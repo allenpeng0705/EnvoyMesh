@@ -10,6 +10,7 @@
 // tests assert on them. Anything the transport doesn't actually
 // exercise (e.g. RTCDataChannel) is left as noSuchMethod.
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:envoygo/models/call_event.dart';
@@ -28,6 +29,7 @@ class FakePeerConnection implements RTCPeerConnection {
   final List<RTCSessionDescription> setRemoteDescriptionCalls = [];
   final List<RTCIceCandidate> addCandidateCalls = [];
   final List<MediaStreamTrack> addTrackCalls = [];
+  final List<RTCRtpMediaType?> addTransceiverKinds = [];
   bool closeCalled = false;
 
   String offerSdp;
@@ -175,8 +177,10 @@ class FakePeerConnection implements RTCPeerConnection {
     MediaStreamTrack? track,
     RTCRtpMediaType? kind,
     RTCRtpTransceiverInit? init,
-  }) async =>
-      throw UnimplementedError();
+  }) async {
+    addTransceiverKinds.add(kind);
+    return _FakeRtpTransceiver();
+  }
   @override
   Future<void> dispose() async {}
 }
@@ -207,6 +211,33 @@ class _FakeRtpSender implements RTCRtpSender {
   RTCDTMFSender get dtmfSender => throw UnimplementedError();
 }
 
+class _FakeRtpTransceiver implements RTCRtpTransceiver {
+  @override
+  Future<void> setDirection(TransceiverDirection direction) async {}
+  @override
+  Future<TransceiverDirection> getDirection() async =>
+      TransceiverDirection.RecvOnly;
+  @override
+  Future<TransceiverDirection?> getCurrentDirection() async =>
+      TransceiverDirection.RecvOnly;
+  @override
+  TransceiverDirection get currentDirection => TransceiverDirection.RecvOnly;
+  @override
+  Future<void> setCodecPreferences(List<RTCRtpCodecCapability> codecs) async {}
+  @override
+  String get mid => '0';
+  @override
+  RTCRtpSender get sender => throw UnimplementedError();
+  @override
+  RTCRtpReceiver get receiver => throw UnimplementedError();
+  @override
+  bool get stoped => false;
+  @override
+  String get transceiverId => 'fake-transceiver';
+  @override
+  Future<void> stop() async {}
+}
+
 // ---------------------------------------------------------------------------
 // Fake MediaStream + MediaStreamTrack
 // ---------------------------------------------------------------------------
@@ -227,10 +258,12 @@ class FakeMediaStream implements MediaStream {
       {this.id = 'local', this.ownerTag = 'fake-stream'});
 
   @override
-  List<MediaStreamTrack> getAudioTracks() => List.from(_tracks);
+  List<MediaStreamTrack> getAudioTracks() =>
+      _tracks.where((t) => t.kind == 'audio').toList();
 
   @override
-  List<MediaStreamTrack> getVideoTracks() => [];
+  List<MediaStreamTrack> getVideoTracks() =>
+      _tracks.where((t) => t.kind == 'video').toList();
 
   @override
   List<MediaStreamTrack> getTracks() => List.from(_tracks);
@@ -242,7 +275,13 @@ class FakeMediaStream implements MediaStream {
   Future<void> getMediaTracks() async {}
 
   @override
-  Future<void> addTrack(MediaStreamTrack track, {bool addToNative = true}) async {}
+  Future<void> addTrack(MediaStreamTrack track, {bool addToNative = true}) async {
+    if (track is FakeMediaStreamTrack) {
+      if (!_tracks.any((t) => t.id == track.id)) {
+        _tracks.add(track);
+      }
+    }
+  }
 
   @override
   Future<void> removeTrack(MediaStreamTrack track,
@@ -362,18 +401,22 @@ WebRtcCallTransport buildTransport({
   FakePeerConnection? pc,
   FakeMediaStream? localStream,
   List<IceServer> iceServers = const [],
+  bool enableVideo = false,
 }) {
   pc ??= FakePeerConnection();
   localStream ??= FakeMediaStream([FakeMediaStreamTrack()]);
   return WebRtcCallTransport(
     callId: 'call-test-123',
     iceServers: iceServers,
+    enableVideo: enableVideo,
     onRemoteStream: remoteStreams.add,
     onConnectionStateChange: connectionStates.add,
     onSdpGenerated: (sdp, type) => sdps.add((sdp, type)),
     onIceCandidate: iceCandidates.add,
     peerConnectionFactory: (_) async => pc!,
     getUserMedia: (_) async => localStream!,
+    createRemoteMediaStream: (label) async =>
+        FakeMediaStream([], id: label, ownerTag: 'remote'),
   );
 }
 
@@ -588,6 +631,8 @@ void main() {
         onIceCandidate: (_) {},
         peerConnectionFactory: (_) async => FakePeerConnection(),
         getUserMedia: (_) async => throw Exception('Permission denied'),
+        createRemoteMediaStream: (label) async =>
+            FakeMediaStream([], id: label),
       );
 
       expect(
@@ -665,5 +710,214 @@ void main() {
       expect(pc.setRemoteDescriptionCalls, hasLength(1));
       expect(pc.setRemoteDescriptionCalls.first.type, 'answer');
     });
+
+    test('onTrack with empty streams merges video into composite remote stream',
+        () async {
+      final remoteStreams = <MediaStream>[];
+      final pc = FakePeerConnection();
+      final transport = buildTransport(
+        iceCandidates: [],
+        connectionStates: [],
+        remoteStreams: remoteStreams,
+        sdps: [],
+        pc: pc,
+      );
+
+      await transport.startOffer();
+      final video = FakeMediaStreamTrack(
+        id: 'mac-video',
+        kind: 'video',
+      );
+      await pc.onTrack?.call(RTCTrackEvent(
+        track: video,
+        streams: const [],
+      ));
+
+      expect(remoteStreams, hasLength(1));
+      expect(remoteStreams.first.getVideoTracks(), hasLength(1));
+      expect(remoteStreams.first.getVideoTracks().first.id, 'mac-video');
+    });
+
+    test('onTrack audio then video on empty streams accumulates tracks',
+        () async {
+      final remoteStreams = <MediaStream>[];
+      final pc = FakePeerConnection();
+      final transport = buildTransport(
+        iceCandidates: [],
+        connectionStates: [],
+        remoteStreams: remoteStreams,
+        sdps: [],
+        pc: pc,
+      );
+
+      await transport.startOffer();
+      await pc.onTrack?.call(RTCTrackEvent(
+        track: FakeMediaStreamTrack(id: 'mac-audio', kind: 'audio'),
+        streams: const [],
+      ));
+      await pc.onTrack?.call(RTCTrackEvent(
+        track: FakeMediaStreamTrack(id: 'mac-video', kind: 'video'),
+        streams: const [],
+      ));
+
+      expect(remoteStreams, hasLength(2));
+      expect(remoteStreams.last.getAudioTracks(), hasLength(1));
+      expect(remoteStreams.last.getVideoTracks(), hasLength(1));
+      // Same composite identity across updates (UI rebinds by track count).
+      expect(identical(remoteStreams.first, remoteStreams.last), isTrue);
+    });
+
+    test('stream video then empty-stream audio keeps video on one composite',
+        () async {
+      final remoteStreams = <MediaStream>[];
+      final pc = FakePeerConnection();
+      final transport = buildTransport(
+        iceCandidates: [],
+        connectionStates: [],
+        remoteStreams: remoteStreams,
+        sdps: [],
+        pc: pc,
+      );
+
+      await transport.startOffer();
+      final peerStream = FakeMediaStream([
+        FakeMediaStreamTrack(id: 'mac-video', kind: 'video'),
+      ], id: 'peer-stream');
+
+      await pc.onTrack?.call(RTCTrackEvent(
+        track: peerStream.getVideoTracks().first,
+        streams: [peerStream],
+      ));
+      await pc.onTrack?.call(RTCTrackEvent(
+        track: FakeMediaStreamTrack(id: 'mac-audio', kind: 'audio'),
+        streams: const [],
+      ));
+
+      expect(remoteStreams, isNotEmpty);
+      final latest = remoteStreams.last;
+      expect(latest.getVideoTracks(), hasLength(1));
+      expect(latest.getAudioTracks(), hasLength(1));
+      expect(identical(remoteStreams.first, latest), isTrue);
+    });
+
+    test('in-flight onTrack after close does not publish remote stream',
+        () async {
+      final remoteStreams = <MediaStream>[];
+      final pc = FakePeerConnection();
+      final slowRemote = FakeMediaStream([], id: 'slow-remote');
+      var gateOpen = false;
+      final gate = Completer<void>();
+
+      final delayedRemote = _DelayedAddTrackStream(
+        slowRemote,
+        beforeAdd: () async {
+          gateOpen = true;
+          await gate.future;
+        },
+      );
+
+      final transport = WebRtcCallTransport(
+        callId: 'call-close-race',
+        iceServers: const [],
+        onRemoteStream: remoteStreams.add,
+        onConnectionStateChange: (_) {},
+        onSdpGenerated: (_, __) {},
+        onIceCandidate: (_) {},
+        peerConnectionFactory: (_) async => pc,
+        getUserMedia: (_) async => FakeMediaStream([FakeMediaStreamTrack()]),
+        createRemoteMediaStream: (_) async => delayedRemote,
+      );
+
+      await transport.startOffer();
+      final pending = pc.onTrack?.call(RTCTrackEvent(
+        track: FakeMediaStreamTrack(id: 'late-video', kind: 'video'),
+        streams: const [],
+      ));
+      // Wait until addTrack is blocked inside the handler.
+      for (var i = 0; i < 50 && !gateOpen; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+      expect(gateOpen, isTrue);
+      await transport.close();
+      gate.complete();
+      await pending;
+
+      expect(remoteStreams, isEmpty,
+          reason: 'closed transport must not publish after hangup');
+    });
+
+    test('video call without local camera adds recvonly video transceiver',
+        () async {
+      final pc = FakePeerConnection();
+      final audioOnly = FakeMediaStream([
+        FakeMediaStreamTrack(id: 'mic', kind: 'audio'),
+      ]);
+      final transport = buildTransport(
+        iceCandidates: [],
+        connectionStates: [],
+        remoteStreams: [],
+        sdps: [],
+        pc: pc,
+        localStream: audioOnly,
+        enableVideo: true,
+      );
+
+      await transport.startOffer();
+      expect(
+        pc.addTransceiverKinds,
+        contains(RTCRtpMediaType.RTCRtpMediaTypeVideo),
+      );
+    });
   });
+}
+
+/// Wraps [inner] and delays [addTrack] so tests can close mid-handler.
+class _DelayedAddTrackStream implements MediaStream {
+  _DelayedAddTrackStream(this.inner, {required this.beforeAdd});
+  final FakeMediaStream inner;
+  final Future<void> Function() beforeAdd;
+
+  @override
+  String get id => inner.id;
+  @override
+  set id(String v) => inner.id = v;
+  @override
+  String get ownerTag => inner.ownerTag;
+  @override
+  set ownerTag(String v) => inner.ownerTag = v;
+  @override
+  Function(MediaStreamTrack track)? get onAddTrack => inner.onAddTrack;
+  @override
+  set onAddTrack(Function(MediaStreamTrack track)? v) => inner.onAddTrack = v;
+  @override
+  Function(MediaStreamTrack track)? get onRemoveTrack => inner.onRemoveTrack;
+  @override
+  set onRemoveTrack(Function(MediaStreamTrack track)? v) =>
+      inner.onRemoveTrack = v;
+  @override
+  List<MediaStreamTrack> getAudioTracks() => inner.getAudioTracks();
+  @override
+  List<MediaStreamTrack> getVideoTracks() => inner.getVideoTracks();
+  @override
+  List<MediaStreamTrack> getTracks() => inner.getTracks();
+  @override
+  bool? get active => inner.active;
+  @override
+  Future<void> getMediaTracks() => inner.getMediaTracks();
+  @override
+  Future<void> addTrack(MediaStreamTrack track, {bool addToNative = true}) async {
+    await beforeAdd();
+    await inner.addTrack(track, addToNative: addToNative);
+  }
+  @override
+  Future<void> removeTrack(MediaStreamTrack track,
+          {bool removeFromNative = true}) =>
+      inner.removeTrack(track, removeFromNative: removeFromNative);
+  @override
+  MediaStreamTrack? getTrackById(String trackId) =>
+      inner.getTrackById(trackId);
+  @override
+  Future<MediaStream> clone() => inner.clone();
+  @override
+  Future<void> dispose() => inner.dispose();
 }

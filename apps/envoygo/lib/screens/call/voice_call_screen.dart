@@ -22,6 +22,8 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
   bool _rendererInitialized = false;
   dynamic _boundRemoteStream;
   dynamic _boundLocalStream;
+  int _boundRemoteVideoCount = 0;
+  int _boundLocalVideoCount = 0;
 
   Timer? _durationTimer;
   DateTime? _callStartedAt;
@@ -81,18 +83,38 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
     await ref.read(callProvider).switchCamera();
   }
 
+  int _videoTrackCount(dynamic stream) {
+    if (stream is! MediaStream) return 0;
+    try {
+      return stream.getVideoTracks().length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   void _bindRemoteStreamIfNeeded(dynamic stream) {
     if (!_rendererInitialized) return;
     if (stream == null) {
       if (_boundRemoteStream != null) {
         _remoteRenderer.srcObject = null;
         _boundRemoteStream = null;
+        _boundRemoteVideoCount = 0;
       }
       return;
     }
-    if (identical(_boundRemoteStream, stream)) return;
+    final videoCount = _videoTrackCount(stream);
+    // Same MediaStream often gains a late video track (audio first), or the
+    // provider swaps stream identity — always rebind when either changes.
+    if (identical(_boundRemoteStream, stream) &&
+        videoCount == _boundRemoteVideoCount) {
+      return;
+    }
+    // Clear first so RTCVideoRenderer notices track-set changes on the
+    // same object (and when swapping to a different stream).
+    _remoteRenderer.srcObject = null;
     _remoteRenderer.srcObject = stream;
     _boundRemoteStream = stream;
+    _boundRemoteVideoCount = videoCount;
   }
 
   void _bindLocalStreamIfNeeded(dynamic stream) {
@@ -101,12 +123,19 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
       if (_boundLocalStream != null) {
         _localRenderer.srcObject = null;
         _boundLocalStream = null;
+        _boundLocalVideoCount = 0;
       }
       return;
     }
-    if (identical(_boundLocalStream, stream)) return;
+    final videoCount = _videoTrackCount(stream);
+    if (identical(_boundLocalStream, stream) &&
+        videoCount == _boundLocalVideoCount) {
+      return;
+    }
+    _localRenderer.srcObject = null;
     _localRenderer.srcObject = stream;
     _boundLocalStream = stream;
+    _boundLocalVideoCount = videoCount;
   }
 
   String _formatDuration(Duration d) {
@@ -305,7 +334,9 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
   bool _hasVideo(dynamic stream) {
     if (stream is! MediaStream) return false;
     try {
-      return stream.getVideoTracks().any((t) => t.enabled);
+      // Presence of a video track is enough — don't gate on `enabled`,
+      // which can be briefly false while Mac frames are still arriving.
+      return stream.getVideoTracks().isNotEmpty;
     } catch (_) {
       return false;
     }

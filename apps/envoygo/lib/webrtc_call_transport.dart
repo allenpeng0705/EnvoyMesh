@@ -32,8 +32,15 @@ class WebRtcCallTransport {
   final Future<MediaStream> Function(Map<String, dynamic> constraints)?
       getUserMedia;
 
+  /// Pluggable factory for the composite remote stream used when
+  /// `onTrack` arrives with an empty `streams` list (common on mobile).
+  final Future<MediaStream> Function(String label)? createRemoteMediaStream;
+
   RTCPeerConnection? _pc;
   MediaStream? _localStream;
+  MediaStream? _remoteMediaStream;
+  /// Bumped on [close] so in-flight `onTrack` handlers stop publishing.
+  int _remoteTrackEpoch = 0;
   bool _isClosed = false;
   bool _isMuted = false;
   /// `true` = front (user), `false` = back (environment).
@@ -51,6 +58,7 @@ class WebRtcCallTransport {
     this.enableVideo = false,
     this.peerConnectionFactory,
     this.getUserMedia,
+    this.createRemoteMediaStream,
   });
 
   bool get isClosed => _isClosed;
@@ -94,6 +102,10 @@ class WebRtcCallTransport {
   Future<RTCPeerConnection> _buildPeerConnection() async {
     final factory = peerConnectionFactory ?? createPeerConnection;
     final pc = await factory(_rtcConfiguration());
+    // Pre-allocate so onTrack can merge tracks when `streams` is empty
+    // (Chrome→flutter_webrtc often delivers video this way).
+    _remoteMediaStream ??= await (createRemoteMediaStream ??
+        createLocalMediaStream)('remote-$callId');
     pc.onIceCandidate = (RTCIceCandidate? c) {
       if (_isClosed || c == null) return;
       onIceCandidate(CallIceCandidate(
@@ -108,15 +120,100 @@ class WebRtcCallTransport {
     };
     pc.onAddStream = (MediaStream stream) {
       if (_isClosed) return;
-      onRemoteStream(stream);
+      // Unified-plan still sometimes fires onAddStream — fold into composite.
+      unawaited(_handleRemoteTracksFromStream(stream));
     };
     pc.onTrack = (RTCTrackEvent event) {
       if (_isClosed) return;
-      if (event.streams.isNotEmpty) {
-        onRemoteStream(event.streams.first);
-      }
+      unawaited(_handleRemoteTrack(event));
     };
     return pc;
+  }
+
+  Future<void> _handleRemoteTracksFromStream(MediaStream stream) async {
+    for (final track in stream.getTracks()) {
+      if (_isClosed) return;
+      await _ingestRemoteTrack(
+        track,
+        fallbackStream: stream,
+        via: 'addStream',
+      );
+    }
+  }
+
+  /// Always accumulate remote audio/video into one composite stream.
+  ///
+  /// Publishing `event.streams.first` for some tracks and a separate composite
+  /// for others caused Mac video to vanish when a later empty-stream audio
+  /// track replaced the UI stream. One composite avoids that overwrite.
+  Future<void> _handleRemoteTrack(RTCTrackEvent event) async {
+    if (_isClosed) return;
+    await _ingestRemoteTrack(
+      event.track,
+      fallbackStream: event.streams.isNotEmpty ? event.streams.first : null,
+      via: event.streams.isNotEmpty ? 'stream' : 'track',
+    );
+  }
+
+  Future<void> _ingestRemoteTrack(
+    MediaStreamTrack track, {
+    MediaStream? fallbackStream,
+    required String via,
+  }) async {
+    if (_isClosed) return;
+    final kind = track.kind;
+    if (kind != 'audio' && kind != 'video') return;
+
+    final epoch = _remoteTrackEpoch;
+    final remote = _remoteMediaStream;
+    if (remote == null) {
+      // Composite not ready — last resort so video is not dropped entirely.
+      if (fallbackStream != null && !_isClosed) {
+        // ignore: avoid_print
+        print(
+          '[WebRtcCallTransport] remote-track via=$via kind=$kind '
+          'id=${track.id} (no composite; using fallback stream)',
+        );
+        onRemoteStream(fallbackStream);
+      }
+      return;
+    }
+
+    final already = remote.getTracks().any((t) => t.id == track.id);
+    if (!already) {
+      try {
+        await remote.addTrack(track);
+      } catch (err) {
+        // ignore: avoid_print
+        print(
+          '[WebRtcCallTransport] remote addTrack failed via=$via '
+          'kind=$kind id=${track.id}: $err',
+        );
+        // Platform rejected grafting onto the composite — publish the
+        // peer-provided stream if it carries this track (and prefer keeping
+        // any video already shown on the composite).
+        if (_isClosed || epoch != _remoteTrackEpoch) return;
+        if (fallbackStream != null) {
+          final compositeHasVideo = remote.getVideoTracks().isNotEmpty;
+          final fallbackHasVideo = fallbackStream.getVideoTracks().isNotEmpty;
+          if (!compositeHasVideo || fallbackHasVideo) {
+            onRemoteStream(fallbackStream);
+          }
+        }
+        return;
+      }
+    }
+
+    if (_isClosed ||
+        epoch != _remoteTrackEpoch ||
+        !identical(_remoteMediaStream, remote)) {
+      return;
+    }
+    // ignore: avoid_print
+    print(
+      '[WebRtcCallTransport] remote-track via=$via kind=$kind id=${track.id}',
+    );
+    onRemoteStream(remote);
   }
 
   Future<MediaStream> _acquireLocalMedia() async {
@@ -149,6 +246,21 @@ class WebRtcCallTransport {
     _localStream = await _acquireLocalMedia();
     for (final track in _localStream!.getTracks()) {
       await pc.addTrack(track, _localStream!);
+    }
+    // Camera failed but this is still a video call — advertise recvonly
+    // so Mac's camera can still be received/rendered.
+    if (enableVideo && _localStream!.getVideoTracks().isEmpty) {
+      try {
+        await pc.addTransceiver(
+          kind: RTCRtpMediaType.RTCRtpMediaTypeVideo,
+          init: RTCRtpTransceiverInit(
+            direction: TransceiverDirection.RecvOnly,
+          ),
+        );
+      } catch (err) {
+        // ignore: avoid_print
+        print('[WebRtcCallTransport] recvonly video transceiver failed: $err');
+      }
     }
     // Restore mute preference if set before tracks existed.
     if (_isMuted) {
@@ -371,6 +483,7 @@ class WebRtcCallTransport {
   Future<void> close() async {
     if (_isClosed) return;
     _isClosed = true;
+    _remoteTrackEpoch++;
 
     final pc = _pc;
     _pc = null;
@@ -398,6 +511,14 @@ class WebRtcCallTransport {
     _localStream = null;
     if (stream != null) {
       await _stopStream(stream);
+    }
+
+    final remote = _remoteMediaStream;
+    _remoteMediaStream = null;
+    if (remote != null) {
+      try {
+        await remote.dispose();
+      } catch (_) {}
     }
   }
 }
