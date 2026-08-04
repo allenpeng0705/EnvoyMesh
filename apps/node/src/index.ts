@@ -757,7 +757,9 @@ const resolvedBootstrapResults = await resolveBootstrapAddresses(args.bootstrapP
 const resolvedBootstrapPeers = resolvedBootstrapResults.flatMap((r) => r.resolved);
 
 const rawBootstrapPeers = dedupeAddrs([...resolvedBootstrapPeers, ...persistedSeedAddrs]);
-const effectiveBootstrapPeers = filterBootstrapMultiaddrs(rawBootstrapPeers);
+// Mutable: deferred first-run activation reloads node-config and must refresh
+// this list so relay.lookup / checkin targets match the live mesh bootstrap.
+let effectiveBootstrapPeers = filterBootstrapMultiaddrs(rawBootstrapPeers);
 
 // Build a set of bootstrap peer IDs so we can exclude them from the
 // "People on this network" / "People you can reach" discovery UI.
@@ -2823,6 +2825,11 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
   cliMeshActivationInFlight = true;
   cliMeshActivationPromise = (async () => {
     try {
+      // Defaults from module init; overwritten when first-run reloads node-config.
+      let relayBootstrapPeers = effectiveBootstrapPeers;
+      let relayConfiguredRelays = persistedNodeConfig?.configuredRelays;
+      let relayBootstrapPresets = persistedNodeConfig?.bootstrapPresets ?? args.bootstrapPresets;
+
       if (reloadDiscoveryFromConfig) {
         const config = await nodeConfigStore.load();
         if (!config) {
@@ -2845,6 +2852,10 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
         );
         const rawBootstrapPeers = dedupeAddrs([...resolvedBootstrapPeers, ...persistedSeedAddrs]);
         const effectivePeers = filterBootstrapMultiaddrs(rawBootstrapPeers);
+        effectiveBootstrapPeers = effectivePeers;
+        relayBootstrapPeers = effectivePeers;
+        relayConfiguredRelays = config.configuredRelays;
+        relayBootstrapPresets = config.bootstrapPresets ?? args.bootstrapPresets;
 
         const meshOpts = (mesh as unknown as { options: EnvoyMeshOptions }).options;
         meshOpts.bootstrapPeers = effectivePeers;
@@ -2943,6 +2954,23 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
 
       if (nodeService instanceof NodeServiceImpl) {
         nodeService.bindExternalMesh(mesh);
+        // Wire relay.lookup deps for searchPeers. Without this, DHT-empty
+        // networks (mobile 5G, blocked bootstrap DNS) cannot discover anyone
+        // via the community relay roster even though checkin succeeds.
+        if (args.enableRelay && relayBootstrapPeers.length > 0) {
+          const displayName = (await humanProfileStore.loadHumanProfile().catch(() => undefined))
+            ?.displayName;
+          nodeService.bindExternalRelayClientCycle({
+            mesh: mesh as never,
+            profile,
+            displayName,
+            bootstrapPeers: relayBootstrapPeers,
+            configuredRelays: relayConfiguredRelays,
+            bootstrapPresets: relayBootstrapPresets,
+            inboundGuard,
+            discoverySeedStore,
+          });
+        }
       }
 
       if (args.enableRelayServer) {

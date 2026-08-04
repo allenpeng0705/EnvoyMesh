@@ -2203,6 +2203,22 @@ class NodeServiceImpl implements NodeService {
     this._startBondWarmInterval();
   }
 
+  /**
+   * CLI / Tauri path: wire relay.lookup deps used by `searchPeers` when DHT
+   * is empty (mobile 5G, blocked public bootstrap DNS, etc.).
+   *
+   * `bindExternalMesh` alone is not enough — checkin runs in `index.ts`, but
+   * topic/peer search goes through NodeService and needs these deps or it
+   * logs `_relayClientCycleDeps not set` and returns no relay-roster hits.
+   */
+  bindExternalRelayClientCycle(deps: RelayClientCycleDeps): void {
+    this._relayClientCycleDeps = deps;
+    console.log(
+      `[node-service] relay client cycle deps bound for searchPeers ` +
+        `(bootstrapPeers=${deps.bootstrapPeers.length})`,
+    );
+  }
+
   /** CLI `index.ts` path: start the pre-built libp2p stack after first-run setup writes node-config.json. */
   registerDeferredExternalMeshStart(fn: () => Promise<void>): void {
     this._deferredExternalMeshStart = fn;
