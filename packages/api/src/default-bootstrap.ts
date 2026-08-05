@@ -25,7 +25,17 @@ export const DEFAULT_CONTACTS_ONLY_BOOTSTRAP_PRESETS = ["cn-relay"] as const
 
 export type DiscoveryBootstrapProfile = "lan-fast" | "wan-default" | "relay-only" | "contacts-only"
 
-/** Default bootstrap preset ids for a discovery profile (before explicit operator overrides). */
+/**
+ * Default bootstrap preset ids for a discovery profile (before explicit
+ * operator overrides).
+ *
+ * WAN-default uses cn-relay ONLY (not the public libp2p swarm). The public
+ * swarm presets (public-libp2p, -am6, -am7) flood the connection manager
+ * with 100+ anonymous DHT peers, which starves the circuit relay CONNECT
+ * handler and causes intermittent bond.request timeouts. The cn-relay alone
+ * provides DHT routing + circuit relay + discovery — everything EnvoyMesh
+ * needs on WAN without the swarm overload.
+ */
 export function defaultBootstrapPresetsForDiscoveryProfile(
   profile: DiscoveryBootstrapProfile,
 ): readonly string[] {
@@ -33,7 +43,9 @@ export function defaultBootstrapPresetsForDiscoveryProfile(
     return DEFAULT_CONTACTS_ONLY_BOOTSTRAP_PRESETS
   }
   if (profile === "wan-default") {
-    return DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS
+    // cn-relay only — no public libp2p swarm. The public DHT flood
+    // (140+ peers, 250+ dial queue) causes circuit CONNECT hangs.
+    return DEFAULT_CONTACTS_ONLY_BOOTSTRAP_PRESETS
   }
   return []
 }

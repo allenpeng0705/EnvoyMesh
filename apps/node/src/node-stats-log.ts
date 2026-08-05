@@ -1,6 +1,6 @@
 import type { EnvoyMesh } from "@envoymesh/network";
 
-export const NODE_STATS_INTERVAL_MS = 60_000;
+export const NODE_STATS_INTERVAL_MS = 30_000;
 /** Log a hint when libp2p connection count suggests dial churn / GC pressure. */
 export const HIGH_CONNECTION_COUNT_WARN = 60;
 
@@ -42,6 +42,20 @@ export function logNodeRuntimeStats(mesh: EnvoyMesh, context: NodeStatsLogContex
     console.warn(
       `[node-stats] WARNING: ${conn.totalConnections} open libp2p connections (peers=${conn.totalPeerIds}${dialPart}) — check relay dial churn; bond-warm interval=${60_000 * 5}ms (5min) per contact with ${60_000 * 5}ms per-contact cooldown (cap ${"see BOND_WARM_MAX_CONNECTIONS"})`,
     );
+  }
+
+  // Protect circuit-relay hoppability: prune anonymous DHT/bootstrap peers
+  // when the dial queue or peer count is high enough to starve CONNECT.
+  if (
+    (conn.dialQueueLength != null && conn.dialQueueLength > 40) ||
+    conn.totalPeerIds > 64
+  ) {
+    void mesh.pruneExcessSwarmConnections().catch((err) => {
+      console.warn(
+        "[node-stats] pruneExcessSwarmConnections failed:",
+        err instanceof Error ? err.message : err,
+      );
+    });
   }
 }
 

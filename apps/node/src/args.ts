@@ -1,7 +1,6 @@
 import type { Sensitivity } from "@envoymesh/protocol";
 import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
-  DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
   normalizeBootstrapPresetsForContactsOnly,
   type ConnectivityTuning,
 } from "@envoymesh/api";
@@ -113,7 +112,14 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     connectivityStrict: false,
     enableMdnsExplicit: false,
     connectivityTuning: {},
-    bootstrapPresets: [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
+    // cn-relay only by default. The public libp2p swarm presets
+    // (public-libp2p, -am6, -am7) flood the connection manager with
+    // 100+ anonymous DHT peers, which starves the circuit relay
+    // CONNECT handler and causes intermittent bond.request timeouts
+    // on WAN. The cn-relay alone provides DHT routing + circuit
+    // relay + discovery — everything EnvoyMesh needs without the
+    // swarm overload.
+    bootstrapPresets: ["cn-relay"],
     bootstrapPresetsFiles: [],
     listen: ["/ip4/0.0.0.0/tcp/0"],
     advertiseAddrs: [],
@@ -351,7 +357,9 @@ Options:
   --bootstrap <addr>    Add a bootstrap peer multiaddr. Repeatable.
                          Env: ENVOYMESH_BOOTSTRAP_PEERS (comma-separated)
   --bootstrap-preset <p> Add managed bootstrap set. Supported: public-libp2p, public-libp2p-am6, public-libp2p-am7, cn-relay
-                         Default (wan-default, no explicit bootstrap): all public-libp2p presets plus EnvoyMesh community relay multiaddr.
+                         Default (wan-default, no explicit bootstrap): cn-relay only. Public libp2p swarm
+                         presets are opt-in (--bootstrap-preset public-libp2p) to avoid connection manager
+                         overload from 100+ anonymous DHT peers.
                          Repeatable. Env: ENVOYMESH_BOOTSTRAP_PRESETS (comma-separated)
   --bootstrap-presets-file <path> Load custom bootstrap preset definitions from YAML. Repeatable.
                          Env: ENVOYMESH_BOOTSTRAP_PRESETS_FILES (comma-separated)

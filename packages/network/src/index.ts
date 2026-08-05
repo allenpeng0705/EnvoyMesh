@@ -2666,6 +2666,65 @@ export class EnvoyMesh {
   }
 
   /**
+   * Close non-essential swarm peers when connection/dial-queue pressure
+   * threatens circuit-relay hoppability. Keeps preferred relays and
+   * Envoy-tagged contacts; drops anonymous DHT/bootstrap churn peers.
+   */
+  async pruneExcessSwarmConnections(options?: {
+    maxPeers?: number;
+    dialQueueThreshold?: number;
+  }): Promise<{ closedPeers: number; reason?: string }> {
+    const maxPeers = options?.maxPeers ?? 32;
+    const dialQueueThreshold = options?.dialQueueThreshold ?? 20;
+    const stats = this.getConnectionStats();
+    const dialQueue = stats.dialQueueLength ?? 0;
+    const overPeers = stats.totalPeerIds > maxPeers;
+    const overQueue = dialQueue > dialQueueThreshold;
+    if (!overPeers && !overQueue) {
+      return { closedPeers: 0 };
+    }
+
+    const node = this.requireNode();
+    const preferredRelays = new Set(this.preferredRelayPeerIds ?? []);
+    for (const id of this.lastReservedRelayPeerIds ?? []) {
+      if (id) preferredRelays.add(id);
+    }
+    preferredRelays.add(COMMUNITY_CN_RELAY_PEER_ID);
+
+    const candidates: string[] = [];
+    for (const peerId of stats.connectedPeerIds) {
+      if (preferredRelays.has(peerId)) continue;
+      let tags: string[] = [];
+      try {
+        const peerData = await node.peerStore.get(peerIdFromString(peerId));
+        tags = [...peerData.tags.keys()];
+      } catch {
+        tags = [];
+      }
+      if (tags.includes(CONTACT_KEEP_ALIVE_PEER_TAG)) continue;
+      if (tags.includes(RELAY_KEEP_ALIVE_PEER_TAG)) continue;
+      candidates.push(peerId);
+    }
+
+    let closedPeers = 0;
+    const target = Math.max(0, stats.totalPeerIds - maxPeers);
+    const toClose = Math.max(target, overQueue ? Math.min(candidates.length, 24) : 0);
+    for (const peerId of candidates.slice(0, toClose)) {
+      const n = await this.closeConnectionsToPeer(peerId);
+      if (n > 0) closedPeers += 1;
+    }
+    if (closedPeers > 0) {
+      console.warn(
+        `[p2p] pruned ${closedPeers} non-essential swarm peer(s) (peers=${stats.totalPeerIds} dialQueue=${dialQueue}) to protect circuit hoppability`,
+      );
+    }
+    return {
+      closedPeers,
+      reason: overQueue ? "dial-queue" : "peer-count",
+    };
+  }
+
+  /**
    * Best-effort dial to establish or reuse a libp2p connection before chat/file sends.
    * Opens and closes one stream on `protocol` (default chat) using the same dial-hint path as {@link sendChat}.
    */
@@ -4370,6 +4429,49 @@ export function filterBootstrapMultiaddrs(addrs: string[]): string[] {
 /** Bootstrap addrs that speak Envoy relay.checkin / relay.lookup (exclude public libp2p DHT nodes). */
 export function filterRelayControlTargets(addrs: string[]): string[] {
   return filterBootstrapMultiaddrs(addrs).filter((a) => !isPublicLibp2pBootstrapMultiaddr(a));
+}
+
+/**
+ * Cap wan-default bootstrap fanout so circuit-relay CONNECT stays reliable.
+ *
+ * History (2026-08-05): Allen Mac with 27 bootstrap addrs opened 140+ peers /
+ * dialQueue 300+. Local `hasLiveRelayReservation()` stayed true while external
+ * `/p2p-circuit/` dials flapped (OK 119ms ↔ 20s timeout). Prefer configured /
+ * community relays; keep at most {@link MAX_BOOTSTRAP_PEERS_FOR_HOPPABILITY}
+ * total dial targets (resolved public DHT peers count toward the cap).
+ */
+export const MAX_BOOTSTRAP_PEERS_FOR_HOPPABILITY = 8;
+
+/** Community cn-relay peer id — always preferred when present in the list. */
+export const COMMUNITY_CN_RELAY_PEER_ID =
+  "12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo";
+
+export function capBootstrapPeersForCircuitHoppability(
+  addrs: readonly string[],
+  options?: { maxTotal?: number; preferPeerIds?: readonly string[] },
+): string[] {
+  const maxTotal = options?.maxTotal ?? MAX_BOOTSTRAP_PEERS_FOR_HOPPABILITY;
+  const prefer = new Set<string>([
+    COMMUNITY_CN_RELAY_PEER_ID,
+    ...(options?.preferPeerIds ?? []).map((s) => s.trim()).filter(Boolean),
+  ]);
+  const filtered = filterBootstrapMultiaddrs([...addrs]).filter(
+    (a) => !isPrivateLanTcpDialHint(a) && !a.includes("/p2p-circuit/"),
+  );
+  const preferred: string[] = [];
+  const rest: string[] = [];
+  for (const a of filtered) {
+    const p2pIdx = a.lastIndexOf("/p2p/");
+    const peerId = p2pIdx >= 0 ? a.slice(p2pIdx + 5).split("/")[0]?.trim() : undefined;
+    if (peerId && prefer.has(peerId)) preferred.push(a);
+    else rest.push(a);
+  }
+  const out = [...preferred];
+  for (const a of rest) {
+    if (out.length >= maxTotal) break;
+    out.push(a);
+  }
+  return out;
 }
 
 /** Returns true if the multiaddr uses QUIC (udp port + quic-v1). */
