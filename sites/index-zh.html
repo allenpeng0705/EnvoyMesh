@@ -347,8 +347,13 @@
 
     .features-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      grid-template-columns: repeat(3, 1fr);
       gap: 24px;
+      --show-count: 6;
+    }
+
+    .features-grid.collapsed > .feature-card.is-overflow {
+      display: none;
     }
 
     .feature-card {
@@ -609,8 +614,13 @@
 
     .phone-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      grid-template-columns: repeat(5, 1fr);
       gap: 24px;
+      --show-count: 5;
+    }
+
+    .phone-grid.collapsed > .phone-card.is-overflow {
+      display: none;
     }
 
     .phone-card {
@@ -641,6 +651,44 @@
       font-size: 0.85rem;
       font-weight: 500;
       color: var(--text-secondary);
+      text-align: center;
+    }
+
+    /* 显示更多 / 收起 折叠网格切换 */
+    .show-more-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 36px auto 0;
+      padding: 12px 28px;
+      background-color: var(--bg-card);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .show-more-btn:hover {
+      border-color: var(--primary-color);
+      background-color: var(--bg-card-hover);
+      color: var(--text-primary);
+    }
+
+    .show-more-btn .arrow {
+      display: inline-block;
+      transition: transform 0.25s ease;
+      font-size: 0.8rem;
+    }
+
+    .show-more-btn.expanded .arrow {
+      transform: rotate(180deg);
+    }
+
+    .show-more-wrap {
       text-align: center;
     }
 
@@ -1016,9 +1064,9 @@
 
     .download-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      grid-template-columns: repeat(2, 1fr);
       gap: 24px;
-      max-width: 1000px;
+      max-width: 900px;
       margin: 0 auto 40px;
     }
 
@@ -1132,6 +1180,58 @@
       font-size: 0.85rem;
       max-width: 600px;
       margin: 0 auto;
+    }
+
+    .download-layout {
+      display: flex;
+      gap: 24px;
+      align-items: center;
+    }
+
+    .download-buttons {
+      flex: 1;
+      text-align: center;
+    }
+
+    .download-layout .download-buttons .download-links {
+      max-width: 220px;
+      margin: 0 auto;
+    }
+
+    .download-qr {
+      flex-shrink: 0;
+      text-align: center;
+      padding: 16px;
+      background-color: white;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+    }
+
+    .download-qr img {
+      width: 160px;
+      height: 160px;
+      display: block;
+      border-radius: 6px;
+    }
+
+    .download-qr-label {
+      margin-top: 8px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .download-icon.ios {
+      background-color: rgba(147, 197, 253, 0.12);
+      color: #93c5fd;
+    }
+
+    .download-card.disabled {
+      opacity: 0.65;
+    }
+
+    .download-card.disabled .download-link {
+      cursor: not-allowed;
+      pointer-events: none;
     }
 
     /* Architecture Section */
@@ -1318,6 +1418,18 @@
     }
 
     /* Responsive */
+    @media (max-width: 1024px) {
+      .features-grid {
+        grid-template-columns: repeat(2, 1fr);
+        --show-count: 4;
+      }
+
+      .phone-grid {
+        grid-template-columns: repeat(3, 1fr);
+        --show-count: 3;
+      }
+    }
+
     @media (max-width: 768px) {
       .container {
         padding: 0 16px;
@@ -1394,6 +1506,7 @@
       .features-grid {
         grid-template-columns: 1fr;
         gap: 20px;
+        --show-count: 2;
       }
 
       .feature-card.with-shot .feature-body {
@@ -1467,6 +1580,15 @@
         padding: 24px 20px;
       }
 
+      .download-layout {
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .download-qr {
+        display: none;
+      }
+
       .footer-content {
         flex-direction: column;
         text-align: center;
@@ -1493,8 +1615,9 @@
       }
 
       .phone-grid {
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        grid-template-columns: repeat(2, 1fr);
         gap: 16px;
+        --show-count: 2;
       }
 
       .phone-card .phone-caption {
@@ -1526,6 +1649,7 @@
         <li><a href="#envoygo">EnvoyGo</a></li>
         <li><a href="#knowledge">知识库</a></li>
         <li><a href="#family">家庭网络</a></li>
+        <li><a href="#agents">智能体</a></li>
         <li><a href="#architecture">架构</a></li>
         <li><a href="#security">安全</a></li>
         <li><a href="#downloads">下载</a></li>
@@ -1549,6 +1673,7 @@
     <a href="#envoygo">EnvoyGo 移动端</a>
     <a href="#knowledge">知识库</a>
     <a href="#family">家庭网络</a>
+    <a href="#agents">智能体网络</a>
     <a href="#architecture">架构</a>
     <a href="#security">安全</a>
     <a href="#downloads">下载</a>
@@ -1594,7 +1719,7 @@
       </div>
       <div style="display: flex; justify-content: center; margin-top: 32px;">
         <div style="max-width: 950px; width: 100%;">
-          <svg viewBox="0 0 950 600" style="width: 100%; height: auto;">
+          <svg viewBox="0 0 830 600" style="width: 100%; height: auto;">
             <defs>
               <linearGradient id="meshGradientZh" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%" style="stop-color:#6366f1;stop-opacity:0.3" />
@@ -1627,8 +1752,8 @@
               <line x1="200" y1="80" x2="750" y2="30" stroke="#a855f7" stroke-width="1" />
             </g>
 
-            <text x="475" y="40" text-anchor="middle" font-size="16" font-weight="600" fill="#f8fafc">EnvoyMesh Network</text>
-            <line x1="200" y1="55" x2="750" y2="55" stroke="#334155" stroke-width="2" stroke-dasharray="5,5" />
+            <text x="415" y="40" text-anchor="middle" font-size="16" font-weight="600" fill="#f8fafc">EnvoyMesh Network</text>
+            <line x1="140" y1="55" x2="690" y2="55" stroke="#334155" stroke-width="2" stroke-dasharray="5,5" />
 
             <g transform="translate(80, 70)">
               <rect x="0" y="0" width="200" height="440" rx="12" fill="#1e293b" stroke="#6366f1" stroke-width="2" filter="url(#glowZh)" />
@@ -1921,6 +2046,12 @@
           </div>
         </div>
       </div>
+      <div class="show-more-wrap">
+        <button class="show-more-btn" data-collapsed-text="显示全部功能" data-expanded-text="收起">
+          <span class="btn-text">显示全部功能</span>
+          <span class="arrow">▾</span>
+        </button>
+      </div>
     </div>
   </section>
 
@@ -1933,7 +2064,7 @@
       </div>
 
       <div class="envoygo-intro">
-        <p>EnvoyGo 是 EnvoyMesh 的移动配套应用。它通过安全的 WebSocket 或 libp2p 电路中继与你的家庭节点配对——无需云端、无需公网、无需中间人。你的数据始终留在你的机器上；EnvoyGo 只是一个轻量级的加密窗口。从手机上运行家庭电脑的终端命令、与 AI 智能体聊天、浏览保险箱、管理你的网络——一切尽在掌握。</p>
+        <p>EnvoyGo 是 EnvoyMesh 的移动配套应用。它通过安全的 WebSocket 或 libp2p 电路中继与你的家庭节点配对——无需云端、无需公网、无需中间人。你的数据始终留在你的机器上；EnvoyGo 只是一个轻量级的加密窗口。从手机上运行家庭电脑的终端命令、与 AI 智能体聊天、浏览保险箱、管理你的网络——一切尽在掌握。家人也可以从自己的 EnvoyGo 加入你的私人家庭网络——每个人都有自己的智能体和个人资料，与家人互相聊天，共享家庭节点的 AI。所有数据都存放在你的家庭电脑上；智能体共享，但每位成员的数据彼此独立、互不干扰。</p>
       </div>
 
       <div class="envoygo-highlights">
@@ -1966,6 +2097,11 @@
           <div class="highlight-icon">🔐</div>
           <h4>端到端安全</h4>
           <p>所有通信均经过 Ed25519 签名和加密。EnvoyGo 通过二维码配对与你的家庭节点认证。</p>
+        </div>
+        <div class="envoygo-highlight">
+          <div class="highlight-icon">👨‍👩‍👧</div>
+          <h4>家庭网络</h4>
+          <p>邀请家人从自己的 EnvoyGo 加入你的私人网络。每个人都有自己的 AI 智能体和个人资料，互相聊天，共享家庭节点的 AI——而每个人的数据在你的家庭电脑上彼此独立、互不干扰。</p>
         </div>
       </div>
 
@@ -2069,6 +2205,194 @@
           <div class="phone-caption">Pi 终端</div>
         </div>
       </div>
+      <div class="show-more-wrap">
+        <button class="show-more-btn" data-collapsed-text="显示全部屏幕" data-expanded-text="收起">
+          <span class="btn-text">显示全部屏幕</span>
+          <span class="arrow">▾</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Agent Network Section -->
+  <section class="agent-network" id="agents" style="padding: 80px 0;">
+    <div class="container">
+      <div class="section-header">
+        <h2>智能体网络</h2>
+        <p>局域网或广域网上的多智能体协作——跨智能体集群委派任务，并实时跟踪进度直至完成。</p>
+      </div>
+      <div style="max-width: 830px; margin: 0 auto 40px;">
+        <svg viewBox="0 0 830 400" style="width: 100%; height: auto;" role="img" aria-label="智能体网络拓扑图">
+          <defs>
+            <filter id="agGlowZh"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+            <marker id="agArrowZh" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto"><polygon points="0 0, 8 2.5, 0 5" fill="#818cf8"/></marker>
+            <marker id="agArrowBackZh" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto"><polygon points="0 0, 8 2.5, 0 5" fill="#22c55e"/></marker>
+          </defs>
+
+          <!-- 局域网/广域网云标 -->
+          <text x="615" y="40" text-anchor="middle" font-size="11" font-weight="600" fill="#64748b">🌐 局域网 / 广域网</text>
+          <line x1="500" y1="50" x2="730" y2="50" stroke="#334155" stroke-width="1" stroke-dasharray="4,3"/>
+
+          <!-- 主节点 + 任务看板（左）-->
+          <g transform="translate(40, 80)">
+            <rect x="0" y="0" width="240" height="280" rx="12" fill="#1e293b" stroke="#6366f1" stroke-width="2" filter="url(#agGlowZh)"/>
+            <text x="120" y="30" text-anchor="middle" font-size="14" font-weight="600" fill="#6366f1">🏠 主节点</text>
+            <text x="120" y="48" text-anchor="middle" font-size="10" fill="#94a3b8">任务看板 · 任务委派</text>
+            <line x1="20" y1="58" x2="220" y2="58" stroke="#334155" stroke-width="1"/>
+            <rect x="20" y="72" width="200" height="44" rx="6" fill="rgba(34,197,94,0.15)" stroke="#22c55e" stroke-width="1"/>
+            <text x="32" y="90" font-size="10" font-weight="600" fill="#4ade80">▶ 任务 A</text>
+            <text x="32" y="106" font-size="9" fill="#94a3b8">进行中 · EnvoyAI</text>
+            <rect x="20" y="124" width="200" height="44" rx="6" fill="rgba(148,163,184,0.12)" stroke="#64748b" stroke-width="1"/>
+            <text x="32" y="142" font-size="10" font-weight="600" fill="#94a3b8">✓ 任务 B</text>
+            <text x="32" y="158" font-size="9" fill="#64748b">已完成 · HomeClaw</text>
+            <rect x="20" y="176" width="200" height="44" rx="6" fill="rgba(245,158,11,0.15)" stroke="#f59e0b" stroke-width="1"/>
+            <text x="32" y="194" font-size="10" font-weight="600" fill="#fbbf24">⏳ 任务 C</text>
+            <text x="32" y="210" font-size="9" fill="#94a3b8">排队中 · Hermes</text>
+            <text x="120" y="252" text-anchor="middle" font-size="9" fill="#64748b">创建 · 委派 · 跟踪 · 汇总</text>
+          </g>
+
+          <!-- 委派箭头（主节点 → 智能体集群）-->
+          <path d="M 280 150 L 540 110" stroke="#818cf8" stroke-width="2" fill="none" stroke-dasharray="6,3" marker-end="url(#agArrowZh)"/>
+          <path d="M 280 180 L 660 110" stroke="#818cf8" stroke-width="2" fill="none" stroke-dasharray="6,3" marker-end="url(#agArrowZh)"/>
+          <path d="M 280 220 L 540 250" stroke="#818cf8" stroke-width="2" fill="none" stroke-dasharray="6,3" marker-end="url(#agArrowZh)"/>
+          <path d="M 280 250 L 660 250" stroke="#818cf8" stroke-width="2" fill="none" stroke-dasharray="6,3" marker-end="url(#agArrowZh)"/>
+          <text x="410" y="100" text-anchor="middle" font-size="9" fill="#818cf8">委派</text>
+
+          <!-- 结果反馈（智能体 → 主节点）-->
+          <path d="M 540 290 L 280 290" stroke="#22c55e" stroke-width="1.5" fill="none" stroke-dasharray="4,3" marker-end="url(#agArrowBackZh)"/>
+          <text x="410" y="305" text-anchor="middle" font-size="9" fill="#4ade80">进度 · 结果</text>
+
+          <!-- 智能体集群（右，2×2）-->
+          <g transform="translate(540, 70)">
+            <rect x="0" y="0" width="110" height="80" rx="8" fill="#1e293b" stroke="#6366f1" stroke-width="2" filter="url(#agGlowZh)"/>
+            <text x="55" y="32" text-anchor="middle" font-size="11" font-weight="600" fill="#818cf8">EnvoyAI</text>
+            <text x="55" y="50" text-anchor="middle" font-size="8" fill="#94a3b8">内置</text>
+            <text x="55" y="66" text-anchor="middle" font-size="8" fill="#64748b">本地</text>
+          </g>
+          <g transform="translate(660, 70)">
+            <rect x="0" y="0" width="110" height="80" rx="8" fill="#1e293b" stroke="#3b82f6" stroke-width="2" filter="url(#agGlowZh)"/>
+            <text x="55" y="32" text-anchor="middle" font-size="11" font-weight="600" fill="#60a5fa">HomeClaw</text>
+            <text x="55" y="50" text-anchor="middle" font-size="8" fill="#94a3b8">外部</text>
+            <text x="55" y="66" text-anchor="middle" font-size="8" fill="#64748b">广域网</text>
+          </g>
+          <g transform="translate(540, 210)">
+            <rect x="0" y="0" width="110" height="80" rx="8" fill="#1e293b" stroke="#8b5cf6" stroke-width="2" filter="url(#agGlowZh)"/>
+            <text x="55" y="32" text-anchor="middle" font-size="11" font-weight="600" fill="#a78bfa">Hermes</text>
+            <text x="55" y="50" text-anchor="middle" font-size="8" fill="#94a3b8">外部</text>
+            <text x="55" y="66" text-anchor="middle" font-size="8" fill="#64748b">局域网</text>
+          </g>
+          <g transform="translate(660, 210)">
+            <rect x="0" y="0" width="110" height="80" rx="8" fill="#1e293b" stroke="#ec4899" stroke-width="2" filter="url(#agGlowZh)"/>
+            <text x="55" y="32" text-anchor="middle" font-size="11" font-weight="600" fill="#f472b6">OpenHuman</text>
+            <text x="55" y="50" text-anchor="middle" font-size="8" fill="#94a3b8">外部</text>
+            <text x="55" y="66" text-anchor="middle" font-size="8" fill="#64748b">广域网</text>
+          </g>
+        </svg>
+        <p style="text-align: center; color: var(--text-muted); font-size: 0.85rem; margin-top: 12px;">创建任务 · 跨局域网/广域网委派智能体 · 跟踪进度 · 汇总结果</p>
+      </div>
+      <div style="max-width: 760px; margin: 0 auto; text-align: center;">
+        <p style="color: var(--text-secondary); font-size: 1rem; line-height: 1.8;">把你的主节点变成<strong style="color: var(--text-primary);">智能体集群指挥官</strong>。创建任务，委派给 EnvoyAI 或外部智能体（HomeClaw、Hermes、OpenHuman），实时查看进度回传。智能体在局域网或广域网中协作——无需中心服务器，无需公网 IP。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Family Network Section -->
+  <section class="family-network" id="family">
+    <div class="container">
+      <div class="section-header">
+        <h2>家庭网络</h2>
+        <p>你的家用电脑，家人的私人服务器——将一台 EnvoyMesh 家庭节点变成私人家庭社交网络。每位成员配对手机，获得独立资料，互相聊天，并与 AI 对话。无云端、无订阅。</p>
+      </div>
+      <div class="family-grid">
+        <div>
+          <div class="family-tiers">
+            <div class="family-tier">
+              <div class="tier-icon owner">👑</div>
+              <div>
+                <h4>所有者——完整权限</h4>
+                <p>EnvoyMesh 的全部能力：AI、机器人、外部智能体、终端、Pi、保险箱、网络联系人、节点设置以及家庭管理。</p>
+              </div>
+            </div>
+            <div class="family-tier">
+              <div class="tier-icon family">👨‍👩‍👧</div>
+              <div>
+                <h4>家庭成员——专注且私密</h4>
+                <p>独立资料、独立 AI 线程、角色机器人、外部智能体聊天，以及家庭私聊和群聊。支持推送通知。无终端、保险箱或网络设置。</p>
+              </div>
+            </div>
+          </div>
+          <p style="color: var(--text-muted); font-size: 0.9rem;">就像一个账号上的 Netflix 资料——每个人在共享家庭节点上拥有隔离的体验。成员之间完全数据隔离。</p>
+        </div>
+        <div class="family-shot">
+          <img src="screens/desktop/chinese/family_network.png" alt="EnvoyMesh 家庭网络" loading="lazy">
+        </div>
+      </div>
+      <!-- 家庭网络拓扑图 -->
+      <div style="max-width: 830px; margin: 0 auto 56px;">
+        <svg viewBox="0 0 830 470" style="width: 100%; height: auto;" role="img" aria-label="家庭网络拓扑图">
+          <defs>
+            <filter id="famGlowZh"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          </defs>
+
+          <!-- 主节点（所有者）-->
+          <g transform="translate(315, 20)">
+            <rect x="0" y="0" width="200" height="140" rx="12" fill="#1e293b" stroke="#6366f1" stroke-width="2" filter="url(#famGlowZh)"/>
+            <text x="100" y="30" text-anchor="middle" font-size="14" font-weight="600" fill="#6366f1">🏠 主节点 · 所有者</text>
+            <text x="100" y="48" text-anchor="middle" font-size="10" fill="#94a3b8">家用电脑</text>
+            <line x1="20" y1="58" x2="180" y2="58" stroke="#334155" stroke-width="1"/>
+            <rect x="20" y="70" width="160" height="56" rx="6" fill="rgba(99,102,241,0.18)" stroke="#818cf8" stroke-width="1" stroke-dasharray="4,2"/>
+            <text x="100" y="90" text-anchor="middle" font-size="11" font-weight="600" fill="#818cf8">🤖 共享 AI 智能体</text>
+            <text x="100" y="106" text-anchor="middle" font-size="9" fill="#94a3b8">EnvoyAI + 外部智能体</text>
+            <text x="100" y="120" text-anchor="middle" font-size="9" fill="#64748b">服务所有成员</text>
+          </g>
+
+          <!-- 配对连线 -->
+          <path d="M 370 160 Q 280 230 190 300" stroke="#6366f1" stroke-width="2" fill="none" stroke-dasharray="6,3"/>
+          <path d="M 415 160 L 415 300" stroke="#6366f1" stroke-width="2" fill="none" stroke-dasharray="6,3"/>
+          <path d="M 460 160 Q 550 230 640 300" stroke="#6366f1" stroke-width="2" fill="none" stroke-dasharray="6,3"/>
+          <text x="415" y="185" text-anchor="middle" font-size="9" fill="#818cf8">扫码配对</text>
+
+          <!-- 成员 A - 青色（数据隔离）-->
+          <g transform="translate(90, 300)">
+            <rect x="0" y="0" width="200" height="160" rx="12" fill="#1e293b" stroke="#06b6d4" stroke-width="2" filter="url(#famGlowZh)"/>
+            <text x="100" y="28" text-anchor="middle" font-size="13" font-weight="600" fill="#06b6d4">📱 成员 A</text>
+            <text x="100" y="44" text-anchor="middle" font-size="9" fill="#94a3b8">EnvoyGo · 独立资料</text>
+            <line x1="20" y1="54" x2="180" y2="54" stroke="#334155" stroke-width="1"/>
+            <rect x="20" y="64" width="160" height="34" rx="5" fill="rgba(6,182,212,0.15)" stroke="#06b6d4" stroke-width="1"/>
+            <text x="100" y="85" text-anchor="middle" font-size="10" fill="#22d3ee">聊天 · AI 会话</text>
+            <rect x="20" y="104" width="160" height="34" rx="5" fill="rgba(6,182,212,0.15)" stroke="#06b6d4" stroke-width="1"/>
+            <text x="100" y="125" text-anchor="middle" font-size="10" fill="#22d3ee">🔒 私人数据</text>
+            <text x="100" y="150" text-anchor="middle" font-size="8" fill="#64748b">与他人隔离</text>
+          </g>
+
+          <!-- 成员 B - 紫色（数据隔离）-->
+          <g transform="translate(315, 300)">
+            <rect x="0" y="0" width="200" height="160" rx="12" fill="#1e293b" stroke="#a855f7" stroke-width="2" filter="url(#famGlowZh)"/>
+            <text x="100" y="28" text-anchor="middle" font-size="13" font-weight="600" fill="#a855f7">📱 成员 B</text>
+            <text x="100" y="44" text-anchor="middle" font-size="9" fill="#94a3b8">EnvoyGo · 独立资料</text>
+            <line x1="20" y1="54" x2="180" y2="54" stroke="#334155" stroke-width="1"/>
+            <rect x="20" y="64" width="160" height="34" rx="5" fill="rgba(168,85,247,0.15)" stroke="#a855f7" stroke-width="1"/>
+            <text x="100" y="85" text-anchor="middle" font-size="10" fill="#c084fc">聊天 · AI 会话</text>
+            <rect x="20" y="104" width="160" height="34" rx="5" fill="rgba(168,85,247,0.15)" stroke="#a855f7" stroke-width="1"/>
+            <text x="100" y="125" text-anchor="middle" font-size="10" fill="#c084fc">🔒 私人数据</text>
+            <text x="100" y="150" text-anchor="middle" font-size="8" fill="#64748b">与他人隔离</text>
+          </g>
+
+          <!-- 成员 C - 粉色（数据隔离）-->
+          <g transform="translate(540, 300)">
+            <rect x="0" y="0" width="200" height="160" rx="12" fill="#1e293b" stroke="#ec4899" stroke-width="2" filter="url(#famGlowZh)"/>
+            <text x="100" y="28" text-anchor="middle" font-size="13" font-weight="600" fill="#ec4899">📱 成员 C</text>
+            <text x="100" y="44" text-anchor="middle" font-size="9" fill="#94a3b8">EnvoyGo · 独立资料</text>
+            <line x1="20" y1="54" x2="180" y2="54" stroke="#334155" stroke-width="1"/>
+            <rect x="20" y="64" width="160" height="34" rx="5" fill="rgba(236,72,153,0.15)" stroke="#ec4899" stroke-width="1"/>
+            <text x="100" y="85" text-anchor="middle" font-size="10" fill="#f472b6">聊天 · AI 会话</text>
+            <rect x="20" y="104" width="160" height="34" rx="5" fill="rgba(236,72,153,0.15)" stroke="#ec4899" stroke-width="1"/>
+            <text x="100" y="125" text-anchor="middle" font-size="10" fill="#f472b6">🔒 私人数据</text>
+            <text x="100" y="150" text-anchor="middle" font-size="8" fill="#64748b">与他人隔离</text>
+          </g>
+        </svg>
+        <p style="text-align: center; color: var(--text-muted); font-size: 0.85rem; margin-top: 12px;">一个主节点 · 多部手机配对 · <span style="color:#818cf8">共享 AI 智能体</span> · <span style="color:#22d3ee">成员数据相互隔离</span></p>
+      </div>
     </div>
   </section>
 
@@ -2152,39 +2476,6 @@
           <a href="https://github.com/allenpeng0705/EnvoyMesh/tree/main/docs/knowledge-base-and-rag.md" target="_blank" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; font-size: 0.9rem; text-decoration: none; color: var(--text-secondary); font-weight: 500; transition: all 0.2s ease;">
             📖 阅读文档
           </a>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Family Network Section -->
-  <section class="family-network" id="family">
-    <div class="container">
-      <div class="family-grid">
-        <div>
-          <span class="family-badge">★ 全新 · 家庭网络</span>
-          <h2>你的家用电脑，家人的私人服务器</h2>
-          <p class="lead">将一台 EnvoyMesh 家庭节点变成私人家庭社交网络。每位家庭成员配对自己的手机，获得独立资料，互相聊天，并与 AI 对话——无云端、无订阅。</p>
-          <div class="family-tiers">
-            <div class="family-tier">
-              <div class="tier-icon owner">👑</div>
-              <div>
-                <h4>所有者——完整权限</h4>
-                <p>EnvoyMesh 的全部能力：AI、机器人、外部智能体、终端、Pi、保险箱、网络联系人、节点设置以及家庭管理。</p>
-              </div>
-            </div>
-            <div class="family-tier">
-              <div class="tier-icon family">👨‍👩‍👧</div>
-              <div>
-                <h4>家庭成员——专注且私密</h4>
-                <p>独立资料、独立 AI 线程、角色机器人、外部智能体聊天，以及家庭私聊和群聊。支持推送通知。无终端、保险箱或网络设置。</p>
-              </div>
-            </div>
-          </div>
-          <p style="color: var(--text-muted); font-size: 0.9rem;">就像一个账号上的 Netflix 资料——每个人在共享家庭节点上拥有隔离的体验。成员之间完全数据隔离。</p>
-        </div>
-        <div class="family-shot">
-          <img src="screens/desktop/chinese/family_network.png" alt="EnvoyMesh 家庭网络" loading="lazy">
         </div>
       </div>
     </div>
@@ -2318,13 +2609,12 @@
         <div class="download-card">
           <div class="download-icon mac"><svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg></div>
           <h3>EnvoyMesh macOS 版</h3>
-          <div class="platform-sub">桌面节点 · DMG 安装包</div>
+          <div class="platform-sub">Apple Silicon · ARM 64 · DMG 安装包</div>
           <div class="download-links">
             <a href="https://github.com/allenpeng0705/EnvoyMesh/releases" class="download-link primary" target="_blank">
               下载 DMG <span class="tag">GitHub</span>
             </a>
-            <!-- TODO: replace PLACEHOLDER_CF_MAC_DMG with the mirror download URL -->
-            <a href="PLACEHOLDER_CF_MAC_DMG" class="download-link alt" target="_blank">
+            <a href="https://gpt4people.online/EnvoyMesh/envoymesh-desktop-compressed-0.2.2-macos-arm64.dmg" class="download-link alt" target="_blank">
               下载 DMG <span class="tag">镜像</span>
             </a>
           </div>
@@ -2337,28 +2627,49 @@
             <a href="https://github.com/allenpeng0705/EnvoyMesh/releases" class="download-link primary" target="_blank">
               下载 EXE <span class="tag">GitHub</span>
             </a>
-            <!-- TODO: replace PLACEHOLDER_CF_WIN_EXE with the mirror download URL -->
-            <a href="PLACEHOLDER_CF_WIN_EXE" class="download-link alt" target="_blank">
+            <a href="https://gpt4people.online/EnvoyMesh/envoymesh-desktop-0.2.2-windows-x64.exe" class="download-link alt" target="_blank">
               下载 EXE <span class="tag">镜像</span>
             </a>
           </div>
         </div>
         <div class="download-card">
-          <div class="download-icon android"><svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M17.6 9.48l1.84-3.18c.16-.31.04-.69-.26-.85-.29-.15-.65-.06-.83.22l-1.88 3.24a11.43 11.43 0 0 0-8.94 0L5.65 5.67c-.18-.28-.54-.37-.83-.22-.3.16-.42.54-.26.85L6.4 9.48A10.81 10.81 0 0 0 1 18h22a10.81 10.81 0 0 0-5.4-8.52zM7 15.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5zm10 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5z"/></svg></div>
-          <h3>EnvoyGo Android 版</h3>
-          <div class="platform-sub">移动瘦客户端 · APK</div>
+          <div class="download-layout">
+            <div class="download-buttons">
+              <div class="download-icon android"><svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M17.6 9.48l1.84-3.18c.16-.31.04-.69-.26-.85-.29-.15-.65-.06-.83.22l-1.88 3.24a11.43 11.43 0 0 0-8.94 0L5.65 5.67c-.18-.28-.54-.37-.83-.22-.3.16-.42.54-.26.85L6.4 9.48A10.81 10.81 0 0 0 1 18h22a10.81 10.81 0 0 0-5.4-8.52zM7 15.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5zm10 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5z"/></svg></div>
+              <h3>EnvoyGo Android 版</h3>
+              <div class="platform-sub">移动瘦客户端</div>
+              <div class="download-links">
+                <a href="https://play.google.com/store/apps/details?id=com.envoymesh.envoygo" class="download-link primary" target="_blank">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3.609 1.814L13.792 12 3.61 22.186a.996.996 0 0 1-.61-.92V2.734c0-.384.219-.72.609-.92zm10.89 10.893l2.302 2.302-10.937 6.333 8.635-8.635zm3.199-3.199l2.302 2.302a1 1 0 0 1 0 1.38l-2.302 2.302L15.396 12l2.302-2.492zM5.864 2.658L16.8 8.99l-2.302 2.302L5.864 2.657z"/></svg>
+                  在 Google Play 获取 <span class="tag">官方</span>
+                </a>
+                <a href="https://github.com/allenpeng0705/EnvoyMesh/releases" class="download-link alt" target="_blank">
+                  下载 APK <span class="tag">GitHub</span>
+                </a>
+                <a href="https://gpt4people.online/EnvoyMesh/envoygo-0.2.2-android.apk.zip" class="download-link alt" target="_blank">
+                  下载 APK <span class="tag">镜像</span>
+                </a>
+              </div>
+            </div>
+            <div class="download-qr">
+              <img src="screens/google-play-qr.png" alt="扫描二维码在 Google Play 下载 EnvoyGo" width="160" height="160">
+              <div class="download-qr-label">扫码前往 Google Play</div>
+            </div>
+          </div>
+        </div>
+        <div class="download-card disabled">
+          <div class="download-icon ios"><svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg></div>
+          <h3>EnvoyGo iOS 版</h3>
+          <div class="platform-sub">即将登陆 App Store</div>
           <div class="download-links">
-            <a href="https://github.com/allenpeng0705/EnvoyMesh/releases" class="download-link primary" target="_blank">
-              下载 APK <span class="tag">GitHub</span>
-            </a>
-            <!-- TODO: replace PLACEHOLDER_CF_ANDROID_APK with the mirror download URL -->
-            <a href="PLACEHOLDER_CF_ANDROID_APK" class="download-link alt" target="_blank">
-              下载 APK <span class="tag">镜像</span>
-            </a>
+            <!-- TODO: replace PLACEHOLDER_APP_STORE with the App Store URL -->
+            <span class="download-link alt" style="opacity: 0.6;">
+              App Store <span class="tag">即将推出</span>
+            </span>
           </div>
         </div>
       </div>
-      <p class="download-note">EnvoyGo iOS 版即将上架 App Store。Linux 用户可从源码构建。GitHub 链接将打开发布页面——选择对应平台的安装包即可。GitHub 无法下载？可使用镜像链接作为备用。</p>
+      <p class="download-note">EnvoyGo Android 版已登陆 Google Play——扫描二维码或点击下方按钮即可下载。EnvoyGo iOS 版即将推出。Linux 用户可从源码构建。GitHub 链接将打开发布页面——选择对应平台的安装包即可。GitHub 无法下载？可使用镜像链接作为备用。</p>
     </div>
   </section>
 
@@ -2492,6 +2803,54 @@
     });
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && lightbox.classList.contains('active')) closeLightbox();
+    });
+
+    // 折叠网格 — 应用展示（1 行）& 核心功能（2 行）
+    // CSS 按断点设置 --show-count；JS 将超出数量的项标记为 .is-overflow，
+    // 并通过按钮在网格上切换 .collapsed 类。
+    function setupCollapsibleGrid(grid, btn) {
+      const items = Array.from(grid.children).filter((el) =>
+        el.classList.contains('phone-card') || el.classList.contains('feature-card')
+      );
+      const textEl = btn.querySelector('.btn-text');
+
+      function refresh() {
+        const count = parseInt(getComputedStyle(grid).getPropertyValue('--show-count'), 10) || items.length;
+        items.forEach((item, i) => {
+          item.classList.toggle('is-overflow', i >= count);
+        });
+        // 当所有项都能放进可见行时，隐藏切换按钮
+        btn.parentElement.style.display = items.length > count ? '' : 'none';
+        if (items.length <= count) {
+          grid.classList.remove('collapsed');
+        }
+      }
+
+      btn.addEventListener('click', () => {
+        const expanded = grid.classList.toggle('expanded');
+        grid.classList.toggle('collapsed', !expanded);
+        btn.classList.toggle('expanded', expanded);
+        if (textEl) {
+          textEl.textContent = expanded ? btn.dataset.expandedText : btn.dataset.collapsedText;
+        }
+      });
+
+      // 默认折叠（仅显示前几行）
+      grid.classList.add('collapsed');
+      refresh();
+
+      let resizeTimer;
+      window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(refresh, 150);
+      });
+    }
+
+    document.querySelectorAll('.show-more-btn').forEach((btn) => {
+      const grid = btn.parentElement.previousElementSibling;
+      if (grid && (grid.classList.contains('phone-grid') || grid.classList.contains('features-grid'))) {
+        setupCollapsibleGrid(grid, btn);
+      }
     });
   </script>
 </body>

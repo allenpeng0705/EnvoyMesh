@@ -10,9 +10,10 @@
 # Environment variables:
 #   STAGE_OPENCLAW_BUNDLE=1   Force re-stage (default: reuse cached tree)
 #   STAGE_OPENCLAW_BUNDLE=0   Skip gate entirely (debug escape hatch)
-#   OPENCLAW_EXTENSIONS=""     Default — keep ALL extensions (macOS DMG)
-#   OPENCLAW_EXTENSIONS=default  Use the built-in allowlist
+#   OPENCLAW_EXTENSIONS=default  EnvoyMesh agent allowlist (build-desktop.sh default)
+#   OPENCLAW_EXTENSIONS=all      Keep ALL OpenClaw extensions
 #   OPENCLAW_EXTENSIONS="ext1 ext2 ..."  Keep only the named extensions
+#   OPENCLAW_EXTENSIONS unset    Treated as "default" (not full tree)
 
 set -euo pipefail
 
@@ -20,16 +21,18 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SOURCE="$ROOT/packages/openclaw"
 DEST="$ROOT/apps/tauri/src-tauri/resources/openclaw"
 
-# Built-in allowlist: envoy channel + web search providers.
-_OPENCLAW_DEFAULT_ALLOWLIST="envoymesh device-pair webhooks policy browser file-transfer openshell memory-wiki active-memory llm-task canvas diffs diffs-language-pack duckduckgo brave exa firecrawl google xai moonshot minimax ollama perplexity searxng tavily"
+# EnvoyMesh agent allowlist: envoymesh channel + agent utils + web search.
+# Excludes OpenClaw Diff UI and all third-party chat/IM channels — Social is
+# the chat surface; users can install those later via Skill Manager.
+_OPENCLAW_DEFAULT_ALLOWLIST="envoymesh device-pair webhooks policy browser file-transfer openshell memory-wiki active-memory llm-task canvas duckduckgo brave exa firecrawl google xai moonshot minimax ollama perplexity searxng tavily"
 
-# Resolve extension filter: empty = keep all, "default" = use allowlist,
+# Resolve extension filter: "all" = keep everything; empty/"default" = allowlist;
 # otherwise treat as a space-separated list of extensions to keep.
 _openclaw_resolve_ext_allowlist() {
-  local val="${OPENCLAW_EXTENSIONS:-}"
-  if [ -z "$val" ]; then
+  local val="${OPENCLAW_EXTENSIONS:-default}"
+  if [ "$val" = "all" ]; then
     echo ""   # keep all — caller should skip pruning entirely
-  elif [ "$val" = "default" ]; then
+  elif [ -z "$val" ] || [ "$val" = "default" ]; then
     echo "$_OPENCLAW_DEFAULT_ALLOWLIST"
   else
     echo "$val"  # custom list
@@ -53,7 +56,7 @@ _openclaw_dev_only_packages="typescript @typescript @oxlint @oxlint-tsgolint @sh
 #
 # CONDITIONAL: only scrub a package if NONE of its dependent extensions
 # are present in the staged tree. This makes the scrub safe whether the
-# caller kept all extensions (Mac DMG) or pruned to an allowlist (Windows).
+# caller kept all extensions (OPENCLAW_EXTENSIONS=all) or pruned to an allowlist.
 # Format: "pkg|ext1 ext2" — scrub pkg only when none of ext1/ext2 exist.
 _openclaw_orphaned_native_pkgs_with_deps="
   @node-llama-cpp|
@@ -65,6 +68,9 @@ _openclaw_orphaned_native_pkgs_with_deps="
   @matrix-org|matrix
   @azure|msteams azure-speech
   @opentelemetry|diagnostics-otel diagnostics-prometheus
+  @pierre|diffs
+  @discordjs|discord
+  @larksuiteoapi|feishu
 "
 
 _openclaw_extension_is_kept() {
@@ -221,8 +227,8 @@ elif [ "${STAGE_OPENCLAW_BUNDLE:-0}" != "1" ] \
       fi
     fi
 
-    # Prune extensions on reuse — only when OPENCLAW_EXTENSIONS is set
-    # (macOS DMG keeps all by default; Windows sets it to "default").
+    # Prune extensions on reuse when an allowlist is active (default).
+    # OPENCLAW_EXTENSIONS=all skips pruning.
     _ext_allowlist="$(_openclaw_resolve_ext_allowlist)"
     if [ -n "$_ext_allowlist" ]; then
       for ext_base in "$DEST/dist/extensions" "$DEST/dist-runtime/extensions" "$DEST/extensions"; do
@@ -552,7 +558,7 @@ with open(p, 'w') as f: json.dump(d, f, indent=2); f.write('\n')
       fi
     done
   else
-    echo "  Keeping all OpenClaw extensions (OPENCLAW_EXTENSIONS not set)"
+    echo "  Keeping all OpenClaw extensions (OPENCLAW_EXTENSIONS=all)"
   fi
 
   # Scrub dev-only tooling (typescript/vite/esbuild/etc.) — verified

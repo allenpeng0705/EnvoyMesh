@@ -3,8 +3,8 @@
 #
 # Called by build:win / build:linux (and optionally build:mac) to keep the
 # staged openclaw tree under NSIS's 2 GB hard cap. The full set is ~143
-# extensions with ~2.2 GB of production node_modules deps; EnvoyMesh only
-# uses ~13.
+# extensions with ~2.2 GB of production node_modules deps; EnvoyMesh uses
+# the agent allowlist (envoymesh + search/agent utils; no Diff UI / chat channels).
 #
 # This script is a no-op if the openclaw tree is missing or already pruned.
 #
@@ -19,7 +19,7 @@ if [ ! -d "$EXT_DIR" ]; then
   exit 0
 fi
 
-ALLOWLIST="envoymesh duckduckgo brave exa firecrawl google xai moonshot minimax ollama perplexity searxng tavily"
+ALLOWLIST="envoymesh device-pair webhooks policy browser file-transfer openshell memory-wiki active-memory llm-task canvas duckduckgo brave exa firecrawl google xai moonshot minimax ollama perplexity searxng tavily"
 
 removed=0
 for ext_dir in "$EXT_DIR"/*/; do

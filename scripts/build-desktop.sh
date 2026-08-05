@@ -42,6 +42,13 @@
 #               Force re-fetch of Pi even when a matching version is cached
 #               (passed through to stage-tauri-pi-bundle.sh).
 #
+# OpenClaw extensions (macOS/Linux):
+#   Default OPENCLAW_EXTENSIONS=default — EnvoyMesh agent allowlist only
+#   (envoymesh + search/agent utils). Omits OpenClaw Diff UI and all
+#   third-party chat channels (Discord/Telegram/…); Social is the chat UI.
+#   Users can install extra extensions later via Skill Manager.
+#   OPENCLAW_EXTENSIONS=all — ship the full OpenClaw extension tree.
+#
 #   Slim/full entry points for Windows live in apps/tauri/package.json:
 #     npm run build:win        → tauri.conf.slim.json   (mirrors PS -SkipPi)
 #     npm run build:win:full   → tauri.conf.full.json
@@ -230,6 +237,11 @@ else
 fi
 
 bash scripts/fetch-node-sidecar.sh
+# EnvoyMesh Social is the chat UI/channel. Default OpenClaw staging keeps the
+# agent allowlist only (no Diff UI, no Discord/Telegram/…). Override with
+# OPENCLAW_EXTENSIONS=all for a full OpenClaw tree.
+export OPENCLAW_EXTENSIONS="${OPENCLAW_EXTENSIONS:-default}"
+echo "  OpenClaw extensions filter: OPENCLAW_EXTENSIONS=${OPENCLAW_EXTENSIONS}"
 bash scripts/stage-tauri-openclaw-bundle.sh
 # Always install envoymesh channel (independent of OpenClaw cache reuse).
 bash scripts/stage-openclaw-envoymesh-extension.sh

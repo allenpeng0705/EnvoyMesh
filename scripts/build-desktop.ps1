@@ -35,15 +35,25 @@
 #                             so the slow WiX .msi step is skipped (3 GB resource
 #                             tree takes 10-20 min for light.exe). Use -SkipMsi:$false
 #                             to build both NSIS and MSI.
-#   -OpenClawExtensions <val> Extension filter: "default" (built-in allowlist),
-#                             "all" (keep everything), or "ext1,ext2" (custom list).
-#                             Default: "default" (NSIS 2 GB cap)
+#   -OpenClawExtensions <val> Extension filter:
+#                             "default" — EnvoyMesh agent allowlist (envoymesh +
+#                               search/agent utils). Omits OpenClaw Diff UI and
+#                               all third-party chat channels (Discord/Telegram/…);
+#                               Social is the chat UI. Users can install extras
+#                               later via Skill Manager.
+#                             "all" — keep every OpenClaw extension
+#                             "ext1,ext2" — custom comma-separated keep list
+#                             Default: "default" (also required for NSIS 2 GB cap)
 #   -?                        Print this message and exit
 #
 # Output (copied from Cargo target dir into the repo):
 #   release\envoymesh-desktop-{version}-windows-x64.exe   NSIS installer
 #   release\envoymesh-desktop-{version}-windows-x64.msi   WiX MSI (only if -SkipMsi:$false)
 #   release\envoymesh-desktop-{version}-windows-x64\       Folder with both
+#
+# OpenClaw extensions (aligned with scripts/build-desktop.sh):
+#   Default -OpenClawExtensions default matches macOS OPENCLAW_EXTENSIONS=default.
+#   Use -OpenClawExtensions all only when you intentionally want the full tree.
 #
 # Slim / Full / default presets (Phase 49 — Pi optional on Windows):
 #   default       Uses tauri.conf.json           — includes Pi + OpenClaw + Kubo.
@@ -143,10 +153,10 @@ param(
 
     # Extension filter for OpenClaw. Controls which extensions are kept in
     # the staged bundle — the rest are pruned (deleted) to save space.
-    #   "default"     Keep only the built-in allowlist (envoymesh + web search)
+    #   "default"     EnvoyMesh agent allowlist (no Diff UI / chat channels)
     #   "all"         Keep every extension (no pruning)
     #   "ext1,ext2"   Keep only the named extensions (comma-separated)
-    # Default: "default" (Windows NSIS has a 2 GB cap)
+    # Default: "default" (Windows NSIS has a 2 GB cap; matches macOS policy)
     [string]$OpenClawExtensions = "default"
 )
 
@@ -182,12 +192,12 @@ function Write-Fail {
     Write-Host "  ✗ $Message" -ForegroundColor Red
 }
 
-# Built-in allowlist: envoy channel + web search providers.
+# Built-in allowlist: envoy channel + agent utils + web search providers.
+# Excludes OpenClaw Diff UI and all third-party chat/IM channels (Social is chat).
 $script:OpenClawDefaultAllowlist = @(
     "envoymesh", "device-pair", "webhooks", "policy",
     "browser", "file-transfer", "openshell",
     "memory-wiki", "active-memory", "llm-task", "canvas",
-    "diffs", "diffs-language-pack",
     "duckduckgo", "brave", "exa", "firecrawl", "google", "xai",
     "moonshot", "minimax", "ollama", "perplexity", "searxng", "tavily"
 )
@@ -697,6 +707,7 @@ if (Test-Path $stagePushPs1) {
 
 # 1c. OpenClaw gateway.
 Write-Info "Staging OpenClaw gateway..."
+Write-Info "OpenClaw extensions filter: -OpenClawExtensions=$OpenClawExtensions"
 $openclawSrc = Join-Path $RepoRoot "packages/openclaw"
 $openclawDest = Join-Path $TauriResources "openclaw"
 # Self-healing: if the staged tree's node_modules exists from a previous run
@@ -1264,13 +1275,15 @@ export * from "../src/cli/run-main.ts";
     }
 
     # Prune unused OpenClaw extensions — the full set is ~143 dirs with
-    # production node_modules deps totalling ~2.2 GB. EnvoyMesh only uses
-    # ~13 (envoymesh channel + web search providers). Keeping all of them
-    # pushes the NSIS installer past its 2 GB hard cap and the build fails.
+    # production node_modules deps totalling ~2.2 GB. Default keep list is the
+    # EnvoyMesh agent allowlist (envoymesh + search/agent utils; no Diff UI or
+    # third-party chat channels — Social is the chat surface). Keeping all
+    # extensions pushes the NSIS installer past its 2 GB hard cap.
     # Prune ALL extension directories: dist/extensions/, dist-runtime/extensions/,
     # and extensions/. Controlled by -OpenClawExtensions (see param block).
     $openclawExtAllowlist = Resolve-OpenClawExtAllowlist -Filter $OpenClawExtensions
     if ($null -ne $openclawExtAllowlist) {
+        Write-Info ("Pruning to allowlist ({0} extensions)" -f $openclawExtAllowlist.Count)
         foreach ($extBase in $bundledExtDirs) {
             if (Test-Path $extBase) {
                 $removedCount = 0
@@ -1451,8 +1464,8 @@ if ($scrubbedCount -gt 0) {
 #
 # CONDITIONAL: only scrub a package when NONE of its dependent extensions
 # are present in the staged tree. This makes the scrub safe whether the
-# caller kept all extensions (Mac DMG via -OpenClawExtensions all) or
-# pruned to an allowlist (Windows default).
+# caller kept all extensions (OPENCLAW_EXTENSIONS=all / -OpenClawExtensions all)
+# or pruned to an allowlist (default on macOS + Windows).
 $script:OpenClawOrphanedNativesWithDeps = @(
     # Format: @{ Pkg = "..."; Deps = @("ext1", "ext2") }
     # Scrub Pkg only when none of Deps exist under extensions/roots.
@@ -1464,7 +1477,10 @@ $script:OpenClawOrphanedNativesWithDeps = @(
     @{ Pkg = "@lancedb";          Deps = @("memory-lancedb") },
     @{ Pkg = "@matrix-org";       Deps = @("matrix") },
     @{ Pkg = "@azure";            Deps = @("msteams", "azure-speech") },
-    @{ Pkg = "@opentelemetry";    Deps = @("diagnostics-otel", "diagnostics-prometheus") }
+    @{ Pkg = "@opentelemetry";    Deps = @("diagnostics-otel", "diagnostics-prometheus") },
+    @{ Pkg = "@pierre";           Deps = @("diffs") },
+    @{ Pkg = "@discordjs";        Deps = @("discord") },
+    @{ Pkg = "@larksuiteoapi";    Deps = @("feishu") }
 )
 function Test-ExtensionKept {
     param([string[]]$Exts, [string]$TreeRoot)
