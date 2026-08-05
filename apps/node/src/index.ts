@@ -4565,7 +4565,7 @@ async function runRelayCheckinCycle(source: "startup" | "periodic" | "post-adver
       source,
       peerId: mesh.peerId,
       ownerId: profile.owner.ownerId,
-      addrs: mesh.multiaddrs,
+      addrs: mesh.getRelayAdvertisedMultiaddrs(),
     });
   }
   // Compute topicHash advertisements for the topics this node currently
@@ -4593,7 +4593,7 @@ async function runRelayCheckinCycle(source: "startup" | "periodic" | "post-adver
       peerId: mesh.peerId,
       ownerId: profile.owner.ownerId,
       displayName,
-      relayReachableAddrs: mesh.multiaddrs,
+      relayReachableAddrs: mesh.getRelayAdvertisedMultiaddrs(),
       capabilities,
       advertisements: [
         ...capabilities.map((capability) => ({

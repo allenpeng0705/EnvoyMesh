@@ -353,7 +353,7 @@ async function sendRelayCheckin(input: {
   const payload = createRelayCheckinPayload({
     peerId: mesh.peerId,
     ownerId: profile.owner.ownerId,
-    relayReachableAddrs: mesh.multiaddrs,
+    relayReachableAddrs: mesh.getRelayAdvertisedMultiaddrs(),
     capabilities,
     advertisements: [{ capability: "mesh.discovery", visibility: "public", expiresAt }],
     relayHints: bootstrapPeers.map((addr) => ({

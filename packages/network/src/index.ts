@@ -24,6 +24,7 @@ import net from "node:net";
 import { decodeEnvelope, encodeEnvelope } from "./codec.js";
 import {
   buildConfiguredRelayCircuitListenAddrs,
+  buildRelayAdvertisedMultiaddrs,
   filterMultiaddrsToPreferredRelays,
   peerIdFromRelayMultiaddr,
 } from "./relay-listen-addrs.js";
@@ -815,9 +816,21 @@ export class EnvoyMesh {
    * Multiaddrs safe to advertise via relay.checkin / WAN invite / provideSelf.
    * When configured EnvoyMesh relays are known, strips `/p2p-circuit/` paths
    * whose hop is not in that allowlist (AutoRelay public IPFS circuits).
+   * Circuits are included only for usable reservations (store ∩ open TCP),
+   * rewritten onto public preferred relay bases when libp2p only exposes
+   * loopback/RFC1918 hop views.
    */
   getRelayAdvertisedMultiaddrs(): string[] {
-    return filterMultiaddrsToPreferredRelays(this.multiaddrs, this.preferredRelayPeerIds);
+    const filtered = filterMultiaddrsToPreferredRelays(
+      this.multiaddrs,
+      this.preferredRelayPeerIds,
+    );
+    return buildRelayAdvertisedMultiaddrs({
+      listenAddrs: filtered,
+      preferredRelayBases: this.reservationHealthRelayAddrs,
+      usableRelayPeerIds: this.listUsableRelayPeerIds(),
+      selfPeerId: this.node ? this.peerId : undefined,
+    });
   }
 
   /** Dialable multiaddrs from the libp2p peer store (includes mDNS-learned LAN paths). */
@@ -4083,6 +4096,7 @@ export {
 } from "./relay-circuit-hints.js";
 export {
   buildConfiguredRelayCircuitListenAddrs,
+  buildRelayAdvertisedMultiaddrs,
   filterMultiaddrsToPreferredRelays,
   peerIdFromRelayMultiaddr,
 } from "./relay-listen-addrs.js";
