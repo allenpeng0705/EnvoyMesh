@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { parseNodeArgs, printHelp } from "./args.js";
 import { createDiscoverySeedStore } from "./discovery-seed-store.js";
 import { expandCircuitDialCandidates } from "./discovery-inbound.js";
-import { createInboundMessageGuard } from "./inbound-guard.js";
+import { createInboundMessageGuard, peerIdFromRelayTarget } from "./inbound-guard.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { deliverOutboundEnvelope, deliverOutboundExpectReply } from "./mesh-outbound-helper.js";
 import { logRelayReachableAddrsForCheckin, logClientRelayLookupResponse, describeMultiaddrReachability } from "./relay-checkin-log.js";
@@ -217,9 +217,18 @@ Examples:
   }
 
   // Handle relay.lookup.response from older relays that still push replies on a separate stream.
-  mesh.onMessage(async ({ envelope }) => {
+  mesh.onMessage(async ({ envelope, remotePeerId }) => {
     if (envelope.intent === "relay.lookup.response") {
-      const guardDecision = inboundGuard.inspect(envelope);
+      const preferred =
+        typeof mesh.getPreferredRelayPeerIds === "function"
+          ? mesh.getPreferredRelayPeerIds()
+          : (mesh.getRelayReservationStatus?.().relayPeerIds ?? []);
+      const guardDecision = inboundGuard.inspect(envelope, {
+        // Trust the libp2p transport peer — never envelope.senderPeerId alone
+        // (placeholder credentials are public; a peer could spoof a relay id).
+        remotePeerId,
+        trustedRelayPeerIds: preferred,
+      });
       if (guardDecision.action === "reject") {
         console.log(`[auto-relay-query] rejected relay.lookup.response: ${guardDecision.reason}`);
         return;
@@ -427,7 +436,17 @@ async function queryRelayLookup(input: {
       const reply = await deliverOutboundExpectReply(mesh, bootstrapPeer, signedEnvelope, {
         timeoutMs: RELAY_LOOKUP_REPLY_TIMEOUT_MS,
       });
-      const guardDecision = inboundGuard.inspect(reply);
+      const targetPeerId = peerIdFromRelayTarget(bootstrapPeer);
+      const preferred =
+        typeof mesh.getPreferredRelayPeerIds === "function"
+          ? mesh.getPreferredRelayPeerIds()
+          : (mesh.getRelayReservationStatus?.().relayPeerIds ?? []);
+      const trusted = new Set<string>([...preferred, ...(targetPeerId ? [targetPeerId] : [])]);
+      const guardDecision = inboundGuard.inspect(reply, {
+        remotePeerId:
+          typeof reply.senderPeerId === "string" ? reply.senderPeerId : targetPeerId,
+        trustedRelayPeerIds: [...trusted],
+      });
       if (guardDecision.action === "reject") {
         failed++;
         console.log(

@@ -1033,33 +1033,23 @@ export class EnvoyMesh {
   }
 
   /**
-   * True only when libp2p's reservation store currently reports a slot for
-   * a known relay peer. Returns false when the store is unavailable or empty.
+   * True when a preferred/configured relay has a **usable** reservation:
+   * libp2p's reservation store reports a live slot **and** there is an open
+   * connection to that relay peer. The store flag alone can go stale after
+   * TCP drop (evicted only at TTL), which previously made auto-bond / UI
+   * report `liveReservation=true` while circuits were already dead.
    *
    * When {@link preferredRelayPeerIds} is set (configured EnvoyMesh relays),
    * only those peers count — unless `relayPeerIds` is passed explicitly.
    */
   hasLiveRelayReservation(relayPeerIds?: readonly string[]): boolean {
-    const hasReservation = this.getClientHasReservationFn();
-    if (!hasReservation) return false;
-    const candidates = this.resolveReservationCheckPeerIds(relayPeerIds);
-    const seen = new Set<string>();
-    for (const id of candidates) {
-      const trimmed = id.trim();
-      if (!trimmed || seen.has(trimmed)) continue;
-      seen.add(trimmed);
-      try {
-        if (hasReservation(peerIdFromString(trimmed))) return true;
-      } catch {
-        /* ignore invalid peer ids */
-      }
-    }
-    return false;
+    return this.listUsableRelayPeerIds(relayPeerIds).length > 0;
   }
 
   /**
-   * Preferred/configured relay peer IDs that currently hold a live slot.
-   * Empty when the store is unavailable or no preferred relays are set.
+   * Preferred/configured relay peer IDs that the reservation store currently
+   * marks as reserved (no open-connection cross-check). Prefer
+   * {@link listUsableRelayPeerIds} for readiness / dial gating.
    */
   listLivePreferredRelayPeerIds(relayPeerIds?: readonly string[]): string[] {
     const hasReservation = this.getClientHasReservationFn();
@@ -1080,11 +1070,27 @@ export class EnvoyMesh {
     return live;
   }
 
-  /** True when every preferred/configured relay currently has a live slot. */
+  /**
+   * Relay peer IDs with both a store-live reservation and an open libp2p
+   * connection. Used by reservation health, mesh readiness, and status UI.
+   */
+  listUsableRelayPeerIds(relayPeerIds?: readonly string[]): string[] {
+    const reservedIds = this.listLivePreferredRelayPeerIds(relayPeerIds);
+    if (reservedIds.length === 0) return [];
+    const connectedIds = new Set(this.getConnectedPeerIds());
+    return reservedIds.filter((id) => connectedIds.has(id));
+  }
+
+  /** Configured / preferred EnvoyMesh relay peer IDs (may be empty). */
+  getPreferredRelayPeerIds(): string[] {
+    return [...this.preferredRelayPeerIds];
+  }
+
+  /** True when every preferred/configured relay currently has a usable slot. */
   hasAllPreferredRelayReservations(relayPeerIds?: readonly string[]): boolean {
     const candidates = this.resolveReservationCheckPeerIds(relayPeerIds);
     if (candidates.length === 0) return this.hasLiveRelayReservation();
-    return this.listLivePreferredRelayPeerIds(candidates).length === candidates.length;
+    return this.listUsableRelayPeerIds(candidates).length === candidates.length;
   }
 
   /**
@@ -1128,7 +1134,9 @@ export class EnvoyMesh {
       return empty();
     }
     const checkIds = this.resolveReservationCheckPeerIds();
-    const liveRelayPeerIds = this.listLivePreferredRelayPeerIds(checkIds);
+    // Status "RESERVED" means usable (store ∩ open connection), not a stale
+    // store flag after the relay TCP session has already dropped.
+    const liveRelayPeerIds = this.listUsableRelayPeerIds(checkIds);
     const live = liveRelayPeerIds.length > 0;
     const allLive =
       checkIds.length > 0 ? liveRelayPeerIds.length === checkIds.length : live;
@@ -1224,10 +1232,12 @@ export class EnvoyMesh {
       })
       .filter((id): id is string => Boolean(id));
     this.preferredRelayPeerIds = [...relayPeerIds];
-    let wasLive = this.hasLiveRelayReservation(relayPeerIds);
+    // Connection-aware seed so a stale reservation-store flag at startup
+    // doesn't bias the first scheduling cycle toward the slow cadence.
+    let wasLive = this.listUsableRelayPeerIds(relayPeerIds).length > 0;
 
     const missingRelayAddrs = (): string[] => {
-      const liveIds = new Set(this.listLivePreferredRelayPeerIds(relayPeerIds));
+      const liveIds = new Set(this.listUsableRelayPeerIds(relayPeerIds));
       if (liveIds.size === relayPeerIds.length) return [];
       return addrs.filter((a) => {
         const m = a.match(/\/p2p\/([^/]+)$/);
@@ -1254,12 +1264,13 @@ export class EnvoyMesh {
           `[p2p] relay reservation health (${reason}): reserved=${resv.reserved} failed=${resv.failed}` +
             (resv.failures.length > 0 ? ` failures=${JSON.stringify(resv.failures)}` : ""),
         );
-        if (resv.failed > 0 && resv.reserved === 0 && !this.hasLiveRelayReservation(relayPeerIds)) {
+        const usable = this.listUsableRelayPeerIds(relayPeerIds);
+        if (resv.failed > 0 && resv.reserved === 0 && usable.length === 0) {
           this.lastReservationError = resv.failures[0] ?? "reservation health re-warm failed";
-        } else if (this.hasAllPreferredRelayReservations(relayPeerIds)) {
+        } else if (usable.length === relayPeerIds.length) {
           this.lastReservationError = undefined;
         }
-        wasLive = this.hasLiveRelayReservation(relayPeerIds);
+        wasLive = usable.length > 0;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         this.lastReservationError = msg;
@@ -1271,14 +1282,17 @@ export class EnvoyMesh {
 
     const scheduleNext = (): void => {
       if (this.reservationHealthGeneration !== generation) return;
-      const allLive = this.hasAllPreferredRelayReservations(relayPeerIds);
-      const anyLive = this.hasLiveRelayReservation(relayPeerIds);
+      // Connection-aware: stale store-only "reserved" must not pin us to the
+      // slow healthyMs cadence (would delay re-warm by up to 5 minutes).
+      const liveCount = this.listUsableRelayPeerIds(relayPeerIds).length;
+      const allLive = liveCount === relayPeerIds.length;
+      const anyLive = liveCount > 0;
       let delay = pendingMs;
       if (allLive) {
         delay = healthyMs;
         wasLive = true;
       } else if (anyLive) {
-        // Partial multi-home: keep trying missing hops on the pending cadence.
+        // Partial multi-home or stale slot: keep trying on the pending cadence.
         delay = pendingMs;
         wasLive = true;
       } else if (wasLive) {

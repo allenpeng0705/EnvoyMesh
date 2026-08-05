@@ -209,6 +209,10 @@ describe("EnvoyMesh reservation status (unit via prototype stubs)", () => {
     (mesh as unknown as { getClientHasReservationFn: () => ((id: unknown) => boolean) | undefined })
       .getClientHasReservationFn = () => (pid: { toString(): string }) =>
         pid.toString() === opportunistic;
+    (mesh as unknown as { getConnectedPeerIds: () => string[] }).getConnectedPeerIds = () => [
+      opportunistic,
+      configured,
+    ];
 
     expect(mesh.hasLiveRelayReservation()).toBe(false);
     expect(mesh.getRelayReservationStatus().state).toBe("pending");
@@ -226,6 +230,32 @@ describe("EnvoyMesh reservation status (unit via prototype stubs)", () => {
     expect(mesh.getRelayReservationStatus().liveRelayPeerIds).toEqual([configured]);
   });
 
+  it("hasLiveRelayReservation is false when store is live but relay TCP is down", async () => {
+    const { EnvoyMesh } = await import("@envoymesh/network");
+    const mesh = new EnvoyMesh({ enableRelay: true });
+    const configured = "12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo";
+    (mesh as unknown as { preferredRelayPeerIds: string[] }).preferredRelayPeerIds = [configured];
+    (mesh as unknown as { lastReservedRelayPeerIds: string[] }).lastReservedRelayPeerIds = [
+      configured,
+    ];
+    (mesh as unknown as { getClientHasReservationFn: () => ((id: unknown) => boolean) | undefined })
+      .getClientHasReservationFn = () => () => true;
+    // Stale store: reserved=true, but no open connection → unusable.
+    (mesh as unknown as { getConnectedPeerIds: () => string[] }).getConnectedPeerIds = () => [];
+
+    expect(mesh.listLivePreferredRelayPeerIds()).toEqual([configured]);
+    expect(mesh.listUsableRelayPeerIds()).toEqual([]);
+    expect(mesh.hasLiveRelayReservation()).toBe(false);
+    expect(mesh.getRelayReservationStatus().state).not.toBe("reserved");
+
+    (mesh as unknown as { getConnectedPeerIds: () => string[] }).getConnectedPeerIds = () => [
+      configured,
+    ];
+    expect(mesh.hasLiveRelayReservation()).toBe(true);
+    expect(mesh.listUsableRelayPeerIds()).toEqual([configured]);
+    expect(mesh.getRelayReservationStatus().state).toBe("reserved");
+  });
+
   it("reports partial multi-relay reservation and missing hops", async () => {
     const { EnvoyMesh } = await import("@envoymesh/network");
     const mesh = new EnvoyMesh({ enableRelay: true });
@@ -235,6 +265,7 @@ describe("EnvoyMesh reservation status (unit via prototype stubs)", () => {
     (mesh as unknown as { lastReservedRelayPeerIds: string[] }).lastReservedRelayPeerIds = [a];
     (mesh as unknown as { getClientHasReservationFn: () => ((id: unknown) => boolean) | undefined })
       .getClientHasReservationFn = () => (pid: { toString(): string }) => pid.toString() === a;
+    (mesh as unknown as { getConnectedPeerIds: () => string[] }).getConnectedPeerIds = () => [a];
 
     expect(mesh.listLivePreferredRelayPeerIds()).toEqual([a]);
     expect(mesh.hasAllPreferredRelayReservations()).toBe(false);

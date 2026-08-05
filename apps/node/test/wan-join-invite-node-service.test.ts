@@ -9,7 +9,7 @@ import {
 } from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";
 import { NodeServiceImpl } from "../src/node-service-impl.js";
-import { decodeWanJoinInviteV1, parseEnvoyJoinUri } from "@envoymesh/api";
+import { decodeWanJoinInviteV1, encodeWanJoinInviteV1, parseEnvoyJoinUri } from "@envoymesh/api";
 
 describe("NodeServiceImpl WAN join invite", () => {
   let profileDir: string;
@@ -260,6 +260,32 @@ describe("NodeServiceImpl WAN join invite", () => {
     expect(
       decoded.bootstrapPeers.some((a) => a.includes("47.93.11.212")),
     ).toBe(true);
+  });
+
+  it("applyWanJoinInvite does not promote RFC1918 into configuredRelays", async () => {
+    const cnRelay =
+      "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo";
+    const lanPeer =
+      "/ip4/192.168.3.85/tcp/64589/p2p/12D3KooWQsD3ougrAJjmKeevSiY2azE5CKqLjcijyYreS6fUFYCS";
+    await svc.updateNodeConfig({
+      bootstrapPeers: [lanPeer],
+      configuredRelays: [{ relayId: "lan", addr: lanPeer, enabled: true }],
+    });
+    const invite = encodeWanJoinInviteV1({
+      v: 1,
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+      targetPeerId: "12D3KooWQsD3ougrAJjmKeevSiY2azE5CKqLjcijyYreS6fUFYCR",
+      targetMultiaddrs: [`${cnRelay}/p2p-circuit/p2p/12D3KooWQsD3ougrAJjmKeevSiY2azE5CKqLjcijyYreS6fUFYCR`],
+      bootstrapPeers: [cnRelay, lanPeer],
+      bootstrapPresets: ["cn-relay"],
+    });
+    const applied = await svc.applyWanJoinInvite(invite);
+    expect(applied.ok).toBe(true);
+    const after = await svc.getNodeConfig();
+    expect(after.bootstrapPeers.every((a) => !a.includes("192.168."))).toBe(true);
+    expect(after.configuredRelays.every((r) => !r.addr.includes("192.168."))).toBe(true);
+    expect(after.configuredRelays.some((r) => r.addr.includes("47.93.11.212"))).toBe(true);
   });
 
   it("createWanJoinInvite lan-paired keeps RFC1918 bootstrapPeers", async () => {

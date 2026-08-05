@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   createAgentCredential,
   generateAgentIdentity,
@@ -5,7 +6,15 @@ import {
   generateOwnerIdentity,
   signUnsignedEnvelope,
 } from "@envoymesh/identity";
-import { createChatMessagePayload, createSystemPingPayload, createUnsignedEnvelope } from "@envoymesh/protocol";
+import {
+  createChatMessagePayload,
+  createRelayHintsResponsePayload,
+  createRelayLookupResponsePayload,
+  createSystemPingPayload,
+  createUnsignedEnvelope,
+  RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
+  RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
+} from "@envoymesh/protocol";
 import { describe, expect, it } from "vitest";
 import { createInboundMessageGuard } from "../src/inbound-guard.js";
 
@@ -164,6 +173,101 @@ describe("inbound message guard", () => {
       messageId: reb.messageId,
     });
   });
+
+  it("allows relay.lookup.response with the relay placeholder signature + public key", () => {
+    const guard = createInboundMessageGuard();
+    const envelope = placeholderRelayLookupResponseEnvelope();
+
+    const decision = guard.inspect(envelope);
+    expect(decision.action).toBe("allow");
+    if (decision.action === "allow") {
+      expect(decision.envelope.intent).toBe("relay.lookup.response");
+    }
+  });
+
+  it("allows relay.hints.response with the placeholder credentials", () => {
+    const guard = createInboundMessageGuard();
+    const envelope = {
+      ...placeholderRelayLookupResponseEnvelope(),
+      messageId: randomUUID(),
+      intent: "relay.hints.response" as const,
+      payload: createRelayHintsResponsePayload({
+        relayHints: [],
+        truncated: false,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      }),
+    };
+    expect(guard.inspect(envelope).action).toBe("allow");
+  });
+
+  it("still rejects relay.lookup.response with a non-placeholder (forged) signature", () => {
+    const guard = createInboundMessageGuard();
+    const envelope = placeholderRelayLookupResponseEnvelope();
+
+    const decision = guard.inspect({
+      ...envelope,
+      signature: "not-the-placeholder-forged-signature",
+    });
+
+    expect(decision.action).toBe("reject");
+    if (decision.action === "reject") {
+      expect(decision.reason).toBe("invalid signature");
+    }
+  });
+
+  it("rejects placeholder lookup when public key is not the relay placeholder", () => {
+    const guard = createInboundMessageGuard();
+    const envelope = placeholderRelayLookupResponseEnvelope();
+    const decision = guard.inspect({
+      ...envelope,
+      senderPublicKey: "-----BEGIN PUBLIC KEY-----\nnot-the-placeholder\n-----END PUBLIC KEY-----",
+    });
+    expect(decision.action).toBe("reject");
+  });
+
+  it("rejects placeholder lookup from an untrusted relay peer when trust gate is set", () => {
+    const guard = createInboundMessageGuard();
+    const envelope = placeholderRelayLookupResponseEnvelope();
+    const decision = guard.inspect(envelope, {
+      remotePeerId: envelope.senderPeerId,
+      trustedRelayPeerIds: ["12D3KooWSomeOtherConfiguredRelayxxxxxxxxxxxxxxxx"],
+    });
+    expect(decision.action).toBe("reject");
+    if (decision.action === "reject") {
+      expect(decision.reason).toBe("untrusted relay control source");
+    }
+  });
+
+  it("allows placeholder lookup when claimant is in trustedRelayPeerIds", () => {
+    const guard = createInboundMessageGuard();
+    const envelope = placeholderRelayLookupResponseEnvelope();
+    const decision = guard.inspect(envelope, {
+      remotePeerId: envelope.senderPeerId,
+      trustedRelayPeerIds: [envelope.senderPeerId],
+    });
+    expect(decision.action).toBe("allow");
+  });
+
+  it("rejects non-relay-control intents that carry the placeholder signature", () => {
+    const guard = createInboundMessageGuard();
+    const identity = generateIdentity();
+    const envelope = {
+      version: "0.1" as const,
+      messageId: randomUUID(),
+      createdAt: new Date().toISOString(),
+      senderPeerId: identity.peerId,
+      senderPublicKey: RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
+      senderRole: "human" as const,
+      recipientPeerId: "envoy_recipient",
+      recipientRole: "human" as const,
+      intent: "chat.message",
+      payload: createChatMessagePayload({ senderOwnerId: "envoy:owner:forged", text: "hi" }),
+      signature: RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
+    };
+
+    const decision = guard.inspect(envelope);
+    expect(decision.action).toBe("reject");
+  });
 });
 
 function signedPingEnvelope(messageId: string = "message-1") {
@@ -205,4 +309,32 @@ function signedAgentChatEnvelope(messageId: string = "agent-message-1") {
   });
 
   return signUnsignedEnvelope(unsigned, agent.privateKeyPem);
+}
+
+/**
+ * A relay.lookup.response envelope signed with the well-known relay
+ * placeholder signature — mirrors what `placeholderReply()` in
+ * apps/relay/src/standalone-relay-control.ts produces.
+ */
+function placeholderRelayLookupResponseEnvelope(messageId: string = randomUUID()) {
+  const payload = createRelayLookupResponsePayload({
+    queryId: "test-query-1",
+    peers: [],
+    relayHints: [],
+    truncated: false,
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  });
+  return {
+    version: "0.1" as const,
+    messageId,
+    createdAt: new Date().toISOString(),
+    senderPeerId: "12D3KooWRelayPeerIdPlaceholder",
+    senderPublicKey: RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
+    senderRole: "agent" as const,
+    recipientPeerId: "envoy_recipient",
+    recipientRole: "agent" as const,
+    intent: "relay.lookup.response",
+    payload,
+    signature: RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
+  };
 }

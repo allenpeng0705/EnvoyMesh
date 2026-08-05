@@ -15,7 +15,7 @@ import type { EnvoyMesh } from "@envoymesh/network";
 import { sendEnvelopeWithRetry, sendExpectReplyWithRetry } from "./chat-outbound-deliver.js";
 import { cidForCapabilityTopic } from "@envoymesh/network";
 import type { NodeProfile } from "@envoymesh/api";
-import type { InboundMessageGuard } from "./inbound-guard.js";
+import { peerIdFromRelayTarget, type InboundMessageGuard } from "./inbound-guard.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import { logClientRelayLookupResponse, logRelayReachableAddrsForCheckin } from "./relay-checkin-log.js";
 import { recordRelayCheckinCycle, recordRelayLookupResult, type RelayCheckinAttempt } from "./relay-diagnostics-state.js";
@@ -360,7 +360,17 @@ export async function queryRelayLookupWithDeps(
         RELAY_LOOKUP_REPLY_TIMEOUT_MS + 5_000,
         `relay.lookup ${target}`,
       );
-      const guardDecision = inboundGuard.inspect(reply);
+      const targetPeerId = peerIdFromRelayTarget(target);
+      const preferred =
+        typeof mesh.getPreferredRelayPeerIds === "function"
+          ? mesh.getPreferredRelayPeerIds()
+          : [];
+      const trusted = new Set<string>([...preferred, ...(targetPeerId ? [targetPeerId] : [])]);
+      const guardDecision = inboundGuard.inspect(reply, {
+        remotePeerId:
+          typeof reply.senderPeerId === "string" ? reply.senderPeerId : targetPeerId,
+        trustedRelayPeerIds: [...trusted],
+      });
       if (guardDecision.action === "reject") {
         const reason = guardDecision.reason ?? "rejected";
         console.warn(`[relay-client] relay.lookup rejected target=${target} reason=${reason}`);

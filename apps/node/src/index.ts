@@ -143,7 +143,7 @@ import { join, extname } from "node:path";
 import { parseNodeArgs, applyPersistedDiscoveryConfig, type NodeArgs } from "./args.js";
 import { buildOutboundCliEnvelopes } from "./cli-actions.js";
 import { deliverOutboundEnvelope, deliverOutboundExpectReply } from "./mesh-outbound-helper.js";
-import { createInboundMessageGuard } from "./inbound-guard.js";
+import { createInboundMessageGuard, peerIdFromRelayTarget } from "./inbound-guard.js";
 import { chatSenderActorFromEnvelope, resolveEmpSupportedCapabilities } from "@envoymesh/api";
 import { buildSignedChatDeliveredEnvelope } from "@envoymesh/api/chat-delivered";
 import { verifyInboundChatDevice, formatChatSenderDisplayName, bindDeviceAuthorizationStore } from "./chat-device-auth.js";
@@ -594,6 +594,20 @@ if (args.joinInviteSeedAddrs.length > 0) {
 const taskRuntimeStore = createTaskRuntimeStateStore(args.profileDir);
 const resolvedArgs = await resolveNodeArgsTargetsByOwnerId(args, peerDirectoryStore);
 const inboundGuard = createInboundMessageGuard();
+function trustedRelayPeerIdsForInboundGuard(extra?: readonly string[]): string[] {
+  const fromMesh =
+    typeof mesh?.getPreferredRelayPeerIds === "function"
+      ? mesh.getPreferredRelayPeerIds()
+      : (mesh?.getRelayReservationStatus?.().relayPeerIds ?? []);
+  const out = new Set<string>();
+  for (const id of fromMesh) {
+    if (id?.trim()) out.add(id.trim());
+  }
+  for (const id of extra ?? []) {
+    if (id?.trim()) out.add(id.trim());
+  }
+  return [...out];
+}
 let vaultIndex: Awaited<ReturnType<typeof buildVaultIndex>> | null = null;
 let ragService: RagService | null = null;
 let emitRagReindexProgress: ((progress: import("@envoymesh/api").RagIndexProgress) => void) | undefined;
@@ -1097,7 +1111,10 @@ async function handleInboundMeshMessage({
 }: InboundMeshMessageParams): Promise<void> {
   const receivedAt = Date.now();
 
-  const guardDecision = inboundGuard.inspect(inboundEnvelope);
+  const guardDecision = inboundGuard.inspect(inboundEnvelope, {
+    remotePeerId,
+    trustedRelayPeerIds: trustedRelayPeerIdsForInboundGuard(),
+  });
 
   if (guardDecision.action === "reject") {
     console.warn(
@@ -5093,7 +5110,13 @@ async function runRelayLookupCycle(source: "startup" | "periodic"): Promise<void
         timeoutMs: RELAY_LOOKUP_REPLY_TIMEOUT_MS,
       });
       const latencyMs = Date.now() - startedAt;
-      const guardDecision = inboundGuard.inspect(reply);
+      const targetPeerId = peerIdFromRelayTarget(target);
+      const guardDecision = inboundGuard.inspect(reply, {
+        remotePeerId: typeof reply.senderPeerId === "string" ? reply.senderPeerId : targetPeerId,
+        trustedRelayPeerIds: trustedRelayPeerIdsForInboundGuard(
+          targetPeerId ? [targetPeerId] : undefined,
+        ),
+      });
       if (guardDecision.action === "reject") {
         noteRelayFailure(relayClientState, relayHintFromAddr(target));
         await appendRelayTrace(
@@ -5478,7 +5501,17 @@ async function forwardRelayLookup(input: {
         timeoutMs: RELAY_FORWARD_LOOKUP_REPLY_MS,
       });
       const latencyMs = Date.now() - startedAt;
-      const guardDecision = inboundGuard.inspect(reply);
+      const forwardTrusted = [
+        ...(target.relayId ? [target.relayId] : []),
+        ...(peerIdFromRelayTarget(targetAddress)
+          ? [peerIdFromRelayTarget(targetAddress)!]
+          : []),
+      ];
+      const guardDecision = inboundGuard.inspect(reply, {
+        remotePeerId:
+          typeof reply.senderPeerId === "string" ? reply.senderPeerId : target.relayId,
+        trustedRelayPeerIds: trustedRelayPeerIdsForInboundGuard(forwardTrusted),
+      });
       if (guardDecision.action === "reject") {
         relayLookupRouter.recordFailedForward();
         if (target.relayId) {

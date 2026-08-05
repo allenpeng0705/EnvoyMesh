@@ -14,6 +14,7 @@ import {
   decodeWanJoinInviteV1,
   encodeWanJoinInviteV1,
   assertWanJoinInviteNotExpired,
+  isPrivateOrLoopbackMultiaddr,
   mergeWanJoinInviteBootstrap,
   parseEnvoyJoinUri,
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
@@ -305,21 +306,28 @@ export async function applyWanJoinInviteViaRuntime(
   });
   // Promote invite bootstrap relay bases into configuredRelays so the joiner
   // reserves/looks up the same EnvoyMesh hops the sponsor uses (multi-relay).
+  // Never promote RFC1918 / loopback — older invites and polluted profiles
+  // used to turn the sponsor's home LAN listen addr into an addRelay target
+  // (EHOSTUNREACH on WAN), starving cn-relay reservation.
   const existingConfigured = new Map(
     (config.configuredRelays ?? [])
       .filter((r) => r.addr?.trim())
+      .filter((r) => !isPrivateOrLoopbackMultiaddr(r.addr!.trim()))
       .map((r) => [r.addr!.trim(), r] as const),
   );
   for (const addr of merged.bootstrapPeers) {
     if (!addr.includes("/p2p/") || addr.includes("/p2p-circuit/")) continue;
+    if (isPrivateOrLoopbackMultiaddr(addr)) continue;
     if (existingConfigured.has(addr)) continue;
     const peerMatch = addr.match(/\/p2p\/([^/]+)$/);
     const relayId = peerMatch?.[1] ?? addr;
     existingConfigured.set(addr, { relayId, addr, enabled: true });
   }
   const configuredRelays = [...existingConfigured.values()];
+  // Also drop any leftover private bootstrap peers from a prior polluted apply.
+  const bootstrapPeers = merged.bootstrapPeers.filter((a) => !isPrivateOrLoopbackMultiaddr(a));
   await deps.updateNodeConfig({
-    bootstrapPeers: merged.bootstrapPeers,
+    bootstrapPeers,
     bootstrapPresets: merged.bootstrapPresets,
     configuredRelays,
   });

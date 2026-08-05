@@ -50,7 +50,7 @@ export interface WireMeshEventsContext {
 }
 
 export interface WireMeshInboundContext {
-  inspectInbound(envelope: unknown): any;
+  inspectInbound(envelope: unknown, remotePeerId?: string): any;
   learnInboundDialHints(remotePeerId: string, remoteAddr?: string): Promise<unknown>;
   emit(event: string, payload: unknown): void;
   getProfile(): NodeProfile;
@@ -77,7 +77,17 @@ export interface WireMeshInboundContext {
 
 export function buildWireMeshInboundContext(host: any): WireMeshInboundContext {
   return {
-    inspectInbound: (envelope) => host._inboundGuard!.inspect(envelope),
+    inspectInbound: (envelope, remotePeerId) => {
+      const mesh = host._mesh ?? host._externalMesh;
+      const preferred =
+        typeof mesh?.getPreferredRelayPeerIds === "function"
+          ? mesh.getPreferredRelayPeerIds()
+          : (mesh?.getRelayReservationStatus?.().relayPeerIds ?? []);
+      return host._inboundGuard!.inspect(envelope, {
+        remotePeerId,
+        trustedRelayPeerIds: preferred,
+      });
+    },
     learnInboundDialHints: (remotePeerId, remoteAddr) =>
       host._outboundMessagingContext().learnInboundDialHints(remotePeerId, remoteAddr),
     emit: (event, payload) => host.emit(event, payload),
@@ -121,7 +131,7 @@ export async function handleInboundMessageViaRuntime(
   const { envelope, remotePeerId, remoteAddr, replyWithEnvelope } = params as any;
   const profile = ctx.getProfile();
   const taskStore = ctx.getTaskStore();
-  const guardDecision = ctx.inspectInbound(envelope);
+  const guardDecision = ctx.inspectInbound(envelope, remotePeerId);
   if (guardDecision.action === "reject") {
     console.warn(
       `[inbound-guard] REJECTED envelope intent=${envelope.intent} from ${remotePeerId}: ${guardDecision.reason}`,
