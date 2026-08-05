@@ -210,6 +210,7 @@ import { createHash } from "node:crypto";
 import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
   DEFAULT_ENVOY_COMMUNITY_RELAY_HTTP_PORT,
+  DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
   defaultBootstrapPresetsForDiscoveryProfile,
   normalizeBootstrapPresetsForContactsOnly,
   bondTrustRank,
@@ -5985,10 +5986,11 @@ class NodeServiceImpl implements NodeService {
    * Called by EnvoyGo after pairing to sync bootstrap peers for future reconnections.
    */
   async getBootstrapPeers(): Promise<{ bootstrapPeers: string[]; bootstrapPresetNames: string[] }> {
-    // Resolve bootstrap presets — cn-relay only by default.
-    // Public libp2p swarm presets flood the connection manager with
-    // 100+ anonymous DHT peers, starving circuit relay CONNECT.
+    // Resolve all bootstrap presets so EnvoyGo gets the complete list
     const presetsToResolve = [
+      "public-libp2p",
+      "public-libp2p-am6",
+      "public-libp2p-am7",
       "cn-relay",
     ];
     const resolvedResults = await resolveBootstrapAddresses(presetsToResolve);

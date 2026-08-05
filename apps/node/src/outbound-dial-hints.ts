@@ -21,7 +21,7 @@ import type { DialableAddrMode } from "@envoymesh/api";
 import { expandCircuitDialCandidates } from "./discovery-inbound.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import { createDefaultPersistedNodeConfig, type PersistedNodeConfig } from "./node-config-store.js";
-import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
+import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR, DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS } from "@envoymesh/api";
 import { filterDialableMultiaddrs } from "./node-service-wan.js";
 
 /**
@@ -147,7 +147,7 @@ function relayBasesForCircuitDial(input: {
       bases.push(addr);
     }
   }
-  const cfgPresets = config?.bootstrapPresets ?? ["cn-relay"];
+  const cfgPresets = config?.bootstrapPresets ?? [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS];
   if (cfgPresets.includes("cn-relay") || config?.relayEnabled !== false) {
     bases.push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
   }

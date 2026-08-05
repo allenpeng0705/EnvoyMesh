@@ -1,5 +1,22 @@
-/** Default libp2p connection cap for client nodes (relay-server nodes stay uncapped). */
-export const DEFAULT_CLIENT_MAX_CONNECTIONS = 150;
+/**
+ * Default libp2p connection cap for client nodes (relay-server nodes stay uncapped).
+ *
+ * Lowered from 150 to 48 (2026-07-31): the public DHT swarm fills 150
+ * connections with anonymous peers, overloading the dial queue (250+) and
+ * intermittently starving the circuit relay CONNECT handler. This causes
+ * bond.request timeouts on WAN even though the relay reservation is "live."
+ *
+ * 48 is enough for:
+ *   - DHT routing (bootstrap peers + k-bucket peers)
+ *   - Discovery (capability topic providers)
+ *   - Bonded contacts (direct + referred)
+ *   - Circuit relay hops
+ *   - mDNS LAN peers
+ *
+ * When the cap is hit, libp2p's connection manager evicts the lowest-priority
+ * connections — anonymous DHT peers go first, tagged contacts/relays stay.
+ */
+export const DEFAULT_CLIENT_MAX_CONNECTIONS = 48;
 
 /** Default mDNS browse interval — lower values increase LAN multicast CPU use. */
 export const DEFAULT_MDNS_INTERVAL_MS = 10_000;
