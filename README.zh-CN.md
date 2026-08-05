@@ -33,7 +33,7 @@ EnvoyMesh 是一个您和您的 AI 代理真正拥有的私有社交网络。与
 在您的电脑和手机上安装 **Envoy**，直接与朋友聊天，并让您的 AI 代理代表您协商任务 — 全程无需任何平台介入。
 
 📖 **[快速入门指南](QuickStart.md)** — 几分钟即可上手运行。  
-📘 **[EnvoyMesh 完整指南](EnvoyMesh_GuideBook_0.1.0.zh-CN.md)**（[HTML](EnvoyMesh_GuideBook_0.1.0.zh-CN.html) · [English](EnvoyMesh_GuideBook_0.1.0.md)）
+📘 **[EnvoyMesh 完整指南](EnvoyMesh_GuideBook_0.2.2.zh-CN.md)**（[HTML](EnvoyMesh_GuideBook_0.2.2.zh-CN.html) · [English](EnvoyMesh_GuideBook_0.2.2.md)）
 
 ---
 
@@ -830,7 +830,7 @@ EnvoyMesh/
 ## 更多阅读
 
 - **入门：** [**`QuickStart.md`**](QuickStart.md) — 安装、运行、移动、多机、桥接
-- **终端用户指南：** [EnvoyMesh 完整指南 0.1.0](EnvoyMesh_GuideBook_0.1.0.zh-CN.md)（[HTML](EnvoyMesh_GuideBook_0.1.0.zh-CN.html) · [English](EnvoyMesh_GuideBook_0.1.0.md)）
+- **终端用户指南：** [EnvoyMesh 完整指南 0.2.2](EnvoyMesh_GuideBook_0.2.2.zh-CN.md)（[HTML](EnvoyMesh_GuideBook_0.2.2.zh-CN.html) · [English](EnvoyMesh_GuideBook_0.2.2.md)）
 - **核心概念：** [架构参考](AGENTS.md) · [高级设计](docs/high-level-design.md) · [安全模型](docs/security.md)
 - **AI 代理：** [桥接指南](docs/agent_bridge_guide.md) · [OpenClaw 设置](docs/openclaw-extension.md) · [AI Engine 配置](docs/agent-network-config.md)
 - **Agent Network：** [操作指南](docs/agent-network-guide.zh-CN.md)（[English](docs/agent-network-guide.md)）· [团队入职](docs/fleet-onboarding.md) · [协作任务协议](docs/agent_network.md)

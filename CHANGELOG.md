@@ -5,6 +5,26 @@ All notable changes to EnvoyMesh are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-08-05
+
+### Added
+
+**Content**
+- Content tab UI in Social and EnvoyGo with three sub-tabs: Feed, Blog, and Explore
+- Feed — chronological social feed of posts and updates from followed authors and topics (signed publish events, sensitivity-gated, no algorithmic ranking)
+- Blog — long-form publishing with rich editor, visibility tiers (public / friends / trusted), and `envoy://` page sync to bonded peers
+- Explore — metadata-first discovery of public/bonded authors, trending topics, and Bazaar listings (title, author, sensitivity, content hash before any bytes transfer)
+
+**Family Network**
+- Turn one home node into a private family social network — no cloud, no subscription
+- Owner and family member roles: owner keeps full EnvoyMesh; members get a focused subset (profile, AI threads, bots, Ext Agent chat, family chat, push)
+- Family invite QR (distinct from normal pairing QR) binds a device to a specific member profile
+- Family direct and group chat (local to home node, push notifications via FCM/APNs)
+- Shared AI agents with complete per-profile data isolation
+
+### Changed
+- Guidebook refreshed to v0.2.2 — added §20.9–20.14 (Family Network) and §33.11–33.13 (Content tab UI); no section renumbering
+
 ## [0.1.0] - 2026-07-13
 
 ### Added

@@ -33,7 +33,7 @@ EnvoyMesh is a private social network that you — and your AI agent — actuall
 Install an **Envoy** on your computer and phone, chat with friends directly, and let your AI agent negotiate tasks on your behalf — all without any platform in the middle.
 
 📖 **[QuickStart.md](QuickStart.md)** — Get up and running in minutes.  
-📘 **[EnvoyMesh Guidebook](EnvoyMesh_GuideBook_0.1.0.md)** ([HTML](EnvoyMesh_GuideBook_0.1.0.html) · [中文版](EnvoyMesh_GuideBook_0.1.0.zh-CN.md))
+📘 **[EnvoyMesh Guidebook](EnvoyMesh_GuideBook_0.2.2.md)** ([HTML](EnvoyMesh_GuideBook_0.2.2.html) · [中文版](EnvoyMesh_GuideBook_0.2.2.zh-CN.md))
 
 ---
 
@@ -842,7 +842,7 @@ See [`docs/implementation-plan.md`](docs/implementation-plan.md) for the full ro
 ## Want to Read More?
 
 - **Start here:** [**`QuickStart.md`**](QuickStart.md) — install, run, mobile, multi-machine, bridge
-- **End-user guidebook:** [EnvoyMesh Guidebook 0.1.0](EnvoyMesh_GuideBook_0.1.0.md) ([HTML](EnvoyMesh_GuideBook_0.1.0.html) · [简体中文](EnvoyMesh_GuideBook_0.1.0.zh-CN.md))
+- **End-user guidebook:** [EnvoyMesh Guidebook 0.2.2](EnvoyMesh_GuideBook_0.2.2.md) ([HTML](EnvoyMesh_GuideBook_0.2.2.html) · [简体中文](EnvoyMesh_GuideBook_0.2.2.zh-CN.md))
 - **Core concepts:** [Architecture reference](AGENTS.md) · [High-level design](docs/high-level-design.md) · [Security model](docs/security.md)
 - **AI Agent:** [Bridge guide](docs/agent_bridge_guide.md) · [OpenClaw setup](docs/openclaw-extension.md) · [AI Engine config](docs/agent-network-config.md)
 - **Agent Network:** [Operator guide](docs/agent-network-guide.md) ([中文](docs/agent-network-guide.zh-CN.md)) · [Fleet onboarding](docs/fleet-onboarding.md) · [Team jobs protocol](docs/agent_network.md)

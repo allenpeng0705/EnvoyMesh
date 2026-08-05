@@ -1,13 +1,13 @@
 # EnvoyMesh Guidebook
 
-**Version:** 0.1.0  
+**Version:** 0.2.2  
 **Edition:** Complete Guidebook Edition  
-**Revised:** 2026-07-25  
-**Languages:** [English](EnvoyMesh_GuideBook_0.1.0.md) · [简体中文](EnvoyMesh_GuideBook_0.1.0.zh-CN.md) ([HTML](EnvoyMesh_GuideBook_0.1.0.html) · [中文 HTML](EnvoyMesh_GuideBook_0.1.0.zh-CN.html))  
+**Revised:** 2026-08-05  
+**Languages:** [English](EnvoyMesh_GuideBook_0.2.2.md) · [简体中文](EnvoyMesh_GuideBook_0.2.2.zh-CN.md) ([HTML](EnvoyMesh_GuideBook_0.2.2.html) · [中文 HTML](EnvoyMesh_GuideBook_0.2.2.zh-CN.html))  
 **Audience:** End users and prospective users (Parts I–XIV); website editors, support teams, and operators (Part XV and Operator-marked topics)  
 **Purpose:** A complete end-user guide to EnvoyMesh—what it is, how to install and use it on desktop and EnvoyGo, how identity and trust work, and how to operate networking, agents, relays, and advanced features safely.
 
-> **Complete Guidebook Edition.** This guide reflects the EnvoyMesh 0.1.0 repository state at the revision date. It is written for end users, not as a content-outline stub. Feature status can differ by platform and deployment—verify each Beta or Experimental capability in your build (release notes, Settings labels, and Appendix J) before relying on it in production.
+> **Complete Guidebook Edition.** This guide reflects the EnvoyMesh 0.2.2 repository state at the revision date. It is written for end users, not as a content-outline stub. Feature status can differ by platform and deployment—verify each Beta or Experimental capability in your build (release notes, Settings labels, and Appendix J) before relying on it in production.
 
 ## How to read this guide
 
@@ -942,6 +942,45 @@ Profile updates push on signed publish events; contacts refresh on next fetch or
 
 Initial privacy defaults favor minimal public exposure: conservative photo visibility, friends-level chat history on home, and agent tools disabled until mandated. Review defaults after install before joining discovery topics. Reset paths are in Settings → Privacy where available.
 
+#### 20.9 Family Network — one home node, many profiles
+
+The Family Network turns a single EnvoyMesh home node into a private family social network. The owner installs the node on a desktop or laptop, configures the model, and pairs their phone; then each family member pairs their own phone and gets a focused, independent experience — their own profile, their own AI threads, and family direct + group chat. No cloud, no subscription, no data leaving your home except the LLM API calls you configure. Think of it as Netflix profiles on one account, or macOS user accounts on one machine: shared infrastructure, isolated experiences.
+
+The home node keeps a single mesh identity (`envoy:owner:…`) — the owner is the only participant visible to the wider P2P mesh. Family members exist as local profiles on the home node, not as mesh peers; their contacts and chats are derived from the family roster, not from mesh discovery.
+
+#### 20.10 Owner and family member roles
+
+The **owner** is the person who installed the node. They keep the full EnvoyMesh product: EnvoyAI, character bots, Ext Agent chat, terminal, Pi coding agent, vault, external mesh bonding, node settings, and family administration (create, rename, and delete member profiles; configure the model API key and infrastructure).
+
+A **family member** gets a focused subset: their own profile, their own AI and bot threads, Ext Agent chat, family direct and group chat, and push notifications. They do **not** get external mesh bonding, terminal, Pi, vault, or node settings. Each profile is locked to one device at pairing time — there is no profile switching within an app, which keeps each person's data and AI threads cleanly separated.
+
+#### 20.11 Invite a family member
+
+The owner creates a family profile from Settings and generates a **family invite QR**. This is distinct from a normal EnvoyGo pairing QR: a family invite binds the pairing device to that specific member profile, whereas normal pairing binds to the owner's full node. The family member installs EnvoyGo, scans the invite QR, and their phone pairs to the home node over WebSocket or libp2p circuit relay (§45). Once paired, the member appears in every other family member's contact list automatically — no separate bonding step.
+
+Because each profile is locked to one device, a member who changes phones must be re-paired by the owner (the old device is revoked). The owner can rename or delete a profile at any time; deletion removes that member's data and revokes their device.
+
+#### 20.12 Family direct and group chat
+
+Family members can direct-message each other and participate in family-only group chats. These conversations are local to the home node — they never traverse the wider mesh, and family contacts are not mesh peers. Presence (online/away/offline) reflects each member's paired-device connection to the home node. Push notifications (FCM on Android, APNs on iOS) deliver messages to a member's phone when EnvoyGo is in the background, so family chat feels like any other messaging app while staying on infrastructure you control.
+
+#### 20.13 Shared AI agents, isolated data
+
+All family members share the home node's model configuration and agent runtime — one LLM API key, one OpenClaw / Ext Agent runtime — so the owner configures AI once and every member gets an assistant. But each member's AI threads, bot conversations, and Ext Agent chats are private to that profile. No family member can read another's AI history, and member data is isolated at the profile level. Shared infrastructure, isolated experiences: the AI is the same engine, but each person's memory and conversations stay sealed.
+
+#### 20.14 What family members cannot access
+
+To keep the family experience focused and safe, member profiles are deliberately scoped down. A family member **cannot**:
+
+- Open a terminal to the home machine (owner-only)
+- Use the Pi coding agent (owner-only)
+- Browse the vault or Library (owner-only)
+- Bond with external mesh contacts or participate in mesh discovery (owner-only)
+- Change node, relay, or model settings (owner-only)
+- Administer other family profiles (owner-only)
+
+If a member needs mesh access, terminal, or vault, the owner can perform that action on their behalf from the owner profile, or the member should pair as an owner on their own separate home node. The Family Network is a private social layer, not a shared admin console.
+
 
 ---
 
@@ -1470,6 +1509,28 @@ Edit source files locally, bump manifests, and republish when correcting typos o
 #### 33.10 External HTTP gateway — planned
 
 **Planned.** The `envoy://` mesh-content path is available today; a public HTTP gateway for non-mesh browsing is forward-referenced as Phase 45F and is not part of the current release.
+
+#### 33.11 The Content tab — Feed, Blog, and Explore
+
+The **Content** tab in Social and EnvoyGo is the user-facing home for everything described in 33.1–33.9. It surfaces `envoy://` mesh content through three sub-tabs:
+
+- **Feed** — a chronological social feed of posts and updates from the authors and topics you follow (§33.8)
+- **Blog** — long-form posts built on the publishing templates in §33.7, read in a dedicated reader
+- **Explore** — discovery of public and bonded authors, topics, and Bazaar listings (§33.6)
+
+Everything you read here is content-addressed and delivered peer-to-peer from your bonded contacts' nodes — there is no central content server. Open any item to read it through the mesh Browser (§33.2) or `library.read`, depending on format. The Content tab does not introduce a new delivery path; it is the aggregated view of the content system already documented in this section.
+
+#### 33.12 Feed and Blog — read and post
+
+**Feed** aggregates short posts and shared items from the authors and topics you chose to follow in §33.8. New posts arrive as signed publish events; your node verifies the author, checks sensitivity against the bond tier, and renders them inline. Browse, like, and comment — comments are themselves signed mesh messages, so the conversation is auditable and stays within your trust boundary. There is no algorithmic ranking: Feed is chronological, and you control what appears by choosing whom and what to follow.
+
+**Blog** is for long-form content. Use the publishing editor (§33.7) to draft a post with a title, body, and optional cover media; choose a visibility tier (public, friends, trusted) and publish. Your post lives on your node as an `envoy://` page and syncs to bonded peers on their next fetch. Followers see it in their Feed; everyone else can find it through Explore. Notifications reuse the follow-feed mechanism in §33.8 — no separate push channel is needed for mesh delivery. Edit source files and republish (§33.9) to correct typos or replace media; clients verify `contentHash` on reload.
+
+#### 33.13 Explore — discover mesh content
+
+**Explore** is the discovery layer for mesh content. It lists public and bonded authors, trending topics, and Bazaar offerings (§33.6) as metadata-first cards — title, author, sensitivity, and content hash — so you decide what to fetch before any bytes transfer. Selecting a card opens the full content through the mesh Browser (§33.2) or `library.read` depending on format, after the usual bond and sensitivity checks. This metadata-first design keeps bandwidth and exposure minimal: you see what exists without automatically pulling it.
+
+Explore does not bypass trust. Public-stranger content is still gated by your public sensitivity ceiling, referred authors surface through your bond graph, and blocked authors never appear. Treat Explore as a directory of the mesh, not a feed — it shows what exists on reachable nodes, not what has been pushed to you.
 
 
 ### 34. IPFS and Content Verification
@@ -4165,7 +4226,7 @@ Before sharing logs, copy only the relevant time window and redact `owner-key*`,
 
 #### 91.9 Ask the community for help
 
-Gather version, platform, profile path, reproduction steps, and redacted audit excerpts with correlation IDs. State which feature status label applies (Available, Beta, Experimental). Community channels are announced in release notes for 0.1.0—avoid posting secrets in public threads.
+Gather version, platform, profile path, reproduction steps, and redacted audit excerpts with correlation IDs. State which feature status label applies (Available, Beta, Experimental). Community channels are announced in release notes for 0.2.2—avoid posting secrets in public threads.
 
 
 ### 92. Installation and Startup Problems
@@ -5139,7 +5200,7 @@ Raw file sharing (`allowRawFiles`) always returns **`approval_required`** regard
 
 #### J.1 Available features
 
-**Available (0.1.0)** — intended for current use on supported platforms:
+**Available (0.2.2)** — intended for current use on supported platforms:
 
 - Signed messaging, groups, audio messages, voice calls, file/profile sharing (Chapters 11–14)
 - Personal AI via EnvoyAI/OpenClaw and external-agent bridges (Part VI)
@@ -5271,7 +5332,7 @@ A2A JSON-RPC may also return `-32001` with an `auth-required:` message when Auth
 
 **Source repository:** https://github.com/allenpeng0705/EnvoyMesh — use GitHub Issues for bug reports and feature discussion when that repository is your distribution channel. There is no separate commercial support portal documented in this release; enterprise operators should maintain internal runbooks.
 
-**Before opening an issue:** reproduce on a current build, note platform (macOS/Windows/EnvoyGo), profile path, feature status label (**Beta** / **Experimental**), and redacted `audit-events.jsonl` excerpts with correlation IDs. Placeholder community chat/forum links are not bundled with 0.1.0—watch release notes for official channels as they are announced.
+**Before opening an issue:** reproduce on a current build, note platform (macOS/Windows/EnvoyGo), profile path, feature status label (**Beta** / **Experimental**), and redacted `audit-events.jsonl` excerpts with correlation IDs. Placeholder community chat/forum links are not bundled with 0.2.2—watch release notes for official channels as they are announced.
 
 
 ---
