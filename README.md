@@ -77,6 +77,11 @@ Install an **Envoy** on your computer and phone, chat with friends directly, and
 - **Federated RAG** — fan out knowledge queries to bonded peers' libraries and synthesize answers.
 - **Plug-in providers** — new knowledge providers slot in via the `KnowledgeBasePlugin` interface.
 
+### Content
+- **Feed** — chronological social feed of posts and updates from authors and topics you follow, delivered peer-to-peer with no algorithmic ranking.
+- **Blog** — publish long-form posts with a rich editor; content lives on your node as `envoy://` pages and syncs to bonded peers.
+- **Explore** — discover public and bonded authors, trending topics, and Bazaar listings as metadata-first cards before any bytes transfer.
+
 ### Agent Network
 - **Fleet onboarding** — bring teams online with company invite links, fleet manifests, LAN auto-bond, or a pairing kiosk.
 - **Team jobs** — decompose complex tasks ("translate → review → summarize") across bonded, opted-in agents; direct-assign by default, or competitive bidding when enabled.
@@ -91,6 +96,11 @@ Install an **Envoy** on your computer and phone, chat with friends directly, and
 - **Capacitor (`apps/mobile/`)** — backup / legacy full-node experiment; not the product phone app.
 - **Terminals** — chat-integrated remote shell access to your home node from anywhere.
 - **Multi-device identity** — same owner ID across all your devices.
+
+### Family Network
+- **One home node, many profiles** — turn your home computer into a private family social network; each member pairs their phone and gets their own profile, AI threads, and family chat. No cloud, no subscription.
+- **Owner vs. member roles** — owner keeps full EnvoyMesh; members get a focused subset (profile, AI, bots, family chat, push) with no terminal, vault, or mesh settings.
+- **Shared AI, isolated data** — all members share the home node's model config, but each person's AI history and data stay sealed.
 
 ---
 
