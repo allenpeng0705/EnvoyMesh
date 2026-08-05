@@ -712,7 +712,8 @@ try {
   // process.stdout.fd (not the OS rlimit), so use the OS API directly.
   try {
     const { execSync } = await import("node:child_process");
-    const ulimitOut = execSync("ulimit -n", { timeout: 2000 }).toString().trim();
+    // ulimit is a shell builtin, not an executable — must run via shell.
+    const ulimitOut = execSync("ulimit -n", { timeout: 2000, shell: "/bin/sh" }).toString().trim();
     const fdLimit = parseInt(ulimitOut, 10);
     const recommendedMin = 4096;
     if (!isNaN(fdLimit) && fdLimit < recommendedMin) {

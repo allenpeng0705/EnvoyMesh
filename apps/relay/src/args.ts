@@ -154,6 +154,8 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
 
   /** Set when CLI explicitly chose public vs private (blocks advertise auto). */
   let publicModeFromCli: "public" | "private" | undefined;
+  /** Set when CLI explicitly chose DHT mode (blocks auto-switch). */
+  let dhtModeFromCli = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -171,9 +173,11 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
     } else if (arg === "--dht-server") {
       args.enableDht = true;
       args.dhtClientMode = false;
+      dhtModeFromCli = true;
     } else if (arg === "--dht-client") {
       args.enableDht = true;
       args.dhtClientMode = true;
+      dhtModeFromCli = true;
     } else if (arg === "--no-rendezvous") {
       args.enableRendezvous = false;
     } else if (arg === "--ws-auth-token") {
@@ -271,7 +275,8 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
   // Server mode means the relay stores routing records for other peers, making
   // discovery (capability topics, findPeer) work even when home nodes go offline.
   // Private/LAN relays stay in client mode (they may not be reliably reachable).
-  if (args.relayPublicMode && args.enableDht && args.dhtClientMode) {
+  // Explicit --dht-client override is respected (operator knows best).
+  if (args.relayPublicMode && args.enableDht && args.dhtClientMode && !dhtModeFromCli) {
     args.dhtClientMode = false;
     console.log("[relay] DHT: auto-switched to SERVER mode (public relay)");
   }
