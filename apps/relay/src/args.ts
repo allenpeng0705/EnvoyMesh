@@ -168,6 +168,12 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
       args.bootstrapPeers.push(getValue(argv, ++i, arg));
     } else if (arg === "--no-dht") {
       args.enableDht = false;
+    } else if (arg === "--dht-server") {
+      args.enableDht = true;
+      args.dhtClientMode = false;
+    } else if (arg === "--dht-client") {
+      args.enableDht = true;
+      args.dhtClientMode = true;
     } else if (arg === "--no-rendezvous") {
       args.enableRendezvous = false;
     } else if (arg === "--ws-auth-token") {
@@ -258,6 +264,16 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
     args.advertiseAddrs.length > 0
   ) {
     args.relayPublicMode = true;
+  }
+
+  // Public relays auto-switch to DHT server mode. The relay is always-online,
+  // has a stable peer ID, and is publicly reachable — ideal DHT routing node.
+  // Server mode means the relay stores routing records for other peers, making
+  // discovery (capability topics, findPeer) work even when home nodes go offline.
+  // Private/LAN relays stay in client mode (they may not be reliably reachable).
+  if (args.relayPublicMode && args.enableDht && args.dhtClientMode) {
+    args.dhtClientMode = false;
+    console.log("[relay] DHT: auto-switched to SERVER mode (public relay)");
   }
 
   return args;
@@ -421,6 +437,11 @@ Options:
                          to get full multiaddr with peer ID.
                          Env: ENVOYMESH_BOOTSTRAP_PEERS (comma-separated)
   --no-dht              Disable DHT discovery.
+  --dht-server          Force DHT server mode (relay stores routing records for other peers).
+                         Default for public relays (auto-enabled with --advertise-addr).
+                         Makes discovery work even when home nodes go offline.
+  --dht-client          Force DHT client mode (relay can query but doesn't serve records).
+                         Use for private/LAN relays that may not be reliably reachable.
   --no-rendezvous       Disable rendezvous capability registry.
   --ws-auth-token <token>  Shared token for /ws/client auth. When set, clients
                            must pass ?token=<token> in the WebSocket URL.

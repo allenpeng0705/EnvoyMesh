@@ -706,6 +706,44 @@ try {
   seedRelayBookFromBootstrap(mesh.peerId);
   startSiblingHintsGossip();
 
+  // FD limit check — warn operators who haven't raised ulimit -n.
+  // 1024 reservations + WS connections can exhaust the default 1024 FD
+  // limit on many Linux boxes. Node.js surfaces the soft limit via
+  // process.stdout.fd (not the OS rlimit), so use the OS API directly.
+  try {
+    const { execSync } = await import("node:child_process");
+    const ulimitOut = execSync("ulimit -n", { timeout: 2000 }).toString().trim();
+    const fdLimit = parseInt(ulimitOut, 10);
+    const recommendedMin = 4096;
+    if (!isNaN(fdLimit) && fdLimit < recommendedMin) {
+      console.warn(
+        `[relay] WARNING: file descriptor limit is ${fdLimit} (recommended ≥${recommendedMin}). ` +
+        `Raise with: ulimit -n ${recommendedMin} (or set LimitNOFILE=${recommendedMin} in systemd). ` +
+        `With ${args.relayPublicMode ? "1024" : "15"} reservations + WebSocket connections, ` +
+        `the relay may run out of file descriptors under load.`,
+      );
+    }
+  } catch {
+    // ulimit not available (Windows) — skip silently.
+  }
+
+  // DHT server mode: advertise self + periodically re-provide so other
+  // peers can findPeer(this relay) via DHT. Client-mode relays skip this
+  // (they can query but can't serve routing records).
+  if (args.enableDht && !args.dhtClientMode) {
+    console.log("[relay] DHT server mode: advertising self on DHT for findPeer discovery");
+    void mesh.provideSelf().catch((err) => {
+      console.warn("[relay] provideSelf failed at startup:", err instanceof Error ? err.message : String(err));
+    });
+    // Re-advertise every 10 minutes (TTL on DHT records is typically 24h,
+    // but re-providing keeps the routing table fresh).
+    const provideInterval = setInterval(() => {
+      void mesh.provideSelf().catch(() => {});
+    }, 10 * 60_000);
+    // Don't keep the process alive just for this timer.
+    if (provideInterval.unref) provideInterval.unref();
+  }
+
   // Phase 46 — Attach the shared standalone relay control-plane handlers
   // (checkin / lookup / miss-forward / hints). This replaces the inline
   // duplicate that was previously in the mesh.onMessage handler below.
@@ -954,11 +992,17 @@ try {
           // this to see "is the store filling up?" in real time without
           // scraping the relay log. A persistently-near-cap count means
           // the public-mode preset (or hand-tuned override) is too tight.
+          const count = mesh.getCircuitRelayReservationCount();
+          const maxReservations = circuitRelayServerConfig.maxReservations ?? 15;
+          const pct = maxReservations > 0 ? Math.round((count / maxReservations) * 100) : 0;
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({
-            count: mesh.getCircuitRelayReservationCount(),
-            maxReservations: circuitRelayServerConfig.maxReservations ?? 15,
+            count,
+            maxReservations,
+            utilizationPercent: pct,
+            status: pct >= 90 ? "near-capacity" : pct >= 70 ? "high" : "ok",
             publicMode: args.relayPublicMode,
+            reservationTtlMs: circuitRelayServerConfig.reservationTtl ?? (args.relayPublicMode ? 30 * 60_000 : 2 * 60_000),
             checkedAt: new Date().toISOString(),
           }));
         } else if (pathname === "/reservations/inspect") {
