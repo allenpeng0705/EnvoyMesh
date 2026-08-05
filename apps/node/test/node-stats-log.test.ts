@@ -10,11 +10,12 @@ describe("logNodeRuntimeStats", () => {
     logNodeRuntimeStats(
       {
         getConnectionStats: () => ({
-          totalPeerIds: 42,
-          totalConnections: 55,
+          totalPeerIds: 12,
+          totalConnections: 15,
           circuitPeerIds: ["12D3KooWRelay"],
           circuitConnections: 2,
         }),
+        pruneExcessSwarmConnections: vi.fn(async () => ({ closedPeers: 0 })),
       } as never,
       {
         processStartedAtMs: Date.now() - 30_000,
@@ -26,8 +27,8 @@ describe("logNodeRuntimeStats", () => {
     const line = String(logSpy.mock.calls[0]?.[0]);
     expect(line).toContain("circuitPeers=1");
     expect(line).toContain("circuitConns=2");
-    expect(line).toContain("totalPeers=42");
-    expect(line).toContain("totalConns=55");
+    expect(line).toContain("totalPeers=12");
+    expect(line).toContain("totalConns=15");
     expect(line).toContain("relayRoster=7");
     expect(line).toContain("memoryRss=");
     expect(line).toContain("heapUsed=");
@@ -49,6 +50,7 @@ describe("logNodeRuntimeStats", () => {
           circuitPeerIds: ["12D3KooWRelay"],
           circuitConnections: 12,
         }),
+        pruneExcessSwarmConnections: vi.fn(async () => ({ closedPeers: 0 })),
       } as never,
       { processStartedAtMs: Date.now() - 30_000 },
     );

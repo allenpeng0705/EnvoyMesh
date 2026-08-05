@@ -1,7 +1,14 @@
 import type { DiscoveryProfile } from "./ws-protocol.js";
 
-/** libp2p connection-manager cap for client nodes (relay-server nodes are uncapped). */
-export const DEFAULT_CLIENT_MAX_CONNECTIONS = 150;
+/**
+ * libp2p connection-manager cap for client nodes (relay-server nodes are uncapped).
+ *
+ * Lowered from 150 → 48 (2026-08-05): the public DHT swarm was filling 80–150
+ * slots and starving circuit-relay CONNECT (WAN auto-bond timeouts). This is the
+ * value that `resolveConnectivityTuning` / NodeService actually pass into
+ * EnvoyMesh — keep it in sync with `packages/network` connection-stats.
+ */
+export const DEFAULT_CLIENT_MAX_CONNECTIONS = 48;
 export const MIN_CLIENT_MAX_CONNECTIONS = 10;
 export const MAX_CLIENT_MAX_CONNECTIONS = 500;
 
@@ -118,7 +125,10 @@ const PRESETS: Record<ConnectivityMode, Omit<ConnectivityPreset, "mode">> = {
     relayIdleStretchMaxMultiplier: 2,
   },
   optimized: {
-    maxConnections: 80,
+    // Same connection ceiling as normal — savings come from quieter timers /
+    // lazy discovery, not from a higher swarm budget (higher budgets were
+    // starving circuit CONNECT on WAN).
+    maxConnections: DEFAULT_CLIENT_MAX_CONNECTIONS,
     mdnsIntervalMs: 45_000,
     mdnsPolicy: "on",
     capabilityDiscoveryIntervalMs: 120_000,
@@ -133,7 +143,7 @@ const PRESETS: Record<ConnectivityMode, Omit<ConnectivityPreset, "mode">> = {
     relayIdleStretchMaxMultiplier: 2,
   },
   smart: {
-    maxConnections: 64,
+    maxConnections: 40,
     mdnsIntervalMs: 60_000,
     mdnsPolicy: "on",
     capabilityDiscoveryIntervalMs: 180_000,

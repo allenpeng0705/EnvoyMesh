@@ -234,7 +234,7 @@ export async function getNodeConfigViaRuntime(
     friendMatchingPreferencesText: undefined,
     externalPublish: { allowIpfs: false },
     connectivityMode: "optimized",
-    maxConnections: 80,
+    maxConnections: 48,
     mdnsIntervalMs: 45_000,
     capabilityDiscoveryIntervalMs: 120_000,
     lazyCapabilityDiscovery: true,

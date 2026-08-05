@@ -1,6 +1,13 @@
 import type { DiscoveryProfile } from "./ws-protocol.js";
-/** libp2p connection-manager cap for client nodes (relay-server nodes are uncapped). */
-export declare const DEFAULT_CLIENT_MAX_CONNECTIONS = 150;
+/**
+ * libp2p connection-manager cap for client nodes (relay-server nodes are uncapped).
+ *
+ * Lowered from 150 → 48 (2026-08-05): the public DHT swarm was filling 80–150
+ * slots and starving circuit-relay CONNECT (WAN auto-bond timeouts). This is the
+ * value that `resolveConnectivityTuning` / NodeService actually pass into
+ * EnvoyMesh — keep it in sync with `packages/network` connection-stats.
+ */
+export declare const DEFAULT_CLIENT_MAX_CONNECTIONS = 48;
 export declare const MIN_CLIENT_MAX_CONNECTIONS = 10;
 export declare const MAX_CLIENT_MAX_CONNECTIONS = 500;
 export declare const DEFAULT_MDNS_INTERVAL_MS = 10000;

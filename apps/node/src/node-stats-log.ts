@@ -1,8 +1,12 @@
-import type { EnvoyMesh } from "@envoymesh/network";
+import {
+  PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD,
+  PRUNE_EXCESS_SWARM_MAX_PEERS,
+  type EnvoyMesh,
+} from "@envoymesh/network";
 
 export const NODE_STATS_INTERVAL_MS = 30_000;
-/** Log a hint when libp2p connection count suggests dial churn / GC pressure. */
-export const HIGH_CONNECTION_COUNT_WARN = 60;
+/** Log a hint when libp2p connection count approaches the client cap (48). */
+export const HIGH_CONNECTION_COUNT_WARN = 40;
 
 export interface NodeStatsLogContext {
   processStartedAtMs: number;
@@ -45,10 +49,11 @@ export function logNodeRuntimeStats(mesh: EnvoyMesh, context: NodeStatsLogContex
   }
 
   // Protect circuit-relay hoppability: prune anonymous DHT/bootstrap peers
-  // when the dial queue or peer count is high enough to starve CONNECT.
+  // when the dial queue or peer count crosses pruneExcessSwarmConnections defaults.
   if (
-    (conn.dialQueueLength != null && conn.dialQueueLength > 40) ||
-    conn.totalPeerIds > 64
+    (conn.dialQueueLength != null &&
+      conn.dialQueueLength > PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD) ||
+    conn.totalPeerIds > PRUNE_EXCESS_SWARM_MAX_PEERS
   ) {
     void mesh.pruneExcessSwarmConnections().catch((err) => {
       console.warn(

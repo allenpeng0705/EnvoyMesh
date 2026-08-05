@@ -81,7 +81,9 @@ describe("connectivity-tuning", () => {
     expect(o.mdnsIntervalMs).toBeGreaterThan(n.mdnsIntervalMs);
     expect(o.relayCycleBaseMs).toBeGreaterThan(n.relayCycleBaseMs);
     expect(o.connectionMonitorPingIntervalMs).toBeGreaterThan(n.connectionMonitorPingIntervalMs);
-    expect(o.maxConnections).toBeLessThan(n.maxConnections);
+    // Same connection ceiling as normal — quieter via timers/lazy discovery only.
+    expect(o.maxConnections).toBe(n.maxConnections);
+    expect(o.maxConnections).toBe(DEFAULT_CLIENT_MAX_CONNECTIONS);
     expect(o.lazyCapabilityDiscovery).toBe(true);
     expect(o.idleTimerStretch).toBe(true);
   });

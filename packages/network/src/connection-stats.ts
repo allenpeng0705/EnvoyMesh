@@ -18,6 +18,13 @@
  */
 export const DEFAULT_CLIENT_MAX_CONNECTIONS = 48;
 
+/**
+ * Defaults for {@link EnvoyMesh.pruneExcessSwarmConnections}.
+ * Keep node-stats prune *triggers* in sync with these thresholds.
+ */
+export const PRUNE_EXCESS_SWARM_MAX_PEERS = 32;
+export const PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD = 20;
+
 /** Default mDNS browse interval — lower values increase LAN multicast CPU use. */
 export const DEFAULT_MDNS_INTERVAL_MS = 10_000;
 

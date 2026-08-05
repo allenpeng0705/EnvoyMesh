@@ -84,6 +84,8 @@ import { expandListenAddressesWithQuic } from "./quic-listen.js";
 import {
   DEFAULT_CLIENT_MAX_CONNECTIONS,
   DEFAULT_MDNS_INTERVAL_MS,
+  PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD,
+  PRUNE_EXCESS_SWARM_MAX_PEERS,
   scanLibp2pConnectionsFlat,
   scanLibp2pConnectionsMap,
   type MeshConnectionStats,
@@ -92,6 +94,8 @@ import {
 export {
   DEFAULT_CLIENT_MAX_CONNECTIONS,
   DEFAULT_MDNS_INTERVAL_MS,
+  PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD,
+  PRUNE_EXCESS_SWARM_MAX_PEERS,
   scanLibp2pConnectionsFlat,
   scanLibp2pConnectionsMap,
   type MeshConnectionStats,
@@ -2674,8 +2678,9 @@ export class EnvoyMesh {
     maxPeers?: number;
     dialQueueThreshold?: number;
   }): Promise<{ closedPeers: number; reason?: string }> {
-    const maxPeers = options?.maxPeers ?? 32;
-    const dialQueueThreshold = options?.dialQueueThreshold ?? 20;
+    const maxPeers = options?.maxPeers ?? PRUNE_EXCESS_SWARM_MAX_PEERS;
+    const dialQueueThreshold =
+      options?.dialQueueThreshold ?? PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD;
     const stats = this.getConnectionStats();
     const dialQueue = stats.dialQueueLength ?? 0;
     const overPeers = stats.totalPeerIds > maxPeers;
