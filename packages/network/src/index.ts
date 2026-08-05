@@ -12,7 +12,7 @@ import { ping } from "@libp2p/ping";
 import { tcp } from "@libp2p/tcp";
 import { webSockets } from "@libp2p/websockets";
 import { byteStream } from "@libp2p/utils";
-import { KEEP_ALIVE, type RoutingOptions, type TopologyFilter, type PeerId as Libp2pPeerId } from "@libp2p/interface";
+import { KEEP_ALIVE, FaultTolerance, type RoutingOptions, type TopologyFilter, type PeerId as Libp2pPeerId } from "@libp2p/interface";
 import { peerIdFromString } from "@libp2p/peer-id";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import { CHAT_DELIVERY_ACK_TIMEOUT_MS } from "@envoymesh/protocol";
@@ -590,6 +590,12 @@ export class EnvoyMesh {
 
     this.node = await createLibp2p({
       ...(libp2pPrivateKey != null ? { privateKey: libp2pPrivateKey } : {}),
+      // Configured `/p2p-circuit` listen addrs dial the relay at startup. A
+      // transient ECONNRESET / EncryptionFailedError on cn-relay must not
+      // abort the whole node — reservation health re-warms afterward.
+      transportManager: {
+        faultTolerance: FaultTolerance.NO_FATAL,
+      },
       connectionMonitor: {
         pingInterval: this.options.connectionMonitorPingIntervalMs ?? 45_000,
         abortConnectionOnPingFailure: false,
