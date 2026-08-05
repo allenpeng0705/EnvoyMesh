@@ -78,6 +78,71 @@ describe("deliverCallEnvelopeWithRetry (call.* on chat protocol)", () => {
     );
   });
 
+  it("keeps circuit dialHints when preferCircuitHints is explicit true on connected relay", async () => {
+    const sendChat = vi.fn().mockResolvedValue(0);
+    const peerId = "12D3KooWCircuitRetainCallPeer";
+    const circuit =
+      `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${peerId}`;
+    const mesh = {
+      sendChat,
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+      ensurePeerReachable: vi.fn().mockResolvedValue({ connected: true, direct: false }),
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: false }),
+    };
+
+    await deliverCallEnvelopeWithRetry({
+      mesh,
+      transportPeerId: peerId,
+      envelope: callEnvelope,
+      dialHints: [circuit],
+      preferCircuitHints: true,
+      maxAttempts: 1,
+    });
+
+    expect(sendChat).toHaveBeenCalledWith(
+      peerId,
+      callEnvelope,
+      expect.objectContaining({
+        dialHints: [circuit],
+        preferCircuitHints: true,
+      }),
+    );
+  });
+
+  it("keeps dialHints for bond.request on connected relay (message-protocol path)", async () => {
+    const send = vi.fn().mockResolvedValue(0);
+    const peerId = "12D3KooWBondRetainPeer";
+    const circuit =
+      `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${peerId}`;
+    const bondEnvelope = { intent: "bond.request" } as EnvoyEnvelope;
+    const mesh = {
+      send,
+      sendChat: vi.fn(),
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+      ensurePeerReachable: vi.fn().mockResolvedValue({ connected: true, direct: false }),
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: false }),
+    };
+
+    await deliverCallEnvelopeWithRetry({
+      mesh,
+      transportPeerId: peerId,
+      envelope: bondEnvelope,
+      dialHints: [circuit],
+      preferCircuitHints: true,
+      maxAttempts: 1,
+    });
+
+    // bond.request is not a chat-protocol intent — routed to message send.
+    expect(send).toHaveBeenCalledWith(
+      peerId,
+      bondEnvelope,
+      expect.objectContaining({
+        dialHints: [circuit],
+        preferCircuitHints: true,
+      }),
+    );
+  });
+
   it("honors preferCircuitHints override on first attempt", async () => {
     const sendChat = vi.fn().mockResolvedValue(0);
     const ensurePeerReachable = vi.fn().mockResolvedValue({ connected: true, direct: false });

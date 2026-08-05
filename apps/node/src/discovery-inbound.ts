@@ -346,6 +346,25 @@ export function getQueuedDiscoveryCount(): number {
   return total;
 }
 
+/** Drop rate-limit Map keys whose timestamps all fall outside the window. */
+function pruneStaleRateLimitMap(
+  map: Map<string, number[]>,
+  windowMs: number,
+  now: number,
+): number {
+  let removed = 0;
+  for (const [key, history] of map.entries()) {
+    const active = history.filter((timestamp) => timestamp >= now - windowMs);
+    if (active.length === 0) {
+      map.delete(key);
+      removed += 1;
+    } else if (active.length !== history.length) {
+      map.set(key, active);
+    }
+  }
+  return removed;
+}
+
 export function clearExpiredQueueEntries(): number {
   let cleared = 0;
   const now = Date.now();
@@ -361,6 +380,11 @@ export function clearExpiredQueueEntries(): number {
     }
   }
 
+  // Same periodic cycle as the queue: drop owner/anon rate-limit keys that
+  // have not been touched within their window (multi-week DHT peer churn).
+  cleared += pruneStaleRateLimitMap(discoveryRequestRate, RATE_LIMIT_WINDOW_MS, now);
+  cleared += pruneStaleRateLimitMap(anonDiscoveryRate, ANON_RATE_LIMIT_WINDOW_MS, now);
+
   return cleared;
 }
 
@@ -372,6 +396,19 @@ export function __resetDiscoveryState(): void {
   discoveryRequestRate.clear();
   anonDiscoveryRate.clear();
   anonymousDiscoveryQueue.clear();
+}
+
+/** @internal Seed stale rate-limit keys for eviction tests. */
+export function __seedStaleDiscoveryRateLimitsForTests(nowMs: number = Date.now()): void {
+  discoveryRequestRate.set("envoy:owner:stale-rate", [nowMs - RATE_LIMIT_WINDOW_MS * 2]);
+  discoveryRequestRate.set("envoy:owner:fresh-rate", [nowMs - 1_000]);
+  anonDiscoveryRate.set("12D3KooWStaleAnonPeer", [nowMs - ANON_RATE_LIMIT_WINDOW_MS * 2]);
+  anonDiscoveryRate.set("12D3KooWFreshAnonPeer", [nowMs - 1_000]);
+}
+
+/** @internal Rate-limit Map sizes for eviction tests. */
+export function __discoveryRateLimitSizesForTests(): { owner: number; anon: number } {
+  return { owner: discoveryRequestRate.size, anon: anonDiscoveryRate.size };
 }
 
 export async function handleInboundDiscoveryIntent(input: {

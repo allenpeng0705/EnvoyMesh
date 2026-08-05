@@ -400,3 +400,31 @@ export function resolvePreferCircuitDialHints(
   if (explicit === false) return false;
   return shouldPreferCircuitDialHints(listenAddrs, dialHints, recipientPeerId);
 }
+
+/**
+ * After a successful dial, should outbound send keep `/p2p-circuit/` dialHints?
+ *
+ * Clearing hints on a connected relay path caused Win auto-bond to fail:
+ * dial PASS → limited stream open fails → redial with no circuit → hang.
+ *
+ * Rules:
+ * - Explicit `preferCircuitHints: false` (LAN-first call) never retains.
+ * - `bond.request` always retains (message-protocol WAN bond).
+ * - Explicit `preferCircuitHints: true` retains.
+ * - Otherwise retain when circuits are wanted and the peer is not direct
+ *   (relay-connected). Does **not** retain merely because dialHints contain
+ *   a circuit string — that would override LAN-first call delivery.
+ */
+export function shouldRetainCircuitDialHints(input: {
+  intent: string;
+  preferCircuitHints?: boolean;
+  wantCircuits?: boolean;
+  connectedDirect?: boolean;
+}): boolean {
+  // bond.request always retains — never let LAN-first override wipe circuit
+  // redial capability after a successful relay dial.
+  if (input.intent === "bond.request") return true;
+  if (input.preferCircuitHints === false) return false;
+  if (input.preferCircuitHints === true) return true;
+  return Boolean(input.wantCircuits) && input.connectedDirect === false;
+}

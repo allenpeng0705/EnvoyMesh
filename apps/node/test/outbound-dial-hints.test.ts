@@ -341,7 +341,57 @@ describe("resolvePreferCircuitDialHints", () => {
     expect(resolvePreferCircuitDialHints(true, listen, hints, "12D3KooWContact")).toBe(true);
     expect(resolvePreferCircuitDialHints(undefined, listen, hints, "12D3KooWContact")).toBe(true);
   });
+});
 
+describe("shouldRetainCircuitDialHints", () => {
+  it("always retains for bond.request", async () => {
+    const { shouldRetainCircuitDialHints } = await import("../src/outbound-dial-hints.js");
+    expect(
+      shouldRetainCircuitDialHints({
+        intent: "bond.request",
+        preferCircuitHints: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("honors explicit preferCircuitHints true/false for non-bond intents", async () => {
+    const { shouldRetainCircuitDialHints } = await import("../src/outbound-dial-hints.js");
+    expect(
+      shouldRetainCircuitDialHints({
+        intent: "call.invite",
+        preferCircuitHints: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRetainCircuitDialHints({
+        intent: "call.invite",
+        preferCircuitHints: false,
+        wantCircuits: true,
+        connectedDirect: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("retains relay-connected WAN paths when circuits are wanted", async () => {
+    const { shouldRetainCircuitDialHints } = await import("../src/outbound-dial-hints.js");
+    expect(
+      shouldRetainCircuitDialHints({
+        intent: "call.invite",
+        wantCircuits: true,
+        connectedDirect: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRetainCircuitDialHints({
+        intent: "call.invite",
+        wantCircuits: true,
+        connectedDirect: true,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("outbound-dial-hints helpers", () => {
   it("mergeDialablePeerListenAddrs drops ephemeral snapshot ports", async () => {
     const { mergeDialablePeerListenAddrs } = await import("../src/outbound-dial-hints.js");
     const peerId = "12D3KooWContact";

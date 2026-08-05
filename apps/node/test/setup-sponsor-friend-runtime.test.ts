@@ -181,6 +181,9 @@ describe("classifySponsorError", () => {
     expect(classifySponsorError("libp2p not yet started")).toBe(
       "mesh-not-ready",
     );
+    expect(
+      classifySponsorError("libp2p mesh not ready yet — deferring bond.request"),
+    ).toBe("mesh-not-ready");
   });
 
   it("classifies the observed limited-connection + ensurePeerReachable family as network-unreachable", () => {

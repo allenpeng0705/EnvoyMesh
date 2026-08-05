@@ -52,6 +52,7 @@ import {
   buildOutboundDialHints,
   mergeDialablePeerListenAddrs,
   shouldPreferCircuitDialHints,
+  shouldRetainCircuitDialHints,
   isMultiaddrPeerIdsValid,
 } from "./outbound-dial-hints.js";
 import { dialableInboundRemoteAddrs, mergeInboundPeerDialHintsIfDue } from "./inbound-dial-hint-learn.js";
@@ -756,13 +757,19 @@ export async function deliverCallEnvelopeViaRuntime(
     // fall back to redialing the same /p2p-circuit/ hint. Clearing hints
     // here caused: dial PASS → "Cannot open protocol stream on limited
     // connection" → retry with no circuit → hang/fail (Win auto-bond).
-    const keepCircuitHints =
-      preferCircuits ||
-      envelope.intent === "bond.request" ||
-      dialHints.some((h) => h.includes("/p2p-circuit/"));
+    // Explicit preferCircuitHints:false (LAN-first call) must not retain.
+    const keepCircuitHints = shouldRetainCircuitDialHints({
+      intent: envelope.intent,
+      preferCircuitHints,
+      wantCircuits: preferCircuits,
+      connectedDirect: conn.direct,
+    });
     const sendDialHints = keepCircuitHints ? dialHints : [];
-    const sendPreferCircuits =
-      keepCircuitHints || (preferCircuits && !conn.direct);
+    const sendPreferCircuits = keepCircuitHints
+      ? true
+      : preferCircuitHints === false
+        ? false
+        : preferCircuits && !conn.direct;
     if (conn.connected) {
       try {
         if (useChatProtocol) {

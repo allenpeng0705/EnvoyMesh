@@ -27,7 +27,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { handleInboundDiscoveryIntent, processDiscoveryQueue, getQueuedDiscoveryCount, clearExpiredQueueEntries, __resetDiscoveryState } from "../src/discovery-inbound.js";
+import { handleInboundDiscoveryIntent, processDiscoveryQueue, getQueuedDiscoveryCount, clearExpiredQueueEntries, __resetDiscoveryState, __seedStaleDiscoveryRateLimitsForTests, __discoveryRateLimitSizesForTests } from "../src/discovery-inbound.js";
 
 let profileDir: string;
 
@@ -302,5 +302,21 @@ describe("Discovery queue — processDiscoveryQueue", () => {
     const processed = await processDiscoveryQueue(meshInterface);
     expect(processed).toHaveLength(0);
     expect(meshInterface.send).not.toHaveBeenCalled();
+  });
+});
+
+describe("discovery rate-limit Map eviction", () => {
+  beforeEach(() => {
+    __resetDiscoveryState();
+  });
+
+  it("clearExpiredQueueEntries drops keys whose timestamps are outside the window", () => {
+    const now = Date.now();
+    __seedStaleDiscoveryRateLimitsForTests(now);
+    expect(__discoveryRateLimitSizesForTests()).toEqual({ owner: 2, anon: 2 });
+
+    const cleared = clearExpiredQueueEntries();
+    expect(cleared).toBe(2); // one stale owner + one stale anon
+    expect(__discoveryRateLimitSizesForTests()).toEqual({ owner: 1, anon: 1 });
   });
 });

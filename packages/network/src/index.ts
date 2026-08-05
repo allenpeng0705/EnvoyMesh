@@ -128,8 +128,9 @@ export function getEnvoyContactKeepAlivePeerTagName(): string {
  * idle TCP half-open state, or relay path expiry (often seen on Windows). We time out and force a fresh dial.
  *
  * Relay `/p2p-circuit` connections often carry `connection.limits` (Circuit Relay v2 "limited" conns).
- * `newStream()` throws `LimitedConnectionError` on those unless opting into `runOnLimitedConnection`.
- * Reusing them for Envoy app protocols is wrong — we only reuse **unlimited** connections and otherwise dial fresh.
+ * `newStream()` / `dialProtocol()` throw `LimitedConnectionError` unless
+ * `runOnLimitedConnection: true`. Envoy message/chat/data handlers are
+ * registered with that flag, and outbound circuit dials/reuse pass it too.
  */
 const NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS = 15_000;
 /** Fail fast when reusing an existing chat stream (stale direct TCP is common on LAN). */
@@ -3053,9 +3054,9 @@ export class EnvoyMesh {
       // refuses to open app streams on them unless runOnLimitedConnection is set —
       // otherwise callers see: "Cannot open protocol stream on limited connection"
       // (Win auto-bond after mesh.dial PASS → send redial).
-      const addrStr = String(addr);
-      const needsLimited =
-        Boolean(sendOptions?.preferCircuitHints) || addrStr.includes("/p2p-circuit");
+      // Only circuit multiaddrs need the flag — not every dial when
+      // preferCircuitHints is set (LAN TCP hints stay unlimited).
+      const needsLimited = String(addr).includes("/p2p-circuit");
       const stream = await promiseWithTimeout(
         needsLimited
           ? node.dialProtocol(addr as any, protocol, { runOnLimitedConnection: true })

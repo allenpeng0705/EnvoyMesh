@@ -4084,7 +4084,7 @@ async function runDiscoveryQueueCycle(): Promise<void> {
   // entirely stale, so the cost is negligible.
   const cleared = clearExpiredQueueEntries();
   if (cleared > 0) {
-    console.log(`[discovery-queue] pruned ${cleared} expired queue entries for fully-expired peers`);
+    console.log(`[discovery-queue] pruned ${cleared} expired discovery queue/rate-limit entries`);
   }
   const processed = await processDiscoveryQueue(meshInterface);
   if (processed.length > 0) {

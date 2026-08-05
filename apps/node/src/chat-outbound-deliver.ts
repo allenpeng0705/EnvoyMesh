@@ -13,6 +13,7 @@ import { parseChatDeliveredAck } from "@envoymesh/api/chat-delivered";
 import {
   resolvePreferCircuitDialHints,
   shouldPreferCircuitDialHints,
+  shouldRetainCircuitDialHints,
 } from "./outbound-dial-hints.js";
 import {
   clearOutboundPeerFreshness,
@@ -614,13 +615,22 @@ export async function deliverCallEnvelopeWithRetry(input: {
       }
 
       const sendConn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
+      // Connected sends usually clear dialHints (reuse open path). Retain when
+      // the caller explicitly asked for circuits or this is bond.request —
+      // otherwise limited-relay stream failures cannot redial the circuit.
+      const retainHints =
+        !sendConn.connected ||
+        shouldRetainCircuitDialHints({
+          intent: input.envelope.intent,
+          preferCircuitHints: input.preferCircuitHints,
+        });
       await input.mesh.sendChat(input.transportPeerId, input.envelope, {
-        dialHints: sendConn.connected ? [] : hints,
-        preferCircuitHints: sendConn.connected
+        dialHints: retainHints ? hints : [],
+        preferCircuitHints: !retainHints
           ? false
           : input.preferCircuitHints === false
             ? false
-            : preferCircuits || attempt > 0,
+            : preferCircuits || attempt > 0 || input.preferCircuitHints === true,
         forceFreshDial: attempt > 0,
       });
       if (attempt > 0) {
