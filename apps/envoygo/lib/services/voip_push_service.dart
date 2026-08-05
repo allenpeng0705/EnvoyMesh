@@ -16,7 +16,7 @@ import 'package:flutter/services.dart';
 ///    push-type header.
 /// 3. Surfaces incoming-call metadata to [CallProvider] via
 ///    [onIncomingCall], which in turn presents a CallKit screen
-///    through `flutter_callkit_incoming`.
+///    via the native `CXProvider` in `ios/Runner/AppDelegate.swift`.
 ///
 /// On non-iOS platforms, the service is a no-op stub.
 class VoipPushService {

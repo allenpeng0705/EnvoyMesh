@@ -35,8 +35,10 @@ class SecureStorage {
       // flutter_secure_storage on web uses an in-memory fallback.
       _storage = const FlutterSecureStorage();
     } else {
+      // v10+: Android uses custom ciphers (EncryptedSharedPreferences
+      // backend removed). migrateOnAlgorithmChange defaults to true.
       _storage = const FlutterSecureStorage(
-        aOptions: AndroidOptions(encryptedSharedPreferences: true),
+        aOptions: AndroidOptions(),
         iOptions: IOSOptions(
           accessibility: KeychainAccessibility.first_unlock_this_device,
         ),
@@ -54,7 +56,7 @@ class SecureStorage {
       _syncedStorage = const FlutterSecureStorage();
     } else {
       _syncedStorage = const FlutterSecureStorage(
-        aOptions: AndroidOptions(encryptedSharedPreferences: true),
+        aOptions: AndroidOptions(),
         iOptions: IOSOptions(
           accessibility: KeychainAccessibility.first_unlock,
           synchronizable: true,
