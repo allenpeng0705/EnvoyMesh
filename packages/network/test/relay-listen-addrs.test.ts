@@ -85,4 +85,29 @@ describe("relay-listen-addrs", () => {
       }),
     ).toEqual([`${CN}/p2p-circuit/p2p/${US}`]);
   });
+
+  it("rewrites private listen-form …/p2p-circuit (no trailing target) onto public base", () => {
+    expect(
+      buildRelayAdvertisedMultiaddrs({
+        listenAddrs: [`/ip4/127.0.0.1/tcp/4001/p2p/${CN_PEER}/p2p-circuit`],
+        preferredRelayBases: [CN],
+        usableRelayPeerIds: [CN_PEER],
+        selfPeerId: US,
+      }),
+    ).toEqual([`${CN}/p2p-circuit/p2p/${US}`]);
+  });
+
+  it("keeps direct LAN addrs even when no usable reservation (LAN recovery)", () => {
+    expect(
+      buildRelayAdvertisedMultiaddrs({
+        listenAddrs: [
+          `/ip4/192.168.3.85/tcp/4001/p2p/${US}`,
+          `${CN}/p2p-circuit/p2p/${US}`,
+        ],
+        preferredRelayBases: [CN],
+        usableRelayPeerIds: [],
+        selfPeerId: US,
+      }),
+    ).toEqual([`/ip4/192.168.3.85/tcp/4001/p2p/${US}`]);
+  });
 });

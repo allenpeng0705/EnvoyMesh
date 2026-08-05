@@ -674,7 +674,9 @@ export class EnvoyMesh {
     // from "everything is fine" in the existing log stream.
     this.installRelayLogging();
 
-    await this.node.handle(ENVOY_DATA_PROTOCOL, async (stream: any, connection: any) => {
+    await this.node.handle(
+      ENVOY_DATA_PROTOCOL,
+      async (stream: any, connection: any) => {
       const remotePeerId = connection.remotePeer.toString();
       this.emitP2pDebug({
         kind: "stream:open",
@@ -710,7 +712,9 @@ export class EnvoyMesh {
           direction: "inbound",
         });
       }
-    });
+    },
+      { runOnLimitedConnection: true },
+    );
 
     // node.start() starts all transports including circuit-relay-v2. When relay
     // is enabled, the relay transport may try to reach configured relay servers
@@ -825,9 +829,16 @@ export class EnvoyMesh {
       this.multiaddrs,
       this.preferredRelayPeerIds,
     );
+    // Prefer health-loop bases (always set after warmAndWatch). Fall back to
+    // construct-time configured relays so a checkin that races the health
+    // loop still rewrites private hop views onto a public dial base.
+    const preferredRelayBases =
+      this.reservationHealthRelayAddrs.length > 0
+        ? this.reservationHealthRelayAddrs
+        : (this.options.configuredRelayAddrs ?? []);
     return buildRelayAdvertisedMultiaddrs({
       listenAddrs: filtered,
-      preferredRelayBases: this.reservationHealthRelayAddrs,
+      preferredRelayBases,
       usableRelayPeerIds: this.listUsableRelayPeerIds(),
       selfPeerId: this.node ? this.peerId : undefined,
     });
@@ -2412,7 +2423,7 @@ export class EnvoyMesh {
     protocol: string,
     handler: (stream: any, connection: any) => Promise<void>,
   ): Promise<void> {
-    await this.requireNode().handle(protocol, handler);
+    await this.requireNode().handle(protocol, handler, { runOnLimitedConnection: true });
   }
 
   /**
@@ -2946,6 +2957,25 @@ export class EnvoyMesh {
     const reuseStreamTimeoutMs = streamReuseTimeoutMs(protocol);
 
     if (peerIdStr && !sendOptions?.forceFreshDial) {
+      // Prefer limited (circuit-relay) reuse when the caller asked for circuits —
+      // those connections have `limits` set and are invisible to findOpenConnectionToPeer.
+      const preferLimited =
+        Boolean(sendOptions?.preferCircuitHints) && !skipLimitedReuse;
+      if (preferLimited) {
+        const limitedExisting = this.findLimitedConnectionToPeer(node, peerIdStr);
+        if (limitedExisting) {
+          const opened = await this.openStreamOnConnection(
+            limitedExisting,
+            protocol,
+            true,
+            reuseStreamTimeoutMs,
+          );
+          if (opened) {
+            return opened;
+          }
+        }
+      }
+
       const existing = this.findOpenConnectionToPeer(node, peerIdStr);
       if (existing) {
         const opened = await this.openStreamOnConnection(
@@ -2960,19 +2990,21 @@ export class EnvoyMesh {
       }
 
       // After a failed direct reuse, always try relay (stale direct + live circuit is common).
-      const limitedExisting = this.findLimitedConnectionToPeer(node, peerIdStr);
-      if (limitedExisting) {
-        const opened = await this.openStreamOnConnection(
-          limitedExisting,
-          protocol,
-          true,
-          reuseStreamTimeoutMs,
-        );
-        if (opened) {
-          return opened;
+      if (!preferLimited) {
+        const limitedExisting = this.findLimitedConnectionToPeer(node, peerIdStr);
+        if (limitedExisting) {
+          const opened = await this.openStreamOnConnection(
+            limitedExisting,
+            protocol,
+            true,
+            reuseStreamTimeoutMs,
+          );
+          if (opened) {
+            return opened;
+          }
+        } else if (!skipLimitedReuse) {
+          /* no limited conn to reuse; fall through to dial hints */
         }
-      } else if (!skipLimitedReuse) {
-        /* no limited conn to reuse; fall through to dial hints */
       }
     }
 
@@ -3017,8 +3049,17 @@ export class EnvoyMesh {
     };
 
     const dialOnce = async (addr: Multiaddr | string): Promise<{ stream: any; remotePeerId?: string }> => {
+      // Circuit-relay v2 hops are "limited" connections. libp2p's dialProtocol
+      // refuses to open app streams on them unless runOnLimitedConnection is set —
+      // otherwise callers see: "Cannot open protocol stream on limited connection"
+      // (Win auto-bond after mesh.dial PASS → send redial).
+      const addrStr = String(addr);
+      const needsLimited =
+        Boolean(sendOptions?.preferCircuitHints) || addrStr.includes("/p2p-circuit");
       const stream = await promiseWithTimeout(
-        node.dialProtocol(addr as any, protocol),
+        needsLimited
+          ? node.dialProtocol(addr as any, protocol, { runOnLimitedConnection: true })
+          : node.dialProtocol(addr as any, protocol),
         HINT_DIAL_TIMEOUT_MS,
         `dial ${String(addr).slice(0, 64)}`,
       );
@@ -3348,7 +3389,12 @@ export class EnvoyMesh {
    * are not supported — each logical message requires a fresh stream.
    */
   private async installEnvelopeInboundHandler(protocol: string): Promise<void> {
-    await this.requireNode().handle(protocol, async (stream: any, connection: any) => {
+    // Circuit-relay v2 inbound hops are limited; without this flag libp2p aborts
+    // the stream after negotiation with LimitedConnectionError and peers never
+    // see bond.request / chat over WAN relay.
+    await this.requireNode().handle(
+      protocol,
+      async (stream: any, connection: any) => {
       const remotePeerId = connection.remotePeer.toString();
       console.log(`[network] INBOUND STREAM: protocol=${protocol}, remotePeerId=${remotePeerId}`);
       this.emitP2pDebug({
@@ -3422,7 +3468,9 @@ export class EnvoyMesh {
           direction: "inbound",
         });
       }
-    });
+    },
+      { runOnLimitedConnection: true },
+    );
   }
 
   private async dispatchData(message: InboundDataTransfer): Promise<void> {

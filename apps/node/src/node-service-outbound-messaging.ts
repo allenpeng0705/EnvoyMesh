@@ -751,32 +751,59 @@ export async function deliverCallEnvelopeViaRuntime(
       }
     }
     const wasConnected = conn.connected;
+    // Circuit / bond sends must keep dialHints after a successful dial.
+    // Relay connections are often "limited"; stream open can fail and must
+    // fall back to redialing the same /p2p-circuit/ hint. Clearing hints
+    // here caused: dial PASS → "Cannot open protocol stream on limited
+    // connection" → retry with no circuit → hang/fail (Win auto-bond).
+    const keepCircuitHints =
+      preferCircuits ||
+      envelope.intent === "bond.request" ||
+      dialHints.some((h) => h.includes("/p2p-circuit/"));
+    const sendDialHints = keepCircuitHints ? dialHints : [];
+    const sendPreferCircuits =
+      keepCircuitHints || (preferCircuits && !conn.direct);
     if (conn.connected) {
       try {
         if (useChatProtocol) {
           await mesh.sendChat(transportPeerId, envelope, {
-            dialHints: [],
-            preferCircuitHints: preferCircuits && !conn.direct,
+            dialHints: sendDialHints,
+            preferCircuitHints: sendPreferCircuits,
           });
         } else {
           await mesh.send(transportPeerId, envelope, {
-            dialHints: [],
-            preferCircuitHints: preferCircuits && !conn.direct,
+            dialHints: sendDialHints,
+            preferCircuitHints: sendPreferCircuits,
           });
         }
         webrtcCallTrace("node:deliver-call-fast-path-ok", {
           peer: shortCallId(transportPeerId),
           direct: conn.direct,
         });
+        if (envelope.intent === "bond.request") {
+          bondTrace(3, "PASS", "bond.request sent on connected path", {
+            peer: transportPeerId.slice(0, 16),
+            direct: conn.direct,
+          });
+        }
         return { delivered: true, deliveredAt: new Date().toISOString() };
       } catch (fastErr) {
+        const errMsg = fastErr instanceof Error ? fastErr.message : String(fastErr);
         webrtcCallWarn("node:deliver-call-fast-path-failed", {
           peer: shortCallId(transportPeerId),
-          error: fastErr instanceof Error ? fastErr.message.slice(0, 120) : String(fastErr),
+          error: errMsg.slice(0, 120),
         });
+        if (envelope.intent === "bond.request") {
+          bondTrace(3, "FAIL", "connected send failed after dial — retrying with circuit hints", {
+            peer: transportPeerId.slice(0, 16),
+            error: errMsg.slice(0, 140),
+            hintCount: dialHints.length,
+            keepCircuitHints,
+          });
+        }
         console.warn(
           `[call] connected send failed for ${transportPeerId.slice(0, 12)}…, retrying:`,
-          fastErr instanceof Error ? fastErr.message : fastErr,
+          errMsg,
         );
       }
     }
@@ -784,13 +811,14 @@ export async function deliverCallEnvelopeViaRuntime(
       mesh,
       transportPeerId,
       envelope,
-      dialHints: wasConnected ? [] : dialHints,
+      dialHints: wasConnected && !keepCircuitHints ? [] : dialHints,
       // Keep LAN listen addrs for call invite retries (short LAN dial timeout).
-      peerListenAddrs: wasConnected ? [] : listenAddrs,
-      preferCircuitHints: preferCircuits,
-      rebuildDialHints: wasConnected
-        ? undefined
-        : () => dialHintsForChatViaRuntime(ctx, transportPeerId, listenAddrs),
+      peerListenAddrs: wasConnected && !keepCircuitHints ? [] : listenAddrs,
+      preferCircuitHints: keepCircuitHints || preferCircuits,
+      rebuildDialHints:
+        wasConnected && !keepCircuitHints
+          ? undefined
+          : () => dialHintsForChatViaRuntime(ctx, transportPeerId, listenAddrs),
     });
   });
 }

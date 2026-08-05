@@ -35,6 +35,19 @@ function isPrivateRelayBase(base: string): boolean {
 }
 
 /**
+ * Private-hop check that also covers listen-form `…/p2p-circuit` (no trailing
+ * `/p2p/<target>`). `isPrivateRelayHopCircuitDialHint` requires `/p2p-circuit/`.
+ */
+function isPrivateCircuitAdvertiseAddr(addr: string): boolean {
+  const a = addr.trim();
+  if (isPrivateRelayHopCircuitDialHint(a)) return true;
+  if (/\/p2p-circuit$/.test(a)) {
+    return isPrivateRelayHopCircuitDialHint(`${a}/p2p/_`);
+  }
+  return false;
+}
+
+/**
  * Multiaddrs safe to publish via relay.checkin / WAN invite.
  *
  * - Drops `/p2p-circuit/` paths whose hop is not in `usableRelayPeerIds`
@@ -81,13 +94,14 @@ export function buildRelayAdvertisedMultiaddrs(input: {
     if (!hop || !usable.has(hop)) continue;
 
     const target = circuitTargetPeerId(addr) ?? input.selfPeerId;
-    if (isPrivateRelayHopCircuitDialHint(addr)) {
+    if (isPrivateCircuitAdvertiseAddr(addr)) {
       const bases = basesByPeer.get(hop) ?? [];
       for (const base of bases) {
         if (!target) break;
         const circuit = relayCircuitToPeer(base, target);
         if (circuit) add(circuit);
       }
+      // Never publish loopback/RFC1918 hop circuits (listen or dial form).
       continue;
     }
     add(addr);
