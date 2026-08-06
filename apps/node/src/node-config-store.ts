@@ -373,6 +373,35 @@ export function createDefaultPersistedNodeConfig(profileDir: string): PersistedN
 export function createNodeConfigStore(profileDir: string): NodeConfigStore {
   const path = join(profileDir, NODE_CONFIG_FILE);
 
+  // Serialize config writes so two concurrent save() calls (or a save()
+  // and a load()'s normalization write) don't interleave. On Windows,
+  // writeNodeConfigFile does unlink(path) → rename(tmp, path) because
+  // rename cannot overwrite an existing file. That creates a window where
+  // the file is temporarily absent — a concurrent load() would hit ENOENT
+  // and return undefined, causing updateNodeConfigViaRuntime to fall back
+  // to createDefaultPersistedNodeConfig() and clobber user-saved fields
+  // (worker profile, capabilityProviderEnabled, bond autonomy, …). The
+  // write chain serializes the unlink+rename critical sections so only one
+  // write is in flight at a time.
+  let writeChain: Promise<void> = Promise.resolve();
+  // In-memory snapshot of the last successfully loaded/saved config. When
+  // load() hits ENOENT during the Windows rename window (or any transient
+  // absence), we return this snapshot instead of undefined so concurrent
+  // updaters don't reset to defaults. This is strictly better than returning
+  // undefined: the caller sees a slightly stale config instead of losing
+  // every field the user had saved.
+  let cachedConfig: PersistedNodeConfig | undefined;
+
+  /** Run a disk write on the serialized write chain. Errors are caught on
+   *  the chain (so a failed write doesn't poison all future writes) but
+   *  re-thrown to the caller so they can audit/react. */
+  function serializedWrite(payload: PersistedNodeConfig): Promise<void> {
+    const next = writeChain.then(() => writeNodeConfigFile(path, payload));
+    // Swallow errors on the stored chain so subsequent writes still run.
+    writeChain = next.catch(() => undefined);
+    return next;
+  }
+
   return {
     async load() {
       try {
@@ -381,15 +410,17 @@ export function createNodeConfigStore(profileDir: string): NodeConfigStore {
         if (isValidNodeConfig(parsed)) {
           const normalized = withDefaultAutonomousPolicies(parsed);
           if (autonomousPoliciesChanged(parsed, normalized)) {
-            await writeNodeConfigFile(path, normalized);
+            await serializedWrite(normalized);
           }
+          cachedConfig = normalized;
           return normalized;
         }
         const reason = describeNodeConfigValidationFailure(parsed);
         const migrated = tryMigrateNodeConfig(parsed, profileDir);
         if (migrated) {
           console.warn(`[node-config] ${path} invalid (${reason}); migrated and repaired`);
-          await writeNodeConfigFile(path, migrated);
+          await serializedWrite(migrated);
+          cachedConfig = migrated;
           return migrated;
         }
         const salvaged = tryMigrateNodeConfig(
@@ -398,7 +429,8 @@ export function createNodeConfigStore(profileDir: string): NodeConfigStore {
         );
         if (salvaged) {
           console.warn(`[node-config] ${path} invalid (${reason}); repaired with defaults`);
-          await writeNodeConfigFile(path, salvaged);
+          await serializedWrite(salvaged);
+          cachedConfig = salvaged;
           return salvaged;
         }
         if (!warnedInvalidConfigPaths.has(path)) {
@@ -424,7 +456,19 @@ export function createNodeConfigStore(profileDir: string): NodeConfigStore {
             // Override profileDir with the actual runtime profile dir —
             // the bundled file is canonical for the other fields, but the
             // user's actual profile dir is canonical for where state lives.
-            return { ...bundled, profileDir, updatedAt: new Date().toISOString() };
+            const result = { ...bundled, profileDir, updatedAt: new Date().toISOString() };
+            cachedConfig = result;
+            return result;
+          }
+          // The file may be temporarily absent during a concurrent save's
+          // Windows unlink+rename window. Return the cached snapshot so the
+          // caller doesn't fall back to createDefaultPersistedNodeConfig
+          // and clobber user-saved fields (worker profile, capability flag,
+          // bond autonomy, etc.). Without this, restarting the node while
+          // a background save is in flight would reset the worker profile
+          // to "disabled and empty" — the exact symptom reported on Windows.
+          if (cachedConfig) {
+            return cachedConfig;
           }
           return undefined;
         }
@@ -434,11 +478,17 @@ export function createNodeConfigStore(profileDir: string): NodeConfigStore {
     },
 
     async save(config) {
-      await writeNodeConfigFile(path, {
+      const payload: PersistedNodeConfig = {
         ...config,
         profileDir,
         updatedAt: new Date().toISOString(),
-      });
+      };
+      // Update the cache BEFORE the serialized write lands so a concurrent
+      // load() hitting the ENOENT window sees the new values rather than the
+      // previous snapshot. If the write fails the cache is stale, but that's
+      // strictly better than undefined → default-reset.
+      cachedConfig = payload;
+      await serializedWrite(payload);
     },
 
     async exists() {

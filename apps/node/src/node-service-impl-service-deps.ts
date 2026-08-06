@@ -300,6 +300,11 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
               host._advertiseInterestsStartupTimeout = undefined;
               return t;
             },
+            getAndClearAgentCardRefreshStartupTimeout: () => {
+              const t = host._agentCardRefreshStartupTimeout;
+              host._agentCardRefreshStartupTimeout = undefined;
+              return t;
+            },
             getAndClearEarlyRelayCheckinTimer: () => {
               const t = host._earlyRelayCheckinTimer;
               host._earlyRelayCheckinTimer = undefined;
@@ -409,6 +414,9 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             setAdvertiseInterestsStartupTimeout: (t) => {
               host._advertiseInterestsStartupTimeout = t;
             },
+            setAgentCardRefreshStartupTimeout: (t) => {
+              host._agentCardRefreshStartupTimeout = t;
+            },
             setLastNodeError: (v) => {
               host._lastNodeError = v;
             },
@@ -422,6 +430,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             resyncBondedContactReachabilityTags: () =>
               host.resyncBondedContactReachabilityTags(),
             refreshCapabilityIndex: () => host.refreshCapabilityIndex(),
+            refreshAgentNetworkWorkers: () => host.refreshAgentNetworkWorkers(),
             scheduleDeferredProfileRefresh: (reason) =>
               host._scheduleDeferredProfileRefresh(reason),
             advertiseInterestsIfPublic: () => host._advertiseInterestsIfPublic(),

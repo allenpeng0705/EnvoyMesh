@@ -2120,13 +2120,15 @@ async function handleInboundMeshMessage({
             }),
             getOwnOwnerId: () => profile?.owner.ownerId ?? "",
             enableCapabilityProvider: async () => {
-              const cfg = await nodeConfigStore.load();
-              if (!cfg) return;
-              await nodeConfigStore.save({
-                ...cfg,
+              // Route through the public updateNodeConfig API so the flag is
+              // merged with the current on-disk config (preserving the worker
+              // profile and every other user-saved field) instead of doing a
+              // direct load-spread-save that can race with concurrent saves.
+              // The config store's write serialization + in-memory cache
+              // handles the Windows unlink+rename window.
+              await nodeService.updateNodeConfig({
                 capabilityProviderEnabled: true,
-                updatedAt: new Date().toISOString(),
-              });
+              } as Parameters<typeof nodeService.updateNodeConfig>[0]);
             },
           },
           {

@@ -2696,6 +2696,7 @@ class NodeServiceImpl implements NodeService {
   /** Topics auto-advertised from public profile (interests, username, geo) — cancelled when profile/network changes. */
   private _autoAdvertisedDiscoveryTopics: string[] = [];
   private _advertiseInterestsStartupTimeout?: ReturnType<typeof setTimeout>;
+  private _agentCardRefreshStartupTimeout?: ReturnType<typeof setTimeout>;
   private _stopRelayClientScheduler?: () => void;
   private _relayClientCycleDeps?: RelayClientCycleDeps;
   private _capabilityDiscoveryTimer?: ReturnType<typeof setTimeout>;
@@ -7556,13 +7557,17 @@ class NodeServiceImpl implements NodeService {
       getProfile: () => this._profile ?? null,
       appendAudit: (event) => this._taskStore!.appendAuditEvent(event),
       enableCapabilityProvider: async () => {
-        const cfg = await this._configStore.load();
-        if (!cfg) return;
-        await this._configStore.save({
-          ...cfg,
+        // Route through updateNodeConfigViaRuntime so the capability flag is
+        // merged with the current on-disk config instead of overwriting it
+        // with a stale snapshot. The previous direct save() loaded the config,
+        // flipped the flag, and wrote the whole thing back — if another save
+        // landed between the load and the write (e.g. the user editing their
+        // worker profile, or a sponsor-friend loop persisting attempt state),
+        // those changes were silently clobbered. The merge path also benefits
+        // from the config store's write serialization + in-memory cache.
+        await updateNodeConfigViaRuntime(this._nodeConfigContext(), {
           capabilityProviderEnabled: true,
-          updatedAt: new Date().toISOString(),
-        });
+        } as Partial<NodeConfig>);
       },
     });
   }

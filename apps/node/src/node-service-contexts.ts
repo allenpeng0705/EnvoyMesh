@@ -245,6 +245,7 @@ export interface StopNodeContextDeps {
   clearExternalMesh: StopNodeContext["clearExternalMesh"];
   getAndClearAdvertiseInterestsTimer: StopNodeContext["getAndClearAdvertiseInterestsTimer"];
   getAndClearAdvertiseInterestsStartupTimeout: StopNodeContext["getAndClearAdvertiseInterestsStartupTimeout"];
+  getAndClearAgentCardRefreshStartupTimeout: StopNodeContext["getAndClearAgentCardRefreshStartupTimeout"];
   getAndClearEarlyRelayCheckinTimer: StopNodeContext["getAndClearEarlyRelayCheckinTimer"];
   getDeviceId: StopNodeContext["getDeviceId"];
 }
@@ -284,12 +285,14 @@ export interface StartNodeContextDeps {
   setStopNodeStatsLogging: StartNodeContext["setStopNodeStatsLogging"];
   setCapabilityDiscoveryTimer: StartNodeContext["setCapabilityDiscoveryTimer"];
   setAdvertiseInterestsStartupTimeout: StartNodeContext["setAdvertiseInterestsStartupTimeout"];
+  setAgentCardRefreshStartupTimeout: StartNodeContext["setAgentCardRefreshStartupTimeout"];
   setLastNodeError: StartNodeContext["setLastNodeError"];
   setLastNodeErrorAt: StartNodeContext["setLastNodeErrorAt"];
   setNodeProcessStartedAtMs: StartNodeContext["setNodeProcessStartedAtMs"];
   startBondWarmInterval: StartNodeContext["startBondWarmInterval"];
   resyncBondedContactReachabilityTags: StartNodeContext["resyncBondedContactReachabilityTags"];
   refreshCapabilityIndex: StartNodeContext["refreshCapabilityIndex"];
+  refreshAgentNetworkWorkers: StartNodeContext["refreshAgentNetworkWorkers"];
   scheduleDeferredProfileRefresh: StartNodeContext["scheduleDeferredProfileRefresh"];
   advertiseInterestsIfPublic: StartNodeContext["advertiseInterestsIfPublic"];
   loadHumanProfile: StartNodeContext["loadHumanProfile"];
@@ -800,6 +803,7 @@ export function buildStopNodeContext(deps: StopNodeContextDeps): StopNodeContext
     },
     getAndClearAdvertiseInterestsTimer: () => deps.getAndClearAdvertiseInterestsTimer(),
     getAndClearAdvertiseInterestsStartupTimeout: () => deps.getAndClearAdvertiseInterestsStartupTimeout(),
+    getAndClearAgentCardRefreshStartupTimeout: () => deps.getAndClearAgentCardRefreshStartupTimeout(),
     getAndClearEarlyRelayCheckinTimer: () => deps.getAndClearEarlyRelayCheckinTimer(),
     getDeviceId: () => deps.getDeviceId(),
   };
@@ -918,6 +922,9 @@ export function buildStartNodeContext(deps: StartNodeContextDeps): StartNodeCont
     setAdvertiseInterestsStartupTimeout: (t) => {
       deps.setAdvertiseInterestsStartupTimeout(t);
     },
+    setAgentCardRefreshStartupTimeout: (t) => {
+      deps.setAgentCardRefreshStartupTimeout(t);
+    },
     setLastNodeError: (v) => {
       deps.setLastNodeError(v);
     },
@@ -931,6 +938,7 @@ export function buildStartNodeContext(deps: StartNodeContextDeps): StartNodeCont
     resyncBondedContactReachabilityTags: () =>
       deps.resyncBondedContactReachabilityTags(),
     refreshCapabilityIndex: () => deps.refreshCapabilityIndex(),
+    refreshAgentNetworkWorkers: () => deps.refreshAgentNetworkWorkers(),
     scheduleDeferredProfileRefresh: (reason) =>
       deps.scheduleDeferredProfileRefresh(reason),
     advertiseInterestsIfPublic: () => deps.advertiseInterestsIfPublic(),

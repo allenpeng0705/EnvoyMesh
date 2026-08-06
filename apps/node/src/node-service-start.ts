@@ -171,12 +171,19 @@ export interface StartNodeContext {
   setStopNodeStatsLogging(fn: (() => void) | undefined): void;
   setCapabilityDiscoveryTimer(timer: NodeJS.Timeout | undefined): void;
   setAdvertiseInterestsStartupTimeout(timer: NodeJS.Timeout | undefined): void;
+  /** Track the startup agent-card refresh timer so it can be cleared on stop. */
+  setAgentCardRefreshStartupTimeout(timer: NodeJS.Timeout | undefined): void;
   setLastNodeError(value: string | undefined): void;
   setLastNodeErrorAt(value: string | undefined): void;
   setNodeProcessStartedAtMs(ms: number): void;
   startBondWarmInterval(): void;
   resyncBondedContactReachabilityTags(): Promise<void>;
   refreshCapabilityIndex(): Promise<void>;
+  /** Re-fetch agent cards from all bonded peers. Called on startup so peer
+   *  worker profiles (capabilityProvider flag, agentNetworkProfile) are fresh
+   *  after a restart — without this, the Team jobs view shows stale cached
+   *  cards that may not reflect the peer's current opt-in state. */
+  refreshAgentNetworkWorkers(): Promise<{ requested: number; failed: number }>;
   scheduleDeferredProfileRefresh(reason: string): void;
   advertiseInterestsIfPublic(): Promise<void>;
   loadHumanProfile(): Promise<import("@envoymesh/api").HumanProfile | undefined>;
@@ -481,6 +488,19 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     void ctx.refreshCapabilityIndex().catch((err) => {
       console.warn("[chain] refreshCapabilityIndex after node:online failed:", err);
     });
+    // Re-fetch agent cards from bonded peers shortly after going online so the
+    // Team jobs view reflects each peer's current capabilityProvider /
+    // agentNetworkProfile state. Without this, a restart leaves the local node
+    // with stale cached cards — if a peer's opt-in or profile changed (or was
+    // lost due to a config bug), the local node wouldn't see the update until
+    // someone manually clicked "Refresh workers". The 5s delay gives the mesh
+    // time to re-establish direct connections before we fire card requests.
+    const agentCardRefresh = setTimeout(() => {
+      void ctx.refreshAgentNetworkWorkers().catch((err) => {
+        console.warn("[chain] refreshAgentNetworkWorkers after node:online failed:", err);
+      });
+    }, 5_000);
+    ctx.setAgentCardRefreshStartupTimeout(agentCardRefresh);
     ctx.startBondWarmInterval();
 
     // Wait for DHT to populate the routing table before advertising.
