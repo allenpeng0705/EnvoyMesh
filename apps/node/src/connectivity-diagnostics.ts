@@ -85,6 +85,25 @@ export function buildConnectivityDiagnostics(
     );
   }
 
+  // CGNAT / constrained-network suggestion: when the node is on a DHT-enabled
+  // mode (not quietWan/aggressive) but the public DHT is unreachable
+  // (bootstrap failing) and there's visible connection churn, suggest trying
+  // quietWan. This is a SUGGESTION, not auto-apply — false positives on a node
+  // that's actually reachable would silently disable public-DHT discovery.
+  // See docs/connectivity-internals-and-design.md Open Question #1.
+  const connectivityMode = input.config?.connectivityMode ?? "optimized";
+  const dhtStillOn = connectivityMode !== "quietWan" && connectivityMode !== "aggressive";
+  const bootstrapFailing =
+    axes.bootstrapReachability.state === "fail" || axes.bootstrapReachability.state === "degraded";
+  const churnSymptom = (connStats?.totalPeerIds ?? 0) > 32 || (connStats?.dialQueueLength ?? 0) > 20;
+  if (dhtStillOn && bootstrapFailing && churnSymptom) {
+    hints.push(
+      "High connection churn with the public DHT unreachable — your node may be behind CGNAT or a restrictive NAT. " +
+        "Consider switching to 'Quiet WAN' mode (Settings → Resource Tuning) to disable the public DHT swarm and rely on relay-roster discovery. " +
+        "This stops the churn while keeping WAN relay + LAN discovery.",
+    );
+  }
+
   return {
     checkedAt: new Date().toISOString(),
     nodeOnline: input.nodeOnline,

@@ -11,7 +11,13 @@
 import { describe, expect, it } from "vitest";
 import { buildConnectivityDiagnostics } from "../src/connectivity-diagnostics.js";
 
-function makeMeshStub(opts: { failureStreak: number; state: "failed" | "pending" | "reserved"; live?: boolean }) {
+function makeMeshStub(opts: {
+  failureStreak: number;
+  state: "failed" | "pending" | "reserved";
+  live?: boolean;
+  totalPeerIds?: number;
+  dialQueueLength?: number;
+}) {
   return {
     getRelayReservationStatus: () => ({
       state: opts.state,
@@ -24,11 +30,12 @@ function makeMeshStub(opts: { failureStreak: number; state: "failed" | "pending"
       checkedAt: new Date().toISOString(),
     }),
     getConnectionStats: () => ({
-      totalPeerIds: 0,
-      totalConnections: 0,
+      totalPeerIds: opts.totalPeerIds ?? 0,
+      totalConnections: opts.totalPeerIds ?? 0,
       circuitPeerIds: [],
       circuitConnections: 0,
       connectedPeerIds: [],
+      ...(opts.dialQueueLength != null ? { dialQueueLength: opts.dialQueueLength } : {}),
     }),
   } as never;
 }
@@ -105,5 +112,67 @@ describe("buildConnectivityDiagnostics — sustained relay failure hint (M2)", (
     const diag = buildConnectivityDiagnostics({ ...baseInput, mesh });
     const relayHint = diag.hints.find((h) => h.startsWith("Relay unreachable"));
     expect(relayHint).toBeUndefined();
+  });
+});
+
+describe("buildConnectivityDiagnostics — CGNAT quietWan suggestion", () => {
+  // Audit events that produce a failing bootstrap axis (probe failures with
+  // no successes → bootstrapReachability.state === "fail"). The profile event
+  // must include `bootstrap=N` so bootstrapPeerCount > 0 (otherwise the axis
+  // reports "disabled" instead of "fail").
+  const failingBootstrapEvents = [
+    { type: "p2p.trace", protocol: "connectivity.profile", summary: "profile=wan-default bootstrap=23 relay=true dht=true", direction: "outbound", outcome: "record", createdAt: "2026-08-06T10:00:00.000Z" },
+    { type: "p2p.trace", protocol: "connectivity.bootstrap.fail", summary: "47.93.11.212:4001 unreachable", direction: "outbound", outcome: "record", createdAt: "2026-08-06T10:00:01.000Z" },
+    { type: "p2p.trace", protocol: "connectivity.bootstrap.fail", summary: "104.131.5.41:4001 unreachable", direction: "outbound", outcome: "record", createdAt: "2026-08-06T10:00:02.000Z" },
+  ] as never;
+
+  it("suggests quietWan when DHT-on + bootstrap failing + high churn", () => {
+    const diag = buildConnectivityDiagnostics({
+      nodeOnline: true,
+      config: { discoveryProfile: "wan-default", connectivityMode: "optimized" } as never,
+      auditEvents: failingBootstrapEvents,
+      mesh: makeMeshStub({ failureStreak: 0, state: "pending", totalPeerIds: 80, dialQueueLength: 200 }),
+    });
+    const suggestion = diag.hints.find((h) => h.includes("Quiet WAN"));
+    expect(suggestion, "should suggest Quiet WAN when churn + unreachable DHT on a DHT-enabled mode").toBeTruthy();
+    expect(suggestion).toContain("CGNAT");
+  });
+
+  it("does NOT suggest quietWan when already on quietWan", () => {
+    const diag = buildConnectivityDiagnostics({
+      nodeOnline: true,
+      config: { discoveryProfile: "wan-default", connectivityMode: "quietWan" } as never,
+      auditEvents: failingBootstrapEvents,
+      mesh: makeMeshStub({ failureStreak: 0, state: "pending", totalPeerIds: 80, dialQueueLength: 200 }),
+    });
+    const suggestion = diag.hints.find((h) => h.includes("Quiet WAN"));
+    expect(suggestion, "should not suggest quietWan when already on it").toBeUndefined();
+  });
+
+  it("does NOT suggest quietWan when there's no churn (peers low)", () => {
+    const diag = buildConnectivityDiagnostics({
+      nodeOnline: true,
+      config: { discoveryProfile: "wan-default", connectivityMode: "optimized" } as never,
+      auditEvents: failingBootstrapEvents,
+      mesh: makeMeshStub({ failureStreak: 0, state: "pending", totalPeerIds: 5, dialQueueLength: 2 }),
+    });
+    const suggestion = diag.hints.find((h) => h.includes("Quiet WAN"));
+    expect(suggestion, "no churn → no suggestion").toBeUndefined();
+  });
+
+  it("does NOT suggest quietWan when bootstrap is healthy", () => {
+    // Healthy bootstrap: one success, no failures.
+    const healthyEvents = [
+      { type: "p2p.trace", protocol: "connectivity.profile", summary: "profile=wan-default bootstrap=23 relay=true dht=true", direction: "outbound", outcome: "record", createdAt: "2026-08-06T10:00:00.000Z" },
+      { type: "p2p.trace", protocol: "connectivity.bootstrap.ok", summary: "47.93.11.212:4001 reachable", direction: "outbound", outcome: "record", createdAt: "2026-08-06T10:00:01.000Z" },
+    ] as never;
+    const diag = buildConnectivityDiagnostics({
+      nodeOnline: true,
+      config: { discoveryProfile: "wan-default", connectivityMode: "optimized" } as never,
+      auditEvents: healthyEvents,
+      mesh: makeMeshStub({ failureStreak: 0, state: "pending", totalPeerIds: 80, dialQueueLength: 200 }),
+    });
+    const suggestion = diag.hints.find((h) => h.includes("Quiet WAN"));
+    expect(suggestion, "healthy bootstrap → no suggestion").toBeUndefined();
   });
 });
