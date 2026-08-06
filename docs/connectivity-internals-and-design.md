@@ -710,13 +710,17 @@ considering a default change.
 
 ### Open questions
 
-1. **Should `quietWan` auto-activate on CGNAT detection?** Allen's node shows
-   clear CGNAT signals (UPnP returns private IP, STUN fails). We could detect
-   this at startup and suggest (or auto-apply) `quietWan`. **Decision: do NOT
-   auto-apply yet** — UPnP returning a private IP has false positives (networks
-   where UPnP is merely disabled but the node is reachable). False positives are
-   costly because they disable the public DHT unnecessarily. Start with a
-   Settings suggestion prompt only.
+1. **Should `quietWan` auto-activate on CGNAT detection?** ✅ **Resolved &
+   implemented.** The node now runs a CGNAT detection pass at startup
+   (`detectCgnatAtStartup`) that uses three *definitive* signals: symmetric NAT
+   (two STUN servers see different mappings), RFC 6598 CGNAT range IP, and
+   UPnP-private external IP. When any one fires AND the operator hasn't
+   explicitly chosen a mode, `quietWan` is auto-applied for that startup.
+   Ambiguous results (STUN timeout, no UPnP) do NOT auto-apply — they fall
+   through to the churn-based Settings suggestion. The earlier "false positives
+   are costly" concern is resolved because the detection is now deterministic,
+   not a guess. See `apps/node/src/cgnat-detection.ts` + `stun.ts`
+   (`detectNatType`, `classifyCgnat`).
 
 2. **Should we fully deprecate the public DHT?** Given that every discovery path
    has a relay-roster fallback, the public DHT's only unique value is finding
