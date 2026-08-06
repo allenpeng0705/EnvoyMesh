@@ -97,6 +97,7 @@ export {
   DEFAULT_MDNS_INTERVAL_MS,
   PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD,
   PRUNE_EXCESS_SWARM_MAX_PEERS,
+  pruneThresholdForMaxConnections,
   scanLibp2pConnectionsFlat,
   scanLibp2pConnectionsMap,
   type MeshConnectionStats,

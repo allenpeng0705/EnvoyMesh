@@ -3022,6 +3022,7 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
       stopNodeStatsLogging = startNodeStatsInterval(mesh, {
         processStartedAtMs: processStartedAt,
         relayRosterSize: () => relayRoster.entries().length,
+        maxConnections: connectivityRuntime.maxConnections,
       });
 
       await registerClientProxyHandler();

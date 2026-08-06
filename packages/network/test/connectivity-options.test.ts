@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EnvoyMesh } from "../src/index.js";
+import { EnvoyMesh, pruneThresholdForMaxConnections, PRUNE_EXCESS_SWARM_MAX_PEERS } from "../src/index.js";
 
 describe("EnvoyMesh connectivity options", () => {
   it("reports enabled local and wide-area connectivity features", () => {
@@ -62,5 +62,33 @@ describe("EnvoyMesh connectivity options", () => {
 
     expect(mesh.enabledFeatures).toContain("reachability-log");
     expect(mesh.enabledFeatures).not.toContain("mdns");
+  });
+});
+
+describe("pruneThresholdForMaxConnections (C1)", () => {
+  it("tracks maxConnections minus an 8-slot headroom", () => {
+    // quietWan = 24 → prune at 16 (don't over-prune legitimate LAN peers)
+    expect(pruneThresholdForMaxConnections(24)).toBe(16);
+    // optimized/normal = 48 → prune at 40
+    expect(pruneThresholdForMaxConnections(48)).toBe(40);
+    // smart = 40 → prune at 32
+    expect(pruneThresholdForMaxConnections(40)).toBe(32);
+  });
+
+  it("floors at 8 so a very-low cap doesn't prune below viability", () => {
+    expect(pruneThresholdForMaxConnections(10)).toBe(8);
+    expect(pruneThresholdForMaxConnections(4)).toBe(8);
+  });
+
+  it("falls back to the fixed default when maxConnections is unknown", () => {
+    expect(pruneThresholdForMaxConnections(undefined)).toBe(PRUNE_EXCESS_SWARM_MAX_PEERS);
+    expect(pruneThresholdForMaxConnections(0)).toBe(PRUNE_EXCESS_SWARM_MAX_PEERS);
+    expect(pruneThresholdForMaxConnections(-1)).toBe(PRUNE_EXCESS_SWARM_MAX_PEERS);
+  });
+
+  it("quietWan threshold (16) is lower than optimized threshold (40)", () => {
+    // The point of C1: a quietWan node shouldn't prune at the same 32 threshold
+    // as an optimized node — it has a smaller connection budget.
+    expect(pruneThresholdForMaxConnections(24)).toBeLessThan(pruneThresholdForMaxConnections(48));
   });
 });

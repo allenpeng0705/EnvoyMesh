@@ -389,6 +389,7 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     ctx.setStopNodeStatsLogging(undefined);
     const stopStats = startNodeStatsInterval(mesh as never, {
       processStartedAtMs: Date.now(),
+      maxConnections: connectivityRuntime.maxConnections,
     });
     ctx.setStopNodeStatsLogging(() => stopStats);
 
