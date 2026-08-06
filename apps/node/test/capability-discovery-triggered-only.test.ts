@@ -2,58 +2,95 @@
  * Phase 3 (B2) — discovery is always *triggered*, never free-running.
  *
  * Locks in the principle from `docs/connectivity-internals-and-design.md`
- * Solution B2: `shouldRunPeriodicCapabilityFind` always returns false, so the
- * capability-discovery cycle never auto-runs a DHT findProviders on a timer.
- * Discovery runs only when explicitly requested (on-demand search, agent tool,
- * bond flow).
- *
- * A future where an AI agent proactively discovers peers for a Team job is
- * still *agent-triggered* (tied to a task) — never a background poll.
+ * Solution B2: periodic/startup capability cycles advertise only. DHT
+ * findProviders runs only when the caller passes `runFind: true` (Discover UI,
+ * agent tool, bond flow) or `source === "on-demand"`.
  */
-import { describe, expect, it } from "vitest";
-import { shouldRunPeriodicCapabilityFind } from "../src/connectivity-runtime.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  runCapabilityDiscoveryCycleViaRuntime,
+  type CapabilityDiscoveryContext,
+} from "../src/node-service-capability-discovery.js";
 
-function makeRuntime(overrides: Record<string, unknown> = {}): never {
+const mocks = vi.hoisted(() => ({
+  runCapabilityDiscoveryCycle: vi.fn(async () => undefined),
+  buildAutoCapabilityTopics: vi.fn(() => ["topic-1"]),
+  buildProfileDiscoveryTopics: vi.fn(() => ["topic-1"]),
+}));
+
+vi.mock("../src/capability-discovery.js", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  buildAutoCapabilityTopics: mocks.buildAutoCapabilityTopics,
+  buildProfileDiscoveryTopics: mocks.buildProfileDiscoveryTopics,
+  runCapabilityDiscoveryCycle: mocks.runCapabilityDiscoveryCycle,
+}));
+
+function makeCtx(): CapabilityDiscoveryContext {
   return {
-    enableDht: true,
-    lazyCapabilityDiscovery: false,
-    connectivityMode: "normal",
-    maxConnections: 48,
-    mdnsIntervalMs: 10_000,
-    mdnsPolicy: "on",
-    capabilityDiscoveryIntervalMs: 90_000,
-    idleTimerStretch: false,
-    connectionMonitorPingIntervalMs: 45_000,
-    bondWarmIntervalMs: 300_000,
-    bondWarmPerContactCooldownMs: 300_000,
-    bondWarmEventDriven: false,
-    relayCycleBaseMs: 30_000,
-    forceDisableDht: false,
-    relayIdleStretchMaxMultiplier: 2,
-    ...overrides,
-  } as never;
+    getMesh: () => ({ peerId: "peer-1" }),
+    getProfile: () => ({ deviceCertificate: { capabilities: ["rust"] } }),
+    getTaskStore: () => ({ appendAudit: vi.fn() } as never),
+    getDiscoverySeedStore: () => ({ upsert: vi.fn() } as never),
+    loadConfig: async () => ({ discoveryProfile: "lan-fast" }),
+    loadHumanProfile: async () => undefined,
+    getCapabilityDiscoveryTimer: () => undefined,
+    setCapabilityDiscoveryTimer: () => {},
+    syncPairingKioskFromConfig: async () => {},
+    getProfileDir: () => undefined,
+  };
 }
 
-describe("shouldRunPeriodicCapabilityFind — discovery is triggered only (B2)", () => {
-  it("returns false even when DHT is enabled and lazy is off (normal preset)", () => {
-    // This is the case that USED to return true (the legacy periodic find on
-    // the normal preset). It must now return false — no background discovery.
-    expect(shouldRunPeriodicCapabilityFind(makeRuntime({ enableDht: true, lazyCapabilityDiscovery: false }))).toBe(false);
+const runtime = {
+  enableDht: true,
+  capabilityDiscoveryJitterMs: 0,
+  capabilityDiscoveryIntervalMsEffective: () => 60_000,
+} as never;
+
+describe("capability discovery runFind wiring — triggered only (B2)", () => {
+  beforeEach(() => {
+    mocks.runCapabilityDiscoveryCycle.mockReset();
+    mocks.runCapabilityDiscoveryCycle.mockResolvedValue(undefined);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("periodic cycle does not auto-run findProviders", async () => {
+    await runCapabilityDiscoveryCycleViaRuntime(makeCtx(), "periodic", {
+      connectivityRuntime: runtime,
+    });
+    const callArg = mocks.runCapabilityDiscoveryCycle.mock.calls[0]?.[0] as {
+      options: { runFind: boolean };
+    };
+    expect(callArg.options.runFind).toBe(false);
   });
 
-  it("returns false on every connectivity mode", () => {
-    for (const mode of ["normal", "optimized", "smart", "aggressive", "quietWan"] as const) {
-      expect(shouldRunPeriodicCapabilityFind(makeRuntime({ connectivityMode: mode }))).toBe(false);
-    }
+  it("startup cycle does not auto-run findProviders", async () => {
+    await runCapabilityDiscoveryCycleViaRuntime(makeCtx(), "startup", {
+      connectivityRuntime: runtime,
+    });
+    const callArg = mocks.runCapabilityDiscoveryCycle.mock.calls[0]?.[0] as {
+      options: { runFind: boolean };
+    };
+    expect(callArg.options.runFind).toBe(false);
   });
 
-  it("returns false when DHT is disabled", () => {
-    expect(shouldRunPeriodicCapabilityFind(makeRuntime({ enableDht: false }))).toBe(false);
+  it("on-demand source enables findProviders", async () => {
+    await runCapabilityDiscoveryCycleViaRuntime(makeCtx(), "on-demand", {
+      connectivityRuntime: runtime,
+    });
+    const callArg = mocks.runCapabilityDiscoveryCycle.mock.calls[0]?.[0] as {
+      options: { runFind: boolean };
+    };
+    expect(callArg.options.runFind).toBe(true);
   });
 
-  it("returns false regardless of the legacy lazyCapabilityDiscovery flag", () => {
-    // lazyCapabilityDiscovery used to gate this; now it's irrelevant.
-    expect(shouldRunPeriodicCapabilityFind(makeRuntime({ lazyCapabilityDiscovery: true }))).toBe(false);
-    expect(shouldRunPeriodicCapabilityFind(makeRuntime({ lazyCapabilityDiscovery: false }))).toBe(false);
+  it("explicit runFind: true still wins on periodic source", async () => {
+    await runCapabilityDiscoveryCycleViaRuntime(makeCtx(), "periodic", {
+      connectivityRuntime: runtime,
+      runFind: true,
+    });
+    const callArg = mocks.runCapabilityDiscoveryCycle.mock.calls[0]?.[0] as {
+      options: { runFind: boolean };
+    };
+    expect(callArg.options.runFind).toBe(true);
   });
 });

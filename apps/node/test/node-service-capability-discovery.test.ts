@@ -12,17 +12,12 @@ import {
 const mocks = vi.hoisted(() => ({
   runCapabilityDiscoveryCycle: vi.fn(async () => undefined),
   buildAutoCapabilityTopics: vi.fn(() => ["topic-1", "topic-2"]),
-  shouldRunPeriodicCapabilityFind: vi.fn(() => true),
 }));
 
 vi.mock("../src/capability-discovery.js", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   buildAutoCapabilityTopics: mocks.buildAutoCapabilityTopics,
   runCapabilityDiscoveryCycle: mocks.runCapabilityDiscoveryCycle,
-}));
-
-vi.mock("../src/connectivity-runtime.js", () => ({
-  shouldRunPeriodicCapabilityFind: mocks.shouldRunPeriodicCapabilityFind,
 }));
 
 function makeCtx(

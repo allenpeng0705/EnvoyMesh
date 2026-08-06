@@ -22,10 +22,7 @@ import {
   withPublishDiscoveryTopics,
   withWebContentDiscoveryTopic,
 } from "./capability-discovery.js";
-import {
-  shouldRunPeriodicCapabilityFind,
-  type ResolvedConnectivityRuntime,
-} from "./connectivity-runtime.js";
+import type { ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import type { LocalTaskStore } from "@envoymesh/local-store";
 import type { DiscoveryProfile } from "@envoymesh/api";
@@ -126,11 +123,9 @@ export async function runCapabilityDiscoveryCycleViaRuntime(
     enableDht: connectivityRuntime.enableDht,
     options: {
       source,
-      runFind:
-        opts.runFind ??
-        (source === "on-demand"
-          ? true
-          : shouldRunPeriodicCapabilityFind(connectivityRuntime)),
+      // Discovery find is triggered-only (B2): on-demand / explicit runFind.
+      // Periodic and startup cycles advertise only — never free-running findProviders.
+      runFind: opts.runFind ?? source === "on-demand",
     },
   });
   // Mirror capability + publish topics into relay checkin so NAT peers

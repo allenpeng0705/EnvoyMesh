@@ -270,7 +270,6 @@ import { runCapabilityDiscoveryCycle, buildProfileDiscoveryTopics } from "./capa
 import {
   resolveConnectivityRuntime,
   recordMeshActivity,
-  shouldRunPeriodicCapabilityFind,
   type ResolvedConnectivityRuntime,
 } from "./connectivity-runtime.js";
 import { configureBondWarmFromConnectivity } from "./node-service-reachability.js";
@@ -4448,13 +4447,9 @@ async function runLocalCapabilityDiscoveryCycle(
     enableDht: args.enableDht,
     options: {
       source,
-      runFind:
-        opts?.runFind ??
-        (source === "on-demand"
-          ? true
-          : source === "startup"
-            ? shouldRunPeriodicCapabilityFind(connectivityRuntime)
-            : shouldRunPeriodicCapabilityFind(connectivityRuntime)),
+      // Discovery find is triggered-only (B2): on-demand / explicit runFind.
+      // Periodic and startup cycles advertise only — never free-running findProviders.
+      runFind: opts?.runFind ?? source === "on-demand",
     },
   });
 }

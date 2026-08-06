@@ -105,24 +105,3 @@ export function resolveConnectivityRuntime(input: {
     capabilityDiscoveryIntervalMsEffective: () => stretch(capabilityBase),
   };
 }
-
-/**
- * Whether the periodic capability-discovery cycle should also run a DHT
- * `findProviders` (the discovery side) automatically.
- *
- * Always returns **false**: discovery is *triggered only*, never free-running.
- * A find runs when a human or an AI agent (acting on a human's behalf)
- * explicitly searches — a manual Discover search, an agent calling
- * `searchPeers` for a task, a bond flow resolving a sponsor. There is no
- * background "every N minutes" discovery loop.
- *
- * This codifies the principle from
- * `docs/connectivity-internals-and-design.md` Solution B2. The `runtime`
- * argument is retained for signature stability and for the (now-dead)
- * `lazyCapabilityDiscovery` field, which previously gated this on the
- * `normal` preset only. Keeping the parameter avoids touching every call site
- * in this pass; a later cleanup can remove it.
- */
-export function shouldRunPeriodicCapabilityFind(_runtime: ResolvedConnectivityRuntime): boolean {
-  return false;
-}

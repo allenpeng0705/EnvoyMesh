@@ -32,10 +32,10 @@ describe("connectivity-tuning", () => {
     expect(discoveryProfileDefaultEnableMdns("contacts-only")).toBe(true);
   });
 
-  it("lazy capability discovery defaults false on WAN (note: periodic find removed in B2)", () => {
-    // resolveLazyCapabilityDiscovery reports the lazy *flag* only; the actual
-    // periodic-find gate (shouldRunPeriodicCapabilityFind) is now always false
-    // regardless of this flag — discovery is triggered only (Phase 3 / B2).
+  it("lazy capability discovery defaults false on WAN (periodic find removed in B2)", () => {
+    // resolveLazyCapabilityDiscovery reports the legacy lazy *flag* only.
+    // Periodic DHT findProviders was removed in Phase 3 / B2 — discovery is
+    // triggered only via on-demand / explicit runFind.
     expect(resolveLazyCapabilityDiscovery("wan-default")).toBe(false);
     expect(resolveLazyCapabilityDiscovery("relay-only")).toBe(false);
   });
