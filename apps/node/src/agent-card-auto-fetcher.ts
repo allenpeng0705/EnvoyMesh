@@ -174,7 +174,13 @@ export function createAgentCardAutoFetcher(
         try {
           const resolved = await deps.resolvePeerTransport(peerOwnerId);
           transportPeerId = resolved.transportPeerId;
-          recipientEnvelopePeerId = resolved.recipientEnvelopePeerId ?? resolved.transportPeerId;
+          // Issue 1 (complete fix): do NOT fall back to transportPeerId when
+          // recipientEnvelopePeerId is undefined. The resolver intentionally
+          // returns undefined when the device key is unknown (see
+          // peer-transport-resolve.ts). The old `?? resolved.transportPeerId`
+          // fallback would set a raw libp2p ID (12D3KooW...) as the envelope
+          // recipient — the same header-hygiene bug as the short-circuit path.
+          recipientEnvelopePeerId = resolved.recipientEnvelopePeerId;
           listenAddrs = resolved.listenAddrs;
           dialHints = resolved.dialHints;
         } catch {
