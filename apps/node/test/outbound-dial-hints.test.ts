@@ -438,25 +438,28 @@ describe("pickAddressFilterForPeer", () => {
   // Helper: sponsor peer-id used only to make multiaddrs look real.
   const SPONSOR = "12D3KooWSponsor";
 
-  it("returns \"wan-public\" when peer has public circuit + LAN (strip home LAN on wan)", async () => {
+  it("returns \"all\" when peer has public circuit + LAN (LAN-first, circuit as fallback)", async () => {
     const { pickAddressFilterForPeer } = await import("../src/outbound-dial-hints.js");
     const peerAddrs = [
       `/ip4/192.168.3.85/tcp/64589/p2p/${SPONSOR}`,
       `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${SPONSOR}`,
     ];
-    // Public circuit exists → strip RFC1918 so WAN installs do not dial
-    // the sponsor's home LAN (or a private-hop circuit) first.
-    expect(pickAddressFilterForPeer(peerAddrs, "wan-default")).toBe("wan-public");
-    expect(pickAddressFilterForPeer(peerAddrs, undefined)).toBe("wan-public");
+    // LAN-first: when the peer has a LAN TCP address, try it first (same-LAN
+    // peers respond in <1s). Keep the public circuit as fallback via "all".
+    // The old behavior stripped LAN when a public circuit existed, causing
+    // same-LAN peers to show "online-relay" instead of "online-direct".
+    expect(pickAddressFilterForPeer(peerAddrs, "wan-default")).toBe("all");
+    expect(pickAddressFilterForPeer(peerAddrs, undefined)).toBe("all");
   });
 
-  it("returns \"wan-public\" when peer has public + private-hop circuits", async () => {
+  it("returns \"all\" when peer has public + private-hop circuits", async () => {
     const { pickAddressFilterForPeer } = await import("../src/outbound-dial-hints.js");
     const peerAddrs = [
       `/ip4/192.168.3.85/tcp/4001/p2p/12D3KooWLanRelay/p2p-circuit/p2p/${SPONSOR}`,
       `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${SPONSOR}`,
     ];
-    expect(pickAddressFilterForPeer(peerAddrs, "wan-default")).toBe("wan-public");
+    // Private-hop circuit → keep (same-LAN relay) rather than stripping.
+    expect(pickAddressFilterForPeer(peerAddrs, "wan-default")).toBe("all");
   });
 
   it("returns \"all\" when peer has only private LAN (no circuit yet)", async () => {

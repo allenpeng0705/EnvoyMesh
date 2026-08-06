@@ -101,10 +101,18 @@ export function pickAddressFilterForPeer(
     (addr) => addr.includes("/p2p-circuit/") && !isPrivateRelayHopCircuitDialHint(addr),
   );
 
-  // Prefer stripping home-LAN / private-hop circuits when a public circuit
-  // exists — otherwise WAN installs burn 8s+ on 192.168.x hops first.
+  // LAN-first: when the peer has a private LAN TCP address, try it first
+  // (mDNS-discovered same-LAN peers respond in <1s). Keep public circuits as
+  // fallback via "all" — do NOT strip LAN addresses just because a public
+  // circuit exists. The old behavior (hasPublicCircuit → "wan-public") caused
+  // same-LAN peers to connect via relay ("online-relay") instead of direct
+  // ("online-direct") until a message triggered an upgrade.
+  if (hasLan) return "all";
+  if (hasPrivateCircuit) return "all";
+
+  // Pure WAN peer with a public circuit — strip RFC1918/private-hop circuits
+  // so WAN installs don't burn 8s+ on unreachable 192.168.x hops.
   if (hasPublicCircuit) return "wan-public";
-  if (hasLan || hasPrivateCircuit) return "all";
 
   return "wan-public";
 }
