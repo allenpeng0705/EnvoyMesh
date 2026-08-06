@@ -444,6 +444,24 @@ export interface EnvoyMeshOptions {
    * nodes; relay-server nodes stay uncapped unless set explicitly.
    */
   maxConnections?: number;
+  /**
+   * When enabled, a libp2p `connectionGater` blocks outbound dials to peers
+   * NOT in the set returned by {@link allowedDialPeerIds}. This is
+   * defense-in-depth for quietWan / DHT-off modes: even if some path
+   * (bootstrap, identify) introduces an anonymous peer, the gater refuses the
+   * dial at the libp2p layer before it opens a connection. Default OFF — must
+   * never be set on relay servers (would break circuit hopping from arbitrary
+   * peers). See docs/connectivity-internals-and-design.md Solution A2.
+   */
+  strictDialPolicy?: boolean;
+  /**
+   * Callback returning the current set of peer IDs that {@link strictDialPolicy}
+   * permits dialing. Evaluated on every dial attempt so it stays dynamic as
+   * bonds form and discovery seeds arrive. Should include: configured relays,
+   * bonded contacts, mDNS/relay-roster discovered peers. When it returns
+   * undefined, ALL peers are allowed (gater effectively disabled for that dial).
+   */
+  allowedDialPeerIds?: () => Set<string> | undefined;
 }
 
 export interface CapabilityTopicProviderRecord {
@@ -634,6 +652,22 @@ export class EnvoyMesh {
       transportManager: {
         faultTolerance: FaultTolerance.NO_FATAL,
       },
+      // Optional strict dial policy (A2): block outbound dials to peers not in
+      // the allow-set. Defense-in-depth for quietWan / DHT-off modes — stops
+      // anonymous DHT peers at the libp2p layer before a connection opens.
+      // Default off; MUST NOT be enabled on relay servers (would break hops).
+      ...(this.options.strictDialPolicy && this.options.allowedDialPeerIds
+        ? {
+            connectionGater: {
+              denyDialPeer: (peerId: { toString(): string }): boolean => {
+                const allowed = this.options.allowedDialPeerIds?.();
+                // No allow-set → allow all (gater effectively disabled).
+                if (!allowed || allowed.size === 0) return false;
+                return !allowed.has(peerId.toString());
+              },
+            },
+          }
+        : {}),
       connectionMonitor: {
         pingInterval: this.options.connectionMonitorPingIntervalMs ?? 45_000,
         abortConnectionOnPingFailure: false,
