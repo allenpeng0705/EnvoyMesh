@@ -316,8 +316,14 @@ export async function runCapabilityDiscoveryCycle(deps: {
     return;
   }
 
+  // Discovery (findProviders) runs only when explicitly requested via
+  // `options.runFind: true` (on-demand search). It is never auto-run on a
+  // periodic timer — `shouldRunPeriodicCapabilityFind` always returns false
+  // (see connectivity-runtime.ts). The profile gate below additionally
+  // ensures we only query the DHT on profiles that actually use it.
+  // See docs/connectivity-internals-and-design.md Solution B2.
   const runFind =
-    options.runFind !== false &&
+    options.runFind === true &&
     shouldRunCapabilityTopicFind(profile);
   const queryTimeoutMs = options.queryTimeoutMs ?? CAPABILITY_DISCOVERY_QUERY_TIMEOUT_MS;
   const limit = options.limit ?? CAPABILITY_DISCOVERY_MAX_PROVIDERS;
