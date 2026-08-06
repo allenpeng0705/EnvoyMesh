@@ -12,6 +12,7 @@ import {
   sendEnvelopeWithRetry,
   type OutboundDeliverMesh,
 } from "./chat-outbound-deliver.js";
+import { isLibp2pPeerId } from "./profile-sync-outbound.js";
 
 /** Mesh / libp2p transport surface needed to send a signed envelope. */
 export type AgentCardAutoFetcherMesh = OutboundDeliverMesh & Pick<EnvoyMesh, "peerId">;
@@ -44,24 +45,53 @@ export interface AgentCardAutoFetcherDeps {
   maxAgeMs?: number;
   /** Per-fetch timeout. Default: 5s. */
   fetchTimeoutMs?: number;
+  /**
+   * Minimum time between auto-fetch attempts for the same peer. Prevents send
+   * storms when bonds re-establish repeatedly (e.g. flapping LAN/relay links).
+   * Default: 5 min. The startup/manual `refreshAgentNetworkWorkers` path is
+   * NOT subject to this cooldown — it calls `requestAgentCard` directly.
+   */
+  refetchCooldownMs?: number;
   /** Optional clock injection for tests. */
   now?: () => number;
 }
 
 export interface AgentCardAutoFetcherResult {
-  outcome: "skipped-fresh" | "skipped-public" | "skipped-no-transport" | "sent" | "failed";
+  outcome: "skipped-fresh" | "skipped-public" | "skipped-no-transport" | "skipped-cooldown" | "sent" | "failed";
   reason?: string;
 }
 
 const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_FETCH_TIMEOUT_MS = 5_000;
+const DEFAULT_REFETCH_COOLDOWN_MS = 5 * 60 * 1000;
+/**
+ * Issue 4: prune entries older than 2× the cooldown so the map doesn't grow
+ * unbounded on long-lived nodes with many bonds/reconnections. The fetcher
+ * is created once and lives for the entire process lifetime.
+ */
+const LAST_FETCH_PRUNE_INTERVAL_MS = 10 * 60 * 1000;
+const LAST_FETCH_MAX_AGE_MS = DEFAULT_REFETCH_COOLDOWN_MS * 2;
 
 export function createAgentCardAutoFetcher(
   deps: AgentCardAutoFetcherDeps,
 ): { onBondEstablished: (input: { peerOwnerId: string; remotePeerId: string }) => Promise<AgentCardAutoFetcherResult> } {
   const maxAgeMs = deps.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
   const fetchTimeoutMs = deps.fetchTimeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
+  const refetchCooldownMs = deps.refetchCooldownMs ?? DEFAULT_REFETCH_COOLDOWN_MS;
   const now = deps.now ?? (() => Date.now());
+  /** Last auto-fetch attempt timestamp per peerOwnerId (ms epoch). */
+  const lastFetchAttempt = new Map<string, number>();
+
+  // Issue 4: periodic prune so the map doesn't grow unbounded on long-lived
+  // nodes. Entries older than 2× the cooldown are no longer useful (the
+  // cooldown has long expired) and can be safely evicted.
+  const pruneTimer = setInterval(() => {
+    const cutoff = now() - LAST_FETCH_MAX_AGE_MS;
+    for (const [key, ts] of lastFetchAttempt) {
+      if (ts < cutoff) lastFetchAttempt.delete(key);
+    }
+  }, LAST_FETCH_PRUNE_INTERVAL_MS);
+  pruneTimer.unref?.();
 
   return {
     async onBondEstablished({ peerOwnerId, remotePeerId }) {
@@ -101,26 +131,66 @@ export function createAgentCardAutoFetcher(
         // Ignore cache-read errors and proceed with the fetch.
       }
 
-      // 3. Resolve transport.
+      // 3. Refetch cooldown — skip if we attempted recently. Prevents send
+      //    storms when bonds re-establish repeatedly on flapping links. The
+      //    cooldown is per-ownerId so a healthy peer isn't blocked by a
+      //    different peer's failure.
+      const lastAttempt = lastFetchAttempt.get(peerOwnerId) ?? 0;
+      if (now() - lastAttempt < refetchCooldownMs) {
+        // Issue 2: log at debug so flapping-link cooldown skips are
+        // diagnosable without flooding the audit log (which would be
+        // unreadable under heavy flap). Not an audit event — cooldown is
+        // expected behavior, not a failure.
+        const elapsed = Math.round((now() - lastAttempt) / 1000);
+        console.debug(
+          `[agent-card] auto-fetch cooldown: ${peerOwnerId.slice(0, 16)}… last attempt ${elapsed}s ago (cooldown ${refetchCooldownMs / 1000}s)`,
+        );
+        return { outcome: "skipped-cooldown", reason: "cooldown" };
+      }
+      lastFetchAttempt.set(peerOwnerId, now());
+
+      // 4. Resolve transport — prefer the remotePeerId from the bond handler
+      //    (known-connected libp2p peer) over a peer-directory lookup. The
+      //    directory may hold stale listen addrs from a previous session, so
+      //    dialing via it can silently fail even though we have a live
+      //    inbound connection from the bond handshake.
       let transportPeerId: string | undefined;
       let recipientEnvelopePeerId: string | undefined;
       let listenAddrs: string[] | undefined;
       let dialHints: string[] | undefined;
-      try {
-        const resolved = await deps.resolvePeerTransport(peerOwnerId);
-        transportPeerId = resolved.transportPeerId;
-        recipientEnvelopePeerId = resolved.recipientEnvelopePeerId ?? resolved.transportPeerId;
-        listenAddrs = resolved.listenAddrs;
-        dialHints = resolved.dialHints;
-      } catch {
-        // fall through
+      if (remotePeerId && isLibp2pPeerId(remotePeerId)) {
+        // Issue 1: we know the libp2p transport peer (it's connected right
+        // now from the bond handshake), but we do NOT know the device's
+        // Envoy peer ID from the bond alone. The envelope's recipientPeerId
+        // should be the device peer ID (envoy_<hash>) when known, or
+        // undefined when unknown — NOT the raw libp2p ID (12D3KooW...).
+        // Setting a libp2p ID as recipientPeerId is incorrect header
+        // hygiene for agent intents. Leave it undefined; the recipient
+        // resolves via the transport connection, not the envelope header.
+        transportPeerId = remotePeerId;
+        recipientEnvelopePeerId = undefined;
+        dialHints = [`/p2p/${remotePeerId}`];
+      } else {
+        try {
+          const resolved = await deps.resolvePeerTransport(peerOwnerId);
+          transportPeerId = resolved.transportPeerId;
+          recipientEnvelopePeerId = resolved.recipientEnvelopePeerId ?? resolved.transportPeerId;
+          listenAddrs = resolved.listenAddrs;
+          dialHints = resolved.dialHints;
+        } catch {
+          // fall through
+        }
       }
-      if (!transportPeerId || !recipientEnvelopePeerId) {
+      // Issue 1: recipientEnvelopePeerId may be legitimately undefined when
+      // we have a live libp2p transport but don't know the device's Envoy
+      // peer ID. The transport is what matters — the envelope is delivered
+      // over the libp2p stream regardless of the recipientPeerId header.
+      if (!transportPeerId) {
         await auditFailure(deps.taskStore, remotePeerId, "no-agent-peer");
         return { outcome: "skipped-no-transport", reason: "no-transport" };
       }
 
-      // 4. Build + send the signed agent.card.request envelope.
+      // 5. Build + send the signed agent.card.request envelope.
       const envelope = signUnsignedEnvelope(
         createUnsignedEnvelope({
           senderPeerId: deps.bridgeIdentity.agentPeerId,

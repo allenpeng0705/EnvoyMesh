@@ -485,7 +485,12 @@ describe("AgentCardAutoFetcher — fresh-cache skip + public skip", () => {
           recipientEnvelopePeerId: undefined,
         }),
       });
-      const r = await fetcher.onBondEstablished({ peerOwnerId: "friend", remotePeerId: "rp" });
+      // Use an envoy_ envelope id so the fetcher falls back to
+      // resolvePeerTransport (which returns undefined here).
+      const r = await fetcher.onBondEstablished({
+        peerOwnerId: "friend",
+        remotePeerId: "envoy_notlibp2p",
+      });
       expect(r.outcome).toBe("skipped-no-transport");
       expect(send).not.toHaveBeenCalled();
     } finally {

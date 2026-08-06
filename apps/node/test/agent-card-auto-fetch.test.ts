@@ -247,3 +247,152 @@ describe("AgentCardAutoFetcher — integration with inbound handler", () => {
     }
   });
 });
+
+describe("AgentCardAutoFetcher — cooldown + remotePeerId short-circuit (Issue 3)", () => {
+  it("cooldown skips the second fetch within the cooldown window", async () => {
+    const t = await tempDir();
+    try {
+      const taskStore = createLocalTaskStore(t.dir);
+      const trustStore = createLocalTrustStore(t.dir);
+      const agentCardStore = createAgentCardStore(t.dir);
+      await trustStore.setTrustRecord({ peerOwnerId: "peer-flap", level: "direct" });
+
+      const bridge = makeBridgeIdentity();
+      const mesh = createOutboundMeshMock();
+      const fetcher = createAgentCardAutoFetcher({
+        mesh: { ...mesh, peerId: "12D3KooWSelf" },
+        bridgeIdentity: bridge,
+        agentCardStore,
+        trustStore,
+        taskStore,
+        resolvePeerTransport: async () => ({
+          transportPeerId: "tp",
+          recipientEnvelopePeerId: "tp-recipient",
+        }),
+        fetchTimeoutMs: 200,
+        refetchCooldownMs: 5_000,
+      });
+
+      // First bond → sends.
+      const r1 = await fetcher.onBondEstablished({ peerOwnerId: "peer-flap", remotePeerId: "12D3KooWTest1" });
+      expect(r1.outcome).toBe("sent");
+
+      // Second bond within cooldown → skipped-cooldown (no send).
+      const r2 = await fetcher.onBondEstablished({ peerOwnerId: "peer-flap", remotePeerId: "12D3KooWTest1" });
+      expect(r2.outcome).toBe("skipped-cooldown");
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("libp2p remotePeerId short-circuits to transport directly (no resolvePeerTransport call)", async () => {
+    const t = await tempDir();
+    try {
+      const taskStore = createLocalTaskStore(t.dir);
+      const trustStore = createLocalTrustStore(t.dir);
+      const agentCardStore = createAgentCardStore(t.dir);
+      await trustStore.setTrustRecord({ peerOwnerId: "peer-direct", level: "direct" });
+
+      const bridge = makeBridgeIdentity();
+      let resolvedCalled = false;
+
+      const mesh = createOutboundMeshMock();
+      const fetcher = createAgentCardAutoFetcher({
+        mesh: { ...mesh, peerId: "12D3KooWSelf" },
+        bridgeIdentity: bridge,
+        agentCardStore,
+        trustStore,
+        taskStore,
+        // resolvePeerTransport should NOT be called for a libp2p remotePeerId.
+        resolvePeerTransport: async () => {
+          resolvedCalled = true;
+          return { transportPeerId: "should-not-be-used", recipientEnvelopePeerId: "x" };
+        },
+        fetchTimeoutMs: 200,
+      });
+
+      const libp2pId = "12D3KooWDirectPeerXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
+      const r = await fetcher.onBondEstablished({ peerOwnerId: "peer-direct", remotePeerId: libp2pId });
+      expect(r.outcome).toBe("sent");
+      expect(resolvedCalled).toBe(false); // short-circuit did not call resolver
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("envoy_ remotePeerId falls through to resolvePeerTransport", async () => {
+    const t = await tempDir();
+    try {
+      const taskStore = createLocalTaskStore(t.dir);
+      const trustStore = createLocalTrustStore(t.dir);
+      const agentCardStore = createAgentCardStore(t.dir);
+      await trustStore.setTrustRecord({ peerOwnerId: "peer-envoyid", level: "direct" });
+
+      const bridge = makeBridgeIdentity();
+      let resolvedOwnerId: string | undefined;
+
+      const mesh = createOutboundMeshMock();
+      const fetcher = createAgentCardAutoFetcher({
+        mesh: { ...mesh, peerId: "12D3KooWSelf" },
+        bridgeIdentity: bridge,
+        agentCardStore,
+        trustStore,
+        taskStore,
+        resolvePeerTransport: async (ownerId: string) => {
+          resolvedOwnerId = ownerId;
+          return { transportPeerId: "resolved-tp", recipientEnvelopePeerId: "resolved-recipient" };
+        },
+        fetchTimeoutMs: 200,
+      });
+
+      // An envoy_ prefixed remotePeerId is NOT a libp2p ID → falls through to resolver.
+      const r = await fetcher.onBondEstablished({
+        peerOwnerId: "peer-envoyid",
+        remotePeerId: "envoy_device_abc123",
+      });
+      expect(r.outcome).toBe("sent");
+      expect(resolvedOwnerId).toBe("peer-envoyid"); // resolver was called
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("libp2p short-circuit sets recipientPeerId to undefined (Issue 1 header hygiene)", async () => {
+    const t = await tempDir();
+    try {
+      const taskStore = createLocalTaskStore(t.dir);
+      const trustStore = createLocalTrustStore(t.dir);
+      const agentCardStore = createAgentCardStore(t.dir);
+      await trustStore.setTrustRecord({ peerOwnerId: "peer-hdr", level: "direct" });
+
+      const bridge = makeBridgeIdentity();
+      let capturedEnvelope: Record<string, unknown> | null = null;
+
+      const mesh = createOutboundMeshMock({
+        send: async (_peerId: string, envelope: unknown) => {
+          capturedEnvelope = envelope as Record<string, unknown>;
+          return 0;
+        },
+      });
+      const fetcher = createAgentCardAutoFetcher({
+        mesh: { ...mesh, peerId: "12D3KooWSelf" },
+        bridgeIdentity: bridge,
+        agentCardStore,
+        trustStore,
+        taskStore,
+        resolvePeerTransport: async () => ({ transportPeerId: "x", recipientEnvelopePeerId: "x" }),
+        fetchTimeoutMs: 200,
+      });
+
+      const libp2pId = "12D3KooWHeaderTestXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
+      await fetcher.onBondEstablished({ peerOwnerId: "peer-hdr", remotePeerId: libp2pId });
+
+      expect(capturedEnvelope).toBeTruthy();
+      // Issue 1: recipientPeerId should be undefined (or absent) for the
+      // libp2p short-circuit path — NOT the raw libp2p ID.
+      expect(capturedEnvelope!.recipientPeerId).toBeUndefined();
+    } finally {
+      await t.cleanup();
+    }
+  });
+});
