@@ -354,6 +354,7 @@ import {
   type DocumentAcquisitionJobStore,
   type CapabilityProviderJobStore,
   type AuditEvent,
+  type PeerDirectoryRecord,
 } from "@envoymesh/local-store";
 import {
   listFamilyProfilesViaRuntime,
@@ -10329,21 +10330,38 @@ class NodeServiceImpl implements NodeService {
     const connectedIds = new Set(stats?.connectedPeerIds ?? mesh?.getConnectedPeerIds() ?? []);
     const circuitIds = new Set(stats?.circuitPeerIds ?? []);
 
-    const rows = await Promise.all(
-      ownerIds.map(async (ownerId) => {
-        const agentPeerId = agentPeerIdByOwner.get(ownerId);
-        const online = agentPeerId ? connectedIds.has(agentPeerId) : false;
-        const viaRelay = online && agentPeerId ? circuitIds.has(agentPeerId) : false;
-        let sameLan = false;
-        try {
-          const peer = await this._peerDirectoryStore.getPeerByOwnerId(ownerId);
-          sameLan = sameLanFromListenAddrs(peer?.listenAddrs);
-        } catch {
-          /* leave false */
-        }
-        return { ownerId, agentPeerId, online, sameLan, viaRelay };
-      }),
-    );
+    // Index peer-directory records by owner so we can check every device's
+    // libp2p peer id. Connectivity is a property of the NODE (libp2p host),
+    // not the agent identity — `sourceAgentPeerId` is an `envoy_agent_*` id
+    // that is never a libp2p PeerId, so comparing it directly against
+    // `connectedIds` would always report offline (every contact filtered out).
+    const recordsByOwner = new Map<string, PeerDirectoryRecord[]>();
+    try {
+      const allRecords = await this._peerDirectoryStore.listPeerRecords();
+      for (const rec of allRecords) {
+        const list = recordsByOwner.get(rec.ownerId);
+        if (list) list.push(rec);
+        else recordsByOwner.set(rec.ownerId, [rec]);
+      }
+    } catch {
+      /* leave empty — every row reports offline + sameLan=false */
+    }
+
+    const rows = ownerIds.map((ownerId) => {
+      const agentPeerId = agentPeerIdByOwner.get(ownerId);
+      const peerRecords = recordsByOwner.get(ownerId) ?? [];
+      // A contact is online when ANY of their devices' libp2p peer ids is
+      // currently connected. Prefer the most-recently-seen connected record.
+      const connectedRecord = peerRecords
+        .filter((r) => isLibp2pPeerId(r.peerId) && connectedIds.has(r.peerId))
+        .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt))[0];
+      const online = Boolean(connectedRecord);
+      const viaRelay = online ? circuitIds.has(connectedRecord.peerId) : false;
+      const sameLan = sameLanFromListenAddrs(
+        connectedRecord?.listenAddrs ?? peerRecords[0]?.listenAddrs,
+      );
+      return { ownerId, agentPeerId, online, sameLan, viaRelay };
+    });
     return { rows };
   }
 

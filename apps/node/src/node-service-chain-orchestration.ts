@@ -86,6 +86,7 @@ import { executeAcceptedSubtask } from "./chain-worker-executor.js";
 import { requiresChainAwardApproval } from "./chain-sensitivity-gate.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 import type { MeshToolContext } from "./tool-registry.js";
+import { isLibp2pPeerId } from "./profile-sync-outbound.js";
 import { type ChainContext, type ChainRankedWorker, type ChainStore } from "./node-service-chains.js";
 
 /* ---------- context ---------- */
@@ -916,11 +917,36 @@ export async function findCapabilityProvidersRanked(
   const connectedIds = new Set(connStats?.connectedPeerIds ?? mesh?.getConnectedPeerIds() ?? []);
   const circuitIds = new Set(connStats?.circuitPeerIds ?? []);
 
+  // Resolve each agent peer id → owner → libp2p peer id via the peer directory.
+  // `connectedIds` holds libp2p PeerIds, but `peerId` in the soft pool is an
+  // `envoy_agent_*` identity — comparing them directly always reports offline.
+  const transportByAgentPeer = new Map<string, string>();
+  try {
+    const store = deps.getPeerDirectoryStore?.();
+    if (store) {
+      const allRecords = await store.listPeerRecords();
+      const connectedLibp2pByOwner = new Map<string, string>();
+      for (const rec of allRecords) {
+        if (isLibp2pPeerId(rec.peerId) && connectedIds.has(rec.peerId)) {
+          connectedLibp2pByOwner.set(rec.ownerId, rec.peerId);
+        }
+      }
+      for (const peerId of peerList) {
+        const ownerId = byPeer.get(peerId)?.ownerId;
+        const transport = ownerId ? connectedLibp2pByOwner.get(ownerId) : undefined;
+        if (transport) transportByAgentPeer.set(peerId, transport);
+      }
+    }
+  } catch {
+    /* store unavailable — leave all offline */
+  }
+
   const scored: ChainRankedWorker[] = peerList.map((peerId) => {
     const card = byPeer.get(peerId);
     const sameLan = sameLanByPeer.get(peerId) === true;
-    const online = connectedIds.has(peerId);
-    const viaRelay = online && circuitIds.has(peerId);
+    const transportId = transportByAgentPeer.get(peerId);
+    const online = Boolean(transportId);
+    const viaRelay = online && transportId ? circuitIds.has(transportId) : false;
     const result = scoreAgentNetworkWorker({
       requiredCapability: capability,
       cardCapabilities: card?.capabilities ?? [],
