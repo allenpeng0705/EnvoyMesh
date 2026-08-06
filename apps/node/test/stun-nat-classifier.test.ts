@@ -88,21 +88,37 @@ describe("isRfc1918PrivateIp", () => {
   });
 });
 
-describe("classifyCgnat — definitive CGNAT detection", () => {
-  it("returns 'cgnat' when NAT type is symmetric", () => {
-    expect(classifyCgnat({ natType: "symmetric" })).toBe("cgnat");
-  });
-
-  it("returns 'cgnat' when STUN-observed IP is in the CGNAT range", () => {
+describe("classifyCgnat — definitive CGNAT detection (false-positive hardened)", () => {
+  // ── Pristine signal: trusted alone ────────────────────────────────────────
+  it("returns 'cgnat' when STUN-observed IP is in the RFC 6598 CGNAT range (alone)", () => {
     expect(classifyCgnat({ stunObservedIp: "100.64.5.5" })).toBe("cgnat");
+    expect(classifyCgnat({ stunObservedIp: "100.64.5.5", natType: "full-cone" })).toBe("cgnat");
   });
 
-  it("returns 'cgnat' when UPnP external IP is RFC1918 private", () => {
-    // Allen's case: UPnP gateway reports 192.168.1.6 as the "external" IP.
-    expect(classifyCgnat({ upnpExternalIp: "192.168.1.6" })).toBe("cgnat");
-    expect(classifyCgnat({ upnpExternalIp: "10.0.0.1" })).toBe("cgnat");
+  // ── Noisy signals: require corroboration ─────────────────────────────────
+  it("returns 'unknown' for symmetric NAT ALONE (transient-IP / firewall false positive)", () => {
+    // A lone symmetric signal could be a Wi-Fi↔cellular handoff or an
+    // enterprise firewall intercepting STUN. Don't auto-apply on it alone.
+    expect(classifyCgnat({ natType: "symmetric" })).toBe("unknown");
   });
 
+  it("returns 'unknown' for UPnP-private ALONE (could be fixable double-NAT)", () => {
+    // UPnP reporting 192.168.x could mean the outer router has a public IP and
+    // port-forwarding would fix it — NOT CGNAT. Don't auto-apply on it alone.
+    expect(classifyCgnat({ upnpExternalIp: "192.168.1.6" })).toBe("unknown");
+    expect(classifyCgnat({ upnpExternalIp: "10.0.0.1" })).toBe("unknown");
+  });
+
+  it("returns 'cgnat' when symmetric NAT AND UPnP-private agree (corroboration)", () => {
+    // Two independent noisy signals agreeing → high confidence. This is the
+    // realistic CGNAT case: STUN sees per-destination mappings AND UPnP can't
+    // reach a public IP.
+    expect(
+      classifyCgnat({ natType: "symmetric", upnpExternalIp: "192.168.1.6" }),
+    ).toBe("cgnat");
+  });
+
+  // ── Negative signal ───────────────────────────────────────────────────────
   it("returns 'not-cgnat' for full-cone NAT with a routable public IP", () => {
     expect(
       classifyCgnat({ natType: "full-cone", stunObservedIp: "203.0.113.5" }),
@@ -113,26 +129,24 @@ describe("classifyCgnat — definitive CGNAT detection", () => {
     expect(classifyCgnat({ natType: "open" })).toBe("not-cgnat");
   });
 
+  it("returns 'not-cgnat' when full-cone NAT coexists with a routable STUN IP", () => {
+    // A healthy reading wins — even if UPnP mis-reports (buggy UPnP),
+    // a confirmed full-cone NAT with a public IP means NOT CGNAT.
+    expect(
+      classifyCgnat({ natType: "full-cone", stunObservedIp: "203.0.113.5", upnpExternalIp: "192.168.1.6" }),
+    ).toBe("not-cgnat");
+  });
+
+  // ── Ambiguous ─────────────────────────────────────────────────────────────
   it("returns 'unknown' when signals are ambiguous (STUN failed, no UPnP)", () => {
     expect(classifyCgnat({})).toBe("unknown");
     expect(classifyCgnat({ natType: "unknown" })).toBe("unknown");
   });
 
-  it("returns 'cgnat' even with conflicting signals (symmetric wins over a routable IP)", () => {
-    // Symmetric NAT is definitive even if one STUN server happened to report a
-    // routable IP — the two servers disagreed, which is the CGNAT signature.
+  // ── The pristine signal wins over a stale UPnP mis-report ─────────────────
+  it("returns 'cgnat' when RFC 6598 range fires even if UPnP reports private", () => {
     expect(
-      classifyCgnat({ natType: "symmetric", stunObservedIp: "203.0.113.5" }),
-    ).toBe("cgnat");
-  });
-
-  it("returns 'cgnat' when multiple definitive signals fire", () => {
-    expect(
-      classifyCgnat({
-        natType: "symmetric",
-        stunObservedIp: "100.64.0.1",
-        upnpExternalIp: "192.168.1.6",
-      }),
+      classifyCgnat({ stunObservedIp: "100.64.0.1", upnpExternalIp: "192.168.1.6" }),
     ).toBe("cgnat");
   });
 });

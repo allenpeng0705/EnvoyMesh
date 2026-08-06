@@ -33,30 +33,8 @@ describe("detectCgnatAtStartup — auto-apply decision boundary", () => {
     mocks.upnpDiscoverAndMap.mockReset();
   });
 
-  it("auto-applies quietWan on symmetric NAT (definitive CGNAT)", async () => {
-    mocks.detectNatType.mockResolvedValue("symmetric");
-    mocks.raceStunServers.mockResolvedValue({ ip: "203.0.113.5", port: 4001 });
-    mocks.upnpDiscoverAndMap.mockResolvedValue(null);
-
-    const result = await detectCgnatAtStartup({ explicitMode: false });
-
-    expect(result.classification).toBe("cgnat");
-    expect(result.shouldAutoApplyQuietWan).toBe(true);
-  });
-
-  it("does NOT auto-apply when the operator explicitly chose a mode", async () => {
-    mocks.detectNatType.mockResolvedValue("symmetric"); // definitive CGNAT
-    mocks.raceStunServers.mockResolvedValue({ ip: "100.64.0.1", port: 4001 });
-
-    const result = await detectCgnatAtStartup({ explicitMode: true });
-
-    expect(result.classification).toBe("cgnat");
-    // Explicit mode → respect it, don't override.
-    expect(result.shouldAutoApplyQuietWan).toBe(false);
-  });
-
-  it("auto-applies on RFC 6598 CGNAT range IP from STUN", async () => {
-    mocks.detectNatType.mockResolvedValue("full-cone"); // same mapping (mocked)
+  it("auto-applies quietWan on RFC 6598 CGNAT range (pristine signal, trusted alone)", async () => {
+    mocks.detectNatType.mockResolvedValue("full-cone"); // even with healthy NAT
     mocks.raceStunServers.mockResolvedValue({ ip: "100.64.5.5", port: 4001 });
     mocks.upnpDiscoverAndMap.mockResolvedValue(null);
 
@@ -66,15 +44,49 @@ describe("detectCgnatAtStartup — auto-apply decision boundary", () => {
     expect(result.shouldAutoApplyQuietWan).toBe(true);
   });
 
-  it("auto-applies on UPnP returning RFC1918 private external IP (Allen's case)", async () => {
-    mocks.detectNatType.mockResolvedValue("unknown"); // STUN couldn't classify
-    mocks.raceStunServers.mockResolvedValue(null);
+  it("auto-applies when symmetric NAT AND UPnP-private corroborate (realistic CGNAT)", async () => {
+    mocks.detectNatType.mockResolvedValue("symmetric");
+    mocks.raceStunServers.mockResolvedValue({ ip: "203.0.113.5", port: 4001 });
     mocks.upnpDiscoverAndMap.mockResolvedValue({ ip: "192.168.1.6", port: 4001 });
 
     const result = await detectCgnatAtStartup({ explicitMode: false, upnpEnabled: true });
 
     expect(result.classification).toBe("cgnat");
     expect(result.shouldAutoApplyQuietWan).toBe(true);
+  });
+
+  it("does NOT auto-apply on symmetric NAT ALONE (transient-IP / firewall false positive)", async () => {
+    mocks.detectNatType.mockResolvedValue("symmetric");
+    mocks.raceStunServers.mockResolvedValue({ ip: "203.0.113.5", port: 4001 });
+    mocks.upnpDiscoverAndMap.mockResolvedValue(null); // no corroboration
+
+    const result = await detectCgnatAtStartup({ explicitMode: false });
+
+    expect(result.classification).toBe("unknown");
+    expect(result.shouldAutoApplyQuietWan).toBe(false);
+  });
+
+  it("does NOT auto-apply on UPnP-private ALONE (could be fixable double-NAT)", async () => {
+    mocks.detectNatType.mockResolvedValue("unknown");
+    mocks.raceStunServers.mockResolvedValue(null);
+    mocks.upnpDiscoverAndMap.mockResolvedValue({ ip: "192.168.1.6", port: 4001 });
+
+    const result = await detectCgnatAtStartup({ explicitMode: false, upnpEnabled: true });
+
+    expect(result.classification).toBe("unknown");
+    expect(result.shouldAutoApplyQuietWan).toBe(false);
+  });
+
+  it("does NOT auto-apply when the operator explicitly chose a mode", async () => {
+    mocks.detectNatType.mockResolvedValue("symmetric");
+    mocks.raceStunServers.mockResolvedValue({ ip: "100.64.0.1", port: 4001 });
+    mocks.upnpDiscoverAndMap.mockResolvedValue({ ip: "192.168.1.6", port: 4001 });
+
+    const result = await detectCgnatAtStartup({ explicitMode: true, upnpEnabled: true });
+
+    expect(result.classification).toBe("cgnat");
+    // Explicit mode → respect it, don't override.
+    expect(result.shouldAutoApplyQuietWan).toBe(false);
   });
 
   it("does NOT auto-apply on ambiguous signals (STUN failed, no UPnP)", async () => {

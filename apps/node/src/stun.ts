@@ -343,27 +343,45 @@ export interface CgnatDetectionInput {
  * Classify whether the node is *definitively* behind CGNAT, based on the
  * available signals. Returns one of:
  *
- * - `"cgnat"` — at least one definitive signal fired. Auto-applying quietWan
- *   is correct: the public DHT cannot work (no inbound), so it's pure churn.
+ * - `"cgnat"` — a pristine (zero-false-positive) signal fired, OR two noisy
+ *   signals corroborate each other. Auto-applying quietWan is correct: the
+ *   public DHT cannot work (no inbound), so it's pure churn.
  * - `"not-cgnat"` — a definitive negative signal (full-cone / open NAT with a
  *   routable public IP). Don't suggest quietWan for network reasons.
  * - `"unknown"` — signals are ambiguous. Don't auto-apply; fall back to the
  *   churn-based Settings suggestion.
  *
- * The definitive positive signals (any one is sufficient):
- *   1. NAT type `"symmetric"` (two STUN servers saw different mappings).
- *   2. STUN-observed IP is in the RFC 6598 CGNAT range (100.64.0.0/10).
- *   3. UPnP external IP is RFC1918 private (gateway is behind another NAT).
+ * ## False-positive analysis (why each signal is trusted or not)
+ *
+ * **Pristine (trusted alone):**
+ * - STUN-observed IP in RFC 6598 range (`100.64.x.x`). This range is reserved
+ *   EXCLUSIVELY for carrier-grade NAT (RFC 6598). No public service, no normal
+ *   NAT, no residential ISP uses it for anything else. Zero false-positive risk.
+ *
+ * **Noisy (require corroboration — two independent signals must agree):**
+ * - NAT type `"symmetric"` (two STUN servers saw different mappings). False
+ *   positives: transient IP change mid-test (Wi-Fi↔cellular handoff, VPN
+ *   connect), enterprise STUN-intercepting firewalls. Real but rare.
+ * - UPnP external IP is RFC1918 private. False positives: cascaded routers
+ *   (double-NAT where the outer router HAS a public IP and the situation is
+ *   fixable via port-forwarding, unlike CGNAT), buggy UPnP reporting the LAN
+ *   interface. The signal is correct for true CGNAT but can't distinguish
+ *   "fixable double-NAT" from "unfixable CGNAT" on its own.
+ *
+ * When a noisy signal fires alone, we return `"unknown"` (no auto-apply) and
+ * let the churn-based suggestion surface it to the operator. When a pristine
+ * signal fires, OR two noisy signals agree, we return `"cgnat"`.
  *
  * Pure function — unit-testable without any network.
  */
 export function classifyCgnat(input: CgnatDetectionInput): "cgnat" | "not-cgnat" | "unknown" {
-  // Definitive positives — any one means CGNAT.
-  if (input.natType === "symmetric") return "cgnat";
-  if (input.stunObservedIp && isCgnatRangeIp(input.stunObservedIp)) return "cgnat";
-  if (input.upnpExternalIp && isRfc1918PrivateIp(input.upnpExternalIp)) return "cgnat";
-
-  // Definitive negative — stable public mapping, routable IP, not CGNAT range.
+  // Definitive negative — stable public mapping confirmed by STUN. A full-cone
+  // or open NAT means the node HAS a stable public mapping that can receive
+  // inbound (once a port is mapped). This wins over a buggy UPnP report: UPnP
+  // can mis-report the LAN interface or sit behind a cascaded router, but STUN
+  // full-cone is a direct measurement of inbound-mapping stability. The only
+  // thing that overrides this is the RFC 6598 range (checked next), because
+  // that's an even more pristine signal.
   if (
     (input.natType === "full-cone" || input.natType === "open") &&
     (!input.stunObservedIp || !isCgnatRangeIp(input.stunObservedIp))
@@ -371,6 +389,18 @@ export function classifyCgnat(input: CgnatDetectionInput): "cgnat" | "not-cgnat"
     return "not-cgnat";
   }
 
-  // Everything else (STUN failed, NAT unknown, no UPnP) → ambiguous.
+  // Pristine positive: RFC 6598 CGNAT range. Trusted alone — zero false positives.
+  if (input.stunObservedIp && isCgnatRangeIp(input.stunObservedIp)) return "cgnat";
+
+  // Noisy signals: require TWO to agree (corroboration), to avoid false positives.
+  // - symmetric NAT (could be transient IP change / firewall intercept)
+  // - UPnP-private (could be fixable double-NAT, not CGNAT)
+  // Either alone → unknown (fall through to churn-based suggestion).
+  // Both together → cgnat (two independent signals agree → high confidence).
+  const symmetricSignal = input.natType === "symmetric";
+  const upnpPrivateSignal = !!(input.upnpExternalIp && isRfc1918PrivateIp(input.upnpExternalIp));
+  if (symmetricSignal && upnpPrivateSignal) return "cgnat";
+
+  // Everything else → ambiguous. Don't auto-apply; let the operator decide.
   return "unknown";
 }
