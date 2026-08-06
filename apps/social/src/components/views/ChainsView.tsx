@@ -16,7 +16,7 @@ import { useT } from "../../context/I18nContext.js";
 import { useToast } from "../../hooks/useToast.js";
 import { useNodeService, useAgentCards } from "../../hooks/useNodeService.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
-import { computeChainBondHealth, mergeReachability } from "../../lib/chain-bond-health.js";
+import { computeChainBondHealth, isTeamJobReady, mergeReachability } from "../../lib/chain-bond-health.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import { ChainReportView } from "../ChainReportView.js";
 import { ChainStartDialog } from "../ChainStartDialog.js";
@@ -150,6 +150,16 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
         return score(a.health) - score(b.health);
       });
   }, [bonds, agentCards, reachabilityByOwner]);
+
+  // Only contacts that can actually participate in a team job right now —
+  // online, opted into the Agent Network, and with a ready/stale agent card.
+  // Offline and non-opted-in contacts are hidden from the Team jobs view
+  // since they can't join a job and only add noise when the contact list
+  // grows.
+  const teamReadyCandidates = useMemo(
+    () => workerCandidates.filter((w) => isTeamJobReady(w.card, w.health)),
+    [workerCandidates],
+  );
 
   // Chain creation flow (Phase 43 follow-up): a "New chain" button opens a
   // goal composer; the preview+launch reuses ChainStartDialog.
@@ -424,12 +434,12 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
         <div className="chains-empty">
           <p>{t("chains.active.empty")}</p>
           <p className="chains-empty__hint">{t("chains.active.prerequisite")}</p>
-          {workerCandidates.length > 0 ? (
+          {teamReadyCandidates.length > 0 ? (
             <div className="chains-empty__contacts">
               <h4 className="chains-empty__contacts-title">{t("chains.start.contactsTitle")}</h4>
               <p className="chains-empty__contacts-desc">{t("chains.start.contactsDesc")}</p>
               <ul className="chain-workers__list">
-                {workerCandidates.slice(0, 6).map(({ bond, card, health }) => (
+                {teamReadyCandidates.slice(0, 6).map(({ bond, card, health }) => (
                   <li key={bond.peerOwnerId} className="chain-worker-card">
                     <div className="chain-worker-card__avatar">
                       {(bond.displayName ?? bond.peerOwnerId).slice(0, 1).toUpperCase()}
@@ -463,6 +473,8 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
                 ))}
               </ul>
             </div>
+          ) : workerCandidates.length > 0 ? (
+            <p className="chains-empty__hint">{t("chains.start.contactsNotReady")}</p>
           ) : (
             <p className="chains-empty__hint">{t("chains.start.contactsEmpty")}</p>
           )}
@@ -576,13 +588,15 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
         ))
       )}
 
-      {/* Bonded contacts — always visible (promoted from empty-state-only) */}
-      {activeChains.length > 0 && workerCandidates.length > 0 ? (
+      {/* Team-ready contacts — only contacts that can actually join team jobs
+          (online + opted in + has agent card). Offline/non-opted-in contacts
+          are hidden to keep this list useful when the contact list grows. */}
+      {activeChains.length > 0 && teamReadyCandidates.length > 0 ? (
         <div className="chains-empty__contacts chains-contacts">
           <h4 className="chains-empty__contacts-title">{t("chains.start.contactsTitle")}</h4>
           <p className="chains-empty__contacts-desc">{t("chains.start.contactsDesc")}</p>
           <ul className="chain-workers__list">
-            {workerCandidates.slice(0, 6).map(({ bond, card, health }) => (
+            {teamReadyCandidates.slice(0, 6).map(({ bond, card, health }) => (
               <li key={bond.peerOwnerId} className="chain-worker-card">
                 <div className="chain-worker-card__avatar">
                   {(bond.displayName ?? bond.peerOwnerId).slice(0, 1).toUpperCase()}

@@ -191,8 +191,10 @@ export const zhChainsMessages = {
     workersDesc: "可加入此协作任务的已绑定联系人。系统会根据能力自动分配。",
     workersEmpty: "暂无拥有智能体卡片的已绑定联系人。请先在「发现」中建联。",
     workersCount: "可用工作代理：{count}",
-    contactsTitle: "您的已绑定联系人",
-    contactsDesc: "这些联系人可以参与协作任务。请在「协作任务」中请他们开启「加入智能体网络」。",
+    contactsTitle: "可参与协作任务",
+    contactsDesc: "已在线且加入智能体网络的联系人，可参与协作任务。",
+    contactsNotReady:
+      "您有已建联的联系人，但目前没有可参与协作任务的。对方需要在线且已加入智能体网络。",
     contactsEmpty: "暂无已绑定联系人。请先在「发现」中建联。",
     contactCapabilities: "{count} 项能力",
     contactNoCard: "无智能体卡片",

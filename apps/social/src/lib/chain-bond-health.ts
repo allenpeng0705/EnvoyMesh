@@ -107,3 +107,28 @@ export function mergeReachability(
   if (!reachability) return health;
   return { ...health, onlineStatus: reachability.online ? "online" : "offline" };
 }
+
+/**
+ * Whether a bonded contact can actually participate in a team job right now.
+ *
+ * All three readiness dimensions must pass:
+ *   - Has an agent peer ID on their cached card (required for worker selection)
+ *   - Card freshness is ready or stale (not missing/blocked)
+ *   - Opted into the Agent Network (capability-provider on their card)
+ *   - Not confirmed offline (unknown is OK — probe may still be in flight)
+ *
+ * Used by both ChainsView (to filter the contacts list) and ChainStartDialog
+ * (to determine selectability). Keeping this in one place ensures the main
+ * view and the launch dialog never diverge on who counts as "available."
+ */
+export function isTeamJobReady(
+  card: CachedAgentCardSummary | undefined,
+  health: ChainBondHealth,
+): boolean {
+  return Boolean(
+    card?.sourceAgentPeerId &&
+      (health.cardStatus === "ready" || health.cardStatus === "stale") &&
+      health.optIn &&
+      health.onlineStatus !== "offline",
+  );
+}

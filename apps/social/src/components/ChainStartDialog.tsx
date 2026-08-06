@@ -9,6 +9,7 @@ import type { ChainPreviewGoalResult, ChainPreviewSuggestedWorker, ChainStartFro
 import { useT } from "../context/I18nContext.js";
 import { useNodeService } from "../hooks/useNodeService.js";
 import { useToast } from "../hooks/useToast.js";
+import { isTeamJobReady } from "../lib/chain-bond-health.js";
 import type { ChainBondHealth } from "../lib/chain-bond-health.js";
 
 export interface WorkerCandidate {
@@ -64,14 +65,7 @@ export function ChainStartDialog({
   // so the UI doesn't dead-lock while the batch RPC loads; explicit "offline"
   // sinks to non-selectable — team jobs can only run on reachable workers.
   const selectableCandidates = useMemo(
-    () =>
-      workerCandidates.filter(
-        (w) =>
-          w.card?.sourceAgentPeerId &&
-          (w.health.cardStatus === "ready" || w.health.cardStatus === "stale") &&
-          w.health.optIn &&
-          w.health.onlineStatus !== "offline",
-      ),
+    () => workerCandidates.filter((w) => isTeamJobReady(w.card, w.health)),
     [workerCandidates],
   );
 
@@ -316,11 +310,7 @@ export function ChainStartDialog({
                 <p className="chain-workers__desc">{t("chains.start.selectTeamDesc")}</p>
                 <ul className="chain-workers__list">
                   {displayCandidates.map(({ bond, card, health, peerId, suggested }) => {
-                    const selectable =
-                      Boolean(peerId) &&
-                      (health.cardStatus === "ready" || health.cardStatus === "stale") &&
-                      health.optIn &&
-                      health.onlineStatus !== "offline";
+                    const selectable = isTeamJobReady(card, health);
                     const checked = peerId ? selectedPeerIds.has(peerId) : false;
                     const offline = health.onlineStatus === "offline";
                     const cardClass = selectable

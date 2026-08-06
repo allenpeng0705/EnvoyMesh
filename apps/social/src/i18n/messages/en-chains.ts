@@ -192,8 +192,10 @@ export const chainsMessages = {
     workersDesc: "Bonded contacts who can join this team job. The system auto-assigns based on capabilities.",
     workersEmpty: "No bonded contacts with agent cards yet. Bond with someone in Discover first.",
     workersCount: "{count} worker(s) available",
-    contactsTitle: "Your bonded contacts",
-    contactsDesc: "These contacts can participate in team jobs. Ask them to enable Join Agent Network in Team jobs.",
+    contactsTitle: "Available for team jobs",
+    contactsDesc: "Online contacts who joined the Agent Network and can participate in team jobs.",
+    contactsNotReady:
+      "You have bonded contacts, but none are currently available for team jobs. They need to be online and have joined the Agent Network.",
     contactsEmpty: "No bonded contacts yet. Bond with someone in Discover first.",
     contactCapabilities: "{count} capabilities",
     contactNoCard: "No agent card",
