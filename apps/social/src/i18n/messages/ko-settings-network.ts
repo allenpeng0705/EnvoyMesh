@@ -103,6 +103,8 @@ export const koNetworkSettingsMessages = {
     modeSmart: "Smart — slower when idle; warm on chat",
     modeAggressive: "Aggressive — lowest CPU/network",
     modeQuietWan: "Quiet WAN — relay discovery only (no public DHT)",
+    autoAppliedCgnat:
+      "Quiet WAN was auto-applied because this node looks like it is behind CGNAT. Changing the mode here locks your choice.",
     restartHint: "Restart the node (or fully quit and reopen the app) for mesh timers and DHT/mDNS options to apply.",
     maxConnections: "최대 연결 수",
     capabilityCycle: "기능 주기 (초)",

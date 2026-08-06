@@ -1,14 +1,12 @@
 /**
  * CGNAT auto-apply wiring tests.
  *
- * Tests the decision boundary of `detectCgnatAtStartup`: it should auto-apply
- * quietWan ONLY on a definitive CGNAT classification AND when the operator has
- * not explicitly chosen a mode. The network round-trips (STUN/UPnP) are mocked
- * so the tests are fast and deterministic.
+ * Tests the decision boundary of `detectCgnatAtStartup` / `shouldAllowCgnatQuietWanAutoApply`:
+ * auto-apply quietWan ONLY on a definitive CGNAT classification AND when the
+ * operator has not explicitly chosen a mode (default optimized is eligible).
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock the network dependencies before importing the module under test.
 const mocks = vi.hoisted(() => ({
   detectNatType: vi.fn(async () => "unknown" as const),
   raceStunServers: vi.fn(async () => null as { ip: string; port: number } | null),
@@ -24,7 +22,33 @@ vi.mock("../src/upnp.js", () => ({
   upnpDiscoverAndMap: mocks.upnpDiscoverAndMap,
 }));
 
-const { detectCgnatAtStartup } = await import("../src/cgnat-detection.js");
+const {
+  detectCgnatAtStartup,
+  shouldAllowCgnatQuietWanAutoApply,
+} = await import("../src/cgnat-detection.js");
+
+describe("shouldAllowCgnatQuietWanAutoApply", () => {
+  it("allows default optimized / unset", () => {
+    expect(shouldAllowCgnatQuietWanAutoApply({})).toBe(true);
+    expect(shouldAllowCgnatQuietWanAutoApply({ connectivityMode: "optimized" })).toBe(true);
+  });
+
+  it("blocks operator-explicit modes including optimized", () => {
+    expect(
+      shouldAllowCgnatQuietWanAutoApply({
+        connectivityMode: "optimized",
+        connectivityModeExplicit: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("blocks smart/normal/quietWan/aggressive without needing the explicit flag", () => {
+    expect(shouldAllowCgnatQuietWanAutoApply({ connectivityMode: "smart" })).toBe(false);
+    expect(shouldAllowCgnatQuietWanAutoApply({ connectivityMode: "normal" })).toBe(false);
+    expect(shouldAllowCgnatQuietWanAutoApply({ connectivityMode: "quietWan" })).toBe(false);
+    expect(shouldAllowCgnatQuietWanAutoApply({ connectivityMode: "aggressive" })).toBe(false);
+  });
+});
 
 describe("detectCgnatAtStartup — auto-apply decision boundary", () => {
   beforeEach(() => {
@@ -33,45 +57,40 @@ describe("detectCgnatAtStartup — auto-apply decision boundary", () => {
     mocks.upnpDiscoverAndMap.mockReset();
   });
 
-  it("auto-applies quietWan on RFC 6598 CGNAT range (pristine signal, trusted alone)", async () => {
-    mocks.detectNatType.mockResolvedValue("full-cone"); // even with healthy NAT
+  it("auto-applies quietWan on RFC 6598 CGNAT range when mode is default optimized", async () => {
+    mocks.detectNatType.mockResolvedValue("full-cone");
     mocks.raceStunServers.mockResolvedValue({ ip: "100.64.5.5", port: 4001 });
     mocks.upnpDiscoverAndMap.mockResolvedValue(null);
 
-    const result = await detectCgnatAtStartup({ explicitMode: false });
+    const result = await detectCgnatAtStartup({
+      connectivityMode: "optimized",
+      connectivityModeExplicit: false,
+    });
 
     expect(result.classification).toBe("cgnat");
     expect(result.shouldAutoApplyQuietWan).toBe(true);
   });
 
-  it("auto-applies when symmetric NAT AND UPnP-private corroborate (realistic CGNAT)", async () => {
+  it("auto-applies when symmetric NAT AND UPnP-private corroborate", async () => {
     mocks.detectNatType.mockResolvedValue("symmetric");
     mocks.raceStunServers.mockResolvedValue({ ip: "203.0.113.5", port: 4001 });
     mocks.upnpDiscoverAndMap.mockResolvedValue({ ip: "192.168.1.6", port: 4001 });
 
-    const result = await detectCgnatAtStartup({ explicitMode: false, upnpEnabled: true });
+    const result = await detectCgnatAtStartup({
+      connectivityMode: "optimized",
+      upnpEnabled: true,
+    });
 
     expect(result.classification).toBe("cgnat");
     expect(result.shouldAutoApplyQuietWan).toBe(true);
   });
 
-  it("does NOT auto-apply on symmetric NAT ALONE (transient-IP / firewall false positive)", async () => {
+  it("does NOT auto-apply on symmetric NAT ALONE", async () => {
     mocks.detectNatType.mockResolvedValue("symmetric");
     mocks.raceStunServers.mockResolvedValue({ ip: "203.0.113.5", port: 4001 });
-    mocks.upnpDiscoverAndMap.mockResolvedValue(null); // no corroboration
+    mocks.upnpDiscoverAndMap.mockResolvedValue(null);
 
-    const result = await detectCgnatAtStartup({ explicitMode: false });
-
-    expect(result.classification).toBe("unknown");
-    expect(result.shouldAutoApplyQuietWan).toBe(false);
-  });
-
-  it("does NOT auto-apply on UPnP-private ALONE (could be fixable double-NAT)", async () => {
-    mocks.detectNatType.mockResolvedValue("unknown");
-    mocks.raceStunServers.mockResolvedValue(null);
-    mocks.upnpDiscoverAndMap.mockResolvedValue({ ip: "192.168.1.6", port: 4001 });
-
-    const result = await detectCgnatAtStartup({ explicitMode: false, upnpEnabled: true });
+    const result = await detectCgnatAtStartup({ connectivityMode: "optimized" });
 
     expect(result.classification).toBe("unknown");
     expect(result.shouldAutoApplyQuietWan).toBe(false);
@@ -82,30 +101,46 @@ describe("detectCgnatAtStartup — auto-apply decision boundary", () => {
     mocks.raceStunServers.mockResolvedValue({ ip: "100.64.0.1", port: 4001 });
     mocks.upnpDiscoverAndMap.mockResolvedValue({ ip: "192.168.1.6", port: 4001 });
 
-    const result = await detectCgnatAtStartup({ explicitMode: true, upnpEnabled: true });
+    const result = await detectCgnatAtStartup({
+      connectivityMode: "optimized",
+      connectivityModeExplicit: true,
+      upnpEnabled: true,
+    });
 
     expect(result.classification).toBe("cgnat");
-    // Explicit mode → respect it, don't override.
     expect(result.shouldAutoApplyQuietWan).toBe(false);
   });
 
-  it("does NOT auto-apply on ambiguous signals (STUN failed, no UPnP)", async () => {
+  it("does NOT auto-apply when legacy explicitMode flag is true", async () => {
+    mocks.detectNatType.mockResolvedValue("unknown");
+    mocks.raceStunServers.mockResolvedValue({ ip: "100.64.0.1", port: 4001 });
+
+    const result = await detectCgnatAtStartup({
+      connectivityMode: "optimized",
+      explicitMode: true,
+    });
+
+    expect(result.classification).toBe("cgnat");
+    expect(result.shouldAutoApplyQuietWan).toBe(false);
+  });
+
+  it("does NOT auto-apply on ambiguous signals", async () => {
     mocks.detectNatType.mockResolvedValue("unknown");
     mocks.raceStunServers.mockResolvedValue(null);
     mocks.upnpDiscoverAndMap.mockResolvedValue(null);
 
-    const result = await detectCgnatAtStartup({ explicitMode: false });
+    const result = await detectCgnatAtStartup({ connectivityMode: "optimized" });
 
     expect(result.classification).toBe("unknown");
     expect(result.shouldAutoApplyQuietWan).toBe(false);
   });
 
-  it("does NOT auto-apply on a healthy full-cone NAT (not CGNAT)", async () => {
+  it("does NOT auto-apply on a healthy full-cone NAT", async () => {
     mocks.detectNatType.mockResolvedValue("full-cone");
     mocks.raceStunServers.mockResolvedValue({ ip: "203.0.113.5", port: 4001 });
     mocks.upnpDiscoverAndMap.mockResolvedValue(null);
 
-    const result = await detectCgnatAtStartup({ explicitMode: false });
+    const result = await detectCgnatAtStartup({ connectivityMode: "optimized" });
 
     expect(result.classification).toBe("not-cgnat");
     expect(result.shouldAutoApplyQuietWan).toBe(false);
@@ -115,7 +150,7 @@ describe("detectCgnatAtStartup — auto-apply decision boundary", () => {
     mocks.detectNatType.mockResolvedValue("unknown");
     mocks.raceStunServers.mockResolvedValue(null);
 
-    await detectCgnatAtStartup({ explicitMode: false, upnpEnabled: false });
+    await detectCgnatAtStartup({ connectivityMode: "optimized", upnpEnabled: false });
 
     expect(mocks.upnpDiscoverAndMap).not.toHaveBeenCalled();
   });

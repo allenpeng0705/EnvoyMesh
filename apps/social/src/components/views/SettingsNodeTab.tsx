@@ -1527,6 +1527,13 @@ export function SettingsNodeTab() {
             <option value="quietWan">{t("settings.network.resourceTuning.modeQuietWan")}</option>
           </select>
         </label>
+        {nodeConfig?.connectivityMode === "quietWan" &&
+          nodeConfig.connectivityModeAutoAppliedReason === "cgnat" &&
+          !nodeConfig.connectivityModeExplicit && (
+            <p className="section-desc" data-testid="connectivity-mode-auto-applied">
+              {t("settings.network.resourceTuning.autoAppliedCgnat")}
+            </p>
+          )}
         <p className="section-desc" data-testid="connectivity-mode-summary">
           {formatConnectivityPresetSummary(
             resolveConnectivityPreset(nodeConfig?.connectivityMode ?? "optimized"),

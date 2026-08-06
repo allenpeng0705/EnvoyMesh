@@ -113,6 +113,16 @@ export interface PersistedNodeConfig {
    * Default: optimized. Takes effect after node restart for mesh options.
    */
   connectivityMode?: import("@envoymesh/api").ConnectivityMode;
+  /**
+   * True when the operator chose the mode in Settings (or CLI). When false/omitted,
+   * CGNAT startup detection may auto-apply `quietWan` over the default `optimized`.
+   */
+  connectivityModeExplicit?: boolean;
+  /**
+   * Set when `quietWan` was persisted by CGNAT auto-apply (not a user choice).
+   * Cleared when the operator picks a mode in Settings.
+   */
+  connectivityModeAutoAppliedReason?: "cgnat";
   /** libp2p connection cap (client nodes). Omitted uses network default (150). */
   maxConnections?: number;
   /** mDNS interval in ms. Default 10_000. */

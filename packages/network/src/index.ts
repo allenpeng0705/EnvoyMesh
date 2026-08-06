@@ -1359,9 +1359,6 @@ export class EnvoyMesh {
       })
       .filter((id): id is string => Boolean(id));
     this.preferredRelayPeerIds = [...relayPeerIds];
-    // Connection-aware seed so a stale reservation-store flag at startup
-    // doesn't bias the first scheduling cycle toward the slow cadence.
-    let wasLive = this.listUsableRelayPeerIds(relayPeerIds).length > 0;
 
     const missingRelayAddrs = (): string[] => {
       const liveIds = new Set(this.listUsableRelayPeerIds(relayPeerIds));
@@ -1385,7 +1382,6 @@ export class EnvoyMesh {
       if (this.reservationHealthRunning || !this.node) return;
       const missing = missingRelayAddrs();
       if (missing.length === 0) {
-        wasLive = true;
         consecutiveReWarmFailures = 0;
         this.reservationFailureStreak = 0;
         return;
@@ -1413,7 +1409,6 @@ export class EnvoyMesh {
         } else {
           // Partial recovery — don't increment, but don't reset either.
         }
-        wasLive = usable.length > 0;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         this.lastReservationError = msg;
@@ -1435,24 +1430,22 @@ export class EnvoyMesh {
       let delay = pendingMs;
       if (allLive) {
         delay = healthyMs;
-        wasLive = true;
         consecutiveReWarmFailures = 0;
       } else if (anyLive) {
         // Partial multi-home or stale slot: keep trying on the pending cadence.
         delay = pendingMs;
-        wasLive = true;
-      } else if (wasLive) {
-        delay = lostMs;
-        // Back off when re-warm has failed repeatedly — a dead relay doesn't
-        // need a 30s dial attempt every 15s forever. Stretch exponentially.
+      } else {
+        // Zero live reservations — either lost after having them, OR never
+        // reserved (cold start against a dead relay). Use lostMs + exponential
+        // backoff so we don't hammer forever in either case.
         const backed = computeReservationBackoffDelay({
           consecutiveReWarmFailures,
           threshold: sustainedFailureBackoffThreshold,
           lostMs,
           maxMs: sustainedFailureBackoffMaxMs,
         });
+        delay = backed;
         if (backed !== lostMs) {
-          delay = backed;
           console.log(
             `[p2p] relay reservation health: backing off (sustained failure ${consecutiveReWarmFailures} cycles) — next re-warm in ${Math.round(delay / 1000)}s`,
           );

@@ -90,7 +90,7 @@ export function buildConnectivityDiagnostics(
   // (bootstrap failing) and there's visible connection churn, suggest trying
   // quietWan. This is a SUGGESTION, not auto-apply — false positives on a node
   // that's actually reachable would silently disable public-DHT discovery.
-  // See docs/connectivity-internals-and-design.md Open Question #1.
+  // Definitive CGNAT auto-apply happens at startup (see cgnat-detection.ts).
   const connectivityMode = input.config?.connectivityMode ?? "optimized";
   const dhtStillOn = connectivityMode !== "quietWan" && connectivityMode !== "aggressive";
   const bootstrapFailing =
@@ -101,6 +101,15 @@ export function buildConnectivityDiagnostics(
       "High connection churn with the public DHT unreachable — your node may be behind CGNAT or a restrictive NAT. " +
         "Consider switching to 'Quiet WAN' mode (Settings → Resource Tuning) to disable the public DHT swarm and rely on relay-roster discovery. " +
         "This stops the churn while keeping WAN relay + LAN discovery.",
+    );
+  } else if (
+    connectivityMode === "quietWan" &&
+    input.config?.connectivityModeAutoAppliedReason === "cgnat"
+  ) {
+    hints.unshift(
+      "Quiet WAN was auto-applied because this node looks like it is behind CGNAT. " +
+        "Public DHT discovery is off; WAN uses relay roster + circuit. " +
+        "Change Settings → Resource Tuning if you want a different mode.",
     );
   }
 

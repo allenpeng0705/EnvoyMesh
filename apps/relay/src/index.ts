@@ -317,6 +317,12 @@ let statsInterval: ReturnType<typeof setInterval> | undefined;
 let rateLimitCleanupInterval: ReturnType<typeof setInterval> | undefined;
 let relayHealthTimer: ReturnType<typeof setInterval> | undefined;
 let eventLoopLagTimer: ReturnType<typeof setInterval> | undefined;
+// Hoisted to module scope so shutdown() can clear them (C4/M1 stability fixes).
+let provideInterval: ReturnType<typeof setInterval> | undefined;
+let detachRelayControl: (() => void) | undefined;
+let directWss: WebSocketServer | undefined;
+let wss: WebSocketServer | undefined;
+let homeTunnelProxy: ReturnType<typeof createHomeTunnelProxy> | undefined;
 let relayHealthState: StandaloneRelayHealthState = createInitialStandaloneRelayHealthState();
 let relayHealthSnapshot: StandaloneRelayHealthSnapshot | undefined;
 let lastEventLoopLagMs = 0;
@@ -492,6 +498,35 @@ async function shutdown(): Promise<void> {
     clearInterval(hintsGossipTimer);
     hintsGossipTimer = undefined;
   }
+  // C4: clear the DHT re-provide interval + detach the relay-control handler.
+  if (provideInterval) {
+    clearInterval(provideInterval);
+    provideInterval = undefined;
+  }
+  if (detachRelayControl) {
+    detachRelayControl();
+    detachRelayControl = undefined;
+  }
+  // M1: explicitly close the WebSocket servers and home-tunnel-proxy so active
+  // connections are terminated promptly (systemd SIGTERM shouldn't hang).
+  try {
+    await homeTunnelProxy?.shutdown();
+  } catch {
+    /* ignore */
+  }
+  homeTunnelProxy = undefined;
+  try {
+    directWss?.close();
+  } catch {
+    /* ignore */
+  }
+  try {
+    wss?.close();
+  } catch {
+    /* ignore */
+  }
+  directWss = undefined;
+  wss = undefined;
   if (httpServer) {
     httpServer.close();
   }
@@ -738,8 +773,12 @@ try {
     });
     // Re-advertise every 10 minutes (TTL on DHT records is typically 24h,
     // but re-providing keeps the routing table fresh).
-    const provideInterval = setInterval(() => {
-      void mesh.provideSelf().catch(() => {});
+    provideInterval = setInterval(() => {
+      // L1: log failures instead of silently swallowing — a relay that
+      // looks healthy but can't provide is silently un-discoverable.
+      mesh.provideSelf().catch((err) => {
+        console.warn("[relay] periodic provideSelf failed:", err instanceof Error ? err.message : String(err));
+      });
     }, 10 * 60_000);
     // Don't keep the process alive just for this timer.
     if (provideInterval.unref) provideInterval.unref();
@@ -749,7 +788,7 @@ try {
   // (checkin / lookup / miss-forward / hints). This replaces the inline
   // duplicate that was previously in the mesh.onMessage handler below.
   // Production binary and E2E tests now share the same implementation.
-  const detachRelayControl = attachStandaloneRelayControl({
+  detachRelayControl = attachStandaloneRelayControl({
     mesh,
     roster: relayRoster,
     router: relayLookupRouter,
@@ -782,12 +821,22 @@ try {
 
   if (args.httpPort) {
     // Direct client WebSocket connections (mobile → relay direct envelope routing)
-    const directWss = new WebSocketServer({ noServer: true });
+    directWss = new WebSocketServer({ noServer: true });
+    const _directWss = directWss; // local alias (non-undefined within this block)
+    // M2: WSS servers must have error handlers — a bad upgrade/TLS reset emits
+    // 'error' with no listener → uncaughtException on a long-running relay.
+    _directWss.on("error", (err) => {
+      console.warn("[relay] directWss error:", err instanceof Error ? err.message : String(err));
+    });
     const directClients = new Map<WebSocket, string>(); // ws → peerId
     const MAX_DIRECT_CLIENTS = 200;
 
     // WebSocket proxy for mobile client connections (Phase 10A relay bridge)
-    const wss = new WebSocketServer({ noServer: true });
+    wss = new WebSocketServer({ noServer: true });
+    const _wss = wss; // local alias
+    _wss.on("error", (err) => {
+      console.warn("[relay] proxyWss error:", err instanceof Error ? err.message : String(err));
+    });
     const proxyConnByTarget = new Map<string, Set<WebSocket>>();
     let proxyConnTotal = 0;
 
@@ -805,12 +854,13 @@ try {
     // re-claim on new tunnel) lives in `./home-tunnel-proxy.ts` so it
     // can be unit-tested in isolation.
     const MAX_HOME_TUNNELS = 200;
-    const homeTunnelProxy = createHomeTunnelProxy({
+    homeTunnelProxy = createHomeTunnelProxy({
       maxHomeTunnels: MAX_HOME_TUNNELS,
       maxProxyConnections: MAX_PROXY_CONNECTIONS,
       maxHomeTunnelDataBytes: MAX_HOME_TUNNEL_DATA_BYTES,
       logPrefix: "[relay]",
     });
+    const _homeTunnelProxy = homeTunnelProxy; // local alias (non-undefined within block)
 
     const adminDeps: AdminHttpDeps = {
       creds: adminCreds,
@@ -825,7 +875,7 @@ try {
           reasons: started ? [] : ["relay is starting"],
         };
         const versions = buildRelayVersionReport(new Date(startedAtMs).toISOString());
-        const tunnelStats = homeTunnelProxy.stats();
+        const tunnelStats = _homeTunnelProxy.stats();
         const metrics = relayMetrics.snapshot();
         return {
           uptimeMs: Date.now() - startedAtMs,
@@ -856,7 +906,7 @@ try {
       },
       buildPeers: () => {
         const conn = mesh.getConnectionStats();
-        const tunnelStats = homeTunnelProxy.stats();
+        const tunnelStats = _homeTunnelProxy.stats();
         return {
           connectedPeerIds: conn.connectedPeerIds,
           connectedPeerCount: conn.connectedPeerIds.length,
@@ -1089,13 +1139,13 @@ try {
                 .entries()
                 .filter((e) => e.ownerId === ownerId && e.expiresAt > now);
               if (matches.length === 0) return null;
-              const withTunnel = matches.find((e) => homeTunnelProxy.hasHomeTunnel(e.peerId));
+              const withTunnel = matches.find((e) => _homeTunnelProxy.hasHomeTunnel(e.peerId));
               return (withTunnel ?? matches[0])!.peerId;
             },
             forwardToHome: async (homePeerId, body, headers, stream) => {
               const a2aPath =
                 process.env.ENVOYMESH_A2A_HOME_PATH?.trim() || "/a2a/jsonrpc";
-              return homeTunnelProxy.requestHttpViaHomeTunnel(homePeerId, {
+              return _homeTunnelProxy.requestHttpViaHomeTunnel(homePeerId, {
                 method: "POST",
                 path: a2aPath,
                 headers: {
@@ -1134,15 +1184,15 @@ try {
           const matches = relayRoster
             .entries()
             .filter((e) => e.ownerId === tokenEntry.ownerId && e.expiresAt > now);
-          const withTunnel = matches.find((e) => homeTunnelProxy.hasHomeTunnel(e.peerId));
+          const withTunnel = matches.find((e) => _homeTunnelProxy.hasHomeTunnel(e.peerId));
           const homePeerId = (withTunnel ?? matches[0])?.peerId;
-          if (!homePeerId || !homeTunnelProxy.hasHomeTunnel(homePeerId)) {
+          if (!homePeerId || !_homeTunnelProxy.hasHomeTunnel(homePeerId)) {
             res.writeHead(504, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ ok: false, reason: "home tunnel unavailable" }));
             return;
           }
           const qs = url.search ?? "";
-          const upstream = await homeTunnelProxy.requestHttpViaHomeTunnel(homePeerId, {
+          const upstream = await _homeTunnelProxy.requestHttpViaHomeTunnel(homePeerId, {
             method: "GET",
             path: `${pathname}${qs}`,
             headers: { Authorization: `Bearer ${token}` },
@@ -1190,7 +1240,7 @@ try {
           socket.destroy();
           return;
         }
-        directWss.handleUpgrade(req, socket, head, (ws) => {
+        _directWss.handleUpgrade(req, socket, head, (ws) => {
           handleDirectClientConnection(ws);
         });
         return;
@@ -1199,7 +1249,7 @@ try {
       // ---- /ws/home — home node registers a persistent tunnel ----
       if (url.pathname === "/ws/home") {
         const peerId = (url.searchParams.get("peerId") ?? "").trim();
-        void homeTunnelProxy.handleHomeUpgrade(req, socket, head, peerId);
+        void _homeTunnelProxy.handleHomeUpgrade(req, socket, head, peerId);
         return;
       }
 
@@ -1232,7 +1282,7 @@ try {
         ""
       ).trim();
 
-      wss.handleUpgrade(req, socket, head, (ws) => {
+      _wss.handleUpgrade(req, socket, head, (ws) => {
         // SECURITY: /ws?target=<peerId> is unauthenticated at the relay
         // level — the token is passed through to the home node's handshake.
         // Anyone can open a connection and cause the relay to dial an
@@ -1242,7 +1292,7 @@ try {
         // Operators who want stricter control should set --ws-auth-token
         // (which gates /ws/client but not /ws?target= today — a future
         // hardening item is to extend the token gate to /ws?target=).
-        homeTunnelProxy.attachMobileProxy(ws, targetPeerId, token, (fallbackWs) => {
+        _homeTunnelProxy.attachMobileProxy(ws, targetPeerId, token, (fallbackWs) => {
           void handleProxyConnection(fallbackWs, targetPeerId, token);
         });
       });
@@ -1270,13 +1320,18 @@ try {
 
       let libp2pStream: any = null;
 
-      // Buffer early messages — the mobile sends JSON-RPC probes immediately after
-      // WebSocket connect, but dialProtocol + handshake can take seconds. Without
-      // buffering, those messages arrive before ws.on("message") is registered and
-      // are silently dropped by the ws EventEmitter.
+      // C2: Cap early-buffer to prevent OOM when dialProtocol + handshake stalls
+      // but the mobile keeps sending. Mirrors home-tunnel-proxy's MAX_EARLY_BUFFER_FRAMES.
+      const MAX_EARLY_BUFFER_FRAMES = 100;
+      const MAX_EARLY_BUFFER_BYTES = 2 * 1024 * 1024; // 2 MB total cap
       const earlyBuffer: Uint8Array[] = [];
+      let earlyBufferBytes = 0;
       let streamReady = false;
       let streamIo: ReturnType<typeof byteStream> | null = null;
+
+      // C3: Backpressure cap — if the mobile client is slow to read, ws.send
+      // queues frames in memory. Close before this grows unbounded (slow-client OOM).
+      const MAX_WS_BUFFERED_AMOUNT = 4 * 1024 * 1024; // 4 MB
 
       const rawToBytes = (raw: string | Buffer | ArrayBuffer | Buffer[]): Uint8Array => {
         if (typeof raw === "string") return new TextEncoder().encode(raw);
@@ -1292,7 +1347,17 @@ try {
           if (streamReady && streamIo) {
             void streamIo.write(bytes).catch(() => ws.close());
           } else {
+            // C2: cap the early buffer — drop oldest if over frame/byte limits.
             earlyBuffer.push(bytes);
+            earlyBufferBytes += bytes.byteLength;
+            while (
+              (earlyBuffer.length > MAX_EARLY_BUFFER_FRAMES ||
+                earlyBufferBytes > MAX_EARLY_BUFFER_BYTES) &&
+              earlyBuffer.length > 0
+            ) {
+              const dropped = earlyBuffer.shift()!;
+              earlyBufferBytes -= dropped.byteLength;
+            }
           }
         } catch {
           ws.close();
@@ -1304,6 +1369,17 @@ try {
 
         libp2pStream = await mesh.dialProtocol(targetPeerId, CLIENT_PROXY_PROTOCOL);
         streamIo = byteStream(libp2pStream);
+
+        // C1: Attach an error handler on the raw libp2p stream. Without it, a
+        // connection reset after handshake emits 'error' with no listener →
+        // uncaughtException on a long-running relay. Close both stream + WS.
+        libp2pStream.on?.("error", (err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn(`[relay] client-proxy: libp2p stream error: ${msg}`);
+          try { libp2pStream.close?.(); } catch { /* ignore */ }
+          try { ws.close(); } catch { /* ignore */ }
+        });
+
         console.log(`[relay] client-proxy: dialed ${targetPeerId.slice(0, 12)}…, sending handshake`);
 
         // Send handshake with pairing token
@@ -1333,6 +1409,7 @@ try {
             await streamIo.write(bytes);
           }
           earlyBuffer.length = 0;
+          earlyBufferBytes = 0;
         }
 
         // Send "connected" event immediately so the mobile knows the RPC channel is ready.
@@ -1354,6 +1431,16 @@ try {
                 break;
               }
               const text = decoder.decode(bytes.subarray());
+              // C3: backpressure — if the mobile is slow to read, ws.bufferedAmount
+              // grows unbounded (each pending frame holds the full string). Close
+              // the connection before this becomes an OOM vector.
+              if (ws.bufferedAmount > MAX_WS_BUFFERED_AMOUNT) {
+                console.warn(
+                  `[relay] client-proxy: closing slow client (bufferedAmount=${ws.bufferedAmount} > ${MAX_WS_BUFFERED_AMOUNT})`,
+                );
+                ws.close(1011, "slow client (backpressure)");
+                break;
+              }
               console.log(`[relay] client-proxy: forwarding from home node (${text.length} chars): ${text.slice(0, 100)}`);
               ws.send(text);
             }

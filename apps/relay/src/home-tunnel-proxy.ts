@@ -171,6 +171,14 @@ const ORPHAN_CHANNEL_TIMEOUT_MS = 60_000;
  */
 const MAX_EARLY_BUFFER_FRAMES = 100;
 
+/**
+ * M3: Maximum in-flight proxied HTTP requests. Each entry holds a Promise
+ * resolver + a 55s timer. Without a cap, a reconnect loop can accumulate
+ * entries faster than the 55s timeout evicts them. When exceeded, reject the
+ * oldest pending request rather than growing unbounded.
+ */
+const MAX_PENDING_HTTP = 1000;
+
 export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelProxy {
   const {
     maxHomeTunnels,
@@ -182,6 +190,14 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
   // ---- Module-level state ----
   const homeWss = new WebSocketServer({ noServer: true });
   const proxyWss = new WebSocketServer({ noServer: true });
+  // M2: WSS servers must have error handlers — a bad upgrade or TLS reset
+  // emits 'error' with no listener → uncaughtException on a long-running relay.
+  homeWss.on("error", (err) => {
+    console.warn(`${logPrefix} homeWss error:`, err instanceof Error ? err.message : String(err));
+  });
+  proxyWss.on("error", (err) => {
+    console.warn(`${logPrefix} proxyWss error:`, err instanceof Error ? err.message : String(err));
+  });
   const homeTunnels = new Map<string, WebSocket>();
   const proxyChannels = new Map<string, ProxyChannelState>();
   const proxyClaimResolvers = new Map<string, () => void>();
@@ -538,6 +554,14 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
         resolver();
       }
       proxyClaimResolvers.clear();
+      // M3: reject in-flight proxied HTTP requests that were going through
+      // this tunnel — they'll never get a response now. Without this they
+      // sit until the 55s timeout, accumulating under reconnect loops.
+      for (const [reqId, entry] of pendingHttp.entries()) {
+        clearTimeout(entry.timer);
+        entry.resolve(null);
+        pendingHttp.delete(reqId);
+      }
       log(
         `home-tunnel: ${peerId.slice(0, 12)}… disconnected (total=${homeTunnels.size}, orphaned=${orphaned})`,
       );
@@ -734,6 +758,19 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
       const requestId = `http_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
       const timeoutMs = input.timeoutMs ?? 55_000;
       return new Promise((resolve) => {
+        // M3: cap pending HTTP requests to prevent unbounded growth under
+        // reconnect loops. Evict the oldest entry (FIFO) when over the cap.
+        if (pendingHttp.size >= MAX_PENDING_HTTP) {
+          const oldest = pendingHttp.keys().next().value;
+          if (oldest) {
+            const entry = pendingHttp.get(oldest);
+            if (entry) {
+              clearTimeout(entry.timer);
+              entry.resolve(null);
+            }
+            pendingHttp.delete(oldest);
+          }
+        }
         const timer = setTimeout(() => {
           pendingHttp.delete(requestId);
           resolve(null);

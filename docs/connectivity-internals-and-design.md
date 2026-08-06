@@ -464,12 +464,12 @@ bundle proves error-prone in practice.
 still works via relay-roster union. The only loss is peers who are *exclusively*
 on the public DHT and not on any relay — rare for the bonded-mesh use case.
 
-**Default change?** Do NOT make `quietWan` the default initially. Ship it as a
-selectable profile (Settings suggestion, not auto-apply), validate it across a
-few real nodes (Allen's CGNAT Mac, Windows 5G, a LAN node), then consider
-promoting it to default. **Do NOT auto-apply on CGNAT detection yet** — UPnP
-returning a private IP has false positives (networks where UPnP is merely
-disabled but the node is reachable). Start with a Settings suggestion.
+**Default change?** Do NOT make `quietWan` the global default. Ship it as a
+selectable profile; on **definitive** CGNAT classification at startup (RFC 6598
+range, or symmetric NAT + UPnP-private corroboration) auto-apply and persist
+`quietWan` when the operator has not explicitly chosen a mode (default
+`optimized` is eligible). Ambiguous signals only surface a Settings suggestion.
+See Open Question #1 (resolved) and `cgnat-detection.ts`.
 
 ### Solution A2 — Connection gater to block anonymous dials (defense in depth)
 
@@ -711,16 +711,14 @@ considering a default change.
 ### Open questions
 
 1. **Should `quietWan` auto-activate on CGNAT detection?** ✅ **Resolved &
-   implemented.** The node now runs a CGNAT detection pass at startup
-   (`detectCgnatAtStartup`) that uses three *definitive* signals: symmetric NAT
-   (two STUN servers see different mappings), RFC 6598 CGNAT range IP, and
-   UPnP-private external IP. When any one fires AND the operator hasn't
-   explicitly chosen a mode, `quietWan` is auto-applied for that startup.
-   Ambiguous results (STUN timeout, no UPnP) do NOT auto-apply — they fall
-   through to the churn-based Settings suggestion. The earlier "false positives
-   are costly" concern is resolved because the detection is now deterministic,
-   not a guess. See `apps/node/src/cgnat-detection.ts` + `stun.ts`
-   (`detectNatType`, `classifyCgnat`).
+   implemented.** Startup runs `detectCgnatAtStartup` with definitive signals
+   (RFC 6598 alone, or symmetric NAT + UPnP-private). When classification is
+   `cgnat` and the operator has not locked a mode (`connectivityModeExplicit`),
+   the node auto-applies **and persists** `quietWan` *before* lean bootstrap so
+   public-libp2p presets are also stripped. Default `optimized` without the
+   explicit flag is eligible; Settings mode changes set `connectivityModeExplicit:
+   true`. Ambiguous results only suggest Quiet WAN in diagnostics. See
+   `apps/node/src/cgnat-detection.ts` + `shouldAllowCgnatQuietWanAutoApply`.
 
 2. **Should we fully deprecate the public DHT?** Given that every discovery path
    has a relay-roster fallback, the public DHT's only unique value is finding

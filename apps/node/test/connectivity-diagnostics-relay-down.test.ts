@@ -175,4 +175,19 @@ describe("buildConnectivityDiagnostics — CGNAT quietWan suggestion", () => {
     const suggestion = diag.hints.find((h) => h.includes("Quiet WAN"));
     expect(suggestion, "healthy bootstrap → no suggestion").toBeUndefined();
   });
+
+  it("surfaces CGNAT auto-applied Quiet WAN notice", () => {
+    const diag = buildConnectivityDiagnostics({
+      nodeOnline: true,
+      config: {
+        discoveryProfile: "wan-default",
+        connectivityMode: "quietWan",
+        connectivityModeAutoAppliedReason: "cgnat",
+      } as never,
+      auditEvents: [],
+      mesh: makeMeshStub({ failureStreak: 0, state: "reserved", totalPeerIds: 4, dialQueueLength: 0 }),
+    });
+    const notice = diag.hints.find((h) => h.includes("auto-applied"));
+    expect(notice, "should explain CGNAT auto-apply").toBeTruthy();
+  });
 });
