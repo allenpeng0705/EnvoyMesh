@@ -59,7 +59,21 @@ export function buildConnectivityDiagnostics(
     typeof input.mesh?.getRelayReservationStatus === "function"
       ? input.mesh.getRelayReservationStatus()
       : undefined;
-  if (circuitReservation?.state === "failed") {
+  // Sustained relay failure (M2): when the reservation health loop has been
+  // failing repeatedly, surface a clear "Relay unreachable" warning so the
+  // operator knows WAN discovery + cross-NAT reachability are degraded and can
+  // add a backup relay. This is especially important under quietWan where the
+  // relay is the only WAN discovery path.
+  const SUSTAINED_RELAY_FAILURE_THRESHOLD = 4; // matches M1 backoff threshold
+  if (
+    circuitReservation?.state === "failed" &&
+    (circuitReservation.failureStreak ?? 0) >= SUSTAINED_RELAY_FAILURE_THRESHOLD
+  ) {
+    hints.unshift(
+      `Relay unreachable — ${circuitReservation.failureStreak} consecutive reservation failures. ` +
+        "WAN discovery and cross-NAT reachability are degraded. Add a backup relay in Settings → Agent Network, or check the relay server.",
+    );
+  } else if (circuitReservation?.state === "failed") {
     hints.unshift(
       circuitReservation.lastError
         ? `Circuit reservation: ${circuitReservation.lastError}`
@@ -68,6 +82,34 @@ export function buildConnectivityDiagnostics(
   } else if (circuitReservation?.state === "pending") {
     hints.unshift(
       "Circuit reservation still PENDING — wait for relay=RESERVED before minting WAN invites.",
+    );
+  }
+
+  // CGNAT / constrained-network suggestion: when the node is on a DHT-enabled
+  // mode (not quietWan/aggressive) but the public DHT is unreachable
+  // (bootstrap failing) and there's visible connection churn, suggest trying
+  // quietWan. This is a SUGGESTION, not auto-apply — false positives on a node
+  // that's actually reachable would silently disable public-DHT discovery.
+  // Definitive CGNAT auto-apply happens at startup (see cgnat-detection.ts).
+  const connectivityMode = input.config?.connectivityMode ?? "optimized";
+  const dhtStillOn = connectivityMode !== "quietWan" && connectivityMode !== "aggressive";
+  const bootstrapFailing =
+    axes.bootstrapReachability.state === "fail" || axes.bootstrapReachability.state === "degraded";
+  const churnSymptom = (connStats?.totalPeerIds ?? 0) > 32 || (connStats?.dialQueueLength ?? 0) > 20;
+  if (dhtStillOn && bootstrapFailing && churnSymptom) {
+    hints.push(
+      "High connection churn with the public DHT unreachable — your node may be behind CGNAT or a restrictive NAT. " +
+        "Consider switching to 'Quiet WAN' mode (Settings → Resource Tuning) to disable the public DHT swarm and rely on relay-roster discovery. " +
+        "This stops the churn while keeping WAN relay + LAN discovery.",
+    );
+  } else if (
+    connectivityMode === "quietWan" &&
+    input.config?.connectivityModeAutoAppliedReason === "cgnat"
+  ) {
+    hints.unshift(
+      "Quiet WAN was auto-applied because this node looks like it is behind CGNAT. " +
+        "Public DHT discovery is off; WAN uses relay roster + circuit. " +
+        "Change Settings → Resource Tuning if you want a different mode.",
     );
   }
 

@@ -1500,6 +1500,13 @@ export interface CircuitReservationStatus {
   liveRelayPeerIds?: string[];
   lastError?: string;
   lastReservedAt?: string;
+  /**
+   * Consecutive failed re-warm cycles (resets to 0 on success). When sustained
+   * (>4), the UI shows a "Relay unreachable" warning so operators know WAN
+   * discovery and cross-NAT reachability are degraded. See
+   * `docs/connectivity-internals-and-design.md` Part VIII (M2).
+   */
+  failureStreak?: number;
   checkedAt: string;
 }
 

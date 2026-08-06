@@ -105,8 +105,3 @@ export function resolveConnectivityRuntime(input: {
     capabilityDiscoveryIntervalMsEffective: () => stretch(capabilityBase),
   };
 }
-
-/** True when periodic DHT capability *find* should run (provide may still run). */
-export function shouldRunPeriodicCapabilityFind(runtime: ResolvedConnectivityRuntime): boolean {
-  return runtime.enableDht && !runtime.lazyCapabilityDiscovery;
-}

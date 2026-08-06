@@ -97,6 +97,7 @@ export {
   DEFAULT_MDNS_INTERVAL_MS,
   PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD,
   PRUNE_EXCESS_SWARM_MAX_PEERS,
+  pruneThresholdForMaxConnections,
   scanLibp2pConnectionsFlat,
   scanLibp2pConnectionsMap,
   type MeshConnectionStats,
@@ -121,6 +122,28 @@ export function peerTagsTriggerReconnectQueue(tagNames: Iterable<string>): boole
 /** Envoy tag name merged by {@link EnvoyMesh.tagContactForPersistentReachability}. */
 export function getEnvoyContactKeepAlivePeerTagName(): string {
   return CONTACT_KEEP_ALIVE_PEER_TAG;
+}
+
+/**
+ * Compute the re-warm delay for the reservation health loop after N consecutive
+ * failures. Pure (unit-testable). Returns `lostMs` until failures exceed
+ * `threshold`, then `lostMs × 2^(failures - threshold)` capped at `maxMs`.
+ *
+ * Rationale: a dead relay doesn't need a 30s dial attempt every 15s forever.
+ * After ~1 minute of sustained failure, stretch the cadence so the node stops
+ * hammering it. Reset to 0 immediately on any successful reservation (the
+ * caller's responsibility). See docs/connectivity-internals-and-design.md M1.
+ */
+export function computeReservationBackoffDelay(input: {
+  consecutiveReWarmFailures: number;
+  threshold: number;
+  lostMs: number;
+  maxMs: number;
+}): number {
+  const { consecutiveReWarmFailures, threshold, lostMs, maxMs } = input;
+  if (consecutiveReWarmFailures <= threshold) return lostMs;
+  const exp = consecutiveReWarmFailures - threshold;
+  return Math.min(lostMs * 2 ** exp, maxMs);
 }
 
 /**
@@ -332,6 +355,13 @@ export interface RelayReservationStatus {
   liveRelayPeerIds: string[];
   lastError?: string;
   lastReservedAt?: string;
+  /**
+   * Consecutive failed re-warm cycles (resets to 0 on success). When this
+   * stays >0 for a while, the configured relay(s) are effectively down — the
+   * UI surfaces a "Relay unreachable" warning so operators know WAN discovery
+   * and cross-NAT reachability are degraded. See M2.
+   */
+  failureStreak: number;
   checkedAt: string;
 }
 
@@ -414,6 +444,24 @@ export interface EnvoyMeshOptions {
    * nodes; relay-server nodes stay uncapped unless set explicitly.
    */
   maxConnections?: number;
+  /**
+   * When enabled, a libp2p `connectionGater` blocks outbound dials to peers
+   * NOT in the set returned by {@link allowedDialPeerIds}. This is
+   * defense-in-depth for quietWan / DHT-off modes: even if some path
+   * (bootstrap, identify) introduces an anonymous peer, the gater refuses the
+   * dial at the libp2p layer before it opens a connection. Default OFF — must
+   * never be set on relay servers (would break circuit hopping from arbitrary
+   * peers). See docs/connectivity-internals-and-design.md Solution A2.
+   */
+  strictDialPolicy?: boolean;
+  /**
+   * Callback returning the current set of peer IDs that {@link strictDialPolicy}
+   * permits dialing. Evaluated on every dial attempt so it stays dynamic as
+   * bonds form and discovery seeds arrive. Should include: configured relays,
+   * bonded contacts, mDNS/relay-roster discovered peers. When it returns
+   * undefined, ALL peers are allowed (gater effectively disabled for that dial).
+   */
+  allowedDialPeerIds?: () => Set<string> | undefined;
 }
 
 export interface CapabilityTopicProviderRecord {
@@ -507,6 +555,12 @@ export class EnvoyMesh {
   private preferredRelayPeerIds: string[] = [];
   private lastReservedAt: string | undefined;
   private lastReservationError: string | undefined;
+  /**
+   * Consecutive failed re-warm cycles in the reservation health loop. Surfaced
+   * via RelayReservationStatus so the UI can distinguish a transient blip from
+   * a sustained outage (M2). Reset to 0 on any successful reservation.
+   */
+  private reservationFailureStreak = 0;
   private reservationHealthTimer?: ReturnType<typeof setTimeout>;
   private reservationHealthDisconnectUnsub?: () => void;
   private reservationHealthRunning = false;
@@ -598,6 +652,22 @@ export class EnvoyMesh {
       transportManager: {
         faultTolerance: FaultTolerance.NO_FATAL,
       },
+      // Optional strict dial policy (A2): block outbound dials to peers not in
+      // the allow-set. Defense-in-depth for quietWan / DHT-off modes — stops
+      // anonymous DHT peers at the libp2p layer before a connection opens.
+      // Default off; MUST NOT be enabled on relay servers (would break hops).
+      ...(this.options.strictDialPolicy && this.options.allowedDialPeerIds
+        ? {
+            connectionGater: {
+              denyDialPeer: (peerId: { toString(): string }): boolean => {
+                const allowed = this.options.allowedDialPeerIds?.();
+                // No allow-set → allow all (gater effectively disabled).
+                if (!allowed || allowed.size === 0) return false;
+                return !allowed.has(peerId.toString());
+              },
+            },
+          }
+        : {}),
       connectionMonitor: {
         pingInterval: this.options.connectionMonitorPingIntervalMs ?? 45_000,
         abortConnectionOnPingFailure: false,
@@ -1154,6 +1224,7 @@ export class EnvoyMesh {
       everReserved: false,
       relayPeerIds: [],
       liveRelayPeerIds: [],
+      failureStreak: 0,
       checkedAt: new Date().toISOString(),
     });
     if (!enableRelay && !enableServer) {
@@ -1192,6 +1263,7 @@ export class EnvoyMesh {
         liveRelayPeerIds,
         lastReservedAt: this.lastReservedAt,
         lastError: partialHint,
+        failureStreak: this.reservationFailureStreak,
         checkedAt: new Date().toISOString(),
       };
     }
@@ -1203,6 +1275,7 @@ export class EnvoyMesh {
         relayPeerIds,
         liveRelayPeerIds,
         lastError: this.lastReservationError,
+        failureStreak: this.reservationFailureStreak,
         checkedAt: new Date().toISOString(),
       };
     }
@@ -1219,6 +1292,7 @@ export class EnvoyMesh {
             ? "No live reservation on configured EnvoyMesh relay(s) — re-warming (AutoRelay public hops do not count)."
             : "Reservation was granted earlier but is no longer live in the local store — re-warming."),
         lastReservedAt: this.lastReservedAt,
+        failureStreak: this.reservationFailureStreak,
         checkedAt: new Date().toISOString(),
       };
     }
@@ -1229,6 +1303,7 @@ export class EnvoyMesh {
       relayPeerIds,
       liveRelayPeerIds,
       lastError: this.lastReservationError,
+      failureStreak: this.reservationFailureStreak,
       checkedAt: new Date().toISOString(),
     };
   }
@@ -1241,9 +1316,27 @@ export class EnvoyMesh {
    * Uses an adaptive interval: faster while pending/partial/failed; slower
    * only when *all* preferred relays hold a live slot.
    */
+  /**
+   * Compute the next re-warm delay when the reservation health loop has been
+   * failing. Returns `lostMs` while failures are below the threshold (no
+   * backoff yet); returns exponentially-stretched delays (lostMs × 2^exp,
+   * capped at maxMs) once failures exceed the threshold.
+   *
+   * Exported pure so the backoff math is unit-testable without spinning up a
+   * real libp2p node + dead relay (which needs ~30s × N cycles).
+   * See docs/connectivity-internals-and-design.md Part VIII (M1).
+   */
   startRelayReservationHealthLoop(
     relayMultiaddrs: readonly string[],
-    options?: { intervalMs?: number; pendingIntervalMs?: number; lostIntervalMs?: number },
+    options?: {
+      intervalMs?: number;
+      pendingIntervalMs?: number;
+      lostIntervalMs?: number;
+      /** Consecutive failed re-warms before exponential backoff kicks in. Default 4. */
+      sustainedFailureBackoffThreshold?: number;
+      /** Max delay between re-warms during sustained failure. Default 5 min. */
+      sustainedFailureBackoffMaxMs?: number;
+    },
   ): () => void {
     this.stopRelayReservationHealthLoop();
     const addrs = [...new Set(relayMultiaddrs.map((a) => a.trim()).filter(Boolean))];
@@ -1255,6 +1348,9 @@ export class EnvoyMesh {
     const healthyMs = options?.intervalMs ?? 5 * 60_000;
     const pendingMs = options?.pendingIntervalMs ?? 45_000;
     const lostMs = options?.lostIntervalMs ?? 15_000;
+    // Backoff knobs (test-configurable; see M1 E2E test).
+    const sustainedFailureBackoffThreshold = options?.sustainedFailureBackoffThreshold ?? 4;
+    const sustainedFailureBackoffMaxMs = options?.sustainedFailureBackoffMaxMs ?? 5 * 60_000;
     const generation = ++this.reservationHealthGeneration;
     const relayPeerIds = addrs
       .map((a) => {
@@ -1263,9 +1359,6 @@ export class EnvoyMesh {
       })
       .filter((id): id is string => Boolean(id));
     this.preferredRelayPeerIds = [...relayPeerIds];
-    // Connection-aware seed so a stale reservation-store flag at startup
-    // doesn't bias the first scheduling cycle toward the slow cadence.
-    let wasLive = this.listUsableRelayPeerIds(relayPeerIds).length > 0;
 
     const missingRelayAddrs = (): string[] => {
       const liveIds = new Set(this.listUsableRelayPeerIds(relayPeerIds));
@@ -1277,11 +1370,20 @@ export class EnvoyMesh {
       });
     };
 
+    // Track consecutive failed re-warm cycles so we can back off when a relay
+    // stays down. Without this the loop re-warms every `lostMs` (15s) forever —
+    // each attempt a 30s dial that fails. After ~1 minute of sustained failure
+    // we stretch the cadence exponentially (capped) to stop hammering a dead
+    // relay. Reset to 0 immediately on any successful reservation.
+    // See docs/connectivity-internals-and-design.md Part VIII (M1).
+    let consecutiveReWarmFailures = 0;
+
     const tick = async (reason: string): Promise<void> => {
       if (this.reservationHealthRunning || !this.node) return;
       const missing = missingRelayAddrs();
       if (missing.length === 0) {
-        wasLive = true;
+        consecutiveReWarmFailures = 0;
+        this.reservationFailureStreak = 0;
         return;
       }
       this.reservationHealthRunning = true;
@@ -1298,13 +1400,20 @@ export class EnvoyMesh {
         const usable = this.listUsableRelayPeerIds(relayPeerIds);
         if (resv.failed > 0 && resv.reserved === 0 && usable.length === 0) {
           this.lastReservationError = resv.failures[0] ?? "reservation health re-warm failed";
+          consecutiveReWarmFailures += 1;
+          this.reservationFailureStreak = consecutiveReWarmFailures;
         } else if (usable.length === relayPeerIds.length) {
           this.lastReservationError = undefined;
+          consecutiveReWarmFailures = 0;
+          this.reservationFailureStreak = 0;
+        } else {
+          // Partial recovery — don't increment, but don't reset either.
         }
-        wasLive = usable.length > 0;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         this.lastReservationError = msg;
+        consecutiveReWarmFailures += 1;
+        this.reservationFailureStreak = consecutiveReWarmFailures;
         console.warn(`[p2p] relay reservation health (${reason}) threw: ${msg}`);
       } finally {
         this.reservationHealthRunning = false;
@@ -1321,13 +1430,26 @@ export class EnvoyMesh {
       let delay = pendingMs;
       if (allLive) {
         delay = healthyMs;
-        wasLive = true;
+        consecutiveReWarmFailures = 0;
       } else if (anyLive) {
         // Partial multi-home or stale slot: keep trying on the pending cadence.
         delay = pendingMs;
-        wasLive = true;
-      } else if (wasLive) {
-        delay = lostMs;
+      } else {
+        // Zero live reservations — either lost after having them, OR never
+        // reserved (cold start against a dead relay). Use lostMs + exponential
+        // backoff so we don't hammer forever in either case.
+        const backed = computeReservationBackoffDelay({
+          consecutiveReWarmFailures,
+          threshold: sustainedFailureBackoffThreshold,
+          lostMs,
+          maxMs: sustainedFailureBackoffMaxMs,
+        });
+        delay = backed;
+        if (backed !== lostMs) {
+          console.log(
+            `[p2p] relay reservation health: backing off (sustained failure ${consecutiveReWarmFailures} cycles) — next re-warm in ${Math.round(delay / 1000)}s`,
+          );
+        }
       }
       this.reservationHealthTimer = setTimeout(() => {
         void tick("adaptive").finally(() => {
@@ -2005,6 +2127,41 @@ export class EnvoyMesh {
    * accurately. Previously logged "SUCCESS" even when the broadcast put
    * timed out because no DHT peers were reachable, which hid real outages.
    */
+
+  /**
+   * Number of peers currently in the KadDHT routing table, or -1 when the DHT
+   * is disabled / not yet started / the table cannot be introspected.
+   *
+   * Used by the capability-discovery cycle to short-circuit topic provides
+   * when the routing table is empty — every `provideCapabilityTopic` would
+   * otherwise time out independently (~30s × N topics) for the same root
+   * cause. The relay.checkin mirror carries the topics cross-NAT regardless,
+   * so skipping the DHT provide loses nothing. See
+   * `docs/connectivity-internals-and-design.md` Solution B1.
+   */
+  getRoutingTableSize(): number {
+    if (!this.options.enableDht || !this.node) return -1;
+    try {
+      const dht = (this.node.services as any)?.dht ?? (this.node as any).dht;
+      // Preferred path: KadDHT's RoutingTable.size getter (kb.count()).
+      if (typeof dht?.routingTable?.size === "number") {
+        return dht.routingTable.size;
+      }
+      // Fallback for older KadDHT shapes: sum bucket peer counts.
+      const buckets = dht?.routingTable?.buckets;
+      if (Array.isArray(buckets)) {
+        let n = 0;
+        for (const bucket of buckets) n += bucket?.peers?.size ?? 0;
+        return n;
+      }
+      // Alternative kbucket shape.
+      if (Array.isArray(dht?.kbucket)) return dht.kbucket.length;
+      return -1;
+    } catch {
+      return -1;
+    }
+  }
+
   async provideSelf(): Promise<{ advertised: number; timedOut: boolean }> {
     console.log("[p2p] provideSelf: starting...");
     if (!this.options.enableDht) {
@@ -2020,23 +2177,9 @@ export class EnvoyMesh {
     // time out because there are no peers to replicate to. This helps
     // operators distinguish "empty table → expected timeout" from "populated
     // table → unexpected timeout" (a real network problem).
-    try {
-      const dht = (node.services as any)?.dht ?? (node as any).dht;
-      if (dht?.routingTable) {
-        const rt = dht.routingTable;
-        const bucketCount = rt.buckets?.length ?? 0;
-        let peerCount = 0;
-        if (rt.buckets) {
-          for (const bucket of rt.buckets) peerCount += bucket.peers?.size ?? 0;
-        }
-        console.log(`[p2p] provideSelf: DHT routing table: ${bucketCount} buckets, ${peerCount} peers`);
-      } else if (dht?.kbucket) {
-        // Alternative KadDHT implementation
-        const peers = Array.isArray(dht.kbucket) ? dht.kbucket : [];
-        console.log(`[p2p] provideSelf: DHT kbucket entries: ${peers.length}`);
-      }
-    } catch {
-      // DHT introspection is best-effort
+    const routingTableSize = this.getRoutingTableSize();
+    if (routingTableSize >= 0) {
+      console.log(`[p2p] provideSelf: DHT routing table: ${routingTableSize} peers`);
     }
 
     try {

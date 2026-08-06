@@ -294,8 +294,34 @@ export async function runCapabilityDiscoveryCycle(deps: {
     return;
   }
 
+  // Early-exit when the DHT routing table is empty: every provideCapabilityTopic
+  // would time out independently (~30s × N topics) for the same root cause
+  // (no peers to PUT to). The relay.checkin mirror (merged by the caller)
+  // carries these topics cross-NAT regardless, so skipping the DHT provide
+  // loses nothing. See docs/connectivity-internals-and-design.md Solution B1.
+  const routingTableSize = mesh.getRoutingTableSize();
+  if (routingTableSize === 0) {
+    console.log(
+      `[node-service] capability discovery: DHT routing table empty — skipping DHT provide for ${topics.length} topic(s) (relay.checkin mirror carries them) source=${options.source}`,
+    );
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "p2p.trace",
+        direction: "outbound",
+        protocol: "discovery.capability.provide.skipped-empty-routing-table",
+        outcome: "record",
+        summary: `skipped DHT provide for ${topics.length} topic(s) — routing table empty (relay.checkin mirror carries them) source=${options.source}`,
+      }),
+    );
+    return;
+  }
+
+  // Discovery (findProviders) runs only when explicitly requested via
+  // `options.runFind: true` (on-demand search / agent / bond flow). Periodic
+  // and startup cycles advertise only — never free-running findProviders.
+  // See docs/connectivity-internals-and-design.md Solution B2.
   const runFind =
-    options.runFind !== false &&
+    options.runFind === true &&
     shouldRunCapabilityTopicFind(profile);
   const queryTimeoutMs = options.queryTimeoutMs ?? CAPABILITY_DISCOVERY_QUERY_TIMEOUT_MS;
   const limit = options.limit ?? CAPABILITY_DISCOVERY_MAX_PROVIDERS;

@@ -153,6 +153,8 @@ export async function getNodeConfigViaRuntime(
           }
         : { allowIpfs: false },
       connectivityMode: (tuning.connectivityMode ?? "optimized") as ConnectivityMode,
+      connectivityModeExplicit: config.connectivityModeExplicit === true,
+      connectivityModeAutoAppliedReason: config.connectivityModeAutoAppliedReason,
       maxConnections: tuning.maxConnections,
       mdnsIntervalMs: tuning.mdnsIntervalMs,
       capabilityDiscoveryIntervalMs: tuning.capabilityDiscoveryIntervalMs,
@@ -289,7 +291,8 @@ export async function updateNodeConfigViaRuntime(
   } = config;
 
   // When the resource mode changes, materialize preset knobs so restart picks them up
-  // even if older override fields were previously saved.
+  // even if older override fields were previously saved. Operator-initiated mode
+  // changes mark the choice as explicit so CGNAT auto-apply will not override it.
   if (isConnectivityMode(persistedPatch.connectivityMode)) {
     const preset = resolveConnectivityPreset(persistedPatch.connectivityMode);
     Object.assign(persistedPatch, {
@@ -298,6 +301,8 @@ export async function updateNodeConfigViaRuntime(
       capabilityDiscoveryIntervalMs: preset.capabilityDiscoveryIntervalMs,
       lazyCapabilityDiscovery: preset.lazyCapabilityDiscovery,
       idleTimerStretch: preset.idleTimerStretch,
+      connectivityModeExplicit: true,
+      connectivityModeAutoAppliedReason: undefined,
     });
   }
 

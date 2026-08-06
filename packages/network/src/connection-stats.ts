@@ -25,6 +25,21 @@ export const DEFAULT_CLIENT_MAX_CONNECTIONS = 48;
 export const PRUNE_EXCESS_SWARM_MAX_PEERS = 32;
 export const PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD = 20;
 
+/**
+ * Derive the prune threshold from a connectivity mode's maxConnections so
+ * low-cap presets (quietWan=24) don't prune legitimate LAN/discovered peers
+ * too aggressively, and high-cap presets don't let the pool balloon. The
+ * threshold tracks `maxConnections - headroom` (8-slot headroom). Falls back
+ * to the fixed {@link PRUNE_EXCESS_SWARM_MAX_PEERS} when maxConnections is
+ * unknown. See docs/connectivity-internals-and-design.md Solution C1.
+ */
+export function pruneThresholdForMaxConnections(maxConnections: number | undefined): number {
+  if (typeof maxConnections !== "number" || maxConnections <= 0) {
+    return PRUNE_EXCESS_SWARM_MAX_PEERS;
+  }
+  return Math.max(8, maxConnections - 8);
+}
+
 /** Default mDNS browse interval — lower values increase LAN multicast CPU use. */
 export const DEFAULT_MDNS_INTERVAL_MS = 10_000;
 

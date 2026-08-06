@@ -102,6 +102,9 @@ export const frNetworkSettingsMessages = {
     modeOptimized: "Optimized — balanced (recommended)",
     modeSmart: "Smart — slower when idle; warm on chat",
     modeAggressive: "Aggressive — lowest CPU/network",
+    modeQuietWan: "Quiet WAN — relay discovery only (no public DHT)",
+    autoAppliedCgnat:
+      "Quiet WAN was auto-applied because this node looks like it is behind CGNAT. Changing the mode here locks your choice.",
     restartHint: "Restart the node (or fully quit and reopen the app) for mesh timers and DHT/mDNS options to apply.",
     maxConnections: "Connexions max.",
     capabilityCycle: "Cycle de capacité (secondes)",

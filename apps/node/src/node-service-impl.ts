@@ -929,7 +929,7 @@ import {
   surfaceForContentUrl,
 } from "./content-engage-inbox-store.js";
 import { handleInboundLibraryRead } from "./library-read-inbound.js";
-import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
+import { recordMeshActivity, resolveConnectivityRuntime, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { tryBondAutonomyInboundAutoAccept } from "./bond-autonomy-inbound.js";
 

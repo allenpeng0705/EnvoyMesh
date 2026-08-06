@@ -650,10 +650,19 @@ export interface NodeConfig {
   /** Optional external distribution policy (IPFS export gate). Default: IPFS export disabled. */
   externalPublish?: ExternalPublishConfig;
   /**
-   * Resource / connectivity duty-cycle mode (normal | optimized | smart | aggressive).
+   * Resource / connectivity duty-cycle mode (normal | optimized | smart | aggressive | quietWan).
    * Default: optimized. Mesh-level options apply after node restart.
    */
   connectivityMode?: import("./connectivity-tuning.js").ConnectivityMode;
+  /**
+   * True when the operator chose the mode in Settings. When false/omitted, CGNAT
+   * detection may auto-apply `quietWan` over the default `optimized`.
+   */
+  connectivityModeExplicit?: boolean;
+  /**
+   * Present when `quietWan` was persisted by CGNAT auto-apply (not a user choice).
+   */
+  connectivityModeAutoAppliedReason?: "cgnat";
   /** libp2p connection cap (client nodes). Default 50. */
   maxConnections?: number;
   /** mDNS interval in ms. Default 10_000. */
@@ -1591,6 +1600,10 @@ export interface UpdateNodeConfigParams {
   maxConnections?: number;
   /** Resource / connectivity duty-cycle mode. */
   connectivityMode?: import("./connectivity-tuning.js").ConnectivityMode;
+  /** True when the operator chose the mode in Settings (blocks CGNAT auto-apply). */
+  connectivityModeExplicit?: boolean;
+  /** Set when quietWan was auto-applied for CGNAT; cleared on user mode change. */
+  connectivityModeAutoAppliedReason?: "cgnat" | null;
   /** Optional model name for terminal assist LLM calls. */
   terminalAssistModelName?: string;
   terminalCommandAllowPatterns?: readonly string[];

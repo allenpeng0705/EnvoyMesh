@@ -46,6 +46,71 @@ export function shouldLeanBootstrapForPendingSponsorBond(config: {
   return Boolean(config.setupSponsorFriendEnabled) && !config.setupSponsorFriendCompletedAt;
 }
 
+/**
+ * True when the connectivity mode disables the public DHT (`quietWan` /
+ * `aggressive`). In that mode the public-libp2p bootstrap presets are pure
+ * churn — the DHT service is off, so bootstrapping into the IPFS swarm just
+ * fills the connection pool with anonymous peers that can never be used for
+ * routing. Narrow bootstrap to EnvoyMesh relays only (the `contacts-only`
+ * preset set, which keeps `cn-relay` and any operator relays).
+ *
+ * See `docs/connectivity-internals-and-design.md` Solution A1.1.
+ */
+export function shouldLeanBootstrapForDhtOffMode(connectivityMode: string | undefined): boolean {
+  return connectivityMode === "quietWan" || connectivityMode === "aggressive";
+}
+
+/**
+ * Run CGNAT detection at startup and, when the node is *definitively* behind
+ * carrier-grade NAT, override connectivityMode → quietWan. Only fires when
+ * {@link shouldAllowCgnatQuietWanAutoApply} permits it. See cgnat-detection.ts.
+ */
+async function maybeAutoApplyQuietWanForCgnat(
+  config: {
+    profileDir: string;
+    connectivityMode?: string;
+    connectivityModeExplicit?: boolean;
+    enableUpnp?: boolean;
+  },
+): Promise<{ applied: boolean; detectedMode?: "quietWan"; classification?: string }> {
+  // Skip network probes when already DHT-off or operator-locked.
+  if (
+    config.connectivityMode === "quietWan" ||
+    config.connectivityMode === "aggressive" ||
+    config.connectivityModeExplicit === true
+  ) {
+    return { applied: false };
+  }
+  const { detectCgnatAtStartup, persistCgnatAutoAppliedQuietWan, shouldAllowCgnatQuietWanAutoApply } =
+    await import("./cgnat-detection.js");
+  if (!shouldAllowCgnatQuietWanAutoApply(config)) {
+    return { applied: false };
+  }
+  const result = await detectCgnatAtStartup({
+    upnpEnabled: config.enableUpnp ?? true,
+    connectivityMode: config.connectivityMode,
+    connectivityModeExplicit: config.connectivityModeExplicit,
+  });
+  console.log(
+    `[node-service] CGNAT detection: classification=${result.classification} natType=${result.natType}` +
+      (result.stunObservedIp ? ` stunIp=${result.stunObservedIp}` : "") +
+      (result.upnpExternalIp ? ` upnpIp=${result.upnpExternalIp}` : "") +
+      (result.shouldAutoApplyQuietWan ? " → auto-applying quietWan" : ""),
+  );
+  if (result.shouldAutoApplyQuietWan) {
+    try {
+      await persistCgnatAutoAppliedQuietWan(config.profileDir);
+    } catch (err) {
+      console.warn(
+        "[node-service] failed to persist CGNAT auto-applied quietWan:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+    return { applied: true, detectedMode: "quietWan", classification: result.classification };
+  }
+  return { applied: false, classification: result.classification };
+}
+
 export interface StartNodeContext {
   /** Current node lifecycle status string. */
   getNodeStatus(): NodeStatus;
@@ -76,6 +141,8 @@ export interface StartNodeContext {
     discoveryProfile: DiscoveryProfile;
     enableMdns?: boolean;
     connectivityMode?: import("@envoymesh/api").ConnectivityMode;
+    connectivityModeExplicit?: boolean;
+    connectivityModeAutoAppliedReason?: "cgnat";
     maxConnections?: number;
     mdnsIntervalMs?: number;
     capabilityDiscoveryIntervalMs?: number;
@@ -162,13 +229,34 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     ctx.setNodeStatus("starting");
     ctx.emit("node:status", { status: ctx.getNodeStatus() });
 
+    // CGNAT auto-detection FIRST — before bootstrap resolution — so quietWan
+    // also narrows public-libp2p presets (lean bootstrap). See design A1.1.
+    const leanForSponsor = shouldLeanBootstrapForPendingSponsorBond(config);
+    let effectiveConnectivityMode = config.connectivityMode;
+    if (!leanForSponsor) {
+      const cgnat = await maybeAutoApplyQuietWanForCgnat({
+        profileDir: config.profileDir,
+        connectivityMode: config.connectivityMode,
+        connectivityModeExplicit: config.connectivityModeExplicit,
+        enableUpnp: (config as { enableUpnp?: boolean }).enableUpnp,
+      });
+      if (cgnat.applied && cgnat.detectedMode) {
+        effectiveConnectivityMode = cgnat.detectedMode;
+      }
+    }
+
     // Compute effective bootstrap peers.
     const peerRecords = await ctx.getDiscoverySeedStore();
     const peerDirAddrCount = 0; // peerRecords is the discovery seed list; peer directory is separate
-    const leanForSponsor = shouldLeanBootstrapForPendingSponsorBond(config);
-    // Pending first-launch auto-bond: ignore DHT/seed swarm addrs so the
-    // dial queue is not flooded before bond.request can circuit-CONNECT.
-    const seedAddrs = leanForSponsor
+    // quietWan / aggressive disable the public DHT entirely, so the
+    // public-libp2p bootstrap presets are pure churn — narrow to relays.
+    // Use effectiveConnectivityMode (may have been CGNAT-auto-applied above).
+    const leanForDhtOffMode = shouldLeanBootstrapForDhtOffMode(effectiveConnectivityMode);
+    const leanBootstrap = leanForSponsor || leanForDhtOffMode;
+    // Pending first-launch auto-bond OR DHT-off mode: ignore DHT/seed swarm
+    // addrs so the dial queue is not flooded with peers that can never be
+    // used for routing.
+    const seedAddrs = leanBootstrap
       ? []
       : seedAddrsForDiscoveryProfile(
           config.discoveryProfile,
@@ -178,12 +266,15 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     void peerDirAddrCount;
 
     const resolvedPresetAddrs: string[] = [];
-    const effectivePresets = leanForSponsor
+    const effectivePresets = leanBootstrap
       ? normalizeBootstrapPresetsForContactsOnly(config.bootstrapPresets ?? [])
       : (config.bootstrapPresets ?? []);
-    if (leanForSponsor) {
+    if (leanBootstrap) {
+      const reason = leanForDhtOffMode
+        ? `connectivityMode=${effectiveConnectivityMode} (DHT off — strip public-libp2p swarm)`
+        : "pending setupSponsorFriend (strip public-libp2p swarm)";
       console.log(
-        `[node-service] pending setupSponsorFriend — lean bootstrap (strip public-libp2p swarm) presets=${JSON.stringify(effectivePresets)}`,
+        `[node-service] lean bootstrap — ${reason} presets=${JSON.stringify(effectivePresets)}`,
       );
     }
     console.log(
@@ -252,17 +343,23 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
 
     // Resolve connectivity runtime for DHT / mdns / intervals.
     // Lean mode uses relay-only so DHT peer churn cannot starve circuit CONNECT.
+    // When CGNAT just auto-applied quietWan, ignore stale per-field overrides from
+    // the previous optimized mode so maxConnections/timers match the quietWan preset.
+    const quietWanJustApplied =
+      effectiveConnectivityMode === "quietWan" && config.connectivityMode !== "quietWan";
     const connectivityRuntime = resolveConnectivityRuntime({
       profile: leanForSponsor ? "relay-only" : config.discoveryProfile,
       enableMdns: config.enableMdns ?? true,
-      tuning: {
-        connectivityMode: config.connectivityMode,
-        maxConnections: config.maxConnections,
-        mdnsIntervalMs: config.mdnsIntervalMs,
-        capabilityDiscoveryIntervalMs: config.capabilityDiscoveryIntervalMs,
-        lazyCapabilityDiscovery: config.lazyCapabilityDiscovery,
-        idleTimerStretch: config.idleTimerStretch,
-      },
+      tuning: quietWanJustApplied
+        ? { connectivityMode: "quietWan" }
+        : {
+            connectivityMode: effectiveConnectivityMode,
+            maxConnections: config.maxConnections,
+            mdnsIntervalMs: config.mdnsIntervalMs,
+            capabilityDiscoveryIntervalMs: config.capabilityDiscoveryIntervalMs,
+            lazyCapabilityDiscovery: config.lazyCapabilityDiscovery,
+            idleTimerStretch: config.idleTimerStretch,
+          },
     });
     console.log(
       `[node-service] Creating EnvoyMesh mode=${connectivityRuntime.connectivityMode} enableDht=${connectivityRuntime.enableDht}`,
@@ -367,6 +464,7 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     ctx.setStopNodeStatsLogging(undefined);
     const stopStats = startNodeStatsInterval(mesh as never, {
       processStartedAtMs: Date.now(),
+      maxConnections: connectivityRuntime.maxConnections,
     });
     ctx.setStopNodeStatsLogging(() => stopStats);
 

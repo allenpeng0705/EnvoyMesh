@@ -1,6 +1,7 @@
 import {
   PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD,
   PRUNE_EXCESS_SWARM_MAX_PEERS,
+  pruneThresholdForMaxConnections,
   type EnvoyMesh,
 } from "@envoymesh/network";
 
@@ -12,6 +13,13 @@ export interface NodeStatsLogContext {
   processStartedAtMs: number;
   /** When running as relay-server CLI, report in-memory roster size. */
   relayRosterSize?: () => number;
+  /**
+   * The node's effective maxConnections (from the connectivity preset). When
+   * set, the prune threshold tracks it so low-cap presets (quietWan=24) don't
+   * over-prune legitimate peers. Undefined → use the fixed default (32).
+   * See docs/connectivity-internals-and-design.md Solution C1.
+   */
+  maxConnections?: number;
 }
 
 export function logNodeRuntimeStats(mesh: EnvoyMesh, context: NodeStatsLogContext): void {
@@ -49,18 +57,21 @@ export function logNodeRuntimeStats(mesh: EnvoyMesh, context: NodeStatsLogContex
   }
 
   // Protect circuit-relay hoppability: prune anonymous DHT/bootstrap peers
-  // when the dial queue or peer count crosses pruneExcessSwarmConnections defaults.
+  // when the dial queue or peer count crosses the (preset-scaled) threshold.
+  const pruneMaxPeers = pruneThresholdForMaxConnections(context.maxConnections);
   if (
     (conn.dialQueueLength != null &&
       conn.dialQueueLength > PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD) ||
-    conn.totalPeerIds > PRUNE_EXCESS_SWARM_MAX_PEERS
+    conn.totalPeerIds > pruneMaxPeers
   ) {
-    void mesh.pruneExcessSwarmConnections().catch((err) => {
-      console.warn(
-        "[node-stats] pruneExcessSwarmConnections failed:",
-        err instanceof Error ? err.message : err,
-      );
-    });
+    void mesh
+      .pruneExcessSwarmConnections({ maxPeers: pruneMaxPeers })
+      .catch((err) => {
+        console.warn(
+          "[node-stats] pruneExcessSwarmConnections failed:",
+          err instanceof Error ? err.message : err,
+        );
+      });
   }
 }
 
