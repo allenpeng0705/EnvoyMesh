@@ -124,6 +124,28 @@ export function getEnvoyContactKeepAlivePeerTagName(): string {
 }
 
 /**
+ * Compute the re-warm delay for the reservation health loop after N consecutive
+ * failures. Pure (unit-testable). Returns `lostMs` until failures exceed
+ * `threshold`, then `lostMs × 2^(failures - threshold)` capped at `maxMs`.
+ *
+ * Rationale: a dead relay doesn't need a 30s dial attempt every 15s forever.
+ * After ~1 minute of sustained failure, stretch the cadence so the node stops
+ * hammering it. Reset to 0 immediately on any successful reservation (the
+ * caller's responsibility). See docs/connectivity-internals-and-design.md M1.
+ */
+export function computeReservationBackoffDelay(input: {
+  consecutiveReWarmFailures: number;
+  threshold: number;
+  lostMs: number;
+  maxMs: number;
+}): number {
+  const { consecutiveReWarmFailures, threshold, lostMs, maxMs } = input;
+  if (consecutiveReWarmFailures <= threshold) return lostMs;
+  const exp = consecutiveReWarmFailures - threshold;
+  return Math.min(lostMs * 2 ** exp, maxMs);
+}
+
+/**
  * When libp2p still reports a connection as open, `newStream` can hang or fail after NAT sleep,
  * idle TCP half-open state, or relay path expiry (often seen on Windows). We time out and force a fresh dial.
  *
@@ -1241,9 +1263,27 @@ export class EnvoyMesh {
    * Uses an adaptive interval: faster while pending/partial/failed; slower
    * only when *all* preferred relays hold a live slot.
    */
+  /**
+   * Compute the next re-warm delay when the reservation health loop has been
+   * failing. Returns `lostMs` while failures are below the threshold (no
+   * backoff yet); returns exponentially-stretched delays (lostMs × 2^exp,
+   * capped at maxMs) once failures exceed the threshold.
+   *
+   * Exported pure so the backoff math is unit-testable without spinning up a
+   * real libp2p node + dead relay (which needs ~30s × N cycles).
+   * See docs/connectivity-internals-and-design.md Part VIII (M1).
+   */
   startRelayReservationHealthLoop(
     relayMultiaddrs: readonly string[],
-    options?: { intervalMs?: number; pendingIntervalMs?: number; lostIntervalMs?: number },
+    options?: {
+      intervalMs?: number;
+      pendingIntervalMs?: number;
+      lostIntervalMs?: number;
+      /** Consecutive failed re-warms before exponential backoff kicks in. Default 4. */
+      sustainedFailureBackoffThreshold?: number;
+      /** Max delay between re-warms during sustained failure. Default 5 min. */
+      sustainedFailureBackoffMaxMs?: number;
+    },
   ): () => void {
     this.stopRelayReservationHealthLoop();
     const addrs = [...new Set(relayMultiaddrs.map((a) => a.trim()).filter(Boolean))];
@@ -1255,6 +1295,9 @@ export class EnvoyMesh {
     const healthyMs = options?.intervalMs ?? 5 * 60_000;
     const pendingMs = options?.pendingIntervalMs ?? 45_000;
     const lostMs = options?.lostIntervalMs ?? 15_000;
+    // Backoff knobs (test-configurable; see M1 E2E test).
+    const sustainedFailureBackoffThreshold = options?.sustainedFailureBackoffThreshold ?? 4;
+    const sustainedFailureBackoffMaxMs = options?.sustainedFailureBackoffMaxMs ?? 5 * 60_000;
     const generation = ++this.reservationHealthGeneration;
     const relayPeerIds = addrs
       .map((a) => {
@@ -1277,11 +1320,20 @@ export class EnvoyMesh {
       });
     };
 
+    // Track consecutive failed re-warm cycles so we can back off when a relay
+    // stays down. Without this the loop re-warms every `lostMs` (15s) forever —
+    // each attempt a 30s dial that fails. After ~1 minute of sustained failure
+    // we stretch the cadence exponentially (capped) to stop hammering a dead
+    // relay. Reset to 0 immediately on any successful reservation.
+    // See docs/connectivity-internals-and-design.md Part VIII (M1).
+    let consecutiveReWarmFailures = 0;
+
     const tick = async (reason: string): Promise<void> => {
       if (this.reservationHealthRunning || !this.node) return;
       const missing = missingRelayAddrs();
       if (missing.length === 0) {
         wasLive = true;
+        consecutiveReWarmFailures = 0;
         return;
       }
       this.reservationHealthRunning = true;
@@ -1298,13 +1350,18 @@ export class EnvoyMesh {
         const usable = this.listUsableRelayPeerIds(relayPeerIds);
         if (resv.failed > 0 && resv.reserved === 0 && usable.length === 0) {
           this.lastReservationError = resv.failures[0] ?? "reservation health re-warm failed";
+          consecutiveReWarmFailures += 1;
         } else if (usable.length === relayPeerIds.length) {
           this.lastReservationError = undefined;
+          consecutiveReWarmFailures = 0;
+        } else {
+          // Partial recovery — don't increment, but don't reset either.
         }
         wasLive = usable.length > 0;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         this.lastReservationError = msg;
+        consecutiveReWarmFailures += 1;
         console.warn(`[p2p] relay reservation health (${reason}) threw: ${msg}`);
       } finally {
         this.reservationHealthRunning = false;
@@ -1322,12 +1379,27 @@ export class EnvoyMesh {
       if (allLive) {
         delay = healthyMs;
         wasLive = true;
+        consecutiveReWarmFailures = 0;
       } else if (anyLive) {
         // Partial multi-home or stale slot: keep trying on the pending cadence.
         delay = pendingMs;
         wasLive = true;
       } else if (wasLive) {
         delay = lostMs;
+        // Back off when re-warm has failed repeatedly — a dead relay doesn't
+        // need a 30s dial attempt every 15s forever. Stretch exponentially.
+        const backed = computeReservationBackoffDelay({
+          consecutiveReWarmFailures,
+          threshold: sustainedFailureBackoffThreshold,
+          lostMs,
+          maxMs: sustainedFailureBackoffMaxMs,
+        });
+        if (backed !== lostMs) {
+          delay = backed;
+          console.log(
+            `[p2p] relay reservation health: backing off (sustained failure ${consecutiveReWarmFailures} cycles) — next re-warm in ${Math.round(delay / 1000)}s`,
+          );
+        }
       }
       this.reservationHealthTimer = setTimeout(() => {
         void tick("adaptive").finally(() => {
