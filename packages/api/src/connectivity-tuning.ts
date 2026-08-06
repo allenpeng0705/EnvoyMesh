@@ -39,14 +39,20 @@ export const IDLE_MESH_ACTIVITY_THRESHOLD_MS = 5 * 60 * 1000;
  * - optimized: Phase 1 balanced savings (default)
  * - smart: Phase 2 idle/event-driven
  * - aggressive: Phase 3 minimum background mesh
+ * - quietWan: relay-roster discovery with the public DHT disabled (CGNAT /
+ *   constrained-network mode). Keeps WAN relay + mDNS so cross-NAT peers and
+ *   LAN discovery still work; drops the public-libp2p DHT swarm entirely,
+ *   which is pure churn for a node whose routing table never fills. See
+ *   `docs/connectivity-internals-and-design.md` Part II (Solution A1).
  */
-export type ConnectivityMode = "normal" | "optimized" | "smart" | "aggressive";
+export type ConnectivityMode = "normal" | "optimized" | "smart" | "aggressive" | "quietWan";
 
 export const CONNECTIVITY_MODES: readonly ConnectivityMode[] = [
   "normal",
   "optimized",
   "smart",
   "aggressive",
+  "quietWan",
 ] as const;
 
 /** Default for new nodes and unset config. */
