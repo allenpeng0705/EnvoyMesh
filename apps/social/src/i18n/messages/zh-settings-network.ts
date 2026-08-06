@@ -102,6 +102,7 @@ export const zhNetworkSettingsMessages = {
     modeOptimized: "优化 — 平衡（推荐）",
     modeSmart: "智能 — 空闲时放慢；聊天时预热",
     modeAggressive: "激进 — 最低 CPU/网络占用",
+    modeQuietWan: "静默 WAN — 仅中继发现（无公共 DHT）",
     restartHint: "请重启节点（或完全退出并重新打开应用），网格定时器与 DHT/mDNS 选项才会生效。",
     maxConnections: "最大连接数",
     capabilityCycle: "能力周期（秒）",

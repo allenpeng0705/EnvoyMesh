@@ -46,6 +46,20 @@ export function shouldLeanBootstrapForPendingSponsorBond(config: {
   return Boolean(config.setupSponsorFriendEnabled) && !config.setupSponsorFriendCompletedAt;
 }
 
+/**
+ * True when the connectivity mode disables the public DHT (`quietWan` /
+ * `aggressive`). In that mode the public-libp2p bootstrap presets are pure
+ * churn — the DHT service is off, so bootstrapping into the IPFS swarm just
+ * fills the connection pool with anonymous peers that can never be used for
+ * routing. Narrow bootstrap to EnvoyMesh relays only (the `contacts-only`
+ * preset set, which keeps `cn-relay` and any operator relays).
+ *
+ * See `docs/connectivity-internals-and-design.md` Solution A1.1.
+ */
+export function shouldLeanBootstrapForDhtOffMode(connectivityMode: string | undefined): boolean {
+  return connectivityMode === "quietWan" || connectivityMode === "aggressive";
+}
+
 export interface StartNodeContext {
   /** Current node lifecycle status string. */
   getNodeStatus(): NodeStatus;
@@ -166,9 +180,14 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     const peerRecords = await ctx.getDiscoverySeedStore();
     const peerDirAddrCount = 0; // peerRecords is the discovery seed list; peer directory is separate
     const leanForSponsor = shouldLeanBootstrapForPendingSponsorBond(config);
-    // Pending first-launch auto-bond: ignore DHT/seed swarm addrs so the
-    // dial queue is not flooded before bond.request can circuit-CONNECT.
-    const seedAddrs = leanForSponsor
+    // quietWan / aggressive disable the public DHT entirely, so the
+    // public-libp2p bootstrap presets are pure churn — narrow to relays.
+    const leanForDhtOffMode = shouldLeanBootstrapForDhtOffMode(config.connectivityMode);
+    const leanBootstrap = leanForSponsor || leanForDhtOffMode;
+    // Pending first-launch auto-bond OR DHT-off mode: ignore DHT/seed swarm
+    // addrs so the dial queue is not flooded with peers that can never be
+    // used for routing.
+    const seedAddrs = leanBootstrap
       ? []
       : seedAddrsForDiscoveryProfile(
           config.discoveryProfile,
@@ -178,12 +197,15 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     void peerDirAddrCount;
 
     const resolvedPresetAddrs: string[] = [];
-    const effectivePresets = leanForSponsor
+    const effectivePresets = leanBootstrap
       ? normalizeBootstrapPresetsForContactsOnly(config.bootstrapPresets ?? [])
       : (config.bootstrapPresets ?? []);
-    if (leanForSponsor) {
+    if (leanBootstrap) {
+      const reason = leanForDhtOffMode
+        ? `connectivityMode=${config.connectivityMode} (DHT off — strip public-libp2p swarm)`
+        : "pending setupSponsorFriend (strip public-libp2p swarm)";
       console.log(
-        `[node-service] pending setupSponsorFriend — lean bootstrap (strip public-libp2p swarm) presets=${JSON.stringify(effectivePresets)}`,
+        `[node-service] lean bootstrap — ${reason} presets=${JSON.stringify(effectivePresets)}`,
       );
     }
     console.log(

@@ -39,14 +39,20 @@ export const IDLE_MESH_ACTIVITY_THRESHOLD_MS = 5 * 60 * 1000;
  * - optimized: Phase 1 balanced savings (default)
  * - smart: Phase 2 idle/event-driven
  * - aggressive: Phase 3 minimum background mesh
+ * - quietWan: relay-roster discovery with the public DHT disabled (CGNAT /
+ *   constrained-network mode). Keeps WAN relay + mDNS so cross-NAT peers and
+ *   LAN discovery still work; drops the public-libp2p DHT swarm entirely,
+ *   which is pure churn for a node whose routing table never fills. See
+ *   `docs/connectivity-internals-and-design.md` Part II (Solution A1).
  */
-export type ConnectivityMode = "normal" | "optimized" | "smart" | "aggressive";
+export type ConnectivityMode = "normal" | "optimized" | "smart" | "aggressive" | "quietWan";
 
 export const CONNECTIVITY_MODES: readonly ConnectivityMode[] = [
   "normal",
   "optimized",
   "smart",
   "aggressive",
+  "quietWan",
 ] as const;
 
 /** Default for new nodes and unset config. */
@@ -172,15 +178,34 @@ const PRESETS: Record<ConnectivityMode, Omit<ConnectivityPreset, "mode">> = {
     forceDisableDht: true,
     relayIdleStretchMaxMultiplier: 2,
   },
+  quietWan: {
+    // Like `aggressive` (DHT off) but keeps WAN relay + mDNS for cross-NAT
+    // discovery via the relay roster. The public-libp2p DHT swarm is pure
+    // churn for a CGNAT'd node whose routing table never fills; this preset
+    // removes it at the source while preserving reachability. Pair with
+    // discoveryProfile "contacts-only" so bootstrap also narrows to relays.
+    maxConnections: 24,
+    mdnsIntervalMs: 60_000,
+    mdnsPolicy: "on",
+    capabilityDiscoveryIntervalMs: 300_000,
+    lazyCapabilityDiscovery: true,
+    idleTimerStretch: true,
+    connectionMonitorPingIntervalMs: 120_000,
+    bondWarmIntervalMs: DEFAULT_BOND_WARM_INTERVAL_MS,
+    bondWarmPerContactCooldownMs: DEFAULT_BOND_WARM_PER_CONTACT_COOLDOWN_MS,
+    bondWarmEventDriven: true,
+    relayCycleBaseMs: 60_000,
+    forceDisableDht: true,
+    relayIdleStretchMaxMultiplier: 2,
+  },
 };
 
 export function isConnectivityMode(value: unknown): value is ConnectivityMode {
-  return (
-    value === "normal" ||
-    value === "optimized" ||
-    value === "smart" ||
-    value === "aggressive"
-  );
+  // Derive from CONNECTIVITY_MODES so adding a preset above is the only place
+  // a new mode needs to be declared. A hardcoded `value === "..."` chain here
+  // silently drops any mode that isn't also listed (quietWan was exactly this
+  // bug during review).
+  return typeof value === "string" && (CONNECTIVITY_MODES as readonly string[]).includes(value);
 }
 
 export function resolveConnectivityMode(raw?: ConnectivityMode | string | null): ConnectivityMode {

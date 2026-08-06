@@ -115,6 +115,7 @@ export const networkSettingsMessages = {
     modeOptimized: "Optimized — balanced (recommended)",
     modeSmart: "Smart — slower when idle; warm on chat",
     modeAggressive: "Aggressive — lowest CPU/network",
+    modeQuietWan: "Quiet WAN — relay discovery only (no public DHT)",
     restartHint: "Restart the node (or fully quit and reopen the app) for mesh timers and DHT/mDNS options to apply.",
     maxConnections: "Max connections",
     capabilityCycle: "Capability cycle (seconds)",

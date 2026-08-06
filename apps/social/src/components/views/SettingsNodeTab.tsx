@@ -1514,7 +1514,8 @@ export function SettingsNodeTab() {
                 | "normal"
                 | "optimized"
                 | "smart"
-                | "aggressive";
+                | "aggressive"
+                | "quietWan";
               await nodeService.updateNodeConfig({ connectivityMode: mode });
               await refreshNodeConfig();
             }}
@@ -1523,6 +1524,7 @@ export function SettingsNodeTab() {
             <option value="optimized">{t("settings.network.resourceTuning.modeOptimized")}</option>
             <option value="smart">{t("settings.network.resourceTuning.modeSmart")}</option>
             <option value="aggressive">{t("settings.network.resourceTuning.modeAggressive")}</option>
+            <option value="quietWan">{t("settings.network.resourceTuning.modeQuietWan")}</option>
           </select>
         </label>
         <p className="section-desc" data-testid="connectivity-mode-summary">

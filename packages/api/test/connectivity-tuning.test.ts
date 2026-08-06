@@ -5,6 +5,7 @@ import {
   discoveryProfileDefaultEnableMdns,
   discoveryProfileUsesDht,
   formatConnectivityPresetSummary,
+  isConnectivityMode,
   resolveConnectivityMode,
   resolveConnectivityPreset,
   resolveConnectivityTuning,
@@ -95,6 +96,47 @@ describe("connectivity-tuning", () => {
     expect(p.bondWarmEventDriven).toBe(true);
     expect(resolveEnableMdns("wan-default", undefined, { mdnsPolicy: "lan-only" })).toBe(false);
     expect(resolveEnableMdns("lan-fast", undefined, { mdnsPolicy: "lan-only" })).toBe(true);
+  });
+
+  it("quietWan forces DHT off but keeps mDNS on (unlike aggressive)", () => {
+    // The whole point of quietWan vs aggressive: DHT off, but WAN relay + mDNS
+    // stay on so cross-NAT peers (via relay roster) and LAN discovery still work.
+    const p = resolveConnectivityPreset("quietWan");
+    expect(p.forceDisableDht).toBe(true);
+    expect(p.mdnsPolicy).toBe("on");
+    expect(resolveEnableMdns("wan-default", undefined, { mdnsPolicy: "on" })).toBe(true);
+    expect(resolveEnableMdns("lan-fast", undefined, { mdnsPolicy: "on" })).toBe(true);
+  });
+
+  it("quietWan is recognized as a valid connectivity mode", () => {
+    // Regression: isConnectivityMode used to be a hardcoded chain that silently
+    // dropped any mode not listed, causing resolveConnectivityMode("quietWan")
+    // to fall through to the default. The check now derives from CONNECTIVITY_MODES.
+    expect(isConnectivityMode("quietWan")).toBe(true);
+    expect(isConnectivityMode("quietwan")).toBe(false);
+    expect(isConnectivityMode("quiet-wan")).toBe(false);
+    expect(resolveConnectivityMode("quietWan")).toBe("quietWan");
+    expect(resolveConnectivityPreset("quietWan").mode).toBe("quietWan");
+  });
+
+  it("quietWan has a lower connection cap than optimized (no swarm to fill)", () => {
+    const q = resolveConnectivityPreset("quietWan");
+    const o = resolveConnectivityPreset("optimized");
+    expect(q.maxConnections).toBeLessThan(o.maxConnections);
+    expect(q.maxConnections).toBe(24);
+  });
+
+  it("quietWan is lazy about discovery and stretches timers when idle", () => {
+    const p = resolveConnectivityPreset("quietWan");
+    expect(p.lazyCapabilityDiscovery).toBe(true);
+    expect(p.idleTimerStretch).toBe(true);
+    expect(p.bondWarmEventDriven).toBe(true);
+  });
+
+  it("formatConnectivityPresetSummary includes 'DHT off' for quietWan", () => {
+    const s = formatConnectivityPresetSummary(resolveConnectivityPreset("quietWan"));
+    expect(s).toContain("DHT off");
+    expect(s).toMatch(/mDNS/);
   });
 
   it("resolveConnectivityTuning applies preset then overrides", () => {

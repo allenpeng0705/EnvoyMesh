@@ -102,6 +102,7 @@ export const koNetworkSettingsMessages = {
     modeOptimized: "Optimized — balanced (recommended)",
     modeSmart: "Smart — slower when idle; warm on chat",
     modeAggressive: "Aggressive — lowest CPU/network",
+    modeQuietWan: "Quiet WAN — relay discovery only (no public DHT)",
     restartHint: "Restart the node (or fully quit and reopen the app) for mesh timers and DHT/mDNS options to apply.",
     maxConnections: "최대 연결 수",
     capabilityCycle: "기능 주기 (초)",
