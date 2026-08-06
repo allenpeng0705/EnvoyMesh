@@ -37,6 +37,20 @@ describe("EnvoyMesh connectivity options", () => {
     expect(mesh.enabledFeatures).toEqual(["dht"]);
   });
 
+  it("getRoutingTableSize returns -1 before start() (no node yet)", () => {
+    // -1 = "unknown / not introspectable". The capability-discovery cycle
+    // treats -1 as "don't skip" (let the provide + its own timeout handle it);
+    // only a definitive 0 triggers the early-exit. So the contract here is:
+    // before start(), report -1, NOT 0, so we never falsely skip provides.
+    const mesh = new EnvoyMesh({ enableDht: true });
+    expect(mesh.getRoutingTableSize()).toBe(-1);
+  });
+
+  it("getRoutingTableSize returns -1 when DHT is disabled", () => {
+    const mesh = new EnvoyMesh({ enableDht: false });
+    expect(mesh.getRoutingTableSize()).toBe(-1);
+  });
+
   it("lists reachability-log when dedicated reachability console logging is on", () => {
     const mesh = new EnvoyMesh({
       enableMdns: false,

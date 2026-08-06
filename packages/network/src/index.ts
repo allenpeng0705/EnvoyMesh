@@ -2005,6 +2005,41 @@ export class EnvoyMesh {
    * accurately. Previously logged "SUCCESS" even when the broadcast put
    * timed out because no DHT peers were reachable, which hid real outages.
    */
+
+  /**
+   * Number of peers currently in the KadDHT routing table, or -1 when the DHT
+   * is disabled / not yet started / the table cannot be introspected.
+   *
+   * Used by the capability-discovery cycle to short-circuit topic provides
+   * when the routing table is empty — every `provideCapabilityTopic` would
+   * otherwise time out independently (~30s × N topics) for the same root
+   * cause. The relay.checkin mirror carries the topics cross-NAT regardless,
+   * so skipping the DHT provide loses nothing. See
+   * `docs/connectivity-internals-and-design.md` Solution B1.
+   */
+  getRoutingTableSize(): number {
+    if (!this.options.enableDht || !this.node) return -1;
+    try {
+      const dht = (this.node.services as any)?.dht ?? (this.node as any).dht;
+      // Preferred path: KadDHT's RoutingTable.size getter (kb.count()).
+      if (typeof dht?.routingTable?.size === "number") {
+        return dht.routingTable.size;
+      }
+      // Fallback for older KadDHT shapes: sum bucket peer counts.
+      const buckets = dht?.routingTable?.buckets;
+      if (Array.isArray(buckets)) {
+        let n = 0;
+        for (const bucket of buckets) n += bucket?.peers?.size ?? 0;
+        return n;
+      }
+      // Alternative kbucket shape.
+      if (Array.isArray(dht?.kbucket)) return dht.kbucket.length;
+      return -1;
+    } catch {
+      return -1;
+    }
+  }
+
   async provideSelf(): Promise<{ advertised: number; timedOut: boolean }> {
     console.log("[p2p] provideSelf: starting...");
     if (!this.options.enableDht) {
@@ -2020,23 +2055,9 @@ export class EnvoyMesh {
     // time out because there are no peers to replicate to. This helps
     // operators distinguish "empty table → expected timeout" from "populated
     // table → unexpected timeout" (a real network problem).
-    try {
-      const dht = (node.services as any)?.dht ?? (node as any).dht;
-      if (dht?.routingTable) {
-        const rt = dht.routingTable;
-        const bucketCount = rt.buckets?.length ?? 0;
-        let peerCount = 0;
-        if (rt.buckets) {
-          for (const bucket of rt.buckets) peerCount += bucket.peers?.size ?? 0;
-        }
-        console.log(`[p2p] provideSelf: DHT routing table: ${bucketCount} buckets, ${peerCount} peers`);
-      } else if (dht?.kbucket) {
-        // Alternative KadDHT implementation
-        const peers = Array.isArray(dht.kbucket) ? dht.kbucket : [];
-        console.log(`[p2p] provideSelf: DHT kbucket entries: ${peers.length}`);
-      }
-    } catch {
-      // DHT introspection is best-effort
+    const routingTableSize = this.getRoutingTableSize();
+    if (routingTableSize >= 0) {
+      console.log(`[p2p] provideSelf: DHT routing table: ${routingTableSize} peers`);
     }
 
     try {
