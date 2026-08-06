@@ -2120,6 +2120,15 @@ async function handleInboundMeshMessage({
               devicePublicKeyPem: profile?.device.publicKeyPem ?? "",
             }),
             getOwnOwnerId: () => profile?.owner.ownerId ?? "",
+            enableCapabilityProvider: async () => {
+              const cfg = await nodeConfigStore.load();
+              if (!cfg) return;
+              await nodeConfigStore.save({
+                ...cfg,
+                capabilityProviderEnabled: true,
+                updatedAt: new Date().toISOString(),
+              });
+            },
           },
           {
             requesterOwnerId: payload.requesterOwnerId,

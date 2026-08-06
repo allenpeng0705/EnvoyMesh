@@ -1,6 +1,7 @@
-// Settings → Agent Network (a.k.a. Agent Network) translations. Mirrors
-// the en-agent-network.ts bundle so t("settings.agentNetwork.*") resolves
-// in Chinese mode.
+// Agent Network section translations. These keys are rendered inside the
+// Team jobs → Manage workers modal (AgentNetworkSettingsModal) and the
+// inline membership section of ChainsView. Mirrors the en-agent-network.ts
+// bundle so t("settings.agentNetwork.*") resolves in Chinese mode.
 
 export const zhAgentNetworkSettingsMessages = {
   title: "智能体网络",
@@ -34,9 +35,35 @@ export const zhAgentNetworkSettingsMessages = {
     throughputHint: "由你声明的推理速度。协作任务打分时作为软性参考 — 目前尚非实测。",
     strengths: "擅长领域",
     strengthPlaceholder: "自定义标签后按回车",
+    strengthGroup_analytical: "分析推理",
+    strengthGroup_stem: "理工",
+    strengthGroup_language: "语言文字",
+    strengthGroup_creative: "创意设计",
+    strength_research: "研究",
+    strength_analysis: "分析",
+    strength_reasoning: "推理",
+    strength_mathematics: "数学",
+    strength_physics: "物理",
+    strength_coding: "编程",
+    strength_engineering: "工程",
+    strength_writing: "写作",
+    strength_summarization: "摘要",
+    strength_translation: "翻译",
+    strength_creative: "创意",
+    strength_design: "设计",
     save: "保存画像",
     saving: "保存中…",
     saved: "智能体网络画像已保存",
+    presetTitle: "快速设置 — 选择一个角色",
+    preset_researcher: "研究员",
+    preset_coder: "程序员",
+    preset_writer: "写作 / 翻译",
+    preset_general: "通用助手",
+    preset_budget: "经济 / 轻量",
+    llmProvider: "LLM 配置",
+    llmProviderHint:
+      "配置你的智能体向对等节点展示的 LLM 参数：模型新鲜度、计费姿态、上下文窗口和吞吐量。",
+    presetApplied: "已应用「{name}」预设",
   },
   officeLan: {
     heading: "办公局域网",
@@ -132,6 +159,7 @@ export const zhAgentNetworkSettingsMessages = {
   fleetManifest: {
     sectionTitle: "群花名册",
     sectionDesc: "应用已签名的 Fleet Manifest 花名册，可一次性为所有成员预设信任。运维粘贴成员 JSON，主节点签名后导入。再次导入相同 manifest id 是幂等的。",
+    autoJoinLabel: "自动加入智能体网络 — 导入此花名册的节点将自动成为链上工作节点",
     labelLabel: "花名册标签（可选）",
     membersLabel: "成员（JSON 数组）：每个元素为 { ownerId, deviceId, devicePublicKeyPem, role, trustLevel, displayName? }",
     roleTemplateLabel: "从角色模板开始：",

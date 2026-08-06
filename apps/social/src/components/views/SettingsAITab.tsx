@@ -9,7 +9,6 @@ import {
 } from "../../hooks/useNodeService.js";
 import { useOptimisticToggle } from "../../hooks/useOptimisticToggle.js";
 import { AgentSettings } from "./settings/AgentSettings.js";
-import { ChainDefaultsPanel } from "./settings/ChainDefaultsPanel.js";
 import type {
   AiIdentityMode,
   AiKnowledgeBaseSettings,
@@ -2552,14 +2551,6 @@ export function SettingsAITab() {
             )}
           </div>
         </div>
-      </section>
-
-      {/* Agent Network chain defaults — budget ceiling, stall policy, bid
-          ranking weights. Moved here (from the orphaned panel) so all
-          agent-behavior config lives together. The "Agent Network" tab is
-          now "Agent Network" (membership + device bonding), clearing the naming clash. */}
-      <section className="settings-section">
-        <ChainDefaultsPanel />
       </section>
 
       {/* Per-call model cost dashboard. Reads from the rollup store so it

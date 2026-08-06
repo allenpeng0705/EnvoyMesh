@@ -739,8 +739,8 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
           placeholderMandate(chainId, chainMandateId) as never,
         findCapabilityProviders: (capability) =>
           findCapabilityProviders(host._chainOrchestrationContext(), capability) as never,
-        findCapabilityProvidersRanked: (capability) =>
-          findCapabilityProvidersRanked(host._chainOrchestrationContext(), capability) as never,
+        findCapabilityProvidersRanked: (capability, preferredWorkerPeerIds) =>
+          findCapabilityProvidersRanked(host._chainOrchestrationContext(), capability, preferredWorkerPeerIds) as never,
         chainDiagnosticsForSubtasks: (subtasks, workersBySubtask, rankedBySubtask) =>
           _chainDiagnosticsForSubtasks(
             subtasks as never,

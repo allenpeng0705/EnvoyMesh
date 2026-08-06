@@ -63,6 +63,13 @@ export interface LanAutoBondDeps {
    * pick a sensible display name when seeding the trust record.
    */
   getOwnOwnerId: () => string;
+  /**
+   * Auto-enable `capabilityProviderEnabled` on this node so it joins the
+   * Agent Network as a worker. Called when `lanAutoBondAutoJoinAgentNetwork`
+   * is not false and the node hasn't already opted in. Optional — if not
+   * provided, the auto-join is skipped (useful for tests).
+   */
+  enableCapabilityProvider?: () => Promise<void>;
 }
 
 export interface LanAutoBondSendResult {
@@ -276,6 +283,47 @@ export async function applyLanAutoBondAccept(
       summary: `lan-auto: auto-bonded with ${params.requesterOwnerId} (fleetTokenFingerprint=${params.fingerprint}).`,
     }),
   );
+
+  // Auto-join Agent Network: when the node accepted a fleet-token bond and
+  // `lanAutoBondAutoJoinAgentNetwork` is not explicitly false, auto-enable
+  // `capabilityProviderEnabled` so this node participates as a chain worker
+  // without a manual toggle. This is the "fleet onboarding = one-click agent
+  // network" behavior the Office LAN preset relies on.
+  if (deps.enableCapabilityProvider) {
+    const cfg = await deps.loadConfig();
+    const autoJoin = cfg?.lanAutoBondAutoJoinAgentNetwork !== false;
+    const alreadyOn = cfg?.capabilityProviderEnabled === true;
+    if (autoJoin && !alreadyOn) {
+      try {
+        await deps.enableCapabilityProvider();
+        await deps.taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "agent.card.auto_fetched",
+            intent: "device.pair.request",
+            outcome: "record",
+            summary: `lan-auto: auto-enabled Agent Network (capabilityProvider) after fleet bond with ${params.requesterOwnerId}.`,
+            correlationId: params.correlationId,
+            remotePeerId: params.requesterPeerId,
+          }),
+        );
+      } catch (err) {
+        // Non-fatal: the bond succeeded; only the auto-join failed. The
+        // owner can still enable it manually in Team jobs → Worker profile.
+        await deps.taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "agent.card.auto_fetch_failed",
+            intent: "device.pair.request",
+            outcome: "record",
+            summary: `lan-auto: auto-join Agent Network failed: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+            correlationId: params.correlationId,
+            remotePeerId: params.requesterPeerId,
+          }),
+        );
+      }
+    }
+  }
 }
 
 /** Re-export the NodeService type for convenience to callers wiring this up. */

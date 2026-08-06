@@ -56,7 +56,7 @@ export const zhAiSettingsMessages = {
   postures: {
     heading: "EnvoyAI 姿态",
     sectionDesc:
-      "EMP 内的常驻委托。社交代理需在 设置 → 信任 中启用信任模式。要以工作节点加入智能体网络，请到 设置 → 智能体网络。",
+      "EMP 内的常驻委托。社交代理需在 设置 → 信任 中启用信任模式。要以工作节点加入智能体网络，请到「协作任务」。",
     socialProxy: "社交代理",
     documentAcquisition: "文档采集智能体",
   },

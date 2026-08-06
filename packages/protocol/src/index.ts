@@ -348,6 +348,14 @@ export const UnsignedFleetManifestSchema = z.object({
    */
   expiresAt: z.string().datetime().nullable().optional(),
   members: z.array(FleetMemberSchema).min(1).max(1024),
+  /**
+   * When true, the importer auto-enables `capabilityProviderEnabled` so its
+   * node joins the Agent Network as a worker. This is the fleet-onboarding
+   * "one-click agent network" signal: every node that imports a manifest
+   * with this flag becomes a chain worker without a manual toggle.
+   * Default: false (omitted = not set).
+   */
+  autoJoinAgentNetwork: z.boolean().optional(),
 });
 
 export const FleetManifestSchema = UnsignedFleetManifestSchema.extend({

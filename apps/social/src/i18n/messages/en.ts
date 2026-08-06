@@ -601,7 +601,7 @@ export const en = {
       inviteRedeemedFailed: "Could not redeem that fleet invite. Ask the issuer for a new link.",
       inviteRedeemedWithReason: "Could not redeem that fleet invite: {reason}",
       inviteInvalidHint:
-        "That fleet invite link looks incomplete. Ask the issuer to mint a new one from Settings → Agent Network.",
+        "That fleet invite link looks incomplete. Ask the issuer to mint a new one from Team jobs → Manage workers.",
     },
     search: {
       panelTitle: "Search the network",

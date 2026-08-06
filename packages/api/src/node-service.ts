@@ -74,6 +74,8 @@ import type {
   ChainPreviewGoalResult,
   ChainStartFromGoalParams,
   ChainStartFromGoalResult,
+  ChainProbeReachabilityParams,
+  ChainProbeReachabilityResult,
   ChainResolveIterationParams,
   ChainResolveIterationResult,
   ChainExportCostsParams,
@@ -3140,6 +3142,16 @@ export interface NodeService {
 
   /** Phase 43B — launch a chain from a natural-language goal with smart defaults. */
   chainStartFromGoal(params: ChainStartFromGoalParams): Promise<ChainStartFromGoalResult>;
+
+  /**
+   * Phase 43B+ — batch reachability probe for chain worker candidates.
+   *
+   * For each bonded owner id, returns whether their agent peer is online
+   * (open libp2p connection), same-LAN, and relay-routed. The team-job dialog
+   * merges this with card-freshness health to make offline contacts
+   * non-selectable — team jobs can only run on currently-reachable workers.
+   */
+  chainProbeReachability(params: ChainProbeReachabilityParams): Promise<ChainProbeReachabilityResult>;
 
   /** Phase 47C — owner resolves iteration ask_owner hold (stop/publish or continue). */
   chainResolveIteration(params: ChainResolveIterationParams): Promise<ChainResolveIterationResult>;

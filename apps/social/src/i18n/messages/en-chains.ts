@@ -88,7 +88,7 @@ export const chainsMessages = {
     finalized: "This team job is complete — see the report.",
     cancelled: "This team job was cancelled.",
     directAssignHint:
-      "Direct assign is on — the first available worker is awarded automatically. Enable competitive bidding in Settings → AI → Team job defaults if you want cost ranking.",
+      "Direct assign is on — the first available worker is awarded automatically. Enable competitive bidding in Team job defaults if you want cost ranking.",
   },
   tree: {
     title: "Subtask tree",
@@ -133,7 +133,7 @@ export const chainsMessages = {
     noBids: "No live bids.",
     noWorkersTitle: "No workers available",
     noWorkersDesc:
-      "This team job has no bids because no bonded contacts opted into Agent Network work. Ask them to enable Join Agent Network in Settings → Agent Network, then start a new team job.",
+      "This team job has no bids because no bonded contacts opted into Agent Network work. Ask them to enable Join Agent Network in Team jobs, then start a new team job.",
     waitingTitle: "Waiting for bids",
     waitingDesc:
       "The plan was sent. Workers have not bid yet — check that contacts are online, opted into Agent Network, and their agent cards are fresh.",
@@ -185,9 +185,35 @@ export const chainsMessages = {
     previewFailed: "Could not preview plan",
     noWorkersTitle: "No workers found",
     noWorkersDesc:
-      "Team jobs run on bonded contacts' agents that opted into Agent Network — not on this node alone. Bond in Discover, ask them to enable Join Agent Network in Settings → Agent Network, then try again.",
+      "Team jobs run on bonded contacts' agents that opted into Agent Network — not on this node alone. Bond in Discover, ask them to enable Join Agent Network in Team jobs, then try again.",
     noWorkersToast: "No workers available — contacts must enable Join Agent Network first",
     openDiscover: "Open Discover",
+    workersTitle: "Worker candidates",
+    workersDesc: "Bonded contacts who can join this team job. The system auto-assigns based on capabilities.",
+    workersEmpty: "No bonded contacts with agent cards yet. Bond with someone in Discover first.",
+    workersCount: "{count} worker(s) available",
+    contactsTitle: "Your bonded contacts",
+    contactsDesc: "These contacts can participate in team jobs. Ask them to enable Join Agent Network in Team jobs.",
+    contactsEmpty: "No bonded contacts yet. Bond with someone in Discover first.",
+    contactCapabilities: "{count} capabilities",
+    contactNoCard: "No agent card",
+    contactReady: "Ready",
+    contactStale: "Stale card",
+    contactMissing: "No agent card",
+    contactBlocked: "Blocked",
+    selectTeamTitle: "Team workers",
+    selectTeamDesc: "System picked the best matches and pre-checked the online ones. Team jobs only run on contacts that are online and joined the Agent Network — greyed-out contacts can't be picked. Uncheck to narrow the pool, or uncheck all to let the system auto-pick.",
+    selectTeamCount: "{selected} of {selectable} in pool",
+    selectTeamPreviewNote: "Scores blend capability, model freshness, spend posture, throughput, and LAN fit. Only online, opted-in contacts are selectable. Checked workers form the launch pool.",
+    contactNotSelectable: "Not selectable",
+    systemPick: "System pick",
+    matchScore: "Score {score}",
+    matchedSteps: "Matches {count} steps",
+    reachOnline: "Online",
+    reachOffline: "Offline",
+    reachUnknown: "Checking…",
+    offlineReason: "Offline — can't join this job",
+    notOptedInReason: "Not joined Agent Network",
     runAsChain: "Run as team job",
     runAsChainHint: "Split this into a multi-agent team job across your contacts' agents",
     exportCsv: "Export costs (CSV)",
@@ -199,6 +225,19 @@ export const chainsMessages = {
     iterationRounds1: "1 (publish after first draft)",
     iterationRounds2: "Up to 2 rounds",
     iterationRounds3: "Up to 3 rounds",
+    iterationJudge: "After each draft",
+    iterationJudgeLlm: "LLM judge (stop / continue)",
+    iterationJudgeOwner: "Ask me (owner approval)",
+    iterationJudgeAlwaysStop: "Always stop after first draft",
+    iterationJudgeHint:
+      "Controls whether a finished round publishes, continues, or waits for you.",
+    extendMaxSteps: "Max extend steps per round",
+    extendMaxStepsHint:
+      "How many extra dependent steps the Assigner may append inside a round before sealing a draft.",
+    showCostUi: "Show cost estimate before starting",
+    showCostUiHint:
+      "Displays the estimated cost range in the plan preview. Competitive mode always shows this.",
+    jobSettingsTitle: "Job settings",
     template: {
       research: "Research a topic",
       researchGoal: "Research the latest developments in {topic} and summarize the key findings",
@@ -222,5 +261,15 @@ export const chainsMessages = {
     blocked: "Blocked",
     detail: "{count} capabilities · synced {synced}",
     noSync: "Agent card not synced",
+  },
+  manageWorkers: {
+    button: "Manage workers",
+    title: "Manage workers & network",
+    intro:
+      "Bring more workers online and configure how your node connects with them. For most teams, Office LAN + LAN Auto-Bond is all you need.",
+    advancedGroup: "Advanced",
+  },
+  workerProfile: {
+    title: "Your worker profile",
   },
 };

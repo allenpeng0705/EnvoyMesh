@@ -10,15 +10,19 @@
  * "Run as chain" affordance under a chat message.
  */
 
-import React, { useEffect, useState, useCallback } from "react";
-import type { ChainGetStateResult } from "@envoymesh/api";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import type { ChainGetStateResult, ChainWorkerReachability } from "@envoymesh/api";
 import { useT } from "../../context/I18nContext.js";
 import { useToast } from "../../hooks/useToast.js";
-import { useNodeService } from "../../hooks/useNodeService.js";
+import { useNodeService, useAgentCards } from "../../hooks/useNodeService.js";
+import { useNodeState } from "../../context/NodeStateContext.js";
+import { computeChainBondHealth, mergeReachability } from "../../lib/chain-bond-health.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import { ChainReportView } from "../ChainReportView.js";
 import { ChainStartDialog } from "../ChainStartDialog.js";
 import { ChainDetailPanel } from "../ChainDetailPanel.js";
+import { AgentNetworkSettingsModal } from "../AgentNetworkSettingsModal.js";
+import { WorkerMembershipSection } from "./settings/agent-network-sections.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -111,6 +115,8 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
   const t = useT();
   const nodeService = useNodeService();
   const { showToast } = useToast();
+  const { bonds } = useNodeState();
+  const agentCards = useAgentCards();
   const [chains, setChains] = useState<ChainSummary[]>([]);
   const [viewingReport, setViewingReport] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -119,11 +125,44 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
     onConfirm: () => void;
   } | null>(null);
 
+  // Live reachability per bonded owner — fetched via a batch RPC so the team-job
+  // dialog can show online/offline and make offline contacts non-selectable.
+  // A 20s poll keeps the dots fresh while the view is mounted.
+  const [reachabilityByOwner, setReachabilityByOwner] = useState<Map<string, ChainWorkerReachability>>(new Map());
+
+  // Bonded contacts with agent-card health — used in the empty state and
+  // passed to ChainStartDialog so the user sees who can join a team job.
+  // Three dimensions: card freshness, agent-network opt-in, online reachability.
+  const workerCandidates = useMemo(() => {
+    return bonds
+      .filter((b) => b.level !== "blocked")
+      .map((bond) => {
+        const card = agentCards.find((c) => c.ownerId === bond.peerOwnerId);
+        const base = computeChainBondHealth(bond, card);
+        const health = mergeReachability(base, reachabilityByOwner.get(bond.peerOwnerId));
+        return { bond, card, health };
+      })
+      .sort((a, b) => {
+        // Online + card-ready first, then stale, then missing; offline sinks below online.
+        const score = (h: typeof a.health) =>
+          (h.onlineStatus === "online" ? 0 : h.onlineStatus === "unknown" ? 1 : 2) * 4 +
+          ({ ready: 0, stale: 1, missing: 2, blocked: 3 }[h.status] ?? 9);
+        return score(a.health) - score(b.health);
+      });
+  }, [bonds, agentCards, reachabilityByOwner]);
+
   // Chain creation flow (Phase 43 follow-up): a "New chain" button opens a
   // goal composer; the preview+launch reuses ChainStartDialog.
   const [newChainGoal, setNewChainGoal] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
   const [goalDraft, setGoalDraft] = useState("");
+
+  // Agent Network settings modal (fleet onboarding + advanced) — opened from
+  // the "Manage workers" button in the header.
+  const [showSettings, setShowSettings] = useState(false);
+
+  // Collapsible "Join Agent Network" inline section (Tier 1).
+  const [showMembership, setShowMembership] = useState(false);
 
   // Chain detail view: clicking an active chain opens the management panel
   // (bid inbox + subtask tree + rebalance bar) that was previously orphaned.
@@ -142,6 +181,28 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
     setLoading(true);
     void loadChains().finally(() => setLoading(false));
   }, [loadChains]);
+
+  // Batch-probe reachability for every bonded contact, then refresh on a 20s
+  // cadence so the online/offline dots stay current while the view is open.
+  const loadReachability = useCallback(async () => {
+    const ownerIds = bonds.filter((b) => b.level !== "blocked").map((b) => b.peerOwnerId);
+    if (ownerIds.length === 0) {
+      setReachabilityByOwner(new Map());
+      return;
+    }
+    try {
+      const result = await nodeService.chainProbeReachability({ ownerIds });
+      setReachabilityByOwner(new Map((result.rows ?? []).map((r) => [r.ownerId, r])));
+    } catch (err) {
+      console.error("[ChainsView] failed to probe worker reachability:", err);
+    }
+  }, [nodeService, bonds]);
+
+  useEffect(() => {
+    void loadReachability();
+    const timer = setInterval(() => void loadReachability(), 20_000);
+    return () => clearInterval(timer);
+  }, [loadReachability]);
 
   useEffect(() => {
     const unsub = nodeService.on("chain:state", (state) => {
@@ -265,13 +326,42 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
     <div className="chains-view">
       <div className="chains-view__header">
         <h3>{t("chains.nav")}</h3>
+        <div className="chains-view__header-actions">
+          <button
+            type="button"
+            className="secondary btn-sm chains-view__manage-btn"
+            onClick={() => setShowSettings(true)}
+          >
+            {t("chains.manageWorkers.button")}
+          </button>
+          <button
+            type="button"
+            className="primary btn-sm chains-view__new-btn"
+            onClick={() => openComposer()}
+          >
+            {t("chains.start.newChain")}
+          </button>
+        </div>
+      </div>
+
+      {/* Tier 1 — inline collapsible sections (daily-use controls) */}
+      <div className="chains-view__inline-settings">
         <button
           type="button"
-          className="primary btn-sm chains-view__new-btn"
-          onClick={() => openComposer()}
+          className="chains-view__inline-toggle"
+          aria-expanded={showMembership}
+          onClick={() => setShowMembership((v) => !v)}
         >
-          {t("chains.start.newChain")}
+          <span className="chains-view__inline-chevron">
+            {showMembership ? "▾" : "▸"}
+          </span>
+          {t("chains.workerProfile.title")}
         </button>
+        {showMembership ? (
+          <div className="chains-view__inline-body">
+            <WorkerMembershipSection />
+          </div>
+        ) : null}
       </div>
 
       {composing ? (
@@ -322,32 +412,60 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
           onClose={() => setNewChainGoal(null)}
           onStarted={handleStarted}
           onOpenDiscover={onOpenDiscover}
+          workerCandidates={workerCandidates}
         />
+      ) : null}
+
+      {showSettings ? (
+        <AgentNetworkSettingsModal onClose={() => setShowSettings(false)} />
       ) : null}
 
       {activeChains.length === 0 && !composing ? (
         <div className="chains-empty">
           <p>{t("chains.active.empty")}</p>
           <p className="chains-empty__hint">{t("chains.active.prerequisite")}</p>
-          <div className="chains-empty__actions">
-            {onOpenDiscover ? (
-              <button
-                type="button"
-                className="secondary"
-                data-testid="chains-open-discover"
-                onClick={onOpenDiscover}
-              >
-                {t("chains.start.openDiscover")}
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="primary"
-              onClick={() => openComposer()}
-            >
-              {t("chains.start.newChain")}
-            </button>
-          </div>
+          {workerCandidates.length > 0 ? (
+            <div className="chains-empty__contacts">
+              <h4 className="chains-empty__contacts-title">{t("chains.start.contactsTitle")}</h4>
+              <p className="chains-empty__contacts-desc">{t("chains.start.contactsDesc")}</p>
+              <ul className="chain-workers__list">
+                {workerCandidates.slice(0, 6).map(({ bond, card, health }) => (
+                  <li key={bond.peerOwnerId} className="chain-worker-card">
+                    <div className="chain-worker-card__avatar">
+                      {(bond.displayName ?? bond.peerOwnerId).slice(0, 1).toUpperCase()}
+                    </div>
+                    <div className="chain-worker-card__info">
+                      <span className="chain-worker-card__name">
+                        {bond.displayName ?? bond.libp2pPeerId?.slice(0, 10) ?? bond.peerOwnerId.slice(0, 10)}
+                      </span>
+                      <div className="chain-worker-card__meta">
+                        <span
+                          className={`chain-worker-card__online chain-worker-card__online--${health.onlineStatus}`}
+                          title={t(`chains.start.reach${health.onlineStatus.charAt(0).toUpperCase() + health.onlineStatus.slice(1)}`)}
+                          aria-label={t(`chains.start.reach${health.onlineStatus.charAt(0).toUpperCase() + health.onlineStatus.slice(1)}`)}
+                        />
+                        <span className={`chain-worker-card__tier chain-worker-card__tier--${bond.level}`}>
+                          {bond.level}
+                        </span>
+                        <span className={`chain-bond-health chain-bond-health--${health.cardStatus}`}>
+                          {health.cardStatus === "ready" ? "✓" : health.cardStatus === "stale" ? "⏳" : "?"}
+                          {" "}
+                          {t(`chains.start.contact${health.cardStatus.charAt(0).toUpperCase() + health.cardStatus.slice(1)}`)}
+                        </span>
+                        {card && card.capabilities.length > 0 ? (
+                          <span className="chain-worker-card__caps">
+                            {t("chains.start.contactCapabilities", { count: card.capabilities.length })}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="chains-empty__hint">{t("chains.start.contactsEmpty")}</p>
+          )}
         </div>
       ) : (
         activeChains.map((chain) => (
@@ -457,6 +575,48 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
           </div>
         ))
       )}
+
+      {/* Bonded contacts — always visible (promoted from empty-state-only) */}
+      {activeChains.length > 0 && workerCandidates.length > 0 ? (
+        <div className="chains-empty__contacts chains-contacts">
+          <h4 className="chains-empty__contacts-title">{t("chains.start.contactsTitle")}</h4>
+          <p className="chains-empty__contacts-desc">{t("chains.start.contactsDesc")}</p>
+          <ul className="chain-workers__list">
+            {workerCandidates.slice(0, 6).map(({ bond, card, health }) => (
+              <li key={bond.peerOwnerId} className="chain-worker-card">
+                <div className="chain-worker-card__avatar">
+                  {(bond.displayName ?? bond.peerOwnerId).slice(0, 1).toUpperCase()}
+                </div>
+                <div className="chain-worker-card__info">
+                  <span className="chain-worker-card__name">
+                    {bond.displayName ?? bond.libp2pPeerId?.slice(0, 10) ?? bond.peerOwnerId.slice(0, 10)}
+                  </span>
+                  <div className="chain-worker-card__meta">
+                    <span
+                      className={`chain-worker-card__online chain-worker-card__online--${health.onlineStatus}`}
+                      title={t(`chains.start.reach${health.onlineStatus.charAt(0).toUpperCase() + health.onlineStatus.slice(1)}`)}
+                      aria-label={t(`chains.start.reach${health.onlineStatus.charAt(0).toUpperCase() + health.onlineStatus.slice(1)}`)}
+                    />
+                    <span className={`chain-worker-card__tier chain-worker-card__tier--${bond.level}`}>
+                      {bond.level}
+                    </span>
+                    <span className={`chain-bond-health chain-bond-health--${health.cardStatus}`}>
+                      {health.cardStatus === "ready" ? "✓" : health.cardStatus === "stale" ? "⏳" : "?"}
+                      {" "}
+                      {t(`chains.start.contact${health.cardStatus.charAt(0).toUpperCase() + health.cardStatus.slice(1)}`)}
+                    </span>
+                    {card && card.capabilities.length > 0 ? (
+                      <span className="chain-worker-card__caps">
+                        {t("chains.start.contactCapabilities", { count: card.capabilities.length })}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {completedChains.length > 0 && (
         <>

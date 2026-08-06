@@ -194,6 +194,8 @@ import type {
   ChainPreviewGoalParams,
   ChainPreviewGoalResult,
   ChainStartFromGoalParams,
+  ChainProbeReachabilityParams,
+  ChainProbeReachabilityResult,
   ChainStartFromGoalResult,
   ChainExportCostsParams,
   ChainExportCostsResult,
@@ -994,6 +996,7 @@ import {
   handleInboundChainEnvelope,
   placeholderMandate,
   refreshCapabilityIndex,
+  sameLanFromListenAddrs,
   snapshotToResult,
   type ChainOrchestrationContext,
 } from "./node-service-chain-orchestration.js";
@@ -7551,6 +7554,15 @@ class NodeServiceImpl implements NodeService {
       getManifestStore: () => this._taskStore,
       getProfile: () => this._profile ?? null,
       appendAudit: (event) => this._taskStore!.appendAuditEvent(event),
+      enableCapabilityProvider: async () => {
+        const cfg = await this._configStore.load();
+        if (!cfg) return;
+        await this._configStore.save({
+          ...cfg,
+          capabilityProviderEnabled: true,
+          updatedAt: new Date().toISOString(),
+        });
+      },
     });
   }
 
@@ -10296,6 +10308,43 @@ class NodeServiceImpl implements NodeService {
 
   async chainStartFromGoal(params: ChainStartFromGoalParams): Promise<ChainStartFromGoalResult> {
     return chainStartFromGoalViaRuntime(this._chainContext(), params);
+  }
+
+  async chainProbeReachability(
+    params: ChainProbeReachabilityParams,
+  ): Promise<ChainProbeReachabilityResult> {
+    const ownerIds = params.ownerIds ?? [];
+    if (ownerIds.length === 0) return { rows: [] };
+
+    // Map owner id → agent peer id via cached agent cards.
+    const cards = await this.listAgentCards();
+    const agentPeerIdByOwner = new Map<string, string | undefined>();
+    for (const card of cards) {
+      agentPeerIdByOwner.set(card.ownerId, card.sourceAgentPeerId);
+    }
+
+    // Live mesh connection snapshot — open libp2p connections + relay-routed subset.
+    const mesh = this._reachableMesh();
+    const stats = mesh?.getConnectionStats();
+    const connectedIds = new Set(stats?.connectedPeerIds ?? mesh?.getConnectedPeerIds() ?? []);
+    const circuitIds = new Set(stats?.circuitPeerIds ?? []);
+
+    const rows = await Promise.all(
+      ownerIds.map(async (ownerId) => {
+        const agentPeerId = agentPeerIdByOwner.get(ownerId);
+        const online = agentPeerId ? connectedIds.has(agentPeerId) : false;
+        const viaRelay = online && agentPeerId ? circuitIds.has(agentPeerId) : false;
+        let sameLan = false;
+        try {
+          const peer = await this._peerDirectoryStore.getPeerByOwnerId(ownerId);
+          sameLan = sameLanFromListenAddrs(peer?.listenAddrs);
+        } catch {
+          /* leave false */
+        }
+        return { ownerId, agentPeerId, online, sameLan, viaRelay };
+      }),
+    );
+    return { rows };
   }
 
   async chainResolveIteration(

@@ -122,6 +122,8 @@ export interface CreateFleetManifestInput {
   members: FleetMember[];
   /** Owner public key of the issuer. Defaults to the local owner's public key. */
   issuerOwnerPublicKeyPem?: string;
+  /** When true, importers auto-enable capabilityProviderEnabled (join Agent Network). */
+  autoJoinAgentNetwork?: boolean;
 }
 
 export interface CreateFleetManifestResult {

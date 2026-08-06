@@ -24,6 +24,8 @@ export type FleetPublicDeps = {
   getManifestStore(): any;
   getProfile(): any;
   appendAudit(event: any): any;
+  /** Auto-enable capabilityProviderEnabled on this node. */
+  enableCapabilityProvider?(): Promise<void>;
 };
 
 export function buildFleetPublicDeps(input: FleetPublicDeps): FleetPublicDeps {
@@ -76,6 +78,7 @@ export function importFleetManifestViaPublicRuntime(deps: FleetPublicDeps, param
       manifestStore: deps.getManifestStore(),
       profile: deps.getProfile(),
       appendAudit: (event: any) => deps.appendAudit(event),
+      enableCapabilityProvider: deps.enableCapabilityProvider,
     },
     params,
   );

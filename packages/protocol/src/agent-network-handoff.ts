@@ -124,6 +124,11 @@ export const ChainHandoffRequestPayloadSchema = z
      * Absent on start-of-job goal handoff (knobs alone suffice).
      */
     iterationState: ChainIterationWireSchema.optional(),
+    /**
+     * Optional set of agent peer IDs to restrict worker discovery to.
+     * Empty/absent = use all discovered workers. Forward-compatible.
+     */
+    preferredWorkerPeerIds: z.array(z.string().min(1)).max(64).optional(),
   })
   .refine((d) => d.subtaskIds.length >= 1 || (typeof d.goal === "string" && d.goal.trim().length > 0), {
     message: "handoff requires subtaskIds or goal",
@@ -146,6 +151,7 @@ export interface ChainHandoffRequest {
   iterationJudgeMode?: "llm" | "always_stop" | "owner";
   extendMaxStepsPerRound?: number;
   iterationState?: ChainIterationWire;
+  preferredWorkerPeerIds?: string[];
 }
 
 // ---------------------------------------------------------------------------

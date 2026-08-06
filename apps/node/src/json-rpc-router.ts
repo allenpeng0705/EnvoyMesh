@@ -29,6 +29,7 @@ import type {
   ChainListRecipesParams,
   ChainSaveRecipeParams,
   ChainDeleteRecipeParams,
+  ChainProbeReachabilityParams,
 } from "@envoymesh/api";
 import { requireOwnerProfile } from "./rpc-caller-context.js";
 
@@ -288,6 +289,10 @@ export async function routeRpcMethod(
       return ns.chainSaveRecipe(params as unknown as ChainSaveRecipeParams);
     case "chainDeleteRecipe":
       return ns.chainDeleteRecipe(params as unknown as ChainDeleteRecipeParams);
+    case "chainProbeReachability":
+      return ns.chainProbeReachability(
+        (params as unknown as ChainProbeReachabilityParams) ?? { ownerIds: [] },
+      );
     case "sendAgentChat":
       return ns.sendAgentChat(params.targetOwnerId as string, params.text as string);
     case "sendChatAttachment":

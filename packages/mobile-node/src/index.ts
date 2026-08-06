@@ -9113,6 +9113,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
   async chainExportCosts(_params: any): Promise<any> { return { csv: "" }; }
   async chainPreviewGoal(_params: any): Promise<any> { return { ok: false, subtasks: [] }; }
   async chainStartFromGoal(_params: any): Promise<any> { return { ok: false, error: "Not available on mobile" }; }
+  async chainProbeReachability(_params: import("@envoymesh/api").ChainProbeReachabilityParams): Promise<import("@envoymesh/api").ChainProbeReachabilityResult> { return { rows: [] }; }
   async chainResolveIteration(_params: import("@envoymesh/api").ChainResolveIterationParams): Promise<import("@envoymesh/api").ChainResolveIterationResult> {
     return { ok: false, error: "Not available on mobile" };
   }

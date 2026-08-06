@@ -1311,8 +1311,8 @@ export function buildChainContext(deps: ChainContextDeps): ChainContext {
       deps.placeholderMandate(chainId, chainMandateId) as never,
     findCapabilityProviders: (capability) =>
       deps.findCapabilityProviders(capability) as never,
-    findCapabilityProvidersRanked: (capability) =>
-      deps.findCapabilityProvidersRanked?.(capability) as never,
+    findCapabilityProvidersRanked: (capability, preferredWorkerPeerIds) =>
+      deps.findCapabilityProvidersRanked?.(capability, preferredWorkerPeerIds) as never,
     chainDiagnosticsForSubtasks: (subtasks, workersBySubtask, rankedBySubtask) =>
       deps.chainDiagnosticsForSubtasks(
         subtasks as never,

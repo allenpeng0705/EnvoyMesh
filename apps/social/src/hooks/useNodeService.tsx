@@ -100,6 +100,8 @@ import type {
   ChainPreviewGoalResult,
   ChainStartFromGoalParams,
   ChainStartFromGoalResult,
+  ChainProbeReachabilityParams,
+  ChainProbeReachabilityResult,
   ChainExportCostsParams,
   ChainExportCostsResult,
   ChainListRecipesParams,
@@ -303,6 +305,7 @@ export interface NodeServiceClient {
   chainSetDefaults(params: ChainSetDefaultsParams): Promise<ChainSetDefaultsResult>;
   chainPreviewGoal(params: ChainPreviewGoalParams): Promise<ChainPreviewGoalResult>;
   chainStartFromGoal(params: ChainStartFromGoalParams): Promise<ChainStartFromGoalResult>;
+  chainProbeReachability(params: ChainProbeReachabilityParams): Promise<ChainProbeReachabilityResult>;
   chainResolveIteration(params: import("@envoymesh/api").ChainResolveIterationParams): Promise<import("@envoymesh/api").ChainResolveIterationResult>;
   chainExportCosts(params: ChainExportCostsParams): Promise<ChainExportCostsResult>;
   chainListRecipes(params?: ChainListRecipesParams): Promise<ChainListRecipesResult>;
@@ -1092,6 +1095,9 @@ function createWsNodeServiceClient(
     },
     async chainStartFromGoal(params: ChainStartFromGoalParams) {
       return wsClient.rpc("chainStartFromGoal", params as unknown as Record<string, unknown>) as unknown as Promise<ChainStartFromGoalResult>;
+    },
+    async chainProbeReachability(params: ChainProbeReachabilityParams) {
+      return wsClient.rpc("chainProbeReachability", params as unknown as Record<string, unknown>) as unknown as Promise<ChainProbeReachabilityResult>;
     },
     async chainResolveIteration(params: import("@envoymesh/api").ChainResolveIterationParams) {
       return wsClient.rpc("chainResolveIteration", params as unknown as Record<string, unknown>) as unknown as Promise<

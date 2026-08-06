@@ -414,6 +414,7 @@ export type RpcMethods =
   | "chainListRecipes"
   | "chainSaveRecipe"
   | "chainDeleteRecipe"
+  | "chainProbeReachability"
   // Phase 44C — Knowledge Base Plugins
   | "listKbPlugins"
   | "activateKbPlugin"
@@ -2055,6 +2056,30 @@ export interface ChainPreviewGoalParams {
   maxChainCostUsd?: number;
   costCeilingUsd?: number;
   allowLlm?: boolean;
+  /**
+   * When non-empty, filter discovered workers to this set of agent peer IDs
+   * (`card.sourceAgentPeerId`). Empty/absent = use all discovered workers.
+   */
+  preferredWorkerPeerIds?: string[];
+}
+
+/**
+ * System-recommended worker pool for a previewed goal. Deduplicated across
+ * subtasks, ranked by best score, capped to a UI-friendly number. Each entry
+ * records which subtasks the worker matched so the UI can surface "matches N
+ * steps". Used to invert the team-job UX to auto-first: the system's pick is
+ * visible and pre-checked, the owner only narrows if they want to.
+ */
+export interface ChainPreviewSuggestedWorker {
+  peerId: string;
+  score: number;
+  summary: string;
+  sameLan: boolean;
+  /** Currently connected on the mesh (libp2p open connection). */
+  online?: boolean;
+  /** Connection is via circuit relay (not direct). */
+  viaRelay?: boolean;
+  matchedSubtaskIds: string[];
 }
 
 export interface ChainPreviewGoalResult {
@@ -2068,8 +2093,39 @@ export interface ChainPreviewGoalResult {
     workerCount: number;
   }>;
   estimatedCostRange?: { minUsd: number; maxUsd: number };
+  suggestedWorkers?: ChainPreviewSuggestedWorker[];
   diagnostics?: string[];
   reason?: string;
+}
+
+/**
+ * Phase 43B+ — batch reachability probe for chain worker candidates.
+ *
+ * Team jobs can only run on bonded contacts that are currently reachable on the
+ * mesh. This RPC takes a set of owner ids (the bonded contacts shown in the
+ * team-job dialog) and returns, for each, whether their agent peer is online
+ * (open libp2p connection), same-LAN (direct RFC1919 path), and relay-routed.
+ * The UI merges this with card-freshness health to form a three-dimension
+ * readiness model and to make offline contacts non-selectable.
+ */
+export interface ChainProbeReachabilityParams {
+  ownerIds: string[];
+}
+
+export interface ChainWorkerReachability {
+  ownerId: string;
+  /** Agent peer id from the cached agent card, when known. */
+  agentPeerId?: string;
+  /** Currently connected on the mesh (libp2p open connection). */
+  online: boolean;
+  /** Peer directory listen addrs include a direct RFC1918 TCP path. */
+  sameLan: boolean;
+  /** Connection is via circuit relay (not direct). */
+  viaRelay: boolean;
+}
+
+export interface ChainProbeReachabilityResult {
+  rows: ChainWorkerReachability[];
 }
 
 /** Phase 43B — one-click chain launch from a natural-language goal. */
@@ -2092,6 +2148,11 @@ export interface ChainStartFromGoalParams {
    * When set with `assignerPeerId`, carried on `task.chain.handoff.iterationState`.
    */
   iterationState?: ChainIterationWire;
+  /**
+   * When non-empty, filter discovered workers to this set of agent peer IDs
+   * (`card.sourceAgentPeerId`). Empty/absent = use all discovered workers.
+   */
+  preferredWorkerPeerIds?: string[];
 }
 
 export interface ChainResolveIterationParams {

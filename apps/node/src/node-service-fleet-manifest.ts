@@ -60,6 +60,12 @@ export interface FleetManifestRuntimeContext {
   now?: () => Date;
   /** Audit appender — receives `bond.pre_staged` events. Optional. */
   appendAudit?: (event: ReturnType<typeof createAuditEvent>) => Promise<void> | void;
+  /**
+   * Auto-enable `capabilityProviderEnabled` on this node. Called when the
+   * manifest has `autoJoinAgentNetwork: true` and the node hasn't already
+   * opted in. Optional — if not provided, the auto-join is skipped.
+   */
+  enableCapabilityProvider?: () => Promise<void>;
 }
 
 function fingerprintPem(pem: string): string {
@@ -309,6 +315,42 @@ export async function importFleetManifestViaRuntime(
     );
   }
 
+  // Auto-join Agent Network: when the manifest carries `autoJoinAgentNetwork:
+  // true`, auto-enable `capabilityProviderEnabled` on this node so it
+  // participates as a chain worker without a manual toggle. This is the
+  // fleet-onboarding "one-click agent network" signal.
+  if (manifest.autoJoinAgentNetwork === true && ctx.enableCapabilityProvider) {
+    try {
+      await ctx.enableCapabilityProvider();
+      if (ctx.appendAudit) {
+        await ctx.appendAudit(
+          createAuditEvent({
+            type: "bond.pre_staged",
+            intent: "bond.request",
+            outcome: "record",
+            summary: `Fleet manifest ${manifest.manifestId}: auto-enabled Agent Network (capabilityProvider).`,
+            correlationId: manifest.manifestId,
+          }),
+        );
+      }
+    } catch (err) {
+      // Non-fatal: the manifest import succeeded; only the auto-join failed.
+      if (ctx.appendAudit) {
+        await ctx.appendAudit(
+          createAuditEvent({
+            type: "agent.card.auto_fetch_failed",
+            intent: "bond.request",
+            outcome: "record",
+            summary: `Fleet manifest ${manifest.manifestId}: auto-join Agent Network failed: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+            correlationId: manifest.manifestId,
+          }),
+        );
+      }
+    }
+  }
+
   const result: ImportFleetManifestResult = {
     ok: true,
     manifestId: manifest.manifestId,
@@ -423,6 +465,7 @@ export async function createFleetManifestViaRuntime(
     issuedAt: now().toISOString(),
     expiresAt,
     members: input.members,
+    autoJoinAgentNetwork: input.autoJoinAgentNetwork === true ? true : undefined,
   };
   const signature = signCanonicalPayload(
     fleetManifestForSigning({ ...unsigned, signature: "" }),

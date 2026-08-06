@@ -201,6 +201,14 @@ export interface PersistedNodeConfig {
    */
   lanAutoBondLastRunAt?: string;
   /**
+   * When true (the default when LAN auto-bond is enabled), a node that
+   * accepts a fleet-token auto-bond also auto-enables
+   * `capabilityProviderEnabled` so it joins the Agent Network without a
+   * manual toggle. Set to false to keep fleet-bonded contacts as pure
+   * messaging peers that do not participate as chain workers.
+   */
+  lanAutoBondAutoJoinAgentNetwork?: boolean;
+  /**
    * Phase 35D — opt-in pairing-kiosk HTTP server. Default: false (off).
    * When false, the home node does not start the kiosk endpoint regardless
    * of any other kiosk* setting.

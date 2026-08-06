@@ -181,6 +181,20 @@ export class ChainStore {
 
 /* ---------- high-level operations ---------- */
 
+/**
+ * A ranked agent-network worker for a subtask. `online` / `viaRelay` come from
+ * the live mesh connection snapshot so the team-job dialog can make offline
+ * contacts non-selectable and the system pick can prefer reachable workers.
+ */
+export interface ChainRankedWorker {
+  peerId: string;
+  score: number;
+  summary: string;
+  sameLan: boolean;
+  online: boolean;
+  viaRelay: boolean;
+}
+
 export interface ChainContext {
   store: ChainStore;
   /** Where to persist chain reports (class field). */
@@ -223,12 +237,13 @@ export interface ChainContext {
   /** Ranked workers with score summaries (for diagnostics / UI). */
   findCapabilityProvidersRanked?(
     capability: string,
-  ): Promise<Array<{ peerId: string; score: number; summary: string }>>;
+    preferredWorkerPeerIds?: readonly string[],
+  ): Promise<ChainRankedWorker[]>;
   /** Compute diagnostics for a set of subtasks + candidate workers. */
   chainDiagnosticsForSubtasks(
     subtasks: Array<{ subtaskId: string; requiredCapability: string }>,
     workersBySubtask: Record<string, string[]>,
-    rankedBySubtask?: Record<string, Array<{ peerId: string; score: number; summary: string }>>,
+    rankedBySubtask?: Record<string, ChainRankedWorker[]>,
   ): unknown;
   /** Run a chain from a free-form goal. */
   runChainGoal(params: {
@@ -262,6 +277,8 @@ export interface ChainContext {
       waitingForOwner?: boolean;
       stopReason?: string;
     };
+    /** Restrict worker discovery to these agent peer IDs. Empty/absent = use all. */
+    preferredWorkerPeerIds?: string[];
   }): Promise<
     | {
         ok: true;
@@ -726,15 +743,18 @@ export async function chainPreviewGoalViaRuntime(
     return { ok: false, subtasks: [], reason: (plan as { reason: string }).reason };
   }
   const workersBySubtask: Record<string, string[]> = {};
-  const rankedBySubtask: Record<string, Array<{ peerId: string; score: number; summary: string }>> = {};
+  const rankedBySubtask: Record<string, ChainRankedWorker[]> = {};
   let maxWorkers = 0;
   for (const subtask of plan.subtasks) {
     const ranked = ctx.findCapabilityProvidersRanked
-      ? await ctx.findCapabilityProvidersRanked(subtask.requiredCapability)
+      ? await ctx.findCapabilityProvidersRanked(subtask.requiredCapability, params.preferredWorkerPeerIds)
       : (await ctx.findCapabilityProviders(subtask.requiredCapability)).map((peerId) => ({
           peerId,
           score: 0,
           summary: peerId,
+          sameLan: false,
+          online: false,
+          viaRelay: false,
         }));
     rankedBySubtask[subtask.subtaskId] = ranked;
     workersBySubtask[subtask.subtaskId] = ranked.map((r) => r.peerId);
@@ -745,6 +765,51 @@ export async function chainPreviewGoalViaRuntime(
     workerCandidateCount: maxWorkers,
     maxChainCostUsd: mandate.maxChainCostUsd as number,
   });
+  // System-recommended worker pool: deduplicate across subtasks, keep the best
+  // score + union of matched subtask ids, rank by score, cap to a UI-friendly N.
+  // Surfaced in the preview so the team-job dialog can show the system's pick
+  // (auto-first) instead of asking the owner to guess from a flat contact list.
+  const suggestedMap = new Map<
+    string,
+    { peerId: string; score: number; summary: string; sameLan: boolean; online: boolean; viaRelay: boolean; matchedSubtaskIds: Set<string> }
+  >();
+  for (const [subtaskId, ranked] of Object.entries(rankedBySubtask)) {
+    for (const w of ranked) {
+      const existing = suggestedMap.get(w.peerId);
+      if (existing) {
+        if (w.score > existing.score) {
+          existing.score = w.score;
+          existing.summary = w.summary;
+          existing.sameLan = w.sameLan;
+          existing.online = w.online;
+          existing.viaRelay = w.viaRelay;
+        }
+        existing.matchedSubtaskIds.add(subtaskId);
+      } else {
+        suggestedMap.set(w.peerId, {
+          peerId: w.peerId,
+          score: w.score,
+          summary: w.summary,
+          sameLan: w.sameLan,
+          online: w.online,
+          viaRelay: w.viaRelay,
+          matchedSubtaskIds: new Set([subtaskId]),
+        });
+      }
+    }
+  }
+  // Rank: online workers first (a system pick should prefer reachable peers),
+  // then by score, then peer id for stability. Cap to a UI-friendly N.
+  const suggestedWorkers = [...suggestedMap.values()]
+    .sort((a, b) => {
+      const aOnline = a.online ? 1 : 0;
+      const bOnline = b.online ? 1 : 0;
+      if (aOnline !== bOnline) return bOnline - aOnline;
+      if (b.score !== a.score) return b.score - a.score;
+      return a.peerId.localeCompare(b.peerId);
+    })
+    .slice(0, 8)
+    .map((w) => ({ ...w, matchedSubtaskIds: [...w.matchedSubtaskIds] }));
   return {
     ok: true,
     chainId,
@@ -756,6 +821,7 @@ export async function chainPreviewGoalViaRuntime(
       workerCount: (workersBySubtask[s.subtaskId] ?? []).length,
     })),
     estimatedCostRange,
+    suggestedWorkers,
     diagnostics: ctx.chainDiagnosticsForSubtasks(
       plan.subtasks,
       workersBySubtask,
@@ -787,6 +853,7 @@ export async function chainStartFromGoalViaRuntime(
       iterationJudgeMode: params.iterationJudgeMode,
       extendMaxStepsPerRound: params.extendMaxStepsPerRound,
       iterationWire: params.iterationState,
+      preferredWorkerPeerIds: params.preferredWorkerPeerIds,
     });
     if (!result.ok) {
       return { ok: false, error: result.error };
@@ -812,6 +879,7 @@ export async function chainStartFromGoalViaRuntime(
     maxChainCostUsd: params.maxChainCostUsd ?? template?.maxChainCostUsd,
     costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd,
     allowLlm: params.allowLlm,
+    preferredWorkerPeerIds: params.preferredWorkerPeerIds,
   });
   if (!preview.ok || preview.subtasks.length === 0) {
     return {
@@ -838,6 +906,7 @@ export async function chainStartFromGoalViaRuntime(
     iterationJudgeMode: params.iterationJudgeMode,
     extendMaxStepsPerRound: params.extendMaxStepsPerRound,
     iterationWire: params.iterationState,
+    preferredWorkerPeerIds: params.preferredWorkerPeerIds,
   });
   if (!result.ok) {
     return { ok: false, error: result.error, diagnostics: preview.diagnostics };

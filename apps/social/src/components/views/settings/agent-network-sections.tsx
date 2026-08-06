@@ -1,21 +1,22 @@
 /**
- * Settings → Agent Network tab.
+ * Agent Network section components — extracted from the former
+ * SettingsAgentNetworkTab so they can be rendered inside the Team jobs
+ * "Manage workers" modal (AgentNetworkSettingsModal).
  *
- * Worker membership (Join Agent Network + scoring profile) lives here first,
- * then the four fleet onboarding paths. Kept distinct from AI settings so the
- * operator can find membership / LAN auto-bond / company invites / pairing
- * kiosk / fleet manifest without scrolling past model-provider configuration.
+ * Each section is self-contained: it pulls its own config via useNodeService /
+ * useNodeState and renders into a <section className="settings-section">.
+ * The modal just composes them with accordion headers.
  *
- * Each section is a sub-component below so this file stays under ~700
- * lines and the wiring is obvious.
+ * i18n keys: settings.agentNetwork.* (unchanged — only the render location
+ * moved from Settings → Agent Network tab to Team jobs → Manage workers).
  */
 import { useCallback, useEffect, useState } from "react";
-import { useNodeState } from "../../context/NodeStateContext.js";
-import { useT } from "../../context/I18nContext.js";
+import { useNodeState } from "../../../context/NodeStateContext.js";
+import { useT } from "../../../context/I18nContext.js";
 import {
   useIsInProcessMobileNode,
   useNodeService,
-} from "../../hooks/useNodeService.js";
+} from "../../../hooks/useNodeService.js";
 import type {
   CompanyInviteRecord,
   FleetManifest,
@@ -23,7 +24,7 @@ import type {
   PairingKioskStatus,
 } from "@envoymesh/api";
 import { FleetMemberSchema } from "@envoymesh/protocol";
-import { AgentNetworkProfilePanel } from "./settings/AgentNetworkProfilePanel.js";
+import { AgentNetworkProfilePanel } from "./AgentNetworkProfilePanel.js";
 
 type InviteStatus = "active" | "used" | "revoked" | "expired";
 
@@ -51,60 +52,11 @@ function generateRandomToken(length: number): string {
   ).join("");
 }
 
-/**
- * Brief explanation of the four paths. Always-on at the top of the tab so
- * a first-time operator knows what to flip.
- */
-function AgentNetworkIntro() {
-  const t = useT();
-  return (
-    <section className="settings-section">
-      <h3>{t("settings.agentNetwork.title")}</h3>
-      <p className="section-desc">{t("settings.agentNetwork.intro")}</p>
-      <h4 style={{ marginBottom: 4 }}>
-        {t("settings.agentNetwork.quickReferenceTitle")}
-      </h4>
-      <ul style={{ marginTop: 4, paddingLeft: 18 }}>
-        <li>
-          <strong>{t("settings.agentNetwork.officeLan.heading")}</strong>
-          {" — "}
-          {t("settings.agentNetwork.quickReference.officeLan")}
-        </li>
-        <li>
-          <strong>{t("settings.agentNetwork.membership.heading")}</strong>
-          {" — "}
-          {t("settings.agentNetwork.quickReference.membership")}
-        </li>
-        <li>
-          <strong>{t("settings.agentNetwork.companyInvites.sectionTitle")}</strong>
-          {" — "}
-          {t("settings.agentNetwork.quickReference.companyInvites")}
-        </li>
-        <li>
-          <strong>{t("settings.agentNetwork.lanAutoBond.heading")}</strong>
-          {" — "}
-          {t("settings.agentNetwork.quickReference.lanAutoBond")}
-        </li>
-        <li>
-          <strong>{t("settings.agentNetwork.pairingKiosk.sectionTitle")}</strong>
-          {" — "}
-          {t("settings.agentNetwork.quickReference.pairingKiosk")}
-        </li>
-        <li>
-          <strong>{t("settings.agentNetwork.fleetManifest.sectionTitle")}</strong>
-          {" — "}
-          {t("settings.agentNetwork.quickReference.fleetManifest")}
-        </li>
-      </ul>
-    </section>
-  );
-}
+/* -------------------------------------------------------------------------- */
+/* Office LAN preset                                                          */
+/* -------------------------------------------------------------------------- */
 
-/**
- * Same-LAN happy path: one action enables Join + LAN Auto-Bond + shared token.
- * Does not auto-flip Join on every bond — operator stays explicit.
- */
-function OfficeLanPresetSection() {
+export function OfficeLanPresetSection() {
   const t = useT();
   const nodeService = useNodeService();
   const { nodeConfig, refreshNodeConfig } = useNodeState();
@@ -128,6 +80,7 @@ function OfficeLanPresetSection() {
         capabilityProviderEnabled: true,
         lanAutoBondEnabled: true,
         lanAutoBondFleetToken: nextToken,
+        lanAutoBondAutoJoinAgentNetwork: true,
       } as Parameters<typeof nodeService.updateNodeConfig>[0]);
       await refreshNodeConfig();
       if (typeof nodeService.refreshAgentNetworkWorkers === "function") {
@@ -203,10 +156,11 @@ function OfficeLanPresetSection() {
   );
 }
 
-/**
- * Compact worker pool status + refresh + soft nudge when LAN-bonded but Join off.
- */
-function WorkersStatusSection() {
+/* -------------------------------------------------------------------------- */
+/* Workers status                                                             */
+/* -------------------------------------------------------------------------- */
+
+export function WorkersStatusSection() {
   const t = useT();
   const nodeService = useNodeService();
   const { nodeConfig } = useNodeState();
@@ -232,8 +186,6 @@ function WorkersStatusSection() {
       );
       setWorkerCount(workers.length);
       const hasLanBondNote = trusted.some((b) => (b.note ?? "").includes("lan-auto"));
-      // Nudge when Join is off and either we have an explicit LAN-auto bond note,
-      // or LAN Auto-Bond is on with any trusted peer (office LAN happy path).
       setLanBondWithoutJoin(
         !joinOn && (hasLanBondNote || (lanOn && trusted.length > 0)),
       );
@@ -276,8 +228,6 @@ function WorkersStatusSection() {
         );
       }
       await loadStatus();
-      // Card replies are async — poll again so the strip catches late arrivals
-      // without requiring a second click.
       window.setTimeout(() => {
         void loadStatus();
       }, 2_800);
@@ -329,11 +279,11 @@ function WorkersStatusSection() {
   );
 }
 
-/**
- * Join Agent Network as a Chains worker + owner-attested scoring profile.
- * Kept at the top of this tab — distinct from fleet onboarding paths below.
- */
-function WorkerMembershipSection() {
+/* -------------------------------------------------------------------------- */
+/* Worker membership                                                          */
+/* -------------------------------------------------------------------------- */
+
+export function WorkerMembershipSection() {
   const t = useT();
   const nodeService = useNodeService();
   const { nodeConfig, refreshNodeConfig } = useNodeState();
@@ -353,8 +303,6 @@ function WorkerMembershipSection() {
                 capabilityProviderEnabled: e.target.checked,
               });
               await refreshNodeConfig();
-              // Node-side updateNodeConfig already triggers refreshAgentNetworkWorkers
-              // when Join is toggled — avoid a duplicate round-trip here.
             }}
           />
           <span>{t("settings.agentNetwork.membership.joinLabel")}</span>
@@ -366,14 +314,11 @@ function WorkerMembershipSection() {
   );
 }
 
-/**
- * Phase 35C — LAN auto-bond section.
- *
- * Off by default. When toggled on with a fleet token, this node will silently
- * accept `device.pair.request` envelopes from other fleet members that carry
- * the same token.
- */
-function LanAutoBondSection() {
+/* -------------------------------------------------------------------------- */
+/* LAN auto-bond                                                              */
+/* -------------------------------------------------------------------------- */
+
+export function LanAutoBondSection() {
   const t = useT();
   const nodeService = useNodeService();
   const { nodeConfig, refreshNodeConfig } = useNodeState();
@@ -490,15 +435,11 @@ function LanAutoBondSection() {
   );
 }
 
-/**
- * Phase 35A — Company Invites.
- *
- * Long-lived bearer links minted on the home node and pasted into the
- * joiner's Social UI. Single-use. URI is captured at create-time and
- * pinned to the invite row in local component state, so the user always
- * copies the right URI even after creating more invites.
- */
-function CompanyInvitesSection() {
+/* -------------------------------------------------------------------------- */
+/* Company invites                                                            */
+/* -------------------------------------------------------------------------- */
+
+export function CompanyInvitesSection() {
   const t = useT();
   const nodeService = useNodeService();
   const isMobileNode = useIsInProcessMobileNode();
@@ -721,13 +662,11 @@ function CompanyInvitesSection() {
   );
 }
 
-/**
- * Phase 35D — Pairing Kiosk.
- *
- * Tiny HTTP server bound to 127.0.0.1 by default. Visiting laptops open the
- * page, paste the admin token, and mint a one-shot company invite.
- */
-function PairingKioskSection() {
+/* -------------------------------------------------------------------------- */
+/* Pairing kiosk                                                              */
+/* -------------------------------------------------------------------------- */
+
+export function PairingKioskSection() {
   const t = useT();
   const nodeService = useNodeService();
   const isMobileNode = useIsInProcessMobileNode();
@@ -973,22 +912,10 @@ function PairingKioskSection() {
   );
 }
 
-/**
- * Phase 35B — Fleet Manifest.
- *
- * Operator pastes member JSON, the home node signs it, then imports the
- * signed manifest to pre-stage trust for every member.
- *
- * Member JSON is validated against `FleetMemberSchema` *before* signing
- * so a malformed entry surfaces a useful error instead of producing a
- * broken manifest.
- */
-/**
- * Built-in role templates for fleet manifests. Each template pre-fills the
- * `role` + `trustLevel` fields so operators don't hand-author them per member.
- * The `applyTemplate` helper injects a skeleton member JSON into the textarea;
- * the operator still fills in `ownerId` / `deviceId` / `devicePublicKeyPem`.
- */
+/* -------------------------------------------------------------------------- */
+/* Fleet manifest                                                             */
+/* -------------------------------------------------------------------------- */
+
 const FLEET_ROLE_TEMPLATES = [
   { id: "operator", role: "operator", trustLevel: "direct" as const },
   { id: "engineer", role: "engineer", trustLevel: "direct" as const },
@@ -996,7 +923,6 @@ const FLEET_ROLE_TEMPLATES = [
   { id: "visitor", role: "visitor", trustLevel: "public" as const },
 ] as const;
 
-/** Build a skeleton members JSON array for a given role template. */
 function skeletonMembersForTemplate(templateId: string): string {
   const tpl = FLEET_ROLE_TEMPLATES.find((t) => t.id === templateId);
   if (!tpl) return "";
@@ -1013,7 +939,7 @@ function skeletonMembersForTemplate(templateId: string): string {
   return JSON.stringify(skeleton, null, 2);
 }
 
-function FleetManifestSection() {
+export function FleetManifestSection() {
   const t = useT();
   const nodeService = useNodeService();
   const isMobileNode = useIsInProcessMobileNode();
@@ -1029,6 +955,7 @@ function FleetManifestSection() {
   const [lastImportSummary, setLastImportSummary] = useState<string | null>(null);
   const [signed, setSigned] = useState<FleetManifest | null>(null);
   const [copiedSigned, setCopiedSigned] = useState(false);
+  const [autoJoin, setAutoJoin] = useState(true);
 
   const refresh = useCallback(async () => {
     if (isMobileNode) return;
@@ -1067,8 +994,6 @@ function FleetManifestSection() {
       setError(t("settings.agentNetwork.fleetManifest.invalidMembersJson"));
       return;
     }
-    // Validate each entry against the runtime schema so the operator gets
-    // a useful error instead of a broken manifest.
     const validation = FleetMemberSchema.array().safeParse(parsed);
     if (!validation.success) {
       setError(
@@ -1087,6 +1012,7 @@ function FleetManifestSection() {
       const result = await nodeService.createFleetManifest({
         label: labelDraft.trim() || undefined,
         members: validation.data as FleetManifest["members"],
+        autoJoinAgentNetwork: autoJoin,
       });
       setSigned(result.manifest);
     } catch (e) {
@@ -1094,7 +1020,7 @@ function FleetManifestSection() {
     } finally {
       setSigning(false);
     }
-  }, [isMobileNode, jsonDraft, labelDraft, nodeService, t]);
+  }, [autoJoin, isMobileNode, jsonDraft, labelDraft, nodeService, t]);
 
   const handleImport = useCallback(async () => {
     if (isMobileNode) return;
@@ -1216,6 +1142,20 @@ function FleetManifestSection() {
           marginBottom: 4,
         }}
       />
+      <label
+        className="fleet-manifest__auto-join"
+        style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8, cursor: "pointer" }}
+      >
+        <input
+          type="checkbox"
+          checked={autoJoin}
+          onChange={(e) => setAutoJoin(e.target.checked)}
+          disabled={signing || importing}
+        />
+        <span className="settings-hint" style={{ margin: 0 }}>
+          {t("settings.agentNetwork.fleetManifest.autoJoinLabel")}
+        </span>
+      </label>
       <div
         style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}
       >
@@ -1354,10 +1294,11 @@ function FleetManifestSection() {
   );
 }
 
-/**
- * Bond autonomy — auto-accept inbound hellos (sponsor node).
- */
-function BondAutonomySection() {
+/* -------------------------------------------------------------------------- */
+/* Bond autonomy                                                              */
+/* -------------------------------------------------------------------------- */
+
+export function BondAutonomySection() {
   const t = useT();
   const nodeService = useNodeService();
   const { nodeConfig, refreshNodeConfig } = useNodeState();
@@ -1501,10 +1442,11 @@ function BondAutonomySection() {
   );
 }
 
-/**
- * Setup sponsor friend — installer zero-step first friend overrides.
- */
-function SetupSponsorFriendSection() {
+/* -------------------------------------------------------------------------- */
+/* Setup sponsor friend                                                       */
+/* -------------------------------------------------------------------------- */
+
+export function SetupSponsorFriendSection() {
   const t = useT();
   const nodeService = useNodeService();
   const { nodeConfig, refreshNodeConfig } = useNodeState();
@@ -1526,11 +1468,6 @@ function SetupSponsorFriendSection() {
     try {
       const resolved = await nodeService.getSetupSponsorFriendConfig();
       setResolvedSource(resolved.source);
-      // Populate inputs from the RESOLVED (bundled + persisted, merged) config,
-      // not just the persisted nodeConfig. Otherwise an installer node that has
-      // never had `updateNodeConfig` called with sponsor overrides shows empty
-      // inputs even though the runtime is happily running on bundled defaults.
-      // The runtime keeps re-resolving on every call, so this stays in sync.
       setEnabled(resolved.enabled);
       setContactUri(resolved.contactUri ?? "");
       setOwnerId(resolved.ownerId ?? "");
@@ -1544,11 +1481,6 @@ function SetupSponsorFriendSection() {
   }, [nodeService]);
 
   useEffect(() => {
-    // The persisted nodeConfig only carries values the user has explicitly saved.
-    // The RESOLVED config carries bundled + persisted merged — and that is what
-    // the runtime actually uses, so the Settings form has to mirror it.
-    // We do NOT keep reading from `nodeConfig` here because that would overwrite
-    // the bundled-derived values every time the polling refresh fires.
     void refreshResolved();
   }, [nodeConfig, refreshResolved]);
 
@@ -1718,52 +1650,5 @@ function SetupSponsorFriendSection() {
       </div>
       {error ? <p className="library-view-error">{error}</p> : null}
     </section>
-  );
-}
-
-export function SettingsAgentNetworkTab() {
-  const t = useT();
-  const isMobileNode = useIsInProcessMobileNode();
-
-  if (isMobileNode) {
-    return (
-      <section className="settings-section">
-        <h3>{t("settings.agentNetwork.title")}</h3>
-        <p className="section-desc">
-          {t("settings.agentNetwork.mobileNotAvailable")}
-        </p>
-      </section>
-    );
-  }
-
-  return (
-    <>
-      <AgentNetworkIntro />
-
-      <OfficeLanPresetSection />
-      <WorkersStatusSection />
-      <WorkerMembershipSection />
-
-      <section className="settings-section">
-        <h4>{t("settings.agentNetwork.groupAutoBondTitle")}</h4>
-        <p className="section-desc">{t("settings.agentNetwork.groupAutoBondDesc")}</p>
-      </section>
-      <BondAutonomySection />
-      <SetupSponsorFriendSection />
-
-      <section className="settings-section">
-        <h4>{t("settings.agentNetwork.groupInvitesTitle")}</h4>
-        <p className="section-desc">{t("settings.agentNetwork.groupInvitesDesc")}</p>
-      </section>
-      <CompanyInvitesSection />
-      <PairingKioskSection />
-
-      <section className="settings-section">
-        <h4>{t("settings.agentNetwork.groupOperatorTitle")}</h4>
-        <p className="section-desc">{t("settings.agentNetwork.groupOperatorDesc")}</p>
-      </section>
-      <LanAutoBondSection />
-      <FleetManifestSection />
-    </>
   );
 }

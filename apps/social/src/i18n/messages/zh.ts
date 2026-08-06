@@ -568,7 +568,7 @@ export const zh = mergeMessages(en, {
       inviteRedeemed: "群邀请已兑换 — 我们已向签发者打招呼。对方接受后即会出现在联系人中。",
       inviteRedeemedFailed: "无法兑换该群邀请。请向签发者索取新链接。",
       inviteRedeemedWithReason: "无法兑换该群邀请：{reason}",
-      inviteInvalidHint: "该群邀请链接不完整。请签发者在「设置 → 智能体网络」中重新生成。",
+      inviteInvalidHint: "该群邀请链接不完整。请签发者在「协作任务 → 管理工作节点」中重新生成。",
     },
     search: {
       panelTitle: "搜索网络",

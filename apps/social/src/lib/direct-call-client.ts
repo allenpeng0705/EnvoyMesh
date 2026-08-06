@@ -306,6 +306,9 @@ export class DirectCallClient implements NodeServiceClient {
   chainStartFromGoal(params: Parameters<NodeService["chainStartFromGoal"]>[0]): ReturnType<NodeService["chainStartFromGoal"]> {
     return this._ns.chainStartFromGoal(params);
   }
+  chainProbeReachability(params: Parameters<NodeService["chainProbeReachability"]>[0]): ReturnType<NodeService["chainProbeReachability"]> {
+    return this._ns.chainProbeReachability(params);
+  }
   chainResolveIteration(params: Parameters<NodeService["chainResolveIteration"]>[0]): ReturnType<NodeService["chainResolveIteration"]> {
     return this._ns.chainResolveIteration(params);
   }

@@ -2,14 +2,12 @@ import { SettingsAccountTab } from "./SettingsAccountTab.js";
 import { SettingsNodeTab } from "./SettingsNodeTab.js";
 import { SettingsAITab } from "./SettingsAITab.js";
 import { SettingsAppTab } from "./SettingsAppTab.js";
-import { SettingsAgentNetworkTab } from "./SettingsAgentNetworkTab.js";
 import { SettingsFamilyTab } from "./SettingsFamilyTab.js";
 import { useT } from "../../context/I18nContext.js";
 
 export type SettingsTabId =
   | "account"
   | "ai"
-  | "agentNetwork"
   | "family"
   | "network"
   | "app";
@@ -44,13 +42,6 @@ export function SettingsView({
         </button>
         <button
           type="button"
-          className={tab === "agentNetwork" ? "active" : ""}
-          onClick={() => onTabChange("agentNetwork")}
-        >
-          {t("settings.tabs.agentNetwork")}
-        </button>
-        <button
-          type="button"
           className={tab === "family" ? "active" : ""}
           onClick={() => onTabChange("family")}
         >
@@ -74,7 +65,6 @@ export function SettingsView({
 
       {tab === "account" && <SettingsAccountTab />}
       {tab === "ai" && <SettingsAITab />}
-      {tab === "agentNetwork" && <SettingsAgentNetworkTab />}
       {tab === "family" && <SettingsFamilyTab />}
       {tab === "network" && <SettingsNodeTab />}
       {tab === "app" && <SettingsAppTab />}

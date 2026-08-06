@@ -86,7 +86,7 @@ import { executeAcceptedSubtask } from "./chain-worker-executor.js";
 import { requiresChainAwardApproval } from "./chain-sensitivity-gate.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 import type { MeshToolContext } from "./tool-registry.js";
-import { type ChainContext, type ChainStore } from "./node-service-chains.js";
+import { type ChainContext, type ChainRankedWorker, type ChainStore } from "./node-service-chains.js";
 
 /* ---------- context ---------- */
 
@@ -219,8 +219,8 @@ export function buildChainContext(deps: ChainOrchestrationContext): ChainContext
     placeholderMandate: (chainId, chainMandateId) =>
       placeholderMandate(chainId, chainMandateId) as never,
     findCapabilityProviders: (capability) => findCapabilityProviders(deps, capability) as never,
-    findCapabilityProvidersRanked: (capability) =>
-      findCapabilityProvidersRanked(deps, capability) as never,
+    findCapabilityProvidersRanked: (capability, preferredWorkerPeerIds) =>
+      findCapabilityProvidersRanked(deps, capability, preferredWorkerPeerIds) as never,
     chainDiagnosticsForSubtasks: (subtasks, workersBySubtask, rankedBySubtask) =>
       _chainDiagnosticsForSubtasks(subtasks as never, workersBySubtask as never, rankedBySubtask) as never,
     runChainGoal: (params) => _runChainGoal(deps, params) as never,
@@ -564,6 +564,7 @@ export async function buildChainInboundDeps(deps: ChainOrchestrationContext): Pr
           iterationJudgeMode: payload.iterationJudgeMode,
           extendMaxStepsPerRound: payload.extendMaxStepsPerRound,
           iterationWire: payload.iterationState,
+          preferredWorkerPeerIds: payload.preferredWorkerPeerIds,
         }).then((result) => {
           void orchDeps.audit.record({
             type: result.ok ? "chain.launched" : "chain.mandate_broadcast",
@@ -863,7 +864,8 @@ export async function findCapabilityProviders(deps: ChainOrchestrationContext, c
 export async function findCapabilityProvidersRanked(
   deps: ChainOrchestrationContext,
   capability: string,
-): Promise<Array<{ peerId: string; score: number; summary: string; sameLan: boolean }>> {
+  preferredWorkerPeerIds?: readonly string[],
+): Promise<ChainRankedWorker[]> {
   const ready = deps.getCapabilityIndexReady();
   if (ready) {
     await ready;
@@ -905,9 +907,20 @@ export async function findCapabilityProvidersRanked(
   if (peers.size === 0) return [];
   const peerList = [...peers];
   const sameLanByPeer = await buildSameLanByPeerId(deps, peerList, byPeer);
-  const scored = peerList.map((peerId) => {
+
+  // Live mesh connection snapshot — online workers can actually receive a
+  // task.execute handoff; offline ones cannot until they reconnect. Used both
+  // for the system pick (prefer reachable) and the UI (offline = non-selectable).
+  const mesh = deps.getReachableMesh();
+  const connStats = mesh?.getConnectionStats();
+  const connectedIds = new Set(connStats?.connectedPeerIds ?? mesh?.getConnectedPeerIds() ?? []);
+  const circuitIds = new Set(connStats?.circuitPeerIds ?? []);
+
+  const scored: ChainRankedWorker[] = peerList.map((peerId) => {
     const card = byPeer.get(peerId);
     const sameLan = sameLanByPeer.get(peerId) === true;
+    const online = connectedIds.has(peerId);
+    const viaRelay = online && circuitIds.has(peerId);
     const result = scoreAgentNetworkWorker({
       requiredCapability: capability,
       cardCapabilities: card?.capabilities ?? [],
@@ -915,9 +928,20 @@ export async function findCapabilityProvidersRanked(
       displayName: card?.displayName,
       sameLan,
     });
-    return { peerId, score: result.score, summary: result.summary, sameLan };
+    return { peerId, score: result.score, summary: result.summary, sameLan, online, viaRelay };
   });
-  return rankWorkersByScore(scored);
+  const filtered =
+    preferredWorkerPeerIds && preferredWorkerPeerIds.length > 0
+      ? scored.filter((w) => preferredWorkerPeerIds.includes(w.peerId))
+      : scored;
+  // Online workers first (they can actually execute), then by score, then id.
+  return rankWorkersByScore(filtered).sort((a, b) => {
+    const aOnline = a.online ? 1 : 0;
+    const bOnline = b.online ? 1 : 0;
+    if (aOnline !== bOnline) return bOnline - aOnline;
+    if (b.score !== a.score) return b.score - a.score;
+    return a.peerId.localeCompare(b.peerId);
+  });
 }
 
 /* ---------- tracking + state emission ---------- */
@@ -1187,6 +1211,8 @@ export async function _runChainGoal(
     extendMaxStepsPerRound?: number;
     /** Phase 47D — rehydrate mid-job iteration after Assigner handoff. */
     iterationWire?: import("./chain-iteration.js").IterationWireBlob;
+    /** Restrict worker discovery to these agent peer IDs. Empty/absent = use all. */
+    preferredWorkerPeerIds?: string[];
   },
 ): Promise<{
   ok: boolean;
@@ -1218,6 +1244,7 @@ export async function _runChainGoal(
         iterationJudgeMode: input.iterationJudgeMode,
         extendMaxStepsPerRound: input.extendMaxStepsPerRound,
         iterationWire: input.iterationWire,
+        preferredWorkerPeerIds: input.preferredWorkerPeerIds,
       });
     }
   }
@@ -1336,7 +1363,7 @@ export async function _runChainGoal(
   let totalWorkers = 0;
   const workerCap = awardMode === "direct" ? 1 : 3;
   for (const subtask of plan.subtasks) {
-    const ranked = await findCapabilityProvidersRanked(deps, subtask.requiredCapability);
+    const ranked = await findCapabilityProvidersRanked(deps, subtask.requiredCapability, input.preferredWorkerPeerIds);
     rankedBySubtask[subtask.subtaskId] = ranked;
     const candidates = ranked.map((r) => r.peerId);
     // Named assignee from plan+assign wins (direct dispatch). Keep up to 2
@@ -1604,6 +1631,8 @@ export async function _handoffChainGoalToAssigner(
     iterationJudgeMode?: NonNullable<ChainDefaultsConfig["iterationJudgeMode"]>;
     extendMaxStepsPerRound?: number;
     iterationWire?: import("./chain-iteration.js").IterationWireBlob;
+    /** Restrict worker discovery to these agent peer IDs. Empty/absent = use all. */
+    preferredWorkerPeerIds?: string[];
   },
 ): Promise<{
   ok: boolean;
@@ -1680,6 +1709,7 @@ export async function _handoffChainGoalToAssigner(
     iterationJudgeMode,
     extendMaxStepsPerRound,
     iterationState: input.iterationWire,
+    preferredWorkerPeerIds: input.preferredWorkerPeerIds,
   });
 
   const orchDeps = await buildChainOrchestratorDeps(deps);
