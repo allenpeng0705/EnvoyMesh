@@ -328,13 +328,18 @@ export function isRfc1918PrivateIp(ip: string): boolean {
  * See docs/connectivity-internals-and-design.md Open Question #1.
  */
 export interface CgnatDetectionInput {
-  /** STUN-observed NAT type. `"symmetric"` is definitive CGNAT. */
+  /**
+   * STUN-observed NAT type. `"symmetric"` is a *noisy* CGNAT signal (requires
+   * corroboration from UPnP-private to auto-apply — see classifyCgnat docs).
+   * `"full-cone"` / `"open"` are definitive negatives.
+   */
   natType?: NatType;
-  /** STUN-observed public IP (if any). Checked against the CGNAT range. */
+  /** STUN-observed public IP (if any). Checked against the RFC 6598 CGNAT range. */
   stunObservedIp?: string;
   /**
    * UPnP-reported external IP. When UPnP returns an RFC1918 private IP, the
-   * gateway itself is behind another NAT (double-NAT / CGNAT) — definitive.
+   * gateway may be behind another NAT (CGNAT or fixable double-NAT). A *noisy*
+   * signal — requires corroboration from symmetric NAT to auto-apply.
    */
   upnpExternalIp?: string;
 }

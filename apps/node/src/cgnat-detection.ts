@@ -87,10 +87,12 @@ export async function detectCgnatAtStartup(options?: {
  * We don't need the port mapping here — only the external IP classification.
  * Reuses upnpDiscoverAndMap with a dummy internal port to get the external IP.
  */
-async function probeUpnpExternalIp(_probePort: number): Promise<string | undefined> {
+async function probeUpnpExternalIp(probePort: number): Promise<string | undefined> {
   // upnpDiscoverAndMap returns { ip, port } on success; we only need the IP.
-  // Pass a throwaway internal port — we don't actually want a mapping here,
-  // just the external IP observation. If it fails, return undefined.
-  const result = await upnpDiscoverAndMap(_probePort, _probePort, 3000);
+  // Pass a throwaway internal/external port pair — we don't actually want a
+  // persistent mapping here, just the external IP observation. If UPnP is
+  // unavailable or fails, return undefined (the classifier treats that as
+  // "no UPnP signal", not a failure).
+  const result = await upnpDiscoverAndMap(probePort, probePort, 3000);
   return result?.ip;
 }
