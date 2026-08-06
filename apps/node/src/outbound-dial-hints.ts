@@ -239,15 +239,35 @@ export async function buildOutboundDialHints(input: {
   // a stale LAN address from a previous same-network session would block
   // the circuit fallback — the dial would burn 30s on the LAN address,
   // time out, and only then try the circuit, repeating every retry.
-  const addressFilter = input.addressFilter ?? defaultAddressFilterForProfile(input.config);
+  //
+  // LAN-aware override: when the caller did NOT explicitly set an addressFilter
+  // AND the ordered hints include a same-subnet LAN address (i.e. both peers
+  // are on the same LAN right now), use "all" instead of stripping LAN. This
+  // prevents same-LAN peers from connecting via relay ("online-relay") when
+  // they should connect direct ("online-direct"). The stale-LAN concern above
+  // does not apply here because `prioritizeSameSubnetDialHints` only flags
+  // addresses that match the LOCAL node's current subnet — a stale address
+  // from a different network won't match.
+  const sameSubnetLan = ordered.some((h) => {
+    const remoteIp = parseIpv4FromMultiaddr(h);
+    if (!remoteIp || !isPrivateLanTcpDialHint(h)) return false;
+    const localIps = (input.localListenAddrs ?? [])
+      .map(parseIpv4FromMultiaddr)
+      .filter((ip): ip is string => ip != null);
+    return localIps.some((lip) => ipv4SameSubnet(remoteIp, lip));
+  });
+  const defaultFilter = sameSubnetLan ? "all" : defaultAddressFilterForProfile(input.config);
+  const addressFilter = input.addressFilter ?? defaultFilter;
   const filtered = filterDialHintsByAddressFilter(ordered, addressFilter);
   const hasSurvivingDirect = hasDirectTcpDialHints(filtered);
   const hasSurvivingCircuit = filtered.some((a) => a.includes("/p2p-circuit/"));
   // wan-default (and other non-lan-fast profiles): when both circuit and
   // LAN survive, prefer circuit first so installer RFC1918 does not burn
   // 30s before relay. lan-fast keeps LAN-first via prioritizeDirectLanDialHints.
+  // BUT when same-subnet LAN was detected above, keep LAN-first so same-LAN
+  // peers connect direct immediately instead of going through the relay.
   const lanFast = input.config?.discoveryProfile === "lan-fast";
-  const preferCircuitHints = lanFast
+  const preferCircuitHints = (lanFast || sameSubnetLan)
     ? !hasSurvivingDirect
     : hasSurvivingCircuit || !hasSurvivingDirect;
   const forSend = preferCircuitHints
