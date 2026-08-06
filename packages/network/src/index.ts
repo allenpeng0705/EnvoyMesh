@@ -354,6 +354,13 @@ export interface RelayReservationStatus {
   liveRelayPeerIds: string[];
   lastError?: string;
   lastReservedAt?: string;
+  /**
+   * Consecutive failed re-warm cycles (resets to 0 on success). When this
+   * stays >0 for a while, the configured relay(s) are effectively down — the
+   * UI surfaces a "Relay unreachable" warning so operators know WAN discovery
+   * and cross-NAT reachability are degraded. See M2.
+   */
+  failureStreak: number;
   checkedAt: string;
 }
 
@@ -529,6 +536,12 @@ export class EnvoyMesh {
   private preferredRelayPeerIds: string[] = [];
   private lastReservedAt: string | undefined;
   private lastReservationError: string | undefined;
+  /**
+   * Consecutive failed re-warm cycles in the reservation health loop. Surfaced
+   * via RelayReservationStatus so the UI can distinguish a transient blip from
+   * a sustained outage (M2). Reset to 0 on any successful reservation.
+   */
+  private reservationFailureStreak = 0;
   private reservationHealthTimer?: ReturnType<typeof setTimeout>;
   private reservationHealthDisconnectUnsub?: () => void;
   private reservationHealthRunning = false;
@@ -1176,6 +1189,7 @@ export class EnvoyMesh {
       everReserved: false,
       relayPeerIds: [],
       liveRelayPeerIds: [],
+      failureStreak: 0,
       checkedAt: new Date().toISOString(),
     });
     if (!enableRelay && !enableServer) {
@@ -1214,6 +1228,7 @@ export class EnvoyMesh {
         liveRelayPeerIds,
         lastReservedAt: this.lastReservedAt,
         lastError: partialHint,
+        failureStreak: this.reservationFailureStreak,
         checkedAt: new Date().toISOString(),
       };
     }
@@ -1225,6 +1240,7 @@ export class EnvoyMesh {
         relayPeerIds,
         liveRelayPeerIds,
         lastError: this.lastReservationError,
+        failureStreak: this.reservationFailureStreak,
         checkedAt: new Date().toISOString(),
       };
     }
@@ -1241,6 +1257,7 @@ export class EnvoyMesh {
             ? "No live reservation on configured EnvoyMesh relay(s) — re-warming (AutoRelay public hops do not count)."
             : "Reservation was granted earlier but is no longer live in the local store — re-warming."),
         lastReservedAt: this.lastReservedAt,
+        failureStreak: this.reservationFailureStreak,
         checkedAt: new Date().toISOString(),
       };
     }
@@ -1251,6 +1268,7 @@ export class EnvoyMesh {
       relayPeerIds,
       liveRelayPeerIds,
       lastError: this.lastReservationError,
+      failureStreak: this.reservationFailureStreak,
       checkedAt: new Date().toISOString(),
     };
   }
@@ -1334,6 +1352,7 @@ export class EnvoyMesh {
       if (missing.length === 0) {
         wasLive = true;
         consecutiveReWarmFailures = 0;
+        this.reservationFailureStreak = 0;
         return;
       }
       this.reservationHealthRunning = true;
@@ -1351,9 +1370,11 @@ export class EnvoyMesh {
         if (resv.failed > 0 && resv.reserved === 0 && usable.length === 0) {
           this.lastReservationError = resv.failures[0] ?? "reservation health re-warm failed";
           consecutiveReWarmFailures += 1;
+          this.reservationFailureStreak = consecutiveReWarmFailures;
         } else if (usable.length === relayPeerIds.length) {
           this.lastReservationError = undefined;
           consecutiveReWarmFailures = 0;
+          this.reservationFailureStreak = 0;
         } else {
           // Partial recovery — don't increment, but don't reset either.
         }
@@ -1362,6 +1383,7 @@ export class EnvoyMesh {
         const msg = err instanceof Error ? err.message : String(err);
         this.lastReservationError = msg;
         consecutiveReWarmFailures += 1;
+        this.reservationFailureStreak = consecutiveReWarmFailures;
         console.warn(`[p2p] relay reservation health (${reason}) threw: ${msg}`);
       } finally {
         this.reservationHealthRunning = false;

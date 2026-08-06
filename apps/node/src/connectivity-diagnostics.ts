@@ -59,7 +59,21 @@ export function buildConnectivityDiagnostics(
     typeof input.mesh?.getRelayReservationStatus === "function"
       ? input.mesh.getRelayReservationStatus()
       : undefined;
-  if (circuitReservation?.state === "failed") {
+  // Sustained relay failure (M2): when the reservation health loop has been
+  // failing repeatedly, surface a clear "Relay unreachable" warning so the
+  // operator knows WAN discovery + cross-NAT reachability are degraded and can
+  // add a backup relay. This is especially important under quietWan where the
+  // relay is the only WAN discovery path.
+  const SUSTAINED_RELAY_FAILURE_THRESHOLD = 4; // matches M1 backoff threshold
+  if (
+    circuitReservation?.state === "failed" &&
+    (circuitReservation.failureStreak ?? 0) >= SUSTAINED_RELAY_FAILURE_THRESHOLD
+  ) {
+    hints.unshift(
+      `Relay unreachable — ${circuitReservation.failureStreak} consecutive reservation failures. ` +
+        "WAN discovery and cross-NAT reachability are degraded. Add a backup relay in Settings → Agent Network, or check the relay server.",
+    );
+  } else if (circuitReservation?.state === "failed") {
     hints.unshift(
       circuitReservation.lastError
         ? `Circuit reservation: ${circuitReservation.lastError}`
