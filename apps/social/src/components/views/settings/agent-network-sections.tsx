@@ -85,6 +85,7 @@ export function OfficeLanPresetSection() {
         lanAutoBondEnabled: true,
         lanAutoBondFleetToken: nextToken,
         lanAutoBondAutoJoinAgentNetwork: true,
+        discoveryProfile: "lan-fast",
       } as Parameters<typeof nodeService.updateNodeConfig>[0]);
       await refreshNodeConfig();
       if (typeof nodeService.refreshAgentNetworkWorkers === "function") {

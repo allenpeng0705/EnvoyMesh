@@ -271,6 +271,23 @@ describe("dial hint sorting", () => {
       expect(filterUsableOutboundPeerDialHints([ephemeral, stable], target)).toEqual([stable]);
     });
 
+    it("allows ephemeral private LAN when same-subnet dials need tcp/0 listeners", () => {
+      const target = "12D3KooWN67PannbfXrLPhgJkkRGWGN9UBV3Xfu5UpzdK1dY8qGD";
+      const ephemeral = `/ip4/192.168.3.78/tcp/64595/p2p/${target}`;
+      const stripped = "/ip4/192.168.3.78/tcp/55093";
+      expect(
+        isUsableOutboundPeerDialHint(ephemeral, target, { allowEphemeralPrivateLan: true }),
+      ).toBe(true);
+      expect(
+        isUsableOutboundPeerDialHint(stripped, target, { allowEphemeralPrivateLan: true }),
+      ).toBe(true);
+      expect(
+        filterUsableOutboundPeerDialHints([ephemeral, stripped], target, {
+          allowEphemeralPrivateLan: true,
+        }),
+      ).toEqual([ephemeral, stripped]);
+    });
+
     it("rejects ephemeral ports even without trailing slash or /p2p/ suffix", () => {
       // Peer-directory often stores bare `/ip4/…/tcp/HIGHPORT` without `/p2p/`.
       // Those used to skip the snapshot regex and burned dialTimeout on warm.

@@ -566,6 +566,7 @@ export async function routeRpcMethod(
           ...(params.upgradeRelayToDirect === true ? { upgradeRelayToDirect: true } : {}),
           ...(params.keepAlive === true ? { keepAlive: true } : {}),
           ...(params.verifyConnection === true ? { verifyConnection: true } : {}),
+          ...(params.force === true ? { force: true } : {}),
         },
       );
     case "getChatDiagnostics":

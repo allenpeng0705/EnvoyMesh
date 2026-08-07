@@ -14,7 +14,6 @@ import {
   REACHABILITY_POLL_MS,
 } from "../lib/peer-reachability-hysteresis.js";
 import {
-  canStartBondWarm,
   markBondWarmFinished,
   markBondWarmStarted,
 } from "../lib/bond-warm-coordinator.js";
@@ -113,16 +112,14 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
         } else if (opts?.verifyOnly) {
           next = await ns.getPeerConnectionInfo(peerOwnerId);
         } else if (opts?.warm) {
-          if (!canStartBondWarm(peerOwnerId)) {
-            next = await ns.getPeerConnectionInfo(peerOwnerId);
-          } else {
-            lastRedialAtRef.current = Date.now();
-            markBondWarmStarted(peerOwnerId);
-            try {
-              next = await ns.warmContactConnection(peerOwnerId);
-            } finally {
-              markBondWarmFinished(peerOwnerId);
-            }
+          // Open-chat / offline poll: always dial. Shared cooldown is for sidebar
+          // preload only — blocking here left chat Offline for 90s after a failed warm.
+          lastRedialAtRef.current = Date.now();
+          markBondWarmStarted(peerOwnerId);
+          try {
+            next = await ns.warmContactConnection(peerOwnerId, { force: true });
+          } finally {
+            markBondWarmFinished(peerOwnerId);
           }
         } else {
           next = await ns.getPeerConnectionInfo(peerOwnerId);
@@ -168,10 +165,10 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
         return;
       }
       if (!libp2pConnectedRef.current) {
-        // Background dial after chat history loads — avoids blocking the WS RPC queue on open.
+        // Background dial after chat history loads — show Checking… while warming.
         deferredWarmTimer = setTimeout(() => {
           if (generation !== peerGenerationRef.current) return;
-          void runRefresh(generation, { warm: true, silent: true });
+          void runRefresh(generation, { warm: true });
         }, OPEN_CHAT_DEFERRED_WARM_MS);
       } else if (!libp2pDirectRef.current) {
         // Prefer direct LAN/TCP when available instead of staying on relay.

@@ -189,18 +189,23 @@ export async function buildOutboundDialHints(input: {
 }): Promise<string[]> {
   const recipientPeerId = input.recipientPeerId.trim();
   const raw = (input.peerListenAddrs ?? []).map((a) => a.trim()).filter(Boolean);
+  /** Same-subnet evidence must use RAW directory addrs — high ports are often the live tcp/0 listen. */
+  const sameSubnetFromRaw = hasSameSubnetLanDialEvidence(input.localListenAddrs, raw);
+  const hintOpts = sameSubnetFromRaw ? { allowEphemeralPrivateLan: true } : undefined;
   /** Never dial the remote peer's loopback or local docker-bridge IP from our machine. */
-  const nonLoopListen = raw.filter((a) => isUsableChatDialHint(a, recipientPeerId));
+  const nonLoopListen = raw.filter((a) => isUsableOutboundPeerDialHint(a, recipientPeerId, hintOpts));
 
   const store = input.discoverySeedStore;
   if (!store) {
     return filterDialHintsByAddressFilter(
       dedupeDialHints(nonLoopListen),
-      input.addressFilter ?? defaultAddressFilterForProfile(input.config),
+      input.addressFilter ?? (sameSubnetFromRaw ? "all" : defaultAddressFilterForProfile(input.config)),
     );
   }
 
-  const seeds = (await store.listSeedAddrs()).filter((a) => isUsableChatDialHint(a, recipientPeerId));
+  const seeds = (await store.listSeedAddrs()).filter((a) =>
+    isUsableOutboundPeerDialHint(a, recipientPeerId, hintOpts),
+  );
   const relayPool = dedupeDialHints([
     ...seeds.filter((s) => s.includes("/p2p-circuit/")),
     ...relayBasesForCircuitDial({ config: input.config, profileDir: input.profileDir }),
@@ -215,7 +220,9 @@ export async function buildOutboundDialHints(input: {
     }
   }
 
-  const hasDirect = hasDirectTcpDialHints([...nonLoopListen, ...peerSeeds]);
+  const hasDirect =
+    hasDirectTcpDialHints([...nonLoopListen, ...peerSeeds]) ||
+    (sameSubnetFromRaw && nonLoopListen.some((h) => isPrivateLanTcpDialHint(h)));
   const peerSpecificCircuits = out.filter(
     (h) => h.includes(recipientPeerId) && h.includes("/p2p-circuit/"),
   );
@@ -227,7 +234,27 @@ export async function buildOutboundDialHints(input: {
     );
   }
 
-  const usable = dedupeDialHints(out.filter((a) => isUsableChatDialHint(a, recipientPeerId)));
+  // Cap stale inbound snapshots: keep at most 2 high-port LAN addrs (newest first).
+  if (sameSubnetFromRaw) {
+    let ephemeralKept = 0;
+    const capped: string[] = [];
+    for (const h of out) {
+      if (
+        isPrivateLanTcpDialHint(h) &&
+        isLikelyInboundConnSnapshotDialHint(h) &&
+        !h.includes("/p2p-circuit/")
+      ) {
+        if (ephemeralKept >= 2) continue;
+        ephemeralKept += 1;
+      }
+      capped.push(h);
+    }
+    out = capped;
+  }
+
+  const usable = dedupeDialHints(
+    out.filter((a) => isUsableOutboundPeerDialHint(a, recipientPeerId, hintOpts)),
+  );
   const ordered = prioritizeSameSubnetDialHints(
     prioritizeDirectLanDialHints(usable),
     input.localListenAddrs,
@@ -248,18 +275,22 @@ export async function buildOutboundDialHints(input: {
   // does not apply here because `prioritizeSameSubnetDialHints` only flags
   // addresses that match the LOCAL node's current subnet — a stale address
   // from a different network won't match.
-  const sameSubnetLan = ordered.some((h) => {
-    const remoteIp = parseIpv4FromMultiaddr(h);
-    if (!remoteIp || !isPrivateLanTcpDialHint(h)) return false;
-    const localIps = (input.localListenAddrs ?? [])
-      .map(parseIpv4FromMultiaddr)
-      .filter((ip): ip is string => ip != null);
-    return localIps.some((lip) => ipv4SamePrivateOrOverlayNetwork(remoteIp, lip));
-  });
+  const sameSubnetLan =
+    sameSubnetFromRaw ||
+    ordered.some((h) => {
+      const remoteIp = parseIpv4FromMultiaddr(h);
+      if (!remoteIp || !isPrivateLanTcpDialHint(h)) return false;
+      const localIps = (input.localListenAddrs ?? [])
+        .map(parseIpv4FromMultiaddr)
+        .filter((ip): ip is string => ip != null);
+      return localIps.some((lip) => ipv4SamePrivateOrOverlayNetwork(remoteIp, lip));
+    });
   const defaultFilter = sameSubnetLan ? "all" : defaultAddressFilterForProfile(input.config);
   const addressFilter = input.addressFilter ?? defaultFilter;
   const filtered = filterDialHintsByAddressFilter(ordered, addressFilter);
-  const hasSurvivingDirect = hasDirectTcpDialHints(filtered);
+  const hasSurvivingDirect =
+    hasDirectTcpDialHints(filtered) ||
+    (sameSubnetLan && filtered.some((h) => isPrivateLanTcpDialHint(h)));
   const hasSurvivingCircuit = filtered.some((a) => a.includes("/p2p-circuit/"));
   // wan-default (and other non-lan-fast profiles): when both circuit and
   // LAN survive, prefer circuit first so installer RFC1918 does not burn
@@ -275,6 +306,7 @@ export async function buildOutboundDialHints(input: {
     : filtered;
   return filterDialHintsForOutboundSend(forSend, recipientPeerId, {
     preferCircuitHints,
+    allowEphemeralPrivateLan: sameSubnetLan,
   });
 }
 

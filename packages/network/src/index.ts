@@ -187,6 +187,8 @@ const HINT_DIAL_TIMEOUT_MS = 45_000;
 const PRIVATE_LAN_HINT_DIAL_TIMEOUT_MS = 3_000;
 /** Cap ephemeral (≥32768) private LAN attempts before falling through to circuits. */
 const MAX_EPHEMERAL_PRIVATE_LAN_DIALS = 2;
+/** Faster fail for high-port LAN dials (tcp/0 listeners + stale inbound snapshots). */
+const EPHEMERAL_PRIVATE_LAN_HINT_DIAL_TIMEOUT_MS = 1_000;
 
 /**
  * circuit-relay-v2 reservation-protocol timeout.
@@ -930,7 +932,10 @@ export class EnvoyMesh {
   }
 
   /** Dialable multiaddrs from the libp2p peer store (includes mDNS-learned LAN paths). */
-  async getPeerStoreDialHints(peerIdStr: string): Promise<string[]> {
+  async getPeerStoreDialHints(
+    peerIdStr: string,
+    opts?: { allowEphemeralPrivateLan?: boolean },
+  ): Promise<string[]> {
     const idStr = peerIdStr.trim();
     if (!idStr || !this.node) {
       return [];
@@ -948,7 +953,7 @@ export class EnvoyMesh {
           out.push(raw);
         }
       }
-      return filterUsableOutboundPeerDialHints(out, idStr);
+      return filterUsableOutboundPeerDialHints(out, idStr, opts);
     } catch {
       return [];
     }
@@ -3189,20 +3194,38 @@ export class EnvoyMesh {
     protocol: string,
     sendOptions?: MeshOutboundOptions,
   ): Promise<{ stream: any; remotePeerId?: string }> {
+    const allowEphemeralPrivateLan = sendOptions?.sameSubnetLanFirst === true;
+    const hintFilterOpts = {
+      preferCircuitHints: sendOptions?.preferCircuitHints,
+      allowEphemeralPrivateLan,
+    };
     let hintsRaw = filterDialHintsForOutboundSend(
       sendOptions?.dialHints ?? [],
       peerIdStr,
-      sendOptions,
+      hintFilterOpts,
     );
     const barePeerDial = !target.trim().startsWith("/");
 
     if (peerIdStr) {
-      const scrubbed = await this.scrubPeerStoreDialHints(peerIdStr, hintsRaw);
-      hintsRaw = filterDialHintsForOutboundSend(
-        [...new Set([...hintsRaw, ...scrubbed])],
-        peerIdStr,
-        sendOptions,
-      );
+      // Same-subnet: keep mDNS/peerstore high ports (nodes often listen on tcp/0).
+      // Do not scrub-patch the peerstore with a filter that strips them.
+      if (allowEphemeralPrivateLan) {
+        const storeHints = await this.getPeerStoreDialHints(peerIdStr, {
+          allowEphemeralPrivateLan: true,
+        });
+        hintsRaw = filterDialHintsForOutboundSend(
+          [...new Set([...hintsRaw, ...storeHints])],
+          peerIdStr,
+          hintFilterOpts,
+        );
+      } else {
+        const scrubbed = await this.scrubPeerStoreDialHints(peerIdStr, hintsRaw);
+        hintsRaw = filterDialHintsForOutboundSend(
+          [...new Set([...hintsRaw, ...scrubbed])],
+          peerIdStr,
+          hintFilterOpts,
+        );
+      }
     }
 
     const openStreamOnLimitedConn = async (): Promise<{ stream: any; remotePeerId?: string } | undefined> => {
@@ -3229,9 +3252,13 @@ export class EnvoyMesh {
         sendOptions?.sameSubnetLanFirst === true &&
         !needsLimited &&
         isPrivateLanTcpDialHint(addrStr);
-      const dialTimeoutMs = privateLan
-        ? (sendOptions?.privateLanDialTimeoutMs ?? PRIVATE_LAN_HINT_DIAL_TIMEOUT_MS)
-        : (sendOptions?.dialTimeoutMs ?? HINT_DIAL_TIMEOUT_MS);
+      const ephemeralPrivateLan =
+        privateLan && isLikelyInboundConnSnapshotDialHint(addrStr);
+      const dialTimeoutMs = ephemeralPrivateLan
+        ? (sendOptions?.privateLanDialTimeoutMs ?? EPHEMERAL_PRIVATE_LAN_HINT_DIAL_TIMEOUT_MS)
+        : privateLan
+          ? (sendOptions?.privateLanDialTimeoutMs ?? PRIVATE_LAN_HINT_DIAL_TIMEOUT_MS)
+          : (sendOptions?.dialTimeoutMs ?? HINT_DIAL_TIMEOUT_MS);
       const stream = await promiseWithTimeout(
         needsLimited
           ? node.dialProtocol(addr as any, protocol, { runOnLimitedConnection: true })
@@ -3319,9 +3346,9 @@ export class EnvoyMesh {
       }
     } else if (barePeerDial && peerIdStr) {
       const storeHints = filterDialHintsForOutboundSend(
-        await this.getPeerStoreDialHints(peerIdStr),
+        await this.getPeerStoreDialHints(peerIdStr, { allowEphemeralPrivateLan }),
         peerIdStr,
-        sendOptions,
+        hintFilterOpts,
       );
       const viaStore = await tryHintList(storeHints);
       if (viaStore) {
@@ -4582,11 +4609,24 @@ function lastPeerIdFromMultiaddr(addr: string): string | undefined {
   return m?.[1];
 }
 
+export type UsableOutboundDialHintOptions = {
+  /**
+   * Keep high-port (≥32768) private LAN TCP hints. Needed when both peers
+   * listen on `tcp/0` (random port) on the same subnet — the live listen
+   * address looks like an inbound snapshot but is the only LAN path.
+   */
+  allowEphemeralPrivateLan?: boolean;
+};
+
 /**
  * Filter multiaddrs for outbound dials to a specific libp2p peer.
  * Drops WebTransport, incomplete circuits, bootstrap nodes, and paths whose final `/p2p/` id ≠ target.
  */
-export function isUsableOutboundPeerDialHint(addr: string, targetPeerId?: string): boolean {
+export function isUsableOutboundPeerDialHint(
+  addr: string,
+  targetPeerId?: string,
+  opts?: UsableOutboundDialHintOptions,
+): boolean {
   const a = addr.trim();
   if (!a.startsWith("/")) {
     return false;
@@ -4609,8 +4649,13 @@ export function isUsableOutboundPeerDialHint(addr: string, targetPeerId?: string
   // Apply even when `/p2p/` is absent — peer-directory often stores bare
   // `/ip4/…/tcp/HIGHPORT` snapshots that previously skipped this filter and
   // burned full dialTimeout on same-LAN warm.
+  // Exception: same-subnet dials may keep private-LAN high ports (tcp/0 listeners).
   if (isLikelyInboundConnSnapshotDialHint(a)) {
-    return false;
+    const allowLanEphemeral =
+      opts?.allowEphemeralPrivateLan === true && isPrivateLanTcpDialHint(a);
+    if (!allowLanEphemeral) {
+      return false;
+    }
   }
   const hasExplicitPeer = lastPeerIdFromMultiaddr(a);
   if (hasExplicitPeer && targetPeerId?.trim() && hasExplicitPeer !== targetPeerId.trim()) {
@@ -4619,7 +4664,11 @@ export function isUsableOutboundPeerDialHint(addr: string, targetPeerId?: string
   return true;
 }
 
-export function filterUsableOutboundPeerDialHints(addrs: string[], targetPeerId: string): string[] {
+export function filterUsableOutboundPeerDialHints(
+  addrs: string[],
+  targetPeerId: string,
+  opts?: UsableOutboundDialHintOptions,
+): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const raw of addrs) {
@@ -4627,7 +4676,7 @@ export function filterUsableOutboundPeerDialHints(addrs: string[], targetPeerId:
     if (!a || seen.has(a)) {
       continue;
     }
-    if (!isUsableOutboundPeerDialHint(a, targetPeerId)) {
+    if (!isUsableOutboundPeerDialHint(a, targetPeerId, opts)) {
       continue;
     }
     seen.add(a);
@@ -4651,9 +4700,17 @@ export function filterUsableOutboundPeerDialHints(addrs: string[], targetPeerId:
 export function filterDialHintsForOutboundSend(
   hints: readonly string[],
   targetPeerId: string,
-  opts?: { preferCircuitHints?: boolean },
+  opts?: {
+    preferCircuitHints?: boolean;
+    /** Alias used when callers pass {@link MeshOutboundOptions} through. */
+    sameSubnetLanFirst?: boolean;
+  } & UsableOutboundDialHintOptions,
 ): string[] {
-  const filtered = filterUsableOutboundPeerDialHints([...hints], targetPeerId);
+  const allowEphemeralPrivateLan =
+    opts?.allowEphemeralPrivateLan === true || opts?.sameSubnetLanFirst === true;
+  const filtered = filterUsableOutboundPeerDialHints([...hints], targetPeerId, {
+    allowEphemeralPrivateLan,
+  });
   if (opts?.preferCircuitHints === true) {
     return prioritizeCircuitDialHints(filtered);
   }

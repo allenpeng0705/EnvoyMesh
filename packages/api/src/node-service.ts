@@ -1393,6 +1393,11 @@ export interface WarmContactConnectionOptions {
   keepAlive?: boolean;
   /** When connected, verify with a chat stream; redial if stale. Use on chat open. */
   verifyConnection?: boolean;
+  /**
+   * Skip the background warm cooldown (UI preload / bond-warm dedupe).
+   * Use for explicit chat-open dials so a failed preload cannot block reconnect for 90s.
+   */
+  force?: boolean;
 }
 
 export interface ChatDiagnosticsContact {

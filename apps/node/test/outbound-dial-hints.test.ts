@@ -480,6 +480,36 @@ describe("hasSameSubnetLanDialEvidence", () => {
       ),
     ).toBe(true);
   });
+
+  it("treats high-port tcp/0 listen snapshots as same-subnet evidence", async () => {
+    const { hasSameSubnetLanDialEvidence } = await import("../src/outbound-dial-hints.js");
+    expect(
+      hasSameSubnetLanDialEvidence(
+        ["/ip4/192.168.3.85/tcp/62673"],
+        ["/ip4/192.168.3.78/tcp/57944", "/ip4/192.168.3.78/tcp/56891"],
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("buildOutboundDialHints same-subnet tcp/0", () => {
+  it("keeps LAN-first ephemeral private ports instead of preferring circuit", async () => {
+    const { buildOutboundDialHints } = await import("../src/outbound-dial-hints.js");
+    const peerId = "12D3KooWN67PannbfXrLPhgJkkRGWGN9UBV3Xfu5UpzdK1dY8qGD";
+    const hints = await buildOutboundDialHints({
+      recipientPeerId: peerId,
+      peerListenAddrs: [
+        `/ip4/192.168.3.78/tcp/57944`,
+        `/ip4/192.168.3.78/tcp/56891`,
+        `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${peerId}`,
+      ],
+      discoverySeedStore: undefined,
+      config: { discoveryProfile: "wan-default" } as never,
+      localListenAddrs: ["/ip4/192.168.3.85/tcp/62673"],
+    });
+    expect(hints.some((h) => h.includes("192.168.3.78"))).toBe(true);
+    expect(hints[0]).toContain("192.168.3.78");
+  });
 });
 describe("resolvePreferCircuitDialHints", () => {
   it("lets explicit false win over private-LAN circuit heuristic", async () => {

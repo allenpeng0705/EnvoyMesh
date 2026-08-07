@@ -184,6 +184,7 @@ function withPathVerified(
 
 function isDedupeableBackgroundWarm(options?: WarmContactConnectionOptions): boolean {
   return (
+    !options?.force &&
     !options?.redial &&
     !options?.upgradeRelayToDirect &&
     !options?.verifyConnection &&
@@ -951,6 +952,24 @@ export async function mergeFreshListenAddrsViaRuntime(
     cached,
     fromDir,
   );
+  // Nodes listen on tcp/0 → peer-directory only has high ports. Keep up to 2
+  // same-subnet private LAN snapshots so dial hints can try LAN before relay.
+  const mesh = ctx.getReachableMesh();
+  const localListen = mesh?.multiaddrs;
+  if (hasSameSubnetLanDialEvidence(localListen, fromDir)) {
+    const seen = new Set(merged);
+    let kept = 0;
+    for (const raw of fromDir) {
+      const a = raw.trim();
+      if (!a || seen.has(a)) continue;
+      if (!isPrivateLanTcpDialHint(a) || a.includes("/p2p-circuit/")) continue;
+      if (!hasSameSubnetLanDialEvidence(localListen, [a])) continue;
+      seen.add(a);
+      merged.push(a);
+      kept += 1;
+      if (kept >= 2) break;
+    }
+  }
   return merged.length ? merged : listenAddrs;
 }
 
@@ -1017,12 +1036,28 @@ export async function warmContactConnectionTransportViaRuntime(
     const profile =
       typeof cfg?.discoveryProfile === "string" ? cfg.discoveryProfile.trim() : "";
     const localListen = mesh.multiaddrs;
-    const evidenceHints = [...(listenAddrs ?? []), ...dialHints];
+    // Peer-directory often only has tcp/0 high ports — keep them for same-subnet
+    // evidence even though mergeDialablePeerListenAddrs strips them for dialing.
+    let rawDirListen: string[] = [];
+    try {
+      const records = await ctx.peerDirectoryStore.listPeerRecords();
+      rawDirListen = records
+        .filter((r) => r.peerId === transportPeerId)
+        .flatMap((r) => r.listenAddrs ?? []);
+    } catch {
+      /* best-effort */
+    }
+    const evidenceHints = [...(listenAddrs ?? []), ...rawDirListen, ...dialHints];
     sameSubnetLanFirst = hasSameSubnetLanDialEvidence(localListen, evidenceHints);
-    preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId, {
-      localListenAddrs: localListen,
-      discoveryProfile: profile || undefined,
-    });
+    preferCircuitHints = shouldPreferCircuitDialHints(
+      [...(listenAddrs ?? []), ...rawDirListen],
+      dialHints,
+      transportPeerId,
+      {
+        localListenAddrs: localListen,
+        discoveryProfile: profile || undefined,
+      },
+    );
     // lan-fast / empty: always LAN-first when any direct exists; same-subnet
     // evidence additionally enables the short private-LAN dial budget.
     if (profile === "lan-fast" || profile === "") {
