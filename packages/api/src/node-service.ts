@@ -2020,6 +2020,12 @@ export interface NodeService {
   /** Cached peer agent cards (Phase 13C). */
   listAgentCards(): Promise<CachedAgentCardSummary[]>;
 
+  /**
+   * Local agent as a Team-jobs worker when Join Agent Network is on.
+   * Undefined when Join is off or agent identity is unavailable.
+   */
+  getLocalAgentNetworkWorkerCard(): Promise<CachedAgentCardSummary | undefined>;
+
   getAgentCard(ownerId: string): Promise<CachedAgentCardSummary | undefined>;
 
   /** Send agent.card.request to a bonded peer (response cached on reply). */

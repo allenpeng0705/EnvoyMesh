@@ -490,6 +490,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.listAgentCards();
   }
 
+  async getLocalAgentNetworkWorkerCard() {
+    return this._ns.getLocalAgentNetworkWorkerCard();
+  }
+
   async getAgentCard(ownerId: string) {
     return this._ns.getAgentCard(ownerId);
   }

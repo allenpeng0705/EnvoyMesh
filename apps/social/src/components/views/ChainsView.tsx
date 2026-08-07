@@ -11,15 +11,17 @@
  */
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import type { ChainGetStateResult, ChainWorkerReachability } from "@envoymesh/api";
+import type { BondRecord, CachedAgentCardSummary, ChainGetStateResult, ChainWorkerReachability } from "@envoymesh/api";
 import { useT } from "../../context/I18nContext.js";
 import { useToast } from "../../hooks/useToast.js";
 import { useNodeService, useAgentCards, useTransportWsOpen } from "../../hooks/useNodeService.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { computeChainBondHealth, isTeamJobListed, mergeReachability } from "../../lib/chain-bond-health.js";
+import type { ChainBondHealth } from "../../lib/chain-bond-health.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import { ChainReportView } from "../ChainReportView.js";
 import { ChainStartDialog } from "../ChainStartDialog.js";
+import type { WorkerCandidate } from "../ChainStartDialog.js";
 import { ChainDetailPanel } from "../ChainDetailPanel.js";
 import { AgentNetworkSettingsModal } from "../AgentNetworkSettingsModal.js";
 import { AgentNetworkSkillsPreview } from "../AgentNetworkSkillsPreview.js";
@@ -117,7 +119,7 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
   const nodeService = useNodeService();
   const wsOpen = useTransportWsOpen();
   const { showToast } = useToast();
-  const { bonds } = useNodeState();
+  const { bonds, nodeConfig } = useNodeState();
   const agentCards = useAgentCards();
   const [chains, setChains] = useState<ChainSummary[]>([]);
   const [viewingReport, setViewingReport] = useState<string | null>(null);
@@ -132,11 +134,57 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
   // A 20s poll keeps the dots fresh while the view is mounted.
   const [reachabilityByOwner, setReachabilityByOwner] = useState<Map<string, ChainWorkerReachability>>(new Map());
 
+  // Local Join'd agent — Team job creator is also a worker (always online when
+  // Built-in OpenClaw / AN engine is ready).
+  const [localWorkerCard, setLocalWorkerCard] = useState<CachedAgentCardSummary | undefined>();
+  const [openClawRunning, setOpenClawRunning] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!wsOpen || nodeConfig?.capabilityProviderEnabled !== true) {
+      setLocalWorkerCard(undefined);
+      setOpenClawRunning(null);
+      return;
+    }
+    let cancelled = false;
+    void nodeService
+      .getLocalAgentNetworkWorkerCard()
+      .then((card) => {
+        if (!cancelled) setLocalWorkerCard(card);
+      })
+      .catch(() => {
+        if (!cancelled) setLocalWorkerCard(undefined);
+      });
+    void nodeService
+      .getOpenClawStatus()
+      .then((s) => {
+        if (!cancelled) setOpenClawRunning(Boolean(s?.running));
+      })
+      .catch(() => {
+        if (!cancelled) setOpenClawRunning(false);
+      });
+    const timer = setInterval(() => {
+      void nodeService.getOpenClawStatus().then((s) => {
+        if (!cancelled) setOpenClawRunning(Boolean(s?.running));
+      }).catch(() => {
+        if (!cancelled) setOpenClawRunning(false);
+      });
+    }, 20_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [
+    nodeService,
+    wsOpen,
+    nodeConfig?.capabilityProviderEnabled,
+    nodeConfig?.agentNetworkProfile,
+  ]);
+
   // Bonded contacts with agent-card health — used in the empty state and
   // passed to ChainStartDialog so the user sees who can join a team job.
   // Three dimensions: card freshness, agent-network opt-in, online reachability.
-  const workerCandidates = useMemo(() => {
-    return bonds
+  // When Join is on, the local agent is prepended as "You" (always online).
+  const workerCandidates = useMemo((): WorkerCandidate[] => {
+    const others = bonds
       .filter((b) => b.level !== "blocked")
       .map((bond) => {
         const card = agentCards.find((c) => c.ownerId === bond.peerOwnerId);
@@ -151,7 +199,36 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
           ({ ready: 0, stale: 1, missing: 2, blocked: 3 }[h.status] ?? 9);
         return score(a.health) - score(b.health);
       });
-  }, [bonds, agentCards, reachabilityByOwner]);
+
+    if (!localWorkerCard?.sourceAgentPeerId) return others;
+
+    const selfBond: BondRecord = {
+      peerOwnerId: localWorkerCard.ownerId,
+      displayName: localWorkerCard.displayName,
+      level: "direct",
+      createdAt: new Date(0).toISOString(),
+    };
+    const selfHealth: ChainBondHealth = {
+      status: "ready",
+      cardStatus: "ready",
+      onlineStatus: openClawRunning === false ? "offline" : "online",
+      optIn: true,
+      engineReady: openClawRunning !== false,
+      capabilityCount: localWorkerCard.membership.length,
+      lastSyncedAt: localWorkerCard.cachedAt,
+      label: "Ready",
+    };
+    const selfCandidate: WorkerCandidate = {
+      bond: selfBond,
+      card: localWorkerCard,
+      health: selfHealth,
+      isSelf: true,
+    };
+    return [
+      selfCandidate,
+      ...others.filter((w) => w.bond.peerOwnerId !== localWorkerCard.ownerId),
+    ];
+  }, [bonds, agentCards, reachabilityByOwner, localWorkerCard, openClawRunning]);
 
   // Opted-in contacts with a cached agent card — shown even when offline so
   // the list is not empty while reachability is warming. Starting a job still
@@ -454,14 +531,18 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
               <ul className="chain-workers__list">
                 {(teamListedCandidates.length > 0 ? teamListedCandidates : workerCandidates)
                   .slice(0, 6)
-                  .map(({ bond, card, health }) => (
-                  <li key={bond.peerOwnerId} className="chain-worker-card">
+                  .map(({ bond, card, health, isSelf }) => {
+                  const displayName = isSelf
+                    ? t("chains.start.youLabel")
+                    : (bond.displayName ?? bond.libp2pPeerId?.slice(0, 10) ?? bond.peerOwnerId.slice(0, 10));
+                  return (
+                  <li key={isSelf ? "self" : bond.peerOwnerId} className={`chain-worker-card${isSelf ? " chain-worker-card--self" : ""}`}>
                     <div className="chain-worker-card__avatar">
-                      {(bond.displayName ?? bond.peerOwnerId).slice(0, 1).toUpperCase()}
+                      {displayName.slice(0, 1).toUpperCase()}
                     </div>
                     <div className="chain-worker-card__info">
                       <span className="chain-worker-card__name">
-                        {bond.displayName ?? bond.libp2pPeerId?.slice(0, 10) ?? bond.peerOwnerId.slice(0, 10)}
+                        {displayName}
                       </span>
                       <div className="chain-worker-card__meta">
                         <span
@@ -469,8 +550,8 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
                           title={t(`chains.start.reach${health.onlineStatus.charAt(0).toUpperCase() + health.onlineStatus.slice(1)}`)}
                           aria-label={t(`chains.start.reach${health.onlineStatus.charAt(0).toUpperCase() + health.onlineStatus.slice(1)}`)}
                         />
-                        <span className={`chain-worker-card__tier chain-worker-card__tier--${bond.level}`}>
-                          {bond.level}
+                        <span className={`chain-worker-card__tier chain-worker-card__tier--${isSelf ? "self" : bond.level}`}>
+                          {isSelf ? t("chains.start.youTier") : bond.level}
                         </span>
                         <span className={`chain-bond-health chain-bond-health--${health.cardStatus}`}>
                           {health.cardStatus === "ready" ? "✓" : health.cardStatus === "stale" ? "⏳" : "?"}
@@ -482,11 +563,16 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
                             {t("chains.start.notOptedInReason")}
                           </span>
                         ) : null}
+                        {isSelf && health.engineReady === false ? (
+                          <span className="chain-worker-card__caps muted">
+                            {t("chains.start.engineOfflineReason")}
+                          </span>
+                        ) : null}
                       </div>
                       <AgentNetworkSkillsPreview card={card} compact />
                     </div>
                   </li>
-                ))}
+                );})}
               </ul>
             </div>
           ) : (
@@ -610,14 +696,18 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
           <h4 className="chains-empty__contacts-title">{t("chains.start.contactsTitle")}</h4>
           <p className="chains-empty__contacts-desc">{t("chains.start.contactsDesc")}</p>
           <ul className="chain-workers__list">
-            {teamListedCandidates.slice(0, 6).map(({ bond, card, health }) => (
-              <li key={bond.peerOwnerId} className="chain-worker-card">
+            {teamListedCandidates.slice(0, 6).map(({ bond, card, health, isSelf }) => {
+              const displayName = isSelf
+                ? t("chains.start.youLabel")
+                : (bond.displayName ?? bond.libp2pPeerId?.slice(0, 10) ?? bond.peerOwnerId.slice(0, 10));
+              return (
+              <li key={isSelf ? "self" : bond.peerOwnerId} className={`chain-worker-card${isSelf ? " chain-worker-card--self" : ""}`}>
                 <div className="chain-worker-card__avatar">
-                  {(bond.displayName ?? bond.peerOwnerId).slice(0, 1).toUpperCase()}
+                  {displayName.slice(0, 1).toUpperCase()}
                 </div>
                 <div className="chain-worker-card__info">
                   <span className="chain-worker-card__name">
-                    {bond.displayName ?? bond.libp2pPeerId?.slice(0, 10) ?? bond.peerOwnerId.slice(0, 10)}
+                    {displayName}
                   </span>
                   <div className="chain-worker-card__meta">
                     <span
@@ -625,19 +715,24 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
                       title={t(`chains.start.reach${health.onlineStatus.charAt(0).toUpperCase() + health.onlineStatus.slice(1)}`)}
                       aria-label={t(`chains.start.reach${health.onlineStatus.charAt(0).toUpperCase() + health.onlineStatus.slice(1)}`)}
                     />
-                    <span className={`chain-worker-card__tier chain-worker-card__tier--${bond.level}`}>
-                      {bond.level}
+                    <span className={`chain-worker-card__tier chain-worker-card__tier--${isSelf ? "self" : bond.level}`}>
+                      {isSelf ? t("chains.start.youTier") : bond.level}
                     </span>
                     <span className={`chain-bond-health chain-bond-health--${health.cardStatus}`}>
                       {health.cardStatus === "ready" ? "✓" : health.cardStatus === "stale" ? "⏳" : "?"}
                       {" "}
                       {t(`chains.start.contact${health.cardStatus.charAt(0).toUpperCase() + health.cardStatus.slice(1)}`)}
                     </span>
+                    {isSelf && health.engineReady === false ? (
+                      <span className="chain-worker-card__caps muted">
+                        {t("chains.start.engineOfflineReason")}
+                      </span>
+                    ) : null}
                   </div>
                   <AgentNetworkSkillsPreview card={card} compact />
                 </div>
               </li>
-            ))}
+            );})}
           </ul>
         </div>
       ) : null}

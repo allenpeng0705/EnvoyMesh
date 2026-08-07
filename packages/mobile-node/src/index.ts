@@ -2870,6 +2870,25 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return rows.map((row) => summarizeCachedAgentCard(row));
   }
 
+  async getLocalAgentNetworkWorkerCard(): Promise<
+    import("@envoymesh/api").CachedAgentCardSummary | undefined
+  > {
+    // Capacitor backup path — Team jobs soft-pool self is a home-node concern.
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      try {
+        return await this._homeRemoteCall<
+          import("@envoymesh/api").CachedAgentCardSummary | undefined
+        >("getLocalAgentNetworkWorkerCard", {});
+      } catch (err) {
+        if (err instanceof Error && err.message === "homeRemote.offline") {
+          return undefined;
+        }
+        throw err;
+      }
+    }
+    return undefined;
+  }
+
   async getAgentCard(ownerId: string): Promise<import("@envoymesh/api").CachedAgentCardSummary | undefined> {
     const row = await this._agentCardStore.get(ownerId.trim());
     if (!row) return undefined;

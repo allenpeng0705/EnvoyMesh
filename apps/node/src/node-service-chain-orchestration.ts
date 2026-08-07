@@ -82,7 +82,7 @@ import {
   handleWorkerPropose,
   type ChainWorkerHandlerDeps,
 } from "./chain-worker.js";
-import { executeAcceptedSubtask } from "./chain-worker-executor.js";
+import { createOpenClawChainSubtaskExecutor, executeAcceptedSubtask } from "./chain-worker-executor.js";
 import { requiresChainAwardApproval } from "./chain-sensitivity-gate.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 import type { MeshToolContext } from "./tool-registry.js";
@@ -154,12 +154,37 @@ export interface ChainOrchestrationContext {
   getReachableMesh(): EnvoyMesh | undefined;
   ensureAgentIdentity(): Promise<BridgeIdentity | null>;
   listAgentCards(): Promise<CachedAgentCardSummary[]>;
+  /**
+   * Local agent as a Team-jobs worker when Join Agent Network is on.
+   * Not stored in the peer card cache — synthesized from live config + identity.
+   */
+  getLocalAgentNetworkWorkerCard(): Promise<CachedAgentCardSummary | undefined>;
   getLocalManifestCapabilities(): Promise<string[]>;
   getToolExecutionContext(): Promise<MeshToolContext | null>;
   getBonds(): Promise<BondRecord[]>;
   getNodeConfig(): Promise<unknown>;
   updateNodeConfig(cfg: unknown): Promise<void>;
   emit<K extends keyof NodeServiceEvents>(event: K, data: NodeServiceEvents[K]): void;
+  /** Built-in OpenClaw readiness for Agent Network worker execution. */
+  isOpenClawReady(): boolean;
+  /** Ask Built-in OpenClaw (default AN worker engine). */
+  askOpenClaw(prompt: string): Promise<string>;
+}
+
+/** Peer card cache plus the local Join'd worker (creator is also a worker). */
+export async function listAgentCardsIncludingLocal(
+  deps: ChainOrchestrationContext,
+): Promise<CachedAgentCardSummary[]> {
+  const remote = await deps.listAgentCards();
+  let local: CachedAgentCardSummary | undefined;
+  try {
+    local = await deps.getLocalAgentNetworkWorkerCard();
+  } catch {
+    local = undefined;
+  }
+  if (!local?.sourceAgentPeerId) return remote;
+  const selfId = local.sourceAgentPeerId;
+  return [local, ...remote.filter((c) => c.sourceAgentPeerId !== selfId)];
 }
 
 export function buildChainOrchestrationContext(host: any): ChainOrchestrationContext {
@@ -175,12 +200,15 @@ export function buildChainOrchestrationContext(host: any): ChainOrchestrationCon
     getReachableMesh: () => host._reachableMesh(),
     ensureAgentIdentity: () => host._ensureAgentIdentity(),
     listAgentCards: () => host.listAgentCards(),
+    getLocalAgentNetworkWorkerCard: () => host.getLocalAgentNetworkWorkerCard(),
     getLocalManifestCapabilities: () => host._localManifestCapabilities(),
     getToolExecutionContext: () => host.getToolExecutionContext(),
     getBonds: () => host.getBonds(),
     getNodeConfig: () => host.getNodeConfig(),
     updateNodeConfig: (cfg) => host.updateNodeConfig(cfg),
     emit: (event, data) => host.emit(event, data),
+    isOpenClawReady: () => Boolean(host.isOpenClawReady?.()),
+    askOpenClaw: (prompt) => host.askOpenClaw(prompt),
   };
 }
 
@@ -366,7 +394,7 @@ export async function refreshAgentNetworkMembershipIndex(deps: ChainOrchestratio
   if (ready) {
     await ready;
   }
-  const cards = await deps.listAgentCards();
+  const cards = await listAgentCardsIncludingLocal(deps);
   const index = deps.getAgentNetworkMembershipIndex();
   const seen = new Set<string>();
   for (const card of cards) {
@@ -404,7 +432,7 @@ export async function _chainTransportResolver(
   if (!mesh || !profile) return null;
   const agentIdentity = await deps.ensureAgentIdentity();
   const agentPeerToOwner = new Map<string, string>();
-  for (const card of await deps.listAgentCards()) {
+  for (const card of await listAgentCardsIncludingLocal(deps)) {
     if (card.sourceAgentPeerId) {
       agentPeerToOwner.set(card.sourceAgentPeerId, card.ownerId);
     }
@@ -664,6 +692,13 @@ export async function buildChainWorkerDeps(deps: ChainOrchestrationContext): Pro
       capabilityLocalEtaMs: baseStrategy.capabilityLocalEtaMs,
     },
     pendingBidExpirations: deps.getChainSideState().pendingBidExpirations,
+    // Default AN worker engine = Built-in OpenClaw (docs/agent-network-engine.md).
+    isAgentNetworkEngineReady: () => deps.isOpenClawReady(),
+    executeSubtask: createOpenClawChainSubtaskExecutor({
+      workerPeerId: agentIdentity.agentPeerId,
+      isOpenClawReady: () => deps.isOpenClawReady(),
+      askOpenClaw: (prompt) => deps.askOpenClaw(prompt),
+    }),
   };
 }
 
@@ -693,7 +728,7 @@ async function buildLlmDecomposerAsync(
     timeoutMs: 90_000,
     getRoster: async () => {
       const ranked = await findAgentNetworkWorkersRanked(deps, "task.execute");
-      const cards = await deps.listAgentCards();
+      const cards = await listAgentCardsIncludingLocal(deps);
       const byPeer = new Map(
         cards.filter((c) => c.sourceAgentPeerId).map((c) => [c.sourceAgentPeerId!, c] as const),
       );
@@ -871,10 +906,17 @@ export async function findAgentNetworkWorkersRanked(
   if (ready) {
     await ready;
   }
-  const cards = await deps.listAgentCards();
+  const cards = await listAgentCardsIncludingLocal(deps);
   const byPeer = new Map<string, (typeof cards)[number]>();
   for (const card of cards) {
     if (card.sourceAgentPeerId) byPeer.set(card.sourceAgentPeerId, card);
+  }
+
+  let selfPeerId: string | undefined;
+  try {
+    selfPeerId = (await deps.ensureAgentIdentity())?.agentPeerId;
+  } catch {
+    /* ignore */
   }
 
   // Soft pool: all Agent Network workers that can execute.
@@ -939,10 +981,15 @@ export async function findAgentNetworkWorkersRanked(
 
   const scored: ChainRankedWorker[] = peerList.map((peerId) => {
     const card = byPeer.get(peerId);
-    const sameLan = sameLanByPeer.get(peerId) === true;
+    const isSelf = selfPeerId !== undefined && peerId === selfPeerId;
+    const sameLan = sameLanByPeer.get(peerId) === true || isSelf;
     const transportId = transportByAgentPeer.get(peerId);
-    const online = Boolean(transportId);
-    const viaRelay = online && transportId ? circuitIds.has(transportId) : false;
+    // Local agent is "online" for ranking only when Built-in OpenClaw (AN engine) is ready.
+    const online =
+      isSelf
+        ? deps.isOpenClawReady?.() !== false
+        : Boolean(transportId);
+    const viaRelay = !isSelf && online && transportId ? circuitIds.has(transportId) : false;
     const result = scoreAgentNetworkWorker({
       requiredSkill: capability,
       membership: card?.membership ?? [],
@@ -956,8 +1003,11 @@ export async function findAgentNetworkWorkersRanked(
     preferredWorkerPeerIds && preferredWorkerPeerIds.length > 0
       ? scored.filter((w) => preferredWorkerPeerIds.includes(w.peerId))
       : scored;
-  // Online workers first (they can actually execute), then by score, then id.
+  // Local agent first (creator is a worker), then online, then score, then id.
   return rankWorkersByScore(filtered).sort((a, b) => {
+    const aSelf = selfPeerId && a.peerId === selfPeerId ? 1 : 0;
+    const bSelf = selfPeerId && b.peerId === selfPeerId ? 1 : 0;
+    if (aSelf !== bSelf) return bSelf - aSelf;
     const aOnline = a.online ? 1 : 0;
     const bOnline = b.online ? 1 : 0;
     if (aOnline !== bOnline) return bOnline - aOnline;

@@ -10736,6 +10736,12 @@ button:disabled {
   color: var(--color-primary);
 }
 
+.chain-worker-card__tier--self {
+  background: var(--color-success-subtle, #ecfdf5);
+  color: var(--color-success, #059669);
+  text-transform: none;
+}
+
 .chain-worker-card__tier--referred {
   background: var(--color-info-subtle, #eff6ff);
   color: var(--color-info, #2563eb);

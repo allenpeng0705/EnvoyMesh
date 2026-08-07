@@ -4265,6 +4265,8 @@ export {
   createExtAgentSkill,
   agentNetworkSkillId,
   agentNetworkSkillIds,
+  agentNetworkDomainSkillIds,
+  agentNetworkRankingSkillIds,
 } from "./agent-network-profile.js";
 export type {
   AgentNetworkProfile,

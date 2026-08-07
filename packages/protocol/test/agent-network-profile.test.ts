@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  agentNetworkDomainSkillIds,
+  agentNetworkRankingSkillIds,
   agentNetworkSkillIds,
   coerceAgentNetworkSkills,
   createAgentNetworkProfile,
@@ -33,6 +35,8 @@ describe("AgentNetworkProfile skills entries", () => {
       { id: "pi", kind: "skill", source: "ext" },
     ]);
     expect(agentNetworkSkillIds(profile.skills)).toEqual(["writing", "tavily", "pi"]);
+    expect(agentNetworkDomainSkillIds(profile.skills)).toEqual(["writing"]);
+    expect(agentNetworkRankingSkillIds(profile.skills)).toEqual(["writing", "tavily"]);
   });
 
   it("coerces partial { id } objects to domain/owner entries", () => {

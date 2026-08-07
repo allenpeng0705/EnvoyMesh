@@ -1,8 +1,9 @@
 /**
- * Aggregate Agent Network `skills[]` from owner domains + installed engines.
+ * Aggregate Agent Network `skills[]` from owner domains + OpenClaw Agent Skills.
  *
  * See docs/agent-network-vocabulary.md — skills drive assignment; membership
- * stays separate. Kind/source are stamped automatically (no owner config).
+ * stays separate. Ext Agents are AI Engines, not skill tags — never merged here.
+ * Kind/source are stamped automatically (no owner config).
  */
 
 import { existsSync, readdirSync } from "node:fs";
@@ -11,7 +12,6 @@ import type { AgentNetworkProfile, AgentNetworkSkillEntry } from "@envoymesh/pro
 import {
   DEFAULT_AGENT_NETWORK_PROFILE,
   coerceAgentNetworkSkills,
-  createExtAgentSkill,
   createOpenClawSkill,
 } from "@envoymesh/protocol";
 import { openClawWorkspaceSkillsDir } from "./openclaw-workspace.js";
@@ -37,17 +37,17 @@ export function listOpenClawSkillIds(profileDir: string): string[] {
 }
 
 /**
- * Merge owner-attested skills with discovered Agent Skills (OpenClaw workspace,
- * optional Ext Agent labels). Owner tags keep priority; discovered ids fill
- * remaining slots up to MAX_SKILLS. Kind/source stamped by source.
+ * Merge owner-attested skills with discovered OpenClaw Agent Skills.
+ * Owner tags keep priority; OpenClaw ids fill remaining slots up to MAX_SKILLS.
+ * Ext Agent labels are never included (AI Engine ≠ skill).
  */
 export function aggregateAgentNetworkSkills(input: {
   profile?: Partial<AgentNetworkProfile> | null;
   profileDir?: string;
-  /** Active Ext Agent display names / ids (soft tags). */
-  extAgentLabels?: readonly string[];
 }): AgentNetworkProfile {
-  const ownerSkills = coerceAgentNetworkSkills(input.profile?.skills ?? []);
+  const ownerSkills = coerceAgentNetworkSkills(input.profile?.skills ?? []).filter(
+    (s) => s.source !== "ext",
+  );
   const merged: AgentNetworkSkillEntry[] = [];
   const seen = new Set<string>();
   const add = (entry: AgentNetworkSkillEntry) => {
@@ -62,29 +62,10 @@ export function aggregateAgentNetworkSkills(input: {
   if (input.profileDir) {
     for (const s of listOpenClawSkillIds(input.profileDir)) add(createOpenClawSkill(s));
   }
-  for (const label of input.extAgentLabels ?? []) add(createExtAgentSkill(label));
 
   return {
     ...DEFAULT_AGENT_NETWORK_PROFILE,
     ...input.profile,
     skills: merged,
   };
-}
-
-/** Soft skill tags from enabled Ext Agent definitions (id + distinct name). */
-export function extAgentLabelsFromDefinitions(
-  extAgents?: readonly { id: string; name: string; enabled: boolean }[] | null,
-): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const agent of extAgents ?? []) {
-    if (!agent.enabled) continue;
-    for (const raw of [agent.id, agent.name]) {
-      const id = raw.trim().toLowerCase();
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
-      out.push(id);
-    }
-  }
-  return out;
 }

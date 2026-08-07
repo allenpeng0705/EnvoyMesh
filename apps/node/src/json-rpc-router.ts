@@ -396,6 +396,8 @@ export async function routeRpcMethod(
       return ns.runCostRollupRetention();
     case "listAgentCards":
       return ns.listAgentCards();
+    case "getLocalAgentNetworkWorkerCard":
+      return ns.getLocalAgentNetworkWorkerCard();
     case "getAgentCard":
       return ns.getAgentCard(params.ownerId as string);
     case "requestAgentCard":

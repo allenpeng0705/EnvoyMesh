@@ -68,8 +68,6 @@ export async function buildLocalAgentCard(input: {
   profileDir?: string;
   capabilityProviderEnabled?: boolean;
   agentNetworkProfile?: import("@envoymesh/protocol").AgentNetworkProfile;
-  /** Enabled Ext Agent ids/names merged into agentNetworkProfile.skills. */
-  extAgentLabels?: readonly string[];
 }): Promise<AgentCard> {
   const human = await input.humanProfileStore.loadHumanProfile().catch(() => null);
   const ownerId = input.profile.owner.ownerId;
@@ -87,7 +85,6 @@ export async function buildLocalAgentCard(input: {
       ? aggregateAgentNetworkSkills({
           profile: input.agentNetworkProfile,
           profileDir: input.profileDir,
-          extAgentLabels: input.extAgentLabels,
         })
       : undefined;
   return createAgentCard({
@@ -121,8 +118,6 @@ export async function handleInboundAgentCardIntent(input: {
   capabilityProviderEnabled?: boolean;
   /** Owner-attested Agent Network profile (advertised when Join Agent Network is on). */
   agentNetworkProfile?: import("@envoymesh/protocol").AgentNetworkProfile;
-  /** Enabled Ext Agent labels merged into advertised skills. */
-  extAgentLabels?: readonly string[];
 }): Promise<AgentCardInboundResult> {
   const {
     envelope,
@@ -192,7 +187,6 @@ export async function handleInboundAgentCardIntent(input: {
       profileDir: input.profileDir,
       capabilityProviderEnabled: input.capabilityProviderEnabled,
       agentNetworkProfile: input.agentNetworkProfile,
-      extAgentLabels: input.extAgentLabels,
     });
     return {
       ok: true,

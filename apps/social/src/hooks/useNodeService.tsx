@@ -259,6 +259,7 @@ export interface NodeServiceClient {
   getCostSummary(params?: import("@envoymesh/api").GetCostSummaryParams): Promise<import("@envoymesh/api").CostSummary>;
   runCostRollupRetention(): Promise<{ collapsed: number; dropped: number }>;
   listAgentCards(): Promise<import("@envoymesh/api").CachedAgentCardSummary[]>;
+  getLocalAgentNetworkWorkerCard(): Promise<import("@envoymesh/api").CachedAgentCardSummary | undefined>;
   getAgentCard(ownerId: string): Promise<import("@envoymesh/api").CachedAgentCardSummary | undefined>;
   requestAgentCard(targetOwnerId: string): Promise<{ ok: boolean; error?: string }>;
   refreshAgentNetworkWorkers(): Promise<{ requested: number; failed: number }>;
@@ -980,6 +981,11 @@ function createWsNodeServiceClient(
     },
     async listAgentCards() {
       return wsClient.rpc("listAgentCards") as Promise<import("@envoymesh/api").CachedAgentCardSummary[]>;
+    },
+    async getLocalAgentNetworkWorkerCard() {
+      return wsClient.rpc("getLocalAgentNetworkWorkerCard") as Promise<
+        import("@envoymesh/api").CachedAgentCardSummary | undefined
+      >;
     },
     async getAgentCard(ownerId: string) {
       return wsClient.rpc("getAgentCard", { ownerId }) as Promise<

@@ -1008,6 +1008,7 @@ import {
   findAgentNetworkWorkers,
   findAgentNetworkWorkersRanked,
   handleInboundChainEnvelope,
+  listAgentCardsIncludingLocal,
   placeholderMandate,
   refreshAgentNetworkMembershipIndex,
   sameLanFromListenAddrs,
@@ -3501,6 +3502,39 @@ class NodeServiceImpl implements NodeService {
     return listAgentCardsViaRuntime(this._storeAccessorDeps());
   }
 
+  /**
+   * Local agent as a Team-jobs worker when Join Agent Network is on.
+   * Synthesized from live config — not from the peer card cache.
+   */
+  async getLocalAgentNetworkWorkerCard(): Promise<CachedAgentCardSummary | undefined> {
+    const cfg = await this.getNodeConfig();
+    if (cfg.capabilityProviderEnabled !== true) return undefined;
+    const agentIdentity = await this._ensureAgentIdentity();
+    if (!agentIdentity) return undefined;
+    const profile = this._profile;
+    if (!profile) return undefined;
+    const { buildLocalAgentCard } = await import("./agent-card-inbound.js");
+    const card = await buildLocalAgentCard({
+      profile,
+      humanProfileStore: this._humanProfileStore,
+      profileDir: this._profileDir,
+      capabilityProviderEnabled: true,
+      agentNetworkProfile: cfg.agentNetworkProfile,
+    });
+    const summary: CachedAgentCardSummary = {
+      ownerId: card.ownerId,
+      displayName: card.displayName,
+      membership: card.membership,
+      cachedAt: new Date().toISOString(),
+      sourceAgentPeerId: agentIdentity.agentPeerId,
+    };
+    if (card.nodeProfile !== undefined) summary.nodeProfile = card.nodeProfile;
+    if (card.publicTopics) summary.publicTopics = card.publicTopics;
+    if (card.webContentRoot) summary.webContentRoot = card.webContentRoot;
+    if (card.agentNetworkProfile) summary.agentNetworkProfile = card.agentNetworkProfile;
+    return summary;
+  }
+
   async getAgentCard(ownerId: string): Promise<CachedAgentCardSummary | undefined> {
     return getAgentCardViaRuntime(this._storeAccessorDeps(), ownerId);
   }
@@ -3628,14 +3662,12 @@ class NodeServiceImpl implements NodeService {
     const cfg = await this.getNodeConfig();
     const { buildLocalAgentCard } = await import("./agent-card-inbound.js");
     const { createAgentCardResponsePayload } = await import("@envoymesh/protocol");
-    const { extAgentLabelsFromDefinitions } = await import("./agent-network-skills-aggregate.js");
     const card = await buildLocalAgentCard({
       profile,
       humanProfileStore: this._humanProfileStore,
       profileDir: this._profileDir,
       capabilityProviderEnabled: cfg.capabilityProviderEnabled === true,
       agentNetworkProfile: cfg.agentNetworkProfile,
-      extAgentLabels: extAgentLabelsFromDefinitions(cfg.extAgents),
     });
     const payload = createAgentCardResponsePayload(card);
     let announced = 0;
@@ -10074,11 +10106,9 @@ class NodeServiceImpl implements NodeService {
       listAgentNetworkWorkers: async (params) => {
         const capability = params?.requiredSkill?.trim() || "task.execute";
         const limit = Math.max(1, Math.min(50, params?.limit ?? 20));
-        const ranked = await findAgentNetworkWorkersRanked(
-          this._chainOrchestrationContext(),
-          capability,
-        );
-        const cards = await this.listAgentCards();
+        const chainDeps = this._chainOrchestrationContext();
+        const ranked = await findAgentNetworkWorkersRanked(chainDeps, capability);
+        const cards = await listAgentCardsIncludingLocal(chainDeps);
         const byPeer = new Map(cards.map((c) => [c.sourceAgentPeerId, c] as const));
         return ranked.slice(0, limit).map((r) => {
           const card = byPeer.get(r.peerId);

@@ -11,7 +11,6 @@ import { createUnsignedEnvelope, type EnvoyEnvelope } from "@envoymesh/protocol"
 import { ENVOY_MESSAGE_PROTOCOL, type EnvoyMesh } from "@envoymesh/network";
 import { sendEnvelopeWithRetry } from "./chat-outbound-deliver.js";
 import { handleInboundAgentCardIntent } from "./agent-card-inbound.js";
-import { extAgentLabelsFromDefinitions } from "./agent-network-skills-aggregate.js";
 import { markOutboundPeerVerified } from "./outbound-peer-freshness.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 import type { NodeServiceImpl } from "./node-service-impl.js";
@@ -56,13 +55,11 @@ export async function handleDaemonAgentCardInbound(input: {
 
   let capabilityProviderEnabled = input.capabilityProviderEnabled === true;
   let agentNetworkProfile: import("@envoymesh/protocol").AgentNetworkProfile | undefined;
-  let extAgentLabels: string[] | undefined;
   if (input.capabilityProviderEnabled === undefined && input.nodeService) {
     try {
       const cfg = await input.nodeService.getNodeConfig();
       capabilityProviderEnabled = cfg.capabilityProviderEnabled === true;
       agentNetworkProfile = cfg.agentNetworkProfile;
-      extAgentLabels = extAgentLabelsFromDefinitions(cfg.extAgents);
     } catch {
       capabilityProviderEnabled = false;
     }
@@ -82,7 +79,6 @@ export async function handleDaemonAgentCardInbound(input: {
     profileDir: input.profileDir,
     capabilityProviderEnabled,
     agentNetworkProfile,
-    extAgentLabels,
   });
 
   if (!cardResult.ok) {

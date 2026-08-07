@@ -149,6 +149,7 @@ export type RpcMethods =
   | "getCostSummary"
   | "runCostRollupRetention"
   | "listAgentCards"
+  | "getLocalAgentNetworkWorkerCard"
   | "getAgentCard"
   | "requestAgentCard"
   | "refreshAgentNetworkWorkers"

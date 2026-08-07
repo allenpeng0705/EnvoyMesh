@@ -85,11 +85,34 @@ export interface ChainWorkerHandlerDeps extends ChainWorkerSendDeps {
    * reject the award with `chain.bid_expired`.
    */
   pendingBidExpirations: Map<string, string>;
+  /**
+   * Agent Network worker engine readiness (Built-in OpenClaw by default).
+   * When false, decline propose/accept so peers are not awarded work we cannot run.
+   * See docs/agent-network-engine.md.
+   */
+  isAgentNetworkEngineReady?: () => boolean;
   /** Optional executor — runs the task body and emits partials. */
   executeSubtask?: (
     subtask: ChainSubtask,
     onPartial: (partial: TaskChainPartialPayload) => Promise<void>,
   ) => Promise<{ ok: boolean; finalNote?: string }>;
+}
+
+function refuseIfEngineUnavailable(
+  deps: ChainWorkerHandlerDeps,
+  envelope: EnvoyEnvelope,
+  intent: string,
+): ChainInboundDecision | null {
+  if (deps.isAgentNetworkEngineReady?.() !== false) return null;
+  deps.audit.record({
+    type: "chain.bid_declined",
+    outcome: "deny",
+    intent,
+    remotePeerId: envelope.senderPeerId,
+    correlationId: envelope.correlationId,
+    summary: "openclaw_unavailable",
+  });
+  return { ok: false, reason: "handler_denied" };
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +124,9 @@ export async function handleWorkerPropose(
   envelope: EnvoyEnvelope,
   payload: TaskChainProposePayload,
 ): Promise<ChainInboundDecision> {
+  const engineBlock = refuseIfEngineUnavailable(deps, envelope, "task.chain.propose");
+  if (engineBlock) return engineBlock;
+
   const subtask = payload.subtask;
   const now = (deps.now ?? (() => new Date()))();
 
@@ -180,6 +206,9 @@ export async function handleWorkerAccept(
   envelope: EnvoyEnvelope,
   payload: TaskChainAcceptPayload,
 ): Promise<ChainInboundDecision> {
+  const engineBlock = refuseIfEngineUnavailable(deps, envelope, "task.chain.accept");
+  if (engineBlock) return engineBlock;
+
   const subtaskId = payload.award.subtaskId;
   const nowMs = (deps.now ?? (() => new Date()))().getTime();
   const check = checkBidExpiration(deps, subtaskId, nowMs);

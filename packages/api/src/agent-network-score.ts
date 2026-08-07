@@ -1,8 +1,9 @@
 /**
  * Weighted scoring for Agent Network worker selection.
  *
- * Skills = per-agent specialty factors (owner domains + Agent Skills).
+ * Skills = per-agent specialty factors (owner domains + OpenClaw Agent Skills).
  * Membership tags (mesh) = opt-in / can-execute only — never specialty signals.
+ * Ext Agents are AI Engines — never skill / ranking signals.
  * Hard eligibility is enforced upstream when building the worker pool.
  *
  * See docs/agent-network-vocabulary.md.
@@ -11,7 +12,7 @@
 import type { AgentNetworkProfile } from "@envoymesh/protocol";
 import {
   DEFAULT_AGENT_NETWORK_PROFILE,
-  agentNetworkSkillIds,
+  agentNetworkRankingSkillIds,
   coerceAgentNetworkSkills,
 } from "@envoymesh/protocol";
 
@@ -148,7 +149,7 @@ export function scoreAgentNetworkWorker(input: {
   const canExecute = canExecuteFromMembership(input.membership);
 
   const breakdown: WorkerScoreBreakdown = {
-    skill: skillFit(input.requiredSkill, agentNetworkSkillIds(profile.skills), canExecute),
+    skill: skillFit(input.requiredSkill, agentNetworkRankingSkillIds(profile.skills), canExecute),
     context: CONTEXT_SCORE[profile.contextWindow] ?? 0.25,
     freshness: Math.max(0, Math.min(1, (profile.modelFreshness - 1) / 9)),
     spendPosture: SPEND_SCORE[profile.spendPosture] ?? 0.35,

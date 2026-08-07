@@ -196,6 +196,18 @@ describe("handleWorkerPropose", () => {
     expect(deps.pendingBidExpirations.has("subtask_test-1")).toBe(false);
     expect(deps.auditEvents.some((e) => e.type === "chain.bid_send_failed")).toBe(true);
   });
+
+  it("declines when Agent Network engine (OpenClaw) is not ready", async () => {
+    const deps = makeHandlerDeps({ isAgentNetworkEngineReady: () => false });
+    const r = await handleWorkerPropose(deps, orchestratorEnvelope(), proposePayload(subtask()));
+    expect(r.ok).toBe(false);
+    expect(deps.sendDeps.sentEnvelopes.length).toBe(0);
+    expect(
+      deps.auditEvents.some(
+        (e) => e.type === "chain.bid_declined" && e.summary === "openclaw_unavailable",
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("handleWorkerCancel", () => {

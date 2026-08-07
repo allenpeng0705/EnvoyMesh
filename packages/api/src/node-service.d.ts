@@ -1061,6 +1061,7 @@ export interface NodeService {
     listTaskJournalEntries(params?: ListTaskJournalParams): Promise<TaskJournalSummary[]>;
     /** Cached peer agent cards (Phase 13C). */
     listAgentCards(): Promise<CachedAgentCardSummary[]>;
+    getLocalAgentNetworkWorkerCard(): Promise<CachedAgentCardSummary | undefined>;
     getAgentCard(ownerId: string): Promise<CachedAgentCardSummary | undefined>;
     /** Send agent.card.request to a bonded peer (response cached on reply). */
     requestAgentCard(targetOwnerId: string, options?: {

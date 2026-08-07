@@ -13,7 +13,7 @@
 **Date:** 2026-06-16 (reframed post-review)
 **Author:** EnvoyMesh core team
 **Implements:** US-AN1, US-AN2, US-AN3
-**Related:** [implementation-plan.md#phase-32](./implementation-plan.md#phase-32--agent-network-membership-built-in-openclaw--ext-agent), Phase 29 (OpenClaw runtime), Phase 11 (mobile thin-client), [agent-network-guide.md](./agent-network-guide.md)
+**Related:** [implementation-plan.md#phase-32](./implementation-plan.md#phase-32--agent-network-membership-built-in-openclaw--ext-agent), Phase 29 (OpenClaw runtime), Phase 11 (mobile thin-client), [agent-network-guide.md](./agent-network-guide.md), [agent-network-engine.md](./agent-network-engine.md) (Team-job **worker** engine: OpenClaw default; Ext later — separate from chat AI Engine membership).
 
 > **Reframe (2026-06-16, post-review):** the original framing of this phase as "you can turn off the built-in OpenClaw" was a misread of the original ask. The original question was *"can the user configure **which agent engines run on this home node**, or both?"* — that is a **local engine membership** question, not a "kill the engine" question. The built-in OpenClaw is the **primary** agent on every EnvoyMesh home node and is **not** something the user is expected to disable in normal use. This doc has been rewritten to reflect that. The runtime gate and status RPC are still useful — a user running a pure relay node, or an external-only deployment, can opt out of the built-in at config-write time — but the UI surfaces this as a **secondary** option, not a primary action. The default-mode chip and mobile mirror remain; the dramatic "in-flight cancel" machinery has been removed (the gate runs at boot, not on every chat).
 

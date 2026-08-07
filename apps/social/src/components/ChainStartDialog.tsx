@@ -17,6 +17,8 @@ export interface WorkerCandidate {
   bond: BondRecord;
   card: CachedAgentCardSummary | undefined;
   health: ChainBondHealth;
+  /** Local agent (team job creator) — listed first, always online when Join is on. */
+  isSelf?: boolean;
 }
 
 export interface ChainStartDialogProps {
@@ -173,9 +175,8 @@ export function ChainStartDialog({
   const noWorkers =
     Boolean(preview?.ok && preview.subtasks.length > 0) && !hasWorkers;
 
-  // Display order: system-suggested + online workers first (by score desc),
-  // then the remaining bonded contacts by health. Offline contacts sink to the
-  // bottom so the owner sees who can actually execute. Caps to 8.
+  // Display order: local agent (You) first, then system-suggested + online
+  // workers by score, then remaining bonded contacts by health. Caps to 8.
   const displayCandidates = useMemo(() => {
     const order = { ready: 0, stale: 1, missing: 2, blocked: 3 };
     const onlineRank = (s: string) => (s === "online" ? 0 : s === "unknown" ? 1 : 2);
@@ -191,6 +192,7 @@ export function ChainStartDialog({
       };
     });
     withScore.sort((a, b) => {
+      if (Boolean(a.isSelf) !== Boolean(b.isSelf)) return a.isSelf ? -1 : 1;
       const aSuggested = a.suggested ? 1 : 0;
       const bSuggested = b.suggested ? 1 : 0;
       if (aSuggested !== bSuggested) return bSuggested - aSuggested;
@@ -310,16 +312,19 @@ export function ChainStartDialog({
                 </div>
                 <p className="chain-workers__desc">{t("chains.start.selectTeamDesc")}</p>
                 <ul className="chain-workers__list">
-                  {displayCandidates.map(({ bond, card, health, peerId, suggested }) => {
+                  {displayCandidates.map(({ bond, card, health, peerId, suggested, isSelf }) => {
                     const selectable = isTeamJobReady(card, health);
                     const checked = peerId ? selectedPeerIds.has(peerId) : false;
                     const offline = health.onlineStatus === "offline";
+                    const displayName = isSelf
+                      ? t("chains.start.youLabel")
+                      : (bond.displayName ?? bond.libp2pPeerId?.slice(0, 10) ?? bond.peerOwnerId.slice(0, 10));
                     const cardClass = selectable
-                      ? `chain-worker-card chain-worker-card--selectable${checked ? " chain-worker-card--selected" : ""}${suggested ? " chain-worker-card--suggested" : ""}`
+                      ? `chain-worker-card chain-worker-card--selectable${checked ? " chain-worker-card--selected" : ""}${suggested ? " chain-worker-card--suggested" : ""}${isSelf ? " chain-worker-card--self" : ""}`
                       : `chain-worker-card chain-worker-card--disabled${offline ? " chain-worker-card--offline" : ""}`;
                     return (
                       <li
-                        key={bond.peerOwnerId}
+                        key={isSelf ? "self" : bond.peerOwnerId}
                         className={cardClass}
                         onClick={selectable && peerId ? () => toggleWorker(peerId) : undefined}
                         role={selectable ? "checkbox" : undefined}
@@ -343,15 +348,15 @@ export function ChainStartDialog({
                           checked={checked}
                           disabled={!selectable}
                           onChange={peerId ? () => toggleWorker(peerId) : undefined}
-                          aria-label={t("chains.start.contactNotSelectable")}
+                          aria-label={displayName}
                           onClick={(e) => e.stopPropagation()}
                         />
                         <div className="chain-worker-card__avatar">
-                          {(bond.displayName ?? bond.peerOwnerId).slice(0, 1).toUpperCase()}
+                          {displayName.slice(0, 1).toUpperCase()}
                         </div>
                         <div className="chain-worker-card__info">
                           <span className="chain-worker-card__name">
-                            {bond.displayName ?? bond.libp2pPeerId?.slice(0, 10) ?? bond.peerOwnerId.slice(0, 10)}
+                            {displayName}
                           </span>
                           <div className="chain-worker-card__meta">
                             <span
@@ -364,8 +369,8 @@ export function ChainStartDialog({
                                 {t("chains.start.systemPick")}
                               </span>
                             ) : null}
-                            <span className={`chain-worker-card__tier chain-worker-card__tier--${bond.level}`}>
-                              {bond.level}
+                            <span className={`chain-worker-card__tier chain-worker-card__tier--${isSelf ? "self" : bond.level}`}>
+                              {isSelf ? t("chains.start.youTier") : bond.level}
                             </span>
                             <span className={`chain-bond-health chain-bond-health--${health.cardStatus}`}>
                               {health.cardStatus === "ready" ? "✓" : health.cardStatus === "stale" ? "⏳" : "?"}
@@ -374,10 +379,17 @@ export function ChainStartDialog({
                             </span>
                             {offline ? (
                               <span className="chain-worker-card__offline-reason">
-                                {t("chains.start.offlineReason")}
+                                {isSelf && health.engineReady === false
+                                  ? t("chains.start.engineOfflineReason")
+                                  : t("chains.start.offlineReason")}
                               </span>
                             ) : null}
-                            {!selectable && !offline && !health.optIn ? (
+                            {!selectable && !offline && health.engineReady === false ? (
+                              <span className="chain-worker-card__offline-reason">
+                                {t("chains.start.engineOfflineReason")}
+                              </span>
+                            ) : null}
+                            {!selectable && !offline && health.engineReady !== false && !health.optIn ? (
                               <span className="chain-worker-card__offline-reason">
                                 {t("chains.start.notOptedInReason")}
                               </span>

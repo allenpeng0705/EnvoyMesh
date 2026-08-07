@@ -74,6 +74,7 @@ export function createOpenClawSkill(id: string): AgentNetworkSkillEntry {
   return { id: id.trim().toLowerCase(), kind: "skill", source: "openclaw" };
 }
 
+/** @deprecated Ext Agents are AI Engines — do not add as skills. Kept for legacy card coerce. */
 export function createExtAgentSkill(id: string): AgentNetworkSkillEntry {
   return { id: id.trim().toLowerCase(), kind: "skill", source: "ext" };
 }
@@ -101,6 +102,27 @@ export function agentNetworkSkillIds(
   return out;
 }
 
+/** Owner domain specialties only — hides OpenClaw / Ext engine tags in UI chips. */
+export function agentNetworkDomainSkillIds(
+  skills: readonly (string | AgentNetworkSkillEntry)[] | null | undefined,
+): string[] {
+  return coerceAgentNetworkSkills(skills)
+    .filter((e) => e.kind === "domain" && e.source === "owner")
+    .map((e) => e.id);
+}
+
+/**
+ * Skills used for Team-job ranking / soft match.
+ * Excludes Ext Agent labels (AI Engines are not specialty signals).
+ */
+export function agentNetworkRankingSkillIds(
+  skills: readonly (string | AgentNetworkSkillEntry)[] | null | undefined,
+): string[] {
+  return coerceAgentNetworkSkills(skills)
+    .filter((e) => e.source !== "ext")
+    .map((e) => e.id);
+}
+
 export const AgentNetworkProfileSchema = z.object({
   /** Owner-attested model freshness / modernity (1 = older, 10 = newest). */
   modelFreshness: z.number().int().min(1).max(10).default(5),
@@ -111,9 +133,9 @@ export const AgentNetworkProfileSchema = z.object({
   spendPosture: AgentNetworkSpendPostureSchema.default("unknown"),
   contextWindow: AgentNetworkContextWindowSchema.default("128k"),
   /**
-   * Skills for assignment: owner domains + Agent Skills from OpenClaw / Ext.
-   * Accepts legacy plain strings and partial `{ id }` objects (coerced).
-   * Matching uses `id`.
+   * Skills for assignment: owner domains + OpenClaw Agent Skills.
+   * Ext Agent labels are not skills (AI Engines). Accepts legacy plain strings
+   * and partial `{ id }` objects (coerced). Matching uses `id`.
    */
   skills: z
     .array(z.unknown())

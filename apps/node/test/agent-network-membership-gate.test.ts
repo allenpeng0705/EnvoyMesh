@@ -16,7 +16,7 @@ function makeDeps(
   cards: Array<{
     ownerId: string;
     displayName: string;
-    capabilities: string[];
+    membership: string[];
     cachedAt: string;
     sourceAgentPeerId?: string;
     agentNetworkProfile?: {
@@ -29,6 +29,8 @@ function makeDeps(
   options?: {
     listenAddrsByOwnerId?: Record<string, string[]>;
     selfAgentPeerId?: string;
+    localWorkerCard?: (typeof cards)[number] | null;
+    openClawReady?: boolean;
   },
 ): ChainOrchestrationContext {
   const index = new AgentNetworkMembershipIndex();
@@ -38,6 +40,12 @@ function makeDeps(
     getAgentNetworkMembershipIndexReady: () => null,
     getReachableMesh: () => undefined,
     listAgentCards: async () => cards,
+    getLocalAgentNetworkWorkerCard: async () =>
+      options?.localWorkerCard === null
+        ? undefined
+        : options?.localWorkerCard ?? undefined,
+    isOpenClawReady: () => options?.openClawReady !== false,
+    askOpenClaw: async () => "",
     ensureAgentIdentity: async () =>
       options?.selfAgentPeerId
         ? { agentPeerId: options.selfAgentPeerId }
@@ -257,5 +265,87 @@ describe("Agent Network worker discovery gate", () => {
     expect(ranked[0]?.sameLan).toBe(true);
     expect(ranked[1]?.sameLan).toBe(false);
     expect(ranked[0]!.score).toBeGreaterThan(ranked[1]!.score);
+  });
+
+  it("includes Join'd local agent first and always online", async () => {
+    const deps = makeDeps(
+      [
+        {
+          ownerId: "envoy:owner:remote",
+          displayName: "Remote",
+          membership: ["task.execute", "agent-network-worker"],
+          cachedAt: "2026-07-22T00:00:00.000Z",
+          sourceAgentPeerId: "envoy_agent_remote",
+          agentNetworkProfile: {
+            modelFreshness: 9,
+            spendPosture: "subscription",
+            contextWindow: "1M+",
+            skills: ["research"],
+          },
+        },
+      ],
+      {
+        selfAgentPeerId: "envoy_agent_self",
+        localWorkerCard: {
+          ownerId: "envoy:owner:self",
+          displayName: "Me",
+          membership: ["task.execute", "agent-network-worker"],
+          cachedAt: "2026-07-22T00:00:00.000Z",
+          sourceAgentPeerId: "envoy_agent_self",
+          agentNetworkProfile: {
+            modelFreshness: 3,
+            spendPosture: "metered",
+            contextWindow: "128k",
+            skills: [],
+          },
+        },
+      },
+    );
+    await refreshAgentNetworkMembershipIndex(deps);
+    expect(deps.getAgentNetworkMembershipIndex().findWorkers("task.execute")).toContain(
+      "envoy_agent_self",
+    );
+    const ranked = await findAgentNetworkWorkersRanked(deps, "task.execute");
+    expect(ranked[0]?.peerId).toBe("envoy_agent_self");
+    expect(ranked[0]?.online).toBe(true);
+    expect(ranked[0]?.sameLan).toBe(true);
+    expect(ranked.map((r) => r.peerId)).toContain("envoy_agent_remote");
+  });
+
+  it("omits local agent when Join is off (no local worker card)", async () => {
+    const deps = makeDeps(
+      [
+        {
+          ownerId: "envoy:owner:remote",
+          displayName: "Remote",
+          membership: ["task.execute", "agent-network-worker"],
+          cachedAt: "2026-07-22T00:00:00.000Z",
+          sourceAgentPeerId: "envoy_agent_remote",
+        },
+      ],
+      {
+        selfAgentPeerId: "envoy_agent_self",
+        localWorkerCard: null,
+      },
+    );
+    const peers = await findAgentNetworkWorkers(deps, "task.execute");
+    expect(peers).toEqual(["envoy_agent_remote"]);
+  });
+
+  it("marks local agent offline for ranking when OpenClaw is down", async () => {
+    const deps = makeDeps([], {
+      selfAgentPeerId: "envoy_agent_self",
+      openClawReady: false,
+      localWorkerCard: {
+        ownerId: "envoy:owner:self",
+        displayName: "Me",
+        membership: ["task.execute", "agent-network-worker"],
+        cachedAt: "2026-07-22T00:00:00.000Z",
+        sourceAgentPeerId: "envoy_agent_self",
+      },
+    });
+    const ranked = await findAgentNetworkWorkersRanked(deps, "task.execute");
+    expect(ranked[0]?.peerId).toBe("envoy_agent_self");
+    expect(ranked[0]?.online).toBe(false);
   });
 });

@@ -285,7 +285,7 @@ describe("buildLocalAgentCard", () => {
     expect(card.membership).not.toContain("agent-network-worker");
   });
 
-  it("merges Ext Agent labels into skills when Join is on", async () => {
+  it("does not merge Ext Agent labels into skills when Join is on", async () => {
     const card = await buildLocalAgentCard({
       profile: makeTestProfile() as never,
       humanProfileStore,
@@ -296,12 +296,9 @@ describe("buildLocalAgentCard", () => {
         contextWindow: "128k",
         skills: ["coding"],
       },
-      extAgentLabels: ["pi", "Hermes"],
     });
     expect(card.agentNetworkProfile?.skills).toEqual([
       { id: "coding", kind: "domain", source: "owner" },
-      { id: "pi", kind: "skill", source: "ext" },
-      { id: "hermes", kind: "skill", source: "ext" },
     ]);
   });
 });

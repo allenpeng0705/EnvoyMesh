@@ -1,15 +1,18 @@
 import type { CachedAgentCardSummary } from "@envoymesh/api";
-import { agentNetworkSkillIds } from "@envoymesh/protocol";
+import { agentNetworkDomainSkillIds } from "@envoymesh/protocol";
 import { useT } from "../context/I18nContext.js";
 import { AgentCapabilitiesPreview } from "./AgentCapabilitiesPreview.js";
 
-/** Agent Network skills chips for Team worker rows (not membership tags). */
+/**
+ * Owner domain skill chips for Team worker rows.
+ * OpenClaw Agent Skills stay on the card for ranking but are not shown here.
+ */
 export function AgentNetworkSkillsPreview(props: {
   card?: CachedAgentCardSummary;
   compact?: boolean;
 }) {
   const t = useT();
-  const skills = agentNetworkSkillIds(props.card?.agentNetworkProfile?.skills);
+  const skills = agentNetworkDomainSkillIds(props.card?.agentNetworkProfile?.skills);
   if (skills.length === 0) return null;
 
   return (

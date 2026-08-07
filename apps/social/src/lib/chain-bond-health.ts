@@ -26,6 +26,11 @@ export interface ChainBondHealth {
   onlineStatus: ChainOnlineStatus;
   /** Peer has opted into the Agent Network (`agent-network-worker` on their card). */
   optIn: boolean;
+  /**
+   * Local Agent Network engine ready (Built-in OpenClaw). Only set for the
+   * local "You" worker; undefined means unknown / remote peer.
+   */
+  engineReady?: boolean;
   capabilityCount: number;
   lastSyncedAt?: string;
   label: string;
@@ -124,6 +129,7 @@ export function isTeamJobReady(
   card: CachedAgentCardSummary | undefined,
   health: ChainBondHealth,
 ): boolean {
+  if (health.engineReady === false) return false;
   return isTeamJobListed(card, health) && health.onlineStatus !== "offline";
 }
 

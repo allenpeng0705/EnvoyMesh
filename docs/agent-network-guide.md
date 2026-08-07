@@ -38,7 +38,7 @@ whether **bonded peers** can ask it to help on their Team jobs.
 | **Join Agent Network** | Join Agent Network | Opt-in so peers can recruit your agent |
 | **Team jobs** | “Chains” / multi-agent chains | Owner-facing collaboration view |
 | **Team job defaults** | Chain Defaults | Award mode, bidding, stall policy (under **Settings → AI**) |
-| **AI Engine** | Once mislabeled “Agent Network” | Which AI runs on *this* home node (EnvoyAI / Ext Agent) — **not** the same as joining Agent Network |
+| **AI Engine** | Once mislabeled “Agent Network” | Which AI runs on *this* home node (EnvoyAI / Ext Agent) — **not** the same as joining Agent Network. For Team-job **worker** execution, this node defaults to Built-in OpenClaw; Ext Agent for Agent Network is a later owner-only choice (see [agent-network-engine.md](./agent-network-engine.md)). |
 
 Protocol and source code still use names like `task.chain.*`, `ChainsView`,
 and `agent-network-worker`. That is fine for engineers; the Social UI uses the

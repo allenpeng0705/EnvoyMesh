@@ -498,6 +498,9 @@ export async function advanceReadySubtasks(
 /**
  * Stall recovery: cancel the current award and propose to the next listed
  * worker. At most one re-assign per subtask.
+ *
+ * Also used when a worker returns a failed final partial (e.g. OpenClaw down)
+ * so the Assigner can try a backup peer instead of treating the failure as done.
  */
 export async function reassignStalledSubtask(
   deps: ChainOrchestratorHandlerDeps,
@@ -1276,9 +1279,46 @@ export async function handleOrchestratorPartial(
     summary: `subtask=${payload.partial.subtaskId} seq=${payload.partial.seq} isFinal=${payload.partial.isFinal}`,
   });
   if (payload.partial.isFinal) {
+    if (isFailedWorkerFinalPartial(payload)) {
+      // Engine/worker failure — try backup peer before treating the step as done.
+      const reassigned = await reassignStalledSubtask(deps, state, payload.partial.subtaskId);
+      if (reassigned.ok) {
+        deps.audit.record({
+          type: "chain.launched",
+          outcome: "allow",
+          intent: "task.chain.propose",
+          remotePeerId: envelope.senderPeerId,
+          correlationId: envelope.correlationId,
+          summary: `worker_failed_reassign subtask=${payload.partial.subtaskId} to=${reassigned.nextWorkerPeerId}`,
+        });
+        return { ok: true };
+      }
+      deps.audit.record({
+        type: "chain.partial_received",
+        outcome: "record",
+        intent: "task.chain.partial",
+        remotePeerId: envelope.senderPeerId,
+        correlationId: envelope.correlationId,
+        summary: `worker_failed_exhausted subtask=${payload.partial.subtaskId} reason=${reassigned.reason}`,
+      });
+      // No backup: keep Failed final so the report can surface it; do not
+      // advance dependents as if the step succeeded.
+      return { ok: true };
+    }
     await advanceReadySubtasks(deps, state);
   }
   return { ok: true };
+}
+
+/** Final partial that means the worker could not complete the step. */
+export function isFailedWorkerFinalPartial(payload: TaskChainPartialPayload): boolean {
+  if (!payload.partial.isFinal) return false;
+  const note = (payload.partial.note ?? "").trim();
+  if (note.startsWith("Failed:")) return true;
+  if (typeof payload.partial.confidence === "number" && payload.partial.confidence < 0.3) {
+    return true;
+  }
+  return false;
 }
 
 export async function handleOrchestratorHeartbeat(

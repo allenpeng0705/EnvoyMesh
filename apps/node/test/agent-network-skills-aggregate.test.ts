@@ -4,13 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   aggregateAgentNetworkSkills,
-  extAgentLabelsFromDefinitions,
   listOpenClawSkillIds,
 } from "../src/agent-network-skills-aggregate.js";
 import { openClawWorkspaceSkillsDir } from "../src/openclaw-workspace.js";
 
 describe("aggregateAgentNetworkSkills", () => {
-  it("keeps owner skills and stamps OpenClaw / Ext provenance", async () => {
+  it("keeps owner skills and stamps OpenClaw provenance (not Ext Agents)", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "an-skills-"));
     try {
       const skillsRoot = openClawWorkspaceSkillsDir(profileDir);
@@ -25,16 +24,18 @@ describe("aggregateAgentNetworkSkills", () => {
           modelFreshness: 7,
           spendPosture: "subscription",
           contextWindow: "256k",
-          skills: ["coding", "research"],
+          skills: [
+            "coding",
+            "research",
+            { id: "pi", kind: "skill", source: "ext" },
+          ],
         },
         profileDir,
-        extAgentLabels: ["pi"],
       });
       expect(profile.skills).toEqual([
         { id: "coding", kind: "domain", source: "owner" },
         { id: "research", kind: "domain", source: "owner" },
         { id: "tavily", kind: "skill", source: "openclaw" },
-        { id: "pi", kind: "skill", source: "ext" },
       ]);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
@@ -48,15 +49,5 @@ describe("aggregateAgentNetworkSkills", () => {
     expect(profile.skills).toEqual([
       { id: "writing", kind: "domain", source: "owner" },
     ]);
-  });
-
-  it("extAgentLabelsFromDefinitions keeps enabled ids and distinct names", () => {
-    expect(
-      extAgentLabelsFromDefinitions([
-        { id: "pi", name: "Pi", enabled: true },
-        { id: "hermes", name: "hermes", enabled: true },
-        { id: "off", name: "Off Agent", enabled: false },
-      ]),
-    ).toEqual(["pi", "hermes"]);
   });
 });
