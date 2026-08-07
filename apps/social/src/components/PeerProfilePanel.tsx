@@ -23,13 +23,16 @@ export function PeerProfilePanel({ ownerId, fallbackDisplayName }: PeerProfilePa
       });
     };
     load();
+    // Human profile (chat protocol) + agent card (message protocol) are separate
+    // exchanges — without requesting the card, Agent capabilities stay empty forever.
     void nodeService.requestPeerProfile(ownerId).catch(() => {});
-    const unsub = nodeService.on?.("profile:updated", (data: { ownerId: string }) => {
+    void nodeService.requestAgentCard(ownerId).catch(() => {});
+    const unsubProfile = nodeService.on?.("profile:updated", (data: { ownerId: string }) => {
       if (data.ownerId === ownerId) load();
     });
     return () => {
       cancelled = true;
-      unsub?.();
+      unsubProfile?.();
     };
   }, [nodeService, ownerId]);
 

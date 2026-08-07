@@ -991,6 +991,7 @@ export async function sendEnvelopeWithRetry(input: {
   peerListenAddrs?: string[];
   rebuildDialHints?: () => Promise<string[]>;
   maxAttempts?: number;
+  preferCircuitHints?: boolean;
 }): Promise<ChatDeliverResult> {
   if (isProfileIntent(input.envelope.intent)) {
     return withOutboundSendLock(input.transportPeerId, () =>
@@ -1014,6 +1015,7 @@ export async function sendEnvelopeWithRetry(input: {
       peerListenAddrs: input.peerListenAddrs,
       rebuildDialHints: input.rebuildDialHints,
       maxAttempts: input.maxAttempts,
+      preferCircuitHints: input.preferCircuitHints,
     }),
   );
 }

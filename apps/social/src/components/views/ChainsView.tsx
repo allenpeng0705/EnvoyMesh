@@ -14,7 +14,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import type { ChainGetStateResult, ChainWorkerReachability } from "@envoymesh/api";
 import { useT } from "../../context/I18nContext.js";
 import { useToast } from "../../hooks/useToast.js";
-import { useNodeService, useAgentCards } from "../../hooks/useNodeService.js";
+import { useNodeService, useAgentCards, useTransportWsOpen } from "../../hooks/useNodeService.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { computeChainBondHealth, isTeamJobListed, mergeReachability } from "../../lib/chain-bond-health.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
@@ -114,6 +114,7 @@ export interface ChainsViewProps {
 export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
   const t = useT();
   const nodeService = useNodeService();
+  const wsOpen = useTransportWsOpen();
   const { showToast } = useToast();
   const { bonds } = useNodeState();
   const agentCards = useAgentCards();
@@ -212,14 +213,14 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
     return () => clearInterval(timer);
   }, [loadReachability]);
 
-  // Pull + push agent cards once when Team jobs opens so Join'd peers appear
-  // without a manual Settings → Refresh workers click.
+  // Pull + push agent cards when Team jobs opens (and when WS connects) so
+  // Join'd peers appear without a manual Settings → Refresh workers click.
   useEffect(() => {
-    if (!nodeService.isConnected) return;
+    if (!wsOpen || !nodeService.isConnected) return;
     void nodeService.refreshAgentNetworkWorkers().catch((err) => {
       console.error("[ChainsView] refreshAgentNetworkWorkers failed:", err);
     });
-  }, [nodeService]);
+  }, [nodeService, wsOpen, nodeService.isConnected]);
 
   useEffect(() => {
     const unsub = nodeService.on("chain:state", (state) => {
@@ -441,12 +442,18 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
         <div className="chains-empty">
           <p>{t("chains.active.empty")}</p>
           <p className="chains-empty__hint">{t("chains.active.prerequisite")}</p>
-          {teamListedCandidates.length > 0 ? (
+          {teamListedCandidates.length > 0 || workerCandidates.length > 0 ? (
             <div className="chains-empty__contacts">
               <h4 className="chains-empty__contacts-title">{t("chains.start.contactsTitle")}</h4>
-              <p className="chains-empty__contacts-desc">{t("chains.start.contactsDesc")}</p>
+              <p className="chains-empty__contacts-desc">
+                {teamListedCandidates.length > 0
+                  ? t("chains.start.contactsDesc")
+                  : t("chains.start.contactsNotReady")}
+              </p>
               <ul className="chain-workers__list">
-                {teamListedCandidates.slice(0, 6).map(({ bond, card, health }) => (
+                {(teamListedCandidates.length > 0 ? teamListedCandidates : workerCandidates)
+                  .slice(0, 6)
+                  .map(({ bond, card, health }) => (
                   <li key={bond.peerOwnerId} className="chain-worker-card">
                     <div className="chain-worker-card__avatar">
                       {(bond.displayName ?? bond.peerOwnerId).slice(0, 1).toUpperCase()}
@@ -469,7 +476,11 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
                           {" "}
                           {t(`chains.start.contact${health.cardStatus.charAt(0).toUpperCase() + health.cardStatus.slice(1)}`)}
                         </span>
-                        {card && card.capabilities.length > 0 ? (
+                        {!health.optIn ? (
+                          <span className="chain-worker-card__caps muted">
+                            {t("chains.start.notOptedInReason")}
+                          </span>
+                        ) : card && card.capabilities.length > 0 ? (
                           <span className="chain-worker-card__caps">
                             {t("chains.start.contactCapabilities", { count: card.capabilities.length })}
                           </span>
@@ -480,8 +491,6 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
                 ))}
               </ul>
             </div>
-          ) : workerCandidates.length > 0 ? (
-            <p className="chains-empty__hint">{t("chains.start.contactsNotReady")}</p>
           ) : (
             <p className="chains-empty__hint">{t("chains.start.contactsEmpty")}</p>
           )}

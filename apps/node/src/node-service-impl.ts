@@ -3547,6 +3547,9 @@ class NodeServiceImpl implements NodeService {
       envelope,
       dialHints,
       listenAddrs,
+      // Prefer direct when already Online-direct — circuit-first breaks card
+      // exchange on VPN/overlay even though chat is fine.
+      false,
     );
     if (!deliver.delivered) {
       return { ok: false, error: "agent.card.request not delivered" };
@@ -3628,7 +3631,13 @@ class NodeServiceImpl implements NodeService {
             agentIdentity.agentPrivateKeyPem,
           );
           const deliver = await raceWithTimeout(
-            this._deliverCallEnvelope(transportPeerId, envelope, dialHints, listenAddrs),
+            this._deliverCallEnvelope(
+              transportPeerId,
+              envelope,
+              dialHints,
+              listenAddrs,
+              false,
+            ),
             timeoutMs,
             `announceAgentCard(${bond.peerOwnerId.slice(0, 16)}…)`,
           );
@@ -3732,27 +3741,33 @@ class NodeServiceImpl implements NodeService {
     return { requested, failed };
   }
 
-  private _agentNetworkIndexRefreshTimer?: ReturnType<typeof setTimeout>;
+  private _agentNetworkIndexRefreshTimers: ReturnType<typeof setTimeout>[] = [];
 
   private _scheduleDeferredAgentNetworkIndexRefresh(): void {
-    if (this._agentNetworkIndexRefreshTimer) {
-      clearTimeout(this._agentNetworkIndexRefreshTimer);
+    for (const t of this._agentNetworkIndexRefreshTimers) clearTimeout(t);
+    this._agentNetworkIndexRefreshTimers = [];
+    // Card replies are async over the message protocol — re-index + emit a few
+    // times so Social/Team jobs pick up capability-provider without a second click.
+    for (const delayMs of [1_500, 4_000, 8_000]) {
+      const timer = setTimeout(() => {
+        this._agentNetworkIndexRefreshTimers = this._agentNetworkIndexRefreshTimers.filter(
+          (t) => t !== timer,
+        );
+        void this.refreshCapabilityIndex()
+          .then(async () => {
+            try {
+              const cards = await this.listAgentCards();
+              this.emit("home:agent-cards-updated", { cards });
+            } catch {
+              /* ignore */
+            }
+          })
+          .catch((err) => {
+            console.warn("[agent-network] deferred refreshCapabilityIndex failed:", err);
+          });
+      }, delayMs);
+      this._agentNetworkIndexRefreshTimers.push(timer);
     }
-    this._agentNetworkIndexRefreshTimer = setTimeout(() => {
-      this._agentNetworkIndexRefreshTimer = undefined;
-      void this.refreshCapabilityIndex()
-        .then(async () => {
-          try {
-            const cards = await this.listAgentCards();
-            this.emit("home:agent-cards-updated", { cards });
-          } catch {
-            /* ignore */
-          }
-        })
-        .catch((err) => {
-          console.warn("[agent-network] deferred refreshCapabilityIndex failed:", err);
-        });
-    }, 2_500);
   }
 
   async recordAgentCardCached(ownerId: string, card: import("@envoymesh/protocol").AgentCard): Promise<void> {
@@ -7784,9 +7799,9 @@ class NodeServiceImpl implements NodeService {
   }
 
   async stopNode(): Promise<void> {
-    if (this._agentNetworkIndexRefreshTimer) {
-      clearTimeout(this._agentNetworkIndexRefreshTimer);
-      this._agentNetworkIndexRefreshTimer = undefined;
+    if (this._agentNetworkIndexRefreshTimers.length > 0) {
+      for (const t of this._agentNetworkIndexRefreshTimers) clearTimeout(t);
+      this._agentNetworkIndexRefreshTimers = [];
     }
     return stopNodeViaRuntime(this._stopNodeContext());
   }

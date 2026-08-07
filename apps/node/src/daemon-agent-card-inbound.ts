@@ -103,6 +103,9 @@ export async function handleDaemonAgentCardInbound(input: {
       transportPeerId: input.remotePeerId,
       envelope: signedResponse,
       dialHints: [`/p2p/${input.remotePeerId}`],
+      // Stay on the inbound direct path — circuit-first can fail card reply
+      // while chat remains Online-direct (esp. VPN/overlay).
+      preferCircuitHints: false,
     });
     await input.taskStore.appendAuditEvent(
       createAuditEvent({
@@ -127,9 +130,12 @@ export async function handleDaemonAgentCardInbound(input: {
       void input.nodeService.recordAgentCardCached(cardResult.ownerId, cardResult.card).catch((err) =>
         console.warn(`[agent.card] activity hook failed:`, err),
       );
-      void input.nodeService.refreshCapabilityIndex().catch((err) =>
-        console.warn(`[agent.card] refreshCapabilityIndex failed:`, err),
-      );
+      const refreshIndex = input.nodeService.refreshCapabilityIndex?.bind(input.nodeService);
+      if (typeof refreshIndex === "function") {
+        void refreshIndex().catch((err) =>
+          console.warn(`[agent.card] refreshCapabilityIndex failed:`, err),
+        );
+      }
     }
     return { handled: true, outcome: "cached", ownerId: cardResult.ownerId };
   }

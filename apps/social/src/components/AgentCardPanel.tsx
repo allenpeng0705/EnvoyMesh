@@ -1,16 +1,8 @@
-/**
- * Phase 34: render the cached `AgentCard` summary for a peer. Surfaces the
- * richer optional fields (nodeProfile, publicTopics, trustPolicySummary,
- * supportedProtocolVersions) added to `CachedAgentCardSummary` in this phase.
- *
- * `useAgentCards` keeps the list hot — this component just looks up the row
- * for the given `ownerId` and renders. Renders nothing if no card is cached
- * yet, so it can be embedded in peer-details panels without flicker.
- */
+import { useEffect, useRef } from "react";
+import type { CachedAgentCardSummary } from "@envoymesh/api";
 import { useT } from "../context/I18nContext.js";
 import { useNodeState } from "../context/NodeStateContext.js";
-import { useAgentCards } from "../hooks/useNodeService.js";
-import type { CachedAgentCardSummary } from "@envoymesh/api";
+import { useAgentCards, useNodeService } from "../hooks/useNodeService.js";
 import { ChainBondHealthBadge } from "./ChainBondHealthBadge.js";
 import { ContactWebContentShortcuts } from "./ContactWebContentShortcuts.js";
 
@@ -20,11 +12,24 @@ export function AgentCardPanel(props: {
   showWebContentShortcuts?: boolean;
 }) {
   const t = useT();
+  const nodeService = useNodeService();
   const { bonds } = useNodeState();
   const cards = useAgentCards();
   const card = cards.find((c) => c.ownerId === props.ownerId);
   const bond = bonds.find((b) => b.peerOwnerId === props.ownerId);
   const showShortcuts = props.showWebContentShortcuts !== false;
+  const fetchedFor = useRef<string | null>(null);
+
+  // If the cache is empty for this contact, pull once (message-protocol exchange).
+  useEffect(() => {
+    if (card) {
+      fetchedFor.current = null;
+      return;
+    }
+    if (fetchedFor.current === props.ownerId) return;
+    fetchedFor.current = props.ownerId;
+    void nodeService.requestAgentCard(props.ownerId).catch(() => {});
+  }, [card, nodeService, props.ownerId]);
 
   if (!card) {
     return (

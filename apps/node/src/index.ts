@@ -1282,6 +1282,7 @@ async function handleInboundMeshMessage({
       },
       { envelope, remotePeerId, receivedAt, correlationId },
     );
+    return;
   }
 
   if (envelope.intent === "knowledge.query") {
