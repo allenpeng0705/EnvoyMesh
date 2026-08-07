@@ -111,6 +111,11 @@ async function maybeAutoApplyQuietWanForCgnat(
   if (mode === "quietWan" || mode === "aggressive" || explicit === true) {
     return { applied: false, revertedVpn, effectiveConnectivityMode: mode };
   }
+  // Just undid a cgnat-quietWan for VPN — do not re-probe and re-apply in the
+  // same boot (STUN can still see ISP 100.64 under split-tunnel / commercial VPN).
+  if (revertedVpn) {
+    return { applied: false, revertedVpn: true, effectiveConnectivityMode: mode };
+  }
   if (!shouldAllowCgnatQuietWanAutoApply({ connectivityMode: mode, connectivityModeExplicit: explicit })) {
     return { applied: false, revertedVpn, effectiveConnectivityMode: mode };
   }

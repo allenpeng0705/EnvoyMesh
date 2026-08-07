@@ -344,6 +344,18 @@ describe("ipv4SamePrivateOrOverlayNetwork / Tailscale dial hints", () => {
 });
 
 describe("shouldPreferCircuitDialHints", () => {
+  it("prefers direct when Tailscale/RFC6598 overlay TCP hints exist", async () => {
+    const { shouldPreferCircuitDialHints } = await import("../src/outbound-dial-hints.js");
+    const listen = ["/ip4/100.100.50.25/tcp/4011/p2p/12D3KooWContact"];
+    const hints = [
+      "/ip4/100.100.50.25/tcp/4011/p2p/12D3KooWContact",
+      "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWContact",
+    ];
+    // Overlay 100.64/10 is private for wan-public stripping, but mutually
+    // dialable — must not force Online-relay.
+    expect(shouldPreferCircuitDialHints(listen, hints, "12D3KooWContact")).toBe(false);
+  });
+
   it("prefers circuits when only private LAN direct TCP hints exist (cross-network fix)", async () => {
     const { shouldPreferCircuitDialHints } = await import("../src/outbound-dial-hints.js");
     const listen = ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWContact"];

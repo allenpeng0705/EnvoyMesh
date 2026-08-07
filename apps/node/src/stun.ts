@@ -349,7 +349,9 @@ export interface CgnatDetectionInput {
   localInterfaceIps?: string[];
   /**
    * True when a VPN/overlay interface is active (utun/tun/wg/tailscale/…).
-   * Suppresses the noisy symmetric+UPnP auto-apply path (common VPN false positive).
+   * Suppresses quietWan auto-apply: both symmetric+UPnP and STUN-100.64 pristine
+   * paths (commercial/split-tunnel VPN often sees ISP CGNAT 100.64 without a
+   * local Tailscale NIC).
    */
   likelyVpnActive?: boolean;
 }
@@ -371,7 +373,9 @@ export interface CgnatDetectionInput {
  * **Pristine (trusted alone):**
  * - STUN-observed IP in RFC 6598 range (`100.64.x.x`), **unless** a local
  *   interface is also in that range (Tailscale/headscale overlay — those
- *   100.64 addresses are mutually dialable VPN IPs, not ISP CGNAT).
+ *   100.64 addresses are mutually dialable VPN IPs, not ISP CGNAT), **or**
+ *   {@link CgnatDetectionInput.likelyVpnActive} (commercial/split-tunnel VPN
+ *   often sees ISP CGNAT 100.64 on STUN without a local 100.64 NIC).
  *
  * **Noisy (require corroboration — two independent signals must agree):**
  * - NAT type `"symmetric"` (two STUN servers saw different mappings). False
@@ -409,11 +413,11 @@ export function classifyCgnat(input: CgnatDetectionInput): "cgnat" | "not-cgnat"
   }
 
   // Pristine positive: RFC 6598 CGNAT range — but not when local NICs also
-  // sit in 100.64/10 (Tailscale overlay). ISP CGNAT keeps LAN on 192.168
-  // while STUN sees 100.64; overlay VPN puts 100.64 on the local interface.
+  // sit in 100.64/10 (Tailscale overlay), and not when a VPN is already up
+  // (would re-apply quietWan right after a VPN revert on commercial VPN).
   if (input.stunObservedIp && isCgnatRangeIp(input.stunObservedIp)) {
     const localHasOverlay = (input.localInterfaceIps ?? []).some(isCgnatRangeIp);
-    if (!localHasOverlay) return "cgnat";
+    if (!localHasOverlay && !input.likelyVpnActive) return "cgnat";
   }
 
   // Noisy signals: require TWO to agree (corroboration), to avoid false positives.

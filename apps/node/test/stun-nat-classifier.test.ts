@@ -105,6 +105,17 @@ describe("classifyCgnat — definitive CGNAT detection (false-positive hardened)
     ).toBe("unknown");
   });
 
+  it("returns 'unknown' for STUN 100.64 when a commercial VPN is active (no local 100.64)", () => {
+    // Split-tunnel / OpenVPN: STUN may still see ISP CGNAT while traffic uses the tunnel.
+    expect(
+      classifyCgnat({
+        stunObservedIp: "100.64.5.5",
+        localInterfaceIps: ["10.8.0.2", "192.168.1.20"],
+        likelyVpnActive: true,
+      }),
+    ).toBe("unknown");
+  });
+
   it("returns 'unknown' for symmetric+UPnP when a VPN is active", () => {
     expect(
       classifyCgnat({

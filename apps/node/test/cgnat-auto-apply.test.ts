@@ -74,6 +74,21 @@ describe("detectCgnatAtStartup — auto-apply decision boundary", () => {
     expect(result.shouldAutoApplyQuietWan).toBe(true);
   });
 
+  it("does NOT auto-apply RFC 6598 STUN when commercial VPN is active (no local 100.64)", async () => {
+    mocks.detectNatType.mockResolvedValue("full-cone");
+    mocks.raceStunServers.mockResolvedValue({ ip: "100.64.5.5", port: 4001 });
+    mocks.upnpDiscoverAndMap.mockResolvedValue(null);
+
+    const result = await detectCgnatAtStartup({
+      connectivityMode: "optimized",
+      localInterfaceIps: ["10.8.0.2", "192.168.1.20"],
+      likelyVpnActive: true,
+    });
+
+    expect(result.classification).toBe("unknown");
+    expect(result.shouldAutoApplyQuietWan).toBe(false);
+  });
+
   it("does NOT auto-apply RFC 6598 STUN when a local Tailscale NIC is present", async () => {
     mocks.detectNatType.mockResolvedValue("full-cone");
     mocks.raceStunServers.mockResolvedValue({ ip: "100.64.5.5", port: 4001 });
@@ -223,6 +238,17 @@ describe("detectLikelyVpnActive / maybeRevertCgnatQuietWanForVpn", () => {
       detectLikelyVpnActive({
         en0: [{ address: "192.168.1.20", family: "IPv4", internal: false } as NodeJS.NetworkInterfaceInfo],
         utun0: [],
+      }),
+    ).toBe(false);
+  });
+
+  it("ignores idle utun that has no private tunnel address", async () => {
+    const { detectLikelyVpnActive } = await import("../src/cgnat-detection.js");
+    expect(
+      detectLikelyVpnActive({
+        en0: [{ address: "192.168.1.20", family: "IPv4", internal: false } as NodeJS.NetworkInterfaceInfo],
+        // Public-looking address on utun is not a typical VPN client assignment.
+        utun2: [{ address: "203.0.113.9", family: "IPv4", internal: false } as NodeJS.NetworkInterfaceInfo],
       }),
     ).toBe(false);
   });

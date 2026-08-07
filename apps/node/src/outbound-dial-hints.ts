@@ -393,11 +393,22 @@ export function mergeDialablePeerListenAddrs(
   return out;
 }
 
+/** True for direct TCP multiaddrs in RFC 6598 (100.64/10) — Tailscale/headscale overlay. */
+function isRfc6598OverlayTcpDialHint(addr: string): boolean {
+  if (!addr.includes("/tcp/") || addr.includes("/p2p-circuit/")) return false;
+  const ip = parseIpv4FromMultiaddr(addr);
+  return ip != null && isRfc6598CgnatIp(ip);
+}
+
 /** Prefer direct LAN/TCP dials when we have routable non-circuit hints; avoid jumping to relay on same network.
  *
  * **Cross-network safeguard:** If all direct TCP hints are private LAN (RFC1918 /
- * link-local / CGNAT), prefer circuits instead — the LAN addresses are unreachable
+ * link-local), prefer circuits instead — the LAN addresses are unreachable
  * from other networks and would burn 30 s per attempt with no chance of success.
+ *
+ * **Overlay exception:** RFC 6598 (`100.64/10`) direct TCP is mutually dialable
+ * inside Tailscale/headscale. Treating it like RFC1918 would force Online-relay
+ * even when dial hints kept the overlay path for Online-direct.
  */
 export function shouldPreferCircuitDialHints(
   listenAddrs: string[] | undefined,
@@ -419,13 +430,14 @@ export function shouldPreferCircuitDialHints(
     ...dialHints.filter((h) => h.includes("/tcp/") && !h.includes("/p2p-circuit/")),
   ];
   if (hasDirectTcpDialHints(directCandidates)) {
-    // Only prefer direct when at least one hint is publicly routable.
-    // Private-LAN-only hints are unreachable cross-network; preferring
-    // circuits gives the relay fallback a chance to work.
-    const hasPublicDirect = directCandidates.some(
-      (h) => isPrivateLanTcpDialHint(h) ? false : !isPrivateOrUnroutableDialHint(h),
-    );
-    return !hasPublicDirect;
+    // Prefer direct when publicly routable OR when an RFC6598 overlay path exists.
+    // (100.64 is classified private for wan-public stripping, but is dialable
+    // inside the overlay — same as pre-isPrivateLanTcpDialHint behavior.)
+    const hasReachableDirect = directCandidates.some((h) => {
+      if (isRfc6598OverlayTcpDialHint(h)) return true;
+      return isPrivateLanTcpDialHint(h) ? false : !isPrivateOrUnroutableDialHint(h);
+    });
+    return !hasReachableDirect;
   }
   return dialHints.some((h) => h.includes("/p2p-circuit/"));
 }

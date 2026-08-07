@@ -28,6 +28,7 @@ import {
   classifyCgnat,
   detectNatType,
   isCgnatRangeIp,
+  isRfc1918PrivateIp,
   raceStunServers,
   DEFAULT_STUN_SERVERS,
   type NatType,
@@ -65,23 +66,32 @@ export function listLocalIpv4Addresses(
 
 /**
  * Heuristic: overlay / commercial VPN is active.
- * - Interface name matches utun/tun/wg/ppp/ipsec/tailscale
- * - Or any local IPv4 is in RFC 6598 100.64/10 (Tailscale/headscale)
+ * - Any local IPv4 in RFC 6598 100.64/10 (Tailscale/headscale)
+ * - Interface name is Tailscale / WireGuard / `wg*`
+ * - Tunnel iface (`utun`/`tun`/`tap`/`ppp`/`ipsec`) with an RFC1918 or RFC6598
+ *   client address — not bare name match (macOS always has idle `utun` devices)
  */
 export function detectLikelyVpnActive(
   ifaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces(),
 ): boolean {
   for (const [name, addrs] of Object.entries(ifaces)) {
     const n = name.toLowerCase();
-    const nameLooksVpn =
-      /^(utun|tun|tap|wg|ppp|ipsec)/.test(n) || n.includes("tailscale") || n.includes("wireguard");
+    const nameLooksOverlay =
+      n.includes("tailscale") || n.includes("wireguard") || /^wg\d*$/.test(n);
+    const nameLooksTunnel = /^(utun|tun|tap|ppp|ipsec)/.test(n);
     if (!addrs) continue;
     for (const a of addrs) {
       if (a.internal) continue;
       const family = a.family as string | number;
       if (family !== "IPv4" && family !== 4) continue;
       if (isCgnatRangeIp(a.address)) return true;
-      if (nameLooksVpn) return true;
+      if (nameLooksOverlay) return true;
+      if (
+        nameLooksTunnel &&
+        (isRfc1918PrivateIp(a.address) || isCgnatRangeIp(a.address))
+      ) {
+        return true;
+      }
     }
   }
   return false;
