@@ -3,6 +3,7 @@ import type { CachedAgentCardSummary } from "@envoymesh/api";
 import { useT } from "../context/I18nContext.js";
 import { useNodeState } from "../context/NodeStateContext.js";
 import { useAgentCards, useNodeService } from "../hooks/useNodeService.js";
+import { AgentCapabilitiesPreview } from "./AgentCapabilitiesPreview.js";
 import { ChainBondHealthBadge } from "./ChainBondHealthBadge.js";
 import { ContactWebContentShortcuts } from "./ContactWebContentShortcuts.js";
 
@@ -63,13 +64,7 @@ export function AgentCardPanel(props: {
       {card.capabilities.length > 0 && (
         <div className="agent-card-section">
           <h5 className="agent-card-section-title">{t("agentCard.capabilities", "Capabilities")}</h5>
-          <ul className="agent-card-capability-list">
-            {card.capabilities.map((cap) => (
-              <li key={cap} className="agent-card-capability">
-                <code>{cap}</code>
-              </li>
-            ))}
-          </ul>
+          <AgentCapabilitiesPreview capabilities={card.capabilities} />
         </div>
       )}
 

@@ -25,6 +25,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
   useAgentCards: () => cards,
   useNodeService: () => ({
     listAgentCards: mockListAgentCards,
+    requestAgentCard: vi.fn(async () => ({ ok: true })),
     on: mockOn,
   }),
 }));
@@ -89,10 +90,33 @@ describe("AgentCardPanel", () => {
 
   it("renders capabilities as code chips", () => {
     render(<AgentCardPanel ownerId="envoy:owner:alice" />);
-    const items = document.querySelectorAll(".agent-card-capability code");
+    const items = document.querySelectorAll(".agent-caps-preview__item code");
     expect(items).toHaveLength(2);
     expect(items[0]?.textContent).toBe("knowledge.query");
     expect(items[1]?.textContent).toBe("chat.message");
+  });
+
+  it("shows three capabilities and a more button that opens the full list", async () => {
+    cards = [
+      {
+        ...baseCard,
+        capabilities: [
+          "knowledge.query",
+          "chat.message",
+          "task.execute",
+          "capability-provider",
+          "discovery.request",
+        ],
+      },
+    ];
+    const { fireEvent } = await import("@testing-library/react");
+    render(<AgentCardPanel ownerId="envoy:owner:alice" />);
+    const items = document.querySelectorAll(".agent-caps-preview__item code");
+    expect(items).toHaveLength(3);
+    expect(screen.getByTestId("agent-caps-more")).toBeDefined();
+    fireEvent.click(screen.getByTestId("agent-caps-more"));
+    const modalList = screen.getByTestId("agent-caps-modal-list");
+    expect(modalList.querySelectorAll("li")).toHaveLength(5);
   });
 
   it("renders public topics when present", () => {

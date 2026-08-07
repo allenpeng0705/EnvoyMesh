@@ -7750,8 +7750,9 @@ button.activity-row:hover,
   letter-spacing: 0.04em;
   padding: 2px 6px;
   border-radius: var(--radius-sm, 4px);
-  background: var(--color-surface-2, #f4f4f5);
-  color: var(--color-text, #18181b);
+  background: color-mix(in srgb, var(--color-text) 10%, var(--color-surface));
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
 }
 
 .agent-card-profile--primary {
@@ -7792,14 +7793,119 @@ button.activity-row:hover,
 .agent-card-capability code,
 .agent-card-protocol code {
   font-size: var(--text-xs, 11px);
-  background: var(--color-surface-2, #f4f4f5);
+  background: color-mix(in srgb, var(--color-text) 10%, var(--color-surface));
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm, 4px);
   padding: 2px 6px;
 }
 
+.agent-caps-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1, 4px) var(--space-2, 8px);
+}
+
+.agent-caps-preview--compact {
+  gap: 4px 6px;
+  max-width: 100%;
+}
+
+.agent-caps-preview__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  min-width: 0;
+}
+
+.agent-caps-preview__item code {
+  font-size: var(--text-xs, 11px);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  /* Theme-safe chip: mix text into surface so light & dark both keep contrast.
+     Do NOT use a hard-coded light gray — dark mode inherits near-white text. */
+  background: color-mix(in srgb, var(--color-text) 10%, var(--color-surface));
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+  padding: 2px 6px;
+  word-break: break-all;
+}
+
+.agent-caps-preview--compact .agent-caps-preview__item code {
+  max-width: 8.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+  vertical-align: bottom;
+}
+
+.agent-caps-preview__more {
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  color: var(--color-primary);
+  font-size: var(--text-xs, 12px);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.agent-caps-preview__more:hover {
+  background: color-mix(in srgb, var(--color-primary) 20%, var(--color-surface));
+}
+
+.agent-caps-modal {
+  width: min(420px, calc(100vw - 2rem));
+  max-height: min(70vh, 520px);
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.agent-caps-modal .modal-header h2 {
+  color: var(--color-text);
+}
+
+.agent-caps-modal__list {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-3, 12px) var(--space-4, 16px) var(--space-4, 16px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+}
+
+.agent-caps-modal__item code {
+  font-size: var(--text-sm, 13px);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background: color-mix(in srgb, var(--color-text) 10%, var(--color-surface));
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 4px);
+  display: inline-block;
+  word-break: break-all;
+}
+
+.chain-worker-card__caps-row {
+  margin-top: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
 .agent-card-topic {
   font-size: var(--text-xs, 11px);
-  background: var(--color-surface-2, #f4f4f5);
+  background: color-mix(in srgb, var(--color-text) 10%, var(--color-surface));
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm, 4px);
   padding: 2px 8px;
 }

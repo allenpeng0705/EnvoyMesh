@@ -974,6 +974,7 @@ export const zhAgentCardMessages = {
   openPhotoWall: "相册",
   openFeeds: "动态",
   capabilities: "能力",
+  capabilitiesMore: "+{count} 项",
   publicTopics: "公开主题",
   trustPolicy: "信任策略",
   protocolVersions: "协议版本",

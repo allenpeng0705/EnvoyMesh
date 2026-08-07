@@ -22,6 +22,7 @@ import { ChainReportView } from "../ChainReportView.js";
 import { ChainStartDialog } from "../ChainStartDialog.js";
 import { ChainDetailPanel } from "../ChainDetailPanel.js";
 import { AgentNetworkSettingsModal } from "../AgentNetworkSettingsModal.js";
+import { AgentCapabilitiesPreview } from "../AgentCapabilitiesPreview.js";
 import { WorkerMembershipSection } from "./settings/agent-network-sections.js";
 
 // ---------------------------------------------------------------------------
@@ -480,12 +481,16 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
                           <span className="chain-worker-card__caps muted">
                             {t("chains.start.notOptedInReason")}
                           </span>
-                        ) : card && card.capabilities.length > 0 ? (
-                          <span className="chain-worker-card__caps">
-                            {t("chains.start.contactCapabilities", { count: card.capabilities.length })}
-                          </span>
                         ) : null}
                       </div>
+                      {card && card.capabilities.length > 0 ? (
+                        <div className="chain-worker-card__caps-row">
+                          <AgentCapabilitiesPreview
+                            capabilities={card.capabilities}
+                            compact
+                          />
+                        </div>
+                      ) : null}
                     </div>
                   </li>
                 ))}
@@ -635,12 +640,15 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
                       {" "}
                       {t(`chains.start.contact${health.cardStatus.charAt(0).toUpperCase() + health.cardStatus.slice(1)}`)}
                     </span>
-                    {card && card.capabilities.length > 0 ? (
-                      <span className="chain-worker-card__caps">
-                        {t("chains.start.contactCapabilities", { count: card.capabilities.length })}
-                      </span>
-                    ) : null}
                   </div>
+                  {card && card.capabilities.length > 0 ? (
+                    <div className="chain-worker-card__caps-row">
+                      <AgentCapabilitiesPreview
+                        capabilities={card.capabilities}
+                        compact
+                      />
+                    </div>
+                  ) : null}
                 </div>
               </li>
             ))}

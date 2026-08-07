@@ -1001,6 +1001,7 @@ export const agentCardMessages = {
   openPhotoWall: "PhotoWall",
   openFeeds: "Feeds",
   capabilities: "Capabilities",
+  capabilitiesMore: "+{count} more",
   publicTopics: "Public topics",
   trustPolicy: "Trust policy",
   protocolVersions: "Protocol versions",
