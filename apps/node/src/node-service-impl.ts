@@ -1431,6 +1431,9 @@ class NodeServiceImpl implements NodeService {
   /** Phase 40F — worker capability index for chain worker discovery. */
   private readonly _capabilityIndex = new AgentNetworkMembershipIndex();
   private _capabilityIndexReady: Promise<void> | null = null;
+  /** Debounce timer for pushing our Agent Card after worker-profile edits. */
+  private _announceLocalAgentCardTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly _ANNOUNCE_LOCAL_AGENT_CARD_DEBOUNCE_MS = 1_000;
   /** Bond autonomy daily counter — resets at midnight UTC to enforce maxAutoBondsPerDay. */
   private _bondAutonomyDailyCounter = { count: 0, date: "" };
   // ---------------------------------------------------------------
@@ -3706,6 +3709,35 @@ class NodeServiceImpl implements NodeService {
     announced = outcomes.filter((ok) => ok).length;
     failed = outcomes.filter((ok) => !ok).length;
     return { announced, failed };
+  }
+
+  /**
+   * Debounced push of our Agent Card to bonded peers. Used when the owner
+   * edits worker profile (skills, etc.) so chip spam does not open N streams.
+   * Join toggle still uses the fuller `refreshAgentNetworkWorkers` path.
+   */
+  private _scheduleAnnounceLocalAgentCard(reason: string): void {
+    if (this._announceLocalAgentCardTimer) {
+      clearTimeout(this._announceLocalAgentCardTimer);
+      this._announceLocalAgentCardTimer = null;
+    }
+    this._announceLocalAgentCardTimer = setTimeout(() => {
+      this._announceLocalAgentCardTimer = null;
+      void this.announceLocalAgentCardToBondedPeers()
+        .then((pushed) => {
+          if (pushed.failed > 0) {
+            console.warn(
+              `[agent-network] announce after ${reason}: announced=${pushed.announced} failed=${pushed.failed}`,
+            );
+          }
+        })
+        .catch((err) => {
+          console.warn(
+            `[agent-network] announce after ${reason} failed:`,
+            err instanceof Error ? err.message : err,
+          );
+        });
+    }, NodeServiceImpl._ANNOUNCE_LOCAL_AGENT_CARD_DEBOUNCE_MS);
   }
 
   /**
@@ -7311,6 +7343,7 @@ class NodeServiceImpl implements NodeService {
     }
     if (hasNodePatch) {
       const joinToggled = Object.prototype.hasOwnProperty.call(nodePatch, "capabilityProviderEnabled");
+      const profilePatched = Object.prototype.hasOwnProperty.call(nodePatch, "agentNetworkProfile");
       await updateNodeConfigViaRuntime(this._nodeConfigContext(), nodePatch as Partial<NodeConfig>);
       // Phase 51B — keep owner profile aiBots in sync when node-config is updated.
       if (
@@ -7333,6 +7366,17 @@ class NodeServiceImpl implements NodeService {
         void this.refreshAgentNetworkWorkers().catch((err) => {
           console.warn("[agent-network] refresh after Join toggle failed:", err);
         });
+      } else if (profilePatched) {
+        // Worker profile (skills, freshness, …) is on the Agent Card — push so
+        // bonded peers update without waiting for a manual Refresh on their side.
+        try {
+          const cfg = await this.getNodeConfig();
+          if (cfg.capabilityProviderEnabled === true) {
+            this._scheduleAnnounceLocalAgentCard("worker-profile");
+          }
+        } catch (err) {
+          console.warn("[agent-network] schedule announce after profile save failed:", err);
+        }
       }
     }
     if (needsBridgeRebind) {

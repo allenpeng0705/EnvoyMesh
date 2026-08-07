@@ -52,7 +52,9 @@ One list on the card: `skills[]` as structured entries:
 
 Legacy plain strings still parse as `{ id, kind: "domain", source: "owner" }`.
 Matching stays on `id`. Settings only edits owner domain chips — kind/source are
-stamped automatically (never a user picker).
+stamped automatically (never a user picker). When Join Agent Network is on,
+saving the worker profile **announces** the updated Agent Card to bonded peers
+(debounced); peers can also **Refresh workers** to pull fresh cards.
 
 | Source | Examples | `kind` | `source` |
 |--------|----------|--------|----------|
