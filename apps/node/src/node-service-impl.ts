@@ -286,6 +286,7 @@ import {
   encryptOwnerKeyForDevice,
   signUnsignedEnvelope,
   verifyFriendMatchingPreferences,
+  verifyInboundEnvelope,
   createAgentCredential,
   generateAgentIdentity,
 } from "@envoymesh/identity";
@@ -464,6 +465,7 @@ import {
 } from "./profile-sync-outbound.js";
 import { probeNearbyPeerProfile } from "./nearby-profile-probe.js";
 import { deliverCallEnvelopeWithRetry, deliverChatEnvelopeWithRetry, sendExpectReplyWithRetry, type ChatDeliverResult } from "./chat-outbound-deliver.js";
+import { handleInboundAgentCardIntent } from "./agent-card-inbound.js";
 import {
   AGENT_CARD_REFRESH_CONCURRENCY,
   AGENT_CARD_REFRESH_RELAY_MS,
@@ -3516,16 +3518,27 @@ class NodeServiceImpl implements NodeService {
     if (!agentIdentity) {
       return { ok: false, error: "agent identity not available" };
     }
+    if (!this._agentCardStore) {
+      return { ok: false, error: "agent card store unavailable" };
+    }
+    if (!this._taskStore) {
+      return { ok: false, error: "task store unavailable" };
+    }
     const profile = this._requireProfile();
-    this._requireMesh();
+    const mesh = this._requireMesh();
     const budgetMs = options?.timeoutMs ?? AGENT_CARD_REFRESH_RELAY_MS;
+    const targetOwner = targetOwnerId.trim();
     const { transportPeerId, recipientEnvelopePeerId, listenAddrs } =
-      await this._resolvePeerTransportForOwner(targetOwnerId.trim());
+      await this._resolvePeerTransportForOwner(targetOwner);
+    const startedAt = Date.now();
     const dialHints = await raceWithTimeout(
       this._dialHintsForChat(transportPeerId, listenAddrs),
       agentCardDialHintsBudgetMs(budgetMs),
       "_dialHintsForChat",
     );
+    // Remaining budget for expect-reply so dial-hints + reply stay within
+    // refreshAgentNetworkWorkers' outer raceWithTimeout(budgetMs).
+    const replyTimeoutMs = Math.max(3_000, budgetMs - (Date.now() - startedAt));
     const envelope = signUnsignedEnvelope(
       createUnsignedEnvelope({
         senderPeerId: agentIdentity.agentPeerId,
@@ -3542,19 +3555,56 @@ class NodeServiceImpl implements NodeService {
       }),
       agentIdentity.agentPrivateKeyPem,
     );
-    const deliver = await this._deliverCallEnvelope(
-      transportPeerId,
-      envelope,
-      dialHints,
-      listenAddrs,
-      // Prefer direct when already Online-direct — circuit-first breaks card
-      // exchange on VPN/overlay even though chat is fine.
-      false,
-    );
-    if (!deliver.delivered) {
-      return { ok: false, error: "agent.card.request not delivered" };
+    // Same-stream expect-reply (message protocol), matching profile.request.
+    // Fire-and-forget never waited for agent.card.response, so Team jobs /
+    // Agent capabilities stayed empty while chat remained Online-direct.
+    try {
+      const reply = await sendExpectReplyWithRetry({
+        mesh,
+        transportPeerId,
+        envelope,
+        dialHints,
+        peerListenAddrs: listenAddrs,
+        timeoutMs: replyTimeoutMs,
+        rebuildDialHints: () => this._dialHintsForChat(transportPeerId, listenAddrs),
+        preferCircuitHints: false,
+      });
+      if (reply.intent !== "agent.card.response") {
+        return { ok: false, error: `expected agent.card.response, got ${reply.intent}` };
+      }
+      if (!verifyInboundEnvelope(reply)) {
+        return { ok: false, error: "agent.card.response signature invalid" };
+      }
+      const cardResult = await handleInboundAgentCardIntent({
+        envelope: reply,
+        profile,
+        remotePeerId: transportPeerId,
+        receivedAt: Date.now(),
+        correlationId: reply.correlationId,
+        taskStore: this._taskStore,
+        trustStore: this._trustStore,
+        agentCardStore: this._agentCardStore,
+        humanProfileStore: this._humanProfileStore,
+        bridgeIdentity: agentIdentity,
+        profileDir: this._profileDir,
+      });
+      if (!cardResult.ok) {
+        return { ok: false, error: cardResult.reason };
+      }
+      if (cardResult.action !== "cached") {
+        return { ok: false, error: "unexpected agent.card.response action" };
+      }
+      if (cardResult.ownerId !== targetOwner) {
+        return { ok: false, error: "agent.card.response owner mismatch" };
+      }
+      await this.recordAgentCardCached(cardResult.ownerId, cardResult.card);
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
-    return { ok: true };
   }
 
   /**

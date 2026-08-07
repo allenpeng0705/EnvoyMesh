@@ -136,10 +136,8 @@ describe("E2E agent.card + task via full daemon handlers (Phase 13C)", () => {
     const requested = await alice.service.requestAgentCard(bob.profile.owner.ownerId);
     expect(requested.ok).toBe(true);
 
-    await waitForPhase13(async () => {
-      const cards = await alice.service.listAgentCards();
-      return cards.some((row) => row.ownerId === bob.profile.owner.ownerId);
-    }, 8000);
+    const cards = await alice.service.listAgentCards();
+    expect(cards.some((row) => row.ownerId === bob.profile.owner.ownerId)).toBe(true);
 
     const taskId = "task-daemon-e2e-1";
     const mandateId = "mandate-daemon-e2e-1";
@@ -225,7 +223,8 @@ describe("E2E agent.card + task via full daemon handlers (Phase 13C)", () => {
     await waitForPhase13(async () => allIntents.includes("task.result"), 8000);
 
     expect(allIntents.filter((intent) => intent === "chat.message")).toHaveLength(0);
-    expect(allIntents).toContain("agent.card.response");
+    // agent.card.response is same-stream (sendExpectReply) — not a separate inbound
+    // onMessage event on the requester. Card cache above is the proof of exchange.
     expect(allIntents).toContain("task.propose");
     expect(allIntents).toContain("task.result");
 

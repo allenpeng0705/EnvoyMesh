@@ -333,9 +333,9 @@ describe("AgentCardAutoFetcher — fresh-cache skip + public skip", () => {
   it("skips when no trust record exists (defaults to public)", async () => {
     const store = await tempStore();
     try {
-      const send = vi.fn();
+      const sendExpectReply = vi.fn();
       const fetcher = createAgentCardAutoFetcher({
-        mesh: createOutboundMeshMock({ send }),
+        mesh: createOutboundMeshMock({ sendExpectReply }),
         bridgeIdentity: makeBridgeIdentity(),
         agentCardStore: store.agentCardStore,
         trustStore: store.trustStore,
@@ -348,7 +348,7 @@ describe("AgentCardAutoFetcher — fresh-cache skip + public skip", () => {
       });
       const r = await fetcher.onBondEstablished({ peerOwnerId: "stranger", remotePeerId: "rp" });
       expect(r.outcome).toBe("skipped-public");
-      expect(send).not.toHaveBeenCalled();
+      expect(sendExpectReply).not.toHaveBeenCalled();
     } finally {
       await store.cleanup();
     }
@@ -358,9 +358,9 @@ describe("AgentCardAutoFetcher — fresh-cache skip + public skip", () => {
     const store = await tempStore();
     try {
       await store.trustStore.setTrustRecord({ peerOwnerId: "bad", level: "blocked" });
-      const send = vi.fn();
+      const sendExpectReply = vi.fn();
       const fetcher = createAgentCardAutoFetcher({
-        mesh: createOutboundMeshMock({ send }),
+        mesh: createOutboundMeshMock({ sendExpectReply }),
         bridgeIdentity: makeBridgeIdentity(),
         agentCardStore: store.agentCardStore,
         trustStore: store.trustStore,
@@ -372,7 +372,7 @@ describe("AgentCardAutoFetcher — fresh-cache skip + public skip", () => {
       });
       const r = await fetcher.onBondEstablished({ peerOwnerId: "bad", remotePeerId: "rp" });
       expect(r.outcome).toBe("skipped-public");
-      expect(send).not.toHaveBeenCalled();
+      expect(sendExpectReply).not.toHaveBeenCalled();
     } finally {
       await store.cleanup();
     }
@@ -393,9 +393,9 @@ describe("AgentCardAutoFetcher — fresh-cache skip + public skip", () => {
         }),
         cachedAt: new Date().toISOString(),
       });
-      const send = vi.fn();
+      const sendExpectReply = vi.fn();
       const fetcher = createAgentCardAutoFetcher({
-        mesh: createOutboundMeshMock({ send }),
+        mesh: createOutboundMeshMock({ sendExpectReply }),
         bridgeIdentity: makeBridgeIdentity(),
         agentCardStore: store.agentCardStore,
         trustStore: store.trustStore,
@@ -407,7 +407,7 @@ describe("AgentCardAutoFetcher — fresh-cache skip + public skip", () => {
       });
       const r = await fetcher.onBondEstablished({ peerOwnerId: "friend", remotePeerId: "rp" });
       expect(r.outcome).toBe("skipped-fresh");
-      expect(send).not.toHaveBeenCalled();
+      expect(sendExpectReply).not.toHaveBeenCalled();
     } finally {
       await store.cleanup();
     }
@@ -416,10 +416,42 @@ describe("AgentCardAutoFetcher — fresh-cache skip + public skip", () => {
   it("issues a fetch when no cache entry exists and trust is direct", async () => {
     const store = await tempStore();
     try {
-      await store.trustStore.setTrustRecord({ peerOwnerId: "friend", level: "direct" });
-      const send = vi.fn().mockResolvedValue(undefined);
+      const peerOwner = generateOwnerIdentity();
+      const peerAgent = generateAgentIdentity(peerOwner.ownerId);
+      await store.trustStore.setTrustRecord({ peerOwnerId: peerOwner.ownerId, level: "direct" });
+      const { createAgentCardResponsePayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+      const { signUnsignedEnvelope } = await import("@envoymesh/identity");
+      const reply = signUnsignedEnvelope(
+        createUnsignedEnvelope({
+          senderPeerId: peerAgent.agentPeerId,
+          senderPublicKey: peerAgent.publicKeyPem,
+          senderRole: "agent",
+          recipientRole: "agent",
+          intent: "agent.card.response",
+          payload: createAgentCardResponsePayload(
+            createAgentCard({
+              ownerId: peerOwner.ownerId,
+              displayName: "Friend",
+              nodeProfile: "full",
+              capabilities: ["chat.message"],
+              publicTopics: [],
+            }),
+          ),
+          agentCredential: createAgentCredential({
+            owner: peerOwner,
+            agent: peerAgent,
+            scope: ["agent.card.response"],
+          }),
+        }),
+        peerAgent.privateKeyPem,
+      );
+      const sendExpectReply = vi.fn().mockResolvedValue(reply);
       const fetcher = createAgentCardAutoFetcher({
-        mesh: createOutboundMeshMock({ send }),
+        mesh: createOutboundMeshMock({
+          sendExpectReply,
+          getPeerConnectionInfo: () => ({ connected: true, direct: true }),
+          getConnectedPeerIds: () => ["tp"],
+        }),
         bridgeIdentity: makeBridgeIdentity(),
         agentCardStore: store.agentCardStore,
         trustStore: store.trustStore,
@@ -430,25 +462,30 @@ describe("AgentCardAutoFetcher — fresh-cache skip + public skip", () => {
         }),
         fetchTimeoutMs: 200,
       });
-      const r = await fetcher.onBondEstablished({ peerOwnerId: "friend", remotePeerId: "rp" });
+      const r = await fetcher.onBondEstablished({ peerOwnerId: peerOwner.ownerId, remotePeerId: "tp" });
       expect(r.outcome).toBe("sent");
-      expect(send).toHaveBeenCalledTimes(1);
-      const envelope = send.mock.calls[0]?.[1];
+      expect(sendExpectReply).toHaveBeenCalledTimes(1);
+      const envelope = sendExpectReply.mock.calls[0]?.[1];
       expect(envelope.intent).toBe("agent.card.request");
       expect(envelope.senderRole).toBe("agent");
       expect(envelope.recipientRole).toBe("agent");
+      expect(await store.agentCardStore.get(peerOwner.ownerId)).toBeDefined();
     } finally {
       await store.cleanup();
     }
   });
 
-  it("returns 'failed' (and audits) when the mesh send errors", async () => {
+  it("returns 'failed' (and audits) when the expect-reply errors", async () => {
     const store = await tempStore();
     try {
       await store.trustStore.setTrustRecord({ peerOwnerId: "friend", level: "direct" });
-      const send = vi.fn().mockRejectedValue(new Error("agent-card-auto-fetch-timeout"));
+      const sendExpectReply = vi.fn().mockRejectedValue(new Error("agent-card-auto-fetch-timeout"));
       const fetcher = createAgentCardAutoFetcher({
-        mesh: createOutboundMeshMock({ send }),
+        mesh: createOutboundMeshMock({
+          sendExpectReply,
+          getPeerConnectionInfo: () => ({ connected: true, direct: true }),
+          getConnectedPeerIds: () => ["tp"],
+        }),
         bridgeIdentity: makeBridgeIdentity(),
         agentCardStore: store.agentCardStore,
         trustStore: store.trustStore,
@@ -459,7 +496,7 @@ describe("AgentCardAutoFetcher — fresh-cache skip + public skip", () => {
         }),
         fetchTimeoutMs: 50,
       });
-      const r = await fetcher.onBondEstablished({ peerOwnerId: "friend", remotePeerId: "rp" });
+      const r = await fetcher.onBondEstablished({ peerOwnerId: "friend", remotePeerId: "tp" });
       expect(r.outcome).toBe("failed");
       const events = await store.taskStore.readAuditEvents();
       const failure = events.find((e) => e.type === "agent.card.auto_fetch_failed");
@@ -473,9 +510,9 @@ describe("AgentCardAutoFetcher — fresh-cache skip + public skip", () => {
     const store = await tempStore();
     try {
       await store.trustStore.setTrustRecord({ peerOwnerId: "friend", level: "direct" });
-      const send = vi.fn();
+      const sendExpectReply = vi.fn();
       const fetcher = createAgentCardAutoFetcher({
-        mesh: createOutboundMeshMock({ send }),
+        mesh: createOutboundMeshMock({ sendExpectReply }),
         bridgeIdentity: makeBridgeIdentity(),
         agentCardStore: store.agentCardStore,
         trustStore: store.trustStore,
@@ -492,7 +529,7 @@ describe("AgentCardAutoFetcher — fresh-cache skip + public skip", () => {
         remotePeerId: "envoy_notlibp2p",
       });
       expect(r.outcome).toBe("skipped-no-transport");
-      expect(send).not.toHaveBeenCalled();
+      expect(sendExpectReply).not.toHaveBeenCalled();
     } finally {
       await store.cleanup();
     }

@@ -223,7 +223,7 @@ export function wireFullDaemonAgentCardHandlers(
   const agentCardStore = createAgentCardStore(node.profileDir);
   const guard = opts?.inboundGuard ?? createInboundMessageGuard();
 
-  node.mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId }) => {
+  node.mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelope }) => {
     const guardDecision = guard.inspect(inboundEnvelope);
     if (guardDecision.action === "reject") return;
     const envelope = guardDecision.envelope;
@@ -242,6 +242,7 @@ export function wireFullDaemonAgentCardHandlers(
       bridgeIdentity,
       mesh: node.mesh,
       nodeService: node.service,
+      replyWithEnvelope,
     });
     void result;
   });

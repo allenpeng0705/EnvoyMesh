@@ -26,6 +26,8 @@ export interface AgentCardParams {
   remotePeerId: string;
   receivedAt: number;
   correlationId: string | undefined;
+  /** Same-stream reply from mesh.onMessage — preferred for agent.card.response. */
+  replyWithEnvelope?: (envelope: unknown) => Promise<void>;
 }
 
 export async function handleAgentCardViaRuntime(
@@ -48,6 +50,7 @@ export async function handleAgentCardViaRuntime(
     mesh: ctx.getMesh(),
     nodeService: ctx.getNodeService(),
     profileDir: typeof ctx.getProfileDir === "function" ? ctx.getProfileDir() : undefined,
+    replyWithEnvelope: params.replyWithEnvelope,
   });
   if (agentCard.handled) return;
   // Otherwise fall through (matches the original control flow).

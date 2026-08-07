@@ -228,4 +228,167 @@ describe("handleDaemonAgentCardInbound", () => {
       await rm(profileDir, { recursive: true, force: true });
     }
   });
+
+  it("prefers same-stream replyWithEnvelope over outbound send for agent.card.request", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-daemon-card-stream-"));
+    try {
+      const owner = generateOwnerIdentity();
+      const requesterOwner = generateOwnerIdentity();
+      const requesterAgent = generateAgentIdentity(requesterOwner.ownerId);
+      const localAgent = generateAgentIdentity(owner.ownerId);
+      const bridgeIdentity: BridgeIdentity = {
+        agentPeerId: localAgent.agentPeerId,
+        agentPublicKeyPem: localAgent.publicKeyPem,
+        agentPrivateKeyPem: localAgent.privateKeyPem,
+        ownerId: owner.ownerId,
+        agentCredential: createAgentCredential({
+          owner,
+          agent: localAgent,
+          scope: ["agent.card.request", "agent.card.response"],
+        }),
+      };
+      const trustStore = createLocalTrustStore(profileDir);
+      await trustStore.setTrustRecord({
+        peerOwnerId: requesterOwner.ownerId,
+        level: "direct",
+        displayName: "Requester",
+      });
+      const send = vi.fn().mockResolvedValue(12);
+      const replyWithEnvelope = vi.fn().mockResolvedValue(undefined);
+      const unsigned = createUnsignedEnvelope({
+        senderPeerId: requesterAgent.agentPeerId,
+        senderPublicKey: requesterAgent.publicKeyPem,
+        senderRole: "agent",
+        recipientPeerId: localAgent.agentPeerId,
+        recipientRole: "agent",
+        intent: "agent.card.request",
+        payload: createAgentCardRequestPayload({
+          requesterOwnerId: requesterOwner.ownerId,
+          requesterDeviceId: "envoy:device:req",
+        }),
+        agentCredential: createAgentCredential({
+          owner: requesterOwner,
+          agent: requesterAgent,
+          scope: ["agent.card.request"],
+        }),
+      });
+      const envelope = signUnsignedEnvelope(unsigned, requesterAgent.privateKeyPem);
+
+      const result = await handleDaemonAgentCardInbound({
+        envelope,
+        profile: {
+          owner,
+          device: { deviceId: "envoy:device:local", publicKeyPem: "pk", privateKeyPem: "sk" },
+          deviceCertificate: {
+            version: "0.1",
+            deviceId: "envoy:device:local",
+            ownerPublicKey: owner.publicKeyPem,
+            deviceProfile: "primary",
+            capabilities: ["task.execute"],
+            createdAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 86400000).toISOString(),
+            signature: "sig",
+          },
+        },
+        remotePeerId: "12D3KooWRequesterTransport",
+        receivedAt: Date.now(),
+        correlationId: "corr-stream",
+        taskStore: createLocalTaskStore(profileDir),
+        trustStore,
+        agentCardStore: createAgentCardStore(profileDir),
+        humanProfileStore: createHumanProfileStore(profileDir),
+        bridgeIdentity,
+        mesh: createMockMesh(send),
+        replyWithEnvelope,
+      });
+
+      expect(result).toEqual({ handled: true, outcome: "responded" });
+      expect(replyWithEnvelope).toHaveBeenCalledTimes(1);
+      expect(replyWithEnvelope.mock.calls[0]?.[0]?.intent).toBe("agent.card.response");
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not outbound-fallback when replyWithEnvelope fails", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-daemon-card-stream-fail-"));
+    try {
+      const owner = generateOwnerIdentity();
+      const requesterOwner = generateOwnerIdentity();
+      const requesterAgent = generateAgentIdentity(requesterOwner.ownerId);
+      const localAgent = generateAgentIdentity(owner.ownerId);
+      const bridgeIdentity: BridgeIdentity = {
+        agentPeerId: localAgent.agentPeerId,
+        agentPublicKeyPem: localAgent.publicKeyPem,
+        agentPrivateKeyPem: localAgent.privateKeyPem,
+        ownerId: owner.ownerId,
+        agentCredential: createAgentCredential({
+          owner,
+          agent: localAgent,
+          scope: ["agent.card.request", "agent.card.response"],
+        }),
+      };
+      const trustStore = createLocalTrustStore(profileDir);
+      await trustStore.setTrustRecord({
+        peerOwnerId: requesterOwner.ownerId,
+        level: "direct",
+        displayName: "Requester",
+      });
+      const send = vi.fn().mockResolvedValue(12);
+      const replyWithEnvelope = vi.fn().mockRejectedValue(new Error("stream closed"));
+      const unsigned = createUnsignedEnvelope({
+        senderPeerId: requesterAgent.agentPeerId,
+        senderPublicKey: requesterAgent.publicKeyPem,
+        senderRole: "agent",
+        recipientPeerId: localAgent.agentPeerId,
+        recipientRole: "agent",
+        intent: "agent.card.request",
+        payload: createAgentCardRequestPayload({
+          requesterOwnerId: requesterOwner.ownerId,
+          requesterDeviceId: "envoy:device:req",
+        }),
+        agentCredential: createAgentCredential({
+          owner: requesterOwner,
+          agent: requesterAgent,
+          scope: ["agent.card.request"],
+        }),
+      });
+      const envelope = signUnsignedEnvelope(unsigned, requesterAgent.privateKeyPem);
+
+      const result = await handleDaemonAgentCardInbound({
+        envelope,
+        profile: {
+          owner,
+          device: { deviceId: "envoy:device:local", publicKeyPem: "pk", privateKeyPem: "sk" },
+          deviceCertificate: {
+            version: "0.1",
+            deviceId: "envoy:device:local",
+            ownerPublicKey: owner.publicKeyPem,
+            deviceProfile: "primary",
+            capabilities: ["task.execute"],
+            createdAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 86400000).toISOString(),
+            signature: "sig",
+          },
+        },
+        remotePeerId: "12D3KooWRequesterTransport",
+        receivedAt: Date.now(),
+        correlationId: "corr-fail",
+        taskStore: createLocalTaskStore(profileDir),
+        trustStore,
+        agentCardStore: createAgentCardStore(profileDir),
+        humanProfileStore: createHumanProfileStore(profileDir),
+        bridgeIdentity,
+        mesh: createMockMesh(send),
+        replyWithEnvelope,
+      });
+
+      expect(result).toEqual({ handled: true, outcome: "denied" });
+      expect(replyWithEnvelope).toHaveBeenCalledTimes(1);
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
 });

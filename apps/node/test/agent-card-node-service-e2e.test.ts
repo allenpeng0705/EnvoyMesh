@@ -7,7 +7,6 @@ import {
   createPhase13TestNode,
   ensureBridgeIdentity,
   registerBondedPeer,
-  waitForPhase13,
   wireProductionAgentCardHandlers,
 } from "./phase13-e2e-harness.js";
 
@@ -39,11 +38,6 @@ describe("E2E requestAgentCard via NodeServiceImpl (Phase 13C)", () => {
 
     const requested = await alice.service.requestAgentCard(bob.profile.owner.ownerId);
     expect(requested.ok).toBe(true);
-
-    await waitForPhase13(async () => {
-      const cards = await alice.service.listAgentCards();
-      return cards.some((row) => row.ownerId === bob.profile.owner.ownerId);
-    }, 8000);
 
     const cards = await alice.service.listAgentCards();
     const bobCard = cards.find((row) => row.ownerId === bob.profile.owner.ownerId);

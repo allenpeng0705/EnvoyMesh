@@ -18,6 +18,7 @@ export function createOutboundMeshMock(
   return {
     send: vi.fn().mockResolvedValue(0),
     sendChat: vi.fn().mockResolvedValue(0),
+    sendExpectReply: vi.fn().mockRejectedValue(new Error("sendExpectReply not configured")),
     sendChatExpectEnvelopeReply: vi.fn(),
     closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
     ensurePeerReachable: vi.fn().mockResolvedValue({ connected: true, direct: true }),

@@ -1280,7 +1280,7 @@ async function handleInboundMeshMessage({
         getNodeService: () =>
           nodeService instanceof NodeServiceImpl ? (nodeService as any) : null,
       },
-      { envelope, remotePeerId, receivedAt, correlationId },
+      { envelope, remotePeerId, receivedAt, correlationId, replyWithEnvelope },
     );
     return;
   }

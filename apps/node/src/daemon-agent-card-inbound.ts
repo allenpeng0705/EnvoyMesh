@@ -36,6 +36,12 @@ export async function handleDaemonAgentCardInbound(input: {
   profileDir?: string;
   /** Override for tests; otherwise read from nodeService.getNodeConfig(). */
   capabilityProviderEnabled?: boolean;
+  /**
+   * Same-stream reply from the inbound message-protocol handler. Prefer this
+   * over opening a second outbound stream (profile.request pattern) — Win↔Mac
+   * / VPN Online-direct often has chat working while a new message stream fails.
+   */
+  replyWithEnvelope?: (envelope: EnvoyEnvelope) => Promise<void>;
 }): Promise<DaemonAgentCardInboundResult> {
   const { envelope } = input;
   if (envelope.intent !== "agent.card.request" && envelope.intent !== "agent.card.response") {
@@ -98,6 +104,41 @@ export async function handleDaemonAgentCardInbound(input: {
     // open connection instead of verifying/redialing (which fails when we have
     // no peer-directory entry for the requester, e.g. one-sided bond).
     markOutboundPeerVerified(input.remotePeerId);
+
+    // Prefer same-stream reply when the inbound mesh handler provided it
+    // (sendExpectReply / requestAgentCard / auto-fetcher). Do NOT fall back to
+    // a new outbound stream in that case — the requester is still waiting on
+    // the request stream and would hang until timeout.
+    if (input.replyWithEnvelope) {
+      try {
+        await input.replyWithEnvelope(signedResponse);
+        console.log(
+          `[agent.card] replied on inbound stream to ${input.remotePeerId.slice(0, 16)}…`,
+        );
+        await input.taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "message.sent",
+            intent: signedResponse.intent,
+            messageId: signedResponse.messageId,
+            correlationId: signedResponse.correlationId,
+            remotePeerId: input.remotePeerId,
+            direction: "outbound",
+            protocol: ENVOY_MESSAGE_PROTOCOL,
+            outcome: "record",
+            summary: `Sent agent.card.response (same-stream) for ${envelope.messageId}.`,
+            createdAt: signedResponse.createdAt,
+          }),
+        );
+        return { handled: true, outcome: "responded" };
+      } catch (err) {
+        console.warn(
+          `[agent.card] inbound stream reply failed (no outbound fallback):`,
+          err instanceof Error ? err.message : err,
+        );
+        return { handled: true, outcome: "denied" };
+      }
+    }
+
     await sendEnvelopeWithRetry({
       mesh: input.mesh,
       transportPeerId: input.remotePeerId,
