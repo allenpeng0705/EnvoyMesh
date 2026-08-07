@@ -18,9 +18,10 @@ export function ChainBondHealthBadge({ bond, card, compact = false }: ChainBondH
   const health = computeChainBondHealth(bond, card);
 
   const title = t(`chains.bondHealth.${health.status}`, health.label);
+  const strengthCount = card?.agentNetworkProfile?.skills?.length ?? 0;
   const detail = health.lastSyncedAt
     ? t("chains.bondHealth.detail", {
-        count: health.capabilityCount,
+        count: strengthCount,
         synced: new Date(health.lastSyncedAt).toLocaleDateString(),
       })
     : t("chains.bondHealth.noSync");

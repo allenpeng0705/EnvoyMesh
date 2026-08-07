@@ -182,7 +182,7 @@ export function WorkersStatusSection() {
       const trusted = bonds.filter((b) => b.level === "direct" || b.level === "referred");
       setBondedCount(trusted.length);
       const workers = cards.filter((c) =>
-        (c.capabilities ?? []).includes("capability-provider"),
+        (c.membership ?? []).includes("agent-network-worker"),
       );
       setWorkerCount(workers.length);
       const hasLanBondNote = trusted.some((b) => (b.note ?? "").includes("lan-auto"));

@@ -4,7 +4,7 @@
 
 The Team Jobs UI refinement (remove duplicate button, bonded contacts list, dialog redesign) is complete. The user now wants to make the worker candidates **selectable** — so users can explicitly pick which bonded contacts participate in a team job. If none are selected, the system uses all valid workers (current behavior).
 
-Currently the worker candidates in `ChainStartDialog` are display-only. The backend auto-discovers workers via `findCapabilityProvidersRanked` with no user filtering. The `preferredWorkerPeerId` concept exists per-subtask in the orchestration code but is not exposed through the `chainStartFromGoal` API.
+Currently the worker candidates in `ChainStartDialog` are display-only. The backend auto-discovers workers via `findAgentNetworkWorkersRanked` with no user filtering. The `preferredWorkerPeerId` concept exists per-subtask in the orchestration code but is not exposed through the `chainStartFromGoal` API.
 
 ## Approach
 
@@ -17,14 +17,14 @@ Add `preferredWorkerPeerIds?: string[]` to the chain API params, filter worker d
 - Doc comment: agent peer IDs, empty = use all discovered workers
 
 ### 2. Worker discovery filter — `apps/node/src/node-service-chain-orchestration.ts`
-- `findCapabilityProvidersRanked` (L863): add optional `preferredWorkerPeerIds?: readonly string[]` arg. Filter the scored results **after** scoring (preserves ranking among allowed set), right before `return rankWorkersByScore(...)`:
+- `findAgentNetworkWorkersRanked` (L863): add optional `preferredWorkerPeerIds?: readonly string[]` arg. Filter the scored results **after** scoring (preserves ranking among allowed set), right before `return rankWorkersByScore(...)`:
   ```ts
   const filtered = preferredWorkerPeerIds?.length
     ? scored.filter((w) => preferredWorkerPeerIds.includes(w.peerId))
     : scored;
   return rankWorkersByScore(filtered);
   ```
-- `_runChainGoal` input (L1175): add `preferredWorkerPeerIds?: string[]`; pass to `findCapabilityProvidersRanked` at L1339
+- `_runChainGoal` input (L1175): add `preferredWorkerPeerIds?: string[]`; pass to `findAgentNetworkWorkersRanked` at L1339
 - `buildChainContext` (L222): forward the new arg through the wrapper
 - `_handoffChainGoalToAssigner` (L1596): add to input; forward to wire payload (after schema change below). Receiving handler (L557) forwards into `_runChainGoal`
 
@@ -32,11 +32,11 @@ Add `preferredWorkerPeerIds?: string[]` to the chain API params, filter worker d
 - Add `preferredWorkerPeerIds: z.array(z.string().min(1)).max(64).optional()` to `ChainHandoffRequestPayloadSchema` (L90) and the `ChainHandoffRequest` interface (L133). Forward-compatible (older receivers strip it)
 
 ### 4. Preview/start runtime — `apps/node/src/node-service-chains.ts`
-- `chainPreviewGoalViaRuntime` (L732): pass `params.preferredWorkerPeerIds` to `ctx.findCapabilityProvidersRanked`
+- `chainPreviewGoalViaRuntime` (L732): pass `params.preferredWorkerPeerIds` to `ctx.findAgentNetworkWorkersRanked`
 - `chainStartFromGoalViaRuntime`: pass `params.preferredWorkerPeerIds` to both the preview call (L809) and `ctx.runChainGoal` calls (L780, L832)
 
 ### 5. Wrapper plumbing — `apps/node/src/node-service-impl-service-deps.ts` (L742) + `apps/node/src/node-service-contexts.ts` (L1314)
-- Forward the new optional arg through `findCapabilityProvidersRanked` wrappers
+- Forward the new optional arg through `findAgentNetworkWorkersRanked` wrappers
 
 ### 6. Dialog UI — `apps/social/src/components/ChainStartDialog.tsx`
 - Add `selectedPeerIds: Set<string>` state (track `card.sourceAgentPeerId`)

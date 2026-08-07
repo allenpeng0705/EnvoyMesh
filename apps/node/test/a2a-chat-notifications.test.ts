@@ -57,7 +57,7 @@ describe("a2aChatNotifications (Phase 13E)", () => {
         ownerId: bobOwnerId,
         displayName: "Bob Agent",
         nodeProfile: "primary",
-        capabilities: ["task.execute"],
+        membership: ["task.execute"],
       }),
     );
 

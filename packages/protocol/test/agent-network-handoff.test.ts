@@ -501,7 +501,7 @@ describe("getSubChainRootSubtasks", () => {
       chainId: "chain_x",
       chainMandateId: "chainmandate_x",
       depth: 1,
-      requiredCapability: "task.execute",
+      requiredSkill: "task.execute",
       objective: "obj",
       requestedResult: "res",
       constraints: [],

@@ -17,8 +17,8 @@ const SAMPLE_PROMPT = [
       {
         peerId: "envoy_agent_coder",
         displayName: "Coder",
-        capabilities: ["task.execute", "coding", "capability-provider"],
-        strengths: ["coding"],
+        membership: ["task.execute", "agent-network-worker"],
+        skills: ["coding"],
         modelFreshness: 9,
         throughputTokensPerSec: 80,
         isSelf: false,
@@ -26,8 +26,8 @@ const SAMPLE_PROMPT = [
       {
         peerId: "envoy_agent_researcher",
         displayName: "Researcher",
-        capabilities: ["task.execute", "research.web", "capability-provider"],
-        strengths: ["research.web"],
+        membership: ["task.execute", "agent-network-worker"],
+        skills: ["research.web"],
         modelFreshness: 7,
         throughputTokensPerSec: 40,
         isSelf: false,
@@ -45,12 +45,12 @@ describe("synthesizePlanAssignFromRosterPrompt", () => {
     const raw = synthesizePlanAssignFromRosterPrompt(SAMPLE_PROMPT);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!) as {
-      steps: Array<{ assignedPeerId: string; requiredCapability: string; dependsOn: number[] }>;
+      steps: Array<{ assignedPeerId: string; requiredSkill: string; dependsOn: number[] }>;
     };
     expect(parsed.steps).toHaveLength(3);
-    expect(parsed.steps[0]!.requiredCapability).toBe("research.web");
+    expect(parsed.steps[0]!.requiredSkill).toBe("research.web");
     expect(parsed.steps[0]!.assignedPeerId).toBe("envoy_agent_researcher");
-    expect(parsed.steps[1]!.requiredCapability).toBe("coding");
+    expect(parsed.steps[1]!.requiredSkill).toBe("coding");
     expect(parsed.steps[1]!.assignedPeerId).toBe("envoy_agent_coder");
     expect(parsed.steps[2]!.dependsOn).toEqual([0, 1]);
   });

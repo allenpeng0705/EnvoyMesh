@@ -4,7 +4,7 @@ import {
   transitionCapabilityProviderJob,
 } from "../src/capability-provider.js";
 
-describe("capability-provider", () => {
+describe("agent-network-worker", () => {
   it("transitions queued -> routing -> routed on ROUTE_OK", () => {
     let job = createCapabilityProviderJob({ postureRef: "m1", goal: "delegate task" });
     const start = transitionCapabilityProviderJob(job, "START");

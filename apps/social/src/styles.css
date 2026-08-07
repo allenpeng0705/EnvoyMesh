@@ -7714,92 +7714,6 @@ button.activity-row:hover,
   font-size: var(--text-xs);
 }
 
-/* Agent card (Phase 34) — peer details panel. Reuses the answer-block
-   surface treatment to feel like part of the same family as ArtifactRenderer. */
-.agent-card-panel {
-  border: 1px solid var(--color-border, #d4d4d8);
-  border-radius: var(--radius-md, 8px);
-  background: var(--color-surface, #ffffff);
-  padding: var(--space-3, 12px);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2, 8px);
-}
-
-.agent-card-panel--empty {
-  border-style: dashed;
-  color: var(--color-text-muted, #6b7280);
-  background: transparent;
-}
-
-.agent-card-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2, 8px);
-}
-
-.agent-card-name {
-  font-size: var(--text-base, 14px);
-  font-weight: 600;
-  margin: 0;
-}
-
-.agent-card-profile {
-  font-size: var(--text-xs, 11px);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 2px 6px;
-  border-radius: var(--radius-sm, 4px);
-  background: color-mix(in srgb, var(--color-text) 10%, var(--color-surface));
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
-}
-
-.agent-card-profile--primary {
-  background: var(--color-info-soft, #dbeafe);
-  color: var(--color-info, #1d4ed8);
-}
-
-.agent-card-profile--full {
-  background: var(--color-success-soft, #dcfce7);
-  color: var(--color-success, #166534);
-}
-
-.agent-card-profile--satellite,
-.agent-card-profile--relay {
-  background: var(--color-warning-soft, #fef3c7);
-  color: var(--color-warning, #92400e);
-}
-
-.agent-card-section-title {
-  font-size: var(--text-xs, 11px);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--color-text-muted, #6b7280);
-  margin: 0 0 var(--space-1, 4px);
-}
-
-.agent-card-capability-list,
-.agent-card-topic-list,
-.agent-card-protocol-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1, 4px);
-}
-
-.agent-card-capability code,
-.agent-card-protocol code {
-  font-size: var(--text-xs, 11px);
-  background: color-mix(in srgb, var(--color-text) 10%, var(--color-surface));
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm, 4px);
-  padding: 2px 6px;
-}
-
 .agent-caps-preview {
   display: flex;
   flex-wrap: wrap;
@@ -7899,31 +7813,6 @@ button.activity-row:hover,
   margin-top: 4px;
   width: 100%;
   min-width: 0;
-}
-
-.agent-card-topic {
-  font-size: var(--text-xs, 11px);
-  background: color-mix(in srgb, var(--color-text) 10%, var(--color-surface));
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm, 4px);
-  padding: 2px 8px;
-}
-
-.agent-card-trust-policy {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1, 4px);
-  font-size: var(--text-xs, 11px);
-  color: var(--color-text, #18181b);
-}
-
-.agent-card-cached-at {
-  margin: 0;
-  font-size: var(--text-xs, 11px);
 }
 
 /* Phase 45 Pass 2 — published content shortcuts */
@@ -8094,53 +7983,6 @@ button.activity-row:hover,
   font: inherit;
   text-decoration: underline;
   white-space: nowrap;
-}
-
-/* Mount point for PeerProfilePanel in ContactChatPanel. */
-.peer-profile-panel-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-}
-.peer-profile-panel {
-  border-top: 1px solid var(--color-border, #e5e7eb);
-  padding: var(--space-2, 8px) var(--space-3, 12px);
-  background: var(--color-surface, #ffffff);
-}
-
-.peer-profile-panel > summary {
-  cursor: pointer;
-  font-size: var(--text-sm, 13px);
-  color: var(--color-text, #18181b);
-  padding: var(--space-1, 4px) 0;
-}
-
-.peer-profile-panel__body {
-  margin-top: var(--space-2, 8px);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3, 12px);
-}
-
-.peer-profile-panel__name {
-  margin: 0;
-  font-size: var(--text-base, 15px);
-}
-
-.peer-profile-panel__username,
-.peer-profile-panel__bio,
-.peer-profile-panel__meta {
-  margin: var(--space-1, 4px) 0 0;
-}
-
-.peer-profile-panel__section-title {
-  margin: 0 0 var(--space-2, 8px);
-  font-size: var(--text-sm, 13px);
-  font-weight: 600;
-}
-
-.peer-profile-panel__agent .agent-card-panel {
-  margin-top: 0;
 }
 
 .answer-block-status {
@@ -11292,19 +11134,19 @@ button:disabled {
 /* Strength toggle chips — grouped by domain (Analytical / STEM / Language
  * / Creative) so the menu reads as a taxonomy. Each group has a small
  * uppercase label above a wrapping pill row. */
-.agent-network-strengths {
+.agent-network-skills {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
 }
 
-.an-strength-group {
+.an-skill-group {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
 }
 
-.an-strength-group__label {
+.an-skill-group__label {
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
   color: var(--color-text-muted);
@@ -11312,13 +11154,13 @@ button:disabled {
   letter-spacing: 0.03em;
 }
 
-.an-strength-group__chips {
+.an-skill-group__chips {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
 }
 
-.an-strength-chip {
+.an-skill-chip {
   padding: 0.3125rem 0.75rem;
   border: 1px solid var(--color-border, var(--color-slate-200));
   border-radius: var(--radius-full);
@@ -11332,12 +11174,12 @@ button:disabled {
     color var(--transition-fast);
 }
 
-.an-strength-chip:hover:not(:disabled) {
+.an-skill-chip:hover:not(:disabled) {
   border-color: var(--color-primary);
   background: var(--color-primary-subtle);
 }
 
-.an-strength-chip--on {
+.an-skill-chip--on {
   border-color: var(--color-primary);
   background: var(--color-primary-subtle);
   color: var(--color-primary);
@@ -11346,7 +11188,7 @@ button:disabled {
 
 /* Custom-strength input — breathing room above so it never collides with
  * the chip row. */
-.agent-network-strength-add {
+.agent-network-skill-add {
   margin-top: var(--space-2);
 }
 

@@ -4,14 +4,14 @@
  * Three-dimension readiness model:
  *   - `cardStatus`:  card freshness (ready / stale / missing / blocked)
  *   - `onlineStatus`: live mesh reachability (online / offline / unknown)
- *   - `optIn`:        peer has opted into the Agent Network (capability-provider)
+ *   - `optIn`:        peer has opted into the Agent Network (agent-network-worker)
  *
  * Team jobs can only run on contacts that are card-ready, opted-in, AND online.
  * The composite `status` mirrors `cardStatus` for backwards compatibility; the
  * UI gates selectability on all three dimensions.
  */
 
-import { isAgentNetworkWorker } from "@envoymesh/api";
+import { isAgentNetworkMember } from "@envoymesh/api";
 import type { BondRecord, CachedAgentCardSummary, ChainWorkerReachability } from "@envoymesh/api";
 
 export type ChainBondHealthStatus = "ready" | "stale" | "missing" | "blocked";
@@ -24,7 +24,7 @@ export interface ChainBondHealth {
   cardStatus: ChainBondHealthStatus;
   /** Reachability dimension — merged from `chainProbeReachability`. */
   onlineStatus: ChainOnlineStatus;
-  /** Peer has opted into the Agent Network (`capability-provider` on their card). */
+  /** Peer has opted into the Agent Network (`agent-network-worker` on their card). */
   optIn: boolean;
   capabilityCount: number;
   lastSyncedAt?: string;
@@ -58,8 +58,8 @@ export function computeChainBondHealth(
       label: "No agent card",
     };
   }
-  const capabilityCount = card.capabilities.length;
-  const optedIn = isAgentNetworkWorker(card.capabilities);
+  const capabilityCount = card.membership.length;
+  const optedIn = isAgentNetworkMember(card.membership);
   const cachedMs = Date.parse(card.cachedAt);
   const stale = Number.isFinite(cachedMs) && nowMs - cachedMs > STALE_MS;
   if (capabilityCount === 0) {
@@ -70,7 +70,7 @@ export function computeChainBondHealth(
       optIn: optedIn,
       capabilityCount: 0,
       lastSyncedAt: card.cachedAt,
-      label: "No capabilities",
+      label: "No membership",
     };
   }
   if (stale) {
@@ -114,7 +114,7 @@ export function mergeReachability(
  * All readiness dimensions must pass:
  *   - Has an agent peer ID on their cached card (required for worker selection)
  *   - Card freshness is ready or stale (not missing/blocked)
- *   - Opted into the Agent Network (capability-provider on their card)
+ *   - Opted into the Agent Network (agent-network-worker on their card)
  *   - Not confirmed offline (unknown is OK — probe may still be in flight)
  *
  * Used by ChainStartDialog (selectability) and ChainsView (who can launch).

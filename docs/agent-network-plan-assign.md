@@ -7,7 +7,7 @@
 ## Workflow (one round — shipped)
 
 1. Build **eligible roster** (bonded + Join Agent Network + can execute). Specialty tags are **soft**.
-2. **Assigner** (default = trigger node) runs one LLM **plan+assign** prompt with the roster (factors: strengths, freshness, context, spend, **throughputTokensPerSec**, same-LAN when known).
+2. **Assigner** (default = trigger node) runs one LLM **plan+assign** prompt with the roster (factors: skills, freshness, context, spend, **throughputTokensPerSec**, same-LAN when known).
 3. Every step gets a `preferredWorkerPeerId`. No specialty match → **best generalist**. One worker → all steps to them. Empty roster → `no_workers`.
 4. Dispatch via **A2A** `task.chain.*` to named peers (direct assign by default).
 5. Wait for all steps → **Assigner merges** into one final Team job report / composite artifact.
@@ -35,7 +35,7 @@ goal → Round 1 DAG (+ optional capped extends) → draft₁ → Judge
 |-------|----------|
 | Profile throughput | `packages/protocol/src/agent-network-profile.ts` |
 | Soft scoring + `assignWorkersToSteps` | `packages/api/src/agent-network-score.ts` |
-| Soft worker pool | `findCapabilityProviders` in `apps/node/src/node-service-chain-orchestration.ts` |
+| Soft worker pool | `findAgentNetworkWorkers` in `apps/node/src/node-service-chain-orchestration.ts` |
 | Plan+assign prompt / parse | `apps/node/src/chain-plan-assign.ts` |
 | LLM entry | `apps/node/src/chain-decomposer.ts` (`getRoster`) |
 | Named launch | `_runChainGoal` prefers `subtask.preferredWorkerPeerId` |
@@ -56,7 +56,7 @@ goal → Round 1 DAG (+ optional capped extends) → draft₁ → Judge
 | Layer | What |
 |-------|------|
 | Unit | `chain-plan-assign`, `agent-network-score`, soft membership pool, DAG advance / stall reassign, mock `synthesizePlanAssignFromRosterPrompt`, decomposer plan+assign |
-| Smoke / E2E | `chain-plan-assign-three-home-e2e.test.ts` — 3 libp2p homes, **same** `modelProviders: { mode: "mock", mockResponseText: "__plan_assign_from_roster__" }`, **different** capabilities + `agentNetworkProfile`; asserts ranking, named assignees, 3-step plan, report |
+| Smoke / E2E | `chain-plan-assign-three-home-e2e.test.ts` — 3 libp2p homes, **same** `modelProviders: { mode: "mock", mockResponseText: "__plan_assign_from_roster__" }`, **different** membership + `agentNetworkProfile.skills`; asserts ranking, named assignees, 3-step plan, report |
 | Smoke / E2E | `chain-assigner-handoff-e2e.test.ts` — trigger hands off via `assignerPeerId`; Assigner plans+merges on the same `chainId` |
 | Smoke / E2E | `chain-stall-reassign-e2e.test.ts` — multi-home award with ranked backups; aged award + `trackChain` → one reassign (worker list rotates to backup; cap holds) |
 | Live (opt-in) | `chain-plan-assign-live-llm-e2e.test.ts` — Assigner uses live MiniMax; workers stay on roster mock; asserts multi-step named plan from roster + report. Requires `ENVOY_PHASE18_LIVE_TESTS=1` and model credentials (same gate as Phase 18). |

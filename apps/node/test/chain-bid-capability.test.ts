@@ -7,7 +7,7 @@
  * `bid.capability ?? bid.workerPeerId`.
  *
  * Also tests that `computeChainBid` now populates `capability` from the
- * subtask's `requiredCapability`.
+ * subtask's `requiredSkill`.
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -42,12 +42,12 @@ describe("bidScore — capability precision (post-fix)", () => {
     const badBid = makeBid({ capability: "translation" });
 
     const goodScore = bidScore(
-      { bid: goodBid, now, requiredCapability: "research" },
+      { bid: goodBid, now, requiredSkill: "research" },
       { cost: 0.25, reputation: 0.25, freshness: 0.25, precision: 0.25 },
       10,
     );
     const badScore = bidScore(
-      { bid: badBid, now, requiredCapability: "research" },
+      { bid: badBid, now, requiredSkill: "research" },
       { cost: 0.25, reputation: 0.25, freshness: 0.25, precision: 0.25 },
       10,
     );
@@ -60,7 +60,7 @@ describe("bidScore — capability precision (post-fix)", () => {
     // (uses peer-id proxy).
     const bid = makeBid({ workerPeerId: "12D3KooW-research-peer" });
     const score = bidScore(
-      { bid, now, requiredCapability: "research" },
+      { bid, now, requiredSkill: "research" },
       { cost: 0.25, reputation: 0.25, freshness: 0.25, precision: 0.25 },
       10,
     );
@@ -76,13 +76,13 @@ describe("bidScore — capability precision (post-fix)", () => {
 });
 
 describe("computeChainBid — populates bid.capability", () => {
-  it("sets capability to the subtask's requiredCapability", () => {
+  it("sets capability to the subtask's requiredSkill", () => {
     const subtask: ChainSubtask = {
       version: "0.1",
       subtaskId: "subtask_1",
       chainId: "chain_1",
       depth: 1,
-      requiredCapability: "code_review",
+      requiredSkill: "code_review",
       objective: "Review the Rust code",
       dependsOn: [],
       createdAt: new Date().toISOString(),

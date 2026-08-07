@@ -42,7 +42,7 @@ describe("ChainStartDialog", () => {
         {
           subtaskId: "st1",
           depth: 0,
-          requiredCapability: "task.execute",
+          requiredSkill: "task.execute",
           objective: "Do the thing",
           workerCount: 0,
         },
@@ -76,7 +76,7 @@ describe("ChainStartDialog", () => {
         {
           subtaskId: "st1",
           depth: 0,
-          requiredCapability: "task.execute",
+          requiredSkill: "task.execute",
           objective: "Do the thing",
           workerCount: 2,
         },
@@ -111,7 +111,7 @@ describe("ChainStartDialog", () => {
         {
           subtaskId: "st1",
           depth: 0,
-          requiredCapability: "task.execute",
+          requiredSkill: "task.execute",
           objective: "Do the thing",
           workerCount: 1,
         },

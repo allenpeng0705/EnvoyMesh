@@ -1782,7 +1782,7 @@ export interface ChainPlanResult {
   subtasks: Array<{
     subtaskId: string;
     depth: number;
-    requiredCapability: string;
+    requiredSkill: string;
     objective: string;
     /** Per-subtask cost ceiling from the mandate or LLM estimate. */
     costCeilingUsd?: number;
@@ -2101,7 +2101,7 @@ export interface ChainPreviewGoalResult {
   subtasks: Array<{
     subtaskId: string;
     depth: number;
-    requiredCapability: string;
+    requiredSkill: string;
     objective: string;
     workerCount: number;
   }>;
@@ -2188,7 +2188,7 @@ export interface ChainStartFromGoalResult {
   subtasks?: Array<{
     subtaskId: string;
     depth: number;
-    requiredCapability: string;
+    requiredSkill: string;
     objective: string;
     preferredWorkerPeerId?: string;
   }>;

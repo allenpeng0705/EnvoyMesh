@@ -32,7 +32,7 @@ describe("MobileNode audit drill-down", () => {
       ownerId: owner.ownerId,
       displayName: "Peer agent",
       nodeProfile: "primary",
-      capabilities: ["task.execute"],
+      membership: ["task.execute"],
     });
     const responsePayload = createAgentCardResponsePayload(card);
     const envelope: EnvoyEnvelope = {

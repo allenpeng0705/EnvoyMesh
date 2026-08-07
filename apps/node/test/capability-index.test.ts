@@ -1,5 +1,5 @@
 /**
- * Phase 41B — CapabilityIndex tests.
+ * Phase 41B — AgentNetworkMembershipIndex tests.
  *
  * Tests auto-discovery worker index: add, update, remove, find,
  * persistence, dedup, sort-by-last-seen.
@@ -11,29 +11,29 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CapabilityIndex, type WorkerEntry } from "../src/capability-index.js";
+import { AgentNetworkMembershipIndex, type WorkerEntry } from "../src/capability-index.js";
 
 function worker(
   peerId: string,
-  capabilities: string[],
+  membership: string[],
   opts: { ownerId?: string; displayName?: string; lastSeenAt?: string } = {},
 ): WorkerEntry {
   return {
     peerId,
     ownerId: opts.ownerId ?? `envoy:owner:${peerId}`,
-    capabilities,
+    membership,
     lastSeenAt: opts.lastSeenAt ?? new Date().toISOString(),
     displayName: opts.displayName,
   };
 }
 
-describe("CapabilityIndex — 41B", () => {
+describe("AgentNetworkMembershipIndex — 41B", () => {
   let profileDir: string;
-  let index: CapabilityIndex;
+  let index: AgentNetworkMembershipIndex;
 
   beforeAll(async () => {
     profileDir = await mkdtemp(join(tmpdir(), "cap-idx-"));
-    index = new CapabilityIndex();
+    index = new AgentNetworkMembershipIndex();
     await index.init(profileDir);
   });
 
@@ -84,7 +84,7 @@ describe("CapabilityIndex — 41B", () => {
     expect(peers.filter((p) => p === "peer_a").length).toBe(1);
 
     const reviewer = index.getWorker("peer_a");
-    expect(reviewer?.capabilities).toEqual(["translation", "summarize"]);
+    expect(reviewer?.membership).toEqual(["translation", "summarize"]);
     expect(index.findWorkers("review")).not.toContain("peer_a");
   });
 
@@ -126,7 +126,7 @@ describe("CapabilityIndex — 41B", () => {
     expect(entry).toBeTruthy();
     expect(entry?.ownerId).toBe("envoy:owner:test");
     expect(entry?.displayName).toBe("Test Bot");
-    expect(entry?.capabilities).toEqual(["translation"]);
+    expect(entry?.membership).toEqual(["translation"]);
   });
 
   it("listWorkers returns all entries", () => {
@@ -148,14 +148,14 @@ describe("CapabilityIndex — 41B", () => {
     // Create a fresh index, add a worker, let it persist
     const dir = await mkdtemp(join(tmpdir(), "cap-idx-persist-"));
     try {
-      const idx1 = new CapabilityIndex();
+      const idx1 = new AgentNetworkMembershipIndex();
       await idx1.init(dir);
       idx1.indexWorker(worker("persist_a", ["translation"]));
       // Wait for debounced persist
       await new Promise((r) => setTimeout(r, 600));
 
       // Reload from disk
-      const idx2 = new CapabilityIndex();
+      const idx2 = new AgentNetworkMembershipIndex();
       await idx2.init(dir);
       expect(idx2.workerCount).toBe(1);
       expect(idx2.findWorkers("translation")).toEqual(["persist_a"]);
@@ -169,7 +169,7 @@ describe("CapabilityIndex — 41B", () => {
     index.indexWorker(worker("peer_merge", ["review"]));
 
     const entry = index.getWorker("peer_merge");
-    expect(entry?.capabilities).toEqual(["review"]);
+    expect(entry?.membership).toEqual(["review"]);
     expect(index.findWorkers("search")).not.toContain("peer_merge");
     expect(index.findWorkers("review")).toContain("peer_merge");
   });

@@ -35,13 +35,13 @@ whether **bonded peers** can ask it to help on their Team jobs.
 | UI label | Older / code name | Meaning |
 |----------|-------------------|---------|
 | **Agent Network** (Settings tab) | Was briefly “Devices & Fleet” | Membership + fleet onboarding |
-| **Join Agent Network** | Capability Provider | Opt-in so peers can recruit your agent |
+| **Join Agent Network** | Join Agent Network | Opt-in so peers can recruit your agent |
 | **Team jobs** | “Chains” / multi-agent chains | Owner-facing collaboration view |
 | **Team job defaults** | Chain Defaults | Award mode, bidding, stall policy (under **Settings → AI**) |
 | **AI Engine** | Once mislabeled “Agent Network” | Which AI runs on *this* home node (EnvoyAI / Ext Agent) — **not** the same as joining Agent Network |
 
 Protocol and source code still use names like `task.chain.*`, `ChainsView`,
-and `capability-provider`. That is fine for engineers; the Social UI uses the
+and `agent-network-worker`. That is fine for engineers; the Social UI uses the
 labels above.
 
 ---
@@ -59,9 +59,9 @@ labels above.
 1. You and Alice are **bonded** (typically `direct` or `referred` trust).
 2. Alice enabled **Join Agent Network** on her node.
 3. Her **agent card** reached you (auto-fetched on bond for eligible trust tiers).
-4. Her card advertises a useful capability (e.g. `task.execute` or the
-   capability your subtask needs) **and** the membership tag
-   `capability-provider`.
+4. Her card advertises membership that includes `task.execute` **and**
+   `agent-network-worker`, and her **skills** (domains / Agent Skills) are
+   used to rank her for steps.
 
 If Alice never opted in, her agent stays **private**. You will not see her as
 a worker, even if you are friends.
@@ -84,10 +84,10 @@ When you enable **Join Agent Network**:
 
 1. Node config sets `capabilityProviderEnabled: true`.
 2. Your agent card (and related advertisements) include capability
-   `capability-provider`.
+   `agent-network-worker`.
 3. Bonded peers who sync your card can discover you via the capability index.
 4. Your optional **Agent Network profile** (freshness, spend posture, context
-   window, strengths) is shared and used to **score** you when someone starts
+   window, skills) is shared and used to **score** you when someone starts
    a Team job.
 
 When you turn it **off**, the membership capability is removed from the card.
@@ -106,7 +106,7 @@ Under **Settings → Agent Network**, after you join, you can set an
 | **Model freshness** (1–10) | How new / capable the models you run feel |
 | **Spend posture** | `subscription` / `metered` / `unknown` — long jobs prefer subscription |
 | **Context window** | `128k` / `256k` / `512k` / `1M+` |
-| **Strengths** | Tags such as research, coding, summarization |
+| **Skills** | Tags such as research, coding, summarization |
 
 When an orchestrator looks for workers, EnvoyMesh scores candidates roughly as:
 
@@ -159,7 +159,7 @@ Most personal / small-team use should stay on **direct assign**.
 You (owner)                Your home node                 Bonded peer (opted in)
 ─────────────              ──────────────                 ─────────────────────
 Write goal ──►  Plan subtasks
-               Find workers (bonded + capability-provider)
+               Find workers (bonded + agent-network-worker)
                Direct-assign or bid  ───────────────►  Agent runs subtask
                ◄────────────── partial / result
                Synthesize report
@@ -236,7 +236,7 @@ strangers your workers.
 
 To run a Team job **across** two people: the **workers** you recruit must
 have joined. Your node acts as orchestrator; workers need
-`capability-provider`. If nobody else joined, you get “no workers.”
+`agent-network-worker`. If nobody else joined, you get “no workers.”
 
 ### What about my phone?
 
@@ -268,6 +268,7 @@ say `chain`.
 
 | Doc | Role |
 |-----|------|
+| [agent-network-vocabulary.md](./agent-network-vocabulary.md) | **Canonical naming:** membership vs skills |
 | [agent-network-fleet.md](./agent-network-fleet.md) | Day-by-day fleet rollout playbook |
 | [agent-network-lan-scenarios.md](./agent-network-lan-scenarios.md) | **3 machines on one LAN** — simple→complex real-world test scenarios |
 | [fleet-onboarding.md](./fleet-onboarding.md) | Fleet path schemas and threat model |
@@ -284,7 +285,7 @@ say `chain`.
 1. Same office Wi-Fi: both machines use **Office LAN → Enable office LAN team**
    (shared token). Remote teammates: bond via invite / manifest, then enable
    **Join Agent Network** on each node.  
-2. Optionally fill the **profile** (strengths, freshness, context).  
+2. Optionally fill the **profile** (skills, freshness, context).  
 3. Leave **Team job defaults** on **direct assign** unless you need bidding.  
 4. Open **Team jobs → New team job**, enter a goal, preview, start.  
 5. Open the report when synthesis finishes.  
@@ -298,6 +299,6 @@ say `chain`.
 
 ## Related: plan + assign design
 
-See [`agent-network-plan-assign.md`](./agent-network-plan-assign.md) for the Assigner LLM plan+assign flow, soft capability matching, throughput scoring, merge-as-final-result, remote `assignerPeerId` handoff, and MCP roster/probe tools.
+See [`agent-network-plan-assign.md`](./agent-network-plan-assign.md) for the Assigner LLM plan+assign flow, soft skill matching, throughput scoring, merge-as-final-result, remote `assignerPeerId` handoff, and MCP roster/probe tools.
 
 Multi-round refinement (draft → judge → replan / capped extend) is **shipped** as Phase 47 — see [`agent-network-iteration.md`](./agent-network-iteration.md). Defaults keep today’s one-shot Team jobs (`iterationMaxRounds=1`); opt in via Settings / Start dialog. Remote Assigner handoff carries iteration knobs (+ optional wire blob); Assigner UIs get `chain:iteration` progress events.

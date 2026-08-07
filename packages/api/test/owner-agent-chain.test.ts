@@ -100,8 +100,8 @@ describe("runOwnerAgentTurn — chain integration", () => {
       chainId: "chain_abc",
       chainMandateId: "chainmandate_abc",
       subtasks: [
-        { subtaskId: "subtask_a", depth: 1, requiredCapability: "task.execute", objective: "analyze X" },
-        { subtaskId: "subtask_b", depth: 1, requiredCapability: "task.execute", objective: "analyze Y" },
+        { subtaskId: "subtask_a", depth: 1, requiredSkill: "task.execute", objective: "analyze X" },
+        { subtaskId: "subtask_b", depth: 1, requiredSkill: "task.execute", objective: "analyze Y" },
       ],
     });
     const deps = makeDeps({ runChain });
@@ -211,7 +211,7 @@ describe("runOwnerAgentTurn — chain integration", () => {
       chainId: "chain_z",
       chainMandateId: "chainmandate_z",
       subtasks: [
-        { subtaskId: "subtask_a", depth: 1, requiredCapability: "task.execute", objective: "research" },
+        { subtaskId: "subtask_a", depth: 1, requiredSkill: "task.execute", objective: "research" },
       ],
     });
     const deps = makeDeps({ runChain });

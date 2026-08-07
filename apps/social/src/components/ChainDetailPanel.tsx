@@ -32,7 +32,7 @@ export interface ChainDetailPanelProps {
   subtasks?: Array<{
     subtaskId: string;
     depth?: number;
-    requiredCapability?: string;
+    requiredSkill?: string;
     objective?: string;
     costCeilingUsd?: number;
   }>;
@@ -155,7 +155,7 @@ export function ChainDetailPanel({
     const detail = subtasks?.find((s) => s.subtaskId === row.subtaskId);
     return {
       subtaskId: row.subtaskId,
-      label: detail?.requiredCapability,
+      label: detail?.requiredSkill,
       costCeilingUsd: detail?.costCeilingUsd ?? state?.budgetMaxUsd ?? 0,
       bids: row.bids.map((b) => ({
         bidKey: b.bidKey,

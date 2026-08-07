@@ -42,7 +42,7 @@ describe("E2E requestAgentCard via NodeServiceImpl (Phase 13C)", () => {
     const cards = await alice.service.listAgentCards();
     const bobCard = cards.find((row) => row.ownerId === bob.profile.owner.ownerId);
     expect(bobCard?.displayName).toBe("Bob Human");
-    expect(bobCard?.capabilities.length).toBeGreaterThan(0);
+    expect(bobCard?.membership.length).toBeGreaterThan(0);
 
     const activity = await alice.service.listAgentActivity({ limit: 20 });
     expect(activity.some((row) => row.summary.includes("Learned agent card"))).toBe(true);

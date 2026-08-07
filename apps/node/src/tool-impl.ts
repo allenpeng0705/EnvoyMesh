@@ -290,7 +290,7 @@ function redactContact(opts: {
 
 export interface MeshFindCapabilityDeps {
   trustStore: LocalTrustStore;
-  listBondedAgentCapabilities?: () => Promise<Array<{ ownerId: string; capabilities: string[] }>>;
+  listBondedAgentCapabilities?: () => Promise<Array<{ ownerId: string; membership: string[] }>>;
   maxInvocationsPerHour?: number;
 }
 
@@ -324,7 +324,7 @@ export function buildMeshFindCapabilityTool(
     const capabilitiesByOwner = new Map<string, string[]>();
     if (deps.listBondedAgentCapabilities) {
       for (const row of await deps.listBondedAgentCapabilities()) {
-        capabilitiesByOwner.set(row.ownerId, row.capabilities);
+        capabilitiesByOwner.set(row.ownerId, row.membership);
       }
     }
 

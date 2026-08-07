@@ -215,7 +215,7 @@ export function canExtendOpenRound(
 
 export interface ExtendStepInput {
   objective: string;
-  requiredCapability?: string;
+  requiredSkill?: string;
   /** Must reference open-round IDs that already have final partials. */
   dependsOn: string[];
   depth?: number;
@@ -291,7 +291,7 @@ export function appendExtendSteps(
       chainId: state.chainId,
       chainMandateId: state.chainMandate.chainMandateId,
       depth,
-      requiredCapability: step.requiredCapability?.trim() || "task.execute",
+      requiredSkill: step.requiredSkill?.trim() || "task.execute",
       objective,
       requestedResult: step.requestedResult?.trim() || "extended result",
       constraints: step.constraints?.slice(0, 8) ?? [],
@@ -540,7 +540,7 @@ export function suggestLocalExtendStep(state: ChainState): ExtendStepInput | nul
   return {
     objective: `Expand and strengthen the prior result for ${weakest.id} (add missing detail or a citation if needed).`,
     dependsOn: [weakest.id],
-    requiredCapability: "task.execute",
+    requiredSkill: "task.execute",
   };
 }
 

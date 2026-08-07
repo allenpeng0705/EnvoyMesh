@@ -22,7 +22,7 @@ export interface AgentCapabilityRoute {
   capabilityIds: string[];
   keywords: string[];
   steps: AgentRouteStep[];
-  empPosture?: "social-proxy" | "document-acquisition" | "capability-provider";
+  empPosture?: "social-proxy" | "document-acquisition" | "agent-network-worker";
 }
 
 export interface MatchAgentCapabilityRoutesInput {
@@ -159,7 +159,7 @@ const BUILTIN_AGENT_CAPABILITY_ROUTES: AgentCapabilityRoute[] = [
     domain: "service",
     capabilityIds: [],
     keywords: ["task", "service", "execute", "delegate", "mandate", "job", "work"],
-    empPosture: "capability-provider",
+    empPosture: "agent-network-worker",
     steps: [
       {
         phase: "discover",
@@ -219,7 +219,7 @@ export function buildCustomCapabilityRoute(capabilityId: string): AgentCapabilit
     domain: "service",
     capabilityIds: [capabilityId],
     keywords: [tail, slug, capabilityId.toLowerCase()],
-    empPosture: "capability-provider",
+    empPosture: "agent-network-worker",
     steps: [
       {
         phase: "discover",

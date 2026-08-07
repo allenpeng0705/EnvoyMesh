@@ -24,8 +24,8 @@ import {
 import {
   buildChainOrchestratorDeps,
   bidsBySubtask,
-  findCapabilityProviders,
-  findCapabilityProvidersRanked,
+  findAgentNetworkWorkers,
+  findAgentNetworkWorkersRanked,
   placeholderMandate,
   snapshotToResult,
   _chainDiagnosticsForSubtasks,
@@ -429,7 +429,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             startBondWarmInterval: () => host._startBondWarmInterval(),
             resyncBondedContactReachabilityTags: () =>
               host.resyncBondedContactReachabilityTags(),
-            refreshCapabilityIndex: () => host.refreshCapabilityIndex(),
+            refreshAgentNetworkMembershipIndex: () => host.refreshAgentNetworkMembershipIndex(),
             refreshAgentNetworkWorkers: () => host.refreshAgentNetworkWorkers(),
             scheduleDeferredProfileRefresh: (reason) =>
               host._scheduleDeferredProfileRefresh(reason),
@@ -746,10 +746,10 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
         startChainTracking: (chainId) => _startChainTracking(host._chainOrchestrationContext(), chainId),
         placeholderMandate: (chainId, chainMandateId) =>
           placeholderMandate(chainId, chainMandateId) as never,
-        findCapabilityProviders: (capability) =>
-          findCapabilityProviders(host._chainOrchestrationContext(), capability) as never,
-        findCapabilityProvidersRanked: (capability, preferredWorkerPeerIds) =>
-          findCapabilityProvidersRanked(host._chainOrchestrationContext(), capability, preferredWorkerPeerIds) as never,
+        findAgentNetworkWorkers: (capability) =>
+          findAgentNetworkWorkers(host._chainOrchestrationContext(), capability) as never,
+        findAgentNetworkWorkersRanked: (capability, preferredWorkerPeerIds) =>
+          findAgentNetworkWorkersRanked(host._chainOrchestrationContext(), capability, preferredWorkerPeerIds) as never,
         chainDiagnosticsForSubtasks: (subtasks, workersBySubtask, rankedBySubtask) =>
           _chainDiagnosticsForSubtasks(
             subtasks as never,

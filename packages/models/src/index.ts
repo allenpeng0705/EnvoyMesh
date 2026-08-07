@@ -241,7 +241,7 @@ export function createMockModelProvider(input: CreateMockModelProviderInput = {}
             steps: [
               {
                 objective: request.prompt.slice(0, 80) || "goal",
-                requiredCapability: "task.execute",
+                requiredSkill: "task.execute",
                 depth: 1,
                 dependsOn: [],
                 assignedPeerId: "envoy_agent_fallback",

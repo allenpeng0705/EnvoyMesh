@@ -27,6 +27,8 @@ import {
   signCanonicalPayload,
   verifyCanonicalPayload,
 } from "@envoymesh/identity";
+import type { AgentNetworkSkillEntry } from "@envoymesh/protocol";
+import { coerceAgentNetworkSkills } from "@envoymesh/protocol";
 
 /** Optional EnvoyMesh Ed25519 signature on an A2A Agent Card (48D.5). */
 export interface A2AAgentCardSignature {
@@ -114,7 +116,7 @@ export interface EnvoyAgentCard {
   ownerId: string;
   displayName: string;
   nodeProfile: string;
-  capabilities: string[];
+  membership: string[];
   publicTopics: string[];
   trustPolicySummary?: {
     acceptsDirectBondRequests?: boolean;
@@ -127,7 +129,7 @@ export interface EnvoyAgentCard {
     modelFreshness?: number;
     spendPosture?: string;
     contextWindow?: string;
-    strengths?: string[];
+    skills?: readonly (string | AgentNetworkSkillEntry)[];
     throughputTokensPerSec?: number;
   };
 }
@@ -149,15 +151,43 @@ export function toA2AAgentCard(
 ): A2AAgentCard {
   const name = envoyCard.displayName;
   const description = options?.description ??
-    `EnvoyMesh agent node (${envoyCard.nodeProfile}). Skills: ${envoyCard.capabilities.join(", ")}.`;
+    `EnvoyMesh agent node (${envoyCard.nodeProfile}). Membership: ${envoyCard.membership.join(", ")}.`;
 
-  const strengths = envoyCard.agentNetworkProfile?.strengths ?? [];
-  const skills = envoyCard.capabilities.map((cap) => ({
-    id: cap,
-    name: cap,
-    description: `Capability: ${cap}`,
-    tags: strengths.includes(cap) ? [cap, "strength"] : [cap],
-  }));
+  const profileSkills = coerceAgentNetworkSkills(
+    envoyCard.agentNetworkProfile?.skills ?? [],
+  );
+  const skillById = new Map<
+    string,
+    { id: string; name: string; description: string; tags: string[] }
+  >();
+  for (const cap of envoyCard.membership) {
+    skillById.set(cap, {
+      id: cap,
+      name: cap,
+      description: `Membership tag: ${cap}`,
+      tags: [cap, "membership"],
+    });
+  }
+  for (const entry of profileSkills) {
+    const skillId = entry.id;
+    const kind = entry.kind;
+    const source = entry.source;
+    const existing = skillById.get(skillId);
+    if (existing) {
+      if (!existing.tags.includes("skill")) existing.tags.push("skill");
+      if (!existing.tags.includes(kind)) existing.tags.push(kind);
+      if (!existing.tags.includes(source)) existing.tags.push(source);
+      existing.description = `Agent Network skill (also membership): ${skillId}`;
+    } else {
+      skillById.set(skillId, {
+        id: skillId,
+        name: skillId,
+        description: `Agent Network skill (${kind}/${source}): ${skillId}`,
+        tags: [skillId, "skill", kind, source],
+      });
+    }
+  }
+  const skills = [...skillById.values()];
 
   if (envoyCard.webContentRoot) {
     // Inline the URL in the description so spec-strict parsers don't drop it.
@@ -199,7 +229,10 @@ export function toA2AAgentCard(
       "x-envoymesh-nodeProfile": envoyCard.nodeProfile,
       "x-envoymesh-version": envoyCard.version,
       ...(envoyCard.agentNetworkProfile && {
-        "x-envoymesh-agentNetworkProfile": envoyCard.agentNetworkProfile,
+        "x-envoymesh-agentNetworkProfile": {
+          ...envoyCard.agentNetworkProfile,
+          skills: profileSkills,
+        },
       }),
       ...(envoyCard.webContentRoot && {
         "x-envoymesh-webContentRoot": envoyCard.webContentRoot,

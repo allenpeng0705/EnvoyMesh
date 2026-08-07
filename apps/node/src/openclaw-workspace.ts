@@ -375,7 +375,7 @@ function buildEnvoyMeshGuideMd(): string {
     "**Step 4: Agent Cards are exchanged automatically**",
     "- When you bond with someone, both nodes auto-fetch each other's Agent Card",
     "  (cached for 24h). The card lists capabilities, topics, and trust policy.",
-    "- The CapabilityIndex (in-memory + persisted) maps capability → peer IDs.",
+    "- The AgentNetworkMembershipIndex (in-memory + persisted) maps capability → peer IDs.",
     "- The orchestrator uses this index to find workers for each subtask.",
     "- You don't need to manually configure anything — bonding triggers the exchange.",
     "",

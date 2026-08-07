@@ -183,7 +183,7 @@ export const deChainsMessages = {
     stale: "Agent-Karte veraltet",
     missing: "Keine Agent-Karte",
     blocked: "Blockiert",
-    detail: "{count} Fähigkeiten · synchronisiert {synced}",
+    detail: "{count} Stärken · synchronisiert {synced}",
     noSync: "Agent-Karte nicht synchronisiert",
   },
 } as const;

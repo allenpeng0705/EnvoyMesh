@@ -80,8 +80,8 @@ describe("createLlmDecomposer — successful parse", () => {
     const provider = makeProvider(() =>
       respondWith(
         JSON.stringify([
-          { objective: "research X", requiredCapability: "research.web", depth: 1 },
-          { objective: "summarize X", requiredCapability: "summarize.text", depth: 2 },
+          { objective: "research X", requiredSkill: "research.web", depth: 1 },
+          { objective: "summarize X", requiredSkill: "summarize.text", depth: 2 },
         ]),
       ),
     );
@@ -90,7 +90,7 @@ describe("createLlmDecomposer — successful parse", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.steps.length).toBe(2);
-    expect(r.steps[0].requiredCapability).toBe("research.web");
+    expect(r.steps[0].requiredSkill).toBe("research.web");
     expect(r.steps[1].depth).toBe(2);
     // All subtasks share the chainId we generated internally.
     const chainIds = new Set(r.steps.map((s) => s.chainId));
@@ -122,7 +122,7 @@ describe("createLlmDecomposer — successful parse", () => {
     const provider = makeProvider(() =>
       respondWith(
         JSON.stringify(
-          Array.from({ length: 8 }, (_, i) => ({ objective: `s${i}`, requiredCapability: "task.execute" })),
+          Array.from({ length: 8 }, (_, i) => ({ objective: `s${i}`, requiredSkill: "task.execute" })),
         ),
       ),
     );
@@ -133,7 +133,7 @@ describe("createLlmDecomposer — successful parse", () => {
     expect(r.steps.length).toBe(5);
   });
 
-  it("applies defaults for missing requiredCapability and objective", async () => {
+  it("applies defaults for missing requiredSkill and objective", async () => {
     const provider = makeProvider(() =>
       respondWith(JSON.stringify([{}])),
     );
@@ -141,7 +141,7 @@ describe("createLlmDecomposer — successful parse", () => {
     const r = await decomposer("build me a thing");
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.steps[0].requiredCapability).toBe("task.execute");
+    expect(r.steps[0].requiredSkill).toBe("task.execute");
     expect(r.steps[0].objective).toBe("build me a thing");
   });
 });
@@ -167,7 +167,7 @@ describe("createLlmDecomposer — parsing failures", () => {
 
   it("recovers when JSON is wrapped in prose via extractJson", async () => {
     const provider = makeProvider(() =>
-      respondWith('Here you go:\n[{"objective":"a","requiredCapability":"task.execute"}]\nDone.'),
+      respondWith('Here you go:\n[{"objective":"a","requiredSkill":"task.execute"}]\nDone.'),
     );
     const decomposer = createLlmDecomposer({ providers: [provider] });
     const r = await decomposer("x");
@@ -208,7 +208,7 @@ describe("extractJson", () => {
       'Example shape: {"steps":[{"objective":"ignore me"}]}',
       "</think>",
       "",
-      '{"steps":[{"objective":"real","requiredCapability":"coding","depth":1,"dependsOn":[],"assignedPeerId":"envoy_agent_c","reason":"ok"}]}',
+      '{"steps":[{"objective":"real","requiredSkill":"coding","depth":1,"dependsOn":[],"assignedPeerId":"envoy_agent_c","reason":"ok"}]}',
     ].join("\n");
     expect(extractJson(text)).toContain('"objective":"real"');
     expect(extractJson(text)).not.toContain("ignore me");
@@ -222,7 +222,7 @@ describe("createLlmDecomposer — plan+assign with roster", () => {
           steps: [
             {
               objective: "research",
-              requiredCapability: "research.web",
+              requiredSkill: "research.web",
               depth: 1,
               dependsOn: [],
               assignedPeerId: "envoy_agent_r",
@@ -230,7 +230,7 @@ describe("createLlmDecomposer — plan+assign with roster", () => {
             },
             {
               objective: "write",
-              requiredCapability: "coding",
+              requiredSkill: "coding",
               depth: 1,
               dependsOn: [0],
               assignedPeerId: "envoy_agent_c",
@@ -246,9 +246,9 @@ describe("createLlmDecomposer — plan+assign with roster", () => {
       getRoster: async () => [
         {
           peerId: "envoy_agent_r",
-          capabilities: ["task.execute", "research.web"],
+          membership: ["task.execute", "research.web"],
           profile: {
-            strengths: ["research.web"],
+            skills: ["research.web"],
             modelFreshness: 8,
             spendPosture: "metered",
             contextWindow: "512k",
@@ -256,9 +256,9 @@ describe("createLlmDecomposer — plan+assign with roster", () => {
         },
         {
           peerId: "envoy_agent_c",
-          capabilities: ["task.execute", "coding"],
+          membership: ["task.execute", "coding"],
           profile: {
-            strengths: ["coding"],
+            skills: ["coding"],
             modelFreshness: 9,
             spendPosture: "subscription",
             contextWindow: "1M+",

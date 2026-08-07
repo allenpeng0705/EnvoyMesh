@@ -24,7 +24,7 @@ import type {
 } from "@envoymesh/api";
 import type { ChainReport, ChainSubtask, ChainSubtaskBid, EnvoyEnvelope, EnvoyIntent } from "@envoymesh/protocol";
 import { ChainHandoffRequestPayloadSchema } from "@envoymesh/protocol";
-import { createApprovalItem, isAgentNetworkWorker, rankWorkersByScore, scoreAgentNetworkWorker } from "@envoymesh/api";
+import { createApprovalItem, isAgentNetworkMember, rankWorkersByScore, scoreAgentNetworkWorker } from "@envoymesh/api";
 import { hasDirectPrivateLanDialHints, type EnvoyMesh } from "@envoymesh/network";
 import {
   chainStateSnapshot,
@@ -64,7 +64,7 @@ import {
   resolveAwardMode,
   resolveShowCostUi,
 } from "./chain-defaults.js";
-import { CapabilityIndex } from "./capability-index.js";
+import { AgentNetworkMembershipIndex } from "./capability-index.js";
 import {
   extractChainIdFromEnvelope,
   sendChainEnvelopeOverMesh,
@@ -148,8 +148,8 @@ export interface ChainOrchestrationContext {
   getTaskStore(): LocalTaskStore | undefined;
   getProfile(): NodeProfile | undefined;
   getApprovalQueue(): ApprovalQueue | null;
-  getCapabilityIndex(): CapabilityIndex;
-  getCapabilityIndexReady(): Promise<void> | null;
+  getAgentNetworkMembershipIndex(): AgentNetworkMembershipIndex;
+  getAgentNetworkMembershipIndexReady(): Promise<void> | null;
   getPeerDirectoryStore(): LocalPeerDirectoryStore;
   getReachableMesh(): EnvoyMesh | undefined;
   ensureAgentIdentity(): Promise<BridgeIdentity | null>;
@@ -169,8 +169,8 @@ export function buildChainOrchestrationContext(host: any): ChainOrchestrationCon
     getTaskStore: () => host._taskStore,
     getProfile: () => host._profile,
     getApprovalQueue: () => host._approvalQueue,
-    getCapabilityIndex: () => host._capabilityIndex,
-    getCapabilityIndexReady: () => host._capabilityIndexReady,
+    getAgentNetworkMembershipIndex: () => host._capabilityIndex,
+    getAgentNetworkMembershipIndexReady: () => host._capabilityIndexReady,
     getPeerDirectoryStore: () => host._peerDirectoryStore,
     getReachableMesh: () => host._reachableMesh(),
     ensureAgentIdentity: () => host._ensureAgentIdentity(),
@@ -219,9 +219,9 @@ export function buildChainContext(deps: ChainOrchestrationContext): ChainContext
     startChainTracking: (chainId) => _startChainTracking(deps, chainId),
     placeholderMandate: (chainId, chainMandateId) =>
       placeholderMandate(chainId, chainMandateId) as never,
-    findCapabilityProviders: (capability) => findCapabilityProviders(deps, capability) as never,
-    findCapabilityProvidersRanked: (capability, preferredWorkerPeerIds) =>
-      findCapabilityProvidersRanked(deps, capability, preferredWorkerPeerIds) as never,
+    findAgentNetworkWorkers: (capability) => findAgentNetworkWorkers(deps, capability) as never,
+    findAgentNetworkWorkersRanked: (capability, preferredWorkerPeerIds) =>
+      findAgentNetworkWorkersRanked(deps, capability, preferredWorkerPeerIds) as never,
     chainDiagnosticsForSubtasks: (subtasks, workersBySubtask, rankedBySubtask) =>
       _chainDiagnosticsForSubtasks(subtasks as never, workersBySubtask as never, rankedBySubtask) as never,
     runChainGoal: (params) => _runChainGoal(deps, params) as never,
@@ -361,19 +361,19 @@ export async function handleInboundChainEnvelope(
   }
 }
 
-export async function refreshCapabilityIndex(deps: ChainOrchestrationContext): Promise<void> {
-  const ready = deps.getCapabilityIndexReady();
+export async function refreshAgentNetworkMembershipIndex(deps: ChainOrchestrationContext): Promise<void> {
+  const ready = deps.getAgentNetworkMembershipIndexReady();
   if (ready) {
     await ready;
   }
   const cards = await deps.listAgentCards();
-  const index = deps.getCapabilityIndex();
+  const index = deps.getAgentNetworkMembershipIndex();
   const seen = new Set<string>();
   for (const card of cards) {
     const peerId = card.sourceAgentPeerId;
     if (!peerId) continue;
     // Private by default: only index peers that opted into Agent Network work.
-    if (!isAgentNetworkWorker(card.capabilities)) {
+    if (!isAgentNetworkMember(card.membership)) {
       index.removeWorker(peerId);
       continue;
     }
@@ -381,7 +381,7 @@ export async function refreshCapabilityIndex(deps: ChainOrchestrationContext): P
     index.indexWorker({
       peerId,
       ownerId: card.ownerId,
-      capabilities: card.capabilities,
+      membership: card.membership,
       lastSeenAt: card.cachedAt,
       displayName: card.displayName,
     });
@@ -692,7 +692,7 @@ async function buildLlmDecomposerAsync(
     audit: { record: () => undefined },
     timeoutMs: 90_000,
     getRoster: async () => {
-      const ranked = await findCapabilityProvidersRanked(deps, "task.execute");
+      const ranked = await findAgentNetworkWorkersRanked(deps, "task.execute");
       const cards = await deps.listAgentCards();
       const byPeer = new Map(
         cards.filter((c) => c.sourceAgentPeerId).map((c) => [c.sourceAgentPeerId!, c] as const),
@@ -711,7 +711,7 @@ async function buildLlmDecomposerAsync(
           peerId: r.peerId,
           displayName: card?.displayName,
           ownerId: card?.ownerId,
-          capabilities: card?.capabilities ?? [],
+          membership: card?.membership ?? [],
           profile: card?.agentNetworkProfile,
           isSelf,
           sameLan: r.sameLan === true || isSelf,
@@ -785,7 +785,7 @@ export async function buildChainOrchestratorDeps(
       if (!transport) return false;
       return sendChainEnvelopeOverMesh(transport, recipientPeerId, envelope);
     },
-    findWorkers: async (capability) => findCapabilityProviders(deps, capability),
+    findWorkers: async (capability) => findAgentNetworkWorkers(deps, capability),
     now: () => new Date(),
     signingKeyPem: agentIdentity.agentPrivateKeyPem,
     publicKeyPem: agentIdentity.agentPublicKeyPem,
@@ -856,18 +856,18 @@ export async function buildSameLanByPeerId(
   return out;
 }
 
-export async function findCapabilityProviders(deps: ChainOrchestrationContext, capability: string): Promise<string[]> {
-  const ranked = await findCapabilityProvidersRanked(deps, capability);
+export async function findAgentNetworkWorkers(deps: ChainOrchestrationContext, capability: string): Promise<string[]> {
+  const ranked = await findAgentNetworkWorkersRanked(deps, capability);
   return ranked.map((r) => r.peerId);
 }
 
 /** Ranked workers with human-readable score summaries for diagnostics / UI. */
-export async function findCapabilityProvidersRanked(
+export async function findAgentNetworkWorkersRanked(
   deps: ChainOrchestrationContext,
   capability: string,
   preferredWorkerPeerIds?: readonly string[],
 ): Promise<ChainRankedWorker[]> {
-  const ready = deps.getCapabilityIndexReady();
+  const ready = deps.getAgentNetworkMembershipIndexReady();
   if (ready) {
     await ready;
   }
@@ -877,29 +877,25 @@ export async function findCapabilityProvidersRanked(
     if (card.sourceAgentPeerId) byPeer.set(card.sourceAgentPeerId, card);
   }
 
-  // Soft pool: all Agent Network workers that can execute. Specialty tags only
-  // affect ranking — never exclude generalists when a specialty index has hits.
+  // Soft pool: all Agent Network workers that can execute.
+  // Specialty hints match against agentNetworkProfile.skills at score time —
+  // never filter or boost via mesh capability tags (those are membership only).
   const peers = new Set<string>();
-  const index = deps.getCapabilityIndex();
+  const index = deps.getAgentNetworkMembershipIndex();
   for (const worker of index.listWorkers()) {
-    if (isAgentNetworkWorker(worker.capabilities)) peers.add(worker.peerId);
-  }
-  for (const peerId of index.findWorkers(capability)) {
-    const worker = index.getWorker(peerId);
-    if (worker && isAgentNetworkWorker(worker.capabilities)) peers.add(peerId);
+    if (isAgentNetworkMember(worker.membership)) peers.add(worker.peerId);
   }
   for (const peerId of index.findWorkers("task.execute")) {
     const worker = index.getWorker(peerId);
-    if (worker && isAgentNetworkWorker(worker.capabilities)) peers.add(peerId);
+    if (worker && isAgentNetworkMember(worker.membership)) peers.add(peerId);
   }
 
   for (const card of cards) {
     if (!card.sourceAgentPeerId) continue;
-    if (!isAgentNetworkWorker(card.capabilities)) continue;
+    if (!isAgentNetworkMember(card.membership)) continue;
     if (
-      card.capabilities.includes("task.execute") ||
-      card.capabilities.includes(capability) ||
-      card.capabilities.length > 0
+      card.membership.includes("task.execute") ||
+      card.membership.length > 0
     ) {
       peers.add(card.sourceAgentPeerId);
     }
@@ -948,8 +944,8 @@ export async function findCapabilityProvidersRanked(
     const online = Boolean(transportId);
     const viaRelay = online && transportId ? circuitIds.has(transportId) : false;
     const result = scoreAgentNetworkWorker({
-      requiredCapability: capability,
-      cardCapabilities: card?.capabilities ?? [],
+      requiredSkill: capability,
+      membership: card?.membership ?? [],
       profile: card?.agentNetworkProfile,
       displayName: card?.displayName,
       sameLan,
@@ -1199,7 +1195,7 @@ export async function _autoEvaluateSubtask(
 }
 
 export function _chainDiagnosticsForSubtasks(
-  subtasks: Array<{ subtaskId: string; requiredCapability: string }>,
+  subtasks: Array<{ subtaskId: string; requiredSkill: string }>,
   workersBySubtask: Record<string, string[]>,
   rankedBySubtask?: Record<string, Array<{ peerId: string; score: number; summary: string }>>,
 ): string[] {
@@ -1208,13 +1204,13 @@ export function _chainDiagnosticsForSubtasks(
     const workers = workersBySubtask[subtask.subtaskId] ?? [];
     if (workers.length === 0) {
       diagnostics.push(
-        `No workers for \`${subtask.requiredCapability}\` — ask a bonded contact to enable Join Agent Network (Capability Provider) in Settings → AI.`,
+        `No workers for \`${subtask.requiredSkill}\` — ask a bonded contact to enable Join Agent Network (Capability Provider) in Settings → AI.`,
       );
       continue;
     }
     const ranked = rankedBySubtask?.[subtask.subtaskId];
     if (ranked && ranked.length > 0) {
-      diagnostics.push(`Selected for \`${subtask.requiredCapability}\`: ${ranked[0]!.summary}`);
+      diagnostics.push(`Selected for \`${subtask.requiredSkill}\`: ${ranked[0]!.summary}`);
     }
   }
   return diagnostics;
@@ -1247,7 +1243,7 @@ export async function _runChainGoal(
   subtasks: Array<{
     subtaskId: string;
     depth: number;
-    requiredCapability: string;
+    requiredSkill: string;
     objective: string;
     preferredWorkerPeerId?: string;
   }>;
@@ -1389,7 +1385,7 @@ export async function _runChainGoal(
   let totalWorkers = 0;
   const workerCap = awardMode === "direct" ? 1 : 3;
   for (const subtask of plan.subtasks) {
-    const ranked = await findCapabilityProvidersRanked(deps, subtask.requiredCapability, input.preferredWorkerPeerIds);
+    const ranked = await findAgentNetworkWorkersRanked(deps, subtask.requiredSkill, input.preferredWorkerPeerIds);
     rankedBySubtask[subtask.subtaskId] = ranked;
     const candidates = ranked.map((r) => r.peerId);
     // Named assignee from plan+assign wins (direct dispatch). Keep up to 2
@@ -1426,7 +1422,7 @@ export async function _runChainGoal(
       subtasks: plan.subtasks.map((s) => ({
         subtaskId: s.subtaskId,
         depth: s.depth,
-        requiredCapability: s.requiredCapability,
+        requiredSkill: s.requiredSkill,
         objective: s.objective,
         preferredWorkerPeerId: s.preferredWorkerPeerId,
       })),
@@ -1453,7 +1449,7 @@ export async function _runChainGoal(
       subtasks: plan.subtasks.map((s) => ({
         subtaskId: s.subtaskId,
         depth: s.depth,
-        requiredCapability: s.requiredCapability,
+        requiredSkill: s.requiredSkill,
         objective: s.objective,
         preferredWorkerPeerId: s.preferredWorkerPeerId,
       })),
@@ -1471,7 +1467,7 @@ export async function _runChainGoal(
     subtasks: plan.subtasks.map((s) => ({
       subtaskId: s.subtaskId,
       depth: s.depth,
-      requiredCapability: s.requiredCapability,
+      requiredSkill: s.requiredSkill,
       objective: s.objective,
       preferredWorkerPeerId: s.preferredWorkerPeerId,
     })),
@@ -1508,7 +1504,7 @@ export async function _continueIterationRound(
   const workersBySubtask: Record<string, string[]> = {};
   let totalWorkers = 0;
   for (const subtask of plan.subtasks) {
-    const ranked = await findCapabilityProvidersRanked(deps, subtask.requiredCapability);
+    const ranked = await findAgentNetworkWorkersRanked(deps, subtask.requiredSkill);
     const candidates = ranked.map((r) => r.peerId);
     const preferred = subtask.preferredWorkerPeerId;
     let chosen: string[];
@@ -1583,7 +1579,7 @@ export async function _extendIterationRound(
   const workersBySubtask: Record<string, string[]> = {};
   let totalWorkers = 0;
   for (const subtask of appended.subtasks) {
-    const ranked = await findCapabilityProvidersRanked(deps, subtask.requiredCapability);
+    const ranked = await findAgentNetworkWorkersRanked(deps, subtask.requiredSkill);
     const candidates = ranked.map((r) => r.peerId);
     const preferred = subtask.preferredWorkerPeerId;
     let chosen: string[];
@@ -1667,7 +1663,7 @@ export async function _handoffChainGoalToAssigner(
   subtasks: Array<{
     subtaskId: string;
     depth: number;
-    requiredCapability: string;
+    requiredSkill: string;
     objective: string;
     preferredWorkerPeerId?: string;
   }>;
@@ -1676,7 +1672,7 @@ export async function _handoffChainGoalToAssigner(
   handedOff?: boolean;
 }> {
   const chainId = input.chainId ?? `chain_${randomUUID()}`;
-  const eligible = await findCapabilityProviders(deps, "task.execute");
+  const eligible = await findAgentNetworkWorkers(deps, "task.execute");
   if (!eligible.includes(input.assignerPeerId)) {
     return {
       ok: false,

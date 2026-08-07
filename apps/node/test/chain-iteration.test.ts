@@ -113,7 +113,7 @@ function seedFinalSubtask(state: ReturnType<typeof createChainState>, subtaskId:
     chainId: state.chainId,
     chainMandateId: state.chainMandate.chainMandateId,
     depth: 1,
-    requiredCapability: "task.execute",
+    requiredSkill: "task.execute",
     objective: "do work",
     requestedResult: "result",
     constraints: [],
@@ -223,7 +223,7 @@ describe("chain-iteration helpers", () => {
   it("buildPlanAssignPrompt includes iteration block for round>1", () => {
     const prompt = buildPlanAssignPrompt(
       "goal",
-      [{ peerId: "p1", capabilities: ["task.execute"] }],
+      [{ peerId: "p1", membership: ["task.execute"] }],
       {
         iteration: {
           round: 2,
@@ -583,7 +583,7 @@ describe("Phase 47C heuristics + ask_owner", () => {
       chainId: state.chainId,
       chainMandateId: state.chainMandate.chainMandateId,
       depth: 1,
-      requiredCapability: "task.execute",
+      requiredSkill: "task.execute",
       objective: "still running",
       requestedResult: "result",
       constraints: [],

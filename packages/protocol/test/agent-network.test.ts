@@ -103,7 +103,7 @@ function subtask(overrides: Partial<ChainSubtask> = {}): ChainSubtask {
     chainId: createChainId(),
     chainMandateId: createChainMandateId(),
     depth: 1,
-    requiredCapability: "task.execute",
+    requiredSkill: "task.execute",
     objective: "summarize the Q3 hiring report",
     requestedResult: "a markdown summary under 500 words",
     constraints: [],

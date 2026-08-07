@@ -159,7 +159,7 @@ Translates EnvoyMesh's `AgentCardSchema` to the A2A standard Agent Card format, 
 | `trustPolicySummary` | `securitySchemes` | Bond-based trust → `HTTPAuth: { scheme: "bearer" }` |
 | — | `defaultInputModes` | `["application/json", "text/plain"]` |
 | — | `defaultOutputModes` | `["application/json", "text/plain"]` |
-| `agentNetworkProfile.strengths` | `skills` (tags) | Each strength tag → skill `tags` |
+| `agentNetworkProfile.skills` | `skills` (tags) | Each strength tag → skill `tags` |
 | `agentNetworkProfile` (full) | `metadata` | Freshness, spend, context as structured metadata |
 | — | `signatures` | Optional Ed25519 over canonical JSON (`withA2AAgentCardSignature`; relay signs with control identity) |
 | — | `provider` | Optional: owner identity as provider |

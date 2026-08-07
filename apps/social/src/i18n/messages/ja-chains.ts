@@ -183,7 +183,7 @@ export const jaChainsMessages = {
     stale: "古いエージェントカード",
     missing: "エージェントカードなし",
     blocked: "ブロック中",
-    detail: "{count} 機能 · {synced} に同期済み",
+    detail: "{count} の得意分野 · {synced} に同期済み",
     noSync: "エージェントカードが未同期",
   },
 } as const;

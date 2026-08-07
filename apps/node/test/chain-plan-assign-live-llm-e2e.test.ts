@@ -56,36 +56,36 @@ describe.sequential.skipIf(!isPhase18LiveModelConfigured())(
 
       const orchPeerId = await enableAgentNetworkWorker(orch, {
         displayName: "Orchestrator",
-        capabilities: ["task.execute", "chain.orchestrate", "capability-provider"],
+        membership: ["task.execute", "chain.orchestrate", "agent-network-worker"],
         profile: {
           modelFreshness: 6,
           spendPosture: "subscription",
           contextWindow: "512k",
-          strengths: ["task.execute"],
+          skills: ["task.execute"],
           throughputTokensPerSec: 30,
         },
         modelProviders: liveAi,
       });
       const coderPeerId = await enableAgentNetworkWorker(coder, {
         displayName: "Coder Home",
-        capabilities: ["task.execute", "coding", "capability-provider"],
+        membership: ["task.execute", "coding", "agent-network-worker"],
         profile: {
           modelFreshness: 9,
           spendPosture: "subscription",
           contextWindow: "1M+",
-          strengths: ["coding"],
+          skills: ["coding"],
           throughputTokensPerSec: 90,
         },
         modelProviders: SHARED_PLAN_ASSIGN_AI,
       });
       const researchPeerId = await enableAgentNetworkWorker(research, {
         displayName: "Research Home",
-        capabilities: ["task.execute", "research.web", "capability-provider"],
+        membership: ["task.execute", "research.web", "agent-network-worker"],
         profile: {
           modelFreshness: 8,
           spendPosture: "metered",
           contextWindow: "512k",
-          strengths: ["research.web"],
+          skills: ["research.web"],
           throughputTokensPerSec: 45,
         },
         modelProviders: SHARED_PLAN_ASSIGN_AI,
@@ -94,7 +94,7 @@ describe.sequential.skipIf(!isPhase18LiveModelConfigured())(
       await bondAndExchangeCards(orch, coder, "Orchestrator", "Coder Home");
       await bondAndExchangeCards(orch, research, "Orchestrator", "Research Home");
       await bondAndExchangeCards(coder, research, "Coder Home", "Research Home");
-      await orch.service.refreshCapabilityIndex();
+      await orch.service.refreshAgentNetworkMembershipIndex();
 
       const roster = new Set([orchPeerId, coderPeerId, researchPeerId]);
 
@@ -116,7 +116,7 @@ describe.sequential.skipIf(!isPhase18LiveModelConfigured())(
         subtasks.length,
         `live plan too thin (${subtasks.length}): ${JSON.stringify(
           subtasks.map((s) => ({
-            cap: s.requiredCapability,
+            cap: s.requiredSkill,
             obj: s.objective,
             peer: s.preferredWorkerPeerId,
           })),
@@ -137,9 +137,9 @@ describe.sequential.skipIf(!isPhase18LiveModelConfigured())(
 
       // Soft specialty signal: when the live plan names coding / research caps,
       // prefer the matching specialist (mock E2E asserts this hard; live is soft).
-      const codingStep = subtasks.find((s) => /cod/i.test(s.requiredCapability) || /cod/i.test(s.objective));
+      const codingStep = subtasks.find((s) => /cod/i.test(s.requiredSkill) || /cod/i.test(s.objective));
       const researchStep = subtasks.find(
-        (s) => /research/i.test(s.requiredCapability) || /research/i.test(s.objective),
+        (s) => /research/i.test(s.requiredSkill) || /research/i.test(s.objective),
       );
       if (codingStep?.preferredWorkerPeerId) {
         expect(

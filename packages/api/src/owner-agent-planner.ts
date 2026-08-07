@@ -56,7 +56,7 @@ export interface OwnerAgentPlannerDeps {
     ok: boolean;
     chainId: string;
     chainMandateId: string;
-    subtasks: Array<{ subtaskId: string; depth: number; requiredCapability: string; objective: string }>;
+    subtasks: Array<{ subtaskId: string; depth: number; requiredSkill: string; objective: string }>;
     error?: string;
     assignerPeerId?: string;
     handedOff?: boolean;

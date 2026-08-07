@@ -19,6 +19,7 @@ import { withAgentNetworkMembership } from "@envoymesh/api";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 import { interestTopicFor, publishTopicFor } from "./capability-discovery.js";
 import { createWebContentStore } from "./web-content-store.js";
+import { aggregateAgentNetworkSkills } from "./agent-network-skills-aggregate.js";
 import { join } from "node:path";
 
 export type AgentCardInboundResult =
@@ -67,6 +68,8 @@ export async function buildLocalAgentCard(input: {
   profileDir?: string;
   capabilityProviderEnabled?: boolean;
   agentNetworkProfile?: import("@envoymesh/protocol").AgentNetworkProfile;
+  /** Enabled Ext Agent ids/names merged into agentNetworkProfile.skills. */
+  extAgentLabels?: readonly string[];
 }): Promise<AgentCard> {
   const human = await input.humanProfileStore.loadHumanProfile().catch(() => null);
   const ownerId = input.profile.owner.ownerId;
@@ -75,19 +78,26 @@ export async function buildLocalAgentCard(input: {
     knowledge: human?.knowledge,
     profileDir: input.profileDir,
   });
+  const membership = withAgentNetworkMembership(
+    input.profile.deviceCertificate.capabilities ?? ["message.send", "task.execute"],
+    input.capabilityProviderEnabled === true,
+  );
+  const agentNetworkProfile =
+    input.capabilityProviderEnabled === true && input.agentNetworkProfile
+      ? aggregateAgentNetworkSkills({
+          profile: input.agentNetworkProfile,
+          profileDir: input.profileDir,
+          extAgentLabels: input.extAgentLabels,
+        })
+      : undefined;
   return createAgentCard({
     ownerId,
     displayName: human?.displayName ?? ownerId,
     nodeProfile: input.profile.deviceCertificate.deviceProfile,
-    capabilities: withAgentNetworkMembership(
-      input.profile.deviceCertificate.capabilities ?? ["message.send", "task.execute"],
-      input.capabilityProviderEnabled === true,
-    ),
+    membership,
     publicTopics,
     webContentRoot: `envoy://${ownerId}/`,
-    ...(input.capabilityProviderEnabled === true && input.agentNetworkProfile
-      ? { agentNetworkProfile: input.agentNetworkProfile }
-      : {}),
+    ...(agentNetworkProfile ? { agentNetworkProfile } : {}),
   });
 }
 
@@ -105,12 +115,14 @@ export async function handleInboundAgentCardIntent(input: {
   /** Optional profile dir — used to load published web tags for publicTopics (45E). */
   profileDir?: string;
   /**
-   * When true, advertise Agent Network worker membership (`capability-provider`)
-   * on the local agent card. Default false — agents stay private for Chains.
+   * When true, advertise Agent Network worker membership (`agent-network-worker`)
+   * on the local agent card. Default false — agents stay private for Team jobs.
    */
   capabilityProviderEnabled?: boolean;
-  /** Owner-attested Agent Network profile (advertised when capability provider is on). */
+  /** Owner-attested Agent Network profile (advertised when Join Agent Network is on). */
   agentNetworkProfile?: import("@envoymesh/protocol").AgentNetworkProfile;
+  /** Enabled Ext Agent labels merged into advertised skills. */
+  extAgentLabels?: readonly string[];
 }): Promise<AgentCardInboundResult> {
   const {
     envelope,
@@ -180,6 +192,7 @@ export async function handleInboundAgentCardIntent(input: {
       profileDir: input.profileDir,
       capabilityProviderEnabled: input.capabilityProviderEnabled,
       agentNetworkProfile: input.agentNetworkProfile,
+      extAgentLabels: input.extAgentLabels,
     });
     return {
       ok: true,

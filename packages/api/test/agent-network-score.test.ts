@@ -6,41 +6,66 @@ import {
   scoreAgentNetworkWorker,
   throughputFit,
 } from "../src/agent-network-score.js";
-import { AGENT_NETWORK_WORKER_CAPABILITY } from "../src/agent-network-membership.js";
+import { AGENT_NETWORK_WORKER_MEMBERSHIP } from "../src/agent-network-membership.js";
 
 describe("scoreAgentNetworkWorker", () => {
-  it("ranks strength + large context + subscription + freshness + throughput higher", () => {
+  it("ranks skills + large context + subscription + freshness + throughput higher", () => {
     const weak = scoreAgentNetworkWorker({
-      requiredCapability: "research.web",
-      cardCapabilities: ["task.execute", AGENT_NETWORK_WORKER_CAPABILITY],
+      requiredSkill: "research.web",
+      membership: ["task.execute", AGENT_NETWORK_WORKER_MEMBERSHIP],
       profile: {
         modelFreshness: 3,
         spendPosture: "metered",
         contextWindow: "128k",
-        strengths: [],
+        skills: [],
         throughputTokensPerSec: 20,
       },
       displayName: "Weak",
     });
     const strong = scoreAgentNetworkWorker({
-      requiredCapability: "research.web",
-      cardCapabilities: ["task.execute", "research.web", AGENT_NETWORK_WORKER_CAPABILITY],
+      requiredSkill: "research.web",
+      // Mesh membership must not create a specialty match — only skills do.
+      membership: ["task.execute", "research.web", AGENT_NETWORK_WORKER_MEMBERSHIP],
       profile: {
         modelFreshness: 9,
         spendPosture: "subscription",
         contextWindow: "1M+",
-        strengths: ["research", "research.web"],
+        skills: ["research", "research.web"],
         throughputTokensPerSec: 120,
       },
       sameLan: true,
       displayName: "Strong",
     });
     expect(strong.score).toBeGreaterThan(weak.score);
-    expect(strong.breakdown.capability).toBeGreaterThan(weak.breakdown.capability);
+    expect(strong.breakdown.skill).toBe(1);
+    expect(weak.breakdown.skill).toBe(0.45);
     expect(strong.breakdown.throughput).toBeGreaterThan(weak.breakdown.throughput);
-    expect(DEFAULT_WORKER_SCORE_WEIGHTS.capability).toBeGreaterThan(
+    expect(DEFAULT_WORKER_SCORE_WEIGHTS.skill).toBeGreaterThan(
       DEFAULT_WORKER_SCORE_WEIGHTS.spendPosture,
     );
+  });
+
+  it("does not treat membership tags as specialty factors", () => {
+    const withMembershipOnly = scoreAgentNetworkWorker({
+      requiredSkill: "coding",
+      membership: ["task.execute", "coding", AGENT_NETWORK_WORKER_MEMBERSHIP],
+      profile: { skills: [], modelFreshness: 5, spendPosture: "unknown", contextWindow: "128k" },
+      displayName: "MembershipOnly",
+    });
+    const withSkills = scoreAgentNetworkWorker({
+      requiredSkill: "coding",
+      membership: ["task.execute", AGENT_NETWORK_WORKER_MEMBERSHIP],
+      profile: {
+        skills: ["coding"],
+        modelFreshness: 5,
+        spendPosture: "unknown",
+        contextWindow: "128k",
+      },
+      displayName: "Skills",
+    });
+    expect(withSkills.breakdown.skill).toBe(1);
+    expect(withMembershipOnly.breakdown.skill).toBe(0.45);
+    expect(withSkills.score).toBeGreaterThan(withMembershipOnly.score);
   });
 
   it("throughputFit saturates around 200 tok/s", () => {
@@ -61,8 +86,8 @@ describe("scoreAgentNetworkWorker", () => {
   it("assignWorkersToSteps never skips when pool is non-empty", () => {
     const all = assignWorkersToSteps({
       steps: [
-        { stepKey: "1", requiredCapability: "+" },
-        { stepKey: "2", requiredCapability: "/" },
+        { stepKey: "1", requiredSkill: "+" },
+        { stepKey: "2", requiredSkill: "/" },
       ],
       rankedPeerIds: ["only"],
       scoreFor: () => 1,
@@ -73,8 +98,8 @@ describe("scoreAgentNetworkWorker", () => {
   it("assignWorkersToSteps picks best score per step", () => {
     const out = assignWorkersToSteps({
       steps: [
-        { stepKey: "add", requiredCapability: "+" },
-        { stepKey: "div", requiredCapability: "/" },
+        { stepKey: "add", requiredSkill: "+" },
+        { stepKey: "div", requiredSkill: "/" },
       ],
       rankedPeerIds: ["a", "b"],
       scoreFor: (peerId, cap) => {

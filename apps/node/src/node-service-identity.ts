@@ -124,7 +124,7 @@ export interface IdentityContext {
   getPeerDirectoryStore(): LocalPeerDirectoryStore;
   getBonds(): Promise<BondRecord[]>;
   requestPeerProfile(ownerId: string): Promise<{ ok: boolean; reason?: string }>;
-  refreshCapabilityIndex(): Promise<void>;
+  refreshAgentNetworkMembershipIndex(): Promise<void>;
   emit(event: string, payload: unknown): void;
   dialHintsForChat(peerId: string, listenAddrs?: string[]): Promise<string[]>;
   rememberBondedPeerTransportFromInbound(
@@ -188,7 +188,7 @@ export function buildIdentityContext(host: any): IdentityContext {
     getPeerDirectoryStore: () => host._peerDirectoryStore,
     getBonds: () => host.getBonds(),
     requestPeerProfile: (ownerId) => host.requestPeerProfile(ownerId),
-    refreshCapabilityIndex: () => host.refreshCapabilityIndex(),
+    refreshAgentNetworkMembershipIndex: () => host.refreshAgentNetworkMembershipIndex(),
     emit: (event, payload) => host.emit(event, payload),
     dialHintsForChat: (peerId, listenAddrs) => host._dialHintsForChat(peerId, listenAddrs),
     rememberBondedPeerTransportFromInbound: (envelope, context) =>
@@ -451,8 +451,8 @@ export async function refreshBondPeerProfilesViaRuntime(
     const result = await ctx.requestPeerProfile(bond.peerOwnerId);
     if (!result.ok) failed += 1;
   }
-  void ctx.refreshCapabilityIndex().catch((err) => {
-    console.warn("[chain] refreshCapabilityIndex after bond refresh failed:", err);
+  void ctx.refreshAgentNetworkMembershipIndex().catch((err) => {
+    console.warn("[chain] refreshAgentNetworkMembershipIndex after bond refresh failed:", err);
   });
   return { requested, failed };
 }

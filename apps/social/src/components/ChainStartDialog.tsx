@@ -11,7 +11,7 @@ import { useNodeService } from "../hooks/useNodeService.js";
 import { useToast } from "../hooks/useToast.js";
 import { isTeamJobReady } from "../lib/chain-bond-health.js";
 import type { ChainBondHealth } from "../lib/chain-bond-health.js";
-import { AgentCapabilitiesPreview } from "./AgentCapabilitiesPreview.js";
+import { AgentNetworkSkillsPreview } from "./AgentNetworkSkillsPreview.js";
 
 export interface WorkerCandidate {
   bond: BondRecord;
@@ -286,7 +286,7 @@ export function ChainStartDialog({
             <ul className="chain-start-subtasks">
               {preview.subtasks.map((s) => (
                 <li key={s.subtaskId}>
-                  <strong>{s.requiredCapability}</strong>
+                  <strong>{s.requiredSkill}</strong>
                   <span>{s.objective}</span>
                   <span className="chain-start-workers">
                     {t("chains.start.workerCount", { count: s.workerCount })}
@@ -393,14 +393,7 @@ export function ChainStartDialog({
                               </span>
                             ) : null}
                           </div>
-                          {card && card.capabilities.length > 0 ? (
-                            <div className="chain-worker-card__caps-row">
-                              <AgentCapabilitiesPreview
-                                capabilities={card.capabilities}
-                                compact
-                              />
-                            </div>
-                          ) : null}
+                          <AgentNetworkSkillsPreview card={card} compact />
                         </div>
                       </li>
                     );

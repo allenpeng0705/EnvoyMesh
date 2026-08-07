@@ -12,8 +12,9 @@ export const PLAN_ASSIGN_FROM_ROSTER_TOKEN = "__plan_assign_from_roster__";
 
 interface RosterRow {
   peerId: string;
-  strengths?: string[];
-  capabilities?: string[];
+  skills?: string[];
+  membership?: string[];
+  canExecute?: boolean;
   isSelf?: boolean;
   throughputTokensPerSec?: number | null;
   modelFreshness?: number | null;
@@ -47,11 +48,12 @@ function extractRosterJson(prompt: string): unknown {
 }
 
 function scoreFor(row: RosterRow, tag: string): number {
-  const strengths = row.strengths ?? [];
-  const caps = row.capabilities ?? [];
+  const skills = row.skills ?? [];
+  const caps = row.membership ?? [];
   let score = 0;
-  if (strengths.includes(tag) || caps.includes(tag)) score += 50;
-  if (caps.includes("task.execute")) score += 5;
+  // Specialty match is skills-only — mesh capability tags are not factors.
+  if (skills.includes(tag)) score += 50;
+  if (caps.includes("task.execute") || row.canExecute === true) score += 5;
   if (row.isSelf) score += 2;
   score += Math.min(20, Math.floor((row.throughputTokensPerSec ?? 0) / 10));
   score += row.modelFreshness ?? 0;
@@ -78,12 +80,13 @@ export function synthesizePlanAssignFromRosterPrompt(prompt: string): string | n
     if (typeof o.peerId !== "string" || !o.peerId) continue;
     rows.push({
       peerId: o.peerId,
-      strengths: Array.isArray(o.strengths)
-        ? o.strengths.filter((x): x is string => typeof x === "string")
+      skills: Array.isArray(o.skills)
+        ? o.skills.filter((x): x is string => typeof x === "string")
         : [],
-      capabilities: Array.isArray(o.capabilities)
-        ? o.capabilities.filter((x): x is string => typeof x === "string")
+      membership: Array.isArray(o.membership)
+        ? o.membership.filter((x): x is string => typeof x === "string")
         : [],
+      canExecute: o.canExecute === true,
       isSelf: o.isSelf === true,
       throughputTokensPerSec:
         typeof o.throughputTokensPerSec === "number" ? o.throughputTokensPerSec : null,
@@ -100,7 +103,7 @@ export function synthesizePlanAssignFromRosterPrompt(prompt: string): string | n
     steps: [
       {
         objective: "Gather source facts for the goal",
-        requiredCapability: "research.web",
+        requiredSkill: "research.web",
         depth: 1,
         dependsOn: [],
         assignedPeerId: researchPeer,
@@ -108,7 +111,7 @@ export function synthesizePlanAssignFromRosterPrompt(prompt: string): string | n
       },
       {
         objective: "Draft structured answer from research",
-        requiredCapability: "coding",
+        requiredSkill: "coding",
         depth: 1,
         dependsOn: [],
         assignedPeerId: codingPeer,
@@ -116,7 +119,7 @@ export function synthesizePlanAssignFromRosterPrompt(prompt: string): string | n
       },
       {
         objective: "Combine research + draft into one final deliverable",
-        requiredCapability: "task.execute",
+        requiredSkill: "task.execute",
         depth: 1,
         dependsOn: [0, 1],
         assignedPeerId: mergePeer,

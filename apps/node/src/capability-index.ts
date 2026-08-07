@@ -2,7 +2,7 @@
  * Phase 41B — Capability Index for worker auto-discovery.
  *
  * When a bond is established with a peer, this index is updated with
- * the peer's agent card capabilities. The orchestrator's `findWorkers`
+ * the peer's agent card membership. The orchestrator's `findWorkers`
  * callback reads from this index, making worker discovery dynamic.
  *
  * Persistence: `<profileDir>/capability-index.json` — survives restarts.
@@ -21,7 +21,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 export interface WorkerEntry {
   peerId: string;
   ownerId: string;
-  capabilities: string[];
+  membership: string[];
   lastSeenAt: string;
   /** Optional display info from the agent card. */
   displayName?: string;
@@ -29,10 +29,10 @@ export interface WorkerEntry {
 }
 
 // ---------------------------------------------------------------------------
-// CapabilityIndex
+// AgentNetworkMembershipIndex
 // ---------------------------------------------------------------------------
 
-export class CapabilityIndex {
+export class AgentNetworkMembershipIndex {
   /** Map from capability tag → list of worker peerIds. */
   private byCapability = new Map<string, string[]>();
 
@@ -56,29 +56,29 @@ export class CapabilityIndex {
   }
 
   /**
-   * Add or update a worker's capabilities. Automatically deduplicates
+   * Add or update a worker's membership. Automatically deduplicates
    * capability entries and triggers a debounced persist.
    */
   indexWorker(entry: WorkerEntry): void {
     const existing = this.workers.get(entry.peerId);
     // Replace capabilities from the latest agent card — do not merge forever.
-    // Opt-out of Agent Network (dropping `capability-provider`) must take effect.
-    const nextCaps = [...new Set(entry.capabilities)];
+    // Opt-out of Agent Network (dropping `agent-network-worker`) must take effect.
+    const nextCaps = [...new Set(entry.membership)];
     if (existing) {
-      for (const cap of existing.capabilities) {
+      for (const cap of existing.membership) {
         const peers = this.byCapability.get(cap);
         if (!peers) continue;
         const idx = peers.indexOf(entry.peerId);
         if (idx >= 0) peers.splice(idx, 1);
         if (peers.length === 0) this.byCapability.delete(cap);
       }
-      existing.capabilities = nextCaps;
+      existing.membership = nextCaps;
       existing.lastSeenAt = entry.lastSeenAt;
       existing.ownerId = entry.ownerId;
       if (entry.displayName) existing.displayName = entry.displayName;
       if (entry.agentCardId) existing.agentCardId = entry.agentCardId;
     } else {
-      this.workers.set(entry.peerId, { ...entry, capabilities: nextCaps });
+      this.workers.set(entry.peerId, { ...entry, membership: nextCaps });
     }
     for (const cap of nextCaps) {
       const peers = this.byCapability.get(cap) ?? [];
@@ -96,7 +96,7 @@ export class CapabilityIndex {
     if (!entry) return;
 
     this.workers.delete(peerId);
-    for (const cap of entry.capabilities) {
+    for (const cap of entry.membership) {
       const peers = this.byCapability.get(cap);
       if (peers) {
         const idx = peers.indexOf(peerId);

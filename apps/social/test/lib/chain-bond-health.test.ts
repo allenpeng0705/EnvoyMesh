@@ -23,7 +23,7 @@ const card = {
   ownerId: "envoy:owner:alice",
   displayName: "Alice",
   sourceAgentPeerId: "envoy_agent_abc",
-  capabilities: ["research"],
+  membership: ["task.execute", "agent-network-worker"],
   cachedAt: new Date().toISOString(),
 } as CachedAgentCardSummary;
 

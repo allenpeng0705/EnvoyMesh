@@ -806,7 +806,7 @@ export class ToolRegistry {
       paramSchema: {
         type: "object",
         properties: {
-          requiredCapability: {
+          requiredSkill: {
             type: "string",
             description: "Capability tag to score against (default task.execute)",
           },
@@ -822,7 +822,7 @@ export class ToolRegistry {
     this.register({
       name: "mesh.probe_peer",
       description:
-        "Refresh a peer's Agent Card (optional request) and return Assigner roster factors: strengths, freshness, context, spend, throughputTokensPerSec.",
+        "Refresh a peer's Agent Card (optional request) and return Assigner roster factors: skills, freshness, context, spend, throughputTokensPerSec.",
       paramSchema: {
         type: "object",
         properties: {
@@ -1368,7 +1368,7 @@ export interface MeshToolContext {
   listAgentCards?: () => Promise<import("@envoymesh/api").CachedAgentCardSummary[]>;
   /** Ranked Agent Network workers for Assigner roster / MCP. */
   listAgentNetworkWorkers?: (params?: {
-    requiredCapability?: string;
+    requiredSkill?: string;
     limit?: number;
   }) => Promise<
     Array<{
@@ -1391,13 +1391,13 @@ export interface MeshToolContext {
     ownerId?: string;
     peerId?: string;
     displayName?: string;
-    capabilities?: string[];
+    membership?: string[];
     profile?: import("@envoymesh/protocol").AgentNetworkProfile;
     score?: number;
     summary?: string;
   }>;
   getLocalCapabilityManifest?: () => Promise<{ capabilities: string[]; keywords: string[] } | undefined>;
-  listBondedAgentCapabilities?: () => Promise<Array<{ ownerId: string; capabilities: string[] }>>;
+  listBondedAgentCapabilities?: () => Promise<Array<{ ownerId: string; membership: string[] }>>;
   startCapabilityProviderJob?: (params: {
     goal: string;
     capabilityIds?: string[];
@@ -2191,12 +2191,12 @@ export async function executeTool(
           latencyMs: Date.now() - startTime,
         };
       }
-      const requiredCapability =
-        typeof params.requiredCapability === "string" && params.requiredCapability.trim()
-          ? params.requiredCapability.trim()
+      const requiredSkill =
+        typeof params.requiredSkill === "string" && params.requiredSkill.trim()
+          ? params.requiredSkill.trim()
           : undefined;
       const limit = typeof params.limit === "number" ? params.limit : undefined;
-      const workers = await context.listAgentNetworkWorkers({ requiredCapability, limit });
+      const workers = await context.listAgentNetworkWorkers({ requiredSkill, limit });
       return {
         ok: true,
         result: { workers, count: workers.length },

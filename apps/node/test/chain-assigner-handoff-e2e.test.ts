@@ -43,34 +43,34 @@ describe.sequential("E2E remote Assigner handoff (libp2p)", () => {
 
     await enableAgentNetworkWorker(trigger, {
       displayName: "Trigger",
-      capabilities: ["task.execute", "chain.orchestrate", "capability-provider"],
+      membership: ["task.execute", "chain.orchestrate", "agent-network-worker"],
       profile: {
         modelFreshness: 5,
         spendPosture: "subscription",
         contextWindow: "128k",
-        strengths: ["task.execute"],
+        skills: ["task.execute"],
         throughputTokensPerSec: 20,
       },
     });
     const assignerPeerId = await enableAgentNetworkWorker(assigner, {
       displayName: "Assigner",
-      capabilities: ["task.execute", "chain.orchestrate", "capability-provider"],
+      membership: ["task.execute", "chain.orchestrate", "agent-network-worker"],
       profile: {
         modelFreshness: 8,
         spendPosture: "subscription",
         contextWindow: "512k",
-        strengths: ["task.execute"],
+        skills: ["task.execute"],
         throughputTokensPerSec: 50,
       },
     });
     await enableAgentNetworkWorker(worker, {
       displayName: "Worker",
-      capabilities: ["task.execute", "coding", "research.web", "capability-provider"],
+      membership: ["task.execute", "coding", "research.web", "agent-network-worker"],
       profile: {
         modelFreshness: 9,
         spendPosture: "metered",
         contextWindow: "1M+",
-        strengths: ["coding", "research.web"],
+        skills: ["coding", "research.web"],
         throughputTokensPerSec: 80,
       },
     });
@@ -81,8 +81,8 @@ describe.sequential("E2E remote Assigner handoff (libp2p)", () => {
     await bondAndExchangeCards(assigner, worker, "Assigner", "Worker");
     await bondAndExchangeCards(trigger, worker, "Trigger", "Worker");
 
-    await trigger.service.refreshCapabilityIndex();
-    await assigner.service.refreshCapabilityIndex();
+    await trigger.service.refreshAgentNetworkMembershipIndex();
+    await assigner.service.refreshAgentNetworkMembershipIndex();
 
     const started = await trigger.service.chainStartFromGoal({
       goal: "Research then draft a coded summary and merge into one final answer",
@@ -135,34 +135,34 @@ describe.sequential("E2E remote Assigner handoff (libp2p)", () => {
 
     await enableAgentNetworkWorker(trigger, {
       displayName: "Trigger",
-      capabilities: ["task.execute", "chain.orchestrate", "capability-provider"],
+      membership: ["task.execute", "chain.orchestrate", "agent-network-worker"],
       profile: {
         modelFreshness: 5,
         spendPosture: "subscription",
         contextWindow: "128k",
-        strengths: ["task.execute"],
+        skills: ["task.execute"],
         throughputTokensPerSec: 20,
       },
     });
     const assignerPeerId = await enableAgentNetworkWorker(assigner, {
       displayName: "Assigner",
-      capabilities: ["task.execute", "chain.orchestrate", "capability-provider"],
+      membership: ["task.execute", "chain.orchestrate", "agent-network-worker"],
       profile: {
         modelFreshness: 8,
         spendPosture: "subscription",
         contextWindow: "512k",
-        strengths: ["task.execute"],
+        skills: ["task.execute"],
         throughputTokensPerSec: 50,
       },
     });
     await enableAgentNetworkWorker(worker, {
       displayName: "Worker",
-      capabilities: ["task.execute", "coding", "research.web", "capability-provider"],
+      membership: ["task.execute", "coding", "research.web", "agent-network-worker"],
       profile: {
         modelFreshness: 9,
         spendPosture: "metered",
         contextWindow: "1M+",
-        strengths: ["coding", "research.web"],
+        skills: ["coding", "research.web"],
         throughputTokensPerSec: 80,
       },
     });
@@ -170,8 +170,8 @@ describe.sequential("E2E remote Assigner handoff (libp2p)", () => {
     await bondAndExchangeCards(trigger, assigner, "Trigger", "Assigner");
     await bondAndExchangeCards(assigner, worker, "Assigner", "Worker");
     await bondAndExchangeCards(trigger, worker, "Trigger", "Worker");
-    await trigger.service.refreshCapabilityIndex();
-    await assigner.service.refreshCapabilityIndex();
+    await trigger.service.refreshAgentNetworkMembershipIndex();
+    await assigner.service.refreshAgentNetworkMembershipIndex();
 
     const midJobBlob = {
       round: 2,

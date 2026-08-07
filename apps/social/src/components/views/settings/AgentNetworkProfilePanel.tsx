@@ -3,7 +3,7 @@
  *
  * Rendered inside Team jobs → "Your worker profile" inline section (via
  * WorkerMembershipSection). The profile is advertised on the Agent Card
- * only when Join Agent Network (Capability Provider) is enabled.
+ * only when Join Agent Network (Join Agent Network) is enabled.
  *
  * UX: role presets one-click fill + auto-save every field; the technical
  * sliders (freshness / spend / context / throughput) live in a collapsed
@@ -17,31 +17,36 @@ import type {
   AgentNetworkProfile,
   AgentNetworkSpendPosture,
 } from "@envoymesh/protocol";
-import { DEFAULT_AGENT_NETWORK_PROFILE } from "@envoymesh/protocol";
+import {
+  DEFAULT_AGENT_NETWORK_PROFILE,
+  agentNetworkSkillIds,
+  createAgentNetworkProfile,
+  createOwnerDomainSkill,
+} from "@envoymesh/protocol";
 import { useT } from "../../../context/I18nContext.js";
 import { useNodeService } from "../../../hooks/useNodeService.js";
 import { useToast } from "../../../hooks/useToast.js";
 
-/** Strength taxonomy — grouped so the menu reads as a sensible taxonomy
+/** Skill taxonomy — grouped so the menu reads as a sensible taxonomy
  * (Analytical → STEM → Language → Creative) rather than an arbitrary
- * grab-bag. Strengths are stored as their id in the profile; the
- * localized label is looked up at render time. Custom strengths the user
+ * grab-bag. Skills are stored as owner domain entries; the
+ * localized label is looked up at render time. Custom skills the user
  * types in are kept as-is (raw lowercase). */
-interface StrengthGroup {
+interface SkillGroup {
   id: "analytical" | "stem" | "language" | "creative";
-  strengths: string[];
+  skills: string[];
 }
 
-const STRENGTH_GROUPS: StrengthGroup[] = [
-  { id: "analytical", strengths: ["research", "analysis", "reasoning"] },
-  { id: "stem", strengths: ["mathematics", "physics", "coding", "engineering"] },
-  { id: "language", strengths: ["writing", "summarization", "translation"] },
-  { id: "creative", strengths: ["creative", "design"] },
+const SKILL_GROUPS: SkillGroup[] = [
+  { id: "analytical", skills: ["research", "analysis", "reasoning"] },
+  { id: "stem", skills: ["mathematics", "physics", "coding", "engineering"] },
+  { id: "language", skills: ["writing", "summarization", "translation"] },
+  { id: "creative", skills: ["creative", "design"] },
 ];
 
-/** Every known strength id — used to recognize preset tags in the summary
+/** Every known skill id — used to recognize preset tags in the summary
  * line so they render with their localized label instead of the raw id. */
-const KNOWN_STRENGTHS = new Set(STRENGTH_GROUPS.flatMap((g) => g.strengths));
+const KNOWN_SKILLS = new Set(SKILL_GROUPS.flatMap((g) => g.skills));
 
 /** i18n prefix — Settings → Agent Network → membership. */
 const K = "settings.agentNetwork.membership";
@@ -52,16 +57,16 @@ interface ProfilePreset {
   modelFreshness: number;
   spendPosture: AgentNetworkSpendPosture;
   contextWindow: AgentNetworkContextWindow;
-  strengths: string[];
+  skills: string[];
 }
 
 /** One-click role presets. Each fills every profile field. */
 const PROFILE_PRESETS: ProfilePreset[] = [
-  { id: "researcher", emoji: "🔬", modelFreshness: 8, spendPosture: "subscription", contextWindow: "256k", strengths: ["research", "summarization", "writing"] },
-  { id: "coder", emoji: "💻", modelFreshness: 9, spendPosture: "subscription", contextWindow: "256k", strengths: ["coding"] },
-  { id: "writer", emoji: "✍️", modelFreshness: 6, spendPosture: "unknown", contextWindow: "128k", strengths: ["writing", "translation"] },
-  { id: "general", emoji: "🧰", modelFreshness: 5, spendPosture: "unknown", contextWindow: "128k", strengths: [] },
-  { id: "budget", emoji: "💰", modelFreshness: 4, spendPosture: "metered", contextWindow: "128k", strengths: [] },
+  { id: "researcher", emoji: "🔬", modelFreshness: 8, spendPosture: "subscription", contextWindow: "256k", skills: ["research", "summarization", "writing"] },
+  { id: "coder", emoji: "💻", modelFreshness: 9, spendPosture: "subscription", contextWindow: "256k", skills: ["coding"] },
+  { id: "writer", emoji: "✍️", modelFreshness: 6, spendPosture: "unknown", contextWindow: "128k", skills: ["writing", "translation"] },
+  { id: "general", emoji: "🧰", modelFreshness: 5, spendPosture: "unknown", contextWindow: "128k", skills: [] },
+  { id: "budget", emoji: "💰", modelFreshness: 4, spendPosture: "metered", contextWindow: "128k", skills: [] },
 ];
 
 function arraysEqual(a: string[], b: string[]): boolean {
@@ -71,12 +76,13 @@ function arraysEqual(a: string[], b: string[]): boolean {
 
 /** Returns the id of the preset whose fields exactly match the profile, or null. */
 function matchingPreset(profile: AgentNetworkProfile): string | null {
+  const ids = agentNetworkSkillIds(profile.skills);
   for (const p of PROFILE_PRESETS) {
     if (
       profile.modelFreshness === p.modelFreshness &&
       profile.spendPosture === p.spendPosture &&
       profile.contextWindow === p.contextWindow &&
-      arraysEqual(profile.strengths, p.strengths)
+      arraysEqual(ids, p.skills)
     ) {
       return p.id;
     }
@@ -84,12 +90,21 @@ function matchingPreset(profile: AgentNetworkProfile): string | null {
   return null;
 }
 
+function toggleOwnerSkill(profile: AgentNetworkProfile, tag: string, on: boolean): AgentNetworkProfile {
+  const ids = agentNetworkSkillIds(profile.skills);
+  const nextIds = on ? ids.filter((s) => s !== tag) : [...ids, tag].slice(0, 16);
+  return {
+    ...profile,
+    skills: nextIds.map((id) => createOwnerDomainSkill(id)),
+  };
+}
+
 export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
   const t = useT();
   const nodeService = useNodeService();
   const { showToast } = useToast();
   const [profile, setProfile] = useState<AgentNetworkProfile>({ ...DEFAULT_AGENT_NETWORK_PROFILE });
-  const [strengthDraft, setStrengthDraft] = useState("");
+  const [skillDraft, setSkillDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [showFineTune, setShowFineTune] = useState(false);
 
@@ -98,7 +113,7 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
     void nodeService.getNodeConfig().then((cfg) => {
       if (cancelled) return;
       if (cfg.agentNetworkProfile) {
-        setProfile({ ...DEFAULT_AGENT_NETWORK_PROFILE, ...cfg.agentNetworkProfile });
+        setProfile(createAgentNetworkProfile(cfg.agentNetworkProfile));
       }
     }).catch(() => undefined);
     return () => {
@@ -126,13 +141,13 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
   /** One-click: fill every field from a preset and auto-save. */
   const applyPreset = useCallback(
     (preset: ProfilePreset) => {
-      const next: AgentNetworkProfile = {
+      const next = createAgentNetworkProfile({
         modelFreshness: preset.modelFreshness,
         spendPosture: preset.spendPosture,
         contextWindow: preset.contextWindow,
-        strengths: [...preset.strengths],
+        skills: preset.skills.map((id) => createOwnerDomainSkill(id)),
         throughputTokensPerSec: profile.throughputTokensPerSec,
-      };
+      });
       setProfile(next);
       void persist(next, t(`${K}.presetApplied`, { name: t(`${K}.preset_${preset.id}`) }));
     },
@@ -178,34 +193,28 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
 
       {/* ---- Strengths (intuitive — always visible) ---- */}
       <div className="form-group">
-        <label>{t(`${K}.strengths`)}</label>
-        <div className="agent-network-strengths">
-          {STRENGTH_GROUPS.map((group) => (
-            <div key={group.id} className="an-strength-group">
-              <span className="an-strength-group__label">
-                {t(`${K}.strengthGroup_${group.id}`)}
+        <label>{t(`${K}.skills`)}</label>
+        <div className="agent-network-skills">
+          {SKILL_GROUPS.map((group) => (
+            <div key={group.id} className="an-skill-group">
+              <span className="an-skill-group__label">
+                {t(`${K}.skillGroup_${group.id}`)}
               </span>
-              <div className="an-strength-group__chips">
-                {group.strengths.map((tag) => {
-                  const on = profile.strengths.includes(tag);
+              <div className="an-skill-group__chips">
+                {group.skills.map((tag) => {
+                  const ids = agentNetworkSkillIds(profile.skills);
+                  const on = ids.includes(tag);
                   return (
                     <button
                       key={tag}
                       type="button"
                       className={
-                        on ? "an-strength-chip an-strength-chip--on" : "an-strength-chip"
+                        on ? "an-skill-chip an-skill-chip--on" : "an-skill-chip"
                       }
                       aria-pressed={on}
-                      onClick={() =>
-                        setProfile((p) => ({
-                          ...p,
-                          strengths: on
-                            ? p.strengths.filter((s) => s !== tag)
-                            : [...p.strengths, tag].slice(0, 16),
-                        }))
-                      }
+                      onClick={() => setProfile((p) => toggleOwnerSkill(p, tag, on))}
                     >
-                      {t(`${K}.strength_${tag}`)}
+                      {t(`${K}.skill_${tag}`)}
                     </button>
                   );
                 })}
@@ -213,32 +222,31 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
             </div>
           ))}
         </div>
-        <div className="agent-network-strength-add">
+        <div className="agent-network-skill-add">
           <input
             type="text"
             className="settings-input"
-            value={strengthDraft}
-            placeholder={t(`${K}.strengthPlaceholder`)}
-            onChange={(e) => setStrengthDraft(e.target.value)}
+            value={skillDraft}
+            placeholder={t(`${K}.skillPlaceholder`)}
+            onChange={(e) => setSkillDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key !== "Enter") return;
               e.preventDefault();
-              const tag = strengthDraft.trim().toLowerCase();
+              const tag = skillDraft.trim().toLowerCase();
               if (!tag) return;
-              setProfile((p) => ({
-                ...p,
-                strengths: p.strengths.includes(tag)
-                  ? p.strengths
-                  : [...p.strengths, tag].slice(0, 16),
-              }));
-              setStrengthDraft("");
+              setProfile((p) => {
+                const ids = agentNetworkSkillIds(p.skills);
+                if (ids.includes(tag)) return p;
+                return toggleOwnerSkill(p, tag, false);
+              });
+              setSkillDraft("");
             }}
           />
         </div>
-        {profile.strengths.length > 0 ? (
+        {agentNetworkSkillIds(profile.skills).length > 0 ? (
           <p className="field-desc">
-            {profile.strengths
-              .map((s) => (KNOWN_STRENGTHS.has(s) ? t(`${K}.strength_${s}`) : s))
+            {agentNetworkSkillIds(profile.skills)
+              .map((s) => (KNOWN_SKILLS.has(s) ? t(`${K}.skill_${s}`) : s))
               .join(", ")}
           </p>
         ) : null}

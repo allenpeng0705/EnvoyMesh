@@ -37,7 +37,7 @@ function mockProvider(responses: string[]): LlmProvider {
 function decompositionResponse(caps: string[]): string {
   return JSON.stringify(
     caps.map((c, i) => ({
-      requiredCapability: c,
+      requiredSkill: c,
       objective: `${c} task ${i + 1}`,
       costCeilingUsd: 2.5 + i,
     })),
@@ -59,8 +59,8 @@ describe("chain-llm — createLlmDecompose", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.subtasks.length).toBe(2);
-      expect(result.subtasks[0].requiredCapability).toBe("search");
-      expect(result.subtasks[1].requiredCapability).toBe("summarize");
+      expect(result.subtasks[0].requiredSkill).toBe("search");
+      expect(result.subtasks[1].requiredSkill).toBe("summarize");
       expect(result.estimatedTotalCostUsd).toBeCloseTo(6);
       expect(result.tokenUsage.promptTokens).toBe(100);
     }
@@ -127,7 +127,7 @@ describe("chain-llm — createLlmDecompose", () => {
   });
 
   it("handles single-object response (not array)", async () => {
-    const provider = mockProvider([JSON.stringify({ requiredCapability: "search", objective: "test" })]);
+    const provider = mockProvider([JSON.stringify({ requiredSkill: "search", objective: "test" })]);
     const decompose = createLlmDecompose(provider, CAPS);
     const r = await decompose("Test");
     expect(r.ok).toBe(false);
@@ -137,7 +137,7 @@ describe("chain-llm — createLlmDecompose", () => {
   it("rejects too many subtasks", async () => {
     const manyCapabilities = Array.from({ length: 20 }, (_, i) => `cap_${i}`);
     const provider = mockProvider([JSON.stringify(manyCapabilities.map((c) => ({
-      requiredCapability: c,
+      requiredSkill: c,
       objective: `${c} task`,
       costCeilingUsd: 1,
     })))]);
@@ -149,22 +149,22 @@ describe("chain-llm — createLlmDecompose", () => {
 
   it("filters out unknown capabilities", async () => {
     const provider = mockProvider([JSON.stringify([
-      { requiredCapability: "translation", objective: "Translate", costCeilingUsd: 2 },
-      { requiredCapability: "unknown_cap", objective: "Unknown", costCeilingUsd: 5 },
+      { requiredSkill: "translation", objective: "Translate", costCeilingUsd: 2 },
+      { requiredSkill: "unknown_cap", objective: "Unknown", costCeilingUsd: 5 },
     ])]);
     const decompose = createLlmDecompose(provider, CAPS);
     const r = await decompose("Test");
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.subtasks.length).toBe(1);
-      expect(r.subtasks[0].requiredCapability).toBe("translation");
+      expect(r.subtasks[0].requiredSkill).toBe("translation");
     }
   });
 
   it("rejects when all subtasks filtered out", async () => {
     const provider = mockProvider([JSON.stringify([
-      { requiredCapability: "unknown_1", objective: "a", costCeilingUsd: 1 },
-      { requiredCapability: "unknown_2", objective: "b", costCeilingUsd: 1 },
+      { requiredSkill: "unknown_1", objective: "a", costCeilingUsd: 1 },
+      { requiredSkill: "unknown_2", objective: "b", costCeilingUsd: 1 },
     ])]);
     const decompose = createLlmDecompose(provider, CAPS);
     const r = await decompose("Test");
@@ -174,16 +174,16 @@ describe("chain-llm — createLlmDecompose", () => {
 
   it("filters out invalid cost values", async () => {
     const provider = mockProvider([JSON.stringify([
-      { requiredCapability: "search", objective: "Good", costCeilingUsd: 5 },
-      { requiredCapability: "review", objective: "Bad cost 0", costCeilingUsd: 0 },
-      { requiredCapability: "analyze", objective: "Too expensive", costCeilingUsd: 100 },
+      { requiredSkill: "search", objective: "Good", costCeilingUsd: 5 },
+      { requiredSkill: "review", objective: "Bad cost 0", costCeilingUsd: 0 },
+      { requiredSkill: "analyze", objective: "Too expensive", costCeilingUsd: 100 },
     ])]);
     const decompose = createLlmDecompose(provider, CAPS);
     const r = await decompose("Test");
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.subtasks.length).toBe(1);
-      expect(r.subtasks[0].requiredCapability).toBe("search");
+      expect(r.subtasks[0].requiredSkill).toBe("search");
     }
   });
 });

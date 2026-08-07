@@ -223,7 +223,7 @@ export interface StartNodeContext {
   setNodeProcessStartedAtMs(ms: number): void;
   startBondWarmInterval(): void;
   resyncBondedContactReachabilityTags(): Promise<void>;
-  refreshCapabilityIndex(): Promise<void>;
+  refreshAgentNetworkMembershipIndex(): Promise<void>;
   /** Re-fetch agent cards from all bonded peers. Called on startup so peer
    *  worker profiles (capabilityProvider flag, agentNetworkProfile) are fresh
    *  after a restart — without this, the Team jobs view shows stale cached
@@ -540,8 +540,8 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
       multiaddrs: mesh.multiaddrs.map((a: { toString(): string }) => a.toString()),
     });
     ctx.scheduleDeferredProfileRefresh("node:online");
-    void ctx.refreshCapabilityIndex().catch((err) => {
-      console.warn("[chain] refreshCapabilityIndex after node:online failed:", err);
+    void ctx.refreshAgentNetworkMembershipIndex().catch((err) => {
+      console.warn("[chain] refreshAgentNetworkMembershipIndex after node:online failed:", err);
     });
     // Re-fetch agent cards from bonded peers after going online so the
     // Team jobs view reflects each peer's current capabilityProvider /

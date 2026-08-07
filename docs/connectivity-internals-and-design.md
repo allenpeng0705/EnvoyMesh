@@ -320,7 +320,7 @@ even when the DHT finds nothing.
 |---|---|---|
 | **Bonding** (bond.request/accept) | No — uses bundled dial hints + relay.lookup | **Unaffected** |
 | **Chat / message delivery** | No — dials known addresses from peer directory / relay circuit | **Unaffected** |
-| **Team jobs / chain** (find workers) | No — uses `CapabilityIndex` from bonded contacts' agent cards | **Unaffected** |
+| **Team jobs / chain** (find workers) | No — uses `AgentNetworkMembershipIndex` from bonded contacts' agent cards | **Unaffected** |
 | **Profile sync** | No — delivered over established bond connection | **Unaffected** |
 | **Discover/Search by topic** | Yes (DHT findProviders) **+ relay.lookup union** | **Still works** — relay roster returns the same peers; loses only peers exclusively on the public DHT (rare for bonded mesh) |
 | **Discover/Search by peer ID** | Yes (DHT findPeer) **+ direct dial + relay.lookup fallback** | **Still works** — direct dial + relay.lookup find the peer |

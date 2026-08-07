@@ -23,7 +23,7 @@ const BASE_ENVOY_CARD: EnvoyAgentCard = {
   ownerId: "envoy:owner:abc123def456abc123def456abc123def456abc123def456abc123de",
   displayName: "Atlas",
   nodeProfile: "home-desktop",
-  capabilities: ["chat", "knowledge.query", "task.execute"],
+  membership: ["chat", "knowledge.query", "task.execute"],
   publicTopics: ["books", "rust"],
   trustPolicySummary: {
     acceptsDirectBondRequests: true,
@@ -32,7 +32,7 @@ const BASE_ENVOY_CARD: EnvoyAgentCard = {
   },
   supportedProtocolVersions: ["0.1"],
   agentNetworkProfile: {
-    strengths: ["chat", "rust"],
+    skills: ["chat", "rust"],
     spendPosture: "balanced",
     contextWindow: "200k",
     throughputTokensPerSec: 80,
@@ -45,20 +45,30 @@ describe("a2a-bridge: toA2AAgentCard", () => {
     expect(card.name).toBe("Atlas");
   });
 
-  it("translates capabilities → skills with tags", () => {
+  it("translates mesh capabilities and skills → distinct skills", () => {
     const card = toA2AAgentCard(BASE_ENVOY_CARD, "https://relay.example.com");
     const ids = card.skills.map((s) => s.id);
     expect(ids).toContain("chat");
     expect(ids).toContain("knowledge.query");
     expect(ids).toContain("task.execute");
+    // Skill-only tags appear even when not in mesh membership.
+    expect(ids).toContain("rust");
 
-    // "chat" and "rust" are strengths, so skills matching them get
-    // a "strength" tag. The other capability does not.
     const chatSkill = card.skills.find((s) => s.id === "chat");
-    expect(chatSkill?.tags).toContain("strength");
+    expect(chatSkill?.tags).toContain("skill");
+    expect(chatSkill?.tags).toContain("membership");
+    expect(chatSkill?.tags).toContain("domain");
+    expect(chatSkill?.tags).toContain("owner");
+
+    const rustSkill = card.skills.find((s) => s.id === "rust");
+    expect(rustSkill?.tags).toContain("skill");
+    expect(rustSkill?.tags).toContain("domain");
+    expect(rustSkill?.tags).toContain("owner");
+    expect(rustSkill?.tags).not.toContain("membership");
+
     const taskSkill = card.skills.find((s) => s.id === "task.execute");
-    expect(taskSkill?.tags).not.toContain("strength");
-    expect(taskSkill?.tags).toContain("task.execute");
+    expect(taskSkill?.tags).not.toContain("skill");
+    expect(taskSkill?.tags).toContain("membership");
   });
 
   it("appends web-content skill when webContentRoot is present", () => {
@@ -120,8 +130,11 @@ describe("a2a-bridge: toA2AAgentCard", () => {
     expect(card.metadata?.["x-envoymesh-nodeProfile"]).toBe("home-desktop");
     expect(card.metadata?.["x-envoymesh-ownerId"]).toBe(BASE_ENVOY_CARD.ownerId);
     expect(card.description).not.toContain(BASE_ENVOY_CARD.ownerId);
-    expect((card.metadata?.["x-envoymesh-agentNetworkProfile"] as Record<string, unknown> | undefined)?.strengths)
-      .toEqual(["chat", "rust"]);
+    expect((card.metadata?.["x-envoymesh-agentNetworkProfile"] as Record<string, unknown> | undefined)?.skills)
+      .toEqual([
+        { id: "chat", kind: "domain", source: "owner" },
+        { id: "rust", kind: "domain", source: "owner" },
+      ]);
   });
 
   it("uses default version when no override given", () => {
@@ -155,9 +168,10 @@ describe("a2a-bridge: toA2AAgentCard", () => {
       { ...BASE_ENVOY_CARD, agentNetworkProfile: undefined },
       "https://relay.example.com",
     );
-    // Capabilities still become skills; none get the "strength" tag.
+    // Mesh capabilities still become skills; none get the "skill" tag.
     const skill = card.skills.find((s) => s.id === "chat");
-    expect(skill?.tags).toEqual(["chat"]);
+    expect(skill?.tags).toEqual(["chat", "membership"]);
+    expect(card.skills.find((s) => s.id === "rust")).toBeUndefined();
     expect((card.metadata?.agentNetworkProfile as unknown)).toBeUndefined();
   });
 });

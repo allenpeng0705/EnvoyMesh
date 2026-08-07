@@ -9,6 +9,7 @@
 import { randomUUID } from "node:crypto";
 import {
   ChainSubtaskSchema,
+  agentNetworkSkillIds,
   type AgentNetworkProfile,
   type ChainSubtask,
 } from "@envoymesh/protocol";
@@ -19,8 +20,12 @@ export interface PlanAssignRosterEntry {
   peerId: string;
   displayName?: string;
   ownerId?: string;
-  capabilities: string[];
-  profile?: Partial<AgentNetworkProfile> | null;
+  membership: string[];
+  profile?:
+    | (Partial<Omit<AgentNetworkProfile, "skills">> & {
+        skills?: readonly (string | import("@envoymesh/protocol").AgentNetworkSkillEntry)[];
+      })
+    | null;
   sameLan?: boolean;
   isSelf?: boolean;
   scoreSummary?: string;
@@ -28,7 +33,7 @@ export interface PlanAssignRosterEntry {
 
 export interface PlanAssignStepDraft {
   objective: string;
-  requiredCapability: string;
+  requiredSkill: string;
   depth: number;
   constraints: string[];
   /** 0-based indices into the steps array (LLM form) or already-resolved subtask ids. */
@@ -53,8 +58,9 @@ export function buildPlanAssignPrompt(
     roster.map((w) => ({
       peerId: w.peerId,
       displayName: w.displayName ?? null,
-      capabilities: w.capabilities,
-      strengths: w.profile?.strengths ?? [],
+      // Mesh capabilities are membership only — do not expose them as specialty tags.
+      canExecute: (w.membership ?? []).includes("task.execute"),
+      skills: agentNetworkSkillIds(w.profile?.skills),
       modelFreshness: w.profile?.modelFreshness ?? null,
       contextWindow: w.profile?.contextWindow ?? null,
       spendPosture: w.profile?.spendPosture ?? null,
@@ -93,12 +99,13 @@ export function buildPlanAssignPrompt(
     "- If eligibleWorkers has exactly one peer, assign every step to that peer.",
     "- When eligibleWorkers has 2+ peers OR the goal has multiple phases (research/draft/code/merge/etc.), produce 2–5 steps. Use a single step only for trivial one-shot goals.",
     "- Prefer sameLan=true and higher throughputTokensPerSec when quality is otherwise equal.",
-    "- Soft-match strengths/capabilities; they are hints, not hard filters.",
+    "- Soft-match skills (owner-attested specialties per agent). Mesh canExecute is membership only — never a specialty.",
+    "- requiredSkill on each step is a specialty/strength hint (e.g. coding, research), NOT a mesh capability id.",
     "- dependsOn uses 0-based indices into your steps array.",
     "- Do not emit <think> tags, chain-of-thought, or markdown — JSON object only.",
     "",
     "Return ONLY a JSON object (no prose, no markdown fencing) with shape:",
-    '{ "steps": [ { "objective": string, "requiredCapability": string, "depth": 1|2|3, "dependsOn": number[], "assignedPeerId": string, "reason": string, "constraints"?: string[] } ], "aggregation": "llm_merge"|"concatenate", "notes"?: string }',
+    '{ "steps": [ { "objective": string, "requiredSkill": string, "depth": 1|2|3, "dependsOn": number[], "assignedPeerId": string, "reason": string, "constraints"?: string[] } ], "aggregation": "llm_merge"|"concatenate", "notes"?: string }',
     "",
     `User goal: ${JSON.stringify(goal)}`,
     iterationBlock,
@@ -132,9 +139,9 @@ export function parsePlanAssignSteps(rawText: string): PlanAssignStepDraft[] | n
     const objective =
       typeof c.objective === "string" && c.objective.trim().length > 0 ? c.objective.trim() : "";
     if (!objective) return null;
-    const requiredCapability =
-      typeof c.requiredCapability === "string" && c.requiredCapability.trim().length > 0
-        ? c.requiredCapability.trim()
+    const requiredSkill =
+      typeof c.requiredSkill === "string" && c.requiredSkill.trim().length > 0
+        ? c.requiredSkill.trim()
         : "task.execute";
     const depth = Math.max(1, Math.min(3, Math.floor(Number(c.depth ?? 1))));
     const constraints = Array.isArray(c.constraints)
@@ -148,7 +155,7 @@ export function parsePlanAssignSteps(rawText: string): PlanAssignStepDraft[] | n
     const reason = typeof c.reason === "string" ? c.reason : undefined;
     drafts.push({
       objective,
-      requiredCapability,
+      requiredSkill,
       depth,
       constraints,
       dependsOnRaw,
@@ -173,21 +180,21 @@ export function materializePlanAssignSubtasks(input: {
   const suffix = randomUUID();
 
   const stepKeys = input.drafts.map((_, i) => `step_${i}`);
-  const scoreFor = (peerId: string, requiredCapability: string): number => {
+  const scoreFor = (peerId: string, specialtyHint: string): number => {
     const entry = input.roster.find((r) => r.peerId === peerId);
     if (!entry) return -1;
-    const req = requiredCapability.toLowerCase();
-    const strengths = entry.profile?.strengths ?? [];
-    if (strengths.some((s) => s.toLowerCase() === req || s.toLowerCase().includes(req))) return 3;
-    if (entry.capabilities.some((c) => c.toLowerCase() === req)) return 2;
-    if (entry.capabilities.includes("task.execute")) return 1;
+    const req = specialtyHint.toLowerCase();
+    const skills = agentNetworkSkillIds(entry.profile?.skills);
+    if (skills.some((s) => s === req || s.includes(req) || req.includes(s))) return 3;
+    // Mesh capabilities are never specialty factors — only can-execute baseline.
+    if ((entry.membership ?? []).includes("task.execute")) return 1;
     return 0;
   };
 
   const filled = assignWorkersToSteps({
     steps: input.drafts.map((d, i) => ({
       stepKey: stepKeys[i]!,
-      requiredCapability: d.requiredCapability,
+      requiredSkill: d.requiredSkill,
     })),
     rankedPeerIds,
     scoreFor,
@@ -222,7 +229,7 @@ export function materializePlanAssignSubtasks(input: {
       chainId: input.chainId,
       chainMandateId: input.chainMandateId,
       depth: draft.depth,
-      requiredCapability: draft.requiredCapability,
+      requiredSkill: draft.requiredSkill,
       objective: draft.objective,
       requestedResult: `result of: ${draft.objective}`,
       constraints,

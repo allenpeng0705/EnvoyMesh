@@ -50,7 +50,7 @@ export function buildChainCsvRows(state: ChainState): CsvExportRow[] {
 
     rows.push({
       subtaskId,
-      capability: subtask.requiredCapability,
+      capability: subtask.requiredSkill,
       workerPeerId: award?.workerPeerId ?? "-",
       costUsd: award?.acceptedCostUsd ?? 0,
       status,

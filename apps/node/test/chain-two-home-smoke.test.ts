@@ -83,7 +83,7 @@ async function setupChainHomes(): Promise<{ orchestrator: Phase13TestNode; worke
     const cards = await worker.service.listAgentCards();
     return cards.some((row) => row.ownerId === orchestrator.profile.owner.ownerId);
   }, 10_000);
-  await orchestrator.service.refreshCapabilityIndex();
+  await orchestrator.service.refreshAgentNetworkMembershipIndex();
 
   return { orchestrator, worker };
 }

@@ -7,7 +7,7 @@
  *
  * The decomposer is intentionally strict about its input/output:
  *   - The prompt asks for a JSON array of subtasks with `objective`,
- *     `requiredCapability`, and `depth` (1..3).
+ *     `requiredSkill`, and `depth` (1..3).
  *   - The response is parsed as `ChainSubtask`-shaped JSON, validated by
  *     `ChainSubtaskSchema`, and tagged with `subtaskId`, `chainId`, etc.
  *   - The chain orchestrator enforces depth ≤ 3 separately so this module
@@ -179,9 +179,9 @@ export function createLlmDecomposer(opts: CreateLlmDecomposerOptions): LlmDecomp
         chainId: candidate.chainId ?? `chain_${chainIdSuffix}`,
         chainMandateId: candidate.chainMandateId ?? `chainmandate_${chainIdSuffix}`,
         depth,
-        requiredCapability:
-          typeof candidate.requiredCapability === "string" && candidate.requiredCapability.length > 0
-            ? candidate.requiredCapability
+        requiredSkill:
+          typeof candidate.requiredSkill === "string" && candidate.requiredSkill.length > 0
+            ? candidate.requiredSkill
             : "task.execute",
         objective:
           typeof candidate.objective === "string" && candidate.objective.length > 0
@@ -235,7 +235,7 @@ export function buildDecomposePrompt(goal: string, opts: CreateLlmDecomposerOpti
     "Decompose the user's goal into 2–5 subtasks that can each be assigned to a different worker agent.",
     "Return ONLY a JSON array (no prose, no markdown fencing) where each element has:",
     '  - "objective": a single concrete sentence describing what the worker should produce',
-    '  - "requiredCapability": one short kebab-case tag, e.g. "research.web", "summarize.text", "code.write"',
+    '  - "requiredSkill": one short kebab-case tag, e.g. "research.web", "summarize.text", "code.write"',
     '  - "depth": integer 1 (leaf subtask), 2 (combines 2+ leaves), or 3 (top-level rollup). Use 1 for most subtasks.',
     '  - "constraints": optional array of short strings (max 4 items)',
     '  - "dependsOn": optional array of subtask indices (0-based) this subtask depends on',

@@ -111,7 +111,7 @@ describe("routeRpcMethod — Phase 13 RPC routing", () => {
       {
         ownerId: "envoy:owner:bob",
         displayName: "Bob's agent",
-        capabilities: ["task.execute"],
+        membership: ["task.execute"],
         cachedAt: new Date().toISOString(),
       },
     ];

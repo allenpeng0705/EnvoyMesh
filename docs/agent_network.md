@@ -11,6 +11,14 @@
 > are historical (“proposal”); treat checklists in
 > [`implementation-plan.md`](./implementation-plan.md) as the shipping record.
 >
+> **Vocabulary (2026-08):** Agent Card uses `membership[]` (opt-in / execute
+> rights; tag `agent-network-worker`). Assignment specialties live in
+> `agentNetworkProfile.skills[]` and subtask field `requiredSkill`. See
+> [`agent-network-vocabulary.md`](./agent-network-vocabulary.md). Older
+> excerpts below may still say `capabilities` / `requiredCapability` /
+> `CapabilityIndex` — treat those as historical; runtime names are membership /
+> skills / `AgentNetworkMembershipIndex`.
+>
 > **Scope:** Multi-agent collaboration, multi-round negotiation, parent/child
 > task lineage, structured reports, end-to-end observability.
 > **Prereqs already shipped:** Phase 24 (single-shot A2A), Phase 33 (typed
@@ -177,8 +185,8 @@ export const ChainSubtaskSchema = z.object({
   chainId: ChainIdSchema,
   parentSubtaskId: z.string().regex(/^sub_[a-zA-Z0-9_-]{8,64}$/).optional(),
   depth: z.number().int().min(1).max(3),
-  // Required capability tag (matches the agent card's capabilities[]).
-  requiredCapability: z.string().min(1).max(64),
+  // Specialty hint — soft-matched against agentNetworkProfile.skills[].
+  requiredSkill: z.string().min(1).max(64),
   // Plain-language brief the worker receives.
   objective: z.string().min(1).max(8000),
   // Explicit inputs (file IDs, prior artifact IDs, prior subtask IDs).
@@ -854,10 +862,10 @@ planChain(deps, state, goal, { allowLlm: true })
     │     │   analyze, extract, compare, rank]. Return JSON array."
     │     │
     │     └── Response: [
-    │           { requiredCapability: "search",    objective: "Search bonded contacts' vaults for Paris restaurant reviews" },
-    │           { requiredCapability: "extract",   objective: "Extract restaurant names, ratings, and review snippets" },
-    │           { requiredCapability: "rank",      objective: "Rank restaurants by rating, recency, and reviewer trust tier" },
-    │           { requiredCapability: "summarize", objective: "Produce a ranked list with evidence citations" }
+    │           { requiredSkill: "search",    objective: "Search bonded contacts' vaults for Paris restaurant reviews" },
+    │           { requiredSkill: "extract",   objective: "Extract restaurant names, ratings, and review snippets" },
+    │           { requiredSkill: "rank",      objective: "Rank restaurants by rating, recency, and reviewer trust tier" },
+    │           { requiredSkill: "summarize", objective: "Produce a ranked list with evidence citations" }
     │         ]
     │
     ▼
@@ -911,7 +919,7 @@ publishChainReport() → task.chain.report → owner sees final result
 
 #### 41B — Agent Card auto-discovery (🥇 highest impact)
 
-**Goal:** When a bond is established, auto-fetch the peer's agent card and index their `capabilities[]`. This makes the worker pool dynamic — no manual configuration needed.
+**Goal:** When a bond is established, auto-fetch the peer's agent card and index their `membership[]`. This makes the worker pool dynamic — no manual configuration needed.
 
 **Design:**
 
@@ -922,9 +930,9 @@ Bond established (bond.request → bond.accept)
     │
     ├── Auto-fetch on bond: the local node sends agent.card.request
     │     to the newly bonded peer, receives agent.card.response, and
-    │     indexes capabilities[] in an in-memory map.
+    │     indexes membership[] in an in-memory map.
     │
-    └── CapabilityIndex (in-memory, persisted to disk on shutdown)
+    └── AgentNetworkMembershipIndex (in-memory, persisted to disk on shutdown)
           capability: "translation" → [peerId_a, peerId_b]
           capability: "review"     → [peerId_b, peerId_c]
           capability: "search"     → [peerId_a]
@@ -932,8 +940,8 @@ Bond established (bond.request → bond.accept)
 
 **New file:**
 - `apps/node/src/capability-index.ts` (~120 lines)
-  - `CapabilityIndex` class: `Map<capability, workerPeerId[]>`
-  - `indexWorker(peerId, capabilities[])` — add/update
+  - `AgentNetworkMembershipIndex` class: `Map<membershipTag, workerPeerId[]>`
+  - `indexWorker(peerId, membership[])` — add/update
   - `removeWorker(peerId)` — on bond revoked
   - `findWorkers(capability)` — returns peerIds
   - `snapshot()` → persisted as JSON to `<profileDir>/capability-index.json`
@@ -941,8 +949,8 @@ Bond established (bond.request → bond.accept)
 
 **Integration points:**
 - `apps/node/src/index.ts` — after bond establishment, call `capabilityIndex.indexWorker(peerId, agentCard.capabilities)`
-- `apps/node/src/chain-orchestrator.ts` — `findWorkers` callback now reads from `CapabilityIndex` instead of returning empty
-- `apps/node/src/node-service-impl.ts` — instantiate `CapabilityIndex`, pass to orchestrator deps
+- `apps/node/src/chain-orchestrator.ts` — `findWorkers` callback now reads from `AgentNetworkMembershipIndex` instead of returning empty
+- `apps/node/src/node-service-impl.ts` — instantiate `AgentNetworkMembershipIndex`, pass to orchestrator deps
 
 **Tests:**
 - `apps/node/test/capability-index.test.ts` — index, update, remove, snapshot persistence, load from disk

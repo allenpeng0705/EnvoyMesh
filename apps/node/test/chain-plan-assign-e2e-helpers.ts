@@ -101,7 +101,7 @@ export async function enableAgentNetworkWorker(
       modelFreshness: number;
       spendPosture: "subscription" | "metered" | "payg";
       contextWindow: "128k" | "512k" | "1M+";
-      strengths: string[];
+      skills: string[];
       throughputTokensPerSec: number;
     };
     /** Defaults to roster mock AI. Pass live providers for Assigner homes. */

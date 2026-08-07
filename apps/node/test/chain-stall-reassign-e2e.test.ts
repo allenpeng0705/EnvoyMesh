@@ -54,34 +54,34 @@ describe.sequential("E2E stall re-assign (libp2p)", () => {
 
     await enableAgentNetworkWorker(orch, {
       displayName: "Orch",
-      capabilities: ["task.execute", "chain.orchestrate", "capability-provider"],
+      membership: ["task.execute", "chain.orchestrate", "agent-network-worker"],
       profile: {
         modelFreshness: 5,
         spendPosture: "subscription",
         contextWindow: "128k",
-        strengths: ["task.execute"],
+        skills: ["task.execute"],
         throughputTokensPerSec: 10,
       },
     });
     const primaryPeerId = await enableAgentNetworkWorker(primary, {
       displayName: "Primary",
-      capabilities: ["task.execute", "coding", "capability-provider"],
+      membership: ["task.execute", "coding", "agent-network-worker"],
       profile: {
         modelFreshness: 9,
         spendPosture: "subscription",
         contextWindow: "1M+",
-        strengths: ["coding"],
+        skills: ["coding"],
         throughputTokensPerSec: 100,
       },
     });
     const backupPeerId = await enableAgentNetworkWorker(backup, {
       displayName: "Backup",
-      capabilities: ["task.execute", "coding", "capability-provider"],
+      membership: ["task.execute", "coding", "agent-network-worker"],
       profile: {
         modelFreshness: 4,
         spendPosture: "metered",
         contextWindow: "128k",
-        strengths: ["coding"],
+        skills: ["coding"],
         throughputTokensPerSec: 20,
       },
     });
@@ -90,7 +90,7 @@ describe.sequential("E2E stall re-assign (libp2p)", () => {
     await bondAndExchangeCards(orch, primary, "Orch", "Primary");
     await bondAndExchangeCards(orch, backup, "Orch", "Backup");
     await bondAndExchangeCards(primary, backup, "Primary", "Backup");
-    await orch.service.refreshCapabilityIndex();
+    await orch.service.refreshAgentNetworkMembershipIndex();
 
     const started = await orch.service.chainStartFromGoal({
       goal: "Research then draft a coded summary and merge into one final answer",
@@ -100,7 +100,7 @@ describe.sequential("E2E stall re-assign (libp2p)", () => {
     if (!started.ok || !started.chainId) return;
     const chainId = started.chainId;
 
-    const codingStep = started.subtasks?.find((s) => s.requiredCapability === "coding");
+    const codingStep = started.subtasks?.find((s) => s.requiredSkill === "coding");
     expect(codingStep?.preferredWorkerPeerId).toBe(primaryPeerId);
     expect(codingStep?.subtaskId).toBeTruthy();
     const subtaskId = codingStep!.subtaskId;

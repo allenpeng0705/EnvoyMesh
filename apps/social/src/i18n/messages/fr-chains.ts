@@ -183,7 +183,7 @@ export const frChainsMessages = {
     stale: "Carte d'agent obsolète",
     missing: "Pas de carte d'agent",
     blocked: "Bloqué",
-    detail: "{count} capacités · synchronisé {synced}",
+    detail: "{count} points forts · synchronisé {synced}",
     noSync: "Carte d'agent non synchronisée",
   },
 } as const;

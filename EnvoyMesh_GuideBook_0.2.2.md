@@ -2050,11 +2050,11 @@ The local agent remains usable by its owner whether or not it joins. Membership 
 
 #### 44.5 Worker membership
 
-**Worker membership** is the opt-in flag (**Join Agent Network**) that advertises `capability-provider` on your agent card. Without it, bonded peers cannot recruit your agent for Team jobs even if trust is direct.
+**Worker membership** is the opt-in flag (**Join Agent Network**) that advertises `agent-network-worker` on your agent card. Without it, bonded peers cannot recruit your agent for Team jobs even if trust is direct.
 
-#### 44.6 Agent cards and capabilities
+#### 44.6 Agent cards and membership
 
-An **Agent Card** lists capabilities, supported task types, optional profile fields, and membership tags. Orchestrators index cards from bonded peers to decide who can execute each subtask.
+An **Agent Card** lists **membership** (opt-in / execute rights), optional **skills** on the Agent Network profile, supported task types, and related fields. Orchestrators filter by membership, then rank by skills.
 
 #### 44.7 Team jobs
 
@@ -2081,15 +2081,15 @@ Before joining: running home node, owner identity, configured AI engine, and at 
 
 #### 45.2 Enable Join Agent Network
 
-Open **Settings → Agent Network** and enable **Join Agent Network**. The node sets capability-provider membership in its advertisements; it does not create bonds automatically.
+Open **Settings → Agent Network** and enable **Join Agent Network**. The node sets `agent-network-worker` membership in its advertisements; it does not create bonds automatically.
 
 #### 45.3 What membership advertises
 
-Membership advertises the `capability-provider` tag and, if configured, the Agent Network profile. Bonded peers can then index the card and consider the worker for compatible subtasks.
+Membership advertises the `agent-network-worker` tag and, if configured, the Agent Network profile (including **skills**). Bonded peers can then index the card and consider the worker for compatible subtasks.
 
 #### 45.4 Turn membership off
 
-Disable **Join Agent Network** in Settings to remove `capability-provider` from your card. In-flight subtasks may finish, but new orchestrators should stop recruiting you after refresh.
+Disable **Join Agent Network** in Settings to remove `agent-network-worker` from your card. In-flight subtasks may finish, but new orchestrators should stop recruiting you after refresh.
 
 #### 45.5 Confirm your worker is visible
 
@@ -2112,7 +2112,7 @@ If membership seems stuck: toggle Join off/on, restart the node, confirm agent c
 
 #### 46.1 Owner-attested worker profiles
 
-The profile is an owner-attested description used for soft worker ranking, not a centrally verified benchmark. It may include model freshness, spend posture, context window, strengths, and throughput.
+The profile is an owner-attested description used for soft worker ranking, not a centrally verified benchmark. It may include model freshness, spend posture, context window, skills, and throughput.
 
 #### 46.2 Model freshness
 
@@ -2136,7 +2136,7 @@ The profile is an owner-attested description used for soft worker ranking, not a
 
 #### 46.7 How candidate scoring works
 
-Candidate scoring prioritizes capability match, then uses context, freshness, spend posture, strengths, and related signals. These factors guide assignment but do not override bond and mandate policy.
+Candidate scoring filters by membership (can execute / Agent Network opt-in), then soft-matches **skills**, context, freshness, spend posture, and related signals. These factors guide assignment but do not override bond and mandate policy.
 
 #### 46.8 Profile trust and limitations
 
@@ -2175,7 +2175,7 @@ An Agent Card describes an agent’s identity, capabilities, task support, optio
 
 #### 47.7 Membership tags
 
-**Membership tags** include `capability-provider` when Join Agent Network is enabled. Orchestrators filter on this tag before offering subtasks to a bonded contact.
+**Membership tags** include `agent-network-worker` when Join Agent Network is enabled. Orchestrators filter on this tag before offering subtasks to a bonded contact.
 
 #### 47.8 Fetch and refresh a bonded agent’s card
 
@@ -2222,7 +2222,7 @@ Team jobs operate across bonded relationships because workers may receive object
 
 #### 48.7 Capability requirements
 
-Each subtask names a **required capability**. Workers must advertise an exact or soft-matched tag plus `capability-provider` membership to be eligible.
+Each subtask names a **required skill**. Workers must be Agent Network members (`agent-network-worker`) and soft-match the skill via `agentNetworkProfile.skills` (or generalist baseline) to be preferred.
 
 #### 48.8 Membership and card freshness
 
@@ -2230,7 +2230,7 @@ Stale cards may hide new capabilities or show revoked agents. Refresh after memb
 
 #### 48.9 Worker eligibility checklist
 
-Confirm: the owners are bonded; trust is referred or direct as required; Join Agent Network is enabled; the card is fresh; `capability-provider` is present; the requested capability matches; and neither side is blocked.
+Confirm: the owners are bonded; trust is referred or direct as required; Join Agent Network is enabled; the card is fresh; `agent-network-worker` is present; skills are a reasonable fit; and neither side is blocked.
 
 #### 48.10 Change or revoke trust
 
@@ -2269,7 +2269,7 @@ Click **Refresh workers** on the Agent Network tab after onboarding changes. The
 
 #### 49.8 Capability-based matching
 
-Assigner matches subtask `requiredCapability` to worker card tags, then applies soft scoring (context, freshness, strengths, same-LAN hints). Missing capability excludes the worker entirely.
+Assigner soft-matches subtask `requiredSkill` to worker `agentNetworkProfile.skills`, then applies soft scoring (context, freshness, throughput, same-LAN hints). Missing membership excludes the worker from the pool; missing skill only lowers rank.
 
 #### 49.9 Probe a peer
 
@@ -2392,10 +2392,10 @@ The roster lists bonded contacts who joined Agent Network and pass capability fi
 <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6d6a63"/></marker>
 <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3d5a45"/></marker>
 </defs><rect x="280" y="20" width="200" height="30" rx="6" fill="#FEE2E2" stroke="#5d3ac7" stroke-width="1.2"/><text x="380.0" y="32.0" text-anchor="middle" font-family="Inter, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="12" font-weight="600" fill="#1e1d1b">Capability match</text><text x="380.0" y="48.0" text-anchor="middle" font-family="Inter, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="11" fill="#6d6a63">HARD GATE</text><rect x="280" y="70" width="200" height="30" rx="6" fill="#FEF3C7" stroke="#645a3a" stroke-width="1.2"/><text x="380.0" y="82.0" text-anchor="middle" font-family="Inter, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="12" font-weight="600" fill="#1e1d1b">Context window</text><rect x="280" y="120" width="200" height="30" rx="6" fill="#EFF6FF" stroke="#3d5a45" stroke-width="1.2"/><text x="380.0" y="132.0" text-anchor="middle" font-family="Inter, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13" font-weight="600" fill="#1e1d1b">Model freshness</text><rect x="280" y="170" width="200" height="30" rx="6" fill="#EFF6FF" stroke="#3d5a45" stroke-width="1.2"/><text x="380.0" y="182.0" text-anchor="middle" font-family="Inter, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13" font-weight="600" fill="#1e1d1b">Spend posture</text><rect x="280" y="220" width="200" height="30" rx="6" fill="#EFF6FF" stroke="#3d5a45" stroke-width="1.2"/><text x="380.0" y="232.0" text-anchor="middle" font-family="Inter, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13" font-weight="600" fill="#1e1d1b">Strengths / sameLan</text><rect x="280" y="270" width="200" height="30" rx="6" fill="#F0FDF4" stroke="#3d5a45" stroke-width="1.2"/><text x="380.0" y="282.0" text-anchor="middle" font-family="Inter, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="12" font-weight="600" fill="#1e1d1b">Final rank</text><path d="M380,50 L380,70" fill="none" stroke="#6d6a63" stroke-width="1.2" marker-end="url(#a)"/><path d="M380,100 L380,120" fill="none" stroke="#6d6a63" stroke-width="1.2" marker-end="url(#a)"/><path d="M380,150 L380,170" fill="none" stroke="#6d6a63" stroke-width="1.2" marker-end="url(#a)"/><path d="M380,200 L380,220" fill="none" stroke="#6d6a63" stroke-width="1.2" marker-end="url(#a)"/><path d="M380,250 L380,270" fill="none" stroke="#6d6a63" stroke-width="1.2" marker-end="url(#a)"/><text x="540" y="150" text-anchor="start" font-family="Inter, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="11" font-weight="normal" fill="#6d6a63">Priority decreases downward.
-Capability is a hard gate — failing it disqualifies the candidate regardless of soft signals.</text></svg><figcaption style="text-align:center;font-size:9pt;color:#6d6a63;margin-top:0.6em">Figure 14 — Candidate scoring funnel: capability match is a hard gate; below it, soft factors (context, freshness, spend, strengths) contribute to the final rank.</figcaption></figure>
+Membership is a hard gate — failing it disqualifies the candidate regardless of soft signals.</text></svg><figcaption style="text-align:center;font-size:9pt;color:#6d6a63;margin-top:0.6em">Figure 14 — Candidate scoring funnel: membership is a hard gate; below it, soft factors (context, freshness, spend, skills) contribute to the final rank.</figcaption></figure>
 
 
-Scoring weighs **context window**, **freshness**, **spend posture**, and **strengths** after capability fit. Direct assign picks the top scored worker; bidding still uses score as signal.
+Scoring weighs **skills**, **context window**, **freshness**, **spend posture**, and **throughput** after membership. Direct assign picks the top scored worker; bidding still uses score as signal.
 
 #### 52.4 Same-network considerations
 

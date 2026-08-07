@@ -33,7 +33,7 @@ describe("agentVisibility WS push (Phase 13E)", () => {
         ownerId: peerOwnerId,
         displayName: "Peer Agent",
         nodeProfile: "primary",
-        capabilities: ["task.execute"],
+        membership: ["task.execute"],
       }),
     );
 
@@ -61,7 +61,7 @@ describe("agentVisibility WS push (Phase 13E)", () => {
         ownerId: "envoy:owner:peer-brief",
         displayName: "Brief Peer",
         nodeProfile: "primary",
-        capabilities: ["task.execute"],
+        membership: ["task.execute"],
       }),
     );
 

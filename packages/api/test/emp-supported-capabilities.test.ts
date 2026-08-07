@@ -13,6 +13,6 @@ describe("resolveEmpSupportedCapabilities", () => {
         documentAcquisitionEnabled: true,
         capabilityProviderEnabled: true,
       }),
-    ).toEqual(["social-proxy", "document-acquisition", "capability-provider"]);
+    ).toEqual(["social-proxy", "document-acquisition", "agent-network-worker"]);
   });
 });

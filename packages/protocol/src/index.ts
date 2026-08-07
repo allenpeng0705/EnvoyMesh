@@ -133,7 +133,7 @@ export const EmpCapabilitySchema = z.enum([
   "standing-delegation",
   "social-proxy",
   "document-acquisition",
-  "capability-provider",
+  "agent-network-worker",
   "bond-autonomy",
 ]);
 
@@ -514,7 +514,8 @@ export const AgentCardSchema = z.object({
   ownerId: z.string().min(1),
   displayName: z.string().min(1).max(120),
   nodeProfile: DeviceProfileSchema,
-  capabilities: z.array(z.string().min(1)).min(1),
+  /** Membership tags (opt-in / can-execute). Not specialty skills — see agentNetworkProfile.skills. */
+  membership: z.array(z.string().min(1)).min(1),
   publicTopics: z.array(z.string().min(1)).default([]),
   trustPolicySummary: TrustPolicySummarySchema,
   supportedProtocolVersions: z.array(z.string().min(1)).min(1),
@@ -522,7 +523,7 @@ export const AgentCardSchema = z.object({
   webContentRoot: z.string().min(1).optional(),
   /**
    * Agent Network worker profile (owner-attested). Advertised when the peer
-   * has opted into Capability Provider; used for scored worker selection.
+   * has opted into Join Agent Network; used for scored worker selection.
    */
   agentNetworkProfile: AgentNetworkProfileSchema.optional(),
 });
@@ -3716,13 +3717,13 @@ export interface CreateAgentCardInput {
   ownerId: string;
   displayName: string;
   nodeProfile: DeviceProfile;
-  capabilities: string[];
+  membership: string[];
   publicTopics?: string[];
   trustPolicySummary?: Partial<TrustPolicySummary>;
   supportedProtocolVersions?: string[];
   /** Phase 45D — optional canonical web root URL. */
   webContentRoot?: string;
-  /** Agent Network worker profile (when opted into Capability Provider). */
+  /** Agent Network worker profile (when opted into Join Agent Network). */
   agentNetworkProfile?: import("./agent-network-profile.js").AgentNetworkProfile;
 }
 
@@ -3732,7 +3733,7 @@ export function createAgentCard(input: CreateAgentCardInput): AgentCard {
     ownerId: input.ownerId,
     displayName: input.displayName,
     nodeProfile: input.nodeProfile,
-    capabilities: input.capabilities,
+    membership: input.membership,
     publicTopics: input.publicTopics ?? [],
     trustPolicySummary: {
       acceptsDirectBondRequests: false,
@@ -4251,12 +4252,25 @@ export {
   AgentNetworkProfileSchema,
   AgentNetworkContextWindowSchema,
   AgentNetworkSpendPostureSchema,
+  AgentNetworkSkillKindSchema,
+  AgentNetworkSkillSourceSchema,
+  AgentNetworkSkillEntrySchema,
   DEFAULT_AGENT_NETWORK_PROFILE,
   parseAgentNetworkProfile,
   createAgentNetworkProfile,
+  coerceAgentNetworkSkillEntry,
+  coerceAgentNetworkSkills,
+  createOwnerDomainSkill,
+  createOpenClawSkill,
+  createExtAgentSkill,
+  agentNetworkSkillId,
+  agentNetworkSkillIds,
 } from "./agent-network-profile.js";
 export type {
   AgentNetworkProfile,
   AgentNetworkContextWindow,
   AgentNetworkSpendPosture,
+  AgentNetworkSkillKind,
+  AgentNetworkSkillSource,
+  AgentNetworkSkillEntry,
 } from "./agent-network-profile.js";

@@ -63,10 +63,10 @@ export async function executeAcceptedSubtask(
 
   await emit(`Working on: ${subtask.objective}`, false, 0.3);
 
-  const toolName = toolForCapability(subtask.requiredCapability);
+  const toolName = toolForCapability(subtask.requiredSkill);
   const context = await executorDeps.getToolContext();
   if (!context || !toolName) {
-    const fallback = `[${subtask.requiredCapability}] ${subtask.objective}`;
+    const fallback = `[${subtask.requiredSkill}] ${subtask.objective}`;
     await emit(fallback, true, 0.5);
     return { ok: true };
   }

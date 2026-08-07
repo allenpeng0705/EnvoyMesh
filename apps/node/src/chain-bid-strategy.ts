@@ -125,9 +125,9 @@ export function computeChainBid(input: ComputeChainBidInput): ComputeChainBidRes
     bidExpiresAt: new Date(bidExpiresMs).toISOString(),
     // Surface the capability the worker is offering so the orchestrator's
     // composite ranker can score precision against the subtask's
-    // requiredCapability without falling back to the peer-id proxy.
-    capability: subtask.requiredCapability,
-    rationale: `${subtask.requiredCapability}: $${Number(rawCost.toFixed(2))} · ~${etaMinutes} min`,
+    // requiredSkill without falling back to the peer-id proxy.
+    capability: subtask.requiredSkill,
+    rationale: `${subtask.requiredSkill}: $${Number(rawCost.toFixed(2))} · ~${etaMinutes} min`,
     createdAt: now.toISOString(),
   });
   return { ok: true, bid };
@@ -159,7 +159,7 @@ export interface BidScoreInput {
   /** Reference time for freshness calculation. Defaults to now. */
   now?: Date;
   /** The required capability tag for the subtask. */
-  requiredCapability?: string;
+  requiredSkill?: string;
 }
 
 export interface BidRankingWeights {
@@ -193,11 +193,11 @@ export function freshnessDecay(bidExpiresAt: string, now: Date): number {
  */
 export function capabilityMatchPrecision(
   workerCapability: string,
-  requiredCapability: string,
+  requiredSkill: string,
 ): number {
-  if (!workerCapability || !requiredCapability) return 0.5;
-  if (workerCapability === requiredCapability) return 1;
-  if (workerCapability.includes(requiredCapability) || requiredCapability.includes(workerCapability)) return 0.5;
+  if (!workerCapability || !requiredSkill) return 0.5;
+  if (workerCapability === requiredSkill) return 1;
+  if (workerCapability.includes(requiredSkill) || requiredSkill.includes(workerCapability)) return 0.5;
   return 0;
 }
 
@@ -231,9 +231,9 @@ export function bidScore(
   // to the legacy `workerPeerId` proxy when an older worker omitted it, so we
   // don't regress ranking for peers that haven't upgraded yet.
   let precision = 1;
-  if (input.requiredCapability) {
+  if (input.requiredSkill) {
     const offered = bid.capability ?? bid.workerPeerId;
-    precision = capabilityMatchPrecision(offered, input.requiredCapability);
+    precision = capabilityMatchPrecision(offered, input.requiredSkill);
   }
 
   const score =
@@ -250,7 +250,7 @@ export function bidScore(
  */
 export function rankBids(
   bids: Array<{ bid: ChainSubtaskBid; reputationScore?: number }>,
-  options: { weights?: BidRankingWeights; costCeiling?: number; requiredCapability?: string; now?: Date } = {},
+  options: { weights?: BidRankingWeights; costCeiling?: number; requiredSkill?: string; now?: Date } = {},
 ): Array<{ bid: ChainSubtaskBid; score: number }> {
   const now = options.now ?? new Date();
   const weights = options.weights ?? DEFAULT_BID_WEIGHTS;
@@ -259,7 +259,7 @@ export function rankBids(
     .map((b) => ({
       bid: b.bid,
       score: bidScore(
-        { bid: b.bid, reputationScore: b.reputationScore, now, requiredCapability: options.requiredCapability },
+        { bid: b.bid, reputationScore: b.reputationScore, now, requiredSkill: options.requiredSkill },
         weights,
         options.costCeiling,
       ),

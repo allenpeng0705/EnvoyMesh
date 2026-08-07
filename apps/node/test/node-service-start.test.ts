@@ -42,7 +42,7 @@ function makeCtx(overrides: Partial<StartNodeContext> = {}): {
     runCapabilityDiscoveryCycle: ReturnType<typeof vi.fn>;
     startCapabilityDiscoveryScheduler: ReturnType<typeof vi.fn>;
     startBondWarmInterval: ReturnType<typeof vi.fn>;
-    refreshCapabilityIndex: ReturnType<typeof vi.fn>;
+    refreshAgentNetworkMembershipIndex: ReturnType<typeof vi.fn>;
     scheduleDeferredProfileRefresh: ReturnType<typeof vi.fn>;
     advertiseInterestsIfPublic: ReturnType<typeof vi.fn>;
     resyncBondedContactReachabilityTags: ReturnType<typeof vi.fn>;
@@ -71,7 +71,7 @@ function makeCtx(overrides: Partial<StartNodeContext> = {}): {
     runCapabilityDiscoveryCycle: vi.fn(async () => {}),
     startCapabilityDiscoveryScheduler: vi.fn(),
     startBondWarmInterval: vi.fn(),
-    refreshCapabilityIndex: vi.fn(async () => {}),
+    refreshAgentNetworkMembershipIndex: vi.fn(async () => {}),
     scheduleDeferredProfileRefresh: vi.fn(),
     advertiseInterestsIfPublic: vi.fn(async () => {}),
     resyncBondedContactReachabilityTags: vi.fn(async () => {}),
@@ -121,7 +121,7 @@ function makeCtx(overrides: Partial<StartNodeContext> = {}): {
     },
     startBondWarmInterval: spies.startBondWarmInterval,
     resyncBondedContactReachabilityTags: spies.resyncBondedContactReachabilityTags,
-    refreshCapabilityIndex: spies.refreshCapabilityIndex,
+    refreshAgentNetworkMembershipIndex: spies.refreshAgentNetworkMembershipIndex,
     scheduleDeferredProfileRefresh: spies.scheduleDeferredProfileRefresh,
     advertiseInterestsIfPublic: spies.advertiseInterestsIfPublic,
     loadPublishedLibraryFromDisk: spies.loadPublishedLibraryFromDisk,

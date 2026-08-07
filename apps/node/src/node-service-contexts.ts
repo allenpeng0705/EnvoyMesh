@@ -291,7 +291,7 @@ export interface StartNodeContextDeps {
   setNodeProcessStartedAtMs: StartNodeContext["setNodeProcessStartedAtMs"];
   startBondWarmInterval: StartNodeContext["startBondWarmInterval"];
   resyncBondedContactReachabilityTags: StartNodeContext["resyncBondedContactReachabilityTags"];
-  refreshCapabilityIndex: StartNodeContext["refreshCapabilityIndex"];
+  refreshAgentNetworkMembershipIndex: StartNodeContext["refreshAgentNetworkMembershipIndex"];
   refreshAgentNetworkWorkers: StartNodeContext["refreshAgentNetworkWorkers"];
   scheduleDeferredProfileRefresh: StartNodeContext["scheduleDeferredProfileRefresh"];
   advertiseInterestsIfPublic: StartNodeContext["advertiseInterestsIfPublic"];
@@ -560,8 +560,8 @@ export interface ChainContextDeps {
   emitChainState: ChainContext["emitChainState"];
   startChainTracking: ChainContext["startChainTracking"];
   placeholderMandate: ChainContext["placeholderMandate"];
-  findCapabilityProviders: ChainContext["findCapabilityProviders"];
-  findCapabilityProvidersRanked: ChainContext["findCapabilityProvidersRanked"];
+  findAgentNetworkWorkers: ChainContext["findAgentNetworkWorkers"];
+  findAgentNetworkWorkersRanked: ChainContext["findAgentNetworkWorkersRanked"];
   chainDiagnosticsForSubtasks: ChainContext["chainDiagnosticsForSubtasks"];
   runChainGoal: ChainContext["runChainGoal"];
 }
@@ -937,7 +937,7 @@ export function buildStartNodeContext(deps: StartNodeContextDeps): StartNodeCont
     startBondWarmInterval: () => deps.startBondWarmInterval(),
     resyncBondedContactReachabilityTags: () =>
       deps.resyncBondedContactReachabilityTags(),
-    refreshCapabilityIndex: () => deps.refreshCapabilityIndex(),
+    refreshAgentNetworkMembershipIndex: () => deps.refreshAgentNetworkMembershipIndex(),
     refreshAgentNetworkWorkers: () => deps.refreshAgentNetworkWorkers(),
     scheduleDeferredProfileRefresh: (reason) =>
       deps.scheduleDeferredProfileRefresh(reason),
@@ -1317,10 +1317,10 @@ export function buildChainContext(deps: ChainContextDeps): ChainContext {
     startChainTracking: (chainId) => deps.startChainTracking(chainId),
     placeholderMandate: (chainId, chainMandateId) =>
       deps.placeholderMandate(chainId, chainMandateId) as never,
-    findCapabilityProviders: (capability) =>
-      deps.findCapabilityProviders(capability) as never,
-    findCapabilityProvidersRanked: (capability, preferredWorkerPeerIds) =>
-      deps.findCapabilityProvidersRanked?.(capability, preferredWorkerPeerIds) as never,
+    findAgentNetworkWorkers: (capability) =>
+      deps.findAgentNetworkWorkers(capability) as never,
+    findAgentNetworkWorkersRanked: (capability, preferredWorkerPeerIds) =>
+      deps.findAgentNetworkWorkersRanked?.(capability, preferredWorkerPeerIds) as never,
     chainDiagnosticsForSubtasks: (subtasks, workersBySubtask, rankedBySubtask) =>
       deps.chainDiagnosticsForSubtasks(
         subtasks as never,

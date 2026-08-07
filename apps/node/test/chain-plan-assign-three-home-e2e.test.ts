@@ -2,7 +2,7 @@
  * Multi-home Team jobs plan+assign E2E (libp2p).
  *
  * Same AI settings on every home (`mode: "mock"` + roster-aware plan token).
- * Workers differ by capability tags + agentNetworkProfile (strengths /
+ * Workers differ by capability tags + agentNetworkProfile (skills /
  * throughput). Asserts soft ranking, named assignees, multi-step plan, and
  * final chain report.
  */
@@ -56,7 +56,7 @@ async function setupDifferentiatedWorker(
       modelFreshness: number;
       spendPosture: "subscription" | "metered" | "payg";
       contextWindow: "128k" | "512k" | "1M+";
-      strengths: string[];
+      skills: string[];
       throughputTokensPerSec: number;
     };
   },
@@ -125,7 +125,7 @@ describe.sequential("E2E plan+assign three-home (shared AI, differentiated agent
 
     await applySharedAi(orchestrator);
     await orchestrator.service.updateCapabilityManifest({
-      capabilities: ["task.execute", "chain.orchestrate", "capability-provider"],
+      membership: ["task.execute", "chain.orchestrate", "agent-network-worker"],
     });
     await orchestrator.service.updateNodeConfig({
       capabilityProviderEnabled: true,
@@ -133,7 +133,7 @@ describe.sequential("E2E plan+assign three-home (shared AI, differentiated agent
         modelFreshness: 6,
         spendPosture: "subscription",
         contextWindow: "512k",
-        strengths: ["task.execute"],
+        skills: ["task.execute"],
         throughputTokensPerSec: 30,
       },
     });
@@ -146,44 +146,44 @@ describe.sequential("E2E plan+assign three-home (shared AI, differentiated agent
 
     const coderPeerId = await setupDifferentiatedWorker(orchestrator, workerCoder, {
       displayName: "Coder Home",
-      capabilities: ["task.execute", "coding", "capability-provider"],
+      membership: ["task.execute", "coding", "agent-network-worker"],
       profile: {
         modelFreshness: 9,
         spendPosture: "subscription",
         contextWindow: "1M+",
-        strengths: ["coding"],
+        skills: ["coding"],
         throughputTokensPerSec: 90,
       },
     });
     const researchPeerId = await setupDifferentiatedWorker(orchestrator, workerResearch, {
       displayName: "Research Home",
-      capabilities: ["task.execute", "research.web", "capability-provider"],
+      membership: ["task.execute", "research.web", "agent-network-worker"],
       profile: {
         modelFreshness: 8,
         spendPosture: "metered",
         contextWindow: "512k",
-        strengths: ["research.web"],
+        skills: ["research.web"],
         throughputTokensPerSec: 45,
       },
     });
-    await orchestrator.service.refreshCapabilityIndex();
+    await orchestrator.service.refreshAgentNetworkMembershipIndex();
 
     const toolCtx = await (orchestrator.service as {
       getToolExecutionContext?: () => Promise<{
         listAgentNetworkWorkers?: (p?: {
-          requiredCapability?: string;
+          requiredSkill?: string;
         }) => Promise<Array<{ peerId: string; score: number }>>;
       } | null>;
     }).getToolExecutionContext?.();
     expect(toolCtx?.listAgentNetworkWorkers).toBeTypeOf("function");
     const codingRanked = await toolCtx!.listAgentNetworkWorkers!({
-      requiredCapability: "coding",
+      requiredSkill: "coding",
     });
     expect(codingRanked.length).toBeGreaterThanOrEqual(2);
     expect(codingRanked[0]!.peerId).toBe(coderPeerId);
 
     const researchRanked = await toolCtx!.listAgentNetworkWorkers!({
-      requiredCapability: "research.web",
+      requiredSkill: "research.web",
     });
     expect(researchRanked[0]!.peerId).toBe(researchPeerId);
 
@@ -197,8 +197,8 @@ describe.sequential("E2E plan+assign three-home (shared AI, differentiated agent
     const chainId = started.chainId;
     expect(started.subtasks?.length).toBe(3);
 
-    const researchStep = started.subtasks?.find((s) => s.requiredCapability === "research.web");
-    const codingStep = started.subtasks?.find((s) => s.requiredCapability === "coding");
+    const researchStep = started.subtasks?.find((s) => s.requiredSkill === "research.web");
+    const codingStep = started.subtasks?.find((s) => s.requiredSkill === "coding");
     const mergeStep = started.subtasks?.find((s) =>
       s.objective.toLowerCase().includes("combine") || s.objective.toLowerCase().includes("merge"),
     );

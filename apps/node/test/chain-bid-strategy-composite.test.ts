@@ -151,12 +151,12 @@ describe("bidScore", () => {
     expect(score).toBeGreaterThanOrEqual(0);
   });
 
-  it("precision penalty applies with requiredCapability", () => {
-    // When requiredCapability is provided, the bid's workerPeerId is used as a
+  it("precision penalty applies with requiredSkill", () => {
+    // When requiredSkill is provided, the bid's workerPeerId is used as a
     // proxy for capability matching. Same peerId = exact match = no penalty.
     const bid = makeBid({ workerPeerId: "same" });
-    const score = bidScore({ bid, now, requiredCapability: "same" }, DEFAULT_BID_WEIGHTS, 10);
-    // Without requiredCapability, the same bid would get precision=1.
+    const score = bidScore({ bid, now, requiredSkill: "same" }, DEFAULT_BID_WEIGHTS, 10);
+    // Without requiredSkill, the same bid would get precision=1.
     // With it, workerPeerId "same" matches "same" → 1. So scores should be equal.
     const scoreNoReq = bidScore({ bid, now }, DEFAULT_BID_WEIGHTS, 10);
     expect(score).toBe(scoreNoReq);

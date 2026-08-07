@@ -127,7 +127,7 @@ export const OWNER_AGENT_TOOL_ALLOWLIST: OwnerAgentToolSpec[] = [
     domain: "service",
     description:
       "List eligible Agent Network workers ranked for a capability (Assigner roster).",
-    paramHint: '{ "requiredCapability"?: string, "limit"?: number }',
+    paramHint: '{ "requiredSkill"?: string, "limit"?: number }',
     requiresTrustMode: true,
   },
   {
@@ -135,7 +135,7 @@ export const OWNER_AGENT_TOOL_ALLOWLIST: OwnerAgentToolSpec[] = [
     kind: "mesh",
     domain: "service",
     description:
-      "Probe a peer Agent Card and return Assigner roster factors (strengths, freshness, throughput).",
+      "Probe a peer Agent Card and return Assigner roster factors (skills, freshness, throughput).",
     paramHint: '{ "ownerId"?: string, "peerId"?: string, "refresh"?: boolean }',
     requiresTrustMode: true,
   },

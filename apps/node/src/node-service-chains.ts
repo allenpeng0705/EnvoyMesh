@@ -233,15 +233,15 @@ export interface ChainContext {
   /** Build a placeholder mandate for a new chain (chainPlan / chainPreviewGoal). */
   placeholderMandate(chainId: string, chainMandateId: string): unknown;
   /** Find capability providers (peer ids) for a given capability, best score first. */
-  findCapabilityProviders(capability: string): Promise<string[]>;
+  findAgentNetworkWorkers(capability: string): Promise<string[]>;
   /** Ranked workers with score summaries (for diagnostics / UI). */
-  findCapabilityProvidersRanked?(
+  findAgentNetworkWorkersRanked?(
     capability: string,
     preferredWorkerPeerIds?: readonly string[],
   ): Promise<ChainRankedWorker[]>;
   /** Compute diagnostics for a set of subtasks + candidate workers. */
   chainDiagnosticsForSubtasks(
-    subtasks: Array<{ subtaskId: string; requiredCapability: string }>,
+    subtasks: Array<{ subtaskId: string; requiredSkill: string }>,
     workersBySubtask: Record<string, string[]>,
     rankedBySubtask?: Record<string, ChainRankedWorker[]>,
   ): unknown;
@@ -287,7 +287,7 @@ export interface ChainContext {
         subtasks: Array<{
           subtaskId: string;
           depth?: number;
-          requiredCapability?: string;
+          requiredSkill?: string;
           objective?: string;
           preferredWorkerPeerId?: string;
         }>;
@@ -619,7 +619,7 @@ export async function chainPlanViaRuntime(
     subtasks: plan.subtasks.map((s) => ({
       subtaskId: s.subtaskId,
       depth: s.depth,
-      requiredCapability: s.requiredCapability,
+      requiredSkill: s.requiredSkill,
       objective: s.objective,
     })),
   };
@@ -746,9 +746,9 @@ export async function chainPreviewGoalViaRuntime(
   const rankedBySubtask: Record<string, ChainRankedWorker[]> = {};
   let maxWorkers = 0;
   for (const subtask of plan.subtasks) {
-    const ranked = ctx.findCapabilityProvidersRanked
-      ? await ctx.findCapabilityProvidersRanked(subtask.requiredCapability, params.preferredWorkerPeerIds)
-      : (await ctx.findCapabilityProviders(subtask.requiredCapability)).map((peerId) => ({
+    const ranked = ctx.findAgentNetworkWorkersRanked
+      ? await ctx.findAgentNetworkWorkersRanked(subtask.requiredSkill, params.preferredWorkerPeerIds)
+      : (await ctx.findAgentNetworkWorkers(subtask.requiredSkill)).map((peerId) => ({
           peerId,
           score: 0,
           summary: peerId,
@@ -816,7 +816,7 @@ export async function chainPreviewGoalViaRuntime(
     subtasks: plan.subtasks.map((s) => ({
       subtaskId: s.subtaskId,
       depth: s.depth,
-      requiredCapability: s.requiredCapability,
+      requiredSkill: s.requiredSkill,
       objective: s.objective,
       workerCount: (workersBySubtask[s.subtaskId] ?? []).length,
     })),
@@ -865,7 +865,7 @@ export async function chainStartFromGoalViaRuntime(
       subtasks: result.subtasks.map((s) => ({
         subtaskId: s.subtaskId,
         depth: s.depth ?? 0,
-        requiredCapability: s.requiredCapability ?? "",
+        requiredSkill: s.requiredSkill ?? "",
         objective: s.objective ?? "",
         preferredWorkerPeerId: s.preferredWorkerPeerId,
       })),
@@ -918,7 +918,7 @@ export async function chainStartFromGoalViaRuntime(
     subtasks: result.subtasks.map((s) => ({
       subtaskId: s.subtaskId,
       depth: s.depth ?? 0,
-      requiredCapability: s.requiredCapability ?? "",
+      requiredSkill: s.requiredSkill ?? "",
       objective: s.objective ?? "",
       preferredWorkerPeerId: s.preferredWorkerPeerId,
     })),

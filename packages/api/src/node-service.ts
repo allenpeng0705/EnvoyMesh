@@ -503,7 +503,7 @@ export type AgentInteractionMode = "chat_ok" | "structured_preferred";
 export interface CachedAgentCardSummary {
   ownerId: string;
   displayName: string;
-  capabilities: string[];
+  membership: string[];
   cachedAt: string;
   sourceAgentPeerId?: string;
   /** Phase 34: rich card fields forwarded from the peer AgentCard. */

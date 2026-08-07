@@ -20,7 +20,8 @@ export async function handleMobileInboundAgentCardIntent(input: {
   deviceId: string;
   displayName: string;
   nodeProfile: "primary" | "satellite" | "full" | "relay";
-  capabilities: string[];
+  /** Device / mesh membership rights advertised on the local Agent Card. */
+  membership: string[];
   remotePeerId: string;
   receivedAt: number;
   correlationId: string | undefined;
@@ -34,7 +35,7 @@ export async function handleMobileInboundAgentCardIntent(input: {
     deviceId: _deviceId,
     displayName,
     nodeProfile,
-    capabilities,
+    membership,
     remotePeerId,
     receivedAt: _receivedAt,
     correlationId,
@@ -92,7 +93,7 @@ export async function handleMobileInboundAgentCardIntent(input: {
       ownerId,
       displayName,
       nodeProfile,
-      capabilities,
+      membership,
       publicTopics: [],
     });
     return {

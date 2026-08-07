@@ -55,7 +55,7 @@ describe("Mobile agent.card E2E (Phase 13C)", () => {
       ownerId: peerOwner.ownerId,
       displayName: "Bob's Envoy Agent",
       nodeProfile: "primary",
-      capabilities: ["task.execute", "knowledge.query"],
+      membership: ["task.execute", "knowledge.query"],
     });
     const unsigned = createUnsignedEnvelope({
       senderPeerId: peerAgent.agentPeerId,
@@ -74,7 +74,7 @@ describe("Mobile agent.card E2E (Phase 13C)", () => {
       deviceId: "envoy:device:mobile-test",
       displayName: "Alice Mobile",
       nodeProfile: "primary",
-      capabilities: ["message.send", "task.execute"],
+      membership: ["message.send", "task.execute"],
       remotePeerId: peerAgent.agentPeerId,
       receivedAt: Date.now(),
       correlationId: "corr-mobile-card",
@@ -110,7 +110,7 @@ describe("Mobile agent.card E2E (Phase 13C)", () => {
       ownerId: peerOwner.ownerId,
       displayName: "Peer Agent",
       nodeProfile: "primary",
-      capabilities: ["task.execute"],
+      membership: ["task.execute"],
     });
 
     await node.recordAgentCardCached(peerOwner.ownerId, card);

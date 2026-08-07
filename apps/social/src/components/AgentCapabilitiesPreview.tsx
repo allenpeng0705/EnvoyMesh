@@ -5,31 +5,35 @@ import { ModalPortal } from "./ModalPortal.js";
 const PREVIEW_LIMIT = 3;
 
 export interface AgentCapabilitiesPreviewProps {
-  capabilities: readonly string[];
+  /** Tags to preview (Agent Network skills). */
+  tags: readonly string[];
   /** Compact chips for crowded worker rows (Team jobs). Default false = panel layout. */
   compact?: boolean;
   /** Optional title override for the popup. */
   title?: string;
+  /** Optional display label for each tag (e.g. localized skill names). */
+  labelFor?: (tag: string) => string;
 }
 
 /**
- * Shows up to 3 capabilities inline; "+N more" opens a modal with the full list.
- * Agent cards often carry many mesh intents — listing them all inline overflows
- * chat/team rows and looks like the card "cannot be shown".
+ * Shows up to 3 tags inline; "+N more" opens a modal with the full list.
+ * Used on Team worker rows for Agent Network skills (not mesh capability IDs).
  */
 export function AgentCapabilitiesPreview({
-  capabilities,
+  tags,
   compact = false,
   title,
+  labelFor,
 }: AgentCapabilitiesPreviewProps) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const titleId = useId();
-  if (capabilities.length === 0) return null;
+  if (tags.length === 0) return null;
 
-  const preview = capabilities.slice(0, PREVIEW_LIMIT);
-  const hiddenCount = capabilities.length - preview.length;
-  const heading = title ?? t("agentCard.capabilities", "Capabilities");
+  const preview = tags.slice(0, PREVIEW_LIMIT);
+  const hiddenCount = tags.length - preview.length;
+  const heading = title ?? t("settings.agentNetwork.membership.skills", "Skills");
+  const label = (tag: string) => (labelFor ? labelFor(tag) : tag);
 
   const openModal = (e: MouseEvent) => {
     e.preventDefault();
@@ -51,7 +55,7 @@ export function AgentCapabilitiesPreview({
         <ul className="agent-caps-preview__list" aria-label={heading}>
           {preview.map((cap) => (
             <li key={cap} className="agent-caps-preview__item">
-              <code>{cap}</code>
+              <code>{label(cap)}</code>
             </li>
           ))}
         </ul>
@@ -94,9 +98,9 @@ export function AgentCapabilitiesPreview({
                 </button>
               </div>
               <ul className="agent-caps-modal__list" data-testid="agent-caps-modal-list">
-                {capabilities.map((cap) => (
+                {tags.map((cap) => (
                   <li key={cap} className="agent-caps-modal__item">
-                    <code>{cap}</code>
+                    <code>{label(cap)}</code>
                   </li>
                 ))}
               </ul>

@@ -16,7 +16,7 @@ Give each machine a stable role so logs and screenshots stay comparable:
 | Role | Machine | Typical job |
 |------|---------|-------------|
 | **Alice** | Laptop / desktop A | Assigner / Team job owner (starts most jobs) |
-| **Bob** | Laptop / desktop B | Worker (coding / research strengths) |
+| **Bob** | Laptop / desktop B | Worker (coding / research skills) |
 | **Carol** | Laptop / desktop C | Worker + optional remote Assigner |
 
 ```text
@@ -34,11 +34,11 @@ mDNS discovery. You do **not** need a public relay for these scenarios.
 Scenarios below assume these **Agent Network profiles**. If you change them,
 expected assignees change too.
 
-| Peer | Strengths | Freshness | Spend | Context | Also advertise capabilities |
+| Peer | Skills | Freshness | Spend | Context | Also advertise capabilities |
 |------|-----------|-----------|-------|---------|-------------------------------|
-| **Alice** | `task.execute` | 5 | subscription | `128k` | `task.execute`, `capability-provider` |
-| **Bob** | `coding`, `research.web` | 9 | metered | `1M+` | `task.execute`, `coding`, `research.web`, `capability-provider` |
-| **Carol** | `task.execute`, `summarization` | 7 | subscription | `512k` | `task.execute`, `capability-provider` |
+| **Alice** | `task.execute` | 5 | subscription | `128k` | `task.execute`, `agent-network-worker` |
+| **Bob** | `coding`, `research.web` | 9 | metered | `1M+` | `task.execute`, `coding`, `research.web`, `agent-network-worker` |
+| **Carol** | `task.execute`, `summarization` | 7 | subscription | `512k` | `task.execute`, `agent-network-worker` |
 
 With **direct assign** + plan+assign scoring, the usual preference is:
 
@@ -274,8 +274,8 @@ subtask planned → richer goal / enable LLM decompose / use mock roster token.
 
 **Prep**
 
-1. Bob: strengths `coding` + freshness 9 + `1M+` (as in §0).
-2. Carol: remove `coding` / leave coding-related strengths empty; keep `task.execute`.
+1. Bob: skills `coding` + freshness 9 + `1M+` (as in §0).
+2. Carol: remove `coding` / leave coding-related skills empty; keep `task.execute`.
 3. Alice: Refresh workers.
 
 **Task** (paste):

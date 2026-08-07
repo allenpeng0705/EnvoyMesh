@@ -106,7 +106,7 @@ function subtask(overrides: Partial<{ deadlineAt: string; costCeilingUsd: number
     chainId: "chain_test-1",
     chainMandateId: "chainmandate_test-1",
     depth: overrides.depth ?? 1,
-    requiredCapability: "task.execute",
+    requiredSkill: "task.execute",
     objective: "summarize the Q3 report",
     requestedResult: "markdown summary",
     constraints: [],

@@ -2,13 +2,13 @@
  * Agent Network membership gate for worker discovery.
  */
 import { describe, expect, it } from "vitest";
-import { AGENT_NETWORK_WORKER_CAPABILITY } from "@envoymesh/api";
-import { CapabilityIndex } from "../src/capability-index.js";
+import { AGENT_NETWORK_WORKER_MEMBERSHIP } from "@envoymesh/api";
+import { AgentNetworkMembershipIndex } from "../src/capability-index.js";
 import {
-  findCapabilityProviders,
-  findCapabilityProvidersRanked,
+  findAgentNetworkWorkers,
+  findAgentNetworkWorkersRanked,
   sameLanFromListenAddrs,
-  refreshCapabilityIndex,
+  refreshAgentNetworkMembershipIndex,
   type ChainOrchestrationContext,
 } from "../src/node-service-chain-orchestration.js";
 
@@ -23,7 +23,7 @@ function makeDeps(
       modelFreshness: number;
       spendPosture: "subscription" | "metered" | "unknown";
       contextWindow: "128k" | "256k" | "512k" | "1M+";
-      strengths: string[];
+      skills: string[];
     };
   }>,
   options?: {
@@ -31,11 +31,12 @@ function makeDeps(
     selfAgentPeerId?: string;
   },
 ): ChainOrchestrationContext {
-  const index = new CapabilityIndex();
+  const index = new AgentNetworkMembershipIndex();
   const listenAddrsByOwnerId = options?.listenAddrsByOwnerId ?? {};
   return {
-    getCapabilityIndex: () => index,
-    getCapabilityIndexReady: () => null,
+    getAgentNetworkMembershipIndex: () => index,
+    getAgentNetworkMembershipIndexReady: () => null,
+    getReachableMesh: () => undefined,
     listAgentCards: async () => cards,
     ensureAgentIdentity: async () =>
       options?.selfAgentPeerId
@@ -47,144 +48,158 @@ function makeDeps(
         if (!listenAddrs) return undefined;
         return { ownerId, listenAddrs };
       },
+      listPeerRecords: async () => [],
     }),
   } as unknown as ChainOrchestrationContext;
 }
 
 describe("Agent Network worker discovery gate", () => {
-  it("refreshCapabilityIndex skips private agents (no capability-provider)", async () => {
+  it("refreshAgentNetworkMembershipIndex skips private agents (no agent-network-worker)", async () => {
     const deps = makeDeps([
       {
         ownerId: "envoy:owner:private",
         displayName: "Private",
-        capabilities: ["task.execute", "research.web"],
+        membership: ["task.execute", "research.web"],
         cachedAt: "2026-07-22T00:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_private",
       },
       {
         ownerId: "envoy:owner:worker",
         displayName: "Worker",
-        capabilities: ["task.execute", AGENT_NETWORK_WORKER_CAPABILITY],
+        membership: ["task.execute", AGENT_NETWORK_WORKER_MEMBERSHIP],
         cachedAt: "2026-07-22T00:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_worker",
       },
     ]);
-    await refreshCapabilityIndex(deps);
-    const index = deps.getCapabilityIndex();
+    await refreshAgentNetworkMembershipIndex(deps);
+    const index = deps.getAgentNetworkMembershipIndex();
     expect(index.workerCount).toBe(1);
     expect(index.findWorkers("task.execute")).toEqual(["envoy_agent_worker"]);
   });
 
-  it("findCapabilityProviders ignores task.execute without Agent Network opt-in", async () => {
+  it("findAgentNetworkWorkers ignores task.execute without Agent Network opt-in", async () => {
     const deps = makeDeps([
       {
         ownerId: "envoy:owner:solo",
         displayName: "Solo",
-        capabilities: ["task.execute"],
+        membership: ["task.execute"],
         cachedAt: "2026-07-22T00:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_solo",
       },
     ]);
-    const peers = await findCapabilityProviders(deps, "task.execute");
+    const peers = await findAgentNetworkWorkers(deps, "task.execute");
     expect(peers).toEqual([]);
   });
 
-  it("findCapabilityProviders returns opted-in workers", async () => {
+  it("findAgentNetworkWorkers returns opted-in workers", async () => {
     const deps = makeDeps([
       {
         ownerId: "envoy:owner:worker",
         displayName: "Worker",
-        capabilities: ["task.execute", "capability-provider"],
+        membership: ["task.execute", "agent-network-worker"],
         cachedAt: "2026-07-22T00:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_worker",
       },
     ]);
-    const peers = await findCapabilityProviders(deps, "task.execute");
+    const peers = await findAgentNetworkWorkers(deps, "task.execute");
     expect(peers).toEqual(["envoy_agent_worker"]);
   });
 
-  it("findCapabilityProviders returns higher-scored peers first", async () => {
+  it("findAgentNetworkWorkers returns higher-scored peers first", async () => {
     const deps = makeDeps([
       {
         ownerId: "envoy:owner:weak",
         displayName: "Weak",
-        capabilities: ["task.execute", "capability-provider"],
+        membership: ["task.execute", "agent-network-worker"],
         cachedAt: "2026-07-22T00:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_weak",
         agentNetworkProfile: {
           modelFreshness: 2,
           spendPosture: "metered",
           contextWindow: "128k",
-          strengths: [],
+          skills: [],
         },
       },
       {
         ownerId: "envoy:owner:strong",
         displayName: "Strong",
-        capabilities: ["task.execute", "capability-provider"],
+        membership: ["task.execute", "agent-network-worker"],
         cachedAt: "2026-07-22T00:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_strong",
         agentNetworkProfile: {
           modelFreshness: 9,
           spendPosture: "subscription",
           contextWindow: "1M+",
-          strengths: ["task.execute"],
+          skills: ["research"],
         },
       },
     ]);
-    const peers = await findCapabilityProviders(deps, "task.execute");
+    const peers = await findAgentNetworkWorkers(deps, "task.execute");
     expect(peers[0]).toBe("envoy_agent_strong");
     expect(peers[1]).toBe("envoy_agent_weak");
   });
 
-  it("findCapabilityProviders includes generalists even when a specialty tag has index hits", async () => {
+  it("findAgentNetworkWorkers ranks specialists by skills, not mesh capability tags", async () => {
     const deps = makeDeps([
       {
         ownerId: "envoy:owner:coder",
         displayName: "Coder",
-        capabilities: ["task.execute", "coding", "capability-provider"],
+        membership: ["task.execute", "agent-network-worker"],
         cachedAt: "2026-07-22T00:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_coder",
+        agentNetworkProfile: {
+          modelFreshness: 7,
+          spendPosture: "subscription",
+          contextWindow: "256k",
+          skills: ["coding"],
+        },
       },
       {
         ownerId: "envoy:owner:general",
         displayName: "General",
-        capabilities: ["task.execute", "capability-provider"],
+        // Specialty tag on mesh caps must NOT create a specialist ranking.
+        membership: ["task.execute", "coding", "agent-network-worker"],
         cachedAt: "2026-07-22T00:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_general",
+        agentNetworkProfile: {
+          modelFreshness: 7,
+          spendPosture: "subscription",
+          contextWindow: "256k",
+          skills: [],
+        },
       },
     ]);
-    await refreshCapabilityIndex(deps);
-    const peers = await findCapabilityProviders(deps, "coding");
+    await refreshAgentNetworkMembershipIndex(deps);
+    const peers = await findAgentNetworkWorkers(deps, "coding");
     expect(peers).toContain("envoy_agent_coder");
     expect(peers).toContain("envoy_agent_general");
     expect(peers[0]).toBe("envoy_agent_coder");
   });
 
-  it("refreshCapabilityIndex removes a worker after opt-out", async () => {
+  it("refreshAgentNetworkMembershipIndex removes a worker after opt-out", async () => {
     const deps = makeDeps([
       {
         ownerId: "envoy:owner:worker",
         displayName: "Worker",
-        capabilities: ["task.execute", "capability-provider"],
+        membership: ["task.execute", "agent-network-worker"],
         cachedAt: "2026-07-22T00:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_worker",
       },
     ]);
-    await refreshCapabilityIndex(deps);
-    expect(deps.getCapabilityIndex().workerCount).toBe(1);
+    await refreshAgentNetworkMembershipIndex(deps);
+    expect(deps.getAgentNetworkMembershipIndex().workerCount).toBe(1);
 
     (deps as { listAgentCards: () => Promise<unknown> }).listAgentCards = async () => [
       {
         ownerId: "envoy:owner:worker",
         displayName: "Worker",
-        capabilities: ["task.execute"],
+        membership: ["task.execute"],
         cachedAt: "2026-07-22T01:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_worker",
       },
     ];
-    await refreshCapabilityIndex(deps);
-    expect(deps.getCapabilityIndex().workerCount).toBe(0);
+    await refreshAgentNetworkMembershipIndex(deps);
+    expect(deps.getAgentNetworkMembershipIndex().workerCount).toBe(0);
   });
 
   it("sameLanFromListenAddrs detects RFC1918 direct TCP", () => {
@@ -202,19 +217,19 @@ describe("Agent Network worker discovery gate", () => {
     expect(sameLanFromListenAddrs(undefined)).toBe(false);
   });
 
-  it("findCapabilityProvidersRanked prefers identical LAN twin over WAN", async () => {
+  it("findAgentNetworkWorkersRanked prefers identical LAN twin over WAN", async () => {
     const identicalProfile = {
       modelFreshness: 5,
       spendPosture: "subscription" as const,
       contextWindow: "256k" as const,
-      strengths: ["task.execute"],
+      skills: ["task.execute"],
     };
     const deps = makeDeps(
       [
         {
           ownerId: "envoy:owner:wan",
           displayName: "WanTwin",
-          capabilities: ["task.execute", "capability-provider"],
+          membership: ["task.execute", "agent-network-worker"],
           cachedAt: "2026-07-22T00:00:00.000Z",
           sourceAgentPeerId: "envoy_agent_wan",
           agentNetworkProfile: identicalProfile,
@@ -222,7 +237,7 @@ describe("Agent Network worker discovery gate", () => {
         {
           ownerId: "envoy:owner:lan",
           displayName: "LanTwin",
-          capabilities: ["task.execute", "capability-provider"],
+          membership: ["task.execute", "agent-network-worker"],
           cachedAt: "2026-07-22T00:00:00.000Z",
           sourceAgentPeerId: "envoy_agent_lan",
           agentNetworkProfile: identicalProfile,
@@ -237,7 +252,7 @@ describe("Agent Network worker discovery gate", () => {
         },
       },
     );
-    const ranked = await findCapabilityProvidersRanked(deps, "task.execute");
+    const ranked = await findAgentNetworkWorkersRanked(deps, "task.execute");
     expect(ranked.map((r) => r.peerId)).toEqual(["envoy_agent_lan", "envoy_agent_wan"]);
     expect(ranked[0]?.sameLan).toBe(true);
     expect(ranked[1]?.sameLan).toBe(false);

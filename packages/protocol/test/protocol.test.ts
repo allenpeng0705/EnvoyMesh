@@ -936,7 +936,7 @@ describe("protocol", () => {
       ownerId: "envoy:owner:alice",
       displayName: "Alice's Envoy",
       nodeProfile: "primary",
-      capabilities: ["knowledge.query", "task.negotiate", "find.books"],
+      membership: ["knowledge.query", "task.negotiate", "find.books"],
       publicTopics: ["distributed systems", "books"],
     });
 
@@ -956,7 +956,7 @@ describe("protocol", () => {
       ownerId: "envoy:owner:alice",
       displayName: "Alice's Envoy",
       nodeProfile: "primary",
-      capabilities: ["find.books"],
+      membership: ["find.books"],
     });
     const response = createAgentCardResponsePayload(card);
 

@@ -29,7 +29,7 @@ describe("bridge agent scope", () => {
       ownerId: owner.ownerId,
       displayName: "Worker",
       nodeProfile: "full",
-      capabilities: ["task.execute", "capability-provider"],
+      membership: ["task.execute", "agent-network-worker"],
     });
     const envelope = signUnsignedEnvelope(
       createUnsignedEnvelope({
@@ -57,7 +57,7 @@ describe("bridge agent scope", () => {
       ownerId: owner.ownerId,
       displayName: "Worker",
       nodeProfile: "full",
-      capabilities: ["task.execute"],
+      membership: ["task.execute"],
     });
     const envelope = signUnsignedEnvelope(
       createUnsignedEnvelope({

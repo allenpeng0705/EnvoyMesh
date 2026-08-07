@@ -122,7 +122,7 @@ export interface OwnerAgentTurnDeps {
     ok: boolean;
     chainId: string;
     chainMandateId: string;
-    subtasks: Array<{ subtaskId: string; depth: number; requiredCapability: string; objective: string }>;
+    subtasks: Array<{ subtaskId: string; depth: number; requiredSkill: string; objective: string }>;
     error?: string;
     assignerPeerId?: string;
     handedOff?: boolean;
@@ -620,7 +620,7 @@ export async function runOwnerAgentTurn(deps: OwnerAgentTurnDeps): Promise<Owner
     if (started.ok) {
       toolsUsed.push("mesh.chain.run");
       const subTaskLines = started.subtasks
-        .map((s) => `- \`${s.subtaskId}\` (${s.requiredCapability}, depth ${s.depth}): ${s.objective}`)
+        .map((s) => `- \`${s.subtaskId}\` (${s.requiredSkill}, depth ${s.depth}): ${s.objective}`)
         .join("\n");
       return {
         answer:

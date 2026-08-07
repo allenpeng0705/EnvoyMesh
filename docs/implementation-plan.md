@@ -5258,7 +5258,7 @@ Wire the Phase 40 library modules into the live node runtime so chains work over
 - `[x]` **Real worker deps:** `buildChainWorkerDeps()` handles inbound `propose` / `mandate` / `accept` / `cancel` / orchestrator heartbeats; auto-bids on propose via `chain-bid-strategy`.
 - `[x]` **Inbound routing fix:** capability gate split into orchestrator-receive (`bid`, `partial`, `merge`, worker-originated `heartbeat`) vs worker-receive (`mandate`, `propose`, `accept`, `cancel`); added `handleOrchestratorBid` to store bids in `chainRuntime`.
 - `[x]` **RPC wiring:** `chainPlan` / `chainLaunch` call `planChain` / `launchChain`; `chainListReports` / `chainGetReport` / `chainPinReport` read/write `chain-reports.json` via `LocalTaskStore.recordChainReport`.
-- `[x]` **Worker discovery:** `findCapabilityProviders` reads from `CapabilityIndex` (populated from bonded agent cards on `node:online` + `bond:established`).
+- `[x]` **Worker discovery:** `findAgentNetworkWorkers` reads from `AgentNetworkMembershipIndex` (populated from bonded agent cards on `node:online` + `bond:established`).
 - `[x]` **Heartbeat scheduler:** `_startChainTracking` runs `trackChain` ticks for active chains after launch.
 - `[x]` **Tests:** `chain-production.test.ts` (transport resolver + chainId extraction); updated `chain-inbound.test.ts` + `chain-e2e.test.ts` for corrected capability gate.
 

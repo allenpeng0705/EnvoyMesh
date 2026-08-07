@@ -192,7 +192,7 @@ describe("A2A round-trip — propose → result with typed Artifacts", () => {
         ownerId: receiver.profile.owner.ownerId,
         displayName: "Receiver",
         nodeProfile: "full",
-        capabilities: ["task.execute"],
+        membership: ["task.execute"],
         publicTopics: [],
       });
       void card; // not used here, kept for the symmetry of the round-trip

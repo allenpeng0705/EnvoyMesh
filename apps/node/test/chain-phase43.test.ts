@@ -41,7 +41,7 @@ function sampleState() {
     subtaskId,
     chainId: "chain_1",
     depth: 1,
-    requiredCapability: "research.web",
+    requiredSkill: "research.web",
     objective: "Research topic",
     costCeilingUsd: 3,
     createdAt: new Date().toISOString(),

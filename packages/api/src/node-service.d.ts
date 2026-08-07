@@ -207,7 +207,7 @@ export type AgentInteractionMode = "chat_ok" | "structured_preferred";
 export interface CachedAgentCardSummary {
     ownerId: string;
     displayName: string;
-    capabilities: string[];
+    membership: string[];
     cachedAt: string;
     sourceAgentPeerId?: string;
     nodeProfile?: import("@envoymesh/protocol").DeviceProfile;
@@ -218,6 +218,8 @@ export interface CachedAgentCardSummary {
         requiresHumanApprovalForRawFiles?: boolean;
     };
     supportedProtocolVersions?: string[];
+    webContentRoot?: string;
+    agentNetworkProfile?: import("@envoymesh/protocol").AgentNetworkProfile;
 }
 export interface AuditEventSummary {
     eventId: string;

@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
-  AGENT_NETWORK_WORKER_CAPABILITY,
-  isAgentNetworkWorker,
+  AGENT_NETWORK_WORKER_MEMBERSHIP,
+  isAgentNetworkMember,
   withAgentNetworkMembership,
 } from "../src/agent-network-membership.js";
 
 describe("agent-network-membership", () => {
   it("defaults private — task.execute alone is not network membership", () => {
-    expect(isAgentNetworkWorker(["message.send", "task.execute"])).toBe(false);
+    expect(isAgentNetworkMember(["message.send", "task.execute"])).toBe(false);
   });
 
-  it("opts in when capability-provider is present", () => {
+  it("opts in when agent-network-worker membership is present", () => {
     expect(
-      isAgentNetworkWorker(["task.execute", AGENT_NETWORK_WORKER_CAPABILITY]),
+      isAgentNetworkMember(["task.execute", AGENT_NETWORK_WORKER_MEMBERSHIP]),
     ).toBe(true);
   });
 
@@ -21,16 +21,16 @@ describe("agent-network-membership", () => {
     expect(withAgentNetworkMembership(base, true)).toEqual([
       "message.send",
       "task.execute",
-      AGENT_NETWORK_WORKER_CAPABILITY,
+      AGENT_NETWORK_WORKER_MEMBERSHIP,
     ]);
     expect(
       withAgentNetworkMembership(
-        ["task.execute", AGENT_NETWORK_WORKER_CAPABILITY, AGENT_NETWORK_WORKER_CAPABILITY],
+        ["task.execute", AGENT_NETWORK_WORKER_MEMBERSHIP, AGENT_NETWORK_WORKER_MEMBERSHIP],
         true,
       ),
-    ).toEqual(["task.execute", AGENT_NETWORK_WORKER_CAPABILITY]);
+    ).toEqual(["task.execute", AGENT_NETWORK_WORKER_MEMBERSHIP]);
     expect(
-      withAgentNetworkMembership(["task.execute", AGENT_NETWORK_WORKER_CAPABILITY], false),
+      withAgentNetworkMembership(["task.execute", AGENT_NETWORK_WORKER_MEMBERSHIP], false),
     ).toEqual(["task.execute"]);
   });
 });

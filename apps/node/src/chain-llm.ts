@@ -23,13 +23,13 @@ import type { ChainSubtask, ChainSubtaskBid, TaskChainPartialPayload } from "@en
 /** Default system prompt for decomposing goals into subtasks. */
 const DECOMPOSE_SYSTEM_PROMPT = `You are a task decomposition engine. Given a natural-language goal,
 break it down into a sequence of subtasks. Each subtask must have:
-  - requiredCapability: one of [translation, review, search, summarize, analyze, extract, compare, rank]
+  - requiredSkill: one of [translation, review, search, summarize, analyze, extract, compare, rank]
   - objective: a clear, self-contained description (max 200 chars)
   - costCeilingUsd: estimated cost in USD (0.50–50.00)
   - deadlineMinutes: estimated time in minutes (1–60)
 
 Return ONLY a JSON array. Do not include markdown fences or explanations.
-Example: [{"requiredCapability":"search","objective":"Search bonded contacts' vaults","costCeilingUsd":5,"deadlineMinutes":10}]`;
+Example: [{"requiredSkill":"search","objective":"Search bonded contacts' vaults","costCeilingUsd":5,"deadlineMinutes":10}]`;
 
 /** Default system prompt for merging partial results into a composite. */
 const MERGE_SYSTEM_PROMPT = `You are a report synthesis engine. Given multiple worker contributions
@@ -57,7 +57,7 @@ export interface LlmDecomposeInput {
 
 export type LlmDecomposeSuccess = {
   ok: true;
-  subtasks: Pick<ChainSubtask, "requiredCapability" | "objective" | "costCeilingUsd">[];
+  subtasks: Pick<ChainSubtask, "requiredSkill" | "objective" | "costCeilingUsd">[];
   estimatedTotalCostUsd: number;
   tokenUsage: { promptTokens: number; completionTokens: number };
 };
@@ -189,7 +189,7 @@ Decompose this goal into subtasks.`;
 
     for (const item of parsed) {
       if (!item || typeof item !== "object") continue;
-      const cap = String((item as any).requiredCapability ?? "").trim();
+      const cap = String((item as any).requiredSkill ?? "").trim();
       const obj = String((item as any).objective ?? "").trim();
       const cost = Number((item as any).costCeilingUsd ?? 1);
 
@@ -198,7 +198,7 @@ Decompose this goal into subtasks.`;
       if (cost <= 0 || cost > 50) continue;
 
       subtasks.push({
-        requiredCapability: cap,
+        requiredSkill: cap,
         objective: obj.slice(0, 200),
         costCeilingUsd: Math.round(cost * 100) / 100,
       });

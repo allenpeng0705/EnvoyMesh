@@ -29,12 +29,12 @@
 | 界面标签 | 旧名 / 代码名 | 含义 |
 |----------|---------------|------|
 | **Agent Network**（设置页签） | 曾短暂叫「Devices & Fleet」 | 成员资格 + Fleet 入网 |
-| **Join Agent Network** | Capability Provider（能力提供者） | 主动加入，以便对等节点招募你的代理 |
+| **Join Agent Network** | Join Agent Network（能力提供者） | 主动加入，以便对等节点招募你的代理 |
 | **Team jobs** | 「Chains」/ 多代理链 | 面向所有者的协作视图 |
 | **Team job defaults**（团队任务默认值） | Chain Defaults | 分配模式、竞价、停滞策略（在 **设置 → AI** 下） |
 | **AI Engine**（AI 引擎） | 曾被误标为「Agent Network」 | *本机* Home Node 上跑哪种 AI（EnvoyAI / Ext Agent）——**与**加入 Agent Network **不是一回事** |
 
-协议与源码仍使用 `task.chain.*`、`ChainsView`、`capability-provider` 等名称；工程师看代码没问题，Social 界面则用上表标签。
+协议与源码仍使用 `task.chain.*`、`ChainsView`、`agent-network-worker` 等名称；工程师看代码没问题，Social 界面则用上表标签。
 
 ---
 
@@ -51,7 +51,7 @@
 1. 你与 Alice **已建联**（通常为 `direct` 或 `referred` 信任）。
 2. Alice 在其节点上开启了 **Join Agent Network**。
 3. 她的 **agent card**（代理名片）已到达你这边（符合信任层级时建联后自动拉取）。
-4. 她的名片声明了有用能力（如 `task.execute` 或子任务所需能力）**以及**成员标签 `capability-provider`（能力提供者）。
+4. 她的名片声明了有用能力（如 `task.execute` 或子任务所需能力）**以及**成员标签 `agent-network-worker`（能力提供者）。
 
 若 Alice 从未加入，她的代理保持**私有**。即使你们是朋友，也不会把她当作 Worker。
 
@@ -71,7 +71,7 @@
 开启 **Join Agent Network** 时：
 
 1. 节点配置设为 `capabilityProviderEnabled: true`。
-2. 你的 agent card（及相关广播）包含 `capability-provider` 能力。
+2. 你的 agent card（及相关广播）包含 `agent-network-worker` 能力。
 3. 同步你名片的已建联对等节点可通过能力索引发现你。
 4. 可选的 **Agent Network profile**（新鲜度、消费姿态、上下文窗口、特长）会被分享，并在他人发起 Team job 时用于**评分**。
 
@@ -88,7 +88,7 @@
 | **Model freshness**（模型新鲜度，1–10） | 你所跑模型的新旧 / 能力感受 |
 | **Spend posture**（消费姿态） | `subscription` / `metered` / `unknown` — 长任务更偏好 subscription |
 | **Context window**（上下文窗口） | `128k` / `256k` / `512k` / `1M+` |
-| **Strengths**（特长） | 如 research、coding、summarization 等标签 |
+| **Skills**（特长） | 如 research、coding、summarization 等标签 |
 
 编排器寻找 Worker 时，EnvoyMesh 大致按以下优先级评分：
 
@@ -138,7 +138,7 @@
 你（所有者）              你的 Home Node                 已建联对等节点（已加入）
 ─────────────            ──────────────                 ─────────────────────
 输入目标 ──►  规划子任务
-             寻找 Worker（已建联 + capability-provider）
+             寻找 Worker（已建联 + agent-network-worker）
              直接分配或竞价  ───────────────►  代理执行子任务
              ◄────────────── 部分结果 / 最终结果
              合成报告
@@ -203,7 +203,7 @@ AI Engine 是**本地引擎选择**，**不是**「Join Agent Network」。
 
 ### 双方都要加入吗？
 
-要在**两人之间**跑 Team job：你招募的 **Worker** 必须已加入。你的节点作编排器；Worker 需要 `capability-provider`。若无人加入，会出现「no workers」。
+要在**两人之间**跑 Team job：你招募的 **Worker** 必须已加入。你的节点作编排器；Worker 需要 `agent-network-worker`。若无人加入，会出现「no workers」。
 
 ### 手机怎么办？
 

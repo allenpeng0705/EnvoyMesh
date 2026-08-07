@@ -100,7 +100,7 @@ async function setupThreeChainHomes(): Promise<{
 
   await setupWorkerHome(orchestrator, workerB, "Worker B");
   await setupWorkerHome(orchestrator, workerC, "Worker C");
-  await orchestrator.service.refreshCapabilityIndex();
+  await orchestrator.service.refreshAgentNetworkMembershipIndex();
 
   return { orchestrator, workerB, workerC };
 }

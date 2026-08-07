@@ -1003,11 +1003,11 @@ import {
   buildChainWorkerDeps,
   ensureChainMandateLoaded,
   evaluateBidsAsync,
-  findCapabilityProviders,
-  findCapabilityProvidersRanked,
+  findAgentNetworkWorkers,
+  findAgentNetworkWorkersRanked,
   handleInboundChainEnvelope,
   placeholderMandate,
-  refreshCapabilityIndex,
+  refreshAgentNetworkMembershipIndex,
   sameLanFromListenAddrs,
   snapshotToResult,
   type ChainOrchestrationContext,
@@ -1189,7 +1189,7 @@ import {
   type ChainOrchestratorHandlerDeps,
   type ChainState,
 } from "./chain-orchestrator.js";
-import { CapabilityIndex } from "./capability-index.js";
+import { AgentNetworkMembershipIndex } from "./capability-index.js";
 import {
   extractChainIdFromEnvelope,
   sendChainEnvelopeOverMesh,
@@ -1271,7 +1271,7 @@ function summarizeAgentCard(row: {
   ownerId: string;
   card: {
     displayName: string;
-    capabilities: string[];
+    membership: string[];
     nodeProfile?: CachedAgentCardSummary["nodeProfile"];
     publicTopics?: string[];
     trustPolicySummary?: CachedAgentCardSummary["trustPolicySummary"];
@@ -1285,7 +1285,7 @@ function summarizeAgentCard(row: {
   const summary: CachedAgentCardSummary = {
     ownerId: row.ownerId,
     displayName: row.card.displayName,
-    capabilities: row.card.capabilities,
+    membership: row.card.membership,
     cachedAt: row.cachedAt,
     sourceAgentPeerId: row.sourceAgentPeerId,
   };
@@ -1415,7 +1415,7 @@ class NodeServiceImpl implements NodeService {
   /** Phase 38 — per-node call session manager (voice/video calls). */
   readonly callManager = new CallManager();
   /** Phase 40F — worker capability index for chain worker discovery. */
-  private readonly _capabilityIndex = new CapabilityIndex();
+  private readonly _capabilityIndex = new AgentNetworkMembershipIndex();
   private _capabilityIndexReady: Promise<void> | null = null;
   /** Bond autonomy daily counter — resets at midnight UTC to enforce maxAutoBondsPerDay. */
   private _bondAutonomyDailyCounter = { count: 0, date: "" };
@@ -3599,7 +3599,7 @@ class NodeServiceImpl implements NodeService {
 
   /**
    * Push our current Agent Card to bonded peers (unsolicited `agent.card.response`).
-   * Needed when Join Agent Network flips on: peers only learn `capability-provider`
+   * Needed when Join Agent Network flips on: peers only learn `agent-network-worker`
    * from our card, and a pull-only refresh on our side does not update their cache.
    */
   async announceLocalAgentCardToBondedPeers(): Promise<{ announced: number; failed: number }> {
@@ -3611,12 +3611,14 @@ class NodeServiceImpl implements NodeService {
     const cfg = await this.getNodeConfig();
     const { buildLocalAgentCard } = await import("./agent-card-inbound.js");
     const { createAgentCardResponsePayload } = await import("@envoymesh/protocol");
+    const { extAgentLabelsFromDefinitions } = await import("./agent-network-skills-aggregate.js");
     const card = await buildLocalAgentCard({
       profile,
       humanProfileStore: this._humanProfileStore,
       profileDir: this._profileDir,
       capabilityProviderEnabled: cfg.capabilityProviderEnabled === true,
       agentNetworkProfile: cfg.agentNetworkProfile,
+      extAgentLabels: extAgentLabelsFromDefinitions(cfg.extAgents),
     });
     const payload = createAgentCardResponsePayload(card);
     let announced = 0;
@@ -3705,7 +3707,7 @@ class NodeServiceImpl implements NodeService {
    * (bounded concurrency) so a few slow peers don't serialize the whole RPC.
    *
    * When this node has Join Agent Network enabled, also push our card so peers
-   * learn `capability-provider` without waiting for them to pull.
+   * learn `agent-network-worker` without waiting for them to pull.
    */
   async refreshAgentNetworkWorkers(): Promise<{ requested: number; failed: number }> {
     let requested = 0;
@@ -3771,11 +3773,11 @@ class NodeServiceImpl implements NodeService {
       /* bonds unavailable — still refresh local index */
     }
     try {
-      await this.refreshCapabilityIndex();
+      await this.refreshAgentNetworkMembershipIndex();
       const cards = await this.listAgentCards();
       this.emit("home:agent-cards-updated", { cards });
     } catch (err) {
-      console.warn("[agent-network] refreshCapabilityIndex failed:", err);
+      console.warn("[agent-network] refreshAgentNetworkMembershipIndex failed:", err);
     }
     this._scheduleDeferredAgentNetworkIndexRefresh();
     return { requested, failed };
@@ -3787,13 +3789,13 @@ class NodeServiceImpl implements NodeService {
     for (const t of this._agentNetworkIndexRefreshTimers) clearTimeout(t);
     this._agentNetworkIndexRefreshTimers = [];
     // Card replies are async over the message protocol — re-index + emit a few
-    // times so Social/Team jobs pick up capability-provider without a second click.
+    // times so Social/Team jobs pick up agent-network-worker without a second click.
     for (const delayMs of [1_500, 4_000, 8_000]) {
       const timer = setTimeout(() => {
         this._agentNetworkIndexRefreshTimers = this._agentNetworkIndexRefreshTimers.filter(
           (t) => t !== timer,
         );
-        void this.refreshCapabilityIndex()
+        void this.refreshAgentNetworkMembershipIndex()
           .then(async () => {
             try {
               const cards = await this.listAgentCards();
@@ -3803,7 +3805,7 @@ class NodeServiceImpl implements NodeService {
             }
           })
           .catch((err) => {
-            console.warn("[agent-network] deferred refreshCapabilityIndex failed:", err);
+            console.warn("[agent-network] deferred refreshAgentNetworkMembershipIndex failed:", err);
           });
       }, delayMs);
       this._agentNetworkIndexRefreshTimers.push(timer);
@@ -5190,7 +5192,7 @@ class NodeServiceImpl implements NodeService {
           if (
             capabilityIds.length > 0 &&
             !capabilityIds.some((cap: string) =>
-              row.capabilities.some((tag) => tag.toLowerCase() === cap.toLowerCase()),
+              row.membership.some((tag) => tag.toLowerCase() === cap.toLowerCase()),
             )
           ) {
             continue;
@@ -7312,7 +7314,7 @@ class NodeServiceImpl implements NodeService {
         }
       }
       // Join Agent Network changes what our card advertises; refresh pulls peers'
-      // cards and (when joining) pushes ours so both sides see capability-provider.
+      // cards and (when joining) pushes ours so both sides see agent-network-worker.
       if (joinToggled) {
         void this.refreshAgentNetworkWorkers().catch((err) => {
           console.warn("[agent-network] refresh after Join toggle failed:", err);
@@ -10012,9 +10014,9 @@ class NodeServiceImpl implements NodeService {
       getAgentCard: (ownerId) => this.getAgentCard(ownerId),
       listAgentCards: () => this.listAgentCards(),
       listAgentNetworkWorkers: async (params) => {
-        const capability = params?.requiredCapability?.trim() || "task.execute";
+        const capability = params?.requiredSkill?.trim() || "task.execute";
         const limit = Math.max(1, Math.min(50, params?.limit ?? 20));
-        const ranked = await findCapabilityProvidersRanked(
+        const ranked = await findAgentNetworkWorkersRanked(
           this._chainOrchestrationContext(),
           capability,
         );
@@ -10062,8 +10064,8 @@ class NodeServiceImpl implements NodeService {
           /* ignore */
         }
         const scored = scoreAgentNetworkWorker({
-          requiredCapability: "task.execute",
-          cardCapabilities: card.capabilities ?? [],
+          requiredSkill: "task.execute",
+          membership: card.membership ?? [],
           profile: card.agentNetworkProfile,
           displayName: card.displayName,
           sameLan,
@@ -10073,7 +10075,7 @@ class NodeServiceImpl implements NodeService {
           ownerId: card.ownerId,
           peerId,
           displayName: card.displayName,
-          capabilities: card.capabilities,
+          membership: card.membership,
           profile: card.agentNetworkProfile,
           score: scored.score,
           summary: scored.summary,
@@ -10089,7 +10091,7 @@ class NodeServiceImpl implements NodeService {
         const cards = await this.listAgentCards();
         return cards.map((card) => ({
           ownerId: card.ownerId,
-          capabilities: card.capabilities,
+          membership: card.membership,
         }));
       },
       startCapabilityProviderJob: (params) => this.startCapabilityProviderJob(params),
@@ -10432,8 +10434,8 @@ class NodeServiceImpl implements NodeService {
     return handleInboundChainEnvelope(this._chainOrchestrationContext(), envelope);
   }
 
-  async refreshCapabilityIndex(): Promise<void> {
-    return refreshCapabilityIndex(this._chainOrchestrationContext());
+  async refreshAgentNetworkMembershipIndex(): Promise<void> {
+    return refreshAgentNetworkMembershipIndex(this._chainOrchestrationContext());
   }
 
   private async buildChainInboundDeps(): Promise<ChainInboundDeps> {
@@ -10502,7 +10504,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   private _chainDiagnosticsForSubtasks(
-    subtasks: Array<{ subtaskId: string; requiredCapability: string }>,
+    subtasks: Array<{ subtaskId: string; requiredSkill: string }>,
     workersBySubtask: Record<string, string[]>,
     rankedBySubtask?: Record<string, Array<{ peerId: string; score: number; summary: string }>>,
   ): string[] {
@@ -10520,7 +10522,7 @@ class NodeServiceImpl implements NodeService {
     ok: boolean;
     chainId: string;
     chainMandateId: string;
-    subtasks: Array<{ subtaskId: string; depth: number; requiredCapability: string; objective: string }>;
+    subtasks: Array<{ subtaskId: string; depth: number; requiredSkill: string; objective: string }>;
     error?: string;
     assignerPeerId?: string;
     handedOff?: boolean;
@@ -10543,8 +10545,8 @@ class NodeServiceImpl implements NodeService {
     return buildChainOrchestratorDeps(this._chainOrchestrationContext());
   }
 
-  private async findCapabilityProviders(capability: string): Promise<string[]> {
-    return findCapabilityProviders(this._chainOrchestrationContext(), capability);
+  private async findAgentNetworkWorkers(capability: string): Promise<string[]> {
+    return findAgentNetworkWorkers(this._chainOrchestrationContext(), capability);
   }
 
   async chainPreviewGoal(params: ChainPreviewGoalParams): Promise<ChainPreviewGoalResult> {

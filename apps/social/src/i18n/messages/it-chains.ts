@@ -183,7 +183,7 @@ export const itChainsMessages = {
     stale: "Scheda agente obsoleta",
     missing: "Nessuna scheda agente",
     blocked: "Bloccato",
-    detail: "{count} capacità · sincronizzato {synced}",
+    detail: "{count} punti di forza · sincronizzato {synced}",
     noSync: "Scheda agente non sincronizzata",
   },
 } as const;

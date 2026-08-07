@@ -394,12 +394,12 @@ async function stepVerifyRoster(
     }>;
     const cards = (await rpc(node.rpc.wsUrl, "listAgentCards")) as Array<{
       ownerId?: string;
-      capabilities?: string[];
+      membership?: string[];
     }>;
     const bondList = Array.isArray(bonds) ? bonds : [];
     const cardList = Array.isArray(cards) ? cards : [];
     const workers = cardList.filter((c) =>
-      (c.capabilities ?? []).includes("capability-provider"),
+      (c.membership ?? []).includes("agent-network-worker"),
     );
     log(
       `[ok] verifyRoster ${node.id}: bonds=${bondList.length} cards=${cardList.length} workers=${workers.length}`,

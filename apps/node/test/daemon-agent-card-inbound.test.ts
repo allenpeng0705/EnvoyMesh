@@ -101,7 +101,7 @@ describe("handleDaemonAgentCardInbound", () => {
         ownerId: peerOwner.ownerId,
         displayName: "Peer Agent",
         nodeProfile: "primary",
-        capabilities: ["task.execute"],
+        membership: ["task.execute"],
       });
       const unsigned = createUnsignedEnvelope({
         senderPeerId: peerAgent.agentPeerId,

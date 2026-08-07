@@ -11,13 +11,13 @@ describe("chain-plan-assign", () => {
     const prompt = buildPlanAssignPrompt("(5*6+7*8-4*2)/3", [
       {
         peerId: "envoy_agent_mul",
-        capabilities: ["task.execute", "capability-provider"],
-        profile: { strengths: ["*"], throughputTokensPerSec: 90 },
+        membership: ["task.execute", "agent-network-worker"],
+        profile: { skills: ["*"], throughputTokensPerSec: 90 },
       },
       {
         peerId: "envoy_agent_add",
-        capabilities: ["task.execute", "capability-provider"],
-        profile: { strengths: ["+"] },
+        membership: ["task.execute", "agent-network-worker"],
+        profile: { skills: ["+"] },
       },
     ]);
     expect(prompt).toContain("eligibleWorkers");
@@ -32,7 +32,7 @@ describe("chain-plan-assign", () => {
         steps: [
           {
             objective: "Compute 5*6",
-            requiredCapability: "*",
+            requiredSkill: "*",
             depth: 1,
             dependsOn: [],
             assignedPeerId: "envoy_agent_mul",
@@ -40,7 +40,7 @@ describe("chain-plan-assign", () => {
           },
           {
             objective: "Compute 7*8",
-            requiredCapability: "*",
+            requiredSkill: "*",
             depth: 1,
             dependsOn: [],
             // missing assignee — materialize must fill
@@ -48,7 +48,7 @@ describe("chain-plan-assign", () => {
           },
           {
             objective: "Add products then subtract 4*2 and divide by 3",
-            requiredCapability: "/",
+            requiredSkill: "/",
             depth: 2,
             dependsOn: [0, 1],
             assignedPeerId: "envoy_agent_div",
@@ -69,13 +69,13 @@ describe("chain-plan-assign", () => {
       roster: [
         {
           peerId: "envoy_agent_mul",
-          capabilities: ["task.execute"],
-          profile: { strengths: ["*"] },
+          membership: ["task.execute"],
+          profile: { skills: ["*"] },
         },
         {
           peerId: "envoy_agent_div",
-          capabilities: ["task.execute"],
-          profile: { strengths: ["/"] },
+          membership: ["task.execute"],
+          profile: { skills: ["/"] },
         },
       ],
       createdAt: "2026-07-22T00:00:00.000Z",
@@ -91,8 +91,8 @@ describe("chain-plan-assign", () => {
     const drafts = parsePlanAssignSteps(
       JSON.stringify({
         steps: [
-          { objective: "a", requiredCapability: "task.execute", depth: 1, dependsOn: [] },
-          { objective: "b", requiredCapability: "task.execute", depth: 1, dependsOn: [0] },
+          { objective: "a", requiredSkill: "task.execute", depth: 1, dependsOn: [] },
+          { objective: "b", requiredSkill: "task.execute", depth: 1, dependsOn: [0] },
         ],
       }),
     );
@@ -101,7 +101,7 @@ describe("chain-plan-assign", () => {
       chainId: "chain_solo",
       chainMandateId: "chainmandate_solo",
       drafts: drafts!,
-      roster: [{ peerId: "only", capabilities: ["task.execute", "capability-provider"] }],
+      roster: [{ peerId: "only", membership: ["task.execute", "agent-network-worker"] }],
       createdAt: "2026-07-22T00:00:00.000Z",
     });
     expect(subtasks.map((s) => s.preferredWorkerPeerId)).toEqual(["only", "only"]);

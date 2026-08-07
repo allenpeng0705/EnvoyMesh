@@ -183,7 +183,7 @@ export const koChainsMessages = {
     stale: "오래된 에이전트 카드",
     missing: "에이전트 카드 없음",
     blocked: "차단됨",
-    detail: "{count}개 기능 · {synced}에 동기화됨",
+    detail: "{count}개 강점 · {synced}에 동기화됨",
     noSync: "에이전트 카드 동기화 안 됨",
   },
 } as const;

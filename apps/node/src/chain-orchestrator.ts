@@ -364,7 +364,7 @@ export async function planChain(
     chainId: state.chainId,
     chainMandateId: state.chainMandate.chainMandateId,
     depth: 1,
-    requiredCapability: "task.execute",
+    requiredSkill: "task.execute",
     objective: goal,
     requestedResult: "result of the goal",
     constraints: [],
@@ -662,7 +662,7 @@ export async function evaluateBids(
         liveBids.map((bid) => ({ bid })),
         {
           costCeiling: subtask.costCeilingUsd ?? state.chainMandate.costCeilingUsd,
-          requiredCapability: subtask.requiredCapability,
+          requiredSkill: subtask.requiredSkill,
           now: deps.now?.() ?? new Date(),
         },
       );

@@ -38,7 +38,6 @@ import { VoiceNoteRecorderBar } from "../VoiceNoteRecorderBar.js";
 import { useVoiceNoteRecorder } from "../../hooks/useVoiceNoteRecorder.js";
 import { useToast } from "../../hooks/useToast.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
-import { PeerProfilePanel } from "../PeerProfilePanel.js";
 import { ContactWebContentShortcuts } from "../ContactWebContentShortcuts.js";
 import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
@@ -872,9 +871,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
         </div>
       </header>
       {isHomeBridgeThread ? <ExtAgentOfflineBanner /> : null}
-      {threadKind !== "agent" && (
-        <PeerProfilePanel ownerId={selectedContact} fallbackDisplayName={displayName} />
-      )}
       <div className="messages" ref={messagesRef} onScroll={onMessagesScroll}>
         {displayMessages.length === 0 ? (
           <div className="empty-state">

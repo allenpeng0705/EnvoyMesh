@@ -22,7 +22,7 @@ import { ChainReportView } from "../ChainReportView.js";
 import { ChainStartDialog } from "../ChainStartDialog.js";
 import { ChainDetailPanel } from "../ChainDetailPanel.js";
 import { AgentNetworkSettingsModal } from "../AgentNetworkSettingsModal.js";
-import { AgentCapabilitiesPreview } from "../AgentCapabilitiesPreview.js";
+import { AgentNetworkSkillsPreview } from "../AgentNetworkSkillsPreview.js";
 import { WorkerMembershipSection } from "./settings/agent-network-sections.js";
 
 // ---------------------------------------------------------------------------
@@ -483,14 +483,7 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
                           </span>
                         ) : null}
                       </div>
-                      {card && card.capabilities.length > 0 ? (
-                        <div className="chain-worker-card__caps-row">
-                          <AgentCapabilitiesPreview
-                            capabilities={card.capabilities}
-                            compact
-                          />
-                        </div>
-                      ) : null}
+                      <AgentNetworkSkillsPreview card={card} compact />
                     </div>
                   </li>
                 ))}
@@ -641,14 +634,7 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
                       {t(`chains.start.contact${health.cardStatus.charAt(0).toUpperCase() + health.cardStatus.slice(1)}`)}
                     </span>
                   </div>
-                  {card && card.capabilities.length > 0 ? (
-                    <div className="chain-worker-card__caps-row">
-                      <AgentCapabilitiesPreview
-                        capabilities={card.capabilities}
-                        compact
-                      />
-                    </div>
-                  ) : null}
+                  <AgentNetworkSkillsPreview card={card} compact />
                 </div>
               </li>
             ))}

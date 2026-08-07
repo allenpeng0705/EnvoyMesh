@@ -191,7 +191,7 @@ export const ChainSubtaskSchema = z.object({
   /** 1..CHAIN_MAX_DEPTH (3). Enforced at parse time so malformed depth is caught early. */
   depth: z.number().int().min(1).max(CHAIN_MAX_DEPTH),
   /** Required capability tag. Worker must advertise this capability to bid. */
-  requiredCapability: z.string().min(1).max(64),
+  requiredSkill: z.string().min(1).max(64),
   objective: z.string().min(1).max(2000),
   requestedResult: z.string().min(1).max(1000),
   constraints: z.array(z.string().min(1)).max(32).default([]),

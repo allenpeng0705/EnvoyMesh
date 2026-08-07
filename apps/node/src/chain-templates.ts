@@ -27,7 +27,7 @@ export interface ChainTemplate {
   keywords: string[];
   /** Pre-configured subtasks (optional — LLM decomposition fills in if empty). */
   subtasks?: Array<{
-    requiredCapability: string;
+    requiredSkill: string;
     objective: string;
     initialDraft?: string;
   }>;
@@ -58,9 +58,9 @@ const BUILTIN_TEMPLATES: ChainTemplate[] = [
     description: "Translate a document, have it reviewed by a second agent, then summarize the results.",
     keywords: ["translate", "review", "summarize", "document", "proofread"],
     subtasks: [
-      { requiredCapability: "translation", objective: "Translate the document from source to target language", initialDraft: "Please translate the provided document." },
-      { requiredCapability: "review", objective: "Review the translation for accuracy and fluency", initialDraft: "Review the translation and note any errors." },
-      { requiredCapability: "summarize", objective: "Summarize the translated and reviewed document", initialDraft: "Write a concise summary of the final document." },
+      { requiredSkill: "translation", objective: "Translate the document from source to target language", initialDraft: "Please translate the provided document." },
+      { requiredSkill: "review", objective: "Review the translation for accuracy and fluency", initialDraft: "Review the translation and note any errors." },
+      { requiredSkill: "summarize", objective: "Summarize the translated and reviewed document", initialDraft: "Write a concise summary of the final document." },
     ],
     stallPolicy: "auto_rebid",
     costEstimationEnabled: true,
@@ -71,9 +71,9 @@ const BUILTIN_TEMPLATES: ChainTemplate[] = [
     description: "Search for information across bonded peers, rank results, and synthesize a report.",
     keywords: ["find", "search", "research", "best", "ranking", "report"],
     subtasks: [
-      { requiredCapability: "search", objective: "Search bonded contacts' vaults for relevant information" },
-      { requiredCapability: "rank", objective: "Rank results by relevance, recency, and credibility" },
-      { requiredCapability: "summarize", objective: "Synthesize a ranked report with citations" },
+      { requiredSkill: "search", objective: "Search bonded contacts' vaults for relevant information" },
+      { requiredSkill: "rank", objective: "Rank results by relevance, recency, and credibility" },
+      { requiredSkill: "summarize", objective: "Synthesize a ranked report with citations" },
     ],
     stallPolicy: "auto_rebid",
     costEstimationEnabled: false,
@@ -84,9 +84,9 @@ const BUILTIN_TEMPLATES: ChainTemplate[] = [
     description: "Extract data from documents, analyze trends, and produce a report.",
     keywords: ["extract", "analyze", "report", "data", "trends"],
     subtasks: [
-      { requiredCapability: "extract", objective: "Extract structured data from provided documents" },
-      { requiredCapability: "analyze", objective: "Analyze extracted data for patterns and trends" },
-      { requiredCapability: "summarize", objective: "Produce a report with findings and recommendations" },
+      { requiredSkill: "extract", objective: "Extract structured data from provided documents" },
+      { requiredSkill: "analyze", objective: "Analyze extracted data for patterns and trends" },
+      { requiredSkill: "summarize", objective: "Produce a report with findings and recommendations" },
     ],
     stallPolicy: "auto_cancel_subtask",
     costEstimationEnabled: false,
@@ -97,9 +97,9 @@ const BUILTIN_TEMPLATES: ChainTemplate[] = [
     description: "Compare two or more options across multiple dimensions and recommend the best.",
     keywords: ["compare", "comparison", "vs", "versus", "options", "recommend"],
     subtasks: [
-      { requiredCapability: "analyze", objective: "Analyze each option across defined dimensions" },
-      { requiredCapability: "compare", objective: "Compare options side-by-side with weighted scoring" },
-      { requiredCapability: "summarize", objective: "Recommend the best option with justification" },
+      { requiredSkill: "analyze", objective: "Analyze each option across defined dimensions" },
+      { requiredSkill: "compare", objective: "Compare options side-by-side with weighted scoring" },
+      { requiredSkill: "summarize", objective: "Recommend the best option with justification" },
     ],
     stallPolicy: "escalate",
     costEstimationEnabled: false,

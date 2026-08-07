@@ -217,7 +217,7 @@ describe("MESH_FIND_CAPABILITY_TOOL", () => {
     const toolImpl = buildMeshFindCapabilityTool({
       trustStore,
       listBondedAgentCapabilities: async () => [
-        { ownerId: "envoy:owner:dana", capabilities: ["envoymesh.published-library"] },
+        { ownerId: "envoy:owner:dana", membership: ["envoymesh.published-library"] },
       ],
     });
     const result = (await toolImpl({

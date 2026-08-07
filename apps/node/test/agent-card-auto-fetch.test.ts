@@ -69,7 +69,7 @@ function makeSignedCardReplyForOwner(
     ownerId: peerOwner.ownerId,
     displayName,
     nodeProfile: "full",
-    capabilities: ["chat.message"],
+    membership: ["chat.message"],
     publicTopics: [],
   });
   return signUnsignedEnvelope(

@@ -88,7 +88,7 @@ function mockIdentityContext(overrides: Partial<IdentityContext> = {}): Identity
     getPeerDirectoryStore: () => peerDirStore,
     getBonds: vi.fn().mockResolvedValue([]),
     requestPeerProfile: vi.fn().mockResolvedValue({ ok: true }),
-    refreshCapabilityIndex: vi.fn().mockResolvedValue(undefined),
+    refreshAgentNetworkMembershipIndex: vi.fn().mockResolvedValue(undefined),
     emit: vi.fn(),
     dialHintsForChat: vi.fn().mockResolvedValue([]),
     rememberBondedPeerTransportFromInbound: vi.fn().mockResolvedValue(undefined),

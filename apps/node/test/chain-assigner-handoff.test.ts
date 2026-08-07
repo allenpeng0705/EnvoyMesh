@@ -101,12 +101,12 @@ describe("executeTool — agent network roster helpers", () => {
     ]);
     const result = await executeTool(
       "mesh.list_agent_network_workers",
-      { requiredCapability: "coding", limit: 5 },
+      { requiredSkill: "coding", limit: 5 },
       toolContext({ listAgentNetworkWorkers }),
     );
     expect(result.ok).toBe(true);
     expect(listAgentNetworkWorkers).toHaveBeenCalledWith({
-      requiredCapability: "coding",
+      requiredSkill: "coding",
       limit: 5,
     });
     expect((result.result as { count: number }).count).toBe(1);

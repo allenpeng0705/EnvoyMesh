@@ -137,14 +137,14 @@ describe("handleInboundAgentCardIntent", () => {
       expect(result.action).toBe("respond");
       if (result.action === "respond") {
         expect(result.responsePayload.card.ownerId).toBe(OWNER_ID);
-        expect(result.responsePayload.card.capabilities).toContain("message.send");
+        expect(result.responsePayload.card.membership).toContain("message.send");
         // Private by default — not recruitable for Agent Network / Chains.
-        expect(result.responsePayload.card.capabilities).not.toContain("capability-provider");
+        expect(result.responsePayload.card.membership).not.toContain("agent-network-worker");
       }
     }
   });
 
-  it("advertises capability-provider on agent card when Capability Provider is enabled", async () => {
+  it("advertises agent-network-worker on agent card when Join Agent Network is enabled", async () => {
     const request = createAgentCardRequestPayload({
       requesterOwnerId: PEER_OWNER_ID,
       requesterDeviceId: "envoy:device:phone",
@@ -165,8 +165,8 @@ describe("handleInboundAgentCardIntent", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok && result.action === "respond") {
-      expect(result.responsePayload.card.capabilities).toContain("capability-provider");
-      expect(result.responsePayload.card.capabilities).toContain("task.execute");
+      expect(result.responsePayload.card.membership).toContain("agent-network-worker");
+      expect(result.responsePayload.card.membership).toContain("task.execute");
     }
   });
 
@@ -191,7 +191,7 @@ describe("handleInboundAgentCardIntent", () => {
         modelFreshness: 8,
         spendPosture: "subscription",
         contextWindow: "512k",
-        strengths: ["research"],
+        skills: ["research"],
       },
     });
 
@@ -199,7 +199,7 @@ describe("handleInboundAgentCardIntent", () => {
     if (result.ok && result.action === "respond") {
       expect(result.responsePayload.card.agentNetworkProfile?.modelFreshness).toBe(8);
       expect(result.responsePayload.card.agentNetworkProfile?.contextWindow).toBe("512k");
-      expect(result.responsePayload.card.capabilities).toContain("capability-provider");
+      expect(result.responsePayload.card.membership).toContain("agent-network-worker");
     }
   });
 
@@ -208,7 +208,7 @@ describe("handleInboundAgentCardIntent", () => {
       ownerId: PEER_OWNER_ID,
       displayName: "Bob's Envoy",
       nodeProfile: "primary",
-      capabilities: ["task.execute"],
+      membership: ["task.execute"],
     });
     const response = createAgentCardResponsePayload(card);
     const result = await handleInboundAgentCardIntent({
@@ -236,7 +236,7 @@ describe("handleInboundAgentCardIntent", () => {
     expect(cached?.card.displayName).toBe("Bob's Envoy");
   });
 
-  it("denies agent.card when bond is public", async () => {
+  it("allows agent.card exchange at public bond (cards are public metadata)", async () => {
     await trustStore.setTrustRecord({
       peerOwnerId: PEER_OWNER_ID,
       level: "public",
@@ -260,27 +260,48 @@ describe("handleInboundAgentCardIntent", () => {
       bridgeIdentity,
     });
 
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.action).toBe("respond");
   });
 });
 
 describe("buildLocalAgentCard", () => {
-  it("includes capability-provider when Join Agent Network is enabled", async () => {
+  it("includes agent-network-worker when Join Agent Network is enabled", async () => {
     const card = await buildLocalAgentCard({
       profile: makeTestProfile() as never,
       humanProfileStore,
       capabilityProviderEnabled: true,
     });
-    expect(card.capabilities).toContain("capability-provider");
+    expect(card.membership).toContain("agent-network-worker");
     expect(card.ownerId).toBe(OWNER_ID);
   });
 
-  it("omits capability-provider when Join is off", async () => {
+  it("omits agent-network-worker when Join is off", async () => {
     const card = await buildLocalAgentCard({
       profile: makeTestProfile() as never,
       humanProfileStore,
       capabilityProviderEnabled: false,
     });
-    expect(card.capabilities).not.toContain("capability-provider");
+    expect(card.membership).not.toContain("agent-network-worker");
+  });
+
+  it("merges Ext Agent labels into skills when Join is on", async () => {
+    const card = await buildLocalAgentCard({
+      profile: makeTestProfile() as never,
+      humanProfileStore,
+      capabilityProviderEnabled: true,
+      agentNetworkProfile: {
+        modelFreshness: 5,
+        spendPosture: "unknown",
+        contextWindow: "128k",
+        skills: ["coding"],
+      },
+      extAgentLabels: ["pi", "Hermes"],
+    });
+    expect(card.agentNetworkProfile?.skills).toEqual([
+      { id: "coding", kind: "domain", source: "owner" },
+      { id: "pi", kind: "skill", source: "ext" },
+      { id: "hermes", kind: "skill", source: "ext" },
+    ]);
   });
 });

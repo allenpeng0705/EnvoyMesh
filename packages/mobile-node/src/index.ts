@@ -488,7 +488,7 @@ function summarizeCachedAgentCard(row: {
   const summary: import("@envoymesh/api").CachedAgentCardSummary = {
     ownerId: row.ownerId,
     displayName: card.displayName,
-    capabilities: card.capabilities,
+    membership: card.membership,
     cachedAt: row.cachedAt,
     sourceAgentPeerId: row.sourceAgentPeerId,
   };
@@ -8344,7 +8344,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
       deviceId: deriveDeviceId(this._state.device.publicKeyPem),
       displayName: this._state.owner.ownerId,
       nodeProfile: this._state.deviceCertificate?.deviceProfile ?? "primary",
-      capabilities: this._state.deviceCertificate?.capabilities ?? ["message.send", "task.execute"],
+      membership: this._state.deviceCertificate?.capabilities ?? ["message.send", "task.execute"],
       remotePeerId,
       receivedAt,
       correlationId,
