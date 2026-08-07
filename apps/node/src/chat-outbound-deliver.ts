@@ -11,6 +11,7 @@ import {
 import { parseChatDeliveredAck } from "@envoymesh/api/chat-delivered";
 
 import {
+  hasSameSubnetLanDialEvidence,
   resolvePreferCircuitDialHints,
   shouldPreferCircuitDialHints,
   shouldRetainCircuitDialHints,
@@ -35,6 +36,38 @@ export function resolveChatDeliveryAckTimeoutMs(dialHints: readonly string[]): n
 
 const CHAT_SEND_MAX_ATTEMPTS = 3;
 const CHAT_SEND_RETRY_BASE_MS = 800;
+
+function meshLocalListenAddrs(mesh: unknown): string[] | undefined {
+  const addrs = (mesh as { multiaddrs?: unknown }).multiaddrs;
+  return Array.isArray(addrs) ? (addrs as string[]) : undefined;
+}
+
+function dialPreferenceOpts(
+  mesh: unknown,
+  discoveryProfile?: string,
+): {
+  localListenAddrs?: readonly string[];
+  discoveryProfile?: string;
+} {
+  return {
+    localListenAddrs: meshLocalListenAddrs(mesh),
+    discoveryProfile: discoveryProfile?.trim() || undefined,
+  };
+}
+
+/** Enable short private-LAN dial budget when same-subnet evidence exists. */
+function resolveSameSubnetLanFirst(input: {
+  mesh: unknown;
+  dialHints: string[];
+  peerListenAddrs?: string[];
+  preferCircuitHints?: boolean;
+}): boolean {
+  if (input.preferCircuitHints === true) return false;
+  return hasSameSubnetLanDialEvidence(meshLocalListenAddrs(input.mesh), [
+    ...(input.peerListenAddrs ?? []),
+    ...input.dialHints,
+  ]);
+}
 
 export type OutboundDeliverMesh = Pick<
   EnvoyMesh,
@@ -94,10 +127,19 @@ export async function prepareOutboundPeerConnection(input: {
   dialHints: string[];
   preferCircuitHints: boolean;
   forceFreshDial: boolean;
+  /** Peer-directory / inbound listen addrs — unioned into same-subnet evidence. */
+  peerListenAddrs?: string[];
 }): Promise<boolean> {
+  const sameSubnetLanFirst = resolveSameSubnetLanFirst({
+    mesh: input.mesh,
+    dialHints: input.dialHints,
+    peerListenAddrs: input.peerListenAddrs,
+    preferCircuitHints: input.preferCircuitHints,
+  });
   const warmOpts = {
     dialHints: input.dialHints,
     preferCircuitHints: input.preferCircuitHints,
+    sameSubnetLanFirst,
   };
   const conn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
   const upgradeRelayToDirect = conn.connected && !conn.direct && !input.preferCircuitHints;
@@ -203,6 +245,7 @@ async function prepareOutboundChatConnection(input: {
   dialHints: string[];
   preferCircuitHints: boolean;
   forceFreshDial: boolean;
+  peerListenAddrs?: string[];
 }): Promise<boolean> {
   return prepareOutboundPeerConnection({
     mesh: input.mesh,
@@ -211,7 +254,28 @@ async function prepareOutboundChatConnection(input: {
     dialHints: input.dialHints,
     preferCircuitHints: input.preferCircuitHints,
     forceFreshDial: input.forceFreshDial,
+    peerListenAddrs: input.peerListenAddrs,
   });
+}
+
+function outboundSendDialOpts(input: {
+  mesh: unknown;
+  dialHints: string[];
+  peerListenAddrs?: string[];
+  preferCircuitHints?: boolean;
+  forceFreshDial?: boolean;
+}): {
+  dialHints: string[];
+  preferCircuitHints?: boolean;
+  forceFreshDial?: boolean;
+  sameSubnetLanFirst: boolean;
+} {
+  return {
+    dialHints: input.dialHints,
+    preferCircuitHints: input.preferCircuitHints,
+    forceFreshDial: input.forceFreshDial,
+    sameSubnetLanFirst: resolveSameSubnetLanFirst(input),
+  };
 }
 
 /** ACK read failed after chat.message was written — do not retry (avoids duplicate sends). */
@@ -256,6 +320,8 @@ export async function deliverChatEnvelopeWithRetry(input: {
   rebuildDialHints?: () => Promise<string[]>;
   maxAttempts?: number;
   expectDeliveryAck?: boolean;
+  /** From node config — gates same-subnet LAN-first (relay-only must stay circuit-first). */
+  discoveryProfile?: string;
 }): Promise<ChatDeliverResult> {
   const maxAttempts = input.maxAttempts ?? CHAT_SEND_MAX_ATTEMPTS;
   let lastErr: unknown;
@@ -264,6 +330,7 @@ export async function deliverChatEnvelopeWithRetry(input: {
     input.peerListenAddrs,
     hints,
     input.transportPeerId,
+    dialPreferenceOpts(input.mesh, input.discoveryProfile),
   );
   const canExpectAck =
     input.expectDeliveryAck !== false && typeof input.mesh.sendChatExpectReply === "function";
@@ -308,6 +375,7 @@ export async function deliverChatEnvelopeWithRetry(input: {
           dialHints: hints,
           preferCircuitHints: preferCircuitsOnPrepare,
           forceFreshDial: attempt > 0,
+          peerListenAddrs: input.peerListenAddrs,
         });
         if (!ready && attempt === 0) {
           lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`);
@@ -319,15 +387,20 @@ export async function deliverChatEnvelopeWithRetry(input: {
     const preferCircuitsOnAttempt = preferCircuits || attempt >= 2;
     const forceFreshDial = attempt > 0;
     let usedAck = false;
+    const sendDial = outboundSendDialOpts({
+      mesh: input.mesh,
+      dialHints: hints,
+      peerListenAddrs: input.peerListenAddrs,
+      preferCircuitHints: preferCircuitsOnAttempt,
+      forceFreshDial,
+    });
 
     try {
       if (canExpectAck) {
         usedAck = true;
         const reply = await input.mesh.sendChatExpectReply(input.transportPeerId, input.envelope, {
           timeoutMs: ackTimeoutMs,
-          dialHints: hints,
-          preferCircuitHints: preferCircuitsOnAttempt,
-          forceFreshDial,
+          ...sendDial,
         });
         const ack = parseChatDeliveredAck(reply);
         if (attempt > 0) {
@@ -336,11 +409,7 @@ export async function deliverChatEnvelopeWithRetry(input: {
         markOutboundPeerVerified(input.transportPeerId);
         return { delivered: true, deliveredAt: ack.deliveredAt };
       }
-      await input.mesh.sendChat(input.transportPeerId, input.envelope, {
-        dialHints: hints,
-        preferCircuitHints: preferCircuitsOnAttempt,
-        forceFreshDial,
-      });
+      await input.mesh.sendChat(input.transportPeerId, input.envelope, sendDial);
       if (attempt > 0) {
         console.log(`[sendChat] delivered on attempt ${attempt + 1}/${maxAttempts}`);
       }
@@ -373,6 +442,7 @@ export async function deliverChatEnvelopeWithRetry(input: {
       envelope: input.envelope,
       dialHints: rotateDialHintsForRetry(hints, maxAttempts),
       peerListenAddrs: input.peerListenAddrs,
+      discoveryProfile: input.discoveryProfile,
     });
     if (fallback) {
       return fallback;
@@ -388,22 +458,30 @@ async function trySendChatWithoutAck(input: {
   envelope: EnvoyEnvelope;
   dialHints: string[];
   peerListenAddrs?: string[];
+  discoveryProfile?: string;
 }): Promise<ChatDeliverResult | undefined> {
   const preferCircuits = shouldPreferCircuitDialHints(
     input.peerListenAddrs,
     input.dialHints,
     input.transportPeerId,
+    dialPreferenceOpts(input.mesh, input.discoveryProfile),
   );
   try {
     const closed = await input.mesh.closeConnectionsToPeer(input.transportPeerId);
     if (closed > 0) {
       console.log(`[sendChat] closed ${closed} stale connection(s) before ack-less fallback`);
     }
-    await input.mesh.sendChat(input.transportPeerId, input.envelope, {
-      dialHints: input.dialHints,
-      preferCircuitHints: preferCircuits,
-      forceFreshDial: true,
-    });
+    await input.mesh.sendChat(
+      input.transportPeerId,
+      input.envelope,
+      outboundSendDialOpts({
+        mesh: input.mesh,
+        dialHints: input.dialHints,
+        peerListenAddrs: input.peerListenAddrs,
+        preferCircuitHints: preferCircuits,
+        forceFreshDial: true,
+      }),
+    );
     console.log("[sendChat] delivered without ack (fallback after ack failures)");
     return { delivered: false };
   } catch (err) {
@@ -449,6 +527,7 @@ export async function deliverProfileEnvelopeWithRetry(input: {
   peerListenAddrs?: string[];
   rebuildDialHints?: () => Promise<string[]>;
   maxAttempts?: number;
+  discoveryProfile?: string;
 }): Promise<ChatDeliverResult> {
   if (!isPeerLiveConnected(input.mesh, input.transportPeerId)) {
     return { delivered: false };
@@ -481,6 +560,7 @@ export async function deliverCallEnvelopeWithRetry(input: {
   maxAttempts?: number;
   /** When true, try relay circuit paths before stale direct WAN hints. */
   preferCircuitHints?: boolean;
+  discoveryProfile?: string;
 }): Promise<ChatDeliverResult> {
   // Protocol dispatch: chat/call/profile intents travel on `/envoymesh/chat/0.1.0`
   // (this function); everything else (agent.card.*, social.intro.*, device.pair.*,
@@ -557,6 +637,7 @@ export async function deliverCallEnvelopeWithRetry(input: {
     input.peerListenAddrs,
     hints,
     input.transportPeerId,
+    dialPreferenceOpts(input.mesh, input.discoveryProfile),
   );
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -596,6 +677,7 @@ export async function deliverCallEnvelopeWithRetry(input: {
           dialHints: hints,
           preferCircuitHints: preferCircuits,
           forceFreshDial: false,
+          peerListenAddrs: input.peerListenAddrs,
         });
         if (!ready && !input.mesh.getPeerConnectionInfo(input.transportPeerId).connected) {
           lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before call send`);
@@ -621,6 +703,7 @@ export async function deliverCallEnvelopeWithRetry(input: {
           preferCircuitHints:
             input.preferCircuitHints === false ? false : preferCircuits || attempt > 0,
           forceFreshDial: true,
+          peerListenAddrs: input.peerListenAddrs,
         });
         if (!ready) {
           lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before call send`);
@@ -639,13 +722,17 @@ export async function deliverCallEnvelopeWithRetry(input: {
           preferCircuitHints: input.preferCircuitHints,
         });
       await input.mesh.sendChat(input.transportPeerId, input.envelope, {
-        dialHints: retainHints ? hints : [],
-        preferCircuitHints: !retainHints
-          ? false
-          : input.preferCircuitHints === false
+        ...outboundSendDialOpts({
+          mesh: input.mesh,
+          dialHints: retainHints ? hints : [],
+          peerListenAddrs: input.peerListenAddrs,
+          preferCircuitHints: !retainHints
             ? false
-            : preferCircuits || attempt > 0 || input.preferCircuitHints === true,
-        forceFreshDial: attempt > 0,
+            : input.preferCircuitHints === false
+              ? false
+              : preferCircuits || attempt > 0 || input.preferCircuitHints === true,
+          forceFreshDial: attempt > 0,
+        }),
       });
       if (attempt > 0) {
         console.log(`[call] delivered on attempt ${attempt + 1}/${maxAttempts}`);
@@ -691,6 +778,7 @@ export async function deliverMessageEnvelopeWithRetry(input: {
   rebuildDialHints?: () => Promise<string[]>;
   maxAttempts?: number;
   preferCircuitHints?: boolean;
+  discoveryProfile?: string;
 }): Promise<ChatDeliverResult> {
   const maxAttempts = input.maxAttempts ?? CHAT_SEND_MAX_ATTEMPTS;
   let lastErr: unknown;
@@ -700,6 +788,7 @@ export async function deliverMessageEnvelopeWithRetry(input: {
     input.peerListenAddrs,
     hints,
     input.transportPeerId,
+    dialPreferenceOpts(input.mesh, input.discoveryProfile),
   );
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -734,6 +823,7 @@ export async function deliverMessageEnvelopeWithRetry(input: {
           dialHints: hints,
           preferCircuitHints: preferCircuits,
           forceFreshDial: false,
+          peerListenAddrs: input.peerListenAddrs,
         });
         if (!ready && !input.mesh.getPeerConnectionInfo(input.transportPeerId).connected) {
           lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`);
@@ -753,6 +843,7 @@ export async function deliverMessageEnvelopeWithRetry(input: {
           preferCircuitHints:
             input.preferCircuitHints === false ? false : preferCircuits || attempt > 0,
           forceFreshDial: true,
+          peerListenAddrs: input.peerListenAddrs,
         });
         if (!ready) {
           lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`);
@@ -762,12 +853,18 @@ export async function deliverMessageEnvelopeWithRetry(input: {
       }
 
       const sendConn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
-      await input.mesh.send(input.transportPeerId, input.envelope, {
-        dialHints: sendConn.connected && sendConn.direct && attempt === 0 ? [] : hints,
-        preferCircuitHints:
-          input.preferCircuitHints === false ? false : preferCircuits || attempt > 0,
-        forceFreshDial: attempt > 0,
-      });
+      await input.mesh.send(
+        input.transportPeerId,
+        input.envelope,
+        outboundSendDialOpts({
+          mesh: input.mesh,
+          dialHints: sendConn.connected && sendConn.direct && attempt === 0 ? [] : hints,
+          peerListenAddrs: input.peerListenAddrs,
+          preferCircuitHints:
+            input.preferCircuitHints === false ? false : preferCircuits || attempt > 0,
+          forceFreshDial: attempt > 0,
+        }),
+      );
       return { delivered: true, deliveredAt: new Date().toISOString() };
     } catch (err) {
       lastErr = err;
@@ -797,6 +894,7 @@ export async function deliverDataTransferWithRetry(input: {
   peerListenAddrs?: string[];
   maxAttempts?: number;
   rebuildDialHints?: () => Promise<string[]>;
+  discoveryProfile?: string;
 }): Promise<number> {
   const maxAttempts = input.maxAttempts ?? CHAT_SEND_MAX_ATTEMPTS;
   let lastErr: unknown;
@@ -805,6 +903,7 @@ export async function deliverDataTransferWithRetry(input: {
     input.peerListenAddrs,
     hints,
     input.transportPeerId,
+    dialPreferenceOpts(input.mesh, input.discoveryProfile),
   );
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -832,6 +931,7 @@ export async function deliverDataTransferWithRetry(input: {
       dialHints: hints,
       preferCircuitHints: preferCircuits || attempt > 0,
       forceFreshDial: attempt > 0,
+      peerListenAddrs: input.peerListenAddrs,
     });
     if (!ready) {
       lastErr = new Error(`No reachable data path to ${input.transportPeerId.slice(0, 12)}…`);
@@ -843,11 +943,13 @@ export async function deliverDataTransferWithRetry(input: {
         input.transportPeerId,
         input.voucherUtf8,
         input.chunks,
-        {
+        outboundSendDialOpts({
+          mesh: input.mesh,
           dialHints: hints,
+          peerListenAddrs: input.peerListenAddrs,
           preferCircuitHints: preferCircuits || attempt > 0,
           forceFreshDial: attempt > 0,
-        },
+        }),
       );
       if (attempt > 0) {
         console.log(`[data-transfer] delivered on attempt ${attempt + 1}/${maxAttempts}`);
@@ -877,6 +979,7 @@ export async function deliverExpectReplyWithRetry(input: {
   maxAttempts?: number;
   /** Explicit false keeps Online-direct (agent.card / VPN) instead of circuit-first. */
   preferCircuitHints?: boolean;
+  discoveryProfile?: string;
 }): Promise<EnvoyEnvelope> {
   const maxAttempts = input.maxAttempts ?? CHAT_SEND_MAX_ATTEMPTS;
   const timeoutMs = input.timeoutMs ?? 30_000;
@@ -902,7 +1005,12 @@ export async function deliverExpectReplyWithRetry(input: {
       ? false
       : input.preferCircuitHints === true
         ? true
-        : shouldPreferCircuitDialHints(input.peerListenAddrs, hints, input.transportPeerId);
+        : shouldPreferCircuitDialHints(
+            input.peerListenAddrs,
+            hints,
+            input.transportPeerId,
+            dialPreferenceOpts(input.mesh, input.discoveryProfile),
+          );
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {
@@ -932,6 +1040,7 @@ export async function deliverExpectReplyWithRetry(input: {
           dialHints: hints,
           preferCircuitHints: preferCircuits,
           forceFreshDial: false,
+          peerListenAddrs: input.peerListenAddrs,
         });
         if (!ready && !input.mesh.getPeerConnectionInfo(input.transportPeerId).connected) {
           lastErr = new Error(
@@ -952,6 +1061,7 @@ export async function deliverExpectReplyWithRetry(input: {
         dialHints: hints,
         preferCircuitHints: preferOnPrepare,
         forceFreshDial: attempt > 0,
+        peerListenAddrs: input.peerListenAddrs,
       });
       if (!ready) {
         lastErr = new Error(
@@ -971,9 +1081,13 @@ export async function deliverExpectReplyWithRetry(input: {
             : preferCircuits || attempt > 0;
       const reply = await sendExpectReply(input.transportPeerId, input.envelope, {
         timeoutMs,
-        dialHints: useChatProtocol && sendConn.connected ? [] : hints,
-        preferCircuitHints: preferOnSend,
-        forceFreshDial: attempt > 0,
+        ...outboundSendDialOpts({
+          mesh: input.mesh,
+          dialHints: useChatProtocol && sendConn.connected ? [] : hints,
+          peerListenAddrs: input.peerListenAddrs,
+          preferCircuitHints: preferOnSend,
+          forceFreshDial: attempt > 0,
+        }),
       });
       if (attempt > 0) {
         console.log(`[expect-reply] delivered on attempt ${attempt + 1}/${maxAttempts}`);

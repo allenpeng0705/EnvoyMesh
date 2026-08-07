@@ -367,6 +367,66 @@ describe("shouldPreferCircuitDialHints", () => {
     expect(shouldPreferCircuitDialHints(listen, hints, "12D3KooWContact")).toBe(true);
   });
 
+  it("prefers direct on wan-default when same-subnet LAN evidence exists", async () => {
+    const { shouldPreferCircuitDialHints } = await import("../src/outbound-dial-hints.js");
+    const listen = ["/ip4/192.168.3.78/tcp/4001/p2p/12D3KooWContact"];
+    const hints = [
+      "/ip4/192.168.3.78/tcp/4001/p2p/12D3KooWContact",
+      "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWContact",
+    ];
+    expect(
+      shouldPreferCircuitDialHints(listen, hints, "12D3KooWContact", {
+        localListenAddrs: ["/ip4/192.168.3.85/tcp/4001"],
+        discoveryProfile: "wan-default",
+      }),
+    ).toBe(false);
+  });
+
+  it("still prefers circuits on wan-default for different subnet", async () => {
+    const { shouldPreferCircuitDialHints } = await import("../src/outbound-dial-hints.js");
+    const listen = ["/ip4/192.168.1.50/tcp/4001/p2p/12D3KooWContact"];
+    const hints = [
+      "/ip4/192.168.1.50/tcp/4001/p2p/12D3KooWContact",
+      "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWContact",
+    ];
+    expect(
+      shouldPreferCircuitDialHints(listen, hints, "12D3KooWContact", {
+        localListenAddrs: ["/ip4/192.168.3.85/tcp/4001"],
+        discoveryProfile: "wan-default",
+      }),
+    ).toBe(true);
+  });
+
+  it("relay-only ignores same-subnet evidence", async () => {
+    const { shouldPreferCircuitDialHints } = await import("../src/outbound-dial-hints.js");
+    const listen = ["/ip4/192.168.3.78/tcp/4001/p2p/12D3KooWContact"];
+    const hints = [
+      "/ip4/192.168.3.78/tcp/4001/p2p/12D3KooWContact",
+      "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWContact",
+    ];
+    expect(
+      shouldPreferCircuitDialHints(listen, hints, "12D3KooWContact", {
+        localListenAddrs: ["/ip4/192.168.3.85/tcp/4001"],
+        discoveryProfile: "relay-only",
+      }),
+    ).toBe(true);
+  });
+
+  it("without discoveryProfile, same-subnet still prefers direct (chat needs profile from caller)", async () => {
+    const { shouldPreferCircuitDialHints } = await import("../src/outbound-dial-hints.js");
+    const listen = ["/ip4/192.168.3.78/tcp/4001/p2p/12D3KooWContact"];
+    const hints = [
+      "/ip4/192.168.3.78/tcp/4001/p2p/12D3KooWContact",
+      "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWContact",
+    ];
+    // Call sites must pass discoveryProfile for relay-only; absent profile keeps LAN-first.
+    expect(
+      shouldPreferCircuitDialHints(listen, hints, "12D3KooWContact", {
+        localListenAddrs: ["/ip4/192.168.3.85/tcp/4001"],
+      }),
+    ).toBe(false);
+  });
+
   it("prefers direct when public routable TCP hints exist alongside circuits", async () => {
     const { shouldPreferCircuitDialHints } = await import("../src/outbound-dial-hints.js");
     const listen = ["/ip4/203.0.113.50/tcp/4011/p2p/12D3KooWContact"];
@@ -398,6 +458,29 @@ describe("shouldPreferCircuitDialHints", () => {
   });
 });
 
+describe("hasSameSubnetLanDialEvidence", () => {
+  it("detects same /24 and RFC6598 overlay", async () => {
+    const { hasSameSubnetLanDialEvidence } = await import("../src/outbound-dial-hints.js");
+    expect(
+      hasSameSubnetLanDialEvidence(
+        ["/ip4/192.168.3.85/tcp/4001"],
+        ["/ip4/192.168.3.78/tcp/4001/p2p/12D3KooWPeer"],
+      ),
+    ).toBe(true);
+    expect(
+      hasSameSubnetLanDialEvidence(
+        ["/ip4/192.168.3.85/tcp/4001"],
+        ["/ip4/192.168.1.78/tcp/4001/p2p/12D3KooWPeer"],
+      ),
+    ).toBe(false);
+    expect(
+      hasSameSubnetLanDialEvidence(
+        ["/ip4/100.64.1.10/tcp/4001"],
+        ["/ip4/100.100.50.25/tcp/4011/p2p/12D3KooWPeer"],
+      ),
+    ).toBe(true);
+  });
+});
 describe("resolvePreferCircuitDialHints", () => {
   it("lets explicit false win over private-LAN circuit heuristic", async () => {
     const { resolvePreferCircuitDialHints } = await import("../src/outbound-dial-hints.js");

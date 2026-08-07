@@ -374,6 +374,29 @@ export function prioritizeDirectLanDialHints(hints: string[]): string[] {
   return [...lan, ...other];
 }
 
+/**
+ * True when at least one peer hint is private LAN TCP on the same private
+ * /24 (or RFC6598 overlay) as a local listen address. Used to safely enable
+ * LAN-first dials on `wan-default` without treating all RFC1918 as reachable.
+ */
+export function hasSameSubnetLanDialEvidence(
+  localListenAddrs: readonly string[] | undefined,
+  peerHints: readonly string[] | undefined,
+): boolean {
+  const localIps = (localListenAddrs ?? [])
+    .map(parseIpv4FromMultiaddr)
+    .filter((ip): ip is string => ip != null);
+  if (localIps.length === 0) return false;
+  for (const h of peerHints ?? []) {
+    if (!isPrivateLanTcpDialHint(h)) continue;
+    const remoteIp = parseIpv4FromMultiaddr(h);
+    if (remoteIp && localIps.some((lip) => ipv4SamePrivateOrOverlayNetwork(remoteIp, lip))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Merge peer-directory / inbound-cache listen addrs, dropping ephemeral TCP snapshots. */
 export function mergeDialablePeerListenAddrs(
   recipientPeerId: string,
@@ -406,6 +429,10 @@ function isRfc6598OverlayTcpDialHint(addr: string): boolean {
  * link-local), prefer circuits instead — the LAN addresses are unreachable
  * from other networks and would burn 30 s per attempt with no chance of success.
  *
+ * **Same-subnet exception:** When `localListenAddrs` share a private /24 (or
+ * RFC6598 overlay) with a peer LAN hint, prefer direct — both peers are on
+ * the same LAN *right now*. `relay-only` profiles never take this exception.
+ *
  * **Overlay exception:** RFC 6598 (`100.64/10`) direct TCP is mutually dialable
  * inside Tailscale/headscale. Treating it like RFC1918 would force Online-relay
  * even when dial hints kept the overlay path for Online-direct.
@@ -414,6 +441,10 @@ export function shouldPreferCircuitDialHints(
   listenAddrs: string[] | undefined,
   dialHints: string[],
   recipientPeerId?: string,
+  opts?: {
+    localListenAddrs?: readonly string[];
+    discoveryProfile?: string;
+  },
 ): boolean {
   const peerId = recipientPeerId?.trim() ?? "";
   const dialableListen = peerId
@@ -429,6 +460,21 @@ export function shouldPreferCircuitDialHints(
     ...dialableListen,
     ...dialHints.filter((h) => h.includes("/tcp/") && !h.includes("/p2p-circuit/")),
   ];
+  const profile = opts?.discoveryProfile?.trim() ?? "";
+
+  // relay-only: never LAN-first even on same subnet.
+  if (profile === "relay-only") {
+    return (
+      dialHints.some((h) => h.includes("/p2p-circuit/")) ||
+      !hasDirectTcpDialHints(directCandidates)
+    );
+  }
+
+  // Same-subnet / overlay evidence → prefer direct (wan-default safe path).
+  if (hasSameSubnetLanDialEvidence(opts?.localListenAddrs, [...dialableListen, ...dialHints])) {
+    return false;
+  }
+
   if (hasDirectTcpDialHints(directCandidates)) {
     // Prefer direct when publicly routable OR when an RFC6598 overlay path exists.
     // (100.64 is classified private for wan-public stripping, but is dialable
@@ -455,10 +501,14 @@ export function resolvePreferCircuitDialHints(
   listenAddrs: string[] | undefined,
   dialHints: string[],
   recipientPeerId?: string,
+  opts?: {
+    localListenAddrs?: readonly string[];
+    discoveryProfile?: string;
+  },
 ): boolean {
   if (explicit === true) return true;
   if (explicit === false) return false;
-  return shouldPreferCircuitDialHints(listenAddrs, dialHints, recipientPeerId);
+  return shouldPreferCircuitDialHints(listenAddrs, dialHints, recipientPeerId, opts);
 }
 
 /**

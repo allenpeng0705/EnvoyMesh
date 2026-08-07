@@ -32,8 +32,10 @@ describe("WAN production discovery + auto-bond hygiene", () => {
     setRelayClientAdvertisedTopics([]);
   });
 
-  it("sponsor-friend dial filter: public circuit → wan-public (strip home LAN)", () => {
-    expect(pickAddressFilterForPeer([LAN, CIRCUIT], "wan-default")).toBe("wan-public");
+  it("sponsor-friend dial filter: LAN present → all (keep LAN); circuit-only → wan-public", () => {
+    // Same-LAN recovery: when peer has private LAN TCP, keep it (filter "all")
+    // even alongside a public circuit. Circuit-only peers still strip RFC1918.
+    expect(pickAddressFilterForPeer([LAN, CIRCUIT], "wan-default")).toBe("all");
     expect(pickAddressFilterForPeer([LAN, CIRCUIT], "lan-fast")).toBe("all");
     expect(pickAddressFilterForPeer([CIRCUIT], "wan-default")).toBe("wan-public");
   });

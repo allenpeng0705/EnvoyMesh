@@ -50,6 +50,7 @@ import {
 } from "./bond-warm-coordinator.js";
 import {
   buildOutboundDialHints,
+  hasSameSubnetLanDialEvidence,
   mergeDialablePeerListenAddrs,
   shouldPreferCircuitDialHints,
   shouldRetainCircuitDialHints,
@@ -73,6 +74,18 @@ import type { PersistedNodeConfig } from "./node-config-store.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 
 export const WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS = 10_000;
+
+async function discoveryProfileFromConfig(
+  ctx: Pick<OutboundMessagingContext, "loadConfig">,
+): Promise<string | undefined> {
+  try {
+    const cfg = await ctx.loadConfig();
+    const profile = typeof cfg?.discoveryProfile === "string" ? cfg.discoveryProfile.trim() : "";
+    return profile || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export type TransportCacheEntry = { peerId: string; listenAddrs?: string[] };
 
@@ -528,6 +541,7 @@ export async function deliverChatEnvelopeViaRuntime(
 ): Promise<ChatDeliverResult> {
   return withChatSendLock(transportPeerId, async () => {
     const mesh = ctx.requireMesh();
+    const discoveryProfile = await discoveryProfileFromConfig(ctx);
     return deliverChatEnvelopeWithRetry({
       mesh,
       transportPeerId,
@@ -537,6 +551,7 @@ export async function deliverChatEnvelopeViaRuntime(
       chatProtocol: ENVOY_CHAT_PROTOCOL,
       rebuildDialHints: () => dialHintsForChatViaRuntime(ctx, transportPeerId, listenAddrs),
       expectDeliveryAck: options?.expectDeliveryAck,
+      discoveryProfile,
     });
   });
 }
@@ -822,6 +837,7 @@ export async function deliverCallEnvelopeViaRuntime(
       // Keep LAN listen addrs for call invite retries (short LAN dial timeout).
       peerListenAddrs: wasConnected && !keepCircuitHints ? [] : listenAddrs,
       preferCircuitHints: keepCircuitHints || preferCircuits,
+      discoveryProfile: await discoveryProfileFromConfig(ctx),
       rebuildDialHints:
         wasConnected && !keepCircuitHints
           ? undefined
@@ -871,6 +887,7 @@ export async function deliverMessageEnvelopeViaRuntime(
         return true;
       }),
       preferCircuitHints: preferCircuits,
+      discoveryProfile: await discoveryProfileFromConfig(ctx),
       rebuildDialHints: () => dialHintsForChatViaRuntime(ctx, transportPeerId, listenAddrs),
     });
   });
@@ -994,12 +1011,20 @@ export async function warmContactConnectionTransportViaRuntime(
   }
 
   let preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
+  let sameSubnetLanFirst = false;
   try {
     const cfg = await ctx.loadConfig();
     const profile =
       typeof cfg?.discoveryProfile === "string" ? cfg.discoveryProfile.trim() : "";
-    // Same-LAN homes (default / lan-fast): never circuit-first on private listen
-    // addrs — that burns ~30s dialTimeout before the callee can ring.
+    const localListen = mesh.multiaddrs;
+    const evidenceHints = [...(listenAddrs ?? []), ...dialHints];
+    sameSubnetLanFirst = hasSameSubnetLanDialEvidence(localListen, evidenceHints);
+    preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId, {
+      localListenAddrs: localListen,
+      discoveryProfile: profile || undefined,
+    });
+    // lan-fast / empty: always LAN-first when any direct exists; same-subnet
+    // evidence additionally enables the short private-LAN dial budget.
     if (profile === "lan-fast" || profile === "") {
       preferCircuitHints = false;
     }
@@ -1026,6 +1051,7 @@ export async function warmContactConnectionTransportViaRuntime(
   const result = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
     dialHints,
     preferCircuitHints,
+    sameSubnetLanFirst: sameSubnetLanFirst && !preferCircuitHints,
     forceFreshDial:
       options?.redial === true ||
       !existing.connected ||

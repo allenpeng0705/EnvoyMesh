@@ -183,6 +183,10 @@ const BONDED_CHAT_STREAM_REUSE_TIMEOUT_MS = 4_000;
  * value and override our per-hint race.
  */
 const HINT_DIAL_TIMEOUT_MS = 45_000;
+/** Short budget for private LAN TCP when same-subnet LAN-first is enabled. */
+const PRIVATE_LAN_HINT_DIAL_TIMEOUT_MS = 3_000;
+/** Cap ephemeral (≥32768) private LAN attempts before falling through to circuits. */
+const MAX_EPHEMERAL_PRIVATE_LAN_DIALS = 2;
 
 /**
  * circuit-relay-v2 reservation-protocol timeout.
@@ -301,6 +305,16 @@ export interface MeshOutboundOptions {
   verifyConnection?: boolean;
   /** When true, close an existing relay connection and redial direct if LAN hints exist. Default false. */
   upgradeRelayToDirect?: boolean;
+  /**
+   * Same-subnet LAN-first warm/chat: use a short per-address timeout on private
+   * LAN TCP hints and cap ephemeral high-port attempts so dead peer-directory
+   * snapshots cannot burn the full dialTimeout before circuit fallthrough.
+   */
+  sameSubnetLanFirst?: boolean;
+  /** Override per-address dial timeout (ms). Default {@link HINT_DIAL_TIMEOUT_MS}. */
+  dialTimeoutMs?: number;
+  /** Private-LAN timeout when {@link sameSubnetLanFirst} is set. Default 3s. */
+  privateLanDialTimeoutMs?: number;
 }
 
 /**
@@ -2614,6 +2628,7 @@ export class EnvoyMesh {
       dialHints?: string[];
       preferCircuitHints?: boolean;
       forceFreshDial?: boolean;
+      sameSubnetLanFirst?: boolean;
     },
   ): Promise<EnvoyEnvelope> {
     return this.sendExpectReplyOnProtocol(target, envelope, ENVOY_MESSAGE_PROTOCOL, options);
@@ -2631,6 +2646,7 @@ export class EnvoyMesh {
       dialHints?: string[];
       preferCircuitHints?: boolean;
       forceFreshDial?: boolean;
+      sameSubnetLanFirst?: boolean;
     },
   ): Promise<EnvoyEnvelope> {
     return this.sendExpectReplyOnProtocol(target, envelope, ENVOY_CHAT_PROTOCOL, options);
@@ -2645,16 +2661,21 @@ export class EnvoyMesh {
       dialHints?: string[];
       preferCircuitHints?: boolean;
       forceFreshDial?: boolean;
+      sameSubnetLanFirst?: boolean;
     },
   ): Promise<EnvoyEnvelope> {
     validateEnvelopeProtocol(protocol, envelope);
     const timeoutMs = options?.timeoutMs ?? 30_000;
     const sendOptions: MeshOutboundOptions | undefined =
-      options?.dialHints?.length || options?.preferCircuitHints || options?.forceFreshDial
+      options?.dialHints?.length ||
+      options?.preferCircuitHints ||
+      options?.forceFreshDial ||
+      options?.sameSubnetLanFirst
         ? {
             dialHints: options.dialHints,
             preferCircuitHints: options.preferCircuitHints,
             forceFreshDial: options.forceFreshDial,
+            sameSubnetLanFirst: options.sameSubnetLanFirst,
           }
         : undefined;
     const { stream } = await this.openOutboundStream(target, protocol, sendOptions);
@@ -2746,6 +2767,7 @@ export class EnvoyMesh {
       dialHints?: string[];
       preferCircuitHints?: boolean;
       forceFreshDial?: boolean;
+      sameSubnetLanFirst?: boolean;
     },
   ): Promise<EnvoyEnvelope> {
     validateEnvelopeProtocol(ENVOY_CHAT_PROTOCOL, envelope);
@@ -2753,11 +2775,13 @@ export class EnvoyMesh {
     const sendOptions: MeshOutboundOptions | undefined =
       options?.dialHints?.length ||
       options?.preferCircuitHints ||
-      options?.forceFreshDial
+      options?.forceFreshDial ||
+      options?.sameSubnetLanFirst
         ? {
             dialHints: options.dialHints,
             preferCircuitHints: options.preferCircuitHints,
             forceFreshDial: options.forceFreshDial,
+            sameSubnetLanFirst: options.sameSubnetLanFirst,
           }
         : undefined;
     const { stream } = await this.openOutboundStream(target, ENVOY_CHAT_PROTOCOL, sendOptions);
@@ -3199,13 +3223,21 @@ export class EnvoyMesh {
       // (Win auto-bond after mesh.dial PASS → send redial).
       // Only circuit multiaddrs need the flag — not every dial when
       // preferCircuitHints is set (LAN TCP hints stay unlimited).
-      const needsLimited = String(addr).includes("/p2p-circuit");
+      const addrStr = String(addr);
+      const needsLimited = addrStr.includes("/p2p-circuit");
+      const privateLan =
+        sendOptions?.sameSubnetLanFirst === true &&
+        !needsLimited &&
+        isPrivateLanTcpDialHint(addrStr);
+      const dialTimeoutMs = privateLan
+        ? (sendOptions?.privateLanDialTimeoutMs ?? PRIVATE_LAN_HINT_DIAL_TIMEOUT_MS)
+        : (sendOptions?.dialTimeoutMs ?? HINT_DIAL_TIMEOUT_MS);
       const stream = await promiseWithTimeout(
         needsLimited
           ? node.dialProtocol(addr as any, protocol, { runOnLimitedConnection: true })
           : node.dialProtocol(addr as any, protocol),
-        HINT_DIAL_TIMEOUT_MS,
-        `dial ${String(addr).slice(0, 64)}`,
+        dialTimeoutMs,
+        `dial ${addrStr.slice(0, 64)}`,
       );
       const s = stream as { connection?: { remotePeer?: { toString(): string } } };
       const remotePeerId = s.connection?.remotePeer?.toString();
@@ -3241,13 +3273,26 @@ export class EnvoyMesh {
     let lastError: unknown = new Error("no outbound dial attempted");
 
     const dialTarget = this._normalizeDialTarget(target);
-    const tryRoutableHints = async (): Promise<{ stream: any; remotePeerId?: string } | undefined> => {
-      if (!hasRoutableHint) {
-        return undefined;
-      }
-      // Try hints sequentially in speed order (LAN first, then direct TCP, then circuits).
-      // Sequential avoids connection flapping from simultaneous dials to the same peer.
-      for (const ma of dialHintsToMultiaddrs(sortDialHints(routableHints), peerIdStr)) {
+    const tryHintList = async (
+      hints: string[],
+    ): Promise<{ stream: any; remotePeerId?: string } | undefined> => {
+      let ephemeralPrivateLanTried = 0;
+      for (const ma of dialHintsToMultiaddrs(
+        sortDialHints(hints, { sameSubnetLanFirst: sendOptions?.sameSubnetLanFirst === true }),
+        peerIdStr,
+      )) {
+        const addrStr = String(ma);
+        if (
+          sendOptions?.sameSubnetLanFirst === true &&
+          isPrivateLanTcpDialHint(addrStr) &&
+          !addrStr.includes("/p2p-circuit/") &&
+          isLikelyInboundConnSnapshotDialHint(addrStr)
+        ) {
+          if (ephemeralPrivateLanTried >= MAX_EPHEMERAL_PRIVATE_LAN_DIALS) {
+            continue;
+          }
+          ephemeralPrivateLanTried++;
+        }
         try {
           return await dialOnce(ma);
         } catch (e) {
@@ -3255,6 +3300,15 @@ export class EnvoyMesh {
         }
       }
       return undefined;
+    };
+
+    const tryRoutableHints = async (): Promise<{ stream: any; remotePeerId?: string } | undefined> => {
+      if (!hasRoutableHint) {
+        return undefined;
+      }
+      // Try hints sequentially in speed order (LAN first, then direct TCP, then circuits).
+      // Sequential avoids connection flapping from simultaneous dials to the same peer.
+      return tryHintList(routableHints);
     };
 
     // Always prefer explicit filtered hints over bare `/p2p/id` (libp2p peerstore keeps ephemeral inbound observed addrs).
@@ -3269,12 +3323,9 @@ export class EnvoyMesh {
         peerIdStr,
         sendOptions,
       );
-      for (const ma of dialHintsToMultiaddrs(sortDialHints(storeHints), peerIdStr)) {
-        try {
-          return await dialOnce(ma);
-        } catch (e) {
-          lastError = e;
-        }
+      const viaStore = await tryHintList(storeHints);
+      if (viaStore) {
+        return viaStore;
       }
     } else if (barePeerDial) {
       try {
@@ -3294,22 +3345,16 @@ export class EnvoyMesh {
 
     const hints = preferNonLoopbackDialHints(hintsRaw);
     if (!(barePeerDial && hasRoutableHint)) {
-      for (const ma of dialHintsToMultiaddrs(sortDialHints(hints), peerIdStr)) {
-        try {
-          return await dialOnce(ma);
-        } catch (e) {
-          lastError = e;
-        }
+      const viaHints = await tryHintList(hints);
+      if (viaHints) {
+        return viaHints;
       }
     }
     /** Last resort: retry any loopback hints only if bare + routable passes failed */
     const loopOnly = hintsRaw.filter((h) => isLoopbackOrUnspecifiedDialHint(h));
-    for (const ma of dialHintsToMultiaddrs(sortDialHints(loopOnly), peerIdStr)) {
-      try {
-        return await dialOnce(ma);
-      } catch (e) {
-        lastError = e;
-      }
+    const viaLoop = await tryHintList(loopOnly);
+    if (viaLoop) {
+      return viaLoop;
     }
     const skipLimitedFallback =
       hasDirectTcpDialHints(hintsRaw) && !sendOptions?.preferCircuitHints;
@@ -4432,7 +4477,8 @@ export function isLikelyInboundConnSnapshotDialHint(addr: string): boolean {
   if (!addr.includes("/tcp/")) {
     return false;
   }
-  const match = addr.match(/\/tcp\/(\d+)\//);
+  // Match `/tcp/N/` or `/tcp/N` at end — peer-directory often omits a trailing slash.
+  const match = addr.match(/\/tcp\/(\d+)(?:\/|$)/);
   if (!match) {
     return false;
   }
@@ -4560,26 +4606,16 @@ export function isUsableOutboundPeerDialHint(addr: string, targetPeerId?: string
   }
   // Snapshot check: high TCP ports (≥32768) are almost always ephemeral
   // source ports from inbound connections, not dialable listen addresses.
-  // Only skip this check for addresses WITHOUT a /p2p/ suffix — libp2p
-  // peer store strips peer IDs, making valid addresses look like snapshots.
-  const hasExplicitPeer = lastPeerIdFromMultiaddr(a);
-  if (!targetPeerId?.trim()) {
-    // No target peer ID — always apply snapshot filter.
-    if (isLikelyInboundConnSnapshotDialHint(a)) {
-      return false;
-    }
-  } else if (hasExplicitPeer) {
-    // Address has an explicit /p2p/ peer ID. Verify it matches the target,
-    // then still apply the snapshot check — a matching peer ID on a high
-    // port is still ephemeral (e.g. port 62210 from an inbound connection).
-    if (hasExplicitPeer !== targetPeerId.trim()) {
-      return false;
-    }
-    if (isLikelyInboundConnSnapshotDialHint(a)) {
-      return false;
-    }
+  // Apply even when `/p2p/` is absent — peer-directory often stores bare
+  // `/ip4/…/tcp/HIGHPORT` snapshots that previously skipped this filter and
+  // burned full dialTimeout on same-LAN warm.
+  if (isLikelyInboundConnSnapshotDialHint(a)) {
+    return false;
   }
-  // No explicit peer ID — trust the caller's target. Skip snapshot check.
+  const hasExplicitPeer = lastPeerIdFromMultiaddr(a);
+  if (hasExplicitPeer && targetPeerId?.trim() && hasExplicitPeer !== targetPeerId.trim()) {
+    return false;
+  }
   return true;
 }
 
@@ -4727,10 +4763,14 @@ export function preferNonLoopbackDialHints(hints: string[]): string[] {
 /**
  * Sort dial hints by:
  * 1. Prefer direct TCP/LAN paths over relay circuits (LAN + same-network peers)
- * 2. Prefer TCP over browser/WebTransport QUIC
- * 3. Prefer non-loopback / non-unspecified over loopback
+ * 2. Prefer stable listen ports over ephemeral inbound snapshots (same-subnet mode)
+ * 3. Prefer TCP over browser/WebTransport QUIC
+ * 4. Prefer non-loopback / non-unspecified over loopback
  */
-function sortDialHints(hints: string[]): string[] {
+function sortDialHints(
+  hints: string[],
+  opts?: { sameSubnetLanFirst?: boolean },
+): string[] {
   return [...hints].sort((a, b) => {
     const browserA = isBrowserOnlyTransportDialHint(a) ? 1 : 0;
     const browserB = isBrowserOnlyTransportDialHint(b) ? 1 : 0;
@@ -4741,6 +4781,14 @@ function sortDialHints(hints: string[]): string[] {
     const lanB = isPrivateLanTcpDialHint(b) ? 0 : 1;
     if (lanA !== lanB) {
       return lanA - lanB;
+    }
+    if (opts?.sameSubnetLanFirst) {
+      // Stable listen ports (4001/4011/…) before ephemeral inbound snapshots.
+      const snapA = isLikelyInboundConnSnapshotDialHint(a) ? 1 : 0;
+      const snapB = isLikelyInboundConnSnapshotDialHint(b) ? 1 : 0;
+      if (snapA !== snapB) {
+        return snapA - snapB;
+      }
     }
     const circuitA = a.includes("/p2p-circuit/p2p/") ? 1 : 0;
     const circuitB = b.includes("/p2p-circuit/p2p/") ? 1 : 0;
