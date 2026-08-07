@@ -23,6 +23,7 @@ import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import { createDefaultPersistedNodeConfig, type PersistedNodeConfig } from "./node-config-store.js";
 import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR, DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS } from "@envoymesh/api";
 import { filterDialableMultiaddrs } from "./node-service-wan.js";
+import { listLocalIpv4Addresses } from "./cgnat-detection.js";
 
 /**
  * base58btc valid alphabet (RFC 4648 subset used by Bitcoin/IPFS):
@@ -190,7 +191,9 @@ export async function buildOutboundDialHints(input: {
   const recipientPeerId = input.recipientPeerId.trim();
   const raw = (input.peerListenAddrs ?? []).map((a) => a.trim()).filter(Boolean);
   /** Same-subnet evidence must use RAW directory addrs — high ports are often the live tcp/0 listen. */
-  const sameSubnetFromRaw = hasSameSubnetLanDialEvidence(input.localListenAddrs, raw);
+  const sameSubnetFromRaw = hasSameSubnetLanDialEvidence(input.localListenAddrs, raw, {
+    hostNicFallback: Boolean(input.localListenAddrs?.length),
+  });
   const hintOpts = sameSubnetFromRaw ? { allowEphemeralPrivateLan: true } : undefined;
   /** Never dial the remote peer's loopback or local docker-bridge IP from our machine. */
   const nonLoopListen = raw.filter((a) => isUsableOutboundPeerDialHint(a, recipientPeerId, hintOpts));
@@ -410,14 +413,23 @@ export function prioritizeDirectLanDialHints(hints: string[]): string[] {
  * True when at least one peer hint is private LAN TCP on the same private
  * /24 (or RFC6598 overlay) as a local listen address. Used to safely enable
  * LAN-first dials on `wan-default` without treating all RFC1918 as reachable.
+ *
+ * Pass `hostNicFallback: true` at runtime when libp2p multiaddrs may only
+ * expose `0.0.0.0` / loopback — host NIC IPv4s are then used for evidence.
+ * Keep the default off so unit tests and cross-network wan-default stripping
+ * are not poisoned by the developer's LAN.
  */
 export function hasSameSubnetLanDialEvidence(
   localListenAddrs: readonly string[] | undefined,
   peerHints: readonly string[] | undefined,
+  opts?: { hostNicFallback?: boolean },
 ): boolean {
-  const localIps = (localListenAddrs ?? [])
+  let localIps = (localListenAddrs ?? [])
     .map(parseIpv4FromMultiaddr)
-    .filter((ip): ip is string => ip != null);
+    .filter((ip): ip is string => ip != null && ip !== "0.0.0.0" && !ip.startsWith("127."));
+  if (localIps.length === 0 && opts?.hostNicFallback === true) {
+    localIps = listLocalIpv4Addresses().filter((ip) => ip !== "0.0.0.0" && !ip.startsWith("127."));
+  }
   if (localIps.length === 0) return false;
   for (const h of peerHints ?? []) {
     if (!isPrivateLanTcpDialHint(h)) continue;
@@ -503,7 +515,9 @@ export function shouldPreferCircuitDialHints(
   }
 
   // Same-subnet / overlay evidence → prefer direct (wan-default safe path).
-  if (hasSameSubnetLanDialEvidence(opts?.localListenAddrs, [...dialableListen, ...dialHints])) {
+  if (hasSameSubnetLanDialEvidence(opts?.localListenAddrs, [...dialableListen, ...dialHints], {
+    hostNicFallback: Boolean(opts?.localListenAddrs?.length),
+  })) {
     return false;
   }
 

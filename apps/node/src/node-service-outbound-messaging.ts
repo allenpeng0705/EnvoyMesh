@@ -956,7 +956,7 @@ export async function mergeFreshListenAddrsViaRuntime(
   // same-subnet private LAN snapshots so dial hints can try LAN before relay.
   const mesh = ctx.getReachableMesh();
   const localListen = mesh?.multiaddrs;
-  if (hasSameSubnetLanDialEvidence(localListen, fromDir)) {
+  if (hasSameSubnetLanDialEvidence(localListen, fromDir, { hostNicFallback: true })) {
     const seen = new Set(merged);
     let kept = 0;
     for (const raw of fromDir) {
@@ -1048,7 +1048,9 @@ export async function warmContactConnectionTransportViaRuntime(
       /* best-effort */
     }
     const evidenceHints = [...(listenAddrs ?? []), ...rawDirListen, ...dialHints];
-    sameSubnetLanFirst = hasSameSubnetLanDialEvidence(localListen, evidenceHints);
+    sameSubnetLanFirst = hasSameSubnetLanDialEvidence(localListen, evidenceHints, {
+      hostNicFallback: true,
+    });
     preferCircuitHints = shouldPreferCircuitDialHints(
       [...(listenAddrs ?? []), ...rawDirListen],
       dialHints,
@@ -1063,6 +1065,17 @@ export async function warmContactConnectionTransportViaRuntime(
     if (profile === "lan-fast" || profile === "") {
       preferCircuitHints = false;
     }
+    // Explicit Relay→Direct: never prefer circuit; enable same-subnet LAN budget
+    // whenever we have private LAN evidence (including tcp/0 high ports).
+    if (options?.upgradeRelayToDirect === true) {
+      preferCircuitHints = false;
+      if (
+        sameSubnetLanFirst ||
+        evidenceHints.some((h) => isPrivateLanTcpDialHint(h) && !h.includes("/p2p-circuit/"))
+      ) {
+        sameSubnetLanFirst = true;
+      }
+    }
   } catch {
     /* keep heuristic */
   }
@@ -1071,10 +1084,10 @@ export async function warmContactConnectionTransportViaRuntime(
     void mesh.mergePeerStoreDialHints(transportPeerId, dialHints);
   }
 
+  // redial / stale verify may tear down; upgradeRelayToDirect must NOT — keep
+  // the working relay until a Direct dial succeeds (see ensurePeerReachable).
   const tearingDown =
-    options?.redial === true ||
-    options?.upgradeRelayToDirect === true ||
-    (needsProbe && !options?.keepAlive);
+    options?.redial === true || (needsProbe && !options?.keepAlive);
   if (tearingDown) {
     try {
       await mesh.closeConnectionsToPeer(transportPeerId);
@@ -1088,10 +1101,7 @@ export async function warmContactConnectionTransportViaRuntime(
     preferCircuitHints,
     sameSubnetLanFirst: sameSubnetLanFirst && !preferCircuitHints,
     forceFreshDial:
-      options?.redial === true ||
-      !existing.connected ||
-      options?.upgradeRelayToDirect === true ||
-      tearingDown,
+      options?.redial === true || !existing.connected || tearingDown,
     upgradeRelayToDirect: options?.upgradeRelayToDirect === true || options?.redial === true,
   });
   void ctx.flushPendingRoomSyncs();

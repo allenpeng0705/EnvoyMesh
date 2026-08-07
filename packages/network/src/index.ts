@@ -2974,7 +2974,9 @@ export class EnvoyMesh {
     );
     const canUpgradeRelayToDirect =
       sendOptions?.upgradeRelayToDirect === true &&
-      hasDirectTcpDialHints(hintList) &&
+      hasLanUpgradeDialHints(hintList, {
+        sameSubnetLanFirst: sendOptions?.sameSubnetLanFirst === true,
+      }) &&
       !sendOptions?.preferCircuitHints;
     if (peerIdStr && !sendOptions?.forceFreshDial && !sendOptions?.verifyConnection) {
       const before = this.getPeerConnectionInfo(peerIdStr);
@@ -2982,7 +2984,31 @@ export class EnvoyMesh {
         if (before.direct || !canUpgradeRelayToDirect) {
           return before;
         }
-        await this.closeConnectionsToPeer(peerIdStr);
+        // Relay→Direct: try LAN first WITHOUT dropping the working relay.
+        // Closing first caused Offline when tcp/0 high-port dials failed.
+        try {
+          const lanOnly = hintList.filter((h) => !h.includes("/p2p-circuit/"));
+          const { stream } = await this.openOutboundStream(target, protocol, {
+            ...sendOptions,
+            dialHints: lanOnly.length > 0 ? lanOnly : hintList,
+            preferCircuitHints: false,
+            sameSubnetLanFirst: true,
+            forceFreshDial: true,
+            upgradeRelayToDirect: true,
+          });
+          try {
+            await stream.close();
+          } catch {
+            /* ignore */
+          }
+          const after = this.getPeerConnectionInfo(peerIdStr);
+          if (after.connected && after.direct) {
+            return after;
+          }
+          return before;
+        } catch {
+          return before;
+        }
       }
     }
     if (peerIdStr && sendOptions?.verifyConnection && !sendOptions?.forceFreshDial) {
@@ -3026,6 +3052,13 @@ export class EnvoyMesh {
           );
         } else {
           console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
+        }
+      }
+      // Failed redial/upgrade must not report Offline when an existing path remains.
+      if (peerIdStr) {
+        const still = this.getPeerConnectionInfo(peerIdStr);
+        if (still.connected) {
+          return still;
         }
       }
       return { connected: false, direct: false };
@@ -4474,6 +4507,19 @@ export function hasDirectTcpDialHints(hints: readonly string[]): boolean {
       !isDockerBridgeGatewayDialHint(h) &&
       !isLikelyInboundConnSnapshotDialHint(h),
   );
+}
+
+/**
+ * True when hints include a LAN TCP path we may try for Relay→Direct upgrade.
+ * Includes high-port private LAN (`tcp/0` listeners) when {@link sameSubnetLanFirst}.
+ */
+export function hasLanUpgradeDialHints(
+  hints: readonly string[],
+  opts?: { sameSubnetLanFirst?: boolean },
+): boolean {
+  if (hasDirectTcpDialHints(hints)) return true;
+  if (opts?.sameSubnetLanFirst !== true) return false;
+  return hasDirectPrivateLanDialHints(hints);
 }
 
 export function isPrivateOrUnroutableDialHint(addr: string): boolean {

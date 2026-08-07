@@ -63,10 +63,11 @@ function resolveSameSubnetLanFirst(input: {
   preferCircuitHints?: boolean;
 }): boolean {
   if (input.preferCircuitHints === true) return false;
-  return hasSameSubnetLanDialEvidence(meshLocalListenAddrs(input.mesh), [
-    ...(input.peerListenAddrs ?? []),
-    ...input.dialHints,
-  ]);
+  return hasSameSubnetLanDialEvidence(
+    meshLocalListenAddrs(input.mesh),
+    [...(input.peerListenAddrs ?? []), ...input.dialHints],
+    { hostNicFallback: true },
+  );
 }
 
 export type OutboundDeliverMesh = Pick<

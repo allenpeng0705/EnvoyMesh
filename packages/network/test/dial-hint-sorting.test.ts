@@ -4,6 +4,7 @@ import {
   filterDialHintsForOutboundSend,
   hasDirectPrivateLanDialHints,
   hasDirectTcpDialHints,
+  hasLanUpgradeDialHints,
   isBrowserOnlyTransportDialHint,
   isLoopbackOrUnspecifiedDialHint,
   isLikelyInboundConnSnapshotDialHint,
@@ -286,6 +287,8 @@ describe("dial hint sorting", () => {
           allowEphemeralPrivateLan: true,
         }),
       ).toEqual([ephemeral, stripped]);
+      expect(hasLanUpgradeDialHints([ephemeral], { sameSubnetLanFirst: true })).toBe(true);
+      expect(hasLanUpgradeDialHints([ephemeral])).toBe(false);
     });
 
     it("rejects ephemeral ports even without trailing slash or /p2p/ suffix", () => {

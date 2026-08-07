@@ -141,13 +141,19 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       expect(closeConnectionsToPeer).not.toHaveBeenCalled();
     });
 
-    it("upgradeRelayToDirect closes relay and redials when requested", async () => {
+    it("upgradeRelayToDirect redials for Direct without closing relay first", async () => {
       getPeerConnectionInfo.mockReturnValue({ connected: true, direct: false });
 
       await node.warmContactConnection(PEER_OWNER_ID, { upgradeRelayToDirect: true });
 
-      expect(closeConnectionsToPeer).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
+      // Keep the working relay until ensurePeerReachable succeeds on LAN.
+      expect(closeConnectionsToPeer).not.toHaveBeenCalled();
       expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
+      expect(ensurePeerReachable).toHaveBeenCalledWith(
+        TRANSPORT_PEER_ID,
+        expect.anything(),
+        expect.objectContaining({ upgradeRelayToDirect: true, forceFreshDial: false }),
+      );
     });
 
     it("redial closes and re-dials only when explicitly requested", async () => {
