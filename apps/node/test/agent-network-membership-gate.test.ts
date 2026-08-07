@@ -28,6 +28,8 @@ function makeDeps(
   }>,
   options?: {
     listenAddrsByOwnerId?: Record<string, string[]>;
+    /** ownerId → libp2p peer id currently connected on the mesh. */
+    connectedLibp2pByOwnerId?: Record<string, string>;
     selfAgentPeerId?: string;
     localWorkerCard?: (typeof cards)[number] | null;
     openClawReady?: boolean;
@@ -35,10 +37,21 @@ function makeDeps(
 ): ChainOrchestrationContext {
   const index = new AgentNetworkMembershipIndex();
   const listenAddrsByOwnerId = options?.listenAddrsByOwnerId ?? {};
+  const connectedLibp2pByOwnerId = options?.connectedLibp2pByOwnerId ?? {};
+  const connectedPeerIds = [...new Set(Object.values(connectedLibp2pByOwnerId))];
   return {
     getAgentNetworkMembershipIndex: () => index,
     getAgentNetworkMembershipIndexReady: () => null,
-    getReachableMesh: () => undefined,
+    getReachableMesh: () =>
+      connectedPeerIds.length > 0
+        ? {
+            getConnectedPeerIds: () => connectedPeerIds,
+            getConnectionStats: () => ({
+              connectedPeerIds,
+              circuitPeerIds: [],
+            }),
+          }
+        : undefined,
     listAgentCards: async () => cards,
     getLocalAgentNetworkWorkerCard: async () =>
       options?.localWorkerCard === null
@@ -53,10 +66,19 @@ function makeDeps(
     getPeerDirectoryStore: () => ({
       getPeerByOwnerId: async (ownerId: string) => {
         const listenAddrs = listenAddrsByOwnerId[ownerId];
-        if (!listenAddrs) return undefined;
-        return { ownerId, listenAddrs };
+        if (!listenAddrs && !connectedLibp2pByOwnerId[ownerId]) return undefined;
+        return {
+          ownerId,
+          peerId: connectedLibp2pByOwnerId[ownerId] ?? `12D3KooW${ownerId.slice(-8)}`,
+          listenAddrs: listenAddrs ?? [],
+        };
       },
-      listPeerRecords: async () => [],
+      listPeerRecords: async () =>
+        Object.entries(connectedLibp2pByOwnerId).map(([ownerId, peerId]) => ({
+          ownerId,
+          peerId,
+          listenAddrs: listenAddrsByOwnerId[ownerId] ?? [],
+        })),
     }),
   } as unknown as ChainOrchestrationContext;
 }
@@ -267,7 +289,7 @@ describe("Agent Network worker discovery gate", () => {
     expect(ranked[0]!.score).toBeGreaterThan(ranked[1]!.score);
   });
 
-  it("includes Join'd local agent first and always online", async () => {
+  it("includes Join'd local agent as online same-LAN worker (score-ordered, not forced first)", async () => {
     const deps = makeDeps(
       [
         {
@@ -286,6 +308,9 @@ describe("Agent Network worker discovery gate", () => {
       ],
       {
         selfAgentPeerId: "envoy_agent_self",
+        connectedLibp2pByOwnerId: {
+          "envoy:owner:remote": "12D3KooWRemotePeerxxxxxxx",
+        },
         localWorkerCard: {
           ownerId: "envoy:owner:self",
           displayName: "Me",
@@ -305,11 +330,14 @@ describe("Agent Network worker discovery gate", () => {
     expect(deps.getAgentNetworkMembershipIndex().findWorkers("task.execute")).toContain(
       "envoy_agent_self",
     );
-    const ranked = await findAgentNetworkWorkersRanked(deps, "task.execute");
-    expect(ranked[0]?.peerId).toBe("envoy_agent_self");
-    expect(ranked[0]?.online).toBe(true);
-    expect(ranked[0]?.sameLan).toBe(true);
+    const ranked = await findAgentNetworkWorkersRanked(deps, "research");
+    const self = ranked.find((r) => r.peerId === "envoy_agent_self");
+    expect(self?.online).toBe(true);
+    expect(self?.sameLan).toBe(true);
     expect(ranked.map((r) => r.peerId)).toContain("envoy_agent_remote");
+    // Research specialist outranks weak local generalist when both online.
+    expect(ranked[0]?.peerId).toBe("envoy_agent_remote");
+    expect(ranked[0]!.score).toBeGreaterThan(self!.score);
   });
 
   it("omits local agent when Join is off (no local worker card)", async () => {

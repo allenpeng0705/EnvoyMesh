@@ -17,7 +17,7 @@ export interface WorkerCandidate {
   bond: BondRecord;
   card: CachedAgentCardSummary | undefined;
   health: ChainBondHealth;
-  /** Local agent (team job creator) — listed first, always online when Join is on. */
+  /** Local agent (team job creator) — labeled "You"; same select/order rules as peers. */
   isSelf?: boolean;
 }
 
@@ -81,23 +81,30 @@ export function ChainStartDialog({
     return map;
   }, [preview?.suggestedWorkers]);
 
-  // Auto-first: when the preview's suggested workers arrive, pre-check the
-  // ones that are currently selectable. Only runs once per preview (guarded
-  // by selectionTouchedRef) so the owner's later edits survive re-renders.
+  // Auto-first: union plan assignees + suggested pool (backups for stall
+  // reassign). Only runs until the owner manually toggles.
   useEffect(() => {
     if (!preview?.ok || selectionTouchedRef.current) return;
     const selectableIds = new Set(
       selectableCandidates.map((w) => w.card!.sourceAgentPeerId!),
     );
+    const preferredIds = [
+      ...new Set(
+        (preview.subtasks ?? [])
+          .map((s) => s.preferredWorkerPeerId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ].filter((id) => selectableIds.has(id));
     const suggestedSelectable = [...suggestedByPeer.keys()].filter((id) =>
       selectableIds.has(id),
     );
+    const autoIds = [...new Set([...preferredIds, ...suggestedSelectable])];
     setSelectedPeerIds((prev) => {
       // Only adopt the system pick if the owner hasn't chosen anyone yet.
       if (prev.size > 0) return prev;
-      return new Set(suggestedSelectable);
+      return new Set(autoIds);
     });
-  }, [preview, preview?.ok, suggestedByPeer, selectableCandidates]);
+  }, [preview, preview?.ok, preview?.subtasks, suggestedByPeer, selectableCandidates]);
 
   // Prune stale selections when the candidate list changes
   useEffect(() => {
@@ -175,8 +182,9 @@ export function ChainStartDialog({
   const noWorkers =
     Boolean(preview?.ok && preview.subtasks.length > 0) && !hasWorkers;
 
-  // Display order: local agent (You) first, then system-suggested + online
-  // workers by score, then remaining bonded contacts by health. Caps to 8.
+  // Display order: same rules for You and peers — suggested/score, then
+  // online, then card health. Cap to 8, but always keep You visible when
+  // Join is on (may still be unselectable if the engine is down).
   const displayCandidates = useMemo(() => {
     const order = { ready: 0, stale: 1, missing: 2, blocked: 3 };
     const onlineRank = (s: string) => (s === "online" ? 0 : s === "unknown" ? 1 : 2);
@@ -192,7 +200,6 @@ export function ChainStartDialog({
       };
     });
     withScore.sort((a, b) => {
-      if (Boolean(a.isSelf) !== Boolean(b.isSelf)) return a.isSelf ? -1 : 1;
       const aSuggested = a.suggested ? 1 : 0;
       const bSuggested = b.suggested ? 1 : 0;
       if (aSuggested !== bSuggested) return bSuggested - aSuggested;
@@ -202,7 +209,23 @@ export function ChainStartDialog({
       if (a.onlineOrder !== b.onlineOrder) return a.onlineOrder - b.onlineOrder;
       return a.healthOrder - b.healthOrder;
     });
-    return withScore.slice(0, 8);
+    const capped = withScore.slice(0, 8);
+    const self = withScore.find((w) => w.isSelf);
+    if (self && capped.length > 0 && !capped.some((w) => w.isSelf)) {
+      capped[capped.length - 1] = self;
+      // Re-sort so You keeps score order among the final eight.
+      capped.sort((a, b) => {
+        const aSuggested = a.suggested ? 1 : 0;
+        const bSuggested = b.suggested ? 1 : 0;
+        if (aSuggested !== bSuggested) return bSuggested - aSuggested;
+        if (a.suggested && b.suggested) {
+          return (b.suggested.score ?? 0) - (a.suggested.score ?? 0);
+        }
+        if (a.onlineOrder !== b.onlineOrder) return a.onlineOrder - b.onlineOrder;
+        return a.healthOrder - b.healthOrder;
+      });
+    }
+    return capped;
   }, [workerCandidates, suggestedByPeer]);
 
   const handleStart = useCallback(async () => {

@@ -765,43 +765,72 @@ export async function chainPreviewGoalViaRuntime(
     workerCandidateCount: maxWorkers,
     maxChainCostUsd: mandate.maxChainCostUsd as number,
   });
-  // System-recommended worker pool: deduplicate across subtasks, keep the best
-  // score + union of matched subtask ids, rank by score, cap to a UI-friendly N.
-  // Surfaced in the preview so the team-job dialog can show the system's pick
-  // (auto-first) instead of asking the owner to guess from a flat contact list.
+  // System-recommended worker pool: prefer plan+assign assignees, then fill
+  // with other ranked workers (best score / online). Cap to a UI-friendly N.
   const suggestedMap = new Map<
     string,
-    { peerId: string; score: number; summary: string; sameLan: boolean; online: boolean; viaRelay: boolean; matchedSubtaskIds: Set<string> }
-  >();
-  for (const [subtaskId, ranked] of Object.entries(rankedBySubtask)) {
-    for (const w of ranked) {
-      const existing = suggestedMap.get(w.peerId);
-      if (existing) {
-        if (w.score > existing.score) {
-          existing.score = w.score;
-          existing.summary = w.summary;
-          existing.sameLan = w.sameLan;
-          existing.online = w.online;
-          existing.viaRelay = w.viaRelay;
-        }
-        existing.matchedSubtaskIds.add(subtaskId);
-      } else {
-        suggestedMap.set(w.peerId, {
-          peerId: w.peerId,
-          score: w.score,
-          summary: w.summary,
-          sameLan: w.sameLan,
-          online: w.online,
-          viaRelay: w.viaRelay,
-          matchedSubtaskIds: new Set([subtaskId]),
-        });
-      }
+    {
+      peerId: string;
+      score: number;
+      summary: string;
+      sameLan: boolean;
+      online: boolean;
+      viaRelay: boolean;
+      matchedSubtaskIds: Set<string>;
+      assigned: boolean;
     }
+  >();
+  const bump = (
+    w: {
+      peerId: string;
+      score: number;
+      summary: string;
+      sameLan: boolean;
+      online: boolean;
+      viaRelay: boolean;
+    },
+    subtaskId: string,
+    assigned: boolean,
+  ) => {
+    const existing = suggestedMap.get(w.peerId);
+    if (existing) {
+      if (w.score > existing.score) {
+        existing.score = w.score;
+        existing.summary = w.summary;
+        existing.sameLan = w.sameLan;
+        existing.online = w.online;
+        existing.viaRelay = w.viaRelay;
+      }
+      existing.matchedSubtaskIds.add(subtaskId);
+      if (assigned) existing.assigned = true;
+    } else {
+      suggestedMap.set(w.peerId, {
+        peerId: w.peerId,
+        score: w.score,
+        summary: w.summary,
+        sameLan: w.sameLan,
+        online: w.online,
+        viaRelay: w.viaRelay,
+        matchedSubtaskIds: new Set([subtaskId]),
+        assigned,
+      });
+    }
+  };
+  for (const subtask of plan.subtasks) {
+    const ranked = rankedBySubtask[subtask.subtaskId] ?? [];
+    const preferredId = subtask.preferredWorkerPeerId;
+    if (preferredId) {
+      const preferred = ranked.find((r) => r.peerId === preferredId);
+      if (preferred) bump(preferred, subtask.subtaskId, true);
+    }
+    for (const w of ranked) bump(w, subtask.subtaskId, false);
   }
-  // Rank: online workers first (a system pick should prefer reachable peers),
-  // then by score, then peer id for stability. Cap to a UI-friendly N.
+  // Rank: plan assignees first, then online, then score.
   const suggestedWorkers = [...suggestedMap.values()]
     .sort((a, b) => {
+      const aAssigned = a.assigned ? 1 : 0;
+      const bAssigned = b.assigned ? 1 : 0;
+      if (aAssigned !== bAssigned) return bAssigned - aAssigned;
       const aOnline = a.online ? 1 : 0;
       const bOnline = b.online ? 1 : 0;
       if (aOnline !== bOnline) return bOnline - aOnline;
@@ -809,7 +838,10 @@ export async function chainPreviewGoalViaRuntime(
       return a.peerId.localeCompare(b.peerId);
     })
     .slice(0, 8)
-    .map((w) => ({ ...w, matchedSubtaskIds: [...w.matchedSubtaskIds] }));
+    .map(({ assigned: _assigned, ...w }) => ({
+      ...w,
+      matchedSubtaskIds: [...w.matchedSubtaskIds],
+    }));
   return {
     ok: true,
     chainId,
@@ -819,6 +851,7 @@ export async function chainPreviewGoalViaRuntime(
       requiredSkill: s.requiredSkill,
       objective: s.objective,
       workerCount: (workersBySubtask[s.subtaskId] ?? []).length,
+      preferredWorkerPeerId: s.preferredWorkerPeerId,
     })),
     estimatedCostRange,
     suggestedWorkers,

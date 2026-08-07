@@ -2105,6 +2105,8 @@ export interface ChainPreviewGoalResult {
     requiredSkill: string;
     objective: string;
     workerCount: number;
+    /** Plan+assign primary assignee (agent peer id), when known. */
+    preferredWorkerPeerId?: string;
   }>;
   estimatedCostRange?: { minUsd: number; maxUsd: number };
   suggestedWorkers?: ChainPreviewSuggestedWorker[];

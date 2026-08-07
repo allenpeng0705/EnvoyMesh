@@ -182,52 +182,51 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
   // Bonded contacts with agent-card health — used in the empty state and
   // passed to ChainStartDialog so the user sees who can join a team job.
   // Three dimensions: card freshness, agent-network opt-in, online reachability.
-  // When Join is on, the local agent is prepended as "You" (always online).
+  // Local "You" uses the same readiness/order rules as peers (may be offline
+  // when Built-in OpenClaw is down).
   const workerCandidates = useMemo((): WorkerCandidate[] => {
     const others = bonds
       .filter((b) => b.level !== "blocked")
+      .filter((b) => b.peerOwnerId !== localWorkerCard?.ownerId)
       .map((bond) => {
         const card = agentCards.find((c) => c.ownerId === bond.peerOwnerId);
         const base = computeChainBondHealth(bond, card);
         const health = mergeReachability(base, reachabilityByOwner.get(bond.peerOwnerId));
         return { bond, card, health };
-      })
-      .sort((a, b) => {
-        // Online + card-ready first, then stale, then missing; offline sinks below online.
-        const score = (h: typeof a.health) =>
-          (h.onlineStatus === "online" ? 0 : h.onlineStatus === "unknown" ? 1 : 2) * 4 +
-          ({ ready: 0, stale: 1, missing: 2, blocked: 3 }[h.status] ?? 9);
-        return score(a.health) - score(b.health);
       });
 
-    if (!localWorkerCard?.sourceAgentPeerId) return others;
+    const rows: WorkerCandidate[] = [...others];
+    if (localWorkerCard?.sourceAgentPeerId) {
+      const selfBond: BondRecord = {
+        peerOwnerId: localWorkerCard.ownerId,
+        displayName: localWorkerCard.displayName,
+        level: "direct",
+        createdAt: new Date(0).toISOString(),
+      };
+      const selfHealth: ChainBondHealth = {
+        status: "ready",
+        cardStatus: "ready",
+        onlineStatus: openClawRunning === false ? "offline" : "online",
+        optIn: true,
+        engineReady: openClawRunning !== false,
+        capabilityCount: localWorkerCard.membership.length,
+        lastSyncedAt: localWorkerCard.cachedAt,
+        label: "Ready",
+      };
+      rows.push({
+        bond: selfBond,
+        card: localWorkerCard,
+        health: selfHealth,
+        isSelf: true,
+      });
+    }
 
-    const selfBond: BondRecord = {
-      peerOwnerId: localWorkerCard.ownerId,
-      displayName: localWorkerCard.displayName,
-      level: "direct",
-      createdAt: new Date(0).toISOString(),
-    };
-    const selfHealth: ChainBondHealth = {
-      status: "ready",
-      cardStatus: "ready",
-      onlineStatus: openClawRunning === false ? "offline" : "online",
-      optIn: true,
-      engineReady: openClawRunning !== false,
-      capabilityCount: localWorkerCard.membership.length,
-      lastSyncedAt: localWorkerCard.cachedAt,
-      label: "Ready",
-    };
-    const selfCandidate: WorkerCandidate = {
-      bond: selfBond,
-      card: localWorkerCard,
-      health: selfHealth,
-      isSelf: true,
-    };
-    return [
-      selfCandidate,
-      ...others.filter((w) => w.bond.peerOwnerId !== localWorkerCard.ownerId),
-    ];
+    return rows.sort((a, b) => {
+      const score = (h: typeof a.health) =>
+        (h.onlineStatus === "online" ? 0 : h.onlineStatus === "unknown" ? 1 : 2) * 4 +
+        ({ ready: 0, stale: 1, missing: 2, blocked: 3 }[h.status] ?? 9);
+      return score(a.health) - score(b.health);
+    });
   }, [bonds, agentCards, reachabilityByOwner, localWorkerCard, openClawRunning]);
 
   // Opted-in contacts with a cached agent card — shown even when offline so

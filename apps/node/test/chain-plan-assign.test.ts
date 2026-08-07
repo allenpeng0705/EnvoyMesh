@@ -23,7 +23,131 @@ describe("chain-plan-assign", () => {
     expect(prompt).toContain("eligibleWorkers");
     expect(prompt).toContain("envoy_agent_mul");
     expect(prompt).toContain("Every step MUST include assignedPeerId");
+    expect(prompt).toContain("prefer that specialist over isSelf=true");
     expect(prompt).toContain("(5*6+7*8-4*2)/3");
+  });
+
+  it("overrides LLM self-bias when a specialty match exists", () => {
+    const drafts = parsePlanAssignSteps(
+      JSON.stringify({
+        steps: [
+          {
+            objective: "Research entanglement",
+            requiredSkill: "research",
+            depth: 1,
+            dependsOn: [],
+            assignedPeerId: "envoy_agent_self",
+            reason: "creator",
+          },
+          {
+            objective: "Draft brief",
+            requiredSkill: "writing",
+            depth: 2,
+            dependsOn: [0],
+            assignedPeerId: "envoy_agent_self",
+            reason: "creator",
+          },
+        ],
+      }),
+    );
+    const subtasks = materializePlanAssignSubtasks({
+      goal: "quantum brief",
+      chainId: "chain_bias",
+      chainMandateId: "chainmandate_bias",
+      drafts: drafts!,
+      roster: [
+        {
+          peerId: "envoy_agent_self",
+          isSelf: true,
+          membership: ["task.execute", "agent-network-worker"],
+          profile: { skills: ["coding", "physics"] },
+        },
+        {
+          peerId: "envoy_agent_xf",
+          membership: ["task.execute", "agent-network-worker"],
+          profile: { skills: ["research", "writing", "summarization"] },
+        },
+      ],
+      createdAt: "2026-07-22T00:00:00.000Z",
+    });
+    expect(subtasks[0]!.preferredWorkerPeerId).toBe("envoy_agent_xf");
+    expect(subtasks[1]!.preferredWorkerPeerId).toBe("envoy_agent_xf");
+  });
+
+  it("overrides LLM self-bias when creator shares the same specialty", () => {
+    const drafts = parsePlanAssignSteps(
+      JSON.stringify({
+        steps: [
+          {
+            objective: "Research entanglement",
+            requiredSkill: "research",
+            depth: 1,
+            dependsOn: [],
+            assignedPeerId: "envoy_agent_self",
+            reason: "also research",
+          },
+        ],
+      }),
+    );
+    const subtasks = materializePlanAssignSubtasks({
+      goal: "shared specialty",
+      chainId: "chain_tie",
+      chainMandateId: "chainmandate_tie",
+      drafts: drafts!,
+      roster: [
+        {
+          peerId: "envoy_agent_self",
+          isSelf: true,
+          membership: ["task.execute", "agent-network-worker"],
+          profile: { skills: ["research", "coding"] },
+        },
+        {
+          peerId: "envoy_agent_xf",
+          membership: ["task.execute", "agent-network-worker"],
+          profile: { skills: ["research", "writing"] },
+        },
+      ],
+      createdAt: "2026-07-22T00:00:00.000Z",
+    });
+    expect(subtasks[0]!.preferredWorkerPeerId).toBe("envoy_agent_xf");
+  });
+
+  it("keeps creator when they are the only specialist", () => {
+    const drafts = parsePlanAssignSteps(
+      JSON.stringify({
+        steps: [
+          {
+            objective: "Implement API",
+            requiredSkill: "coding",
+            depth: 1,
+            dependsOn: [],
+            assignedPeerId: "envoy_agent_self",
+            reason: "coder",
+          },
+        ],
+      }),
+    );
+    const subtasks = materializePlanAssignSubtasks({
+      goal: "solo specialist",
+      chainId: "chain_solo_spec",
+      chainMandateId: "chainmandate_solo_spec",
+      drafts: drafts!,
+      roster: [
+        {
+          peerId: "envoy_agent_self",
+          isSelf: true,
+          membership: ["task.execute", "agent-network-worker"],
+          profile: { skills: ["coding"] },
+        },
+        {
+          peerId: "envoy_agent_xf",
+          membership: ["task.execute", "agent-network-worker"],
+          profile: { skills: ["research"] },
+        },
+      ],
+      createdAt: "2026-07-22T00:00:00.000Z",
+    });
+    expect(subtasks[0]!.preferredWorkerPeerId).toBe("envoy_agent_self");
   });
 
   it("parsePlanAssignSteps accepts object wrapper and fills missing assignees on materialize", () => {

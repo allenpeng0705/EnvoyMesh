@@ -725,7 +725,8 @@ async function buildLlmDecomposerAsync(
   const decomposer = createLlmDecomposer({
     providers,
     audit: { record: () => undefined },
-    timeoutMs: 90_000,
+    // Match Social `chainPreviewGoal` / `chainPlan` RPC budget (120s).
+    timeoutMs: 120_000,
     getRoster: async () => {
       const ranked = await findAgentNetworkWorkersRanked(deps, "task.execute");
       const cards = await listAgentCardsIncludingLocal(deps);
@@ -1003,11 +1004,9 @@ export async function findAgentNetworkWorkersRanked(
     preferredWorkerPeerIds && preferredWorkerPeerIds.length > 0
       ? scored.filter((w) => preferredWorkerPeerIds.includes(w.peerId))
       : scored;
-  // Local agent first (creator is a worker), then online, then score, then id.
+  // Online first, then specialty score. Local/"You" is not forced to the front —
+  // ranking stays skill-honest for diagnostics, suggestedWorkers, and assign.
   return rankWorkersByScore(filtered).sort((a, b) => {
-    const aSelf = selfPeerId && a.peerId === selfPeerId ? 1 : 0;
-    const bSelf = selfPeerId && b.peerId === selfPeerId ? 1 : 0;
-    if (aSelf !== bSelf) return bSelf - aSelf;
     const aOnline = a.online ? 1 : 0;
     const bOnline = b.online ? 1 : 0;
     if (aOnline !== bOnline) return bOnline - aOnline;
@@ -1245,9 +1244,13 @@ export async function _autoEvaluateSubtask(
 }
 
 export function _chainDiagnosticsForSubtasks(
-  subtasks: Array<{ subtaskId: string; requiredSkill: string }>,
+  subtasks: Array<{
+    subtaskId: string;
+    requiredSkill: string;
+    preferredWorkerPeerId?: string;
+  }>,
   workersBySubtask: Record<string, string[]>,
-  rankedBySubtask?: Record<string, Array<{ peerId: string; score: number; summary: string }>>,
+  rankedBySubtask?: Record<string, Array<{ peerId: string; score: number; summary: string; online?: boolean }>>,
 ): string[] {
   const diagnostics: string[] = [];
   for (const subtask of subtasks) {
@@ -1258,9 +1261,22 @@ export function _chainDiagnosticsForSubtasks(
       );
       continue;
     }
-    const ranked = rankedBySubtask?.[subtask.subtaskId];
-    if (ranked && ranked.length > 0) {
-      diagnostics.push(`Selected for \`${subtask.requiredSkill}\`: ${ranked[0]!.summary}`);
+    const ranked = rankedBySubtask?.[subtask.subtaskId] ?? [];
+    if (ranked.length === 0) continue;
+    const byReachability = [...ranked].sort((a, b) => {
+      const aOnline = a.online ? 1 : 0;
+      const bOnline = b.online ? 1 : 0;
+      if (aOnline !== bOnline) return bOnline - aOnline;
+      if (b.score !== a.score) return b.score - a.score;
+      return a.peerId.localeCompare(b.peerId);
+    });
+    // Prefer the plan+assign assignee only when online; else best reachable.
+    const preferred = subtask.preferredWorkerPeerId
+      ? ranked.find((r) => r.peerId === subtask.preferredWorkerPeerId && r.online !== false)
+      : undefined;
+    const pick = preferred ?? byReachability[0];
+    if (pick) {
+      diagnostics.push(`Selected for \`${subtask.requiredSkill}\`: ${pick.summary}`);
     }
   }
   return diagnostics;

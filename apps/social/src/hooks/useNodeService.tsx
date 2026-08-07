@@ -1052,7 +1052,10 @@ function createWsNodeServiceClient(
     },
     // Phase 40 — chain RPCs
     async chainPlan(params: ChainPlanParams) {
-      return wsClient.rpc("chainPlan", (params ?? {}) as unknown as Record<string, unknown>) as unknown as Promise<ChainPlanResult>;
+      // LLM plan+assign often exceeds the default 30s RPC budget.
+      return wsClient.rpc("chainPlan", (params ?? {}) as unknown as Record<string, unknown>, {
+        timeoutMs: 120_000,
+      }) as unknown as Promise<ChainPlanResult>;
     },
     async chainLaunch(params: ChainLaunchParams) {
       return wsClient.rpc("chainLaunch", params as unknown as Record<string, unknown>) as unknown as Promise<ChainLaunchResult>;
@@ -1097,10 +1100,15 @@ function createWsNodeServiceClient(
       return wsClient.rpc("chainSetDefaults", params as unknown as Record<string, unknown>) as unknown as Promise<ChainSetDefaultsResult>;
     },
     async chainPreviewGoal(params: ChainPreviewGoalParams) {
-      return wsClient.rpc("chainPreviewGoal", params as unknown as Record<string, unknown>) as unknown as Promise<ChainPreviewGoalResult>;
+      // Preview runs modelProviders plan+assign; MiniMax/OpenAI often need >30s.
+      return wsClient.rpc("chainPreviewGoal", params as unknown as Record<string, unknown>, {
+        timeoutMs: 120_000,
+      }) as unknown as Promise<ChainPreviewGoalResult>;
     },
     async chainStartFromGoal(params: ChainStartFromGoalParams) {
-      return wsClient.rpc("chainStartFromGoal", params as unknown as Record<string, unknown>) as unknown as Promise<ChainStartFromGoalResult>;
+      return wsClient.rpc("chainStartFromGoal", params as unknown as Record<string, unknown>, {
+        timeoutMs: 180_000,
+      }) as unknown as Promise<ChainStartFromGoalResult>;
     },
     async chainProbeReachability(params: ChainProbeReachabilityParams) {
       return wsClient.rpc("chainProbeReachability", params as unknown as Record<string, unknown>) as unknown as Promise<ChainProbeReachabilityResult>;

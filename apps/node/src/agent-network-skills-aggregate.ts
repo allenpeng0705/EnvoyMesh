@@ -45,9 +45,14 @@ export function aggregateAgentNetworkSkills(input: {
   profile?: Partial<AgentNetworkProfile> | null;
   profileDir?: string;
 }): AgentNetworkProfile {
-  const ownerSkills = coerceAgentNetworkSkills(input.profile?.skills ?? []).filter(
-    (s) => s.source !== "ext",
-  );
+  const rawProfile = input.profile as
+    | (Partial<AgentNetworkProfile> & { strengths?: unknown })
+    | null
+    | undefined;
+  // Legacy disks used `strengths[]` before the skills rename.
+  const ownerSkills = coerceAgentNetworkSkills(
+    rawProfile?.skills ?? rawProfile?.strengths ?? [],
+  ).filter((s) => s.source !== "ext");
   const merged: AgentNetworkSkillEntry[] = [];
   const seen = new Set<string>();
   const add = (entry: AgentNetworkSkillEntry) => {

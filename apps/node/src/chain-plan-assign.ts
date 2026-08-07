@@ -101,6 +101,8 @@ export function buildPlanAssignPrompt(
     "- Prefer sameLan=true and higher throughputTokensPerSec when quality is otherwise equal.",
     "- Soft-match skills (owner-attested specialties per agent). Mesh canExecute is membership only — never a specialty.",
     "- requiredSkill on each step is a specialty/strength hint (e.g. coding, research), NOT a mesh capability id.",
+    "- When a non-self worker lists a skill that matches the step, prefer that specialist over isSelf=true. Do not assign every step to isSelf just because they are the creator.",
+    "- Spread work across matching specialists when the roster has 2+ peers with different skills.",
     "- dependsOn uses 0-based indices into your steps array.",
     "- Do not emit <think> tags, chain-of-thought, or markdown — JSON object only.",
     "",
@@ -203,11 +205,43 @@ export function materializePlanAssignSubtasks(input: {
   const subtaskIds = input.drafts.map((_, i) => `subtask_${suffix}_${i + 1}`);
   const subtasks: ChainSubtask[] = [];
 
+  const bestNonSelfSpecialist = (specialtyHint: string): string | undefined => {
+    let best: string | undefined;
+    let bestS = -1;
+    for (const peerId of rankedPeerIds) {
+      const entry = input.roster.find((r) => r.peerId === peerId);
+      if (entry?.isSelf) continue;
+      const s = scoreFor(peerId, specialtyHint);
+      if (s > bestS) {
+        bestS = s;
+        best = peerId;
+      }
+    }
+    return bestS >= 3 ? best : undefined;
+  };
+
   for (const [i, draft] of input.drafts.entries()) {
-    let assignee =
-      draft.assignedPeerId && allowed.has(draft.assignedPeerId)
-        ? draft.assignedPeerId
-        : filled[stepKeys[i]!];
+    const scoredPick = filled[stepKeys[i]!];
+    let assignee: string | undefined;
+    if (draft.assignedPeerId && allowed.has(draft.assignedPeerId)) {
+      const llmId = draft.assignedPeerId;
+      const llmScore = scoreFor(llmId, draft.requiredSkill);
+      const llmIsSelf = input.roster.find((r) => r.peerId === llmId)?.isSelf === true;
+      const peerSpecialist = bestNonSelfSpecialist(draft.requiredSkill);
+      const scoredPickScore = scoredPick ? scoreFor(scoredPick, draft.requiredSkill) : -1;
+      // Prefer a peer specialist when the LLM missed the specialty, or when it
+      // tied on specialty but biased to isSelf (creator). Fall back to scoredPick
+      // when only the creator (or another roster entry) is the specialist.
+      if (peerSpecialist && (llmScore < 3 || llmIsSelf)) {
+        assignee = peerSpecialist;
+      } else if (scoredPick && scoredPickScore >= 3 && llmScore < 3) {
+        assignee = scoredPick;
+      } else {
+        assignee = llmId;
+      }
+    } else {
+      assignee = scoredPick;
+    }
     if (!assignee && rankedPeerIds.length > 0) assignee = rankedPeerIds[0];
 
     const dependsOn: string[] = [];

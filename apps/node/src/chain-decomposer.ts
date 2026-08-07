@@ -44,7 +44,7 @@ export interface CreateLlmDecomposerOptions {
   providers: readonly ModelProvider[];
   /** Audit sink for recording the prompt + outcome. */
   audit?: ChainAuditSink;
-  /** Per-call timeout for the LLM roundtrip. Defaults to 30s. */
+  /** Per-call timeout for the LLM roundtrip. Defaults to 30s; Team preview uses 120s. */
   timeoutMs?: number;
   /**
    * Optional roster for plan+assign. When non-empty, the prompt asks the LLM
@@ -76,7 +76,6 @@ export function createLlmDecomposer(opts: CreateLlmDecomposerOptions): LlmDecomp
     return async () => ({ ok: false, reason: "no_provider" });
   }
   const timeoutMs = opts.timeoutMs ?? 30_000;
-  void timeoutMs;
 
   return async (goal: string) => {
     if (!goal || goal.trim().length === 0) {
@@ -94,15 +93,28 @@ export function createLlmDecomposer(opts: CreateLlmDecomposerOptions): LlmDecomp
       prompt = buildDecomposePrompt(goal, opts);
     }
 
-    const result = await routeModelRequest(
-      {
-        taskType: usePlanAssign ? "chain.plan_assign" : "chain.decompose",
-        prompt,
-        sensitivity: "public",
-        ownerApproved: true,
-      },
-      opts.providers,
-    );
+    let result: Awaited<ReturnType<typeof routeModelRequest>>;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      result = await Promise.race([
+        routeModelRequest(
+          {
+            taskType: usePlanAssign ? "chain.plan_assign" : "chain.decompose",
+            prompt,
+            sensitivity: "public",
+            ownerApproved: true,
+          },
+          opts.providers,
+        ),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("llm_timeout")), timeoutMs);
+        }),
+      ]);
+    } catch {
+      return { ok: false, reason: "model_deny" };
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
 
     opts.audit?.record({
       type: usePlanAssign ? "chain.plan_assign.llm" : "chain.decompose.llm",
