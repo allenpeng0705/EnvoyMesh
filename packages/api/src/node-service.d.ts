@@ -1061,7 +1061,9 @@ export interface NodeService {
     listAgentCards(): Promise<CachedAgentCardSummary[]>;
     getAgentCard(ownerId: string): Promise<CachedAgentCardSummary | undefined>;
     /** Send agent.card.request to a bonded peer (response cached on reply). */
-    requestAgentCard(targetOwnerId: string): Promise<{
+    requestAgentCard(targetOwnerId: string, options?: {
+        timeoutMs?: number;
+    }): Promise<{
         ok: boolean;
         error?: string;
     }>;

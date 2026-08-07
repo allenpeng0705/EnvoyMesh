@@ -2023,7 +2023,10 @@ export interface NodeService {
   getAgentCard(ownerId: string): Promise<CachedAgentCardSummary | undefined>;
 
   /** Send agent.card.request to a bonded peer (response cached on reply). */
-  requestAgentCard(targetOwnerId: string): Promise<{ ok: boolean; error?: string }>;
+  requestAgentCard(
+    targetOwnerId: string,
+    options?: { timeoutMs?: number },
+  ): Promise<{ ok: boolean; error?: string }>;
 
   /**
    * Re-request agent cards from bonded peers and rebuild the capability index

@@ -464,6 +464,14 @@ import {
 } from "./profile-sync-outbound.js";
 import { probeNearbyPeerProfile } from "./nearby-profile-probe.js";
 import { deliverCallEnvelopeWithRetry, deliverChatEnvelopeWithRetry, sendExpectReplyWithRetry, type ChatDeliverResult } from "./chat-outbound-deliver.js";
+import {
+  AGENT_CARD_REFRESH_CONCURRENCY,
+  AGENT_CARD_REFRESH_RELAY_MS,
+  AGENT_CARD_REFRESH_WARM_MS,
+  agentCardDialHintsBudgetMs,
+  agentCardRefreshTimeoutMs,
+  mapPoolSettled,
+} from "./agent-card-refresh.js";
 import { isOutboundPeerRecentlyVerified, markOutboundPeerVerified } from "./outbound-peer-freshness.js";
 import { deliverOutboundEnvelope, dialHintsForTransportTarget } from "./mesh-outbound-helper.js";
 import { withOutboundSendLock } from "./outbound-send-lock.js";
@@ -3499,19 +3507,23 @@ class NodeServiceImpl implements NodeService {
     return this._taskStore.getTaskResult(taskId);
   }
 
-  async requestAgentCard(targetOwnerId: string): Promise<{ ok: boolean; error?: string }> {
+  async requestAgentCard(
+    targetOwnerId: string,
+    options?: { timeoutMs?: number },
+  ): Promise<{ ok: boolean; error?: string }> {
     this._assertOnline();
     const agentIdentity = await this._ensureAgentIdentity();
     if (!agentIdentity) {
       return { ok: false, error: "agent identity not available" };
     }
     const profile = this._requireProfile();
-    const mesh = this._requireMesh();
+    this._requireMesh();
+    const budgetMs = options?.timeoutMs ?? AGENT_CARD_REFRESH_RELAY_MS;
     const { transportPeerId, recipientEnvelopePeerId, listenAddrs } =
       await this._resolvePeerTransportForOwner(targetOwnerId.trim());
     const dialHints = await raceWithTimeout(
       this._dialHintsForChat(transportPeerId, listenAddrs),
-      30_000,
+      agentCardDialHintsBudgetMs(budgetMs),
       "_dialHintsForChat",
     );
     const envelope = signUnsignedEnvelope(
@@ -3541,31 +3553,55 @@ class NodeServiceImpl implements NodeService {
    * Card replies are async: we refresh the index immediately (opt-out / local
    * state) and again after a short delay so newly cached cards enter the soft
    * pool without a second manual Refresh.
+   *
+   * Timing: warm offline peers briefly, then use a short timeout when already
+   * connected and a longer relay budget otherwise. Requests run in parallel
+   * (bounded concurrency) so a few slow peers don't serialize the whole RPC.
    */
   async refreshAgentNetworkWorkers(): Promise<{ requested: number; failed: number }> {
     let requested = 0;
     let failed = 0;
     try {
-      const bonds = await this.getBonds();
-      for (const bond of bonds) {
-        if (bond.level !== "direct" && bond.level !== "referred") continue;
-        requested += 1;
-        try {
-          // Per-peer timeout: requestAgentCard can hang for 30s+ on offline
-          // peers (dial timeout). With N bonds this blocks the JSON-RPC call
-          // and freezes the Team jobs UI. 12s per peer is enough for a
-          // connected peer (card exchange is <1s) while bounding the worst
-          // case for offline peers.
-          const result = await raceWithTimeout(
-            this.requestAgentCard(bond.peerOwnerId),
-            12_000,
-            `requestAgentCard(${bond.peerOwnerId.slice(0, 16)}…)`,
-          );
-          if (!result || !result.ok) failed += 1;
-        } catch {
-          failed += 1;
-        }
-      }
+      const bonds = (await this.getBonds()).filter(
+        (bond) => bond.level === "direct" || bond.level === "referred",
+      );
+      requested = bonds.length;
+      const outcomes = await mapPoolSettled(
+        bonds,
+        AGENT_CARD_REFRESH_CONCURRENCY,
+        async (bond) => {
+          try {
+            let connected = false;
+            try {
+              connected = (await this.getPeerConnectionInfo(bond.peerOwnerId)).connected;
+            } catch {
+              /* treat as offline */
+            }
+            if (!connected) {
+              try {
+                await raceWithTimeout(
+                  this.warmContactConnection(bond.peerOwnerId),
+                  AGENT_CARD_REFRESH_WARM_MS,
+                  `agentCardWarm(${bond.peerOwnerId.slice(0, 16)}…)`,
+                );
+                connected = (await this.getPeerConnectionInfo(bond.peerOwnerId)).connected;
+              } catch {
+                /* still offline — use relay budget below */
+              }
+            }
+            const timeoutMs = agentCardRefreshTimeoutMs(connected);
+            const result = await raceWithTimeout(
+              this.requestAgentCard(bond.peerOwnerId, { timeoutMs }),
+              timeoutMs,
+              `requestAgentCard(${bond.peerOwnerId.slice(0, 16)}…)`,
+            );
+            return Boolean(result?.ok);
+          } catch {
+            return false;
+          }
+        },
+      );
+      failed = outcomes.filter((ok) => !ok).length;
     } catch {
       /* bonds unavailable — still refresh local index */
     }
@@ -10340,9 +10376,16 @@ class NodeServiceImpl implements NodeService {
 
     // Live mesh connection snapshot — open libp2p connections + relay-routed subset.
     const mesh = this._reachableMesh();
-    const stats = mesh?.getConnectionStats();
-    const connectedIds = new Set(stats?.connectedPeerIds ?? mesh?.getConnectedPeerIds() ?? []);
-    const circuitIds = new Set(stats?.circuitPeerIds ?? []);
+    const readConnectedIds = (): Set<string> => {
+      const stats = mesh?.getConnectionStats();
+      return new Set(stats?.connectedPeerIds ?? mesh?.getConnectedPeerIds() ?? []);
+    };
+    const readCircuitIds = (): Set<string> => {
+      const stats = mesh?.getConnectionStats();
+      return new Set(stats?.circuitPeerIds ?? []);
+    };
+    let connectedIds = readConnectedIds();
+    let circuitIds = readCircuitIds();
 
     // Index peer-directory records by owner so we can check every device's
     // libp2p peer id. Connectivity is a property of the NODE (libp2p host),
@@ -10359,6 +10402,42 @@ class NodeServiceImpl implements NodeService {
       }
     } catch {
       /* leave empty — every row reports offline + sameLan=false */
+    }
+
+    const isOwnerConnected = (ownerId: string): boolean => {
+      const peerRecords = recordsByOwner.get(ownerId) ?? [];
+      return peerRecords.some(
+        (r) => isLibp2pPeerId(r.peerId) && connectedIds.has(r.peerId),
+      );
+    };
+
+    // Team jobs polls this every 20s and previously only read the passive
+    // connection snapshot. Unlike chat (which dials on open), that meant
+    // bonded peers with no open session were always "offline" and hidden
+    // from the contact list. Best-effort warm offline owners before the
+    // final snapshot so the UI matches real reachability.
+    if (mesh) {
+      const offlineOwners = ownerIds.filter((id) => !isOwnerConnected(id)).slice(0, 8);
+      if (offlineOwners.length > 0) {
+        const warmOne = async (ownerId: string): Promise<void> => {
+          try {
+            await raceWithTimeout(
+              this.warmContactConnection(ownerId),
+              6_000,
+              `chainProbeWarm(${ownerId.slice(0, 16)}…)`,
+            );
+          } catch {
+            /* best-effort — leave offline */
+          }
+        };
+        // Bound concurrency so a large bond list doesn't stampede dials.
+        const concurrency = 3;
+        for (let i = 0; i < offlineOwners.length; i += concurrency) {
+          await Promise.all(offlineOwners.slice(i, i + concurrency).map(warmOne));
+        }
+        connectedIds = readConnectedIds();
+        circuitIds = readCircuitIds();
+      }
     }
 
     const rows = ownerIds.map((ownerId) => {
