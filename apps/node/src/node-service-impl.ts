@@ -496,6 +496,7 @@ import { normalizeGatewayBaseUrl } from "./ipfs-gateway.js";
 import { createAgentShareProposalStore } from "./agent-share-proposal-store.js";
 import { PUBLISHED_LIB_CAPABILITY } from "./discovery-inbound.js";
 import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.js";
+import { BRIDGE_AGENT_SCOPE, bridgeAgentScopeNeedsRefresh } from "./bridge/agent-scope.js";
 import {
   applyExtAgentSettingsPatch,
   extractExtAgentSettingsPatch,
@@ -1258,18 +1259,7 @@ const DEFAULT_ICE_SERVERS: { urls: string; username?: string; credential?: strin
 ];
 
 /** Intents allowed on the native / bridge agent credential for document + mesh tools. */
-const NATIVE_AGENT_TOOL_SCOPE = [
-  "chat.message",
-  "knowledge.query",
-  "discovery.request",
-  "discovery.response",
-  "share.request",
-  "share.preview",
-  "share.accept",
-  "social.intro.sync",
-  "social.intro.propose",
-  "bond.request",
-] as const;
+const NATIVE_AGENT_TOOL_SCOPE = BRIDGE_AGENT_SCOPE;
 
 /**
  * Phase 34: project a stored `AgentCard` row (whatever its full shape) into
@@ -9894,7 +9884,28 @@ class NodeServiceImpl implements NodeService {
     const profile = this._profile;
     if (!profile) return null;
     let identity = await loadBridgeIdentity(this._profileDir);
-    if (identity) return identity;
+    if (identity) {
+      if (bridgeAgentScopeNeedsRefresh(identity.agentCredential.scope)) {
+        identity = {
+          ...identity,
+          agentCredential: createAgentCredential({
+            owner: profile.owner,
+            agent: {
+              agentId: identity.agentCredential.agentId,
+              agentPeerId: identity.agentPeerId,
+              publicKeyPem: identity.agentPublicKeyPem,
+              privateKeyPem: identity.agentPrivateKeyPem,
+            },
+            scope: [...BRIDGE_AGENT_SCOPE],
+          }),
+        };
+        await saveBridgeIdentity(this._profileDir, identity);
+        console.log(
+          `[bridge] expanded agent credential scope for agent.card: ${identity.agentPeerId}`,
+        );
+      }
+      return identity;
+    }
     const agent = generateAgentIdentity(profile.owner.ownerId);
     identity = {
       agentPeerId: agent.agentPeerId,
@@ -9904,7 +9915,7 @@ class NodeServiceImpl implements NodeService {
       agentCredential: createAgentCredential({
         owner: profile.owner,
         agent,
-        scope: [...NATIVE_AGENT_TOOL_SCOPE],
+        scope: [...BRIDGE_AGENT_SCOPE],
       }),
     };
     await saveBridgeIdentity(this._profileDir, identity);

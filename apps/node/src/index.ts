@@ -212,6 +212,7 @@ import {
 import { createProductionA2ATaskExecutor } from "./a2a-task-executor.js";
 import { executeTool as runRegistryTool, listAgentTools } from "./tool-registry.js";
 import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.js";
+import { BRIDGE_AGENT_SCOPE, bridgeAgentScopeNeedsRefresh } from "./bridge/agent-scope.js";
 import type { BridgeConfig } from "./bridge/config.js";
 import { BridgeConfigSchema, resolveAssistantAgentUrl, applyActiveExtAgent, bridgeConfigToStatusFields, DEFAULT_BRIDGE_CONFIG } from "./bridge/config.js";
 import { loadBridgeConfigFromProfile } from "./bridge/bridge-config-store.js";
@@ -501,7 +502,7 @@ if (!bridgeIdentity) {
   const agentCredential = createAgentCredential({
     owner: profile.owner,
     agent: agentId,
-    scope: ["chat.message"],
+    scope: [...BRIDGE_AGENT_SCOPE],
   });
   bridgeIdentity = {
     agentPeerId: agentId.agentPeerId,
@@ -514,13 +515,14 @@ if (!bridgeIdentity) {
   console.log(`[bridge] generated agent identity: ${bridgeIdentity.agentPeerId}`);
 } else {
   const expectedAgentId = deriveAgentId(bridgeIdentity.ownerId, bridgeIdentity.agentPublicKeyPem);
-  if (
+  const identityFieldsStale =
     bridgeIdentity.agentCredential.ownerId !== bridgeIdentity.ownerId ||
     bridgeIdentity.agentCredential.agentId !== expectedAgentId ||
     bridgeIdentity.agentCredential.agentPeerId !== bridgeIdentity.agentPeerId ||
     bridgeIdentity.agentCredential.agentPublicKeyPem !== bridgeIdentity.agentPublicKeyPem ||
-    bridgeIdentity.agentCredential.ownerPublicKeyPem !== profile.owner.publicKeyPem
-  ) {
+    bridgeIdentity.agentCredential.ownerPublicKeyPem !== profile.owner.publicKeyPem;
+  const scopeStale = bridgeAgentScopeNeedsRefresh(bridgeIdentity.agentCredential.scope);
+  if (identityFieldsStale || scopeStale) {
     bridgeIdentity = {
       ...bridgeIdentity,
       agentCredential: createAgentCredential({
@@ -531,11 +533,13 @@ if (!bridgeIdentity) {
           publicKeyPem: bridgeIdentity.agentPublicKeyPem,
           privateKeyPem: bridgeIdentity.agentPrivateKeyPem,
         },
-        scope: ["chat.message"],
+        scope: [...BRIDGE_AGENT_SCOPE],
       }),
     };
     await saveBridgeIdentity(args.profileDir, bridgeIdentity);
-    console.log(`[bridge] refreshed agent credential: ${bridgeIdentity.agentPeerId}`);
+    console.log(
+      `[bridge] refreshed agent credential${scopeStale ? " (expanded scope for agent.card)" : ""}: ${bridgeIdentity.agentPeerId}`,
+    );
   }
   console.log(`[bridge] loaded agent identity: ${bridgeIdentity.agentPeerId}`);
 }
