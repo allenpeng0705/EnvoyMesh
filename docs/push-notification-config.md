@@ -1,13 +1,20 @@
 # Push Notification Configuration — Phase 31I / 42I / 45E / 50
 
 Complete operator and developer reference for EnvoyGo push notifications
-(iOS + Android). Covers **alert** pushes (chat, bond, feed, approval, Pi)
-and **VoIP** pushes (backgrounded calls).
+(iOS + Android). All events — chat, bond, feed, approval, Pi, and
+**incoming calls** — use the **alert** APNs / FCM path.
+
+> **CallKit / PushKit removed (China App Store).** MIIT requires CallKit
+> off for apps available in China. EnvoyGo ships one binary worldwide
+> without CallKit or PushKit. Incoming calls use a standard alert push
+> (`data.type = "incomingCall"`, iOS `aps.content-available: 1`) and the
+> in-app call screen. Wake from a force-killed app is best-effort (not
+> as reliable as the old VoIP path). Legacy `tokenType: "voip"` from
+> older builds is accepted and stored as `"alert"`.
 
 **Implementation:**
 - Home: `apps/node/src/push-notification.ts` + unified listener in `apps/node/src/node-service-impl.ts` (constructor)
-- EnvoyGo alert: `apps/envoygo/lib/services/push_notification_service.dart` + `ios/Runner/AppDelegate.swift` (`envoygo/alert_push`)
-- EnvoyGo VoIP: `apps/envoygo/lib/services/voip_push_service.dart` + `AppDelegate.swift` (`envoygo/voip_push`)
+- EnvoyGo: `apps/envoygo/lib/services/push_notification_service.dart` + `ios/Runner/AppDelegate.swift` (`envoygo/alert_push`)
 - EnvoyGo deep-link navigation: `apps/envoygo/lib/main.dart` (`_routeNotificationTap`)
 - EnvoyGo push toggle: `apps/envoygo/lib/services/push_preferences.dart` + `apps/envoygo/lib/screens/me/me_screen.dart`
 
@@ -23,7 +30,7 @@ extra npm packages are required on the home node (native `node:http2` /
 1. [Architecture](#1-architecture)
 2. [What triggers a push](#2-what-triggers-a-push)
 3. [Environment variable reference](#3-environment-variable-reference)
-4. [iOS — APNs (alert + VoIP)](#4-ios--apns-alert--voip)
+4. [iOS — APNs (alert + incoming-call)](#4-ios--apns-alert--incoming-call)
 5. [Android — FCM](#5-android--fcm)
 6. [Token registration (RPC + storage)](#6-token-registration-rpc--storage)
 7. [Payload shapes](#7-payload-shapes)
@@ -49,46 +56,39 @@ Publisher / peer ──mesh──► Home node (apps/node)
                                     ├─ this.on("pi:proposal") → Pi tool-action request
                                     │
                                     └─ PushNotificationService
-                                          ├─ alert tokens → APNs (iOS) / FCM (Android)
-                                          │     chat · bond · feed.notify · approval · Pi proposal
-                                          └─ voip tokens  → APNs VoIP topic (iOS)
-                                                call invite (Android uses FCM alert token + type=call)
+                                          └─ alert tokens → APNs (iOS) / FCM (Android)
+                                                chat · bond · feed.notify · approval · Pi · incomingCall
 
 EnvoyGo (thin client)
   ├─ PushNotificationService  → registerPushToken(tokenType: "alert")
   │     ├─ initialize() in main() before runApp (cold-start safe)
   │     ├─ getInitialMessage() for Android cold-start tap
-  │     └─ onNotificationTap → _routeNotificationTap (deep-link nav)
-  ├─ VoipPushService (iOS)    → registerPushToken(tokenType: "voip")
+  │     ├─ onNotificationTap → _routeNotificationTap (deep-link nav)
+  │     └─ onIncomingCall → CallProvider (in-app call screen)
   └─ PushPreferences          → in-app toggle (Me → Preferences)
 ```
 
-| Platform | Alert channel | Call channel |
-|----------|---------------|--------------|
-| **iOS** | APNs `apns-push-type: alert` → standard remote-notification token (hex) | APNs `apns-push-type: voip` → PushKit token (separate hex) |
-| **Android** | FCM HTTP v1 → FCM registration token | Same FCM token with `data.type=call` (no separate VoIP channel) |
+| Platform | Alert / call channel |
+|----------|----------------------|
+| **iOS** | APNs `apns-push-type: alert` → one remote-notification token (hex). Calls add `aps.content-available: 1` + `data.type=incomingCall`. |
+| **Android** | FCM HTTP v1 → one FCM token. Calls use the same token with `data.type=incomingCall` and `priority=high`. |
 
-**Why two iOS tokens?** Regular alert pushes cannot reliably wake a
-terminated app into a CallKit incoming-call UI. Apple reserves that for
-PushKit VoIP. Chat / bond / feed stay on the alert path.
-
-**China note:** iOS alert + VoIP use native APNs only (no Firebase on
-iOS). Android still needs Firebase/FCM.
+**China note:** iOS uses native APNs only (no Firebase on iOS). Android
+still needs Firebase/FCM.
 
 **Phase 50 — Skip-if-online gate.** All chat/bond/feed push paths check
 whether **EnvoyGo recently sent an RPC** over an authenticated WebSocket
 (`WsServer.hasRecentlyActiveClientForOwner`, ~20s idle window). A
 backgrounded phone with a lingering TCP socket does **not** suppress
-pushes. VoIP still uses `hasClientForOwner` (any connected thin-client
-session) to avoid a double CallKit prompt.
+pushes. Call pushes use `hasClientForOwner` (any connected thin-client
+session) to avoid a double in-app ring when the phone is already online.
 **Desktop Social does not count** as online for this gate (it connects
 without a thin-client session token); otherwise chatting in Social would
 suppress pushes to a killed phone.
 
 This gate covers chat, bond, feed, approval, and Pi proposal pushes. Call
-pushes already used `hasClientForOwner` (Phase 42I). Owner presence
-(`isOwnerOnline` / AI status activity) is separate and only used for
-auto-reply / assist policy.
+pushes use `hasClientForOwner`. Owner presence (`isOwnerOnline` / AI
+status activity) is separate and only used for auto-reply / assist policy.
 
 ---
 
@@ -110,13 +110,13 @@ the same skip-if-online gate.
 | Bond / contact request | `dispatchBondPush` | `hello:request` callback (`index.ts`) | `alert` | ✅ Yes |
 | Inbound `feed.notify` | `dispatchFeedPush` | `index.ts:1339` (skip-if-online gated) | `alert` | ✅ Yes |
 | Approval-queue item (new pending) | `dispatchApprovalPush` | `approvalQueue.onChange` diff (`bindApprovalQueue`) | `alert` | ✅ Yes |
-| Inbound call invite | `dispatchCallPush` | `call.invite` → `call-inbound.ts` | iOS `voip`; Android FCM | ✅ Yes (Phase 42I) |
+| Inbound call invite | `dispatchCallPush` | `call.invite` → `call-inbound.ts` | `alert` (iOS APNs + Android FCM) | ✅ Yes (`hasClientForOwner`) |
 
 Pushes are best-effort. Missing credentials or tokens → log + skip.
 **Phase 50:** chat/bond/feed paths apply the skip-if-online gate via
 `isThinClientOnline()` → `hasRecentlyActiveClientForOwner` (authenticated
 EnvoyGo WS **and** an RPC within ~20s). Idle/background sockets do not
-suppress pushes. VoIP still uses `hasClientForOwner`.
+suppress pushes. Call pushes use `hasClientForOwner`.
 
 **Token cleanup (Phase 50B):** `sendAndCleanup()` wraps every
 `sendApns`/`sendFcm` call. If APNs returns 410 (Unregistered), 400
@@ -131,16 +131,18 @@ suppress pushes. VoIP still uses `hasClientForOwner`.
 Set these on the **home node** process (shell export, launchd/systemd
 `Environment=`, Docker `-e`, etc.). Restart the node after changing them.
 
-### 3.1 iOS — APNs (required for iOS alert + VoIP)
+### 3.1 iOS — APNs (required for iOS alert + incoming-call)
 
 | Variable | Required | Example | Purpose |
 |----------|----------|---------|---------|
 | `APNS_KEY_ID` | **Yes** (iOS) | `ABC1234567` | 10-char Key ID from Apple Developer → Keys |
 | `APNS_TEAM_ID` | **Yes** (iOS) | `1A2B3C4D5E` | 10-char Team ID from Membership |
 | `APNS_KEY_PATH` | **Yes** (iOS) | `/secure/AuthKey_ABC1234567.p8` | Absolute path to the `.p8` private key file |
-| `APNS_TOPIC` | **Yes** (iOS alert) | `com.envoymesh.envoygo` | App **bundle ID** — must match the build that registered the device token |
-| `APNS_VOIP_TOPIC` | Optional | `com.envoymesh.envoygo.voip` | VoIP APNs topic. If unset, home uses `${APNS_TOPIC}.voip` |
+| `APNS_TOPIC` | **Yes** (iOS) | `com.envoymesh.envoygo` | App **bundle ID** — must match the build that registered the device token |
 | `APNS_SANDBOX` | Optional | `1` | If set (any non-empty), use `api.sandbox.push.apple.com`. Unset → production `api.push.apple.com` |
+
+`APNS_VOIP_TOPIC` is **obsolete** (CallKit/PushKit removed). Ignore it if
+present in an old `push-config.json`.
 
 JWT auth: ES256, claims `{ iss: TEAM_ID, iat: now }`, header `{ alg: ES256, kid: KEY_ID }`.
 
@@ -169,14 +171,13 @@ export APNS_TOPIC="com.envoymesh.envoygo"
 # export APNS_SANDBOX=1
 ```
 
-**iOS alert + VoIP calls:**
+**iOS (chat + incoming-call share the same APNs topic):**
 
 ```bash
 export APNS_KEY_ID="ABC1234567"
 export APNS_TEAM_ID="1A2B3C4D5E"
 export APNS_KEY_PATH="/secure/AuthKey_ABC1234567.p8"
 export APNS_TOPIC="com.envoymesh.envoygo"
-export APNS_VOIP_TOPIC="com.envoymesh.envoygo.voip"   # or omit to use ${APNS_TOPIC}.voip
 ```
 
 **Android:**
@@ -227,7 +228,6 @@ cp push-config.example.json ~/Library/Application\ Support/EnvoyMesh/push-config
     "teamId": "1A2B3C4D5E",
     "keyPath": "/secure/AuthKey_ABC1234567.p8",
     "topic": "com.envoymesh.envoygo",
-    "voipTopic": "com.envoymesh.envoygo.voip",
     "sandbox": false
   },
   "fcm": {
@@ -292,14 +292,15 @@ After editing, restart the EnvoyMesh app. The log should show:
 
 ---
 
-## 4. iOS — APNs (alert + VoIP)
+## 4. iOS — APNs (alert + incoming-call)
 
 ### 4.1 Prerequisites
 
 - Apple Developer Program membership
 - App ID / Bundle ID registered for EnvoyGo
 - **Push Notifications** capability enabled on that App ID
-- For VoIP: Push Notifications + Background Modes (VoIP) / PushKit usage as below
+- Background Modes: **Audio** (in-call) and **Remote notifications**
+  (do **not** enable Voice over IP / PushKit — CallKit removed for China)
 
 ### 4.2 Bundle ID (`APNS_TOPIC`) — critical
 
@@ -334,8 +335,6 @@ Mismatch → APNs `400` / `403` or silent drop.
    - File path → `APNS_KEY_PATH`
 7. Team ID from [Membership](https://developer.apple.com/account/#/membership) → `APNS_TEAM_ID`
 
-One `.p8` key can serve both alert and VoIP topics for the same team.
-
 Store the file outside the git tree (e.g. `/secure/…`) with mode `0600`.
 **Never commit `.p8` files.**
 
@@ -346,15 +345,14 @@ Store the file outside the git tree (e.g. `/secure/…`) with mode `0600`.
 3. Runner target → **Signing & Capabilities** → **+ Capability** → **Push Notifications**
 4. Also add **Background Modes** if not already present, and check:
    - Audio, AirPlay, and Picture in Picture (for calls)
-   - Voice over IP
    - Remote notifications
+   - **Do not** check Voice over IP
 
-Repo `Info.plist` already declares:
+Repo `Info.plist` declares:
 
 ```xml
 <key>UIBackgroundModes</key>
 <array>
-  <string>voip</string>
   <string>audio</string>
   <string>remote-notification</string>
 </array>
@@ -370,22 +368,9 @@ Repo `Info.plist` already declares:
 Device tokens are **environment-specific**. A sandbox token sent to
 production (or the reverse) fails with status `400`.
 
-### 4.6 VoIP topic (`APNS_VOIP_TOPIC`)
+### 4.6 What EnvoyGo does on iOS (already implemented)
 
-Apple delivers VoIP pushes to topic `<bundleId>.voip` (convention).
-
-```bash
-export APNS_VOIP_TOPIC="com.envoymesh.envoygo.voip"
-# If omitted, home uses: "${APNS_TOPIC}.voip"
-```
-
-Ensure the App ID / entitlements allow PushKit VoIP for that bundle.
-The same `.p8` JWT authenticates both alert and VoIP HTTP/2 calls; only
-`apns-topic` and `apns-push-type` differ.
-
-### 4.7 What EnvoyGo does on iOS (already implemented)
-
-**Alert path (`envoygo/alert_push`):**
+Single channel `envoygo/alert_push`:
 
 1. Dart `PushNotificationService.initialize()` → native
    `requestPermissionAndRegister`
@@ -394,14 +379,10 @@ The same `.p8` JWT authenticates both alert and VoIP HTTP/2 calls; only
 4. `didRegisterForRemoteNotificationsWithDeviceToken` → hex string → Dart
    `onAlertToken`
 5. After home connect → `registerPushToken` with `tokenType: "alert"`
-6. Notification tap → `onNotificationTap` with the `data` dictionary
-
-**VoIP path (`envoygo/voip_push`):**
-
-1. `PKPushRegistry(desiredPushTypes: [.voIP])`
-2. Token → Dart `onVoipToken` → `registerPushToken` with `tokenType: "voip"`
-3. Incoming VoIP push → CallKit `reportNewIncomingCall` (sync, required by Apple)
-   then Dart `onIncomingCall` → `CallProvider`
+6. Non-call notification tap → `onNotificationTap` → deep-link router
+7. `data.type == "incomingCall"` (tap, `content-available` wake, or
+   cold-start `launchOptions`) → `onIncomingCall` → `CallProvider`
+   in-app call screen (no CallKit)
 
 ---
 
@@ -471,10 +452,11 @@ On Android 13+, the user must grant notification permission at runtime
 2. `Firebase.initializeApp()` + `getToken()`
 3. `registerPushToken` with `platform: "android"`, `tokenType: "alert"`
 4. `onTokenRefresh` re-registers
-5. `onMessageOpenedApp` → `onNotificationTap`
+5. `onMessage` / `onMessageOpenedApp` / cold-start → `_routePushData`
+   (`incomingCall` → `onIncomingCall`; else → `onNotificationTap`)
 
-There is **no** separate Android VoIP token; call invites reuse the alert
-FCM token with `data.type=call`.
+Call invites reuse the same FCM alert token with
+`data.type=incomingCall` and `priority=high`.
 
 ---
 
@@ -489,20 +471,14 @@ Invoked by EnvoyGo over the home WebSocket JSON-RPC after connect.
 | `platform` | `"ios"` \| `"android"` | yes | Anything other than `"ios"` is stored as `"android"` |
 | `token` | string | yes | iOS: APNs hex; Android: FCM token. Empty → ignored |
 | `ownerId` | string | optional | If omitted/empty, home fills from local profile `owner.ownerId` |
-| `deviceId` | string | optional | Default: `{platform}-{tokenType}-{token}` |
-| `tokenType` | `"alert"` \| `"voip"` | optional | Default `"alert"`. Unknown values → `"alert"` |
+| `deviceId` | string | optional | Default: `{platform}-alert-{profileId}-{token}` |
+| `tokenType` | `"alert"` \| `"voip"` | optional | Always stored as `"alert"`. Legacy `"voip"` from older EnvoyGo builds is accepted and downgraded. |
 
 ```dart
-// Alert (chat / bond / feed) — both platforms
+// Chat / bond / feed / incoming-call — both platforms (one token)
 await PushNotificationService().registerWithHomeNode(
   (method, [params]) => client.call(method, params),
   ownerId: myOwnerId, // optional; home can fill
-);
-
-// VoIP — iOS only
-await VoipPushService().registerWithHomeNode(
-  (method, [params]) => client.call(method, params),
-  ownerId: myOwnerId,
 );
 ```
 
@@ -517,28 +493,21 @@ Created on first successful register; survives restarts.
 ```json
 [
   {
-    "deviceId": "ios-alert-<hex-or-token>",
+    "deviceId": "ios-alert-owner-<hex-or-token>",
     "platform": "ios",
     "token": "<device-token>",
     "ownerId": "envoy:owner:alice",
+    "profileId": "owner",
     "createdAt": "2026-07-21T00:00:00.000Z",
     "lastUsedAt": "2026-07-21T00:00:00.000Z",
     "tokenType": "alert"
   },
   {
-    "deviceId": "ios-voip-<hex>",
-    "platform": "ios",
-    "token": "<voip-hex>",
-    "ownerId": "envoy:owner:alice",
-    "createdAt": "2026-07-21T00:00:00.000Z",
-    "lastUsedAt": "2026-07-21T00:00:00.000Z",
-    "tokenType": "voip"
-  },
-  {
-    "deviceId": "android-alert-<fcm-token>",
+    "deviceId": "android-alert-owner-<fcm-token>",
     "platform": "android",
     "token": "<fcm-token>",
     "ownerId": "envoy:owner:alice",
+    "profileId": "owner",
     "createdAt": "2026-07-21T00:00:00.000Z",
     "lastUsedAt": "2026-07-21T00:00:00.000Z",
     "tokenType": "alert"
@@ -547,8 +516,8 @@ Created on first successful register; survives restarts.
 ```
 
 - Pre-42I rows without `tokenType` migrate to `"alert"` on load.
-- Same physical phone may have **both** alert and voip rows; keys are
-  namespaced so one does not overwrite the other.
+- Legacy `tokenType: "voip"` rows also migrate to `"alert"` on load
+  (CallKit/PushKit removed).
 
 ### 6.3 Owner ID matching
 
@@ -629,24 +598,26 @@ Chats tab (index 0) where the Pi thread lives.
 
 ### 7.6 Call — `dispatchCallPush`
 
-**iOS VoIP body:**
+**iOS APNs alert body** (`apns-push-type: alert`, topic = `APNS_TOPIC`):
 
 ```json
 {
-  "aps": { "voip": 1 },
+  "aps": {
+    "alert": { "title": "Incoming call", "body": "<callerName>" },
+    "sound": "default",
+    "badge": 1,
+    "content-available": 1
+  },
   "data": {
-    "type": "call",
+    "type": "incomingCall",
     "callId": "<uuid>",
-    "callerOwnerId": "envoy:owner:…",
-    "callerName": "…"
+    "callerOwnerId": "envoy:owner:…"
   }
 }
 ```
 
-Headers: `apns-push-type: voip`, topic = `APNS_VOIP_TOPIC` or `${APNS_TOPIC}.voip`.
-
-**Android FCM:** normal notification + `data.type=call`, `callId`,
-`callerOwnerId`, `priority=high`.
+**Android FCM:** same `data.type=incomingCall`, `callId`,
+`callerOwnerId`, plus `priority=high`.
 
 ### 7.7 APNs alert envelope (chat / bond / feed / approval / Pi)
 
@@ -665,17 +636,16 @@ Headers: `apns-push-type: voip`, topic = `APNS_VOIP_TOPIC` or `${APNS_TOPIC}.voi
 
 ## 8. Dispatch selection rules
 
-| Method | iOS alert token | iOS voip token | Android token |
-|--------|-----------------|----------------|---------------|
-| `dispatchChatPush` | ✅ APNs alert (via `sendAndCleanup`) | ❌ skipped | ✅ FCM (via `sendAndCleanup`) |
-| `dispatchBondPush` | ✅ APNs alert (via `sendAndCleanup`) | ❌ skipped | ✅ FCM (via `sendAndCleanup`) |
-| `dispatchFeedPush` | ✅ APNs alert (via `sendAndCleanup`) | ❌ skipped | ✅ FCM (via `sendAndCleanup`) |
-| `dispatchApprovalPush` | ✅ APNs alert (via `sendAndCleanup`) | ❌ skipped | ✅ FCM (via `sendAndCleanup`) |
-| `dispatchCallPush` | ❌ skipped | ✅ APNs voip (`sendVoipPush`) | ✅ FCM (via `sendAndCleanup`, `priority=high`) |
+| Method | iOS alert token | Android token |
+|--------|-----------------|---------------|
+| `dispatchChatPush` | ✅ APNs alert (via `sendAndCleanup`) | ✅ FCM (via `sendAndCleanup`) |
+| `dispatchBondPush` | ✅ APNs alert (via `sendAndCleanup`) | ✅ FCM (via `sendAndCleanup`) |
+| `dispatchFeedPush` | ✅ APNs alert (via `sendAndCleanup`) | ✅ FCM (via `sendAndCleanup`) |
+| `dispatchApprovalPush` | ✅ APNs alert (via `sendAndCleanup`) | ✅ FCM (via `sendAndCleanup`) |
+| `dispatchCallPush` | ✅ APNs alert + `content-available` | ✅ FCM (`priority=high`) |
 
-All dispatch methods (except the iOS VoIP call path) now go through
-`sendAndCleanup()` which automatically unregisters tokens that return
-410/400/403/404 from APNs/FCM.
+All dispatch methods go through `sendAndCleanup()` which automatically
+unregisters tokens that return 410/400/403/404 from APNs/FCM.
 
 If no matching tokens for `targetOwnerId` → no-op (no warning).
 If credentials missing → warning per attempted platform send, then skip.
@@ -696,10 +666,10 @@ If credentials missing → warning per attempted platform send, then skip.
    - Checks `PushPreferences.isEnabled()` first — if the user turned push
      off in Me → Preferences, skips registration entirely.
    - If enabled: `PushNotificationService.registerWithHomeNode(...)`
-4. `callProvider` initializes `VoipPushService` (iOS) and registers voip
-   token with the same home client
+4. `callProvider` subscribes to `PushNotificationService.onIncomingCall`
+   (and drains `consumePendingIncomingCall` for cold start).
 
-If the OS returns the token **after** connect, alert service re-registers
+If the OS returns the token **after** connect, the alert service re-registers
 when `onAlertToken` / FCM `onTokenRefresh` fires (home RPC handle kept).
 
 ### 9.2 Phase 50 — In-app push toggle
@@ -730,11 +700,13 @@ maps the payload to a target screen via `EnvoyGoApp.navigatorKey`:
 | `bond_request` | Inbox tab (index 1) |
 | `approval` | Inbox tab (index 1) |
 | `pi_proposal` | Chats tab (index 0) |
+| `incomingCall` | In-app call screen via `onIncomingCall` (not deep-link router) |
 
 **Cold-start handling:**
 - `initialize()` runs in `main()` before `runApp()` so `getInitialMessage()`
-  (Android) resolves early. The buffer is drained via
-  `consumePendingInitialTap()` in `initState()`.
+  (Android) resolves early. Chat taps drain via
+  `consumePendingInitialTap()` in `initState()`; calls drain via
+  `consumePendingIncomingCall()` when `CallProvider` attaches.
 - If `activeNode` is null on cold-start (nodes load async), the tap is
   buffered in `_pendingColdStartTap` and replayed after `loadPairedNodes()`
   completes.
@@ -745,12 +717,11 @@ maps the payload to a target screen via `EnvoyGoApp.navigatorKey`:
 
 | Piece | Path |
 |-------|------|
-| Alert Dart | `apps/envoygo/lib/services/push_notification_service.dart` |
-| VoIP Dart | `apps/envoygo/lib/services/voip_push_service.dart` |
+| Push Dart | `apps/envoygo/lib/services/push_notification_service.dart` |
 | Push toggle | `apps/envoygo/lib/services/push_preferences.dart` |
 | Deep-link router | `apps/envoygo/lib/main.dart` (`_routeNotificationTap`) |
 | Native iOS | `apps/envoygo/ios/Runner/AppDelegate.swift` |
-| Connect hook | `apps/envoygo/lib/providers/node_provider.dart` (`registerPushToken`) |
+| Connect / call hook | `apps/envoygo/lib/providers/node_provider.dart` |
 | Toggle UI | `apps/envoygo/lib/screens/me/me_screen.dart` |
 | Home dispatch | `apps/node/src/push-notification.ts` |
 | Unified chat listener | `apps/node/src/node-service-impl.ts` (constructor) |
@@ -767,8 +738,7 @@ npx vitest run apps/node/test/push-notification.test.ts
 
 # EnvoyGo services
 cd apps/envoygo && flutter test \
-  test/services/push_notification_service_test.dart \
-  test/services/voip_push_service_test.dart
+  test/services/push_notification_service_test.dart
 ```
 
 ---
@@ -792,7 +762,6 @@ Then trigger a push (or temporarily call dispatch from a debug path).
 Missing vars produce:
 
 - `[push] APNs credentials not configured — skipping iOS push`
-- `[push] APNs VoIP topic not configured — skipping iOS VoIP push`
 - `[push] FCM credentials not configured — skipping Android push`
 
 No such warning on send attempt ⇒ credentials resolved (HTTP may still fail).
@@ -806,8 +775,7 @@ No such warning on send attempt ⇒ credentials resolved (HTTP may still fail).
 cat "$PROFILE_DIR/push-tokens.json"
 ```
 
-Expect an `alert` row for the device; on iOS also a `voip` row after the
-call stack has initialized.
+Expect a single `alert` row per device/profile (no separate voip row).
 
 ### 10.3 End-to-end — chat alert
 
@@ -824,12 +792,14 @@ call stack has initialized.
 3. EnvoyGo shows OS notification; tap data includes `type=feed_notify` + `url`
 4. Foreground path: Inbox list / `feed:notify` WS still works without OS push
 
-### 10.5 End-to-end — VoIP call (iOS)
+### 10.5 End-to-end — incoming call
 
-1. `APNS_TOPIC` + VoIP topic configured; voip token registered
+1. `APNS_TOPIC` (and/or FCM) configured; alert token registered
 2. Place EnvoyGo in background / terminated
 3. Peer starts a call to the home owner
-4. Expect CallKit incoming UI; accept → WebRTC over WS
+4. Expect OS banner; tap or background wake → in-app call screen
+   (not CallKit); accept → WebRTC over WS. Force-killed wake is
+   best-effort with alert + `content-available`.
 
 ---
 
@@ -840,16 +810,15 @@ call stack has initialized.
 | `[push] dispatchChatPush skipped — push service not initialized` | Home node never called `pushNotificationService.init(profileDir)` | Restart home node on a build that inits push at startup (`index.ts` + `NodeServiceImpl`) |
 | `[push] dispatchChatPush: no alert tokens for owner=…` | EnvoyGo never registered, or `ownerId` mismatch | Open EnvoyGo → Me → enable push; reconnect; check `push-tokens.json` |
 | `[push] APNs credentials not configured` | Missing `APNS_KEY_ID` / `TEAM_ID` / `KEY_PATH` / `TOPIC`, or unreadable `.p8` | Set all four; check file path and permissions; ensure `push-config.json` is next to the profile or repo root |
-| `[push] APNs VoIP topic not configured` | No `APNS_TOPIC` and no `APNS_VOIP_TOPIC` | Set `APNS_TOPIC` (fallback `.voip`) or explicit `APNS_VOIP_TOPIC` |
 | `[push] APNs rejected: status=403` | Wrong Key/Team/Topic, or Push not enabled on App ID | Re-check Apple portal + `APNS_TOPIC` = bundle id |
 | `[push] APNs rejected: status=400` | Bad/expired token, or sandbox↔prod mismatch | Toggle `APNS_SANDBOX` / `apns.sandbox` in `push-config.json`; debug builds need `sandbox: true`; re-install app; re-register token |
 | `[push] FCM credentials not configured` | Missing `FCM_PROJECT_ID` or `FCM_SERVICE_ACCOUNT_JSON`, or bad JSON | Fix paths; ensure JSON has `client_email` + `private_key` |
 | `[push] FCM rejected: status=403` | SA lacks Messaging permission / wrong project | IAM + matching `FCM_PROJECT_ID` |
 | `[push] APNs error: …` / `FCM request error: …` | Network / DNS / TLS from home host | Can the node reach `api.push.apple.com` / `fcm.googleapis.com`? |
 | No row in `push-tokens.json` | Push never initialized (tokens not persisted); permission denied; not connected | Restart home; grant notifications; reconnect EnvoyGo |
-| Token present, no notification | Wrong `ownerId` / `profileId` on token vs dispatch target; only voip token for chat; app actively using WS (<20s) | Ensure `ownerId` matches home owner and `profileId` matches family member (mom/dad/owner); need `tokenType: alert`; background app (EnvoyGo disconnects WS on pause) |
+| Token present, no notification | Wrong `ownerId` / `profileId` on token vs dispatch target; app actively using WS (<20s) | Ensure `ownerId` matches home owner and `profileId` matches family member (mom/dad/owner); background app (EnvoyGo disconnects WS on pause) |
 | `[push] skip-if-online profile=…` | Thin client still considered recently active | Background/force-quit EnvoyGo; after pause the WS should drop so FCM/APNs can fire |
-| Chat works, calls don’t (iOS) | No voip token / wrong VoIP topic | Check voip row; set `APNS_VOIP_TOPIC`; PushKit + Background Modes |
+| Chat works, calls don’t | No alert token / offline gate / OS throttled `content-available` | Check `alert` row; confirm phone offline for `hasClientForOwner`; tap the banner if wake failed |
 | Android never gets token | Missing `google-services.json` or Gradle plugin | §5.2; watch logcat for Firebase init errors |
 | iOS push OK, Android never | FCM credentials missing on home, or no Android row in `push-tokens.json` | Set `FCM_PROJECT_ID` + `FCM_SERVICE_ACCOUNT_JSON` (or `push-config.json` + `serviceAccountKey.json`); open Android EnvoyGo once with push enabled |
 | iOS simulator | APNs device tokens often unavailable | Use a physical device |

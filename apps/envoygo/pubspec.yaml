@@ -35,9 +35,11 @@ dependencies:
   # ^1.6.0 removes private RPSystemBroadcastPickerView.buttonPressed:
   # (App Store Guideline 2.5.1 rejection).
   flutter_webrtc: ^1.6.0
-  # CallKit is implemented natively in ios/Runner/AppDelegate.swift
-  # (Phase 42I). Do not add flutter_callkit_incoming — it is unused in
-  # Dart and was CocoaPods-only (Flutter 3.44 SPM warning).
+  # CallKit / PushKit removed for China App Store review compliance.
+  # Audio/video calls run via WebRTC + a standard APNs alert push
+  # (the home node's sendApns adds aps.content-available: 1 to wake
+  # the app in the background). The in-app call screen handles
+  # accept/decline — no system CallKit UI.
   # URI parsing
   uri: ^1.0.0
   # JSON
@@ -97,7 +99,7 @@ hooks:
 
 flutter:
   # Flutter 3.44 defaults to SwiftPM; keep CocoaPods for EnvoyGo so App Store
-  # builds match the prior plugin integration (CallKit/Firebase/WebRTC pods).
+  # builds match the prior plugin integration (Firebase/WebRTC pods).
   config:
     enable-swift-package-manager: false
   generate: true

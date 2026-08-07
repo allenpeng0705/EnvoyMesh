@@ -78,7 +78,7 @@ EnvoyGo is a thin client: your home node remains the intelligent edge. The phone
 ## Keywords (100 chars max, comma-separated, no spaces after commas preferred)
 
 ```
-mesh,p2p,chat,secure,private,relay,AI,agent,home,node,pairing,QR,voip,decentralized,envoy
+mesh,p2p,chat,secure,private,relay,AI,agent,home,node,pairing,QR,calls,decentralized,envoy
 ```
 
 Count check: keep under 100 characters total (Apple counts commas).
@@ -86,7 +86,7 @@ Count check: keep under 100 characters total (Apple counts commas).
 Shorter backup if over limit:
 
 ```
-mesh,p2p,chat,private,AI,agent,relay,home,QR,voip,envoy
+mesh,p2p,chat,private,AI,agent,relay,home,QR,calls,envoy
 ```
 
 ---
@@ -234,5 +234,5 @@ flutter build ipa   # after signing / certificates configured in Xcode
 
 - Version: `CFBundleShortVersionString` = `1.0.0`
 - Build: `CFBundleVersion` = `3` (bump each upload)
-- Capabilities: Push Notifications, Background Modes (voip, audio, remote-notification) already in Info.plist
+- Capabilities: Push Notifications, Background Modes (audio, remote-notification) already in Info.plist. CallKit / VoIP push removed for cross-store compliance — incoming calls use a standard APNs alert push with `aps.content-available: 1` to wake the app in the background.
 - Export compliance: uses encryption (HTTPS / TLS / libp2p) — usually **exempt** standard encryption; answer the questionnaire accordingly

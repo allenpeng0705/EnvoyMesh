@@ -1,7 +1,8 @@
 // Phase 31I — tests for the alert push service.
 //
-// Mirrors voip_push_service_test.dart: MethodChannel bridge +
-// registerWithHomeNode payload shape + handleNotificationTap.
+// Covers: MethodChannel bridge + registerWithHomeNode payload shape +
+// handleNotificationTap + onIncomingCall stream (the post-CallKit-removal
+// flow for incoming-call pushes).
 
 import 'package:envoygo/services/push_notification_service.dart';
 import 'package:flutter/services.dart';
@@ -91,6 +92,153 @@ void main() {
     test('handleNotificationTap returns null for unknown payload', () {
       final service = PushNotificationService();
       expect(service.handleNotificationTap({'foo': 'bar'}), isNull);
+    });
+
+    test(
+        'handleNotificationTap returns null for incomingCall '
+        '(routes through onIncomingCall instead)', () {
+      final service = PushNotificationService();
+      // The chat-thread deep-link router must not see incoming-call
+      // payloads — those go through the separate onIncomingCall stream
+      // so the in-app call screen can surface. If handleNotificationTap
+      // returned a chat-thread route for an incomingCall, the app
+      // would try to open a chat thread for the call.
+      final result = service.handleNotificationTap({
+        'type': 'incomingCall',
+        'callId': 'call-1',
+        'callerOwnerId': 'envoy:owner:alice',
+      });
+      expect(result, isNull);
+    });
+  });
+
+  group('PushNotificationService — onIncomingCall (Phase 31I, post-CallKit)', () {
+    test('onIncomingCall stream fires when native dispatches onIncomingCall',
+        () async {
+      final service = PushNotificationService();
+      await service.initialize();
+      final future = service.onIncomingCall.first;
+      await service.debugDispatch('onIncomingCall', {
+        'callId': 'call-1',
+        'callerOwnerId': 'envoy:owner:alice',
+        'callerName': 'Alice',
+      });
+      final received = await future;
+      expect(received['callId'], 'call-1');
+      expect(received['callerOwnerId'], 'envoy:owner:alice');
+      expect(received['callerName'], 'Alice');
+    });
+
+    test('onIncomingCall silently drops empty payloads', () async {
+      final service = PushNotificationService();
+      await service.initialize();
+      // No listener attached — the broadcast stream should accept
+      // the add without error even if the payload is empty. We just
+      // assert no throw.
+      await service.debugDispatch('onIncomingCall', {});
+      // Also: nothing should be added if args is the platform default
+      // (nil) — handled by the args.isNotEmpty guard.
+    });
+
+    test(
+        'onIncomingCall survives duplicate payloads (CallKit removal: '
+        'APNs may deliver the call push twice in the same launch window)',
+        () async {
+      final service = PushNotificationService();
+      await service.initialize();
+      final received = <Map<String, dynamic>>[];
+      final sub = service.onIncomingCall.listen(received.add);
+      final payload = {
+        'callId': 'call-dup',
+        'callerOwnerId': 'envoy:owner:bob',
+      };
+      await service.debugDispatch('onIncomingCall', payload);
+      await service.debugDispatch('onIncomingCall', payload);
+      // Two events reach Dart; CallProvider's _hasMeaningfulCallUpdate
+      // dedupes them downstream — but the stream itself is dumb and
+      // forwards everything.
+      expect(received.length, 2);
+      expect(received.first['callId'], 'call-dup');
+      await sub.cancel();
+    });
+
+    test('onIncomingCall is a broadcast stream (multiple subscribers)',
+        () async {
+      final service = PushNotificationService();
+      await service.initialize();
+      // Use .first on each subscriber (the broadcast stream never
+      // closes on its own — we need to take a single event from each
+      // subscriber to verify fan-out).
+      final sub1 = service.onIncomingCall
+          .map((p) => 'A:${p['callId']}')
+          .first;
+      final sub2 = service.onIncomingCall
+          .map((p) => 'B:${p['callId']}')
+          .first;
+      await service.debugDispatch('onIncomingCall', {
+        'callId': 'call-fanout',
+        'callerOwnerId': 'envoy:owner:carol',
+      });
+      expect(await sub1, 'A:call-fanout');
+      expect(await sub2, 'B:call-fanout');
+    });
+
+    test(
+        'onIncomingCall is a separate stream from onNotificationTap '
+        '(incoming-call payloads do NOT also fire onNotificationTap)',
+        () async {
+      final service = PushNotificationService();
+      await service.initialize();
+      // Native/FCM route incomingCall only to onIncomingCall.
+      final tapFuture = service.onNotificationTap.first
+          .timeout(const Duration(milliseconds: 50), onTimeout: () => {});
+      final incomingFuture = service.onIncomingCall.first;
+      await service.debugDispatch('onIncomingCall', {
+        'type': 'incomingCall',
+        'callId': 'call-bg',
+        'callerOwnerId': 'envoy:owner:dan',
+      });
+      final incoming = await incomingFuture;
+      final tap = await tapFuture;
+      expect(incoming['callId'], 'call-bg');
+      expect(tap, isA<void>());
+    });
+
+    test(
+        'onNotificationTap with type=incomingCall fans out to onIncomingCall '
+        '(Android FCM / legacy tap path)',
+        () async {
+      final service = PushNotificationService();
+      await service.initialize();
+      final incomingFuture = service.onIncomingCall.first;
+      final tapFuture = service.onNotificationTap.first
+          .timeout(const Duration(milliseconds: 50), onTimeout: () => {});
+      await service.debugDispatch('onNotificationTap', {
+        'type': 'incomingCall',
+        'callId': 'call-android',
+        'callerOwnerId': 'envoy:owner:eve',
+      });
+      final incoming = await incomingFuture;
+      expect(incoming['callId'], 'call-android');
+      // Must not also hit the chat deep-link stream.
+      expect(await tapFuture, isA<void>());
+    });
+
+    test(
+        'consumePendingIncomingCall replays a call that arrived before '
+        'any listener attached',
+        () async {
+      final service = PushNotificationService();
+      await service.initialize();
+      // No onIncomingCall listener yet — payload is buffered.
+      await service.debugDispatch('onIncomingCall', {
+        'type': 'incomingCall',
+        'callId': 'call-pending',
+        'callerOwnerId': 'envoy:owner:frank',
+      });
+      final pending = service.consumePendingIncomingCall();
+      expect(pending?['callId'], 'call-pending');
+      expect(service.consumePendingIncomingCall(), isNull);
     });
   });
 

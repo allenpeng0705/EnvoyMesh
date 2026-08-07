@@ -325,18 +325,23 @@ class CallProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Phase 42I — surface an incoming call that was delivered via a
-  /// VoIP push (iOS PushKit) when the app was backgrounded.
+  /// Phase 31I (post-CallKit-removal) — surface an incoming call that
+  /// was delivered via a standard APNs alert push (the home node's
+  /// `dispatchCallPush` adds `aps.content-available: 1` to wake the
+  /// app in the background, no PushKit/VoIP involved).
   ///
   /// The push payload only carries `callId` and `callerOwnerId` (no
   /// SDP yet — the call envelope arrives over the WebSocket after the
-  /// app wakes). We update local state so the CallKit screen can show
-  /// a "ringing" entry; the WebSocket `call:incoming` event then
+  /// app wakes). We update local state so the in-app call screen can
+  /// show a "ringing" entry; the WebSocket `call:incoming` event then
   /// re-fills the state with the SDP and full peer info.
   ///
   /// `callerName` is optional — the eventual `call:incoming` event
   /// typically replaces it with a contact-resolved display name.
-  void onIncomingCallFromVoipPush({
+  ///
+  /// Subscribers are wired in `node_provider.dart` via
+  /// `PushNotificationService.onIncomingCall`.
+  void onIncomingCallFromPush({
     required String callId,
     required String callerOwnerId,
     String? callerName,

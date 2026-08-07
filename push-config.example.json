@@ -6,7 +6,6 @@
     "teamId": "YOUR_APPLE_TEAM_ID",
     "keyPath": "AuthKey_YOUR_KEY_ID.p8",
     "topic": "com.envoymesh.envoygo",
-    "voipTopic": "com.envoymesh.envoygo.voip",
     "sandbox": false
   },
   "fcm": {

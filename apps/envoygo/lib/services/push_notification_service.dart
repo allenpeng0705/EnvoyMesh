@@ -8,7 +8,8 @@ import 'package:flutter/services.dart';
 
 import '../utils/localized_labels.dart';
 
-/// Alert (chat / bond / feed) push notifications for EnvoyGo — Phase 31I.
+/// Alert (chat / bond / feed / **incoming-call**) push notifications for
+/// EnvoyGo — Phase 31I.
 ///
 /// - **iOS:** native APNs via `envoygo/alert_push` MethodChannel
 ///   (`AppDelegate.swift`). No Firebase — China-friendly; home
@@ -17,8 +18,15 @@ import '../utils/localized_labels.dart';
 ///   is present; otherwise initialize is a silent no-op.
 /// - **Web / desktop:** unsupported.
 ///
-/// Tokens are registered with the home node as `tokenType: "alert"`
-/// (distinct from VoIP tokens registered by VoipPushService).
+/// ### Incoming-call flow (replaces the old VoIP/CallKit path)
+///
+/// The home dispatches a standard alert push with
+/// `data.type == "incomingCall"`. On iOS the push carries
+/// `aps.content-available: 1` (best-effort wake; no PushKit). Native
+/// `AppDelegate` and Android FCM both route that type to
+/// [onIncomingCall] (not the chat deep-link router). [CallProvider]
+/// consumes the stream; a one-shot pending buffer covers cold start
+/// before the provider has subscribed.
 class PushNotificationService {
   static const String _channelName = 'envoygo/alert_push';
 
@@ -57,6 +65,26 @@ class PushNotificationService {
   Stream<Map<String, dynamic>> get onNotificationTap =>
       _tapController.stream;
   final _tapController = StreamController<Map<String, dynamic>>.broadcast();
+
+  /// Stream of incoming-call payloads (post-CallKit-removal flow).
+  ///
+  /// Emitted when native/FCM delivers `data.type == "incomingCall"`:
+  /// banner tap, iOS `content-available` wake, iOS cold-start
+  /// `launchOptions`, Android foreground `onMessage`, or Android
+  /// notification open. Payload shape:
+  /// `{ callId, callerOwnerId, callerName? }`.
+  ///
+  /// Subscribers should treat arrival as idempotent: the same callId
+  /// may arrive more than once, and WebSocket `call:incoming` may
+  /// already have filled SDP before the push lands.
+  Stream<Map<String, dynamic>> get onIncomingCall =>
+      _incomingCallController.stream;
+  final _incomingCallController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
+  /// Cold-start incoming-call payload buffered when no listener is
+  /// attached yet (same role as [consumePendingInitialTap] for chats).
+  Map<String, dynamic>? _pendingIncomingCall;
 
   /// Request permission, obtain a device token, and install listeners.
   ///
@@ -109,8 +137,17 @@ class PushNotificationService {
   /// Normalize a notification payload into navigation hints.
   ///
   /// Returns `null` when [data] is not a known EnvoyGo push type.
+  /// Note: `data.type == "incomingCall"` is intentionally NOT routed
+  /// here — it must go through [onIncomingCall] to the in-app call
+  /// screen, not through the chat/bond deep-link router.
   Map<String, dynamic>? handleNotificationTap(Map<String, dynamic> data) {
     final type = data['type'] as String?;
+    if (type == 'incomingCall') {
+      // Incoming-call push: the AppDelegate will have already surfaced
+      // it via onIncomingCall. Skip the chat-thread router so we
+      // don't try to open a chat thread for the call.
+      return null;
+    }
     if (type == 'feed_notify' || type == 'feed.notify') {
       final url = data['url'] as String?;
       if (url == null || url.isEmpty) return null;
@@ -173,20 +210,22 @@ class PushNotificationService {
         _token = t;
         await _registerIfReady();
       });
-      FirebaseMessaging.onMessageOpenedApp.listen((message) {
-        final data = Map<String, dynamic>.from(message.data);
-        if (data.isNotEmpty) _tapController.add(data);
+      FirebaseMessaging.onMessage.listen((message) {
+        _routePushData(Map<String, dynamic>.from(message.data));
       });
-      // Phase 50 — cold-start tap handling. onMessageOpenedApp only fires
-      // for warm taps (app in background). When the user taps a notification
-      // that launched the app from terminated state, the initial message
-      // must be retrieved explicitly. Because the tap subscriber may not
-      // be registered yet at this point (it's set up in main.dart after
-      // the first frame), we buffer it as the "pending initial tap" so the
-      // subscriber can replay it once it attaches.
+      FirebaseMessaging.onMessageOpenedApp.listen((message) {
+        _routePushData(Map<String, dynamic>.from(message.data));
+      });
+      // Cold-start: onMessageOpenedApp only fires for warm taps.
+      // Buffer until main.dart / CallProvider attach their listeners.
       final initial = await messaging.getInitialMessage();
       if (initial != null && initial.data.isNotEmpty) {
-        _pendingInitialTap = Map<String, dynamic>.from(initial.data);
+        final data = Map<String, dynamic>.from(initial.data);
+        if (data['type'] == 'incomingCall') {
+          _pendingIncomingCall = data;
+        } else {
+          _pendingInitialTap = data;
+        }
       }
     } catch (e, st) {
       // No google-services.json / Firebase not configured / Play Services.
@@ -203,6 +242,37 @@ class PushNotificationService {
     final tap = _pendingInitialTap;
     _pendingInitialTap = null;
     return tap;
+  }
+
+  /// Buffered cold-start incoming call. [CallProvider] drains this when
+  /// it attaches to [onIncomingCall].
+  Map<String, dynamic>? consumePendingIncomingCall() {
+    final call = _pendingIncomingCall;
+    _pendingIncomingCall = null;
+    return call;
+  }
+
+  /// Route FCM / MethodChannel payloads: calls → [onIncomingCall],
+  /// everything else → [onNotificationTap].
+  void _routePushData(Map<String, dynamic> data) {
+    if (data.isEmpty) return;
+    if (data['type'] == 'incomingCall') {
+      _emitIncomingCall(data);
+    } else {
+      _tapController.add(data);
+    }
+  }
+
+  void _emitIncomingCall(Map<String, dynamic> data) {
+    debugPrint(
+      '[push] incomingCall callId=${data['callId']} '
+      'caller=${data['callerOwnerId']}',
+    );
+    if (_incomingCallController.hasListener) {
+      _incomingCallController.add(data);
+    } else {
+      _pendingIncomingCall = data;
+    }
   }
 
   Future<void> _registerIfReady() async {
@@ -255,7 +325,13 @@ class PushNotificationService {
         return null;
       case 'onNotificationTap':
         final args = (call.arguments as Map?)?.cast<String, dynamic>() ?? {};
-        if (args.isNotEmpty) _tapController.add(args);
+        _routePushData(args);
+        return null;
+      case 'onIncomingCall':
+        // iOS AppDelegate routes incomingCall here (tap, content-available
+        // wake, or cold-start launchOptions).
+        final args = (call.arguments as Map?)?.cast<String, dynamic>() ?? {};
+        if (args.isNotEmpty) _emitIncomingCall(args);
         return null;
       default:
         return null;

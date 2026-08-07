@@ -5432,6 +5432,13 @@ The current `sendCallInvite` interface is already a runtime schema violation (`s
 
 ### 42I — iOS backgrounded calling (VoIP + PushKit + CallKit)
 
+> **Superseded for App Store China (2026-08):** CallKit / PushKit / VoIP
+> push were removed from EnvoyGo. Incoming calls use a standard APNs/FCM
+> alert with `data.type = "incomingCall"` + iOS `aps.content-available: 1`
+> and the in-app call screen. Historical checklist below records what
+> shipped in 42I; see `docs/push-notification-config.md` for the current
+> operator path.
+
 - `[x]` **Home: extend `push-notification.ts`.** Add `tokenType: "alert" | "voip"` to `PushTokenRecord` (`apps/node/src/push-notification.ts:47`). Add `sendVoipPush(deviceId, callId, callerName)` mirroring `sendApns` (`push-notification.ts:199`) but using the APNs VoIP endpoint (`/3/device/{voip-token}`), `apns-topic: {BUNDLE_ID}.voip`, `apns-push-type: voip`, and a minimal `{"aps": {"content-available": 1}, "callId": "...", "callerName": "..."}` payload. Reuses the existing `.p8` key and JWT auth.
 - `[x]` **Home: extend `registerPushToken` RPC** at `node-service-impl.ts:11482` to accept `tokenType: "alert" | "voip"`; persist the discriminator to `push-tokens.json` (existing `0o600` convention). The implementation uses `"alert"` (matches Apple's `apns-push-type` vocabulary) rather than the originally-planned `"standard"`.
 - `[x]` **Home: dispatch hook in `call-inbound.ts:handleCallInvite`** (added in commit `78df804`): after `inboundCallReceived`, look up the callee's `tokenType === "voip"` token via `pushNotificationService.listForOwner(calleeOwnerId)`; if the WebSocket to the phone is **not** connected (`isDeviceOnline(calleeOwnerId) === false`), send a VoIP push carrying the `callId` and `callerName`. The hook lives on the **callee's** home (where the phone registered its token), not the caller's home.

@@ -1,9 +1,17 @@
 # Phase 42 — Native WebRTC Voice Calls on EnvoyGo
 
-**Status:** `[ ]` designed
+**Status:** `[x]` shipped (design doc retained for history)
 **Date:** 2026-06-19
 **Author:** EnvoyMesh core team
-**Related:** [implementation-plan.md#phase-42](./implementation-plan.md#phase-42--native-webrtc-voice-calls-on-envoygo-), [Phase 38](./implementation-plan.md#phase-38--real-time-voicevideo-calls), [voice-video-call-support.md](./voice-video-call-support.md), [parked-envoygo-full-node-scope.md](./parked-envoygo-full-node-scope.md), [Phase 31 (EnvoyGo thin client)](./implementation-plan.md#phase-31--flutter-thin-client-envoygo)
+**Related:** [implementation-plan.md#phase-42](./implementation-plan.md#phase-42--native-webrtc-voice-calls-on-envoygo-), [Phase 38](./implementation-plan.md#phase-38--real-time-voicevideo-calls), [voice-video-call-support.md](./voice-video-call-support.md), [parked-envoygo-full-node-scope.md](./parked-envoygo-full-node-scope.md), [Phase 31 (EnvoyGo thin client)](./implementation-plan.md#phase-31--flutter-thin-client-envoygo), [push-notification-config.md](./push-notification-config.md)
+
+> **2026-08 update — CallKit / PushKit removed.** China App Store review
+> requires CallKit off when China is a territory. EnvoyGo no longer uses
+> VoIP push, PushKit, or CallKit. Incoming calls use a standard alert push
+> (`data.type = "incomingCall"`, iOS `aps.content-available: 1`) and the
+> in-app call UI. Sections below that describe 42I VoIP/CallKit are
+> historical; follow [push-notification-config.md](./push-notification-config.md)
+> for the current wake path.
 
 ---
 
@@ -38,7 +46,7 @@ This phase lands the missing pieces so a Flutter phone and a desktop browser can
 - **G4.** The media path is peer-to-peer. The home does not see SRTP media bytes.
 - **G5.** `iceServers` configured on the home node reaches EnvoyGo via the call envelope (not via a new RPC) so the phone can build an `RTCPeerConnection` with the right ICE config.
 - **G6.** All Phase 38 protocol rules continue to hold — `callId` generation/dedup, identity binding, ring timeout, role policy (`HUMAN_HUMAN_ONLY`, `friends` sensitivity), and `agentCredential` handling.
-- **G7.** An EnvoyGo phone on iOS receives incoming calls even when the app is **terminated** (not just backgrounded). Home sends a VoIP push via APNs on `call.invite` arrival; phone wakes via PushKit and shows a native CallKit call screen.
+- **G7.** An EnvoyGo phone on iOS can surface an incoming call when backgrounded (and best-effort when terminated). Home sends a standard APNs alert with `data.type = "incomingCall"` + `aps.content-available: 1`; the phone shows the **in-app** call screen (CallKit/PushKit removed for China App Store compliance).
 - **G8.** Symmetric-NAT phone↔phone calls connect when the home has TURN credentials configured. The home injects user-configured TURN into the call envelope alongside the default 3-STUN list; phone uses whichever the envelope provides.
 
 ### Non-Goals
@@ -50,7 +58,7 @@ This phase lands the missing pieces so a Flutter phone and a desktop browser can
 - **NG5.** Removing the home from the call path or making the phone a full mesh node.
 - **NG6.** Provisioning or bundling a TURN server in the EnvoyMesh relay binary (`apps/relay/`). TURN is a *user-configured* concern, not an EnvoyMesh service. The recommended providers (Twilio Network Traversal Service, Cloudflare TURN, self-hosted coturn) are documented in §7.7.
 - **NG7.** AI agent as a call participant (already a Phase 39 / Phase 38 open question).
-- **NG8.** Android backgrounded-call survival equivalent to iOS VoIP push. FCM `data` messages can wake a backgrounded Flutter app, but Android's call-UI integration story is less clean than CallKit; Android coverage is best-effort via `audio` background mode + FCM `data` message. Detailed Android call-UI work is tracked separately if needed.
+- **NG8.** Guaranteed force-killed ring parity with the old iOS VoIP+CallKit path. Both platforms now use alert/FCM wake + in-app UI (best-effort under OS throttling).
 
 ---
 
