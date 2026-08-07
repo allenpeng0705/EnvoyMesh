@@ -201,6 +201,14 @@ function evaluateReferredPolicy(request: PolicyRequest): PolicyDecision {
     return { action: "allow", maxSensitivity: "public" };
   }
 
+  // Phase 9/43 — referred peers may exchange agent cards so Team jobs / Agent
+  // Network can discover workers past a direct-friend boundary. Cards are
+  // public-sensitivity only (no private data is carried); the response
+  // handler verifies trust before caching.
+  if (request.intent === "agent.card.request" || request.intent === "agent.card.response") {
+    return { action: "allow", maxSensitivity: "public" };
+  }
+
   return { action: "approval_required", reason: "referred peer requires approval" };
 }
 

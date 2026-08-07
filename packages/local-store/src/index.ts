@@ -1612,31 +1612,65 @@ export function createRelayStateStore(profileDir: string): RelayStateStore {
 export function createLocalTrustStore(profileDir: string): LocalTrustStore {
   const trustStorePath = join(profileDir, TRUST_STORE_FILE);
 
+  //
+  // Issue (Windows config store follow-up): concurrent setTrustRecord calls
+  // (e.g. LAN auto-bond racing a UI bond update) can do read-then-write on
+  // stale snapshots on slow disks, wiping trust records. We fix this the
+  // same way node-config-store was fixed:
+  //   1. serial write chain — all mutations queue after the prior I/O
+  //   2. in-memory cache — reads bypass the filesystem during a rename window
+  //      (on Windows, unlink+rename or writeFile can return ENOENT briefly
+  //      for concurrent readers, causing readTrustStoreFile() to return an
+  //      empty records array and wiping the next write).
+  //
+  let _cache: TrustStoreFile | null = null;
+  let _writeChain: Promise<void> = Promise.resolve();
+
+  async function loadCached(): Promise<TrustStoreFile> {
+    if (_cache) return _cache;
+    const data = await readTrustStoreFile(trustStorePath);
+    _cache = data;
+    return _cache;
+  }
+
+  function serialWrite(next: TrustStoreFile): Promise<void> {
+    _cache = next; // update cache *before* I/O so concurrent reads see new value
+    _writeChain = _writeChain.then(() => writeTrustStoreFile(trustStorePath, next)).catch((err) => {
+      // Reset chain on error so subsequent writes aren't permanently blocked.
+      console.warn("[trust-store] write failed, continuing write chain:", err?.message ?? err);
+    });
+    return _writeChain;
+  }
+
   return {
     async listTrustRecords() {
-      return (await readTrustStoreFile(trustStorePath)).records.sort((left, right) =>
+      return (await loadCached()).records.sort((left, right) =>
         left.peerOwnerId.localeCompare(right.peerOwnerId),
       );
     },
 
     async getTrustRecord(peerOwnerId) {
-      return (await readTrustStoreFile(trustStorePath)).records.find(
-        (record) => record.peerOwnerId === peerOwnerId,
-      );
+      return (await loadCached()).records.find((record) => record.peerOwnerId === peerOwnerId);
     },
 
     async setTrustRecord(input) {
-      const file = await readTrustStoreFile(trustStorePath);
+      const file = await loadCached();
       const now = input.now ?? new Date().toISOString();
       const existing = file.records.find((record) => record.peerOwnerId === input.peerOwnerId);
 
+      const next: TrustStoreFile = { version: file.version ?? "0.1", records: [...file.records] };
+
       if (existing) {
-        existing.level = input.level;
-        existing.displayName = input.displayName ?? existing.displayName;
-        existing.note = input.note ?? existing.note;
-        existing.updatedAt = now;
-        await writeTrustStoreFile(trustStorePath, file);
-        return existing;
+        const updated: TrustRecord = {
+          ...existing,
+          level: input.level,
+          displayName: input.displayName ?? existing.displayName,
+          note: input.note ?? existing.note,
+          updatedAt: now,
+        };
+        next.records = next.records.map((r) => (r.peerOwnerId === input.peerOwnerId ? updated : r));
+        await serialWrite(next);
+        return updated;
       }
 
       const record: TrustRecord = {
@@ -1649,21 +1683,24 @@ export function createLocalTrustStore(profileDir: string): LocalTrustStore {
         updatedAt: now,
       };
 
-      file.records.push(record);
-      await writeTrustStoreFile(trustStorePath, file);
+      next.records.push(record);
+      await serialWrite(next);
       return record;
     },
 
     async removeTrustRecord(peerOwnerId) {
-      const file = await readTrustStoreFile(trustStorePath);
+      const file = await loadCached();
       const record = file.records.find((candidate) => candidate.peerOwnerId === peerOwnerId);
 
       if (!record) {
         throw new Error(`Trust record not found: ${peerOwnerId}`);
       }
 
-      file.records = file.records.filter((candidate) => candidate.peerOwnerId !== peerOwnerId);
-      await writeTrustStoreFile(trustStorePath, file);
+      const next: TrustStoreFile = {
+        version: file.version ?? "0.1",
+        records: file.records.filter((candidate) => candidate.peerOwnerId !== peerOwnerId),
+      };
+      await serialWrite(next);
       return record;
     },
   };
@@ -2377,9 +2414,64 @@ async function readTrustStoreFile(path: string): Promise<TrustStoreFile> {
   }
 }
 
+/**
+ * Atomic write for trust-records.json.
+ *
+ * Windows file semantics are unusual: `unlink` + `rename` races with
+ * concurrent `readFile` calls (returns ENOENT briefly), and direct
+ * `writeFile` truncates mid-write under concurrent load on slow disks.
+ *
+ * Strategy (mirrors the node-config store fix and writePeerDirectoryFileAtomic):
+ *   - write to `.tmp.<ts>.<rand>` first (validates JSON before writing)
+ *   - rename atomically into place
+ *   - retry on Windows EPERM / EACCESS (anti-virus / indexer locks)
+ *
+ * Additionally, the createLocalTrustStore factory uses this through a
+ * serial write-chain so concurrent setTrustRecord calls never race.
+ */
 async function writeTrustStoreFile(path: string, file: TrustStoreFile): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
+  const content = `${JSON.stringify(file, null, 2)}\n`;
+  JSON.parse(content); // fail fast before touching disk
+
+  const maxAttempts = 5;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const tmpPath = `${path}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
+    try {
+      await writeFile(tmpPath, content, { mode: 0o600 });
+      await rename(tmpPath, path);
+      return;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      // Best-effort cleanup of leftover tmp file.
+      try {
+        await import("node:fs/promises").then((fsp) => fsp.unlink(tmpPath));
+      } catch {
+        /* tmp might never have been created; ignore */
+      }
+      // Exponential backoff only on Windows-like errors, else re-throw quickly.
+      const code = (lastError as { code?: string }).code;
+      if (code === "EPERM" || code === "EACCES" || code === "EBUSY") {
+        await new Promise((r) => setTimeout(r, 20 * (attempt + 1)));
+        continue;
+      }
+      throw lastError;
+    }
+  }
+
+  // Fallback: direct write. One final attempt before giving up.
+  if (lastError) {
+    try {
+      await writeFile(path, content, { mode: 0o600 });
+      return;
+    } catch (fallbackErr) {
+      const err = fallbackErr instanceof Error ? fallbackErr : new Error(String(fallbackErr));
+      err.message = `writeTrustStoreFile failed (atomic + fallback): ${err.message} (prior: ${lastError.message})`;
+      throw err;
+    }
+  }
 }
 
 async function readPeerDirectoryFile(path: string): Promise<PeerDirectoryFile> {
