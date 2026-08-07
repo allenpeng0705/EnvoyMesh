@@ -442,15 +442,21 @@ export async function launchChain(
         : subtask.preferredWorkerPeerId
           ? workerIds.slice(0, 1)
           : workerIds;
+    let proposedThis = 0;
     for (const workerPeerId of targets) {
       const ok = await sendChainPropose(deps, workerPeerId, toSend, state.chainMandate);
       if (ok) {
         proposed++;
+        proposedThis++;
       } else {
         proposeFails.push(`${subtaskId.slice(0, 12)}→${workerPeerId.slice(0, 14)}`);
       }
     }
-    state.proposedSubtasks.add(subtaskId);
+    // Only mark proposed when at least one send succeeded — otherwise
+    // advanceReadySubtasks can retry later (e.g. after transient mesh failure).
+    if (proposedThis > 0) {
+      state.proposedSubtasks.add(subtaskId);
+    }
   }
   deps.audit.record({
     type: "chain.launched",
@@ -499,10 +505,15 @@ export async function advanceReadySubtasks(
         : subtask.preferredWorkerPeerId
           ? workers.slice(0, 1)
           : workers;
+    let proposedThis = 0;
     for (const workerPeerId of targets) {
       const ok = await sendChainPropose(deps, workerPeerId, toSend, state.chainMandate);
-      if (ok) proposed++;
+      if (ok) {
+        proposed++;
+        proposedThis++;
+      }
     }
+    if (proposedThis === 0) continue;
     state.proposedSubtasks.add(subtaskId);
     subtaskIds.push(subtaskId);
   }

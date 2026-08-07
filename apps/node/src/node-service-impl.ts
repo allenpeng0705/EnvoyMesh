@@ -10680,11 +10680,25 @@ class NodeServiceImpl implements NodeService {
     costCeilingUsd?: number;
     allowLlm?: boolean;
     assignerPeerId?: string;
+    preferredWorkerPeerIds?: string[];
+    plannedSubtasks?: Array<{
+      subtaskId: string;
+      depth: number;
+      requiredSkill: string;
+      objective: string;
+      requestedResult?: string;
+      constraints?: string[];
+      dependsOn?: string[];
+      costCeilingUsd?: number;
+      deadlineAt?: string;
+      preferredWorkerPeerId?: string;
+      createdAt?: string;
+    }>;
   }): Promise<{
     ok: boolean;
     chainId: string;
     chainMandateId: string;
-    subtasks: Array<{ subtaskId: string; depth: number; requiredSkill: string; objective: string }>;
+    subtasks: Array<{ subtaskId: string; depth: number; requiredSkill: string; objective: string; preferredWorkerPeerId?: string }>;
     error?: string;
     assignerPeerId?: string;
     handedOff?: boolean;

@@ -11,10 +11,11 @@
  *    `task.chain.report`, which is `agent→human`.
  * 3. **Capability gate** — orchestrator-receive intents (`task.chain.bid`,
  *    `task.chain.partial`, `task.chain.merge`, worker-originated
- *    `task.chain.heartbeat`) require the local node to advertise
- *    `chain.orchestrate`. Worker-receive intents (`mandate`, `propose`,
- *    `accept`, `cancel`, orchestrator-originated `heartbeat`) only require
- *    the recipient role to be `agent`.
+ *    `task.chain.heartbeat`) require a live orch runtime for that chainId
+ *    (preferred), or else a static EMP `chain.orchestrate` tag when no
+ *    runtime is present. Handoff intents always require `chain.orchestrate`.
+ *    Worker-receive intents (`mandate`, `propose`, `accept`, `cancel`,
+ *    orchestrator-originated `heartbeat`) only require recipient role `agent`.
  * 4. **Handler dispatch** — calls the matching orchestrator or worker handler
  *    from `chain-orchestrator.ts` / `chain-worker.ts`. Handlers are injected
  *    via `ChainInboundDeps` for testability.
@@ -70,8 +71,8 @@ import type {
 // ---------------------------------------------------------------------------
 
 /**
- * Intents delivered **to the orchestrator**. The recipient must advertise
- * `chain.orchestrate` and supply matching `InboundChainState`.
+ * Intents delivered **to the orchestrator**. Prefer a live orch runtime
+ * (`InboundChainState`); without one, require EMP `chain.orchestrate`.
  */
 const ORCHESTRATOR_RECEIVE_INTENTS = new Set<string>([
   "task.chain.bid",
@@ -133,12 +134,16 @@ export async function dispatchChainEnvelope(
     ORCHESTRATOR_RECEIVE_INTENTS.has(intent) ||
     (intent === "task.chain.heartbeat" && state !== undefined);
   if (orchestratorReceive) {
-    if (!deps.nodeCapabilities.includes("chain.orchestrate")) {
-      const reason: ChainInboundRejectReason = "missing_orchestrator_capability";
-      await emitDeny(deps, envelope, reason);
-      return { ok: false, reason };
-    }
+    // Live orchestrator runtime for this chainId proves we are the orch —
+    // do not also require a static EMP `chain.orchestrate` tag. Home nodes
+    // that launch Team jobs often omit it from capability-manifest.json;
+    // after local loopback delivery, bids would otherwise be denied here.
     if (!state) {
+      if (!deps.nodeCapabilities.includes("chain.orchestrate")) {
+        const reason: ChainInboundRejectReason = "missing_orchestrator_capability";
+        await emitDeny(deps, envelope, reason);
+        return { ok: false, reason };
+      }
       const reason: ChainInboundRejectReason = "handler_denied";
       await emitDeny(deps, envelope, reason);
       return { ok: false, reason };

@@ -100,7 +100,17 @@ describe("ChainStartDialog", () => {
       expect(onStarted).toHaveBeenCalledWith("chain_1");
     });
     expect(chainStartFromGoal).toHaveBeenCalledWith(
-      expect.objectContaining({ goal: "Research local LLMs", iterationMaxRounds: 1 }),
+      expect.objectContaining({
+        goal: "Research local LLMs",
+        iterationMaxRounds: 1,
+        plannedSubtasks: [
+          expect.objectContaining({
+            subtaskId: "st1",
+            requiredSkill: "task.execute",
+            objective: "Do the thing",
+          }),
+        ],
+      }),
     );
   });
 
@@ -110,7 +120,7 @@ describe("ChainStartDialog", () => {
       subtasks: [
         {
           subtaskId: "st1",
-          depth: 0,
+          depth: 1,
           requiredSkill: "task.execute",
           objective: "Do the thing",
           workerCount: 1,
@@ -132,7 +142,7 @@ describe("ChainStartDialog", () => {
     fireEvent.click(screen.getByTestId("chain-start-confirm"));
     await waitFor(() => {
       expect(chainStartFromGoal).toHaveBeenCalledWith(
-        expect.objectContaining({ iterationMaxRounds: 2 }),
+        expect.objectContaining({ iterationMaxRounds: 2, plannedSubtasks: expect.any(Array) }),
       );
     });
   });

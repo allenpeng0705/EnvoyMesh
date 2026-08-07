@@ -243,6 +243,22 @@ export function ChainStartDialog({
         extendMaxStepsPerRound,
         preferredWorkerPeerIds:
           selectedPeerIds.size > 0 ? [...selectedPeerIds] : undefined,
+        plannedSubtasks:
+          preview?.ok && preview.subtasks.length > 0
+            ? preview.subtasks.map((s) => ({
+                subtaskId: s.subtaskId,
+                depth: s.depth,
+                requiredSkill: s.requiredSkill,
+                objective: s.objective,
+                requestedResult: s.requestedResult,
+                constraints: s.constraints,
+                dependsOn: s.dependsOn,
+                costCeilingUsd: s.costCeilingUsd,
+                deadlineAt: s.deadlineAt,
+                preferredWorkerPeerId: s.preferredWorkerPeerId,
+                createdAt: s.createdAt,
+              }))
+            : undefined,
       });
       if (!result.ok) {
         const err =
@@ -260,7 +276,7 @@ export function ChainStartDialog({
     } finally {
       setStarting(false);
     }
-  }, [goal, hasWorkers, iterationMaxRounds, iterationJudgeMode, extendMaxStepsPerRound, nodeService, onClose, onStarted, selectedPeerIds, showToast, t]);
+  }, [goal, hasWorkers, iterationMaxRounds, iterationJudgeMode, extendMaxStepsPerRound, nodeService, onClose, onStarted, preview, selectedPeerIds, showToast, t]);
 
   const handleSaveRecipe = useCallback(async () => {
     setSavingRecipe(true);

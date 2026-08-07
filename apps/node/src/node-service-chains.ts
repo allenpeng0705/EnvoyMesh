@@ -277,25 +277,43 @@ export interface ChainContext {
       waitingForOwner?: boolean;
       stopReason?: string;
     };
-    /** Restrict worker discovery to these agent peer IDs. Empty/absent = use all. */
-    preferredWorkerPeerIds?: string[];
-  }): Promise<
-    | {
-        ok: true;
-        chainId: string;
-        chainMandateId: string;
-        subtasks: Array<{
-          subtaskId: string;
-          depth?: number;
-          requiredSkill?: string;
-          objective?: string;
-          preferredWorkerPeerId?: string;
-        }>;
-        assignerPeerId?: string;
-        handedOff?: boolean;
-      }
-    | { ok: false; error: string }
-  >;
+  /** Restrict worker discovery to these agent peer IDs. Empty/absent = use all. */
+  preferredWorkerPeerIds?: string[];
+  /**
+   * Adopt a previewed plan instead of calling `planChain` again.
+   * Subtask ids / dependsOn / preferred assignees are preserved; chainId and
+   * chainMandateId are rewritten onto the live mandate.
+   */
+  plannedSubtasks?: Array<{
+    subtaskId: string;
+    depth: number;
+    requiredSkill: string;
+    objective: string;
+    requestedResult?: string;
+    constraints?: string[];
+    dependsOn?: string[];
+    costCeilingUsd?: number;
+    deadlineAt?: string;
+    preferredWorkerPeerId?: string;
+    createdAt?: string;
+  }>;
+}): Promise<
+  | {
+      ok: true;
+      chainId: string;
+      chainMandateId: string;
+      subtasks: Array<{
+        subtaskId: string;
+        depth?: number;
+        requiredSkill?: string;
+        objective?: string;
+        preferredWorkerPeerId?: string;
+      }>;
+      assignerPeerId?: string;
+      handedOff?: boolean;
+    }
+  | { ok: false; error: string }
+>;
   /** Recipe persistence (optional — the runtime returns the builtin list when absent).
    *  Types are intentionally loose: the class is the source of truth for the
    *  recipe row shape, and the runtime just passes rows through. */
@@ -852,6 +870,12 @@ export async function chainPreviewGoalViaRuntime(
       objective: s.objective,
       workerCount: (workersBySubtask[s.subtaskId] ?? []).length,
       preferredWorkerPeerId: s.preferredWorkerPeerId,
+      requestedResult: s.requestedResult,
+      constraints: s.constraints,
+      dependsOn: s.dependsOn,
+      costCeilingUsd: s.costCeilingUsd,
+      deadlineAt: s.deadlineAt,
+      createdAt: s.createdAt,
     })),
     estimatedCostRange,
     suggestedWorkers,
@@ -875,21 +899,66 @@ export async function chainStartFromGoalViaRuntime(
     return { ok: false, error: "no_goal" };
   }
   const remoteAssigner = Boolean(params.assignerPeerId?.trim());
-  if (remoteAssigner) {
+  const plannedSubtasks =
+    params.plannedSubtasks && params.plannedSubtasks.length > 0
+      ? params.plannedSubtasks
+      : undefined;
+
+  // When the UI already previewed, reuse that plan (no second LLM decompose).
+  // Without a frozen plan, runChainGoal plans once — do not preview first.
+  if (!remoteAssigner && !plannedSubtasks) {
+    const preview = await chainPreviewGoalViaRuntime(ctx, {
+      goal,
+      templateId: params.templateId,
+      maxChainCostUsd: params.maxChainCostUsd ?? template?.maxChainCostUsd,
+      costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd,
+      allowLlm: params.allowLlm,
+      preferredWorkerPeerIds: params.preferredWorkerPeerIds,
+    });
+    if (!preview.ok || preview.subtasks.length === 0) {
+      return {
+        ok: false,
+        error: preview.reason ?? "plan_failed",
+        diagnostics: preview.diagnostics,
+      };
+    }
+    const hasWorkers = preview.subtasks.some((s) => s.workerCount > 0);
+    if (!hasWorkers) {
+      return {
+        ok: false,
+        error: "no_workers",
+        diagnostics: preview.diagnostics,
+        estimatedCostRange: preview.estimatedCostRange,
+      };
+    }
+    // Adopt preview plan so Start does not call planChain again.
+    const reused = preview.subtasks.map((s) => ({
+      subtaskId: s.subtaskId,
+      depth: s.depth,
+      requiredSkill: s.requiredSkill,
+      objective: s.objective,
+      requestedResult: s.requestedResult,
+      constraints: s.constraints,
+      dependsOn: s.dependsOn,
+      costCeilingUsd: s.costCeilingUsd,
+      deadlineAt: s.deadlineAt,
+      preferredWorkerPeerId: s.preferredWorkerPeerId,
+      createdAt: s.createdAt,
+    }));
     const result = await ctx.runChainGoal({
       goal,
       maxChainCostUsd: params.maxChainCostUsd ?? template?.maxChainCostUsd,
       costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd,
       allowLlm: params.allowLlm,
-      assignerPeerId: params.assignerPeerId!.trim(),
       iterationMaxRounds: params.iterationMaxRounds,
       iterationJudgeMode: params.iterationJudgeMode,
       extendMaxStepsPerRound: params.extendMaxStepsPerRound,
       iterationWire: params.iterationState,
       preferredWorkerPeerIds: params.preferredWorkerPeerIds,
+      plannedSubtasks: reused,
     });
     if (!result.ok) {
-      return { ok: false, error: result.error };
+      return { ok: false, error: result.error, diagnostics: preview.diagnostics };
     }
     return {
       ok: true,
@@ -902,47 +971,26 @@ export async function chainStartFromGoalViaRuntime(
         objective: s.objective ?? "",
         preferredWorkerPeerId: s.preferredWorkerPeerId,
       })),
-      assignerPeerId: (result as { assignerPeerId?: string }).assignerPeerId,
-      handedOff: (result as { handedOff?: boolean }).handedOff,
-    };
-  }
-  const preview = await chainPreviewGoalViaRuntime(ctx, {
-    goal,
-    templateId: params.templateId,
-    maxChainCostUsd: params.maxChainCostUsd ?? template?.maxChainCostUsd,
-    costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd,
-    allowLlm: params.allowLlm,
-    preferredWorkerPeerIds: params.preferredWorkerPeerIds,
-  });
-  if (!preview.ok || preview.subtasks.length === 0) {
-    return {
-      ok: false,
-      error: preview.reason ?? "plan_failed",
-      diagnostics: preview.diagnostics,
-    };
-  }
-  const hasWorkers = preview.subtasks.some((s) => s.workerCount > 0);
-  if (!hasWorkers) {
-    return {
-      ok: false,
-      error: "no_workers",
-      diagnostics: preview.diagnostics,
       estimatedCostRange: preview.estimatedCostRange,
+      diagnostics: preview.diagnostics,
     };
   }
+
   const result = await ctx.runChainGoal({
     goal,
     maxChainCostUsd: params.maxChainCostUsd ?? template?.maxChainCostUsd,
     costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd,
     allowLlm: params.allowLlm,
+    assignerPeerId: remoteAssigner ? params.assignerPeerId!.trim() : undefined,
     iterationMaxRounds: params.iterationMaxRounds,
     iterationJudgeMode: params.iterationJudgeMode,
     extendMaxStepsPerRound: params.extendMaxStepsPerRound,
     iterationWire: params.iterationState,
     preferredWorkerPeerIds: params.preferredWorkerPeerIds,
+    plannedSubtasks,
   });
   if (!result.ok) {
-    return { ok: false, error: result.error, diagnostics: preview.diagnostics };
+    return { ok: false, error: result.error };
   }
   return {
     ok: true,
@@ -955,8 +1003,8 @@ export async function chainStartFromGoalViaRuntime(
       objective: s.objective ?? "",
       preferredWorkerPeerId: s.preferredWorkerPeerId,
     })),
-    estimatedCostRange: preview.estimatedCostRange,
-    diagnostics: preview.diagnostics,
+    assignerPeerId: (result as { assignerPeerId?: string }).assignerPeerId,
+    handedOff: (result as { handedOff?: boolean }).handedOff,
   };
 }
 

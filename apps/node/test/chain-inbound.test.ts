@@ -447,7 +447,20 @@ describe("dispatchChainEnvelope", () => {
     expect(audit.events.some((e) => (e as { outcome?: string }).outcome === "deny")).toBe(true);
   });
 
-  it("capability gate: task.chain.bid rejected when node lacks chain.orchestrate", async () => {
+  it("capability gate: task.chain.bid rejected without live orch state when node lacks chain.orchestrate", async () => {
+    const audit = makeAudit();
+    const handler = vi.fn().mockResolvedValue({ ok: true as const });
+    const r = await dispatchChainEnvelope(
+      makeDeps(audit.sink, { nodeCapabilities: ["task.execute"], orchestratorBid: handler }),
+      envelope("task.chain.bid", bidPayload()),
+      // no inbound state — stranger bid to a non-orchestrator
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("missing_orchestrator_capability");
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("capability gate: task.chain.bid accepted with live orch state even without EMP chain.orchestrate", async () => {
     const audit = makeAudit();
     const handler = vi.fn().mockResolvedValue({ ok: true as const });
     const r = await dispatchChainEnvelope(
@@ -455,9 +468,8 @@ describe("dispatchChainEnvelope", () => {
       envelope("task.chain.bid", bidPayload()),
       makeInboundState(),
     );
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toBe("missing_orchestrator_capability");
-    expect(handler).not.toHaveBeenCalled();
+    expect(r.ok).toBe(true);
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 
   it("capability gate: task.chain.mandate accepted when node has task.execute only", async () => {

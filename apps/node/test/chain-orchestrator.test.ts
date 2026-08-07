@@ -26,6 +26,7 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
+  advanceReadySubtasks,
   chainStateSnapshot,
   createChainState,
   evaluateBids,
@@ -260,6 +261,41 @@ describe("launchChain", () => {
     // 2 mandates + 2 proposes = 4 envelopes.
     expect(deps.sentEnvelopes.length).toBe(4);
     expect(deps.auditEvents.some((e) => e.type === "chain.launched")).toBe(true);
+  });
+
+  it("does not mark proposed when every propose send fails", async () => {
+    const deps = makeDeps({ sendResult: false });
+    const state = createChainState(mandate());
+    state.subtasks.set("subtask_a", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      chainMandateId: "chainmandate_test-1",
+      depth: 1,
+      requiredSkill: "task.execute",
+      objective: "step one",
+      requestedResult: "r1",
+      constraints: [],
+      dependsOn: [],
+      createdAt: NOW.toISOString(),
+    });
+    const r = await launchChain(deps, state, {
+      subtask_a: ["12D3KooW-w1"],
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.proposed).toBe(0);
+    expect(state.proposedSubtasks.has("subtask_a")).toBe(false);
+    // advanceReadySubtasks can retry later
+    const advanced = await advanceReadySubtasks(
+      { ...deps, sendEnvelope: async (recipientPeerId, envelope, payload) => {
+        deps.sentEnvelopes.push({ recipientPeerId, envelope, payload });
+        return true;
+      } },
+      state,
+    );
+    expect(advanced.proposed).toBe(1);
+    expect(state.proposedSubtasks.has("subtask_a")).toBe(true);
   });
 
   it("defers dependents until parents finish, then advances with parent context", async () => {

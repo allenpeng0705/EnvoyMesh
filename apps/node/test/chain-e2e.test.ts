@@ -635,7 +635,7 @@ describe("chain-e2e", () => {
     expect(w.pendingBidExpirations.has("subtask_a")).toBe(true);
   });
 
-  it("dispatchChainEnvelope gates task.chain.bid on missing chain.orchestrate capability", async () => {
+  it("dispatchChainEnvelope gates task.chain.bid without live orch state when EMP lacks chain.orchestrate", async () => {
     const orch = makeOrchestrator();
     let bidRejected = false;
     const audit: Array<Record<string, unknown>> = [];
@@ -689,7 +689,7 @@ describe("chain-e2e", () => {
         correlationId: "chain_x",
         signature: "stub",
       },
-      { chainId: "chain_x", lastHeartbeatAt: new Map(), lastConfidence: new Map() },
+      // No live orch runtime — stranger bid must still require EMP chain.orchestrate.
     );
     expect(r.ok).toBe(false);
     if (r.ok) return;

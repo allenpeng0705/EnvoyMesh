@@ -23,7 +23,7 @@ import type {
   NodeServiceEvents,
 } from "@envoymesh/api";
 import type { ChainReport, ChainSubtask, ChainSubtaskBid, EnvoyEnvelope, EnvoyIntent } from "@envoymesh/protocol";
-import { ChainHandoffRequestPayloadSchema } from "@envoymesh/protocol";
+import { ChainHandoffRequestPayloadSchema, ChainSubtaskSchema } from "@envoymesh/protocol";
 import { createApprovalItem, isAgentNetworkMember, rankWorkersByScore, scoreAgentNetworkWorker } from "@envoymesh/api";
 import { hasDirectPrivateLanDialHints, type EnvoyMesh } from "@envoymesh/network";
 import { anLog, shortId } from "./agent-network-debug.js";
@@ -1361,6 +1361,23 @@ export async function _runChainGoal(
     iterationWire?: import("./chain-iteration.js").IterationWireBlob;
     /** Restrict worker discovery to these agent peer IDs. Empty/absent = use all. */
     preferredWorkerPeerIds?: string[];
+    /**
+     * Adopt a previewed plan instead of calling `planChain` again.
+     * Rewrites chainId / chainMandateId onto the live mandate.
+     */
+    plannedSubtasks?: Array<{
+      subtaskId: string;
+      depth: number;
+      requiredSkill: string;
+      objective: string;
+      requestedResult?: string;
+      constraints?: string[];
+      dependsOn?: string[];
+      costCeilingUsd?: number;
+      deadlineAt?: string;
+      preferredWorkerPeerId?: string;
+      createdAt?: string;
+    }>;
   },
 ): Promise<{
   ok: boolean;
@@ -1446,9 +1463,48 @@ export async function _runChainGoal(
     },
   });
 
-  const plan = await planChain(await buildChainOrchestratorDeps(deps), state, input.goal, {
-    allowLlm: input.allowLlm ?? nodeDefaults.allowLlmDecompose ?? false,
-  });
+  let plan: { ok: true; subtasks: ChainSubtask[] } | { ok: false; reason: string };
+  if (input.plannedSubtasks && input.plannedSubtasks.length > 0) {
+    const nowIso = new Date().toISOString();
+    try {
+      const steps = input.plannedSubtasks.map((s) =>
+        ChainSubtaskSchema.parse({
+          version: "0.1" as const,
+          subtaskId: s.subtaskId,
+          chainId,
+          chainMandateId,
+          depth: Math.min(3, Math.max(1, Math.floor(s.depth) || 1)),
+          requiredSkill: s.requiredSkill,
+          objective: s.objective,
+          requestedResult: (s.requestedResult?.trim() || "result of the goal").slice(0, 1000),
+          constraints: s.constraints ?? [],
+          dependsOn: s.dependsOn ?? [],
+          costCeilingUsd: s.costCeilingUsd,
+          deadlineAt: s.deadlineAt ?? mandate.deadlineAt,
+          preferredWorkerPeerId: s.preferredWorkerPeerId,
+          createdAt: s.createdAt ?? nowIso,
+        }),
+      );
+      for (const step of steps) state.subtasks.set(step.subtaskId, step);
+      plan = { ok: true, subtasks: steps };
+      void _appendChainAudit(deps, {
+        type: "chain.launched",
+        outcome: "record",
+        intent: "task.chain.propose",
+        correlationId: chainId,
+        summary: `adopted_preview_plan steps=${steps.length}`,
+      });
+    } catch (err) {
+      plan = {
+        ok: false,
+        reason: err instanceof Error ? err.message : "invalid_planned_subtasks",
+      };
+    }
+  } else {
+    plan = await planChain(await buildChainOrchestratorDeps(deps), state, input.goal, {
+      allowLlm: input.allowLlm ?? nodeDefaults.allowLlmDecompose ?? false,
+    });
+  }
   if (!plan.ok) {
     return { ok: false, chainId, chainMandateId, subtasks: [], error: `plan failed: ${(plan as { reason: string }).reason}` };
   }
@@ -1531,6 +1587,13 @@ export async function _runChainGoal(
       if (chosen.length === 0 && ranked.length > 0) chosen = [ranked[0]!.peerId];
     }
     workersBySubtask[subtask.subtaskId] = chosen;
+    // Keep subtask.preferred in sync with the filtered worker list so launch
+    // proposes the same primary the owner selected / ranking chose.
+    if (chosen[0] && subtask.preferredWorkerPeerId !== chosen[0]) {
+      if (!preferred || !chosen.includes(preferred)) {
+        subtask.preferredWorkerPeerId = chosen[0];
+      }
+    }
     maxWorkers = Math.max(maxWorkers, candidates.length);
     totalWorkers += chosen.length > 0 ? 1 : 0;
   }

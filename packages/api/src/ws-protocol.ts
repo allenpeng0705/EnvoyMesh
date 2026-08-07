@@ -2113,6 +2113,13 @@ export interface ChainPreviewGoalResult {
     workerCount: number;
     /** Plan+assign primary assignee (agent peer id), when known. */
     preferredWorkerPeerId?: string;
+    /** Full plan fields — pass through to `chainStartFromGoal.plannedSubtasks`. */
+    requestedResult?: string;
+    constraints?: string[];
+    dependsOn?: string[];
+    costCeilingUsd?: number;
+    deadlineAt?: string;
+    createdAt?: string;
   }>;
   estimatedCostRange?: { minUsd: number; maxUsd: number };
   suggestedWorkers?: ChainPreviewSuggestedWorker[];
@@ -2175,6 +2182,24 @@ export interface ChainStartFromGoalParams {
    * (`card.sourceAgentPeerId`). Empty/absent = use all discovered workers.
    */
   preferredWorkerPeerIds?: string[];
+  /**
+   * Reuse a plan from `chainPreviewGoal` so Start does not re-decompose /
+   * re-assign (avoids UI assignee drift). Subtask ids / dependsOn / preferred
+   * assignees are adopted onto the new chain mandate.
+   */
+  plannedSubtasks?: Array<{
+    subtaskId: string;
+    depth: number;
+    requiredSkill: string;
+    objective: string;
+    requestedResult?: string;
+    constraints?: string[];
+    dependsOn?: string[];
+    costCeilingUsd?: number;
+    deadlineAt?: string;
+    preferredWorkerPeerId?: string;
+    createdAt?: string;
+  }>;
 }
 
 export interface ChainResolveIterationParams {
