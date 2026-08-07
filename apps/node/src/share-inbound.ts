@@ -47,9 +47,24 @@ export async function resolveSenderOwnerId(
     if (r.peerId === senderPeerId || r.peerId === remotePeerId) {
       return r.ownerId;
     }
-    const pem = r.devicePublicKeyPem?.trim();
-    if (pem && derivePeerId(pem) === senderPeerId) {
-      return r.ownerId;
+    // Match device PEM → envoy_ peer id. Do NOT trim before derivePeerId —
+    // trailing newlines are part of how keys are serialized and hashed;
+    // trimming produces a different peer id and falsely demotes bonded
+    // readers to strangers (library.read returns not_found for profile/blog).
+    const pem = r.devicePublicKeyPem;
+    if (!pem) continue;
+    try {
+      if (derivePeerId(pem) === senderPeerId) return r.ownerId;
+    } catch {
+      /* ignore bad PEM */
+    }
+    const trimmed = pem.trim();
+    if (trimmed !== pem) {
+      try {
+        if (derivePeerId(trimmed) === senderPeerId) return r.ownerId;
+      } catch {
+        /* ignore */
+      }
     }
   }
   return undefined;

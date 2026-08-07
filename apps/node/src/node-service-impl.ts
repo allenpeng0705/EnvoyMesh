@@ -3542,8 +3542,105 @@ class NodeServiceImpl implements NodeService {
       }),
       agentIdentity.agentPrivateKeyPem,
     );
-    await this._deliverCallEnvelope(transportPeerId, envelope, dialHints, listenAddrs);
+    const deliver = await this._deliverCallEnvelope(
+      transportPeerId,
+      envelope,
+      dialHints,
+      listenAddrs,
+    );
+    if (!deliver.delivered) {
+      return { ok: false, error: "agent.card.request not delivered" };
+    }
     return { ok: true };
+  }
+
+  /**
+   * Push our current Agent Card to bonded peers (unsolicited `agent.card.response`).
+   * Needed when Join Agent Network flips on: peers only learn `capability-provider`
+   * from our card, and a pull-only refresh on our side does not update their cache.
+   */
+  async announceLocalAgentCardToBondedPeers(): Promise<{ announced: number; failed: number }> {
+    this._assertOnline();
+    const agentIdentity = await this._ensureAgentIdentity();
+    if (!agentIdentity) return { announced: 0, failed: 0 };
+    const profile = this._requireProfile();
+    this._requireMesh();
+    const cfg = await this.getNodeConfig();
+    const { buildLocalAgentCard } = await import("./agent-card-inbound.js");
+    const { createAgentCardResponsePayload } = await import("@envoymesh/protocol");
+    const card = await buildLocalAgentCard({
+      profile,
+      humanProfileStore: this._humanProfileStore,
+      profileDir: this._profileDir,
+      capabilityProviderEnabled: cfg.capabilityProviderEnabled === true,
+      agentNetworkProfile: cfg.agentNetworkProfile,
+    });
+    const payload = createAgentCardResponsePayload(card);
+    let announced = 0;
+    let failed = 0;
+    const bonds = (await this.getBonds()).filter(
+      (bond) => bond.level === "direct" || bond.level === "referred",
+    );
+    const outcomes = await mapPoolSettled(
+      bonds,
+      AGENT_CARD_REFRESH_CONCURRENCY,
+      async (bond) => {
+        try {
+          let connected = false;
+          try {
+            connected = (await this.getPeerConnectionInfo(bond.peerOwnerId)).connected;
+          } catch {
+            /* offline */
+          }
+          if (!connected) {
+            try {
+              await raceWithTimeout(
+                this.warmContactConnection(bond.peerOwnerId),
+                AGENT_CARD_REFRESH_WARM_MS,
+                `agentCardAnnounceWarm(${bond.peerOwnerId.slice(0, 16)}…)`,
+              );
+            } catch {
+              /* still offline */
+            }
+          }
+          const { transportPeerId, recipientEnvelopePeerId, listenAddrs } =
+            await this._resolvePeerTransportForOwner(bond.peerOwnerId.trim());
+          const timeoutMs = agentCardRefreshTimeoutMs(
+            (await this.getPeerConnectionInfo(bond.peerOwnerId).catch(() => ({ connected: false })))
+              .connected,
+          );
+          const dialHints = await raceWithTimeout(
+            this._dialHintsForChat(transportPeerId, listenAddrs),
+            agentCardDialHintsBudgetMs(timeoutMs),
+            "_dialHintsForChat",
+          );
+          const envelope = signUnsignedEnvelope(
+            createUnsignedEnvelope({
+              senderPeerId: agentIdentity.agentPeerId,
+              senderPublicKey: agentIdentity.agentPublicKeyPem,
+              senderRole: "agent",
+              recipientPeerId: recipientEnvelopePeerId,
+              recipientRole: "agent",
+              intent: "agent.card.response",
+              payload,
+              agentCredential: agentIdentity.agentCredential,
+            }),
+            agentIdentity.agentPrivateKeyPem,
+          );
+          const deliver = await raceWithTimeout(
+            this._deliverCallEnvelope(transportPeerId, envelope, dialHints, listenAddrs),
+            timeoutMs,
+            `announceAgentCard(${bond.peerOwnerId.slice(0, 16)}…)`,
+          );
+          return Boolean(deliver?.delivered);
+        } catch {
+          return false;
+        }
+      },
+    );
+    announced = outcomes.filter((ok) => ok).length;
+    failed = outcomes.filter((ok) => !ok).length;
+    return { announced, failed };
   }
 
   /**
@@ -3557,11 +3654,30 @@ class NodeServiceImpl implements NodeService {
    * Timing: warm offline peers briefly, then use a short timeout when already
    * connected and a longer relay budget otherwise. Requests run in parallel
    * (bounded concurrency) so a few slow peers don't serialize the whole RPC.
+   *
+   * When this node has Join Agent Network enabled, also push our card so peers
+   * learn `capability-provider` without waiting for them to pull.
    */
   async refreshAgentNetworkWorkers(): Promise<{ requested: number; failed: number }> {
     let requested = 0;
     let failed = 0;
     try {
+      const cfg = await this.getNodeConfig();
+      if (cfg.capabilityProviderEnabled === true) {
+        try {
+          const pushed = await this.announceLocalAgentCardToBondedPeers();
+          if (pushed.failed > 0) {
+            console.warn(
+              `[agent-network] announceLocalAgentCard: announced=${pushed.announced} failed=${pushed.failed}`,
+            );
+          }
+        } catch (err) {
+          console.warn(
+            "[agent-network] announceLocalAgentCardToBondedPeers failed:",
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
       const bonds = (await this.getBonds()).filter(
         (bond) => bond.level === "direct" || bond.level === "referred",
       );
@@ -3607,6 +3723,8 @@ class NodeServiceImpl implements NodeService {
     }
     try {
       await this.refreshCapabilityIndex();
+      const cards = await this.listAgentCards();
+      this.emit("home:agent-cards-updated", { cards });
     } catch (err) {
       console.warn("[agent-network] refreshCapabilityIndex failed:", err);
     }
@@ -7138,8 +7256,8 @@ class NodeServiceImpl implements NodeService {
           console.warn("[family] sync aiBots to owner profile failed:", err);
         }
       }
-      // Join Agent Network changes what our card advertises; refresh the local
-      // index and re-fetch bonded peers so Team jobs see the soft pool promptly.
+      // Join Agent Network changes what our card advertises; refresh pulls peers'
+      // cards and (when joining) pushes ours so both sides see capability-provider.
       if (joinToggled) {
         void this.refreshAgentNetworkWorkers().catch((err) => {
           console.warn("[agent-network] refresh after Join toggle failed:", err);

@@ -891,12 +891,17 @@ export async function libraryReadViaRuntime(
       correlationId: randomUUID(),
     });
     const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
+    // Pass listen addrs + rebuild like profile.request — library.read uses the
+    // message protocol (not chat), so prepareOutboundPeerConnection must get
+    // the same same-LAN / overlay dial hints or expect-reply fails while chat works.
     const reply = await sendExpectReplyWithRetry({
       mesh: mesh as never,
       transportPeerId,
       envelope,
       dialHints,
+      peerListenAddrs: listenAddrs,
       timeoutMs,
+      rebuildDialHints: () => ctx.dialHintsForChat(transportPeerId, listenAddrs),
     });
     const latencyMs = Date.now() - started;
 

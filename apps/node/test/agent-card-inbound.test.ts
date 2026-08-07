@@ -16,7 +16,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { handleInboundAgentCardIntent } from "../src/agent-card-inbound.js";
+import { handleInboundAgentCardIntent, buildLocalAgentCard } from "../src/agent-card-inbound.js";
 
 let profileDir: string;
 let taskStore: ReturnType<typeof createLocalTaskStore>;
@@ -261,5 +261,26 @@ describe("handleInboundAgentCardIntent", () => {
     });
 
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("buildLocalAgentCard", () => {
+  it("includes capability-provider when Join Agent Network is enabled", async () => {
+    const card = await buildLocalAgentCard({
+      profile: makeTestProfile() as never,
+      humanProfileStore,
+      capabilityProviderEnabled: true,
+    });
+    expect(card.capabilities).toContain("capability-provider");
+    expect(card.ownerId).toBe(OWNER_ID);
+  });
+
+  it("omits capability-provider when Join is off", async () => {
+    const card = await buildLocalAgentCard({
+      profile: makeTestProfile() as never,
+      humanProfileStore,
+      capabilityProviderEnabled: false,
+    });
+    expect(card.capabilities).not.toContain("capability-provider");
   });
 });

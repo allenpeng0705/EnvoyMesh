@@ -212,6 +212,15 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
     return () => clearInterval(timer);
   }, [loadReachability]);
 
+  // Pull + push agent cards once when Team jobs opens so Join'd peers appear
+  // without a manual Settings → Refresh workers click.
+  useEffect(() => {
+    if (!nodeService.isConnected) return;
+    void nodeService.refreshAgentNetworkWorkers().catch((err) => {
+      console.error("[ChainsView] refreshAgentNetworkWorkers failed:", err);
+    });
+  }, [nodeService]);
+
   useEffect(() => {
     const unsub = nodeService.on("chain:state", (state) => {
       setChains((prev) => {

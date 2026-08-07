@@ -30,6 +30,7 @@ import {
   type WebContentStore,
 } from "./web-content-store.js";
 import { mimeTypeForFilename } from "./node-service-fileshare.js";
+import { derivePeerId } from "@envoymesh/identity";
 import { resolveSenderOwnerId as resolveOwnerFromPeerDirectory } from "./share-inbound.js";
 
 /** Prefer path extension over a stale/wrong manifest mimeType (e.g. index.html stored as text/markdown). */
@@ -37,6 +38,33 @@ function resolveContentType(normalizedPath: string, entryMimeType?: string): str
   const fromName = mimeTypeForFilename(normalizedPath);
   if (fromName !== "application/octet-stream") return fromName;
   return entryMimeType ?? fromName;
+}
+
+async function resolveSenderOwnerId(
+  envelope: EnvoyEnvelope,
+  remotePeerId: string,
+  peerDirectoryStore: LocalPeerDirectoryStore,
+): Promise<string | undefined> {
+  if (envelope.agentCredential?.ownerId) {
+    return envelope.agentCredential.ownerId;
+  }
+  const fromDir = await resolveOwnerFromPeerDirectory(
+    envelope.senderPeerId,
+    remotePeerId,
+    peerDirectoryStore,
+  );
+  if (fromDir) return fromDir;
+  // Directory may lack the envoy_ device id row but still have PEM / other
+  // peer ids. Re-resolve using the signed device public key from the envelope.
+  try {
+    const fromPem = derivePeerId(envelope.senderPublicKey);
+    if (fromPem && fromPem !== envelope.senderPeerId) {
+      return resolveOwnerFromPeerDirectory(fromPem, remotePeerId, peerDirectoryStore);
+    }
+  } catch {
+    /* ignore bad PEM */
+  }
+  return undefined;
 }
 
 /** Result of the inbound handler. */
@@ -66,23 +94,6 @@ async function hashFileSha256(absPath: string): Promise<string> {
     hash.update(chunk as Buffer);
   }
   return hash.digest("hex");
-}
-
-/**
- * Resolve the owner ID for a sender using the peer directory.
- * Uses the same PEM→peerId fallback as share/chat so a stale libp2p peerId
- * on the contact row does not demote a bonded peer to stranger (which would
- * return not_found for bonded profile portals).
- */
-async function resolveSenderOwnerId(
-  envelope: EnvoyEnvelope,
-  remotePeerId: string,
-  peerDirectoryStore: LocalPeerDirectoryStore,
-): Promise<string | undefined> {
-  if (envelope.agentCredential?.ownerId) {
-    return envelope.agentCredential.ownerId;
-  }
-  return resolveOwnerFromPeerDirectory(envelope.senderPeerId, remotePeerId, peerDirectoryStore);
 }
 
 export interface HandleInboundLibraryReadInput {

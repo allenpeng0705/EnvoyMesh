@@ -60,6 +60,37 @@ async function buildPublicTopics(input: {
   return topics.slice(0, 32);
 }
 
+/** Build the local Agent Card for responses / proactive announce to bonded peers. */
+export async function buildLocalAgentCard(input: {
+  profile: NodeProfile;
+  humanProfileStore: HumanProfileStore;
+  profileDir?: string;
+  capabilityProviderEnabled?: boolean;
+  agentNetworkProfile?: import("@envoymesh/protocol").AgentNetworkProfile;
+}): Promise<AgentCard> {
+  const human = await input.humanProfileStore.loadHumanProfile().catch(() => null);
+  const ownerId = input.profile.owner.ownerId;
+  const publicTopics = await buildPublicTopics({
+    hobbies: human?.hobbies,
+    knowledge: human?.knowledge,
+    profileDir: input.profileDir,
+  });
+  return createAgentCard({
+    ownerId,
+    displayName: human?.displayName ?? ownerId,
+    nodeProfile: input.profile.deviceCertificate.deviceProfile,
+    capabilities: withAgentNetworkMembership(
+      input.profile.deviceCertificate.capabilities ?? ["message.send", "task.execute"],
+      input.capabilityProviderEnabled === true,
+    ),
+    publicTopics,
+    webContentRoot: `envoy://${ownerId}/`,
+    ...(input.capabilityProviderEnabled === true && input.agentNetworkProfile
+      ? { agentNetworkProfile: input.agentNetworkProfile }
+      : {}),
+  });
+}
+
 export async function handleInboundAgentCardIntent(input: {
   envelope: EnvoyEnvelope;
   profile: NodeProfile;
@@ -143,26 +174,12 @@ export async function handleInboundAgentCardIntent(input: {
 
   if (envelope.intent === "agent.card.request") {
     parseAgentCardRequestPayload(envelope.payload);
-    const human = await humanProfileStore.loadHumanProfile().catch(() => null);
-    const ownerId = profile.owner.ownerId;
-    const publicTopics = await buildPublicTopics({
-      hobbies: human?.hobbies,
-      knowledge: human?.knowledge,
+    const card = await buildLocalAgentCard({
+      profile,
+      humanProfileStore,
       profileDir: input.profileDir,
-    });
-    const card = createAgentCard({
-      ownerId,
-      displayName: human?.displayName ?? ownerId,
-      nodeProfile: profile.deviceCertificate.deviceProfile,
-      capabilities: withAgentNetworkMembership(
-        profile.deviceCertificate.capabilities ?? ["message.send", "task.execute"],
-        input.capabilityProviderEnabled === true,
-      ),
-      publicTopics,
-      webContentRoot: `envoy://${ownerId}/`,
-      ...(input.capabilityProviderEnabled === true && input.agentNetworkProfile
-        ? { agentNetworkProfile: input.agentNetworkProfile }
-        : {}),
+      capabilityProviderEnabled: input.capabilityProviderEnabled,
+      agentNetworkProfile: input.agentNetworkProfile,
     });
     return {
       ok: true,
