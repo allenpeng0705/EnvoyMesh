@@ -11,6 +11,7 @@ import { createUnsignedEnvelope, type EnvoyEnvelope } from "@envoymesh/protocol"
 import { ENVOY_MESSAGE_PROTOCOL, type EnvoyMesh } from "@envoymesh/network";
 import { sendEnvelopeWithRetry } from "./chat-outbound-deliver.js";
 import { handleInboundAgentCardIntent } from "./agent-card-inbound.js";
+import { markOutboundPeerVerified } from "./outbound-peer-freshness.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 import type { NodeServiceImpl } from "./node-service-impl.js";
 
@@ -92,6 +93,11 @@ export async function handleDaemonAgentCardInbound(input: {
       agentCredential: input.bridgeIdentity.agentCredential,
     });
     const signedResponse = signUnsignedEnvelope(unsignedResponse, input.bridgeIdentity.agentPrivateKeyPem);
+    // We just received an inbound request from this peer — the connection is
+    // known-good. Mark it verified so prepareOutboundPeerConnection reuses the
+    // open connection instead of verifying/redialing (which fails when we have
+    // no peer-directory entry for the requester, e.g. one-sided bond).
+    markOutboundPeerVerified(input.remotePeerId);
     await sendEnvelopeWithRetry({
       mesh: input.mesh,
       transportPeerId: input.remotePeerId,

@@ -3551,8 +3551,17 @@ class NodeServiceImpl implements NodeService {
         if (bond.level !== "direct" && bond.level !== "referred") continue;
         requested += 1;
         try {
-          const result = await this.requestAgentCard(bond.peerOwnerId);
-          if (!result.ok) failed += 1;
+          // Per-peer timeout: requestAgentCard can hang for 30s+ on offline
+          // peers (dial timeout). With N bonds this blocks the JSON-RPC call
+          // and freezes the Team jobs UI. 12s per peer is enough for a
+          // connected peer (card exchange is <1s) while bounding the worst
+          // case for offline peers.
+          const result = await raceWithTimeout(
+            this.requestAgentCard(bond.peerOwnerId),
+            12_000,
+            `requestAgentCard(${bond.peerOwnerId.slice(0, 16)}…)`,
+          );
+          if (!result || !result.ok) failed += 1;
         } catch {
           failed += 1;
         }
