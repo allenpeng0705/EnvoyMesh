@@ -488,19 +488,34 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     void ctx.refreshCapabilityIndex().catch((err) => {
       console.warn("[chain] refreshCapabilityIndex after node:online failed:", err);
     });
-    // Re-fetch agent cards from bonded peers shortly after going online so the
+    // Re-fetch agent cards from bonded peers after going online so the
     // Team jobs view reflects each peer's current capabilityProvider /
-    // agentNetworkProfile state. Without this, a restart leaves the local node
-    // with stale cached cards — if a peer's opt-in or profile changed (or was
-    // lost due to a config bug), the local node wouldn't see the update until
-    // someone manually clicked "Refresh workers". The 5s delay gives the mesh
-    // time to re-establish direct connections before we fire card requests.
-    const agentCardRefresh = setTimeout(() => {
-      void ctx.refreshAgentNetworkWorkers().catch((err) => {
-        console.warn("[chain] refreshAgentNetworkWorkers after node:online failed:", err);
-      });
-    }, 5_000);
-    ctx.setAgentCardRefreshStartupTimeout(agentCardRefresh);
+    // agentNetworkProfile state. Retry with backoff because relay circuit
+    // connections can take minutes to establish — a single 5s attempt fails
+    // for any peer that isn't immediately reachable, leaving Team jobs empty
+    // until a manual refresh. The schedule covers the first ~6 minutes after
+    // startup, which is enough for even slow relay circuit reservations.
+    const agentCardRetryDelays = [5_000, 30_000, 60_000, 120_000, 180_000];
+    let agentCardRetryIndex = 0;
+    const scheduleAgentCardRefresh = (): void => {
+      if (agentCardRetryIndex >= agentCardRetryDelays.length) return;
+      const delay = agentCardRetryDelays[agentCardRetryIndex++];
+      const timer = setTimeout(() => {
+        void ctx
+          .refreshAgentNetworkWorkers()
+          .then(({ failed }) => {
+            if (failed > 0) {
+              scheduleAgentCardRefresh();
+            }
+          })
+          .catch((err) => {
+            console.warn("[chain] refreshAgentNetworkWorkers after node:online failed:", err);
+            scheduleAgentCardRefresh();
+          });
+      }, delay);
+      ctx.setAgentCardRefreshStartupTimeout(timer);
+    };
+    scheduleAgentCardRefresh();
     ctx.startBondWarmInterval();
 
     // Wait for DHT to populate the routing table before advertising.

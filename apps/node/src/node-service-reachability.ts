@@ -100,6 +100,8 @@ export interface ReachabilityContext {
   flushFeedNotifyOutbox(): Promise<void>;
   /** Retry undelivered feed.engage (like/comment) outbox. */
   flushFeedEngageOutbox(): Promise<void>;
+  /** Request agent card from a bonded peer (best-effort, no throw). */
+  requestAgentCard?(ownerId: string): Promise<{ ok: boolean }>;
 }
 
 export function buildReachabilityContext(host: any): ReachabilityContext {
@@ -134,6 +136,7 @@ export function buildReachabilityContext(host: any): ReachabilityContext {
     resetNonEnvoyPeerFailCount: (peerId) => host._resetNonEnvoyPeerFailCount(peerId),
     flushFeedNotifyOutbox: () => host._flushFeedNotifyOutbox(),
     flushFeedEngageOutbox: () => host._flushFeedEngageOutbox(),
+    requestAgentCard: (ownerId) => host.requestAgentCard(ownerId),
   };
 }
 
@@ -387,8 +390,22 @@ export async function warmAllBondedContactsViaRuntime(ctx: ReachabilityContext):
         await ctx.warmContactConnection(bond.peerOwnerId, { keepAlive: true });
         continue;
       }
+      // Peer was disconnected — warm, then fetch agent card if it just came online.
+      // This bridges the gap between startup (where the 5s refresh fires before
+      // relay circuits are established) and steady-state (where the auto-fetcher
+      // only fires on NEW bond establishment, not reconnection of existing bonds).
       lastBondWarmAt.set(bond.peerOwnerId, now);
-      await ctx.warmContactConnection(bond.peerOwnerId);
+      const warmed = await ctx.warmContactConnection(bond.peerOwnerId);
+      if (warmed.connected && ctx.requestAgentCard) {
+        void ctx
+          .requestAgentCard(bond.peerOwnerId)
+          .catch((err) =>
+            console.warn(
+              `[bond-warm] requestAgentCard for ${bond.peerOwnerId.slice(0, 16)}… failed:`,
+              err instanceof Error ? err.message : err,
+            ),
+          );
+      }
     } catch {
       /* best-effort */
     }

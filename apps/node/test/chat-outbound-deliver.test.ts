@@ -100,7 +100,12 @@ describe("deliverChatEnvelopeWithRetry", () => {
     expect(sendChat).toHaveBeenCalledTimes(1);
   });
 
-  it("upgrades relay connection to direct before send when public direct hints exist", async () => {
+  it("skips relay-to-direct upgrade in critical send path (preserves working relay)", async () => {
+    // Relay-to-direct upgrade is intentionally skipped in the critical send
+    // path — the upgrade closes the working relay connection BEFORE the direct
+    // dial succeeds, and when the direct dial fails on stale LAN addresses the
+    // peer becomes completely unreachable. Direct path upgrades should happen
+    // in a background health task, not in the send path.
     const sendChatExpectReply = vi.fn().mockResolvedValue({
       intent: "chat.delivered",
       payload: {
@@ -129,12 +134,8 @@ describe("deliverChatEnvelopeWithRetry", () => {
       maxAttempts: 1,
     });
 
-    expect(closeConnectionsToPeer).toHaveBeenCalledWith("12D3KooWUpgradePeer");
-    expect(ensurePeerReachable).toHaveBeenCalledWith(
-      "12D3KooWUpgradePeer",
-      "/envoy/chat/0.1",
-      expect.objectContaining({ preferCircuitHints: false, forceFreshDial: true }),
-    );
+    // Should NOT close the relay connection or redial — just send on the relay.
+    expect(closeConnectionsToPeer).not.toHaveBeenCalled();
     expect(sendChatExpectReply).toHaveBeenCalledTimes(1);
   });
 
