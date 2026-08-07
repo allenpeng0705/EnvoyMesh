@@ -254,7 +254,7 @@ export async function buildOutboundDialHints(input: {
     const localIps = (input.localListenAddrs ?? [])
       .map(parseIpv4FromMultiaddr)
       .filter((ip): ip is string => ip != null);
-    return localIps.some((lip) => ipv4SameSubnet(remoteIp, lip));
+    return localIps.some((lip) => ipv4SamePrivateOrOverlayNetwork(remoteIp, lip));
   });
   const defaultFilter = sameSubnetLan ? "all" : defaultAddressFilterForProfile(input.config);
   const addressFilter = input.addressFilter ?? defaultFilter;
@@ -299,6 +299,15 @@ export function parseIpv4FromMultiaddr(addr: string): string | null {
   return m?.[1] ?? null;
 }
 
+/** True when an IPv4 string is in the RFC 6598 CGNAT / overlay range (100.64.0.0/10). */
+export function isRfc6598CgnatIp(ip: string): boolean {
+  const m = ip.match(/^(\d+)\.(\d+)\./);
+  if (!m) return false;
+  const o1 = parseInt(m[1]!, 10);
+  const o2 = parseInt(m[2]!, 10);
+  return o1 === 100 && o2 >= 64 && o2 <= 127;
+}
+
 /** True when two IPv4 addresses share the first `prefixOctets` (default /24). */
 export function ipv4SameSubnet(a: string, b: string, prefixOctets = 3): boolean {
   const pa = a.split(".").map(Number);
@@ -310,6 +319,17 @@ export function ipv4SameSubnet(a: string, b: string, prefixOctets = 3): boolean 
     if (pa[i] !== pb[i]) return false;
   }
   return true;
+}
+
+/**
+ * Same home /24 LAN, OR same RFC 6598 overlay (Tailscale/headscale): any two
+ * 100.64/10 addresses are typically mutually dialable inside the overlay, so
+ * a strict /24 match would miss Online-direct between Tailscale peers.
+ */
+export function ipv4SamePrivateOrOverlayNetwork(a: string, b: string): boolean {
+  if (ipv4SameSubnet(a, b, 3)) return true;
+  if (isRfc6598CgnatIp(a) && isRfc6598CgnatIp(b)) return true;
+  return false;
 }
 
 /**
@@ -329,7 +349,7 @@ export function prioritizeSameSubnetDialHints(
   const rest: string[] = [];
   for (const h of hints) {
     const remoteIp = parseIpv4FromMultiaddr(h);
-    if (remoteIp && localIps.some((lip) => ipv4SameSubnet(remoteIp, lip))) {
+    if (remoteIp && localIps.some((lip) => ipv4SamePrivateOrOverlayNetwork(remoteIp, lip))) {
       sameSubnet.push(h);
     } else if (isPrivateLanTcpDialHint(h)) {
       otherLan.push(h);

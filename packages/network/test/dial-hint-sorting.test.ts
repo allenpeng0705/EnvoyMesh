@@ -66,6 +66,11 @@ describe("dial hint sorting", () => {
       expect(isPrivateLanTcpDialHint("/ip4/10.0.0.5/tcp/4011/p2p/12D3KooW")).toBe(true);
     });
 
+    it("returns true for Tailscale/RFC6598 overlay TCP (100.64/10)", () => {
+      expect(isPrivateLanTcpDialHint("/ip4/100.64.1.2/tcp/4011/p2p/12D3KooW")).toBe(true);
+      expect(isPrivateLanTcpDialHint("/ip4/100.100.50.25/tcp/4011/p2p/12D3KooW")).toBe(true);
+    });
+
     it("returns false for public relay circuits and loopback direct", () => {
       expect(
         isPrivateLanTcpDialHint(

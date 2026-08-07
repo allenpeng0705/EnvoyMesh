@@ -95,6 +95,26 @@ describe("classifyCgnat — definitive CGNAT detection (false-positive hardened)
     expect(classifyCgnat({ stunObservedIp: "100.64.5.5", natType: "full-cone" })).toBe("cgnat");
   });
 
+  it("returns 'unknown' when STUN 100.64 coincides with a local Tailscale NIC", () => {
+    // Overlay VPN puts 100.64 on the local interface — not ISP CGNAT.
+    expect(
+      classifyCgnat({
+        stunObservedIp: "100.64.5.5",
+        localInterfaceIps: ["100.64.1.10", "192.168.1.20"],
+      }),
+    ).toBe("unknown");
+  });
+
+  it("returns 'unknown' for symmetric+UPnP when a VPN is active", () => {
+    expect(
+      classifyCgnat({
+        natType: "symmetric",
+        upnpExternalIp: "192.168.1.6",
+        likelyVpnActive: true,
+      }),
+    ).toBe("unknown");
+  });
+
   // ── Noisy signals: require corroboration ─────────────────────────────────
   it("returns 'unknown' for symmetric NAT ALONE (transient-IP / firewall false positive)", () => {
     // A lone symmetric signal could be a Wi-Fi↔cellular handoff or an

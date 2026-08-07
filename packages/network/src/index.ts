@@ -4367,7 +4367,7 @@ const STABLE_LIBP2P_TCP_PORTS = new Set([4001, 4002, 4011, 41641]);
  * Public-hop `/p2p-circuit/` addresses are kept. Private-hop circuits are
  * classified via {@link isPrivateRelayHopCircuitDialHint}.
  */
-/** True for RFC1918 / link-local direct TCP multiaddrs (same-LAN dial candidates). */
+/** True for RFC1918 / link-local / RFC6598-overlay direct TCP multiaddrs. */
 export function isPrivateLanTcpDialHint(addr: string): boolean {
   const a = addr.trim();
   if (!a.includes("/tcp/") || a.includes("/p2p-circuit/")) {
@@ -4380,6 +4380,10 @@ export function isPrivateLanTcpDialHint(addr: string): boolean {
   if (/\/ip4\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+\//.test(a)) return true;
   if (/\/ip4\/192\.168\.\d+\.\d+\//.test(a)) return true;
   if (/\/ip4\/169\.254\.\d+\.\d+\//.test(a)) return true;
+  // RFC 6598 (100.64/10) — Tailscale / headscale / some carrier overlays.
+  // Within the same overlay these are mutually dialable (Online-direct);
+  // wan-public still strips them for cross-Internet invites.
+  if (/\/ip4\/100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+\//.test(a)) return true;
   return false;
 }
 
@@ -4416,6 +4420,7 @@ export function isPrivateOrUnroutableDialHint(addr: string): boolean {
   if (/\/ip4\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+\//.test(a)) return true;
   if (/\/ip4\/192\.168\.\d+\.\d+\//.test(a)) return true;
   if (/\/ip4\/169\.254\.\d+\.\d+\//.test(a)) return true;
+  if (/\/ip4\/100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+\//.test(a)) return true;
   return false;
 }
 

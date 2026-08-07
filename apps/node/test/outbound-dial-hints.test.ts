@@ -287,6 +287,62 @@ describe("buildOutboundDialHints", () => {
   });
 });
 
+describe("ipv4SamePrivateOrOverlayNetwork / Tailscale dial hints", () => {
+  it("treats any two RFC6598 addresses as the same overlay network", async () => {
+    const { ipv4SamePrivateOrOverlayNetwork, isRfc6598CgnatIp } = await import(
+      "../src/outbound-dial-hints.js"
+    );
+    expect(isRfc6598CgnatIp("100.64.1.2")).toBe(true);
+    expect(isRfc6598CgnatIp("100.100.50.25")).toBe(true);
+    // Different /24s — still same Tailscale overlay.
+    expect(ipv4SamePrivateOrOverlayNetwork("100.64.1.2", "100.100.50.25")).toBe(true);
+    expect(ipv4SamePrivateOrOverlayNetwork("192.168.1.5", "192.168.1.9")).toBe(true);
+    expect(ipv4SamePrivateOrOverlayNetwork("192.168.1.5", "192.168.2.9")).toBe(false);
+  });
+
+  it("keeps Tailscale peer TCP when local NIC is also on 100.64/10", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-tailscale-"));
+    try {
+      const peerId = "12D3KooWTailscalePeer0000000000000000000000001";
+      const peerOverlay = `/ip4/100.100.50.25/tcp/4011/p2p/${peerId}`;
+      const circuit =
+        "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo/p2p-circuit/" +
+        `p2p/${peerId}`;
+      const seedStore = createDiscoverySeedStore(profileDir);
+      await seedStore.upsertSuccess(circuit, "relay.lookup");
+
+      const hints = await buildOutboundDialHints({
+        recipientPeerId: peerId,
+        peerListenAddrs: [peerOverlay],
+        localListenAddrs: [`/ip4/100.64.1.10/tcp/4011/p2p/12D3KooWLocal`],
+        discoverySeedStore: seedStore,
+        config: {
+          version: "0.1",
+          profileDir,
+          discoveryProfile: "wan-default",
+          relayEnabled: true,
+          relayServerEnabled: false,
+          advertiseAddrs: [],
+          bootstrapPeers: [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
+          bootstrapPresets: ["cn-relay"],
+          configuredRelays: [],
+          modelProviders: { mode: "mock" },
+          chatAssistEnabled: false,
+          contactAiPreferences: [],
+          updatedAt: new Date().toISOString(),
+        },
+      });
+
+      // Overlay path must survive wan-public stripping (Online-direct).
+      expect(hints.some((h) => h.includes("100.100.50.25"))).toBe(true);
+      // And should be preferred ahead of the circuit.
+      expect(hints[0]).toContain("100.100.50.25");
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("shouldPreferCircuitDialHints", () => {
   it("prefers circuits when only private LAN direct TCP hints exist (cross-network fix)", async () => {
     const { shouldPreferCircuitDialHints } = await import("../src/outbound-dial-hints.js");

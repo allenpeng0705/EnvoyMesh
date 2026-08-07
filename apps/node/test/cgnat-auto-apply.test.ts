@@ -65,10 +65,44 @@ describe("detectCgnatAtStartup — auto-apply decision boundary", () => {
     const result = await detectCgnatAtStartup({
       connectivityMode: "optimized",
       connectivityModeExplicit: false,
+      // ISP CGNAT: STUN sees 100.64, LAN stays 192.168 (no local overlay NIC).
+      localInterfaceIps: ["192.168.1.20"],
+      likelyVpnActive: false,
     });
 
     expect(result.classification).toBe("cgnat");
     expect(result.shouldAutoApplyQuietWan).toBe(true);
+  });
+
+  it("does NOT auto-apply RFC 6598 STUN when a local Tailscale NIC is present", async () => {
+    mocks.detectNatType.mockResolvedValue("full-cone");
+    mocks.raceStunServers.mockResolvedValue({ ip: "100.64.5.5", port: 4001 });
+    mocks.upnpDiscoverAndMap.mockResolvedValue(null);
+
+    const result = await detectCgnatAtStartup({
+      connectivityMode: "optimized",
+      localInterfaceIps: ["100.64.1.10", "192.168.1.20"],
+      likelyVpnActive: true,
+    });
+
+    expect(result.classification).toBe("unknown");
+    expect(result.shouldAutoApplyQuietWan).toBe(false);
+  });
+
+  it("does NOT auto-apply symmetric+UPnP when VPN is active", async () => {
+    mocks.detectNatType.mockResolvedValue("symmetric");
+    mocks.raceStunServers.mockResolvedValue({ ip: "203.0.113.5", port: 4001 });
+    mocks.upnpDiscoverAndMap.mockResolvedValue({ ip: "192.168.1.6", port: 4001 });
+
+    const result = await detectCgnatAtStartup({
+      connectivityMode: "optimized",
+      upnpEnabled: true,
+      localInterfaceIps: ["10.8.0.2"],
+      likelyVpnActive: true,
+    });
+
+    expect(result.classification).toBe("unknown");
+    expect(result.shouldAutoApplyQuietWan).toBe(false);
   });
 
   it("auto-applies when symmetric NAT AND UPnP-private corroborate", async () => {
@@ -79,6 +113,8 @@ describe("detectCgnatAtStartup — auto-apply decision boundary", () => {
     const result = await detectCgnatAtStartup({
       connectivityMode: "optimized",
       upnpEnabled: true,
+      localInterfaceIps: ["192.168.1.20"],
+      likelyVpnActive: false,
     });
 
     expect(result.classification).toBe("cgnat");
@@ -105,6 +141,8 @@ describe("detectCgnatAtStartup — auto-apply decision boundary", () => {
       connectivityMode: "optimized",
       connectivityModeExplicit: true,
       upnpEnabled: true,
+      localInterfaceIps: ["192.168.1.20"],
+      likelyVpnActive: false,
     });
 
     expect(result.classification).toBe("cgnat");
@@ -118,6 +156,8 @@ describe("detectCgnatAtStartup — auto-apply decision boundary", () => {
     const result = await detectCgnatAtStartup({
       connectivityMode: "optimized",
       explicitMode: true,
+      localInterfaceIps: ["192.168.1.20"],
+      likelyVpnActive: false,
     });
 
     expect(result.classification).toBe("cgnat");
@@ -153,5 +193,117 @@ describe("detectCgnatAtStartup — auto-apply decision boundary", () => {
     await detectCgnatAtStartup({ connectivityMode: "optimized", upnpEnabled: false });
 
     expect(mocks.upnpDiscoverAndMap).not.toHaveBeenCalled();
+  });
+});
+
+describe("detectLikelyVpnActive / maybeRevertCgnatQuietWanForVpn", () => {
+  it("detects Tailscale via RFC6598 local address", async () => {
+    const { detectLikelyVpnActive } = await import("../src/cgnat-detection.js");
+    expect(
+      detectLikelyVpnActive({
+        en0: [{ address: "192.168.1.20", family: "IPv4", internal: false } as NodeJS.NetworkInterfaceInfo],
+        utun4: [{ address: "100.64.1.10", family: "IPv4", internal: false } as NodeJS.NetworkInterfaceInfo],
+      }),
+    ).toBe(true);
+  });
+
+  it("detects commercial VPN via utun with assigned IPv4", async () => {
+    const { detectLikelyVpnActive } = await import("../src/cgnat-detection.js");
+    expect(
+      detectLikelyVpnActive({
+        en0: [{ address: "192.168.1.20", family: "IPv4", internal: false } as NodeJS.NetworkInterfaceInfo],
+        utun3: [{ address: "10.8.0.2", family: "IPv4", internal: false } as NodeJS.NetworkInterfaceInfo],
+      }),
+    ).toBe(true);
+  });
+
+  it("ignores empty utun (macOS always has them)", async () => {
+    const { detectLikelyVpnActive } = await import("../src/cgnat-detection.js");
+    expect(
+      detectLikelyVpnActive({
+        en0: [{ address: "192.168.1.20", family: "IPv4", internal: false } as NodeJS.NetworkInterfaceInfo],
+        utun0: [],
+      }),
+    ).toBe(false);
+  });
+
+  it("reverts persisted cgnat-quietWan to optimized when VPN is active", async () => {
+    const { mkdtemp, rm } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const { createNodeConfigStore } = await import("../src/node-config-store.js");
+    const { maybeRevertCgnatQuietWanForVpn } = await import("../src/cgnat-detection.js");
+
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-cgnat-revert-"));
+    try {
+      const store = createNodeConfigStore(profileDir);
+      await store.save({
+        version: "0.1",
+        profileDir,
+        discoveryProfile: "wan-default",
+        relayEnabled: true,
+        relayServerEnabled: false,
+        advertiseAddrs: [],
+        bootstrapPeers: [],
+        bootstrapPresets: ["cn-relay"],
+        configuredRelays: [],
+        modelProviders: { mode: "mock" },
+        chatAssistEnabled: false,
+        contactAiPreferences: [],
+        connectivityMode: "quietWan",
+        connectivityModeExplicit: false,
+        connectivityModeAutoAppliedReason: "cgnat",
+        updatedAt: new Date().toISOString(),
+      });
+
+      expect(await maybeRevertCgnatQuietWanForVpn(profileDir, { likelyVpnActive: false })).toBe(
+        false,
+      );
+      expect((await store.load())?.connectivityMode).toBe("quietWan");
+
+      expect(await maybeRevertCgnatQuietWanForVpn(profileDir, { likelyVpnActive: true })).toBe(true);
+      const after = await store.load();
+      expect(after?.connectivityMode).toBe("optimized");
+      expect(after?.connectivityModeAutoAppliedReason).toBeUndefined();
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not revert operator-explicit quietWan", async () => {
+    const { mkdtemp, rm } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const { createNodeConfigStore } = await import("../src/node-config-store.js");
+    const { maybeRevertCgnatQuietWanForVpn } = await import("../src/cgnat-detection.js");
+
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-cgnat-revert-explicit-"));
+    try {
+      const store = createNodeConfigStore(profileDir);
+      await store.save({
+        version: "0.1",
+        profileDir,
+        discoveryProfile: "wan-default",
+        relayEnabled: true,
+        relayServerEnabled: false,
+        advertiseAddrs: [],
+        bootstrapPeers: [],
+        bootstrapPresets: ["cn-relay"],
+        configuredRelays: [],
+        modelProviders: { mode: "mock" },
+        chatAssistEnabled: false,
+        contactAiPreferences: [],
+        connectivityMode: "quietWan",
+        connectivityModeExplicit: true,
+        connectivityModeAutoAppliedReason: "cgnat",
+        updatedAt: new Date().toISOString(),
+      });
+      expect(await maybeRevertCgnatQuietWanForVpn(profileDir, { likelyVpnActive: true })).toBe(
+        false,
+      );
+      expect((await store.load())?.connectivityMode).toBe("quietWan");
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
   });
 });

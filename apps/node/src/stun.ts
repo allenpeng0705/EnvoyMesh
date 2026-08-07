@@ -342,6 +342,16 @@ export interface CgnatDetectionInput {
    * signal — requires corroboration from symmetric NAT to auto-apply.
    */
   upnpExternalIp?: string;
+  /**
+   * Local NIC IPv4 addresses. When any is in 100.64/10 (Tailscale/headscale),
+   * a STUN-observed 100.64 address is treated as overlay VPN — not ISP CGNAT.
+   */
+  localInterfaceIps?: string[];
+  /**
+   * True when a VPN/overlay interface is active (utun/tun/wg/tailscale/…).
+   * Suppresses the noisy symmetric+UPnP auto-apply path (common VPN false positive).
+   */
+  likelyVpnActive?: boolean;
 }
 
 /**
@@ -359,9 +369,9 @@ export interface CgnatDetectionInput {
  * ## False-positive analysis (why each signal is trusted or not)
  *
  * **Pristine (trusted alone):**
- * - STUN-observed IP in RFC 6598 range (`100.64.x.x`). This range is reserved
- *   EXCLUSIVELY for carrier-grade NAT (RFC 6598). No public service, no normal
- *   NAT, no residential ISP uses it for anything else. Zero false-positive risk.
+ * - STUN-observed IP in RFC 6598 range (`100.64.x.x`), **unless** a local
+ *   interface is also in that range (Tailscale/headscale overlay — those
+ *   100.64 addresses are mutually dialable VPN IPs, not ISP CGNAT).
  *
  * **Noisy (require corroboration — two independent signals must agree):**
  * - NAT type `"symmetric"` (two STUN servers saw different mappings). False
@@ -372,10 +382,14 @@ export interface CgnatDetectionInput {
  *   fixable via port-forwarding, unlike CGNAT), buggy UPnP reporting the LAN
  *   interface. The signal is correct for true CGNAT but can't distinguish
  *   "fixable double-NAT" from "unfixable CGNAT" on its own.
+ * - When {@link CgnatDetectionInput.likelyVpnActive} is set, the noisy
+ *   corroboration path is suppressed (VPN users commonly look like
+ *   symmetric + UPnP-private without being on ISP CGNAT).
  *
  * When a noisy signal fires alone, we return `"unknown"` (no auto-apply) and
  * let the churn-based suggestion surface it to the operator. When a pristine
- * signal fires, OR two noisy signals agree, we return `"cgnat"`.
+ * signal fires, OR two noisy signals agree (and VPN is not active), we return
+ * `"cgnat"`.
  *
  * Pure function — unit-testable without any network.
  */
@@ -394,17 +408,21 @@ export function classifyCgnat(input: CgnatDetectionInput): "cgnat" | "not-cgnat"
     return "not-cgnat";
   }
 
-  // Pristine positive: RFC 6598 CGNAT range. Trusted alone — zero false positives.
-  if (input.stunObservedIp && isCgnatRangeIp(input.stunObservedIp)) return "cgnat";
+  // Pristine positive: RFC 6598 CGNAT range — but not when local NICs also
+  // sit in 100.64/10 (Tailscale overlay). ISP CGNAT keeps LAN on 192.168
+  // while STUN sees 100.64; overlay VPN puts 100.64 on the local interface.
+  if (input.stunObservedIp && isCgnatRangeIp(input.stunObservedIp)) {
+    const localHasOverlay = (input.localInterfaceIps ?? []).some(isCgnatRangeIp);
+    if (!localHasOverlay) return "cgnat";
+  }
 
   // Noisy signals: require TWO to agree (corroboration), to avoid false positives.
-  // - symmetric NAT (could be transient IP change / firewall intercept)
-  // - UPnP-private (could be fixable double-NAT, not CGNAT)
-  // Either alone → unknown (fall through to churn-based suggestion).
-  // Both together → cgnat (two independent signals agree → high confidence).
+  // Skip when a VPN/overlay is active — commercial VPN + home UPnP looks like
+  // this pair without being ISP CGNAT, and auto-applying quietWan then breaks
+  // Online-direct over the VPN.
   const symmetricSignal = input.natType === "symmetric";
   const upnpPrivateSignal = !!(input.upnpExternalIp && isRfc1918PrivateIp(input.upnpExternalIp));
-  if (symmetricSignal && upnpPrivateSignal) return "cgnat";
+  if (symmetricSignal && upnpPrivateSignal && !input.likelyVpnActive) return "cgnat";
 
   // Everything else → ambiguous. Don't auto-apply; let the operator decide.
   return "unknown";

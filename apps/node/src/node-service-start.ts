@@ -72,29 +72,58 @@ async function maybeAutoApplyQuietWanForCgnat(
     connectivityModeExplicit?: boolean;
     enableUpnp?: boolean;
   },
-): Promise<{ applied: boolean; detectedMode?: "quietWan"; classification?: string }> {
-  // Skip network probes when already DHT-off or operator-locked.
-  if (
-    config.connectivityMode === "quietWan" ||
-    config.connectivityMode === "aggressive" ||
-    config.connectivityModeExplicit === true
-  ) {
-    return { applied: false };
+): Promise<{
+  applied: boolean;
+  revertedVpn?: boolean;
+  detectedMode?: "quietWan";
+  classification?: string;
+  effectiveConnectivityMode?: string;
+}> {
+  const {
+    detectCgnatAtStartup,
+    persistCgnatAutoAppliedQuietWan,
+    maybeRevertCgnatQuietWanForVpn,
+    shouldAllowCgnatQuietWanAutoApply,
+  } = await import("./cgnat-detection.js");
+
+  // Undo false-positive quietWan when Tailscale / commercial VPN is up —
+  // otherwise a prior auto-apply sticks forever and Online-direct dies.
+  let mode = config.connectivityMode;
+  let explicit = config.connectivityModeExplicit;
+  let revertedVpn = false;
+  try {
+    revertedVpn = await maybeRevertCgnatQuietWanForVpn(config.profileDir);
+    if (revertedVpn) {
+      mode = "optimized";
+      explicit = false;
+      console.log(
+        "[node-service] CGNAT quietWan reverted — overlay/VPN interface detected; restoring optimized for Online-direct",
+      );
+    }
+  } catch (err) {
+    console.warn(
+      "[node-service] failed to revert CGNAT quietWan for VPN:",
+      err instanceof Error ? err.message : err,
+    );
   }
-  const { detectCgnatAtStartup, persistCgnatAutoAppliedQuietWan, shouldAllowCgnatQuietWanAutoApply } =
-    await import("./cgnat-detection.js");
-  if (!shouldAllowCgnatQuietWanAutoApply(config)) {
-    return { applied: false };
+
+  // Skip network probes when already DHT-off or operator-locked.
+  if (mode === "quietWan" || mode === "aggressive" || explicit === true) {
+    return { applied: false, revertedVpn, effectiveConnectivityMode: mode };
+  }
+  if (!shouldAllowCgnatQuietWanAutoApply({ connectivityMode: mode, connectivityModeExplicit: explicit })) {
+    return { applied: false, revertedVpn, effectiveConnectivityMode: mode };
   }
   const result = await detectCgnatAtStartup({
     upnpEnabled: config.enableUpnp ?? true,
-    connectivityMode: config.connectivityMode,
-    connectivityModeExplicit: config.connectivityModeExplicit,
+    connectivityMode: mode,
+    connectivityModeExplicit: explicit,
   });
   console.log(
     `[node-service] CGNAT detection: classification=${result.classification} natType=${result.natType}` +
       (result.stunObservedIp ? ` stunIp=${result.stunObservedIp}` : "") +
       (result.upnpExternalIp ? ` upnpIp=${result.upnpExternalIp}` : "") +
+      (result.likelyVpnActive ? " vpn=yes" : "") +
       (result.shouldAutoApplyQuietWan ? " → auto-applying quietWan" : ""),
   );
   if (result.shouldAutoApplyQuietWan) {
@@ -106,9 +135,20 @@ async function maybeAutoApplyQuietWanForCgnat(
         err instanceof Error ? err.message : err,
       );
     }
-    return { applied: true, detectedMode: "quietWan", classification: result.classification };
+    return {
+      applied: true,
+      revertedVpn,
+      detectedMode: "quietWan",
+      classification: result.classification,
+      effectiveConnectivityMode: "quietWan",
+    };
   }
-  return { applied: false, classification: result.classification };
+  return {
+    applied: false,
+    revertedVpn,
+    classification: result.classification,
+    effectiveConnectivityMode: mode,
+  };
 }
 
 export interface StartNodeContext {
@@ -240,6 +280,7 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     // also narrows public-libp2p presets (lean bootstrap). See design A1.1.
     const leanForSponsor = shouldLeanBootstrapForPendingSponsorBond(config);
     let effectiveConnectivityMode = config.connectivityMode;
+    let vpnQuietWanReverted = false;
     if (!leanForSponsor) {
       const cgnat = await maybeAutoApplyQuietWanForCgnat({
         profileDir: config.profileDir,
@@ -249,6 +290,11 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
       });
       if (cgnat.applied && cgnat.detectedMode) {
         effectiveConnectivityMode = cgnat.detectedMode;
+      } else if (cgnat.revertedVpn) {
+        effectiveConnectivityMode = "optimized";
+        vpnQuietWanReverted = true;
+      } else if (cgnat.effectiveConnectivityMode) {
+        effectiveConnectivityMode = cgnat.effectiveConnectivityMode as typeof effectiveConnectivityMode;
       }
     }
 
@@ -352,6 +398,8 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     // Lean mode uses relay-only so DHT peer churn cannot starve circuit CONNECT.
     // When CGNAT just auto-applied quietWan, ignore stale per-field overrides from
     // the previous optimized mode so maxConnections/timers match the quietWan preset.
+    // Same for VPN revert: disk was rewritten to optimized, but in-memory config
+    // still holds quietWan maxConnections — use mode-only tuning so the preset wins.
     const quietWanJustApplied =
       effectiveConnectivityMode === "quietWan" && config.connectivityMode !== "quietWan";
     const connectivityRuntime = resolveConnectivityRuntime({
@@ -359,14 +407,16 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
       enableMdns: config.enableMdns ?? true,
       tuning: quietWanJustApplied
         ? { connectivityMode: "quietWan" }
-        : {
-            connectivityMode: effectiveConnectivityMode,
-            maxConnections: config.maxConnections,
-            mdnsIntervalMs: config.mdnsIntervalMs,
-            capabilityDiscoveryIntervalMs: config.capabilityDiscoveryIntervalMs,
-            lazyCapabilityDiscovery: config.lazyCapabilityDiscovery,
-            idleTimerStretch: config.idleTimerStretch,
-          },
+        : vpnQuietWanReverted
+          ? { connectivityMode: "optimized" }
+          : {
+              connectivityMode: effectiveConnectivityMode,
+              maxConnections: config.maxConnections,
+              mdnsIntervalMs: config.mdnsIntervalMs,
+              capabilityDiscoveryIntervalMs: config.capabilityDiscoveryIntervalMs,
+              lazyCapabilityDiscovery: config.lazyCapabilityDiscovery,
+              idleTimerStretch: config.idleTimerStretch,
+            },
     });
     console.log(
       `[node-service] Creating EnvoyMesh mode=${connectivityRuntime.connectivityMode} enableDht=${connectivityRuntime.enableDht}`,

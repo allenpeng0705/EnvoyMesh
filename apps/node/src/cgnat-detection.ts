@@ -8,9 +8,11 @@
  * is pure waste. There is no false-positive risk because we only act on
  * deterministic measurements, never on a guess:
  *
- *   1. NAT type "symmetric" — two STUN servers saw different mapped addresses.
- *   2. STUN-observed IP in the RFC 6598 CGNAT range (100.64.0.0/10).
- *   3. UPnP external IP is RFC1918 private (gateway is behind another NAT).
+ *   1. NAT type "symmetric" — two STUN servers saw different mapped addresses
+ *      (only with UPnP-private corroboration, and not when a VPN is active).
+ *   2. STUN-observed IP in the RFC 6598 CGNAT range (100.64.0.0/10), unless a
+ *      local NIC is also in that range (Tailscale/headscale overlay).
+ *   3. UPnP external IP is RFC1918 private (gateway behind another NAT).
  *
  * Ambiguous results (STUN timeout, no UPnP) do NOT trigger auto-apply — they
  * fall through to the churn-based Settings suggestion in connectivity diagnostics.
@@ -18,12 +20,14 @@
  * See docs/connectivity-internals-and-design.md Open Question #1.
  */
 
+import * as os from "node:os";
 import { resolveConnectivityPreset } from "@envoymesh/api";
 import { createNodeConfigStore } from "./node-config-store.js";
 import { upnpDiscoverAndMap } from "./upnp.js";
 import {
   classifyCgnat,
   detectNatType,
+  isCgnatRangeIp,
   raceStunServers,
   DEFAULT_STUN_SERVERS,
   type NatType,
@@ -37,6 +41,50 @@ export interface CgnatDetectionResult {
   upnpExternalIp?: string;
   /** True when the caller should override connectivityMode → quietWan. */
   shouldAutoApplyQuietWan: boolean;
+  /** Local NICs looked like an overlay VPN (Tailscale/utun/…). */
+  likelyVpnActive?: boolean;
+}
+
+/** Collect non-internal IPv4 addresses from `os.networkInterfaces()`. */
+export function listLocalIpv4Addresses(
+  ifaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces(),
+): string[] {
+  const out: string[] = [];
+  for (const addrs of Object.values(ifaces)) {
+    if (!addrs) continue;
+    for (const a of addrs) {
+      if (a.internal) continue;
+      // Node 18+ may use numeric family (4); older used "IPv4".
+      const family = a.family as string | number;
+      if (family !== "IPv4" && family !== 4) continue;
+      if (a.address) out.push(a.address);
+    }
+  }
+  return out;
+}
+
+/**
+ * Heuristic: overlay / commercial VPN is active.
+ * - Interface name matches utun/tun/wg/ppp/ipsec/tailscale
+ * - Or any local IPv4 is in RFC 6598 100.64/10 (Tailscale/headscale)
+ */
+export function detectLikelyVpnActive(
+  ifaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces(),
+): boolean {
+  for (const [name, addrs] of Object.entries(ifaces)) {
+    const n = name.toLowerCase();
+    const nameLooksVpn =
+      /^(utun|tun|tap|wg|ppp|ipsec)/.test(n) || n.includes("tailscale") || n.includes("wireguard");
+    if (!addrs) continue;
+    for (const a of addrs) {
+      if (a.internal) continue;
+      const family = a.family as string | number;
+      if (family !== "IPv4" && family !== 4) continue;
+      if (isCgnatRangeIp(a.address)) return true;
+      if (nameLooksVpn) return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -76,9 +124,15 @@ export async function detectCgnatAtStartup(options?: {
   explicitMode?: boolean;
   connectivityMode?: string;
   connectivityModeExplicit?: boolean;
+  /** Test seam — override discovered local IPv4s. */
+  localInterfaceIps?: string[];
+  /** Test seam — override VPN heuristic. */
+  likelyVpnActive?: boolean;
 }): Promise<CgnatDetectionResult> {
   const stunServers = options?.stunServers ?? DEFAULT_STUN_SERVERS;
   const stunTimeoutMs = options?.stunTimeoutMs ?? 3000;
+  const localInterfaceIps = options?.localInterfaceIps ?? listLocalIpv4Addresses();
+  const likelyVpnActive = options?.likelyVpnActive ?? detectLikelyVpnActive();
 
   const [natType, stunRace, upnpIp] = await Promise.all([
     detectNatType(stunServers, { timeoutMs: stunTimeoutMs }).catch((): NatType => "unknown"),
@@ -89,7 +143,13 @@ export async function detectCgnatAtStartup(options?: {
   ]);
 
   const stunObservedIp = stunRace?.ip;
-  const classification = classifyCgnat({ natType, stunObservedIp, upnpExternalIp: upnpIp });
+  const classification = classifyCgnat({
+    natType,
+    stunObservedIp,
+    upnpExternalIp: upnpIp,
+    localInterfaceIps,
+    likelyVpnActive,
+  });
 
   const allowAutoApply =
     options?.explicitMode === true
@@ -101,7 +161,14 @@ export async function detectCgnatAtStartup(options?: {
 
   const shouldAutoApplyQuietWan = classification === "cgnat" && allowAutoApply;
 
-  return { classification, natType, stunObservedIp, upnpExternalIp: upnpIp, shouldAutoApplyQuietWan };
+  return {
+    classification,
+    natType,
+    stunObservedIp,
+    upnpExternalIp: upnpIp,
+    shouldAutoApplyQuietWan,
+    likelyVpnActive,
+  };
 }
 
 /**
@@ -135,6 +202,39 @@ export async function persistCgnatAutoAppliedQuietWan(profileDir: string): Promi
     lazyCapabilityDiscovery: preset.lazyCapabilityDiscovery,
     idleTimerStretch: preset.idleTimerStretch,
   });
+}
+
+/**
+ * Undo a CGNAT false-positive `quietWan` when an overlay VPN is present.
+ * Restores `optimized` so Tailscale / commercial-VPN Online-direct works again.
+ * Never overrides an operator-explicit mode choice.
+ */
+export async function maybeRevertCgnatQuietWanForVpn(
+  profileDir: string,
+  options?: { likelyVpnActive?: boolean },
+): Promise<boolean> {
+  const vpn = options?.likelyVpnActive ?? detectLikelyVpnActive();
+  if (!vpn) return false;
+  const store = createNodeConfigStore(profileDir);
+  const existing = await store.load();
+  if (!existing) return false;
+  if (existing.connectivityModeExplicit === true) return false;
+  if (existing.connectivityMode !== "quietWan") return false;
+  if (existing.connectivityModeAutoAppliedReason !== "cgnat") return false;
+
+  const preset = resolveConnectivityPreset("optimized");
+  await store.save({
+    ...existing,
+    connectivityMode: "optimized",
+    connectivityModeExplicit: false,
+    connectivityModeAutoAppliedReason: undefined,
+    maxConnections: preset.maxConnections,
+    mdnsIntervalMs: preset.mdnsIntervalMs,
+    capabilityDiscoveryIntervalMs: preset.capabilityDiscoveryIntervalMs,
+    lazyCapabilityDiscovery: preset.lazyCapabilityDiscovery,
+    idleTimerStretch: preset.idleTimerStretch,
+  });
+  return true;
 }
 
 /**
