@@ -11,7 +11,7 @@
  * UI gates selectability on all three dimensions.
  */
 
-import { isAgentNetworkMember } from "@envoymesh/api";
+import { isAgentNetworkMember, normalizeAgentCardMembership } from "@envoymesh/api";
 import type { BondRecord, CachedAgentCardSummary, ChainWorkerReachability } from "@envoymesh/api";
 
 export type ChainBondHealthStatus = "ready" | "stale" | "missing" | "blocked";
@@ -58,8 +58,9 @@ export function computeChainBondHealth(
       label: "No agent card",
     };
   }
-  const capabilityCount = card.membership.length;
-  const optedIn = isAgentNetworkMember(card.membership);
+  const membership = normalizeAgentCardMembership(card.membership);
+  const capabilityCount = membership.length;
+  const optedIn = isAgentNetworkMember(membership);
   const cachedMs = Date.parse(card.cachedAt);
   const stale = Number.isFinite(cachedMs) && nowMs - cachedMs > STALE_MS;
   if (capabilityCount === 0) {

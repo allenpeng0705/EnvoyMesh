@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AGENT_NETWORK_WORKER_MEMBERSHIP,
   isAgentNetworkMember,
+  normalizeAgentCardMembership,
   withAgentNetworkMembership,
 } from "../src/agent-network-membership.js";
 
@@ -14,6 +15,19 @@ describe("agent-network-membership", () => {
     expect(
       isAgentNetworkMember(["task.execute", AGENT_NETWORK_WORKER_MEMBERSHIP]),
     ).toBe(true);
+  });
+
+  it("treats legacy capability-provider as agent-network-worker", () => {
+    expect(isAgentNetworkMember(["task.execute", "capability-provider"])).toBe(true);
+    expect(normalizeAgentCardMembership(["capability-provider", "task.execute"])).toEqual([
+      AGENT_NETWORK_WORKER_MEMBERSHIP,
+      "task.execute",
+    ]);
+  });
+
+  it("is safe when membership is missing", () => {
+    expect(isAgentNetworkMember(undefined)).toBe(false);
+    expect(normalizeAgentCardMembership(undefined)).toEqual([]);
   });
 
   it("withAgentNetworkMembership adds and strips without duplicating", () => {

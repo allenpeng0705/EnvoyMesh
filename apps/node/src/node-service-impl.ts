@@ -158,6 +158,7 @@ import {
   scoreAgentNetworkWorker,
   mergeExtAgentPresets,
   resolveActiveExtAgent,
+  normalizeAgentCardMembership,
 } from "@envoymesh/api";
 import { resolveDidImportInput } from "@envoymesh/api/did-import";
 import type {
@@ -270,6 +271,7 @@ import {
   createLibraryReadPayload,
   parseKnowledgeResponsePayload,
   createAgentCardRequestPayload,
+  createAgentNetworkProfile,
   createHumanProfileFragmentPayload,
   createSocialIntroProposePayload,
   createSocialIntroOwnerReadyPayload,
@@ -1271,21 +1273,29 @@ function summarizeAgentCard(row: {
   ownerId: string;
   card: {
     displayName: string;
-    membership: string[];
+    membership?: string[];
+    /** Legacy field — pre-membership rename on disk. */
+    capabilities?: string[];
     nodeProfile?: CachedAgentCardSummary["nodeProfile"];
     publicTopics?: string[];
     trustPolicySummary?: CachedAgentCardSummary["trustPolicySummary"];
     supportedProtocolVersions?: string[];
     webContentRoot?: string;
-    agentNetworkProfile?: CachedAgentCardSummary["agentNetworkProfile"];
+    agentNetworkProfile?: CachedAgentCardSummary["agentNetworkProfile"] & {
+      /** Legacy field — pre-skills rename on disk. */
+      strengths?: string[];
+    };
   };
   cachedAt: string;
   sourceAgentPeerId?: string;
 }): CachedAgentCardSummary {
+  const membership = normalizeAgentCardMembership(
+    row.card.membership ?? row.card.capabilities,
+  );
   const summary: CachedAgentCardSummary = {
     ownerId: row.ownerId,
     displayName: row.card.displayName,
-    membership: row.card.membership,
+    membership,
     cachedAt: row.cachedAt,
     sourceAgentPeerId: row.sourceAgentPeerId,
   };
@@ -1299,7 +1309,11 @@ function summarizeAgentCard(row: {
     summary.webContentRoot = row.card.webContentRoot;
   }
   if (row.card.agentNetworkProfile) {
-    summary.agentNetworkProfile = row.card.agentNetworkProfile;
+    const raw = row.card.agentNetworkProfile;
+    summary.agentNetworkProfile = createAgentNetworkProfile({
+      ...raw,
+      skills: raw.skills ?? raw.strengths ?? [],
+    });
   }
   return summary;
 }

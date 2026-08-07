@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  computeChainBondHealth,
   isTeamJobListed,
   isTeamJobReady,
   type ChainBondHealth,
 } from "../../src/lib/chain-bond-health.js";
-import type { CachedAgentCardSummary } from "@envoymesh/api";
+import type { BondRecord, CachedAgentCardSummary } from "@envoymesh/api";
 
 function health(partial: Partial<ChainBondHealth>): ChainBondHealth {
   return {
@@ -19,6 +20,11 @@ function health(partial: Partial<ChainBondHealth>): ChainBondHealth {
   };
 }
 
+const bond = {
+  peerOwnerId: "envoy:owner:alice",
+  level: "direct",
+} as BondRecord;
+
 const card = {
   ownerId: "envoy:owner:alice",
   displayName: "Alice",
@@ -26,6 +32,29 @@ const card = {
   membership: ["task.execute", "agent-network-worker"],
   cachedAt: new Date().toISOString(),
 } as CachedAgentCardSummary;
+
+describe("computeChainBondHealth", () => {
+  it("does not throw when membership is missing on a cached card", () => {
+    const broken = {
+      ...card,
+      membership: undefined,
+    } as unknown as CachedAgentCardSummary;
+    const h = computeChainBondHealth(bond, broken);
+    expect(h.cardStatus).toBe("missing");
+    expect(h.capabilityCount).toBe(0);
+    expect(h.optIn).toBe(false);
+  });
+
+  it("maps legacy capability-provider into opt-in", () => {
+    const legacy = {
+      ...card,
+      membership: ["task.execute", "capability-provider"],
+    } as CachedAgentCardSummary;
+    const h = computeChainBondHealth(bond, legacy);
+    expect(h.optIn).toBe(true);
+    expect(h.capabilityCount).toBe(2);
+  });
+});
 
 describe("isTeamJobListed / isTeamJobReady", () => {
   it("lists opted-in contacts with a card even when offline", () => {

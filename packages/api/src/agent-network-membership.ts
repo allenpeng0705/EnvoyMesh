@@ -12,9 +12,37 @@
 /** Advertised on Agent Card `membership[]` when Join Agent Network is on. */
 export const AGENT_NETWORK_WORKER_MEMBERSHIP = "agent-network-worker" as const;
 
+/** Pre-rename wire tag — still accepted when reading cached agent cards. */
+const LEGACY_AGENT_NETWORK_WORKER_MEMBERSHIP = "capability-provider" as const;
+
+/**
+ * Normalize membership tags from a card (or legacy `capabilities[]`).
+ * Maps `capability-provider` → `agent-network-worker`.
+ */
+export function normalizeAgentCardMembership(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (typeof item !== "string") continue;
+    const trimmed = item.trim();
+    if (!trimmed) continue;
+    const tag =
+      trimmed === LEGACY_AGENT_NETWORK_WORKER_MEMBERSHIP
+        ? AGENT_NETWORK_WORKER_MEMBERSHIP
+        : trimmed;
+    if (seen.has(tag)) continue;
+    seen.add(tag);
+    out.push(tag);
+  }
+  return out;
+}
+
 /** True when the peer's agent card membership opts into Agent Network work. */
-export function isAgentNetworkMember(membership: readonly string[]): boolean {
-  return membership.includes(AGENT_NETWORK_WORKER_MEMBERSHIP);
+export function isAgentNetworkMember(
+  membership: readonly string[] | null | undefined,
+): boolean {
+  return normalizeAgentCardMembership(membership).includes(AGENT_NETWORK_WORKER_MEMBERSHIP);
 }
 
 /**
