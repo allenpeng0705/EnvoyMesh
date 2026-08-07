@@ -27,7 +27,7 @@ export interface AgentCardParams {
   receivedAt: number;
   correlationId: string | undefined;
   /** Same-stream reply from mesh.onMessage — preferred for agent.card.response. */
-  replyWithEnvelope?: (envelope: unknown) => Promise<void>;
+  replyWithEnvelope?: (envelope: import("@envoymesh/protocol").EnvoyEnvelope) => Promise<void>;
 }
 
 export async function handleAgentCardViaRuntime(
