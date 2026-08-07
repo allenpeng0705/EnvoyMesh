@@ -26,6 +26,7 @@ import type { ChainReport, ChainSubtask, ChainSubtaskBid, EnvoyEnvelope, EnvoyIn
 import { ChainHandoffRequestPayloadSchema } from "@envoymesh/protocol";
 import { createApprovalItem, isAgentNetworkMember, rankWorkersByScore, scoreAgentNetworkWorker } from "@envoymesh/api";
 import { hasDirectPrivateLanDialHints, type EnvoyMesh } from "@envoymesh/network";
+import { anLog, shortId } from "./agent-network-debug.js";
 import {
   chainStateSnapshot,
   createChainState,
@@ -72,6 +73,7 @@ import {
 } from "./chain-production.js";
 import { dispatchChainEnvelope } from "./chain-inbound.js";
 import type { ChainInboundDeps } from "./chain-inbound-types.js";
+import { chainLog, chainWarn, shortPeerId } from "./chain-debug.js";
 import { applyArbitration, createArbitrationStore, type ArbitrationStore } from "./chain-arbitration.js";
 import { signCanonicalPayload } from "@envoymesh/identity";
 import {
@@ -382,10 +384,24 @@ export async function handleInboundChainEnvelope(
   const chainId = extractChainIdFromEnvelope(envelope);
   const runtime = chainId ? deps.getChainStore().getRuntime(chainId) : undefined;
   const inboundState = runtime?.state;
+  chainLog("inbound", "dispatch", {
+    intent: envelope.intent,
+    chainId: chainId ?? "(none)",
+    from: shortPeerId(envelope.senderPeerId),
+    hasRuntime: Boolean(runtime),
+  });
   const inboundDeps = await buildChainInboundDeps(deps);
   const decision = await dispatchChainEnvelope(inboundDeps, envelope, inboundState);
   if (!decision.ok) {
-    console.warn(`[chain.inbound] rejected ${envelope.intent}: ${decision.reason}`);
+    chainWarn("inbound", `rejected ${envelope.intent}: ${decision.reason}`, {
+      chainId: chainId ?? "(none)",
+      from: shortPeerId(envelope.senderPeerId),
+    });
+  } else {
+    chainLog("inbound", `ok ${envelope.intent}`, {
+      chainId: chainId ?? "(none)",
+      from: shortPeerId(envelope.senderPeerId),
+    });
   }
 }
 
@@ -397,15 +413,19 @@ export async function refreshAgentNetworkMembershipIndex(deps: ChainOrchestratio
   const cards = await listAgentCardsIncludingLocal(deps);
   const index = deps.getAgentNetworkMembershipIndex();
   const seen = new Set<string>();
+  let members = 0;
+  let nonMembers = 0;
   for (const card of cards) {
     const peerId = card.sourceAgentPeerId;
     if (!peerId) continue;
     // Private by default: only index peers that opted into Agent Network work.
     if (!isAgentNetworkMember(card.membership)) {
       index.removeWorker(peerId);
+      nonMembers += 1;
       continue;
     }
     seen.add(peerId);
+    members += 1;
     index.indexWorker({
       peerId,
       ownerId: card.ownerId,
@@ -415,11 +435,24 @@ export async function refreshAgentNetworkMembershipIndex(deps: ChainOrchestratio
     });
   }
   // Drop stale index rows whose cards no longer opt in (or were removed).
+  let staleRemoved = 0;
   for (const worker of index.listWorkers()) {
     if (!seen.has(worker.peerId)) {
       index.removeWorker(worker.peerId);
+      staleRemoved += 1;
     }
   }
+  anLog("index", "membership index rebuilt", {
+    cards: cards.length,
+    members,
+    nonMembers,
+    staleRemoved,
+    indexed: index.listWorkers().length,
+    sample: index.listWorkers().slice(0, 5).map((w) => ({
+      peer: shortId(w.peerId),
+      name: w.displayName,
+    })),
+  });
 }
 
 /* ---------- transport + dep builders ---------- */
@@ -443,6 +476,9 @@ export async function _chainTransportResolver(
     localDevicePublicKeyPem: profile.device.publicKeyPem,
     localAgentPeerId: agentIdentity?.agentPeerId,
     agentPeerToOwner,
+    deliverLocally: async (envelope) => {
+      await handleInboundChainEnvelope(deps, envelope);
+    },
   };
 }
 
@@ -474,12 +510,33 @@ export async function buildChainInboundDeps(deps: ChainOrchestrationContext): Pr
           }
         }
         if (subtask) {
+          chainLog("worker", "executeAcceptedSubtask start", {
+            chainId: subtask.chainId,
+            subtaskId: subtask.subtaskId,
+            skill: subtask.requiredSkill,
+            orch: shortPeerId(envelope.senderPeerId),
+          });
           void executeAcceptedSubtask(
             workerDeps,
             { getToolContext: () => deps.getToolExecutionContext() },
             envelope.senderPeerId,
             subtask,
-          ).catch((err) => console.warn("[chain.worker] execute failed:", err));
+          )
+            .then((r) => {
+              chainLog("worker", "executeAcceptedSubtask done", {
+                subtaskId: subtask.subtaskId,
+                ok: r.ok,
+                reason: r.reason,
+              });
+            })
+            .catch((err) => chainWarn("worker", "execute failed", {
+              subtaskId: subtask.subtaskId,
+              error: err instanceof Error ? err.message : String(err),
+            }));
+        } else {
+          chainWarn("worker", "award accepted but subtask cache miss", {
+            subtaskId: payload.award.subtaskId,
+          });
         }
       }
       return result;
@@ -1270,13 +1327,16 @@ export function _chainDiagnosticsForSubtasks(
       if (b.score !== a.score) return b.score - a.score;
       return a.peerId.localeCompare(b.peerId);
     });
-    // Prefer the plan+assign assignee only when online; else best reachable.
+    // Always surface the plan+assign assignee when present (even if offline),
+    // so diagnostics match preferredWorkerPeerId. Note offline so owners know
+    // launch may need another reachable worker.
     const preferred = subtask.preferredWorkerPeerId
-      ? ranked.find((r) => r.peerId === subtask.preferredWorkerPeerId && r.online !== false)
+      ? ranked.find((r) => r.peerId === subtask.preferredWorkerPeerId)
       : undefined;
     const pick = preferred ?? byReachability[0];
     if (pick) {
-      diagnostics.push(`Selected for \`${subtask.requiredSkill}\`: ${pick.summary}`);
+      const offlineNote = preferred && preferred.online === false ? " (offline)" : "";
+      diagnostics.push(`Selected for \`${subtask.requiredSkill}\`: ${pick.summary}${offlineNote}`);
     }
   }
   return diagnostics;

@@ -68,6 +68,7 @@ import {
   type WorkerContribution,
 } from "./chain-report-synthesizer.js";
 import type { ChainAuditSink, ChainInboundDecision } from "./chain-inbound-types.js";
+import { chainLog, shortPeerId } from "./chain-debug.js";
 
 // ---------------------------------------------------------------------------
 // Outbound send surface — what the orchestrator needs from the runtime
@@ -406,22 +407,29 @@ export async function launchChain(
   }
 
   let mandateBroadcastOk = true;
+  const mandateFails: string[] = [];
   for (const workerPeerId of allWorkerPeerIds) {
     const sent = await sendChainMandate(deps, workerPeerId, state.chainMandate);
-    if (!sent) mandateBroadcastOk = false;
+    if (!sent) {
+      mandateBroadcastOk = false;
+      mandateFails.push(workerPeerId);
+    }
   }
   deps.audit.record({
     type: "chain.mandate_broadcast",
     outcome: mandateBroadcastOk ? "allow" : "deny",
     intent: "task.chain.mandate",
     correlationId: state.chainId,
-    summary: `workers=${allWorkerPeerIds.size}`,
+    summary: mandateBroadcastOk
+      ? `workers=${allWorkerPeerIds.size}`
+      : `workers=${allWorkerPeerIds.size} failed=${mandateFails.length} peers=${mandateFails.map((p) => p.slice(0, 14)).join(",")}`,
   });
 
   // Record the full worker map up front, but only propose dependency-ready
   // roots. Dependents wait for parent final partials (`advanceReadySubtasks`).
   // Named/direct assignees: propose to the primary only; extras are stall backups.
   let proposed = 0;
+  const proposeFails: string[] = [];
   for (const [subtaskId, workerIds] of Object.entries(workersBySubtask)) {
     const subtask = state.subtasks.get(subtaskId);
     if (!subtask) continue;
@@ -436,7 +444,11 @@ export async function launchChain(
           : workerIds;
     for (const workerPeerId of targets) {
       const ok = await sendChainPropose(deps, workerPeerId, toSend, state.chainMandate);
-      if (ok) proposed++;
+      if (ok) {
+        proposed++;
+      } else {
+        proposeFails.push(`${subtaskId.slice(0, 12)}→${workerPeerId.slice(0, 14)}`);
+      }
     }
     state.proposedSubtasks.add(subtaskId);
   }
@@ -445,7 +457,18 @@ export async function launchChain(
     outcome: "allow",
     intent: "task.chain.propose",
     correlationId: state.chainId,
-    summary: `proposed=${proposed} deferred=${state.subtasks.size - state.proposedSubtasks.size}`,
+    summary:
+      `proposed=${proposed} deferred=${state.subtasks.size - state.proposedSubtasks.size}` +
+      (proposeFails.length > 0 ? ` proposeFails=${proposeFails.join(";")}` : ""),
+  });
+  chainLog("launch", "chain launched", {
+    chainId: state.chainId,
+    workers: allWorkerPeerIds.size,
+    mandateOk: mandateBroadcastOk,
+    mandateFails: mandateFails.map(shortPeerId),
+    proposed,
+    deferred: state.subtasks.size - state.proposedSubtasks.size,
+    proposeFails,
   });
   return { ok: true, proposed, mandateBroadcastOk };
 }
@@ -1223,6 +1246,12 @@ export async function handleOrchestratorBid(
     return { ok: false, reason: "handler_denied" };
   }
   state.bids.set(`${bid.subtaskId}::${bid.workerPeerId}`, bid);
+  chainLog("orch", "bid received", {
+    chainId: state.chainId,
+    subtaskId: bid.subtaskId,
+    worker: shortPeerId(bid.workerPeerId),
+    costUsd: bid.proposedCostUsd,
+  });
   deps.audit.record({
     type: "chain.bid_received",
     outcome: "allow",

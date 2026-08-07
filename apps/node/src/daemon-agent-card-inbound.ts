@@ -14,6 +14,7 @@ import { handleInboundAgentCardIntent } from "./agent-card-inbound.js";
 import { markOutboundPeerVerified } from "./outbound-peer-freshness.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 import type { NodeServiceImpl } from "./node-service-impl.js";
+import { anLog, anWarn, shortId } from "./agent-network-debug.js";
 
 export type DaemonAgentCardInboundResult =
   | { handled: false }
@@ -166,15 +167,19 @@ export async function handleDaemonAgentCardInbound(input: {
   }
 
   if (cardResult.action === "cached") {
-    console.log(`[agent.card] cached card for ${cardResult.ownerId}`);
+    anLog("card-inbound", "cached card", { owner: shortId(cardResult.ownerId) });
     if (input.nodeService) {
       void input.nodeService.recordAgentCardCached(cardResult.ownerId, cardResult.card).catch((err) =>
-        console.warn(`[agent.card] activity hook failed:`, err),
+        anWarn("card-inbound", "activity hook failed", {
+          error: err instanceof Error ? err.message : String(err),
+        }),
       );
       const refreshIndex = input.nodeService.refreshAgentNetworkMembershipIndex?.bind(input.nodeService);
       if (typeof refreshIndex === "function") {
         void refreshIndex().catch((err) =>
-          console.warn(`[agent.card] refreshAgentNetworkMembershipIndex failed:`, err),
+          anWarn("card-inbound", "refreshAgentNetworkMembershipIndex failed", {
+            error: err instanceof Error ? err.message : String(err),
+          }),
         );
       }
     }

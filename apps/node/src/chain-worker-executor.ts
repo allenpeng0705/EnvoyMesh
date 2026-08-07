@@ -13,6 +13,7 @@ import {
 
 import { executeTool, type MeshToolContext } from "./tool-registry.js";
 import { deliverChainPartial, type ChainWorkerHandlerDeps } from "./chain-worker.js";
+import { chainLog, chainWarn, shortPeerId } from "./chain-debug.js";
 
 export interface ChainWorkerExecutorDeps {
   getToolContext: () => Promise<MeshToolContext | null>;
@@ -76,8 +77,17 @@ export function createOpenClawChainSubtaskExecutor(input: {
       );
     };
 
+    chainLog("exec", "OpenClaw subtask start", {
+      chainId: subtask.chainId,
+      subtaskId: subtask.subtaskId,
+      skill: subtask.requiredSkill,
+      worker: shortPeerId(input.workerPeerId),
+      openclawReady: input.isOpenClawReady(),
+    });
+
     if (!input.isOpenClawReady()) {
       await emit("Failed: Built-in OpenClaw is not running on this node", true, 0.1);
+      chainWarn("exec", "OpenClaw unavailable", { subtaskId: subtask.subtaskId });
       return { ok: false, finalNote: "openclaw_unavailable" };
     }
 
@@ -87,14 +97,20 @@ export function createOpenClawChainSubtaskExecutor(input: {
       const text = (await input.askOpenClaw(buildOpenClawSubtaskPrompt(subtask))).trim();
       if (!text) {
         await emit("Failed: OpenClaw returned an empty response", true, 0.1);
+        chainWarn("exec", "OpenClaw empty", { subtaskId: subtask.subtaskId });
         return { ok: false, finalNote: "openclaw_empty" };
       }
       const clipped = text.slice(0, 8000);
       await emit(clipped, true, 0.85);
+      chainLog("exec", "OpenClaw subtask done", {
+        subtaskId: subtask.subtaskId,
+        chars: clipped.length,
+      });
       return { ok: true, finalNote: clipped };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       await emit(`Failed: ${msg}`, true, 0.1);
+      chainWarn("exec", "OpenClaw error", { subtaskId: subtask.subtaskId, error: msg });
       return { ok: false, finalNote: msg };
     }
   };

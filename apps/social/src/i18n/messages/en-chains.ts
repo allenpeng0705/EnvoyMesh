@@ -177,6 +177,7 @@ export const chainsMessages = {
     title: "Run as team job",
     costRange: "Estimated cost: ${min}–${max}",
     workerCount: "{count} worker(s) available",
+    assignee: "Assigned: {name}",
     confirm: "Start team job",
     starting: "Starting…",
     cancel: "Cancel",

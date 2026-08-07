@@ -37,7 +37,7 @@ import type { LocalTrustStore, LocalPeerDirectoryStore } from "@envoymesh/local-
 import type { BondLevel } from "@envoymesh/bonds";
 import type { NodeProfile } from "@envoymesh/api";
 import { createAuditEvent } from "@envoymesh/local-store";
-
+import { anLog, anWarn, shortId } from "./agent-network-debug.js";
 const MAX_FLEET_MEMBERS = 1024;
 const NOTE_MANIFEST_PREFIX = "fleet-manifest:";
 const DEFAULT_TTL_MS = 90 * 24 * 60 * 60 * 1000;
@@ -320,6 +320,9 @@ export async function importFleetManifestViaRuntime(
   // participates as a chain worker without a manual toggle. This is the
   // fleet-onboarding "one-click agent network" signal.
   if (manifest.autoJoinAgentNetwork === true && ctx.enableCapabilityProvider) {
+    anLog("fleet", "autoJoinAgentNetwork — enabling capabilityProvider", {
+      manifestId: shortId(manifest.manifestId),
+    });
     try {
       await ctx.enableCapabilityProvider();
       if (ctx.appendAudit) {
@@ -335,6 +338,10 @@ export async function importFleetManifestViaRuntime(
       }
     } catch (err) {
       // Non-fatal: the manifest import succeeded; only the auto-join failed.
+      anWarn("fleet", "auto-join Agent Network failed", {
+        manifestId: shortId(manifest.manifestId),
+        error: err instanceof Error ? err.message : String(err),
+      });
       if (ctx.appendAudit) {
         await ctx.appendAudit(
           createAuditEvent({
@@ -349,6 +356,10 @@ export async function importFleetManifestViaRuntime(
         );
       }
     }
+  } else if (manifest.autoJoinAgentNetwork === true) {
+    anLog("fleet", "autoJoinAgentNetwork set but no enableCapabilityProvider hook", {
+      manifestId: shortId(manifest.manifestId),
+    });
   }
 
   const result: ImportFleetManifestResult = {

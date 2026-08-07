@@ -10434,6 +10434,12 @@ button:disabled {
   font-weight: var(--font-medium);
 }
 
+.chain-start-assignee {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  font-weight: var(--font-semibold);
+}
+
 .chain-start-diagnostics {
   list-style: none;
   margin: 0;

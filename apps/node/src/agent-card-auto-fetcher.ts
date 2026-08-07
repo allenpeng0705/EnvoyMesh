@@ -14,7 +14,7 @@ import {
   type OutboundExpectReplyMesh,
 } from "./chat-outbound-deliver.js";
 import { isLibp2pPeerId } from "./profile-sync-outbound.js";
-
+import { anLog, anWarn, shortId } from "./agent-network-debug.js";
 /** Mesh / libp2p transport surface needed for same-stream agent.card expect-reply. */
 export type AgentCardAutoFetcherMesh = OutboundExpectReplyMesh & Pick<EnvoyMesh, "peerId">;
 
@@ -96,6 +96,10 @@ export function createAgentCardAutoFetcher(
 
   return {
     async onBondEstablished({ peerOwnerId, remotePeerId }) {
+      anLog("card-fetch", "onBondEstablished", {
+        peer: shortId(peerOwnerId),
+        transport: shortId(remotePeerId),
+      });
       // 1. Trust-tier check — don't fetch from public bonds.
       try {
         const trust = await deps.trustStore.getTrustRecord(peerOwnerId);
@@ -113,6 +117,7 @@ export function createAgentCardAutoFetcher(
               createdAt: new Date().toISOString(),
             }),
           );
+          anLog("card-fetch", "skipped", { reason: `trust-level-${level}`, peer: shortId(peerOwnerId) });
           return { outcome: "skipped-public", reason: `trust-level-${level}` };
         }
       } catch {
@@ -125,6 +130,7 @@ export function createAgentCardAutoFetcher(
         if (cached) {
           const cachedAtMs = new Date(cached.cachedAt).getTime();
           if (Number.isFinite(cachedAtMs) && now() - cachedAtMs < maxAgeMs) {
+            anLog("card-fetch", "skipped", { reason: "cache-fresh", peer: shortId(peerOwnerId) });
             return { outcome: "skipped-fresh", reason: "cache-fresh" };
           }
         }
@@ -143,9 +149,12 @@ export function createAgentCardAutoFetcher(
         // unreadable under heavy flap). Not an audit event — cooldown is
         // expected behavior, not a failure.
         const elapsed = Math.round((now() - lastAttempt) / 1000);
-        console.debug(
-          `[agent-card] auto-fetch cooldown: ${peerOwnerId.slice(0, 16)}… last attempt ${elapsed}s ago (cooldown ${refetchCooldownMs / 1000}s)`,
-        );
+        anLog("card-fetch", "skipped", {
+          reason: "cooldown",
+          peer: shortId(peerOwnerId),
+          elapsedSec: elapsed,
+          cooldownSec: refetchCooldownMs / 1000,
+        });
         return { outcome: "skipped-cooldown", reason: "cooldown" };
       }
       lastFetchAttempt.set(peerOwnerId, now());
@@ -194,6 +203,7 @@ export function createAgentCardAutoFetcher(
       // over the libp2p stream regardless of the recipientPeerId header.
       if (!transportPeerId) {
         await auditFailure(deps.taskStore, remotePeerId, "no-agent-peer");
+        anLog("card-fetch", "skipped", { reason: "no-transport", peer: shortId(peerOwnerId) });
         return { outcome: "skipped-no-transport", reason: "no-transport" };
       }
 
@@ -256,6 +266,10 @@ export function createAgentCardAutoFetcher(
             createdAt: new Date().toISOString(),
           }),
         );
+        anLog("card-fetch", "cached", {
+          peer: shortId(peerOwnerId),
+          agentPeer: shortId(reply.senderPeerId),
+        });
         return { outcome: "sent" };
       } catch (err) {
         await auditFailure(
@@ -263,6 +277,10 @@ export function createAgentCardAutoFetcher(
           remotePeerId,
           err instanceof Error ? err.message : String(err),
         );
+        anWarn("card-fetch", "failed", {
+          peer: shortId(peerOwnerId),
+          error: err instanceof Error ? err.message : String(err),
+        });
         return { outcome: "failed", reason: err instanceof Error ? err.message : String(err) };
       }
     },

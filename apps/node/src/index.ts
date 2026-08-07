@@ -164,7 +164,8 @@ import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent, expandCirc
 import { handleInboundSyncStateIntent } from "./sync-state-inbound.js";
 import { handleInboundBroadcastRequest, handleInboundBroadcastResponse } from "./broadcast-inbound.js";
 import { pushNotificationService } from "./push-notification.js";
-import { applyLanAutoBondAccept, evaluateLanAutoBondReceipt } from "./node-service-lan-auto-bond.js";
+import { handleLanAutoBondInbound } from "./node-service-lan-auto-bond.js";
+import { anWarn, shortId } from "./agent-network-debug.js";
 import { handleInboundTaskFeedback, handleInboundOfficialCredential } from "./reputation-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { handleInboundLibraryRead } from "./library-read-inbound.js";
@@ -2095,88 +2096,83 @@ async function handleInboundMeshMessage({
     // fleet-onboarded pair-request can land even when the operator hasn't
     // enabled the QR-pair auto-accept lever.
     if (nodeService instanceof NodeServiceImpl) {
-      const decision = await evaluateLanAutoBondReceipt(
-        {
-          taskStore,
-          loadConfig: () => nodeConfigStore.load(),
-          // `sendPairRequest` is only used by `sendLanAutoBondRequest` (the
-          // outbound path); the receive path never calls it. The dummy
-          // implementation keeps the helper testable on both sides.
-          sendPairRequest: async () => ({ ok: true }),
-          getLocalIdentity: () => ({
-            ownerId: profile?.owner.ownerId ?? "",
-            deviceId: profile?.device.deviceId ?? "",
-            devicePublicKeyPem: profile?.device.publicKeyPem ?? "",
-          }),
-          getOwnOwnerId: () => profile?.owner.ownerId ?? "",
+      const lanDeps = {
+        taskStore,
+        loadConfig: () => nodeConfigStore.load(),
+        // `sendPairRequest` is only used by `sendLanAutoBondRequest` (the
+        // outbound path); the receive path never calls it. The dummy
+        // implementation keeps the helper testable on both sides.
+        sendPairRequest: async () => ({ ok: true }),
+        getLocalIdentity: () => ({
+          ownerId: profile?.owner.ownerId ?? "",
+          deviceId: profile?.device.deviceId ?? "",
+          devicePublicKeyPem: profile?.device.publicKeyPem ?? "",
+        }),
+        getOwnOwnerId: () => profile?.owner.ownerId ?? "",
+        enableCapabilityProvider: async () => {
+          // Route through the public updateNodeConfig API so the flag is
+          // merged with the current on-disk config (preserving the worker
+          // profile and every other user-saved field) instead of doing a
+          // direct load-spread-save that can race with concurrent saves.
+          // The config store's write serialization + in-memory cache
+          // handles the Windows unlink+rename window.
+          await nodeService.updateNodeConfig({
+            capabilityProviderEnabled: true,
+          } as Parameters<typeof nodeService.updateNodeConfig>[0]);
         },
+      };
+      const lanResult = await handleLanAutoBondInbound({
+        deps: lanDeps,
         envelope,
-      );
-      if (decision.accept) {
-        await applyLanAutoBondAccept(
-          {
-            taskStore,
-            loadConfig: () => nodeConfigStore.load(),
-            sendPairRequest: async () => ({ ok: true }),
-            getLocalIdentity: () => ({
-              ownerId: profile?.owner.ownerId ?? "",
-              deviceId: profile?.device.deviceId ?? "",
-              devicePublicKeyPem: profile?.device.publicKeyPem ?? "",
-            }),
-            getOwnOwnerId: () => profile?.owner.ownerId ?? "",
-            enableCapabilityProvider: async () => {
-              // Route through the public updateNodeConfig API so the flag is
-              // merged with the current on-disk config (preserving the worker
-              // profile and every other user-saved field) instead of doing a
-              // direct load-spread-save that can race with concurrent saves.
-              // The config store's write serialization + in-memory cache
-              // handles the Windows unlink+rename window.
-              await nodeService.updateNodeConfig({
-                capabilityProviderEnabled: true,
-              } as Parameters<typeof nodeService.updateNodeConfig>[0]);
-            },
-          },
-          {
-            requesterOwnerId: payload.requesterOwnerId,
-            requesterDeviceId: payload.requesterDeviceId,
-            requesterPeerId: remotePeerId,
-            remoteAddr,
-            fingerprint: decision.fingerprint ?? "",
-            correlationId,
-            messageId: envelope.messageId,
-            trustStore,
-            peerDirectory: peerDirectoryStore,
-          },
-        );
-        // Surface the new bond to Social (status strip, contacts) — LAN accept
-        // previously wrote trust without emitting bond:established.
-        nodeService.emit("bond:established", {
-          peerOwnerId: payload.requesterOwnerId,
-          displayName: "Fleet peer",
-        });
-        try {
-          const bonds = await nodeService.getBonds();
-          nodeService.emit("home:bonds-updated", { bonds });
-        } catch {
-          /* ignore */
-        }
-        // Pull the peer's agent card + rebuild soft pool so Team jobs can see
-        // them without a manual Settings → Refresh workers click.
-        void nodeService.refreshAgentNetworkWorkers().catch((err) => {
-          console.warn("[lan-auto-bond] refreshAgentNetworkWorkers failed:", err);
-        });
+        remotePeerId,
+        remoteAddr,
+        trustStore,
+        peerDirectory: peerDirectoryStore,
+        onAccepted: async ({ payload: acceptedPayload }) => {
+          // Surface the new bond to Social (status strip, contacts) — LAN accept
+          // previously wrote trust without emitting bond:established.
+          nodeService.emit("bond:established", {
+            peerOwnerId: acceptedPayload.requesterOwnerId,
+            displayName: "Fleet peer",
+          });
+          try {
+            const bonds = await nodeService.getBonds();
+            nodeService.emit("home:bonds-updated", { bonds });
+          } catch {
+            /* ignore */
+          }
+          // Pull the peer's agent card + rebuild soft pool so Team jobs can see
+          // them without a manual Settings → Refresh workers click.
+          void nodeService.refreshAgentNetworkWorkers().catch((err) => {
+            anWarn("lan-auto-bond", "refreshAgentNetworkWorkers after accept failed", {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          });
+        },
+      });
+      if (lanResult.outcome === "accepted") {
         return;
       }
       // If the envelope *did* carry a fleet token but we declined (disabled,
       // token-mismatch, self-target, …) emit a `message.rejected` audit so the
       // operator can see why nothing happened.
-      if (decision.reason === "token-mismatch" || decision.reason === "disabled" || decision.reason === "self-target") {
+      if (
+        lanResult.outcome === "declined" &&
+        (lanResult.reason === "token-mismatch" ||
+          lanResult.reason === "disabled" ||
+          lanResult.reason === "self-target")
+      ) {
+        anWarn("lan-auto-bond", "daemon reject", {
+          reason: lanResult.reason,
+          fingerprint: lanResult.fingerprint,
+          from: shortId(lanResult.payload.requesterOwnerId),
+        });
         void taskStore.appendAuditEvent(
           createAuditEvent({
             type: "message.rejected",
             intent: "device.pair.request",
             outcome: "deny",
-            summary: `lan-auto-bond rejected: ${decision.reason}${decision.fingerprint ? ` (fp=${decision.fingerprint})` : ""}`,
+            summary: `lan-auto-bond rejected: ${lanResult.reason}${lanResult.fingerprint ? ` (fp=${lanResult.fingerprint})` : ""}`,
             correlationId,
             remotePeerId,
             direction: "inbound",
@@ -2185,7 +2181,7 @@ async function handleInboundMeshMessage({
       }
       // Self-target short-circuit: skip the companion-pairing and manual-approval
       // fallback paths — we should never accept a pair request from ourselves.
-      if (decision.reason === "self-target") {
+      if (lanResult.outcome === "declined" && lanResult.reason === "self-target") {
         return;
       }
     }

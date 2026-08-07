@@ -51,6 +51,7 @@ import { signCanonicalPayload } from "@envoymesh/identity";
 
 import { computeChainBid, isChainBidExpired, type ChainBidWorkerContext } from "./chain-bid-strategy.js";
 import type { ChainAuditSink, ChainInboundDecision } from "./chain-inbound-types.js";
+import { chainLog, chainWarn, shortPeerId } from "./chain-debug.js";
 
 // ---------------------------------------------------------------------------
 // Outbound surface — what the worker needs from the runtime to send envelopes
@@ -125,9 +126,23 @@ export async function handleWorkerPropose(
   payload: TaskChainProposePayload,
 ): Promise<ChainInboundDecision> {
   const engineBlock = refuseIfEngineUnavailable(deps, envelope, "task.chain.propose");
-  if (engineBlock) return engineBlock;
+  if (engineBlock) {
+    chainWarn("worker", "propose declined — AN engine unavailable", {
+      subtaskId: payload.subtask.subtaskId,
+      skill: payload.subtask.requiredSkill,
+      from: shortPeerId(envelope.senderPeerId),
+    });
+    return engineBlock;
+  }
 
   const subtask = payload.subtask;
+  chainLog("worker", "propose received", {
+    chainId: subtask.chainId,
+    subtaskId: subtask.subtaskId,
+    skill: subtask.requiredSkill,
+    preferred: shortPeerId(subtask.preferredWorkerPeerId),
+    from: shortPeerId(envelope.senderPeerId),
+  });
   const now = (deps.now ?? (() => new Date()))();
 
   // Compute bid via the worker-context strategy.
@@ -137,6 +152,10 @@ export async function handleWorkerPropose(
     now,
   });
   if (!bidResult.ok) {
+    chainWarn("worker", "bid declined", {
+      subtaskId: subtask.subtaskId,
+      reason: bidResult.reason,
+    });
     deps.audit.record({
       type: "chain.bid_declined",
       outcome: "deny",
@@ -155,6 +174,10 @@ export async function handleWorkerPropose(
   const sent = await submitChainBid(deps, envelope.senderPeerId, bidResult.bid, payload);
   if (!sent) {
     deps.pendingBidExpirations.delete(subtask.subtaskId);
+    chainWarn("worker", "bid send failed", {
+      subtaskId: subtask.subtaskId,
+      orch: shortPeerId(envelope.senderPeerId),
+    });
     deps.audit.record({
       type: "chain.bid_send_failed",
       outcome: "deny",
@@ -166,6 +189,11 @@ export async function handleWorkerPropose(
     return { ok: false, reason: "handler_denied" };
   }
 
+  chainLog("worker", "bid sent", {
+    subtaskId: subtask.subtaskId,
+    costUsd: bidResult.bid.proposedCostUsd,
+    orch: shortPeerId(envelope.senderPeerId),
+  });
   deps.audit.record({
     type: "chain.bid_sent",
     outcome: "allow",
@@ -224,6 +252,11 @@ export async function handleWorkerAccept(
     return { ok: false, reason: "handler_denied" };
   }
   acceptChainAward(deps, subtaskId);
+  chainLog("worker", "award accepted", {
+    subtaskId,
+    costUsd: payload.award.acceptedCostUsd,
+    from: shortPeerId(envelope.senderPeerId),
+  });
   deps.audit.record({
     type: "chain.award_accepted",
     outcome: "allow",

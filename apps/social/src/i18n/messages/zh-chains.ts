@@ -176,6 +176,7 @@ export const zhChainsMessages = {
     title: "作为协作任务运行",
     costRange: "预计费用：${min}–${max}",
     workerCount: "可用工作代理：{count}",
+    assignee: "指派：{name}",
     confirm: "启动协作任务",
     starting: "正在启动…",
     cancel: "取消",

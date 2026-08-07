@@ -553,6 +553,7 @@ import {
   type NodeWanRuntimeDeps,
 } from "./node-service-wan.js";
 import { sendLanAutoBondRequest } from "./node-service-lan-auto-bond.js";
+import { anLog, anWarn, shortId } from "./agent-network-debug.js";
 import {
   consumeCompanyInviteViaRuntime,
   createCompanyInviteViaRuntime,
@@ -2438,7 +2439,14 @@ class NodeServiceImpl implements NodeService {
    * `sendLanAutoBondRequest` (and `buildLanAutoBondRequest`) inside
    * `node-service-lan-auto-bond.ts`. This wrapper only adds the per-peer
    * cooldown + the dependency wiring.
+   *
+   * Public for tests / harnesses that simulate mDNS discovery without
+   * enabling real multicast (Phase13 disables mDNS).
    */
+  async maybeFireLanAutoBondForDiscoveredPeer(peerId: string): Promise<void> {
+    return this._maybeFireLanAutoBond(peerId);
+  }
+
   private async _maybeFireLanAutoBond(peerId: string): Promise<void> {
     const profile = this._profile;
     const mesh = this._mesh;
@@ -2453,7 +2461,13 @@ class NodeServiceImpl implements NodeService {
       }
     }
     const lastAt = this._lanAutoBondLastFireAt.get(peerId) ?? 0;
-    if (Date.now() - lastAt < NodeServiceImpl._LAN_AUTO_BOND_COOLDOWN_MS) return;
+    if (Date.now() - lastAt < NodeServiceImpl._LAN_AUTO_BOND_COOLDOWN_MS) {
+      anLog("lan-auto-bond", "fire skipped — cooldown", {
+        peer: shortId(peerId),
+        cooldownMs: NodeServiceImpl._LAN_AUTO_BOND_COOLDOWN_MS,
+      });
+      return;
+    }
 
     // All gating (config check, token check, self check) happens inside
     // `sendLanAutoBondRequest`, which also handles audit logging and the
@@ -2462,6 +2476,7 @@ class NodeServiceImpl implements NodeService {
     // Only stamp the cooldown *after* the helper actually accepted the call.
     // Otherwise a config flip (off → no token) would block the next fire
     // for a full 60s even though no envelope was ever sent.
+    anLog("lan-auto-bond", "fire attempt (mDNS/discovery)", { peer: shortId(peerId) });
     const result = await sendLanAutoBondRequest(
       {
         taskStore: this._taskStore,
@@ -2480,9 +2495,13 @@ class NodeServiceImpl implements NodeService {
       this._lanAutoBondLastFireAt.set(peerId, Date.now());
       // Best-effort: once the peer accepts (or we already share a bond), pull
       // cards so Assigner soft pool updates without a Settings refresh.
-      void this.refreshAgentNetworkWorkers().catch((err) => {
-        console.warn("[lan-auto-bond] refreshAgentNetworkWorkers after send failed:", err);
-      });
+      this._trackAgentNetworkRefresh(
+        this.refreshAgentNetworkWorkers().catch((err) => {
+          anWarn("lan-auto-bond", "refreshAgentNetworkWorkers after send failed", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }),
+      );
     }
   }
 
@@ -3790,27 +3809,35 @@ class NodeServiceImpl implements NodeService {
   async refreshAgentNetworkWorkers(): Promise<{ requested: number; failed: number }> {
     let requested = 0;
     let failed = 0;
+    anLog("refresh", "refreshAgentNetworkWorkers start");
     try {
       const cfg = await this.getNodeConfig();
       if (cfg.capabilityProviderEnabled === true) {
         try {
           const pushed = await this.announceLocalAgentCardToBondedPeers();
+          anLog("refresh", "announce local card", {
+            announced: pushed.announced,
+            failed: pushed.failed,
+          });
           if (pushed.failed > 0) {
-            console.warn(
-              `[agent-network] announceLocalAgentCard: announced=${pushed.announced} failed=${pushed.failed}`,
-            );
+            anWarn("refresh", "announceLocalAgentCard partial failure", {
+              announced: pushed.announced,
+              failed: pushed.failed,
+            });
           }
         } catch (err) {
-          console.warn(
-            "[agent-network] announceLocalAgentCardToBondedPeers failed:",
-            err instanceof Error ? err.message : err,
-          );
+          anWarn("refresh", "announceLocalAgentCardToBondedPeers failed", {
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
+      } else {
+        anLog("refresh", "skip announce — Join Agent Network off");
       }
       const bonds = (await this.getBonds()).filter(
         (bond) => bond.level === "direct" || bond.level === "referred",
       );
       requested = bonds.length;
+      anLog("refresh", "pull cards from bonded peers", { count: requested });
       const outcomes = await mapPoolSettled(
         bonds,
         AGENT_CARD_REFRESH_CONCURRENCY,
@@ -3847,21 +3874,35 @@ class NodeServiceImpl implements NodeService {
         },
       );
       failed = outcomes.filter((ok) => !ok).length;
+      anLog("refresh", "card pull done", { requested, failed, ok: requested - failed });
     } catch {
       /* bonds unavailable — still refresh local index */
+      anWarn("refresh", "bond list / card pull failed — still refreshing index");
     }
     try {
       await this.refreshAgentNetworkMembershipIndex();
       const cards = await this.listAgentCards();
       this.emit("home:agent-cards-updated", { cards });
+      anLog("refresh", "membership index refreshed", { cards: cards.length });
     } catch (err) {
-      console.warn("[agent-network] refreshAgentNetworkMembershipIndex failed:", err);
+      anWarn("refresh", "refreshAgentNetworkMembershipIndex failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
     this._scheduleDeferredAgentNetworkIndexRefresh();
     return { requested, failed };
   }
 
   private _agentNetworkIndexRefreshTimers: ReturnType<typeof setTimeout>[] = [];
+  /** In-flight Join/LAN refresh work — awaited in stopNode so tests don't rm() under us. */
+  private _agentNetworkRefreshInflight: Promise<unknown> = Promise.resolve();
+
+  private _trackAgentNetworkRefresh(work: Promise<unknown>): void {
+    this._agentNetworkRefreshInflight = Promise.allSettled([
+      this._agentNetworkRefreshInflight,
+      work,
+    ]).then(() => undefined);
+  }
 
   private _scheduleDeferredAgentNetworkIndexRefresh(): void {
     for (const t of this._agentNetworkIndexRefreshTimers) clearTimeout(t);
@@ -7376,6 +7417,23 @@ class NodeServiceImpl implements NodeService {
     if (hasNodePatch) {
       const joinToggled = Object.prototype.hasOwnProperty.call(nodePatch, "capabilityProviderEnabled");
       const profilePatched = Object.prototype.hasOwnProperty.call(nodePatch, "agentNetworkProfile");
+      const lanPatched =
+        Object.prototype.hasOwnProperty.call(nodePatch, "lanAutoBondEnabled") ||
+        Object.prototype.hasOwnProperty.call(nodePatch, "lanAutoBondFleetToken") ||
+        Object.prototype.hasOwnProperty.call(nodePatch, "lanAutoBondAutoJoinAgentNetwork");
+      if (joinToggled || lanPatched || profilePatched) {
+        anLog("config", "updateNodeConfig agent-network related", {
+          joinToggled,
+          joinValue:
+            joinToggled
+              ? (nodePatch as Partial<NodeConfig>).capabilityProviderEnabled === true
+              : undefined,
+          lanPatched,
+          lanEnabled: (nodePatch as Partial<NodeConfig>).lanAutoBondEnabled,
+          lanAutoJoin: (nodePatch as Partial<NodeConfig>).lanAutoBondAutoJoinAgentNetwork,
+          profilePatched,
+        });
+      }
       await updateNodeConfigViaRuntime(this._nodeConfigContext(), nodePatch as Partial<NodeConfig>);
       // Phase 51B — keep owner profile aiBots in sync when node-config is updated.
       if (
@@ -7395,19 +7453,29 @@ class NodeServiceImpl implements NodeService {
       // Join Agent Network changes what our card advertises; refresh pulls peers'
       // cards and (when joining) pushes ours so both sides see agent-network-worker.
       if (joinToggled) {
-        void this.refreshAgentNetworkWorkers().catch((err) => {
-          console.warn("[agent-network] refresh after Join toggle failed:", err);
+        anLog("join", "Join Agent Network toggled — scheduling refresh", {
+          enabled: (nodePatch as Partial<NodeConfig>).capabilityProviderEnabled === true,
         });
+        this._trackAgentNetworkRefresh(
+          this.refreshAgentNetworkWorkers().catch((err) => {
+            anWarn("join", "refresh after Join toggle failed", {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }),
+        );
       } else if (profilePatched) {
         // Worker profile (skills, freshness, …) is on the Agent Card — push so
         // bonded peers update without waiting for a manual Refresh on their side.
         try {
           const cfg = await this.getNodeConfig();
           if (cfg.capabilityProviderEnabled === true) {
+            anLog("profile", "worker profile saved — schedule announce");
             this._scheduleAnnounceLocalAgentCard("worker-profile");
           }
         } catch (err) {
-          console.warn("[agent-network] schedule announce after profile save failed:", err);
+          anWarn("profile", "schedule announce after profile save failed", {
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
       }
     }
@@ -7935,6 +8003,12 @@ class NodeServiceImpl implements NodeService {
       for (const t of this._agentNetworkIndexRefreshTimers) clearTimeout(t);
       this._agentNetworkIndexRefreshTimers = [];
     }
+    try {
+      await this._agentNetworkRefreshInflight;
+    } catch {
+      /* ignore — tracked promises already catch */
+    }
+    this._agentNetworkRefreshInflight = Promise.resolve();
     return stopNodeViaRuntime(this._stopNodeContext());
   }
 

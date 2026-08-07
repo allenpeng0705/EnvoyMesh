@@ -600,6 +600,12 @@ export interface NodeConfig {
    */
   lanAutoBondFleetToken?: string;
   /**
+   * When true (default after Office LAN preset), accepting a fleet-token LAN
+   * auto-bond also enables Join Agent Network (`capabilityProviderEnabled`).
+   * Set false to bond without joining the soft pool.
+   */
+  lanAutoBondAutoJoinAgentNetwork?: boolean;
+  /**
    * Phase 35D — opt-in pairing-kiosk HTTP server. Default: false.
    */
   pairingKioskEnabled?: boolean;

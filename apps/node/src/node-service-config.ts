@@ -176,6 +176,9 @@ export async function getNodeConfigViaRuntime(
       capabilityProviderEnabled: config.capabilityProviderEnabled ?? false,
       capabilityProviderMandateId: config.capabilityProviderMandateId,
       agentNetworkProfile: config.agentNetworkProfile,
+      lanAutoBondEnabled: config.lanAutoBondEnabled ?? false,
+      lanAutoBondFleetToken: config.lanAutoBondFleetToken,
+      lanAutoBondAutoJoinAgentNetwork: config.lanAutoBondAutoJoinAgentNetwork,
       bondAutonomyEnabled: config.bondAutonomyEnabled ?? false,
       bondAutonomyMandateId: config.bondAutonomyMandateId,
       bondAutonomyMaxAutoBondsPerDay: config.bondAutonomyMaxAutoBondsPerDay,
@@ -249,6 +252,7 @@ export async function getNodeConfigViaRuntime(
     socialProxyEnabled: false,
     documentAcquisitionEnabled: false,
     capabilityProviderEnabled: false,
+    lanAutoBondEnabled: false,
   };
 }
 

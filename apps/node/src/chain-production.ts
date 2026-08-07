@@ -11,6 +11,7 @@ import type { LocalPeerDirectoryStore } from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import { sendEnvelopeWithRetry, type OutboundDeliverMesh } from "./chat-outbound-deliver.js";
+import { chainLog, chainWarn, shortPeerId } from "./chain-debug.js";
 
 export interface ChainTransportResolver {
   mesh: OutboundDeliverMesh & Pick<EnvoyMesh, "peerId">;
@@ -21,6 +22,12 @@ export interface ChainTransportResolver {
   localAgentPeerId?: string;
   /** Cached agent cards: sourceAgentPeerId → ownerId. */
   agentPeerToOwner?: Map<string, string>;
+  /**
+   * Same-node delivery for Team jobs when the recipient is the local agent.
+   * Mesh self-dial is skipped by chat-outbound-deliver; without this, local
+   * "You" workers never receive mandate/propose.
+   */
+  deliverLocally?: (envelope: EnvoyEnvelope) => Promise<void>;
 }
 
 /**
@@ -131,16 +138,82 @@ export async function sendChainEnvelopeOverMesh(
   envelope: EnvoyEnvelope,
 ): Promise<boolean> {
   const transportPeerId = await resolveChainTransportPeerId(resolver, recipientPeerId);
-  if (!transportPeerId) return false;
+  if (!transportPeerId) {
+    chainWarn("send", "no transport peer", {
+      intent: envelope.intent,
+      recipient: shortPeerId(recipientPeerId),
+      correlationId: envelope.correlationId,
+    });
+    return false;
+  }
+
+  const localDevicePeerId = resolver.localDevicePublicKeyPem
+    ? derivePeerId(resolver.localDevicePublicKeyPem)
+    : undefined;
+  const isLocal =
+    recipientPeerId === resolver.localAgentPeerId ||
+    recipientPeerId === localDevicePeerId ||
+    recipientPeerId === resolver.mesh.peerId ||
+    transportPeerId === resolver.mesh.peerId;
+
+  if (isLocal) {
+    if (!resolver.deliverLocally) {
+      chainWarn("send", "local recipient but deliverLocally missing", {
+        intent: envelope.intent,
+        recipient: shortPeerId(recipientPeerId),
+        correlationId: envelope.correlationId,
+      });
+      return false;
+    }
+    try {
+      chainLog("send", "local loopback", {
+        intent: envelope.intent,
+        recipient: shortPeerId(recipientPeerId),
+        correlationId: envelope.correlationId,
+      });
+      await resolver.deliverLocally(envelope);
+      return true;
+    } catch (err) {
+      chainWarn("send", "local loopback failed", {
+        intent: envelope.intent,
+        recipient: shortPeerId(recipientPeerId),
+        correlationId: envelope.correlationId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
+  }
+
   try {
-    await sendEnvelopeWithRetry({
+    chainLog("send", "mesh deliver", {
+      intent: envelope.intent,
+      recipient: shortPeerId(recipientPeerId),
+      transport: shortPeerId(transportPeerId),
+      correlationId: envelope.correlationId,
+    });
+    const result = await sendEnvelopeWithRetry({
       mesh: resolver.mesh,
       transportPeerId,
       envelope,
       dialHints: [`/p2p/${transportPeerId}`],
     });
-    return true;
-  } catch {
+    if (!result.delivered) {
+      chainWarn("send", "mesh deliver returned not delivered", {
+        intent: envelope.intent,
+        recipient: shortPeerId(recipientPeerId),
+        transport: shortPeerId(transportPeerId),
+        correlationId: envelope.correlationId,
+      });
+    }
+    return result.delivered === true;
+  } catch (err) {
+    chainWarn("send", "mesh deliver threw", {
+      intent: envelope.intent,
+      recipient: shortPeerId(recipientPeerId),
+      transport: shortPeerId(transportPeerId),
+      correlationId: envelope.correlationId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return false;
   }
 }

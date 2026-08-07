@@ -309,15 +309,35 @@ export function ChainStartDialog({
               </p>
             ) : null}
             <ul className="chain-start-subtasks">
-              {preview.subtasks.map((s) => (
-                <li key={s.subtaskId}>
-                  <strong>{s.requiredSkill}</strong>
-                  <span>{s.objective}</span>
-                  <span className="chain-start-workers">
-                    {t("chains.start.workerCount", { count: s.workerCount })}
-                  </span>
-                </li>
-              ))}
+              {preview.subtasks.map((s) => {
+                const assigneePeerId = s.preferredWorkerPeerId;
+                const assigneeCandidate = assigneePeerId
+                  ? workerCandidates.find((w) => w.card?.sourceAgentPeerId === assigneePeerId)
+                  : undefined;
+                const assigneeSuggested = assigneePeerId
+                  ? suggestedByPeer.get(assigneePeerId)
+                  : undefined;
+                const assigneeLabel = assigneeCandidate?.isSelf
+                  ? t("chains.start.youLabel")
+                  : (assigneeCandidate?.bond.displayName
+                    ?? assigneeCandidate?.card?.displayName
+                    ?? assigneeSuggested?.summary?.split(":")[0]?.trim()
+                    ?? (assigneePeerId ? assigneePeerId.slice(0, 12) : undefined));
+                return (
+                  <li key={s.subtaskId}>
+                    <strong>{s.requiredSkill}</strong>
+                    <span>{s.objective}</span>
+                    <span className="chain-start-workers">
+                      {t("chains.start.workerCount", { count: s.workerCount })}
+                    </span>
+                    {assigneeLabel ? (
+                      <span className="chain-start-assignee">
+                        {t("chains.start.assignee", { name: assigneeLabel })}
+                      </span>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
 
             {/* Team workers — system auto-picks the best matches (auto-first);

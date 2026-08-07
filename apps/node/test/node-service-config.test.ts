@@ -41,6 +41,7 @@ describe("getNodeConfigViaRuntime", () => {
     expect(out.relayServerEnabled).toBe(false);
     expect(out.configuredRelays).toEqual([]);
     expect(out.bridgeEnabled).toBe(true);
+    expect(out.lanAutoBondEnabled).toBe(false);
     expect(out.openclawEnabled).toBe(true);
     expect(out.trustModeEnabled).toBe(false);
     expect(out.anonymousDiscoveryMode).toBe("off");
@@ -68,6 +69,21 @@ describe("getNodeConfigViaRuntime", () => {
       makeCtx({ loadNodeConfig: async () => persisted as PersistedNodeConfig }),
     );
     expect(out.friendAutopilotIntervalHours).toBe(24);
+  });
+
+  it("exposes LAN auto-bond fields from persisted config", async () => {
+    const persisted: Partial<PersistedNodeConfig> = {
+      profileDir: "/profile",
+      lanAutoBondEnabled: true,
+      lanAutoBondFleetToken: "office-token-xyz",
+      lanAutoBondAutoJoinAgentNetwork: true,
+    };
+    const out = await getNodeConfigViaRuntime(
+      makeCtx({ loadNodeConfig: async () => persisted as PersistedNodeConfig }),
+    );
+    expect(out.lanAutoBondEnabled).toBe(true);
+    expect(out.lanAutoBondFleetToken).toBe("office-token-xyz");
+    expect(out.lanAutoBondAutoJoinAgentNetwork).toBe(true);
   });
 });
 

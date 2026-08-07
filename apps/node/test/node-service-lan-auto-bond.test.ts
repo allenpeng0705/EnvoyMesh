@@ -355,3 +355,83 @@ describe("applyLanAutoBondAccept", () => {
     expect(fail?.summary).toContain("lan-auto: peer directory pre-fill failed");
   });
 });
+
+describe("handleLanAutoBondInbound", () => {
+  function trustStoreSpy() {
+    return { setTrustRecord: vi.fn().mockResolvedValue(undefined) };
+  }
+
+  it("accepts matching fleet token and writes trust (shared daemon/E2E path)", async () => {
+    const { handleLanAutoBondInbound } = await import("../src/node-service-lan-auto-bond.js");
+    const enableCapabilityProvider = vi.fn();
+    const deps: LanAutoBondDeps = {
+      ...baseDeps({
+        loadConfig: async () => ({
+          ...((await baseDeps().loadConfig()) as PersistedNodeConfig),
+          lanAutoBondEnabled: true,
+          lanAutoBondFleetToken: "fleet-secret-1",
+          lanAutoBondAutoJoinAgentNetwork: false,
+        }),
+      }),
+      enableCapabilityProvider,
+    };
+    const trust = trustStoreSpy();
+    const peer = { ensurePeerFromInboundChat: vi.fn().mockResolvedValue(undefined) };
+    const payload = {
+      requestId: "req-shared",
+      requesterOwnerId: "envoy:owner:other",
+      requesterDeviceId: "envoy:device:other",
+      requesterDevicePublicKeyPem: "pem",
+      createdAt: new Date().toISOString(),
+      lanFleetToken: "fleet-secret-1",
+    };
+    let accepted = false;
+    const result = await handleLanAutoBondInbound({
+      deps,
+      envelope: { payload, messageId: "msg-1", correlationId: "c-1" },
+      remotePeerId: "12D3KooW-other",
+      trustStore: trust,
+      peerDirectory: peer,
+      onAccepted: async () => {
+        accepted = true;
+      },
+    });
+    expect(result.outcome).toBe("accepted");
+    expect(accepted).toBe(true);
+    expect(trust.setTrustRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ peerOwnerId: "envoy:owner:other", level: "direct" }),
+    );
+    expect(enableCapabilityProvider).not.toHaveBeenCalled();
+  });
+
+  it("returns not-applicable without logging path for tokenless pair requests", async () => {
+    const { handleLanAutoBondInbound } = await import("../src/node-service-lan-auto-bond.js");
+    const deps = baseDeps({
+      loadConfig: async () => ({
+        ...((await baseDeps().loadConfig()) as PersistedNodeConfig),
+        lanAutoBondEnabled: true,
+        lanAutoBondFleetToken: "fleet-secret-1",
+      }),
+    });
+    const trust = trustStoreSpy();
+    const peer = { ensurePeerFromInboundChat: vi.fn() };
+    const result = await handleLanAutoBondInbound({
+      deps,
+      envelope: {
+        payload: {
+          requestId: "req-qr",
+          requesterOwnerId: "envoy:owner:other",
+          requesterDeviceId: "envoy:device:other",
+          requesterDevicePublicKeyPem: "pem",
+          createdAt: new Date().toISOString(),
+        },
+        messageId: "msg-qr",
+      },
+      remotePeerId: "12D3KooW-other",
+      trustStore: trust,
+      peerDirectory: peer,
+    });
+    expect(result.outcome).toBe("not-applicable");
+    expect(trust.setTrustRecord).not.toHaveBeenCalled();
+  });
+});

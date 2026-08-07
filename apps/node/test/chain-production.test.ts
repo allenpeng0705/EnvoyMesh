@@ -4,6 +4,7 @@ import { generateKeyPairSync } from "node:crypto";
 import {
   extractChainIdFromEnvelope,
   resolveChainTransportPeerId,
+  sendChainEnvelopeOverMesh,
 } from "../src/chain-production.js";
 
 describe("chain-production", () => {
@@ -54,5 +55,44 @@ describe("chain-production", () => {
     );
 
     expect(resolved).toBe(transportPeerId);
+  });
+
+  it("sendChainEnvelopeOverMesh loopbacks local agent instead of mesh self-dial", async () => {
+    const delivered: string[] = [];
+    const localAgent = "envoy_agent_local";
+    const ok = await sendChainEnvelopeOverMesh(
+      {
+        mesh: {
+          peerId: "12D3KooW-self",
+          send: async () => {
+            throw new Error("mesh.send must not run for local loopback");
+          },
+        } as never,
+        peerDirectoryStore: {
+          listPeerRecords: async () => [],
+          getPeerByOwnerId: async () => undefined,
+        } as never,
+        localAgentPeerId: localAgent,
+        deliverLocally: async (envelope) => {
+          delivered.push(envelope.intent);
+        },
+      },
+      localAgent,
+      {
+        version: "0.1",
+        messageId: "m-local",
+        createdAt: "2026-08-07T00:00:00.000Z",
+        senderPeerId: localAgent,
+        senderPublicKey: "stub",
+        senderRole: "agent",
+        recipientPeerId: localAgent,
+        recipientRole: "agent",
+        intent: "task.chain.propose",
+        payload: {},
+        signature: "stub",
+      },
+    );
+    expect(ok).toBe(true);
+    expect(delivered).toEqual(["task.chain.propose"]);
   });
 });

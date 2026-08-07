@@ -76,6 +76,10 @@ export function OfficeLanPresetSection() {
     setJustEnabled(false);
     try {
       const nextToken = token.length >= 8 ? token : generateRandomToken(32);
+      console.info("[agent-network.ui] Office LAN enable", {
+        hadToken: token.length >= 8,
+        tokenLen: nextToken.length,
+      });
       await nodeService.updateNodeConfig({
         capabilityProviderEnabled: true,
         lanAutoBondEnabled: true,
@@ -86,9 +90,11 @@ export function OfficeLanPresetSection() {
       if (typeof nodeService.refreshAgentNetworkWorkers === "function") {
         await nodeService.refreshAgentNetworkWorkers().catch(() => undefined);
       }
+      console.info("[agent-network.ui] Office LAN enable done");
       setJustEnabled(true);
       window.setTimeout(() => setJustEnabled(false), 4000);
     } catch (err) {
+      console.warn("[agent-network.ui] Office LAN enable failed", err);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
@@ -217,6 +223,7 @@ export function WorkersStatusSection() {
     setRefreshing(true);
     setRefreshed(false);
     try {
+      console.info("[agent-network.ui] Refresh workers clicked");
       if (typeof nodeService.refreshAgentNetworkWorkers === "function") {
         await nodeService.refreshAgentNetworkWorkers();
       } else {
@@ -299,6 +306,9 @@ export function WorkerMembershipSection() {
             type="checkbox"
             checked={enabled}
             onChange={async (e) => {
+              console.info("[agent-network.ui] Join Agent Network toggle", {
+                enabled: e.target.checked,
+              });
               await nodeService.updateNodeConfig({
                 capabilityProviderEnabled: e.target.checked,
               });
@@ -343,16 +353,22 @@ export function LanAutoBondSection() {
     setError(null);
     setSaved(false);
     try {
+      console.info("[agent-network.ui] LAN Auto-Bond save", {
+        enabled,
+        tokenLen: trimmedToken.length,
+      });
       await nodeService.updateNodeConfig({
         lanAutoBondEnabled: enabled,
         lanAutoBondFleetToken: trimmedToken || undefined,
       } as Parameters<typeof nodeService.updateNodeConfig>[0]);
       await refreshNodeConfig();
+      console.info("[agent-network.ui] LAN Auto-Bond save done");
       setSaved(true);
       window.setTimeout(() => {
         setSaved(false);
       }, 3000);
     } catch (err) {
+      console.warn("[agent-network.ui] LAN Auto-Bond save failed", err);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);

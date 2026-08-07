@@ -23,8 +23,10 @@ import { createHash, randomUUID } from "node:crypto";
 import type { LocalTaskStore } from "@envoymesh/local-store";
 import { createDevicePairRequestPayload, parseDevicePairRequestPayload, type DevicePairRequestPayload } from "@envoymesh/protocol";
 import { createAuditEvent } from "@envoymesh/local-store";
+import { derivePeerId } from "@envoymesh/identity";
 import type { PersistedNodeConfig } from "./node-config-store.js";
 import type { NodeService } from "@envoymesh/api";
+import { anLog, anWarn, shortId } from "./agent-network-debug.js";
 
 /**
  * Compute a stable, short fingerprint of the fleet token. Stored in the
@@ -140,6 +142,10 @@ export async function sendLanAutoBondRequest(
 ): Promise<LanAutoBondSendResult> {
   const built = await buildLanAutoBondRequest(deps, targetPeerId);
   if (!built.ok) {
+    anLog("lan-auto-bond", "send skipped", {
+      reason: built.reason,
+      target: shortId(targetPeerId),
+    });
     return { ok: false, reason: built.reason };
   }
   let result: { ok: boolean; error?: string };
@@ -148,6 +154,11 @@ export async function sendLanAutoBondRequest(
   } catch (err) {
     result = { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
+  anLog("lan-auto-bond", result.ok ? "pair-request sent" : "pair-request send failed", {
+    target: shortId(targetPeerId),
+    fingerprint: built.fingerprint,
+    error: result.error,
+  });
   await deps.taskStore.appendAuditEvent(
     createAuditEvent({
       type: "message.sent",
@@ -182,25 +193,57 @@ export async function evaluateLanAutoBondReceipt(
   try {
     payload = parseDevicePairRequestPayload(envelope.payload);
   } catch {
+    // Ordinary pair requests without a fleet token are common (QR / companion).
+    // Stay silent — not a LAN auto-bond event.
     return { accept: false, reason: "no-token-on-envelope" };
   }
-  if (!payload.lanFleetToken) return { accept: false, reason: "no-token-on-envelope" };
+  if (!payload.lanFleetToken) {
+    return { accept: false, reason: "no-token-on-envelope" };
+  }
 
   // Self-bond guard: reject pair-requests from our own owner identity.
   // This can happen via mDNS loopback or relay echo.
   const ownOwnerId = deps.getOwnOwnerId();
   if (payload.requesterOwnerId && payload.requesterOwnerId === ownOwnerId) {
+    anLog("lan-auto-bond", "receive reject", { reason: "self-target" });
     return { accept: false, reason: "self-target" };
   }
 
   const cfg = await deps.loadConfig();
-  if (!cfg?.lanAutoBondEnabled) return { accept: false, reason: "disabled" };
-  const own = cfg.lanAutoBondFleetToken?.trim();
-  if (!own) return { accept: false, reason: "no-local-token" };
-  if (own !== payload.lanFleetToken) {
-    return { accept: false, reason: "token-mismatch", fingerprint: fingerprintFleetToken(payload.lanFleetToken) };
+  if (!cfg?.lanAutoBondEnabled) {
+    anWarn("lan-auto-bond", "receive reject — fleet token present but LAN auto-bond off", {
+      reason: "disabled",
+      from: shortId(payload.requesterOwnerId),
+    });
+    return { accept: false, reason: "disabled" };
   }
-  return { accept: true, reason: "matched-fleet-token", fingerprint: fingerprintFleetToken(own) };
+  const own = cfg.lanAutoBondFleetToken?.trim();
+  if (!own) {
+    anWarn("lan-auto-bond", "receive reject — fleet token present but no local token", {
+      reason: "no-local-token",
+      from: shortId(payload.requesterOwnerId),
+    });
+    return { accept: false, reason: "no-local-token" };
+  }
+  if (own !== payload.lanFleetToken) {
+    const fp = fingerprintFleetToken(payload.lanFleetToken);
+    anWarn("lan-auto-bond", "receive reject — token mismatch", {
+      reason: "token-mismatch",
+      fingerprint: fp,
+      from: shortId(payload.requesterOwnerId),
+    });
+    return { accept: false, reason: "token-mismatch", fingerprint: fp };
+  }
+  const decision = {
+    accept: true as const,
+    reason: "matched-fleet-token" as const,
+    fingerprint: fingerprintFleetToken(own),
+  };
+  anLog("lan-auto-bond", "receive accept", {
+    fingerprint: decision.fingerprint,
+    from: shortId(payload.requesterOwnerId),
+  });
+  return decision;
 }
 
 /**
@@ -243,6 +286,10 @@ export async function applyLanAutoBondAccept(
     };
   },
 ): Promise<void> {
+  anLog("lan-auto-bond", "apply accept — writing direct trust", {
+    peer: shortId(params.requesterOwnerId),
+    fingerprint: params.fingerprint,
+  });
   await params.trustStore.setTrustRecord({
     peerOwnerId: params.requesterOwnerId,
     level: "direct",
@@ -257,6 +304,10 @@ export async function applyLanAutoBondAccept(
     });
   } catch (err) {
     // Non-fatal: the joiner will fill this in on first contact.
+    anWarn("lan-auto-bond", "peer directory pre-fill failed", {
+      peer: shortId(params.requesterOwnerId),
+      error: err instanceof Error ? err.message : String(err),
+    });
     await deps.taskStore.appendAuditEvent(
       createAuditEvent({
         type: "agent.card.auto_fetch_failed",
@@ -295,6 +346,9 @@ export async function applyLanAutoBondAccept(
     const alreadyOn = cfg?.capabilityProviderEnabled === true;
     if (autoJoin && !alreadyOn) {
       try {
+        anLog("lan-auto-bond", "auto-join Agent Network after fleet bond", {
+          peer: shortId(params.requesterOwnerId),
+        });
         await deps.enableCapabilityProvider();
         await deps.taskStore.appendAuditEvent(
           createAuditEvent({
@@ -309,6 +363,9 @@ export async function applyLanAutoBondAccept(
       } catch (err) {
         // Non-fatal: the bond succeeded; only the auto-join failed. The
         // owner can still enable it manually in Team jobs → Worker profile.
+        anWarn("lan-auto-bond", "auto-join Agent Network failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
         await deps.taskStore.appendAuditEvent(
           createAuditEvent({
             type: "agent.card.auto_fetch_failed",
@@ -322,8 +379,106 @@ export async function applyLanAutoBondAccept(
           }),
         );
       }
+    } else {
+      anLog("lan-auto-bond", "skip auto-join", {
+        autoJoin,
+        alreadyOn,
+        hasHook: true,
+      });
+    }
+  } else {
+    anLog("lan-auto-bond", "skip auto-join — no enableCapabilityProvider hook");
+  }
+}
+
+export type LanAutoBondInboundHandleResult =
+  | { outcome: "accepted"; payload: DevicePairRequestPayload; fingerprint: string }
+  | {
+      outcome: "declined";
+      reason: Exclude<LanAutoBondReceiveDecision["reason"], "no-token-on-envelope">;
+      fingerprint?: string;
+      payload: DevicePairRequestPayload;
+    }
+  | { outcome: "not-applicable" }
+  | { outcome: "sender-mismatch"; payload: DevicePairRequestPayload };
+
+/**
+ * Shared production path for inbound `device.pair.request` LAN auto-bond.
+ * Used by the daemon (`index.ts`) and Phase13 E2E so accept / auto-join /
+ * audit behavior cannot drift.
+ *
+ * Verifies `envelope.senderPeerId` matches `requesterDevicePublicKeyPem` when
+ * `senderPeerId` is provided on the envelope.
+ */
+export async function handleLanAutoBondInbound(input: {
+  deps: LanAutoBondDeps;
+  envelope: {
+    payload: unknown;
+    messageId: string;
+    correlationId?: string;
+    senderPeerId?: string;
+  };
+  remotePeerId: string;
+  remoteAddr?: string;
+  trustStore: Parameters<typeof applyLanAutoBondAccept>[1]["trustStore"];
+  peerDirectory: Parameters<typeof applyLanAutoBondAccept>[1]["peerDirectory"];
+  /** After trust write — emit UI events, refresh workers, etc. */
+  onAccepted?: (info: {
+    payload: DevicePairRequestPayload;
+    fingerprint: string;
+  }) => void | Promise<void>;
+}): Promise<LanAutoBondInboundHandleResult> {
+  let payload: DevicePairRequestPayload;
+  try {
+    payload = parseDevicePairRequestPayload(input.envelope.payload);
+  } catch {
+    return { outcome: "not-applicable" };
+  }
+
+  if (input.envelope.senderPeerId) {
+    const expectedRequester = derivePeerId(payload.requesterDevicePublicKeyPem);
+    if (expectedRequester !== input.envelope.senderPeerId) {
+      return { outcome: "sender-mismatch", payload };
     }
   }
+
+  const decision = await evaluateLanAutoBondReceipt(input.deps, input.envelope);
+  if (decision.reason === "no-token-on-envelope") {
+    return { outcome: "not-applicable" };
+  }
+
+  if (!decision.accept) {
+    return {
+      outcome: "declined",
+      reason: decision.reason as Exclude<
+        LanAutoBondReceiveDecision["reason"],
+        "no-token-on-envelope"
+      >,
+      fingerprint: decision.fingerprint,
+      payload,
+    };
+  }
+
+  const fingerprint = decision.fingerprint ?? "";
+  anLog("lan-auto-bond", "accept path", {
+    from: shortId(payload.requesterOwnerId),
+    fingerprint,
+  });
+  await applyLanAutoBondAccept(input.deps, {
+    requesterOwnerId: payload.requesterOwnerId,
+    requesterDeviceId: payload.requesterDeviceId,
+    requesterPeerId: input.remotePeerId,
+    remoteAddr: input.remoteAddr,
+    fingerprint,
+    correlationId: input.envelope.correlationId,
+    messageId: input.envelope.messageId,
+    trustStore: input.trustStore,
+    peerDirectory: input.peerDirectory,
+  });
+  if (input.onAccepted) {
+    await input.onAccepted({ payload, fingerprint });
+  }
+  return { outcome: "accepted", payload, fingerprint };
 }
 
 /** Re-export the NodeService type for convenience to callers wiring this up. */
