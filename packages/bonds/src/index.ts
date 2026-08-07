@@ -170,6 +170,16 @@ function evaluatePublicPolicy(intent: EnvoyIntent): PolicyDecision {
     return { action: "allow", maxSensitivity: "public" };
   }
 
+  // Agent card exchange — cards carry only public data (displayName,
+  // capabilities, publicTopics). Allowing public-tier requests ensures
+  // agent card exchange works even when one side's trust store was wiped
+  // (e.g. Windows config race condition). Without this, a peer whose
+  // trust records were lost will deny all agent.card requests, making
+  // them invisible in Agent Network / Team jobs until a manual re-bond.
+  if (intent === "agent.card.request" || intent === "agent.card.response") {
+    return { action: "allow", maxSensitivity: "public" };
+  }
+
   return { action: "deny", reason: "public peers cannot use this intent" };
 }
 

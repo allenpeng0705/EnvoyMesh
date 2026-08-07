@@ -111,6 +111,20 @@ export async function prepareOutboundPeerConnection(input: {
     return true;
   }
 
+  // Relay-to-direct upgrade: when the peer is connected via relay and we're
+  // not forcing a fresh dial, skip the upgrade and send on the relay. The
+  // upgrade path (redialFresh below) closes the working relay connection
+  // BEFORE the direct dial succeeds — when the direct dial fails on stale
+  // LAN addresses, the peer becomes completely unreachable and the message
+  // is lost. This is the root cause of bond.accept / agent.card.request
+  // never reaching the peer: Mac receives bond.request over relay, then
+  // destroys the relay connection trying to upgrade to direct, then can't
+  // send the reply. Direct path upgrades should happen in a background
+  // health task, not in the critical send path.
+  if (upgradeRelayToDirect && !input.forceFreshDial) {
+    return true;
+  }
+
   const redialFresh = async (): Promise<boolean> => {
     try {
       await input.mesh.closeConnectionsToPeer(input.transportPeerId);
