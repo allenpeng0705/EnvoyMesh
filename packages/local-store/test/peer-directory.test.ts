@@ -344,7 +344,7 @@ describe("peer directory store", () => {
     expect(repaired?.deviceId).toBe("envoy:device:bad");
   });
 
-  it("mergeListenAddrsForPeerId strips legacy ephemeral TCP snapshots even with no new addrs", async () => {
+  it("mergeListenAddrsForPeerId keeps private-LAN high ports beside stable listens", async () => {
     const store = createLocalPeerDirectoryStore(profileDir);
     const peerId = "12D3KooWEphemeralScrubPeer";
     await writeFile(
@@ -369,11 +369,12 @@ describe("peer directory store", () => {
     );
     await store.mergeListenAddrsForPeerId(peerId, []);
     const row = await store.getPeerByPeerId(peerId);
-    expect(row?.listenAddrs.some((a) => a.includes("64595"))).toBe(false);
+    // tcp/0 home-LAN must survive next to stable 4011 (same-LAN + VPN Direct).
+    expect(row?.listenAddrs.some((a) => a.includes("64595"))).toBe(true);
     expect(row?.listenAddrs.some((a) => a.includes("4011"))).toBe(true);
   });
 
-  it("sanitizeListenAddrs strips bare high ports when a stable listen port exists", async () => {
+  it("sanitizeListenAddrs keeps newest private-LAN high ports beside a stable listen", async () => {
     const store = createLocalPeerDirectoryStore(profileDir);
     const peerId = "12D3KooWBareEphemeralPeer";
     await writeFile(
@@ -390,6 +391,7 @@ describe("peer directory store", () => {
             listenAddrs: [
               "/ip4/192.168.3.78/tcp/57944",
               "/ip4/192.168.3.78/tcp/56891",
+              "/ip4/192.168.3.78/tcp/55056",
               `/ip4/192.168.3.78/tcp/4011/p2p/${peerId}`,
             ],
           },
@@ -398,9 +400,11 @@ describe("peer directory store", () => {
       { mode: 0o600 },
     );
     const result = await store.sanitizeListenAddrs();
-    expect(result.addrsRemoved).toBeGreaterThanOrEqual(2);
+    expect(result.addrsRemoved).toBe(1); // oldest high port trimmed; keep 2 + stable
     const row = await store.getPeerByPeerId(peerId);
     expect(row?.listenAddrs.some((a) => a.includes("57944"))).toBe(false);
+    expect(row?.listenAddrs.some((a) => a.includes("56891"))).toBe(true);
+    expect(row?.listenAddrs.some((a) => a.includes("55056"))).toBe(true);
     expect(row?.listenAddrs.some((a) => a.includes("4011"))).toBe(true);
   });
 

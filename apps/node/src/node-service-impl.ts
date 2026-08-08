@@ -663,10 +663,10 @@ import {
   sendChatViaRuntime,
   sendAgentChatViaRuntime,
   warmContactConnectionTransportViaRuntime,
-  warmContactConnectionViaRuntime,
   type OutboundMessagingContext,
   type SendAgentChatContext,
 } from "./node-service-outbound-messaging.js";
+import { ensureContactPath } from "./peer-path.js";
 import {
   getOpenClawPluginsViaRuntime,
   getTrendingOpenClawPluginsViaRuntime,
@@ -9814,7 +9814,8 @@ class NodeServiceImpl implements NodeService {
     peerOwnerId: string,
     options?: WarmContactConnectionOptions,
   ): Promise<PeerConnectionInfo> {
-    return warmContactConnectionViaRuntime(this._outboundMessagingContext(), peerOwnerId, options);
+    // PeerPath facade: dial concurrency + soft connection cap + policy inside warm.
+    return ensureContactPath(this._outboundMessagingContext(), peerOwnerId, options);
   }
 
   private async _warmContactConnectionTransport(

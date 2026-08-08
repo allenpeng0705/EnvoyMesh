@@ -50,15 +50,18 @@ import {
 } from "./bond-warm-coordinator.js";
 import {
   buildOutboundDialHints,
-  filterDialHintsForVpn,
   hasRfc6598OverlayDialEvidence,
   hasSameSubnetLanDialEvidence,
   mergeDialablePeerListenAddrs,
   shouldPreferCircuitDialHints,
-  shouldPreferCircuitUnderVpn,
   shouldRetainCircuitDialHints,
   isMultiaddrPeerIdsValid,
 } from "./outbound-dial-hints.js";
+import {
+  privateLanListenAddrsForPersist,
+  resolveReachabilityDialPolicy,
+  shouldIdentifyBeforeVpnSkip,
+} from "./peer-reachability-policy.js";
 import { detectLikelyVpnActive } from "./cgnat-detection.js";
 import { dialableInboundRemoteAddrs, mergeInboundPeerDialHintsIfDue } from "./inbound-dial-hint-learn.js";
 import { withOutboundSendLock } from "./outbound-send-lock.js";
@@ -85,6 +88,11 @@ import {
   WARM_CONTACT_SAME_SUBNET_EPHEMERAL_BUDGET_MS,
   WARM_CONTACT_VPN_DIAL_TIMEOUT_MS,
 } from "./outbound-warm-dial.js";
+import {
+  inferPeerPathIntent,
+  releasePeerPathDialSlot,
+  tryAcquirePeerPathDialSlot,
+} from "./peer-path-slots.js";
 
 export {
   raceWithTimeout,
@@ -987,6 +995,34 @@ export async function mergeFreshListenAddrsViaRuntime(
   return merged.length ? merged : listenAddrs;
 }
 
+/**
+ * Identify over a live relay/limited conn, then read peerstore LAN listens.
+ * Used before VPN "skip home LAN" so same-LAN + VPN can still upgrade to Direct
+ * when peer-directory listenAddrs were scrubbed empty (tcp/0).
+ */
+async function refreshLanHintsForRelayUpgrade(
+  mesh: EnvoyMesh,
+  transportPeerId: string,
+): Promise<string[]> {
+  if (typeof mesh.refreshPeerListenAddrsViaIdentify === "function") {
+    try {
+      await mesh.refreshPeerListenAddrsViaIdentify(transportPeerId);
+    } catch {
+      /* best-effort — keep existing peerstore */
+    }
+  }
+  if (typeof mesh.getPeerStoreDialHints !== "function") {
+    return [];
+  }
+  try {
+    return await mesh.getPeerStoreDialHints(transportPeerId, {
+      allowEphemeralPrivateLan: true,
+    });
+  } catch {
+    return [];
+  }
+}
+
 export async function warmContactConnectionTransportViaRuntime(
   ctx: OutboundMessagingContext,
   transportPeerId: string,
@@ -1043,122 +1079,141 @@ export async function warmContactConnectionTransportViaRuntime(
     likelyVpnActive,
   });
   let sameSubnetLanFirst = false;
+  let skipIdentifyRefresh = false;
+
+  // PeerPath dial slot covers identify + ensurePeerReachable (not early connected returns).
+  const pathIntent = inferPeerPathIntent(options);
+  const acquired = await tryAcquirePeerPathDialSlot({ intent: pathIntent });
+  if (!acquired) {
+    return mesh.getPeerConnectionInfo(transportPeerId);
+  }
   try {
-    const cfg = await ctx.loadConfig();
-    const profile =
-      typeof cfg?.discoveryProfile === "string" ? cfg.discoveryProfile.trim() : "";
-    const localListen = mesh.multiaddrs;
-    // Peer-directory often only has tcp/0 high ports — keep them for same-subnet
-    // evidence even though mergeDialablePeerListenAddrs strips them for dialing.
-    let rawDirListen: string[] = [];
     try {
-      const records = await ctx.peerDirectoryStore.listPeerRecords();
-      rawDirListen = records
-        .filter((r) => r.peerId === transportPeerId)
-        .flatMap((r) => r.listenAddrs ?? []);
-    } catch {
-      /* best-effort */
-    }
-    const evidenceHints = [...(listenAddrs ?? []), ...rawDirListen, ...dialHints];
-    const vpnSkipHomeLan = shouldPreferCircuitUnderVpn({
-      likelyVpnActive,
-      localListenAddrs: localListen,
-      peerHints: evidenceHints,
-    });
-    sameSubnetLanFirst =
-      !vpnSkipHomeLan &&
-      hasSameSubnetLanDialEvidence(localListen, evidenceHints, {
-        hostNicFallback: true,
-      });
-    if (hasRfc6598OverlayDialEvidence(localListen, evidenceHints)) {
-      sameSubnetLanFirst = true;
-    }
-    preferCircuitHints = shouldPreferCircuitDialHints(
-      [...(listenAddrs ?? []), ...rawDirListen],
-      dialHints,
-      transportPeerId,
-      {
-        localListenAddrs: localListen,
+      const cfg = await ctx.loadConfig();
+      const profile =
+        typeof cfg?.discoveryProfile === "string" ? cfg.discoveryProfile.trim() : "";
+      const localListen = mesh.multiaddrs;
+      // Peer-directory often only has tcp/0 high ports — keep them for same-subnet
+      // evidence even though mergeDialablePeerListenAddrs strips them for dialing.
+      let rawDirListen: string[] = [];
+      try {
+        const records = await ctx.peerDirectoryStore.listPeerRecords();
+        rawDirListen = records
+          .filter((r) => r.peerId === transportPeerId)
+          .flatMap((r) => r.listenAddrs ?? []);
+      } catch {
+        /* best-effort */
+      }
+
+      // VPN-only: identify before the home-LAN skip gate. Do not run this for
+      // non-VPN WAN Online-Relay — foreign RFC1918 from identify would reopen
+      // black-hole Relay→Direct dial storms.
+      let identifiedLan: string[] = [];
+      if (
+        shouldIdentifyBeforeVpnSkip({
+          upgradeRelayToDirect: options?.upgradeRelayToDirect,
+          connected: existing.connected,
+          direct: existing.direct,
+          likelyVpnActive,
+        })
+      ) {
+        identifiedLan = await refreshLanHintsForRelayUpgrade(mesh, transportPeerId);
+        if (identifiedLan.length > 0) {
+          // Evidence only until policy allows — do not persist foreign LAN yet.
+          dialHints = [...new Set([...dialHints, ...identifiedLan])];
+          rawDirListen = [...rawDirListen, ...privateLanListenAddrsForPersist(identifiedLan)];
+        }
+      }
+
+      const policy = resolveReachabilityDialPolicy({
+        transportPeerId,
         discoveryProfile: profile || undefined,
         likelyVpnActive,
-      },
-    );
-    // lan-fast / empty: always LAN-first when any direct exists; same-subnet
-    // evidence additionally enables the short private-LAN dial budget.
-    // Under commercial VPN, keep circuit preference (home LAN black-holes).
-    if (!vpnSkipHomeLan && (profile === "lan-fast" || profile === "")) {
-      preferCircuitHints = false;
-    }
-    // Explicit Relay→Direct: never prefer circuit when LAN/overlay may work.
-    // Only skip the upgrade when VPN has neither same-LAN nor 100.64 evidence.
-    if (options?.upgradeRelayToDirect === true && !vpnSkipHomeLan) {
-      preferCircuitHints = false;
-      if (
-        sameSubnetLanFirst ||
-        evidenceHints.some((h) => isPrivateLanTcpDialHint(h) && !h.includes("/p2p-circuit/"))
-      ) {
-        sameSubnetLanFirst = true;
+        localListenAddrs: localListen,
+        peerListenAddrs: [...(listenAddrs ?? []), ...rawDirListen],
+        dialHints,
+        upgradeRelayToDirect: options?.upgradeRelayToDirect,
+      });
+      preferCircuitHints = policy.preferCircuitHints;
+      sameSubnetLanFirst = policy.sameSubnetLanFirst;
+      dialHints = policy.dialHints;
+      if (policy.skipUpgradeStayOnRelay) {
+        return existing.connected ? existing : mesh.getPeerConnectionInfo(transportPeerId);
       }
-    } else if (options?.upgradeRelayToDirect === true && vpnSkipHomeLan) {
-      // Cross-network VPN: stay on relay; home LAN dials would only delay.
-      return existing.connected ? existing : mesh.getPeerConnectionInfo(transportPeerId);
-    }
-
-    dialHints = filterDialHintsForVpn({
-      hints: dialHints,
-      likelyVpnActive,
-      localListenAddrs: localListen,
-    });
-  } catch {
-    /* keep heuristic */
-  }
-
-  // Scrub after same-subnet detection. On same LAN, skip the aggressive scrub —
-  // mergeDialable drops tcp/0 high ports, and patching peerstore with only
-  // circuits wiped mDNS-learned live listen addrs (stuck Online-Relay).
-  if (!sameSubnetLanFirst && typeof mesh.scrubPeerStoreDialHints === "function") {
-    const dialableListen = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
-    void mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
-  }
-
-  if (typeof mesh.mergePeerStoreDialHints === "function") {
-    void mesh.mergePeerStoreDialHints(transportPeerId, dialHints);
-  }
-
-  // redial / stale verify may tear down; upgradeRelayToDirect must NOT — keep
-  // the working relay until a Direct dial succeeds (see ensurePeerReachable).
-  const tearingDown =
-    options?.redial === true || (needsProbe && !options?.keepAlive);
-  if (tearingDown) {
-    try {
-      await mesh.closeConnectionsToPeer(transportPeerId);
+      // Persist + skip second identify only when we got usable same-/24|overlay LAN.
+      if (identifiedLan.length > 0 && policy.sameSubnetLanFirst) {
+        const lanToPersist = privateLanListenAddrsForPersist(identifiedLan).filter((a) => {
+          return (
+            hasSameSubnetLanDialEvidence(localListen, [a], { hostNicFallback: true }) ||
+            hasRfc6598OverlayDialEvidence(localListen, [a])
+          );
+        });
+        if (lanToPersist.length > 0) {
+          try {
+            await ctx.peerDirectoryStore.mergeListenAddrsForPeerId(
+              transportPeerId,
+              lanToPersist,
+            );
+          } catch {
+            /* best-effort */
+          }
+          skipIdentifyRefresh = true;
+        }
+      }
     } catch {
-      /* ignore */
+      /* keep heuristic */
     }
-  }
 
-  const forceFreshDial =
-    options?.redial === true || !existing.connected || tearingDown;
-  const upgradeRelayToDirect =
-    options?.upgradeRelayToDirect === true || options?.redial === true;
+    // Scrub after same-subnet detection. On same LAN, skip the aggressive scrub —
+    // mergeDialable drops tcp/0 high ports, and patching peerstore with only
+    // circuits wiped mDNS-learned live listen addrs (stuck Online-Relay).
+    if (!sameSubnetLanFirst && typeof mesh.scrubPeerStoreDialHints === "function") {
+      const dialableListen = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
+      void mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
+    }
 
-  const result = await ensureReachableWithLanFirstBudget({
-    mesh,
-    transportPeerId,
-    protocol: ENVOY_CHAT_PROTOCOL,
-    dialHints,
-    preferCircuitHints,
-    sameSubnetLanFirst,
-    forceFreshDial,
-    upgradeRelayToDirect,
-    likelyVpnActive,
-  });
-  void ctx.flushPendingRoomSyncs();
-  void ctx.flushPendingRoomMessages();
-  if (result.connected) {
-    markOutboundPeerVerified(transportPeerId);
+    if (typeof mesh.mergePeerStoreDialHints === "function") {
+      void mesh.mergePeerStoreDialHints(transportPeerId, dialHints);
+    }
+
+    // redial / stale verify may tear down; upgradeRelayToDirect must NOT — keep
+    // the working relay until a Direct dial succeeds (see ensurePeerReachable).
+    const tearingDown =
+      options?.redial === true || (needsProbe && !options?.keepAlive);
+    if (tearingDown) {
+      try {
+        await mesh.closeConnectionsToPeer(transportPeerId);
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const forceFreshDial =
+      options?.redial === true || !existing.connected || tearingDown;
+    const upgradeRelayToDirect =
+      options?.upgradeRelayToDirect === true || options?.redial === true;
+
+    const result = await ensureReachableWithLanFirstBudget({
+      mesh,
+      transportPeerId,
+      protocol: ENVOY_CHAT_PROTOCOL,
+      dialHints,
+      preferCircuitHints,
+      sameSubnetLanFirst,
+      forceFreshDial,
+      upgradeRelayToDirect,
+      skipIdentifyRefresh,
+      likelyVpnActive,
+    });
+    void ctx.flushPendingRoomSyncs();
+    void ctx.flushPendingRoomMessages();
+    if (result.connected) {
+      markOutboundPeerVerified(transportPeerId);
+    }
+    return result;
+  } finally {
+    releasePeerPathDialSlot(pathIntent);
   }
-  return result;
 }
 
 export async function warmContactConnectionViaRuntime(

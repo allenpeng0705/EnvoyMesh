@@ -11,13 +11,12 @@ import {
 import { parseChatDeliveredAck } from "@envoymesh/api/chat-delivered";
 
 import {
-  hasSameSubnetLanDialEvidence,
   resolvePreferCircuitDialHints,
   shouldPreferCircuitDialHints,
-  shouldPreferCircuitUnderVpn,
   shouldRetainCircuitDialHints,
 } from "./outbound-dial-hints.js";
 import { detectLikelyVpnActive } from "./cgnat-detection.js";
+import { resolveSameSubnetLanFirstFromEvidence } from "./peer-reachability-policy.js";
 import {
   clearOutboundPeerFreshness,
   isOutboundPeerRecentlyVerified,
@@ -67,19 +66,13 @@ function resolveSameSubnetLanFirst(input: {
   peerListenAddrs?: string[];
   preferCircuitHints?: boolean;
 }): boolean {
-  if (input.preferCircuitHints === true) return false;
-  const localListen = meshLocalListenAddrs(input.mesh);
-  const peerHints = [...(input.peerListenAddrs ?? []), ...input.dialHints];
-  if (
-    shouldPreferCircuitUnderVpn({
-      likelyVpnActive: detectLikelyVpnActive(),
-      localListenAddrs: localListen,
-      peerHints,
-    })
-  ) {
-    return false;
-  }
-  return hasSameSubnetLanDialEvidence(localListen, peerHints, { hostNicFallback: true });
+  return resolveSameSubnetLanFirstFromEvidence({
+    likelyVpnActive: detectLikelyVpnActive(),
+    localListenAddrs: meshLocalListenAddrs(input.mesh),
+    peerListenAddrs: input.peerListenAddrs,
+    dialHints: input.dialHints,
+    preferCircuitHints: input.preferCircuitHints,
+  });
 }
 
 export type OutboundDeliverMesh = Pick<

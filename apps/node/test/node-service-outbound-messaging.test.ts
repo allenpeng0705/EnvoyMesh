@@ -2,7 +2,7 @@
  * Unit tests for extracted outbound messaging runtime.
  */
 import { generateEd25519KeyPair } from "@envoymesh/identity";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OutboundMessagingContext } from "../src/node-service-outbound-messaging.js";
 import {
   finalizePeerTransportResolve,
@@ -12,6 +12,11 @@ import {
   warmContactConnectionTransportViaRuntime,
   warmContactConnectionViaRuntime,
 } from "../src/node-service-outbound-messaging.js";
+import * as cgnatDetection from "../src/cgnat-detection.js";
+import {
+  getPeerPathDialStatsForTests,
+  resetPeerPathDialSlotsForTests,
+} from "../src/peer-path.js";
 
 const OWNER_ID = "envoy:owner:remote";
 const TRANSPORT_ID = "12D3KooWRemoteTransportUnitTest";
@@ -42,6 +47,7 @@ function makeCtx(overrides: Partial<OutboundMessagingContext> = {}): OutboundMes
     mergePeerStoreDialHints: vi.fn(async () => {}),
     scrubPeerStoreDialHints: vi.fn(async () => []),
     getPeerStoreDialHints: vi.fn(async () => [] as string[]),
+    refreshPeerListenAddrsViaIdentify: vi.fn(async () => {}),
     sendChat: vi.fn(async () => {}),
   };
 
@@ -66,6 +72,7 @@ function makeCtx(overrides: Partial<OutboundMessagingContext> = {}): OutboundMes
         listenAddrs: ["/ip4/10.0.0.2/tcp/4011/p2p/" + TRANSPORT_ID],
         lastSeenAt: "2026-06-20T12:00:00.000Z",
       }),
+      mergeListenAddrsForPeerId: vi.fn(async () => {}),
     } as never,
     getTransportCache: () => transportCache,
     setTransportCache: (ownerId, entry) => {
@@ -285,6 +292,184 @@ describe("warmContactConnectionTransportViaRuntime", () => {
     expect(opts.dialHints).toEqual([lanEphemeral, circuit]);
     expect(opts.signal).toBeInstanceOf(AbortSignal);
   });
+
+  it("VPN + Online-Relay: identify same-/24 LAN then upgrade (persist hints)", async () => {
+    const vpnSpy = vi.spyOn(cgnatDetection, "detectLikelyVpnActive").mockReturnValue(true);
+    const lan = `/ip4/10.0.0.2/tcp/57944/p2p/${TRANSPORT_ID}`;
+    const circuit = `/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${TRANSPORT_ID}`;
+    const mergeListenAddrsForPeerId = vi.fn(async () => {});
+    const ctx = makeCtx({
+      dialHintsForChat: async () => [circuit],
+      loadConfig: async () => ({ discoveryProfile: "wan-default" }) as never,
+      peerDirectoryStore: {
+        listPeerRecords: async () => [
+          {
+            ownerId: OWNER_ID,
+            peerId: TRANSPORT_ID,
+            listenAddrs: [] as string[],
+            lastSeenAt: "2026-06-20T12:00:00.000Z",
+          },
+        ],
+        getPeerByOwnerId: async () => ({
+          ownerId: OWNER_ID,
+          peerId: TRANSPORT_ID,
+          listenAddrs: [] as string[],
+          lastSeenAt: "2026-06-20T12:00:00.000Z",
+        }),
+        mergeListenAddrsForPeerId,
+      } as never,
+    });
+    const mesh = ctx.requireMesh();
+    vi.mocked(mesh.getPeerConnectionInfo).mockReturnValue({ connected: true, direct: false });
+    vi.mocked(mesh.getPeerStoreDialHints).mockResolvedValue([lan]);
+    vi.mocked(mesh.ensurePeerReachable).mockResolvedValue({ connected: true, direct: true });
+
+    const info = await warmContactConnectionTransportViaRuntime(ctx, TRANSPORT_ID, [], {
+      upgradeRelayToDirect: true,
+    });
+
+    expect(info).toEqual({ connected: true, direct: true });
+    expect(mesh.refreshPeerListenAddrsViaIdentify).toHaveBeenCalledWith(TRANSPORT_ID);
+    expect(mergeListenAddrsForPeerId).toHaveBeenCalledWith(TRANSPORT_ID, [lan]);
+    expect(mesh.ensurePeerReachable).toHaveBeenCalledOnce();
+    const opts = vi.mocked(mesh.ensurePeerReachable).mock.calls[0]?.[2] as {
+      upgradeRelayToDirect?: boolean;
+      preferCircuitHints?: boolean;
+      sameSubnetLanFirst?: boolean;
+      skipIdentifyRefresh?: boolean;
+      dialHints?: string[];
+    };
+    expect(opts.upgradeRelayToDirect).toBe(true);
+    expect(opts.preferCircuitHints).toBeFalsy();
+    expect(opts.sameSubnetLanFirst).toBe(true);
+    expect(opts.skipIdentifyRefresh).toBe(true);
+    expect(opts.dialHints?.some((h) => h.includes("10.0.0.2"))).toBe(true);
+    vpnSpy.mockRestore();
+  });
+
+  it("VPN + Online-Relay: still skip upgrade when identify LAN is cross-network", async () => {
+    const vpnSpy = vi.spyOn(cgnatDetection, "detectLikelyVpnActive").mockReturnValue(true);
+    const foreignLan = `/ip4/172.16.9.8/tcp/57944/p2p/${TRANSPORT_ID}`;
+    const circuit = `/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${TRANSPORT_ID}`;
+    const mergeListenAddrsForPeerId = vi.fn(async () => {});
+    const ctx = makeCtx({
+      dialHintsForChat: async () => [circuit],
+      loadConfig: async () => ({ discoveryProfile: "wan-default" }) as never,
+      peerDirectoryStore: {
+        listPeerRecords: async () => [
+          {
+            ownerId: OWNER_ID,
+            peerId: TRANSPORT_ID,
+            listenAddrs: [] as string[],
+            lastSeenAt: "2026-06-20T12:00:00.000Z",
+          },
+        ],
+        getPeerByOwnerId: async () => undefined,
+        mergeListenAddrsForPeerId,
+      } as never,
+    });
+    const mesh = ctx.requireMesh();
+    // Local mesh is 10.0.0.1 — foreign 172.16 is not same-subnet evidence.
+    vi.mocked(mesh.getPeerConnectionInfo).mockReturnValue({ connected: true, direct: false });
+    vi.mocked(mesh.getPeerStoreDialHints).mockResolvedValue([foreignLan]);
+
+    const info = await warmContactConnectionTransportViaRuntime(ctx, TRANSPORT_ID, [], {
+      upgradeRelayToDirect: true,
+    });
+
+    expect(info).toEqual({ connected: true, direct: false });
+    expect(mesh.refreshPeerListenAddrsViaIdentify).toHaveBeenCalled();
+    expect(mesh.ensurePeerReachable).not.toHaveBeenCalled();
+    // Must not poison peer-directory with foreign home LAN.
+    expect(mergeListenAddrsForPeerId).not.toHaveBeenCalled();
+    expect(getPeerPathDialStatsForTests().inFlightDials).toBe(0);
+    vpnSpy.mockRestore();
+  });
+
+  it("VPN + Online-Relay: empty identify does not skip second identify", async () => {
+    const vpnSpy = vi.spyOn(cgnatDetection, "detectLikelyVpnActive").mockReturnValue(true);
+    const dirLan = `/ip4/10.0.0.2/tcp/57944/p2p/${TRANSPORT_ID}`;
+    const circuit = `/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${TRANSPORT_ID}`;
+    const ctx = makeCtx({
+      dialHintsForChat: async () => [circuit],
+      loadConfig: async () => ({ discoveryProfile: "wan-default" }) as never,
+      peerDirectoryStore: {
+        listPeerRecords: async () => [
+          {
+            ownerId: OWNER_ID,
+            peerId: TRANSPORT_ID,
+            listenAddrs: [dirLan],
+            lastSeenAt: "2026-06-20T12:00:00.000Z",
+          },
+        ],
+        getPeerByOwnerId: async () => undefined,
+        mergeListenAddrsForPeerId: vi.fn(async () => {}),
+      } as never,
+    });
+    const mesh = ctx.requireMesh();
+    vi.mocked(mesh.getPeerConnectionInfo).mockReturnValue({ connected: true, direct: false });
+    vi.mocked(mesh.getPeerStoreDialHints).mockResolvedValue([]);
+    vi.mocked(mesh.ensurePeerReachable).mockResolvedValue({ connected: true, direct: false });
+
+    await warmContactConnectionTransportViaRuntime(ctx, TRANSPORT_ID, [dirLan], {
+      upgradeRelayToDirect: true,
+    });
+
+    expect(mesh.ensurePeerReachable).toHaveBeenCalledOnce();
+    const opts = vi.mocked(mesh.ensurePeerReachable).mock.calls[0]?.[2] as {
+      skipIdentifyRefresh?: boolean;
+    };
+    expect(opts.skipIdentifyRefresh).toBeFalsy();
+    vpnSpy.mockRestore();
+  });
+
+  it("non-VPN Online-Relay: does not identify-merge foreign LAN into upgrade", async () => {
+    const vpnSpy = vi.spyOn(cgnatDetection, "detectLikelyVpnActive").mockReturnValue(false);
+    const foreignLan = `/ip4/172.16.9.8/tcp/57944/p2p/${TRANSPORT_ID}`;
+    const circuit = `/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${TRANSPORT_ID}`;
+    const ctx = makeCtx({
+      dialHintsForChat: async () => [circuit],
+      loadConfig: async () => ({ discoveryProfile: "wan-default" }) as never,
+      peerDirectoryStore: {
+        listPeerRecords: async () => [
+          {
+            ownerId: OWNER_ID,
+            peerId: TRANSPORT_ID,
+            listenAddrs: [] as string[],
+            lastSeenAt: "2026-06-20T12:00:00.000Z",
+          },
+        ],
+        getPeerByOwnerId: async () => undefined,
+        mergeListenAddrsForPeerId: vi.fn(async () => {}),
+      } as never,
+    });
+    const mesh = ctx.requireMesh();
+    vi.mocked(mesh.getPeerConnectionInfo).mockReturnValue({ connected: true, direct: false });
+    vi.mocked(mesh.getPeerStoreDialHints).mockResolvedValue([foreignLan]);
+    vi.mocked(mesh.ensurePeerReachable).mockResolvedValue({ connected: true, direct: false });
+
+    await warmContactConnectionTransportViaRuntime(ctx, TRANSPORT_ID, [], {
+      upgradeRelayToDirect: true,
+    });
+
+    expect(mesh.refreshPeerListenAddrsViaIdentify).not.toHaveBeenCalled();
+    // Without same-subnet evidence, upgrade may still run but must not LAN-first
+    // on foreign RFC1918 from identify (identify was skipped).
+    if (mesh.ensurePeerReachable.mock.calls.length > 0) {
+      const opts = vi.mocked(mesh.ensurePeerReachable).mock.calls[0]?.[2] as {
+        sameSubnetLanFirst?: boolean;
+        dialHints?: string[];
+      };
+      expect(opts.sameSubnetLanFirst).toBeFalsy();
+      expect(opts.dialHints?.some((h) => h.includes("172.16.9.8"))).toBeFalsy();
+    }
+    vpnSpy.mockRestore();
+  });
+});
+
+afterEach(() => {
+  resetPeerPathDialSlotsForTests();
+  vi.restoreAllMocks();
 });
 
 describe("warmContactConnectionViaRuntime", () => {

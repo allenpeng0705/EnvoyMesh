@@ -308,6 +308,11 @@ export interface MeshOutboundOptions {
   /** When true, close an existing relay connection and redial direct if LAN hints exist. Default false. */
   upgradeRelayToDirect?: boolean;
   /**
+   * Caller already ran {@link EnvoyMesh.refreshPeerListenAddrsViaIdentify}
+   * (e.g. warm path before VPN policy). Skip a second identify on upgrade.
+   */
+  skipIdentifyRefresh?: boolean;
+  /**
    * Same-subnet LAN-first warm/chat: use a short per-address timeout on private
    * LAN TCP hints and cap ephemeral high-port attempts so dead peer-directory
    * snapshots cannot burn the full dialTimeout before circuit fallthrough.
@@ -3032,7 +3037,9 @@ export class EnvoyMesh {
         // the peer's *current* tcp/0 LAN listen (directory often has dead ports
         // from the previous process). Then try LAN WITHOUT dropping the relay.
         try {
-          await this.refreshPeerListenAddrsViaIdentify(peerIdStr);
+          if (sendOptions?.skipIdentifyRefresh !== true) {
+            await this.refreshPeerListenAddrsViaIdentify(peerIdStr);
+          }
           try {
             const freshLan = await this.getPeerStoreDialHints(peerIdStr, {
               allowEphemeralPrivateLan: true,
@@ -3524,8 +3531,11 @@ export class EnvoyMesh {
    * Run identify on an existing (often limited/relay) connection so peerstore
    * picks up the remote's current listen multiaddrs — required for Relay→Direct
    * after both peers restart on tcp/0 (directory holds dead high ports).
+   *
+   * Public so the node warm path can refresh LAN evidence *before* deciding
+   * whether VPN should skip home-LAN dials (empty peer-directory after scrub).
    */
-  private async refreshPeerListenAddrsViaIdentify(peerIdStr: string): Promise<void> {
+  async refreshPeerListenAddrsViaIdentify(peerIdStr: string): Promise<void> {
     const node = this.requireNode();
     const identifySvc = (
       node.services as {

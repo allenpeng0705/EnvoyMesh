@@ -2168,13 +2168,15 @@ function isPrivateLanTcpListenAddr(addr: string): boolean {
 function filterDialableListenAddrs(addrs: string[]): string[] {
   const deduped = dedupeListenAddrList(addrs);
   const stable = deduped.filter((a) => !isLikelyEphemeralTcpSnapshot(a));
-  if (stable.length > 0) return stable;
-  // Nodes listen on tcp/0 → directory only has high ports. Scrubbing them all
-  // left bonded contacts with listenAddrs=[] and UI stuck Offline until relay
-  // reservation caught up. Keep the newest 2 private-LAN high ports.
+  // Always keep newest 2 private-LAN high ports (tcp/0). Dropping them whenever
+  // any stable port existed wiped home-LAN paths next to public/4011 and forced
+  // Online-Relay until identify ran again. Ephemeral dial budgets cap stale ports.
   const lanEphemeral = deduped.filter(
     (a) => isLikelyEphemeralTcpSnapshot(a) && isPrivateLanTcpListenAddr(a),
   );
+  if (stable.length > 0) {
+    return dedupeListenAddrList([...stable, ...lanEphemeral.slice(-2)]);
+  }
   return lanEphemeral.slice(-2);
 }
 

@@ -18,8 +18,10 @@ import {
 import { isOutboundPeerRecentlyVerified } from "./outbound-peer-freshness.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
 import { NEARBY_PROFILE_PROBE_COOLDOWN_MS } from "./node-service-identity.js";
+import { PEER_PATH_SOFT_CONNECTION_CAP, isPeerPathConnectionCapReached } from "./peer-path.js";
 
-export const BOND_WARM_MAX_CONNECTIONS = 64;
+/** @deprecated Prefer {@link PEER_PATH_SOFT_CONNECTION_CAP} — shared with PeerPath facade. */
+export const BOND_WARM_MAX_CONNECTIONS = PEER_PATH_SOFT_CONNECTION_CAP;
 export const BOND_WARM_PER_CONTACT_COOLDOWN_MS = 300_000;
 const BOND_WARM_INITIAL_DELAY_MS = 45_000;
 const BOND_WARM_INTERVAL_MS = 300_000;
@@ -352,10 +354,10 @@ export async function warmAllBondedContactsViaRuntime(ctx: ReachabilityContext):
   // connected), so the cap must also be re-checked before each warm call —
   // otherwise a single cycle can push totalConnections well past the cap
   // before the next cycle's pre-check has a chance to refuse.
-  if (mesh.getConnectionStats().totalConnections >= BOND_WARM_MAX_CONNECTIONS) {
+  if (isPeerPathConnectionCapReached(mesh.getConnectionStats().totalConnections)) {
     console.warn(
       `[bond-warm] skipped: ${mesh.getConnectionStats().totalConnections} open connections (cap ${BOND_WARM_MAX_CONNECTIONS}). ` +
-        `Reduce bonded contacts or increase the cap.`,
+        `PeerPath soft cap — reduce bonded contacts or wait for idle.`,
     );
     return;
   }
@@ -373,7 +375,7 @@ export async function warmAllBondedContactsViaRuntime(ctx: ReachabilityContext):
     // Per-iteration cap check — see comment above. Bail out of the cycle
     // (without breaking the cooldown) so the next cycle can re-
     // evaluate when the cap headroom grows.
-    if (mesh.getConnectionStats().totalConnections >= BOND_WARM_MAX_CONNECTIONS) {
+    if (isPeerPathConnectionCapReached(mesh.getConnectionStats().totalConnections)) {
       console.warn(
         `[bond-warm] cap ${BOND_WARM_MAX_CONNECTIONS} reached mid-cycle at bond ${bond.peerOwnerId.slice(0, 12)}… — deferring remaining ${bonds.length - (bonds.indexOf(bond))} bonds to next cycle`,
       );

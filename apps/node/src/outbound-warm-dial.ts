@@ -74,6 +74,8 @@ export type EnsureReachableWithBudgetInput = {
   sameSubnetLanFirst: boolean;
   forceFreshDial?: boolean;
   upgradeRelayToDirect?: boolean;
+  /** Warm already identified; avoid a second identify in ensurePeerReachable. */
+  skipIdentifyRefresh?: boolean;
   verifyConnection?: boolean;
   likelyVpnActive?: boolean;
 };
@@ -115,6 +117,7 @@ export async function ensureReachableWithLanFirstBudget(
       sameSubnetLanFirst: sameSubnet,
       forceFreshDial: input.forceFreshDial,
       upgradeRelayToDirect: input.upgradeRelayToDirect,
+      skipIdentifyRefresh: input.skipIdentifyRefresh,
       verifyConnection: input.verifyConnection,
       signal,
     });
