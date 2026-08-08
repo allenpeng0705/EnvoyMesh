@@ -28,7 +28,9 @@ import { createApprovalItem, isAgentNetworkMember, rankWorkersByScore, scoreAgen
 import { hasDirectPrivateLanDialHints, type EnvoyMesh } from "@envoymesh/network";
 import { anLog, shortId } from "./agent-network-debug.js";
 import {
+  buildInputArtifacts,
   chainStateSnapshot,
+  chooseWorkersForSubtask,
   createChainState,
   evaluateBids,
   handleOrchestratorBid,
@@ -120,6 +122,8 @@ export interface ChainSideState {
     {
       subtask: ChainSubtask;
       orchestratorPeerId: string;
+      /** Phase 53 — parent artifacts from propose (typed handoff). */
+      inputArtifacts?: import("@envoymesh/protocol").NamedArtifact[];
     }
   >;
   autoEvaluateTimers: Map<string, ReturnType<typeof setTimeout>>;
@@ -571,6 +575,7 @@ export async function buildChainInboundDeps(deps: ChainOrchestrationContext): Pr
       chainSide.workerSubtasks.set(payload.subtask.subtaskId, {
         subtask: payload.subtask,
         orchestratorPeerId: envelope.senderPeerId,
+        inputArtifacts: payload.inputArtifacts,
       });
       return handleWorkerPropose(workerDeps, envelope, payload);
     },
@@ -578,13 +583,24 @@ export async function buildChainInboundDeps(deps: ChainOrchestrationContext): Pr
     handleWorkerAccept: async (envelope, payload) => {
       const result = await handleWorkerAccept(workerDeps, envelope, payload);
       if (result.ok) {
-        let subtask = chainSide.workerSubtasks.get(payload.award.subtaskId)?.subtask;
+        const cached = chainSide.workerSubtasks.get(payload.award.subtaskId);
+        let subtask = cached?.subtask;
+        // Prefer propose-cache inputs; fall back to accept payload (restart / race).
+        let inputArtifacts = cached?.inputArtifacts ?? payload.inputArtifacts;
         if (!subtask && payload.subtask) {
           subtask = payload.subtask;
           chainSide.workerSubtasks.set(payload.award.subtaskId, {
             subtask,
             orchestratorPeerId: envelope.senderPeerId,
+            inputArtifacts,
           });
+        } else if (subtask && !cached?.inputArtifacts && payload.inputArtifacts?.length) {
+          chainSide.workerSubtasks.set(payload.award.subtaskId, {
+            subtask,
+            orchestratorPeerId: envelope.senderPeerId,
+            inputArtifacts: payload.inputArtifacts,
+          });
+          inputArtifacts = payload.inputArtifacts;
         }
         if (!subtask) {
           for (const rt of chainStore.listActive()) {
@@ -598,12 +614,14 @@ export async function buildChainInboundDeps(deps: ChainOrchestrationContext): Pr
             subtaskId: subtask.subtaskId,
             skill: subtask.requiredSkill,
             orch: shortPeerId(envelope.senderPeerId),
+            inputArtifacts: inputArtifacts?.length ?? 0,
           });
           void executeAcceptedSubtask(
             workerDeps,
             { getToolContext: () => deps.getToolExecutionContext() },
             envelope.senderPeerId,
             subtask,
+            { inputArtifacts },
           )
             .then((r) => {
               chainLog("worker", "executeAcceptedSubtask done", {
@@ -1332,11 +1350,16 @@ export async function _evaluateAwardAndAccept(
   }
 
   const subtask = runtime.state.subtasks.get(subtaskId);
+  const inputArtifacts =
+    subtask && subtask.dependsOn.length > 0
+      ? buildInputArtifacts(runtime.state, subtask)
+      : undefined;
   let acceptOk = await sendChainAccept(
     orchDeps,
     result.bid.workerPeerId,
     result.award,
     subtask,
+    inputArtifacts && inputArtifacts.length > 0 ? inputArtifacts : undefined,
   );
   if (!acceptOk) {
     // Critical: evaluateBids already reserved/awarded in state — retry once so
@@ -1347,6 +1370,7 @@ export async function _evaluateAwardAndAccept(
       result.bid.workerPeerId,
       result.award,
       subtask,
+      inputArtifacts && inputArtifacts.length > 0 ? inputArtifacts : undefined,
     );
   }
   orchDeps.audit.record({
@@ -1769,29 +1793,14 @@ export async function _runChainGoal(
     const ranked = await findAgentNetworkWorkersRanked(deps, subtask.requiredSkill, input.preferredWorkerPeerIds);
     rankedBySubtask[subtask.subtaskId] = ranked;
     const candidates = ranked.map((r) => r.peerId);
-    // Named assignee from plan+assign wins (direct dispatch). Keep up to 2
-    // backups in the worker list for stall re-assign (launch proposes primary only).
+    // Named / thread-sticky assignee always leads the list (even if ranking missed).
     const preferred = subtask.preferredWorkerPeerId;
-    let chosen: string[];
-    if (preferred && candidates.includes(preferred)) {
-      chosen = [preferred, ...candidates.filter((c) => c !== preferred)].slice(0, Math.max(workerCap, 3));
-    } else if (preferred && candidates.length === 0) {
-      // Prefer still listed even if ranking missed (should be rare).
-      chosen = [preferred];
-    } else if (candidates.length === 1) {
-      chosen = candidates;
-    } else {
-      chosen = candidates.slice(0, workerCap);
-      // If preferred was invalid, still ensure every step gets someone.
-      if (chosen.length === 0 && ranked.length > 0) chosen = [ranked[0]!.peerId];
-    }
+    let chosen = chooseWorkersForSubtask(preferred, candidates, workerCap);
+    if (chosen.length === 0 && ranked.length > 0) chosen = [ranked[0]!.peerId];
     workersBySubtask[subtask.subtaskId] = chosen;
-    // Keep subtask.preferred in sync with the filtered worker list so launch
-    // proposes the same primary the owner selected / ranking chose.
-    if (chosen[0] && subtask.preferredWorkerPeerId !== chosen[0]) {
-      if (!preferred || !chosen.includes(preferred)) {
-        subtask.preferredWorkerPeerId = chosen[0];
-      }
+    // Only rewrite preferred when plan+assign left none (ranking fill-in).
+    if (!preferred && chosen[0]) {
+      subtask.preferredWorkerPeerId = chosen[0];
     }
     maxWorkers = Math.max(maxWorkers, candidates.length);
     totalWorkers += chosen.length > 0 ? 1 : 0;
@@ -1899,16 +1908,8 @@ export async function _continueIterationRound(
   for (const subtask of plan.subtasks) {
     const ranked = await findAgentNetworkWorkersRanked(deps, subtask.requiredSkill);
     const candidates = ranked.map((r) => r.peerId);
-    const preferred = subtask.preferredWorkerPeerId;
-    let chosen: string[];
-    if (preferred && candidates.includes(preferred)) {
-      chosen = [preferred, ...candidates.filter((c) => c !== preferred)].slice(0, Math.max(workerCap, 3));
-    } else if (preferred && candidates.length === 0) {
-      chosen = [preferred];
-    } else {
-      chosen = candidates.slice(0, workerCap);
-      if (chosen.length === 0 && ranked.length > 0) chosen = [ranked[0]!.peerId];
-    }
+    let chosen = chooseWorkersForSubtask(subtask.preferredWorkerPeerId, candidates, workerCap);
+    if (chosen.length === 0 && ranked.length > 0) chosen = [ranked[0]!.peerId];
     workersBySubtask[subtask.subtaskId] = chosen;
     totalWorkers += chosen.length > 0 ? 1 : 0;
   }
@@ -1974,16 +1975,8 @@ export async function _extendIterationRound(
   for (const subtask of appended.subtasks) {
     const ranked = await findAgentNetworkWorkersRanked(deps, subtask.requiredSkill);
     const candidates = ranked.map((r) => r.peerId);
-    const preferred = subtask.preferredWorkerPeerId;
-    let chosen: string[];
-    if (preferred && candidates.includes(preferred)) {
-      chosen = [preferred, ...candidates.filter((c) => c !== preferred)].slice(0, Math.max(workerCap, 3));
-    } else if (preferred && candidates.length === 0) {
-      chosen = [preferred];
-    } else {
-      chosen = candidates.slice(0, workerCap);
-      if (chosen.length === 0 && ranked.length > 0) chosen = [ranked[0]!.peerId];
-    }
+    let chosen = chooseWorkersForSubtask(subtask.preferredWorkerPeerId, candidates, workerCap);
+    if (chosen.length === 0 && ranked.length > 0) chosen = [ranked[0]!.peerId];
     workersBySubtask[subtask.subtaskId] = chosen;
     totalWorkers += chosen.length > 0 ? 1 : 0;
   }

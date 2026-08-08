@@ -3,6 +3,8 @@
  *
  * Default Agent Network engine = Built-in OpenClaw (see docs/agent-network-engine.md).
  * Ext Agent for AN is a later, node-owner-only option.
+ *
+ * Phase 53 — consumes propose `inputArtifacts` and emits named `result` artifacts.
  */
 
 import {
@@ -10,6 +12,7 @@ import {
   TaskChainPartialPayloadSchema,
   clipChainSubtaskPartialNote,
   type ChainSubtask,
+  type NamedArtifact,
 } from "@envoymesh/protocol";
 
 import { executeTool, type MeshToolContext } from "./tool-registry.js";
@@ -23,6 +26,7 @@ export interface ChainWorkerExecutorDeps {
 export interface CachedWorkerSubtask {
   subtask: ChainSubtask;
   orchestratorPeerId: string;
+  inputArtifacts?: NamedArtifact[];
 }
 
 /** Map capability tags to tool names for simple local execution (legacy fallback). */
@@ -33,18 +37,82 @@ function toolForCapability(capability: string): string | null {
   return "assistant_summarize";
 }
 
-function buildOpenClawSubtaskPrompt(subtask: ChainSubtask): string {
+const TEXT_ARTIFACT_MAX = 64_000;
+
+/** Format parent input artifacts for the OpenClaw worker prompt (Phase 53). */
+export function formatInputArtifactsForPrompt(
+  inputArtifacts: readonly NamedArtifact[] | undefined,
+): string {
+  if (!inputArtifacts || inputArtifacts.length === 0) return "";
+  const sections: string[] = ["## Parent inputs (typed handoff)"];
+  for (const item of inputArtifacts) {
+    const art = item.artifact as {
+      kind?: string;
+      content?: string;
+      data?: unknown;
+      schemaRef?: string;
+      vaultPath?: string;
+      contentHash?: string;
+      displayName?: string;
+      mimeType?: string;
+    };
+    sections.push(`## Input: ${item.key}`);
+    if (art.kind === "text" && typeof art.content === "string") {
+      sections.push(art.content);
+    } else if (art.kind === "structured") {
+      sections.push(
+        `schemaRef: ${art.schemaRef ?? "unknown"}\n${JSON.stringify(art.data ?? {}, null, 2)}`,
+      );
+    } else if (art.kind === "file") {
+      sections.push(
+        [
+          `File ref (contents not inlined — resolve via vault if available):`,
+          `- path: ${art.vaultPath ?? "unknown"}`,
+          `- contentHash: ${art.contentHash ?? "unknown"}`,
+          art.displayName ? `- displayName: ${art.displayName}` : "",
+          art.mimeType ? `- mimeType: ${art.mimeType}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
+    } else {
+      sections.push(JSON.stringify(item.artifact));
+    }
+  }
+  return sections.join("\n\n");
+}
+
+export function buildOpenClawSubtaskPrompt(
+  subtask: ChainSubtask,
+  inputArtifacts?: readonly NamedArtifact[],
+): string {
   const constraints = (subtask.constraints ?? []).filter(Boolean);
   const parts = [
     "You are a Team job worker on the EnvoyMesh Agent Network.",
     `Required skill hint: ${subtask.requiredSkill}`,
+    subtask.requiredRole ? `Required role: ${subtask.requiredRole}` : "",
+    subtask.threadId ? `Thread: ${subtask.threadId}` : "",
     `Objective:\n${subtask.objective}`,
-  ];
+  ].filter(Boolean);
+  const inputs = formatInputArtifactsForPrompt(inputArtifacts);
+  if (inputs) parts.push(inputs);
   if (constraints.length > 0) {
     parts.push(`Constraints:\n${constraints.map((c) => `- ${c}`).join("\n")}`);
   }
   parts.push("Produce a clear, useful result for the orchestrator. Be concise and factual.");
   return parts.join("\n\n");
+}
+
+function textResultArtifacts(text: string): {
+  artifactFragment: { kind: "text"; content: string };
+  namedArtifacts: NamedArtifact[];
+} {
+  const content = text.slice(0, TEXT_ARTIFACT_MAX);
+  const artifact = { kind: "text" as const, content };
+  return {
+    artifactFragment: artifact,
+    namedArtifacts: [{ key: "result", artifact }],
+  };
 }
 
 /**
@@ -57,9 +125,14 @@ export function createOpenClawChainSubtaskExecutor(input: {
   isOpenClawReady: () => boolean;
   askOpenClaw: (prompt: string) => Promise<string>;
 }): NonNullable<ChainWorkerHandlerDeps["executeSubtask"]> {
-  return async (subtask, onPartial) => {
+  return async (subtask, onPartial, opts) => {
     let seq = 0;
-    const emit = async (note: string, isFinal: boolean, confidence?: number) => {
+    const emit = async (
+      note: string,
+      isFinal: boolean,
+      confidence?: number,
+      artifacts?: ReturnType<typeof textResultArtifacts>,
+    ) => {
       seq += 1;
       await onPartial(
         TaskChainPartialPayloadSchema.parse({
@@ -72,6 +145,12 @@ export function createOpenClawChainSubtaskExecutor(input: {
             isFinal,
             note: clipChainSubtaskPartialNote(note),
             confidence,
+            ...(isFinal && artifacts
+              ? {
+                  artifactFragment: artifacts.artifactFragment,
+                  namedArtifacts: artifacts.namedArtifacts,
+                }
+              : {}),
             createdAt: (input.now ?? (() => new Date()))().toISOString(),
           }),
         }),
@@ -84,6 +163,7 @@ export function createOpenClawChainSubtaskExecutor(input: {
       skill: subtask.requiredSkill,
       worker: shortPeerId(input.workerPeerId),
       openclawReady: input.isOpenClawReady(),
+      inputArtifacts: opts?.inputArtifacts?.length ?? 0,
     });
 
     if (!input.isOpenClawReady()) {
@@ -95,17 +175,21 @@ export function createOpenClawChainSubtaskExecutor(input: {
     await emit(`Working on: ${subtask.objective}`, false, 0.3);
 
     try {
-      const text = (await input.askOpenClaw(buildOpenClawSubtaskPrompt(subtask))).trim();
+      const text = (
+        await input.askOpenClaw(buildOpenClawSubtaskPrompt(subtask, opts?.inputArtifacts))
+      ).trim();
       if (!text) {
         await emit("AN_ENGINE_FAIL: OpenClaw returned an empty response", true, 0.1);
         chainWarn("exec", "OpenClaw empty", { subtaskId: subtask.subtaskId });
         return { ok: false, finalNote: "openclaw_empty" };
       }
+      // Note stays at CHAIN_SUBTASK_PARTIAL_NOTE_MAX; typed handoff may carry up to 64k.
       const clipped = clipChainSubtaskPartialNote(text) ?? text;
-      await emit(clipped, true, 0.85);
+      await emit(clipped, true, 0.85, textResultArtifacts(text));
       chainLog("exec", "OpenClaw subtask done", {
         subtaskId: subtask.subtaskId,
         chars: clipped.length,
+        artifactChars: Math.min(text.length, TEXT_ARTIFACT_MAX),
       });
       return { ok: true, finalNote: clipped };
     } catch (err) {
@@ -122,10 +206,14 @@ export async function executeAcceptedSubtask(
   executorDeps: ChainWorkerExecutorDeps,
   orchestratorPeerId: string,
   subtask: ChainSubtask,
+  opts?: { inputArtifacts?: NamedArtifact[] },
 ): Promise<{ ok: boolean; reason?: string }> {
   let seq = 0;
   const emit = async (note: string, isFinal: boolean, confidence?: number) => {
     seq += 1;
+    const artifacts = isFinal && note && !note.startsWith("AN_ENGINE_FAIL")
+      ? textResultArtifacts(note)
+      : undefined;
     const partial = TaskChainPartialPayloadSchema.parse({
       partial: ChainSubtaskPartialSchema.parse({
         version: "0.1",
@@ -136,6 +224,12 @@ export async function executeAcceptedSubtask(
         isFinal,
         note: clipChainSubtaskPartialNote(note),
         confidence,
+        ...(artifacts
+          ? {
+              artifactFragment: artifacts.artifactFragment,
+              namedArtifacts: artifacts.namedArtifacts,
+            }
+          : {}),
         createdAt: (workerDeps.now ?? (() => new Date()))().toISOString(),
       }),
     });
@@ -143,9 +237,13 @@ export async function executeAcceptedSubtask(
   };
 
   if (workerDeps.executeSubtask) {
-    const result = await workerDeps.executeSubtask(subtask, async (payload) => {
-      await deliverChainPartial(workerDeps, orchestratorPeerId, payload, subtask.chainId);
-    });
+    const result = await workerDeps.executeSubtask(
+      subtask,
+      async (payload) => {
+        await deliverChainPartial(workerDeps, orchestratorPeerId, payload, subtask.chainId);
+      },
+      opts,
+    );
     return {
       ok: result.ok,
       reason: result.ok ? undefined : (result.finalNote ?? "execution_failed"),
@@ -179,7 +277,7 @@ export async function executeAcceptedSubtask(
   const text =
     typeof result.result === "string"
       ? result.result
-      : JSON.stringify(result.result ?? {}).slice(0, 4000);
-  await emit(clipChainSubtaskPartialNote(text) ?? text, true, 0.75);
+      : JSON.stringify(result.result ?? {});
+  await emit(text, true, 0.8);
   return { ok: true };
 }

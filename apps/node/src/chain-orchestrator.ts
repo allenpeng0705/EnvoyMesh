@@ -50,6 +50,7 @@ import {
   type ChainSubtask,
   type ChainSubtaskAward,
   type ChainSubtaskBid,
+  type NamedArtifact,
   type EnvoyEnvelope,
   type TaskChainAcceptPayload,
   type TaskChainBidPayload,
@@ -270,10 +271,20 @@ export function subtaskDependenciesSatisfied(state: ChainState, subtask: ChainSu
 }
 
 const PARENT_CONTEXT_MAX = 800;
+/** Cap on serialized JSON size for propose `inputArtifacts` (Phase 53). */
+export const CHAIN_INPUT_ARTIFACTS_BYTES_MAX = 48_000;
+const TEXT_ARTIFACT_CONTENT_MAX = 64_000;
 
 function artifactSnippet(artifact: unknown): string {
   if (!artifact || typeof artifact !== "object") return "";
-  const a = artifact as { kind?: string; content?: string; data?: unknown; displayName?: string; vaultPath?: string };
+  const a = artifact as {
+    kind?: string;
+    content?: string;
+    data?: unknown;
+    displayName?: string;
+    vaultPath?: string;
+    contentHash?: string;
+  };
   if (a.kind === "text" && typeof a.content === "string") {
     return a.content.slice(0, PARENT_CONTEXT_MAX);
   }
@@ -281,9 +292,130 @@ function artifactSnippet(artifact: unknown): string {
     return JSON.stringify(a.data).slice(0, PARENT_CONTEXT_MAX);
   }
   if (a.kind === "file") {
-    return `[file ${a.displayName ?? a.vaultPath ?? "unknown"}]`;
+    const path = a.displayName ?? a.vaultPath ?? "unknown";
+    const hash = typeof a.contentHash === "string" ? ` hash=${a.contentHash.slice(0, 24)}` : "";
+    return `[file ${path}${hash}]`;
   }
   return "";
+}
+
+function namedFromPartial(partial: TaskChainPartialPayload["partial"]): NamedArtifact[] {
+  const named = partial.namedArtifacts;
+  if (named && named.length > 0) return [...named];
+  if (partial.artifactFragment) {
+    return [{ key: "default", artifact: partial.artifactFragment as NamedArtifact["artifact"] }];
+  }
+  const note = partial.note?.trim();
+  if (note) {
+    return [
+      {
+        key: "default",
+        artifact: {
+          kind: "text",
+          content: note.slice(0, TEXT_ARTIFACT_CONTENT_MAX),
+        },
+      },
+    ];
+  }
+  return [];
+}
+
+/** Shrink a text named artifact until JSON.stringify(result) fits `budget`. */
+function fitTextNamedArtifact(key: string, content: string, budget: number): NamedArtifact | null {
+  if (budget < 64) return null;
+  let body = content;
+  for (let i = 0; i < 8; i++) {
+    const candidate: NamedArtifact = { key, artifact: { kind: "text", content: body } };
+    const encoded = JSON.stringify(candidate);
+    if (encoded.length <= budget) return candidate;
+    const overflow = encoded.length - budget;
+    const nextLen = Math.max(0, body.length - overflow - 16);
+    if (nextLen <= 0) return null;
+    body = `${body.slice(0, nextLen)}\n…[truncated]`;
+  }
+  return null;
+}
+
+function truncateNamedArtifact(item: NamedArtifact, budget: number): NamedArtifact | null {
+  if (budget < 64) return null;
+  const art = item.artifact as {
+    kind?: string;
+    content?: string;
+    data?: unknown;
+    vaultPath?: string;
+    contentHash?: string;
+    displayName?: string;
+    mimeType?: string;
+    schemaRef?: string;
+    sizeBytes?: number;
+  };
+  if (art.kind === "text" && typeof art.content === "string") {
+    return fitTextNamedArtifact(item.key, art.content, budget);
+  }
+  if (art.kind === "structured" && art.data !== undefined && typeof art.schemaRef === "string") {
+    const asStructured: NamedArtifact = {
+      key: item.key,
+      artifact: {
+        kind: "structured",
+        schemaRef: art.schemaRef,
+        data: art.data as Record<string, unknown>,
+      },
+    };
+    if (JSON.stringify(asStructured).length <= budget) return asStructured;
+    // Convert to text under the *same* remaining budget (escape-aware).
+    const prefix = `[structured ${art.schemaRef} truncated]\n`;
+    const dataJson = JSON.stringify(art.data);
+    return fitTextNamedArtifact(item.key, `${prefix}${dataJson}`, budget);
+  }
+  // file / other — refs are small; include as-is if they fit
+  const encoded = JSON.stringify(item);
+  if (encoded.length <= budget) return item;
+  if (art.kind === "file" && typeof art.vaultPath === "string" && typeof art.contentHash === "string") {
+    const slim: NamedArtifact = {
+      key: item.key,
+      artifact: {
+        kind: "file",
+        vaultPath: art.vaultPath,
+        contentHash: art.contentHash,
+        ...(art.displayName ? { displayName: art.displayName } : {}),
+      },
+    };
+    return JSON.stringify(slim).length <= budget ? slim : null;
+  }
+  return null;
+}
+
+/**
+ * Phase 53 — collect parent finals as first-class `inputArtifacts` for propose.
+ * Prefers `namedArtifacts`, then `artifactFragment`, then note→text.
+ */
+export function buildInputArtifacts(state: ChainState, subtask: ChainSubtask): NamedArtifact[] {
+  if (subtask.dependsOn.length === 0) return [];
+  const collected: NamedArtifact[] = [];
+  for (const dep of subtask.dependsOn) {
+    const payload = state.partials.get(dep);
+    if (!payload?.partial.isFinal) continue;
+    const fromParent = namedFromPartial(payload.partial);
+    for (const item of fromParent) {
+      // Prefix key with parent subtask id when colliding across parents.
+      const key =
+        collected.some((c) => c.key === item.key) ? `${dep}:${item.key}` : item.key;
+      collected.push({ key, artifact: item.artifact });
+    }
+  }
+  // Size-cap pack
+  const out: NamedArtifact[] = [];
+  let used = 2; // []
+  for (const item of collected.slice(0, 16)) {
+    const remaining = CHAIN_INPUT_ARTIFACTS_BYTES_MAX - used - 1;
+    const truncated = truncateNamedArtifact(item, remaining);
+    if (!truncated) break;
+    const size = JSON.stringify(truncated).length + (out.length > 0 ? 1 : 0);
+    if (used + size > CHAIN_INPUT_ARTIFACTS_BYTES_MAX) break;
+    out.push(truncated);
+    used += size;
+  }
+  return out;
 }
 
 /** Append prior-step notes/artifacts into constraints for a dependent propose. */
@@ -294,7 +426,11 @@ export function enrichSubtaskWithParentContext(state: ChainState, subtask: Chain
     const payload = state.partials.get(dep);
     if (!payload) continue;
     const note = payload.partial.note?.trim();
-    const art = artifactSnippet(payload.partial.artifactFragment);
+    const named = payload.partial.namedArtifacts;
+    const art =
+      named && named.length > 0
+        ? named.map((n) => `${n.key}=${artifactSnippet(n.artifact)}`).join("; ")
+        : artifactSnippet(payload.partial.artifactFragment);
     const body = [note, art].filter(Boolean).join(" | ") || "(no artifact text)";
     extras.push(`prior[${dep}]: ${body}`.slice(0, PARENT_CONTEXT_MAX + 64));
   }
@@ -303,6 +439,19 @@ export function enrichSubtaskWithParentContext(state: ChainState, subtask: Chain
   const enriched = { ...subtask, constraints };
   state.subtasks.set(subtask.subtaskId, enriched);
   return enriched;
+}
+
+/** Enrich constraints + build inputArtifacts for a propose. */
+export function prepareSubtaskPropose(
+  state: ChainState,
+  subtask: ChainSubtask,
+): { subtask: ChainSubtask; inputArtifacts?: NamedArtifact[] } {
+  const enriched = enrichSubtaskWithParentContext(state, subtask);
+  const inputArtifacts = buildInputArtifacts(state, subtask);
+  return {
+    subtask: enriched,
+    ...(inputArtifacts.length > 0 ? { inputArtifacts } : {}),
+  };
 }
 
 /** Read-only view of the chain state, useful for the UI to render progress. */
@@ -510,7 +659,7 @@ export async function launchChain(
     if (!subtask) continue;
     state.workersBySubtask.set(subtaskId, [...workerIds]);
     if (!subtaskDependenciesSatisfied(state, subtask)) continue;
-    const toSend = enrichSubtaskWithParentContext(state, subtask);
+    const prepared = prepareSubtaskPropose(state, subtask);
     const targets =
       subtask.preferredWorkerPeerId && workerIds.includes(subtask.preferredWorkerPeerId)
         ? [subtask.preferredWorkerPeerId]
@@ -519,7 +668,13 @@ export async function launchChain(
           : workerIds;
     let proposedThis = 0;
     for (const workerPeerId of targets) {
-      const ok = await sendChainPropose(deps, workerPeerId, toSend, state.chainMandate);
+      const ok = await sendChainPropose(
+        deps,
+        workerPeerId,
+        prepared.subtask,
+        state.chainMandate,
+        prepared.inputArtifacts,
+      );
       if (ok) {
         proposed++;
         proposedThis++;
@@ -620,8 +775,14 @@ export async function retryStaleProposals(
       retries === 0 ? primary : (workers.find((w) => w !== primary) ?? primary);
 
     await sendChainMandate(deps, target, state.chainMandate);
-    const toSend = enrichSubtaskWithParentContext(state, subtask);
-    const ok = await sendChainPropose(deps, target, toSend, state.chainMandate);
+    const prepared = prepareSubtaskPropose(state, subtask);
+    const ok = await sendChainPropose(
+      deps,
+      target,
+      prepared.subtask,
+      state.chainMandate,
+      prepared.inputArtifacts,
+    );
     state.proposeRetryCount.set(subtaskId, retries + 1);
     markSubtaskProposed(state, subtaskId, nowMs);
     if (target !== workers[0]) {
@@ -680,7 +841,14 @@ export async function retryStaleAccepts(
     if (retries >= CHAIN_ACCEPT_RESEND_CAP) continue;
 
     const subtask = state.subtasks.get(subtaskId);
-    const ok = await sendChainAccept(deps, award.workerPeerId, award, subtask);
+    const inputArtifacts = subtask ? buildInputArtifacts(state, subtask) : undefined;
+    const ok = await sendChainAccept(
+      deps,
+      award.workerPeerId,
+      award,
+      subtask,
+      inputArtifacts && inputArtifacts.length > 0 ? inputArtifacts : undefined,
+    );
     state.acceptResendCount.set(subtaskId, retries + 1);
     // Bump awardedAt so the wait window resets between resends.
     state.awardedAt.set(subtaskId, (deps.now ?? (() => new Date()))().toISOString());
@@ -724,7 +892,7 @@ export async function advanceReadySubtasks(
     if (!subtaskDependenciesSatisfied(state, subtask)) continue;
     const workers = state.workersBySubtask.get(subtaskId) ?? [];
     if (workers.length === 0) continue;
-    const toSend = enrichSubtaskWithParentContext(state, subtask);
+    const prepared = prepareSubtaskPropose(state, subtask);
     const targets =
       subtask.preferredWorkerPeerId && workers.includes(subtask.preferredWorkerPeerId)
         ? [subtask.preferredWorkerPeerId]
@@ -733,7 +901,13 @@ export async function advanceReadySubtasks(
           : workers;
     let proposedThis = 0;
     for (const workerPeerId of targets) {
-      const ok = await sendChainPropose(deps, workerPeerId, toSend, state.chainMandate);
+      const ok = await sendChainPropose(
+        deps,
+        workerPeerId,
+        prepared.subtask,
+        state.chainMandate,
+        prepared.inputArtifacts,
+      );
       if (ok) {
         proposed++;
         proposedThis++;
@@ -762,6 +936,49 @@ export async function advanceReadySubtasks(
  * Also used when a worker returns a failed final partial (e.g. OpenClaw down)
  * so the Assigner can try a backup peer instead of treating the failure as done.
  */
+/**
+ * Phase 53 — order stall backups: same-thread sticky peer, then same
+ * requiredRole (via preferred of sibling steps), then list order.
+ */
+export function pickStallReassignWorker(
+  state: ChainState,
+  subtaskId: string,
+  stalledWorkerPeerId: string,
+): string | undefined {
+  const workers = state.workersBySubtask.get(subtaskId) ?? [];
+  const candidates = workers.filter((w) => w !== stalledWorkerPeerId);
+  if (candidates.length === 0) return undefined;
+  const subtask = state.subtasks.get(subtaskId);
+  const threadId = subtask?.threadId;
+
+  if (threadId) {
+    for (const [otherId, other] of state.subtasks.entries()) {
+      if (otherId === subtaskId) continue;
+      if (other.threadId !== threadId) continue;
+      const sticky =
+        other.preferredWorkerPeerId ??
+        state.awards.get(otherId)?.workerPeerId;
+      if (sticky && candidates.includes(sticky)) return sticky;
+    }
+  }
+
+  const requiredRole = subtask?.requiredRole;
+  if (requiredRole) {
+    for (const [otherId, other] of state.subtasks.entries()) {
+      if (other.requiredRole !== requiredRole) continue;
+      const peer =
+        other.preferredWorkerPeerId ?? state.awards.get(otherId)?.workerPeerId;
+      if (peer && peer !== stalledWorkerPeerId && candidates.includes(peer)) {
+        return peer;
+      }
+    }
+    // Prefer a candidate that is preferredWorker on any step with same role
+    // already reflected above; otherwise keep list order.
+  }
+
+  return candidates[0];
+}
+
 export async function reassignStalledSubtask(
   deps: ChainOrchestratorHandlerDeps,
   state: ChainState,
@@ -779,7 +996,7 @@ export async function reassignStalledSubtask(
   const award = state.awards.get(subtaskId);
   if (!award) return { ok: false, reason: "no_award" };
   const workers = state.workersBySubtask.get(subtaskId) ?? [];
-  const next = workers.find((w) => w !== award.workerPeerId);
+  const next = pickStallReassignWorker(state, subtaskId, award.workerPeerId);
   if (!next) return { ok: false, reason: "no_alternate" };
 
   const nowIso = (deps.now ?? (() => new Date()))().toISOString();
@@ -804,8 +1021,14 @@ export async function reassignStalledSubtask(
 
   const subtask = state.subtasks.get(subtaskId);
   if (!subtask) return { ok: false, reason: "send_failed" };
-  const toSend = enrichSubtaskWithParentContext(state, subtask);
-  const ok = await sendChainPropose(deps, next, toSend, state.chainMandate);
+  const prepared = prepareSubtaskPropose(state, subtask);
+  const ok = await sendChainPropose(
+    deps,
+    next,
+    prepared.subtask,
+    state.chainMandate,
+    prepared.inputArtifacts,
+  );
   if (!ok) return { ok: false, reason: "send_failed" };
 
   state.workersBySubtask.set(subtaskId, [next, ...workers.filter((w) => w !== next && w !== award.workerPeerId)]);
@@ -1030,8 +1253,15 @@ export async function counterBid(
 // wraps every send through `deps.sendEnvelope`, so we just iterate the
 // targeted workers.
   const workers = state.workersBySubtask.get(input.subtaskId) ?? [];
+  const prepared = prepareSubtaskPropose(state, subtask);
   for (const workerPeerId of workers) {
-    await sendChainPropose(deps, workerPeerId, subtask, state.chainMandate);
+    await sendChainPropose(
+      deps,
+      workerPeerId,
+      prepared.subtask,
+      state.chainMandate,
+      prepared.inputArtifacts,
+    );
   }
 
   deps.audit?.record({
@@ -1688,8 +1918,13 @@ export async function sendChainPropose(
   recipientPeerId: string,
   subtask: ChainSubtask,
   mandate: ChainMandate,
+  inputArtifacts?: NamedArtifact[],
 ): Promise<boolean> {
-  const payload = TaskChainProposePayloadSchema.parse({ subtask, chainMandate: mandate });
+  const payload = TaskChainProposePayloadSchema.parse({
+    subtask,
+    chainMandate: mandate,
+    ...(inputArtifacts && inputArtifacts.length > 0 ? { inputArtifacts } : {}),
+  });
   const envelope = buildChainEnvelope({
     intent: "task.chain.propose",
     senderPeerId: deps.orchestratorPeerId,
@@ -1709,10 +1944,12 @@ export async function sendChainAccept(
   recipientPeerId: string,
   award: ChainSubtaskAward,
   subtask?: ChainSubtask,
+  inputArtifacts?: NamedArtifact[],
 ): Promise<boolean> {
   const payload = TaskChainAcceptPayloadSchema.parse({
     award,
     ...(subtask ? { subtask } : {}),
+    ...(inputArtifacts && inputArtifacts.length > 0 ? { inputArtifacts } : {}),
   });
   const envelope = buildChainEnvelope({
     intent: "task.chain.accept",
@@ -1726,6 +1963,23 @@ export async function sendChainAccept(
     signingKeyPem: deps.signingKeyPem,
   });
   return deps.sendEnvelope(recipientPeerId, envelope, payload);
+}
+
+/**
+ * Build the worker list for a subtask: preferred (sticky) peer always first
+ * when set, even if skill ranking missed them; then ranked backups.
+ */
+export function chooseWorkersForSubtask(
+  preferred: string | undefined,
+  candidates: readonly string[],
+  workerCap: number,
+): string[] {
+  const cap = Math.max(1, workerCap);
+  if (preferred) {
+    const backups = candidates.filter((c) => c !== preferred);
+    return [preferred, ...backups].slice(0, Math.max(cap, 3));
+  }
+  return candidates.slice(0, cap);
 }
 
 export async function sendChainCancel(

@@ -99,6 +99,7 @@ export interface ChainWorkerHandlerDeps extends ChainWorkerSendDeps {
   executeSubtask?: (
     subtask: ChainSubtask,
     onPartial: (partial: TaskChainPartialPayload) => Promise<void>,
+    opts?: { inputArtifacts?: import("@envoymesh/protocol").NamedArtifact[] },
   ) => Promise<{ ok: boolean; finalNote?: string }>;
 }
 

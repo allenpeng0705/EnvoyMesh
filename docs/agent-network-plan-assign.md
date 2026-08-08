@@ -16,7 +16,7 @@
 
 See **[agent-network-roles.md](./agent-network-roles.md)** for role schema, prompt modules, and transparency.
 
-**Inside the DAG (not a whole-job loop):** dependency-ready scheduling; parent finals inject `prior[subtaskId]: …` into child constraints (`enrichSubtaskWithParentContext`). Stall reassign (≤1 backup) and bid negotiation rounds are separate recovery/cost mechanisms — see iteration design §2.
+**Inside the DAG (not a whole-job loop):** dependency-ready scheduling; parent finals inject `prior[subtaskId]: …` into child constraints **and** first-class `inputArtifacts` on propose (`prepareSubtaskPropose` / Phase 53 — see [agent-network-artifacts.md](./agent-network-artifacts.md)). Optional `threadId` keeps related steps on one preferred worker; stall reassign prefers sticky peer / same `requiredRole`. Bid negotiation rounds remain separate — see iteration design §2.
 
 ## Multi-round iteration (Phase 47)
 
@@ -81,5 +81,7 @@ ENVOY_PHASE18_LIVE_TESTS=1 RUN_E2E=1 npx vitest run \
 ## Dependency schedule + stall re-assign
 
 - `launchChain` proposes only dependency-ready roots; dependents wait.
-- Final parent partial → `advanceReadySubtasks` proposes children with `prior[subtaskId]: …` constraints (note + artifact snippet).
-- Stall (past `stallTimeoutMs` from last heartbeat or award time) → `reassignStalledSubtask` once to the next backup peer in `workersBySubtask`. Named/direct launch proposes the primary only; ranked backups stay on the list for recovery.
+- Final parent partial → `advanceReadySubtasks` proposes children with:
+  - `inputArtifacts` (named parent outputs / fragment / note→text; size-capped), and
+  - `prior[subtaskId]: …` constraint lines (compat skim).
+- Stall (past `stallTimeoutMs` from last heartbeat or award time) → `reassignStalledSubtask` once via `pickStallReassignWorker` (same `threadId` sticky peer → same `requiredRole` preferred → list order). Named/direct launch proposes the primary only; ranked backups stay on the list for recovery.

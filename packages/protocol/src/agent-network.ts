@@ -180,6 +180,17 @@ export type UnsignedChainMandate = z.infer<typeof UnsignedChainMandateSchema>;
 export type ChainMandate = z.infer<typeof ChainMandateSignedSchema>;
 
 /**
+ * Soft expect for a parent artifact key (Phase 53). Not enforced at launch —
+ * used for transparency and best-effort input packing.
+ */
+export const ChainSubtaskExpectSchema = z.object({
+  key: z.string().min(1).max(64),
+  fromSubtaskId: ChainSubtaskIdSchema.optional(),
+});
+
+export type ChainSubtaskExpect = z.infer<typeof ChainSubtaskExpectSchema>;
+
+/**
  * A single subtask the orchestrator plans to fan out. Workers receive the
  * subtask as a `task.chain.propose` payload and may respond with a bid.
  */
@@ -211,10 +222,35 @@ export const ChainSubtaskSchema = z.object({
    * When set, launch proposes to this peer first (direct dispatch).
    */
   preferredWorkerPeerId: z.string().min(1).max(128).optional(),
+  /**
+   * Soft ownership group (Phase 53). Steps sharing a threadId keep the same
+   * preferred worker across the DAG; stall reassign prefers that peer/role.
+   */
+  threadId: z.string().min(1).max(64).optional(),
+  /** Soft keys this step intends to produce (Phase 53; not enforced). */
+  produces: z.array(z.string().min(1).max(64)).max(8).optional(),
+  /** Soft expected parent artifact keys (Phase 53; not enforced). */
+  expects: z.array(ChainSubtaskExpectSchema).max(16).optional(),
   createdAt: z.string().datetime(),
 });
 
 export type ChainSubtask = z.infer<typeof ChainSubtaskSchema>;
+
+/**
+ * Named artifact for parent→child handoff and worker finals (Phase 53).
+ * Reuses existing ArtifactSchema (text / file / structured / composite).
+ */
+export const NamedArtifactSchema = z.object({
+  key: z.string().min(1).max(64),
+  artifact: ArtifactSchema,
+});
+
+export type NamedArtifact = z.infer<typeof NamedArtifactSchema>;
+
+/** Max named artifacts on a single partial. */
+export const CHAIN_NAMED_ARTIFACTS_MAX = 8;
+/** Max input artifacts on a propose payload. */
+export const CHAIN_INPUT_ARTIFACTS_MAX = 16;
 
 /**
  * A worker's response to a `task.chain.propose` — declares willingness and
@@ -324,6 +360,11 @@ export const ChainSubtaskPartialSchema = z.object({
   confidence: z.number().min(0).max(1).optional(),
   /** Optional artifact fragment (e.g. file being uploaded in pieces). */
   artifactFragment: ArtifactSchema.optional(),
+  /**
+   * Phase 53 — named outputs for typed parent→child handoff.
+   * When absent, orchestrators may treat `artifactFragment` as key `default`.
+   */
+  namedArtifacts: z.array(NamedArtifactSchema).max(CHAIN_NAMED_ARTIFACTS_MAX).optional(),
   createdAt: z.string().datetime(),
 });
 
@@ -456,6 +497,11 @@ export const TaskChainMandatePayloadSchema = z.object({
 export const TaskChainProposePayloadSchema = z.object({
   subtask: ChainSubtaskSchema,
   chainMandate: ChainMandateSignedSchema,
+  /**
+   * Phase 53 — first-class parent artifacts for the worker (not only
+   * `prior[...]` constraint strings). Older workers ignore this field.
+   */
+  inputArtifacts: z.array(NamedArtifactSchema).max(CHAIN_INPUT_ARTIFACTS_MAX).optional(),
 });
 
 /** `task.chain.bid` — worker responds with a bid. */
@@ -471,6 +517,11 @@ export const TaskChainAcceptPayloadSchema = z.object({
    * cache was lost (restart / race). Older orchestrators omit this.
    */
   subtask: ChainSubtaskSchema.optional(),
+  /**
+   * Phase 53 — parent artifacts for cache-miss / restart accept paths.
+   * Prefer propose-time `inputArtifacts`; this is a recovery carry.
+   */
+  inputArtifacts: z.array(NamedArtifactSchema).max(CHAIN_INPUT_ARTIFACTS_MAX).optional(),
 });
 
 /** `task.chain.partial` — worker streams a partial deliverable. */

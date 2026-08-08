@@ -78,6 +78,10 @@ export interface PlanAssignStepDraft {
   reason?: string;
   assignKind?: PlanAssignKind;
   missingRole?: string;
+  /** Soft ownership group — steps sharing threadId keep one preferred worker. */
+  threadId?: string;
+  produces?: string[];
+  expects?: Array<{ key: string; fromStepIndex?: number }>;
 }
 
 export interface PlanAssignParseResult {
@@ -199,6 +203,8 @@ export function buildPlanAssignPrompt(
     "- When a non-self worker lists a skill that matches the step, prefer that specialist over isSelf=true. Do not assign every step to isSelf just because they are the creator.",
     "- Spread work across matching specialists when the roster has 2+ peers with different skills.",
     "- dependsOn uses 0-based indices into your steps array.",
+    "- Optional threadId: group related steps that should stay on the SAME worker (e.g. \"coding\", \"qa\").",
+    "- Optional produces: string[] artifact keys this step will emit; expects: [{ key, fromStepIndex? }] soft parent keys.",
     "- Do not emit <think> tags, chain-of-thought, or markdown — JSON object only.",
     "",
     ...modeSection,
@@ -206,8 +212,8 @@ export function buildPlanAssignPrompt(
     "",
     "Return ONLY a JSON object (no prose, no markdown fencing) with shape:",
     mode === "role"
-      ? '{ "assignmentMode": "role", "steps": [ { "objective": string, "requiredRole": string, "requiredSkill": string, "depth": 1|2|3, "dependsOn": number[], "assignedPeerId": string, "assignKind": "exact_role"|"role_substitute"|"skill_fallback"|"generalist", "missingRole"?: string, "reason": string, "constraints"?: string[] } ], "aggregation": "llm_merge"|"concatenate", "warnings": [ { "code": string, "role"?: string, "stepIndex"?: number, "usedPeerId"?: string, "assignKind"?: string, "message": string } ], "notes"?: string }'
-      : '{ "assignmentMode": "skill", "steps": [ { "objective": string, "requiredSkill": string, "depth": 1|2|3, "dependsOn": number[], "assignedPeerId": string, "reason": string, "constraints"?: string[] } ], "aggregation": "llm_merge"|"concatenate", "warnings"?: [], "notes"?: string }',
+      ? '{ "assignmentMode": "role", "steps": [ { "objective": string, "requiredRole": string, "requiredSkill": string, "depth": 1|2|3, "dependsOn": number[], "assignedPeerId": string, "assignKind": "exact_role"|"role_substitute"|"skill_fallback"|"generalist", "missingRole"?: string, "reason": string, "threadId"?: string, "produces"?: string[], "expects"?: [{ "key": string, "fromStepIndex"?: number }], "constraints"?: string[] } ], "aggregation": "llm_merge"|"concatenate", "warnings": [ { "code": string, "role"?: string, "stepIndex"?: number, "usedPeerId"?: string, "assignKind"?: string, "message": string } ], "notes"?: string }'
+      : '{ "assignmentMode": "skill", "steps": [ { "objective": string, "requiredSkill": string, "depth": 1|2|3, "dependsOn": number[], "assignedPeerId": string, "reason": string, "threadId"?: string, "produces"?: string[], "expects"?: [{ "key": string, "fromStepIndex"?: number }], "constraints"?: string[] } ], "aggregation": "llm_merge"|"concatenate", "warnings"?: [], "notes"?: string }',
     "",
     `User goal: ${JSON.stringify(goal)}`,
     iterationBlock,
@@ -301,6 +307,31 @@ export function parsePlanAssignResult(rawText: string): PlanAssignParseResult | 
     const requiredRole = coerceAgentNetworkRoleId(c.requiredRole) ?? undefined;
     const assignKind = parseAssignKind(c.assignKind);
     const missingRole = typeof c.missingRole === "string" ? c.missingRole : undefined;
+    const threadId =
+      typeof c.threadId === "string" && c.threadId.trim().length > 0
+        ? c.threadId.trim().slice(0, 64)
+        : undefined;
+    const produces = Array.isArray(c.produces)
+      ? c.produces
+          .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+          .map((x) => x.trim().slice(0, 64))
+          .slice(0, 8)
+      : undefined;
+    const expectsRaw: Array<{ key: string; fromStepIndex?: number }> = [];
+    if (Array.isArray(c.expects)) {
+      for (const raw of c.expects.slice(0, 16)) {
+        if (!raw || typeof raw !== "object") continue;
+        const e = raw as Record<string, unknown>;
+        const key = typeof e.key === "string" ? e.key.trim().slice(0, 64) : "";
+        if (!key) continue;
+        if (typeof e.fromStepIndex === "number" && Number.isInteger(e.fromStepIndex)) {
+          expectsRaw.push({ key, fromStepIndex: e.fromStepIndex });
+        } else {
+          expectsRaw.push({ key });
+        }
+      }
+    }
+    const expects = expectsRaw.length > 0 ? expectsRaw : undefined;
     drafts.push({
       objective,
       requiredSkill,
@@ -312,6 +343,9 @@ export function parsePlanAssignResult(rawText: string): PlanAssignParseResult | 
       reason,
       assignKind,
       missingRole,
+      threadId,
+      produces: produces && produces.length > 0 ? produces : undefined,
+      expects: expects && expects.length > 0 ? expects : undefined,
     });
   }
   if (drafts.length === 0) return null;
@@ -447,6 +481,8 @@ export function materializePlanAssignWithMeta(input: {
 
   const subtaskIds = input.drafts.map((_, i) => `subtask_${suffix}_${i + 1}`);
   const subtasks: ChainSubtask[] = [];
+  /** First assignee per threadId — later steps in the thread stick to this peer. */
+  const threadOwner = new Map<string, string>();
 
   const bestNonSelfSpecialist = (specialtyHint: string): string | undefined => {
     let best: string | undefined;
@@ -532,6 +568,17 @@ export function materializePlanAssignWithMeta(input: {
     }
     if (!assignee && rankedPeerIds.length > 0) assignee = rankedPeerIds[0];
 
+    // Phase 53 stickiness: steps sharing threadId keep the first step's assignee.
+    const threadId = draft.threadId?.trim();
+    if (threadId && assignee) {
+      const owner = threadOwner.get(threadId);
+      if (owner && allowed.has(owner)) {
+        assignee = owner;
+      } else {
+        threadOwner.set(threadId, assignee);
+      }
+    }
+
     // Derive from the final assignee so an exact-role rewrite cannot leave a
     // stale LLM claim (e.g. role_substitute) on the constraint text.
     let assignKind: PlanAssignKind | undefined =
@@ -595,6 +642,24 @@ export function materializePlanAssignWithMeta(input: {
     if (roleHint) constraints.push(roleHint);
     if (reasonHint) constraints.push(reasonHint);
 
+    const expects =
+      draft.expects && draft.expects.length > 0
+        ? draft.expects.map((e) => {
+            const fromSubtaskId =
+              typeof e.fromStepIndex === "number" &&
+              e.fromStepIndex >= 0 &&
+              e.fromStepIndex < i
+                ? subtaskIds[e.fromStepIndex]
+                : undefined;
+            return {
+              key: e.key,
+              ...(fromSubtaskId ? { fromSubtaskId } : {}),
+            };
+          })
+        : dependsOn.length > 0
+          ? dependsOn.map((fromSubtaskId) => ({ key: "result", fromSubtaskId }))
+          : undefined;
+
     const obj = {
       version: "0.1" as const,
       subtaskId: subtaskIds[i]!,
@@ -603,6 +668,9 @@ export function materializePlanAssignWithMeta(input: {
       depth: draft.depth,
       requiredSkill: draft.requiredSkill,
       ...(requiredRole ? { requiredRole } : {}),
+      ...(threadId ? { threadId } : {}),
+      ...(draft.produces && draft.produces.length > 0 ? { produces: draft.produces } : {}),
+      ...(expects && expects.length > 0 ? { expects } : {}),
       objective: draft.objective,
       requestedResult: `result of: ${draft.objective}`,
       constraints,

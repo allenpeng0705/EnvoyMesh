@@ -414,6 +414,36 @@ describe("ChainSubtaskPartial", () => {
     const p = partial({ note: "n".repeat(CHAIN_SUBTASK_PARTIAL_NOTE_MAX + 400) });
     expect(p.note?.length).toBe(CHAIN_SUBTASK_PARTIAL_NOTE_MAX);
   });
+
+  it("accepts namedArtifacts on partial (Phase 53)", () => {
+    const p = partial({
+      isFinal: true,
+      namedArtifacts: [
+        { key: "result", artifact: { kind: "text", content: "parent deliverable" } },
+      ],
+    });
+    expect(p.namedArtifacts).toHaveLength(1);
+    expect(p.namedArtifacts?.[0]?.key).toBe("result");
+  });
+
+  it("old partial without namedArtifacts still parses", () => {
+    const p = partial({ artifactFragment: { kind: "text", content: "legacy" } });
+    expect(p.namedArtifacts).toBeUndefined();
+    expect(p.artifactFragment).toEqual({ kind: "text", content: "legacy" });
+  });
+});
+
+describe("Phase 53 chain subtask handoff fields", () => {
+  it("accepts threadId, produces, expects on subtask", () => {
+    const s = subtask({
+      threadId: "coding",
+      produces: ["api_diff"],
+      expects: [{ key: "research_notes" }],
+    });
+    expect(s.threadId).toBe("coding");
+    expect(s.produces).toEqual(["api_diff"]);
+    expect(s.expects?.[0]?.key).toBe("research_notes");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -613,6 +643,29 @@ describe("TaskChain payload wrappers", () => {
     expect(p.subtask).toEqual(s);
   });
 
+  it("TaskChainProposePayloadSchema accepts inputArtifacts (Phase 53)", () => {
+    const m = signedMandate();
+    const s = subtask();
+    const p = TaskChainProposePayloadSchema.parse({
+      subtask: s,
+      chainMandate: m,
+      inputArtifacts: [
+        { key: "default", artifact: { kind: "text", content: "from parent" } },
+        {
+          key: "spec",
+          artifact: {
+            kind: "file",
+            vaultPath: "specs/api.md",
+            contentHash: "sha256:abc",
+            displayName: "api.md",
+          },
+        },
+      ],
+    });
+    expect(p.inputArtifacts).toHaveLength(2);
+    expect(p.inputArtifacts?.[1]?.key).toBe("spec");
+  });
+
   it("TaskChainBidPayloadSchema wraps a bid", () => {
     const b = bid();
     const p = TaskChainBidPayloadSchema.parse({ bid: b });
@@ -623,6 +676,15 @@ describe("TaskChain payload wrappers", () => {
     const a = award();
     const p = TaskChainAcceptPayloadSchema.parse({ award: a });
     expect(p.award).toEqual(a);
+  });
+
+  it("TaskChainAcceptPayloadSchema accepts inputArtifacts recovery carry", () => {
+    const a = award();
+    const p = TaskChainAcceptPayloadSchema.parse({
+      award: a,
+      inputArtifacts: [{ key: "result", artifact: { kind: "text", content: "from parent" } }],
+    });
+    expect(p.inputArtifacts?.[0]?.key).toBe("result");
   });
 
   it("TaskChainPartialPayloadSchema wraps a partial", () => {

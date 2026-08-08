@@ -88,6 +88,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 50 — Push Notification Coverage (home node → EnvoyGo)](#phase-50--push-notification-coverage-home-node--envoygo--shipped-50a--50b--deep-link)
 - [Phase 51 — Family Network (multi-profile private social network)](#phase-51--family-network-multi-profile-private-social-network--designed)
 - [Phase 52 — Agent Network collaboration roles + assignment modes](#phase-52--agent-network-collaboration-roles--assignment-modes)
+- [Phase 53 — Artifact handoff + worker stickiness](#phase-53--artifact-handoff--worker-stickiness)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -6638,8 +6639,53 @@ Closes the production path after 48A–48D protocol/mount work.
 - `[x]` Role-based plans emit structured warnings on substitute / skill fallback
 - `[x]` Skill-based behavior unchanged when mode=`skill`
 - `[x]` Missing roles never block launch
-- `[ ]` Stall reassign prefers same `requiredRole` (follow-up — Phase 52E optional)
+- `[x]` Stall reassign prefers same `requiredRole` / sticky thread peer (**Phase 53**)
 - `[ ]` Multi-role editor UI (schema ready; UI later)
+
+---
+
+## Phase 53 — Artifact handoff + worker stickiness
+
+> **Status:** `[x]` 53A–53E shipped (2026-08-09).  
+> **Design:** [agent-network-artifacts.md](./agent-network-artifacts.md) · plan-assign [agent-network-plan-assign.md](./agent-network-plan-assign.md).
+
+**Goal:** Make parent→child Team-job results **first-class** (`inputArtifacts` on propose) and pin **ownership threads** (`threadId`) so related steps stay on one preferred worker. Keep `prior[...]` constraint strings as a backward-compatible fallback.
+
+### 53A — Protocol `[x]`
+
+- `[x]` `NamedArtifactSchema`; `ChainSubtaskPartial.namedArtifacts`
+- `[x]` `TaskChainProposePayload.inputArtifacts`
+- `[x]` `ChainSubtask.threadId` / `produces` / `expects`
+
+### 53B — Orchestrator handoff `[x]`
+
+- `[x]` `buildInputArtifacts` + `prepareSubtaskPropose` (size cap 48k)
+- `[x]` Wire launch / advance / stall / counter-bid propose paths
+- `[x]` Retain `prior[...]` constraint enrichment for old workers
+
+### 53C — Worker consume / emit `[x]`
+
+- `[x]` Cache `inputArtifacts` from propose; pass into executor
+- `[x]` OpenClaw prompt `## Input: {key}` (text/structured/file refs)
+- `[x]` Final partial emits `namedArtifacts: [{ key: "result", … }]`
+
+### 53D — Stickiness `[x]`
+
+- `[x]` Materialize: shared `threadId` → same `preferredWorkerPeerId`
+- `[x]` `pickStallReassignWorker`: sticky thread peer → same `requiredRole` → list order
+
+### 53E — Tests + docs `[x]`
+
+- `[x]` Protocol + `chain-artifacts-handoff` + executor unit tests
+- `[x]` Docs: artifacts design, plan-assign, roles pointer, this phase
+
+### Exit criteria
+
+- `[x]` Child propose carries typed parent text/structured/file refs within caps
+- `[x]` Worker prompt includes parent inputs; final emits named `result`
+- `[x]` Shared `threadId` keeps one preferred worker
+- `[x]` Stall prefers sticky / same role when available
+- `[x]` Old path via `prior[...]` still present
 
 ---
 
@@ -6647,6 +6693,7 @@ Closes the production path after 48A–48D protocol/mount work.
 
 | Date | Change |
 |------|--------|
+| 2026-08-09 | **Phase 53 — Artifact handoff + worker stickiness shipped (53A–53E).** `namedArtifacts` / propose `inputArtifacts`; `threadId` stickiness; stall prefer sticky peer / `requiredRole`; OpenClaw consume+emit; docs [agent-network-artifacts.md](./agent-network-artifacts.md). |
 | 2026-08-08 | **Phase 52 — Agent Network collaboration roles + assignment modes shipped (52A–52D).** Manual `agentNetworkProfile.roles[]` (primary = `[0]`); Team job assignment mode `skill` \| `role`; Assigner prompt modules + `planWarnings`; Social picker / start dialog / defaults; mock role synthesizer; card-announce E2E + unit coverage. Design: [agent-network-roles.md](./agent-network-roles.md). |
 | 2026-07-31 | **Phase 51 follow-ups.** Owner-only RPC gate covers vault/library + all `terminal*` methods; `previewFamilyInvite` pre-auth profile list for EnvoyGo re-pair (I'm new / I'm back); Social family group create/list/send UI; EnvoyGo skips bond/terminal/feed owner RPCs for family sessions; widget-test mock signatures fixed. |
 | 2026-07-31 | **Phase 51F review hardenings.** Social family DMs: route `family:*` in `partnerOwnerIdForChat` / `useChatThreadPreviews`; bubble direction uses `callerFamilyProfileId` (not mesh owner id). |

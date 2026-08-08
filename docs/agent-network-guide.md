@@ -277,6 +277,7 @@ say `chain`.
 | [agent-network-config.md](./agent-network-config.md) | AI Engine (EnvoyAI / Ext Agent) config — Phase 32 |
 | [implementation-plan.md](./implementation-plan.md) | Phase checklists (32, 35–36, 40–43, 47) |
 | [agent-network-plan-assign.md](./agent-network-plan-assign.md) | Assigner plan+assign + merge (shipped) |
+| [agent-network-artifacts.md](./agent-network-artifacts.md) | Parent→child artifact handoff + thread stickiness (Phase 53) |
 | [agent-network-iteration.md](./agent-network-iteration.md) | Multi-round Team job iteration A ∩ B (Phase 47, shipped) |
 
 ---

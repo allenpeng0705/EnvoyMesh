@@ -15,7 +15,7 @@
 
 - Job-scoped cast overrides (“force Bob = tester for this job only”) — later.
 - Hard wire enforcement that a programmer cannot receive a test step — LLM + transparency only in v1.
-- Rich artifact handoff / `produces`/`expects` contracts — separate design (see conversation notes); roles do not depend on it.
+- Rich artifact handoff / `produces`/`expects` contracts — **Phase 53** ([agent-network-artifacts.md](./agent-network-artifacts.md)); roles remain orthogonal (seats vs payloads).
 - EnvoyGo Team jobs UI — Social first.
 - Automatic role inference from OpenClaw skills.
 
@@ -367,7 +367,7 @@ assignmentMode stored as "skill" for clarity.
 1. Stall reassign prefers same `requiredRole` when mode=role.  
 2. Update `agent-network-vocabulary.md`, `plan-assign.md`, operator guide.  
 3. Live-LLM smoke (gated) for substitute warning quality.  
-4. (Later) multi-role editor; job-scoped cast; artifact contracts.
+4. (Later) multi-role editor; job-scoped cast. Artifact handoff / stickiness: Phase 53.
 
 ### Suggested sequencing
 
