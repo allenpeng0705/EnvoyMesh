@@ -4379,6 +4379,8 @@ class NodeServiceImpl implements NodeService {
         agentUrl,
         listenPort: bridgeCfg?.listenPort ?? 3031,
         agentName: snap?.agentName ?? bridgeCfg?.agentName ?? "Ext Agent",
+        activeExtAgent:
+          snap?.activeExtAgentId ?? bridgeCfg?.activeExtAgent ?? "pi",
         secret: bridgeCfg?.secret,
       },
       {
