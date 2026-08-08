@@ -373,7 +373,7 @@ describe("peer directory store", () => {
     expect(row?.listenAddrs.some((a) => a.includes("4011"))).toBe(true);
   });
 
-  it("sanitizeListenAddrs strips bare /tcp/HIGHPORT without trailing /p2p/", async () => {
+  it("sanitizeListenAddrs strips bare high ports when a stable listen port exists", async () => {
     const store = createLocalPeerDirectoryStore(profileDir);
     const peerId = "12D3KooWBareEphemeralPeer";
     await writeFile(
@@ -387,7 +387,6 @@ describe("peer directory store", () => {
             peerId,
             deviceId: "legacy",
             lastSeenAt: new Date().toISOString(),
-            // Real XiaoFeng-shaped rows: no /p2p/<id> suffix after the port.
             listenAddrs: [
               "/ip4/192.168.3.78/tcp/57944",
               "/ip4/192.168.3.78/tcp/56891",
@@ -405,7 +404,39 @@ describe("peer directory store", () => {
     expect(row?.listenAddrs.some((a) => a.includes("4011"))).toBe(true);
   });
 
-  it("sanitizeListenAddrs strips ephemeral snapshots from all rows", async () => {
+  it("sanitizeListenAddrs keeps newest private-LAN high ports when tcp/0-only", async () => {
+    const store = createLocalPeerDirectoryStore(profileDir);
+    const peerId = "12D3KooWTcpZeroOnlyPeer";
+    await writeFile(
+      join(profileDir, "peer-directory.json"),
+      JSON.stringify({
+        version: "0.1",
+        records: [
+          {
+            version: "0.1",
+            ownerId: "envoy:owner:tcp0-only",
+            peerId,
+            deviceId: "legacy",
+            lastSeenAt: new Date().toISOString(),
+            listenAddrs: [
+              "/ip4/192.168.3.78/tcp/57944",
+              "/ip4/192.168.3.78/tcp/56891",
+              "/ip4/192.168.3.78/tcp/55056",
+            ],
+          },
+        ],
+      }),
+      { mode: 0o600 },
+    );
+    await store.sanitizeListenAddrs();
+    const row = await store.getPeerByPeerId(peerId);
+    expect(row?.listenAddrs).toEqual([
+      "/ip4/192.168.3.78/tcp/56891",
+      "/ip4/192.168.3.78/tcp/55056",
+    ]);
+  });
+
+  it("sanitizeListenAddrs keeps private-LAN high port when it is the only dial hint", async () => {
     const store = createLocalPeerDirectoryStore(profileDir);
     const peerId = "12D3KooWSanitizeListenAddrsPeer";
     await writeFile(
@@ -426,8 +457,8 @@ describe("peer directory store", () => {
       { mode: 0o600 },
     );
     const result = await store.sanitizeListenAddrs();
-    expect(result.recordsTouched).toBe(1);
+    expect(result.recordsTouched).toBe(0);
     const row = await store.getPeerByPeerId(peerId);
-    expect(row?.listenAddrs).toEqual([]);
+    expect(row?.listenAddrs).toEqual([`/ip4/192.168.3.78/tcp/64595/p2p/${peerId}`]);
   });
 });

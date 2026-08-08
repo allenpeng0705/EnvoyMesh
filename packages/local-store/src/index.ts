@@ -2155,8 +2155,27 @@ function isLikelyEphemeralTcpSnapshot(addr: string): boolean {
   return port >= 32768;
 }
 
+/** Private LAN / RFC1918 TCP listen (not circuit). Used when tcp/0 is the only listen mode. */
+function isPrivateLanTcpListenAddr(addr: string): boolean {
+  if (!addr.includes("/tcp/") || addr.includes("/p2p-circuit/")) return false;
+  const a = addr.trim();
+  if (/\/ip4\/10\.\d+\.\d+\.\d+\//.test(a)) return true;
+  if (/\/ip4\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+\//.test(a)) return true;
+  if (/\/ip4\/192\.168\.\d+\.\d+\//.test(a)) return true;
+  return false;
+}
+
 function filterDialableListenAddrs(addrs: string[]): string[] {
-  return dedupeListenAddrList(addrs.filter((a) => !isLikelyEphemeralTcpSnapshot(a)));
+  const deduped = dedupeListenAddrList(addrs);
+  const stable = deduped.filter((a) => !isLikelyEphemeralTcpSnapshot(a));
+  if (stable.length > 0) return stable;
+  // Nodes listen on tcp/0 → directory only has high ports. Scrubbing them all
+  // left bonded contacts with listenAddrs=[] and UI stuck Offline until relay
+  // reservation caught up. Keep the newest 2 private-LAN high ports.
+  const lanEphemeral = deduped.filter(
+    (a) => isLikelyEphemeralTcpSnapshot(a) && isPrivateLanTcpListenAddr(a),
+  );
+  return lanEphemeral.slice(-2);
 }
 
 /** Max dial hints retained per peer row — matches ensurePeerFromInboundChat / bond paths. */
