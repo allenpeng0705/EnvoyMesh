@@ -215,10 +215,8 @@ describe("ChainsView", () => {
     cancelBtn && fireEvent.click(cancelBtn);
 
     const dialog = await screen.findByRole("alertdialog");
-    const dialogCancelBtns = within(dialog).getAllByRole("button", { name: "Cancel" });
-    expect(dialogCancelBtns.length).toBe(2);
-    const confirmBtn = dialogCancelBtns[dialogCancelBtns.length - 1];
-    if (!confirmBtn) throw new Error("ConfirmDialog confirm button not found");
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDefined();
+    const confirmBtn = within(dialog).getByRole("button", { name: "Yes, cancel job" });
     fireEvent.click(confirmBtn);
 
     await waitFor(() => {

@@ -47,6 +47,7 @@ export const zhChainsMessages = {
     cancelTitle: "取消此协作任务",
     cancelConfirm: "取消此协作任务？",
     cancelConfirmMessage: "工作代理将收到通知，汇总过程将停止。",
+    cancelConfirmAction: "确认取消",
     cancelled: "协作任务已取消",
     cancelFailed: "取消协作任务失败",
     manage: "管理",

@@ -876,7 +876,7 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
           title={t("chains.active.cancelConfirm")}
           message={t("chains.active.cancelConfirmMessage")}
           variant="destructive"
-          confirmLabel={t("chains.active.cancel")}
+          confirmLabel={t("chains.active.cancelConfirmAction")}
           onConfirm={confirm.onConfirm}
           onCancel={() => setConfirm(null)}
         />

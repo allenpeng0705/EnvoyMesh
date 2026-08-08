@@ -31,6 +31,7 @@ export const jaChainsMessages = {
     cancelTitle: "このチェーンをキャンセル",
     cancelConfirm: "このチェーンをキャンセルしますか？",
     cancelConfirmMessage: "ワーカーに通知され、統合が停止します。",
+    cancelConfirmAction: "はい、キャンセルする",
     cancelled: "チェーンがキャンセルされました",
     cancelFailed: "チェーンのキャンセルに失敗",
     manage: "管理",

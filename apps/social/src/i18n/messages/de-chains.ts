@@ -31,6 +31,7 @@ export const deChainsMessages = {
     cancelTitle: "Diese Kette abbrechen",
     cancelConfirm: "Diese Kette abbrechen?",
     cancelConfirmMessage: "Die Worker werden benachrichtigt und die Synthese wird gestoppt.",
+    cancelConfirmAction: "Ja, Aufgabe abbrechen",
     cancelled: "Kette abgebrochen",
     cancelFailed: "Kette konnte nicht abgebrochen werden",
     manage: "Verwalten",

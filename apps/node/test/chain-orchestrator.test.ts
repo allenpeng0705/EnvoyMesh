@@ -603,7 +603,7 @@ describe("reassignStalledSubtask", () => {
 });
 
 describe("handleOrchestratorPartial worker failure", () => {
-  it("reassigns to backup when final partial is Failed:", async () => {
+  it("reassigns to backup when final partial is an engine failure marker", async () => {
     const deps = makeDeps();
     const state = createChainState(mandate());
     state.subtasks.set("subtask_a", {
@@ -640,7 +640,7 @@ describe("handleOrchestratorPartial worker failure", () => {
         workerPeerId: "12D3KooW-w1",
         seq: 1,
         isFinal: true,
-        note: "Failed: Built-in OpenClaw is not running on this node",
+        note: "AN_ENGINE_FAIL: Built-in OpenClaw is not running on this node",
         confidence: 0.1,
         createdAt: NOW.toISOString(),
       }),
@@ -667,6 +667,70 @@ describe("handleOrchestratorPartial worker failure", () => {
     expect(state.partials.has("subtask_a")).toBe(false);
     expect(state.reassignCount.get("subtask_a")).toBe(1);
     expect(state.workersBySubtask.get("subtask_a")?.[0]).toBe("12D3KooW-w2");
+  });
+
+  it("does not reassign when LLM prose starts with Failed:", async () => {
+    const deps = makeDeps();
+    const state = createChainState(mandate());
+    state.subtasks.set("subtask_a", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      chainMandateId: "chainmandate_test-1",
+      depth: 1,
+      requiredSkill: "task.execute",
+      objective: "x",
+      requestedResult: "r",
+      constraints: [],
+      dependsOn: [],
+      createdAt: NOW.toISOString(),
+    });
+    state.workersBySubtask.set("subtask_a", ["12D3KooW-w1", "12D3KooW-w2"]);
+    state.proposedSubtasks.add("subtask_a");
+    state.awards.set("subtask_a", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      workerPeerId: "12D3KooW-w1",
+      acceptedCostUsd: 0,
+      negotiationRound: 1,
+      deadlineAt: "2026-06-18T01:00:00.000Z",
+      createdAt: NOW.toISOString(),
+    });
+    const partial = TaskChainPartialPayloadSchema.parse({
+      partial: ChainSubtaskPartialSchema.parse({
+        version: "0.1",
+        subtaskId: "subtask_a",
+        chainId: "chain_test-1",
+        workerPeerId: "12D3KooW-w1",
+        seq: 1,
+        isFinal: true,
+        note: "Failed: to locate primary sources — here is a best-effort summary instead.",
+        confidence: 0.85,
+        createdAt: NOW.toISOString(),
+      }),
+    });
+    await handleOrchestratorPartial(
+      deps,
+      {
+        version: "0.1",
+        messageId: "m1",
+        createdAt: NOW.toISOString(),
+        senderPeerId: "12D3KooW-w1",
+        senderPublicKey: "pk",
+        senderRole: "agent",
+        recipientRole: "agent",
+        intent: "task.chain.partial",
+        payload: partial,
+        signature: "s",
+        correlationId: "chain_test-1",
+      },
+      partial,
+      state,
+    );
+    expect(state.awards.has("subtask_a")).toBe(true);
+    expect(state.partials.has("subtask_a")).toBe(true);
+    expect(state.reassignCount.get("subtask_a") ?? 0).toBe(0);
   });
 });
 

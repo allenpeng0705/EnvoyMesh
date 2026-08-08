@@ -46,6 +46,7 @@ export const chainsMessages = {
     cancelTitle: "Cancel this team job",
     cancelConfirm: "Cancel this team job?",
     cancelConfirmMessage: "Workers will be notified and the synthesis will stop.",
+    cancelConfirmAction: "Yes, cancel job",
     cancelled: "Team job cancelled",
     cancelFailed: "Failed to cancel team job",
     manage: "Manage",

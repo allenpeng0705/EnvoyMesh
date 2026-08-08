@@ -31,6 +31,7 @@ export const frChainsMessages = {
     cancelTitle: "Annuler cette chaîne",
     cancelConfirm: "Annuler cette chaîne ?",
     cancelConfirmMessage: "Les travailleurs seront notifiés et la synthèse s'arrêtera.",
+    cancelConfirmAction: "Oui, annuler la tâche",
     cancelled: "Chaîne annulée",
     cancelFailed: "Échec de l'annulation de la chaîne",
     manage: "Gérer",

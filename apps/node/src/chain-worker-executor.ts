@@ -86,7 +86,7 @@ export function createOpenClawChainSubtaskExecutor(input: {
     });
 
     if (!input.isOpenClawReady()) {
-      await emit("Failed: Built-in OpenClaw is not running on this node", true, 0.1);
+      await emit("AN_ENGINE_FAIL: Built-in OpenClaw is not running on this node", true, 0.1);
       chainWarn("exec", "OpenClaw unavailable", { subtaskId: subtask.subtaskId });
       return { ok: false, finalNote: "openclaw_unavailable" };
     }
@@ -96,7 +96,7 @@ export function createOpenClawChainSubtaskExecutor(input: {
     try {
       const text = (await input.askOpenClaw(buildOpenClawSubtaskPrompt(subtask))).trim();
       if (!text) {
-        await emit("Failed: OpenClaw returned an empty response", true, 0.1);
+        await emit("AN_ENGINE_FAIL: OpenClaw returned an empty response", true, 0.1);
         chainWarn("exec", "OpenClaw empty", { subtaskId: subtask.subtaskId });
         return { ok: false, finalNote: "openclaw_empty" };
       }
@@ -109,7 +109,7 @@ export function createOpenClawChainSubtaskExecutor(input: {
       return { ok: true, finalNote: clipped };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      await emit(`Failed: ${msg}`, true, 0.1);
+      await emit(`AN_ENGINE_FAIL: ${msg}`, true, 0.1);
       chainWarn("exec", "OpenClaw error", { subtaskId: subtask.subtaskId, error: msg });
       return { ok: false, finalNote: msg };
     }
@@ -157,7 +157,11 @@ export async function executeAcceptedSubtask(
   const toolName = toolForCapability(subtask.requiredSkill);
   const context = await executorDeps.getToolContext();
   if (!context || !toolName) {
-    await emit(`Failed: no Agent Network executor available for ${subtask.requiredSkill}`, true, 0.1);
+    await emit(
+      `AN_ENGINE_FAIL: no Agent Network executor available for ${subtask.requiredSkill}`,
+      true,
+      0.1,
+    );
     return { ok: false, reason: "no_executor" };
   }
 
@@ -167,7 +171,7 @@ export async function executeAcceptedSubtask(
     { ...context, approvalGranted: true },
   );
   if (!result.ok) {
-    await emit(`Failed: ${result.error ?? "execution error"}`, true, 0.1);
+    await emit(`AN_ENGINE_FAIL: ${result.error ?? "execution error"}`, true, 0.1);
     return { ok: false, reason: result.error };
   }
 

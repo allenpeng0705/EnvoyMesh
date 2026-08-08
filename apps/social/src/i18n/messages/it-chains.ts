@@ -31,6 +31,7 @@ export const itChainsMessages = {
     cancelTitle: "Annulla questa catena",
     cancelConfirm: "Annullare questa catena?",
     cancelConfirmMessage: "I lavoratori saranno notificati e la sintesi si fermerà.",
+    cancelConfirmAction: "Sì, annulla il lavoro",
     cancelled: "Catena annullata",
     cancelFailed: "Impossibile annullare la catena",
     manage: "Gestisci",

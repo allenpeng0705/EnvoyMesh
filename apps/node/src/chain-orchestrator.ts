@@ -1478,13 +1478,20 @@ export async function handleOrchestratorPartial(
   if (typeof payload.partial.confidence === "number") {
     state.lastConfidence.set(payload.partial.subtaskId, payload.partial.confidence);
   }
+  const notePreview = (payload.partial.note ?? "").replace(/\s+/g, " ").slice(0, 120);
   deps.audit.record({
     type: "chain.partial_received",
     outcome: "allow",
     intent: "task.chain.partial",
     remotePeerId: envelope.senderPeerId,
     correlationId: envelope.correlationId,
-    summary: `subtask=${payload.partial.subtaskId} seq=${payload.partial.seq} isFinal=${payload.partial.isFinal}`,
+    summary:
+      `subtask=${payload.partial.subtaskId} seq=${payload.partial.seq}` +
+      ` isFinal=${payload.partial.isFinal}` +
+      (typeof payload.partial.confidence === "number"
+        ? ` confidence=${payload.partial.confidence}`
+        : "") +
+      (notePreview ? ` note=${notePreview}` : ""),
   });
   if (payload.partial.isFinal) {
     if (isFailedWorkerFinalPartial(payload)) {
@@ -1518,12 +1525,30 @@ export async function handleOrchestratorPartial(
   return { ok: true };
 }
 
-/** Final partial that means the worker could not complete the step. */
+/**
+ * Final partial that means the worker engine could not complete the step.
+ * Must NOT treat ordinary LLM prose that happens to start with "Failed:" as an
+ * engine failure — that false-positive was reassigning successful local work
+ * to a silent backup peer and stalling team jobs.
+ */
 export function isFailedWorkerFinalPartial(payload: TaskChainPartialPayload): boolean {
   if (!payload.partial.isFinal) return false;
   const note = (payload.partial.note ?? "").trim();
-  if (note.startsWith("Failed:")) return true;
-  if (typeof payload.partial.confidence === "number" && payload.partial.confidence < 0.3) {
+  // Executor-owned failure markers only (see chain-worker-executor.ts).
+  if (
+    note.startsWith("AN_ENGINE_FAIL:") ||
+    note.startsWith("Failed: Built-in OpenClaw") ||
+    note.startsWith("Failed: OpenClaw ") ||
+    note.startsWith("Failed: no Agent Network executor")
+  ) {
+    return true;
+  }
+  // Very low confidence + empty/near-empty body is still an engine miss.
+  if (
+    typeof payload.partial.confidence === "number" &&
+    payload.partial.confidence < 0.3 &&
+    note.length < 80
+  ) {
     return true;
   }
   return false;
@@ -1712,7 +1737,11 @@ export function buildChainStatusPayload(
       const partial = state.partials.get(sub.subtaskId);
       const body = partial?.partial;
       if (body?.isFinal) {
-        stepState = body.note?.startsWith("Failed:") ? "failed" : "done";
+        stepState = isFailedWorkerFinalPartial({
+          partial: body,
+        } as TaskChainPartialPayload)
+          ? "failed"
+          : "done";
       } else if (partial) {
         stepState = "running";
       } else {

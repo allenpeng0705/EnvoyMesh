@@ -31,6 +31,7 @@ export const koChainsMessages = {
     cancelTitle: "이 체인 취소",
     cancelConfirm: "이 체인을 취소하시겠습니까?",
     cancelConfirmMessage: "작업자에게 알림이 전송되고 종합이 중지됩니다.",
+    cancelConfirmAction: "예, 작업 취소",
     cancelled: "체인이 취소되었습니다",
     cancelFailed: "체인 취소 실패",
     manage: "관리",
