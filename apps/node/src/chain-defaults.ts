@@ -14,6 +14,8 @@ export const DEFAULT_CHAIN_DEFAULTS: ChainDefaultsConfig = {
   allowLlmDecompose: true,
   awardMode: "direct",
   // showCostUi omitted — derived from awardMode in mergeChainDefaults
+  /** Skill-based plan+assign (preserves historical Team job behavior). */
+  assignmentMode: "skill",
   iterationMaxRounds: 1,
   iterationJudgeMode: "llm",
   iterationCarryMode: "summary",
@@ -123,4 +125,11 @@ export function resolveAwardMode(
 export function resolveShowCostUi(defaults?: ChainDefaultsConfig | null): boolean {
   if (defaults?.showCostUi !== undefined) return defaults.showCostUi;
   return resolveAwardMode(defaults) === "competitive";
+}
+
+/** Resolve plan+assign mode (defaults to skill). */
+export function resolveAssignmentModeDefault(
+  defaults?: ChainDefaultsConfig | null,
+): "skill" | "role" {
+  return defaults?.assignmentMode === "role" ? "role" : "skill";
 }

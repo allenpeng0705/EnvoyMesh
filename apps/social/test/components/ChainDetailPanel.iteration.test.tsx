@@ -113,4 +113,39 @@ describe("ChainDetailPanel iteration owner surface", () => {
       });
     });
   });
+
+  it("shows assignment mode and plan warnings from chainGetState", async () => {
+    chainGetState.mockResolvedValue({
+      chainId: "chain_owner_1",
+      chainMandateId: "m1",
+      subtaskCount: 1,
+      awardedCount: 0,
+      partialCount: 0,
+      cancelledCount: 0,
+      chainCancelled: false,
+      published: false,
+      budgetSpentUsd: 0,
+      budgetMaxUsd: 10,
+      showCostUi: false,
+      assignmentMode: "role",
+      planWarnings: [
+        {
+          code: "role_substitute",
+          message: "No tester — used programmer",
+          assignKind: "role_substitute",
+        },
+      ],
+    });
+
+    renderPanel();
+    await waitFor(() => {
+      expect(screen.getByTestId("chain-detail-assignment-mode")).toBeDefined();
+    });
+    expect(screen.getByTestId("chain-detail-assignment-mode").textContent).toMatch(
+      /Role-based/i,
+    );
+    expect(screen.getByTestId("chain-detail-plan-warnings").textContent).toMatch(
+      /No tester/,
+    );
+  });
 });

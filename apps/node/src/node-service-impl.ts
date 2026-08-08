@@ -1459,6 +1459,8 @@ class NodeServiceImpl implements NodeService {
     costEstimates: new Map<string, { minUsd: number; maxUsd: number }>(),
     awardModes: new Map<string, "direct" | "competitive">(),
     showCostUi: new Map<string, boolean>(),
+    assignmentModes: new Map<string, "skill" | "role">(),
+    planWarnings: new Map(),
     pendingExtendSteps: new Map(),
     iterationObservers: new Map<string, string>(),
     observedChains: new Map(),

@@ -229,6 +229,55 @@ describe("planChain", () => {
     expect(r.subtasks.length).toBe(1);
     expect(llmDecompose).toHaveBeenCalledTimes(1);
   });
+
+  it("passes request-scoped assignmentMode into llmDecompose", async () => {
+    const llmDecompose = vi.fn().mockResolvedValue({
+      ok: true,
+      steps: [
+        {
+          version: "0.1" as const,
+          subtaskId: "subtask_a",
+          chainId: "chain_test-1",
+          chainMandateId: "chainmandate_test-1",
+          depth: 1,
+          requiredSkill: "task.execute",
+          objective: "step one",
+          requestedResult: "r1",
+          constraints: [],
+          dependsOn: [],
+          createdAt: NOW.toISOString(),
+        },
+      ],
+      planWarnings: [{ code: "role_substitute", message: "used programmer", assignKind: "role_substitute" }],
+      assignmentMode: "role",
+    });
+    const deps = makeDeps({ llmDecompose });
+    const state = createChainState(mandate());
+    const r = await planChain(deps, state, "role plan goal", {
+      allowLlm: true,
+      assignmentMode: "role",
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(llmDecompose).toHaveBeenCalledWith("role plan goal", { assignmentMode: "role" });
+    expect(r.assignmentMode).toBe("role");
+    expect(r.planWarnings?.[0]?.code).toBe("role_substitute");
+  });
+
+  it("emits no_llm_role_planning when role mode falls back to keyword path", async () => {
+    const llmDecompose = vi.fn().mockResolvedValue({ ok: false, reason: "rate-limited" });
+    const deps = makeDeps({ llmDecompose });
+    const state = createChainState(mandate());
+    const r = await planChain(deps, state, "role fallback goal", {
+      allowLlm: true,
+      assignmentMode: "role",
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.subtasks.length).toBe(1);
+    expect(r.planWarnings?.some((w) => w.code === "no_llm_role_planning")).toBe(true);
+    expect(r.assignmentMode).toBe("role");
+  });
 });
 
 describe("launchChain", () => {

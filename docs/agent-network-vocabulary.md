@@ -10,6 +10,8 @@
 |------|---------|-------------|
 | **Membership** | Whether a bonded peer’s agent may be recruited for Team jobs, and basic execute rights advertised on the Agent Card | Agent Card `membership[]` (e.g. `task.execute`, `agent-network-worker`) |
 | **Skills** | What the orchestrator uses to prefer / match workers — owner domain tags **and** Agent Skills from Built-in OpenClaw | `agentNetworkProfile.skills[]` as `{ id, kind, source }` (legacy strings coerce) |
+| **Roles** | Collaboration seat on a team (PM / programmer / tester…). Manual owner attestation; `roles[0]` = primary | `agentNetworkProfile.roles[]` — see [agent-network-roles.md](./agent-network-roles.md) |
+| **Assignment mode** | How the Assigner ranks seats for a Team job | `skill` (default) or `role` — per job + chain defaults |
 | **AI Engine** | Which local engines run on *this* home node (EnvoyAI / Ext Agent). For **Agent Network worker** execution, see [agent-network-engine.md](./agent-network-engine.md) (default OpenClaw; Ext is a later owner choice on that node only) | Phase 32 chat flags + AN worker engine policy |
 | **Team job** | Multi-agent collaboration (protocol: chains) | Social **Team jobs** |
 
@@ -33,11 +35,14 @@ Human Profile interest chips may still say “capabilities” in Profile UI; tha
 ## Orchestrator rules
 
 1. **Pool** = bonded + online + `membership` includes Agent Network worker tag (`agent-network-worker`) and can execute (`task.execute` or equivalent).
-2. **Rank / assign** = soft-match step `requiredSkill` against `agentNetworkProfile.skills` (plus freshness, context, spend, throughput, LAN).
+2. **Rank / assign** depends on assignment mode:
+   - **skill** (default): soft-match step `requiredSkill` against `agentNetworkProfile.skills` (plus freshness, context, spend, throughput, LAN). Roles are informational.
+   - **role**: prefer peers whose `roles[]` match step `requiredRole`; exact role assumes seat competence; missing roles → Assigner LLM may substitute or skill-fallback and emit `planWarnings`.
 3. **Never** treat membership tags as specialty factors (they look identical across opted-in workers).
+4. **Roles are not skills** — do not put `programmer` into `skills[]`.
 
 ```text
-Filter by membership  →  Rank by skills + profile factors  →  Assign
+Filter by membership  →  Rank by roles (if mode=role) and/or skills + profile factors  →  Assign
 ```
 
 ## Skill sources (ingestion)

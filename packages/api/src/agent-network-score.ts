@@ -13,6 +13,7 @@ import type { AgentNetworkProfile } from "@envoymesh/protocol";
 import {
   DEFAULT_AGENT_NETWORK_PROFILE,
   agentNetworkRankingSkillIds,
+  coerceAgentNetworkRoles,
   coerceAgentNetworkSkills,
 } from "@envoymesh/protocol";
 
@@ -141,6 +142,7 @@ export function scoreAgentNetworkWorker(input: {
     ...DEFAULT_AGENT_NETWORK_PROFILE,
     ...input.profile,
     skills: coerceAgentNetworkSkills(input.profile?.skills ?? DEFAULT_AGENT_NETWORK_PROFILE.skills),
+    roles: coerceAgentNetworkRoles(input.profile?.roles ?? DEFAULT_AGENT_NETWORK_PROFILE.roles),
   };
   const weights = normalizeWeights({
     ...DEFAULT_WORKER_SCORE_WEIGHTS,

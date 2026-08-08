@@ -2,19 +2,53 @@
  * Plan+assign helpers for Team jobs.
  *
  * Builds the Assigner prompt (goal + eligible worker roster) and parses
- * LLM JSON into subtasks with preferredWorkerPeerId. Specialty is soft;
- * every step must get an assignee when the roster is non-empty.
+ * LLM JSON into subtasks with preferredWorkerPeerId. Supports skill-based
+ * (default) and role-based assignment modes — see docs/agent-network-roles.md.
  */
 
 import { randomUUID } from "node:crypto";
 import {
   ChainSubtaskSchema,
+  agentNetworkHasRole,
+  agentNetworkPrimaryRole,
+  agentNetworkRoleIds,
   agentNetworkSkillIds,
+  coerceAgentNetworkRoleId,
   type AgentNetworkProfile,
+  type AgentNetworkRoleId,
   type ChainSubtask,
 } from "@envoymesh/protocol";
 import { assignWorkersToSteps } from "@envoymesh/api";
 import { extractJson } from "./chain-decomposer.js";
+
+/** Bump when substitute guidance text changes (prompt module versioning). */
+export const ROLE_SUBSTITUTE_GUIDANCE_VERSION = 1;
+
+export type ChainAssignmentMode = "skill" | "role";
+
+export type PlanAssignKind =
+  | "exact_role"
+  | "role_substitute"
+  | "skill_fallback"
+  | "generalist";
+
+export type PlanAssignWarningCode =
+  | "role_missing"
+  | "role_substitute"
+  | "skill_fallback"
+  | "no_role_peers"
+  | "ambiguous_role"
+  | "assignee_rewritten"
+  | "no_llm_role_planning";
+
+export interface PlanAssignWarning {
+  code: PlanAssignWarningCode;
+  role?: string;
+  stepIndex?: number;
+  usedPeerId?: string;
+  assignKind?: PlanAssignKind;
+  message: string;
+}
 
 export interface PlanAssignRosterEntry {
   peerId: string;
@@ -22,8 +56,9 @@ export interface PlanAssignRosterEntry {
   ownerId?: string;
   membership: string[];
   profile?:
-    | (Partial<Omit<AgentNetworkProfile, "skills">> & {
+    | (Partial<Omit<AgentNetworkProfile, "skills" | "roles">> & {
         skills?: readonly (string | import("@envoymesh/protocol").AgentNetworkSkillEntry)[];
+        roles?: readonly string[];
       })
     | null;
   sameLan?: boolean;
@@ -34,18 +69,62 @@ export interface PlanAssignRosterEntry {
 export interface PlanAssignStepDraft {
   objective: string;
   requiredSkill: string;
+  requiredRole?: AgentNetworkRoleId;
   depth: number;
   constraints: string[];
   /** 0-based indices into the steps array (LLM form) or already-resolved subtask ids. */
   dependsOnRaw: Array<number | string>;
   assignedPeerId?: string;
   reason?: string;
+  assignKind?: PlanAssignKind;
+  missingRole?: string;
+}
+
+export interface PlanAssignParseResult {
+  steps: PlanAssignStepDraft[];
+  warnings: PlanAssignWarning[];
+  notes?: string;
+  assignmentMode?: ChainAssignmentMode;
+}
+
+export function resolveAssignmentMode(
+  mode?: string | null,
+): ChainAssignmentMode {
+  return mode === "role" ? "role" : "skill";
+}
+
+function buildModeSkillSection(): string[] {
+  return [
+    "ASSIGNMENT MODE: skill",
+    "- Rank by requiredSkill vs each worker's skills, plus soft factors (LAN, throughput, freshness).",
+    "- Collaboration roles on the roster are informational only — do not use them for ranking.",
+    "- requiredRole may be omitted. assignKind is optional (skill_fallback / generalist).",
+  ];
+}
+
+function buildModeRoleSection(): string[] {
+  return [
+    "ASSIGNMENT MODE: role",
+    "- Every non-trivial step SHOULD set requiredRole (product_manager|programmer|tester|researcher|writer|generalist|custom:…).",
+    "- Prefer a worker whose primaryRole (or any roles[]) equals requiredRole. Exact match → assignKind=exact_role.",
+    "- Assume exact-role peers can perform that seat's work (do not require skill overlap for exact_role).",
+    "- If 2+ workers share the exact role, break ties with skills + soft factors; optionally warn ambiguous_role.",
+    "- If zero exact matches: choose role_substitute (another role that can reasonably cover), else skill_fallback, else generalist.",
+    "- ALWAYS add a warnings[] entry when assignKind is not exact_role.",
+    "",
+    `SUBSTITUTE GUIDANCE (v${ROLE_SUBSTITUTE_GUIDANCE_VERSION} — examples, not exhaustive; explain deviations in reason):`,
+    "- missing tester → programmer often OK for light QA (role_substitute)",
+    "- missing writer → product_manager or researcher sometimes OK for docs (role_substitute)",
+    "- missing programmer → do NOT assign tester as coder; use skill_fallback (coding) or generalist",
+    "- missing product_manager → prefer researcher/writer via skills for spec steps; do not invent authority",
+  ];
 }
 
 export function buildPlanAssignPrompt(
   goal: string,
   roster: readonly PlanAssignRosterEntry[],
   opts?: {
+    assignmentMode?: ChainAssignmentMode;
     iteration?: {
       round: number;
       maxRounds: number;
@@ -54,20 +133,26 @@ export function buildPlanAssignPrompt(
     };
   },
 ): string {
+  const mode = resolveAssignmentMode(opts?.assignmentMode);
   const rosterJson = JSON.stringify(
-    roster.map((w) => ({
-      peerId: w.peerId,
-      displayName: w.displayName ?? null,
-      // Mesh capabilities are membership only — do not expose them as specialty tags.
-      canExecute: (w.membership ?? []).includes("task.execute"),
-      skills: agentNetworkSkillIds(w.profile?.skills),
-      modelFreshness: w.profile?.modelFreshness ?? null,
-      contextWindow: w.profile?.contextWindow ?? null,
-      spendPosture: w.profile?.spendPosture ?? null,
-      throughputTokensPerSec: w.profile?.throughputTokensPerSec ?? null,
-      sameLan: w.sameLan === true,
-      isSelf: w.isSelf === true,
-    })),
+    roster.map((w) => {
+      const roles = agentNetworkRoleIds(w.profile?.roles);
+      return {
+        peerId: w.peerId,
+        displayName: w.displayName ?? null,
+        // Mesh capabilities are membership only — do not expose them as specialty tags.
+        canExecute: (w.membership ?? []).includes("task.execute"),
+        skills: agentNetworkSkillIds(w.profile?.skills),
+        roles,
+        primaryRole: agentNetworkPrimaryRole(roles) ?? null,
+        modelFreshness: w.profile?.modelFreshness ?? null,
+        contextWindow: w.profile?.contextWindow ?? null,
+        spendPosture: w.profile?.spendPosture ?? null,
+        throughputTokensPerSec: w.profile?.throughputTokensPerSec ?? null,
+        sameLan: w.sameLan === true,
+        isSelf: w.isSelf === true,
+      };
+    }),
     null,
     2,
   );
@@ -88,6 +173,16 @@ export function buildPlanAssignPrompt(
           .join("\n")
       : "";
 
+  const modeSection = mode === "role" ? buildModeRoleSection() : buildModeSkillSection();
+  const rolePeers = roster.filter((w) => agentNetworkRoleIds(w.profile?.roles).length > 0);
+  const noRolePeersHint =
+    mode === "role" && rolePeers.length === 0
+      ? [
+          "NOTICE: No workers on the roster advertise a collaboration role.",
+          "Degrade gracefully: plan steps with requiredRole as intended seats, assign via skills, set assignKind=skill_fallback, and emit warnings code=no_role_peers.",
+        ]
+      : [];
+
   return [
     "You are the Assigner for an EnvoyMesh Team job (multi-agent collaboration).",
     "Analyze the goal, split it into concrete steps (dependency-aware), and assign EACH step to exactly one eligible worker.",
@@ -106,8 +201,13 @@ export function buildPlanAssignPrompt(
     "- dependsOn uses 0-based indices into your steps array.",
     "- Do not emit <think> tags, chain-of-thought, or markdown — JSON object only.",
     "",
+    ...modeSection,
+    ...noRolePeersHint,
+    "",
     "Return ONLY a JSON object (no prose, no markdown fencing) with shape:",
-    '{ "steps": [ { "objective": string, "requiredSkill": string, "depth": 1|2|3, "dependsOn": number[], "assignedPeerId": string, "reason": string, "constraints"?: string[] } ], "aggregation": "llm_merge"|"concatenate", "notes"?: string }',
+    mode === "role"
+      ? '{ "assignmentMode": "role", "steps": [ { "objective": string, "requiredRole": string, "requiredSkill": string, "depth": 1|2|3, "dependsOn": number[], "assignedPeerId": string, "assignKind": "exact_role"|"role_substitute"|"skill_fallback"|"generalist", "missingRole"?: string, "reason": string, "constraints"?: string[] } ], "aggregation": "llm_merge"|"concatenate", "warnings": [ { "code": string, "role"?: string, "stepIndex"?: number, "usedPeerId"?: string, "assignKind"?: string, "message": string } ], "notes"?: string }'
+      : '{ "assignmentMode": "skill", "steps": [ { "objective": string, "requiredSkill": string, "depth": 1|2|3, "dependsOn": number[], "assignedPeerId": string, "reason": string, "constraints"?: string[] } ], "aggregation": "llm_merge"|"concatenate", "warnings"?: [], "notes"?: string }',
     "",
     `User goal: ${JSON.stringify(goal)}`,
     iterationBlock,
@@ -121,17 +221,60 @@ export function buildPlanAssignPrompt(
     .join("\n");
 }
 
-export function parsePlanAssignSteps(rawText: string): PlanAssignStepDraft[] | null {
+function parseAssignKind(raw: unknown): PlanAssignKind | undefined {
+  if (raw === "exact_role" || raw === "role_substitute" || raw === "skill_fallback" || raw === "generalist") {
+    return raw;
+  }
+  return undefined;
+}
+
+function parseWarnings(raw: unknown): PlanAssignWarning[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PlanAssignWarning[] = [];
+  for (const item of raw.slice(0, 16)) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const message = typeof o.message === "string" ? o.message.trim() : "";
+    if (!message) continue;
+    const codeRaw = typeof o.code === "string" ? o.code : "skill_fallback";
+    const knownCodes: readonly PlanAssignWarningCode[] = [
+      "role_missing",
+      "role_substitute",
+      "skill_fallback",
+      "no_role_peers",
+      "ambiguous_role",
+      "assignee_rewritten",
+      "no_llm_role_planning",
+    ];
+    const code = knownCodes.includes(codeRaw as PlanAssignWarningCode)
+      ? (codeRaw as PlanAssignWarningCode)
+      : "skill_fallback";
+    out.push({
+      code,
+      role: typeof o.role === "string" ? o.role : undefined,
+      stepIndex: typeof o.stepIndex === "number" ? o.stepIndex : undefined,
+      usedPeerId: typeof o.usedPeerId === "string" ? o.usedPeerId : undefined,
+      assignKind: parseAssignKind(o.assignKind),
+      message: message.slice(0, 500),
+    });
+  }
+  return out;
+}
+
+export function parsePlanAssignResult(rawText: string): PlanAssignParseResult | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(extractJson(rawText));
   } catch {
     return null;
   }
+  const root = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : null;
   const stepsRaw = Array.isArray(parsed)
     ? parsed
-    : parsed && typeof parsed === "object" && Array.isArray((parsed as { steps?: unknown }).steps)
-      ? (parsed as { steps: unknown[] }).steps
+    : root && Array.isArray(root.steps)
+      ? root.steps
       : null;
   if (!stepsRaw || stepsRaw.length === 0) return null;
 
@@ -155,17 +298,99 @@ export function parsePlanAssignSteps(rawText: string): PlanAssignStepDraft[] | n
         ? c.assignedPeerId.trim()
         : undefined;
     const reason = typeof c.reason === "string" ? c.reason : undefined;
+    const requiredRole = coerceAgentNetworkRoleId(c.requiredRole) ?? undefined;
+    const assignKind = parseAssignKind(c.assignKind);
+    const missingRole = typeof c.missingRole === "string" ? c.missingRole : undefined;
     drafts.push({
       objective,
       requiredSkill,
+      requiredRole,
       depth,
       constraints,
       dependsOnRaw,
       assignedPeerId,
       reason,
+      assignKind,
+      missingRole,
     });
   }
-  return drafts.length > 0 ? drafts : null;
+  if (drafts.length === 0) return null;
+
+  const assignmentMode =
+    root?.assignmentMode === "role" || root?.assignmentMode === "skill"
+      ? root.assignmentMode
+      : undefined;
+  const notes = typeof root?.notes === "string" ? root.notes.slice(0, 2000) : undefined;
+  return {
+    steps: drafts,
+    warnings: parseWarnings(root?.warnings),
+    notes,
+    assignmentMode,
+  };
+}
+
+/** @deprecated Prefer parsePlanAssignResult — kept for existing call sites. */
+export function parsePlanAssignSteps(rawText: string): PlanAssignStepDraft[] | null {
+  return parsePlanAssignResult(rawText)?.steps ?? null;
+}
+
+const SKILL_TO_ROLE: Record<string, AgentNetworkRoleId> = {
+  coding: "programmer",
+  engineering: "programmer",
+  research: "researcher",
+  "research.web": "researcher",
+  writing: "writer",
+  summarization: "writer",
+  translation: "writer",
+  analysis: "researcher",
+};
+
+function inferRequiredRole(draft: PlanAssignStepDraft): AgentNetworkRoleId | undefined {
+  if (draft.requiredRole) return draft.requiredRole;
+  const skill = draft.requiredSkill.toLowerCase();
+  if (SKILL_TO_ROLE[skill]) return SKILL_TO_ROLE[skill];
+  for (const [k, role] of Object.entries(SKILL_TO_ROLE)) {
+    if (skill.includes(k) || k.includes(skill)) return role;
+  }
+  return undefined;
+}
+
+function inferAssignKind(
+  roster: readonly PlanAssignRosterEntry[],
+  peerId: string | undefined,
+  requiredRole: AgentNetworkRoleId | undefined,
+): PlanAssignKind {
+  if (!peerId) return "generalist";
+  const entry = roster.find((r) => r.peerId === peerId);
+  if (!entry) return "generalist";
+  if (requiredRole && agentNetworkHasRole(entry.profile?.roles, requiredRole)) {
+    return "exact_role";
+  }
+  if (agentNetworkRoleIds(entry.profile?.roles).length > 0 && requiredRole) {
+    return "role_substitute";
+  }
+  if (requiredRole) return "skill_fallback";
+  return "generalist";
+}
+
+function bestPeerForRole(
+  roster: readonly PlanAssignRosterEntry[],
+  role: AgentNetworkRoleId,
+  scoreFor: (peerId: string, specialtyHint: string) => number,
+  specialtyHint: string,
+): string | undefined {
+  const matches = roster.filter((r) => agentNetworkHasRole(r.profile?.roles, role));
+  if (matches.length === 0) return undefined;
+  let best = matches[0]!.peerId;
+  let bestS = scoreFor(best, specialtyHint);
+  for (const m of matches.slice(1)) {
+    const s = scoreFor(m.peerId, specialtyHint);
+    if (s > bestS) {
+      best = m.peerId;
+      bestS = s;
+    }
+  }
+  return best;
 }
 
 export function materializePlanAssignSubtasks(input: {
@@ -176,7 +401,26 @@ export function materializePlanAssignSubtasks(input: {
   roster: readonly PlanAssignRosterEntry[];
   createdAt: string;
   deadlineAt?: string;
+  assignmentMode?: ChainAssignmentMode;
+  /** Warnings already parsed from the LLM (mutated with hygiene additions). */
+  warnings?: PlanAssignWarning[];
 }): ChainSubtask[] {
+  return materializePlanAssignWithMeta(input).subtasks;
+}
+
+export function materializePlanAssignWithMeta(input: {
+  goal: string;
+  chainId: string;
+  chainMandateId: string;
+  drafts: PlanAssignStepDraft[];
+  roster: readonly PlanAssignRosterEntry[];
+  createdAt: string;
+  deadlineAt?: string;
+  assignmentMode?: ChainAssignmentMode;
+  warnings?: PlanAssignWarning[];
+}): { subtasks: ChainSubtask[]; warnings: PlanAssignWarning[] } {
+  const mode = resolveAssignmentMode(input.assignmentMode);
+  const warnings = [...(input.warnings ?? [])];
   const allowed = new Set(input.roster.map((r) => r.peerId));
   const rankedPeerIds = input.roster.map((r) => r.peerId);
   const suffix = randomUUID();
@@ -188,7 +432,6 @@ export function materializePlanAssignSubtasks(input: {
     const req = specialtyHint.toLowerCase();
     const skills = agentNetworkSkillIds(entry.profile?.skills);
     if (skills.some((s) => s === req || s.includes(req) || req.includes(s))) return 3;
-    // Mesh capabilities are never specialty factors — only can-execute baseline.
     if ((entry.membership ?? []).includes("task.execute")) return 1;
     return 0;
   };
@@ -220,18 +463,63 @@ export function materializePlanAssignSubtasks(input: {
     return bestS >= 3 ? best : undefined;
   };
 
+  const rolePeersExist = input.roster.some(
+    (r) => agentNetworkRoleIds(r.profile?.roles).length > 0,
+  );
+  if (mode === "role" && !rolePeersExist) {
+    warnings.push({
+      code: "no_role_peers",
+      message: "No workers advertise a collaboration role — using skill fallback for assignment.",
+      assignKind: "skill_fallback",
+    });
+  }
+
   for (const [i, draft] of input.drafts.entries()) {
+    const requiredRole = mode === "role" ? inferRequiredRole(draft) : draft.requiredRole;
     const scoredPick = filled[stepKeys[i]!];
     let assignee: string | undefined;
-    if (draft.assignedPeerId && allowed.has(draft.assignedPeerId)) {
-      const llmId = draft.assignedPeerId;
+    const llmId =
+      draft.assignedPeerId && allowed.has(draft.assignedPeerId) ? draft.assignedPeerId : undefined;
+
+    if (mode === "role" && requiredRole) {
+      const exact = bestPeerForRole(input.roster, requiredRole, scoreFor, draft.requiredSkill);
+      if (exact) {
+        // Prefer exact role; if LLM already picked an exact-role peer, keep LLM.
+        if (llmId && agentNetworkHasRole(
+          input.roster.find((r) => r.peerId === llmId)?.profile?.roles,
+          requiredRole,
+        )) {
+          assignee = llmId;
+        } else {
+          assignee = exact;
+          if (llmId && llmId !== exact) {
+            // Drop stale LLM substitute/missing warnings for this step — rewrite wins.
+            for (let wi = warnings.length - 1; wi >= 0; wi--) {
+              const w = warnings[wi]!;
+              if (w.stepIndex === i && w.code !== "assignee_rewritten") {
+                warnings.splice(wi, 1);
+              }
+            }
+            warnings.push({
+              code: "assignee_rewritten",
+              role: requiredRole,
+              stepIndex: i,
+              usedPeerId: exact,
+              assignKind: "exact_role",
+              message: `Rewrote step ${i} assignee to exact role ${requiredRole}.`,
+            });
+          }
+        }
+      } else if (llmId) {
+        assignee = llmId;
+      } else {
+        assignee = scoredPick;
+      }
+    } else if (llmId) {
       const llmScore = scoreFor(llmId, draft.requiredSkill);
       const llmIsSelf = input.roster.find((r) => r.peerId === llmId)?.isSelf === true;
       const peerSpecialist = bestNonSelfSpecialist(draft.requiredSkill);
       const scoredPickScore = scoredPick ? scoreFor(scoredPick, draft.requiredSkill) : -1;
-      // Prefer a peer specialist when the LLM missed the specialty, or when it
-      // tied on specialty but biased to isSelf (creator). Fall back to scoredPick
-      // when only the creator (or another roster entry) is the specialist.
       if (peerSpecialist && (llmScore < 3 || llmIsSelf)) {
         assignee = peerSpecialist;
       } else if (scoredPick && scoredPickScore >= 3 && llmScore < 3) {
@@ -244,6 +532,51 @@ export function materializePlanAssignSubtasks(input: {
     }
     if (!assignee && rankedPeerIds.length > 0) assignee = rankedPeerIds[0];
 
+    // Derive from the final assignee so an exact-role rewrite cannot leave a
+    // stale LLM claim (e.g. role_substitute) on the constraint text.
+    let assignKind: PlanAssignKind | undefined =
+      mode === "role"
+        ? inferAssignKind(input.roster, assignee, requiredRole)
+        : draft.assignKind;
+    if (
+      mode === "role" &&
+      draft.assignKind === "exact_role" &&
+      assignKind !== "exact_role" &&
+      requiredRole
+    ) {
+      warnings.push({
+        code: "role_missing",
+        role: requiredRole,
+        stepIndex: i,
+        usedPeerId: assignee,
+        assignKind,
+        message: `Claimed exact_role for ${requiredRole} but assignee lacks that role — treated as ${assignKind}.`,
+      });
+    }
+
+    if (
+      mode === "role" &&
+      assignKind &&
+      assignKind !== "exact_role" &&
+      !warnings.some((w) => w.stepIndex === i)
+    ) {
+      warnings.push({
+        code:
+          assignKind === "role_substitute"
+            ? "role_substitute"
+            : assignKind === "skill_fallback"
+              ? "skill_fallback"
+              : "role_missing",
+        role: requiredRole,
+        stepIndex: i,
+        usedPeerId: assignee,
+        assignKind,
+        message:
+          draft.reason?.trim() ||
+          `Step ${i}: ${assignKind} for role ${requiredRole ?? "unknown"}.`,
+      });
+    }
+
     const dependsOn: string[] = [];
     for (const dep of draft.dependsOnRaw) {
       if (typeof dep === "number" && Number.isInteger(dep) && dep >= 0 && dep < i) {
@@ -254,7 +587,12 @@ export function materializePlanAssignSubtasks(input: {
     }
 
     const reasonHint = draft.reason ? `Assign reason: ${draft.reason}` : undefined;
+    const roleHint =
+      mode === "role" && requiredRole
+        ? `Required role: ${requiredRole}${assignKind ? ` (${assignKind})` : ""}`
+        : undefined;
     const constraints = [...draft.constraints];
+    if (roleHint) constraints.push(roleHint);
     if (reasonHint) constraints.push(reasonHint);
 
     const obj = {
@@ -264,6 +602,7 @@ export function materializePlanAssignSubtasks(input: {
       chainMandateId: input.chainMandateId,
       depth: draft.depth,
       requiredSkill: draft.requiredSkill,
+      ...(requiredRole ? { requiredRole } : {}),
       objective: draft.objective,
       requestedResult: `result of: ${draft.objective}`,
       constraints,
@@ -275,7 +614,7 @@ export function materializePlanAssignSubtasks(input: {
     subtasks.push(ChainSubtaskSchema.parse(obj));
   }
 
-  return subtasks;
+  return { subtasks, warnings };
 }
 
 /** Detect cycles in dependsOn after materialization. */
@@ -299,4 +638,13 @@ export function hasDependsOnCycle(subtasks: readonly ChainSubtask[]): boolean {
     if (dfs(s.subtaskId)) return true;
   }
   return false;
+}
+
+/** Format plan warnings for RPC diagnostics strings. */
+export function formatPlanWarningDiagnostics(warnings: readonly PlanAssignWarning[]): string[] {
+  return warnings.map((w) => {
+    const kind = w.assignKind ? ` [${w.assignKind}]` : "";
+    const role = w.role ? ` role=${w.role}` : "";
+    return `plan:${w.code}${role}${kind}: ${w.message}`;
+  });
 }

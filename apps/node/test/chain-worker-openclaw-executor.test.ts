@@ -3,7 +3,10 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { createOpenClawChainSubtaskExecutor } from "../src/chain-worker-executor.js";
-import type { ChainSubtask } from "@envoymesh/protocol";
+import {
+  CHAIN_SUBTASK_PARTIAL_NOTE_MAX,
+  type ChainSubtask,
+} from "@envoymesh/protocol";
 
 function sampleSubtask(overrides?: Partial<ChainSubtask>): ChainSubtask {
   return {
@@ -32,7 +35,7 @@ describe("createOpenClawChainSubtaskExecutor", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.finalNote).toBe("openclaw_unavailable");
-    expect(partials.at(-1)).toMatch(/^Failed:/);
+    expect(partials.at(-1)).toMatch(/^AN_ENGINE_FAIL:/);
     expect(partials.at(-1)).toMatch(/OpenClaw/);
   });
 
@@ -78,5 +81,21 @@ describe("createOpenClawChainSubtaskExecutor", () => {
     const result = await executor(sampleSubtask(), async () => undefined);
     expect(result.ok).toBe(false);
     expect(result.finalNote).toBe("openclaw_empty");
+  });
+
+  it("clips oversized OpenClaw answers so Zod note.max cannot fail the step", async () => {
+    const long = "x".repeat(CHAIN_SUBTASK_PARTIAL_NOTE_MAX + 1500);
+    const executor = createOpenClawChainSubtaskExecutor({
+      workerPeerId: "envoy_agent_self",
+      isOpenClawReady: () => true,
+      askOpenClaw: vi.fn().mockResolvedValue(long),
+    });
+    const partials: string[] = [];
+    const result = await executor(sampleSubtask(), async (payload) => {
+      partials.push(payload.partial.note ?? "");
+    });
+    expect(result.ok).toBe(true);
+    expect(result.finalNote?.length).toBe(CHAIN_SUBTASK_PARTIAL_NOTE_MAX);
+    expect(partials.at(-1)?.length).toBe(CHAIN_SUBTASK_PARTIAL_NOTE_MAX);
   });
 });

@@ -717,6 +717,11 @@ export const en = {
     awardModeCompetitive: "Competitive bidding",
     awardModeHint:
       "Direct: first available bonded worker. Competitive: collect bids and rank by cost.",
+    assignmentMode: "Plan assignment",
+    assignmentModeSkill: "Skill based (default)",
+    assignmentModeRole: "Role based",
+    assignmentModeHint:
+      "Role based: Assigner prefers collaboration roles on worker profiles. Skill based: match specialties as today.",
     showCostUiLabel: "Show cost & bid prices in UI",
     showCostUiHint: "Optional. Leave off unless you are using competitive bidding.",
     stallPolicy: "When a worker stalls (no response)",

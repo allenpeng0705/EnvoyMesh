@@ -8,6 +8,7 @@
 import {
   ChainSubtaskPartialSchema,
   TaskChainPartialPayloadSchema,
+  clipChainSubtaskPartialNote,
   type ChainSubtask,
 } from "@envoymesh/protocol";
 
@@ -69,7 +70,7 @@ export function createOpenClawChainSubtaskExecutor(input: {
             workerPeerId: input.workerPeerId,
             seq,
             isFinal,
-            note,
+            note: clipChainSubtaskPartialNote(note),
             confidence,
             createdAt: (input.now ?? (() => new Date()))().toISOString(),
           }),
@@ -100,7 +101,7 @@ export function createOpenClawChainSubtaskExecutor(input: {
         chainWarn("exec", "OpenClaw empty", { subtaskId: subtask.subtaskId });
         return { ok: false, finalNote: "openclaw_empty" };
       }
-      const clipped = text.slice(0, 8000);
+      const clipped = clipChainSubtaskPartialNote(text) ?? text;
       await emit(clipped, true, 0.85);
       chainLog("exec", "OpenClaw subtask done", {
         subtaskId: subtask.subtaskId,
@@ -133,7 +134,7 @@ export async function executeAcceptedSubtask(
         workerPeerId: workerDeps.workerPeerId,
         seq,
         isFinal,
-        note,
+        note: clipChainSubtaskPartialNote(note),
         confidence,
         createdAt: (workerDeps.now ?? (() => new Date()))().toISOString(),
       }),
@@ -179,6 +180,6 @@ export async function executeAcceptedSubtask(
     typeof result.result === "string"
       ? result.result
       : JSON.stringify(result.result ?? {}).slice(0, 4000);
-  await emit(text.slice(0, 8000), true, 0.75);
+  await emit(clipChainSubtaskPartialNote(text) ?? text, true, 0.75);
   return { ok: true };
 }

@@ -37,7 +37,15 @@ export interface DecomposerInput {
 }
 
 export type DecomposerResult =
-  | { ok: true; steps: ChainSubtask[]; modelUsed: string; tokensIn: number; tokensOut: number }
+  | {
+      ok: true;
+      steps: ChainSubtask[];
+      modelUsed: string;
+      tokensIn: number;
+      tokensOut: number;
+      planWarnings?: import("./chain-plan-assign.js").PlanAssignWarning[];
+      assignmentMode?: import("./chain-plan-assign.js").ChainAssignmentMode;
+    }
   | { ok: false; reason: "no_provider" | "firewall" | "model_deny" | "parse_failed" | "empty_goal" | "too_deep" };
 
 export interface CreateLlmDecomposerOptions {
@@ -53,6 +61,16 @@ export interface CreateLlmDecomposerOptions {
   getRoster?: () => Promise<
     import("./chain-plan-assign.js").PlanAssignRosterEntry[]
   >;
+  /** Skill vs role plan+assign mode (default skill). */
+  getAssignmentMode?: () =>
+    | Promise<import("./chain-plan-assign.js").ChainAssignmentMode>
+    | import("./chain-plan-assign.js").ChainAssignmentMode;
+  /** Receives structured plan warnings after materialize (role/skill modes). */
+  onPlanMeta?: (meta: {
+    warnings: import("./chain-plan-assign.js").PlanAssignWarning[];
+    notes?: string;
+    assignmentMode: import("./chain-plan-assign.js").ChainAssignmentMode;
+  }) => void;
   /** Mandate/chain ids so plan+assign can mint valid ChainSubtask rows. */
   chainContext?: {
     chainId: string;
@@ -61,7 +79,10 @@ export interface CreateLlmDecomposerOptions {
   };
 }
 
-export type LlmDecomposer = (goal: string) => Promise<DecomposerResult>;
+export type LlmDecomposer = (
+  goal: string,
+  callOpts?: { assignmentMode?: import("./chain-plan-assign.js").ChainAssignmentMode },
+) => Promise<DecomposerResult>;
 
 /**
  * Construct an `llmDecompose` callback suitable for `ChainOrchestratorHandlerDeps`.
@@ -69,7 +90,8 @@ export type LlmDecomposer = (goal: string) => Promise<DecomposerResult>;
  * The returned function is async, idempotent (safe to call concurrently for
  * different goals), and never throws — failures are surfaced as
  * `{ ok: false, reason }` so the orchestrator can fall back to the keyword
- * decomposer.
+ * decomposer. Prefer `callOpts.assignmentMode` over `getAssignmentMode` so
+ * concurrent previews stay request-scoped.
  */
 export function createLlmDecomposer(opts: CreateLlmDecomposerOptions): LlmDecomposer {
   if (opts.providers.length === 0) {
@@ -77,18 +99,25 @@ export function createLlmDecomposer(opts: CreateLlmDecomposerOptions): LlmDecomp
   }
   const timeoutMs = opts.timeoutMs ?? 30_000;
 
-  return async (goal: string) => {
+  return async (goal: string, callOpts) => {
     if (!goal || goal.trim().length === 0) {
       return { ok: false, reason: "empty_goal" };
     }
 
     const roster = opts.getRoster ? await opts.getRoster() : [];
     const usePlanAssign = roster.length > 0;
+    const rawMode =
+      callOpts?.assignmentMode === "role" || callOpts?.assignmentMode === "skill"
+        ? callOpts.assignmentMode
+        : opts.getAssignmentMode
+          ? await opts.getAssignmentMode()
+          : "skill";
+    const assignmentMode = rawMode === "role" ? "role" : "skill";
 
     let prompt: string;
     if (usePlanAssign) {
       const { buildPlanAssignPrompt } = await import("./chain-plan-assign.js");
-      prompt = buildPlanAssignPrompt(goal, roster);
+      prompt = buildPlanAssignPrompt(goal, roster, { assignmentMode });
     } else {
       prompt = buildDecomposePrompt(goal, opts);
     }
@@ -135,34 +164,43 @@ export function createLlmDecomposer(opts: CreateLlmDecomposerOptions): LlmDecomp
 
     if (usePlanAssign) {
       const {
-        parsePlanAssignSteps,
-        materializePlanAssignSubtasks,
+        parsePlanAssignResult,
+        materializePlanAssignWithMeta,
         hasDependsOnCycle,
       } = await import("./chain-plan-assign.js");
-      const drafts = parsePlanAssignSteps(result.response.text);
-      if (!drafts) return { ok: false, reason: "parse_failed" };
+      const parsed = parsePlanAssignResult(result.response.text);
+      if (!parsed) return { ok: false, reason: "parse_failed" };
       const chainId = opts.chainContext?.chainId ?? `chain_${randomUUID()}`;
       const chainMandateId =
         opts.chainContext?.chainMandateId ?? `chainmandate_${randomUUID()}`;
-      const subtasks = materializePlanAssignSubtasks({
+      const { subtasks, warnings } = materializePlanAssignWithMeta({
         goal,
         chainId,
         chainMandateId,
-        drafts,
+        drafts: parsed.steps,
         roster,
         createdAt: new Date().toISOString(),
         deadlineAt: opts.chainContext?.deadlineAt,
+        assignmentMode,
+        warnings: parsed.warnings,
       });
       if (hasDependsOnCycle(subtasks)) return { ok: false, reason: "parse_failed" };
       if (subtasks.some((s) => s.depth < 1 || s.depth > 3)) {
         return { ok: false, reason: "too_deep" };
       }
+      opts.onPlanMeta?.({
+        warnings,
+        notes: parsed.notes,
+        assignmentMode,
+      });
       return {
         ok: true,
         steps: subtasks,
         modelUsed: result.response.modelName,
         tokensIn: result.response.usage?.inputTokens ?? 0,
         tokensOut: result.response.usage?.outputTokens ?? 0,
+        planWarnings: warnings,
+        assignmentMode,
       };
     }
 

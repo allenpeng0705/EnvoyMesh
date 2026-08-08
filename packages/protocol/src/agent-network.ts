@@ -192,6 +192,11 @@ export const ChainSubtaskSchema = z.object({
   depth: z.number().int().min(1).max(CHAIN_MAX_DEPTH),
   /** Required capability tag. Worker must advertise this capability to bid. */
   requiredSkill: z.string().min(1).max(64),
+  /**
+   * Collaboration seat for role-based Team jobs (optional).
+   * Well-known ids or `custom:<slug>` — see agent-network-profile roles.
+   */
+  requiredRole: z.string().min(1).max(48).optional(),
   objective: z.string().min(1).max(2000),
   requestedResult: z.string().min(1).max(1000),
   constraints: z.array(z.string().min(1)).max(32).default([]),
@@ -272,6 +277,20 @@ export const ChainSubtaskAwardSchema = z.object({
 export type ChainSubtaskAward = z.infer<typeof ChainSubtaskAwardSchema>;
 
 /**
+ * Max length for `ChainSubtaskPartial.note`. OpenClaw answers are clipped to
+ * this before emit; Zod also preprocess-clips oversized inbound notes so a
+ * long model reply cannot fail the whole Team-job step with `too_big`.
+ */
+export const CHAIN_SUBTASK_PARTIAL_NOTE_MAX = 8000;
+
+/** Clip a partial note to {@link CHAIN_SUBTASK_PARTIAL_NOTE_MAX}. */
+export function clipChainSubtaskPartialNote(note: string | undefined): string | undefined {
+  if (note == null) return undefined;
+  if (note.length <= CHAIN_SUBTASK_PARTIAL_NOTE_MAX) return note;
+  return note.slice(0, CHAIN_SUBTASK_PARTIAL_NOTE_MAX);
+}
+
+/**
  * A worker's partial deliverable. Workers may submit multiple partials per
  * subtask (with monotonically increasing `seq`) before the final result.
  *
@@ -289,7 +308,13 @@ export const ChainSubtaskPartialSchema = z.object({
   /** True when this is the worker's terminal partial before their task.result. */
   isFinal: z.boolean().default(false),
   /** Free-text progress note (visible in the chain tree). */
-  note: z.string().max(2000).optional(),
+  note: z.preprocess(
+    (v) =>
+      typeof v === "string" && v.length > CHAIN_SUBTASK_PARTIAL_NOTE_MAX
+        ? v.slice(0, CHAIN_SUBTASK_PARTIAL_NOTE_MAX)
+        : v,
+    z.string().max(CHAIN_SUBTASK_PARTIAL_NOTE_MAX).optional(),
+  ),
   /**
    * Phase 40D — worker's self-reported confidence in this partial (0..1).
    * Compared against `chainMandate.lowConfidenceThreshold` by `trackChain`

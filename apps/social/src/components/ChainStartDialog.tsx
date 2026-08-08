@@ -53,7 +53,11 @@ export function ChainStartDialog({
     "llm" | "always_stop" | "owner"
   >("llm");
   const [showJobSettings, setShowJobSettings] = useState(false);
+  const [assignmentMode, setAssignmentMode] = useState<"skill" | "role">("skill");
+  /** Wait for defaults so the first preview uses the node default mode. */
+  const [defaultsReady, setDefaultsReady] = useState(false);
   const iterationTouchedRef = useRef(false);
+  const assignmentModeTouchedRef = useRef(false);
 
   // Team member selection — track by agent peer ID (card.sourceAgentPeerId)
   const [selectedPeerIds, setSelectedPeerIds] = useState<Set<string>>(new Set());
@@ -146,8 +150,12 @@ export function ChainStartDialog({
         setIterationJudgeMode(r.defaults?.iterationJudgeMode ?? "llm");
         setExtendMaxStepsPerRound(r.defaults?.extendMaxStepsPerRound ?? 2);
       }
+      if (!assignmentModeTouchedRef.current) {
+        setAssignmentMode(r.defaults?.assignmentMode === "role" ? "role" : "skill");
+      }
+      setDefaultsReady(true);
     }).catch(() => {
-      /* keep hidden */
+      if (!cancelled) setDefaultsReady(true);
     });
     return () => {
       cancelled = true;
@@ -155,10 +163,11 @@ export function ChainStartDialog({
   }, [nodeService]);
 
   useEffect(() => {
+    if (!defaultsReady) return;
     let cancelled = false;
     setLoading(true);
     void nodeService
-      .chainPreviewGoal({ goal, allowLlm: true })
+      .chainPreviewGoal({ goal, allowLlm: true, assignmentMode })
       .then((result) => {
         if (!cancelled) setPreview(result);
       })
@@ -173,7 +182,7 @@ export function ChainStartDialog({
     return () => {
       cancelled = true;
     };
-  }, [goal, nodeService]);
+  }, [goal, nodeService, assignmentMode, defaultsReady]);
 
   const hasWorkers = useMemo(
     () => Boolean(preview?.ok && preview.subtasks.some((s) => s.workerCount > 0)),
@@ -238,6 +247,7 @@ export function ChainStartDialog({
       const result: ChainStartFromGoalResult = await nodeService.chainStartFromGoal({
         goal,
         allowLlm: true,
+        assignmentMode,
         iterationMaxRounds,
         iterationJudgeMode,
         extendMaxStepsPerRound,
@@ -249,6 +259,7 @@ export function ChainStartDialog({
                 subtaskId: s.subtaskId,
                 depth: s.depth,
                 requiredSkill: s.requiredSkill,
+                requiredRole: s.requiredRole,
                 objective: s.objective,
                 requestedResult: s.requestedResult,
                 constraints: s.constraints,
@@ -259,6 +270,7 @@ export function ChainStartDialog({
                 createdAt: s.createdAt,
               }))
             : undefined,
+        planWarnings: preview?.ok ? preview.planWarnings : undefined,
       });
       if (!result.ok) {
         const err =
@@ -276,7 +288,7 @@ export function ChainStartDialog({
     } finally {
       setStarting(false);
     }
-  }, [goal, hasWorkers, iterationMaxRounds, iterationJudgeMode, extendMaxStepsPerRound, nodeService, onClose, onStarted, preview, selectedPeerIds, showToast, t]);
+  }, [assignmentMode, goal, hasWorkers, iterationMaxRounds, iterationJudgeMode, extendMaxStepsPerRound, nodeService, onClose, onStarted, preview, selectedPeerIds, showToast, t]);
 
   const handleSaveRecipe = useCallback(async () => {
     setSavingRecipe(true);
@@ -504,6 +516,19 @@ export function ChainStartDialog({
               </ul>
             ) : null}
 
+            {(preview.planWarnings ?? []).length > 0 ? (
+              <ul
+                className="chain-start-plan-warnings"
+                data-testid="chain-start-plan-warnings"
+              >
+                {preview.planWarnings!.map((w, i) => (
+                  <li key={`${w.code}-${i}`}>
+                    {w.message}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
             {/* Per-job settings — collapsed by default so the primary flow stays
                 focused on goal + worker selection. Values are seeded from the
                 node's global defaults (chainGetDefaults) and override on a
@@ -523,6 +548,24 @@ export function ChainStartDialog({
               </button>
               {showJobSettings ? (
                 <div className="chain-start-job-settings__body">
+                  <label className="chain-start-iteration-label">
+                    <span>{t("chains.start.assignmentMode")}</span>
+                    <select
+                      value={assignmentMode}
+                      onChange={(e) => {
+                        assignmentModeTouchedRef.current = true;
+                        setAssignmentMode(e.target.value === "role" ? "role" : "skill");
+                      }}
+                      disabled={starting || savingRecipe}
+                      data-testid="chain-start-assignment-mode"
+                    >
+                      <option value="skill">{t("chains.start.assignmentModeSkill")}</option>
+                      <option value="role">{t("chains.start.assignmentModeRole")}</option>
+                    </select>
+                    <small className="chain-start-hint">
+                      {t("chains.start.assignmentModeHint")}
+                    </small>
+                  </label>
                   <label className="chain-start-iteration-label">
                     <span>{t("chains.start.iterationMaxRounds")}</span>
                     <select

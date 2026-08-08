@@ -86,6 +86,9 @@ export const chainsMessages = {
       "This team job is still in progress. The published report will appear here once synthesis finishes.",
     bidsTitle: "Live bids",
     budgetTitle: "Budget",
+    assignmentModeSkill: "Skill-based assignment",
+    assignmentModeRole: "Role-based assignment",
+    planWarningsTitle: "Assignment notes",
     loadFailed: "Could not load team job state.",
     finalized: "This team job is complete — see the report.",
     cancelled: "This team job was cancelled.",
@@ -255,6 +258,11 @@ export const chainsMessages = {
     showCostUiHint:
       "Displays the estimated cost range in the plan preview. Competitive mode always shows this.",
     jobSettingsTitle: "Job settings",
+    assignmentMode: "Assignment mode",
+    assignmentModeSkill: "Skill based",
+    assignmentModeRole: "Role based",
+    assignmentModeHint:
+      "Role based prefers each worker’s collaboration role (PM / programmer / tester…). Skill based matches specialties. Missing roles fall back via the Assigner (with warnings).",
     template: {
       research: "Research a topic",
       researchGoal: "Research the latest developments in {topic} and summarize the key findings",

@@ -66,6 +66,7 @@ import {
   DEFAULT_CHAIN_DEFAULTS,
   estimateChainCostRange,
   mergeChainDefaults,
+  resolveAssignmentModeDefault,
   resolveAwardMode,
   resolveShowCostUi,
 } from "./chain-defaults.js";
@@ -98,6 +99,19 @@ import { type ChainContext, type ChainRankedWorker, type ChainStore } from "./no
 
 /* ---------- context ---------- */
 
+export interface ChainPlanMeta {
+  warnings: Array<{
+    code: string;
+    role?: string;
+    stepIndex?: number;
+    usedPeerId?: string;
+    assignKind?: string;
+    message: string;
+  }>;
+  notes?: string;
+  assignmentMode?: "skill" | "role";
+}
+
 export interface ChainSideState {
   pendingBidExpirations: Map<string, string>;
   trackAbort: Map<string, AbortController>;
@@ -115,6 +129,16 @@ export interface ChainSideState {
   awardModes: Map<string, "direct" | "competitive">;
   /** Per-chain cost UI visibility. */
   showCostUi: Map<string, boolean>;
+  /**
+   * @deprecated Prefer request-scoped `planChain(..., { assignmentMode })`.
+   * Kept as a fallback for older call paths that have not been updated.
+   */
+  pendingAssignmentMode?: "skill" | "role";
+  /** @deprecated Prefer returning warnings from `planChain` / start params. */
+  lastPlanMeta?: ChainPlanMeta;
+  /** Per-chain assignment mode + plan warnings for UI. */
+  assignmentModes: Map<string, "skill" | "role">;
+  planWarnings: Map<string, ChainPlanMeta["warnings"]>;
   /**
    * Phase 47B — queued Assigner extend steps for the next idle open-round tick.
    * Cleared after a successful append+launch (or rejected clear).
@@ -261,6 +285,7 @@ export function buildChainContext(deps: ChainOrchestrationContext): ChainContext
   const taskStore = deps.getTaskStore();
   return {
     store: deps.getChainStore(),
+    getChainSideState: () => deps.getChainSideState(),
     hasTaskStore: () => Boolean(taskStore),
     listChainReports: (params?: ChainListReportsParams) =>
       taskStore!.listChainReports(params) as never,
@@ -862,11 +887,23 @@ async function buildLlmDecomposerAsync(
   }
   if (providers.length === 0) return undefined;
   const { createLlmDecomposer } = await import("./chain-decomposer.js");
+  const { mergeChainDefaults, resolveAssignmentModeDefault } = await import("./chain-defaults.js");
   const decomposer = createLlmDecomposer({
     providers,
     audit: { record: () => undefined },
     // Match Social `chainPreviewGoal` / `chainPlan` RPC budget (120s).
     timeoutMs: 120_000,
+    getAssignmentMode: async () => {
+      // Fallback only — planChain passes call-time mode into llmDecompose.
+      try {
+        const cfg = await deps.getNodeConfig();
+        return resolveAssignmentModeDefault(
+          mergeChainDefaults((cfg as { chainDefaults?: import("@envoymesh/api").ChainDefaultsConfig }).chainDefaults),
+        );
+      } catch {
+        return "skill";
+      }
+    },
     getRoster: async () => {
       const ranked = await findAgentNetworkWorkersRanked(deps, "task.execute");
       const cards = await listAgentCardsIncludingLocal(deps);
@@ -1497,6 +1534,8 @@ export async function _runChainGoal(
     iterationWire?: import("./chain-iteration.js").IterationWireBlob;
     /** Restrict worker discovery to these agent peer IDs. Empty/absent = use all. */
     preferredWorkerPeerIds?: string[];
+    /** Skill vs role plan+assign mode for this job. */
+    assignmentMode?: "skill" | "role";
     /**
      * Adopt a previewed plan instead of calling `planChain` again.
      * Rewrites chainId / chainMandateId onto the live mandate.
@@ -1505,6 +1544,7 @@ export async function _runChainGoal(
       subtaskId: string;
       depth: number;
       requiredSkill: string;
+      requiredRole?: string;
       objective: string;
       requestedResult?: string;
       constraints?: string[];
@@ -1514,6 +1554,8 @@ export async function _runChainGoal(
       preferredWorkerPeerId?: string;
       createdAt?: string;
     }>;
+    /** Preview warnings — preferred over process-global lastPlanMeta. */
+    planWarnings?: ChainPlanMeta["warnings"];
   },
 ): Promise<{
   ok: boolean;
@@ -1523,6 +1565,7 @@ export async function _runChainGoal(
     subtaskId: string;
     depth: number;
     requiredSkill: string;
+    requiredRole?: string;
     objective: string;
     preferredWorkerPeerId?: string;
   }>;
@@ -1564,6 +1607,10 @@ export async function _runChainGoal(
   }
   const awardMode = resolveAwardMode(nodeDefaults);
   const showCostUi = resolveShowCostUi(nodeDefaults);
+  const assignmentMode =
+    input.assignmentMode === "role" || input.assignmentMode === "skill"
+      ? input.assignmentMode
+      : resolveAssignmentModeDefault(nodeDefaults);
   const mandate = signChainMandate(
     {
       version: "0.1" as const,
@@ -1589,6 +1636,10 @@ export async function _runChainGoal(
   chainSide.goals.set(chainId, input.goal);
   chainSide.awardModes.set(chainId, awardMode);
   chainSide.showCostUi.set(chainId, showCostUi);
+  chainSide.assignmentModes.set(chainId, assignmentMode);
+  if (input.planWarnings?.length) {
+    chainSide.planWarnings.set(chainId, input.planWarnings);
+  }
   deps.getChainStore().setRuntime(chainId, {
     state,
     bidStrategy: {
@@ -1599,7 +1650,14 @@ export async function _runChainGoal(
     },
   });
 
-  let plan: { ok: true; subtasks: ChainSubtask[] } | { ok: false; reason: string };
+  let plan:
+    | {
+        ok: true;
+        subtasks: ChainSubtask[];
+        planWarnings?: ChainPlanMeta["warnings"];
+        assignmentMode?: "skill" | "role";
+      }
+    | { ok: false; reason: string };
   if (input.plannedSubtasks && input.plannedSubtasks.length > 0) {
     const nowIso = new Date().toISOString();
     try {
@@ -1611,6 +1669,7 @@ export async function _runChainGoal(
           chainMandateId,
           depth: Math.min(3, Math.max(1, Math.floor(s.depth) || 1)),
           requiredSkill: s.requiredSkill,
+          ...(s.requiredRole ? { requiredRole: s.requiredRole } : {}),
           objective: s.objective,
           requestedResult: (s.requestedResult?.trim() || "result of the goal").slice(0, 1000),
           constraints: s.constraints ?? [],
@@ -1639,7 +1698,11 @@ export async function _runChainGoal(
   } else {
     plan = await planChain(await buildChainOrchestratorDeps(deps), state, input.goal, {
       allowLlm: input.allowLlm ?? nodeDefaults.allowLlmDecompose ?? false,
+      assignmentMode,
     });
+    if (plan.ok && plan.planWarnings?.length) {
+      chainSide.planWarnings.set(chainId, plan.planWarnings as ChainPlanMeta["warnings"]);
+    }
   }
   if (!plan.ok) {
     return { ok: false, chainId, chainMandateId, subtasks: [], error: `plan failed: ${(plan as { reason: string }).reason}` };
@@ -1814,16 +1877,21 @@ export async function _continueIterationRound(
   } catch {
     /* defaults */
   }
-  const awardMode =
-    deps.getChainSideState().awardModes.get(state.chainId) ?? resolveAwardMode(nodeDefaults);
+  const side = deps.getChainSideState();
+  const awardMode = side.awardModes.get(state.chainId) ?? resolveAwardMode(nodeDefaults);
+  const assignmentMode = side.assignmentModes.get(state.chainId) ?? resolveAssignmentModeDefault(nodeDefaults);
   const workerCap = awardMode === "direct" ? 1 : 3;
   const replanGoal = iterationReplanGoal(state);
   const orchDeps = await buildChainOrchestratorDeps(deps);
   const plan = await planChain(orchDeps, state, replanGoal, {
     allowLlm: nodeDefaults.allowLlmDecompose ?? true,
+    assignmentMode,
   });
   if (!plan.ok || plan.subtasks.length === 0) {
     return { ok: false, error: `replan failed: ${!plan.ok ? (plan as { reason: string }).reason : "empty"}` };
+  }
+  if (plan.planWarnings?.length) {
+    side.planWarnings.set(state.chainId, plan.planWarnings as ChainPlanMeta["warnings"]);
   }
 
   const workersBySubtask: Record<string, string[]> = {};

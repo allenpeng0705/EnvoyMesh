@@ -21,6 +21,7 @@ interface ChainDefaultsState {
   autoRebalanceIncrementUsd: number;
   allowLlmDecompose: boolean;
   awardMode: NonNullable<ChainDefaultsConfig["awardMode"]>;
+  assignmentMode: NonNullable<ChainDefaultsConfig["assignmentMode"]>;
   showCostUi: boolean;
   iterationMaxRounds: number;
   extendMaxStepsPerRound: number;
@@ -35,6 +36,7 @@ const DEFAULTS: ChainDefaultsState = {
   autoRebalanceIncrementUsd: 5,
   allowLlmDecompose: false,
   awardMode: "direct",
+  assignmentMode: "skill",
   showCostUi: false,
   iterationMaxRounds: 1,
   extendMaxStepsPerRound: 2,
@@ -63,6 +65,7 @@ export function ChainDefaultsPanel() {
             autoRebalanceIncrementUsd: d.autoRebalanceIncrementUsd ?? DEFAULTS.autoRebalanceIncrementUsd,
             allowLlmDecompose: d.allowLlmDecompose ?? DEFAULTS.allowLlmDecompose,
             awardMode: d.awardMode ?? DEFAULTS.awardMode,
+            assignmentMode: d.assignmentMode === "role" ? "role" : "skill",
             showCostUi: d.showCostUi ?? (d.awardMode === "competitive"),
             iterationMaxRounds: d.iterationMaxRounds ?? DEFAULTS.iterationMaxRounds,
             extendMaxStepsPerRound: d.extendMaxStepsPerRound ?? DEFAULTS.extendMaxStepsPerRound,
@@ -95,6 +98,7 @@ export function ChainDefaultsPanel() {
           autoRebalanceIncrementUsd: defaults.autoRebalanceIncrementUsd,
           allowLlmDecompose: defaults.allowLlmDecompose,
           awardMode: defaults.awardMode,
+          assignmentMode: defaults.assignmentMode,
           showCostUi: defaults.showCostUi,
           iterationMaxRounds: defaults.iterationMaxRounds,
           extendMaxStepsPerRound: defaults.extendMaxStepsPerRound,
@@ -134,6 +138,27 @@ export function ChainDefaultsPanel() {
           <option value="competitive">{t("chainDefaults.awardModeCompetitive")}</option>
         </select>
         <small className="chain-default-hint">{t("chainDefaults.awardModeHint")}</small>
+      </div>
+
+      <div className="chain-default-row">
+        <label htmlFor="chain-assignment-mode">
+          {t("chainDefaults.assignmentMode")}
+        </label>
+        <select
+          id="chain-assignment-mode"
+          value={defaults.assignmentMode}
+          onChange={(e) =>
+            writeField(
+              "assignmentMode",
+              e.target.value === "role" ? "role" : "skill",
+            )
+          }
+          data-testid="chain-defaults-assignment-mode"
+        >
+          <option value="skill">{t("chainDefaults.assignmentModeSkill")}</option>
+          <option value="role">{t("chainDefaults.assignmentModeRole")}</option>
+        </select>
+        <small className="chain-default-hint">{t("chainDefaults.assignmentModeHint")}</small>
       </div>
 
       <div className="chain-default-row chain-default-row--toggle">

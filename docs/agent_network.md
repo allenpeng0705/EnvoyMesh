@@ -13,11 +13,14 @@
 >
 > **Vocabulary (2026-08):** Agent Card uses `membership[]` (opt-in / execute
 > rights; tag `agent-network-worker`). Assignment specialties live in
-> `agentNetworkProfile.skills[]` and subtask field `requiredSkill`. See
+> `agentNetworkProfile.skills[]` and subtask field `requiredSkill`.
+> **Collaboration roles** (Phase 52) live in `agentNetworkProfile.roles[]`
+> (`roles[0]` = primary) with Team job assignment mode `skill` \| `role` —
+> see [`agent-network-roles.md`](./agent-network-roles.md) and
 > [`agent-network-vocabulary.md`](./agent-network-vocabulary.md). Older
 > excerpts below may still say `capabilities` / `requiredCapability` /
 > `CapabilityIndex` — treat those as historical; runtime names are membership /
-> skills / `AgentNetworkMembershipIndex`.
+> skills / roles / `AgentNetworkMembershipIndex`.
 >
 > **Scope:** Multi-agent collaboration, multi-round negotiation, parent/child
 > task lineage, structured reports, end-to-end observability.

@@ -7813,6 +7813,55 @@ button.activity-row:hover,
   margin-top: 4px;
   width: 100%;
   min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.chain-worker-card__role {
+  display: inline-block;
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: 600;
+  color: var(--color-text, #0f172a);
+  background: var(--color-surface-muted, #f1f5f9);
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.4rem;
+}
+
+.chain-start-plan-warnings {
+  list-style: none;
+  margin: var(--space-2, 0.5rem) 0 0;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--color-surface-muted, #f8fafc);
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text, #0f172a);
+}
+
+.chain-start-plan-warnings li + li {
+  margin-top: 0.35rem;
+}
+
+.chain-detail-panel__assignment-mode {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted, #64748b);
+}
+
+.chain-detail-plan-warnings ul {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--color-surface-muted, #f8fafc);
+  font-size: var(--text-xs, 0.75rem);
+}
+
+.chain-detail-plan-warnings li + li {
+  margin-top: 0.35rem;
 }
 
 /* Phase 45 Pass 2 — published content shortcuts */
@@ -9844,6 +9893,34 @@ button:disabled {
   gap: var(--space-2, 0.5rem);
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-muted, #64748b);
+}
+
+.chain-observed-steps {
+  list-style: none;
+  margin: var(--space-2, 0.5rem) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.chain-observed-step {
+  display: flex;
+  gap: var(--space-2, 0.5rem);
+  align-items: baseline;
+  font-size: var(--text-xs, 0.75rem);
+}
+
+.chain-observed-step__state {
+  flex: 0 0 auto;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--color-text-muted, #64748b);
+}
+
+.chain-observed-step__objective {
+  color: var(--color-text, #0f172a);
+  overflow-wrap: anywhere;
 }
 
 /* ---- Actions ---- */

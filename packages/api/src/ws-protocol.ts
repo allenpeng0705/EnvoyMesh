@@ -1155,6 +1155,13 @@ export interface ChainDefaultsConfig {
    */
   showCostUi?: boolean;
   /**
+   * How the Assigner ranks workers when planning a Team job.
+   * - `"skill"` (default): soft-match requiredSkill vs agentNetworkProfile.skills.
+   * - `"role"`: prefer collaboration roles (roles[0]=primary); LLM may substitute
+   *   or fall back to skills — see docs/agent-network-roles.md.
+   */
+  assignmentMode?: "skill" | "role";
+  /**
    * Phase 47 — outer Team job refinement rounds (B). `1` = today's one-shot
    * plan→execute→publish. Cap is enforced in the Assigner loop.
    */
@@ -1838,6 +1845,10 @@ export interface ChainGetStateResult {
   awardMode?: "direct" | "competitive";
   /** When false, Social hides cost estimates / bid prices for this chain. */
   showCostUi?: boolean;
+  /** Phase 52 — skill vs role plan+assign mode for this job. */
+  assignmentMode?: "skill" | "role";
+  /** Phase 52 — substitute / missing-role warnings from plan+assign. */
+  planWarnings?: ChainPlanWarning[];
   /** Phase 43G — budget burn warning level. */
   budgetWarningLevel?: "ok" | "warn" | "exceeded";
   /**
@@ -2109,12 +2120,30 @@ export interface ChainSetDefaultsResult {
 }
 
 /** Phase 43B — preview a chain plan without launching. */
+export interface ChainPlanWarning {
+  code:
+    | "role_missing"
+    | "role_substitute"
+    | "skill_fallback"
+    | "no_role_peers"
+    | "ambiguous_role"
+    | "assignee_rewritten"
+    | "no_llm_role_planning";
+  role?: string;
+  stepIndex?: number;
+  usedPeerId?: string;
+  assignKind?: "exact_role" | "role_substitute" | "skill_fallback" | "generalist";
+  message: string;
+}
+
 export interface ChainPreviewGoalParams {
   goal: string;
   templateId?: string;
   maxChainCostUsd?: number;
   costCeilingUsd?: number;
   allowLlm?: boolean;
+  /** Override node default assignment mode for this preview. */
+  assignmentMode?: "skill" | "role";
   /**
    * When non-empty, filter discovered workers to this set of agent peer IDs
    * (`card.sourceAgentPeerId`). Empty/absent = use all discovered workers.
@@ -2144,10 +2173,13 @@ export interface ChainPreviewSuggestedWorker {
 export interface ChainPreviewGoalResult {
   ok: boolean;
   chainId?: string;
+  assignmentMode?: "skill" | "role";
+  planWarnings?: ChainPlanWarning[];
   subtasks: Array<{
     subtaskId: string;
     depth: number;
     requiredSkill: string;
+    requiredRole?: string;
     objective: string;
     workerCount: number;
     /** Plan+assign primary assignee (agent peer id), when known. */
@@ -2203,6 +2235,8 @@ export interface ChainStartFromGoalParams {
   maxChainCostUsd?: number;
   costCeilingUsd?: number;
   allowLlm?: boolean;
+  /** Override node default assignment mode for this job. */
+  assignmentMode?: "skill" | "role";
   /** Optional remote Assigner peer id (default = local agent). */
   assignerPeerId?: string;
   /** Phase 47 — override node default `iterationMaxRounds` for this job. */
@@ -2230,6 +2264,7 @@ export interface ChainStartFromGoalParams {
     subtaskId: string;
     depth: number;
     requiredSkill: string;
+    requiredRole?: string;
     objective: string;
     requestedResult?: string;
     constraints?: string[];
@@ -2239,6 +2274,11 @@ export interface ChainStartFromGoalParams {
     preferredWorkerPeerId?: string;
     createdAt?: string;
   }>;
+  /**
+   * Warnings from the previewed plan. Required when adopting `plannedSubtasks`
+   * so Start does not depend on a process-global lastPlanMeta latch.
+   */
+  planWarnings?: ChainPlanWarning[];
 }
 
 export interface ChainResolveIterationParams {
@@ -2258,10 +2298,13 @@ export interface ChainStartFromGoalResult {
   ok: boolean;
   chainId?: string;
   chainMandateId?: string;
+  assignmentMode?: "skill" | "role";
+  planWarnings?: ChainPlanWarning[];
   subtasks?: Array<{
     subtaskId: string;
     depth: number;
     requiredSkill: string;
+    requiredRole?: string;
     objective: string;
     preferredWorkerPeerId?: string;
   }>;

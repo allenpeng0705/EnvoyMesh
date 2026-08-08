@@ -3,8 +3,11 @@ import {
   buildPlanAssignPrompt,
   hasDependsOnCycle,
   materializePlanAssignSubtasks,
+  materializePlanAssignWithMeta,
+  parsePlanAssignResult,
   parsePlanAssignSteps,
 } from "../src/chain-plan-assign.js";
+import { synthesizePlanAssignFromRosterPrompt } from "@envoymesh/models";
 
 describe("chain-plan-assign", () => {
   it("buildPlanAssignPrompt includes roster and hard rules", () => {
@@ -229,5 +232,170 @@ describe("chain-plan-assign", () => {
       createdAt: "2026-07-22T00:00:00.000Z",
     });
     expect(subtasks.map((s) => s.preferredWorkerPeerId)).toEqual(["only", "only"]);
+  });
+
+  it("role mode prompt includes roles and substitute guidance", () => {
+    const prompt = buildPlanAssignPrompt(
+      "Ship a feature",
+      [
+        {
+          peerId: "envoy_agent_dev",
+          membership: ["task.execute", "agent-network-worker"],
+          profile: { skills: ["coding"], roles: ["programmer"] },
+        },
+      ],
+      { assignmentMode: "role" },
+    );
+    expect(prompt).toContain("ASSIGNMENT MODE: role");
+    expect(prompt).toContain("primaryRole");
+    expect(prompt).toContain("programmer");
+    expect(prompt).toContain("SUBSTITUTE GUIDANCE");
+    expect(prompt).toContain("requiredRole");
+  });
+
+  it("skill mode prompt ignores role ranking policy", () => {
+    const prompt = buildPlanAssignPrompt("Ship a feature", [
+      {
+        peerId: "envoy_agent_dev",
+        membership: ["task.execute"],
+        profile: { skills: ["coding"], roles: ["programmer"] },
+      },
+    ]);
+    expect(prompt).toContain("ASSIGNMENT MODE: skill");
+    expect(prompt).not.toContain("SUBSTITUTE GUIDANCE");
+    expect(prompt).toContain('"roles"');
+  });
+
+  it("role mode materialize prefers exact role over LLM skill self-bias", () => {
+    const parsed = parsePlanAssignResult(
+      JSON.stringify({
+        assignmentMode: "role",
+        steps: [
+          {
+            objective: "Implement API",
+            requiredRole: "programmer",
+            requiredSkill: "coding",
+            depth: 1,
+            dependsOn: [],
+            assignedPeerId: "envoy_agent_self",
+            assignKind: "exact_role",
+            reason: "creator",
+          },
+        ],
+        warnings: [],
+      }),
+    );
+    const { subtasks, warnings } = materializePlanAssignWithMeta({
+      goal: "api",
+      chainId: "chain_role",
+      chainMandateId: "chainmandate_role",
+      drafts: parsed!.steps,
+      roster: [
+        {
+          peerId: "envoy_agent_self",
+          isSelf: true,
+          membership: ["task.execute", "agent-network-worker"],
+          profile: { skills: ["coding"], roles: ["product_manager"] },
+        },
+        {
+          peerId: "envoy_agent_dev",
+          membership: ["task.execute", "agent-network-worker"],
+          profile: { skills: ["writing"], roles: ["programmer"] },
+        },
+      ],
+      createdAt: "2026-08-08T00:00:00.000Z",
+      assignmentMode: "role",
+      warnings: parsed!.warnings,
+    });
+    expect(subtasks[0]!.preferredWorkerPeerId).toBe("envoy_agent_dev");
+    expect(subtasks[0]!.requiredRole).toBe("programmer");
+    expect(warnings.some((w) => w.code === "assignee_rewritten")).toBe(true);
+  });
+
+  it("exact-role rewrite clears stale LLM role_substitute assignKind", () => {
+    const parsed = parsePlanAssignResult(
+      JSON.stringify({
+        assignmentMode: "role",
+        steps: [
+          {
+            objective: "Implement API",
+            requiredRole: "programmer",
+            requiredSkill: "coding",
+            depth: 1,
+            dependsOn: [],
+            assignedPeerId: "envoy_agent_self",
+            assignKind: "role_substitute",
+            reason: "no programmer claimed",
+          },
+        ],
+        warnings: [
+          {
+            code: "role_substitute",
+            role: "programmer",
+            stepIndex: 0,
+            usedPeerId: "envoy_agent_self",
+            assignKind: "role_substitute",
+            message: "Using PM as substitute",
+          },
+        ],
+      }),
+    );
+    const { subtasks, warnings } = materializePlanAssignWithMeta({
+      goal: "api",
+      chainId: "chain_rewrite_kind",
+      chainMandateId: "chainmandate_rewrite_kind",
+      drafts: parsed!.steps,
+      roster: [
+        {
+          peerId: "envoy_agent_self",
+          isSelf: true,
+          membership: ["task.execute", "agent-network-worker"],
+          profile: { skills: ["coding"], roles: ["product_manager"] },
+        },
+        {
+          peerId: "envoy_agent_dev",
+          membership: ["task.execute", "agent-network-worker"],
+          profile: { skills: ["writing"], roles: ["programmer"] },
+        },
+      ],
+      createdAt: "2026-08-08T00:00:00.000Z",
+      assignmentMode: "role",
+      warnings: parsed!.warnings,
+    });
+    expect(subtasks[0]!.preferredWorkerPeerId).toBe("envoy_agent_dev");
+    expect(subtasks[0]!.constraints.some((c) => c.includes("(exact_role)"))).toBe(true);
+    expect(subtasks[0]!.constraints.some((c) => c.includes("(role_substitute)"))).toBe(false);
+    expect(warnings.some((w) => w.code === "assignee_rewritten" && w.assignKind === "exact_role")).toBe(
+      true,
+    );
+    expect(warnings.some((w) => w.code === "role_substitute")).toBe(false);
+  });
+
+  it("mock role mode substitutes programmer for missing tester", () => {
+    const prompt = buildPlanAssignPrompt(
+      "Spec, code, test",
+      [
+        {
+          peerId: "envoy_agent_pm",
+          membership: ["task.execute"],
+          profile: { skills: ["research"], roles: ["product_manager"] },
+        },
+        {
+          peerId: "envoy_agent_dev",
+          membership: ["task.execute"],
+          profile: { skills: ["coding"], roles: ["programmer"] },
+        },
+      ],
+      { assignmentMode: "role" },
+    );
+    const raw = synthesizePlanAssignFromRosterPrompt(prompt);
+    expect(raw).toBeTruthy();
+    const parsed = parsePlanAssignResult(raw!);
+    expect(parsed?.assignmentMode).toBe("role");
+    expect(parsed?.steps).toHaveLength(3);
+    expect(parsed?.steps[2]?.requiredRole).toBe("tester");
+    expect(parsed?.steps[2]?.assignedPeerId).toBe("envoy_agent_dev");
+    expect(parsed?.steps[2]?.assignKind).toBe("role_substitute");
+    expect(parsed?.warnings.some((w) => w.code === "role_substitute")).toBe(true);
   });
 });

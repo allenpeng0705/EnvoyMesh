@@ -15,10 +15,13 @@ import { useCallback, useEffect, useState } from "react";
 import type {
   AgentNetworkContextWindow,
   AgentNetworkProfile,
+  AgentNetworkRoleId,
   AgentNetworkSpendPosture,
 } from "@envoymesh/protocol";
 import {
+  AGENT_NETWORK_WELL_KNOWN_ROLES,
   DEFAULT_AGENT_NETWORK_PROFILE,
+  agentNetworkPrimaryRole,
   agentNetworkSkillIds,
   createAgentNetworkProfile,
   createOwnerDomainSkill,
@@ -60,7 +63,7 @@ interface ProfilePreset {
   skills: string[];
 }
 
-/** One-click role presets. Each fills every profile field. */
+/** One-click skill/profile presets (not collaboration roles). */
 const PROFILE_PRESETS: ProfilePreset[] = [
   { id: "researcher", emoji: "🔬", modelFreshness: 8, spendPosture: "subscription", contextWindow: "256k", skills: ["research", "summarization", "writing"] },
   { id: "coder", emoji: "💻", modelFreshness: 9, spendPosture: "subscription", contextWindow: "256k", skills: ["coding"] },
@@ -138,7 +141,7 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
 
   const save = useCallback(() => void persist(profile), [persist, profile]);
 
-  /** One-click: fill every field from a preset and auto-save. */
+  /** One-click: fill skill/profile fields from a preset and auto-save (keeps role). */
   const applyPreset = useCallback(
     (preset: ProfilePreset) => {
       const next = createAgentNetworkProfile({
@@ -146,12 +149,25 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
         spendPosture: preset.spendPosture,
         contextWindow: preset.contextWindow,
         skills: preset.skills.map((id) => createOwnerDomainSkill(id)),
+        roles: profile.roles,
         throughputTokensPerSec: profile.throughputTokensPerSec,
       });
       setProfile(next);
       void persist(next, t(`${K}.presetApplied`, { name: t(`${K}.preset_${preset.id}`) }));
     },
-    [persist, profile.throughputTokensPerSec, t],
+    [persist, profile.roles, profile.throughputTokensPerSec, t],
+  );
+
+  const setPrimaryRole = useCallback(
+    (role: AgentNetworkRoleId | "") => {
+      const next = createAgentNetworkProfile({
+        ...profile,
+        roles: role ? [role] : [],
+      });
+      setProfile(next);
+      void persist(next, t(`${K}.roleSaved`));
+    },
+    [persist, profile, t],
   );
 
   if (!enabled) {
@@ -163,12 +179,36 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
   }
 
   const activePresetId = matchingPreset(profile);
+  const primaryRole = agentNetworkPrimaryRole(profile.roles) ?? "";
 
   return (
     <div className="agent-network-profile-panel" data-testid="agent-network-profile-panel">
       <p className="field-desc">{t(`${K}.profileDesc`)}</p>
 
-      {/* ---- Quick setup: role presets ---- */}
+      {/* ---- Collaboration role (Team job seats) ---- */}
+      <div className="form-group" data-testid="agent-network-primary-role">
+        <label htmlFor="anp-primary-role">{t(`${K}.primaryRole`)}</label>
+        <select
+          id="anp-primary-role"
+          className="settings-input"
+          value={primaryRole}
+          disabled={saving}
+          onChange={(e) => {
+            const v = e.target.value;
+            setPrimaryRole(v === "" ? "" : (v as AgentNetworkRoleId));
+          }}
+        >
+          <option value="">{t(`${K}.roleNone`)}</option>
+          {AGENT_NETWORK_WELL_KNOWN_ROLES.map((role) => (
+            <option key={role} value={role}>
+              {t(`${K}.role_${role}`)}
+            </option>
+          ))}
+        </select>
+        <small className="field-desc">{t(`${K}.primaryRoleHint`)}</small>
+      </div>
+
+      {/* ---- Quick setup: skill presets ---- */}
       <div className="an-profile__presets">
         <p className="an-profile__presets-label">{t(`${K}.presetTitle`)}</p>
         <div className="an-profile__preset-row">

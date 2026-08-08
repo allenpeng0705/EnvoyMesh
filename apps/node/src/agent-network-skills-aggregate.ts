@@ -72,5 +72,6 @@ export function aggregateAgentNetworkSkills(input: {
     ...DEFAULT_AGENT_NETWORK_PROFILE,
     ...input.profile,
     skills: merged,
+    roles: input.profile?.roles ?? DEFAULT_AGENT_NETWORK_PROFILE.roles,
   };
 }

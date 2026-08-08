@@ -211,6 +211,16 @@ export function ChainDetailPanel({
             <span className={`chain-status-badge status-${detailStatus}`}>
               {statusLabel}
             </span>
+            {state.assignmentMode ? (
+              <span
+                className="chain-detail-panel__assignment-mode"
+                data-testid="chain-detail-assignment-mode"
+              >
+                {state.assignmentMode === "role"
+                  ? t("chains.detail.assignmentModeRole")
+                  : t("chains.detail.assignmentModeSkill")}
+              </span>
+            ) : null}
             <span>
               {t("chains.active.progress", {
                 partial: state.partialCount,
@@ -236,6 +246,20 @@ export function ChainDetailPanel({
               </span>
             ) : null}
           </section>
+
+          {(state.planWarnings ?? []).length > 0 ? (
+            <section
+              className="chain-detail-panel__section chain-detail-plan-warnings"
+              data-testid="chain-detail-plan-warnings"
+            >
+              <h4>{t("chains.detail.planWarningsTitle")}</h4>
+              <ul>
+                {state.planWarnings!.map((w, i) => (
+                  <li key={`${w.code}-${i}`}>{w.message}</li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
           {state.iteration?.waitingForOwner ? (
             <section className="chain-detail-panel__section chain-iteration-owner" data-testid="chain-iteration-owner">

@@ -58,6 +58,48 @@ describe("synthesizePlanAssignFromRosterPrompt", () => {
   it("returns null when roster is missing", () => {
     expect(synthesizePlanAssignFromRosterPrompt("no workers here")).toBeNull();
   });
+
+  it("role mode substitutes programmer when tester is missing", () => {
+    const rolePrompt = [
+      "ASSIGNMENT MODE: role",
+      "eligibleWorkers:",
+      JSON.stringify(
+        [
+          {
+            peerId: "envoy_agent_pm",
+            skills: ["research"],
+            roles: ["product_manager"],
+            primaryRole: "product_manager",
+            canExecute: true,
+          },
+          {
+            peerId: "envoy_agent_dev",
+            skills: ["coding"],
+            roles: ["programmer"],
+            primaryRole: "programmer",
+            canExecute: true,
+          },
+        ],
+        null,
+        2,
+      ),
+    ].join("\n");
+    const raw = synthesizePlanAssignFromRosterPrompt(rolePrompt);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!) as {
+      assignmentMode: string;
+      steps: Array<{ requiredRole?: string; assignedPeerId: string; assignKind?: string }>;
+      warnings: Array<{ code: string }>;
+    };
+    expect(parsed.assignmentMode).toBe("role");
+    expect(parsed.steps).toHaveLength(3);
+    expect(parsed.steps[0]!.assignedPeerId).toBe("envoy_agent_pm");
+    expect(parsed.steps[1]!.assignedPeerId).toBe("envoy_agent_dev");
+    expect(parsed.steps[2]!.requiredRole).toBe("tester");
+    expect(parsed.steps[2]!.assignedPeerId).toBe("envoy_agent_dev");
+    expect(parsed.steps[2]!.assignKind).toBe("role_substitute");
+    expect(parsed.warnings.some((w) => w.code === "role_substitute")).toBe(true);
+  });
 });
 
 describe("createMockModelProvider — plan_assign_from_roster", () => {

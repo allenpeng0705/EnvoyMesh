@@ -22,7 +22,13 @@ import {
   rebalanceChain,
   type ChainState,
 } from "./chain-orchestrator.js";
-import { CHAIN_GOAL_TEMPLATES, estimateChainCostRange, mergeChainDefaults } from "./chain-defaults.js";
+import {
+  CHAIN_GOAL_TEMPLATES,
+  estimateChainCostRange,
+  mergeChainDefaults,
+  resolveAssignmentModeDefault,
+} from "./chain-defaults.js";
+import { formatPlanWarningDiagnostics } from "./chain-plan-assign.js";
 import { chainCostsToCsv } from "./chain-cost-export.js";
 import type {
   ChainGetStateParams,
@@ -197,6 +203,34 @@ export interface ChainRankedWorker {
 
 export interface ChainContext {
   store: ChainStore;
+  /** Side-state (award modes, pending assignment mode, plan warnings). */
+  getChainSideState?(): {
+    pendingAssignmentMode?: "skill" | "role";
+    lastPlanMeta?: {
+      warnings: Array<{
+        code: string;
+        role?: string;
+        stepIndex?: number;
+        usedPeerId?: string;
+        assignKind?: string;
+        message: string;
+      }>;
+      notes?: string;
+      assignmentMode?: "skill" | "role";
+    };
+    assignmentModes: Map<string, "skill" | "role">;
+    planWarnings: Map<
+      string,
+      Array<{
+        code: string;
+        role?: string;
+        stepIndex?: number;
+        usedPeerId?: string;
+        assignKind?: string;
+        message: string;
+      }>
+    >;
+  };
   /** Where to persist chain reports (class field). */
   hasTaskStore(): boolean;
   /** The task store's listChainReports / getChainReport / pinChainReport. */
@@ -286,10 +320,12 @@ export interface ChainContext {
    * Subtask ids / dependsOn / preferred assignees are preserved; chainId and
    * chainMandateId are rewritten onto the live mandate.
    */
+  assignmentMode?: "skill" | "role";
   plannedSubtasks?: Array<{
     subtaskId: string;
     depth: number;
     requiredSkill: string;
+    requiredRole?: string;
     objective: string;
     requestedResult?: string;
     constraints?: string[];
@@ -298,6 +334,15 @@ export interface ChainContext {
     deadlineAt?: string;
     preferredWorkerPeerId?: string;
     createdAt?: string;
+  }>;
+  /** Preview warnings to persist when adopting `plannedSubtasks`. */
+  planWarnings?: Array<{
+    code: string;
+    role?: string;
+    stepIndex?: number;
+    usedPeerId?: string;
+    assignKind?: string;
+    message: string;
   }>;
 }): Promise<
   | {
@@ -360,6 +405,9 @@ export function chainGetStateViaRuntime(
   result.estimatedCostRange = ctx.getChainCostEstimate(params.chainId) as never;
   result.awardMode = ctx.getChainAwardMode?.(params.chainId) ?? "direct";
   result.showCostUi = ctx.getChainShowCostUi?.(params.chainId) ?? false;
+  const side = ctx.getChainSideState?.();
+  result.assignmentMode = side?.assignmentModes.get(params.chainId);
+  result.planWarnings = side?.planWarnings.get(params.chainId) as ChainGetStateResult["planWarnings"];
   result.budgetWarningLevel = chainBudgetWarningLevel(entry.state);
   const it = entry.state.iteration;
   if (it) {
@@ -395,6 +443,9 @@ export function chainListActiveViaRuntime(
       snap.estimatedCostRange = ctx.getChainCostEstimate(chainId) as never;
       snap.awardMode = ctx.getChainAwardMode?.(chainId) ?? "direct";
       snap.showCostUi = ctx.getChainShowCostUi?.(chainId) ?? false;
+      const side = ctx.getChainSideState?.();
+      snap.assignmentMode = side?.assignmentModes.get(chainId);
+      snap.planWarnings = side?.planWarnings.get(chainId) as ChainGetStateResult["planWarnings"];
       snap.budgetWarningLevel = chainBudgetWarningLevel(entry.state);
       const it = entry.state.iteration;
       if (it) {
@@ -538,7 +589,8 @@ export async function chainSetDefaultsViaRuntime(
       d.rebalancePolicy !== "manual" &&
       d.rebalancePolicy !== "auto" &&
       d.rebalancePolicy !== "never") ||
-    (d.awardMode !== undefined && d.awardMode !== "direct" && d.awardMode !== "competitive")
+    (d.awardMode !== undefined && d.awardMode !== "direct" && d.awardMode !== "competitive") ||
+    (d.assignmentMode !== undefined && d.assignmentMode !== "skill" && d.assignmentMode !== "role")
   ) {
     return { ok: false, defaults: d as never, reason: "validation_failed" };
   }
@@ -772,11 +824,20 @@ export async function chainPreviewGoalViaRuntime(
     costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd ?? 3,
   };
   const state = createChainState(mandate as Parameters<typeof createChainState>[0]);
+  const cfg = (await ctx.getNodeConfig()) as { chainDefaults?: Parameters<typeof mergeChainDefaults>[0] } | null;
+  const assignmentMode =
+    params.assignmentMode === "role" || params.assignmentMode === "skill"
+      ? params.assignmentMode
+      : resolveAssignmentModeDefault(mergeChainDefaults(cfg?.chainDefaults));
   const deps = (await ctx.buildChainOrchestratorDeps()) as Parameters<typeof planChain>[0];
-  const plan = await planChain(deps, state, goal, { allowLlm: params.allowLlm ?? true });
+  const plan = await planChain(deps, state, goal, {
+    allowLlm: params.allowLlm ?? true,
+    assignmentMode,
+  });
   if (!plan.ok) {
     return { ok: false, subtasks: [], reason: (plan as { reason: string }).reason };
   }
+  const planWarnings = (plan.planWarnings ?? []) as ChainPreviewGoalResult["planWarnings"];
   const workersBySubtask: Record<string, string[]> = {};
   const rankedBySubtask: Record<string, ChainRankedWorker[]> = {};
   let maxWorkers = 0;
@@ -877,13 +938,22 @@ export async function chainPreviewGoalViaRuntime(
       ...w,
       matchedSubtaskIds: [...w.matchedSubtaskIds],
     }));
+  const baseDiagnostics = ctx.chainDiagnosticsForSubtasks(
+    plan.subtasks,
+    workersBySubtask,
+    rankedBySubtask,
+  ) as string[];
+  const warningDiagnostics = formatPlanWarningDiagnostics(planWarnings ?? []);
   return {
     ok: true,
     chainId,
+    assignmentMode,
+    planWarnings,
     subtasks: plan.subtasks.map((s) => ({
       subtaskId: s.subtaskId,
       depth: s.depth,
       requiredSkill: s.requiredSkill,
+      requiredRole: (s as { requiredRole?: string }).requiredRole,
       objective: s.objective,
       workerCount: (workersBySubtask[s.subtaskId] ?? []).length,
       preferredWorkerPeerId: s.preferredWorkerPeerId,
@@ -896,11 +966,7 @@ export async function chainPreviewGoalViaRuntime(
     })),
     estimatedCostRange,
     suggestedWorkers,
-    diagnostics: ctx.chainDiagnosticsForSubtasks(
-      plan.subtasks,
-      workersBySubtask,
-      rankedBySubtask,
-    ) as never,
+    diagnostics: [...warningDiagnostics, ...(baseDiagnostics ?? [])],
   };
 }
 
@@ -930,6 +996,7 @@ export async function chainStartFromGoalViaRuntime(
       maxChainCostUsd: params.maxChainCostUsd ?? template?.maxChainCostUsd,
       costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd,
       allowLlm: params.allowLlm,
+      assignmentMode: params.assignmentMode,
       preferredWorkerPeerIds: params.preferredWorkerPeerIds,
     });
     if (!preview.ok || preview.subtasks.length === 0) {
@@ -937,6 +1004,8 @@ export async function chainStartFromGoalViaRuntime(
         ok: false,
         error: preview.reason ?? "plan_failed",
         diagnostics: preview.diagnostics,
+        assignmentMode: preview.assignmentMode,
+        planWarnings: preview.planWarnings,
       };
     }
     const hasWorkers = preview.subtasks.some((s) => s.workerCount > 0);
@@ -946,6 +1015,8 @@ export async function chainStartFromGoalViaRuntime(
         error: "no_workers",
         diagnostics: preview.diagnostics,
         estimatedCostRange: preview.estimatedCostRange,
+        assignmentMode: preview.assignmentMode,
+        planWarnings: preview.planWarnings,
       };
     }
     // Adopt preview plan so Start does not call planChain again.
@@ -953,6 +1024,7 @@ export async function chainStartFromGoalViaRuntime(
       subtaskId: s.subtaskId,
       depth: s.depth,
       requiredSkill: s.requiredSkill,
+      requiredRole: s.requiredRole,
       objective: s.objective,
       requestedResult: s.requestedResult,
       constraints: s.constraints,
@@ -967,24 +1039,35 @@ export async function chainStartFromGoalViaRuntime(
       maxChainCostUsd: params.maxChainCostUsd ?? template?.maxChainCostUsd,
       costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd,
       allowLlm: params.allowLlm,
+      assignmentMode: params.assignmentMode ?? preview.assignmentMode,
       iterationMaxRounds: params.iterationMaxRounds,
       iterationJudgeMode: params.iterationJudgeMode,
       extendMaxStepsPerRound: params.extendMaxStepsPerRound,
       iterationWire: params.iterationState,
       preferredWorkerPeerIds: params.preferredWorkerPeerIds,
       plannedSubtasks: reused,
+      planWarnings: preview.planWarnings,
     });
     if (!result.ok) {
-      return { ok: false, error: result.error, diagnostics: preview.diagnostics };
+      return {
+        ok: false,
+        error: result.error,
+        diagnostics: preview.diagnostics,
+        assignmentMode: preview.assignmentMode,
+        planWarnings: preview.planWarnings,
+      };
     }
     return {
       ok: true,
       chainId: result.chainId,
       chainMandateId: result.chainMandateId,
+      assignmentMode: preview.assignmentMode,
+      planWarnings: preview.planWarnings,
       subtasks: result.subtasks.map((s) => ({
         subtaskId: s.subtaskId,
         depth: s.depth ?? 0,
         requiredSkill: s.requiredSkill ?? "",
+        requiredRole: (s as { requiredRole?: string }).requiredRole,
         objective: s.objective ?? "",
         preferredWorkerPeerId: s.preferredWorkerPeerId,
       })),
@@ -998,6 +1081,7 @@ export async function chainStartFromGoalViaRuntime(
     maxChainCostUsd: params.maxChainCostUsd ?? template?.maxChainCostUsd,
     costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd,
     allowLlm: params.allowLlm,
+    assignmentMode: params.assignmentMode,
     assignerPeerId: remoteAssigner ? params.assignerPeerId!.trim() : undefined,
     iterationMaxRounds: params.iterationMaxRounds,
     iterationJudgeMode: params.iterationJudgeMode,
@@ -1005,18 +1089,27 @@ export async function chainStartFromGoalViaRuntime(
     iterationWire: params.iterationState,
     preferredWorkerPeerIds: params.preferredWorkerPeerIds,
     plannedSubtasks,
+    planWarnings: params.planWarnings,
   });
   if (!result.ok) {
     return { ok: false, error: result.error };
   }
+  const side = ctx.getChainSideState?.();
+  const meta = result.chainId ? side?.planWarnings.get(result.chainId) : undefined;
+  const mode =
+    (result.chainId ? side?.assignmentModes.get(result.chainId) : undefined) ??
+    params.assignmentMode;
   return {
     ok: true,
     chainId: result.chainId,
     chainMandateId: result.chainMandateId,
+    assignmentMode: mode,
+    planWarnings: (meta ?? params.planWarnings) as ChainStartFromGoalResult["planWarnings"],
     subtasks: result.subtasks.map((s) => ({
       subtaskId: s.subtaskId,
       depth: s.depth ?? 0,
       requiredSkill: s.requiredSkill ?? "",
+      requiredRole: (s as { requiredRole?: string }).requiredRole,
       objective: s.objective ?? "",
       preferredWorkerPeerId: s.preferredWorkerPeerId,
     })),

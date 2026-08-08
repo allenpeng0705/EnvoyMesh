@@ -3,9 +3,11 @@
  * when selecting workers (direct-assign mode). Advertised on the Agent Card
  * only when Join Agent Network is enabled.
  *
- * See docs/agent-network-vocabulary.md — skills (not membership) drive assignment.
+ * See docs/agent-network-vocabulary.md — membership filters; skills + optional
+ * collaboration roles drive assignment (role-based Team jobs prefer roles).
  * Skills are structured `{ id, kind, source }`; legacy plain strings coerce to
  * owner domain entries. Matching stays on `id`.
+ * Roles: `roles[]` with `roles[0]` = primary (multi-role later).
  */
 
 import { z } from "zod";
@@ -123,6 +125,80 @@ export function agentNetworkRankingSkillIds(
     .map((e) => e.id);
 }
 
+/** Well-known collaboration seats (Team job role-based assignment). */
+export const AGENT_NETWORK_WELL_KNOWN_ROLES = [
+  "product_manager",
+  "programmer",
+  "tester",
+  "researcher",
+  "writer",
+  "generalist",
+] as const;
+
+export type AgentNetworkWellKnownRole = (typeof AGENT_NETWORK_WELL_KNOWN_ROLES)[number];
+
+/** Collaboration role id — well-known or `custom:<slug>`. */
+export type AgentNetworkRoleId = AgentNetworkWellKnownRole | `custom:${string}`;
+
+const CUSTOM_ROLE_RE = /^custom:[a-z0-9_-]{1,32}$/;
+const WELL_KNOWN_ROLE_SET = new Set<string>(AGENT_NETWORK_WELL_KNOWN_ROLES);
+
+/** True when `id` is a well-known role or valid `custom:` slug. */
+export function isAgentNetworkRoleId(id: string): id is AgentNetworkRoleId {
+  const normalized = id.trim().toLowerCase();
+  if (WELL_KNOWN_ROLE_SET.has(normalized)) return true;
+  return CUSTOM_ROLE_RE.test(normalized);
+}
+
+/** Coerce / normalize a role id; returns null if invalid. */
+export function coerceAgentNetworkRoleId(raw: unknown): AgentNetworkRoleId | null {
+  if (typeof raw !== "string") return null;
+  const id = raw.trim().toLowerCase();
+  if (!id || id.length > 48) return null;
+  if (!isAgentNetworkRoleId(id)) return null;
+  return id;
+}
+
+/** Normalize a roles array; `roles[0]` is the primary. Max 8. */
+export function coerceAgentNetworkRoles(raw: unknown): AgentNetworkRoleId[] {
+  if (!Array.isArray(raw)) return [];
+  const out: AgentNetworkRoleId[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    const id = coerceAgentNetworkRoleId(item);
+    if (!id || seen.has(id)) continue;
+    if (out.length >= 8) break;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+/** Primary collaboration role (`roles[0]`), if any. */
+export function agentNetworkPrimaryRole(
+  roles: readonly string[] | null | undefined,
+): AgentNetworkRoleId | undefined {
+  if (!roles?.length) return undefined;
+  return coerceAgentNetworkRoleId(roles[0]) ?? undefined;
+}
+
+/** Normalized role ids (deduped). */
+export function agentNetworkRoleIds(
+  roles: readonly string[] | null | undefined,
+): AgentNetworkRoleId[] {
+  return coerceAgentNetworkRoles(roles ?? []);
+}
+
+/** True when the peer lists `role` (primary or secondary). */
+export function agentNetworkHasRole(
+  roles: readonly string[] | null | undefined,
+  role: string | null | undefined,
+): boolean {
+  const want = coerceAgentNetworkRoleId(role);
+  if (!want) return false;
+  return agentNetworkRoleIds(roles).includes(want);
+}
+
 export const AgentNetworkProfileSchema = z.object({
   /** Owner-attested model freshness / modernity (1 = older, 10 = newest). */
   modelFreshness: z.number().int().min(1).max(10).default(5),
@@ -143,6 +219,15 @@ export const AgentNetworkProfileSchema = z.object({
     .default([])
     .transform((items) => coerceAgentNetworkSkills(items)),
   /**
+   * Collaboration roles for Team jobs (`roles[0]` = primary). Manual owner
+   * attestation — not inferred from skills. Empty = skill-only peer.
+   */
+  roles: z
+    .array(z.unknown())
+    .max(8)
+    .default([])
+    .transform((items) => coerceAgentNetworkRoles(items)),
+  /**
    * Owner-attested inference throughput (tokens/sec). Soft ranking hint —
    * not a measured probe until a later phase.
    */
@@ -154,6 +239,7 @@ export type AgentNetworkProfile = {
   spendPosture: AgentNetworkSpendPosture;
   contextWindow: AgentNetworkContextWindow;
   skills: AgentNetworkSkillEntry[];
+  roles: AgentNetworkRoleId[];
   throughputTokensPerSec?: number;
 };
 
@@ -162,6 +248,7 @@ export const DEFAULT_AGENT_NETWORK_PROFILE: AgentNetworkProfile = {
   spendPosture: "unknown",
   contextWindow: "128k",
   skills: [],
+  roles: [],
 };
 
 export function parseAgentNetworkProfile(input: unknown): AgentNetworkProfile {
@@ -171,11 +258,13 @@ export function parseAgentNetworkProfile(input: unknown): AgentNetworkProfile {
 export function createAgentNetworkProfile(
   input: Partial<AgentNetworkProfile> & {
     skills?: readonly (string | AgentNetworkSkillEntry)[];
+    roles?: readonly string[];
   } = {},
 ): AgentNetworkProfile {
   return AgentNetworkProfileSchema.parse({
     ...DEFAULT_AGENT_NETWORK_PROFILE,
     ...input,
     skills: input.skills ?? DEFAULT_AGENT_NETWORK_PROFILE.skills,
+    roles: input.roles ?? DEFAULT_AGENT_NETWORK_PROFILE.roles,
   });
 }

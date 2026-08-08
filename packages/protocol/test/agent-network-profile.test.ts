@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   agentNetworkDomainSkillIds,
+  agentNetworkHasRole,
+  agentNetworkPrimaryRole,
   agentNetworkRankingSkillIds,
+  agentNetworkRoleIds,
   agentNetworkSkillIds,
+  coerceAgentNetworkRoles,
   coerceAgentNetworkSkills,
   createAgentNetworkProfile,
   createOwnerDomainSkill,
@@ -56,5 +60,44 @@ describe("AgentNetworkProfile skills entries", () => {
         "coding",
       ]),
     ).toEqual([{ id: "coding", kind: "domain", source: "owner" }]);
+  });
+});
+
+describe("AgentNetworkProfile roles", () => {
+  it("defaults roles to empty and accepts primary role", () => {
+    const empty = parseAgentNetworkProfile({ skills: [] });
+    expect(empty.roles).toEqual([]);
+    const withRole = createAgentNetworkProfile({
+      roles: ["Programmer", "tester"],
+    });
+    expect(withRole.roles).toEqual(["programmer", "tester"]);
+    expect(agentNetworkPrimaryRole(withRole.roles)).toBe("programmer");
+    expect(agentNetworkHasRole(withRole.roles, "tester")).toBe(true);
+    expect(agentNetworkHasRole(withRole.roles, "writer")).toBe(false);
+  });
+
+  it("accepts custom roles and rejects garbage", () => {
+    expect(coerceAgentNetworkRoles(["custom:qa_lead", "not-a-role", "programmer"])).toEqual([
+      "custom:qa_lead",
+      "programmer",
+    ]);
+    expect(agentNetworkRoleIds(["PRODUCT_MANAGER"])).toEqual(["product_manager"]);
+  });
+
+  it("caps roles at 8 and dedupes", () => {
+    const many = coerceAgentNetworkRoles([
+      "programmer",
+      "programmer",
+      "tester",
+      "writer",
+      "researcher",
+      "product_manager",
+      "generalist",
+      "custom:a",
+      "custom:b",
+      "custom:c",
+    ]);
+    expect(many).toHaveLength(8);
+    expect(many[0]).toBe("programmer");
   });
 });

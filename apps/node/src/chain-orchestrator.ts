@@ -118,8 +118,30 @@ export interface ChainOrchestratorHandlerDeps extends ChainOrchestratorSendDeps 
   audit: ChainAuditSink;
   /** Persistent store used for chain reports (atomic JSONL). */
   storeChainReport: (report: TaskChainReportPayload["report"]) => Promise<void>;
-  /** Optional LLM-driven decomposition (used by planChain when stepCount > 3). */
-  llmDecompose?: (goal: string) => Promise<{ ok: true; steps: ChainSubtask[] } | { ok: false; reason: string }>;
+  /**
+   * Optional LLM-driven decomposition (used by planChain when allowLlm).
+   * Call-time `assignmentMode` is request-scoped so concurrent previews cannot
+   * stomp a process-wide latch.
+   */
+  llmDecompose?: (
+    goal: string,
+    opts?: { assignmentMode?: "skill" | "role" },
+  ) => Promise<
+    | {
+        ok: true;
+        steps: ChainSubtask[];
+        planWarnings?: Array<{
+          code: string;
+          role?: string;
+          stepIndex?: number;
+          usedPeerId?: string;
+          assignKind?: string;
+          message: string;
+        }>;
+        assignmentMode?: "skill" | "role";
+      }
+    | { ok: false; reason: string }
+  >;
   /** Optional LLM merge for `merge_structured` synthesis. */
   llmMerge?: (input: { contributions: WorkerContribution[] }) => Promise<
     { ok: true; mergedJson: Record<string, unknown>; costUsd: number } | { ok: false; reason: string }
@@ -331,8 +353,22 @@ export function chainStateSnapshot(state: ChainState): {
 // 1. planChain — decompose a goal into subtasks
 // ---------------------------------------------------------------------------
 
+export type PlanChainWarning = {
+  code: string;
+  role?: string;
+  stepIndex?: number;
+  usedPeerId?: string;
+  assignKind?: string;
+  message: string;
+};
+
 export type PlanChainResult =
-  | { ok: true; subtasks: ChainSubtask[] }
+  | {
+      ok: true;
+      subtasks: ChainSubtask[];
+      planWarnings?: PlanChainWarning[];
+      assignmentMode?: "skill" | "role";
+    }
   | { ok: false; reason: "no_goal" | "llm_decompose_unavailable" | "llm_decompose_failed" | "decompose_too_deep" };
 
 const PLAN_KEYWORD_FALLBACK = "decompose";
@@ -346,18 +382,21 @@ export async function planChain(
   deps: ChainOrchestratorHandlerDeps,
   state: ChainState,
   goal: string,
-  opts: { allowLlm?: boolean } = {},
+  opts: { allowLlm?: boolean; assignmentMode?: "skill" | "role" } = {},
 ): Promise<PlanChainResult> {
   if (!goal || goal.trim().length === 0) {
     return { ok: false, reason: "no_goal" };
   }
+
+  const assignmentMode =
+    opts.assignmentMode === "role" ? "role" : opts.assignmentMode === "skill" ? "skill" : undefined;
 
   // Prefer LLM plan+assign whenever available (short goals included).
   // On LLM failure, fall through to the single-subtask keyword path.
   const useLlm = opts.allowLlm !== false && deps.llmDecompose !== undefined;
 
   if (useLlm && deps.llmDecompose) {
-    const r = await deps.llmDecompose(goal);
+    const r = await deps.llmDecompose(goal, { assignmentMode });
     if (r.ok) {
       if (r.steps.some((s) => s.depth < 1 || s.depth > 3)) {
         return { ok: false, reason: "decompose_too_deep" };
@@ -371,11 +410,25 @@ export async function planChain(
         }),
       );
       registerSubtasks(state, steps);
-      return { ok: true, subtasks: steps };
+      return {
+        ok: true,
+        subtasks: steps,
+        planWarnings: r.planWarnings,
+        assignmentMode: r.assignmentMode ?? assignmentMode,
+      };
     }
   }
 
   // Keyword fallback — produces a single subtask by default.
+  const planWarnings: PlanChainWarning[] = [];
+  if (assignmentMode === "role") {
+    planWarnings.push({
+      code: "no_llm_role_planning",
+      assignKind: "skill_fallback",
+      message:
+        "Role-based planning fell back to the keyword decomposer (LLM unavailable or failed). Steps are skill-only.",
+    });
+  }
   const subtask = ChainSubtaskSchema.parse({
     version: "0.1",
     subtaskId: `subtask_${cryptoRandom()}`,
@@ -391,7 +444,12 @@ export async function planChain(
     deadlineAt: state.chainMandate.deadlineAt,
   });
   registerSubtasks(state, [subtask]);
-  return { ok: true, subtasks: [subtask] };
+  return {
+    ok: true,
+    subtasks: [subtask],
+    planWarnings: planWarnings.length > 0 ? planWarnings : undefined,
+    assignmentMode,
+  };
 }
 
 function registerSubtasks(state: ChainState, subtasks: ChainSubtask[]): void {

@@ -268,7 +268,8 @@ say `chain`.
 
 | Doc | Role |
 |-----|------|
-| [agent-network-vocabulary.md](./agent-network-vocabulary.md) | **Canonical naming:** membership vs skills |
+| [agent-network-vocabulary.md](./agent-network-vocabulary.md) | **Canonical naming:** membership vs skills vs roles |
+| [agent-network-roles.md](./agent-network-roles.md) | Collaboration roles + Role/Skill assignment modes |
 | [agent-network-fleet.md](./agent-network-fleet.md) | Day-by-day fleet rollout playbook |
 | [agent-network-lan-scenarios.md](./agent-network-lan-scenarios.md) | **3 machines on one LAN** — simple→complex real-world test scenarios |
 | [fleet-onboarding.md](./fleet-onboarding.md) | Fleet path schemas and threat model |
@@ -285,7 +286,8 @@ say `chain`.
 1. Same office Wi-Fi: both machines use **Office LAN → Enable office LAN team**
    (shared token). Remote teammates: bond via invite / manifest, then enable
    **Join Agent Network** on each node.  
-2. Optionally fill the **profile** (skills, freshness, context).  
+2. Optionally fill the **profile** (skills, freshness, context) and a
+   **collaboration role** (e.g. programmer / tester) for role-based Team jobs.  
 3. Leave **Team job defaults** on **direct assign** unless you need bidding.  
 4. Open **Team jobs → New team job**, enter a goal, preview, start.  
 5. Open the report when synthesis finishes.  

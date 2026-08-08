@@ -750,6 +750,20 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
                   })}
                 </span>
               </div>
+              {job.steps.length > 0 ? (
+                <ul className="chain-observed-steps" data-testid="chain-observed-steps">
+                  {job.steps.map((step) => (
+                    <li key={step.subtaskId} className="chain-observed-step">
+                      <span className={`chain-observed-step__state state-${step.state}`}>
+                        {step.state}
+                      </span>
+                      <span className="chain-observed-step__objective">
+                        {step.objective?.trim() || step.subtaskId}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </div>
           ))}
         </section>

@@ -87,6 +87,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 49 — Pi as Built-in Local Coding Agent](#phase-49--pi-as-built-in-local-coding-agent-designed)
 - [Phase 50 — Push Notification Coverage (home node → EnvoyGo)](#phase-50--push-notification-coverage-home-node--envoygo--shipped-50a--50b--deep-link)
 - [Phase 51 — Family Network (multi-profile private social network)](#phase-51--family-network-multi-profile-private-social-network--designed)
+- [Phase 52 — Agent Network collaboration roles + assignment modes](#phase-52--agent-network-collaboration-roles--assignment-modes)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -6594,10 +6595,59 @@ Closes the production path after 48A–48D protocol/mount work.
 
 ---
 
+## Phase 52 — Agent Network collaboration roles + assignment modes
+
+> **Status:** `[x]` 52A–52D shipped (2026-08-08).  
+> **Design:** [agent-network-roles.md](./agent-network-roles.md) · vocabulary update in [agent-network-vocabulary.md](./agent-network-vocabulary.md) · plan+assign [agent-network-plan-assign.md](./agent-network-plan-assign.md).
+
+**Goal:** Let owners set a **manual primary collaboration role** on their Agent Network profile (`roles[]`, `roles[0]` = primary; multi-role later). Team jobs choose **Skill based** (default) or **Role based** assignment. The Assigner LLM decides exact seats, substitutes, and skill fallbacks via an extensible prompt; the UI surfaces structured `planWarnings`.
+
+### 52A — Profile roles + announce `[x]`
+
+- `[x]` `agentNetworkProfile.roles[]` + helpers (`agentNetworkPrimaryRole`, coerce, well-known + `custom:`)
+- `[x]` Social primary-role picker; skill presets relabeled (not “roles”)
+- `[x]` Roster / worker chip shows primary role; Agent Card announces roles
+- `[x]` E2E: `chain-plan-assign-roles-e2e.test.ts` (card announce)
+
+### 52B — Assignment mode plumbing `[x]`
+
+- `[x]` `ChainDefaultsConfig.assignmentMode` (`skill` \| `role`, default `skill`)
+- `[x]` `chainPreviewGoal` / `chainStartFromGoal` accept `assignmentMode`
+- `[x]` Per-chain `assignmentModes` / `planWarnings`; request-scoped `planChain(..., { assignmentMode })` (no global latch race)
+- `[x]` Start adopts preview `planWarnings` with `plannedSubtasks` (not `lastPlanMeta`)
+- `[x]` Optional `ChainSubtask.requiredRole`
+
+### 52C — Prompt + parse + materialize `[x]`
+
+- `[x]` Modular `buildPlanAssignPrompt` (skill vs role + substitute guidance)
+- `[x]` `parsePlanAssignResult` / `materializePlanAssignWithMeta` + honesty hygiene
+- `[x]` Mock `__plan_assign_from_roster__` role-mode synthesizer
+- `[x]` Unit tests: `chain-plan-assign.test.ts`, `mock-plan-assign.test.ts`
+
+### 52D — Transparency UI `[x]`
+
+- `[x]` ChainStartDialog: assignment mode toggle + `planWarnings` list; wait for defaults before first preview
+- `[x]` `chainGetState` / ChainDetailPanel: assignment mode badge + plan warnings
+- `[x]` ChainDefaultsPanel: default assignment mode
+- `[x]` Docs: roles design, vocabulary, plan-assign, operator guide, `agent_network.md`
+
+### Exit criteria
+
+- `[x]` Owner can set one primary role; peers see it on cards
+- `[x]` Team job create offers Role based / Skill based
+- `[x]` Role-based plans emit structured warnings on substitute / skill fallback
+- `[x]` Skill-based behavior unchanged when mode=`skill`
+- `[x]` Missing roles never block launch
+- `[ ]` Stall reassign prefers same `requiredRole` (follow-up — Phase 52E optional)
+- `[ ]` Multi-role editor UI (schema ready; UI later)
+
+---
+
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
+| 2026-08-08 | **Phase 52 — Agent Network collaboration roles + assignment modes shipped (52A–52D).** Manual `agentNetworkProfile.roles[]` (primary = `[0]`); Team job assignment mode `skill` \| `role`; Assigner prompt modules + `planWarnings`; Social picker / start dialog / defaults; mock role synthesizer; card-announce E2E + unit coverage. Design: [agent-network-roles.md](./agent-network-roles.md). |
 | 2026-07-31 | **Phase 51 follow-ups.** Owner-only RPC gate covers vault/library + all `terminal*` methods; `previewFamilyInvite` pre-auth profile list for EnvoyGo re-pair (I'm new / I'm back); Social family group create/list/send UI; EnvoyGo skips bond/terminal/feed owner RPCs for family sessions; widget-test mock signatures fixed. |
 | 2026-07-31 | **Phase 51F review hardenings.** Social family DMs: route `family:*` in `partnerOwnerIdForChat` / `useChatThreadPreviews`; bubble direction uses `callerFamilyProfileId` (not mesh owner id). |
 | 2026-07-31 | **Phase 51E review hardenings + 51F shipped.** 51E: restore family session from secure storage on connect; hide call/mic/published-content on family DMs; family avatars; deep-link guards; filtered loadThreads. 51F: Social Settings Family tab + invite QR; Chat sidebar Family section; FamilyChatPanel; family RPCs on useNodeService. |

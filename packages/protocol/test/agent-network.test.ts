@@ -28,6 +28,7 @@ import {
   SensitivitySchema,
   // The chain surface (re-exported from agent-network.js)
   CHAIN_MAX_DEPTH,
+  CHAIN_SUBTASK_PARTIAL_NOTE_MAX,
   ChainMandateSignedSchema,
   ChainReportSchema,
   ChainReportSectionSchema,
@@ -407,6 +408,11 @@ describe("ChainSubtaskPartial", () => {
 
   it("rejects partial with negative seq", () => {
     expect(() => partial({ seq: -1 })).toThrow();
+  });
+
+  it("clips oversized notes instead of rejecting with too_big", () => {
+    const p = partial({ note: "n".repeat(CHAIN_SUBTASK_PARTIAL_NOTE_MAX + 400) });
+    expect(p.note?.length).toBe(CHAIN_SUBTASK_PARTIAL_NOTE_MAX);
   });
 });
 

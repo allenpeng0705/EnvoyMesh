@@ -6,11 +6,15 @@
 
 ## Workflow (one round — shipped)
 
-1. Build **eligible roster** (bonded + Join Agent Network + can execute). Specialty tags are **soft**.
-2. **Assigner** (default = trigger node) runs one LLM **plan+assign** prompt with the roster (factors: skills, freshness, context, spend, **throughputTokensPerSec**, same-LAN when known).
-3. Every step gets a `preferredWorkerPeerId`. No specialty match → **best generalist**. One worker → all steps to them. Empty roster → `no_workers`.
+1. Build **eligible roster** (bonded + Join Agent Network + can execute). Specialty tags are **soft**. Roster includes `roles[]` / `primaryRole` when set.
+2. **Assigner** (default = trigger node) runs one LLM **plan+assign** prompt with the roster. Mode from job / chain defaults:
+   - **skill** (default): skills + freshness, context, spend, **throughputTokensPerSec**, same-LAN.
+   - **role**: prefer collaboration roles; LLM may substitute / skill-fallback; structured `warnings[]` for the owner.
+3. Every step gets a `preferredWorkerPeerId` (and optional `requiredRole`). No specialty match → **best generalist**. One worker → all steps to them. Empty roster → `no_workers`.
 4. Dispatch via **A2A** `task.chain.*` to named peers (direct assign by default).
 5. Wait for all steps → **Assigner merges** into one final Team job report / composite artifact.
+
+See **[agent-network-roles.md](./agent-network-roles.md)** for role schema, prompt modules, and transparency.
 
 **Inside the DAG (not a whole-job loop):** dependency-ready scheduling; parent finals inject `prior[subtaskId]: …` into child constraints (`enrichSubtaskWithParentContext`). Stall reassign (≤1 backup) and bid negotiation rounds are separate recovery/cost mechanisms — see iteration design §2.
 
@@ -36,7 +40,8 @@ goal → Round 1 DAG (+ optional capped extends) → draft₁ → Judge
 | Profile throughput | `packages/protocol/src/agent-network-profile.ts` |
 | Soft scoring + `assignWorkersToSteps` | `packages/api/src/agent-network-score.ts` |
 | Soft worker pool | `findAgentNetworkWorkers` in `apps/node/src/node-service-chain-orchestration.ts` |
-| Plan+assign prompt / parse | `apps/node/src/chain-plan-assign.ts` |
+| Plan+assign prompt / parse (skill + role modes) | `apps/node/src/chain-plan-assign.ts` |
+| Collaboration roles (profile) | `packages/protocol/src/agent-network-profile.ts` · [agent-network-roles.md](./agent-network-roles.md) |
 | LLM entry | `apps/node/src/chain-decomposer.ts` (`getRoster`) |
 | Named launch | `_runChainGoal` prefers `subtask.preferredWorkerPeerId` |
 | Roster mock AI | `packages/models` `mockResponseText: "__plan_assign_from_roster__"` |
