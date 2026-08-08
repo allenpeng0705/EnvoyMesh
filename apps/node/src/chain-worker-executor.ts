@@ -2,7 +2,7 @@
  * Phase 43A — Production worker execution after task.chain.accept.
  *
  * Default Agent Network engine = Built-in OpenClaw (see docs/agent-network-engine.md).
- * Ext Agent for AN is a later, node-owner-only option.
+ * Ext Agent is a node-owner-only option (`agentNetworkWorkerEngine`).
  *
  * Phase 53 — consumes propose `inputArtifacts` and emits named `result` artifacts.
  */
@@ -116,7 +116,7 @@ function textResultArtifacts(text: string): {
 }
 
 /**
- * Built-in OpenClaw executor for accepted Team-job subtasks (AN engine step 1).
+ * Built-in OpenClaw executor for accepted Team-job subtasks (AN engine default).
  * Emits honest Failed partials when OpenClaw is down or errors — no stub success.
  */
 export function createOpenClawChainSubtaskExecutor(input: {
@@ -124,6 +124,51 @@ export function createOpenClawChainSubtaskExecutor(input: {
   now?: () => Date;
   isOpenClawReady: () => boolean;
   askOpenClaw: (prompt: string) => Promise<string>;
+}): NonNullable<ChainWorkerHandlerDeps["executeSubtask"]> {
+  return createEngineChainSubtaskExecutor({
+    workerPeerId: input.workerPeerId,
+    now: input.now,
+    engineLabel: "Built-in OpenClaw",
+    logTag: "OpenClaw",
+    unavailableCode: "openclaw_unavailable",
+    emptyCode: "openclaw_empty",
+    isReady: input.isOpenClawReady,
+    ask: input.askOpenClaw,
+  });
+}
+
+/**
+ * Ext Agent executor for accepted Team-job subtasks (AN engine Step 2).
+ * Uses the node owner's active Ext Agent (bridge). Sync reply required —
+ * async `/bridge/send` replies are treated as failure for Team jobs.
+ */
+export function createExtAgentChainSubtaskExecutor(input: {
+  workerPeerId: string;
+  now?: () => Date;
+  isExtAgentReady: () => boolean;
+  askExtAgent: (prompt: string) => Promise<string>;
+}): NonNullable<ChainWorkerHandlerDeps["executeSubtask"]> {
+  return createEngineChainSubtaskExecutor({
+    workerPeerId: input.workerPeerId,
+    now: input.now,
+    engineLabel: "Ext Agent",
+    logTag: "ExtAgent",
+    unavailableCode: "ext_agent_unavailable",
+    emptyCode: "ext_agent_empty",
+    isReady: input.isExtAgentReady,
+    ask: input.askExtAgent,
+  });
+}
+
+function createEngineChainSubtaskExecutor(input: {
+  workerPeerId: string;
+  now?: () => Date;
+  engineLabel: string;
+  logTag: string;
+  unavailableCode: string;
+  emptyCode: string;
+  isReady: () => boolean;
+  ask: (prompt: string) => Promise<string>;
 }): NonNullable<ChainWorkerHandlerDeps["executeSubtask"]> {
   return async (subtask, onPartial, opts) => {
     let seq = 0;
@@ -157,36 +202,43 @@ export function createOpenClawChainSubtaskExecutor(input: {
       );
     };
 
-    chainLog("exec", "OpenClaw subtask start", {
+    chainLog("exec", `${input.logTag} subtask start`, {
       chainId: subtask.chainId,
       subtaskId: subtask.subtaskId,
       skill: subtask.requiredSkill,
       worker: shortPeerId(input.workerPeerId),
-      openclawReady: input.isOpenClawReady(),
+      ready: input.isReady(),
       inputArtifacts: opts?.inputArtifacts?.length ?? 0,
     });
 
-    if (!input.isOpenClawReady()) {
-      await emit("AN_ENGINE_FAIL: Built-in OpenClaw is not running on this node", true, 0.1);
-      chainWarn("exec", "OpenClaw unavailable", { subtaskId: subtask.subtaskId });
-      return { ok: false, finalNote: "openclaw_unavailable" };
+    if (!input.isReady()) {
+      await emit(
+        `AN_ENGINE_FAIL: ${input.engineLabel} is not ready on this node`,
+        true,
+        0.1,
+      );
+      chainWarn("exec", `${input.logTag} unavailable`, { subtaskId: subtask.subtaskId });
+      return { ok: false, finalNote: input.unavailableCode };
     }
 
     await emit(`Working on: ${subtask.objective}`, false, 0.3);
 
     try {
       const text = (
-        await input.askOpenClaw(buildOpenClawSubtaskPrompt(subtask, opts?.inputArtifacts))
+        await input.ask(buildOpenClawSubtaskPrompt(subtask, opts?.inputArtifacts))
       ).trim();
       if (!text) {
-        await emit("AN_ENGINE_FAIL: OpenClaw returned an empty response", true, 0.1);
-        chainWarn("exec", "OpenClaw empty", { subtaskId: subtask.subtaskId });
-        return { ok: false, finalNote: "openclaw_empty" };
+        await emit(
+          `AN_ENGINE_FAIL: ${input.engineLabel} returned an empty response`,
+          true,
+          0.1,
+        );
+        chainWarn("exec", `${input.logTag} empty`, { subtaskId: subtask.subtaskId });
+        return { ok: false, finalNote: input.emptyCode };
       }
-      // Note stays at CHAIN_SUBTASK_PARTIAL_NOTE_MAX; typed handoff may carry up to 64k.
       const clipped = clipChainSubtaskPartialNote(text) ?? text;
       await emit(clipped, true, 0.85, textResultArtifacts(text));
-      chainLog("exec", "OpenClaw subtask done", {
+      chainLog("exec", `${input.logTag} subtask done`, {
         subtaskId: subtask.subtaskId,
         chars: clipped.length,
         artifactChars: Math.min(text.length, TEXT_ARTIFACT_MAX),
@@ -195,7 +247,7 @@ export function createOpenClawChainSubtaskExecutor(input: {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       await emit(`AN_ENGINE_FAIL: ${msg}`, true, 0.1);
-      chainWarn("exec", "OpenClaw error", { subtaskId: subtask.subtaskId, error: msg });
+      chainWarn("exec", `${input.logTag} error`, { subtaskId: subtask.subtaskId, error: msg });
       return { ok: false, finalNote: msg };
     }
   };

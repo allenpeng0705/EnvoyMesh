@@ -390,7 +390,15 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             setTaskDispatcher: (d) => {
               host._taskDispatcher = d;
             },
-            loadConfig: () => host._configStore.load(),
+            loadConfig: async () => {
+              const cfg = await host._configStore.load();
+              // Keep sync AN engine caches aligned as soon as start loads config
+              // (before mesh online / Team-job handlers).
+              if (cfg) {
+                await host.hydrateAgentNetworkWorkerEngineFromDisk();
+              }
+              return cfg;
+            },
             getMesh: () => host._mesh,
             setMesh: (m) => {
               host._mesh = m as never;

@@ -155,14 +155,15 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
   // A 20s poll keeps the dots fresh while the view is mounted.
   const [reachabilityByOwner, setReachabilityByOwner] = useState<Map<string, ChainWorkerReachability>>(new Map());
 
-  // Local Join'd agent — Team job creator is also a worker (always online when
-  // Built-in OpenClaw / AN engine is ready).
+  // Local Join'd agent — Team job creator is also a worker (online when the
+  // node-owner AN engine — OpenClaw or Ext Agent — is ready).
   const [localWorkerCard, setLocalWorkerCard] = useState<CachedAgentCardSummary | undefined>();
-  const [openClawRunning, setOpenClawRunning] = useState<boolean | null>(null);
+  const [anEngineReady, setAnEngineReady] = useState<boolean | null>(null);
+  const anWorkerEngine = nodeConfig?.agentNetworkWorkerEngine === "ext" ? "ext" : "openclaw";
   useEffect(() => {
     if (!wsOpen || nodeConfig?.capabilityProviderEnabled !== true) {
       setLocalWorkerCard(undefined);
-      setOpenClawRunning(null);
+      setAnEngineReady(null);
       return;
     }
     let cancelled = false;
@@ -174,21 +175,36 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
       .catch(() => {
         if (!cancelled) setLocalWorkerCard(undefined);
       });
-    void nodeService
-      .getOpenClawStatus()
-      .then((s) => {
-        if (!cancelled) setOpenClawRunning(Boolean(s?.running));
-      })
-      .catch(() => {
-        if (!cancelled) setOpenClawRunning(false);
-      });
-    const timer = setInterval(() => {
-      void nodeService.getOpenClawStatus().then((s) => {
-        if (!cancelled) setOpenClawRunning(Boolean(s?.running));
-      }).catch(() => {
-        if (!cancelled) setOpenClawRunning(false);
-      });
-    }, 20_000);
+    const refreshEngineReady = () => {
+      if (anWorkerEngine === "ext") {
+        const bridgeOn = nodeConfig?.bridgeEnabled !== false;
+        const hasUrl = Boolean(nodeConfig?.bridgeStatus?.agentUrl?.trim());
+        if (!bridgeOn || !hasUrl) {
+          if (!cancelled) setAnEngineReady(false);
+          return;
+        }
+        void nodeService
+          .probeExtAgent?.()
+          .then((r) => {
+            if (!cancelled) setAnEngineReady(Boolean(r?.reachable));
+          })
+          .catch(() => {
+            // URL present — treat as ready if probe unavailable
+            if (!cancelled) setAnEngineReady(true);
+          });
+        return;
+      }
+      void nodeService
+        .getOpenClawStatus()
+        .then((s) => {
+          if (!cancelled) setAnEngineReady(Boolean(s?.running));
+        })
+        .catch(() => {
+          if (!cancelled) setAnEngineReady(false);
+        });
+    };
+    refreshEngineReady();
+    const timer = setInterval(refreshEngineReady, 20_000);
     return () => {
       cancelled = true;
       clearInterval(timer);
@@ -198,13 +214,17 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
     wsOpen,
     nodeConfig?.capabilityProviderEnabled,
     nodeConfig?.agentNetworkProfile,
+    nodeConfig?.agentNetworkWorkerEngine,
+    nodeConfig?.bridgeEnabled,
+    nodeConfig?.bridgeStatus?.agentUrl,
+    anWorkerEngine,
   ]);
 
   // Bonded contacts with agent-card health — used in the empty state and
   // passed to ChainStartDialog so the user sees who can join a team job.
   // Three dimensions: card freshness, agent-network opt-in, online reachability.
   // Local "You" uses the same readiness/order rules as peers (may be offline
-  // when Built-in OpenClaw is down).
+  // when the configured AN engine is down).
   const workerCandidates = useMemo((): WorkerCandidate[] => {
     const others = bonds
       .filter((b) => b.level !== "blocked")
@@ -227,9 +247,9 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
       const selfHealth: ChainBondHealth = {
         status: "ready",
         cardStatus: "ready",
-        onlineStatus: openClawRunning === false ? "offline" : "online",
+        onlineStatus: anEngineReady === false ? "offline" : "online",
         optIn: true,
-        engineReady: openClawRunning !== false,
+        engineReady: anEngineReady !== false,
         capabilityCount: localWorkerCard.membership.length,
         lastSyncedAt: localWorkerCard.cachedAt,
         label: "Ready",
@@ -248,7 +268,7 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
         ({ ready: 0, stale: 1, missing: 2, blocked: 3 }[h.status] ?? 9);
       return score(a.health) - score(b.health);
     });
-  }, [bonds, agentCards, reachabilityByOwner, localWorkerCard, openClawRunning]);
+  }, [bonds, agentCards, reachabilityByOwner, localWorkerCard, anEngineReady]);
 
   // Opted-in contacts with a cached agent card — shown even when offline so
   // the list is not empty while reachability is warming. Starting a job still

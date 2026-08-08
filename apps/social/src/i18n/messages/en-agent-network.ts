@@ -21,6 +21,14 @@ export const agentNetworkSettingsMessages = {
       "Off by default. When on, peers can discover and score your agent for chain steps. Your agent still runs locally for you either way.",
     profileDesc:
       "Owner-attested traits peers use to score your agent when selecting workers. Only shared when Join Agent Network is on.",
+    workerEngine: "Team job engine (this node)",
+    workerEngineOpenClaw: "Built-in OpenClaw",
+    workerEngineExt: "Ext Agent",
+    workerEngineHint:
+      "When peers assign a Team job step to this node, that engine runs it. Only you choose this — not the job creator.",
+    workerEngineExtHint:
+      "Uses your active Ext Agent ({name}). Change the product under Settings → AI → Ext Agent. OpenClaw will not run Team job steps while this is selected.",
+    workerEngineSaved: "Team job engine saved",
     primaryRole: "Collaboration role",
     primaryRoleHint:
       "Team seat for role-based jobs (e.g. programmer, tester). Separate from skills — set manually. Peers see this on your Agent Card when Join is on.",

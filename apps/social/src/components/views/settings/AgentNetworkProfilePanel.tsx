@@ -115,6 +115,8 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
   const [skillDraft, setSkillDraft] = useState("");
   const [roleDraft, setRoleDraft] = useState("");
   const [roleDraftError, setRoleDraftError] = useState<string | null>(null);
+  const [workerEngine, setWorkerEngine] = useState<"openclaw" | "ext">("openclaw");
+  const [activeExtLabel, setActiveExtLabel] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [showFineTune, setShowFineTune] = useState(false);
 
@@ -125,11 +127,33 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
       if (cfg.agentNetworkProfile) {
         setProfile(createAgentNetworkProfile(cfg.agentNetworkProfile));
       }
+      setWorkerEngine(cfg.agentNetworkWorkerEngine === "ext" ? "ext" : "openclaw");
+      const activeId = cfg.activeExtAgentId;
+      const active = cfg.extAgents?.find((a) => a.id === activeId);
+      setActiveExtLabel(active?.name ?? cfg.bridgeStatus?.agentName ?? activeId ?? "");
     }).catch(() => undefined);
     return () => {
       cancelled = true;
     };
   }, [nodeService]);
+
+  const setWorkerEngineAndPersist = useCallback(
+    (engine: "openclaw" | "ext") => {
+      setWorkerEngine(engine);
+      void (async () => {
+        setSaving(true);
+        try {
+          await nodeService.updateNodeConfig({ agentNetworkWorkerEngine: engine });
+          showToast(t(`${K}.workerEngineSaved`), "success");
+        } catch (err) {
+          showToast(err instanceof Error ? err.message : String(err), "error");
+        } finally {
+          setSaving(false);
+        }
+      })();
+    },
+    [nodeService, showToast, t],
+  );
 
   const persist = useCallback(
     async (next: AgentNetworkProfile, successMsg?: string) => {
@@ -205,6 +229,28 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
   return (
     <div className="agent-network-profile-panel" data-testid="agent-network-profile-panel">
       <p className="field-desc">{t(`${K}.profileDesc`)}</p>
+
+      {/* ---- Team job engine (this node only) ---- */}
+      <div className="form-group" data-testid="agent-network-worker-engine">
+        <label htmlFor="anp-worker-engine">{t(`${K}.workerEngine`)}</label>
+        <select
+          id="anp-worker-engine"
+          className="settings-input"
+          value={workerEngine}
+          disabled={saving}
+          onChange={(e) =>
+            setWorkerEngineAndPersist(e.target.value === "ext" ? "ext" : "openclaw")
+          }
+        >
+          <option value="openclaw">{t(`${K}.workerEngineOpenClaw`)}</option>
+          <option value="ext">{t(`${K}.workerEngineExt`)}</option>
+        </select>
+        <small className="field-desc">
+          {workerEngine === "ext"
+            ? t(`${K}.workerEngineExtHint`, { name: activeExtLabel || "Ext Agent" })
+            : t(`${K}.workerEngineHint`)}
+        </small>
+      </div>
 
       {/* ---- Collaboration role (Team job seats) ---- */}
       <div className="form-group" data-testid="agent-network-primary-role">

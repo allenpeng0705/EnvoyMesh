@@ -1,6 +1,6 @@
 # Agent Network — worker AI Engine policy
 
-> **Status:** Canonical product policy (2026-08).  
+> **Status:** Canonical product policy (2026-08). Step 1 shipped; Step 2 (Ext) shipped for node-local engine choice + sync Ext ask.  
 > **Audience:** engineers implementing Team job worker execution.  
 > **Related:** [agent-network-vocabulary.md](./agent-network-vocabulary.md),
 > [agent-network-config.md](./agent-network-config.md) (chat AI Engine flags),
@@ -25,19 +25,26 @@ covers **Agent Network worker execution** only.
 | Mode | Who runs accepted Team-job subtasks on this node |
 |------|--------------------------------------------------|
 | **Default (step 1)** | **Built-in OpenClaw** (EnvoyAI) |
-| **Later (step 2)** | **Ext Agent** — owner selects on **their** node |
+| **Step 2** | **Ext Agent** — owner selects on **their** node (`agentNetworkWorkerEngine`) |
+
+Config field: `PersistedNodeConfig.agentNetworkWorkerEngine`: `"openclaw"` \| `"ext"` (default `"openclaw"`).
+
+Which Ext product (Pi / HomeClaw / Hermes / …, later Codex / Claude Code) remains **Settings → AI → Ext Agent** (`activeExtAgent` in bridge-config). AN only chooses OpenClaw vs that active Ext agent.
 
 Rules:
 
 1. **Default = OpenClaw.** Joining Agent Network implies this node’s worker
    path uses Built-in OpenClaw until the owner opts into Ext for AN.
-2. **Manual, node-local.** Only the owner of that home node chooses. Not the
-   Team job creator, not the Assigner, not a per-step UI.
+2. **Manual, node-local.** Only the owner of that home node chooses (Social →
+   Your worker profile → Team job engine). Not the Team job creator, not the
+   Assigner, not a per-step UI. When this node is selected for a step, it runs
+   the configured engine.
 3. **One engine for Agent Network at a time.** If the owner selects Ext Agent
    for Agent Network, Built-in OpenClaw does **not** run AN worker subtasks on
    that node (and the reverse). Chat routing may still differ; AN is exclusive.
-4. **Ext Agent (later)** may expose its own skills onto the Agent Card for
-   ranking. Until then, Ext ids/names are **not** skills (see vocabulary).
+4. **Skills (v1):** ranking still uses owner domains (+ OpenClaw skill scan when
+   engine is OpenClaw). Ext product names are **not** skills. Ext skill
+   advertisement is deferred (see vocabulary).
 
 ```text
 Owner config (this node)          Assigner (Team job)
@@ -59,11 +66,14 @@ AN engine: OpenClaw | Ext    →    pick peer by membership + skills
   another worker (existing `reassignStalledSubtask`). No Ext↔OpenClaw swap on
   the same node in step 1.
 
-### Step 2 — Ext Agent for Agent Network (later)
+### Step 2 — Ext Agent for Agent Network (shipped — execution + config)
 
-- Owner setting: **Agent Network engine = OpenClaw | Ext Agent** (default OpenClaw).
-- When Ext is selected: Ext executes AN subtasks; OpenClaw does not for AN.
-- Ext advertises skills for soft ranking (separate from chat bridge presence).
+- Owner setting: `agentNetworkWorkerEngine` = `openclaw` \| `ext` (default OpenClaw).
+- When Ext is selected: `createExtAgentChainSubtaskExecutor` → sync `forwardToAgent`
+  (`/message`); empty/async-only replies → `AN_ENGINE_FAIL`.
+- Readiness: Ext path requires bridge enabled + agent URL (propose/accept + local
+  “You” online). OpenClaw path still uses gateway readiness.
+- Ext skill advertisement for ranking: **not in this slice** (owner domains + role only).
 - Same fail semantics: honest failure → stall / reassign to another peer.
 
 ## 4. Error handling summary
@@ -85,5 +95,8 @@ the Assigner can reassign.
 | Policy (this doc) | `docs/agent-network-engine.md` |
 | Membership / skills vocabulary | `docs/agent-network-vocabulary.md` |
 | Worker accept → execute | `apps/node/src/chain-worker-executor.ts`, `buildChainWorkerDeps` |
+| Engine coerce / default | `apps/node/src/agent-network-worker-engine.ts` |
 | OpenClaw ask | `NodeService.askOpenClaw` / `askOpenClawViaRuntime` |
+| Ext ask (AN) | `NodeService.askExtAgent` → `forwardToAgent` |
 | Stall reassign | `apps/node/src/chain-orchestrator.ts` → `reassignStalledSubtask` |
+| Social picker | `AgentNetworkProfilePanel` → Team job engine |

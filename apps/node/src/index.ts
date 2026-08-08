@@ -2986,6 +2986,8 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
       }
 
       if (nodeService instanceof NodeServiceImpl) {
+        // Ensure Ext|OpenClaw AN engine cache is loaded before online (bind awaits hydrate).
+        await nodeService.hydrateAgentNetworkWorkerEngineFromDisk();
         nodeService.bindExternalMesh(mesh);
         // Wire relay.lookup deps for searchPeers. Without this, DHT-empty
         // networks (mobile 5G, blocked bootstrap DNS) cannot discover anyone

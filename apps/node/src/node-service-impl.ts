@@ -510,6 +510,10 @@ import { probeExtAgentReachability } from "./ext-agent-adapter/probe.js";
 import type { BridgeConfig } from "./bridge/config.js";
 import { forwardToAgent, receiveFromAgent } from "./bridge/index.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
+import {
+  coerceAgentNetworkWorkerEngine,
+  type AgentNetworkWorkerEngine,
+} from "./agent-network-worker-engine.js";
 
 import { executeTool, type MeshToolContext } from "./tool-registry.js";
 import { createMcpConsumerManager } from "./mcp-client-adapter.js";
@@ -1378,6 +1382,12 @@ class NodeServiceImpl implements NodeService {
 
   private _nodeStatus: NodeStatus = "offline";
   private _bridgeStatus: BridgeStatus | null = null;
+  /** Cached node-owner AN worker engine (default OpenClaw). */
+  private _agentNetworkWorkerEngine: AgentNetworkWorkerEngine = "openclaw";
+  /** Cached `bridgeEnabled` for sync Ext AN readiness. */
+  private _bridgeEnabledCached = true;
+  /** True after a successful hydrate from disk (or getNodeConfig / update). */
+  private _agentNetworkWorkerEngineHydrated = false;
   private _bridgeChatHandler: ((envelope: EnvoyEnvelope, remotePeerId: string) => Promise<void>) | null = null;
   /** Hot-apply Ext Agent URL without restarting the bridge HTTP server. */
   private _bridgeUpdateLiveConfig:
@@ -2222,6 +2232,20 @@ class NodeServiceImpl implements NodeService {
     this._externalMesh = mesh;
     this._nodeStatus = "running";
     this.emit("node:status", { status: this._nodeStatus, peerId: mesh.peerId });
+    // Prefer sync online when cache was already hydrated (CLI / startNode
+    // await hydrate before bind). Otherwise hydrate first so Team jobs don't
+    // see the default OpenClaw engine after a restart with Ext configured.
+    if (this._agentNetworkWorkerEngineHydrated) {
+      this._finishBindExternalMeshOnline(mesh);
+      return;
+    }
+    void this.hydrateAgentNetworkWorkerEngineFromDisk().then(() => {
+      if (this._externalMesh !== mesh) return;
+      this._finishBindExternalMeshOnline(mesh);
+    });
+  }
+
+  private _finishBindExternalMeshOnline(mesh: EnvoyMesh): void {
     this.emit("node:online", {
       peerId: mesh.peerId,
       multiaddrs: (mesh.multiaddrs ?? []).map((a) => a.toString()),
@@ -4319,6 +4343,95 @@ class NodeServiceImpl implements NodeService {
   /** True when the built-in OpenClaw gateway webhook is reachable. */
   isOpenClawReady(): boolean {
     return isOpenClawReadyViaRuntime(this._openClawState);
+  }
+
+  /** Node-owner choice: which engine runs Team-job steps on this node. */
+  getAgentNetworkWorkerEngine(): AgentNetworkWorkerEngine {
+    return this._agentNetworkWorkerEngine;
+  }
+
+  /** Ext Agent bridge has a URL and is enabled (sync gate for AN propose/accept). */
+  isExtAgentBridgeReady(): boolean {
+    if (this._bridgeEnabledCached === false) return false;
+    const url = this._bridgeStatus?.agentUrl?.trim();
+    return Boolean(url);
+  }
+
+  /**
+   * Sync ask to the active Ext Agent for Team-job subtasks.
+   * Requires a synchronous HTTP reply — async bridge replies are not accepted.
+   */
+  async askExtAgent(prompt: string): Promise<string> {
+    const bridgeCfg = await loadBridgeConfigFromProfile(this._profileDir).catch(() => null);
+    const snap = this._bridgeStatus;
+    const agentUrl = (snap?.agentUrl ?? bridgeCfg?.agentUrl)?.trim();
+    if (!agentUrl) {
+      throw new Error("Ext Agent is not configured (no agent URL)");
+    }
+    if (this._bridgeEnabledCached === false || bridgeCfg?.enabled === false) {
+      throw new Error("Ext Agent bridge is disabled");
+    }
+    const mesh = this._reachableMesh();
+    const ownerId = this._profile?.owner?.ownerId ?? "";
+    const reply = await forwardToAgent(
+      {
+        enabled: true,
+        agentUrl,
+        listenPort: bridgeCfg?.listenPort ?? 3031,
+        agentName: snap?.agentName ?? bridgeCfg?.agentName ?? "Ext Agent",
+        secret: bridgeCfg?.secret,
+      },
+      {
+        senderPeerId: mesh?.peerId ?? "local-team-job",
+        senderOwnerId: ownerId || "envoy:owner:local",
+        senderDisplayName: "Team job",
+        text: prompt,
+        messageId: crypto.randomUUID(),
+      },
+    );
+    const text = typeof reply === "string" ? reply.trim() : "";
+    if (!text) {
+      throw new Error(
+        "Ext Agent returned no synchronous reply (Team jobs require a sync /message response)",
+      );
+    }
+    return text;
+  }
+
+  private _refreshAgentNetworkWorkerEngineCache(cfg: {
+    agentNetworkWorkerEngine?: unknown;
+    bridgeEnabled?: boolean;
+  }): void {
+    this._agentNetworkWorkerEngine = coerceAgentNetworkWorkerEngine(
+      cfg.agentNetworkWorkerEngine,
+    );
+    if (typeof cfg.bridgeEnabled === "boolean") {
+      this._bridgeEnabledCached = cfg.bridgeEnabled;
+    }
+    this._agentNetworkWorkerEngineHydrated = true;
+  }
+
+  /**
+   * Load AN worker engine + bridgeEnabled from disk into the sync caches.
+   * Must run before the node accepts Team-job proposes (start / bindExternalMesh),
+   * not only when a client later calls getNodeConfig.
+   */
+  async hydrateAgentNetworkWorkerEngineFromDisk(): Promise<void> {
+    try {
+      const persisted = await this._configStore.load();
+      if (!persisted) {
+        // No config yet — still mark hydrated so bindExternalMesh can go online
+        // with defaults (openclaw / bridge on).
+        this._agentNetworkWorkerEngineHydrated = true;
+        return;
+      }
+      this._refreshAgentNetworkWorkerEngineCache({
+        agentNetworkWorkerEngine: persisted.agentNetworkWorkerEngine,
+        bridgeEnabled: persisted.bridgeEnabled,
+      });
+    } catch {
+      this._agentNetworkWorkerEngineHydrated = true;
+    }
   }
 
   private async _isOpenClawEnabled(): Promise<boolean> {
@@ -7352,6 +7465,10 @@ class NodeServiceImpl implements NodeService {
       callerFamilyProfileId: caller?.profileId,
       callerIsOwnerProfile: caller ? caller.isOwnerProfile : true,
     };
+    this._refreshAgentNetworkWorkerEngineCache({
+      agentNetworkWorkerEngine: config.agentNetworkWorkerEngine,
+      bridgeEnabled: config.bridgeEnabled,
+    });
     return redactNodeConfigForCaller(enriched as unknown as Record<string, unknown>, caller) as unknown as NodeConfig;
   }
 
@@ -7440,6 +7557,22 @@ class NodeServiceImpl implements NodeService {
         });
       }
       await updateNodeConfigViaRuntime(this._nodeConfigContext(), nodePatch as Partial<NodeConfig>);
+      try {
+        const persisted = await this._configStore.load();
+        if (persisted) {
+          this._refreshAgentNetworkWorkerEngineCache({
+            agentNetworkWorkerEngine: persisted.agentNetworkWorkerEngine,
+            bridgeEnabled: persisted.bridgeEnabled,
+          });
+        } else if (
+          Object.prototype.hasOwnProperty.call(nodePatch, "agentNetworkWorkerEngine") ||
+          Object.prototype.hasOwnProperty.call(nodePatch, "bridgeEnabled")
+        ) {
+          this._refreshAgentNetworkWorkerEngineCache(nodePatch as Partial<NodeConfig>);
+        }
+      } catch {
+        /* keep previous cache */
+      }
       // Phase 51B — keep owner profile aiBots in sync when node-config is updated.
       if (
         Array.isArray((nodePatch as Partial<NodeConfig>).aiBots) &&
@@ -7792,6 +7925,8 @@ class NodeServiceImpl implements NodeService {
   }
 
   async startNode(): Promise<void> {
+    // Persist AN engine choice into sync caches before mesh comes up / handlers run.
+    await this.hydrateAgentNetworkWorkerEngineFromDisk();
     if (this._deferredExternalMeshStart && this._nodeStatus !== "running") {
       await this._deferredExternalMeshStart();
       if (!this._mesh && !this._externalMesh) {

@@ -176,6 +176,8 @@ export async function getNodeConfigViaRuntime(
       capabilityProviderEnabled: config.capabilityProviderEnabled ?? false,
       capabilityProviderMandateId: config.capabilityProviderMandateId,
       agentNetworkProfile: config.agentNetworkProfile,
+      agentNetworkWorkerEngine:
+        config.agentNetworkWorkerEngine === "ext" ? "ext" : "openclaw",
       lanAutoBondEnabled: config.lanAutoBondEnabled ?? false,
       lanAutoBondFleetToken: config.lanAutoBondFleetToken,
       lanAutoBondAutoJoinAgentNetwork: config.lanAutoBondAutoJoinAgentNetwork,
@@ -228,6 +230,7 @@ export async function getNodeConfigViaRuntime(
       relayPublicWsUrl: ctx.getRelayPublicWsUrl() ?? undefined,
     bridgeEnabled: true,
     openclawEnabled: true,
+    agentNetworkWorkerEngine: "openclaw",
     piEnabled: true,
     piSettings: undefined,
     aiBots: [],

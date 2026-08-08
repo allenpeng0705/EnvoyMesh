@@ -158,6 +158,12 @@ export interface PersistedNodeConfig {
    * Owner-attested Agent Network profile (advertised when capability provider on).
    */
   agentNetworkProfile?: import("@envoymesh/protocol").AgentNetworkProfile;
+  /**
+   * Which local AI engine executes accepted Team-job subtasks on this node.
+   * Default `openclaw`. Independent of chat AI Engine toggles — see
+   * docs/agent-network-engine.md.
+   */
+  agentNetworkWorkerEngine?: "openclaw" | "ext";
   /** Phase 19 — bond autonomy posture (agent-driven bond acceptance). */
   bondAutonomyEnabled?: boolean;
   bondAutonomyMandateId?: string;

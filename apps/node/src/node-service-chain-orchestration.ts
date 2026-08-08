@@ -92,7 +92,15 @@ import {
   handleWorkerStatus,
   type ChainWorkerHandlerDeps,
 } from "./chain-worker.js";
-import { createOpenClawChainSubtaskExecutor, executeAcceptedSubtask } from "./chain-worker-executor.js";
+import {
+  coerceAgentNetworkWorkerEngine,
+  type AgentNetworkWorkerEngine,
+} from "./agent-network-worker-engine.js";
+import {
+  createExtAgentChainSubtaskExecutor,
+  createOpenClawChainSubtaskExecutor,
+  executeAcceptedSubtask,
+} from "./chain-worker-executor.js";
 import { requiresChainAwardApproval } from "./chain-sensitivity-gate.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 import type { MeshToolContext } from "./tool-registry.js";
@@ -240,6 +248,12 @@ export interface ChainOrchestrationContext {
   isOpenClawReady(): boolean;
   /** Ask Built-in OpenClaw (default AN worker engine). */
   askOpenClaw(prompt: string): Promise<string>;
+  /** Node-owner AN worker engine choice (`openclaw` | `ext`). */
+  getAgentNetworkWorkerEngine(): AgentNetworkWorkerEngine;
+  /** Ext Agent bridge ready enough to accept Team-job work. */
+  isExtAgentBridgeReady(): boolean;
+  /** Sync ask via active Ext Agent (Team jobs — empty/async reply = error). */
+  askExtAgent(prompt: string): Promise<string>;
 }
 
 /** Peer card cache plus the local Join'd worker (creator is also a worker). */
@@ -280,6 +294,10 @@ export function buildChainOrchestrationContext(host: any): ChainOrchestrationCon
     emit: (event, data) => host.emit(event, data),
     isOpenClawReady: () => Boolean(host.isOpenClawReady?.()),
     askOpenClaw: (prompt) => host.askOpenClaw(prompt),
+    getAgentNetworkWorkerEngine: () =>
+      coerceAgentNetworkWorkerEngine(host.getAgentNetworkWorkerEngine?.()),
+    isExtAgentBridgeReady: () => Boolean(host.isExtAgentBridgeReady?.()),
+    askExtAgent: (prompt) => host.askExtAgent(prompt),
   };
 }
 
@@ -851,13 +869,27 @@ export async function buildChainWorkerDeps(deps: ChainOrchestrationContext): Pro
       capabilityLocalEtaMs: baseStrategy.capabilityLocalEtaMs,
     },
     pendingBidExpirations: deps.getChainSideState().pendingBidExpirations,
-    // Default AN worker engine = Built-in OpenClaw (docs/agent-network-engine.md).
-    isAgentNetworkEngineReady: () => deps.isOpenClawReady(),
-    executeSubtask: createOpenClawChainSubtaskExecutor({
-      workerPeerId: agentIdentity.agentPeerId,
-      isOpenClawReady: () => deps.isOpenClawReady(),
-      askOpenClaw: (prompt) => deps.askOpenClaw(prompt),
-    }),
+    // Node-owner AN engine (docs/agent-network-engine.md) — not chosen by Assigner.
+    isAgentNetworkEngineReady: () => {
+      const engine = deps.getAgentNetworkWorkerEngine();
+      return engine === "ext" ? deps.isExtAgentBridgeReady() : deps.isOpenClawReady();
+    },
+    executeSubtask: async (subtask, onPartial, opts) => {
+      const engine = deps.getAgentNetworkWorkerEngine();
+      const exec =
+        engine === "ext"
+          ? createExtAgentChainSubtaskExecutor({
+              workerPeerId: agentIdentity.agentPeerId,
+              isExtAgentReady: () => deps.isExtAgentBridgeReady(),
+              askExtAgent: (prompt) => deps.askExtAgent(prompt),
+            })
+          : createOpenClawChainSubtaskExecutor({
+              workerPeerId: agentIdentity.agentPeerId,
+              isOpenClawReady: () => deps.isOpenClawReady(),
+              askOpenClaw: (prompt) => deps.askOpenClaw(prompt),
+            });
+      return exec(subtask, onPartial, opts);
+    },
     onObservedStatus: (orchestratorPeerId, payload) => {
       const snap: ObservedChainSnapshot = {
         chainId: payload.chainId,
@@ -1180,10 +1212,12 @@ export async function findAgentNetworkWorkersRanked(
     const isSelf = selfPeerId !== undefined && peerId === selfPeerId;
     const sameLan = sameLanByPeer.get(peerId) === true || isSelf;
     const transportId = transportByAgentPeer.get(peerId);
-    // Local agent is "online" for ranking only when Built-in OpenClaw (AN engine) is ready.
+    // Local agent is "online" for ranking only when the configured AN engine is ready.
     const online =
       isSelf
-        ? deps.isOpenClawReady?.() !== false
+        ? (deps.getAgentNetworkWorkerEngine() === "ext"
+          ? deps.isExtAgentBridgeReady()
+          : deps.isOpenClawReady() !== false)
         : Boolean(transportId);
     const viaRelay = !isSelf && online && transportId ? circuitIds.has(transportId) : false;
     const result = scoreAgentNetworkWorker({

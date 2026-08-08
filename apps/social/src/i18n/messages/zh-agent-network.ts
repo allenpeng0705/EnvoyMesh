@@ -21,6 +21,14 @@ export const zhAgentNetworkSettingsMessages = {
     joinHint:
       "默认关闭。开启后，对等节点可发现并对你的智能体打分以分配链步骤。无论是否开启，本地智能体仍可为你本人服务。",
     profileDesc: "由你声明的特质，对等节点在选择工作节点时用于打分。仅在开启「加入智能体网络」后对外共享。",
+    workerEngine: "协作任务引擎（本节点）",
+    workerEngineOpenClaw: "内置 OpenClaw",
+    workerEngineExt: "Ext Agent",
+    workerEngineHint:
+      "当对等节点把协作任务步骤分给本节点时，由该引擎执行。仅本机所有者可配置，任务创建者不能指定。",
+    workerEngineExtHint:
+      "使用当前 Ext Agent（{name}）。可在 设置 → AI → Ext Agent 更换产品。选此项时 OpenClaw 不执行协作任务步骤。",
+    workerEngineSaved: "协作任务引擎已保存",
     primaryRole: "协作角色",
     primaryRoleHint:
       "面向角色型团队任务的席位（如程序员、测试）。与技能分开，需手动设置；开启加入后会随 Agent Card 分享给对等节点。",

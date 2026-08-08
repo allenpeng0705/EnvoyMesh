@@ -718,6 +718,12 @@ export interface NodeConfig {
    * this node when selecting workers.
    */
   agentNetworkProfile?: import("@envoymesh/protocol").AgentNetworkProfile;
+  /**
+   * Which local AI engine runs accepted Team-job steps on this node.
+   * `"openclaw"` (default) or `"ext"` (active Ext Agent from bridge settings).
+   * Node-owner only — not chosen by the Team job creator.
+   */
+  agentNetworkWorkerEngine?: "openclaw" | "ext";
   /** Phase 19 — agent-driven inbound bond auto-accept. Default false. */
   bondAutonomyEnabled?: boolean;
   bondAutonomyMandateId?: string;

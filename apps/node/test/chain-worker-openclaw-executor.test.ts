@@ -2,7 +2,10 @@
  * Built-in OpenClaw as default Agent Network worker engine.
  */
 import { describe, expect, it, vi } from "vitest";
-import { createOpenClawChainSubtaskExecutor } from "../src/chain-worker-executor.js";
+import {
+  createExtAgentChainSubtaskExecutor,
+  createOpenClawChainSubtaskExecutor,
+} from "../src/chain-worker-executor.js";
 import {
   CHAIN_SUBTASK_PARTIAL_NOTE_MAX,
   type ChainSubtask,
@@ -159,5 +162,32 @@ describe("createOpenClawChainSubtaskExecutor", () => {
     expect(result.ok).toBe(true);
     expect(result.finalNote?.length).toBe(CHAIN_SUBTASK_PARTIAL_NOTE_MAX);
     expect(partials.at(-1)?.length).toBe(CHAIN_SUBTASK_PARTIAL_NOTE_MAX);
+  });
+});
+
+describe("createExtAgentChainSubtaskExecutor", () => {
+  it("fails honestly when Ext Agent bridge is not ready", async () => {
+    const executor = createExtAgentChainSubtaskExecutor({
+      workerPeerId: "envoy_agent_self",
+      isExtAgentReady: () => false,
+      askExtAgent: vi.fn(),
+    });
+    const result = await executor(sampleSubtask(), async () => undefined);
+    expect(result.ok).toBe(false);
+    expect(result.finalNote).toBe("ext_agent_unavailable");
+  });
+
+  it("asks Ext Agent and emits the final note", async () => {
+    const askExtAgent = vi.fn().mockResolvedValue("Ext result");
+    const executor = createExtAgentChainSubtaskExecutor({
+      workerPeerId: "envoy_agent_self",
+      isExtAgentReady: () => true,
+      askExtAgent,
+    });
+    const result = await executor(sampleSubtask(), async () => undefined);
+    expect(result.ok).toBe(true);
+    expect(result.finalNote).toBe("Ext result");
+    expect(askExtAgent).toHaveBeenCalledOnce();
+    expect(String(askExtAgent.mock.calls[0]?.[0])).toContain("Summarize local LLM trends");
   });
 });

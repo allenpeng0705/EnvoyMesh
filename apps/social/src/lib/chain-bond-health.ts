@@ -27,8 +27,9 @@ export interface ChainBondHealth {
   /** Peer has opted into the Agent Network (`agent-network-worker` on their card). */
   optIn: boolean;
   /**
-   * Local Agent Network engine ready (Built-in OpenClaw). Only set for the
-   * local "You" worker; undefined means unknown / remote peer.
+   * Local Agent Network engine ready (Built-in OpenClaw or Ext Agent per
+   * `agentNetworkWorkerEngine`). Only set for the local "You" worker;
+   * undefined means unknown / remote peer.
    */
   engineReady?: boolean;
   capabilityCount: number;
