@@ -467,6 +467,63 @@ function isRfc6598OverlayTcpDialHint(addr: string): boolean {
   return ip != null && isRfc6598CgnatIp(ip);
 }
 
+/** True when local + peer share an RFC 6598 overlay dial path (Tailscale-style). */
+export function hasRfc6598OverlayDialEvidence(
+  localListenAddrs: readonly string[] | undefined,
+  peerHints: readonly string[] | undefined,
+): boolean {
+  const localHasOverlay =
+    (localListenAddrs ?? []).some((a) => isRfc6598OverlayTcpDialHint(a)) ||
+    listLocalIpv4Addresses().some((ip) => isRfc6598CgnatIp(ip));
+  if (!localHasOverlay) return false;
+  return (peerHints ?? []).some((h) => isRfc6598OverlayTcpDialHint(h));
+}
+
+/**
+ * Prefer circuit under VPN only when home-LAN dials are unlikely to work:
+ * VPN up, no Tailscale-style 100.64 path, and no same-/24 evidence.
+ *
+ * Same-LAN + split-tunnel VPN must still reach Online-direct (previous behavior).
+ */
+export function shouldPreferCircuitUnderVpn(input: {
+  likelyVpnActive?: boolean;
+  localListenAddrs?: readonly string[];
+  peerHints?: readonly string[];
+}): boolean {
+  if (input.likelyVpnActive !== true) return false;
+  if (hasRfc6598OverlayDialEvidence(input.localListenAddrs, input.peerHints)) {
+    return false;
+  }
+  if (
+    hasSameSubnetLanDialEvidence(input.localListenAddrs, input.peerHints, {
+      hostNicFallback: Boolean(input.localListenAddrs?.length),
+    })
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** Drop home-LAN TCP hints when VPN is up and no overlay / same-LAN path (keep circuits + public). */
+export function filterDialHintsForVpn(input: {
+  hints: readonly string[];
+  likelyVpnActive?: boolean;
+  localListenAddrs?: readonly string[];
+}): string[] {
+  if (
+    !shouldPreferCircuitUnderVpn({
+      likelyVpnActive: input.likelyVpnActive,
+      localListenAddrs: input.localListenAddrs,
+      peerHints: input.hints,
+    })
+  ) {
+    return [...input.hints];
+  }
+  return input.hints.filter(
+    (h) => !isPrivateLanTcpDialHint(h) || isRfc6598OverlayTcpDialHint(h),
+  );
+}
+
 /** Prefer direct LAN/TCP dials when we have routable non-circuit hints; avoid jumping to relay on same network.
  *
  * **Cross-network safeguard:** If all direct TCP hints are private LAN (RFC1918 /
@@ -476,6 +533,10 @@ function isRfc6598OverlayTcpDialHint(addr: string): boolean {
  * **Same-subnet exception:** When `localListenAddrs` share a private /24 (or
  * RFC6598 overlay) with a peer LAN hint, prefer direct — both peers are on
  * the same LAN *right now*. `relay-only` profiles never take this exception.
+ *
+ * **VPN exception:** When VPN is active with neither same-/24 nor RFC6598
+ * overlay evidence, skip home RFC1918 (often black-holed) and prefer circuit.
+ * Same-LAN + split-tunnel VPN still uses the same-subnet exception for Direct.
  *
  * **Overlay exception:** RFC 6598 (`100.64/10`) direct TCP is mutually dialable
  * inside Tailscale/headscale. Treating it like RFC1918 would force Online-relay
@@ -488,6 +549,7 @@ export function shouldPreferCircuitDialHints(
   opts?: {
     localListenAddrs?: readonly string[];
     discoveryProfile?: string;
+    likelyVpnActive?: boolean;
   },
 ): boolean {
   const peerId = recipientPeerId?.trim() ?? "";
@@ -505,6 +567,12 @@ export function shouldPreferCircuitDialHints(
     ...dialHints.filter((h) => h.includes("/tcp/") && !h.includes("/p2p-circuit/")),
   ];
   const profile = opts?.discoveryProfile?.trim() ?? "";
+  const evidenceHints = [...dialableListen, ...dialHints];
+  const vpnSkipHomeLan = shouldPreferCircuitUnderVpn({
+    likelyVpnActive: opts?.likelyVpnActive,
+    localListenAddrs: opts?.localListenAddrs,
+    peerHints: evidenceHints,
+  });
 
   // relay-only: never LAN-first even on same subnet.
   if (profile === "relay-only") {
@@ -514,10 +582,22 @@ export function shouldPreferCircuitDialHints(
     );
   }
 
+  // VPN without Tailscale-style overlay: go to circuit immediately.
+  if (vpnSkipHomeLan && dialHints.some((h) => h.includes("/p2p-circuit/"))) {
+    return true;
+  }
+
   // Same-subnet / overlay evidence → prefer direct (wan-default safe path).
-  if (hasSameSubnetLanDialEvidence(opts?.localListenAddrs, [...dialableListen, ...dialHints], {
-    hostNicFallback: Boolean(opts?.localListenAddrs?.length),
-  })) {
+  // Skip RFC1918 same-subnet when VPN black-holes home LAN (overlay still OK).
+  if (
+    !vpnSkipHomeLan &&
+    hasSameSubnetLanDialEvidence(opts?.localListenAddrs, evidenceHints, {
+      hostNicFallback: Boolean(opts?.localListenAddrs?.length),
+    })
+  ) {
+    return false;
+  }
+  if (hasRfc6598OverlayDialEvidence(opts?.localListenAddrs, evidenceHints)) {
     return false;
   }
 
@@ -550,6 +630,7 @@ export function resolvePreferCircuitDialHints(
   opts?: {
     localListenAddrs?: readonly string[];
     discoveryProfile?: string;
+    likelyVpnActive?: boolean;
   },
 ): boolean {
   if (explicit === true) return true;

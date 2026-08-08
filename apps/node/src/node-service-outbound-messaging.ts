@@ -50,12 +50,16 @@ import {
 } from "./bond-warm-coordinator.js";
 import {
   buildOutboundDialHints,
+  filterDialHintsForVpn,
+  hasRfc6598OverlayDialEvidence,
   hasSameSubnetLanDialEvidence,
   mergeDialablePeerListenAddrs,
   shouldPreferCircuitDialHints,
+  shouldPreferCircuitUnderVpn,
   shouldRetainCircuitDialHints,
   isMultiaddrPeerIdsValid,
 } from "./outbound-dial-hints.js";
+import { detectLikelyVpnActive } from "./cgnat-detection.js";
 import { dialableInboundRemoteAddrs, mergeInboundPeerDialHintsIfDue } from "./inbound-dial-hint-learn.js";
 import { withOutboundSendLock } from "./outbound-send-lock.js";
 import {
@@ -74,6 +78,8 @@ import type { PersistedNodeConfig } from "./node-config-store.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 
 export const WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS = 10_000;
+/** Cap full warm dial when VPN is active so chat does not sit Offline for minutes. */
+export const WARM_CONTACT_VPN_DIAL_TIMEOUT_MS = 12_000;
 
 async function discoveryProfileFromConfig(
   ctx: Pick<OutboundMessagingContext, "loadConfig">,
@@ -1029,7 +1035,10 @@ export async function warmContactConnectionTransportViaRuntime(
     void mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
   }
 
-  let preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
+  const likelyVpnActive = detectLikelyVpnActive();
+  let preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId, {
+    likelyVpnActive,
+  });
   let sameSubnetLanFirst = false;
   try {
     const cfg = await ctx.loadConfig();
@@ -1048,9 +1057,19 @@ export async function warmContactConnectionTransportViaRuntime(
       /* best-effort */
     }
     const evidenceHints = [...(listenAddrs ?? []), ...rawDirListen, ...dialHints];
-    sameSubnetLanFirst = hasSameSubnetLanDialEvidence(localListen, evidenceHints, {
-      hostNicFallback: true,
+    const vpnSkipHomeLan = shouldPreferCircuitUnderVpn({
+      likelyVpnActive,
+      localListenAddrs: localListen,
+      peerHints: evidenceHints,
     });
+    sameSubnetLanFirst =
+      !vpnSkipHomeLan &&
+      hasSameSubnetLanDialEvidence(localListen, evidenceHints, {
+        hostNicFallback: true,
+      });
+    if (hasRfc6598OverlayDialEvidence(localListen, evidenceHints)) {
+      sameSubnetLanFirst = true;
+    }
     preferCircuitHints = shouldPreferCircuitDialHints(
       [...(listenAddrs ?? []), ...rawDirListen],
       dialHints,
@@ -1058,16 +1077,18 @@ export async function warmContactConnectionTransportViaRuntime(
       {
         localListenAddrs: localListen,
         discoveryProfile: profile || undefined,
+        likelyVpnActive,
       },
     );
     // lan-fast / empty: always LAN-first when any direct exists; same-subnet
     // evidence additionally enables the short private-LAN dial budget.
-    if (profile === "lan-fast" || profile === "") {
+    // Under commercial VPN, keep circuit preference (home LAN black-holes).
+    if (!vpnSkipHomeLan && (profile === "lan-fast" || profile === "")) {
       preferCircuitHints = false;
     }
-    // Explicit Relay→Direct: never prefer circuit; enable same-subnet LAN budget
-    // whenever we have private LAN evidence (including tcp/0 high ports).
-    if (options?.upgradeRelayToDirect === true) {
+    // Explicit Relay→Direct: never prefer circuit when LAN/overlay may work.
+    // Only skip the upgrade when VPN has neither same-LAN nor 100.64 evidence.
+    if (options?.upgradeRelayToDirect === true && !vpnSkipHomeLan) {
       preferCircuitHints = false;
       if (
         sameSubnetLanFirst ||
@@ -1075,7 +1096,16 @@ export async function warmContactConnectionTransportViaRuntime(
       ) {
         sameSubnetLanFirst = true;
       }
+    } else if (options?.upgradeRelayToDirect === true && vpnSkipHomeLan) {
+      // Cross-network VPN: stay on relay; home LAN dials would only delay.
+      return existing.connected ? existing : mesh.getPeerConnectionInfo(transportPeerId);
     }
+
+    dialHints = filterDialHintsForVpn({
+      hints: dialHints,
+      likelyVpnActive,
+      localListenAddrs: localListen,
+    });
   } catch {
     /* keep heuristic */
   }
@@ -1096,7 +1126,7 @@ export async function warmContactConnectionTransportViaRuntime(
     }
   }
 
-  const result = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
+  const warmPromise = mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
     dialHints,
     preferCircuitHints,
     sameSubnetLanFirst: sameSubnetLanFirst && !preferCircuitHints,
@@ -1104,6 +1134,14 @@ export async function warmContactConnectionTransportViaRuntime(
       options?.redial === true || !existing.connected || tearingDown,
     upgradeRelayToDirect: options?.upgradeRelayToDirect === true || options?.redial === true,
   });
+  let result: PeerConnectionInfo;
+  try {
+    result = likelyVpnActive
+      ? await raceWithTimeout(warmPromise, WARM_CONTACT_VPN_DIAL_TIMEOUT_MS, "warmContactVpnDial")
+      : await warmPromise;
+  } catch {
+    result = mesh.getPeerConnectionInfo(transportPeerId);
+  }
   void ctx.flushPendingRoomSyncs();
   void ctx.flushPendingRoomMessages();
   if (result.connected) {

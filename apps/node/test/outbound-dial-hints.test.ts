@@ -456,6 +456,74 @@ describe("shouldPreferCircuitDialHints", () => {
     const hints = ["/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWContact"];
     expect(shouldPreferCircuitDialHints([], hints, "12D3KooWContact")).toBe(true);
   });
+
+  it("keeps same-LAN Direct under VPN (split-tunnel); circuits only when cross-network", async () => {
+    const { shouldPreferCircuitDialHints } = await import("../src/outbound-dial-hints.js");
+    const listen = ["/ip4/192.168.3.85/tcp/4001"];
+    const peer = ["/ip4/192.168.3.78/tcp/4011/p2p/12D3KooWContact"];
+    const hints = [
+      ...peer,
+      "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWContact",
+    ];
+    // Same /24 + VPN → still prefer Direct (previous product behavior).
+    expect(
+      shouldPreferCircuitDialHints(peer, hints, "12D3KooWContact", {
+        localListenAddrs: listen,
+        likelyVpnActive: true,
+      }),
+    ).toBe(false);
+    // Different network + VPN → prefer circuit (skip black-holed home LAN).
+    expect(
+      shouldPreferCircuitDialHints(
+        ["/ip4/10.0.0.8/tcp/4011/p2p/12D3KooWContact"],
+        [
+          "/ip4/10.0.0.8/tcp/4011/p2p/12D3KooWContact",
+          "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWContact",
+        ],
+        "12D3KooWContact",
+        {
+          localListenAddrs: listen,
+          likelyVpnActive: true,
+        },
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps overlay-direct under VPN when both sides have 100.64 paths", async () => {
+    const { shouldPreferCircuitDialHints } = await import("../src/outbound-dial-hints.js");
+    const listen = ["/ip4/100.64.1.10/tcp/4001"];
+    const peer = ["/ip4/100.100.50.25/tcp/4011/p2p/12D3KooWContact"];
+    const hints = [
+      ...peer,
+      "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWContact",
+    ];
+    expect(
+      shouldPreferCircuitDialHints(peer, hints, "12D3KooWContact", {
+        localListenAddrs: listen,
+        likelyVpnActive: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("filterDialHintsForVpn strips home LAN only when VPN + cross-network", async () => {
+    const { filterDialHintsForVpn } = await import("../src/outbound-dial-hints.js");
+    const circuit =
+      "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWContact";
+    const sameLan = filterDialHintsForVpn({
+      hints: ["/ip4/192.168.3.78/tcp/4011", circuit],
+      likelyVpnActive: true,
+      localListenAddrs: ["/ip4/192.168.3.85/tcp/4001"],
+    });
+    expect(sameLan.some((h) => h.includes("192.168.3.78"))).toBe(true);
+
+    const crossNet = filterDialHintsForVpn({
+      hints: ["/ip4/10.0.0.8/tcp/4011", circuit],
+      likelyVpnActive: true,
+      localListenAddrs: ["/ip4/192.168.3.85/tcp/4001"],
+    });
+    expect(crossNet.some((h) => h.includes("10.0.0.8"))).toBe(false);
+    expect(crossNet.some((h) => h.includes("/p2p-circuit/"))).toBe(true);
+  });
 });
 
 describe("hasSameSubnetLanDialEvidence", () => {

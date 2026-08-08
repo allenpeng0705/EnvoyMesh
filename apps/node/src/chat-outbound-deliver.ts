@@ -14,8 +14,10 @@ import {
   hasSameSubnetLanDialEvidence,
   resolvePreferCircuitDialHints,
   shouldPreferCircuitDialHints,
+  shouldPreferCircuitUnderVpn,
   shouldRetainCircuitDialHints,
 } from "./outbound-dial-hints.js";
+import { detectLikelyVpnActive } from "./cgnat-detection.js";
 import {
   clearOutboundPeerFreshness,
   isOutboundPeerRecentlyVerified,
@@ -48,10 +50,12 @@ function dialPreferenceOpts(
 ): {
   localListenAddrs?: readonly string[];
   discoveryProfile?: string;
+  likelyVpnActive?: boolean;
 } {
   return {
     localListenAddrs: meshLocalListenAddrs(mesh),
     discoveryProfile: discoveryProfile?.trim() || undefined,
+    likelyVpnActive: detectLikelyVpnActive(),
   };
 }
 
@@ -63,11 +67,18 @@ function resolveSameSubnetLanFirst(input: {
   preferCircuitHints?: boolean;
 }): boolean {
   if (input.preferCircuitHints === true) return false;
-  return hasSameSubnetLanDialEvidence(
-    meshLocalListenAddrs(input.mesh),
-    [...(input.peerListenAddrs ?? []), ...input.dialHints],
-    { hostNicFallback: true },
-  );
+  const localListen = meshLocalListenAddrs(input.mesh);
+  const peerHints = [...(input.peerListenAddrs ?? []), ...input.dialHints];
+  if (
+    shouldPreferCircuitUnderVpn({
+      likelyVpnActive: detectLikelyVpnActive(),
+      localListenAddrs: localListen,
+      peerHints,
+    })
+  ) {
+    return false;
+  }
+  return hasSameSubnetLanDialEvidence(localListen, peerHints, { hostNicFallback: true });
 }
 
 export type OutboundDeliverMesh = Pick<
