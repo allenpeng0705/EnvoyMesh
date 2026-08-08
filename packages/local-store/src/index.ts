@@ -2141,7 +2141,10 @@ function isLikelyEphemeralTcpSnapshot(addr: string): boolean {
   if (!addr.includes("/tcp/")) {
     return false;
   }
-  const match = addr.match(/\/tcp\/(\d+)\//);
+  // Match `/tcp/N/` or bare `/tcp/N` — peer-directory often omits `/p2p/<id>`.
+  // The old `/tcp/(\d+)\//` regex left bare high-ports forever (stuck Online-Relay
+  // after tcp/0 restart: Mac kept dialing dead Win ports like …/tcp/57944).
+  const match = addr.match(/\/tcp\/(\d+)(?:\/|$)/);
   if (!match) {
     return false;
   }

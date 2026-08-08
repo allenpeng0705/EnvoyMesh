@@ -3028,10 +3028,32 @@ export class EnvoyMesh {
         if (before.direct || !canUpgradeRelayToDirect) {
           return before;
         }
-        // Relay→Direct: try LAN first WITHOUT dropping the working relay.
-        // Closing first caused Offline when tcp/0 high-port dials failed.
+        // Relay→Direct: refresh identify over the live circuit so peerstore has
+        // the peer's *current* tcp/0 LAN listen (directory often has dead ports
+        // from the previous process). Then try LAN WITHOUT dropping the relay.
         try {
+          await this.refreshPeerListenAddrsViaIdentify(peerIdStr);
+          try {
+            const freshLan = await this.getPeerStoreDialHints(peerIdStr, {
+              allowEphemeralPrivateLan: true,
+            });
+            if (freshLan.length > 0) {
+              hintList = filterDialHintsForOutboundSend(
+                [...hintList, ...freshLan],
+                peerIdStr,
+                hintFilterOpts,
+              );
+            }
+          } catch {
+            /* best-effort */
+          }
           const lanOnly = hintList.filter((h) => !h.includes("/p2p-circuit/"));
+          if (lanOnly.length === 0) {
+            console.warn(
+              `[network] relay→direct skipped for ${peerIdStr.slice(0, 12)}…: no LAN dial hints after identify`,
+            );
+            return before;
+          }
           const { stream } = await this.openOutboundStream(target, protocol, {
             ...sendOptions,
             dialHints: lanOnly,
@@ -3049,8 +3071,17 @@ export class EnvoyMesh {
           if (after.connected && after.direct) {
             return after;
           }
+          console.warn(
+            `[network] relay→direct still relay for ${peerIdStr.slice(0, 12)}… triedLan=${lanOnly
+              .slice(0, 3)
+              .join(",")}`,
+          );
           return before;
-        } catch {
+        } catch (err) {
+          console.warn(
+            `[network] relay→direct upgrade failed for ${peerIdStr.slice(0, 12)}…:`,
+            err instanceof Error ? err.message : err,
+          );
           return before;
         }
       }
@@ -3487,6 +3518,35 @@ export class EnvoyMesh {
       }
     }
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  }
+
+  /**
+   * Run identify on an existing (often limited/relay) connection so peerstore
+   * picks up the remote's current listen multiaddrs — required for Relay→Direct
+   * after both peers restart on tcp/0 (directory holds dead high ports).
+   */
+  private async refreshPeerListenAddrsViaIdentify(peerIdStr: string): Promise<void> {
+    const node = this.requireNode();
+    const identifySvc = (
+      node.services as {
+        identify?: { identify: (connection: unknown, options?: { signal?: AbortSignal }) => Promise<unknown> };
+      }
+    ).identify;
+    if (!identifySvc?.identify) {
+      return;
+    }
+    const candidates = [
+      this.findLimitedConnectionToPeer(node, peerIdStr),
+      this.findOpenConnectionToPeer(node, peerIdStr),
+    ].filter(Boolean);
+    for (const connection of candidates) {
+      try {
+        await identifySvc.identify(connection, { signal: AbortSignal.timeout(5_000) });
+        return;
+      } catch {
+        /* try next connection */
+      }
+    }
   }
 
   private findOpenConnectionToPeer(node: Libp2p, peerIdStr: string): any | undefined {
@@ -4349,7 +4409,11 @@ export class EnvoyMesh {
     // peer to the store first, subsequent mDNS re-discoveries are silent).
     typedNode.addEventListener("peer:connect", async (event: any) => {
       const remotePeerId = event.detail?.toString?.() ?? String(event.detail);
-      const multiaddrs = await this.getPeerStoreDialHints(remotePeerId);
+      // Include tcp/0 private-LAN listen addrs so discovery/warm can upgrade
+      // same-subnet Online-Relay → Direct after dual restart.
+      const multiaddrs = await this.getPeerStoreDialHints(remotePeerId, {
+        allowEphemeralPrivateLan: true,
+      });
       for (const handler of this.peerConnectHandlers) {
         handler({ peerId: remotePeerId, multiaddrs });
       }

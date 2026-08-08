@@ -1248,8 +1248,13 @@ export async function sendChatViaRuntime(
   ]);
 
   const conn = mesh.getPeerConnectionInfo(transportPeerId);
+  const libp2pConnected =
+    conn.connected || mesh.getConnectedPeerIds().includes(transportPeerId);
   let dialHints: string[];
-  if (conn.connected || mesh.getConnectedPeerIds().includes(transportPeerId)) {
+  // Direct + connected: reuse with empty hints. Relay / offline: keep circuit +
+  // LAN hints so the first attempt can open a stream without relying solely on
+  // a Mac-initiated inbound circuit (common Win→Mac failure after dual restart).
+  if (libp2pConnected && conn.direct) {
     dialHints = [];
   } else {
     dialHints = await raceWithTimeout(
@@ -1259,7 +1264,13 @@ export async function sendChatViaRuntime(
     );
   }
 
-  if (typeof mesh.scrubPeerStoreDialHints === "function") {
+  const sameSubnetForSend = hasSameSubnetLanDialEvidence(
+    mesh.multiaddrs,
+    [...(listenAddrs ?? []), ...dialHints],
+    { hostNicFallback: true },
+  );
+  // Same-subnet: do not scrub mDNS/identify tcp/0 listen addrs out of peerstore.
+  if (!sameSubnetForSend && typeof mesh.scrubPeerStoreDialHints === "function") {
     void mesh.scrubPeerStoreDialHints(
       transportPeerId,
       mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints),

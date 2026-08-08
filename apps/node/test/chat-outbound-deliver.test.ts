@@ -249,6 +249,78 @@ describe("deliverChatEnvelopeWithRetry", () => {
     expect(sendChatExpectReply).toHaveBeenCalledTimes(1);
   });
 
+  it("probes recently verified Online-Relay before send (Win→Mac)", async () => {
+    resetOutboundPeerFreshnessForTests();
+    const transportPeerId = "12D3KooWRelayVerified";
+    markOutboundPeerVerified(transportPeerId);
+    const sendChatExpectReply = vi.fn().mockResolvedValue({
+      intent: "chat.delivered",
+      payload: { messageId: "msg-relay-fresh", deliveredAt: new Date().toISOString() },
+    });
+    const ensurePeerReachable = vi.fn().mockResolvedValue({ connected: true, direct: false });
+    const mesh = {
+      sendChat: vi.fn(),
+      sendChatExpectReply,
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+      ensurePeerReachable,
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: false }),
+    };
+
+    await deliverChatEnvelopeWithRetry({
+      mesh,
+      transportPeerId,
+      envelope: { ...envelope, messageId: "msg-relay-fresh" },
+      dialHints: [
+        `/ip4/1.2.3.4/tcp/4001/p2p/12Relay/p2p-circuit/p2p/${transportPeerId}`,
+      ],
+      chatProtocol: "/envoy/chat/0.1",
+      maxAttempts: 1,
+    });
+
+    expect(ensurePeerReachable).toHaveBeenCalledWith(
+      transportPeerId,
+      "/envoy/chat/0.1",
+      expect.objectContaining({ verifyConnection: true }),
+    );
+    expect(sendChatExpectReply).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps live relay open across send retries", async () => {
+    const sendChatExpectReply = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Cannot open protocol stream on limited connection"))
+      .mockResolvedValueOnce({
+        intent: "chat.delivered",
+        payload: {
+          messageId: "msg-relay-retry",
+          recipientOwnerId: "envoy:owner:abc",
+          deliveredAt: "2026-05-28T12:00:00.000Z",
+        },
+      });
+    const closeConnectionsToPeer = vi.fn().mockResolvedValue(1);
+    const mesh = {
+      sendChat: vi.fn(),
+      sendChatExpectReply,
+      closeConnectionsToPeer,
+      ensurePeerReachable: vi.fn().mockResolvedValue({ connected: true, direct: false }),
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: false }),
+    };
+
+    await deliverChatEnvelopeWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWRelayRetry",
+      envelope: { ...envelope, messageId: "msg-relay-retry" },
+      dialHints: [
+        "/ip4/1.2.3.4/tcp/4001/p2p/12Relay/p2p-circuit/p2p/12D3KooWRelayRetry",
+      ],
+      chatProtocol: "/envoy/chat/0.1",
+      maxAttempts: 2,
+    });
+
+    expect(closeConnectionsToPeer).not.toHaveBeenCalled();
+    expect(sendChatExpectReply).toHaveBeenCalledTimes(2);
+  });
+
   it("retries after send failure on a connected direct path after pre-send verify", async () => {
     resetOutboundPeerFreshnessForTests();
     const sendChatExpectReply = vi
@@ -493,11 +565,11 @@ describe("resolveChatDeliveryAckTimeoutMs", () => {
 });
 
 describe("prepareOutboundPeerConnection freshness", () => {
-  it("skips verify for recently verified relay connections", async () => {
+  it("probes recently verified Online-Relay before treating path as fresh", async () => {
     resetOutboundPeerFreshnessForTests();
     const transportPeerId = "12D3KooWRelayFresh";
     markOutboundPeerVerified(transportPeerId);
-    const ensurePeerReachable = vi.fn();
+    const ensurePeerReachable = vi.fn().mockResolvedValue({ connected: true, direct: false });
     const mesh = {
       closeConnectionsToPeer: vi.fn(),
       ensurePeerReachable,
@@ -514,7 +586,11 @@ describe("prepareOutboundPeerConnection freshness", () => {
     });
 
     expect(ready).toBe(true);
-    expect(ensurePeerReachable).not.toHaveBeenCalled();
+    expect(ensurePeerReachable).toHaveBeenCalledWith(
+      transportPeerId,
+      "/envoy/chat/0.1",
+      expect.objectContaining({ verifyConnection: true }),
+    );
   });
 
   it("offline pre-send warm uses abortable budgeted dials", async () => {

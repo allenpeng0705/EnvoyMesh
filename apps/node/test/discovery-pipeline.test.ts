@@ -155,6 +155,19 @@ describe("handleMeshPeerDiscoveredViaRuntime", () => {
     expect(mergeHints).toHaveBeenCalledWith("12D3KooWPeerA", expect.any(Array));
   });
 
+  it("keeps same-subnet tcp/0 mDNS listen addrs in peerstore (Relay→Direct)", async () => {
+    const mergeHints = vi.fn().mockResolvedValue(undefined);
+    const ephemeralLan = ["/ip4/192.168.1.5/tcp/57944/p2p/12D3KooWPeerA"];
+    const mesh = {
+      multiaddrs: ["/ip4/192.168.1.10/tcp/4001"],
+      mergePeerStoreDialHints: mergeHints,
+    } as any;
+    const ctx = mockContext({ getReachableMesh: () => mesh });
+    await handleMeshPeerDiscoveredViaRuntime(ctx, "12D3KooWPeerA", ephemeralLan);
+
+    expect(mergeHints).toHaveBeenCalledWith("12D3KooWPeerA", ephemeralLan);
+  });
+
   // ---- Probe dispatch --------------------------------------------------
 
   it("calls probeNearbyPeerProfileAfterDiscovery for non-infrastructure peer", async () => {

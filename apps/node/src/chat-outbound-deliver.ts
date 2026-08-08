@@ -157,6 +157,7 @@ export async function prepareOutboundPeerConnection(input: {
     !input.forceFreshDial &&
     !upgradeRelayToDirect &&
     conn.connected &&
+    conn.direct &&
     isOutboundPeerRecentlyVerified(input.transportPeerId)
   ) {
     return true;
@@ -374,10 +375,19 @@ export async function deliverChatEnvelopeWithRetry(input: {
         }
       }
       hints = rotateDialHintsForRetry(hints, attempt);
-      const closed = await input.mesh.closeConnectionsToPeer(input.transportPeerId);
-      if (closed > 0) {
+      const beforeClose = input.mesh.getPeerConnectionInfo(input.transportPeerId);
+      // Closing a live relay before redial strands Win→Mac when the only path
+      // is a Mac-initiated circuit (Win often cannot recreate the reservation hop).
+      if (beforeClose.direct || !beforeClose.connected) {
+        const closed = await input.mesh.closeConnectionsToPeer(input.transportPeerId);
+        if (closed > 0) {
+          console.log(
+            `[sendChat] closed ${closed} stale connection(s) before retry ${attempt + 1}/${maxAttempts}`,
+          );
+        }
+      } else {
         console.log(
-          `[sendChat] closed ${closed} stale connection(s) before retry ${attempt + 1}/${maxAttempts}`,
+          `[sendChat] keeping live relay for retry ${attempt + 1}/${maxAttempts} (no close)`,
         );
       }
     } else {
@@ -385,11 +395,14 @@ export async function deliverChatEnvelopeWithRetry(input: {
       const preferCircuitsOnPrepare = preferCircuits || attempt >= 2;
       const needsRelayUpgrade =
         conn.connected && !conn.direct && !preferCircuitsOnPrepare && hasDirectTcpDialHints(hints);
-      // Verify stale direct/LAN paths before send; skip only when recently probed successful.
+      // Skip prepare only on a recently verified *direct* path. Inbound Mac→Win
+      // chat marks Win's peer verified even when the only libp2p conn is a
+      // Mac-initiated relay circuit that cannot carry Win→Mac streams reliably.
       const skipPrepare =
         !needsRelayUpgrade &&
-        isOutboundPeerRecentlyVerified(input.transportPeerId) &&
-        (conn.connected || canExpectAck);
+        conn.connected &&
+        conn.direct &&
+        isOutboundPeerRecentlyVerified(input.transportPeerId);
       if (!skipPrepare) {
         const ready = await prepareOutboundChatConnection({
           mesh: input.mesh,
@@ -476,7 +489,7 @@ export async function deliverChatEnvelopeWithRetry(input: {
 }
 
 async function trySendChatWithoutAck(input: {
-  mesh: Pick<EnvoyMesh, "sendChat" | "closeConnectionsToPeer">;
+  mesh: Pick<EnvoyMesh, "sendChat" | "closeConnectionsToPeer" | "getPeerConnectionInfo">;
   transportPeerId: string;
   envelope: EnvoyEnvelope;
   dialHints: string[];
@@ -490,9 +503,14 @@ async function trySendChatWithoutAck(input: {
     dialPreferenceOpts(input.mesh, input.discoveryProfile),
   );
   try {
-    const closed = await input.mesh.closeConnectionsToPeer(input.transportPeerId);
-    if (closed > 0) {
-      console.log(`[sendChat] closed ${closed} stale connection(s) before ack-less fallback`);
+    const beforeClose = input.mesh.getPeerConnectionInfo(input.transportPeerId);
+    if (beforeClose.direct || !beforeClose.connected) {
+      const closed = await input.mesh.closeConnectionsToPeer(input.transportPeerId);
+      if (closed > 0) {
+        console.log(`[sendChat] closed ${closed} stale connection(s) before ack-less fallback`);
+      }
+    } else {
+      console.log("[sendChat] keeping live relay for ack-less fallback (no close)");
     }
     await input.mesh.sendChat(
       input.transportPeerId,

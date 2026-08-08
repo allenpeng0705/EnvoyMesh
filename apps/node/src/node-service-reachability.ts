@@ -11,7 +11,10 @@ import {
   shouldPersistPeerDiscoverySeeds,
 } from "./peer-discovery-telemetry.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
-import { mergeDialablePeerListenAddrs } from "./outbound-dial-hints.js";
+import {
+  hasSameSubnetLanDialEvidence,
+  mergeDialablePeerListenAddrs,
+} from "./outbound-dial-hints.js";
 import { isOutboundPeerRecentlyVerified } from "./outbound-peer-freshness.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
 import { NEARBY_PROFILE_PROBE_COOLDOWN_MS } from "./node-service-identity.js";
@@ -191,8 +194,16 @@ export async function handleMeshPeerDiscoveredViaRuntime(
     }
     const mesh = ctx.getReachableMesh();
     if (mesh && multiaddrs.length > 0) {
-      const dialable = mergeDialablePeerListenAddrs(peerId, multiaddrs);
-      void mesh.mergePeerStoreDialHints(peerId, dialable);
+      // mergeDialable strips tcp/0 high ports — but same-LAN nodes listen on
+      // tcp/0, and those mDNS/identify addrs are required for Relay→Direct.
+      // mergePeerStoreDialHints already keeps ephemeral private-LAN hints.
+      const sameSubnet = hasSameSubnetLanDialEvidence(mesh.multiaddrs, multiaddrs, {
+        hostNicFallback: true,
+      });
+      void mesh.mergePeerStoreDialHints(
+        peerId,
+        sameSubnet ? multiaddrs : mergeDialablePeerListenAddrs(peerId, multiaddrs),
+      );
     }
     const profile = ctx.getProfile();
     if (mesh && profile && peerId === mesh.peerId) {
@@ -372,6 +383,15 @@ export async function warmAllBondedContactsViaRuntime(ctx: ReachabilityContext):
     try {
       const info = await ctx.getPeerConnectionInfo(bond.peerOwnerId);
       if (info.connected) {
+        // Stuck Online-Relay on same LAN: keep trying Relay→Direct even when
+        // recently verified (inbound chat marks freshness without a direct path).
+        if (!info.direct) {
+          lastBondWarmAt.set(bond.peerOwnerId, now);
+          await ctx.warmContactConnection(bond.peerOwnerId, {
+            upgradeRelayToDirect: true,
+          });
+          continue;
+        }
         try {
           const { transportPeerId } = await ctx.resolvePeerTransportForOwner(bond.peerOwnerId);
           // Optimized+ always skips recently verified; Smart/Aggressive also treat
