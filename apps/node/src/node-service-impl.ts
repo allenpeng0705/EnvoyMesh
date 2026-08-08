@@ -10804,7 +10804,8 @@ class NodeServiceImpl implements NodeService {
           try {
             await raceWithTimeout(
               this.warmContactConnection(ownerId),
-              6_000,
+              // Align with warm phase-1 (hints 5s + LAN 8s); do not wait full WAN.
+              14_000,
               `chainProbeWarm(${ownerId.slice(0, 16)}…)`,
             );
           } catch {

@@ -76,10 +76,24 @@ import { isLibp2pPeerId } from "./profile-sync-outbound.js";
 import { webrtcCallTrace, webrtcCallWarn, shortCallId } from "./webrtc-call-trace.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
+import {
+  ensureReachableWithLanFirstBudget,
+  raceWithTimeout,
+  WARM_CONTACT_DIAL_BUDGET_MS,
+  WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS,
+  WARM_CONTACT_SAME_SUBNET_BUDGET_MS,
+  WARM_CONTACT_SAME_SUBNET_EPHEMERAL_BUDGET_MS,
+  WARM_CONTACT_VPN_DIAL_TIMEOUT_MS,
+} from "./outbound-warm-dial.js";
 
-export const WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS = 10_000;
-/** Cap full warm dial when VPN is active so chat does not sit Offline for minutes. */
-export const WARM_CONTACT_VPN_DIAL_TIMEOUT_MS = 12_000;
+export {
+  raceWithTimeout,
+  WARM_CONTACT_DIAL_BUDGET_MS,
+  WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS,
+  WARM_CONTACT_SAME_SUBNET_BUDGET_MS,
+  WARM_CONTACT_SAME_SUBNET_EPHEMERAL_BUDGET_MS,
+  WARM_CONTACT_VPN_DIAL_TIMEOUT_MS,
+};
 
 async function discoveryProfileFromConfig(
   ctx: Pick<OutboundMessagingContext, "loadConfig">,
@@ -94,32 +108,6 @@ async function discoveryProfileFromConfig(
 }
 
 export type TransportCacheEntry = { peerId: string; listenAddrs?: string[] };
-
-/** Unblocks when an underlying fs read or mutex never settles (seen on some Windows setups). */
-export function raceWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const t = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      reject(new Error(`${label} timed out after ${ms}ms`));
-    }, ms);
-    promise.then(
-      (v) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(t);
-        resolve(v);
-      },
-      (e) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(t);
-        reject(e);
-      },
-    );
-  });
-}
 
 export interface OutboundMessagingContext {
   loadConfig(): Promise<PersistedNodeConfig | undefined>;
@@ -1149,22 +1137,22 @@ export async function warmContactConnectionTransportViaRuntime(
     }
   }
 
-  const warmPromise = mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
+  const forceFreshDial =
+    options?.redial === true || !existing.connected || tearingDown;
+  const upgradeRelayToDirect =
+    options?.upgradeRelayToDirect === true || options?.redial === true;
+
+  const result = await ensureReachableWithLanFirstBudget({
+    mesh,
+    transportPeerId,
+    protocol: ENVOY_CHAT_PROTOCOL,
     dialHints,
     preferCircuitHints,
-    sameSubnetLanFirst: sameSubnetLanFirst && !preferCircuitHints,
-    forceFreshDial:
-      options?.redial === true || !existing.connected || tearingDown,
-    upgradeRelayToDirect: options?.upgradeRelayToDirect === true || options?.redial === true,
+    sameSubnetLanFirst,
+    forceFreshDial,
+    upgradeRelayToDirect,
+    likelyVpnActive,
   });
-  let result: PeerConnectionInfo;
-  try {
-    result = likelyVpnActive
-      ? await raceWithTimeout(warmPromise, WARM_CONTACT_VPN_DIAL_TIMEOUT_MS, "warmContactVpnDial")
-      : await warmPromise;
-  } catch {
-    result = mesh.getPeerConnectionInfo(transportPeerId);
-  }
   void ctx.flushPendingRoomSyncs();
   void ctx.flushPendingRoomMessages();
   if (result.connected) {

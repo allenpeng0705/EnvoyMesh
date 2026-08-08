@@ -33,6 +33,7 @@ function makeCtx(overrides: Partial<OutboundMessagingContext> = {}): OutboundMes
   const transportCache = new Map<string, { peerId: string; listenAddrs?: string[] }>();
   const mesh = {
     peerId: "12D3KooWSelfUnitTest",
+    multiaddrs: ["/ip4/10.0.0.1/tcp/4001"],
     getPeerConnectionInfo: vi.fn(() => ({ connected: true, direct: true })),
     getConnectedPeerIds: vi.fn(() => [TRANSPORT_ID]),
     ensurePeerReachable: vi.fn(async () => ({ connected: true, direct: true })),
@@ -40,6 +41,7 @@ function makeCtx(overrides: Partial<OutboundMessagingContext> = {}): OutboundMes
     probeBondedPeerConnection: vi.fn(async () => ({ connected: true, direct: true })),
     mergePeerStoreDialHints: vi.fn(async () => {}),
     scrubPeerStoreDialHints: vi.fn(async () => []),
+    getPeerStoreDialHints: vi.fn(async () => [] as string[]),
     sendChat: vi.fn(async () => {}),
   };
 
@@ -202,6 +204,87 @@ describe("warmContactConnectionTransportViaRuntime", () => {
     expect(info).toEqual({ connected: true, direct: false });
     expect(mesh.ensurePeerReachable).not.toHaveBeenCalled();
   });
+
+  it("same-subnet warm dials LAN-only (no circuit walk) so Checking… stays short", async () => {
+    const lan = `/ip4/10.0.0.2/tcp/4011/p2p/${TRANSPORT_ID}`;
+    const circuit = `/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${TRANSPORT_ID}`;
+    const ctx = makeCtx({
+      dialHintsForChat: async () => [lan, circuit],
+      loadConfig: async () => ({ discoveryProfile: "lan-fast" }) as never,
+    });
+    const mesh = ctx.requireMesh();
+    vi.mocked(mesh.getPeerConnectionInfo).mockReturnValue({ connected: false, direct: false });
+    vi.mocked(mesh.ensurePeerReachable).mockResolvedValue({ connected: true, direct: true });
+
+    const info = await warmContactConnectionTransportViaRuntime(ctx, TRANSPORT_ID, [lan], {
+      force: true,
+    });
+
+    expect(info).toEqual({ connected: true, direct: true });
+    expect(mesh.ensurePeerReachable).toHaveBeenCalledOnce();
+    const opts = vi.mocked(mesh.ensurePeerReachable).mock.calls[0]?.[2] as {
+      dialHints?: string[];
+      sameSubnetLanFirst?: boolean;
+    };
+    expect(opts.sameSubnetLanFirst).toBe(true);
+    expect(opts.dialHints).toEqual([lan]);
+    expect(opts.dialHints?.some((h) => h.includes("/p2p-circuit/"))).toBe(false);
+  });
+
+  it("same-subnet phase-2 restores circuit hints when LAN warm misses", async () => {
+    const lan = `/ip4/10.0.0.2/tcp/4011/p2p/${TRANSPORT_ID}`;
+    const circuit = `/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${TRANSPORT_ID}`;
+    const ctx = makeCtx({
+      dialHintsForChat: async () => [lan, circuit],
+      loadConfig: async () => ({ discoveryProfile: "lan-fast" }) as never,
+    });
+    const mesh = ctx.requireMesh();
+    vi.mocked(mesh.getPeerConnectionInfo).mockReturnValue({ connected: false, direct: false });
+    vi.mocked(mesh.ensurePeerReachable)
+      .mockResolvedValueOnce({ connected: false, direct: false })
+      .mockResolvedValueOnce({ connected: true, direct: false });
+
+    const info = await warmContactConnectionTransportViaRuntime(ctx, TRANSPORT_ID, [lan], {
+      force: true,
+    });
+
+    expect(info).toEqual({ connected: true, direct: false });
+    expect(mesh.ensurePeerReachable).toHaveBeenCalledTimes(2);
+    const phase1 = vi.mocked(mesh.ensurePeerReachable).mock.calls[0]?.[2] as {
+      dialHints?: string[];
+    };
+    const phase2 = vi.mocked(mesh.ensurePeerReachable).mock.calls[1]?.[2] as {
+      dialHints?: string[];
+      sameSubnetLanFirst?: boolean;
+    };
+    expect(phase1.dialHints).toEqual([lan]);
+    expect(phase2.dialHints).toEqual([lan, circuit]);
+    expect(phase2.sameSubnetLanFirst).toBe(true);
+  });
+
+  it("ephemeral-only same-subnet skips LAN-only phase when circuits exist", async () => {
+    const lanEphemeral = `/ip4/10.0.0.2/tcp/57944/p2p/${TRANSPORT_ID}`;
+    const circuit = `/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${TRANSPORT_ID}`;
+    const ctx = makeCtx({
+      dialHintsForChat: async () => [lanEphemeral, circuit],
+      loadConfig: async () => ({ discoveryProfile: "lan-fast" }) as never,
+    });
+    const mesh = ctx.requireMesh();
+    vi.mocked(mesh.getPeerConnectionInfo).mockReturnValue({ connected: false, direct: false });
+    vi.mocked(mesh.ensurePeerReachable).mockResolvedValue({ connected: true, direct: false });
+
+    await warmContactConnectionTransportViaRuntime(ctx, TRANSPORT_ID, [lanEphemeral], {
+      force: true,
+    });
+
+    expect(mesh.ensurePeerReachable).toHaveBeenCalledOnce();
+    const opts = vi.mocked(mesh.ensurePeerReachable).mock.calls[0]?.[2] as {
+      dialHints?: string[];
+      signal?: AbortSignal;
+    };
+    expect(opts.dialHints).toEqual([lanEphemeral, circuit]);
+    expect(opts.signal).toBeInstanceOf(AbortSignal);
+  });
 });
 
 describe("warmContactConnectionViaRuntime", () => {
@@ -232,6 +315,10 @@ describe("getPeerConnectionInfoViaRuntime", () => {
   });
 
   it("returns libp2p snapshot without probing (probe runs on send / warm verifyConnection)", async () => {
+    const { resetOutboundPeerFreshnessForTests } = await import(
+      "../src/outbound-peer-freshness.js"
+    );
+    resetOutboundPeerFreshnessForTests();
     const ctx = makeCtx();
     const mesh = ctx.requireMesh() as {
       getPeerConnectionInfo: ReturnType<typeof vi.fn>;

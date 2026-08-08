@@ -516,6 +516,36 @@ describe("prepareOutboundPeerConnection freshness", () => {
     expect(ready).toBe(true);
     expect(ensurePeerReachable).not.toHaveBeenCalled();
   });
+
+  it("offline pre-send warm uses abortable budgeted dials", async () => {
+    resetOutboundPeerFreshnessForTests();
+    const transportPeerId = "12D3KooWOfflineWarm";
+    const ensurePeerReachable = vi.fn().mockResolvedValue({ connected: true, direct: true });
+    const mesh = {
+      multiaddrs: ["/ip4/10.0.0.1/tcp/4001"],
+      closeConnectionsToPeer: vi.fn(),
+      ensurePeerReachable,
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: false, direct: false }),
+    };
+
+    const ready = await prepareOutboundPeerConnection({
+      mesh,
+      transportPeerId,
+      protocol: "/envoy/chat/0.1",
+      dialHints: [
+        `/ip4/10.0.0.2/tcp/4011/p2p/${transportPeerId}`,
+        `/ip4/1.2.3.4/tcp/4001/p2p/12Relay/p2p-circuit/p2p/${transportPeerId}`,
+      ],
+      preferCircuitHints: false,
+      forceFreshDial: false,
+      peerListenAddrs: [`/ip4/10.0.0.2/tcp/4011/p2p/${transportPeerId}`],
+    });
+
+    expect(ready).toBe(true);
+    expect(ensurePeerReachable).toHaveBeenCalled();
+    const opts = ensurePeerReachable.mock.calls[0]?.[2] as { signal?: AbortSignal };
+    expect(opts.signal).toBeInstanceOf(AbortSignal);
+  });
 });
 
 describe("deliverChatEnvelopeWithRetry ack timeout", () => {

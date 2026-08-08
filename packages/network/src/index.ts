@@ -317,6 +317,8 @@ export interface MeshOutboundOptions {
   dialTimeoutMs?: number;
   /** Private-LAN timeout when {@link sameSubnetLanFirst} is set. Default 3s. */
   privateLanDialTimeoutMs?: number;
+  /** Abort in-flight dials when an outer warm/send budget elapses. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -2971,6 +2973,9 @@ export class EnvoyMesh {
     protocol: string = ENVOY_CHAT_PROTOCOL,
     sendOptions?: MeshOutboundOptions,
   ): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }> {
+    if (sendOptions?.signal?.aborted) {
+      return { connected: false, direct: false };
+    }
     // Self-dial guard: skip if the target is the local node (by peer ID in
     // the multiaddr or direct peer ID match). Wrapped in try/catch because
     // requireNode() throws if the node isn't started.
@@ -3318,6 +3323,9 @@ export class EnvoyMesh {
       // (Win auto-bond after mesh.dial PASS → send redial).
       // Only circuit multiaddrs need the flag — not every dial when
       // preferCircuitHints is set (LAN TCP hints stay unlimited).
+      if (sendOptions?.signal?.aborted) {
+        throw new Error("outbound dial aborted");
+      }
       const addrStr = String(addr);
       const needsLimited = addrStr.includes("/p2p-circuit");
       const privateLan =
@@ -3326,14 +3334,23 @@ export class EnvoyMesh {
         isPrivateLanTcpDialHint(addrStr);
       const ephemeralPrivateLan =
         privateLan && isLikelyInboundConnSnapshotDialHint(addrStr);
+      // Same-subnet warm already knows LAN should win — do not burn the full
+      // 45s WAN circuit budget per leftover relay hint while UI shows Checking…
+      const sameSubnetCircuitFastFail =
+        sendOptions?.sameSubnetLanFirst === true && needsLimited;
       const dialTimeoutMs = ephemeralPrivateLan
         ? (sendOptions?.privateLanDialTimeoutMs ?? EPHEMERAL_PRIVATE_LAN_HINT_DIAL_TIMEOUT_MS)
         : privateLan
           ? (sendOptions?.privateLanDialTimeoutMs ?? PRIVATE_LAN_HINT_DIAL_TIMEOUT_MS)
-          : (sendOptions?.dialTimeoutMs ?? HINT_DIAL_TIMEOUT_MS);
+          : sameSubnetCircuitFastFail
+            ? Math.min(sendOptions?.dialTimeoutMs ?? 5_000, 5_000)
+            : (sendOptions?.dialTimeoutMs ?? HINT_DIAL_TIMEOUT_MS);
+      const dialOpts: { runOnLimitedConnection?: boolean; signal?: AbortSignal } = {};
+      if (needsLimited) dialOpts.runOnLimitedConnection = true;
+      if (sendOptions?.signal) dialOpts.signal = sendOptions.signal;
       const stream = await promiseWithTimeout(
-        needsLimited
-          ? node.dialProtocol(addr as any, protocol, { runOnLimitedConnection: true })
+        Object.keys(dialOpts).length > 0
+          ? node.dialProtocol(addr as any, protocol, dialOpts)
           : node.dialProtocol(addr as any, protocol),
         dialTimeoutMs,
         `dial ${addrStr.slice(0, 64)}`,
@@ -3380,6 +3397,9 @@ export class EnvoyMesh {
         sortDialHints(hints, { sameSubnetLanFirst: sendOptions?.sameSubnetLanFirst === true }),
         peerIdStr,
       )) {
+        if (sendOptions?.signal?.aborted) {
+          throw new Error("outbound dial aborted");
+        }
         const addrStr = String(ma);
         if (
           sendOptions?.sameSubnetLanFirst === true &&
@@ -3396,6 +3416,9 @@ export class EnvoyMesh {
           return await dialOnce(ma);
         } catch (e) {
           lastError = e;
+          if (sendOptions?.signal?.aborted) {
+            throw e instanceof Error ? e : new Error(String(e));
+          }
         }
       }
       return undefined;

@@ -23,6 +23,7 @@ import {
   isOutboundPeerRecentlyVerified,
   markOutboundPeerVerified,
 } from "./outbound-peer-freshness.js";
+import { ensureReachableWithLanFirstBudget } from "./outbound-warm-dial.js";
 import { withOutboundSendLock } from "./outbound-send-lock.js";
 import { webrtcCallTrace, webrtcCallWarn, shortCallId } from "./webrtc-call-trace.js";
 
@@ -148,11 +149,7 @@ export async function prepareOutboundPeerConnection(input: {
     peerListenAddrs: input.peerListenAddrs,
     preferCircuitHints: input.preferCircuitHints,
   });
-  const warmOpts = {
-    dialHints: input.dialHints,
-    preferCircuitHints: input.preferCircuitHints,
-    sameSubnetLanFirst,
-  };
+  const likelyVpnActive = detectLikelyVpnActive();
   const conn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
   const upgradeRelayToDirect = conn.connected && !conn.direct && !input.preferCircuitHints;
 
@@ -179,11 +176,28 @@ export async function prepareOutboundPeerConnection(input: {
     return true;
   }
 
+  const warmReachable = async (opts: {
+    forceFreshDial?: boolean;
+    upgradeRelayToDirect?: boolean;
+    verifyConnection?: boolean;
+  }) =>
+    ensureReachableWithLanFirstBudget({
+      mesh: input.mesh,
+      transportPeerId: input.transportPeerId,
+      protocol: input.protocol,
+      dialHints: input.dialHints,
+      preferCircuitHints: input.preferCircuitHints,
+      sameSubnetLanFirst,
+      forceFreshDial: opts.forceFreshDial,
+      upgradeRelayToDirect: opts.upgradeRelayToDirect,
+      verifyConnection: opts.verifyConnection,
+      likelyVpnActive,
+    });
+
   const redialFresh = async (): Promise<boolean> => {
     try {
       await input.mesh.closeConnectionsToPeer(input.transportPeerId);
-      const result = await input.mesh.ensurePeerReachable(input.transportPeerId, input.protocol, {
-        ...warmOpts,
+      const result = await warmReachable({
         forceFreshDial: true,
         upgradeRelayToDirect,
       });
@@ -208,7 +222,7 @@ export async function prepareOutboundPeerConnection(input: {
 
   if (!conn.connected) {
     try {
-      const result = await input.mesh.ensurePeerReachable(input.transportPeerId, input.protocol, warmOpts);
+      const result = await warmReachable({});
       if (result.connected) {
         markOutboundPeerVerified(input.transportPeerId);
       }
@@ -224,10 +238,7 @@ export async function prepareOutboundPeerConnection(input: {
 
   // libp2p may report "open" while NAT/TCP is half-dead (common on Windows LAN paths).
   try {
-    const verified = await input.mesh.ensurePeerReachable(input.transportPeerId, input.protocol, {
-      ...warmOpts,
-      verifyConnection: true,
-    });
+    const verified = await warmReachable({ verifyConnection: true });
     if (verified.connected) {
       markOutboundPeerVerified(input.transportPeerId);
       return true;
