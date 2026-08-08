@@ -610,6 +610,7 @@ import {
   chainGetStateViaRuntime,
   chainLaunchViaRuntime,
   chainListActiveViaRuntime,
+  chainListObservedViaRuntime,
   chainListRecipesViaRuntime,
   chainListReportsViaRuntime,
   chainPinReportViaRuntime,
@@ -1460,6 +1461,8 @@ class NodeServiceImpl implements NodeService {
     showCostUi: new Map<string, boolean>(),
     pendingExtendSteps: new Map(),
     iterationObservers: new Map<string, string>(),
+    observedChains: new Map(),
+    lastStatusBroadcastAt: new Map<string, number>(),
   } as const;
 
   /** Latest QR / `getPairingPayload` token for optional companion auto-pair (short TTL). */
@@ -10516,6 +10519,12 @@ class NodeServiceImpl implements NodeService {
 
   async chainListActive(_params?: ChainListActiveParams): Promise<ChainListActiveResult> {
     return chainListActiveViaRuntime(this._chainContext());
+  }
+
+  async chainListObserved(
+    params?: import("@envoymesh/api").ChainListObservedParams,
+  ): Promise<import("@envoymesh/api").ChainListObservedResult> {
+    return chainListObservedViaRuntime(this._chainContext(), params);
   }
 
   async chainCancel(params: ChainCancelParams): Promise<ChainCancelResult> {

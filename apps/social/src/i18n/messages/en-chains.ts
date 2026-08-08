@@ -17,6 +17,7 @@ export const chainsMessages = {
     bidding: "Bidding",
     assigning: "Assigning",
     waitingWorkers: "Waiting for workers",
+    participating: "Participating",
     running: "Running",
     synthesizing: "Synthesizing",
     awaitingOwner: "Awaiting your decision",
@@ -88,7 +89,14 @@ export const chainsMessages = {
     finalized: "This team job is complete — see the report.",
     cancelled: "This team job was cancelled.",
     directAssignHint:
-      "Direct assign is on — the first available worker is awarded automatically. Enable competitive bidding in Team job defaults if you want cost ranking.",
+      "Direct assign is on — workers are offered the step and awarded as soon as they confirm ready (no cost auction). Turn on competitive bidding in Team job defaults only if you want cost ranking.",
+    observedHint:
+      "You are a worker on this job. You can watch progress here; only the assigner can manage or cancel it.",
+  },
+  observed: {
+    title: "Jobs you’re on",
+    empty: "No jobs from other assigners yet.",
+    readOnly: "View only",
   },
   tree: {
     title: "Subtask tree",
@@ -96,6 +104,7 @@ export const chainsMessages = {
     mandateId: "Mandate",
     empty: "No subtasks yet.",
     stateBidding: "Bidding",
+    stateAssigning: "Assigning",
     stateAwarded: "Awarded",
     stateRunning: "Running",
     statePartial: "Partial",
@@ -104,6 +113,7 @@ export const chainsMessages = {
     stateFailed: "Failed",
     stateTitle: "State: {state}",
     bidsCount: "{count} bid(s)",
+    readyCount: "{count} ready",
     workerStateAwarded: "Awarded",
     workerStateRunning: "Running",
     workerStatePartial: "Partial",

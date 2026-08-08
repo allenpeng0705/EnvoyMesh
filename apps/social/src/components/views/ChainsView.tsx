@@ -11,7 +11,13 @@
  */
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import type { BondRecord, CachedAgentCardSummary, ChainGetStateResult, ChainWorkerReachability } from "@envoymesh/api";
+import type {
+  BondRecord,
+  CachedAgentCardSummary,
+  ChainGetStateResult,
+  ChainObservedStatus,
+  ChainWorkerReachability,
+} from "@envoymesh/api";
 import { useT } from "../../context/I18nContext.js";
 import { useToast } from "../../hooks/useToast.js";
 import { useNodeService, useAgentCards, useTransportWsOpen } from "../../hooks/useNodeService.js";
@@ -35,7 +41,15 @@ interface ChainSummary {
   chainId: string;
   chainMandateId: string;
   goal?: string;
-  status: "bidding" | "waitingWorkers" | "running" | "synthesizing" | "awaitingOwner" | "completed" | "cancelled";
+  status:
+    | "bidding"
+    | "assigning"
+    | "waitingWorkers"
+    | "running"
+    | "synthesizing"
+    | "awaitingOwner"
+    | "completed"
+    | "cancelled";
   subtaskCount: number;
   awardedCount: number;
   completedCount: number;
@@ -60,6 +74,7 @@ function deriveStatus(r: {
   cancelledCount: number;
   bidsBySubtask?: ChainGetStateResult["bidsBySubtask"];
   iteration?: ChainGetStateResult["iteration"];
+  awardMode?: ChainGetStateResult["awardMode"];
 }): ChainSummary["status"] {
   if (r.chainCancelled || r.cancelledCount === r.subtaskCount) return "cancelled";
   if (r.published) return "completed";
@@ -67,9 +82,13 @@ function deriveStatus(r: {
   if (r.partialCount === r.subtaskCount && r.subtaskCount > 0) return "synthesizing";
   const bidCount = (r.bidsBySubtask ?? []).reduce((n, row) => n + row.bids.length, 0);
   if (r.awardedCount === 0 && bidCount === 0 && r.subtaskCount > 0) return "waitingWorkers";
-  if (r.awardedCount < r.subtaskCount) return "bidding";
+  // Direct assign: worker ACK is still task.chain.bid on the wire, but the UI
+  // must not say "Bidding" — that label is reserved for competitive mode.
+  const preAward =
+    r.awardMode === "competitive" ? ("bidding" as const) : ("assigning" as const);
+  if (r.awardedCount < r.subtaskCount) return preAward;
   if (r.awardedCount > 0) return "running";
-  return "bidding";
+  return preAward;
 }
 
 /** Map a ChainGetStateResult to our local ChainSummary. */
@@ -122,6 +141,7 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
   const { bonds, nodeConfig } = useNodeState();
   const agentCards = useAgentCards();
   const [chains, setChains] = useState<ChainSummary[]>([]);
+  const [observed, setObserved] = useState<ChainObservedStatus[]>([]);
   const [viewingReport, setViewingReport] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [confirm, setConfirm] = useState<{
@@ -261,6 +281,12 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
     } catch (err) {
       console.error("[ChainsView] failed to load active chains:", err);
     }
+    try {
+      const obs = await nodeService.chainListObserved?.();
+      setObserved(obs?.chains ?? []);
+    } catch (err) {
+      console.error("[ChainsView] failed to load observed chains:", err);
+    }
   }, [nodeService]);
 
   useEffect(() => {
@@ -273,7 +299,7 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
   const loadReachability = useCallback(async () => {
     const ownerIds = bonds.filter((b) => b.level !== "blocked").map((b) => b.peerOwnerId);
     if (ownerIds.length === 0) {
-      setReachabilityByOwner(new Map());
+      setReachabilityByOwner((prev) => (prev.size === 0 ? prev : new Map()));
       return;
     }
     try {
@@ -300,7 +326,7 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
   }, [nodeService, wsOpen, nodeService.isConnected]);
 
   useEffect(() => {
-    const unsub = nodeService.on("chain:state", (state) => {
+    const unsubState = nodeService.on("chain:state", (state) => {
       setChains((prev) => {
         const next = asChainSummary(state);
         const idx = prev.findIndex((c) => c.chainId === next.chainId);
@@ -308,7 +334,17 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
         return prev.map((c, i) => (i === idx ? next : c));
       });
     });
-    return unsub;
+    const unsubObserved = nodeService.on("chain:observed", (snap) => {
+      setObserved((prev) => {
+        const idx = prev.findIndex((c) => c.chainId === snap.chainId);
+        if (idx < 0) return [snap, ...prev];
+        return prev.map((c, i) => (i === idx ? snap : c));
+      });
+    });
+    return () => {
+      unsubState();
+      unsubObserved();
+    };
   }, [nodeService]);
 
   const handleCancel = useCallback(
@@ -605,9 +641,7 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
                         ? "👤"
                         : "⏳"}
                 {" "}
-                {chain.status === "bidding" && chain.awardMode !== "competitive"
-                  ? t("chains.status.assigning")
-                  : t(`chains.status.${chain.status}`)}
+                {t(`chains.status.${chain.status}`)}
               </span>
               <code className="chain-id">{chain.chainId.slice(0, 12)}…</code>
             </div>
@@ -686,6 +720,40 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
           </div>
         ))
       )}
+
+      {observed.length > 0 ? (
+        <section className="chains-observed" data-testid="chains-observed">
+          <h4 className="chains-empty__contacts-title">{t("chains.observed.title")}</h4>
+          <p className="chains-empty__contacts-desc">{t("chains.detail.observedHint")}</p>
+          {observed.map((job) => (
+            <div key={job.chainId} className="chain-card chain-card--observed">
+              <div className="chain-card-header">
+                <span className={`chain-status-badge status-${job.phase}`}>
+                  {t(
+                    `chains.status.${
+                      job.phase === "bidding" && job.awardMode !== "competitive"
+                        ? "assigning"
+                        : job.phase
+                    }`,
+                  )}
+                </span>
+                <span className="chain-observed-readonly">{t("chains.observed.readOnly")}</span>
+                <code className="chain-id">{job.chainId.slice(0, 12)}…</code>
+              </div>
+              {job.goal ? <p className="chain-card-goal">{job.goal}</p> : null}
+              <div className="chain-card-progress">
+                <span>
+                  {t("chains.active.progress", {
+                    partial: job.partialCount,
+                    awarded: job.awardedCount,
+                    total: job.subtaskCount,
+                  })}
+                </span>
+              </div>
+            </div>
+          ))}
+        </section>
+      ) : null}
 
       {/* Opted-in contacts with agent cards — include offline so the list
           is not empty while reachability is warming. Online badge still

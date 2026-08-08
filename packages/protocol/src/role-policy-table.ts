@@ -86,6 +86,7 @@ const INTENT_ROLE_POLICIES: Record<string, readonly RolePair[]> = {
   "task.chain.merge": AGENT_AGENT_ONLY,
   "task.chain.cancel": AGENT_AGENT_ONLY,
   "task.chain.heartbeat": AGENT_AGENT_ONLY,
+  "task.chain.status": AGENT_AGENT_ONLY,
   "task.chain.report": AGENT_TO_HUMAN,
   // Phase 40E — Cross-orchestrator + cross-home chains.
   // All four are agent↔agent. The owner (acting as the owner's agent

@@ -293,6 +293,9 @@ export interface NodeServiceClient {
   chainLaunch(params: ChainLaunchParams): Promise<ChainLaunchResult>;
   chainGetState(params: ChainGetStateParams): Promise<ChainGetStateResult>;
   chainListActive(params?: ChainListActiveParams): Promise<ChainListActiveResult>;
+  chainListObserved?(
+    params?: import("@envoymesh/api").ChainListObservedParams,
+  ): Promise<import("@envoymesh/api").ChainListObservedResult>;
   chainCancel(params: ChainCancelParams): Promise<ChainCancelResult>;
   chainListReports(params?: ChainListReportsParams): Promise<ChainListReportsResult>;
   chainGetReport(params: ChainGetReportParams): Promise<ChainGetReportResult>;
@@ -1066,6 +1069,12 @@ function createWsNodeServiceClient(
     },
     async chainListActive(params?: ChainListActiveParams) {
       return wsClient.rpc("chainListActive", (params ?? {}) as unknown as Record<string, unknown>) as unknown as Promise<ChainListActiveResult>;
+    },
+    async chainListObserved(params?: import("@envoymesh/api").ChainListObservedParams) {
+      return wsClient.rpc(
+        "chainListObserved",
+        (params ?? {}) as unknown as Record<string, unknown>,
+      ) as unknown as Promise<import("@envoymesh/api").ChainListObservedResult>;
     },
     async chainCancel(params: ChainCancelParams) {
       return wsClient.rpc("chainCancel", params as unknown as Record<string, unknown>) as unknown as Promise<ChainCancelResult>;

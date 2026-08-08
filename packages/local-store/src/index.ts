@@ -282,6 +282,8 @@ export type AuditEventType =
   | "chain.depth_exceeded"
   | "chain.budget_exceeded"
   | "chain.bid_expired"
+  | "chain.status_received"
+  | "chain.status_broadcast"
   // Phase 40E / 47 — handoff + iteration observability
   | "chain.handoff.request_received"
   | "chain.handoff.delegate_received"

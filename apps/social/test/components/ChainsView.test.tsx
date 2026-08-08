@@ -9,16 +9,38 @@ import { ToastProvider } from "../../src/hooks/useToast.js";
 import { I18nTestProvider } from "../../src/context/I18nContext.js";
 
 export const chainListActive = vi.fn();
+export const chainListObserved = vi.fn();
 export const chainCancel = vi.fn();
 
 const mockNodeService = {
   chainListActive,
+  chainListObserved,
   chainCancel,
+  chainProbeReachability: vi.fn(async () => ({ rows: [] })),
+  refreshAgentNetworkWorkers: vi.fn(async () => ({})),
+  getLocalAgentNetworkWorkerCard: vi.fn(async () => undefined),
+  getOpenClawStatus: vi.fn(async () => ({ running: false })),
+  isConnected: true,
   on: vi.fn(() => () => {}),
 };
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => mockNodeService,
+  useTransportWsOpen: () => true,
+  useAgentCards: () => [],
+  useIsInProcessMobileNode: () => false,
+}));
+
+// Stable references — a fresh `bonds: []` / `nodeConfig: {}` per call
+// retriggers ChainsView reachability effects → infinite setState → OOM.
+const mockNodeState = {
+  bonds: [] as const,
+  nodeConfig: { capabilityProviderEnabled: false },
+  profile: null,
+  refreshNodeConfig: () => undefined,
+};
+vi.mock("../../src/context/NodeStateContext.js", () => ({
+  useNodeState: () => mockNodeState,
 }));
 
 function renderChainsView() {
@@ -34,6 +56,7 @@ function renderChainsView() {
 describe("ChainsView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    chainListObserved.mockResolvedValue({ chains: [] });
   });
   afterEach(() => {
     cleanup();
@@ -43,10 +66,8 @@ describe("ChainsView", () => {
     chainListActive.mockResolvedValueOnce({ chains: [] });
     renderChainsView();
     await waitFor(() => {
-      // New empty state invites the user to click "New team job"
       expect(screen.getByText(/No active team jobs yet/)).toBeDefined();
-      expect(screen.getByText(/solo node cannot run multi-agent/i)).toBeDefined();
-      expect(screen.getByText(/Join Agent Network/i)).toBeDefined();
+      expect(screen.getAllByText(/Join Agent Network/i).length).toBeGreaterThan(0);
     });
   });
 
@@ -188,20 +209,13 @@ describe("ChainsView", () => {
       expect(screen.getByText(/1\/1 of 2 subtasks|Assigning|Running/i)).toBeDefined();
     });
 
-    // Click the Cancel button on the active chain card
     const cancelBtns = document.querySelectorAll("button");
     const cancelBtn = Array.from(cancelBtns).find((b) => b.textContent === "Cancel");
     expect(cancelBtn).toBeTruthy();
     cancelBtn && fireEvent.click(cancelBtn);
 
-    // ConfirmDialog should now be rendered — scope to the alertdialog so
-    // the trigger "Cancel" button on the chain card is not matched. The
-    // dialog's confirm button is labeled with `chains.active.cancel` so
-    // it also reads "Cancel"; the alertdialog is the unique structural
-    // anchor that distinguishes the two.
     const dialog = await screen.findByRole("alertdialog");
     const dialogCancelBtns = within(dialog).getAllByRole("button", { name: "Cancel" });
-    // The confirm button is the rightmost action inside the dialog
     expect(dialogCancelBtns.length).toBe(2);
     const confirmBtn = dialogCancelBtns[dialogCancelBtns.length - 1];
     if (!confirmBtn) throw new Error("ConfirmDialog confirm button not found");
@@ -237,5 +251,34 @@ describe("ChainsView", () => {
     await waitFor(() => {
       expect(screen.getByText(/Published/)).toBeDefined();
     });
+  });
+
+  it("renders observed worker jobs as view-only (no Bidding in direct mode)", async () => {
+    chainListActive.mockResolvedValueOnce({ chains: [] });
+    chainListObserved.mockResolvedValueOnce({
+      chains: [
+        {
+          chainId: "chain_obs_001",
+          goal: "Help with research",
+          phase: "waitingWorkers",
+          awardMode: "direct",
+          subtaskCount: 1,
+          awardedCount: 0,
+          partialCount: 0,
+          bidCount: 0,
+          steps: [],
+          orchestratorPeerId: "12D3KooW-orch",
+          updatedAt: new Date().toISOString(),
+          readOnly: true as const,
+        },
+      ],
+    });
+    renderChainsView();
+    await waitFor(() => {
+      expect(screen.getByTestId("chains-observed")).toBeDefined();
+      expect(screen.getByText(/Waiting for workers/i)).toBeDefined();
+      expect(screen.getByText(/View only/i)).toBeDefined();
+    });
+    expect(screen.queryByText(/^Bidding$/i)).toBeNull();
   });
 });

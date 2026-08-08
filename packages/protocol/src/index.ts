@@ -84,6 +84,8 @@ export const EnvoyIntentSchema = z.enum([
   "task.chain.merge",
   "task.chain.cancel",
   "task.chain.heartbeat",
+  /** Orchestrator → workers: read-only job progress snapshot (no manage/cancel). */
+  "task.chain.status",
   "task.chain.report",
   // Phase 40E — Cross-orchestrator + cross-home chains
   "task.chain.handoff",
@@ -4189,6 +4191,8 @@ export {
   TaskChainMergePayloadSchema,
   TaskChainCancelPayloadSchema,
   TaskChainHeartbeatPayloadSchema,
+  TaskChainStatusStepSchema,
+  TaskChainStatusPayloadSchema,
   TaskChainReportPayloadSchema,
   parseChainMandate,
   parseChainSubtask,
@@ -4220,6 +4224,8 @@ export type {
   TaskChainMergePayload,
   TaskChainCancelPayload,
   TaskChainHeartbeatPayload,
+  TaskChainStatusStep,
+  TaskChainStatusPayload,
   TaskChainReportPayload,
 } from "./agent-network.js";
 

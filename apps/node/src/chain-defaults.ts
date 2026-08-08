@@ -28,6 +28,26 @@ export const CHAIN_AUTO_EVALUATE_MS = 30_000;
 /** Direct mode: award as soon as the first worker responds. */
 export const CHAIN_DIRECT_AUTO_EVALUATE_MS = 0;
 
+/**
+ * How long to wait for the first bid after a propose before re-proposing
+ * (and eventually trying a backup worker). Cap separately from post-award
+ * stallTimeoutMs so bidding deadlocks recover faster.
+ */
+export const CHAIN_BID_WAIT_MS = 30_000;
+
+/** Max re-propose attempts per subtask while stuck with zero bids. */
+export const CHAIN_PROPOSE_RETRY_CAP = 2;
+
+/**
+ * How long after award (with no partial) before re-sending task.chain.accept.
+ * Covers mesh flakes where evaluateBids reserved state but the accept envelope
+ * never reached the worker.
+ */
+export const CHAIN_ACCEPT_RESEND_WAIT_MS = 20_000;
+
+/** Max accept re-sends per awarded subtask with zero partials. */
+export const CHAIN_ACCEPT_RESEND_CAP = 3;
+
 export interface ChainGoalTemplate {
   id: string;
   label: string;

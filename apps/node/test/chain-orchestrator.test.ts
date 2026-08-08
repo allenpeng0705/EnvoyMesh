@@ -36,12 +36,16 @@ import {
   planChain,
   publishChainReport,
   reassignStalledSubtask,
+  retryStaleProposals,
+  retryStaleAccepts,
+  buildChainStatusPayload,
   sendChainAccept,
   sendChainPropose,
   synthesizeChain,
   trackChain,
   type ChainOrchestratorHandlerDeps,
 } from "../src/chain-orchestrator.js";
+import { CHAIN_ACCEPT_RESEND_WAIT_MS, CHAIN_BID_WAIT_MS } from "../src/chain-defaults.js";
 import { TaskChainPartialPayloadSchema, type ChainSubtaskBid, type EnvoyEnvelope, type TaskChainPartialPayload, type TaskChainReportPayload } from "@envoymesh/protocol";
 import { ChainSubtaskBidSchema, ChainSubtaskPartialSchema } from "@envoymesh/protocol";
 import { generateKeyPairSync } from "node:crypto";
@@ -296,6 +300,165 @@ describe("launchChain", () => {
     );
     expect(advanced.proposed).toBe(1);
     expect(state.proposedSubtasks.has("subtask_a")).toBe(true);
+  });
+
+  it("buildChainStatusPayload uses waitingWorkers then assigning/bidding by mode", () => {
+    const state = createChainState(mandate());
+    state.subtasks.set("subtask_a", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      chainMandateId: "chainmandate_test-1",
+      depth: 1,
+      requiredSkill: "task.execute",
+      objective: "step one",
+      requestedResult: "r1",
+      constraints: [],
+      dependsOn: [],
+      createdAt: NOW.toISOString(),
+    });
+    state.proposedSubtasks.add("subtask_a");
+    const waiting = buildChainStatusPayload(state, { awardMode: "direct", goal: "g" });
+    expect(waiting.phase).toBe("waitingWorkers");
+    expect(waiting.bidCount).toBe(0);
+    expect(waiting.readOnly).toBe(true);
+    expect(waiting.steps[0]?.state).toBe("offered");
+
+    state.bids.set("subtask_a::12D3KooW-w1", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      workerPeerId: "12D3KooW-w1",
+      workerOwnerId: "envoy:owner:w1",
+      proposedCostUsd: 0,
+      proposedEtaAt: new Date(NOW.getTime() + 60_000).toISOString(),
+      bidExpiresAt: new Date(NOW.getTime() + 120_000).toISOString(),
+      capability: "task.execute",
+      createdAt: NOW.toISOString(),
+    });
+    const direct = buildChainStatusPayload(state, { awardMode: "direct", goal: "g" });
+    expect(direct.phase).toBe("assigning");
+    expect(direct.bidCount).toBe(1);
+    const competitive = buildChainStatusPayload(state, { awardMode: "competitive" });
+    expect(competitive.phase).toBe("bidding");
+  });
+
+  it("retryStaleAccepts re-sends accept with subtask when no partial arrives", async () => {
+    const deps = makeDeps();
+    const state = createChainState(mandate());
+    const subtask = {
+      version: "0.1" as const,
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      chainMandateId: "chainmandate_test-1",
+      depth: 1,
+      requiredSkill: "task.execute",
+      objective: "step one",
+      requestedResult: "r1",
+      constraints: [] as string[],
+      dependsOn: [] as string[],
+      createdAt: NOW.toISOString(),
+    };
+    state.subtasks.set("subtask_a", subtask);
+    state.awards.set("subtask_a", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      workerPeerId: "12D3KooW-w1",
+      negotiationRound: 1,
+      acceptedCostUsd: 0,
+      deadlineAt: new Date(NOW.getTime() + 3600_000).toISOString(),
+      createdAt: NOW.toISOString(),
+    });
+    state.awardedAt.set("subtask_a", NOW.toISOString());
+
+    const early = await retryStaleAccepts(deps, state, {
+      waitMs: CHAIN_ACCEPT_RESEND_WAIT_MS,
+      nowMs: NOW.getTime() + 1_000,
+    });
+    expect(early.resent).toEqual([]);
+
+    const first = await retryStaleAccepts(deps, state, {
+      waitMs: CHAIN_ACCEPT_RESEND_WAIT_MS,
+      nowMs: NOW.getTime() + CHAIN_ACCEPT_RESEND_WAIT_MS + 1,
+    });
+    expect(first.resent).toEqual(["subtask_a"]);
+    const accepts = deps.sentEnvelopes.filter((e) => e.envelope.intent === "task.chain.accept");
+    expect(accepts).toHaveLength(1);
+    expect((accepts[0]!.payload as { subtask?: { subtaskId: string } }).subtask?.subtaskId).toBe(
+      "subtask_a",
+    );
+  });
+
+  it("retryStaleProposals re-proposes preferred worker then tries backup after bid wait", async () => {
+    const deps = makeDeps();
+    const state = createChainState(mandate());
+    state.subtasks.set("subtask_a", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      chainMandateId: "chainmandate_test-1",
+      depth: 1,
+      requiredSkill: "task.execute",
+      objective: "step one",
+      requestedResult: "r1",
+      constraints: [],
+      dependsOn: [],
+      preferredWorkerPeerId: "12D3KooW-w1",
+      createdAt: NOW.toISOString(),
+    });
+    await launchChain(deps, state, {
+      subtask_a: ["12D3KooW-w1", "12D3KooW-w2"],
+    });
+    expect(state.proposedSubtasks.has("subtask_a")).toBe(true);
+    const proposesAfterLaunch = deps.sentEnvelopes.filter(
+      (e) => e.envelope.intent === "task.chain.propose",
+    ).length;
+    expect(proposesAfterLaunch).toBe(1);
+    expect(deps.sentEnvelopes.some((e) => e.recipientPeerId === "12D3KooW-w1")).toBe(true);
+
+    // Too early — no retry.
+    const early = await retryStaleProposals(deps, state, {
+      bidWaitMs: CHAIN_BID_WAIT_MS,
+      nowMs: NOW.getTime() + 1_000,
+    });
+    expect(early.retried).toEqual([]);
+
+    // First retry: same preferred worker.
+    const first = await retryStaleProposals(deps, state, {
+      bidWaitMs: CHAIN_BID_WAIT_MS,
+      nowMs: NOW.getTime() + CHAIN_BID_WAIT_MS + 1,
+    });
+    expect(first.retried).toEqual(["subtask_a"]);
+    const proposesAfterFirst = deps.sentEnvelopes.filter(
+      (e) => e.envelope.intent === "task.chain.propose",
+    );
+    expect(proposesAfterFirst.length).toBe(2);
+    expect(proposesAfterFirst[1]!.recipientPeerId).toBe("12D3KooW-w1");
+    expect(
+      deps.auditEvents.some(
+        (e) => e.type === "chain.subtask_proposed" && String(e.summary).includes("propose_retry"),
+      ),
+    ).toBe(true);
+
+    // Second retry: backup worker.
+    const second = await retryStaleProposals(deps, state, {
+      bidWaitMs: CHAIN_BID_WAIT_MS,
+      nowMs: NOW.getTime() + 2 * CHAIN_BID_WAIT_MS + 2,
+    });
+    expect(second.retried).toEqual(["subtask_a"]);
+    const proposesAfterSecond = deps.sentEnvelopes.filter(
+      (e) => e.envelope.intent === "task.chain.propose",
+    );
+    expect(proposesAfterSecond.length).toBe(3);
+    expect(proposesAfterSecond[2]!.recipientPeerId).toBe("12D3KooW-w2");
+
+    // Cap — no more retries.
+    const capped = await retryStaleProposals(deps, state, {
+      bidWaitMs: CHAIN_BID_WAIT_MS,
+      nowMs: NOW.getTime() + 3 * CHAIN_BID_WAIT_MS + 3,
+    });
+    expect(capped.retried).toEqual([]);
   });
 
   it("defers dependents until parents finish, then advances with parent context", async () => {

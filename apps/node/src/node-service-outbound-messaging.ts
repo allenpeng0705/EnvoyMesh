@@ -207,22 +207,42 @@ export async function dialHintsForChatViaRuntime(
 ): Promise<string[]> {
   const config = await ctx.loadConfig();
   const mesh = ctx.getReachableMesh();
+  const localListen = mesh?.multiaddrs;
+  // Same-subnet: pull mDNS/identify high-port LAN from peerstore (tcp/0 listeners).
+  // Stable-only getPeerStoreDialHints previously dropped the only Direct path.
+  const evidenceForSubnet = [
+    ...(peerListenAddrs ?? []),
+    ...(localListen ?? []),
+  ];
+  let rawDirListen: string[] = [];
+  try {
+    rawDirListen = (await ctx.peerDirectoryStore.listPeerRecords())
+      .filter((r) => r.peerId === recipientPeerId)
+      .flatMap((r) => r.listenAddrs ?? []);
+  } catch {
+    /* best-effort */
+  }
+  const sameSubnet = hasSameSubnetLanDialEvidence(
+    localListen,
+    [...evidenceForSubnet, ...rawDirListen],
+    { hostNicFallback: true },
+  );
   const peerStoreAddrs =
     mesh && typeof mesh.getPeerStoreDialHints === "function"
-      ? await mesh.getPeerStoreDialHints(recipientPeerId)
+      ? await mesh.getPeerStoreDialHints(recipientPeerId, {
+          allowEphemeralPrivateLan: sameSubnet,
+        })
       : [];
-  const mergedListen = mergeDialablePeerListenAddrs(
-    recipientPeerId,
-    peerListenAddrs,
-    peerStoreAddrs,
-  );
+  const mergedListen = sameSubnet
+    ? [...new Set([...(peerListenAddrs ?? []), ...rawDirListen, ...peerStoreAddrs])]
+    : mergeDialablePeerListenAddrs(recipientPeerId, peerListenAddrs, peerStoreAddrs);
   return buildOutboundDialHints({
     recipientPeerId,
     peerListenAddrs: mergedListen.length ? mergedListen : peerListenAddrs,
     discoverySeedStore: ctx.getDiscoverySeedStore(),
     config,
     profileDir: ctx.getProfileDir(),
-    localListenAddrs: mesh?.multiaddrs,
+    localListenAddrs: localListen,
     addressFilter,
   });
 }
@@ -1030,11 +1050,6 @@ export async function warmContactConnectionTransportViaRuntime(
     return mesh.getPeerConnectionInfo(transportPeerId);
   }
 
-  const dialableListen = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
-  if (typeof mesh.scrubPeerStoreDialHints === "function") {
-    void mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
-  }
-
   const likelyVpnActive = detectLikelyVpnActive();
   let preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId, {
     likelyVpnActive,
@@ -1108,6 +1123,14 @@ export async function warmContactConnectionTransportViaRuntime(
     });
   } catch {
     /* keep heuristic */
+  }
+
+  // Scrub after same-subnet detection. On same LAN, skip the aggressive scrub —
+  // mergeDialable drops tcp/0 high ports, and patching peerstore with only
+  // circuits wiped mDNS-learned live listen addrs (stuck Online-Relay).
+  if (!sameSubnetLanFirst && typeof mesh.scrubPeerStoreDialHints === "function") {
+    const dialableListen = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
+    void mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
   }
 
   if (typeof mesh.mergePeerStoreDialHints === "function") {

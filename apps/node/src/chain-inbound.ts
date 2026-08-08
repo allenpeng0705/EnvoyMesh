@@ -38,6 +38,7 @@ import {
   TaskChainPartialPayloadSchema,
   TaskChainProposePayloadSchema,
   TaskChainReportPayloadSchema,
+  TaskChainStatusPayloadSchema,
   ChainHandoffRequestPayloadSchema,
   ChainHandoffDelegatePayloadSchema,
   ChainRelayRouteSchema,
@@ -53,6 +54,7 @@ import {
   type TaskChainPartialPayload,
   type TaskChainProposePayload,
   type TaskChainReportPayload,
+  type TaskChainStatusPayload,
   type ChainHandoffRequestPayload,
   type ChainHandoffDelegatePayload,
   type ChainRelayRoute,
@@ -89,6 +91,7 @@ const WORKER_RECEIVE_INTENTS = new Set<string>([
   "task.chain.propose",
   "task.chain.accept",
   "task.chain.cancel",
+  "task.chain.status",
 ]);
 
 /**
@@ -196,6 +199,8 @@ function parsePayloadByIntent(
       return wrap(TaskChainCancelPayloadSchema, payload, "malformed_cancel_payload");
     case "task.chain.heartbeat":
       return wrap(TaskChainHeartbeatPayloadSchema, payload, "malformed_heartbeat_payload");
+    case "task.chain.status":
+      return wrap(TaskChainStatusPayloadSchema, payload, "malformed_status_payload");
     case "task.chain.report":
       return wrap(TaskChainReportPayloadSchema, payload, "malformed_report_payload");
     case "task.chain.handoff":
@@ -232,6 +237,7 @@ type ChainPayloadUnion =
   | TaskChainMergePayload
   | TaskChainCancelPayload
   | TaskChainHeartbeatPayload
+  | TaskChainStatusPayload
   | TaskChainReportPayload
   | ChainHandoffRequestPayload
   | ChainHandoffDelegatePayload
@@ -289,6 +295,8 @@ async function dispatchToHandler(
           envelope,
           payload as TaskChainHeartbeatPayload,
         );
+      case "task.chain.status":
+        return await deps.handleWorkerStatus(envelope, payload as TaskChainStatusPayload);
       case "task.chain.report":
         return await deps.handleOwnerReport(envelope, payload as TaskChainReportPayload);
       case "task.chain.handoff":

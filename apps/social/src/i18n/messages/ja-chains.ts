@@ -16,8 +16,12 @@ export const jaChainsMessages = {
     published: "公開済み",
     planning: "計画中",
     bidding: "入札中",
+    assigning: "割当中",
+    waitingWorkers: "ワーカー待ち",
+    participating: "参加中",
     running: "実行中",
     synthesizing: "統合中",
+    awaitingOwner: "あなたの判断待ち",
     unknown: "不明",
   },
   active: {
@@ -68,12 +72,22 @@ export const jaChainsMessages = {
     loadFailed: "チェーン状態を読み込めません。",
     finalized: "このチェーンは完了しています — レポートを確認してください。",
     cancelled: "このチェーンはキャンセルされました。",
+    directAssignHint:
+      "直接割当が有効です — ワーカーが準備完了を確認するとすぐにステップが割り当てられます（費用オークションなし）。費用ランキングが必要な場合のみ、チームジョブ既定値で競争入札を有効にしてください。",
+    observedHint:
+      "このジョブのワーカーです。進捗は確認できますが、管理・キャンセルは依頼者のみが可能です。",
   },
-  tree: {
+  observed: {
+    title: "参加中のジョブ",
+    empty: "まだありません。",
+    readOnly: "閲覧のみ",
+  },
+    tree: {
     title: "サブタスクツリー",
     chainId: "チェーン",
     mandateId: "マンデート",
     empty: "まだサブタスクがありません。",
+    stateAssigning: "割当中",
     stateBidding: "入札中",
     stateAwarded: "落札済み",
     stateRunning: "実行中",
@@ -83,6 +97,7 @@ export const jaChainsMessages = {
     stateFailed: "失敗",
     stateTitle: "状態: {state}",
     bidsCount: "{count} 件の入札",
+    readyCount: "{count} 準備完了",
     workerStateAwarded: "落札済み",
     workerStateRunning: "実行中",
     workerStatePartial: "部分完了",

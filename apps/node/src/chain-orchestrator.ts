@@ -27,6 +27,12 @@
  */
 
 import {
+  CHAIN_ACCEPT_RESEND_CAP,
+  CHAIN_ACCEPT_RESEND_WAIT_MS,
+  CHAIN_BID_WAIT_MS,
+  CHAIN_PROPOSE_RETRY_CAP,
+} from "./chain-defaults.js";
+import {
   ChainHandoffRequestPayloadSchema,
   ChainMandateSignedSchema,
   ChainSubtaskSchema,
@@ -37,6 +43,7 @@ import {
   TaskChainMergePayloadSchema,
   TaskChainProposePayloadSchema,
   TaskChainReportPayloadSchema,
+  TaskChainStatusPayloadSchema,
   UnsignedChainMandateSchema,
   type ChainHandoffRequestPayload,
   type ChainMandate,
@@ -48,6 +55,7 @@ import {
   type TaskChainBidPayload,
   type TaskChainCancelPayload,
   type TaskChainHeartbeatPayload,
+  type TaskChainStatusPayload,
   type TaskChainMandatePayload,
   type TaskChainMergePayload,
   type TaskChainPartialPayload,
@@ -150,6 +158,12 @@ export interface ChainState {
    * until parents produce a final partial (dependency-aware schedule).
    */
   proposedSubtasks: Set<string>;
+  /** Epoch ms when each subtask was last proposed (bidding-phase watchdog). */
+  proposedAt: Map<string, number>;
+  /** Re-propose attempts while stuck with zero bids (capped). */
+  proposeRetryCount: Map<string, number>;
+  /** Accept re-send attempts while awarded but no partial arrived (capped). */
+  acceptResendCount: Map<string, number>;
   /**
    * Stall re-assign attempts per subtask. Cap is 1 (one next-best peer).
    */
@@ -212,6 +226,9 @@ export function createChainState(chainMandate: ChainMandate): ChainState {
     awardedAt: new Map(),
     workersBySubtask: new Map(),
     proposedSubtasks: new Set(),
+    proposedAt: new Map(),
+    proposeRetryCount: new Map(),
+    acceptResendCount: new Map(),
     reassignCount: new Map(),
     lastHeartbeatAt: new Map(),
     lastConfidence: new Map(),
@@ -455,7 +472,7 @@ export async function launchChain(
     // Only mark proposed when at least one send succeeded — otherwise
     // advanceReadySubtasks can retry later (e.g. after transient mesh failure).
     if (proposedThis > 0) {
-      state.proposedSubtasks.add(subtaskId);
+      markSubtaskProposed(state, subtaskId, (deps.now ?? (() => new Date()))().getTime());
     }
   }
   deps.audit.record({
@@ -477,6 +494,157 @@ export async function launchChain(
     proposeFails,
   });
   return { ok: true, proposed, mandateBroadcastOk };
+}
+
+function markSubtaskProposed(state: ChainState, subtaskId: string, atMs: number): void {
+  state.proposedSubtasks.add(subtaskId);
+  state.proposedAt.set(subtaskId, atMs);
+}
+
+function subtaskHasAnyBid(state: ChainState, subtaskId: string): boolean {
+  const prefix = `${subtaskId}::`;
+  for (const key of state.bids.keys()) {
+    if (key.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+function primaryWorkerForSubtask(state: ChainState, subtaskId: string): string | undefined {
+  const subtask = state.subtasks.get(subtaskId);
+  const workers = state.workersBySubtask.get(subtaskId) ?? [];
+  if (workers.length === 0) return undefined;
+  if (subtask?.preferredWorkerPeerId && workers.includes(subtask.preferredWorkerPeerId)) {
+    return subtask.preferredWorkerPeerId;
+  }
+  return workers[0];
+}
+
+/**
+ * Bidding-phase recovery: when a propose was marked sent but no bid arrived
+ * (mesh flake, worker OpenClaw down, preferred-only miss), re-propose — and
+ * on later retries try the next listed worker. Without this, `proposedSubtasks`
+ * permanently blocks `advanceReadySubtasks` and tracking sleeps forever while
+ * `awards.size === 0`.
+ */
+export async function retryStaleProposals(
+  deps: ChainOrchestratorHandlerDeps,
+  state: ChainState,
+  opts?: { bidWaitMs?: number; nowMs?: number },
+): Promise<{ retried: string[] }> {
+  if (state.chainCancelled || state.published) {
+    return { retried: [] };
+  }
+  const nowMs = opts?.nowMs ?? (deps.now ?? (() => new Date()))().getTime();
+  const bidWaitMs = opts?.bidWaitMs ?? CHAIN_BID_WAIT_MS;
+  const retried: string[] = [];
+
+  for (const [subtaskId, subtask] of state.subtasks.entries()) {
+    if (state.cancelledSubtasks.has(subtaskId)) continue;
+    if (state.awards.has(subtaskId)) continue;
+    if (!state.proposedSubtasks.has(subtaskId)) continue;
+    if (subtaskHasAnyBid(state, subtaskId)) continue;
+
+    const proposedAt = state.proposedAt.get(subtaskId);
+    if (proposedAt == null) {
+      // Legacy / in-flight state without timestamps — start the clock now.
+      state.proposedAt.set(subtaskId, nowMs);
+      continue;
+    }
+    if (nowMs - proposedAt < bidWaitMs) continue;
+
+    const retries = state.proposeRetryCount.get(subtaskId) ?? 0;
+    if (retries >= CHAIN_PROPOSE_RETRY_CAP) continue;
+
+    const workers = state.workersBySubtask.get(subtaskId) ?? [];
+    if (workers.length === 0) continue;
+    const primary = primaryWorkerForSubtask(state, subtaskId) ?? workers[0]!;
+    const target =
+      retries === 0 ? primary : (workers.find((w) => w !== primary) ?? primary);
+
+    await sendChainMandate(deps, target, state.chainMandate);
+    const toSend = enrichSubtaskWithParentContext(state, subtask);
+    const ok = await sendChainPropose(deps, target, toSend, state.chainMandate);
+    state.proposeRetryCount.set(subtaskId, retries + 1);
+    markSubtaskProposed(state, subtaskId, nowMs);
+    if (target !== workers[0]) {
+      state.workersBySubtask.set(subtaskId, [
+        target,
+        ...workers.filter((w) => w !== target),
+      ]);
+    }
+    deps.audit.record({
+      type: "chain.subtask_proposed",
+      outcome: ok ? "allow" : "deny",
+      intent: "task.chain.propose",
+      correlationId: state.chainId,
+      summary:
+        `propose_retry attempt=${retries + 1} subtask=${subtaskId.slice(0, 12)}` +
+        ` to=${target.slice(0, 14)} ok=${ok}`,
+    });
+    chainLog("launch", "propose retry", {
+      chainId: state.chainId,
+      subtaskId,
+      attempt: retries + 1,
+      target: shortPeerId(target),
+      ok,
+    });
+    if (ok) retried.push(subtaskId);
+  }
+  return { retried };
+}
+
+/**
+ * Post-award recovery: when accept was marked awarded in orchestrator state
+ * but the worker never started (no partial), re-send `task.chain.accept`
+ * with the subtask snapshot so execution can begin.
+ */
+export async function retryStaleAccepts(
+  deps: ChainOrchestratorHandlerDeps,
+  state: ChainState,
+  opts?: { waitMs?: number; nowMs?: number },
+): Promise<{ resent: string[] }> {
+  if (state.chainCancelled || state.published) {
+    return { resent: [] };
+  }
+  const nowMs = opts?.nowMs ?? (deps.now ?? (() => new Date()))().getTime();
+  const waitMs = opts?.waitMs ?? CHAIN_ACCEPT_RESEND_WAIT_MS;
+  const resent: string[] = [];
+
+  for (const [subtaskId, award] of state.awards.entries()) {
+    if (state.cancelledSubtasks.has(subtaskId)) continue;
+    if (state.partials.has(subtaskId)) continue;
+
+    const awardedIso = state.awardedAt.get(subtaskId) ?? award.createdAt;
+    const awardedMs = Date.parse(awardedIso);
+    if (!Number.isFinite(awardedMs) || nowMs - awardedMs < waitMs) continue;
+
+    const retries = state.acceptResendCount.get(subtaskId) ?? 0;
+    if (retries >= CHAIN_ACCEPT_RESEND_CAP) continue;
+
+    const subtask = state.subtasks.get(subtaskId);
+    const ok = await sendChainAccept(deps, award.workerPeerId, award, subtask);
+    state.acceptResendCount.set(subtaskId, retries + 1);
+    // Bump awardedAt so the wait window resets between resends.
+    state.awardedAt.set(subtaskId, (deps.now ?? (() => new Date()))().toISOString());
+    deps.audit.record({
+      type: "chain.awarded",
+      outcome: ok ? "allow" : "deny",
+      intent: "task.chain.accept",
+      correlationId: state.chainId,
+      summary:
+        `accept_resend attempt=${retries + 1} subtask=${subtaskId.slice(0, 12)}` +
+        ` to=${award.workerPeerId.slice(0, 14)} ok=${ok}`,
+    });
+    chainLog("orch", "accept resend", {
+      chainId: state.chainId,
+      subtaskId,
+      attempt: retries + 1,
+      worker: shortPeerId(award.workerPeerId),
+      ok,
+    });
+    if (ok) resent.push(subtaskId);
+  }
+  return { resent };
 }
 
 /**
@@ -514,7 +682,7 @@ export async function advanceReadySubtasks(
       }
     }
     if (proposedThis === 0) continue;
-    state.proposedSubtasks.add(subtaskId);
+    markSubtaskProposed(state, subtaskId, (deps.now ?? (() => new Date()))().getTime());
     subtaskIds.push(subtaskId);
   }
   if (subtaskIds.length > 0) {
@@ -583,7 +751,7 @@ export async function reassignStalledSubtask(
   if (!ok) return { ok: false, reason: "send_failed" };
 
   state.workersBySubtask.set(subtaskId, [next, ...workers.filter((w) => w !== next && w !== award.workerPeerId)]);
-  state.proposedSubtasks.add(subtaskId);
+  markSubtaskProposed(state, subtaskId, (deps.now ?? (() => new Date()))().getTime());
   state.reassignCount.set(subtaskId, (state.reassignCount.get(subtaskId) ?? 0) + 1);
   deps.audit.record({
     type: "chain.launched",
@@ -1457,8 +1625,12 @@ export async function sendChainAccept(
   deps: ChainOrchestratorSendDeps,
   recipientPeerId: string,
   award: ChainSubtaskAward,
+  subtask?: ChainSubtask,
 ): Promise<boolean> {
-  const payload = TaskChainAcceptPayloadSchema.parse({ award });
+  const payload = TaskChainAcceptPayloadSchema.parse({
+    award,
+    ...(subtask ? { subtask } : {}),
+  });
   const envelope = buildChainEnvelope({
     intent: "task.chain.accept",
     senderPeerId: deps.orchestratorPeerId,
@@ -1521,6 +1693,121 @@ async function sendChainHeartbeat(
   return deps.sendEnvelope(recipientPeerId, envelope, payload);
 }
 
+/** Build a read-only status snapshot for worker fan-out. */
+export function buildChainStatusPayload(
+  state: ChainState,
+  opts?: {
+    goal?: string;
+    awardMode?: "direct" | "competitive";
+    now?: () => Date;
+  },
+): TaskChainStatusPayload {
+  const awardMode = opts?.awardMode === "competitive" ? "competitive" : "direct";
+  const createdAt = (opts?.now ?? (() => new Date()))().toISOString();
+  const steps = [...state.subtasks.values()].map((sub) => {
+    let stepState: TaskChainStatusPayload["steps"][number]["state"] = "pending";
+    if (state.cancelledSubtasks.has(sub.subtaskId) || state.chainCancelled) {
+      stepState = "cancelled";
+    } else if (state.awards.has(sub.subtaskId)) {
+      const partial = state.partials.get(sub.subtaskId);
+      const body = partial?.partial;
+      if (body?.isFinal) {
+        stepState = body.note?.startsWith("Failed:") ? "failed" : "done";
+      } else if (partial) {
+        stepState = "running";
+      } else {
+        stepState = "awarded";
+      }
+    } else if (state.proposedSubtasks.has(sub.subtaskId)) {
+      stepState = "offered";
+    }
+    return {
+      subtaskId: sub.subtaskId,
+      objective: sub.objective.slice(0, 500),
+      state: stepState,
+      workerPeerId: state.awards.get(sub.subtaskId)?.workerPeerId,
+    };
+  });
+  let finalPartialCount = 0;
+  for (const p of state.partials.values()) {
+    if (p.partial?.isFinal) finalPartialCount += 1;
+  }
+  const bidCount = state.bids.size;
+  let phase: TaskChainStatusPayload["phase"] = "assigning";
+  if (state.chainCancelled) phase = "cancelled";
+  else if (state.published) phase = "completed";
+  else if (finalPartialCount >= state.subtasks.size && state.subtasks.size > 0) {
+    phase = "synthesizing";
+  } else if (state.awards.size === 0) {
+    if (bidCount === 0 && state.subtasks.size > 0) {
+      phase = "waitingWorkers";
+    } else {
+      phase = awardMode === "competitive" ? "bidding" : "assigning";
+    }
+  } else {
+    phase = "running";
+  }
+  return TaskChainStatusPayloadSchema.parse({
+    chainId: state.chainId,
+    goal: opts?.goal,
+    phase,
+    awardMode,
+    subtaskCount: state.subtasks.size,
+    awardedCount: state.awards.size,
+    partialCount: state.partials.size,
+    finalPartialCount,
+    bidCount,
+    steps,
+    readOnly: true,
+    createdAt,
+  });
+}
+
+/** Fan-out read-only status to every worker peer listed on the chain. */
+export async function broadcastChainStatus(
+  deps: ChainOrchestratorHandlerDeps,
+  state: ChainState,
+  opts?: { goal?: string; awardMode?: "direct" | "competitive" },
+): Promise<{ sent: number; failed: number }> {
+  const payload = buildChainStatusPayload(state, {
+    ...opts,
+    now: deps.now,
+  });
+  const peers = new Set<string>();
+  for (const list of state.workersBySubtask.values()) {
+    for (const p of list) peers.add(p);
+  }
+  // Also include awarded / bidding workers in case the worker list was narrowed.
+  for (const award of state.awards.values()) peers.add(award.workerPeerId);
+  for (const bid of state.bids.values()) peers.add(bid.workerPeerId);
+  let sent = 0;
+  let failed = 0;
+  for (const recipientPeerId of peers) {
+    const envelope = buildChainEnvelope({
+      intent: "task.chain.status",
+      senderPeerId: deps.orchestratorPeerId,
+      senderPublicKey: deps.publicKeyPem,
+      recipientPeerId,
+      recipientRole: "agent",
+      payload,
+      createdAt: payload.createdAt,
+      correlationId: state.chainId,
+      signingKeyPem: deps.signingKeyPem,
+    });
+    const ok = await deps.sendEnvelope(recipientPeerId, envelope, payload);
+    if (ok) sent += 1;
+    else failed += 1;
+  }
+  deps.audit.record({
+    type: "chain.status_broadcast",
+    outcome: failed === 0 ? "allow" : "record",
+    intent: "task.chain.status",
+    correlationId: state.chainId,
+    summary: `phase=${payload.phase} peers=${peers.size} sent=${sent} failed=${failed}`,
+  });
+  return { sent, failed };
+}
+
 /** Send `task.chain.handoff` — whole-job Assigner handoff or subtask transfer request. */
 export async function sendChainHandoff(
   deps: ChainOrchestratorSendDeps,
@@ -1553,6 +1840,7 @@ interface BuildChainEnvelopeInput {
     | "task.chain.accept"
     | "task.chain.cancel"
     | "task.chain.heartbeat"
+    | "task.chain.status"
     | "task.chain.merge"
     | "task.chain.report"
     | "task.chain.handoff"

@@ -35,8 +35,12 @@ import {
   handleOrchestratorHeartbeat,
   handleOrchestratorMerge,
   handleOrchestratorPartial,
+  advanceReadySubtasks,
+  broadcastChainStatus,
   launchChain,
   planChain,
+  retryStaleAccepts,
+  retryStaleProposals,
   sendChainAccept,
   sendChainHandoff,
   trackChain,
@@ -82,6 +86,7 @@ import {
   handleWorkerHeartbeat,
   handleWorkerMandate,
   handleWorkerPropose,
+  handleWorkerStatus,
   type ChainWorkerHandlerDeps,
 } from "./chain-worker.js";
 import { createOpenClawChainSubtaskExecutor, executeAcceptedSubtask } from "./chain-worker-executor.js";
@@ -121,6 +126,42 @@ export interface ChainSideState {
    * future wire observe. Stored for correlation / notify hooks.
    */
   iterationObservers: Map<string, string>;
+  /**
+   * Read-only snapshots of jobs where this node is a worker (from
+   * `task.chain.status`). Keyed by chainId. Never grants manage/cancel.
+   */
+  observedChains: Map<string, ObservedChainSnapshot>;
+  /** Debounce status fan-out per chain (ms epoch). */
+  lastStatusBroadcastAt: Map<string, number>;
+}
+
+/** Worker-side read-only view of an assigner's team job. */
+export interface ObservedChainSnapshot {
+  chainId: string;
+  goal?: string;
+  phase:
+    | "assigning"
+    | "waitingWorkers"
+    | "bidding"
+    | "running"
+    | "synthesizing"
+    | "completed"
+    | "cancelled";
+  awardMode: "direct" | "competitive";
+  subtaskCount: number;
+  awardedCount: number;
+  partialCount: number;
+  finalPartialCount?: number;
+  bidCount?: number;
+  steps: Array<{
+    subtaskId: string;
+    objective?: string;
+    state: "pending" | "offered" | "awarded" | "running" | "done" | "failed" | "cancelled";
+    workerPeerId?: string;
+  }>;
+  orchestratorPeerId: string;
+  updatedAt: string;
+  readOnly: true;
 }
 
 /**
@@ -229,6 +270,7 @@ export function buildChainContext(deps: ChainOrchestrationContext): ChainContext
     getChainCostEstimate: (chainId) => deps.getChainSideState().costEstimates.get(chainId),
     getChainAwardMode: (chainId) => deps.getChainSideState().awardModes.get(chainId),
     getChainShowCostUi: (chainId) => deps.getChainSideState().showCostUi.get(chainId),
+    listObservedChains: () => [...deps.getChainSideState().observedChains.values()],
     snapshotToResult: (snap) => snapshotToResult(snap),
     bidsBySubtask: (state) => bidsBySubtask(state),
     getNodeConfig: () => deps.getNodeConfig(),
@@ -479,6 +521,15 @@ export async function _chainTransportResolver(
     deliverLocally: async (envelope) => {
       await handleInboundChainEnvelope(deps, envelope);
     },
+    resolveDialHints: async (transportPeerId) => {
+      try {
+        const records = await deps.getPeerDirectoryStore().listPeerRecords();
+        const match = records.find((r) => r.peerId === transportPeerId);
+        return (match?.listenAddrs ?? []).filter((a) => a.trim().length > 0);
+      } catch {
+        return [];
+      }
+    },
   };
 }
 
@@ -503,6 +554,13 @@ export async function buildChainInboundDeps(deps: ChainOrchestrationContext): Pr
       const result = await handleWorkerAccept(workerDeps, envelope, payload);
       if (result.ok) {
         let subtask = chainSide.workerSubtasks.get(payload.award.subtaskId)?.subtask;
+        if (!subtask && payload.subtask) {
+          subtask = payload.subtask;
+          chainSide.workerSubtasks.set(payload.award.subtaskId, {
+            subtask,
+            orchestratorPeerId: envelope.senderPeerId,
+          });
+        }
         if (!subtask) {
           for (const rt of chainStore.listActive()) {
             subtask = rt.state.subtasks.get(payload.award.subtaskId);
@@ -543,6 +601,7 @@ export async function buildChainInboundDeps(deps: ChainOrchestrationContext): Pr
     },
     handleWorkerCancel: (envelope, payload) => handleWorkerCancel(workerDeps, envelope, payload),
     handleWorkerHeartbeat: (envelope, payload) => handleWorkerHeartbeat(workerDeps, envelope, payload),
+    handleWorkerStatus: (envelope, payload) => handleWorkerStatus(workerDeps, envelope, payload),
     handleOrchestratorBid: async (envelope, payload, state) => {
       const runtime = chainStore.getRuntime(state.chainId);
       if (!runtime) return { ok: false, reason: "handler_denied" as const };
@@ -756,6 +815,30 @@ export async function buildChainWorkerDeps(deps: ChainOrchestrationContext): Pro
       isOpenClawReady: () => deps.isOpenClawReady(),
       askOpenClaw: (prompt) => deps.askOpenClaw(prompt),
     }),
+    onObservedStatus: (orchestratorPeerId, payload) => {
+      const snap: ObservedChainSnapshot = {
+        chainId: payload.chainId,
+        goal: payload.goal,
+        phase: payload.phase,
+        awardMode: payload.awardMode,
+        subtaskCount: payload.subtaskCount,
+        awardedCount: payload.awardedCount,
+        partialCount: payload.partialCount,
+        finalPartialCount: payload.finalPartialCount,
+        bidCount: payload.bidCount,
+        steps: payload.steps.map((s) => ({
+          subtaskId: s.subtaskId,
+          objective: s.objective,
+          state: s.state,
+          workerPeerId: s.workerPeerId,
+        })),
+        orchestratorPeerId,
+        updatedAt: payload.createdAt,
+        readOnly: true,
+      };
+      deps.getChainSideState().observedChains.set(payload.chainId, snap);
+      deps.emit("chain:observed", snap);
+    },
   };
 }
 
@@ -1089,17 +1172,30 @@ export function _startChainTracking(deps: ChainOrchestrationContext, chainId: st
         _stopChainTracking(deps, chainId);
         return;
       }
-      if (rt.state.awards.size === 0) {
-        await new Promise((r) => setTimeout(r, 5_000));
-        continue;
-      }
       try {
         const orchDeps = await buildChainOrchestratorDeps(deps);
-        await trackChain(orchDeps, rt.state, { tickMs: 30_000, maxTicks: 1 });
+        // Always advance dependents + recover silent proposes/accepts.
+        const advanced = await advanceReadySubtasks(orchDeps, rt.state);
+        const proposed = await retryStaleProposals(orchDeps, rt.state);
+        const accepted = await retryStaleAccepts(orchDeps, rt.state);
+        if (advanced.proposed > 0 || proposed.retried.length > 0 || accepted.resent.length > 0) {
+          _emitChainState(deps, chainId);
+        }
+        if (rt.state.awards.size > 0) {
+          await trackChain(orchDeps, rt.state, { tickMs: 30_000, maxTicks: 1 });
+        }
       } catch (err) {
         console.warn(`[chain.track] ${chainId} tick failed:`, err);
       }
-      await new Promise((r) => setTimeout(r, 30_000));
+      // Faster while waiting for first ACK / first execution; slower once running.
+      const latest = deps.getChainStore().getRuntime(chainId);
+      const waitMs =
+        !latest ||
+        latest.state.awards.size === 0 ||
+        [...latest.state.awards.keys()].some((id) => !latest.state.partials.has(id))
+          ? 5_000
+          : 30_000;
+      await new Promise((r) => setTimeout(r, waitMs));
     }
   })();
 }
@@ -1198,13 +1294,32 @@ export async function _evaluateAwardAndAccept(
     }
   }
 
-  await sendChainAccept(orchDeps, result.bid.workerPeerId, result.award);
+  const subtask = runtime.state.subtasks.get(subtaskId);
+  let acceptOk = await sendChainAccept(
+    orchDeps,
+    result.bid.workerPeerId,
+    result.award,
+    subtask,
+  );
+  if (!acceptOk) {
+    // Critical: evaluateBids already reserved/awarded in state — retry once so
+    // the worker can start; otherwise jobs stall with awards but no execution.
+    // Further recovery is handled by retryStaleAccepts in the tracking loop.
+    acceptOk = await sendChainAccept(
+      orchDeps,
+      result.bid.workerPeerId,
+      result.award,
+      subtask,
+    );
+  }
   orchDeps.audit.record({
     type: "chain.awarded",
-    outcome: "allow",
+    outcome: acceptOk ? "allow" : "deny",
     intent: "task.chain.accept",
     correlationId: chainId,
-    summary: `subtask=${subtaskId} worker=${result.bid.workerPeerId} cost=${result.bid.proposedCostUsd}`,
+    summary:
+      `subtask=${subtaskId} worker=${result.bid.workerPeerId} cost=${result.bid.proposedCostUsd}` +
+      (acceptOk ? "" : " accept_send_failed"),
   });
   return result;
 }
@@ -1224,6 +1339,8 @@ export async function _executeApprovedChainAward(
   return { ok: true };
 }
 
+const CHAIN_STATUS_BROADCAST_MIN_INTERVAL_MS = 2_000;
+
 export function _emitChainState(deps: ChainOrchestrationContext, chainId: string): void {
   const runtime = deps.getChainStore().getRuntime(chainId);
   if (!runtime) return;
@@ -1237,6 +1354,24 @@ export function _emitChainState(deps: ChainOrchestrationContext, chainId: string
   state.budgetWarningLevel = chainBudgetWarningLevel(runtime.state);
   populateIterationInState(runtime, state);
   deps.emit("chain:state", state);
+  // Fan-out read-only status to joined workers (debounced).
+  const now = Date.now();
+  const last = chainSide.lastStatusBroadcastAt.get(chainId) ?? 0;
+  const terminal = runtime.state.published || runtime.state.chainCancelled;
+  if (terminal || now - last >= CHAIN_STATUS_BROADCAST_MIN_INTERVAL_MS) {
+    chainSide.lastStatusBroadcastAt.set(chainId, now);
+    void (async () => {
+      try {
+        const orchDeps = await buildChainOrchestratorDeps(deps);
+        await broadcastChainStatus(orchDeps, runtime.state, {
+          goal: chainSide.goals.get(chainId),
+          awardMode: chainSide.awardModes.get(chainId) ?? "direct",
+        });
+      } catch (err) {
+        console.warn(`[chain.status] broadcast failed for ${chainId}:`, err);
+      }
+    })();
+  }
 }
 
 /** Phase 47D — focused iteration progress for Social / remote Assigner UIs. */
@@ -1294,7 +1429,8 @@ export async function _autoEvaluateSubtask(
   const runtime = deps.getChainStore().getRuntime(chainId);
   if (!runtime || runtime.state.chainCancelled || runtime.state.awards.has(subtaskId)) return;
   if (!subtasksAwaitingAward(runtime.state).includes(subtaskId)) return;
-  const result = await _evaluateAwardAndAccept(deps, chainId, subtaskId, { policy: "composite" });
+  // Respect award mode: direct → first ACK wins; competitive → composite rank.
+  const result = await _evaluateAwardAndAccept(deps, chainId, subtaskId);
   if (result.ok) {
     _emitChainState(deps, chainId);
   }

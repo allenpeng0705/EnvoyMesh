@@ -441,6 +441,11 @@ export const TaskChainBidPayloadSchema = z.object({
 /** `task.chain.accept` — orchestrator awards a subtask. */
 export const TaskChainAcceptPayloadSchema = z.object({
   award: ChainSubtaskAwardSchema,
+  /**
+   * Optional subtask snapshot so the worker can execute even if its propose
+   * cache was lost (restart / race). Older orchestrators omit this.
+   */
+  subtask: ChainSubtaskSchema.optional(),
 });
 
 /** `task.chain.partial` — worker streams a partial deliverable. */
@@ -485,6 +490,52 @@ export const TaskChainHeartbeatPayloadSchema = z.object({
   createdAt: z.string().datetime(),
 });
 
+/**
+ * `task.chain.status` — orchestrator fans out a read-only job snapshot to
+ * joined workers. Recipients may display progress; they must not treat this
+ * as authority to manage or cancel the chain.
+ */
+export const TaskChainStatusStepSchema = z.object({
+  subtaskId: ChainSubtaskIdSchema,
+  objective: z.string().max(500).optional(),
+  state: z.enum([
+    "pending",
+    "offered",
+    "awarded",
+    "running",
+    "done",
+    "failed",
+    "cancelled",
+  ]),
+  workerPeerId: z.string().min(1).optional(),
+});
+
+export const TaskChainStatusPayloadSchema = z.object({
+  chainId: ChainIdSchema,
+  goal: z.string().max(2000).optional(),
+  phase: z.enum([
+    "assigning",
+    "waitingWorkers",
+    "bidding",
+    "running",
+    "synthesizing",
+    "completed",
+    "cancelled",
+  ]),
+  awardMode: z.enum(["direct", "competitive"]).default("direct"),
+  subtaskCount: z.number().int().nonnegative(),
+  awardedCount: z.number().int().nonnegative(),
+  /** Number of subtasks that have at least one partial (any seq). */
+  partialCount: z.number().int().nonnegative(),
+  /** Number of subtasks with a final partial — used for synthesizing gate. */
+  finalPartialCount: z.number().int().nonnegative().default(0),
+  /** Live readiness/bid ACKs across all subtasks (wire intent still task.chain.bid). */
+  bidCount: z.number().int().nonnegative().default(0),
+  steps: z.array(TaskChainStatusStepSchema).max(32).default([]),
+  readOnly: z.literal(true).default(true),
+  createdAt: z.string().datetime(),
+});
+
 /** `task.chain.report` — orchestrator publishes the final ChainReport (agent → human). */
 export const TaskChainReportPayloadSchema = z.object({
   report: ChainReportSchema,
@@ -499,6 +550,8 @@ export type TaskChainPartialPayload = z.infer<typeof TaskChainPartialPayloadSche
 export type TaskChainMergePayload = z.infer<typeof TaskChainMergePayloadSchema>;
 export type TaskChainCancelPayload = z.infer<typeof TaskChainCancelPayloadSchema>;
 export type TaskChainHeartbeatPayload = z.infer<typeof TaskChainHeartbeatPayloadSchema>;
+export type TaskChainStatusStep = z.infer<typeof TaskChainStatusStepSchema>;
+export type TaskChainStatusPayload = z.infer<typeof TaskChainStatusPayloadSchema>;
 export type TaskChainReportPayload = z.infer<typeof TaskChainReportPayloadSchema>;
 
 // ---------------------------------------------------------------------------

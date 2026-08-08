@@ -16,8 +16,12 @@ export const frChainsMessages = {
     published: "Publiée",
     planning: "Planification",
     bidding: "Enchères",
+    assigning: "Attribution",
+    waitingWorkers: "En attente des travailleurs",
+    participating: "Participation",
     running: "En cours",
     synthesizing: "Synthèse",
+    awaitingOwner: "En attente de votre décision",
     unknown: "Inconnu",
   },
   active: {
@@ -68,12 +72,22 @@ export const frChainsMessages = {
     loadFailed: "Impossible de charger l'état de la chaîne.",
     finalized: "Cette chaîne est terminée — voir le rapport.",
     cancelled: "Cette chaîne a été annulée.",
+    directAssignHint:
+      "L'attribution directe est active — les travailleurs reçoivent l'étape dès qu'ils confirment être prêts (pas d'enchère de coût). Activez les enchères compétitives dans les valeurs par défaut uniquement si vous voulez un classement par coût.",
+    observedHint:
+      "Vous êtes travailleur sur cette mission. Vous pouvez suivre la progression ; seul l'assignateur peut gérer ou annuler.",
   },
-  tree: {
+  observed: {
+    title: "Missions où vous participez",
+    empty: "Aucune pour l’instant.",
+    readOnly: "Lecture seule",
+  },
+    tree: {
     title: "Arbre des sous-tâches",
     chainId: "Chaîne",
     mandateId: "Mandat",
     empty: "Pas encore de sous-tâches.",
+    stateAssigning: "Attribution",
     stateBidding: "Enchères",
     stateAwarded: "Attribué",
     stateRunning: "En cours",
@@ -83,6 +97,7 @@ export const frChainsMessages = {
     stateFailed: "Échec",
     stateTitle: "État : {state}",
     bidsCount: "{count} enchère(s)",
+    readyCount: "{count} prêt(s)",
     workerStateAwarded: "Attribué",
     workerStateRunning: "En cours",
     workerStatePartial: "Partiel",

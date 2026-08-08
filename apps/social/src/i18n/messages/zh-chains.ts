@@ -20,6 +20,7 @@ export const zhChainsMessages = {
     bidding: "竞标中",
     assigning: "分配中",
     waitingWorkers: "等待工作节点",
+    participating: "参与中",
     running: "运行中",
     synthesizing: "汇总中",
     awaitingOwner: "等待您确认",
@@ -88,7 +89,13 @@ export const zhChainsMessages = {
     finalized: "此协作任务已完成 — 请查看报告。",
     cancelled: "此协作任务已取消。",
     directAssignHint:
-      "当前为直接分配 — 首位可用工作节点会自动获派。若需要按费用竞标，请在协作任务默认值中开启竞争性竞标。",
+      "当前为直接分配 — 工作节点确认可接单后立即获派（无费用竞拍）。仅在需要按费用排序时，才在协作任务默认值中开启竞争性竞标。",
+    observedHint: "你是此任务的工作节点，可查看进度；仅发起方可以管理或取消。",
+  },
+  observed: {
+    title: "你参与的任务",
+    empty: "暂无来自其他发起方的任务。",
+    readOnly: "只读",
   },
   tree: {
     title: "子任务树",
@@ -96,6 +103,7 @@ export const zhChainsMessages = {
     mandateId: "任务授权",
     empty: "暂无子任务。",
     stateBidding: "竞标中",
+    stateAssigning: "分配中",
     stateAwarded: "已分配",
     stateRunning: "运行中",
     statePartial: "部分完成",
@@ -104,6 +112,7 @@ export const zhChainsMessages = {
     stateFailed: "失败",
     stateTitle: "状态：{state}",
     bidsCount: "{count} 个竞标",
+    readyCount: "{count} 已就绪",
     workerStateAwarded: "已分配",
     workerStateRunning: "运行中",
     workerStatePartial: "部分完成",

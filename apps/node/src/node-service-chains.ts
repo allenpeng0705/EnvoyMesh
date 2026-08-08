@@ -208,6 +208,8 @@ export interface ChainContext {
   getChainCostEstimate(chainId: string): unknown;
   getChainAwardMode?(chainId: string): "direct" | "competitive" | undefined;
   getChainShowCostUi?(chainId: string): boolean | undefined;
+  /** Worker-side read-only jobs (from task.chain.status). */
+  listObservedChains?(): import("@envoymesh/api").ChainObservedStatus[];
   /** Build the snapshot-to-result transform. */
   snapshotToResult(snap: ReturnType<typeof chainStateSnapshot>): ChainGetStateResult;
   /** Build the per-subtask bid map. */
@@ -412,6 +414,21 @@ export function chainListActiveViaRuntime(
         };
       }
       return snap;
+    }),
+  };
+}
+
+/** Read-only jobs where this node is a worker (synced via task.chain.status). */
+export function chainListObservedViaRuntime(
+  ctx: ChainContext,
+  params?: import("@envoymesh/api").ChainListObservedParams,
+): import("@envoymesh/api").ChainListObservedResult {
+  const includeTerminal = params?.includeTerminal === true;
+  const list = ctx.listObservedChains?.() ?? [];
+  return {
+    chains: list.filter((c) => {
+      if (includeTerminal) return true;
+      return c.phase !== "completed" && c.phase !== "cancelled";
     }),
   };
 }

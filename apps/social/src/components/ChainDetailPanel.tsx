@@ -181,10 +181,7 @@ export function ChainDetailPanel({
     state!.subtaskCount > 0;
   const isFinalized = state?.published || state?.chainCancelled;
   const detailStatus = state ? deriveDetailStatus(state) : "unknown";
-  const statusLabel =
-    detailStatus === "bidding" && !competitive
-      ? t("chains.status.assigning")
-      : t(`chains.status.${detailStatus}`);
+  const statusLabel = t(`chains.status.${detailStatus}`);
 
   return (
     <div className="chain-detail-panel">
@@ -378,9 +375,10 @@ function deriveDetailStatus(r: ChainGetStateResult): string {
   if (r.published) return "completed";
   if (r.partialCount === r.subtaskCount && r.subtaskCount > 0) return "synthesizing";
   const bidCount = (r.bidsBySubtask ?? []).reduce((n, row) => n + row.bids.length, 0);
-  // Solo / stalled: no awards and no bids looks like "Bidding" forever — say so.
+  // Solo / stalled: no awards and no worker ACK yet.
   if (r.awardedCount === 0 && bidCount === 0 && r.subtaskCount > 0) return "waitingWorkers";
-  if (r.awardedCount < r.subtaskCount) return "bidding";
+  const preAward = r.awardMode === "competitive" ? "bidding" : "assigning";
+  if (r.awardedCount < r.subtaskCount) return preAward;
   if (r.awardedCount > 0) return "running";
-  return "bidding";
+  return preAward;
 }

@@ -3504,6 +3504,7 @@ nodeService.on("chat:draft", (data) => wsServer.emitEvent("chat:draft", data));
 nodeService.on("chain:state", (data) => wsServer.emitEvent("chain:state", data));
 nodeService.on("chain:report", (data) => wsServer.emitEvent("chain:report", data));
 nodeService.on("chain:iteration", (data) => wsServer.emitEvent("chain:iteration", data));
+nodeService.on("chain:observed", (data) => wsServer.emitEvent("chain:observed", data));
 nodeService.on("peer:discovered", (data) => wsServer.emitEvent("peer:discovered", data));
 nodeService.on("peer:lost", (data) => wsServer.emitEvent("peer:lost", data));
 nodeService.on("bond:established", (data) => {

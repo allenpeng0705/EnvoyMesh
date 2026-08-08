@@ -251,6 +251,10 @@ export async function routeRpcMethod(
       return ns.chainGetState(params as unknown as ChainGetStateParams);
     case "chainListActive":
       return ns.chainListActive((params as unknown as ChainListActiveParams | undefined) ?? {});
+    case "chainListObserved":
+      return ns.chainListObserved?.(
+        (params as unknown as import("@envoymesh/api").ChainListObservedParams | undefined) ?? {},
+      ) ?? { chains: [] };
     case "chainCancel":
       return ns.chainCancel(params as unknown as ChainCancelParams);
     case "chainListReports":

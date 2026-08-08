@@ -16,8 +16,12 @@ export const deChainsMessages = {
     published: "Veröffentlicht",
     planning: "Planung",
     bidding: "Gebote",
+    assigning: "Zuweisung",
+    waitingWorkers: "Warten auf Worker",
+    participating: "Teilnahme",
     running: "Läuft",
     synthesizing: "Synthese",
+    awaitingOwner: "Wartet auf Ihre Entscheidung",
     unknown: "Unbekannt",
   },
   active: {
@@ -68,12 +72,22 @@ export const deChainsMessages = {
     loadFailed: "Kettenstatus konnte nicht geladen werden.",
     finalized: "Diese Kette ist abgeschlossen — siehe Bericht.",
     cancelled: "Diese Kette wurde abgebrochen.",
+    directAssignHint:
+      "Direktzuweisung ist aktiv — Worker erhalten den Schritt, sobald sie bereit bestätigen (keine Kostenauktion). Wettbewerbsgebote nur in den Team-Job-Standards aktivieren, wenn Kostenranking gewünscht ist.",
+    observedHint:
+      "Sie sind Worker bei diesem Job. Fortschritt ist sichtbar; nur der Auftraggeber kann verwalten oder abbrechen.",
   },
-  tree: {
+  observed: {
+    title: "Aufgaben, an denen du mitwirkst",
+    empty: "Noch keine.",
+    readOnly: "Nur Anzeige",
+  },
+    tree: {
     title: "Teilaufgaben-Baum",
     chainId: "Kette",
     mandateId: "Mandat",
     empty: "Noch keine Teilaufgaben.",
+    stateAssigning: "Zuweisung",
     stateBidding: "Gebote",
     stateAwarded: "Vergeben",
     stateRunning: "Läuft",
@@ -83,6 +97,7 @@ export const deChainsMessages = {
     stateFailed: "Fehlgeschlagen",
     stateTitle: "Status: {state}",
     bidsCount: "{count} Gebot(e)",
+    readyCount: "{count} bereit",
     workerStateAwarded: "Vergeben",
     workerStateRunning: "Läuft",
     workerStatePartial: "Teilweise",

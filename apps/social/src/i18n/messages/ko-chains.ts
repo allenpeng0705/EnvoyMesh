@@ -16,8 +16,12 @@ export const koChainsMessages = {
     published: "게시됨",
     planning: "계획 중",
     bidding: "입찰 중",
+    assigning: "할당 중",
+    waitingWorkers: "워커 대기 중",
+    participating: "참여 중",
     running: "실행 중",
     synthesizing: "종합 중",
+    awaitingOwner: "결정 대기 중",
     unknown: "알 수 없음",
   },
   active: {
@@ -68,12 +72,22 @@ export const koChainsMessages = {
     loadFailed: "체인 상태를 로드할 수 없습니다.",
     finalized: "이 체인은 완료되었습니다 — 보고서를 확인하세요.",
     cancelled: "이 체인은 취소되었습니다.",
+    directAssignHint:
+      "직접 할당이 켜져 있습니다 — 워커가 준비됨을 확인하면 바로 단계가 배정됩니다(비용 경매 없음). 비용 순위가 필요할 때만 팀 작업 기본값에서 경쟁 입찰을 켜세요.",
+    observedHint:
+      "이 작업의 워커입니다. 진행 상황은 볼 수 있지만 관리/취소는 배정자만 할 수 있습니다.",
   },
-  tree: {
+  observed: {
+    title: "참여 중인 작업",
+    empty: "아직 없음.",
+    readOnly: "읽기 전용",
+  },
+    tree: {
     title: "하위 작업 트리",
     chainId: "체인",
     mandateId: "권한",
     empty: "아직 하위 작업이 없습니다.",
+    stateAssigning: "할당 중",
     stateBidding: "입찰 중",
     stateAwarded: "할당됨",
     stateRunning: "실행 중",
@@ -83,6 +97,7 @@ export const koChainsMessages = {
     stateFailed: "실패",
     stateTitle: "상태: {state}",
     bidsCount: "{count}개 입찰",
+    readyCount: "준비 {count}",
     workerStateAwarded: "할당됨",
     workerStateRunning: "실행 중",
     workerStatePartial: "부분 완료",

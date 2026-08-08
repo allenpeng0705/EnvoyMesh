@@ -1751,6 +1751,9 @@ export interface NodeServiceEvents {
 
   /** Phase 47D — iteration progress (seal / judge / continue / ask_owner). */
   "chain:iteration": ChainIterationProgressEvent;
+
+  /** Worker-side read-only team job snapshot (`task.chain.status`). */
+  "chain:observed": import("./ws-protocol.js").ChainObservedStatus;
 }
 
 export interface NodeService {
@@ -3109,6 +3112,10 @@ export interface NodeService {
 
   /** List in-flight chains (newest first). */
   chainListActive(params?: ChainListActiveParams): Promise<ChainListActiveResult>;
+  /** Read-only jobs where this node is a worker (synced via task.chain.status). */
+  chainListObserved?(
+    params?: import("./ws-protocol.js").ChainListObservedParams,
+  ): Promise<import("./ws-protocol.js").ChainListObservedResult>;
 
   /** Cancel a chain or a single subtask within a chain. */
   chainCancel(params: ChainCancelParams): Promise<ChainCancelResult>;

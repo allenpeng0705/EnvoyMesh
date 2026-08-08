@@ -46,6 +46,7 @@ import {
   type TaskChainMandatePayload,
   type TaskChainPartialPayload,
   type TaskChainProposePayload,
+  type TaskChainStatusPayload,
 } from "@envoymesh/protocol";
 import { signCanonicalPayload } from "@envoymesh/identity";
 
@@ -92,6 +93,8 @@ export interface ChainWorkerHandlerDeps extends ChainWorkerSendDeps {
    * See docs/agent-network-engine.md.
    */
   isAgentNetworkEngineReady?: () => boolean;
+  /** Optional: persist/display read-only job snapshots from the assigner. */
+  onObservedStatus?: (orchestratorPeerId: string, payload: TaskChainStatusPayload) => void;
   /** Optional executor — runs the task body and emits partials. */
   executeSubtask?: (
     subtask: ChainSubtask,
@@ -286,6 +289,35 @@ export async function handleWorkerHeartbeat(
     correlationId: envelope.correlationId,
     summary: `subtask=${payload.subtaskId}`,
   });
+  return { ok: true };
+}
+
+/**
+ * Read-only job snapshot from the assigner. Persistence/UI is handled by the
+ * runtime via `onObservedStatus` when wired; this handler only audits.
+ */
+export async function handleWorkerStatus(
+  deps: ChainWorkerHandlerDeps,
+  envelope: EnvoyEnvelope,
+  payload: TaskChainStatusPayload,
+): Promise<ChainInboundDecision> {
+  deps.audit.record({
+    type: "chain.status_received",
+    outcome: "record",
+    intent: "task.chain.status",
+    remotePeerId: envelope.senderPeerId,
+    correlationId: envelope.correlationId ?? payload.chainId,
+    summary:
+      `phase=${payload.phase} awarded=${payload.awardedCount}/${payload.subtaskCount}` +
+      ` partial=${payload.partialCount} mode=${payload.awardMode}`,
+  });
+  if (typeof deps.onObservedStatus === "function") {
+    try {
+      deps.onObservedStatus(envelope.senderPeerId, payload);
+    } catch {
+      /* best-effort UI hook */
+    }
+  }
   return { ok: true };
 }
 

@@ -965,14 +965,22 @@ export class EnvoyMesh {
     if (!idStr || idStr.startsWith("envoy_") || !this.node) {
       return [];
     }
-    const existingGood = await this.getPeerStoreDialHints(idStr);
+    // Preserve mDNS / identify private-LAN high ports (tcp/0). A scrub that only
+    // keeps stable ports + circuits used to wipe the live LAN listen addr and
+    // leave the peer stuck on Online-Relay on the same subnet.
+    const existingLanEphemeral = await this.getPeerStoreDialHints(idStr, {
+      allowEphemeralPrivateLan: true,
+    });
+    const existingStable = await this.getPeerStoreDialHints(idStr);
     const replacement = filterUsableOutboundPeerDialHints(
       [
-        ...existingGood,
+        ...existingStable,
+        ...existingLanEphemeral,
         ...extraAddrs.filter((a) => !a.includes("/p2p-circuit/")),
       ],
       idStr,
-    );
+      { allowEphemeralPrivateLan: true },
+    ).filter((a) => !a.includes("/p2p-circuit/"));
     // Do NOT overwrite the peer store with an empty list: in-process two-
     // node tests listen on 127.0.0.1, which the outbound hint filter strips
     // as "unroutable". Without this guard, the first `scrubPeerStoreDialHints`
@@ -1005,11 +1013,19 @@ export class EnvoyMesh {
     if (!idStr || idStr.startsWith("envoy_") || !this.node) {
       return;
     }
-    const existingGood = await this.getPeerStoreDialHints(idStr);
+    const existingLanEphemeral = await this.getPeerStoreDialHints(idStr, {
+      allowEphemeralPrivateLan: true,
+    });
+    const existingStable = await this.getPeerStoreDialHints(idStr);
     const merged = filterUsableOutboundPeerDialHints(
-      [...existingGood, ...addrs.filter((a) => !a.includes("/p2p-circuit/"))],
+      [
+        ...existingStable,
+        ...existingLanEphemeral,
+        ...addrs.filter((a) => !a.includes("/p2p-circuit/")),
+      ],
       idStr,
-    );
+      { allowEphemeralPrivateLan: true },
+    ).filter((a) => !a.includes("/p2p-circuit/"));
     if (merged.length === 0) {
       return;
     }
@@ -2967,17 +2983,40 @@ export class EnvoyMesh {
       // Node not started — skip the self-dial check.
     }
     const peerIdStr = parsePeerIdFromDialTarget(target);
-    const hintList = filterDialHintsForOutboundSend(
+    const hintFilterOpts = {
+      preferCircuitHints: sendOptions?.preferCircuitHints,
+      allowEphemeralPrivateLan: sendOptions?.sameSubnetLanFirst === true,
+    };
+    let hintList = filterDialHintsForOutboundSend(
       sendOptions?.dialHints ?? [],
       peerIdStr ?? "",
-      sendOptions,
+      hintFilterOpts,
     );
+    if (peerIdStr && sendOptions?.sameSubnetLanFirst === true) {
+      try {
+        const storeLan = await this.getPeerStoreDialHints(peerIdStr, {
+          allowEphemeralPrivateLan: true,
+        });
+        if (storeLan.length > 0) {
+          hintList = filterDialHintsForOutboundSend(
+            [...hintList, ...storeLan],
+            peerIdStr,
+            hintFilterOpts,
+          );
+        }
+      } catch {
+        /* best-effort */
+      }
+    }
     const canUpgradeRelayToDirect =
       sendOptions?.upgradeRelayToDirect === true &&
-      hasLanUpgradeDialHints(hintList, {
+      !sendOptions?.preferCircuitHints &&
+      (hasLanUpgradeDialHints(hintList, {
         sameSubnetLanFirst: sendOptions?.sameSubnetLanFirst === true,
-      }) &&
-      !sendOptions?.preferCircuitHints;
+      }) ||
+        // Same-subnet: still try peerstore/mDNS bare dial even when directory
+        // only has stale closed high ports (common after tcp/0 restart).
+        sendOptions?.sameSubnetLanFirst === true);
     if (peerIdStr && !sendOptions?.forceFreshDial && !sendOptions?.verifyConnection) {
       const before = this.getPeerConnectionInfo(peerIdStr);
       if (before.connected) {
@@ -2990,7 +3029,7 @@ export class EnvoyMesh {
           const lanOnly = hintList.filter((h) => !h.includes("/p2p-circuit/"));
           const { stream } = await this.openOutboundStream(target, protocol, {
             ...sendOptions,
-            dialHints: lanOnly.length > 0 ? lanOnly : hintList,
+            dialHints: lanOnly,
             preferCircuitHints: false,
             sameSubnetLanFirst: true,
             forceFreshDial: true,

@@ -16,8 +16,12 @@ export const itChainsMessages = {
     published: "Pubblicata",
     planning: "Pianificazione",
     bidding: "Offerte",
+    assigning: "Assegnazione",
+    waitingWorkers: "In attesa dei worker",
+    participating: "Partecipazione",
     running: "In esecuzione",
     synthesizing: "Sintesi",
+    awaitingOwner: "In attesa della tua decisione",
     unknown: "Sconosciuto",
   },
   active: {
@@ -68,12 +72,22 @@ export const itChainsMessages = {
     loadFailed: "Impossibile caricare lo stato della catena.",
     finalized: "Questa catena è terminata — vedi il report.",
     cancelled: "Questa catena è stata annullata.",
+    directAssignHint:
+      "L'assegnazione diretta è attiva — i worker ricevono il passo non appena confermano di essere pronti (nessuna asta sui costi). Attiva le offerte competitive nelle impostazioni solo se vuoi la classifica per costo.",
+    observedHint:
+      "Sei un worker su questo lavoro. Puoi seguire i progressi; solo l'assegnatore può gestire o annullare.",
   },
-  tree: {
+  observed: {
+    title: "Lavori a cui partecipi",
+    empty: "Nessuno ancora.",
+    readOnly: "Solo lettura",
+  },
+    tree: {
     title: "Albero delle sotto-attività",
     chainId: "Catena",
     mandateId: "Mandato",
     empty: "Ancora nessuna sotto-attività.",
+    stateAssigning: "Assegnazione",
     stateBidding: "Offerte",
     stateAwarded: "Assegnata",
     stateRunning: "In esecuzione",
@@ -83,6 +97,7 @@ export const itChainsMessages = {
     stateFailed: "Fallita",
     stateTitle: "Stato: {state}",
     bidsCount: "{count} offerta/e",
+    readyCount: "{count} pronti",
     workerStateAwarded: "Assegnato",
     workerStateRunning: "In esecuzione",
     workerStatePartial: "Parziale",

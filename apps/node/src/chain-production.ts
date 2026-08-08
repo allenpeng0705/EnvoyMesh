@@ -28,6 +28,8 @@ export interface ChainTransportResolver {
    * "You" workers never receive mandate/propose.
    */
   deliverLocally?: (envelope: EnvoyEnvelope) => Promise<void>;
+  /** Optional LAN/listen dial hints for the resolved libp2p transport peer. */
+  resolveDialHints?: (transportPeerId: string) => Promise<string[]>;
 }
 
 /**
@@ -191,11 +193,22 @@ export async function sendChainEnvelopeOverMesh(
       transport: shortPeerId(transportPeerId),
       correlationId: envelope.correlationId,
     });
+    let dialHints = [`/p2p/${transportPeerId}`];
+    if (resolver.resolveDialHints) {
+      try {
+        const extra = await resolver.resolveDialHints(transportPeerId);
+        if (extra.length > 0) {
+          dialHints = [...new Set([...extra, ...dialHints])];
+        }
+      } catch {
+        /* best-effort */
+      }
+    }
     const result = await sendEnvelopeWithRetry({
       mesh: resolver.mesh,
       transportPeerId,
       envelope,
-      dialHints: [`/p2p/${transportPeerId}`],
+      dialHints,
     });
     if (!result.delivered) {
       chainWarn("send", "mesh deliver returned not delivered", {

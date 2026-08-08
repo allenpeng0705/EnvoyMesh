@@ -397,6 +397,7 @@ export type RpcMethods =
   | "chainLaunch"
   | "chainGetState"
   | "chainListActive"
+  | "chainListObserved"
   | "chainCancel"
   | "chainListReports"
   | "chainGetReport"
@@ -1893,6 +1894,44 @@ export interface ChainGetStateResult {
       judgeReason?: string;
     }>;
   };
+}
+
+/** Read-only snapshot of a team job where this node is a worker (not assigner). */
+export interface ChainObservedStatus {
+  chainId: string;
+  goal?: string;
+  phase:
+    | "assigning"
+    | "waitingWorkers"
+    | "bidding"
+    | "running"
+    | "synthesizing"
+    | "completed"
+    | "cancelled";
+  awardMode: "direct" | "competitive";
+  subtaskCount: number;
+  awardedCount: number;
+  partialCount: number;
+  finalPartialCount?: number;
+  bidCount?: number;
+  steps: Array<{
+    subtaskId: string;
+    objective?: string;
+    state: "pending" | "offered" | "awarded" | "running" | "done" | "failed" | "cancelled";
+    workerPeerId?: string;
+  }>;
+  orchestratorPeerId: string;
+  updatedAt: string;
+  readOnly: true;
+}
+
+export interface ChainListObservedParams {
+  /** When true, include completed/cancelled observed jobs (default: active only). */
+  includeTerminal?: boolean;
+}
+
+export interface ChainListObservedResult {
+  chains: ChainObservedStatus[];
 }
 
 export interface ChainListActiveParams {

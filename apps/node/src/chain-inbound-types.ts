@@ -19,6 +19,7 @@ import type {
   TaskChainPartialPayload,
   TaskChainProposePayload,
   TaskChainReportPayload,
+  TaskChainStatusPayload,
 } from "@envoymesh/protocol";
 import type {
   ChainHandoffRequestPayload,
@@ -55,6 +56,7 @@ export type ChainInboundRejectReason =
   | "malformed_merge_payload"
   | "malformed_cancel_payload"
   | "malformed_heartbeat_payload"
+  | "malformed_status_payload"
   | "malformed_report_payload"
   | "malformed_handoff_payload"
   | "malformed_delegate_payload"
@@ -117,6 +119,10 @@ export interface ChainInboundDeps {
   handleWorkerHeartbeat: (
     envelope: EnvoyEnvelope,
     payload: TaskChainHeartbeatPayload,
+  ) => Promise<ChainInboundDecision>;
+  handleWorkerStatus: (
+    envelope: EnvoyEnvelope,
+    payload: TaskChainStatusPayload,
   ) => Promise<ChainInboundDecision>;
 
   // Orchestrator-side handlers (called when this node is the orchestrator agent)
