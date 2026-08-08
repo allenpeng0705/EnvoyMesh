@@ -21,6 +21,7 @@ import type { CID } from "multiformats/cid";
 import { createLibp2p, type Libp2p } from "libp2p";
 import type { Uint8ArrayList } from "uint8arraylist";
 import net from "node:net";
+import os from "node:os";
 import { decodeEnvelope, encodeEnvelope } from "./codec.js";
 import {
   buildConfiguredRelayCircuitListenAddrs,
@@ -320,6 +321,12 @@ export interface MeshOutboundOptions {
    * snapshots cannot burn the full dialTimeout before circuit fallthrough.
    */
   sameSubnetLanFirst?: boolean;
+  /**
+   * When true, dial only {@link dialHints} — do not union peerstore/mDNS addrs.
+   * Used by Relay→Direct after {@link selectDialHintsForRelayToDirectUpgrade}
+   * so foreign home RFC1918 left in the peerstore cannot re-enter the dial list.
+   */
+  dialHintsOnly?: boolean;
   /** Override per-address dial timeout (ms). Default {@link HINT_DIAL_TIMEOUT_MS}. */
   dialTimeoutMs?: number;
   /** Private-LAN timeout when {@link sameSubnetLanFirst} is set. Default 3s. */
@@ -3001,16 +3008,24 @@ export class EnvoyMesh {
       // Node not started — skip the self-dial check.
     }
     const peerIdStr = parsePeerIdFromDialTarget(target);
+    // Relay→Direct must keep tcp/0 private-LAN listens from identify/mDNS even
+    // when policy has not yet proven same-/24 (circuit-only directory was the
+    // stuck Online-Relay-on-LAN case).
+    const wantsUpgradeRelayToDirect = wantsRelayToDirectUpgradeAttempt(sendOptions);
     const hintFilterOpts = {
       preferCircuitHints: sendOptions?.preferCircuitHints,
-      allowEphemeralPrivateLan: sendOptions?.sameSubnetLanFirst === true,
+      allowEphemeralPrivateLan:
+        sendOptions?.sameSubnetLanFirst === true || wantsUpgradeRelayToDirect,
     };
     let hintList = filterDialHintsForOutboundSend(
       sendOptions?.dialHints ?? [],
       peerIdStr ?? "",
       hintFilterOpts,
     );
-    if (peerIdStr && sendOptions?.sameSubnetLanFirst === true) {
+    if (
+      peerIdStr &&
+      (sendOptions?.sameSubnetLanFirst === true || wantsUpgradeRelayToDirect)
+    ) {
       try {
         const storeLan = await this.getPeerStoreDialHints(peerIdStr, {
           allowEphemeralPrivateLan: true,
@@ -3026,24 +3041,15 @@ export class EnvoyMesh {
         /* best-effort */
       }
     }
-    const canUpgradeRelayToDirect =
-      sendOptions?.upgradeRelayToDirect === true &&
-      !sendOptions?.preferCircuitHints &&
-      (hasLanUpgradeDialHints(hintList, {
-        sameSubnetLanFirst: sendOptions?.sameSubnetLanFirst === true,
-      }) ||
-        // Same-subnet: still try peerstore/mDNS bare dial even when directory
-        // only has stale closed high ports (common after tcp/0 restart).
-        sendOptions?.sameSubnetLanFirst === true);
     if (peerIdStr && !sendOptions?.forceFreshDial && !sendOptions?.verifyConnection) {
       const before = this.getPeerConnectionInfo(peerIdStr);
       if (before.connected) {
-        if (before.direct || !canUpgradeRelayToDirect) {
+        if (before.direct || !wantsUpgradeRelayToDirect) {
           return before;
         }
-        // Relay→Direct: refresh identify over the live circuit so peerstore has
-        // the peer's *current* tcp/0 LAN listen (directory often has dead ports
-        // from the previous process). Then try LAN WITHOUT dropping the relay.
+        // Relay→Direct: always identify over the live circuit first — directory
+        // / dialHints are often circuit-only until identify publishes the peer's
+        // current tcp/0 LAN listen. Then try LAN WITHOUT dropping the relay.
         try {
           if (sendOptions?.skipIdentifyRefresh !== true) {
             await this.refreshPeerListenAddrsViaIdentify(peerIdStr);
@@ -3056,16 +3062,25 @@ export class EnvoyMesh {
               hintList = filterDialHintsForOutboundSend(
                 [...hintList, ...freshLan],
                 peerIdStr,
-                hintFilterOpts,
+                { ...hintFilterOpts, allowEphemeralPrivateLan: true },
               );
             }
           } catch {
             /* best-effort */
           }
-          const lanOnly = hintList.filter((h) => !h.includes("/p2p-circuit/"));
+          const lanCandidates = hintList.filter((h) => !h.includes("/p2p-circuit/"));
+          // Always identify (above), but only dial LAN that is safe:
+          // - policy already proved same-/24 → all non-circuit hints
+          // - otherwise → public direct + same-/24|overlay vs local NICs only
+          //   (prevents WAN black-hole dials of foreign home RFC1918 from identify)
+          const lanOnly = selectDialHintsForRelayToDirectUpgrade(lanCandidates, this.multiaddrs, {
+            sameSubnetAlreadyProven: sendOptions?.sameSubnetLanFirst === true,
+            hostNicFallback: true,
+          });
           if (lanOnly.length === 0) {
             console.warn(
-              `[network] relay→direct skipped for ${peerIdStr.slice(0, 12)}…: no LAN dial hints after identify`,
+              `[network] relay→direct skipped for ${peerIdStr.slice(0, 12)}…: no same-network LAN dial hints after identify` +
+                (lanCandidates.length > 0 ? ` (had ${lanCandidates.length} private/foreign hint(s))` : ""),
             );
             return before;
           }
@@ -3074,6 +3089,8 @@ export class EnvoyMesh {
             dialHints: lanOnly,
             preferCircuitHints: false,
             sameSubnetLanFirst: true,
+            // Do not re-merge peerstore (may still hold foreign RFC1918 from identify).
+            dialHintsOnly: true,
             forceFreshDial: true,
             upgradeRelayToDirect: true,
           });
@@ -3329,7 +3346,7 @@ export class EnvoyMesh {
     );
     const barePeerDial = !target.trim().startsWith("/");
 
-    if (peerIdStr) {
+    if (peerIdStr && sendOptions?.dialHintsOnly !== true) {
       // Same-subnet: keep mDNS/peerstore high ports (nodes often listen on tcp/0).
       // Do not scrub-patch the peerstore with a filter that strips them.
       if (allowEphemeralPrivateLan) {
@@ -4655,6 +4672,110 @@ export function hasDirectTcpDialHints(hints: readonly string[]): boolean {
       !isDockerBridgeGatewayDialHint(h) &&
       !isLikelyInboundConnSnapshotDialHint(h),
   );
+}
+
+/**
+ * True when an outbound call asked for Relay→Direct and is not forcing circuit
+ * preference (VPN / relay-only). Intentionally ignores whether dialHints already
+ * contain LAN addresses — identify over the live circuit often learns them.
+ */
+export function wantsRelayToDirectUpgradeAttempt(opts?: {
+  upgradeRelayToDirect?: boolean;
+  preferCircuitHints?: boolean;
+}): boolean {
+  return opts?.upgradeRelayToDirect === true && opts?.preferCircuitHints !== true;
+}
+
+/** Parse dotted IPv4 from a libp2p multiaddr string. */
+export function parseIpv4FromMultiaddr(addr: string): string | null {
+  const m = addr.match(/\/ip4\/(\d+\.\d+\.\d+\.\d+)(?:\/|$)/);
+  return m?.[1] ?? null;
+}
+
+function ipv4SameSubnetPrefix(a: string, b: string, prefixOctets = 3): boolean {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  if (pa.length !== 4 || pb.length !== 4) return false;
+  if (pa.some((n) => !Number.isFinite(n)) || pb.some((n) => !Number.isFinite(n))) return false;
+  for (let i = 0; i < prefixOctets; i++) {
+    if (pa[i] !== pb[i]) return false;
+  }
+  return true;
+}
+
+function isRfc6598OverlayIp(ip: string): boolean {
+  const m = ip.match(/^(\d+)\.(\d+)\./);
+  if (!m) return false;
+  const o1 = Number(m[1]);
+  const o2 = Number(m[2]);
+  return o1 === 100 && o2 >= 64 && o2 <= 127;
+}
+
+function collectLocalIpv4sForUpgrade(
+  localListenAddrs: readonly string[],
+  hostNicFallback: boolean,
+): string[] {
+  const out = new Set<string>();
+  for (const ip of localListenAddrs
+    .map(parseIpv4FromMultiaddr)
+    .filter((ip): ip is string => ip != null && ip !== "0.0.0.0" && !ip.startsWith("127."))) {
+    out.add(ip);
+  }
+  if (hostNicFallback) {
+    try {
+      for (const addrs of Object.values(os.networkInterfaces())) {
+        for (const a of addrs ?? []) {
+          const family = a.family as string | number;
+          if (a.internal) continue;
+          if (family !== "IPv4" && family !== 4) continue;
+          if (a.address.startsWith("127.") || a.address === "0.0.0.0") continue;
+          out.add(a.address);
+        }
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+  return [...out];
+}
+
+/**
+ * After identify on Relay→Direct, choose which non-circuit hints are safe to dial.
+ *
+ * - Public direct TCP: always kept.
+ * - Private LAN: kept only when same-/24 (or RFC6598 overlay) as a local address,
+ *   unless {@link sameSubnetAlreadyProven} (caller policy already LAN-first).
+ */
+export function selectDialHintsForRelayToDirectUpgrade(
+  nonCircuitHints: readonly string[],
+  localListenAddrs: readonly string[],
+  opts?: { sameSubnetAlreadyProven?: boolean; hostNicFallback?: boolean },
+): string[] {
+  if (opts?.sameSubnetAlreadyProven === true) {
+    return [...nonCircuitHints];
+  }
+  const localIps = collectLocalIpv4sForUpgrade(
+    localListenAddrs,
+    opts?.hostNicFallback === true,
+  );
+  const out: string[] = [];
+  for (const h of nonCircuitHints) {
+    if (!h.includes("/tcp/") || h.includes("/p2p-circuit/")) continue;
+    if (hasDirectTcpDialHints([h]) && !isPrivateOrUnroutableDialHint(h)) {
+      out.push(h);
+      continue;
+    }
+    if (!isPrivateLanTcpDialHint(h)) continue;
+    const remoteIp = parseIpv4FromMultiaddr(h);
+    if (!remoteIp || localIps.length === 0) continue;
+    const sameNet = localIps.some(
+      (lip) =>
+        ipv4SameSubnetPrefix(remoteIp, lip, 3) ||
+        (isRfc6598OverlayIp(remoteIp) && isRfc6598OverlayIp(lip)),
+    );
+    if (sameNet) out.push(h);
+  }
+  return out;
 }
 
 /**

@@ -18,6 +18,7 @@ import type {
   ChainObservedStatus,
   ChainWorkerReachability,
 } from "@envoymesh/api";
+import { agentNetworkPrimaryRole } from "@envoymesh/protocol";
 import { useT } from "../../context/I18nContext.js";
 import { useToast } from "../../hooks/useToast.js";
 import { useNodeService, useAgentCards, useTransportWsOpen } from "../../hooks/useNodeService.js";
@@ -262,6 +263,7 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
   const [newChainGoal, setNewChainGoal] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
   const [goalDraft, setGoalDraft] = useState("");
+  const [composerAssignmentMode, setComposerAssignmentMode] = useState<"skill" | "role">("skill");
 
   // Agent Network settings modal (fleet onboarding + advanced) — opened from
   // the "Manage workers" button in the header.
@@ -402,9 +404,34 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
     { label: t("chains.start.template.askNetwork"), goal: t("chains.start.template.askNetworkGoal") },
   ];
 
-  const openComposer = useCallback((initialGoal?: string) => {
-    setGoalDraft(initialGoal ?? "");
-    setComposing(true);
+  const openComposer = useCallback(
+    (initialGoal?: string) => {
+      setGoalDraft(initialGoal ?? "");
+      setComposerAssignmentMode("skill");
+      setComposing(true);
+      void nodeService
+        .chainGetDefaults?.({})
+        .then((r) => {
+          setComposerAssignmentMode(r.defaults?.assignmentMode === "role" ? "role" : "skill");
+        })
+        .catch(() => undefined);
+    },
+    [nodeService],
+  );
+
+  const localPrimaryRole = agentNetworkPrimaryRole(
+    localWorkerCard?.agentNetworkProfile?.roles ?? nodeConfig?.agentNetworkProfile?.roles,
+  );
+  const showEmptyRoleGuide =
+    composing && composerAssignmentMode === "role" && !localPrimaryRole;
+
+  const openWorkerProfileForRole = useCallback(() => {
+    setShowMembership(true);
+    window.setTimeout(() => {
+      const el = document.getElementById("anp-primary-role") ?? document.getElementById("anp-custom-role");
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (el instanceof HTMLElement) el.focus();
+    }, 50);
   }, []);
 
   const launchChain = useCallback(() => {
@@ -496,7 +523,59 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
       </div>
 
       {composing ? (
-        <div className="chain-composer">
+        <div className="chain-composer" data-testid="chain-composer">
+          <fieldset className="chain-composer__mode" data-testid="chain-composer-assignment-mode">
+            <legend className="chain-composer__label">{t("chains.start.assignmentChooserLabel")}</legend>
+            <div className="chain-composer__mode-options">
+              <label
+                className={
+                  composerAssignmentMode === "skill"
+                    ? "chain-composer__mode-option chain-composer__mode-option--active"
+                    : "chain-composer__mode-option"
+                }
+              >
+                <input
+                  type="radio"
+                  name="chain-assignment-mode"
+                  value="skill"
+                  checked={composerAssignmentMode === "skill"}
+                  onChange={() => setComposerAssignmentMode("skill")}
+                />
+                <span className="chain-composer__mode-title">{t("chains.start.assignmentChooserSkill")}</span>
+                <span className="chain-composer__mode-hint">{t("chains.start.assignmentChooserSkillHint")}</span>
+              </label>
+              <label
+                className={
+                  composerAssignmentMode === "role"
+                    ? "chain-composer__mode-option chain-composer__mode-option--active"
+                    : "chain-composer__mode-option"
+                }
+              >
+                <input
+                  type="radio"
+                  name="chain-assignment-mode"
+                  value="role"
+                  checked={composerAssignmentMode === "role"}
+                  onChange={() => setComposerAssignmentMode("role")}
+                />
+                <span className="chain-composer__mode-title">{t("chains.start.assignmentChooserRole")}</span>
+                <span className="chain-composer__mode-hint">{t("chains.start.assignmentChooserRoleHint")}</span>
+              </label>
+            </div>
+          </fieldset>
+          {showEmptyRoleGuide ? (
+            <div className="chain-composer__empty-role" data-testid="chain-composer-empty-role">
+              <p>{t("chains.start.emptyRoleBanner")}</p>
+              <button
+                type="button"
+                className="secondary btn-sm"
+                data-testid="chain-composer-empty-role-cta"
+                onClick={openWorkerProfileForRole}
+              >
+                {t("chains.start.emptyRoleCta")}
+              </button>
+            </div>
+          ) : null}
           <label htmlFor="chain-goal-input" className="chain-composer__label">
             {t("chains.start.composerLabel")}
           </label>
@@ -540,6 +619,7 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
       {newChainGoal ? (
         <ChainStartDialog
           goal={newChainGoal}
+          assignmentMode={composerAssignmentMode}
           onClose={() => setNewChainGoal(null)}
           onStarted={handleStarted}
           onOpenDiscover={onOpenDiscover}

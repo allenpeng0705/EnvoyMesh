@@ -6607,6 +6607,7 @@ Closes the production path after 48A–48D protocol/mount work.
 
 - `[x]` `agentNetworkProfile.roles[]` + helpers (`agentNetworkPrimaryRole`, coerce, well-known + `custom:`)
 - `[x]` Social primary-role picker; skill presets relabeled (not “roles”)
+- `[x]` Custom collaboration roles in Social (`custom:<slug>` free-text, label helper)
 - `[x]` Roster / worker chip shows primary role; Agent Card announces roles
 - `[x]` E2E: `chain-plan-assign-roles-e2e.test.ts` (card announce)
 
@@ -6628,6 +6629,7 @@ Closes the production path after 48A–48D protocol/mount work.
 ### 52D — Transparency UI `[x]`
 
 - `[x]` ChainStartDialog: assignment mode toggle + `planWarnings` list; wait for defaults before first preview
+- `[x]` New team job composer: Skill vs Role chooser + empty local-role soft guide; emphasize `no_role_peers`
 - `[x]` `chainGetState` / ChainDetailPanel: assignment mode badge + plan warnings
 - `[x]` ChainDefaultsPanel: default assignment mode
 - `[x]` Docs: roles design, vocabulary, plan-assign, operator guide, `agent_network.md`
@@ -6694,6 +6696,7 @@ Closes the production path after 48A–48D protocol/mount work.
 | Date | Change |
 |------|--------|
 | 2026-08-09 | **Phase 53 — Artifact handoff + worker stickiness shipped (53A–53E).** `namedArtifacts` / propose `inputArtifacts`; `threadId` stickiness; stall prefer sticky peer / `requiredRole`; OpenClaw consume+emit; docs [agent-network-artifacts.md](./agent-network-artifacts.md). |
+| 2026-08-09 | **Phase 52 follow-up — custom roles + New team job mode chooser.** Social worker profile accepts `custom:<slug>` roles (mirrors custom skills); New team job composer offers Skill-based vs Role-based (seeded from defaults) with soft empty-role guidance; `no_role_peers` emphasized in preview. |
 | 2026-08-08 | **Phase 52 — Agent Network collaboration roles + assignment modes shipped (52A–52D).** Manual `agentNetworkProfile.roles[]` (primary = `[0]`); Team job assignment mode `skill` \| `role`; Assigner prompt modules + `planWarnings`; Social picker / start dialog / defaults; mock role synthesizer; card-announce E2E + unit coverage. Design: [agent-network-roles.md](./agent-network-roles.md). |
 | 2026-07-31 | **Phase 51 follow-ups.** Owner-only RPC gate covers vault/library + all `terminal*` methods; `previewFamilyInvite` pre-auth profile list for EnvoyGo re-pair (I'm new / I'm back); Social family group create/list/send UI; EnvoyGo skips bond/terminal/feed owner RPCs for family sessions; widget-test mock signatures fixed. |
 | 2026-07-31 | **Phase 51F review hardenings.** Social family DMs: route `family:*` in `partnerOwnerIdForChat` / `useChatThreadPreviews`; bubble direction uses `callerFamilyProfileId` (not mesh owner id). |

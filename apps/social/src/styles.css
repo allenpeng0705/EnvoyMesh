@@ -10410,6 +10410,92 @@ button:disabled {
   border-radius: var(--radius-md);
 }
 
+.chain-composer__mode {
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+.chain-composer__mode-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.chain-composer__mode-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border, var(--color-slate-200));
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  background: var(--color-surface);
+}
+
+.chain-composer__mode-option--active {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-subtle);
+}
+
+.chain-composer__mode-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chain-composer__mode-title {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text);
+}
+
+.chain-composer__mode-hint {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted, #64748b);
+  line-height: 1.35;
+}
+
+.chain-composer__empty-role {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-warning-border, #fcd34d);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-subtle, #fffbeb);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+
+.chain-composer__empty-role p {
+  margin: 0;
+  flex: 1 1 12rem;
+}
+
+.chain-start-plan-warnings--emphasize {
+  border-color: var(--color-warning-border, #fcd34d);
+  background: var(--color-warning-subtle, #fffbeb);
+}
+
+.chain-start-plan-warnings__lead {
+  margin: 0 0 0.35rem;
+  font-weight: var(--font-medium, 600);
+}
+
+.chain-start-plan-warnings ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chain-start-plan-warnings__item--role {
+  font-weight: var(--font-medium, 600);
+}
+
 /* ---- Chain start dialog (modal) ---- */
 
 .chain-start-dialog-backdrop {
@@ -11277,6 +11363,10 @@ button:disabled {
 
 /* Custom-strength input — breathing room above so it never collides with
  * the chip row. */
+.agent-network-role-add {
+  margin-top: var(--space-2, 0.5rem);
+}
+
 .agent-network-skill-add {
   margin-top: var(--space-2);
 }

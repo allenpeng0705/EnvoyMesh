@@ -26,6 +26,9 @@ export const agentNetworkSettingsMessages = {
       "Team seat for role-based jobs (e.g. programmer, tester). Separate from skills — set manually. Peers see this on your Agent Card when Join is on.",
     roleNone: "None (skill-only)",
     roleSaved: "Collaboration role saved",
+    roleCustomPlaceholder: "Add custom role + Enter (e.g. qa_lead)",
+    roleCustomInvalid:
+      "Use letters, numbers, hyphen or underscore (max 32). Saved as custom:<slug>.",
     role_product_manager: "Product manager",
     role_programmer: "Programmer",
     role_tester: "Tester",

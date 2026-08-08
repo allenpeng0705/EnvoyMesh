@@ -22,6 +22,7 @@ import {
   AGENT_NETWORK_WELL_KNOWN_ROLES,
   DEFAULT_AGENT_NETWORK_PROFILE,
   agentNetworkPrimaryRole,
+  agentNetworkRoleIds,
   agentNetworkSkillIds,
   createAgentNetworkProfile,
   createOwnerDomainSkill,
@@ -29,6 +30,10 @@ import {
 import { useT } from "../../../context/I18nContext.js";
 import { useNodeService } from "../../../hooks/useNodeService.js";
 import { useToast } from "../../../hooks/useToast.js";
+import {
+  agentNetworkRoleLabel,
+  draftToAgentNetworkRoleId,
+} from "../../../lib/agent-network-role-label.js";
 
 /** Skill taxonomy — grouped so the menu reads as a sensible taxonomy
  * (Analytical → STEM → Language → Creative) rather than an arbitrary
@@ -108,6 +113,8 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
   const { showToast } = useToast();
   const [profile, setProfile] = useState<AgentNetworkProfile>({ ...DEFAULT_AGENT_NETWORK_PROFILE });
   const [skillDraft, setSkillDraft] = useState("");
+  const [roleDraft, setRoleDraft] = useState("");
+  const [roleDraftError, setRoleDraftError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showFineTune, setShowFineTune] = useState(false);
 
@@ -170,6 +177,17 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
     [persist, profile, t],
   );
 
+  const commitRoleDraft = useCallback(() => {
+    const role = draftToAgentNetworkRoleId(roleDraft);
+    if (!role) {
+      setRoleDraftError(t(`${K}.roleCustomInvalid`));
+      return;
+    }
+    setRoleDraftError(null);
+    setRoleDraft("");
+    setPrimaryRole(role);
+  }, [roleDraft, setPrimaryRole, t]);
+
   if (!enabled) {
     return (
       <p className="field-desc" data-testid="agent-network-profile-disabled">
@@ -180,6 +198,9 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
 
   const activePresetId = matchingPreset(profile);
   const primaryRole = agentNetworkPrimaryRole(profile.roles) ?? "";
+  const customRolesInProfile = agentNetworkRoleIds(profile.roles).filter((r) =>
+    r.startsWith("custom:"),
+  );
 
   return (
     <div className="agent-network-profile-panel" data-testid="agent-network-profile-panel">
@@ -204,8 +225,39 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
               {t(`${K}.role_${role}`)}
             </option>
           ))}
+          {customRolesInProfile.map((role) => (
+            <option key={role} value={role}>
+              {agentNetworkRoleLabel(role, t)}
+            </option>
+          ))}
         </select>
-        <small className="field-desc">{t(`${K}.primaryRoleHint`)}</small>
+        <div className="agent-network-role-add">
+          <input
+            type="text"
+            id="anp-custom-role"
+            className="settings-input"
+            data-testid="agent-network-custom-role-input"
+            value={roleDraft}
+            disabled={saving}
+            placeholder={t(`${K}.roleCustomPlaceholder`)}
+            onChange={(e) => {
+              setRoleDraft(e.target.value);
+              if (roleDraftError) setRoleDraftError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              e.preventDefault();
+              commitRoleDraft();
+            }}
+          />
+        </div>
+        {roleDraftError ? (
+          <small className="field-desc" data-testid="agent-network-custom-role-error">
+            {roleDraftError}
+          </small>
+        ) : (
+          <small className="field-desc">{t(`${K}.primaryRoleHint`)}</small>
+        )}
       </div>
 
       {/* ---- Quick setup: skill presets ---- */}

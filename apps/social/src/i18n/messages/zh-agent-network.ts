@@ -26,6 +26,8 @@ export const zhAgentNetworkSettingsMessages = {
       "面向角色型团队任务的席位（如程序员、测试）。与技能分开，需手动设置；开启加入后会随 Agent Card 分享给对等节点。",
     roleNone: "无（仅按技能）",
     roleSaved: "协作角色已保存",
+    roleCustomPlaceholder: "自定义角色后按回车（如 qa_lead）",
+    roleCustomInvalid: "仅限字母、数字、连字符或下划线（最多 32 个字符），保存为 custom:<slug>。",
     role_product_manager: "产品经理",
     role_programmer: "程序员",
     role_tester: "测试",

@@ -2,41 +2,64 @@
  * @vitest-environment jsdom
  */
 import React from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { ChainStartDialog } from "../../src/components/ChainStartDialog.js";
-import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { I18nTestProvider } from "../../src/context/I18nContext.js";
 
-const chainPreviewGoal = vi.fn();
-const chainStartFromGoal = vi.fn();
-const chainSaveRecipe = vi.fn();
-const showToast = vi.fn();
-
-vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+const mocks = vi.hoisted(() => {
+  const chainPreviewGoal = vi.fn();
+  const chainStartFromGoal = vi.fn();
+  const chainSaveRecipe = vi.fn();
+  const chainGetDefaults = vi.fn();
+  const showToast = vi.fn();
+  return {
     chainPreviewGoal,
     chainStartFromGoal,
     chainSaveRecipe,
-    chainGetDefaults: vi.fn().mockResolvedValue({
-      defaults: { awardMode: "direct", showCostUi: false, iterationMaxRounds: 1 },
-    }),
-  }),
+    chainGetDefaults,
+    showToast,
+    nodeService: {
+      chainPreviewGoal,
+      chainStartFromGoal,
+      chainSaveRecipe,
+      chainGetDefaults,
+    },
+  };
+});
+
+vi.mock("../../src/hooks/useNodeService.js", () => ({
+  useNodeService: () => mocks.nodeService,
 }));
 
 vi.mock("../../src/hooks/useToast.js", () => ({
-  useToast: () => ({ showToast, toasts: [] }),
-  useToastOptional: () => ({ showToast }),
+  useToast: () => ({ showToast: mocks.showToast, toasts: [] }),
+  useToastOptional: () => ({ showToast: mocks.showToast }),
   ToastProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
+function renderDialog(ui: React.ReactElement) {
+  return render(<I18nTestProvider locale="en">{ui}</I18nTestProvider>);
+}
+
+beforeEach(() => {
+  mocks.chainPreviewGoal.mockReset();
+  mocks.chainStartFromGoal.mockReset();
+  mocks.chainSaveRecipe.mockReset();
+  mocks.showToast.mockReset();
+  mocks.chainGetDefaults.mockReset();
+  mocks.chainGetDefaults.mockResolvedValue({
+    defaults: { awardMode: "direct", showCostUi: false, iterationMaxRounds: 1 },
+  });
+});
+
 afterEach(() => {
   cleanup();
-  vi.clearAllMocks();
 });
 
 describe("ChainStartDialog", () => {
   it("blocks start and shows Discover CTA when every subtask has 0 workers", async () => {
-    chainPreviewGoal.mockResolvedValue({
+    const { ChainStartDialog } = await import("../../src/components/ChainStartDialog.js");
+    mocks.chainPreviewGoal.mockResolvedValue({
       ok: true,
       subtasks: [
         {
@@ -51,7 +74,7 @@ describe("ChainStartDialog", () => {
     });
     const onOpenDiscover = vi.fn();
     const onClose = vi.fn();
-    renderWithI18n(
+    renderDialog(
       <ChainStartDialog goal="Research local LLMs" onClose={onClose} onOpenDiscover={onOpenDiscover} />,
     );
 
@@ -61,16 +84,19 @@ describe("ChainStartDialog", () => {
     expect(screen.getByText(/No workers found/i)).toBeTruthy();
 
     const startBtn = screen.getByTestId("chain-start-confirm") as HTMLButtonElement;
-    expect(startBtn.disabled).toBe(true);
+    await waitFor(() => {
+      expect(startBtn.disabled).toBe(true);
+    });
 
     fireEvent.click(screen.getByTestId("chain-start-open-discover"));
     expect(onClose).toHaveBeenCalled();
     expect(onOpenDiscover).toHaveBeenCalled();
-    expect(chainStartFromGoal).not.toHaveBeenCalled();
+    expect(mocks.chainStartFromGoal).not.toHaveBeenCalled();
   });
 
   it("allows start when at least one worker is available", async () => {
-    chainPreviewGoal.mockResolvedValue({
+    const { ChainStartDialog } = await import("../../src/components/ChainStartDialog.js");
+    mocks.chainPreviewGoal.mockResolvedValue({
       ok: true,
       subtasks: [
         {
@@ -82,24 +108,24 @@ describe("ChainStartDialog", () => {
         },
       ],
     });
-    chainStartFromGoal.mockResolvedValue({ ok: true, chainId: "chain_1" });
+    mocks.chainStartFromGoal.mockResolvedValue({ ok: true, chainId: "chain_1" });
     const onStarted = vi.fn();
     const onClose = vi.fn();
-    renderWithI18n(
+    renderDialog(
       <ChainStartDialog goal="Research local LLMs" onClose={onClose} onStarted={onStarted} />,
     );
 
-    await waitFor(() => {
-      expect(screen.queryByTestId("chain-start-no-workers")).toBeNull();
+    const startBtn = await waitFor(() => {
+      const btn = screen.getByTestId("chain-start-confirm") as HTMLButtonElement;
+      expect(btn.disabled).toBe(false);
+      return btn;
     });
-    const startBtn = screen.getByTestId("chain-start-confirm") as HTMLButtonElement;
-    expect(startBtn.disabled).toBe(false);
     fireEvent.click(startBtn);
     await waitFor(() => {
-      expect(chainStartFromGoal).toHaveBeenCalled();
+      expect(mocks.chainStartFromGoal).toHaveBeenCalled();
       expect(onStarted).toHaveBeenCalledWith("chain_1");
     });
-    expect(chainStartFromGoal).toHaveBeenCalledWith(
+    expect(mocks.chainStartFromGoal).toHaveBeenCalledWith(
       expect.objectContaining({
         goal: "Research local LLMs",
         iterationMaxRounds: 1,
@@ -115,7 +141,8 @@ describe("ChainStartDialog", () => {
   });
 
   it("passes selected iterationMaxRounds on start", async () => {
-    chainPreviewGoal.mockResolvedValue({
+    const { ChainStartDialog } = await import("../../src/components/ChainStartDialog.js");
+    mocks.chainPreviewGoal.mockResolvedValue({
       ok: true,
       subtasks: [
         {
@@ -127,22 +154,55 @@ describe("ChainStartDialog", () => {
         },
       ],
     });
-    chainStartFromGoal.mockResolvedValue({ ok: true, chainId: "chain_2" });
-    renderWithI18n(
+    mocks.chainStartFromGoal.mockResolvedValue({ ok: true, chainId: "chain_2" });
+    renderDialog(
       <ChainStartDialog goal="Research local LLMs" onClose={() => undefined} onStarted={() => undefined} />,
     );
     await waitFor(() => {
-      expect(screen.getByTestId("chain-start-confirm")).toBeTruthy();
       expect((screen.getByTestId("chain-start-confirm") as HTMLButtonElement).disabled).toBe(false);
     });
+    fireEvent.click(screen.getByText(/Job settings/i));
     fireEvent.change(screen.getByTestId("chain-start-iteration-rounds"), { target: { value: "2" } });
     await waitFor(() => {
       expect((screen.getByTestId("chain-start-iteration-rounds") as HTMLSelectElement).value).toBe("2");
     });
     fireEvent.click(screen.getByTestId("chain-start-confirm"));
     await waitFor(() => {
-      expect(chainStartFromGoal).toHaveBeenCalledWith(
+      expect(mocks.chainStartFromGoal).toHaveBeenCalledWith(
         expect.objectContaining({ iterationMaxRounds: 2, plannedSubtasks: expect.any(Array) }),
+      );
+    });
+  });
+
+  it("previews with assignmentMode from props and emphasizes no_role_peers", async () => {
+    const { ChainStartDialog } = await import("../../src/components/ChainStartDialog.js");
+    mocks.chainPreviewGoal.mockResolvedValue({
+      ok: true,
+      subtasks: [
+        {
+          subtaskId: "st1",
+          depth: 0,
+          requiredSkill: "task.execute",
+          objective: "Do the thing",
+          workerCount: 1,
+        },
+      ],
+      planWarnings: [{ code: "no_role_peers", message: "No peers advertise roles" }],
+    });
+    renderDialog(
+      <ChainStartDialog
+        goal="Research local LLMs"
+        assignmentMode="role"
+        onClose={() => undefined}
+      />,
+    );
+    await waitFor(() => {
+      expect(mocks.chainPreviewGoal).toHaveBeenCalledWith(
+        expect.objectContaining({ goal: "Research local LLMs", assignmentMode: "role" }),
+      );
+      expect(screen.getByTestId("chain-start-no-role-peers-lead")).toBeTruthy();
+      expect(screen.getByTestId("chain-start-plan-warnings").className).toContain(
+        "chain-start-plan-warnings--emphasize",
       );
     });
   });

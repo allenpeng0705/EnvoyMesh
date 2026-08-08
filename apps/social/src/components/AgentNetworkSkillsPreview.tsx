@@ -1,6 +1,7 @@
 import type { CachedAgentCardSummary } from "@envoymesh/api";
 import { agentNetworkDomainSkillIds, agentNetworkPrimaryRole } from "@envoymesh/protocol";
 import { useT } from "../context/I18nContext.js";
+import { agentNetworkRoleLabel } from "../lib/agent-network-role-label.js";
 import { AgentCapabilitiesPreview } from "./AgentCapabilitiesPreview.js";
 
 /**
@@ -24,7 +25,7 @@ export function AgentNetworkSkillsPreview(props: {
           data-testid="chain-worker-role"
           title={t("settings.agentNetwork.membership.primaryRole", "Collaboration role")}
         >
-          {t(`settings.agentNetwork.membership.role_${primaryRole}`, primaryRole)}
+          {agentNetworkRoleLabel(primaryRole, t)}
         </span>
       ) : null}
       {skills.length > 0 ? (

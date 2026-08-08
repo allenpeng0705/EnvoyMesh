@@ -5,6 +5,8 @@ import {
   hasDirectPrivateLanDialHints,
   hasDirectTcpDialHints,
   hasLanUpgradeDialHints,
+  wantsRelayToDirectUpgradeAttempt,
+  selectDialHintsForRelayToDirectUpgrade,
   isBrowserOnlyTransportDialHint,
   isLoopbackOrUnspecifiedDialHint,
   isLikelyInboundConnSnapshotDialHint,
@@ -289,6 +291,71 @@ describe("dial hint sorting", () => {
       ).toEqual([ephemeral, stripped]);
       expect(hasLanUpgradeDialHints([ephemeral], { sameSubnetLanFirst: true })).toBe(true);
       expect(hasLanUpgradeDialHints([ephemeral])).toBe(false);
+    });
+
+    it("wantsRelayToDirectUpgradeAttempt is true even when hints are circuit-only", () => {
+      // Product fix: do not require pre-existing LAN dialHints before identify.
+      expect(
+        wantsRelayToDirectUpgradeAttempt({
+          upgradeRelayToDirect: true,
+          preferCircuitHints: false,
+        }),
+      ).toBe(true);
+      expect(
+        wantsRelayToDirectUpgradeAttempt({
+          upgradeRelayToDirect: true,
+        }),
+      ).toBe(true);
+      expect(
+        wantsRelayToDirectUpgradeAttempt({
+          upgradeRelayToDirect: true,
+          preferCircuitHints: true,
+        }),
+      ).toBe(false);
+      expect(wantsRelayToDirectUpgradeAttempt({ upgradeRelayToDirect: false })).toBe(false);
+    });
+
+    it("keeps identify-learned ephemeral LAN when filtering for Relay→Direct upgrade", () => {
+      const target = "12D3KooWN67PannbfXrLPhgJkkRGWGN9UBV3Xfu5UpzdK1dY8qGD";
+      const circuit =
+        `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${target}`;
+      const ephemeralLan = `/ip4/192.168.3.78/tcp/64595/p2p/${target}`;
+      // Without upgrade/same-subnet, ephemeral LAN is stripped (stale snapshot guard).
+      expect(
+        filterDialHintsForOutboundSend([circuit, ephemeralLan], target, {
+          preferCircuitHints: false,
+        }),
+      ).toEqual([circuit]);
+      // With upgrade attempt, keep ephemeral LAN so identify→Direct can succeed.
+      const upgraded = filterDialHintsForOutboundSend([circuit, ephemeralLan], target, {
+        preferCircuitHints: false,
+        allowEphemeralPrivateLan: true,
+      });
+      expect(upgraded).toContain(ephemeralLan);
+      expect(upgraded).toContain(circuit);
+    });
+
+    it("selectDialHintsForRelayToDirectUpgrade dials same-/24 only (no WAN black-hole)", () => {
+      const target = "12D3KooWN67PannbfXrLPhgJkkRGWGN9UBV3Xfu5UpzdK1dY8qGD";
+      const sameLan = `/ip4/192.168.3.78/tcp/4001/p2p/${target}`;
+      const foreignLan = `/ip4/10.0.0.8/tcp/4001/p2p/${target}`;
+      const publicDirect = `/ip4/203.0.113.9/tcp/4001/p2p/${target}`;
+      const local = ["/ip4/192.168.3.85/tcp/4001"];
+      expect(
+        selectDialHintsForRelayToDirectUpgrade([sameLan, foreignLan, publicDirect], local, {
+          hostNicFallback: false,
+        }),
+      ).toEqual([sameLan, publicDirect]);
+      // Foreign home LAN alone → empty (stay Online-Relay; do not burn dials).
+      expect(
+        selectDialHintsForRelayToDirectUpgrade([foreignLan], local, { hostNicFallback: false }),
+      ).toEqual([]);
+      // Policy already proved same-subnet → keep all non-circuit candidates.
+      expect(
+        selectDialHintsForRelayToDirectUpgrade([sameLan, foreignLan], local, {
+          sameSubnetAlreadyProven: true,
+        }),
+      ).toEqual([sameLan, foreignLan]);
     });
 
     it("rejects ephemeral ports even without trailing slash or /p2p/ suffix", () => {

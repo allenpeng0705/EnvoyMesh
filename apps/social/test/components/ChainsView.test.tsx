@@ -12,17 +12,37 @@ export const chainListActive = vi.fn();
 export const chainListObserved = vi.fn();
 export const chainCancel = vi.fn();
 
+const chainGetDefaults = vi.fn(async () => ({
+  defaults: { awardMode: "direct", showCostUi: false, iterationMaxRounds: 1, assignmentMode: "skill" },
+}));
+
 const mockNodeService = {
   chainListActive,
   chainListObserved,
   chainCancel,
+  chainGetDefaults,
   chainProbeReachability: vi.fn(async () => ({ rows: [] })),
   refreshAgentNetworkWorkers: vi.fn(async () => ({})),
   getLocalAgentNetworkWorkerCard: vi.fn(async () => undefined),
   getOpenClawStatus: vi.fn(async () => ({ running: false })),
+  getNodeConfig: vi.fn(async () => ({})),
+  updateNodeConfig: vi.fn(async () => ({})),
   isConnected: true,
   on: vi.fn(() => () => {}),
 };
+
+vi.mock("../../src/components/ChainStartDialog.js", () => ({
+  ChainStartDialog: (props: {
+    goal: string;
+    assignmentMode?: "skill" | "role";
+  }) => (
+    <div
+      data-testid="chain-start-dialog-stub"
+      data-assignment-mode={props.assignmentMode ?? ""}
+      data-goal={props.goal}
+    />
+  ),
+}));
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => mockNodeService,
@@ -248,6 +268,30 @@ describe("ChainsView", () => {
     renderChainsView();
     await waitFor(() => {
       expect(screen.getByText(/Published/)).toBeDefined();
+    });
+  });
+
+  it("passes composer assignment mode into ChainStartDialog", async () => {
+    chainListActive.mockResolvedValueOnce({ chains: [] });
+    renderChainsView();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /^New team job$/i })).toBeDefined();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^New team job$/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId("chain-composer-assignment-mode")).toBeDefined();
+    });
+    fireEvent.click(screen.getByRole("radio", { name: /Role-based/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId("chain-composer-empty-role")).toBeDefined();
+    });
+    fireEvent.change(screen.getByLabelText(/What do you want your agents to accomplish/i), {
+      target: { value: "Research local LLMs and summarize findings" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Preview plan/i }));
+    await waitFor(() => {
+      const dialog = screen.getByTestId("chain-start-dialog-stub");
+      expect(dialog.getAttribute("data-assignment-mode")).toBe("role");
     });
   });
 

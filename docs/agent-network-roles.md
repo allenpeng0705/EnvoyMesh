@@ -60,6 +60,7 @@ roles: AgentNetworkRoleId[]  // max 8; default []
 - Empty `roles` → agent has **no role** (skill-only peer).
 - Zod: array of strings with refine (`known enum | /^custom:[a-z0-9_-]{1,32}$/`).
 - Card announce already ships full `agentNetworkProfile` — no new intent.
+- **Custom roles in Social:** worker profile keeps the six well-known seats plus a free-text field (same pattern as custom skills). Input is normalized to `custom:<slug>` (`[a-z0-9_-]{1,32}`); chips/labels strip the `custom:` prefix for display. Multi-role editor remains out of scope.
 
 **Primary helper (API):**
 
@@ -77,6 +78,7 @@ type ChainAssignmentMode = "skill" | "role";
 - Default on `ChainDefaultsConfig.assignmentMode` (default `"skill"` — preserves today’s behavior).
 - Per-job override on `chainPreviewGoal` / `chainStartFromGoal` / Assigner handoff payload.
 - Stored on chain side-state (like `awardMode`) for UI + status: `assignmentMode`.
+- **New team job composer (Social):** Skill-based vs Role-based chooser at the top of the goal composer (seeded from `chainGetDefaults().assignmentMode`). Role-based with an empty local primary role shows a soft guide + CTA into **Your worker profile** (does not hard-block Continue). Preview still surfaces `no_role_peers` when the roster lacks roles.
 
 ### 4.3 Plan output (LLM → materializer)
 

@@ -235,7 +235,22 @@ export const zhChainsMessages = {
     newChain: "新建协作任务",
     composerLabel: "您希望您的代理完成什么？",
     composerPlaceholder: "例如：研究本地 LLM 的最新进展并总结前 3 项",
+    assignmentChooserLabel: "如何选择工作节点？",
+    assignmentChooserSkill: "按技能",
+    assignmentChooserRole: "按角色",
+    assignmentChooserSkillHint: "匹配专长（编程、研究、写作…）。",
+    assignmentChooserRoleHint:
+      "优先匹配协作角色（产品经理、程序员、测试…）。无角色的对等节点会技能回退并给出警告。",
+    emptyRoleBanner:
+      "角色型规划前请先设置协作角色（或添加自定义角色）— 本地工作节点尚未设置。",
+    emptyRoleCta: "打开工作节点画像",
+    noRolePeersLead: "角色型规划需要各对等节点也设置协作角色。",
     preview: "预览计划",
+    assignmentMode: "分配模式",
+    assignmentModeSkill: "按技能",
+    assignmentModeRole: "按角色",
+    assignmentModeHint:
+      "按角色优先使用各工作节点的协作角色；按技能匹配专长。缺失角色时由分配器回退（并给出警告）。",
     iterationMaxRounds: "精炼轮数",
     iterationRounds1: "1（首稿后发布）",
     iterationRounds2: "最多 2 轮",

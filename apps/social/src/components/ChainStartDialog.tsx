@@ -21,6 +21,9 @@ export interface WorkerCandidate {
   isSelf?: boolean;
 }
 
+/** Stable default — a fresh `[]` each render retriggers candidate memos/effects. */
+const EMPTY_WORKER_CANDIDATES: WorkerCandidate[] = [];
+
 export interface ChainStartDialogProps {
   goal: string;
   onClose: () => void;
@@ -29,6 +32,11 @@ export interface ChainStartDialogProps {
   onOpenDiscover?: () => void;
   /** Bonded contacts with agent-card health, passed from ChainsView. */
   workerCandidates?: WorkerCandidate[];
+  /**
+   * Seed from the New team job composer chooser. When set, overrides
+   * chainGetDefaults for the first preview (Job settings can still change it).
+   */
+  assignmentMode?: "skill" | "role";
 }
 
 export function ChainStartDialog({
@@ -36,7 +44,8 @@ export function ChainStartDialog({
   onClose,
   onStarted,
   onOpenDiscover,
-  workerCandidates = [],
+  workerCandidates = EMPTY_WORKER_CANDIDATES,
+  assignmentMode: assignmentModeProp,
 }: ChainStartDialogProps) {
   const t = useT();
   const nodeService = useNodeService();
@@ -53,11 +62,13 @@ export function ChainStartDialog({
     "llm" | "always_stop" | "owner"
   >("llm");
   const [showJobSettings, setShowJobSettings] = useState(false);
-  const [assignmentMode, setAssignmentMode] = useState<"skill" | "role">("skill");
+  const [assignmentMode, setAssignmentMode] = useState<"skill" | "role">(
+    assignmentModeProp === "role" ? "role" : "skill",
+  );
   /** Wait for defaults so the first preview uses the node default mode. */
-  const [defaultsReady, setDefaultsReady] = useState(false);
+  const [defaultsReady, setDefaultsReady] = useState(assignmentModeProp != null);
   const iterationTouchedRef = useRef(false);
-  const assignmentModeTouchedRef = useRef(false);
+  const assignmentModeTouchedRef = useRef(assignmentModeProp != null);
 
   // Team member selection — track by agent peer ID (card.sourceAgentPeerId)
   const [selectedPeerIds, setSelectedPeerIds] = useState<Set<string>>(new Set());
@@ -106,6 +117,8 @@ export function ChainStartDialog({
     setSelectedPeerIds((prev) => {
       // Only adopt the system pick if the owner hasn't chosen anyone yet.
       if (prev.size > 0) return prev;
+      // Same empty selection — keep prev so we don't loop on a new Set().
+      if (autoIds.length === 0) return prev;
       return new Set(autoIds);
     });
   }, [preview, preview?.ok, preview?.subtasks, suggestedByPeer, selectableCandidates]);
@@ -517,16 +530,38 @@ export function ChainStartDialog({
             ) : null}
 
             {(preview.planWarnings ?? []).length > 0 ? (
-              <ul
-                className="chain-start-plan-warnings"
+              <div
+                className={
+                  preview.planWarnings!.some((w) => w.code === "no_role_peers")
+                    ? "chain-start-plan-warnings chain-start-plan-warnings--emphasize"
+                    : "chain-start-plan-warnings"
+                }
                 data-testid="chain-start-plan-warnings"
               >
-                {preview.planWarnings!.map((w, i) => (
-                  <li key={`${w.code}-${i}`}>
-                    {w.message}
-                  </li>
-                ))}
-              </ul>
+                {preview.planWarnings!.some((w) => w.code === "no_role_peers") ? (
+                  <p className="chain-start-plan-warnings__lead" data-testid="chain-start-no-role-peers-lead">
+                    {t(
+                      "chains.start.noRolePeersLead",
+                      "Peers need collaboration roles for role-based planning.",
+                    )}
+                  </p>
+                ) : null}
+                <ul>
+                  {preview.planWarnings!.map((w, i) => (
+                    <li
+                      key={`${w.code}-${i}`}
+                      className={
+                        w.code === "no_role_peers"
+                          ? "chain-start-plan-warnings__item--role"
+                          : undefined
+                      }
+                      data-warning-code={w.code}
+                    >
+                      {w.message}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ) : null}
 
             {/* Per-job settings — collapsed by default so the primary flow stays

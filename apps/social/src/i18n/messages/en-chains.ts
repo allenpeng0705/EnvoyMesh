@@ -240,6 +240,16 @@ export const chainsMessages = {
     newChain: "New team job",
     composerLabel: "What do you want your agents to accomplish?",
     composerPlaceholder: "e.g. Research the latest developments in local LLMs and summarize the top 3",
+    assignmentChooserLabel: "How should workers be chosen?",
+    assignmentChooserSkill: "Skill-based",
+    assignmentChooserRole: "Role-based",
+    assignmentChooserSkillHint: "Match specialties (coding, research, writing…).",
+    assignmentChooserRoleHint:
+      "Prefer each worker’s collaboration role (PM, programmer, tester…). Peers without roles get skill fallbacks + warnings.",
+    emptyRoleBanner:
+      "Set a collaboration role (or add a custom role) before role-based planning — your local worker has none yet.",
+    emptyRoleCta: "Open worker profile",
+    noRolePeersLead: "Peers need collaboration roles for role-based planning.",
     preview: "Preview plan",
     iterationMaxRounds: "Refinement rounds",
     iterationRounds1: "1 (publish after first draft)",
