@@ -84,6 +84,7 @@ import {
 import { expandListenAddressesWithQuic } from "./quic-listen.js";
 import {
   DEFAULT_CLIENT_MAX_CONNECTIONS,
+  DEFAULT_RELAY_SERVER_MAX_CONNECTIONS,
   DEFAULT_MDNS_INTERVAL_MS,
   PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD,
   PRUNE_EXCESS_SWARM_MAX_PEERS,
@@ -94,6 +95,7 @@ import {
 
 export {
   DEFAULT_CLIENT_MAX_CONNECTIONS,
+  DEFAULT_RELAY_SERVER_MAX_CONNECTIONS,
   DEFAULT_MDNS_INTERVAL_MS,
   PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD,
   PRUNE_EXCESS_SWARM_MAX_PEERS,
@@ -644,7 +646,10 @@ export class EnvoyMesh {
       if (!s) continue;
       try {
         ma(s);
-        this._appendAnnounce.push(s);
+        // Dedupe: health-driven mesh.stop()/start() must not grow announce forever.
+        if (!this._appendAnnounce.includes(s)) {
+          this._appendAnnounce.push(s);
+        }
       } catch {
         console.warn(`[p2p] skipping invalid advertise multiaddr: ${raw}`);
       }
@@ -662,8 +667,11 @@ export class EnvoyMesh {
 
     const maxConnections =
       this.options.maxConnections ??
-      (this.options.enableRelayServer ? undefined : DEFAULT_CLIENT_MAX_CONNECTIONS);
-    if (maxConnections != null && this.options.enableP2pDebug) {
+      (this.options.enableRelayServer
+        ? DEFAULT_RELAY_SERVER_MAX_CONNECTIONS
+        : DEFAULT_CLIENT_MAX_CONNECTIONS);
+    // Always log on relay-server — operators need the 24/7 cap visible at boot.
+    if (maxConnections != null && (this.options.enableP2pDebug || this.options.enableRelayServer)) {
       console.log(`[p2p] connectionManager.maxConnections=${maxConnections}`);
     }
 
@@ -3777,7 +3785,11 @@ export class EnvoyMesh {
       protocol,
       async (stream: any, connection: any) => {
       const remotePeerId = connection.remotePeer.toString();
-      console.log(`[network] INBOUND STREAM: protocol=${protocol}, remotePeerId=${remotePeerId}`);
+      // Hot path on busy relays (checkin/lookup/broadcast). Gate behind p2p-debug
+      // so 24/7 relays don't burn CPU/disk on every stream.
+      if (this.options.enableP2pDebug) {
+        console.log(`[network] INBOUND STREAM: protocol=${protocol}, remotePeerId=${remotePeerId}`);
+      }
       this.emitP2pDebug({
         kind: "stream:open",
         remotePeerId,

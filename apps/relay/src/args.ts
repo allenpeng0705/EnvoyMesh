@@ -34,6 +34,12 @@ export interface RelayArgs {
   relayHopTimeoutMs: number | null;
   /** Override `maxOutboundStopStreams` on the circuit-relay-v2 server. */
   relayMaxOutboundStopStreams: number | null;
+  /**
+   * Cap libp2p connectionManager.maxConnections. Without this, relay-server
+   * mode leaves connections unbounded and multi-day DHT/swarm churn can
+   * exhaust FDs / RSS. Null = derive from reservation budget at mesh start.
+   */
+  maxConnections: number | null;
   /** Admin UI / sensitive HTTP Basic Auth username. Default: admin. */
   adminUser: string;
   /** Admin UI / sensitive HTTP Basic Auth password. Default: envoymesh123456. */
@@ -135,6 +141,7 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
     relayDefaultDurationLimitMs: null,
     relayHopTimeoutMs: null,
     relayMaxOutboundStopStreams: null,
+    maxConnections: null,
     adminUser: "admin",
     adminPassword: "envoymesh123456",
     logMaxLines: 2000,
@@ -225,6 +232,8 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
         "--relay-max-outbound-stop-streams",
         getValue(argv, ++i, arg),
       );
+    } else if (arg === "--max-connections") {
+      args.maxConnections = parsePositiveInt("--max-connections", getValue(argv, ++i, arg));
     } else if (arg === "--admin-user") {
       args.adminUser = getValue(argv, ++i, arg);
     } else if (arg === "--admin-password") {
@@ -356,6 +365,12 @@ function applyEnvVars(args: RelayArgs): void {
       process.env.ENVOYMESH_RELAY_MAX_OUTBOUND_STOP_STREAMS,
     );
   }
+  if (process.env.ENVOYMESH_RELAY_MAX_CONNECTIONS !== undefined) {
+    args.maxConnections = parsePositiveInt(
+      "ENVOYMESH_RELAY_MAX_CONNECTIONS",
+      process.env.ENVOYMESH_RELAY_MAX_CONNECTIONS,
+    );
+  }
   const envAdminUser = process.env.ENVOYMESH_RELAY_ADMIN_USER?.trim();
   if (envAdminUser) {
     args.adminUser = envAdminUser;
@@ -482,6 +497,9 @@ Options:
                          Env: ENVOYMESH_RELAY_HOP_TIMEOUT_MS
   --relay-max-outbound-stop-streams <n>  Override max simultaneous STOP streams.
                          Env: ENVOYMESH_RELAY_MAX_OUTBOUND_STOP_STREAMS
+  --max-connections <n> Cap libp2p open connections (24/7 FD/RSS safety).
+                         Default: derived from reservation budget (~2× + headroom).
+                         Env: ENVOYMESH_RELAY_MAX_CONNECTIONS
   --a2a-bridge          Publish A2A v1.0 Agent Card at /.well-known/agent-card.json
                          so external A2A clients (LangChain, Salesforce, etc.)
                          can discover this relay. Default: off.

@@ -258,6 +258,19 @@ setActiveCircuitRelayServerConfig(
 );
 
 // Create minimal EnvoyMesh for relay-only operation
+const resolvedMaxConnections =
+  args.maxConnections ??
+  Math.min(
+    8192,
+    Math.max(
+      512,
+      ((circuitRelayServerConfig.maxReservations ??
+        (args.relayPublicMode ? PUBLIC_RELAY_V2_DEFAULTS.maxReservations : 15)) *
+        2) +
+        256,
+    ),
+  );
+
 const mesh = new EnvoyMesh({
   listen: args.listen,
   advertiseAddrs: args.advertiseAddrs,
@@ -270,12 +283,15 @@ const mesh = new EnvoyMesh({
   bootstrapPeers: args.bootstrapPeers,
   libp2pPrivateKey,
   circuitRelayServer: circuitRelayServerConfig,
+  maxConnections: resolvedMaxConnections,
 });
 
 // Log the active v2 server config so operators can verify the redeploy
 // picked up the right values without needing to curl /version. The same
 // object is also surfaced on /version, so the log line and the endpoint
 // payload are guaranteed to agree (they're built from the same source).
+console.log(`[relay] libp2p maxConnections=${resolvedMaxConnections}`);
+
 if (Object.keys(circuitRelayServerConfig).length > 0) {
   const parts: string[] = [];
   if (circuitRelayServerConfig.maxReservations !== undefined) {
@@ -665,60 +681,67 @@ function seedRelayBookFromBootstrap(selfPeerId: string): void {
 
 function startSiblingHintsGossip(): void {
   if (hintsGossipTimer) return;
+  let gossipInFlight = false;
   const tick = async (): Promise<void> => {
-    // Primary gossip: probe verified/active/seed siblings (refresh + learn new candidates).
-    const verifiedBook = relayRoster
-      .relayBook()
-      .filter(
-        (e) =>
-          e.expiresAt > Date.now() &&
-          (e.state === "verified" || e.state === "active" || e.state === "seed") &&
-          e.addrs.length > 0,
-      )
-      .slice(0, 4);
+    if (gossipInFlight) return;
+    gossipInFlight = true;
+    try {
+      // Primary gossip: probe verified/active/seed siblings (refresh + learn new candidates).
+      const verifiedBook = relayRoster
+        .relayBook()
+        .filter(
+          (e) =>
+            e.expiresAt > Date.now() &&
+            (e.state === "verified" || e.state === "active" || e.state === "seed") &&
+            e.addrs.length > 0,
+        )
+        .slice(0, 4);
 
-    // Candidate probe: on every other tick, probe up to 2 candidates
-    // to promote them to verified. Without this, candidates learned from
-    // gossip can never earn a successful RTT and the book is permanently
-    // locked to the initial --bootstrap seed set (review finding M3).
-    const probeCandidates = Math.floor(Date.now() / RELAY_HINTS_INTERVAL_MS) % 2 === 0;
-    const candidateBook = probeCandidates
-      ? relayRoster
-          .relayBook()
-          .filter((e) => e.expiresAt > Date.now() && e.state === "candidate" && e.addrs.length > 0)
-          .slice(0, 2)
-      : [];
+      // Candidate probe: on every other tick, probe up to 2 candidates
+      // to promote them to verified. Without this, candidates learned from
+      // gossip can never earn a successful RTT and the book is permanently
+      // locked to the initial --bootstrap seed set (review finding M3).
+      const probeCandidates = Math.floor(Date.now() / RELAY_HINTS_INTERVAL_MS) % 2 === 0;
+      const candidateBook = probeCandidates
+        ? relayRoster
+            .relayBook()
+            .filter((e) => e.expiresAt > Date.now() && e.state === "candidate" && e.addrs.length > 0)
+            .slice(0, 2)
+        : [];
 
-    for (const entry of [...verifiedBook, ...candidateBook]) {
-      const target = entry.addrs[0];
-      if (!target) continue;
-      try {
-        const payload = createRelayHintsRequestPayload({
-          reason: "refresh",
-          maxResults: 8,
-          expiresAt: new Date(Date.now() + RELAY_BOOK_TTL_MS).toISOString(),
-        });
-        const envelope = relayControlIdentity.signControl({
-          intent: "relay.hints.request",
-          payload,
-          recipientPeerId: entry.relayId.startsWith("/") ? undefined : entry.relayId,
-        });
-        const reply = await mesh.sendExpectReply(target, envelope, {
-          timeoutMs: RELAY_FORWARD_LOOKUP_REPLY_MS,
-        });
-        if (reply.intent !== "relay.hints.response") continue;
-        const response = parseRelayHintsResponsePayload(reply.payload);
-        // Successful RTT → promote this peer and ingest returned siblings as candidates.
-        // For candidates this is the ONLY path to verified status (design B2.3).
-        relayRoster.promoteRelay(entry.relayId, "verified");
-        ingestSiblingHints(relayRoster, mesh, response.relayHints, { verified: false }, RELAY_BOOK_TTL_MS);
-        console.log(
-          `[relay] hints gossip ok target=${entry.relayId.slice(0, 12)}… state=${entry.state}→verified got=${response.relayHints.length}`,
-        );
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[relay] hints gossip failed target=${entry.relayId.slice(0, 12)}… error=${msg}`);
+      for (const entry of [...verifiedBook, ...candidateBook]) {
+        const target = entry.addrs[0];
+        if (!target) continue;
+        try {
+          const payload = createRelayHintsRequestPayload({
+            reason: "refresh",
+            maxResults: 8,
+            expiresAt: new Date(Date.now() + RELAY_BOOK_TTL_MS).toISOString(),
+          });
+          const envelope = relayControlIdentity.signControl({
+            intent: "relay.hints.request",
+            payload,
+            recipientPeerId: entry.relayId.startsWith("/") ? undefined : entry.relayId,
+          });
+          const reply = await mesh.sendExpectReply(target, envelope, {
+            timeoutMs: RELAY_FORWARD_LOOKUP_REPLY_MS,
+          });
+          if (reply.intent !== "relay.hints.response") continue;
+          const response = parseRelayHintsResponsePayload(reply.payload);
+          // Successful RTT → promote this peer and ingest returned siblings as candidates.
+          // For candidates this is the ONLY path to verified status (design B2.3).
+          relayRoster.promoteRelay(entry.relayId, "verified");
+          ingestSiblingHints(relayRoster, mesh, response.relayHints, { verified: false }, RELAY_BOOK_TTL_MS);
+          console.log(
+            `[relay] hints gossip ok target=${entry.relayId.slice(0, 12)}… state=${entry.state}→verified got=${response.relayHints.length}`,
+          );
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn(`[relay] hints gossip failed target=${entry.relayId.slice(0, 12)}… error=${msg}`);
+        }
       }
+    } finally {
+      gossipInFlight = false;
     }
   };
   void tick();
@@ -1441,7 +1464,11 @@ try {
                 ws.close(1011, "slow client (backpressure)");
                 break;
               }
-              console.log(`[relay] client-proxy: forwarding from home node (${text.length} chars): ${text.slice(0, 100)}`);
+              if (process.env.ENVOYMESH_RELAY_DEBUG_PROXY === "1") {
+                console.log(
+                  `[relay] client-proxy: forwarding from home node (${text.length} chars): ${text.slice(0, 100)}`,
+                );
+              }
               ws.send(text);
             }
           } catch (err) {

@@ -201,7 +201,8 @@ describe("a2a home-tunnel HTTP E2E", () => {
     expect(chunks.join("")).toContain("event: status-update");
     expect(chunks.join("")).toContain("event: done");
     expect(result?.contentType).toBe("text/event-stream");
-    expect(result?.body).toContain("event: done");
+    // Stream path must not retain chunks for the joined body (24/7 OOM guard).
+    expect(result?.body).toBe("");
   });
 
   it("A2A JSON-RPC proxy uses home-tunnel forwardToHome", async () => {

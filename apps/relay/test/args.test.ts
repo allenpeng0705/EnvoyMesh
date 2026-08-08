@@ -20,6 +20,7 @@ const VARS = [
   "ENVOYMESH_RELAY_DEFAULT_DURATION_LIMIT_MS",
   "ENVOYMESH_RELAY_HOP_TIMEOUT_MS",
   "ENVOYMESH_RELAY_MAX_OUTBOUND_STOP_STREAMS",
+  "ENVOYMESH_RELAY_MAX_CONNECTIONS",
   "ENVOYMESH_RELAY_ADMIN_USER",
   "ENVOYMESH_RELAY_ADMIN_PASSWORD",
   "ENVOYMESH_RELAY_LOG_MAX_LINES",
@@ -136,6 +137,12 @@ describe("parseRelayArgs", () => {
     expect(args.relayDefaultDurationLimitMs).toBe(900_000);
     expect(args.relayHopTimeoutMs).toBe(45_000);
     expect(args.relayMaxOutboundStopStreams).toBe(600);
+  });
+
+  it("parses --max-connections and ENVOYMESH_RELAY_MAX_CONNECTIONS", () => {
+    expect(parseRelayArgs(["--max-connections", "3072"]).maxConnections).toBe(3072);
+    process.env.ENVOYMESH_RELAY_MAX_CONNECTIONS = "4096";
+    expect(parseRelayArgs([]).maxConnections).toBe(4096);
   });
 
   it("reads ENVOYMESH_RELAY_PUBLIC_MODE env var", () => {

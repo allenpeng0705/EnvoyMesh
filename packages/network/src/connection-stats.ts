@@ -1,5 +1,5 @@
 /**
- * Default libp2p connection cap for client nodes (relay-server nodes stay uncapped).
+ * Default libp2p connection cap for client (home) nodes.
  *
  * Lowered from 150 to 48 (2026-07-31): the public DHT swarm fills 150
  * connections with anonymous peers, overloading the dial queue (250+) and
@@ -17,6 +17,15 @@
  * connections — anonymous DHT peers go first, tagged contacts/relays stay.
  */
 export const DEFAULT_CLIENT_MAX_CONNECTIONS = 48;
+
+/**
+ * Default libp2p connection cap for standalone / embedded relay-server nodes.
+ * Previously left uncapped (`undefined`), which lets multi-day DHT + hop
+ * churn exhaust FDs and RSS on 24/7 community relays. 2048 covers public-mode
+ * 1024 reservations + hoppers + DHT/bootstrap headroom; operators can raise
+ * via EnvoyMeshOptions.maxConnections / ENVOYMESH_RELAY_MAX_CONNECTIONS.
+ */
+export const DEFAULT_RELAY_SERVER_MAX_CONNECTIONS = 2048;
 
 /**
  * Defaults for {@link EnvoyMesh.pruneExcessSwarmConnections}.

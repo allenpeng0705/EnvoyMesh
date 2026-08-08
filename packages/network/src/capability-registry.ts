@@ -110,11 +110,8 @@ export class CapabilityRegistry {
       }
     }
 
-    console.log(
-      this.p(
-        `Registered ${payload.peerId} with ${payload.capabilities.length} capabilities, TTL ${payload.ttlSeconds}s`,
-      ),
-    );
+    // Intentionally no per-register console.log: on a public rendezvous relay
+    // this is a hot path and filled disks / lag-triggered restarts under load.
   }
 
   unregister(peerId: string): boolean {

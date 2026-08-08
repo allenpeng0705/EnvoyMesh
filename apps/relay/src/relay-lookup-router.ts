@@ -52,6 +52,8 @@ function isForwardableState(state: RelayBookState): boolean {
   return state === "verified" || state === "active" || state === "seed";
 }
 
+const MAX_SEEN_QUERIES = 50_000;
+
 export function createRelayLookupRouter(options: RelayLookupRouterOptions = {}) {
   const now = options.now ?? Date.now;
   const seenQueryTtlMs = options.seenQueryTtlMs ?? DEFAULT_SEEN_QUERY_TTL_MS;
@@ -74,6 +76,16 @@ export function createRelayLookupRouter(options: RelayLookupRouterOptions = {}) 
     }
     for (const [key, expiresAt] of negativeCache) {
       if (expiresAt <= current) negativeCache.delete(key);
+    }
+    // Hard cap against unique-queryId flood (TTL alone is not enough).
+    if (seenQueries.size > MAX_SEEN_QUERIES) {
+      const overflow = seenQueries.size - MAX_SEEN_QUERIES;
+      let dropped = 0;
+      for (const key of seenQueries.keys()) {
+        seenQueries.delete(key);
+        dropped += 1;
+        if (dropped >= overflow) break;
+      }
     }
   }
 

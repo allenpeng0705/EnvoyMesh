@@ -82,6 +82,15 @@ describe("standalone relay lookup router (46B)", () => {
     expect(router.markSeen("q1")).toBe(false);
   });
 
+  it("caps seenQueries under unique-id flood", () => {
+    const router = createRelayLookupRouter({ seenQueryTtlMs: 60_000 });
+    for (let i = 0; i < 55_000; i++) {
+      expect(router.markSeen(`q_${i}`)).toBe(true);
+    }
+    // Oldest entries were evicted; new unique ids still accepted.
+    expect(router.markSeen("q_flood_tail")).toBe(true);
+  });
+
   it("skips negatively cached siblings until TTL", () => {
     let now = Date.now();
     const router = createRelayLookupRouter({ now: () => now, negativeCacheTtlMs: 1_000 });

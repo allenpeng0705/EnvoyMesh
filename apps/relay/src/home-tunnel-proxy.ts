@@ -179,6 +179,12 @@ const MAX_EARLY_BUFFER_FRAMES = 100;
  */
 const MAX_PENDING_HTTP = 1000;
 
+/**
+ * Cap buffered HTTP response body collected for non-stream (or stream
+ * join-at-end) requests. Streaming SSE must not accumulate chunks in memory.
+ */
+const MAX_PENDING_HTTP_BODY_BYTES = 8 * 1024 * 1024;
+
 export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelProxy {
   const {
     maxHomeTunnels,
@@ -212,6 +218,8 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
     status: number;
     contentType?: string;
     chunks: string[];
+    bufferedBytes: number;
+    aborted?: boolean;
   }>();
   let proxyConnTotal = 0;
   let stopped = false;
@@ -401,16 +409,36 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
           return;
         }
         if (env.type === "http-res-chunk" && typeof env.data === "string") {
+          if (pending.aborted) return;
+          // Streaming clients already receive chunks — do not also retain them
+          // (SSE / large vault proxies OOM vector on long-lived relays).
+          if (pending.onStream) {
+            pending.onStream.onChunk(env.data);
+            return;
+          }
+          const nextBytes = pending.bufferedBytes + env.data.length;
+          if (nextBytes > MAX_PENDING_HTTP_BODY_BYTES) {
+            pending.aborted = true;
+            clearTimeout(pending.timer);
+            pendingHttp.delete(env.requestId);
+            warn(
+              `home-tunnel: abort http ${env.requestId} — buffered body > ${MAX_PENDING_HTTP_BODY_BYTES} bytes`,
+            );
+            pending.resolve(null);
+            return;
+          }
           pending.chunks.push(env.data);
-          pending.onStream?.onChunk(env.data);
+          pending.bufferedBytes = nextBytes;
           return;
         }
         if (env.type === "http-res-end") {
           clearTimeout(pending.timer);
           pendingHttp.delete(env.requestId);
+          if (pending.aborted) return;
           pending.resolve({
             status: pending.status,
-            body: pending.chunks.join(""),
+            // Stream path: body already delivered via onChunk; join is empty.
+            body: pending.onStream ? "" : pending.chunks.join(""),
             ...(pending.contentType ? { contentType: pending.contentType } : {}),
           });
           return;
@@ -781,6 +809,7 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
           onStream: input.onStream,
           status: 200,
           chunks: [],
+          bufferedBytes: 0,
         });
         try {
           tunnel.send(JSON.stringify({
