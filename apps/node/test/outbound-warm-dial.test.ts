@@ -47,10 +47,44 @@ describe("ensureReachableWithLanFirstBudget", () => {
       preferCircuitHints: false,
     });
     expect(ensurePeerReachable.mock.calls[1]?.[2]).toMatchObject({
+      preferCircuitHints: false,
+      sameSubnetLanFirst: true,
       dialHints: [
         "/ip4/10.0.0.2/tcp/57944/p2p/12D3KooWPeer",
         "/ip4/1.2.3.4/tcp/4001/p2p/12Relay/p2p-circuit/p2p/12D3KooWPeer",
       ],
+    });
+  });
+
+  it("offline WAN phase-2 uses circuit preference so public Direct cannot strip Relay", async () => {
+    const ensurePeerReachable = vi
+      .fn()
+      .mockResolvedValueOnce({ connected: false, direct: false })
+      .mockResolvedValueOnce({ connected: true, direct: false });
+    const mesh = {
+      ensurePeerReachable,
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: false, direct: false }),
+    };
+
+    await ensureReachableWithLanFirstBudget({
+      mesh,
+      transportPeerId: "12D3KooWPeer",
+      protocol: "/envoymesh/chat/0.1.0",
+      dialHints: [
+        "/ip4/203.0.113.9/tcp/4001/p2p/12D3KooWPeer",
+        "/ip4/1.2.3.4/tcp/4001/p2p/12Relay/p2p-circuit/p2p/12D3KooWPeer",
+      ],
+      sameSubnetLanFirst: false,
+      preferCircuitHints: false,
+    });
+
+    expect(ensurePeerReachable).toHaveBeenCalledTimes(2);
+    expect(ensurePeerReachable.mock.calls[0]?.[2]).toMatchObject({
+      preferCircuitHints: false,
+      dialHints: ["/ip4/203.0.113.9/tcp/4001/p2p/12D3KooWPeer"],
+    });
+    expect(ensurePeerReachable.mock.calls[1]?.[2]).toMatchObject({
+      preferCircuitHints: true,
     });
   });
 

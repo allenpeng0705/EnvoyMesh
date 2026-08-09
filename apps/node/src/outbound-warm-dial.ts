@@ -100,13 +100,13 @@ export async function ensureReachableWithLanFirstBudget(
   const preferCircuitHints = input.preferCircuitHints === true;
   const likelyVpnActive = input.likelyVpnActive === true;
   const isUpgrade = input.upgradeRelayToDirect === true;
-  const lanFirst = input.sameSubnetLanFirst && !preferCircuitHints;
+  const policySameSubnet = input.sameSubnetLanFirst === true;
+  const lanFirst = policySameSubnet && !preferCircuitHints;
   const lanOnly = input.dialHints.filter((h) => !h.includes("/p2p-circuit/"));
   const hasCircuit = input.dialHints.some((h) => h.includes("/p2p-circuit/"));
   const hasStableLan = hasStablePrivateLanHint(lanOnly);
-  // Offline reconnect: Direct first, then Relay. Ephemeral LAN uses a short
-  // budget so stale high-ports cannot delay Relay long. VPN/relay-only
-  // (preferCircuitHints) skips this and stays circuit-first.
+  // Offline: Direct first → Relay immediately on failure → (caller upgrades).
+  // VPN/relay-only (preferCircuitHints) skips Direct and stays circuit-first.
   const tryDirectFirstOffline =
     !isUpgrade && !preferCircuitHints && lanOnly.length > 0 && (hasCircuit || lanFirst);
 
@@ -152,10 +152,14 @@ export async function ensureReachableWithLanFirstBudget(
     const phase1Budget = hasStableLan
       ? WARM_CONTACT_SAME_SUBNET_BUDGET_MS
       : WARM_CONTACT_SAME_SUBNET_EPHEMERAL_BUDGET_MS;
-    // Phase 1 must not prefer circuits — Direct-only attempt.
-    const phase1 = await bounded(lanOnly, true, phase1Budget, "warmContactLanDial", {
-      preferCircuitHints: false,
-    });
+    // Phase 1: Direct-only. Honor policy same-subnet (do not force true on WAN).
+    const phase1 = await bounded(
+      lanOnly,
+      policySameSubnet,
+      phase1Budget,
+      "warmContactLanDial",
+      { preferCircuitHints: false },
+    );
     if (phase1.connected) return phase1;
     if (!hasCircuit) {
       return phase1;
@@ -163,8 +167,18 @@ export async function ensureReachableWithLanFirstBudget(
     const phase2Budget = likelyVpnActive
       ? WARM_CONTACT_VPN_DIAL_TIMEOUT_MS
       : WARM_CONTACT_DIAL_BUDGET_MS;
-    // Phase 2: allow Relay fallback; keep LAN hints so upgrade path can follow.
-    return bounded(input.dialHints, lanFirst, phase2Budget, "warmContactDial");
+    // Phase 2: Relay immediately after Direct miss.
+    // Same-LAN / overlay: keep LAN-first ordering (private LAN does not strip
+    // circuits). WAN / public Direct: prefer circuits so public TCP hints cannot
+    // strip /p2p-circuit/ from the fallback list.
+    if (policySameSubnet) {
+      return bounded(input.dialHints, true, phase2Budget, "warmContactDial", {
+        preferCircuitHints: false,
+      });
+    }
+    return bounded(input.dialHints, false, phase2Budget, "warmContactRelayDial", {
+      preferCircuitHints: true,
+    });
   }
 
   const budgetMs = isUpgrade

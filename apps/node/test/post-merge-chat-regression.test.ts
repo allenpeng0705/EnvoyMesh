@@ -279,6 +279,8 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
         multiaddrs: ["/ip4/127.0.0.1/tcp/4011/p2p/12D3KooWSelfBindExternal"],
         tagContactForPersistentReachability: vi.fn(async () => {}),
       };
+      // CLI path hydrates AN engine before bind → sync online/ready emit.
+      (node as any)._agentNetworkWorkerEngineHydrated = true;
       (node as any).bindExternalMesh(mockMesh);
 
       expect(readyHandler).toHaveBeenCalled();

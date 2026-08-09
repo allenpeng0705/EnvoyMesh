@@ -1069,23 +1069,21 @@ export async function warmContactConnectionTransportViaRuntime(
   }
 
   const needsProbe = options?.keepAlive === true || options?.verifyConnection === true;
+  /** Probe closed/declared the path dead — must not return a stale Direct snapshot. */
+  let probeFailed = false;
   if (existing.connected && !options?.redial && !options?.upgradeRelayToDirect) {
     if (needsProbe) {
-      if (options?.verifyConnection) {
-        const probed = await mesh.probeBondedPeerConnection(transportPeerId);
-        if (probed.connected) {
-          markOutboundPeerVerified(transportPeerId);
-          return probed;
-        }
-      } else {
-        const probed = await mesh.probeBondedPeerConnection(transportPeerId);
-        if (probed.connected || options?.keepAlive === true) {
-          if (probed.connected) {
-            markOutboundPeerVerified(transportPeerId);
-          }
-          return probed;
-        }
+      const probed = await mesh.probeBondedPeerConnection(transportPeerId);
+      if (probed.connected) {
+        markOutboundPeerVerified(transportPeerId);
+        return probed;
       }
+      // keepAlive: report truth (possibly Offline) without redialing.
+      if (options?.keepAlive === true) {
+        return probed;
+      }
+      // verifyConnection failed — fall through to Offline → Direct → Relay.
+      probeFailed = true;
     } else {
       return existing;
     }
@@ -1219,10 +1217,18 @@ export async function warmContactConnectionTransportViaRuntime(
       void mesh.mergePeerStoreDialHints(transportPeerId, dialHints);
     }
 
-    // redial / stale verify may tear down; upgradeRelayToDirect must NOT — keep
-    // the working relay until a Direct dial succeeds (see ensurePeerReachable).
+    // Never tear down a still-live Direct path (avoids Direct → Offline/Relay).
+    // Explicit redial and failed verify probes always tear down / rebuild.
+    // upgradeRelayToDirect must not close Relay until Direct succeeds.
+    const liveDirect =
+      wasDirect &&
+      options?.redial !== true &&
+      !probeFailed &&
+      mesh.getPeerConnectionInfo(transportPeerId).connected;
     const tearingDown =
-      options?.redial === true || (needsProbe && !options?.keepAlive);
+      options?.redial === true ||
+      probeFailed ||
+      (needsProbe && !options?.keepAlive && !wasDirect);
     if (tearingDown) {
       try {
         await mesh.closeConnectionsToPeer(transportPeerId);
@@ -1232,9 +1238,14 @@ export async function warmContactConnectionTransportViaRuntime(
     }
 
     const forceFreshDial =
-      options?.redial === true || !existing.connected || tearingDown;
-    const upgradeRelayToDirect =
-      options?.upgradeRelayToDirect === true || options?.redial === true;
+      options?.redial === true || !existing.connected || tearingDown || probeFailed;
+    // Only explicit upgrade requests — do not treat redial as upgrade.
+    const upgradeRelayToDirect = options?.upgradeRelayToDirect === true;
+
+    // Still-live Direct: recover Direct-only; never circuit-first (no downgrade).
+    if (liveDirect && !upgradeRelayToDirect) {
+      preferCircuitHints = false;
+    }
 
     const result = await ensureReachableWithLanFirstBudget({
       mesh,
@@ -1250,6 +1261,22 @@ export async function warmContactConnectionTransportViaRuntime(
     });
     void ctx.flushPendingRoomSyncs();
     void ctx.flushPendingRoomMessages();
+
+    // Live Direct must not be reported as Relay/Offline after a soft recovery.
+    if (liveDirect) {
+      const after = mesh.getPeerConnectionInfo(transportPeerId);
+      if (after.connected && after.direct) {
+        markOutboundPeerVerified(transportPeerId);
+        void recordLastSuccessfulDialFromMesh(ctx, transportPeerId, after).catch((err) =>
+          console.warn(
+            `[peer-directory] recordLastSuccessfulDial failed:`,
+            err instanceof Error ? err.message : err,
+          ),
+        );
+        return after;
+      }
+    }
+
     if (result.connected) {
       markOutboundPeerVerified(transportPeerId);
       void recordLastSuccessfulDialFromMesh(ctx, transportPeerId, result).catch((err) =>
@@ -1332,12 +1359,35 @@ export async function warmContactConnectionViaRuntime(
     );
 
     const mesh = ctx.getReachableMesh();
-    const info = await warmContactConnectionTransportViaRuntime(
+    const startedOffline = !(mesh?.getPeerConnectionInfo(transportPeerId).connected);
+    let info = await warmContactConnectionTransportViaRuntime(
       ctx,
       transportPeerId,
       listenAddrs,
       options,
     );
+    // Offline → Direct failed → Relay: immediately try Relay→Direct upgrade.
+    // Keep Relay if upgrade fails (never drop to Offline after a successful Relay).
+    if (
+      startedOffline &&
+      info.connected &&
+      !info.direct &&
+      options?.upgradeRelayToDirect !== true &&
+      options?.redial !== true
+    ) {
+      const upgraded = await warmContactConnectionTransportViaRuntime(
+        ctx,
+        transportPeerId,
+        listenAddrs,
+        { ...options, upgradeRelayToDirect: true },
+      );
+      if (upgraded.direct) {
+        info = upgraded;
+      } else if (upgraded.connected) {
+        info = upgraded;
+      }
+      // else keep prior Relay `info`
+    }
     return mesh ? withPathVerified(mesh, transportPeerId, info) : info;
   } finally {
     if (dedupeWarm) {

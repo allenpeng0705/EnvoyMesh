@@ -269,7 +269,7 @@ describe("warmContactConnectionTransportViaRuntime", () => {
     expect(phase2.sameSubnetLanFirst).toBe(true);
   });
 
-  it("ephemeral-only same-subnet skips LAN-only phase when circuits exist", async () => {
+  it("ephemeral same-subnet still tries Direct-only before Relay", async () => {
     const lanEphemeral = `/ip4/10.0.0.2/tcp/57944/p2p/${TRANSPORT_ID}`;
     const circuit = `/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${TRANSPORT_ID}`;
     const ctx = makeCtx({
@@ -284,12 +284,15 @@ describe("warmContactConnectionTransportViaRuntime", () => {
       force: true,
     });
 
+    // Offline Direct-first: phase-1 is LAN-only (succeeds here → no Relay phase).
     expect(mesh.ensurePeerReachable).toHaveBeenCalledOnce();
     const opts = vi.mocked(mesh.ensurePeerReachable).mock.calls[0]?.[2] as {
       dialHints?: string[];
+      preferCircuitHints?: boolean;
       signal?: AbortSignal;
     };
-    expect(opts.dialHints).toEqual([lanEphemeral, circuit]);
+    expect(opts.dialHints).toEqual([lanEphemeral]);
+    expect(opts.preferCircuitHints).toBe(false);
     expect(opts.signal).toBeInstanceOf(AbortSignal);
   });
 
@@ -423,7 +426,7 @@ describe("warmContactConnectionTransportViaRuntime", () => {
     vpnSpy.mockRestore();
   });
 
-  it("non-VPN Online-Relay: does not identify-merge foreign LAN into upgrade", async () => {
+  it("non-VPN Online-Relay: identify may run but foreign LAN is not merged into upgrade", async () => {
     const vpnSpy = vi.spyOn(cgnatDetection, "detectLikelyVpnActive").mockReturnValue(false);
     const foreignLan = `/ip4/172.16.9.8/tcp/57944/p2p/${TRANSPORT_ID}`;
     const circuit = `/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${TRANSPORT_ID}`;
@@ -452,17 +455,15 @@ describe("warmContactConnectionTransportViaRuntime", () => {
       upgradeRelayToDirect: true,
     });
 
-    expect(mesh.refreshPeerListenAddrsViaIdentify).not.toHaveBeenCalled();
-    // Without same-subnet evidence, upgrade may still run but must not LAN-first
-    // on foreign RFC1918 from identify (identify was skipped).
-    if (mesh.ensurePeerReachable.mock.calls.length > 0) {
-      const opts = vi.mocked(mesh.ensurePeerReachable).mock.calls[0]?.[2] as {
-        sameSubnetLanFirst?: boolean;
-        dialHints?: string[];
-      };
-      expect(opts.sameSubnetLanFirst).toBeFalsy();
-      expect(opts.dialHints?.some((h) => h.includes("172.16.9.8"))).toBeFalsy();
-    }
+    // Identify is allowed on any Relay→Direct upgrade; foreign RFC1918 must not
+    // become sameSubnetLanFirst or enter dialHints.
+    expect(mesh.ensurePeerReachable).toHaveBeenCalled();
+    const opts = vi.mocked(mesh.ensurePeerReachable).mock.calls[0]?.[2] as {
+      sameSubnetLanFirst?: boolean;
+      dialHints?: string[];
+    };
+    expect(opts.sameSubnetLanFirst).toBeFalsy();
+    expect(opts.dialHints?.some((h) => h.includes("172.16.9.8"))).toBeFalsy();
     vpnSpy.mockRestore();
   });
 });
