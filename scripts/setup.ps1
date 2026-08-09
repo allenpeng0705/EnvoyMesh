@@ -295,29 +295,37 @@ if (-not (Test-Path "packages/openclaw/package.json")) {
     exit 1
 }
 
-Write-Info "Installing EnvoyMesh channel extension..."
 # EnvoyMesh gateway spawn validates extensions/envoymesh/index.js (compiled).
 # Copying OpenClawExtension/*.ts alone is not enough — compile like
 # scripts/stage-openclaw-envoymesh-extension.sh.
+# Must run AFTER packages/openclaw `pnpm install` so esbuild is available.
+# Note: never invoke a relative *.cmd path with `&` — PowerShell treats
+# `packages\...` as a module name. Always use absolute paths + `node …/esbuild`.
 function Install-EnvoyMeshOpenClawExtension {
     param([string]$OpenClawRoot)
-    $extSrc = "OpenClawExtension"
+    $repoRoot = (Get-Location).Path
+    $ocRoot = if ([System.IO.Path]::IsPathRooted($OpenClawRoot)) {
+        $OpenClawRoot
+    } else {
+        Join-Path $repoRoot $OpenClawRoot
+    }
+    $extSrc = Join-Path $repoRoot "OpenClawExtension"
     if (-not (Test-Path $extSrc)) {
         Write-Warn "OpenClawExtension/ missing — cannot install envoymesh channel"
         return $false
     }
-    if (-not (Test-Path (Join-Path $OpenClawRoot "extensions"))) {
-        Write-Warn "$OpenClawRoot/extensions missing — cannot install envoymesh channel"
+    if (-not (Test-Path (Join-Path $ocRoot "extensions"))) {
+        Write-Warn "$ocRoot/extensions missing — cannot install envoymesh channel"
         return $false
     }
 
-    $extDir = Join-Path $OpenClawRoot "extensions/envoymesh"
+    $extDir = Join-Path $ocRoot "extensions\envoymesh"
     if (Test-Path $extDir) {
         Remove-Item -Recurse -Force $extDir
     }
     Copy-Item -Recurse -Force $extSrc $extDir
-    if (Test-Path "$extDir/node_modules") {
-        Remove-Item -Recurse -Force "$extDir/node_modules"
+    if (Test-Path (Join-Path $extDir "node_modules")) {
+        Remove-Item -Recurse -Force (Join-Path $extDir "node_modules")
     }
     Get-ChildItem -Path $extDir -Recurse -Include "tsconfig.json","tsconfig.*.json",".oxlintrc.json",".oxfmtrc.jsonc" -ErrorAction SilentlyContinue |
         Remove-Item -Force -ErrorAction SilentlyContinue
@@ -326,36 +334,33 @@ function Install-EnvoyMeshOpenClawExtension {
         if (Test-Path $p) { Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue }
     }
 
-    $esbuild = Join-Path $OpenClawRoot "node_modules/.bin/esbuild.cmd"
-    if (-not (Test-Path $esbuild)) {
-        $esbuild = Join-Path $OpenClawRoot "node_modules/.bin/esbuild"
-    }
-    if (-not (Test-Path $esbuild)) {
-        # Prefer openclaw-local esbuild after pnpm install; before that use npx.
-        $esbuild = "npx"
-        $esbuildArgs = @("esbuild")
-    } else {
-        $esbuildArgs = @()
-    }
+    $esbuildJs = Join-Path $ocRoot "node_modules\esbuild\bin\esbuild"
+    $useNpx = -not (Test-Path $esbuildJs)
 
     Push-Location $extDir
     try {
-        $inputs = @(Get-ChildItem -Path . -Filter "*.ts" -File | ForEach-Object { $_.FullName })
+        $inputs = @(Get-ChildItem -Path . -Filter "*.ts" -File | ForEach-Object { $_.Name })
         if (Test-Path "src") {
             $inputs += @(Get-ChildItem -Path "src" -Filter "*.ts" -File |
                 Where-Object { $_.Name -notmatch '\.(test|e2e\.test|live\.test)\.ts$' } |
-                ForEach-Object { $_.FullName })
+                ForEach-Object { Join-Path "src" $_.Name })
         }
         if ($inputs.Count -eq 0) {
             Write-Warn "No .ts sources in $extDir"
             return $false
         }
-        $compileArgs = $esbuildArgs + $inputs + @(
+        $flags = @(
             "--bundle=false", "--format=esm", "--platform=node",
             "--outdir=.", "--out-extension:.js=.js", "--allow-overwrite",
             "--log-level=warning"
         )
-        & $esbuild @compileArgs
+        if ($useNpx) {
+            Write-Info "Compiling envoymesh via npx esbuild (local esbuild not found yet)..."
+            & npx --yes esbuild @inputs @flags
+        } else {
+            # Absolute path + node — avoids PowerShell "module 'packages'" trap on *.cmd
+            & node -- $esbuildJs @inputs @flags
+        }
         if ($LASTEXITCODE -ne 0) {
             Write-Warn "esbuild failed for envoymesh extension (exit $LASTEXITCODE)"
             return $false
@@ -376,8 +381,8 @@ function Install-EnvoyMeshOpenClawExtension {
         return $false
     }
 
-    $distExt = Join-Path $OpenClawRoot "dist/extensions/envoymesh"
-    $distParent = Join-Path $OpenClawRoot "dist/extensions"
+    $distParent = Join-Path $ocRoot "dist\extensions"
+    $distExt = Join-Path $distParent "envoymesh"
     if (-not (Test-Path $distParent)) {
         New-Item -ItemType Directory -Force -Path $distParent | Out-Null
     }
@@ -386,8 +391,8 @@ function Install-EnvoyMeshOpenClawExtension {
     }
     Copy-Item -Recurse -Force $extDir $distExt
 
-    if (Test-Path (Join-Path $OpenClawRoot "dist-runtime")) {
-        $rtParent = Join-Path $OpenClawRoot "dist-runtime/extensions"
+    if (Test-Path (Join-Path $ocRoot "dist-runtime")) {
+        $rtParent = Join-Path $ocRoot "dist-runtime\extensions"
         if (-not (Test-Path $rtParent)) {
             New-Item -ItemType Directory -Force -Path $rtParent | Out-Null
         }
@@ -400,9 +405,7 @@ function Install-EnvoyMeshOpenClawExtension {
     return $true
 }
 
-if (-not (Install-EnvoyMeshOpenClawExtension -OpenClawRoot "packages/openclaw")) {
-    Write-Warn "envoymesh extension install incomplete — EnvoyAI/OpenClaw may refuse to start"
-}
+Write-Info "EnvoyMesh channel extension will be compiled after OpenClaw pnpm install (needs esbuild)"
 
 # -----------------------------------------------------------------------------
 # Step 4: Build OpenClaw gateway
@@ -446,6 +449,14 @@ if ($SkipOpenClawBuild) {
         Write-Info "Installing @pierre/diffs (fallback)..."
         Invoke-ExternalQuiet npm install @pierre/diffs --save-dev | Out-Null
     }
+
+    # Compile envoymesh now that esbuild is installed under packages/openclaw.
+    Pop-Location
+    Write-Info "Installing EnvoyMesh channel extension (compiled index.js)..."
+    if (-not (Install-EnvoyMeshOpenClawExtension -OpenClawRoot "packages/openclaw")) {
+        Write-Warn "envoymesh extension install incomplete — EnvoyAI/OpenClaw may refuse to start"
+    }
+    Push-Location "packages/openclaw"
 
     # Generate the bundled-channel-config metadata. We use a throwaway
     # GIT_INDEX_FILE so the untracked envoymesh extension is visible to
