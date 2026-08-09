@@ -12,9 +12,17 @@ export interface H2AChannelViewProps {
   onOpenInbox?: () => void;
   onOpenChains?: () => void;
   onOpenDiscover?: () => void;
+  onOpenSettingsAi?: () => void;
 }
 
-export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox, onOpenChains, onOpenDiscover }: H2AChannelViewProps) {
+export function H2AChannelView({
+  onBackToChats,
+  onOpenActivity,
+  onOpenInbox,
+  onOpenChains,
+  onOpenDiscover,
+  onOpenSettingsAi,
+}: H2AChannelViewProps) {
   const t = useT();
   const nodeService = useNodeService();
   const [activity, setActivity] = useState<AgentActivityRecord[]>([]);
@@ -195,7 +203,13 @@ export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox, onO
       </aside>
 
       <section className="h2a-channel-main chat-area">
-        <AIChatPanel onOpenActivity={onOpenActivity} onOpenInbox={onOpenInbox} onOpenChains={onOpenChains} onOpenDiscover={onOpenDiscover} />
+        <AIChatPanel
+          onOpenActivity={onOpenActivity}
+          onOpenInbox={onOpenInbox}
+          onOpenChains={onOpenChains}
+          onOpenDiscover={onOpenDiscover}
+          onOpenSettingsAi={onOpenSettingsAi}
+        />
       </section>
       </div>
     </div>

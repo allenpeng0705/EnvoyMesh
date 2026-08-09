@@ -21,6 +21,10 @@ import type {
   DocumentAutonomyPolicy,
   ModelProviderMode,
   PiStatus,
+  EnvoyLocalStatus,
+  EnvoyLocalInstalledModel,
+  EnvoyLocalCatalogModel,
+  EnvoyLocalEngineUpdateInfo,
   RagIndexStatus,
   AutonomousPolicy,
   A2aChatNotificationMode,
@@ -41,6 +45,7 @@ import {
   listModelProviderPresets,
   getModelProviderPreset,
   inferModelProviderPreset,
+  DEFAULT_ENVOY_LOCAL_SERVER_PARAMS,
 } from "@envoymesh/api";
 import {
   DEFAULT_AI_KNOWLEDGE_BASE,
@@ -916,6 +921,24 @@ function defaultAiSettings(): AiSettings {
   };
 }
 
+/** Merge disk/partial aiSettings so Settings → AI never crashes on missing fields. */
+function resolveAiSettings(raw: AiSettings | null | undefined): AiSettings {
+  const base = defaultAiSettings();
+  if (!raw) return base;
+  return {
+    ...base,
+    ...raw,
+    status: { ...base.status, ...(raw.status ?? {}) },
+    identity: { ...base.identity, ...(raw.identity ?? {}) },
+    rules: Array.isArray(raw.rules) ? raw.rules : [],
+    documentAutonomy: normalizeDocumentAutonomyPolicy(raw.documentAutonomy),
+    disclosure: normalizeEnvoyDisclosureSettings(raw.disclosure),
+    profileMedia: normalizeProfileMediaPolicy(raw.profileMedia),
+    knowledgeBase: { ...base.knowledgeBase, ...(raw.knowledgeBase ?? {}) },
+    autoReplyLimits: { ...base.autoReplyLimits, ...(raw.autoReplyLimits ?? {}) },
+  };
+}
+
 function ModelProviderSettings({
   nodeConfig,
   refreshNodeConfig,
@@ -1552,16 +1575,684 @@ function CostDashboardPanel() {
   );
 }
 
+function formatApproxMb(bytes: number | undefined): string {
+  if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return "?";
+  return String(Math.max(1, Math.round(bytes / (1024 * 1024))));
+}
+
+function EnvoyLocalSettings({
+  refreshNodeConfig,
+}: {
+  refreshNodeConfig: () => Promise<void>;
+}) {
+  const t = useT();
+  const { showToast } = useToast();
+  const nodeService = useNodeService();
+  const [status, setStatus] = useState<EnvoyLocalStatus | null>(null);
+  const [installed, setInstalled] = useState<EnvoyLocalInstalledModel[]>([]);
+  const [catalog, setCatalog] = useState<EnvoyLocalCatalogModel[]>([]);
+  const [engineInfo, setEngineInfo] = useState<EnvoyLocalEngineUpdateInfo | null>(null);
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const [debouncedCatalogQuery, setDebouncedCatalogQuery] = useState("");
+  const [catalogSearching, setCatalogSearching] = useState(false);
+  const [hfSearchError, setHfSearchError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [ctxSize, setCtxSize] = useState(DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.ctxSize);
+  const [nglMode, setNglMode] = useState<"auto" | "off" | "custom">("auto");
+  const [nglCustom, setNglCustom] = useState(20);
+  const [threads, setThreads] = useState<string>("");
+  const [parallel, setParallel] = useState(DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.parallel);
+
+  const refresh = useCallback(async (opts?: { syncParams?: boolean }) => {
+    try {
+      const [st, models, eng] = await Promise.all([
+        nodeService.getEnvoyLocalStatus(),
+        nodeService.listEnvoyLocalInstalledModels(),
+        nodeService.checkEnvoyLocalEngineUpdate(),
+      ]);
+      setStatus(st);
+      setInstalled(Array.isArray(models) ? models : []);
+      setEngineInfo(eng);
+      if (opts?.syncParams !== false) {
+        const sp = st?.serverParams ?? DEFAULT_ENVOY_LOCAL_SERVER_PARAMS;
+        setCtxSize(sp.ctxSize ?? DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.ctxSize);
+        if (sp.nGpuLayers === 0) setNglMode("off");
+        else if (typeof sp.nGpuLayers === "number") {
+          setNglMode("custom");
+          setNglCustom(sp.nGpuLayers);
+        } else setNglMode("auto");
+        setThreads(typeof sp.threads === "number" ? String(sp.threads) : "");
+        setParallel(sp.parallel ?? DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.parallel);
+      }
+      return st;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("[SettingsAITab] failed to fetch Envoy Local status", e);
+      setActionError(msg);
+      return null;
+    }
+  }, [nodeService]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      setDebouncedCatalogQuery(catalogQuery);
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [catalogQuery]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCatalogSearching(true);
+    void nodeService
+      .searchEnvoyLocalModels({ query: debouncedCatalogQuery })
+      .then((result) => {
+        if (cancelled) return;
+        setCatalog(Array.isArray(result?.models) ? result.models : []);
+        setHfSearchError(result?.huggingfaceError ?? null);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setCatalog([]);
+        setHfSearchError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setCatalogSearching(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [nodeService, debouncedCatalogQuery]);
+
+  const phase = status?.phase;
+  // Only real in-process ops disable actions / drive the poller. Sticky phase
+  // strings alone must not lock the UI (server clears them when idle).
+  const inFlight = busy || Boolean(status?.operationInProgress);
+
+  useEffect(() => {
+    if (!inFlight) return;
+    const id = window.setInterval(() => {
+      void refresh({ syncParams: false });
+    }, 1_000);
+    return () => window.clearInterval(id);
+  }, [inFlight, refresh]);
+
+  const statusLabel = (() => {
+    if (!status) return "…";
+    if (status.running || status.phase === "ready") return t("settings.ai.envoyLocal.statusReady");
+    if (status.phase === "error") return t("settings.ai.envoyLocal.statusError");
+    if (status.phase === "starting") return t("settings.ai.envoyLocal.statusStarting");
+    if (
+      inFlight &&
+      (status.phase === "downloading-runtime" ||
+        status.phase === "extracting-runtime" ||
+        status.phase === "downloading-model" ||
+        status.phase === "detecting")
+    ) {
+      return t("settings.ai.envoyLocal.statusDownloading");
+    }
+    if (!status.enabled) return t("settings.ai.envoyLocal.statusDisabled");
+    return status.phase;
+  })();
+
+  const installedIds = useMemo(() => new Set(installed.map((m) => m.id)), [installed]);
+
+  return (
+    <div className="envoy-local-settings" data-testid="envoy-local-settings">
+      <p className="section-desc">{t("settings.ai.envoyLocal.desc")}</p>
+      <p className="settings-hint">{t("settings.ai.envoyLocal.noteCloudFirst")}</p>
+      {status ? (
+        <dl className="settings-dl">
+          <dt>{t("settings.ai.envoyLocal.runtime")}</dt>
+          <dd>
+            {statusLabel}
+            {status.runtimeVersion ? ` · ${status.runtimeVersion}` : ""}
+            {status.runtimeInstalled ? "" : " · not installed"}
+          </dd>
+          <dt>{t("settings.ai.envoyLocal.accel")}</dt>
+          <dd>{status.accel ?? "—"}</dd>
+          <dt>{t("settings.ai.envoyLocal.model")}</dt>
+          <dd>{status.activeModelId ?? "—"}</dd>
+          <dt>{t("settings.ai.envoyLocal.endpoint")}</dt>
+          <dd className="settings-mono">{status.endpoint}</dd>
+          <dt>{t("settings.ai.envoyLocal.downloadRegion")}</dt>
+          <dd>
+            {status.modelDownloadRegion === "cn"
+              ? t("settings.ai.envoyLocal.downloadRegionCn")
+              : t("settings.ai.envoyLocal.downloadRegionGlobal")}
+          </dd>
+          {status.hardwareSummary ? (
+            <>
+              <dt>{t("settings.ai.envoyLocal.hardware")}</dt>
+              <dd>{status.hardwareSummary}</dd>
+            </>
+          ) : null}
+          {status.recommendedModelId ? (
+            <>
+              <dt>{t("settings.ai.envoyLocal.recommended")}</dt>
+              <dd>
+                {status.recommendedModelId}
+                {status.recommendedModelReason ? (
+                  <div className="settings-hint">{status.recommendedModelReason}</div>
+                ) : null}
+              </dd>
+            </>
+          ) : null}
+        </dl>
+      ) : null}
+      {status?.download?.label ? (
+        <p className="settings-hint">
+          {t("settings.ai.envoyLocal.progress", { label: status.download.label })}
+          {typeof status.download.fraction === "number"
+            ? ` (${Math.round(status.download.fraction * 100)}%)`
+            : ""}
+        </p>
+      ) : null}
+      {status?.lastError ? (
+        <p className="settings-hint pi-error" data-testid="envoy-local-last-error">
+          {t("settings.ai.envoyLocal.lastError", { error: status.lastError })}
+        </p>
+      ) : null}
+      {actionError ? (
+        <p className="settings-hint pi-error" data-testid="envoy-local-action-error">
+          {t("settings.ai.envoyLocal.actionError", { error: actionError })}
+        </p>
+      ) : null}
+      {status?.accelFallbackNote ? (
+        <p className="settings-hint">
+          {t("settings.ai.envoyLocal.accelFallback", { note: status.accelFallbackNote })}
+        </p>
+      ) : null}
+      <h5 className="settings-subheading">{t("settings.ai.envoyLocal.engineHeading")}</h5>
+      {engineInfo ? (
+        <dl className="settings-dl">
+          <dt>{t("settings.ai.envoyLocal.enginePinned")}</dt>
+          <dd className="settings-mono">{engineInfo.pinnedVersion}</dd>
+          <dt>{t("settings.ai.envoyLocal.engineInstalled")}</dt>
+          <dd>
+            {engineInfo.installedVersion ?? "—"}
+            {" · "}
+            {engineInfo.updateAvailable
+              ? t("settings.ai.envoyLocal.engineUpdateAvailable")
+              : t("settings.ai.envoyLocal.engineUpToDate")}
+          </dd>
+        </dl>
+      ) : null}
+      <div className="settings-buttons">
+        <button
+          type="button"
+          className="settings-cancel-btn"
+          disabled={inFlight}
+          onClick={async () => {
+            setBusy(true);
+            setActionError(null);
+            try {
+              setStatus(await nodeService.updateEnvoyLocalEngine());
+              setEngineInfo(await nodeService.checkEnvoyLocalEngineUpdate());
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              setActionError(msg);
+              showToast(msg, "error");
+            } finally {
+              setBusy(false);
+              await refresh({ syncParams: false });
+            }
+          }}
+        >
+          {inFlight && status?.phase === "downloading-runtime"
+            ? t("settings.ai.envoyLocal.updatingEngine")
+            : t("settings.ai.envoyLocal.updateEngine")}
+        </button>
+        {!status?.enabled || status.phase === "error" || !status.running ? (
+          <button
+            type="button"
+            className="settings-save-btn"
+            data-testid="envoy-local-enable"
+            disabled={inFlight}
+            onClick={async () => {
+              setBusy(true);
+              setActionError(null);
+              setStatus((prev) => {
+                const download = {
+                  phase: "detecting" as const,
+                  label: t("settings.ai.envoyLocal.startingDownload"),
+                  fraction: 0,
+                };
+                if (prev) {
+                  return {
+                    ...prev,
+                    phase: "detecting",
+                    lastError: null,
+                    operationInProgress: true,
+                    download,
+                  };
+                }
+                return {
+                  enabled: false,
+                  running: false,
+                  phase: "detecting",
+                  port: 18790,
+                  endpoint: "http://127.0.0.1:18790/v1",
+                  runtimeInstalled: false,
+                  lastError: null,
+                  download,
+                  serverParams: { ...DEFAULT_ENVOY_LOCAL_SERVER_PARAMS },
+                  operationInProgress: true,
+                };
+              });
+              try {
+                const st = await nodeService.enableEnvoyLocal();
+                setStatus(st);
+                if (st.phase === "error" || st.lastError) {
+                  const msg = st.lastError ?? t("settings.ai.envoyLocal.enableFailed");
+                  setActionError(msg);
+                  showToast(msg, "error");
+                } else {
+                  showToast(t("settings.ai.envoyLocal.enableOk"), "success");
+                }
+                await refreshNodeConfig();
+              } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                setActionError(msg);
+                showToast(msg, "error");
+              } finally {
+                setBusy(false);
+                await refresh();
+              }
+            }}
+          >
+            {inFlight
+              ? t("settings.ai.envoyLocal.enabling")
+              : t("settings.ai.envoyLocal.enable")}
+          </button>
+        ) : null}
+        {status?.enabled ? (
+          <>
+            <button
+              type="button"
+              className="settings-cancel-btn"
+              disabled={inFlight}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  setStatus(await nodeService.disableEnvoyLocal());
+                  await refreshNodeConfig();
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {t("settings.ai.envoyLocal.disable")}
+            </button>
+            <button
+              type="button"
+              className="settings-cancel-btn"
+              disabled={inFlight}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  setStatus(await nodeService.restartEnvoyLocal());
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {t("settings.ai.envoyLocal.restart")}
+            </button>
+          </>
+        ) : null}
+        {inFlight && status?.phase !== "starting" ? (
+          <button
+            type="button"
+            className="settings-cancel-btn"
+            onClick={async () => {
+              setStatus(await nodeService.cancelEnvoyLocalDownload());
+            }}
+          >
+            {t("settings.ai.envoyLocal.cancel")}
+          </button>
+        ) : null}
+      </div>
+
+      <h5 className="settings-subheading">{t("settings.ai.envoyLocal.modelsHeading")}</h5>
+      <p className="section-desc">{t("settings.ai.envoyLocal.modelsDesc")}</p>
+      <div className="envoy-local-models">
+        <div className="envoy-local-models-col">
+          <div className="settings-hint">{t("settings.ai.envoyLocal.installed")}</div>
+          {installed.length === 0 ? (
+            <p className="settings-hint">{t("settings.ai.envoyLocal.noInstalled")}</p>
+          ) : (
+            <ul className="envoy-local-model-list">
+              {installed.map((m) => (
+                <li key={m.id} className="envoy-local-model-row">
+                  <div>
+                    <span className="settings-mono">{m.id}</span>
+                    {m.active ? (
+                      <span className="envoy-local-active-badge">
+                        {" "}
+                        {t("settings.ai.envoyLocal.activeBadge")}
+                      </span>
+                    ) : null}
+                    {m.newerCuratedModelId ? (
+                      <span className="envoy-local-active-badge" data-testid="envoy-local-newer-badge">
+                        {" "}
+                        {t("settings.ai.envoyLocal.newerAvailableBadge")}
+                      </span>
+                    ) : null}
+                    {m.sizeBytes != null ? (
+                      <div className="settings-hint">
+                        {t("settings.ai.envoyLocal.approxSize", {
+                          mb: formatApproxMb(m.sizeBytes),
+                        })}
+                      </div>
+                    ) : null}
+                    {m.newerCuratedModelId ? (
+                      <div className="settings-hint">
+                        {t("settings.ai.envoyLocal.newerAvailableHint", {
+                          model: m.newerCuratedModelLabel ?? m.newerCuratedModelId,
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="settings-buttons">
+                    {m.newerCuratedModelId && !installedIds.has(m.newerCuratedModelId) ? (
+                      <button
+                        type="button"
+                        className="settings-cancel-btn"
+                        disabled={inFlight}
+                        onClick={async () => {
+                          setBusy(true);
+                          setActionError(null);
+                          try {
+                            setInstalled(
+                              await nodeService.downloadEnvoyLocalModel({
+                                modelId: m.newerCuratedModelId!,
+                              }),
+                            );
+                          } catch (e) {
+                            const msg = e instanceof Error ? e.message : String(e);
+                            setActionError(msg);
+                            showToast(msg, "error");
+                          } finally {
+                            setBusy(false);
+                            await refresh();
+                          }
+                        }}
+                      >
+                        {t("settings.ai.envoyLocal.downloadNewer")}
+                      </button>
+                    ) : null}
+                    {!m.active ? (
+                      <button
+                        type="button"
+                        className="settings-cancel-btn"
+                        disabled={inFlight}
+                        onClick={async () => {
+                          setBusy(true);
+                          try {
+                            setStatus(
+                              await nodeService.setEnvoyLocalActiveModel({ modelId: m.id }),
+                            );
+                            await refreshNodeConfig();
+                          } finally {
+                            setBusy(false);
+                            await refresh();
+                          }
+                        }}
+                      >
+                        {t("settings.ai.envoyLocal.setActive")}
+                      </button>
+                    ) : null}
+                    {!m.active ? (
+                      <button
+                        type="button"
+                        className="settings-cancel-btn"
+                        disabled={inFlight}
+                        onClick={async () => {
+                          setBusy(true);
+                          try {
+                            setInstalled(
+                              await nodeService.deleteEnvoyLocalModel({ modelId: m.id }),
+                            );
+                          } finally {
+                            setBusy(false);
+                          }
+                        }}
+                      >
+                        {t("settings.ai.envoyLocal.deleteModel")}
+                      </button>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="envoy-local-models-col">
+          <label className="settings-label">
+            {t("settings.ai.envoyLocal.catalogSearch")}
+            <input
+              type="search"
+              className="settings-input"
+              placeholder={t("settings.ai.envoyLocal.catalogSearchPlaceholder")}
+              value={catalogQuery}
+              onChange={(e) => setCatalogQuery(e.target.value)}
+            />
+          </label>
+          <div className="settings-hint">{t("settings.ai.envoyLocal.catalog")}</div>
+          {catalogSearching ? (
+            <p className="settings-hint">{t("settings.ai.envoyLocal.searchingHf")}</p>
+          ) : null}
+          {hfSearchError ? (
+            <p className="settings-hint pi-error" data-testid="envoy-local-hf-search-error">
+              {t("settings.ai.envoyLocal.hfSearchError", { error: hfSearchError })}
+            </p>
+          ) : null}
+          <ul className="envoy-local-model-list">
+            {catalog.map((m) => (
+              <li key={m.id} className="envoy-local-model-row">
+                <div>
+                  <strong>{m.label}</strong>
+                  {m.source === "huggingface" ? (
+                    <span className="envoy-local-active-badge">
+                      {" "}
+                      {t("settings.ai.envoyLocal.sourceHf")}
+                    </span>
+                  ) : (
+                    <span className="envoy-local-active-badge">
+                      {" "}
+                      {t("settings.ai.envoyLocal.sourceCurated")}
+                    </span>
+                  )}
+                  {m.recommended ? (
+                    <span className="envoy-local-active-badge">
+                      {" "}
+                      {m.id === status?.recommendedModelId
+                        ? t("settings.ai.envoyLocal.recommendedBadge")
+                        : t("settings.ai.envoyLocal.alsoFitsBadge")}
+                    </span>
+                  ) : null}
+                  <div className="settings-hint">{m.description}</div>
+                  <div className="settings-hint">
+                    {t("settings.ai.envoyLocal.approxSize", {
+                      mb: formatApproxMb(m.approxBytes),
+                    })}
+                  </div>
+                </div>
+                <div className="settings-buttons">
+                  <button
+                    type="button"
+                    className="settings-cancel-btn"
+                    disabled={inFlight || installedIds.has(m.id)}
+                    onClick={async () => {
+                      setBusy(true);
+                      setActionError(null);
+                      try {
+                        setInstalled(
+                          await nodeService.downloadEnvoyLocalModel({ modelId: m.id }),
+                        );
+                      } catch (e) {
+                        const msg = e instanceof Error ? e.message : String(e);
+                        setActionError(msg);
+                        showToast(msg, "error");
+                      } finally {
+                        setBusy(false);
+                        await refresh();
+                      }
+                    }}
+                  >
+                    {installedIds.has(m.id)
+                      ? t("settings.ai.envoyLocal.installed")
+                      : t("settings.ai.envoyLocal.download")}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <h5 className="settings-subheading">{t("settings.ai.envoyLocal.paramsHeading")}</h5>
+      <p className="settings-hint">{t("settings.ai.envoyLocal.paramsHint")}</p>
+      <dl className="settings-dl">
+        <dt>{t("settings.ai.envoyLocal.ctxSize")}</dt>
+        <dd>
+          <input
+            type="number"
+            className="settings-input"
+            min={512}
+            max={131072}
+            step={512}
+            value={ctxSize}
+            onChange={(e) => setCtxSize(Number(e.target.value) || 4096)}
+          />
+        </dd>
+        <dt>{t("settings.ai.envoyLocal.nGpuLayers")}</dt>
+        <dd>
+          <select
+            className="settings-input"
+            value={nglMode}
+            onChange={(e) => setNglMode(e.target.value as "auto" | "off" | "custom")}
+          >
+            <option value="auto">{t("settings.ai.envoyLocal.nGpuAuto")}</option>
+            <option value="off">{t("settings.ai.envoyLocal.nGpuOff")}</option>
+            <option value="custom">{t("settings.ai.envoyLocal.nGpuCustom")}</option>
+          </select>
+          {nglMode === "custom" ? (
+            <input
+              type="number"
+              className="settings-input"
+              min={1}
+              max={999}
+              value={nglCustom}
+              onChange={(e) => setNglCustom(Number(e.target.value) || 1)}
+            />
+          ) : null}
+        </dd>
+      </dl>
+      <button
+        type="button"
+        className="settings-cancel-btn"
+        onClick={() => setShowAdvanced((v) => !v)}
+      >
+        {showAdvanced
+          ? t("settings.ai.envoyLocal.paramsSimple")
+          : t("settings.ai.envoyLocal.paramsAdvanced")}
+      </button>
+      {showAdvanced ? (
+        <dl className="settings-dl">
+          <dt>{t("settings.ai.envoyLocal.threads")}</dt>
+          <dd>
+            <input
+              type="number"
+              className="settings-input"
+              min={1}
+              max={256}
+              placeholder={t("settings.ai.envoyLocal.threadsAuto")}
+              value={threads}
+              onChange={(e) => setThreads(e.target.value)}
+            />
+          </dd>
+          <dt>{t("settings.ai.envoyLocal.parallel")}</dt>
+          <dd>
+            <input
+              type="number"
+              className="settings-input"
+              min={1}
+              max={16}
+              value={parallel}
+              onChange={(e) => setParallel(Number(e.target.value) || 1)}
+            />
+          </dd>
+        </dl>
+      ) : null}
+      <div className="settings-buttons">
+        <button
+          type="button"
+          className="settings-save-btn"
+          disabled={inFlight}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              const nGpuLayers =
+                nglMode === "off" ? 0 : nglMode === "custom" ? nglCustom : "auto";
+              const threadsNum = threads.trim() ? Number(threads) : undefined;
+              setStatus(
+                await nodeService.updateEnvoyLocalServerParams({
+                  serverParams: {
+                    ctxSize,
+                    nGpuLayers,
+                    parallel,
+                    ...(threadsNum && Number.isFinite(threadsNum)
+                      ? { threads: threadsNum }
+                      : { threads: undefined }),
+                  },
+                }),
+              );
+            } finally {
+              setBusy(false);
+              await refresh();
+            }
+          }}
+        >
+          {t("settings.ai.envoyLocal.saveParams")}
+        </button>
+        <button
+          type="button"
+          className="settings-cancel-btn"
+          disabled={inFlight}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              setStatus(await nodeService.resetEnvoyLocalServerParams());
+            } finally {
+              setBusy(false);
+              await refresh();
+            }
+          }}
+        >
+          {t("settings.ai.envoyLocal.resetParams")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsAITab() {
   const t = useT();
   const nodeService = useNodeService();
   const { showToast } = useToast();
   const isMobileNode = useIsInProcessMobileNode();
   const { nodeConfig, refreshNodeConfig, bridgeStatus } = useNodeState();
-  const aiSettings = nodeConfig?.aiSettings ?? defaultAiSettings();
-  const documentAutonomy = normalizeDocumentAutonomyPolicy(aiSettings.documentAutonomy);
-  const profileMedia = normalizeProfileMediaPolicy(aiSettings.profileMedia);
-  const disclosure = normalizeEnvoyDisclosureSettings(aiSettings.disclosure);
+  const aiSettings = resolveAiSettings(nodeConfig?.aiSettings);
+  const documentAutonomy = aiSettings.documentAutonomy!;
+  const profileMedia = aiSettings.profileMedia!;
+  const disclosure = aiSettings.disclosure!;
 
   const [ruleForm, setRuleForm] = useState<RuleFormState>(EMPTY_RULE_FORM);
 
@@ -1608,7 +2299,7 @@ export function SettingsAITab() {
   };
 
   const handleDeleteRule = async (ruleId: string) => {
-    const newRules = aiSettings.rules.filter(r => r.id !== ruleId);
+    const newRules = (aiSettings.rules ?? []).filter(r => r.id !== ruleId);
     await updateAiSettings({ rules: newRules });
   };
 
@@ -2054,6 +2745,13 @@ export function SettingsAITab() {
         <h4>{t("settings.ai.modelProvider.heading")}</h4>
         <ModelProviderSettings nodeConfig={nodeConfig} refreshNodeConfig={refreshNodeConfig} />
       </section>
+
+      {!isMobileNode ? (
+        <section className="settings-section">
+          <h4>{t("settings.ai.envoyLocal.heading")}</h4>
+          <EnvoyLocalSettings refreshNodeConfig={refreshNodeConfig} />
+        </section>
+      ) : null}
 
       <section className="settings-section">
         <h4>{t("settings.ai.aiEngine.heading")}</h4>

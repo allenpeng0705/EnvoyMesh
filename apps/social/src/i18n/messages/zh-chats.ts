@@ -195,11 +195,19 @@ export const zhAiChatMessages = {
   mockMode: "模拟模式",
   modelLabel: "模型：{name}",
   modelNotSet: "未设置",
+  configureAiTitle: "配置 AI 模型",
+  configureAiDesc:
+    "可选用云端 API（无需本地下载）、自建 Ollama，或可选的 Envoy Local（安装后下载 llama.cpp）。本地引擎不是必须的。",
+  configureAiButton: "打开 AI 设置",
+  configureAiTurnCta:
+    "尚未配置可用的 AI 模型。请打开「设置 → AI」选择云端、Ollama，或可选的 Envoy Local（下载）。可以只用云端、不装本地引擎。",
+  configureAiAgain: "仍未配置可用模型。请打开「设置 → AI」— 使用云端无需安装任何本地引擎。",
   emptyTitle: "与 AI 助手聊天",
   emptyDesc: "提问、获取任务帮助或起草消息",
   welcomeGreeting: "👋 你好！我是你的 Envoy 助手。",
-  welcomeBody:
-    "我可以帮你找联系人、解释 EnvoyMesh 的功能，并引导你完成第一步。随时问我 — 即使没有配置模型，我也能帮你入门！",
+  welcomeBody: "我可以帮你找联系人、解释 EnvoyMesh 的功能，并引导你完成第一步。",
+  welcomeBodyNoModel:
+    "要与 EnvoyAI 对话，请先在「设置 → AI」配置模型。云端 API 无需下载任何内容；若需要本地推理，可选用 Ollama 或可选的 Envoy Local。",
   suggestGetStarted: "帮我入门",
   suggestFindContacts: "如何找联系人？",
   suggestWhatCanDo: "EnvoyMesh 能做什么？",

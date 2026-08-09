@@ -2511,6 +2511,42 @@ export interface NodeService {
   getPiStatus(): Promise<PiStatus>;
   /** Stop + start the Pi child process. Returns the new status. */
   restartPi(): Promise<PiStatus>;
+
+  // --- Phase 54: Envoy Local (downloadable llama-server; never packaged) ---
+  getEnvoyLocalStatus(): Promise<import("./envoy-local.js").EnvoyLocalStatus>;
+  enableEnvoyLocal(
+    params?: import("./envoy-local.js").EnableEnvoyLocalParams,
+  ): Promise<import("./envoy-local.js").EnvoyLocalStatus>;
+  /** Persist dismissal of the auto-provision consent dialog. */
+  declineEnvoyLocalAutoProvision(): Promise<
+    import("./envoy-local.js").EnvoyLocalStatus
+  >;
+  disableEnvoyLocal(): Promise<import("./envoy-local.js").EnvoyLocalStatus>;
+  restartEnvoyLocal(): Promise<import("./envoy-local.js").EnvoyLocalStatus>;
+  cancelEnvoyLocalDownload(): Promise<import("./envoy-local.js").EnvoyLocalStatus>;
+  listEnvoyLocalInstalledModels(): Promise<
+    import("./envoy-local.js").EnvoyLocalInstalledModel[]
+  >;
+  searchEnvoyLocalModels(
+    params?: import("./envoy-local.js").SearchEnvoyLocalModelsParams,
+  ): Promise<import("./envoy-local.js").SearchEnvoyLocalModelsResult>;
+  downloadEnvoyLocalModel(
+    params: import("./envoy-local.js").DownloadEnvoyLocalModelParams,
+  ): Promise<import("./envoy-local.js").EnvoyLocalInstalledModel[]>;
+  setEnvoyLocalActiveModel(
+    params: import("./envoy-local.js").SetEnvoyLocalActiveModelParams,
+  ): Promise<import("./envoy-local.js").EnvoyLocalStatus>;
+  deleteEnvoyLocalModel(
+    params: import("./envoy-local.js").DeleteEnvoyLocalModelParams,
+  ): Promise<import("./envoy-local.js").EnvoyLocalInstalledModel[]>;
+  updateEnvoyLocalServerParams(
+    params: import("./envoy-local.js").UpdateEnvoyLocalServerParamsParams,
+  ): Promise<import("./envoy-local.js").EnvoyLocalStatus>;
+  resetEnvoyLocalServerParams(): Promise<import("./envoy-local.js").EnvoyLocalStatus>;
+  checkEnvoyLocalEngineUpdate(): Promise<
+    import("./envoy-local.js").EnvoyLocalEngineUpdateInfo
+  >;
+  updateEnvoyLocalEngine(): Promise<import("./envoy-local.js").EnvoyLocalStatus>;
   /** One-shot prompt — used by the sendToPi JSON-RPC method. Returns the text. */
   sendToPi(text: string): Promise<string>;
   /** Dynamic AI bot — send a message to a character bot, get a reply. */

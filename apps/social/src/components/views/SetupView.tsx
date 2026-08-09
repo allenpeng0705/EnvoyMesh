@@ -79,6 +79,11 @@ function validateModelSetup(
   if (preset.mode === "ollama") {
     return modelNameTrimmed ? null : "modelName";
   }
+  // Envoy Local (llama-server) — loopback OpenAI-compatible, no API key.
+  if (preset.id === "envoy-local") {
+    if (showEndpoint && !endpointTrimmed) return "endpoint";
+    return modelNameTrimmed ? null : "modelName";
+  }
   if (preset.mode === "litellm") {
     if (!endpointTrimmed) return "endpoint";
     if (!modelNameTrimmed) return "modelName";

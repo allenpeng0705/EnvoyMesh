@@ -97,6 +97,7 @@ export * from "./pi-agent.js";
 export * from "./ai-bot.js";
 export * from "./pi-native-providers.js";
 export * from "./model-provider-presets.js";
+export * from "./envoy-local.js";
 export * from "./terminal-wire.js";
 export * from "./home-remote.js";
 /** Explicit export: Vite pre-bundle can skip `bondTrustRank` when re-exported only via star from `node-service`. */

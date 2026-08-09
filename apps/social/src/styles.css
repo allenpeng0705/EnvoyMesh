@@ -4115,6 +4115,72 @@ textarea::placeholder {
    OpenClaw engine is configured but not running. Mirrors the settings
    page's error styling so the user gets the same affordance in the place
    where the pain actually happens (they tried to chat, the AI is dead). */
+.configure-ai-banner {
+  background: var(--color-info-subtle, #eff6ff);
+  border-bottom: 1px solid var(--color-info, #3b82f6);
+  padding: 0.75rem 1rem;
+}
+.configure-ai-banner-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 100%;
+}
+.configure-ai-banner-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.configure-ai-banner-title {
+  font-weight: var(--font-semibold, 600);
+  color: var(--color-text, #0f172a);
+  font-size: var(--text-sm, 0.875rem);
+  margin-bottom: 0.15rem;
+}
+.configure-ai-banner-desc {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted, #64748b);
+  line-height: 1.4;
+}
+
+.envoy-local-settings .settings-subheading {
+  margin: 1.25rem 0 0.35rem;
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-semibold, 600);
+}
+.envoy-local-models {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 0.75rem 0 1rem;
+}
+@media (max-width: 800px) {
+  .envoy-local-models {
+    grid-template-columns: 1fr;
+  }
+}
+.envoy-local-model-list {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.envoy-local-model-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+}
+.envoy-local-active-badge {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-info, #2563eb);
+  font-weight: var(--font-semibold, 600);
+}
+
 .openclaw-offline-banner {
   background: var(--color-danger-subtle, #fef2f2);
   border-bottom: 1px solid var(--color-danger, #ef4444);

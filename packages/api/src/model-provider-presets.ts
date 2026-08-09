@@ -177,6 +177,20 @@ export const MODEL_PROVIDER_PRESETS: readonly ModelProviderPreset[] = [
     localOnly: true,
   },
   {
+    // Phase 54 — post-install download of llama-server (never packaged in the app).
+    // Default port matches apps/node service-ports ENVOY_LOCAL_PORT_BASE (18790).
+    id: "envoy-local",
+    label: "Envoy Local (llama.cpp)",
+    mode: "openai-compatible",
+    defaultEndpoint: "http://127.0.0.1:18790/v1",
+    models: [],
+    openclawProviderId: "openai-compatible",
+    openclawApi: "openai-completions",
+    endpointEditable: true,
+    endpointPlaceholder: "http://127.0.0.1:18790/v1",
+    localOnly: true,
+  },
+  {
     id: "litellm",
     label: "LiteLLM",
     mode: "litellm",
@@ -298,6 +312,8 @@ function inferPresetFromHost(
     if (host === "api.openai.com" || host.endsWith(".openai.com")) {
       return getModelProviderPreset("openai")
     }
+    // Envoy Local default endpoint is loopback; prefer presetId when set.
+    // Host-only cannot distinguish Ollama vs Envoy Local (both often 127.0.0.1).
     return undefined
   }
   if (mode === "anthropic-compatible") {
@@ -338,6 +354,28 @@ export function resolveOpenClawModelConfig(
     ...(baseUrl ? { baseUrl } : {}),
     ...(config.apiKey?.trim() ? { apiKey: config.apiKey.trim() } : {}),
   }
+}
+
+/**
+ * True when Settings → AI has a real provider EnvoyAI / Pi-inherit can use.
+ * Stricter than {@link isModelProviderConfigured} (`mock` is not usable).
+ * Equivalent to {@link resolveOpenClawModelConfig} succeeding.
+ */
+export function hasUsableModelProvider(
+  config: ModelProviderConfig | null | undefined,
+): boolean {
+  return resolveOpenClawModelConfig(config) != null
+}
+
+/**
+ * True when a usable cloud or BYO Ollama (non–Envoy Local) provider is configured.
+ * Used to skip Envoy Local auto-download / consent prompts.
+ */
+export function hasUsableNonEnvoyLocalModelProvider(
+  config: ModelProviderConfig | null | undefined,
+): boolean {
+  if (!hasUsableModelProvider(config)) return false
+  return inferModelProviderPreset(config).id !== "envoy-local"
 }
 
 /** Presets visible for a given UI scope. */

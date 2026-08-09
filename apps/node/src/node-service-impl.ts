@@ -155,6 +155,7 @@ import {
   type ListCommerceReceiptsParams,
   type RecordCommerceReceiptParams,
   ensureDefaultAutonomousPoliciesForModel,
+  inferModelProviderPreset,
   scoreAgentNetworkWorker,
   mergeExtAgentPresets,
   resolveActiveExtAgent,
@@ -1147,6 +1148,29 @@ import {
   type PiRuntimeDeps,
 } from "./node-service-pi.js";
 import { ensurePiTerminalSession } from "./pi-terminal-session.js";
+import {
+  cancelEnvoyLocalDownloadViaRuntime,
+  checkEnvoyLocalEngineUpdateViaRuntime,
+  createEnvoyLocalRuntimeState,
+  declineEnvoyLocalAutoProvisionViaRuntime,
+  deleteEnvoyLocalModelViaRuntime,
+  disableEnvoyLocalViaRuntime,
+  downloadEnvoyLocalModelViaRuntime,
+  enableEnvoyLocalViaRuntime,
+  getEnvoyLocalStatusViaRuntime,
+  listEnvoyLocalInstalledModelsViaRuntime,
+  maybeDisableEnvoyLocalForExternalProvider,
+  maybeStartEnvoyLocalOnBootViaRuntime,
+  resetEnvoyLocalServerParamsViaRuntime,
+  restartEnvoyLocalViaRuntime,
+  searchEnvoyLocalModelsViaRuntime,
+  setEnvoyLocalActiveModelViaRuntime,
+  stopEnvoyLocalViaRuntime,
+  updateEnvoyLocalEngineViaRuntime,
+  updateEnvoyLocalServerParamsViaRuntime,
+  type EnvoyLocalRuntimeDeps,
+  type EnvoyLocalRuntimeState,
+} from "./envoy-local-runtime.js";
 import {
   acceptShareViaRuntime,
   buildTransferInboundContext,
@@ -4321,6 +4345,9 @@ class NodeServiceImpl implements NodeService {
   // Phase 49 — Pi Runtime (local coding agent; local-only, no mesh.* tools)
   private readonly _piState = createPiRuntimeState();
 
+  // Phase 54 — Envoy Local (downloadable llama-server)
+  private readonly _envoyLocalState: EnvoyLocalRuntimeState = createEnvoyLocalRuntimeState();
+
   private _bindOpenClawPersistence(): void {
     if (this._profileDir === "/tmp/unknown") {
       return;
@@ -4480,6 +4507,166 @@ class NodeServiceImpl implements NodeService {
 
   async getPiStatus(): Promise<PiStatus> {
     return getPiStatusViaRuntime(this._piState, this._piRuntimeDeps())
+  }
+
+  // --- Phase 54: Envoy Local ---
+
+  private _envoyLocalRuntimeDeps(): EnvoyLocalRuntimeDeps {
+    return {
+      getProfileDir: () => this._profileDir,
+      loadEnvoyLocalConfig: async () => {
+        const cfg = await this._configStore.load();
+        return cfg?.envoyLocal;
+      },
+      saveEnvoyLocalConfig: async (patch) => {
+        const existing = await this._configStore.load();
+        const prev = existing?.envoyLocal ?? {};
+        await this.updateNodeConfig({
+          envoyLocal: { ...prev, ...patch },
+        });
+      },
+      wireModelProviders: async (endpoint, modelName) => {
+        await this.updateNodeConfig({
+          modelProviders: {
+            mode: "openai-compatible",
+            presetId: "envoy-local",
+            endpoint,
+            modelName,
+            requireApprovalForCloud: false,
+          },
+        });
+      },
+      reloadOpenClaw: async () => {
+        await this.reloadOpenClawConfig();
+      },
+      loadModelProviders: async () => {
+        const cfg = await this._configStore.load();
+        return cfg?.modelProviders;
+      },
+      clearEnvoyLocalModelProviders: async () => {
+        const cfg = await this._configStore.load();
+        const mp = cfg?.modelProviders;
+        if (!mp) return;
+        if (inferModelProviderPreset(mp).id !== "envoy-local") return;
+        await this.updateNodeConfig({
+          modelProviders: { mode: "disabled", presetId: "disabled" },
+        });
+      },
+    };
+  }
+
+  async getEnvoyLocalStatus() {
+    return getEnvoyLocalStatusViaRuntime(this._envoyLocalState, this._envoyLocalRuntimeDeps());
+  }
+
+  async enableEnvoyLocal(params?: import("@envoymesh/api").EnableEnvoyLocalParams) {
+    return enableEnvoyLocalViaRuntime(
+      this._envoyLocalState,
+      this._envoyLocalRuntimeDeps(),
+      params,
+    );
+  }
+
+  async declineEnvoyLocalAutoProvision() {
+    return declineEnvoyLocalAutoProvisionViaRuntime(
+      this._envoyLocalState,
+      this._envoyLocalRuntimeDeps(),
+    );
+  }
+
+  async disableEnvoyLocal() {
+    return disableEnvoyLocalViaRuntime(this._envoyLocalState, this._envoyLocalRuntimeDeps());
+  }
+
+  async restartEnvoyLocal() {
+    return restartEnvoyLocalViaRuntime(this._envoyLocalState, this._envoyLocalRuntimeDeps());
+  }
+
+  async cancelEnvoyLocalDownload() {
+    return cancelEnvoyLocalDownloadViaRuntime(
+      this._envoyLocalState,
+      this._envoyLocalRuntimeDeps(),
+    );
+  }
+
+  async listEnvoyLocalInstalledModels() {
+    return listEnvoyLocalInstalledModelsViaRuntime(this._envoyLocalRuntimeDeps());
+  }
+
+  async searchEnvoyLocalModels(
+    params?: import("@envoymesh/api").SearchEnvoyLocalModelsParams,
+  ) {
+    return searchEnvoyLocalModelsViaRuntime(params?.query);
+  }
+
+  async downloadEnvoyLocalModel(
+    params: import("@envoymesh/api").DownloadEnvoyLocalModelParams,
+  ) {
+    return downloadEnvoyLocalModelViaRuntime(
+      this._envoyLocalState,
+      this._envoyLocalRuntimeDeps(),
+      params,
+    );
+  }
+
+  async setEnvoyLocalActiveModel(
+    params: import("@envoymesh/api").SetEnvoyLocalActiveModelParams,
+  ) {
+    return setEnvoyLocalActiveModelViaRuntime(
+      this._envoyLocalState,
+      this._envoyLocalRuntimeDeps(),
+      params.modelId,
+    );
+  }
+
+  async deleteEnvoyLocalModel(
+    params: import("@envoymesh/api").DeleteEnvoyLocalModelParams,
+  ) {
+    return deleteEnvoyLocalModelViaRuntime(
+      this._envoyLocalState,
+      this._envoyLocalRuntimeDeps(),
+      params.modelId,
+    );
+  }
+
+  async updateEnvoyLocalServerParams(
+    params: import("@envoymesh/api").UpdateEnvoyLocalServerParamsParams,
+  ) {
+    return updateEnvoyLocalServerParamsViaRuntime(
+      this._envoyLocalState,
+      this._envoyLocalRuntimeDeps(),
+      params.serverParams,
+    );
+  }
+
+  async resetEnvoyLocalServerParams() {
+    return resetEnvoyLocalServerParamsViaRuntime(
+      this._envoyLocalState,
+      this._envoyLocalRuntimeDeps(),
+    );
+  }
+
+  async checkEnvoyLocalEngineUpdate() {
+    return checkEnvoyLocalEngineUpdateViaRuntime(this._envoyLocalRuntimeDeps());
+  }
+
+  async updateEnvoyLocalEngine() {
+    return updateEnvoyLocalEngineViaRuntime(
+      this._envoyLocalState,
+      this._envoyLocalRuntimeDeps(),
+    );
+  }
+
+  /** Boot hook (duck-typed from index.ts). */
+  async startEnvoyLocal(): Promise<void> {
+    await maybeStartEnvoyLocalOnBootViaRuntime(
+      this._envoyLocalState,
+      this._envoyLocalRuntimeDeps(),
+    );
+  }
+
+  async stopEnvoyLocal(): Promise<void> {
+    await stopEnvoyLocalViaRuntime(this._envoyLocalState);
   }
 
   /** One-shot prompt — used by the sendToPi JSON-RPC method. */
@@ -7625,6 +7812,22 @@ class NodeServiceImpl implements NodeService {
       } catch (err) {
         console.warn(
           "[bridge] rebind failed:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+    // Cloud / Ollama / disabled AI takes over: stop Envoy Local sidecar unless
+    // the patch itself is usable envoy-local (enable/wire path).
+    if (Object.prototype.hasOwnProperty.call(nodePatch, "modelProviders")) {
+      try {
+        await maybeDisableEnvoyLocalForExternalProvider(
+          this._envoyLocalState,
+          this._envoyLocalRuntimeDeps(),
+          (nodePatch as Partial<NodeConfig>).modelProviders,
+        );
+      } catch (err) {
+        console.warn(
+          "[envoy-local] auto-disable after model provider save failed:",
           err instanceof Error ? err.message : err,
         );
       }

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
+  hasUsableModelProvider,
+  hasUsableNonEnvoyLocalModelProvider,
   inferModelProviderPreset,
   listModelProviderPresets,
   resolveOpenClawModelConfig,
@@ -73,5 +75,74 @@ describe("model-provider-presets", () => {
     })!
     expect(resolved.providerId).toBe("deepseek")
     expect(resolved.baseUrl).toBe("https://api.deepseek.com/v1")
+  })
+
+  it("hasUsableModelProvider rejects disabled/mock/empty modelName", () => {
+    expect(hasUsableModelProvider(undefined)).toBe(false)
+    expect(hasUsableModelProvider({ mode: "disabled" })).toBe(false)
+    expect(hasUsableModelProvider({ mode: "mock" })).toBe(false)
+    expect(
+      hasUsableModelProvider({ mode: "openai-compatible", presetId: "openai" }),
+    ).toBe(false)
+  })
+
+  it("hasUsableModelProvider accepts cloud, ollama, and envoy-local", () => {
+    expect(
+      hasUsableModelProvider({
+        mode: "openai-compatible",
+        presetId: "openai",
+        modelName: "gpt-4o-mini",
+        apiKey: "k",
+      }),
+    ).toBe(true)
+    expect(
+      hasUsableModelProvider({
+        mode: "ollama",
+        presetId: "ollama",
+        modelName: "llama3.2",
+      }),
+    ).toBe(true)
+    expect(
+      hasUsableModelProvider({
+        mode: "openai-compatible",
+        presetId: "envoy-local",
+        modelName: "default.gguf",
+        endpoint: "http://127.0.0.1:18790/v1",
+      }),
+    ).toBe(true)
+  })
+
+  it("hasUsableNonEnvoyLocalModelProvider treats envoy-local as non-external", () => {
+    expect(
+      hasUsableNonEnvoyLocalModelProvider({
+        mode: "openai-compatible",
+        presetId: "openai",
+        modelName: "gpt-4o-mini",
+        apiKey: "k",
+      }),
+    ).toBe(true)
+    expect(
+      hasUsableNonEnvoyLocalModelProvider({
+        mode: "ollama",
+        presetId: "ollama",
+        modelName: "llama3.2",
+      }),
+    ).toBe(true)
+    expect(
+      hasUsableNonEnvoyLocalModelProvider({
+        mode: "openai-compatible",
+        presetId: "envoy-local",
+        modelName: "default.gguf",
+        endpoint: "http://127.0.0.1:18790/v1",
+      }),
+    ).toBe(false)
+    expect(hasUsableNonEnvoyLocalModelProvider({ mode: "mock" })).toBe(false)
+  })
+
+  it("lists envoy-local as a local-only preset", () => {
+    expect(listModelProviderPresets().map((p) => p.id)).toContain("envoy-local")
+    expect(listModelProviderPresets({ includeLocal: false }).map((p) => p.id)).not.toContain(
+      "envoy-local",
+    )
   })
 })

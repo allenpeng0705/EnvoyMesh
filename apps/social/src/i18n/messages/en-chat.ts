@@ -207,11 +207,21 @@ export const aiChatMessages = {
   mockMode: "Mock Mode",
   modelLabel: "Model: {name}",
   modelNotSet: "Not set",
+  configureAiTitle: "Configure an AI model",
+  configureAiDesc:
+    "Pick a cloud API (no local download), BYO Ollama, or optional Envoy Local (downloads llama.cpp after install). Local is never required.",
+  configureAiButton: "Open AI settings",
+  configureAiTurnCta:
+    "No AI model is configured yet. Open Settings → AI to choose a cloud provider, Ollama, or optional Envoy Local (download). You can skip local and use cloud only.",
+  configureAiAgain:
+    "Still no usable model. Open Settings → AI — cloud works without installing any local engine.",
   emptyTitle: "Chat with your AI assistant",
   emptyDesc: "Ask questions, get help with tasks, or draft messages",
   welcomeGreeting: "👋 Hi! I'm your Envoy assistant.",
   welcomeBody:
-    "I can help you find contacts, explain how EnvoyMesh works, and guide you through your first steps. Ask me anything — even without a model configured, I can help you get started!",
+    "I can help you find contacts, explain how EnvoyMesh works, and guide you through your first steps.",
+  welcomeBodyNoModel:
+    "To chat with EnvoyAI, configure a model in Settings → AI. Cloud APIs work without downloading anything; Ollama or optional Envoy Local are available if you want local inference.",
   suggestGetStarted: "Help me get started",
   suggestFindContacts: "How do I find contacts?",
   suggestWhatCanDo: "What can EnvoyMesh do?",

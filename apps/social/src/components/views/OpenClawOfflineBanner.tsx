@@ -41,6 +41,7 @@
  * Auto-polls every 5s while the alarm is visible.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { hasUsableModelProvider } from "@envoymesh/api";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
@@ -186,10 +187,11 @@ export function OpenClawOfflineBanner() {
     running === false &&
     startedAt !== null &&
     (hasBeenUpThisSessionRef.current || graceElapsed);
-  // Reference nodeConfig so unused-var tooling doesn't complain — this
-  // is intentionally a sanity hook in case the runtime status lags behind
-  // a recent settings change. The runtime is the source of truth.
-  void nodeConfig?.openclawEnabled;
+  // Prefer Configure AI guidance when the real gap is no usable model —
+  // OpenClaw "stopped" is misleading when Settings → AI is still disabled/mock.
+  if (!hasUsableModelProvider(nodeConfig?.modelProviders)) {
+    return null;
+  }
   if (!alarmVisible) {
     return null;
   }

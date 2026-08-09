@@ -647,6 +647,76 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.restartPi();
   }
 
+  async getEnvoyLocalStatus() {
+    return this._ns.getEnvoyLocalStatus();
+  }
+
+  async enableEnvoyLocal(params?: import("@envoymesh/api").EnableEnvoyLocalParams) {
+    return this._ns.enableEnvoyLocal(params);
+  }
+
+  async declineEnvoyLocalAutoProvision() {
+    return this._ns.declineEnvoyLocalAutoProvision();
+  }
+
+  async disableEnvoyLocal() {
+    return this._ns.disableEnvoyLocal();
+  }
+
+  async restartEnvoyLocal() {
+    return this._ns.restartEnvoyLocal();
+  }
+
+  async cancelEnvoyLocalDownload() {
+    return this._ns.cancelEnvoyLocalDownload();
+  }
+
+  async listEnvoyLocalInstalledModels() {
+    return this._ns.listEnvoyLocalInstalledModels();
+  }
+
+  async searchEnvoyLocalModels(
+    params?: import("@envoymesh/api").SearchEnvoyLocalModelsParams,
+  ) {
+    return this._ns.searchEnvoyLocalModels(params);
+  }
+
+  async downloadEnvoyLocalModel(
+    params: import("@envoymesh/api").DownloadEnvoyLocalModelParams,
+  ) {
+    return this._ns.downloadEnvoyLocalModel(params);
+  }
+
+  async setEnvoyLocalActiveModel(
+    params: import("@envoymesh/api").SetEnvoyLocalActiveModelParams,
+  ) {
+    return this._ns.setEnvoyLocalActiveModel(params);
+  }
+
+  async deleteEnvoyLocalModel(
+    params: import("@envoymesh/api").DeleteEnvoyLocalModelParams,
+  ) {
+    return this._ns.deleteEnvoyLocalModel(params);
+  }
+
+  async updateEnvoyLocalServerParams(
+    params: import("@envoymesh/api").UpdateEnvoyLocalServerParamsParams,
+  ) {
+    return this._ns.updateEnvoyLocalServerParams(params);
+  }
+
+  async resetEnvoyLocalServerParams() {
+    return this._ns.resetEnvoyLocalServerParams();
+  }
+
+  async checkEnvoyLocalEngineUpdate() {
+    return this._ns.checkEnvoyLocalEngineUpdate();
+  }
+
+  async updateEnvoyLocalEngine() {
+    return this._ns.updateEnvoyLocalEngine();
+  }
+
   async sendToPi(text: string) {
     return this._ns.sendToPi(text);
   }

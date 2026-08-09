@@ -346,6 +346,40 @@ export interface NodeServiceClient {
   getPiStatus(): Promise<import("@envoymesh/api").PiStatus>;
   /** Stop + start the Pi child process. May take up to ~15s (readiness probe). */
   restartPi(): Promise<import("@envoymesh/api").PiStatus>;
+  // Phase 54 — Envoy Local (downloadable llama-server)
+  getEnvoyLocalStatus(): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
+  enableEnvoyLocal(
+    params?: import("@envoymesh/api").EnableEnvoyLocalParams,
+  ): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
+  declineEnvoyLocalAutoProvision(): Promise<
+    import("@envoymesh/api").EnvoyLocalStatus
+  >;
+  disableEnvoyLocal(): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
+  restartEnvoyLocal(): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
+  cancelEnvoyLocalDownload(): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
+  listEnvoyLocalInstalledModels(): Promise<
+    import("@envoymesh/api").EnvoyLocalInstalledModel[]
+  >;
+  searchEnvoyLocalModels(
+    params?: import("@envoymesh/api").SearchEnvoyLocalModelsParams,
+  ): Promise<import("@envoymesh/api").SearchEnvoyLocalModelsResult>;
+  downloadEnvoyLocalModel(
+    params: import("@envoymesh/api").DownloadEnvoyLocalModelParams,
+  ): Promise<import("@envoymesh/api").EnvoyLocalInstalledModel[]>;
+  setEnvoyLocalActiveModel(
+    params: import("@envoymesh/api").SetEnvoyLocalActiveModelParams,
+  ): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
+  deleteEnvoyLocalModel(
+    params: import("@envoymesh/api").DeleteEnvoyLocalModelParams,
+  ): Promise<import("@envoymesh/api").EnvoyLocalInstalledModel[]>;
+  updateEnvoyLocalServerParams(
+    params: import("@envoymesh/api").UpdateEnvoyLocalServerParamsParams,
+  ): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
+  resetEnvoyLocalServerParams(): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
+  checkEnvoyLocalEngineUpdate(): Promise<
+    import("@envoymesh/api").EnvoyLocalEngineUpdateInfo
+  >;
+  updateEnvoyLocalEngine(): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
   /** One-shot prompt — collects streamed text into a single response. */
   sendToPi(text: string): Promise<string>;
   /** Ensure Pi interactive TUI for a project folder (lazy; may return needs_project). */
@@ -1273,6 +1307,103 @@ function createWsNodeServiceClient(
       // the 15s readiness deadline, shorter than OpenClaw's 120s since Pi
       // has no port-conflict machinery).
       return wsClient.rpc("restartPi", {}, { timeoutMs: 30_000 }) as Promise<import("@envoymesh/api").PiStatus>;
+    },
+    async getEnvoyLocalStatus() {
+      return wsClient.rpc("getEnvoyLocalStatus") as Promise<
+        import("@envoymesh/api").EnvoyLocalStatus
+      >;
+    },
+    async enableEnvoyLocal(params?: import("@envoymesh/api").EnableEnvoyLocalParams) {
+      // Download + extract + start can take several minutes on slow links.
+      return wsClient.rpc(
+        "enableEnvoyLocal",
+        (params ?? {}) as Record<string, unknown>,
+        { timeoutMs: 600_000 },
+      ) as Promise<import("@envoymesh/api").EnvoyLocalStatus>;
+    },
+    async declineEnvoyLocalAutoProvision() {
+      return wsClient.rpc("declineEnvoyLocalAutoProvision") as Promise<
+        import("@envoymesh/api").EnvoyLocalStatus
+      >;
+    },
+    async disableEnvoyLocal() {
+      return wsClient.rpc("disableEnvoyLocal", {}, { timeoutMs: 30_000 }) as Promise<
+        import("@envoymesh/api").EnvoyLocalStatus
+      >;
+    },
+    async restartEnvoyLocal() {
+      return wsClient.rpc("restartEnvoyLocal", {}, { timeoutMs: 90_000 }) as Promise<
+        import("@envoymesh/api").EnvoyLocalStatus
+      >;
+    },
+    async cancelEnvoyLocalDownload() {
+      return wsClient.rpc("cancelEnvoyLocalDownload") as Promise<
+        import("@envoymesh/api").EnvoyLocalStatus
+      >;
+    },
+    async listEnvoyLocalInstalledModels() {
+      return wsClient.rpc("listEnvoyLocalInstalledModels") as Promise<
+        import("@envoymesh/api").EnvoyLocalInstalledModel[]
+      >;
+    },
+    async searchEnvoyLocalModels(
+      params?: import("@envoymesh/api").SearchEnvoyLocalModelsParams,
+    ) {
+      return wsClient.rpc(
+        "searchEnvoyLocalModels",
+        (params ?? {}) as Record<string, unknown>,
+        { timeoutMs: 45_000 },
+      ) as Promise<import("@envoymesh/api").SearchEnvoyLocalModelsResult>;
+    },
+    async downloadEnvoyLocalModel(
+      params: import("@envoymesh/api").DownloadEnvoyLocalModelParams,
+    ) {
+      return wsClient.rpc(
+        "downloadEnvoyLocalModel",
+        params as unknown as Record<string, unknown>,
+        { timeoutMs: 600_000 },
+      ) as Promise<import("@envoymesh/api").EnvoyLocalInstalledModel[]>;
+    },
+    async setEnvoyLocalActiveModel(
+      params: import("@envoymesh/api").SetEnvoyLocalActiveModelParams,
+    ) {
+      return wsClient.rpc(
+        "setEnvoyLocalActiveModel",
+        params as unknown as Record<string, unknown>,
+        { timeoutMs: 120_000 },
+      ) as Promise<import("@envoymesh/api").EnvoyLocalStatus>;
+    },
+    async deleteEnvoyLocalModel(
+      params: import("@envoymesh/api").DeleteEnvoyLocalModelParams,
+    ) {
+      return wsClient.rpc(
+        "deleteEnvoyLocalModel",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").EnvoyLocalInstalledModel[]>;
+    },
+    async updateEnvoyLocalServerParams(
+      params: import("@envoymesh/api").UpdateEnvoyLocalServerParamsParams,
+    ) {
+      return wsClient.rpc(
+        "updateEnvoyLocalServerParams",
+        params as unknown as Record<string, unknown>,
+        { timeoutMs: 120_000 },
+      ) as Promise<import("@envoymesh/api").EnvoyLocalStatus>;
+    },
+    async resetEnvoyLocalServerParams() {
+      return wsClient.rpc("resetEnvoyLocalServerParams", {}, { timeoutMs: 120_000 }) as Promise<
+        import("@envoymesh/api").EnvoyLocalStatus
+      >;
+    },
+    async checkEnvoyLocalEngineUpdate() {
+      return wsClient.rpc("checkEnvoyLocalEngineUpdate") as Promise<
+        import("@envoymesh/api").EnvoyLocalEngineUpdateInfo
+      >;
+    },
+    async updateEnvoyLocalEngine() {
+      return wsClient.rpc("updateEnvoyLocalEngine", {}, { timeoutMs: 600_000 }) as Promise<
+        import("@envoymesh/api").EnvoyLocalStatus
+      >;
     },
     async sendToPi(text: string) {
       // One Pi turn = LLM round-trip + any tool calls. Match the terminal

@@ -12,6 +12,12 @@ export const TERMINAL_WS_PORT_BASE = 3032;
 /** Built-in OpenClaw gateway webhook port. */
 export const OPENCLAW_GATEWAY_PORT_BASE = 18789;
 
+/**
+ * Envoy Local (llama-server) OpenAI-compatible HTTP port (Phase 54).
+ * Distinct from Ollama's conventional 11434 so BYO Ollama and Envoy Local can coexist.
+ */
+export const ENVOY_LOCAL_PORT_BASE = 18790;
+
 function parseNonNegativeInt(raw: string | undefined): number {
   if (!raw?.trim()) return 0;
   const n = Number.parseInt(raw.trim(), 10);
@@ -55,8 +61,18 @@ export const OPENCLAW_GATEWAY_PORT = parsePort(
   OPENCLAW_GATEWAY_PORT_BASE + offset,
 );
 
+/** Effective Envoy Local llama-server port. Env: `ENVOYMESH_ENVOY_LOCAL_PORT`, or base + offset. */
+export const ENVOY_LOCAL_PORT = parsePort(
+  process.env.ENVOYMESH_ENVOY_LOCAL_PORT,
+  ENVOY_LOCAL_PORT_BASE + offset,
+);
+
 export function openClawGatewayWebhookUrl(port: number = OPENCLAW_GATEWAY_PORT): string {
   return `http://127.0.0.1:${port}/webhook/envoymesh`;
+}
+
+export function envoyLocalOpenAiBaseUrl(port: number = ENVOY_LOCAL_PORT): string {
+  return `http://127.0.0.1:${port}/v1`;
 }
 
 export function socialWsLoopbackUrl(port: number = SOCIAL_WS_PORT): string {

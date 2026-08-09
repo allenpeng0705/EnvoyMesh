@@ -89,6 +89,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 51 — Family Network (multi-profile private social network)](#phase-51--family-network-multi-profile-private-social-network--designed)
 - [Phase 52 — Agent Network collaboration roles + assignment modes](#phase-52--agent-network-collaboration-roles--assignment-modes)
 - [Phase 53 — Artifact handoff + worker stickiness](#phase-53--artifact-handoff--worker-stickiness)
+- [Phase 54 — EnvoyAI model guidance + Envoy Local (llama.cpp)](#phase-54--envoyai-model-guidance--envoy-local-llamacpp)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -1158,7 +1159,7 @@ Milestone: **Phases 0–48 shipped for interop bridges** — Core protocol throu
 
 **Last shipped:** **Phase 48 — A2A + MCP Interop Bridges (48A–48D).** MCP tool consumer (`mesh.mcp.*`), MCP server adapter (`npx envoymesh mcp-server`), A2A Agent Card on relay `/.well-known/agent-card.json`, and A2A Task Bridge JSON-RPC (`message/send` / `tasks/get` / `tasks/cancel`) with auth + state/artifact maps + relay proxy. **~191 dedicated unit tests green.** Design: [a2a-mcp-interop-design.md](./a2a-mcp-interop-design.md). Earlier recent ship: Phase 47 Team job multi-round iteration (47A–47D).
 
-**Active:** ICE media-transport wiring (config/UI shipped; see [voice-video-call-support.md](./voice-video-call-support.md)); Phase 41 UX checklist in [agent_network.md §13](./agent_network.md#13-phase-41--making-agent-network-usable--powerful).
+**Active:** **Phase 54 — EnvoyAI model guidance + Envoy Local** (Configure AI UX + optional post-install llama.cpp download; cloud-only remains first-class). Design: [envoy-local-design.md](./envoy-local-design.md). Also: ICE media-transport wiring (config/UI shipped; see [voice-video-call-support.md](./voice-video-call-support.md)); Phase 41 UX checklist in [agent_network.md §13](./agent_network.md#13-phase-41--making-agent-network-usable--powerful).
 
 ### Next planning pulls
 
@@ -1175,6 +1176,7 @@ Milestone: **Phases 0–48 shipped for interop bridges** — Core protocol throu
 11. **Phase 46 — Multi-Relay Fleet Coordination** — shipped (46A–46C + P2/P3 test harness). Client multi-home, standalone miss-forward, sibling `relay.hints` gossip; in-process + process-spawn E2E; gated live `TEST_RELAY_A`/`TEST_RELAY_B` signoff. Design: [relay-server-design.md](./relay-server-design.md) Part B.
 12. **Phase 47 — Team job multi-round iteration (A ∩ B)** — **47A–47D shipped**. Outer seal→draft→replan (B) + capped intra-round extend (A) + judge/UX + handoff knobs/`iterationState` + `chain:iteration`. Design: [agent-network-iteration.md](./agent-network-iteration.md).
 13. **Phase 48 — A2A + MCP Interop Bridges** — **48A–48D.5 shipped** (SDK MCP consumer, MCP server adapter, Agent Card + streaming, production Task Bridge executor, relay `forwardToHome` home-tunnel, `message/stream` SSE, vault HTTP). [a2a-mcp-interop-design.md](./a2a-mcp-interop-design.md).
+14. **Phase 54 — EnvoyAI model guidance + Envoy Local** — Configure AI when no usable model; optional downloadable `llama-server` (never packaged); cloud/Ollama remain equal choices. [envoy-local-design.md](./envoy-local-design.md).
 
 ### Phase 9 Architecture Overview
 
@@ -6691,10 +6693,77 @@ Closes the production path after 48A–48D protocol/mount work.
 
 ---
 
+## Phase 54 — EnvoyAI model guidance + Envoy Local (llama.cpp)
+
+**Status:** `[x]` 54A–54E landed (manual platform smoke remains operator-side)  
+**Design:** [envoy-local-design.md](./envoy-local-design.md)
+
+**Problem:** Fresh installs default `modelProviders.mode: "disabled"`. Opening EnvoyAI shows OpenClaw-offline noise or a dead end instead of guiding the user to configure a model. Users who want local AI should not need a giant installer — and users who prefer **cloud only** must never be forced to download llama.cpp.
+
+**Hard rules:**
+- **Never package** `llama-server`, cudart, or any GGUF in the app bundle / Tauri `resources/`.
+- Downloads go to `{appData}/envoy-local/` **after** EnvoyMesh install.
+- **Cloud / Ollama / Envoy Local** are equal Configure AI choices; skipping local is fully supported.
+
+**Consumers of Envoy Local (via `modelProviders` openai-compatible):** EnvoyAI/OpenClaw, native brain, **Pi inherit**. Not HomeClaw/Hermes/OpenHuman (own LLMs).
+
+### 54A — Configure AI guidance `[x]`
+
+- `[x]` `hasUsableModelProvider()` in `@envoymesh/api` (stricter than `isModelProviderConfigured`; mock ≠ usable)
+- `[x]` EnvoyAI banner / empty-state: Configure AI (cloud first-class; Ollama / Envoy Local optional)
+- `[x]` Deprioritize OpenClaw-offline banner when the real issue is missing model
+- `[x]` One-shot turn CTA; i18n (en + zh)
+- `[x]` Unit + Social component tests (`hasUsableModelProvider`, `ConfigureAiBanner`)
+
+### 54B — Scaffold `[x]`
+
+- `[x]` Port `18790` in `service-ports.ts` (+ offset)
+- `[x]` Preset `envoy-local` (key-optional openai-compatible); Setup validation key-optional
+- `[x]` Config shape `envoyLocal` (enabled, serverParams, activeModelId)
+
+### 54C — Auto download + sidecar `[x]`
+
+- `[x]` Platform × accel runtime resolver + download to `{profileDir}/envoy-local/` (pinned llama.cpp tag; sha256 fail-closed when manifest lists digests)
+- `[x]` Default GGUF download on enable
+- `[x]` `llama-server` OpenAI loopback sidecar + watchdog
+- `[x]` Wire `modelProviders` + OpenClaw reload
+- `[x]` Settings progress UI / cancel / disk gates
+- `[x]` Pin release asset sha256 digests in `envoy-local-manifest.ts` (GitHub Releases digests for `b10331`)
+
+### 54D — Catalog + params `[x]`
+
+- `[x]` Search / list / download / set-active / delete models (curated allowlist + `models.json`)
+- `[x]` Settings simple + advanced server params; reset defaults
+
+### 54E — Hardening `[x]`
+
+- `[x]` CUDA→CPU fallback (`-ngl 0` + Settings note); engine update channel (`check`/`updateEnvoyLocalEngine`)
+- `[x]` Tests (accel mapping, checksum fail-closed, catalog Qwen/Llama/Gemma, mirrors)
+- `[ ]` Manual smoke: macOS Metal + Windows CPU (+ CUDA if available) — operator checklist
+
+### Exit criteria
+
+- `[x]` No usable model → clear Configure AI with cloud-first option (local optional)
+- `[x]` Envoy Local enable downloads engine+default model without bundling them
+- `[x]` Cloud-only path never triggers llama download
+- `[x]` Pi inherit uses Envoy Local when it is the active provider (`modelProviders` openai-compatible)
+- `[x]` Installer size unchanged by Phase 54 assets (post-install download only)
+
+---
+
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
+| 2026-08-09 | **Phase 54 hardware model tiers.** Recommend/download Qwen3.5 4B or 9B from Metal/CUDA/RAM (0.8B only when tight); Settings shows machine + Recommended badges. |
+| 2026-08-09 | **Phase 54 HF GGUF search.** Live Hub search + `hf:` download ids; curated refresh to Qwen3.5 0.8B/4B + Gemma 4; Settings debounce/badges. |
+| 2026-08-09 | **Phase 54 runtime lifecycle tests.** Mocked spawn/fetch coverage for enable→wireProviders, CUDA→CPU `-ngl 0` fallback, catalog CN failover + abort. |
+| 2026-08-09 | **Phase 54 runtime mirrors + tests.** llama.cpp GitHub downloads fail over via CN proxies / `RUNTIME_MIRROR_BASE` (sha256 unchanged); download helper + mirror unit tests. |
+| 2026-08-09 | **Phase 54 catalog refresh.** Edge allowlist → Qwen3 (0.6B/4B), Gemma 4 (E2B/E4B + chat-template), Llama 3.2 3B (labeled vs Llama 4); default enable model Qwen3-0.6B. |
+| 2026-08-09 | **Phase 54E — Envoy Local hardening.** CUDA→CPU fallback; engine update RPC; checksum fail-closed helpers/tests; curated edge catalog Qwen + Llama + Gemma; CN ModelScope/hf-mirror already in place. |
+| 2026-08-09 | **Phase 54D — Envoy Local catalog + server params.** Curated GGUF allowlist (search/download/set-active/delete); Settings simple/advanced params with restart; pinned llama.cpp `b10331` asset sha256 digests (fail-closed). |
+| 2026-08-09 | **Phase 54C — Envoy Local auto download + sidecar.** `enableEnvoyLocal` downloads pinned llama.cpp + default tiny Qwen GGUF into profile `envoy-local/`, spawns loopback `:18790`, wires `modelProviders` + OpenClaw reload; Settings progress UI. Never packaged. |
+| 2026-08-09 | **Phase 54 designed — EnvoyAI model guidance + Envoy Local.** Configure AI UX (cloud / Ollama / optional local); never package llama.cpp/GGUF; post-install download + OpenAI `llama-server` for EnvoyAI/native/Pi inherit. Design: [envoy-local-design.md](./envoy-local-design.md). |
 | 2026-08-09 | **Phase 53 — Artifact handoff + worker stickiness shipped (53A–53E).** `namedArtifacts` / propose `inputArtifacts`; `threadId` stickiness; stall prefer sticky peer / `requiredRole`; OpenClaw consume+emit; docs [agent-network-artifacts.md](./agent-network-artifacts.md). |
 | 2026-08-09 | **AN engine Step 2 — node-local Ext Agent for Team jobs.** `agentNetworkWorkerEngine` (`openclaw` \| `ext`); Ext sync executor via `askExtAgent`/`forwardToAgent`; Social worker-profile picker; local “You” readiness follows configured engine. Skills advertisement deferred. Design: [agent-network-engine.md](./agent-network-engine.md). |
 | 2026-08-09 | **Phase 52 follow-up — custom roles + New team job mode chooser.** Social worker profile accepts `custom:<slug>` roles (mirrors custom skills); New team job composer offers Skill-based vs Role-based (seeded from defaults) with soft empty-role guidance; `no_role_peers` emphasized in preview. |

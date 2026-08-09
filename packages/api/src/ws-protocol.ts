@@ -256,6 +256,22 @@ export type RpcMethods =
    | "getPiStatus"
    | "restartPi"
    | "ensurePiTerminalSession"
+   // Phase 54 — Envoy Local (downloadable llama-server)
+   | "getEnvoyLocalStatus"
+   | "enableEnvoyLocal"
+   | "declineEnvoyLocalAutoProvision"
+   | "disableEnvoyLocal"
+   | "restartEnvoyLocal"
+   | "cancelEnvoyLocalDownload"
+   | "listEnvoyLocalInstalledModels"
+   | "searchEnvoyLocalModels"
+   | "downloadEnvoyLocalModel"
+   | "setEnvoyLocalActiveModel"
+   | "deleteEnvoyLocalModel"
+   | "updateEnvoyLocalServerParams"
+   | "resetEnvoyLocalServerParams"
+   | "checkEnvoyLocalEngineUpdate"
+   | "updateEnvoyLocalEngine"
    // ClawHub skills
    | "getOpenClawPlugins"
     | "searchOpenClawPlugins"
@@ -561,6 +577,11 @@ export interface NodeConfig {
    * gateway is stopped at config-changed time. Default: true (Phase 32, D1C).
    */
   openclawEnabled?: boolean;
+  /**
+   * Phase 54 — Envoy Local (post-install llama-server). Never packaged;
+   * downloads into `{profileDir}/envoy-local/` when enabled.
+   */
+  envoyLocal?: import("./envoy-local.js").EnvoyLocalConfig;
   /**
    * Phase 49 — whether the built-in Pi local coding agent is enabled.
    * Default: true on full builds; false on Windows slim builds (where the

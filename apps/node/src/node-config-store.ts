@@ -184,6 +184,8 @@ export interface PersistedNodeConfig {
   prefetchMaxResults?: number;
   /** Phase 32 — whether the built-in OpenClaw agent (EnvoyAI) is enabled. */
   openclawEnabled?: boolean;
+  /** Phase 54 — Envoy Local (post-install llama-server). */
+  envoyLocal?: import("@envoymesh/api").EnvoyLocalConfig;
   /**
    * Phase 49 — whether the built-in Pi local coding agent is enabled.
    * Default: true on full builds (macOS/Linux); false on Windows slim

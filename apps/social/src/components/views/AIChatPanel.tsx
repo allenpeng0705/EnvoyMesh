@@ -8,7 +8,7 @@ import { ChainStartDialog } from "../ChainStartDialog.js";
 import { ChainReportInlineCard } from "../ChainReportInlineCard.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import { openLocalFile } from "../../lib/library-file-actions.js";
-import { stripModelThinking } from "@envoymesh/api";
+import { hasUsableModelProvider, stripModelThinking } from "@envoymesh/api";
 import type { AgentActivityRecord, AnswerFormat, ChainReportReceivedEvent, ChatMessage, OwnerAgentApprovalSummary, OwnerAgentDomain, OwnerAgentTurnResult, StructuredBlock } from "@envoymesh/api";
 import type { ChainReport } from "@envoymesh/protocol";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
@@ -29,6 +29,7 @@ import { ChatComposer } from "../ChatComposer.js";
 import { AnswerRenderer } from "../AnswerRenderer.js";
 import { ChatIcon, RemoveIcon } from "../../icons.js";
 import type { TFunction } from "../../context/I18nContext.js";
+import { ConfigureAiBanner } from "./ConfigureAiBanner.js";
 
 interface AiMessageTurnMeta extends Pick<
   OwnerAgentTurnResult,
@@ -56,6 +57,8 @@ export interface AIChatPanelProps {
   /** Navigate to the Chains tab (used by the inline chain-report card). */
   onOpenChains?: () => void;
   onOpenDiscover?: () => void;
+  /** Open Settings → AI (Configure AI banner / no-model CTA). */
+  onOpenSettingsAi?: () => void;
 }
 
 function domainLabel(domain: OwnerAgentDomain, t: TFunction): string {
@@ -211,7 +214,13 @@ function groupByDate(msgs: AiMessage[]): [string, AiMessage[]][] {
   return [...groups.entries()];
 }
 
-export function AIChatPanel({ onOpenActivity, onOpenInbox, onOpenChains, onOpenDiscover }: AIChatPanelProps = {}) {
+export function AIChatPanel({
+  onOpenActivity,
+  onOpenInbox,
+  onOpenChains,
+  onOpenDiscover,
+  onOpenSettingsAi,
+}: AIChatPanelProps = {}) {
   const t = useT();
   const { locale } = useI18n();
   const nodeService = useNodeService();
@@ -222,6 +231,8 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox, onOpenChains, onOpenD
   const assistantHomeOffline =
     isMobileNode && homeRemote?.paired === true && homeRemote?.homeOnline === false;
   const assistantReady = nodeStatus === "running" && !assistantHomeOffline;
+  const modelConfigured = hasUsableModelProvider(nodeConfig?.modelProviders);
+  const configureAiCtaShownRef = useRef(false);
   const assistantBlockedHint = assistantHomeOffline
     ? t("aiChat.homeOffline")
     : nodeStatus === "starting"
@@ -475,6 +486,30 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox, onOpenChains, onOpenD
       return;
     }
 
+    if (!modelConfigured) {
+      const reply = configureAiCtaShownRef.current
+        ? t("aiChat.configureAiAgain")
+        : t("aiChat.configureAiTurnCta");
+      configureAiCtaShownRef.current = true;
+      setAiMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          text: question.trim(),
+          timestamp: new Date().toISOString(),
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "ai",
+          text: reply,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+      draftRef.current?.setPlainText("");
+      return;
+    }
+
     const userMsg: AiMessage = {
       id: crypto.randomUUID(),
       role: "user",
@@ -626,6 +661,7 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox, onOpenChains, onOpenD
           </span>
         </div>
       </header>
+      <ConfigureAiBanner onOpenSettingsAi={onOpenSettingsAi} />
       <div className="messages ai-messages-pane" ref={messagesRef} onScroll={onMessagesScroll}>
         {!assistantReady && (
           <p className="chat-reachability-hint ai-assistant-hint" role="status">
@@ -640,7 +676,17 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox, onOpenChains, onOpenD
               <div className="message-stack">
                 <div className="message-bubble message-bubble--ai">
                   <div className="ai-welcome-greeting">{t("aiChat.welcomeGreeting")}</div>
-                  <p>{t("aiChat.welcomeBody")}</p>
+                  <p>{modelConfigured ? t("aiChat.welcomeBody") : t("aiChat.welcomeBodyNoModel")}</p>
+                  {!modelConfigured && onOpenSettingsAi && (
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      style={{ marginTop: "0.75rem" }}
+                      onClick={onOpenSettingsAi}
+                    >
+                      {t("aiChat.configureAiButton")}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

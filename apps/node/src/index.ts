@@ -3851,6 +3851,20 @@ if (typeof openClawCapable.startOpenClaw === "function") {
   });
 }
 
+// Phase 54 — Envoy Local: start sidecar only when enabled + assets on disk;
+// never download here; never start when cloud/Ollama is the active provider.
+const envoyLocalCapable = nodeService as unknown as {
+  startEnvoyLocal?: () => Promise<void>;
+};
+if (typeof envoyLocalCapable.startEnvoyLocal === "function") {
+  void envoyLocalCapable.startEnvoyLocal().catch((err) => {
+    console.warn(
+      "[envoy-local] Boot start skipped/failed:",
+      err instanceof Error ? err.message : String(err),
+    );
+  });
+}
+
 // Pi Ext Agent RPC: lazy-start on first Ext Agent message (askPi → ensurePiReady).
 // Pi TUI: never auto-start — user picks a project folder, then starts.
 console.log("[pi] Ext Agent Pi RPC will lazy-start on first message");
@@ -4358,6 +4372,11 @@ async function shutdown(): Promise<void> {
     if (nodeService instanceof NodeServiceImpl) {
       try {
         await nodeService.stopOpenClaw?.();
+      } catch {
+        /* ok */
+      }
+      try {
+        await nodeService.stopEnvoyLocal?.();
       } catch {
         /* ok */
       }

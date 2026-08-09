@@ -131,6 +131,7 @@ export async function getNodeConfigViaRuntime(
       relayPublicWsUrl: config.relayPublicWsUrl ?? ctx.getRelayPublicWsUrl() ?? undefined,
       bridgeEnabled: config.bridgeEnabled ?? true,
       openclawEnabled: config.openclawEnabled ?? true,
+      envoyLocal: config.envoyLocal,
       piEnabled: config.piEnabled ?? true,
       piSettings: config.piSettings,
       aiBots: config.aiBots ?? [],

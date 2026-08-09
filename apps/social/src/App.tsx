@@ -7,6 +7,7 @@ import { ToastProvider } from "./hooks/useToast.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { Header } from "./components/Header.js";
 import { PairingQRModal } from "./components/PairingQRModal.js";
+import { EnvoyLocalAutoProvisionDialog } from "./components/EnvoyLocalAutoProvisionDialog.js";
 import { SwipeBack } from "./components/SwipeBack.js";
 import { SetupView } from "./components/views/SetupView.js";
 import { ChatView } from "./components/views/ChatView.js";
@@ -581,6 +582,10 @@ export function App() {
                   }}
                   onOpenChains={() => navigateTo("chains")}
                   onOpenDiscover={() => navigateTo("discover")}
+                  onOpenSettingsAi={() => {
+                    setSettingsTab("ai");
+                    navigateTo("settings");
+                  }}
                 />
               </SwipeBack>
             )}
@@ -629,6 +634,12 @@ export function App() {
           </main>
         </ErrorBoundary>
         {pairingOpen && <PairingQRModal onClose={() => setPairingOpen(false)} />}
+        <EnvoyLocalAutoProvisionDialog
+          onOpenSettingsAi={() => {
+            setSettingsTab("ai");
+            navigateTo("settings");
+          }}
+        />
         {guideOpen && (
           <GettingStartedGuide
             onClose={() => setGuideOpen(false)}

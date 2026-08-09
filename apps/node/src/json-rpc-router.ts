@@ -72,6 +72,17 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "sendToPi",
   "piRespondToProposal",
   "restartOpenClaw",
+  "enableEnvoyLocal",
+  "declineEnvoyLocalAutoProvision",
+  "disableEnvoyLocal",
+  "restartEnvoyLocal",
+  "cancelEnvoyLocalDownload",
+  "downloadEnvoyLocalModel",
+  "setEnvoyLocalActiveModel",
+  "deleteEnvoyLocalModel",
+  "updateEnvoyLocalServerParams",
+  "resetEnvoyLocalServerParams",
+  "updateEnvoyLocalEngine",
   "createWanJoinInvite",
   "createCompanyInvite",
   "listCompanyInvites",
@@ -707,6 +718,48 @@ export async function routeRpcMethod(
       return ns.getPiStatus();
     case "restartPi":
       return ns.restartPi();
+    case "getEnvoyLocalStatus":
+      return ns.getEnvoyLocalStatus();
+    case "enableEnvoyLocal":
+      return ns.enableEnvoyLocal({
+        skipModelDownload: params.skipModelDownload === true,
+      });
+    case "declineEnvoyLocalAutoProvision":
+      return ns.declineEnvoyLocalAutoProvision();
+    case "disableEnvoyLocal":
+      return ns.disableEnvoyLocal();
+    case "restartEnvoyLocal":
+      return ns.restartEnvoyLocal();
+    case "cancelEnvoyLocalDownload":
+      return ns.cancelEnvoyLocalDownload();
+    case "listEnvoyLocalInstalledModels":
+      return ns.listEnvoyLocalInstalledModels();
+    case "searchEnvoyLocalModels":
+      return ns.searchEnvoyLocalModels({
+        query: typeof params.query === "string" ? params.query : undefined,
+      });
+    case "downloadEnvoyLocalModel":
+      return ns.downloadEnvoyLocalModel({
+        modelId: String(params.modelId ?? ""),
+      });
+    case "setEnvoyLocalActiveModel":
+      return ns.setEnvoyLocalActiveModel({
+        modelId: String(params.modelId ?? ""),
+      });
+    case "deleteEnvoyLocalModel":
+      return ns.deleteEnvoyLocalModel({
+        modelId: String(params.modelId ?? ""),
+      });
+    case "updateEnvoyLocalServerParams":
+      return ns.updateEnvoyLocalServerParams({
+        serverParams: (params.serverParams ?? {}) as import("@envoymesh/api").EnvoyLocalServerParams,
+      });
+    case "resetEnvoyLocalServerParams":
+      return ns.resetEnvoyLocalServerParams();
+    case "checkEnvoyLocalEngineUpdate":
+      return ns.checkEnvoyLocalEngineUpdate();
+    case "updateEnvoyLocalEngine":
+      return ns.updateEnvoyLocalEngine();
     case "getPairingPayload":
       return ns.getPairingPayload();
     case "createWanJoinInvite":
