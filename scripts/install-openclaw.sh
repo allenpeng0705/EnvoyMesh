@@ -31,21 +31,6 @@ RUNNER
   chmod +x "$BIN_DIR/openclaw"
 }
 
-write_entry_bootstrap() {
-  local target_dir="$1"
-  mkdir -p "$target_dir/dist"
-  cat > "$target_dir/dist/entry.js" << 'STUB'
-// EnvoyMesh bootstrap — calls runCli directly.
-// We can't import src/entry.ts because its isMainModule guard checks
-// process.argv[1], which under tsx points to tsx/cli.mjs, not entry.ts.
-import { runCli } from "../src/cli/run-main.ts";
-runCli(process.argv).catch((err) => {
-  console.error("[entry] Fatal error:", err);
-  process.exit(1);
-});
-STUB
-}
-
 echo "=== EnvoyMesh OpenClaw Bootstrap ==="
 echo ""
 
@@ -53,9 +38,10 @@ echo ""
 if [ -f "$SOURCE_DIR/openclaw.mjs" ] || [ -f "$SOURCE_DIR/package.json" ]; then
   echo "[1/2] Bundled OpenClaw found at $SOURCE_DIR"
   write_runtime_wrapper
-  if [ ! -f "$SOURCE_DIR/dist/entry.js" ]; then
-    echo "  Creating dist/entry.js bootstrap..."
-    write_entry_bootstrap "$SOURCE_DIR"
+  # Do NOT write a stub dist/entry.js here — EnvoyAI requires a real
+  # compiled dist (dist/config/config.js). setup.sh step 4 builds it.
+  if [ ! -f "$SOURCE_DIR/dist/config/config.js" ]; then
+    echo "  ⚠ dist/ not built yet — setup.sh will pnpm install + build"
   fi
   echo "  ✓ Runtime wrapper: $BIN_DIR/openclaw"
   echo "  ✓ setup.sh will pnpm install + build the gateway"
@@ -79,8 +65,8 @@ if [ -n "$LOCAL_PATH" ]; then
     mkdir -p "$(dirname "$SOURCE_DIR")"
     cp -R "$LOCAL_PATH" "$SOURCE_DIR"
     write_runtime_wrapper
-    write_entry_bootstrap "$SOURCE_DIR"
     echo "  ✓ Copied to $SOURCE_DIR"
+    echo "  ⚠ Run ./scripts/setup.sh to build OpenClaw (needs dist/config/config.js)"
     exit 0
   fi
   echo "  ✗ Path not found: $LOCAL_PATH"
@@ -111,7 +97,6 @@ else
 fi
 
 write_runtime_wrapper
-write_entry_bootstrap "$SOURCE_DIR"
 
 # ---- Optional binary fallback (legacy) ----
 echo "[3/4] Optional binary download..."

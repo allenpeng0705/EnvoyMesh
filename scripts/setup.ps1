@@ -120,7 +120,28 @@ function Test-OpenClawGatewayReady {
     if (-not (Test-Path (Join-Path $ocDir "node_modules/tsx/dist/cli.mjs"))) {
         return $false
     }
+    # Must match apps/node validateOpenClawTree — a stub entry.js alone is not enough.
+    if (-not (Test-Path (Join-Path $ocDir "dist/config/config.js"))) {
+        return $false
+    }
+    $entry = Join-Path $ocDir "dist/entry.js"
+    if (-not (Test-Path $entry)) {
+        return $false
+    }
+    $entryHead = Get-Content -Path $entry -TotalCount 1 -ErrorAction SilentlyContinue
+    if ($entryHead -and ($entryHead -match "EnvoyMesh bootstrap")) {
+        return $false
+    }
+    if (-not (Test-Path (Join-Path $ocDir "extensions/envoymesh/index.js"))) {
+        return $false
+    }
     return $true
+}
+
+function Write-Utf8NoBom {
+    param([string]$Path, [string]$Content)
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
 }
 
 # Git writes CRLF hints to stderr; PowerShell treats that as a terminating error.
@@ -185,10 +206,19 @@ Write-Host ""
 Write-Step "0/6  Cleaning up stale artifacts..."
 
 # packages/openclaw is pnpm-managed separately (not an npm workspace). Keep node_modules
-# across setup re-runs; only drop an incomplete dist bootstrap.
-$entryExists = $false
-if (Test-Path "packages/openclaw/dist/entry.js") { $entryExists = $true }
-if ((Test-Path "packages/openclaw/dist") -and -not $entryExists) {
+# across setup re-runs; drop an incomplete dist (missing config.js or stub entry).
+$ocDistIncomplete = $false
+if (Test-Path "packages/openclaw/dist") {
+    if (-not (Test-Path "packages/openclaw/dist/config/config.js")) {
+        $ocDistIncomplete = $true
+    } elseif (Test-Path "packages/openclaw/dist/entry.js") {
+        $entryHead = Get-Content -Path "packages/openclaw/dist/entry.js" -TotalCount 1 -ErrorAction SilentlyContinue
+        if ($entryHead -and ($entryHead -match "EnvoyMesh bootstrap")) {
+            $ocDistIncomplete = $true
+        }
+    }
+}
+if ($ocDistIncomplete) {
     Write-Info "Removing incomplete packages/openclaw/dist..."
     Remove-Item -Recurse -Force "packages/openclaw/dist" -ErrorAction SilentlyContinue
 }
@@ -368,9 +398,11 @@ function Install-EnvoyMeshOpenClawExtension {
         Get-ChildItem -Path . -Recurse -Filter "*.ts" -File | Remove-Item -Force
         $pkg = Join-Path $extDir "package.json"
         if (Test-Path $pkg) {
+            # UTF-8 *without BOM* — Windows PowerShell 5.1's -Encoding UTF8
+            # writes a BOM that breaks OpenClaw's JSON.parse (plugins:assets:build).
             $raw = Get-Content -Raw -Path $pkg
             $raw = $raw -replace '\./index\.ts', './index.js' -replace '\./setup-entry\.ts', './setup-entry.js'
-            Set-Content -Path $pkg -Value $raw -Encoding UTF8
+            Write-Utf8NoBom -Path $pkg -Content ($raw.TrimEnd() + "`n")
         }
     } finally {
         Pop-Location
@@ -413,6 +445,13 @@ Write-Info "EnvoyMesh channel extension will be compiled after OpenClaw pnpm ins
 
 if ($SkipOpenClawBuild) {
     Write-Step "4/6  Building OpenClaw gateway (SKIPPED — -SkipOpenClawBuild)"
+    if (-not (Test-OpenClawGatewayReady $RepoRoot)) {
+        Write-Fail "OpenClaw tree incomplete after -SkipOpenClawBuild"
+        Write-Info "Need dist/config/config.js + compiled extensions/envoymesh/index.js"
+        Write-Info "Re-run without -SkipOpenClawBuild (or: cd packages/openclaw; pnpm run build)"
+        exit 1
+    }
+    Write-Ok "OpenClaw gateway ready (packages/openclaw)"
 } elseif (-not (Test-Path "packages/openclaw/package.json")) {
     Write-Step "4/6  Building OpenClaw gateway..."
     Write-Warn "packages/openclaw not found — EnvoyAI will use native LLM fallback only"
@@ -489,22 +528,21 @@ if ($SkipOpenClawBuild) {
     Write-Info "Building..."
     $buildExit = Invoke-ExternalQuiet pnpm run build
     if ($buildExit -ne 0) {
-        Write-Warn "Full build failed — creating tsx bootstrap..."
-        if (-not (Test-Path "dist")) {
-            New-Item -ItemType Directory -Force -Path "dist" | Out-Null
-        }
-        $entryStub = @"
-// EnvoyMesh bootstrap — re-exports the gateway from TS source.
-export * from "../src/cli/run-main.ts";
-"@
-        Set-Content -Path "dist/entry.js" -Value $entryStub -Encoding UTF8
+        Write-Fail "OpenClaw pnpm run build failed"
+        Write-Info "A stub dist/entry.js is NOT enough — EnvoyAI needs dist/config/config.js."
+        Write-Info "Fix the build error (common on Windows: UTF-8 BOM in extensions/*/package.json),"
+        Write-Info "then re-run .\scripts\setup.ps1"
+        Pop-Location
+        exit 1
     }
 
-    if (Test-Path "dist/entry.js") {
-        Write-Ok "dist/entry.js ready"
-    } else {
-        Write-Fail "dist/entry.js missing — gateway will not start"
+    if (-not (Test-Path "dist/config/config.js") -or -not (Test-Path "dist/entry.js")) {
+        Write-Fail "OpenClaw build did not produce dist/config/config.js (+ dist/entry.js)"
+        Write-Info "EnvoyAI will refuse to start until a full build succeeds."
+        Pop-Location
+        exit 1
     }
+    Write-Ok "dist/entry.js + dist/config/config.js ready"
 
     # Re-install compiled envoymesh after OpenClaw build — `pnpm run build`
     # can wipe/refresh dist/ and leave extensions/envoymesh without index.js.
@@ -550,7 +588,7 @@ export * from "../src/cli/run-main.ts";
   }
 }
 "@
-    Set-Content -Path (Join-Path $gwState "openclaw.json") -Value $gwConfig -Encoding UTF8
+    Write-Utf8NoBom -Path (Join-Path $gwState "openclaw.json") -Content ($gwConfig.TrimEnd() + "`n")
     $smokePort = Get-FreeLoopbackPort
     $env:OPENCLAW_STATE_DIR = $gwState
     $env:OPENCLAW_CONFIG_PATH = (Join-Path $gwState "openclaw.json")
@@ -619,7 +657,8 @@ export * from "../src/cli/run-main.ts";
     Pop-Location
 
     if (-not (Test-OpenClawGatewayReady $RepoRoot)) {
-        Write-Fail "OpenClaw gateway not ready — pnpm install did not produce tsx + openclaw.mjs"
+        Write-Fail "OpenClaw gateway not ready — need compiled dist/config/config.js,"
+        Write-Info "dist/entry.js (not a stub), extensions/envoymesh/index.js, tsx, openclaw.mjs"
         exit 1
     }
     Write-Ok "OpenClaw gateway ready (packages/openclaw)"
