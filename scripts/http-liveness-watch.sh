@@ -8,8 +8,13 @@
 #
 # Usage:
 #   scripts/http-liveness-watch.sh --url http://127.0.0.1:3030/health --pid-file /path/to.pid
-#   scripts/http-liveness-watch.sh --url http://127.0.0.1:8080/health --pid 12345
-#   scripts/http-liveness-watch.sh --url http://127.0.0.1:8080/health --systemctl envoymesh-relay
+#   scripts/http-liveness-watch.sh --url http://127.0.0.1:15432/health --pid 12345
+#   scripts/http-liveness-watch.sh --url http://127.0.0.1:15432/health --systemctl envoymesh-relay
+#
+# --systemctl UNIT (default): read MainPID and SIGTERM/SIGKILL it. Works when the
+#   watchdog runs as the same User= as the relay (systemd Restart=always respawns).
+#   Does NOT require root / polkit for `systemctl restart`.
+# --systemctl-restart UNIT: call `systemctl restart` (needs root or a sudoers rule).
 #
 # Env overrides:
 #   LIVENESS_INTERVAL_SEC=15 LIVENESS_TIMEOUT_SEC=2 LIVENESS_FAILS=3 LIVENESS_GRACE_SEC=90
@@ -20,6 +25,7 @@ URL=""
 PID=""
 PID_FILE=""
 SYSTEMCTL_UNIT=""
+SYSTEMCTL_RESTART=0
 INTERVAL_SEC="${LIVENESS_INTERVAL_SEC:-15}"
 TIMEOUT_SEC="${LIVENESS_TIMEOUT_SEC:-2}"
 FAILS_NEEDED="${LIVENESS_FAILS:-3}"
@@ -30,9 +36,10 @@ while [[ $# -gt 0 ]]; do
     --url) URL="${2:-}"; shift 2 ;;
     --pid) PID="${2:-}"; shift 2 ;;
     --pid-file) PID_FILE="${2:-}"; shift 2 ;;
-    --systemctl) SYSTEMCTL_UNIT="${2:-}"; shift 2 ;;
+    --systemctl) SYSTEMCTL_UNIT="${2:-}"; SYSTEMCTL_RESTART=0; shift 2 ;;
+    --systemctl-restart) SYSTEMCTL_UNIT="${2:-}"; SYSTEMCTL_RESTART=1; shift 2 ;;
     -h|--help)
-      sed -n '2,20p' "$0"
+      sed -n '2,22p' "$0"
       exit 0
       ;;
     *)
@@ -47,7 +54,7 @@ if [[ -z "$URL" ]]; then
   exit 2
 fi
 if [[ -z "$PID" && -z "$PID_FILE" && -z "$SYSTEMCTL_UNIT" ]]; then
-  echo "one of --pid, --pid-file, or --systemctl is required" >&2
+  echo "one of --pid, --pid-file, --systemctl, or --systemctl-restart is required" >&2
   exit 2
 fi
 
@@ -67,24 +74,39 @@ resolve_pid() {
   echo ""
 }
 
-kill_target() {
-  if [[ -n "$SYSTEMCTL_UNIT" ]]; then
-    echo "[liveness] restarting unit $SYSTEMCTL_UNIT"
-    systemctl restart "$SYSTEMCTL_UNIT"
-    return
-  fi
-  local target
-  target="$(resolve_pid)"
+kill_pid() {
+  local target="$1"
   if [[ -z "$target" || "$target" == "0" ]]; then
     echo "[liveness] no pid to kill" >&2
     return 1
   fi
-  echo "[liveness] killing wedged pid $target (TERM then KILL)"
+  echo "[liveness] killing wedged pid $target (TERM then KILL); supervisor should Restart=always"
   kill -TERM "$target" 2>/dev/null || true
   sleep 3
   if kill -0 "$target" 2>/dev/null; then
     kill -KILL "$target" 2>/dev/null || true
   fi
+}
+
+kill_target() {
+  if [[ -n "$SYSTEMCTL_UNIT" && "$SYSTEMCTL_RESTART" == "1" ]]; then
+    echo "[liveness] systemctl restart $SYSTEMCTL_UNIT"
+    if ! systemctl restart "$SYSTEMCTL_UNIT"; then
+      echo "[liveness] systemctl restart failed (need root, or use --systemctl to kill MainPID instead)" >&2
+      return 1
+    fi
+    return 0
+  fi
+
+  if [[ -n "$SYSTEMCTL_UNIT" ]]; then
+    local target
+    target="$(resolve_pid)"
+    echo "[liveness] unit=$SYSTEMCTL_UNIT MainPID=${target:-unknown}"
+    kill_pid "$target"
+    return
+  fi
+
+  kill_pid "$(resolve_pid)"
 }
 
 echo "[liveness] watching $URL every ${INTERVAL_SEC}s (fail=${FAILS_NEEDED}, timeout=${TIMEOUT_SEC}s, grace=${GRACE_SEC}s)"

@@ -216,7 +216,7 @@ http://<relay-host>:<http-port>/admin/
 
 Default credentials: **admin** / **envoymesh123456**. Change them via env or `--admin-user` / `--admin-password` before exposing the relay publicly.
 
-The UI shows health, peers, circuit reservations, recent logs, and soft (libp2p) / hard (process exit) restart. Hard restart requires a supervisor with `Restart=always` (see `docs/relay-supervisor-recipes.md`).
+The UI shows health, peers, circuit reservations, recent logs, and soft (libp2p) / hard (process exit) restart. Hard restart requires a supervisor with `Restart=always` (see [`docs/relay_server_deployment.md`](./relay_server_deployment.md) and [`docs/relay-supervisor-recipes.md`](./relay-supervisor-recipes.md)).
 
 **Security:** put TLS (Caddy/nginx) in front for remote access — Basic Auth over plain HTTP leaks credentials on the wire. `/health` stays unauthenticated for probes; `/info`, `/version`, `/protocols`, and `/reservations` require the same Basic Auth when admin credentials are set (including the defaults).
 

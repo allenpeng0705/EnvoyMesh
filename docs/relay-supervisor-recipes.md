@@ -1,5 +1,7 @@
 # Relay Supervisor Recipes
 
+**Full Linux + Windows deployment (systemd/NSSM, liveness watchdog, verification checklists):** see **[relay_server_deployment](./relay_server_deployment.md)**.
+
 Relay nodes should run under an external supervisor. EnvoyMesh performs local health checks and bounded repairs, then exits non-zero only when the process should be restarted by the host.
 
 **Event-loop lag:** a brief lag spike only marks the relay `degraded` (no libp2p recycle — that drops reservations and flaps clients). After **~90s of sustained lag** (3 health ticks), the process exits for the supervisor. Keep `Restart=always` / `KeepAlive` enabled.
@@ -70,7 +72,7 @@ Use `KeepAlive` so a critical relay exit restarts the process.
 
 ## Linux systemd
 
-Use `Restart=always` and a short restart delay. Enable the HTTP admin/health port on the relay (`--http-port`, e.g. `8080`) so an external probe can detect wedges.
+Use `Restart=always` and a short restart delay. Enable the HTTP admin/health port on the relay (`--http-port`, default **15432**) so an external probe can detect wedges. Full unit files + verification steps: [relay_server_deployment §4](./relay_server_deployment.md#4-linux-systemd--recommended-production-shape).
 
 ```ini
 [Unit]
@@ -80,7 +82,7 @@ Wants=network-online.target
 
 [Service]
 WorkingDirectory=/opt/envoymesh
-ExecStart=/usr/bin/npm run node:dev -- --profile ./data/relay --discovery-profile wan-default --relay --relay-server --listen /ip4/0.0.0.0/tcp/64073 --http-port 8080
+ExecStart=/usr/bin/npm run node:dev -- --profile ./data/relay --discovery-profile wan-default --relay --relay-server --listen /ip4/0.0.0.0/tcp/64073 --http-port 15432
 Restart=always
 RestartSec=5
 Environment=NODE_ENV=production
@@ -98,7 +100,9 @@ After=envoymesh-relay.service
 Requires=envoymesh-relay.service
 
 [Service]
-ExecStart=/opt/envoymesh/scripts/http-liveness-watch.sh --url http://127.0.0.1:8080/health --systemctl envoymesh-relay
+# --systemctl kills MainPID (same User= as relay); systemd Restart=always respawns.
+# Do not use --systemctl-restart unless this unit runs as root.
+ExecStart=/opt/envoymesh/scripts/http-liveness-watch.sh --url http://127.0.0.1:15432/health --systemctl envoymesh-relay
 Restart=always
 RestartSec=5
 
@@ -108,14 +112,14 @@ WantedBy=multi-user.target
 
 ## Windows
 
-Use WinSW or NSSM for long-running relay nodes. Configure the service to restart on non-zero exit and pass the same node flags used during manual testing.
+Use WinSW or NSSM for long-running relay nodes, plus `scripts/http-liveness-watch.ps1`. Full NSSM install + verification: [relay_server_deployment §5](./relay_server_deployment.md#5-windows--nssm-recommended--powershell-liveness). Terminal quick start (macOS/Windows): [§3](./relay_server_deployment.md#3-run-from-terminal-macos--windows).
 
 Example NSSM shape:
 
 ```powershell
-nssm install EnvoyMeshRelay "C:\Program Files\nodejs\npm.cmd"
+nssm install EnvoyMeshRelay "C:\Program Files\nodejs\node.exe"
 nssm set EnvoyMeshRelay AppDirectory "C:\envoymesh\EnvoyMesh"
-nssm set EnvoyMeshRelay AppParameters "run node:dev -- --profile C:\envoymesh\relay --discovery-profile wan-default --relay --relay-server --listen /ip4/0.0.0.0/tcp/64073"
+nssm set EnvoyMeshRelay AppParameters "apps\relay\dist\index.js --profile C:\envoymesh\relay-data --listen /ip4/0.0.0.0/tcp/4001 --advertise-addr /ip4/YOUR_PUBLIC_IP/tcp/4001 --http-port 15432 --relay-public-mode"
 nssm set EnvoyMeshRelay AppExit Default Restart
 nssm start EnvoyMeshRelay
 ```
