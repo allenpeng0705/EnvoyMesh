@@ -13,10 +13,12 @@ beforeEach(() => {
 });
 
 describe("peer-discovery-telemetry", () => {
-  it("audits each peer id once unless relay-sourced", () => {
+  it("audits each peer id once (including relay-sourced)", () => {
     expect(shouldRecordPeerDiscoveryAudit("peer-a", "unknown")).toBe(true);
     expect(shouldRecordPeerDiscoveryAudit("peer-a", "unknown")).toBe(false);
-    expect(shouldRecordPeerDiscoveryAudit("peer-a", "relay")).toBe(true);
+    expect(shouldRecordPeerDiscoveryAudit("peer-a", "relay")).toBe(false);
+    expect(shouldRecordPeerDiscoveryAudit("peer-b", "relay")).toBe(true);
+    expect(shouldRecordPeerDiscoveryAudit("peer-b", "relay")).toBe(false);
   });
 
   it("detects relay source from circuit multiaddrs", () => {
@@ -27,7 +29,9 @@ describe("peer-discovery-telemetry", () => {
   });
 
   it("skips non-relay peer.discovery seeds on contacts-only profile", () => {
-    expect(shouldPersistPeerDiscoverySeeds("wan-default", "unknown")).toBe(true);
+    expect(shouldPersistPeerDiscoverySeeds("wan-default", "unknown")).toBe(false);
+    expect(shouldPersistPeerDiscoverySeeds("wan-default", "mdns")).toBe(true);
+    expect(shouldPersistPeerDiscoverySeeds("wan-default", "relay")).toBe(true);
     expect(shouldPersistPeerDiscoverySeeds("contacts-only", "unknown")).toBe(false);
     expect(shouldPersistPeerDiscoverySeeds("contacts-only", "relay")).toBe(true);
     expect(shouldPersistPeerDiscoverySeeds("relay-only", "unknown")).toBe(false);

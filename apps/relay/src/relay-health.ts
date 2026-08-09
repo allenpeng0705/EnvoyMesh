@@ -17,6 +17,8 @@ export interface StandaloneRelayHealthState {
   lastHealthyAt?: string;
   consecutiveFailures: number;
   consecutiveRestartRequests: number;
+  /** Consecutive health ticks with event-loop lag above threshold. */
+  consecutiveHighLag: number;
   counters: StandaloneRelayHealthCounters;
 }
 
@@ -65,12 +67,15 @@ const MAX_RSS_BYTES = readMaxRssBytes("ENVOYMESH_RELAY_MAX_RSS_MB", 4096);
 const FATAL_ERROR_WINDOW_MS = 5 * 60_000;
 const MAX_FATAL_ERRORS_PER_WINDOW = 3;
 const MAX_CONSECUTIVE_RESTART_REQUESTS = 2;
+/** ~90s of sustained lag at 30s health cadence → exit for systemd/launchd. */
+const MAX_CONSECUTIVE_HIGH_LAG = 3;
 
 export function createInitialStandaloneRelayHealthState(): StandaloneRelayHealthState {
   return {
     lastStatus: "healthy",
     consecutiveFailures: 0,
     consecutiveRestartRequests: 0,
+    consecutiveHighLag: 0,
     counters: {
       healthChecks: 0,
       degraded: 0,
@@ -104,9 +109,17 @@ export function evaluateStandaloneRelayHealth(input: StandaloneRelayHealthInput)
     actions.add("exit-for-supervisor");
   }
 
-  if ((input.eventLoopLagMs ?? 0) > MAX_EVENT_LOOP_LAG_MS) {
+  const lagHigh = (input.eventLoopLagMs ?? 0) > MAX_EVENT_LOOP_LAG_MS;
+  const consecutiveHighLag = lagHigh ? previous.consecutiveHighLag + 1 : 0;
+  if (lagHigh) {
     reasons.push(`event loop lag high=${input.eventLoopLagMs}ms`);
-    actions.add("restart-libp2p");
+    // Match home-node policy: do NOT recycle libp2p on lag alone (drops
+    // reservations / flaps clients). After sustained lag, exit so the external
+    // supervisor (systemd Restart=always / launchd KeepAlive) can recover.
+    if (consecutiveHighLag >= MAX_CONSECUTIVE_HIGH_LAG) {
+      reasons.push(`event loop lag sustained for ${consecutiveHighLag} health checks`);
+      actions.add("exit-for-supervisor");
+    }
   }
 
   if ((input.rssBytes ?? 0) > (input.maxRssBytesOverride ?? MAX_RSS_BYTES)) {
@@ -214,6 +227,7 @@ function nextState(
     counters.exitRequested += 1;
   }
 
+  const lagHigh = (snapshot.eventLoopLagMs ?? 0) > MAX_EVENT_LOOP_LAG_MS;
   return {
     lastStatus: snapshot.status,
     lastHealthyAt: snapshot.status === "healthy" ? snapshot.checkedAt : previous.lastHealthyAt,
@@ -221,6 +235,7 @@ function nextState(
     consecutiveRestartRequests: snapshot.actions.includes("restart-libp2p")
       ? previous.consecutiveRestartRequests + 1
       : 0,
+    consecutiveHighLag: lagHigh ? previous.consecutiveHighLag + 1 : 0,
     counters,
   };
 }

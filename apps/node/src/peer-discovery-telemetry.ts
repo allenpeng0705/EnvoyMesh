@@ -3,48 +3,51 @@ import type { DiscoverySeedSource } from "./discovery-seed-store.js";
 
 export type PeerDiscoverySource = "relay" | "mdns" | "bootstrap" | "unknown";
 
-const MAX_AUDITED_PEER_IDS = 512;
+/** Cap unique peer.discovery audit rows per process — DHT can surface thousands of ephemeral peers. */
+const MAX_AUDITED_PEER_IDS = 2048;
+/** Hard rate limit so a discovery storm cannot starve the Social WebSocket / event loop. */
+const MAX_PEER_DISCOVERY_AUDITS_PER_MINUTE = 60;
 const auditedPeerIds = new Set<string>();
-const auditedPeerOrder: string[] = [];
+let auditWindowStartedAtMs = 0;
+let auditsInWindow = 0;
 
-/** Record peer.discovery audit once per peer id; always record relay-sourced discoveries. */
+/**
+ * Record peer.discovery audit at most once per peer id (per process).
+ * When the unique-peer cap is hit, stop auditing new peers (do not LRU-evict —
+ * eviction re-audited the same DHT swarm overnight and wedged the home node).
+ */
 export function shouldRecordPeerDiscoveryAudit(
   peerId: string,
-  source: PeerDiscoverySource,
+  _source: PeerDiscoverySource,
   opts?: { force?: boolean },
 ): boolean {
   if (opts?.force) {
     return true;
   }
-  if (source === "relay") {
-    rememberAuditedPeerId(peerId);
-    return true;
-  }
   if (auditedPeerIds.has(peerId)) {
     return false;
   }
-  rememberAuditedPeerId(peerId);
-  return true;
-}
-
-function rememberAuditedPeerId(peerId: string): void {
-  if (auditedPeerIds.has(peerId)) {
-    return;
+  if (auditedPeerIds.size >= MAX_AUDITED_PEER_IDS) {
+    return false;
   }
-  while (auditedPeerIds.size >= MAX_AUDITED_PEER_IDS && auditedPeerOrder.length > 0) {
-    const oldest = auditedPeerOrder.shift();
-    if (oldest) {
-      auditedPeerIds.delete(oldest);
-    }
+  const now = Date.now();
+  if (now - auditWindowStartedAtMs >= 60_000) {
+    auditWindowStartedAtMs = now;
+    auditsInWindow = 0;
+  }
+  if (auditsInWindow >= MAX_PEER_DISCOVERY_AUDITS_PER_MINUTE) {
+    return false;
   }
   auditedPeerIds.add(peerId);
-  auditedPeerOrder.push(peerId);
+  auditsInWindow += 1;
+  return true;
 }
 
 /** @internal test helper */
 export function resetPeerDiscoveryAuditStateForTests(): void {
   auditedPeerIds.clear();
-  auditedPeerOrder.length = 0;
+  auditWindowStartedAtMs = 0;
+  auditsInWindow = 0;
 }
 
 export function peerDiscoverySourceFromMultiaddrs(multiaddrs: readonly string[]): PeerDiscoverySource {
@@ -78,7 +81,10 @@ export function shouldPersistPeerDiscoverySeeds(
   if (profile === "contacts-only" || profile === "relay-only") {
     return source === "relay";
   }
-  return true;
+  // wan-default / lan-fast: persist LAN + relay hops only. Public DHT "unknown"
+  // peers churn by the thousands and rewriting discovery-seeds.json on every
+  // sighting starved the event loop on long-running home nodes.
+  return source === "relay" || source === "mdns";
 }
 
 const CONTACTS_ONLY_EXCLUDED_SEED_SOURCES = new Set<DiscoverySeedSource>([

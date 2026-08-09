@@ -2,6 +2,20 @@
 
 Relay nodes should run under an external supervisor. EnvoyMesh performs local health checks and bounded repairs, then exits non-zero only when the process should be restarted by the host.
 
+**Event-loop lag:** a brief lag spike only marks the relay `degraded` (no libp2p recycle — that drops reservations and flaps clients). After **~90s of sustained lag** (3 health ticks), the process exits for the supervisor. Keep `Restart=always` / `KeepAlive` enabled.
+
+**Alive-but-wedged:** exit-based supervisors alone are not enough. If the event loop is starved, the process stays running (ports LISTEN) and never exits. Pair `Restart=always` with an **external HTTP liveness probe**:
+
+| Surface | Probe | Who kills/respawns |
+|---------|-------|--------------------|
+| Relay (`--http-port`) | `GET /health` | `scripts/http-liveness-watch.sh --systemctl …` (or `--pid`) |
+| Home CLI | `GET http://127.0.0.1:3030/health` (or `:4030`) | same script + launchd/systemd |
+| Desktop Tauri | `GET http://127.0.0.1:3030/health` | built into the Tauri guardian (3 fails → kill + respawn) |
+
+**Headless home nodes** (CLI): set `ENVOYMESH_GUARDIAN_EXIT_ON_LAG=1`, wrap `node:dev` in launchd/systemd/`KeepAlive`, **and** run `scripts/http-liveness-watch.sh` against `/health`.
+
+**Desktop Tauri:** sets `ENVOYMESH_GUARDIAN_EXIT_ON_LAG=1`, auto-respawns on `process.exit(2)`, **and** kills/respawns when `/health` times out while the child is still alive (max 3/hour, backoff). Intentional stops (quit, OTA, Social “Restart node”) suppress respawn.
+
 The admin Web UI **Hard (process)** restart calls a graceful shutdown then `process.exit(0)`. That only comes back if the host restarts the process — use systemd `Restart=always`, Docker restart policies, or launchd `KeepAlive`. Soft restart from the UI only recycles libp2p and does not require a supervisor.
 
 The relay health loop emits local audit traces:
@@ -56,7 +70,7 @@ Use `KeepAlive` so a critical relay exit restarts the process.
 
 ## Linux systemd
 
-Use `Restart=always` and a short restart delay.
+Use `Restart=always` and a short restart delay. Enable the HTTP admin/health port on the relay (`--http-port`, e.g. `8080`) so an external probe can detect wedges.
 
 ```ini
 [Unit]
@@ -66,10 +80,27 @@ Wants=network-online.target
 
 [Service]
 WorkingDirectory=/opt/envoymesh
-ExecStart=/usr/bin/npm run node:dev -- --profile ./data/relay --discovery-profile wan-default --relay --relay-server --listen /ip4/0.0.0.0/tcp/64073
+ExecStart=/usr/bin/npm run node:dev -- --profile ./data/relay --discovery-profile wan-default --relay --relay-server --listen /ip4/0.0.0.0/tcp/64073 --http-port 8080
 Restart=always
 RestartSec=5
 Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Companion liveness unit (kills/restarts when `/health` stops answering — covers alive-but-wedged):
+
+```ini
+[Unit]
+Description=EnvoyMesh Relay HTTP liveness watchdog
+After=envoymesh-relay.service
+Requires=envoymesh-relay.service
+
+[Service]
+ExecStart=/opt/envoymesh/scripts/http-liveness-watch.sh --url http://127.0.0.1:8080/health --systemctl envoymesh-relay
+Restart=always
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target

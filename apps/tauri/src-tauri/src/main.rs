@@ -1,5 +1,6 @@
 use std::fs::{File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -21,10 +22,36 @@ struct NodeSpawnConfig {
     node_log_file: Option<Arc<Mutex<File>>>,
 }
 
+/// Tracks intentional stops vs critical health exits so the guardian can
+/// decide whether to auto-respawn the home-node child.
+struct NodeGuardianState {
+    /// When true, the monitor must not respawn (app quit, OTA stop, manual restart).
+    suppress_respawn: bool,
+    /// Wall-clock times of recent auto-respawns (rate limit window).
+    recent_respawn_at: Vec<Instant>,
+    /// Consecutive failed GET /health probes while the child is still running.
+    consecutive_liveness_failures: u32,
+    /// When the current child was (re)spawned — grace period before probing.
+    child_started_at: Option<Instant>,
+    last_liveness_probe_at: Option<Instant>,
+}
+
 struct NodeProcessState {
     child: Mutex<Option<Child>>,
     config: NodeSpawnConfig,
+    guardian: Mutex<NodeGuardianState>,
 }
+
+/// Home node `exitForNodeSupervisor` uses `process.exit(2)`.
+const NODE_SUPERVISOR_EXIT_CODE: i32 = 2;
+const NODE_GUARDIAN_MAX_RESPAWNS_PER_HOUR: usize = 3;
+const NODE_GUARDIAN_POLL_INTERVAL: Duration = Duration::from_secs(2);
+/// Desktop Social WS port (Tauri home node). Alive-but-wedged detection.
+const NODE_LIVENESS_PORT: u16 = 3030;
+const NODE_LIVENESS_PROBE_INTERVAL: Duration = Duration::from_secs(10);
+const NODE_LIVENESS_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+const NODE_LIVENESS_FAILS_BEFORE_KILL: u32 = 3;
+const NODE_LIVENESS_STARTUP_GRACE: Duration = Duration::from_secs(90);
 
 #[derive(Clone)]
 struct AppLogPaths {
@@ -687,11 +714,317 @@ fn stop_node_child(child_slot: &mut Option<Child>) {
 
 fn stop_node_from_app(app: &tauri::AppHandle) {
     if let Some(state) = app.try_state::<NodeProcessState>() {
+        if let Ok(mut guardian) = state.guardian.lock() {
+            guardian.suppress_respawn = true;
+        }
         if let Ok(mut child_guard) = state.child.lock() {
             stop_node_child(&mut *child_guard);
             info!("Node process stopped");
         }
     }
+}
+
+/// Decide whether Tauri should auto-respawn a home-node child that exited.
+/// Only critical supervisor exits (`process.exit(2)`) are eligible; clean
+/// shutdowns and intentional stops are ignored. Rate-limited to 3/hour.
+fn should_auto_respawn_node(
+    exit_code: Option<i32>,
+    suppress_respawn: bool,
+    recent_respawn_at: &[Instant],
+    now: Instant,
+    max_per_hour: usize,
+) -> bool {
+    if suppress_respawn {
+        return false;
+    }
+    if exit_code != Some(NODE_SUPERVISOR_EXIT_CODE) {
+        return false;
+    }
+    let window = Duration::from_secs(3600);
+    let recent = recent_respawn_at
+        .iter()
+        .filter(|t| now.saturating_duration_since(**t) < window)
+        .count();
+    recent < max_per_hour
+}
+
+fn guardian_backoff_delay(recent_in_window: usize) -> Duration {
+    // 5s, 10s, 20s… capped at 2 minutes — avoids thrash if the node exits(2) immediately.
+    let exp = recent_in_window.min(6) as u32;
+    Duration::from_secs(5u64.saturating_mul(2u64.saturating_pow(exp))).min(Duration::from_secs(120))
+}
+
+/// Probe `GET /health` on the home-node Social WS HTTP server.
+/// Returns false on connect/read timeout or non-OK body — including the
+/// alive-but-wedged case where the port LISTENs but the event loop never answers.
+fn probe_home_node_liveness(port: u16, timeout: Duration) -> bool {
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let mut stream = match TcpStream::connect_timeout(&addr, timeout) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let _ = stream.set_read_timeout(Some(timeout));
+    let _ = stream.set_write_timeout(Some(timeout));
+    let req = format!(
+        "GET /health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+    );
+    if stream.write_all(req.as_bytes()).is_err() {
+        return false;
+    }
+    let mut buf = [0u8; 512];
+    match stream.read(&mut buf) {
+        Ok(n) if n > 0 => {
+            let text = String::from_utf8_lossy(&buf[..n]);
+            text.contains("200") && text.contains("\"ok\":true")
+        }
+        _ => false,
+    }
+}
+
+fn guardian_rate_limit_allows(recent_respawn_at: &[Instant], now: Instant) -> (bool, usize) {
+    let recent: Vec<Instant> = recent_respawn_at
+        .iter()
+        .copied()
+        .filter(|t| now.saturating_duration_since(*t) < Duration::from_secs(3600))
+        .collect();
+    (recent.len() < NODE_GUARDIAN_MAX_RESPAWNS_PER_HOUR, recent.len())
+}
+
+fn try_guardian_respawn(state: &NodeProcessState, reason: &str) {
+    let (suppress, recent_count, allow) = {
+        let Ok(guardian) = state.guardian.lock() else {
+            return;
+        };
+        let now = Instant::now();
+        let (under_limit, recent) =
+            guardian_rate_limit_allows(&guardian.recent_respawn_at, now);
+        (
+            guardian.suppress_respawn,
+            recent,
+            !guardian.suppress_respawn && under_limit,
+        )
+    };
+
+    if !allow {
+        if suppress {
+            info!("Home-node guardian: respawn skipped ({reason}) — suppressed");
+        } else {
+            error!(
+                "Home-node guardian: respawn skipped ({reason}) — rate limit ({}/hour)",
+                NODE_GUARDIAN_MAX_RESPAWNS_PER_HOUR
+            );
+        }
+        return;
+    }
+
+    let delay = guardian_backoff_delay(recent_count);
+    warn!(
+        "Home-node guardian: {} — respawning in {:?}",
+        reason, delay
+    );
+    std::thread::sleep(delay);
+
+    {
+        let Ok(guardian) = state.guardian.lock() else {
+            return;
+        };
+        if guardian.suppress_respawn {
+            info!("Home-node guardian: respawn cancelled (suppress set during backoff)");
+            return;
+        }
+    }
+
+    {
+        let Ok(child_guard) = state.child.lock() else {
+            return;
+        };
+        if child_guard.is_some() {
+            info!("Home-node guardian: child already present after backoff — skip spawn");
+            return;
+        }
+    }
+
+    match spawn_node_process(&state.config) {
+        Ok(child) => {
+            if let Ok(mut guardian) = state.guardian.lock() {
+                let now = Instant::now();
+                guardian
+                    .recent_respawn_at
+                    .retain(|t| now.saturating_duration_since(*t) < Duration::from_secs(3600));
+                guardian.recent_respawn_at.push(now);
+                guardian.consecutive_liveness_failures = 0;
+                guardian.child_started_at = Some(now);
+                guardian.last_liveness_probe_at = None;
+            }
+            if let Ok(mut child_guard) = state.child.lock() {
+                if child_guard.is_none() {
+                    *child_guard = Some(child);
+                    info!("Home-node guardian: respawned home node ({reason})");
+                } else {
+                    let mut extra = Some(child);
+                    stop_node_child(&mut extra);
+                    info!("Home-node guardian: discarded duplicate spawn (manual restart won)");
+                }
+            }
+        }
+        Err(e) => {
+            error!("Home-node guardian: respawn failed: {}", e);
+        }
+    }
+}
+
+fn start_node_guardian(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        info!(
+            "Home-node guardian started (exit {} + GET :{}/health liveness, max {}/hour)",
+            NODE_SUPERVISOR_EXIT_CODE, NODE_LIVENESS_PORT, NODE_GUARDIAN_MAX_RESPAWNS_PER_HOUR
+        );
+        loop {
+            std::thread::sleep(NODE_GUARDIAN_POLL_INTERVAL);
+            let Some(state) = app.try_state::<NodeProcessState>() else {
+                break;
+            };
+
+            // --- Path A: process exited ---
+            let exited = {
+                let Ok(mut child_guard) = state.child.lock() else {
+                    continue;
+                };
+                match child_guard.as_mut() {
+                    Some(child) => match child.try_wait() {
+                        Ok(Some(status)) => {
+                            let code = status.code();
+                            let _ = child_guard.take();
+                            Some(code)
+                        }
+                        Ok(None) => None,
+                        Err(e) => {
+                            warn!("Home-node guardian: try_wait failed: {}", e);
+                            let _ = child_guard.take();
+                            None
+                        }
+                    },
+                    None => None,
+                }
+            };
+
+            if let Some(exit_code) = exited {
+                let allow_exit_respawn = {
+                    let Ok(guardian) = state.guardian.lock() else {
+                        continue;
+                    };
+                    should_auto_respawn_node(
+                        exit_code,
+                        guardian.suppress_respawn,
+                        &guardian.recent_respawn_at,
+                        Instant::now(),
+                        NODE_GUARDIAN_MAX_RESPAWNS_PER_HOUR,
+                    )
+                };
+                if allow_exit_respawn {
+                    try_guardian_respawn(
+                        &state,
+                        &format!("supervisor exit code {NODE_SUPERVISOR_EXIT_CODE}"),
+                    );
+                } else if exit_code == Some(NODE_SUPERVISOR_EXIT_CODE) {
+                    error!(
+                        "Home-node exited with supervisor code {} — not restarting (suppress or rate limit)",
+                        NODE_SUPERVISOR_EXIT_CODE
+                    );
+                } else {
+                    warn!(
+                        "Home-node exited (code {:?}) — not auto-respawning",
+                        exit_code
+                    );
+                }
+                continue;
+            }
+
+            // --- Path B: alive but wedged (port up, /health never answers) ---
+            let child_alive = state
+                .child
+                .lock()
+                .map(|g| g.is_some())
+                .unwrap_or(false);
+            if !child_alive {
+                continue;
+            }
+
+            let should_probe = {
+                let Ok(mut guardian) = state.guardian.lock() else {
+                    continue;
+                };
+                if guardian.suppress_respawn {
+                    continue;
+                }
+                let now = Instant::now();
+                if let Some(started) = guardian.child_started_at {
+                    if now.saturating_duration_since(started) < NODE_LIVENESS_STARTUP_GRACE {
+                        continue;
+                    }
+                } else {
+                    // First observe of a running child (initial spawn).
+                    guardian.child_started_at = Some(now);
+                    continue;
+                }
+                match guardian.last_liveness_probe_at {
+                    Some(last)
+                        if now.saturating_duration_since(last) < NODE_LIVENESS_PROBE_INTERVAL =>
+                    {
+                        false
+                    }
+                    _ => {
+                        guardian.last_liveness_probe_at = Some(now);
+                        true
+                    }
+                }
+            };
+            if !should_probe {
+                continue;
+            }
+
+            let ok = probe_home_node_liveness(NODE_LIVENESS_PORT, NODE_LIVENESS_PROBE_TIMEOUT);
+            let failures = {
+                let Ok(mut guardian) = state.guardian.lock() else {
+                    continue;
+                };
+                if ok {
+                    guardian.consecutive_liveness_failures = 0;
+                    0
+                } else {
+                    guardian.consecutive_liveness_failures =
+                        guardian.consecutive_liveness_failures.saturating_add(1);
+                    guardian.consecutive_liveness_failures
+                }
+            };
+
+            if failures > 0 {
+                warn!(
+                    "Home-node liveness probe failed ({}/{}) on http://127.0.0.1:{}/health",
+                    failures, NODE_LIVENESS_FAILS_BEFORE_KILL, NODE_LIVENESS_PORT
+                );
+            }
+            if failures < NODE_LIVENESS_FAILS_BEFORE_KILL {
+                continue;
+            }
+
+            error!(
+                "Home-node unresponsive ({} failed /health probes) — killing wedged child for respawn",
+                failures
+            );
+            {
+                let Ok(mut child_guard) = state.child.lock() else {
+                    continue;
+                };
+                stop_node_child(&mut child_guard);
+            }
+            if let Ok(mut guardian) = state.guardian.lock() {
+                guardian.consecutive_liveness_failures = 0;
+                guardian.child_started_at = None;
+            }
+            try_guardian_respawn(&state, "liveness probe timeout (alive but wedged)");
+        }
+    });
 }
 
 fn spawn_node_process(config: &NodeSpawnConfig) -> Result<Child, String> {
@@ -785,6 +1118,9 @@ fn spawn_node_process(config: &NodeSpawnConfig) -> Result<Child, String> {
     }
 
     command.env("ENVOYMESH_NODE_BUNDLE_DIR", &config.node_cwd);
+    // Tauri supervises the child: allow sustained event-loop lag to exit(2)
+    // so the guardian can respawn a wedged home node overnight.
+    command.env("ENVOYMESH_GUARDIAN_EXIT_ON_LAG", "1");
 
     let log_file = config.node_log_file.clone();
     command.spawn().map_err(|e| {
@@ -855,6 +1191,10 @@ fn reveal_log_dir(log_paths: State<'_, AppLogPaths>) -> Result<(), String> {
 
 #[tauri::command]
 fn restart_node_process(state: State<'_, NodeProcessState>) -> Result<(), String> {
+    {
+        let mut guardian = state.guardian.lock().map_err(|e| e.to_string())?;
+        guardian.suppress_respawn = true;
+    }
     let mut child_guard = state.child.lock().map_err(|e| e.to_string())?;
     stop_node_child(&mut child_guard);
     #[cfg(unix)]
@@ -862,12 +1202,22 @@ fn restart_node_process(state: State<'_, NodeProcessState>) -> Result<(), String
     let child = spawn_node_process(&state.config)?;
     info!("Node process restarted from Social UI");
     *child_guard = Some(child);
+    drop(child_guard);
+    if let Ok(mut guardian) = state.guardian.lock() {
+        guardian.suppress_respawn = false;
+        guardian.consecutive_liveness_failures = 0;
+        guardian.child_started_at = Some(Instant::now());
+        guardian.last_liveness_probe_at = None;
+    }
     Ok(())
 }
 
 /// Stop the home-node child without respawning (used before OTA install).
 #[tauri::command]
 fn stop_node_process(state: State<'_, NodeProcessState>) -> Result<(), String> {
+    if let Ok(mut guardian) = state.guardian.lock() {
+        guardian.suppress_respawn = true;
+    }
     let mut child_guard = state.child.lock().map_err(|e| e.to_string())?;
     stop_node_child(&mut child_guard);
     info!("Node process stopped for update install");
@@ -1239,7 +1589,16 @@ fn main() {
             app.manage(NodeProcessState {
                 child: Mutex::new(initial_child),
                 config: spawn_config,
+                guardian: Mutex::new(NodeGuardianState {
+                    suppress_respawn: false,
+                    recent_respawn_at: Vec::new(),
+                    consecutive_liveness_failures: 0,
+                    child_started_at: Some(Instant::now()),
+                    last_liveness_probe_at: None,
+                }),
             });
+
+            start_node_guardian(app.handle().clone());
 
             // Log when the Social WebSocket is up — do not block window creation on this wait.
             std::thread::spawn(|| {
@@ -1275,6 +1634,79 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::Path;
+
+    #[test]
+    fn guardian_respawns_only_on_supervisor_exit_code() {
+        let now = Instant::now();
+        assert!(should_auto_respawn_node(
+            Some(2),
+            false,
+            &[],
+            now,
+            NODE_GUARDIAN_MAX_RESPAWNS_PER_HOUR
+        ));
+        assert!(!should_auto_respawn_node(
+            Some(0),
+            false,
+            &[],
+            now,
+            NODE_GUARDIAN_MAX_RESPAWNS_PER_HOUR
+        ));
+        assert!(!should_auto_respawn_node(
+            Some(1),
+            false,
+            &[],
+            now,
+            NODE_GUARDIAN_MAX_RESPAWNS_PER_HOUR
+        ));
+        assert!(!should_auto_respawn_node(
+            None,
+            false,
+            &[],
+            now,
+            NODE_GUARDIAN_MAX_RESPAWNS_PER_HOUR
+        ));
+    }
+
+    #[test]
+    fn guardian_respects_suppress_and_rate_limit() {
+        let now = Instant::now();
+        assert!(!should_auto_respawn_node(
+            Some(2),
+            true,
+            &[],
+            now,
+            NODE_GUARDIAN_MAX_RESPAWNS_PER_HOUR
+        ));
+        let recent = vec![
+            now - Duration::from_secs(10),
+            now - Duration::from_secs(20),
+            now - Duration::from_secs(30),
+        ];
+        assert!(!should_auto_respawn_node(
+            Some(2),
+            false,
+            &recent,
+            now,
+            NODE_GUARDIAN_MAX_RESPAWNS_PER_HOUR
+        ));
+        let stale = vec![now - Duration::from_secs(3601)];
+        assert!(should_auto_respawn_node(
+            Some(2),
+            false,
+            &stale,
+            now,
+            NODE_GUARDIAN_MAX_RESPAWNS_PER_HOUR
+        ));
+    }
+
+    #[test]
+    fn guardian_backoff_grows_then_caps() {
+        assert_eq!(guardian_backoff_delay(0), Duration::from_secs(5));
+        assert_eq!(guardian_backoff_delay(1), Duration::from_secs(10));
+        assert_eq!(guardian_backoff_delay(2), Duration::from_secs(20));
+        assert_eq!(guardian_backoff_delay(10), Duration::from_secs(120));
+    }
 
     /// Walk up from `tests_root` until we find a writable temp dir. Each
     /// test gets its own subdir so they don't collide on parallel runs.

@@ -353,7 +353,29 @@ export async function getConnectivityDiagnosticsViaRuntime(
 ): Promise<ConnectivityDiagnostics> {
   const mesh = deps.reachableMesh();
   const taskStore = deps.getTaskStore();
-  const auditEvents: readonly AuditEvent[] = taskStore ? await taskStore.readAuditEvents() : [];
+  // Protocol-filtered tails — a raw 2000-line window is dominated by
+  // peer.discovery / relay.manager.snapshot noise and misreports Stage D.
+  const auditEvents: readonly AuditEvent[] = taskStore
+    ? (
+        await Promise.all([
+          taskStore.readAuditEventsTail({
+            protocolPrefix: "connectivity.",
+            limit: 400,
+            scanBytes: 2 * 1024 * 1024,
+          }),
+          taskStore.readAuditEventsTail({
+            protocolPrefix: "relay.",
+            limit: 200,
+            scanBytes: 1 * 1024 * 1024,
+          }),
+          taskStore.readAuditEventsTail({
+            protocolPrefix: "peer.discovery",
+            limit: 200,
+            scanBytes: 1 * 1024 * 1024,
+          }),
+        ])
+      ).flat()
+    : [];
   const config = await deps.loadPersistedConfig();
   return buildConnectivityDiagnostics({
     mesh,

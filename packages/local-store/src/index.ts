@@ -715,7 +715,12 @@ export interface LocalTaskStore {
    *  the audit log without parsing the entire file. Used by the relay
    *  manager snapshot cycle (which only needs the last 12 relay.* traces)
    *  to avoid blocking the event loop on a 100+ MB audit file every 30s. */
-  readAuditEventsTail(filter: { protocolPrefix?: string; limit: number }): Promise<AuditEvent[]>;
+  readAuditEventsTail(filter: {
+    protocolPrefix?: string;
+    limit: number;
+    /** Override default 256 KiB tail window (diagnostics may need more). */
+    scanBytes?: number;
+  }): Promise<AuditEvent[]>;
   queryAuditEvents(params?: JsonlIndexQueryParams): Promise<AuditEvent[]>;
   rebuildAuditQueryIndex(): Promise<number>;
   appendDiscoveryEvent(event: DiscoveryEvent): Promise<void>;
@@ -926,9 +931,10 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
   const shareEventsPath = join(profileDir, SHARE_EVENTS_FILE);
 
   const appendTaskJournalQueued = createSerialJsonlAppender(taskJournalPath);
-  // Audit events: 100MB max file size, 7-day retention
+  // Audit events: 24MB max file size, 7-day retention.
+  // Larger caps let p2p.trace floods grow until full-file reads starve the event loop.
   const appendAuditQueued = createSerialJsonlAppender(auditEventsPath, {
-    maxSizeBytes: 100 * 1024 * 1024,
+    maxSizeBytes: 24 * 1024 * 1024,
     maxAgeMs: 7 * 24 * 60 * 60 * 1000,
   });
   const appendAuditIndexQueued = createJsonlIndexAppender(auditIndexPath);
@@ -970,13 +976,30 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
     summary: String(entry.payload.summary ?? ""),
   });
 
+  const isIndexableAuditEvent = (event: AuditEvent): boolean => event.type !== "p2p.trace";
+
+  /**
+   * Index is maintained on append for non-trace rows. Full rebuild only when
+   * the index file is missing/empty/corrupt (e.g. after startup truncate).
+   * Never compare index length to full audit length — p2p.trace is intentionally
+   * not indexed, and a full read+rebuild of a multi‑MB audit log starves the loop.
+   */
   const ensureAuditIndex = async (): Promise<void> => {
-    const [indexRows, auditRows] = await Promise.all([
-      readJsonlIndex(auditIndexPath),
-      readJsonLines<AuditEvent>(auditEventsPath),
-    ]);
-    if (auditRows.length > 0 && indexRows.length < auditRows.length) {
-      await rebuildJsonlIndex(auditRows, auditIndexPath, auditEventToIndexEntry);
+    try {
+      const st = await stat(auditIndexPath);
+      if (st.size > 0) {
+        const indexRows = await readJsonlIndex(auditIndexPath);
+        if (indexRows.length > 0) return;
+        // Non-empty file but zero parseable rows — treat as corrupt and rebuild.
+        console.warn(`[local-store] ${AUDIT_QUERY_INDEX_FILE} unreadable — rebuilding`);
+      }
+    } catch {
+      // missing index — rebuild below
+    }
+    const auditRows = await readJsonLines<AuditEvent>(auditEventsPath);
+    const indexable = auditRows.filter(isIndexableAuditEvent);
+    if (indexable.length > 0) {
+      await rebuildJsonlIndex(indexable, auditIndexPath, auditEventToIndexEntry);
     }
   };
 
@@ -1008,16 +1031,14 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
     },
 
     async appendAuditEvent(event) {
-      // No event-type filter here: every emitted audit event is
-      // diagnostically meaningful. `message.rejected` is high-volume
-      // (one per failed signature / policy check) but it tells you WHY a
-      // message was refused, which the developer CLI's `audit` view
-      // surfaces. Dropping it at the store layer hides that from
-      // operators. The JSONL appender handles concurrent writes safely;
-      // future size caps can be added in `createJsonlAppender` if the log
-      // grows too large.
+      // Persist every event (including high-volume p2p.trace) for operators,
+      // but do not grow audit-query-index 1:1 with DHT/relay telemetry —
+      // that index was rewriting/rebuilding on Social queries and wedging
+      // long-running home nodes overnight.
       await appendAuditQueued(event);
-      await appendAuditIndexQueued(auditEventToIndexEntry(event));
+      if (isIndexableAuditEvent(event)) {
+        await appendAuditIndexQueued(auditEventToIndexEntry(event));
+      }
     },
 
     async readAuditEvents() {
@@ -1036,7 +1057,8 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
 
     async rebuildAuditQueryIndex() {
       const auditRows = await readJsonLines<AuditEvent>(auditEventsPath);
-      return rebuildJsonlIndex(auditRows, auditIndexPath, auditEventToIndexEntry);
+      const indexable = auditRows.filter(isIndexableAuditEvent);
+      return rebuildJsonlIndex(indexable, auditIndexPath, auditEventToIndexEntry);
     },
 
     async appendDiscoveryEvent(event) {
@@ -2243,72 +2265,42 @@ async function appendJsonLineWithRetention(
   // pruning even if fileSizeBytes + lineBytes > maxSizeBytes — the next write will re-check.
   const pruneThreshold = Math.floor(maxSizeBytes * 0.95);
   if (fileSizeBytes > pruneThreshold && fileSizeBytes + lineBytes > maxSizeBytes) {
-    await pruneJsonlByRetention(path, maxSizeBytes, maxAgeMs);
+    // Fast path: byte-tail truncate. Full JSON parse/rewrite of multi‑MB audit
+    // logs starved the event loop on long-running home nodes.
+    await truncateJsonlKeepTail(path, Math.floor(maxSizeBytes * 0.7));
   }
 
   await appendFile(path, line, { mode: 0o600 });
 }
 
 /**
- * Read a JSONL file, filter out entries older than maxAgeMs, and rewrite.
- * Also truncates if the file is still over maxSizeBytes after age pruning.
+ * Keep only the trailing `keepBytes` of a JSONL file (drop a partial first line).
+ * O(keepBytes) I/O — does not parse the whole file.
  */
-async function pruneJsonlByRetention(path: string, maxSizeBytes: number, maxAgeMs: number): Promise<void> {
-  const now = Date.now();
-
-  let entries: Array<{ line: string; ageMs: number }> = [];
-
+async function truncateJsonlKeepTail(path: string, keepBytes: number): Promise<void> {
+  let fileHandle;
   try {
-    const content = await readFile(path, "utf8");
-    const lines = content.split("\n").filter((line) => line.trim().length > 0);
-
-    for (const line of lines) {
-      try {
-        const obj = JSON.parse(line);
-        const createdAt = obj.createdAt ? new Date(obj.createdAt).getTime() : 0;
-        const ageMs = now - createdAt;
-        entries.push({ line, ageMs });
-      } catch {
-        // Keep malformed lines as-is (they'll be filtered by readJsonLines on next read)
-        entries.push({ line, ageMs: 0 });
-      }
-    }
-  } catch {
-    // File doesn't exist or can't be read — nothing to prune
-    return;
+    fileHandle = await open(path, "r");
+  } catch (error) {
+    if (isMissingFileError(error)) return;
+    throw error;
   }
-
-  // Filter out expired entries
-  const before = entries.length;
-  entries = entries.filter((e) => e.ageMs < maxAgeMs);
-
-  if (entries.length === before) {
-    // No entries expired, but file is too big — keep newest entries up to size
-    entries.sort((a, b) => b.ageMs - a.ageMs);
+  try {
+    const { size } = await fileHandle.stat();
+    if (size <= keepBytes) return;
+    const buf = Buffer.alloc(keepBytes);
+    await fileHandle.read(buf, 0, keepBytes, size - keepBytes);
+    let text = buf.toString("utf8");
+    const nl = text.indexOf("\n");
+    if (nl >= 0) text = text.slice(nl + 1);
+    if (!text.endsWith("\n") && text.length > 0) text += "\n";
+    await writeFile(path, text, { mode: 0o600 });
+    console.warn(
+      `[local-store] tail-truncated ${basename(path)} to ~${keepBytes} bytes (was ${size})`,
+    );
+  } finally {
+    await fileHandle.close();
   }
-
-  // Build new content, keeping newest entries until under size limit.
-  // All size comparisons use bytes (Buffer.byteLength) to match stat.size and maxSizeBytes.
-  let newContent = "";
-  const kept: string[] = [];
-  for (const entry of entries) {
-    const trialLine = entry.line + "\n";
-    const trialBytes = Buffer.byteLength(newContent, "utf8") + Buffer.byteLength(trialLine, "utf8");
-    if (trialBytes > maxSizeBytes && kept.length > 0) {
-      break;
-    }
-    newContent += trialLine;
-    kept.push(entry.line);
-  }
-
-  if (kept.length === entries.length) {
-    // Nothing was pruned
-    return;
-  }
-
-  // Rewrite file with pruned entries
-  await writeFile(path, newContent, { mode: 0o600 });
-  console.warn(`[local-store] pruned ${before - kept.length} old entries from ${basename(path)} (was ${before}, kept ${kept.length})`);
 }
 
 async function writeJsonLines(path: string, values: unknown[]): Promise<void> {
@@ -2374,9 +2366,10 @@ async function readJsonLines<T>(path: string): Promise<T[]> {
  */
 async function readJsonLinesTail<T>(
   path: string,
-  filter: { protocolPrefix?: string; limit: number },
-  scanBytes = 256 * 1024,
+  filter: { protocolPrefix?: string; limit: number; scanBytes?: number },
+  defaultScanBytes = 256 * 1024,
 ): Promise<T[]> {
+  const scanBytes = filter.scanBytes ?? defaultScanBytes;
   let fileHandle;
   try {
     fileHandle = await open(path, "r");

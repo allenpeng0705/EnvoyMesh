@@ -65,12 +65,36 @@ describe("node health", () => {
       eventLoopLagMs: 2_500,
       recentFatalErrors: [],
       previous: createInitialNodeHealthState(),
+      exitOnSustainedLag: false,
     });
 
     expect(result.snapshot.status).toBe("degraded");
     expect(result.snapshot.actions).not.toContain("restart-libp2p");
     expect(result.snapshot.actions).toEqual(["none"]);
     expect(result.snapshot.reasons.some((r) => r.includes("event loop lag"))).toBe(true);
+    expect(result.state.consecutiveHighLag).toBe(1);
+  });
+
+  it("exits for supervisor on sustained lag when guardian enabled", () => {
+    const previous = {
+      ...createInitialNodeHealthState(),
+      consecutiveHighLag: 2,
+    };
+    const result = evaluateNodeHealth({
+      now: () => now,
+      startedAtMs,
+      meshStarted: true,
+      listenAddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/node-a"],
+      relayPeerCount: 0,
+      eventLoopLagMs: 2_500,
+      recentFatalErrors: [],
+      previous,
+      exitOnSustainedLag: true,
+    });
+
+    expect(result.snapshot.status).toBe("critical");
+    expect(result.snapshot.actions).toContain("exit-for-supervisor");
+    expect(result.state.consecutiveHighLag).toBe(3);
   });
 
   it("exits for supervisor when memory is too high", () => {

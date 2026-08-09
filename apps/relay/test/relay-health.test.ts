@@ -45,7 +45,7 @@ describe("standalone relay health", () => {
     expect(result.state.counters.restartRequested).toBe(1);
   });
 
-  it("requests libp2p restart when event-loop lag is too high", () => {
+  it("degrades without libp2p restart when event-loop lag is briefly high", () => {
     const result = evaluateStandaloneRelayHealth({
       now: () => now,
       startedAtMs,
@@ -58,8 +58,33 @@ describe("standalone relay health", () => {
       previous: createInitialStandaloneRelayHealthState(),
     });
 
-    expect(result.snapshot.status).toBe("unhealthy");
-    expect(result.snapshot.actions).toContain("restart-libp2p");
+    expect(result.snapshot.status).toBe("degraded");
+    expect(result.snapshot.actions).not.toContain("restart-libp2p");
+    expect(result.snapshot.actions).toEqual(["none"]);
+    expect(result.state.consecutiveHighLag).toBe(1);
+  });
+
+  it("exits for supervisor after sustained event-loop lag", () => {
+    const previous = {
+      ...createInitialStandaloneRelayHealthState(),
+      consecutiveHighLag: 2,
+    };
+    const result = evaluateStandaloneRelayHealth({
+      now: () => now,
+      startedAtMs,
+      listenAddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/relay-a"],
+      connectedRelayPeerCount: 0,
+      httpEnabled: true,
+      httpListening: true,
+      eventLoopLagMs: 2_500,
+      recentFatalErrors: [],
+      previous,
+    });
+
+    expect(result.snapshot.status).toBe("critical");
+    expect(result.snapshot.actions).toContain("exit-for-supervisor");
+    expect(result.snapshot.actions).not.toContain("restart-libp2p");
+    expect(result.state.consecutiveHighLag).toBe(3);
   });
 
   it("exits for supervisor when memory is too high", () => {

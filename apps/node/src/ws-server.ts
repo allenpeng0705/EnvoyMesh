@@ -100,7 +100,26 @@ export class WsServer {
   start(nodeService: NodeService): void {
     this.nodeService = nodeService;
 
-    this.httpServer = createServer((_req, res) => {
+    const startedAtMs = Date.now();
+    this.httpServer = createServer((req, res) => {
+      // External supervisors (Tauri guardian, curl/systemd watchdog) probe
+      // GET /health. If the event loop is wedged, the probe times out even
+      // though the TCP port still LISTENs — that is the signal to kill/respawn.
+      const pathname = (req.url ?? "/").split("?")[0] ?? "/";
+      if (req.method === "GET" && (pathname === "/health" || pathname === "/readyz")) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: true,
+            service: "envoymesh-home-ws",
+            path: this.path,
+            port: this.port,
+            uptimeMs: Date.now() - startedAtMs,
+            checkedAt: new Date().toISOString(),
+          }),
+        );
+        return;
+      }
       res.writeHead(426, { "Content-Type": "text/plain" });
       res.end("Upgrade Required");
     });

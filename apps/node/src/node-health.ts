@@ -17,6 +17,8 @@ export interface NodeHealthState {
   lastHealthyAt?: string;
   consecutiveFailures: number;
   consecutiveRestartRequests: number;
+  /** Consecutive health ticks with event-loop lag above threshold. */
+  consecutiveHighLag: number;
   counters: NodeHealthCounters;
 }
 
@@ -65,6 +67,12 @@ export interface NodeHealthInput {
    *   - report status as `degraded` (known pending) rather than `unhealthy`
    */
   meshStartDeferred?: boolean;
+  /**
+   * When true, sustained event-loop lag exits for an external supervisor.
+   * Default: env `ENVOYMESH_GUARDIAN_EXIT_ON_LAG=1`. Off for desktop Social
+   * (no auto-respawn); on for headless home nodes under launchd/systemd.
+   */
+  exitOnSustainedLag?: boolean;
 }
 
 function readMaxRssBytes(envName: string, defaultMb: number): number {
@@ -76,17 +84,27 @@ function readMaxRssBytes(envName: string, defaultMb: number): number {
   return defaultMb * 1024 * 1024;
 }
 
+function envFlagEnabled(name: string): boolean {
+  const raw = process.env[name];
+  if (!raw) return false;
+  const v = raw.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
 const MAX_EVENT_LOOP_LAG_MS = 2_000;
 const MAX_RSS_BYTES = readMaxRssBytes("ENVOYMESH_MAX_RSS_MB", 4096);
 const FATAL_ERROR_WINDOW_MS = 5 * 60_000;
 const MAX_FATAL_ERRORS_PER_WINDOW = 3;
 const MAX_CONSECUTIVE_RESTART_REQUESTS = 2;
+/** ~90s of sustained lag at 30s health cadence before supervisor exit (when enabled). */
+const MAX_CONSECUTIVE_HIGH_LAG = 3;
 
 export function createInitialNodeHealthState(): NodeHealthState {
   return {
     lastStatus: "healthy",
     consecutiveFailures: 0,
     consecutiveRestartRequests: 0,
+    consecutiveHighLag: 0,
     counters: {
       healthChecks: 0,
       degraded: 0,
@@ -126,10 +144,18 @@ export function evaluateNodeHealth(input: NodeHealthInput): { snapshot: NodeHeal
     actions.add("restart-libp2p");
   }
 
-  if ((input.eventLoopLagMs ?? 0) > MAX_EVENT_LOOP_LAG_MS) {
+  const lagHigh = (input.eventLoopLagMs ?? 0) > MAX_EVENT_LOOP_LAG_MS;
+  const consecutiveHighLag = lagHigh ? previous.consecutiveHighLag + 1 : 0;
+  if (lagHigh) {
     reasons.push(`event loop lag high=${input.eventLoopLagMs}ms`);
-    // Do not restart libp2p for lag alone — restarts drop all peer sessions and make
-    // contact online status flap under wan-default load (Mac/Windows home nodes).
+    // Do not restart libp2p for lag alone — restarts drop peer sessions and flap
+    // contact presence. Optional process exit lets systemd/launchd recover a wedged
+    // headless home node (desktop Tauri does not auto-respawn by default).
+    const exitOnLag = input.exitOnSustainedLag ?? envFlagEnabled("ENVOYMESH_GUARDIAN_EXIT_ON_LAG");
+    if (exitOnLag && consecutiveHighLag >= MAX_CONSECUTIVE_HIGH_LAG) {
+      reasons.push(`event loop lag sustained for ${consecutiveHighLag} health checks`);
+      actions.add("exit-for-supervisor");
+    }
   }
 
   if ((input.rssBytes ?? 0) > (input.maxRssBytesOverride ?? MAX_RSS_BYTES)) {
@@ -236,6 +262,7 @@ function nextState(previous: NodeHealthState, snapshot: NodeHealthSnapshot, rece
     counters.exitRequested += 1;
   }
 
+  const lagHigh = (snapshot.eventLoopLagMs ?? 0) > MAX_EVENT_LOOP_LAG_MS;
   return {
     lastStatus: snapshot.status,
     lastHealthyAt: snapshot.status === "healthy" ? snapshot.checkedAt : previous.lastHealthyAt,
@@ -243,6 +270,7 @@ function nextState(previous: NodeHealthState, snapshot: NodeHealthSnapshot, rece
     consecutiveRestartRequests: snapshot.actions.includes("restart-libp2p")
       ? previous.consecutiveRestartRequests + 1
       : 0,
+    consecutiveHighLag: lagHigh ? previous.consecutiveHighLag + 1 : 0,
     counters,
   };
 }

@@ -31,6 +31,25 @@ describe("discovery seed store", () => {
     expect(records[1].addr).toBe("/ip4/2.2.2.2/tcp/4001/p2p/peer-b");
   });
 
+  it("coalesces repeated seed touches within 15 minutes", async () => {
+    const store = createDiscoverySeedStore(profileDir);
+    const path = join(profileDir, "discovery-seeds.json");
+    await store.upsertSuccess(
+      "/ip4/1.1.1.1/tcp/4001/p2p/peer-a",
+      "peer.discovery",
+      "2026-04-27T10:00:00.000Z",
+    );
+    const before = await readFile(path, "utf8");
+    await store.upsertSuccess(
+      "/ip4/1.1.1.1/tcp/4001/p2p/peer-a",
+      "peer.discovery",
+      "2026-04-27T10:05:00.000Z",
+    );
+    const after = await readFile(path, "utf8");
+    expect(after).toBe(before);
+    expect(JSON.parse(after).records[0].lastSuccessAt).toBe("2026-04-27T10:00:00.000Z");
+  });
+
   it("ignores empty addresses in batch upsert", async () => {
     const store = createDiscoverySeedStore(profileDir);
     await store.upsertMany(["", "   ", "/ip4/3.3.3.3/tcp/4001/p2p/peer-c"], "peer.discovery", "2026-04-27T10:00:00.000Z");

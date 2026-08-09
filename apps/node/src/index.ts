@@ -284,7 +284,7 @@ try {
   const auditIndexPath = join(args.profileDir, AUDIT_QUERY_INDEX_FILE);
   const auditIndexStat = await stat(auditIndexPath);
   const auditIndexMb = auditIndexStat.size / (1024 * 1024);
-  if (auditIndexMb > 32) {
+  if (auditIndexMb > 8) {
     await unlink(auditIndexPath);
     console.warn(
       `[audit] removed bloated ${AUDIT_QUERY_INDEX_FILE} (${auditIndexMb.toFixed(0)}MB) — ` +
@@ -294,21 +294,20 @@ try {
 } catch {
   // missing index is fine
 }
-// Startup audit-events.jsonl size guard: a 100+ MB audit log causes the
-// relay manager snapshot cycle (every 30 s) to read-parse the entire file,
-// blocking the event loop for tens of seconds.  Truncate when it exceeds
-// 64 MB — the JSONL appender recreates the file on the next append, and
-// the scoped tail reader (`readAuditEventsTail`) avoids this class of
-// problem for periodic cycles.
+// Startup audit-events.jsonl size guard: a large audit log used to make
+// periodic cycles full-parse the file and starve the Social WebSocket.
+// Truncate when it exceeds 24 MB; the JSONL appender recreates on next
+// append, and `readAuditEventsTail` / byte-tail retention avoid this class
+// of problem for periodic cycles.
 try {
   const auditEventsPath = join(args.profileDir, "audit-events.jsonl");
   const auditStat = await stat(auditEventsPath);
   const auditMb = auditStat.size / (1024 * 1024);
-  if (auditMb > 64) {
+  if (auditMb > 24) {
     await unlink(auditEventsPath);
     console.warn(
       `[audit] removed bloated audit-events.jsonl (${auditMb.toFixed(0)}MB) — ` +
-        "relay manager snapshot was blocking the event loop; file recreates on next append",
+        "relay manager snapshot / diagnostics were blocking the event loop; file recreates on next append",
     );
   }
 } catch {
@@ -887,6 +886,9 @@ const RELAY_CONTROL_TTL_MS = 300_000;
 /** Child relay relay.lookup forward: read reply on same stream (per-hop). */
 const RELAY_FORWARD_LOOKUP_REPLY_MS = 12_000;
 const RELAY_MANAGER_SNAPSHOT_INTERVAL_MS = 30_000;
+/** Persist relay book every snapshot cycle; write full snapshot audit less often. */
+const RELAY_MANAGER_SNAPSHOT_AUDIT_INTERVAL_MS = 5 * 60_000;
+let lastRelayManagerSnapshotAuditAtMs = 0;
 const RELAY_HEALTH_INTERVAL_MS = 30_000;
 const NODE_HEALTH_INTERVAL_MS = 30_000;
 const EVENT_LOOP_LAG_SAMPLE_MS = 1_000;
@@ -5017,15 +5019,22 @@ async function runRelayManagerSnapshotCycle(source: "startup" | "periodic"): Pro
     auditEvents,
     runtime: buildRelayManagerRuntimeState(),
   });
-  void taskStore.appendAuditEvent(
-    createAuditEvent({
-      type: "p2p.trace",
-      direction: "outbound",
-      protocol: RELAY_MANAGER_SNAPSHOT_PROTOCOL,
-      outcome: "record",
-      summary: serializeRelayManagerSnapshot(snapshot),
-    }),
-  );
+  const nowMs = Date.now();
+  const shouldAuditSnapshot =
+    source === "startup" ||
+    nowMs - lastRelayManagerSnapshotAuditAtMs >= RELAY_MANAGER_SNAPSHOT_AUDIT_INTERVAL_MS;
+  if (shouldAuditSnapshot) {
+    lastRelayManagerSnapshotAuditAtMs = nowMs;
+    void taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "p2p.trace",
+        direction: "outbound",
+        protocol: RELAY_MANAGER_SNAPSHOT_PROTOCOL,
+        outcome: "record",
+        summary: serializeRelayManagerSnapshot(snapshot),
+      }),
+    );
+  }
   // Persist relay book and summaries so they survive restarts
   const currentRelayBook = relayRoster.relayBook();
   const currentSummaries = relayRoster.summaries();

@@ -4,6 +4,8 @@ import { dirname, join } from "node:path";
 
 const DISCOVERY_SEED_FILE = "discovery-seeds.json";
 const MAX_DISCOVERY_SEEDS = 256;
+/** Skip rewriting discovery-seeds.json when only refreshing lastSuccessAt within this window. */
+const SEED_TOUCH_COALESCE_MS = 15 * 60_000;
 
 export type DiscoverySeedSource =
   | "bootstrap-probe"
@@ -60,9 +62,19 @@ export function createDiscoverySeedStore(profileDir: string): DiscoverySeedStore
 
       await enqueueWrite(async () => {
         const now = at ?? new Date().toISOString();
+        const nowMs = Date.parse(now);
         const file = await readDiscoverySeedFile(path);
         const existing = file.records.find((record) => record.addr === trimmed);
         if (existing) {
+          const lastMs = Date.parse(existing.lastSuccessAt);
+          if (
+            existing.source === source &&
+            Number.isFinite(lastMs) &&
+            Number.isFinite(nowMs) &&
+            nowMs - lastMs < SEED_TOUCH_COALESCE_MS
+          ) {
+            return;
+          }
           existing.lastSuccessAt = now;
           existing.source = source;
         } else {
@@ -87,19 +99,35 @@ export function createDiscoverySeedStore(profileDir: string): DiscoverySeedStore
 
       await enqueueWrite(async () => {
         const now = at ?? new Date().toISOString();
+        const nowMs = Date.parse(now);
         const file = await readDiscoverySeedFile(path);
+        let dirty = false;
         for (const addr of trimmed) {
           const existing = file.records.find((record) => record.addr === addr);
           if (existing) {
+            const lastMs = Date.parse(existing.lastSuccessAt);
+            if (
+              existing.source === source &&
+              Number.isFinite(lastMs) &&
+              Number.isFinite(nowMs) &&
+              nowMs - lastMs < SEED_TOUCH_COALESCE_MS
+            ) {
+              continue;
+            }
             existing.lastSuccessAt = now;
             existing.source = source;
+            dirty = true;
           } else {
             file.records.push({
               addr,
               source,
               lastSuccessAt: now,
             });
+            dirty = true;
           }
+        }
+        if (!dirty) {
+          return;
         }
         file.records = file.records
           .sort((left, right) => right.lastSuccessAt.localeCompare(left.lastSuccessAt))
