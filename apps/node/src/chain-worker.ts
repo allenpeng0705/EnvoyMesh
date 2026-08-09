@@ -75,6 +75,8 @@ export interface ChainWorkerSendDeps {
   workerPeerId: string;
   /** Local worker owner id. */
   workerOwnerId: string;
+  /** Owner-signed agent credential for remote verification of envoy_agent_* envelopes. */
+  agentCredential?: EnvoyEnvelope["agentCredential"];
 }
 
 export interface ChainWorkerHandlerDeps extends ChainWorkerSendDeps {
@@ -379,6 +381,7 @@ export async function submitChainBid(
     createdAt: now.toISOString(),
     correlationId: undefined,
     signingKeyPem: deps.signingKeyPem,
+    agentCredential: deps.agentCredential,
   });
   return deps.sendEnvelope(recipientPeerId, envelope, payload);
 }
@@ -407,6 +410,7 @@ export async function deliverChainPartial(
     createdAt: now.toISOString(),
     correlationId,
     signingKeyPem: deps.signingKeyPem,
+    agentCredential: deps.agentCredential,
   });
   return deps.sendEnvelope(recipientPeerId, envelope, payload);
 }
@@ -520,9 +524,16 @@ interface BuildChainEnvelopeInput {
   createdAt: string;
   correlationId?: string;
   signingKeyPem: string;
+  agentCredential?: EnvoyEnvelope["agentCredential"];
 }
 
 function buildChainEnvelope(input: BuildChainEnvelopeInput): EnvoyEnvelope {
+  if (!input.agentCredential) {
+    chainWarn("envelope", "missing agentCredential — remote peers will reject as invalid signature", {
+      intent: input.intent,
+      sender: shortPeerId(input.senderPeerId),
+    });
+  }
   const unsigned = {
     version: "0.1" as const,
     messageId: `m_${randomString()}`,
@@ -535,6 +546,7 @@ function buildChainEnvelope(input: BuildChainEnvelopeInput): EnvoyEnvelope {
     intent: input.intent,
     payload: input.payload,
     correlationId: input.correlationId,
+    ...(input.agentCredential ? { agentCredential: input.agentCredential } : {}),
   };
   const signature = signCanonicalPayload(unsigned, input.signingKeyPem);
   return { ...(unsigned as object), signature } as EnvoyEnvelope;

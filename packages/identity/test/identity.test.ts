@@ -628,6 +628,32 @@ describe("agent identity", () => {
     expect(verifyAgentEnvelope(envelope, owner.publicKeyPem)).toBe(false);
   });
 
+  it("rejects agent envelope when senderPublicKey does not match credential", () => {
+    const owner = generateOwnerIdentity();
+    const agent = generateAgentIdentity(owner.ownerId);
+    const otherAgent = generateAgentIdentity(owner.ownerId);
+    const credential = createAgentCredential({
+      owner,
+      agent,
+      scope: ["chat.message"],
+    });
+
+    const unsigned = createUnsignedEnvelope({
+      senderPeerId: agent.agentPeerId,
+      senderPublicKey: otherAgent.publicKeyPem, // mismatch vs credential
+      senderRole: "agent",
+      recipientPeerId: "peer-b",
+      recipientRole: "human",
+      intent: "chat.message",
+      payload: { text: "hello" },
+      agentCredential: credential,
+    });
+
+    const envelope = signUnsignedEnvelope(unsigned, otherAgent.privateKeyPem);
+    expect(verifyAgentEnvelope(envelope, owner.publicKeyPem)).toBe(false);
+    expect(verifyInboundEnvelope(envelope)).toBe(false);
+  });
+
   it("rejects agent envelope when credential is tampered", () => {
     const owner = generateOwnerIdentity();
     const agent = generateAgentIdentity(owner.ownerId);

@@ -389,6 +389,11 @@ export function verifyAgentEnvelope(
     return false;
   }
 
+  // Bind envelope key material to the credential (prevents mismatched pubkey + peer id)
+  if (envelope.senderPublicKey !== envelope.agentCredential.agentPublicKeyPem) {
+    return false;
+  }
+
   // Verify envelope signature using the agent's public key
   if (!verifyCanonicalPayload(
     envelopeForSigning(envelope),

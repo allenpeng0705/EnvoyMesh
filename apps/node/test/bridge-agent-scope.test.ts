@@ -50,6 +50,68 @@ describe("bridge agent scope", () => {
     expect(verifyInboundEnvelope(envelope)).toBe(true);
   });
 
+  it("verifyInboundEnvelope accepts task.chain.status with bridge scope + credential", () => {
+    const owner = generateOwnerIdentity();
+    const agent = generateAgentIdentity(owner.ownerId);
+    const envelope = signUnsignedEnvelope(
+      createUnsignedEnvelope({
+        senderPeerId: agent.agentPeerId,
+        senderPublicKey: agent.publicKeyPem,
+        senderRole: "agent",
+        recipientRole: "agent",
+        intent: "task.chain.status",
+        payload: {
+          version: "0.1",
+          chainId: "chain_test",
+          phase: "running",
+          awardMode: "direct",
+          subtaskCount: 1,
+          awardedCount: 0,
+          partialCount: 0,
+          bidCount: 0,
+          steps: [],
+          createdAt: new Date().toISOString(),
+        },
+        agentCredential: createAgentCredential({
+          owner,
+          agent,
+          scope: [...BRIDGE_AGENT_SCOPE],
+        }),
+      }),
+      agent.privateKeyPem,
+    );
+    expect(verifyInboundEnvelope(envelope)).toBe(true);
+  });
+
+  it("verifyInboundEnvelope rejects task.chain.status without agentCredential", () => {
+    const owner = generateOwnerIdentity();
+    const agent = generateAgentIdentity(owner.ownerId);
+    const envelope = signUnsignedEnvelope(
+      createUnsignedEnvelope({
+        senderPeerId: agent.agentPeerId,
+        senderPublicKey: agent.publicKeyPem,
+        senderRole: "agent",
+        recipientRole: "agent",
+        intent: "task.chain.status",
+        payload: {
+          version: "0.1",
+          chainId: "chain_test",
+          phase: "running",
+          awardMode: "direct",
+          subtaskCount: 1,
+          awardedCount: 0,
+          partialCount: 0,
+          bidCount: 0,
+          steps: [],
+          createdAt: new Date().toISOString(),
+        },
+      }),
+      agent.privateKeyPem,
+    );
+    // envoy_agent_* peer id ≠ derivePeerId(pubkey) → classic "invalid signature" path
+    expect(verifyInboundEnvelope(envelope)).toBe(false);
+  });
+
   it("verifyInboundEnvelope rejects agent.card.response scoped to chat.message only", () => {
     const owner = generateOwnerIdentity();
     const agent = generateAgentIdentity(owner.ownerId);

@@ -873,6 +873,7 @@ export async function buildChainWorkerDeps(deps: ChainOrchestrationContext): Pro
     publicKeyPem: agentIdentity.agentPublicKeyPem,
     workerPeerId: agentIdentity.agentPeerId,
     workerOwnerId: profile.owner.ownerId,
+    agentCredential: agentIdentity.agentCredential,
     audit: {
       record: (event) => {
         void _appendChainAudit(deps, {
@@ -1089,6 +1090,7 @@ export async function buildChainOrchestratorDeps(
     publicKeyPem: agentIdentity.agentPublicKeyPem,
     orchestratorPeerId: agentIdentity.agentPeerId,
     orchestratorOwnerId: profile.owner.ownerId,
+    agentCredential: agentIdentity.agentCredential,
     probeWorkerEngineReady: async (workerPeerId) => {
       if (!transport) return { ready: false, reason: "no_transport" };
       return probeChainWorkerReady({

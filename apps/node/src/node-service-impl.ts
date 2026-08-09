@@ -3805,8 +3805,19 @@ class NodeServiceImpl implements NodeService {
             timeoutMs,
             `announceAgentCard(${bond.peerOwnerId.slice(0, 16)}…)`,
           );
-          return Boolean(deliver?.delivered);
-        } catch {
+          if (!deliver?.delivered) {
+            anWarn("refresh", "announce card deliver failed", {
+              owner: bond.peerOwnerId.slice(0, 24),
+              transport: transportPeerId.slice(0, 16),
+            });
+            return false;
+          }
+          return true;
+        } catch (err) {
+          anWarn("refresh", "announce card error", {
+            owner: bond.peerOwnerId.slice(0, 24),
+            error: err instanceof Error ? err.message.slice(0, 120) : String(err).slice(0, 120),
+          });
           return false;
         }
       },
