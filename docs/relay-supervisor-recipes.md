@@ -97,7 +97,7 @@ Companion liveness unit (kills/restarts when `/health` stops answering — cover
 [Unit]
 Description=EnvoyMesh Relay HTTP liveness watchdog
 After=envoymesh-relay.service
-Requires=envoymesh-relay.service
+Wants=envoymesh-relay.service
 
 [Service]
 # --systemctl kills MainPID (same User= as relay); systemd Restart=always respawns.

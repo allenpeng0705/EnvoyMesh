@@ -222,7 +222,10 @@ Create `/etc/systemd/system/envoymesh-relay-liveness.service`:
 [Unit]
 Description=EnvoyMesh Relay HTTP liveness watchdog
 After=envoymesh-relay.service
-Requires=envoymesh-relay.service
+# Use Wants= (not Requires=). Requires= stops this watchdog whenever the relay
+# exits — including when the watchdog itself kills a wedged MainPID — so the
+# liveness unit unnecessarily restarts on every recovery.
+Wants=envoymesh-relay.service
 
 [Service]
 Type=simple
@@ -236,7 +239,7 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-**Important:** `--systemctl UNIT` kills the unit’s **MainPID** (TERM then KILL). That works when the liveness service runs as the **same `User=`** as the relay (`admin` in the example). systemd then respawns the relay because of `Restart=always`.
+**Important:** `--systemctl UNIT` kills the unit’s **MainPID** (SIGKILL). That works when the liveness service runs as the **same `User=`** as the relay (`admin` in the example). systemd then respawns the relay because of `Restart=always`.
 
 Do **not** use `--systemctl-restart` unless the watchdog runs as **root** (or has a sudoers NOPASSWD rule). Otherwise you get:
 
@@ -257,6 +260,27 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now envoymesh-relay-liveness.service
 ```
 
+#### Migrate an existing unit (`Requires=` → `Wants=`)
+
+If you already installed the liveness unit with `Requires=envoymesh-relay.service`, update it so the watchdog stays up across recoveries:
+
+```bash
+# Confirm current dependency
+systemctl show -p Requires -p Wants envoymesh-relay-liveness.service
+
+sudo systemctl edit --full envoymesh-relay-liveness.service
+# In [Unit]: remove Requires=envoymesh-relay.service
+#            add    Wants=envoymesh-relay.service
+# Keep After=envoymesh-relay.service
+
+sudo systemctl daemon-reload
+sudo systemctl restart envoymesh-relay-liveness.service
+systemctl show -p Requires -p Wants envoymesh-relay-liveness.service
+# Expect Wants=…envoymesh-relay.service and Requires= without envoymesh-relay
+```
+
+**Symptom of the old `Requires=` unit:** after a successful wedge kill, the liveness journal shows a **new** `watching http://…` line (watchdog PID bounced). With `Wants=`, only the relay restarts; the same liveness PID keeps probing.
+
 Watchdog defaults (override with env on the unit if needed):
 
 | Env | Default | Meaning |
@@ -265,6 +289,8 @@ Watchdog defaults (override with env on the unit if needed):
 | `LIVENESS_TIMEOUT_SEC` | `2` | curl max time |
 | `LIVENESS_FAILS` | `3` | Failures before restart (~45s after grace) |
 | `LIVENESS_GRACE_SEC` | `90` | Ignore failures right after (re)start |
+
+**Normal vs action-needed probe noise:** occasional `probe failed (1/3)` or `(2/3)` followed by `recovered after N failure(s)` is OK under load. Action only after **`(3/3)`** + `killing wedged pid`.
 
 ### 4.3 Verify on Linux — is everything working?
 
@@ -308,7 +334,7 @@ Expect a line like:
 [liveness] watching http://127.0.0.1:15432/health every 15s (fail=3, timeout=2s, grace=90s)
 ```
 
-After the grace window, a healthy relay should **not** show sustained `probe failed` lines.
+After the grace window, a healthy relay should **not** show sustained `probe failed (3/3)` lines. Brief `1/3` / `2/3` that recover are fine.
 
 Follow live:
 
@@ -324,7 +350,8 @@ journalctl -u envoymesh-relay-liveness.service -f
 | `systemctl is-active envoymesh-relay-liveness` | `active` |
 | journal shows `watching http://…/health` | script started |
 | `curl …:15432/health` succeeds | probe target works |
-| no sustained `probe failed` | relay event loop answering |
+| no sustained `probe failed (3/3)` | relay event loop answering |
+| liveness unit uses `Wants=` not `Requires=` | watchdog does not bounce on every relay restart |
 
 #### 6. Prove the watchdog can restart (optional, maintenance window)
 
@@ -339,7 +366,7 @@ journalctl -u envoymesh-relay-liveness.service -n 3 --no-pager
 # Must show a FRESH "watching http://127.0.0.1:15432/health" line (new PID).
 ```
 
-If journals still say `restarting unit …` / `Interactive authentication required`, that is the **old** script still in memory — the file on disk was updated but the liveness service was not restarted.
+If journals still say `restarting unit …` / `Interactive authentication required` / `TERM then KILL`, that is an **old** script still in memory — pull latest `scripts/http-liveness-watch.sh` and `sudo systemctl restart envoymesh-relay-liveness.service`.
 
 **Sanity check (does `User=admin` have permission to kill the relay?):**
 
@@ -357,16 +384,29 @@ kill -0 "$pid" && echo "can signal pid" || echo "cannot signal pid"
 Note: a STOP’d process ignores `SIGTERM` until `CONT`; the watchdog must use **`SIGKILL`** (current script does).
 
 ```bash
+# Record the current liveness PID (should stay the same after recovery if Wants=)
+liveness_pid=$(systemctl show -p MainPID --value envoymesh-relay-liveness.service)
+echo "liveness MainPID=$liveness_pid"
+
 sudo systemctl restart envoymesh-relay.service   # clean start; clear any prior STOP
-sleep 5
-curl -fsS --max-time 2 http://127.0.0.1:15432/health >/dev/null && echo health_ok
+# run-relay.sh may rebuild apps/relay — wait until /health answers (often 30–120s)
+for i in $(seq 1 60); do
+  curl -fsS --max-time 2 http://127.0.0.1:15432/health >/dev/null && echo health_ok && break
+  sleep 2
+done
 
 sudo kill -STOP $(systemctl show -p MainPID --value envoymesh-relay.service)
 
 # Wait ~60–90s (3 failed probes @ 15s). Then:
 journalctl -u envoymesh-relay-liveness.service -n 20 --no-pager
 systemctl is-active envoymesh-relay.service
-curl -fsS --max-time 2 http://127.0.0.1:15432/health
+# Again wait for rebuild + HTTP bind before declaring failure:
+for i in $(seq 1 60); do
+  curl -fsS --max-time 2 http://127.0.0.1:15432/health && break
+  sleep 2
+done
+
+echo "liveness was=$liveness_pid now=$(systemctl show -p MainPID --value envoymesh-relay-liveness.service)"
 ```
 
 **Expect (success):**
@@ -377,7 +417,12 @@ curl -fsS --max-time 2 http://127.0.0.1:15432/health
 [liveness] killing wedged pid ... (SIGKILL); supervisor should Restart=always
 ```
 
-Then `is-active` → `active` and `/health` answers again.
+Then:
+
+- `systemctl is-active envoymesh-relay` → `active`
+- `/health` returns JSON (e.g. `"status":"healthy"`, fresh `uptimeMs`)
+- With `Wants=`: liveness MainPID is **unchanged** (no new `watching` line right after the kill)
+- With leftover `Requires=`: liveness MainPID changes and a new `watching` line appears — migrate per [§4.2](#migrate-an-existing-unit-requires--wants)
 
 **If it fails, clean up a leftover STOP:**
 
@@ -595,10 +640,14 @@ External liveness:
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
 | `curl …:8080/health` connection refused | Wrong port | Use **15432** or your `--http-port` |
-| `curl …:15432/health` refused | HTTP not listening / relay down | Check `systemctl status` / NSSM; ensure `--http-port` / binary default |
+| `curl …:15432/health` refused right after restart | `run-relay.sh` still rebuilding / binding | Wait up to ~2 min; poll `/health` in a loop (do not only `sleep 3`) |
+| `curl …:15432/health` refused for longer | HTTP not listening / relay down | Check `systemctl status` / NSSM; ensure `--http-port` / binary default |
 | Watchdog `active` but no `watching` line | Wrong `ExecStart` path / script not executable | `chmod +x` (Linux); fix path; check journal/log |
 | Watchdog restarts relay in a loop | `/health` returns non-2xx while starting, or wrong URL | Increase `LIVENESS_GRACE_SEC`; fix URL; inspect `/health` body |
+| Occasional `probe failed (1/3)` then `recovered` | Transient load / slow event loop | Normal — only `(3/3)` triggers kill |
+| Liveness PID restarts every time relay is killed | Unit still has `Requires=envoymesh-relay` | Switch to `Wants=` ([§4.2 migrate](#migrate-an-existing-unit-requires--wants)) |
 | `Interactive authentication required` on restart | Watchdog used `systemctl restart` as non-root | Use `--systemctl` (kill MainPID) with same `User=` as relay; pull latest `http-liveness-watch.sh` and `systemctl restart envoymesh-relay-liveness` |
+| Journal still says `TERM then KILL` | Old script in memory | `git pull` + `systemctl restart envoymesh-relay-liveness` |
 | Admin UI hard restart never comes back | No `Restart=always` / NSSM AppExit Restart | Fix supervisor unit |
 | Clients cannot dial WAN | Missing `--advertise` / firewall | Set public IP advertise; open TCP 4001 |
 
