@@ -38,6 +38,7 @@ import {
   reassignStalledSubtask,
   retryStaleProposals,
   retryStaleAccepts,
+  resolveProposeTargets,
   buildChainStatusPayload,
   sendChainAccept,
   sendChainPropose,
@@ -45,7 +46,11 @@ import {
   trackChain,
   type ChainOrchestratorHandlerDeps,
 } from "../src/chain-orchestrator.js";
-import { CHAIN_ACCEPT_RESEND_WAIT_MS, CHAIN_BID_WAIT_MS } from "../src/chain-defaults.js";
+import {
+  CHAIN_ACCEPT_RESEND_CAP,
+  CHAIN_ACCEPT_RESEND_WAIT_MS,
+  CHAIN_BID_WAIT_MS,
+} from "../src/chain-defaults.js";
 import { TaskChainPartialPayloadSchema, type ChainSubtaskBid, type EnvoyEnvelope, type TaskChainPartialPayload, type TaskChainReportPayload } from "@envoymesh/protocol";
 import { ChainSubtaskBidSchema, ChainSubtaskPartialSchema } from "@envoymesh/protocol";
 import { generateKeyPairSync } from "node:crypto";
@@ -437,6 +442,104 @@ describe("launchChain", () => {
     expect((accepts[0]!.payload as { subtask?: { subtaskId: string } }).subtask?.subtaskId).toBe(
       "subtask_a",
     );
+  });
+
+  it("retryStaleAccepts reassigns after accept-resend cap with no partial", async () => {
+    const deps = makeDeps();
+    const state = createChainState(mandate(), { awardMode: "direct" });
+    state.subtasks.set("subtask_a", {
+      version: "0.1" as const,
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      chainMandateId: "chainmandate_test-1",
+      depth: 1,
+      requiredSkill: "task.execute",
+      objective: "step one",
+      requestedResult: "r1",
+      constraints: [] as string[],
+      dependsOn: [] as string[],
+      preferredWorkerPeerId: "12D3KooW-w1",
+      createdAt: NOW.toISOString(),
+    });
+    state.workersBySubtask.set("subtask_a", ["12D3KooW-w1", "12D3KooW-w2"]);
+    state.proposedSubtasks.add("subtask_a");
+    state.awards.set("subtask_a", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      workerPeerId: "12D3KooW-w1",
+      negotiationRound: 1,
+      acceptedCostUsd: 0,
+      deadlineAt: new Date(NOW.getTime() + 3600_000).toISOString(),
+      createdAt: NOW.toISOString(),
+    });
+    state.awardedAt.set("subtask_a", NOW.toISOString());
+    state.acceptResendCount.set("subtask_a", CHAIN_ACCEPT_RESEND_CAP);
+
+    const afterCap = await retryStaleAccepts(deps, state, {
+      waitMs: CHAIN_ACCEPT_RESEND_WAIT_MS,
+      nowMs: NOW.getTime() + CHAIN_ACCEPT_RESEND_WAIT_MS + 1,
+    });
+    expect(afterCap.reassigned).toEqual(["subtask_a"]);
+    expect(state.awards.get("subtask_a")?.workerPeerId).toBe("12D3KooW-w2");
+    expect(state.silentWorkerPeerIds.has("12D3KooW-w1")).toBe(true);
+    expect(
+      deps.auditEvents.some(
+        (e) => typeof e.summary === "string" && e.summary.includes("silent_accept_reassign"),
+      ),
+    ).toBe(true);
+  });
+
+  it("resolveProposeTargets demotes silent preferred workers", () => {
+    expect(
+      resolveProposeTargets(["12D3KooW-w1", "12D3KooW-w2"], "12D3KooW-w1", {
+        demotePeerIds: new Set(["12D3KooW-w1"]),
+      }),
+    ).toEqual(["12D3KooW-w2", "12D3KooW-w1"]);
+    expect(
+      resolveProposeTargets(["12D3KooW-w1", "12D3KooW-w2"], "12D3KooW-w1"),
+    ).toEqual(["12D3KooW-w1", "12D3KooW-w2"]);
+  });
+
+  it("advanceReadySubtasks skips silent preferred worker in direct mode", async () => {
+    const deps = makeDeps();
+    const state = createChainState(mandate(), { awardMode: "direct" });
+    state.silentWorkerPeerIds.add("12D3KooW-w1");
+    state.subtasks.set("subtask_b", {
+      version: "0.1" as const,
+      subtaskId: "subtask_b",
+      chainId: "chain_test-1",
+      chainMandateId: "chainmandate_test-1",
+      depth: 2,
+      requiredSkill: "task.execute",
+      objective: "step two",
+      requestedResult: "r2",
+      constraints: [] as string[],
+      dependsOn: ["subtask_a"],
+      preferredWorkerPeerId: "12D3KooW-w1",
+      createdAt: NOW.toISOString(),
+    });
+    state.workersBySubtask.set("subtask_b", ["12D3KooW-w1", "12D3KooW-w2"]);
+    state.partials.set("subtask_a", {
+      version: "0.1",
+      chainId: "chain_test-1",
+      partial: {
+        version: "0.1",
+        subtaskId: "subtask_a",
+        chainId: "chain_test-1",
+        workerPeerId: "12D3KooW-w2",
+        sequence: 1,
+        isFinal: true,
+        confidence: 0.9,
+        note: "done",
+        artifact: { kind: "text", content: "parent" },
+        createdAt: NOW.toISOString(),
+      },
+    } as TaskChainPartialPayload);
+
+    const advanced = await advanceReadySubtasks(deps, state);
+    expect(advanced.proposed).toBe(1);
+    expect(state.awards.get("subtask_b")?.workerPeerId).toBe("12D3KooW-w2");
   });
 
   it("launchChain in competitive mode proposes preferred worker and one backup together", async () => {

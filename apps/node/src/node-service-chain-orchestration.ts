@@ -1269,7 +1269,12 @@ export function _startChainTracking(deps: ChainOrchestrationContext, chainId: st
         const advanced = await advanceReadySubtasks(orchDeps, rt.state);
         const proposed = await retryStaleProposals(orchDeps, rt.state);
         const accepted = await retryStaleAccepts(orchDeps, rt.state);
-        if (advanced.proposed > 0 || proposed.retried.length > 0 || accepted.resent.length > 0) {
+        if (
+          advanced.proposed > 0 ||
+          proposed.retried.length > 0 ||
+          accepted.resent.length > 0 ||
+          accepted.reassigned.length > 0
+        ) {
           _emitChainState(deps, chainId);
         }
         if (rt.state.awards.size > 0) {

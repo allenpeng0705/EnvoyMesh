@@ -990,13 +990,14 @@ export async function retryStaleAccepts(
   deps: ChainOrchestratorHandlerDeps,
   state: ChainState,
   opts?: { waitMs?: number; nowMs?: number },
-): Promise<{ resent: string[] }> {
+): Promise<{ resent: string[]; reassigned: string[] }> {
   if (state.chainCancelled || state.published) {
-    return { resent: [] };
+    return { resent: [], reassigned: [] };
   }
   const nowMs = opts?.nowMs ?? (deps.now ?? (() => new Date()))().getTime();
   const waitMs = opts?.waitMs ?? CHAIN_ACCEPT_RESEND_WAIT_MS;
   const resent: string[] = [];
+  const reassigned: string[] = [];
 
   for (const [subtaskId, award] of state.awards.entries()) {
     if (state.cancelledSubtasks.has(subtaskId)) continue;
@@ -1007,7 +1008,25 @@ export async function retryStaleAccepts(
     if (!Number.isFinite(awardedMs) || nowMs - awardedMs < waitMs) continue;
 
     const retries = state.acceptResendCount.get(subtaskId) ?? 0;
-    if (retries >= CHAIN_ACCEPT_RESEND_CAP) continue;
+    if (retries >= CHAIN_ACCEPT_RESEND_CAP) {
+      // Delivery ok ≠ worker started. After resend cap, fail over immediately
+      // instead of waiting the full stallTimeoutMs (often 60–120s more).
+      if ((state.reassignCount.get(subtaskId) ?? 0) >= 1) continue;
+      const result = await reassignStalledSubtask(deps, state, subtaskId);
+      if (result.ok) {
+        reassigned.push(subtaskId);
+        deps.audit.record({
+          type: "chain.awarded",
+          outcome: "allow",
+          intent: "task.chain.accept",
+          correlationId: state.chainId,
+          summary:
+            `silent_accept_reassign subtask=${subtaskId.slice(0, 12)}` +
+            ` from=${award.workerPeerId.slice(0, 14)} to=${result.nextWorkerPeerId.slice(0, 14)}`,
+        });
+      }
+      continue;
+    }
 
     const subtask = state.subtasks.get(subtaskId);
     const inputArtifacts = subtask ? buildInputArtifacts(state, subtask) : undefined;
@@ -1039,7 +1058,7 @@ export async function retryStaleAccepts(
     });
     if (ok) resent.push(subtaskId);
   }
-  return { resent };
+  return { resent, reassigned };
 }
 
 /**
@@ -1061,7 +1080,9 @@ export async function advanceReadySubtasks(
     if (!subtaskDependenciesSatisfied(state, subtask)) continue;
     const workers = state.workersBySubtask.get(subtaskId) ?? [];
     if (workers.length === 0) continue;
-    const targets = resolveProposeTargets(workers, subtask.preferredWorkerPeerId);
+    const targets = resolveProposeTargets(workers, subtask.preferredWorkerPeerId, {
+      demotePeerIds: state.silentWorkerPeerIds,
+    });
     let proposedThis = 0;
     if (state.awardMode !== "competitive") {
       for (const workerPeerId of targets) {
@@ -1173,6 +1194,9 @@ export async function reassignStalledSubtask(
   const workers = state.workersBySubtask.get(subtaskId) ?? [];
   const next = pickStallReassignWorker(state, subtaskId, award.workerPeerId);
   if (!next) return { ok: false, reason: "no_alternate" };
+
+  // Remember silent workers so later steps do not prefer them again.
+  state.silentWorkerPeerIds.add(award.workerPeerId);
 
   const nowIso = (deps.now ?? (() => new Date()))().toISOString();
   await sendChainCancel(deps, award.workerPeerId, {
