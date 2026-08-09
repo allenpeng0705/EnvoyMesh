@@ -465,4 +465,44 @@ describe("peer directory store", () => {
     const row = await store.getPeerByPeerId(peerId);
     expect(row?.listenAddrs).toEqual([`/ip4/192.168.3.78/tcp/64595/p2p/${peerId}`]);
   });
+
+  it("recordLastSuccessfulDial persists hint/path and survives reload", async () => {
+    const store = createLocalPeerDirectoryStore(profileDir);
+    const peerId = "12D3KooWLastDialPeer";
+    const circuit =
+      `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${peerId}`;
+    await store.ensurePeerFromInboundChat({
+      ownerId: "envoy:owner:last-dial",
+      peerId,
+      listenAddrs: [],
+    });
+
+    await store.recordLastSuccessfulDial({
+      peerId,
+      dialHint: circuit,
+      path: "relay",
+      at: "2026-08-09T12:00:00.000Z",
+    });
+
+    const row = await store.getPeerByPeerId(peerId);
+    expect(row?.lastSuccessfulDialHint).toBe(circuit);
+    expect(row?.lastSuccessfulDialPath).toBe("relay");
+    expect(row?.lastSuccessfulDialAt).toBe("2026-08-09T12:00:00.000Z");
+
+    const reloaded = createLocalPeerDirectoryStore(profileDir);
+    const again = await reloaded.getPeerByPeerId(peerId);
+    expect(again?.lastSuccessfulDialHint).toBe(circuit);
+    expect(again?.lastSuccessfulDialPath).toBe("relay");
+  });
+
+  it("recordLastSuccessfulDial no-ops when peer row is missing", async () => {
+    const store = createLocalPeerDirectoryStore(profileDir);
+    await expect(
+      store.recordLastSuccessfulDial({
+        peerId: "12D3KooWMissingPeer",
+        dialHint: "/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWMissingPeer",
+        path: "direct",
+      }),
+    ).resolves.toBeUndefined();
+  });
 });

@@ -187,6 +187,11 @@ export async function buildOutboundDialHints(input: {
    * that need to override (e.g. mobile pairing kiosk on the same LAN).
    */
   addressFilter?: DialableAddrMode;
+  /**
+   * Previously successful dial multiaddr for this peer (from peer-directory).
+   * When still usable under the active address filter, placed first.
+   */
+  preferredDialHint?: string;
 }): Promise<string[]> {
   const recipientPeerId = input.recipientPeerId.trim();
   const raw = (input.peerListenAddrs ?? []).map((a) => a.trim()).filter(Boolean);
@@ -307,10 +312,45 @@ export async function buildOutboundDialHints(input: {
   const forSend = preferCircuitHints
     ? prioritizeCircuitDialHints(filtered)
     : filtered;
-  return filterDialHintsForOutboundSend(forSend, recipientPeerId, {
+  const orderedForSend = filterDialHintsForOutboundSend(forSend, recipientPeerId, {
     preferCircuitHints,
     allowEphemeralPrivateLan: sameSubnetLan,
   });
+  return preferDialHintFirst(orderedForSend, input.preferredDialHint, recipientPeerId, {
+    addressFilter,
+    allowEphemeralPrivateLan: sameSubnetLan,
+  });
+}
+
+/**
+ * Move a previously successful dial hint to the front when it still passes
+ * usability + address-class filters (stale LAN on wan-default is dropped).
+ */
+export function preferDialHintFirst(
+  hints: string[],
+  preferredDialHint: string | undefined,
+  recipientPeerId: string,
+  opts: {
+    addressFilter: DialableAddrMode;
+    allowEphemeralPrivateLan?: boolean;
+  },
+): string[] {
+  const preferred = preferredDialHint?.trim();
+  if (!preferred) {
+    return hints;
+  }
+  const hintOpts = opts.allowEphemeralPrivateLan
+    ? { allowEphemeralPrivateLan: true }
+    : undefined;
+  if (!isUsableOutboundPeerDialHint(preferred, recipientPeerId, hintOpts)) {
+    return hints;
+  }
+  const kept = filterDialHintsByAddressFilter([preferred], opts.addressFilter);
+  if (kept.length === 0) {
+    return hints;
+  }
+  const first = kept[0]!;
+  return [first, ...hints.filter((h) => h !== first)];
 }
 
 /**

@@ -23,7 +23,12 @@ import { PEER_PATH_SOFT_CONNECTION_CAP, isPeerPathConnectionCapReached } from ".
 /** @deprecated Prefer {@link PEER_PATH_SOFT_CONNECTION_CAP} — shared with PeerPath facade. */
 export const BOND_WARM_MAX_CONNECTIONS = PEER_PATH_SOFT_CONNECTION_CAP;
 export const BOND_WARM_PER_CONTACT_COOLDOWN_MS = 300_000;
-const BOND_WARM_INITIAL_DELAY_MS = 45_000;
+/**
+ * Delay before the first bond-warm cycle after the node comes online.
+ * Kept at 0 so bonded contacts reconnect immediately (previously 45s).
+ * Periodic cycles still use {@link configuredBondWarmIntervalMs}.
+ */
+export const BOND_WARM_INITIAL_DELAY_MS = 0;
 const BOND_WARM_INTERVAL_MS = 300_000;
 
 /** Runtime-overridable bond-warm timers (from connectivity mode preset). */
@@ -314,7 +319,13 @@ export function startBondWarmIntervalViaRuntime(ctx: ReachabilityContext): void 
   const runWarm = (): void => {
     void warmAllBondedContactsViaRuntime(ctx);
   };
-  setTimeout(runWarm, BOND_WARM_INITIAL_DELAY_MS);
+  // Biggest reconnect win: warm as soon as the node is online (same soft
+  // connection cap / per-contact cooldown as the periodic cycle).
+  if (BOND_WARM_INITIAL_DELAY_MS <= 0) {
+    runWarm();
+  } else {
+    setTimeout(runWarm, BOND_WARM_INITIAL_DELAY_MS);
+  }
   ctx.setBondWarmTimer(setInterval(runWarm, configuredBondWarmIntervalMs));
 }
 

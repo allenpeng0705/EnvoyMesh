@@ -211,10 +211,15 @@ export async function dialHintsForChatViaRuntime(
     ...(localListen ?? []),
   ];
   let rawDirListen: string[] = [];
+  let preferredDialHint: string | undefined;
   try {
-    rawDirListen = (await ctx.peerDirectoryStore.listPeerRecords())
-      .filter((r) => r.peerId === recipientPeerId)
-      .flatMap((r) => r.listenAddrs ?? []);
+    const dirRows = (await ctx.peerDirectoryStore.listPeerRecords()).filter(
+      (r) => r.peerId === recipientPeerId,
+    );
+    rawDirListen = dirRows.flatMap((r) => r.listenAddrs ?? []);
+    preferredDialHint = dirRows
+      .map((r) => r.lastSuccessfulDialHint?.trim())
+      .find((h): h is string => Boolean(h));
   } catch {
     /* best-effort */
   }
@@ -240,6 +245,7 @@ export async function dialHintsForChatViaRuntime(
     profileDir: ctx.getProfileDir(),
     localListenAddrs: localListen,
     addressFilter,
+    preferredDialHint,
   });
 }
 
@@ -286,6 +292,23 @@ export async function rememberBondedPeerTransportFromInboundViaRuntime(
       peerId: transportPeerId,
       listenAddrs,
     });
+    const inboundRemote = inbound?.remoteAddr?.trim();
+    if (inboundRemote && isMultiaddrPeerIdsValid(inboundRemote)) {
+      void ctx.peerDirectoryStore
+        .recordLastSuccessfulDial({
+          peerId: transportPeerId,
+          dialHint: inboundRemote.includes(`/p2p/${transportPeerId}`)
+            ? inboundRemote
+            : `${inboundRemote.replace(/\/$/, "")}/p2p/${transportPeerId}`,
+          path: inboundRemote.includes("/p2p-circuit/") ? "relay" : "direct",
+        })
+        .catch((err) =>
+          console.warn(
+            `[peer-directory] inbound recordLastSuccessfulDial failed:`,
+            err instanceof Error ? err.message : err,
+          ),
+        );
+    }
     if (envelope.senderPublicKey?.trim()) {
       await ctx.peerDirectoryStore.mergeInboundDeviceBinding({
         peerId: transportPeerId,
@@ -1209,11 +1232,42 @@ export async function warmContactConnectionTransportViaRuntime(
     void ctx.flushPendingRoomMessages();
     if (result.connected) {
       markOutboundPeerVerified(transportPeerId);
+      void recordLastSuccessfulDialFromMesh(ctx, transportPeerId, result).catch((err) =>
+        console.warn(
+          `[peer-directory] recordLastSuccessfulDial failed:`,
+          err instanceof Error ? err.message : err,
+        ),
+      );
     }
     return result;
   } finally {
     releasePeerPathDialSlot(pathIntent);
   }
+}
+
+async function recordLastSuccessfulDialFromMesh(
+  ctx: Pick<OutboundMessagingContext, "peerDirectoryStore" | "requireMesh" | "getReachableMesh">,
+  transportPeerId: string,
+  info: { connected: boolean; direct: boolean },
+): Promise<void> {
+  if (!info.connected) return;
+  const mesh = ctx.getReachableMesh() ?? ctx.requireMesh();
+  const remote =
+    typeof mesh.getPeerRemoteMultiaddr === "function"
+      ? mesh.getPeerRemoteMultiaddr(transportPeerId)?.trim()
+      : undefined;
+  if (!remote) return;
+  // Prefer a dialable form that still names this peer (append /p2p/<id> when missing).
+  let dialHint = remote;
+  if (!dialHint.includes(`/p2p/${transportPeerId}`) && !dialHint.endsWith(`/p2p/${transportPeerId}`)) {
+    dialHint = `${dialHint.replace(/\/$/, "")}/p2p/${transportPeerId}`;
+  }
+  if (!isMultiaddrPeerIdsValid(dialHint)) return;
+  await ctx.peerDirectoryStore.recordLastSuccessfulDial({
+    peerId: transportPeerId,
+    dialHint,
+    path: info.direct ? "direct" : "relay",
+  });
 }
 
 export async function warmContactConnectionViaRuntime(

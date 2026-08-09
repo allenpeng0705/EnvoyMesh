@@ -1488,6 +1488,15 @@ export interface PeerDirectoryRecord {
   devicePublicKeyPem?: string;
   lastSeenAt: string;
   listenAddrs: string[];
+  /**
+   * Multiaddr that last successfully reached this peer (direct TCP or circuit).
+   * Preferred first on the next outbound dial so reconnect after restart is fast.
+   */
+  lastSuccessfulDialHint?: string;
+  /** Path class for {@link lastSuccessfulDialHint}. */
+  lastSuccessfulDialPath?: "direct" | "relay";
+  /** ISO timestamp when {@link lastSuccessfulDialHint} was recorded. */
+  lastSuccessfulDialAt?: string;
 }
 
 export interface LocalPeerDirectoryStore {
@@ -1496,6 +1505,16 @@ export interface LocalPeerDirectoryStore {
   getPeerByPeerId(peerId: string): Promise<PeerDirectoryRecord | undefined>;
   /** Append dialable multiaddrs learned from inbound libp2p connections (e.g. relay circuit path). */
   mergeListenAddrsForPeerId(peerId: string, addrs: string[]): Promise<void>;
+  /**
+   * Persist the multiaddr that just successfully reached this peer so the next
+   * dial (e.g. after node restart) tries that path first.
+   */
+  recordLastSuccessfulDial(input: {
+    peerId: string;
+    dialHint: string;
+    path: "direct" | "relay";
+    at?: string;
+  }): Promise<void>;
   /** Cap stored listen addrs per peer (repairs bloated directories from pre-cap merges). */
   compactListenAddrs(maxPerRecord?: number): Promise<{ recordsTouched: number; addrsRemoved: number }>;
   /** Strip ephemeral inbound TCP snapshots from every peer row. */
@@ -1960,6 +1979,37 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         }
         record.listenAddrs = merged;
         record.lastSeenAt = new Date().toISOString();
+        await writePeerDirectoryFileAtomic(directoryPath, file);
+      });
+    },
+
+    async recordLastSuccessfulDial(input) {
+      const peerId = input.peerId.trim();
+      const dialHint = input.dialHint.trim();
+      if (!peerId || !dialHint) {
+        return;
+      }
+      await withDirectory(async (file) => {
+        const record = file.records.find((r) => r.peerId === peerId);
+        if (!record) {
+          return;
+        }
+        const at = input.at?.trim() || new Date().toISOString();
+        if (
+          record.lastSuccessfulDialHint === dialHint &&
+          record.lastSuccessfulDialPath === input.path &&
+          record.lastSuccessfulDialAt
+        ) {
+          // Refresh timestamp only — avoid rewriting the whole file on every keepAlive.
+          const prevMs = Date.parse(record.lastSuccessfulDialAt);
+          if (Number.isFinite(prevMs) && Date.now() - prevMs < 60_000) {
+            return;
+          }
+        }
+        record.lastSuccessfulDialHint = dialHint;
+        record.lastSuccessfulDialPath = input.path;
+        record.lastSuccessfulDialAt = at;
+        record.lastSeenAt = at;
         await writePeerDirectoryFileAtomic(directoryPath, file);
       });
     },

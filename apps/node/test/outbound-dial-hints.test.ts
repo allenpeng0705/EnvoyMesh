@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildOutboundDialHints } from "../src/outbound-dial-hints.js";
+import { buildOutboundDialHints, preferDialHintFirst } from "../src/outbound-dial-hints.js";
 import { createDiscoverySeedStore } from "../src/discovery-seed-store.js";
 import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
 
@@ -68,6 +68,68 @@ describe("buildOutboundDialHints", () => {
     } finally {
       await rm(profileDir, { recursive: true, force: true });
     }
+  });
+
+  it("places lastSuccessfulDialHint first when it survives wan-public filtering", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-preferred-"));
+    try {
+      const seedStore = createDiscoverySeedStore(profileDir);
+      const target = "12D3KooWPreferredDialPeer";
+      const preferred =
+        "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelayA/p2p-circuit/p2p/12D3KooWPreferredDialPeer";
+      const other =
+        "/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWRelayB/p2p-circuit/p2p/12D3KooWPreferredDialPeer";
+      await seedStore.upsertSuccess(other, "relay.lookup");
+
+      const hints = await buildOutboundDialHints({
+        recipientPeerId: target,
+        peerListenAddrs: [],
+        discoverySeedStore: seedStore,
+        config: undefined,
+        preferredDialHint: preferred,
+      });
+
+      expect(hints[0]).toBe(preferred);
+      expect(hints).toContain(other);
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not prefer a stale LAN lastSuccessfulDialHint on wan-default", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-stale-lan-"));
+    try {
+      const seedStore = createDiscoverySeedStore(profileDir);
+      const target = "12D3KooWStaleLanPreferred";
+      const staleLan = `/ip4/192.168.3.78/tcp/4011/p2p/${target}`;
+      const circuit =
+        "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWStaleLanPreferred";
+      await seedStore.upsertSuccess(circuit, "relay.lookup");
+
+      const hints = await buildOutboundDialHints({
+        recipientPeerId: target,
+        peerListenAddrs: [],
+        discoverySeedStore: seedStore,
+        config: undefined,
+        preferredDialHint: staleLan,
+      });
+
+      expect(hints[0]).not.toBe(staleLan);
+      expect(hints.some((h) => h.includes("192.168.3.78"))).toBe(false);
+      expect(hints.some((h) => h.includes("/p2p-circuit/"))).toBe(true);
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
+
+  it("preferDialHintFirst moves a usable hint to index 0 without dropping others", () => {
+    const target = "12D3KooWPreferFirstPeer";
+    const preferred = `/ip4/8.8.8.8/tcp/4001/p2p/${target}`;
+    const other = `/ip4/1.1.1.1/tcp/4001/p2p/${target}`;
+    const ordered = preferDialHintFirst([other, preferred], preferred, target, {
+      addressFilter: "all",
+    });
+    expect(ordered).toEqual([preferred, other]);
   });
 
   it("keeps LAN listen addrs when discoveryProfile is lan-fast (same-network home setup)", async () => {

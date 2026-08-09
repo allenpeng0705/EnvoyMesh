@@ -2049,6 +2049,38 @@ export class EnvoyMesh {
   }
 
   /**
+   * Remote multiaddr of an open connection to `peerId` (prefer direct over circuit).
+   * Used to persist {@code lastSuccessfulDialHint} for faster reconnect after restart.
+   */
+  getPeerRemoteMultiaddr(peerId: string): string | undefined {
+    if (!this.node) {
+      return undefined;
+    }
+    try {
+      const node = this.node as Libp2p & {
+        getConnections?: (peerId?: ReturnType<typeof peerIdFromString>) => Array<{
+          status?: string;
+          remoteAddr?: { toString?: () => string };
+        }>;
+      };
+      const pid = peerIdFromString(peerId);
+      const conns = node.getConnections?.(pid) ?? [];
+      const openConns = conns.filter((c) => c?.status === "open" || c?.status === undefined);
+      if (openConns.length === 0) {
+        return undefined;
+      }
+      const directConn = openConns.find(
+        (c) => !(c?.remoteAddr?.toString?.() ?? "").includes("/p2p-circuit"),
+      );
+      const chosen = directConn ?? openConns[0];
+      const addr = chosen?.remoteAddr?.toString?.()?.trim();
+      return addr || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * Lightweight libp2p ping on an existing direct connection (no protocol stream open).
    */
   async pingDirectPeer(peerIdStr: string): Promise<boolean> {
