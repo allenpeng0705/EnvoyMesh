@@ -1103,6 +1103,7 @@ export async function warmContactConnectionTransportViaRuntime(
   }
 
   const likelyVpnActive = detectLikelyVpnActive();
+  const wasDirect = existing.direct === true;
   let preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId, {
     likelyVpnActive,
   });
@@ -1124,11 +1125,14 @@ export async function warmContactConnectionTransportViaRuntime(
       // Peer-directory often only has tcp/0 high ports — keep them for same-subnet
       // evidence even though mergeDialablePeerListenAddrs strips them for dialing.
       let rawDirListen: string[] = [];
+      let lastSuccessfulDialPath: "direct" | "relay" | undefined;
       try {
         const records = await ctx.peerDirectoryStore.listPeerRecords();
-        rawDirListen = records
-          .filter((r) => r.peerId === transportPeerId)
-          .flatMap((r) => r.listenAddrs ?? []);
+        const peerRows = records.filter((r) => r.peerId === transportPeerId);
+        rawDirListen = peerRows.flatMap((r) => r.listenAddrs ?? []);
+        lastSuccessfulDialPath = peerRows
+          .map((r) => r.lastSuccessfulDialPath)
+          .find((p): p is "direct" | "relay" => p === "direct" || p === "relay");
       } catch {
         /* best-effort */
       }
@@ -1164,10 +1168,18 @@ export async function warmContactConnectionTransportViaRuntime(
         peerListenAddrs: [...(listenAddrs ?? []), ...rawDirListen],
         dialHints,
         upgradeRelayToDirect: options?.upgradeRelayToDirect,
+        lastSuccessfulDialPath:
+          wasDirect || lastSuccessfulDialPath === "direct" ? "direct" : lastSuccessfulDialPath,
+        offlineReconnect: !existing.connected,
       });
       preferCircuitHints = policy.preferCircuitHints;
       sameSubnetLanFirst = policy.sameSubnetLanFirst;
       dialHints = policy.dialHints;
+      // Never voluntarily dial circuit-first when we just had (or sticky-have)
+      // Direct — avoids Direct → Relay downgrade on probe/redial.
+      if ((wasDirect || lastSuccessfulDialPath === "direct") && !policy.vpnSkipHomeLan) {
+        preferCircuitHints = false;
+      }
       if (policy.skipUpgradeStayOnRelay) {
         return existing.connected ? existing : mesh.getPeerConnectionInfo(transportPeerId);
       }

@@ -19,7 +19,42 @@ describe("raceWithTimeout", () => {
 });
 
 describe("ensureReachableWithLanFirstBudget", () => {
-  it("skips dedicated LAN-only phase for ephemeral LAN + circuits", async () => {
+  it("offline: ephemeral LAN still tries Direct-only before Relay", async () => {
+    const ensurePeerReachable = vi
+      .fn()
+      .mockResolvedValueOnce({ connected: false, direct: false })
+      .mockResolvedValueOnce({ connected: true, direct: false });
+    const mesh = {
+      ensurePeerReachable,
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: false, direct: false }),
+    };
+
+    const result = await ensureReachableWithLanFirstBudget({
+      mesh,
+      transportPeerId: "12D3KooWPeer",
+      protocol: "/envoymesh/chat/0.1.0",
+      dialHints: [
+        "/ip4/10.0.0.2/tcp/57944/p2p/12D3KooWPeer",
+        "/ip4/1.2.3.4/tcp/4001/p2p/12Relay/p2p-circuit/p2p/12D3KooWPeer",
+      ],
+      sameSubnetLanFirst: true,
+    });
+
+    expect(result).toEqual({ connected: true, direct: false });
+    expect(ensurePeerReachable).toHaveBeenCalledTimes(2);
+    expect(ensurePeerReachable.mock.calls[0]?.[2]).toMatchObject({
+      dialHints: ["/ip4/10.0.0.2/tcp/57944/p2p/12D3KooWPeer"],
+      preferCircuitHints: false,
+    });
+    expect(ensurePeerReachable.mock.calls[1]?.[2]).toMatchObject({
+      dialHints: [
+        "/ip4/10.0.0.2/tcp/57944/p2p/12D3KooWPeer",
+        "/ip4/1.2.3.4/tcp/4001/p2p/12Relay/p2p-circuit/p2p/12D3KooWPeer",
+      ],
+    });
+  });
+
+  it("VPN/circuit-preferred offline skips Direct-first phase", async () => {
     const ensurePeerReachable = vi.fn().mockResolvedValue({ connected: true, direct: false });
     const mesh = {
       ensurePeerReachable,
@@ -34,16 +69,17 @@ describe("ensureReachableWithLanFirstBudget", () => {
         "/ip4/10.0.0.2/tcp/57944/p2p/12D3KooWPeer",
         "/ip4/1.2.3.4/tcp/4001/p2p/12Relay/p2p-circuit/p2p/12D3KooWPeer",
       ],
-      sameSubnetLanFirst: true,
+      sameSubnetLanFirst: false,
+      preferCircuitHints: true,
     });
 
     expect(ensurePeerReachable).toHaveBeenCalledOnce();
-    const opts = ensurePeerReachable.mock.calls[0]?.[2] as {
-      dialHints?: string[];
-      signal?: AbortSignal;
-    };
-    expect(opts.dialHints).toHaveLength(2);
-    expect(opts.signal).toBeInstanceOf(AbortSignal);
+    expect(ensurePeerReachable.mock.calls[0]?.[2]).toMatchObject({
+      preferCircuitHints: true,
+      dialHints: expect.arrayContaining([
+        "/ip4/1.2.3.4/tcp/4001/p2p/12Relay/p2p-circuit/p2p/12D3KooWPeer",
+      ]),
+    });
   });
 
   it("aborts hung ephemeral LAN-only warm when budget elapses", async () => {
@@ -80,7 +116,8 @@ describe("ensureReachableWithLanFirstBudget", () => {
 
     expect(result).toEqual({ connected: false, direct: false });
     expect(phase1Signal?.aborted).toBe(true);
-    expect(calls).toBe(2);
+    // No circuit fallback → single Direct-only phase (no second Relay dial).
+    expect(calls).toBe(1);
     expect(elapsed).toBeLessThan(WARM_CONTACT_SAME_SUBNET_EPHEMERAL_BUDGET_MS + 1_500);
   });
 

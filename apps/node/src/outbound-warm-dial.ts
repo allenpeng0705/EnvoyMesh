@@ -104,16 +104,21 @@ export async function ensureReachableWithLanFirstBudget(
   const lanOnly = input.dialHints.filter((h) => !h.includes("/p2p-circuit/"));
   const hasCircuit = input.dialHints.some((h) => h.includes("/p2p-circuit/"));
   const hasStableLan = hasStablePrivateLanHint(lanOnly);
-  // Dedicated LAN-only phase only with stable listen ports, or when there is
-  // no circuit fallback. Ephemeral-only + circuits → one combined pass so
-  // stale same-/24 directory snapshots cannot burn ~8s before relay.
-  const tryLanOnlyFirst =
-    lanFirst && !isUpgrade && lanOnly.length > 0 && (hasStableLan || !hasCircuit);
+  // Offline reconnect: Direct first, then Relay. Ephemeral LAN uses a short
+  // budget so stale high-ports cannot delay Relay long. VPN/relay-only
+  // (preferCircuitHints) skips this and stays circuit-first.
+  const tryDirectFirstOffline =
+    !isUpgrade && !preferCircuitHints && lanOnly.length > 0 && (hasCircuit || lanFirst);
 
-  const run = (hints: string[], sameSubnet: boolean, signal: AbortSignal) =>
+  const run = (
+    hints: string[],
+    sameSubnet: boolean,
+    signal: AbortSignal,
+    opts?: { preferCircuitHints?: boolean },
+  ) =>
     input.mesh.ensurePeerReachable(input.transportPeerId, input.protocol, {
       dialHints: hints,
-      preferCircuitHints,
+      preferCircuitHints: opts?.preferCircuitHints ?? preferCircuitHints,
       sameSubnetLanFirst: sameSubnet,
       forceFreshDial: input.forceFreshDial,
       upgradeRelayToDirect: input.upgradeRelayToDirect,
@@ -127,11 +132,15 @@ export async function ensureReachableWithLanFirstBudget(
     sameSubnet: boolean,
     budgetMs: number,
     label: string,
+    opts?: { preferCircuitHints?: boolean },
   ) => {
     const ac = new AbortController();
     try {
-      return await raceWithTimeout(run(hints, sameSubnet, ac.signal), budgetMs, label, () =>
-        ac.abort(),
+      return await raceWithTimeout(
+        run(hints, sameSubnet, ac.signal, opts),
+        budgetMs,
+        label,
+        () => ac.abort(),
       );
     } catch {
       if (!ac.signal.aborted) ac.abort();
@@ -139,25 +148,23 @@ export async function ensureReachableWithLanFirstBudget(
     }
   };
 
-  if (tryLanOnlyFirst) {
+  if (tryDirectFirstOffline) {
     const phase1Budget = hasStableLan
       ? WARM_CONTACT_SAME_SUBNET_BUDGET_MS
       : WARM_CONTACT_SAME_SUBNET_EPHEMERAL_BUDGET_MS;
-    const phase1 = await bounded(lanOnly, true, phase1Budget, "warmContactLanDial");
+    // Phase 1 must not prefer circuits — Direct-only attempt.
+    const phase1 = await bounded(lanOnly, true, phase1Budget, "warmContactLanDial", {
+      preferCircuitHints: false,
+    });
     if (phase1.connected) return phase1;
+    if (!hasCircuit) {
+      return phase1;
+    }
     const phase2Budget = likelyVpnActive
       ? WARM_CONTACT_VPN_DIAL_TIMEOUT_MS
       : WARM_CONTACT_DIAL_BUDGET_MS;
-    return bounded(input.dialHints, true, phase2Budget, "warmContactDial");
-  }
-
-  // Same-subnet evidence from high-port snapshots only: LAN short-timeouts then
-  // circuit fast-fail in one walk (no exclusive LAN-only phase).
-  if (lanFirst && hasCircuit && !hasStableLan && !isUpgrade) {
-    const budget = likelyVpnActive
-      ? WARM_CONTACT_VPN_DIAL_TIMEOUT_MS
-      : WARM_CONTACT_DIAL_BUDGET_MS;
-    return bounded(input.dialHints, true, budget, "warmContactDial");
+    // Phase 2: allow Relay fallback; keep LAN hints so upgrade path can follow.
+    return bounded(input.dialHints, lanFirst, phase2Budget, "warmContactDial");
   }
 
   const budgetMs = isUpgrade

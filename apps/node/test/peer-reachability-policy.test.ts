@@ -92,6 +92,32 @@ describe("resolveReachabilityDialPolicy", () => {
     expect(policy.preferCircuitHints).toBe(false);
   });
 
+  it("offline reconnect with Direct hints prefers Direct (not circuit)", () => {
+    const policy = resolveReachabilityDialPolicy({
+      transportPeerId: PEER,
+      discoveryProfile: "wan-default",
+      likelyVpnActive: false,
+      localListenAddrs: ["/ip4/192.168.3.85/tcp/4001"],
+      peerListenAddrs: [],
+      dialHints: [`/ip4/192.168.3.78/tcp/57944/p2p/${PEER}`, CIRCUIT],
+      offlineReconnect: true,
+    });
+    expect(policy.preferCircuitHints).toBe(false);
+  });
+
+  it("sticky lastSuccessfulDialPath=direct disables circuit preference", () => {
+    const policy = resolveReachabilityDialPolicy({
+      transportPeerId: PEER,
+      discoveryProfile: "wan-default",
+      likelyVpnActive: false,
+      localListenAddrs: ["/ip4/192.168.3.85/tcp/4001"],
+      peerListenAddrs: [],
+      dialHints: [`/ip4/192.168.3.78/tcp/57944/p2p/${PEER}`, CIRCUIT],
+      lastSuccessfulDialPath: "direct",
+    });
+    expect(policy.preferCircuitHints).toBe(false);
+  });
+
   it("resolveSameSubnetLanFirstFromEvidence matches policy same-subnet", async () => {
     const { resolveSameSubnetLanFirstFromEvidence } = await import(
       "../src/peer-reachability-policy.js"

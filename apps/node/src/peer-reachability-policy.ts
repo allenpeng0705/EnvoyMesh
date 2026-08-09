@@ -29,6 +29,16 @@ export type ReachabilityDialPolicyInput = {
   dialHints: readonly string[];
   /** True when UI/bond-warm asked for Relay→Direct upgrade. */
   upgradeRelayToDirect?: boolean;
+  /**
+   * Sticky path from peer-directory. When `"direct"`, offline warm must not
+   * prefer circuit (avoids Offline → Relay when Direct was last known good).
+   */
+  lastSuccessfulDialPath?: "direct" | "relay";
+  /**
+   * True when there is no live connection yet (Offline reconnect). Used to
+   * force Direct-first when any non-circuit hint exists (Relay is fallback).
+   */
+  offlineReconnect?: boolean;
 };
 
 export type ReachabilityDialPolicy = {
@@ -96,6 +106,22 @@ export function resolveReachabilityDialPolicy(
   );
 
   if (!vpnSkipHomeLan && (profile === "lan-fast" || profile === "")) {
+    preferCircuitHints = false;
+  }
+
+  const hasNonCircuitTcp = dialHints.some(
+    (h) => h.includes("/tcp/") && !h.includes("/p2p-circuit/"),
+  );
+  // Offline reconnect: Direct first whenever a non-circuit hint exists and VPN
+  // is not black-holing home LAN. Relay remains the fallback in warm-dial.
+  // Sticky Direct from a prior session has the same effect (never prefer circuit
+  // just because wan-default would otherwise).
+  if (
+    profile !== "relay-only" &&
+    !vpnSkipHomeLan &&
+    hasNonCircuitTcp &&
+    (input.offlineReconnect === true || input.lastSuccessfulDialPath === "direct")
+  ) {
     preferCircuitHints = false;
   }
 
