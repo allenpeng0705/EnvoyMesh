@@ -80,11 +80,18 @@ kill_pid() {
     echo "[liveness] no pid to kill" >&2
     return 1
   fi
-  echo "[liveness] killing wedged pid $target (TERM then KILL); supervisor should Restart=always"
-  kill -TERM "$target" 2>/dev/null || true
-  sleep 3
+  # Prefer SIGKILL: a wedged or SIGSTOP'd process will not run a SIGTERM
+  # handler (STOP leaves TERM pending until CONT). Liveness recovery is not
+  # a graceful shutdown path — systemd Restart=always brings the unit back.
+  echo "[liveness] killing wedged pid $target (SIGKILL); supervisor should Restart=always"
+  if ! kill -KILL "$target" 2>/dev/null; then
+    echo "[liveness] SIGKILL failed for pid $target (permission? wrong pid?)" >&2
+    return 1
+  fi
+  sleep 1
   if kill -0 "$target" 2>/dev/null; then
-    kill -KILL "$target" 2>/dev/null || true
+    echo "[liveness] pid $target still alive after SIGKILL" >&2
+    return 1
   fi
 }
 

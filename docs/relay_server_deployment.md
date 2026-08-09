@@ -328,22 +328,61 @@ journalctl -u envoymesh-relay-liveness.service -f
 
 #### 6. Prove the watchdog can restart (optional, maintenance window)
 
-```bash
-# Freeze the relay process (simulates a wedge)
-sudo kill -STOP $(systemctl show -p MainPID --value envoymesh-relay.service)
+**Before testing — confirm the new script is what systemd is running:**
 
-# Wait ~45–90s after grace, then inspect
-journalctl -u envoymesh-relay-liveness.service -n 30 --no-pager
-systemctl status envoymesh-relay.service
+```bash
+grep -n 'SIGKILL\|killing wedged pid\|restarting unit' "$(systemctl show -p ExecStart --value envoymesh-relay-liveness.service | awk '{print $1}')" 2>/dev/null \
+  || grep -n 'SIGKILL\|killing wedged pid' /home/admin/mygithub/EnvoyMesh/scripts/http-liveness-watch.sh
+
+sudo systemctl restart envoymesh-relay-liveness.service
+journalctl -u envoymesh-relay-liveness.service -n 3 --no-pager
+# Must show a FRESH "watching http://127.0.0.1:15432/health" line (new PID).
 ```
 
-Expect: `probe failed` lines, then `restarting unit envoymesh-relay`, and the relay back **active**.
+If journals still say `restarting unit …` / `Interactive authentication required`, that is the **old** script still in memory — the file on disk was updated but the liveness service was not restarted.
 
-If the process is still stopped:
+**Sanity check (does `User=admin` have permission to kill the relay?):**
 
 ```bash
-sudo kill -CONT $(systemctl show -p MainPID --value envoymesh-relay.service)
-# or:
+pid=$(systemctl show -p MainPID --value envoymesh-relay.service)
+echo "MainPID=$pid"
+kill -0 "$pid" && echo "can signal pid" || echo "cannot signal pid"
+# Optional: kill once and confirm systemd restarts (will drop live traffic briefly)
+# kill -KILL "$pid"; sleep 3; systemctl is-active envoymesh-relay.service
+```
+
+**Wedge simulation with `SIGSTOP` (valid test):**
+
+`kill -STOP` freezes the process so `/health` times out. That is a correct wedge simulation.  
+Note: a STOP’d process ignores `SIGTERM` until `CONT`; the watchdog must use **`SIGKILL`** (current script does).
+
+```bash
+sudo systemctl restart envoymesh-relay.service   # clean start; clear any prior STOP
+sleep 5
+curl -fsS --max-time 2 http://127.0.0.1:15432/health >/dev/null && echo health_ok
+
+sudo kill -STOP $(systemctl show -p MainPID --value envoymesh-relay.service)
+
+# Wait ~60–90s (3 failed probes @ 15s). Then:
+journalctl -u envoymesh-relay-liveness.service -n 20 --no-pager
+systemctl is-active envoymesh-relay.service
+curl -fsS --max-time 2 http://127.0.0.1:15432/health
+```
+
+**Expect (success):**
+
+```text
+[liveness] probe failed (3/3) ...
+[liveness] unit=envoymesh-relay MainPID=...
+[liveness] killing wedged pid ... (SIGKILL); supervisor should Restart=always
+```
+
+Then `is-active` → `active` and `/health` answers again.
+
+**If it fails, clean up a leftover STOP:**
+
+```bash
+sudo kill -CONT $(systemctl show -p MainPID --value envoymesh-relay.service) 2>/dev/null || true
 sudo systemctl restart envoymesh-relay.service
 ```
 
