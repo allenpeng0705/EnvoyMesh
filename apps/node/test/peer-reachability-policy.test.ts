@@ -8,7 +8,7 @@ const PEER = "12D3KooWPolicyPeer";
 const CIRCUIT = `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${PEER}`;
 
 describe("shouldIdentifyBeforeVpnSkip", () => {
-  it("only when VPN + Online-Relay upgrade", () => {
+  it("runs identify for any Online-Relay → Direct upgrade (VPN or home LAN)", () => {
     expect(
       shouldIdentifyBeforeVpnSkip({
         upgradeRelayToDirect: true,
@@ -24,13 +24,21 @@ describe("shouldIdentifyBeforeVpnSkip", () => {
         direct: false,
         likelyVpnActive: false,
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       shouldIdentifyBeforeVpnSkip({
         upgradeRelayToDirect: true,
         connected: true,
         direct: true,
         likelyVpnActive: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldIdentifyBeforeVpnSkip({
+        upgradeRelayToDirect: false,
+        connected: true,
+        direct: false,
+        likelyVpnActive: false,
       }),
     ).toBe(false);
   });

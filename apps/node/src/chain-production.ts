@@ -10,8 +10,34 @@ import { derivePeerId } from "@envoymesh/identity";
 import type { LocalPeerDirectoryStore } from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
+import { CHAIN_MESH_SEND_TIMEOUT_MS } from "./chain-defaults.js";
 import { sendEnvelopeWithRetry, type OutboundDeliverMesh } from "./chat-outbound-deliver.js";
 import { chainLog, chainWarn, shortPeerId } from "./chain-debug.js";
+
+async function withChainSendTimeout<T>(
+  work: Promise<T>,
+  timeoutMs: number,
+  onTimeout: () => void,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => {
+          try {
+            onTimeout();
+          } catch {
+            /* best-effort unblock */
+          }
+          reject(new Error(`chain_send_timeout after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
 
 export interface ChainTransportResolver {
   mesh: OutboundDeliverMesh & Pick<EnvoyMesh, "peerId">;
@@ -173,7 +199,13 @@ export async function sendChainEnvelopeOverMesh(
         recipient: shortPeerId(recipientPeerId),
         correlationId: envelope.correlationId,
       });
-      await resolver.deliverLocally(envelope);
+      await withChainSendTimeout(
+        resolver.deliverLocally(envelope),
+        CHAIN_MESH_SEND_TIMEOUT_MS,
+        () => {
+          /* local loopback has no mesh conn to close */
+        },
+      );
       return true;
     } catch (err) {
       chainWarn("send", "local loopback failed", {
@@ -204,12 +236,22 @@ export async function sendChainEnvelopeOverMesh(
         /* best-effort */
       }
     }
-    const result = await sendEnvelopeWithRetry({
-      mesh: resolver.mesh,
-      transportPeerId,
-      envelope,
-      dialHints,
-    });
+    const result = await withChainSendTimeout(
+      sendEnvelopeWithRetry({
+        mesh: resolver.mesh,
+        transportPeerId,
+        envelope,
+        dialHints,
+        // One prepare+send cycle; outer timeout covers hang. Retries on a
+        // half-dead peer just multiply lock hold time.
+        maxAttempts: 1,
+      }),
+      CHAIN_MESH_SEND_TIMEOUT_MS,
+      () => {
+        // Unblock a hung mesh.send holding the per-peer outbound lock.
+        void resolver.mesh.closeConnectionsToPeer?.(transportPeerId);
+      },
+    );
     if (!result.delivered) {
       chainWarn("send", "mesh deliver returned not delivered", {
         intent: envelope.intent,

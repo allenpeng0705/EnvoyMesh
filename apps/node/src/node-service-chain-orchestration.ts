@@ -570,8 +570,10 @@ export async function _chainTransportResolver(
     },
     resolveDialHints: async (transportPeerId) => {
       try {
-        const records = await deps.getPeerDirectoryStore().listPeerRecords();
-        const match = records.find((r) => r.peerId === transportPeerId);
+        const store = deps.getPeerDirectoryStore();
+        const match =
+          (await store.getPeerByPeerId?.(transportPeerId)) ??
+          (await store.listPeerRecords()).find((r) => r.peerId === transportPeerId);
         return (match?.listenAddrs ?? []).filter((a) => a.trim().length > 0);
       } catch {
         return [];
@@ -1824,14 +1826,36 @@ export async function _runChainGoal(
   let totalWorkers = 0;
   // Direct keeps a backup so a silent preferred peer can failover quickly.
   const workerCap = awardMode === "direct" ? 2 : 3;
+  void _appendChainAudit(deps, {
+    type: "chain.launched",
+    outcome: "record",
+    intent: "task.chain.propose",
+    correlationId: chainId,
+    summary: `worker_rank_start steps=${plan.subtasks.length}`,
+  });
   for (const subtask of plan.subtasks) {
     const ranked = await findAgentNetworkWorkersRanked(deps, subtask.requiredSkill, input.preferredWorkerPeerIds);
     rankedBySubtask[subtask.subtaskId] = ranked;
-    const candidates = ranked.map((r) => r.peerId);
+    // Prefer online workers as backups; sticky preferred still leads.
+    const candidates = [
+      ...ranked.filter((r) => r.online).map((r) => r.peerId),
+      ...ranked.filter((r) => !r.online).map((r) => r.peerId),
+    ];
     // Named / thread-sticky assignee always leads the list (even if ranking missed).
     const preferred = subtask.preferredWorkerPeerId;
     let chosen = chooseWorkersForSubtask(preferred, candidates, workerCap);
     if (chosen.length === 0 && ranked.length > 0) chosen = [ranked[0]!.peerId];
+    // Direct mode: if preferred is offline but an online backup exists, try
+    // online first so launch does not sit on a dead remote dial.
+    if (awardMode === "direct" && preferred && chosen.length > 1) {
+      const preferredRank = ranked.find((r) => r.peerId === preferred);
+      if (preferredRank && preferredRank.online === false) {
+        const onlineBackup = chosen.find((id) => id !== preferred && ranked.find((r) => r.peerId === id)?.online);
+        if (onlineBackup) {
+          chosen = [onlineBackup, ...chosen.filter((id) => id !== onlineBackup)];
+        }
+      }
+    }
     workersBySubtask[subtask.subtaskId] = chosen;
     // Only rewrite preferred when plan+assign left none (ranking fill-in).
     if (!preferred && chosen[0]) {
@@ -1840,6 +1864,13 @@ export async function _runChainGoal(
     maxWorkers = Math.max(maxWorkers, candidates.length);
     totalWorkers += chosen.length > 0 ? 1 : 0;
   }
+  void _appendChainAudit(deps, {
+    type: "chain.launched",
+    outcome: "record",
+    intent: "task.chain.propose",
+    correlationId: chainId,
+    summary: `worker_rank_done filled=${totalWorkers}/${plan.subtasks.length} mode=${awardMode}`,
+  });
   if (plan.subtasks.length > 0 && totalWorkers === 0) {
     // Solo / no capability providers — do not create a zombie "Bidding…" chain.
     deps.getChainStore().deleteRuntime(chainId);

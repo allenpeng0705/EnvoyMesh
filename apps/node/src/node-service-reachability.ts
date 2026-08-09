@@ -30,11 +30,25 @@ export const BOND_WARM_PER_CONTACT_COOLDOWN_MS = 300_000;
  */
 export const BOND_WARM_FAILURE_COOLDOWN_MS = 20_000;
 /**
+ * After an Online-Relay warm that did not upgrade to Direct, become eligible
+ * again quickly. Applying the full 5‑minute success cooldown here was why
+ * same-LAN peers sat on Online-Relay for minutes.
+ */
+export const BOND_WARM_RELAY_UPGRADE_COOLDOWN_MS = 5_000;
+/**
+ * Aggressive Relay→Direct retries after we first see Online-Relay (identify +
+ * LAN dial). Independent of the 5‑minute bond-warm interval.
+ */
+export const BOND_WARM_RELAY_UPGRADE_RETRY_DELAYS_MS = [2_000, 5_000, 12_000, 25_000] as const;
+/**
  * Extra warm pulses after the node comes online. The steady-state interval is
  * still ~5 min; without these, a failed first dial waited until the next
  * interval (~5 min) before Online appeared.
  */
 export const BOND_WARM_STARTUP_RETRY_DELAYS_MS = [5_000, 20_000, 45_000, 90_000] as const;
+
+/** Per-owner timers for Relay→Direct upgrade pulses (cleared on Direct / stop). */
+const relayUpgradeRetryTimers = new Map<string, Array<ReturnType<typeof setTimeout>>>();
 /** @deprecated Prefer {@link BOND_WARM_STARTUP_RETRY_DELAYS_MS}[0]. */
 export const BOND_WARM_INITIAL_DELAY_MS = BOND_WARM_STARTUP_RETRY_DELAYS_MS[0];
 const BOND_WARM_INTERVAL_MS = 300_000;
@@ -59,6 +73,67 @@ export function resetBondWarmConnectivityConfigForTests(): void {
   configuredBondWarmIntervalMs = BOND_WARM_INTERVAL_MS;
   configuredBondWarmCooldownMs = BOND_WARM_PER_CONTACT_COOLDOWN_MS;
   configuredBondWarmEventDriven = false;
+  for (const ownerId of [...relayUpgradeRetryTimers.keys()]) {
+    clearRelayUpgradeRetryTimers(ownerId);
+  }
+}
+
+function clearRelayUpgradeRetryTimers(ownerId: string): void {
+  const timers = relayUpgradeRetryTimers.get(ownerId);
+  if (!timers) return;
+  for (const t of timers) clearTimeout(t);
+  relayUpgradeRetryTimers.delete(ownerId);
+}
+
+/**
+ * Schedule short Relay→Direct upgrade attempts. Cooldown alone is not enough —
+ * the steady warm interval is 5 minutes; these pulses drive identify/LAN dial
+ * within seconds of first Online-Relay.
+ */
+function scheduleRelayToDirectUpgradeRetries(
+  ctx: ReachabilityContext,
+  ownerId: string,
+): void {
+  clearRelayUpgradeRetryTimers(ownerId);
+  const timers: Array<ReturnType<typeof setTimeout>> = [];
+  for (const delayMs of BOND_WARM_RELAY_UPGRADE_RETRY_DELAYS_MS) {
+    timers.push(
+      setTimeout(() => {
+        void (async () => {
+          try {
+            if (ctx.getNodeStatus() !== "running") return;
+            const info = await ctx.getPeerConnectionInfo(ownerId);
+            if (!info.connected) return;
+            if (info.direct) {
+              clearRelayUpgradeRetryTimers(ownerId);
+              markBondWarmCooldown(ctx.getLastBondWarmAt(), ownerId, true);
+              return;
+            }
+            const upgraded = await ctx.warmContactConnection(ownerId, {
+              upgradeRelayToDirect: true,
+            });
+            if (upgraded.direct) {
+              clearRelayUpgradeRetryTimers(ownerId);
+              markBondWarmCooldown(ctx.getLastBondWarmAt(), ownerId, true);
+              return;
+            }
+            if (upgraded.connected) {
+              markBondWarmCooldown(
+                ctx.getLastBondWarmAt(),
+                ownerId,
+                /* connected */ false,
+                Date.now(),
+                BOND_WARM_RELAY_UPGRADE_COOLDOWN_MS,
+              );
+            }
+          } catch {
+            /* best-effort */
+          }
+        })();
+      }, delayMs),
+    );
+  }
+  relayUpgradeRetryTimers.set(ownerId, timers);
 }
 
 /**
@@ -267,7 +342,8 @@ export async function warmBondedContactAfterLanDiscoveryViaRuntime(
     if (!ownerId || ownerId === peerId) return;
     const trust = await ctx.trustStore.getTrustRecord(ownerId);
     if (!trust || trust.level === "blocked" || trust.level === "public") return;
-    await ctx.warmContactConnection(ownerId);
+    // Fresh mDNS LAN: force Relay→Direct upgrade (not a passive keep-alive).
+    await ctx.warmContactConnection(ownerId, { upgradeRelayToDirect: true });
   } catch {
     /* best-effort */
   }
@@ -324,16 +400,18 @@ function markBondWarmCooldown(
   ownerId: string,
   connected: boolean,
   now = Date.now(),
+  /** Override failure/partial cooldown (e.g. still Online-Relay). */
+  partialCooldownMs = BOND_WARM_FAILURE_COOLDOWN_MS,
 ): void {
   if (connected) {
     lastBondWarmAt.set(ownerId, now);
     return;
   }
-  // Failed dial: become eligible again after BOND_WARM_FAILURE_COOLDOWN_MS
+  // Failed / still-relay: become eligible again after partialCooldownMs
   // (encoded relative to the configured success cooldown window).
   lastBondWarmAt.set(
     ownerId,
-    now - configuredBondWarmCooldownMs + BOND_WARM_FAILURE_COOLDOWN_MS,
+    now - configuredBondWarmCooldownMs + partialCooldownMs,
   );
 }
 
@@ -419,16 +497,30 @@ export async function warmAllBondedContactsViaRuntime(ctx: ReachabilityContext):
     try {
       const info = await ctx.getPeerConnectionInfo(bond.peerOwnerId);
       if (info.connected) {
-        // Stuck Online-Relay on same LAN: keep trying Relay→Direct even when
-        // recently verified (inbound chat marks freshness without a direct path).
+        // Stuck Online-Relay: identify + LAN dial, short cooldown, and schedule
+        // aggressive upgrade pulses (do not apply the 5‑minute success cooldown).
         if (!info.direct) {
           const upgraded = await ctx.warmContactConnection(bond.peerOwnerId, {
             upgradeRelayToDirect: true,
           });
-          // Still Online (relay or direct): full cooldown. Dropped: short retry.
-          markBondWarmCooldown(lastBondWarmAt, bond.peerOwnerId, upgraded.connected);
+          if (upgraded.direct) {
+            clearRelayUpgradeRetryTimers(bond.peerOwnerId);
+            markBondWarmCooldown(lastBondWarmAt, bond.peerOwnerId, true);
+          } else if (upgraded.connected) {
+            markBondWarmCooldown(
+              lastBondWarmAt,
+              bond.peerOwnerId,
+              false,
+              Date.now(),
+              BOND_WARM_RELAY_UPGRADE_COOLDOWN_MS,
+            );
+            scheduleRelayToDirectUpgradeRetries(ctx, bond.peerOwnerId);
+          } else {
+            markBondWarmCooldown(lastBondWarmAt, bond.peerOwnerId, false);
+          }
           continue;
         }
+        clearRelayUpgradeRetryTimers(bond.peerOwnerId);
         try {
           const { transportPeerId } = await ctx.resolvePeerTransportForOwner(bond.peerOwnerId);
           // Optimized+ always skips recently verified; Smart/Aggressive also treat
@@ -451,7 +543,19 @@ export async function warmAllBondedContactsViaRuntime(ctx: ReachabilityContext):
       // Do NOT apply the full 5-minute cooldown before the dial: a failed first
       // attempt used to block every retry until the next 5-minute interval.
       const warmed = await ctx.warmContactConnection(bond.peerOwnerId);
-      markBondWarmCooldown(lastBondWarmAt, bond.peerOwnerId, warmed.connected);
+      if (warmed.connected && !warmed.direct) {
+        markBondWarmCooldown(
+          lastBondWarmAt,
+          bond.peerOwnerId,
+          false,
+          Date.now(),
+          BOND_WARM_RELAY_UPGRADE_COOLDOWN_MS,
+        );
+        scheduleRelayToDirectUpgradeRetries(ctx, bond.peerOwnerId);
+      } else {
+        markBondWarmCooldown(lastBondWarmAt, bond.peerOwnerId, warmed.connected);
+        if (warmed.direct) clearRelayUpgradeRetryTimers(bond.peerOwnerId);
+      }
       if (warmed.connected && ctx.requestAgentCard) {
         void ctx
           .requestAgentCard(bond.peerOwnerId)

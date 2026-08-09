@@ -732,6 +732,53 @@ describe("reassignStalledSubtask", () => {
     if (second.ok) return;
     expect(second.reason).toBe("reassign_cap");
   });
+
+  it("direct mode reassigns with accept instead of propose", async () => {
+    const deps = makeDeps();
+    const state = createChainState(mandate(), { awardMode: "direct" });
+    state.subtasks.set("subtask_a", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      chainMandateId: "chainmandate_test-1",
+      depth: 1,
+      requiredSkill: "task.execute",
+      objective: "x",
+      requestedResult: "r",
+      constraints: [],
+      dependsOn: [],
+      preferredWorkerPeerId: "12D3KooW-w1",
+      createdAt: NOW.toISOString(),
+    });
+    state.workersBySubtask.set("subtask_a", ["12D3KooW-w1", "12D3KooW-w2"]);
+    state.proposedSubtasks.add("subtask_a");
+    state.awards.set("subtask_a", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      workerPeerId: "12D3KooW-w1",
+      acceptedCostUsd: 0,
+      negotiationRound: 1,
+      deadlineAt: "2026-06-18T01:00:00.000Z",
+      createdAt: NOW.toISOString(),
+    });
+    const first = await reassignStalledSubtask(deps, state, "subtask_a");
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.nextWorkerPeerId).toBe("12D3KooW-w2");
+    expect(state.awards.get("subtask_a")?.workerPeerId).toBe("12D3KooW-w2");
+    expect(deps.sentEnvelopes.some((e) => e.envelope.intent === "task.chain.cancel")).toBe(true);
+    expect(
+      deps.sentEnvelopes.some(
+        (e) => e.envelope.intent === "task.chain.accept" && e.recipientPeerId === "12D3KooW-w2",
+      ),
+    ).toBe(true);
+    expect(
+      deps.sentEnvelopes.some(
+        (e) => e.envelope.intent === "task.chain.propose" && e.recipientPeerId === "12D3KooW-w2",
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("handleOrchestratorPartial worker failure", () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { derivePeerId } from "@envoymesh/identity";
 import { generateKeyPairSync } from "node:crypto";
 import {
@@ -6,6 +6,7 @@ import {
   resolveChainTransportPeerId,
   sendChainEnvelopeOverMesh,
 } from "../src/chain-production.js";
+import { CHAIN_MESH_SEND_TIMEOUT_MS } from "../src/chain-defaults.js";
 
 describe("chain-production", () => {
   it("extractChainIdFromEnvelope reads chainId from nested payloads", () => {
@@ -94,5 +95,55 @@ describe("chain-production", () => {
     );
     expect(ok).toBe(true);
     expect(delivered).toEqual(["task.chain.propose"]);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("sendChainEnvelopeOverMesh times out a hung mesh.send and closes the peer", async () => {
+    vi.useFakeTimers();
+    const closed: string[] = [];
+    const remote = "envoy_agent_remote";
+    const transport = "12D3KooW-remote-transport";
+    const sendPromise = sendChainEnvelopeOverMesh(
+      {
+        mesh: {
+          peerId: "12D3KooW-self",
+          send: () => new Promise(() => {
+            /* never resolves — reproduces half-dead LAN hang */
+          }),
+          closeConnectionsToPeer: async (peerId: string) => {
+            closed.push(peerId);
+            return 1;
+          },
+          ensurePeerReachable: async () => ({ connected: true, direct: true }),
+          getPeerConnectionInfo: () => ({ connected: true, direct: true }),
+        } as never,
+        peerDirectoryStore: {
+          listPeerRecords: async () => [],
+          getPeerByOwnerId: async () => ({ peerId: transport }),
+        } as never,
+        agentPeerToOwner: new Map([[remote, "envoy:owner:remote"]]),
+      },
+      remote,
+      {
+        version: "0.1",
+        messageId: "m-hang",
+        createdAt: "2026-08-09T00:00:00.000Z",
+        senderPeerId: "envoy_agent_local",
+        senderPublicKey: "stub",
+        senderRole: "agent",
+        recipientPeerId: remote,
+        recipientRole: "agent",
+        intent: "task.chain.mandate",
+        payload: {},
+        signature: "stub",
+      },
+    );
+    const okPromise = sendPromise;
+    await vi.advanceTimersByTimeAsync(CHAIN_MESH_SEND_TIMEOUT_MS);
+    await expect(okPromise).resolves.toBe(false);
+    expect(closed).toEqual([transport]);
   });
 });

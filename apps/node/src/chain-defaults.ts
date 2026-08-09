@@ -38,6 +38,13 @@ export const CHAIN_DIRECT_AUTO_EVALUATE_MS = 0;
  */
 export const CHAIN_BID_WAIT_MS = 15_000;
 
+/**
+ * Hard cap for a single Team-job mesh/local envelope send. A hung
+ * `mesh.send` (half-dead Windows LAN path) otherwise holds the per-peer
+ * outbound lock forever and freezes launch after `adopted_preview_plan`.
+ */
+export const CHAIN_MESH_SEND_TIMEOUT_MS = 20_000;
+
 /** Max re-propose attempts per subtask while stuck with zero bids. */
 export const CHAIN_PROPOSE_RETRY_CAP = 2;
 

@@ -1133,9 +1133,8 @@ export async function warmContactConnectionTransportViaRuntime(
         /* best-effort */
       }
 
-      // VPN-only: identify before the home-LAN skip gate. Do not run this for
-      // non-VPN WAN Online-Relay — foreign RFC1918 from identify would reopen
-      // black-hole Relay→Direct dial storms.
+      // Identify over live Online-Relay to refresh tcp/0 LAN listens. Only keep
+      // same-/24 or overlay addresses — foreign RFC1918 must not enter dialHints.
       let identifiedLan: string[] = [];
       if (
         shouldIdentifyBeforeVpnSkip({
@@ -1145,9 +1144,13 @@ export async function warmContactConnectionTransportViaRuntime(
           likelyVpnActive,
         })
       ) {
-        identifiedLan = await refreshLanHintsForRelayUpgrade(mesh, transportPeerId);
+        const refreshed = await refreshLanHintsForRelayUpgrade(mesh, transportPeerId);
+        identifiedLan = refreshed.filter(
+          (a) =>
+            hasSameSubnetLanDialEvidence(localListen, [a], { hostNicFallback: true }) ||
+            hasRfc6598OverlayDialEvidence(localListen, [a]),
+        );
         if (identifiedLan.length > 0) {
-          // Evidence only until policy allows — do not persist foreign LAN yet.
           dialHints = [...new Set([...dialHints, ...identifiedLan])];
           rawDirListen = [...rawDirListen, ...privateLanListenAddrsForPersist(identifiedLan)];
         }

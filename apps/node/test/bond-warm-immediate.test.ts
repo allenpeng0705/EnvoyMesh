@@ -6,6 +6,8 @@ import {
   BOND_WARM_FAILURE_COOLDOWN_MS,
   BOND_WARM_INITIAL_DELAY_MS,
   BOND_WARM_PER_CONTACT_COOLDOWN_MS,
+  BOND_WARM_RELAY_UPGRADE_COOLDOWN_MS,
+  BOND_WARM_RELAY_UPGRADE_RETRY_DELAYS_MS,
   BOND_WARM_STARTUP_RETRY_DELAYS_MS,
   resetBondWarmConnectivityConfigForTests,
   startBondWarmIntervalViaRuntime,
@@ -127,5 +129,70 @@ describe("warmAllBondedContactsViaRuntime failure cooldown", () => {
     expect(BOND_WARM_FAILURE_COOLDOWN_MS).toBeLessThan(BOND_WARM_PER_CONTACT_COOLDOWN_MS / 2);
     await warmAllBondedContactsViaRuntime(ctx);
     expect(warmContactConnection).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries Relay→Direct within seconds instead of waiting 5 minutes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-09T12:00:00.000Z"));
+
+    const lastBondWarmAt = new Map<string, number>();
+    const warmContactConnection = vi.fn(async (_ownerId: string, opts?: { upgradeRelayToDirect?: boolean }) => {
+      if (opts?.upgradeRelayToDirect) {
+        // First upgrade pulses stay on relay; a later pulse lands Direct.
+        if (warmContactConnection.mock.calls.length >= 3) {
+          return { connected: true, direct: true };
+        }
+        return { connected: true, direct: false };
+      }
+      return { connected: true, direct: false };
+    });
+    let connectionInfo = { connected: true, direct: false };
+    const mesh = {
+      getConnectionStats: () => ({ totalConnections: 0 }),
+    };
+    const ctx = {
+      getNodeStatus: () => "running",
+      getInternalMesh: () => mesh,
+      flushFeedNotifyOutbox: async () => undefined,
+      flushFeedEngageOutbox: async () => undefined,
+      getBonds: async () => [{ peerOwnerId: "envoy:owner:win", level: "direct" }],
+      getProfile: () => ({ owner: { ownerId: "envoy:owner:mac" } }),
+      getLastBondWarmAt: () => lastBondWarmAt,
+      getPeerConnectionInfo: async () => connectionInfo,
+      warmContactConnection,
+      resolvePeerTransportForOwner: async () => ({ transportPeerId: "12D3KooWWin" }),
+    } as unknown as ReachabilityContext;
+
+    await warmAllBondedContactsViaRuntime(ctx);
+    expect(warmContactConnection).toHaveBeenCalledWith("envoy:owner:win", {
+      upgradeRelayToDirect: true,
+    });
+    expect(BOND_WARM_RELAY_UPGRADE_COOLDOWN_MS).toBeLessThan(BOND_WARM_PER_CONTACT_COOLDOWN_MS / 10);
+
+    // Still inside the old 5-minute success window — but scheduled upgrade pulses fire.
+    const beforePulses = warmContactConnection.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(BOND_WARM_RELAY_UPGRADE_RETRY_DELAYS_MS[0]!);
+    await Promise.resolve();
+    expect(warmContactConnection.mock.calls.length).toBeGreaterThan(beforePulses);
+
+    await vi.advanceTimersByTimeAsync(
+      BOND_WARM_RELAY_UPGRADE_RETRY_DELAYS_MS[2]! - BOND_WARM_RELAY_UPGRADE_RETRY_DELAYS_MS[0]!,
+    );
+    await Promise.resolve();
+    expect(warmContactConnection.mock.calls.some((c) => c[1]?.upgradeRelayToDirect === true)).toBe(
+      true,
+    );
+
+    // Once Direct, scheduled pulses stop asking for upgradeRelayToDirect.
+    connectionInfo = { connected: true, direct: true };
+    const upgradeCallsBeforeDirectSettle = warmContactConnection.mock.calls.filter(
+      (c) => c[1]?.upgradeRelayToDirect === true,
+    ).length;
+    await vi.advanceTimersByTimeAsync(60_000);
+    await Promise.resolve();
+    const upgradeCallsAfter = warmContactConnection.mock.calls.filter(
+      (c) => c[1]?.upgradeRelayToDirect === true,
+    ).length;
+    expect(upgradeCallsAfter).toBe(upgradeCallsBeforeDirectSettle);
   });
 });

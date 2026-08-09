@@ -131,21 +131,27 @@ export function privateLanListenAddrsForPersist(addrs: readonly string[]): strin
 }
 
 /**
- * Whether warm should identify over a live relay before applying the VPN gate.
- * Only needed when VPN is up — otherwise empty-directory WAN peers must not
- * pull foreign home-LAN listens into an upgrade dial.
+ * Whether warm should identify over a live Online-Relay connection before a
+ * Relay→Direct attempt. Needed whenever peer-directory LAN listens were
+ * scrubbed empty (tcp/0) — home LAN without VPN used to skip identify and
+ * stay stuck on Online-Relay until mDNS randomly refreshed.
+ *
+ * Callers must only merge identified RFC1918 that passes same-/24 or overlay
+ * evidence (see warmContactConnectionTransportViaRuntime) so WAN peers cannot
+ * inject foreign home-LAN dial storms.
  */
 export function shouldIdentifyBeforeVpnSkip(input: {
   upgradeRelayToDirect?: boolean;
   connected: boolean;
   direct: boolean;
-  likelyVpnActive: boolean;
+  /** Kept for call-site compatibility; no longer gates identify. */
+  likelyVpnActive?: boolean;
 }): boolean {
+  void input.likelyVpnActive;
   return (
     input.upgradeRelayToDirect === true &&
-    input.connected &&
-    !input.direct &&
-    input.likelyVpnActive === true
+    input.connected === true &&
+    input.direct !== true
   );
 }
 

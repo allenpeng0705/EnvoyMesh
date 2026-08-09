@@ -644,7 +644,21 @@ export async function launchChain(
 
   let mandateBroadcastOk = true;
   const mandateFails: string[] = [];
-  for (const workerPeerId of allWorkerPeerIds) {
+  // Local / self first so a hung remote mesh.send cannot block the whole
+  // launch before any worker has the mandate (Team-job stuck after adopt).
+  const mandateTargets = [...allWorkerPeerIds].sort((a, b) => {
+    const aLocal = a === deps.orchestratorPeerId ? 0 : 1;
+    const bLocal = b === deps.orchestratorPeerId ? 0 : 1;
+    return aLocal - bLocal;
+  });
+  deps.audit.record({
+    type: "chain.launched",
+    outcome: "record",
+    intent: "task.chain.mandate",
+    correlationId: state.chainId,
+    summary: `mandate_broadcast_start workers=${mandateTargets.length}`,
+  });
+  for (const workerPeerId of mandateTargets) {
     const sent = await sendChainMandate(deps, workerPeerId, state.chainMandate);
     if (!sent) {
       mandateBroadcastOk = false;
@@ -1161,23 +1175,30 @@ export async function reassignStalledSubtask(
 
   const subtask = state.subtasks.get(subtaskId);
   if (!subtask) return { ok: false, reason: "send_failed" };
-  const prepared = prepareSubtaskPropose(state, subtask);
-  const ok = await sendChainPropose(
-    deps,
-    next,
-    prepared.subtask,
-    state.chainMandate,
-    prepared.inputArtifacts,
-  );
+  state.workersBySubtask.set(subtaskId, [next, ...workers.filter((w) => w !== next && w !== award.workerPeerId)]);
+  let ok = false;
+  if (state.awardMode !== "competitive") {
+    await sendChainMandate(deps, next, state.chainMandate);
+    const awarded = await directAwardSubtask(deps, state, subtaskId, next);
+    ok = awarded.ok;
+  } else {
+    const prepared = prepareSubtaskPropose(state, subtask);
+    ok = await sendChainPropose(
+      deps,
+      next,
+      prepared.subtask,
+      state.chainMandate,
+      prepared.inputArtifacts,
+    );
+  }
   if (!ok) return { ok: false, reason: "send_failed" };
 
-  state.workersBySubtask.set(subtaskId, [next, ...workers.filter((w) => w !== next && w !== award.workerPeerId)]);
   markSubtaskProposed(state, subtaskId, (deps.now ?? (() => new Date()))().getTime());
   state.reassignCount.set(subtaskId, (state.reassignCount.get(subtaskId) ?? 0) + 1);
   deps.audit.record({
     type: "chain.launched",
     outcome: "allow",
-    intent: "task.chain.propose",
+    intent: state.awardMode !== "competitive" ? "task.chain.accept" : "task.chain.propose",
     correlationId: state.chainId,
     summary: `stall_reassign subtask=${subtaskId} from=${award.workerPeerId} to=${next}`,
   });
