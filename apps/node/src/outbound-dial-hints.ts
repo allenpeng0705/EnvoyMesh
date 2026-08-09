@@ -316,15 +316,22 @@ export async function buildOutboundDialHints(input: {
     preferCircuitHints,
     allowEphemeralPrivateLan: sameSubnetLan,
   });
+  // Preferred last-dial must NOT re-inject a circuit after LAN-first filtering
+  // stripped circuits — that forced Online-Relay and blocked same-LAN Direct.
   return preferDialHintFirst(orderedForSend, input.preferredDialHint, recipientPeerId, {
     addressFilter,
     allowEphemeralPrivateLan: sameSubnetLan,
+    preferCircuitHints,
+    hasDirectHints: hasSurvivingDirect || orderedForSend.some((h) => !h.includes("/p2p-circuit/")),
   });
 }
 
 /**
  * Move a previously successful dial hint to the front when it still passes
  * usability + address-class filters (stale LAN on wan-default is dropped).
+ *
+ * Never promote a circuit ahead of (or back into) a direct/LAN-first list —
+ * that regresses same-LAN Online-Direct after an early relay warm.
  */
 export function preferDialHintFirst(
   hints: string[],
@@ -333,11 +340,22 @@ export function preferDialHintFirst(
   opts: {
     addressFilter: DialableAddrMode;
     allowEphemeralPrivateLan?: boolean;
+    /** When false, circuit preferred hints are ignored (LAN-first / Direct mode). */
+    preferCircuitHints?: boolean;
+    /** True when the hint list already has a non-circuit path. */
+    hasDirectHints?: boolean;
   },
 ): string[] {
   const preferred = preferredDialHint?.trim();
   if (!preferred) {
     return hints;
+  }
+  const preferredIsCircuit = preferred.includes("/p2p-circuit/");
+  if (preferredIsCircuit) {
+    // Do not undo filterDialHintsForOutboundSend / LAN-first ordering.
+    if (opts.preferCircuitHints === false) return hints;
+    if (opts.hasDirectHints === true) return hints;
+    if (hints.some((h) => !h.includes("/p2p-circuit/"))) return hints;
   }
   const hintOpts = opts.allowEphemeralPrivateLan
     ? { allowEphemeralPrivateLan: true }

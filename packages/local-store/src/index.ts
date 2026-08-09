@@ -1995,6 +1995,11 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
           return;
         }
         const at = input.at?.trim() || new Date().toISOString();
+        // Never let a later relay path erase a known Direct — same-LAN reconnect
+        // must keep preferring the direct multiaddr.
+        if (record.lastSuccessfulDialPath === "direct" && input.path === "relay") {
+          return;
+        }
         if (
           record.lastSuccessfulDialHint === dialHint &&
           record.lastSuccessfulDialPath === input.path &&

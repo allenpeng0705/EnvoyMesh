@@ -228,6 +228,11 @@ export async function dialHintsForChatViaRuntime(
     [...evidenceForSubnet, ...rawDirListen],
     { hostNicFallback: true },
   );
+  // Same-LAN: never feed a sticky relay last-dial into hint build — it races
+  // Online-Direct (preferDialHintFirst also guards this).
+  if (sameSubnet && preferredDialHint?.includes("/p2p-circuit/")) {
+    preferredDialHint = undefined;
+  }
   const peerStoreAddrs =
     mesh && typeof mesh.getPeerStoreDialHints === "function"
       ? await mesh.getPeerStoreDialHints(recipientPeerId, {

@@ -24,11 +24,19 @@ import { PEER_PATH_SOFT_CONNECTION_CAP, isPeerPathConnectionCapReached } from ".
 export const BOND_WARM_MAX_CONNECTIONS = PEER_PATH_SOFT_CONNECTION_CAP;
 export const BOND_WARM_PER_CONTACT_COOLDOWN_MS = 300_000;
 /**
- * Delay before the first bond-warm cycle after the node comes online.
- * Kept at 0 so bonded contacts reconnect immediately (previously 45s).
- * Periodic cycles still use {@link configuredBondWarmIntervalMs}.
+ * After a *failed* warm, stay cool only this long so startup reconnect is not
+ * stuck waiting for the full {@link BOND_WARM_PER_CONTACT_COOLDOWN_MS} (5 min)
+ * — that matched the Win→Mac "Offline until Online-Relay ~5 min" report.
  */
-export const BOND_WARM_INITIAL_DELAY_MS = 0;
+export const BOND_WARM_FAILURE_COOLDOWN_MS = 20_000;
+/**
+ * Extra warm pulses after the node comes online. The steady-state interval is
+ * still ~5 min; without these, a failed first dial waited until the next
+ * interval (~5 min) before Online appeared.
+ */
+export const BOND_WARM_STARTUP_RETRY_DELAYS_MS = [5_000, 20_000, 45_000, 90_000] as const;
+/** @deprecated Prefer {@link BOND_WARM_STARTUP_RETRY_DELAYS_MS}[0]. */
+export const BOND_WARM_INITIAL_DELAY_MS = BOND_WARM_STARTUP_RETRY_DELAYS_MS[0];
 const BOND_WARM_INTERVAL_MS = 300_000;
 
 /** Runtime-overridable bond-warm timers (from connectivity mode preset). */
@@ -311,6 +319,24 @@ export async function resyncBondedContactReachabilityTagsViaRuntime(ctx: Reachab
   }
 }
 
+function markBondWarmCooldown(
+  lastBondWarmAt: Map<string, number>,
+  ownerId: string,
+  connected: boolean,
+  now = Date.now(),
+): void {
+  if (connected) {
+    lastBondWarmAt.set(ownerId, now);
+    return;
+  }
+  // Failed dial: become eligible again after BOND_WARM_FAILURE_COOLDOWN_MS
+  // (encoded relative to the configured success cooldown window).
+  lastBondWarmAt.set(
+    ownerId,
+    now - configuredBondWarmCooldownMs + BOND_WARM_FAILURE_COOLDOWN_MS,
+  );
+}
+
 export function startBondWarmIntervalViaRuntime(ctx: ReachabilityContext): void {
   const existing = ctx.getBondWarmTimer();
   if (existing) {
@@ -319,12 +345,9 @@ export function startBondWarmIntervalViaRuntime(ctx: ReachabilityContext): void 
   const runWarm = (): void => {
     void warmAllBondedContactsViaRuntime(ctx);
   };
-  // Biggest reconnect win: warm as soon as the node is online (same soft
-  // connection cap / per-contact cooldown as the periodic cycle).
-  if (BOND_WARM_INITIAL_DELAY_MS <= 0) {
-    runWarm();
-  } else {
-    setTimeout(runWarm, BOND_WARM_INITIAL_DELAY_MS);
+  // Startup pulses — do not rely on the 5-minute interval for first Online.
+  for (const delayMs of BOND_WARM_STARTUP_RETRY_DELAYS_MS) {
+    setTimeout(runWarm, delayMs);
   }
   ctx.setBondWarmTimer(setInterval(runWarm, configuredBondWarmIntervalMs));
 }
@@ -399,10 +422,11 @@ export async function warmAllBondedContactsViaRuntime(ctx: ReachabilityContext):
         // Stuck Online-Relay on same LAN: keep trying Relay→Direct even when
         // recently verified (inbound chat marks freshness without a direct path).
         if (!info.direct) {
-          lastBondWarmAt.set(bond.peerOwnerId, now);
-          await ctx.warmContactConnection(bond.peerOwnerId, {
+          const upgraded = await ctx.warmContactConnection(bond.peerOwnerId, {
             upgradeRelayToDirect: true,
           });
+          // Still Online (relay or direct): full cooldown. Dropped: short retry.
+          markBondWarmCooldown(lastBondWarmAt, bond.peerOwnerId, upgraded.connected);
           continue;
         }
         try {
@@ -413,22 +437,21 @@ export async function warmAllBondedContactsViaRuntime(ctx: ReachabilityContext):
             isOutboundPeerRecentlyVerified(transportPeerId) ||
             (configuredBondWarmEventDriven && info.connected)
           ) {
-            lastBondWarmAt.set(bond.peerOwnerId, now);
+            markBondWarmCooldown(lastBondWarmAt, bond.peerOwnerId, true);
             continue;
           }
         } catch {
           /* fall through */
         }
-        lastBondWarmAt.set(bond.peerOwnerId, now);
-        await ctx.warmContactConnection(bond.peerOwnerId, { keepAlive: true });
+        const kept = await ctx.warmContactConnection(bond.peerOwnerId, { keepAlive: true });
+        markBondWarmCooldown(lastBondWarmAt, bond.peerOwnerId, kept.connected);
         continue;
       }
       // Peer was disconnected — warm, then fetch agent card if it just came online.
-      // This bridges the gap between startup (where the 5s refresh fires before
-      // relay circuits are established) and steady-state (where the auto-fetcher
-      // only fires on NEW bond establishment, not reconnection of existing bonds).
-      lastBondWarmAt.set(bond.peerOwnerId, now);
+      // Do NOT apply the full 5-minute cooldown before the dial: a failed first
+      // attempt used to block every retry until the next 5-minute interval.
       const warmed = await ctx.warmContactConnection(bond.peerOwnerId);
+      markBondWarmCooldown(lastBondWarmAt, bond.peerOwnerId, warmed.connected);
       if (warmed.connected && ctx.requestAgentCard) {
         void ctx
           .requestAgentCard(bond.peerOwnerId)
@@ -440,7 +463,8 @@ export async function warmAllBondedContactsViaRuntime(ctx: ReachabilityContext):
           );
       }
     } catch {
-      /* best-effort */
+      // Attempt threw — treat as failure so startup pulses can retry soon.
+      markBondWarmCooldown(lastBondWarmAt, bond.peerOwnerId, false);
     }
   }
 }

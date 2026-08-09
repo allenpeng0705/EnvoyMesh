@@ -132,6 +132,61 @@ describe("buildOutboundDialHints", () => {
     expect(ordered).toEqual([preferred, other]);
   });
 
+  it("does not promote a circuit lastSuccessfulDialHint over same-LAN direct hints", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-no-circuit-pref-"));
+    try {
+      const seedStore = createDiscoverySeedStore(profileDir);
+      const target = "12D3KooWSameLanNoCircuitPref";
+      const lanAddr = `/ip4/192.168.3.78/tcp/4011/p2p/${target}`;
+      const localListen = ["/ip4/192.168.3.10/tcp/4011/p2p/12D3KooWLocalNode"];
+      const stickyCircuit =
+        "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWSameLanNoCircuitPref";
+      await seedStore.upsertSuccess(stickyCircuit, "relay.lookup");
+
+      const hints = await buildOutboundDialHints({
+        recipientPeerId: target,
+        peerListenAddrs: [lanAddr],
+        discoverySeedStore: seedStore,
+        localListenAddrs: localListen,
+        config: {
+          version: "0.1",
+          profileDir,
+          discoveryProfile: "wan-default",
+          relayEnabled: true,
+          relayServerEnabled: false,
+          advertiseAddrs: [],
+          bootstrapPeers: [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
+          bootstrapPresets: ["cn-relay"],
+          configuredRelays: [],
+          modelProviders: { mode: "mock" },
+          chatAssistEnabled: false,
+          contactAiPreferences: [],
+          updatedAt: new Date().toISOString(),
+        },
+        preferredDialHint: stickyCircuit,
+      });
+
+      // Critical regression guard: sticky relay must not become dial #1 on same LAN.
+      expect(hints[0]).toBe(lanAddr);
+      expect(hints[0]).not.toContain("/p2p-circuit/");
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
+
+  it("preferDialHintFirst ignores circuit preferred when direct hints already exist", () => {
+    const target = "12D3KooWPreferGuardPeer";
+    const lan = `/ip4/192.168.1.5/tcp/4011/p2p/${target}`;
+    const circuit =
+      `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${target}`;
+    const ordered = preferDialHintFirst([lan], circuit, target, {
+      addressFilter: "all",
+      preferCircuitHints: false,
+      hasDirectHints: true,
+    });
+    expect(ordered).toEqual([lan]);
+  });
+
   it("keeps LAN listen addrs when discoveryProfile is lan-fast (same-network home setup)", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-lan-fast-"));
     try {

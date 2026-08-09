@@ -505,4 +505,32 @@ describe("peer directory store", () => {
       }),
     ).resolves.toBeUndefined();
   });
+
+  it("recordLastSuccessfulDial does not let relay overwrite a stored direct path", async () => {
+    const store = createLocalPeerDirectoryStore(profileDir);
+    const peerId = "12D3KooWDirectWinsPeer";
+    const direct = `/ip4/192.168.3.78/tcp/4011/p2p/${peerId}`;
+    const circuit =
+      `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${peerId}`;
+    await store.ensurePeerFromInboundChat({
+      ownerId: "envoy:owner:direct-wins",
+      peerId,
+      listenAddrs: [direct],
+    });
+    await store.recordLastSuccessfulDial({
+      peerId,
+      dialHint: direct,
+      path: "direct",
+      at: "2026-08-09T12:00:00.000Z",
+    });
+    await store.recordLastSuccessfulDial({
+      peerId,
+      dialHint: circuit,
+      path: "relay",
+      at: "2026-08-09T12:01:00.000Z",
+    });
+    const row = await store.getPeerByPeerId(peerId);
+    expect(row?.lastSuccessfulDialHint).toBe(direct);
+    expect(row?.lastSuccessfulDialPath).toBe("direct");
+  });
 });
