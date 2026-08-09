@@ -53,6 +53,7 @@ export const chainsMessages = {
     manage: "Manage",
   },
   reports: {
+    title: "Reports",
     empty: "No reports yet.",
     pinnedOnly: "Pinned only",
     pin: "Pin",
@@ -60,6 +61,13 @@ export const chainsMessages = {
     summary: "{subtasks} subtasks · {workers} workers · ${synthesis} synthesis",
     viewReport: "View report",
     hideReport: "Hide report",
+    delete: "Delete",
+    deleteConfirm: "Delete this report?",
+    deleteConfirmMessage: "The report will be removed from this node. This cannot be undone.",
+    deleteConfirmAction: "Yes, delete report",
+    deleted: "Report deleted",
+    deleteFailed: "Failed to delete report",
+    deleteFailedRestart: "Delete needs a node restart — stop and start the home node, then try again",
   },
   report: {
     title: "Job report",
@@ -68,6 +76,7 @@ export const chainsMessages = {
     openChains: "Open Team jobs",
     viewFull: "View full report",
     chainId: "Job ID",
+    goal: "Job",
     totalCost: "Total cost",
     synthesisCost: "Synthesis cost",
     duration: "Duration",
@@ -283,6 +292,9 @@ export const chainsMessages = {
       summarizeGoal: "Summarize this document and extract the 5 most important action items",
       askNetwork: "Ask my network",
       askNetworkGoal: "Ask my bonded contacts what tools they recommend for {topic}",
+      engineerBrief: "Engineer brief",
+      engineerBriefGoal:
+        "Produce a short brief (≤600 words) for software engineers on {topic}. Open with a 5-bullet TL;DR. Use at most 3 metaphors; for each give Analogy / Where it breaks / When to stop. Prefer protocol, consensus, shared-randomness, or capability language — not CQRS/OAuth/IAM. No faster-than-light or signalling claims. Close with when metaphors help vs when the math must take over.",
     },
   },
   recipes: {

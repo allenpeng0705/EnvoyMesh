@@ -20,6 +20,7 @@ import {
 } from "@envoymesh/protocol";
 import { assignWorkersToSteps } from "@envoymesh/api";
 import { extractJson } from "./chain-decomposer.js";
+import { isBriefOrReportGoal, planPromptAddonForGoal } from "./chain-deliverable-policy.js";
 
 /** Bump when substitute guidance text changes (prompt module versioning). */
 export const ROLE_SUBSTITUTE_GUIDANCE_VERSION = 1;
@@ -187,6 +188,11 @@ export function buildPlanAssignPrompt(
         ]
       : [];
 
+  const briefAddon = planPromptAddonForGoal(goal).trim();
+  const aggregationHint = isBriefOrReportGoal(goal)
+    ? '- For brief/report goals, aggregation MUST be "llm_merge".'
+    : "";
+
   return [
     "You are the Assigner for an EnvoyMesh Team job (multi-agent collaboration).",
     "Analyze the goal, split it into concrete steps (dependency-aware), and assign EACH step to exactly one eligible worker.",
@@ -206,6 +212,8 @@ export function buildPlanAssignPrompt(
     "- Optional threadId: group related steps that should stay on the SAME worker (e.g. \"coding\", \"qa\").",
     "- Optional produces: string[] artifact keys this step will emit; expects: [{ key, fromStepIndex? }] soft parent keys.",
     "- Do not emit <think> tags, chain-of-thought, or markdown — JSON object only.",
+    aggregationHint,
+    briefAddon,
     "",
     ...modeSection,
     ...noRolePeersHint,

@@ -59,6 +59,8 @@ export interface LocalChainReportsStore {
   getChainReport(chainId: string): Promise<ChainReportRecord | null>;
   listChainReports(params?: ListChainReportsParams): Promise<ChainReportRecord[]>;
   pinChainReport(chainId: string, pinned: boolean): Promise<ChainReportRecord | null>;
+  /** Permanently remove a report by chainId. Returns true if a record was deleted. */
+  deleteChainReport(chainId: string): Promise<boolean>;
   /**
    * Drops records whose `createdAt + retentionMs < now` and `report.pinned !== true`.
    * Returns the number of records removed. Idempotent and safe to call repeatedly.
@@ -187,6 +189,19 @@ export function createLocalChainReportsStore(
         file.reports[idx] = updated;
         await writeFileAtomic(file);
         return updated;
+      });
+    },
+
+    async deleteChainReport(chainId) {
+      return enqueueWrite(async () => {
+        const file = await loadFile();
+        const idx = file.reports.findIndex(
+          (r) => r.report.chainId === chainId,
+        );
+        if (idx === -1) return false;
+        file.reports.splice(idx, 1);
+        await writeFileAtomic(file);
+        return true;
       });
     },
 

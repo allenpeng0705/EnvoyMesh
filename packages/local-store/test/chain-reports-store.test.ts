@@ -168,6 +168,19 @@ describe("createLocalChainReportsStore", () => {
     expect(await store.pinChainReport("chain_missing", true)).toBeNull();
   });
 
+  it("deleteChainReport removes a record", async () => {
+    await store.recordChainReport(report({ chainId: "chain_del" }));
+    await store.recordChainReport(report({ chainId: "chain_keep" }));
+    expect(await store.deleteChainReport("chain_del")).toBe(true);
+    const list = await store.listChainReports();
+    expect(list.map((r) => r.report.chainId)).toEqual(["chain_keep"]);
+    expect(await store.getChainReport("chain_del")).toBeNull();
+  });
+
+  it("deleteChainReport returns false for a missing chainId", async () => {
+    expect(await store.deleteChainReport("chain_missing")).toBe(false);
+  });
+
   it("pruneExpiredReports drops old unpinned but preserves pinned", async () => {
     const veryOld = "2020-01-01T00:00:00.000Z";
     const recent = "2026-06-17T00:00:00.000Z";

@@ -364,12 +364,14 @@ function buildReport(
     ...workingNotes,
   ];
 
+  const goal = input.goal?.trim();
   return ChainReportSchema.parse({
     version: "0.1",
     chainId: input.chainMandate.chainId,
     chainMandateId: input.chainMandate.chainMandateId,
     orchestratorOwnerId: input.chainMandate.orchestratorOwnerId,
     orchestratorPeerId: input.chainMandate.issuerOwnerId,
+    ...(goal ? { goal } : {}),
     pinned: false,
     chainSummary: {
       durationMs,

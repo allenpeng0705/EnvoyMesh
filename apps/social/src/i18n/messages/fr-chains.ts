@@ -38,6 +38,7 @@ export const frChainsMessages = {
     manage: "Gérer",
   },
   reports: {
+    title: "Rapports",
     empty: "Pas encore de rapports.",
     pinnedOnly: "Épinglés uniquement",
     pin: "Épingler",
@@ -45,6 +46,13 @@ export const frChainsMessages = {
     summary: "{subtasks} sous-tâches · {workers} travailleurs · ${synthesis} synthèse",
     viewReport: "Voir le rapport",
     hideReport: "Masquer le rapport",
+    delete: "Supprimer",
+    deleteConfirm: "Supprimer ce rapport ?",
+    deleteConfirmMessage: "Le rapport sera retiré de ce nœud. Cette action est irréversible.",
+    deleteConfirmAction: "Oui, supprimer",
+    deleted: "Rapport supprimé",
+    deleteFailed: "Échec de la suppression du rapport",
+    deleteFailedRestart: "La suppression nécessite un redémarrage du nœud — redémarrez le nœud local puis réessayez",
   },
   report: {
     title: "Rapport de chaîne",
@@ -188,6 +196,9 @@ export const frChainsMessages = {
       summarizeGoal: "Résumer ce document et extraire les 5 éléments d'action les plus importants",
       askNetwork: "Demander à mon réseau",
       askNetworkGoal: "Demander à mes contacts liés quels outils ils recommandent pour {topic}",
+      engineerBrief: "Brief ingénieur",
+      engineerBriefGoal:
+        "Rédiger un brief court (≤600 mots) pour des ingénieurs logiciels sur {topic}. Commencer par un TL;DR en 5 puces. Au plus 3 métaphores ; pour chacune : Analogie / Où ça casse / Quand s'arrêter. Préférer protocole, consensus, aléas partagés ou capacités — pas CQRS/OAuth/IAM. Aucune affirmation FTL ou de signalisation. Conclure quand les métaphores aident vs quand les maths doivent prendre le relais.",
     },
   },
   recipes: {

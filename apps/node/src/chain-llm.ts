@@ -16,6 +16,13 @@
 
 import type { ChainSubtask, ChainSubtaskBid, TaskChainPartialPayload } from "@envoymesh/protocol";
 
+import {
+  isBriefOrReportGoal,
+  mergeSystemPromptForGoal,
+  mergeUserPromptAddonForGoal,
+  planPromptAddonForGoal,
+} from "./chain-deliverable-policy.js";
+
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
@@ -32,7 +39,7 @@ Return ONLY a JSON array. Do not include markdown fences or explanations.
 Example: [{"requiredSkill":"search","objective":"Search bonded contacts' vaults","costCeilingUsd":5,"deadlineMinutes":10}]`;
 
 /** Default system prompt for merging partial results into a composite. */
-const MERGE_SYSTEM_PROMPT = `You are the Assigner's final editor for an EnvoyMesh Team job.
+export const MERGE_SYSTEM_PROMPT = `You are the Assigner's final editor for an EnvoyMesh Team job.
 Workers already completed steps. Your job is ONE polished final deliverable for a human reader.
 
 Rules:
@@ -42,6 +49,7 @@ Rules:
   - Integrate the best facts/metaphors/structure from every step; remove redundancy.
   - Resolve contradictions; prefer later / higher-confidence steps when they refine earlier ones.
   - Keep engineer-friendly tone when the goal targets software engineers.
+  - Prefer editing the synthesize/summarize step over inventing new content.
   - "sections" is optional appendix only (empty array if summary is complete).
   - "sources" briefly maps which step informed what (workerIndex = step number).
   - Return ONLY a JSON object: { summary, sections, sources }.
@@ -157,7 +165,7 @@ export function createLlmDecompose(
 Available capabilities: ${availableCapabilities.join(", ")}
 Maximum subtasks: ${MAX_SUBTASKS}
 
-Decompose this goal into subtasks.`;
+Decompose this goal into subtasks.${planPromptAddonForGoal(goal)}`;
 
     let response: Awaited<ReturnType<LlmProvider["complete"]>>;
     try {
@@ -318,14 +326,14 @@ Step results:
 ${partsText}
 
 Return a JSON object with { summary, sections, sources }.
-"summary" must be the complete final result the human should read.`;
+"summary" must be the complete final result the human should read.${mergeUserPromptAddonForGoal(input.goal)}`;
 
     let response: Awaited<ReturnType<LlmProvider["complete"]>>;
     try {
       response = await provider.complete({
-        systemPrompt: MERGE_SYSTEM_PROMPT,
+        systemPrompt: mergeSystemPromptForGoal(MERGE_SYSTEM_PROMPT, input.goal),
         userPrompt,
-        maxTokens: 8192,
+        maxTokens: isBriefOrReportGoal(input.goal) ? 4096 : 8192,
       });
     } catch (err) {
       return { ok: false, reason: "llm_unavailable", detail: err instanceof Error ? err.message : String(err) };

@@ -279,6 +279,9 @@ export class DirectCallClient implements NodeServiceClient {
   chainPinReport(params: Parameters<NodeService["chainPinReport"]>[0]): ReturnType<NodeService["chainPinReport"]> {
     return this._ns.chainPinReport(params);
   }
+  chainDeleteReport(params: Parameters<NodeService["chainDeleteReport"]>[0]): ReturnType<NodeService["chainDeleteReport"]> {
+    return this._ns.chainDeleteReport(params);
+  }
   chainSetBidStrategy(params: Parameters<NodeService["chainSetBidStrategy"]>[0]): ReturnType<NodeService["chainSetBidStrategy"]> {
     return this._ns.chainSetBidStrategy(params);
   }

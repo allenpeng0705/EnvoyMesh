@@ -9119,6 +9119,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
   async chainListReports(_params?: import("@envoymesh/api").ChainListReportsParams): Promise<import("@envoymesh/api").ChainListReportsResult> { return { reports: [] }; }
   async chainGetReport(_params: import("@envoymesh/api").ChainGetReportParams): Promise<import("@envoymesh/api").ChainGetReportResult> { throw new Error("Not available on mobile"); }
   async chainPinReport(_params: import("@envoymesh/api").ChainPinReportParams): Promise<import("@envoymesh/api").ChainPinReportResult> { return { chainId: "", pinned: false }; }
+  async chainDeleteReport(params: import("@envoymesh/api").ChainDeleteReportParams): Promise<import("@envoymesh/api").ChainDeleteReportResult> { return { chainId: params.chainId, deleted: false }; }
   async listCapabilityProviders(): Promise<Record<string, string[]>> { return {}; }
   async getPeerReputation(_peerOwnerId?: string): Promise<{ score: number } | null> { return null; }
   async discoverAndCluster(_seedTopics?: string[], _seedCapabilities?: string[]): Promise<string> { throw new Error("Not available on mobile — pair to desktop"); }

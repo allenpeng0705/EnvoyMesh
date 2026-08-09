@@ -438,6 +438,11 @@ export const ChainReportSchema = z.object({
   chainMandateId: ChainMandateIdSchema,
   orchestratorOwnerId: z.string().min(1),
   orchestratorPeerId: z.string().min(1),
+  /**
+   * Owner's original Team job text (natural-language goal). Optional for
+   * reports published before this field existed; new reports should set it.
+   */
+  goal: z.string().min(1).max(4_000).optional(),
   /** True when the owner flagged this report to be exempt from 90-day GC. */
   pinned: z.boolean().default(false),
   chainSummary: z.object({

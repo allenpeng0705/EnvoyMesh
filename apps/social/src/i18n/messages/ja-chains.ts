@@ -38,6 +38,7 @@ export const jaChainsMessages = {
     manage: "管理",
   },
   reports: {
+    title: "レポート",
     empty: "まだレポートがありません。",
     pinnedOnly: "ピン留めのみ",
     pin: "ピン留め",
@@ -45,6 +46,13 @@ export const jaChainsMessages = {
     summary: "{subtasks} サブタスク · {workers} ワーカー · ${synthesis} 統合",
     viewReport: "レポートを表示",
     hideReport: "レポートを非表示",
+    delete: "削除",
+    deleteConfirm: "このレポートを削除しますか？",
+    deleteConfirmMessage: "レポートはこのノードから削除され、元に戻せません。",
+    deleteConfirmAction: "はい、削除する",
+    deleted: "レポートを削除しました",
+    deleteFailed: "レポートの削除に失敗しました",
+    deleteFailedRestart: "削除にはノードの再起動が必要です — ホームノードを再起動してから再試行してください",
   },
   report: {
     title: "チェーンレポート",
@@ -188,6 +196,9 @@ export const jaChainsMessages = {
       summarizeGoal: "このドキュメントを要約し、最も重要な5つのアクション項目を抽出",
       askNetwork: "ネットワークに質問",
       askNetworkGoal: "バウンド済みの連絡先に {topic} についておすすめのツールを質問",
+      engineerBrief: "エンジニア向けブリーフ",
+      engineerBriefGoal:
+        "ソフトウェアエンジニア向けに {topic} の短いブリーフ（≤600語）を作成。5点の TL;DR で始める。比喩は最大3つ。各比喩は Analogy / Where it breaks / When to stop。CQRS/OAuth/IAM を主比喩にしない。超光速・シグナリング主張は禁止。最後に比喩が有用な時と数学が必要な時を区別する。",
     },
   },
   recipes: {

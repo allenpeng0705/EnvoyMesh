@@ -16,6 +16,7 @@ import type {
   ChainListReportsParams,
   ChainGetReportParams,
   ChainPinReportParams,
+  ChainDeleteReportParams,
   ChainSetBidStrategyParams,
   ChainGetBidStrategyParams,
   ChainEvaluateBidsParams,
@@ -274,6 +275,8 @@ export async function routeRpcMethod(
       return ns.chainGetReport(params as unknown as ChainGetReportParams);
     case "chainPinReport":
       return ns.chainPinReport(params as unknown as ChainPinReportParams);
+    case "chainDeleteReport":
+      return ns.chainDeleteReport(params as unknown as ChainDeleteReportParams);
     case "chainSetBidStrategy":
       return ns.chainSetBidStrategy(params as unknown as ChainSetBidStrategyParams);
     case "chainGetBidStrategy":

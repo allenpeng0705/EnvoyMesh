@@ -18,6 +18,11 @@ import {
 import { executeTool, type MeshToolContext } from "./tool-registry.js";
 import { deliverChainPartial, type ChainWorkerHandlerDeps } from "./chain-worker.js";
 import { chainLog, chainWarn, shortPeerId } from "./chain-debug.js";
+import {
+  briefReportWorkerConstraints,
+  isBriefOrReportGoal,
+  isSynthesizeSubtask,
+} from "./chain-deliverable-policy.js";
 
 export interface ChainWorkerExecutorDeps {
   getToolContext: () => Promise<MeshToolContext | null>;
@@ -87,6 +92,10 @@ export function buildOpenClawSubtaskPrompt(
   inputArtifacts?: readonly NamedArtifact[],
 ): string {
   const constraints = (subtask.constraints ?? []).filter(Boolean);
+  const applyBriefRules =
+    isSynthesizeSubtask(subtask) || isBriefOrReportGoal(subtask.objective);
+  const briefConstraints = applyBriefRules ? briefReportWorkerConstraints() : [];
+  const mergedConstraints = [...constraints, ...briefConstraints];
   const parts = [
     "You are a Team job worker on the EnvoyMesh Agent Network.",
     `Required skill hint: ${subtask.requiredSkill}`,
@@ -96,10 +105,14 @@ export function buildOpenClawSubtaskPrompt(
   ].filter(Boolean);
   const inputs = formatInputArtifactsForPrompt(inputArtifacts);
   if (inputs) parts.push(inputs);
-  if (constraints.length > 0) {
-    parts.push(`Constraints:\n${constraints.map((c) => `- ${c}`).join("\n")}`);
+  if (mergedConstraints.length > 0) {
+    parts.push(`Constraints:\n${mergedConstraints.map((c) => `- ${c}`).join("\n")}`);
   }
-  parts.push("Produce a clear, useful result for the orchestrator. Be concise and factual.");
+  parts.push(
+    applyBriefRules
+      ? "Produce the final brief/report markdown for the orchestrator. Follow the constraints exactly."
+      : "Produce a clear, useful result for the orchestrator. Be concise and factual.",
+  );
   return parts.join("\n\n");
 }
 

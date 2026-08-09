@@ -176,6 +176,11 @@ export interface ChainOrchestratorHandlerDeps extends ChainOrchestratorSendDeps 
 export interface ChainState {
   chainId: string;
   chainMandate: ChainMandate;
+  /**
+   * Owner's original Team job text. Persisted onto the published ChainReport
+   * so the Reports list can show what the job was for.
+   */
+  goal?: string;
   subtasks: Map<string, ChainSubtask>;
   /** Latest bid per (subtaskId, workerPeerId). */
   bids: Map<string, ChainSubtaskBid>;
@@ -263,12 +268,14 @@ export interface ChainState {
 
 export function createChainState(
   chainMandate: ChainMandate,
-  opts?: { awardMode?: "direct" | "competitive" },
+  opts?: { awardMode?: "direct" | "competitive"; goal?: string },
 ): ChainState {
   const ledger = createChainBudgetLedger(chainMandate);
+  const goal = opts?.goal?.trim();
   return {
     chainId: chainMandate.chainId,
     chainMandate,
+    ...(goal ? { goal } : {}),
     subtasks: new Map(),
     bids: new Map(),
     awards: new Map(),
@@ -1921,12 +1928,15 @@ export async function synthesizeChain(
     });
   }
 
+  // Prefer the owner's original job text — never the first subtask objective
+  // (that is usually a research paraphrase, not the job the owner typed).
   const goal =
+    state.goal?.trim() ||
     state.iteration?.goal?.trim() ||
-    [...state.subtasks.values()][0]?.objective?.trim() ||
     undefined;
 
-  // Prefer LLM merge when wired; fall back to concatenate on soft failure.
+  // Prefer LLM merge when wired (brief/report goals rely on the merge editor);
+  // fall back to concatenate on soft failure.
   let usedKind = kind;
   if (kind === "concatenate" && deps.llmMerge) {
     usedKind = "merge_structured";
@@ -1981,10 +1991,13 @@ export async function publishChainReport(
     return { ok: false, reason: "handler_denied" };
   }
 
-  await deps.storeChainReport(report);
+  const goal = (state.goal ?? state.iteration?.goal ?? report.goal)?.trim();
+  const finalReport = goal && !report.goal?.trim() ? { ...report, goal } : report;
+
+  await deps.storeChainReport(finalReport);
   state.published = true;
 
-  const payload = TaskChainReportPayloadSchema.parse({ report });
+  const payload = TaskChainReportPayloadSchema.parse({ report: finalReport });
   const envelope = buildChainEnvelope({
     intent: "task.chain.report",
     senderPeerId: deps.orchestratorPeerId,

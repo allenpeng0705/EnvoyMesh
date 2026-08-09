@@ -54,6 +54,7 @@ export const zhChainsMessages = {
     manage: "管理",
   },
   reports: {
+    title: "报告",
     empty: "还没有报告。",
     pinnedOnly: "仅已固定",
     pin: "固定",
@@ -61,6 +62,13 @@ export const zhChainsMessages = {
     summary: "{subtasks} 个子任务 · {workers} 个工作代理 · 汇总 ${synthesis}",
     viewReport: "查看报告",
     hideReport: "隐藏报告",
+    delete: "删除",
+    deleteConfirm: "删除这份报告？",
+    deleteConfirmMessage: "报告将从本节点移除，且无法恢复。",
+    deleteConfirmAction: "是，删除报告",
+    deleted: "报告已删除",
+    deleteFailed: "删除报告失败",
+    deleteFailedRestart: "删除需要重启节点 — 请停止并重新启动家庭节点后再试",
   },
   report: {
     title: "任务报告",
@@ -69,6 +77,7 @@ export const zhChainsMessages = {
     openChains: "打开协作任务",
     viewFull: "查看完整报告",
     chainId: "任务 ID",
+    goal: "任务",
     totalCost: "总费用",
     synthesisCost: "汇总费用",
     duration: "耗时",
@@ -275,6 +284,9 @@ export const zhChainsMessages = {
       summarizeGoal: "总结此文档并提取 5 个最重要的行动项",
       askNetwork: "询问我的网络",
       askNetworkGoal: "向已绑定的联系人询问他们推荐的 {topic} 工具",
+      engineerBrief: "工程师简报",
+      engineerBriefGoal:
+        "为软件工程师写一份关于 {topic} 的短简报（≤600 字）。以 5 条 TL;DR 开头。最多 3 个类比；每个给出 类比 / 失效点 / 何时停用。优先用协议、共识、共享随机数或能力令牌语言——不要用 CQRS/OAuth/IAM 做主类比。禁止超光速或“发信号”表述。结尾说明类比何时有用、何时必须回到数学。",
     },
   },
   recipes: {

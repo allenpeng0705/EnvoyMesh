@@ -768,6 +768,8 @@ export interface LocalTaskStore {
     chainId: string,
     pinned: boolean,
   ): Promise<ChainReportRecord | null>;
+  /** Permanently remove a persisted chain report. */
+  deleteChainReport(chainId: string): Promise<boolean>;
   /** Phase 43H — list owner-saved chain recipes. */
   listChainRecipes(): Promise<ChainRecipeRecord[]>;
   saveChainRecipe(
@@ -1155,6 +1157,9 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
 
     async pinChainReport(chainId, pinned) {
       return chainReportsStore.pinChainReport(chainId, pinned);
+    },
+    async deleteChainReport(chainId) {
+      return chainReportsStore.deleteChainReport(chainId);
     },
     async listChainRecipes() {
       return chainRecipesStore.listRecipes();

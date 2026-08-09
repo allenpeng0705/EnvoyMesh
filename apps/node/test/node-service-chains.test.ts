@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   chainCancelViaRuntime,
   chainDeleteRecipeViaRuntime,
+  chainDeleteReportViaRuntime,
   chainExportCostsViaRuntime,
   chainGetBidStrategyViaRuntime,
   chainGetStateViaRuntime,
@@ -28,6 +29,7 @@ function makeContext(store: ChainStore): ChainContext {
     listChainReports: async () => [],
     getChainReport: async () => null,
     pinChainReport: async () => undefined,
+    deleteChainReport: async () => false,
     getChainGoal: () => undefined,
     getChainCostEstimate: () => undefined,
     snapshotToResult: () => ({
@@ -235,5 +237,32 @@ describe("chainDeleteRecipeViaRuntime", () => {
     const store = new ChainStore();
     const out = await chainDeleteRecipeViaRuntime(makeContext(store), { id: "x" });
     expect(out).toEqual({ ok: false, deleted: false });
+  });
+});
+
+describe("chainDeleteReportViaRuntime", () => {
+  it("returns deleted:false when no task store is bound", async () => {
+    const store = new ChainStore();
+    const out = await chainDeleteReportViaRuntime(makeContext(store), { chainId: "c1" });
+    expect(out).toEqual({ chainId: "c1", deleted: false });
+  });
+
+  it("deletes the report and drops runtime", async () => {
+    const store = new ChainStore();
+    store.setRuntime("c1", {
+      state: { chainId: "c1" } as never,
+      bidStrategy: { baseCostUsd: 1, capabilityLocalEtaMs: 1, reputationDiscount: 1, etaSlackMs: 1 },
+    });
+    let deletedId: string | undefined;
+    const ctx = makeContext(store);
+    ctx.hasTaskStore = () => true;
+    ctx.deleteChainReport = async (chainId) => {
+      deletedId = chainId;
+      return true;
+    };
+    const out = await chainDeleteReportViaRuntime(ctx, { chainId: "c1" });
+    expect(out).toEqual({ chainId: "c1", deleted: true });
+    expect(deletedId).toBe("c1");
+    expect(store.getRuntime("c1")).toBeUndefined();
   });
 });

@@ -38,6 +38,7 @@ export const deChainsMessages = {
     manage: "Verwalten",
   },
   reports: {
+    title: "Berichte",
     empty: "Noch keine Berichte.",
     pinnedOnly: "Nur angeheftete",
     pin: "Anheften",
@@ -45,6 +46,13 @@ export const deChainsMessages = {
     summary: "{subtasks} Teilaufgaben · {workers} Worker · ${synthesis} Synthese",
     viewReport: "Bericht anzeigen",
     hideReport: "Bericht ausblenden",
+    delete: "Löschen",
+    deleteConfirm: "Diesen Bericht löschen?",
+    deleteConfirmMessage: "Der Bericht wird von diesem Knoten entfernt. Das kann nicht rückgängig gemacht werden.",
+    deleteConfirmAction: "Ja, Bericht löschen",
+    deleted: "Bericht gelöscht",
+    deleteFailed: "Bericht konnte nicht gelöscht werden",
+    deleteFailedRestart: "Löschen erfordert einen Neustart des Knotens — starten Sie den Home-Knoten neu und versuchen Sie es erneut",
   },
   report: {
     title: "Kettenbericht",
@@ -188,6 +196,9 @@ export const deChainsMessages = {
       summarizeGoal: "Dieses Dokument zusammenfassen und die 5 wichtigsten Aktionspunkte extrahieren",
       askNetwork: "Mein Netzwerk fragen",
       askNetworkGoal: "Meine verbundenen Kontakte fragen, welche Tools sie für {topic} empfehlen",
+      engineerBrief: "Ingenieur-Brief",
+      engineerBriefGoal:
+        "Erstelle einen kurzen Brief (≤600 Wörter) für Software-Ingenieure zu {topic}. Mit 5 TL;DR-Punkten öffnen. Höchstens 3 Metaphern; je Analogy / Where it breaks / When to stop. Bevorzuge Protokoll-/Konsens-/Shared-RNG-/Capability-Sprache — nicht CQRS/OAuth/IAM. Keine FTL- oder Signalling-Claims. Schließe mit Wann Metaphern helfen vs. wann Mathematik übernehmen muss.",
     },
   },
   recipes: {

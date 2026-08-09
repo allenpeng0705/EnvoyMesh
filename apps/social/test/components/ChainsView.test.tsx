@@ -10,6 +10,8 @@ import { I18nTestProvider } from "../../src/context/I18nContext.js";
 
 export const chainListActive = vi.fn();
 export const chainListObserved = vi.fn();
+export const chainListReports = vi.fn();
+export const chainDeleteReport = vi.fn();
 export const chainCancel = vi.fn();
 
 const chainGetDefaults = vi.fn(async () => ({
@@ -19,6 +21,8 @@ const chainGetDefaults = vi.fn(async () => ({
 const mockNodeService = {
   chainListActive,
   chainListObserved,
+  chainListReports,
+  chainDeleteReport,
   chainCancel,
   chainGetDefaults,
   chainProbeReachability: vi.fn(async () => ({ rows: [] })),
@@ -77,6 +81,8 @@ describe("ChainsView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     chainListObserved.mockResolvedValue({ chains: [] });
+    chainListReports.mockResolvedValue({ reports: [] });
+    chainDeleteReport.mockResolvedValue({ chainId: "", deleted: false });
   });
   afterEach(() => {
     cleanup();
@@ -265,9 +271,105 @@ describe("ChainsView", () => {
         },
       ],
     });
+    chainListReports.mockResolvedValueOnce({
+      reports: [
+        {
+          chainId: "chain_done",
+          chainMandateId: "mandate_done",
+          orchestratorOwnerId: "owner_a",
+          orchestratorPeerId: "peer_a",
+          pinned: false,
+          createdAt: "2026-01-01T12:30:00.000Z",
+          goal: "Produce a short brief on quantum entanglement",
+          chainSummary: { subtaskCount: 2, workerCount: 1, synthesisCostUsd: 0 },
+        },
+      ],
+    });
     renderChainsView();
     await waitFor(() => {
       expect(screen.getByText(/Published/)).toBeDefined();
+      expect(screen.getByTestId("chain-report-card")).toBeDefined();
+      expect(screen.getByText(/Produce a short brief on quantum entanglement/)).toBeDefined();
+      expect(screen.getByText((_, el) => el?.tagName === "TIME")).toBeDefined();
+      expect(screen.queryByText(/chain_done/i)).toBeNull();
+      expect(screen.queryByText(/of 2 subtasks/i)).toBeNull();
+    });
+  });
+
+  it("shows report cards from chainListReports even when active list is stale", async () => {
+    chainListActive.mockResolvedValue({
+      chains: [
+        {
+          chainId: "chain_stale",
+          chainMandateId: "mandate_stale",
+          subtaskCount: 2,
+          awardedCount: 1,
+          partialCount: 0,
+          cancelledCount: 0,
+          chainCancelled: false,
+          published: false,
+          budgetSpentUsd: 0,
+          budgetMaxUsd: 10,
+          awardMode: "direct",
+          showCostUi: false,
+        },
+      ],
+    });
+    chainListReports.mockResolvedValue({
+      reports: [
+        {
+          chainId: "chain_stale",
+          chainMandateId: "mandate_stale",
+          orchestratorOwnerId: "owner_a",
+          orchestratorPeerId: "peer_a",
+          pinned: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          goal: "Produce a short brief for software engineers on entanglement",
+          chainSummary: { subtaskCount: 2, workerCount: 1, synthesisCostUsd: 0 },
+        },
+      ],
+    });
+    renderChainsView();
+    await waitFor(() => {
+      expect(screen.getByTestId("chain-report-card")).toBeDefined();
+      expect(screen.getByText(/Published/)).toBeDefined();
+      expect(
+        screen.getByText(/Produce a short brief for software engineers on entanglement/),
+      ).toBeDefined();
+    });
+    // Stale Assigning/Running row must not remain once a report exists.
+    expect(screen.queryByText(/^Assigning$/i)).toBeNull();
+    expect(screen.queryByText(/chain_stale/i)).toBeNull();
+    expect(screen.queryByText(/of 2 subtasks/i)).toBeNull();
+  });
+
+  it("deletes a report after confirmation", async () => {
+    chainListActive.mockResolvedValue({ chains: [] });
+    chainListReports.mockResolvedValue({
+      reports: [
+        {
+          chainId: "chain_del",
+          chainMandateId: "mandate_del",
+          orchestratorOwnerId: "owner_a",
+          orchestratorPeerId: "peer_a",
+          pinned: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          chainSummary: { subtaskCount: 1, workerCount: 1, synthesisCostUsd: 0 },
+        },
+      ],
+    });
+    chainDeleteReport.mockResolvedValueOnce({ chainId: "chain_del", deleted: true });
+    renderChainsView();
+    await waitFor(() => {
+      expect(screen.getByTestId("chain-report-card")).toBeDefined();
+      expect(screen.getByText(/^Reports$/i)).toBeDefined();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Delete$/i }));
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /Yes, delete report/i }));
+    await waitFor(() => {
+      expect(chainDeleteReport).toHaveBeenCalledWith({ chainId: "chain_del" });
+      expect(screen.queryByTestId("chain-report-card")).toBeNull();
     });
   });
 

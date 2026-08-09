@@ -545,6 +545,7 @@ export interface ChainContextDeps {
   listChainReports: ChainContext["listChainReports"];
   getChainReport: ChainContext["getChainReport"];
   pinChainReport: ChainContext["pinChainReport"];
+  deleteChainReport: ChainContext["deleteChainReport"];
   getChainGoal: ChainContext["getChainGoal"];
   getChainCostEstimate: ChainContext["getChainCostEstimate"];
   getChainAwardMode: ChainContext["getChainAwardMode"];
@@ -1299,6 +1300,7 @@ export function buildChainContext(deps: ChainContextDeps): ChainContext {
       deps.getChainReport(chainId) as never,
     pinChainReport: (chainId, pinned) =>
       deps.pinChainReport(chainId, pinned),
+    deleteChainReport: (chainId) => deps.deleteChainReport(chainId),
     getChainGoal: (chainId) => deps.getChainGoal(chainId),
     getChainCostEstimate: (chainId) => deps.getChainCostEstimate(chainId),
     getChainAwardMode: (chainId) => deps.getChainAwardMode?.(chainId),

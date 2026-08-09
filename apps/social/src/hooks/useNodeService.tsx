@@ -82,6 +82,8 @@ import type {
   ChainGetReportResult,
   ChainPinReportParams,
   ChainPinReportResult,
+  ChainDeleteReportParams,
+  ChainDeleteReportResult,
   ChainSetBidStrategyParams,
   ChainSetBidStrategyResult,
   ChainGetBidStrategyParams,
@@ -300,6 +302,7 @@ export interface NodeServiceClient {
   chainListReports(params?: ChainListReportsParams): Promise<ChainListReportsResult>;
   chainGetReport(params: ChainGetReportParams): Promise<ChainGetReportResult>;
   chainPinReport(params: ChainPinReportParams): Promise<ChainPinReportResult>;
+  chainDeleteReport(params: ChainDeleteReportParams): Promise<ChainDeleteReportResult>;
   chainSetBidStrategy(params: ChainSetBidStrategyParams): Promise<ChainSetBidStrategyResult>;
   chainGetBidStrategy(params: ChainGetBidStrategyParams): Promise<ChainGetBidStrategyResult>;
   chainEvaluateBids(params: ChainEvaluateBidsParams): Promise<ChainEvaluateBidsResult>;
@@ -1121,6 +1124,9 @@ function createWsNodeServiceClient(
     },
     async chainPinReport(params: ChainPinReportParams) {
       return wsClient.rpc("chainPinReport", params as unknown as Record<string, unknown>) as unknown as Promise<ChainPinReportResult>;
+    },
+    async chainDeleteReport(params: ChainDeleteReportParams) {
+      return wsClient.rpc("chainDeleteReport", params as unknown as Record<string, unknown>) as unknown as Promise<ChainDeleteReportResult>;
     },
     async chainSetBidStrategy(params: ChainSetBidStrategyParams) {
       return wsClient.rpc("chainSetBidStrategy", params as unknown as Record<string, unknown>) as unknown as Promise<ChainSetBidStrategyResult>;

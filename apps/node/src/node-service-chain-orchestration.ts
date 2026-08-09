@@ -330,6 +330,7 @@ export function buildChainContext(deps: ChainOrchestrationContext): ChainContext
       taskStore!.listChainReports(params) as never,
     getChainReport: (chainId) => taskStore!.getChainReport(chainId) as never,
     pinChainReport: (chainId, pinned) => taskStore!.pinChainReport(chainId, pinned),
+    deleteChainReport: (chainId) => taskStore!.deleteChainReport(chainId),
     getChainGoal: (chainId) => deps.getChainSideState().goals.get(chainId),
     getChainCostEstimate: (chainId) => deps.getChainSideState().costEstimates.get(chainId),
     getChainAwardMode: (chainId) => deps.getChainSideState().awardModes.get(chainId),
@@ -741,6 +742,18 @@ export async function buildChainInboundDeps(deps: ChainOrchestrationContext): Pr
       }
       await taskStore.recordChainReport(payload.report);
       _emitChainReport(deps, payload.report);
+      // Worker may miss the final task.chain.status (completed). Treat an
+      // inbound report as terminal so Team jobs UI leaves "Running".
+      const observed = deps.getChainSideState().observedChains.get(payload.report.chainId);
+      if (observed && observed.phase !== "completed" && observed.phase !== "cancelled") {
+        const snap = {
+          ...observed,
+          phase: "completed" as const,
+          updatedAt: payload.report.createdAt ?? new Date().toISOString(),
+        };
+        deps.getChainSideState().observedChains.set(payload.report.chainId, snap);
+        deps.emit("chain:observed", snap);
+      }
       await taskStore.appendAuditEvent(
         createAuditEvent({
           type: "chain.report_received",
@@ -1860,7 +1873,7 @@ export async function _runChainGoal(
     },
     ownerPrivateKeyPem,
   );
-  const state = createChainState(mandate, { awardMode });
+  const state = createChainState(mandate, { awardMode, goal: input.goal });
   const chainSide = deps.getChainSideState();
   chainSide.goals.set(chainId, input.goal);
   chainSide.awardModes.set(chainId, awardMode);

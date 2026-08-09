@@ -38,6 +38,7 @@ export const koChainsMessages = {
     manage: "관리",
   },
   reports: {
+    title: "보고서",
     empty: "아직 보고서가 없습니다.",
     pinnedOnly: "고정됨만",
     pin: "고정",
@@ -45,6 +46,13 @@ export const koChainsMessages = {
     summary: "{subtasks}개 하위 작업 · {workers}명의 작업자 · ${synthesis} 종합",
     viewReport: "보고서 보기",
     hideReport: "보고서 숨기기",
+    delete: "삭제",
+    deleteConfirm: "이 보고서를 삭제할까요?",
+    deleteConfirmMessage: "보고서가 이 노드에서 제거되며 되돌릴 수 없습니다.",
+    deleteConfirmAction: "예, 보고서 삭제",
+    deleted: "보고서가 삭제되었습니다",
+    deleteFailed: "보고서 삭제에 실패했습니다",
+    deleteFailedRestart: "삭제하려면 노드를 재시작해야 합니다 — 홈 노드를 재시작한 뒤 다시 시도하세요",
   },
   report: {
     title: "체인 보고서",
@@ -188,6 +196,9 @@ export const koChainsMessages = {
       summarizeGoal: "이 문서를 요약하고 가장 중요한 5개의 실행 항목을 추출",
       askNetwork: "내 네트워크에 묻기",
       askNetworkGoal: "신뢰된 연락처에게 {topic}에 추천하는 도구를 묻기",
+      engineerBrief: "엔지니어 브리프",
+      engineerBriefGoal:
+        "소프트웨어 엔지니어를 위한 {topic} 짧은 브리프(≤600단어). 5개 TL;DR로 시작. 비유는 최대 3개; 각각 Analogy / Where it breaks / When to stop. CQRS/OAuth/IAM을 주 비유로 쓰지 말고 프로토콜·합의·공유 RNG·capability 언어를 선호. FTL/시그널링 주장 금지. 비유가 도움이 될 때와 수학이 필요할 때를 구분해 마무리.",
     },
   },
   recipes: {

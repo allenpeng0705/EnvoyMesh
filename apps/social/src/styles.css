@@ -9880,6 +9880,42 @@ button:disabled {
   flex-wrap: wrap;
 }
 
+.chain-card-time {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted, #64748b);
+  white-space: nowrap;
+}
+
+.chain-card-goal {
+  margin: 0;
+  font-size: var(--text-sm, 0.875rem);
+  line-height: 1.45;
+  font-weight: 500;
+  color: var(--color-text, #0f172a);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.chain-report-card__footer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-2, 0.5rem);
+  flex-wrap: wrap;
+}
+
+.chain-report-card__footer .chain-card-actions {
+  flex: 1 1 auto;
+}
+
+.chain-report-card__footer .chain-card-time {
+  margin-left: auto;
+  text-align: right;
+}
+
 .chain-card-completed {
   border-color: var(--color-success, #16a34a);
   background: color-mix(in srgb, var(--color-success, #16a34a) 5%, var(--color-surface, #fff));

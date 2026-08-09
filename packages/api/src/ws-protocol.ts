@@ -418,6 +418,7 @@ export type RpcMethods =
   | "chainListReports"
   | "chainGetReport"
   | "chainPinReport"
+  | "chainDeleteReport"
   | "chainSetBidStrategy"
   | "chainGetBidStrategy"
   | "chainEvaluateBids"
@@ -2008,6 +2009,8 @@ export interface ChainListReportsResult {
     orchestratorPeerId: string;
     pinned: boolean;
     createdAt: string;
+    /** Owner's original Team job text when known. */
+    goal?: string;
     chainSummary: {
       subtaskCount: number;
       workerCount: number;
@@ -2032,6 +2035,15 @@ export interface ChainPinReportParams {
 export interface ChainPinReportResult {
   chainId: string;
   pinned: boolean;
+}
+
+export interface ChainDeleteReportParams {
+  chainId: string;
+}
+
+export interface ChainDeleteReportResult {
+  chainId: string;
+  deleted: boolean;
 }
 
 export interface ChainSetBidStrategyParams {

@@ -15,7 +15,6 @@ import {
   isContactComposeDraftSyncScope,
 } from "@envoymesh/api";
 import { createContactComposeDraftCrdt } from "../../lib/contact-compose-draft-crdt.js";
-import { ContactPrivateNotesPanel } from "../ContactPrivateNotesPanel.js";
 import type { AssistantMode } from "../../lib/storage.js";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
@@ -136,7 +135,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   }, [wsTransportOpen, setPendingOutbound]);
 
   const [chatInput, setChatInput] = useState("");
-  const [notesOpen, setNotesOpen] = useState(false);
   const [confirm, setConfirm] = useState<{ title: string; message?: ReactNode; variant?: "default" | "destructive"; confirmLabel?: string; cancelLabel?: string; onConfirm: () => void } | null>(null);
   const draftRef = useRef<ReturnType<typeof createContactComposeDraftCrdt> | null>(null);
   const draftSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -960,12 +958,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
           ))
         )}
       </div>
-      <ContactPrivateNotesPanel
-        ownerId={ownerId}
-        contactOwnerId={selectedContact}
-        open={notesOpen}
-        onOpenChange={setNotesOpen}
-      />
+      {/* Private notes hidden for now — restore ContactPrivateNotesPanel here when wanted. */}
       <div className="chat-composer">
         {/* Floating overlays — render above the input row without pushing it down */}
         <div className="chat-composer-overlays">

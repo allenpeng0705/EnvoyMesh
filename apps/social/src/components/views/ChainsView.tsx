@@ -15,6 +15,7 @@ import type {
   BondRecord,
   CachedAgentCardSummary,
   ChainGetStateResult,
+  ChainListReportsResult,
   ChainObservedStatus,
   ChainWorkerReachability,
 } from "@envoymesh/api";
@@ -125,6 +126,18 @@ function formatIterationProgress(
   });
 }
 
+function formatReportListTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -143,9 +156,12 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
   const agentCards = useAgentCards();
   const [chains, setChains] = useState<ChainSummary[]>([]);
   const [observed, setObserved] = useState<ChainObservedStatus[]>([]);
+  /** Persisted reports from chainListReports — not only in-memory completed active rows. */
+  const [reports, setReports] = useState<ChainListReportsResult["reports"]>([]);
   const [viewingReport, setViewingReport] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [confirm, setConfirm] = useState<{
+    kind: "cancel" | "deleteReport";
     chainId: string;
     onConfirm: () => void;
   } | null>(null);
@@ -309,11 +325,22 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
     } catch (err) {
       console.error("[ChainsView] failed to load observed chains:", err);
     }
+    try {
+      const reps = await nodeService.chainListReports?.({ limit: 30 });
+      setReports(reps?.reports ?? []);
+    } catch (err) {
+      console.error("[ChainsView] failed to load chain reports:", err);
+    }
   }, [nodeService]);
 
   useEffect(() => {
     setLoading(true);
     void loadChains().finally(() => setLoading(false));
+    // Active list / observed cards only update on WS push today; if a
+    // chain:state or chain:observed event is missed, badges stay Assigning/Running
+    // and the Reports section stays empty. Poll while Team jobs is open.
+    const timer = setInterval(() => void loadChains(), 8_000);
+    return () => clearInterval(timer);
   }, [loadChains]);
 
   // Batch-probe reachability for every bonded contact, then refresh on a 20s
@@ -355,23 +382,38 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
         if (idx < 0) return [next, ...prev];
         return prev.map((c, i) => (i === idx ? next : c));
       });
+      if (state.published) {
+        void nodeService.chainListReports?.({ limit: 30 }).then((reps) => {
+          setReports(reps?.reports ?? []);
+        });
+      }
     });
     const unsubObserved = nodeService.on("chain:observed", (snap) => {
       setObserved((prev) => {
+        if (snap.phase === "completed" || snap.phase === "cancelled") {
+          return prev.filter((c) => c.chainId !== snap.chainId);
+        }
         const idx = prev.findIndex((c) => c.chainId === snap.chainId);
         if (idx < 0) return [snap, ...prev];
         return prev.map((c, i) => (i === idx ? snap : c));
       });
     });
+    const unsubReport = nodeService.on("chain:report", () => {
+      void nodeService.chainListReports?.({ limit: 30 }).then((reps) => {
+        setReports(reps?.reports ?? []);
+      });
+    });
     return () => {
       unsubState();
       unsubObserved();
+      unsubReport();
     };
   }, [nodeService]);
 
   const handleCancel = useCallback(
     (chainId: string) => {
       setConfirm({
+        kind: "cancel",
         chainId,
         onConfirm: async () => {
           setConfirm(null);
@@ -391,6 +433,43 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
       });
     },
     [nodeService, loadChains, showToast, t],
+  );
+
+  const handleDeleteReport = useCallback(
+    (chainId: string) => {
+      setConfirm({
+        kind: "deleteReport",
+        chainId,
+        onConfirm: async () => {
+          setConfirm(null);
+          try {
+            if (typeof nodeService.chainDeleteReport !== "function") {
+              showToast(t("chains.reports.deleteFailedRestart"), "error");
+              return;
+            }
+            const result = await nodeService.chainDeleteReport({ chainId });
+            if (!result?.deleted) {
+              showToast(t("chains.reports.deleteFailed"), "error");
+              return;
+            }
+            setReports((prev) => prev.filter((r) => r.chainId !== chainId));
+            setChains((prev) => prev.filter((c) => c.chainId !== chainId));
+            setViewingReport((prev) => (prev === chainId ? null : prev));
+            showToast(t("chains.reports.deleted"), "success");
+          } catch (err) {
+            console.error("[ChainsView] chainDeleteReport failed:", err);
+            const msg = err instanceof Error ? err.message : String(err);
+            // Old node builds reject the RPC until restarted against new code.
+            if (/unknown method|is not a function|not a function/i.test(msg)) {
+              showToast(t("chains.reports.deleteFailedRestart"), "error");
+              return;
+            }
+            showToast(t("chains.reports.deleteFailed"), "error");
+          }
+        },
+      });
+    },
+    [nodeService, showToast, t],
   );
 
   const handleViewReport = useCallback((chainId: string) => {
@@ -422,6 +501,10 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
     { label: t("chains.start.template.research"), goal: t("chains.start.template.researchGoal") },
     { label: t("chains.start.template.summarize"), goal: t("chains.start.template.summarizeGoal") },
     { label: t("chains.start.template.askNetwork"), goal: t("chains.start.template.askNetworkGoal") },
+    {
+      label: t("chains.start.template.engineerBrief"),
+      goal: t("chains.start.template.engineerBriefGoal"),
+    },
   ];
 
   const openComposer = useCallback(
@@ -466,6 +549,53 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
     void loadChains();
   }, [loadChains]);
 
+  const reportIds = useMemo(() => new Set(reports.map((r) => r.chainId)), [reports]);
+  const completedChains = useMemo(
+    () => chains.filter((c) => c.status === "completed"),
+    [chains],
+  );
+  const cancelledChains = useMemo(
+    () => chains.filter((c) => c.status === "cancelled"),
+    [chains],
+  );
+  // Drop stale Assigning/Running rows once a persisted report exists (missed
+  // chain:state can leave published=false in the active snapshot).
+  const activeChains = useMemo(
+    () =>
+      chains.filter(
+        (c) =>
+          c.status !== "completed" &&
+          c.status !== "cancelled" &&
+          !reportIds.has(c.chainId),
+      ),
+    [chains, reportIds],
+  );
+  const activeObserved = useMemo(
+    () =>
+      observed.filter(
+        (c) =>
+          c.phase !== "completed" &&
+          c.phase !== "cancelled" &&
+          !reportIds.has(c.chainId),
+      ),
+    [observed, reportIds],
+  );
+  // Persisted report list only — so Delete removes the card and we do not
+  // resurrect a Published stub from a stale published=true active row.
+  const reportCards = useMemo(() => {
+    const byId = new Map(completedChains.map((c) => [c.chainId, c]));
+    return reports.map((r) => {
+      const chain = byId.get(r.chainId);
+      const goal = (r.goal?.trim() || chain?.goal?.trim() || "") || undefined;
+      return {
+        chainId: r.chainId,
+        chain,
+        createdAt: r.createdAt,
+        goal,
+      };
+    });
+  }, [reports, completedChains]);
+
   // ---- Render ----
 
   if (loading && chains.length === 0) {
@@ -478,12 +608,6 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
       </div>
     );
   }
-
-  const activeChains = chains.filter(
-    (c) => c.status !== "completed" && c.status !== "cancelled",
-  );
-  const completedChains = chains.filter((c) => c.status === "completed");
-  const cancelledChains = chains.filter((c) => c.status === "cancelled");
 
   // When a chain detail is open, render the management panel instead of the list.
   if (detailChainId) {
@@ -821,11 +945,11 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
         ))
       )}
 
-      {observed.length > 0 ? (
+      {activeObserved.length > 0 ? (
         <section className="chains-observed" data-testid="chains-observed">
           <h4 className="chains-empty__contacts-title">{t("chains.observed.title")}</h4>
           <p className="chains-empty__contacts-desc">{t("chains.detail.observedHint")}</p>
-          {observed.map((job) => (
+          {activeObserved.map((job) => (
             <div key={job.chainId} className="chain-card chain-card--observed">
               <div className="chain-card-header">
                 <span className={`chain-status-badge status-${job.phase}`}>
@@ -918,48 +1042,60 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
         </div>
       ) : null}
 
-      {completedChains.length > 0 && (
+      {reportCards.length > 0 && (
         <>
           <h3>{t("chains.reports.title")}</h3>
-          {completedChains.map((chain) => (
+          {reportCards.map(({ chainId, chain, createdAt, goal }) => (
             <div
-              key={chain.chainId}
-              className="chain-card chain-card-completed"
+              key={chainId}
+              className="chain-card chain-card-completed chain-report-card"
+              data-testid="chain-report-card"
             >
               <div className="chain-card-header">
                 <span className="chain-status-badge status-completed">
                   ✅ {t("chains.status.published")}
                 </span>
-                <code className="chain-id">{chain.chainId.slice(0, 12)}…</code>
-                <span className="chain-cost">
-                  {t("chains.rebalance.spent", {
-                    spent: chain.budgetSpentUsd.toFixed(2),
-                    max: chain.budgetMaxUsd.toFixed(2),
-                  })}
-                </span>
               </div>
-              {chain.goal ? <p className="chain-card-goal">{chain.goal}</p> : null}
-              <div className="chain-card-actions">
-                <button
-                  type="button"
-                  className="btn-sm"
-                  onClick={() => void handleExportCosts(chain.chainId)}
-                >
-                  {t("chains.start.exportCsv")}
-                </button>
-                <button
-                  className="btn-sm"
-                  onClick={() => handleViewReport(chain.chainId)}
-                >
-                  {viewingReport === chain.chainId
-                    ? t("chains.reports.hideReport")
-                    : t("chains.reports.viewReport")}
-                </button>
+              <p className={`chain-card-goal${goal ? "" : " muted"}`}>
+                {goal?.trim() || t("chains.report.untitled")}
+              </p>
+              <div className="chain-report-card__footer">
+                <div className="chain-card-actions">
+                  {chain?.showCostUi ? (
+                    <button
+                      type="button"
+                      className="btn-sm"
+                      onClick={() => void handleExportCosts(chainId)}
+                    >
+                      {t("chains.start.exportCsv")}
+                    </button>
+                  ) : null}
+                  <button
+                    className="btn-sm"
+                    onClick={() => handleViewReport(chainId)}
+                  >
+                    {viewingReport === chainId
+                      ? t("chains.reports.hideReport")
+                      : t("chains.reports.viewReport")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-sm btn-danger"
+                    onClick={() => handleDeleteReport(chainId)}
+                  >
+                    {t("chains.reports.delete")}
+                  </button>
+                </div>
+                {createdAt ? (
+                  <time className="chain-card-time" dateTime={createdAt}>
+                    {formatReportListTime(createdAt)}
+                  </time>
+                ) : null}
               </div>
 
-              {viewingReport === chain.chainId && (
+              {viewingReport === chainId && (
                 <ChainReportView
-                  chainId={chain.chainId}
+                  chainId={chainId}
                   onClose={() => setViewingReport(null)}
                 />
               )}
@@ -987,10 +1123,22 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
 
       {confirm && (
         <ConfirmDialog
-          title={t("chains.active.cancelConfirm")}
-          message={t("chains.active.cancelConfirmMessage")}
+          title={
+            confirm.kind === "deleteReport"
+              ? t("chains.reports.deleteConfirm")
+              : t("chains.active.cancelConfirm")
+          }
+          message={
+            confirm.kind === "deleteReport"
+              ? t("chains.reports.deleteConfirmMessage")
+              : t("chains.active.cancelConfirmMessage")
+          }
           variant="destructive"
-          confirmLabel={t("chains.active.cancelConfirmAction")}
+          confirmLabel={
+            confirm.kind === "deleteReport"
+              ? t("chains.reports.deleteConfirmAction")
+              : t("chains.active.cancelConfirmAction")
+          }
           onConfirm={confirm.onConfirm}
           onCancel={() => setConfirm(null)}
         />

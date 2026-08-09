@@ -179,6 +179,8 @@ import type {
   ChainGetReportResult,
   ChainPinReportParams,
   ChainPinReportResult,
+  ChainDeleteReportParams,
+  ChainDeleteReportResult,
   ChainSetBidStrategyParams,
   ChainSetBidStrategyResult,
   ChainGetBidStrategyParams,
@@ -619,6 +621,7 @@ import {
   chainListRecipesViaRuntime,
   chainListReportsViaRuntime,
   chainPinReportViaRuntime,
+  chainDeleteReportViaRuntime,
   chainPlanViaRuntime,
   chainPreviewGoalViaRuntime,
   chainRebalanceViaRuntime,
@@ -10929,6 +10932,10 @@ class NodeServiceImpl implements NodeService {
 
   async chainPinReport(params: ChainPinReportParams): Promise<ChainPinReportResult> {
     return chainPinReportViaRuntime(this._chainContext(), params);
+  }
+
+  async chainDeleteReport(params: ChainDeleteReportParams): Promise<ChainDeleteReportResult> {
+    return chainDeleteReportViaRuntime(this._chainContext(), params);
   }
 
   async chainSetBidStrategy(params: ChainSetBidStrategyParams): Promise<ChainSetBidStrategyResult> {

@@ -46,6 +46,8 @@ import type {
   ChainGetReportParams,
   ChainGetReportResult,
   ChainPinReportParams,
+  ChainDeleteReportParams,
+  ChainDeleteReportResult,
   ChainPinReportResult,
   ChainGetDefaultsParams,
   ChainGetDefaultsResult,
@@ -233,10 +235,11 @@ export interface ChainContext {
   };
   /** Where to persist chain reports (class field). */
   hasTaskStore(): boolean;
-  /** The task store's listChainReports / getChainReport / pinChainReport. */
+  /** The task store's listChainReports / getChainReport / pinChainReport / deleteChainReport. */
   listChainReports(params?: ChainListReportsParams): Promise<Array<{ report: ChainListReportsResult["reports"][number] & { chainMandateId: string; orchestratorOwnerId: string; orchestratorPeerId: string; chainSummary: { subtaskCount: number; workerAllocations: unknown[]; synthesisCostUsd: number } } }>>;
   getChainReport(chainId: string): Promise<{ report: ChainGetReportResult["report"] & object } | null | void>;
   pinChainReport(chainId: string, pinned: boolean): Promise<void | unknown>;
+  deleteChainReport(chainId: string): Promise<boolean>;
   /** Class fields used to enrich the get-state result. */
   getChainGoal(chainId: string): unknown;
   getChainCostEstimate(chainId: string): unknown;
@@ -505,19 +508,31 @@ export async function chainListReportsViaRuntime(
   if (!ctx.hasTaskStore()) return { reports: [] };
   const rows = await ctx.listChainReports(params);
   return {
-    reports: rows.map((row) => ({
-      chainId: row.report.chainId,
-      chainMandateId: row.report.chainMandateId,
-      orchestratorOwnerId: row.report.orchestratorOwnerId,
-      orchestratorPeerId: row.report.orchestratorPeerId,
-      pinned: row.report.pinned ?? false,
-      createdAt: row.report.createdAt,
-      chainSummary: {
-        subtaskCount: row.report.chainSummary.subtaskCount,
-        workerCount: row.report.chainSummary.workerAllocations.length,
-        synthesisCostUsd: row.report.chainSummary.synthesisCostUsd,
-      },
-    })),
+    reports: rows.map((row) => {
+      const persistedGoal =
+        typeof (row.report as { goal?: unknown }).goal === "string"
+          ? (row.report as { goal: string }).goal.trim()
+          : "";
+      const liveGoal = (() => {
+        const g = ctx.getChainGoal(row.report.chainId);
+        return typeof g === "string" ? g.trim() : "";
+      })();
+      const goal = persistedGoal || liveGoal || undefined;
+      return {
+        chainId: row.report.chainId,
+        chainMandateId: row.report.chainMandateId,
+        orchestratorOwnerId: row.report.orchestratorOwnerId,
+        orchestratorPeerId: row.report.orchestratorPeerId,
+        pinned: row.report.pinned ?? false,
+        createdAt: row.report.createdAt,
+        ...(goal ? { goal } : {}),
+        chainSummary: {
+          subtaskCount: row.report.chainSummary.subtaskCount,
+          workerCount: row.report.chainSummary.workerAllocations.length,
+          synthesisCostUsd: row.report.chainSummary.synthesisCostUsd,
+        },
+      };
+    }),
   };
 }
 
@@ -538,6 +553,22 @@ export async function chainPinReportViaRuntime(
     await ctx.pinChainReport(params.chainId, params.pinned);
   }
   return { chainId: params.chainId, pinned: params.pinned };
+}
+
+export async function chainDeleteReportViaRuntime(
+  ctx: ChainContext,
+  params: ChainDeleteReportParams,
+): Promise<ChainDeleteReportResult> {
+  if (!ctx.hasTaskStore() || typeof ctx.deleteChainReport !== "function") {
+    return { chainId: params.chainId, deleted: false };
+  }
+  const deleted = await ctx.deleteChainReport(params.chainId);
+  if (deleted) {
+    // Drop in-memory runtime so Team jobs does not resurrect a stale
+    // Assigning/Running card after the report is gone.
+    ctx.store.deleteRuntime(params.chainId);
+  }
+  return { chainId: params.chainId, deleted };
 }
 
 /* ---------- chainSetBidStrategy / chainGetBidStrategy ---------- */

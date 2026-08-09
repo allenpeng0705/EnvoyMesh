@@ -56,6 +56,8 @@ import type {
   ChainGetReportResult,
   ChainPinReportParams,
   ChainPinReportResult,
+  ChainDeleteReportParams,
+  ChainDeleteReportResult,
   ChainSetBidStrategyParams,
   ChainSetBidStrategyResult,
   ChainGetBidStrategyParams,
@@ -3164,6 +3166,9 @@ export interface NodeService {
 
   /** Pin or unpin a chain report (pinned reports are exempt from 90-day GC). */
   chainPinReport(params: ChainPinReportParams): Promise<ChainPinReportResult>;
+
+  /** Permanently delete a persisted chain report from this node. */
+  chainDeleteReport(params: ChainDeleteReportParams): Promise<ChainDeleteReportResult>;
 
   /** Set the worker's bid strategy for a capability tag. */
   chainSetBidStrategy(params: ChainSetBidStrategyParams): Promise<ChainSetBidStrategyResult>;

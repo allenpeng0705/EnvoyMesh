@@ -732,6 +732,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
         listChainReports: (params) => host._taskStore!.listChainReports(params) as never,
         getChainReport: (chainId) => host._taskStore!.getChainReport(chainId) as never,
         pinChainReport: (chainId, pinned) => host._taskStore!.pinChainReport(chainId, pinned),
+        deleteChainReport: (chainId) => host._taskStore!.deleteChainReport(chainId),
         getChainGoal: (chainId) => host._chainState.goals.get(chainId),
         getChainCostEstimate: (chainId) => host._chainState.costEstimates.get(chainId),
         getChainAwardMode: (chainId) => host._chainState.awardModes.get(chainId),

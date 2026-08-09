@@ -29,6 +29,7 @@ import {
 } from "@envoymesh/models";
 
 import type { ChainAuditSink } from "./chain-inbound-types.js";
+import { planPromptAddonForGoal } from "./chain-deliverable-policy.js";
 
 export interface DecomposerInput {
   goal: string;
@@ -291,9 +292,12 @@ export function buildDecomposePrompt(goal: string, opts: CreateLlmDecomposerOpti
     '  - "dependsOn": optional array of subtask indices (0-based) this subtask depends on',
     "",
     `User goal: ${JSON.stringify(goal)}`,
+    planPromptAddonForGoal(goal).trim(),
     "",
     "Output the JSON array now.",
-  ].join("\n");
+  ]
+    .filter((l) => l.length > 0)
+    .join("\n");
 }
 
 /**

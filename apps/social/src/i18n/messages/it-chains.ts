@@ -38,6 +38,7 @@ export const itChainsMessages = {
     manage: "Gestisci",
   },
   reports: {
+    title: "Report",
     empty: "Ancora nessun report.",
     pinnedOnly: "Solo pinnati",
     pin: "Pinna",
@@ -45,6 +46,13 @@ export const itChainsMessages = {
     summary: "{subtasks} sotto-attività · {workers} lavoratori · ${synthesis} sintesi",
     viewReport: "Vedi report",
     hideReport: "Nascondi report",
+    delete: "Elimina",
+    deleteConfirm: "Eliminare questo report?",
+    deleteConfirmMessage: "Il report verrà rimosso da questo nodo. L'azione non può essere annullata.",
+    deleteConfirmAction: "Sì, elimina report",
+    deleted: "Report eliminato",
+    deleteFailed: "Eliminazione del report non riuscita",
+    deleteFailedRestart: "L'eliminazione richiede il riavvio del nodo — riavvia il nodo home e riprova",
   },
   report: {
     title: "Report della catena",
@@ -188,6 +196,9 @@ export const itChainsMessages = {
       summarizeGoal: "Riassumi questo documento ed estrai i 5 elementi d'azione più importanti",
       askNetwork: "Chiedi alla mia rete",
       askNetworkGoal: "Chiedi ai miei contatti collegati quali strumenti raccomandano per {topic}",
+      engineerBrief: "Brief per ingegneri",
+      engineerBriefGoal:
+        "Produci un brief breve (≤600 parole) per software engineer su {topic}. Apri con TL;DR a 5 punti. Al massimo 3 metafore; ciascuna con Analogy / Where it breaks / When to stop. Preferisci linguaggio di protocollo/consensus/RNG condiviso/capability — non CQRS/OAuth/IAM. Niente claim FTL o di signalling. Chiudi con quando le metafore aiutano vs quando serve la matematica.",
     },
   },
   recipes: {

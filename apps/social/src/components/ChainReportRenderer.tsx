@@ -121,12 +121,12 @@ export function ChainReportRenderer({
       <header className="chain-report-header">
         <h2 className="chain-report-title">{t("chains.report.title")}</h2>
         <dl className="chain-report-meta">
-          <div>
-            <dt>{t("chains.report.chainId")}</dt>
-            <dd>
-              <code>{report.chainId}</code>
-            </dd>
-          </div>
+          {typeof report.goal === "string" && report.goal.trim() ? (
+            <div className="chain-report-meta-goal">
+              <dt>{t("chains.report.goal")}</dt>
+              <dd>{report.goal.trim()}</dd>
+            </div>
+          ) : null}
           <div>
             <dt>{t("chains.report.totalCost")}</dt>
             <dd>{formatUsd(totalCostUsd)}</dd>
