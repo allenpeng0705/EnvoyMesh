@@ -112,6 +112,7 @@ export interface OutboundMessagingContextDeps {
   resolvePeerTransportForOwner: OutboundMessagingContext["resolvePeerTransportForOwner"];
   deliverChatEnvelope: OutboundMessagingContext["deliverChatEnvelope"];
   dialHintsForChat: OutboundMessagingContext["dialHintsForChat"];
+  refreshBondedRelayDialHints?: OutboundMessagingContext["refreshBondedRelayDialHints"];
 }
 
 export interface AgentPassesContextDeps {
@@ -660,6 +661,12 @@ export function buildOutboundMessagingContext(deps: OutboundMessagingContextDeps
       deps.deliverChatEnvelope(transportPeerId, envelope, dialHints, listenAddrs, options),
     dialHintsForChat: (recipientPeerId, peerListenAddrs) =>
       deps.dialHintsForChat(recipientPeerId, peerListenAddrs),
+    ...(typeof deps.refreshBondedRelayDialHints === "function"
+      ? {
+          refreshBondedRelayDialHints: (transportPeerId: string) =>
+            deps.refreshBondedRelayDialHints!(transportPeerId),
+        }
+      : {}),
   };
 }
 

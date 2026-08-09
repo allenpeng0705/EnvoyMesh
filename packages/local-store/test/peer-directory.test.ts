@@ -374,7 +374,7 @@ describe("peer directory store", () => {
     expect(row?.listenAddrs.some((a) => a.includes("4011"))).toBe(true);
   });
 
-  it("sanitizeListenAddrs keeps newest private-LAN high ports beside a stable listen", async () => {
+  it("sanitizeListenAddrs keeps newest private-LAN high port per IP beside a stable listen", async () => {
     const store = createLocalPeerDirectoryStore(profileDir);
     const peerId = "12D3KooWBareEphemeralPeer";
     await writeFile(
@@ -400,15 +400,15 @@ describe("peer directory store", () => {
       { mode: 0o600 },
     );
     const result = await store.sanitizeListenAddrs();
-    expect(result.addrsRemoved).toBe(1); // oldest high port trimmed; keep 2 + stable
+    expect(result.addrsRemoved).toBe(2); // same-IP stale high ports trimmed; keep newest + stable
     const row = await store.getPeerByPeerId(peerId);
     expect(row?.listenAddrs.some((a) => a.includes("57944"))).toBe(false);
-    expect(row?.listenAddrs.some((a) => a.includes("56891"))).toBe(true);
+    expect(row?.listenAddrs.some((a) => a.includes("56891"))).toBe(false);
     expect(row?.listenAddrs.some((a) => a.includes("55056"))).toBe(true);
     expect(row?.listenAddrs.some((a) => a.includes("4011"))).toBe(true);
   });
 
-  it("sanitizeListenAddrs keeps newest private-LAN high ports when tcp/0-only", async () => {
+  it("sanitizeListenAddrs keeps newest private-LAN high port when tcp/0-only", async () => {
     const store = createLocalPeerDirectoryStore(profileDir);
     const peerId = "12D3KooWTcpZeroOnlyPeer";
     await writeFile(
@@ -434,9 +434,67 @@ describe("peer directory store", () => {
     );
     await store.sanitizeListenAddrs();
     const row = await store.getPeerByPeerId(peerId);
+    expect(row?.listenAddrs).toEqual(["/ip4/192.168.3.78/tcp/55056"]);
+  });
+
+  it("mergeListenAddrsForPeerId replaces same-IP stale high port with the newest", async () => {
+    const store = createLocalPeerDirectoryStore(profileDir);
+    const peerId = "12D3KooWSameIpChurnPeer";
+    await writeFile(
+      join(profileDir, "peer-directory.json"),
+      JSON.stringify({
+        version: "0.1",
+        records: [
+          {
+            version: "0.1",
+            ownerId: "envoy:owner:same-ip-churn",
+            peerId,
+            deviceId: "legacy",
+            lastSeenAt: new Date().toISOString(),
+            listenAddrs: [
+              "/ip4/192.168.3.78/tcp/53968",
+              "/ip4/192.168.3.78/tcp/54882",
+            ],
+          },
+        ],
+      }),
+      { mode: 0o600 },
+    );
+    await store.mergeListenAddrsForPeerId(peerId, ["/ip4/192.168.3.78/tcp/53111"]);
+    const row = await store.getPeerByPeerId(peerId);
+    expect(row?.listenAddrs).toEqual(["/ip4/192.168.3.78/tcp/53111"]);
+  });
+
+  it("sanitizeListenAddrs keeps newest high port for two distinct LAN IPs", async () => {
+    const store = createLocalPeerDirectoryStore(profileDir);
+    const peerId = "12D3KooWMultiLanIpPeer";
+    await writeFile(
+      join(profileDir, "peer-directory.json"),
+      JSON.stringify({
+        version: "0.1",
+        records: [
+          {
+            version: "0.1",
+            ownerId: "envoy:owner:multi-lan",
+            peerId,
+            deviceId: "legacy",
+            lastSeenAt: new Date().toISOString(),
+            listenAddrs: [
+              "/ip4/192.168.3.78/tcp/53968",
+              "/ip4/192.168.3.78/tcp/53111",
+              "/ip4/192.168.1.20/tcp/40001",
+              "/ip4/192.168.1.20/tcp/40002",
+            ],
+          },
+        ],
+      }),
+      { mode: 0o600 },
+    );
+    await store.sanitizeListenAddrs();
+    const row = await store.getPeerByPeerId(peerId);
     expect(row?.listenAddrs).toEqual([
-      "/ip4/192.168.3.78/tcp/56891",
-      "/ip4/192.168.3.78/tcp/55056",
+      "/ip4/192.168.3.78/tcp/53111",
+      "/ip4/192.168.1.20/tcp/40002",
     ]);
   });
 

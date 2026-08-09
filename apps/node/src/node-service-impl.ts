@@ -6513,6 +6513,37 @@ class NodeServiceImpl implements NodeService {
     }
   }
 
+  /**
+   * Bonded Offline warm helper: exact-peerId `relay.lookup` stores fresh
+   * `/p2p-circuit/` seeds (periodic mesh.discovery lookup often returns 0).
+   */
+  private async _refreshBondedRelayDialHints(transportPeerId: string): Promise<number> {
+    const peerId = transportPeerId.trim();
+    if (!peerId || peerId.startsWith("envoy_")) return 0;
+    const deps = this._relayClientCycleDeps;
+    if (!deps) return 0;
+    const targets = resolveRelayClientControlTargets(deps);
+    if (targets.length === 0) return 0;
+    try {
+      const responses = await queryRelayLookupWithDeps(deps, targets, {
+        targetPeerId: peerId,
+        capability: "mesh.discovery",
+        maxResults: 4,
+        visibilityScope: "public",
+      });
+      return responses.reduce(
+        (sum, r) => sum + r.peers.reduce((n, p) => n + (p.multiaddrs?.length ?? 0), 0),
+        0,
+      );
+    } catch (err) {
+      console.warn(
+        `[warmContact] refreshBondedRelayDialHints failed:`,
+        err instanceof Error ? err.message : err,
+      );
+      return 0;
+    }
+  }
+
   private async _mapRelayLookupPeersToSearchResults(
     responses: Awaited<ReturnType<typeof queryRelayLookupWithDeps>>,
     opts: {

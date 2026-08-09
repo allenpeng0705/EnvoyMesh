@@ -2242,19 +2242,46 @@ function isPrivateLanTcpListenAddr(addr: string): boolean {
   return false;
 }
 
+function ip4FromListenAddr(addr: string): string | undefined {
+  const m = addr.match(/\/ip4\/(\d+\.\d+\.\d+\.\d+)\//);
+  return m?.[1];
+}
+
+/**
+ * Keep the newest private-LAN high port per IPv4 (tcp/0 listen churn), capped
+ * across IPs. Same-IP stale ports (e.g. 53968 then 53111 after restart) must
+ * not pile up — bonded warm otherwise dials dead ports for minutes.
+ */
+function keepNewestEphemeralLanPerIp(
+  lanEphemeral: readonly string[],
+  maxIps = 2,
+): string[] {
+  const keptNewestFirst: string[] = [];
+  const seenIps = new Set<string>();
+  for (let i = lanEphemeral.length - 1; i >= 0; i--) {
+    const addr = lanEphemeral[i]!;
+    const ip = ip4FromListenAddr(addr);
+    if (!ip || seenIps.has(ip)) continue;
+    seenIps.add(ip);
+    keptNewestFirst.push(addr);
+    if (seenIps.size >= maxIps) break;
+  }
+  return keptNewestFirst.reverse();
+}
+
 function filterDialableListenAddrs(addrs: string[]): string[] {
   const deduped = dedupeListenAddrList(addrs);
   const stable = deduped.filter((a) => !isLikelyEphemeralTcpSnapshot(a));
-  // Always keep newest 2 private-LAN high ports (tcp/0). Dropping them whenever
-  // any stable port existed wiped home-LAN paths next to public/4011 and forced
-  // Online-Relay until identify ran again. Ephemeral dial budgets cap stale ports.
+  // Keep newest high port per LAN IP (max 2 IPs). Dropping all ephemerals
+  // whenever a stable port existed wiped home-LAN paths next to public/4011.
   const lanEphemeral = deduped.filter(
     (a) => isLikelyEphemeralTcpSnapshot(a) && isPrivateLanTcpListenAddr(a),
   );
+  const ephemeralKept = keepNewestEphemeralLanPerIp(lanEphemeral, 2);
   if (stable.length > 0) {
-    return dedupeListenAddrList([...stable, ...lanEphemeral.slice(-2)]);
+    return dedupeListenAddrList([...stable, ...ephemeralKept]);
   }
-  return lanEphemeral.slice(-2);
+  return ephemeralKept;
 }
 
 /** Max dial hints retained per peer row — matches ensurePeerFromInboundChat / bond paths. */

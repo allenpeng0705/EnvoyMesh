@@ -139,6 +139,8 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
               host._deliverChatEnvelope(transportPeerId, envelope, dialHints, listenAddrs, options),
             dialHintsForChat: (recipientPeerId, peerListenAddrs) =>
               host._dialHintsForChat(recipientPeerId, peerListenAddrs),
+            refreshBondedRelayDialHints: (transportPeerId) =>
+              host._refreshBondedRelayDialHints(transportPeerId),
           },
       agentPasses: {
             getBonds: () => host.getBonds(),

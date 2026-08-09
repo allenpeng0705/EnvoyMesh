@@ -489,6 +489,47 @@ describe("warmContactConnectionViaRuntime", () => {
     const info = await warmContactConnectionViaRuntime(ctx, OWNER_ID);
     expect(info).toEqual({ connected: false, direct: false });
   });
+
+  it("refreshes bonded relay.lookup seeds before Offline warm dial", async () => {
+    const refresh = vi.fn(async () => 2);
+    const mesh = {
+      peerId: "12D3KooWSelfUnitTest",
+      multiaddrs: ["/ip4/192.168.3.85/tcp/4001"],
+      getPeerConnectionInfo: vi
+        .fn()
+        .mockReturnValueOnce({ connected: false, direct: false })
+        .mockReturnValue({ connected: true, direct: false, relayPeerId: "12Relay" }),
+      getConnectedPeerIds: vi.fn(() => []),
+      ensurePeerReachable: vi.fn(async () => ({
+        connected: true,
+        direct: false,
+        relayPeerId: "12Relay",
+      })),
+      closeConnectionsToPeer: vi.fn(async () => 0),
+      probeBondedPeerConnection: vi.fn(async () => ({
+        connected: true,
+        direct: false,
+        relayPeerId: "12Relay",
+      })),
+      mergePeerStoreDialHints: vi.fn(async () => {}),
+      scrubPeerStoreDialHints: vi.fn(async () => []),
+      getPeerStoreDialHints: vi.fn(async () => [] as string[]),
+      refreshPeerListenAddrsViaIdentify: vi.fn(async () => [
+        `/ip4/192.168.3.78/tcp/53111/p2p/${TRANSPORT_ID}`,
+      ]),
+    };
+    const ctx = makeCtx({
+      getReachableMesh: () => mesh as never,
+      requireMesh: () => mesh as never,
+      refreshBondedRelayDialHints: refresh,
+      dialHintsForChat: async () => [
+        `/ip4/192.168.3.78/tcp/53968/p2p/${TRANSPORT_ID}`,
+        `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${TRANSPORT_ID}`,
+      ],
+    });
+    await warmContactConnectionViaRuntime(ctx, OWNER_ID, { force: true });
+    expect(refresh).toHaveBeenCalledWith(TRANSPORT_ID);
+  });
 });
 
 describe("getPeerConnectionInfoViaRuntime", () => {

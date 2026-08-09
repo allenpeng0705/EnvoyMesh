@@ -162,6 +162,11 @@ export interface OutboundMessagingContext {
     options?: { expectDeliveryAck?: boolean },
   ): Promise<ChatDeliverResult>;
   dialHintsForChat(recipientPeerId: string, peerListenAddrs: string[] | undefined): Promise<string[]>;
+  /**
+   * Bonded Offline warm: `relay.lookup` by exact peerId so discovery seeds get
+   * fresh `/p2p-circuit/` paths. Optional — unit tests omit it.
+   */
+  refreshBondedRelayDialHints?(transportPeerId: string): Promise<number>;
 }
 
 export interface SendAgentChatContext extends OutboundMessagingContext {
@@ -1141,6 +1146,10 @@ export async function warmContactConnectionTransportViaRuntime(
       if (
         shouldIdentifyBeforeVpnSkip({
           upgradeRelayToDirect: options?.upgradeRelayToDirect,
+          // Offline warm lands on Relay then upgrades; also refresh LAN when an
+          // explicit redial/force is already Online-Relay (stale tcp/0 ports).
+          refreshLanFromRelay:
+            options?.redial === true || options?.force === true,
           connected: existing.connected,
           direct: existing.direct,
           likelyVpnActive,
@@ -1360,6 +1369,19 @@ export async function warmContactConnectionViaRuntime(
 
     const mesh = ctx.getReachableMesh();
     const startedOffline = !(mesh?.getPeerConnectionInfo(transportPeerId).connected);
+    // Bonded Offline: refresh circuit seeds via targetPeerId lookup before dial.
+    // Periodic mesh.discovery lookup often returns peers=0; exact peerId still
+    // works when the contact holds a live hop on the same relay.
+    if (startedOffline && typeof ctx.refreshBondedRelayDialHints === "function") {
+      try {
+        await ctx.refreshBondedRelayDialHints(transportPeerId);
+      } catch (err) {
+        console.warn(
+          `[warmContact] bonded relay.lookup refresh failed for ${transportPeerId.slice(0, 16)}…:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
     let info = await warmContactConnectionTransportViaRuntime(
       ctx,
       transportPeerId,
@@ -1375,6 +1397,14 @@ export async function warmContactConnectionViaRuntime(
       options?.upgradeRelayToDirect !== true &&
       options?.redial !== true
     ) {
+      // Re-merge directory after Relay land so identify from the upgrade pass
+      // sees any ports persisted mid-flight.
+      listenAddrs = await mergeFreshListenAddrsViaRuntime(
+        ctx,
+        peerOwnerId,
+        transportPeerId,
+        listenAddrs,
+      );
       const upgraded = await warmContactConnectionTransportViaRuntime(
         ctx,
         transportPeerId,

@@ -168,17 +168,20 @@ export function privateLanListenAddrsForPersist(addrs: readonly string[]): strin
  */
 export function shouldIdentifyBeforeVpnSkip(input: {
   upgradeRelayToDirect?: boolean;
+  /**
+   * Offline→Relay landed: refresh peer-directory LAN listens even when the
+   * caller is not yet requesting Relay→Direct (stale tcp/0 ports otherwise stick).
+   */
+  refreshLanFromRelay?: boolean;
   connected: boolean;
   direct: boolean;
   /** Kept for call-site compatibility; no longer gates identify. */
   likelyVpnActive?: boolean;
 }): boolean {
   void input.likelyVpnActive;
-  return (
-    input.upgradeRelayToDirect === true &&
-    input.connected === true &&
-    input.direct !== true
-  );
+  const wantsLanRefresh =
+    input.upgradeRelayToDirect === true || input.refreshLanFromRelay === true;
+  return wantsLanRefresh && input.connected === true && input.direct !== true;
 }
 
 /**

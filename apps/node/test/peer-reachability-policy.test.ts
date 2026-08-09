@@ -42,6 +42,25 @@ describe("shouldIdentifyBeforeVpnSkip", () => {
       }),
     ).toBe(false);
   });
+
+  it("runs identify on Online-Relay when refreshLanFromRelay is set (stale tcp/0)", () => {
+    expect(
+      shouldIdentifyBeforeVpnSkip({
+        upgradeRelayToDirect: false,
+        refreshLanFromRelay: true,
+        connected: true,
+        direct: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldIdentifyBeforeVpnSkip({
+        upgradeRelayToDirect: false,
+        refreshLanFromRelay: true,
+        connected: false,
+        direct: false,
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("resolveReachabilityDialPolicy", () => {
