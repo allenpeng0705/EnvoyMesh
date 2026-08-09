@@ -60,11 +60,14 @@ export const CHAIN_ACCEPT_RESEND_CAP = 3;
 
 /**
  * RTT budget for `task.chain.ready.request` (engine hello) before award.
- * Failure / timeout → treat worker engine as not ready and try backup.
+ * Soft failures (stream closed / dial glitch) retry; hard engine-down skips.
  */
-export const CHAIN_READY_PROBE_TIMEOUT_MS = 5_000;
+export const CHAIN_READY_PROBE_TIMEOUT_MS = 8_000;
 
-/** Cache a ready/not-ready probe result per worker for this long. */
+/** Retry expect-reply once after a soft failure (stale stream / brief dial miss). */
+export const CHAIN_READY_PROBE_MAX_ATTEMPTS = 2;
+
+/** Cache a definitive ready/not-ready probe result per worker for this long. */
 export const CHAIN_READY_PROBE_CACHE_MS = 30_000;
 
 export interface ChainGoalTemplate {

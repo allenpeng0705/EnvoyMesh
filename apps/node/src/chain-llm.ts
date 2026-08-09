@@ -32,16 +32,23 @@ Return ONLY a JSON array. Do not include markdown fences or explanations.
 Example: [{"requiredSkill":"search","objective":"Search bonded contacts' vaults","costCeilingUsd":5,"deadlineMinutes":10}]`;
 
 /** Default system prompt for merging partial results into a composite. */
-const MERGE_SYSTEM_PROMPT = `You are a report synthesis engine. Given multiple worker contributions
-for a task, produce a coherent merged report. Rules:
-  - Resolve contradictions by prioritizing more recent contributions.
-  - Cite sources by worker index (e.g. [Worker 1]).
-  - If contributions disagree, note the disagreement explicitly.
-  - Return ONLY a JSON object with fields: { summary, sections, sources }.
-  - sections[]: each has { title, body, confidence (0..1) }.
-  - sources[]: each has { workerIndex, contributionSummary }.
+const MERGE_SYSTEM_PROMPT = `You are the Assigner's final editor for an EnvoyMesh Team job.
+Workers already completed steps. Your job is ONE polished final deliverable for a human reader.
 
-Do not include markdown fences or explanations.`;
+Rules:
+  - "summary" is the ONLY thing the user reads by default. Write it as a complete,
+    coherent final result in markdown (brief, report, or answer matching the goal).
+  - Do NOT paste step dumps, IDs, or "Working on:" chatter into summary.
+  - Integrate the best facts/metaphors/structure from every step; remove redundancy.
+  - Resolve contradictions; prefer later / higher-confidence steps when they refine earlier ones.
+  - Keep engineer-friendly tone when the goal targets software engineers.
+  - "sections" is optional appendix only (empty array if summary is complete).
+  - "sources" briefly maps which step informed what (workerIndex = step number).
+  - Return ONLY a JSON object: { summary, sections, sources }.
+  - sections[] items: { title, body, confidence (0..1) }.
+  - sources[] items: { workerIndex, contributionSummary }.
+
+Do not wrap the JSON in markdown fences.`;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -226,10 +233,24 @@ Decompose this goal into subtasks.`;
  * Adapts `createLlmMerge()` output to the `ChainOrchestratorHandlerDeps.llmMerge`
  * signature, which expects `WorkerContribution[]` → `{ mergedJson, costUsd }`.
  */
+/** Strip worker chatter / extract ```job_result``` for cleaner merge input. */
+export function cleanContributionTextForMerge(text: string): string {
+  const raw = text.trim();
+  if (!raw) return "";
+  const fenced = /```(?:job_result|result|markdown)?\s*\n([\s\S]*?)```/i.exec(raw);
+  if (fenced?.[1]?.trim()) return fenced[1].trim();
+  // Drop leading "Working on:" progress lines when a real body follows.
+  const withoutProgress = raw.replace(/^(Working on:[^\n]*\n+)+/i, "").trim();
+  return withoutProgress || raw;
+}
+
 export function createLlmMergeAdapter(provider: LlmProvider) {
   const merge = createLlmMerge(provider);
 
-  return async (input: { contributions: Array<{ subtaskId: string; workerPeerId: string; text: string; confidence: number }> }) => {
+  return async (input: {
+    contributions: Array<{ subtaskId: string; workerPeerId: string; text: string; confidence: number }>;
+    goal?: string;
+  }) => {
     const adapted = input.contributions.map((c, i) => ({
       workerIndex: i + 1,
       partial: {
@@ -241,13 +262,16 @@ export function createLlmMergeAdapter(provider: LlmProvider) {
           seq: 1,
           isFinal: true,
           confidence: c.confidence,
-          artifactFragment: c.text,
+          artifactFragment: cleanContributionTextForMerge(c.text),
           createdAt: new Date().toISOString(),
         },
       },
     }));
 
-    const result = await merge({ contributions: adapted });
+    const result = await merge({
+      contributions: adapted,
+      goal: input.goal ?? "",
+    });
     if (!result.ok) return { ok: false as const, reason: result.reason };
 
     return {
@@ -262,7 +286,10 @@ export function createLlmMergeAdapter(provider: LlmProvider) {
  * Create an `llmMerge` callback compatible with `ChainOrchestratorHandlerDeps`.
  */
 export function createLlmMerge(provider: LlmProvider) {
-  return async (input: { contributions: LlmMergeInput["contributions"] }): Promise<LlmMergeResult> => {
+  return async (input: {
+    contributions: LlmMergeInput["contributions"];
+    goal?: string;
+  }): Promise<LlmMergeResult> => {
     const { contributions } = input;
     if (contributions.length === 0) {
       return { ok: false, reason: "no_contributions" };
@@ -277,16 +304,21 @@ export function createLlmMerge(provider: LlmProvider) {
         : artifact !== undefined && artifact !== null
           ? JSON.stringify(artifact)
           : "[no artifact]";
+      const cleaned = cleanContributionTextForMerge(partialText);
       const confidence = inner.confidence != null ? `${Math.round(inner.confidence * 100)}%` : "N/A";
-      return `[Worker ${i + 1}] Confidence: ${confidence}\n${partialText}`;
+      return `[Step ${i + 1}] Confidence: ${confidence}\n${cleaned}`;
     }).join("\n\n---\n\n");
 
-    const userPrompt = `Merge these worker contributions into a single report.
+    const goalLine = input.goal?.trim()
+      ? `Team job goal:\n${input.goal.trim()}\n\n`
+      : "";
+    const userPrompt = `${goalLine}Synthesize these step results into one final deliverable.
 
-Contributions:
+Step results:
 ${partsText}
 
-Return a JSON object with { summary, sections, sources }.`;
+Return a JSON object with { summary, sections, sources }.
+"summary" must be the complete final result the human should read.`;
 
     let response: Awaited<ReturnType<LlmProvider["complete"]>>;
     try {

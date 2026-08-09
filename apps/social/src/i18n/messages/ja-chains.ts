@@ -14,6 +14,7 @@ export const jaChainsMessages = {
   status: {
     cancelled: "キャンセル済み",
     published: "公開済み",
+    completed: "完了",
     planning: "計画中",
     bidding: "入札中",
     assigning: "割当中",
@@ -58,6 +59,8 @@ export const jaChainsMessages = {
     started: "開始",
     unknownTime: "—",
     executiveSummary: "概要",
+    finalResult: "最終結果",
+    workingNotes: "作業メモ（{count} ステップ）— 展開して確認",
     citations: "引用",
     citationUnattributed: "（出典不明）",
     sectionUntitled: "セクション {index}",

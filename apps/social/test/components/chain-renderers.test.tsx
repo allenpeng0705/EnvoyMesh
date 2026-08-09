@@ -74,6 +74,7 @@ function makeReport(overrides: Partial<ChainReport> = {}): ChainReport {
       ],
       synthesisCostUsd: 0.5,
     },
+    executiveSummary: "## Final brief\n\nAll clear.",
     sections: [
       {
         heading: "Analyzed Q3",
@@ -97,15 +98,34 @@ function makeReport(overrides: Partial<ChainReport> = {}): ChainReport {
 }
 
 describe("ChainReportRenderer", () => {
-  it("renders header, sections, and citations", () => {
+  it("renders final result, sections, and citations", () => {
     const report = makeReport();
     const onCite = () => undefined;
     render(wrap(<ChainReportRenderer report={report} onCitationClick={onCite} />));
+    expect(screen.getByTestId("chain-report-final")).toBeDefined();
+    expect(screen.getByText("All clear.")).toBeDefined();
     expect(screen.getByText("Analyzed Q3")).toBeDefined();
     expect(screen.getByText("Analyzed Q4")).toBeDefined();
     expect(screen.getAllByText("subtask_a").length).toBeGreaterThan(0);
     expect(screen.getAllByText("subtask_b").length).toBeGreaterThan(0);
     expect(screen.getByText(/Q3 revenue was/)).toBeDefined();
+  });
+
+  it("collapses working-notes sections by default", () => {
+    const report = makeReport({
+      sections: [
+        {
+          heading: "Working notes · step 1",
+          bodyMarkdown: "Hidden research dump",
+          citations: [{ subtaskId: "subtask_a", snippet: "snip" }],
+        },
+      ],
+    });
+    render(wrap(<ChainReportRenderer report={report} />));
+    const notes = screen.getByTestId("chain-report-working-notes");
+    expect(notes).toBeDefined();
+    expect((notes as HTMLDetailsElement).open).toBe(false);
+    expect(screen.getByText("Hidden research dump")).toBeDefined();
   });
 
   it("fires onCitationClick with the subtaskId", () => {

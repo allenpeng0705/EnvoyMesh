@@ -9391,6 +9391,23 @@ button.activity-row:hover,
   font-family: monospace;
 }
 
+.chain-report-working-notes {
+  margin-top: 1.25rem;
+  border-top: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+  padding-top: 0.75rem;
+}
+
+.chain-report-working-notes-summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text-muted, #666);
+  user-select: none;
+}
+
+.chain-report-working-notes[open] > .chain-report-working-notes-summary {
+  margin-bottom: 0.75rem;
+}
+
 .chain-report-section,
 .chain-report-executive,
 .chain-report-composite {

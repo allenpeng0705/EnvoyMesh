@@ -14,6 +14,7 @@ export const itChainsMessages = {
   status: {
     cancelled: "Annullata",
     published: "Pubblicata",
+    completed: "Completata",
     planning: "Pianificazione",
     bidding: "Offerte",
     assigning: "Assegnazione",
@@ -58,6 +59,8 @@ export const itChainsMessages = {
     started: "Avviata",
     unknownTime: "—",
     executiveSummary: "Riepilogo",
+    finalResult: "Risultato finale",
+    workingNotes: "Note di lavoro ({count} passaggi) — espandi per ispezionare",
     citations: "Citazioni",
     citationUnattributed: "(non attribuito)",
     sectionUntitled: "Sezione {index}",

@@ -14,6 +14,7 @@ export const frChainsMessages = {
   status: {
     cancelled: "Annulée",
     published: "Publiée",
+    completed: "Terminée",
     planning: "Planification",
     bidding: "Enchères",
     assigning: "Attribution",
@@ -58,6 +59,8 @@ export const frChainsMessages = {
     started: "Démarrée",
     unknownTime: "—",
     executiveSummary: "Résumé",
+    finalResult: "Résultat final",
+    workingNotes: "Notes de travail ({count} étapes) — développer pour inspecter",
     citations: "Citations",
     citationUnattributed: "(non attribué)",
     sectionUntitled: "Section {index}",

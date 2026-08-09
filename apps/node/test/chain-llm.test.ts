@@ -192,6 +192,17 @@ describe("chain-llm — createLlmDecompose", () => {
 // createLlmMerge tests
 // ---------------------------------------------------------------------------
 
+describe("cleanContributionTextForMerge", () => {
+  it("extracts job_result fences and drops Working on chatter", async () => {
+    const { cleanContributionTextForMerge } = await import("../src/chain-llm.js");
+    expect(
+      cleanContributionTextForMerge(
+        "Working on: research\n\n```job_result\n# Brief\n\nHello.\n```",
+      ),
+    ).toBe("# Brief\n\nHello.");
+  });
+});
+
 describe("chain-llm — createLlmMerge", () => {
   function makePartial(text: string, confidence: number): any {
     return {
@@ -276,8 +287,8 @@ describe("chain-llm — createLlmMerge", () => {
     await merge({ contributions: [{ workerIndex: 1, partial: makePartial("Hello world", 80) }] });
     const call = (provider.complete as any).mock.calls[0][0];
     expect(call.userPrompt).toContain("Hello world");
-    expect(call.userPrompt).toContain("[Worker 1]");
-    expect(call.systemPrompt).toContain("report synthesis");
+    expect(call.userPrompt).toContain("[Step 1]");
+    expect(call.systemPrompt).toContain("final editor");
     expect(call.maxTokens).toBe(8192);
   });
 

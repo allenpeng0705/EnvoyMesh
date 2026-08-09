@@ -14,6 +14,7 @@ export const koChainsMessages = {
   status: {
     cancelled: "취소됨",
     published: "게시됨",
+    completed: "완료됨",
     planning: "계획 중",
     bidding: "입찰 중",
     assigning: "할당 중",
@@ -58,6 +59,8 @@ export const koChainsMessages = {
     started: "시작",
     unknownTime: "—",
     executiveSummary: "요약",
+    finalResult: "최종 결과",
+    workingNotes: "작업 노트({count}단계) — 펼쳐서 확인",
     citations: "인용",
     citationUnattributed: "(출처 미상)",
     sectionUntitled: "섹션 {index}",

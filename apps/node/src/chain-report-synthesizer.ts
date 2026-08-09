@@ -81,11 +81,16 @@ export interface SynthesizeChainReportInput {
   contributions: WorkerContribution[];
   kind?: AggregationKind;
   /** Called only for `merge_structured`. */
-  llmMerge?: (input: { contributions: WorkerContribution[] }) => Promise<{
+  llmMerge?: (input: {
+    contributions: WorkerContribution[];
+    goal?: string;
+  }) => Promise<{
     ok: true;
     mergedJson: Record<string, unknown>;
     costUsd: number;
   } | { ok: false; reason: string }>;
+  /** Human goal — passed into LLM merge so the final result matches the ask. */
+  goal?: string;
   /** Optional override for "now" (useful in tests). */
   now?: Date;
 }
@@ -202,9 +207,9 @@ async function doConcatenate(
   input: SynthesizeChainReportInput,
   _estimatedUsd: number,
 ): Promise<SynthesizeChainReportResult> {
-  const joined = input.contributions
-    .map((c) => `[${c.subtaskId}] ${c.text}`)
-    .join("\n\n");
+  // Prefer the last worker's cleaned result as the human-facing report.
+  // Raw per-subtask dumps stay in sections (UI collapses them by default).
+  const executive = pickExecutiveSummary(input.contributions);
   const composite: CompositeArtifact | undefined = undefined;
   const spendResult = await ledger.recordSynthesisSpend(0);
   if (!spendResult.ok) {
@@ -215,7 +220,7 @@ async function doConcatenate(
     composite,
     0,
     "concatenate",
-    joined,
+    executive,
   );
   return { ok: true, report, compositeArtifact: composite, actualSynthesisCostUsd: 0, usedKind: "concatenate" };
 }
@@ -232,7 +237,10 @@ async function doMergeStructured(
   if (!input.llmMerge) {
     return { ok: false, reason: "merge_llm_unavailable" };
   }
-  const result = await input.llmMerge({ contributions: input.contributions });
+  const result = await input.llmMerge({
+    contributions: input.contributions,
+    goal: input.goal,
+  });
   if (!result.ok) {
     return { ok: false, reason: "merge_llm_failed" };
   }
@@ -259,11 +267,30 @@ async function doMergeStructured(
     aggregation: "merge_structured",
     createdAt: (input.now ?? new Date()).toISOString(),
   });
+  const merged = result.mergedJson as {
+    summary?: unknown;
+    sections?: Array<{ title?: unknown; body?: unknown }>;
+  };
+  const executive =
+    typeof merged.summary === "string" && merged.summary.trim()
+      ? merged.summary.trim()
+      : pickExecutiveSummary(input.contributions);
+  const llmSections =
+    Array.isArray(merged.sections) && merged.sections.length > 0
+      ? merged.sections
+          .map((s) => ({
+            heading: typeof s.title === "string" && s.title.trim() ? s.title.trim() : "Section",
+            bodyMarkdown: typeof s.body === "string" ? s.body : "",
+          }))
+          .filter((s) => s.bodyMarkdown.trim().length > 0)
+      : undefined;
   const report = buildReport(
     input,
     composite,
     result.costUsd,
     "merge_structured",
+    executive,
+    llmSections,
   );
   return {
     ok: true,
@@ -307,6 +334,8 @@ function buildReport(
   synthesisCostUsd: number,
   kind: AggregationKind,
   executiveSummaryText?: string,
+  /** When set (LLM merge), these replace raw per-subtask sections as the body. */
+  primarySections?: Array<{ heading: string; bodyMarkdown: string }>,
 ): ChainReport {
   const now = input.now ?? new Date();
   const startedAt = Date.parse(input.chainMandate.createdAt);
@@ -314,26 +343,26 @@ function buildReport(
     ? Math.max(0, now.getTime() - startedAt)
     : 0;
 
-  // One section per contribution; a final "Synthesis" section captures the
-  // synthesis outcome. Citations reference the subtaskId so the renderer can
-  // jump back to the ChainTreeView.
-  const sections: ChainReportSection[] = input.contributions.map((c) =>
-    ChainReportSectionSchema.parse({
-      heading: `Subtask ${c.subtaskId}`,
-      bodyMarkdown: c.text,
-      citations: [{ subtaskId: c.subtaskId, snippet: c.text.slice(0, 200) }],
-    }),
-  );
-  sections.push(
-    ChainReportSectionSchema.parse({
-      heading: "Synthesis",
-      bodyMarkdown: `Synthesized via ${kind}; ${input.contributions.length} contribution(s).`,
-      citations: input.contributions.map((c) => ({
-        subtaskId: c.subtaskId,
-        snippet: c.text.slice(0, 200),
-      })),
-    }),
-  );
+  // Working notes: one section per contribution (UI collapses by default).
+  const workingNotes: ChainReportSection[] = input.contributions.map((c, idx) => {
+    const cleaned = extractContributionMarkdown(c.text);
+    return ChainReportSectionSchema.parse({
+      heading: `Working notes · step ${idx + 1}`,
+      bodyMarkdown: cleaned,
+      citations: [{ subtaskId: c.subtaskId, snippet: cleaned.slice(0, 200) }],
+    });
+  });
+
+  const sections: ChainReportSection[] = [
+    ...(primarySections ?? []).map((s) =>
+      ChainReportSectionSchema.parse({
+        heading: s.heading,
+        bodyMarkdown: s.bodyMarkdown,
+        citations: [],
+      }),
+    ),
+    ...workingNotes,
+  ];
 
   return ChainReportSchema.parse({
     version: "0.1",
@@ -364,6 +393,30 @@ function buildReport(
 function compositeSummary(input: SynthesizeChainReportInput, kind: AggregationKind): string {
   const workers = input.contributions.length;
   return `Chain synthesized (${kind}) from ${workers} contribution(s).`;
+}
+
+/** Prefer fenced ```job_result … ``` body when workers used that convention. */
+export function extractContributionMarkdown(text: string): string {
+  const raw = text.trim();
+  if (!raw) return "";
+  const fenced = /```(?:job_result|result|markdown)?\s*\n([\s\S]*?)```/i.exec(raw);
+  if (fenced?.[1]?.trim()) return fenced[1].trim();
+  return raw;
+}
+
+/** Last contribution is usually the writer/brief step — use that as the report. */
+export function pickExecutiveSummary(contributions: readonly WorkerContribution[]): string {
+  if (contributions.length === 0) return "";
+  const last = contributions[contributions.length - 1]!;
+  const cleaned = extractContributionMarkdown(last.text);
+  if (cleaned) return cleaned;
+  // Fall back to the longest cleaned contribution.
+  let best = "";
+  for (const c of contributions) {
+    const t = extractContributionMarkdown(c.text);
+    if (t.length > best.length) best = t;
+  }
+  return best;
 }
 
 // ---------------------------------------------------------------------------

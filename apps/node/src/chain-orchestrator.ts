@@ -79,6 +79,7 @@ import {
 } from "./chain-report-synthesizer.js";
 import type { ChainAuditSink, ChainInboundDecision } from "./chain-inbound-types.js";
 import { chainLog, shortPeerId } from "./chain-debug.js";
+import { shouldSkipWorkerForEngineProbe } from "./chain-ready-probe.js";
 
 // ---------------------------------------------------------------------------
 // Outbound send surface — what the orchestrator needs from the runtime
@@ -153,7 +154,10 @@ export interface ChainOrchestratorHandlerDeps extends ChainOrchestratorSendDeps 
     | { ok: false; reason: string }
   >;
   /** Optional LLM merge for `merge_structured` synthesis. */
-  llmMerge?: (input: { contributions: WorkerContribution[] }) => Promise<
+  llmMerge?: (input: {
+    contributions: WorkerContribution[];
+    goal?: string;
+  }) => Promise<
     { ok: true; mergedJson: Record<string, unknown>; costUsd: number } | { ok: false; reason: string }
   >;
   /** Default heartbeat interval in ms. Default 30_000. */
@@ -725,7 +729,7 @@ export async function launchChain(
       for (const workerPeerId of targets) {
         if (deps.probeWorkerEngineReady) {
           const probe = await deps.probeWorkerEngineReady(workerPeerId);
-          if (!probe.ready) {
+          if (shouldSkipWorkerForEngineProbe(probe)) {
             state.silentWorkerPeerIds.add(workerPeerId);
             proposeFails.push(
               `${subtaskId.slice(0, 12)}→${workerPeerId.slice(0, 14)}:engine_not_ready`,
@@ -872,7 +876,7 @@ export async function directAwardSubtask(
 
   if (deps.probeWorkerEngineReady) {
     const probe = await deps.probeWorkerEngineReady(workerPeerId);
-    if (!probe.ready) {
+    if (shouldSkipWorkerForEngineProbe(probe)) {
       state.silentWorkerPeerIds.add(workerPeerId);
       deps.audit.record({
         type: "chain.awarded",
@@ -886,6 +890,19 @@ export async function directAwardSubtask(
           ` reason=${probe.reason ?? "not_ready"}`,
       });
       return { ok: false, reason: "engine_not_ready" };
+    }
+    if (!probe.ready) {
+      deps.audit.record({
+        type: "chain.awarded",
+        outcome: "record",
+        intent: "task.chain.ready.request",
+        correlationId: state.chainId,
+        remotePeerId: workerPeerId,
+        summary:
+          `ready_probe_soft_award subtask=${subtaskId.slice(0, 12)}` +
+          ` worker=${workerPeerId.slice(0, 14)}` +
+          ` reason=${probe.reason ?? "unknown"}`,
+      });
     }
   }
 
@@ -1158,7 +1175,7 @@ export async function advanceReadySubtasks(
       for (const workerPeerId of targets) {
         if (deps.probeWorkerEngineReady) {
           const probe = await deps.probeWorkerEngineReady(workerPeerId);
-          if (!probe.ready) {
+          if (shouldSkipWorkerForEngineProbe(probe)) {
             state.silentWorkerPeerIds.add(workerPeerId);
             continue;
           }
@@ -1881,23 +1898,52 @@ export async function synthesizeChain(
     if (allow && !allow.has(subtaskId)) continue;
     const partial = state.partials.get(subtaskId);
     if (!partial) continue;
+    const artifact = partial.partial.artifactFragment;
+    const artifactText =
+      artifact &&
+      typeof artifact === "object" &&
+      (artifact as { kind?: string }).kind === "text" &&
+      typeof (artifact as { content?: unknown }).content === "string"
+        ? (artifact as { content: string }).content
+        : undefined;
     contributions.push({
       subtaskId,
       workerPeerId: award.workerPeerId,
       workerOwnerId: award.workerPeerId, // owner-id resolution belongs to a higher layer
-      text: partial.partial.note ?? "(empty)",
+      text: artifactText?.trim() || partial.partial.note || "(empty)",
       confidence: 0.5,
       award,
     });
   }
 
-  const r = await synthesizeChainReport(state.ledger, {
+  const goal =
+    state.iteration?.goal?.trim() ||
+    [...state.subtasks.values()][0]?.objective?.trim() ||
+    undefined;
+
+  // Prefer LLM merge when wired; fall back to concatenate on soft failure.
+  let usedKind = kind;
+  if (kind === "concatenate" && deps.llmMerge) {
+    usedKind = "merge_structured";
+  }
+  let r = await synthesizeChainReport(state.ledger, {
     chainMandate: state.chainMandate,
     contributions,
-    kind,
+    kind: usedKind,
     llmMerge: deps.llmMerge,
+    goal,
     now: (deps.now ?? (() => new Date()))(),
   });
+  if (!r.ok && usedKind === "merge_structured" && kind === "concatenate") {
+    r = await synthesizeChainReport(state.ledger, {
+      chainMandate: state.chainMandate,
+      contributions,
+      kind: "concatenate",
+      llmMerge: deps.llmMerge,
+      goal,
+      now: (deps.now ?? (() => new Date()))(),
+    });
+  }
   if (!r.ok) {
     return { ok: false, reason: r.reason } as SynthesizeChainResult;
   }

@@ -16,6 +16,7 @@ export const zhChainsMessages = {
   status: {
     cancelled: "已取消",
     published: "已发布",
+    completed: "已完成",
     planning: "规划中",
     bidding: "竞标中",
     assigning: "分配中",
@@ -74,6 +75,8 @@ export const zhChainsMessages = {
     started: "开始时间",
     unknownTime: "—",
     executiveSummary: "执行摘要",
+    finalResult: "最终结果",
+    workingNotes: "过程笔记（{count} 步）— 展开查看",
     citations: "引用",
     citationUnattributed: "（未注明）",
     sectionUntitled: "第 {index} 节",

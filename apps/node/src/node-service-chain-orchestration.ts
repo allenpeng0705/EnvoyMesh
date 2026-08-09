@@ -74,6 +74,12 @@ import {
 } from "./chain-defaults.js";
 import { AgentNetworkMembershipIndex } from "./capability-index.js";
 import {
+  localAgentNetworkEngineReady,
+  probeChainWorkerReady,
+  shouldSkipWorkerForEngineProbe,
+  type ChainReadyProbeCacheEntry,
+} from "./chain-ready-probe.js";
+import {
   extractChainIdFromEnvelope,
   sendChainEnvelopeOverMesh,
   type ChainTransportResolver,
@@ -170,7 +176,7 @@ export interface ChainSideState {
   /** Debounce status fan-out per chain (ms epoch). */
   lastStatusBroadcastAt: Map<string, number>;
   /** Cached `task.chain.ready` probe results (worker peer id → ready). */
-  readyProbeCache: Map<string, import("./chain-ready-probe.js").ChainReadyProbeCacheEntry>;
+  readyProbeCache: Map<string, ChainReadyProbeCacheEntry>;
 }
 
 /** Worker-side read-only view of an assigner's team job. */
@@ -1006,47 +1012,59 @@ async function buildLlmDecomposerAsync(
 async function buildLlmMergeAsync(
   deps: ChainOrchestrationContext,
 ): Promise<ChainOrchestratorHandlerDeps["llmMerge"] | undefined> {
-  let nodeConfig: Awaited<ReturnType<ChainOrchestrationContext["getNodeConfig"]>> | null = null;
-  try {
-    nodeConfig = await deps.getNodeConfig();
-  } catch {
-    return undefined;
-  }
-  if (!nodeConfig) return undefined;
-  const modelCfg = (nodeConfig as { modelProviders?: { mode?: string } }).modelProviders;
-  if (!modelCfg || modelCfg.mode === "disabled") return undefined;
+  const { createLlmMergeAdapter } = await import("./chain-llm.js");
+
   let providers: ReturnType<typeof buildModelProviders> = [];
   try {
-    providers = buildModelProviders(modelCfg as never, false, { trustedLocalAssist: true });
+    const nodeConfig = await deps.getNodeConfig();
+    const modelCfg = (nodeConfig as { modelProviders?: { mode?: string } } | null)?.modelProviders;
+    if (modelCfg && modelCfg.mode !== "disabled") {
+      providers = buildModelProviders(modelCfg as never, false, { trustedLocalAssist: true });
+    }
   } catch {
-    return undefined;
+    providers = [];
   }
-  if (providers.length === 0) return undefined;
 
-  const { createLlmMergeAdapter } = await import("./chain-llm.js");
   const llmProvider = {
     complete: async (params: { systemPrompt: string; userPrompt: string; maxTokens?: number }) => {
-      const result = await routeModelRequest(
-        {
-          taskType: "chain.merge",
-          prompt: `${params.systemPrompt}\n\n${params.userPrompt}`,
-          sensitivity: "public",
-          ownerApproved: true,
-        },
-        providers,
-      );
-      if (result.decision.action === "deny" || !result.response) {
-        throw new Error("LLM merge denied");
+      if (providers.length > 0) {
+        const result = await routeModelRequest(
+          {
+            taskType: "chain.merge",
+            prompt: `${params.systemPrompt}\n\n${params.userPrompt}`,
+            sensitivity: "public",
+            ownerApproved: true,
+          },
+          providers,
+        );
+        if (result.decision.action !== "deny" && result.response) {
+          return {
+            text: result.response.text,
+            usage: {
+              promptTokens: result.response.usage?.inputTokens ?? 0,
+              completionTokens: result.response.usage?.outputTokens ?? 0,
+            },
+          };
+        }
       }
-      return {
-        text: result.response.text,
-        usage: {
-          promptTokens: result.response.usage?.inputTokens ?? 0,
-          completionTokens: result.response.usage?.outputTokens ?? 0,
-        },
-      };
+      // Fallback: Built-in OpenClaw (common when Assigner uses AN OpenClaw).
+      if (deps.isOpenClawReady()) {
+        const text = await deps.askOpenClaw(
+          `${params.systemPrompt}\n\n${params.userPrompt}`,
+        );
+        if (text?.trim()) {
+          return {
+            text,
+            usage: { promptTokens: 0, completionTokens: 0 },
+          };
+        }
+      }
+      throw new Error("LLM merge unavailable");
     },
   };
+
+  // Always wire the adapter: providers / OpenClaw may become ready mid-session.
+  // synthesizeChain falls back to concatenate when complete() fails.
   return createLlmMergeAdapter(llmProvider);
 }
 
@@ -1073,8 +1091,6 @@ export async function buildChainOrchestratorDeps(
     orchestratorOwnerId: profile.owner.ownerId,
     probeWorkerEngineReady: async (workerPeerId) => {
       if (!transport) return { ready: false, reason: "no_transport" };
-      const { probeChainWorkerReady, localAgentNetworkEngineReady } =
-        await import("./chain-ready-probe.js");
       return probeChainWorkerReady({
         transport,
         workerPeerId,
@@ -1218,6 +1234,24 @@ export async function selectReadyWorkersForSubtask(
     const probe = await probeFn(peerId);
     if (probe.ready) {
       chosen.push(peerId);
+      continue;
+    }
+    // Soft failures (timeout / old peer / dial) — keep preferred workers in
+    // the shortlist; silent-worker reassign covers a truly dead engine later.
+    if (!shouldSkipWorkerForEngineProbe(probe)) {
+      chosen.push(peerId);
+      void _appendChainAudit(deps, {
+        type: "chain.launched",
+        outcome: "record",
+        intent: "task.chain.ready.request",
+        correlationId: opts?.correlationId,
+        remotePeerId: peerId,
+        summary:
+          `ready_probe_soft_allow worker=${peerId.slice(0, 14)}` +
+          ` reason=${probe.reason ?? "unknown"}`,
+      }).catch(() => {
+        /* best-effort audit */
+      });
       continue;
     }
     skipped.push(peerId);

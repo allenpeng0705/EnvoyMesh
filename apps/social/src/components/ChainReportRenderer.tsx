@@ -3,9 +3,10 @@
  *
  * Renders a published `ChainReport`:
  *   - header (chainId, total cost, duration, worker peer-ids)
- *   - executive summary (markdown body)
- *   - sections with citations (click → jumps to a tree node)
- *   - composite artifact (delegated to CompositeArtifactRenderer)
+ *   - executive summary (primary human-facing result)
+ *   - optional LLM/body sections
+ *   - working notes (per-subtask) collapsed by default
+ *   - composite artifact (collapsed under working notes)
  *
  * Phase 47C — iteration draft sections (`Draft N` / `Final (round N)`) render
  * as an accordion timeline; other sections stay expanded.
@@ -53,6 +54,7 @@ function findComposite(report: ChainReport): CompositeArtifact | undefined {
 }
 
 const DRAFT_HEADING_RE = /^(Draft\s+(\d+)|Final\s*\(round\s+(\d+)\))$/i;
+const WORKING_NOTES_RE = /^Working notes/i;
 
 function parseIterationHeading(heading: string | undefined): {
   kind: "draft" | "final";
@@ -64,6 +66,11 @@ function parseIterationHeading(heading: string | undefined): {
   if (m[2]) return { kind: "draft", round: Number(m[2]) };
   if (m[3]) return { kind: "final", round: Number(m[3]) };
   return null;
+}
+
+function isWorkingNotesHeading(heading: string | undefined): boolean {
+  if (!heading) return false;
+  return WORKING_NOTES_RE.test(heading.trim()) || /^Subtask\s+/i.test(heading.trim());
 }
 
 export interface ChainReportRendererProps {
@@ -95,8 +102,15 @@ export function ChainReportRenderer({
   const durationMs = report.chainSummary?.durationMs ?? 0;
   const sections = Array.isArray(report.sections) ? report.sections : [];
   const draftSections = sections.filter((s) => parseIterationHeading(s.heading));
-  const bodySections = sections.filter((s) => !parseIterationHeading(s.heading));
+  const workingNoteSections = sections.filter((s) => isWorkingNotesHeading(s.heading));
+  const bodySections = sections.filter(
+    (s) => !parseIterationHeading(s.heading) && !isWorkingNotesHeading(s.heading),
+  );
   const draftCount = draftSections.length;
+  const executive = (report.executiveSummary ?? "").trim();
+  const showExecutive =
+    executive.length > 0 &&
+    !/^Chain synthesized\b/i.test(executive);
 
   return (
     <article
@@ -136,10 +150,10 @@ export function ChainReportRenderer({
         </dl>
       </header>
 
-      {composite && composite.parts.length > 0 ? (
-        <section className="chain-report-executive">
-          <h3>{t("chains.report.executiveSummary")}</h3>
-          <CompositeArtifactRenderer artifact={composite} artifactsByPart={artifactsByPart} />
+      {showExecutive ? (
+        <section className="chain-report-executive" data-testid="chain-report-final">
+          <h3>{t("chains.report.finalResult")}</h3>
+          <Markdown text={executive} className="message-text" />
         </section>
       ) : null}
 
@@ -167,11 +181,11 @@ export function ChainReportRenderer({
         </section>
       ) : null}
 
-      {(draftCount <= 1 ? sections : bodySections).length > 0 ? (
+      {bodySections.length > 0 ? (
         <section className="chain-report-sections">
-          {(draftCount <= 1 ? sections : bodySections).map((section, idx) => (
+          {bodySections.map((section, idx) => (
             <div
-              key={idx}
+              key={`body-${idx}`}
               className="chain-report-section"
               data-subtask-id={section.citations?.[0]?.subtaskId}
             >
@@ -202,6 +216,52 @@ export function ChainReportRenderer({
             </div>
           ))}
         </section>
+      ) : null}
+
+      {workingNoteSections.length > 0 || (composite && composite.parts.length > 0) ? (
+        <details className="chain-report-working-notes" data-testid="chain-report-working-notes">
+          <summary className="chain-report-working-notes-summary">
+            {t("chains.report.workingNotes", { count: workingNoteSections.length })}
+          </summary>
+          {workingNoteSections.map((section, idx) => (
+            <div
+              key={`note-${idx}`}
+              className="chain-report-section"
+              data-subtask-id={section.citations?.[0]?.subtaskId}
+            >
+              <h3 className="chain-report-section-title">
+                {section.heading ?? t("chains.report.sectionUntitled", { index: idx + 1 })}
+              </h3>
+              <Markdown text={section.bodyMarkdown} className="message-text" />
+              {Array.isArray(section.citations) && section.citations.length > 0 ? (
+                <div className="chain-report-citations">
+                  <span className="chain-report-citations-label">
+                    {t("chains.report.citations")}
+                  </span>
+                  {section.citations.map((c, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className="chain-report-citation"
+                      onClick={() => c.subtaskId && onCitationClick?.(c.subtaskId)}
+                      disabled={!c.subtaskId || !onCitationClick}
+                      title={c.subtaskId}
+                    >
+                      {c.subtaskId ?? t("chains.report.citationUnattributed")}
+                      {c.snippet ? <span className="chain-report-citation-snippet"> — {c.snippet.slice(0, 60)}…</span> : null}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ))}
+          {composite && composite.parts.length > 0 ? (
+            <section className="chain-report-composite">
+              <h3>{t("chains.report.compositeArtifact")}</h3>
+              <CompositeArtifactRenderer artifact={composite} artifactsByPart={artifactsByPart} />
+            </section>
+          ) : null}
+        </details>
       ) : null}
     </article>
   );

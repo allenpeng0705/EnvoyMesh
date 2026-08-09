@@ -13,6 +13,7 @@ export const chainsMessages = {
   status: {
     cancelled: "Cancelled",
     published: "Published",
+    completed: "Completed",
     planning: "Planning",
     bidding: "Bidding",
     assigning: "Assigning",
@@ -73,6 +74,8 @@ export const chainsMessages = {
     started: "Started",
     unknownTime: "—",
     executiveSummary: "Executive summary",
+    finalResult: "Final result",
+    workingNotes: "Working notes ({count} steps) — expand to inspect",
     citations: "Citations",
     citationUnattributed: "(unattributed)",
     sectionUntitled: "Section {index}",

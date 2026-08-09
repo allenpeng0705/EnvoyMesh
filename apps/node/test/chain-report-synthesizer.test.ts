@@ -99,13 +99,17 @@ describe("estimateSynthesisCostUsd", () => {
 });
 
 describe("synthesizeChainReport", () => {
-  it("concatenate: joins worker texts with [subtaskId] prefix", async () => {
+  it("concatenate: uses last contribution as the final report", async () => {
     const ledger = createChainBudgetLedger(mandate());
     const r = await synthesizeChainReport(ledger, {
       chainMandate: mandate(),
       contributions: [
         contribution("subtask_a", "first answer", 0.5),
-        contribution("subtask_b", "second answer", 0.7),
+        contribution(
+          "subtask_b",
+          "scratch\n\n```job_result\n# Final brief\n\nDone.\n```",
+          0.7,
+        ),
       ],
       kind: "concatenate",
       now: new Date(NOW),
@@ -113,8 +117,9 @@ describe("synthesizeChainReport", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.usedKind).toBe("concatenate");
-    expect(r.report.executiveSummary).toContain("[subtask_a] first answer");
-    expect(r.report.executiveSummary).toContain("[subtask_b] second answer");
+    expect(r.report.executiveSummary).toContain("# Final brief");
+    expect(r.report.executiveSummary).not.toContain("first answer");
+    expect(r.report.sections.some((s) => s.heading.startsWith("Working notes"))).toBe(true);
     expect(r.compositeArtifact).toBeUndefined();
     expect(r.actualSynthesisCostUsd).toBe(0);
     expect(r.report.chainSummary.workerCount).toBe(2);
@@ -263,7 +268,7 @@ describe("synthesizeChainReport", () => {
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    const subSections = r.report.sections.filter((s) => s.heading.startsWith("Subtask "));
+    const subSections = r.report.sections.filter((s) => s.heading.startsWith("Working notes"));
     expect(subSections.length).toBe(2);
     for (const s of subSections) {
       expect(s.citations.length).toBe(1);

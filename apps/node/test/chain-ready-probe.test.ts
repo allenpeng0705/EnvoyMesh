@@ -8,6 +8,7 @@ import {
 import {
   handleChainReadyRequestInbound,
   localAgentNetworkEngineReady,
+  shouldSkipWorkerForEngineProbe,
 } from "../src/chain-ready-probe.js";
 import {
   createChainState,
@@ -150,6 +151,18 @@ describe("expandWorkerTryOrder", () => {
   });
 });
 
+describe("shouldSkipWorkerForEngineProbe", () => {
+  it("hard-skips explicit engine-down, soft-allows probe_timeout", () => {
+    expect(shouldSkipWorkerForEngineProbe({ ready: true })).toBe(false);
+    expect(
+      shouldSkipWorkerForEngineProbe({ ready: false, reason: "openclaw_unavailable" }),
+    ).toBe(true);
+    expect(
+      shouldSkipWorkerForEngineProbe({ ready: false, reason: "probe_timeout" }),
+    ).toBe(false);
+  });
+});
+
 describe("selectReadyWorkersForSubtask", () => {
   it("skips not-ready preferred and selects the next ready worker", async () => {
     const ranked: ChainRankedWorker[] = [
@@ -170,6 +183,25 @@ describe("selectReadyWorkersForSubtask", () => {
     });
     expect(result.skipped).toEqual(["w1"]);
     expect(result.chosen).toEqual(["w2", "w3"]);
+  });
+
+  it("soft-allows preferred workers on probe_timeout", async () => {
+    const ranked: ChainRankedWorker[] = [
+      { peerId: "w1", score: 10, summary: "a", sameLan: false, online: true, viaRelay: false },
+      { peerId: "w2", score: 8, summary: "b", sameLan: true, online: true, viaRelay: false },
+    ];
+    const deps = {
+      getChainSideState: () => ({ readyProbeCache: new Map() }),
+      getTaskStore: () => undefined,
+    } as never;
+    const result = await selectReadyWorkersForSubtask(deps, ranked, "w1", 2, {
+      probeWorkerEngineReady: async (peerId) =>
+        peerId === "w1"
+          ? { ready: false, reason: "probe_timeout" }
+          : { ready: true },
+    });
+    expect(result.skipped).toEqual([]);
+    expect(result.chosen).toEqual(["w1", "w2"]);
   });
 });
 
@@ -224,5 +256,43 @@ describe("directAwardSubtask ready probe", () => {
         (e) => typeof e.summary === "string" && e.summary.includes("ready_probe_fail"),
       ),
     ).toBe(true);
+  });
+
+  it("still awards on probe_timeout (soft failure)", async () => {
+    const sent: string[] = [];
+    const deps: ChainOrchestratorHandlerDeps = {
+      sendEnvelope: async (peerId) => {
+        sent.push(peerId);
+        return true;
+      },
+      findWorkers: async () => ["12D3KooW-w1"],
+      signingKeyPem: keyPair.privateKey,
+      publicKeyPem: keyPair.publicKey,
+      orchestratorPeerId: "12D3KooW-orch",
+      orchestratorOwnerId: "owner_test",
+      now: () => NOW,
+      probeWorkerEngineReady: async () => ({ ready: false, reason: "probe_timeout" }),
+      audit: { record: () => {} },
+      storeChainReport: async () => {},
+    };
+    const state = createChainState(mandate(), { awardMode: "direct" });
+    state.subtasks.set("subtask_a", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      chainMandateId: "chainmandate_test-1",
+      depth: 1,
+      requiredSkill: "task.execute",
+      objective: "x",
+      requestedResult: "r",
+      constraints: [],
+      dependsOn: [],
+      preferredWorkerPeerId: "12D3KooW-w1",
+      createdAt: NOW.toISOString(),
+    });
+    const ok = await directAwardSubtask(deps, state, "subtask_a", "12D3KooW-w1");
+    expect(ok.ok).toBe(true);
+    expect(sent).toContain("12D3KooW-w1");
+    expect(state.silentWorkerPeerIds.has("12D3KooW-w1")).toBe(false);
   });
 });

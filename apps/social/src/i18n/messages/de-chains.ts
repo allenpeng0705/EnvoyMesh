@@ -14,6 +14,7 @@ export const deChainsMessages = {
   status: {
     cancelled: "Abgebrochen",
     published: "Veröffentlicht",
+    completed: "Abgeschlossen",
     planning: "Planung",
     bidding: "Gebote",
     assigning: "Zuweisung",
@@ -58,6 +59,8 @@ export const deChainsMessages = {
     started: "Gestartet",
     unknownTime: "—",
     executiveSummary: "Zusammenfassung",
+    finalResult: "Endergebnis",
+    workingNotes: "Arbeitsnotizen ({count} Schritte) — zum Prüfen öffnen",
     citations: "Zitate",
     citationUnattributed: "(nicht zugeordnet)",
     sectionUntitled: "Abschnitt {index}",
