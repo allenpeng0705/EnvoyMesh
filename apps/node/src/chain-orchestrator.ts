@@ -192,6 +192,12 @@ export interface ChainState {
    * Stall re-assign attempts per subtask. Cap is 1 (one next-best peer).
    */
   reassignCount: Map<string, number>;
+  /**
+   * Workers that accepted delivery but never produced a partial (or were
+   * stall-reassigned). Later steps demote these so we don't re-award a
+   * silent remote after failover already proved it dead for this chain.
+   */
+  silentWorkerPeerIds: Set<string>;
   /** True after a chain-wide cancel has been issued. */
   chainCancelled: boolean;
   /** Reports we've already published for this chain (only one is allowed). */
@@ -262,6 +268,7 @@ export function createChainState(
     proposeRetryCount: new Map(),
     acceptResendCount: new Map(),
     reassignCount: new Map(),
+    silentWorkerPeerIds: new Set(),
     lastHeartbeatAt: new Map(),
     lastConfidence: new Map(),
     autoRebalanceCount: 0,
@@ -687,7 +694,9 @@ export async function launchChain(
     if (!subtask) continue;
     state.workersBySubtask.set(subtaskId, [...workerIds]);
     if (!subtaskDependenciesSatisfied(state, subtask)) continue;
-    const targets = resolveProposeTargets(workerIds, subtask.preferredWorkerPeerId);
+    const targets = resolveProposeTargets(workerIds, subtask.preferredWorkerPeerId, {
+      demotePeerIds: state.silentWorkerPeerIds,
+    });
     let proposedThis = 0;
     if (direct) {
       for (const workerPeerId of targets) {
@@ -770,23 +779,35 @@ function primaryWorkerForSubtask(state: ChainState, subtaskId: string): string |
 }
 
 /**
- * Who should receive the initial `task.chain.propose`.
- * Preferred assignee first; include one backup so a silent preferred peer
- * (envelope delivered / agent never bids) cannot stall every step.
+ * Who should receive the initial `task.chain.propose` / direct award.
+ * Preferred assignee first (unless demoted as silent); include one backup
+ * so a silent preferred peer cannot stall every step.
  */
 export function resolveProposeTargets(
   workerIds: readonly string[],
   preferredWorkerPeerId?: string,
+  opts?: { demotePeerIds?: ReadonlySet<string> },
 ): string[] {
   if (workerIds.length === 0) return [];
-  if (preferredWorkerPeerId && workerIds.includes(preferredWorkerPeerId)) {
-    const backup = workerIds.find((w) => w !== preferredWorkerPeerId);
-    return backup ? [preferredWorkerPeerId, backup] : [preferredWorkerPeerId];
+  const demote = opts?.demotePeerIds;
+  const usablePreferred =
+    preferredWorkerPeerId &&
+    workerIds.includes(preferredWorkerPeerId) &&
+    !(demote?.has(preferredWorkerPeerId))
+      ? preferredWorkerPeerId
+      : undefined;
+
+  if (usablePreferred) {
+    const backup =
+      workerIds.find((w) => w !== usablePreferred && !(demote?.has(w))) ??
+      workerIds.find((w) => w !== usablePreferred);
+    return backup ? [usablePreferred, backup] : [usablePreferred];
   }
-  if (preferredWorkerPeerId) {
-    return workerIds.slice(0, 1);
-  }
-  return [...workerIds];
+
+  // Preferred missing or silent — lead with a live worker; silent as last resort.
+  const primary = workerIds.find((w) => !(demote?.has(w))) ?? workerIds[0]!;
+  const backup = workerIds.find((w) => w !== primary);
+  return backup ? [primary, backup] : [primary];
 }
 
 /**
