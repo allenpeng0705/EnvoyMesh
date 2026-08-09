@@ -20,8 +20,27 @@ import {
 import {
   CHAIN_READY_PROBE_CACHE_MS,
   CHAIN_READY_PROBE_MAX_ATTEMPTS,
+  CHAIN_READY_PROBE_OVERALL_MS,
+  CHAIN_READY_PROBE_SOFT_CACHE_MS,
   CHAIN_READY_PROBE_TIMEOUT_MS,
 } from "./chain-defaults.js";
+
+function raceWithTimeout<T>(work: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return new Promise<T>((resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(label)), timeoutMs);
+    work.then(
+      (v) => {
+        if (timer !== undefined) clearTimeout(timer);
+        resolve(v);
+      },
+      (err: unknown) => {
+        if (timer !== undefined) clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
 import { chainLog, chainWarn, shortPeerId } from "./chain-debug.js";
 import {
   sendExpectReplyWithRetry,
@@ -198,15 +217,18 @@ export async function probeChainWorkerReady(input: {
 }): Promise<{ ready: boolean; reason?: string; cached?: boolean }> {
   const nowMs = input.nowMs ?? Date.now();
   const cacheTtlMs = input.cacheTtlMs ?? CHAIN_READY_PROBE_CACHE_MS;
+  const softCacheTtlMs = CHAIN_READY_PROBE_SOFT_CACHE_MS;
   const cached = input.cache?.get(input.workerPeerId);
-  // Cache only definitive answers. Soft failures must not stick for 30s —
-  // otherwise a one-shot dial glitch blocks every step in a team job.
-  if (
-    cached &&
-    nowMs - cached.checkedAtMs < cacheTtlMs &&
-    (cached.ready || !isSoftEngineProbeFailure(cached.reason))
-  ) {
-    return { ready: cached.ready, reason: cached.reason, cached: true };
+  if (cached) {
+    const age = nowMs - cached.checkedAtMs;
+    const definitive = cached.ready || !isSoftEngineProbeFailure(cached.reason);
+    if (definitive && age < cacheTtlMs) {
+      return { ready: cached.ready, reason: cached.reason, cached: true };
+    }
+    // Soft fail: short cache so plan ranking does not re-dial 4×.
+    if (!definitive && age < softCacheTtlMs) {
+      return { ready: cached.ready, reason: cached.reason, cached: true };
+    }
   }
 
   if (input.workerPeerId === input.orchestratorPeerId) {
@@ -251,32 +273,58 @@ export async function probeChainWorkerReady(input: {
 
   try {
     const expectMesh = input.transport.mesh as unknown as OutboundExpectReplyMesh;
-    const reply = await sendExpectReplyWithRetry({
-      mesh: expectMesh,
-      transportPeerId,
-      envelope,
-      dialHints,
-      timeoutMs: input.timeoutMs ?? CHAIN_READY_PROBE_TIMEOUT_MS,
-      rebuildDialHints: input.transport.resolveDialHints
-        ? () => input.transport.resolveDialHints!(transportPeerId)
-        : undefined,
-      preferCircuitHints: false,
-      maxAttempts: CHAIN_READY_PROBE_MAX_ATTEMPTS,
-    });
+    const perAttemptMs = input.timeoutMs ?? CHAIN_READY_PROBE_TIMEOUT_MS;
+    const overallMs = Math.max(CHAIN_READY_PROBE_OVERALL_MS, perAttemptMs);
+    const reply = await raceWithTimeout(
+      sendExpectReplyWithRetry({
+        mesh: expectMesh,
+        transportPeerId,
+        envelope,
+        dialHints,
+        timeoutMs: perAttemptMs,
+        rebuildDialHints: input.transport.resolveDialHints
+          ? () => input.transport.resolveDialHints!(transportPeerId)
+          : undefined,
+        preferCircuitHints: false,
+        maxAttempts: CHAIN_READY_PROBE_MAX_ATTEMPTS,
+      }),
+      overallMs,
+      `ready_probe_overall_timeout after ${overallMs}ms`,
+    );
     if (reply.intent !== "task.chain.ready.response") {
       // Soft — peer may be on a build that echoes another intent / closes early.
+      input.cache?.set(input.workerPeerId, {
+        ready: false,
+        reason: `unexpected_intent:${reply.intent}`,
+        checkedAtMs: nowMs,
+      });
       return { ready: false, reason: `unexpected_intent:${reply.intent}` };
     }
     if (!verifyInboundEnvelope(reply)) {
+      input.cache?.set(input.workerPeerId, {
+        ready: false,
+        reason: "bad_signature",
+        checkedAtMs: nowMs,
+      });
       return { ready: false, reason: "bad_signature" };
     }
     let payload: TaskChainReadyResponsePayload;
     try {
       payload = parseTaskChainReadyResponsePayload(reply.payload);
     } catch {
+      input.cache?.set(input.workerPeerId, {
+        ready: false,
+        reason: "malformed_response",
+        checkedAtMs: nowMs,
+      });
       return { ready: false, reason: "malformed_response" };
     }
     if (payload.probeId !== requestPayload.probeId) {
+      input.cache?.set(input.workerPeerId, {
+        ready: false,
+        reason: "probe_id_mismatch",
+        checkedAtMs: nowMs,
+      });
       return { ready: false, reason: "probe_id_mismatch" };
     }
     input.cache?.set(input.workerPeerId, {
@@ -294,6 +342,11 @@ export async function probeChainWorkerReady(input: {
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     // Normalize to soft probe_timeout so selection soft-allows; keep detail in logs.
+    input.cache?.set(input.workerPeerId, {
+      ready: false,
+      reason: "probe_timeout",
+      checkedAtMs: nowMs,
+    });
     chainWarn("ready", "probe failed", {
       worker: shortPeerId(input.workerPeerId),
       transport: shortPeerId(transportPeerId),

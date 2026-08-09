@@ -59,7 +59,7 @@ export const CHAIN_ACCEPT_RESEND_WAIT_MS = 20_000;
 export const CHAIN_ACCEPT_RESEND_CAP = 3;
 
 /**
- * RTT budget for `task.chain.ready.request` (engine hello) before award.
+ * Per-attempt expect-reply read budget for `task.chain.ready.request`.
  * Soft failures (stream closed / dial glitch) retry; hard engine-down skips.
  */
 export const CHAIN_READY_PROBE_TIMEOUT_MS = 8_000;
@@ -67,8 +67,20 @@ export const CHAIN_READY_PROBE_TIMEOUT_MS = 8_000;
 /** Retry expect-reply once after a soft failure (stale stream / brief dial miss). */
 export const CHAIN_READY_PROBE_MAX_ATTEMPTS = 2;
 
+/**
+ * Hard wall-clock cap for one probe (dial + prepare + attempts).
+ * Without this, `prepareOutboundPeerConnection` can hang ranking for minutes.
+ */
+export const CHAIN_READY_PROBE_OVERALL_MS = 12_000;
+
 /** Cache a definitive ready/not-ready probe result per worker for this long. */
 export const CHAIN_READY_PROBE_CACHE_MS = 30_000;
+
+/**
+ * Short cache for soft failures so a 4-step plan does not re-dial the same
+ * unreachable peer four times during selection.
+ */
+export const CHAIN_READY_PROBE_SOFT_CACHE_MS = 15_000;
 
 export interface ChainGoalTemplate {
   id: string;
