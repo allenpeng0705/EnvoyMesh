@@ -68,10 +68,137 @@ echo "  EnvoyMesh Setup"
 echo "============================================"
 echo ""
 
+# ---- helpers (OpenClaw readiness; keep in sync with setup.ps1) ----
+# Runtime validateOpenClawTree requires a real compiled dist — a stub
+# entry.js that re-exports src/ is not enough (missing dist/config/config.js).
+openclaw_dist_incomplete() {
+  local oc="${1:-packages/openclaw}"
+  [ -d "$oc/dist" ] || return 1
+  if [ ! -f "$oc/dist/config/config.js" ]; then
+    return 0
+  fi
+  if [ -f "$oc/dist/entry.js" ] && head -n 1 "$oc/dist/entry.js" 2>/dev/null | grep -q "EnvoyMesh bootstrap"; then
+    return 0
+  fi
+  # Legacy stub from older setup.sh (no EnvoyMesh comment, only src re-export).
+  if [ -f "$oc/dist/entry.js" ] \
+      && grep -q 'from "../src/cli/run-main.ts"' "$oc/dist/entry.js" 2>/dev/null \
+      && [ ! -d "$oc/dist/cli" ]; then
+    return 0
+  fi
+  return 1
+}
+
+openclaw_gateway_ready() {
+  local oc="${1:-packages/openclaw}"
+  [ -f "$oc/openclaw.mjs" ] || return 1
+  [ -f "$oc/node_modules/tsx/dist/cli.mjs" ] || return 1
+  [ -f "$oc/dist/config/config.js" ] || return 1
+  [ -f "$oc/dist/entry.js" ] || return 1
+  if head -n 1 "$oc/dist/entry.js" 2>/dev/null | grep -q "EnvoyMesh bootstrap"; then
+    return 1
+  fi
+  [ -f "$oc/extensions/envoymesh/index.js" ] || return 1
+  return 0
+}
+
+# Compile OpenClawExtension → packages/openclaw/extensions/envoymesh (index.js).
+# Mirrors setup.ps1 Install-EnvoyMeshOpenClawExtension / stage-openclaw-envoymesh-extension.sh.
+install_envoymesh_extension() {
+  local oc_root="${1:-packages/openclaw}"
+  local ext_src="$ROOT/OpenClawExtension"
+  local ext_dir="$oc_root/extensions/envoymesh"
+
+  if [ ! -d "$ext_src" ]; then
+    echo "  ⚠ OpenClawExtension/ missing — cannot install envoymesh channel"
+    return 1
+  fi
+  if [ ! -d "$oc_root/extensions" ]; then
+    echo "  ⚠ $oc_root/extensions missing — cannot install envoymesh channel"
+    return 1
+  fi
+
+  rm -rf "$ext_dir"
+  cp -R "$ext_src" "$ext_dir"
+  rm -rf "$ext_dir/node_modules"
+  rm -f "$ext_dir"/tsconfig.json "$ext_dir"/tsconfig.*.json \
+    "$ext_dir"/.oxlintrc.json "$ext_dir"/.oxfmtrc.jsonc 2>/dev/null || true
+  rm -rf "$ext_dir/docs" "$ext_dir/examples" "$ext_dir/test" "$ext_dir/tests" "$ext_dir/.git" 2>/dev/null || true
+
+  (
+    cd "$ext_dir"
+    ESBUILD=""
+    if [ -f "$ROOT/$oc_root/node_modules/esbuild/bin/esbuild" ]; then
+      ESBUILD="node $ROOT/$oc_root/node_modules/esbuild/bin/esbuild"
+    elif [ -x "$ROOT/$oc_root/node_modules/.bin/esbuild" ]; then
+      ESBUILD="$ROOT/$oc_root/node_modules/.bin/esbuild"
+    else
+      ESBUILD="npx --yes esbuild"
+    fi
+    # bash 3.2-safe: build argv without mapfile
+    set --
+    for f in ./*.ts; do
+      [ -f "$f" ] || continue
+      set -- "$@" "$f"
+    done
+    if [ -d src ]; then
+      for f in src/*.ts; do
+        [ -f "$f" ] || continue
+        case "$(basename "$f")" in
+          *.test.ts|*.e2e.test.ts|*.live.test.ts) continue ;;
+        esac
+        set -- "$@" "$f"
+      done
+    fi
+    if [ "$#" -eq 0 ]; then
+      echo "  ⚠ No .ts sources in $ext_dir" >&2
+      exit 1
+    fi
+    $ESBUILD "$@" \
+      --bundle=false --format=esm --platform=node \
+      --outdir=. --out-extension:.js=.js --allow-overwrite \
+      --log-level=warning
+  ) || {
+    echo "  ⚠ esbuild failed for envoymesh extension"
+    return 1
+  }
+
+  find "$ext_dir" -name '*.ts' -type f -delete
+  if [ -f "$ext_dir/package.json" ] && command -v node >/dev/null 2>&1; then
+    # node writeFileSync = UTF-8 without BOM (safe for OpenClaw JSON.parse).
+    # Keep this -e script free of `$` / `$'` — bash would expand them inside "...".
+    node -e '
+      const fs=require("fs");
+      const p=process.argv[1];
+      let s=fs.readFileSync(p,"utf8");
+      s=s.replace(/\.\/index\.ts/g,"./index.js").replace(/\.\/setup-entry\.ts/g,"./setup-entry.js");
+      fs.writeFileSync(p, s.replace(/\s*$/, "") + "\n");
+    ' "$ext_dir/package.json"
+  fi
+
+  if [ ! -f "$ext_dir/index.js" ]; then
+    echo "  ⚠ envoymesh index.js missing after compile"
+    return 1
+  fi
+
+  mkdir -p "$oc_root/dist/extensions"
+  rm -rf "$oc_root/dist/extensions/envoymesh"
+  cp -R "$ext_dir" "$oc_root/dist/extensions/envoymesh"
+  if [ -d "$oc_root/dist-runtime" ]; then
+    mkdir -p "$oc_root/dist-runtime/extensions"
+    rm -rf "$oc_root/dist-runtime/extensions/envoymesh"
+    cp -R "$ext_dir" "$oc_root/dist-runtime/extensions/envoymesh"
+  fi
+
+  echo "  ✓ envoymesh extension compiled -> $ext_dir (+ dist/extensions mirror)"
+  return 0
+}
+
 # ---- Step 0: Clean stale artifacts ----
 echo "[0/6] Cleaning up stale artifacts..."
 # packages/openclaw is pnpm-managed separately (not an npm workspace).
-if [ -d packages/openclaw/dist ] && [ ! -f packages/openclaw/dist/entry.js ]; then
+# Drop incomplete dist (missing config.js or stub entry) so re-runs rebuild.
+if openclaw_dist_incomplete packages/openclaw; then
   echo "  Removing incomplete packages/openclaw/dist..."
   rm -rf packages/openclaw/dist
 fi
@@ -132,21 +259,22 @@ if [ ! -f packages/openclaw/package.json ]; then
   exit 1
 fi
 
-echo "  Installing EnvoyMesh channel extension..."
-if [ -d packages/openclaw/extensions ] && [ -d OpenClawExtension ]; then
-  EXT_DIR="packages/openclaw/extensions/envoymesh"
-  rm -rf "$EXT_DIR"
-  cp -R OpenClawExtension "$EXT_DIR"
-  rm -rf "$EXT_DIR/node_modules"
-  echo "  ✓ Extension copied to $EXT_DIR"
-else
-  echo "  ⚠ Skipping extension copy (packages/openclaw/extensions or OpenClawExtension missing)"
-fi
+# EnvoyMesh gateway spawn validates extensions/envoymesh/index.js (compiled).
+# Copying OpenClawExtension/*.ts alone is not enough — compile after pnpm
+# install (needs esbuild from packages/openclaw/node_modules).
+echo "  EnvoyMesh channel extension will be compiled after OpenClaw pnpm install (needs esbuild)"
 echo ""
 
 # ---- Step 4: Build OpenClaw gateway ----
 if [ "$SKIP_OPENCLAW_BUILD" = "1" ]; then
   echo "[4/6] Building OpenClaw gateway (SKIPPED -- --skip-openclaw-build)..."
+  if ! openclaw_gateway_ready packages/openclaw; then
+    echo "  ✗ OpenClaw tree incomplete after --skip-openclaw-build"
+    echo "    Need dist/config/config.js + compiled extensions/envoymesh/index.js"
+    echo "    Re-run without --skip-openclaw-build (or: cd packages/openclaw && pnpm run build)"
+    exit 1
+  fi
+  echo "  ✓ OpenClaw gateway ready (packages/openclaw)"
 elif [ ! -f packages/openclaw/package.json ]; then
   echo "[4/6] Building OpenClaw gateway..."
   echo "  ⚠ packages/openclaw not found — EnvoyAI will use native LLM fallback only"
@@ -177,9 +305,17 @@ else
     npm install @pierre/diffs --save-dev 2>&1 | tail -2 || true
   fi
 
+  # Compile envoymesh now that esbuild is installed under packages/openclaw.
+  cd "$ORIG_DIR"
+  echo "  Installing EnvoyMesh channel extension (compiled index.js)..."
+  install_envoymesh_extension packages/openclaw || {
+    echo "  ⚠ envoymesh extension install incomplete — EnvoyAI/OpenClaw may refuse to start"
+  }
+  cd packages/openclaw
+
   echo "  Generating channel metadata (envoymesh)..."
   # OpenClaw's metadata generator uses `git ls-files` to enumerate bundled
-  # extensions. The envoymesh extension was just `cp -R`'d in and is therefore
+  # extensions. The envoymesh extension was just installed and is therefore
   # untracked from OpenClaw's perspective. Stage it in a throwaway index so
   # the generator sees it WITHOUT modifying OpenClaw's git state (we don't
   # own that repo and want clean upstream upgrades).
@@ -203,19 +339,30 @@ else
   fi
 
   echo "  Building..."
-  CI=true pnpm run build 2>&1 | tail -8 || {
-    echo "  ⚠ Full build failed — creating tsx bootstrap..."
-    mkdir -p dist
-    cat > dist/entry.js << 'STUB'
-export * from "../src/cli/run-main.ts";
-STUB
-  }
-
-  if [ -f dist/entry.js ]; then
-    echo "  ✓ dist/entry.js ready"
-  else
-    echo "  ✗ dist/entry.js missing — gateway will not start"
+  if ! CI=true pnpm run build 2>&1 | tail -8; then
+    echo "  ✗ OpenClaw pnpm run build failed"
+    echo "    A stub dist/entry.js is NOT enough — EnvoyAI needs dist/config/config.js."
+    echo "    Fix the build error above, then re-run ./scripts/setup.sh"
+    cd "$ORIG_DIR"
+    exit 1
   fi
+
+  if [ ! -f dist/config/config.js ] || [ ! -f dist/entry.js ]; then
+    echo "  ✗ OpenClaw build did not produce dist/config/config.js (+ dist/entry.js)"
+    echo "    EnvoyAI will refuse to start until a full build succeeds."
+    cd "$ORIG_DIR"
+    exit 1
+  fi
+  echo "  ✓ dist/entry.js + dist/config/config.js ready"
+
+  # Re-install compiled envoymesh after OpenClaw build — `pnpm run build`
+  # can wipe/refresh dist/ and leave extensions/envoymesh without index.js.
+  cd "$ORIG_DIR"
+  echo "  Re-staging compiled envoymesh extension after OpenClaw build..."
+  install_envoymesh_extension packages/openclaw || {
+    echo "  ⚠ Post-build envoymesh stage failed — check packages/openclaw/extensions/envoymesh/index.js"
+  }
+  cd packages/openclaw
 
   if grep -q '"envoymesh"' src/config/bundled-channel-config-metadata.generated.ts 2>/dev/null; then
     echo "  ✓ envoymesh channel in bundled metadata"
@@ -300,14 +447,13 @@ EOF
   GW_STATE_CREATED=""
   trap - EXIT INT TERM
 
-  if [ ! -f node_modules/tsx/dist/cli.mjs ] || [ ! -f openclaw.mjs ]; then
-    echo "  ✗ OpenClaw gateway not ready — pnpm install did not produce tsx + openclaw.mjs"
-    cd "$ORIG_DIR"
+  cd "$ORIG_DIR"
+  if ! openclaw_gateway_ready packages/openclaw; then
+    echo "  ✗ OpenClaw gateway not ready — need compiled dist/config/config.js,"
+    echo "    dist/entry.js (not a stub), extensions/envoymesh/index.js, tsx, openclaw.mjs"
     exit 1
   fi
   echo "  ✓ OpenClaw gateway ready (packages/openclaw)"
-
-  cd "$ORIG_DIR"
 fi
 echo ""
 

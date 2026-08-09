@@ -287,10 +287,12 @@ function Install-EnvoyMeshOpenClawExtension {
             Remove-Item -Force -ErrorAction SilentlyContinue
         $pkgJson = Join-Path $envExtDst "package.json"
         if (Test-Path $pkgJson) {
+            # UTF-8 without BOM — PS 5.1 -Encoding UTF8 breaks OpenClaw JSON.parse.
             $content = Get-Content -Path $pkgJson -Raw -Encoding UTF8
             $content = $content -replace '"\.\/index\.ts"', '"./index.js"'
             $content = $content -replace '"\.\/setup-entry\.ts"', '"./setup-entry.js"'
-            Set-Content -Path $pkgJson -Value $content -Encoding UTF8 -NoNewline
+            $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+            [System.IO.File]::WriteAllText($pkgJson, $content.TrimEnd() + "`n", $utf8NoBom)
         }
     }
     # Also rewrite package.json in extensions/envoymesh for runtime (no tsx).
@@ -1255,13 +1257,14 @@ export * from "../src/cli/run-main.ts";
             Copy-Item -Recurse -Force $envExtSrc $envExtDst
             # Remove leftover .ts source files — only .js is needed at runtime
             Get-ChildItem -Path $envExtDst -Filter "*.ts" -Recurse | Remove-Item -Force
-            # Fix package.json: replace .ts references with .js
+            # Fix package.json: replace .ts references with .js (UTF-8 without BOM)
             $pkgJson = Join-Path $envExtDst "package.json"
             if (Test-Path $pkgJson) {
                 $content = Get-Content -Path $pkgJson -Raw -Encoding UTF8
                 $content = $content -replace '"\.\/index\.ts"', '"./index.js"'
                 $content = $content -replace '"\.\/setup-entry\.ts"', '"./setup-entry.js"'
-                Set-Content -Path $pkgJson -Value $content -Encoding UTF8 -NoNewline
+                $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+                [System.IO.File]::WriteAllText($pkgJson, $content.TrimEnd() + "`n", $utf8NoBom)
             }
             # Verify critical files
             if (-not (Test-Path (Join-Path $envExtDst "index.js")) -or

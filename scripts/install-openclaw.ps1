@@ -38,19 +38,6 @@ exec pnpm exec tsx openclaw.mjs "$@"
     Set-Content -Path (Join-Path $BinDir "openclaw") -Value $wrapper -Encoding UTF8
 }
 
-function Write-EntryBootstrap {
-    param([string]$TargetDir)
-    $dist = Join-Path $TargetDir "dist"
-    if (-not (Test-Path $dist)) {
-        New-Item -ItemType Directory -Force -Path $dist | Out-Null
-    }
-    $entry = @'
-// EnvoyMesh bootstrap — re-exports the gateway from TS source.
-export * from "../src/cli/run-main.ts";
-'@
-    Set-Content -Path (Join-Path $dist "entry.js") -Value $entry -Encoding UTF8
-}
-
 Write-Host "=== EnvoyMesh OpenClaw Bootstrap ===" -ForegroundColor Cyan
 Write-Host ""
 
@@ -58,9 +45,10 @@ Write-Host ""
 if ((Test-Path "$SourceDir/openclaw.mjs") -or (Test-Path "$SourceDir/package.json")) {
     Write-Host "[1/2] Bundled OpenClaw found at $SourceDir"
     Write-RuntimeWrapper
-    if (-not (Test-Path "$SourceDir/dist/entry.js")) {
-        Write-Host "  Creating dist/entry.js bootstrap..."
-        Write-EntryBootstrap $SourceDir
+    # Do NOT write a stub dist/entry.js here — EnvoyAI requires a real
+    # compiled dist (dist/config/config.js). setup.ps1 step 4 builds it.
+    if (-not (Test-Path "$SourceDir/dist/config/config.js")) {
+        Write-Host "  dist/ not built yet — setup.ps1 will pnpm install + build" -ForegroundColor Yellow
     }
     Write-Host "  Runtime wrapper: $BinDir/openclaw" -ForegroundColor Green
     Write-Host "  setup.ps1 will pnpm install + build the gateway" -ForegroundColor Green
@@ -94,8 +82,8 @@ if ($LocalOpenClawPath) {
         }
         Copy-Item -Recurse -Force $LocalOpenClawPath $SourceDir
         Write-RuntimeWrapper
-        Write-EntryBootstrap $SourceDir
         Write-Host "  Copied to $SourceDir" -ForegroundColor Green
+        Write-Host "  Run .\scripts\setup.ps1 to build OpenClaw (needs dist/config/config.js)" -ForegroundColor Yellow
         exit 0
     }
     Write-Host "  Path not found: $LocalOpenClawPath" -ForegroundColor Red
@@ -132,7 +120,6 @@ if (-not (Test-Path $SourceDir)) {
 }
 
 Write-RuntimeWrapper
-Write-EntryBootstrap $SourceDir
 
 # ---- Optional binary fallback (legacy) ----
 Write-Host "[3/4] Optional binary download..."

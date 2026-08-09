@@ -86,9 +86,9 @@ platforms so output is comparable.
 
 ### Step 0 — Clean stale artifacts
 
-- Drop an incomplete `packages/openclaw/dist` directory (one that exists
-  but is missing `dist/entry.js`, so we don't mistake it for a built
-  gateway).
+- Drop an incomplete `packages/openclaw/dist` directory — missing
+  `dist/config/config.js`, or a stub `dist/entry.js` (EnvoyMesh bootstrap /
+  src re-export). A stub alone is not a working gateway.
 - mac/Linux: also `rm -rf /tmp/envoymesh-gateway-*`. Windows: skip (each
   user has their own `$env:TEMP`; there is no shared `/tmp` to scrub).
 
@@ -111,19 +111,23 @@ platforms so output is comparable.
 
 - Delegate to `scripts/install-openclaw.{sh,ps1}`:
   - If `packages/openclaw/` already has `openclaw.mjs` or `package.json`,
-    bootstrap the runtime wrapper in `packages/openclaw-runtime/bin/`
-    and the `dist/entry.js` stub. No re-clone.
+    bootstrap the runtime wrapper in `packages/openclaw-runtime/bin/`.
+    No re-clone. Does not write a stub `dist/entry.js`.
   - Otherwise, if `--local` / `-LocalOpenClawPath` was given, copy from
     the user-provided path. Otherwise, `git clone --depth 1` from
     `https://github.com/openclaw/openclaw.git`.
-- After bootstrap, copy `OpenClawExtension/` (the envoymesh channel
-  extension source) into `packages/openclaw/extensions/envoymesh/` and
-  strip any nested `node_modules`.
+- After bootstrap, defer compiling the envoymesh channel until step 4
+  (needs `esbuild` from `packages/openclaw/node_modules`). Copying
+  `OpenClawExtension/*.ts` alone is not enough — runtime requires
+  `extensions/envoymesh/index.js`.
+- `install-openclaw` does **not** write a stub `dist/entry.js` anymore
+  (a stub fails EnvoyAI's `validateOpenClawTree`).
 
 ### Step 4 — Build OpenClaw gateway + smoke-test
 
-This is the longest step. Skipped entirely with `--skip-openclaw-build` /
-`-SkipOpenClawBuild`.
+This is the longest step. With `--skip-openclaw-build` /
+`-SkipOpenClawBuild`, the build is skipped but readiness is still
+checked (fails if `dist/config/config.js` or envoymesh is missing).
 
 If `packages/openclaw/package.json` is missing, the step prints a warning
 instead of building — the rest of EnvoyMesh still works (EnvoyAI just
@@ -137,17 +141,21 @@ Otherwise it runs, in order:
    after `rm -rf node_modules` if it fails.
 3. Install the `@pierre/diffs` dev dependency if `pnpm` skipped it
    (transitive direct-dep in some OpenClaw versions).
-4. Stage the untracked `extensions/envoymesh` into a throwaway
+4. Compile `OpenClawExtension/` → `extensions/envoymesh/index.js`
+   (and mirror under `dist/extensions/`). On Windows, rewrite
+   `package.json` as UTF-8 **without BOM** (a BOM breaks OpenClaw's
+   `plugins:assets:build` JSON.parse).
+5. Stage the untracked `extensions/envoymesh` into a throwaway
    `GIT_INDEX_FILE` so OpenClaw's metadata generator sees it via
    `git ls-files`, then run `pnpm exec tsx
    scripts/generate-bundled-channel-config-metadata.ts`. The throwaway
    index leaves OpenClaw's own git state untouched.
-5. `pnpm run build`. On failure, write a `dist/entry.js` stub that
-   re-exports the TS source. This is a deliberate degraded fallback so
-   the gateway can still boot — TypeScript errors don't block a fresh
-   dev setup. The build log is the source of truth for diagnosing what
-   went wrong.
-6. Smoke-test the gateway on a **random free loopback port** in the
+6. `pnpm run build`. On failure, **abort setup** (do not write a stub
+   `dist/entry.js`). EnvoyAI requires `dist/config/config.js` from a
+   real build.
+7. Re-stage compiled envoymesh after the build (build can refresh
+   `dist/` / extensions).
+8. Smoke-test the gateway on a **random free loopback port** in the
    user-private range. The probe uses `bash /dev/tcp` on mac/Linux and
    `[System.Net.Sockets.TcpListener]` on Windows; both pick an ephemeral
    port and verify it's currently free before binding it. The smoke
@@ -155,8 +163,8 @@ Otherwise it runs, in order:
    --allow-unconfigured` and posts `{}` to `/webhook/envoymesh` for up
    to 45 seconds. Any non-`000` / non-`404` HTTP code is treated as the
    gateway being up.
-7. Verify `node_modules/tsx/dist/cli.mjs` + `openclaw.mjs` exist; that
-   combination is what the runtime needs to actually start the gateway.
+9. Verify readiness: `openclaw.mjs`, `tsx`, `dist/entry.js` (not a
+   stub), `dist/config/config.js`, and `extensions/envoymesh/index.js`.
 
 ### Step 5 — Bridge config template
 

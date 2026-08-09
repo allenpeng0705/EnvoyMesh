@@ -96,10 +96,12 @@ Get-ChildItem -Path $Seed -Filter "*.ts" -Recurse -File -ErrorAction SilentlyCon
 
 $pkgJson = Join-Path $Seed "package.json"
 if (Test-Path $pkgJson) {
+    # UTF-8 without BOM — PS 5.1 -Encoding UTF8 breaks OpenClaw JSON.parse.
     $content = Get-Content -Path $pkgJson -Raw -Encoding UTF8
     $content = $content -replace '"\.\/index\.ts"', '"./index.js"'
     $content = $content -replace '"\.\/setup-entry\.ts"', '"./setup-entry.js"'
-    Set-Content -Path $pkgJson -Value $content -Encoding UTF8 -NoNewline
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($pkgJson, $content.TrimEnd() + "`n", $utf8NoBom)
 }
 
 $jsCount = @(Get-ChildItem -Path $Seed -Filter "*.js" -Recurse -File).Count
