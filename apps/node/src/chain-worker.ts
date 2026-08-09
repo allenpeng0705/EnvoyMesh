@@ -245,15 +245,20 @@ export async function handleWorkerAccept(
   const nowMs = (deps.now ?? (() => new Date()))().getTime();
   const check = checkBidExpiration(deps, subtaskId, nowMs);
   if (!check.ok) {
-    deps.audit.record({
-      type: "chain.bid_expired",
-      outcome: "deny",
-      intent: "task.chain.accept",
-      remotePeerId: envelope.senderPeerId,
-      correlationId: envelope.correlationId,
-      summary: check.reason,
-    });
-    return { ok: false, reason: "handler_denied" };
+    // Direct-assign: orchestrator awards a pre-selected worker with a subtask
+    // snapshot and no prior bid. Still reject truly expired bids.
+    const directAssignOk = check.reason === "no_pending_bid" && Boolean(payload.subtask);
+    if (!directAssignOk) {
+      deps.audit.record({
+        type: "chain.bid_expired",
+        outcome: "deny",
+        intent: "task.chain.accept",
+        remotePeerId: envelope.senderPeerId,
+        correlationId: envelope.correlationId,
+        summary: check.reason,
+      });
+      return { ok: false, reason: "handler_denied" };
+    }
   }
   acceptChainAward(deps, subtaskId);
   chainLog("worker", "award accepted", {

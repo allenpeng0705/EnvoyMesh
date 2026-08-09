@@ -7894,6 +7894,8 @@ class NodeServiceImpl implements NodeService {
       lastError: persisted?.setupSponsorFriendLastError,
       lastErrorKind: persisted?.setupSponsorFriendLastErrorKind,
       attempts: persisted?.setupSponsorFriendAttempts,
+      cooldownUntil: persisted?.setupSponsorFriendCooldownUntil,
+      skipReason: persisted?.setupSponsorFriendSkipReason,
     };
     return {
       config,

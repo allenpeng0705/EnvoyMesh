@@ -187,6 +187,14 @@ function sleep(ms: number): Promise<void> {
  *  the user can come back from a coffee and see fresh state. */
 const DEFAULT_COOLDOWN_MS = 60_000;
 
+/**
+ * After one auto-bond cycle exhausts maxAttempts, keep non-forced callers
+ * skipped forever. Manual Retry uses forceBypassGuards and clears this.
+ * A short 60s cooldown used to let Discover/NodeStateContext re-spawn the
+ * full dial loop every minute on machines that never reach the sponsor.
+ */
+const AUTO_EXHAUSTED_COOLDOWN_UNTIL = "9999-12-31T00:00:00.000Z";
+
 function resolveCooldownMs(config: PersistedNodeConfig | undefined): number {
   const v = config?.setupSponsorFriendCooldownMs;
   if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
@@ -290,6 +298,12 @@ export interface SetupSponsorFriendRuntimeDeps {
   probeMeshReady?(): Promise<boolean>;
   /** Load the local node profile (for self-check). */
   loadNodeProfile(): Promise<{ owner: { ownerId: string }; peerId: string } | undefined>;
+  /**
+   * True when the local trust store already has a real bond with the
+   * sponsor (`direct` / `referred`). Auto-bond is a first-friend helper —
+   * if the user already bonded via Discover/LAN/QR, skip and mark complete.
+   */
+  isAlreadyBondedWith?(ownerId: string): Promise<boolean>;
   assertOnline(): void;
   /**
    * Wait for the sponsor's `bond.established` event for a given
@@ -394,6 +408,31 @@ export async function runSetupSponsorFriendViaRuntime(
   // it as `string` without `!` non-null assertions at every use site.
   const ownerId: string = resolved.ownerId;
   const forceBypass = input.forceBypassGuards === true;
+
+  // Already a bonded contact — nothing to do. Mark completed so UI/auto
+  // paths stop dialing the sponsor again (common when the bundled sponsor
+  // was bonded earlier via Discover / LAN / QR).
+  if (deps.isAlreadyBondedWith) {
+    const alreadyBonded = await deps.isAlreadyBondedWith(ownerId);
+    if (alreadyBonded) {
+      bondTrace(1, "PASS", "skip auto-bond — already bonded with sponsor", {
+        ownerId: ownerId.slice(0, 20),
+      });
+      if (!existing?.setupSponsorFriendCompletedAt) {
+        const base = buildBasePersistedConfig(existing, deps);
+        await deps.saveNodeConfig({
+          ...base,
+          setupSponsorFriendCompletedAt: new Date().toISOString(),
+          setupSponsorFriendLastError: undefined,
+          setupSponsorFriendLastErrorKind: undefined,
+          setupSponsorFriendCooldownUntil: undefined,
+          setupSponsorFriendSkipReason: undefined,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      return { ok: true, skipped: true, reason: "already-bonded", ownerId };
+    }
+  }
 
   // Cooldown guard — pause auto-retry after a failed cycle. Manual Retry
   // (forceBypassGuards=true) bypasses this. The runtime still persists
@@ -882,20 +921,20 @@ async function runSetupSponsorFriendRetryLoop(
     }
   }
 
-  // Loop exhausted `maxAttempts` — apply the cooldown so the tile stops
-  // showing "Retrying" and shows the classified lastError instead. The next
-  // auto-trigger is gated on `cooldownUntil` expiring.
-  const cooldownUntil = new Date(Date.now() + cooldownMs).toISOString();
+  // Loop exhausted `maxAttempts` — stop auto-retry permanently. The tile
+  // shows the classified lastError + Retry; only forceBypassGuards (manual
+  // Retry) may spawn another cycle.
+  const cooldownUntil = AUTO_EXHAUSTED_COOLDOWN_UNTIL;
   const base = buildBasePersistedConfig(existing, deps);
   await deps.saveNodeConfig({
     ...base,
     setupSponsorFriendCooldownUntil: cooldownUntil,
-    setupSponsorFriendSkipReason: "cooldown",
+    setupSponsorFriendSkipReason: "auto-exhausted",
     updatedAt: new Date().toISOString(),
   });
 
   console.warn(
-    `[runSetupSponsorFriend] exhausted ${resolved.maxAttempts} attempts; last error: ${lastError ?? "(none)"}; cooldown until ${cooldownUntil}`,
+    `[runSetupSponsorFriend] exhausted ${resolved.maxAttempts} attempts; last error: ${lastError ?? "(none)"}; auto-retry stopped (manual Retry can bypass)`,
   );
   bondTrace(4, "FAIL", "auto-bond exhausted all attempts — copy [bond-trace] lines from this session", {
     maxAttempts: resolved.maxAttempts,
@@ -907,7 +946,16 @@ async function runSetupSponsorFriendRetryLoop(
 /** Convenience wrapper using NodeService when available. */
 export async function runSetupSponsorFriendOnService(
   ns: NodeService,
-  deps: Omit<SetupSponsorFriendRuntimeDeps, "applyWanJoinInvite" | "searchPeers" | "sendHello" | "loadHelloProfile" | "loadNodeProfile" | "probeHumanProfileReady">,
+  deps: Omit<
+    SetupSponsorFriendRuntimeDeps,
+    | "applyWanJoinInvite"
+    | "searchPeers"
+    | "sendHello"
+    | "loadHelloProfile"
+    | "loadNodeProfile"
+    | "probeHumanProfileReady"
+    | "isAlreadyBondedWith"
+  >,
   input: RunSetupSponsorFriendInput = {},
 ): Promise<RunSetupSponsorFriendResult> {
   return runSetupSponsorFriendViaRuntime(
@@ -930,6 +978,14 @@ export async function runSetupSponsorFriendOnService(
         };
       },
       probeHumanProfileReady: async () => Boolean(await ns.getHumanProfile()),
+      isAlreadyBondedWith: async (sponsorOwnerId) => {
+        const bonds = await ns.getBonds();
+        return bonds.some(
+          (b) =>
+            b.peerOwnerId === sponsorOwnerId &&
+            (b.level === "direct" || b.level === "referred"),
+        );
+      },
       loadNodeProfile: async () => {
         try {
           const np = ns.getProfile();

@@ -439,9 +439,9 @@ describe("launchChain", () => {
     );
   });
 
-  it("retryStaleProposals re-proposes preferred worker then tries backup after bid wait", async () => {
+  it("launchChain in competitive mode proposes preferred worker and one backup together", async () => {
     const deps = makeDeps();
-    const state = createChainState(mandate());
+    const state = createChainState(mandate()); // default competitive
     state.subtasks.set("subtask_a", {
       version: "0.1",
       subtaskId: "subtask_a",
@@ -459,12 +459,95 @@ describe("launchChain", () => {
     await launchChain(deps, state, {
       subtask_a: ["12D3KooW-w1", "12D3KooW-w2"],
     });
-    expect(state.proposedSubtasks.has("subtask_a")).toBe(true);
-    const proposesAfterLaunch = deps.sentEnvelopes.filter(
-      (e) => e.envelope.intent === "task.chain.propose",
-    ).length;
-    expect(proposesAfterLaunch).toBe(1);
-    expect(deps.sentEnvelopes.some((e) => e.recipientPeerId === "12D3KooW-w1")).toBe(true);
+    const proposes = deps.sentEnvelopes.filter((e) => e.envelope.intent === "task.chain.propose");
+    expect(proposes.map((e) => e.recipientPeerId)).toEqual(["12D3KooW-w1", "12D3KooW-w2"]);
+  });
+
+  it("launchChain in direct mode awards preferred worker without waiting for a bid", async () => {
+    const deps = makeDeps();
+    const state = createChainState(mandate(), { awardMode: "direct" });
+    state.subtasks.set("subtask_a", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      chainMandateId: "chainmandate_test-1",
+      depth: 1,
+      requiredSkill: "task.execute",
+      objective: "step one",
+      requestedResult: "r1",
+      constraints: [],
+      dependsOn: [],
+      preferredWorkerPeerId: "12D3KooW-w1",
+      createdAt: NOW.toISOString(),
+    });
+    await launchChain(deps, state, {
+      subtask_a: ["12D3KooW-w1", "12D3KooW-w2"],
+    });
+    expect(state.awards.get("subtask_a")?.workerPeerId).toBe("12D3KooW-w1");
+    const accepts = deps.sentEnvelopes.filter((e) => e.envelope.intent === "task.chain.accept");
+    expect(accepts).toHaveLength(1);
+    expect(accepts[0]!.recipientPeerId).toBe("12D3KooW-w1");
+    expect((accepts[0]!.payload as { subtask?: { subtaskId: string } }).subtask?.subtaskId).toBe(
+      "subtask_a",
+    );
+    const proposes = deps.sentEnvelopes.filter((e) => e.envelope.intent === "task.chain.propose");
+    expect(proposes).toHaveLength(0);
+  });
+
+  it("direct launch fails over to backup when preferred accept send fails", async () => {
+    const deps = makeDeps();
+    deps.sendEnvelope = async (recipientPeerId, envelope, payload) => {
+      deps.sentEnvelopes.push({ recipientPeerId, envelope, payload });
+      if (
+        envelope.intent === "task.chain.accept" &&
+        recipientPeerId === "12D3KooW-w1"
+      ) {
+        return false;
+      }
+      return true;
+    };
+    const state = createChainState(mandate(), { awardMode: "direct" });
+    state.subtasks.set("subtask_a", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      chainMandateId: "chainmandate_test-1",
+      depth: 1,
+      requiredSkill: "task.execute",
+      objective: "step one",
+      requestedResult: "r1",
+      constraints: [],
+      dependsOn: [],
+      preferredWorkerPeerId: "12D3KooW-w1",
+      createdAt: NOW.toISOString(),
+    });
+    await launchChain(deps, state, {
+      subtask_a: ["12D3KooW-w1", "12D3KooW-w2"],
+    });
+    expect(state.awards.get("subtask_a")?.workerPeerId).toBe("12D3KooW-w2");
+  });
+
+  it("retryStaleProposals tries backup first after bid wait (not the silent preferred again)", async () => {
+    const deps = makeDeps();
+    const state = createChainState(mandate()); // competitive
+    state.subtasks.set("subtask_a", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      chainMandateId: "chainmandate_test-1",
+      depth: 1,
+      requiredSkill: "task.execute",
+      objective: "step one",
+      requestedResult: "r1",
+      constraints: [],
+      dependsOn: [],
+      preferredWorkerPeerId: "12D3KooW-w1",
+      createdAt: NOW.toISOString(),
+    });
+    // Simulate legacy preferred-only propose (no backup fan-out on launch).
+    state.workersBySubtask.set("subtask_a", ["12D3KooW-w1", "12D3KooW-w2"]);
+    state.proposedSubtasks.add("subtask_a");
+    state.proposedAt.set("subtask_a", NOW.getTime());
 
     // Too early — no retry.
     const early = await retryStaleProposals(deps, state, {
@@ -473,7 +556,7 @@ describe("launchChain", () => {
     });
     expect(early.retried).toEqual([]);
 
-    // First retry: same preferred worker.
+    // First retry: backup worker (skip re-proposing silent preferred).
     const first = await retryStaleProposals(deps, state, {
       bidWaitMs: CHAIN_BID_WAIT_MS,
       nowMs: NOW.getTime() + CHAIN_BID_WAIT_MS + 1,
@@ -482,15 +565,15 @@ describe("launchChain", () => {
     const proposesAfterFirst = deps.sentEnvelopes.filter(
       (e) => e.envelope.intent === "task.chain.propose",
     );
-    expect(proposesAfterFirst.length).toBe(2);
-    expect(proposesAfterFirst[1]!.recipientPeerId).toBe("12D3KooW-w1");
+    expect(proposesAfterFirst.length).toBe(1);
+    expect(proposesAfterFirst[0]!.recipientPeerId).toBe("12D3KooW-w2");
     expect(
       deps.auditEvents.some(
         (e) => e.type === "chain.subtask_proposed" && String(e.summary).includes("propose_retry"),
       ),
     ).toBe(true);
 
-    // Second retry: backup worker.
+    // Second retry: back to preferred.
     const second = await retryStaleProposals(deps, state, {
       bidWaitMs: CHAIN_BID_WAIT_MS,
       nowMs: NOW.getTime() + 2 * CHAIN_BID_WAIT_MS + 2,
@@ -499,8 +582,8 @@ describe("launchChain", () => {
     const proposesAfterSecond = deps.sentEnvelopes.filter(
       (e) => e.envelope.intent === "task.chain.propose",
     );
-    expect(proposesAfterSecond.length).toBe(3);
-    expect(proposesAfterSecond[2]!.recipientPeerId).toBe("12D3KooW-w2");
+    expect(proposesAfterSecond.length).toBe(2);
+    expect(proposesAfterSecond[1]!.recipientPeerId).toBe("12D3KooW-w1");
 
     // Cap — no more retries.
     const capped = await retryStaleProposals(deps, state, {

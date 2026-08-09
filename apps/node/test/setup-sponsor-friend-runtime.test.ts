@@ -105,6 +105,63 @@ describe("runSetupSponsorFriendViaRuntime", () => {
     expect(sendHello).not.toHaveBeenCalled();
   });
 
+  it("skips and marks completed when the sponsor is already a bonded contact", async () => {
+    const sendHello = vi.fn(async () => ({ messageId: "msg-1" }));
+    const saveNodeConfig = vi.fn(async () => {});
+    const result = await runSetupSponsorFriendViaRuntime({
+      loadNodeConfig: async () => ({
+        version: "0.1",
+        profileDir: "/tmp/profile",
+        discoveryProfile: "wan-default",
+        enableMdns: true,
+        relayEnabled: true,
+        relayServerEnabled: false,
+        advertiseAddrs: [],
+        bootstrapPeers: [],
+        bootstrapPresets: [],
+        configuredRelays: [],
+        modelProviders: { mode: "disabled" },
+        chatAssistEnabled: false,
+        contactAiPreferences: [],
+        updatedAt: new Date().toISOString(),
+        setupSponsorFriendEnabled: true,
+        setupSponsorFriendOwnerId: "envoy:owner:already-friend",
+        setupSponsorFriendPeerId: "12D3KooWAlreadyFriend",
+        setupSponsorFriendMaxAttempts: 3,
+        setupSponsorFriendRetryDelayMs: 0,
+      }),
+      saveNodeConfig,
+      getProfileDir: () => "/tmp/profile",
+      nodeBundleDir: "/tmp/bundle",
+      applyWanJoinInvite: vi.fn(async () => ({})),
+      searchPeers: vi.fn(async () => []),
+      sendHello,
+      loadHelloProfile: async () => ({
+        displayName: "New User",
+        bio: "",
+        interests: [],
+        whatShares: [],
+      }),
+      loadNodeProfile: async () => undefined,
+      isAlreadyBondedWith: async (ownerId) => ownerId === "envoy:owner:already-friend",
+      assertOnline: () => {},
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      skipped: true,
+      reason: "already-bonded",
+      ownerId: "envoy:owner:already-friend",
+    });
+    expect(saveNodeConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        setupSponsorFriendCompletedAt: expect.any(String),
+      }),
+    );
+    await flushSponsorLoop();
+    expect(sendHello).not.toHaveBeenCalled();
+  });
+
   it("single-flights concurrent setup calls for the same sponsor", async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => {
@@ -773,12 +830,10 @@ describe("runSetupSponsorFriendViaRuntime — cooldown + profile-not-ready guard
     expect(sendHello).not.toHaveBeenCalled();
   });
 
-  it("persists cooldownUntil + skipReason after exhausting maxAttempts", async () => {
-    // After 12 attempts fail (here, 1 attempt in the test) the runtime
-    // must write cooldownUntil + skipReason so the tile shows "Paused"
-    // and the next auto-trigger is gated. Without this, the user sees
-    // "Retrying" forever and the loop dials the same unreachable
-    // target back-to-back.
+  it("persists permanent auto-stop after exhausting maxAttempts", async () => {
+    // After one auto cycle fails, auto-retry must stop for good (manual
+    // Retry uses forceBypassGuards). A short 60s cooldown used to let
+    // Discover/NodeStateContext re-spawn the dial loop every minute.
     const saveNodeConfig = vi.fn(async () => {});
     const sendHello = vi.fn(async () => {
       throw new Error("Failed to send hello: No reachable path to 12D3KooWTest…");
@@ -806,18 +861,16 @@ describe("runSetupSponsorFriendViaRuntime — cooldown + profile-not-ready guard
     await flushSponsorLoop();
     expect(saveNodeConfig).toHaveBeenCalledWith(
       expect.objectContaining({
-        setupSponsorFriendCooldownUntil: expect.any(String),
-        setupSponsorFriendSkipReason: "cooldown",
+        setupSponsorFriendCooldownUntil: "9999-12-31T00:00:00.000Z",
+        setupSponsorFriendSkipReason: "auto-exhausted",
       }),
     );
-    // Verify the cooldown is roughly 60s in the future (default).
-    const lastCall = saveNodeConfig.mock.calls.at(-1)?.[0] as { setupSponsorFriendCooldownUntil?: string };
-    const untilMs = lastCall.setupSponsorFriendCooldownUntil
-      ? Date.parse(lastCall.setupSponsorFriendCooldownUntil)
-      : 0;
-    const deltaMs = untilMs - Date.now();
-    expect(deltaMs).toBeGreaterThan(55_000);
-    expect(deltaMs).toBeLessThan(65_000);
+    const lastCall = saveNodeConfig.mock.calls.at(-1)?.[0] as {
+      setupSponsorFriendCooldownUntil?: string;
+      setupSponsorFriendSkipReason?: string;
+    };
+    expect(lastCall.setupSponsorFriendSkipReason).toBe("auto-exhausted");
+    expect(lastCall.setupSponsorFriendCooldownUntil).toBe("9999-12-31T00:00:00.000Z");
   });
 
   it("bails out early on profile-not-ready (no 12 wasted attempts)", async () => {

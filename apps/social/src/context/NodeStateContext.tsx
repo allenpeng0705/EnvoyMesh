@@ -357,35 +357,9 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     };
   }, [nodeService, wsTransportOpen, nodeStatus, nodeConfig?.nodeInitialized, refreshConnectionStatus]);
 
-  /** Zero-step sponsor friend — retry when mesh becomes reachable. */
-  useEffect(() => {
-    if (!wsTransportOpen || nodeStatus !== "running") return;
-    void nodeService.runSetupSponsorFriend().then((result) => {
-      if (!result.ok && !result.skipped) {
-        console.warn("[NodeState] setup sponsor friend:", result.reason ?? "failed");
-      } else if (result.ok && result.helloMessageId) {
-        console.info("[NodeState] setup sponsor friend sent hello:", result.helloMessageId);
-      }
-    }).catch((err) => {
-      console.warn("[NodeState] setup sponsor friend error:", err);
-    });
-  }, [nodeService, wsTransportOpen, nodeStatus]);
-
-  /** Re-trigger sponsor friend when the human profile is saved.
-   *  On first launch the profile doesn't exist yet, so the effect above
-   *  bails with "profile-not-ready".  Once the user completes the
-   *  profile setup (display name + save), the "profile:updated" event
-   *  fires and we retry — the profile is now ready so the loop can
-   *  actually send the bond.request. */
-  useEffect(() => {
-    if (!wsTransportOpen || nodeStatus !== "running") return;
-    const unsub = nodeService.on("profile:updated", () => {
-      void nodeService.runSetupSponsorFriend().catch((err) => {
-        console.warn("[NodeState] setup sponsor friend re-trigger after profile save error:", err);
-      });
-    });
-    return unsub;
-  }, [nodeService, wsTransportOpen, nodeStatus]);
+  // Sponsor auto-bond runs once from SetupView after first-run wizard.
+  // Do not re-trigger here on WS reconnect / nodeStatus / profile:updated —
+  // that burned dials on Windows every session. Users retry from Discover.
 
   // config:updated — keep nodeConfig in sync
   useEffect(() => {

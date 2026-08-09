@@ -32,10 +32,11 @@ export const CHAIN_DIRECT_AUTO_EVALUATE_MS = 0;
 
 /**
  * How long to wait for the first bid after a propose before re-proposing
- * (and eventually trying a backup worker). Cap separately from post-award
- * stallTimeoutMs so bidding deadlocks recover faster.
+ * (and trying a backup worker). Kept short so a silent preferred peer
+ * (send ok / no bid) does not stall each Team job step for a full minute.
+ * Cap separately from post-award stallTimeoutMs.
  */
-export const CHAIN_BID_WAIT_MS = 30_000;
+export const CHAIN_BID_WAIT_MS = 15_000;
 
 /** Max re-propose attempts per subtask while stuck with zero bids. */
 export const CHAIN_PROPOSE_RETRY_CAP = 2;

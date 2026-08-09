@@ -35,6 +35,7 @@ import {
 import {
   ChainHandoffRequestPayloadSchema,
   ChainMandateSignedSchema,
+  ChainSubtaskBidSchema,
   ChainSubtaskSchema,
   TaskChainAcceptPayloadSchema,
   TaskChainCancelPayloadSchema,
@@ -226,13 +227,21 @@ export interface ChainState {
    * preserves one-shot synthesize→publish.
    */
   iteration?: import("./chain-iteration.js").ChainIterationState;
+  /**
+   * Direct = pre-selected worker is awarded without a bid auction.
+   * Competitive = propose → bid → evaluate.
+   */
+  awardMode: "direct" | "competitive";
 }
 
 // ---------------------------------------------------------------------------
 // Factory + state accessors
 // ---------------------------------------------------------------------------
 
-export function createChainState(chainMandate: ChainMandate): ChainState {
+export function createChainState(
+  chainMandate: ChainMandate,
+  opts?: { awardMode?: "direct" | "competitive" },
+): ChainState {
   const ledger = createChainBudgetLedger(chainMandate);
   return {
     chainId: chainMandate.chainId,
@@ -257,6 +266,9 @@ export function createChainState(chainMandate: ChainMandate): ChainState {
     lastConfidence: new Map(),
     autoRebalanceCount: 0,
     autoRebalanceHistory: [],
+    // Default competitive keeps unit/e2e propose→bid paths intact; production
+    // Team jobs always pass awardMode explicitly (usually "direct").
+    awardMode: opts?.awardMode === "direct" ? "direct" : "competitive",
   };
 }
 
@@ -649,9 +661,11 @@ export async function launchChain(
       : `workers=${allWorkerPeerIds.size} failed=${mandateFails.length} peers=${mandateFails.map((p) => p.slice(0, 14)).join(",")}`,
   });
 
-  // Record the full worker map up front, but only propose dependency-ready
+  // Record the full worker map up front, but only launch dependency-ready
   // roots. Dependents wait for parent final partials (`advanceReadySubtasks`).
-  // Named/direct assignees: propose to the primary only; extras are stall backups.
+  // Direct mode: award the selected worker immediately (no bid wait).
+  // Competitive: propose to preferred + backup and wait for bids.
+  const direct = state.awardMode !== "competitive";
   let proposed = 0;
   const proposeFails: string[] = [];
   for (const [subtaskId, workerIds] of Object.entries(workersBySubtask)) {
@@ -659,27 +673,36 @@ export async function launchChain(
     if (!subtask) continue;
     state.workersBySubtask.set(subtaskId, [...workerIds]);
     if (!subtaskDependenciesSatisfied(state, subtask)) continue;
-    const prepared = prepareSubtaskPropose(state, subtask);
-    const targets =
-      subtask.preferredWorkerPeerId && workerIds.includes(subtask.preferredWorkerPeerId)
-        ? [subtask.preferredWorkerPeerId]
-        : subtask.preferredWorkerPeerId
-          ? workerIds.slice(0, 1)
-          : workerIds;
+    const targets = resolveProposeTargets(workerIds, subtask.preferredWorkerPeerId);
     let proposedThis = 0;
-    for (const workerPeerId of targets) {
-      const ok = await sendChainPropose(
-        deps,
-        workerPeerId,
-        prepared.subtask,
-        state.chainMandate,
-        prepared.inputArtifacts,
-      );
-      if (ok) {
-        proposed++;
-        proposedThis++;
-      } else {
-        proposeFails.push(`${subtaskId.slice(0, 12)}→${workerPeerId.slice(0, 14)}`);
+    if (direct) {
+      for (const workerPeerId of targets) {
+        const awarded = await directAwardSubtask(deps, state, subtaskId, workerPeerId);
+        if (awarded.ok) {
+          proposed++;
+          proposedThis++;
+          break;
+        }
+        proposeFails.push(
+          `${subtaskId.slice(0, 12)}→${workerPeerId.slice(0, 14)}:${awarded.reason}`,
+        );
+      }
+    } else {
+      const prepared = prepareSubtaskPropose(state, subtask);
+      for (const workerPeerId of targets) {
+        const ok = await sendChainPropose(
+          deps,
+          workerPeerId,
+          prepared.subtask,
+          state.chainMandate,
+          prepared.inputArtifacts,
+        );
+        if (ok) {
+          proposed++;
+          proposedThis++;
+        } else {
+          proposeFails.push(`${subtaskId.slice(0, 12)}→${workerPeerId.slice(0, 14)}`);
+        }
       }
     }
     // Only mark proposed when at least one send succeeded — otherwise
@@ -733,11 +756,107 @@ function primaryWorkerForSubtask(state: ChainState, subtaskId: string): string |
 }
 
 /**
+ * Who should receive the initial `task.chain.propose`.
+ * Preferred assignee first; include one backup so a silent preferred peer
+ * (envelope delivered / agent never bids) cannot stall every step.
+ */
+export function resolveProposeTargets(
+  workerIds: readonly string[],
+  preferredWorkerPeerId?: string,
+): string[] {
+  if (workerIds.length === 0) return [];
+  if (preferredWorkerPeerId && workerIds.includes(preferredWorkerPeerId)) {
+    const backup = workerIds.find((w) => w !== preferredWorkerPeerId);
+    return backup ? [preferredWorkerPeerId, backup] : [preferredWorkerPeerId];
+  }
+  if (preferredWorkerPeerId) {
+    return workerIds.slice(0, 1);
+  }
+  return [...workerIds];
+}
+
+/**
+ * Direct mode: award a pre-selected worker without waiting for a bid.
+ * Sends `task.chain.accept` with a subtask snapshot so the worker can execute
+ * even with no prior propose/bid. Tries are ordered by the caller (preferred
+ * then backup); a failed send rolls back so the next worker can be tried.
+ */
+export async function directAwardSubtask(
+  deps: ChainOrchestratorHandlerDeps,
+  state: ChainState,
+  subtaskId: string,
+  workerPeerId: string,
+): Promise<{ ok: true; award: ChainSubtaskAward } | { ok: false; reason: string }> {
+  if (state.chainCancelled || state.cancelledSubtasks.has(subtaskId)) {
+    return { ok: false, reason: "cancelled" };
+  }
+  if (state.awards.has(subtaskId)) {
+    return { ok: false, reason: "already_awarded" };
+  }
+  const subtask = state.subtasks.get(subtaskId);
+  if (!subtask) return { ok: false, reason: "no_subtask" };
+
+  const now = deps.now?.() ?? new Date();
+  const nowIso = now.toISOString();
+  const bid: ChainSubtaskBid = ChainSubtaskBidSchema.parse({
+    version: "0.1",
+    subtaskId,
+    chainId: state.chainId,
+    workerPeerId,
+    workerOwnerId: workerPeerId,
+    proposedCostUsd: 0,
+    proposedEtaAt: new Date(now.getTime() + 60_000).toISOString(),
+    bidExpiresAt: new Date(now.getTime() + 10 * 60_000).toISOString(),
+    capability: subtask.requiredSkill,
+    rationale: "direct-assign",
+    createdAt: nowIso,
+  });
+  state.bids.set(`${subtaskId}::${workerPeerId}`, bid);
+
+  const evaluated = await evaluateBids(deps, state, {
+    subtaskId,
+    policy: "first",
+    pickWorkerPeerId: workerPeerId,
+    reserveCostUsd: 0,
+  });
+  if (!evaluated.ok) {
+    state.bids.delete(`${subtaskId}::${workerPeerId}`);
+    return { ok: false, reason: evaluated.reason };
+  }
+
+  const prepared = prepareSubtaskPropose(state, subtask);
+  const sent = await sendChainAccept(
+    deps,
+    workerPeerId,
+    evaluated.award,
+    prepared.subtask,
+    prepared.inputArtifacts,
+  );
+  if (!sent) {
+    await state.ledger.release(subtaskId, "direct-assign send failed");
+    state.awards.delete(subtaskId);
+    state.awardedAt.delete(subtaskId);
+    state.bids.delete(`${subtaskId}::${workerPeerId}`);
+    return { ok: false, reason: "send_failed" };
+  }
+
+  deps.audit.record({
+    type: "chain.awarded",
+    outcome: "allow",
+    intent: "task.chain.accept",
+    correlationId: state.chainId,
+    summary:
+      `direct_assign subtask=${subtaskId.slice(0, 12)}` +
+      ` worker=${workerPeerId.slice(0, 14)}`,
+  });
+  return { ok: true, award: evaluated.award };
+}
+
+/**
  * Bidding-phase recovery: when a propose was marked sent but no bid arrived
- * (mesh flake, worker OpenClaw down, preferred-only miss), re-propose — and
- * on later retries try the next listed worker. Without this, `proposedSubtasks`
- * permanently blocks `advanceReadySubtasks` and tracking sleeps forever while
- * `awards.size === 0`.
+ * (mesh flake, worker OpenClaw down, preferred-only miss), re-propose to a
+ * backup worker first. Without this, `proposedSubtasks` permanently blocks
+ * `advanceReadySubtasks` and tracking sleeps forever while `awards.size === 0`.
  */
 export async function retryStaleProposals(
   deps: ChainOrchestratorHandlerDeps,
@@ -771,18 +890,31 @@ export async function retryStaleProposals(
     const workers = state.workersBySubtask.get(subtaskId) ?? [];
     if (workers.length === 0) continue;
     const primary = primaryWorkerForSubtask(state, subtaskId) ?? workers[0]!;
+    const backups = workers.filter((w) => w !== primary);
+    // First retry → first backup (do not burn another bidWait on the silent
+    // preferred peer). Later retries walk remaining backups, then primary.
     const target =
-      retries === 0 ? primary : (workers.find((w) => w !== primary) ?? primary);
+      backups.length === 0
+        ? primary
+        : retries < backups.length
+          ? backups[retries]!
+          : primary;
 
     await sendChainMandate(deps, target, state.chainMandate);
-    const prepared = prepareSubtaskPropose(state, subtask);
-    const ok = await sendChainPropose(
-      deps,
-      target,
-      prepared.subtask,
-      state.chainMandate,
-      prepared.inputArtifacts,
-    );
+    let ok = false;
+    if (state.awardMode !== "competitive") {
+      const awarded = await directAwardSubtask(deps, state, subtaskId, target);
+      ok = awarded.ok;
+    } else {
+      const prepared = prepareSubtaskPropose(state, subtask);
+      ok = await sendChainPropose(
+        deps,
+        target,
+        prepared.subtask,
+        state.chainMandate,
+        prepared.inputArtifacts,
+      );
+    }
     state.proposeRetryCount.set(subtaskId, retries + 1);
     markSubtaskProposed(state, subtaskId, nowMs);
     if (target !== workers[0]) {
@@ -794,11 +926,12 @@ export async function retryStaleProposals(
     deps.audit.record({
       type: "chain.subtask_proposed",
       outcome: ok ? "allow" : "deny",
-      intent: "task.chain.propose",
+      intent: state.awardMode !== "competitive" ? "task.chain.accept" : "task.chain.propose",
       correlationId: state.chainId,
       summary:
         `propose_retry attempt=${retries + 1} subtask=${subtaskId.slice(0, 12)}` +
-        ` to=${target.slice(0, 14)} ok=${ok}`,
+        ` to=${target.slice(0, 14)} ok=${ok}` +
+        (state.awardMode !== "competitive" ? " mode=direct_assign" : ""),
     });
     chainLog("launch", "propose retry", {
       chainId: state.chainId,
@@ -806,6 +939,7 @@ export async function retryStaleProposals(
       attempt: retries + 1,
       target: shortPeerId(target),
       ok,
+      direct: state.awardMode !== "competitive",
     });
     if (ok) retried.push(subtaskId);
   }
@@ -892,25 +1026,31 @@ export async function advanceReadySubtasks(
     if (!subtaskDependenciesSatisfied(state, subtask)) continue;
     const workers = state.workersBySubtask.get(subtaskId) ?? [];
     if (workers.length === 0) continue;
-    const prepared = prepareSubtaskPropose(state, subtask);
-    const targets =
-      subtask.preferredWorkerPeerId && workers.includes(subtask.preferredWorkerPeerId)
-        ? [subtask.preferredWorkerPeerId]
-        : subtask.preferredWorkerPeerId
-          ? workers.slice(0, 1)
-          : workers;
+    const targets = resolveProposeTargets(workers, subtask.preferredWorkerPeerId);
     let proposedThis = 0;
-    for (const workerPeerId of targets) {
-      const ok = await sendChainPropose(
-        deps,
-        workerPeerId,
-        prepared.subtask,
-        state.chainMandate,
-        prepared.inputArtifacts,
-      );
-      if (ok) {
-        proposed++;
-        proposedThis++;
+    if (state.awardMode !== "competitive") {
+      for (const workerPeerId of targets) {
+        const awarded = await directAwardSubtask(deps, state, subtaskId, workerPeerId);
+        if (awarded.ok) {
+          proposed++;
+          proposedThis++;
+          break;
+        }
+      }
+    } else {
+      const prepared = prepareSubtaskPropose(state, subtask);
+      for (const workerPeerId of targets) {
+        const ok = await sendChainPropose(
+          deps,
+          workerPeerId,
+          prepared.subtask,
+          state.chainMandate,
+          prepared.inputArtifacts,
+        );
+        if (ok) {
+          proposed++;
+          proposedThis++;
+        }
       }
     }
     if (proposedThis === 0) continue;

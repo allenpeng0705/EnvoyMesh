@@ -16,6 +16,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   handleWorkerPropose,
+  handleWorkerAccept,
   handleWorkerCancel,
   checkBidExpiration,
   acceptChainAward,
@@ -26,9 +27,11 @@ import {
   type ChainWorkerSendDeps,
 } from "../src/chain-worker.js";
 import {
+  ChainSubtaskAwardSchema,
   ChainSubtaskBidSchema,
   ChainSubtaskPartialSchema,
   ChainSubtaskSchema,
+  TaskChainAcceptPayloadSchema,
   TaskChainBidPayloadSchema,
   TaskChainPartialPayloadSchema,
   type EnvoyEnvelope,
@@ -238,6 +241,82 @@ describe("handleWorkerCancel", () => {
     });
     expect(r.ok).toBe(true);
     expect(deps.auditEvents.some((e) => e.type === "chain.cancelled")).toBe(true);
+  });
+});
+
+describe("handleWorkerAccept", () => {
+  it("accepts direct-assign when there is no prior bid but subtask snapshot is present", async () => {
+    const deps = makeHandlerDeps();
+    const subtask = ChainSubtaskSchema.parse({
+      version: "0.1",
+      subtaskId: "subtask_direct",
+      chainId: "chain_direct",
+      chainMandateId: "chainmandate_direct",
+      depth: 1,
+      requiredSkill: "task.execute",
+      objective: "do it",
+      requestedResult: "out",
+      constraints: [],
+      dependsOn: [],
+      createdAt: NOW.toISOString(),
+    });
+    const award = ChainSubtaskAwardSchema.parse({
+      version: "0.1",
+      subtaskId: "subtask_direct",
+      chainId: "chain_direct",
+      workerPeerId: "12D3KooW-worker",
+      negotiationRound: 1,
+      acceptedCostUsd: 0,
+      deadlineAt: "2026-06-18T01:00:00.000Z",
+      createdAt: NOW.toISOString(),
+    });
+    const payload = TaskChainAcceptPayloadSchema.parse({ award, subtask });
+    const envelope = {
+      version: "0.1" as const,
+      messageId: "m1",
+      createdAt: NOW.toISOString(),
+      senderPeerId: "12D3KooW-orch",
+      senderPublicKey: "pk",
+      senderRole: "agent" as const,
+      recipientRole: "agent" as const,
+      intent: "task.chain.accept" as const,
+      payload,
+      signature: "s",
+      correlationId: "chain_direct",
+    };
+    const r = await handleWorkerAccept(deps, envelope, payload);
+    expect(r.ok).toBe(true);
+    expect(deps.auditEvents.some((e) => e.type === "chain.award_accepted")).toBe(true);
+  });
+
+  it("still rejects accept with no pending bid when subtask snapshot is missing", async () => {
+    const deps = makeHandlerDeps();
+    const award = ChainSubtaskAwardSchema.parse({
+      version: "0.1",
+      subtaskId: "subtask_missing_bid",
+      chainId: "chain_x",
+      workerPeerId: "12D3KooW-worker",
+      negotiationRound: 1,
+      acceptedCostUsd: 0,
+      deadlineAt: "2026-06-18T01:00:00.000Z",
+      createdAt: NOW.toISOString(),
+    });
+    const payload = TaskChainAcceptPayloadSchema.parse({ award });
+    const envelope = {
+      version: "0.1" as const,
+      messageId: "m2",
+      createdAt: NOW.toISOString(),
+      senderPeerId: "12D3KooW-orch",
+      senderPublicKey: "pk",
+      senderRole: "agent" as const,
+      recipientRole: "agent" as const,
+      intent: "task.chain.accept" as const,
+      payload,
+      signature: "s",
+      correlationId: "chain_x",
+    };
+    const r = await handleWorkerAccept(deps, envelope, payload);
+    expect(r.ok).toBe(false);
   });
 });
 

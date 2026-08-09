@@ -12,7 +12,7 @@
  * the sponsor's `bondAutonomy.sponsorProofToken` doesn't match the
  * bundled `proofOfContext` — the tile surfaces a hint to copy-paste).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { parseContactCode } from "../../lib/discover-contact-code.js";
@@ -60,92 +60,51 @@ export function SponsorSetupTile() {
     void refresh();
   }, [refresh]);
 
-  // Auto-trigger the sponsor setup loop on mount when the persisted
-  // status shows a previous failure (or no completion yet) and the tile
-  // is eligible. The runtime's single-flight guard (`activeSponsorLoops`
-  // set in `node-service-setup-sponsor-friend.ts`) means this is safe
-  // to call even if NodeStateContext's auto-trigger already fired — the
-  // second caller just gets `running: true` and the loop continues.
-  //
-  // Without this, the tile would sit at "Not started yet" / "Couldn't
-  // reach {name}" until the user clicks Retry, even though the loop
-  // would happily start on its own once the user interacts. The
-  // auto-trigger brings the tile's `runState` in sync with what the
-  // runtime is actually doing.
-  const autoTriggeredRef = useRef(false);
+  // No auto-trigger on Discover mount — first-run SetupView owns the only
+  // automatic attempt. Opening Discover (or cooldown expiry) used to spawn
+  // another full dial loop and burn Windows CPU/network. Retry is explicit.
+
+  // Reflect persisted first-run / manual-run outcomes into local runState.
   useEffect(() => {
-    // Wait for the first status fetch to land before deciding.
-    if (autoTriggeredRef.current) return;
     if (!status) return;
-    if (!status.config.enabled || !status.config.ownerId) return;
-    if (status.state?.completedAt) return; // nothing to retry
-    // Respect cooldown — the runtime is explicitly pausing auto-retry
-    // after a failed cycle. Don't re-trigger until the user clicks Retry
-    // (forceBypassGuards=true) or the cooldown expires.
-    if (status.state?.cooldownUntil && Date.parse(status.state.cooldownUntil) > Date.now()) {
+    if (runState.kind === "running") return;
+    if (status.state?.completedAt) {
+      setRunState((prev) => (prev.kind === "idle" ? { kind: "succeeded" } : prev));
       return;
     }
-    autoTriggeredRef.current = true;
-    void (async () => {
-      try {
-        const result = await nodeService.runSetupSponsorFriend();
-        if (result.running) {
-          // Loop started (or was already in flight). Tile moves to
-          // "Connecting…" — polling will surface the final state.
-          setRunState({ kind: "running" });
-          await refresh();
-        } else if (result.ok) {
-          setRunState({ kind: "succeeded", helloMessageId: result.helloMessageId });
-        } else if (result.skipped) {
-          // Map runtime skip reasons to tile states so the user gets a
-          // real signal instead of "Retrying".
-          if (result.reason === "cooldown" && result.cooldownUntil) {
-            setRunState({
-              kind: "cooldown",
-              until: result.cooldownUntil,
-              reason: status.state?.lastError ?? "sponsor not reachable",
-              errorKind: result.lastErrorKind ?? status.state?.lastErrorKind,
-            });
-            return;
-          }
-          if (result.reason === "profile-not-ready") {
-            setRunState({
-              kind: "profileNotReady",
-              reason: "Finish setting up your profile, then tap Retry.",
-            });
-            return;
-          }
-          setRunState({ kind: "skipped", reason: result.reason ?? "skipped" });
-        } else {
-          setRunState({ kind: "failed", reason: result.reason ?? "sponsor hello failed" });
-        }
-      } catch (e) {
-        // Mid-RPC WS drop is common during the long sendHello call —
-        // fall through to the next handler below which re-polls the
-        // status to learn the truth instead of demoting to "failed".
-        const message = e instanceof Error ? e.message : String(e);
-        setRunState({ kind: "running" });
-        const latest = await refresh();
-        if (!latest?.state?.lastError) {
-          // Polling didn't surface a failure either — the loop is
-          // probably healthy and the WS error was a transient blip.
-          // Keep "running" and let the next poll cycle report the
-          // outcome.
-          return;
-        }
-        // Polling confirmed the loop has already failed. Surface it.
-        setRunState({ kind: "failed", reason: message });
-      }
-    })();
-  }, [status, nodeService, refresh]);
+    // Permanent auto-stop after one exhausted cycle — show failed + Retry,
+    // not a multi-year "cooldown" countdown.
+    if (status.state?.skipReason === "auto-exhausted") {
+      setRunState({
+        kind: "failed",
+        reason: status.state.lastError ?? "sponsor not reachable",
+        errorKind: status.state.lastErrorKind,
+      });
+      return;
+    }
+    const cooldownMs = status.state?.cooldownUntil
+      ? Date.parse(status.state.cooldownUntil) - Date.now()
+      : 0;
+    if (cooldownMs > 0 && cooldownMs < 24 * 60 * 60 * 1000) {
+      setRunState({
+        kind: "cooldown",
+        until: status.state!.cooldownUntil!,
+        reason: status.state?.lastError ?? "sponsor not reachable",
+        errorKind: status.state?.lastErrorKind,
+      });
+      return;
+    }
+    if (status.state?.lastError) {
+      setRunState({
+        kind: "failed",
+        reason: status.state.lastError,
+        errorKind: status.state.lastErrorKind,
+      });
+    }
+  }, [status, runState.kind]);
 
-  // Poll periodically while the tile is active so background activity
-  // (NodeStateContext's auto-trigger, the runtime persisting per-attempt
-  // errors) shows up. The earlier useEffect only refreshes on mount and
-  // when `runState.kind` changes — but NodeStateContext's auto-trigger
-  // doesn't update the tile's local `runState`, so without this poll the
-  // tile would stay on the mount-time snapshot ("Not started yet") even
-  // after the runtime has run and persisted failures.
+  // Poll while the tile is visible so a first-run SetupView attempt (or a
+  // manual Retry) that finishes in the background updates the UI.
   //
   // Gate on `isActive` so the poll stops once the tile hides itself
   // (lastRunSucceeded → return null). One RPC per 2s while visible.

@@ -1689,7 +1689,7 @@ export async function _runChainGoal(
     },
     ownerPrivateKeyPem,
   );
-  const state = createChainState(mandate);
+  const state = createChainState(mandate, { awardMode });
   const chainSide = deps.getChainSideState();
   chainSide.goals.set(chainId, input.goal);
   chainSide.awardModes.set(chainId, awardMode);
@@ -1822,7 +1822,8 @@ export async function _runChainGoal(
   const rankedBySubtask: Record<string, Array<{ peerId: string; score: number; summary: string }>> = {};
   let maxWorkers = 0;
   let totalWorkers = 0;
-  const workerCap = awardMode === "direct" ? 1 : 3;
+  // Direct keeps a backup so a silent preferred peer can failover quickly.
+  const workerCap = awardMode === "direct" ? 2 : 3;
   for (const subtask of plan.subtasks) {
     const ranked = await findAgentNetworkWorkersRanked(deps, subtask.requiredSkill, input.preferredWorkerPeerIds);
     rankedBySubtask[subtask.subtaskId] = ranked;
@@ -1923,7 +1924,8 @@ export async function _continueIterationRound(
   const side = deps.getChainSideState();
   const awardMode = side.awardModes.get(state.chainId) ?? resolveAwardMode(nodeDefaults);
   const assignmentMode = side.assignmentModes.get(state.chainId) ?? resolveAssignmentModeDefault(nodeDefaults);
-  const workerCap = awardMode === "direct" ? 1 : 3;
+  // Direct keeps a backup so a silent preferred peer can failover quickly.
+  const workerCap = awardMode === "direct" ? 2 : 3;
   const replanGoal = iterationReplanGoal(state);
   const orchDeps = await buildChainOrchestratorDeps(deps);
   const plan = await planChain(orchDeps, state, replanGoal, {
@@ -2003,7 +2005,8 @@ export async function _extendIterationRound(
   }
   const awardMode =
     deps.getChainSideState().awardModes.get(state.chainId) ?? resolveAwardMode(nodeDefaults);
-  const workerCap = awardMode === "direct" ? 1 : 3;
+  // Direct keeps a backup so a silent preferred peer can failover quickly.
+  const workerCap = awardMode === "direct" ? 2 : 3;
   const workersBySubtask: Record<string, string[]> = {};
   let totalWorkers = 0;
   for (const subtask of appended.subtasks) {

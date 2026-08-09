@@ -73,11 +73,13 @@ export type SetupSponsorFriendState = {
    * Why a sponsor hello was skipped (not started, not auto-retrying). Set
    * when the runtime refuses to start a fresh cycle — current values:
    *   - `"cooldown"` — `cooldownUntil` is in the future.
+   *   - `"auto-exhausted"` — one auto cycle burned `maxAttempts`; only manual Retry.
    *   - `"profile-not-ready"` — `getHumanProfile()` returned null.
    *   - `"mesh-not-ready"` — libp2p mesh isn't fully up yet.
    *   - `"protocol-mismatch"` — `bond.request` landed on the wrong protocol.
    *   - `"disabled-or-incomplete"` — config not enabled or no ownerId.
    *   - `"already-completed"` — `setupSponsorFriendCompletedAt` is set.
+   *   - `"already-bonded"` — sponsor is already a direct/referred contact.
    *   - `"sponsor-is-self-peer"` / `"sponsor-is-self-owner"` — local profile matches.
    */
   skipReason?: string;
