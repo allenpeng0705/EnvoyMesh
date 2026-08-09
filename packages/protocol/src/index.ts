@@ -92,6 +92,10 @@ export const EnvoyIntentSchema = z.enum([
   "task.chain.delegate",
   "task.chain.relay",
   "task.chain.arbitration",
+  /** Assigner → worker peer: AN engine readiness hello (worker answers for its engine). */
+  "task.chain.ready.request",
+  /** Worker → assigner: ready yes/no for THAT node's configured AN engine (OpenClaw XOR Ext). */
+  "task.chain.ready.response",
   // Phase 45 — Web Content Browsing. Pull-based content serving over the mesh.
   // See docs/web-content-browsing-design.md.
   "library.read",
@@ -4200,6 +4204,8 @@ export {
   TaskChainStatusStepSchema,
   TaskChainStatusPayloadSchema,
   TaskChainReportPayloadSchema,
+  TaskChainReadyRequestPayloadSchema,
+  TaskChainReadyResponsePayloadSchema,
   parseChainMandate,
   parseChainSubtask,
   parseChainSubtaskBid,
@@ -4207,9 +4213,14 @@ export {
   parseChainSubtaskPartial,
   parseChainReport,
   parseCompositeArtifact,
+  parseTaskChainReadyRequestPayload,
+  parseTaskChainReadyResponsePayload,
   createChainMandateId,
   createChainId,
   createChainSubtaskId,
+  createChainReadyProbeId,
+  createTaskChainReadyRequestPayload,
+  createTaskChainReadyResponsePayload,
 } from "./agent-network.js";
 export type {
   UnsignedChainMandate,
@@ -4235,6 +4246,8 @@ export type {
   TaskChainStatusStep,
   TaskChainStatusPayload,
   TaskChainReportPayload,
+  TaskChainReadyRequestPayload,
+  TaskChainReadyResponsePayload,
 } from "./agent-network.js";
 
 export {

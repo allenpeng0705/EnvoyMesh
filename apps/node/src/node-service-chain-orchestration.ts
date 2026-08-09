@@ -169,6 +169,8 @@ export interface ChainSideState {
   observedChains: Map<string, ObservedChainSnapshot>;
   /** Debounce status fan-out per chain (ms epoch). */
   lastStatusBroadcastAt: Map<string, number>;
+  /** Cached `task.chain.ready` probe results (worker peer id → ready). */
+  readyProbeCache: Map<string, import("./chain-ready-probe.js").ChainReadyProbeCacheEntry>;
 }
 
 /** Worker-side read-only view of an assigner's team job. */
@@ -254,6 +256,8 @@ export interface ChainOrchestrationContext {
   isExtAgentBridgeReady(): boolean;
   /** Sync ask via active Ext Agent (Team jobs — empty/async reply = error). */
   askExtAgent(prompt: string): Promise<string>;
+  /** Live Ext Agent reachability hello (HTTP/sidecar) for AN ready probes. */
+  probeExtAgent(): Promise<{ reachable: boolean }>;
 }
 
 /** Peer card cache plus the local Join'd worker (creator is also a worker). */
@@ -298,6 +302,13 @@ export function buildChainOrchestrationContext(host: any): ChainOrchestrationCon
       coerceAgentNetworkWorkerEngine(host.getAgentNetworkWorkerEngine?.()),
     isExtAgentBridgeReady: () => Boolean(host.isExtAgentBridgeReady?.()),
     askExtAgent: (prompt) => host.askExtAgent(prompt),
+    probeExtAgent: async () => {
+      if (typeof host.probeExtAgent !== "function") {
+        return { reachable: Boolean(host.isExtAgentBridgeReady?.()) };
+      }
+      const reach = await host.probeExtAgent();
+      return { reachable: reach?.reachable === true };
+    },
   };
 }
 
@@ -876,6 +887,10 @@ export async function buildChainWorkerDeps(deps: ChainOrchestrationContext): Pro
       const engine = deps.getAgentNetworkWorkerEngine();
       return engine === "ext" ? deps.isExtAgentBridgeReady() : deps.isOpenClawReady();
     },
+    agentNetworkEngineDenyReason: () =>
+      deps.getAgentNetworkWorkerEngine() === "ext"
+        ? "ext_agent_unavailable"
+        : "openclaw_unavailable",
     executeSubtask: async (subtask, onPartial, opts) => {
       const engine = deps.getAgentNetworkWorkerEngine();
       const exec =
@@ -1056,6 +1071,31 @@ export async function buildChainOrchestratorDeps(
     publicKeyPem: agentIdentity.agentPublicKeyPem,
     orchestratorPeerId: agentIdentity.agentPeerId,
     orchestratorOwnerId: profile.owner.ownerId,
+    probeWorkerEngineReady: async (workerPeerId) => {
+      if (!transport) return { ready: false, reason: "no_transport" };
+      const { probeChainWorkerReady, localAgentNetworkEngineReady } =
+        await import("./chain-ready-probe.js");
+      return probeChainWorkerReady({
+        transport,
+        workerPeerId,
+        orchestratorPeerId: agentIdentity.agentPeerId,
+        orchestratorPublicKeyPem: agentIdentity.agentPublicKeyPem,
+        orchestratorPrivateKeyPem: agentIdentity.agentPrivateKeyPem,
+        agentCredential: agentIdentity.agentCredential,
+        cache: deps.getChainSideState().readyProbeCache,
+        localReady: () =>
+          localAgentNetworkEngineReady({
+            engine: deps.getAgentNetworkWorkerEngine(),
+            isOpenClawReady: () => deps.isOpenClawReady(),
+            isExtAgentBridgeReady: () => deps.isExtAgentBridgeReady(),
+            // Self-probe: Ext AN engine → hello Ext Agent; OpenClaw → gateway only.
+            probeExtAgent:
+              deps.getAgentNetworkWorkerEngine() === "ext"
+                ? () => deps.probeExtAgent()
+                : undefined,
+          }),
+      });
+    },
     audit: {
       record: (event) => {
         void _appendChainAudit(deps, {
@@ -1124,6 +1164,92 @@ export async function buildSameLanByPeerId(
 export async function findAgentNetworkWorkers(deps: ChainOrchestrationContext, capability: string): Promise<string[]> {
   const ranked = await findAgentNetworkWorkersRanked(deps, capability);
   return ranked.map((r) => r.peerId);
+}
+
+/**
+ * Selection-time engine hello: walk ranked candidates, probe each, keep only
+ * workers whose Agent Network engine is ready. Caps probes so a large roster
+ * cannot stall launch. Prefer online mesh peers first (same as launch ranking).
+ */
+export async function selectReadyWorkersForSubtask(
+  deps: ChainOrchestrationContext,
+  ranked: readonly ChainRankedWorker[],
+  preferredWorkerPeerId: string | undefined,
+  workerCap: number,
+  opts?: {
+    maxProbes?: number;
+    correlationId?: string;
+    /** Test override — production uses buildChainOrchestratorDeps probe. */
+    probeWorkerEngineReady?: (
+      workerPeerId: string,
+    ) => Promise<{ ready: boolean; reason?: string }>;
+  },
+): Promise<{ chosen: string[]; probed: number; skipped: string[] }> {
+  const cap = Math.max(1, workerCap);
+  const maxProbes = opts?.maxProbes ?? Math.max(cap + 2, 6);
+  const candidates = [
+    ...ranked.filter((r) => r.online).map((r) => r.peerId),
+    ...ranked.filter((r) => !r.online).map((r) => r.peerId),
+  ];
+  // Preferred leads even if ranking missed them (sticky assignee).
+  const ordered = chooseWorkersForSubtask(preferredWorkerPeerId, candidates, candidates.length);
+  const tryOrder =
+    ordered.length > 0
+      ? ordered
+      : ranked.length > 0
+        ? [ranked[0]!.peerId]
+        : [];
+
+  const probeFn =
+    opts?.probeWorkerEngineReady ??
+    (await buildChainOrchestratorDeps(deps)).probeWorkerEngineReady;
+  const chosen: string[] = [];
+  const skipped: string[] = [];
+  let probed = 0;
+
+  for (const peerId of tryOrder) {
+    if (chosen.length >= cap) break;
+    if (probed >= maxProbes) break;
+    probed += 1;
+    if (!probeFn) {
+      chosen.push(peerId);
+      continue;
+    }
+    const probe = await probeFn(peerId);
+    if (probe.ready) {
+      chosen.push(peerId);
+      continue;
+    }
+    skipped.push(peerId);
+    void _appendChainAudit(deps, {
+      type: "chain.launched",
+      outcome: "deny",
+      intent: "task.chain.ready.request",
+      correlationId: opts?.correlationId,
+      remotePeerId: peerId,
+      summary:
+        `ready_probe_skip_select worker=${peerId.slice(0, 14)}` +
+        ` reason=${probe.reason ?? "not_ready"}`,
+    }).catch(() => {
+      /* best-effort audit */
+    });
+  }
+
+  // Sticky preferred leads only when that peer passed the ready probe.
+  if (
+    preferredWorkerPeerId &&
+    chosen.includes(preferredWorkerPeerId) &&
+    chosen[0] !== preferredWorkerPeerId
+  ) {
+    chosen.splice(
+      0,
+      chosen.length,
+      preferredWorkerPeerId,
+      ...chosen.filter((id) => id !== preferredWorkerPeerId),
+    );
+  }
+
+  return { chosen, probed, skipped };
 }
 
 /** Ranked workers with human-readable score summaries for diagnostics / UI. */
@@ -1215,12 +1341,14 @@ export async function findAgentNetworkWorkersRanked(
     const sameLan = sameLanByPeer.get(peerId) === true || isSelf;
     const transportId = transportByAgentPeer.get(peerId);
     // Local agent is "online" for ranking only when the configured AN engine is ready.
+    // Remotes: mesh transport, refined by recent ready-probe cache when present.
+    const cachedReady = deps.getChainSideState().readyProbeCache.get(peerId);
     const online =
       isSelf
         ? (deps.getAgentNetworkWorkerEngine() === "ext"
           ? deps.isExtAgentBridgeReady()
           : deps.isOpenClawReady() !== false)
-        : Boolean(transportId);
+        : Boolean(transportId) && (cachedReady ? cachedReady.ready : true);
     const viaRelay = !isSelf && online && transportId ? circuitIds.has(transportId) : false;
     const result = scoreAgentNetworkWorker({
       requiredSkill: capability,
@@ -1841,32 +1969,21 @@ export async function _runChainGoal(
   for (const subtask of plan.subtasks) {
     const ranked = await findAgentNetworkWorkersRanked(deps, subtask.requiredSkill, input.preferredWorkerPeerIds);
     rankedBySubtask[subtask.subtaskId] = ranked;
-    // Prefer online workers as backups; sticky preferred still leads.
-    const candidates = [
-      ...ranked.filter((r) => r.online).map((r) => r.peerId),
-      ...ranked.filter((r) => !r.online).map((r) => r.peerId),
-    ];
-    // Named / thread-sticky assignee always leads the list (even if ranking missed).
     const preferred = subtask.preferredWorkerPeerId;
-    let chosen = chooseWorkersForSubtask(preferred, candidates, workerCap);
-    if (chosen.length === 0 && ranked.length > 0) chosen = [ranked[0]!.peerId];
-    // Direct mode: if preferred is offline but an online backup exists, try
-    // online first so launch does not sit on a dead remote dial.
-    if (awardMode === "direct" && preferred && chosen.length > 1) {
-      const preferredRank = ranked.find((r) => r.peerId === preferred);
-      if (preferredRank && preferredRank.online === false) {
-        const onlineBackup = chosen.find((id) => id !== preferred && ranked.find((r) => r.peerId === id)?.online);
-        if (onlineBackup) {
-          chosen = [onlineBackup, ...chosen.filter((id) => id !== onlineBackup)];
-        }
-      }
-    }
+    // Engine hello at select time — skip peers whose configured AN engine is down.
+    const { chosen } = await selectReadyWorkersForSubtask(
+      deps,
+      ranked,
+      preferred,
+      workerCap,
+      { correlationId: chainId },
+    );
     workersBySubtask[subtask.subtaskId] = chosen;
-    // Only rewrite preferred when plan+assign left none (ranking fill-in).
-    if (!preferred && chosen[0]) {
+    // Prefer the first ready worker. Rewrite sticky preferred when it failed hello.
+    if (chosen[0] && (!preferred || !chosen.includes(preferred))) {
       subtask.preferredWorkerPeerId = chosen[0];
     }
-    maxWorkers = Math.max(maxWorkers, candidates.length);
+    maxWorkers = Math.max(maxWorkers, ranked.length);
     totalWorkers += chosen.length > 0 ? 1 : 0;
   }
   void _appendChainAudit(deps, {
@@ -1979,10 +2096,18 @@ export async function _continueIterationRound(
   let totalWorkers = 0;
   for (const subtask of plan.subtasks) {
     const ranked = await findAgentNetworkWorkersRanked(deps, subtask.requiredSkill);
-    const candidates = ranked.map((r) => r.peerId);
-    let chosen = chooseWorkersForSubtask(subtask.preferredWorkerPeerId, candidates, workerCap);
-    if (chosen.length === 0 && ranked.length > 0) chosen = [ranked[0]!.peerId];
+    const preferred = subtask.preferredWorkerPeerId;
+    const { chosen } = await selectReadyWorkersForSubtask(
+      deps,
+      ranked,
+      preferred,
+      workerCap,
+      { correlationId: state.chainId },
+    );
     workersBySubtask[subtask.subtaskId] = chosen;
+    if (chosen[0] && (!preferred || !chosen.includes(preferred))) {
+      subtask.preferredWorkerPeerId = chosen[0];
+    }
     totalWorkers += chosen.length > 0 ? 1 : 0;
   }
   if (totalWorkers === 0) {
@@ -2047,10 +2172,18 @@ export async function _extendIterationRound(
   let totalWorkers = 0;
   for (const subtask of appended.subtasks) {
     const ranked = await findAgentNetworkWorkersRanked(deps, subtask.requiredSkill);
-    const candidates = ranked.map((r) => r.peerId);
-    let chosen = chooseWorkersForSubtask(subtask.preferredWorkerPeerId, candidates, workerCap);
-    if (chosen.length === 0 && ranked.length > 0) chosen = [ranked[0]!.peerId];
+    const preferred = subtask.preferredWorkerPeerId;
+    const { chosen } = await selectReadyWorkersForSubtask(
+      deps,
+      ranked,
+      preferred,
+      workerCap,
+      { correlationId: state.chainId },
+    );
     workersBySubtask[subtask.subtaskId] = chosen;
+    if (chosen[0] && (!preferred || !chosen.includes(preferred))) {
+      subtask.preferredWorkerPeerId = chosen[0];
+    }
     totalWorkers += chosen.length > 0 ? 1 : 0;
   }
   if (totalWorkers === 0) {

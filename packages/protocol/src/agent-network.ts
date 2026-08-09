@@ -617,6 +617,25 @@ export const TaskChainReportPayloadSchema = z.object({
   report: ChainReportSchema,
 });
 
+/**
+ * `task.chain.ready.request` — assigner hellos the worker peer; that node
+ * answers for **its** configured Agent Network engine only (Built-in OpenClaw
+ * XOR Ext Agent — owner choice on that home). No LLM call.
+ */
+export const TaskChainReadyRequestPayloadSchema = z.object({
+  probeId: z.string().min(1).max(128),
+  requestedAt: z.string().datetime(),
+});
+
+/** `task.chain.ready.response` — worker answers the readiness hello. */
+export const TaskChainReadyResponsePayloadSchema = z.object({
+  probeId: z.string().min(1).max(128),
+  ready: z.boolean(),
+  engine: z.enum(["openclaw", "ext"]),
+  reason: z.string().min(1).max(200).optional(),
+  checkedAt: z.string().datetime(),
+});
+
 // Inferred payload types (re-exported from protocol index for consumers).
 export type TaskChainMandatePayload = z.infer<typeof TaskChainMandatePayloadSchema>;
 export type TaskChainProposePayload = z.infer<typeof TaskChainProposePayloadSchema>;
@@ -629,6 +648,8 @@ export type TaskChainHeartbeatPayload = z.infer<typeof TaskChainHeartbeatPayload
 export type TaskChainStatusStep = z.infer<typeof TaskChainStatusStepSchema>;
 export type TaskChainStatusPayload = z.infer<typeof TaskChainStatusPayloadSchema>;
 export type TaskChainReportPayload = z.infer<typeof TaskChainReportPayloadSchema>;
+export type TaskChainReadyRequestPayload = z.infer<typeof TaskChainReadyRequestPayloadSchema>;
+export type TaskChainReadyResponsePayload = z.infer<typeof TaskChainReadyResponsePayloadSchema>;
 
 // ---------------------------------------------------------------------------
 // Constructors (createX) + parsers (parseX) — match the project convention
@@ -673,4 +694,42 @@ export function createChainId(): string {
 
 export function createChainSubtaskId(): string {
   return `subtask_${crypto.randomUUID()}`;
+}
+
+export function createChainReadyProbeId(): string {
+  return `readyprobe_${crypto.randomUUID()}`;
+}
+
+export function createTaskChainReadyRequestPayload(input?: {
+  probeId?: string;
+  requestedAt?: string;
+}): TaskChainReadyRequestPayload {
+  return TaskChainReadyRequestPayloadSchema.parse({
+    probeId: input?.probeId ?? createChainReadyProbeId(),
+    requestedAt: input?.requestedAt ?? new Date().toISOString(),
+  });
+}
+
+export function createTaskChainReadyResponsePayload(input: {
+  probeId: string;
+  ready: boolean;
+  engine: "openclaw" | "ext";
+  reason?: string;
+  checkedAt?: string;
+}): TaskChainReadyResponsePayload {
+  return TaskChainReadyResponsePayloadSchema.parse({
+    probeId: input.probeId,
+    ready: input.ready,
+    engine: input.engine,
+    ...(input.reason ? { reason: input.reason } : {}),
+    checkedAt: input.checkedAt ?? new Date().toISOString(),
+  });
+}
+
+export function parseTaskChainReadyRequestPayload(input: unknown): TaskChainReadyRequestPayload {
+  return TaskChainReadyRequestPayloadSchema.parse(input);
+}
+
+export function parseTaskChainReadyResponsePayload(input: unknown): TaskChainReadyResponsePayload {
+  return TaskChainReadyResponsePayloadSchema.parse(input);
 }

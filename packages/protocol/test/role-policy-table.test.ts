@@ -271,7 +271,7 @@ describe("schema / role-policy sync", () => {
     // documents the invariant.
     const allIntents = EnvoyIntentSchema.options;
     const chainIntents = allIntents.filter((i) => i.startsWith("task.chain."));
-    expect(chainIntents.length).toBe(14); // 9 from 40A + status + 4 from 40E
+    expect(chainIntents.length).toBe(16); // 9 from 40A + status + 4 from 40E + ready req/res
     for (const intent of chainIntents) {
       // Probing human→human should be denied for every chain intent
       // (none of them are human↔human; the only human-targeting one is

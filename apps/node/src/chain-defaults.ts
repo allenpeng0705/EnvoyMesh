@@ -58,6 +58,15 @@ export const CHAIN_ACCEPT_RESEND_WAIT_MS = 20_000;
 /** Max accept re-sends per awarded subtask with zero partials. */
 export const CHAIN_ACCEPT_RESEND_CAP = 3;
 
+/**
+ * RTT budget for `task.chain.ready.request` (engine hello) before award.
+ * Failure / timeout → treat worker engine as not ready and try backup.
+ */
+export const CHAIN_READY_PROBE_TIMEOUT_MS = 5_000;
+
+/** Cache a ready/not-ready probe result per worker for this long. */
+export const CHAIN_READY_PROBE_CACHE_MS = 30_000;
+
 export interface ChainGoalTemplate {
   id: string;
   label: string;

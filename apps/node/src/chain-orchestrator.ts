@@ -118,6 +118,14 @@ export interface ChainOrchestratorSendDeps {
 
 export interface ChainOrchestratorHandlerDeps extends ChainOrchestratorSendDeps {
   audit: ChainAuditSink;
+  /**
+   * Pre-award Agent Network engine hello. When false, skip that worker
+   * (configured OpenClaw or Ext Agent not ready, or probe timed out).
+   * Omit in unit tests.
+   */
+  probeWorkerEngineReady?: (
+    workerPeerId: string,
+  ) => Promise<{ ready: boolean; reason?: string }>;
   /** Persistent store used for chain reports (atomic JSONL). */
   storeChainReport: (report: TaskChainReportPayload["report"]) => Promise<void>;
   /**
@@ -694,9 +702,11 @@ export async function launchChain(
     if (!subtask) continue;
     state.workersBySubtask.set(subtaskId, [...workerIds]);
     if (!subtaskDependenciesSatisfied(state, subtask)) continue;
-    const targets = resolveProposeTargets(workerIds, subtask.preferredWorkerPeerId, {
-      demotePeerIds: state.silentWorkerPeerIds,
-    });
+    const targets = expandWorkerTryOrder(
+      workerIds,
+      subtask.preferredWorkerPeerId,
+      state.silentWorkerPeerIds,
+    );
     let proposedThis = 0;
     if (direct) {
       for (const workerPeerId of targets) {
@@ -713,6 +723,16 @@ export async function launchChain(
     } else {
       const prepared = prepareSubtaskPropose(state, subtask);
       for (const workerPeerId of targets) {
+        if (deps.probeWorkerEngineReady) {
+          const probe = await deps.probeWorkerEngineReady(workerPeerId);
+          if (!probe.ready) {
+            state.silentWorkerPeerIds.add(workerPeerId);
+            proposeFails.push(
+              `${subtaskId.slice(0, 12)}→${workerPeerId.slice(0, 14)}:engine_not_ready`,
+            );
+            continue;
+          }
+        }
         const ok = await sendChainPropose(
           deps,
           workerPeerId,
@@ -811,6 +831,25 @@ export function resolveProposeTargets(
 }
 
 /**
+ * Award/propose try order: preferred+backup (demoting silent), then any
+ * remaining workers so a dead AN-engine peer cannot exhaust the shortlist.
+ */
+export function expandWorkerTryOrder(
+  workerIds: readonly string[],
+  preferredWorkerPeerId: string | undefined,
+  demotePeerIds: ReadonlySet<string>,
+): string[] {
+  const primary = resolveProposeTargets(workerIds, preferredWorkerPeerId, {
+    demotePeerIds,
+  });
+  const out = [...primary];
+  for (const w of workerIds) {
+    if (!out.includes(w)) out.push(w);
+  }
+  return out;
+}
+
+/**
  * Direct mode: award a pre-selected worker without waiting for a bid.
  * Sends `task.chain.accept` with a subtask snapshot so the worker can execute
  * even with no prior propose/bid. Tries are ordered by the caller (preferred
@@ -830,6 +869,25 @@ export async function directAwardSubtask(
   }
   const subtask = state.subtasks.get(subtaskId);
   if (!subtask) return { ok: false, reason: "no_subtask" };
+
+  if (deps.probeWorkerEngineReady) {
+    const probe = await deps.probeWorkerEngineReady(workerPeerId);
+    if (!probe.ready) {
+      state.silentWorkerPeerIds.add(workerPeerId);
+      deps.audit.record({
+        type: "chain.awarded",
+        outcome: "deny",
+        intent: "task.chain.ready.request",
+        correlationId: state.chainId,
+        remotePeerId: workerPeerId,
+        summary:
+          `ready_probe_fail subtask=${subtaskId.slice(0, 12)}` +
+          ` worker=${workerPeerId.slice(0, 14)}` +
+          ` reason=${probe.reason ?? "not_ready"}`,
+      });
+      return { ok: false, reason: "engine_not_ready" };
+    }
+  }
 
   const now = deps.now?.() ?? new Date();
   const nowIso = now.toISOString();
@@ -1080,9 +1138,11 @@ export async function advanceReadySubtasks(
     if (!subtaskDependenciesSatisfied(state, subtask)) continue;
     const workers = state.workersBySubtask.get(subtaskId) ?? [];
     if (workers.length === 0) continue;
-    const targets = resolveProposeTargets(workers, subtask.preferredWorkerPeerId, {
-      demotePeerIds: state.silentWorkerPeerIds,
-    });
+    const targets = expandWorkerTryOrder(
+      workers,
+      subtask.preferredWorkerPeerId,
+      state.silentWorkerPeerIds,
+    );
     let proposedThis = 0;
     if (state.awardMode !== "competitive") {
       for (const workerPeerId of targets) {
@@ -1096,6 +1156,13 @@ export async function advanceReadySubtasks(
     } else {
       const prepared = prepareSubtaskPropose(state, subtask);
       for (const workerPeerId of targets) {
+        if (deps.probeWorkerEngineReady) {
+          const probe = await deps.probeWorkerEngineReady(workerPeerId);
+          if (!probe.ready) {
+            state.silentWorkerPeerIds.add(workerPeerId);
+            continue;
+          }
+        }
         const ok = await sendChainPropose(
           deps,
           workerPeerId,

@@ -1499,6 +1499,7 @@ class NodeServiceImpl implements NodeService {
     iterationObservers: new Map<string, string>(),
     observedChains: new Map(),
     lastStatusBroadcastAt: new Map<string, number>(),
+    readyProbeCache: new Map(),
   } as const;
 
   /** Latest QR / `getPairingPayload` token for optional companion auto-pair (short TTL). */
@@ -10948,6 +10949,38 @@ class NodeServiceImpl implements NodeService {
 
   async handleInboundChainEnvelope(envelope: EnvoyEnvelope): Promise<void> {
     return handleInboundChainEnvelope(this._chainOrchestrationContext(), envelope);
+  }
+
+  /** Same-stream reply for Assigner `task.chain.ready.request` (AN engine hello). */
+  async handleInboundChainReadyRequest(
+    envelope: EnvoyEnvelope,
+    replyWithEnvelope?: (envelope: EnvoyEnvelope) => Promise<void>,
+  ): Promise<void> {
+    const agentIdentity = await this._ensureAgentIdentity();
+    if (!agentIdentity) {
+      console.warn("[chain.ready] ignored: agent identity unavailable");
+      return;
+    }
+    const { handleChainReadyRequestInbound } = await import("./chain-ready-probe.js");
+    const result = await handleChainReadyRequestInbound({
+      envelope,
+      replyWithEnvelope,
+      agentPeerId: agentIdentity.agentPeerId,
+      agentPublicKeyPem: agentIdentity.agentPublicKeyPem,
+      agentPrivateKeyPem: agentIdentity.agentPrivateKeyPem,
+      agentCredential: agentIdentity.agentCredential,
+      // Answer for THIS node's configured AN engine only (OpenClaw XOR Ext).
+      engine: this.getAgentNetworkWorkerEngine(),
+      isOpenClawReady: () => this.isOpenClawReady(),
+      isExtAgentBridgeReady: () => this.isExtAgentBridgeReady(),
+      probeExtAgent: async () => {
+        const reach = await this.probeExtAgent();
+        return { reachable: reach.reachable === true };
+      },
+    });
+    if (!result.ok) {
+      console.warn(`[chain.ready] request failed: ${result.reason}`);
+    }
   }
 
   async refreshAgentNetworkMembershipIndex(): Promise<void> {

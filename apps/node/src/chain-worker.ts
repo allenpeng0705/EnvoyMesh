@@ -88,11 +88,13 @@ export interface ChainWorkerHandlerDeps extends ChainWorkerSendDeps {
    */
   pendingBidExpirations: Map<string, string>;
   /**
-   * Agent Network worker engine readiness (Built-in OpenClaw by default).
-   * When false, decline propose/accept so peers are not awarded work we cannot run.
+   * Agent Network worker engine readiness for **this node's** configured engine
+   * (Built-in OpenClaw or Ext Agent). When false, decline propose/accept.
    * See docs/agent-network-engine.md.
    */
   isAgentNetworkEngineReady?: () => boolean;
+  /** Audit reason when declining because the configured AN engine is down. */
+  agentNetworkEngineDenyReason?: () => string;
   /** Optional: persist/display read-only job snapshots from the assigner. */
   onObservedStatus?: (orchestratorPeerId: string, payload: TaskChainStatusPayload) => void;
   /** Optional executor — runs the task body and emits partials. */
@@ -115,7 +117,7 @@ function refuseIfEngineUnavailable(
     intent,
     remotePeerId: envelope.senderPeerId,
     correlationId: envelope.correlationId,
-    summary: "openclaw_unavailable",
+    summary: deps.agentNetworkEngineDenyReason?.() ?? "an_engine_unavailable",
   });
   return { ok: false, reason: "handler_denied" };
 }

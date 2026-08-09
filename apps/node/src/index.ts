@@ -1727,6 +1727,15 @@ async function handleInboundMeshMessage({
 
   // Phase 40F — task.chain.* intents (agent network collaboration layer)
   if (envelope.intent.startsWith("task.chain.") && nodeService instanceof NodeServiceImpl) {
+    // Engine hello uses same-stream expect-reply (like agent.card.request).
+    if (envelope.intent === "task.chain.ready.request") {
+      await nodeService.handleInboundChainReadyRequest(envelope, replyWithEnvelope);
+      return;
+    }
+    if (envelope.intent === "task.chain.ready.response") {
+      // Consumed by sendExpectReply on the assigner; ignore unsolicited.
+      return;
+    }
     await nodeService.handleInboundChainEnvelope(envelope);
     return;
   }
