@@ -68,6 +68,26 @@ export const chatMessages = {
   openclawOfflineRestart: "Restart",
   openclawOfflineSettings: "Open settings",
   openclawOfflineRestarting: "Restarting…",
+  // Phase 37 — Audio Messages (chat composer / playback)
+  audioMessage: {
+    record: "Record voice note",
+    recording: "Recording… tap to stop",
+    recordingLabel: "Recording",
+    readyLabel: "Ready to send",
+    cancel: "Cancel recording",
+    cancelShort: "Cancel",
+    send: "Send voice note",
+    sendShort: "Send",
+    sendingLabel: "Sending voice note…",
+    recorderAria: "Voice note recorder",
+    loading: "Loading audio…",
+    error: "Audio unavailable",
+    unsupported: "Your browser does not support audio playback.",
+    recordingUnsupported: "Audio recording not supported in this browser",
+    duration: "{seconds}s",
+    micDenied: "Microphone access denied",
+    noTranscription: "[Audio message — no transcription available]",
+  },
 } as const;
 
 export const groupChatMessages = {
@@ -467,26 +487,6 @@ export const inboxMessages = {
   messagesBeforeBonding: "Messages before bonding ({count})",
   defaultUserName: "Envoy User",
   defaultHello: "Hello!",
-  // Phase 37 — Audio Messages
-  audioMessage: {
-    record: "Record voice note",
-    recording: "Recording… tap to stop",
-    recordingLabel: "Recording",
-    readyLabel: "Ready to send",
-    cancel: "Cancel recording",
-    cancelShort: "Cancel",
-    send: "Send voice note",
-    sendShort: "Send",
-    sendingLabel: "Sending voice note…",
-    recorderAria: "Voice note recorder",
-    loading: "Loading audio…",
-    error: "Audio unavailable",
-    unsupported: "Your browser does not support audio playback.",
-    recordingUnsupported: "Audio recording not supported in this browser",
-    duration: "{seconds}s",
-    micDenied: "Microphone access denied",
-    noTranscription: "[Audio message — no transcription available]",
-  },
   // Phase 38 — Voice/Video Calls
   "call:cancelCall": "Cancel call",
   "call:start": "Voice call",

@@ -33,10 +33,10 @@ export function VoiceNoteRecorderBar({
         className="voice-note-recorder is-sending"
         role="status"
         aria-live="polite"
-        aria-label={t("audioMessage.sendingLabel")}
+        aria-label={t("chat.audioMessage.sendingLabel")}
       >
         <span className="voice-note-recorder-spinner" aria-hidden />
-        <span className="voice-note-recorder-sending-text">{t("audioMessage.sendingLabel")}</span>
+        <span className="voice-note-recorder-sending-text">{t("chat.audioMessage.sendingLabel")}</span>
       </div>
     );
   }
@@ -45,26 +45,26 @@ export function VoiceNoteRecorderBar({
     <div
       className={`voice-note-recorder${isCapturing ? " is-capturing" : " is-ready"}`}
       role="region"
-      aria-label={t("audioMessage.recorderAria")}
+      aria-label={t("chat.audioMessage.recorderAria")}
     >
       <button
         type="button"
         className="voice-note-recorder-cancel"
         onClick={onCancel}
-        aria-label={t("audioMessage.cancel")}
+        aria-label={t("chat.audioMessage.cancel")}
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
           <line x1="18" y1="6" x2="6" y2="18" />
           <line x1="6" y1="6" x2="18" y2="18" />
         </svg>
-        <span>{t("audioMessage.cancelShort")}</span>
+        <span>{t("chat.audioMessage.cancelShort")}</span>
       </button>
 
       <div className="voice-note-recorder-body">
         <span className="voice-note-recorder-dot" aria-hidden />
         <div className="voice-note-recorder-meta">
           <span className="voice-note-recorder-label">
-            {isCapturing ? t("audioMessage.recordingLabel") : t("audioMessage.readyLabel")}
+            {isCapturing ? t("chat.audioMessage.recordingLabel") : t("chat.audioMessage.readyLabel")}
           </span>
           <span className={`voice-note-recorder-timer${nearLimit ? " near-limit" : ""}`}>
             {formatDuration(recordingSeconds)}
@@ -82,13 +82,13 @@ export function VoiceNoteRecorderBar({
         className="voice-note-recorder-send"
         onClick={onSend}
         disabled={!canSend}
-        aria-label={t("audioMessage.send")}
+        aria-label={t("chat.audioMessage.send")}
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <line x1="22" y1="2" x2="11" y2="13" />
           <polygon points="22 2 15 22 11 13 2 9 22 2" fill="currentColor" stroke="none" />
         </svg>
-        <span>{t("audioMessage.sendShort")}</span>
+        <span>{t("chat.audioMessage.sendShort")}</span>
       </button>
     </div>
   );

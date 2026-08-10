@@ -206,7 +206,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
 
   const voiceRecorder = useVoiceNoteRecorder({
     onError: (code) => {
-      setSendError(t(`audioMessage.${code}`));
+      setSendError(t(`chat.audioMessage.${code}`));
       scheduleClearSendError(5000);
     },
   });
@@ -1016,8 +1016,8 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                 <button
                   type="button"
                   className="secondary chat-mic-btn"
-                  title={t("audioMessage.record")}
-                  aria-label={t("audioMessage.record")}
+                  title={t("chat.audioMessage.record")}
+                  aria-label={t("chat.audioMessage.record")}
                   disabled={!nodeMeshOnline}
                   onClick={() => void voiceRecorder.start()}
                 >

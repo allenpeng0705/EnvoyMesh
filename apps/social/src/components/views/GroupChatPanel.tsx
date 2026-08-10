@@ -111,7 +111,7 @@ export function GroupChatPanel({
   // via `sendChatRoomAttachment` instead of `sendChatAttachment`.
   const voiceRecorder = useVoiceNoteRecorder({
     onError: (code) => {
-      setSendError(t(`audioMessage.${code}`));
+      setSendError(t(`chat.audioMessage.${code}`));
     },
   });
 
@@ -808,8 +808,8 @@ export function GroupChatPanel({
                 <button
                   type="button"
                   className="secondary chat-mic-btn"
-                  title={t("audioMessage.recordTitle")}
-                  aria-label={t("audioMessage.recordAria")}
+                  title={t("chat.audioMessage.record")}
+                  aria-label={t("chat.audioMessage.record")}
                   disabled={!nodeMeshOnline || voiceRecorder.phase !== "idle"}
                   onClick={() => void voiceRecorder.start()}
                 >
