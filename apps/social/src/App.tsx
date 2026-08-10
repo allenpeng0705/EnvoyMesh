@@ -38,7 +38,7 @@ import {
   normalizeLoopbackWsUrl,
 } from "./lib/storage.js";
 import { resolveDevLoopbackWsUrlHeal } from "./lib/discover-local-node.js";
-import { WS_LOOPBACK_URL } from "@envoymesh/api";
+import { WS_LOOPBACK_URL, ENVOY_AI_THREAD_KEY } from "@envoymesh/api";
 import type { HumanProfile, NodeConfig, NodeStatus } from "@envoymesh/api";
 
 export type ViewName = "chat" | "assistant" | "pi" | "discover" | "content" | "chains" | "profile" | "settings";
@@ -299,8 +299,6 @@ export function App() {
   // page does not tear down the wait / chat:message handlers mid-reply.
   const [envoyAiInflight, setEnvoyAiInflightState] = useState(getEnvoyAiInflight);
   useEffect(() => subscribeEnvoyAiInflight(() => setEnvoyAiInflightState(getEnvoyAiInflight())), []);
-  const keepAssistantMounted = currentView === "assistant" || envoyAiInflight;
-  const assistantVisible = currentView === "assistant";
   // While Content → Feed/Blog is open, don't badge Like/Comment for that surface.
   const [contentSurface, setContentSurface] = useState<ContentTab>("feed");
   const viewingContentFeed = currentView === "content" && contentSurface === "feed";
@@ -443,16 +441,29 @@ export function App() {
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>("account");
   const [chatSelectedContact, setChatSelectedContact] = useState<string | null>(null);
   const [chatPanelMode, setChatPanelMode] = useState<ChatPanelMode>("threads");
+  const oldAssistantVisible = currentView === "assistant";
+  const keepAssistantMounted = oldAssistantVisible || envoyAiInflight;
 
   // Navigation handler. Legacy "pi" view → Terminals (Pi TUI).
+  // "assistant" now routes to ChatView with ENVOY_AI_THREAD_KEY instead of
+  // the separate H2AChannelView page.
   const navigateTo = (view: ViewName) => {
     if (view === "pi") {
       setCurrentView("chat");
       setChatPanelMode("terminals");
       return;
     }
+    if (view === "assistant") {
+      setCurrentView("chat");
+      setChatPanelMode("threads");
+      setChatSelectedContact(ENVOY_AI_THREAD_KEY);
+      return;
+    }
     setCurrentView(view);
-    if (view === "chat") setChatPanelMode("threads");
+    if (view === "chat") {
+      setChatPanelMode("threads");
+      setChatSelectedContact(null);
+    }
   };
 
   useEffect(() => {
@@ -576,13 +587,25 @@ export function App() {
                 inboxActivityCount={inboxActivityCount}
                 onOpenAssistant={() => navigateTo("assistant")}
                 onOpenDiscover={() => navigateTo("discover")}
+                onOpenActivity={() => {
+                  setSettingsTab("app");
+                  navigateTo("settings");
+                }}
+                onOpenInbox={() => {
+                  setChatPanelMode("inbox");
+                }}
+                onOpenChains={() => navigateTo("chains")}
+                onOpenSettingsAi={() => {
+                  setSettingsTab("ai");
+                  navigateTo("settings");
+                }}
               />
             )}
             {keepAssistantMounted && (
               <div
                 className="main-view-slot"
-                hidden={!assistantVisible}
-                aria-hidden={!assistantVisible}
+                hidden={!oldAssistantVisible}
+                aria-hidden={!oldAssistantVisible}
               >
                 <SwipeBack onSwipeBack={() => navigateTo("chat")}>
                   <H2AChannelView

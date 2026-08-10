@@ -398,13 +398,19 @@ export const h2aMessages = {
   viewAllActivity: "View all activity",
   contextAria: "Assistant context",
   webSearchTitle: "Web Search",
+  webSearchOn: "Web: On",
+  webSearchOff: "Web: Off",
   webSearchLabel: "Built-in web search",
   webSearchDesc:
     "Uses DuckDuckGo when no search API key is configured; uses Tavily (or other keys from Skills) when present.",
   skillsTitle: "Skills & Plugins",
   manageSkills: "Manage OpenClaw Skills",
   skillsDesc: "Browse installed skills, search ClawHub, and install new plugins.",
-} as const;
+  meshIntelligenceReport: "Mesh Report",
+  reportDesc: "Generate a summary of your mesh activity across all contacts and agents.",
+  generateReport: "Generate Report",
+  generatingReport: "Generating...",
+}
 
 export const messageBubbleMessages = {
   deliveryPending: "Sending…",

@@ -32,9 +32,11 @@ import { createAssistantDraftCrdt, ASSISTANT_DRAFT_SYNC_SCOPE } from "../../lib/
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { ChatComposer } from "../ChatComposer.js";
 import { AnswerRenderer } from "../AnswerRenderer.js";
-import { ChatIcon, RemoveIcon } from "../../icons.js";
+import { ChatIcon, RemoveIcon, PluginIcon, PendingIcon } from "../../icons.js";
 import type { TFunction } from "../../context/I18nContext.js";
 import { ConfigureAiBanner } from "./ConfigureAiBanner.js";
+import { SkillManagerModal } from "../SkillManagerModal.js";
+import type { PendingApprovalSummary } from "@envoymesh/api";
 
 interface AiMessageTurnMeta extends Pick<
   OwnerAgentTurnResult,
@@ -256,11 +258,44 @@ export function AIChatPanel({
   const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ title: string; message?: string; variant?: "default" | "destructive"; onConfirm: () => void } | null>(null);
   const [chainGoal, setChainGoal] = useState<string | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalSummary[]>([]);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportText, setReportText] = useState<string | null>(null);
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  const [webSearchOn, setWebSearchOn] = useState(true);
+  const [showReport, setShowReport] = useState(false);
+  const [showApprovals, setShowApprovals] = useState(false);
   const draftRef = useRef<ReturnType<typeof createAssistantDraftCrdt> | null>(null);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reloadSeqRef = useRef(0);
   const selfOwnerId = humanProfile?.ownerId?.trim() ?? "";
   const ownerId = selfOwnerId || nodeConfig?.profileDir || "anonymous";
+
+  useEffect(() => {
+    void nodeService
+      .listPendingApprovals()
+      .then(setPendingApprovals)
+      .catch(() => setPendingApprovals([]));
+    void nodeService.getNodeConfig?.().then((cfg: any) => {
+      if (typeof cfg?.webSearchEnabled === "boolean") setWebSearchOn(cfg.webSearchEnabled);
+    }).catch(() => {});
+  }, [nodeService]);
+
+  const handleGenerateReport = async () => {
+    setReportLoading(true);
+    setReportText(null);
+    setShowReport(true);
+    try {
+      const report = await nodeService.generateMeshIntelligenceReport?.();
+      if (typeof report === "string") {
+        setReportText(report);
+      }
+    } catch {
+      setReportText("");
+    } finally {
+      setReportLoading(false);
+    }
+  };
 
   const reloadEnvoyAiHistory = useCallback(async (turn?: OwnerAgentTurnResult) => {
     if (!selfOwnerId) return;
@@ -643,29 +678,68 @@ export function AIChatPanel({
 
   return (
     <>
-      <header className="chat-header">
+      <header className="chat-header chat-header--assistant">
         <div className="chat-header-left">
           <span className="chat-header-avatar kind-ai" aria-hidden>AI</span>
           <div className="chat-header-titles">
-            <span className="chat-name">{t("aiChat.title")}</span>
+            <span className="chat-name">
+              {t("aiChat.title")}
+              <span className="chat-header-model-inline"> ({modelStatusLabel})</span>
+            </span>
             <span className="chat-header-kind kind-ai">{t("aiChat.subtitle")}</span>
           </div>
         </div>
-        <div className="chat-header-right">
+        <div className="chat-header-links">
           <button
             type="button"
-            className="chat-header-clear-btn"
-            title={t("aiChat.clearSessionTitle")}
-            aria-label={t("aiChat.clearSessionAria")}
-            disabled={aiMessages.length === 0}
-            onClick={handleClearAiChat}
+            className="chat-header-link"
+            onClick={() => setSkillsOpen(true)}
           >
-            <RemoveIcon size={16} />
+            <PluginIcon size={14} />
+            <span>{t("h2a.skillsTitle")}</span>
           </button>
-          <span className="ai-status" title={nodeConfig?.modelProviders?.modelName ?? undefined}>
-            {modelStatusLabel}
-          </span>
+
+          <button
+            type="button"
+            className={`chat-header-link${webSearchOn ? " active" : ""}`}
+            onClick={async () => {
+              const next = !webSearchOn;
+              setWebSearchOn(next);
+              await (nodeService as any).saveWebSearchEnabled?.(next);
+            }}
+          >
+            {webSearchOn ? t("h2a.webSearchOn") : t("h2a.webSearchOff")}
+          </button>
+
+          <button
+            type="button"
+            className="chat-header-link"
+            onClick={() => setShowReport(true)}
+          >
+            {t("h2a.meshIntelligenceReport")}
+          </button>
+
+          {pendingApprovals.length > 0 && (
+            <button
+              type="button"
+              className="chat-header-link chat-header-link--badge"
+              onClick={() => setShowApprovals(true)}
+            >
+              <PendingIcon size={14} />
+              <span>{t("h2a.pendingApprovals", { count: pendingApprovals.length })}</span>
+            </button>
+          )}
         </div>
+        <button
+          type="button"
+          className="chat-header-clear-btn"
+          title={t("aiChat.clearSessionTitle")}
+          aria-label={t("aiChat.clearSessionAria")}
+          disabled={aiMessages.length === 0}
+          onClick={handleClearAiChat}
+        >
+          <RemoveIcon size={16} />
+        </button>
       </header>
       <ConfigureAiBanner onOpenSettingsAi={onOpenSettingsAi} />
       <div className="messages ai-messages-pane" ref={messagesRef} onScroll={onMessagesScroll}>
@@ -877,6 +951,72 @@ export function AIChatPanel({
           onOpenDiscover={onOpenDiscover}
         />
       ) : null}
+      {skillsOpen && <SkillManagerModal onClose={() => setSkillsOpen(false)} />}
+
+      {showApprovals && (
+        <div className="modal-overlay" role="presentation" onClick={() => setShowApprovals(false)}>
+          <div
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("h2a.pendingApprovals", { count: pendingApprovals.length })}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2>{t("h2a.pendingApprovals", { count: pendingApprovals.length })}</h2>
+            <ul className="h2a-rail-list">
+              {pendingApprovals.map((item) => (
+                <li key={item.id}>
+                  <strong>{item.title.slice(0, 64)}</strong>
+                  <span className="assistant-top-bar__approval-type">{item.actionType}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="modal-actions">
+              {onOpenInbox && (
+                <button type="button" className="secondary" onClick={() => { setShowApprovals(false); onOpenInbox(); }}>
+                  {t("h2a.openInbox")}
+                </button>
+              )}
+              <button type="button" className="primary" onClick={() => setShowApprovals(false)}>
+                {t("common.close", "Close")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showReport && (
+        <div className="modal-overlay" role="presentation" onClick={() => !reportLoading && setShowReport(false)}>
+          <div
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("h2a.meshIntelligenceReport")}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2>{t("h2a.meshIntelligenceReport")}</h2>
+            <p className="modal-desc">{t("h2a.reportDesc")}</p>
+            {!reportText && !reportLoading && (
+              <div className="modal-actions">
+                <button type="button" className="primary" onClick={() => void handleGenerateReport()}>
+                  {t("h2a.generateReport")}
+                </button>
+              </div>
+            )}
+            {reportLoading && (
+              <p className="assistant-top-bar__loading">{t("h2a.generatingReport")}</p>
+            )}
+            {reportText && (
+              <pre className="assistant-top-bar__report-output">{reportText}</pre>
+            )}
+            <div className="modal-actions">
+              <button type="button" className="primary" onClick={() => setShowReport(false)} disabled={reportLoading}>
+                {t("common.close", "Close")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

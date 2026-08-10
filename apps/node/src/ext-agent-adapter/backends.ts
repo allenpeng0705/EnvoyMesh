@@ -8,6 +8,11 @@ import type { ExtAgentBackend, ExtAgentSidecarKind } from "./types.js";
 // factory can hand it out without a dynamic import; the codex
 // module is small (~700 LOC) and tree-shake friendly.
 import { createCodexBackend } from "./codex-backend.js";
+// Phase 55C — claudecode backend. In-process
+// `@anthropic-ai/claude-agent-sdk`; the SDK module itself is lazy
+// (only loaded on first `ask()` / `probe()` / `start()`) so a missing
+// install surfaces a clear error at runtime, not at boot.
+import { createClaudeCodeBackend } from "./claudecode-backend.js";
 
 /** OpenHuman auth-profile provider id for the stable `/v1` bearer. */
 export const OPENHUMAN_EXTERNAL_V1_PROVIDER = "external-openai-compat";
@@ -911,11 +916,11 @@ export function createBackend(kind: ExtAgentSidecarKind): ExtAgentBackend {
     return createCodexBackend();
   }
   if (kind === "claudecode") {
-    // Phase 55C will replace this with the @anthropic-ai/claude-agent-sdk
-    // backend (in-process). Same not-yet-implemented guard.
-    throw new Error(
-      "[ext-agent] claudecode backend not yet implemented (Phase 55C).",
-    );
+    // Phase 55C — in-process `@anthropic-ai/claude-agent-sdk`. No
+    // subprocess lifecycle, no separate port from the agent side.
+    // The SDK is loaded lazily inside the backend (see
+    // `claudecode-backend.ts`).
+    return createClaudeCodeBackend();
   }
   // Exhaustiveness guard — if a new sidecar kind is added, this will
   // type-error until the new branch is handled.

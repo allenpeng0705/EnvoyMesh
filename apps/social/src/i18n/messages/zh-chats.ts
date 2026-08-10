@@ -294,12 +294,18 @@ export const zhH2aMessages = {
   viewAllActivity: "查看全部活动",
   contextAria: "助手上下文",
   webSearchTitle: "网络搜索",
+  webSearchOn: "网络: 开",
+  webSearchOff: "网络: 关",
   webSearchLabel: "内置网络搜索",
   webSearchDesc: "未配置搜索 API key 时使用 DuckDuckGo；已配置时使用 Tavily（或来自 Skills 的其他 key）。",
   skillsTitle: "技能与插件",
   manageSkills: "管理 OpenClaw 技能",
   skillsDesc: "浏览已安装的技能，搜索 ClawHub，并安装新插件。",
-} as const;
+  meshIntelligenceReport: "网络报告",
+  reportDesc: "生成您在所有联系人和代理上的网络活动摘要。",
+  generateReport: "生成报告",
+  generatingReport: "生成中...",
+}
 
 export const zhMessageBubbleMessages = {
   deliveryPending: "发送中…",

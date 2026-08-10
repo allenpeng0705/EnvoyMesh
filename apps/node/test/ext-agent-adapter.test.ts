@@ -202,8 +202,14 @@ describe("ext-agent-adapter backends", () => {
     expect(backend.label.toLowerCase()).toContain("codex");
   });
 
-  it("createBackend('claudecode') still throws 'not yet implemented' (Phase 55C pending)", () => {
-    expect(() => createBackend("claudecode")).toThrow(/claudecode.*not yet implemented/i);
+  it("createBackend('claudecode') returns a ClaudeCodeBackend (Phase 55C)", () => {
+    // Phase 55C ships the in-process `@anthropic-ai/claude-agent-sdk`
+    // backend. The factory call must succeed; the sidecar won't start
+    // in CI (no live `claude` CLI), but the backend object itself
+    // exists and is wired through.
+    const backend = createBackend("claudecode");
+    expect(backend.kind).toBe("claudecode");
+    expect(backend.label.toLowerCase()).toContain("claude");
   });
 
   it("DEFAULT_EXT_AGENTS includes codex + claudecode presets (Phase 55D)", async () => {
@@ -357,7 +363,10 @@ describe("ext-agent HTTP sidecar", () => {
     await stopExtAgentSidecar();
   });
 
-  it("syncExtAgentSidecar for claudecode logs the 'not yet implemented' error and stays down (Phase 55D, before 55C)", async () => {
+  it("syncExtAgentSidecar for claudecode starts the in-process SDK sidecar (Phase 55C)", async () => {
+    // Phase 55C — claudecode runs in-process via
+    // `@anthropic-ai/claude-agent-sdk`; no subprocess. The sidecar
+    // starts immediately and listens on :8024 (or `ENVOYMESH_CLAUDECODE_PORT`).
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
       await syncExtAgentSidecar({
@@ -365,12 +374,15 @@ describe("ext-agent HTTP sidecar", () => {
         activeExtAgentId: "claudecode",
         bridgeListenPort: 3031,
       });
-      expect(getRunningExtAgentSidecar()).toBeNull();
-      expect(errSpy).toHaveBeenCalled();
-      const callArgs = errSpy.mock.calls.find(
+      const running = getRunningExtAgentSidecar();
+      expect(running).not.toBeNull();
+      expect(running?.kind).toBe("claudecode");
+      expect(running?.port).toBe(8024);
+      // No "failed to start" error in this happy path.
+      const failCall = errSpy.mock.calls.find(
         (c) => typeof c[0] === "string" && c[0].includes("failed to start claudecode"),
       );
-      expect(callArgs?.[1]).toMatch(/claudecode.*not yet implemented/i);
+      expect(failCall).toBeUndefined();
     } finally {
       errSpy.mockRestore();
       await stopExtAgentSidecar();

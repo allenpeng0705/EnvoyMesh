@@ -16,6 +16,7 @@ import {
   chatRoomThreadKey,
   familyThreadKey,
   OWNER_FAMILY_PROFILE_ID,
+  ENVOY_AI_THREAD_KEY,
 } from "@envoymesh/api";
 import { resolveContactAiAccessLevel } from "@envoymesh/api";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
@@ -378,8 +379,8 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
           {onOpenAssistant ? (
             <button
               type="button"
-              className="thread-row thread-row--ai"
-              onClick={onOpenAssistant}
+              className={`thread-row thread-row--ai${selectedContact === ENVOY_AI_THREAD_KEY ? " active" : ""}`}
+              onClick={() => onSelectContact(ENVOY_AI_THREAD_KEY)}
             >
               <span className="thread-avatar" aria-hidden>AI</span>
               <span className="thread-meta">

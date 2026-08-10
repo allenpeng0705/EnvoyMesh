@@ -1093,10 +1093,21 @@ textarea::placeholder {
 }
 
 /* Chat Area */
+.chat-view-threads-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .chat-area {
   display: flex;
   flex-direction: column;
   background: var(--color-bg);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .chat-header {
@@ -6628,11 +6639,90 @@ button:disabled {
    right edge. */
 .chat-header-right {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  flex-direction: row;
+  align-items: center;
   gap: var(--space-1);
   flex-shrink: 0;
   max-width: 100%;
+}
+
+/* Assistant header: 2-row grid — title+actions on top, links on bottom.
+   Reduces horizontal empty space by moving link buttons to their own row
+   aligned with (below) the title text. */
+.chat-header--assistant {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 0 var(--space-3);
+  padding: var(--space-2) var(--space-4);
+}
+
+.chat-header--assistant .chat-header-left {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.chat-header--assistant .chat-header-right {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.chat-header--assistant .chat-header-links {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  padding-top: 0.1rem;
+}
+
+.chat-header-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+
+.chat-header-link {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0.1rem 0.5rem;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s ease, background 0.15s ease;
+  font-family: inherit;
+}
+
+.chat-header-link:hover {
+  color: var(--color-primary, #4f46e5);
+  background: var(--color-primary-subtle, rgba(79, 70, 229, 0.08));
+  text-decoration: none;
+}
+
+.chat-header-link.active {
+  color: var(--color-primary, #4f46e5);
+}
+
+.chat-header-link--badge {
+  color: var(--color-warning, #c97a00);
+}
+
+.chat-header-link--badge:hover {
+  color: var(--color-warning-hover, #b56a00);
+  background: color-mix(in srgb, var(--color-warning, #c97a00) 8%, var(--color-surface));
+}
+
+.chat-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 /* When the header has to fit both a long group name AND the action
@@ -15653,4 +15743,105 @@ button:disabled {
 .pairing-modal__hint--muted {
   opacity: 0.75;
   margin-top: 0.15rem;
+}
+
+/* Assistant Top Bar — compact rail controls inside ChatView */
+
+.assistant-chat-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.assistant-chat-wrapper[hidden] {
+  display: none !important;
+}
+
+.assistant-chat-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.assistant-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border-subtle);
+  flex-shrink: 0;
+}
+
+.assistant-top-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.assistant-top-bar__link {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0.1rem 0.5rem;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s ease, background 0.15s ease;
+  font-family: inherit;
+}
+
+.assistant-top-bar__link:hover {
+  color: var(--color-primary, #4f46e5);
+  background: var(--color-primary-subtle, rgba(79, 70, 229, 0.08));
+  text-decoration: none;
+}
+
+.assistant-top-bar__link.active {
+  color: var(--color-primary, #4f46e5);
+}
+
+.assistant-top-bar__link--badge {
+  color: var(--color-warning, #c97a00);
+}
+
+.assistant-top-bar__link--badge:hover {
+  color: var(--color-warning-hover, #b56a00);
+  background: color-mix(in srgb, var(--color-warning, #c97a00) 8%, var(--color-surface));
+}
+
+.assistant-top-bar__approval-type {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-left: auto;
+}
+
+.assistant-top-bar__loading {
+  text-align: center;
+  padding: var(--space-4);
+  color: var(--color-text-muted);
+}
+
+.assistant-top-bar__report-output {
+  white-space: pre-wrap;
+  background: var(--color-surface-elevated, #f4f4f4);
+  padding: var(--space-3);
+  margin-top: var(--space-3);
+  max-height: 20rem;
+  overflow-y: auto;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  border-radius: var(--radius-md);
 }

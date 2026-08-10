@@ -17,6 +17,7 @@ import {
   isFamilyThreadKey,
   OWNER_FAMILY_PROFILE_ID,
   threadVisibleTo,
+  ENVOY_AI_THREAD_KEY,
 } from "@envoymesh/api";
 import type { TerminalSessionSummary } from "@envoymesh/api";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -26,6 +27,8 @@ import { loadTerminalSelectedSessionId, saveTerminalSelectedSessionId } from "..
 import { isTauriShell, pickTauriDirectory } from "../../lib/tauri-shell.js";
 import { OpenClawOfflineBanner } from "./OpenClawOfflineBanner.js";
 import { BotChatPanel } from "./BotChatPanel.js";
+import { AIChatPanel } from "./AIChatPanel.js";
+import { getEnvoyAiInflight, subscribeEnvoyAiInflight } from "../../lib/envoy-ai-inflight.js";
 
 /**
  * ChatView is a layout shell: sidebar + AI or contact thread, with Inbox as a second panel.
@@ -41,6 +44,10 @@ export interface ChatViewProps {
   onOpenDiscover?: () => void;
   /** Open Pi coding TUI (switches to Terminals + selects Pi session). */
   onOpenPi?: () => void;
+  onOpenActivity?: () => void;
+  onOpenChains?: () => void;
+  onOpenSettingsAi?: () => void;
+  onOpenInbox?: () => void;
 }
 
 export function ChatView({
@@ -52,6 +59,10 @@ export function ChatView({
   onOpenAssistant,
   onOpenDiscover,
   onOpenPi: onOpenPiProp,
+  onOpenActivity,
+  onOpenChains,
+  onOpenSettingsAi,
+  onOpenInbox: onOpenInboxProp,
 }: ChatViewProps) {
   const t = useT();
   const nodeService = useNodeService();
@@ -67,6 +78,11 @@ export function ChatView({
   const [piProjectDraft, setPiProjectDraft] = useState("");
   const [piProjectForceRestart, setPiProjectForceRestart] = useState(false);
   const [piRestartSessionId, setPiRestartSessionId] = useState<string | null>(null);
+  const [envoyAiInflight, setEnvoyAiInflightState] = useState(getEnvoyAiInflight);
+  useEffect(() => {
+    const unsub = subscribeEnvoyAiInflight(() => setEnvoyAiInflightState(getEnvoyAiInflight()));
+    return unsub;
+  }, []);
   /** When true, auto-select prefers the dedicated Pi session over other terminals. */
   const preferPiSessionRef = useRef(false);
   /** Prefer this session id after a successful start (multi-Pi). */
@@ -478,7 +494,31 @@ export function ChatView({
             onOpenPi={() => void openPiTerminal()}
           />
           <section className="chat-area">
-            {selectedContact ? (
+            {selectedContact === ENVOY_AI_THREAD_KEY ? (
+              <div className="assistant-chat-wrapper">
+                <div className="assistant-chat-panel">
+                  <AIChatPanel
+                    onOpenActivity={onOpenActivity}
+                    onOpenInbox={onOpenInboxProp}
+                    onOpenChains={onOpenChains}
+                    onOpenDiscover={onOpenDiscover}
+                    onOpenSettingsAi={onOpenSettingsAi}
+                  />
+                </div>
+              </div>
+            ) : envoyAiInflight ? (
+              <div className="assistant-chat-wrapper" hidden>
+                <div className="assistant-chat-panel">
+                  <AIChatPanel
+                    onOpenActivity={onOpenActivity}
+                    onOpenInbox={onOpenInboxProp}
+                    onOpenChains={onOpenChains}
+                    onOpenDiscover={onOpenDiscover}
+                    onOpenSettingsAi={onOpenSettingsAi}
+                  />
+                </div>
+              </div>
+            ) : selectedContact ? (
               isChatRoomThreadKey(selectedContact) && selectedFamilyRoom ? (
                 <FamilyGroupChatPanel
                   threadKey={selectedContact}

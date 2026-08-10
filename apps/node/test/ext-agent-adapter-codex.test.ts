@@ -243,7 +243,12 @@ describe("codex-backend (55B) — basic lifecycle", () => {
     await backend.start();
     const ok = await backend.probe();
     expect(ok).toBe(false);
-  }, 10_000);
+    // 20s budget: `start()` waits for the supervisor's
+    // `startupTimeoutMs` (5s) when the healthcheck never passes, and
+    // then `probe()` waits up to `healthcheckTimeoutMs` (1s) for the
+    // thread/list roundtrip. The 100ms stability grace in the
+    // supervisor can push the first run to ~6s+ on slow CI.
+  }, 20_000);
 
   it("start() surfaces InstallMissingError when the codex binary is not on PATH", async () => {
     backend = new CodexBackend({
