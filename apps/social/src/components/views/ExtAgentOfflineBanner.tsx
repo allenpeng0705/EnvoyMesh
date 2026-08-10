@@ -1,46 +1,33 @@
 /**
- * Banner shown in Ext Agent chat when the selected agent is not reachable
- * (HomeClaw / Hermes / OpenHuman, or built-in Pi when the sidecar/HTTP adapter
- * is missing). Switching stays instant; this is the soft guide after switch /
- * when opening the thread.
+ * Banner shown in Ext Agent chat when the selected agent is not reachable.
+ *
+ * Phase 55D.1 — when the probe surfaces an install state of
+ * `not-installed` / `unsupported` / `unknown`, the banner renders the
+ * shared `ExtAgentInstallGuideCard` (same component the chat switcher
+ * and the Settings panel use). Built-in Pi / HomeClaw / Hermes /
+ * OpenHuman that are installed but offline get the existing simple
+ * one-line hint + Recheck button.
  */
-import { useCallback, useEffect, useState } from "react"
-import type { ExtAgentReachability } from "@envoymesh/api"
+import { useCallback, useEffect, useRef, useState } from "react"
+import {
+  getExtAgentInstallGuide,
+  type ExtAgentReachability,
+  type InstallState,
+} from "@envoymesh/api"
 import { useT } from "../../context/I18nContext.js"
 import { useNodeState } from "../../context/NodeStateContext.js"
 import { useNodeService } from "../../hooks/useNodeService.js"
+import { ExtAgentInstallGuideCard } from "../ExtAgentInstallGuideCard.js"
 
 const POLL_MS = 5_000
 
-function hintForAgent(
-  t: (key: string, fallback?: string) => string,
-  agentId: string,
-  fallback: string,
-): string {
-  switch (agentId) {
-    case "homeclaw":
-      return t(
-        "chat.extAgentOfflineHintHomeClaw",
-        "Start HomeClaw, then confirm http://127.0.0.1:8010/status responds.",
-      )
-    case "hermes":
-      return t(
-        "chat.extAgentOfflineHintHermes",
-        "Run `hermes gateway run` with API_SERVER_ENABLED=true (API on :8642).",
-      )
-    case "openhuman":
-      return t(
-        "chat.extAgentOfflineHintOpenHuman",
-        "Start OpenHuman.app or the OpenHuman CLI core (health on :7788).",
-      )
-    case "pi":
-      return t(
-        "chat.extAgentOfflineHintPi",
-        "Pi sidecar missing from this install, or model not configured. Use a full desktop build and set Settings → AI model (not mock/disabled).",
-      )
-    default:
-      return fallback
-  }
+/**
+ * Install states that should pull up the full install card instead
+ * of the simple "is not running" hint. "installed" is omitted — the
+ * agent is on disk; we fall through to the offline hint.
+ */
+function isInstallMissing(state: InstallState | undefined): boolean {
+  return state === "not-installed" || state === "unsupported" || state === "unknown"
 }
 
 export function ExtAgentOfflineBanner() {
@@ -53,25 +40,41 @@ export function ExtAgentOfflineBanner() {
   const activeId = bridgeStatus?.activeExtAgentId ?? "pi"
   const bridgeEnabled = bridgeStatus?.enabled === true
 
+  /**
+   * Keep a stable ref to the current `nodeService` + inputs so the
+   * refresh callback's identity doesn't change on every render (the
+   * mock layer returns a fresh `nodeService` object each call). If
+   * we let `refresh` change every render, the useEffect that runs
+   * it on mount fires repeatedly, hammering the probe.
+   */
+  const probeRef = useRef(nodeService.probeExtAgent)
+  probeRef.current = nodeService.probeExtAgent
+  const activeIdRef = useRef(activeId)
+  activeIdRef.current = activeId
+  const bridgeEnabledRef = useRef(bridgeEnabled)
+  bridgeEnabledRef.current = bridgeEnabled
+
   const refresh = useCallback(async () => {
-    if (!bridgeEnabled) {
+    if (!bridgeEnabledRef.current) {
       setStatus(null)
       return
     }
     setChecking(true)
     try {
-      const next = await nodeService.probeExtAgent({ agentId: activeId })
+      const next = await probeRef.current({ agentId: activeIdRef.current })
       setStatus(next)
     } catch {
       // keep last-known
     } finally {
       setChecking(false)
     }
-  }, [nodeService, bridgeEnabled, activeId])
+  }, [])
 
   useEffect(() => {
     void refresh()
-  }, [refresh])
+    // refresh is stable (empty deps) — it reads current inputs via refs.
+    // We re-run when the active agent changes (mount + agent switch).
+  }, [refresh, activeId])
 
   useEffect(() => {
     if (!status || status.reachable) return
@@ -85,11 +88,37 @@ export function ExtAgentOfflineBanner() {
     return null
   }
 
+  // Install-missing path: render the shared install card. The
+  // banner keeps polling (5s) so the card disappears once the
+  // agent is installed and reachable.
+  if (isInstallMissing(status.installState)) {
+    const guide = getExtAgentInstallGuide(status.agentId, status.installState)
+    if (guide) {
+      return (
+        <div
+          className="ext-agent-offline-banner ext-agent-offline-banner--install"
+          data-testid="ext-agent-offline-banner"
+        >
+          <ExtAgentInstallGuideCard
+            agentId={status.agentId}
+            installGuide={guide}
+            installState={status.installState}
+            onRetry={() => void refresh()}
+            testId="ext-agent-offline-banner-card"
+          />
+        </div>
+      )
+    }
+    // No guide available (e.g. unknown agent id) — fall through to
+    // the simple hint.
+  }
+
+  // Installed-but-offline path: simple banner with the operator hint
+  // and a Recheck button.
   const title = t("chat.extAgentOfflineTitle", "{name} is not running").replace(
     "{name}",
     status.agentName || activeId,
   )
-  const desc = hintForAgent(t, status.agentId, status.hint)
 
   return (
     <div
@@ -101,7 +130,7 @@ export function ExtAgentOfflineBanner() {
       <div className="ext-agent-offline-banner-body">
         <div className="ext-agent-offline-banner-text">
           <div className="ext-agent-offline-banner-title">{title}</div>
-          <div className="ext-agent-offline-banner-desc">{desc}</div>
+          <div className="ext-agent-offline-banner-desc">{status.hint}</div>
         </div>
         <button
           type="button"

@@ -27,10 +27,12 @@ import {
   computeAiEngineMode,
   DEFAULT_EXT_AGENTS,
   mergeExtAgentPresets,
+  getExtAgentInstallGuide,
   getExtAgentInstallInfo,
   type AiEngineMode,
   type ExtAgentDefinition,
 } from "@envoymesh/api";
+import { ExtAgentInstallGuideCard } from "../../ExtAgentInstallGuideCard.js";
 
 interface EnvoyAIInfo {
   /** Persisted `openclawEnabled` flag from the home node. */
@@ -213,6 +215,12 @@ export function AgentSettings({ envoyAI, extAgent, onExtAgentSave, onRestartOpen
   const viewAgentId = extAgent.activeExtAgentId ?? draftAgentId;
   const draftInstall = getExtAgentInstallInfo(draftAgentId);
   const viewInstall = getExtAgentInstallInfo(viewAgentId);
+  // Phase 55D.1 — use the rich install guide for external agents.
+  // The card hides itself for built-in agents (Pi / homeclaw — guide
+  // has `installed: true`), so we keep the simple hint as a fallback
+  // for the built-in case.
+  const draftGuide = getExtAgentInstallGuide(draftAgentId, "unknown");
+  const viewGuide = getExtAgentInstallGuide(viewAgentId, "unknown");
 
   return (
     <div className="settings-agent" data-mode={mode}>
@@ -354,17 +362,28 @@ export function AgentSettings({ envoyAI, extAgent, onExtAgentSave, onRestartOpen
                 className="agent-install-hint"
                 data-testid="ext-agent-install-hint"
               >
-                <p className="agent-install-hint-text">{viewInstall.startHint}</p>
-                {viewInstall.homepageUrl ? (
-                  <a
-                    className="agent-install-hint-link"
-                    href={viewInstall.homepageUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {viewInstall.homepageLabel}
-                  </a>
-                ) : null}
+                {viewGuide && !viewGuide.installed ? (
+                  <ExtAgentInstallGuideCard
+                    agentId={viewAgentId}
+                    installGuide={viewGuide}
+                    installState="unknown"
+                    testId="ext-agent-install-hint-card"
+                  />
+                ) : (
+                  <>
+                    <p className="agent-install-hint-text">{viewInstall.startHint}</p>
+                    {viewInstall.homepageUrl ? (
+                      <a
+                        className="agent-install-hint-link"
+                        href={viewInstall.homepageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {viewInstall.homepageLabel}
+                      </a>
+                    ) : null}
+                  </>
+                )}
               </div>
               <div className="agent-field agent-field--readonly">
                 <dt>{t("settings.ai.aiEngine.webhookUrl")}</dt>
@@ -407,17 +426,28 @@ export function AgentSettings({ envoyAI, extAgent, onExtAgentSave, onRestartOpen
                   className="agent-install-hint"
                   data-testid="ext-agent-install-hint"
                 >
-                  <p className="agent-install-hint-text">{draftInstall.startHint}</p>
-                  {draftInstall.homepageUrl ? (
-                    <a
-                      className="agent-install-hint-link"
-                      href={draftInstall.homepageUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {draftInstall.homepageLabel}
-                    </a>
-                  ) : null}
+                  {draftGuide && !draftGuide.installed ? (
+                    <ExtAgentInstallGuideCard
+                      agentId={draftAgentId}
+                      installGuide={draftGuide}
+                      installState="unknown"
+                      testId="ext-agent-install-hint-card"
+                    />
+                  ) : (
+                    <>
+                      <p className="agent-install-hint-text">{draftInstall.startHint}</p>
+                      {draftInstall.homepageUrl ? (
+                        <a
+                          className="agent-install-hint-link"
+                          href={draftInstall.homepageUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {draftInstall.homepageLabel}
+                        </a>
+                      ) : null}
+                    </>
+                  )}
                 </div>
               </div>
               <div className="agent-field">

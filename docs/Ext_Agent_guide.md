@@ -670,7 +670,58 @@ The status indicator next to the active agent in Settings reflects
   Required card is rendered)
 
 The chat list switcher (`ExtAgentSwitcher`) uses the same data and
-pops a modal / toast for the same three states (55D.1).
+pops a modal / toast for the same three states (55D.1). See the next
+section for the chat-side UX.
+
+---
+
+## Chat switcher tri-state UX (Phase 55D.1)
+
+The chat list **switch icon** (sidebar) and the **in-chat banner** both
+use the same `installState` + `reachable` data but render different
+controls depending on severity. Goal: **never surface a cryptic error
+to the user** — the worst UX is "I picked Claude Code and nothing
+happens, no error, no hint".
+
+| `installState` | `reachable` | UX |
+|---|---|---|
+| `not-installed` / `unsupported` / `unknown` | (irrelevant) | **Install modal** (chat switcher) / **install card** (banner). Both share `ExtAgentInstallGuideCard`; the modal also wraps it in `ModalPortal` and adds ESC + overlay-click + Dismiss-button close. |
+| `installed` | `false` | **3-second toast** (chat switcher) with start hint + Retry button. **Simple hint banner** (`"X is not running"`) with a Recheck button (offline banner). |
+| `installed` | `true` | **Silent.** Button label is the only signal. |
+
+### Switcher (sidebar)
+
+`apps/social/src/components/ExtAgentSwitcher.tsx`. After a successful
+`updateNodeConfig({ activeExtAgentId })`, the switcher runs a soft
+`probeExtAgent({ agentId })` and routes the result to the matching
+surface. The toast auto-dismisses after 3s; the install modal stays
+open across retries and auto-closes when the retry reports the agent
+is now installed (parent passes `resolved: true` to the dialog).
+
+### In-chat banner
+
+`apps/social/src/components/views/ExtAgentOfflineBanner.tsx`. Polls
+`probeExtAgent` every 5s while the banner is visible. When the
+`installState` says "not installed" the banner renders the full
+`ExtAgentInstallGuideCard` inline (no modal — the user is already in
+the chat, a modal would be disruptive) with a Retry button that
+re-probes immediately.
+
+### Settings panel
+
+`apps/social/src/components/views/settings/AgentSettings.tsx`. The
+view + edit mode for the active agent both look up
+`getExtAgentInstallGuide(agentId, "unknown")` and render the card
+when the guide is non-empty. Built-in Pi / HomeClaw keep the simple
+hint (the card returns `null` for `installed: true`).
+
+### Shared card
+
+`apps/social/src/components/ExtAgentInstallGuideCard.tsx`. Same
+component used in all three places. Renders the install command
+(with a Copy-to-clipboard that flips to "Copied" for 1.5s), verify
+command, install docs link, 2-4 `commonIssues` bullets, and
+optional Retry / Dismiss buttons.
 
 ---
 
@@ -692,6 +743,8 @@ pops a modal / toast for the same three states (55D.1).
 | Ext Agent picker: codex / claudecode not in the list | Bridge off or wrong agent preset | Settings → AI → Ext Agent; bridge must be enabled; presets are additive (no `bridge-config.json` migration needed) |
 | `codex app-server` crashes repeatedly | `OPENAI_API_KEY` invalid / CLI version too old | Verify `codex --version`; rotate key; supervisor will surface `crash.stuck` after 5 restarts/5 min |
 | `claude --version` missing in PATH | Package not installed / wrong binary | `npm i -g @anthropic-ai/claude-code`; the binary is `claude`, not `claudecode` |
+| Chat switcher opens install modal after picking an agent | Binary is missing / install state is `unknown` | Run the install command from the card, then click **Retry**. The dialog auto-closes when the agent is reachable. |
+| Chat switcher shows 3s toast, no modal | Binary is installed but the daemon is down | Start the agent's daemon (e.g. `codex app-server`, `hermes gateway run`); the toast is informational. |
 | `bridge unreachable` in sidecar log | Wrong bridge port | Match `ENVOYMESH_BRIDGE_PORT` (e.g. `4031`) |
 | Sidecar not listening | Bridge off or wrong agent | Enable bridge; select Hermes/OpenHuman/Codex/Claude Code |
 | Port in use | Another process on `8010`/`8020`/`8021`/`8023`/`8024` | Stop old process / set `ENVOYMESH_*_PORT` (e.g. `ENVOYMESH_CODEX_PORT`) |

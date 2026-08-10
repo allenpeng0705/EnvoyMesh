@@ -4435,6 +4435,14 @@ textarea::placeholder {
   border-bottom: 1px solid var(--color-warning, #f59e0b);
   padding: 0.65rem 1rem;
 }
+/* Phase 55D.1 — when the offline banner carries an install card,
+   drop the warning background and let the card's own background
+   take over (the card is the message; the amber bar is redundant). */
+.ext-agent-offline-banner--install {
+  background: var(--color-bg, #f8fafc);
+  border-bottom-color: var(--color-border-subtle, #e2e8f0);
+  padding: 0.6rem 0.85rem;
+}
 .ext-agent-offline-banner-body {
   display: flex;
   align-items: center;
@@ -6646,38 +6654,125 @@ button:disabled {
   max-width: 100%;
 }
 
-/* Assistant header: 2-row grid — title+actions on top, links on bottom.
-   Reduces horizontal empty space by moving link buttons to their own row
-   aligned with (below) the title text. */
+/* Assistant header: title + model on first line; subtitle + text actions
+   share the second line so controls sit with “知识助手” / Knowledge assistant. */
 .chat-header--assistant {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-rows: auto auto;
+  display: flex;
   align-items: center;
-  gap: 0 var(--space-3);
+  gap: var(--space-3);
   padding: var(--space-2) var(--space-4);
 }
 
 .chat-header--assistant .chat-header-left {
-  grid-column: 1;
-  grid-row: 1;
+  flex: 1;
+  min-width: 0;
 }
 
-.chat-header--assistant .chat-header-right {
-  grid-column: 2;
-  grid-row: 1;
+.chat-header--assistant .chat-header-titles {
+  gap: 0.15rem;
 }
 
-.chat-header--assistant .chat-header-links {
-  grid-column: 1 / -1;
-  grid-row: 2;
-  padding-top: 0.1rem;
+.chat-header--assistant .chat-name {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+  max-width: 100%;
+}
+
+.chat-header-model-inline {
+  font-size: var(--text-2xs);
+  font-weight: var(--font-semibold);
+  text-transform: none;
+  letter-spacing: 0.02em;
+  color: var(--color-role-ai);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 14rem;
+}
+
+.chat-header-subtitle-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.chat-header-subtitle-row .chat-header-kind {
+  flex-shrink: 0;
+}
+
+.chat-header-subtitle-row .chat-header-links {
+  margin-left: auto;
+}
+
+.chat-header--assistant .chat-header-link {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0.1rem 0.45rem;
+  margin: 0;
+  color: var(--color-role-ai);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-semibold);
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+  font-family: inherit;
+}
+
+.chat-header--assistant .chat-header-link:hover {
+  color: var(--color-role-ai);
+  background: color-mix(in srgb, var(--color-role-ai) 10%, transparent);
+  text-decoration: none;
+  opacity: 0.9;
+}
+
+.chat-header--assistant .chat-header-link.is-active {
+  color: var(--color-role-ai);
+  opacity: 1;
+}
+
+.chat-header--assistant .chat-header-link--badge {
+  color: var(--color-warning, #c97a00);
+}
+
+.chat-header--assistant .chat-header-link--badge:hover {
+  color: var(--color-warning-hover, #b56a00);
+  background: color-mix(in srgb, var(--color-warning, #c97a00) 8%, transparent);
+}
+
+.chat-header--assistant .chat-header-link--icon {
+  padding: 0.15rem;
+  min-width: 1.35rem;
+  min-height: 1.35rem;
+  justify-content: center;
+  color: var(--color-role-ai);
+}
+
+.chat-header--assistant .chat-header-link--icon:hover:not(:disabled) {
+  color: var(--color-danger, #ef4444);
+  background: color-mix(in srgb, var(--color-danger, #ef4444) 8%, transparent);
+}
+
+.chat-header--assistant .chat-header-link--icon:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .chat-header-links {
   display: inline-flex;
   align-items: center;
-  gap: 0;
+  gap: 0.15rem;
+  min-width: 0;
 }
 
 .chat-header-link {
@@ -6706,7 +6801,8 @@ button:disabled {
   text-decoration: none;
 }
 
-.chat-header-link.active {
+.chat-header-link.active,
+.chat-header-link.is-active {
   color: var(--color-primary, #4f46e5);
 }
 

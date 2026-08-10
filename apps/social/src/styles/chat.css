@@ -2404,6 +2404,174 @@
   white-space: nowrap;
 }
 
+/* ----- Phase 55D.1 — install-required tri-state UX -----
+   .ext-agent-switcher--toast     wrapper modifier when the offline-toast is shown
+   .ext-agent-switcher-toast      the 3s toast with start hint + Retry
+   .ext-agent-install-card        shared card body (used in 3 places)
+   .ext-agent-install-dialog      modal wrapper for the chat switcher
+*/
+.ext-agent-switcher--toast {
+  position: relative;
+}
+
+.ext-agent-switcher-toast {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--color-warning, #f59e0b);
+  background: var(--color-surface, #fff);
+  color: var(--color-text);
+  border-radius: var(--radius-sm, 6px);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.08);
+  font-size: var(--text-xs, 0.75rem);
+  max-width: 22rem;
+  animation: ext-agent-switcher-toast-in 180ms ease-out;
+}
+
+@keyframes ext-agent-switcher-toast-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.ext-agent-switcher-toast-text {
+  flex: 1 1 auto;
+  line-height: 1.4;
+  color: var(--color-text-muted, #475569);
+}
+
+.ext-agent-switcher-toast-retry {
+  flex: 0 0 auto;
+  background: var(--color-primary, #07c160);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  padding: 0.25rem 0.55rem;
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--font-medium, 500);
+  cursor: pointer;
+}
+
+.ext-agent-switcher-toast-retry:hover {
+  background: color-mix(in srgb, var(--color-primary, #07c160) 88%, black);
+}
+
+.ext-agent-install-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-bg, #f8fafc);
+  font-size: var(--text-sm, 0.875rem);
+  line-height: 1.5;
+}
+
+.ext-agent-install-card-title {
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-semibold, 600);
+  color: var(--color-text);
+}
+
+.ext-agent-install-card-body {
+  margin: 0;
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted, #475569);
+  line-height: 1.45;
+}
+
+.ext-agent-install-card-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.ext-agent-install-card-label {
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--font-medium, 500);
+  color: var(--color-text-muted, #475569);
+  min-width: 4rem;
+}
+
+.ext-agent-install-card-cmd {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.3rem 0.5rem;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  border-radius: var(--radius-sm, 6px);
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.ext-agent-install-card-copy {
+  flex: 0 0 auto;
+  font-size: var(--text-xs, 0.75rem);
+  padding: 0.25rem 0.55rem;
+  min-height: 1.65rem;
+}
+
+.ext-agent-install-card-docs {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-primary, #07c160);
+  text-decoration: none;
+  align-self: flex-start;
+}
+
+.ext-agent-install-card-docs:hover {
+  text-decoration: underline;
+}
+
+.ext-agent-install-card-issues {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted, #475569);
+}
+
+.ext-agent-install-card-issue {
+  line-height: 1.4;
+}
+
+.ext-agent-install-card-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.2rem;
+}
+
+.ext-agent-install-card-actions .btn {
+  font-size: var(--text-xs, 0.75rem);
+  padding: 0.3rem 0.7rem;
+  min-height: 1.85rem;
+}
+
+/* Modal wrapper inside the chat switcher — slightly wider than the
+   picker so the install command + commonIssues list breathe. */
+.ext-agent-install-dialog {
+  width: min(28rem, calc(100vw - 2rem));
+  max-height: min(85vh, 640px);
+  overflow-y: auto;
+}
+
+.ext-agent-install-dialog-title {
+  margin: 0 0 0.6rem;
+  font-size: var(--text-lg, 1.05rem);
+  font-weight: var(--font-semibold, 600);
+}
+
 .thread-row--pending .thread-avatar {
   background: linear-gradient(135deg, var(--avatar-pending-from), var(--avatar-pending-to));
 }

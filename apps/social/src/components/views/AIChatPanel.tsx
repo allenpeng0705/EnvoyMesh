@@ -238,7 +238,34 @@ export function AIChatPanel({
   const assistantHomeOffline =
     isMobileNode && homeRemote?.paired === true && homeRemote?.homeOnline === false;
   const assistantReady = nodeStatus === "running" && !assistantHomeOffline;
-  const modelConfigured = hasUsableModelProvider(nodeConfig?.modelProviders);
+  const [localInUse, setLocalInUse] = useState(false);
+  const [localModelName, setLocalModelName] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      void nodeService
+        .getEnvoyLocalStatus()
+        .then((st) => {
+          if (cancelled) return;
+          const active = Boolean(st.enabled && st.running);
+          setLocalInUse(active);
+          setLocalModelName(active ? (st.activeModelId?.trim() || null) : null);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setLocalInUse(false);
+          setLocalModelName(null);
+        });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 4_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [nodeService, nodeConfig?.envoyLocal?.enabled]);
+  const cloudConfigured = hasUsableModelProvider(nodeConfig?.modelProviders);
+  const modelConfigured = cloudConfigured || localInUse;
   const configureAiCtaShownRef = useRef(false);
   const assistantBlockedHint = assistantHomeOffline
     ? t("aiChat.homeOffline")
@@ -667,14 +694,13 @@ export function AIChatPanel({
     }
   };
 
-  const modelStatusLabel =
-    nodeConfig?.modelProviders?.mode === "disabled"
+  const effectiveModelName = localInUse
+    ? (localModelName ?? t("aiChat.envoyLocalFallbackName"))
+    : nodeConfig?.modelProviders?.mode === "disabled"
       ? t("aiChat.aiDisabled")
       : nodeConfig?.modelProviders?.mode === "mock"
         ? t("aiChat.mockMode")
-        : t("aiChat.modelLabel", {
-            name: nodeConfig?.modelProviders?.modelName ?? t("aiChat.modelNotSet"),
-          });
+        : (nodeConfig?.modelProviders?.modelName?.trim() || t("aiChat.modelNotSet"));
 
   return (
     <>
@@ -684,62 +710,70 @@ export function AIChatPanel({
           <div className="chat-header-titles">
             <span className="chat-name">
               {t("aiChat.title")}
-              <span className="chat-header-model-inline"> ({modelStatusLabel})</span>
+              {effectiveModelName ? (
+                <span className="chat-header-model-inline" title={effectiveModelName}>
+                  {" "}
+                  ({effectiveModelName})
+                </span>
+              ) : null}
             </span>
-            <span className="chat-header-kind kind-ai">{t("aiChat.subtitle")}</span>
+            <div className="chat-header-subtitle-row">
+              <span className="chat-header-kind kind-ai">{t("aiChat.subtitle")}</span>
+              <div className="chat-header-links">
+                <button
+                  type="button"
+                  className="chat-header-link"
+                  onClick={() => setSkillsOpen(true)}
+                >
+                  <PluginIcon size={14} />
+                  <span>{t("h2a.skillsTitle")}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`chat-header-link${webSearchOn ? " is-active" : ""}`}
+                  onClick={async () => {
+                    const next = !webSearchOn;
+                    setWebSearchOn(next);
+                    await (nodeService as any).saveWebSearchEnabled?.(next);
+                  }}
+                >
+                  {webSearchOn ? t("h2a.webSearchOn") : t("h2a.webSearchOff")}
+                </button>
+
+                <button
+                  type="button"
+                  className="chat-header-link"
+                  onClick={() => setShowReport(true)}
+                >
+                  {t("h2a.meshIntelligenceReport")}
+                </button>
+
+                {pendingApprovals.length > 0 && (
+                  <button
+                    type="button"
+                    className="chat-header-link chat-header-link--badge"
+                    onClick={() => setShowApprovals(true)}
+                  >
+                    <PendingIcon size={14} />
+                    <span>{t("h2a.pendingApprovals", { count: pendingApprovals.length })}</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className="chat-header-link chat-header-link--icon"
+                  title={t("aiChat.clearSessionTitle")}
+                  aria-label={t("aiChat.clearSessionAria")}
+                  disabled={aiMessages.length === 0}
+                  onClick={handleClearAiChat}
+                >
+                  <RemoveIcon size={14} />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-        <div className="chat-header-links">
-          <button
-            type="button"
-            className="chat-header-link"
-            onClick={() => setSkillsOpen(true)}
-          >
-            <PluginIcon size={14} />
-            <span>{t("h2a.skillsTitle")}</span>
-          </button>
-
-          <button
-            type="button"
-            className={`chat-header-link${webSearchOn ? " active" : ""}`}
-            onClick={async () => {
-              const next = !webSearchOn;
-              setWebSearchOn(next);
-              await (nodeService as any).saveWebSearchEnabled?.(next);
-            }}
-          >
-            {webSearchOn ? t("h2a.webSearchOn") : t("h2a.webSearchOff")}
-          </button>
-
-          <button
-            type="button"
-            className="chat-header-link"
-            onClick={() => setShowReport(true)}
-          >
-            {t("h2a.meshIntelligenceReport")}
-          </button>
-
-          {pendingApprovals.length > 0 && (
-            <button
-              type="button"
-              className="chat-header-link chat-header-link--badge"
-              onClick={() => setShowApprovals(true)}
-            >
-              <PendingIcon size={14} />
-              <span>{t("h2a.pendingApprovals", { count: pendingApprovals.length })}</span>
-            </button>
-          )}
-        </div>
-        <button
-          type="button"
-          className="chat-header-clear-btn"
-          title={t("aiChat.clearSessionTitle")}
-          aria-label={t("aiChat.clearSessionAria")}
-          disabled={aiMessages.length === 0}
-          onClick={handleClearAiChat}
-        >
-          <RemoveIcon size={16} />
-        </button>
       </header>
       <ConfigureAiBanner onOpenSettingsAi={onOpenSettingsAi} />
       <div className="messages ai-messages-pane" ref={messagesRef} onScroll={onMessagesScroll}>

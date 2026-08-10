@@ -29,6 +29,16 @@ const on = vi.fn((event: string, handler: (data: unknown) => void) => {
   };
 });
 
+const getEnvoyLocalStatus = vi.fn().mockResolvedValue({
+  enabled: false,
+  running: false,
+  activeModelId: undefined,
+});
+const listPendingApprovals = vi.fn().mockResolvedValue([]);
+const getNodeConfig = vi.fn().mockResolvedValue({});
+const generateMeshIntelligenceReport = vi.fn();
+const saveWebSearchEnabled = vi.fn();
+
 const mockNodeService = {
   runOwnerAgentTurn,
   listChatHistory,
@@ -37,6 +47,11 @@ const mockNodeService = {
   approvePendingApproval,
   rejectPendingApproval,
   sendSyncStateUpdate,
+  getEnvoyLocalStatus,
+  listPendingApprovals,
+  getNodeConfig,
+  generateMeshIntelligenceReport,
+  saveWebSearchEnabled,
   on,
 };
 

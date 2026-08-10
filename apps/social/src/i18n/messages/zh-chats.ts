@@ -99,6 +99,21 @@ export const zhChatMessages = {
   openclawOfflineRestart: "重启",
   openclawOfflineSettings: "打开设置",
   openclawOfflineRestarting: "正在重启…",
+  // ----- Ext Agent switcher (Phase 55D.1) -----
+  extAgentSwitchTitle: "切换 Ext Agent",
+  extAgentOfflineTitle: "{name} 未运行",
+  extAgentOfflineHintHomeClaw:
+    "请先启动 HomeClaw，并确认 http://127.0.0.1:8010/status 可访问。",
+  extAgentOfflineHintHermes:
+    "运行 `hermes gateway run`，并设置 API_SERVER_ENABLED=true（API 在 :8642）。",
+  extAgentOfflineHintOpenHuman:
+    "请先启动 OpenHuman.app 或 OpenHuman CLI 核心（健康检查在 :7788）。",
+  extAgentOfflineRecheck: "重新检查",
+  extAgentOfflineChecking: "检查中…",
+  extAgentOfflineSwitcherHint: "{name} 未运行 — 开始聊天前请先启动它。",
+  extAgentInstallDialogTitle: "需要先安装 {name}",
+  extAgentOfflineToastHint: "{name} 未安装 — 安装后点击「重试」。",
+  extAgentOfflineToastRetry: "重试",
 } as const;
 
 export const zhContactChatMessages = {
@@ -187,13 +202,14 @@ export const zhAiChatMessages = {
   errorPrefix: "错误：{message}",
   clearConfirm: "清除此 Envoy AI 会话？",
   clearConfirmMessage: "这将移除本会话中的所有消息。AI 上下文会重置。",
-  title: "Envoy AI",
+  title: "EnvoyAI",
   subtitle: "知识助手",
   clearSessionTitle: "清除会话",
   clearSessionAria: "清除会话",
   aiDisabled: "AI 已禁用",
   mockMode: "模拟模式",
   modelLabel: "模型：{name}",
+  envoyLocalFallbackName: "本地模型",
   modelNotSet: "未设置",
   configureAiTitle: "配置 AI 模型",
   configureAiDesc:
