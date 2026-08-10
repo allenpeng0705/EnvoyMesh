@@ -2524,6 +2524,17 @@ export interface NodeService {
     import("./envoy-local.js").EnvoyLocalStatus
   >;
   disableEnvoyLocal(): Promise<import("./envoy-local.js").EnvoyLocalStatus>;
+  /**
+   * Start llama-server when runtime + model are already installed (no download).
+   * Wires Settings → AI to Envoy Local and saves the previous cloud/Ollama
+   * provider as a Stop fallback when present.
+   */
+  startEnvoyLocal(): Promise<import("./envoy-local.js").EnvoyLocalStatus>;
+  /**
+   * Stop llama-server and restore the saved cloud/Ollama provider.
+   * No-op when no usable fallback exists (keeps Envoy Local running).
+   */
+  stopEnvoyLocal(): Promise<import("./envoy-local.js").EnvoyLocalStatus>;
   restartEnvoyLocal(): Promise<import("./envoy-local.js").EnvoyLocalStatus>;
   cancelEnvoyLocalDownload(): Promise<import("./envoy-local.js").EnvoyLocalStatus>;
   listEnvoyLocalInstalledModels(): Promise<

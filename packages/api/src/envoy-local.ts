@@ -16,8 +16,25 @@ export type EnvoyLocalPhase =
   | "error"
   | "disabled";
 
+export type EnvoyLocalFlashAttn = "auto" | "on" | "off";
+
+export type EnvoyLocalKvCacheType =
+  | "f16"
+  | "bf16"
+  | "q8_0"
+  | "q5_0"
+  | "q4_0"
+  | "q4_1";
+
+export type EnvoyLocalFitMode = "on" | "off";
+
 export interface EnvoyLocalServerParams {
-  /** Context size (`-c`). Default 4096. */
+  /**
+   * Context size (`-c` / `--ctx-size`).
+   * Default 8192 — workable for chat + light tools; raise to 32k–1M+ on large
+   * unified/VRAM machines (often with quantized KV). llama.cpp `0` means
+   * “from model”; we always set an explicit value for predictable memory use.
+   */
   ctxSize?: number;
   /**
    * GPU layers (`-ngl`).
@@ -26,10 +43,35 @@ export interface EnvoyLocalServerParams {
    * - positive → that many layers
    */
   nGpuLayers?: number | "auto";
-  /** CPU threads; omit for llama.cpp default. */
+  /** CPU threads (`-t`); omit for llama.cpp default. */
   threads?: number;
-  /** Parallel slots. Default 1. */
+  /**
+   * Server slots (`-np` / `--parallel`). Default 1 for a single home user
+   * (each slot multiplies KV memory).
+   */
   parallel?: number;
+  /**
+   * Flash Attention (`-fa`). Default `auto` (best on Metal/CUDA when supported).
+   */
+  flashAttn?: EnvoyLocalFlashAttn;
+  /** Logical batch size (`-b`). Omit for llama.cpp default (2048). */
+  batchSize?: number;
+  /** Physical micro-batch (`-ub`). Omit for llama.cpp default (512). */
+  ubatchSize?: number;
+  /** KV cache dtype for K (`-ctk`). Omit for llama.cpp default. */
+  cacheTypeK?: EnvoyLocalKvCacheType;
+  /** KV cache dtype for V (`-ctv`). Omit for llama.cpp default. */
+  cacheTypeV?: EnvoyLocalKvCacheType;
+  /**
+   * Absolute or profile-relative path to a LoRA adapter (`.gguf`), passed as
+   * `--lora`. Multiple adapters: comma-separated paths.
+   */
+  loraPath?: string;
+  /**
+   * Whether llama-server may shrink unset sizes to fit device memory (`--fit`).
+   * Default `on` for safer first runs on Metal/CUDA; set `off` for fixed knobs.
+   */
+  fit?: EnvoyLocalFitMode;
   /**
    * Override llama-server startup timeout (ms). Default scales with model
    * file size: 30 s for 0.8B, 60 s for 2–3B, 120 s for 4B, 480 s for 9B,
@@ -109,6 +151,11 @@ export interface EnvoyLocalStatus {
    * user has not declined).
    */
   suggestAutoProvision?: boolean;
+  /**
+   * True when Stop is allowed: a usable cloud/Ollama fallback was saved before
+   * switching to Envoy Local. Without it, Stop is a no-op (keep local running).
+   */
+  canStop?: boolean;
 }
 
 export interface EnvoyLocalEngineUpdateInfo {
@@ -227,17 +274,27 @@ export interface DeleteEnvoyLocalModelParams {
 }
 
 export const DEFAULT_ENVOY_LOCAL_SERVER_PARAMS: Required<
-  Pick<EnvoyLocalServerParams, "ctxSize" | "nGpuLayers" | "parallel">
+  Pick<
+    EnvoyLocalServerParams,
+    "ctxSize" | "nGpuLayers" | "parallel" | "flashAttn" | "fit"
+  >
 > = {
-  ctxSize: 4096,
+  ctxSize: 8192,
   nGpuLayers: "auto",
   parallel: 1,
+  flashAttn: "auto",
+  fit: "on",
 };
 
 /** Merge partial server params over defaults (for UI + spawn). */
 export function resolveEnvoyLocalServerParams(
   value: EnvoyLocalServerParams | undefined,
-): Required<Pick<EnvoyLocalServerParams, "ctxSize" | "nGpuLayers" | "parallel">> &
+): Required<
+  Pick<
+    EnvoyLocalServerParams,
+    "ctxSize" | "nGpuLayers" | "parallel" | "flashAttn" | "fit"
+  >
+> &
   EnvoyLocalServerParams {
   return {
     ...DEFAULT_ENVOY_LOCAL_SERVER_PARAMS,
@@ -263,6 +320,11 @@ export interface EnvoyLocalConfig {
    * Env `ENVOYMESH_ENVOY_LOCAL_DOWNLOAD_REGION` overrides when set.
    */
   downloadRegion?: "auto" | "cn" | "global";
+  /**
+   * Cloud / Ollama provider snapshot saved when switching to Envoy Local.
+   * Restored by Stop when present; Stop is a no-op without a usable fallback.
+   */
+  fallbackModelProviders?: import("./ws-protocol.js").ModelProviderConfig;
 }
 
 export function normalizeEnvoyLocalConfig(
@@ -283,6 +345,9 @@ export function normalizeEnvoyLocalConfig(
       ? { autoProvisionDeclined: true }
       : {}),
     ...(downloadRegion ? { downloadRegion } : {}),
+    ...(value?.fallbackModelProviders
+      ? { fallbackModelProviders: value.fallbackModelProviders }
+      : {}),
   };
 }
 

@@ -4,7 +4,7 @@
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import {
   DEFAULT_ENVOY_LOCAL_SERVER_PARAMS,
   hasUsableModelProvider,
@@ -67,6 +67,9 @@ import {
   resolveStartupTimeoutMs,
 } from "./envoy-local-manifest.js";
 import {
+  buildEnvoyLocalLlamaServerArgs,
+} from "./envoy-local-server-args.js";
+import {
   DEFAULT_ENVOY_LOCAL_MODEL,
   detectEnvoyLocalPlatform,
   type EnvoyLocalPlatform,
@@ -122,7 +125,8 @@ export function createEnvoyLocalRuntimeState(): EnvoyLocalRuntimeState {
 }
 
 function rootDir(profileDir: string): string {
-  return join(profileDir, "envoy-local");
+  // Always absolute so llama-server (spawned with runtime cwd) can open models.
+  return resolve(profileDir, "envoy-local");
 }
 
 async function loadDownloadRegion(
@@ -314,17 +318,6 @@ async function ensureActiveModelPersisted(
   if (needsCfg) {
     await deps.saveEnvoyLocalConfig({ activeModelId: model.id });
   }
-}
-
-function resolveNgl(
-  params: EnvoyLocalServerParams,
-  platform: EnvoyLocalPlatform,
-): number {
-  const raw = params.nGpuLayers ?? DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.nGpuLayers;
-  if (raw === 0) return 0;
-  if (typeof raw === "number" && raw > 0) return raw;
-  // auto
-  return platform.accel === "cpu" ? 0 : -1;
 }
 
 async function probeOpenAiModels(endpoint: string): Promise<boolean> {
@@ -943,7 +936,6 @@ async function startSidecarOnce(
   }
   await ensureActiveModelPersisted(deps, profileDir, index, model);
 
-  const ngl = opts.forceCpu ? 0 : resolveNgl(serverParams, platform);
   const chatTemplate =
     model.chatTemplate ?? getEnvoyLocalCatalogModelRaw(model.id)?.chatTemplate;
   setProgress(state, {
@@ -954,48 +946,52 @@ async function startSidecarOnce(
     fraction: 0.9,
   });
 
-  const args = [
-    "-m",
-    model.path,
-    "-a",
-    model.id,
-    "--host",
-    "127.0.0.1",
-    "--port",
-    String(ENVOY_LOCAL_PORT),
-    "-c",
-    String(serverParams.ctxSize ?? 4096),
-    "-ngl",
-    String(ngl),
-    "--parallel",
-    String(serverParams.parallel ?? 1),
-  ];
-  if (chatTemplate) {
-    args.push("--chat-template", chatTemplate);
-  }
-  if (typeof serverParams.threads === "number" && serverParams.threads > 0) {
-    args.push("-t", String(serverParams.threads));
-  }
+  const args = buildEnvoyLocalLlamaServerArgs({
+    modelPath: resolve(model.path),
+    modelId: model.id,
+    port: ENVOY_LOCAL_PORT,
+    platform,
+    serverParams,
+    profileDir,
+    chatTemplate,
+    forceCpu: opts.forceCpu,
+  });
 
   await stopChild(state);
 
+  const stderrChunks: Buffer[] = [];
+  let stderrBytes = 0;
   const child = spawn(exe, args, {
     cwd: join(exe, ".."),
-    stdio: "ignore",
+    stdio: ["ignore", "ignore", "pipe"],
     windowsHide: true,
     env: { ...process.env },
   });
   state.child = child;
   state.childPid = child.pid;
+  child.stderr?.on("data", (chunk: Buffer | string) => {
+    const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    if (stderrBytes > 48_000) return;
+    stderrChunks.push(buf);
+    stderrBytes += buf.length;
+  });
+
+  const stderrTail = (): string => {
+    const text = Buffer.concat(stderrChunks).toString("utf8").trim();
+    if (!text) return "";
+    return text.length > 1200 ? text.slice(-1200) : text;
+  };
 
   child.on("exit", (code, signal) => {
     if (state.child === child) {
       state.child = null;
       state.childPid = undefined;
       if (state.phase === "ready" || state.phase === "starting") {
+        const detail = stderrTail();
         setError(
           state,
-          `llama-server exited (code=${code ?? "null"} signal=${signal ?? "null"})`,
+          `llama-server exited (code=${code ?? "null"} signal=${signal ?? "null"})` +
+            (detail ? `: ${detail}` : ""),
         );
       }
     }
@@ -1003,9 +999,9 @@ async function startSidecarOnce(
 
   const endpoint = envoyLocalOpenAiBaseUrl(ENVOY_LOCAL_PORT);
   // Timeout scales with the model file size on disk — 0.8B loads in 5-10 s
-  // on any accel, but CPU loading of 9B can take 2-3 min. The user can
+  // on any accel, but CPU loading of 9B can take several minutes. The user can
   // override via serverParams.startupTimeoutMs (e.g. for slow disks).
-  const modelSizeBytes = (await stat(model.path)).size;
+  const modelSizeBytes = (await stat(resolve(model.path))).size;
   const startupTimeoutMs = resolveStartupTimeoutMs(serverParams, modelSizeBytes);
   const deadline = Date.now() + startupTimeoutMs;
   while (Date.now() < deadline) {
@@ -1022,9 +1018,11 @@ async function startSidecarOnce(
     }
     await new Promise((r) => setTimeout(r, 500));
   }
+  const detail = stderrTail();
   throw new Error(
     `llama-server did not become ready within ${Math.round(startupTimeoutMs / 1000)}s ` +
-      `(model ${(modelSizeBytes / 1e9).toFixed(1)} GB; increase Startup timeout in Settings → AI → Envoy Local → Advanced, or set serverParams.startupTimeoutMs)`,
+      `(model ${(modelSizeBytes / 1e9).toFixed(1)} GB; increase Startup timeout in Settings → AI → Envoy Local → Advanced, or set serverParams.startupTimeoutMs)` +
+      (detail ? `\n${detail}` : ""),
   );
 }
 

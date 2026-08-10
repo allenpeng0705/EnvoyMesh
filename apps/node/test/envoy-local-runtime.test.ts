@@ -78,11 +78,13 @@ function makeFakeChild(pid: number): ChildProcess & {
   emitExit: (code: number | null) => void;
 } {
   const ee = new EventEmitter();
+  const stderr = new EventEmitter();
   const child = {
     pid,
     killed: false,
     exitCode: null as number | null,
     signalCode: null as NodeJS.Signals | null,
+    stderr,
     kill: vi.fn((signal?: NodeJS.Signals) => {
       queueMicrotask(() => child.emitExit(signal === "SIGKILL" ? null : 0));
       return true;
@@ -635,5 +637,65 @@ describe("envoy-local-runtime lifecycle", () => {
     expect(status.phase).toBe("ready");
     expect(status.activeModelId).toBe("qwen3.5-4b-q4_k_m");
     expect(mockedDownloadFile).not.toHaveBeenCalled();
+  });
+
+  it("enableEnvoyLocal passes an absolute model path to llama-server", async () => {
+    // Relative profileDir (matches apps/node `data/default` in production).
+    const relProfile = join("data", "envoy-local-rel-profile");
+    const absProfile = join(profileDir, relProfile);
+    await mkdir(absProfile, { recursive: true });
+    // Point deps at the relative path while files live under abs via cwd.
+    const prevCwd = process.cwd();
+    process.chdir(profileDir);
+    try {
+      const exeName = process.platform === "win32" ? "llama-server.exe" : "llama-server";
+      const exePath = join(
+        relProfile,
+        "envoy-local",
+        "runtime",
+        ENVOY_LOCAL_LLAMA_CPP_TAG,
+        exeName,
+      );
+      await mkdir(dirname(exePath), { recursive: true });
+      await writeFile(exePath, "#!/bin/sh\n", { mode: 0o755 });
+      const modelFile = DEFAULT_ENVOY_LOCAL_MODEL.fileName;
+      const modelRel = join(relProfile, "envoy-local", "models", modelFile);
+      await mkdir(dirname(modelRel), { recursive: true });
+      await writeSparseFile(modelRel, ENVOY_LOCAL_MIN_MODEL_BYTES);
+      await writeFile(
+        join(relProfile, "envoy-local", "models.json"),
+        JSON.stringify({
+          activeModelId: DEFAULT_ENVOY_LOCAL_MODEL.id,
+          models: [
+            {
+              id: DEFAULT_ENVOY_LOCAL_MODEL.id,
+              fileName: modelFile,
+              path: modelRel,
+              sizeBytes: ENVOY_LOCAL_MIN_MODEL_BYTES,
+            },
+          ],
+        }),
+        "utf8",
+      );
+      cfg = {
+        enabled: true,
+        activeModelId: DEFAULT_ENVOY_LOCAL_MODEL.id,
+        runtimeVersion: ENVOY_LOCAL_LLAMA_CPP_TAG,
+      };
+      const relDeps: EnvoyLocalRuntimeDeps = {
+        ...deps,
+        getProfileDir: () => relProfile,
+      };
+      mockedSpawn.mockImplementation(() => makeFakeChild(7777));
+      await enableEnvoyLocalViaRuntime(state, relDeps, { skipModelDownload: true });
+      await awaitEnvoyLocalOperation(state);
+      const args = mockedSpawn.mock.calls[0]?.[1] as string[];
+      const mIdx = args.indexOf("-m");
+      expect(mIdx).toBeGreaterThanOrEqual(0);
+      expect(args[mIdx + 1]).toMatch(/^\//);
+      expect(args[mIdx + 1]).toContain(modelFile);
+    } finally {
+      process.chdir(prevCwd);
+    }
   });
 });

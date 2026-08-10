@@ -261,6 +261,8 @@ export type RpcMethods =
    | "enableEnvoyLocal"
    | "declineEnvoyLocalAutoProvision"
    | "disableEnvoyLocal"
+   | "startEnvoyLocal"
+   | "stopEnvoyLocal"
    | "restartEnvoyLocal"
    | "cancelEnvoyLocalDownload"
    | "listEnvoyLocalInstalledModels"

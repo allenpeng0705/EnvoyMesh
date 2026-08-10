@@ -4181,6 +4181,66 @@ textarea::placeholder {
   font-weight: var(--font-semibold, 600);
 }
 
+.envoy-local-params {
+  margin: 0.5rem 0 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.envoy-local-params-section {
+  padding: 0.75rem 0 0.25rem;
+}
+.envoy-local-params-section-label {
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--font-semibold, 600);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #64748b);
+  margin-bottom: 0.5rem;
+}
+.envoy-local-params-dl dd .settings-input + .settings-input {
+  margin-top: 0.35rem;
+}
+.envoy-local-ctx-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+}
+.envoy-local-ctx-preset {
+  appearance: none;
+  border: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #0f172a);
+  border-radius: 0.375rem;
+  padding: 0.2rem 0.55rem;
+  font-size: var(--text-xs, 0.75rem);
+  cursor: pointer;
+  line-height: 1.4;
+}
+.envoy-local-ctx-preset:hover {
+  border-color: var(--color-border-strong, #cbd5e1);
+}
+.envoy-local-ctx-preset.is-active {
+  border-color: var(--color-info, #2563eb);
+  color: var(--color-info, #2563eb);
+  background: var(--color-info-subtle, #eff6ff);
+}
+.envoy-local-params-toggle-row {
+  margin: 1rem 0 0.25rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--color-border, #e2e8f0);
+}
+.envoy-local-params-advanced {
+  margin-top: 0.35rem;
+  padding-top: 0.5rem;
+}
+.envoy-local-params-actions {
+  margin-top: 1.15rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--color-border, #e2e8f0);
+}
+
 .openclaw-offline-banner {
   background: var(--color-danger-subtle, #fef2f2);
   border-bottom: 1px solid var(--color-danger, #ef4444);

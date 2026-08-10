@@ -23,15 +23,19 @@ describe("envoy-local config", () => {
   });
 
   it("ships sensible server defaults", () => {
-    expect(DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.ctxSize).toBe(4096);
+    expect(DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.ctxSize).toBe(8192);
     expect(DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.nGpuLayers).toBe("auto");
     expect(DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.parallel).toBe(1);
+    expect(DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.flashAttn).toBe("auto");
+    expect(DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.fit).toBe("on");
   });
 
   it("resolveEnvoyLocalServerParams merges over defaults", () => {
-    const p = resolveEnvoyLocalServerParams({ ctxSize: 8192, nGpuLayers: 0 });
-    expect(p.ctxSize).toBe(8192);
+    const p = resolveEnvoyLocalServerParams({ ctxSize: 16384, nGpuLayers: 0 });
+    expect(p.ctxSize).toBe(16384);
     expect(p.nGpuLayers).toBe(0);
     expect(p.parallel).toBe(1);
+    expect(p.flashAttn).toBe("auto");
+    expect(p.fit).toBe("on");
   });
 });

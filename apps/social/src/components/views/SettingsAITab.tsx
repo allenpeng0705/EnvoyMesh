@@ -25,6 +25,9 @@ import type {
   EnvoyLocalInstalledModel,
   EnvoyLocalCatalogModel,
   EnvoyLocalEngineUpdateInfo,
+  EnvoyLocalFlashAttn,
+  EnvoyLocalFitMode,
+  EnvoyLocalKvCacheType,
   RagIndexStatus,
   AutonomousPolicy,
   A2aChatNotificationMode,
@@ -1605,6 +1608,15 @@ function EnvoyLocalSettings({
   const [nglCustom, setNglCustom] = useState(20);
   const [threads, setThreads] = useState<string>("");
   const [parallel, setParallel] = useState(DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.parallel);
+  const [flashAttn, setFlashAttn] = useState<EnvoyLocalFlashAttn>(
+    DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.flashAttn,
+  );
+  const [fit, setFit] = useState<EnvoyLocalFitMode>(DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.fit);
+  const [batchSize, setBatchSize] = useState<string>("");
+  const [ubatchSize, setUbatchSize] = useState<string>("");
+  const [cacheTypeK, setCacheTypeK] = useState<"" | EnvoyLocalKvCacheType>("");
+  const [cacheTypeV, setCacheTypeV] = useState<"" | EnvoyLocalKvCacheType>("");
+  const [loraPath, setLoraPath] = useState("");
   const [startupTimeoutSec, setStartupTimeoutSec] = useState<string>("");
 
   const refresh = useCallback(async (opts?: { syncParams?: boolean }) => {
@@ -1627,6 +1639,13 @@ function EnvoyLocalSettings({
         } else setNglMode("auto");
         setThreads(typeof sp.threads === "number" ? String(sp.threads) : "");
         setParallel(sp.parallel ?? DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.parallel);
+        setFlashAttn(sp.flashAttn ?? DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.flashAttn);
+        setFit(sp.fit ?? DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.fit);
+        setBatchSize(typeof sp.batchSize === "number" ? String(sp.batchSize) : "");
+        setUbatchSize(typeof sp.ubatchSize === "number" ? String(sp.ubatchSize) : "");
+        setCacheTypeK(sp.cacheTypeK ?? "");
+        setCacheTypeV(sp.cacheTypeV ?? "");
+        setLoraPath(sp.loraPath?.trim() ? sp.loraPath : "");
         setStartupTimeoutSec(
           typeof sp.startupTimeoutMs === "number" && sp.startupTimeoutMs > 0
             ? String(Math.round(sp.startupTimeoutMs / 1000))
@@ -2246,147 +2265,314 @@ function EnvoyLocalSettings({
 
       <h5 className="settings-subheading">{t("settings.ai.envoyLocal.paramsHeading")}</h5>
       <p className="settings-hint">{t("settings.ai.envoyLocal.paramsHint")}</p>
-      <dl className="settings-dl">
-        <dt>{t("settings.ai.envoyLocal.ctxSize")}</dt>
-        <dd>
-          <input
-            type="number"
-            className="settings-input"
-            min={512}
-            max={131072}
-            step={512}
-            value={ctxSize}
-            onChange={(e) => setCtxSize(Number(e.target.value) || 4096)}
-          />
-        </dd>
-        <dt>{t("settings.ai.envoyLocal.nGpuLayers")}</dt>
-        <dd>
-          <select
-            className="settings-input"
-            value={nglMode}
-            onChange={(e) => setNglMode(e.target.value as "auto" | "off" | "custom")}
+      <div className="envoy-local-params" data-testid="envoy-local-params">
+        <div className="envoy-local-params-section">
+          <div className="envoy-local-params-section-label">
+            {t("settings.ai.envoyLocal.paramsBasicLabel")}
+          </div>
+          <dl className="settings-dl envoy-local-params-dl">
+            <dt>{t("settings.ai.envoyLocal.ctxSize")}</dt>
+            <dd>
+              <div className="envoy-local-ctx-presets" role="group">
+                {(
+                  [
+                    [4096, "ctxPreset4k"],
+                    [8192, "ctxPreset8k"],
+                    [16384, "ctxPreset16k"],
+                    [32768, "ctxPreset32k"],
+                    [262144, "ctxPreset256k"],
+                    [524288, "ctxPreset512k"],
+                    [1048576, "ctxPreset1m"],
+                  ] as const
+                ).map(([n, key]) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={
+                      ctxSize === n
+                        ? "envoy-local-ctx-preset is-active"
+                        : "envoy-local-ctx-preset"
+                    }
+                    onClick={() => setCtxSize(n)}
+                  >
+                    {t(`settings.ai.envoyLocal.${key}`)}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="number"
+                className="settings-input"
+                min={512}
+                max={2097152}
+                step={1024}
+                value={ctxSize}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  if (!Number.isFinite(n) || n <= 0) {
+                    setCtxSize(DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.ctxSize);
+                    return;
+                  }
+                  setCtxSize(Math.min(2_097_152, Math.max(512, Math.round(n))));
+                }}
+              />
+              <div className="settings-hint">{t("settings.ai.envoyLocal.ctxSizeHint")}</div>
+            </dd>
+            <dt>{t("settings.ai.envoyLocal.nGpuLayers")}</dt>
+            <dd>
+              <select
+                className="settings-input"
+                value={nglMode}
+                onChange={(e) => setNglMode(e.target.value as "auto" | "off" | "custom")}
+              >
+                <option value="auto">{t("settings.ai.envoyLocal.nGpuAuto")}</option>
+                <option value="off">{t("settings.ai.envoyLocal.nGpuOff")}</option>
+                <option value="custom">{t("settings.ai.envoyLocal.nGpuCustom")}</option>
+              </select>
+              {nglMode === "custom" ? (
+                <input
+                  type="number"
+                  className="settings-input"
+                  min={1}
+                  max={999}
+                  value={nglCustom}
+                  onChange={(e) => setNglCustom(Number(e.target.value) || 1)}
+                />
+              ) : null}
+              <div className="settings-hint">{t("settings.ai.envoyLocal.nGpuHint")}</div>
+            </dd>
+          </dl>
+        </div>
+
+        <div className="envoy-local-params-toggle-row">
+          <button
+            type="button"
+            className="settings-cancel-btn"
+            data-testid="envoy-local-params-advanced-toggle"
+            onClick={() => setShowAdvanced((v) => !v)}
           >
-            <option value="auto">{t("settings.ai.envoyLocal.nGpuAuto")}</option>
-            <option value="off">{t("settings.ai.envoyLocal.nGpuOff")}</option>
-            <option value="custom">{t("settings.ai.envoyLocal.nGpuCustom")}</option>
-          </select>
-          {nglMode === "custom" ? (
-            <input
-              type="number"
-              className="settings-input"
-              min={1}
-              max={999}
-              value={nglCustom}
-              onChange={(e) => setNglCustom(Number(e.target.value) || 1)}
-            />
-          ) : null}
-        </dd>
-      </dl>
-      <button
-        type="button"
-        className="settings-cancel-btn"
-        onClick={() => setShowAdvanced((v) => !v)}
-      >
-        {showAdvanced
-          ? t("settings.ai.envoyLocal.paramsSimple")
-          : t("settings.ai.envoyLocal.paramsAdvanced")}
-      </button>
-      {showAdvanced ? (
-        <dl className="settings-dl">
-          <dt>{t("settings.ai.envoyLocal.threads")}</dt>
-          <dd>
-            <input
-              type="number"
-              className="settings-input"
-              min={1}
-              max={256}
-              placeholder={t("settings.ai.envoyLocal.threadsAuto")}
-              value={threads}
-              onChange={(e) => setThreads(e.target.value)}
-            />
-          </dd>
-          <dt>{t("settings.ai.envoyLocal.parallel")}</dt>
-          <dd>
-            <input
-              type="number"
-              className="settings-input"
-              min={1}
-              max={16}
-              value={parallel}
-              onChange={(e) => setParallel(Number(e.target.value) || 1)}
-            />
-          </dd>
-          <dt>{t("settings.ai.envoyLocal.startupTimeout")}</dt>
-          <dd>
-            <input
-              type="number"
-              className="settings-input"
-              min={30}
-              max={3600}
-              step={30}
-              placeholder={t("settings.ai.envoyLocal.startupTimeoutAuto")}
-              value={startupTimeoutSec}
-              onChange={(e) => setStartupTimeoutSec(e.target.value)}
-            />
-            <div className="settings-hint">
-              {t("settings.ai.envoyLocal.startupTimeoutHint")}
+            {showAdvanced
+              ? t("settings.ai.envoyLocal.paramsSimple")
+              : t("settings.ai.envoyLocal.paramsAdvanced")}
+          </button>
+        </div>
+
+        {showAdvanced ? (
+          <div className="envoy-local-params-section envoy-local-params-advanced">
+            <div className="envoy-local-params-section-label">
+              {t("settings.ai.envoyLocal.paramsAdvancedLabel")}
             </div>
-          </dd>
-        </dl>
-      ) : null}
-      <div className="settings-buttons">
-        <button
-          type="button"
-          className="settings-save-btn"
-          disabled={inFlight}
-          onClick={async () => {
-            setBusy(true);
-            try {
-              const nGpuLayers =
-                nglMode === "off" ? 0 : nglMode === "custom" ? nglCustom : "auto";
-              const threadsNum = threads.trim() ? Number(threads) : undefined;
-              const startupSec = startupTimeoutSec.trim()
-                ? Number(startupTimeoutSec)
-                : undefined;
-              setStatus(
-                await nodeService.updateEnvoyLocalServerParams({
-                  serverParams: {
-                    ctxSize,
-                    nGpuLayers,
-                    parallel,
-                    ...(threadsNum && Number.isFinite(threadsNum)
-                      ? { threads: threadsNum }
-                      : { threads: undefined }),
-                    ...(startupSec && Number.isFinite(startupSec) && startupSec > 0
-                      ? { startupTimeoutMs: Math.round(startupSec * 1000) }
-                      : { startupTimeoutMs: undefined }),
-                  },
-                }),
-              );
-            } finally {
-              setBusy(false);
-              await refresh();
-            }
-          }}
-        >
-          {t("settings.ai.envoyLocal.saveParams")}
-        </button>
-        <button
-          type="button"
-          className="settings-cancel-btn"
-          disabled={inFlight}
-          onClick={async () => {
-            setBusy(true);
-            try {
-              setStatus(await nodeService.resetEnvoyLocalServerParams());
-            } finally {
-              setBusy(false);
-              await refresh();
-            }
-          }}
-        >
-          {t("settings.ai.envoyLocal.resetParams")}
-        </button>
+            <dl className="settings-dl envoy-local-params-dl">
+              <dt>{t("settings.ai.envoyLocal.flashAttn")}</dt>
+              <dd>
+                <select
+                  className="settings-input"
+                  value={flashAttn}
+                  onChange={(e) => setFlashAttn(e.target.value as EnvoyLocalFlashAttn)}
+                >
+                  <option value="auto">{t("settings.ai.envoyLocal.flashAttnAuto")}</option>
+                  <option value="on">{t("settings.ai.envoyLocal.flashAttnOn")}</option>
+                  <option value="off">{t("settings.ai.envoyLocal.flashAttnOff")}</option>
+                </select>
+                <div className="settings-hint">{t("settings.ai.envoyLocal.flashAttnHint")}</div>
+              </dd>
+              <dt>{t("settings.ai.envoyLocal.fit")}</dt>
+              <dd>
+                <select
+                  className="settings-input"
+                  value={fit}
+                  onChange={(e) => setFit(e.target.value as EnvoyLocalFitMode)}
+                >
+                  <option value="on">{t("settings.ai.envoyLocal.fitOn")}</option>
+                  <option value="off">{t("settings.ai.envoyLocal.fitOff")}</option>
+                </select>
+                <div className="settings-hint">{t("settings.ai.envoyLocal.fitHint")}</div>
+              </dd>
+              <dt>{t("settings.ai.envoyLocal.threads")}</dt>
+              <dd>
+                <input
+                  type="number"
+                  className="settings-input"
+                  min={1}
+                  max={256}
+                  placeholder={t("settings.ai.envoyLocal.threadsAuto")}
+                  value={threads}
+                  onChange={(e) => setThreads(e.target.value)}
+                />
+              </dd>
+              <dt>{t("settings.ai.envoyLocal.parallel")}</dt>
+              <dd>
+                <input
+                  type="number"
+                  className="settings-input"
+                  min={1}
+                  max={16}
+                  value={parallel}
+                  onChange={(e) => setParallel(Number(e.target.value) || 1)}
+                />
+                <div className="settings-hint">{t("settings.ai.envoyLocal.parallelHint")}</div>
+              </dd>
+              <dt>{t("settings.ai.envoyLocal.batchSize")}</dt>
+              <dd>
+                <input
+                  type="number"
+                  className="settings-input"
+                  min={1}
+                  max={65536}
+                  step={64}
+                  placeholder={t("settings.ai.envoyLocal.batchSizeAuto")}
+                  value={batchSize}
+                  onChange={(e) => setBatchSize(e.target.value)}
+                />
+              </dd>
+              <dt>{t("settings.ai.envoyLocal.ubatchSize")}</dt>
+              <dd>
+                <input
+                  type="number"
+                  className="settings-input"
+                  min={1}
+                  max={65536}
+                  step={32}
+                  placeholder={t("settings.ai.envoyLocal.ubatchSizeAuto")}
+                  value={ubatchSize}
+                  onChange={(e) => setUbatchSize(e.target.value)}
+                />
+              </dd>
+              <dt>{t("settings.ai.envoyLocal.cacheTypeK")}</dt>
+              <dd>
+                <select
+                  className="settings-input"
+                  value={cacheTypeK}
+                  onChange={(e) =>
+                    setCacheTypeK(e.target.value as "" | EnvoyLocalKvCacheType)
+                  }
+                >
+                  <option value="">{t("settings.ai.envoyLocal.cacheTypeDefault")}</option>
+                  <option value="f16">f16</option>
+                  <option value="bf16">bf16</option>
+                  <option value="q8_0">q8_0</option>
+                  <option value="q5_0">q5_0</option>
+                  <option value="q4_0">q4_0</option>
+                  <option value="q4_1">q4_1</option>
+                </select>
+              </dd>
+              <dt>{t("settings.ai.envoyLocal.cacheTypeV")}</dt>
+              <dd>
+                <select
+                  className="settings-input"
+                  value={cacheTypeV}
+                  onChange={(e) =>
+                    setCacheTypeV(e.target.value as "" | EnvoyLocalKvCacheType)
+                  }
+                >
+                  <option value="">{t("settings.ai.envoyLocal.cacheTypeDefault")}</option>
+                  <option value="f16">f16</option>
+                  <option value="bf16">bf16</option>
+                  <option value="q8_0">q8_0</option>
+                  <option value="q5_0">q5_0</option>
+                  <option value="q4_0">q4_0</option>
+                  <option value="q4_1">q4_1</option>
+                </select>
+                <div className="settings-hint">{t("settings.ai.envoyLocal.cacheTypeHint")}</div>
+              </dd>
+              <dt>{t("settings.ai.envoyLocal.loraPath")}</dt>
+              <dd>
+                <input
+                  type="text"
+                  className="settings-input"
+                  placeholder={t("settings.ai.envoyLocal.loraPathPlaceholder")}
+                  value={loraPath}
+                  onChange={(e) => setLoraPath(e.target.value)}
+                />
+                <div className="settings-hint">{t("settings.ai.envoyLocal.loraPathHint")}</div>
+              </dd>
+              <dt>{t("settings.ai.envoyLocal.startupTimeout")}</dt>
+              <dd>
+                <input
+                  type="number"
+                  className="settings-input"
+                  min={30}
+                  max={3600}
+                  step={30}
+                  placeholder={t("settings.ai.envoyLocal.startupTimeoutAuto")}
+                  value={startupTimeoutSec}
+                  onChange={(e) => setStartupTimeoutSec(e.target.value)}
+                />
+                <div className="settings-hint">
+                  {t("settings.ai.envoyLocal.startupTimeoutHint")}
+                </div>
+              </dd>
+            </dl>
+          </div>
+        ) : null}
+
+        <div className="settings-buttons envoy-local-params-actions">
+          <button
+            type="button"
+            className="settings-save-btn"
+            disabled={inFlight}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                const nGpuLayers =
+                  nglMode === "off" ? 0 : nglMode === "custom" ? nglCustom : "auto";
+                const threadsNum = threads.trim() ? Number(threads) : undefined;
+                const batchNum = batchSize.trim() ? Number(batchSize) : undefined;
+                const ubatchNum = ubatchSize.trim() ? Number(ubatchSize) : undefined;
+                const startupSec = startupTimeoutSec.trim()
+                  ? Number(startupTimeoutSec)
+                  : undefined;
+                const loraTrim = loraPath.trim();
+                setStatus(
+                  await nodeService.updateEnvoyLocalServerParams({
+                    serverParams: {
+                      ctxSize,
+                      nGpuLayers,
+                      parallel,
+                      flashAttn,
+                      fit,
+                      ...(threadsNum && Number.isFinite(threadsNum)
+                        ? { threads: threadsNum }
+                        : { threads: undefined }),
+                      ...(batchNum && Number.isFinite(batchNum) && batchNum > 0
+                        ? { batchSize: batchNum }
+                        : { batchSize: undefined }),
+                      ...(ubatchNum && Number.isFinite(ubatchNum) && ubatchNum > 0
+                        ? { ubatchSize: ubatchNum }
+                        : { ubatchSize: undefined }),
+                      ...(cacheTypeK ? { cacheTypeK } : { cacheTypeK: undefined }),
+                      ...(cacheTypeV ? { cacheTypeV } : { cacheTypeV: undefined }),
+                      ...(loraTrim ? { loraPath: loraTrim } : { loraPath: undefined }),
+                      ...(startupSec && Number.isFinite(startupSec) && startupSec > 0
+                        ? { startupTimeoutMs: Math.round(startupSec * 1000) }
+                        : { startupTimeoutMs: undefined }),
+                    },
+                  }),
+                );
+              } finally {
+                setBusy(false);
+                await refresh();
+              }
+            }}
+          >
+            {t("settings.ai.envoyLocal.saveParams")}
+          </button>
+          <button
+            type="button"
+            className="settings-cancel-btn"
+            disabled={inFlight}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                setStatus(await nodeService.resetEnvoyLocalServerParams());
+              } finally {
+                setBusy(false);
+                await refresh();
+              }
+            }}
+          >
+            {t("settings.ai.envoyLocal.resetParams")}
+          </button>
+        </div>
       </div>
     </div>
   );
