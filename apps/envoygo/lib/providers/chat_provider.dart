@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../ext_agent/ext_agent_presets.dart';
 import '../models/chat_message.dart';
 import '../models/chat_room.dart';
 import '../models/chat_thread.dart';
@@ -1985,11 +1984,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
     final rawName = (data['agentName'] as String?)?.trim() ?? '';
     if (rawName.isNotEmpty) return rawName;
-    if (activeId != null && activeId.isNotEmpty) {
-      for (final preset in defaultExtAgents) {
-        if (preset.id == activeId) return preset.name;
-      }
-    }
     return ThreadTitleSentinels.extAgent;
   }
 

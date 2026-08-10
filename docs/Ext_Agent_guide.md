@@ -29,14 +29,20 @@ still rebind the bridge HTTP listener in-process).
 
 ## Quick comparison
 
-| | HomeClaw | Hermes | OpenHuman | Codex | Claude Code |
-|---|----------|--------|-----------|-------|-------------|
-| Start with product | Start HomeClaw | `hermes gateway run` | OpenHuman.app **or** CLI core | `codex app-server` (auto) | SDK (auto) |
-| EnvoyMesh sidecar | No | Yes `:8020` | Yes `:8021` | Yes `:8023` (stdio bridge) | Yes `:8024` (in-proc) |
-| Auth | Optional bridge secret | Hermes `API_SERVER_KEY` ↔ `HERMES_API_KEY` | `/v1` API key (auto) or `/rpc` `core.token` | `OPENAI_API_KEY` env | `ANTHROPIC_API_KEY` env |
-| Transport | HomeClaw channel | HTTP `:8642` | HTTP `:7788` | `codex` stdio JSON-RPC | `@anthropic-ai/claude-agent-sdk` |
-| Typical failure | HomeClaw down / wrong `ENVOYMESH_BRIDGE_URL` | API not enabled / key mismatch | Desktop `/rpc` 401 → use `/v1` auto-key | CLI not on `$PATH` | CLI not on `$PATH` |
-| Install | separate product | `curl …/install.sh \| bash` | `curl …/install.sh \| bash` | `npm i -g @openai/codex` | `npm i -g @anthropic-ai/claude-code` |
+| | HomeClaw | Hermes | OpenHuman | Codex | Claude Code | Cursor CLI | Aider | MMX-CLI |
+|---|----------|--------|-----------|-------|-------------|------------|-------|---------|
+| Start with product | Start HomeClaw | `hermes gateway run` | OpenHuman.app **or** CLI core | `codex app-server` (auto) | SDK (auto) | `cursor-agent --prompt …` (auto) | `aider --message …` (auto) | `mmx text chat --message …` (auto) |
+| EnvoyMesh sidecar | No | Yes `:8020` | Yes `:8021` | Yes `:8023` (stdio bridge) | Yes `:8024` (in-proc) | Yes `:8025` (one-shot) | Yes `:8026` (one-shot) | Yes `:8027` (one-shot) |
+| Auth | Optional bridge secret | Hermes `API_SERVER_KEY` ↔ `HERMES_API_KEY` | `/v1` API key (auto) or `/rpc` `core.token` | `OPENAI_API_KEY` env | `ANTHROPIC_API_KEY` env | `cursor-agent login` (browser OAuth) | `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` | `mmx auth login --api-key …` |
+| Transport | HomeClaw channel | HTTP `:8642` | HTTP `:7788` | `codex` stdio JSON-RPC | `@anthropic-ai/claude-agent-sdk` | `cursor-agent` stdio one-shot | `aider` one-shot subprocess | `mmx` one-shot subprocess |
+| Typical failure | HomeClaw down / wrong `ENVOYMESH_BRIDGE_URL` | API not enabled / key mismatch | Desktop `/rpc` 401 → use `/v1` auto-key | CLI not on `$PATH` | CLI not on `$PATH` | First-run browser login skipped | First-run prompts hang in non-TTY | `mmx auth` not run yet |
+| Install | separate product | `curl …/install.sh \| bash` | `curl …/install.sh \| bash` | `npm i -g @openai/codex` | `npm i -g @anthropic-ai/claude-code` | `curl …/cursor.com/install \| bash` | `pip install aider-chat` | `npm i -g mmx-cli` |
+
+> **Phase 56 additions** (cursor / aider / mmx) all use the shared
+> `OneShotCliBackend` base — one subprocess per `ask()`, no long-lived
+> daemon, no JSON-RPC framing. They differ from codex (long-lived stdio
+> JSON-RPC) and claudecode (in-process SDK) by being the **simplest**
+> transport class in the ext-agent-adapter.
 
 ---
 
@@ -46,7 +52,8 @@ still rebind the bridge HTTP listener in-process).
 2. Open Social (or EnvoyGo paired to home).
 3. **Settings → AI → Ext Agent**:
    - Enable Ext Agent / bridge
-   - Choose HomeClaw, Hermes, OpenHuman, **Codex**, or **Claude Code**
+   - Choose HomeClaw, Hermes, OpenHuman, **Codex**, **Claude Code**,
+     **Cursor CLI**, **Aider**, or **MMX-CLI**
    - Listen port usually `3031` (or your offset port, e.g. `4031`)
 4. Chat with the **Ext Agent** contact (`envoy_agent_…`).
 
@@ -683,6 +690,199 @@ echo "$ANTHROPIC_API_KEY" | head -c 8
 
 ---
 
+## Cursor CLI (Phase 56A)
+
+Anysphere's [Cursor CLI](https://docs.cursor.com/en/cli) is a long-running
+coding agent driven by the `cursor-agent` binary. EnvoyMesh wraps it in
+the same **one-shot subprocess per ask** pattern as the other Phase 56
+agents (shared `OneShotCliBackend` base). Each `ask(text)` spawns:
+
+```
+cursor-agent --prompt <text> --output json [--model <m>] [--workspace <w>]
+```
+
+`--output json` is the canonical machine-readable shape. When the flag
+is unsupported the backend falls back to trimming raw stdout.
+
+### Install
+
+```bash
+curl https://cursor.com/install -fsS | bash
+cursor-agent --version
+```
+
+Default install path: `~/.cursor/bin/` — add it to `$PATH` if the
+installer didn't.
+
+### Auth
+
+First run opens a browser for OAuth login. No terminal API-key prompt.
+The login state is persisted in `~/.config/cursor/`; subsequent
+`ask()` calls don't re-prompt.
+
+### Ports
+
+- EnvoyMesh sidecar: `http://127.0.0.1:8025/message` (override with
+  `ENVOYMESH_CURSOR_PORT=…`)
+
+### Env
+
+No required env vars. The OAuth login state is filesystem-resident.
+
+### Minimal checklist
+
+- [ ] `cursor-agent --version` exits 0
+- [ ] First `ask()` triggers a browser login (one-time)
+- [ ] EnvoyMesh Ext Agent = Cursor CLI, bridge enabled
+- [ ] Log: `[ext-agent:cursor] install missing` is **not** present
+- [ ] Chat Ext Agent contact
+
+---
+
+## Aider (Phase 56B)
+
+[Aider](https://aider.chat/) is Paul Gauthier's open-source terminal pair
+programmer. EnvoyMesh drives it in one-shot mode (`aider --message`)
+via a supervised subprocess. The chat-bridge contract disables ALL git
+operations — Aider cannot commit on the user's behalf from the chat
+panel.
+
+Wire per `ask(text)`:
+
+```
+aider --message <text> --no-pretty --no-git --yes-always [--model …]
+```
+
+| Flag | Why we always pass it |
+|------|------------------------|
+| `--message <text>` | one-shot mode (default is interactive REPL) |
+| `--no-pretty` | strips ANSI color codes from stdout |
+| `--no-git` | disables ALL git operations (no auto-commit, no diff, no version checks) |
+| `--yes-always` | auto-accepts any prompts Aider would raise in non-TTY contexts |
+
+### Install
+
+```bash
+pip install aider-chat
+# or
+python -m pip install aider-install
+aider-install   # isolated venv + Aider
+aider --version
+```
+
+### Auth
+
+Set the API key for the model provider you want Aider to use:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...   # Claude (recommended)
+# or
+export OPENAI_API_KEY=sk-...         # GPT-4o / o3-mini
+# or
+export DEEPSEEK_API_KEY=...          # DeepSeek (cheaper, also supported)
+```
+
+Aider auto-detects the key by env var name. Pick a model with
+`aider --model anthropic/claude-sonnet-4-20250514` (set in
+`ext-agent-adapter` extraArgs or per-session).
+
+### Ports
+
+- EnvoyMesh sidecar: `http://127.0.0.1:8026/message` (override with
+  `ENVOYMESH_AIDER_PORT=…`)
+
+### Env
+
+- `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` —
+  one of these is required.
+
+### Minimal checklist
+
+- [ ] `aider --version` exits 0
+- [ ] At least one provider API key is set
+- [ ] EnvoyMesh Ext Agent = Aider, bridge enabled
+- [ ] Log: `[ext-agent:aider] install missing` is **not** present
+- [ ] Chat Ext Agent contact
+- [ ] Aider does **not** auto-commit (verify with `git status` in the
+      working dir after an ask)
+
+---
+
+## MMX-CLI (Phase 56C)
+
+[MiniMax's MMX-CLI](https://github.com/MiniMax-AI/cli) (`mmx`) is a CLI
+*built for AI agents* — clean `--output json` output, semantic exit
+codes, async non-blocking. EnvoyMesh drives it as a one-shot subprocess
+per ask.
+
+Wire per `ask(text)`:
+
+```
+mmx text chat --message <text> --output json [--model MiniMax-M3]
+```
+
+Output shape (with `--output json`):
+
+```json
+{
+  "text": "the assistant response",
+  "session_id": "mmx-sess-001",
+  "model": "MiniMax-M2.7",
+  "usage": { "prompt_tokens": 5, "completion_tokens": 7, "total_tokens": 12 }
+}
+```
+
+The backend tries `text` → `response` → `output` → `message` → `content`
+(field name fallback for forward compat with CLI versions).
+
+### Install
+
+```bash
+npm install -g mmx-cli
+# or
+npx skills add MiniMax-AI/cli -y -g
+mmx --version
+```
+
+### Auth
+
+```bash
+mmx auth login --api-key sk-xxxx
+# saves to ~/.mmx/config.json
+```
+
+Region is **auto-detected** from the API key prefix:
+- `sk-…` → global (`api.minimax.io`)
+- `eyJ…` (JWT, China region) → CN (`api.minimaxi.com`)
+
+OAuth via `mmx auth login` (browser) is also supported.
+
+### Ports
+
+- EnvoyMesh sidecar: `http://127.0.0.1:8027/message` (override with
+  `ENVOYMESH_MMX_PORT=…`)
+
+### Env
+
+No required env vars if `mmx auth login` was run. To override per
+process (CI / container), set `MINIMAX_API_KEY=<key>`.
+
+### Models
+
+Default: `MiniMax-M2.7`. Override with `--model MiniMax-M3` (or
+`MiniMax-M2.7-highspeed` for lower latency) via the ext-agent
+`extraArgs` path or per-session override.
+
+### Minimal checklist
+
+- [ ] `mmx --version` exits 0
+- [ ] `mmx auth status` shows "logged in"
+- [ ] EnvoyMesh Ext Agent = MMX-CLI, bridge enabled
+- [ ] Log: `[ext-agent:mmx] install missing` is **not** present
+- [ ] Chat Ext Agent contact
+
+---
+
 ## Install guide (Phase 55A.1)
 
 Settings → AI → Ext Agent surfaces a per-agent **Install Required**
@@ -697,6 +897,9 @@ verify command, install docs link, and 2-4 `commonIssues` bullets.
 | `claudecode` | `claude` | `npm install -g @anthropic-ai/claude-code` | `claude --version` | <https://docs.claude.com/en/docs/claude-code> |
 | `hermes` | `hermes` | `curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \| bash` | `hermes --version` | <https://hermes-agent.nousresearch.com/docs> |
 | `openhuman` | `openhuman` | `curl -fsSL https://raw.githubusercontent.com/tinyhumansai/openhuman/main/scripts/install.sh \| bash` | `openhuman --version` | <https://tinyhumans.ai/openhuman> |
+| `cursor` (56A) | `cursor-agent` | `curl https://cursor.com/install -fsS \| bash` | `cursor-agent --version` | <https://docs.cursor.com/en/cli> |
+| `aider` (56B) | `aider` | `pip install aider-chat` | `aider --version` | <https://aider.chat/docs/> |
+| `mmx` (56C) | `mmx` | `npm install -g mmx-cli` | `mmx --version` | <https://github.com/MiniMax-AI/cli> |
 
 The status indicator next to the active agent in Settings reflects
 `installState`:
@@ -789,13 +992,19 @@ optional Retry / Dismiss buttons.
 | Sidecar not listening | Bridge off or wrong agent | Enable bridge; select Hermes/OpenHuman/Codex/Claude Code |
 | Port in use | Another process on `8010`/`8020`/`8021`/`8023`/`8024` | Stop old process / set `ENVOYMESH_*_PORT` (e.g. `ENVOYMESH_CODEX_PORT`) |
 | Hermes API works but sidecar errors | Node not restarted / wrong `HERMES_API_BASE` | Restart home node; check env |
+| `cursor-agent` prompts open a browser on every ask | First-run login state not persisted | Run `cursor-agent login` once interactively to save the OAuth session to `~/.config/cursor/` |
+| `aider` hangs on the first ask | First run creates a Python venv + downloads the model spec | Bump `requestTimeoutMs` to 180_000+ for the first call; subsequent calls are fast |
+| `aider` is editing files in the working dir | The chat-bridge disabled `--no-git` somewhere | Verify `[ext-agent:aider] buildArgs` includes `--no-git --no-pretty --yes-always`; the chat-bridge must never auto-commit |
+| `mmx` returns `auth failed: invalid API key` | Key not registered with the CLI | Run `mmx auth login --api-key sk-xxxx` and re-try |
+| `mmx --output json` returns text instead of JSON | Old CLI version (pre-1.0) — `--output json` was added later | Update: `npm install -g mmx-cli@latest` |
+| `mmx` says "request failed: 1305" (rate limit) | Token plan exhausted | Wait for next billing window or upgrade at <https://platform.minimaxi.com/subscribe/token-plan> |
 
 Node log markers:
 
 - `[sendChat] self-send … routing via bridge handler`
-- `[bridge] forwardToAgent: POST http://127.0.0.1:8020/message …` (or `8010` / `8021` / `8023` / `8024`)
-- `[ext-agent:hermes] reply sent to …` / `[ext-agent:openhuman] …` / `[ext-agent:codex] …` / `[ext-agent:claudecode] …`
-- `[ext-agent:codex] install-missing: codex (spawn-enoent)` — CLI not on PATH
+- `[bridge] forwardToAgent: POST http://127.0.0.1:8020/message …` (or `8010` / `8021` / `8023` / `8024` / `8025` / `8026` / `8027`)
+- `[ext-agent:hermes] reply sent to …` / `[ext-agent:openhuman] …` / `[ext-agent:codex] …` / `[ext-agent:claudecode] …` / `[ext-agent:cursor] …` / `[ext-agent:aider] …` / `[ext-agent:mmx] …`
+- `[ext-agent:codex] install-missing: codex (spawn-enoent)` — CLI not on PATH (same pattern for cursor / aider / mmx)
 
 ---
 

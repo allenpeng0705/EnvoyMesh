@@ -31,6 +31,7 @@ class _AiEngineSettingsScreenState
   bool _saving = false;
   ProviderSubscription<NodeServiceClient?>? _clientSub;
   void Function()? _configUnsub;
+  void Function()? _bridgeUnsub;
 
   @override
   void initState() {
@@ -40,10 +41,23 @@ class _AiEngineSettingsScreenState
       (prev, next) {
         _configUnsub?.call();
         _configUnsub = null;
+        _bridgeUnsub?.call();
+        _bridgeUnsub = null;
         if (next != null) {
+          // `home:config-updated` fires when the user edits the home node's
+          // own config (e.g. toggles bridgeEnabled).
           _configUnsub = next.on('home:config-updated', (_) {
             if (mounted) _load();
           });
+          // `bridge:status` fires when the bridge agent reachability
+          // changes — covers the case where a new Ext Agent was added on
+          // home between the phone's syncs.
+          _bridgeUnsub = next.on('bridge:status', (_) {
+            if (mounted) _load();
+          });
+          // Reconnect: pull fresh state immediately so the picker reflects
+          // any new Ext Agents the home node has added since last sync.
+          if (mounted) _load();
         }
       },
       fireImmediately: true,
@@ -278,6 +292,8 @@ class _AiEngineSettingsScreenState
   void dispose() {
     _configUnsub?.call();
     _configUnsub = null;
+    _bridgeUnsub?.call();
+    _bridgeUnsub = null;
     _clientSub?.close();
     _clientSub = null;
     super.dispose();

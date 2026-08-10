@@ -7093,7 +7093,7 @@ The chat list's `ExtAgentSwitcher` component (`apps/social/src/components/ExtAge
 
 ## Phase 56 — Ext Agent: cursor-agent + aider + mmx (one-shot CLI pattern)
 
-**Status:** `[ ]` design landed, no code yet
+**Status:** `[x]` shipped — 56A/56B/56C/56D/56E all landed. 38+16+20+6+21 = **101 new tests**, all green
 
 **Background.** After 55 shipped (codex long-lived JSON-RPC + claudecode in-process SDK + supervised hermes/openhuman), the user asked for three more agents:
 
@@ -7148,11 +7148,11 @@ All three are **one-shot CLIs per ask** — no long-lived protocol, no daemon to
 
 | Slice | LOC | Tests | Description |
 |---|---|---|---|
-| **56A** | ~250 + 3×60 | ~25 | `one-shot-cli-backend.ts` shared base + `cursor-agent-backend.ts` + test. |
-| **56B** | ~80 + ~150 | ~12 | `aider-backend.ts` (one-shot) + test. |
-| **56C** | ~80 + ~150 | ~12 | `mmx-backend.ts` (one-shot) + test. |
-| **56D** | ~30 + ~50 | ~6 | Registration: `DEFAULT_EXT_AGENTS`, `manager.ts` ports, `INSTALL_TABLE`, `getExtAgentInstallInfo`, `backends.ts` `createBackend` switch, env overrides, `index.ts` re-exports. |
-| **56E** | ~30 | 0 | Docs: `Ext_Agent_guide.md` three new sections. |
+| **56A** | ~250 + 3×60 | ~38 | `one-shot-cli-backend.ts` shared base + `cursor-agent-backend.ts` + test. |
+| **56B** | ~120 + ~310 | ~16 | `aider-backend.ts` (one-shot, safety flags baked in) + test. |
+| **56C** | ~120 + ~310 | ~20 | `mmx-backend.ts` (one-shot, 5-field output parser) + test. |
+| **56D** | +92 + 73 | +6 | Registration: `DEFAULT_EXT_AGENTS` (3 rows), `manager.ts` ports, `INSTALL_TABLE`, `getExtAgentInstallInfo`, env overrides. |
+| **56E** | +233 (docs) + Dart rewrite + 21 Dart tests | 21 | Docs: 3 new sections in `Ext_Agent_guide.md` + **architectural fix**: `apps/envoygo/lib/ext_agent/ext_agent_presets.dart` mirror replaced with empty const (home node is source of truth). 4 sync points in EnvoyGo: (1) app start, (2) `bridge:status` event, (3) `home:config-updated` event, (4) **bridge reconnect** (re-register handlers + immediate `_reload()`). New agents in `packages/api/src/ext-agent.ts` now auto-propagate to EnvoyGo — no Dart update ever needed. |
 
 Each sub-slice is a separate commit. Test count target: 50-60 new tests total.
 

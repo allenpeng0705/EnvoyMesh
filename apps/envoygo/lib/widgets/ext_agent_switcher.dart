@@ -46,6 +46,11 @@ class _ExtAgentSwitcherState extends ConsumerState<ExtAgentSwitcher> {
           _configUnsub = next.on('home:config-updated', (_) {
             if (mounted) _reload();
           });
+          // Reconnect: pull fresh state immediately. The next `bridge:status`
+          // event from home may never come (nothing changed in home's view),
+          // so we must NOT rely on it. Adding a new Ext Agent on home
+          // becomes visible here the next time the user (re)connects.
+          if (mounted) _reload();
         }
       },
       fireImmediately: true,

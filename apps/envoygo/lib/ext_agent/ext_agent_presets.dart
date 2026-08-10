@@ -1,7 +1,34 @@
-/// Ext Agent presets + install/docs metadata for EnvoyGo.
+/// Ext Agent presets for EnvoyGo.
 ///
-/// Mirrors `packages/api/src/ext-agent.ts` (`DEFAULT_EXT_AGENTS`,
-/// `getExtAgentInstallInfo`). Keep in sync when presets change.
+/// **Home node is the source of truth.** All Ext Agent presets come
+/// from the home node via `getBridgeStatus().extAgents` and the wire
+/// protocol — EnvoyGo does NOT maintain a parallel list. This file
+/// only contains the **empty default** used when the home node has
+/// never been connected (i.e. brand-new install, before first sync).
+///
+/// Sync timing — there are exactly 4 sync points, all in
+/// `ext_agent_switcher.dart` and `ai_engine_settings_screen.dart`:
+///
+/// 1. **App start** — `initState()` calls `_reload()` / `_load()`,
+///    which fetches `getBridgeStatus()` and renders immediately.
+/// 2. **Wire event `bridge:status`** — home pushes whenever its
+///    bridge state changes (agent reachability, port, etc.).
+/// 3. **Wire event `home:config-updated`** — home pushes when its
+///    own config changes (toggle bridgeEnabled, add agent, etc.).
+/// 4. **Bridge reconnect** — when `nodeServiceProvider` swaps to a
+///    new client (user lost connection and came back), the listener
+///    re-registers AND immediately calls `_reload()` / `_load()`.
+///    This is the case where the user opens the app on a different
+///    network or comes back from offline: they must see the latest
+///    home-side agent list without having to pull-to-refresh.
+///
+/// Adding a new Ext Agent in `packages/api/src/ext-agent.ts` is therefore
+/// sufficient — no Dart-side update is required. The next sync point
+/// (any of the four above) will pick it up.
+///
+/// Why this file still exists: the `ExtAgentPreset` model + merge
+/// function are kept here so the Flutter widget tree has a stable
+/// shape to render against even before the first sync arrives.
 library;
 
 class ExtAgentPreset {
@@ -54,116 +81,51 @@ class ExtAgentInstallInfo {
   });
 }
 
-const defaultExtAgents = <ExtAgentPreset>[
-  ExtAgentPreset(
-    id: 'pi',
-    name: 'Pi',
-    adapter: 'envoymesh-message',
-    url: 'http://127.0.0.1:8022/message',
-    enabled: true,
-  ),
-  ExtAgentPreset(
-    id: 'homeclaw',
-    name: 'HomeClaw',
-    adapter: 'envoymesh-message',
-    url: 'http://127.0.0.1:8010/message',
-    enabled: true,
-  ),
-  ExtAgentPreset(
-    id: 'hermes',
-    name: 'Hermes',
-    adapter: 'envoymesh-message',
-    url: 'http://127.0.0.1:8020/message',
-    enabled: true,
-  ),
-  ExtAgentPreset(
-    id: 'openhuman',
-    name: 'OpenHuman',
-    adapter: 'envoymesh-message',
-    url: 'http://127.0.0.1:8021/message',
-    enabled: false,
-  ),
-];
+/// Empty default — home node's `getBridgeStatus()` is the source of truth.
+///
+/// Kept as a `const <ExtAgentPreset>[]` for shape compatibility with
+/// `mergeExtAgentPresets(null)` (which now returns just the home-pushed
+/// list verbatim). Adding a preset here would re-introduce the
+/// "Dart defaults shown when home has no agents" bug — see commit
+/// history for context.
+const defaultExtAgents = <ExtAgentPreset>[];
 
+/// Generic "connect to home" hint — install docs live on the home
+/// node (see `packages/api/src/ext-agent.ts:INSTALL_TABLE`). EnvoyGo
+/// never owns install instructions; it just surfaces the home's
+/// reachability status and lets the user click through.
 String defaultExtAgentStartHint(String agentId) {
-  switch (agentId) {
-    case 'homeclaw':
-      return 'Start HomeClaw, then confirm http://127.0.0.1:8010/status responds.';
-    case 'hermes':
-      return 'Run `hermes gateway run` with API_SERVER_ENABLED=true (API on :8642).';
-    case 'openhuman':
-      return 'Start OpenHuman.app or the OpenHuman CLI core (health on :7788).';
-    case 'pi':
-      return 'Pi is built into the home node — no separate process needed.';
-    default:
-      return 'Start the external agent process, then confirm its HTTP endpoint is reachable.';
-  }
+  // Intentionally unrecognised — the home node has the real install
+  // instructions. EnvoyGo always defers to home for these.
+  return 'Connect to the home node for install instructions.';
 }
 
+/// Generic install-info fallback — real install commands come from the
+/// home node (`packages/api/src/ext-agent.ts:INSTALL_TABLE`). EnvoyGo
+/// renders the home's response verbatim when the bridge is connected.
 ExtAgentInstallInfo getExtAgentInstallInfo(String agentId) {
-  final id = agentId.trim().isEmpty ? 'pi' : agentId.trim();
-  switch (id) {
-    case 'pi':
-      return ExtAgentInstallInfo(
-        agentId: id,
-        homepageUrl: 'https://github.com/earendil-works/pi',
-        homepageLabel: 'Pi on GitHub',
-        startHint: defaultExtAgentStartHint(id),
-        builtIn: true,
-      );
-    case 'homeclaw':
-      return ExtAgentInstallInfo(
-        agentId: id,
-        homepageUrl: 'https://www.homeclaw.cn/',
-        homepageLabel: 'HomeClaw website',
-        startHint: defaultExtAgentStartHint(id),
-        builtIn: false,
-      );
-    case 'hermes':
-      return ExtAgentInstallInfo(
-        agentId: id,
-        homepageUrl: 'https://hermes-agent.nousresearch.com/docs/',
-        homepageLabel: 'Hermes docs',
-        startHint: defaultExtAgentStartHint(id),
-        builtIn: false,
-      );
-    case 'openhuman':
-      return ExtAgentInstallInfo(
-        agentId: id,
-        homepageUrl: 'https://tinyhumans.ai/openhuman',
-        homepageLabel: 'OpenHuman website',
-        startHint: defaultExtAgentStartHint(id),
-        builtIn: false,
-      );
-    default:
-      return ExtAgentInstallInfo(
-        agentId: id,
-        homepageLabel: 'Docs',
-        startHint: defaultExtAgentStartHint(id),
-        builtIn: false,
-      );
-  }
+  return ExtAgentInstallInfo(
+    agentId: agentId,
+    homepageLabel: 'Connect to home for install instructions',
+    startHint: defaultExtAgentStartHint(agentId),
+    builtIn: false,
+  );
 }
 
-/// Merge home-configured agents with built-in presets (preset wins on missing fields).
+/// Merge home-configured agents with built-in presets.
+///
+/// **The `defaultExtAgents` list is intentionally empty** (see comment
+/// above). With the home as source of truth, this function just
+/// returns the home-pushed list verbatim — preset merging only applies
+/// to unknown / custom agent ids (which still receive the generic
+/// fallback from `getExtAgentInstallInfo`).
 List<Map<String, dynamic>> mergeExtAgentPresets(List<dynamic>? configured) {
-  final byId = <String, Map<String, dynamic>>{
-    for (final agent in defaultExtAgents)
-      agent.id: Map<String, dynamic>.from(agent.toJson()),
-  };
+  final result = <String, Map<String, dynamic>>{};
   for (final raw in configured ?? const []) {
     if (raw is! Map) continue;
     final id = raw['id']?.toString().trim();
     if (id == null || id.isEmpty) continue;
-    final preset = byId[id];
-    final incoming = Map<String, dynamic>.from(raw);
-    if (preset == null) {
-      byId[id] = {...incoming, 'id': id};
-      continue;
-    }
-    final merged = {...preset, ...incoming, 'id': id};
-    if (merged['name'] == 'Pi (built-in)') merged['name'] = preset['name'];
-    byId[id] = merged;
+    result[id] = Map<String, dynamic>.from(raw)..['id'] = id;
   }
-  return byId.values.toList();
+  return result.values.toList();
 }
