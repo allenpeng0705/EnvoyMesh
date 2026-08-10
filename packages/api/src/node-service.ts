@@ -2535,6 +2535,9 @@ export interface NodeService {
   downloadEnvoyLocalModel(
     params: import("./envoy-local.js").DownloadEnvoyLocalModelParams,
   ): Promise<import("./envoy-local.js").EnvoyLocalInstalledModel[]>;
+  setEnvoyLocalDownloadRegion(
+    params: import("./envoy-local.js").SetEnvoyLocalDownloadRegionParams,
+  ): Promise<import("./envoy-local.js").EnvoyLocalStatus>;
   setEnvoyLocalActiveModel(
     params: import("./envoy-local.js").SetEnvoyLocalActiveModelParams,
   ): Promise<import("./envoy-local.js").EnvoyLocalStatus>;

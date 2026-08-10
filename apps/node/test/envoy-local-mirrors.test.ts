@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   detectEnvoyLocalModelRegion,
   ENVOY_LOCAL_GITHUB_RELEASE_PROXIES,
+  resolveEnvoyLocalDownloadRegion,
   resolveEnvoyLocalModelDownloadUrls,
   resolveEnvoyLocalRuntimeDownloadUrls,
   toHfMirrorUrl,
@@ -30,11 +31,34 @@ describe("envoy-local-mirrors", () => {
   });
 
   it("detects China from zh_CN locale or Asia/Shanghai TZ", () => {
-    expect(detectEnvoyLocalModelRegion({ LANG: "zh_CN.UTF-8" })).toBe("cn");
+    expect(detectEnvoyLocalModelRegion({ LANG: "zh_CN.UTF-8", TZ: "UTC" })).toBe(
+      "cn",
+    );
     expect(detectEnvoyLocalModelRegion({ TZ: "Asia/Shanghai" })).toBe("cn");
     expect(detectEnvoyLocalModelRegion({ LANG: "en_US.UTF-8", TZ: "UTC" })).toBe(
       "global",
     );
+  });
+
+  it("honors Settings preference after env, before auto-detect", () => {
+    expect(
+      resolveEnvoyLocalDownloadRegion({
+        preference: "cn",
+        env: { LANG: "en_US.UTF-8", TZ: "UTC" },
+      }),
+    ).toBe("cn");
+    expect(
+      resolveEnvoyLocalDownloadRegion({
+        preference: "global",
+        env: { LANG: "zh_CN.UTF-8" },
+      }),
+    ).toBe("global");
+    expect(
+      resolveEnvoyLocalDownloadRegion({
+        preference: "auto",
+        env: { ENVOYMESH_ENVOY_LOCAL_DOWNLOAD_REGION: "cn", TZ: "UTC" },
+      }),
+    ).toBe("cn");
   });
 
   it("orders China candidates ModelScope then hf-mirror (no huggingface.co)", () => {

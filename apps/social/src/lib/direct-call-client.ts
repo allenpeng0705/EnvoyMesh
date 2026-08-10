@@ -690,6 +690,12 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.downloadEnvoyLocalModel(params);
   }
 
+  async setEnvoyLocalDownloadRegion(
+    params: import("@envoymesh/api").SetEnvoyLocalDownloadRegionParams,
+  ) {
+    return this._ns.setEnvoyLocalDownloadRegion(params);
+  }
+
   async setEnvoyLocalActiveModel(
     params: import("@envoymesh/api").SetEnvoyLocalActiveModelParams,
   ) {

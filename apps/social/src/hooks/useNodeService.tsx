@@ -369,6 +369,9 @@ export interface NodeServiceClient {
   downloadEnvoyLocalModel(
     params: import("@envoymesh/api").DownloadEnvoyLocalModelParams,
   ): Promise<import("@envoymesh/api").EnvoyLocalInstalledModel[]>;
+  setEnvoyLocalDownloadRegion(
+    params: import("@envoymesh/api").SetEnvoyLocalDownloadRegionParams,
+  ): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
   setEnvoyLocalActiveModel(
     params: import("@envoymesh/api").SetEnvoyLocalActiveModelParams,
   ): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
@@ -1320,11 +1323,11 @@ function createWsNodeServiceClient(
       >;
     },
     async enableEnvoyLocal(params?: import("@envoymesh/api").EnableEnvoyLocalParams) {
-      // Download + extract + start can take several minutes on slow links.
+      // Job is detached on the node; poll getEnvoyLocalStatus for progress.
       return wsClient.rpc(
         "enableEnvoyLocal",
         (params ?? {}) as Record<string, unknown>,
-        { timeoutMs: 600_000 },
+        { timeoutMs: 60_000 },
       ) as Promise<import("@envoymesh/api").EnvoyLocalStatus>;
     },
     async declineEnvoyLocalAutoProvision() {
@@ -1364,11 +1367,20 @@ function createWsNodeServiceClient(
     async downloadEnvoyLocalModel(
       params: import("@envoymesh/api").DownloadEnvoyLocalModelParams,
     ) {
+      // Detached download — poll getEnvoyLocalStatus until idle.
       return wsClient.rpc(
         "downloadEnvoyLocalModel",
         params as unknown as Record<string, unknown>,
-        { timeoutMs: 600_000 },
+        { timeoutMs: 60_000 },
       ) as Promise<import("@envoymesh/api").EnvoyLocalInstalledModel[]>;
+    },
+    async setEnvoyLocalDownloadRegion(
+      params: import("@envoymesh/api").SetEnvoyLocalDownloadRegionParams,
+    ) {
+      return wsClient.rpc(
+        "setEnvoyLocalDownloadRegion",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").EnvoyLocalStatus>;
     },
     async setEnvoyLocalActiveModel(
       params: import("@envoymesh/api").SetEnvoyLocalActiveModelParams,
@@ -1407,7 +1419,8 @@ function createWsNodeServiceClient(
       >;
     },
     async updateEnvoyLocalEngine() {
-      return wsClient.rpc("updateEnvoyLocalEngine", {}, { timeoutMs: 600_000 }) as Promise<
+      // Detached engine fetch — poll getEnvoyLocalStatus until idle.
+      return wsClient.rpc("updateEnvoyLocalEngine", {}, { timeoutMs: 60_000 }) as Promise<
         import("@envoymesh/api").EnvoyLocalStatus
       >;
     },

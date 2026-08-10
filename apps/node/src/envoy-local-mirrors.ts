@@ -21,8 +21,20 @@ import type { EnvoyLocalCatalogModel } from "@envoymesh/api";
 
 export type EnvoyLocalModelRegion = "cn" | "global";
 
+/** Persisted Settings preference; `auto` uses locale / timezone heuristics. */
+export type EnvoyLocalDownloadRegionPreference = "auto" | "cn" | "global";
+
 const HF_HOST = "https://huggingface.co";
 const HF_MIRROR_HOST = "https://hf-mirror.com";
+
+const CN_TIMEZONES = new Set([
+  "Asia/Shanghai",
+  "Asia/Chongqing",
+  "Asia/Harbin",
+  "Asia/Urumqi",
+  "Asia/Kashgar",
+  "Asia/Beijing",
+]);
 
 /**
  * Public GitHub-release proxies commonly reachable from China.
@@ -35,9 +47,9 @@ export const ENVOY_LOCAL_GITHUB_RELEASE_PROXIES = [
   "https://mirror.ghproxy.com",
 ] as const;
 
-export function detectEnvoyLocalModelRegion(
+function forcedRegionFromEnv(
   env: NodeJS.ProcessEnv = process.env,
-): EnvoyLocalModelRegion {
+): EnvoyLocalModelRegion | undefined {
   const forced = (
     env.ENVOYMESH_ENVOY_LOCAL_DOWNLOAD_REGION ??
     env.ENVOYMESH_ENVOY_LOCAL_MODEL_REGION ??
@@ -47,7 +59,12 @@ export function detectEnvoyLocalModelRegion(
     .toLowerCase();
   if (forced === "cn" || forced === "china") return "cn";
   if (forced === "global" || forced === "intl" || forced === "hf") return "global";
+  return undefined;
+}
 
+function autoDetectEnvoyLocalModelRegion(
+  env: NodeJS.ProcessEnv = process.env,
+): EnvoyLocalModelRegion {
   const localeHints = [env.LC_ALL, env.LC_MESSAGES, env.LANG, env.LANGUAGE]
     .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
     .map((v) => v.trim().toLowerCase().replace(/-/g, "_"));
@@ -55,18 +72,54 @@ export function detectEnvoyLocalModelRegion(
     return "cn";
   }
 
-  const tz = (env.TZ ?? "").trim();
-  const cnTimezones = new Set([
-    "Asia/Shanghai",
-    "Asia/Chongqing",
-    "Asia/Harbin",
-    "Asia/Urumqi",
-    "Asia/Kashgar",
-    "Asia/Beijing",
-  ]);
-  if (cnTimezones.has(tz)) return "cn";
+  const tzEnv = (env.TZ ?? "").trim();
+  if (tzEnv) {
+    // Explicit TZ wins over Intl (tests / containers often set TZ=UTC).
+    return CN_TIMEZONES.has(tzEnv) ? "cn" : "global";
+  }
+
+  // macOS / GUI apps often have empty LANG/TZ while the system zone is China.
+  try {
+    const intlTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (intlTz && CN_TIMEZONES.has(intlTz)) return "cn";
+  } catch {
+    // ignore
+  }
 
   return "global";
+}
+
+/**
+ * Effective download region.
+ * Order: env force → Settings preference (`cn`/`global`) → auto-detect.
+ */
+export function resolveEnvoyLocalDownloadRegion(opts?: {
+  preference?: EnvoyLocalDownloadRegionPreference | string | null;
+  env?: NodeJS.ProcessEnv;
+}): EnvoyLocalModelRegion {
+  const env = opts?.env ?? process.env;
+  const forced = forcedRegionFromEnv(env);
+  if (forced) return forced;
+  const pref = (opts?.preference ?? "auto").toString().trim().toLowerCase();
+  if (pref === "cn" || pref === "china") return "cn";
+  if (pref === "global" || pref === "intl" || pref === "hf") return "global";
+  return autoDetectEnvoyLocalModelRegion(env);
+}
+
+/** Env force + auto-detect (no Settings preference). */
+export function detectEnvoyLocalModelRegion(
+  env: NodeJS.ProcessEnv = process.env,
+): EnvoyLocalModelRegion {
+  return resolveEnvoyLocalDownloadRegion({ env });
+}
+
+export function normalizeEnvoyLocalDownloadRegionPreference(
+  value: unknown,
+): EnvoyLocalDownloadRegionPreference {
+  const v = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (v === "cn" || v === "china") return "cn";
+  if (v === "global" || v === "intl" || v === "hf") return "global";
+  return "auto";
 }
 
 /** Rewrite a Hugging Face resolve URL onto hf-mirror.com. */

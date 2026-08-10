@@ -30,6 +30,12 @@ export interface EnvoyLocalServerParams {
   threads?: number;
   /** Parallel slots. Default 1. */
   parallel?: number;
+  /**
+   * Override llama-server startup timeout (ms). Default scales with model
+   * file size: 30 s for 0.8B, 60 s for 2–3B, 120 s for 4B, 480 s for 9B,
+   * 600 s for larger. Cold CPU loads of 9B can take several minutes.
+   */
+  startupTimeoutMs?: number;
 }
 
 export interface EnvoyLocalDownloadProgress {
@@ -55,18 +61,25 @@ export interface EnvoyLocalStatus {
   runtimeInstalled: boolean;
   activeModelId?: string;
   activeModelPath?: string;
+  /** Absolute path where users may drop `.gguf` files (scanned into the install list). */
+  modelsDir?: string;
   childPid?: number;
   lastError?: string | null;
   lastErrorAt?: string | null;
   download?: EnvoyLocalDownloadProgress | null;
   serverParams: EnvoyLocalServerParams;
   /**
-   * Download region for GGUFs and llama.cpp runtime archives:
+   * Effective download region for GGUFs and llama.cpp runtime archives:
    * - `cn`: models → ModelScope + hf-mirror; runtime → GitHub proxies (+ optional CDN)
    * - `global`: Hugging Face / GitHub direct
-   * Override: ENVOYMESH_ENVOY_LOCAL_DOWNLOAD_REGION or ENVOYMESH_ENVOY_LOCAL_MODEL_REGION.
+   * Override: Settings preference, or ENVOYMESH_ENVOY_LOCAL_DOWNLOAD_REGION.
    */
   modelDownloadRegion?: "cn" | "global";
+  /**
+   * Settings preference (`auto` = locale / system timezone heuristics).
+   * Env `ENVOYMESH_ENVOY_LOCAL_DOWNLOAD_REGION` still wins when set.
+   */
+  downloadRegionPreference?: "auto" | "cn" | "global";
   /** Pinned llama.cpp release channel (EnvoyMesh manifest). */
   pinnedRuntimeVersion?: string;
   /**
@@ -105,6 +118,11 @@ export interface EnvoyLocalEngineUpdateInfo {
   updateAvailable: boolean;
 }
 
+/**
+ * `enableEnvoyLocal` returns as soon as the job is queued (download runs in
+ * the node process). Poll `getEnvoyLocalStatus` until `operationInProgress`
+ * is false. Same pattern for `downloadEnvoyLocalModel` / `updateEnvoyLocalEngine`.
+ */
 export interface EnableEnvoyLocalParams {
   /** Skip default GGUF download if a model is already installed. */
   skipModelDownload?: boolean;
@@ -240,11 +258,22 @@ export interface EnvoyLocalConfig {
    * Cleared when they enable Envoy Local from Settings.
    */
   autoProvisionDeclined?: boolean;
+  /**
+   * Model + llama.cpp download mirrors: `auto` (default), `cn`, or `global`.
+   * Env `ENVOYMESH_ENVOY_LOCAL_DOWNLOAD_REGION` overrides when set.
+   */
+  downloadRegion?: "auto" | "cn" | "global";
 }
 
 export function normalizeEnvoyLocalConfig(
   value: EnvoyLocalConfig | undefined,
 ): Required<Pick<EnvoyLocalConfig, "enabled">> & EnvoyLocalConfig {
+  const downloadRegion =
+    value?.downloadRegion === "cn" || value?.downloadRegion === "global"
+      ? value.downloadRegion
+      : value?.downloadRegion === "auto"
+        ? "auto"
+        : undefined;
   return {
     enabled: value?.enabled === true,
     ...(value?.activeModelId ? { activeModelId: value.activeModelId } : {}),
@@ -253,5 +282,11 @@ export function normalizeEnvoyLocalConfig(
     ...(value?.autoProvisionDeclined === true
       ? { autoProvisionDeclined: true }
       : {}),
+    ...(downloadRegion ? { downloadRegion } : {}),
   };
+}
+
+export interface SetEnvoyLocalDownloadRegionParams {
+  /** `auto` | `cn` | `global` */
+  region: "auto" | "cn" | "global";
 }

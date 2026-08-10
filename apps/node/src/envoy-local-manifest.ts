@@ -96,3 +96,30 @@ export function assertEnvoyLocalSha256(
     );
   }
 }
+
+/**
+ * Resolve the llama-server startup timeout. Larger models take longer to
+ * load — CPU loading of 9B Q4_K_M can take 3–6 minutes on cold start, while
+ * 0.8B finishes in 5–10 s on any accel. Defaults scale by model file size;
+ * override via `serverParams.startupTimeoutMs` (Settings → Advanced).
+ *
+ * Bands (curated Qwen3.5 / Gemma 4 Q4_K_M):
+ *   0.8B ≈ 0.5 GB              → 30 s
+ *   2B–3B ≈ 1.3–2.0 GB         → 60 s
+ *   4B / Gemma E2B ≈ 2.7–3.5 GB → 120 s
+ *   9B / Gemma E4B ≈ 5.4–6 GB  → 480 s
+ *   larger (≥ 8 GB)            → 600 s
+ */
+export function resolveStartupTimeoutMs(
+  serverParams: { startupTimeoutMs?: number } | undefined,
+  modelSizeBytes: number,
+): number {
+  if (serverParams?.startupTimeoutMs && serverParams.startupTimeoutMs > 0) {
+    return serverParams.startupTimeoutMs;
+  }
+  if (modelSizeBytes < 1_000_000_000) return 30_000; // 0.8B
+  if (modelSizeBytes < 2_500_000_000) return 60_000; // 2B-3B
+  if (modelSizeBytes < 4_500_000_000) return 120_000; // 4B / E2B
+  if (modelSizeBytes < 8_000_000_000) return 480_000; // 9B / E4B
+  return 600_000; // larger
+}

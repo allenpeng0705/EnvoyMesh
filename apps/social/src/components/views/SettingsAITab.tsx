@@ -70,6 +70,7 @@ import {
 // `@envoymesh/rag` root depends on Node builtins and is intentionally not
 // imported here; the resolver subpath is the only entry point the UI uses.
 import { resolveEmbeddingConfig } from "@envoymesh/rag/embedding-resolver";
+import { waitForEnvoyLocalIdle } from "../../lib/envoy-local-wait.js";
 
 // ---------------------------------------------------------------------------
 // "Add Rule" form — now fully controlled via React state (fixes the
@@ -1604,6 +1605,7 @@ function EnvoyLocalSettings({
   const [nglCustom, setNglCustom] = useState(20);
   const [threads, setThreads] = useState<string>("");
   const [parallel, setParallel] = useState(DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.parallel);
+  const [startupTimeoutSec, setStartupTimeoutSec] = useState<string>("");
 
   const refresh = useCallback(async (opts?: { syncParams?: boolean }) => {
     try {
@@ -1625,6 +1627,11 @@ function EnvoyLocalSettings({
         } else setNglMode("auto");
         setThreads(typeof sp.threads === "number" ? String(sp.threads) : "");
         setParallel(sp.parallel ?? DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.parallel);
+        setStartupTimeoutSec(
+          typeof sp.startupTimeoutMs === "number" && sp.startupTimeoutMs > 0
+            ? String(Math.round(sp.startupTimeoutMs / 1000))
+            : "",
+        );
       }
       return st;
     } catch (e) {
@@ -1722,9 +1729,58 @@ function EnvoyLocalSettings({
           <dd className="settings-mono">{status.endpoint}</dd>
           <dt>{t("settings.ai.envoyLocal.downloadRegion")}</dt>
           <dd>
-            {status.modelDownloadRegion === "cn"
-              ? t("settings.ai.envoyLocal.downloadRegionCn")
-              : t("settings.ai.envoyLocal.downloadRegionGlobal")}
+            <label className="settings-label">
+              <select
+                className="settings-input"
+                data-testid="envoy-local-download-region"
+                disabled={inFlight}
+                value={status.downloadRegionPreference ?? "auto"}
+                onChange={(e) => {
+                  const region = e.target.value as "auto" | "cn" | "global";
+                  void (async () => {
+                    setBusy(true);
+                    setActionError(null);
+                    try {
+                      const st = await nodeService.setEnvoyLocalDownloadRegion({
+                        region,
+                      });
+                      setStatus(st);
+                      showToast(
+                        t("settings.ai.envoyLocal.downloadRegionEffective", {
+                          region:
+                            st.modelDownloadRegion === "cn"
+                              ? t("settings.ai.envoyLocal.downloadRegionCn")
+                              : t("settings.ai.envoyLocal.downloadRegionGlobal"),
+                        }),
+                        "info",
+                      );
+                    } catch (err) {
+                      const msg = err instanceof Error ? err.message : String(err);
+                      setActionError(msg);
+                      showToast(msg, "error");
+                    } finally {
+                      setBusy(false);
+                      await refresh({ syncParams: false });
+                    }
+                  })();
+                }}
+              >
+                <option value="auto">{t("settings.ai.envoyLocal.downloadRegionAuto")}</option>
+                <option value="cn">{t("settings.ai.envoyLocal.downloadRegionCn")}</option>
+                <option value="global">
+                  {t("settings.ai.envoyLocal.downloadRegionGlobal")}
+                </option>
+              </select>
+            </label>
+            <div className="settings-hint">
+              {t("settings.ai.envoyLocal.downloadRegionEffective", {
+                region:
+                  status.modelDownloadRegion === "cn"
+                    ? t("settings.ai.envoyLocal.downloadRegionCn")
+                    : t("settings.ai.envoyLocal.downloadRegionGlobal"),
+              })}
+            </div>
+            <div className="settings-hint">{t("settings.ai.envoyLocal.downloadRegionHint")}</div>
           </dd>
           {status.hardwareSummary ? (
             <>
@@ -1793,6 +1849,16 @@ function EnvoyLocalSettings({
             setActionError(null);
             try {
               setStatus(await nodeService.updateEnvoyLocalEngine());
+              const st = await waitForEnvoyLocalIdle(
+                () => nodeService.getEnvoyLocalStatus(),
+                { onUpdate: setStatus },
+              );
+              setStatus(st);
+              if (st.phase === "error" || st.lastError) {
+                const msg = st.lastError ?? t("settings.ai.envoyLocal.enableFailed");
+                setActionError(msg);
+                showToast(msg, "error");
+              }
               setEngineInfo(await nodeService.checkEnvoyLocalEngineUpdate());
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
@@ -1846,7 +1912,11 @@ function EnvoyLocalSettings({
                 };
               });
               try {
-                const st = await nodeService.enableEnvoyLocal();
+                setStatus(await nodeService.enableEnvoyLocal());
+                const st = await waitForEnvoyLocalIdle(
+                  () => nodeService.getEnvoyLocalStatus(),
+                  { onUpdate: setStatus },
+                );
                 setStatus(st);
                 if (st.phase === "error" || st.lastError) {
                   const msg = st.lastError ?? t("settings.ai.envoyLocal.enableFailed");
@@ -1921,6 +1991,37 @@ function EnvoyLocalSettings({
 
       <h5 className="settings-subheading">{t("settings.ai.envoyLocal.modelsHeading")}</h5>
       <p className="section-desc">{t("settings.ai.envoyLocal.modelsDesc")}</p>
+      {status?.modelsDir ? (
+        <div className="settings-hint" data-testid="envoy-local-models-dir">
+          <strong>{t("settings.ai.envoyLocal.modelsFolder")}:</strong>{" "}
+          <span className="settings-mono">{status.modelsDir}</span>
+          <div>{t("settings.ai.envoyLocal.modelsFolderHint")}</div>
+        </div>
+      ) : null}
+      <div className="settings-buttons">
+        <button
+          type="button"
+          className="settings-cancel-btn"
+          disabled={inFlight}
+          data-testid="envoy-local-refresh-models"
+          onClick={async () => {
+            setBusy(true);
+            setActionError(null);
+            try {
+              setInstalled(await nodeService.listEnvoyLocalInstalledModels());
+              await refresh({ syncParams: false });
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              setActionError(msg);
+              showToast(msg, "error");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {t("settings.ai.envoyLocal.refreshModels")}
+        </button>
+      </div>
       <div className="envoy-local-models">
         <div className="envoy-local-models-col">
           <div className="settings-hint">{t("settings.ai.envoyLocal.installed")}</div>
@@ -1973,6 +2074,19 @@ function EnvoyLocalSettings({
                               await nodeService.downloadEnvoyLocalModel({
                                 modelId: m.newerCuratedModelId!,
                               }),
+                            );
+                            const st = await waitForEnvoyLocalIdle(
+                              () => nodeService.getEnvoyLocalStatus(),
+                              { onUpdate: setStatus },
+                            );
+                            if (st.phase === "error" || st.lastError) {
+                              const msg =
+                                st.lastError ?? t("settings.ai.envoyLocal.enableFailed");
+                              setActionError(msg);
+                              showToast(msg, "error");
+                            }
+                            setInstalled(
+                              await nodeService.listEnvoyLocalInstalledModels(),
                             );
                           } catch (e) {
                             const msg = e instanceof Error ? e.message : String(e);
@@ -2096,6 +2210,19 @@ function EnvoyLocalSettings({
                         setInstalled(
                           await nodeService.downloadEnvoyLocalModel({ modelId: m.id }),
                         );
+                        const st = await waitForEnvoyLocalIdle(
+                          () => nodeService.getEnvoyLocalStatus(),
+                          { onUpdate: setStatus },
+                        );
+                        if (st.phase === "error" || st.lastError) {
+                          const msg =
+                            st.lastError ?? t("settings.ai.envoyLocal.enableFailed");
+                          setActionError(msg);
+                          showToast(msg, "error");
+                        }
+                        setInstalled(
+                          await nodeService.listEnvoyLocalInstalledModels(),
+                        );
                       } catch (e) {
                         const msg = e instanceof Error ? e.message : String(e);
                         setActionError(msg);
@@ -2189,6 +2316,22 @@ function EnvoyLocalSettings({
               onChange={(e) => setParallel(Number(e.target.value) || 1)}
             />
           </dd>
+          <dt>{t("settings.ai.envoyLocal.startupTimeout")}</dt>
+          <dd>
+            <input
+              type="number"
+              className="settings-input"
+              min={30}
+              max={3600}
+              step={30}
+              placeholder={t("settings.ai.envoyLocal.startupTimeoutAuto")}
+              value={startupTimeoutSec}
+              onChange={(e) => setStartupTimeoutSec(e.target.value)}
+            />
+            <div className="settings-hint">
+              {t("settings.ai.envoyLocal.startupTimeoutHint")}
+            </div>
+          </dd>
         </dl>
       ) : null}
       <div className="settings-buttons">
@@ -2202,6 +2345,9 @@ function EnvoyLocalSettings({
               const nGpuLayers =
                 nglMode === "off" ? 0 : nglMode === "custom" ? nglCustom : "auto";
               const threadsNum = threads.trim() ? Number(threads) : undefined;
+              const startupSec = startupTimeoutSec.trim()
+                ? Number(startupTimeoutSec)
+                : undefined;
               setStatus(
                 await nodeService.updateEnvoyLocalServerParams({
                   serverParams: {
@@ -2211,6 +2357,9 @@ function EnvoyLocalSettings({
                     ...(threadsNum && Number.isFinite(threadsNum)
                       ? { threads: threadsNum }
                       : { threads: undefined }),
+                    ...(startupSec && Number.isFinite(startupSec) && startupSec > 0
+                      ? { startupTimeoutMs: Math.round(startupSec * 1000) }
+                      : { startupTimeoutMs: undefined }),
                   },
                 }),
               );

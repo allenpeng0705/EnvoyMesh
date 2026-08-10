@@ -1161,6 +1161,7 @@ import {
   downloadEnvoyLocalModelViaRuntime,
   enableEnvoyLocalViaRuntime,
   getEnvoyLocalStatusViaRuntime,
+  setEnvoyLocalDownloadRegionViaRuntime,
   listEnvoyLocalInstalledModelsViaRuntime,
   maybeDisableEnvoyLocalForExternalProvider,
   maybeStartEnvoyLocalOnBootViaRuntime,
@@ -4611,13 +4612,26 @@ class NodeServiceImpl implements NodeService {
   async searchEnvoyLocalModels(
     params?: import("@envoymesh/api").SearchEnvoyLocalModelsParams,
   ) {
-    return searchEnvoyLocalModelsViaRuntime(params?.query);
+    return searchEnvoyLocalModelsViaRuntime(
+      params?.query,
+      this._envoyLocalRuntimeDeps(),
+    );
   }
 
   async downloadEnvoyLocalModel(
     params: import("@envoymesh/api").DownloadEnvoyLocalModelParams,
   ) {
     return downloadEnvoyLocalModelViaRuntime(
+      this._envoyLocalState,
+      this._envoyLocalRuntimeDeps(),
+      params,
+    );
+  }
+
+  async setEnvoyLocalDownloadRegion(
+    params: import("@envoymesh/api").SetEnvoyLocalDownloadRegionParams,
+  ) {
+    return setEnvoyLocalDownloadRegionViaRuntime(
       this._envoyLocalState,
       this._envoyLocalRuntimeDeps(),
       params,

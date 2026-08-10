@@ -90,6 +90,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 52 — Agent Network collaboration roles + assignment modes](#phase-52--agent-network-collaboration-roles--assignment-modes)
 - [Phase 53 — Artifact handoff + worker stickiness](#phase-53--artifact-handoff--worker-stickiness)
 - [Phase 54 — EnvoyAI model guidance + Envoy Local (llama.cpp)](#phase-54--envoyai-model-guidance--envoy-local-llamacpp)
+- [Phase 55 — Ext Agent: codex + claudecode (Plan B + daemon supervisor)](#phase-55--ext-agent-codex--claudecode-plan-b--daemon-supervisor)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -6751,11 +6752,345 @@ Closes the production path after 48A–48D protocol/mount work.
 
 ---
 
+## Phase 55 — Ext Agent: codex + claudecode (Plan B + daemon supervisor)
+
+**Status:** `[~]` 55A shipped; 55A.1 + 55D + 55B + 55C + 55D.1 in progress; 55E backlog
+- 2026-08-10 — 55A `daemon-supervisor.ts` (~785 LOC) + 49 unit tests shipped. Async-ENOENT on macOS handled with a 100ms stability grace after the first passing healthcheck.
+**Scope:** M2 from the [plan options M1/M2/M3](#phase-55-design-notes) discussed in chat on 2026-08-10. Adds **codex** and **claudecode** as `registerAgentHarness`-style backends in `apps/node/src/ext-agent-adapter/`, plus a generic **daemon supervisor** that wraps external processes with spawn / healthcheck / exponential-restart. Hermes + OpenHuman keep their existing HTTP transport and gain supervisor wrapping as 55E (optional, see [open questions](#open-questions-phase-55)).
+
+### Problem
+
+EnvoyMesh's Ext Agent bridge currently supports four swappable external agents, each in its own workspace, with EnvoyMesh acting as a thin "super channel" (see [Ext_Agent_guide.md](./Ext_Agent_guide.md) and [`packages/api/src/ext-agent.ts`](./../packages/api/src/ext-agent.ts)):
+
+| id | Implementation | Transport | Default port |
+|---|---|---|---|
+| `pi` | in-process (`apps/node/src/pi-runtime.ts`) | n/a (in-proc) | 8022 |
+| `homeclaw` | separate channel (`homeclaw-core-ws.ts`) | WS | 8010 |
+| `hermes` | `createHermesBackend` (backends.ts:741) | HTTP `POST /v1/chat/completions` → :8642 | 8020 |
+| `openhuman` | `createOpenHumanBackend` (backends.ts:791) | HTTP `/rpc` (JSON-RPC) or `/v1` (OpenAI-compat) → :7788 | 8021 |
+
+Users want **codex** (OpenAI Codex CLI) and **claudecode** (Anthropic Claude Code) added to the same picker. Both have native **long-lived protocols** that the current one-shot HTTP pattern doesn't exercise:
+
+- **codex** — `codex app-server` JSON-RPC over stdio (already used inside `packages/openclaw/extensions/codex/` for OpenClaw). Stdio gives session continuity via `threadId`, real-time event streams, proper subprocess lifecycle.
+- **claudecode** — `@anthropic-ai/claude-agent-sdk` library (renamed from `@anthropic-ai/claude-code-sdk`). Library form means no subprocess to spawn; sessions come from the `system/init` message's `session_id`; `canUseTool` hooks map to upstream policy.
+
+Independent gap in the existing two: **Hermes and OpenHuman daemons must be manually started by the user**. EnvoyMesh sidecar assumes they're up. No auto-spawn, no healthcheck, no restart. A new **daemon supervisor** helper fixes this and is also what `codex` (subprocess form) needs.
+
+Third gap (UX, surfaced in chat on 2026-08-10): **what happens when the user picks an agent that isn't installed?** Today the answer is "cryptic error somewhere in the bridge log" — `ENOENT` for codex, a generic network error for hermes/openhuman when their binary isn't on `$PATH`. We need runtime **install detection** so the Settings UI can show a guided install card with the right command, and runtime errors mention the install path instead of just failing.
+
+### Goals (vs non-goals)
+
+**In scope (55A–55D):**
+- New `codex` + `claudecode` backends via Plan B (long-lived native protocol each).
+- New `daemon-supervisor.ts` helper used by codex and (optionally) Hermes/OpenHuman.
+- `codex` = managed subprocess (auto-restart on crash).
+- `claudecode` = in-process SDK call (no subprocess).
+- Settings UX + `Ext_Agent_guide.md` updates.
+- Backward compat: existing `bridge-config.json` users with no `codex` / `claudecode` configured keep working unchanged.
+
+**Out of scope:**
+- Touching the OpenClaw `extensions/codex/` extension (already uses the same SDK; kept for OpenClaw's own consumption, not unified into ext-agent-adapter for now).
+- Changing Hermes / OpenHuman HTTP transport (only supervisor wrapping is in scope, and that's 55E / backlog).
+- Persisting sessionKey → external session ID across restarts (sessions are in-memory only — restart drops the mapping, new session ID is allocated on next ask, same as Hermes/OpenHuman today).
+- Modifying `homeclaw-core-ws.ts` (separate channel, not ext-agent-adapter territory).
+- Auth flows for codex / claudecode beyond reusing existing env vars (`OPENAI_API_KEY` for codex app-server, `ANTHROPIC_API_KEY` for Claude Code).
+
+### Hard rules
+
+- **Plan B is for new code only.** Don't rewrite Hermes/OpenHuman's HTTP transport — they already have it. Plan B applies to codex + claudecode, where a real long-lived protocol exists.
+- **Ext Agent is a black box.** We only `ask(text, sessionKey)` and `probe()`. No tool execution, no bond engine, no vault context — those belong to built-in OpenClaw. (See [Ext_Agent_guide.md §Architecture](./Ext_Agent_guide.md) for the "super channel" contract.)
+- **Session is per-sessionKey, in-memory only.** Restart drops the mapping. User experience: "first ask after restart is a fresh session; subsequent asks in the same EnvoyMesh session continue." This matches the Hermes/OpenHuman session header behavior already in `backends.ts`.
+- **Tool execution stays inside the external agent.** Ext Agent `ask()` returns a string. Claude Code's `canUseTool` callback runs inside its own VM; codex's `tool_use` runs inside its own app-server. EnvoyMesh never sees tool payloads.
+- **Daemon supervisor is a generic helper.** It is used by codex (subprocess) and (optionally) Hermes/OpenHuman (subprocess). ClaudeCode does not need it (library call).
+- **Stdout/stderr go to `[ext-agent:<name>]` log lines** (envoy's existing log prefix pattern; same shape as `pi-runtime.ts` already uses for its child process).
+- **No new global ports below 1024.** Sidecars bind 8020/8021/8022/8023/8024 (additive to existing).
+- **Pre-existing mobile-node typecheck error stays untouched** (see AGENTS.md: "we don't need to consider mobile node, it's useless and maybe removed later").
+
+### Architecture
+
+```
+                    EnvoyMesh bridge (PostgreSQL-style P2P relay / P2P mesh)
+                                       │
+                                       │  activeExtAgentId = "codex" / "claudecode" / ...
+                                       ▼
+                            Ext Agent Sidecar  (127.0.0.1:<port>/message)
+                                       │
+        ┌──────────────┬──────────────┴──────────────┬──────────────┐
+        │              │                             │              │
+   Hermes (HTTP)  OpenHuman (HTTP)             Codex (stdio)   ClaudeCode (in-proc)
+   :8642          :7788                       codex app-server  @anthropic-ai/
+                                                (supervised)    claude-agent-sdk
+   supervisor     supervisor                                 (no supervisor needed)
+```
+
+Key shapes:
+
+- **Sidecar HTTP contract is unchanged.** `startExtAgentHttpServer` in `http-server.ts:44` stays the only thing the bridge talks to. New backends just plug into `ExtAgentBackend` (`types.ts:28`).
+- **Manager picks one sidecar at a time.** `syncExtAgentSidecar` in `manager.ts:77` already supports this; we just add two new ports (`DEFAULT_PORTS.codex = 8023`, `claudecode = 8024`) and env overrides (`ENVOYMESH_CODEX_PORT`, `ENVOYMESH_CLAUDECODE_PORT`).
+- **Daemon supervisor is its own module.** `apps/node/src/ext-agent-adapter/daemon-supervisor.ts` is independent of any specific backend, so each backend declares its own spawn spec + healthcheck and reuses the helper.
+
+```ts
+// apps/node/src/ext-agent-adapter/daemon-supervisor.ts (sketch)
+export interface DaemonSupervisorOptions {
+  name: string;              // "codex" / "hermes" / "openhuman"
+  command: string;
+  args: string[];
+  env?: NodeJS.ProcessEnv;
+  cwd?: string;
+  healthcheck: () => Promise<boolean>;
+  healthcheckIntervalMs?: number;     // default 5_000
+  restartPolicy: {
+    initialDelayMs?: number;          // default 1_000
+    maxDelayMs?: number;              // default 30_000
+    backoffMultiplier?: number;       // default 2
+    maxRestartsInWindow?: number;     // default 5 in 5 min
+    windowMs?: number;                // default 300_000
+  };
+}
+export class DaemonSupervisor {
+  constructor(options: DaemonSupervisorOptions);
+  start(): Promise<void>;        // resolves when healthcheck passes (or timeoutMs)
+  stop(): Promise<void>;         // SIGTERM → wait grace → SIGKILL
+  isRunning(): boolean;
+  isHealthy(): boolean;
+  restartsInWindow(): number;
+  on(event: "start" | "stop" | "crash" | "healthy" | "unhealthy", fn: (...args: unknown[]) => void): this;
+}
+```
+
+### 55A — `daemon-supervisor` helper `[x]`
+
+- **New file:** `apps/node/src/ext-agent-adapter/daemon-supervisor.ts` (~785 LOC)
+- **Test:** `apps/node/test/daemon-supervisor.test.ts` (~988 LOC, **49 cases**)
+- Spawn via `node:child_process.spawn` (stdin/stdout/stderr piped, captured as `stdout` / `stderr` events for callers to log with `[ext-agent:<name>:<stream>]` prefix).
+- Healthcheck is caller-supplied (HTTP GET, JSON-RPC ping, file-exists, anything that returns boolean).
+- Restart: exponential backoff `1s → 2s → 4s → 8s → 16s → 30s` capped; `maxRestartsInWindow` (default 5 / 5 min) trips a "stuck" state — supervisor stops trying and emits `crash.stuck` for the manager to surface in Settings.
+- Graceful shutdown: SIGTERM, wait `killGraceMs` (default 5s), then SIGKILL. Idempotent; `start()` after `stop()` is a fresh start.
+- **`start()` semantics:** resolves when the first healthcheck passes (with a 100ms stability grace window after — see below) OR after `startupTimeoutMs` elapses; rejects with `InstallMissingError` on pre-check fail or spawn ENOENT (sync or async). Concurrent `start()` calls share the same promise.
+- **Stability grace (100ms):** on macOS, `spawn()` for a non-existent binary returns a `ChildProcess` (with `pid: undefined`) that immediately fires the `error` event with `ENOENT` — `spawn()` itself does NOT throw. The healthcheck can pass before the `error` event fires, so we hold off on resolving `start()` until the process has been "stable" for a brief moment. If the `error` event sets `installMissing` during the grace, `start()` rejects with `InstallMissingError`.
+- **Stdio cleanup:** `cleanupProc()` destroys piped stdout/stderr and removes `exit` / `error` listeners. Without this, the async-ENOENT path leaks a half-open `ChildProcess` and keeps the event loop alive (we hit this in test dev — fixed).
+- **Test cases (49):** constructor validation (4); basic lifecycle (spawn / stop / `start()` after `stop()` / concurrent `start()` / start-while-healthy no-op / start event / stop event) (9); install detection (pre-check fail + reason + installHint + sync ENOENT + async ENOENT + ENOENT hint + no restart after install-missing + preSpawnCheck throws) (8); crash handling (crash event + restart + crash.stuck + backoff cap + backoff reset on healthy) (5); signals (SIGTERM-then-SIGKILL on hung / quick stop) (2); stdio (stdout event / stderr event) (2); env + cwd (override / inherit / cwd) (3); healthcheck lifecycle (periodic / healthy event / unhealthy event / no spurious initial unhealthy / timeout abort) (5); state getters (isRunning / isHealthy / restartsInWindow / window cleanup) (6); `InstallMissingError` (name+message+info / no hint) (2); `_test.runHealthcheckOnce` (success / throw / timeout) (3).
+
+### 55A.1 — Install detection + install guide `[ ]`
+
+- **MOD:** `apps/node/src/ext-agent-adapter/daemon-supervisor.ts` — extend `start()` to detect ENOENT-class spawn failures and return a structured `InstallState` instead of just an error string. New event `"install-missing"` on the supervisor.
+- **MOD:** `packages/api/src/ext-agent.ts` — add `ExtAgentInstallGuide` interface + `getExtAgentInstallGuide(agentId, installState?)` factory. Reuses `getExtAgentInstallInfo` for the link fields.
+- **MOD:** `packages/api/src/node-service.ts` (or wherever `ExtAgentReachability` lives — `ext-agent.ts:81`) — add `installState: "installed" | "not-installed" | "unsupported" | "unknown"` and `installGuide?: ExtAgentInstallGuide` (only set when not installed).
+- **MOD:** `apps/node/src/ext-agent-adapter/probe.ts` — distinguish "not installed" (ENOENT / module-not-found / CLI not on PATH) from "not running" (daemon absent) from "unreachable" (network). Surface as `installState`.
+
+```ts
+// packages/api/src/ext-agent.ts (sketch, new)
+export interface ExtAgentInstallGuide {
+  agentId: string;
+  installed: boolean;                       // best-effort: probe() passed AND install check passed
+  command: string;                          // "codex" / "hermes" / "claudecode"
+  installCommand: string;                   // "npm install -g @openai/codex"
+  verifyCommand: string;                    // "codex --version"
+  startHint: string;                        // existing defaultExtAgentStartHint()
+  homepageUrl: string;
+  homepageLabel: string;
+  commonIssues: string[];                   // 2-4 bullets for the Settings card
+}
+
+export type InstallState = "installed" | "not-installed" | "unsupported" | "unknown";
+
+export function getExtAgentInstallGuide(
+  agentId: string,
+  installState: InstallState = "unknown",
+): ExtAgentInstallGuide { /* per-id table */ }
+```
+
+**Per-agent install command table** (the one I need you to confirm — see [open questions](#open-questions-phase-55)):
+
+| id | installCommand | verifyCommand | homepageUrl |
+|---|---|---|---|
+| `codex` | `npm install -g @openai/codex` *(proposed — see open question)* | `codex --version` | https://github.com/openai/codex |
+| `claudecode` | `npm install -g @anthropic-ai/claude-code` | `claude --version` | https://docs.claude.com/en/docs/claude-code |
+| `hermes` | `curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \| bash` | `hermes --version` | https://hermes-agent.nousresearch.com/docs |
+| `openhuman` | `curl -fsSL https://raw.githubusercontent.com/tinyhumansai/openhuman/main/scripts/install.sh \| bash` | `openhuman --version` | https://tinyhumans.ai/openhuman |
+
+**Test cases for 55A.1** (extend `daemon-supervisor.test.ts` + new `ext-agent-install-guide.test.ts`):
+- spawn nonexistent command → supervisor emits `"install-missing"` with `{ command, installHint }` instead of generic crash
+- probe() on missing `codex` → `installState: "not-installed"`, `installGuide` populated
+- probe() on present but unhealthy `codex` → `installState: "installed"`, no `installGuide`
+- `getExtAgentInstallGuide("codex", "not-installed")` returns the table row with `installed: false`
+- Settings state shape matches `ExtAgentReachability` extended fields (snapshot test)
+
+### 55B — `codex` ext agent backend `[ ]`
+
+- **New file:** `apps/node/src/ext-agent-adapter/codex-backend.ts` (~350 LOC)
+- **Test:** `apps/node/test/ext-agent-adapter-codex.test.ts` (~200 LOC, ≥8 cases)
+- Protocol: `codex app-server` JSON-RPC over **stdio** (matches existing `extensions/codex/src/app-server/`; no extra TCP port).
+- Library: `@openai/codex` (same major as `extensions/codex/package.json`; verify exact pin at implementation time). If the library's `app-server` client is private to the extension, we vendor the wire types from the extension's `src/app-server/` (license-compatible) — same JSON-RPC shapes the OpenClaw extension already speaks.
+- Wire sequence (per `ask`):
+  1. `initialize` (capabilities, client info) — once per process.
+  2. `thread/start` if no threadId for `sessionKey`; reuse otherwise.
+  3. `turn/start` with `userMessage`; subscribe to `item/agentMessage/delta` stream; collect final `turn/completed` text.
+  4. Cache `threadId` per `sessionKey` in an in-memory `Map<string, string>`.
+- `createCodexBackend()` returns an `ExtAgentBackend` with:
+  - `ask(text, sessionKey) → Promise<string>` (final text from `turn/completed`)
+  - `probe()` → `thread/list` JSON-RPC call; treat any 2xx + valid response as healthy
+- Spawned by `daemon-supervisor` (55A) with `command: "codex"`, `args: ["app-server"]`, `env: { OPENAI_API_KEY: ... }` (env discovery reuses `openaiApiKey()` pattern from `openclaw-workspace.ts` if helpful).
+- Default sidecar port `8023`; override `ENVOYMESH_CODEX_PORT`.
+- **Test cases:** wire init / thread/start / turn/start mock server; ask with new sessionKey creates thread; ask with same sessionKey reuses thread; probe returns true on healthy `thread/list`; probe returns false on bad response; `createSupervisor` returns supervisor that surfaces crash; **missing `codex` binary → probe() returns `installState: "not-installed"` with `installGuide` from 55A.1 (NOT a generic ENOENT error)**; `probe()` for present-but-unhealthy binary returns `installed: true` without `installGuide`.
+
+### 55C — `claudecode` ext agent backend `[ ]`
+
+- **New file:** `apps/node/src/ext-agent-adapter/claudecode-backend.ts` (~250 LOC)
+- **Test:** `apps/node/test/ext-agent-adapter-claudecode.test.ts` (~150 LOC, ≥6 cases)
+- Library: `@anthropic-ai/claude-agent-sdk` (renamed from `@anthropic-ai/claude-code-sdk`; confirm exact package name at implementation time). Pin exact version.
+- No subprocess — library runs in-process. `createClaudeCodeBackend()` returns an `ExtAgentBackend` directly; no supervisor needed.
+- Wire sequence (per `ask`):
+  1. Build `AsyncIterable<SDKMessage>` that yields one `UserMessage(text)`.
+  2. `for await (const msg of query({ prompt, options: { ... } }))` collect assistant text; resolve on `result` subtype.
+  3. Cache `sessionId` (from `system/init` message) per `sessionKey`; pass to next `query` via `options.resume` if available.
+- Auth: `ANTHROPIC_API_KEY` env var, OR Bedrock/Vertex/Foundry via the SDK's existing env wiring (delegate to SDK; do not re-implement).
+- Model: from `ask()` params (let the bridge pass the model the user picked in Settings); default to `claude-sonnet-4-6`.
+- `probe()`: cheap noop `query` (synthetic "ping" prompt) with a 2s timeout; treat 2xx reply as healthy.
+- Default sidecar port `8024`; override `ENVOYMESH_CLAUDECODE_PORT`.
+- **Test cases:** mock `query` module; ask with new sessionKey captures sessionId from `system/init`; ask with same sessionKey passes `resume`; probe returns true on reply; probe returns false on throw; **missing `claude` CLI → probe() returns `installState: "not-installed"` with `installGuide` (no SDK import is tried without CLI present)**; missing `ANTHROPIC_API_KEY` env var → clear error message pointing to env var setup, distinct from not-installed.
+
+### 55D — Settings UX + guide updates `[ ]`
+
+- **MOD:** `packages/api/src/ext-agent.ts`
+  - `DEFAULT_EXT_AGENTS`: append `{ id: "codex", ... }` and `{ id: "claudecode", ... }` with `enabled: true` defaults (users can disable in Settings if they don't have the binary).
+  - `defaultExtAgentStartHint()`: add cases for `codex` (`Install \`codex\` CLI, ensure \`codex app-server\` works; set \`OPENAI_API_KEY\``) and `claudecode` (`Install Claude Code, ensure \`claude --version\` works; set \`ANTHROPIC_API_KEY\``).
+  - `getExtAgentInstallInfo()`: add cases for both with `homepageUrl` + `homepageLabel` (Anthropic / OpenAI docs).
+- **MOD:** `apps/node/src/ext-agent-adapter/manager.ts` — add `codex` / `claudecode` to `DEFAULT_PORTS` + `listenPortFor()` env override arms (same shape as existing `pi` / `hermes` / `openhuman`).
+- **MOD:** `apps/node/src/ext-agent-adapter/types.ts` — extend `ExtAgentSidecarKind` union with `"codex" | "claudecode"`; `EXT_AGENT_SIDECAR_KINDS` array; `isExtAgentSidecarKind` arms.
+- **MOD:** `apps/node/src/ext-agent-adapter/backends.ts` — `createBackend` switch arms; (55E) optional supervisor-wrapping for hermes / openhuman.
+- **MOD:** `apps/node/src/ext-agent-adapter/index.ts` — re-export new factory + supervisor helper.
+- **MOD:** `apps/node/test/ext-agent-adapter.test.ts` — extend `isExtAgentSidecarKind` test + `createBackend` switch test + `syncExtAgentSidecar` for both new kinds.
+- **MOD:** `docs/Ext_Agent_guide.md` — add **Codex** and **Claude Code** sections (install, env var, port override, supervisor behavior, known limitations). Update the picker table. Add **Install guide** section with the install command table from 55A.1 and the troubleshooting matrix.
+- **NOT a public RPC surface change.** All additions are additive; `bridge-config.json` users with no `codex` / `claudecode` continue to work.
+- **Settings UI behavior** (Social `Settings → External Agent Bridge`):
+  - When user switches `activeExtAgent` to an agent whose `installState` is `"not-installed"`, the panel shows an **Install required** card with: install command, verify command, "Open install docs" link, and `commonIssues` bullets. No user action is blocked — they can still see the picker; the card just makes the gap obvious.
+  - The Settings status indicator next to the active agent changes color: green for installed+reachable, amber for installed+unreachable, red for not-installed.
+  - i18n keys added to `en.ts` / `zh.ts`: `ext_agent.install_card.title`, `ext_agent.install_card.command_label`, `ext_agent.install_card.verify_label`, `ext_agent.install_card.docs_label`, `ext_agent.status.installed`, `ext_agent.status.not_installed`, `ext_agent.status.unsupported`.
+
+### 55D.1 — Chat list switcher problem dialog `[ ]`
+
+The chat list's `ExtAgentSwitcher` component (`apps/social/src/components/ExtAgentSwitcher.tsx`, 216 LOC) already does a soft `probeExtAgent()` after a switch (line 88) but only renders a one-line tooltip hint (line 91-96). When 55A.1 extends `ExtAgentReachability` with `installState` + `installGuide?`, the switcher needs to surface that data too — otherwise the same `codex not installed` confusion happens in the chat list.
+
+- **MOD:** `apps/social/src/components/ExtAgentSwitcher.tsx` — replace the `offlineHint` tooltip with a `problemDialog` state. Behavior:
+  - `installState === "not-installed"` → open a **modal** (`<ExtAgentSwitcherInstallDialog>`) showing the install card inline with one-click "Copy command" + "Open docs" buttons. User can dismiss to keep the (broken) selection.
+  - `installState === "installed"` && `reachable === false` → open a **toast** (3-second auto-dismiss) with the start hint + "Retry" button that re-runs the probe. Modal is too heavy for "just start the daemon".
+  - `installState === "installed"` && `reachable === true` → silent switch, no popup (current behavior preserved).
+- **NEW:** `apps/social/src/components/ExtAgentSwitcherInstallDialog.tsx` (~150 LOC) — the install-required modal. Reuses the same `ExtAgentInstallGuide` data the Settings panel uses; can share the inner card component with `SettingsAITab.tsx` (refactor into `ExtAgentInstallGuideCard` so both consume the same visual + i18n).
+- **MOD:** `apps/social/src/components/views/SettingsAITab.tsx` — use the shared `ExtAgentInstallGuideCard` for the Ext Agent Bridge panel; replace inline "start hint" text.
+- **MOD:** `apps/social/src/components/views/ExtAgentOfflineBanner.tsx` — when `installState === "not-installed"`, render the install card inline (currently the banner only shows when daemon is running but unhealthy).
+- **Test cases** (extend `ExtAgentSwitcher.test.tsx` — if it doesn't exist, create at ~200 LOC):
+  - Switch to `codex` when binary missing → modal opens with install command visible; "Copy command" copies to clipboard; "Open docs" opens new tab.
+  - Switch to `codex` when installed but unhealthy → toast (3s) with start hint + "Retry" → re-runs probe.
+  - Switch to `pi` (built-in) → no popup, silent.
+  - Switch back to current agent → no-op (existing behavior preserved).
+  - Dismiss modal → state stays on the new agent (we don't roll back the switch — the user explicitly chose it).
+  - Snapshot test: i18n keys resolve in both `en` and `zh`.
+- **i18n keys added** (to `en.ts` / `zh.ts` and copied to the 4 other locales via `mergeMessages` fallback):
+  - `ext_agent.switcher.install_required.title` / `body` / `copy_command` / `open_docs` / `dismiss`
+  - `ext_agent.switcher.unreachable.toast` / `retry` / `dismiss`
+  - `ext_agent.switcher.shared.start_hint_label` / `verify_label` / `docs_label`
+
+### 55E — `hermes` / `openhuman` supervisor wrap (optional / backlog) `[ ]`
+
+- **MOD:** `apps/node/src/ext-agent-adapter/backends.ts` — wrap `createHermesBackend` / `createOpenHumanBackend` so that on `probe()` failure the supervisor attempts to spawn the daemon.
+- Hermes: `command: "hermes"`, `args: ["gateway", "run"]`, `env: { API_SERVER_ENABLED: "true", API_SERVER_KEY: <discovered> }`; healthcheck is `GET :8642/v1/models`.
+- OpenHuman: `command: "openhuman-core"` (or `openhuman` with the headless flag); healthcheck is `GET :7788/health`.
+- Toggled by `ENVOYMESH_EXT_AGENT_AUTOSTART=1` (default off; only ship if 55B/55C succeed cleanly).
+- This is the bridge-side "no manual daemon startup" feature that makes Ext Agent feel like a one-click swap.
+
+### File map (M2 — all slices together)
+
+| Kind | Path | LOC (est) |
+|---|---|---|
+| NEW | `apps/node/src/ext-agent-adapter/daemon-supervisor.ts` | ~785 (55A; 55A.1 folded in — see above) |
+| NEW | `apps/node/src/ext-agent-adapter/codex-backend.ts` | ~350 |
+| NEW | `apps/node/src/ext-agent-adapter/claudecode-backend.ts` | ~250 |
+| NEW | `apps/node/test/daemon-supervisor.test.ts` | ~250 (55A + 55A.1) |
+| NEW | `apps/node/test/ext-agent-adapter-codex.test.ts` | ~220 |
+| NEW | `apps/node/test/ext-agent-adapter-claudecode.test.ts` | ~170 |
+| NEW | `apps/node/test/ext-agent-install-guide.test.ts` | ~80 (55A.1 table tests) |
+| NEW | `apps/social/src/components/ExtAgentSwitcherInstallDialog.tsx` (55D.1) | ~150 |
+| NEW | `apps/social/src/components/ExtAgentInstallGuideCard.tsx` (55D.1 shared) | ~120 |
+| NEW | `apps/social/src/components/ExtAgentSwitcher.test.tsx` (if not exists) (55D.1) | ~200 |
+| MOD | `apps/node/src/ext-agent-adapter/types.ts` | +30 |
+| MOD | `apps/node/src/ext-agent-adapter/backends.ts` | +40 |
+| MOD | `apps/node/src/ext-agent-adapter/manager.ts` | +30 |
+| MOD | `apps/node/src/ext-agent-adapter/probe.ts` | +50 (InstallState classification) |
+| MOD | `apps/node/src/ext-agent-adapter/index.ts` | +15 |
+| MOD | `apps/node/test/ext-agent-adapter.test.ts` | +100 |
+| MOD | `packages/api/src/ext-agent.ts` | +150 (ExtAgentInstallGuide + table + extended ExtAgentReachability with installState/installGuide) |
+| MOD | `packages/api/src/node-service.ts` | +20 |
+| MOD | `apps/social/src/components/ExtAgentSwitcher.tsx` | +80 (replace tooltip with dialog/toast state) |
+| MOD | `apps/social/src/components/views/SettingsAITab.tsx` | +60 (use shared install card) |
+| MOD | `apps/social/src/components/views/ExtAgentOfflineBanner.tsx` | +40 (render install card when not-installed) |
+| MOD | `apps/social/src/i18n/{en,zh}.ts` | +50 (8 Settings keys + 7 Switcher keys × 2 langs) |
+| MOD | `docs/Ext_Agent_guide.md` | +180 |
+| MOD | `package.json` (`@openai/codex`, `@anthropic-ai/claude-agent-sdk` deps) | +2 deps |
+| MOD | `docs/implementation-plan.md` | this section + changelog |
+| **Total** | | **~2,800 LOC + 2 npm deps** |
+
+### Exit criteria
+
+- [ ] `codex` and `claudecode` show in Settings → External Agent Bridge picker.
+- [ ] Selecting `codex` spawns `codex app-server` via supervisor; sidecar replies to `POST /message` with the agent's final text.
+- [ ] Selecting `claudecode` boots sidecar that uses Claude Agent SDK; same `/message` round-trip works.
+- [ ] `sessionKey` → external session ID mapping persists within a single EnvoyMesh run; restart starts fresh (documented behavior, matches Hermes/OpenHuman).
+- [ ] `codex` subprocess crash → supervisor restarts with exponential backoff; `claudecode` has no subprocess so N/A.
+- [ ] **Picking an agent that isn't installed shows an Install Required card in Settings, NOT a cryptic error.** The card includes the install command, verify command, "Open install docs" link, and `commonIssues` bullets. Confirmed for `codex`, `claudecode`, `hermes`, `openhuman`.
+- [ ] **Status indicator color reflects install state** — green (installed+reachable), amber (installed+unreachable), red (not-installed).
+- [ ] **Switching ext agent from the chat list to an uninstalled one pops a modal with the install card** (not a cryptic error, not a tooltip). Switching to an installed-but-unreachable agent pops a 3-second toast with start hint + Retry. Switching to a healthy agent is silent.
+- [ ] Switching back to `pi` / `hermes` / `openhuman` / `homeclaw` works unchanged (no regression).
+- [ ] `npm run test:dev` passes all new tests + existing ext-agent tests.
+- [ ] `npm run typecheck` clean (pre-existing `packages/mobile-node/src/index.ts:506` error stays as-is).
+- [ ] `Ext_Agent_guide.md` updated; `defaultExtAgentStartHint` cases for both new kinds; new **Install guide** section with the 4-agent install command table.
+
+### Risks & mitigations
+
+| # | Risk | Mitigation |
+|---|---|---|
+| 1 | `@openai/codex` and `@anthropic-ai/claude-agent-sdk` are not yet in `apps/node`'s `package.json` | Add as workspace deps in 55B/55C; pin exact versions; document the pin in code comments. |
+| 2 | Stdio JSON-RPC parsing for codex is finicky (NDJSON vs LSP framing) | Same transport code as `extensions/codex/src/app-server/`; if exportable, reuse; if private to the extension, vendor the wire types with explicit license. Test against a mock JSON-RPC server first. |
+| 3 | `@anthropic-ai/claude-agent-sdk` is pre-1.0 — breaking changes possible between minor versions | Pin exact version; update test fixtures to match; document `knownFragile: ["claude-agent-sdk@<x>"]` in code comment. |
+| 4 | New ports 8023 / 8024 may conflict on some hosts | Same env-override pattern as existing (`ENVOYMESH_CODEX_PORT`, `ENVOYMESH_CLAUDECODE_PORT`); document in `Ext_Agent_guide.md`. |
+| 5 | Process leak on EnvoyMesh shutdown | `daemon-supervisor.stop()` registered on `process.on("SIGTERM"/"SIGINT")` in `manager.ts`; tests verify cleanup. |
+| 6 | Backward compat with existing `bridge-config.json` (no `codex` / `claudecode` keys) | New kinds are purely additive in `DEFAULT_EXT_AGENTS`; old configs still resolve `pi` / `hermes` / `openhuman`; `syncExtAgentSidecar` already handles "no matching kind" by no-op. |
+| 7 | `probe()` for codex is non-trivial (a full `thread/list` round-trip); for claudecode it spawns a cheap turn | Time-bound `probe()` with `AbortSignal.timeout(2_000)` (matches Hermes `probe()` in `backends.ts:746`); sidecar `/status` endpoint already awaits probe — `http-server.ts` design unchanged. |
+| 8 | `claudecode` running in-process shares Node.js heap with EnvoyMesh; resource contention? | Library is designed for it (used in `@anthropic-ai/claude-code` SDK for production IDEs); measure with `process.memoryUsage()` in tests; document in guide. |
+| 9 | Daemon supervisor's stuck-state trip is hard to test deterministically | Use `vi.useFakeTimers()` for the windowMs math; document the trip behavior in the supervisor's JSDoc. |
+| 10 | Mobile (EnvoyGo) doesn't run ext-agent-adapter — only `homeclaw-core-ws` channel | No change needed; mobile uses HomeClaw or direct P2P bridge. Confirm via `grep -r ext-agent-adapter apps/envoygo/`. |
+| 11 | **User picks an agent that isn't installed — cryptic `ENOENT` in bridge log; no clear path to fix** | **55A.1 install detection** — supervisor's `start()` distinguishes ENOENT → structured `installState: "not-installed"` + populated `installGuide`. Settings UI renders an Install Required card with the right command. Tested explicitly per backend. |
+| 12 | Settings UI needs a way to surface `installState` cleanly | Extend `ExtAgentReachability` (`packages/api/src/ext-agent.ts:81`) with `installState: "installed" \| "not-installed" \| "unsupported" \| "unknown"` + `installGuide?`; status indicator color (green/amber/red) so the user can tell at a glance. |
+
+### Open questions (Phase 55)
+
+| Status | Question | My recommendation |
+|---|---|---|
+| `[x]` (settled) | codex transport: stdio vs ws? | **stdio** (matches existing `extensions/codex/`; one fewer port; cleaner supervisor model). |
+| `[x]` (settled) | claudecode transport: per-ask subprocess or in-process SDK? | **in-process SDK** (no subprocess lifecycle to manage; library is designed for it; faster; simpler). |
+| `[x]` (settled) | Should 55E (Hermes/OpenHuman supervisor) ship together? | **No — backlog for first ship.** Get 55A–55D stable, gather user feedback, then revisit. Hermes/OpenHuman already have a working HTTP pattern; autostart is a UX nicety, not a blocker. |
+| `[x]` (settled) | Should we unify with the existing `extensions/codex/`? | **No, not in this phase.** The OpenClaw extension wraps the codex SDK for OpenClaw's own consumption (different prompt/permission/sandbox model). Unifying risks cross-coupling; defer to a follow-up "share codex wire types" refactor. |
+| `[x]` (settled) | Do we add a new RPC method (e.g. `restartCodexSidecar`)? | **No, not needed.** Sidecar restart is internal to the supervisor; surfaced in Settings status if stuck. |
+| `[x]` (settled — user confirmed 2026-08-10) | Primary install command for `codex` / `claudecode` | **Both are wanted.** Primary paths: `codex` = `npm install -g @openai/codex`; `claudecode` = `npm install -g @anthropic-ai/claude-code`. Alternatives (brew / official installer) documented as `commonIssues[]` bullets. |
+| `[x]` (settled — user confirmed 2026-08-10) | Where does the Install Required card live in the Social UI? | **Two surfaces:** (1) `Settings → AI → Ext Agent Bridge` panel for the rich card; (2) `ExtAgentSwitcher` in the chat list for the pop-up modal/toast (55D.1). Shared `ExtAgentInstallGuideCard` component backs both. |
+
+### Design notes
+
+- M1 = just codex + claudecode (no supervisor for hermes/openhuman) — ~1,200 LOC, 2-3 commits.
+- M2 = this plan, ~1,750 LOC, 4-5 commits.
+- M3 = M2 + extending the supervisor to wrap `pi` (which is currently in-process) and `homeclaw-core-ws`. **Not recommended** for this phase — `pi` is intentionally in-process and `homeclaw` has its own channel; touching them is unrelated risk.
+- The "Plan B" framing here distinguishes **protocol** (long-lived socket vs HTTP one-shot) from **process lifecycle** (supervised subprocess). Hermes and OpenHuman already do "Plan B-light" over HTTP — we just give them a supervisor for autostart.
+
+---
+
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
-| 2026-08-09 | **Phase 54 hardware model tiers.** Recommend/download Qwen3.5 4B or 9B from Metal/CUDA/RAM (0.8B only when tight); Settings shows machine + Recommended badges. |
+| 2026-08-10 | **Phase 55 designed — Ext Agent codex + claudecode (Plan B + daemon supervisor).** Two new backends (codex via `app-server` stdio, claudecode via `@anthropic-ai/claude-agent-sdk`); generic `daemon-supervisor.ts` for spawn + healthcheck + exponential restart; existing Hermes/OpenHuman keep their HTTP transport (55E optional). Status: `[!]` awaiting review. |
+| 2026-08-10 | **Phase 55 — 55A daemon-supervisor shipped.** `apps/node/src/ext-agent-adapter/daemon-supervisor.ts` (~785 LOC) + `apps/node/test/daemon-supervisor.test.ts` (49 cases, all pass in ~11s). `DaemonSupervisor` class with `start()` / `stop()` / `isRunning()` / `isHealthy()` / `restartsInWindow()`; events `start` / `stop` / `crash` / `crash.stuck` / `healthy` / `unhealthy` / `install-missing` / `stdout` / `stderr`. Exponential backoff `1s→2s→4s→8s→16s→30s` capped; `maxRestartsInWindow` defaults 5/5min. Async ENOENT on macOS (where `spawn()` returns a child that immediately emits `error`) handled with a 100ms stability grace after the first passing healthcheck. `InstallMissingError` thrown by `start()` for both pre-check fail and ENOENT (sync or async); also emitted as `install-missing` event. 55A.1 install detection already included in this commit (state.installMissing flag, `installHint` option). |
+| 2026-08-10 | **Phase 55 — install detection added (55A.1).** New sub-slice detects ENOENT / missing CLI at supervisor `start()`; surfaces `installState` + `installGuide` through `ExtAgentReachability`; Settings UI shows an Install Required card (install command + verify command + docs link + `commonIssues[]`) with green/amber/red status indicator. `getExtAgentInstallGuide(agentId, installState?)` factory + per-agent install command table added to `packages/api/src/ext-agent.ts`. Total Phase 55 LOC revised: ~1,750 → ~2,300. |
+| 2026-08-10 | **Phase 55 — chat switcher problem dialog (55D.1).** `ExtAgentSwitcher.tsx` (216 LOC) replaces single-line tooltip with rich problem dialog/toast: not-installed → modal with install card (Copy command + Open docs); installed+unreachable → 3s toast with start hint + Retry; healthy → silent. New `ExtAgentSwitcherInstallDialog.tsx` + shared `ExtAgentInstallGuideCard.tsx` (reused by Settings + Chat + OfflineBanner). Open questions Q1 (install commands) + Q2 (UI surface) settled by user. Phase 55 LOC: ~2,300 → ~2,800. |
 | 2026-08-09 | **Phase 54 HF GGUF search.** Live Hub search + `hf:` download ids; curated refresh to Qwen3.5 0.8B/4B + Gemma 4; Settings debounce/badges. |
 | 2026-08-09 | **Phase 54 runtime lifecycle tests.** Mocked spawn/fetch coverage for enable→wireProviders, CUDA→CPU `-ngl 0` fallback, catalog CN failover + abort. |
 | 2026-08-09 | **Phase 54 runtime mirrors + tests.** llama.cpp GitHub downloads fail over via CN proxies / `RUNTIME_MIRROR_BASE` (sha256 unchanged); download helper + mirror unit tests. |

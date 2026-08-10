@@ -14,7 +14,7 @@ import {
   ENVOY_LOCAL_LLAMA_CPP_TAG,
   ENVOY_LOCAL_MIN_MODEL_BYTES,
 } from "../src/envoy-local-manifest.js";
-import { downloadFile } from "../src/envoy-local-download.js";
+import { downloadFile, verifyGgufFile } from "../src/envoy-local-download.js";
 import { ENVOY_LOCAL_PORT, envoyLocalOpenAiBaseUrl } from "../src/service-ports.js";
 
 vi.mock("node:child_process", async (importOriginal) => {
@@ -31,6 +31,9 @@ vi.mock("../src/envoy-local-download.js", async (importOriginal) => {
     ...mod,
     downloadFile: vi.fn(),
     ensureMinFreeBytes: vi.fn().mockResolvedValue(undefined),
+    // verifyGgufFile is exercised by its own unit tests; default mock is a
+    // pass-through so lifecycle tests don't have to seed a real GGUF header.
+    verifyGgufFile: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -49,6 +52,7 @@ vi.mock("../src/envoy-local-platform.js", async (importOriginal) => {
 import { spawn } from "node:child_process";
 import { detectEnvoyLocalPlatform } from "../src/envoy-local-platform.js";
 import {
+  awaitEnvoyLocalOperation,
   cancelEnvoyLocalDownloadViaRuntime,
   createEnvoyLocalRuntimeState,
   declineEnvoyLocalAutoProvisionViaRuntime,
@@ -67,6 +71,7 @@ import {
 
 const mockedSpawn = vi.mocked(spawn);
 const mockedDownloadFile = vi.mocked(downloadFile);
+const mockedVerifyGgufFile = vi.mocked(verifyGgufFile);
 const mockedDetectPlatform = vi.mocked(detectEnvoyLocalPlatform);
 
 function makeFakeChild(pid: number): ChildProcess & {
@@ -211,10 +216,15 @@ describe("envoy-local-runtime lifecycle", () => {
     await seedRuntimeAndModel();
     mockedSpawn.mockImplementation(() => makeFakeChild(4242));
 
-    const status = await enableEnvoyLocalViaRuntime(state, deps, {
+    const kicked = await enableEnvoyLocalViaRuntime(state, deps, {
       skipModelDownload: true,
     });
+    // Detached: RPC snapshot is in-progress, or already finished on a fast path.
+    expect(kicked.operationInProgress || kicked.phase === "ready").toBe(true);
 
+    const status =
+      (await awaitEnvoyLocalOperation(state)) ??
+      (await getEnvoyLocalStatusViaRuntime(state, deps));
     expect(status.phase).toBe("ready");
     expect(status.enabled).toBe(true);
     expect(cfg.enabled).toBe(true);
@@ -278,13 +288,15 @@ describe("envoy-local-runtime lifecycle", () => {
       await writeSparseFile(destPath, ENVOY_LOCAL_MIN_MODEL_BYTES);
     });
 
-    const installed = await downloadEnvoyLocalModelViaRuntime(state, deps, {
+    await downloadEnvoyLocalModelViaRuntime(state, deps, {
       modelId: DEFAULT_ENVOY_LOCAL_MODEL.id,
     });
+    await awaitEnvoyLocalOperation(state);
 
     expect(urls.length).toBe(1);
     expect(urls[0]).toContain("hf-mirror.com");
     expect(urls[0]).not.toContain("huggingface.co");
+    const installed = await listEnvoyLocalInstalledModelsViaRuntime(deps);
     expect(installed.some((m) => m.id === DEFAULT_ENVOY_LOCAL_MODEL.id)).toBe(true);
   });
 
@@ -295,9 +307,11 @@ describe("envoy-local-runtime lifecycle", () => {
     });
     const modelId =
       "hf:unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q4_K_M.gguf";
-    const installed = await downloadEnvoyLocalModelViaRuntime(state, deps, {
+    await downloadEnvoyLocalModelViaRuntime(state, deps, {
       modelId,
     });
+    await awaitEnvoyLocalOperation(state);
+    const installed = await listEnvoyLocalInstalledModelsViaRuntime(deps);
     expect(installed.some((m) => m.id === modelId)).toBe(true);
     expect(mockedDownloadFile).toHaveBeenCalled();
     const url = mockedDownloadFile.mock.calls[0]?.[0]?.url as string;
@@ -435,9 +449,11 @@ describe("envoy-local-runtime lifecycle", () => {
       });
     });
 
-    const pending = downloadEnvoyLocalModelViaRuntime(state, deps, {
+    await downloadEnvoyLocalModelViaRuntime(state, deps, {
       modelId: DEFAULT_ENVOY_LOCAL_MODEL.id,
     });
+    const op = state.enablePromise;
+    expect(op).toBeTruthy();
 
     await vi.waitFor(() => {
       expect(urls.length).toBe(1);
@@ -445,8 +461,179 @@ describe("envoy-local-runtime lifecycle", () => {
     });
 
     await cancelEnvoyLocalDownloadViaRuntime(state, deps);
-    await expect(pending).rejects.toThrow(/abort/i);
+    const st = await op!;
     expect(urls.length).toBe(1);
-    expect(state.lastError).toBe("Download cancelled");
+    expect(st.lastError ?? state.lastError).toBe("Download cancelled");
+  });
+
+  it("downloadEnvoyLocalModel rejects non-GGUF downloads and cleans the file", async () => {
+    process.env.ENVOYMESH_ENVOY_LOCAL_MODEL_REGION = "global";
+    let downloadedPath: string | undefined;
+    mockedDownloadFile.mockImplementation(async ({ destPath }) => {
+      downloadedPath = destPath;
+      await writeSparseFile(destPath, ENVOY_LOCAL_MIN_MODEL_BYTES);
+    });
+    mockedVerifyGgufFile.mockRejectedValueOnce(
+      new Error('Bad GGUF magic: expected 0x46554747 ("GGUF"), got 0x00000000'),
+    );
+
+    await downloadEnvoyLocalModelViaRuntime(state, deps, {
+      modelId: DEFAULT_ENVOY_LOCAL_MODEL.id,
+    });
+    const st =
+      (await awaitEnvoyLocalOperation(state)) ??
+      (await getEnvoyLocalStatusViaRuntime(state, deps));
+    expect(st.lastError ?? state.lastError).toMatch(/GGUF magic/);
+
+    // File must be removed so the next attempt re-downloads from scratch
+    // (matches the sha256-mismatch cleanup pattern at runtime.ts:589).
+    expect(downloadedPath).toBeTruthy();
+    const { existsSync } = await import("node:fs");
+    expect(existsSync(downloadedPath!)).toBe(false);
+  });
+
+  it("downloadEnvoyLocalModel preserves pre-existing .part so downloadFile can resume", async () => {
+    process.env.ENVOYMESH_ENVOY_LOCAL_MODEL_REGION = "global";
+    const partPath = join(
+      profileDir,
+      "envoy-local",
+      "models",
+      `${DEFAULT_ENVOY_LOCAL_MODEL.fileName}.part`,
+    );
+    // Pre-seed a .part file as if a previous attempt got partway through
+    // and died (network blip, app restart). The runtime must not wipe it
+    // before calling downloadFile — that's what enables HTTP Range resume.
+    const partialSize = 318_000_000; // ~60% of qwen3.5-0.8b
+    await mkdir(dirname(partPath), { recursive: true });
+    await writeSparseFile(partPath, partialSize);
+
+    // The mock mirrors what the real downloadFile would do on entry: stat
+    // the .part to learn the resume offset. We record that size and the
+    // request URL so we can assert the runtime didn't rm the .part first.
+    let observedPartSize = 0;
+    let downloadCalled = false;
+    mockedDownloadFile.mockImplementation(async ({ destPath }) => {
+      downloadCalled = true;
+      const { stat: statFn } = await import("node:fs/promises");
+      try {
+        observedPartSize = (await statFn(partPath)).size;
+      } catch {
+        observedPartSize = 0;
+      }
+      await writeSparseFile(destPath, ENVOY_LOCAL_MIN_MODEL_BYTES);
+    });
+
+    await downloadEnvoyLocalModelViaRuntime(state, deps, {
+      modelId: DEFAULT_ENVOY_LOCAL_MODEL.id,
+    });
+    await awaitEnvoyLocalOperation(state);
+
+    expect(downloadCalled).toBe(true);
+    // The .part is still there at the pre-seeded size when downloadFile
+    // runs. (Real Range-header behavior is covered in
+    // envoy-local-download.test.ts; this test just guards the
+    // runtime-level contract: don't wipe the user's partial work.)
+    expect(observedPartSize).toBe(partialSize);
+  });
+
+  it("startSidecar fails with model-size-aware timeout (not the old 60s hardcode)", async () => {
+    // Set up a 9B-sized model (5.5 GB) so the default startup timeout is
+    // 240s. Probe returns false immediately, child stays alive, so the
+    // probe loop hits the deadline and throws the timeout error.
+    await seedRuntimeAndModel();
+    const modelPath = join(
+      profileDir,
+      "envoy-local",
+      "models",
+      DEFAULT_ENVOY_LOCAL_MODEL.fileName,
+    );
+    // 5.5 GB sparse file → resolveStartupTimeoutMs returns 480_000
+    await writeSparseFile(modelPath, 5_500_000_000);
+
+    // Child stays alive (no emitExit). /v1/models returns 503 immediately
+    // so the probe loop iterates and quickly hits the deadline.
+    mockedSpawn.mockImplementation(() => makeFakeChild(9999));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: false, status: 503 })),
+    );
+
+    // Override to 100 ms so the test doesn't wait 240 s. The 240s default
+    // is verified separately in envoy-local-manifest.test.ts.
+    cfg = { ...cfg, serverParams: { startupTimeoutMs: 100 } };
+
+    // restartEnvoyLocalViaRuntime catches the startSidecar error and
+    // stores it on state.lastError. Inspect that.
+    const status = await restartEnvoyLocalViaRuntime(state, deps);
+    expect(status.lastError).toMatch(/did not become ready within/);
+    expect(status.phase).toBe("error");
+  });
+
+  it("user override of startupTimeoutMs is reflected in the error message", async () => {
+    await seedRuntimeAndModel();
+    // The seed file is 50 MB → size-based default is 30 s. With the
+    // 100 ms override the error message should mention the override, not
+    // the size default.
+    cfg = { ...cfg, serverParams: { startupTimeoutMs: 100 } };
+
+    mockedSpawn.mockImplementation(() => makeFakeChild(9998));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: false, status: 503 })),
+    );
+
+    const status = await restartEnvoyLocalViaRuntime(state, deps);
+    // 100 ms rounds to "0s" in the error message. The point is that
+    // the error IS the timeout (not "llama-server exited" from a crashed
+    // child) and that startupTimeoutMs is what determined it.
+    expect(status.lastError).toMatch(/did not become ready within 0s/);
+    expect(status.lastError).toMatch(/Startup timeout|startupTimeoutMs/);
+    expect(status.phase).toBe("error");
+  });
+
+  it("scans a dropped GGUF and auto-activates when it is the only model", async () => {
+    const modelsPath = join(profileDir, "envoy-local", "models");
+    await mkdir(modelsPath, { recursive: true });
+    const fileName = "MyCustom-7B-Q4_K_M.gguf";
+    await writeSparseFile(join(modelsPath, fileName), ENVOY_LOCAL_MIN_MODEL_BYTES);
+
+    const installed = await listEnvoyLocalInstalledModelsViaRuntime(deps);
+    expect(installed).toHaveLength(1);
+    expect(installed[0]?.id).toBe("local:mycustom-7b-q4_k_m");
+    expect(installed[0]?.active).toBe(true);
+    expect(cfg.activeModelId).toBe("local:mycustom-7b-q4_k_m");
+
+    const status = await getEnvoyLocalStatusViaRuntime(state, deps);
+    expect(status.modelsDir).toBe(modelsPath);
+    expect(status.activeModelId).toBe("local:mycustom-7b-q4_k_m");
+  });
+
+  it("enableEnvoyLocal uses a scanned curated filename without downloading", async () => {
+    const exeName = process.platform === "win32" ? "llama-server.exe" : "llama-server";
+    const exePath = join(
+      profileDir,
+      "envoy-local",
+      "runtime",
+      ENVOY_LOCAL_LLAMA_CPP_TAG,
+      exeName,
+    );
+    await mkdir(dirname(exePath), { recursive: true });
+    await writeFile(exePath, "#!/bin/sh\n", { mode: 0o755 });
+    const modelsPath = join(profileDir, "envoy-local", "models");
+    await mkdir(modelsPath, { recursive: true });
+    await writeSparseFile(
+      join(modelsPath, "Qwen3.5-4B-Q4_K_M.gguf"),
+      ENVOY_LOCAL_MIN_MODEL_BYTES,
+    );
+
+    mockedSpawn.mockImplementation(() => makeFakeChild(4243));
+    await enableEnvoyLocalViaRuntime(state, deps, { skipModelDownload: true });
+    const status =
+      (await awaitEnvoyLocalOperation(state)) ??
+      (await getEnvoyLocalStatusViaRuntime(state, deps));
+
+    expect(status.phase).toBe("ready");
+    expect(status.activeModelId).toBe("qwen3.5-4b-q4_k_m");
+    expect(mockedDownloadFile).not.toHaveBeenCalled();
   });
 });

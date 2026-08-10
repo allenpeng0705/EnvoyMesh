@@ -7,6 +7,7 @@ import type { EnvoyLocalStatus } from "@envoymesh/api";
 import { useT } from "../context/I18nContext.js";
 import { useNodeService } from "../hooks/useNodeService.js";
 import { useToastOptional } from "../hooks/useToast.js";
+import { waitForEnvoyLocalIdle } from "../lib/envoy-local-wait.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
 
 function formatApproxSize(bytes: number | undefined): string {
@@ -88,7 +89,10 @@ export function EnvoyLocalAutoProvisionDialog({
         onOpenSettingsAi?.();
         void (async () => {
           try {
-            const st = await nodeService.enableEnvoyLocal();
+            await nodeService.enableEnvoyLocal();
+            const st = await waitForEnvoyLocalIdle(() =>
+              nodeService.getEnvoyLocalStatus(),
+            );
             if (st.phase === "error" || st.lastError) {
               showToast(
                 t("settings.ai.envoyLocal.enableFailed") +

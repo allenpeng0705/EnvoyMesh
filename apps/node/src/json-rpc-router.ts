@@ -79,6 +79,7 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "restartEnvoyLocal",
   "cancelEnvoyLocalDownload",
   "downloadEnvoyLocalModel",
+  "setEnvoyLocalDownloadRegion",
   "setEnvoyLocalActiveModel",
   "deleteEnvoyLocalModel",
   "updateEnvoyLocalServerParams",
@@ -745,6 +746,14 @@ export async function routeRpcMethod(
       return ns.downloadEnvoyLocalModel({
         modelId: String(params.modelId ?? ""),
       });
+    case "setEnvoyLocalDownloadRegion": {
+      const regionRaw = String(params.region ?? "auto").trim().toLowerCase();
+      const region =
+        regionRaw === "cn" || regionRaw === "global" || regionRaw === "auto"
+          ? regionRaw
+          : "auto";
+      return ns.setEnvoyLocalDownloadRegion({ region });
+    }
     case "setEnvoyLocalActiveModel":
       return ns.setEnvoyLocalActiveModel({
         modelId: String(params.modelId ?? ""),

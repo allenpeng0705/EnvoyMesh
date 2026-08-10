@@ -3,8 +3,8 @@
  * Binaries/models are never packaged; everything lives under `{profileDir}/envoy-local/`.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { basename, join } from "node:path";
 import {
   DEFAULT_ENVOY_LOCAL_SERVER_PARAMS,
   hasUsableModelProvider,
@@ -23,10 +23,12 @@ import {
   type EnvoyLocalStatus,
   type ModelProviderConfig,
   type SearchEnvoyLocalModelsResult,
+  type SetEnvoyLocalDownloadRegionParams,
   normalizeEnvoyLocalConfig,
 } from "@envoymesh/api";
 import {
   findCuratedSuccessor,
+  getEnvoyLocalCatalogModelByFileName,
   getEnvoyLocalCatalogModelRaw,
   searchEnvoyLocalCatalog,
 } from "./envoy-local-catalog.js";
@@ -40,8 +42,11 @@ import {
 } from "./envoy-local-hw.js";
 import {
   detectEnvoyLocalModelRegion,
+  normalizeEnvoyLocalDownloadRegionPreference,
+  resolveEnvoyLocalDownloadRegion,
   resolveEnvoyLocalModelDownloadUrls,
   resolveEnvoyLocalRuntimeDownloadUrls,
+  type EnvoyLocalModelRegion,
 } from "./envoy-local-mirrors.js";
 import {
   downloadFile,
@@ -50,6 +55,7 @@ import {
   fileExists,
   findExecutable,
   sha256File,
+  verifyGgufFile,
 } from "./envoy-local-download.js";
 import {
   assertEnvoyLocalSha256,
@@ -58,6 +64,7 @@ import {
   ENVOY_LOCAL_MIN_RUNTIME_ARCHIVE_BYTES,
   ENVOY_LOCAL_LLAMA_CPP_TAG,
   resolveEnvoyLocalRuntimeAssets,
+  resolveStartupTimeoutMs,
 } from "./envoy-local-manifest.js";
 import {
   DEFAULT_ENVOY_LOCAL_MODEL,
@@ -118,6 +125,13 @@ function rootDir(profileDir: string): string {
   return join(profileDir, "envoy-local");
 }
 
+async function loadDownloadRegion(
+  deps: EnvoyLocalRuntimeDeps,
+): Promise<EnvoyLocalModelRegion> {
+  const cfg = normalizeEnvoyLocalConfig(await deps.loadEnvoyLocalConfig());
+  return resolveEnvoyLocalDownloadRegion({ preference: cfg.downloadRegion });
+}
+
 function runtimeDir(profileDir: string): string {
   return join(rootDir(profileDir), "runtime", ENVOY_LOCAL_LLAMA_CPP_TAG);
 }
@@ -130,17 +144,19 @@ function modelsIndexPath(profileDir: string): string {
   return join(rootDir(profileDir), "models.json");
 }
 
+type IndexedModel = {
+  id: string;
+  fileName: string;
+  path: string;
+  sizeBytes?: number;
+  sha256?: string;
+  /** llama-server `--chat-template` when required (e.g. Gemma 4). */
+  chatTemplate?: string;
+};
+
 interface ModelsIndex {
   activeModelId?: string;
-  models: Array<{
-    id: string;
-    fileName: string;
-    path: string;
-    sizeBytes?: number;
-    sha256?: string;
-    /** llama-server `--chat-template` when required (e.g. Gemma 4). */
-    chatTemplate?: string;
-  }>;
+  models: IndexedModel[];
 }
 
 async function loadModelsIndex(profileDir: string): Promise<ModelsIndex> {
@@ -160,6 +176,144 @@ async function saveModelsIndex(profileDir: string, index: ModelsIndex): Promise<
     encoding: "utf8",
     mode: 0o600,
   });
+}
+
+function localModelIdFromFileName(fileName: string): string {
+  const curated = getEnvoyLocalCatalogModelByFileName(fileName);
+  if (curated) return curated.id;
+  const base = basename(fileName).replace(/\.gguf$/i, "");
+  const slug = base
+    .replace(/[^a-zA-Z0-9._+-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+  return `local:${slug || "model"}`;
+}
+
+async function usableModelsFromIndex(index: ModelsIndex): Promise<IndexedModel[]> {
+  const out: IndexedModel[] = [];
+  for (const m of index.models) {
+    if (m.path && (await fileExists(m.path))) out.push(m);
+  }
+  return out;
+}
+
+/**
+ * Pick the active model: preferred id if present on disk, else the only model,
+ * else index.activeModelId. Never falls back to a hardcoded catalog default.
+ */
+function resolveActiveModel(
+  usable: IndexedModel[],
+  preferredIds: Array<string | undefined | null>,
+): IndexedModel | null {
+  if (usable.length === 0) return null;
+  for (const id of preferredIds) {
+    const want = typeof id === "string" ? id.trim() : "";
+    if (!want) continue;
+    const hit = usable.find((m) => m.id === want);
+    if (hit) return hit;
+  }
+  if (usable.length === 1) return usable[0]!;
+  return null;
+}
+
+/**
+ * Discover `*.gguf` files under `{profile}/envoy-local/models/`, merge into
+ * models.json, drop missing entries, and auto-select when exactly one model.
+ */
+async function scanAndReconcileModelsIndex(profileDir: string): Promise<ModelsIndex> {
+  const dir = modelsDir(profileDir);
+  await mkdir(dir, { recursive: true });
+  const previous = await loadModelsIndex(profileDir);
+  const byPath = new Map(previous.models.map((m) => [m.path, m]));
+  const byName = new Map(
+    previous.models.map((m) => [m.fileName.toLowerCase(), m]),
+  );
+
+  let names: string[] = [];
+  try {
+    names = await readdir(dir);
+  } catch {
+    names = [];
+  }
+
+  const nextModels: IndexedModel[] = [];
+  for (const name of names) {
+    const lower = name.toLowerCase();
+    if (!lower.endsWith(".gguf")) continue;
+    if (name.startsWith(".")) continue;
+    if (lower.endsWith(".part")) continue;
+    const path = join(dir, name);
+    let sizeBytes: number | undefined;
+    try {
+      const st = await stat(path);
+      if (!st.isFile()) continue;
+      sizeBytes = st.size;
+    } catch {
+      continue;
+    }
+
+    const existing = byPath.get(path) ?? byName.get(lower);
+    if (existing) {
+      nextModels.push({
+        ...existing,
+        fileName: name,
+        path,
+        ...(sizeBytes != null ? { sizeBytes } : {}),
+      });
+      continue;
+    }
+
+    try {
+      await verifyGgufFile(path);
+    } catch {
+      // Skip corrupt / non-GGUF drops; user can fix or remove.
+      continue;
+    }
+
+    const curated = getEnvoyLocalCatalogModelByFileName(name);
+    nextModels.push({
+      id: curated?.id ?? localModelIdFromFileName(name),
+      fileName: name,
+      path,
+      ...(sizeBytes != null ? { sizeBytes } : {}),
+      ...(curated?.chatTemplate ? { chatTemplate: curated.chatTemplate } : {}),
+    });
+  }
+
+  let activeModelId = previous.activeModelId;
+  if (activeModelId && !nextModels.some((m) => m.id === activeModelId)) {
+    activeModelId = undefined;
+  }
+  if (!activeModelId && nextModels.length === 1) {
+    activeModelId = nextModels[0]!.id;
+  }
+
+  const next: ModelsIndex = {
+    ...(activeModelId ? { activeModelId } : {}),
+    models: nextModels,
+  };
+
+  if (JSON.stringify(previous) !== JSON.stringify(next)) {
+    await saveModelsIndex(profileDir, next);
+  }
+  return next;
+}
+
+async function ensureActiveModelPersisted(
+  deps: EnvoyLocalRuntimeDeps,
+  profileDir: string,
+  index: ModelsIndex,
+  model: IndexedModel,
+): Promise<void> {
+  const cfg = normalizeEnvoyLocalConfig(await deps.loadEnvoyLocalConfig());
+  const needsIndex = index.activeModelId !== model.id;
+  const needsCfg = cfg.activeModelId !== model.id;
+  if (needsIndex) {
+    await saveModelsIndex(profileDir, { ...index, activeModelId: model.id });
+  }
+  if (needsCfg) {
+    await deps.saveEnvoyLocalConfig({ activeModelId: model.id });
+  }
 }
 
 function resolveNgl(
@@ -212,9 +366,11 @@ export async function getEnvoyLocalStatusViaRuntime(
   const endpoint = envoyLocalOpenAiBaseUrl(ENVOY_LOCAL_PORT);
   const exeName = process.platform === "win32" ? "llama-server.exe" : "llama-server";
   const exePath = await findExecutable(runtimeDir(profileDir), [exeName]);
-  const index = await loadModelsIndex(profileDir);
-  const activeId = cfg.activeModelId ?? index.activeModelId ?? DEFAULT_ENVOY_LOCAL_MODEL.id;
-  const active = index.models.find((m) => m.id === activeId);
+  const index = await scanAndReconcileModelsIndex(profileDir);
+  const usable = await usableModelsFromIndex(index);
+  const active =
+    resolveActiveModel(usable, [cfg.activeModelId, index.activeModelId]) ??
+    null;
   const running =
     Boolean(state.child?.pid) &&
     !state.child?.killed &&
@@ -255,7 +411,7 @@ export async function getEnvoyLocalStatusViaRuntime(
   const recommendedCatalog =
     getEnvoyLocalCatalogModelRaw(recommendation.modelId) ??
     getEnvoyLocalCatalogModelRaw(DEFAULT_ENVOY_LOCAL_MODEL.id);
-  const hasInstalledModel = await indexHasUsableModel(profileDir, index);
+  const hasInstalledModel = usable.length > 0;
   const modelProviders = deps.loadModelProviders
     ? await deps.loadModelProviders()
     : undefined;
@@ -266,6 +422,12 @@ export async function getEnvoyLocalStatusViaRuntime(
     needsDownload &&
     cfg.autoProvisionDeclined !== true &&
     !operationInProgress;
+  const downloadRegionPreference = normalizeEnvoyLocalDownloadRegionPreference(
+    cfg.downloadRegion,
+  );
+  const modelDownloadRegion = resolveEnvoyLocalDownloadRegion({
+    preference: downloadRegionPreference,
+  });
 
   return {
     enabled: cfg.enabled,
@@ -276,14 +438,16 @@ export async function getEnvoyLocalStatusViaRuntime(
     accel: platform.accel,
     runtimeVersion: cfg.runtimeVersion ?? (exePath ? ENVOY_LOCAL_LLAMA_CPP_TAG : undefined),
     runtimeInstalled: Boolean(exePath),
-    activeModelId: active?.id ?? activeId,
+    activeModelId: active?.id,
     activeModelPath: active?.path,
+    modelsDir: modelsDir(profileDir),
     childPid: state.child?.pid ?? state.childPid,
     lastError: state.lastError,
     lastErrorAt: state.lastErrorAt,
     download: state.download,
     serverParams: resolveEnvoyLocalServerParams(cfg.serverParams),
-    modelDownloadRegion: detectEnvoyLocalModelRegion(),
+    modelDownloadRegion,
+    downloadRegionPreference,
     pinnedRuntimeVersion: ENVOY_LOCAL_LLAMA_CPP_TAG,
     accelFallbackNote: state.accelFallbackNote,
     operationInProgress,
@@ -296,18 +460,6 @@ export async function getEnvoyLocalStatusViaRuntime(
   };
 }
 
-async function indexHasUsableModel(
-  profileDir: string,
-  index: ModelsIndex,
-): Promise<boolean> {
-  for (const m of index.models) {
-    if (m.path && (await fileExists(m.path))) return true;
-  }
-  // Fresh profile may only have files on disk without index — rare; status uses index.
-  void profileDir;
-  return false;
-}
-
 function hostLabelForUrl(url: string): string {
   try {
     return new URL(url).host;
@@ -316,7 +468,6 @@ function hostLabelForUrl(url: string): string {
   }
 }
 
-/** Download to destPath trying candidates in order (China GitHub proxies / operator CDN). */
 async function downloadFileWithFailover(params: {
   candidates: string[];
   destPath: string;
@@ -332,8 +483,12 @@ async function downloadFileWithFailover(params: {
   for (const url of params.candidates) {
     params.onAttempt(url);
     try {
+      // Wipe `dest` (rename at the end will overwrite it anyway; this is
+      // belt-and-suspenders for the corrupt-dest-from-previous-attempt
+      // case). Do NOT wipe `.part` — downloadFile stats it to decide
+      // whether to send a Range header for HTTP resume, and wiping here
+      // would defeat that on every mirror failover.
       await rm(params.destPath, { force: true });
-      await rm(`${params.destPath}.part`, { force: true });
       await downloadFile({
         url,
         destPath: params.destPath,
@@ -343,8 +498,13 @@ async function downloadFileWithFailover(params: {
       return;
     } catch (err) {
       lastErr = err;
+      // Keep `.part` so the next mirror (or the user's retry) can resume
+      // from the partial bytes we already have on disk. All our mirror
+      // chains (ModelScope → hf-mirror → direct; GitHub → ghproxy →
+      // ghfast → direct) serve the same canonical bytes, so cross-mirror
+      // resume is safe here. The size sanity / sha256 / GGUF magic
+      // checks downstream catch any real corruption.
       await rm(params.destPath, { force: true });
-      await rm(`${params.destPath}.part`, { force: true });
       if (params.signal.aborted) throw err;
     }
   }
@@ -358,7 +518,7 @@ async function ensureRuntimeInstalled(
   profileDir: string,
   platform: EnvoyLocalPlatform,
   signal: AbortSignal,
-  opts?: { force?: boolean },
+  opts?: { force?: boolean; region?: EnvoyLocalModelRegion },
 ): Promise<string> {
   const exeName = process.platform === "win32" ? "llama-server.exe" : "llama-server";
   const destRoot = runtimeDir(profileDir);
@@ -373,7 +533,7 @@ async function ensureRuntimeInstalled(
   await ensureMinFreeBytes(rootDir(profileDir), ENVOY_LOCAL_MIN_FREE_BYTES);
 
   const assets = resolveEnvoyLocalRuntimeAssets(platform);
-  const region = detectEnvoyLocalModelRegion();
+  const region = opts?.region ?? detectEnvoyLocalModelRegion();
   const archivesDir = join(rootDir(profileDir), "archives");
   await mkdir(archivesDir, { recursive: true });
   const archivePath = join(archivesDir, assets.runtimeName);
@@ -491,7 +651,7 @@ async function downloadCatalogModel(
   profileDir: string,
   catalog: EnvoyLocalCatalogModel,
   signal: AbortSignal,
-  opts?: { setActive?: boolean },
+  opts?: { setActive?: boolean; region?: EnvoyLocalModelRegion },
 ): Promise<{ id: string; path: string }> {
   const index = await loadModelsIndex(profileDir);
   const existing = index.models.find((m) => m.id === catalog.id);
@@ -523,7 +683,7 @@ async function downloadCatalogModel(
       Math.max(ENVOY_LOCAL_MIN_FREE_BYTES, catalog.approxBytes + 100_000_000),
     );
 
-    const region = detectEnvoyLocalModelRegion();
+    const region = opts?.region ?? detectEnvoyLocalModelRegion();
     const candidates = resolveEnvoyLocalModelDownloadUrls(catalog, region);
     let lastErr: unknown;
     for (let i = 0; i < candidates.length; i++) {
@@ -541,8 +701,11 @@ async function downloadCatalogModel(
         fraction: 0,
       });
       try {
+        // Wipe `dest` only — the rename at the end of downloadFile will
+        // overwrite it. Do NOT wipe `.part`; downloadFile reads its size
+        // to send a Range header for resume, and wiping here would
+        // discard the user's previous progress.
         await rm(dest, { force: true });
-        await rm(`${dest}.part`, { force: true });
         await downloadFile({
           url,
           destPath: dest,
@@ -564,13 +727,24 @@ async function downloadCatalogModel(
         break;
       } catch (err) {
         lastErr = err;
+        // Keep `.part` for resume on the next mirror or user retry.
+        // See downloadFileWithFailover for the rationale on cross-mirror
+        // safety (all candidates serve the same canonical bytes).
         await rm(dest, { force: true });
-        await rm(`${dest}.part`, { force: true });
         if (signal.aborted) throw err;
         // Try next mirror (China: ModelScope → hf-mirror).
       }
     }
-    if (lastErr) throw lastErr;
+    if (lastErr) {
+      const base = lastErr instanceof Error ? lastErr.message : String(lastErr);
+      if (region === "global" && /fetch failed/i.test(base)) {
+        throw new Error(
+          `${base}. Hugging Face may be unreachable from this network — ` +
+            "switch Model download region to China (ModelScope → hf-mirror) in Settings → AI → Envoy Local, then retry.",
+        );
+      }
+      throw lastErr instanceof Error ? lastErr : new Error(base);
+    }
     if (!(await fileExists(dest))) {
       throw new Error(`Failed to download ${catalog.fileName} from any mirror`);
     }
@@ -579,6 +753,15 @@ async function downloadCatalogModel(
   const st = await stat(dest);
   if (st.size < ENVOY_LOCAL_MIN_MODEL_BYTES) {
     throw new Error(`Model file too small (${st.size} bytes)`);
+  }
+  // Defense-in-depth: GGUF magic + size sanity (catalog has no sha256 for
+  // most curated entries today). Catches HTML error pages, truncated mirrors,
+  // and zip-bomb style padding before sha256 runs on a multi-GB file.
+  try {
+    await verifyGgufFile(dest, { expectedApproxBytes: catalog.approxBytes });
+  } catch (err) {
+    await rm(dest, { force: true });
+    throw err;
   }
   let digest: string | undefined;
   if (catalog.sha256) {
@@ -612,6 +795,8 @@ async function ensureDefaultModel(
   profileDir: string,
   signal: AbortSignal,
   skipDownload: boolean,
+  region?: EnvoyLocalModelRegion,
+  deps?: EnvoyLocalRuntimeDeps,
 ): Promise<{ id: string; path: string }> {
   const platform = state.platform ?? detectEnvoyLocalPlatform();
   state.platform = platform;
@@ -622,23 +807,45 @@ async function ensureDefaultModel(
     getEnvoyLocalCatalogModelRaw(DEFAULT_ENVOY_LOCAL_MODEL.id);
   if (!catalog) throw new Error("Default Envoy Local catalog entry missing");
 
-  const index = await loadModelsIndex(profileDir);
-  // Prefer any already-installed curated model over re-downloading.
-  for (const id of [preferredId, ...recommendation.alsoRecommendedModelIds, DEFAULT_ENVOY_LOCAL_MODEL.id]) {
-    const existing = index.models.find((m) => m.id === id);
-    if (existing && (await fileExists(existing.path))) {
-      return { id: existing.id, path: existing.path };
+  const index = await scanAndReconcileModelsIndex(profileDir);
+  const usable = await usableModelsFromIndex(index);
+  if (usable.length > 0) {
+    const cfgActive = deps
+      ? normalizeEnvoyLocalConfig(await deps.loadEnvoyLocalConfig()).activeModelId
+      : undefined;
+    const preferredOrder = [
+      cfgActive,
+      index.activeModelId,
+      preferredId,
+      ...recommendation.alsoRecommendedModelIds,
+      DEFAULT_ENVOY_LOCAL_MODEL.id,
+    ];
+    const picked =
+      resolveActiveModel(usable, preferredOrder) ??
+      // Multiple models, no preference: keep first usable (user can Set active).
+      usable[0]!;
+    if (deps) {
+      await ensureActiveModelPersisted(deps, profileDir, index, picked);
+    } else if (index.activeModelId !== picked.id) {
+      await saveModelsIndex(profileDir, { ...index, activeModelId: picked.id });
     }
+    return { id: picked.id, path: picked.path };
   }
+
   if (skipDownload) {
-    throw new Error("No local model installed and skipModelDownload was set");
+    throw new Error(
+      `No local model in ${modelsDir(profileDir)} and skipModelDownload was set`,
+    );
   }
   setProgress(state, {
     phase: "downloading-model",
     label: `Recommended: ${catalog.label} (${recommendation.hardware.summary})`,
     fraction: 0,
   });
-  return downloadCatalogModel(state, profileDir, catalog, signal, { setActive: true });
+  return downloadCatalogModel(state, profileDir, catalog, signal, {
+    setActive: true,
+    region,
+  });
 }
 
 async function stopChild(state: EnvoyLocalRuntimeState): Promise<void> {
@@ -723,16 +930,22 @@ async function startSidecarOnce(
   const exe = await findExecutable(runtimeDir(profileDir), [exeName]);
   if (!exe) throw new Error("llama-server binary missing — enable Envoy Local again");
 
-  const index = await loadModelsIndex(profileDir);
-  const activeId = cfg.activeModelId ?? index.activeModelId ?? DEFAULT_ENVOY_LOCAL_MODEL.id;
-  const model = index.models.find((m) => m.id === activeId);
-  if (!model || !(await fileExists(model.path))) {
-    throw new Error(`Active model missing: ${activeId}`);
+  const index = await scanAndReconcileModelsIndex(profileDir);
+  const usable = await usableModelsFromIndex(index);
+  const model = resolveActiveModel(usable, [
+    cfg.activeModelId,
+    index.activeModelId,
+  ]);
+  if (!model) {
+    throw new Error(
+      `No usable local model in ${modelsDir(profileDir)} — download one from the catalog or copy a .gguf file there`,
+    );
   }
+  await ensureActiveModelPersisted(deps, profileDir, index, model);
 
   const ngl = opts.forceCpu ? 0 : resolveNgl(serverParams, platform);
   const chatTemplate =
-    model.chatTemplate ?? getEnvoyLocalCatalogModelRaw(activeId)?.chatTemplate;
+    model.chatTemplate ?? getEnvoyLocalCatalogModelRaw(model.id)?.chatTemplate;
   setProgress(state, {
     phase: "starting",
     label: opts.forceCpu
@@ -789,7 +1002,12 @@ async function startSidecarOnce(
   });
 
   const endpoint = envoyLocalOpenAiBaseUrl(ENVOY_LOCAL_PORT);
-  const deadline = Date.now() + 60_000;
+  // Timeout scales with the model file size on disk — 0.8B loads in 5-10 s
+  // on any accel, but CPU loading of 9B can take 2-3 min. The user can
+  // override via serverParams.startupTimeoutMs (e.g. for slow disks).
+  const modelSizeBytes = (await stat(model.path)).size;
+  const startupTimeoutMs = resolveStartupTimeoutMs(serverParams, modelSizeBytes);
+  const deadline = Date.now() + startupTimeoutMs;
   while (Date.now() < deadline) {
     if (await probeOpenAiModels(endpoint)) {
       state.phase = "ready";
@@ -804,7 +1022,10 @@ async function startSidecarOnce(
     }
     await new Promise((r) => setTimeout(r, 500));
   }
-  throw new Error("llama-server did not become ready within 60s");
+  throw new Error(
+    `llama-server did not become ready within ${Math.round(startupTimeoutMs / 1000)}s ` +
+      `(model ${(modelSizeBytes / 1e9).toFixed(1)} GB; increase Startup timeout in Settings → AI → Envoy Local → Advanced, or set serverParams.startupTimeoutMs)`,
+  );
 }
 
 async function startSidecar(
@@ -825,20 +1046,35 @@ async function startSidecar(
   }
 }
 
+/**
+ * Await the in-flight enable / model-download / engine-update job, if any.
+ * Long installs run detached from the JSON-RPC response (see enable/download).
+ */
+export async function awaitEnvoyLocalOperation(
+  state: EnvoyLocalRuntimeState,
+): Promise<EnvoyLocalStatus | null> {
+  if (!state.enablePromise) return null;
+  return state.enablePromise;
+}
+
 export async function enableEnvoyLocalViaRuntime(
   state: EnvoyLocalRuntimeState,
   deps: EnvoyLocalRuntimeDeps,
   params?: EnableEnvoyLocalParams,
 ): Promise<EnvoyLocalStatus> {
-  if (state.enablePromise) return state.enablePromise;
+  // Already running — return a snapshot (do not hold the RPC on the download).
+  if (state.enablePromise) {
+    return getEnvoyLocalStatusViaRuntime(state, deps);
+  }
+
+  const abort = new AbortController();
+  state.abort = abort;
+  state.lastError = null;
+  state.lastErrorAt = null;
+  setProgress(state, { phase: "detecting", label: "Detecting platform", fraction: 0 });
 
   state.enablePromise = (async () => {
-    const abort = new AbortController();
-    state.abort = abort;
-    state.lastError = null;
-    state.lastErrorAt = null;
     try {
-      setProgress(state, { phase: "detecting", label: "Detecting platform", fraction: 0 });
       const platform = detectEnvoyLocalPlatform();
       state.platform = platform;
       const profileDir = deps.getProfileDir();
@@ -848,11 +1084,13 @@ export async function enableEnvoyLocalViaRuntime(
         autoProvisionDeclined: false,
       });
 
+      const region = await loadDownloadRegion(deps);
       const exe = await ensureRuntimeInstalled(
         state,
         profileDir,
         platform,
         abort.signal,
+        { region },
       );
       void exe;
 
@@ -861,6 +1099,8 @@ export async function enableEnvoyLocalViaRuntime(
         profileDir,
         abort.signal,
         params?.skipModelDownload === true,
+        region,
+        deps,
       );
 
       // Disable may have aborted / cleared enabled while we downloaded.
@@ -897,7 +1137,9 @@ export async function enableEnvoyLocalViaRuntime(
     }
   })();
 
-  return state.enablePromise;
+  // Detach: Social polls getEnvoyLocalStatus while operationInProgress is true.
+  // Holding the RPC for a multi-GB GitHub/HF download hits client timeouts (10m).
+  return getEnvoyLocalStatusViaRuntime(state, deps);
 }
 
 export async function disableEnvoyLocalViaRuntime(
@@ -1022,8 +1264,9 @@ export async function maybeStartEnvoyLocalOnBootViaRuntime(
   const profileDir = deps.getProfileDir();
   const exeName = process.platform === "win32" ? "llama-server.exe" : "llama-server";
   const exePath = await findExecutable(runtimeDir(profileDir), [exeName]);
-  const index = await loadModelsIndex(profileDir);
-  const hasModel = await indexHasUsableModel(profileDir, index);
+  const index = await scanAndReconcileModelsIndex(profileDir);
+  const usable = await usableModelsFromIndex(index);
+  const hasModel = usable.length > 0;
 
   if (!exePath || !hasModel) {
     // Missing assets: wait for UI consent / Settings enable (no silent download).
@@ -1031,10 +1274,14 @@ export async function maybeStartEnvoyLocalOnBootViaRuntime(
   }
 
   try {
+    const active = resolveActiveModel(usable, [
+      cfg.activeModelId,
+      index.activeModelId,
+    ]);
+    if (active) {
+      await ensureActiveModelPersisted(deps, profileDir, index, active);
+    }
     await startSidecar(state, deps);
-    const active =
-      index.models.find((m) => m.id === (cfg.activeModelId ?? index.activeModelId)) ??
-      index.models[0];
     if (active) {
       const endpoint = envoyLocalOpenAiBaseUrl(ENVOY_LOCAL_PORT);
       await deps.wireModelProviders(endpoint, active.id);
@@ -1063,11 +1310,17 @@ export async function listEnvoyLocalInstalledModelsViaRuntime(
 ): Promise<EnvoyLocalInstalledModel[]> {
   const profileDir = deps.getProfileDir();
   const cfg = normalizeEnvoyLocalConfig(await deps.loadEnvoyLocalConfig());
-  const index = await loadModelsIndex(profileDir);
-  const activeId = cfg.activeModelId ?? index.activeModelId;
+  const index = await scanAndReconcileModelsIndex(profileDir);
+  const usable = await usableModelsFromIndex(index);
+  const active =
+    resolveActiveModel(usable, [cfg.activeModelId, index.activeModelId]) ??
+    null;
+  if (active) {
+    await ensureActiveModelPersisted(deps, profileDir, index, active);
+  }
+  const activeId = active?.id;
   const out: EnvoyLocalInstalledModel[] = [];
-  for (const m of index.models) {
-    if (!(await fileExists(m.path))) continue;
+  for (const m of usable) {
     let sizeBytes = m.sizeBytes;
     if (sizeBytes == null) {
       try {
@@ -1096,6 +1349,7 @@ export async function listEnvoyLocalInstalledModelsViaRuntime(
 
 export async function searchEnvoyLocalModelsViaRuntime(
   query?: string,
+  deps?: EnvoyLocalRuntimeDeps,
 ): Promise<SearchEnvoyLocalModelsResult> {
   const platform = detectEnvoyLocalPlatform();
   const recommendation = recommendEnvoyLocalModel(detectEnvoyLocalHardware(platform));
@@ -1121,7 +1375,9 @@ export async function searchEnvoyLocalModelsViaRuntime(
     return { models: curated };
   }
   try {
-    const region = detectEnvoyLocalModelRegion();
+    const region = deps
+      ? await loadDownloadRegion(deps)
+      : detectEnvoyLocalModelRegion();
     const hf = await searchHuggingFaceGgufs(q, {
       region,
       signal: AbortSignal.timeout(20_000),
@@ -1164,23 +1420,48 @@ export async function downloadEnvoyLocalModelViaRuntime(
 
   const abort = new AbortController();
   state.abort = abort;
-  try {
-    await downloadCatalogModel(state, deps.getProfileDir(), catalog, abort.signal, {
-      setActive: false,
-    });
-    if (state.phase === "downloading-model") {
-      const cfg = normalizeEnvoyLocalConfig(await deps.loadEnvoyLocalConfig());
-      state.phase = cfg.enabled ? (state.child ? "ready" : "idle") : "disabled";
-      state.download = null;
+  state.lastError = null;
+  state.lastErrorAt = null;
+  setProgress(state, {
+    phase: "downloading-model",
+    label: `Downloading ${catalog.label ?? catalog.id}`,
+    fraction: 0,
+  });
+
+  state.enablePromise = (async () => {
+    try {
+      const region = await loadDownloadRegion(deps);
+      await downloadCatalogModel(state, deps.getProfileDir(), catalog, abort.signal, {
+        setActive: false,
+        region,
+      });
+      if (state.phase === "downloading-model") {
+        const cfg = normalizeEnvoyLocalConfig(await deps.loadEnvoyLocalConfig());
+        state.phase = cfg.enabled ? (state.child ? "ready" : "idle") : "disabled";
+        state.download = null;
+      }
+      return getEnvoyLocalStatusViaRuntime(state, deps);
+    } catch (err) {
+      if (abort.signal.aborted) setError(state, "Download cancelled");
+      else setError(state, err instanceof Error ? err.message : String(err));
+      return getEnvoyLocalStatusViaRuntime(state, deps);
+    } finally {
+      state.enablePromise = null;
+      state.abort = null;
     }
-  } catch (err) {
-    if (abort.signal.aborted) setError(state, "Download cancelled");
-    else setError(state, err instanceof Error ? err.message : String(err));
-    throw err;
-  } finally {
-    state.abort = null;
-  }
+  })();
+
   return listEnvoyLocalInstalledModelsViaRuntime(deps);
+}
+
+export async function setEnvoyLocalDownloadRegionViaRuntime(
+  state: EnvoyLocalRuntimeState,
+  deps: EnvoyLocalRuntimeDeps,
+  params: SetEnvoyLocalDownloadRegionParams,
+): Promise<EnvoyLocalStatus> {
+  const region = normalizeEnvoyLocalDownloadRegionPreference(params.region);
+  await deps.saveEnvoyLocalConfig({ downloadRegion: region });
+  return getEnvoyLocalStatusViaRuntime(state, deps);
 }
 
 export async function setEnvoyLocalActiveModelViaRuntime(
@@ -1294,30 +1575,45 @@ export async function updateEnvoyLocalEngineViaRuntime(
   }
   const abort = new AbortController();
   state.abort = abort;
-  try {
-    const platform = detectEnvoyLocalPlatform();
-    state.platform = platform;
-    await ensureRuntimeInstalled(
-      state,
-      deps.getProfileDir(),
-      platform,
-      abort.signal,
-      { force: true },
-    );
-    await deps.saveEnvoyLocalConfig({ runtimeVersion: ENVOY_LOCAL_LLAMA_CPP_TAG });
-    const cfg = normalizeEnvoyLocalConfig(await deps.loadEnvoyLocalConfig());
-    if (cfg.enabled) {
-      await stopChild(state);
-      await startSidecar(state, deps);
-    } else {
-      state.phase = "disabled";
-      state.download = null;
+  state.lastError = null;
+  state.lastErrorAt = null;
+  setProgress(state, {
+    phase: "downloading-runtime",
+    label: "Updating llama.cpp engine",
+    fraction: 0,
+  });
+
+  state.enablePromise = (async () => {
+    try {
+      const platform = detectEnvoyLocalPlatform();
+      state.platform = platform;
+      const region = await loadDownloadRegion(deps);
+      await ensureRuntimeInstalled(
+        state,
+        deps.getProfileDir(),
+        platform,
+        abort.signal,
+        { force: true, region },
+      );
+      await deps.saveEnvoyLocalConfig({ runtimeVersion: ENVOY_LOCAL_LLAMA_CPP_TAG });
+      const cfg = normalizeEnvoyLocalConfig(await deps.loadEnvoyLocalConfig());
+      if (cfg.enabled) {
+        await stopChild(state);
+        await startSidecar(state, deps);
+      } else {
+        state.phase = "disabled";
+        state.download = null;
+      }
+      return getEnvoyLocalStatusViaRuntime(state, deps);
+    } catch (err) {
+      if (abort.signal.aborted) setError(state, "Engine update cancelled");
+      else setError(state, err instanceof Error ? err.message : String(err));
+      return getEnvoyLocalStatusViaRuntime(state, deps);
+    } finally {
+      state.enablePromise = null;
+      state.abort = null;
     }
-  } catch (err) {
-    if (abort.signal.aborted) setError(state, "Engine update cancelled");
-    else setError(state, err instanceof Error ? err.message : String(err));
-  } finally {
-    state.abort = null;
-  }
+  })();
+
   return getEnvoyLocalStatusViaRuntime(state, deps);
 }

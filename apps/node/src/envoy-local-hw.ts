@@ -127,8 +127,19 @@ function also(...ids: string[]): string[] {
  * Primary download stays Qwen3.5; Gemma 4 E2B/E4B are listed as also-fits
  * (need `--chat-template gemma` — already set on catalog entries).
  *
- * Rough Q4_K_M working set:
- * - 0.8B ≈ 2–3 GB · 2B ≈ 4–5 GB · 4B ≈ 6–8 GB · 9B / Gemma E4B ≈ 12–14 GB
+ * Rough Q4_K_M working set + KV cache @ 4096 ctx:
+ *   0.8B ≈ 2-3 GB    2B ≈ 4-5 GB
+ *   4B   ≈ 8-10 GB   9B / Gemma E4B ≈ 14-18 GB
+ *
+ * Accel (Metal/CUDA) thresholds leave headroom for KV cache and (on Metal)
+ * other apps competing for unified memory:
+ *   9B  ≥ 32 GB    comfortable on M3 Max / RTX 4090-class
+ *   4B  ≥ 14 GB    comfortable (≥ 8 GB = "tight", still fits)
+ *   2B  ≥ 5 GB
+ *   tiny < 5 GB
+ *
+ * CPU only: 9B is never recommended (interactive chat is too slow without
+ * GPU). 4B on CPU is the practical ceiling, needs ≈18 GB effective RAM.
  */
 export function recommendEnvoyLocalModel(
   hardware: EnvoyLocalHardwareInfo,
@@ -138,19 +149,30 @@ export function recommendEnvoyLocalModel(
   const isAccel = hardware.accel === "metal" || hardware.accel === "cuda";
 
   if (isAccel) {
-    if (mem >= 24 * GB) {
+    // 9B needs 14-18 GB just for weights + KV cache. The threshold
+    // differs by accel because the OS doesn't compete with the model on
+    // dedicated VRAM (CUDA) but does on unified memory (Metal).
+    //   - CUDA: full VRAM available. 24 GB (RTX 4090 class) is enough.
+    //   - Metal: OS + other apps take 6-10 GB. 32 GB nominal (M3 Max 36 GB
+    //     leaves ~26 GB after OS) is the safe floor.
+    const isMetal = hardware.accel === "metal";
+    const nineBThreshold = isMetal ? 32 * GB : 24 * GB;
+    if (mem >= nineBThreshold) {
       return {
         modelId: medium,
         alsoRecommendedModelIds: also(small, gemmaE4b, gemmaE2b),
-        reason: `${hardware.summary} — recommending Qwen3.5 9B; 4B and Gemma 4 also fit.`,
+        reason: `${hardware.summary} — plenty of memory for Qwen3.5 9B; 4B and Gemma 4 also fit.`,
         hardware,
       };
     }
+    // 4B primary: 14-18 GB is the sweet spot. 9B is "tight" — listed as
+    // also-fits so users with 24 GB unified see it as an option but the
+    // primary pick stays at 4B.
     if (mem >= 14 * GB) {
       return {
         modelId: small,
         alsoRecommendedModelIds: also(medium, gemmaE4b, gemmaE2b, qwen2b),
-        reason: `${hardware.summary} — recommending Qwen3.5 4B; 9B and Gemma 4 E2B/E4B also fit.`,
+        reason: `${hardware.summary} — recommending Qwen3.5 4B; 9B and Gemma 4 E2B/E4B also fit (9B may be tight).`,
         hardware,
       };
     }
@@ -158,7 +180,7 @@ export function recommendEnvoyLocalModel(
       return {
         modelId: small,
         alsoRecommendedModelIds: also(qwen2b, gemmaE2b, tiny),
-        reason: `${hardware.summary} — recommending Qwen3.5 4B; 2B and Gemma 4 E2B also fit.`,
+        reason: `${hardware.summary} — recommending Qwen3.5 4B (tight); 2B and Gemma 4 E2B also fit.`,
         hardware,
       };
     }
@@ -178,7 +200,8 @@ export function recommendEnvoyLocalModel(
     };
   }
 
-  // CPU-only — 2B / 4B are fine when RAM allows (slower, still usable).
+  // CPU-only — 4B is the largest practical tier (9B on CPU is too slow for
+  // interactive chat anyway, regardless of memory).
   if (mem >= 18 * GB) {
     return {
       modelId: small,
@@ -195,7 +218,7 @@ export function recommendEnvoyLocalModel(
       hardware,
     };
   }
-  if (mem >= 6 * GB) {
+  if (mem >= 5 * GB) {
     return {
       modelId: qwen2b,
       alsoRecommendedModelIds: also(tiny, gemmaE2b),

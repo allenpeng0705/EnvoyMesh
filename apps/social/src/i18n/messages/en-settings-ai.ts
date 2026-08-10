@@ -151,7 +151,11 @@ export const aiSettingsMessages = {
       "Prefer a cloud API above if you do not want a local download.",
     modelsHeading: "Models",
     modelsDesc:
-      "Installed GGUFs, curated edge picks, and Hugging Face search (post-install only).",
+      "Download several models, or copy your own .gguf files into the models folder. Choose which one is active — if only one is present, it is used automatically.",
+    modelsFolder: "Models folder",
+    modelsFolderHint:
+      "Copy .gguf files here, then Refresh. Catalog downloads also land in this folder.",
+    refreshModels: "Refresh models",
     catalogSearch: "Search curated or Hugging Face",
     catalogSearchPlaceholder: "qwen3.5, gemma-4, qwen3.6, owner/repo…",
     searchingHf: "Searching Hugging Face…",
@@ -184,12 +188,20 @@ export const aiSettingsMessages = {
     threads: "CPU threads",
     threadsAuto: "Default",
     parallel: "Parallel slots",
+    startupTimeout: "Startup timeout (seconds)",
+    startupTimeoutAuto: "Auto (by model size)",
+    startupTimeoutHint:
+      "How long to wait for llama-server after spawn. 9B models often need 5–10 minutes on first load — leave blank for auto, or set 600+ if it times out.",
     saveParams: "Apply parameters",
     resetParams: "Reset defaults",
     paramsHint: "Applying restarts llama-server when Envoy Local is running.",
     downloadRegion: "Model download region",
     downloadRegionCn: "China (ModelScope → hf-mirror)",
     downloadRegionGlobal: "Global (Hugging Face)",
+    downloadRegionAuto: "Auto (detect from timezone / locale)",
+    downloadRegionHint:
+      "If downloads fail with “fetch failed”, switch to China mirrors (or turn on a VPN for Global).",
+    downloadRegionEffective: "Using: {region}",
     accelFallback: "Accelerator note: {note}",
     engineHeading: "Engine",
     enginePinned: "Pinned runtime",

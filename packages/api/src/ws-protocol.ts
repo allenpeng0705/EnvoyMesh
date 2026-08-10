@@ -266,6 +266,7 @@ export type RpcMethods =
    | "listEnvoyLocalInstalledModels"
    | "searchEnvoyLocalModels"
    | "downloadEnvoyLocalModel"
+   | "setEnvoyLocalDownloadRegion"
    | "setEnvoyLocalActiveModel"
    | "deleteEnvoyLocalModel"
    | "updateEnvoyLocalServerParams"

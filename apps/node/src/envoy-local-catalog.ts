@@ -140,6 +140,15 @@ export function getEnvoyLocalCatalogModelRaw(
   return ENVOY_LOCAL_CURATED_MODELS.find((m) => m.id === id);
 }
 
+/** Match a dropped/downloaded file basename to a curated catalog entry. */
+export function getEnvoyLocalCatalogModelByFileName(
+  fileName: string,
+): EnvoyLocalCatalogModel | undefined {
+  const name = fileName.trim().toLowerCase();
+  if (!name) return undefined;
+  return ENVOY_LOCAL_CURATED_MODELS.find((m) => m.fileName.toLowerCase() === name);
+}
+
 /**
  * First catalog entry that lists `installedId` in `supersedes`
  * (explicit succession — not Hub version guessing).
