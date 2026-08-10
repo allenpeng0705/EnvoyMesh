@@ -44,6 +44,25 @@ export function ensureOpenClawEnvoyMeshExtension(ocDir: string): {
   }
   // Sibling of the openclaw tree (Tauri resources layout).
   candidates.push(join(ocDir, "..", "openclaw-envoymesh"));
+  // Monorepo: stage-openclaw-envoymesh-extension.sh writes this seed for
+  // desktop builds; node:dev can reuse it when packages/openclaw lost index.js.
+  candidates.push(
+    join(ocDir, "..", "..", "apps", "tauri", "src-tauri", "resources", "openclaw-envoymesh"),
+  );
+  candidates.push(
+    join(
+      ocDir,
+      "..",
+      "..",
+      "apps",
+      "tauri",
+      "src-tauri",
+      "resources",
+      "openclaw",
+      "extensions",
+      "envoymesh",
+    ),
+  );
   candidates.push(join(ocDir, "dist", "extensions", "envoymesh"));
   candidates.push(join(ocDir, "dist-runtime", "extensions", "envoymesh"));
   candidates.push(join(ocDir, "extensions", "envoymesh"));
