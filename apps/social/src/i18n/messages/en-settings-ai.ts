@@ -225,11 +225,9 @@ export const aiSettingsMessages = {
     paramsAdvancedLabel: "Advanced (llama-server)",
     ctxSize: "Context size",
     ctxSizeHint:
-      "Default 8192 tokens — good for chat + light tools. 256K–1M+ need lots of unified/VRAM (and often quantized KV); type a custom value up to 2M.",
-    ctxPreset4k: "4K",
-    ctxPreset8k: "8K",
-    ctxPreset16k: "16K",
+      "Default 128K — enough for Envoy AI tools/session. 32K for smaller machines; 256K–1M need lots of unified/VRAM (often quantized KV). Custom values up to 2M.",
     ctxPreset32k: "32K",
+    ctxPreset128k: "128K",
     ctxPreset256k: "256K",
     ctxPreset512k: "512K",
     ctxPreset1m: "1M",

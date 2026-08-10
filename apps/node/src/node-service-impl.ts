@@ -2709,6 +2709,7 @@ class NodeServiceImpl implements NodeService {
     return profile;
   }
 
+
   async updateProfileGalleryPhotoVisibility(
     params: UpdateProfileGalleryPhotoVisibilityParams,
   ): Promise<HumanProfile> {
@@ -4565,8 +4566,8 @@ class NodeServiceImpl implements NodeService {
         // used to overwrite cloud settings.
         if (inferModelProviderPreset(mp).id !== "envoy-local") return;
         const fallback = cfg?.envoyLocal?.fallbackModelProviders;
-        if (hasUsableNonEnvoyLocalModelProvider(fallback)) {
-          await this.updateNodeConfig({ modelProviders: { ...fallback } });
+        if (fallback && hasUsableNonEnvoyLocalModelProvider(fallback)) {
+          await this.updateNodeConfig({ modelProviders: fallback });
           return;
         }
         await this.updateNodeConfig({
@@ -4576,9 +4577,9 @@ class NodeServiceImpl implements NodeService {
       restoreFallbackModelProviders: async () => {
         const cfg = await this._configStore.load();
         const fallback = cfg?.envoyLocal?.fallbackModelProviders;
-        if (!hasUsableNonEnvoyLocalModelProvider(fallback)) return;
+        if (!fallback || !hasUsableNonEnvoyLocalModelProvider(fallback)) return;
         await this.updateNodeConfig({
-          modelProviders: { ...fallback },
+          modelProviders: fallback,
         });
       },
     };

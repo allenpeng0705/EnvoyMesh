@@ -415,6 +415,37 @@ export class DaemonSupervisor extends EventEmitter {
     return this.state.restartTimestamps.length;
   }
 
+  /**
+   * Write a string to the child process's stdin. Returns `false` if no
+   * child is alive (caller should treat as "process gone" — e.g. the
+   * `codex-backend` JSON-RPC layer rejects all pending requests).
+   *
+   * Phase 55B — consumed by `codex-backend` to send JSON-RPC requests
+   * to the `codex app-server` over stdio. Backpressure is delegated to
+   * the underlying writable stream.
+   */
+  sendStdin(chunk: string): boolean {
+    const proc = this.state.proc;
+    if (!proc?.stdin || proc.exitCode !== null || proc.signalCode !== null) {
+      return false;
+    }
+    try {
+      return proc.stdin.write(chunk);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * The current child process, or `null` if not running. Exposed for
+   * advanced consumers that need direct access to stdout/stderr
+   * streams (e.g. the `codex-backend` registers a parallel JSON-RPC
+   * parser on stdout alongside the supervisor's own `stdout` event).
+   */
+  getChildProcess(): ChildProcess | null {
+    return this.state.proc;
+  }
+
   // -------------------------------------------------------------------------
   // Internals
   // -------------------------------------------------------------------------
@@ -518,7 +549,13 @@ export class DaemonSupervisor extends EventEmitter {
     return spawn(this.opts.command, this.opts.args, {
       cwd: this.opts.cwd ?? process.cwd(),
       env,
-      stdio: ["ignore", "pipe", "pipe"],
+      // stdio: all pipes. The supervisor's `stdout` / `stderr` event
+      // listeners (registered in `spawnAndWaitForFirstHealthy`) need
+      // stdout/stderr as `pipe`, and downstream consumers (e.g.
+      // codex-backend's JSON-RPC over stdio in 55B) need stdin as
+      // `pipe`. If a daemon doesn't need a particular stream it can
+      // ignore / close it from the consumer side.
+      stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
   }

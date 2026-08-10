@@ -2422,10 +2422,8 @@ function EnvoyLocalSettings({
               <div className="envoy-local-ctx-presets" role="group">
                 {(
                   [
-                    [4096, "ctxPreset4k"],
-                    [8192, "ctxPreset8k"],
-                    [16384, "ctxPreset16k"],
                     [32768, "ctxPreset32k"],
+                    [131072, "ctxPreset128k"],
                     [262144, "ctxPreset256k"],
                     [524288, "ctxPreset512k"],
                     [1048576, "ctxPreset1m"],

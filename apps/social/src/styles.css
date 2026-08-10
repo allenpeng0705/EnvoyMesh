@@ -370,6 +370,11 @@ textarea::placeholder {
   overflow-x: hidden;
 }
 
+/* Keep a view mounted-but-hidden (e.g. Envoy AI mid-turn) without layout. */
+.main-view-slot[hidden] {
+  display: none !important;
+}
+
 /* Loading/Error */
 .loading,
 .error {

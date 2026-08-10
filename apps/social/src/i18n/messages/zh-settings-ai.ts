@@ -349,11 +349,9 @@ export const zhAiSettingsMessages = {
     paramsAdvancedLabel: "高级（llama-server）",
     ctxSize: "上下文长度",
     ctxSizeHint:
-      "默认 8192 token，适合聊天与轻量工具。256K–1M+ 需要大量统一内存/显存（常需量化 KV）；也可手动输入，最高约 2M。",
-    ctxPreset4k: "4K",
-    ctxPreset8k: "8K",
-    ctxPreset16k: "16K",
+      "默认 128K，适合 Envoy AI 工具与会话。小内存机器用 32K；256K–1M 需要大量统一内存/显存（常需量化 KV）。也可手动输入，最高约 2M。",
     ctxPreset32k: "32K",
+    ctxPreset128k: "128K",
     ctxPreset256k: "256K",
     ctxPreset512k: "512K",
     ctxPreset1m: "1M",

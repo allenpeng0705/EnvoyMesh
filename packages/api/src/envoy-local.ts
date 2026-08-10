@@ -31,9 +31,10 @@ export type EnvoyLocalFitMode = "on" | "off";
 export interface EnvoyLocalServerParams {
   /**
    * Context size (`-c` / `--ctx-size`).
-   * Default 8192 — workable for chat + light tools; raise to 32k–1M+ on large
-   * unified/VRAM machines (often with quantized KV). llama.cpp `0` means
-   * “from model”; we always set an explicit value for predictable memory use.
+   * Default 131072 (128K) — enough for Envoy AI tools/session; use 32K on
+   * smaller machines, or 256K–1M+ on large unified/VRAM (often with quantized
+   * KV). llama.cpp `0` means “from model”; we always set an explicit value for
+   * predictable memory use.
    */
   ctxSize?: number;
   /**
@@ -279,7 +280,7 @@ export const DEFAULT_ENVOY_LOCAL_SERVER_PARAMS: Required<
     "ctxSize" | "nGpuLayers" | "parallel" | "flashAttn" | "fit"
   >
 > = {
-  ctxSize: 8192,
+  ctxSize: 131072,
   nGpuLayers: "auto",
   parallel: 1,
   flashAttn: "auto",

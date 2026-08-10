@@ -18,6 +18,11 @@ import {
   mergeAiChatMessages,
   type AiChatMessageView,
 } from "../../lib/envoy-ai-chat.js";
+import {
+  getEnvoyAiInflight,
+  setEnvoyAiInflight,
+  subscribeEnvoyAiInflight,
+} from "../../lib/envoy-ai-inflight.js";
 import { messageVisualVariant } from "../../lib/chat-thread-kind.js";
 import {
   loadAssistantLinkedTerminalSessionId,
@@ -243,7 +248,8 @@ export function AIChatPanel({
 
   const [aiMessages, setAiMessages] = useState<AiMessage[]>([]);
   const [aiInput, setAiInput] = useState("");
-  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [isAiLoading, setIsAiLoading] = useState(getEnvoyAiInflight);
+  useEffect(() => subscribeEnvoyAiInflight(() => setIsAiLoading(getEnvoyAiInflight())), []);
   const [linkedTerminalSessionId, setLinkedTerminalSessionId] = useState<string | null>(() =>
     loadAssistantLinkedTerminalSessionId(),
   );
@@ -423,7 +429,7 @@ export function AIChatPanel({
       // NOT when the human message echo comes back (which would hide the
       // loading state before the AI has responded).
       if (view.role === "ai") {
-        setIsAiLoading(false);
+        setEnvoyAiInflight(false);
       }
     });
     return unsub;
@@ -518,7 +524,7 @@ export function AIChatPanel({
     };
     setAiMessages((prev) => [...prev, userMsg]);
     draftRef.current?.setPlainText("");
-    setIsAiLoading(true);
+    setEnvoyAiInflight(true);
     reloadSeqRef.current += 1;
 
     try {
@@ -546,7 +552,7 @@ export function AIChatPanel({
         },
       ]);
     } finally {
-      setIsAiLoading(false);
+      setEnvoyAiInflight(false);
     }
   };
 

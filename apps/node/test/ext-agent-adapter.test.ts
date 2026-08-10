@@ -192,14 +192,17 @@ describe("ext-agent-adapter backends", () => {
     ]);
   });
 
-  it("createBackend throws 'not yet implemented' for codex until 55B ships", () => {
-    // Phase 55D lands the picker / port / kind, but the codex backend
-    // itself is Phase 55B. Until then, switching to codex in the picker
-    // should produce a clear error, not a silent crash.
-    expect(() => createBackend("codex")).toThrow(/codex.*not yet implemented/i);
+  it("createBackend('codex') returns a CodexBackend (Phase 55B)", () => {
+    // Phase 55B lands the codex backend; switching to codex in the
+    // picker should return a real backend. Sidecar won't start
+    // because there's no `codex` binary on PATH in CI, but the
+    // factory call itself must succeed.
+    const backend = createBackend("codex");
+    expect(backend.kind).toBe("codex");
+    expect(backend.label.toLowerCase()).toContain("codex");
   });
 
-  it("createBackend throws 'not yet implemented' for claudecode until 55C ships", () => {
+  it("createBackend('claudecode') still throws 'not yet implemented' (Phase 55C pending)", () => {
     expect(() => createBackend("claudecode")).toThrow(/claudecode.*not yet implemented/i);
   });
 
@@ -331,26 +334,27 @@ describe("ext-agent HTTP sidecar", () => {
     }
   });
 
-  it("syncExtAgentSidecar for codex logs the 'not yet implemented' error and stays down (Phase 55D, before 55B)", async () => {
-    // Silence the manager's console.error so the test output stays clean.
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    try {
-      await syncExtAgentSidecar({
-        bridgeEnabled: true,
-        activeExtAgentId: "codex",
-        bridgeListenPort: 3031,
-      });
-      // createBackend("codex") throws; the manager catches and logs.
-      expect(getRunningExtAgentSidecar()).toBeNull();
-      expect(errSpy).toHaveBeenCalled();
-      const callArgs = errSpy.mock.calls.find(
-        (c) => typeof c[0] === "string" && c[0].includes("failed to start codex"),
-      );
-      expect(callArgs?.[1]).toMatch(/codex.*not yet implemented/i);
-    } finally {
-      errSpy.mockRestore();
-      await stopExtAgentSidecar();
+  it("syncExtAgentSidecar for codex starts the sidecar (Phase 55B)", async () => {
+    // 55B shipped the codex backend. On a dev machine with the
+    // codex CLI on PATH (the user installed it), the sidecar starts
+    // successfully. On a machine without it, the supervisor would
+    // fail with `InstallMissingError` and the manager would log +
+    // stay down — we cover that case in the install-guide tests
+    // (apps/node/test/ext-agent-install-guide.test.ts).
+    await syncExtAgentSidecar({
+      bridgeEnabled: true,
+      activeExtAgentId: "codex",
+      bridgeListenPort: 3031,
+    });
+    const running = getRunningExtAgentSidecar();
+    if (running?.kind === "codex") {
+      expect(running.port).toBeGreaterThanOrEqual(1024);
+    } else {
+      // codex CLI not on PATH on this machine — the manager should
+      // have stayed down and logged an error.
+      expect(running).toBeNull();
     }
+    await stopExtAgentSidecar();
   });
 
   it("syncExtAgentSidecar for claudecode logs the 'not yet implemented' error and stays down (Phase 55D, before 55C)", async () => {

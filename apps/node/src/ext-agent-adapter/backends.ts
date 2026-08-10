@@ -4,6 +4,10 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import type { ExtAgentBackend, ExtAgentSidecarKind } from "./types.js";
+// Phase 55B — codex backend. Imported at the top so the sidecar
+// factory can hand it out without a dynamic import; the codex
+// module is small (~700 LOC) and tree-shake friendly.
+import { createCodexBackend } from "./codex-backend.js";
 
 /** OpenHuman auth-profile provider id for the stable `/v1` bearer. */
 export const OPENHUMAN_EXTERNAL_V1_PROVIDER = "external-openai-compat";
@@ -902,13 +906,9 @@ export function createBackend(kind: ExtAgentSidecarKind): ExtAgentBackend {
   if (kind === "hermes") return createHermesBackend();
   if (kind === "openhuman") return createOpenHumanBackend();
   if (kind === "codex") {
-    // Phase 55B will replace this with the real codex app-server JSON-RPC
-    // backend (stdio transport + supervisor). Until then, surface a clear
-    // error so the user sees "not yet implemented" instead of a silent
-    // crash in the sidecar.
-    throw new Error(
-      "[ext-agent] codex backend not yet implemented (Phase 55B).",
-    );
+    // Phase 55B — real codex app-server JSON-RPC over stdio,
+    // supervised by the 55A `DaemonSupervisor`.
+    return createCodexBackend();
   }
   if (kind === "claudecode") {
     // Phase 55C will replace this with the @anthropic-ai/claude-agent-sdk

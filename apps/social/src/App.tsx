@@ -27,6 +27,10 @@ import {
   type OpenclawHealStatus,
 } from "./lib/tauri-shell.js";
 import {
+  getEnvoyAiInflight,
+  subscribeEnvoyAiInflight,
+} from "./lib/envoy-ai-inflight.js";
+import {
   isFirstRunSetupComplete,
   hasCompletedFirstRunSetup,
   hasSeenGettingStartedGuide,
@@ -291,6 +295,12 @@ export function App() {
   const contentEngage = useContentEngageNotifications();
   const feedNotify = useFeedNotifications();
   const [currentView, setCurrentView] = useState<ViewName>("chat");
+  // Keep Envoy AI mounted (hidden) while a turn is in flight so leaving the
+  // page does not tear down the wait / chat:message handlers mid-reply.
+  const [envoyAiInflight, setEnvoyAiInflightState] = useState(getEnvoyAiInflight);
+  useEffect(() => subscribeEnvoyAiInflight(() => setEnvoyAiInflightState(getEnvoyAiInflight())), []);
+  const keepAssistantMounted = currentView === "assistant" || envoyAiInflight;
+  const assistantVisible = currentView === "assistant";
   // While Content → Feed/Blog is open, don't badge Like/Comment for that surface.
   const [contentSurface, setContentSurface] = useState<ContentTab>("feed");
   const viewingContentFeed = currentView === "content" && contentSurface === "feed";
@@ -568,26 +578,32 @@ export function App() {
                 onOpenDiscover={() => navigateTo("discover")}
               />
             )}
-            {currentView === "assistant" && (
-              <SwipeBack onSwipeBack={() => navigateTo("chat")}>
-                <H2AChannelView
-                  onBackToChats={() => navigateTo("chat")}
-                  onOpenActivity={() => {
-                    setSettingsTab("app");
-                    navigateTo("settings");
-                  }}
-                  onOpenInbox={() => {
-                    navigateTo("chat");
-                    setChatPanelMode("inbox");
-                  }}
-                  onOpenChains={() => navigateTo("chains")}
-                  onOpenDiscover={() => navigateTo("discover")}
-                  onOpenSettingsAi={() => {
-                    setSettingsTab("ai");
-                    navigateTo("settings");
-                  }}
-                />
-              </SwipeBack>
+            {keepAssistantMounted && (
+              <div
+                className="main-view-slot"
+                hidden={!assistantVisible}
+                aria-hidden={!assistantVisible}
+              >
+                <SwipeBack onSwipeBack={() => navigateTo("chat")}>
+                  <H2AChannelView
+                    onBackToChats={() => navigateTo("chat")}
+                    onOpenActivity={() => {
+                      setSettingsTab("app");
+                      navigateTo("settings");
+                    }}
+                    onOpenInbox={() => {
+                      navigateTo("chat");
+                      setChatPanelMode("inbox");
+                    }}
+                    onOpenChains={() => navigateTo("chains")}
+                    onOpenDiscover={() => navigateTo("discover")}
+                    onOpenSettingsAi={() => {
+                      setSettingsTab("ai");
+                      navigateTo("settings");
+                    }}
+                  />
+                </SwipeBack>
+              </div>
             )}
             {currentView === "discover" && (
               <SwipeBack onSwipeBack={() => navigateTo("chat")}>
