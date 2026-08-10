@@ -328,6 +328,10 @@ export async function saveClawhubTokenViaRuntime(
 
 export async function reloadOpenClawConfigViaRuntime(ctx: ClawHubContext): Promise<void> {
   console.log("[openclaw] Reloading config — restarting gateway...");
+  // Wait out any in-flight start before stop/start. Killing mid-probe races
+  // the startup waiter and flashes "Gateway child is null" / SIGTERM errors
+  // in Settings even though the follow-up start succeeds.
+  await ctx.startOpenClaw().catch(() => undefined);
   await ctx.stopOpenClaw();
   await ctx.startOpenClaw();
 }

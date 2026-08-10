@@ -7,9 +7,10 @@
  * OpenHuman HTTP APIs, built-in Pi runtime, codex stdio JSON-RPC, or the
  * Claude Agent SDK).
  *
- * Phase 56A: `cursor` — Cursor CLI (`cursor-agent`), one-shot subprocess
- * per ask via the shared `OneShotCliBackend` base. Phase 56B / 56C will
- * add `aider` / `mmx` (same one-shot pattern).
+ * Phase 56A: `cursor` — Cursor CLI (`cursor-agent`). Phase 56B: `aider`
+ * (Aider pair-programmer CLI). Phase 56C: `mmx` (MiniMax MMX-CLI).
+ * All three use the shared `OneShotCliBackend` base (one-shot
+ * subprocess per ask).
  */
 export type ExtAgentSidecarKind =
   | "pi"
@@ -17,7 +18,9 @@ export type ExtAgentSidecarKind =
   | "openhuman"
   | "codex"
   | "claudecode"
-  | "cursor";
+  | "cursor"
+  | "aider"
+  | "mmx";
 
 export const EXT_AGENT_SIDECAR_KINDS: readonly ExtAgentSidecarKind[] = [
   "pi",
@@ -26,6 +29,8 @@ export const EXT_AGENT_SIDECAR_KINDS: readonly ExtAgentSidecarKind[] = [
   "codex",
   "claudecode",
   "cursor",
+  "aider",
+  "mmx",
 ];
 
 export function isExtAgentSidecarKind(id: string | undefined): id is ExtAgentSidecarKind {
@@ -35,7 +40,9 @@ export function isExtAgentSidecarKind(id: string | undefined): id is ExtAgentSid
     id === "openhuman" ||
     id === "codex" ||
     id === "claudecode" ||
-    id === "cursor"
+    id === "cursor" ||
+    id === "aider" ||
+    id === "mmx"
   );
 }
 

@@ -113,6 +113,12 @@ export interface OpenClawRuntimeState {
    * for immediate diagnosis instead of a generic "port may be in use".
    */
   lastGatewayStderr: string[];
+  /**
+   * Last gateway child exit observed (code/signal). Kept after `gatewayChild`
+   * is cleared so the startup probe can report "exited code N" instead of the
+   * misleading "Gateway child is null".
+   */
+  lastGatewayExit: { code: number | null; signal: NodeJS.Signals | null; at: number } | null;
 }
 
 /**
@@ -178,6 +184,7 @@ export function createOpenClawRuntimeState(): OpenClawRuntimeState {
     consecutiveRestartFailures: 0,
     watchdogPortConflict: false,
     lastGatewayStderr: [],
+    lastGatewayExit: null,
   };
 }
 
@@ -807,7 +814,9 @@ async function probeOpenClawWebhook(
 async function waitForOpenClawGatewayReady(state: OpenClawRuntimeState): Promise<boolean> {
   for (let attempt = 0; attempt < OPEN_CLAW_STARTUP_PROBE_ATTEMPTS; attempt++) {
     // Bail early if the gateway process exited mid-probe (avoids wasting
-    // 90s probing a dead port).
+    // 90s probing a dead port). Prefer exitCode on the ChildProcess while it
+    // is still referenced; fall back to lastGatewayExit after the exit
+    // handler clears gatewayChild.
     if (state.gatewayChild?.exitCode !== null && state.gatewayChild !== null) {
       const code = state.gatewayChild.exitCode;
       console.warn("[openclaw] Gateway process exited during startup probe — stopping wait");
@@ -815,8 +824,18 @@ async function waitForOpenClawGatewayReady(state: OpenClawRuntimeState): Promise
       return false;
     }
     if (!state.gatewayChild) {
-      console.warn("[openclaw] Gateway child is null during startup probe — stopping wait");
-      recordOpenClawError(state, "Gateway child is null during startup probe");
+      const exit = state.lastGatewayExit;
+      const recent = exit != null && Date.now() - exit.at < 120_000;
+      if (recent) {
+        const detail = exit.signal
+          ? `signal ${exit.signal}`
+          : `exit code ${exit.code ?? "?"}`;
+        console.warn(`[openclaw] Gateway process exited during startup probe (${detail}) — stopping wait`);
+        recordOpenClawError(state, `Gateway process exited during startup probe (${detail})`);
+      } else {
+        console.warn("[openclaw] Gateway child is null during startup probe — stopping wait");
+        recordOpenClawError(state, "Gateway child is null during startup probe");
+      }
       return false;
     }
     if (await probeOpenClawWebhook(state, { quiet: true })) {
@@ -1470,10 +1489,25 @@ async function startOpenClawInner(
     console.warn(`[openclaw] gateway spawn error: ${msg}`);
     recordOpenClawError(state, `Gateway spawn error: ${msg}`);
   });
-  child.on("exit", (code) => {
+  child.on("exit", (code, signal) => {
+    state.lastGatewayExit = {
+      code: code ?? null,
+      signal: signal ?? null,
+      at: Date.now(),
+    };
+    // Only clear state when THIS child is still the active one. A late exit
+    // from a previous gateway (killed for reload) must not null out a newer
+    // spawn — that surfaces as "Gateway child is null" while the new process
+    // is still alive on the port.
+    if (state.gatewayChild !== child) {
+      return;
+    }
     if (code) {
       console.warn(`[openclaw] gateway exited code ${code}`);
       recordOpenClawError(state, `Gateway process exited with code ${code}`);
+    } else if (signal) {
+      console.warn(`[openclaw] gateway exited signal ${signal}`);
+      recordOpenClawError(state, `Gateway process exited with signal ${signal}`);
     }
     state.gatewayChild = null;
     setOpenClawGatewayReady(state, false);
@@ -1485,6 +1519,7 @@ async function startOpenClawInner(
     // stayed dead until the next user message.
   });
   state.gatewayChild = child;
+  state.lastGatewayExit = null;
   // Register the child with the module-level tracker so the `process.on("exit")`
   // hook can SIGKILL it if the node process exits via a path that bypasses
   // `stopOpenClawViaRuntime` (e.g. a Tauri SIGTERM that races with the graceful
@@ -1606,6 +1641,10 @@ export async function stopOpenClawViaRuntime(
   rejectAllPendingOpenClawReplies(state, "OpenClaw stopped");
   setOpenClawGatewayReady(state, false);
   stopOpenClawWatchdog(state);
+  // If startOpenClawInner is mid-probe, kill the child first so the probe
+  // exits quickly, then await the in-flight start so we don't race a second
+  // spawn on top of a half-finished one.
+  const inflightStart = state.startPromise;
   const proc = state.gatewayChild;
   state.gatewayChild = null;
   if (proc && !proc.killed) {
@@ -1620,6 +1659,9 @@ export async function stopOpenClawViaRuntime(
     // eventually exits.
     try { proc.kill("SIGTERM"); } catch { /* ignore */ }
     await waitForOpenClawChildExit(proc, { graceMs: 3000 });
+  }
+  if (inflightStart) {
+    await inflightStart.catch(() => undefined);
   }
   state.runtime = null;
 }

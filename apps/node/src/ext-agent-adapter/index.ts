@@ -78,3 +78,13 @@ export {
   createCursorAgentBackend,
   type CursorAgentBackendOptions,
 } from "./cursor-agent-backend.js";
+export {
+  AiderBackend,
+  createAiderBackend,
+  type AiderBackendOptions,
+} from "./aider-backend.js";
+export {
+  MmxBackend,
+  createMmxBackend,
+  type MmxBackendOptions,
+} from "./mmx-backend.js";

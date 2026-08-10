@@ -25,6 +25,8 @@ import { createOpenHumanSupervisedBackend } from "./supervised-openhuman-backend
 // via the shared `OneShotCliBackend` base. Phase 56B (aider) and
 // 56C (mmx) follow the same pattern.
 import { createCursorAgentBackend } from "./cursor-agent-backend.js";
+import { createAiderBackend } from "./aider-backend.js";
+import { createMmxBackend } from "./mmx-backend.js";
 
 /**
  * Phase 55E — when `true`, `createBackend("hermes" | "openhuman")`
@@ -968,6 +970,18 @@ export function createBackend(kind: ExtAgentSidecarKind): ExtAgentBackend {
     // ask via the shared `OneShotCliBackend` base. Install via
     // `curl https://cursor.com/install -fsS | bash`.
     return createCursorAgentBackend();
+  }
+  if (kind === "aider") {
+    // Phase 56B — Aider (`aider`) one-shot subprocess per ask via
+    // the shared `OneShotCliBackend` base. Safety flags
+    // (--no-pretty, --no-git, --yes-always) baked into the backend.
+    return createAiderBackend();
+  }
+  if (kind === "mmx") {
+    // Phase 56C — MiniMax MMX-CLI (`mmx`) one-shot subprocess per
+    // ask via the shared `OneShotCliBackend` base. Install via
+    // `npm install -g mmx-cli`; auth via `mmx auth login --api-key ...`.
+    return createMmxBackend();
   }
   // Exhaustiveness guard — if a new sidecar kind is added, this will
   // type-error until the new branch is handled.

@@ -188,7 +188,17 @@ describe("ext-agent-adapter backends", () => {
     expect(isExtAgentSidecarKind("cursor")).toBe(true);
   });
 
-  it("EXT_AGENT_SIDECAR_KINDS lists all six kinds", () => {
+  it("isExtAgentSidecarKind includes aider (Phase 56B)", () => {
+    // Phase 56B adds `aider`. mmx comes in 56C.
+    expect(isExtAgentSidecarKind("aider")).toBe(true);
+  });
+
+  it("isExtAgentSidecarKind includes mmx (Phase 56C)", () => {
+    // Phase 56C adds `mmx` — MiniMax's MMX-CLI.
+    expect(isExtAgentSidecarKind("mmx")).toBe(true);
+  });
+
+  it("EXT_AGENT_SIDECAR_KINDS lists all eight kinds", () => {
     expect(EXT_AGENT_SIDECAR_KINDS).toEqual([
       "pi",
       "hermes",
@@ -196,6 +206,8 @@ describe("ext-agent-adapter backends", () => {
       "codex",
       "claudecode",
       "cursor",
+      "aider",
+      "mmx",
     ]);
   });
 
@@ -227,6 +239,26 @@ describe("ext-agent-adapter backends", () => {
     const backend = createBackend("cursor");
     expect(backend.kind).toBe("cursor");
     expect(backend.label.toLowerCase()).toContain("cursor");
+  });
+
+  it("createBackend('aider') returns an AiderBackend (Phase 56B)", () => {
+    // Phase 56B lands the Aider backend (one-shot `aider --message ...`
+    // subprocess per ask). The factory call must succeed; the sidecar
+    // won't start in CI (no live `aider` binary), but the backend
+    // object itself exists.
+    const backend = createBackend("aider");
+    expect(backend.kind).toBe("aider");
+    expect(backend.label.toLowerCase()).toContain("aider");
+  });
+
+  it("createBackend('mmx') returns an MmxBackend (Phase 56C)", () => {
+    // Phase 56C lands the MiniMax MMX-CLI backend (one-shot
+    // `mmx text chat --message ...` subprocess per ask). The factory
+    // call must succeed; the sidecar won't start in CI (no live
+    // `mmx` binary), but the backend object itself exists.
+    const backend = createBackend("mmx");
+    expect(backend.kind).toBe("mmx");
+    expect(backend.label.toLowerCase()).toContain("mmx");
   });
 
   it("DEFAULT_EXT_AGENTS includes codex + claudecode presets (Phase 55D)", async () => {

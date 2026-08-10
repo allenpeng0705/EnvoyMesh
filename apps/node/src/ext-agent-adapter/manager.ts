@@ -28,9 +28,12 @@ const DEFAULT_PORTS: Record<ExtAgentSidecarKind, number> = {
   codex: 8023,
   claudecode: 8024,
   // Phase 56A — Cursor CLI (Anysphere) one-shot subprocess per ask via
-  // the shared `OneShotCliBackend` base. Add additive to the 55 ports
-  // (no port below 1024).
+  // the shared `OneShotCliBackend` base. Phase 56B — Aider. Phase 56C
+  // — MiniMax MMX-CLI. All three use the same one-shot pattern.
+  // Additive to the 55 ports (no port below 1024).
   cursor: 8025,
+  aider: 8026,
+  mmx: 8027,
 };
 
 let running: ExtAgentHttpServerHandle | null = null;
@@ -74,6 +77,20 @@ function listenPortFor(kind: ExtAgentSidecarKind): number {
   }
   if (kind === "cursor") {
     const env = process.env.ENVOYMESH_CURSOR_PORT?.trim();
+    if (env) {
+      const n = Number.parseInt(env, 10);
+      if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;
+    }
+  }
+  if (kind === "aider") {
+    const env = process.env.ENVOYMESH_AIDER_PORT?.trim();
+    if (env) {
+      const n = Number.parseInt(env, 10);
+      if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;
+    }
+  }
+  if (kind === "mmx") {
+    const env = process.env.ENVOYMESH_MMX_PORT?.trim();
     if (env) {
       const n = Number.parseInt(env, 10);
       if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;
