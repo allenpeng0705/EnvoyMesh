@@ -6410,6 +6410,27 @@ class NodeServiceImpl implements NodeService {
         await rag?.clearChatThread(bridgePeer);
       }
     }
+    // EnvoyAI trash must also reset OpenClaw session trajectories — otherwise
+    // Local (and cloud) keep stuffing multi-MB history into the next turn.
+    if (thread === "envoyai" || thread === ENVOY_AI_THREAD_KEY) {
+      try {
+        const { resetOpenClawEnvoyAiSessions } = await import(
+          "./openclaw-envoyai-session-reset.js"
+        );
+        const reset = await resetOpenClawEnvoyAiSessions(this._profileDir);
+        if (reset.removedSessions > 0) {
+          console.log(
+            `[openclaw] EnvoyAI clear reset ${reset.removedSessions} session(s), ` +
+              `${reset.removedFiles} file(s)`,
+          );
+        }
+      } catch (err) {
+        console.warn(
+          "[openclaw] EnvoyAI session reset failed:",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
     return { deletedCount };
   }
 

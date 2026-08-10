@@ -308,6 +308,9 @@ export const zhAiSettingsMessages = {
     endpoint: "端点",
     accel: "加速",
     progress: "{label}",
+    progressBytes: "{received} / {total} MB",
+    progressBytesReceived: "已下载 {received} MB",
+    downloadOk: "模型已下载",
     lastError: "最近错误：{error}",
     noteCloudFirst: "若不需要本地下载，请优先在上方配置云端 API。",
     usageStatus: "AI 提供商",
@@ -349,7 +352,7 @@ export const zhAiSettingsMessages = {
     paramsAdvancedLabel: "高级（llama-server）",
     ctxSize: "上下文长度",
     ctxSizeHint:
-      "默认 128K，适合 Envoy AI 工具与会话。小内存机器用 32K；256K–1M 需要大量统一内存/显存（常需量化 KV）。也可手动输入，最高约 2M。",
+      "默认 32K，Local + OpenClaw 更省内存、响应更快。需要更长会话可调到 128K；256K–1M 需要大量统一内存/显存（常需量化 KV）。也可手动输入，最高约 2M。启用 Envoy Local 时，该值也会限制 OpenClaw 的会话窗口（云端模型不受影响）。",
     ctxPreset32k: "32K",
     ctxPreset128k: "128K",
     ctxPreset256k: "256K",

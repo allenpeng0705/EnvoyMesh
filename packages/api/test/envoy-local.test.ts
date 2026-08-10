@@ -23,7 +23,7 @@ describe("envoy-local config", () => {
   });
 
   it("ships sensible server defaults", () => {
-    expect(DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.ctxSize).toBe(131072);
+    expect(DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.ctxSize).toBe(32768);
     expect(DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.nGpuLayers).toBe("auto");
     expect(DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.parallel).toBe(1);
     expect(DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.flashAttn).toBe("auto");

@@ -67,3 +67,14 @@ export {
   createOpenHumanSupervisedBackend,
   type OpenHumanSupervisedBackendOptions,
 } from "./supervised-openhuman-backend.js";
+// Phase 56A — one-shot CLI backend base + Cursor CLI. Phase 56B
+// (aider) and 56C (mmx) follow the same pattern.
+export {
+  OneShotCliBackend,
+  type OneShotCliBackendOptions,
+} from "./one-shot-cli-backend.js";
+export {
+  CursorAgentBackend,
+  createCursorAgentBackend,
+  type CursorAgentBackendOptions,
+} from "./cursor-agent-backend.js";

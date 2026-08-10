@@ -62,7 +62,7 @@ describe("resolveEnvoyLocalLoraArg", () => {
 });
 
 describe("buildEnvoyLocalLlamaServerArgs", () => {
-  it("emits defaults including flash-attn, fit, and 128k context", () => {
+  it("emits defaults including flash-attn, fit, and 32k context", () => {
     const args = buildEnvoyLocalLlamaServerArgs({
       modelPath: "/models/m.gguf",
       modelId: "m",
@@ -76,7 +76,7 @@ describe("buildEnvoyLocalLlamaServerArgs", () => {
         "-m",
         "/models/m.gguf",
         "-c",
-        "131072",
+        "32768",
         "-ngl",
         "-1",
         "--parallel",

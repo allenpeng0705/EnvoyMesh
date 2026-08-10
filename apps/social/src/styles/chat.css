@@ -1173,33 +1173,36 @@
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0;
+  gap: 0.35rem;
 }
 
 .chat-header-web-links .contact-web-content__link {
+  appearance: none;
   font-size: var(--text-xs);
-  font-weight: var(--font-medium);
-  color: var(--color-primary);
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 2px;
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+  text-decoration: none;
   white-space: nowrap;
-  padding: 0.1rem 0.15rem;
-  border-radius: var(--radius-sm);
-  background: transparent;
+  padding: 0.28rem 0.65rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted, var(--color-bg));
+  box-shadow: var(--shadow-xs);
   cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .chat-header-web-links .contact-web-content__link:hover,
 .chat-header-web-links .contact-web-content__link:focus-visible {
-  color: var(--color-primary-hover, var(--color-primary));
+  color: var(--color-text);
   background: var(--color-primary-subtle);
-  text-decoration-thickness: 2px;
+  border-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
+  text-decoration: none;
+  box-shadow: var(--shadow-sm);
 }
 
 .chat-header-web-links .contact-web-content__sep {
-  margin: 0 0.2rem;
-  color: var(--color-text-muted);
+  display: none;
 }
 
 .chat-header-secondary .assistant-switch {
@@ -2802,7 +2805,7 @@
   justify-content: flex-end;
   /* Anchors the input row to the bottom; overlays float above it without pushing it down. */
   background: var(--color-surface);
-  border-top: 1px solid var(--color-border-subtle);
+  border-top: 1px solid var(--color-border);
   box-shadow: var(--shadow-composer);
 }
 
@@ -3639,7 +3642,7 @@
 .modal-actions .primary {
   border: none;
   background: var(--color-primary);
-  color: var(--color-primary-on, #ffffff);
+  color: var(--color-primary-on, #052e16);
 }
 
 .modal-actions .primary:hover:not(:disabled) {
@@ -3648,12 +3651,14 @@
 
 .modal-actions .secondary {
   border: 1px solid var(--color-border);
-  background: var(--color-surface);
+  background: var(--color-surface-muted, var(--color-bg));
   color: var(--color-text);
+  box-shadow: var(--shadow-xs);
 }
 
 .modal-actions .secondary:hover:not(:disabled) {
-  background: var(--color-bg);
+  background: var(--color-surface);
+  border-color: var(--color-text-muted);
 }
 
 .modal-actions button:disabled {

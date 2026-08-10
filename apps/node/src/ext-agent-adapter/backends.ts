@@ -21,6 +21,10 @@ import { createClaudeCodeBackend } from "./claudecode-backend.js";
 // assume the daemon is already running.
 import { createHermesSupervisedBackend } from "./supervised-hermes-backend.js";
 import { createOpenHumanSupervisedBackend } from "./supervised-openhuman-backend.js";
+// Phase 56A — Cursor CLI (Anysphere) one-shot subprocess per ask
+// via the shared `OneShotCliBackend` base. Phase 56B (aider) and
+// 56C (mmx) follow the same pattern.
+import { createCursorAgentBackend } from "./cursor-agent-backend.js";
 
 /**
  * Phase 55E — when `true`, `createBackend("hermes" | "openhuman")`
@@ -958,6 +962,12 @@ export function createBackend(kind: ExtAgentSidecarKind): ExtAgentBackend {
     // The SDK is loaded lazily inside the backend (see
     // `claudecode-backend.ts`).
     return createClaudeCodeBackend();
+  }
+  if (kind === "cursor") {
+    // Phase 56A — Cursor CLI (`cursor-agent`) one-shot subprocess per
+    // ask via the shared `OneShotCliBackend` base. Install via
+    // `curl https://cursor.com/install -fsS | bash`.
+    return createCursorAgentBackend();
   }
   // Exhaustiveness guard — if a new sidecar kind is added, this will
   // type-error until the new branch is handled.

@@ -203,7 +203,8 @@ export const aiChatMessages = {
   responseFailed: "Failed to get AI response",
   errorPrefix: "Error: {message}",
   clearConfirm: "Clear this Envoy AI session?",
-  clearConfirmMessage: "This removes all messages in this session. AI context is reset.",
+  clearConfirmMessage:
+    "This removes all messages in this session and resets OpenClaw’s EnvoyAI memory so the next reply starts fresh.",
   title: "EnvoyAI",
   subtitle: "Knowledge assistant",
   clearSessionTitle: "Clear session",

@@ -1,10 +1,9 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { useT, useI18n } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useIsInProcessMobileNode } from "../../hooks/useNodeService.js";
 import { useToast } from "../../hooks/useToast.js";
 import { useChatStickToBottom } from "../../hooks/useChatStickToBottom.js";
-import { ChainStartDialog } from "../ChainStartDialog.js";
 import { ChainReportInlineCard } from "../ChainReportInlineCard.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import { openLocalFile } from "../../lib/library-file-actions.js";
@@ -63,9 +62,13 @@ export interface AIChatPanelProps {
   onOpenInbox?: () => void;
   /** Navigate to the Chains tab (used by the inline chain-report card). */
   onOpenChains?: () => void;
-  onOpenDiscover?: () => void;
   /** Open Settings → AI (Configure AI banner / no-model CTA). */
   onOpenSettingsAi?: () => void;
+  /**
+   * When false the panel may stay mounted but hidden (in-flight keep-alive).
+   * Becoming true re-pins the transcript to the latest message.
+   */
+  active?: boolean;
 }
 
 function domainLabel(domain: OwnerAgentDomain, t: TFunction): string {
@@ -225,15 +228,15 @@ export function AIChatPanel({
   onOpenActivity,
   onOpenInbox,
   onOpenChains,
-  onOpenDiscover,
   onOpenSettingsAi,
+  active = true,
 }: AIChatPanelProps = {}) {
   const t = useT();
   const { locale } = useI18n();
   const nodeService = useNodeService();
   const toast = useToast();
   const isMobileNode = useIsInProcessMobileNode();
-  const { nodeConfig, humanProfile, nodeStatus, connectionStatus, bonds } = useNodeState();
+  const { nodeConfig, humanProfile, nodeStatus, connectionStatus } = useNodeState();
   const homeRemote = connectionStatus?.homeRemote;
   const assistantHomeOffline =
     isMobileNode && homeRemote?.paired === true && homeRemote?.homeOnline === false;
@@ -284,7 +287,6 @@ export function AIChatPanel({
   );
   const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ title: string; message?: string; variant?: "default" | "destructive"; onConfirm: () => void } | null>(null);
-  const [chainGoal, setChainGoal] = useState<string | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalSummary[]>([]);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [showApprovals, setShowApprovals] = useState(false);
@@ -509,6 +511,13 @@ export function AIChatPanel({
   }, [aiMessages, isAiLoading]);
   const { containerRef: messagesRef, onScroll: onMessagesScroll, pinToBottom } =
     useChatStickToBottom(ENVOY_AI_THREAD_KEY, scrollRevision);
+
+  // Re-pin when the panel becomes visible again (e.g. return from another chat
+  // while an answer was still in flight and the tree stayed mounted).
+  useLayoutEffect(() => {
+    if (!active) return;
+    pinToBottom();
+  }, [active, pinToBottom]);
 
   const sendAiMessage = async (question: string) => {
     if (!question.trim() || isAiLoading) return;
@@ -841,23 +850,6 @@ export function AIChatPanel({
                               />
                             )}
                           </ChatMessageBubble>
-                          {/* "Run as chain" — only shown when the user has bonded
-                              contacts (chains need workers) and the message looks
-                              like a task (>20 chars, not a simple greeting/question).
-                              Kept subtle so it doesn't clutter normal conversation. */}
-                          {msg.role === "user" &&
-                          bonds.length > 0 &&
-                          msg.text.trim().length > 20 &&
-                          !/^(hi|hello|hey|thanks|ok|yes|no|你好|谢谢|好的|是的|不是)/i.test(msg.text.trim()) ? (
-                            <button
-                              type="button"
-                              className="ai-run-chain-btn ai-run-chain-btn--subtle"
-                              title={t("chains.start.runAsChainHint", "Decompose this into a multi-agent task chain")}
-                              onClick={() => setChainGoal(stripModelThinking(msg.text))}
-                            >
-                              {t("chains.start.runAsChain")}
-                            </button>
-                          ) : null}
                           {msg.role === "ai" && msg.turn && (
                             <AiTurnMetaChips
                               turn={msg.turn}
@@ -928,6 +920,7 @@ export function AIChatPanel({
           sendLabel={t("aiChat.send")}
           disabled={isAiLoading || !assistantReady}
           sendDisabled={isAiLoading || !assistantReady}
+          autoFocus={active}
         />
       </footer>
       {confirm ? (
@@ -937,13 +930,6 @@ export function AIChatPanel({
           variant={confirm.variant}
           onConfirm={confirm.onConfirm}
           onCancel={() => setConfirm(null)}
-        />
-      ) : null}
-      {chainGoal ? (
-        <ChainStartDialog
-          goal={chainGoal}
-          onClose={() => setChainGoal(null)}
-          onOpenDiscover={onOpenDiscover}
         />
       ) : null}
       {skillsOpen && <SkillManagerModal onClose={() => setSkillsOpen(false)} />}

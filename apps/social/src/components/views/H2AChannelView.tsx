@@ -207,7 +207,6 @@ export function H2AChannelView({
           onOpenActivity={onOpenActivity}
           onOpenInbox={onOpenInbox}
           onOpenChains={onOpenChains}
-          onOpenDiscover={onOpenDiscover}
           onOpenSettingsAi={onOpenSettingsAi}
         />
       </section>

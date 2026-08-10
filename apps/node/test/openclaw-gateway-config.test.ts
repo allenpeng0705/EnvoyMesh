@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildOpenClawGatewayAgentSection,
+  buildOpenClawGatewayModelSection,
   buildOpenClawGatewaySearchEnv,
   buildOpenClawGatewayWebSearchSection,
   isOpenClawEnvoymeshWebhookReady,
@@ -124,5 +125,38 @@ describe("openclaw-gateway-config web search", () => {
     expect(resolveAssistantAgentUrl({
       agentUrl: "http://127.0.0.1:8080/webhook/homeclaw",
     })).toBe("http://127.0.0.1:18789/webhook/envoymesh");
+  });
+});
+
+describe("buildOpenClawGatewayModelSection", () => {
+  it("sets contextWindow for Envoy Local from llama -c", () => {
+    const section = buildOpenClawGatewayModelSection(
+      {
+        mode: "openai-compatible",
+        presetId: "envoy-local",
+        endpoint: "http://127.0.0.1:18790/v1",
+        modelName: "gemma-4-e4b-it-q4_k_m",
+      },
+      { contextWindow: 32768 },
+    );
+    expect(section.defaultsModel).toBe("openai-compatible/gemma-4-e4b-it-q4_k_m");
+    const models = section.models?.providers["openai-compatible"]?.models;
+    expect(models?.[0]?.contextWindow).toBe(32768);
+  });
+
+  it("does not set contextWindow for cloud providers even if passed", () => {
+    const section = buildOpenClawGatewayModelSection(
+      {
+        mode: "openai-compatible",
+        presetId: "minimax",
+        endpoint: "https://api.minimaxi.com/v1",
+        modelName: "MiniMax-M3",
+        apiKey: "sk-test",
+      },
+      { contextWindow: 32768 },
+    );
+    const models = section.models?.providers?.["minimax"]?.models
+      ?? section.models?.providers?.["openai-compatible"]?.models;
+    expect(models?.[0]?.contextWindow).toBeUndefined();
   });
 });

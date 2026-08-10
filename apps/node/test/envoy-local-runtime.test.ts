@@ -326,6 +326,40 @@ describe("envoy-local-runtime lifecycle", () => {
     expect(url).toContain("huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/");
   });
 
+  it("getEnvoyLocalStatus keeps downloading phase while sidecar is still running", async () => {
+    await seedRuntimeAndModel();
+    mockedSpawn.mockImplementation(() => makeFakeChild(9191));
+    await restartEnvoyLocalViaRuntime(state, deps);
+
+    let releaseDownload!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseDownload = resolve;
+    });
+    mockedDownloadFile.mockImplementation(async ({ destPath, onProgress }) => {
+      onProgress?.({ bytesReceived: 50_000_000, bytesTotal: 100_000_000 });
+      await gate;
+      await writeSparseFile(destPath, ENVOY_LOCAL_MIN_MODEL_BYTES);
+    });
+
+    // Pick a curated model that is not already installed.
+    await downloadEnvoyLocalModelViaRuntime(state, deps, {
+      modelId: "gemma-4-e4b-it-q4_k_m",
+    });
+
+    const mid = await getEnvoyLocalStatusViaRuntime(state, deps);
+    expect(mid.running).toBe(true);
+    expect(mid.operationInProgress).toBe(true);
+    expect(mid.phase).toBe("downloading-model");
+    expect(mid.download?.label).toMatch(/Downloading/i);
+    expect(mid.download?.fraction).toBeGreaterThan(0);
+
+    releaseDownload();
+    await awaitEnvoyLocalOperation(state);
+    const done = await getEnvoyLocalStatusViaRuntime(state, deps);
+    expect(done.operationInProgress).toBe(false);
+    expect(done.phase).toBe("ready");
+  });
+
   it("clears sticky in-flight phase when no operation is running", async () => {
     state.phase = "downloading-runtime";
     state.download = { phase: "downloading-runtime", label: "stuck" };

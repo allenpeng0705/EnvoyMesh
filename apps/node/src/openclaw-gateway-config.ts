@@ -7,7 +7,7 @@
  */
 
 import type { ModelProviderConfig } from "@envoymesh/api"
-import { resolveOpenClawModelConfig } from "@envoymesh/api"
+import { inferModelProviderPreset, resolveOpenClawModelConfig } from "@envoymesh/api"
 
 const WEB_SEARCH_PROVIDER_SLUGS = new Set([
   "brave",
@@ -194,9 +194,13 @@ export function buildOpenClawGatewaySearchEnv(
  * `models.providers` fragments. Uses curated presets so Anthropic gets
  * `anthropic-messages` and MiniMax gets a clean provider id (not
  * `openai-compatible/...`).
+ *
+ * When the effective provider is Envoy Local, pass `contextWindow` from
+ * llama `-c` so OpenClaw does not overstuff session history.
  */
 export function buildOpenClawGatewayModelSection(
   modelProviders: ModelProviderConfig | null | undefined,
+  opts?: { contextWindow?: number },
 ): {
   defaultsModel?: string
   models?: {
@@ -206,13 +210,25 @@ export function buildOpenClawGatewayModelSection(
         api: string
         baseUrl?: string
         apiKey?: string
-        models?: Array<{ id: string; name: string; api: string }>
+        models?: Array<{
+          id: string
+          name: string
+          api: string
+          contextWindow?: number
+        }>
       }
     >
   }
 } {
   const resolved = resolveOpenClawModelConfig(modelProviders ?? undefined)
   if (!resolved) return {}
+  const preset = inferModelProviderPreset(modelProviders ?? undefined)
+  const contextWindow =
+    preset.id === "envoy-local" &&
+    typeof opts?.contextWindow === "number" &&
+    opts.contextWindow > 0
+      ? Math.floor(opts.contextWindow)
+      : undefined
   return {
     defaultsModel: `${resolved.providerId}/${resolved.model}`,
     models: {
@@ -221,7 +237,14 @@ export function buildOpenClawGatewayModelSection(
           api: resolved.api,
           ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {}),
           ...(resolved.apiKey ? { apiKey: resolved.apiKey } : {}),
-          models: [{ id: resolved.model, name: resolved.model, api: resolved.api }],
+          models: [
+            {
+              id: resolved.model,
+              name: resolved.model,
+              api: resolved.api,
+              ...(contextWindow != null ? { contextWindow } : {}),
+            },
+          ],
         },
       },
     },

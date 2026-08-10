@@ -7091,6 +7091,160 @@ The chat list's `ExtAgentSwitcher` component (`apps/social/src/components/ExtAge
 
 ---
 
+## Phase 56 — Ext Agent: cursor-agent + aider + mmx (one-shot CLI pattern)
+
+**Status:** `[ ]` design landed, no code yet
+
+**Background.** After 55 shipped (codex long-lived JSON-RPC + claudecode in-process SDK + supervised hermes/openhuman), the user asked for three more agents:
+
+- **Cursor CLI** (`cursor-agent`) — Anysphere's official CLI. Install via `curl https://cursor.com/install -fsS | bash`. Has `--prompt "..."` for one-shot asks and `--output json` for structured output. Multi-turn interactive also available but for the chat-bridge we want one-shot.
+- **Aider** (`aider`) — Open source terminal AI pair programmer. `pip install aider-chat` (or `python -m pip install aider-install` then `aider-install`). One-shot: `aider --message "..."` exits when done. We **must** pass `--no-auto-commits` and `--no-git` (defaults commit everything to a local repo — destructive for chat-bridge use case).
+- **MMX-CLI** (`mmx`) — **MiniMax's own CLI** (`github.com/MiniMax-AI/cli`, 2026-04-09). Designed *for AI agents* — clean JSON output via `--output json`, semantic exit codes, async non-blocking. Install: `npm install -g mmx-cli` or `npx skills add MiniMax-AI/cli -y -g`. `mmx text chat --message "..." --output json` returns structured JSON.
+
+All three are **one-shot CLIs per ask** — no long-lived protocol, no daemon to supervise. Different from codex (JSON-RPC) and claudecode (in-process SDK). This calls for a **third backend shape** in `apps/node/src/ext-agent-adapter/`:
+
+```
+                 codex (55B)            claudecode (55C)          cursor / aider / mmx (56)
+                 ─────────              ────────────────          ────────────────────────
+                 DaemonSupervisor       @anthropic-ai/            one-shot CLI per ask
+                 + stdio JSON-RPC       claude-agent-sdk          + sessionKey as prompt
+                 sessionKey→threadId    in-process                (no thread/session concept
+                                       sessionKey→sessionId      — relies on agent's own
+                                                                  in-process history)
+```
+
+### Goals (vs non-goals)
+
+**In scope (56A–56E):**
+
+- Three new one-shot CLI backends, sharing a common base class `OneShotCliBackend` (~200 LOC).
+- `DEFAULT_EXT_AGENTS` extended with `cursor` (`:8025`), `aider` (`:8026`), `mmx` (`:8027`).
+- `manager.ts` port mapping + `ENVOYMESH_CURSOR_PORT` / `ENVOYMESH_AIDER_PORT` / `ENVOYMESH_MMX_PORT` env overrides.
+- `INSTALL_TABLE` in `packages/api/src/ext-agent.ts` for the three new agents.
+- `getExtAgentInstallInfo` for the three new agents + `defaultExtAgentStartHint`.
+- `apps/node/src/ext-agent-adapter/index.ts` re-exports.
+- `docs/Ext_Agent_guide.md` extended with three new sections.
+- i18n: only keys that are actually used by the new install cards / status messages.
+
+**Out of scope (deferred to Phase 57+):**
+
+- GLM as a model endpoint provider (GLM is a model, not an agent — its OpenAI-compatible API at `open.bigmodel.cn/api/paas/v4` is a model router concern, not an ext-agent-adapter concern).
+- Touching the existing `pi` / `homeclaw` / `hermes` / `openhuman` / `codex` / `claudecode` backends.
+- "Add as model endpoint" wiring for GLM / MiniMax-M3 (model router is a separate package, not ext-agent-adapter).
+- Long-lived multi-turn support for any of the three (each ask is fresh; the agent's own in-process history handles context).
+- Aider's `architect` / `code` chat-mode UX features (one-shot is the chat-bridge contract).
+
+### Hard rules
+
+- **One-shot pattern only.** No long-lived subprocess. `ask()` spawns the CLI, waits for stdout, kills the process on timeout, returns the parsed text.
+- **Per-ask timeout (default 60s).** Configurable per agent; codex-style 120s long-running cap. Most one-shot CLIs complete in <30s.
+- **ENOENT → `InstallMissingError`.** Reuse the same error shape as codex / 55A so the 55A.1 / 55D.1 install card surfaces the install guide automatically.
+- **Aider must NOT auto-commit.** Pass `--no-auto-commits --no-git` so aider does not write to a real git repo from the bridge.
+- **MMX-CLI uses `--output json`** for clean structured output (no ANSI / progress bar to strip).
+- **No new global ports below 1024.** Sidecars bind 8025 / 8026 / 8027 (additive to 8010 / 8020-8024).
+- **Pre-existing mobile-node typecheck error stays untouched.**
+
+### Sub-slices (56A → 56E)
+
+| Slice | LOC | Tests | Description |
+|---|---|---|---|
+| **56A** | ~250 + 3×60 | ~25 | `one-shot-cli-backend.ts` shared base + `cursor-agent-backend.ts` + test. |
+| **56B** | ~80 + ~150 | ~12 | `aider-backend.ts` (one-shot) + test. |
+| **56C** | ~80 + ~150 | ~12 | `mmx-backend.ts` (one-shot) + test. |
+| **56D** | ~30 + ~50 | ~6 | Registration: `DEFAULT_EXT_AGENTS`, `manager.ts` ports, `INSTALL_TABLE`, `getExtAgentInstallInfo`, `backends.ts` `createBackend` switch, env overrides, `index.ts` re-exports. |
+| **56E** | ~30 | 0 | Docs: `Ext_Agent_guide.md` three new sections. |
+
+Each sub-slice is a separate commit. Test count target: 50-60 new tests total.
+
+### Architecture sketch
+
+```ts
+// apps/node/src/ext-agent-adapter/one-shot-cli-backend.ts (56A — shared base)
+export abstract class OneShotCliBackend implements ExtAgentBackend {
+  readonly kind: ExtAgentSidecarKind;
+  readonly label: string;
+
+  protected abstract buildArgs(text: string, sessionKey: string): string[];
+  protected abstract parseOutput(stdout: string, stderr: string, exitCode: number): string;
+
+  async ask(text: string, sessionKey: string): Promise<string> {
+    if (!text.trim()) return "";
+    if (!sessionKey) throw new Error(`${this.kind} ask(): sessionKey is required`);
+    // 1. pre-spawn `command -v` check → surface InstallMissingError early
+    // 2. spawn process with buildArgs + env, capture stdout/stderr
+    // 3. set timeout (requestTimeoutMs, default 60_000)
+    // 4. on exit, parseOutput → return text; on error, throw
+  }
+
+  async probe(): Promise<boolean> {
+    // Cheap: run `<command> --version` (or `auth status` for mmx) with 5s timeout
+  }
+}
+
+// apps/node/src/ext-agent-adapter/cursor-agent-backend.ts (56A)
+export class CursorAgentBackend extends OneShotCliBackend {
+  protected buildArgs(text: string, _sessionKey: string): string[] {
+    return ["--prompt", text, "--output", "json"];
+  }
+  protected parseOutput(stdout: string): string {
+    // cursor-agent --output json: { "result": "...", "session_id": "..." } OR plain text fallback
+    return parseJsonOrText(stdout);
+  }
+}
+```
+
+Aider and mmx backends are similarly small — just override `buildArgs` and `parseOutput`.
+
+### File map (56 — all slices together)
+
+```
+新增:
+  apps/node/src/ext-agent-adapter/one-shot-cli-backend.ts          # 56A shared base
+  apps/node/src/ext-agent-adapter/cursor-agent-backend.ts          # 56A
+  apps/node/src/ext-agent-adapter/aider-backend.ts                 # 56B
+  apps/node/src/ext-agent-adapter/mmx-backend.ts                   # 56C
+  apps/node/test/one-shot-cli-backend.test.ts                      # 56A (shared)
+  apps/node/test/ext-agent-adapter-cursor.test.ts                  # 56A
+  apps/node/test/ext-agent-adapter-aider.test.ts                   # 56B
+  apps/node/test/ext-agent-adapter-mmx.test.ts                     # 56C
+修改:
+  apps/node/src/ext-agent-adapter/types.ts                         # +3 enum values
+  apps/node/src/ext-agent-adapter/manager.ts                       # +3 port mappings
+  apps/node/src/ext-agent-adapter/backends.ts                      # +3 createBackend cases
+  apps/node/src/ext-agent-adapter/index.ts                         # +3 re-exports
+  apps/node/test/ext-agent-adapter.test.ts                         # +6 dispatch tests
+  packages/api/src/ext-agent.ts                                    # +3 INSTALL_TABLE rows
+  docs/Ext_Agent_guide.md                                          # +3 sections (56E)
+  docs/implementation-plan.md                                      # (this section)
+```
+
+### Exit criteria
+
+- [ ] `npm run test:dev` is green after each sub-slice.
+- [ ] `npm run typecheck` is green (only the pre-existing mobile-node error is allowed).
+- [ ] For each new agent, `createBackend(<id>)` returns a real `*Backend` instance and `syncExtAgentSidecar` starts the sidecar.
+- [ ] For each new agent, when the binary is missing, `ask()` rejects with `InstallMissingError` and the install card surfaces (matches 55A.1 / 55D.1 behavior).
+- [ ] Cursor / Aider / MMX-CLI each have a working `INSTALLED` reachability probe (cheap `--version` or equivalent).
+- [ ] Aider `--no-auto-commits --no-git` is passed unconditionally.
+- [ ] MMX-CLI uses `--output json` and parses the JSON cleanly.
+- [ ] `Ext_Agent_guide.md` documents install + start for all three.
+
+### Risks & mitigations
+
+- **Cursor / Aider / MMX output format may change between versions.** Pin to a known-good flag set; if the user upgrades and the parser breaks, fail loud (rejected Error, not silent truncation).
+- **Aider's first run is slow** (Python venv creation, model handshake). Default 60s timeout may be too short; bump to 120s for the first ask only (or pre-warm with a `probe()` on first use).
+- **MMX-CLI requires an API key** (`mmx auth login --api-key ...`). Surface this in the install card and the `defaultExtAgentStartHint`.
+- **Cursor CLI auth** is OAuth-based — `cursor-agent login` opens a browser. The install card should mention "first run will prompt for browser login".
+
+### Design notes
+
+- The `OneShotCliBackend` base deliberately does **not** reuse `DaemonSupervisor` (55A) — `DaemonSupervisor` is for long-lived processes; one-shot CLIs are simpler.
+- Session continuity is the responsibility of the CLI itself, not EnvoyMesh. Cursor's `--resume <sessionId>` and Aider's `--chat-history-file` could be added in a follow-up, but the chat-bridge contract (`ask(text, sessionKey) → string`) doesn't require it.
+- MiniMax's own MMX-CLI is a natural fit for "Ext Agent bridge on the home node" — the same node that runs EnvoyMesh can route asks to MMX-CLI, which then calls the MiniMax API. Future: an "MMX in-loop" path could skip the CLI entirely and use the MiniMax SDK directly. Out of scope for Phase 56.
+- GLM is **deferred to Phase 57 (Model Router / Providers)** — GLM is a model, not an agent, and the right plumbing is `@envoymesh/models` not `ext-agent-adapter`.
+
+---
+
 ## Changelog (this document)
 
 | Date | Change |
@@ -7318,3 +7472,4 @@ The chat list's `ExtAgentSwitcher` component (`apps/social/src/components/ExtAge
 | 2026-05-17 | **Phase 11 complete:** Capacitor mobile app with in-process Social UI + mobile node runtime. Created 5 new packages (`mobile-identity` with `@noble/curves` Ed25519, `mobile-storage` SQLite-backed persistence, `mobile-vault` filesystem-backed vault, `mobile-node` relay-only NodeService, `apps/social/src/lib/direct-call-client.ts` in-process client). Multi-device shared identity: `importOwnerIdentity()` on MobileNode reuses home node's ownerId for shared contacts/bonds. PEM encode/decode in pure JS (SPKI/PKCS8 DER prefixes). `NodeServiceProvider.clientFactory` accepts pluggable client — desktop uses WsClient, mobile uses DirectCallClient. Fixed critical `derivePeerId`/`deriveOwnerId`/`deriveDeviceId` bug where `hashCanonicalPayload` wrapped PEM strings in JSON quotes — correct behavior is direct SHA-256 of raw PEM bytes matching `node:crypto`. `vitest.config.ts` maps all `@envoymesh/mobile-*` aliases. 151 unit tests (39 mobile-identity + 41 mobile-storage + 32 mobile-vault + 28 mobile-node + 11 direct-call-client) with golden fixture cross-verification against identity package. No desktop code regressions. |
 | 2026-05-19 | **Bug fixes: reconnect UI, health tests, bridge tests:** (1) `ws-server.ts` now wires `node:online`/`node:offline` events from `nodeServiceImpl` so WebSocket clients receive real-time status updates — fixes "stuck on Connecting..." after node restart. (2) `node-health.ts` and `relay-health.ts` in both `apps/node` and `apps/relay` gained `maxRssBytesOverride?: number` on their input interfaces so tests can override the RSS threshold without relying on env vars (which are evaluated at module scope). (3) `bridge/index.ts` now throws `"Bridge requires a shared secret when enabled"` explicitly rather than silently ignoring the secret check. |
 | 2026-05-19 | **Test suite: all 8 previously failing tests fixed.** `bridge-index.test.ts`: fixed HTTP server timing race by waiting for port availability before calling `/bridge/send`; proper fetch stub routing (native for bridge server, mock for agent endpoint). `bridge-gateway-integration.test.ts`: rewrote "logs P2P reply actions" to call `receiveFromAgent` directly with a constructed deps object (HTTP endpoint uses node:http and bypasses fetch stubs). All health tests (`node-health.test.ts`, both `relay-health.test.ts` files) now use `maxRssBytesOverride: 1` to set threshold to 1 byte so test RSS values trigger the critical path. Added `vi.waitFor` for all fire-and-forget async assertions in bridge tests. Test suite: **1517+ passing, 7 skipped, 1 known-flaky** (agent-e2e collect-N, intermittent ECONNRESET). Commits `4a2c40c` + `479c3f2`. |
+

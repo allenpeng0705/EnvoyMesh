@@ -494,31 +494,23 @@ export function ChatView({
             onOpenPi={() => void openPiTerminal()}
           />
           <section className="chat-area">
-            {selectedContact === ENVOY_AI_THREAD_KEY ? (
-              <div className="assistant-chat-wrapper">
+            {(selectedContact === ENVOY_AI_THREAD_KEY || envoyAiInflight) && (
+              <div
+                className="assistant-chat-wrapper"
+                hidden={selectedContact !== ENVOY_AI_THREAD_KEY}
+              >
                 <div className="assistant-chat-panel">
                   <AIChatPanel
+                    active={selectedContact === ENVOY_AI_THREAD_KEY}
                     onOpenActivity={onOpenActivity}
                     onOpenInbox={onOpenInboxProp}
                     onOpenChains={onOpenChains}
-                    onOpenDiscover={onOpenDiscover}
                     onOpenSettingsAi={onOpenSettingsAi}
                   />
                 </div>
               </div>
-            ) : envoyAiInflight ? (
-              <div className="assistant-chat-wrapper" hidden>
-                <div className="assistant-chat-panel">
-                  <AIChatPanel
-                    onOpenActivity={onOpenActivity}
-                    onOpenInbox={onOpenInboxProp}
-                    onOpenChains={onOpenChains}
-                    onOpenDiscover={onOpenDiscover}
-                    onOpenSettingsAi={onOpenSettingsAi}
-                  />
-                </div>
-              </div>
-            ) : selectedContact ? (
+            )}
+            {selectedContact && selectedContact !== ENVOY_AI_THREAD_KEY ? (
               isChatRoomThreadKey(selectedContact) && selectedFamilyRoom ? (
                 <FamilyGroupChatPanel
                   threadKey={selectedContact}
@@ -555,7 +547,7 @@ export function ChatView({
                   onSelectContact={onSelectedContactChange}
                 />
               )
-            ) : (
+            ) : selectedContact === ENVOY_AI_THREAD_KEY || envoyAiInflight ? null : (
               <div className="no-chat-selected">
                 <div className="no-chat-selected-icon">
                   <ChatIcon size={48} />

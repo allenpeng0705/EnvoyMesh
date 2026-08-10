@@ -27,6 +27,10 @@ const DEFAULT_PORTS: Record<ExtAgentSidecarKind, number> = {
   // the same `/message` shape via this sidecar.
   codex: 8023,
   claudecode: 8024,
+  // Phase 56A — Cursor CLI (Anysphere) one-shot subprocess per ask via
+  // the shared `OneShotCliBackend` base. Add additive to the 55 ports
+  // (no port below 1024).
+  cursor: 8025,
 };
 
 let running: ExtAgentHttpServerHandle | null = null;
@@ -63,6 +67,13 @@ function listenPortFor(kind: ExtAgentSidecarKind): number {
   }
   if (kind === "claudecode") {
     const env = process.env.ENVOYMESH_CLAUDECODE_PORT?.trim();
+    if (env) {
+      const n = Number.parseInt(env, 10);
+      if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;
+    }
+  }
+  if (kind === "cursor") {
+    const env = process.env.ENVOYMESH_CURSOR_PORT?.trim();
     if (env) {
       const n = Number.parseInt(env, 10);
       if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;

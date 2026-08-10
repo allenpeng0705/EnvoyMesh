@@ -14,6 +14,8 @@ export interface ChatComposerProps {
   sendLabel: string;
   disabled?: boolean;
   sendDisabled?: boolean;
+  /** Focus the text field when true (e.g. chat panel became active). */
+  autoFocus?: boolean;
   /** Leading controls (attach, vault share, etc.) rendered before the text field. */
   leading?: ReactNode;
 }
@@ -26,6 +28,7 @@ export function ChatComposer({
   sendLabel,
   disabled = false,
   sendDisabled,
+  autoFocus = false,
   leading,
 }: ChatComposerProps) {
   const t = useT();
@@ -44,6 +47,11 @@ export function ChatComposer({
   useEffect(() => {
     resizeTextarea();
   }, [value, resizeTextarea]);
+
+  useEffect(() => {
+    if (!autoFocus || disabled) return;
+    textareaRef.current?.focus();
+  }, [autoFocus, disabled]);
 
   const insertEmoji = useCallback(
     (unicode: string) => {

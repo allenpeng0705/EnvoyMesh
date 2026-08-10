@@ -1,6 +1,8 @@
 /**
  * Build EnvoyMesh retrieved context for OpenClaw turns (vault RAG, chat history, profile).
  * Injected via OpenClaw trusted GroupSystemPrompt — supplements native workspace/skills.
+ *
+ * Local (Envoy Local) uses leaner caps than cloud so llama.cpp prefill stays snappy.
  */
 
 import type { AiKnowledgeBaseSettings } from "@envoymesh/api";
@@ -19,15 +21,30 @@ import {
 import { buildContextInjection } from "./context-injector.js";
 import type { RagService } from "./rag-service.js";
 
-const MAX_RETRIEVED_CONTEXT_CHARS = 20_000;
-const MAX_BOND_CHAT_THREADS = 8;
+/** Cloud keeps today's OpenClaw defaults; Local is intentionally leaner. */
+export type OpenClawRetrievedContextProfile = "cloud" | "local";
 
-function truncateRetrievedContext(text: string): string {
+export const OPENCLAW_RETRIEVED_CONTEXT_CAPS = {
+  cloud: {
+    maxChars: 20_000,
+    maxBondThreads: 8,
+    recentPerBond: 5,
+    ragPerBond: 3,
+  },
+  local: {
+    maxChars: 7_000,
+    maxBondThreads: 3,
+    recentPerBond: 3,
+    ragPerBond: 1,
+  },
+} as const;
+
+function truncateRetrievedContext(text: string, maxChars: number): string {
   const trimmed = text.trim();
-  if (trimmed.length <= MAX_RETRIEVED_CONTEXT_CHARS) {
+  if (trimmed.length <= maxChars) {
     return trimmed;
   }
-  return `${trimmed.slice(0, MAX_RETRIEVED_CONTEXT_CHARS - 40)}\n\n[... EnvoyMesh context truncated ...]`;
+  return `${trimmed.slice(0, Math.max(0, maxChars - 40))}\n\n[... EnvoyMesh context truncated ...]`;
 }
 
 /** Merge policy + retrieved blocks for OpenClaw trusted system append. */
@@ -51,17 +68,21 @@ async function buildBondChatSections(input: {
   chatLogStore: LocalChatLogStore | null;
   ragService: RagService | null;
   knowledgeBase?: AiKnowledgeBaseSettings | null;
+  caps: (typeof OPENCLAW_RETRIEVED_CONTEXT_CAPS)[OpenClawRetrievedContextProfile];
 }): Promise<string[]> {
   if (!input.chatLogStore || !input.message.trim()) {
     return [];
   }
   const kb = resolveAiKnowledgeBaseSettings(input.knowledgeBase);
   const sections: string[] = [];
-  for (const bond of input.bonds.slice(0, MAX_BOND_CHAT_THREADS)) {
+  for (const bond of input.bonds.slice(0, input.caps.maxBondThreads)) {
     const thread = await loadThreadMessages(input.chatLogStore, bond.peerOwnerId);
     if (thread.length === 0) continue;
     const label = bond.displayName?.trim() || bond.peerOwnerId;
-    const recent = selectRecentThreadMessages(thread, Math.min(5, kb.recentMessageLimit));
+    const recent = selectRecentThreadMessages(
+      thread,
+      Math.min(input.caps.recentPerBond, kb.recentMessageLimit),
+    );
     const recentSection = formatThreadMessagesSection(
       `Recent conversation with ${label}`,
       recent,
@@ -69,6 +90,7 @@ async function buildBondChatSections(input: {
     if (recentSection) sections.push(recentSection);
 
     if (kb.ragMessageLimit <= 0) continue;
+    const ragLimit = Math.min(input.caps.ragPerBond, kb.ragMessageLimit);
     const ragHits = input.ragService
       ? await input.ragService.searchChatHistoryRag({
           threadOwnerId: bond.peerOwnerId,
@@ -76,11 +98,11 @@ async function buildBondChatSections(input: {
           messages: thread,
           knowledgeBase: input.knowledgeBase,
           recentLimit: kb.recentMessageLimit,
-          ragLimit: Math.min(3, kb.ragMessageLimit),
+          ragLimit,
         })
       : searchChatHistoryRag(thread, input.message, {
           recentLimit: kb.recentMessageLimit,
-          ragLimit: Math.min(3, kb.ragMessageLimit),
+          ragLimit,
         });
     const ragSection = formatThreadMessagesSection(
       `Related earlier messages with ${label}`,
@@ -102,7 +124,10 @@ export async function buildEnvoyMeshRetrievedContext(input: {
   vaultDir: string;
   ragService: RagService | null;
   knowledgeBase?: AiKnowledgeBaseSettings | null;
+  /** Defaults to cloud (OpenClaw historical behavior). */
+  profile?: OpenClawRetrievedContextProfile;
 }): Promise<string> {
+  const caps = OPENCLAW_RETRIEVED_CONTEXT_CAPS[input.profile ?? "cloud"];
   const sections: string[] = [];
 
   const agentIdentity = await loadAgentIdentitySection(input.agentIdentityStore);
@@ -174,6 +199,7 @@ export async function buildEnvoyMeshRetrievedContext(input: {
     chatLogStore: input.chatLogStore,
     ragService: input.ragService,
     knowledgeBase: input.knowledgeBase,
+    caps,
   });
   sections.push(...bondSections);
 
@@ -181,5 +207,5 @@ export async function buildEnvoyMeshRetrievedContext(input: {
     return "";
   }
 
-  return truncateRetrievedContext(sections.join("\n\n"));
+  return truncateRetrievedContext(sections.join("\n\n"), caps.maxChars);
 }

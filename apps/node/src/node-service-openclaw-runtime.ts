@@ -13,7 +13,12 @@ import type {
   NodeProfile,
   OwnerAgentTurnResult,
 } from "@envoymesh/api";
-import { ENVOY_AI_THREAD_KEY, OWNER_FAMILY_PROFILE_ID } from "@envoymesh/api";
+import {
+  ENVOY_AI_THREAD_KEY,
+  OWNER_FAMILY_PROFILE_ID,
+  inferModelProviderPreset,
+  resolveEnvoyLocalServerParams,
+} from "@envoymesh/api";
 import type {
   AgentIdentityStore,
   CapabilityManifestStore,
@@ -1116,6 +1121,12 @@ async function buildEnvoyMeshOpenClawPrompts(
   // Family members must not inherit owner vault / bond chat RAG.
   if (owner?.ownerId && isOwnerCaller) {
     try {
+      const effectiveProviders =
+        (await deps.getEffectiveModelProviders?.()) ?? nodeConfig.modelProviders;
+      const retrievedProfile =
+        inferModelProviderPreset(effectiveProviders).id === "envoy-local"
+          ? "local"
+          : "cloud";
       retrievedContext = await withOpenClawTimeout(
         buildEnvoyMeshRetrievedContext({
           message,
@@ -1131,6 +1142,7 @@ async function buildEnvoyMeshOpenClawPrompts(
           vaultDir: deps.getVaultDir(),
           ragService: await deps.getRagService(),
           knowledgeBase: nodeConfig.aiSettings?.knowledgeBase,
+          profile: retrievedProfile,
         }),
         OPEN_CLAW_RETRIEVED_CONTEXT_TIMEOUT_MS,
         "",
@@ -1372,7 +1384,21 @@ async function startOpenClawInner(
   const skillEntries = buildOpenClawGatewaySkillEntries(skillApiKeys);
   const agentSection = buildOpenClawGatewayAgentSection({ webSearchEnabled, skillApiKeys });
   const gatewaySearchEnv = buildOpenClawGatewaySearchEnv(skillApiKeys);
-  const modelSection = buildOpenClawGatewayModelSection(modelProviderCfg);
+  let localContextWindow: number | undefined;
+  if (inferModelProviderPreset(modelProviderCfg).id === "envoy-local") {
+    try {
+      const nodeCfg = await deps.getNodeConfig();
+      localContextWindow = resolveEnvoyLocalServerParams(
+        nodeCfg?.envoyLocal?.serverParams,
+      ).ctxSize;
+    } catch {
+      /* keep undefined — OpenClaw uses its own default */
+    }
+  }
+  const modelSection = buildOpenClawGatewayModelSection(
+    modelProviderCfg,
+    localContextWindow != null ? { contextWindow: localContextWindow } : undefined,
+  );
 
   writeFileSync(gwConfigPathAbs, JSON.stringify({
     gateway: { auth: { mode: "none" } },

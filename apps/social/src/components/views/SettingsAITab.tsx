@@ -1756,9 +1756,6 @@ function EnvoyLocalSettings({
 
   const statusLabel = (() => {
     if (!status) return "…";
-    if (status.running || status.phase === "ready") return t("settings.ai.envoyLocal.statusReady");
-    if (status.phase === "error") return t("settings.ai.envoyLocal.statusError");
-    if (status.phase === "starting") return t("settings.ai.envoyLocal.statusStarting");
     if (
       inFlight &&
       (status.phase === "downloading-runtime" ||
@@ -1768,8 +1765,33 @@ function EnvoyLocalSettings({
     ) {
       return t("settings.ai.envoyLocal.statusDownloading");
     }
+    if (inFlight && status.phase === "starting") {
+      return t("settings.ai.envoyLocal.statusStarting");
+    }
+    if (status.running || status.phase === "ready") return t("settings.ai.envoyLocal.statusReady");
+    if (status.phase === "error") return t("settings.ai.envoyLocal.statusError");
+    if (status.phase === "starting") return t("settings.ai.envoyLocal.statusStarting");
     if (!status.enabled) return t("settings.ai.envoyLocal.statusDisabled");
     return status.phase;
+  })();
+
+  const downloadFraction =
+    typeof status?.download?.fraction === "number"
+      ? Math.max(0, Math.min(1, status.download.fraction))
+      : null;
+  const downloadBytesLabel = (() => {
+    const recv = status?.download?.bytesReceived;
+    const total = status?.download?.bytesTotal;
+    if (typeof recv !== "number" || recv < 0) return null;
+    const recvMb = (recv / (1024 * 1024)).toFixed(recv >= 100 * 1024 * 1024 ? 0 : 1);
+    if (typeof total === "number" && total > 0) {
+      const totalMb = (total / (1024 * 1024)).toFixed(total >= 100 * 1024 * 1024 ? 0 : 1);
+      return t("settings.ai.envoyLocal.progressBytes", {
+        received: recvMb,
+        total: totalMb,
+      });
+    }
+    return t("settings.ai.envoyLocal.progressBytesReceived", { received: recvMb });
   })();
 
   const installedIds = useMemo(() => new Set(installed.map((m) => m.id)), [installed]);
@@ -1900,13 +1922,39 @@ function EnvoyLocalSettings({
           ) : null}
         </dl>
       ) : null}
-      {status?.download?.label ? (
-        <p className="settings-hint">
-          {t("settings.ai.envoyLocal.progress", { label: status.download.label })}
-          {typeof status.download.fraction === "number"
-            ? ` (${Math.round(status.download.fraction * 100)}%)`
-            : ""}
-        </p>
+      {status?.download?.label || (inFlight && status?.operationInProgress) ? (
+        <div className="envoy-local-download-progress" data-testid="envoy-local-download-progress">
+          <p className="settings-hint">
+            {status?.download?.label
+              ? t("settings.ai.envoyLocal.progress", { label: status.download.label })
+              : t("settings.ai.envoyLocal.statusDownloading")}
+            {downloadFraction != null ? ` (${Math.round(downloadFraction * 100)}%)` : ""}
+            {downloadBytesLabel ? ` · ${downloadBytesLabel}` : ""}
+          </p>
+          <div
+            className="settings-progress-bar"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={downloadFraction != null ? Math.round(downloadFraction * 100) : undefined}
+            aria-label={status?.download?.label ?? t("settings.ai.envoyLocal.statusDownloading")}
+          >
+            <div
+              className="settings-progress-fill"
+              style={{
+                width:
+                  downloadFraction != null
+                    ? `${Math.round(downloadFraction * 100)}%`
+                    : inFlight
+                      ? "15%"
+                      : "0%",
+                ...(downloadFraction == null && inFlight
+                  ? { animation: "envoy-local-progress-pulse 1.2s ease-in-out infinite" }
+                  : {}),
+              }}
+            />
+          </div>
+        </div>
       ) : null}
       {status?.lastError ? (
         <p className="settings-hint pi-error" data-testid="envoy-local-last-error">
@@ -2234,6 +2282,21 @@ function EnvoyLocalSettings({
                         onClick={async () => {
                           setBusy(true);
                           setActionError(null);
+                          setStatus((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  phase: "downloading-model",
+                                  lastError: null,
+                                  operationInProgress: true,
+                                  download: {
+                                    phase: "downloading-model",
+                                    label: t("settings.ai.envoyLocal.startingDownload"),
+                                    fraction: 0,
+                                  },
+                                }
+                              : prev,
+                          );
                           try {
                             setInstalled(
                               await nodeService.downloadEnvoyLocalModel({
@@ -2249,6 +2312,8 @@ function EnvoyLocalSettings({
                                 st.lastError ?? t("settings.ai.envoyLocal.enableFailed");
                               setActionError(msg);
                               showToast(msg, "error");
+                            } else {
+                              showToast(t("settings.ai.envoyLocal.downloadOk"), "success");
                             }
                             setInstalled(
                               await nodeService.listEnvoyLocalInstalledModels(),
@@ -2371,6 +2436,21 @@ function EnvoyLocalSettings({
                     onClick={async () => {
                       setBusy(true);
                       setActionError(null);
+                      setStatus((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              phase: "downloading-model",
+                              lastError: null,
+                              operationInProgress: true,
+                              download: {
+                                phase: "downloading-model",
+                                label: t("settings.ai.envoyLocal.startingDownload"),
+                                fraction: 0,
+                              },
+                            }
+                          : prev,
+                      );
                       try {
                         setInstalled(
                           await nodeService.downloadEnvoyLocalModel({ modelId: m.id }),
@@ -2384,6 +2464,8 @@ function EnvoyLocalSettings({
                             st.lastError ?? t("settings.ai.envoyLocal.enableFailed");
                           setActionError(msg);
                           showToast(msg, "error");
+                        } else {
+                          showToast(t("settings.ai.envoyLocal.downloadOk"), "success");
                         }
                         setInstalled(
                           await nodeService.listEnvoyLocalInstalledModels(),

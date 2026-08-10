@@ -405,8 +405,15 @@ export async function getEnvoyLocalStatusViaRuntime(
       state.download = null;
     }
   }
-  if (cfg.enabled && running) phase = "ready";
-  else if (!cfg.enabled && phase === "idle") phase = "disabled";
+  // Never mask an in-flight download/start behind "ready" just because the
+  // current sidecar is still serving — Settings needs the real phase + progress.
+  if (operationInProgress) {
+    phase = state.phase;
+  } else if (cfg.enabled && running) {
+    phase = "ready";
+  } else if (!cfg.enabled && phase === "idle") {
+    phase = "disabled";
+  }
 
   const recommendation = recommendEnvoyLocalModel(detectEnvoyLocalHardware(platform));
   const recommendedCatalog =
@@ -1620,6 +1627,10 @@ export async function updateEnvoyLocalServerParamsViaRuntime(
     } catch (err) {
       setError(state, err instanceof Error ? err.message : String(err));
     }
+  }
+  // Rebuild OpenClaw gateway so model contextWindow tracks llama -c.
+  if (deps.reloadOpenClaw) {
+    await deps.reloadOpenClaw().catch(() => undefined);
   }
   return getEnvoyLocalStatusViaRuntime(state, deps);
 }

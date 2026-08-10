@@ -475,8 +475,8 @@
   version "0.2.2"
   resolved "file:packages/api"
   dependencies:
-    "@envoymesh/identity" "0.2.1"
-    "@envoymesh/protocol" "0.2.1"
+    "@envoymesh/identity" "0.2.2"
+    "@envoymesh/protocol" "0.2.2"
     "@noble/hashes" "^1.8.0"
     zod "^4.3.6"
 
@@ -484,7 +484,7 @@
   version "0.2.2"
   resolved "file:packages/bonds"
   dependencies:
-    "@envoymesh/protocol" "0.2.1"
+    "@envoymesh/protocol" "0.2.2"
 
 "@envoymesh/cli@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/cli":
   version "0.2.2"
@@ -508,15 +508,15 @@
   version "0.2.2"
   resolved "file:packages/kb-obsidian"
   dependencies:
-    "@envoymesh/api" "0.2.1"
+    "@envoymesh/api" "0.2.2"
 
 "@envoymesh/local-store@0.2.2", "@envoymesh/local-store@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/local-store":
   version "0.2.2"
   resolved "file:packages/local-store"
   dependencies:
-    "@envoymesh/bonds" "0.2.1"
-    "@envoymesh/identity" "0.2.1"
-    "@envoymesh/protocol" "0.2.1"
+    "@envoymesh/bonds" "0.2.2"
+    "@envoymesh/identity" "0.2.2"
+    "@envoymesh/protocol" "0.2.2"
 
 "@envoymesh/mobile-identity@0.2.2", "@envoymesh/mobile-identity@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/mobile-identity":
   version "0.2.2"
@@ -579,12 +579,12 @@
     "@capacitor/filesystem" "^8.0.0"
     "@capacitor/geolocation" "^8.0.0"
     "@capacitor/ios" "^8.0.0"
-    "@envoymesh/api" "0.2.1"
-    "@envoymesh/mobile-identity" "0.2.1"
-    "@envoymesh/mobile-node" "0.2.1"
-    "@envoymesh/mobile-storage" "0.2.1"
-    "@envoymesh/mobile-vault" "0.2.1"
-    "@envoymesh/protocol" "0.2.1"
+    "@envoymesh/api" "0.2.2"
+    "@envoymesh/mobile-identity" "0.2.2"
+    "@envoymesh/mobile-node" "0.2.2"
+    "@envoymesh/mobile-storage" "0.2.2"
+    "@envoymesh/mobile-vault" "0.2.2"
+    "@envoymesh/protocol" "0.2.2"
     capacitor-secure-storage-plugin "^0.13.0"
     react "^19.2.3"
     react-dom "^19.2.3"
@@ -593,8 +593,8 @@
   version "0.2.2"
   resolved "file:packages/models"
   dependencies:
-    "@envoymesh/api" "0.2.1"
-    "@envoymesh/protocol" "0.2.1"
+    "@envoymesh/api" "0.2.2"
+    "@envoymesh/protocol" "0.2.2"
     zod "^4.3.6"
 
 "@envoymesh/network@0.2.2", "@envoymesh/network@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/network":
@@ -604,7 +604,7 @@
     "@chainsafe/libp2p-noise" "^17.0.0"
     "@chainsafe/libp2p-quic" "^2.0.1"
     "@chainsafe/libp2p-yamux" "^8.0.0"
-    "@envoymesh/protocol" "0.2.1"
+    "@envoymesh/protocol" "0.2.2"
     "@libp2p/autonat" "^3.0.18"
     "@libp2p/bootstrap" "^12.0.19"
     "@libp2p/circuit-relay-v2" "^4.2.3"
@@ -629,18 +629,19 @@
   version "0.2.2"
   resolved "file:apps/node"
   dependencies:
-    "@envoymesh/api" "0.2.1"
-    "@envoymesh/bonds" "0.2.1"
-    "@envoymesh/identity" "0.2.1"
-    "@envoymesh/ipfs-helia" "0.2.1"
-    "@envoymesh/kb-obsidian" "0.2.1"
-    "@envoymesh/local-store" "0.2.1"
-    "@envoymesh/models" "0.2.1"
-    "@envoymesh/network" "0.2.1"
-    "@envoymesh/openclaw-runtime" "0.2.1"
-    "@envoymesh/protocol" "0.2.1"
-    "@envoymesh/rag" "0.2.1"
-    "@envoymesh/vault" "0.2.1"
+    "@anthropic-ai/claude-agent-sdk" "^0.3.156"
+    "@envoymesh/api" "0.2.2"
+    "@envoymesh/bonds" "0.2.2"
+    "@envoymesh/identity" "0.2.2"
+    "@envoymesh/ipfs-helia" "0.2.2"
+    "@envoymesh/kb-obsidian" "0.2.2"
+    "@envoymesh/local-store" "0.2.2"
+    "@envoymesh/models" "0.2.2"
+    "@envoymesh/network" "0.2.2"
+    "@envoymesh/openclaw-runtime" "0.2.2"
+    "@envoymesh/protocol" "0.2.2"
+    "@envoymesh/rag" "0.2.2"
+    "@envoymesh/vault" "0.2.2"
     "@libp2p/utils" "^7.0.0"
     "@modelcontextprotocol/sdk" "^1.29.0"
     nat-upnp "^1.1.1"
@@ -670,8 +671,8 @@
   version "0.2.2"
   resolved "file:apps/relay"
   dependencies:
-    "@envoymesh/identity" "0.2.1"
-    "@envoymesh/network" "0.2.1"
+    "@envoymesh/identity" "0.2.2"
+    "@envoymesh/network" "0.2.2"
     "@libp2p/utils" "^7.0.0"
     ws "^8.20.0"
 
@@ -679,8 +680,8 @@
   version "0.2.2"
   resolved "file:apps/social"
   dependencies:
-    "@envoymesh/api" "0.2.1"
-    "@envoymesh/rag" "0.2.1"
+    "@envoymesh/api" "0.2.2"
+    "@envoymesh/rag" "0.2.2"
     "@tauri-apps/plugin-process" "^2.3.1"
     "@tauri-apps/plugin-updater" "^2.10.1"
     "@xterm/addon-fit" "^0.11.0"

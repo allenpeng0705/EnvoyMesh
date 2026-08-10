@@ -182,6 +182,9 @@ export const aiSettingsMessages = {
     endpoint: "Endpoint",
     accel: "Accelerator",
     progress: "{label}",
+    progressBytes: "{received} / {total} MB",
+    progressBytesReceived: "{received} MB downloaded",
+    downloadOk: "Model downloaded",
     lastError: "Last error: {error}",
     noteCloudFirst:
       "Prefer a cloud API above if you do not want a local download.",
@@ -225,7 +228,7 @@ export const aiSettingsMessages = {
     paramsAdvancedLabel: "Advanced (llama-server)",
     ctxSize: "Context size",
     ctxSizeHint:
-      "Default 128K — enough for Envoy AI tools/session. 32K for smaller machines; 256K–1M need lots of unified/VRAM (often quantized KV). Custom values up to 2M.",
+      "Default 32K — faster Local + OpenClaw turns. Raise to 128K for longer sessions; 256K–1M need lots of unified/VRAM (often quantized KV). Custom values up to 2M. When Envoy Local is in use, this also limits OpenClaw’s conversation window (cloud providers ignore it).",
     ctxPreset32k: "32K",
     ctxPreset128k: "128K",
     ctxPreset256k: "256K",

@@ -207,7 +207,8 @@ export const zhAiChatMessages = {
   responseFailed: "获取 AI 回复失败",
   errorPrefix: "错误：{message}",
   clearConfirm: "清除此 Envoy AI 会话？",
-  clearConfirmMessage: "这将移除本会话中的所有消息。AI 上下文会重置。",
+  clearConfirmMessage:
+    "这将移除本会话中的所有消息，并重置 OpenClaw 的 EnvoyAI 记忆，下次回复会从干净上下文开始。",
   title: "EnvoyAI",
   subtitle: "知识助手",
   clearSessionTitle: "清除会话",

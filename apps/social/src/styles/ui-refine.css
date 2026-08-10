@@ -1093,7 +1093,7 @@ button.primary,
   border: none;
   border-radius: var(--radius-md);
   background: var(--color-primary);
-  color: var(--color-primary-on, #ffffff);
+  color: var(--color-primary-on, #052e16);
   font-size: var(--text-sm);
   font-weight: var(--font-semibold);
   cursor: pointer;
@@ -1122,12 +1122,13 @@ button.secondary:not(.danger),
   gap: var(--space-2);
   min-height: 44px;
   padding: var(--space-2) var(--space-4);
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: var(--color-surface-elevated);
+  background: var(--color-surface-muted, var(--color-bg));
   color: var(--color-text);
+  box-shadow: var(--shadow-xs);
   font-size: var(--text-sm);
-  font-weight: var(--font-medium);
+  font-weight: var(--font-semibold);
   cursor: pointer;
   transition:
     border-color var(--transition-fast),

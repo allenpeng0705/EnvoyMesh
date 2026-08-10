@@ -182,13 +182,20 @@ describe("ext-agent-adapter backends", () => {
     expect(isExtAgentSidecarKind("homeclaw")).toBe(false);
   });
 
-  it("EXT_AGENT_SIDECAR_KINDS lists all five kinds", () => {
+  it("isExtAgentSidecarKind includes cursor (Phase 56A)", () => {
+    // Phase 56A adds `cursor` (the `cursor-agent` CLI). aider / mmx
+    // come in 56B / 56C respectively.
+    expect(isExtAgentSidecarKind("cursor")).toBe(true);
+  });
+
+  it("EXT_AGENT_SIDECAR_KINDS lists all six kinds", () => {
     expect(EXT_AGENT_SIDECAR_KINDS).toEqual([
       "pi",
       "hermes",
       "openhuman",
       "codex",
       "claudecode",
+      "cursor",
     ]);
   });
 
@@ -210,6 +217,16 @@ describe("ext-agent-adapter backends", () => {
     const backend = createBackend("claudecode");
     expect(backend.kind).toBe("claudecode");
     expect(backend.label.toLowerCase()).toContain("claude");
+  });
+
+  it("createBackend('cursor') returns a CursorAgentBackend (Phase 56A)", () => {
+    // Phase 56A lands the cursor CLI backend (one-shot subprocess
+    // per ask via the shared `OneShotCliBackend` base). The factory
+    // call must succeed; the sidecar won't start in CI (no live
+    // `cursor-agent` binary), but the backend object itself exists.
+    const backend = createBackend("cursor");
+    expect(backend.kind).toBe("cursor");
+    expect(backend.label.toLowerCase()).toContain("cursor");
   });
 
   it("DEFAULT_EXT_AGENTS includes codex + claudecode presets (Phase 55D)", async () => {

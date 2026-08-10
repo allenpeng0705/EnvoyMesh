@@ -31,10 +31,10 @@ export type EnvoyLocalFitMode = "on" | "off";
 export interface EnvoyLocalServerParams {
   /**
    * Context size (`-c` / `--ctx-size`).
-   * Default 131072 (128K) — enough for Envoy AI tools/session; use 32K on
-   * smaller machines, or 256K–1M+ on large unified/VRAM (often with quantized
-   * KV). llama.cpp `0` means “from model”; we always set an explicit value for
-   * predictable memory use.
+   * Default 32768 (32K) — lean for Local + OpenClaw latency; raise to 128K+
+   * when you have memory and need longer sessions, or 256K–1M+ on large
+   * unified/VRAM (often with quantized KV). llama.cpp `0` means “from model”;
+   * we always set an explicit value for predictable memory use.
    */
   ctxSize?: number;
   /**
@@ -280,7 +280,7 @@ export const DEFAULT_ENVOY_LOCAL_SERVER_PARAMS: Required<
     "ctxSize" | "nGpuLayers" | "parallel" | "flashAttn" | "fit"
   >
 > = {
-  ctxSize: 131072,
+  ctxSize: 32768,
   nGpuLayers: "auto",
   parallel: 1,
   flashAttn: "auto",

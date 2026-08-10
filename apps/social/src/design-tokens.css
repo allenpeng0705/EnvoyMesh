@@ -85,14 +85,15 @@
   --color-primary-hover: #06ad56;
   --color-primary-active: #05944a;
   --color-primary-subtle: #e8f8ef;
-  --color-primary-on: #ffffff;
+  /* Dark label on primary fills — same in light & dark for readable buttons */
+  --color-primary-on: #052e16;
   --color-on-primary-text: #052e16;
   --color-on-primary-subtle: #047857;
 
   --color-secondary: #0d9488;
   --color-secondary-hover: #0f766e;
   --color-secondary-subtle: #f0fdfa;
-  --color-secondary-on: #ffffff;
+  --color-secondary-on: #042f2e;
 
   --color-accent: #d97706;
   --color-accent-subtle: #fffbeb;
@@ -123,28 +124,32 @@
   --msg-ai-border: var(--color-role-ai);
   --msg-ai-border-soft: rgba(13, 148, 136, 0.28);
 
-  /* Surfaces & text */
-  --color-bg: var(--color-slate-100);
+  /*
+   * Surfaces: distinct layers so white cards/buttons don’t disappear into the
+   * canvas. bg (page) → muted (inset/chips) → surface (panels) → elevated.
+   */
+  --color-bg: #e8edf4;
+  --color-surface-muted: #f1f5f9;
   --color-surface: #ffffff;
-  --color-surface-elevated: #ffffff;
+  --color-surface-elevated: #f8fafc;
   --color-surface-overlay: #ffffff;
-  --color-border: var(--color-slate-200);
-  --color-border-subtle: var(--color-slate-200);
+  --color-border: #cbd5e1;
+  --color-border-subtle: #e2e8f0;
 
   --color-text: var(--color-slate-900);
   --color-text-muted: var(--color-slate-600);
   --color-text-subtle: var(--color-slate-500);
   --color-text-inverse: #ffffff;
 
-  --shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.05);
-  --shadow-sm: 0 1px 3px 0 rgb(15 23 42 / 0.08), 0 1px 2px -1px rgb(15 23 42 / 0.06);
-  --shadow-md: 0 4px 6px -1px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.05);
-  --shadow-lg: 0 10px 15px -3px rgb(15 23 42 / 0.08), 0 4px 6px -4px rgb(15 23 42 / 0.04);
-  --shadow-xl: 0 20px 25px -5px rgb(15 23 42 / 0.08), 0 8px 10px -6px rgb(15 23 42 / 0.04);
+  --shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.06);
+  --shadow-sm: 0 1px 3px 0 rgb(15 23 42 / 0.1), 0 1px 2px -1px rgb(15 23 42 / 0.08);
+  --shadow-md: 0 4px 8px -2px rgb(15 23 42 / 0.1), 0 2px 4px -2px rgb(15 23 42 / 0.06);
+  --shadow-lg: 0 12px 20px -4px rgb(15 23 42 / 0.1), 0 4px 8px -4px rgb(15 23 42 / 0.06);
+  --shadow-xl: 0 20px 28px -6px rgb(15 23 42 / 0.12), 0 8px 12px -6px rgb(15 23 42 / 0.06);
   --shadow-ring: 0 0 0 3px var(--color-primary-subtle);
   --shadow-glow: 0 0 20px rgb(7 193 96 / 0.12);
   --shadow-glow-lg: 0 0 40px rgb(7 193 96 / 0.16);
-  --shadow-composer: 0 -4px 24px rgb(15 23 42 / 0.06);
+  --shadow-composer: 0 -4px 24px rgb(15 23 42 / 0.08);
 
   --message-outgoing-overlay: rgb(255 255 255 / 0.15);
   --message-code-bg: rgb(100 116 139 / 0.12);
@@ -218,6 +223,7 @@
     --msg-ai-border-soft: rgb(94 234 212 / 0.35);
 
     --color-bg: #1e293b;
+    --color-surface-muted: #2a3648;
     --color-surface: #334155;
     --color-surface-elevated: #475569;
     --color-surface-overlay: #64748b;
@@ -308,6 +314,7 @@
   --msg-ai-border-soft: rgb(94 234 212 / 0.35);
 
   --color-bg: #1e293b;
+  --color-surface-muted: #2a3648;
   --color-surface: #334155;
   --color-surface-elevated: #475569;
   --color-surface-overlay: #64748b;
@@ -361,14 +368,14 @@
   --color-primary-hover: #06ad56;
   --color-primary-active: #05944a;
   --color-primary-subtle: #e8f8ef;
-  --color-primary-on: #ffffff;
+  --color-primary-on: #052e16;
   --color-on-primary-text: #052e16;
   --color-on-primary-subtle: #047857;
 
   --color-secondary: #0d9488;
   --color-secondary-hover: #0f766e;
   --color-secondary-subtle: #f0fdfa;
-  --color-secondary-on: #ffffff;
+  --color-secondary-on: #042f2e;
 
   --color-accent: #d97706;
   --color-accent-subtle: #fffbeb;
@@ -397,26 +404,27 @@
   --msg-ai-border: var(--color-role-ai);
   --msg-ai-border-soft: rgba(13, 148, 136, 0.28);
 
-  --color-bg: var(--color-slate-100);
+  --color-bg: #e8edf4;
+  --color-surface-muted: #f1f5f9;
   --color-surface: #ffffff;
-  --color-surface-elevated: #ffffff;
+  --color-surface-elevated: #f8fafc;
   --color-surface-overlay: #ffffff;
-  --color-border: var(--color-slate-200);
-  --color-border-subtle: var(--color-slate-200);
+  --color-border: #cbd5e1;
+  --color-border-subtle: #e2e8f0;
 
   --color-text: var(--color-slate-900);
   --color-text-muted: var(--color-slate-600);
   --color-text-subtle: var(--color-slate-500);
   --color-text-inverse: #ffffff;
 
-  --shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.05);
-  --shadow-sm: 0 1px 3px 0 rgb(15 23 42 / 0.08), 0 1px 2px -1px rgb(15 23 42 / 0.06);
-  --shadow-md: 0 4px 6px -1px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.05);
-  --shadow-lg: 0 10px 15px -3px rgb(15 23 42 / 0.08), 0 4px 6px -4px rgb(15 23 42 / 0.04);
-  --shadow-xl: 0 20px 25px -5px rgb(15 23 42 / 0.08), 0 8px 10px -6px rgb(15 23 42 / 0.04);
+  --shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.06);
+  --shadow-sm: 0 1px 3px 0 rgb(15 23 42 / 0.1), 0 1px 2px -1px rgb(15 23 42 / 0.08);
+  --shadow-md: 0 4px 8px -2px rgb(15 23 42 / 0.1), 0 2px 4px -2px rgb(15 23 42 / 0.06);
+  --shadow-lg: 0 12px 20px -4px rgb(15 23 42 / 0.1), 0 4px 8px -4px rgb(15 23 42 / 0.06);
+  --shadow-xl: 0 20px 28px -6px rgb(15 23 42 / 0.12), 0 8px 12px -6px rgb(15 23 42 / 0.06);
   --shadow-glow: 0 0 20px rgb(7 193 96 / 0.12);
   --shadow-glow-lg: 0 0 40px rgb(7 193 96 / 0.16);
-  --shadow-composer: 0 -4px 24px rgb(15 23 42 / 0.06);
+  --shadow-composer: 0 -4px 24px rgb(15 23 42 / 0.08);
 
   --message-outgoing-overlay: rgb(255 255 255 / 0.15);
   --message-code-bg: rgb(100 116 139 / 0.12);

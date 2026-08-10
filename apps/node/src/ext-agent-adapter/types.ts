@@ -6,8 +6,18 @@
  * speaks the bridge contract and forwards to each backend (Hermes /
  * OpenHuman HTTP APIs, built-in Pi runtime, codex stdio JSON-RPC, or the
  * Claude Agent SDK).
+ *
+ * Phase 56A: `cursor` — Cursor CLI (`cursor-agent`), one-shot subprocess
+ * per ask via the shared `OneShotCliBackend` base. Phase 56B / 56C will
+ * add `aider` / `mmx` (same one-shot pattern).
  */
-export type ExtAgentSidecarKind = "pi" | "hermes" | "openhuman" | "codex" | "claudecode";
+export type ExtAgentSidecarKind =
+  | "pi"
+  | "hermes"
+  | "openhuman"
+  | "codex"
+  | "claudecode"
+  | "cursor";
 
 export const EXT_AGENT_SIDECAR_KINDS: readonly ExtAgentSidecarKind[] = [
   "pi",
@@ -15,6 +25,7 @@ export const EXT_AGENT_SIDECAR_KINDS: readonly ExtAgentSidecarKind[] = [
   "openhuman",
   "codex",
   "claudecode",
+  "cursor",
 ];
 
 export function isExtAgentSidecarKind(id: string | undefined): id is ExtAgentSidecarKind {
@@ -23,7 +34,8 @@ export function isExtAgentSidecarKind(id: string | undefined): id is ExtAgentSid
     id === "hermes" ||
     id === "openhuman" ||
     id === "codex" ||
-    id === "claudecode"
+    id === "claudecode" ||
+    id === "cursor"
   );
 }
 
