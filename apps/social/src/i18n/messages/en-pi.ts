@@ -12,7 +12,7 @@ export const piMessages = {
     /** Sidebar + panel title. */
     title: "Pi",
     /** Sidebar + header subtitle. */
-    subtitle: "Local coding agent (terminal)",
+    subtitle: "Coding Agent",
     restartHint: "Close & restart Pi",
     stopHint: "Stop Pi (does not auto-restart)",
     closeConfirmTitle: "Stop Pi?",

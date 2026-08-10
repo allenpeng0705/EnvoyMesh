@@ -3040,6 +3040,8 @@ textarea::placeholder {
   padding: 0.875rem 1rem;
   border-radius: var(--radius-lg);
   line-height: 1.55;
+  border: 1px solid var(--color-border-subtle);
+  border-left: 3px solid var(--msg-peer-border);
 }
 .ai-welcome-greeting {
   font-weight: 600;
@@ -6681,10 +6683,10 @@ button:disabled {
 
 .chat-header-model-inline {
   font-size: var(--text-2xs);
-  font-weight: var(--font-semibold);
+  font-weight: var(--font-medium);
   text-transform: none;
   letter-spacing: 0.02em;
-  color: var(--color-role-ai);
+  color: var(--color-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6708,64 +6710,51 @@ button:disabled {
   margin-left: auto;
 }
 
+/* Match Profile / Blog / PhotoWall text links in contact chats. */
 .chat-header--assistant .chat-header-link {
   appearance: none;
   border: none;
   background: transparent;
-  padding: 0.1rem 0.45rem;
+  padding: 0.1rem 0.35rem;
   margin: 0;
-  color: var(--color-role-ai);
-  font-size: var(--text-2xs);
-  font-weight: var(--font-semibold);
-  line-height: 1.35;
-  letter-spacing: 0.02em;
+  color: var(--color-primary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  line-height: 1.4;
+  letter-spacing: 0;
   cursor: pointer;
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
   border-radius: var(--radius-sm);
-  transition: color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+  transition: color 0.15s ease, background 0.15s ease, text-decoration-thickness 0.15s ease;
   font-family: inherit;
 }
 
 .chat-header--assistant .chat-header-link:hover {
-  color: var(--color-role-ai);
-  background: color-mix(in srgb, var(--color-role-ai) 10%, transparent);
+  color: var(--color-primary-hover, var(--color-primary));
+  background: var(--color-primary-subtle);
   text-decoration: none;
-  opacity: 0.9;
+  opacity: 1;
 }
 
 .chat-header--assistant .chat-header-link.is-active {
-  color: var(--color-role-ai);
+  color: var(--color-primary);
   opacity: 1;
+  font-weight: var(--font-semibold);
 }
 
 .chat-header--assistant .chat-header-link--badge {
   color: var(--color-warning, #c97a00);
+  text-decoration: none;
 }
 
 .chat-header--assistant .chat-header-link--badge:hover {
   color: var(--color-warning-hover, #b56a00);
   background: color-mix(in srgb, var(--color-warning, #c97a00) 8%, transparent);
-}
-
-.chat-header--assistant .chat-header-link--icon {
-  padding: 0.15rem;
-  min-width: 1.35rem;
-  min-height: 1.35rem;
-  justify-content: center;
-  color: var(--color-role-ai);
-}
-
-.chat-header--assistant .chat-header-link--icon:hover:not(:disabled) {
-  color: var(--color-danger, #ef4444);
-  background: color-mix(in srgb, var(--color-danger, #ef4444) 8%, transparent);
-}
-
-.chat-header--assistant .chat-header-link--icon:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 .chat-header-links {
@@ -15883,30 +15872,33 @@ button:disabled {
   appearance: none;
   border: none;
   background: transparent;
-  padding: 0.1rem 0.5rem;
+  padding: 0.1rem 0.45rem;
   margin: 0;
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-  font-weight: 500;
+  color: var(--color-primary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
   line-height: 1.4;
   cursor: pointer;
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
   border-radius: var(--radius-sm);
-  transition: color 0.15s ease, background 0.15s ease;
+  transition: color 0.15s ease, background 0.15s ease, text-decoration-thickness 0.15s ease;
   font-family: inherit;
 }
 
 .assistant-top-bar__link:hover {
-  color: var(--color-primary, #4f46e5);
-  background: var(--color-primary-subtle, rgba(79, 70, 229, 0.08));
+  color: var(--color-primary-hover, var(--color-primary));
+  background: var(--color-primary-subtle);
   text-decoration: none;
 }
 
 .assistant-top-bar__link.active {
-  color: var(--color-primary, #4f46e5);
+  color: var(--color-primary);
+  font-weight: var(--font-semibold);
 }
 
 .assistant-top-bar__link--badge {

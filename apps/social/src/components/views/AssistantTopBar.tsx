@@ -19,11 +19,7 @@ export function AssistantTopBar({
   const t = useT();
   const nodeService = useNodeService();
   const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalSummary[]>([]);
-  const [reportLoading, setReportLoading] = useState(false);
-  const [reportText, setReportText] = useState<string | null>(null);
   const [skillsOpen, setSkillsOpen] = useState(false);
-  const [webSearchOn, setWebSearchOn] = useState(true);
-  const [showReport, setShowReport] = useState(false);
   const [showApprovals, setShowApprovals] = useState(false);
 
   useEffect(() => {
@@ -31,26 +27,11 @@ export function AssistantTopBar({
       .listPendingApprovals()
       .then(setPendingApprovals)
       .catch(() => setPendingApprovals([]));
-    void nodeService.getNodeConfig?.().then((cfg: any) => {
-      if (typeof cfg?.webSearchEnabled === "boolean") setWebSearchOn(cfg.webSearchEnabled);
-    }).catch(() => {});
+    // EnvoyAI always keeps built-in web search on (no UI toggle).
+    void (nodeService as { saveWebSearchEnabled?: (enabled: boolean) => Promise<unknown> })
+      .saveWebSearchEnabled?.(true)
+      .catch(() => {});
   }, [nodeService]);
-
-  const handleGenerateReport = async () => {
-    setReportLoading(true);
-    setReportText(null);
-    setShowReport(true);
-    try {
-      const report = await nodeService.generateMeshIntelligenceReport?.();
-      if (typeof report === "string") {
-        setReportText(report);
-      }
-    } catch {
-      setReportText("");
-    } finally {
-      setReportLoading(false);
-    }
-  };
 
   return (
     <>
@@ -66,26 +47,6 @@ export function AssistantTopBar({
               <span>{t("h2a.pendingApprovals", { count: pendingApprovals.length })}</span>
             </button>
           )}
-
-          <button
-            type="button"
-            className={`assistant-top-bar__link${webSearchOn ? " active" : ""}`}
-            onClick={async () => {
-              const next = !webSearchOn;
-              setWebSearchOn(next);
-              await (nodeService as any).saveWebSearchEnabled?.(next);
-            }}
-          >
-            {webSearchOn ? t("h2a.webSearchOn") : t("h2a.webSearchOff")}
-          </button>
-
-          <button
-            type="button"
-            className="assistant-top-bar__link"
-            onClick={() => setShowReport(true)}
-          >
-            {t("h2a.meshIntelligenceReport")}
-          </button>
 
           <button
             type="button"
@@ -125,39 +86,6 @@ export function AssistantTopBar({
                 </button>
               )}
               <button type="button" className="primary" onClick={() => setShowApprovals(false)}>
-                {t("common.close", "Close")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showReport && (
-        <div className="modal-overlay" role="presentation" onClick={() => !reportLoading && setShowReport(false)}>
-          <div
-            className="modal-panel"
-            role="dialog"
-            aria-modal="true"
-            aria-label={t("h2a.meshIntelligenceReport")}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2>{t("h2a.meshIntelligenceReport")}</h2>
-            <p className="modal-desc">{t("h2a.reportDesc")}</p>
-            {!reportText && !reportLoading && (
-              <div className="modal-actions">
-                <button type="button" className="primary" onClick={() => void handleGenerateReport()}>
-                  {t("h2a.generateReport", "Generate Report")}
-                </button>
-              </div>
-            )}
-            {reportLoading && (
-              <p className="assistant-top-bar__loading">{t("h2a.generatingReport", "Generating...")}</p>
-            )}
-            {reportText && (
-              <pre className="assistant-top-bar__report-output">{reportText}</pre>
-            )}
-            <div className="modal-actions">
-              <button type="button" className="primary" onClick={() => setShowReport(false)} disabled={reportLoading}>
                 {t("common.close", "Close")}
               </button>
             </div>

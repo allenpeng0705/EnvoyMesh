@@ -225,6 +225,90 @@ describe("ext-agent-adapter backends", () => {
   });
 });
 
+describe("createBackend autostart dispatch (Phase 55E)", () => {
+  const savedEnv = process.env.ENVOYMESH_EXT_AGENT_AUTOSTART;
+  afterEach(() => {
+    if (savedEnv === undefined) {
+      delete process.env.ENVOYMESH_EXT_AGENT_AUTOSTART;
+    } else {
+      process.env.ENVOYMESH_EXT_AGENT_AUTOSTART = savedEnv;
+    }
+  });
+
+  it("default (env unset) returns the unwrapped HTTP backend for hermes", () => {
+    delete process.env.ENVOYMESH_EXT_AGENT_AUTOSTART;
+    const backend = createBackend("hermes");
+    expect(backend.kind).toBe("hermes");
+    // Unwrapped: no `isEverHealthy` method (it's specific to the
+    // supervised backend). The probe + ask contract still applies.
+    expect((backend as unknown as { isEverHealthy?: unknown }).isEverHealthy).toBeUndefined();
+  });
+
+  it("default (env unset) returns the unwrapped HTTP backend for openhuman", () => {
+    delete process.env.ENVOYMESH_EXT_AGENT_AUTOSTART;
+    const backend = createBackend("openhuman");
+    expect(backend.kind).toBe("openhuman");
+    expect((backend as unknown as { isEverHealthy?: unknown }).isEverHealthy).toBeUndefined();
+  });
+
+  it("ENVOYMESH_EXT_AGENT_AUTOSTART=1 returns the supervised backend for hermes", () => {
+    process.env.ENVOYMESH_EXT_AGENT_AUTOSTART = "1";
+    const backend = createBackend("hermes");
+    expect(backend.kind).toBe("hermes");
+    expect((backend as unknown as { isEverHealthy?: unknown }).isEverHealthy).toBeTypeOf(
+      "function",
+    );
+  });
+
+  it("ENVOYMESH_EXT_AGENT_AUTOSTART=1 returns the supervised backend for openhuman", () => {
+    process.env.ENVOYMESH_EXT_AGENT_AUTOSTART = "1";
+    const backend = createBackend("openhuman");
+    expect(backend.kind).toBe("openhuman");
+    expect((backend as unknown as { isEverHealthy?: unknown }).isEverHealthy).toBeTypeOf(
+      "function",
+    );
+  });
+
+  it("autostart env-var dispatch accepts 'true' / 'yes' / 'on' aliases", () => {
+    for (const v of ["true", "yes", "on", "TRUE", "Yes", "ON"]) {
+      process.env.ENVOYMESH_EXT_AGENT_AUTOSTART = v;
+      const backend = createBackend("hermes");
+      expect(
+        (backend as unknown as { isEverHealthy?: unknown }).isEverHealthy,
+        `expected supervised for value '${v}'`,
+      ).toBeTypeOf("function");
+    }
+  });
+
+  it("autostart env-var dispatch rejects '0' / 'false' / '' (off aliases)", () => {
+    for (const v of ["0", "false", "no", "off", "", "random"]) {
+      process.env.ENVOYMESH_EXT_AGENT_AUTOSTART = v;
+      const backend = createBackend("hermes");
+      expect(
+        (backend as unknown as { isEverHealthy?: unknown }).isEverHealthy,
+        `expected unwrapped for value '${v}'`,
+      ).toBeUndefined();
+    }
+  });
+
+  it("_backendTest.isAutostartEnabled reflects the env var", () => {
+    delete process.env.ENVOYMESH_EXT_AGENT_AUTOSTART;
+    expect(_backendTest.isAutostartEnabled()).toBe(false);
+    process.env.ENVOYMESH_EXT_AGENT_AUTOSTART = "1";
+    expect(_backendTest.isAutostartEnabled()).toBe(true);
+    process.env.ENVOYMESH_EXT_AGENT_AUTOSTART = "yes";
+    expect(_backendTest.isAutostartEnabled()).toBe(true);
+  });
+
+  it("autostart does NOT affect codex / claudecode (already supervised / in-process)", () => {
+    process.env.ENVOYMESH_EXT_AGENT_AUTOSTART = "1";
+    const codex = createBackend("codex");
+    const cc = createBackend("claudecode");
+    expect(codex.kind).toBe("codex");
+    expect(cc.kind).toBe("claudecode");
+  });
+});
+
 describe("ext-agent HTTP sidecar", () => {
   afterEach(async () => {
     await stopExtAgentSidecar();

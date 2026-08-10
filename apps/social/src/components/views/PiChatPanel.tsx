@@ -289,7 +289,7 @@ export function PiChatPanel({ onBackToChats }: PiChatPanelProps) {
           <div className="pi-chat-titles">
             <h2 className="pi-chat-title">{t("pi.title", "Pi")}</h2>
             <p className="pi-chat-subtitle">
-              {t("pi.subtitle", "Local coding agent")}
+              {t("pi.subtitle", "Coding Agent")}
             </p>
           </div>
           {status ? (

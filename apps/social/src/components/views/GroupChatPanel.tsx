@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useT } from "../../context/I18nContext.js";
 import type { TFunction } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
@@ -29,8 +29,9 @@ import { ChatFileAttachment } from "../ChatFileAttachment.js";
 import { ChatAudioAttachment } from "../ChatAudioAttachment.js";
 import { VoiceNoteRecorderBar } from "../VoiceNoteRecorderBar.js";
 import { useVoiceNoteRecorder } from "../../hooks/useVoiceNoteRecorder.js";
-import { ChatIcon, EditIcon, AttachIcon } from "../../icons.js";
+import { ChatIcon, EditIcon, AttachIcon, RemoveIcon } from "../../icons.js";
 import { ChatComposer } from "../ChatComposer.js";
+import { ConfirmDialog } from "../ConfirmDialog.js";
 import { useToast } from "../../hooks/useToast.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 import type { AssistantMode } from "../../lib/storage.js";
@@ -88,13 +89,20 @@ export function GroupChatPanel({
   const { showToast } = useToast();
   const { humanProfile, nodeConfig, contactAiModes, setContactAiModes, refreshNodeConfig, connectionStatus } =
     useNodeState();
-  const { messages, isOutgoing } = useChatMessages(threadKey);
+  const { messages, isOutgoing, clearThread } = useChatMessages(threadKey);
   const [chatInput, setChatInput] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
   const [pendingOutbound, setPendingOutbound] = useState<ChatMessage[]>([]);
   const [showInvite, setShowInvite] = useState(false);
   const [showManage, setShowManage] = useState(false);
   const [leaveBusy, setLeaveBusy] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    message?: ReactNode;
+    variant?: "default" | "destructive";
+    confirmLabel?: string;
+    onConfirm: () => void;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastSendRef = useRef<{ at: number; text: string } | null>(null);
   const [attachBusy, setAttachBusy] = useState(false);
@@ -453,7 +461,7 @@ export function GroupChatPanel({
   );
 
   const handleLeave = async () => {
-    if (!roomId || !confirm(t("groupChat.leaveConfirm"))) return;
+    if (!roomId || !window.confirm(t("groupChat.leaveConfirm"))) return;
     setLeaveBusy(true);
     try {
       await nodeService.leaveChatRoom(roomId);
@@ -465,50 +473,108 @@ export function GroupChatPanel({
     }
   };
 
+  const handleClearChat = () => {
+    if (displayMessages.length === 0) return;
+    setConfirmDialog({
+      title: t("contactChat.clearConfirm"),
+      message: t("contactChat.clearConfirmMessage"),
+      variant: "destructive",
+      confirmLabel: t("common.clear"),
+      onConfirm: () => {
+        setConfirmDialog(null);
+        void clearThread().then((deletedCount) => {
+          setPendingOutbound([]);
+          if (deletedCount > 0) {
+            showToast(
+              deletedCount === 1
+                ? t("contactChat.clearedOne", { count: deletedCount })
+                : t("contactChat.clearedMany", { count: deletedCount }),
+              "success",
+            );
+          } else {
+            showToast(t("contactChat.chatCleared"), "success");
+          }
+        });
+      },
+    });
+  };
+
   return (
     <>
       <header className="chat-header has-assistant-switch">
-        <div className="chat-header-left">
-          <span className="chat-header-avatar kind-group" aria-hidden>
-            {headerInitial}
-          </span>
-          <div className="chat-header-titles">
-            <span className="chat-name">{roomTitle}</span>
-            <span className="chat-header-kind kind-group">{t("groupChat.threadKindLabel")}</span>
-            <span className="contact-reachability checking">
-              {t("groupChat.memberCount", { count: memberCount })}
+        <div className="chat-header-main">
+          <div className="chat-header-left">
+            <span className="chat-header-avatar kind-group" aria-hidden>
+              {headerInitial}
             </span>
+            <div className="chat-header-titles">
+              <span className="chat-name">{roomTitle}</span>
+              <span className="chat-header-kind kind-group">{t("groupChat.threadKindLabel")}</span>
+              <span className="contact-reachability checking">
+                {t("groupChat.memberCount", { count: memberCount })}
+              </span>
+            </div>
+          </div>
+          <div className="chat-header-actions-row">
+            {!(isCreator && memberCount > 1) ? (
+              <button
+                type="button"
+                className="chat-header-remove-contact-btn"
+                onClick={() => void handleLeave()}
+                disabled={leaveBusy}
+              >
+                {t("groupChat.leaveGroup")}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="chat-header-clear-btn"
+              title={t("contactChat.clearAllTitle")}
+              aria-label={t("contactChat.clearAllAria")}
+              disabled={displayMessages.length === 0}
+              onClick={handleClearChat}
+            >
+              <RemoveIcon size={16} />
+            </button>
           </div>
         </div>
-        <div className="chat-header-right">
+        <div className="chat-header-secondary">
           {isCreator ? (
-            <button
-              type="button"
-              className="chat-header-remove-contact-btn"
-              onClick={() => setShowManage(true)}
-            >
-              {t("groupChat.manageGroup")}
-            </button>
-          ) : null}
-          {isCreator ? (
-            <button
-              type="button"
-              className="chat-header-remove-contact-btn"
-              onClick={() => setShowInvite(true)}
-            >
-              {t("groupChat.addPeople")}
-            </button>
-          ) : null}
-          {!(isCreator && memberCount > 1) ? (
-            <button
-              type="button"
-              className="chat-header-remove-contact-btn"
-              onClick={() => void handleLeave()}
-              disabled={leaveBusy}
-            >
-              {t("groupChat.leaveGroup")}
-            </button>
-          ) : null}
+            <div className="chat-header-web-links">
+              <div
+                className="contact-web-content contact-web-content--compact"
+                data-testid="group-header-links"
+              >
+                <div
+                  className="contact-web-content__actions contact-web-content__actions--links"
+                  role="group"
+                  aria-label={t("groupChat.manageGroup")}
+                >
+                  <span className="contact-web-content__link-item">
+                    <button
+                      type="button"
+                      className="contact-web-content__link"
+                      onClick={() => setShowManage(true)}
+                    >
+                      {t("groupChat.manageGroup")}
+                    </button>
+                  </span>
+                  <span className="contact-web-content__link-item">
+                    <span className="contact-web-content__sep" aria-hidden="true">·</span>
+                    <button
+                      type="button"
+                      className="contact-web-content__link"
+                      onClick={() => setShowInvite(true)}
+                    >
+                      {t("groupChat.addPeople")}
+                    </button>
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <span className="chat-header-web-links-spacer" aria-hidden="true" />
+          )}
           <div className="assistant-switch" aria-label={t("contactChat.aiModeLabel", { mode: currentAiMode })}>
             <span className="assistant-switch-label">AI</span>
             <button
@@ -769,6 +835,17 @@ export function GroupChatPanel({
           room={room}
           onClose={() => setShowManage(false)}
           onDismissed={() => onLeaveGroup?.()}
+        />
+      ) : null}
+
+      {confirmDialog ? (
+        <ConfirmDialog
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          variant={confirmDialog.variant}
+          confirmLabel={confirmDialog.confirmLabel}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={() => setConfirmDialog(null)}
         />
       ) : null}
     </>

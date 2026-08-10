@@ -2,7 +2,7 @@
 export const jaPiMessages = {
   pi: {
     title: "Pi",
-    subtitle: "ローカルコーディングエージェント",
+    subtitle: "コーディングエージェント",
     stateReady: "準備完了",
     stateStarting: "起動中…",
     stateStopped: "停止",

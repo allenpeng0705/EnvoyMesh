@@ -13,6 +13,30 @@ import { createCodexBackend } from "./codex-backend.js";
 // (only loaded on first `ask()` / `probe()` / `start()`) so a missing
 // install surfaces a clear error at runtime, not at boot.
 import { createClaudeCodeBackend } from "./claudecode-backend.js";
+// Phase 55E — optional autostart wrappers for hermes / openhuman.
+// Toggled via `ENVOYMESH_EXT_AGENT_AUTOSTART=1` (default off). When
+// enabled, the supervised backends spawn the daemon lazily on the
+// first `ask()` if it isn't already running. When disabled, the
+// default HTTP backends (this file) are used unchanged — they
+// assume the daemon is already running.
+import { createHermesSupervisedBackend } from "./supervised-hermes-backend.js";
+import { createOpenHumanSupervisedBackend } from "./supervised-openhuman-backend.js";
+
+/**
+ * Phase 55E — when `true`, `createBackend("hermes" | "openhuman")`
+ * returns a `*SupervisedBackend` that spawns the daemon on demand
+ * via the 55A `DaemonSupervisor`. Otherwise the unwrapped HTTP
+ * backends are used (the historical default).
+ *
+ * Default: `false` (preserves the existing behavior — most Hermes
+ * users run their own `hermes gateway run`, and OpenHuman desktop
+ * users have the .app running; the node should not spawn a second
+ * instance on the same port).
+ */
+function isAutostartEnabled(): boolean {
+  const v = process.env.ENVOYMESH_EXT_AGENT_AUTOSTART?.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
 
 /** OpenHuman auth-profile provider id for the stable `/v1` bearer. */
 export const OPENHUMAN_EXTERNAL_V1_PROVIDER = "external-openai-compat";
@@ -908,8 +932,21 @@ export function createPiBackend(): ExtAgentBackend {
 
 export function createBackend(kind: ExtAgentSidecarKind): ExtAgentBackend {
   if (kind === "pi") return createPiBackend();
-  if (kind === "hermes") return createHermesBackend();
-  if (kind === "openhuman") return createOpenHumanBackend();
+  if (kind === "hermes") {
+    // Phase 55E — when autostart is on, wrap the HTTP backend with a
+    // supervisor that spawns `hermes gateway run` on demand. Default
+    // off (see `isAutostartEnabled`).
+    return isAutostartEnabled()
+      ? createHermesSupervisedBackend()
+      : createHermesBackend();
+  }
+  if (kind === "openhuman") {
+    // Phase 55E — same pattern for OpenHuman; the CLI subcommand
+    // defaults to `openhuman serve` (override via constructor opts).
+    return isAutostartEnabled()
+      ? createOpenHumanSupervisedBackend()
+      : createOpenHumanBackend();
+  }
   if (kind === "codex") {
     // Phase 55B — real codex app-server JSON-RPC over stdio,
     // supervised by the 55A `DaemonSupervisor`.
@@ -944,4 +981,5 @@ export const _test = {
   parseOpenHumanKeychainTokenPayload,
   openHumanTransport,
   discoverOpenHumanV1ApiKey,
+  isAutostartEnabled,
 };

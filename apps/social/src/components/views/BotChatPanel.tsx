@@ -2,7 +2,7 @@
  * Chat panel for a dynamic AI character bot (`bot:<id>` thread).
  * Sends via `sendToAiBot`; history comes from the shared chat log.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   aiBotThreadKey,
   parseBotIdFromThreadKey,
@@ -14,9 +14,11 @@ import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useChatMessages, useNodeService } from "../../hooks/useNodeService.js";
 import { useChatStickToBottom } from "../../hooks/useChatStickToBottom.js";
+import { useToast } from "../../hooks/useToast.js";
 import { ChatComposer } from "../ChatComposer.js";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
-import { ChatIcon } from "../../icons.js";
+import { ConfirmDialog } from "../ConfirmDialog.js";
+import { ChatIcon, RemoveIcon } from "../../icons.js";
 import { extractChatMessageText } from "../../lib/bridge-chat-message.js";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
 
@@ -33,6 +35,7 @@ function botInitial(name: string): string {
 export function BotChatPanel({ threadKey }: BotChatPanelProps) {
   const t = useT();
   const nodeService = useNodeService();
+  const { showToast } = useToast();
   const { nodeConfig, humanProfile } = useNodeState();
   const botId = parseBotIdFromThreadKey(threadKey) ?? threadKey.replace(/^bot:/, "");
   const normalizedKey = aiBotThreadKey(botId);
@@ -44,7 +47,7 @@ export function BotChatPanel({ threadKey }: BotChatPanelProps) {
     return list.find((b) => b.id === botId && b.enabled !== false);
   }, [nodeConfig?.aiBots, botId]);
 
-  const { messages, isOutgoing } = useChatMessages(normalizedKey);
+  const { messages, isOutgoing, clearThread } = useChatMessages(normalizedKey);
   const { containerRef, onScroll, pinToBottom } = useChatStickToBottom(
     normalizedKey,
     messages.length,
@@ -53,6 +56,13 @@ export function BotChatPanel({ threadKey }: BotChatPanelProps) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [pendingOutbound, setPendingOutbound] = useState<ChatMessage | null>(null);
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    message?: ReactNode;
+    variant?: "default" | "destructive";
+    confirmLabel?: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   const displayMessages = useMemo(() => {
     const filtered = messages.filter((msg) => {
@@ -134,6 +144,32 @@ export function BotChatPanel({ threadKey }: BotChatPanelProps) {
     }
   }, [bot, botId, draft, modelDisabled, nodeService, normalizedKey, pinToBottom, selfOwnerId, sending, t]);
 
+  const handleClearChat = () => {
+    if (displayMessages.length === 0) return;
+    setConfirm({
+      title: t("contactChat.clearConfirm"),
+      message: t("contactChat.clearConfirmMessage"),
+      variant: "destructive",
+      confirmLabel: t("common.clear"),
+      onConfirm: () => {
+        setConfirm(null);
+        void clearThread().then((deletedCount) => {
+          setPendingOutbound(null);
+          if (deletedCount > 0) {
+            showToast(
+              deletedCount === 1
+                ? t("contactChat.clearedOne", { count: deletedCount })
+                : t("contactChat.clearedMany", { count: deletedCount }),
+              "success",
+            );
+          } else {
+            showToast(t("contactChat.chatCleared"), "success");
+          }
+        });
+      },
+    });
+  };
+
   const title = bot?.name ?? botId;
   const subtitle = bot?.description?.trim() ?? "";
   const avatarColor = bot?.avatarColor ?? "#6366f1";
@@ -150,19 +186,33 @@ export function BotChatPanel({ threadKey }: BotChatPanelProps) {
   return (
     <>
       <header className="chat-header">
-        <div className="chat-header-left">
-          <span
-            className="chat-header-avatar kind-ai"
-            style={{ background: avatarColor }}
-            aria-hidden
-          >
-            {botInitial(title)}
-          </span>
-          <div className="chat-header-titles">
-            <span className="chat-name">{title}</span>
-            {subtitle ? (
-              <span className="chat-header-kind kind-ai">{subtitle}</span>
-            ) : null}
+        <div className="chat-header-main">
+          <div className="chat-header-left">
+            <span
+              className="chat-header-avatar kind-ai"
+              style={{ background: avatarColor }}
+              aria-hidden
+            >
+              {botInitial(title)}
+            </span>
+            <div className="chat-header-titles">
+              <span className="chat-name">{title}</span>
+              {subtitle ? (
+                <span className="chat-header-kind kind-ai">{subtitle}</span>
+              ) : null}
+            </div>
+          </div>
+          <div className="chat-header-actions-row">
+            <button
+              type="button"
+              className="chat-header-clear-btn"
+              title={t("contactChat.clearAllTitle")}
+              aria-label={t("contactChat.clearAllAria")}
+              disabled={displayMessages.length === 0}
+              onClick={handleClearChat}
+            >
+              <RemoveIcon size={16} />
+            </button>
           </div>
         </div>
       </header>
@@ -245,6 +295,17 @@ export function BotChatPanel({ threadKey }: BotChatPanelProps) {
           />
         </footer>
       </div>
+
+      {confirm ? (
+        <ConfirmDialog
+          title={confirm.title}
+          message={confirm.message}
+          variant={confirm.variant}
+          confirmLabel={confirm.confirmLabel}
+          onConfirm={confirm.onConfirm}
+          onCancel={() => setConfirm(null)}
+        />
+      ) : null}
     </>
   );
 }

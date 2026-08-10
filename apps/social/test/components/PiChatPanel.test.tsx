@@ -78,7 +78,7 @@ describe("PiChatPanel", () => {
     renderWithI18n(<PiChatPanel />)
     // Title appears immediately (rendered from constants, not RPC).
     expect(screen.getAllByText("Pi").length).toBeGreaterThan(0)
-    expect(screen.getByText(/Local coding agent/)).toBeDefined()
+    expect(screen.getByText(/Coding Agent/)).toBeDefined()
     // Empty-state copy appears after the status probe settles.
     expect(
       await screen.findByText(/your local coding agent/i),

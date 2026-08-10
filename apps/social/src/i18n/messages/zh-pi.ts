@@ -2,7 +2,7 @@
 export const zhPiMessages = {
   pi: {
     title: "Pi",
-    subtitle: "本地编码助手",
+    subtitle: "编码助手",
     stateReady: "就绪",
     stateStarting: "启动中…",
     stateStopped: "已停止",

@@ -2,7 +2,7 @@
 export const koPiMessages = {
   pi: {
     title: "Pi",
-    subtitle: "로컬 코딩 에이전트",
+    subtitle: "코딩 에이전트",
     stateReady: "준비됨",
     stateStarting: "시작 중…",
     stateStopped: "중지됨",

@@ -286,11 +286,7 @@ export function AIChatPanel({
   const [confirm, setConfirm] = useState<{ title: string; message?: string; variant?: "default" | "destructive"; onConfirm: () => void } | null>(null);
   const [chainGoal, setChainGoal] = useState<string | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalSummary[]>([]);
-  const [reportLoading, setReportLoading] = useState(false);
-  const [reportText, setReportText] = useState<string | null>(null);
   const [skillsOpen, setSkillsOpen] = useState(false);
-  const [webSearchOn, setWebSearchOn] = useState(true);
-  const [showReport, setShowReport] = useState(false);
   const [showApprovals, setShowApprovals] = useState(false);
   const draftRef = useRef<ReturnType<typeof createAssistantDraftCrdt> | null>(null);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -303,26 +299,11 @@ export function AIChatPanel({
       .listPendingApprovals()
       .then(setPendingApprovals)
       .catch(() => setPendingApprovals([]));
-    void nodeService.getNodeConfig?.().then((cfg: any) => {
-      if (typeof cfg?.webSearchEnabled === "boolean") setWebSearchOn(cfg.webSearchEnabled);
-    }).catch(() => {});
+    // EnvoyAI always keeps built-in web search on (no UI toggle).
+    void (nodeService as { saveWebSearchEnabled?: (enabled: boolean) => Promise<unknown> })
+      .saveWebSearchEnabled?.(true)
+      .catch(() => {});
   }, [nodeService]);
-
-  const handleGenerateReport = async () => {
-    setReportLoading(true);
-    setReportText(null);
-    setShowReport(true);
-    try {
-      const report = await nodeService.generateMeshIntelligenceReport?.();
-      if (typeof report === "string") {
-        setReportText(report);
-      }
-    } catch {
-      setReportText("");
-    } finally {
-      setReportLoading(false);
-    }
-  };
 
   const reloadEnvoyAiHistory = useCallback(async (turn?: OwnerAgentTurnResult) => {
     if (!selfOwnerId) return;
@@ -729,26 +710,6 @@ export function AIChatPanel({
                   <span>{t("h2a.skillsTitle")}</span>
                 </button>
 
-                <button
-                  type="button"
-                  className={`chat-header-link${webSearchOn ? " is-active" : ""}`}
-                  onClick={async () => {
-                    const next = !webSearchOn;
-                    setWebSearchOn(next);
-                    await (nodeService as any).saveWebSearchEnabled?.(next);
-                  }}
-                >
-                  {webSearchOn ? t("h2a.webSearchOn") : t("h2a.webSearchOff")}
-                </button>
-
-                <button
-                  type="button"
-                  className="chat-header-link"
-                  onClick={() => setShowReport(true)}
-                >
-                  {t("h2a.meshIntelligenceReport")}
-                </button>
-
                 {pendingApprovals.length > 0 && (
                   <button
                     type="button"
@@ -762,13 +723,13 @@ export function AIChatPanel({
 
                 <button
                   type="button"
-                  className="chat-header-link chat-header-link--icon"
+                  className="chat-header-clear-btn"
                   title={t("aiChat.clearSessionTitle")}
                   aria-label={t("aiChat.clearSessionAria")}
                   disabled={aiMessages.length === 0}
                   onClick={handleClearAiChat}
                 >
-                  <RemoveIcon size={14} />
+                  <RemoveIcon size={16} />
                 </button>
               </div>
             </div>
@@ -1012,39 +973,6 @@ export function AIChatPanel({
                 </button>
               )}
               <button type="button" className="primary" onClick={() => setShowApprovals(false)}>
-                {t("common.close", "Close")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showReport && (
-        <div className="modal-overlay" role="presentation" onClick={() => !reportLoading && setShowReport(false)}>
-          <div
-            className="modal-panel"
-            role="dialog"
-            aria-modal="true"
-            aria-label={t("h2a.meshIntelligenceReport")}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2>{t("h2a.meshIntelligenceReport")}</h2>
-            <p className="modal-desc">{t("h2a.reportDesc")}</p>
-            {!reportText && !reportLoading && (
-              <div className="modal-actions">
-                <button type="button" className="primary" onClick={() => void handleGenerateReport()}>
-                  {t("h2a.generateReport")}
-                </button>
-              </div>
-            )}
-            {reportLoading && (
-              <p className="assistant-top-bar__loading">{t("h2a.generatingReport")}</p>
-            )}
-            {reportText && (
-              <pre className="assistant-top-bar__report-output">{reportText}</pre>
-            )}
-            <div className="modal-actions">
-              <button type="button" className="primary" onClick={() => setShowReport(false)} disabled={reportLoading}>
                 {t("common.close", "Close")}
               </button>
             </div>

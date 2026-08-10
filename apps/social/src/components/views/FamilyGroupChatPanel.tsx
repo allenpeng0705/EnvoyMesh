@@ -1,24 +1,30 @@
 /**
  * Phase 51F follow-up — Family group room panel (owner desktop).
  * Thread key `room:<uuid>`; send via sendFamilyRoomMessage.
+ * Header matches GroupChatPanel: AI switch + clear.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   OWNER_FAMILY_PROFILE_ID,
+  contactAiAccessLevelForAssistantMode,
   isChatRoomThreadKey,
   parseChatRoomThreadKey,
   type ChatMessage,
+  type ContactAiPreferences,
   type FamilyRoom,
 } from "@envoymesh/api";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useChatMessages, useNodeService } from "../../hooks/useNodeService.js";
 import { useChatStickToBottom } from "../../hooks/useChatStickToBottom.js";
+import { useToast } from "../../hooks/useToast.js";
 import { ChatComposer } from "../ChatComposer.js";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
-import { ChatIcon } from "../../icons.js";
+import { ConfirmDialog } from "../ConfirmDialog.js";
+import { ChatIcon, EditIcon, RemoveIcon } from "../../icons.js";
 import { extractChatMessageText } from "../../lib/bridge-chat-message.js";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
+import type { AssistantMode } from "../../lib/storage.js";
 
 export interface FamilyGroupChatPanelProps {
   threadKey: string;
@@ -32,7 +38,14 @@ function initial(name: string): string {
 export function FamilyGroupChatPanel({ threadKey, room }: FamilyGroupChatPanelProps) {
   const t = useT();
   const nodeService = useNodeService();
-  const { nodeConfig, humanProfile } = useNodeState();
+  const { showToast } = useToast();
+  const {
+    nodeConfig,
+    humanProfile,
+    contactAiModes,
+    setContactAiModes,
+    refreshNodeConfig,
+  } = useNodeState();
   const myProfileId =
     nodeConfig?.callerFamilyProfileId?.trim() || OWNER_FAMILY_PROFILE_ID;
   const roomId = parseChatRoomThreadKey(threadKey) ?? "";
@@ -40,7 +53,7 @@ export function FamilyGroupChatPanel({ threadKey, room }: FamilyGroupChatPanelPr
   const memberCount = room?.memberProfileIds?.length ?? 0;
 
   const selfOwnerId = humanProfile?.ownerId?.trim() ?? "";
-  const { messages, isOutgoing } = useChatMessages(threadKey);
+  const { messages, isOutgoing, clearThread } = useChatMessages(threadKey);
   const { containerRef, onScroll, pinToBottom } = useChatStickToBottom(
     threadKey,
     messages.length,
@@ -49,6 +62,48 @@ export function FamilyGroupChatPanel({ threadKey, room }: FamilyGroupChatPanelPr
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [pendingOutbound, setPendingOutbound] = useState<ChatMessage | null>(null);
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    message?: string;
+    variant?: "default" | "destructive";
+    confirmLabel?: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const defaultGroupAiMode: AssistantMode =
+    nodeConfig?.aiSettings?.defaultModeForNewContacts === "manual" ? "manual" : "assistant";
+  const storedMode = contactAiModes[threadKey] ?? defaultGroupAiMode;
+  const currentAiMode: AssistantMode = storedMode === "auto" ? "assistant" : storedMode;
+  const canDraftAssist = nodeConfig?.chatAssistEnabled ?? false;
+
+  const updateGroupAiMode = useCallback(
+    async (mode: Extract<AssistantMode, "manual" | "assistant">) => {
+      setContactAiModes({ ...contactAiModes, [threadKey]: mode });
+      const currentPrefs = nodeConfig?.contactAiPreferences ?? [];
+      const existingPref = currentPrefs.find((p) => p.peerOwnerId === threadKey);
+      const otherPrefs = currentPrefs.filter((p) => p.peerOwnerId !== threadKey);
+      const aiAccessLevel = contactAiAccessLevelForAssistantMode(mode);
+      const newPrefs: ContactAiPreferences[] = [
+        ...otherPrefs,
+        {
+          peerOwnerId: threadKey,
+          aiAccessLevel,
+          knowledgeAccess: existingPref?.knowledgeAccess ?? "public",
+          priority: existingPref?.priority ?? "high",
+        },
+      ];
+      const configPatch: {
+        contactAiPreferences: ContactAiPreferences[];
+        chatAssistEnabled?: boolean;
+      } = { contactAiPreferences: newPrefs };
+      if (mode === "assistant" && !nodeConfig?.chatAssistEnabled) {
+        configPatch.chatAssistEnabled = true;
+      }
+      await nodeService.updateNodeConfig(configPatch);
+      await refreshNodeConfig();
+    },
+    [contactAiModes, nodeConfig, nodeService, refreshNodeConfig, setContactAiModes, threadKey],
+  );
 
   const displayMessages = useMemo(() => {
     const filtered = messages.filter((msg) => {
@@ -80,6 +135,32 @@ export function FamilyGroupChatPanel({ threadKey, room }: FamilyGroupChatPanelPr
       ),
     [displayMessages, isOutgoing],
   );
+
+  const handleClearChat = () => {
+    if (displayMessages.length === 0) return;
+    setConfirm({
+      title: t("contactChat.clearConfirm"),
+      message: t("contactChat.clearConfirmMessage"),
+      variant: "destructive",
+      confirmLabel: t("common.clear"),
+      onConfirm: () => {
+        setConfirm(null);
+        void clearThread().then((deletedCount) => {
+          setPendingOutbound(null);
+          if (deletedCount > 0) {
+            showToast(
+              deletedCount === 1
+                ? t("contactChat.clearedOne", { count: deletedCount })
+                : t("contactChat.clearedMany", { count: deletedCount }),
+              "success",
+            );
+          } else {
+            showToast(t("contactChat.chatCleared"), "success");
+          }
+        });
+      },
+    });
+  };
 
   const handleSend = useCallback(async () => {
     const text = draft.trim();
@@ -119,8 +200,8 @@ export function FamilyGroupChatPanel({ threadKey, room }: FamilyGroupChatPanelPr
     try {
       await nodeService.sendFamilyRoomMessage({ roomId, text });
     } catch (err) {
-      setDraft(text);
       setPendingOutbound(null);
+      setDraft(text);
       setSendError(err instanceof Error ? err.message : String(err));
     } finally {
       setSending(false);
@@ -151,20 +232,61 @@ export function FamilyGroupChatPanel({ threadKey, room }: FamilyGroupChatPanelPr
 
   return (
     <>
-      <header className="chat-header">
-        <div className="chat-header-left">
-          <span className="chat-header-avatar" style={{ background: "#0d9488" }} aria-hidden>
-            {initial(title)}
-          </span>
-          <div className="chat-header-titles">
-            <span className="chat-name">{title}</span>
-            <span className="chat-header-kind">
-              {inactive
-                ? t("chat.familyGroupInactive", "Inactive group")
-                : t("chat.familyGroupSubtitle", "{{count}} members · Family", {
-                    count: memberCount,
-                  })}
+      <header className="chat-header has-assistant-switch">
+        <div className="chat-header-main">
+          <div className="chat-header-left">
+            <span className="chat-header-avatar kind-group" style={{ background: "#0d9488" }} aria-hidden>
+              {initial(title)}
             </span>
+            <div className="chat-header-titles">
+              <span className="chat-name">{title}</span>
+              <span className="chat-header-kind kind-group">
+                {inactive
+                  ? t("chat.familyGroupInactive", "Inactive group")
+                  : t("chat.familyGroupSubtitle", "{{count}} members · Family", {
+                      count: memberCount,
+                    })}
+              </span>
+            </div>
+          </div>
+          <div className="chat-header-actions-row">
+            <button
+              type="button"
+              className="chat-header-clear-btn"
+              title={t("contactChat.clearAllTitle")}
+              aria-label={t("contactChat.clearAllAria")}
+              disabled={displayMessages.length === 0}
+              onClick={handleClearChat}
+            >
+              <RemoveIcon size={16} />
+            </button>
+          </div>
+        </div>
+        <div className="chat-header-secondary">
+          <span className="chat-header-web-links-spacer" aria-hidden="true" />
+          <div className="assistant-switch" aria-label={t("contactChat.aiModeLabel", { mode: currentAiMode })}>
+            <span className="assistant-switch-label">AI</span>
+            <button
+              type="button"
+              className={`assistant-switch-btn ${currentAiMode === "manual" ? "active" : ""}`}
+              title={t("contactChat.manualTitle")}
+              aria-label={t("contactChat.manualAria")}
+              onClick={() => void updateGroupAiMode("manual")}
+            >
+              <EditIcon size={16} />
+            </button>
+            <button
+              type="button"
+              className={`assistant-switch-btn ${currentAiMode === "assistant" ? "active" : ""} ${!canDraftAssist ? "disabled" : ""}`}
+              title={canDraftAssist ? t("groupChat.assistantTitle") : t("contactChat.assistantDisabledTitle")}
+              aria-label={t("contactChat.assistantAria")}
+              onClick={() => {
+                if (!canDraftAssist) return;
+                void updateGroupAiMode("assistant");
+              }}
+            >
+              <ChatIcon size={16} />
+            </button>
           </div>
         </div>
       </header>
@@ -236,6 +358,17 @@ export function FamilyGroupChatPanel({ threadKey, room }: FamilyGroupChatPanelPr
           />
         </footer>
       </div>
+
+      {confirm ? (
+        <ConfirmDialog
+          title={confirm.title}
+          message={confirm.message}
+          variant={confirm.variant}
+          confirmLabel={confirm.confirmLabel}
+          onConfirm={confirm.onConfirm}
+          onCancel={() => setConfirm(null)}
+        />
+      ) : null}
     </>
   );
 }

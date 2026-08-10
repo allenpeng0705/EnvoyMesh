@@ -44,6 +44,8 @@ export const chatMessages = {
   familySubtitle: "Family",
   familyOffline: "Inactive profile",
   familyOfflineShort: "offline",
+  familyCallUnavailable:
+    "Family voice/video calls are not available yet — family profiles stay on this home node.",
   familyComposePlaceholder: "Message family…",
   familySendUnavailable: "Family chat is not available on this connection.",
   familyInvalidTitle: "Invalid family chat",

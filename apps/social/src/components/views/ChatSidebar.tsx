@@ -424,7 +424,7 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
                 <span className="thread-title-row">
                   <span className="thread-title">{t("pi.title", "Pi")}</span>
                 </span>
-                <span className="thread-subtitle">{t("pi.subtitle", "Local coding agent")}</span>
+                <span className="thread-subtitle">{t("pi.subtitle", "Coding Agent")}</span>
               </span>
             </button>
           ) : null}

@@ -53,3 +53,17 @@ export {
   type SupervisorCrashInfo,
   type SupervisorStuckInfo,
 } from "./daemon-supervisor.js";
+// Phase 55E — autostart wrappers for hermes / openhuman. Used when
+// `ENVOYMESH_EXT_AGENT_AUTOSTART=1`. They wrap the existing HTTP
+// backends with a `DaemonSupervisor` that lazily spawns the daemon
+// on the first `ask()` when not already running.
+export {
+  HermesSupervisedBackend,
+  createHermesSupervisedBackend,
+  type HermesSupervisedBackendOptions,
+} from "./supervised-hermes-backend.js";
+export {
+  OpenHumanSupervisedBackend,
+  createOpenHumanSupervisedBackend,
+  type OpenHumanSupervisedBackendOptions,
+} from "./supervised-openhuman-backend.js";
