@@ -48,6 +48,8 @@ import {
   listModelProviderPresets,
   getModelProviderPreset,
   inferModelProviderPreset,
+  hasUsableModelProvider,
+  hasUsableNonEnvoyLocalModelProvider,
   DEFAULT_ENVOY_LOCAL_SERVER_PARAMS,
 } from "@envoymesh/api";
 import {
@@ -992,6 +994,18 @@ function ModelProviderSettings({
   const showModelAndKey =
     activePreset.mode !== "mock" && activePreset.mode !== "disabled";
 
+  // Saved provider on the node (not unsaved form edits) — drives In use / Not in use.
+  const savedMp = nodeConfig?.modelProviders;
+  const savedPreset = inferModelProviderPreset(savedMp);
+  const cloudOrOllamaInUse = hasUsableNonEnvoyLocalModelProvider(savedMp);
+  const envoyLocalProviderActive =
+    hasUsableModelProvider(savedMp) && savedPreset.id === "envoy-local";
+  const providerUsageLabel = cloudOrOllamaInUse
+    ? t("settings.ai.model.statusInUse")
+    : envoyLocalProviderActive
+      ? t("settings.ai.model.statusStandbyLocal")
+      : t("settings.ai.model.statusNotInUse");
+
   const updateNodeConfig = async (partial: Partial<import("@envoymesh/api").NodeConfig>) => {
     await nodeService.updateNodeConfig(partial);
     await refreshNodeConfig();
@@ -1006,6 +1020,22 @@ function ModelProviderSettings({
           : t("settings.ai.model.sectionDescDefault")}
       </p>
       <dl className="settings-list">
+        <dt>{t("settings.ai.model.usageStatus")}</dt>
+        <dd>
+          <span
+            className={
+              cloudOrOllamaInUse
+                ? "model-provider-status is-active"
+                : "model-provider-status is-idle"
+            }
+            data-testid="model-provider-usage-status"
+          >
+            {providerUsageLabel}
+          </span>
+          {envoyLocalProviderActive ? (
+            <div className="settings-hint">{t("settings.ai.model.statusStandbyLocalHint")}</div>
+          ) : null}
+        </dd>
         <dt>{t("settings.ai.model.providerLabel")}</dt>
         <dd>
           <select
@@ -1592,6 +1622,7 @@ function EnvoyLocalSettings({
   const t = useT();
   const { showToast } = useToast();
   const nodeService = useNodeService();
+  const { nodeConfig } = useNodeState();
   const [status, setStatus] = useState<EnvoyLocalStatus | null>(null);
   const [installed, setInstalled] = useState<EnvoyLocalInstalledModel[]>([]);
   const [catalog, setCatalog] = useState<EnvoyLocalCatalogModel[]>([]);
@@ -1728,12 +1759,52 @@ function EnvoyLocalSettings({
 
   const installedIds = useMemo(() => new Set(installed.map((m) => m.id)), [installed]);
 
+  const savedMp = nodeConfig?.modelProviders;
+  const localProviderInUse =
+    hasUsableModelProvider(savedMp) &&
+    inferModelProviderPreset(savedMp).id === "envoy-local";
+  const fallbackMp = nodeConfig?.envoyLocal?.fallbackModelProviders;
+  const fallbackPreset = fallbackMp ? inferModelProviderPreset(fallbackMp) : null;
+  const fallbackLabel =
+    fallbackPreset && hasUsableNonEnvoyLocalModelProvider(fallbackMp)
+      ? fallbackPreset.label
+      : null;
+
   return (
     <div className="envoy-local-settings" data-testid="envoy-local-settings">
       <p className="section-desc">{t("settings.ai.envoyLocal.desc")}</p>
       <p className="settings-hint">{t("settings.ai.envoyLocal.noteCloudFirst")}</p>
       {status ? (
         <dl className="settings-dl">
+          <dt>{t("settings.ai.envoyLocal.usageStatus")}</dt>
+          <dd>
+            <span
+              className={
+                localProviderInUse
+                  ? "model-provider-status is-active"
+                  : "model-provider-status is-idle"
+              }
+              data-testid="envoy-local-usage-status"
+            >
+              {localProviderInUse
+                ? t("settings.ai.envoyLocal.statusInUse")
+                : t("settings.ai.envoyLocal.statusNotInUse")}
+            </span>
+            {!localProviderInUse && fallbackLabel ? (
+              <div className="settings-hint">
+                {t("settings.ai.envoyLocal.cloudFallbackHint", {
+                  provider: fallbackLabel,
+                })}
+              </div>
+            ) : null}
+            {localProviderInUse && fallbackLabel ? (
+              <div className="settings-hint">
+                {t("settings.ai.envoyLocal.cloudStandbyHint", {
+                  provider: fallbackLabel,
+                })}
+              </div>
+            ) : null}
+          </dd>
           <dt>{t("settings.ai.envoyLocal.runtime")}</dt>
           <dd>
             {statusLabel}
@@ -1893,7 +1964,7 @@ function EnvoyLocalSettings({
             ? t("settings.ai.envoyLocal.updatingEngine")
             : t("settings.ai.envoyLocal.updateEngine")}
         </button>
-        {!status?.enabled || status.phase === "error" || !status.running ? (
+        {!status?.runtimeInstalled || installed.length === 0 ? (
           <button
             type="button"
             className="settings-save-btn"
@@ -1960,23 +2031,102 @@ function EnvoyLocalSettings({
               : t("settings.ai.envoyLocal.enable")}
           </button>
         ) : null}
-        {status?.enabled ? (
+        {status?.runtimeInstalled && installed.length > 0 && !status.running ? (
+          <button
+            type="button"
+            className="settings-save-btn"
+            data-testid="envoy-local-start"
+            disabled={inFlight}
+            onClick={async () => {
+              setBusy(true);
+              setActionError(null);
+              setStatus((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      phase: "starting",
+                      lastError: null,
+                      operationInProgress: true,
+                      download: {
+                        phase: "starting",
+                        label: t("settings.ai.envoyLocal.starting"),
+                        fraction: 0,
+                      },
+                    }
+                  : prev,
+              );
+              try {
+                setStatus(await nodeService.startEnvoyLocal());
+                const st = await waitForEnvoyLocalIdle(
+                  () => nodeService.getEnvoyLocalStatus(),
+                  { onUpdate: setStatus },
+                );
+                setStatus(st);
+                if (st.phase === "error" || st.lastError) {
+                  const msg = st.lastError ?? t("settings.ai.envoyLocal.startFailed");
+                  setActionError(msg);
+                  showToast(msg, "error");
+                } else {
+                  showToast(t("settings.ai.envoyLocal.startOk"), "success");
+                }
+                await refreshNodeConfig();
+              } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                setActionError(msg);
+                showToast(msg, "error");
+              } finally {
+                setBusy(false);
+                await refresh();
+              }
+            }}
+          >
+            {inFlight
+              ? t("settings.ai.envoyLocal.starting")
+              : t("settings.ai.envoyLocal.start")}
+          </button>
+        ) : null}
+        {status?.running ? (
           <>
             <button
               type="button"
               className="settings-cancel-btn"
-              disabled={inFlight}
+              data-testid="envoy-local-stop"
+              disabled={inFlight || status.canStop === false}
+              title={
+                status.canStop === false
+                  ? t("settings.ai.envoyLocal.stopBlocked")
+                  : undefined
+              }
               onClick={async () => {
+                if (status.canStop === false) {
+                  showToast(t("settings.ai.envoyLocal.stopBlocked"), "info");
+                  return;
+                }
                 setBusy(true);
+                setActionError(null);
                 try {
-                  setStatus(await nodeService.disableEnvoyLocal());
+                  const st = await nodeService.stopEnvoyLocal();
+                  setStatus(st);
+                  if (st.running || st.enabled) {
+                    // Backend no-op (no fallback) — keep local.
+                    showToast(t("settings.ai.envoyLocal.stopBlocked"), "info");
+                  } else {
+                    showToast(t("settings.ai.envoyLocal.stopOk"), "success");
+                  }
                   await refreshNodeConfig();
+                } catch (e) {
+                  const msg = e instanceof Error ? e.message : String(e);
+                  setActionError(msg);
+                  showToast(msg, "error");
                 } finally {
                   setBusy(false);
+                  await refresh({ syncParams: false });
                 }
               }}
             >
-              {t("settings.ai.envoyLocal.disable")}
+              {inFlight
+                ? t("settings.ai.envoyLocal.stopping")
+                : t("settings.ai.envoyLocal.stop")}
             </button>
             <button
               type="button"
@@ -1994,6 +2144,9 @@ function EnvoyLocalSettings({
               {t("settings.ai.envoyLocal.restart")}
             </button>
           </>
+        ) : null}
+        {status?.running && status.canStop === false ? (
+          <div className="settings-hint">{t("settings.ai.envoyLocal.stopHint")}</div>
         ) : null}
         {inFlight && status?.phase !== "starting" ? (
           <button

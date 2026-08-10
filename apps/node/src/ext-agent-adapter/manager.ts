@@ -21,6 +21,12 @@ const DEFAULT_PORTS: Record<ExtAgentSidecarKind, number> = {
   pi: 8022,
   hermes: 8020,
   openhuman: 8021,
+  // Phase 55D — codex / claudecode. Codex uses the OpenAI Codex CLI's
+  // `app-server` JSON-RPC over stdio (55B); claudecode uses the
+  // @anthropic-ai/claude-agent-sdk in-process (55C). Both bridge through
+  // the same `/message` shape via this sidecar.
+  codex: 8023,
+  claudecode: 8024,
 };
 
 let running: ExtAgentHttpServerHandle | null = null;
@@ -43,6 +49,20 @@ function listenPortFor(kind: ExtAgentSidecarKind): number {
   }
   if (kind === "pi") {
     const env = process.env.ENVOYMESH_PI_EXT_PORT?.trim();
+    if (env) {
+      const n = Number.parseInt(env, 10);
+      if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;
+    }
+  }
+  if (kind === "codex") {
+    const env = process.env.ENVOYMESH_CODEX_PORT?.trim();
+    if (env) {
+      const n = Number.parseInt(env, 10);
+      if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;
+    }
+  }
+  if (kind === "claudecode") {
+    const env = process.env.ENVOYMESH_CLAUDECODE_PORT?.trim();
     if (env) {
       const n = Number.parseInt(env, 10);
       if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;

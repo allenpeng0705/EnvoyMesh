@@ -76,6 +76,8 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "enableEnvoyLocal",
   "declineEnvoyLocalAutoProvision",
   "disableEnvoyLocal",
+  "startEnvoyLocal",
+  "stopEnvoyLocal",
   "restartEnvoyLocal",
   "cancelEnvoyLocalDownload",
   "downloadEnvoyLocalModel",
@@ -732,6 +734,10 @@ export async function routeRpcMethod(
       return ns.declineEnvoyLocalAutoProvision();
     case "disableEnvoyLocal":
       return ns.disableEnvoyLocal();
+    case "startEnvoyLocal":
+      return ns.startEnvoyLocal();
+    case "stopEnvoyLocal":
+      return ns.stopEnvoyLocal();
     case "restartEnvoyLocal":
       return ns.restartEnvoyLocal();
     case "cancelEnvoyLocalDownload":

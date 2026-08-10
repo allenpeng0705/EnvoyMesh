@@ -80,17 +80,27 @@ export interface EnvoyLocalRuntimeDeps {
   getProfileDir: () => string;
   loadEnvoyLocalConfig: () => Promise<EnvoyLocalConfig | undefined>;
   saveEnvoyLocalConfig: (patch: EnvoyLocalConfig) => Promise<void>;
-  /** Apply openai-compatible modelProviders for the envoy-local preset. */
+  /**
+   * Formerly wired Settings → AI to the envoy-local preset. Now a no-op:
+   * cloud/Ollama stay in modelProviders; inference prefers Local when running.
+   * Kept so call sites can still await a hook (e.g. future analytics).
+   */
   wireModelProviders: (endpoint: string, modelName: string) => Promise<void>;
-  /** Best-effort OpenClaw reload after provider change. */
+  /** Best-effort OpenClaw reload after provider / Local start-stop change. */
   reloadOpenClaw?: () => Promise<void>;
-  /** Current Settings → AI modelProviders (for auto-provision consent). */
+  /** Current Settings → AI modelProviders (cloud/Ollama; not overwritten by Local). */
   loadModelProviders?: () => Promise<ModelProviderConfig | undefined>;
   /**
-   * When Envoy Local is disabled, clear `modelProviders` if they still point at
-   * the envoy-local preset (avoid a dead 18790 endpoint). No-op for cloud/Ollama.
+   * One-time migration: clear a leftover `presetId: envoy-local` from older
+   * builds that overwrote cloud settings. Prefer restoring
+   * `fallbackModelProviders` when present.
    */
   clearEnvoyLocalModelProviders?: () => Promise<void>;
+  /**
+   * Restore `envoyLocal.fallbackModelProviders` into Settings → AI
+   * (migration helper for older installs).
+   */
+  restoreFallbackModelProviders?: () => Promise<void>;
 }
 
 export interface EnvoyLocalRuntimeState {
@@ -449,7 +459,8 @@ export async function getEnvoyLocalStatusViaRuntime(
     recommendedModelLabel: recommendedCatalog?.label,
     recommendedModelApproxBytes: recommendedCatalog?.approxBytes,
     recommendedModelReason: recommendation.reason,
-    suggestAutoProvision,
+    suggestedAutoProvision,
+    canStop: running,
   };
 }
 
@@ -1156,6 +1167,113 @@ export async function disableEnvoyLocalViaRuntime(
 }
 
 /**
+ * Start llama-server when runtime + model are already on disk (no download).
+ * Saves cloud/Ollama as Stop fallback via {@link EnvoyLocalRuntimeDeps.wireModelProviders}.
+ */
+export async function startEnvoyLocalViaRuntime(
+  state: EnvoyLocalRuntimeState,
+  deps: EnvoyLocalRuntimeDeps,
+): Promise<EnvoyLocalStatus> {
+  if (state.enablePromise) {
+    return getEnvoyLocalStatusViaRuntime(state, deps);
+  }
+
+  const profileDir = deps.getProfileDir();
+  const platform = detectEnvoyLocalPlatform();
+  state.platform = platform;
+  const exeName = process.platform === "win32" ? "llama-server.exe" : "llama-server";
+  const exePath = await findExecutable(runtimeDir(profileDir), [exeName]);
+  const index = await scanAndReconcileModelsIndex(profileDir);
+  const usable = await usableModelsFromIndex(index);
+  if (!exePath || usable.length === 0) {
+    setError(
+      state,
+      "Envoy Local engine or model is not installed. Use Download & enable first.",
+    );
+    return getEnvoyLocalStatusViaRuntime(state, deps);
+  }
+
+  const abort = new AbortController();
+  state.abort = abort;
+  state.lastError = null;
+  state.lastErrorAt = null;
+  setProgress(state, { phase: "starting", label: "Starting llama-server", fraction: 0 });
+
+  state.enablePromise = (async () => {
+    try {
+      await deps.saveEnvoyLocalConfig({
+        enabled: true,
+        autoProvisionDeclined: false,
+      });
+
+      const cfg = normalizeEnvoyLocalConfig(await deps.loadEnvoyLocalConfig());
+      const active = resolveActiveModel(usable, [
+        cfg.activeModelId,
+        index.activeModelId,
+      ]);
+      if (!active) {
+        throw new Error("No usable local model found");
+      }
+      await ensureActiveModelPersisted(deps, profileDir, index, active);
+
+      await assertEnvoyLocalEnableStillActive(deps, abort.signal);
+      await startSidecar(state, deps);
+
+      await assertEnvoyLocalEnableStillActive(deps, abort.signal);
+      const endpoint = envoyLocalOpenAiBaseUrl(ENVOY_LOCAL_PORT);
+      await deps.wireModelProviders(endpoint, active.id);
+      if (deps.reloadOpenClaw) {
+        await deps.reloadOpenClaw().catch(() => undefined);
+      }
+      return getEnvoyLocalStatusViaRuntime(state, deps);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (abort.signal.aborted) {
+        setError(state, "Start cancelled");
+      } else {
+        setError(state, msg);
+      }
+      return getEnvoyLocalStatusViaRuntime(state, deps);
+    } finally {
+      state.enablePromise = null;
+      state.abort = null;
+    }
+  })();
+
+  return getEnvoyLocalStatusViaRuntime(state, deps);
+}
+
+/**
+ * Stop llama-server and restore the saved cloud/Ollama provider.
+ * No-op when no usable fallback exists (keeps local running / enabled).
+ */
+export async function stopEnvoyLocalViaRuntime(
+  state: EnvoyLocalRuntimeState,
+  deps: EnvoyLocalRuntimeDeps,
+): Promise<EnvoyLocalStatus> {
+  const cfg = normalizeEnvoyLocalConfig(await deps.loadEnvoyLocalConfig());
+  if (!hasUsableNonEnvoyLocalModelProvider(cfg.fallbackModelProviders)) {
+    // Keep local AI available — do not stop without a cloud/Ollama fallback.
+    return getEnvoyLocalStatusViaRuntime(state, deps);
+  }
+
+  if (state.abort) state.abort.abort();
+  await stopChild(state);
+  state.phase = "disabled";
+  state.download = null;
+  state.lastError = null;
+  state.lastErrorAt = null;
+  await deps.saveEnvoyLocalConfig({ enabled: false });
+  if (deps.restoreFallbackModelProviders) {
+    await deps.restoreFallbackModelProviders().catch(() => undefined);
+  }
+  if (deps.reloadOpenClaw) {
+    await deps.reloadOpenClaw().catch(() => undefined);
+  }
+  return getEnvoyLocalStatusViaRuntime(state, deps);
+}
+
+/**
  * After a `modelProviders` patch: stop Envoy Local unless the new provider
  * is usable Envoy Local itself (enable / wire path). Covers cloud, Ollama,
  * and turning AI off (disabled/mock).
@@ -1220,7 +1338,8 @@ export async function cancelEnvoyLocalDownloadViaRuntime(
   return getEnvoyLocalStatusViaRuntime(state, deps);
 }
 
-export async function stopEnvoyLocalViaRuntime(
+/** Force-stop the child process (shutdown / test teardown). Does not touch providers. */
+export async function haltEnvoyLocalChildViaRuntime(
   state: EnvoyLocalRuntimeState,
 ): Promise<void> {
   if (state.abort) state.abort.abort();

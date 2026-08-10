@@ -666,6 +666,14 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.disableEnvoyLocal();
   }
 
+  async startEnvoyLocal() {
+    return this._ns.startEnvoyLocal();
+  }
+
+  async stopEnvoyLocal() {
+    return this._ns.stopEnvoyLocal();
+  }
+
   async restartEnvoyLocal() {
     return this._ns.restartEnvoyLocal();
   }

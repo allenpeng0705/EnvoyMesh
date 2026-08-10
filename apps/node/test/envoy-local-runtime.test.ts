@@ -64,7 +64,9 @@ import {
   maybeDisableEnvoyLocalForExternalProvider,
   maybeStartEnvoyLocalOnBootViaRuntime,
   restartEnvoyLocalViaRuntime,
+  startEnvoyLocalViaRuntime,
   stopEnvoyLocalViaRuntime,
+  haltEnvoyLocalChildViaRuntime,
   type EnvoyLocalRuntimeDeps,
   type EnvoyLocalRuntimeState,
 } from "../src/envoy-local-runtime.js";
@@ -116,6 +118,7 @@ describe("envoy-local-runtime lifecycle", () => {
   let wireModelProviders: ReturnType<typeof vi.fn>;
   let reloadOpenClaw: ReturnType<typeof vi.fn>;
   let clearEnvoyLocalModelProviders: ReturnType<typeof vi.fn>;
+  let restoreFallbackModelProviders: ReturnType<typeof vi.fn>;
   let modelProviders: import("@envoymesh/api").ModelProviderConfig | undefined;
   const regionPrev = process.env.ENVOYMESH_ENVOY_LOCAL_MODEL_REGION;
   const downloadRegionPrev = process.env.ENVOYMESH_ENVOY_LOCAL_DOWNLOAD_REGION;
@@ -128,6 +131,7 @@ describe("envoy-local-runtime lifecycle", () => {
     wireModelProviders = vi.fn().mockResolvedValue(undefined);
     reloadOpenClaw = vi.fn().mockResolvedValue(undefined);
     clearEnvoyLocalModelProviders = vi.fn().mockResolvedValue(undefined);
+    restoreFallbackModelProviders = vi.fn().mockResolvedValue(undefined);
     deps = {
       getProfileDir: () => profileDir,
       loadEnvoyLocalConfig: async () => cfg,
@@ -138,6 +142,8 @@ describe("envoy-local-runtime lifecycle", () => {
       reloadOpenClaw: reloadOpenClaw as EnvoyLocalRuntimeDeps["reloadOpenClaw"],
       loadModelProviders: async () => modelProviders,
       clearEnvoyLocalModelProviders: clearEnvoyLocalModelProviders as EnvoyLocalRuntimeDeps["clearEnvoyLocalModelProviders"],
+      restoreFallbackModelProviders:
+        restoreFallbackModelProviders as EnvoyLocalRuntimeDeps["restoreFallbackModelProviders"],
     };
     mockedSpawn.mockReset();
     mockedDownloadFile.mockReset();
@@ -156,7 +162,7 @@ describe("envoy-local-runtime lifecycle", () => {
   });
 
   afterEach(async () => {
-    await stopEnvoyLocalViaRuntime(state);
+    await haltEnvoyLocalChildViaRuntime(state);
     vi.unstubAllGlobals();
     if (regionPrev === undefined) delete process.env.ENVOYMESH_ENVOY_LOCAL_MODEL_REGION;
     else process.env.ENVOYMESH_ENVOY_LOCAL_MODEL_REGION = regionPrev;
@@ -396,6 +402,91 @@ describe("envoy-local-runtime lifecycle", () => {
     await disableEnvoyLocalViaRuntime(state, deps);
     expect(cfg.enabled).toBe(false);
     expect(clearEnvoyLocalModelProviders).toHaveBeenCalled();
+  });
+
+  it("startEnvoyLocal starts without downloading when assets exist", async () => {
+    await seedRuntimeAndModel();
+    cfg = {
+      enabled: false,
+      activeModelId: DEFAULT_ENVOY_LOCAL_MODEL.id,
+      runtimeVersion: ENVOY_LOCAL_LLAMA_CPP_TAG,
+    };
+    mockedSpawn.mockImplementation(() => makeFakeChild(5151));
+
+    const kicked = await startEnvoyLocalViaRuntime(state, deps);
+    expect(kicked.operationInProgress || kicked.phase === "ready").toBe(true);
+
+    const status =
+      (await awaitEnvoyLocalOperation(state)) ??
+      (await getEnvoyLocalStatusViaRuntime(state, deps));
+    expect(status.phase).toBe("ready");
+    expect(status.enabled).toBe(true);
+    expect(cfg.enabled).toBe(true);
+    expect(wireModelProviders).toHaveBeenCalled();
+    expect(mockedDownloadFile).not.toHaveBeenCalled();
+  });
+
+  it("stopEnvoyLocal is a no-op without cloud fallback", async () => {
+    await seedRuntimeAndModel();
+    cfg = {
+      enabled: true,
+      activeModelId: DEFAULT_ENVOY_LOCAL_MODEL.id,
+      runtimeVersion: ENVOY_LOCAL_LLAMA_CPP_TAG,
+    };
+    mockedSpawn.mockImplementation(() => makeFakeChild(6161));
+    await restartEnvoyLocalViaRuntime(state, deps);
+    expect(state.child?.pid).toBe(6161);
+
+    const status = await stopEnvoyLocalViaRuntime(state, deps);
+    expect(status.enabled).toBe(true);
+    expect(status.canStop).toBe(false);
+    expect(cfg.enabled).toBe(true);
+    expect(restoreFallbackModelProviders).not.toHaveBeenCalled();
+    expect(state.child?.pid).toBe(6161);
+  });
+
+  it("stopEnvoyLocal restores cloud fallback and stops the sidecar", async () => {
+    await seedRuntimeAndModel();
+    cfg = {
+      enabled: true,
+      activeModelId: DEFAULT_ENVOY_LOCAL_MODEL.id,
+      runtimeVersion: ENVOY_LOCAL_LLAMA_CPP_TAG,
+      fallbackModelProviders: {
+        mode: "openai-compatible",
+        presetId: "minimax-cn",
+        endpoint: "https://api.minimaxi.com/v1",
+        modelName: "MiniMax-M2.5",
+        apiKey: "sk-test",
+      },
+    };
+    mockedSpawn.mockImplementation(() => makeFakeChild(7171));
+    await restartEnvoyLocalViaRuntime(state, deps);
+
+    const status = await stopEnvoyLocalViaRuntime(state, deps);
+    expect(status.enabled).toBe(false);
+    expect(status.running).toBe(false);
+    expect(cfg.enabled).toBe(false);
+    expect(restoreFallbackModelProviders).toHaveBeenCalledTimes(1);
+    expect(reloadOpenClaw).toHaveBeenCalled();
+  });
+
+  it("getEnvoyLocalStatus reports canStop from fallback", async () => {
+    cfg = {
+      enabled: true,
+      fallbackModelProviders: {
+        mode: "openai-compatible",
+        presetId: "openai",
+        modelName: "gpt-4o-mini",
+        apiKey: "k",
+        endpoint: "https://api.openai.com/v1",
+      },
+    };
+    const withFallback = await getEnvoyLocalStatusViaRuntime(state, deps);
+    expect(withFallback.canStop).toBe(true);
+
+    cfg = { enabled: true };
+    const without = await getEnvoyLocalStatusViaRuntime(state, deps);
+    expect(without.canStop).toBe(false);
   });
 
   it("maybeDisableEnvoyLocalForExternalProvider turns off when cloud is saved", async () => {

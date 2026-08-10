@@ -378,10 +378,41 @@ export function hasUsableNonEnvoyLocalModelProvider(
   return inferModelProviderPreset(config).id !== "envoy-local"
 }
 
+/**
+ * Inference-time provider: prefer Envoy Local when the sidecar is opted-in and
+ * ready. Persisted Settings → AI `modelProviders` (cloud/Ollama) are left
+ * untouched — Local is selected only here, not by overwriting config.
+ */
+export function resolveEffectiveModelProviders(
+  modelProviders: ModelProviderConfig | null | undefined,
+  envoyLocal?: {
+    preferLocal?: boolean
+    endpoint?: string
+    modelName?: string
+  } | null,
+): ModelProviderConfig | undefined {
+  const endpoint = envoyLocal?.endpoint?.trim()
+  const modelName = envoyLocal?.modelName?.trim()
+  if (envoyLocal?.preferLocal && endpoint && modelName) {
+    return {
+      mode: "openai-compatible",
+      presetId: "envoy-local",
+      endpoint,
+      modelName,
+      requireApprovalForCloud: false,
+    }
+  }
+  return modelProviders ?? undefined
+}
+
 /** Presets visible for a given UI scope. */
 export function listModelProviderPresets(opts?: {
   includeLocal?: boolean
 }): ModelProviderPreset[] {
   const includeLocal = opts?.includeLocal !== false
-  return MODEL_PROVIDER_PRESETS.filter((p) => includeLocal || !p.localOnly)
+  return MODEL_PROVIDER_PRESETS.filter((p) => {
+    // Envoy Local is managed in Settings → AI → Envoy Local, not this picker.
+    if (p.id === "envoy-local") return false
+    return includeLocal || !p.localOnly
+  })
 }

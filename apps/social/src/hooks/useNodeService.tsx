@@ -358,6 +358,8 @@ export interface NodeServiceClient {
     import("@envoymesh/api").EnvoyLocalStatus
   >;
   disableEnvoyLocal(): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
+  startEnvoyLocal(): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
+  stopEnvoyLocal(): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
   restartEnvoyLocal(): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
   cancelEnvoyLocalDownload(): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
   listEnvoyLocalInstalledModels(): Promise<
@@ -1337,6 +1339,17 @@ function createWsNodeServiceClient(
     },
     async disableEnvoyLocal() {
       return wsClient.rpc("disableEnvoyLocal", {}, { timeoutMs: 30_000 }) as Promise<
+        import("@envoymesh/api").EnvoyLocalStatus
+      >;
+    },
+    async startEnvoyLocal() {
+      // Detached start (large models); poll getEnvoyLocalStatus.
+      return wsClient.rpc("startEnvoyLocal", {}, { timeoutMs: 60_000 }) as Promise<
+        import("@envoymesh/api").EnvoyLocalStatus
+      >;
+    },
+    async stopEnvoyLocal() {
+      return wsClient.rpc("stopEnvoyLocal", {}, { timeoutMs: 30_000 }) as Promise<
         import("@envoymesh/api").EnvoyLocalStatus
       >;
     },

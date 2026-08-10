@@ -3863,10 +3863,10 @@ if (typeof openClawCapable.startOpenClaw === "function") {
 // Phase 54 — Envoy Local: start sidecar only when enabled + assets on disk;
 // never download here; never start when cloud/Ollama is the active provider.
 const envoyLocalCapable = nodeService as unknown as {
-  startEnvoyLocal?: () => Promise<void>;
+  maybeStartEnvoyLocalOnBoot?: () => Promise<void>;
 };
-if (typeof envoyLocalCapable.startEnvoyLocal === "function") {
-  void envoyLocalCapable.startEnvoyLocal().catch((err) => {
+if (typeof envoyLocalCapable.maybeStartEnvoyLocalOnBoot === "function") {
+  void envoyLocalCapable.maybeStartEnvoyLocalOnBoot().catch((err) => {
     console.warn(
       "[envoy-local] Boot start skipped/failed:",
       err instanceof Error ? err.message : String(err),
@@ -4385,7 +4385,7 @@ async function shutdown(): Promise<void> {
         /* ok */
       }
       try {
-        await nodeService.stopEnvoyLocal?.();
+        await nodeService.haltEnvoyLocalChild?.();
       } catch {
         /* ok */
       }

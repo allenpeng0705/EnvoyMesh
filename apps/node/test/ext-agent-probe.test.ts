@@ -182,7 +182,12 @@ describe("probeExtAgentReachability", () => {
     expect(r.reachable).toBe(true)
   })
 
-  it("codex reachable when binary on PATH AND http probe ok", async () => {
+  it("codex: installState=installed but reachable=false until 55B ships the sidecar", async () => {
+    // 55D: codex/claudecode kinds are in the union, the supervisor is
+    // wired, but the sidecar backend itself is 55B / 55C. Until those
+    // land, the probe should still report installState correctly
+    // (binary on PATH → "installed") and reachable should be false
+    // because there's no working /message sidecar to probe.
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => ({ ok: true, status: 200 })),
@@ -194,7 +199,8 @@ describe("probeExtAgentReachability", () => {
       binaryOnPath: async () => true,
     })
     expect(r.installState).toBe("installed")
-    expect(r.reachable).toBe(true)
+    // 55B replaces this expectation with `true` once the sidecar lands.
+    expect(r.reachable).toBe(false)
   })
 })
 

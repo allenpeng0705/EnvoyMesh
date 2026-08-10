@@ -899,7 +899,28 @@ export function createPiBackend(): ExtAgentBackend {
 
 export function createBackend(kind: ExtAgentSidecarKind): ExtAgentBackend {
   if (kind === "pi") return createPiBackend();
-  return kind === "hermes" ? createHermesBackend() : createOpenHumanBackend();
+  if (kind === "hermes") return createHermesBackend();
+  if (kind === "openhuman") return createOpenHumanBackend();
+  if (kind === "codex") {
+    // Phase 55B will replace this with the real codex app-server JSON-RPC
+    // backend (stdio transport + supervisor). Until then, surface a clear
+    // error so the user sees "not yet implemented" instead of a silent
+    // crash in the sidecar.
+    throw new Error(
+      "[ext-agent] codex backend not yet implemented (Phase 55B).",
+    );
+  }
+  if (kind === "claudecode") {
+    // Phase 55C will replace this with the @anthropic-ai/claude-agent-sdk
+    // backend (in-process). Same not-yet-implemented guard.
+    throw new Error(
+      "[ext-agent] claudecode backend not yet implemented (Phase 55C).",
+    );
+  }
+  // Exhaustiveness guard — if a new sidecar kind is added, this will
+  // type-error until the new branch is handled.
+  const _exhaustive: never = kind;
+  throw new Error(`[ext-agent] unknown sidecar kind: ${String(_exhaustive)}`);
 }
 
 /** @internal tests */

@@ -45,6 +45,33 @@ export const aiSettingsMessages = {
     saving: "Saving…",
     saved: "Saved",
     cancel: "Cancel",
+    // ----- Phase 55D — Ext Agent install required card -----
+    // Surfaces `getExtAgentInstallGuide(agentId, "not-installed")` for
+    // external agents (codex / claudecode / hermes / openhuman) when the
+    // binary isn't on `$PATH`. The status chip color is driven by
+    // `installState`; this card only renders when state is
+    // "not-installed" or "unknown".
+    installCard: {
+      title: "Install required",
+      notInstalledBody:
+        "{command} isn't on this machine yet. Run the install command below, then click Retry.",
+      unknownBody:
+        "Couldn't detect whether {command} is installed. Run the install command to be sure, then click Retry.",
+      commandLabel: "Install",
+      verifyLabel: "Verify",
+      docsLabel: "Open install docs",
+      copyCommand: "Copy",
+      copied: "Copied",
+      retry: "Retry",
+      dismiss: "Dismiss",
+    },
+    // ----- Phase 55D — status indicator (color comes from installState) -----
+    status: {
+      installed: "Installed",
+      notInstalled: "Not installed",
+      unsupported: "Unsupported",
+      unknown: "Unknown",
+    },
     // ----- Block-header icons (kept short — single glyph, not emoji) -----
     // These render as text inside a square icon tile. Using SVG-friendly
     // names so we can swap to inline SVG later without i18n churn.
@@ -133,6 +160,17 @@ export const aiSettingsMessages = {
     enableOk: "Envoy Local is ready",
     enableFailed: "Envoy Local failed to start",
     actionError: "Error: {error}",
+    start: "Start Envoy Local",
+    starting: "Starting…",
+    startOk: "Envoy Local started",
+    startFailed: "Could not start Envoy Local",
+    stop: "Stop Envoy Local",
+    stopping: "Stopping…",
+    stopOk: "Envoy Local stopped — using cloud model",
+    stopBlocked:
+      "Configure a cloud or Ollama provider first. Stop keeps Envoy Local running when there is no fallback.",
+    stopHint:
+      "Stop restores your previous cloud/Ollama provider. Without one, Stop is unavailable so you keep a working model.",
     disable: "Disable Envoy Local",
     restart: "Restart engine",
     cancel: "Cancel download",
@@ -149,6 +187,11 @@ export const aiSettingsMessages = {
     lastError: "Last error: {error}",
     noteCloudFirst:
       "Prefer a cloud API above if you do not want a local download.",
+    usageStatus: "AI provider",
+    statusInUse: "In use",
+    statusNotInUse: "Not in use",
+    cloudFallbackHint: "Cloud/Ollama is active ({provider}).",
+    cloudStandbyHint: "Cloud fallback ready: {provider} (restored on Stop).",
     modelsHeading: "Models",
     modelsDesc:
       "Download several models, or copy your own .gguf files into the models folder. Choose which one is active — if only one is present, it is used automatically.",
@@ -250,6 +293,12 @@ export const aiSettingsMessages = {
     sectionDescCloud: "Configure a cloud API for chat assist and knowledge answers on this device.",
     sectionDescDefault:
       "Choose how Envoy calls an LLM for chat assist, knowledge answers, and the Assistant tab.",
+    usageStatus: "Status",
+    statusInUse: "In use",
+    statusNotInUse: "Not in use",
+    statusStandbyLocal: "Not in use",
+    statusStandbyLocalHint:
+      "Envoy Local is the active provider. Stop Envoy Local to switch back to this cloud/Ollama config (if saved).",
     providerLabel: "Provider",
     presetHint:
       "Presets fill endpoint and model suggestions. OpenClaw, chat drafts, and Pi (when not overridden) all use this setting.",

@@ -155,7 +155,9 @@ import {
   type ListCommerceReceiptsParams,
   type RecordCommerceReceiptParams,
   ensureDefaultAutonomousPoliciesForModel,
+  hasUsableNonEnvoyLocalModelProvider,
   inferModelProviderPreset,
+  resolveEffectiveModelProviders,
   scoreAgentNetworkWorker,
   mergeExtAgentPresets,
   resolveActiveExtAgent,
@@ -1169,7 +1171,9 @@ import {
   restartEnvoyLocalViaRuntime,
   searchEnvoyLocalModelsViaRuntime,
   setEnvoyLocalActiveModelViaRuntime,
+  startEnvoyLocalViaRuntime,
   stopEnvoyLocalViaRuntime,
+  haltEnvoyLocalChildViaRuntime,
   updateEnvoyLocalEngineViaRuntime,
   updateEnvoyLocalServerParamsViaRuntime,
   type EnvoyLocalRuntimeDeps,
@@ -4541,16 +4545,10 @@ class NodeServiceImpl implements NodeService {
           envoyLocal: { ...prev, ...patch },
         });
       },
-      wireModelProviders: async (endpoint, modelName) => {
-        await this.updateNodeConfig({
-          modelProviders: {
-            mode: "openai-compatible",
-            presetId: "envoy-local",
-            endpoint,
-            modelName,
-            requireApprovalForCloud: false,
-          },
-        });
+      wireModelProviders: async (_endpoint, _modelName) => {
+        // Envoy Local no longer overwrites Settings → AI modelProviders.
+        // Cloud/Ollama stay persisted; inference prefers Local via
+        // resolveEffectiveModelProviders when the sidecar is running.
       },
       reloadOpenClaw: async () => {
         await this.reloadOpenClawConfig();
@@ -4563,12 +4561,49 @@ class NodeServiceImpl implements NodeService {
         const cfg = await this._configStore.load();
         const mp = cfg?.modelProviders;
         if (!mp) return;
+        // Only clear a leftover envoy-local preset from older builds that
+        // used to overwrite cloud settings.
         if (inferModelProviderPreset(mp).id !== "envoy-local") return;
+        const fallback = cfg?.envoyLocal?.fallbackModelProviders;
+        if (hasUsableNonEnvoyLocalModelProvider(fallback)) {
+          await this.updateNodeConfig({ modelProviders: { ...fallback } });
+          return;
+        }
         await this.updateNodeConfig({
           modelProviders: { mode: "disabled", presetId: "disabled" },
         });
       },
+      restoreFallbackModelProviders: async () => {
+        const cfg = await this._configStore.load();
+        const fallback = cfg?.envoyLocal?.fallbackModelProviders;
+        if (!hasUsableNonEnvoyLocalModelProvider(fallback)) return;
+        await this.updateNodeConfig({
+          modelProviders: { ...fallback },
+        });
+      },
     };
+  }
+
+  /**
+   * Cloud/Ollama from Settings, or Envoy Local when the sidecar is enabled
+   * and ready — without mutating persisted modelProviders.
+   */
+  async getEffectiveModelProviders(): Promise<
+    import("@envoymesh/api").ModelProviderConfig
+  > {
+    const cfg = await this._configStore.load();
+    const st = await getEnvoyLocalStatusViaRuntime(
+      this._envoyLocalState,
+      this._envoyLocalRuntimeDeps(),
+    );
+    return (
+      resolveEffectiveModelProviders(cfg?.modelProviders, {
+        preferLocal: Boolean(st.enabled && st.running),
+        endpoint: st.endpoint,
+        modelName: st.activeModelId,
+      }) ??
+      cfg?.modelProviders ?? { mode: "disabled", presetId: "disabled" }
+    );
   }
 
   async getEnvoyLocalStatus() {
@@ -4592,6 +4627,14 @@ class NodeServiceImpl implements NodeService {
 
   async disableEnvoyLocal() {
     return disableEnvoyLocalViaRuntime(this._envoyLocalState, this._envoyLocalRuntimeDeps());
+  }
+
+  async startEnvoyLocal() {
+    return startEnvoyLocalViaRuntime(this._envoyLocalState, this._envoyLocalRuntimeDeps());
+  }
+
+  async stopEnvoyLocal() {
+    return stopEnvoyLocalViaRuntime(this._envoyLocalState, this._envoyLocalRuntimeDeps());
   }
 
   async restartEnvoyLocal() {
@@ -4687,15 +4730,16 @@ class NodeServiceImpl implements NodeService {
   }
 
   /** Boot hook (duck-typed from index.ts). */
-  async startEnvoyLocal(): Promise<void> {
+  async maybeStartEnvoyLocalOnBoot(): Promise<void> {
     await maybeStartEnvoyLocalOnBootViaRuntime(
       this._envoyLocalState,
       this._envoyLocalRuntimeDeps(),
     );
   }
 
-  async stopEnvoyLocal(): Promise<void> {
-    await stopEnvoyLocalViaRuntime(this._envoyLocalState);
+  /** Process shutdown — always kill the sidecar child. */
+  async haltEnvoyLocalChild(): Promise<void> {
+    await haltEnvoyLocalChildViaRuntime(this._envoyLocalState);
   }
 
   /** One-shot prompt — used by the sendToPi JSON-RPC method. */

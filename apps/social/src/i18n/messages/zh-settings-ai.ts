@@ -5,6 +5,12 @@ export const zhAiSettingsMessages = {
     heading: "模型提供商",
     sectionDescCloud: "在此设备上配置云端 API，用于聊天辅助与知识问答。",
     sectionDescDefault: "选择 Envoy 如何调用 LLM 进行聊天辅助、知识问答及助手标签页。",
+    usageStatus: "状态",
+    statusInUse: "使用中",
+    statusNotInUse: "未使用",
+    statusStandbyLocal: "未使用",
+    statusStandbyLocalHint:
+      "当前生效的是 Envoy Local。停止 Envoy Local 后会切回此云端/Ollama 配置（若已保存）。",
     providerLabel: "提供商",
     presetHint: "预设会填充端点与模型建议。OpenClaw、聊天草稿，以及未单独覆盖时的 Pi，都使用此设置。",
     modeMock: "Mock（仅测试）",
@@ -179,6 +185,30 @@ export const zhAiSettingsMessages = {
     saving: "保存中…",
     saved: "已保存",
     cancel: "取消",
+    // ----- Phase 55D — Ext Agent install required card -----
+    // 当外部代理（codex / claudecode / hermes / openhuman）的二进制不在
+    // `$PATH` 上时显示 `getExtAgentInstallGuide(agentId, "not-installed")`。
+    // 状态指示颜色由 `installState` 决定；该卡片仅在状态为
+    // "not-installed" 或 "unknown" 时渲染。
+    installCard: {
+      title: "需要安装",
+      notInstalledBody: "本机尚未检测到 {command}。请运行下方安装命令，然后点击「重试」。",
+      unknownBody: "无法确认 {command} 是否已安装。请运行安装命令以确保安装完成，然后点击「重试」。",
+      commandLabel: "安装",
+      verifyLabel: "验证",
+      docsLabel: "打开安装文档",
+      copyCommand: "复制",
+      copied: "已复制",
+      retry: "重试",
+      dismiss: "关闭",
+    },
+    // ----- Phase 55D — 状态指示（颜色由 installState 决定） -----
+    status: {
+      installed: "已安装",
+      notInstalled: "未安装",
+      unsupported: "不支持",
+      unknown: "未知",
+    },
     iconBuiltIn: "AI",
     iconExtAgent: "EX",
     iconPi: "π",
@@ -257,6 +287,17 @@ export const zhAiSettingsMessages = {
     enableOk: "Envoy Local 已就绪",
     enableFailed: "Envoy Local 启动失败",
     actionError: "错误：{error}",
+    start: "启动 Envoy Local",
+    starting: "正在启动…",
+    startOk: "Envoy Local 已启动",
+    startFailed: "无法启动 Envoy Local",
+    stop: "停止 Envoy Local",
+    stopping: "正在停止…",
+    stopOk: "Envoy Local 已停止 — 已切回云端模型",
+    stopBlocked:
+      "请先配置云端或 Ollama。没有可用回退时不会停止，以免没有可用模型。",
+    stopHint:
+      "停止会恢复先前的云端/Ollama。若没有回退，停止按钮不可用，以免没有可用模型。",
     disable: "禁用 Envoy Local",
     restart: "重启引擎",
     cancel: "取消下载",
@@ -272,6 +313,11 @@ export const zhAiSettingsMessages = {
     progress: "{label}",
     lastError: "最近错误：{error}",
     noteCloudFirst: "若不需要本地下载，请优先在上方配置云端 API。",
+    usageStatus: "AI 提供商",
+    statusInUse: "使用中",
+    statusNotInUse: "未使用",
+    cloudFallbackHint: "云端/Ollama 正在使用（{provider}）。",
+    cloudStandbyHint: "已保存云端回退：{provider}（停止时恢复）。",
     modelsHeading: "模型",
     modelsDesc:
       "可下载多个模型，或自行将 .gguf 文件放入模型目录。选择要用的模型；若只有一个，则自动使用。",

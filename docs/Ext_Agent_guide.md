@@ -29,12 +29,14 @@ still rebind the bridge HTTP listener in-process).
 
 ## Quick comparison
 
-| | HomeClaw | Hermes | OpenHuman |
-|---|----------|--------|-----------|
-| Start with product | Start HomeClaw | `hermes gateway run` | OpenHuman.app **or** CLI core |
-| EnvoyMesh sidecar | No | Yes `:8020` | Yes `:8021` |
-| Auth | Optional bridge secret | Hermes `API_SERVER_KEY` ↔ `HERMES_API_KEY` | `/v1` API key (auto) or `/rpc` `core.token` |
-| Typical failure | HomeClaw down / wrong `ENVOYMESH_BRIDGE_URL` | API not enabled / key mismatch | Desktop `/rpc` 401 → use `/v1` auto-key |
+| | HomeClaw | Hermes | OpenHuman | Codex | Claude Code |
+|---|----------|--------|-----------|-------|-------------|
+| Start with product | Start HomeClaw | `hermes gateway run` | OpenHuman.app **or** CLI core | `codex app-server` (auto) | SDK (auto) |
+| EnvoyMesh sidecar | No | Yes `:8020` | Yes `:8021` | Yes `:8023` (stdio bridge) | Yes `:8024` (in-proc) |
+| Auth | Optional bridge secret | Hermes `API_SERVER_KEY` ↔ `HERMES_API_KEY` | `/v1` API key (auto) or `/rpc` `core.token` | `OPENAI_API_KEY` env | `ANTHROPIC_API_KEY` env |
+| Transport | HomeClaw channel | HTTP `:8642` | HTTP `:7788` | `codex` stdio JSON-RPC | `@anthropic-ai/claude-agent-sdk` |
+| Typical failure | HomeClaw down / wrong `ENVOYMESH_BRIDGE_URL` | API not enabled / key mismatch | Desktop `/rpc` 401 → use `/v1` auto-key | CLI not on `$PATH` | CLI not on `$PATH` |
+| Install | separate product | `curl …/install.sh \| bash` | `curl …/install.sh \| bash` | `npm i -g @openai/codex` | `npm i -g @anthropic-ai/claude-code` |
 
 ---
 
@@ -44,7 +46,7 @@ still rebind the bridge HTTP listener in-process).
 2. Open Social (or EnvoyGo paired to home).
 3. **Settings → AI → Ext Agent**:
    - Enable Ext Agent / bridge
-   - Choose HomeClaw, Hermes, or OpenHuman
+   - Choose HomeClaw, Hermes, OpenHuman, **Codex**, or **Claude Code**
    - Listen port usually `3031` (or your offset port, e.g. `4031`)
 4. Chat with the **Ext Agent** contact (`envoy_agent_…`).
 
@@ -492,6 +494,186 @@ curl -sS http://127.0.0.1:7788/v1/models \
 
 ---
 
+## Codex
+
+Codex is the OpenAI Codex CLI. EnvoyMesh's Ext Agent bridge talks to
+`codex app-server` over **stdio** JSON-RPC (no extra TCP port from
+the CLI side), spawns it via the generic **daemon supervisor** (55A),
+and forwards chat turns as `turn/start` requests. Sessions are
+thread-scoped on the Codex side; EnvoyMesh maps `sessionKey` →
+`threadId` in memory only (restart drops the mapping).
+
+### Ports
+
+| Process | Port | Role |
+|---------|------|------|
+| EnvoyMesh bridge | `3031` (or `4031` with offset) | `POST /bridge/send` replies |
+| EnvoyMesh codex sidecar | `8023` (or `ENVOYMESH_CODEX_PORT`) | Inbound `/message` |
+| Codex CLI | n/a (stdio) | JSON-RPC, managed by supervisor |
+
+### Install
+
+```bash
+# Primary install path (matches Settings UI Install Required card)
+npm install -g @openai/codex
+
+# Verify
+codex --version
+
+# Required env var — set before starting the home node
+export OPENAI_API_KEY=sk-...
+```
+
+Alternatives (Settings UI `commonIssues` bullets):
+
+- **Homebrew** (macOS / Linux): `brew install --cask codex` if the formula
+  exists in your tap; otherwise stick with npm.
+- **Direct binary** (Linux / WSL): download from
+  <https://github.com/openai/codex/releases> and place on `$PATH`.
+
+### Run
+
+1. Confirm `codex --version` works in the home node's shell.
+2. Confirm `OPENAI_API_KEY` is set (env var, `~/.bashrc`, `~/.zshrc`, or
+   the launchd / systemd unit that starts EnvoyMesh).
+3. Start the **EnvoyMesh home node** with Ext Agent / bridge enabled
+   and Codex selected.
+4. The supervisor spawns `codex app-server` automatically; the
+   sidecar replies to `POST http://127.0.0.1:8023/message`.
+
+### Verify
+
+```bash
+# Sidecar health (from the home node)
+curl -s http://127.0.0.1:8023/status | head
+
+# Codex CLI sanity
+codex --version
+echo "$OPENAI_API_KEY" | head -c 8
+```
+
+### Known limitations
+
+- **Session persistence** is in-memory; restarting the home node drops
+  the `sessionKey → threadId` map. A fresh ask after restart starts a
+  new Codex thread (matches Hermes / OpenHuman).
+- **Tool execution stays inside Codex.** Codex's `tool_use` runs in its
+  own VM; EnvoyMesh never sees tool payloads. This is by design — Ext
+  Agent is a black box from the mesh's perspective.
+- **Codex CLI requires Node.js 18+.** Verify with `node --version`.
+
+### Minimal checklist
+
+- [ ] `codex --version` exits 0
+- [ ] `OPENAI_API_KEY` set in the home node's environment
+- [ ] EnvoyMesh Ext Agent = Codex, bridge enabled
+- [ ] Log: `[ext-agent:codex] listening …:8023/message`
+- [ ] Chat Ext Agent contact
+
+---
+
+## Claude Code
+
+Claude Code is Anthropic's official coding agent. EnvoyMesh's Ext
+Agent bridge uses the `@anthropic-ai/claude-agent-sdk` **in-process**
+(no subprocess to manage), so the supervisor is not used. Sessions
+are derived from the SDK's `system/init` `session_id`; EnvoyMesh
+maps `sessionKey` → `sessionId` in memory only.
+
+### Ports
+
+| Process | Port | Role |
+|---------|------|------|
+| EnvoyMesh bridge | `3031` (or `4031` with offset) | `POST /bridge/send` replies |
+| EnvoyMesh Claude Code sidecar | `8024` (or `ENVOYMESH_CLAUDECODE_PORT`) | Inbound `/message` |
+| Claude Code CLI | n/a (in-process SDK) | library call, no subprocess |
+
+### Install
+
+```bash
+# Primary install path (matches Settings UI Install Required card)
+npm install -g @anthropic-ai/claude-code
+
+# Verify — the binary that ships with the package is named `claude`
+claude --version
+
+# Required env var — set before starting the home node
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Alternatives:
+
+- **Homebrew** (macOS / Linux): `brew install claude-code` if a
+  maintained formula exists in your tap.
+- **Direct binary**: download from
+  <https://docs.claude.com/en/docs/claude-code> and place on `$PATH`.
+
+### Run
+
+1. Confirm `claude --version` works in the home node's shell.
+2. Confirm `ANTHROPIC_API_KEY` is set.
+3. Start the **EnvoyMesh home node** with Ext Agent / bridge enabled
+   and Claude Code selected.
+4. The sidecar calls the SDK in-process; no supervisor, no restart
+   loop. Each `ask()` allocates a Claude Code session.
+
+### Verify
+
+```bash
+claude --version
+echo "$ANTHROPIC_API_KEY" | head -c 8
+```
+
+### Known limitations
+
+- **Session persistence** is in-memory; restart drops the
+  `sessionKey → sessionId` map.
+- **Tool execution stays inside Claude Code.** `canUseTool` callbacks
+  run inside the SDK's VM; EnvoyMesh never sees tool payloads.
+- **Claude Code requires Node.js 18+.** Verify with `node --version`.
+- **Heavier memory footprint** than codex — the SDK runs in the same
+  Node.js process as EnvoyMesh. Monitor with `process.memoryUsage()`
+  if you hit OOMs.
+
+### Minimal checklist
+
+- [ ] `claude --version` exits 0
+- [ ] `ANTHROPIC_API_KEY` set in the home node's environment
+- [ ] EnvoyMesh Ext Agent = Claude Code, bridge enabled
+- [ ] Log: `[ext-agent:claudecode] listening …:8024/message`
+- [ ] Chat Ext Agent contact
+
+---
+
+## Install guide (Phase 55A.1)
+
+Settings → AI → Ext Agent surfaces a per-agent **Install Required**
+card when the binary is not on `$PATH`. The card is generated by
+`getExtAgentInstallGuide(agentId, installState?)` in
+`packages/api/src/ext-agent.ts` and includes the install command,
+verify command, install docs link, and 2-4 `commonIssues` bullets.
+
+| id | command | installCommand | verifyCommand | homepage |
+|---|---|---|---|---|
+| `codex` | `codex` | `npm install -g @openai/codex` | `codex --version` | <https://github.com/openai/codex> |
+| `claudecode` | `claude` | `npm install -g @anthropic-ai/claude-code` | `claude --version` | <https://docs.claude.com/en/docs/claude-code> |
+| `hermes` | `hermes` | `curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \| bash` | `hermes --version` | <https://hermes-agent.nousresearch.com/docs> |
+| `openhuman` | `openhuman` | `curl -fsSL https://raw.githubusercontent.com/tinyhumansai/openhuman/main/scripts/install.sh \| bash` | `openhuman --version` | <https://tinyhumans.ai/openhuman> |
+
+The status indicator next to the active agent in Settings reflects
+`installState`:
+
+- **green** — `installState: "installed"` AND `reachable: true`
+- **amber** — `installState: "installed"` AND `reachable: false`
+  (binary present, daemon not running — Settings shows a start hint)
+- **red** — `installState: "not-installed"` (binary missing — Install
+  Required card is rendered)
+
+The chat list switcher (`ExtAgentSwitcher`) uses the same data and
+pops a modal / toast for the same three states (55D.1).
+
+---
+
 ## Troubleshooting (all agents)
 
 | Symptom | Likely cause | Fix |
@@ -506,16 +688,21 @@ curl -sS http://127.0.0.1:7788/v1/models \
 | Hermes: `No user allowlists configured` | No Telegram/etc. allowlists | **Ignore for EnvoyMesh**; only needed for messaging bots |
 | Delivered, no reply (OpenHuman) | Core not running / auth | OpenHuman.app + `/v1` auto-key, or CLI + `core.token` |
 | OpenHuman: `401` / missing bearer | Desktop in-memory `/rpc` token / stale creds | Prefer `/v1` auto-key; restart OpenHuman.app after auto-provision |
+| Settings shows "Install required" for codex / claudecode | CLI not on `$PATH` | Run the install command shown on the card, then click **Retry** |
+| Ext Agent picker: codex / claudecode not in the list | Bridge off or wrong agent preset | Settings → AI → Ext Agent; bridge must be enabled; presets are additive (no `bridge-config.json` migration needed) |
+| `codex app-server` crashes repeatedly | `OPENAI_API_KEY` invalid / CLI version too old | Verify `codex --version`; rotate key; supervisor will surface `crash.stuck` after 5 restarts/5 min |
+| `claude --version` missing in PATH | Package not installed / wrong binary | `npm i -g @anthropic-ai/claude-code`; the binary is `claude`, not `claudecode` |
 | `bridge unreachable` in sidecar log | Wrong bridge port | Match `ENVOYMESH_BRIDGE_PORT` (e.g. `4031`) |
-| Sidecar not listening | Bridge off or wrong agent | Enable bridge; select Hermes/OpenHuman |
-| Port in use | Another process on `8010`/`8020`/`8021` | Stop old process / set `ENVOYMESH_*_PORT` |
+| Sidecar not listening | Bridge off or wrong agent | Enable bridge; select Hermes/OpenHuman/Codex/Claude Code |
+| Port in use | Another process on `8010`/`8020`/`8021`/`8023`/`8024` | Stop old process / set `ENVOYMESH_*_PORT` (e.g. `ENVOYMESH_CODEX_PORT`) |
 | Hermes API works but sidecar errors | Node not restarted / wrong `HERMES_API_BASE` | Restart home node; check env |
 
 Node log markers:
 
 - `[sendChat] self-send … routing via bridge handler`
-- `[bridge] forwardToAgent: POST http://127.0.0.1:8020/message …` (or `8010` / `8021`)
-- `[ext-agent:hermes] reply sent to …` / `[ext-agent:openhuman] …`
+- `[bridge] forwardToAgent: POST http://127.0.0.1:8020/message …` (or `8010` / `8021` / `8023` / `8024`)
+- `[ext-agent:hermes] reply sent to …` / `[ext-agent:openhuman] …` / `[ext-agent:codex] …` / `[ext-agent:claudecode] …`
+- `[ext-agent:codex] install-missing: codex (spawn-enoent)` — CLI not on PATH
 
 ---
 
@@ -526,5 +713,12 @@ Node log markers:
 - **Hermes / OpenHuman**: third-party — EnvoyMesh owns the TypeScript sidecar under
   `apps/node/src/ext-agent-adapter/`, started/stopped when the Ext Agent selection
   or bridge enablement changes.
+- **Codex**: third-party OpenAI CLI. EnvoyMesh spawns `codex app-server` via
+  the **daemon supervisor** (`apps/node/src/ext-agent-adapter/daemon-supervisor.ts`,
+  Phase 55A). The supervisor handles restart-on-crash with exponential
+  backoff and surfaces `install-missing` if the CLI is not on `$PATH`.
+- **Claude Code**: third-party Anthropic SDK. EnvoyMesh uses
+  `@anthropic-ai/claude-agent-sdk` **in-process** (no subprocess, no
+  supervisor). The SDK is loaded into the home node's Node.js process.
 - Built-in **EnvoyAI / OpenClaw** is separate (`/webhook/envoymesh`); it is not
   an Ext Agent preset — see [agent_bridge_guide.md](./agent_bridge_guide.md).

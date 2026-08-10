@@ -40,6 +40,27 @@ export const DEFAULT_EXT_AGENTS: ExtAgentDefinition[] = [
     url: "http://127.0.0.1:8021/message",
     enabled: false,
   },
+  // Phase 55D — codex (OpenAI Codex CLI) and claudecode (Anthropic
+  // Claude Code). Both ship as their own supervised daemons
+  // (55B / 55C). Defaults to `enabled: true` so the Settings picker
+  // shows them out of the box; users can disable them in Settings
+  // when the binary isn't installed. The bridge sidecar ports
+  // (8023 / 8024) are additive to the existing 8010 / 8020 / 8021
+  // / 8022 — no port below 1024.
+  {
+    id: "codex",
+    name: "Codex",
+    adapter: "envoymesh-message",
+    url: "http://127.0.0.1:8023/message",
+    enabled: true,
+  },
+  {
+    id: "claudecode",
+    name: "Claude Code",
+    adapter: "envoymesh-message",
+    url: "http://127.0.0.1:8024/message",
+    enabled: true,
+  },
 ];
 
 export function mergeExtAgentPresets(

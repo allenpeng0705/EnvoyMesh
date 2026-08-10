@@ -202,7 +202,19 @@ export async function probeExtAgentReachability(params: {
   }
 
   if (isExtAgentSidecarKind(agentId)) {
-    const reachable = Boolean(await createBackend(agentId).probe?.())
+    // Phase 55B / 55C: codex and claudecode sidecar backends are not
+    // implemented yet (their `createBackend` throws "not yet
+    // implemented"). When that happens, fall back to a "not running"
+    // reachability — the installState is still authoritative, and
+    // the Settings UI will show the right Install Required card.
+    let reachable = false;
+    try {
+      reachable = Boolean(await createBackend(agentId).probe?.());
+    } catch {
+      // Backend not implemented yet — reachable stays false.
+      // The `installState` and `installGuide` fields above still
+      // reflect whether the binary is on PATH.
+    }
     return {
       agentId,
       agentName,
