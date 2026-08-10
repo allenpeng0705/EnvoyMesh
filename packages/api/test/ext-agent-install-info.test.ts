@@ -24,4 +24,26 @@ describe("getExtAgentInstallInfo", () => {
     const info = getExtAgentInstallInfo("openhuman")
     expect(info.homepageUrl).toBe("https://tinyhumans.ai/openhuman")
   })
+
+  // Phase 56A / 56B / 56C — three one-shot CLI backends.
+  it("returns Cursor CLI docs (Phase 56A)", () => {
+    const info = getExtAgentInstallInfo("cursor")
+    expect(info.builtIn).toBe(false)
+    expect(info.homepageUrl).toContain("docs.cursor.com")
+    expect(info.startHint).toContain("cursor.com/install")
+  })
+
+  it("returns Aider docs (Phase 56B)", () => {
+    const info = getExtAgentInstallInfo("aider")
+    expect(info.builtIn).toBe(false)
+    expect(info.homepageUrl).toBe("https://aider.chat/docs/")
+    expect(info.startHint).toContain("aider-chat")
+  })
+
+  it("returns MMX-CLI GitHub link (Phase 56C)", () => {
+    const info = getExtAgentInstallInfo("mmx")
+    expect(info.builtIn).toBe(false)
+    expect(info.homepageUrl).toBe("https://github.com/MiniMax-AI/cli")
+    expect(info.startHint).toContain("mmx-cli")
+  })
 })

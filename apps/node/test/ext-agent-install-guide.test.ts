@@ -77,6 +77,57 @@ describe("getExtAgentInstallGuide — known agents", () => {
       expect(g.commonIssues.some((s) => s.includes("OPENHUMAN_TOKEN") || s.includes("core.token"))).toBe(true);
     });
   });
+
+  // Phase 56A / 56B / 56C — three one-shot CLI backends. All three
+  // follow the codex/claudecode shape (npm-or-pip install + verify
+  // command + auth/region/env issue checklist).
+  describe("cursor (Phase 56A)", () => {
+    it("not-installed: curl-based install with OAuth / Node.js hints", () => {
+      const g = getExtAgentInstallGuide("cursor", "not-installed");
+      expect(g.agentId).toBe("cursor");
+      expect(g.installed).toBe(false);
+      expect(g.command).toBe("cursor-agent");
+      expect(g.installCommand).toContain("cursor.com/install");
+      expect(g.verifyCommand).toBe("cursor-agent --version");
+      expect(g.homepageUrl).toContain("docs.cursor.com");
+      expect(g.commonIssues.some((s) => s.includes("OAuth") || s.includes("browser"))).toBe(true);
+      expect(g.commonIssues.some((s) => s.includes("Node.js"))).toBe(true);
+    });
+  });
+
+  describe("aider (Phase 56B)", () => {
+    it("not-installed: pip-based install with API-key / Python hints", () => {
+      const g = getExtAgentInstallGuide("aider", "not-installed");
+      expect(g.agentId).toBe("aider");
+      expect(g.installed).toBe(false);
+      expect(g.command).toBe("aider");
+      expect(g.installCommand).toContain("pip install aider-chat");
+      expect(g.verifyCommand).toBe("aider --version");
+      expect(g.homepageUrl).toBe("https://aider.chat/docs/");
+      // Issues mention BOTH supported API keys (Aider is multi-provider).
+      expect(
+        g.commonIssues.some(
+          (s) => s.includes("ANTHROPIC_API_KEY") || s.includes("OPENAI_API_KEY"),
+        ),
+      ).toBe(true);
+      expect(g.commonIssues.some((s) => s.includes("Python"))).toBe(true);
+    });
+  });
+
+  describe("mmx (Phase 56C)", () => {
+    it("not-installed: npm install + auth login + region hints", () => {
+      const g = getExtAgentInstallGuide("mmx", "not-installed");
+      expect(g.agentId).toBe("mmx");
+      expect(g.installed).toBe(false);
+      expect(g.command).toBe("mmx");
+      expect(g.installCommand).toContain("npm install -g mmx-cli");
+      expect(g.verifyCommand).toBe("mmx --version");
+      expect(g.homepageUrl).toBe("https://github.com/MiniMax-AI/cli");
+      // MMX-CLI auth path is unique — `mmx auth login --api-key ...`.
+      expect(g.commonIssues.some((s) => s.includes("auth login"))).toBe(true);
+      expect(g.commonIssues.some((s) => s.includes("Region") || s.includes("region"))).toBe(true);
+    });
+  });
 });
 
 describe("getExtAgentInstallGuide — built-in (Pi)", () => {

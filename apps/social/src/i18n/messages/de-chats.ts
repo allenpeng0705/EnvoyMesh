@@ -92,6 +92,7 @@ export const deChatMessages = {
   openclawOfflineRestart: "Neu starten",
   openclawOfflineSettings: "Einstellungen öffnen",
   openclawOfflineRestarting: "Neustart…",
+  audioMessage: deInboxAudioMessages,
 } as const;
 
 export const deContactChatMessages = {
@@ -326,7 +327,6 @@ export const deInboxMessages = {
   messagesBeforeBonding: "Nachrichten vor Verbindung ({count})",
   defaultUserName: "Envoy-Benutzer",
   defaultHello: "Hallo!",
-  audioMessage: deInboxAudioMessages,
   ...deInboxCallMessages,
 } as const;
 

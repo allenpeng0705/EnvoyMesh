@@ -120,6 +120,8 @@ export const zhChatMessages = {
   extAgentInstallDialogTitle: "需要先安装 {name}",
   extAgentOfflineToastHint: "{name} 未安装 — 安装后点击「重试」。",
   extAgentOfflineToastRetry: "重试",
+  // Phase 37 — Audio Messages
+  audioMessage: inboxAudioMessages,
 } as const;
 
 export const zhContactChatMessages = {
@@ -378,8 +380,6 @@ export const zhInboxMessages = {
   messagesBeforeBonding: "绑定前的消息 ({count})",
   defaultUserName: "Envoy 用户",
   defaultHello: "你好！",
-  // Phase 37 — Audio Messages
-  audioMessage: inboxAudioMessages,
   // Phase 38 — Voice/Video Calls
   ...inboxCallMessages,
 } as const;

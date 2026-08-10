@@ -95,6 +95,7 @@ export const koChatMessages = {
   openclawOfflineRestart: "재시작",
   openclawOfflineSettings: "설정 열기",
   openclawOfflineRestarting: "재시작 중…",
+  audioMessage: koInboxAudioMessages,
 } as const;
 
 export const koContactChatMessages = {
@@ -333,7 +334,6 @@ export const koInboxMessages = {
   messagesBeforeBonding: "바인딩 전 메시지 ({count})",
   defaultUserName: "Envoy 사용자",
   defaultHello: "안녕하세요!",
-  audioMessage: koInboxAudioMessages,
   ...koInboxCallMessages,
 } as const;
 

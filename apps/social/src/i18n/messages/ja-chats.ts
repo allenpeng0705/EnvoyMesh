@@ -92,6 +92,7 @@ export const jaChatMessages = {
   openclawOfflineRestart: "再起動",
   openclawOfflineSettings: "設定を開く",
   openclawOfflineRestarting: "再起動中…",
+  audioMessage: jaInboxAudioMessages,
 } as const;
 
 export const jaContactChatMessages = {
@@ -325,7 +326,6 @@ export const jaInboxMessages = {
   messagesBeforeBonding: "バンディング前のメッセージ ({count})",
   defaultUserName: "Envoy ユーザー",
   defaultHello: "こんにちは！",
-  audioMessage: jaInboxAudioMessages,
   ...jaInboxCallMessages,
 } as const;
 

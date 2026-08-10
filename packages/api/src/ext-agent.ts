@@ -61,6 +61,32 @@ export const DEFAULT_EXT_AGENTS: ExtAgentDefinition[] = [
     url: "http://127.0.0.1:8024/message",
     enabled: true,
   },
+  // Phase 56A / 56B / 56C — three one-shot CLI backends sharing the
+  // `OneShotCliBackend` base (subprocess per ask). All enabled by
+  // default like codex/claudecode; users can disable when the
+  // binary isn't installed. Sidecar ports 8025 / 8026 / 8027
+  // are additive to the existing 8010 / 8020-8024.
+  {
+    id: "cursor",
+    name: "Cursor CLI",
+    adapter: "envoymesh-message",
+    url: "http://127.0.0.1:8025/message",
+    enabled: true,
+  },
+  {
+    id: "aider",
+    name: "Aider",
+    adapter: "envoymesh-message",
+    url: "http://127.0.0.1:8026/message",
+    enabled: true,
+  },
+  {
+    id: "mmx",
+    name: "MiniMax MMX-CLI",
+    adapter: "envoymesh-message",
+    url: "http://127.0.0.1:8027/message",
+    enabled: true,
+  },
 ];
 
 export function mergeExtAgentPresets(
@@ -186,6 +212,12 @@ export function defaultExtAgentStartHint(agentId: string): string {
       return "Install `codex` CLI (npm i -g @openai/codex), ensure `codex app-server` works; set OPENAI_API_KEY.";
     case "claudecode":
       return "Install Claude Code (npm i -g @anthropic-ai/claude-code), ensure `claude --version` works; set ANTHROPIC_API_KEY.";
+    case "cursor":
+      return "Install the Cursor CLI: `curl https://cursor.com/install -fsS | bash`. First run opens a browser for OAuth login; ensure `cursor-agent --version` works.";
+    case "aider":
+      return "Install Aider: `pip install aider-chat` (or `python -m pip install aider-install` then `aider-install`). Set ANTHROPIC_API_KEY or OPENAI_API_KEY for the model provider.";
+    case "mmx":
+      return "Install MMX-CLI: `npm install -g mmx-cli`. Then run `mmx auth login --api-key sk-xxxx` to authenticate; the CLI auto-detects global vs CN region from the key prefix.";
     case "pi":
       return "Pi is built into full desktop installs. If chat stays silent, reinstall a full build (Pi sidecar staged) and confirm Settings → AI has a real model (not mock/disabled).";
     default:
@@ -257,6 +289,30 @@ export function getExtAgentInstallInfo(agentId: string): ExtAgentInstallInfo {
         agentId: id,
         homepageUrl: "https://docs.claude.com/en/docs/claude-code",
         homepageLabel: "Claude Code docs",
+        startHint: defaultExtAgentStartHint(id),
+        builtIn: false,
+      };
+    case "cursor":
+      return {
+        agentId: id,
+        homepageUrl: "https://docs.cursor.com/en/cli",
+        homepageLabel: "Cursor CLI docs",
+        startHint: defaultExtAgentStartHint(id),
+        builtIn: false,
+      };
+    case "aider":
+      return {
+        agentId: id,
+        homepageUrl: "https://aider.chat/docs/",
+        homepageLabel: "Aider docs",
+        startHint: defaultExtAgentStartHint(id),
+        builtIn: false,
+      };
+    case "mmx":
+      return {
+        agentId: id,
+        homepageUrl: "https://github.com/MiniMax-AI/cli",
+        homepageLabel: "MMX-CLI on GitHub",
         startHint: defaultExtAgentStartHint(id),
         builtIn: false,
       };
@@ -336,6 +392,42 @@ const INSTALL_TABLE: Record<string, InstallTableRow> = {
       "Set OPENHUMAN_TOKEN or place core.token in your workspace.",
       "OpenHuman requires the openhuman-core binary on PATH.",
       "OpenHuman health endpoint: GET http://127.0.0.1:7788/health.",
+    ],
+  },
+  cursor: {
+    command: "cursor-agent",
+    installCommand: "curl https://cursor.com/install -fsS | bash",
+    verifyCommand: "cursor-agent --version",
+    homepageUrl: "https://docs.cursor.com/en/cli",
+    homepageLabel: "Cursor CLI docs",
+    commonIssues: [
+      "First run opens a browser for OAuth login (no terminal API-key prompt).",
+      "If `cursor-agent --version` fails, ensure the install path (default ~/.cursor/bin) is on $PATH.",
+      "Cursor CLI requires Node.js 18+; verify with `node --version`.",
+    ],
+  },
+  aider: {
+    command: "aider",
+    installCommand: "pip install aider-chat",
+    verifyCommand: "aider --version",
+    homepageUrl: "https://aider.chat/docs/",
+    homepageLabel: "Aider docs",
+    commonIssues: [
+      "Set ANTHROPIC_API_KEY or OPENAI_API_KEY in your shell before running aider.",
+      "If `aider --version` fails, try `python -m pip install aider-chat --upgrade`.",
+      "Aider requires Python 3.8+; verify with `python --version`.",
+    ],
+  },
+  mmx: {
+    command: "mmx",
+    installCommand: "npm install -g mmx-cli",
+    verifyCommand: "mmx --version",
+    homepageUrl: "https://github.com/MiniMax-AI/cli",
+    homepageLabel: "MMX-CLI on GitHub",
+    commonIssues: [
+      "Run `mmx auth login --api-key sk-xxxx` to authenticate; OAuth (browser) is also supported.",
+      "Region is auto-detected by the CLI from the API key prefix (global vs CN).",
+      "MMX-CLI requires Node.js 18+; verify with `node --version`.",
     ],
   },
 };

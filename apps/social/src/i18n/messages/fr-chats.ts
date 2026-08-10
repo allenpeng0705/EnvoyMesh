@@ -92,6 +92,7 @@ export const frChatMessages = {
   openclawOfflineRestart: "Redémarrer",
   openclawOfflineSettings: "Ouvrir les paramètres",
   openclawOfflineRestarting: "Redémarrage…",
+  audioMessage: frInboxAudioMessages,
 } as const;
 
 export const frContactChatMessages = {
@@ -326,7 +327,6 @@ export const frInboxMessages = {
   messagesBeforeBonding: "Messages avant liaison ({count})",
   defaultUserName: "Utilisateur Envoy",
   defaultHello: "Bonjour !",
-  audioMessage: frInboxAudioMessages,
   ...frInboxCallMessages,
 } as const;
 
