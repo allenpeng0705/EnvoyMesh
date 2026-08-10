@@ -382,7 +382,7 @@ describe("envoy-local-runtime lifecycle", () => {
     expect(state.phase).toBe("disabled");
   });
 
-  it("boot does not start sidecar when cloud provider is active", async () => {
+  it("boot starts sidecar even when cloud provider is configured (they coexist)", async () => {
     await seedRuntimeAndModel();
     cfg = { ...cfg, enabled: true };
     modelProviders = {
@@ -393,15 +393,18 @@ describe("envoy-local-runtime lifecycle", () => {
     };
     mockedSpawn.mockImplementation(() => makeFakeChild(5002));
     await maybeStartEnvoyLocalOnBootViaRuntime(state, deps);
-    expect(mockedSpawn).not.toHaveBeenCalled();
-    expect(cfg.enabled).toBe(false);
+    expect(mockedSpawn).toHaveBeenCalled();
+    expect(cfg.enabled).toBe(true);
+    // Migration helper may run for leftover envoy-local presets; cloud stays.
+    expect(clearEnvoyLocalModelProviders).toHaveBeenCalled();
   });
 
-  it("disableEnvoyLocal clears stale envoy-local modelProviders", async () => {
+  it("disableEnvoyLocal does not clear cloud modelProviders", async () => {
     cfg = { enabled: true };
     await disableEnvoyLocalViaRuntime(state, deps);
     expect(cfg.enabled).toBe(false);
-    expect(clearEnvoyLocalModelProviders).toHaveBeenCalled();
+    expect(clearEnvoyLocalModelProviders).not.toHaveBeenCalled();
+    expect(reloadOpenClaw).toHaveBeenCalled();
   });
 
   it("startEnvoyLocal starts without downloading when assets exist", async () => {
@@ -426,7 +429,7 @@ describe("envoy-local-runtime lifecycle", () => {
     expect(mockedDownloadFile).not.toHaveBeenCalled();
   });
 
-  it("stopEnvoyLocal is a no-op without cloud fallback", async () => {
+  it("stopEnvoyLocal always stops without requiring cloud fallback", async () => {
     await seedRuntimeAndModel();
     cfg = {
       enabled: true,
@@ -438,14 +441,13 @@ describe("envoy-local-runtime lifecycle", () => {
     expect(state.child?.pid).toBe(6161);
 
     const status = await stopEnvoyLocalViaRuntime(state, deps);
-    expect(status.enabled).toBe(true);
-    expect(status.canStop).toBe(false);
-    expect(cfg.enabled).toBe(true);
+    expect(status.enabled).toBe(false);
+    expect(status.running).toBe(false);
+    expect(cfg.enabled).toBe(false);
     expect(restoreFallbackModelProviders).not.toHaveBeenCalled();
-    expect(state.child?.pid).toBe(6161);
   });
 
-  it("stopEnvoyLocal restores cloud fallback and stops the sidecar", async () => {
+  it("stopEnvoyLocal does not restore fallback into modelProviders", async () => {
     await seedRuntimeAndModel();
     cfg = {
       enabled: true,
@@ -466,30 +468,23 @@ describe("envoy-local-runtime lifecycle", () => {
     expect(status.enabled).toBe(false);
     expect(status.running).toBe(false);
     expect(cfg.enabled).toBe(false);
-    expect(restoreFallbackModelProviders).toHaveBeenCalledTimes(1);
+    expect(restoreFallbackModelProviders).not.toHaveBeenCalled();
     expect(reloadOpenClaw).toHaveBeenCalled();
   });
 
-  it("getEnvoyLocalStatus reports canStop from fallback", async () => {
-    cfg = {
-      enabled: true,
-      fallbackModelProviders: {
-        mode: "openai-compatible",
-        presetId: "openai",
-        modelName: "gpt-4o-mini",
-        apiKey: "k",
-        endpoint: "https://api.openai.com/v1",
-      },
-    };
-    const withFallback = await getEnvoyLocalStatusViaRuntime(state, deps);
-    expect(withFallback.canStop).toBe(true);
+  it("getEnvoyLocalStatus reports canStop when running", async () => {
+    await seedRuntimeAndModel();
+    mockedSpawn.mockImplementation(() => makeFakeChild(8181));
+    await restartEnvoyLocalViaRuntime(state, deps);
+    const running = await getEnvoyLocalStatusViaRuntime(state, deps);
+    expect(running.canStop).toBe(true);
 
-    cfg = { enabled: true };
-    const without = await getEnvoyLocalStatusViaRuntime(state, deps);
-    expect(without.canStop).toBe(false);
+    await stopEnvoyLocalViaRuntime(state, deps);
+    const stopped = await getEnvoyLocalStatusViaRuntime(state, deps);
+    expect(stopped.canStop).toBe(false);
   });
 
-  it("maybeDisableEnvoyLocalForExternalProvider turns off when cloud is saved", async () => {
+  it("maybeDisableEnvoyLocalForExternalProvider is a no-op (cloud and Local coexist)", async () => {
     cfg = { enabled: true };
     const disabled = await maybeDisableEnvoyLocalForExternalProvider(state, deps, {
       mode: "openai-compatible",
@@ -497,18 +492,18 @@ describe("envoy-local-runtime lifecycle", () => {
       modelName: "gpt-4o-mini",
       apiKey: "k",
     });
-    expect(disabled).toBe(true);
-    expect(cfg.enabled).toBe(false);
+    expect(disabled).toBe(false);
+    expect(cfg.enabled).toBe(true);
   });
 
-  it("maybeDisableEnvoyLocalForExternalProvider turns off when AI is disabled", async () => {
+  it("maybeDisableEnvoyLocalForExternalProvider ignores disabled AI too", async () => {
     cfg = { enabled: true };
     const disabled = await maybeDisableEnvoyLocalForExternalProvider(state, deps, {
       mode: "disabled",
       presetId: "disabled",
     });
-    expect(disabled).toBe(true);
-    expect(cfg.enabled).toBe(false);
+    expect(disabled).toBe(false);
+    expect(cfg.enabled).toBe(true);
   });
 
   it("maybeDisableEnvoyLocalForExternalProvider ignores envoy-local provider", async () => {

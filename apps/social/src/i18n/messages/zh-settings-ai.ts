@@ -10,7 +10,7 @@ export const zhAiSettingsMessages = {
     statusNotInUse: "未使用",
     statusStandbyLocal: "未使用",
     statusStandbyLocalHint:
-      "当前生效的是 Envoy Local。停止 Envoy Local 后会切回此云端/Ollama 配置（若已保存）。",
+      "Envoy Local 正在运行。上方的云端/Ollama 设置会保留；停止 Local 后将继续使用它们。",
     providerLabel: "提供商",
     presetHint: "预设会填充端点与模型建议。OpenClaw、聊天草稿，以及未单独覆盖时的 Pi，都使用此设置。",
     modeMock: "Mock（仅测试）",
@@ -293,11 +293,8 @@ export const zhAiSettingsMessages = {
     startFailed: "无法启动 Envoy Local",
     stop: "停止 Envoy Local",
     stopping: "正在停止…",
-    stopOk: "Envoy Local 已停止 — 已切回云端模型",
-    stopBlocked:
-      "请先配置云端或 Ollama。没有可用回退时不会停止，以免没有可用模型。",
-    stopHint:
-      "停止会恢复先前的云端/Ollama。若没有回退，停止按钮不可用，以免没有可用模型。",
+    stopOk: "Envoy Local 已停止 — 已切回云端/Ollama 设置",
+    stopHint: "停止不会改动云端/Ollama 配置，推理会自动切回它们。",
     disable: "禁用 Envoy Local",
     restart: "重启引擎",
     cancel: "取消下载",
@@ -317,7 +314,7 @@ export const zhAiSettingsMessages = {
     statusInUse: "使用中",
     statusNotInUse: "未使用",
     cloudFallbackHint: "云端/Ollama 正在使用（{provider}）。",
-    cloudStandbyHint: "已保存云端回退：{provider}（停止时恢复）。",
+    cloudStandbyHint: "云端/Ollama 仍保留：{provider}（停止 Local 后使用）。",
     modelsHeading: "模型",
     modelsDesc:
       "可下载多个模型，或自行将 .gguf 文件放入模型目录。选择要用的模型；若只有一个，则自动使用。",

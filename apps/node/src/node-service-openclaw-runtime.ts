@@ -559,6 +559,13 @@ export async function persistEnvoyAiChatExchangeViaRuntime(
 export interface OpenClawRuntimeDeps extends EnvoyAiChatContext {
   getBonds(): Promise<BondRecord[]>;
   getNodeConfig(): Promise<NodeConfig>;
+  /**
+   * Cloud/Ollama from Settings, or Envoy Local when the sidecar is running.
+   * Falls back to `getNodeConfig().modelProviders` when omitted.
+   */
+  getEffectiveModelProviders?: () => Promise<
+    import("@envoymesh/api").ModelProviderConfig
+  >;
   getRagService(): Promise<RagService | null>;
   loadBridgeConfigWebSearchEnabled(): Promise<boolean | undefined>;
   loadBridgeConfigSkillApiKeys(): Promise<Record<string, string> | undefined>;
@@ -578,6 +585,13 @@ export function buildOpenClawRuntimeDeps(host: any): OpenClawRuntimeDeps {
   return {
     getBonds: () => host.getBonds(),
     getNodeConfig: () => host.getNodeConfig(),
+    getEffectiveModelProviders: () =>
+      typeof host.getEffectiveModelProviders === "function"
+        ? host.getEffectiveModelProviders()
+        : host.getNodeConfig().then(
+            (c: NodeConfig) =>
+              c.modelProviders ?? { mode: "disabled" as const, presetId: "disabled" },
+          ),
     getRagService: () => host._getRagService(),
     getReachableMesh: () => host._reachableMesh(),
     getChatLogStore: () => host._chatLogStore,
@@ -998,7 +1012,8 @@ export async function buildOpenClawTurnContextViaRuntime(deps: OpenClawRuntimeDe
     capabilities = manifest?.capabilities;
   }
 
-  const providers = nodeConfig.modelProviders;
+  const providers =
+    (await deps.getEffectiveModelProviders?.()) ?? nodeConfig.modelProviders;
   const model =
     providers?.mode && providers.mode !== "disabled"
       ? {
@@ -1333,9 +1348,11 @@ async function startOpenClawInner(
 
   let modelProviderCfg: import("@envoymesh/api").ModelProviderConfig | undefined
   try {
-    const nodeCfg = await deps.getNodeConfig();
-    if (nodeCfg?.modelProviders?.mode && nodeCfg.modelProviders.mode !== "disabled") {
-      modelProviderCfg = nodeCfg.modelProviders
+    const effective = deps.getEffectiveModelProviders
+      ? await deps.getEffectiveModelProviders()
+      : (await deps.getNodeConfig())?.modelProviders;
+    if (effective?.mode && effective.mode !== "disabled") {
+      modelProviderCfg = effective
     }
   } catch { /* use defaults */ }
 

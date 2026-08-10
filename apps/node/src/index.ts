@@ -2036,7 +2036,10 @@ async function handleInboundMeshMessage({
           receivedAt,
           correlationId,
           config: mergedConfig,
-          modelProviders: mergedConfig.modelProviders ?? currentModelProviders,
+          modelProviders:
+            nodeService instanceof NodeServiceImpl
+              ? await nodeService.getEffectiveModelProviders()
+              : (mergedConfig.modelProviders ?? currentModelProviders),
           profile,
           taskStore,
           trustStore,
@@ -3242,12 +3245,19 @@ terminalAgentAssist = new TerminalAgentAssist({
           },
         }
       : {},
-  getModelProviders: async () => (await nodeService.getNodeConfig()).modelProviders,
+  getModelProviders: async () =>
+    nodeService instanceof NodeServiceImpl
+      ? nodeService.getEffectiveModelProviders()
+      : (await nodeService.getNodeConfig()).modelProviders,
   getAssistSettings: async () => {
     const cfg = await nodeService.getNodeConfig();
+    const effective =
+      nodeService instanceof NodeServiceImpl
+        ? await nodeService.getEffectiveModelProviders()
+        : cfg.modelProviders;
     return {
       terminalAssistModelName: cfg.terminalAssistModelName,
-      chatModelName: cfg.modelProviders.modelName,
+      chatModelName: effective.modelName ?? cfg.modelProviders.modelName,
       terminalCommandAllowPatterns: cfg.terminalCommandAllowPatterns,
       terminalCommandDenyPatterns: cfg.terminalCommandDenyPatterns,
       terminalCommandDestructivePatterns: cfg.terminalCommandDestructivePatterns,

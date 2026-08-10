@@ -48,7 +48,6 @@ import {
   listModelProviderPresets,
   getModelProviderPreset,
   inferModelProviderPreset,
-  hasUsableModelProvider,
   hasUsableNonEnvoyLocalModelProvider,
   DEFAULT_ENVOY_LOCAL_SERVER_PARAMS,
 } from "@envoymesh/api";
@@ -971,21 +970,24 @@ function ModelProviderSettings({
     if (settingsSaveStatus === "saving" || modelProviderFieldsDirtyRef.current) return;
     const mp = nodeConfig?.modelProviders;
     if (!mp) return;
-    setPresetId(inferModelProviderPreset(mp).id);
+    const inferred = inferModelProviderPreset(mp);
+    // Legacy: envoy-local used to live in modelProviders — treat as unset here.
+    if (inferred.id === "envoy-local") {
+      setPresetId("disabled");
+      setModelEndpoint("");
+      setModelName("");
+      setModelApiKey("");
+      return;
+    }
+    setPresetId(inferred.id);
     setModelEndpoint(mp.endpoint ?? "");
     setModelName(mp.modelName ?? "");
     setModelApiKey(mp.apiKey ?? "");
   }, [nodeConfig?.modelProviders, settingsSaveStatus]);
 
   const presets = useMemo(() => {
-    const listed = listModelProviderPresets({ includeLocal });
-    // Keep the currently saved local preset visible even on cloud-only scopes.
-    if (!listed.some((p) => p.id === presetId)) {
-      const current = getModelProviderPreset(presetId);
-      if (current) return [...listed, current];
-    }
-    return listed;
-  }, [includeLocal, presetId]);
+    return listModelProviderPresets({ includeLocal });
+  }, [includeLocal]);
   const activePreset = getModelProviderPreset(presetId) ?? inferredPreset;
   const showEndpoint =
     activePreset.endpointEditable !== false &&
@@ -996,13 +998,27 @@ function ModelProviderSettings({
 
   // Saved provider on the node (not unsaved form edits) — drives In use / Not in use.
   const savedMp = nodeConfig?.modelProviders;
-  const savedPreset = inferModelProviderPreset(savedMp);
-  const cloudOrOllamaInUse = hasUsableNonEnvoyLocalModelProvider(savedMp);
-  const envoyLocalProviderActive =
-    hasUsableModelProvider(savedMp) && savedPreset.id === "envoy-local";
+  const [localRunning, setLocalRunning] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void nodeService
+      .getEnvoyLocalStatus()
+      .then((st) => {
+        if (!cancelled) setLocalRunning(Boolean(st.enabled && st.running));
+      })
+      .catch(() => {
+        if (!cancelled) setLocalRunning(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [nodeService, nodeConfig?.modelProviders, nodeConfig?.envoyLocal?.enabled]);
+
+  const cloudOrOllamaConfigured = hasUsableNonEnvoyLocalModelProvider(savedMp);
+  const cloudOrOllamaInUse = cloudOrOllamaConfigured && !localRunning;
   const providerUsageLabel = cloudOrOllamaInUse
     ? t("settings.ai.model.statusInUse")
-    : envoyLocalProviderActive
+    : localRunning
       ? t("settings.ai.model.statusStandbyLocal")
       : t("settings.ai.model.statusNotInUse");
 
@@ -1012,30 +1028,31 @@ function ModelProviderSettings({
   };
 
   return (
-    <>
-      <h4>{t("settings.ai.model.heading")}</h4>
+    <div className="model-provider-panel" data-testid="model-provider-settings">
+      <div className="settings-section-title-row">
+        <h4>{t("settings.ai.model.heading")}</h4>
+        <span
+          className={
+            cloudOrOllamaInUse
+              ? "model-provider-status is-active"
+              : "model-provider-status is-idle"
+          }
+          data-testid="model-provider-usage-status"
+        >
+          {providerUsageLabel}
+        </span>
+      </div>
       <p className="section-desc">
         {cloudOnlyMobile
           ? t("settings.ai.model.sectionDescCloud")
           : t("settings.ai.model.sectionDescDefault")}
       </p>
+      {localRunning ? (
+        <p className="settings-hint model-provider-status-hint">
+          {t("settings.ai.model.statusStandbyLocalHint")}
+        </p>
+      ) : null}
       <dl className="settings-list">
-        <dt>{t("settings.ai.model.usageStatus")}</dt>
-        <dd>
-          <span
-            className={
-              cloudOrOllamaInUse
-                ? "model-provider-status is-active"
-                : "model-provider-status is-idle"
-            }
-            data-testid="model-provider-usage-status"
-          >
-            {providerUsageLabel}
-          </span>
-          {envoyLocalProviderActive ? (
-            <div className="settings-hint">{t("settings.ai.model.statusStandbyLocalHint")}</div>
-          ) : null}
-        </dd>
         <dt>{t("settings.ai.model.providerLabel")}</dt>
         <dd>
           <select
@@ -1065,9 +1082,7 @@ function ModelProviderSettings({
               </option>
             ))}
           </select>
-          <p className="settings-hint" style={{ marginTop: "6px" }}>
-            {t("settings.ai.model.presetHint")}
-          </p>
+          <p className="settings-hint">{t("settings.ai.model.presetHint")}</p>
         </dd>
         {showEndpoint ? (
           <>
@@ -1205,7 +1220,7 @@ function ModelProviderSettings({
           <span className="settings-save-error">{t("settings.ai.model.saveFailed")}</span>
         )}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -1760,51 +1775,45 @@ function EnvoyLocalSettings({
   const installedIds = useMemo(() => new Set(installed.map((m) => m.id)), [installed]);
 
   const savedMp = nodeConfig?.modelProviders;
-  const localProviderInUse =
-    hasUsableModelProvider(savedMp) &&
-    inferModelProviderPreset(savedMp).id === "envoy-local";
-  const fallbackMp = nodeConfig?.envoyLocal?.fallbackModelProviders;
-  const fallbackPreset = fallbackMp ? inferModelProviderPreset(fallbackMp) : null;
-  const fallbackLabel =
-    fallbackPreset && hasUsableNonEnvoyLocalModelProvider(fallbackMp)
-      ? fallbackPreset.label
-      : null;
+  const localProviderInUse = Boolean(status?.enabled && status?.running);
+  const cloudConfigured = hasUsableNonEnvoyLocalModelProvider(savedMp);
+  const cloudPreset = cloudConfigured ? inferModelProviderPreset(savedMp) : null;
 
   return (
     <div className="envoy-local-settings" data-testid="envoy-local-settings">
+      <div className="settings-section-title-row">
+        <h4>{t("settings.ai.envoyLocal.heading")}</h4>
+        {status ? (
+          <span
+            className={
+              localProviderInUse
+                ? "model-provider-status is-active"
+                : "model-provider-status is-idle"
+            }
+            data-testid="envoy-local-usage-status"
+          >
+            {localProviderInUse
+              ? t("settings.ai.envoyLocal.statusInUse")
+              : t("settings.ai.envoyLocal.statusNotInUse")}
+          </span>
+        ) : null}
+      </div>
       <p className="section-desc">{t("settings.ai.envoyLocal.desc")}</p>
-      <p className="settings-hint">{t("settings.ai.envoyLocal.noteCloudFirst")}</p>
+      {status && cloudPreset ? (
+        <p className="settings-hint model-provider-status-hint">
+          {localProviderInUse
+            ? t("settings.ai.envoyLocal.cloudStandbyHint", {
+                provider: cloudPreset.label,
+              })
+            : t("settings.ai.envoyLocal.cloudFallbackHint", {
+                provider: cloudPreset.label,
+              })}
+        </p>
+      ) : (
+        <p className="settings-hint">{t("settings.ai.envoyLocal.noteCloudFirst")}</p>
+      )}
       {status ? (
         <dl className="settings-dl">
-          <dt>{t("settings.ai.envoyLocal.usageStatus")}</dt>
-          <dd>
-            <span
-              className={
-                localProviderInUse
-                  ? "model-provider-status is-active"
-                  : "model-provider-status is-idle"
-              }
-              data-testid="envoy-local-usage-status"
-            >
-              {localProviderInUse
-                ? t("settings.ai.envoyLocal.statusInUse")
-                : t("settings.ai.envoyLocal.statusNotInUse")}
-            </span>
-            {!localProviderInUse && fallbackLabel ? (
-              <div className="settings-hint">
-                {t("settings.ai.envoyLocal.cloudFallbackHint", {
-                  provider: fallbackLabel,
-                })}
-              </div>
-            ) : null}
-            {localProviderInUse && fallbackLabel ? (
-              <div className="settings-hint">
-                {t("settings.ai.envoyLocal.cloudStandbyHint", {
-                  provider: fallbackLabel,
-                })}
-              </div>
-            ) : null}
-          </dd>
           <dt>{t("settings.ai.envoyLocal.runtime")}</dt>
           <dd>
             {statusLabel}
@@ -2091,28 +2100,14 @@ function EnvoyLocalSettings({
               type="button"
               className="settings-cancel-btn"
               data-testid="envoy-local-stop"
-              disabled={inFlight || status.canStop === false}
-              title={
-                status.canStop === false
-                  ? t("settings.ai.envoyLocal.stopBlocked")
-                  : undefined
-              }
+              disabled={inFlight}
               onClick={async () => {
-                if (status.canStop === false) {
-                  showToast(t("settings.ai.envoyLocal.stopBlocked"), "info");
-                  return;
-                }
                 setBusy(true);
                 setActionError(null);
                 try {
                   const st = await nodeService.stopEnvoyLocal();
                   setStatus(st);
-                  if (st.running || st.enabled) {
-                    // Backend no-op (no fallback) — keep local.
-                    showToast(t("settings.ai.envoyLocal.stopBlocked"), "info");
-                  } else {
-                    showToast(t("settings.ai.envoyLocal.stopOk"), "success");
-                  }
+                  showToast(t("settings.ai.envoyLocal.stopOk"), "success");
                   await refreshNodeConfig();
                 } catch (e) {
                   const msg = e instanceof Error ? e.message : String(e);
@@ -2143,10 +2138,8 @@ function EnvoyLocalSettings({
             >
               {t("settings.ai.envoyLocal.restart")}
             </button>
+            <div className="settings-hint">{t("settings.ai.envoyLocal.stopHint")}</div>
           </>
-        ) : null}
-        {status?.running && status.canStop === false ? (
-          <div className="settings-hint">{t("settings.ai.envoyLocal.stopHint")}</div>
         ) : null}
         {inFlight && status?.phase !== "starting" ? (
           <button
@@ -3230,13 +3223,11 @@ export function SettingsAITab() {
        * ============================================================ */}
 
       <section className="settings-section">
-        <h4>{t("settings.ai.modelProvider.heading")}</h4>
         <ModelProviderSettings nodeConfig={nodeConfig} refreshNodeConfig={refreshNodeConfig} />
       </section>
 
       {!isMobileNode ? (
         <section className="settings-section">
-          <h4>{t("settings.ai.envoyLocal.heading")}</h4>
           <EnvoyLocalSettings refreshNodeConfig={refreshNodeConfig} />
         </section>
       ) : null}

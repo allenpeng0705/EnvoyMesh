@@ -4181,24 +4181,127 @@ textarea::placeholder {
   font-weight: var(--font-semibold, 600);
 }
 
+/* Title + status badge on one row (Model provider / Envoy Local). */
+.settings-section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+.settings-section-title-row h4 {
+  margin: 0;
+}
+
 .model-provider-status {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-semibold, 600);
-  line-height: 1.4;
-  padding: 0.15rem 0.5rem;
-  border-radius: 0.375rem;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
   border: 1px solid transparent;
 }
+.model-provider-status::before {
+  content: "";
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
 .model-provider-status.is-active {
-  color: var(--color-success, #15803d);
-  background: var(--color-success-subtle, #f0fdf4);
-  border-color: var(--color-success-border, #bbf7d0);
+  color: #166534;
+  background: #dcfce7;
+  border-color: #86efac;
 }
 .model-provider-status.is-idle {
-  color: var(--color-text-muted, #64748b);
-  background: var(--color-surface-muted, #f8fafc);
-  border-color: var(--color-border, #e2e8f0);
+  color: #334155;
+  background: #e2e8f0;
+  border-color: #94a3b8;
+}
+
+:root[data-theme="dark"] .model-provider-status.is-active {
+  color: #bbf7d0;
+  background: color-mix(in srgb, #22c55e 28%, var(--color-surface, #0f172a));
+  border-color: color-mix(in srgb, #4ade80 55%, transparent);
+}
+:root[data-theme="dark"] .model-provider-status.is-idle {
+  color: #e2e8f0;
+  background: color-mix(in srgb, #94a3b8 22%, var(--color-surface, #0f172a));
+  border-color: color-mix(in srgb, #cbd5e1 40%, transparent);
+}
+
+.model-provider-status-hint {
+  margin: 0 0 0.85rem;
+}
+
+.model-provider-panel .settings-list {
+  gap: 1rem;
+}
+.model-provider-panel .settings-hint {
+  margin-top: 0.4rem;
+}
+
+/* Missing Settings helpers used heavily by Envoy Local / AI panels. */
+.settings-hint {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted, #475569);
+  line-height: 1.45;
+  margin-top: 0.35rem;
+}
+:root[data-theme="dark"] .settings-hint {
+  color: var(--color-text-muted, #cbd5e1);
+  opacity: 0.95;
+}
+
+.settings-mono {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: var(--text-xs, 0.75rem);
+  word-break: break-all;
+}
+
+.settings-dl {
+  display: grid;
+  grid-template-columns: minmax(7rem, 10.5rem) 1fr;
+  gap: 0.65rem 1rem;
+  margin: 0.75rem 0 1rem;
+  align-items: start;
+}
+.settings-dl > dt {
+  margin: 0;
+  padding-top: 0.15rem;
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--font-semibold, 600);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #475569);
+}
+.settings-dl > dd {
+  margin: 0;
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text, #0f172a);
+  min-width: 0;
+}
+:root[data-theme="dark"] .settings-dl > dt {
+  color: var(--color-text-muted, #cbd5e1);
+}
+:root[data-theme="dark"] .settings-dl > dd {
+  color: var(--color-text, #f1f5f9);
+}
+@media (max-width: 560px) {
+  .settings-dl {
+    grid-template-columns: 1fr;
+    gap: 0.2rem 0;
+  }
+  .settings-dl > dd {
+    margin-bottom: 0.65rem;
+  }
 }
 
 .envoy-local-params {
@@ -4215,8 +4318,11 @@ textarea::placeholder {
   font-weight: var(--font-semibold, 600);
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  color: var(--color-text-muted, #64748b);
+  color: var(--color-text-muted, #475569);
   margin-bottom: 0.5rem;
+}
+:root[data-theme="dark"] .envoy-local-params-section-label {
+  color: var(--color-text-muted, #cbd5e1);
 }
 .envoy-local-params-dl dd .settings-input + .settings-input {
   margin-top: 0.35rem;
@@ -4229,22 +4335,34 @@ textarea::placeholder {
 }
 .envoy-local-ctx-preset {
   appearance: none;
-  border: 1px solid var(--color-border, #e2e8f0);
-  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border-strong, #94a3b8);
+  background: var(--color-surface-elevated, var(--color-surface, #fff));
   color: var(--color-text, #0f172a);
   border-radius: 0.375rem;
-  padding: 0.2rem 0.55rem;
+  padding: 0.28rem 0.65rem;
   font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--font-medium, 500);
   cursor: pointer;
   line-height: 1.4;
 }
 .envoy-local-ctx-preset:hover {
-  border-color: var(--color-border-strong, #cbd5e1);
+  border-color: var(--color-text-muted, #64748b);
 }
 .envoy-local-ctx-preset.is-active {
-  border-color: var(--color-info, #2563eb);
-  color: var(--color-info, #2563eb);
-  background: var(--color-info-subtle, #eff6ff);
+  border-color: var(--color-primary, #059669);
+  color: var(--color-primary-hover, #047857);
+  background: color-mix(in srgb, var(--color-primary, #10b981) 14%, var(--color-surface, #fff));
+  font-weight: var(--font-semibold, 600);
+}
+:root[data-theme="dark"] .envoy-local-ctx-preset {
+  border-color: color-mix(in srgb, #cbd5e1 35%, transparent);
+  color: var(--color-text, #f1f5f9);
+  background: color-mix(in srgb, #94a3b8 12%, var(--color-surface, #0f172a));
+}
+:root[data-theme="dark"] .envoy-local-ctx-preset.is-active {
+  border-color: var(--color-primary, #34d399);
+  color: #a7f3d0;
+  background: color-mix(in srgb, #34d399 22%, var(--color-surface, #0f172a));
 }
 .envoy-local-params-toggle-row {
   margin: 1rem 0 0.25rem;

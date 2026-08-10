@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
+  getModelProviderPreset,
   hasUsableModelProvider,
   hasUsableNonEnvoyLocalModelProvider,
   inferModelProviderPreset,
   listModelProviderPresets,
+  resolveEffectiveModelProviders,
   resolveOpenClawModelConfig,
 } from "../src/model-provider-presets.js"
 
@@ -14,6 +16,48 @@ describe("model-provider-presets", () => {
     expect(ids).toContain("anthropic")
     expect(ids).not.toContain("ollama")
     expect(ids).not.toContain("litellm")
+    expect(ids).not.toContain("envoy-local")
+  })
+
+  it("never lists envoy-local even when includeLocal=true", () => {
+    const ids = listModelProviderPresets({ includeLocal: true }).map((p) => p.id)
+    expect(ids).toContain("ollama")
+    expect(ids).not.toContain("envoy-local")
+  })
+
+  it("resolveEffectiveModelProviders prefers Local when running", () => {
+    const cloud = {
+      mode: "openai-compatible" as const,
+      presetId: "minimax-cn",
+      endpoint: "https://api.minimaxi.com/v1",
+      modelName: "MiniMax-M2.5",
+      apiKey: "sk",
+    }
+    const effective = resolveEffectiveModelProviders(cloud, {
+      preferLocal: true,
+      endpoint: "http://127.0.0.1:18790/v1",
+      modelName: "qwen3.5-9b",
+    })
+    expect(effective?.presetId).toBe("envoy-local")
+    expect(effective?.modelName).toBe("qwen3.5-9b")
+    expect(cloud.presetId).toBe("minimax-cn")
+  })
+
+  it("resolveEffectiveModelProviders keeps cloud when Local is off", () => {
+    const cloud = {
+      mode: "openai-compatible" as const,
+      presetId: "minimax-cn",
+      endpoint: "https://api.minimaxi.com/v1",
+      modelName: "MiniMax-M2.5",
+      apiKey: "sk",
+    }
+    expect(
+      resolveEffectiveModelProviders(cloud, {
+        preferLocal: false,
+        endpoint: "http://127.0.0.1:18790/v1",
+        modelName: "qwen3.5-9b",
+      }),
+    ).toEqual(cloud)
   })
 
   it("uses presetId when endpoint host is unrecognized", () => {
@@ -139,9 +183,10 @@ describe("model-provider-presets", () => {
     expect(hasUsableNonEnvoyLocalModelProvider({ mode: "mock" })).toBe(false)
   })
 
-  it("lists envoy-local as a local-only preset", () => {
-    expect(listModelProviderPresets().map((p) => p.id)).toContain("envoy-local")
-    expect(listModelProviderPresets({ includeLocal: false }).map((p) => p.id)).not.toContain(
+  it("keeps envoy-local preset defined but hidden from the picker", () => {
+    expect(getModelProviderPreset("envoy-local")?.localOnly).toBe(true)
+    expect(listModelProviderPresets().map((p) => p.id)).not.toContain("envoy-local")
+    expect(listModelProviderPresets({ includeLocal: true }).map((p) => p.id)).not.toContain(
       "envoy-local",
     )
   })

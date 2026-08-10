@@ -7,9 +7,7 @@ import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/pr
 import { basename, join, resolve } from "node:path";
 import {
   DEFAULT_ENVOY_LOCAL_SERVER_PARAMS,
-  hasUsableModelProvider,
   hasUsableNonEnvoyLocalModelProvider,
-  inferModelProviderPreset,
   resolveEnvoyLocalServerParams,
   type DownloadEnvoyLocalModelParams,
   type EnableEnvoyLocalParams,
@@ -459,7 +457,7 @@ export async function getEnvoyLocalStatusViaRuntime(
     recommendedModelLabel: recommendedCatalog?.label,
     recommendedModelApproxBytes: recommendedCatalog?.approxBytes,
     recommendedModelReason: recommendation.reason,
-    suggestedAutoProvision,
+    suggestAutoProvision,
     canStop: running,
   };
 }
@@ -1160,15 +1158,16 @@ export async function disableEnvoyLocalViaRuntime(
   state.phase = "disabled";
   state.download = null;
   await deps.saveEnvoyLocalConfig({ enabled: false });
-  if (deps.clearEnvoyLocalModelProviders) {
-    await deps.clearEnvoyLocalModelProviders().catch(() => undefined);
+  // Do not mutate cloud/Ollama modelProviders — Local preference is runtime-only.
+  if (deps.reloadOpenClaw) {
+    await deps.reloadOpenClaw().catch(() => undefined);
   }
   return getEnvoyLocalStatusViaRuntime(state, deps);
 }
 
 /**
  * Start llama-server when runtime + model are already on disk (no download).
- * Saves cloud/Ollama as Stop fallback via {@link EnvoyLocalRuntimeDeps.wireModelProviders}.
+ * Does not mutate cloud/Ollama Settings — inference prefers Local while running.
  */
 export async function startEnvoyLocalViaRuntime(
   state: EnvoyLocalRuntimeState,
@@ -1244,19 +1243,13 @@ export async function startEnvoyLocalViaRuntime(
 }
 
 /**
- * Stop llama-server and restore the saved cloud/Ollama provider.
- * No-op when no usable fallback exists (keeps local running / enabled).
+ * Stop llama-server. Cloud/Ollama Settings are untouched — inference falls
+ * back to them automatically when Local is no longer running.
  */
 export async function stopEnvoyLocalViaRuntime(
   state: EnvoyLocalRuntimeState,
   deps: EnvoyLocalRuntimeDeps,
 ): Promise<EnvoyLocalStatus> {
-  const cfg = normalizeEnvoyLocalConfig(await deps.loadEnvoyLocalConfig());
-  if (!hasUsableNonEnvoyLocalModelProvider(cfg.fallbackModelProviders)) {
-    // Keep local AI available — do not stop without a cloud/Ollama fallback.
-    return getEnvoyLocalStatusViaRuntime(state, deps);
-  }
-
   if (state.abort) state.abort.abort();
   await stopChild(state);
   state.phase = "disabled";
@@ -1264,9 +1257,6 @@ export async function stopEnvoyLocalViaRuntime(
   state.lastError = null;
   state.lastErrorAt = null;
   await deps.saveEnvoyLocalConfig({ enabled: false });
-  if (deps.restoreFallbackModelProviders) {
-    await deps.restoreFallbackModelProviders().catch(() => undefined);
-  }
   if (deps.reloadOpenClaw) {
     await deps.reloadOpenClaw().catch(() => undefined);
   }
@@ -1274,26 +1264,17 @@ export async function stopEnvoyLocalViaRuntime(
 }
 
 /**
- * After a `modelProviders` patch: stop Envoy Local unless the new provider
- * is usable Envoy Local itself (enable / wire path). Covers cloud, Ollama,
- * and turning AI off (disabled/mock).
- * @returns true when disable ran
+ * After a `modelProviders` patch: no longer disables Envoy Local.
+ * Cloud/Ollama and Local are independent; Local wins at inference only
+ * while the sidecar is running.
+ * @returns always false
  */
 export async function maybeDisableEnvoyLocalForExternalProvider(
-  state: EnvoyLocalRuntimeState,
-  deps: EnvoyLocalRuntimeDeps,
-  modelProviders: ModelProviderConfig | null | undefined,
+  _state: EnvoyLocalRuntimeState,
+  _deps: EnvoyLocalRuntimeDeps,
+  _modelProviders: ModelProviderConfig | null | undefined,
 ): Promise<boolean> {
-  const isEnvoyLocalUsable =
-    hasUsableModelProvider(modelProviders) &&
-    inferModelProviderPreset(modelProviders).id === "envoy-local";
-  if (isEnvoyLocalUsable) return false;
-
-  const cfg = normalizeEnvoyLocalConfig(await deps.loadEnvoyLocalConfig());
-  const running = Boolean(state.child?.pid) && !state.child?.killed;
-  if (!cfg.enabled && !running && !state.enablePromise) return false;
-  await disableEnvoyLocalViaRuntime(state, deps);
-  return true;
+  return false;
 }
 
 async function assertEnvoyLocalEnableStillActive(
@@ -1324,6 +1305,9 @@ export async function restartEnvoyLocalViaRuntime(
   await stopChild(state);
   try {
     await startSidecar(state, deps);
+    if (deps.reloadOpenClaw) {
+      await deps.reloadOpenClaw().catch(() => undefined);
+    }
   } catch (err) {
     setError(state, err instanceof Error ? err.message : String(err));
   }
@@ -1348,30 +1332,20 @@ export async function haltEnvoyLocalChildViaRuntime(
 
 /**
  * Boot hook: start sidecar only when already opted in (`enabled`) and assets
- * exist. Never downloads; never starts when cloud/Ollama is the active provider.
- * Respects Settings → Disable across restarts.
+ * exist. Never downloads. Cloud/Ollama may coexist — Local is preferred at
+ * inference time while running.
  */
 export async function maybeStartEnvoyLocalOnBootViaRuntime(
   state: EnvoyLocalRuntimeState,
   deps: EnvoyLocalRuntimeDeps,
 ): Promise<void> {
-  const cfg = normalizeEnvoyLocalConfig(await deps.loadEnvoyLocalConfig());
-  const modelProviders = deps.loadModelProviders
-    ? await deps.loadModelProviders()
-    : undefined;
-  const externalProvider = hasUsableNonEnvoyLocalModelProvider(modelProviders);
-
-  state.platform = detectEnvoyLocalPlatform();
-
-  // Cloud/Ollama is active → never keep a background llama-server.
-  if (externalProvider) {
-    if (cfg.enabled || (state.child?.pid && !state.child.killed)) {
-      await disableEnvoyLocalViaRuntime(state, deps).catch(() => undefined);
-    } else {
-      state.phase = "disabled";
-    }
-    return;
+  // Older builds stored envoy-local inside modelProviders; migrate back to cloud.
+  if (deps.clearEnvoyLocalModelProviders) {
+    await deps.clearEnvoyLocalModelProviders().catch(() => undefined);
   }
+
+  const cfg = normalizeEnvoyLocalConfig(await deps.loadEnvoyLocalConfig());
+  state.platform = detectEnvoyLocalPlatform();
 
   if (!cfg.enabled) {
     state.phase = "disabled";
@@ -1399,12 +1373,8 @@ export async function maybeStartEnvoyLocalOnBootViaRuntime(
       await ensureActiveModelPersisted(deps, profileDir, index, active);
     }
     await startSidecar(state, deps);
-    if (active) {
-      const endpoint = envoyLocalOpenAiBaseUrl(ENVOY_LOCAL_PORT);
-      await deps.wireModelProviders(endpoint, active.id);
-      if (deps.reloadOpenClaw) {
-        await deps.reloadOpenClaw().catch(() => undefined);
-      }
+    if (deps.reloadOpenClaw) {
+      await deps.reloadOpenClaw().catch(() => undefined);
     }
   } catch (err) {
     setError(state, err instanceof Error ? err.message : String(err));

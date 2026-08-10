@@ -152,8 +152,8 @@ export interface EnvoyLocalStatus {
    */
   suggestAutoProvision?: boolean;
   /**
-   * True when Stop is allowed: a usable cloud/Ollama fallback was saved before
-   * switching to Envoy Local. Without it, Stop is a no-op (keep local running).
+   * True when Stop is available (sidecar running). Cloud/Ollama Settings are
+   * independent and are not cleared by Start/Stop.
    */
   canStop?: boolean;
 }

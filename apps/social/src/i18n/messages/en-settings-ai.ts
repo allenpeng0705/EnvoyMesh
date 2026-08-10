@@ -166,11 +166,9 @@ export const aiSettingsMessages = {
     startFailed: "Could not start Envoy Local",
     stop: "Stop Envoy Local",
     stopping: "Stopping…",
-    stopOk: "Envoy Local stopped — using cloud model",
-    stopBlocked:
-      "Configure a cloud or Ollama provider first. Stop keeps Envoy Local running when there is no fallback.",
+    stopOk: "Envoy Local stopped — using cloud/Ollama settings",
     stopHint:
-      "Stop restores your previous cloud/Ollama provider. Without one, Stop is unavailable so you keep a working model.",
+      "Stop leaves your cloud/Ollama provider settings unchanged and switches inference back to them.",
     disable: "Disable Envoy Local",
     restart: "Restart engine",
     cancel: "Cancel download",
@@ -191,7 +189,7 @@ export const aiSettingsMessages = {
     statusInUse: "In use",
     statusNotInUse: "Not in use",
     cloudFallbackHint: "Cloud/Ollama is active ({provider}).",
-    cloudStandbyHint: "Cloud fallback ready: {provider} (restored on Stop).",
+    cloudStandbyHint: "Cloud/Ollama stays configured: {provider} (used when Local is stopped).",
     modelsHeading: "Models",
     modelsDesc:
       "Download several models, or copy your own .gguf files into the models folder. Choose which one is active — if only one is present, it is used automatically.",
@@ -298,7 +296,7 @@ export const aiSettingsMessages = {
     statusNotInUse: "Not in use",
     statusStandbyLocal: "Not in use",
     statusStandbyLocalHint:
-      "Envoy Local is the active provider. Stop Envoy Local to switch back to this cloud/Ollama config (if saved).",
+      "Envoy Local is running. Your cloud/Ollama settings here stay saved; Stop Local to use them again.",
     providerLabel: "Provider",
     presetHint:
       "Presets fill endpoint and model suggestions. OpenClaw, chat drafts, and Pi (when not overridden) all use this setting.",

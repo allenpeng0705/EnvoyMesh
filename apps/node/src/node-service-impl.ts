@@ -5023,7 +5023,7 @@ class NodeServiceImpl implements NodeService {
     try {
       // 3. Call the native LLM router (in-process, no gateway needed).
       const providers = buildModelProviders(
-        cfg?.modelProviders ?? { mode: "disabled" },
+        await this.getEffectiveModelProviders(),
         true,
       )
       const result = await routeModelRequest(
@@ -10339,7 +10339,10 @@ class NodeServiceImpl implements NodeService {
     const envelope = signUnsignedEnvelope(unsignedEnvelope, profile.device.privateKeyPem) as EnvoyEnvelope;
 
     const nodeConfig = await this.getNodeConfig();
-    console.log(`[knowledgeQuery] nodeConfig.modelProviders.mode=${nodeConfig.modelProviders.mode}`);
+    const effectiveProviders = await this.getEffectiveModelProviders();
+    console.log(
+      `[knowledgeQuery] effective.modelProviders.mode=${effectiveProviders.mode} (saved=${nodeConfig.modelProviders.mode})`,
+    );
 
     const vaultIndex = await buildVaultIndex({ rootDir: this._vaultDir });
     const ragService = await this._getRagService();
@@ -10354,7 +10357,7 @@ class NodeServiceImpl implements NodeService {
       peerDirectoryStore: this._peerDirectoryStore,
       profile,
       vaultIndex,
-      modelProviders: nodeConfig.modelProviders,
+      modelProviders: effectiveProviders,
       isLocalSelfQuery: true,
       ownerApproved: true, // Local owner queries are implicitly approved
       knowledgeBase: nodeConfig.aiSettings?.knowledgeBase,
