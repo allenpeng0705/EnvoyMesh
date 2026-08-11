@@ -4,3 +4,7 @@ output-localization-file: app_localizations.dart
 output-class: AppLocalizations
 nullable-getter: false
 preferred-supported-locales: [ en ]
+# Detailed per-locale untranslated-message report (used by CI to
+# track i18n coverage). Run `flutter gen-l10n` and read this file
+# for the list of keys that need to be translated.
+untranslated-messages-file: lib/l10n/untranslated.json

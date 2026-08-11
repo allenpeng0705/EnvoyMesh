@@ -138,8 +138,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get meEnvoyLocal => 'Envoy Local';
 
   @override
-  String get meEnvoyLocalHint =>
-      'Home-node local model (download & start on the computer)';
+  String get meEnvoyLocalHint => '홈 노드 로컬 모델(컴퓨터에 다운로드 및 시작)';
 
   @override
   String get mePiAgent => 'Pi 에이전트';
@@ -241,7 +240,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get meTeamJobs => '팀 작업';
 
   @override
-  String get meStartTeamJobHint => 'Preview a plan and launch on the home node';
+  String get meStartTeamJobHint => '계획을 미리 보고 홈 노드에서 시작';
 
   @override
   String get meAiModelHint => '이 홈 노드 어시스턴트에 사용하는 제공자';
@@ -1482,182 +1481,176 @@ class AppLocalizationsKo extends AppLocalizations {
   String get chainsManageOnSocial => '홈 노드 Social UI에서 체인을 관리하세요.';
 
   @override
-  String get chainsStartTitle => 'Start team job';
+  String get chainsStartTitle => '팀 작업 시작';
 
   @override
-  String get chainsStartFab => 'New team job';
+  String get chainsStartFab => '새 팀 작업';
 
   @override
   String get chainsStartIntro =>
-      'Describe a goal. The home node plans subtasks and assigns bonded Agent Network workers.';
+      '목표를 설명하세요. 홈 노드가 하위 작업을 계획하고 본드된 Agent Network 워커에 할당합니다.';
 
   @override
-  String get chainsStartAssignmentMode => 'Assignment mode';
+  String get chainsStartAssignmentMode => '할당 모드';
 
   @override
-  String get chainsStartModeSkill => 'By skill';
+  String get chainsStartModeSkill => '기술 기준';
 
   @override
-  String get chainsStartModeRole => 'By role';
+  String get chainsStartModeRole => '역할 기준';
 
   @override
-  String get chainsStartModeSkillHint =>
-      'Workers are ranked by matching skills.';
+  String get chainsStartModeSkillHint => '워커는 일치하는 기술로 순위가 매겨집니다.';
 
   @override
-  String get chainsStartModeRoleHint =>
-      'Each step prefers a collaboration role (PM, programmer, …).';
+  String get chainsStartModeRoleHint => '각 단계는 역할(PM, 프로그래머 등)을 우선합니다.';
 
   @override
-  String get chainsStartGoalLabel => 'Goal';
+  String get chainsStartGoalLabel => '목표';
 
   @override
-  String get chainsStartGoalHint => 'What should the team accomplish?';
+  String get chainsStartGoalHint => '팀이 무엇을 달성해야 하나요?';
 
   @override
   String chainsStartGoalTooShort(int min) {
-    return 'Goal must be at least $min characters';
+    return '목표는 최소 $min자 이상이어야 합니다';
   }
 
   @override
-  String get chainsStartPreview => 'Preview plan';
+  String get chainsStartPreview => '계획 미리보기';
 
   @override
-  String get chainsStartPreviewing => 'Planning…';
+  String get chainsStartPreviewing => '계획 중…';
 
   @override
-  String get chainsStartPreviewFailed => 'Could not build a plan';
+  String get chainsStartPreviewFailed => '계획을 만들 수 없습니다';
 
   @override
-  String get chainsStartNeedPreview => 'Preview a plan before starting';
+  String get chainsStartNeedPreview => '시작하기 전에 계획을 미리 보세요';
 
   @override
-  String get chainsStartPlanHeading => 'Plan';
+  String get chainsStartPlanHeading => '계획';
 
   @override
-  String get chainsStartNoSubtasks => 'No subtasks in this plan.';
+  String get chainsStartNoSubtasks => '이 계획에 하위 작업이 없습니다.';
 
   @override
-  String get chainsStartConfirm => 'Start team job';
+  String get chainsStartConfirm => '팀 작업 시작';
 
   @override
-  String get chainsStartStarting => 'Starting…';
+  String get chainsStartStarting => '시작 중…';
 
   @override
-  String get chainsStartStarted => 'Team job started';
+  String get chainsStartStarted => '팀 작업이 시작되었습니다';
 
   @override
-  String get chainsStartFailed => 'Could not start the team job';
+  String get chainsStartFailed => '팀 작업을 시작할 수 없습니다';
 
   @override
   String get chainsStartNoWorkers =>
-      'No reachable Agent Network workers. Bond contacts with agents on the home node first.';
+      '도달 가능한 Agent Network 워커가 없습니다. 먼저 홈 노드의 에이전트와 연락처를 본드하세요.';
 
   @override
   String get chainsStartNeedWorkers =>
-      'Select at least one online worker, or preview again to restore the recommended pool.';
+      '온라인 워커를 최소 1명 선택하거나, 추천 풀을 복원하려면 다시 미리 보세요.';
 
   @override
   String get chainsStartWorkersHint =>
-      'Online workers from the plan. Uncheck any you do not want. Unchecking everyone blocks Start — preview again to reset to the recommended pool.';
+      '계획의 온라인 워커. 원하지 않는 워커의 체크를 해제하세요. 모두 해제하면 시작이 차단됩니다 — 추천 풀을 재설정하려면 다시 미리 보세요.';
 
   @override
-  String get chainsStartWorkersHeading => 'Workers';
+  String get chainsStartWorkersHeading => '워커';
 
   @override
   String get chainsStartNoSuggestedWorkers =>
-      'No suggested workers yet — Start will use the home node’s discovery pool.';
+      '제안된 워커가 아직 없습니다 — 시작 시 홈 노드의 검색 풀을 사용합니다.';
 
   @override
   String chainsStartWorkerMatches(int count) {
-    return 'matches $count steps';
+    return '$count개 단계 일치';
   }
 
   @override
-  String get chainsStartWorkerOnline => 'Online';
+  String get chainsStartWorkerOnline => '온라인';
 
   @override
-  String get chainsStartWorkerRelay => 'Online (relay)';
+  String get chainsStartWorkerRelay => '온라인(릴레이)';
 
   @override
-  String get chainsStartWorkerOffline => 'Offline / unknown';
+  String get chainsStartWorkerOffline => '오프라인 / 알 수 없음';
 
   @override
-  String get chainsActiveGone => 'This team job is no longer active';
+  String get chainsActiveGone => '이 팀 작업은 더 이상 활성 상태가 아닙니다';
 
   @override
   String chainsBudgetLine(String spent, String max) {
-    return 'Budget $spent / $max USD';
+    return '예산 $spent / $max USD';
   }
 
   @override
-  String get chainsBudgetWarn => 'Budget warning — consider adding budget.';
+  String get chainsBudgetWarn => '예산 경고 — 예산 추가를 고려하세요.';
 
   @override
-  String get chainsBudgetExceeded =>
-      'Budget exceeded — the job may stall until rebalanced.';
+  String get chainsBudgetExceeded => '예산 초과 — 재조정 전까지 작업이 멈출 수 있습니다.';
 
   @override
   String chainsPartialCount(int count) {
-    return '$count partial results';
+    return '$count개의 부분 결과';
   }
 
   @override
-  String get chainsCancelTitle => 'Cancel team job?';
+  String get chainsCancelTitle => '팀 작업을 취소할까요?';
 
   @override
-  String get chainsCancelBody =>
-      'Workers will be told to stop. Partial results already collected are kept.';
+  String get chainsCancelBody => '워커에게 중단을 알립니다. 이미 수집된 부분 결과는 유지됩니다.';
 
   @override
-  String get chainsCancelConfirm => 'Cancel job';
+  String get chainsCancelConfirm => '작업 취소';
 
   @override
-  String get chainsCancelDone => 'Team job cancelled';
+  String get chainsCancelDone => '팀 작업이 취소되었습니다';
 
   @override
-  String get chainsCancelReason => 'Cancelled from EnvoyGo';
+  String get chainsCancelReason => 'EnvoyGo에서 취소됨';
 
   @override
-  String get chainsDetailCancelled => 'This job was cancelled.';
+  String get chainsDetailCancelled => '이 작업은 취소되었습니다.';
 
   @override
-  String get chainsDetailPublished =>
-      'This job finished and published a report.';
+  String get chainsDetailPublished => '이 작업이 완료되어 보고서를 게시했습니다.';
 
   @override
-  String get chainsRebalanceHeading => 'Add budget';
+  String get chainsRebalanceHeading => '예산 추가';
 
   @override
-  String get chainsRebalanceHint =>
-      'Raise the cost ceiling and retry un-awarded steps.';
+  String get chainsRebalanceHint => '비용 한도를 높이고 할당되지 않은 단계를 재시도합니다.';
 
   @override
-  String get chainsRebalanceAmount => 'Additional USD';
+  String get chainsRebalanceAmount => '추가 USD';
 
   @override
-  String get chainsRebalanceAction => 'Add & retry';
+  String get chainsRebalanceAction => '추가 후 재시도';
 
   @override
-  String get chainsRebalanceInvalidAmount => 'Enter a positive dollar amount';
+  String get chainsRebalanceInvalidAmount => '양의 달러 금액을 입력하세요';
 
   @override
-  String get chainsRebalanceDone => 'Budget updated';
+  String get chainsRebalanceDone => '예산이 업데이트되었습니다';
 
   @override
-  String get chainsRebalanceFailed => 'Could not rebalance';
+  String get chainsRebalanceFailed => '재조정할 수 없습니다';
 
   @override
-  String get chainsPin => 'Pin report';
+  String get chainsPin => '보고서 고정';
 
   @override
-  String get chainsUnpin => 'Unpin report';
+  String get chainsUnpin => '보고서 고정 해제';
 
   @override
-  String get chainsPinDone => 'Report pinned (kept past 90-day cleanup)';
+  String get chainsPinDone => '보고서가 고정되었습니다(90일 정리 후에도 유지)';
 
   @override
-  String get chainsUnpinDone => 'Report unpinned';
+  String get chainsUnpinDone => '보고서 고정이 해제되었습니다';
 
   @override
   String chainsPublished(String date) {
@@ -1921,69 +1914,69 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsAiModelEnvoyLocalStandby =>
-      'Envoy Local is the active provider on the home node. Tap to manage Local, or save a cloud provider below as standby.';
+      'Envoy Local이 홈 노드의 활성 제공자입니다. 탭하여 Local을 관리하거나, 아래에 클라우드 제공자를 대기 상태로 저장하세요.';
 
   @override
   String get settingsEnvoyLocalIntro =>
-      'Control llama.cpp on the home computer. Models download there — never onto this phone.';
+      '홈 컴퓨터에서 llama.cpp를 제어합니다. 모델은 거기에서 다운로드됩니다 — 이 폰에는 절대 다운로드되지 않습니다.';
 
   @override
-  String get settingsEnvoyLocalStatusHeading => 'Status';
+  String get settingsEnvoyLocalStatusHeading => '상태';
 
   @override
-  String get settingsEnvoyLocalInUse => 'In use';
+  String get settingsEnvoyLocalInUse => '사용 중';
 
   @override
-  String get settingsEnvoyLocalNotInUse => 'Not in use';
+  String get settingsEnvoyLocalNotInUse => '사용하지 않음';
 
   @override
-  String get settingsEnvoyLocalStatusDownloading => 'Downloading…';
+  String get settingsEnvoyLocalStatusDownloading => '다운로드 중…';
 
   @override
-  String get settingsEnvoyLocalStatusDetecting => 'Detecting…';
+  String get settingsEnvoyLocalStatusDetecting => '감지 중…';
 
   @override
-  String get settingsEnvoyLocalStatusExtracting => 'Extracting…';
+  String get settingsEnvoyLocalStatusExtracting => '추출 중…';
 
   @override
-  String get settingsEnvoyLocalStatusStarting => 'Starting…';
+  String get settingsEnvoyLocalStatusStarting => '시작 중…';
 
   @override
-  String get settingsEnvoyLocalStatusReady => 'Ready';
+  String get settingsEnvoyLocalStatusReady => '준비됨';
 
   @override
-  String get settingsEnvoyLocalStatusError => 'Error';
+  String get settingsEnvoyLocalStatusError => '오류';
 
   @override
-  String get settingsEnvoyLocalStatusDisabled => 'Disabled';
+  String get settingsEnvoyLocalStatusDisabled => '비활성';
 
   @override
   String get settingsEnvoyLocalIdleTimeout =>
-      'Envoy Local operation timed out after 60 minutes. If a download is stuck near 100%, try China mirrors or a VPN, then retry — partial downloads resume.';
+      'Envoy Local 작업이 60분 후 시간 초과되었습니다. 다운로드가 100% 근처에서 멈추면 중국 미러 또는 VPN을 시도한 후 재시도하세요 — 부분 다운로드는 재개됩니다.';
 
   @override
   String settingsEnvoyLocalRuntime(String status) {
-    return 'Runtime: $status';
+    return '런타임: $status';
   }
 
   @override
   String settingsEnvoyLocalRuntimeVersion(String version) {
-    return 'Version: $version';
+    return '버전: $version';
   }
 
   @override
   String settingsEnvoyLocalAccel(String accel) {
-    return 'Accelerator: $accel';
+    return '가속기: $accel';
   }
 
   @override
   String settingsEnvoyLocalHardware(String summary) {
-    return 'This machine: $summary';
+    return '이 머신: $summary';
   }
 
   @override
   String settingsEnvoyLocalActiveModel(String model) {
-    return 'Model: $model';
+    return '모델: $model';
   }
 
   @override
@@ -1993,100 +1986,100 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String settingsEnvoyLocalProgressReceived(String received) {
-    return '$received MB downloaded';
+    return '$received MB 다운로드됨';
   }
 
   @override
   String settingsEnvoyLocalLastError(String error) {
-    return 'Last error: $error';
+    return '마지막 오류: $error';
   }
 
   @override
-  String get settingsEnvoyLocalDownloadRegion => 'Model download region';
+  String get settingsEnvoyLocalDownloadRegion => '모델 다운로드 리전';
 
   @override
   String get settingsEnvoyLocalDownloadRegionHint =>
-      'If downloads fail, try China mirrors or a VPN for Global.';
+      '다운로드가 실패하면 중국 미러 또는 Global용 VPN을 시도하세요.';
 
   @override
   String settingsEnvoyLocalDownloadRegionEffective(String region) {
-    return 'Using: $region';
+    return '사용 중: $region';
   }
 
   @override
-  String get settingsEnvoyLocalRegionAuto => 'Auto (timezone / locale)';
+  String get settingsEnvoyLocalRegionAuto => '자동(시간대 / 로케일)';
 
   @override
-  String get settingsEnvoyLocalRegionCn => 'China (ModelScope → hf-mirror)';
+  String get settingsEnvoyLocalRegionCn => '중국(ModelScope → hf-mirror)';
 
   @override
-  String get settingsEnvoyLocalRegionGlobal => 'Global (Hugging Face)';
+  String get settingsEnvoyLocalRegionGlobal => '전역(Hugging Face)';
 
   @override
-  String get settingsEnvoyLocalEnable => 'Download & enable';
+  String get settingsEnvoyLocalEnable => '다운로드 및 활성화';
 
   @override
-  String get settingsEnvoyLocalEnabling => 'Downloading…';
+  String get settingsEnvoyLocalEnabling => '다운로드 중…';
 
   @override
-  String get settingsEnvoyLocalStart => 'Start Envoy Local';
+  String get settingsEnvoyLocalStart => 'Envoy Local 시작';
 
   @override
-  String get settingsEnvoyLocalStarting => 'Starting…';
+  String get settingsEnvoyLocalStarting => '시작 중…';
 
   @override
-  String get settingsEnvoyLocalStop => 'Stop Envoy Local';
+  String get settingsEnvoyLocalStop => 'Envoy Local 중지';
 
   @override
-  String get settingsEnvoyLocalRestart => 'Restart';
+  String get settingsEnvoyLocalRestart => '재시작';
 
   @override
-  String get settingsEnvoyLocalCancelDownload => 'Cancel download';
+  String get settingsEnvoyLocalCancelDownload => '다운로드 취소';
 
   @override
   String get settingsEnvoyLocalStopHint =>
-      'Stop switches the assistant back to your cloud/Ollama provider when one is saved.';
+      '중지하면 저장된 클라우드/Ollama 제공자로 어시스턴트가 돌아갑니다.';
 
   @override
-  String get settingsEnvoyLocalRecommended => 'Recommended';
+  String get settingsEnvoyLocalRecommended => '추천';
 
   @override
-  String get settingsEnvoyLocalRecommendedBadge => 'Recommended';
+  String get settingsEnvoyLocalRecommendedBadge => '추천';
 
   @override
-  String get settingsEnvoyLocalDownload => 'Download';
+  String get settingsEnvoyLocalDownload => '다운로드';
 
   @override
-  String get settingsEnvoyLocalInstalled => 'Installed models';
+  String get settingsEnvoyLocalInstalled => '설치된 모델';
 
   @override
   String get settingsEnvoyLocalInstalledHint =>
-      'Downloaded on the home node. Choose which one is active.';
+      '홈 노드에 다운로드됨. 어떤 모델을 활성화할지 선택하세요.';
 
   @override
-  String get settingsEnvoyLocalNoInstalled => 'No models installed yet.';
+  String get settingsEnvoyLocalNoInstalled => '아직 설치된 모델이 없습니다.';
 
   @override
-  String get settingsEnvoyLocalSetActive => 'Set active';
+  String get settingsEnvoyLocalSetActive => '활성으로 설정';
 
   @override
-  String get settingsEnvoyLocalActiveBadge => 'Active';
+  String get settingsEnvoyLocalActiveBadge => '활성';
 
   @override
-  String get settingsEnvoyLocalInstalledBadge => 'Installed';
+  String get settingsEnvoyLocalInstalledBadge => '설치됨';
 
   @override
-  String get settingsEnvoyLocalCatalog => 'Catalog';
+  String get settingsEnvoyLocalCatalog => '카탈로그';
 
   @override
   String settingsEnvoyLocalHfError(String error) {
-    return 'Hugging Face search unavailable: $error';
+    return 'Hugging Face 검색을 사용할 수 없음: $error';
   }
 
   @override
-  String get settingsEnvoyLocalRefresh => 'Refresh';
+  String get settingsEnvoyLocalRefresh => '새로고침';
 
   @override
   String get settingsEnvoyLocalPhoneNote =>
-      'Advanced server parameters (context size, GPU layers) remain on the home-node Social UI.';
+      '고급 서버 매개변수(컨텍스트 크기, GPU 레이어)는 홈 노드 Social UI에 남아 있습니다.';
 }

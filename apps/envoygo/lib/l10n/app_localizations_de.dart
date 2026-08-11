@@ -141,7 +141,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get meEnvoyLocalHint =>
-      'Home-node local model (download & start on the computer)';
+      'Lokales Modell auf dem Heimknoten (auf dem Computer herunterladen & starten)';
 
   @override
   String get mePiAgent => 'Pi-Agent';
@@ -246,7 +246,8 @@ class AppLocalizationsDe extends AppLocalizations {
   String get meTeamJobs => 'Team-Jobs';
 
   @override
-  String get meStartTeamJobHint => 'Preview a plan and launch on the home node';
+  String get meStartTeamJobHint =>
+      'Plan in der Vorschau ansehen und auf dem Heimknoten starten';
 
   @override
   String get meAiModelHint =>
@@ -1536,108 +1537,109 @@ class AppLocalizationsDe extends AppLocalizations {
       'Verwalten Sie Chains in der Social-UI des Heimknotens.';
 
   @override
-  String get chainsStartTitle => 'Start team job';
+  String get chainsStartTitle => 'Team-Job starten';
 
   @override
-  String get chainsStartFab => 'New team job';
+  String get chainsStartFab => 'Neuer Team-Job';
 
   @override
   String get chainsStartIntro =>
-      'Describe a goal. The home node plans subtasks and assigns bonded Agent Network workers.';
+      'Beschreiben Sie ein Ziel. Der Heimknoten plant Unteraufgaben und weist verbundene Agent-Network-Worker zu.';
 
   @override
-  String get chainsStartAssignmentMode => 'Assignment mode';
+  String get chainsStartAssignmentMode => 'Zuweisungsmodus';
 
   @override
-  String get chainsStartModeSkill => 'By skill';
+  String get chainsStartModeSkill => 'Nach Fähigkeit';
 
   @override
-  String get chainsStartModeRole => 'By role';
+  String get chainsStartModeRole => 'Nach Rolle';
 
   @override
   String get chainsStartModeSkillHint =>
-      'Workers are ranked by matching skills.';
+      'Worker werden nach passenden Fähigkeiten sortiert.';
 
   @override
   String get chainsStartModeRoleHint =>
-      'Each step prefers a collaboration role (PM, programmer, …).';
+      'Jeder Schritt bevorzugt eine Rolle (PM, Programmierer, …).';
 
   @override
-  String get chainsStartGoalLabel => 'Goal';
+  String get chainsStartGoalLabel => 'Ziel';
 
   @override
-  String get chainsStartGoalHint => 'What should the team accomplish?';
+  String get chainsStartGoalHint => 'Was soll das Team erreichen?';
 
   @override
   String chainsStartGoalTooShort(int min) {
-    return 'Goal must be at least $min characters';
+    return 'Das Ziel muss mindestens $min Zeichen umfassen';
   }
 
   @override
-  String get chainsStartPreview => 'Preview plan';
+  String get chainsStartPreview => 'Plan in der Vorschau';
 
   @override
-  String get chainsStartPreviewing => 'Planning…';
+  String get chainsStartPreviewing => 'Planung läuft…';
 
   @override
-  String get chainsStartPreviewFailed => 'Could not build a plan';
+  String get chainsStartPreviewFailed => 'Plan konnte nicht erstellt werden';
 
   @override
-  String get chainsStartNeedPreview => 'Preview a plan before starting';
+  String get chainsStartNeedPreview =>
+      'Vor dem Start einen Plan in der Vorschau ansehen';
 
   @override
   String get chainsStartPlanHeading => 'Plan';
 
   @override
-  String get chainsStartNoSubtasks => 'No subtasks in this plan.';
+  String get chainsStartNoSubtasks => 'Keine Unteraufgaben in diesem Plan.';
 
   @override
-  String get chainsStartConfirm => 'Start team job';
+  String get chainsStartConfirm => 'Team-Job starten';
 
   @override
-  String get chainsStartStarting => 'Starting…';
+  String get chainsStartStarting => 'Wird gestartet…';
 
   @override
-  String get chainsStartStarted => 'Team job started';
+  String get chainsStartStarted => 'Team-Job gestartet';
 
   @override
-  String get chainsStartFailed => 'Could not start the team job';
+  String get chainsStartFailed => 'Team-Job konnte nicht gestartet werden';
 
   @override
   String get chainsStartNoWorkers =>
-      'No reachable Agent Network workers. Bond contacts with agents on the home node first.';
+      'Keine erreichbaren Agent-Network-Worker. Bitte zuerst Kontakte mit Agenten auf dem Heimknoten verknüpfen.';
 
   @override
   String get chainsStartNeedWorkers =>
-      'Select at least one online worker, or preview again to restore the recommended pool.';
+      'Mindestens einen Online-Worker auswählen, oder erneut Vorschau ansehen, um den empfohlenen Pool wiederherzustellen.';
 
   @override
   String get chainsStartWorkersHint =>
-      'Online workers from the plan. Uncheck any you do not want. Unchecking everyone blocks Start — preview again to reset to the recommended pool.';
+      'Online-Worker aus dem Plan. Entfernen Sie alle, die Sie nicht möchten. Wenn alle entfernt werden, ist Start blockiert — erneut Vorschau ansehen, um den empfohlenen Pool zurückzusetzen.';
 
   @override
-  String get chainsStartWorkersHeading => 'Workers';
+  String get chainsStartWorkersHeading => 'Worker';
 
   @override
   String get chainsStartNoSuggestedWorkers =>
-      'No suggested workers yet — Start will use the home node’s discovery pool.';
+      'Noch keine vorgeschlagenen Worker — der Start verwendet den Discovery-Pool des Heimknotens.';
 
   @override
   String chainsStartWorkerMatches(int count) {
-    return 'matches $count steps';
+    return 'passt zu $count Schritten';
   }
 
   @override
   String get chainsStartWorkerOnline => 'Online';
 
   @override
-  String get chainsStartWorkerRelay => 'Online (relay)';
+  String get chainsStartWorkerRelay => 'Online (Relay)';
 
   @override
-  String get chainsStartWorkerOffline => 'Offline / unknown';
+  String get chainsStartWorkerOffline => 'Offline / unbekannt';
 
   @override
-  String get chainsActiveGone => 'This team job is no longer active';
+  String get chainsActiveGone => 'Dieser Team-Job ist nicht mehr aktiv';
 
   @override
   String chainsBudgetLine(String spent, String max) {
@@ -1645,73 +1647,75 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
-  String get chainsBudgetWarn => 'Budget warning — consider adding budget.';
+  String get chainsBudgetWarn =>
+      'Budgetwarnung — erwägen Sie, Budget hinzuzufügen.';
 
   @override
   String get chainsBudgetExceeded =>
-      'Budget exceeded — the job may stall until rebalanced.';
+      'Budget überschritten — der Job kann stocken, bis das Budget neu verteilt wird.';
 
   @override
   String chainsPartialCount(int count) {
-    return '$count partial results';
+    return '$count Teilergebnisse';
   }
 
   @override
-  String get chainsCancelTitle => 'Cancel team job?';
+  String get chainsCancelTitle => 'Team-Job abbrechen?';
 
   @override
   String get chainsCancelBody =>
-      'Workers will be told to stop. Partial results already collected are kept.';
+      'Worker werden angewiesen zu stoppen. Bereits gesammelte Teilergebnisse bleiben erhalten.';
 
   @override
-  String get chainsCancelConfirm => 'Cancel job';
+  String get chainsCancelConfirm => 'Job abbrechen';
 
   @override
-  String get chainsCancelDone => 'Team job cancelled';
+  String get chainsCancelDone => 'Team-Job abgebrochen';
 
   @override
-  String get chainsCancelReason => 'Cancelled from EnvoyGo';
+  String get chainsCancelReason => 'Von EnvoyGo abgebrochen';
 
   @override
-  String get chainsDetailCancelled => 'This job was cancelled.';
+  String get chainsDetailCancelled => 'Dieser Job wurde abgebrochen.';
 
   @override
   String get chainsDetailPublished =>
-      'This job finished and published a report.';
+      'Dieser Job ist abgeschlossen und hat einen Bericht veröffentlicht.';
 
   @override
-  String get chainsRebalanceHeading => 'Add budget';
+  String get chainsRebalanceHeading => 'Budget hinzufügen';
 
   @override
   String get chainsRebalanceHint =>
-      'Raise the cost ceiling and retry un-awarded steps.';
+      'Kostenobergrenze anheben und nicht vergebene Schritte erneut versuchen.';
 
   @override
-  String get chainsRebalanceAmount => 'Additional USD';
+  String get chainsRebalanceAmount => 'Zusätzliche USD';
 
   @override
-  String get chainsRebalanceAction => 'Add & retry';
+  String get chainsRebalanceAction => 'Hinzufügen & erneut versuchen';
 
   @override
-  String get chainsRebalanceInvalidAmount => 'Enter a positive dollar amount';
+  String get chainsRebalanceInvalidAmount => 'Positiven Dollarbetrag eingeben';
 
   @override
-  String get chainsRebalanceDone => 'Budget updated';
+  String get chainsRebalanceDone => 'Budget aktualisiert';
 
   @override
-  String get chainsRebalanceFailed => 'Could not rebalance';
+  String get chainsRebalanceFailed => 'Neuverteilung nicht möglich';
 
   @override
-  String get chainsPin => 'Pin report';
+  String get chainsPin => 'Bericht anheften';
 
   @override
-  String get chainsUnpin => 'Unpin report';
+  String get chainsUnpin => 'Bericht lösen';
 
   @override
-  String get chainsPinDone => 'Report pinned (kept past 90-day cleanup)';
+  String get chainsPinDone =>
+      'Bericht angeheftet (bleibt über die 90-Tage-Bereinigung hinaus erhalten)';
 
   @override
-  String get chainsUnpinDone => 'Report unpinned';
+  String get chainsUnpinDone => 'Bericht gelöst';
 
   @override
   String chainsPublished(String date) {
@@ -1978,49 +1982,49 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get settingsAiModelEnvoyLocalStandby =>
-      'Envoy Local is the active provider on the home node. Tap to manage Local, or save a cloud provider below as standby.';
+      'Envoy Local ist der aktive Anbieter auf dem Heimknoten. Tippen, um Local zu verwalten, oder unten einen Cloud-Anbieter als Standby speichern.';
 
   @override
   String get settingsEnvoyLocalIntro =>
-      'Control llama.cpp on the home computer. Models download there — never onto this phone.';
+      'Steuerung von llama.cpp auf dem Heimcomputer. Modelle werden dort heruntergeladen — nie auf dieses Telefon.';
 
   @override
   String get settingsEnvoyLocalStatusHeading => 'Status';
 
   @override
-  String get settingsEnvoyLocalInUse => 'In use';
+  String get settingsEnvoyLocalInUse => 'In Verwendung';
 
   @override
-  String get settingsEnvoyLocalNotInUse => 'Not in use';
+  String get settingsEnvoyLocalNotInUse => 'Nicht in Verwendung';
 
   @override
-  String get settingsEnvoyLocalStatusDownloading => 'Downloading…';
+  String get settingsEnvoyLocalStatusDownloading => 'Wird heruntergeladen…';
 
   @override
-  String get settingsEnvoyLocalStatusDetecting => 'Detecting…';
+  String get settingsEnvoyLocalStatusDetecting => 'Erkennung läuft…';
 
   @override
-  String get settingsEnvoyLocalStatusExtracting => 'Extracting…';
+  String get settingsEnvoyLocalStatusExtracting => 'Wird entpackt…';
 
   @override
-  String get settingsEnvoyLocalStatusStarting => 'Starting…';
+  String get settingsEnvoyLocalStatusStarting => 'Wird gestartet…';
 
   @override
-  String get settingsEnvoyLocalStatusReady => 'Ready';
+  String get settingsEnvoyLocalStatusReady => 'Bereit';
 
   @override
-  String get settingsEnvoyLocalStatusError => 'Error';
+  String get settingsEnvoyLocalStatusError => 'Fehler';
 
   @override
-  String get settingsEnvoyLocalStatusDisabled => 'Disabled';
+  String get settingsEnvoyLocalStatusDisabled => 'Deaktiviert';
 
   @override
   String get settingsEnvoyLocalIdleTimeout =>
-      'Envoy Local operation timed out after 60 minutes. If a download is stuck near 100%, try China mirrors or a VPN, then retry — partial downloads resume.';
+      'Envoy-Local-Vorgang hat das Zeitlimit von 60 Minuten überschritten. Wenn ein Download bei ca. 100 % hängt, versuchen Sie China-Spiegel oder ein VPN und dann erneut — Teil-Downloads werden fortgesetzt.';
 
   @override
   String settingsEnvoyLocalRuntime(String status) {
-    return 'Runtime: $status';
+    return 'Laufzeit: $status';
   }
 
   @override
@@ -2030,17 +2034,17 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String settingsEnvoyLocalAccel(String accel) {
-    return 'Accelerator: $accel';
+    return 'Beschleuniger: $accel';
   }
 
   @override
   String settingsEnvoyLocalHardware(String summary) {
-    return 'This machine: $summary';
+    return 'Diese Maschine: $summary';
   }
 
   @override
   String settingsEnvoyLocalActiveModel(String model) {
-    return 'Model: $model';
+    return 'Modell: $model';
   }
 
   @override
@@ -2050,28 +2054,28 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String settingsEnvoyLocalProgressReceived(String received) {
-    return '$received MB downloaded';
+    return '$received MB heruntergeladen';
   }
 
   @override
   String settingsEnvoyLocalLastError(String error) {
-    return 'Last error: $error';
+    return 'Letzter Fehler: $error';
   }
 
   @override
-  String get settingsEnvoyLocalDownloadRegion => 'Model download region';
+  String get settingsEnvoyLocalDownloadRegion => 'Modell-Download-Region';
 
   @override
   String get settingsEnvoyLocalDownloadRegionHint =>
-      'If downloads fail, try China mirrors or a VPN for Global.';
+      'Falls Downloads fehlschlagen, probieren Sie China-Spiegel oder ein VPN für Global.';
 
   @override
   String settingsEnvoyLocalDownloadRegionEffective(String region) {
-    return 'Using: $region';
+    return 'Verwendet: $region';
   }
 
   @override
-  String get settingsEnvoyLocalRegionAuto => 'Auto (timezone / locale)';
+  String get settingsEnvoyLocalRegionAuto => 'Auto (Zeitzone / Gebietsschema)';
 
   @override
   String get settingsEnvoyLocalRegionCn => 'China (ModelScope → hf-mirror)';
@@ -2080,70 +2084,70 @@ class AppLocalizationsDe extends AppLocalizations {
   String get settingsEnvoyLocalRegionGlobal => 'Global (Hugging Face)';
 
   @override
-  String get settingsEnvoyLocalEnable => 'Download & enable';
+  String get settingsEnvoyLocalEnable => 'Herunterladen & aktivieren';
 
   @override
-  String get settingsEnvoyLocalEnabling => 'Downloading…';
+  String get settingsEnvoyLocalEnabling => 'Wird heruntergeladen…';
 
   @override
-  String get settingsEnvoyLocalStart => 'Start Envoy Local';
+  String get settingsEnvoyLocalStart => 'Envoy Local starten';
 
   @override
-  String get settingsEnvoyLocalStarting => 'Starting…';
+  String get settingsEnvoyLocalStarting => 'Wird gestartet…';
 
   @override
-  String get settingsEnvoyLocalStop => 'Stop Envoy Local';
+  String get settingsEnvoyLocalStop => 'Envoy Local stoppen';
 
   @override
-  String get settingsEnvoyLocalRestart => 'Restart';
+  String get settingsEnvoyLocalRestart => 'Neustart';
 
   @override
-  String get settingsEnvoyLocalCancelDownload => 'Cancel download';
+  String get settingsEnvoyLocalCancelDownload => 'Download abbrechen';
 
   @override
   String get settingsEnvoyLocalStopHint =>
-      'Stop switches the assistant back to your cloud/Ollama provider when one is saved.';
+      'Stopp schaltet den Assistenten auf Ihren Cloud-/Ollama-Anbieter zurück, falls einer gespeichert ist.';
 
   @override
-  String get settingsEnvoyLocalRecommended => 'Recommended';
+  String get settingsEnvoyLocalRecommended => 'Empfohlen';
 
   @override
-  String get settingsEnvoyLocalRecommendedBadge => 'Recommended';
+  String get settingsEnvoyLocalRecommendedBadge => 'Empfohlen';
 
   @override
-  String get settingsEnvoyLocalDownload => 'Download';
+  String get settingsEnvoyLocalDownload => 'Herunterladen';
 
   @override
-  String get settingsEnvoyLocalInstalled => 'Installed models';
+  String get settingsEnvoyLocalInstalled => 'Installierte Modelle';
 
   @override
   String get settingsEnvoyLocalInstalledHint =>
-      'Downloaded on the home node. Choose which one is active.';
+      'Auf dem Heimknoten heruntergeladen. Wählen Sie, welches aktiv sein soll.';
 
   @override
-  String get settingsEnvoyLocalNoInstalled => 'No models installed yet.';
+  String get settingsEnvoyLocalNoInstalled => 'Noch keine Modelle installiert.';
 
   @override
-  String get settingsEnvoyLocalSetActive => 'Set active';
+  String get settingsEnvoyLocalSetActive => 'Als aktiv festlegen';
 
   @override
-  String get settingsEnvoyLocalActiveBadge => 'Active';
+  String get settingsEnvoyLocalActiveBadge => 'Aktiv';
 
   @override
-  String get settingsEnvoyLocalInstalledBadge => 'Installed';
+  String get settingsEnvoyLocalInstalledBadge => 'Installiert';
 
   @override
-  String get settingsEnvoyLocalCatalog => 'Catalog';
+  String get settingsEnvoyLocalCatalog => 'Katalog';
 
   @override
   String settingsEnvoyLocalHfError(String error) {
-    return 'Hugging Face search unavailable: $error';
+    return 'Hugging-Face-Suche nicht verfügbar: $error';
   }
 
   @override
-  String get settingsEnvoyLocalRefresh => 'Refresh';
+  String get settingsEnvoyLocalRefresh => 'Aktualisieren';
 
   @override
   String get settingsEnvoyLocalPhoneNote =>
-      'Advanced server parameters (context size, GPU layers) remain on the home-node Social UI.';
+      'Erweiterte Server-Parameter (Kontextgröße, GPU-Schichten) bleiben in der Social-UI des Heimknotens.';
 }
