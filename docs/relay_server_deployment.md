@@ -19,10 +19,13 @@
 
 Default HTTP port for `/health`, `/info`, and `/admin` is **`15432`** (`--http-port`). Do **not** assume `8080` unless you set that explicitly.
 
+**Symptom of a wedged relay (seen on community cn-relay):** `curl http://HOST:15432/health` **connects then times out** (TCP SYN-ACK, no HTTP body), while libp2p `:4001` may also be unreachable. In-process health cannot exit because it shares the starved event loop — you need the sibling/`http-liveness-watch` SIGKILL + `Restart=always`.
+
 Probe (unauthenticated):
 
 ```bash
 curl -fsS --max-time 2 http://127.0.0.1:15432/health
+curl -fsS --max-time 2 http://127.0.0.1:15432/readyz   # 503 = mesh not ready; /health still 200 if alive
 ```
 
 ---
@@ -617,22 +620,27 @@ Set `<onfailure action="restart" delay="5 sec"/>` on both.
 
 ```
 ┌──────────────────┐  crash / exit(2)   ┌─────────────────────┐
-│  relay process   │ ─────────────────► │ systemd / NSSM      │ → restart
-└────────┬─────────┘                    └─────────▲───────────┘
-         │ /health timeout (wedged)               │
-         └──── liveness watchdog kills/restarts ──┘
+│  relay process   │ ─────────────────► │ systemd / NSSM /    │ → restart
+└────────┬─────────┘                    │ run-relay supervise │
+         │ heartbeat stale OR /health   └─────────▲───────────┘
+         │ timeout (wedged)                       │
+         └──── sibling + external liveness ───────┘
 ```
 
-In-process health (relay):
+In-process health (relay) — **stricter than home node**:
 
-- Brief event-loop lag → **degraded** (no libp2p recycle)
-- Sustained lag (~90s) / RSS / fatals → **exit** for the supervisor
-- Missing listen addrs → soft **libp2p restart**, then escalate to exit if repeated
+- Lag threshold **1.5s** (home 2s); exit after **2** ticks at **15s** cadence ≈ **30s** (home ≈ 90s)
+- RSS exit default **3072 MB** (home 4096 MB)
+- Sibling watchdog: **heartbeat file + GET /health** (home is HTTP-only); 5s interval / 2s timeout / 2 fails / 60s grace
+- `run-relay.sh` restarts by default (`ENVOYMESH_RELAY_SUPERVISE=0` to disable)
+- Prunes anonymous swarm peers under dial pressure while **protecting live reservation holders**
+- `/health` always **200** if the loop answers; use `/readyz` for mesh readiness
 
-External liveness:
+External liveness (`scripts/http-liveness-watch.sh`):
 
 - `GET /health` fail × 3 (after grace) → restart the relay service
 
+Prefer **both** the built-in sibling and the systemd external unit for community relays.
 ---
 
 ## 8. Troubleshooting
@@ -643,7 +651,7 @@ External liveness:
 | `curl …:15432/health` refused right after restart | `run-relay.sh` still rebuilding / binding | Wait up to ~2 min; poll `/health` in a loop (do not only `sleep 3`) |
 | `curl …:15432/health` refused for longer | HTTP not listening / relay down | Check `systemctl status` / NSSM; ensure `--http-port` / binary default |
 | Watchdog `active` but no `watching` line | Wrong `ExecStart` path / script not executable | `chmod +x` (Linux); fix path; check journal/log |
-| Watchdog restarts relay in a loop | `/health` returns non-2xx while starting, or wrong URL | Increase `LIVENESS_GRACE_SEC`; fix URL; inspect `/health` body |
+| Watchdog restarts relay in a loop | Wrong URL / health never binds | Increase `LIVENESS_GRACE_SEC`; fix URL; `/health` is always 200 when alive — check sibling heartbeat path |
 | Occasional `probe failed (1/3)` then `recovered` | Transient load / slow event loop | Normal — only `(3/3)` triggers kill |
 | Liveness PID restarts every time relay is killed | Unit still has `Requires=envoymesh-relay` | Switch to `Wants=` ([§4.2 migrate](#migrate-an-existing-unit-requires--wants)) |
 | `Interactive authentication required` on restart | Watchdog used `systemctl restart` as non-root | Use `--systemctl` (kill MainPID) with same `User=` as relay; pull latest `http-liveness-watch.sh` and `systemctl restart envoymesh-relay-liveness` |

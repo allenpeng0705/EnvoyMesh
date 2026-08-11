@@ -421,6 +421,170 @@ describe("ext-agent HTTP sidecar", () => {
     }
   });
 
+  // Phase 55+56 review — B1: http-server dedup + timeout edge cases.
+  // Three tests pinning behavior that was previously implicit:
+  // (1) dedup TTL — same messageId within 30s is deduped (skip the 2nd)
+  // (2) dedup cap — oldest entry evicted when >200 entries
+  // (3) bridge reply failure — agent call still resolves; error
+  //     is sent back to bridge but the HTTP /message call returns 200
+
+  it("deduplicates by messageId — second POST with same id is dropped", async () => {
+    const bridgePort = await getFreePort();
+    const seen: Array<{ to: string; text: string }> = [];
+    const bridge = createServer((req, res) => {
+      if (req.method === "POST" && req.url === "/bridge/send") {
+        const chunks: Buffer[] = [];
+        req.on("data", (c) => chunks.push(Buffer.from(c)));
+        req.on("end", () => {
+          seen.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+          res.writeHead(200).end(JSON.stringify({ ok: true }));
+        });
+        return;
+      }
+      res.writeHead(404).end();
+    });
+    await listen(bridge, bridgePort);
+
+    const ask = vi.fn(async () => "pong");
+    const handle = await startExtAgentHttpServer(
+      { kind: "hermes", label: "test", ask, probe: async () => true },
+      {
+        host: "127.0.0.1",
+        port: await getFreePort(),
+        bridgeSendUrl: `http://127.0.0.1:${bridgePort}/bridge/send`,
+      },
+    );
+
+    try {
+      const body = {
+        from: "12D3Sender",
+        fromOwnerId: "envoy:owner:test",
+        text: "ping",
+        messageId: "dup-id-1",
+      };
+      // First POST — should call ask() and forward to bridge.
+      await fetch(`http://127.0.0.1:${handle.port}/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      // Wait for the bridge to receive the first reply.
+      await vi.waitFor(() => expect(seen.length).toBe(1));
+      expect(ask).toHaveBeenCalledTimes(1);
+      // Second POST with the SAME messageId — should be deduped
+      // (skipped without calling ask()).
+      await fetch(`http://127.0.0.1:${handle.port}/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      // Give the dedup path a moment to (not) call ask.
+      await new Promise((r) => setTimeout(r, 100));
+      expect(ask).toHaveBeenCalledTimes(1);
+      expect(seen.length).toBe(1);
+    } finally {
+      await handle.stop();
+      await close(bridge);
+    }
+  });
+
+  it("dedup map caps at 200 entries — oldest is evicted", async () => {
+    const bridgePort = await getFreePort();
+    const bridge = createServer((req, res) => {
+      if (req.method === "POST" && req.url === "/bridge/send") {
+        req.on("data", () => {});
+        req.on("end", () => res.writeHead(200).end(JSON.stringify({ ok: true })));
+        return;
+      }
+      res.writeHead(404).end();
+    });
+    await listen(bridge, bridgePort);
+
+    const ask = vi.fn(async () => "pong");
+    const handle = await startExtAgentHttpServer(
+      { kind: "hermes", label: "test", ask, probe: async () => true },
+      {
+        host: "127.0.0.1",
+        port: await getFreePort(),
+        bridgeSendUrl: `http://127.0.0.1:${bridgePort}/bridge/send`,
+      },
+    );
+
+    try {
+      // Fire 201 unique message IDs.
+      for (let i = 0; i < 201; i++) {
+        await fetch(`http://127.0.0.1:${handle.port}/message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            from: "12D3Sender",
+            fromOwnerId: "envoy:owner:test",
+            text: `ping-${i}`,
+            messageId: `id-${i}`,
+          }),
+        });
+      }
+      // Wait for the bridge to receive all 201 replies.
+      await vi.waitFor(
+        () => expect(ask).toHaveBeenCalledTimes(201),
+        { timeout: 5_000 },
+      );
+      // Now re-send `id-0` (the oldest). It should be evicted from
+      // the dedup map (the 200-entry cap) and processed again —
+      // ask() is called a 202nd time.
+      await fetch(`http://127.0.0.1:${handle.port}/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: "12D3Sender",
+          fromOwnerId: "envoy:owner:test",
+          text: "ping-0-again",
+          messageId: "id-0",
+        }),
+      });
+      await vi.waitFor(() => expect(ask).toHaveBeenCalledTimes(202));
+    } finally {
+      await handle.stop();
+      await close(bridge);
+    }
+  });
+
+  it("bridge /bridge/send unreachable — agent error is still surfaced", async () => {
+    // No bridge server — the sidecar's /bridge/send calls will fail
+    // with ECONNREFUSED. The user-visible behavior: the agent call
+    // completes (the http /message call returns 200 immediately
+    // because handleMessage is fire-and-forget), but the error
+    // path is exercised internally. The test pins: the http /message
+    // request always returns 200, even when the bridge is down.
+    const handle = await startExtAgentHttpServer(
+      { kind: "hermes", label: "test", ask: async () => "result", probe: async () => true },
+      {
+        host: "127.0.0.1",
+        port: await getFreePort(),
+        // Port 1 — guaranteed to be unbound on any sane system.
+        bridgeSendUrl: "http://127.0.0.1:1/bridge/send",
+      },
+    );
+
+    try {
+      const resp = await fetch(`http://127.0.0.1:${handle.port}/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: "12D3Sender",
+          fromOwnerId: "envoy:owner:test",
+          text: "ping",
+          messageId: "m1",
+        }),
+      });
+      // /message returns 200 immediately (async handling).
+      expect(resp.status).toBe(200);
+      expect(await resp.json()).toEqual({ status: "accepted", text: null });
+    } finally {
+      await handle.stop();
+    }
+  });
+
   it("syncExtAgentSidecar starts hermes and stops for homeclaw", async () => {
     process.env.ENVOYMESH_HERMES_PORT = String(await getFreePort());
 

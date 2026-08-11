@@ -219,3 +219,52 @@ describe("getExtAgentInstallGuide — per-state `installed` flag", () => {
     }
   });
 });
+
+describe("getExtAgentInstallGuide — pi is in-process (no CLI verify)", () => {
+  // Regression guard: previously the pi branch returned
+  // `command: "pi"` and `verifyCommand: "pi --version"` even though
+  // pi has no CLI binary. The Install Required card would show a
+  // misleading "Verify: pi --version" if the install-state path
+  // ever flowed through. Now verifyCommand is empty for pi.
+  it("returns installed=true with empty verifyCommand (no fake CLI)", () => {
+    const g = getExtAgentInstallGuide("pi", "installed");
+    expect(g.installed).toBe(true);
+    expect(g.command).toBe("pi");
+    expect(g.installCommand).toBe("");
+    expect(g.verifyCommand).toBe("");
+    // Pi's `command` field stays as "pi" for shape consistency, but
+    // the install card is not rendered (installed: true) so the
+    // user never sees it.
+  });
+});
+
+describe("getExtAgentInstallGuide — unknown id returns empty install commands", () => {
+  // Regression guard: previously the default branch set
+  // `command: id` and `verifyCommand: <id> --version` for unknown
+  // agents. The UI would show "Verify: homeclaw --version" for a
+  // custom / unrecognised agent — misleading. Now both fields are
+  // empty; the UI falls back to the "no install recipe" common-issue.
+  it("returns empty command/installCommand/verifyCommand for unknown ids", () => {
+    const g = getExtAgentInstallGuide("totally-custom-agent", "unknown");
+    expect(g.agentId).toBe("totally-custom-agent");
+    expect(g.command).toBe("");
+    expect(g.installCommand).toBe("");
+    expect(g.verifyCommand).toBe("");
+    // commonIssues still surfaces the "no install recipe" hint.
+    expect(g.commonIssues.join("\n")).toContain("No install recipe");
+  });
+
+  it("returns empty command/installCommand/verifyCommand for homeclaw (no CLI binary)", () => {
+    // HomeClaw is reached over its own :8010 channel; it has no CLI
+    // to verify with. The Install Required card should not suggest
+    // `homeclaw --version` — that's a lie. HomeClaw is not in the
+    // INSTALL_TABLE (it's an app, not a CLI), so it falls into the
+    // "unknown id" path with empty command/verify.
+    const g = getExtAgentInstallGuide("homeclaw", "not-installed");
+    expect(g.command).toBe("");
+    expect(g.installCommand).toBe("");
+    expect(g.verifyCommand).toBe("");
+    // commonIssues should still surface the "no install recipe" hint.
+    expect(g.commonIssues.join("\n")).toContain("No install recipe");
+  });
+});

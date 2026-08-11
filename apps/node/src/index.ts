@@ -55,6 +55,7 @@ import {
   EnvoyMesh,
   type EnvoyMeshOptions,
   filterBootstrapMultiaddrs,
+  capBootstrapPeersForCircuitHoppability,
   filterUsableOutboundPeerDialHints,
   voucherJsonBytesFromObject,
   type P2pDebugEvent,
@@ -452,6 +453,28 @@ const wsServer = new WsServer(SOCIAL_WS_PORT, "/ws", {
   },
 });
 wsServer.start(nodeService);
+// CLI / headless home nodes: sibling /health probe kills a wedged process
+// (Tauri has its own guardian; set ENVOYMESH_LIVENESS_WATCHDOG=0 to disable).
+// Under the watchdog, also exit on sustained event-loop lag so launchd/systemd
+// can respawn (Tauri sets ENVOYMESH_GUARDIAN_EXIT_ON_LAG=1 itself).
+{
+  const { startHomeNodeLivenessWatchdog, isHomeNodeLivenessWatchdogEnabled } = await import(
+    "./home-node-liveness-watchdog.js"
+  );
+  if (isHomeNodeLivenessWatchdogEnabled() && !process.env.ENVOYMESH_GUARDIAN_EXIT_ON_LAG) {
+    process.env.ENVOYMESH_GUARDIAN_EXIT_ON_LAG = "1";
+  }
+  const stopLivenessWatchdog = startHomeNodeLivenessWatchdog({ port: SOCIAL_WS_PORT });
+  if (stopLivenessWatchdog) {
+    process.once("exit", () => {
+      try {
+        stopLivenessWatchdog();
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+}
 wsServerForEvents = wsServer;
 if (nodeService instanceof NodeServiceImpl) {
   nodeService.setWsListenAddress(SOCIAL_WS_PORT, "/ws");
@@ -776,7 +799,14 @@ const resolvedBootstrapPeers = resolvedBootstrapResults.flatMap((r) => r.resolve
 const rawBootstrapPeers = dedupeAddrs([...resolvedBootstrapPeers, ...persistedSeedAddrs]);
 // Mutable: deferred first-run activation reloads node-config and must refresh
 // this list so relay.lookup / checkin targets match the live mesh bootstrap.
-let effectiveBootstrapPeers = filterBootstrapMultiaddrs(rawBootstrapPeers);
+// Cap + strip circuits so wan-default seed pollution cannot reopen dialQueue 300+.
+const filteredBootstrapPeers = filterBootstrapMultiaddrs(rawBootstrapPeers);
+let effectiveBootstrapPeers = capBootstrapPeersForCircuitHoppability(filteredBootstrapPeers);
+if (filteredBootstrapPeers.length !== effectiveBootstrapPeers.length) {
+  console.log(
+    `[connectivity] bootstrap hoppability cap: ${filteredBootstrapPeers.length} → ${effectiveBootstrapPeers.length} (max ${8}, circuits/LAN stripped)`,
+  );
+}
 
 // Build a set of bootstrap peer IDs so we can exclude them from the
 // "People on this network" / "People you can reach" discovery UI.
@@ -841,6 +871,17 @@ const mesh = new EnvoyMesh({
     void appendP2pTrace(event);
   },
 });
+{
+  const { evaluateHomeWanReady } = await import("./home-wan-ready.js");
+  wsServer.setReadyzProbe(() =>
+    evaluateHomeWanReady({
+      meshStarted,
+      discoveryProfile: args.discoveryProfile,
+      relayEnabled: args.enableRelay,
+      hasLiveRelayReservation: meshStarted ? mesh.hasLiveRelayReservation() : false,
+    }),
+  );
+}
 console.log(`[node] DHT mode: ${args.dhtClientMode === false ? "SERVER" : "CLIENT"} (dhtClientMode=${args.dhtClientMode})`);
 let rendezvousRegistry: CapabilityRegistry | undefined;
 if (args.p2pDebug) {
@@ -2898,7 +2939,9 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
           await discoverySeedStore.listSeedRecords(),
         );
         const rawBootstrapPeers = dedupeAddrs([...resolvedBootstrapPeers, ...persistedSeedAddrs]);
-        const effectivePeers = filterBootstrapMultiaddrs(rawBootstrapPeers);
+        const effectivePeers = capBootstrapPeersForCircuitHoppability(
+          filterBootstrapMultiaddrs(rawBootstrapPeers),
+        );
         effectiveBootstrapPeers = effectivePeers;
         relayBootstrapPeers = effectivePeers;
         relayConfiguredRelays = config.configuredRelays;
@@ -4794,6 +4837,23 @@ async function runNodeHealthCycle(source: "startup" | "periodic"): Promise<void>
     nodeService instanceof NodeServiceImpl && nodeService.hasDeferredMeshStart();
   const meshStartDeferred = hasDeferred || !meshStarted;
 
+  // Dial/microtask storms show up as lag + dialQueue growth (async-generator
+  // resume loops in sample). Log once per high-lag tick so overnight wedges
+  // leave a fingerprint without needing an attached CPU profiler.
+  if (meshStarted && lastEventLoopLagMs > 2_000) {
+    try {
+      const conn = mesh.getConnectionStats();
+      const resv = mesh.getRelayReservationStatus();
+      console.warn(
+        `[node-health] event-loop lag=${lastEventLoopLagMs}ms dialQueue=${conn.dialQueueLength ?? "?"} ` +
+          `totalPeers=${conn.totalPeerIds} liveReservation=${resv.state} failStreak=${resv.failureStreak ?? 0} ` +
+          `(source=${source}) — if dialQueue stays high, suspect bootstrap/circuit probe storm`,
+      );
+    } catch {
+      /* ignore probe failures while already unhealthy */
+    }
+  }
+
   const result = evaluateNodeHealth({
     startedAtMs: processStartedAt,
     meshStarted,
@@ -6054,6 +6114,8 @@ function pushBootstrapProbeResult(entry: {
   }
 }
 
+let bootstrapReprobeRunning = false;
+
 function scheduleBootstrapReprobe(peers: string[]): void {
   if (peers.length === 0) {
     return;
@@ -6068,47 +6130,80 @@ async function runBootstrapReprobe(peers: string[]): Promise<void> {
   if (peers.length === 0) {
     return;
   }
-
-  const peer = peers[bootstrapReprobeCursor % peers.length];
-  bootstrapReprobeCursor = (bootstrapReprobeCursor + 1) % peers.length;
+  if (bootstrapReprobeRunning) {
+    scheduleBootstrapReprobe(peers);
+    return;
+  }
+  bootstrapReprobeRunning = true;
 
   try {
-    const latencyMs = await mesh.probePeer(peer);
-    pushBootstrapProbeResult({ peer, ok: true, latencyMs });
-    await discoverySeedStore.upsertSuccess(peer, "bootstrap-probe");
-    void taskStore.appendAuditEvent(
-      createAuditEvent({
-        type: "p2p.trace",
-        direction: "outbound",
-        protocol: "connectivity.reprobe.ok",
-        remotePeerId: peer,
-        latencyMs,
-        outcome: "record",
-        summary: `bootstrap reprobe ok peer=${peer} latencyMs=${latencyMs}`,
-      }),
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    pushBootstrapProbeResult({ peer, ok: false, error: message });
-    console.warn(`[connectivity] bootstrap reprobe FAILED for ${peer.slice(0, 60)}…: ${message.slice(0, 80)}`);
-    // Aggregate diagnostic: warn when the last N results (one per peer)
-    // are all failures — helps operators distinguish "all peers
-    // unreachable" from a single-peer transient error.
-    const recent = bootstrapProbeResults.slice(-peers.length);
-    if (recent.length >= peers.length && recent.every((r) => !r.ok)) {
-      console.warn(`[connectivity] ALL bootstrap reprobe peers failed this cycle (${peers.length}/${peers.length})`);
+    // Skip while dial queue is congested — probing only feeds the storm.
+    const dialQueue = mesh.getConnectionStats().dialQueueLength ?? 0;
+    if (dialQueue > 50) {
+      console.warn(
+        `[connectivity] bootstrap reprobe deferred (dialQueue=${dialQueue} > 50)`,
+      );
+      return;
     }
-    void taskStore.appendAuditEvent(
-      createAuditEvent({
-        type: "p2p.trace",
-        direction: "outbound",
-        protocol: "connectivity.reprobe.fail",
-        remotePeerId: peer,
-        outcome: "record",
-        summary: `bootstrap reprobe failed peer=${peer} error=${message}`,
-      }),
-    );
+
+    // Walk until we find a probeable addr (skip circuit/self without burning a slot).
+    let peer: string | undefined;
+    for (let i = 0; i < peers.length; i++) {
+      const candidate = peers[bootstrapReprobeCursor % peers.length];
+      bootstrapReprobeCursor = (bootstrapReprobeCursor + 1) % peers.length;
+      if (!candidate) continue;
+      if (candidate.includes("/p2p-circuit/")) continue;
+      const selfId = mesh.peerId;
+      if (candidate === selfId || candidate.includes(`/p2p/${selfId}`)) continue;
+      peer = candidate;
+      break;
+    }
+    if (!peer) {
+      return;
+    }
+
+    try {
+      const latencyMs = await mesh.probePeer(peer);
+      pushBootstrapProbeResult({ peer, ok: true, latencyMs });
+      await discoverySeedStore.upsertSuccess(peer, "bootstrap-probe");
+      void taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "p2p.trace",
+          direction: "outbound",
+          protocol: "connectivity.reprobe.ok",
+          remotePeerId: peer,
+          latencyMs,
+          outcome: "record",
+          summary: `bootstrap reprobe ok peer=${peer} latencyMs=${latencyMs}`,
+        }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.startsWith("probePeer skipped:")) {
+        return;
+      }
+      pushBootstrapProbeResult({ peer, ok: false, error: message });
+      console.warn(`[connectivity] bootstrap reprobe FAILED for ${peer.slice(0, 60)}…: ${message.slice(0, 80)}`);
+      // Aggregate diagnostic: warn when the last N results (one per peer)
+      // are all failures — helps operators distinguish "all peers
+      // unreachable" from a single-peer transient error.
+      const recent = bootstrapProbeResults.slice(-peers.length);
+      if (recent.length >= peers.length && recent.every((r) => !r.ok)) {
+        console.warn(`[connectivity] ALL bootstrap reprobe peers failed this cycle (${peers.length}/${peers.length})`);
+      }
+      void taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "p2p.trace",
+          direction: "outbound",
+          protocol: "connectivity.reprobe.fail",
+          remotePeerId: peer,
+          outcome: "record",
+          summary: `bootstrap reprobe failed peer=${peer} error=${message}`,
+        }),
+      );
+    }
   } finally {
+    bootstrapReprobeRunning = false;
     scheduleBootstrapReprobe(peers);
   }
 }

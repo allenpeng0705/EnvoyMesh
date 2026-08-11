@@ -16,10 +16,12 @@ import '../../widgets/profile_avatar.dart';
 import '../browser/browser_screen.dart';
 import '../chains/active_chains_screen.dart';
 import '../chains/recent_chains_screen.dart';
+import '../chains/start_chain_screen.dart';
 import '../pairing/pairing_scan_screen.dart';
 import '../profile/profile_screen.dart';
 import '../settings/ai_engine_settings_screen.dart';
 import '../settings/ai_model_settings_screen.dart';
+import '../settings/envoy_local_settings_screen.dart';
 import '../settings/pi_settings_screen.dart';
 import 'node_switcher_sheet.dart';
 import '../../utils/localized_labels.dart';
@@ -589,6 +591,26 @@ class _MeScreenState extends ConsumerState<MeScreen> {
           _SectionHeader(title: l10n.meTeamJobs),
           Card(
             child: ListTile(
+              leading: const Icon(Icons.add_task),
+              title: Text(l10n.chainsStartTitle),
+              subtitle: Text(l10n.meStartTeamJobHint),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () async {
+                final started = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(builder: (_) => const StartChainScreen()),
+                );
+                if (started == true && context.mounted) {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const ActiveChainsScreen(),
+                    ),
+                  );
+                }
+              },
+            ),
+          ),
+          Card(
+            child: ListTile(
               leading: const Icon(Icons.analytics_outlined),
               title: Text(l10n.meRecentTeamJobs),
               subtitle: Text(l10n.meRecentTeamJobsHintLong),
@@ -650,6 +672,21 @@ class _MeScreenState extends ConsumerState<MeScreen> {
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => const AiModelSettingsScreen(),
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.memory),
+                  title: Text(l10n.meEnvoyLocal),
+                  subtitle: Text(
+                    l10n.meEnvoyLocalHint,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const EnvoyLocalSettingsScreen(),
                     ),
                   ),
                 ),

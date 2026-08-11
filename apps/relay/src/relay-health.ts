@@ -62,13 +62,17 @@ function readMaxRssBytes(envName: string, defaultMb: number): number {
   return defaultMb * 1024 * 1024;
 }
 
-const MAX_EVENT_LOOP_LAG_MS = 2_000;
-const MAX_RSS_BYTES = readMaxRssBytes("ENVOYMESH_RELAY_MAX_RSS_MB", 4096);
+const MAX_EVENT_LOOP_LAG_MS = 1_500;
+const MAX_RSS_BYTES = readMaxRssBytes("ENVOYMESH_RELAY_MAX_RSS_MB", 3072);
 const FATAL_ERROR_WINDOW_MS = 5 * 60_000;
 const MAX_FATAL_ERRORS_PER_WINDOW = 3;
 const MAX_CONSECUTIVE_RESTART_REQUESTS = 2;
-/** ~90s of sustained lag at 30s health cadence → exit for systemd/launchd. */
-const MAX_CONSECUTIVE_HIGH_LAG = 3;
+/**
+ * Tighter than home-node (~90s): with 15s health cadence + 2 ticks ≈ 30s of
+ * sustained lag before exit-for-supervisor. Community relays must recover
+ * faster than a home phone client.
+ */
+const MAX_CONSECUTIVE_HIGH_LAG = 2;
 
 export function createInitialStandaloneRelayHealthState(): StandaloneRelayHealthState {
   return {

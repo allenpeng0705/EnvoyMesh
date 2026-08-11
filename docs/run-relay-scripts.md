@@ -296,7 +296,7 @@ sudo journalctl -u envoymesh-relay -f
 curl http://127.0.0.1:15432/health
 ```
 
-The `/health` endpoint returns JSON with the relay status (`healthy`, `degraded`, `unhealthy`, or `critical`), recent reasons, restart counters, uptime, memory usage, event-loop lag, and connected relay peer count. `unhealthy` and `critical` responses return HTTP 503 so a load balancer or host probe can detect the problem too.
+The `/health` endpoint returns JSON with the relay status (`healthy`, `degraded`, `unhealthy`, or `critical`), recent reasons, restart counters, uptime, memory usage, event-loop lag, and connected relay peer count. **`/health` always returns HTTP 200 when the event loop can answer** (liveness for watchdog / systemd wedge detection). Use **`GET /readyz`** for readiness — it returns **503** while `starting` / `unhealthy` / `critical` so load balancers can drain without conflating a soft libp2p repair with a dead process.
 
 ---
 

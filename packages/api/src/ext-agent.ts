@@ -456,9 +456,13 @@ export function getExtAgentInstallGuide(
     return {
       agentId: id,
       installed: true,
+      // Pi runs in-process (no CLI binary). The `command` field is
+      // exposed for the Install Required card's "verify" line, but
+      // the card is not rendered for Pi (installed: true). Keeping
+      // the field here so the shape stays consistent.
       command: "pi",
       installCommand: "",
-      verifyCommand: "pi --version",
+      verifyCommand: "",
       startHint: info.startHint,
       ...(info.homepageUrl ? { homepageUrl: info.homepageUrl } : {}),
       homepageLabel: info.homepageLabel,
@@ -470,13 +474,15 @@ export function getExtAgentInstallGuide(
   if (!row) {
     // Unknown / custom agent. We have a homepage label from
     // getExtAgentInstallInfo, but no install command. UI should
-    // render a "no install recipe available" hint.
+    // render a "no install recipe" hint. The `command` / `verify`
+    // fields are intentionally empty — we don't guess at a binary
+    // name the user might not even have.
     return {
       agentId: id,
       installed: isInstalled,
-      command: id,
+      command: "",
       installCommand: "",
-      verifyCommand: `${id} --version`,
+      verifyCommand: "",
       startHint: info.startHint,
       ...(info.homepageUrl ? { homepageUrl: info.homepageUrl } : {}),
       homepageLabel: info.homepageLabel,

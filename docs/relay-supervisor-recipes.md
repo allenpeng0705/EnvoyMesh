@@ -6,15 +6,15 @@ Relay nodes should run under an external supervisor. EnvoyMesh performs local he
 
 **Event-loop lag:** a brief lag spike only marks the relay `degraded` (no libp2p recycle — that drops reservations and flaps clients). After **~90s of sustained lag** (3 health ticks), the process exits for the supervisor. Keep `Restart=always` / `KeepAlive` enabled.
 
-**Alive-but-wedged:** exit-based supervisors alone are not enough. If the event loop is starved, the process stays running (ports LISTEN) and never exits. Pair `Restart=always` with an **external HTTP liveness probe**:
+**Alive-but-wedged:** exit-based supervisors alone are not enough. If the event loop is starved, the process stays running (ports LISTEN) and never exits. Pair `Restart=always` with an **external HTTP liveness probe** *and* the built-in sibling watchdog (on by default when `--http-port` is set; disable with `ENVOYMESH_LIVENESS_WATCHDOG=0`):
 
 | Surface | Probe | Who kills/respawns |
 |---------|-------|--------------------|
-| Relay (`--http-port`) | `GET /health` | `scripts/http-liveness-watch.sh --systemctl …` (or `--pid`) |
+| Relay (`--http-port`) | `GET /health` (always 200 if loop answers; use `/readyz` for mesh readiness) | Built-in sibling + `scripts/http-liveness-watch.sh --systemctl …` |
 | Home CLI | `GET http://127.0.0.1:3030/health` (or `:4030`) | same script + launchd/systemd |
 | Desktop Tauri | `GET http://127.0.0.1:3030/health` | built into the Tauri guardian (3 fails → kill + respawn) |
 
-**Headless home nodes** (CLI): set `ENVOYMESH_GUARDIAN_EXIT_ON_LAG=1`, wrap `node:dev` in launchd/systemd/`KeepAlive`, **and** run `scripts/http-liveness-watch.sh` against `/health`.
+**Headless home nodes** (CLI): see **[home-node-supervisor-recipes](./home-node-supervisor-recipes.md)**. Prefer **Tauri** for desktop 24×7. Otherwise set `ENVOYMESH_GUARDIAN_EXIT_ON_LAG=1`, wrap `node:dev` in launchd/systemd/`scripts/supervise-home-node.sh`, **and** rely on the built-in sibling `/health` watchdog (or `scripts/http-liveness-watch.sh`).
 
 **Desktop Tauri:** sets `ENVOYMESH_GUARDIAN_EXIT_ON_LAG=1`, auto-respawns on `process.exit(2)`, **and** kills/respawns when `/health` times out while the child is still alive (max 3/hour, backoff). Intentional stops (quit, OTA, Social “Restart node”) suppress respawn.
 

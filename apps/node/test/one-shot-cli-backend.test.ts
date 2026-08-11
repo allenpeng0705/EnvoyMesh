@@ -152,20 +152,51 @@ describe("OneShotCliBackend (shared base)", () => {
       await expect(backend.ask("hi", "session-A")).rejects.toThrow(/timed out after 200ms/);
     }, 5_000);
 
-    it("rejects when parseOutput throws (non-zero exit + stderr)", async () => {
+    it("rejects with non-zero-exit error and never invokes parseOutput", async () => {
+      // Regression guard: previously, a non-zero exit with an "error
+      // text" on stdout would be returned as a successful answer
+      // (parseOutput would happily return the stderr-derived text).
+      // The base class now rejects with the exit code + stderr +
+      // install hint BEFORE calling parseOutput, so the parser is
+      // bypassed entirely.
+      let parserCalled = false;
       const { command, args } = await fakeNodeScript(
-        `#!/usr/bin/env node\nprocess.stderr.write("boom"); process.exit(7);\n`,
+        `#!/usr/bin/env node\nprocess.stderr.write("boom"); process.stdout.write("looks like an answer"); process.exit(7);\n`,
       );
       const backend = new TestOneShotBackend({
         command,
         args,
         binaryOnPath: async () => true,
-        parser: (_stdout, stderr, exitCode) => {
-          throw new Error(`parser-fail: exit=${exitCode} stderr=${stderr}`);
+        parser: (_stdout, _stderr, _exitCode) => {
+          parserCalled = true;
+          return "should-not-be-returned";
         },
       });
       await expect(backend.ask("hi", "session-A")).rejects.toThrow(
-        /parser-fail: exit=7 stderr=boom/,
+        new RegExp(
+          `cursor ask\\(\\): non-zero exit \\(code=7, stderr=boom\\) — Install the \`${command}\` CLI`,
+        ),
+      );
+      expect(parserCalled).toBe(false);
+    });
+
+    it("rejects when parseOutput throws on a zero-exit (parse error)", async () => {
+      // With exit=0, parseOutput is invoked. If it throws, the error
+      // message is wrapped (so the user sees the parse failure rather
+      // than a silent empty reply).
+      const { command, args } = await fakeNodeScript(
+        `#!/usr/bin/env node\nprocess.stdout.write("not json");\n`,
+      );
+      const backend = new TestOneShotBackend({
+        command,
+        args,
+        binaryOnPath: async () => true,
+        parser: () => {
+          throw new Error("schema mismatch");
+        },
+      });
+      await expect(backend.ask("hi", "session-A")).rejects.toThrow(
+        /failed to parse output \(exit=0\): schema mismatch/,
       );
     });
 

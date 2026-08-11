@@ -32,6 +32,70 @@
  * The supervisor is decoupled from the sidecar HTTP server. The
  * `healthcheck` function is the bridge between them — e.g. an HTTP GET
  * to the local `/status` endpoint.
+ *
+ * ## State machine
+ *
+ * ```mermaid
+ * stateDiagram-v2
+ *     [*] --> Stopped
+ *
+ *     Stopped --> Starting: start()
+ *     Starting --> Healthy: first healthcheck passes + grace
+ *     Starting --> InstallMissing: pre-check fails / spawn ENOENT
+ *     Starting --> TimedOut: startupTimeoutMs elapsed
+ *     TimedOut --> Stopped: stop()
+ *
+ *     Healthy --> Healthy: healthcheck OK (every interval)
+ *     Healthy --> Unhealthy: healthcheck fails
+ *     Healthy --> Restarting: proc crashes unexpectedly
+ *     Healthy --> Stopping: stop()
+ *
+ *     Unhealthy --> Healthy: healthcheck OK
+ *     Unhealthy --> Restarting: proc crashes
+ *     Unhealthy --> Stopping: stop()
+ *
+ *     Restarting --> Starting: backoff elapsed, respawn
+ *     Restarting --> Stuck: maxRestartsInWindow exceeded
+ *     Restarting --> Stopping: stop()
+ *
+ *     InstallMissing --> Starting: user installs + start()
+ *     Stuck --> Starting: stop() + start()
+ *
+ *     Stopping --> Stopped: SIGTERM + grace + SIGKILL done
+ *     Stopped --> [*]
+ * ```
+ *
+ * **Edge annotations** (where the events are emitted):
+ * - `start` event: when the child process has been spawned.
+ * - `healthy` event: when the first healthcheck passes (Healthy) and
+ *   on every healthcheck-OK transition from Unhealthy back to Healthy.
+ * - `unhealthy` event: when a healthcheck fails after at least one
+ *   passing (Unhealthy).
+ * - `crash` event: when the child exits unexpectedly (not via stop()).
+ *   Triggers `Restarting`.
+ * - `install-missing` event: pre-check failed OR spawn ENOENT
+ *   (InstallMissing). The Settings UI renders an Install Required card.
+ * - `crash.stuck` event: restart counter exceeded `maxRestartsInWindow`
+ *   (Stuck). The user must call `stop()` + `start()` to recover.
+ * - `stop` event: child exited via the `stop()` path (after SIGKILL if
+ *   needed). Idempotent — a second `stop()` is a no-op.
+ * - `stdout` / `stderr` events: raw output chunks from the child
+ *   (decoded as utf8).
+ *
+ * **Stability grace** (Starting → Healthy): after the first passing
+ * healthcheck, the supervisor waits 100ms and re-checks. This catches
+ * the macOS-specific race where `spawn()` returns a child object for
+ * a non-existent binary that fires the `error` event with ENOENT some
+ * time after spawn. The grace also runs a post-grace healthcheck so
+ * late-ENOENT cases (error event after the grace) are caught.
+ *
+ * **Why both grace AND post-grace check?** The grace handles the
+ * common case (ENOENT within 100ms). The post-grace check handles
+ * the rare case (ENOENT after 100ms — possible on slow CI or under
+ * filesystem pressure). Without the post-grace check, `start()`
+ * would resolve with `healthy=true` and the supervisor would then
+ * flip to `unhealthy` on the next health-timer tick, which is
+ * confusing for callers.
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
@@ -566,12 +630,16 @@ export class DaemonSupervisor extends EventEmitter {
    * (set asynchronously via the `error` event).
    *
    * After the first passing healthcheck, waits a 100ms stability grace
-   * window: on some platforms (notably macOS) `spawn()` returns a
-   * child object for a non-existent binary that immediately fires the
-   * `error` event with ENOENT — the spawn itself doesn't throw. The
-   * healthcheck can pass before the `error` event fires, so we hold
-   * off on resolving `start()` until the process has been "stable"
-   * for a brief moment.
+   * window AND runs a post-grace healthcheck. On some platforms
+   * (notably macOS) `spawn()` returns a child object for a non-existent
+   * binary that fires the `error` event with ENOENT some time after
+   * spawn() returns — the spawn itself doesn't throw. The healthcheck
+   * can pass before the `error` event fires, so we hold off on
+   * resolving `start()` until the process has been "stable" for a
+   * brief moment. The 100ms grace + post-grace healthcheck catches
+   * both the common case (ENOENT within 100ms) and the rare case
+   * (ENOENT after 100ms — the post-grace healthcheck fails and we
+   * check `installMissing`).
    */
   private async runFirstHealthcheck(): Promise<void> {
     if (this.state.stopped || !this.state.proc) return;
@@ -599,6 +667,7 @@ export class DaemonSupervisor extends EventEmitter {
         // Stability grace — see JSDoc above.
         await this.sleep(100);
         if (this.state.installMissing) {
+          // ENOENT fired during the grace — most common case on macOS.
           throw new InstallMissingError({
             command: this.opts.command,
             reason: "spawn-enoent",
@@ -606,6 +675,27 @@ export class DaemonSupervisor extends EventEmitter {
               ? { installHint: this.opts.installHint }
               : {}),
           });
+        }
+        // Post-grace healthcheck: catches the rare late-ENOENT case
+        // (error event fires AFTER the 100ms grace). If the proc
+        // died in the meantime, the healthcheck should fail and we
+        // either throw InstallMissingError (if marked) or just
+        // resolve (the supervisor's restart logic will handle it).
+        const stillOk = await this.runOneHealthcheck();
+        if (!stillOk) {
+          if (this.state.installMissing) {
+            throw new InstallMissingError({
+              command: this.opts.command,
+              reason: "spawn-enoent",
+              ...(this.opts.installHint
+                ? { installHint: this.opts.installHint }
+                : {}),
+            });
+          }
+          // Process died for a non-install reason (e.g. it crashed
+          // after the first healthcheck). Resolve start() — the
+          // supervisor's own restart logic + health-timer will
+          // surface `unhealthy` and the caller can react.
         }
         return;
       }
@@ -767,20 +857,30 @@ export class DaemonSupervisor extends EventEmitter {
 
   private waitForExit(proc: ChildProcess, timeoutMs: number): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
-      if (proc.exitCode !== null || proc.signalCode !== null) {
-        resolve(true);
-        return;
-      }
-      const t = setTimeout(() => {
-        proc.removeListener("exit", onExit);
-        resolve(false);
-      }, timeoutMs);
+      // Register the exit listener FIRST, then check the exit code.
+      // The old code did it the other way around, which had a small
+      // race window: a proc that exited between the check and the
+      // listener registration would never resolve. Now the listener
+      // is always in place; if the proc has already exited, we settle
+      // synchronously and remove the listener.
+      let settled = false;
+      const settle = (v: boolean) => {
+        if (settled) return;
+        settled = true;
+        resolve(v);
+      };
+      const t = setTimeout(() => settle(false), timeoutMs);
       t.unref?.();
       const onExit = () => {
         clearTimeout(t);
-        resolve(true);
+        settle(true);
       };
       proc.once("exit", onExit);
+      if (proc.exitCode !== null || proc.signalCode !== null) {
+        clearTimeout(t);
+        proc.removeListener("exit", onExit);
+        settle(true);
+      }
     });
   }
 

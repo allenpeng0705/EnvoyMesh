@@ -18,6 +18,8 @@ class ChainActiveSummary {
   final String? budgetWarningLevel;
   /// `direct` (default) or `competitive`. Direct must not show "Bidding".
   final String awardMode;
+  /// `manual` | `auto` | `never` — from live state when known.
+  final String? rebalancePolicy;
 
   const ChainActiveSummary({
     required this.chainId,
@@ -33,12 +35,13 @@ class ChainActiveSummary {
     this.goal,
     this.budgetWarningLevel,
     this.awardMode = 'direct',
+    this.rebalancePolicy,
   });
 
   factory ChainActiveSummary.fromJson(Map<String, dynamic> json) {
     return ChainActiveSummary(
       chainId: json['chainId'] as String,
-      chainMandateId: json['chainMandateId'] as String,
+      chainMandateId: json['chainMandateId'] as String? ?? '',
       subtaskCount: (json['subtaskCount'] as num?)?.toInt() ?? 0,
       bidCount: (json['bidCount'] as num?)?.toInt() ?? 0,
       awardedCount: (json['awardedCount'] as num?)?.toInt() ?? 0,
@@ -50,6 +53,7 @@ class ChainActiveSummary {
       goal: json['goal'] as String?,
       budgetWarningLevel: json['budgetWarningLevel'] as String?,
       awardMode: (json['awardMode'] as String?) ?? 'direct',
+      rebalancePolicy: json['rebalancePolicy'] as String?,
     );
   }
 
@@ -67,6 +71,7 @@ class ChainActiveSummary {
         if (goal != null) 'goal': goal,
         if (budgetWarningLevel != null) 'budgetWarningLevel': budgetWarningLevel,
         'awardMode': awardMode,
+        if (rebalancePolicy != null) 'rebalancePolicy': rebalancePolicy,
       };
 
   String get statusLabel {

@@ -4,12 +4,15 @@ import '../../l10n/app_localizations.dart';
 import '../../ai/model_provider_presets.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../services/node_service_client.dart';
+import 'envoy_local_settings_screen.dart';
 
 /// AI Model settings — cloud provider presets (EnvoyGo).
 ///
 /// Local-only modes (ollama / litellm) are shown read-only here; edit those
-/// on the home-node Social UI. Cloud saves merge into the existing
-/// `modelProviders` object (server shallow-replaces the whole block).
+/// on the home-node Social UI. Envoy Local is controlled via
+/// [EnvoyLocalSettingsScreen] (downloads run on the home node). Cloud saves
+/// merge into the existing `modelProviders` object (server shallow-replaces
+/// the whole block).
 class AiModelSettingsScreen extends ConsumerStatefulWidget {
   const AiModelSettingsScreen({super.key});
 
@@ -30,6 +33,7 @@ class _AiModelSettingsScreenState
   Map<String, dynamic> _existingMp = const {};
   bool _localOnly = false;
   String _localModeLabel = '';
+  bool _envoyLocalInUse = false;
   bool _obscureApiKey = true;
   bool _saving = false;
   bool _loaded = false;
@@ -41,6 +45,13 @@ class _AiModelSettingsScreenState
 
   static bool _isLocalMode(String mode) =>
       mode == 'ollama' || mode == 'litellm';
+
+  static bool _isEnvoyLocalProvider(Map<String, dynamic> mp) {
+    final presetId = (mp['presetId'] as String?) ?? '';
+    if (presetId == 'envoy-local') return true;
+    final endpoint = (mp['endpoint'] as String?) ?? '';
+    return endpoint.contains(':18790');
+  }
 
   @override
   void initState() {
@@ -72,25 +83,41 @@ class _AiModelSettingsScreenState
     }
     try {
       final cfg = await client.getNodeConfig();
+      Map<String, dynamic> localStatus = const {};
+      try {
+        localStatus = await client.getEnvoyLocalStatus();
+      } catch (_) {
+        // Status optional — cloud form still loads without it.
+      }
       final mp = (cfg['modelProviders'] as Map?)?.cast<String, dynamic>() ??
           <String, dynamic>{};
       final mode = (mp['mode'] as String?) ?? 'mock';
       final endpoint = (mp['endpoint'] as String?) ?? '';
       final modelName = (mp['modelName'] as String?) ?? '';
-      final presetId = (mp['presetId'] as String?) ?? '';
+      final envoyLocalInUse =
+          (localStatus['enabled'] == true && localStatus['running'] == true) ||
+              _isEnvoyLocalProvider(mp);
       final localOnly = _isLocalMode(mode);
+      // When Envoy Local owns modelProviders, treat cloud form as unset so
+      // users edit standby cloud settings (same as Social UI).
+      final cloudMp = _isEnvoyLocalProvider(mp) ? <String, dynamic>{} : mp;
+      final cloudMode = (cloudMp['mode'] as String?) ?? 'mock';
+      final cloudEndpoint = (cloudMp['endpoint'] as String?) ?? '';
+      final cloudModel = (cloudMp['modelName'] as String?) ?? '';
+      final cloudPresetId = (cloudMp['presetId'] as String?) ?? '';
       final inferred = localOnly
           ? null
           : inferModelProviderPreset(
-              mode: mode,
-              endpoint: endpoint,
-              presetId: presetId.isNotEmpty ? presetId : null,
+              mode: cloudMode,
+              endpoint: cloudEndpoint,
+              presetId: cloudPresetId.isNotEmpty ? cloudPresetId : null,
             );
       if (!mounted) return;
       setState(() {
         _existingMp = Map<String, dynamic>.from(mp);
         _localOnly = localOnly;
         _localModeLabel = mode;
+        _envoyLocalInUse = envoyLocalInUse;
         if (localOnly) {
           _presetId = 'mock';
           _endpointCtl.text = endpoint;
@@ -98,11 +125,12 @@ class _AiModelSettingsScreenState
           // Never echo the API key into the field.
           _apiKeyCtl.clear();
         } else {
-          _presetId = inferred!.id;
-          _endpointCtl.text = endpoint.isNotEmpty
-              ? endpoint
-              : (inferred.defaultEndpoint ?? '');
-          _modelNameCtl.text = modelName;
+          _presetId = inferred?.id ?? 'mock';
+          final preset = inferred;
+          _endpointCtl.text = cloudEndpoint.isNotEmpty
+              ? cloudEndpoint
+              : (preset?.defaultEndpoint ?? '');
+          _modelNameCtl.text = cloudModel;
           _apiKeyCtl.clear();
         }
         _loaded = true;
@@ -223,6 +251,23 @@ class _AiModelSettingsScreenState
                     l10n.settingsAiModelIntro,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
+                  if (_envoyLocalInUse) ...[
+                    const SizedBox(height: 16),
+                    Card(
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                      child: ListTile(
+                        leading: const Icon(Icons.memory),
+                        title: Text(l10n.settingsEnvoyLocalInUse),
+                        subtitle: Text(l10n.settingsAiModelEnvoyLocalStandby),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const EnvoyLocalSettingsScreen(),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                   if (_localOnly) ...[
                     const SizedBox(height: 16),
                     Card(

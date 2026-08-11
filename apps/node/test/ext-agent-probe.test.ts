@@ -250,6 +250,71 @@ describe("classifyExtAgentInstallState", () => {
     // installCommand is empty (we don't know how to install it)
     expect(r.installGuide!.installCommand).toBe("")
   })
+
+  // Phase 56 — one-shot CLI backends (cursor / aider / mmx). Before
+  // these entries landed, the three agents would always show
+  // `installState: "unknown"` because their binary names were not in
+  // the `BINARY_FOR_AGENT` table. The Settings UI Install Required
+  // card would never fire for them. The regression guard below pins
+  // the path-probe to the actual CLI binary name (cursor uses
+  // `cursor-agent`, not `cursor`).
+  it("cursor uses `cursor-agent` (not `cursor`) for the PATH check", async () => {
+    let checked: string | undefined
+    const r = await classifyExtAgentInstallState("cursor", async (cmd) => {
+      checked = cmd
+      return true
+    })
+    expect(r.installState).toBe("installed")
+    expect(checked).toBe("cursor-agent")
+  })
+
+  it("cursor with binary missing → installState 'not-installed' + installGuide", async () => {
+    const r = await classifyExtAgentInstallState("cursor", async () => false)
+    expect(r.installState).toBe("not-installed")
+    expect(r.installGuide).toBeDefined()
+    // The Install Required card should be the right one for cursor.
+    expect(r.installGuide!.command).toBe("cursor-agent")
+    expect(r.installGuide!.installCommand).toContain("curl https://cursor.com/install")
+    expect(r.installGuide!.verifyCommand).toBe("cursor-agent --version")
+  })
+
+  it("aider with binary on PATH is 'installed'", async () => {
+    let checked: string | undefined
+    const r = await classifyExtAgentInstallState("aider", async (cmd) => {
+      checked = cmd
+      return true
+    })
+    expect(r.installState).toBe("installed")
+    expect(checked).toBe("aider")
+  })
+
+  it("aider with binary missing → installState 'not-installed' + installGuide", async () => {
+    const r = await classifyExtAgentInstallState("aider", async () => false)
+    expect(r.installState).toBe("not-installed")
+    expect(r.installGuide).toBeDefined()
+    expect(r.installGuide!.command).toBe("aider")
+    expect(r.installGuide!.installCommand).toBe("pip install aider-chat")
+    expect(r.installGuide!.verifyCommand).toBe("aider --version")
+  })
+
+  it("mmx with binary on PATH is 'installed'", async () => {
+    let checked: string | undefined
+    const r = await classifyExtAgentInstallState("mmx", async (cmd) => {
+      checked = cmd
+      return true
+    })
+    expect(r.installState).toBe("installed")
+    expect(checked).toBe("mmx")
+  })
+
+  it("mmx with binary missing → installState 'not-installed' + installGuide", async () => {
+    const r = await classifyExtAgentInstallState("mmx", async () => false)
+    expect(r.installState).toBe("not-installed")
+    expect(r.installGuide).toBeDefined()
+    expect(r.installGuide!.command).toBe("mmx")
+    expect(r.installGuide!.installCommand).toBe("npm install -g mmx-cli")
+    expect(r.installGuide!.verifyCommand).toBe("mmx --version")
+  })
 })
 
 describe("defaultBinaryOnPath", () => {

@@ -42,6 +42,8 @@
   "mePairNewNodeHint": "Add another home node",
   "meSettings": "Settings",
   "meAiModel": "AI Model",
+  "meEnvoyLocal": "Envoy Local",
+  "meEnvoyLocalHint": "Home-node local model (download & start on the computer)",
   "mePiAgent": "Pi Agent",
   "mePiAgentHint": "Local coding agent settings",
   "meDarkMode": "Dark mode",
@@ -113,6 +115,7 @@
     }
   },
   "meTeamJobs": "Team jobs",
+  "meStartTeamJobHint": "Preview a plan and launch on the home node",
   "meAiModelHint": "Provider used for the assistant on this home node",
   "mePiAgentHintLong": "Built-in local coding agent on the home node",
   "mePushNotificationsHintLong": "Get notified about new messages, contact requests, and approvals when the app is in the background.",
@@ -678,8 +681,8 @@
   "chainsActiveTitle": "Active team jobs",
   "chainsLoadFailed": "Failed to load chains",
   "chainsNoReports": "No reports yet",
-  "chainsEmptyHint": "Team jobs you run on the home node will appear here.\nAuthor team jobs from the home node Social UI.",
-  "chainsNoActive": "No active chains on the home node.\nStart one from the Social UI.",
+  "chainsEmptyHint": "Team jobs you run on the home node will appear here.\nStart one from this phone or from the home Social UI.",
+  "chainsNoActive": "No active team jobs on the home node.\nStart one with the button below.",
   "chainsReportGone": "This report is no longer available",
   "chainsReportGoneHint": "It may have been removed by the 90-day GC policy.",
   "chainsBackToRecent": "Back to Recent team jobs",
@@ -689,7 +692,91 @@
   "chainsSubtasks": "Subtasks",
   "chainsSynthesis": "Synthesis",
   "chainsDuration": "Duration",
-  "chainsManageOnSocial": "Manage chains on the home node Social UI.",
+  "chainsManageOnSocial": "Advanced chain controls (cancel, rebalance, pin) are on the home-node Social UI.",
+  "chainsStartTitle": "Start team job",
+  "chainsStartFab": "New team job",
+  "chainsStartIntro": "Describe a goal. The home node plans subtasks and assigns bonded Agent Network workers.",
+  "chainsStartAssignmentMode": "Assignment mode",
+  "chainsStartModeSkill": "By skill",
+  "chainsStartModeRole": "By role",
+  "chainsStartModeSkillHint": "Workers are ranked by matching skills.",
+  "chainsStartModeRoleHint": "Each step prefers a collaboration role (PM, programmer, …).",
+  "chainsStartGoalLabel": "Goal",
+  "chainsStartGoalHint": "What should the team accomplish?",
+  "chainsStartGoalTooShort": "Goal must be at least {min} characters",
+  "@chainsStartGoalTooShort": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      }
+    }
+  },
+  "chainsStartPreview": "Preview plan",
+  "chainsStartPreviewing": "Planning…",
+  "chainsStartPreviewFailed": "Could not build a plan",
+  "chainsStartNeedPreview": "Preview a plan before starting",
+  "chainsStartPlanHeading": "Plan",
+  "chainsStartNoSubtasks": "No subtasks in this plan.",
+  "chainsStartConfirm": "Start team job",
+  "chainsStartStarting": "Starting…",
+  "chainsStartStarted": "Team job started",
+  "chainsStartFailed": "Could not start the team job",
+  "chainsStartNoWorkers": "No reachable Agent Network workers. Bond contacts with agents on the home node first.",
+  "chainsStartNeedWorkers": "Select at least one online worker, or preview again to restore the recommended pool.",
+  "chainsStartWorkersHint": "Online workers from the plan. Uncheck any you do not want. Unchecking everyone blocks Start — preview again to reset to the recommended pool.",
+  "chainsStartWorkersHeading": "Workers",
+  "chainsStartNoSuggestedWorkers": "No suggested workers yet — Start will use the home node’s discovery pool.",
+  "chainsStartWorkerMatches": "matches {count} steps",
+  "@chainsStartWorkerMatches": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chainsStartWorkerOnline": "Online",
+  "chainsStartWorkerRelay": "Online (relay)",
+  "chainsStartWorkerOffline": "Offline / unknown",
+  "chainsActiveGone": "This team job is no longer active",
+  "chainsBudgetLine": "Budget {spent} / {max} USD",
+  "@chainsBudgetLine": {
+    "placeholders": {
+      "spent": {
+        "type": "String"
+      },
+      "max": {
+        "type": "String"
+      }
+    }
+  },
+  "chainsBudgetWarn": "Budget warning — consider adding budget.",
+  "chainsBudgetExceeded": "Budget exceeded — the job may stall until rebalanced.",
+  "chainsPartialCount": "{count} partial results",
+  "@chainsPartialCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chainsCancelTitle": "Cancel team job?",
+  "chainsCancelBody": "Workers will be told to stop. Partial results already collected are kept.",
+  "chainsCancelConfirm": "Cancel job",
+  "chainsCancelDone": "Team job cancelled",
+  "chainsCancelReason": "Cancelled from EnvoyGo",
+  "chainsDetailCancelled": "This job was cancelled.",
+  "chainsDetailPublished": "This job finished and published a report.",
+  "chainsRebalanceHeading": "Add budget",
+  "chainsRebalanceHint": "Raise the cost ceiling and retry un-awarded steps.",
+  "chainsRebalanceAmount": "Additional USD",
+  "chainsRebalanceAction": "Add & retry",
+  "chainsRebalanceInvalidAmount": "Enter a positive dollar amount",
+  "chainsRebalanceDone": "Budget updated",
+  "chainsRebalanceFailed": "Could not rebalance",
+  "chainsPin": "Pin report",
+  "chainsUnpin": "Unpin report",
+  "chainsPinDone": "Report pinned (kept past 90-day cleanup)",
+  "chainsUnpinDone": "Report unpinned",
   "chainsPublished": "Published {date}",
   "@chainsPublished": {
     "placeholders": {
@@ -927,5 +1014,126 @@
       }
     }
   },
-  "commonYouName": "You"
+  "commonYouName": "You",
+  "settingsAiModelEnvoyLocalStandby": "Envoy Local is the active provider on the home node. Tap to manage Local, or save a cloud provider below as standby.",
+  "settingsEnvoyLocalIntro": "Control llama.cpp on the home computer. Models download there — never onto this phone.",
+  "settingsEnvoyLocalStatusHeading": "Status",
+  "settingsEnvoyLocalInUse": "In use",
+  "settingsEnvoyLocalNotInUse": "Not in use",
+  "settingsEnvoyLocalStatusDownloading": "Downloading…",
+  "settingsEnvoyLocalStatusDetecting": "Detecting…",
+  "settingsEnvoyLocalStatusExtracting": "Extracting…",
+  "settingsEnvoyLocalStatusStarting": "Starting…",
+  "settingsEnvoyLocalStatusReady": "Ready",
+  "settingsEnvoyLocalStatusError": "Error",
+  "settingsEnvoyLocalStatusDisabled": "Disabled",
+  "settingsEnvoyLocalIdleTimeout": "Envoy Local operation timed out after 60 minutes. If a download is stuck near 100%, try China mirrors or a VPN, then retry — partial downloads resume.",
+  "settingsEnvoyLocalRuntime": "Runtime: {status}",
+  "@settingsEnvoyLocalRuntime": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsEnvoyLocalRuntimeVersion": "Version: {version}",
+  "@settingsEnvoyLocalRuntimeVersion": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsEnvoyLocalAccel": "Accelerator: {accel}",
+  "@settingsEnvoyLocalAccel": {
+    "placeholders": {
+      "accel": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsEnvoyLocalHardware": "This machine: {summary}",
+  "@settingsEnvoyLocalHardware": {
+    "placeholders": {
+      "summary": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsEnvoyLocalActiveModel": "Model: {model}",
+  "@settingsEnvoyLocalActiveModel": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsEnvoyLocalProgressBytes": "{received} / {total} MB",
+  "@settingsEnvoyLocalProgressBytes": {
+    "placeholders": {
+      "received": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsEnvoyLocalProgressReceived": "{received} MB downloaded",
+  "@settingsEnvoyLocalProgressReceived": {
+    "placeholders": {
+      "received": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsEnvoyLocalLastError": "Last error: {error}",
+  "@settingsEnvoyLocalLastError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsEnvoyLocalDownloadRegion": "Model download region",
+  "settingsEnvoyLocalDownloadRegionHint": "If downloads fail, try China mirrors or a VPN for Global.",
+  "settingsEnvoyLocalDownloadRegionEffective": "Using: {region}",
+  "@settingsEnvoyLocalDownloadRegionEffective": {
+    "placeholders": {
+      "region": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsEnvoyLocalRegionAuto": "Auto (timezone / locale)",
+  "settingsEnvoyLocalRegionCn": "China (ModelScope → hf-mirror)",
+  "settingsEnvoyLocalRegionGlobal": "Global (Hugging Face)",
+  "settingsEnvoyLocalEnable": "Download & enable",
+  "settingsEnvoyLocalEnabling": "Downloading…",
+  "settingsEnvoyLocalStart": "Start Envoy Local",
+  "settingsEnvoyLocalStarting": "Starting…",
+  "settingsEnvoyLocalStop": "Stop Envoy Local",
+  "settingsEnvoyLocalRestart": "Restart",
+  "settingsEnvoyLocalCancelDownload": "Cancel download",
+  "settingsEnvoyLocalStopHint": "Stop switches the assistant back to your cloud/Ollama provider when one is saved.",
+  "settingsEnvoyLocalRecommended": "Recommended",
+  "settingsEnvoyLocalRecommendedBadge": "Recommended",
+  "settingsEnvoyLocalDownload": "Download",
+  "settingsEnvoyLocalInstalled": "Installed models",
+  "settingsEnvoyLocalInstalledHint": "Downloaded on the home node. Choose which one is active.",
+  "settingsEnvoyLocalNoInstalled": "No models installed yet.",
+  "settingsEnvoyLocalSetActive": "Set active",
+  "settingsEnvoyLocalActiveBadge": "Active",
+  "settingsEnvoyLocalInstalledBadge": "Installed",
+  "settingsEnvoyLocalCatalog": "Catalog",
+  "settingsEnvoyLocalHfError": "Hugging Face search unavailable: {error}",
+  "@settingsEnvoyLocalHfError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsEnvoyLocalRefresh": "Refresh",
+  "settingsEnvoyLocalPhoneNote": "Advanced server parameters (context size, GPU layers) remain on the home-node Social UI."
 }

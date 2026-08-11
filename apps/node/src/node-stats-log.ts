@@ -35,8 +35,22 @@ export function logNodeRuntimeStats(mesh: EnvoyMesh, context: NodeStatsLogContex
     const extMB = Math.floor((mem.external ?? 0) / 1024 / 1024);
     const abMB = Math.floor((mem.arrayBuffers ?? 0) / 1024 / 1024);
     const dialPart = conn.dialQueueLength != null ? ` dialQueue=${conn.dialQueueLength}` : "";
+    // circuitPeers = open hop connections TO us; liveReservation+advCircuits =
+    // whether EnvoyGo can dial US via /p2p-circuit/ under CGNAT.
+    const liveReservation =
+      typeof mesh.hasLiveRelayReservation === "function" && mesh.hasLiveRelayReservation()
+        ? 1
+        : 0;
+    const failureStreak =
+      typeof mesh.getRelayReservationStatus === "function"
+        ? (mesh.getRelayReservationStatus().failureStreak ?? 0)
+        : 0;
+    const advCircuits =
+      typeof mesh.getRelayAdvertisedMultiaddrs === "function"
+        ? mesh.getRelayAdvertisedMultiaddrs().filter((a) => a.includes("/p2p-circuit")).length
+        : 0;
     console.log(
-      `[node-stats] uptime=${uptimeSeconds}s circuitPeers=${conn.circuitPeerIds.length} circuitConns=${conn.circuitConnections} totalPeers=${conn.totalPeerIds} totalConns=${conn.totalConnections}${rosterPart}${dialPart} memoryRss=${rssMB}MB heapUsed=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB`,
+      `[node-stats] uptime=${uptimeSeconds}s circuitPeers=${conn.circuitPeerIds.length} circuitConns=${conn.circuitConnections} liveReservation=${liveReservation} advCircuits=${advCircuits} resvFailStreak=${failureStreak} totalPeers=${conn.totalPeerIds} totalConns=${conn.totalConnections}${rosterPart}${dialPart} memoryRss=${rssMB}MB heapUsed=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB`,
     );
   }
 
@@ -53,6 +67,14 @@ export function logNodeRuntimeStats(mesh: EnvoyMesh, context: NodeStatsLogContex
     const dialPart = conn.dialQueueLength != null ? ` dialQueue=${conn.dialQueueLength}` : "";
     console.warn(
       `[node-stats] WARNING: ${conn.totalConnections} open libp2p connections (peers=${conn.totalPeerIds}${dialPart}) — check relay dial churn; bond-warm interval=${60_000 * 5}ms (5min) per contact with ${60_000 * 5}ms per-contact cooldown (cap ${"see BOND_WARM_MAX_CONNECTIONS"})`,
+    );
+  }
+
+  // Operator signal: prune kicks in at dialQueue>20, but a sustained queue
+  // above 50 means something is still storming (reprobe/bond-warm/DHT).
+  if (conn.dialQueueLength != null && conn.dialQueueLength > 50) {
+    console.warn(
+      `[node-stats] WARNING: dialQueue=${conn.dialQueueLength} (>50) — dial/microtask storm risk; check bootstrap pollution and liveReservation`,
     );
   }
 

@@ -22,7 +22,7 @@ import { createTaskDispatcher } from "./task-dispatcher.js";
 import { resolveConnectivityRuntime, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
 import { configureBondWarmFromConnectivity } from "./node-service-reachability.js";
 import { resolveBootstrapAddresses } from "./bootstrap-resolver.js";
-import { EnvoyMesh, filterBootstrapMultiaddrs, isPrivateLanTcpDialHint, type EnvoyMeshOptions } from "@envoymesh/network";
+import { EnvoyMesh, filterBootstrapMultiaddrs, capBootstrapPeersForCircuitHoppability, isPrivateLanTcpDialHint, type EnvoyMeshOptions } from "@envoymesh/network";
 import { seedAddrsForDiscoveryProfile } from "./peer-discovery-telemetry.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { runRelayClientCycle, startRelayClientScheduler, type RelayClientCycleDeps } from "./relay-client-cycle.js";
@@ -376,9 +376,11 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     console.log(
       `[node-service] resolvedPresetAddrs: ${resolvedPresetAddrs.join(", ")}`,
     );
-    const bootstrapPeers = filterBootstrapMultiaddrs([...new Set(leanFilteredAddrs)]);
+    const bootstrapPeers = capBootstrapPeersForCircuitHoppability(
+      filterBootstrapMultiaddrs([...new Set(leanFilteredAddrs)]),
+    );
     console.log(
-      `[node-service] bootstrapPeers after filterBootstrapMultiaddrs: ${bootstrapPeers.length} - ${bootstrapPeers.join(", ")}`,
+      `[node-service] bootstrapPeers after hoppability cap: ${bootstrapPeers.length} - ${bootstrapPeers.join(", ")}`,
     );
 
     // Extract bootstrap peer IDs and wire them into the reachability layer

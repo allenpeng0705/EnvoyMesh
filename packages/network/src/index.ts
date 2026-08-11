@@ -1389,7 +1389,7 @@ export class EnvoyMesh {
       intervalMs?: number;
       pendingIntervalMs?: number;
       lostIntervalMs?: number;
-      /** Consecutive failed re-warms before exponential backoff kicks in. Default 4. */
+      /** Consecutive failed re-warms before exponential backoff kicks in. Default 1. */
       sustainedFailureBackoffThreshold?: number;
       /** Max delay between re-warms during sustained failure. Default 5 min. */
       sustainedFailureBackoffMaxMs?: number;
@@ -1405,8 +1405,9 @@ export class EnvoyMesh {
     const healthyMs = options?.intervalMs ?? 5 * 60_000;
     const pendingMs = options?.pendingIntervalMs ?? 45_000;
     const lostMs = options?.lostIntervalMs ?? 15_000;
-    // Backoff knobs (test-configurable; see M1 E2E test).
-    const sustainedFailureBackoffThreshold = options?.sustainedFailureBackoffThreshold ?? 4;
+    // Back off after the first full miss — CGNAT/home nodes with no live
+    // reservation must not hammer eagerConnect every 15s overnight.
+    const sustainedFailureBackoffThreshold = options?.sustainedFailureBackoffThreshold ?? 1;
     const sustainedFailureBackoffMaxMs = options?.sustainedFailureBackoffMaxMs ?? 5 * 60_000;
     const generation = ++this.reservationHealthGeneration;
     const relayPeerIds = addrs
@@ -2964,6 +2965,8 @@ export class EnvoyMesh {
   async pruneExcessSwarmConnections(options?: {
     maxPeers?: number;
     dialQueueThreshold?: number;
+    /** Extra peer IDs that must never be pruned (e.g. live reservation holders). */
+    protectPeerIds?: readonly string[];
   }): Promise<{ closedPeers: number; reason?: string }> {
     const maxPeers = options?.maxPeers ?? PRUNE_EXCESS_SWARM_MAX_PEERS;
     const dialQueueThreshold =
@@ -2982,6 +2985,10 @@ export class EnvoyMesh {
       if (id) preferredRelays.add(id);
     }
     preferredRelays.add(COMMUNITY_CN_RELAY_PEER_ID);
+    for (const id of options?.protectPeerIds ?? []) {
+      const t = id?.trim();
+      if (t) preferredRelays.add(t);
+    }
 
     const candidates: string[] = [];
     for (const peerId of stats.connectedPeerIds) {
@@ -3000,7 +3007,13 @@ export class EnvoyMesh {
 
     let closedPeers = 0;
     const target = Math.max(0, stats.totalPeerIds - maxPeers);
-    const toClose = Math.max(target, overQueue ? Math.min(candidates.length, 24) : 0);
+    // When dialQueue is badly congested (100+), prune harder — overnight hangs
+    // saw dialQueue≈300 with only 24 closes/tick, which never drained the storm.
+    const queueCloseCap = dialQueue >= 100 ? 64 : 24;
+    const toClose = Math.max(
+      target,
+      overQueue ? Math.min(candidates.length, queueCloseCap) : 0,
+    );
     for (const peerId of candidates.slice(0, toClose)) {
       const n = await this.closeConnectionsToPeer(peerId);
       if (n > 0) closedPeers += 1;
@@ -3771,6 +3784,12 @@ export class EnvoyMesh {
    * Returns the elapsed dial time in milliseconds.
    */
   async probePeer(target: string): Promise<number> {
+    // Self / circuit targets burn dial-queue slots and never belong in
+    // bootstrap reprobe. Mirror ensurePeerReachable's self-dial guard.
+    const skip = shouldSkipBootstrapProbeTarget(target, this.node?.peerId?.toString());
+    if (skip.skip) {
+      throw new Error(`probePeer skipped: ${skip.reason}`);
+    }
     const dialTarget = this._normalizeDialTarget(target);
     const startedAt = Date.now();
     await this.requireNode().dial(dialTarget as any);
@@ -5100,6 +5119,28 @@ export function filterBootstrapMultiaddrs(addrs: string[]): string[] {
     out.push(a);
   }
   return out;
+}
+
+/**
+ * Whether a bootstrap / connectivity probe should skip this dial target.
+ * Circuit paths and self-dials burn dial-queue slots and caused overnight
+ * `NO_RESERVATION` / dialQueue≈300 storms when seed store polluted bootstrap.
+ */
+export function shouldSkipBootstrapProbeTarget(
+  target: string,
+  selfPeerId?: string,
+): { skip: boolean; reason?: string } {
+  const a = target.trim();
+  if (!a) return { skip: true, reason: "empty" };
+  if (a.includes("/p2p-circuit/")) {
+    return { skip: true, reason: "circuit-path (contact hop, not bootstrap)" };
+  }
+  if (selfPeerId) {
+    if (a === selfPeerId || a.includes(`/p2p/${selfPeerId}`)) {
+      return { skip: true, reason: "self-dial" };
+    }
+  }
+  return { skip: false };
 }
 
 /** Bootstrap addrs that speak Envoy relay.checkin / relay.lookup (exclude public libp2p DHT nodes). */

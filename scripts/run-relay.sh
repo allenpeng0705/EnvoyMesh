@@ -194,6 +194,25 @@ fi
 echo "=========================================="
 echo ""
 
-# Run relay
-echo "$CMD"
-exec $CMD
+# Community/public relays must come back after SIGKILL from the sibling
+# liveness watchdog. Prefer systemd Restart=always in production; this loop
+# is the built-in fallback (stricter than home's optional supervise script).
+# Disable: ENVOYMESH_RELAY_SUPERVISE=0
+RESTART_SEC="${SUPERVISE_RESTART_SEC:-3}"
+if [ "${ENVOYMESH_RELAY_SUPERVISE:-1}" = "1" ]; then
+  echo "[supervise-relay] enabled (ENVOYMESH_RELAY_SUPERVISE=0 to disable)"
+  echo "$CMD"
+  while true; do
+    set +e
+    # shellcheck disable=SC2086
+    eval $CMD
+    code=$?
+    set -e
+    echo "[supervise-relay] exited code=$code — restarting in ${RESTART_SEC}s"
+    sleep "$RESTART_SEC"
+  done
+else
+  echo "$CMD"
+  # shellcheck disable=SC2086
+  exec $CMD
+fi

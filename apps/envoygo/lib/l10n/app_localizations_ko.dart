@@ -135,6 +135,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get meAiModel => 'AI 모델';
 
   @override
+  String get meEnvoyLocal => 'Envoy Local';
+
+  @override
+  String get meEnvoyLocalHint =>
+      'Home-node local model (download & start on the computer)';
+
+  @override
   String get mePiAgent => 'Pi 에이전트';
 
   @override
@@ -232,6 +239,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get meTeamJobs => '팀 작업';
+
+  @override
+  String get meStartTeamJobHint => 'Preview a plan and launch on the home node';
 
   @override
   String get meAiModelHint => '이 홈 노드 어시스턴트에 사용하는 제공자';
@@ -1472,6 +1482,184 @@ class AppLocalizationsKo extends AppLocalizations {
   String get chainsManageOnSocial => '홈 노드 Social UI에서 체인을 관리하세요.';
 
   @override
+  String get chainsStartTitle => 'Start team job';
+
+  @override
+  String get chainsStartFab => 'New team job';
+
+  @override
+  String get chainsStartIntro =>
+      'Describe a goal. The home node plans subtasks and assigns bonded Agent Network workers.';
+
+  @override
+  String get chainsStartAssignmentMode => 'Assignment mode';
+
+  @override
+  String get chainsStartModeSkill => 'By skill';
+
+  @override
+  String get chainsStartModeRole => 'By role';
+
+  @override
+  String get chainsStartModeSkillHint =>
+      'Workers are ranked by matching skills.';
+
+  @override
+  String get chainsStartModeRoleHint =>
+      'Each step prefers a collaboration role (PM, programmer, …).';
+
+  @override
+  String get chainsStartGoalLabel => 'Goal';
+
+  @override
+  String get chainsStartGoalHint => 'What should the team accomplish?';
+
+  @override
+  String chainsStartGoalTooShort(int min) {
+    return 'Goal must be at least $min characters';
+  }
+
+  @override
+  String get chainsStartPreview => 'Preview plan';
+
+  @override
+  String get chainsStartPreviewing => 'Planning…';
+
+  @override
+  String get chainsStartPreviewFailed => 'Could not build a plan';
+
+  @override
+  String get chainsStartNeedPreview => 'Preview a plan before starting';
+
+  @override
+  String get chainsStartPlanHeading => 'Plan';
+
+  @override
+  String get chainsStartNoSubtasks => 'No subtasks in this plan.';
+
+  @override
+  String get chainsStartConfirm => 'Start team job';
+
+  @override
+  String get chainsStartStarting => 'Starting…';
+
+  @override
+  String get chainsStartStarted => 'Team job started';
+
+  @override
+  String get chainsStartFailed => 'Could not start the team job';
+
+  @override
+  String get chainsStartNoWorkers =>
+      'No reachable Agent Network workers. Bond contacts with agents on the home node first.';
+
+  @override
+  String get chainsStartNeedWorkers =>
+      'Select at least one online worker, or preview again to restore the recommended pool.';
+
+  @override
+  String get chainsStartWorkersHint =>
+      'Online workers from the plan. Uncheck any you do not want. Unchecking everyone blocks Start — preview again to reset to the recommended pool.';
+
+  @override
+  String get chainsStartWorkersHeading => 'Workers';
+
+  @override
+  String get chainsStartNoSuggestedWorkers =>
+      'No suggested workers yet — Start will use the home node’s discovery pool.';
+
+  @override
+  String chainsStartWorkerMatches(int count) {
+    return 'matches $count steps';
+  }
+
+  @override
+  String get chainsStartWorkerOnline => 'Online';
+
+  @override
+  String get chainsStartWorkerRelay => 'Online (relay)';
+
+  @override
+  String get chainsStartWorkerOffline => 'Offline / unknown';
+
+  @override
+  String get chainsActiveGone => 'This team job is no longer active';
+
+  @override
+  String chainsBudgetLine(String spent, String max) {
+    return 'Budget $spent / $max USD';
+  }
+
+  @override
+  String get chainsBudgetWarn => 'Budget warning — consider adding budget.';
+
+  @override
+  String get chainsBudgetExceeded =>
+      'Budget exceeded — the job may stall until rebalanced.';
+
+  @override
+  String chainsPartialCount(int count) {
+    return '$count partial results';
+  }
+
+  @override
+  String get chainsCancelTitle => 'Cancel team job?';
+
+  @override
+  String get chainsCancelBody =>
+      'Workers will be told to stop. Partial results already collected are kept.';
+
+  @override
+  String get chainsCancelConfirm => 'Cancel job';
+
+  @override
+  String get chainsCancelDone => 'Team job cancelled';
+
+  @override
+  String get chainsCancelReason => 'Cancelled from EnvoyGo';
+
+  @override
+  String get chainsDetailCancelled => 'This job was cancelled.';
+
+  @override
+  String get chainsDetailPublished =>
+      'This job finished and published a report.';
+
+  @override
+  String get chainsRebalanceHeading => 'Add budget';
+
+  @override
+  String get chainsRebalanceHint =>
+      'Raise the cost ceiling and retry un-awarded steps.';
+
+  @override
+  String get chainsRebalanceAmount => 'Additional USD';
+
+  @override
+  String get chainsRebalanceAction => 'Add & retry';
+
+  @override
+  String get chainsRebalanceInvalidAmount => 'Enter a positive dollar amount';
+
+  @override
+  String get chainsRebalanceDone => 'Budget updated';
+
+  @override
+  String get chainsRebalanceFailed => 'Could not rebalance';
+
+  @override
+  String get chainsPin => 'Pin report';
+
+  @override
+  String get chainsUnpin => 'Unpin report';
+
+  @override
+  String get chainsPinDone => 'Report pinned (kept past 90-day cleanup)';
+
+  @override
+  String get chainsUnpinDone => 'Report unpinned';
+
+  @override
   String chainsPublished(String date) {
     return '$date 게시됨';
   }
@@ -1730,4 +1918,175 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get commonYouName => '나';
+
+  @override
+  String get settingsAiModelEnvoyLocalStandby =>
+      'Envoy Local is the active provider on the home node. Tap to manage Local, or save a cloud provider below as standby.';
+
+  @override
+  String get settingsEnvoyLocalIntro =>
+      'Control llama.cpp on the home computer. Models download there — never onto this phone.';
+
+  @override
+  String get settingsEnvoyLocalStatusHeading => 'Status';
+
+  @override
+  String get settingsEnvoyLocalInUse => 'In use';
+
+  @override
+  String get settingsEnvoyLocalNotInUse => 'Not in use';
+
+  @override
+  String get settingsEnvoyLocalStatusDownloading => 'Downloading…';
+
+  @override
+  String get settingsEnvoyLocalStatusDetecting => 'Detecting…';
+
+  @override
+  String get settingsEnvoyLocalStatusExtracting => 'Extracting…';
+
+  @override
+  String get settingsEnvoyLocalStatusStarting => 'Starting…';
+
+  @override
+  String get settingsEnvoyLocalStatusReady => 'Ready';
+
+  @override
+  String get settingsEnvoyLocalStatusError => 'Error';
+
+  @override
+  String get settingsEnvoyLocalStatusDisabled => 'Disabled';
+
+  @override
+  String get settingsEnvoyLocalIdleTimeout =>
+      'Envoy Local operation timed out after 60 minutes. If a download is stuck near 100%, try China mirrors or a VPN, then retry — partial downloads resume.';
+
+  @override
+  String settingsEnvoyLocalRuntime(String status) {
+    return 'Runtime: $status';
+  }
+
+  @override
+  String settingsEnvoyLocalRuntimeVersion(String version) {
+    return 'Version: $version';
+  }
+
+  @override
+  String settingsEnvoyLocalAccel(String accel) {
+    return 'Accelerator: $accel';
+  }
+
+  @override
+  String settingsEnvoyLocalHardware(String summary) {
+    return 'This machine: $summary';
+  }
+
+  @override
+  String settingsEnvoyLocalActiveModel(String model) {
+    return 'Model: $model';
+  }
+
+  @override
+  String settingsEnvoyLocalProgressBytes(String received, String total) {
+    return '$received / $total MB';
+  }
+
+  @override
+  String settingsEnvoyLocalProgressReceived(String received) {
+    return '$received MB downloaded';
+  }
+
+  @override
+  String settingsEnvoyLocalLastError(String error) {
+    return 'Last error: $error';
+  }
+
+  @override
+  String get settingsEnvoyLocalDownloadRegion => 'Model download region';
+
+  @override
+  String get settingsEnvoyLocalDownloadRegionHint =>
+      'If downloads fail, try China mirrors or a VPN for Global.';
+
+  @override
+  String settingsEnvoyLocalDownloadRegionEffective(String region) {
+    return 'Using: $region';
+  }
+
+  @override
+  String get settingsEnvoyLocalRegionAuto => 'Auto (timezone / locale)';
+
+  @override
+  String get settingsEnvoyLocalRegionCn => 'China (ModelScope → hf-mirror)';
+
+  @override
+  String get settingsEnvoyLocalRegionGlobal => 'Global (Hugging Face)';
+
+  @override
+  String get settingsEnvoyLocalEnable => 'Download & enable';
+
+  @override
+  String get settingsEnvoyLocalEnabling => 'Downloading…';
+
+  @override
+  String get settingsEnvoyLocalStart => 'Start Envoy Local';
+
+  @override
+  String get settingsEnvoyLocalStarting => 'Starting…';
+
+  @override
+  String get settingsEnvoyLocalStop => 'Stop Envoy Local';
+
+  @override
+  String get settingsEnvoyLocalRestart => 'Restart';
+
+  @override
+  String get settingsEnvoyLocalCancelDownload => 'Cancel download';
+
+  @override
+  String get settingsEnvoyLocalStopHint =>
+      'Stop switches the assistant back to your cloud/Ollama provider when one is saved.';
+
+  @override
+  String get settingsEnvoyLocalRecommended => 'Recommended';
+
+  @override
+  String get settingsEnvoyLocalRecommendedBadge => 'Recommended';
+
+  @override
+  String get settingsEnvoyLocalDownload => 'Download';
+
+  @override
+  String get settingsEnvoyLocalInstalled => 'Installed models';
+
+  @override
+  String get settingsEnvoyLocalInstalledHint =>
+      'Downloaded on the home node. Choose which one is active.';
+
+  @override
+  String get settingsEnvoyLocalNoInstalled => 'No models installed yet.';
+
+  @override
+  String get settingsEnvoyLocalSetActive => 'Set active';
+
+  @override
+  String get settingsEnvoyLocalActiveBadge => 'Active';
+
+  @override
+  String get settingsEnvoyLocalInstalledBadge => 'Installed';
+
+  @override
+  String get settingsEnvoyLocalCatalog => 'Catalog';
+
+  @override
+  String settingsEnvoyLocalHfError(String error) {
+    return 'Hugging Face search unavailable: $error';
+  }
+
+  @override
+  String get settingsEnvoyLocalRefresh => 'Refresh';
+
+  @override
+  String get settingsEnvoyLocalPhoneNote =>
+      'Advanced server parameters (context size, GPU layers) remain on the home-node Social UI.';
 }

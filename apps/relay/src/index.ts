@@ -29,6 +29,7 @@ import {
   type StandaloneRelayHealthSnapshot,
   type StandaloneRelayHealthState,
 } from "./relay-health.js";
+import { startRelayHttpLivenessWatchdog } from "./http-liveness-watchdog.js";
 import {
   parseRendezvousRegisterPayload,
   parseRendezvousQueryPayload,
@@ -137,7 +138,7 @@ const MAX_HOME_TUNNEL_DATA_BYTES = 768 * 1024;
 // Maximum concurrent deliveries per fan-out batch
 const CONCURRENCY_LIMIT = 50;
 
-const RELAY_HEALTH_INTERVAL_MS = 30_000;
+const RELAY_HEALTH_INTERVAL_MS = 15_000;
 const EVENT_LOOP_LAG_SAMPLE_MS = 1_000;
 const MAX_RECORDED_FATAL_ERRORS = 20;
 
@@ -343,6 +344,48 @@ let relayHealthState: StandaloneRelayHealthState = createInitialStandaloneRelayH
 let relayHealthSnapshot: StandaloneRelayHealthSnapshot | undefined;
 let lastEventLoopLagMs = 0;
 let relayRepairInProgress = false;
+let stopRelayLivenessWatchdog: (() => void) | undefined;
+
+function currentRelayHealthSnapshot(): StandaloneRelayHealthSnapshot {
+  return (
+    relayHealthSnapshot ?? {
+      status: started ? "healthy" : "starting",
+      checkedAt: new Date().toISOString(),
+      uptimeMs: Date.now() - startedAtMs,
+      reasons: started ? [] : ["relay is starting"],
+      actions: ["none"],
+      listenAddrCount: started ? mesh.multiaddrs.length : 0,
+      connectedRelayPeerCount: 0,
+      recentFatalErrorCount: 0,
+      recoveryCounters: createInitialStandaloneRelayHealthState().counters,
+    }
+  );
+}
+
+/**
+ * /health = process liveness (always 200 if the event loop answered).
+ * /readyz = mesh readiness (503 while starting / unhealthy / critical).
+ * Mixing readiness into /health made wedge watchdogs kill soft libp2p repairs.
+ */
+function writeRelayProbeResponse(res: ServerResponse, kind: "health" | "readyz"): void {
+  const snapshot = currentRelayHealthSnapshot();
+  if (kind === "health") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true, ...snapshot }));
+    return;
+  }
+  const ready =
+    snapshot.status === "healthy" || snapshot.status === "degraded";
+  res.writeHead(ready ? 200 : 503, { "Content-Type": "application/json" });
+  res.end(
+    JSON.stringify({
+      ok: ready,
+      ready,
+      reason: ready ? undefined : snapshot.reasons.join(";") || snapshot.status,
+      ...snapshot,
+    }),
+  );
+}
 
 // ============================================================================
 // RATE LIMITING: Track registrations per peer to prevent abuse
@@ -546,6 +589,14 @@ async function shutdown(): Promise<void> {
   if (httpServer) {
     httpServer.close();
   }
+  if (stopRelayLivenessWatchdog) {
+    try {
+      stopRelayLivenessWatchdog();
+    } catch {
+      /* ignore */
+    }
+    stopRelayLivenessWatchdog = undefined;
+  }
   if (started) {
     await mesh.stop();
   }
@@ -576,6 +627,21 @@ function startRelayHealthWatchdog(): void {
 }
 
 async function runRelayHealthCycle(source: "startup" | "periodic"): Promise<void> {
+  // Fingerprint dial/connection pressure when lag is high (same class as
+  // home-node overnight async-generator wedges).
+  if (started && lastEventLoopLagMs > 2_000) {
+    try {
+      const conn = mesh.getConnectionStats();
+      console.warn(
+        `[relay] event-loop lag=${lastEventLoopLagMs}ms dialQueue=${conn.dialQueueLength ?? "?"} ` +
+          `totalPeers=${conn.totalPeerIds} totalConns=${conn.totalConnections} ` +
+          `reservations=${mesh.getCircuitRelayReservationCount()} (source=${source})`,
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+
   const result = evaluateStandaloneRelayHealth({
     startedAtMs,
     listenAddrs: started ? mesh.multiaddrs : [],
@@ -989,6 +1055,19 @@ try {
     };
 
     httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
+      // Fast path: answer /health and /readyz without entering the async
+      // request pipeline (admin, roster, tunnels). Under load this still
+      // needs the event loop — sibling liveness watchdog covers full wedges.
+      const fastPath = (req.url ?? "/").split("?")[0] ?? "/";
+      if (req.method === "GET" && fastPath === "/health") {
+        writeRelayProbeResponse(res, "health");
+        return;
+      }
+      if (req.method === "GET" && fastPath === "/readyz") {
+        writeRelayProbeResponse(res, "readyz");
+        return;
+      }
+
       void (async () => {
         const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
         const pathname = url.pathname;
@@ -1048,19 +1127,9 @@ try {
           // selection failed" handshake errors.
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(buildRelayProtocolReport()));
-        } else if (pathname === "/health") {
-          const snapshot = relayHealthSnapshot ?? {
-            status: started ? "healthy" : "starting",
-            checkedAt: new Date().toISOString(),
-            uptimeMs: Date.now() - startedAtMs,
-            reasons: started ? [] : ["relay is starting"],
-          };
-          const statusCode =
-            snapshot.status === "critical" || snapshot.status === "unhealthy" || snapshot.status === "starting"
-              ? 503
-              : 200;
-          res.writeHead(statusCode, { "Content-Type": "application/json" });
-          res.end(JSON.stringify(snapshot));
+        } else if (pathname === "/health" || pathname === "/readyz") {
+          // Also reachable via the sync fast-path above; keep for completeness.
+          writeRelayProbeResponse(res, pathname === "/readyz" ? "readyz" : "health");
         } else if (pathname === "/reservations") {
           // Live circuit-relay-v2 reservation store size. Operators rely on
           // this to see "is the store filling up?" in real time without
@@ -1706,6 +1775,10 @@ try {
 
     httpServer.listen(args.httpPort, "0.0.0.0", () => {
       console.log(`[relay] HTTP info + WebSocket proxy listening on port ${args.httpPort}`);
+      stopRelayLivenessWatchdog = startRelayHttpLivenessWatchdog({
+        port: args.httpPort!,
+        heartbeatPath: join(args.profileDir, "liveness.heartbeat"),
+      });
     });
   }
 
@@ -1713,6 +1786,50 @@ try {
     const relays = mesh.getConnectedRelayPeerIds();
     if (relays.length > 0) {
       console.log(`[relay] Relay connections: ${relays.length} (${relays.join(", ")})`);
+    }
+    try {
+      const conn = mesh.getConnectionStats();
+      const dialPart = conn.dialQueueLength != null ? ` dialQueue=${conn.dialQueueLength}` : "";
+      const mem = process.memoryUsage();
+      const reservationPeerIds = mesh
+        .inspectCircuitRelayReservations()
+        .map((r) => r.peerId)
+        .filter(Boolean);
+      console.log(
+        `[relay-stats] circuitPeers=${conn.circuitPeerIds.length} totalPeers=${conn.totalPeerIds} ` +
+          `totalConns=${conn.totalConnections} reservations=${mesh.getCircuitRelayReservationCount()}` +
+          `${dialPart} roster=${relayRoster.size()} lagMs=${lastEventLoopLagMs} ` +
+          `rssMB=${Math.floor(mem.rss / 1024 / 1024)}`,
+      );
+      if (conn.dialQueueLength != null && conn.dialQueueLength > 50) {
+        console.warn(
+          `[relay-stats] WARNING: dialQueue=${conn.dialQueueLength} (>50) — event-loop wedge risk`,
+        );
+      }
+      // Protect live reservation holders; drop anonymous DHT/bootstrap churn.
+      // Relays must stay hoppable even under public DHT pressure (stricter than home).
+      if (
+        (conn.dialQueueLength != null && conn.dialQueueLength > 20) ||
+        conn.totalPeerIds > Math.max(256, Math.floor(resolvedMaxConnections * 0.75))
+      ) {
+        void mesh
+          .pruneExcessSwarmConnections({
+            maxPeers: Math.max(128, Math.floor(resolvedMaxConnections * 0.6)),
+            dialQueueThreshold: 20,
+            protectPeerIds: reservationPeerIds,
+          })
+          .catch((err) => {
+            console.warn(
+              "[relay-stats] pruneExcessSwarmConnections failed:",
+              err instanceof Error ? err.message : err,
+            );
+          });
+      }
+    } catch (err) {
+      console.warn(
+        "[relay-stats] failed:",
+        err instanceof Error ? err.message : err,
+      );
     }
     if (capabilityRegistry) {
       const stats = capabilityRegistry.stats();

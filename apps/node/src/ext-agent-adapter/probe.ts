@@ -51,17 +51,28 @@ async function probeHttpOk(url: string, timeoutMs = 2_000): Promise<boolean> {
 
 /**
  * Per-agent binary lookup table for install detection. The key is the
- * Ext Agent id (`codex` / `claudecode` / `hermes` / `openhuman`); the
- * value is the binary name the user would type on the command line.
- * `claudecode`'s binary is `claude` (the package is
- * `@anthropic-ai/claude-code`). HomeClaw and Pi are not in this table
- * because they don't have a CLI we can PATH-check.
+ * Ext Agent id (`codex` / `claudecode` / `hermes` / `openhuman` /
+ * `cursor` / `aider` / `mmx`); the value is the binary name the user
+ * would type on the command line.
+ *
+ * - `claudecode`'s binary is `claude` (the package is
+ *   `@anthropic-ai/claude-code`).
+ * - `cursor`'s binary is `cursor-agent` (the official Anysphere CLI
+ *   name; `cursor` is a different binary if installed at all).
+ *
+ * HomeClaw and Pi are not in this table because they don't have a
+ * CLI we can PATH-check (Pi is in-process; HomeClaw runs in its own
+ * .app and is reached over HTTP).
  */
 const BINARY_FOR_AGENT: Record<string, string> = {
   codex: "codex",
   claudecode: "claude",
   hermes: "hermes",
   openhuman: "openhuman",
+  // Phase 56A / 56B / 56C — one-shot CLI backends.
+  cursor: "cursor-agent",
+  aider: "aider",
+  mmx: "mmx",
 };
 
 /**
@@ -202,18 +213,18 @@ export async function probeExtAgentReachability(params: {
   }
 
   if (isExtAgentSidecarKind(agentId)) {
-    // Phase 55B / 55C: codex and claudecode sidecar backends are not
-    // implemented yet (their `createBackend` throws "not yet
-    // implemented"). When that happens, fall back to a "not running"
-    // reachability — the installState is still authoritative, and
-    // the Settings UI will show the right Install Required card.
+    // Sidecar backends (codex / claudecode / cursor / aider / mmx /
+    // hermes / openhuman) each expose a `probe()` that returns the
+    // liveness of the backing process. We catch any throw defensively
+    // so a buggy backend can't take the whole status snapshot down —
+    // the `installState` and `installGuide` fields above remain
+    // authoritative even when the runtime probe fails.
     let reachable = false;
     try {
       reachable = Boolean(await createBackend(agentId).probe?.());
     } catch {
-      // Backend not implemented yet — reachable stays false.
-      // The `installState` and `installGuide` fields above still
-      // reflect whether the binary is on PATH.
+      // Backend probe threw (e.g. misconfigured) — treat as down.
+      // The install card is still rendered from `installGuide`.
     }
     return {
       agentId,

@@ -16,6 +16,7 @@ import '../../models/chain_report.dart';
 import '../../providers/node_provider.dart';
 import '../../services/node_service_client.dart';
 import 'recent_chain_detail_screen.dart';
+import 'start_chain_screen.dart';
 
 class RecentChainsScreen extends ConsumerStatefulWidget {
   const RecentChainsScreen({super.key});
@@ -81,6 +82,15 @@ class _RecentChainsScreenState extends ConsumerState<RecentChainsScreen> {
             onPressed: _loading ? null : _refresh,
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const StartChainScreen()),
+          );
+        },
+        icon: const Icon(Icons.add),
+        label: Text(l10n.chainsStartFab),
       ),
       body: RefreshIndicator(
         onRefresh: _refresh,
@@ -148,6 +158,18 @@ class _RecentChainsScreenState extends ConsumerState<RecentChainsScreen> {
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const StartChainScreen(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.add),
+                  label: Text(l10n.chainsStartFab),
+                ),
               ],
             ),
           ),
@@ -155,17 +177,30 @@ class _RecentChainsScreenState extends ConsumerState<RecentChainsScreen> {
       );
     }
     return ListView.separated(
+      padding: const EdgeInsets.only(bottom: 88),
       itemCount: reports.length,
       separatorBuilder: (_, __) => const Divider(height: 1),
-      itemBuilder: (context, i) => _ChainRow(report: reports[i]),
+      itemBuilder: (context, i) => _ChainRow(
+        report: reports[i],
+        onOpen: () async {
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) =>
+                  RecentChainDetailScreen(chainId: reports[i].chainId),
+            ),
+          );
+          if (mounted) await _refresh();
+        },
+      ),
     );
   }
 }
 
 class _ChainRow extends StatelessWidget {
   final ChainReportSummary report;
+  final VoidCallback onOpen;
 
-  const _ChainRow({required this.report});
+  const _ChainRow({required this.report, required this.onOpen});
 
   @override
   Widget build(BuildContext context) {
@@ -197,13 +232,7 @@ class _ChainRow extends StatelessWidget {
         _formatDate(report.createdAt),
         style: Theme.of(context).textTheme.bodySmall,
       ),
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => RecentChainDetailScreen(chainId: report.chainId),
-          ),
-        );
-      },
+      onTap: onOpen,
     );
   }
 }

@@ -141,7 +141,7 @@ describe("MmxBackend", () => {
       expect(out).toBe("plain text reply from mmx");
     });
 
-    it("rejects with non-InstallMissingError when CLI exits non-zero", async () => {
+    it("rejects with non-zero-exit error when CLI exits non-zero", async () => {
       const { command, args } = await fakeMmxScript(SCRIPT_FAIL);
       const backend = new MmxBackend({
         command,
@@ -149,9 +149,10 @@ describe("MmxBackend", () => {
         binaryOnPath: async () => true,
       });
       // mmx semantic exit codes: 10 = auth failure. The base class
-      // surfaces exit + stderr in the "empty response" error.
+      // now rejects with the exit code + stderr + install hint —
+      // a non-zero exit is a hard error, not a parseable answer.
       await expect(backend.ask("hi", "session-A")).rejects.toThrow(
-        /empty response.*exit=10/,
+        /mmx ask\(\): non-zero exit \(code=10, stderr=auth failed: invalid API key\).*Install MMX-CLI/s,
       );
     });
 

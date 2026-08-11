@@ -39,6 +39,7 @@
     "node:dev": "tsc -b packages/api packages/local-store && cd apps/node && tsx src/index.ts",
     "node:dev:alt": "ENVOYMESH_PORT_OFFSET=100 npm run node:dev --",
     "node:dev:4030": "ENVOYMESH_SOCIAL_WS_PORT=4030 ENVOYMESH_BRIDGE_PORT=4031 ENVOYMESH_TERMINAL_WS_PORT=4032 ENVOYMESH_GATEWAY_PORT=19889 npm run node:dev --",
+    "node:supervised:4030": "bash scripts/supervise-home-node.sh",
     "relay:dev": "npm exec -w @envoymesh/relay -- tsx src/index.ts",
     "relay:build": "npm run build -w @envoymesh/relay",
     "tauri:dev": "npm run dev -w @envoymesh/tauri --",

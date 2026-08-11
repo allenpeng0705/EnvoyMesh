@@ -84,6 +84,14 @@ export function collectRelayControlTargets(config: RelayControlTargetConfig): st
     push(a);
   }
 
+  // Home nodes on CGNAT with empty / polluted bootstrap (LAN-only, circuits,
+  // DHT noise) otherwise skip warmup entirely → no reservation → EnvoyGo
+  // stays unreachable while the process looks "healthy". Always keep the
+  // community relay as a last-resort hop when nothing else survived filters.
+  if (out.length === 0) {
+    push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+  }
+
   return out.slice(0, maxTargets);
 }
 
@@ -103,8 +111,30 @@ export interface RelayReservationWarmupResult {
   connected?: number;
   reserved?: number;
   failed?: number;
+  /** True when store ∩ open TCP reported a usable reservation before return. */
+  live?: boolean;
   skipped?: boolean;
   reason?: string;
+}
+
+/**
+ * Poll until a usable relay reservation exists (store ∩ open connection).
+ * Used so the first relay.checkin can advertise `/p2p-circuit/` paths.
+ */
+export async function waitForUsableRelayReservation(
+  mesh: Pick<EnvoyMesh, "hasLiveRelayReservation">,
+  options?: { timeoutMs?: number; pollMs?: number },
+): Promise<boolean> {
+  const timeoutMs = options?.timeoutMs ?? 45_000;
+  const pollMs = options?.pollMs ?? 500;
+  if (typeof mesh.hasLiveRelayReservation !== "function") return false;
+  if (mesh.hasLiveRelayReservation()) return true;
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  while (Date.now() < deadline) {
+    await new Promise<void>((resolve) => setTimeout(resolve, pollMs));
+    if (mesh.hasLiveRelayReservation()) return true;
+  }
+  return mesh.hasLiveRelayReservation();
 }
 
 /**
@@ -114,7 +144,13 @@ export interface RelayReservationWarmupResult {
 export async function warmAndWatchRelayReservations(
   mesh: EnvoyMesh,
   config: RelayReservationWarmupConfig,
-  options?: { healthIntervalMs?: number; pendingHealthIntervalMs?: number; lostHealthIntervalMs?: number },
+  options?: {
+    healthIntervalMs?: number;
+    pendingHealthIntervalMs?: number;
+    lostHealthIntervalMs?: number;
+    /** Wait for usable reservation before return. Default: 15s if reserved>0 else 2s. Set 0 to skip. */
+    waitForLiveMs?: number;
+  },
 ): Promise<RelayReservationWarmupResult> {
   if (config.relayEnabled === false) {
     return { warmed: false, addrs: [], skipped: true, reason: "relay-disabled" };
@@ -157,11 +193,31 @@ export async function warmAndWatchRelayReservations(
     lostIntervalMs: options?.lostHealthIntervalMs ?? 15_000,
   });
 
+  const waitForLiveMs =
+    options?.waitForLiveMs ??
+    // Store updates can lag the RESERVE RPC slightly; don't burn 45s when
+    // the hop never reserved (health loop will keep trying).
+    (reserved > 0 ? 15_000 : 2_000);
+  let live = false;
+  if (waitForLiveMs > 0) {
+    live = await waitForUsableRelayReservation(mesh, { timeoutMs: waitForLiveMs });
+    if (live) {
+      console.log("[p2p] relay reservation live — safe to advertise /p2p-circuit/ in checkin");
+    } else {
+      console.warn(
+        "[p2p] relay reservation not live yet after warmup — checkin may omit circuit addrs until health loop recovers",
+      );
+    }
+  } else if (typeof mesh.hasLiveRelayReservation === "function") {
+    live = mesh.hasLiveRelayReservation();
+  }
+
   return {
     warmed: true,
     addrs,
     connected: dial.connected,
     reserved,
     failed,
+    live,
   };
 }

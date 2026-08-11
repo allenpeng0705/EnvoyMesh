@@ -53,7 +53,7 @@ describe("standalone relay health", () => {
       connectedRelayPeerCount: 0,
       httpEnabled: true,
       httpListening: true,
-      eventLoopLagMs: 2_500,
+      eventLoopLagMs: 2_000,
       recentFatalErrors: [],
       previous: createInitialStandaloneRelayHealthState(),
     });
@@ -67,7 +67,7 @@ describe("standalone relay health", () => {
   it("exits for supervisor after sustained event-loop lag", () => {
     const previous = {
       ...createInitialStandaloneRelayHealthState(),
-      consecutiveHighLag: 2,
+      consecutiveHighLag: 1,
     };
     const result = evaluateStandaloneRelayHealth({
       now: () => now,
@@ -84,7 +84,7 @@ describe("standalone relay health", () => {
     expect(result.snapshot.status).toBe("critical");
     expect(result.snapshot.actions).toContain("exit-for-supervisor");
     expect(result.snapshot.actions).not.toContain("restart-libp2p");
-    expect(result.state.consecutiveHighLag).toBe(3);
+    expect(result.state.consecutiveHighLag).toBe(2);
   });
 
   it("exits for supervisor when memory is too high", () => {

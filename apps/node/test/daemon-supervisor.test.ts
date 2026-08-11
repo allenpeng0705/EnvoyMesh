@@ -411,6 +411,92 @@ describe("DaemonSupervisor — install detection (55A.1)", () => {
     });
     await expect(sup.start()).rejects.toBeInstanceOf(InstallMissingError);
   });
+
+  // Phase 55+56 review — A1: post-grace healthcheck. The supervisor
+  // runs a second healthcheck after the 100ms stability grace. If
+  // the proc died during/after the grace for a non-install reason,
+  // start() still resolves (the supervisor's restart logic handles
+  // the actual crash). If installMissing was set during the grace
+  // (e.g. via the async error event), the post-grace check sees it
+  // and throws InstallMissingError.
+  it("post-grace healthcheck: proc dies during grace → start() resolves, restart handles it", async () => {
+    // STAY_ALIVE proc; we'll kill it during the grace. Healthcheck
+    // returns true on the first call (success), false on the
+    // second call (post-grace — proc is dead).
+    let calls = 0;
+    const healthcheck = async () => {
+      calls++;
+      return calls === 1; // first true, rest false
+    };
+    sup = makeSupervisor({
+      args: [scripts[SCRIPT.STAY_ALIVE]!],
+      healthcheck,
+      startupTimeoutMs: 1_000,
+    });
+    // Register the crash listener BEFORE start() so we don't miss it.
+    const crashes = recordEvents(sup, "crash");
+    // Don't await yet — start() is going to take >100ms (grace).
+    const startPromise = sup.start();
+    // Wait for the supervisor to register the proc, then kill it
+    // during the grace. 50ms is comfortably inside the 100ms grace.
+    await new Promise((r) => setTimeout(r, 50));
+    const proc = sup.getChildProcess();
+    expect(proc).not.toBeNull();
+    proc!.kill("SIGKILL");
+    // Now start() resolves successfully — the post-grace healthcheck
+    // saw false but installMissing is not set, so the supervisor
+    // resolves (the crash + restart logic will fire async).
+    await startPromise;
+    // The crash event fires (the proc died) but start() resolved.
+    // This is the contract: start() doesn't reject for a non-install
+    // crash during the grace — that's the supervisor's restart path.
+    expect(crashes.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("DaemonSupervisor — race conditions", () => {
+  let sup: DaemonSupervisor | null = null;
+  afterEach(async () => {
+    if (sup) {
+      try {
+        await sup.stop();
+      } catch {
+        // best-effort
+      }
+      sup = null;
+    }
+  });
+
+  // Phase 55+56 review — A2: waitForExit() now registers the exit
+  // listener BEFORE checking the exit code. The previous code had a
+  // tiny race: a proc that exited between the check and the listener
+  // registration would never resolve the waitForExit promise.
+  it("waitForExit resolves when the proc is already dead (race regression guard)", async () => {
+    // STAY_ALIVE keeps the proc alive; we'll stop it, then immediately
+    // call stop() again to test the already-exited path.
+    sup = makeSupervisor({
+      args: [scripts[SCRIPT.STAY_ALIVE]!],
+    });
+    await sup.start();
+    const proc = sup.getChildProcess();
+    expect(proc).not.toBeNull();
+    // Kill the proc and wait for the natural exit to complete.
+    proc!.kill("SIGKILL");
+    await new Promise<void>((resolve) => {
+      proc!.once("exit", () => resolve());
+    });
+    // Now proc is fully dead. stop() should still complete (it goes
+    // through waitForExit, which should see exitCode != null and
+    // resolve immediately without waiting for the timeout).
+    const t0 = Date.now();
+    await sup.stop();
+    const elapsed = Date.now() - t0;
+    // If the race were unfixed, the waitForExit would either hang
+    // (timeoutMs=5000 → ~5s) or never resolve. The fix makes it
+    // resolve in <100ms.
+    expect(elapsed).toBeLessThan(500);
+    expect(sup.isRunning()).toBe(false);
+  });
 });
 
 describe("DaemonSupervisor — crash handling", () => {

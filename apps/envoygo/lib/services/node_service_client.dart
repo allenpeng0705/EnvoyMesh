@@ -537,6 +537,97 @@ class NodeServiceClient {
     return true;
   }
 
+  // -- Envoy Local (home-node llama.cpp; downloads run on the home, not phone) --
+
+  Future<Map<String, dynamic>> getEnvoyLocalStatus() async {
+    return await _client.call('getEnvoyLocalStatus') as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> enableEnvoyLocal({
+    bool skipModelDownload = false,
+  }) async {
+    return await _client.call(
+      'enableEnvoyLocal',
+      {'skipModelDownload': skipModelDownload},
+      const Duration(seconds: 60),
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> startEnvoyLocal() async {
+    return await _client.call(
+      'startEnvoyLocal',
+      const {},
+      const Duration(seconds: 60),
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> stopEnvoyLocal() async {
+    return await _client.call(
+      'stopEnvoyLocal',
+      const {},
+      const Duration(seconds: 30),
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> restartEnvoyLocal() async {
+    return await _client.call(
+      'restartEnvoyLocal',
+      const {},
+      const Duration(seconds: 90),
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> cancelEnvoyLocalDownload() async {
+    return await _client.call('cancelEnvoyLocalDownload')
+        as Map<String, dynamic>;
+  }
+
+  Future<List<Map<String, dynamic>>> listEnvoyLocalInstalledModels() async {
+    final result = await _client.call('listEnvoyLocalInstalledModels');
+    final list = result as List<dynamic>? ?? const [];
+    return list
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> searchEnvoyLocalModels({String? query}) async {
+    return await _client.call(
+      'searchEnvoyLocalModels',
+      {if (query != null && query.trim().isNotEmpty) 'query': query.trim()},
+      const Duration(seconds: 45),
+    ) as Map<String, dynamic>;
+  }
+
+  Future<List<Map<String, dynamic>>> downloadEnvoyLocalModel(
+      String modelId) async {
+    final result = await _client.call(
+      'downloadEnvoyLocalModel',
+      {'modelId': modelId},
+      const Duration(seconds: 60),
+    );
+    final list = result as List<dynamic>? ?? const [];
+    return list
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> setEnvoyLocalDownloadRegion(String region) async {
+    return await _client.call('setEnvoyLocalDownloadRegion', {
+      'region': region,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> setEnvoyLocalActiveModel(String modelId) async {
+    return await _client.call(
+      'setEnvoyLocalActiveModel',
+      {'modelId': modelId},
+      // Match Social (120s); large GGUFs can take a while to become ready.
+      const Duration(seconds: 120),
+    ) as Map<String, dynamic>;
+  }
+
   // -- Pi (built-in coding agent) --
 
   Future<Map<String, dynamic>> getPiStatus() async {
@@ -1002,13 +1093,10 @@ class NodeServiceClient {
     });
   }
 
-  // -- Chains (Phase 40 — read-only mobile mirror) --
+  // -- Chains (Phase 40/43/52 — status, start, light ops) --
   //
-  // The mobile client is a thin status mirror: it lists published chain
-  // reports and shows their detail. Mutations (pin/unpin, launch, cancel,
-  // rebalance) live on the home node's Social UI. The home node already
-  // serves all 15 chain RPCs through its JSON-RPC router; we only add the
-  // two read-only ones the mobile surface needs.
+  // EnvoyGo can list, start, cancel, pin, and rebalance. Fleet "Manage
+  // workers" setup stays on the home Social UI.
 
   /// List published chain reports from the home node's chain-reports store.
   ///
@@ -1058,6 +1146,118 @@ class NodeServiceClient {
     }) as Map<String, dynamic>;
     if (result['chainId'] == null) return null;
     return ChainActiveSummary.fromJson(result);
+  }
+
+  /// Node defaults for new team jobs (assignment mode, iteration, …).
+  Future<Map<String, dynamic>> chainGetDefaults() async {
+    final result =
+        await _client.call('chainGetDefaults', {}) as Map<String, dynamic>;
+    final defaults = result['defaults'];
+    if (defaults is Map) {
+      return Map<String, dynamic>.from(defaults);
+    }
+    return const {};
+  }
+
+  /// Preview a plan for [goal] without launching (LLM may take a while).
+  Future<Map<String, dynamic>> chainPreviewGoal({
+    required String goal,
+    String? assignmentMode,
+    bool allowLlm = true,
+    List<String>? preferredWorkerPeerIds,
+  }) async {
+    return await _client.call(
+      'chainPreviewGoal',
+      {
+        'goal': goal,
+        'allowLlm': allowLlm,
+        if (assignmentMode != null && assignmentMode.isNotEmpty)
+          'assignmentMode': assignmentMode,
+        if (preferredWorkerPeerIds != null && preferredWorkerPeerIds.isNotEmpty)
+          'preferredWorkerPeerIds': preferredWorkerPeerIds,
+      },
+      const Duration(seconds: 120),
+    ) as Map<String, dynamic>;
+  }
+
+  /// Launch a team job from [goal], optionally reusing a preview plan.
+  Future<Map<String, dynamic>> chainStartFromGoal({
+    required String goal,
+    String? assignmentMode,
+    bool allowLlm = true,
+    List<Map<String, dynamic>>? plannedSubtasks,
+    List<Map<String, dynamic>>? planWarnings,
+    List<String>? preferredWorkerPeerIds,
+    int? iterationMaxRounds,
+    String? iterationJudgeMode,
+    int? extendMaxStepsPerRound,
+  }) async {
+    return await _client.call(
+      'chainStartFromGoal',
+      {
+        'goal': goal,
+        'allowLlm': allowLlm,
+        if (assignmentMode != null && assignmentMode.isNotEmpty)
+          'assignmentMode': assignmentMode,
+        if (plannedSubtasks != null) 'plannedSubtasks': plannedSubtasks,
+        if (planWarnings != null) 'planWarnings': planWarnings,
+        if (preferredWorkerPeerIds != null && preferredWorkerPeerIds.isNotEmpty)
+          'preferredWorkerPeerIds': preferredWorkerPeerIds,
+        if (iterationMaxRounds != null) 'iterationMaxRounds': iterationMaxRounds,
+        if (iterationJudgeMode != null)
+          'iterationJudgeMode': iterationJudgeMode,
+        if (extendMaxStepsPerRound != null)
+          'extendMaxStepsPerRound': extendMaxStepsPerRound,
+      },
+      const Duration(seconds: 120),
+    ) as Map<String, dynamic>;
+  }
+
+  /// Cancel an active team job (or one subtask when [subtaskId] is set).
+  ///
+  /// Pass a localized [reason] from the UI so home audits match the app locale.
+  Future<Map<String, dynamic>> chainCancel({
+    required String chainId,
+    required String reason,
+    String cancelledBy = 'owner',
+    String? subtaskId,
+  }) async {
+    return await _client.call(
+      'chainCancel',
+      {
+        'chainId': chainId,
+        'reason': reason,
+        'cancelledBy': cancelledBy,
+        if (subtaskId != null && subtaskId.isNotEmpty) 'subtaskId': subtaskId,
+      },
+      const Duration(seconds: 60),
+    ) as Map<String, dynamic>;
+  }
+
+  /// Pin/unpin a finished report (exempt from 90-day GC when pinned).
+  Future<Map<String, dynamic>> chainPinReport({
+    required String chainId,
+    required bool pinned,
+  }) async {
+    return await _client.call('chainPinReport', {
+      'chainId': chainId,
+      'pinned': pinned,
+    }) as Map<String, dynamic>;
+  }
+
+  /// Raise budget and re-evaluate un-awarded subtasks.
+  Future<Map<String, dynamic>> chainRebalance({
+    required String chainId,
+    required double additionalBudgetUsd,
+  }) async {
+    return await _client.call(
+      'chainRebalance',
+      {
+        'chainId': chainId,
+        'additionalBudgetUsd': additionalBudgetUsd,
+      },
+      const Duration(seconds: 60),
+    ) as Map<String, dynamic>;
   }
 
   // -- Voice / video calls (Phase 42C) --

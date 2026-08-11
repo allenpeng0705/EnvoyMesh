@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import {
   collectKnownRelayAddrs,
   collectRelayControlTargets,
+  waitForUsableRelayReservation,
   warmAndWatchRelayReservations,
 } from "../src/relay-reservation-health.js";
 import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
@@ -61,6 +62,19 @@ describe("collectRelayControlTargets", () => {
       ],
     });
     expect(addrs).toEqual([RELAY_A]);
+  });
+
+  it("falls back to community cn-relay when filters leave no targets", () => {
+    const addrs = collectRelayControlTargets({
+      configuredRelays: [],
+      bootstrapPeers: [
+        "/ip4/192.168.3.85/tcp/4001/p2p/12D3KooWLANONLYXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "/dnsaddr/bootstrap.libp2p.io/p2p/12D3KooWBootstrap",
+        "/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWPeer/p2p-circuit/p2p/12D3KooWOther",
+      ],
+      bootstrapPresets: [],
+    });
+    expect(addrs).toEqual([DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR]);
   });
 
   it("is used by collectKnownRelayAddrs (reserve parity)", () => {
@@ -150,6 +164,7 @@ describe("warmAndWatchRelayReservations", () => {
         failures: [],
       })),
       startRelayReservationHealthLoop: vi.fn(() => () => undefined),
+      hasLiveRelayReservation: vi.fn(() => true),
     };
     const addr = "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo";
     const out = await warmAndWatchRelayReservations(mesh as never, {
@@ -159,6 +174,7 @@ describe("warmAndWatchRelayReservations", () => {
     });
     expect(out.warmed).toBe(true);
     expect(out.reserved).toBe(1);
+    expect(out.live).toBe(true);
     expect(mesh.eagerConnectToRelays).toHaveBeenCalled();
     expect(mesh.requestRelayReservation).toHaveBeenCalled();
     expect(mesh.startRelayReservationHealthLoop).toHaveBeenCalledWith(
@@ -169,6 +185,19 @@ describe("warmAndWatchRelayReservations", () => {
         lostIntervalMs: 15_000,
       }),
     );
+  });
+
+  it("waitForUsableRelayReservation polls until live", async () => {
+    let live = false;
+    const mesh = { hasLiveRelayReservation: () => live };
+    const pending = waitForUsableRelayReservation(mesh as never, {
+      timeoutMs: 2_000,
+      pollMs: 50,
+    });
+    setTimeout(() => {
+      live = true;
+    }, 80);
+    await expect(pending).resolves.toBe(true);
   });
 });
 

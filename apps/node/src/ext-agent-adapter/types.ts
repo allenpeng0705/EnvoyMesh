@@ -34,16 +34,7 @@ export const EXT_AGENT_SIDECAR_KINDS: readonly ExtAgentSidecarKind[] = [
 ];
 
 export function isExtAgentSidecarKind(id: string | undefined): id is ExtAgentSidecarKind {
-  return (
-    id === "pi" ||
-    id === "hermes" ||
-    id === "openhuman" ||
-    id === "codex" ||
-    id === "claudecode" ||
-    id === "cursor" ||
-    id === "aider" ||
-    id === "mmx"
-  );
+  return id != null && (EXT_AGENT_SIDECAR_KINDS as readonly string[]).includes(id);
 }
 
 export interface ExtAgentInboundMessage {

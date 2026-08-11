@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  capBootstrapPeersForCircuitHoppability,
   filterBootstrapMultiaddrs,
   filterRelayControlTargets,
   isDockerBridgeGatewayDialHint,
   isPublicLibp2pBootstrapMultiaddr,
   isUnusableBootstrapMultiaddr,
+  shouldSkipBootstrapProbeTarget,
 } from "../src/index.js";
 
 describe("bootstrap multiaddr filter", () => {
@@ -68,5 +70,28 @@ describe("bootstrap multiaddr filter", () => {
         "/ip4/172.18.0.1/tcp/45519",
       ]),
     ).toEqual([relay, publicLibp2p]);
+  });
+
+  it("shouldSkipBootstrapProbeTarget skips circuit and self", () => {
+    const self = "12D3KooWSelfPeerIdxxxxxxxxxxxx";
+    expect(shouldSkipBootstrapProbeTarget(relay).skip).toBe(false);
+    expect(
+      shouldSkipBootstrapProbeTarget(`${relay}/p2p-circuit/p2p/${self}`, self).skip,
+    ).toBe(true);
+    expect(shouldSkipBootstrapProbeTarget(self, self).skip).toBe(true);
+    expect(shouldSkipBootstrapProbeTarget(`/p2p/${self}`, self).skip).toBe(true);
+  });
+
+  it("capBootstrapPeersForCircuitHoppability strips circuits and caps fanout", () => {
+    const circuit = `${relay}/p2p-circuit/p2p/12D3KooWOtherPeer`;
+    const extras = Array.from(
+      { length: 12 },
+      (_, i) =>
+        `/ip4/1.2.3.${i + 1}/tcp/4001/p2p/12D3KooWExtra${String(i).padStart(2, "0")}abcdefghijklmnop`,
+    );
+    const capped = capBootstrapPeersForCircuitHoppability([relay, circuit, ...extras]);
+    expect(capped).not.toContain(circuit);
+    expect(capped[0]).toBe(relay);
+    expect(capped.length).toBeLessThanOrEqual(8);
   });
 });

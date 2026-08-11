@@ -124,7 +124,7 @@ describe("AiderBackend", () => {
       await expect(backend.ask("hi", "session-A")).rejects.toThrow(/empty response/);
     });
 
-    it("rejects with non-InstallMissingError when CLI exits non-zero", async () => {
+    it("rejects with non-zero-exit error when CLI exits non-zero", async () => {
       const { command, args } = await fakeAiderScript(SCRIPT_FAIL);
       const backend = new AiderBackend({
         command,
@@ -132,7 +132,7 @@ describe("AiderBackend", () => {
         binaryOnPath: async () => true,
       });
       await expect(backend.ask("hi", "session-A")).rejects.toThrow(
-        /empty response.*exit=1/,
+        /aider ask\(\): non-zero exit \(code=1, stderr=model rate limit hit\).*Install Aider/s,
       );
     });
 
@@ -239,7 +239,7 @@ describe("AiderBackend", () => {
       expect(argv).toContain("--yes-always");
     });
 
-    it("inserts extraArgs AFTER the safety flags", async () => {
+    it("inserts extraArgs BEFORE the safety flags (safety always wins)", async () => {
       const { command, args } = await fakeAiderScript(SCRIPT_CAPTURE_ARGV);
       const backend = new AiderBackend({
         command,
@@ -252,11 +252,33 @@ describe("AiderBackend", () => {
       expect(argv).toContain("--model");
       expect(argv).toContain("anthropic/claude-sonnet-4-20250514");
       expect(argv).toContain("--auto-lint");
-      // Safety flags must come first (so users can't accidentally
-      // override --no-git by reordering).
-      expect(argv.indexOf("--no-git")).toBeLessThan(argv.indexOf("--model"));
-      expect(argv.indexOf("--no-pretty")).toBeLessThan(argv.indexOf("--model"));
-      expect(argv.indexOf("--yes-always")).toBeLessThan(argv.indexOf("--model"));
+      // Safety flags must come LAST (so a user-supplied --git can't
+      // override --no-git via last-occurrence-wins). This is the
+      // security contract: the chat-bridge MUST NOT auto-commit.
+      expect(argv.indexOf("--no-git")).toBeGreaterThan(argv.indexOf("--model"));
+      expect(argv.indexOf("--no-pretty")).toBeGreaterThan(argv.indexOf("--model"));
+      expect(argv.indexOf("--yes-always")).toBeGreaterThan(argv.indexOf("--model"));
+    });
+
+    it("safety flags win over user-supplied conflicting flags (security contract)", async () => {
+      // Regression guard: previously safety flags came first, so
+      // a user passing `extraArgs: ["--git"]` would override
+      // `--no-git` (last-occurrence-wins in POSIX getopt). The
+      // ordering has been flipped so safety flags always come
+      // last and therefore always win.
+      const { command, args } = await fakeAiderScript(SCRIPT_CAPTURE_ARGV);
+      const backend = new AiderBackend({
+        command,
+        args,
+        binaryOnPath: async () => true,
+        extraArgs: ["--git", "--pretty"],
+      });
+      const out = await backend.ask("hi", "session-A");
+      const argv = JSON.parse(out);
+      // --no-git must come AFTER --git (so it wins)
+      expect(argv.indexOf("--no-git")).toBeGreaterThan(argv.indexOf("--git"));
+      // --no-pretty must come AFTER --pretty (so it wins)
+      expect(argv.indexOf("--no-pretty")).toBeGreaterThan(argv.indexOf("--pretty"));
     });
   });
 

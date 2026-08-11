@@ -141,7 +141,12 @@ describe("CursorAgentBackend", () => {
       expect(out).toBe("{ this is not valid json }");
     });
 
-    it("rejects with non-InstallMissingError when CLI exits non-zero", async () => {
+    it("rejects with non-zero-exit error when CLI exits non-zero", async () => {
+      // Regression guard: previously a non-zero exit with an "error
+      // text" on stdout would be returned as a successful answer
+      // (parseOutput would happily return the stderr-derived text).
+      // The base class now rejects with the exit code + stderr +
+      // install hint so the user can self-diagnose.
       const { command, args } = await fakeCursorScript(SCRIPT_FAIL);
       const backend = new CursorAgentBackend({
         command,
@@ -149,7 +154,7 @@ describe("CursorAgentBackend", () => {
         binaryOnPath: async () => true,
       });
       await expect(backend.ask("hi", "session-A")).rejects.toThrow(
-        /empty response.*exit=2/,
+        /cursor ask\(\): non-zero exit \(code=2, stderr=model overloaded\).*Install the Cursor CLI/s,
       );
     });
 

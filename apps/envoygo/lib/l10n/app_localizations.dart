@@ -360,6 +360,18 @@ abstract class AppLocalizations {
   /// **'AI Model'**
   String get meAiModel;
 
+  /// No description provided for @meEnvoyLocal.
+  ///
+  /// In en, this message translates to:
+  /// **'Envoy Local'**
+  String get meEnvoyLocal;
+
+  /// No description provided for @meEnvoyLocalHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Home-node local model (download & start on the computer)'**
+  String get meEnvoyLocalHint;
+
   /// No description provided for @mePiAgent.
   ///
   /// In en, this message translates to:
@@ -533,6 +545,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Team jobs'**
   String get meTeamJobs;
+
+  /// No description provided for @meStartTeamJobHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Preview a plan and launch on the home node'**
+  String get meStartTeamJobHint;
 
   /// No description provided for @meAiModelHint.
   ///
@@ -2817,13 +2835,13 @@ abstract class AppLocalizations {
   /// No description provided for @chainsEmptyHint.
   ///
   /// In en, this message translates to:
-  /// **'Team jobs you run on the home node will appear here.\nAuthor team jobs from the home node Social UI.'**
+  /// **'Team jobs you run on the home node will appear here.\nStart one from this phone or from the home Social UI.'**
   String get chainsEmptyHint;
 
   /// No description provided for @chainsNoActive.
   ///
   /// In en, this message translates to:
-  /// **'No active chains on the home node.\nStart one from the Social UI.'**
+  /// **'No active team jobs on the home node.\nStart one with the button below.'**
   String get chainsNoActive;
 
   /// No description provided for @chainsReportGone.
@@ -2883,8 +2901,326 @@ abstract class AppLocalizations {
   /// No description provided for @chainsManageOnSocial.
   ///
   /// In en, this message translates to:
-  /// **'Manage chains on the home node Social UI.'**
+  /// **'Advanced chain controls (cancel, rebalance, pin) are on the home-node Social UI.'**
   String get chainsManageOnSocial;
+
+  /// No description provided for @chainsStartTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Start team job'**
+  String get chainsStartTitle;
+
+  /// No description provided for @chainsStartFab.
+  ///
+  /// In en, this message translates to:
+  /// **'New team job'**
+  String get chainsStartFab;
+
+  /// No description provided for @chainsStartIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Describe a goal. The home node plans subtasks and assigns bonded Agent Network workers.'**
+  String get chainsStartIntro;
+
+  /// No description provided for @chainsStartAssignmentMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Assignment mode'**
+  String get chainsStartAssignmentMode;
+
+  /// No description provided for @chainsStartModeSkill.
+  ///
+  /// In en, this message translates to:
+  /// **'By skill'**
+  String get chainsStartModeSkill;
+
+  /// No description provided for @chainsStartModeRole.
+  ///
+  /// In en, this message translates to:
+  /// **'By role'**
+  String get chainsStartModeRole;
+
+  /// No description provided for @chainsStartModeSkillHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Workers are ranked by matching skills.'**
+  String get chainsStartModeSkillHint;
+
+  /// No description provided for @chainsStartModeRoleHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Each step prefers a collaboration role (PM, programmer, …).'**
+  String get chainsStartModeRoleHint;
+
+  /// No description provided for @chainsStartGoalLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Goal'**
+  String get chainsStartGoalLabel;
+
+  /// No description provided for @chainsStartGoalHint.
+  ///
+  /// In en, this message translates to:
+  /// **'What should the team accomplish?'**
+  String get chainsStartGoalHint;
+
+  /// No description provided for @chainsStartGoalTooShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Goal must be at least {min} characters'**
+  String chainsStartGoalTooShort(int min);
+
+  /// No description provided for @chainsStartPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Preview plan'**
+  String get chainsStartPreview;
+
+  /// No description provided for @chainsStartPreviewing.
+  ///
+  /// In en, this message translates to:
+  /// **'Planning…'**
+  String get chainsStartPreviewing;
+
+  /// No description provided for @chainsStartPreviewFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not build a plan'**
+  String get chainsStartPreviewFailed;
+
+  /// No description provided for @chainsStartNeedPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Preview a plan before starting'**
+  String get chainsStartNeedPreview;
+
+  /// No description provided for @chainsStartPlanHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Plan'**
+  String get chainsStartPlanHeading;
+
+  /// No description provided for @chainsStartNoSubtasks.
+  ///
+  /// In en, this message translates to:
+  /// **'No subtasks in this plan.'**
+  String get chainsStartNoSubtasks;
+
+  /// No description provided for @chainsStartConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Start team job'**
+  String get chainsStartConfirm;
+
+  /// No description provided for @chainsStartStarting.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting…'**
+  String get chainsStartStarting;
+
+  /// No description provided for @chainsStartStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'Team job started'**
+  String get chainsStartStarted;
+
+  /// No description provided for @chainsStartFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not start the team job'**
+  String get chainsStartFailed;
+
+  /// No description provided for @chainsStartNoWorkers.
+  ///
+  /// In en, this message translates to:
+  /// **'No reachable Agent Network workers. Bond contacts with agents on the home node first.'**
+  String get chainsStartNoWorkers;
+
+  /// No description provided for @chainsStartNeedWorkers.
+  ///
+  /// In en, this message translates to:
+  /// **'Select at least one online worker, or preview again to restore the recommended pool.'**
+  String get chainsStartNeedWorkers;
+
+  /// No description provided for @chainsStartWorkersHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Online workers from the plan. Uncheck any you do not want. Unchecking everyone blocks Start — preview again to reset to the recommended pool.'**
+  String get chainsStartWorkersHint;
+
+  /// No description provided for @chainsStartWorkersHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Workers'**
+  String get chainsStartWorkersHeading;
+
+  /// No description provided for @chainsStartNoSuggestedWorkers.
+  ///
+  /// In en, this message translates to:
+  /// **'No suggested workers yet — Start will use the home node’s discovery pool.'**
+  String get chainsStartNoSuggestedWorkers;
+
+  /// No description provided for @chainsStartWorkerMatches.
+  ///
+  /// In en, this message translates to:
+  /// **'matches {count} steps'**
+  String chainsStartWorkerMatches(int count);
+
+  /// No description provided for @chainsStartWorkerOnline.
+  ///
+  /// In en, this message translates to:
+  /// **'Online'**
+  String get chainsStartWorkerOnline;
+
+  /// No description provided for @chainsStartWorkerRelay.
+  ///
+  /// In en, this message translates to:
+  /// **'Online (relay)'**
+  String get chainsStartWorkerRelay;
+
+  /// No description provided for @chainsStartWorkerOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline / unknown'**
+  String get chainsStartWorkerOffline;
+
+  /// No description provided for @chainsActiveGone.
+  ///
+  /// In en, this message translates to:
+  /// **'This team job is no longer active'**
+  String get chainsActiveGone;
+
+  /// No description provided for @chainsBudgetLine.
+  ///
+  /// In en, this message translates to:
+  /// **'Budget {spent} / {max} USD'**
+  String chainsBudgetLine(String spent, String max);
+
+  /// No description provided for @chainsBudgetWarn.
+  ///
+  /// In en, this message translates to:
+  /// **'Budget warning — consider adding budget.'**
+  String get chainsBudgetWarn;
+
+  /// No description provided for @chainsBudgetExceeded.
+  ///
+  /// In en, this message translates to:
+  /// **'Budget exceeded — the job may stall until rebalanced.'**
+  String get chainsBudgetExceeded;
+
+  /// No description provided for @chainsPartialCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} partial results'**
+  String chainsPartialCount(int count);
+
+  /// No description provided for @chainsCancelTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel team job?'**
+  String get chainsCancelTitle;
+
+  /// No description provided for @chainsCancelBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Workers will be told to stop. Partial results already collected are kept.'**
+  String get chainsCancelBody;
+
+  /// No description provided for @chainsCancelConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel job'**
+  String get chainsCancelConfirm;
+
+  /// No description provided for @chainsCancelDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Team job cancelled'**
+  String get chainsCancelDone;
+
+  /// No description provided for @chainsCancelReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled from EnvoyGo'**
+  String get chainsCancelReason;
+
+  /// No description provided for @chainsDetailCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'This job was cancelled.'**
+  String get chainsDetailCancelled;
+
+  /// No description provided for @chainsDetailPublished.
+  ///
+  /// In en, this message translates to:
+  /// **'This job finished and published a report.'**
+  String get chainsDetailPublished;
+
+  /// No description provided for @chainsRebalanceHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Add budget'**
+  String get chainsRebalanceHeading;
+
+  /// No description provided for @chainsRebalanceHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Raise the cost ceiling and retry un-awarded steps.'**
+  String get chainsRebalanceHint;
+
+  /// No description provided for @chainsRebalanceAmount.
+  ///
+  /// In en, this message translates to:
+  /// **'Additional USD'**
+  String get chainsRebalanceAmount;
+
+  /// No description provided for @chainsRebalanceAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Add & retry'**
+  String get chainsRebalanceAction;
+
+  /// No description provided for @chainsRebalanceInvalidAmount.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a positive dollar amount'**
+  String get chainsRebalanceInvalidAmount;
+
+  /// No description provided for @chainsRebalanceDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Budget updated'**
+  String get chainsRebalanceDone;
+
+  /// No description provided for @chainsRebalanceFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not rebalance'**
+  String get chainsRebalanceFailed;
+
+  /// No description provided for @chainsPin.
+  ///
+  /// In en, this message translates to:
+  /// **'Pin report'**
+  String get chainsPin;
+
+  /// No description provided for @chainsUnpin.
+  ///
+  /// In en, this message translates to:
+  /// **'Unpin report'**
+  String get chainsUnpin;
+
+  /// No description provided for @chainsPinDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Report pinned (kept past 90-day cleanup)'**
+  String get chainsPinDone;
+
+  /// No description provided for @chainsUnpinDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Report unpinned'**
+  String get chainsUnpinDone;
 
   /// No description provided for @chainsPublished.
   ///
@@ -3311,6 +3647,294 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'You'**
   String get commonYouName;
+
+  /// No description provided for @settingsAiModelEnvoyLocalStandby.
+  ///
+  /// In en, this message translates to:
+  /// **'Envoy Local is the active provider on the home node. Tap to manage Local, or save a cloud provider below as standby.'**
+  String get settingsAiModelEnvoyLocalStandby;
+
+  /// No description provided for @settingsEnvoyLocalIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Control llama.cpp on the home computer. Models download there — never onto this phone.'**
+  String get settingsEnvoyLocalIntro;
+
+  /// No description provided for @settingsEnvoyLocalStatusHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get settingsEnvoyLocalStatusHeading;
+
+  /// No description provided for @settingsEnvoyLocalInUse.
+  ///
+  /// In en, this message translates to:
+  /// **'In use'**
+  String get settingsEnvoyLocalInUse;
+
+  /// No description provided for @settingsEnvoyLocalNotInUse.
+  ///
+  /// In en, this message translates to:
+  /// **'Not in use'**
+  String get settingsEnvoyLocalNotInUse;
+
+  /// No description provided for @settingsEnvoyLocalStatusDownloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading…'**
+  String get settingsEnvoyLocalStatusDownloading;
+
+  /// No description provided for @settingsEnvoyLocalStatusDetecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Detecting…'**
+  String get settingsEnvoyLocalStatusDetecting;
+
+  /// No description provided for @settingsEnvoyLocalStatusExtracting.
+  ///
+  /// In en, this message translates to:
+  /// **'Extracting…'**
+  String get settingsEnvoyLocalStatusExtracting;
+
+  /// No description provided for @settingsEnvoyLocalStatusStarting.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting…'**
+  String get settingsEnvoyLocalStatusStarting;
+
+  /// No description provided for @settingsEnvoyLocalStatusReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready'**
+  String get settingsEnvoyLocalStatusReady;
+
+  /// No description provided for @settingsEnvoyLocalStatusError.
+  ///
+  /// In en, this message translates to:
+  /// **'Error'**
+  String get settingsEnvoyLocalStatusError;
+
+  /// No description provided for @settingsEnvoyLocalStatusDisabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Disabled'**
+  String get settingsEnvoyLocalStatusDisabled;
+
+  /// No description provided for @settingsEnvoyLocalIdleTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'Envoy Local operation timed out after 60 minutes. If a download is stuck near 100%, try China mirrors or a VPN, then retry — partial downloads resume.'**
+  String get settingsEnvoyLocalIdleTimeout;
+
+  /// No description provided for @settingsEnvoyLocalRuntime.
+  ///
+  /// In en, this message translates to:
+  /// **'Runtime: {status}'**
+  String settingsEnvoyLocalRuntime(String status);
+
+  /// No description provided for @settingsEnvoyLocalRuntimeVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Version: {version}'**
+  String settingsEnvoyLocalRuntimeVersion(String version);
+
+  /// No description provided for @settingsEnvoyLocalAccel.
+  ///
+  /// In en, this message translates to:
+  /// **'Accelerator: {accel}'**
+  String settingsEnvoyLocalAccel(String accel);
+
+  /// No description provided for @settingsEnvoyLocalHardware.
+  ///
+  /// In en, this message translates to:
+  /// **'This machine: {summary}'**
+  String settingsEnvoyLocalHardware(String summary);
+
+  /// No description provided for @settingsEnvoyLocalActiveModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Model: {model}'**
+  String settingsEnvoyLocalActiveModel(String model);
+
+  /// No description provided for @settingsEnvoyLocalProgressBytes.
+  ///
+  /// In en, this message translates to:
+  /// **'{received} / {total} MB'**
+  String settingsEnvoyLocalProgressBytes(String received, String total);
+
+  /// No description provided for @settingsEnvoyLocalProgressReceived.
+  ///
+  /// In en, this message translates to:
+  /// **'{received} MB downloaded'**
+  String settingsEnvoyLocalProgressReceived(String received);
+
+  /// No description provided for @settingsEnvoyLocalLastError.
+  ///
+  /// In en, this message translates to:
+  /// **'Last error: {error}'**
+  String settingsEnvoyLocalLastError(String error);
+
+  /// No description provided for @settingsEnvoyLocalDownloadRegion.
+  ///
+  /// In en, this message translates to:
+  /// **'Model download region'**
+  String get settingsEnvoyLocalDownloadRegion;
+
+  /// No description provided for @settingsEnvoyLocalDownloadRegionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'If downloads fail, try China mirrors or a VPN for Global.'**
+  String get settingsEnvoyLocalDownloadRegionHint;
+
+  /// No description provided for @settingsEnvoyLocalDownloadRegionEffective.
+  ///
+  /// In en, this message translates to:
+  /// **'Using: {region}'**
+  String settingsEnvoyLocalDownloadRegionEffective(String region);
+
+  /// No description provided for @settingsEnvoyLocalRegionAuto.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto (timezone / locale)'**
+  String get settingsEnvoyLocalRegionAuto;
+
+  /// No description provided for @settingsEnvoyLocalRegionCn.
+  ///
+  /// In en, this message translates to:
+  /// **'China (ModelScope → hf-mirror)'**
+  String get settingsEnvoyLocalRegionCn;
+
+  /// No description provided for @settingsEnvoyLocalRegionGlobal.
+  ///
+  /// In en, this message translates to:
+  /// **'Global (Hugging Face)'**
+  String get settingsEnvoyLocalRegionGlobal;
+
+  /// No description provided for @settingsEnvoyLocalEnable.
+  ///
+  /// In en, this message translates to:
+  /// **'Download & enable'**
+  String get settingsEnvoyLocalEnable;
+
+  /// No description provided for @settingsEnvoyLocalEnabling.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading…'**
+  String get settingsEnvoyLocalEnabling;
+
+  /// No description provided for @settingsEnvoyLocalStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Start Envoy Local'**
+  String get settingsEnvoyLocalStart;
+
+  /// No description provided for @settingsEnvoyLocalStarting.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting…'**
+  String get settingsEnvoyLocalStarting;
+
+  /// No description provided for @settingsEnvoyLocalStop.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop Envoy Local'**
+  String get settingsEnvoyLocalStop;
+
+  /// No description provided for @settingsEnvoyLocalRestart.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart'**
+  String get settingsEnvoyLocalRestart;
+
+  /// No description provided for @settingsEnvoyLocalCancelDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel download'**
+  String get settingsEnvoyLocalCancelDownload;
+
+  /// No description provided for @settingsEnvoyLocalStopHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop switches the assistant back to your cloud/Ollama provider when one is saved.'**
+  String get settingsEnvoyLocalStopHint;
+
+  /// No description provided for @settingsEnvoyLocalRecommended.
+  ///
+  /// In en, this message translates to:
+  /// **'Recommended'**
+  String get settingsEnvoyLocalRecommended;
+
+  /// No description provided for @settingsEnvoyLocalRecommendedBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Recommended'**
+  String get settingsEnvoyLocalRecommendedBadge;
+
+  /// No description provided for @settingsEnvoyLocalDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get settingsEnvoyLocalDownload;
+
+  /// No description provided for @settingsEnvoyLocalInstalled.
+  ///
+  /// In en, this message translates to:
+  /// **'Installed models'**
+  String get settingsEnvoyLocalInstalled;
+
+  /// No description provided for @settingsEnvoyLocalInstalledHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded on the home node. Choose which one is active.'**
+  String get settingsEnvoyLocalInstalledHint;
+
+  /// No description provided for @settingsEnvoyLocalNoInstalled.
+  ///
+  /// In en, this message translates to:
+  /// **'No models installed yet.'**
+  String get settingsEnvoyLocalNoInstalled;
+
+  /// No description provided for @settingsEnvoyLocalSetActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Set active'**
+  String get settingsEnvoyLocalSetActive;
+
+  /// No description provided for @settingsEnvoyLocalActiveBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Active'**
+  String get settingsEnvoyLocalActiveBadge;
+
+  /// No description provided for @settingsEnvoyLocalInstalledBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Installed'**
+  String get settingsEnvoyLocalInstalledBadge;
+
+  /// No description provided for @settingsEnvoyLocalCatalog.
+  ///
+  /// In en, this message translates to:
+  /// **'Catalog'**
+  String get settingsEnvoyLocalCatalog;
+
+  /// No description provided for @settingsEnvoyLocalHfError.
+  ///
+  /// In en, this message translates to:
+  /// **'Hugging Face search unavailable: {error}'**
+  String settingsEnvoyLocalHfError(String error);
+
+  /// No description provided for @settingsEnvoyLocalRefresh.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh'**
+  String get settingsEnvoyLocalRefresh;
+
+  /// No description provided for @settingsEnvoyLocalPhoneNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Advanced server parameters (context size, GPU layers) remain on the home-node Social UI.'**
+  String get settingsEnvoyLocalPhoneNote;
 }
 
 class _AppLocalizationsDelegate

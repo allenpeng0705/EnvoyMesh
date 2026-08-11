@@ -83,6 +83,12 @@ export class WsServer {
    */
   private readonly heartbeatMissedPongsTolerance = 3;
   private onConnectionChange?: (connectedCount: number) => void;
+  /**
+   * Optional WAN readiness probe for GET /readyz.
+   * /health stays process-liveness only; /readyz may 503 without a live
+   * circuit-relay reservation on CGNAT/wan profiles.
+   */
+  private getReadyz?: () => { ready: boolean; reason?: string };
   /** Per-client queue tail for dial/send RPCs (reads run concurrently). */
   private readonly slowRpcTail = new WeakMap<WebSocket, Promise<void>>();
 
@@ -92,6 +98,11 @@ export class WsServer {
     opts?: { onConnectionChange?: (connectedCount: number) => void },
   ) {
     this.onConnectionChange = opts?.onConnectionChange;
+  }
+
+  /** Bind /readyz semantics (call after mesh identity is known). */
+  setReadyzProbe(fn: () => { ready: boolean; reason?: string }): void {
+    this.getReadyz = fn;
   }
 
   /**
@@ -106,11 +117,29 @@ export class WsServer {
       // GET /health. If the event loop is wedged, the probe times out even
       // though the TCP port still LISTENs — that is the signal to kill/respawn.
       const pathname = (req.url ?? "/").split("?")[0] ?? "/";
-      if (req.method === "GET" && (pathname === "/health" || pathname === "/readyz")) {
+      if (req.method === "GET" && pathname === "/health") {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
             ok: true,
+            service: "envoymesh-home-ws",
+            path: this.path,
+            port: this.port,
+            uptimeMs: Date.now() - startedAtMs,
+            checkedAt: new Date().toISOString(),
+          }),
+        );
+        return;
+      }
+      if (req.method === "GET" && pathname === "/readyz") {
+        const probe = this.getReadyz?.() ?? { ready: true };
+        const status = probe.ready ? 200 : 503;
+        res.writeHead(status, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: probe.ready,
+            ready: probe.ready,
+            reason: probe.reason,
             service: "envoymesh-home-ws",
             path: this.path,
             port: this.port,

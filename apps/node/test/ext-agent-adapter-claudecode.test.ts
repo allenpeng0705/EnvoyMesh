@@ -376,6 +376,31 @@ describe("claudecode-backend (55C) — SDK import", () => {
     expect(sdk).toBeTypeOf("object");
     expect(typeof sdk.query).toBe("function");
   });
+
+  // Phase 55+56 review — A5: when a `queryFn` override is supplied
+  // (test mode), the SDK is never imported. This lets tests run
+  // without installing `@anthropic-ai/claude-agent-sdk` in the test
+  // environment. The `sdkLoader` field is `undefined` when the
+  // override is set; `start()` / `probe()` / `ask()` all skip the
+  // SDK path.
+  it("does NOT call loadSdk() when queryFn override is supplied", async () => {
+    // Spy on the lazy loader — if it's called, the test fails.
+    const loaderSpy = vi.spyOn(_test, "loadSdk");
+    const queryFn = () => makeFakeQuery([]) as unknown as Query;
+    const backend = new ClaudeCodeBackend({
+      queryFn,
+      apiKey: "test-key",
+    });
+    expect(loaderSpy).not.toHaveBeenCalled();
+    // The sdkLoader field is undefined when the override is set.
+    expect(backend["sdkLoader"]).toBeUndefined();
+    // start() / probe() / ask() all work without ever loading the SDK.
+    await backend.start();
+    const ok = await backend.probe();
+    expect(ok).toBe(true);
+    expect(loaderSpy).not.toHaveBeenCalled();
+    loaderSpy.mockRestore();
+  });
 });
 
 describe("claudecode-backend (55C) — abort error detection", () => {

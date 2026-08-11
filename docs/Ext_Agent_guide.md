@@ -966,6 +966,111 @@ optional Retry / Dismiss buttons.
 
 ---
 
+## Per-agent common issues (Phase 56 detailed)
+
+This section expands the high-level troubleshooting table below
+with the per-agent "common issues" data shipped in
+`packages/api/src/ext-agent.ts:INSTALL_TABLE.commonIssues` (the
+same list rendered by the Settings UI Install Required card).
+
+### Cursor CLI (Phase 56A)
+
+- **First run opens a browser for OAuth login** — there is no
+  terminal API-key prompt. Run `cursor-agent login` once
+  interactively to persist the OAuth session to `~/.config/cursor/`.
+- **`cursor-agent --version` fails** — the install path (default
+  `~/.cursor/bin`) may not be on `$PATH`. Add it to your shell rc
+  and re-source it.
+- **Node.js version** — Cursor CLI requires Node 18+; verify with
+  `node --version`.
+
+### Aider (Phase 56B)
+
+- **Missing API key** — set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
+  in your shell before running Aider. Aider auto-detects by env
+  var name.
+- **First run is slow** — Aider creates a Python venv + downloads
+  the model spec on first use. The chat-bridge has a 120s timeout
+  by default; bump `ENVOYMESH_AIDER_REQUEST_TIMEOUT_MS=180000` if
+  the first call exceeds it.
+- **Aider version is too old** — `aider --version` should be ≥0.70
+  for the `--no-pretty` flag to exist. Update with
+  `python -m pip install aider-chat --upgrade`.
+- **Aider is editing files in the working dir** — the chat-bridge
+  forces `--no-git` and `--yes-always`; if you see diffs being
+  applied, the safety flags are being overridden. Report this as
+  a bug; the safety-flag ordering is load-bearing (last in argv,
+  so they always win).
+- **Python version** — Aider requires Python 3.8+; verify with
+  `python --version`.
+
+### MMX-CLI (Phase 56C)
+
+- **Run `mmx auth login --api-key sk-xxxx`** to authenticate;
+  OAuth (browser-based) is also supported. The key is saved to
+  `~/.mmx/config.json`.
+- **Region is auto-detected** by the CLI from the API key prefix
+  (global vs CN). No env var needed.
+- **Node.js version** — MMX-CLI requires Node 18+; verify with
+  `node --version`.
+- **`mmx` says "rate limit" or HTTP 1305** — Token plan exhausted.
+  Wait for the next billing window or upgrade at
+  <https://platform.minimaxi.com/subscribe/token-plan>.
+- **MMX-CLI version is too old** — `--output json` was added in a
+  later release. Update: `npm install -g mmx-cli@latest`.
+
+### Codex (Phase 55B)
+
+- **Set `OPENAI_API_KEY`** in your shell before running codex. The
+  supervisor's first healthcheck fails without it, surfacing
+  `installState: "unknown"`.
+- **Codex CLI requires Node 18+**; verify with `node --version`.
+- **Codex app-server crashes repeatedly** — the supervisor emits
+  `crash.stuck` after 5 restarts in 5 minutes. Check the logs
+  (`[ext-agent:codex:stderr]`) for the actual failure cause;
+  common ones are invalid API key, quota exceeded, or a CLI
+  version that's too old for the JSON-RPC schema we speak.
+
+### Claude Code (Phase 55C)
+
+- **Set `ANTHROPIC_API_KEY`** in your shell before running Claude
+  Code. `probe()` returns `false` without it.
+- **Claude Code binary is `claude`**, not `claudecode`. The
+  package is `@anthropic-ai/claude-code`; install via
+  `npm i -g @anthropic-ai/claude-code`.
+- **Claude Code requires Node 18+**; verify with `node --version`.
+- **The Ext Agent chat-bridge disables all tools** (`allowedTools:
+  []`) by default. If you want tool-calling, use the `claude` CLI
+  directly, not Ext Agent.
+
+### Hermes (Phase 55 + 55E)
+
+- **Set `API_SERVER_ENABLED=true` and `API_SERVER_KEY`** in your
+  Hermes config (e.g. `~/.hermes/.env`).
+- **Hermes health endpoint**: `GET http://127.0.0.1:8642/v1/models`.
+  If this returns 401, the key is wrong.
+- **`hermes gateway run` fails to start** — check the config file
+  for typos; the supervisor will retry on the next `ask()` (if
+  autostart is enabled) or you can start the daemon manually.
+
+### OpenHuman (Phase 55 + 55E)
+
+- **Set `OPENHUMAN_TOKEN`** or place `core.token` in your workspace.
+- **OpenHuman requires the `openhuman-core` binary on PATH.**
+- **OpenHuman health endpoint**: `GET http://127.0.0.1:7788/health`.
+- **OpenHuman.app keeps a per-launch token in-memory only** — the
+  supervisor can't read it. Use CLI `openhuman serve` /
+  `openhuman core run`, or set a shared `OPENHUMAN_CORE_TOKEN` on
+  a non-desktop core.
+
+### Pi (built-in)
+
+- **Pi is built into full desktop installs.** If chat stays silent,
+  reinstall a full build (Pi sidecar staged) and confirm Settings
+  → AI has a real model (not mock/disabled).
+- **Slim / CI-incomplete DMGs have no Pi CLI** under `resources/pi`.
+  The `probe()` returns `false` in that case.
+
 ## Troubleshooting (all agents)
 
 | Symptom | Likely cause | Fix |

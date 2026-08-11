@@ -1,13 +1,4 @@
-// Phase 40 mobile mirror — read-only chain report detail.
-//
-// Renders a single published `ChainReport` fetched via `chainGetReport`.
-// Sections render the executive summary + per-section body as plain text
-// (no markdown renderer dependency — the wire format is markdown but the
-// mobile surface is a quick-glance mirror, not a reading app).
-//
-// Mutations (pin/unpin, launch, cancel, rebalance) are intentionally not
-// exposed; the home node's Social UI is the source of truth for chain
-// authoring and editing.
+// Chain report detail — view + pin/unpin (GC exemption).
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -30,6 +21,7 @@ class _RecentChainDetailScreenState
     extends ConsumerState<RecentChainDetailScreen> {
   ChainReport? _report;
   bool _loading = true;
+  bool _pinning = false;
   String? _error;
 
   /// True when the home node confirmed the report is gone (returned
@@ -43,6 +35,12 @@ class _RecentChainDetailScreenState
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
+  NodeServiceClient? _clientOrNull() {
+    final home = ref.read(nodeProvider.notifier).client;
+    if (home == null || !home.isConnected) return null;
+    return NodeServiceClient(home);
+  }
+
   Future<void> _load() async {
     if (!mounted) return;
     setState(() {
@@ -50,23 +48,18 @@ class _RecentChainDetailScreenState
       _error = null;
       _notFound = false;
     });
-    final nodeNotifier = ref.read(nodeProvider.notifier);
-    final homeClient = nodeNotifier.client;
-    if (homeClient == null || !homeClient.isConnected) {
+    final client = _clientOrNull();
+    if (client == null) {
       setState(() {
         _loading = false;
         _error = AppLocalizations.of(context).commonNotConnectedHome;
       });
       return;
     }
-    final client = NodeServiceClient(homeClient);
     try {
       final report = await client.getChainReport(widget.chainId);
       if (!mounted) return;
       if (report == null) {
-        // The home node returned a null report — the report was GC'd
-        // (90-day policy unless pinned) or never existed. Show a softer
-        // "not available" state rather than a hard error.
         setState(() {
           _loading = false;
           _notFound = true;
@@ -86,13 +79,66 @@ class _RecentChainDetailScreenState
     }
   }
 
+  Future<void> _togglePin() async {
+    final report = _report;
+    final client = _clientOrNull();
+    final l10n = AppLocalizations.of(context);
+    if (report == null || client == null) return;
+    final next = !report.pinned;
+    setState(() => _pinning = true);
+    try {
+      final result = await client.chainPinReport(
+        chainId: report.chainId,
+        pinned: next,
+      );
+      if (!mounted) return;
+      final pinned = result['pinned'] == true;
+      setState(() {
+        _report = ChainReport(
+          version: report.version,
+          chainId: report.chainId,
+          chainMandateId: report.chainMandateId,
+          orchestratorOwnerId: report.orchestratorOwnerId,
+          orchestratorPeerId: report.orchestratorPeerId,
+          pinned: pinned,
+          createdAt: report.createdAt,
+          chainSummary: report.chainSummary,
+          executiveSummary: report.executiveSummary,
+          sections: report.sections,
+          recipientRoles: report.recipientRoles,
+        );
+        _pinning = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            pinned ? l10n.chainsPinDone : l10n.chainsUnpinDone,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _pinning = false;
+        _error = e.toString();
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final pinned = _report?.pinned == true;
     return Scaffold(
       appBar: AppBar(
         title: Text(_shortId(widget.chainId)),
         actions: [
+          if (_report != null)
+            IconButton(
+              icon: Icon(pinned ? Icons.star : Icons.star_border),
+              tooltip: pinned ? l10n.chainsUnpin : l10n.chainsPin,
+              onPressed: _pinning || _loading ? null : _togglePin,
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: l10n.commonRefresh,

@@ -36,65 +36,32 @@ const DEFAULT_PORTS: Record<ExtAgentSidecarKind, number> = {
   mmx: 8027,
 };
 
+/**
+ * Per-kind `ENVOYMESH_*_PORT` env-var names. Each entry maps a sidecar
+ * kind to the env var that overrides its default listen port (used in
+ * tests + multi-instance deployments). Invalid values (non-integer,
+ * out-of-range) silently fall back to the default — the same shape
+ * `manager.ts` has shipped since the 55 ports landed.
+ */
+const PORT_ENV_FOR: Record<ExtAgentSidecarKind, string> = {
+  hermes: "ENVOYMESH_HERMES_PORT",
+  openhuman: "ENVOYMESH_OPENHUMAN_PORT",
+  pi: "ENVOYMESH_PI_EXT_PORT",
+  codex: "ENVOYMESH_CODEX_PORT",
+  claudecode: "ENVOYMESH_CLAUDECODE_PORT",
+  cursor: "ENVOYMESH_CURSOR_PORT",
+  aider: "ENVOYMESH_AIDER_PORT",
+  mmx: "ENVOYMESH_MMX_PORT",
+};
+
 let running: ExtAgentHttpServerHandle | null = null;
 let syncChain: Promise<void> = Promise.resolve();
 
 function listenPortFor(kind: ExtAgentSidecarKind): number {
-  if (kind === "hermes") {
-    const env = process.env.ENVOYMESH_HERMES_PORT?.trim();
-    if (env) {
-      const n = Number.parseInt(env, 10);
-      if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;
-    }
-  }
-  if (kind === "openhuman") {
-    const env = process.env.ENVOYMESH_OPENHUMAN_PORT?.trim();
-    if (env) {
-      const n = Number.parseInt(env, 10);
-      if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;
-    }
-  }
-  if (kind === "pi") {
-    const env = process.env.ENVOYMESH_PI_EXT_PORT?.trim();
-    if (env) {
-      const n = Number.parseInt(env, 10);
-      if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;
-    }
-  }
-  if (kind === "codex") {
-    const env = process.env.ENVOYMESH_CODEX_PORT?.trim();
-    if (env) {
-      const n = Number.parseInt(env, 10);
-      if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;
-    }
-  }
-  if (kind === "claudecode") {
-    const env = process.env.ENVOYMESH_CLAUDECODE_PORT?.trim();
-    if (env) {
-      const n = Number.parseInt(env, 10);
-      if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;
-    }
-  }
-  if (kind === "cursor") {
-    const env = process.env.ENVOYMESH_CURSOR_PORT?.trim();
-    if (env) {
-      const n = Number.parseInt(env, 10);
-      if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;
-    }
-  }
-  if (kind === "aider") {
-    const env = process.env.ENVOYMESH_AIDER_PORT?.trim();
-    if (env) {
-      const n = Number.parseInt(env, 10);
-      if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;
-    }
-  }
-  if (kind === "mmx") {
-    const env = process.env.ENVOYMESH_MMX_PORT?.trim();
-    if (env) {
-      const n = Number.parseInt(env, 10);
-      if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;
-    }
+  const env = process.env[PORT_ENV_FOR[kind]]?.trim();
+  if (env) {
+    const n = Number.parseInt(env, 10);
+    if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;
   }
   return DEFAULT_PORTS[kind];
 }

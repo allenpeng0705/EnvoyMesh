@@ -330,6 +330,15 @@ export class CodexBackend implements ExtAgentBackend {
     for (const detach of this.detachedListeners) detach();
     this.detachedListeners.length = 0;
     this.failAllPending(new Error("codex backend: stop() called"));
+    // Clear all per-process state so a future start() begins from
+    // scratch. Without this, a re-use of the backend after stop()
+    // would carry stale `threadIds` pointing at a long-gone codex
+    // process — `getOrCreateThread` would return those ids and the
+    // new codex would reject the `turn/start` with "unknown thread".
+    this.threadIds.clear();
+    this.threadIdToSessionKey.clear();
+    this.initialized = false;
+    this.nextRpcId = 1;
     await this.supervisor.stop();
   }
 

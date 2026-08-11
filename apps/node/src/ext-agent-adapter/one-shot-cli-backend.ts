@@ -158,12 +158,33 @@ export abstract class OneShotCliBackend implements ExtAgentBackend {
       proc.on("close", (code) => {
         if (killed) return;
         clearTimeout(timer);
+        const exitCode = code ?? -1;
+        // Non-zero exit is a hard error — do NOT call parseOutput, which
+        // would happily return whatever the CLI wrote to stdout (often
+        // a one-line error message that would then be returned to the
+        // user as if it were the assistant's reply). Subclasses can
+        // override `parseOutput` to throw a richer error if the CLI
+        // emits structured error JSON on a non-zero exit.
+        if (exitCode !== 0) {
+          // Append the install hint so the user can self-diagnose
+          // "did the CLI run but fail, or is it not installed at all?"
+          // The hint is short for known agents (e.g. "Install mmx-cli
+          // via `npm install -g mmx-cli`") and not noisy.
+          reject(
+            new Error(
+              `${this.kind} ask(): non-zero exit (code=${exitCode}, stderr=${truncateForError(
+                stderr,
+              )}) — ${this.installHint}`,
+            ),
+          );
+          return;
+        }
         try {
-          const result = this.parseOutput(stdout, stderr, code ?? -1);
+          const result = this.parseOutput(stdout, stderr, exitCode);
           if (!result.trim()) {
             reject(
               new Error(
-                `${this.kind} ask(): empty response (exit=${code}, stderr=${truncateForError(
+                `${this.kind} ask(): empty response (exit=0, stderr=${truncateForError(
                   stderr,
                 )})`,
               ),
@@ -172,7 +193,16 @@ export abstract class OneShotCliBackend implements ExtAgentBackend {
           }
           resolve(result);
         } catch (err) {
-          reject(err);
+          // parseOutput threw on a zero exit — surface the underlying
+          // parse error. The exit code is 0 so we don't conflate it
+          // with a CLI failure; the user can fix the parser or report
+          // a malformed response.
+          const msg = err instanceof Error ? err.message : String(err);
+          reject(
+            new Error(
+              `${this.kind} ask(): failed to parse output (exit=0): ${msg}`,
+            ),
+          );
         }
       });
     });

@@ -92,7 +92,19 @@ export function BotChatPanel({ threadKey }: BotChatPanelProps) {
   }, [isOutgoing, messages, pendingOutbound]);
 
   const stacks = useMemo(
-    () => buildMessageStacks(displayMessages, (msg) => isOutgoing(msg) || msg.messageId.startsWith("pending-")),
+    () =>
+      buildMessageStacks(
+        displayMessages,
+        // Group two consecutive messages iff they have the SAME
+        // outgoing status. Previously this callback only checked the
+        // *previous* message (single-arg) and ignored the second
+        // argument, so an outgoing user message + incoming bot reply
+        // got bundled into the same stack — both rendered on the
+        // right with the same outgoing style, making the chat look
+        // like the bot was talking to itself. Match the pattern in
+        // ContactChatPanel / GroupChatPanel: `(a, b) => isOut(a) === isOut(b)`.
+        (a, b) => isOutgoing(a) === isOutgoing(b),
+      ),
     [displayMessages, isOutgoing],
   );
 

@@ -324,6 +324,142 @@ process.stdin.on("data", (chunk) => {
     await backend.stop(); // second call must be a no-op
     expect(backend["supervisor"].isRunning()).toBe(false);
   });
+
+  // Phase 55+56 review — A3: stop() must clear per-process state
+  // (threadIds, threadIdToSessionKey, initialized, nextRpcId) so a
+  // future start() on the same backend instance begins from a
+  // clean slate. Without this, a re-used backend would carry stale
+  // thread ids pointing at a long-gone codex process.
+  it("stop() clears per-process state for a clean re-start", async () => {
+    backend = makeBackend();
+    await backend.start();
+    // Force some state to be populated: send a thread/start to
+    // populate threadIds.
+    await backend.ask("hello", "sess-A");
+    // The thread id should be cached for "sess-A".
+    const threadIdsBefore = backend["threadIds"] as Map<string, string>;
+    expect(threadIdsBefore.size).toBeGreaterThan(0);
+    expect(backend["initialized"]).toBe(true);
+    // stop() should clear everything.
+    await backend.stop();
+    expect((backend["threadIds"] as Map<string, string>).size).toBe(0);
+    expect((backend["threadIdToSessionKey"] as Map<string, string>).size).toBe(0);
+    expect(backend["initialized"]).toBe(false);
+    expect(backend["nextRpcId"]).toBe(1);
+  }, 10_000);
+});
+
+describe("codex-backend (55B) — install-missing event handling", () => {
+  // Phase 55+56 review — B2: macOS-style async ENOENT. The supervisor
+  // emits "install-missing" on its EventEmitter when the async
+  // `error` event fires with `code === "ENOENT"`. The codex backend
+  // subscribes to that event and calls `failAllPending` so in-flight
+  // requests are rejected rather than hanging. This test uses a fake
+  // supervisor (the codex backend's `supervisor` option is overridable
+  // for tests per the JSDoc) to emit the event on demand and verify
+  // the codex backend's behavior.
+  it("emits install-missing from the supervisor → codex backend listener fires (no throw)", async () => {
+    const { EventEmitter } = await import("node:events");
+    const fake = new EventEmitter() as unknown as {
+      // Fake supervisor — only the methods the codex backend calls.
+      start: () => Promise<void>;
+      stop: () => Promise<void>;
+      sendStdin: (chunk: string) => boolean;
+      getChildProcess: () => null;
+      on: (event: string, listener: (...args: unknown[]) => void) => unknown;
+    };
+    fake.start = async () => {};
+    fake.stop = async () => {};
+    fake.sendStdin = () => false;
+    fake.getChildProcess = () => null;
+    // The fake is also an EventEmitter — `on` is inherited.
+
+    const backend = new CodexBackend({
+      apiKey: "test-key",
+      requestTimeoutMs: 5_000,
+      supervisor: fake as never,
+    });
+
+    // Emit the install-missing event the codex backend listens for.
+    // The codex backend's listener calls failAllPending (which is
+    // a no-op when no requests are pending). The test pins: the
+    // emit doesn't throw, and the backend survives the event.
+    expect(() => {
+      (fake as unknown as EventEmitter).emit("install-missing", {
+        command: "codex",
+        reason: "spawn-enoent",
+      });
+    }).not.toThrow();
+    // The backend should still respond to stop() cleanly.
+    await backend.stop();
+  });
+
+  it("failAllPending rejects pending requests with a clear error", async () => {
+    // Direct unit test of the failAllPending path. We don't need a
+    // full supervisor — just construct a backend, populate the
+    // pending maps, then call failAllPending directly via a
+    // synthetic install-missing event.
+    const { EventEmitter } = await import("node:events");
+    const fake = new EventEmitter() as unknown as {
+      start: () => Promise<void>;
+      stop: () => Promise<void>;
+      sendStdin: () => boolean;
+      getChildProcess: () => null;
+      on: (event: string, listener: (...args: unknown[]) => void) => unknown;
+    };
+    fake.start = async () => {};
+    fake.stop = async () => {};
+    fake.sendStdin = () => false;
+    fake.getChildProcess = () => null;
+
+    const backend = new CodexBackend({
+      apiKey: "test-key",
+      requestTimeoutMs: 5_000,
+      supervisor: fake as never,
+    });
+
+    // Manually populate a pending completion. We use the private
+    // pendingCompletions map directly.
+    let resolved = false;
+    let rejected: Error | null = null;
+    const completionPromise = new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          reject(new Error("test-timeout"));
+        }
+      }, 5_000);
+      timer.unref?.();
+      (backend as never as {
+        pendingCompletions: Map<string, { resolve: (v: string) => void; reject: (e: Error) => void; timer: NodeJS.Timeout; turnId: string; threadId: string; sessionKey: string }>;
+      }).pendingCompletions.set("sess-A", {
+        sessionKey: "sess-A",
+        threadId: "thread-A",
+        turnId: "turn-A",
+        resolve: (v: string) => {
+          resolved = true;
+          resolve(v);
+        },
+        reject: (e: Error) => {
+          rejected = e;
+          reject(e);
+        },
+        timer,
+      });
+    });
+
+    // Emit install-missing — the codex backend's listener should
+    // call failAllPending, which rejects the pending completion.
+    (fake as unknown as EventEmitter).emit("install-missing", {
+      command: "codex",
+      reason: "spawn-enoent",
+    });
+    await expect(completionPromise).rejects.toThrow(
+      /binary missing \(install-missing event\)/,
+    );
+    expect(rejected).not.toBeNull();
+    await backend.stop();
+  });
 });
 
 describe("codex-backend (55B) — integration with createBackend()", () => {

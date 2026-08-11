@@ -82,13 +82,20 @@ export class AiderBackend extends OneShotCliBackend {
   }
 
   protected buildArgs(text: string, _sessionKey: string): string[] {
+    // Safety flag ordering: Aider is a CLI that uses last-occurrence
+    // wins for mutually-exclusive flags. If a user passes
+    // `extraArgs: ["--git"]` and the safety flags come first, aider
+    // would re-enable git (auto-commits from the chat panel — bad).
+    // Putting the safety flags LAST means they always win, regardless
+    // of what the user passes in `extraArgs` or `args`. Tests that
+    // need to override the safety flags can mock the whole backend.
     return [
       "--message",
       text,
+      ...this.extraArgs,
       "--no-pretty",
       "--no-git",
       "--yes-always",
-      ...this.extraArgs,
     ];
   }
 

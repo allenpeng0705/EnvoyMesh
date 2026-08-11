@@ -156,9 +156,16 @@ export class ClaudeCodeBackend implements ExtAgentBackend {
     | undefined;
   /** `sessionKey → claude session_id` cache. Lost on restart. */
   private readonly sessionIds = new Map<string, string>();
-  /** Cached SDK import. The first `loadSdk()` resolves the module;
-   * subsequent calls reuse the same promise. */
-  private readonly sdkLoader: Promise<typeof import("@anthropic-ai/claude-agent-sdk")>;
+  /**
+   * Cached SDK import. Resolved only when actually needed (i.e. on
+   * `ask()` when no `queryFn` override is supplied). When a test
+   * injects a `queryFn` override, the SDK is never imported — the
+   * test can run without installing `@anthropic-ai/claude-agent-sdk`.
+   * `undefined` means "no loader needed, a queryFn is in use".
+   */
+  private readonly sdkLoader:
+    | Promise<typeof import("@anthropic-ai/claude-agent-sdk") | undefined>
+    | undefined;
 
   constructor(opts: ClaudeCodeBackendOptions = {}) {
     this.apiKey = opts.apiKey ?? process.env.ANTHROPIC_API_KEY ?? undefined;
@@ -173,7 +180,9 @@ export class ClaudeCodeBackend implements ExtAgentBackend {
         : false;
     this.disableTools = opts.disableTools ?? CLAUDE_DEFAULTS.disableTools;
     this.queryFnOverride = opts.queryFn;
-    this.sdkLoader = loadSdk();
+    // Only kick off the SDK loader when there's no queryFn override.
+    // Tests that supply a queryFn can run without the SDK installed.
+    this.sdkLoader = opts.queryFn ? undefined : loadSdk();
   }
 
   // -------------------------------------------------------------------------
@@ -192,9 +201,23 @@ export class ClaudeCodeBackend implements ExtAgentBackend {
       );
     }
 
-    // Lazy SDK import (cached after first call).
-    const sdk = await this.sdkLoader;
-    const queryFn = this.queryFnOverride ?? sdk.query;
+    // Resolve the query function. With a test-supplied `queryFn`
+    // override, the SDK is never loaded; without one, we wait for
+    // the lazy SDK loader (cached after first call).
+    let queryFn: (params: { prompt: string; options?: Options }) => Query;
+    if (this.queryFnOverride) {
+      queryFn = this.queryFnOverride;
+    } else {
+      const sdk = await this.sdkLoader;
+      // sdkLoader is `undefined` only if queryFn is set (caught
+      // above); this assertion narrows the type for TS.
+      if (!sdk) {
+        throw new Error(
+          "claudecode ask(): SDK loader is missing — this is a bug, please report",
+        );
+      }
+      queryFn = sdk.query;
+    }
 
     const cachedSessionId = this.sessionIds.get(sessionKey);
     const ac = new AbortController();
@@ -273,13 +296,19 @@ export class ClaudeCodeBackend implements ExtAgentBackend {
 
   /**
    * Cheap readiness probe. Returns `true` iff the SDK is loadable AND
-   * `ANTHROPIC_API_KEY` is set. The actual network roundtrip is left
-   * to `ask()` (avoids waking the model just for a `/status` poll).
+   * `ANTHROPIC_API_KEY` is set (or a `queryFn` override is supplied,
+   * in which case the SDK isn't loaded at all). The actual network
+   * roundtrip is left to `ask()` (avoids waking the model just for
+   * a `/status` poll).
    */
   async probe(): Promise<boolean> {
-    try {
-      await this.sdkLoader;
+    if (this.queryFnOverride) {
+      // Test mode — assume the override is healthy.
       return !!this.apiKey;
+    }
+    try {
+      const sdk = await this.sdkLoader;
+      return !!this.apiKey && !!sdk;
     } catch {
       return false;
     }
@@ -293,8 +322,11 @@ export class ClaudeCodeBackend implements ExtAgentBackend {
   async start(): Promise<void> {
     // Eagerly resolve the SDK module so a missing install fails here
     // rather than on the first user message. (Cheap — module is cached
-    // after the first call.)
-    await this.sdkLoader;
+    // after the first call.) Skipped when a `queryFn` override is
+    // supplied (test mode — no SDK needed).
+    if (!this.queryFnOverride && this.sdkLoader) {
+      await this.sdkLoader;
+    }
   }
 
   /**

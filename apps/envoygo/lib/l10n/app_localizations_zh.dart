@@ -135,6 +135,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get meAiModel => 'AI 模型';
 
   @override
+  String get meEnvoyLocal => 'Envoy Local';
+
+  @override
+  String get meEnvoyLocalHint => '家庭节点本地模型（在电脑上下载并启动）';
+
+  @override
   String get mePiAgent => 'Pi 智能体';
 
   @override
@@ -232,6 +238,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get meTeamJobs => '团队任务';
+
+  @override
+  String get meStartTeamJobHint => '预览计划并在家庭节点上启动';
 
   @override
   String get meAiModelHint => '此家庭节点助手使用的模型提供方';
@@ -1429,10 +1438,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chainsEmptyHint =>
-      '在家庭节点上运行的团队任务会显示在这里。\n请从家庭节点 Social UI 创建团队任务。';
+      '在家庭节点上运行的团队任务会显示在这里。\n可从本手机或家庭节点 Social UI 启动。';
 
   @override
-  String get chainsNoActive => '家庭节点上没有进行中的协作任务。\n请从 Social UI 启动一个。';
+  String get chainsNoActive => '家庭节点上没有进行中的团队任务。\n请用下方按钮启动一个。';
 
   @override
   String get chainsReportGone => '此报告已不可用';
@@ -1462,7 +1471,176 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chainsDuration => '耗时';
 
   @override
-  String get chainsManageOnSocial => '在家庭节点 Social UI 上管理协作任务。';
+  String get chainsManageOnSocial => '高级协作控制（取消、再平衡、置顶）请在家庭节点 Social UI 中操作。';
+
+  @override
+  String get chainsStartTitle => '启动团队任务';
+
+  @override
+  String get chainsStartFab => '新建团队任务';
+
+  @override
+  String get chainsStartIntro => '描述目标。家庭节点会规划子任务，并分配已绑定的 Agent Network 工作代理。';
+
+  @override
+  String get chainsStartAssignmentMode => '分配模式';
+
+  @override
+  String get chainsStartModeSkill => '按技能';
+
+  @override
+  String get chainsStartModeRole => '按角色';
+
+  @override
+  String get chainsStartModeSkillHint => '按匹配技能为工作代理排序。';
+
+  @override
+  String get chainsStartModeRoleHint => '每个步骤优先匹配协作角色（产品经理、程序员等）。';
+
+  @override
+  String get chainsStartGoalLabel => '目标';
+
+  @override
+  String get chainsStartGoalHint => '团队应完成什么？';
+
+  @override
+  String chainsStartGoalTooShort(int min) {
+    return '目标至少需要 $min 个字符';
+  }
+
+  @override
+  String get chainsStartPreview => '预览计划';
+
+  @override
+  String get chainsStartPreviewing => '规划中…';
+
+  @override
+  String get chainsStartPreviewFailed => '无法生成计划';
+
+  @override
+  String get chainsStartNeedPreview => '请先预览计划再启动';
+
+  @override
+  String get chainsStartPlanHeading => '计划';
+
+  @override
+  String get chainsStartNoSubtasks => '此计划没有子任务。';
+
+  @override
+  String get chainsStartConfirm => '启动团队任务';
+
+  @override
+  String get chainsStartStarting => '启动中…';
+
+  @override
+  String get chainsStartStarted => '团队任务已启动';
+
+  @override
+  String get chainsStartFailed => '无法启动团队任务';
+
+  @override
+  String get chainsStartNoWorkers =>
+      '没有可到达的 Agent Network 工作代理。请先在家庭节点上绑定带智能体的联系人。';
+
+  @override
+  String get chainsStartNeedWorkers => '请至少选择一个在线工作代理，或重新预览以恢复推荐池。';
+
+  @override
+  String get chainsStartWorkersHint =>
+      '以下为计划中的在线工作代理。取消勾选不需要的。全部取消会阻止启动 — 重新预览可恢复推荐池。';
+
+  @override
+  String get chainsStartWorkersHeading => '工作代理';
+
+  @override
+  String get chainsStartNoSuggestedWorkers => '暂无建议工作代理 — 启动时将使用家庭节点的发现池。';
+
+  @override
+  String chainsStartWorkerMatches(int count) {
+    return '匹配 $count 个步骤';
+  }
+
+  @override
+  String get chainsStartWorkerOnline => '在线';
+
+  @override
+  String get chainsStartWorkerRelay => '在线（中继）';
+
+  @override
+  String get chainsStartWorkerOffline => '离线 / 未知';
+
+  @override
+  String get chainsActiveGone => '此团队任务已不在进行中';
+
+  @override
+  String chainsBudgetLine(String spent, String max) {
+    return '预算 $spent / $max 美元';
+  }
+
+  @override
+  String get chainsBudgetWarn => '预算告警 — 可考虑追加预算。';
+
+  @override
+  String get chainsBudgetExceeded => '预算已超 — 任务可能卡住，直到重新平衡。';
+
+  @override
+  String chainsPartialCount(int count) {
+    return '$count 个部分结果';
+  }
+
+  @override
+  String get chainsCancelTitle => '取消团队任务？';
+
+  @override
+  String get chainsCancelBody => '将通知工作代理停止。已收集的部分结果会保留。';
+
+  @override
+  String get chainsCancelConfirm => '取消任务';
+
+  @override
+  String get chainsCancelDone => '团队任务已取消';
+
+  @override
+  String get chainsCancelReason => '已从 EnvoyGo 取消';
+
+  @override
+  String get chainsDetailCancelled => '此任务已取消。';
+
+  @override
+  String get chainsDetailPublished => '此任务已完成并发布报告。';
+
+  @override
+  String get chainsRebalanceHeading => '追加预算';
+
+  @override
+  String get chainsRebalanceHint => '提高成本上限并重试尚未分配的步骤。';
+
+  @override
+  String get chainsRebalanceAmount => '追加金额（美元）';
+
+  @override
+  String get chainsRebalanceAction => '追加并重试';
+
+  @override
+  String get chainsRebalanceInvalidAmount => '请输入大于 0 的金额';
+
+  @override
+  String get chainsRebalanceDone => '预算已更新';
+
+  @override
+  String get chainsRebalanceFailed => '无法重新平衡';
+
+  @override
+  String get chainsPin => '置顶报告';
+
+  @override
+  String get chainsUnpin => '取消置顶';
+
+  @override
+  String get chainsPinDone => '报告已置顶（保留超过 90 天清理）';
+
+  @override
+  String get chainsUnpinDone => '已取消置顶';
 
   @override
   String chainsPublished(String date) {
@@ -1723,4 +1901,173 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonYouName => '你';
+
+  @override
+  String get settingsAiModelEnvoyLocalStandby =>
+      '家庭节点当前使用 Envoy Local。点按可管理本地模型，或在下方保存云端提供方作为备用。';
+
+  @override
+  String get settingsEnvoyLocalIntro =>
+      '在家庭电脑上控制 llama.cpp。模型下载发生在电脑上，不会下载到本手机。';
+
+  @override
+  String get settingsEnvoyLocalStatusHeading => '状态';
+
+  @override
+  String get settingsEnvoyLocalInUse => '使用中';
+
+  @override
+  String get settingsEnvoyLocalNotInUse => '未使用';
+
+  @override
+  String get settingsEnvoyLocalStatusDownloading => '下载中…';
+
+  @override
+  String get settingsEnvoyLocalStatusDetecting => '检测中…';
+
+  @override
+  String get settingsEnvoyLocalStatusExtracting => '解压中…';
+
+  @override
+  String get settingsEnvoyLocalStatusStarting => '启动中…';
+
+  @override
+  String get settingsEnvoyLocalStatusReady => '就绪';
+
+  @override
+  String get settingsEnvoyLocalStatusError => '错误';
+
+  @override
+  String get settingsEnvoyLocalStatusDisabled => '已禁用';
+
+  @override
+  String get settingsEnvoyLocalIdleTimeout =>
+      'Envoy Local 操作已超时（60 分钟）。若下载卡在接近 100%，请改用中国镜像或 VPN 后重试 — 未完成的下载会续传。';
+
+  @override
+  String settingsEnvoyLocalRuntime(String status) {
+    return '运行时：$status';
+  }
+
+  @override
+  String settingsEnvoyLocalRuntimeVersion(String version) {
+    return '版本：$version';
+  }
+
+  @override
+  String settingsEnvoyLocalAccel(String accel) {
+    return '加速：$accel';
+  }
+
+  @override
+  String settingsEnvoyLocalHardware(String summary) {
+    return '本机：$summary';
+  }
+
+  @override
+  String settingsEnvoyLocalActiveModel(String model) {
+    return '模型：$model';
+  }
+
+  @override
+  String settingsEnvoyLocalProgressBytes(String received, String total) {
+    return '$received / $total MB';
+  }
+
+  @override
+  String settingsEnvoyLocalProgressReceived(String received) {
+    return '已下载 $received MB';
+  }
+
+  @override
+  String settingsEnvoyLocalLastError(String error) {
+    return '最近错误：$error';
+  }
+
+  @override
+  String get settingsEnvoyLocalDownloadRegion => '模型下载区域';
+
+  @override
+  String get settingsEnvoyLocalDownloadRegionHint =>
+      '若下载失败，可改用中国镜像，或为全球源开启 VPN。';
+
+  @override
+  String settingsEnvoyLocalDownloadRegionEffective(String region) {
+    return '当前：$region';
+  }
+
+  @override
+  String get settingsEnvoyLocalRegionAuto => '自动（时区 / 语言）';
+
+  @override
+  String get settingsEnvoyLocalRegionCn => '中国（ModelScope → hf-mirror）';
+
+  @override
+  String get settingsEnvoyLocalRegionGlobal => '全球（Hugging Face）';
+
+  @override
+  String get settingsEnvoyLocalEnable => '下载并启用';
+
+  @override
+  String get settingsEnvoyLocalEnabling => '下载中…';
+
+  @override
+  String get settingsEnvoyLocalStart => '启动 Envoy Local';
+
+  @override
+  String get settingsEnvoyLocalStarting => '启动中…';
+
+  @override
+  String get settingsEnvoyLocalStop => '停止 Envoy Local';
+
+  @override
+  String get settingsEnvoyLocalRestart => '重启';
+
+  @override
+  String get settingsEnvoyLocalCancelDownload => '取消下载';
+
+  @override
+  String get settingsEnvoyLocalStopHint => '停止后，助手将切回已保存的云端 / Ollama 提供方。';
+
+  @override
+  String get settingsEnvoyLocalRecommended => '推荐';
+
+  @override
+  String get settingsEnvoyLocalRecommendedBadge => '推荐';
+
+  @override
+  String get settingsEnvoyLocalDownload => '下载';
+
+  @override
+  String get settingsEnvoyLocalInstalled => '已安装模型';
+
+  @override
+  String get settingsEnvoyLocalInstalledHint => '下载保存在家庭节点。选择当前使用的模型。';
+
+  @override
+  String get settingsEnvoyLocalNoInstalled => '尚未安装模型。';
+
+  @override
+  String get settingsEnvoyLocalSetActive => '设为当前';
+
+  @override
+  String get settingsEnvoyLocalActiveBadge => '当前';
+
+  @override
+  String get settingsEnvoyLocalInstalledBadge => '已安装';
+
+  @override
+  String get settingsEnvoyLocalCatalog => '目录';
+
+  @override
+  String settingsEnvoyLocalHfError(String error) {
+    return 'Hugging Face 搜索不可用：$error';
+  }
+
+  @override
+  String get settingsEnvoyLocalRefresh => '刷新';
+
+  @override
+  String get settingsEnvoyLocalPhoneNote =>
+      '高级服务参数（上下文大小、GPU 层数等）请在家庭节点 Social 界面中调整。';
 }

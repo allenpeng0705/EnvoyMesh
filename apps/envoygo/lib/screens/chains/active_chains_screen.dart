@@ -1,4 +1,4 @@
-// Phase 43H — read-only active chains mirror for EnvoyGo.
+// Active team jobs on the home node, plus entry to start a new one.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +7,8 @@ import '../../l10n/app_localizations.dart';
 import '../../models/chain_active.dart';
 import '../../providers/node_provider.dart';
 import '../../services/node_service_client.dart';
+import 'active_chain_detail_screen.dart';
+import 'start_chain_screen.dart';
 
 class ActiveChainsScreen extends ConsumerStatefulWidget {
   const ActiveChainsScreen({super.key});
@@ -58,6 +60,14 @@ class _ActiveChainsScreenState extends ConsumerState<ActiveChainsScreen> {
     }
   }
 
+  void _openStart() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const StartChainScreen()),
+    ).then((_) {
+      if (mounted) _refresh();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -71,6 +81,11 @@ class _ActiveChainsScreenState extends ConsumerState<ActiveChainsScreen> {
             onPressed: _loading ? null : _refresh,
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _openStart,
+        icon: const Icon(Icons.add),
+        label: Text(l10n.chainsStartFab),
       ),
       body: _buildBody(l10n),
     );
@@ -93,10 +108,21 @@ class _ActiveChainsScreenState extends ConsumerState<ActiveChainsScreen> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(
-            l10n.chainsNoActive,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyLarge,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                l10n.chainsNoActive,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: _openStart,
+                icon: const Icon(Icons.add),
+                label: Text(l10n.chainsStartFab),
+              ),
+            ],
           ),
         ),
       );
@@ -104,7 +130,7 @@ class _ActiveChainsScreenState extends ConsumerState<ActiveChainsScreen> {
     return RefreshIndicator(
       onRefresh: _refresh,
       child: ListView.separated(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
         itemCount: chains.length,
         separatorBuilder: (_, __) => const SizedBox(height: 8),
         itemBuilder: (context, index) {
@@ -123,9 +149,24 @@ class _ActiveChainsScreenState extends ConsumerState<ActiveChainsScreen> {
                 '${l10n.chainsAwardedSummary(chain.statusLabel, chain.awardedCount, chain.subtaskCount)} · '
                 '\$${chain.budgetSpentUsd.toStringAsFixed(2)}/\$${chain.budgetMaxUsd.toStringAsFixed(2)}',
               ),
-              trailing: chain.budgetWarningLevel == 'warn'
+              trailing: chain.budgetWarningLevel == 'warn' ||
+                      chain.budgetWarningLevel == 'exceeded'
                   ? const Icon(Icons.warning_amber, color: Colors.orange)
-                  : null,
+                  : const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.of(context)
+                    .push(
+                  MaterialPageRoute(
+                    builder: (_) => ActiveChainDetailScreen(
+                      chainId: chain.chainId,
+                      initialGoal: chain.goal,
+                    ),
+                  ),
+                )
+                    .then((_) {
+                  if (mounted) _refresh();
+                });
+              },
             ),
           );
         },
