@@ -95,36 +95,67 @@ class _ExtAgentSwitcherState extends ConsumerState<ExtAgentSwitcher> {
     final selected = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
+      // `isScrollControlled: true` lets the bottom sheet grow past
+      // the default ~50% screen height so the inner ListView can
+      // use the full available space (and scroll inside it). Without
+      // this, the default 9/16-height sheet truncates long agent
+      // lists — see "EnvoyGo Ext Agent switcher cannot scroll"
+      // bug report (Phase 56+ follow-up).
+      isScrollControlled: true,
       builder: (ctx) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Text(
-                  l10n.extSwitchTitle,
-                  style: Theme.of(ctx).textTheme.titleMedium,
-                ),
-              ),
-              for (final agent in _agents)
-                ListTile(
-                  leading: Icon(
-                    agent['id'] == _displayId
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_off,
+          // Outer Column pins the title + drag handle. The inner
+          // Flexible + ListView scrolls when the agent list exceeds
+          // the sheet height. Constraints(maxHeight: …) keeps the
+          // sheet from covering the entire screen — leaves a hint
+          // of the underlying chat so the user knows the sheet is
+          // modal and dismissible.
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.75,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  child: Text(
+                    l10n.extSwitchTitle,
+                    style: Theme.of(ctx).textTheme.titleMedium,
                   ),
-                  title: Text(agent['name']?.toString() ?? agent['id'].toString()),
-                  subtitle: Text(
-                    getExtAgentInstallInfo(agent['id'].toString()).startHint,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  onTap: () => Navigator.of(ctx).pop(agent['id'] as String),
                 ),
-              const SizedBox(height: 8),
-            ],
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: _agents.length,
+                    itemBuilder: (_, i) {
+                      final agent = _agents[i];
+                      return ListTile(
+                        leading: Icon(
+                          agent['id'] == _displayId
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_off,
+                        ),
+                        title: Text(
+                          agent['name']?.toString() ?? agent['id'].toString(),
+                        ),
+                        subtitle: Text(
+                          getExtAgentInstallInfo(
+                            agent['id'].toString(),
+                          ).startHint,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        onTap: () =>
+                            Navigator.of(ctx).pop(agent['id'] as String),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
           ),
         );
       },

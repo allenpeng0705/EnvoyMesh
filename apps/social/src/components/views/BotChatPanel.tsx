@@ -22,6 +22,28 @@ import { ChatIcon, RemoveIcon } from "../../icons.js";
 import { extractChatMessageText } from "../../lib/bridge-chat-message.js";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
 
+/**
+ * Stack-grouping callback for the bot chat thread. Two consecutive
+ * messages are in the SAME stack iff they have the same outgoing
+ * status (i.e. the same "side" — both user or both bot). Phase 56+
+ * regression: the previous single-arg callback `(msg) => isOutgoing(msg)`
+ * only checked the previous message and ignored the second arg,
+ * which `buildMessageStacks` passes — so an outgoing user message +
+ * incoming bot reply got bundled into the same stack, both rendered
+ * on the right with the same style, making the chat look like the
+ * bot was talking to itself. The fix matches ContactChatPanel /
+ * GroupChatPanel: `(a, b) => isOutgoing(a) === isOutgoing(b)`.
+ *
+ * Exported so the test file can pin the production code directly.
+ */
+export function sameOutgoingGroup(
+  a: ChatMessage,
+  b: ChatMessage,
+  isOutgoing: (msg: ChatMessage) => boolean,
+): boolean {
+  return isOutgoing(a) === isOutgoing(b);
+}
+
 export interface BotChatPanelProps {
   /** Thread key `bot:<id>` or bare bot id. */
   threadKey: string;
@@ -95,15 +117,7 @@ export function BotChatPanel({ threadKey }: BotChatPanelProps) {
     () =>
       buildMessageStacks(
         displayMessages,
-        // Group two consecutive messages iff they have the SAME
-        // outgoing status. Previously this callback only checked the
-        // *previous* message (single-arg) and ignored the second
-        // argument, so an outgoing user message + incoming bot reply
-        // got bundled into the same stack — both rendered on the
-        // right with the same outgoing style, making the chat look
-        // like the bot was talking to itself. Match the pattern in
-        // ContactChatPanel / GroupChatPanel: `(a, b) => isOut(a) === isOut(b)`.
-        (a, b) => isOutgoing(a) === isOutgoing(b),
+        (a, b) => sameOutgoingGroup(a, b, isOutgoing),
       ),
     [displayMessages, isOutgoing],
   );

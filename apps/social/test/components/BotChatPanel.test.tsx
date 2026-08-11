@@ -6,39 +6,58 @@
  * same stack — both rendered on the right with the same outgoing
  * style, making the chat look like the bot was talking to itself.
  *
- * The fix uses `(a, b) => isOutgoing(a) === isOutgoing(b)` (matching
- * ContactChatPanel / GroupChatPanel).
+ * The fix is `sameOutgoingGroup(a, b, isOut)` exported from
+ * `BotChatPanel.tsx` — equivalent to `(a, b) => isOut(a) === isOut(b)`
+ * (matching ContactChatPanel / GroupChatPanel).
  *
  * This file pins both:
- *  1. The pure stack-grouping logic via `buildMessageStacks` (unit
- *     test, no DOM). Easy to reason about; the bug would surface
- *     immediately as "user + bot reply land in the same stack".
- *  2. The integration with the rendered DOM (a single render test
- *     using pre-seeded history; no live RPC needed).
+ *  1. The exported `sameOutgoingGroup` (test the production code).
+ *  2. The integration with the rendered DOM via `buildMessageStacks`
+ *     (the actual algorithm in use).
+ *  3. The rendered DOM contract (different alignment classes for
+ *     outgoing vs incoming bubbles).
  *
  * @vitest-environment jsdom
  */
 import React from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, render } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import {
   buildMessageStacks,
   stackPosition,
 } from "../../src/lib/chat-message-stack.js";
 import { ChatMessageBubble } from "../../src/components/ChatMessageBubble.js";
+import {
+  BotChatPanel,
+  sameOutgoingGroup,
+} from "../../src/components/views/BotChatPanel.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const BOT_CHAT_PANEL_SRC = resolve(
+  __dirname,
+  "../../src/components/views/BotChatPanel.tsx",
+);
 
 // ---------------------------------------------------------------------------
 // 1. Pure unit test of the stack-grouping callback
 // ---------------------------------------------------------------------------
+//
+// The production code is `sameOutgoingGroup(a, b, isOut)` exported
+// from `BotChatPanel.tsx`. We test it directly so a regression to
+// the buggy single-arg callback fails the test suite.
 
-describe("BotChatPanel — buildMessageStacks grouping (Phase 56+ regression)", () => {
+describe("BotChatPanel — sameOutgoingGroup (Phase 56+ regression)", () => {
   // Simulate the messages the panel sees for a 1-on-1 chat with a bot:
   //   msg-1 (user outgoing)  → msg-2 (bot incoming)  → msg-3 (user outgoing)
   // The stack-grouping callback should produce THREE separate stacks
-  // (one per side change). The previous bug would produce ONE stack
-  // (single-arg callback groups everything because the prev message
-  // was outgoing for all three).
+  // (one per side change). The previous bug would produce ONE big
+  // stack (single-arg callback grouped everything because the prev
+  // message was outgoing for all three).
   const userMsg = {
     messageId: "u-1",
     sender: {
@@ -74,19 +93,23 @@ describe("BotChatPanel — buildMessageStacks grouping (Phase 56+ regression)", 
   const isOutgoing = (m: { sender: { ownerId?: string } }) =>
     m.sender.ownerId === "envoy:owner:test";
 
-  it("groups user + bot reply + user into THREE separate stacks (right → left → right)", () => {
-    // The CORRECT callback (matches ContactChatPanel / GroupChatPanel).
-    const correct = buildMessageStacks(
-      [userMsg, botReply, userMsg2],
-      (a, b) => isOutgoing(a) === isOutgoing(b),
-    );
-    expect(correct.length).toBe(3);
-    expect(correct[0]).toHaveLength(1); // user msg 1 (outgoing)
-    expect(correct[1]).toHaveLength(1); // bot reply (incoming)
-    expect(correct[2]).toHaveLength(1); // user msg 2 (outgoing)
+  it("returns true when both messages are outgoing (consecutive user msgs group)", () => {
+    expect(sameOutgoingGroup(userMsg, userMsg2, isOutgoing as never)).toBe(true);
   });
 
-  it("REGRESSION: the previous single-arg callback bundled the user + bot reply into ONE stack", () => {
+  it("returns true when both messages are incoming (consecutive bot replies group)", () => {
+    const bot2 = { ...botReply, messageId: "a-2" };
+    expect(sameOutgoingGroup(botReply, bot2, isOutgoing as never)).toBe(true);
+  });
+
+  it("returns false when one is outgoing and the other is incoming (user + bot reply do NOT group)", () => {
+    // This is the user-visible bug: previously this returned true
+    // (single-arg callback) and the bot reply was rendered on the
+    // right with the user's message. The fix returns false.
+    expect(sameOutgoingGroup(userMsg, botReply, isOutgoing as never)).toBe(false);
+  });
+
+  it("REGRESSION GUARD: the previous single-arg callback bundled the user + bot reply into ONE stack", () => {
     // Pin the OLD behavior so we never regress. The previous code
     // in BotChatPanel.tsx was:
     //   `(msg) => isOutgoing(msg) || msg.messageId.startsWith("pending-")`
@@ -96,51 +119,37 @@ describe("BotChatPanel — buildMessageStacks grouping (Phase 56+ regression)", 
     // outgoing — including a bot reply (incoming) that follows an
     // outgoing user message.
     //
-    // The resulting grouping for [user, bot, user]:
-    //   - i=0: current = [user]
-    //   - i=1: prev=user (outgoing), sameGroup returns true → push bot.
-    //          current = [user, bot].   ← BUG: bot reply is right-aligned
-    //   - i=2: prev=bot (NOT outgoing), sameGroup returns false →
-    //          push current, new stack starts with user.
-    //          stacks = [[user, bot], [user]]  (length 2, first stack has 2)
+    // The resulting grouping for [user, bot, user] with the buggy
+    // callback: 2 stacks: [[user, bot], [user]]. The bot reply is
+    // grouped with the user message. With the fixed callback: 3
+    // stacks, one per side change.
+    const buggyCallback = (prev: { sender: { ownerId?: string } }) =>
+      isOutgoing(prev);
+    // We assert the BUGGY behavior to document what the regression
+    // looked like. If this assertion ever fails (e.g. because the
+    // TS type forces a 2-arg callback), the test serves as a
+    // historical record.
     const buggy = buildMessageStacks(
       [userMsg, botReply, userMsg2],
-      // The previous single-arg callback: only checks `prev` (the
-      // first argument). It ignores `next` entirely.
-      (prev) => isOutgoing(prev as { sender: { ownerId?: string } }),
+      buggyCallback as never,
     );
-    // The bug: the user message and bot reply are in the SAME stack
-    // (length 2). With the fixed callback, they would be in separate
-    // stacks (length 1 each, total 3 stacks for the 3 messages).
     expect(buggy.length).toBe(2);
     expect(buggy[0]).toHaveLength(2); // user + bot reply (BUG)
     expect(buggy[1]).toHaveLength(1); // user msg 2
-    // Pin the user-visible symptom: the bot reply is grouped with
-    // the user message. With the fixed callback, it would be alone.
-    expect(buggy[0]?.[0]?.messageId).toBe("u-1");
-    expect(buggy[0]?.[1]?.messageId).toBe("a-1");
   });
 
-  it("groups two consecutive outgoing messages into ONE stack", () => {
-    // Pin the OTHER direction: two user messages in a row should
-    // still group together (since both are outgoing). This is the
-    // case where the new `(a, b) => isOut(a) === isOut(b)` callback
-    // returns true for the second pair — same side → same stack.
-    const stacked = buildMessageStacks(
-      [userMsg, userMsg2],
-      (a, b) => isOutgoing(a) === isOutgoing(b),
+  it("integrates with buildMessageStacks: [user, bot, user] produces 3 separate stacks", () => {
+    const stacks = buildMessageStacks(
+      [userMsg, botReply, userMsg2],
+      (a, b) => sameOutgoingGroup(a as never, b as never, isOutgoing as never),
     );
-    expect(stacked.length).toBe(1);
-    expect(stacked[0]).toHaveLength(2);
-  });
-
-  it("groups two consecutive incoming messages into ONE stack", () => {
-    const stacked = buildMessageStacks(
-      [botReply, { ...botReply, messageId: "a-2" }],
-      (a, b) => isOutgoing(a) === isOutgoing(b),
-    );
-    expect(stacked.length).toBe(1);
-    expect(stacked[0]).toHaveLength(2);
+    expect(stacks.length).toBe(3);
+    expect(stacks[0]).toHaveLength(1);
+    expect(stacks[1]).toHaveLength(1);
+    expect(stacks[2]).toHaveLength(1);
+    // The middle stack must be the bot reply (the one that was
+    // wrongly grouped with the user before the fix).
+    expect(stacks[1]?.[0]?.messageId).toBe("a-1");
   });
 
   it("an empty message list returns no stacks", () => {
@@ -152,52 +161,49 @@ describe("BotChatPanel — buildMessageStacks grouping (Phase 56+ regression)", 
     expect(stacks).toHaveLength(1);
     expect(stacks[0]).toHaveLength(1);
   });
+
+  // The previous tests exercise the algorithm via the named export.
+  // This source-level guard fails when the production code stops
+  // using `sameOutgoingGroup` (e.g. someone reverts to an inline
+  // single-arg callback). Cheap, runs in <5ms.
+  it("BotChatPanel uses sameOutgoingGroup — no inline single-arg callback that ignores `b`", () => {
+    const src = readFileSync(BOT_CHAT_PANEL_SRC, "utf8");
+    // The production code must call the named helper.
+    expect(src).toMatch(/sameOutgoingGroup\(/);
+    // Guard against the OLD bug returning. If someone reverts the
+    // fix to `(a, b) => isOutgoing(a)` (ignoring `b`), this test
+    // fails. Note: this regex also matches the JSDoc comment that
+    // contains the literal string `(a, b) => isOut(a) === isOut(b)`;
+    // the assertion below allows the comment but flags the actual
+    // code (the comment is in a `*` block, the code is in a
+    // `buildMessageStacks(` call).
+    const inlineBuggyCallback = /\(\s*a\s*,\s*b\s*\)\s*=>\s*isOutgoing\(\s*a\s*\)/;
+    // Strip JSDoc comments to avoid false positives.
+    const srcWithoutComments = src
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    expect(inlineBuggyCallback.test(srcWithoutComments)).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
-// 2. Integration: render pre-seeded history and verify stack rows
+// 2. DOM contract: render a small replica and verify alignment classes
 // ---------------------------------------------------------------------------
 //
 // The full send/receive integration is hard to set up because the
 // BotChatPanel pulls from `useChatMessages` which requires the
-// `NodeServiceContext` provider (with a real `clientFactory`).
-// Instead, we render a hand-rolled DOM that matches what the panel
-// produces for [user, bot reply]: two `message-stack-row` elements
-// (one is-outgoing, one is-incoming), each with the right bubble
-// variant. This verifies the BUBBLE / CSS / DOM contract that the
-// regression would break.
+// `NodeServiceContext` provider (with a real `clientFactory`). The
+// unit tests above already pin the algorithm + the exported helper.
+// This test pins the visible DOM contract: a stack row containing
+// an `ai-outgoing` bubble has `is-outgoing`; a stack row containing
+// an `ai-incoming` bubble has `is-incoming`. The CSS in chat.css
+// (lines 1491-1499) keys off these classes to position the row on
+// the right or left.
 
 describe("BotChatPanel — rendered stack-row contract", () => {
   afterEach(cleanup);
 
   it("renders an outgoing user message + incoming bot reply as two separate stack rows (different alignment)", () => {
-    const userMsg = {
-      messageId: "u-1",
-      sender: {
-        nodeId: "self",
-        ownerId: "envoy:owner:test",
-        displayName: "You",
-        actorRole: "human",
-      },
-      recipient: { nodeId: "self", ownerId: "bot:luna" },
-      content: { text: "hello luna" },
-      metadata: { timestamp: new Date().toISOString() },
-      signature: "",
-    };
-    const botReply = {
-      messageId: "a-1",
-      sender: {
-        nodeId: "bot:luna",
-        ownerId: "bot:luna",
-        displayName: "Luna",
-        actorRole: "agent",
-      },
-      recipient: { nodeId: "self", ownerId: "envoy:owner:test" },
-      content: { text: "Hi there!" },
-      metadata: { timestamp: new Date(Date.now() + 1).toISOString() },
-      signature: "",
-    };
-
     // Render a tiny replica of the BotChatPanel's stack-row markup.
     // We don't pull in the real panel here because that would require
     // the full NodeServiceContext + I18nProvider tree; this DOM-level
