@@ -349,7 +349,9 @@ let stopRelayLivenessWatchdog: (() => void) | undefined;
 function currentRelayHealthSnapshot(): StandaloneRelayHealthSnapshot {
   return (
     relayHealthSnapshot ?? {
-      status: started ? "healthy" : "starting",
+      // Typed status has no "starting" — use unhealthy until mesh.start() finishes
+      // so /readyz returns 503 while /health stays 200 (liveness).
+      status: started ? "healthy" : "unhealthy",
       checkedAt: new Date().toISOString(),
       uptimeMs: Date.now() - startedAtMs,
       reasons: started ? [] : ["relay is starting"],
@@ -957,12 +959,7 @@ try {
       adminUiRoot,
       buildStatus: () => {
         const conn = mesh.getConnectionStats();
-        const health = relayHealthSnapshot ?? {
-          status: started ? "healthy" : "starting",
-          checkedAt: new Date().toISOString(),
-          uptimeMs: Date.now() - startedAtMs,
-          reasons: started ? [] : ["relay is starting"],
-        };
+        const health = currentRelayHealthSnapshot();
         const versions = buildRelayVersionReport(new Date(startedAtMs).toISOString());
         const tunnelStats = _homeTunnelProxy.stats();
         const metrics = relayMetrics.snapshot();
