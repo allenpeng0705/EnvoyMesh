@@ -175,6 +175,7 @@ export const zhContactChatMessages = {
   attachFileAria: "发送图片或文件",
   emojiPickerTitle: "插入表情",
   emojiPickerAria: "打开表情选择器",
+  extAgentSlashSuggestAria: "扩展代理斜杠命令",
   shareVaultTitle: "分享资料库文件",
   shareVaultAria: "分享资料库文件",
   removeContactTitle: "移除联系人",

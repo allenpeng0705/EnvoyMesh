@@ -529,6 +529,85 @@ class NodeServiceClient {
     }) as Map<String, dynamic>;
   }
 
+  /// Slash-command catalog for Ext Agent chat autocomplete.
+  Future<Map<String, dynamic>> getExtAgentCommandCatalog({String? agentId}) async {
+    return await _client.call('getExtAgentCommandCatalog', {
+      if (agentId != null && agentId.trim().isNotEmpty) 'agentId': agentId.trim(),
+    }) as Map<String, dynamic>;
+  }
+
+  /// EnvoyAI (OpenClaw) slash-command catalog.
+  Future<Map<String, dynamic>> getEnvoyAiCommandCatalog() async {
+    return await _client.call('getEnvoyAiCommandCatalog') as Map<String, dynamic>;
+  }
+
+  /// Set or clear Ext Agent session model (`/model`).
+  Future<Map<String, dynamic>> setExtAgentSessionModel({
+    String? agentId,
+    String? model,
+  }) async {
+    return await _client.call('setExtAgentSessionModel', {
+      if (agentId != null && agentId.trim().isNotEmpty) 'agentId': agentId.trim(),
+      'model': model,
+    }) as Map<String, dynamic>;
+  }
+
+  /// Home-node filesystem info for folder browsing (owner only).
+  Future<Map<String, dynamic>> getHomeFsInfo() async {
+    return await _client.call('getHomeFsInfo') as Map<String, dynamic>;
+  }
+
+  /// List directory entries on the home node (owner only).
+  Future<Map<String, dynamic>> listHomeFsEntries({
+    String? path,
+    bool? dirsOnly,
+  }) async {
+    return await _client.call('listHomeFsEntries', {
+      if (path != null && path.trim().isNotEmpty) 'path': path.trim(),
+      if (dirsOnly != null) 'dirsOnly': dirsOnly,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> getExtAgentProjectPath({String? agentId}) async {
+    return await _client.call('getExtAgentProjectPath', {
+      if (agentId != null && agentId.trim().isNotEmpty) 'agentId': agentId.trim(),
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> setExtAgentProjectPath({
+    String? agentId,
+    String? projectPath,
+  }) async {
+    return await _client.call('setExtAgentProjectPath', {
+      if (agentId != null && agentId.trim().isNotEmpty) 'agentId': agentId.trim(),
+      'projectPath': projectPath,
+    }) as Map<String, dynamic>;
+  }
+
+  /// Preview a home-node file for the Home files viewer (owner only).
+  Future<Map<String, dynamic>> previewHomeFsFile(String path) async {
+    return await _client.call('previewHomeFsFile', {
+      'path': path.trim(),
+    }) as Map<String, dynamic>;
+  }
+
+  /// MiniMax MMX-CLI media / status on the home node (owner only).
+  Future<Map<String, dynamic>> runMmxMediaCommand({
+    required String kind,
+    String? prompt,
+    String? target,
+  }) async {
+    return await _client.call(
+      'runMmxMediaCommand',
+      {
+        'kind': kind,
+        if (prompt != null) 'prompt': prompt,
+        if (target != null) 'target': target,
+      },
+      const Duration(seconds: 920),
+    ) as Map<String, dynamic>;
+  }
+
   /// Switch the active Ext Agent id only (existing agent URLs preserved).
   Future<bool> setActiveExtAgentId(String agentId) async {
     await _client.call('updateNodeConfig', {

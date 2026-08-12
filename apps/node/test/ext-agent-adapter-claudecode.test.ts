@@ -67,7 +67,7 @@ function makeRecordingQuery(
 }
 
 /** Minimal `system/init` message. */
-function makeInit(sessionId: string): SDKMessage {
+function makeInit(sessionId: string, slashCommands: string[] = []): SDKMessage {
   return {
     type: "system",
     subtype: "init",
@@ -78,7 +78,7 @@ function makeInit(sessionId: string): SDKMessage {
     mcp_servers: [],
     model: "claude-sonnet-4-5",
     permissionMode: "default",
-    slash_commands: [],
+    slash_commands: slashCommands,
     output_style: "default",
     skills: [],
     plugins: [],
@@ -160,6 +160,7 @@ beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => undefined);
   savedApiKey = process.env.ANTHROPIC_API_KEY;
   process.env.ANTHROPIC_API_KEY = "test-anthropic-key";
+  _test._resetCachedClaudeCodeSlashCommandsForTests();
 });
 
 afterEach(() => {
@@ -168,6 +169,7 @@ afterEach(() => {
   } else {
     process.env.ANTHROPIC_API_KEY = savedApiKey;
   }
+  _test._resetCachedClaudeCodeSlashCommandsForTests();
 });
 
 // ---------------------------------------------------------------------------
@@ -208,6 +210,24 @@ describe("claudecode-backend (55C) — ask()", () => {
     });
     const text = await backend.ask("hi", "owner-A");
     expect(text).toBe("hello from claude");
+  });
+
+  it("ask() caches system/init slash_commands for the Ext Agent catalog", async () => {
+    const { fn } = makeRecordingQuery([
+      makeInit("sess-slash", ["compact", "review", "model"]),
+      makeSuccessResult("ok", "sess-slash"),
+    ]);
+    const backend = new ClaudeCodeBackend({
+      queryFn: fn,
+      apiKey: "k",
+      requestTimeoutMs: 2_000,
+    });
+    await backend.ask("hi", "owner-A");
+    expect(_test.getCachedClaudeCodeSlashCommands()).toEqual([
+      "compact",
+      "review",
+      "model",
+    ]);
   });
 
   it("ask() caches the SDK session_id per sessionKey and passes it as resume on the next call", async () => {
@@ -271,7 +291,7 @@ describe("claudecode-backend (55C) — ask()", () => {
     );
   });
 
-  it("ask() rejects with a clear error when ANTHROPIC_API_KEY is missing", async () => {
+  it("ask() rejects with a clear error when not authenticated", async () => {
     delete process.env.ANTHROPIC_API_KEY;
     const { fn } = makeRecordingQuery([]);
     const backend = new ClaudeCodeBackend({
@@ -279,7 +299,9 @@ describe("claudecode-backend (55C) — ask()", () => {
       // apiKey intentionally omitted
       requestTimeoutMs: 2_000,
     });
-    await expect(backend.ask("hi", "owner-A")).rejects.toThrow(/ANTHROPIC_API_KEY/);
+    await expect(backend.ask("hi", "owner-A")).rejects.toThrow(
+      /not authenticated|ANTHROPIC_API_KEY|claude auth login/,
+    );
   });
 
   it("ask() reports a stalled-stream error when the SDK does not produce a result", async () => {
@@ -338,6 +360,16 @@ describe("claudecode-backend (55C) — probe()", () => {
     // Force sdkLoader to resolve before the probe runs so we hit the
     // "apiKey set" branch.
     await backend.start();
+    expect(await backend.probe()).toBe(true);
+  });
+
+  it("probe() returns true when authReady reports OAuth login (no API key)", async () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    const { fn } = makeRecordingQuery([]);
+    const backend = new ClaudeCodeBackend({
+      queryFn: fn,
+      authReady: async () => true,
+    });
     expect(await backend.probe()).toBe(true);
   });
 

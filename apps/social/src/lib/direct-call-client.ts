@@ -637,6 +637,62 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.probeExtAgent(params);
   }
 
+  async getExtAgentCommandCatalog(
+    params?: import("@envoymesh/api").GetExtAgentCommandCatalogParams,
+  ) {
+    return this._ns.getExtAgentCommandCatalog(params);
+  }
+
+  async setExtAgentSessionModel(
+    params: import("@envoymesh/api").SetExtAgentSessionModelParams,
+  ) {
+    return this._ns.setExtAgentSessionModel(params);
+  }
+
+  async getHomeFsInfo() {
+    return this._ns.getHomeFsInfo();
+  }
+
+  async listHomeFsEntries(
+    params?: import("@envoymesh/api").ListHomeFsEntriesParams,
+  ) {
+    return this._ns.listHomeFsEntries(params);
+  }
+
+  async getExtAgentProjectPath(
+    params?: import("@envoymesh/api").GetExtAgentProjectPathParams,
+  ) {
+    return this._ns.getExtAgentProjectPath(params);
+  }
+
+  async setExtAgentProjectPath(
+    params: import("@envoymesh/api").SetExtAgentProjectPathParams,
+  ) {
+    return this._ns.setExtAgentProjectPath(params);
+  }
+
+  async previewHomeFsFile(
+    params: import("@envoymesh/api").PreviewHomeFsFileParams,
+  ) {
+    return this._ns.previewHomeFsFile(params);
+  }
+
+  async runMmxMediaCommand(
+    params: import("@envoymesh/api").RunMmxMediaCommandParams,
+  ) {
+    return this._ns.runMmxMediaCommand(params);
+  }
+
+  async revealHomeFsPath(
+    params: import("@envoymesh/api").RevealHomeFsPathParams,
+  ) {
+    return this._ns.revealHomeFsPath(params);
+  }
+
+  async getEnvoyAiCommandCatalog() {
+    return this._ns.getEnvoyAiCommandCatalog();
+  }
+
   async restartOpenClaw() {
     return this._ns.restartOpenClaw();
   }

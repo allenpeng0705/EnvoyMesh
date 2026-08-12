@@ -77,6 +77,13 @@ describe("SettingsAITab — partial aiSettings", () => {
     );
     await waitFor(() => {
       expect(screen.getByTestId("envoy-local-settings")).toBeTruthy();
+      expect(screen.getByTestId("envoy-local-manage")).toBeTruthy();
+    });
+    // Full Envoy Local UI lives in a manage modal (keeps the AI tab compact).
+    expect(screen.queryByTestId("envoy-local-manage-modal")).toBeNull();
+    screen.getByTestId("envoy-local-manage").click();
+    await waitFor(() => {
+      expect(screen.getByTestId("envoy-local-manage-modal")).toBeTruthy();
     });
   });
 });

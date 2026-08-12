@@ -342,6 +342,35 @@ export interface NodeServiceClient {
   probeExtAgent(
     params?: import("@envoymesh/api").ProbeExtAgentParams,
   ): Promise<import("@envoymesh/api").ExtAgentReachability>;
+  /** Slash catalog for Ext Agent chat autocomplete. */
+  getExtAgentCommandCatalog(
+    params?: import("@envoymesh/api").GetExtAgentCommandCatalogParams,
+  ): Promise<import("@envoymesh/api").ExtAgentCommandCatalog>;
+  /** Set/clear Ext Agent session model override (`/model`). */
+  setExtAgentSessionModel(
+    params: import("@envoymesh/api").SetExtAgentSessionModelParams,
+  ): Promise<import("@envoymesh/api").SetExtAgentSessionModelResult>;
+  getHomeFsInfo(): Promise<import("@envoymesh/api").HomeFsInfo>;
+  listHomeFsEntries(
+    params?: import("@envoymesh/api").ListHomeFsEntriesParams,
+  ): Promise<import("@envoymesh/api").ListHomeFsEntriesResult>;
+  getExtAgentProjectPath(
+    params?: import("@envoymesh/api").GetExtAgentProjectPathParams,
+  ): Promise<import("@envoymesh/api").ExtAgentProjectPathResult>;
+  setExtAgentProjectPath(
+    params: import("@envoymesh/api").SetExtAgentProjectPathParams,
+  ): Promise<import("@envoymesh/api").ExtAgentProjectPathResult>;
+  previewHomeFsFile(
+    params: import("@envoymesh/api").PreviewHomeFsFileParams,
+  ): Promise<import("@envoymesh/api").PreviewHomeFsFileResult>;
+  runMmxMediaCommand(
+    params: import("@envoymesh/api").RunMmxMediaCommandParams,
+  ): Promise<import("@envoymesh/api").RunMmxMediaCommandResult>;
+  revealHomeFsPath(
+    params: import("@envoymesh/api").RevealHomeFsPathParams,
+  ): Promise<import("@envoymesh/api").RevealHomeFsPathResult>;
+  /** EnvoyAI (OpenClaw) slash catalog. */
+  getEnvoyAiCommandCatalog(): Promise<import("@envoymesh/api").ExtAgentCommandCatalog>;
   /** Force-restart the built-in OpenClaw gateway. */
   restartOpenClaw(): Promise<import("@envoymesh/api").OpenClawStatus>;
   // Phase 49 — Pi (built-in local coding agent). Local-only; no mesh.* tools.
@@ -1302,6 +1331,88 @@ function createWsNodeServiceClient(
         (params ?? {}) as Record<string, unknown>,
         { timeoutMs: 5_000 },
       ) as Promise<import("@envoymesh/api").ExtAgentReachability>;
+    },
+    async getExtAgentCommandCatalog(
+      params?: import("@envoymesh/api").GetExtAgentCommandCatalogParams,
+    ) {
+      return wsClient.rpc(
+        "getExtAgentCommandCatalog",
+        (params ?? {}) as Record<string, unknown>,
+        { timeoutMs: 5_000 },
+      ) as Promise<import("@envoymesh/api").ExtAgentCommandCatalog>;
+    },
+    async setExtAgentSessionModel(
+      params: import("@envoymesh/api").SetExtAgentSessionModelParams,
+    ) {
+      return wsClient.rpc(
+        "setExtAgentSessionModel",
+        params as Record<string, unknown>,
+        { timeoutMs: 5_000 },
+      ) as Promise<import("@envoymesh/api").SetExtAgentSessionModelResult>;
+    },
+    async getHomeFsInfo() {
+      return wsClient.rpc("getHomeFsInfo", {}, { timeoutMs: 10_000 }) as Promise<
+        import("@envoymesh/api").HomeFsInfo
+      >;
+    },
+    async listHomeFsEntries(
+      params?: import("@envoymesh/api").ListHomeFsEntriesParams,
+    ) {
+      return wsClient.rpc(
+        "listHomeFsEntries",
+        (params ?? {}) as Record<string, unknown>,
+        { timeoutMs: 15_000 },
+      ) as Promise<import("@envoymesh/api").ListHomeFsEntriesResult>;
+    },
+    async getExtAgentProjectPath(
+      params?: import("@envoymesh/api").GetExtAgentProjectPathParams,
+    ) {
+      return wsClient.rpc(
+        "getExtAgentProjectPath",
+        (params ?? {}) as Record<string, unknown>,
+        { timeoutMs: 5_000 },
+      ) as Promise<import("@envoymesh/api").ExtAgentProjectPathResult>;
+    },
+    async setExtAgentProjectPath(
+      params: import("@envoymesh/api").SetExtAgentProjectPathParams,
+    ) {
+      return wsClient.rpc(
+        "setExtAgentProjectPath",
+        params as Record<string, unknown>,
+        { timeoutMs: 10_000 },
+      ) as Promise<import("@envoymesh/api").ExtAgentProjectPathResult>;
+    },
+    async previewHomeFsFile(
+      params: import("@envoymesh/api").PreviewHomeFsFileParams,
+    ) {
+      return wsClient.rpc(
+        "previewHomeFsFile",
+        { path: params.path } as Record<string, unknown>,
+        { timeoutMs: 30_000 },
+      ) as Promise<import("@envoymesh/api").PreviewHomeFsFileResult>;
+    },
+    async runMmxMediaCommand(
+      params: import("@envoymesh/api").RunMmxMediaCommandParams,
+    ) {
+      return wsClient.rpc(
+        "runMmxMediaCommand",
+        params as Record<string, unknown>,
+        { timeoutMs: 920_000 },
+      ) as Promise<import("@envoymesh/api").RunMmxMediaCommandResult>;
+    },
+    async revealHomeFsPath(
+      params: import("@envoymesh/api").RevealHomeFsPathParams,
+    ) {
+      return wsClient.rpc(
+        "revealHomeFsPath",
+        { path: params.path } as Record<string, unknown>,
+        { timeoutMs: 15_000 },
+      ) as Promise<import("@envoymesh/api").RevealHomeFsPathResult>;
+    },
+    async getEnvoyAiCommandCatalog() {
+      return wsClient.rpc("getEnvoyAiCommandCatalog", {}, { timeoutMs: 5_000 }) as Promise<
+        import("@envoymesh/api").ExtAgentCommandCatalog
+      >;
     },
     async restartOpenClaw() {
       // Force-restart is potentially slow (kill child + 250ms port-release

@@ -103,6 +103,10 @@ function handleRequest(msg) {
       return;
     }
     case "thread/list":
+      if (!initHandled) {
+        process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, error: { code: -32600, message: "Not initialized" } }) + "\\n");
+        return;
+      }
       reply(msg.id, { data: [], nextCursor: null });
       return;
     default:
@@ -238,16 +242,22 @@ describe("codex-backend (55B) — basic lifecycle", () => {
     expect(ok).toBe(true);
   }, 10_000);
 
+  it("probe() starts app-server itself (soft reachability without prior start)", async () => {
+    backend = makeBackend();
+    const ok = await backend.probe();
+    expect(ok).toBe(true);
+  }, 15_000);
+
   it("probe() returns false when thread/list returns an error", async () => {
     backend = makeBackend({ args: [scripts["bad-probe.js"]!] });
-    await backend.start();
+    // probe() starts the supervisor; healthcheck never goes healthy
+    // (thread/list errors), then the final ping returns false.
     const ok = await backend.probe();
     expect(ok).toBe(false);
     // 20s budget: `start()` waits for the supervisor's
-    // `startupTimeoutMs` (5s) when the healthcheck never passes, and
-    // then `probe()` waits up to `healthcheckTimeoutMs` (1s) for the
-    // thread/list roundtrip. The 100ms stability grace in the
-    // supervisor can push the first run to ~6s+ on slow CI.
+    // `startupTimeoutMs` (10s) when the healthcheck never passes, and
+    // then `probe()` waits up to `healthcheckTimeoutMs` for the
+    // thread/list roundtrip.
   }, 20_000);
 
   it("start() surfaces InstallMissingError when the codex binary is not on PATH", async () => {

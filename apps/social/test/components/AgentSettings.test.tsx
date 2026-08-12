@@ -174,4 +174,80 @@ describe("AgentSettings — phase 32", () => {
     const hermesLink = screen.getByRole("link", { name: /Hermes docs/i }) as HTMLAnchorElement;
     expect(hermesLink.href).toContain("hermes-agent.nousresearch.com");
   });
+
+  it("always shows Project folder path field (disabled when agent has no cwd)", () => {
+    renderWithI18n(
+      <AgentSettings
+        envoyAI={{ enabled: true, running: true, url: "http://127.0.0.1:18789/webhook/envoymesh" }}
+        extAgent={{
+          enabled: true,
+          configured: true,
+          name: "Pi",
+          url: "http://x",
+          listenPort: 3031,
+          activeExtAgentId: "pi",
+          extAgents: [
+            {
+              id: "pi",
+              name: "Pi",
+              adapter: "envoymesh-message",
+              url: "http://x",
+              enabled: true,
+            },
+          ],
+        }}
+        onExtAgentSave={noopAsync}
+      />,
+    );
+    const folder = screen.getByTestId("ext-agent-project-folder-settings");
+    expect(folder).toBeTruthy();
+    expect(screen.getByTestId("ext-agent-project-folder-hint").textContent).toMatch(
+      /Codex|Claude Code|Cursor/i,
+    );
+    const input = screen.getByLabelText(/Project folder/i) as HTMLInputElement;
+    expect(input.disabled).toBe(true);
+  });
+
+  it("routes project folder Set through onProjectPathChange (not onExtAgentSave)", async () => {
+    const onExtAgentSave = vi.fn().mockResolvedValue(undefined);
+    const onProjectPathChange = vi.fn().mockResolvedValue({
+      usesProjectPath: true,
+      projectPath: "/tmp/codex-proj",
+    });
+    renderWithI18n(
+      <AgentSettings
+        envoyAI={{ enabled: true, running: true, url: "http://127.0.0.1:18789/webhook/envoymesh" }}
+        extAgent={{
+          enabled: true,
+          configured: true,
+          name: "Codex",
+          url: "http://x",
+          listenPort: 3031,
+          activeExtAgentId: "codex",
+          extAgents: [
+            {
+              id: "codex",
+              name: "Codex",
+              adapter: "envoymesh-message",
+              url: "http://x",
+              enabled: true,
+            },
+          ],
+        }}
+        onExtAgentSave={onExtAgentSave}
+        onProjectPathChange={onProjectPathChange}
+      />,
+    );
+    const input = screen.getByLabelText(/Project folder/i) as HTMLInputElement;
+    expect(input.disabled).toBe(false);
+    fireEvent.change(input, { target: { value: "/tmp/codex-proj" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Set$/i }));
+    await waitFor(() =>
+      expect(onProjectPathChange).toHaveBeenCalledWith({
+        agentId: "codex",
+        projectPath: "/tmp/codex-proj",
+      }),
+    );
+    expect(onExtAgentSave).not.toHaveBeenCalled();
+  });
 });

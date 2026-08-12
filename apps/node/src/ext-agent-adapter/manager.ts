@@ -1,4 +1,4 @@
-import { BRIDGE_HTTP_PORT } from "../service-ports.js";
+import { effectiveBridgeListenPort } from "../service-ports.js";
 import { createBackend } from "./backends.js";
 import { startExtAgentHttpServer, type ExtAgentHttpServerHandle } from "./http-server.js";
 import {
@@ -13,6 +13,11 @@ export interface SyncExtAgentSidecarParams {
   /** Optional override; defaults to env / BRIDGE_HTTP_PORT. */
   bridgeListenPort?: number;
   bridgeSecret?: string;
+  /**
+   * Restart even when the same kind+port is already running (e.g. projectPath
+   * change for Codex / one-shot CLI agents that bake cwd at spawn).
+   */
+  forceRestart?: boolean;
 }
 
 const DEFAULT_PORTS: Record<ExtAgentSidecarKind, number> = {
@@ -102,12 +107,16 @@ export async function syncExtAgentSidecar(params: SyncExtAgentSidecarParams): Pr
     }
 
     const port = listenPortFor(want);
-    if (running?.kind === want && running.port === port) {
+    if (
+      !params.forceRestart &&
+      running?.kind === want &&
+      running.port === port
+    ) {
       return;
     }
 
     await stopRunning();
-    const bridgePort = params.bridgeListenPort ?? BRIDGE_HTTP_PORT;
+    const bridgePort = effectiveBridgeListenPort(params.bridgeListenPort);
     try {
       running = await startExtAgentHttpServer(createBackend(want), {
         host: "127.0.0.1",

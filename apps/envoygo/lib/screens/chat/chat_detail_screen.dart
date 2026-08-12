@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
+import '../../ext_agent/envoy_ai_slash_commands.dart';
+import '../../ext_agent/ext_agent_presets.dart';
+import '../../ext_agent/ext_agent_slash_commands.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/chat_message.dart';
 import '../../models/chat_thread.dart';
@@ -12,11 +15,10 @@ import '../../providers/chat_provider.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../services/vault_content_fetch.dart';
-import '../../services/node_service_client.dart';
 import '../../widgets/chat_bubble.dart';
-import '../../widgets/chat_audio_player.dart';
 import '../../widgets/ext_agent_offline_banner.dart';
 import '../../widgets/ext_agent_switcher.dart';
+import '../../widgets/home_folder_browser.dart';
 import '../../widgets/voice_note_recorder_bar.dart';
 import '../call/voice_call_screen.dart';
 import '../content/published_content_sheet.dart';
@@ -52,12 +54,19 @@ class ChatDetailScreen extends ConsumerStatefulWidget {
 class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   final _textController = TextEditingController();
   bool _initialized = false;
+  Map<String, dynamic>? _extAgentCatalog;
+  Map<String, dynamic>? _envoyAiCatalog;
+  String _extAgentActiveId = 'pi';
+  String? _extAgentProjectPath;
+  int _slashHighlight = 0;
+  void Function()? _extAgentBridgeUnsub;
 
   // Phase 37 — audio recording state
   final _audioRecorder = AudioRecorder();
   bool _isRecording = false;
   bool _recordingGuard = false; // only during start/stop async work
   bool _isSendingVoice = false;
+  bool _mmxBusy = false;
   Timer? _recordTimer;
   int _recordingSeconds = 0;
   String? _activeRecordingPath;
@@ -67,6 +76,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       widget.chatRoomId != null && widget.chatRoomId!.isNotEmpty;
   bool get _isAgent => widget.agentType != null;
   bool get _isExtAgent => widget.agentType == 'external';
+  bool get _isEnvoyAi => widget.agentType == 'envoyai';
   bool get _isAiBot =>
       widget.agentType != null && widget.agentType!.startsWith('bot:');
   bool get _isFamily => widget.threadId.contains(':family:');
@@ -95,6 +105,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _textController.addListener(_onComposerChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_initialized) {
         _initialized = true;
@@ -120,8 +131,191 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         if (_isAiBot) {
           unawaited(_refreshModelDisabled());
         }
+        if (_isExtAgent) {
+          unawaited(_reloadExtAgentCatalog());
+          final client = ref.read(nodeServiceProvider);
+          _extAgentBridgeUnsub?.call();
+          _extAgentBridgeUnsub = client?.on('bridge:status', (_) {
+            if (mounted) unawaited(_reloadExtAgentCatalog());
+          });
+        }
+        if (_isEnvoyAi) {
+          unawaited(_reloadEnvoyAiCatalog());
+        }
       }
     });
+  }
+
+  void _onComposerChanged() {
+    if (!mounted || (!_isExtAgent && !_isEnvoyAi)) return;
+    setState(() => _slashHighlight = 0);
+  }
+
+  Future<void> _reloadExtAgentCatalog() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null || !mounted) return;
+    try {
+      final bridge = await client.getBridgeStatus();
+      final active =
+          (bridge['activeExtAgentId'] as String?)?.trim().isNotEmpty == true
+              ? (bridge['activeExtAgentId'] as String).trim()
+              : 'pi';
+      final catalog = await client.getExtAgentCommandCatalog(agentId: active);
+      String? projectPath;
+      if (extAgentUsesProjectPath(active)) {
+        try {
+          final pathResult =
+              await client.getExtAgentProjectPath(agentId: active);
+          projectPath = pathResult['projectPath']?.toString();
+        } catch (_) {
+          projectPath = null;
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _extAgentActiveId = active;
+        _extAgentCatalog = catalog;
+        _extAgentProjectPath = projectPath;
+      });
+    } catch (_) {
+      // keep last-known
+    }
+  }
+
+  Future<void> _pickExtAgentProjectFolder() async {
+    if (!ref.read(nodeProvider).isOwnerProfile) return;
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    final picked = await HomeFolderBrowser.open(
+      context,
+      client: client,
+      initialPath: _extAgentProjectPath,
+    );
+    if (picked == null || !mounted) return;
+    try {
+      final result = await client.setExtAgentProjectPath(
+        agentId: _extAgentActiveId,
+        projectPath: picked,
+      );
+      if (!mounted) return;
+      setState(() {
+        _extAgentProjectPath = result['projectPath']?.toString();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
+  }
+
+  Future<void> _clearExtAgentProjectFolder() async {
+    if (!ref.read(nodeProvider).isOwnerProfile) return;
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      await client.setExtAgentProjectPath(
+        agentId: _extAgentActiveId,
+        projectPath: null,
+      );
+      if (!mounted) return;
+      setState(() => _extAgentProjectPath = null);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
+  }
+
+  Future<void> _reloadEnvoyAiCatalog() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null || !mounted) return;
+    try {
+      final catalog = await client.getEnvoyAiCommandCatalog();
+      if (!mounted) return;
+      setState(() => _envoyAiCatalog = catalog);
+    } catch (_) {
+      // keep last-known
+    }
+  }
+
+  Widget _buildAgentSlashSuggest({
+    required Map<String, dynamic>? catalog,
+    required List<Map<String, dynamic>> Function(
+      List<Map<String, dynamic>>,
+      String,
+    ) filterCommands,
+  }) {
+    if (catalog == null) return const SizedBox.shrink();
+    final value = _textController.text;
+    final commands = ((catalog['commands'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    final models = ((catalog['models'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    final slashHits = filterCommands(commands, value);
+    final modelHits = _isExtAgent ? filterExtAgentModels(models, value) : const <Map<String, dynamic>>[];
+    final items = <({String key, String primary, String secondary})>[];
+    if (slashHits.isNotEmpty) {
+      for (final c in slashHits) {
+        final slash = c['slash']?.toString() ?? '';
+        final args = (c['argsHint'] as String?)?.trim();
+        items.add((
+          key: slash,
+          primary: args == null || args.isEmpty ? slash : '$slash $args',
+          secondary: c['summary']?.toString() ?? '',
+        ));
+      }
+    } else if (modelHits.isNotEmpty) {
+      for (final m in modelHits) {
+        final id = m['id']?.toString() ?? '';
+        items.add((
+          key: 'model:$id',
+          primary: '/model $id',
+          secondary: m['label']?.toString() ?? 'model',
+        ));
+      }
+    }
+    if (items.isEmpty) return const SizedBox.shrink();
+    final highlight = _slashHighlight.clamp(0, items.length - 1);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      constraints: const BoxConstraints(maxHeight: 180),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Theme.of(context).dividerColor),
+      ),
+      child: ListView.builder(
+        shrinkWrap: true,
+        itemCount: items.length,
+        itemBuilder: (context, index) {
+          final item = items[index];
+          return ListTile(
+            dense: true,
+            selected: index == highlight,
+            title: Text(item.primary, style: const TextStyle(fontFamily: 'monospace')),
+            subtitle: Text(item.secondary, maxLines: 1, overflow: TextOverflow.ellipsis),
+            onTap: () {
+              if (item.key.startsWith('model:')) {
+                final id = item.key.substring('model:'.length);
+                _textController.text = '/model $id';
+              } else {
+                _textController.text = '${item.key} ';
+              }
+              _textController.selection = TextSelection.collapsed(
+                offset: _textController.text.length,
+              );
+              setState(() => _slashHighlight = index);
+            },
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _refreshModelDisabled() async {
@@ -145,6 +339,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
   @override
   void dispose() {
+    _extAgentBridgeUnsub?.call();
+    _extAgentBridgeUnsub = null;
+    _textController.removeListener(_onComposerChanged);
     _textController.dispose();
     _cancelRecordTimer();
     final pending = _activeRecordingPath;
@@ -422,6 +619,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     final l10n = AppLocalizations.of(context);
     final chatState = ref.watch(chatProvider);
     final messages = chatState.messages[widget.threadId] ?? [];
+    final isOwner = ref.watch(nodeProvider).isOwnerProfile;
+    final showProjectFolder = _isExtAgent && isOwner;
+    final projectFolderSupported = extAgentUsesProjectPath(_extAgentActiveId);
 
     return Scaffold(
       appBar: AppBar(
@@ -470,6 +670,53 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       ),
       body: Column(
         children: [
+          if (showProjectFolder)
+            Material(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: ListTile(
+                dense: true,
+                leading: const Icon(Icons.folder_outlined, size: 20),
+                title: Text(
+                  projectFolderSupported
+                      ? (_extAgentProjectPath?.isNotEmpty == true
+                          ? _extAgentProjectPath!
+                          : 'Project folder not set')
+                      : 'Used by Codex, Claude Code, Cursor, Aider, MiniMax — switch agent to set a folder',
+                  maxLines: projectFolderSupported ? 1 : 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontFamily:
+                            projectFolderSupported ? 'monospace' : null,
+                      ),
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (projectFolderSupported &&
+                        _extAgentProjectPath?.isNotEmpty == true)
+                      IconButton(
+                        tooltip: 'Clear',
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: _clearExtAgentProjectFolder,
+                      ),
+                    IconButton(
+                      tooltip: projectFolderSupported
+                          ? 'Browse'
+                          : 'Switch to Codex / Claude Code / Cursor / Aider / MiniMax',
+                      icon: Icon(
+                        projectFolderSupported
+                            ? Icons.folder_open
+                            : Icons.folder_off_outlined,
+                        size: 18,
+                      ),
+                      onPressed: projectFolderSupported
+                          ? _pickExtAgentProjectFolder
+                          : null,
+                    ),
+                  ],
+                ),
+              ),
+            ),
           if (_isExtAgent) const ExtAgentOfflineBanner(),
           if (_isAiBot && _modelDisabled)
             Container(
@@ -552,7 +799,21 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                       onCancel: () => unawaited(_cancelRecording()),
                       onSend: () => unawaited(_sendRecording()),
                     )
-                  : Row(
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (_isExtAgent)
+                          _buildAgentSlashSuggest(
+                            catalog: _extAgentCatalog,
+                            filterCommands: filterExtAgentSlashCommands,
+                          ),
+                        if (_isEnvoyAi)
+                          _buildAgentSlashSuggest(
+                            catalog: _envoyAiCatalog,
+                            filterCommands: filterEnvoyAiSlashCommands,
+                          ),
+                        Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         IconButton(
@@ -587,8 +848,11 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                             controller: _textController,
                             minLines: 1,
                             maxLines: 4,
+                            enabled: !_mmxBusy,
                             decoration: InputDecoration(
-                              hintText: l10n.chatTypeMessage,
+                              hintText: _mmxBusy
+                                  ? 'MiniMax running…'
+                                  : l10n.chatTypeMessage,
                               border: const OutlineInputBorder(
                                 borderRadius:
                                     BorderRadius.all(Radius.circular(24)),
@@ -603,8 +867,10 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                         ),
                         IconButton(
                           icon: const Icon(Icons.send),
-                          onPressed: _sendMessage,
+                          onPressed: _mmxBusy ? null : _sendMessage,
                         ),
+                      ],
+                    ),
                       ],
                     ),
             ),
@@ -668,12 +934,305 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
   void _sendMessage() {
     final text = _textController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || _mmxBusy) return;
+
+    if (_isExtAgent || _isEnvoyAi) {
+      final mmxParsed = parseMmxMediaCommand(text);
+      if (mmxParsed != null) {
+        if (!mmxParsed.ok) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(mmxParsed.error ?? 'Invalid MiniMax command')),
+          );
+          return;
+        }
+        _textController.clear();
+        unawaited(_handleMmxMediaCommand(mmxParsed.params!));
+        return;
+      }
+    }
+
+    if (_isExtAgent) {
+      if (isExtAgentHelpCommand(text)) {
+        final catalog = _extAgentCatalog;
+        final help = catalog != null
+            ? formatExtAgentSlashHelp(catalog)
+            : 'Slash commands unavailable — reconnect to your home node and try /help again.';
+        _textController.clear();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(help), duration: const Duration(seconds: 6)),
+        );
+        return;
+      }
+      final modelAction = parseExtAgentModelCommand(text);
+      // Only Envoy-handle /model when session override is supported; otherwise
+      // forward as plain chat text (matches catalog intercept: forward).
+      if (modelAction != null && _extAgentCatalog?['supportsSessionModel'] == true) {
+        _textController.clear();
+        unawaited(_handleExtAgentModelCommand(modelAction));
+        return;
+      }
+    }
+
+    if (_isEnvoyAi) {
+      final action = parseEnvoyAiSlashCommand(text);
+      if (action != null) {
+        if (action.type == 'help') {
+          final catalog = _envoyAiCatalog;
+          final help = catalog != null
+              ? formatEnvoyAiSlashHelp(catalog)
+              : 'Slash commands unavailable — reconnect and try /help again.';
+          _textController.clear();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(help), duration: const Duration(seconds: 6)),
+          );
+          return;
+        }
+        if (action.type == 'clear') {
+          _textController.clear();
+          _clearThread();
+          return;
+        }
+        if (action.type == 'model') {
+          _textController.clear();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Change the EnvoyAI model in Settings → AI on your home node.',
+              ),
+            ),
+          );
+          return;
+        }
+        if (action.type == 'status') {
+          _textController.clear();
+          unawaited(_handleEnvoyAiStatus());
+          return;
+        }
+        if (action.type == 'skills' || action.type == 'approvals') {
+          _textController.clear();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                action.type == 'skills'
+                    ? 'Open Skill Manager from the desktop Social app (Settings / Assistant).'
+                    : 'Review pending approvals in the desktop Social Inbox.',
+              ),
+            ),
+          );
+          return;
+        }
+        if (action.type == 'report') {
+          _textController.clear();
+          unawaited(_handleEnvoyAiReport());
+          return;
+        }
+        if (action.type == 'expand' && action.prompt != null) {
+          _textController.clear();
+          unawaited(_sendText(action.prompt!, restoreComposerOnFailure: true));
+          return;
+        }
+        // unknown_slash → fall through and send as chat
+      }
+    }
+
     // Clear synchronously before the async send so a double-tap cannot
     // re-read the same draft, and the composer never sticks after EnvoyAI
     // (void RPC used to throw on null→Map after the message was already sent).
     _textController.clear();
     unawaited(_sendText(text, restoreComposerOnFailure: true));
+  }
+
+  Future<void> _handleMmxMediaCommand(Map<String, String> params) async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Not connected to home node')),
+      );
+      return;
+    }
+    final kind = params['kind'] ?? 'media';
+    if (!mounted) return;
+    setState(() => _mmxBusy = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Running MiniMax /$kind…')),
+    );
+    final chat = ref.read(chatProvider.notifier);
+    try {
+      final result = await client.runMmxMediaCommand(
+        kind: kind,
+        prompt: params['prompt'],
+        target: params['target'],
+      );
+      if (!mounted) return;
+      final caption = formatMmxMediaResult(result);
+      final mime = result['mimeType']?.toString() ?? '';
+      final b64 = result['contentBase64']?.toString();
+      final path = result['path']?.toString();
+      if (b64 != null &&
+          b64.isNotEmpty &&
+          (mime.toLowerCase().startsWith('image/') ||
+              mime.toLowerCase().startsWith('audio/'))) {
+        chat.appendLocalInboundMessage(
+          threadId: widget.threadId,
+          text: 'data:$mime;base64,$b64',
+        );
+        chat.appendLocalInboundMessage(
+          threadId: widget.threadId,
+          text: path != null && path.isNotEmpty ? 'Saved: $path' : caption,
+        );
+      } else {
+        chat.appendLocalInboundMessage(
+          threadId: widget.threadId,
+          text: caption,
+        );
+      }
+      final ok = result['ok'] == true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok
+                ? (path != null && path.isNotEmpty
+                    ? 'Saved: $path'
+                    : 'MiniMax done')
+                : (result['error']?.toString() ?? 'MiniMax failed'),
+          ),
+          duration: Duration(seconds: ok ? 4 : 6),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      chat.appendLocalInboundMessage(
+        threadId: widget.threadId,
+        text: 'MiniMax /$kind failed: $e. Install: npm install -g mmx-cli',
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'MiniMax media failed: $e. Install: npm install -g mmx-cli',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _mmxBusy = false);
+    }
+  }
+
+  Future<void> _handleEnvoyAiStatus() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      final status = await client.getOpenClawStatus();
+      final running = status['running'] == true;
+      final enabled = status['enabled'] == true;
+      final url = status['url']?.toString() ?? '';
+      final state = running
+          ? 'running'
+          : enabled
+              ? 'enabled but not running'
+              : 'disabled';
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('EnvoyAI / OpenClaw: $state${url.isEmpty ? '' : ' ($url)'}'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not read OpenClaw status: $e')),
+      );
+    }
+  }
+
+  Future<void> _handleEnvoyAiReport() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Generating mesh intelligence report…')),
+    );
+    try {
+      // Prefer sending a NL prompt via EnvoyAI so the phone path stays on sendToOpenClaw.
+      await _sendText(
+        'Using EnvoyMesh mesh tools, generate a mesh intelligence report covering health, bonds, and notable issues.',
+        restoreComposerOnFailure: true,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Mesh report failed: $e')),
+      );
+    }
+  }
+
+  Future<void> _handleExtAgentModelCommand(ExtAgentModelSlashAction action) async {
+    final catalog = _extAgentCatalog;
+    if (catalog == null || catalog['supportsSessionModel'] != true) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Model commands unavailable — reconnect to your home node.')),
+      );
+      return;
+    }
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      if (action.type == 'show') {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(formatExtAgentModelShow(catalog))),
+        );
+        return;
+      }
+      if (action.type == 'list') {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(formatExtAgentModelList(catalog)),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+        return;
+      }
+      if (action.type == 'default') {
+        await client.setExtAgentSessionModel(agentId: _extAgentActiveId, model: null);
+        await _reloadExtAgentCatalog();
+        if (!mounted) return;
+        final next = _extAgentCatalog;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${catalog['agentName'] ?? 'Ext Agent'}: model reset to default (${next?['defaultModel'] ?? 'default'})',
+            ),
+          ),
+        );
+        return;
+      }
+      await client.setExtAgentSessionModel(
+        agentId: _extAgentActiveId,
+        model: action.model,
+      );
+      await _reloadExtAgentCatalog();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${catalog['agentName'] ?? 'Ext Agent'}: model set to ${action.model}',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not change model: $e')),
+      );
+    }
   }
 
   /// [restoreComposerOnFailure] — for typed sends only. Image sends pass

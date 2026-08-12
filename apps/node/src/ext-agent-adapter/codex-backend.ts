@@ -28,6 +28,11 @@
 import {
   DaemonSupervisor,
 } from "./daemon-supervisor.js";
+import {
+  augmentPathForExtAgentBins,
+  resolveExtAgentBinary,
+} from "./resolve-ext-agent-binary.js";
+import { getExtAgentProjectPathCwd } from "./project-path-store.js";
 import type { ExtAgentBackend } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -131,6 +136,8 @@ export interface CodexBackendOptions {
     title?: string;
     version?: string;
   };
+  /** Working directory for `codex app-server`. Default: projectPath or process cwd. */
+  cwd?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -170,6 +177,8 @@ export class CodexBackend implements ExtAgentBackend {
   private readonly pendingCompletions = new Map<string, PendingCompletion>();
   private nextRpcId = 1;
   private initialized = false;
+  /** Dedupes concurrent `initialize` RPCs (healthcheck + start/probe/ask). */
+  private initPromise: Promise<void> | null = null;
   /** Re-entrancy guard so a misbehaving peer can't cause infinite loops. */
   private inHandleStdout = false;
   /** Detach listeners on stop. */
@@ -183,24 +192,43 @@ export class CodexBackend implements ExtAgentBackend {
       title: opts.clientInfo?.title ?? CODEX_DEFAULTS.clientTitle,
       version: opts.clientInfo?.version ?? CODEX_DEFAULTS.clientVersion,
     };
-    const env: NodeJS.ProcessEnv = { ...process.env, ...(opts.env ?? {}) };
+    const env: NodeJS.ProcessEnv = augmentPathForExtAgentBins({
+      ...process.env,
+      ...(opts.env ?? {}),
+    });
     if (opts.apiKey) env.OPENAI_API_KEY = opts.apiKey;
     if (opts.model) env.CODEX_MODEL = opts.model;
+
+    const requested = opts.command ?? CODEX_DEFAULTS.command;
+    // Resolve absolute path so Tauri/GUI PATH (often missing ~/.npm-global/bin)
+    // still finds `npm i -g @openai/codex`.
+    const command = resolveExtAgentBinary(requested) ?? requested;
 
     this.supervisor =
       opts.supervisor ??
       new DaemonSupervisor({
         name: "codex",
-        command: opts.command ?? CODEX_DEFAULTS.command,
+        command,
         args: opts.args ?? CODEX_DEFAULTS.args,
         env,
+        cwd: opts.cwd ?? getExtAgentProjectPathCwd("codex"),
         startupTimeoutMs: CODEX_DEFAULTS.startupTimeoutMs,
         healthcheckIntervalMs: CODEX_DEFAULTS.healthcheckIntervalMs,
         healthcheckTimeoutMs: CODEX_DEFAULTS.healthcheckTimeoutMs,
         killGraceMs: 5_000,
-        healthcheck: (signal) => this.pingThreadList(signal),
+        // Real `codex app-server` rejects every RPC with "Not initialized"
+        // until `initialize` succeeds — healthcheck must handshake first.
+        healthcheck: async (signal) => {
+          try {
+            await this.ensureInitialized();
+            return await this.pingThreadList(signal);
+          } catch {
+            return false;
+          }
+        },
+        preSpawnCheck: async () => resolveExtAgentBinary(requested) != null,
         installHint:
-          "Install the Codex CLI: `npm install -g @openai/codex` — then set OPENAI_API_KEY in your shell.",
+          "Install the Codex CLI: `npm install -g @openai/codex` — then set OPENAI_API_KEY in your shell. If already installed, restart the home node so it picks up ~/.npm-global/bin.",
       });
 
     // Parallel JSON-RPC parser on stdout. The supervisor emits the
@@ -241,9 +269,7 @@ export class CodexBackend implements ExtAgentBackend {
     await this.supervisor.start();
 
     // 2. Run the `initialize` handshake once per process.
-    if (!this.initialized) {
-      await this.initializeOnce();
-    }
+    await this.ensureInitialized();
 
     // 3. Get or create a thread for this session.
     const threadId = await this.getOrCreateThread(sessionKey);
@@ -294,8 +320,11 @@ export class CodexBackend implements ExtAgentBackend {
 
   async probe(): Promise<boolean> {
     try {
-      // The supervisor's own healthcheck uses this same logic; reuse
-      // the signal-based path so AbortSignal flows correctly.
+      // Soft probes (switcher / `/status`) must bring app-server up —
+      // otherwise we always report unreachable and the UI shows the
+      // install/start hint even when `codex` is on PATH.
+      await this.supervisor.start();
+      await this.ensureInitialized();
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), 2_000);
       timer.unref?.();
@@ -317,9 +346,7 @@ export class CodexBackend implements ExtAgentBackend {
    */
   async start(): Promise<void> {
     await this.supervisor.start();
-    if (!this.initialized) {
-      await this.initializeOnce();
-    }
+    await this.ensureInitialized();
   }
 
   /** Stop the supervisor. Idempotent. The manager's
@@ -338,6 +365,7 @@ export class CodexBackend implements ExtAgentBackend {
     this.threadIds.clear();
     this.threadIdToSessionKey.clear();
     this.initialized = false;
+    this.initPromise = null;
     this.nextRpcId = 1;
     await this.supervisor.stop();
   }
@@ -346,12 +374,25 @@ export class CodexBackend implements ExtAgentBackend {
   // Internals
   // -------------------------------------------------------------------------
 
-  private async initializeOnce(): Promise<void> {
-    await this.rpc("initialize", {
-      clientInfo: this.clientInfo,
-      capabilities: {},
-    });
-    this.initialized = true;
+  /**
+   * `codex app-server` requires a successful `initialize` before any
+   * other method (including the healthcheck's `thread/list`).
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (this.initialized) return;
+    if (!this.initPromise) {
+      this.initPromise = this.rpc("initialize", {
+        clientInfo: this.clientInfo,
+        capabilities: {},
+      })
+        .then(() => {
+          this.initialized = true;
+        })
+        .finally(() => {
+          if (!this.initialized) this.initPromise = null;
+        });
+    }
+    await this.initPromise;
   }
 
   private async getOrCreateThread(sessionKey: string): Promise<string> {
@@ -558,6 +599,7 @@ export class CodexBackend implements ExtAgentBackend {
     this.threadIds.clear();
     this.threadIdToSessionKey.clear();
     this.initialized = false;
+    this.initPromise = null;
   }
 
   private failAllPending(err: Error): void {

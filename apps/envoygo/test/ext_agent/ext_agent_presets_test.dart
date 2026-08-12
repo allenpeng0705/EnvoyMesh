@@ -236,4 +236,21 @@ void main() {
       expect(json['enabled'], isTrue);
     });
   });
+
+  group('extAgentUsesProjectPath', () {
+    test('true for coding CLI agents', () {
+      expect(extAgentUsesProjectPath('codex'), isTrue);
+      expect(extAgentUsesProjectPath('ClaudeCode'), isTrue);
+      expect(extAgentUsesProjectPath('cursor'), isTrue);
+      expect(extAgentUsesProjectPath('aider'), isTrue);
+      expect(extAgentUsesProjectPath('mmx'), isTrue);
+    });
+
+    test('false for agents that ignore project folders', () {
+      expect(extAgentUsesProjectPath('pi'), isFalse);
+      expect(extAgentUsesProjectPath('hermes'), isFalse);
+      expect(extAgentUsesProjectPath('homeclaw'), isFalse);
+      expect(extAgentUsesProjectPath(null), isFalse);
+    });
+  });
 }

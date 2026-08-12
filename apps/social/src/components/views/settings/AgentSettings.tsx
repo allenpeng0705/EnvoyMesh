@@ -29,10 +29,12 @@ import {
   mergeExtAgentPresets,
   getExtAgentInstallGuide,
   getExtAgentInstallInfo,
+  extAgentUsesProjectPath,
   type AiEngineMode,
   type ExtAgentDefinition,
 } from "@envoymesh/api";
 import { ExtAgentInstallGuideCard } from "../../ExtAgentInstallGuideCard.js";
+import { HomeFolderPicker } from "../../HomeFolderPicker.js";
 
 interface EnvoyAIInfo {
   /** Persisted `openclawEnabled` flag from the home node. */
@@ -69,6 +71,14 @@ interface Props {
   extAgent: ExtAgentConfig;
   /** Persists Ext Agent settings to the home node (synced to mobile). */
   onExtAgentSave: (config: ExtAgentConfig) => Promise<void>;
+  /**
+   * Persist project folder via dedicated RPC (validates path + force-restarts
+   * coding sidecars). Prefer this over baking projectPath into onExtAgentSave.
+   */
+  onProjectPathChange?: (params: {
+    agentId: string;
+    projectPath?: string | null;
+  }) => Promise<{ projectPath?: string; usesProjectPath: boolean }>;
   /**
    * Force-restart the built-in OpenClaw gateway. Wired to the "Restart now"
    * button that appears next to the error block when the runtime has a
@@ -110,7 +120,14 @@ function withMergedAgents(config: ExtAgentConfig): ExtAgentConfig {
   };
 }
 
-export function AgentSettings({ envoyAI, extAgent, onExtAgentSave, onRestartOpenClaw, restartingOpenClaw }: Props) {
+export function AgentSettings({
+  envoyAI,
+  extAgent,
+  onExtAgentSave,
+  onProjectPathChange,
+  onRestartOpenClaw,
+  restartingOpenClaw,
+}: Props) {
   const t = useT();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<ExtAgentConfig>(() => withMergedAgents(extAgent));
@@ -180,19 +197,82 @@ export function AgentSettings({ envoyAI, extAgent, onExtAgentSave, onRestartOpen
     });
   }, []);
 
+  const updateActiveAgentProjectPath = useCallback((projectPath: string | undefined) => {
+    setDraft((prev) => {
+      const activeId = prev.activeExtAgentId;
+      const extAgents = mergeExtAgentPresets(prev.extAgents).map((agent) => {
+        if (agent.id !== activeId) return agent;
+        if (!projectPath) {
+          const { projectPath: _drop, ...rest } = agent;
+          return rest;
+        }
+        return { ...agent, projectPath };
+      });
+      return { ...prev, extAgents };
+    });
+  }, []);
+
+  const [projectPathError, setProjectPathError] = useState<string | null>(null);
+
+  const applyProjectPath = useCallback(
+    async (agentId: string, projectPath: string | undefined) => {
+      if (!extAgentUsesProjectPath(agentId)) return;
+      setProjectPathError(null);
+      if (onProjectPathChange) {
+        try {
+          const result = await onProjectPathChange({
+            agentId,
+            projectPath: projectPath ?? null,
+          });
+          const resolved = result.projectPath;
+          setDraft((prev) => {
+            const extAgents = mergeExtAgentPresets(prev.extAgents).map((agent) => {
+              if (agent.id !== agentId) return agent;
+              if (!resolved) {
+                const { projectPath: _drop, ...rest } = agent;
+                return rest;
+              }
+              return { ...agent, projectPath: resolved };
+            });
+            return { ...prev, extAgents };
+          });
+        } catch (e) {
+          setProjectPathError(e instanceof Error ? e.message : String(e));
+        }
+        return;
+      }
+      // Fallback (tests / no RPC): draft-only update; Save via onExtAgentSave.
+      updateActiveAgentProjectPath(projectPath);
+    },
+    [onProjectPathChange, updateActiveAgentProjectPath],
+  );
+
   const handleExtSave = useCallback(async () => {
     setSaving(true);
     try {
       await onExtAgentSave(withMergedAgents(draft));
+      // Ensure project path goes through the validating RPC when available
+      // (covers Configure→Save if path was only in draft).
+      const agentId = draft.activeExtAgentId;
+      if (agentId && onProjectPathChange && extAgentUsesProjectPath(agentId)) {
+        const path = mergeExtAgentPresets(draft.extAgents).find(
+          (a) => a.id === agentId,
+        )?.projectPath;
+        await onProjectPathChange({
+          agentId,
+          projectPath: path ?? null,
+        });
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
       console.error(e);
+      setProjectPathError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
       setEditing(false);
     }
-  }, [draft, onExtAgentSave]);
+  }, [draft, onExtAgentSave, onProjectPathChange]);
 
   // 3-state status badge for the built-in block.
   const envoyStatusKey = !envoyAI.enabled
@@ -221,6 +301,53 @@ export function AgentSettings({ envoyAI, extAgent, onExtAgentSave, onRestartOpen
   // for the built-in case.
   const draftGuide = getExtAgentInstallGuide(draftAgentId, "unknown");
   const viewGuide = getExtAgentInstallGuide(viewAgentId, "unknown");
+  const viewProjectPath = mergeExtAgentPresets(extAgent.extAgents).find(
+    (a) => a.id === viewAgentId,
+  )?.projectPath;
+  const draftProjectPath = mergeExtAgentPresets(draft.extAgents).find(
+    (a) => a.id === draftAgentId,
+  )?.projectPath;
+  const draftUsesProjectPath = extAgentUsesProjectPath(draftAgentId);
+  const viewUsesProjectPath = extAgentUsesProjectPath(viewAgentId);
+
+  const persistActiveAgentProjectPath = useCallback(
+    async (projectPath: string | undefined) => {
+      const activeId = extAgent.activeExtAgentId ?? viewAgentId;
+      await applyProjectPath(activeId, projectPath);
+    },
+    [applyProjectPath, extAgent.activeExtAgentId, viewAgentId],
+  );
+
+  const projectFolderField = (opts: {
+    usesPath: boolean;
+    path?: string;
+    onChange: (path: string | undefined) => void;
+  }) => (
+    <div className="agent-field" data-testid="ext-agent-project-folder-settings">
+      <label className="agent-field-label">
+        {t("settings.ai.aiEngine.projectFolder")}
+      </label>
+      <p className="agent-field-hint" data-testid="ext-agent-project-folder-hint">
+        {opts.usesPath
+          ? t(
+              "settings.ai.aiEngine.projectFolderHint",
+              "Working folder on this home node for coding agents (cwd).",
+            )
+          : t("settings.ai.aiEngine.projectFolderUnsupported")}
+      </p>
+      <HomeFolderPicker
+        value={opts.path}
+        onChange={opts.onChange}
+        disabled={!opts.usesPath}
+        title={t("settings.ai.aiEngine.projectFolderTitle", "Choose project folder")}
+      />
+      {projectPathError ? (
+        <p className="home-folder-picker-error" data-testid="ext-agent-project-folder-error">
+          {projectPathError}
+        </p>
+      ) : null}
+    </div>
+  );
 
   return (
     <div className="settings-agent" data-mode={mode}>
@@ -394,6 +521,11 @@ export function AgentSettings({ envoyAI, extAgent, onExtAgentSave, onRestartOpen
                 <dd className="agent-field-value--mono">{extAgent.listenPort ?? 3031}</dd>
               </div>
             </dl>
+            {projectFolderField({
+              usesPath: viewUsesProjectPath,
+              path: viewProjectPath,
+              onChange: (path) => void persistActiveAgentProjectPath(path),
+            })}
             <div className="agent-block-actions">
               <button
                 type="button"
@@ -473,6 +605,11 @@ export function AgentSettings({ envoyAI, extAgent, onExtAgentSave, onRestartOpen
                   onChange={(e) => setDraft({ ...draft, listenPort: parseInt(e.target.value, 10) || 3031 })}
                 />
               </div>
+              {projectFolderField({
+                usesPath: draftUsesProjectPath,
+                path: draftProjectPath,
+                onChange: (path) => void applyProjectPath(draftAgentId, path),
+              })}
             </div>
             <div className="agent-field agent-field--checkbox">
               <label className="agent-field-label agent-field-label--inline">

@@ -1,7 +1,13 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import type { ExtAgentCommandDescriptor } from "@envoymesh/api";
 import "emoji-picker-element";
 import { useT } from "../context/I18nContext.js";
 import { insertTextAtCaret } from "../lib/insert-text-at-caret.js";
+import {
+  filterExtAgentModels,
+  filterExtAgentSlashCommands,
+  isExtAgentSlashSuggestInput,
+} from "../lib/ext-agent-slash-commands.js";
 import { SmileIcon } from "../icons.js";
 
 const MAX_TEXTAREA_HEIGHT_PX = 120;
@@ -18,6 +24,10 @@ export interface ChatComposerProps {
   autoFocus?: boolean;
   /** Leading controls (attach, vault share, etc.) rendered before the text field. */
   leading?: ReactNode;
+  /** Ext Agent slash catalog — when set, typing `/` shows autocomplete. */
+  slashCommands?: ExtAgentCommandDescriptor[];
+  /** Model ids for `/model <id>` autocomplete. */
+  slashModels?: Array<{ id: string; label?: string }>;
 }
 
 export function ChatComposer({
@@ -30,12 +40,92 @@ export function ChatComposer({
   sendDisabled,
   autoFocus = false,
   leading,
+  slashCommands,
+  slashModels,
 }: ChatComposerProps) {
   const t = useT();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fieldRef = useRef<HTMLDivElement>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [slashIndex, setSlashIndex] = useState(0);
   const pickerId = useId();
+  const slashListId = useId();
+
+  const slashMatches = useMemo(() => {
+    if (!slashCommands?.length) return [];
+    if (!isExtAgentSlashSuggestInput(value)) return [];
+    return filterExtAgentSlashCommands(slashCommands, value);
+  }, [slashCommands, value]);
+
+  const modelMatches = useMemo(() => {
+    if (!slashModels?.length) return [];
+    return filterExtAgentModels(slashModels, value);
+  }, [slashModels, value]);
+
+  const menuMode: "slash" | "model" | null =
+    slashMatches.length > 0 ? "slash" : modelMatches.length > 0 ? "model" : null;
+  const menuItems =
+    menuMode === "slash"
+      ? slashMatches.map((c) => ({ key: c.slash, primary: c.slash, secondary: c.summary, args: c.argsHint }))
+      : menuMode === "model"
+        ? modelMatches.map((m) => ({
+            key: m.id,
+            primary: m.id,
+            secondary: m.label ?? "model",
+            args: undefined as string | undefined,
+          }))
+        : [];
+  const slashMenuOpen = menuItems.length > 0;
+
+  useEffect(() => {
+    setSlashIndex(0);
+  }, [value, slashMenuOpen, menuMode]);
+
+  useEffect(() => {
+    if (!slashMenuOpen) return;
+    setSlashIndex((i) => Math.min(i, Math.max(0, menuItems.length - 1)));
+  }, [menuItems.length, slashMenuOpen]);
+
+  const applySlash = useCallback(
+    (cmd: ExtAgentCommandDescriptor) => {
+      const next = `${cmd.slash} `;
+      onChange(next);
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        const caret = next.length;
+        el.setSelectionRange(caret, caret);
+      });
+    },
+    [onChange],
+  );
+
+  const applyModel = useCallback(
+    (modelId: string) => {
+      const next = `/model ${modelId}`;
+      onChange(next);
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(next.length, next.length);
+      });
+    },
+    [onChange],
+  );
+
+  const applyActive = useCallback(() => {
+    if (menuMode === "slash") {
+      const selected = slashMatches[slashIndex] ?? slashMatches[0];
+      if (selected) applySlash(selected);
+      return;
+    }
+    if (menuMode === "model") {
+      const selected = modelMatches[slashIndex] ?? modelMatches[0];
+      if (selected) applyModel(selected.id);
+    }
+  }, [applyModel, applySlash, menuMode, modelMatches, slashIndex, slashMatches]);
 
   const resizeTextarea = useCallback(() => {
     const el = textareaRef.current;
@@ -140,14 +230,80 @@ export function ChatComposer({
           disabled={disabled}
           enterKeyHint="send"
           aria-label={placeholder}
+          aria-autocomplete={slashCommands?.length ? "list" : undefined}
+          aria-controls={slashMenuOpen ? slashListId : undefined}
+          aria-activedescendant={
+            slashMenuOpen ? `${slashListId}-opt-${slashIndex}` : undefined
+          }
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
+            if (slashMenuOpen) {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setSlashIndex((i) => (i + 1) % menuItems.length);
+                return;
+              }
+              if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setSlashIndex((i) => (i - 1 + menuItems.length) % menuItems.length);
+                return;
+              }
+              if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+                e.preventDefault();
+                applyActive();
+                return;
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                onChange("");
+                return;
+              }
+            }
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               if (canSend) onSend();
             }
           }}
         />
+        {slashMenuOpen ? (
+          <ul
+            id={slashListId}
+            className="chat-slash-suggest"
+            role="listbox"
+            aria-label={t("contactChat.extAgentSlashSuggestAria")}
+          >
+            {menuItems.map((item, index) => (
+              <li key={item.key} role="presentation">
+                <button
+                  type="button"
+                  id={`${slashListId}-opt-${index}`}
+                  role="option"
+                  aria-selected={index === slashIndex}
+                  className={`chat-slash-suggest__item${index === slashIndex ? " is-active" : ""}`}
+                  onMouseDown={(ev) => {
+                    ev.preventDefault();
+                    if (menuMode === "model") applyModel(item.key);
+                    else {
+                      const cmd = slashMatches.find((c) => c.slash === item.key);
+                      if (cmd) applySlash(cmd);
+                    }
+                  }}
+                  onMouseEnter={() => setSlashIndex(index)}
+                >
+                  <span className="chat-slash-suggest__cmd">
+                    <span className="chat-slash-suggest__slash">
+                      {menuMode === "model" ? `/model ${item.primary}` : item.primary}
+                    </span>
+                    {item.args ? (
+                      <span className="chat-slash-suggest__args">{item.args}</span>
+                    ) : null}
+                  </span>
+                  <span className="chat-slash-suggest__summary">{item.secondary}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {pickerOpen ? (
           <div id={pickerId} className="chat-emoji-picker-popover" role="dialog" aria-label={t("contactChat.emojiPickerTitle")}>
             <emoji-picker className="chat-emoji-picker" />

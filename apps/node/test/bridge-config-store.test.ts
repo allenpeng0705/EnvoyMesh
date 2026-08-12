@@ -144,6 +144,52 @@ describe("bridge-config-store", () => {
       await rm(profileDir, { recursive: true, force: true });
     }
   });
+
+  it("applyExtAgentSettingsPatch drops invalid projectPath and keeps real dirs", async () => {
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const root = mkdtempSync(join(tmpdir(), "envoy-proj-valid-"));
+    const profileDir = await mkdtemp(join(tmpdir(), "envoy-bridge-"));
+    try {
+      const next = await applyExtAgentSettingsPatch(profileDir, {
+        activeExtAgentId: "codex",
+        extAgents: [
+          {
+            id: "codex",
+            name: "Codex",
+            adapter: "envoymesh-message",
+            url: "http://127.0.0.1:8023/message",
+            enabled: true,
+            projectPath: root,
+          },
+          {
+            id: "cursor",
+            name: "Cursor",
+            adapter: "envoymesh-message",
+            url: "http://127.0.0.1:8024/message",
+            enabled: true,
+            projectPath: "/no/such/project/folder/ever",
+          },
+          {
+            id: "hermes",
+            name: "Hermes",
+            adapter: "envoymesh-message",
+            url: "http://127.0.0.1:8020/message",
+            enabled: true,
+            projectPath: root,
+          },
+        ],
+      });
+      const codex = next.extAgents?.find((a) => a.id === "codex");
+      const cursor = next.extAgents?.find((a) => a.id === "cursor");
+      const hermes = next.extAgents?.find((a) => a.id === "hermes");
+      expect(codex?.projectPath).toBe(root);
+      expect(cursor?.projectPath).toBeUndefined();
+      expect(hermes?.projectPath).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("createCoalescedRunner", () => {

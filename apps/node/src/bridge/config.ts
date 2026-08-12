@@ -13,6 +13,7 @@ export const ExtAgentDefinitionSchema = z.object({
   adapter: z.string().min(1),
   url: z.string().url(),
   enabled: z.boolean(),
+  projectPath: z.string().min(1).optional(),
 });
 
 export const BridgeConfigSchema = z.object({

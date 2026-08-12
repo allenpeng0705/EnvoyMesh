@@ -2124,6 +2124,44 @@ class ChatNotifier extends StateNotifier<ChatState> {
     return sessionId;
   }
 
+  /// Append a local inbound bubble (not sent to the mesh) — e.g. MiniMax media results.
+  void appendLocalInboundMessage({
+    required String threadId,
+    required String text,
+    String senderDisplayName = 'MiniMax',
+  }) {
+    final now = DateTime.now().toUtc().toIso8601String();
+    final msg = ChatMessage(
+      id: 'local_mmx_${DateTime.now().microsecondsSinceEpoch}',
+      threadId: threadId,
+      text: text,
+      createdAt: now,
+      isOutbound: false,
+      senderDisplayName: senderDisplayName,
+    );
+    unawaited(_localDb.insertMessage(msg.toJson()));
+    state = state.copyWith(
+      messages: {
+        ...state.messages,
+        threadId: [msg, ...?state.messages[threadId]],
+      },
+    );
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeState.activeNode != null) {
+      _upsertThread(
+        threadId: threadId,
+        nodeId: nodeState.activeNode!.id,
+        type: state.threads.where((t) => t.id == threadId).firstOrNull?.type ??
+            ChatThreadType.direct,
+        displayName:
+            state.threads.where((t) => t.id == threadId).firstOrNull?.displayName ??
+                senderDisplayName,
+        lastMessageText: text.length > 80 ? '${text.substring(0, 80)}…' : text,
+        lastMessageAt: DateTime.tryParse(now),
+      );
+    }
+  }
+
   /// Delete a single message from a thread.
   Future<void> deleteMessage(String threadId, ChatMessage msg) async {
     await _localDb.deleteMessage(msg.id);

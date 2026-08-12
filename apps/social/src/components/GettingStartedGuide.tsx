@@ -17,16 +17,29 @@ import {
   SearchIcon,
   AIIcon,
   ChatIcon,
-  ContactsIcon,
-  SettingsIcon,
+  BridgeIcon,
+  PluginIcon,
+  P2PIcon,
+  PrivateIcon,
+  PublicIcon,
   InfoIcon,
+  SettingsIcon,
 } from "../icons.js";
 import type { ViewName } from "../App.js";
+import type { SettingsTabId } from "./views/SettingsView.js";
+
+/** Destinations the guide CTAs can open (richer than ViewName alone). */
+export type GuideDestination =
+  | { kind: "view"; view: ViewName }
+  | { kind: "assistant" }
+  | { kind: "terminals" }
+  | { kind: "content" }
+  | { kind: "settings"; tab: SettingsTabId };
 
 interface GettingStartedGuideProps {
   onClose: () => void;
-  /** Navigate the host app to a view when a "try it" button is clicked. */
-  onNavigate?: (view: ViewName) => void;
+  /** Navigate the host app when a "try it" button is clicked. */
+  onNavigate?: (dest: GuideDestination) => void;
 }
 
 export function GettingStartedGuide({ onClose, onNavigate }: GettingStartedGuideProps) {
@@ -51,8 +64,8 @@ export function GettingStartedGuide({ onClose, onNavigate }: GettingStartedGuide
     if (e.target === e.currentTarget) onClose();
   };
 
-  const go = (view: ViewName) => {
-    onNavigate?.(view);
+  const go = (dest: GuideDestination) => {
+    onNavigate?.(dest);
     onClose();
   };
 
@@ -89,42 +102,63 @@ export function GettingStartedGuide({ onClose, onNavigate }: GettingStartedGuide
               title={t("guide.discover.title")}
               body={t("guide.discover.body")}
               actionLabel={t("guide.discover.cta")}
-              onAction={() => go("discover")}
+              onAction={() => go({ kind: "view", view: "discover" })}
             />
             <GuideSection
               icon={<ChatIcon size={22} />}
               title={t("guide.chat.title")}
               body={t("guide.chat.body")}
               actionLabel={t("guide.chat.cta")}
-              onAction={() => go("chat")}
+              onAction={() => go({ kind: "view", view: "chat" })}
             />
             <GuideSection
               icon={<AIIcon size={22} />}
-              title={t("guide.agent.title")}
-              body={t("guide.agent.body")}
-              actionLabel={t("guide.agent.cta")}
-              onAction={() => go("chat")}
+              title={t("guide.envoyai.title")}
+              body={t("guide.envoyai.body")}
+              actionLabel={t("guide.envoyai.cta")}
+              onAction={() => go({ kind: "assistant" })}
+            />
+            <GuideSection
+              icon={<BridgeIcon size={22} />}
+              title={t("guide.extagent.title")}
+              body={t("guide.extagent.body")}
+              actionLabel={t("guide.extagent.cta")}
+              onAction={() => go({ kind: "settings", tab: "ai" })}
             />
             <GuideSection
               icon={<SettingsIcon size={22} />}
+              title={t("guide.terminals.title")}
+              body={t("guide.terminals.body")}
+              actionLabel={t("guide.terminals.cta")}
+              onAction={() => go({ kind: "terminals" })}
+            />
+            <GuideSection
+              icon={<PluginIcon size={22} />}
+              title={t("guide.pi.title")}
+              body={t("guide.pi.body")}
+              actionLabel={t("guide.pi.cta")}
+              onAction={() => go({ kind: "terminals" })}
+            />
+            <GuideSection
+              icon={<P2PIcon size={22} />}
               title={t("guide.chains.title")}
               body={t("guide.chains.body")}
               actionLabel={t("guide.chains.cta")}
-              onAction={() => go("chains")}
+              onAction={() => go({ kind: "view", view: "chains" })}
             />
             <GuideSection
-              icon={<ContactsIcon size={22} />}
-              title={t("guide.contacts.title")}
-              body={t("guide.contacts.body")}
-              actionLabel={t("guide.contacts.cta")}
-              onAction={() => go("chat")}
+              icon={<PrivateIcon size={22} />}
+              title={t("guide.family.title")}
+              body={t("guide.family.body")}
+              actionLabel={t("guide.family.cta")}
+              onAction={() => go({ kind: "settings", tab: "family" })}
             />
             <GuideSection
-              icon={<SettingsIcon size={22} />}
-              title={t("guide.settings.title")}
-              body={t("guide.settings.body")}
-              actionLabel={t("guide.settings.cta")}
-              onAction={() => go("settings")}
+              icon={<PublicIcon size={22} />}
+              title={t("guide.content.title")}
+              body={t("guide.content.body")}
+              actionLabel={t("guide.content.cta")}
+              onAction={() => go({ kind: "content" })}
             />
             <GuideSection
               icon={<InfoIcon size={22} />}

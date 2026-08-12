@@ -30,7 +30,7 @@
 import type { DeviceProfile, DeviceRevocationReason, DeviceRevocationRecord, FriendMatchingPreferencesPayload, ChainIterationWire } from "@envoymesh/protocol";
 import type { AgentVisibilityConfig, A2aChatNotificationMode } from "./agent-visibility.js";
 import type { ExtAgentDefinition } from "./ext-agent.js";
-export type { ExtAgentDefinition, ExtAgentReachability } from "./ext-agent.js";
+export type { ExtAgentDefinition, ExtAgentReachability, ExtAgentCommandCatalog, ExtAgentCommandDescriptor, GetExtAgentCommandCatalogParams, SetExtAgentSessionModelParams, SetExtAgentSessionModelResult } from "./ext-agent.js";
 export { defaultExtAgentStartHint } from "./ext-agent.js";
 import type { PiSettings } from "./pi-agent.js";
 import type { AiBotDefinition } from "./ai-bot.js";
@@ -252,6 +252,16 @@ export type RpcMethods =
    | "getOpenClawStatus"
    | "restartOpenClaw"
    | "probeExtAgent"
+   | "getExtAgentCommandCatalog"
+   | "setExtAgentSessionModel"
+   | "getHomeFsInfo"
+   | "listHomeFsEntries"
+   | "getExtAgentProjectPath"
+   | "setExtAgentProjectPath"
+   | "previewHomeFsFile"
+   | "runMmxMediaCommand"
+   | "revealHomeFsPath"
+   | "getEnvoyAiCommandCatalog"
    // Phase 49 — Pi (built-in local coding agent)
    | "getPiStatus"
    | "restartPi"

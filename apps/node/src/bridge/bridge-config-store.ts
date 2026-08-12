@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtAgentDefinition } from "@envoymesh/api";
+import { extAgentUsesProjectPath } from "@envoymesh/api";
 import {
   applyActiveExtAgent,
   BridgeConfigSchema,
@@ -8,6 +9,7 @@ import {
   DEFAULT_BRIDGE_CONFIG,
   normalizeBridgeExtAgents,
 } from "./config.js";
+import { resolveHomeFsDirectory } from "../home-fs.js";
 
 export interface ExtAgentSettingsPatch {
   activeExtAgentId?: string;
@@ -15,6 +17,27 @@ export interface ExtAgentSettingsPatch {
   bridgeListenPort?: number;
   /** Optional Bearer secret for POST /bridge/send — changing this rebinds the HTTP server. */
   secret?: string;
+}
+
+/** Drop invalid projectPath values; keep only real absolute dirs for cwd agents. */
+export function sanitizeExtAgentProjectPaths(
+  agents: ExtAgentDefinition[],
+): ExtAgentDefinition[] {
+  return agents.map((agent) => {
+    if (!extAgentUsesProjectPath(agent.id)) {
+      if (!agent.projectPath) return agent;
+      const { projectPath: _drop, ...rest } = agent;
+      return rest;
+    }
+    if (!agent.projectPath) return agent;
+    const resolved = resolveHomeFsDirectory(agent.projectPath);
+    if (!resolved) {
+      const { projectPath: _drop, ...rest } = agent;
+      return rest;
+    }
+    if (resolved === agent.projectPath) return agent;
+    return { ...agent, projectPath: resolved };
+  });
 }
 
 export function bridgeConfigPathForProfile(profileDir: string): string {
@@ -66,10 +89,12 @@ export async function applyExtAgentSettingsPatch(
     bridgePatch.activeExtAgent = patch.activeExtAgentId.trim() || undefined;
   }
   if (patch.extAgents !== undefined) {
-    bridgePatch.extAgents = normalizeBridgeExtAgents({
-      ...DEFAULT_BRIDGE_CONFIG,
-      extAgents: patch.extAgents,
-    });
+    bridgePatch.extAgents = sanitizeExtAgentProjectPaths(
+      normalizeBridgeExtAgents({
+        ...DEFAULT_BRIDGE_CONFIG,
+        extAgents: patch.extAgents,
+      }),
+    );
   }
   if (patch.bridgeListenPort !== undefined) {
     bridgePatch.listenPort = patch.bridgeListenPort;

@@ -182,15 +182,18 @@ describe("probeExtAgentReachability", () => {
     expect(r.reachable).toBe(true)
   })
 
-  it("codex: installState=installed but reachable=false until 55B ships the sidecar", async () => {
-    // 55D: codex/claudecode kinds are in the union, the supervisor is
-    // wired, but the sidecar backend itself is 55B / 55C. Until those
-    // land, the probe should still report installState correctly
-    // (binary on PATH → "installed") and reachable should be false
-    // because there's no working /message sidecar to probe.
+  it("codex: installState=installed and reachable when sidecar /status reports backend_reachable", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => ({ ok: true, status: 200 })),
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: "OK",
+          kind: "codex",
+          backend_reachable: true,
+        }),
+      })),
     )
     const r = await probeExtAgentReachability({
       agentId: "codex",
@@ -199,7 +202,49 @@ describe("probeExtAgentReachability", () => {
       binaryOnPath: async () => true,
     })
     expect(r.installState).toBe("installed")
-    // 55B replaces this expectation with `true` once the sidecar lands.
+    expect(r.reachable).toBe(true)
+  })
+
+  it("codex: reachable=false when sidecar reports backend_reachable false", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: "OK",
+          kind: "codex",
+          backend_reachable: false,
+        }),
+      })),
+    )
+    const r = await probeExtAgentReachability({
+      agentId: "codex",
+      agentName: "Codex",
+      agentUrl: "http://127.0.0.1:8023/message",
+      binaryOnPath: async () => true,
+    })
+    expect(r.installState).toBe("installed")
+    expect(r.reachable).toBe(false)
+    expect(r.hint.toLowerCase()).not.toContain("npm i -g")
+  })
+
+  it("codex: reachable=false on HTTP 404 (do not treat 4xx as up)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: "not found" }),
+      })),
+    )
+    const r = await probeExtAgentReachability({
+      agentId: "codex",
+      agentName: "Codex",
+      agentUrl: "http://127.0.0.1:8023/message",
+      binaryOnPath: async () => true,
+    })
+    expect(r.installState).toBe("installed")
     expect(r.reachable).toBe(false)
   })
 })
@@ -328,9 +373,12 @@ describe("defaultBinaryOnPath", () => {
     expect(result).toBe(false)
   }, 5_000)
 
-  it("returns null on timeout (impossible to trigger in normal time, but signature is right)", async () => {
-    // Use a 1ms timeout — `command -v` will take longer
-    const result = await defaultBinaryOnPath("node", 1)
-    expect(result).toBe(null)
+  it("timeout races command -v for a missing binary (null or false)", async () => {
+    // Sync well-known-dir resolve misses; 1ms may expire before `command -v`.
+    const result = await defaultBinaryOnPath(
+      "this-binary-definitely-does-not-exist-xyz-9876",
+      1,
+    )
+    expect(result === null || result === false).toBe(true)
   }, 5_000)
 })

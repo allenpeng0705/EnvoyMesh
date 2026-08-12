@@ -8,6 +8,11 @@ export interface ExtAgentDefinition {
   adapter: string;
   url: string;
   enabled: boolean;
+  /**
+   * Absolute project folder on the home node (cwd for coding agents).
+   * Used by Codex / Claude Code / Cursor / Aider / MiniMax; ignored by others.
+   */
+  projectPath?: string;
 }
 
 /** Built-in presets shipped with EnvoyMesh. */
@@ -153,6 +158,200 @@ export interface ExtAgentReachability {
 }
 
 /**
+ * How Ext Agent chat should handle a slash command.
+ * - `envoy` — handled by EnvoyMesh UI/node (never sent as chat text)
+ * - `forward` — sent as plain text to `backend.ask()` (agent may honor it)
+ * - `hybrid` — Envoy may apply local side effects and/or forward
+ */
+export type ExtAgentCommandIntercept = "envoy" | "forward" | "hybrid";
+
+/** One slash command shown in Ext Agent chat autocomplete. */
+export interface ExtAgentCommandDescriptor {
+  /** Full slash token including leading `/`, e.g. `/model`. */
+  slash: string;
+  /** Short human summary for the suggestion row. */
+  summary: string;
+  /** Optional args hint, e.g. `"<name> | list"`. */
+  argsHint?: string;
+  intercept: ExtAgentCommandIntercept;
+  source: "static" | "dynamic";
+}
+
+/**
+ * Per-agent slash catalog for Ext Agent chat (Social / EnvoyGo).
+ * HomeClaw returns an empty `commands` list with a limitation note.
+ */
+export interface ExtAgentCommandCatalog {
+  agentId: string;
+  agentName: string;
+  commands: ExtAgentCommandDescriptor[];
+  /** Optional model ids for `/model` autocomplete (Hermes/OpenHuman). */
+  models?: Array<{ id: string; label?: string }>;
+  /** True when `/model` is handled by Envoy (session override), not forwarded. */
+  supportsSessionModel?: boolean;
+  /** Current session model override (if any). */
+  sessionModel?: string;
+  /** Default model used when no session override is set. */
+  defaultModel?: string;
+  catalogVersion: string;
+  fetchedAt: string;
+  limitations?: string[];
+}
+
+/** Params for {@link NodeService.getExtAgentCommandCatalog}. */
+export interface GetExtAgentCommandCatalogParams {
+  /** When omitted, uses the currently active Ext Agent. */
+  agentId?: string;
+}
+
+/** Params for {@link NodeService.setExtAgentSessionModel}. */
+export interface SetExtAgentSessionModelParams {
+  /** When omitted, uses the currently active Ext Agent. */
+  agentId?: string;
+  /**
+   * Model id to use for subsequent Ext Agent turns in this session.
+   * Empty / omitted clears the override (back to default).
+   */
+  model?: string | null;
+}
+
+export interface SetExtAgentSessionModelResult {
+  agentId: string;
+  /** Resolved model after set/clear (undefined means default). */
+  sessionModel?: string;
+  supportsSessionModel: boolean;
+}
+
+/** Params for {@link NodeService.getHomeFsInfo} / list — owner-only. */
+export interface HomeFsInfo {
+  platform: "darwin" | "linux" | "win32" | "other";
+  pathSep: string;
+  homeDir: string;
+  roots: string[];
+}
+
+export interface HomeFsEntry {
+  name: string;
+  kind: "dir" | "file";
+  path: string;
+}
+
+export interface ListHomeFsEntriesParams {
+  /** Absolute path on the home node; omit to start at homeDir. */
+  path?: string;
+  dirsOnly?: boolean;
+}
+
+export interface ListHomeFsEntriesResult {
+  path: string;
+  parent?: string;
+  entries: HomeFsEntry[];
+}
+
+export interface GetExtAgentProjectPathParams {
+  agentId?: string;
+}
+
+export interface ExtAgentProjectPathResult {
+  agentId: string;
+  /** Absolute path when set; omitted when unset / cleared. */
+  projectPath?: string;
+  /** False for agents that ignore project folders (Hermes, HomeClaw, …). */
+  usesProjectPath: boolean;
+}
+
+export interface SetExtAgentProjectPathParams {
+  agentId?: string;
+  /** Absolute directory on the home node; null/empty clears. */
+  projectPath?: string | null;
+}
+
+export interface PreviewHomeFsFileParams {
+  /** Absolute file path on the home node. */
+  path: string;
+}
+
+export type HomeFsPreviewKind =
+  | "image"
+  | "pdf"
+  | "html"
+  | "markdown"
+  | "text"
+  | "office"
+  | "unsupported"
+  | "error";
+
+export interface PreviewHomeFsFileResult {
+  path: string;
+  title: string;
+  kind: HomeFsPreviewKind;
+  mediaType?: string;
+  /** Sanitized HTML document fragment/body for WebView. */
+  html?: string;
+  /** Plain text when html is not used. */
+  text?: string;
+  /** Base64 payload for binary previews (image/pdf). */
+  contentBase64?: string;
+  /** Human-readable error when kind is error/unsupported. */
+  error?: string;
+  byteLength?: number;
+}
+
+/** MiniMax MMX-CLI media kinds for Envoy-intercepted slash commands. */
+export type MmxMediaKind =
+  | "image"
+  | "video"
+  | "speech"
+  | "music"
+  | "vision"
+  | "search"
+  | "quota"
+  | "auth";
+
+export interface RunMmxMediaCommandParams {
+  kind: MmxMediaKind;
+  /** Prompt / synthesis text / search query. */
+  prompt?: string;
+  /** Vision: local absolute path or URL. */
+  target?: string;
+}
+
+export interface RunMmxMediaCommandResult {
+  ok: boolean;
+  kind: MmxMediaKind;
+  /** Absolute path on the home node when a file was written. */
+  path?: string;
+  text?: string;
+  mimeType?: string;
+  contentBase64?: string;
+  error?: string;
+}
+
+/** Reveal an absolute path on the home node in the OS file manager (owner only). */
+export interface RevealHomeFsPathParams {
+  path: string;
+}
+
+export interface RevealHomeFsPathResult {
+  ok: boolean;
+  error?: string;
+}
+
+/** Agents that honor {@link ExtAgentDefinition.projectPath} as cwd. */
+export const EXT_AGENTS_WITH_PROJECT_PATH = [
+  "codex",
+  "claudecode",
+  "cursor",
+  "aider",
+  "mmx",
+] as const;
+
+export function extAgentUsesProjectPath(agentId: string | undefined | null): boolean {
+  const id = agentId?.trim().toLowerCase() ?? "";
+  return (EXT_AGENTS_WITH_PROJECT_PATH as readonly string[]).includes(id);
+}
+
+/**
  * Whether the Ext Agent's binary is installed on the current machine.
  * Used by the Settings UI status indicator (green/amber/red) and by the
  * chat switcher to decide between a modal and a toast.
@@ -209,9 +408,9 @@ export function defaultExtAgentStartHint(agentId: string): string {
     case "openhuman":
       return "Start OpenHuman.app or the OpenHuman CLI core (health on :7788).";
     case "codex":
-      return "Install `codex` CLI (npm i -g @openai/codex), ensure `codex app-server` works; set OPENAI_API_KEY.";
+      return "Codex CLI found but app-server is not ready — confirm OPENAI_API_KEY is in the home-node environment, then retry (or send a chat message to warm it up).";
     case "claudecode":
-      return "Install Claude Code (npm i -g @anthropic-ai/claude-code), ensure `claude --version` works; set ANTHROPIC_API_KEY.";
+      return "Claude Code CLI found but not authenticated — run `claude auth login`, or set ANTHROPIC_API_KEY in the home-node environment, then retry.";
     case "cursor":
       return "Install the Cursor CLI: `curl https://cursor.com/install -fsS | bash`. First run opens a browser for OAuth login; ensure `cursor-agent --version` works.";
     case "aider":
@@ -363,7 +562,7 @@ const INSTALL_TABLE: Record<string, InstallTableRow> = {
     homepageUrl: "https://docs.claude.com/en/docs/claude-code",
     homepageLabel: "Claude Code docs",
     commonIssues: [
-      "Set ANTHROPIC_API_KEY in your shell before running claude.",
+      "Run `claude auth login` (browser OAuth) or set ANTHROPIC_API_KEY in the home-node environment.",
       "If `claude --version` fails, try `npm install -g @anthropic-ai/claude-code` again.",
       "Claude Code requires Node.js 18+; verify with `node --version`.",
     ],

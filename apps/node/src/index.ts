@@ -1,5 +1,9 @@
 import "./ensure-node-version.js";
 import "./dom-event-polyfill.js";
+import { ensureProcessPathHasExtAgentBins } from "./ext-agent-adapter/resolve-ext-agent-binary.js";
+// Tauri / non-login shells often omit ~/.npm-global/bin — Ext Agent CLIs
+// (codex, claude, …) live there after `npm i -g`. Augment before any probe.
+ensureProcessPathHasExtAgentBins();
 import { evaluateCapability } from "@envoymesh/bonds";
 import { createAgentCardAutoFetcher } from "./agent-card-auto-fetcher.js";
 import { matchPeerInterests } from "./connection-suggester.js";
@@ -206,6 +210,7 @@ import {
   openClawGatewayWebhookUrl,
   socialWsLoopbackUrl,
   devServicePortsConfigured,
+  effectiveBridgeListenPort,
 } from "./service-ports.js";
 import { createBridge } from "./bridge/index.js";
 import {
@@ -3804,11 +3809,12 @@ function wireBridgeIntoNodeService(): void {
   nodeService.setBridgeChatHandler(bridge._handleMessage);
   nodeService.setBridgeLiveConfigUpdater(bridge.updateLiveConfig);
   const fields = bridgeConfigToStatusFields(bridgeConfig);
+  const listenPort = effectiveBridgeListenPort(fields.listenPort);
   const prev = nodeService.getBridgeStatusSnapshot() ?? {
     enabled: false,
     agentPeerId: bridge.agentPeerId,
     agentUrl: "",
-    listenPort: fields.listenPort,
+    listenPort,
     agentName: "",
   };
   const assistantUrl = resolveAssistantAgentUrl(bridgeConfig);
@@ -3819,7 +3825,7 @@ function wireBridgeIntoNodeService(): void {
     enabled: bridgeConfig.enabled,
     agentPeerId: bridge.agentPeerId,
     agentUrl: fields.agentUrl,
-    listenPort: fields.listenPort,
+    listenPort,
     agentName: fields.agentName,
     agentPublicKeyPem: bridgeIdentity!.agentPublicKeyPem,
     agentType,
@@ -3829,7 +3835,7 @@ function wireBridgeIntoNodeService(): void {
   void syncExtAgentSidecar({
     bridgeEnabled: bridgeConfig.enabled,
     activeExtAgentId: fields.activeExtAgentId,
-    bridgeListenPort: bridgeConfig.listenPort,
+    bridgeListenPort: listenPort,
     bridgeSecret: bridgeConfig.secret,
   });
 }
@@ -3943,11 +3949,12 @@ if (nodeService instanceof NodeServiceImpl && bridgeAgentLifecycleReady) {
   const agentType: "envoyai" | "external" =
     assistantUrl.includes("/webhook/envoymesh") ? "envoyai" : "external";
   const bridgeFields = bridgeConfigToStatusFields(bridgeConfig);
+  const bridgeListenPort = effectiveBridgeListenPort(bridgeFields.listenPort);
   nodeService.setBridgeStatus({
     enabled: bridgeHttpReady,
     agentPeerId: bridge.agentPeerId,
     agentUrl: bridgeFields.agentUrl,
-    listenPort: bridgeFields.listenPort,
+    listenPort: bridgeListenPort,
     agentName: bridgeFields.agentName,
     agentPublicKeyPem: bridgeIdentity.agentPublicKeyPem,
     agentType,
@@ -3957,7 +3964,7 @@ if (nodeService instanceof NodeServiceImpl && bridgeAgentLifecycleReady) {
   void syncExtAgentSidecar({
     bridgeEnabled: bridgeHttpReady,
     activeExtAgentId: bridgeFields.activeExtAgentId,
-    bridgeListenPort: bridgeConfig.listenPort,
+    bridgeListenPort,
     bridgeSecret: bridgeConfig.secret,
   });
   if (meshStarted) {

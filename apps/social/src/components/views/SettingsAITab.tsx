@@ -1664,6 +1664,7 @@ function EnvoyLocalSettings({
   const [cacheTypeV, setCacheTypeV] = useState<"" | EnvoyLocalKvCacheType>("");
   const [loraPath, setLoraPath] = useState("");
   const [startupTimeoutSec, setStartupTimeoutSec] = useState<string>("");
+  const [manageOpen, setManageOpen] = useState(false);
 
   const refresh = useCallback(async (opts?: { syncParams?: boolean }) => {
     try {
@@ -1801,6 +1802,16 @@ function EnvoyLocalSettings({
   const cloudConfigured = hasUsableNonEnvoyLocalModelProvider(savedMp);
   const cloudPreset = cloudConfigured ? inferModelProviderPreset(savedMp) : null;
 
+  const summaryLine = !status
+    ? t("settings.ai.envoyLocal.summaryOff")
+    : localProviderInUse
+      ? t("settings.ai.envoyLocal.summaryReady", {
+          model: status.activeModelId ?? "—",
+        })
+      : inFlight || status.enabled
+        ? t("settings.ai.envoyLocal.summaryBusy", { status: statusLabel })
+        : t("settings.ai.envoyLocal.summaryOff");
+
   return (
     <div className="envoy-local-settings" data-testid="envoy-local-settings">
       <div className="settings-section-title-row">
@@ -1820,6 +1831,42 @@ function EnvoyLocalSettings({
           </span>
         ) : null}
       </div>
+      <p className="section-desc envoy-local-summary-line">{summaryLine}</p>
+      <div className="settings-buttons">
+        <button
+          type="button"
+          className="settings-save-btn"
+          data-testid="envoy-local-manage"
+          onClick={() => setManageOpen(true)}
+        >
+          {t("settings.ai.envoyLocal.manage")}
+        </button>
+      </div>
+
+      {manageOpen ? (
+        <div
+          className="modal-overlay envoy-local-manage-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="envoy-local-manage-title"
+          data-testid="envoy-local-manage-modal"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setManageOpen(false);
+          }}
+        >
+          <div className="modal-panel envoy-local-manage-panel">
+            <div className="modal-header">
+              <h2 id="envoy-local-manage-title">{t("settings.ai.envoyLocal.manageTitle")}</h2>
+              <button
+                type="button"
+                className="modal-close"
+                aria-label={t("settings.ai.envoyLocal.closeManage")}
+                onClick={() => setManageOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="envoy-local-manage-body">
       <p className="section-desc">{t("settings.ai.envoyLocal.desc")}</p>
       {status && cloudPreset ? (
         <p className="settings-hint model-provider-status-hint">
@@ -2800,6 +2847,19 @@ function EnvoyLocalSettings({
           </button>
         </div>
       </div>
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setManageOpen(false)}
+              >
+                {t("settings.ai.envoyLocal.closeManage")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -3285,32 +3345,27 @@ export function SettingsAITab() {
        * Section order is "frequent first, defaults last":
        * 1. Model provider                           — foundational LLM backend
        * 2. AI engine (EnvoyAI / Ext Agent)         — picks which agent surfaces the AI
-       * 3. Chat (toggles + auto-reply limits)        — daily drivers
-       * 4. AI identity & disclosure                  — affects every reply
-       * 5. Postures (social proxy / doc acq / etc.)  — power switches
-       * 6. Notifications (a2a + per-domain)          — daily driver
-       * 7. Presence (online / offline / status)      — daily driver
-       * 8. AI rules                                 — set when authoring
-       * 9. Agent operating instructions              — set once
+       * 3. Envoy Local (compact + manage modal)   — optional local llama-server
+       * 4. Chat (toggles + auto-reply limits)        — daily drivers
+       * 5. AI identity & disclosure                  — affects every reply
+       * 6. Postures (social proxy / doc acq / etc.)  — power switches
+       * 7. Notifications (a2a + per-domain)          — daily driver
+       * 8. Presence (online / offline / status)      — daily driver
+       * 9. AI rules                                 — set when authoring
+       * 10. Agent operating instructions              — set once
        * --------- Defaults / set-once ----------
-       * 10. Knowledge base (RAG)                     — many default fields
-       * 11. Profile gallery media policy             — default share tier
-       * 12. Document autonomy policy                 — default share tier
-       * 13. Terminal assist                          — advanced, set once
-       * 14. Contact default mode                    — has default "manual"
+       * 11. Knowledge base (RAG)                     — many default fields
+       * 12. Profile gallery media policy             — default share tier
+       * 13. Document autonomy policy                 — default share tier
+       * 14. Terminal assist                          — advanced, set once
+       * 15. Contact default mode                    — has default "manual"
        * --------- Developer-only ----------
-       * 15. Debug prefix                             — dev / debug toggle
+       * 16. Debug prefix                             — dev / debug toggle
        * ============================================================ */}
 
       <section className="settings-section">
         <ModelProviderSettings nodeConfig={nodeConfig} refreshNodeConfig={refreshNodeConfig} />
       </section>
-
-      {!isMobileNode ? (
-        <section className="settings-section">
-          <EnvoyLocalSettings refreshNodeConfig={refreshNodeConfig} />
-        </section>
-      ) : null}
 
       <section className="settings-section">
         <h4>{t("settings.ai.aiEngine.heading")}</h4>
@@ -3320,6 +3375,9 @@ export function SettingsAITab() {
             envoyAI={envoyAIInfo}
             extAgent={extAgentConfig}
             onExtAgentSave={handleExtAgentSave}
+            onProjectPathChange={async (params) =>
+              nodeService.setExtAgentProjectPath(params)
+            }
             onRestartOpenClaw={handleRestartOpenClaw}
             restartingOpenClaw={restartingOpenClaw}
           />
@@ -3327,6 +3385,12 @@ export function SettingsAITab() {
           <p className="settings-hint">{t("settings.ai.aiEngine.loading")}</p>
         )}
       </section>
+
+      {!isMobileNode ? (
+        <section className="settings-section">
+          <EnvoyLocalSettings refreshNodeConfig={refreshNodeConfig} />
+        </section>
+      ) : null}
 
       {/* Phase 49 — Pi (built-in local coding agent).
           A separate engine alongside Built-in OpenClaw. Writable in the UI

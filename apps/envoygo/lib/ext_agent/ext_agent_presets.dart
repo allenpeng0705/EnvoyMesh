@@ -129,3 +129,17 @@ List<Map<String, dynamic>> mergeExtAgentPresets(List<dynamic>? configured) {
   }
   return result.values.toList();
 }
+
+const _extAgentsWithProjectPath = {
+  'codex',
+  'claudecode',
+  'cursor',
+  'aider',
+  'mmx',
+};
+
+/// Whether this Ext Agent uses a home-node project folder as cwd.
+bool extAgentUsesProjectPath(String? agentId) {
+  final id = agentId?.trim().toLowerCase() ?? '';
+  return _extAgentsWithProjectPath.contains(id);
+}

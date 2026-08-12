@@ -48,6 +48,19 @@ import {
   readPendingOutboundCache,
   writePendingOutboundCache,
 } from "../../lib/chat-pending-outbound-cache.js";
+import {
+  formatExtAgentModelList,
+  formatExtAgentModelShow,
+  formatExtAgentSlashHelp,
+  formatMmxMediaResult,
+  isExtAgentHelpCommand,
+  parseExtAgentModelCommand,
+  parseMmxMediaCommand,
+} from "../../lib/ext-agent-slash-commands.js";
+import type { ExtAgentCommandCatalog, RunMmxMediaCommandResult } from "@envoymesh/api";
+import { extAgentUsesProjectPath } from "@envoymesh/api";
+import { HomeFolderPicker } from "../HomeFolderPicker.js";
+import { MmxMediaResultBlock } from "../MmxMediaResultBlock.js";
 
 interface ContactChatPanelProps {
   selectedContact: string;
@@ -135,6 +148,15 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   }, [wsTransportOpen, setPendingOutbound]);
 
   const [chatInput, setChatInput] = useState("");
+  const [extAgentSlashCatalog, setExtAgentSlashCatalog] = useState<ExtAgentCommandCatalog | null>(
+    null,
+  );
+  const [extAgentProjectPath, setExtAgentProjectPath] = useState<string | undefined>();
+  /** Local MiniMax media results for this Ext Agent thread (not persisted to mesh). */
+  const [mmxLocalResults, setMmxLocalResults] = useState<
+    Array<{ messageId: string; timestamp: string; result: RunMmxMediaCommandResult }>
+  >([]);
+  const [mmxBusy, setMmxBusy] = useState(false);
   const [confirm, setConfirm] = useState<{ title: string; message?: ReactNode; variant?: "default" | "destructive"; confirmLabel?: string; cancelLabel?: string; onConfirm: () => void } | null>(null);
   const draftRef = useRef<ReturnType<typeof createContactComposeDraftCrdt> | null>(null);
   const draftSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -213,13 +235,40 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
 
   useEffect(() => {
     voiceRecorder.cancel();
+    setMmxLocalResults([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset when switching threads
   }, [selectedContact]);
 
   const nodeMeshOnline = connectionStatus?.online === true;
+  const isExtAgentContact =
+    Boolean(bridgeStatus?.agentPeerId) && selectedContact === bridgeStatus?.agentPeerId;
+  /** Ext Agent local slash (mmx/help/model) only needs home WS, not libp2p mesh. */
+  const homeRpcOnline = wsTransportOpen;
+  const composerOnline = nodeMeshOnline || (isExtAgentContact && homeRpcOnline);
+
+  const mmxPreviewById = useMemo(() => {
+    const map = new Map<string, RunMmxMediaCommandResult>();
+    for (const row of mmxLocalResults) {
+      map.set(row.messageId, row.result);
+    }
+    return map;
+  }, [mmxLocalResults]);
 
   const displayMessages = useMemo(() => {
-    const merged = [...messages, ...pendingOutbound];
+    const mmxAsChat: ChatMessage[] = mmxLocalResults.map((row) => ({
+      messageId: row.messageId,
+      sender: {
+        nodeId: "",
+        ownerId: selectedContact,
+        displayName: "MiniMax",
+        actorRole: "agent" as const,
+      },
+      recipient: { nodeId: "", ownerId: "", displayName: t("messageBubble.you") },
+      content: { text: formatMmxMediaResult(row.result) },
+      metadata: { timestamp: row.timestamp, deliveryReceipt: "delivered" as const },
+      signature: "",
+    }));
+    const merged = [...messages, ...pendingOutbound, ...mmxAsChat];
     const seen = new Set<string>();
     const out: ChatMessage[] = [];
     for (const m of merged) {
@@ -233,7 +282,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       return ta - tb;
     });
     return out;
-  }, [messages, pendingOutbound]);
+  }, [messages, pendingOutbound, mmxLocalResults, selectedContact, t]);
 
   const { info: peerReachability, checking: reachabilityChecking } = usePeerReachability(
     selectedContact,
@@ -327,9 +376,144 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
 
   const handleSendMessage = () => {
     const text = chatInput.trim();
-    if (!text) return;
+    if (!text || mmxBusy) return;
 
     pinToBottom();
+
+    // MiniMax media / Ext Agent local slash — home WS only (not mesh).
+    if (isExtAgentContact) {
+      const mmxParsed = parseMmxMediaCommand(text);
+      if (mmxParsed) {
+        if (!homeRpcOnline) {
+          setSendError(t("contactChat.nodeOffline"));
+          scheduleClearSendError(5000);
+          return;
+        }
+        if (!mmxParsed.ok) {
+          showToast(mmxParsed.error, "error");
+          return;
+        }
+        setChatInput("");
+        draftRef.current?.setPlainText("", { skipWireSync: true });
+        setMmxBusy(true);
+        showToast(`Running MiniMax /${mmxParsed.params.kind}…`, "info");
+        void (async () => {
+          const pushLocal = (result: RunMmxMediaCommandResult) => {
+            const messageId = `local-mmx-${crypto.randomUUID()}`;
+            setMmxLocalResults((prev) => [
+              ...prev,
+              {
+                messageId,
+                timestamp: new Date().toISOString(),
+                result,
+              },
+            ]);
+          };
+          try {
+            const result = await nodeService.runMmxMediaCommand(mmxParsed.params);
+            pushLocal(result);
+            if (!result.ok) {
+              showToast(
+                result.error ??
+                  `MiniMax /${result.kind} failed. Install mmx-cli and run mmx auth login.`,
+                "error",
+              );
+            } else {
+              showToast(
+                result.path
+                  ? `Saved: ${result.path}`
+                  : formatMmxMediaResult(result).slice(0, 120),
+                "success",
+              );
+            }
+            pinToBottom();
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            pushLocal({
+              ok: false,
+              kind: mmxParsed.params.kind,
+              error: `${msg}. Install: npm install -g mmx-cli`,
+            });
+            showToast(
+              `MiniMax media failed: ${msg}. Install: npm install -g mmx-cli`,
+              "error",
+            );
+            pinToBottom();
+          } finally {
+            setMmxBusy(false);
+          }
+        })();
+        return;
+      }
+
+      if (isExtAgentHelpCommand(text)) {
+        if (!homeRpcOnline) {
+          setSendError(t("contactChat.nodeOffline"));
+          scheduleClearSendError(5000);
+          return;
+        }
+        const help =
+          extAgentSlashCatalog != null
+            ? formatExtAgentSlashHelp(extAgentSlashCatalog)
+            : "Slash commands unavailable — reconnect to your home node and try /help again.";
+        showToast(help, "info");
+        setChatInput("");
+        draftRef.current?.setPlainText("", { skipWireSync: true });
+        return;
+      }
+
+      const modelAction = parseExtAgentModelCommand(text);
+      if (modelAction && extAgentSlashCatalog?.supportsSessionModel) {
+        if (!homeRpcOnline) {
+          setSendError(t("contactChat.nodeOffline"));
+          scheduleClearSendError(5000);
+          return;
+        }
+        void (async () => {
+          const catalog = extAgentSlashCatalog;
+          try {
+            if (modelAction.type === "show") {
+              showToast(formatExtAgentModelShow(catalog), "info");
+              return;
+            }
+            if (modelAction.type === "list") {
+              showToast(formatExtAgentModelList(catalog), "info");
+              return;
+            }
+            if (modelAction.type === "default") {
+              await nodeService.setExtAgentSessionModel({
+                agentId: catalog.agentId,
+                model: null,
+              });
+              const next = await nodeService.getExtAgentCommandCatalog({
+                agentId: catalog.agentId,
+              });
+              setExtAgentSlashCatalog(next);
+              showToast(
+                `${catalog.agentName}: model reset to default (${next.defaultModel ?? "default"})`,
+                "success",
+              );
+              return;
+            }
+            await nodeService.setExtAgentSessionModel({
+              agentId: catalog.agentId,
+              model: modelAction.model,
+            });
+            const next = await nodeService.getExtAgentCommandCatalog({
+              agentId: catalog.agentId,
+            });
+            setExtAgentSlashCatalog(next);
+            showToast(`${catalog.agentName}: model set to ${modelAction.model}`, "success");
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            showToast(`Could not change model: ${msg}`, "error");
+          }
+        })();
+        setChatInput("");
+        draftRef.current?.setPlainText("", { skipWireSync: true });
+        return;
+      }
+    }
 
     if (!nodeMeshOnline) {
       setSendError(t("contactChat.nodeOffline"));
@@ -663,6 +847,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
         setConfirm(null);
         const deletedCount = await clearThread();
         setPendingOutbound([]);
+        setMmxLocalResults([]);
         if (deletedCount > 0) {
           showToast(
             deletedCount === 1
@@ -678,8 +863,90 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   };
 
   const messageGroups = useMemo(() => groupMessagesByDate(displayMessages), [displayMessages]);
-  const isHomeBridgeThread =
-    Boolean(bridgeStatus?.enabled) && selectedContact === bridgeStatus?.agentPeerId;
+  // Catalog / slash suggest: Ext Agent peer thread (even if bridge temporarily disabled).
+  const isHomeBridgeThread = isExtAgentContact;
+
+  useEffect(() => {
+    if (!isHomeBridgeThread) {
+      setExtAgentSlashCatalog(null);
+      return;
+    }
+    let cancelled = false;
+    const agentId = bridgeStatus?.activeExtAgentId;
+    void nodeService
+      .getExtAgentCommandCatalog(agentId ? { agentId } : undefined)
+      .then((catalog) => {
+        if (!cancelled) setExtAgentSlashCatalog(catalog);
+      })
+      .catch(() => {
+        if (!cancelled) setExtAgentSlashCatalog(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isHomeBridgeThread,
+    bridgeStatus?.activeExtAgentId,
+    nodeService,
+  ]);
+
+  const activeExtAgentId = bridgeStatus?.activeExtAgentId?.trim() || "pi";
+  const showExtAgentProjectFolder = isExtAgentContact;
+  const extAgentProjectFolderSupported = extAgentUsesProjectPath(activeExtAgentId);
+
+  useEffect(() => {
+    if (!showExtAgentProjectFolder || !extAgentProjectFolderSupported) {
+      setExtAgentProjectPath(undefined);
+      return;
+    }
+    let cancelled = false;
+    void nodeService
+      .getExtAgentProjectPath({ agentId: activeExtAgentId })
+      .then((result) => {
+        if (!cancelled) setExtAgentProjectPath(result.projectPath);
+      })
+      .catch(() => {
+        if (!cancelled) setExtAgentProjectPath(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    showExtAgentProjectFolder,
+    extAgentProjectFolderSupported,
+    activeExtAgentId,
+    nodeService,
+    bridgeStatus?.extAgents,
+  ]);
+
+  const handleExtAgentProjectPathChange = useCallback(
+    async (path: string | undefined) => {
+      setExtAgentProjectPath(path);
+      try {
+        const result = await nodeService.setExtAgentProjectPath({
+          agentId: activeExtAgentId,
+          projectPath: path ?? null,
+        });
+        setExtAgentProjectPath(result.projectPath);
+        await refreshNodeConfig();
+      } catch (e) {
+        showToast(
+          e instanceof Error ? e.message : String(e),
+          "error",
+        );
+        try {
+          const result = await nodeService.getExtAgentProjectPath({
+            agentId: activeExtAgentId,
+          });
+          setExtAgentProjectPath(result.projectPath);
+        } catch {
+          // ignore
+        }
+      }
+    },
+    [activeExtAgentId, nodeService, refreshNodeConfig, showToast],
+  );
+
   const showPathUnverifiedHint =
     isBondedHumanContact &&
     contactReachable &&
@@ -736,13 +1003,15 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       ? "checking"
       : "offline";
 
-  const chatInputPlaceholder = !nodeMeshOnline
+  const chatInputPlaceholder = !composerOnline
     ? t("contactChat.inputOffline")
-    : !contactReachable && !reachabilityChecking
-      ? isHomeBridgeThread
-        ? t("contactChat.homeOfflineHint")
-        : t("contactChat.contactOfflineHint")
-      : t("contactChat.inputOnline");
+    : mmxBusy
+      ? "MiniMax running…"
+      : !contactReachable && !reachabilityChecking
+        ? isHomeBridgeThread
+          ? t("contactChat.homeOfflineHint")
+          : t("contactChat.contactOfflineHint")
+        : t("contactChat.inputOnline");
 
   return (
     <>
@@ -832,7 +1101,25 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
           </div>
         </div>
         <div className="chat-header-secondary">
-          {threadKind !== "agent" && threadKind !== "ai" ? (
+          {showExtAgentProjectFolder ? (
+            <div className="chat-header-project-folder" data-testid="ext-agent-project-folder">
+              <span className="chat-header-project-folder-label">
+                {t("settings.ai.aiEngine.projectFolder", "Project folder")}
+              </span>
+              {!extAgentProjectFolderSupported ? (
+                <p className="chat-header-project-folder-hint">
+                  {t("settings.ai.aiEngine.projectFolderUnsupported")}
+                </p>
+              ) : null}
+              <HomeFolderPicker
+                className="home-folder-picker home-folder-picker--compact"
+                value={extAgentProjectPath}
+                onChange={(path) => void handleExtAgentProjectPathChange(path)}
+                disabled={!extAgentProjectFolderSupported}
+                title={t("settings.ai.aiEngine.projectFolderTitle", "Choose project folder")}
+              />
+            </div>
+          ) : threadKind !== "agent" && threadKind !== "ai" ? (
             <div className="chat-header-web-links">
               <ContactWebContentShortcuts ownerId={selectedContact} compact />
             </div>
@@ -939,15 +1226,26 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                               : undefined
                           }
                         >
-                          <ChatMessageText text={msg.content.text} identity={aiIdentity} />
-                          {msg.content.attachments?.map((attachment) => {
-                            const isAudio = attachment.mimeType?.split(";")[0]?.startsWith("audio/") === true;
-                            return isAudio ? (
-                              <ChatAudioAttachment key={attachment.id} attachment={attachment} transcription={msg.content.text?.trim() || undefined} />
-                            ) : (
-                              <ChatFileAttachment key={attachment.id} attachment={attachment} />
-                            );
-                          })}
+                          {mmxPreviewById.has(msg.messageId) ? (
+                            <MmxMediaResultBlock result={mmxPreviewById.get(msg.messageId)!} />
+                          ) : (
+                            <>
+                              <ChatMessageText text={msg.content.text} identity={aiIdentity} />
+                              {msg.content.attachments?.map((attachment) => {
+                                const isAudio =
+                                  attachment.mimeType?.split(";")[0]?.startsWith("audio/") === true;
+                                return isAudio ? (
+                                  <ChatAudioAttachment
+                                    key={attachment.id}
+                                    attachment={attachment}
+                                    transcription={msg.content.text?.trim() || undefined}
+                                  />
+                                ) : (
+                                  <ChatFileAttachment key={attachment.id} attachment={attachment} />
+                                );
+                              })}
+                            </>
+                          )}
                         </ChatMessageBubble>
                       ))}
                     </div>
@@ -1010,7 +1308,13 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
             onSend={handleSendMessage}
             placeholder={chatInputPlaceholder}
             sendLabel={t("contactChat.send")}
-            disabled={!nodeMeshOnline}
+            disabled={!composerOnline || mmxBusy}
+            slashCommands={
+              isHomeBridgeThread ? (extAgentSlashCatalog?.commands ?? []) : undefined
+            }
+            slashModels={
+              isHomeBridgeThread ? (extAgentSlashCatalog?.models ?? []) : undefined
+            }
             leading={
               <>
                 <button
@@ -1018,7 +1322,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                   className="secondary chat-mic-btn"
                   title={t("chat.audioMessage.record")}
                   aria-label={t("chat.audioMessage.record")}
-                  disabled={!nodeMeshOnline}
+                  disabled={!nodeMeshOnline || mmxBusy}
                   onClick={() => void voiceRecorder.start()}
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
@@ -1028,7 +1332,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                   className="secondary chat-attach-file-btn"
                   title={t("contactChat.attachFileTitle")}
                   aria-label={t("contactChat.attachFileAria")}
-                  disabled={!nodeMeshOnline || attachBusy}
+                  disabled={!nodeMeshOnline || attachBusy || mmxBusy}
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <AttachIcon size={18} />

@@ -17,6 +17,7 @@ import {
   type InstallState,
 } from "@envoymesh/api"
 import { createBackend } from "./backends.js"
+import { isExtAgentBinaryAvailable, resolveExtAgentBinary } from "./resolve-ext-agent-binary.js"
 import { isExtAgentSidecarKind } from "./types.js"
 
 /** Derive `/status` (or `/health`) URL from a `/message` agentUrl. */
@@ -50,6 +51,34 @@ async function probeHttpOk(url: string, timeoutMs = 2_000): Promise<boolean> {
 }
 
 /**
+ * Probe a running Ext Agent sidecar `/status` and honour
+ * `backend_reachable` when present (codex / claudecode / …).
+ * Falls back to HTTP 2xx when the field is absent.
+ * Returns `null` when the sidecar isn't listening yet.
+ * Non-2xx responses (including 4xx) are treated as unreachable.
+ */
+async function probeSidecarBackendReachable(
+  statusUrl: string,
+  timeoutMs = 15_000,
+): Promise<boolean | null> {
+  try {
+    const res = await fetch(statusUrl, { signal: AbortSignal.timeout(timeoutMs) })
+    if (!res.ok) return false
+    try {
+      const body = (await res.json()) as { backend_reachable?: unknown }
+      if (typeof body.backend_reachable === "boolean") {
+        return body.backend_reachable
+      }
+    } catch {
+      // Non-JSON 2xx status — treat as reachable.
+    }
+    return true
+  } catch {
+    return null
+  }
+}
+
+/**
  * Per-agent binary lookup table for install detection. The key is the
  * Ext Agent id (`codex` / `claudecode` / `hermes` / `openhuman` /
  * `cursor` / `aider` / `mmx`); the value is the binary name the user
@@ -77,7 +106,9 @@ const BINARY_FOR_AGENT: Record<string, string> = {
 
 /**
  * Default implementation: check `$PATH` for `command` via
- * `command -v <bin>` (POSIX) or `where <bin>` (Windows).
+ * `command -v <bin>` (POSIX) or `where <bin>` (Windows), then fall
+ * back to well-known user bin dirs (`~/.npm-global/bin`, Homebrew, …)
+ * so Tauri / GUI-stripped PATH still finds `npm i -g` installs.
  * Returns `null` if the check failed for an unrelated reason
  * (timeout / spawn error / unknown platform) so the caller can
  * surface `installState: "unknown"`.
@@ -86,6 +117,11 @@ export function defaultBinaryOnPath(
   command: string,
   timeoutMs = 2_000,
 ): Promise<boolean | null> {
+  // Fast path: absolute / well-known dirs (sync) — covers the common
+  // "codex installed but GUI PATH missing ~/.npm-global/bin" case.
+  if (isExtAgentBinaryAvailable(command)) {
+    return Promise.resolve(true);
+  }
   return new Promise<boolean | null>((resolve) => {
     const isWin = process.platform === "win32";
     const checkCmd = isWin ? "where" : "command";
@@ -112,7 +148,12 @@ export function defaultBinaryOnPath(
     });
     proc.on("exit", (code) => {
       clearTimeout(t);
-      done(code === 0);
+      if (code === 0) {
+        done(true);
+        return;
+      }
+      // Double-check well-known dirs in case PATH race / shell differences.
+      done(resolveExtAgentBinary(command) != null);
     });
   });
 }
@@ -213,18 +254,28 @@ export async function probeExtAgentReachability(params: {
   }
 
   if (isExtAgentSidecarKind(agentId)) {
-    // Sidecar backends (codex / claudecode / cursor / aider / mmx /
-    // hermes / openhuman) each expose a `probe()` that returns the
-    // liveness of the backing process. We catch any throw defensively
-    // so a buggy backend can't take the whole status snapshot down —
-    // the `installState` and `installGuide` fields above remain
-    // authoritative even when the runtime probe fails.
+    // Prefer the already-running sidecar's `/status` so we don't spawn a
+    // second `codex app-server` (createBackend() would). Fall back to a
+    // throwaway backend probe when the sidecar isn't up yet.
     let reachable = false;
-    try {
-      reachable = Boolean(await createBackend(agentId).probe?.());
-    } catch {
-      // Backend probe threw (e.g. misconfigured) — treat as down.
-      // The install card is still rendered from `installGuide`.
+    const statusUrl = extAgentStatusUrlFromMessageUrl(params.agentUrl);
+    if (statusUrl) {
+      const fromSidecar = await probeSidecarBackendReachable(statusUrl);
+      if (fromSidecar !== null) {
+        reachable = fromSidecar;
+      } else {
+        try {
+          reachable = Boolean(await createBackend(agentId).probe?.());
+        } catch {
+          reachable = false;
+        }
+      }
+    } else {
+      try {
+        reachable = Boolean(await createBackend(agentId).probe?.());
+      } catch {
+        // Backend probe threw (e.g. misconfigured) — treat as down.
+      }
     }
     return {
       agentId,

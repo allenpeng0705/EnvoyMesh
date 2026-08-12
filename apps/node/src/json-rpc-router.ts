@@ -100,6 +100,13 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "generateFamilyInviteToken",
   "getPairingPayload",
   "syncPairingKioskFromConfig",
+  "getHomeFsInfo",
+  "listHomeFsEntries",
+  "getExtAgentProjectPath",
+  "setExtAgentProjectPath",
+  "previewHomeFsFile",
+  "runMmxMediaCommand",
+  "revealHomeFsPath",
 ]);
 
 /** True when a thin-client family session must not call this RPC. */
@@ -718,6 +725,47 @@ export async function routeRpcMethod(
       return ns.probeExtAgent({
         agentId: params.agentId as string | undefined,
       });
+    case "getExtAgentCommandCatalog":
+      return ns.getExtAgentCommandCatalog({
+        agentId: params.agentId as string | undefined,
+      });
+    case "setExtAgentSessionModel":
+      return ns.setExtAgentSessionModel({
+        agentId: params.agentId as string | undefined,
+        model: params.model as string | null | undefined,
+      });
+    case "getHomeFsInfo":
+      return ns.getHomeFsInfo();
+    case "listHomeFsEntries":
+      return ns.listHomeFsEntries({
+        path: params.path as string | undefined,
+        dirsOnly: params.dirsOnly === true ? true : params.dirsOnly === false ? false : undefined,
+      });
+    case "getExtAgentProjectPath":
+      return ns.getExtAgentProjectPath({
+        agentId: params.agentId as string | undefined,
+      });
+    case "setExtAgentProjectPath":
+      return ns.setExtAgentProjectPath({
+        agentId: params.agentId as string | undefined,
+        projectPath: params.projectPath as string | null | undefined,
+      });
+    case "previewHomeFsFile":
+      return ns.previewHomeFsFile({
+        path: String(params.path ?? ""),
+      });
+    case "runMmxMediaCommand":
+      return ns.runMmxMediaCommand({
+        kind: params.kind as import("@envoymesh/api").MmxMediaKind,
+        prompt: typeof params.prompt === "string" ? params.prompt : undefined,
+        target: typeof params.target === "string" ? params.target : undefined,
+      });
+    case "revealHomeFsPath":
+      return ns.revealHomeFsPath({
+        path: String(params.path ?? ""),
+      });
+    case "getEnvoyAiCommandCatalog":
+      return ns.getEnvoyAiCommandCatalog();
     case "restartOpenClaw":
       return ns.restartOpenClaw();
     case "getPiStatus":

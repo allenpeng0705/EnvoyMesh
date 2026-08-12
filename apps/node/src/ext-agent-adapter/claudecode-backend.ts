@@ -13,7 +13,8 @@
  *      fresh session.
  *   2. Call `query({ prompt, options })`, get back an `AsyncIterable<SDKMessage>`.
  *   3. Iterate the stream:
- *      - `system/init` carries the `session_id` we cache for next time.
+ *      - `system/init` carries the `session_id` we cache for next time,
+ *        and optional `slash_commands` (cached for Ext Agent catalog).
  *      - `assistant` messages carry streamed `text` blocks (we discard
  *        these for chat-bridge use — only the final result matters).
  *      - `result` (subtype `success` / `error_*`) is the terminal message;
@@ -32,9 +33,11 @@
  *
  * The SDK has no separate process to supervise, so this backend
  * intentionally does NOT use `DaemonSupervisor` (55A). Probe is
- * "SDK loadable + ANTHROPIC_API_KEY set" — cheap, no network round-trip.
+ * "SDK loadable + (ANTHROPIC_API_KEY **or** `claude auth` OAuth login)" —
+ * cheap; OAuth check shells out to `claude auth status` with a short TTL cache.
  */
 
+import { spawn } from "node:child_process";
 import type { ExtAgentBackend } from "./types.js";
 // `query` is the only export we use at runtime; types come from
 // `sdk.d.ts` via the package's exports map. Top-level type-only import
@@ -45,6 +48,12 @@ import type {
   Query,
   SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import {
+  augmentPathForExtAgentBins,
+  resolveExtAgentBinary,
+} from "./resolve-ext-agent-binary.js";
+import { getExtAgentSessionModel } from "./session-model-store.js";
+import { getExtAgentProjectPathCwd } from "./project-path-store.js";
 
 // ---------------------------------------------------------------------------
 // Options
@@ -102,6 +111,11 @@ export interface ClaudeCodeBackendOptions {
    * backend consumes (system/init → assistant → result).
    */
   queryFn?: (params: { prompt: string; options?: Options }) => Query;
+  /**
+   * Override auth readiness (API key **or** `claude auth` OAuth).
+   * Tests stub this to avoid spawning the real CLI.
+   */
+  authReady?: () => Promise<boolean>;
 }
 
 // ---------------------------------------------------------------------------
@@ -136,9 +150,108 @@ function isAbortError(err: unknown): boolean {
   );
 }
 
+const AUTH_CACHE_TTL_MS = 30_000;
+let authCache: { at: number; ok: boolean } | null = null;
+
+/**
+ * True when Claude Code can authenticate: either `ANTHROPIC_API_KEY` is
+ * set, or `claude auth status` reports `loggedIn` (browser OAuth — the
+ * common path for interactive installs).
+ */
+export async function isClaudeCodeAuthReady(opts?: {
+  apiKey?: string;
+  command?: string;
+  timeoutMs?: number;
+  /** Bypass the process-wide TTL cache (tests). */
+  skipCache?: boolean;
+}): Promise<boolean> {
+  const key = (opts?.apiKey ?? process.env.ANTHROPIC_API_KEY)?.trim();
+  if (key) return true;
+
+  if (!opts?.skipCache && authCache && Date.now() - authCache.at < AUTH_CACHE_TTL_MS) {
+    return authCache.ok;
+  }
+
+  const requested = opts?.command ?? "claude";
+  const command = resolveExtAgentBinary(requested) ?? requested;
+  const timeoutMs = opts?.timeoutMs ?? 3_000;
+  const ok = await new Promise<boolean>((resolve) => {
+    let settled = false;
+    const done = (v: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(v);
+    };
+    let proc;
+    try {
+      proc = spawn(command, ["auth", "status"], {
+        env: augmentPathForExtAgentBins(process.env),
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch {
+      done(false);
+      return;
+    }
+    let stdout = "";
+    proc.stdout?.setEncoding("utf8");
+    proc.stdout?.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    const timer = setTimeout(() => {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        // already gone
+      }
+      done(false);
+    }, timeoutMs);
+    timer.unref?.();
+    proc.on("error", () => {
+      clearTimeout(timer);
+      done(false);
+    });
+    proc.on("close", () => {
+      clearTimeout(timer);
+      try {
+        const parsed = JSON.parse(stdout.trim()) as { loggedIn?: unknown };
+        done(parsed.loggedIn === true);
+      } catch {
+        done(false);
+      }
+    });
+  });
+
+  if (!opts?.skipCache) {
+    authCache = { at: Date.now(), ok };
+  }
+  return ok;
+}
+
+/** @internal tests — clear the OAuth status cache. */
+export function _resetClaudeCodeAuthCacheForTests(): void {
+  authCache = null;
+}
+
 // ---------------------------------------------------------------------------
 // Implementation
 // ---------------------------------------------------------------------------
+
+/** Last `system/init.slash_commands` seen across Claude Code backends. */
+let cachedClaudeCodeSlashCommands: string[] = [];
+
+/** Slash commands captured from the most recent Claude Code `system/init`. */
+export function getCachedClaudeCodeSlashCommands(): string[] {
+  return [...cachedClaudeCodeSlashCommands];
+}
+
+function rememberClaudeCodeSlashCommands(raw: unknown): void {
+  if (!Array.isArray(raw)) return;
+  const next = raw
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .map((item) => item.trim());
+  if (next.length === 0) return;
+  cachedClaudeCodeSlashCommands = next;
+}
 
 export class ClaudeCodeBackend implements ExtAgentBackend {
   readonly kind = "claudecode" as const;
@@ -154,6 +267,7 @@ export class ClaudeCodeBackend implements ExtAgentBackend {
   private readonly queryFnOverride:
     | ((params: { prompt: string; options?: Options }) => Query)
     | undefined;
+  private readonly authReadyFn: () => Promise<boolean>;
   /** `sessionKey → claude session_id` cache. Lost on restart. */
   private readonly sessionIds = new Map<string, string>();
   /**
@@ -180,6 +294,13 @@ export class ClaudeCodeBackend implements ExtAgentBackend {
         : false;
     this.disableTools = opts.disableTools ?? CLAUDE_DEFAULTS.disableTools;
     this.queryFnOverride = opts.queryFn;
+    // Test queryFn mode: only the API key counts unless authReady is stubbed.
+    // Production: API key **or** `claude auth` OAuth login.
+    this.authReadyFn =
+      opts.authReady ??
+      (opts.queryFn
+        ? async () => Boolean(this.apiKey?.trim())
+        : () => isClaudeCodeAuthReady({ apiKey: this.apiKey }));
     // Only kick off the SDK loader when there's no queryFn override.
     // Tests that supply a queryFn can run without the SDK installed.
     this.sdkLoader = opts.queryFn ? undefined : loadSdk();
@@ -195,9 +316,9 @@ export class ClaudeCodeBackend implements ExtAgentBackend {
       throw new Error("claudecode ask(): sessionKey is required");
     }
 
-    if (!this.apiKey) {
+    if (!(await this.authReadyFn())) {
       throw new Error(
-        "claudecode ask(): ANTHROPIC_API_KEY is not set. Export it on the EnvoyMesh node (or pass `apiKey` to createClaudeCodeBackend()).",
+        "claudecode ask(): not authenticated. Run `claude auth login` once, or set ANTHROPIC_API_KEY in the home-node environment.",
       );
     }
 
@@ -226,8 +347,8 @@ export class ClaudeCodeBackend implements ExtAgentBackend {
 
     try {
       const options: Options = {
-        model: this.model,
-        cwd: this.cwd,
+        model: getExtAgentSessionModel("claudecode", sessionKey) ?? this.model,
+        cwd: getExtAgentProjectPathCwd("claudecode") ?? this.cwd,
         abortController: ac,
         permissionMode: this.permissionMode,
         allowDangerouslySkipPermissions: this.allowDangerouslySkipPermissions,
@@ -250,6 +371,12 @@ export class ClaudeCodeBackend implements ExtAgentBackend {
           // `SDKSystemMessage.session_id` is the canonical session id
           // for the resumed conversation. We cache it for next time.
           sessionId = m.session_id;
+          // Live slash menu from Claude Code (overlay for Ext Agent catalog).
+          if ("slash_commands" in m) {
+            rememberClaudeCodeSlashCommands(
+              (m as { slash_commands?: unknown }).slash_commands,
+            );
+          }
         } else if (m.type === "result") {
           // `SDKResultMessage` is `SDKResultSuccess | SDKResultError`.
           // Success carries `result: string`; errors carry `errors: string[]`.
@@ -296,19 +423,16 @@ export class ClaudeCodeBackend implements ExtAgentBackend {
 
   /**
    * Cheap readiness probe. Returns `true` iff the SDK is loadable AND
-   * `ANTHROPIC_API_KEY` is set (or a `queryFn` override is supplied,
-   * in which case the SDK isn't loaded at all). The actual network
-   * roundtrip is left to `ask()` (avoids waking the model just for
-   * a `/status` poll).
+   * auth is ready (`ANTHROPIC_API_KEY` **or** `claude auth` OAuth).
+   * With a `queryFn` override (tests), only the apiKey / authReady
+   * stub is checked. The actual model roundtrip is left to `ask()`.
    */
   async probe(): Promise<boolean> {
-    if (this.queryFnOverride) {
-      // Test mode — assume the override is healthy.
-      return !!this.apiKey;
-    }
     try {
+      if (!(await this.authReadyFn())) return false;
+      if (this.queryFnOverride) return true;
       const sdk = await this.sdkLoader;
-      return !!this.apiKey && !!sdk;
+      return !!sdk;
     } catch {
       return false;
     }
@@ -354,4 +478,13 @@ export function createClaudeCodeBackend(
 export const _test = {
   isAbortError,
   loadSdk,
+  isClaudeCodeAuthReady,
+  _resetClaudeCodeAuthCacheForTests,
+  getCachedClaudeCodeSlashCommands,
+  _setCachedClaudeCodeSlashCommandsForTests(commands: string[]): void {
+    cachedClaudeCodeSlashCommands = [...commands];
+  },
+  _resetCachedClaudeCodeSlashCommandsForTests(): void {
+    cachedClaudeCodeSlashCommands = [];
+  },
 };

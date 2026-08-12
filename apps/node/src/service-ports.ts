@@ -90,3 +90,32 @@ export function devServicePortsConfigured(): boolean {
     Boolean(process.env.OPENCLAW_PORT?.trim())
   );
 }
+
+/**
+ * Port the bridge HTTP server actually listens on for this process.
+ *
+ * When `ENVOYMESH_BRIDGE_PORT` / `ENVOYMESH_PORT_OFFSET` is set (e.g.
+ * `npm run node:dev:4030` → bridge :4031), that wins over a stale
+ * `listenPort: 3031` in `bridge-config.json`. Ext Agent sidecars must
+ * POST replies here — otherwise Codex finishes the turn but the reply
+ * is sent to a dead :3031 and the chat stays silent.
+ */
+export function effectiveBridgeListenPort(configured?: number): number {
+  const envRaw = process.env.ENVOYMESH_BRIDGE_PORT?.trim();
+  if (envRaw) {
+    const n = Number.parseInt(envRaw, 10);
+    if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;
+  }
+  if (process.env.ENVOYMESH_PORT_OFFSET?.trim()) {
+    return BRIDGE_HTTP_PORT;
+  }
+  if (
+    typeof configured === "number" &&
+    Number.isFinite(configured) &&
+    configured >= 1024 &&
+    configured <= 65535
+  ) {
+    return configured;
+  }
+  return BRIDGE_HTTP_PORT;
+}

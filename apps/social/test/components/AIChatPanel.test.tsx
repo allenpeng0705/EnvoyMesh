@@ -5,6 +5,7 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { AIChatPanel } from "../../src/components/views/AIChatPanel.js";
+import { setEnvoyAiInflight } from "../../src/lib/envoy-ai-inflight.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
 const runOwnerAgentTurn = vi.fn();
@@ -38,6 +39,20 @@ const listPendingApprovals = vi.fn().mockResolvedValue([]);
 const getNodeConfig = vi.fn().mockResolvedValue({});
 const generateMeshIntelligenceReport = vi.fn();
 const saveWebSearchEnabled = vi.fn();
+const getEnvoyAiCommandCatalog = vi.fn().mockResolvedValue({
+  agentId: "envoyai",
+  agentName: "EnvoyAI",
+  commands: [
+    { slash: "/help", summary: "help", intercept: "envoy", source: "static" },
+  ],
+  catalogVersion: "1",
+  fetchedAt: new Date().toISOString(),
+});
+const getOpenClawStatus = vi.fn().mockResolvedValue({
+  enabled: true,
+  running: true,
+  url: "http://127.0.0.1:18789",
+});
 
 const mockNodeService = {
   runOwnerAgentTurn,
@@ -52,13 +67,20 @@ const mockNodeService = {
   getNodeConfig,
   generateMeshIntelligenceReport,
   saveWebSearchEnabled,
+  getEnvoyAiCommandCatalog,
+  getOpenClawStatus,
   on,
 };
 
 let storedHistory: Array<Record<string, unknown>> = [];
 
 let nodeConfig = {
-  modelProviders: { mode: "mock" as const, modelName: "test-model" },
+  modelProviders: {
+    mode: "openai-compatible" as const,
+    presetId: "openai" as const,
+    modelName: "gpt-4o-mini",
+    apiKey: "test-key",
+  },
 };
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
@@ -85,6 +107,7 @@ afterEach(() => {
   vi.clearAllMocks();
   activityHandlers.clear();
   chatMessageHandlers.clear();
+  setEnvoyAiInflight(false);
 });
 
 beforeEach(() => {
@@ -92,7 +115,14 @@ beforeEach(() => {
   localStorage.clear();
   nodeStatus = "running";
   storedHistory = [];
-  nodeConfig = { modelProviders: { mode: "mock", modelName: "test-model" } };
+  nodeConfig = {
+    modelProviders: {
+      mode: "openai-compatible",
+      presetId: "openai",
+      modelName: "gpt-4o-mini",
+      apiKey: "test-key",
+    },
+  };
   listChatHistory.mockImplementation(async () => storedHistory);
   deleteChatMessage.mockResolvedValue({ ok: true });
   clearChatHistory.mockResolvedValue({ deletedCount: 0 });
@@ -139,6 +169,13 @@ describe("AIChatPanel", () => {
 
     const input = screen.getByPlaceholderText(/Ask Envoy AI anything/i);
     fireEvent.change(input, { target: { value: "list my library files" } });
+    await waitFor(() => {
+      const send = screen.getByRole("button", { name: /^Send$/i }) as HTMLButtonElement;
+      expect((screen.getByPlaceholderText(/Ask Envoy AI anything/i) as HTMLTextAreaElement).value).toBe(
+        "list my library files",
+      );
+      expect(send.disabled).toBe(false);
+    });
     fireEvent.click(screen.getByRole("button", { name: /^Send$/i }));
 
     await waitFor(() => {
@@ -158,6 +195,9 @@ describe("AIChatPanel", () => {
 
     const input = screen.getByPlaceholderText(/Ask Envoy AI anything/i);
     fireEvent.change(input, { target: { value: "hello" } });
+    await waitFor(() => {
+      expect((screen.getByPlaceholderText(/Ask Envoy AI anything/i) as HTMLTextAreaElement).value).toBe("hello");
+    });
     fireEvent.click(screen.getByRole("button", { name: /^Send$/i }));
 
     expect(await screen.findByText(/Node is still starting/i)).toBeDefined();
@@ -173,6 +213,9 @@ describe("AIChatPanel", () => {
 
     const input = screen.getByPlaceholderText(/Ask Envoy AI anything/i);
     fireEvent.change(input, { target: { value: "who has golden" } });
+    await waitFor(() => {
+      expect((screen.getByRole("button", { name: /^Send$/i }) as HTMLButtonElement).disabled).toBe(false);
+    });
     fireEvent.click(screen.getByRole("button", { name: /^Send$/i }));
 
     expect(await screen.findByText(/Error: Node not initialized/i)).toBeDefined();
@@ -220,6 +263,9 @@ describe("AIChatPanel", () => {
 
     const input = screen.getByPlaceholderText(/Ask Envoy AI anything/i);
     fireEvent.change(input, { target: { value: "find quarterly report" } });
+    await waitFor(() => {
+      expect((screen.getByRole("button", { name: /^Send$/i }) as HTMLButtonElement).disabled).toBe(false);
+    });
     fireEvent.click(screen.getByRole("button", { name: /^Send$/i }));
 
     expect(await screen.findByText(/Started document acquisition/i)).toBeDefined();
@@ -271,6 +317,9 @@ describe("AIChatPanel", () => {
 
     const input = screen.getByPlaceholderText(/Ask Envoy AI anything/i);
     fireEvent.change(input, { target: { value: "find hiking friends" } });
+    await waitFor(() => {
+      expect((screen.getByRole("button", { name: /^Send$/i }) as HTMLButtonElement).disabled).toBe(false);
+    });
     fireEvent.click(screen.getByRole("button", { name: /^Send$/i }));
 
     expect(await screen.findByText(/Send draft reply/i)).toBeDefined();
@@ -319,6 +368,9 @@ describe("AIChatPanel", () => {
 
     const input = screen.getByPlaceholderText(/Ask Envoy AI anything/i);
     fireEvent.change(input, { target: { value: "find a rust expert" } });
+    await waitFor(() => {
+      expect((screen.getByRole("button", { name: /^Send$/i }) as HTMLButtonElement).disabled).toBe(false);
+    });
     fireEvent.click(screen.getByRole("button", { name: /^Send$/i }));
 
     expect(await screen.findByText(/Started capability provider job/i)).toBeDefined();

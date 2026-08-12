@@ -27,6 +27,11 @@ import { createOpenHumanSupervisedBackend } from "./supervised-openhuman-backend
 import { createCursorAgentBackend } from "./cursor-agent-backend.js";
 import { createAiderBackend } from "./aider-backend.js";
 import { createMmxBackend } from "./mmx-backend.js";
+import { getExtAgentSessionModel } from "./session-model-store.js";
+import {
+  fetchOpenAiCompatibleModels,
+  type ExtAgentModelListEntry,
+} from "./model-list.js";
 
 /**
  * Phase 55E — when `true`, `createBackend("hermes" | "openhuman")`
@@ -777,6 +782,35 @@ function openHumanAuthError(
   );
 }
 
+export function defaultHermesModel(): string {
+  return process.env.HERMES_API_MODEL?.trim() || "hermes-agent";
+}
+
+export function defaultOpenHumanModel(): string {
+  return process.env.OPENHUMAN_API_MODEL?.trim() || "openhuman";
+}
+
+export function defaultClaudeCodeModel(): string {
+  return process.env.CLAUDE_CODE_MODEL?.trim() || "claude-sonnet-4-5";
+}
+
+export async function listHermesModels(): Promise<ExtAgentModelListEntry[]> {
+  return fetchOpenAiCompatibleModels({
+    url: `${hermesApiBase()}/v1/models`,
+    headers: hermesAuthHeaders(),
+    cacheKey: "hermes-v1-models",
+  });
+}
+
+export async function listOpenHumanModels(): Promise<ExtAgentModelListEntry[]> {
+  if (openHumanTransport() !== "v1") return [];
+  return fetchOpenAiCompatibleModels({
+    url: `${openHumanHttpBase()}/v1/models`,
+    headers: openHumanV1AuthHeaders(),
+    cacheKey: "openhuman-v1-models",
+  });
+}
+
 export function createHermesBackend(): ExtAgentBackend {
   const base = hermesApiBase();
   return {
@@ -795,6 +829,8 @@ export function createHermesBackend(): ExtAgentBackend {
     },
     async ask(text, ownerKey) {
       const sid = sessionId(ownerKey);
+      const model =
+        getExtAgentSessionModel("hermes", ownerKey) ?? defaultHermesModel();
       let res: Response;
       try {
         res = await fetch(`${base}/v1/chat/completions`, {
@@ -805,7 +841,7 @@ export function createHermesBackend(): ExtAgentBackend {
             "X-Hermes-Session-Key": sid,
           },
           body: JSON.stringify({
-            model: process.env.HERMES_API_MODEL?.trim() || "hermes-agent",
+            model,
             messages: [{ role: "user", content: text }],
           }),
           signal: AbortSignal.timeout(HERMES_TIMEOUT_MS),
@@ -845,16 +881,18 @@ export function createOpenHumanBackend(): ExtAgentBackend {
         return false;
       }
     },
-    async ask(text) {
+    async ask(text, sessionKey) {
       const mode = openHumanTransport();
       if (mode === "v1") {
         const key = openHumanV1ApiKey();
         if (!key) throw openHumanMissingCredsError("v1", `${base}/v1/chat/completions`);
+        const model =
+          getExtAgentSessionModel("openhuman", sessionKey) ?? defaultOpenHumanModel();
         const res = await fetch(`${base}/v1/chat/completions`, {
           method: "POST",
           headers: openHumanV1AuthHeaders(),
           body: JSON.stringify({
-            model: process.env.OPENHUMAN_API_MODEL?.trim() || "openhuman",
+            model,
             messages: [{ role: "user", content: text }],
           }),
           signal: AbortSignal.timeout(OPENHUMAN_TIMEOUT_MS),

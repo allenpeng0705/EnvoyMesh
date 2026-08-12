@@ -133,7 +133,19 @@ import type {
   CallSession,
   CallEvent,
   ExtAgentReachability,
+  ExtAgentCommandCatalog,
   ProbeExtAgentParams,
+  GetExtAgentCommandCatalogParams,
+  SetExtAgentSessionModelParams,
+  SetExtAgentSessionModelResult,
+  ExtAgentProjectPathResult,
+  GetExtAgentProjectPathParams,
+  HomeFsInfo,
+  ListHomeFsEntriesParams,
+  ListHomeFsEntriesResult,
+  SetExtAgentProjectPathParams,
+  PreviewHomeFsFileParams,
+  PreviewHomeFsFileResult,
 } from "@envoymesh/api";
 import { aiBotThreadKey, isAiBotThread, buildAiBotPrompt } from "@envoymesh/api";
 import type { DocumentAgentTurnResult, OwnerAgentTurnResult, CapabilityProviderJob, DocumentAcquisitionCandidate, DocumentAcquisitionJob, SocialProxySession } from "@envoymesh/api";
@@ -162,6 +174,7 @@ import {
   mergeExtAgentPresets,
   resolveActiveExtAgent,
   normalizeAgentCardMembership,
+  extAgentUsesProjectPath,
 } from "@envoymesh/api";
 import { resolveDidImportInput } from "@envoymesh/api/did-import";
 import type {
@@ -436,6 +449,7 @@ import {
 import { predictIntent } from "./intent-predictor.js";
 import { buildVaultIndex, assertPathInsideVault } from "@envoymesh/vault";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import {
   ENVOY_MESSAGE_PROTOCOL,
@@ -512,6 +526,33 @@ import {
 } from "./bridge/bridge-config-store.js";
 import { bridgeConfigToStatusFields } from "./bridge/config.js";
 import { probeExtAgentReachability } from "./ext-agent-adapter/probe.js";
+import { buildExtAgentCommandCatalog } from "./ext-agent-adapter/command-catalog.js";
+import { getCachedClaudeCodeSlashCommands } from "./ext-agent-adapter/claudecode-backend.js";
+import { buildEnvoyAiCommandCatalog } from "./envoy-ai-command-catalog.js";
+import {
+  defaultClaudeCodeModel,
+  defaultHermesModel,
+  defaultOpenHumanModel,
+  listHermesModels,
+  listOpenHumanModels,
+  openHumanTransport,
+} from "./ext-agent-adapter/backends.js";
+import {
+  getExtAgentSessionModel,
+  setExtAgentSessionModel as writeExtAgentSessionModel,
+  supportsExtAgentSessionModel,
+} from "./ext-agent-adapter/session-model-store.js";
+import {
+  getExtAgentProjectPathCwd,
+  syncExtAgentProjectPathsFromAgents,
+} from "./ext-agent-adapter/project-path-store.js";
+import {
+  getHomeFsInfo as readHomeFsInfo,
+  listHomeFsEntries as readHomeFsEntries,
+  previewHomeFsFile as readHomeFsPreview,
+  resolveHomeFsDirectory,
+} from "./home-fs.js";
+import { runMmxMediaCommand as executeMmxMediaCommand } from "./mmx-media.js";
 import type { BridgeConfig } from "./bridge/config.js";
 import { forwardToAgent, receiveFromAgent } from "./bridge/index.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
@@ -519,6 +560,7 @@ import {
   coerceAgentNetworkWorkerEngine,
   type AgentNetworkWorkerEngine,
 } from "./agent-network-worker-engine.js";
+import { effectiveBridgeListenPort } from "./service-ports.js";
 
 import { executeTool, type MeshToolContext } from "./tool-registry.js";
 import { createMcpConsumerManager } from "./mcp-client-adapter.js";
@@ -1434,6 +1476,7 @@ class NodeServiceImpl implements NodeService {
         activeExtAgentId?: string;
         bridgeListenPort: number;
         bridgeSecret?: string;
+        forceRestart?: boolean;
       }) => Promise<void>)
     | null = null;
   private _relayBookProvider: (() => Array<{ relayId: string; region?: string; addrs: string[] }>) | null = null;
@@ -4809,6 +4852,28 @@ class NodeServiceImpl implements NodeService {
     return fromSession || OWNER_FAMILY_PROFILE_ID;
   }
 
+  /**
+   * Session key used by Ext Agent `ask()` / bridge `fromOwnerId`.
+   * Must stay in sync with {@link sendToBridge}'s `humanSenderOwnerId`.
+   */
+  private _bridgeAskSessionKey(): string {
+    const ownerId = this._profile?.owner?.ownerId?.trim() ?? "";
+    const profileId = this._callerFamilyProfileId();
+    const isOwnerCaller =
+      getRpcCaller()?.isOwnerProfile ?? profileId === OWNER_FAMILY_PROFILE_ID;
+    return (isOwnerCaller ? ownerId : profileId).trim();
+  }
+
+  /**
+   * Whether `/model` session override is honored for this agent right now.
+   * OpenHuman only supports it on the OpenAI-compatible `/v1` transport.
+   */
+  private _extAgentSupportsSessionModel(agentId: string): boolean {
+    if (!supportsExtAgentSessionModel(agentId)) return false;
+    if (agentId === "openhuman") return openHumanTransport() === "v1";
+    return true;
+  }
+
   /** Display name for the current RPC caller (family profile or owner HumanProfile). */
   private async _callerFamilyDisplayName(): Promise<string> {
     const profileId = this._callerFamilyProfileId();
@@ -8144,12 +8209,28 @@ class NodeServiceImpl implements NodeService {
 
   private _refreshBridgeStatusFromConfig(bridgeCfg: BridgeConfig): void {
     const fields = bridgeConfigToStatusFields(bridgeCfg);
+    const activeId = fields.activeExtAgentId?.trim();
+    const prevActiveCwd = activeId
+      ? getExtAgentProjectPathCwd(activeId)
+      : undefined;
+    syncExtAgentProjectPathsFromAgents(fields.extAgents);
+    const nextActiveCwd =
+      activeId && extAgentUsesProjectPath(activeId)
+        ? getExtAgentProjectPathCwd(activeId)
+        : undefined;
+    const activeProjectPathChanged =
+      (prevActiveCwd ?? "") !== (nextActiveCwd ?? "");
     const current = this._bridgeStatus;
     if (!current) return;
+    // Env port overrides (node:dev:4030 → bridge :4031) beat a stale
+    // listenPort in bridge-config.json so Ext Agent sidecars reply to
+    // the live listener, not a dead :3031.
+    const listenPort = effectiveBridgeListenPort(fields.listenPort);
+    const liveCfg: BridgeConfig = { ...bridgeCfg, listenPort };
     // Push agentUrl/name into the running bridge so chat forwards immediately
     // (no node restart). Listen port / enabled / secret use in-process rebind.
     try {
-      this._bridgeUpdateLiveConfig?.(bridgeCfg);
+      this._bridgeUpdateLiveConfig?.(liveCfg);
     } catch (err) {
       console.warn(
         "[bridge] live Ext Agent update failed:",
@@ -8160,14 +8241,21 @@ class NodeServiceImpl implements NodeService {
       ...current,
       agentUrl: fields.agentUrl,
       agentName: fields.agentName,
-      listenPort: fields.listenPort,
+      listenPort,
       activeExtAgentId: fields.activeExtAgentId,
       extAgents: fields.extAgents,
     });
-    void this._syncExtAgentSidecarFromStatus(bridgeCfg);
+    // Settings / updateNodeConfig can change projectPath without going through
+    // setExtAgentProjectPath — force-restart so Codex/Claude cwd takes effect.
+    void this._syncExtAgentSidecarFromStatus(liveCfg, {
+      forceRestart: activeProjectPathChanged,
+    });
   }
 
-  private _syncExtAgentSidecarFromStatus(bridgeCfg?: BridgeConfig): void {
+  private _syncExtAgentSidecarFromStatus(
+    bridgeCfg?: BridgeConfig,
+    opts?: { forceRestart?: boolean },
+  ): void {
     const snap = this._bridgeStatus;
     if (!this._extAgentSidecarSyncer) return;
     void this._extAgentSidecarSyncer({
@@ -8175,8 +8263,11 @@ class NodeServiceImpl implements NodeService {
       activeExtAgentId: bridgeCfg
         ? bridgeConfigToStatusFields(bridgeCfg).activeExtAgentId
         : snap?.activeExtAgentId,
-      bridgeListenPort: snap?.listenPort ?? bridgeCfg?.listenPort ?? 3031,
+      bridgeListenPort: effectiveBridgeListenPort(
+        snap?.listenPort ?? bridgeCfg?.listenPort,
+      ),
       bridgeSecret: bridgeCfg?.secret,
+      ...(opts?.forceRestart ? { forceRestart: true } : {}),
     }).catch((err) => {
       console.warn(
         "[ext-agent] sidecar sync failed:",
@@ -8518,6 +8609,9 @@ class NodeServiceImpl implements NodeService {
   }
 
   setBridgeStatus(status: BridgeStatus): void {
+    if (status.extAgents) {
+      syncExtAgentProjectPathsFromAgents(status.extAgents);
+    }
     this._bridgeStatus = status;
     this.emit("bridge:status", status);
   }
@@ -8545,6 +8639,7 @@ class NodeServiceImpl implements NodeService {
       activeExtAgentId?: string;
       bridgeListenPort: number;
       bridgeSecret?: string;
+      forceRestart?: boolean;
     }) => Promise<void>,
   ): void {
     this._extAgentSidecarSyncer = syncer;
@@ -9057,6 +9152,226 @@ class NodeServiceImpl implements NodeService {
     const agentName = active?.name ?? agentId;
     const agentUrl = active?.url ?? status.agentUrl ?? "";
     return probeExtAgentReachability({ agentId, agentName, agentUrl });
+  }
+
+  /**
+   * Per-agent slash catalog for Ext Agent chat autocomplete.
+   * Uses static baselines; claudecode overlays cached `system/init.slash_commands`.
+   */
+  async getExtAgentCommandCatalog(
+    params?: GetExtAgentCommandCatalogParams,
+  ): Promise<ExtAgentCommandCatalog> {
+    const status = this.getBridgeStatusSnapshot() ?? (await this.getBridgeStatus());
+    const agents = mergeExtAgentPresets(status.extAgents);
+    const requested = params?.agentId?.trim();
+    const active =
+      (requested
+        ? agents.find((a) => a.id === requested)
+        : undefined) ??
+      resolveActiveExtAgent(agents, status.activeExtAgentId) ??
+      agents[0];
+    const agentId = active?.id ?? requested ?? "pi";
+    const agentName = active?.name ?? agentId;
+    const sessionKey = this._bridgeAskSessionKey();
+    const sessionModelOk = this._extAgentSupportsSessionModel(agentId);
+    const sessionModel =
+      sessionKey && sessionModelOk
+        ? getExtAgentSessionModel(agentId, sessionKey)
+        : undefined;
+
+    let models: Array<{ id: string; label?: string }> | undefined;
+    let defaultModel: string | undefined;
+    if (agentId === "hermes") {
+      defaultModel = defaultHermesModel();
+      models = await listHermesModels();
+    } else if (agentId === "openhuman") {
+      defaultModel = defaultOpenHumanModel();
+      models = sessionModelOk ? await listOpenHumanModels() : undefined;
+    } else if (agentId === "claudecode") {
+      defaultModel = defaultClaudeCodeModel();
+      // Claude Code does not expose /v1/models; common aliases for autocomplete.
+      models = [
+        { id: "sonnet", label: "Sonnet (alias)" },
+        { id: "opus", label: "Opus (alias)" },
+        { id: "haiku", label: "Haiku (alias)" },
+        { id: defaultModel },
+      ];
+    }
+
+    return buildExtAgentCommandCatalog({
+      agentId,
+      agentName,
+      dynamicSlashCommands:
+        agentId === "claudecode" ? getCachedClaudeCodeSlashCommands() : undefined,
+      models,
+      sessionModel,
+      defaultModel,
+      supportsSessionModel: sessionModelOk,
+    });
+  }
+
+  async setExtAgentSessionModel(
+    params: SetExtAgentSessionModelParams,
+  ): Promise<SetExtAgentSessionModelResult> {
+    const status = this.getBridgeStatusSnapshot() ?? (await this.getBridgeStatus());
+    const agents = mergeExtAgentPresets(status.extAgents);
+    const requested = params.agentId?.trim();
+    const active =
+      (requested
+        ? agents.find((a) => a.id === requested)
+        : undefined) ??
+      resolveActiveExtAgent(agents, status.activeExtAgentId) ??
+      agents[0];
+    const agentId = active?.id ?? requested ?? "pi";
+    const supports = this._extAgentSupportsSessionModel(agentId);
+    if (!supports) {
+      return { agentId, supportsSessionModel: false };
+    }
+    const sessionKey = this._bridgeAskSessionKey();
+    if (!sessionKey) {
+      throw new Error("setExtAgentSessionModel: caller session identity is not ready");
+    }
+    const sessionModel = writeExtAgentSessionModel(agentId, sessionKey, params.model);
+    return {
+      agentId,
+      supportsSessionModel: true,
+      ...(sessionModel ? { sessionModel } : {}),
+    };
+  }
+
+  async getHomeFsInfo(): Promise<HomeFsInfo> {
+    requireOwnerProfile("browse home folders");
+    return readHomeFsInfo();
+  }
+
+  async listHomeFsEntries(
+    params?: ListHomeFsEntriesParams,
+  ): Promise<ListHomeFsEntriesResult> {
+    requireOwnerProfile("browse home folders");
+    return readHomeFsEntries(params ?? {});
+  }
+
+  async getExtAgentProjectPath(
+    params?: GetExtAgentProjectPathParams,
+  ): Promise<ExtAgentProjectPathResult> {
+    requireOwnerProfile("read Ext Agent project folder");
+    const status = this.getBridgeStatusSnapshot() ?? (await this.getBridgeStatus());
+    const agents = mergeExtAgentPresets(status.extAgents);
+    const requested = params?.agentId?.trim();
+    const active =
+      (requested
+        ? agents.find((a) => a.id === requested)
+        : undefined) ??
+      resolveActiveExtAgent(agents, status.activeExtAgentId) ??
+      agents[0];
+    const agentId = active?.id ?? requested ?? "pi";
+    const usesProjectPath = extAgentUsesProjectPath(agentId);
+    if (!usesProjectPath) {
+      return { agentId, usesProjectPath: false };
+    }
+    const projectPath =
+      getExtAgentProjectPathCwd(agentId) ??
+      resolveHomeFsDirectory(active?.projectPath) ??
+      undefined;
+    return {
+      agentId,
+      usesProjectPath: true,
+      ...(projectPath ? { projectPath } : {}),
+    };
+  }
+
+  async setExtAgentProjectPath(
+    params: SetExtAgentProjectPathParams,
+  ): Promise<ExtAgentProjectPathResult> {
+    requireOwnerProfile("set Ext Agent project folder");
+    const status = this.getBridgeStatusSnapshot() ?? (await this.getBridgeStatus());
+    const agents = mergeExtAgentPresets(status.extAgents);
+    const requested = params.agentId?.trim();
+    const active =
+      (requested
+        ? agents.find((a) => a.id === requested)
+        : undefined) ??
+      resolveActiveExtAgent(agents, status.activeExtAgentId) ??
+      agents[0];
+    const agentId = active?.id ?? requested ?? "pi";
+    if (!extAgentUsesProjectPath(agentId)) {
+      return { agentId, usesProjectPath: false };
+    }
+
+    const raw = params.projectPath;
+    let next: string | undefined;
+    if (raw == null || String(raw).trim() === "") {
+      next = undefined;
+    } else {
+      const resolved = resolveHomeFsDirectory(String(raw));
+      if (!resolved) {
+        throw new Error(`Project folder is missing or is not a directory: ${raw}`);
+      }
+      next = resolved;
+    }
+
+    const updated = agents.map((agent) => {
+      if (agent.id !== agentId) return agent;
+      if (next === undefined) {
+        const { projectPath: _drop, ...rest } = agent;
+        return rest;
+      }
+      return { ...agent, projectPath: next };
+    });
+
+    const bridgeCfg = await applyExtAgentSettingsPatch(this._profileDir, {
+      extAgents: updated,
+      activeExtAgentId: status.activeExtAgentId,
+    });
+    // Refresh compares previous store cwd → new config and force-restarts
+    // when the active agent's projectPath changed (Settings and chat share this).
+    this._refreshBridgeStatusFromConfig(bridgeCfg);
+
+    return {
+      agentId,
+      usesProjectPath: true,
+      ...(next ? { projectPath: next } : {}),
+    };
+  }
+
+  async previewHomeFsFile(
+    params: PreviewHomeFsFileParams,
+  ): Promise<PreviewHomeFsFileResult> {
+    requireOwnerProfile("preview home files");
+    return readHomeFsPreview(params);
+  }
+
+  async runMmxMediaCommand(
+    params: import("@envoymesh/api").RunMmxMediaCommandParams,
+  ): Promise<import("@envoymesh/api").RunMmxMediaCommandResult> {
+    requireOwnerProfile("run MiniMax media commands");
+    return executeMmxMediaCommand(this._profileDir, params);
+  }
+
+  async revealHomeFsPath(
+    params: import("@envoymesh/api").RevealHomeFsPathParams,
+  ): Promise<import("@envoymesh/api").RevealHomeFsPathResult> {
+    requireOwnerProfile("reveal home path");
+    const raw = typeof params.path === "string" ? params.path.trim() : "";
+    if (!raw) return { ok: false, error: "path required" };
+    const abs = resolve(raw);
+    if (!existsSync(abs)) {
+      return { ok: false, error: `Path not found: ${abs}` };
+    }
+    try {
+      await revealPathInFileManager(abs);
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  /** EnvoyAI (OpenClaw) slash catalog for Social / EnvoyGo composers. */
+  async getEnvoyAiCommandCatalog(): Promise<ExtAgentCommandCatalog> {
+    return buildEnvoyAiCommandCatalog();
   }
 
   /**

@@ -167,7 +167,11 @@ import type {
   PairWithHomeNodeParams,
   PairWithHomeNodeResult,
   ExtAgentReachability,
+  ExtAgentCommandCatalog,
   ProbeExtAgentParams,
+  GetExtAgentCommandCatalogParams,
+  SetExtAgentSessionModelParams,
+  SetExtAgentSessionModelResult,
   PairThinClientParams,
   PairThinClientResult,
   RepairSessionProfileParams,
@@ -2495,6 +2499,81 @@ export interface NodeService {
    * Does not block switching — used for in-chat banners and post-switch hints.
    */
   probeExtAgent(params?: ProbeExtAgentParams): Promise<ExtAgentReachability>;
+
+  /**
+   * Slash-command catalog for Ext Agent chat autocomplete (per active agent).
+   * HomeClaw returns an empty command list with a limitation note.
+   */
+  getExtAgentCommandCatalog(
+    params?: GetExtAgentCommandCatalogParams,
+  ): Promise<ExtAgentCommandCatalog>;
+
+  /**
+   * Set or clear the Ext Agent session model override for the home owner
+   * (used by `/model` in Ext Agent chat). Only hermes / openhuman / claudecode
+   * honor the override today.
+   */
+  setExtAgentSessionModel(
+    params: SetExtAgentSessionModelParams,
+  ): Promise<SetExtAgentSessionModelResult>;
+
+  /**
+   * Home-node filesystem info for folder browsing (owner only).
+   * Cross-platform: macOS / Linux / Windows.
+   */
+  getHomeFsInfo(): Promise<import("./ext-agent.js").HomeFsInfo>;
+
+  /**
+   * List files/dirs under a path on the home node (owner only).
+   */
+  listHomeFsEntries(
+    params?: import("./ext-agent.js").ListHomeFsEntriesParams,
+  ): Promise<import("./ext-agent.js").ListHomeFsEntriesResult>;
+
+  /**
+   * Read the project folder for an Ext Agent (owner only).
+   */
+  getExtAgentProjectPath(
+    params?: import("./ext-agent.js").GetExtAgentProjectPathParams,
+  ): Promise<import("./ext-agent.js").ExtAgentProjectPathResult>;
+
+  /**
+   * Set or clear the project folder for an Ext Agent (owner only).
+   * Ignored for agents that do not use projectPath.
+   */
+  setExtAgentProjectPath(
+    params: import("./ext-agent.js").SetExtAgentProjectPathParams,
+  ): Promise<import("./ext-agent.js").ExtAgentProjectPathResult>;
+
+  /**
+   * Preview a file on the home node for EnvoyGo Home files (owner only).
+   * Returns HTML / text / base64 suitable for an embedded WebView.
+   */
+  previewHomeFsFile(
+    params: import("./ext-agent.js").PreviewHomeFsFileParams,
+  ): Promise<import("./ext-agent.js").PreviewHomeFsFileResult>;
+
+  /**
+   * Run MiniMax MMX-CLI media / status commands on the home node (owner only).
+   * File outputs land under `{profileDir}/mmx-output/`.
+   */
+  runMmxMediaCommand(
+    params: import("./ext-agent.js").RunMmxMediaCommandParams,
+  ): Promise<import("./ext-agent.js").RunMmxMediaCommandResult>;
+
+  /**
+   * Reveal an absolute path on the home node in the OS file manager (owner only).
+   * Used for MiniMax mmx-output review and similar home-local files.
+   */
+  revealHomeFsPath(
+    params: import("./ext-agent.js").RevealHomeFsPathParams,
+  ): Promise<import("./ext-agent.js").RevealHomeFsPathResult>;
+
+  /**
+   * Slash-command catalog for EnvoyAI (built-in OpenClaw) chat autocomplete.
+   * EnvoyMesh-owned verbs + hybrid expand prompts for mesh tools.
+   */
+  getEnvoyAiCommandCatalog(): Promise<ExtAgentCommandCatalog>;
 
   /**
    * Force-restart the built-in OpenClaw gateway (kills the child, waits for

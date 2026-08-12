@@ -94,6 +94,15 @@ class ChatBubble extends StatelessWidget {
                     }
                   },
                 )
+              else if (message.text != null &&
+                  message.text!.startsWith('data:audio/'))
+                Text(
+                  '[audio preview — see path below]',
+                  style: TextStyle(
+                    color: colorScheme.onSurface,
+                    fontStyle: FontStyle.italic,
+                  ),
+                )
               else
                 Text(
                   message.text ?? '',

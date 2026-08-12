@@ -18,7 +18,10 @@ import { ContentView, type ContentTab } from "./components/views/ContentView.js"
 import { H2AChannelView } from "./components/views/H2AChannelView.js";
 import { ChainsView } from "./components/views/ChainsView.js";
 import { AutoReplyPausedNotifier } from "./components/AutoReplyPausedNotifier.js";
-import { GettingStartedGuide } from "./components/GettingStartedGuide.js";
+import {
+  GettingStartedGuide,
+  type GuideDestination,
+} from "./components/GettingStartedGuide.js";
 import { CallSessionProvider } from "./context/CallSessionContext.js";
 import {
   getTauriOpenclawHealStatus,
@@ -466,6 +469,28 @@ export function App() {
     }
   };
 
+  const navigateGuide = (dest: GuideDestination) => {
+    switch (dest.kind) {
+      case "view":
+        navigateTo(dest.view);
+        return;
+      case "assistant":
+        navigateTo("assistant");
+        return;
+      case "terminals":
+        setCurrentView("chat");
+        setChatPanelMode("terminals");
+        return;
+      case "content":
+        navigateTo("content");
+        return;
+      case "settings":
+        setSettingsTab(dest.tab);
+        navigateTo("settings");
+        return;
+    }
+  };
+
   useEffect(() => {
     const onOpenBrowser = () => {
       navigateTo("content");
@@ -682,7 +707,7 @@ export function App() {
         {guideOpen && (
           <GettingStartedGuide
             onClose={() => setGuideOpen(false)}
-            onNavigate={navigateTo}
+            onNavigate={navigateGuide}
           />
         )}
       </div>

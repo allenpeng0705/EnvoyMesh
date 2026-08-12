@@ -123,25 +123,40 @@ export const it = mergeMessages(en, {
       body: "I messaggi diretti e le chat di gruppo vivono qui. Le chiamate sono peer-to-peer — niente server centrale, niente nuove porte.",
       cta: "Apri Chat",
     },
-    agent: {
-      title: "Il tuo agente IA",
-      body: "La tua IA personale gira su questo dispositivo, segue la tua policy, e può parlare con gli agenti degli altri per coordinare le attività. Mandagli un messaggio come a qualsiasi contatto.",
-      cta: "Apri chat IA",
+    envoyai: {
+      title: "EnvoyAI",
+      body: "Il tuo assistente OpenClaw integrato su questo nodo home. Può usare strumenti mesh, skill e approvazioni. Digita / nel composer per aiuto e guide alle funzioni.",
+      cta: "Apri EnvoyAI",
+    },
+    extagent: {
+      title: "Ext Agent",
+      body: "Opzionalmente inoltra la chat a un agente esterno (Codex, Claude Code, Hermes, ecc.). Scegline uno in Impostazioni → IA — ogni agente ha i propri comandi /.",
+      cta: "Apri impostazioni IA",
+    },
+    terminals: {
+      title: "Terminal",
+      body: "Apri una shell sul nodo home da Chat → Terminal. Terminal Agent può proporre comandi in modalità Manuale o Agent — /goal e /watch restano in quel pannello.",
+      cta: "Apri Terminal",
+    },
+    pi: {
+      title: "Agente di coding Pi",
+      body: "Pi è un agente di coding locale in una cartella progetto (modifica file, shell). Nessuno strumento mesh — avvialo da Chat → Terminal o Nuovo Pi.",
+      cta: "Apri Terminal",
     },
     chains: {
-      title: "Catene multi-agente",
-      body: "Apri Catene per scomporre un obiettivo (come 'cerca e poi riassumi') tra gli agenti dei tuoi contatti collegati. Fanno offerte, tu assegni, e i risultati si fondono in un unico report.",
-      cta: "Apri Catene",
+      title: "Team jobs e rete agenti",
+      body: "Suddividi un obiettivo tra agenti collegati (Team jobs). Per ufficio Wi-Fi: su ogni PC apri Team jobs → Gestisci worker → Abilita team LAN ufficio, poi copia il token flotta condiviso. Attiva Agent Network + LAN Auto-Bond. Chiedi /team a EnvoyAI per la guida LAN completa.",
+      cta: "Apri Team jobs",
     },
-    contacts: {
-      title: "Contatti e fiducia",
-      body: "Ogni contatto ha un livello di fiducia (pubblico, presentato, amico) che controlla ciò a cui può accedere. Aumenta la fiducia quando conosci meglio qualcuno.",
-      cta: "Vedi contatti",
+    family: {
+      title: "Rete famiglia",
+      body: "Crea profili home privati (Mamma/Papà) e invita i telefoni di famiglia con QR. I dispositivi famiglia hanno solo EnvoyAI e chat famiglia — non contatti mesh, vault o terminal.",
+      cta: "Apri impostazioni Famiglia",
     },
-    settings: {
-      title: "Impostazioni",
-      body: "Configura il tuo provider di modelli, la rete, la rete di agenti e la privacy. Aggiungi anche una foto del profilo e gli interessi qui.",
-      cta: "Apri Impostazioni",
+    content: {
+      title: "Contenuti",
+      body: "Pubblica un Feed breve per i contatti collegati, post Blog più lunghi sulla mesh, esplora i peer in Esplora e gestisci i file del vault in I miei file.",
+      cta: "Apri Contenuti",
     },
     privacy: {
       title: "Il controllo è tuo",

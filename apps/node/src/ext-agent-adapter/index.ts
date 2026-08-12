@@ -88,3 +88,25 @@ export {
   createMmxBackend,
   type MmxBackendOptions,
 } from "./mmx-backend.js";
+export {
+  buildExtAgentCommandCatalog,
+  formatExtAgentCommandHelp,
+  mergeExtAgentCommandDescriptors,
+  EXT_AGENT_COMMAND_CATALOG_VERSION,
+} from "./command-catalog.js";
+export { getCachedClaudeCodeSlashCommands } from "./claudecode-backend.js";
+export {
+  getExtAgentSessionModel,
+  setExtAgentSessionModel,
+  supportsExtAgentSessionModel,
+  EXT_AGENT_SESSION_MODEL_AGENTS,
+} from "./session-model-store.js";
+export {
+  getExtAgentProjectPathCwd,
+  setExtAgentProjectPathInStore,
+  syncExtAgentProjectPathsFromAgents,
+} from "./project-path-store.js";
+export {
+  fetchOpenAiCompatibleModels,
+  parseOpenAiModelsResponse,
+} from "./model-list.js";

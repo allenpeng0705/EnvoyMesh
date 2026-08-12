@@ -123,25 +123,40 @@ export const fr = mergeMessages(en, {
       body: "Les messages directs et les chats de groupe sont ici. Les appels se font en peer-to-peer — pas de serveur central, pas de nouveaux ports.",
       cta: "Ouvrir le chat",
     },
-    agent: {
-      title: "Votre agent IA",
-      body: "Votre IA personnelle fonctionne sur cet appareil, suit votre politique, et peut parler aux agents des autres pour coordonner des tâches. Envoyez-lui un message comme à n'importe quel contact.",
-      cta: "Ouvrir le chat IA",
+    envoyai: {
+      title: "EnvoyAI",
+      body: "Votre assistant OpenClaw intégré sur ce nœud domestique. Il peut utiliser les outils mesh, compétences et approbations. Tapez / dans le composeur pour l'aide et les guides de fonctions.",
+      cta: "Ouvrir EnvoyAI",
+    },
+    extagent: {
+      title: "Ext Agent",
+      body: "Optionnellement relayer le chat vers un agent externe (Codex, Claude Code, Hermes, etc.). Choisissez-en un sous Paramètres → IA — chaque agent a ses propres commandes /.",
+      cta: "Ouvrir les réglages IA",
+    },
+    terminals: {
+      title: "Terminaux",
+      body: "Ouvrez un shell sur le nœud domestique via Chat → Terminaux. Terminal Agent peut proposer des commandes en mode Manuel ou Agent — /goal et /watch restent dans ce panneau.",
+      cta: "Ouvrir les terminaux",
+    },
+    pi: {
+      title: "Agent de code Pi",
+      body: "Pi est un agent de code local dans un dossier projet (éditer des fichiers, shell). Pas d'outils mesh — démarrez-le via Chat → Terminaux ou Nouveau Pi.",
+      cta: "Ouvrir les terminaux",
     },
     chains: {
-      title: "Chaînes multi-agents",
-      body: "Ouvrez Chaînes pour décomposer un objectif (comme « rechercher puis résumer ») entre les agents de vos contacts liés. Ils enchérissent, vous attribuez, et les résultats fusionnent en un rapport.",
-      cta: "Ouvrir les chaînes",
+      title: "Team jobs & réseau d'agents",
+      body: "Répartissez un objectif entre agents liés (Team jobs). Pour un bureau Wi-Fi : sur chaque machine, Team jobs → Gérer les workers → Activer l'équipe LAN bureau, puis copier le jeton de flotte partagé. Cela active Agent Network + LAN Auto-Bond. Demandez /team à EnvoyAI pour le guide LAN complet.",
+      cta: "Ouvrir Team jobs",
     },
-    contacts: {
-      title: "Contacts et confiance",
-      body: "Chaque contact a un niveau de confiance (public, présenté, ami) qui contrôle ce qu'il peut accéder. Améliorez la confiance quand vous connaissez mieux quelqu'un.",
-      cta: "Voir les contacts",
+    family: {
+      title: "Réseau familial",
+      body: "Créez des profils domestiques privés (Maman/Papa) et invitez les téléphones familiaux par QR. Les appareils familiaux n'ont qu'EnvoyAI et le chat familial — pas les contacts mesh, le coffre ni le terminal.",
+      cta: "Ouvrir les réglages Famille",
     },
-    settings: {
-      title: "Paramètres",
-      body: "Configurez votre fournisseur de modèle, réseau, réseau d'agents et confidentialité. Ajoutez aussi une photo de profil et des intérêts ici.",
-      cta: "Ouvrir les paramètres",
+    content: {
+      title: "Contenu",
+      body: "Publiez un Feed court pour les contacts liés, des articles Blog plus longs sur le mesh, parcourez les pairs dans Explorer, et gérez les fichiers du coffre sous Mes fichiers.",
+      cta: "Ouvrir Contenu",
     },
     privacy: {
       title: "Vous avez le contrôle",

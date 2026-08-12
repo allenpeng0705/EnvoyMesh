@@ -19,6 +19,12 @@
 
 import { spawn } from "node:child_process";
 import { InstallMissingError } from "./daemon-supervisor.js";
+import {
+  augmentPathForExtAgentBins,
+  isExtAgentBinaryAvailable,
+  resolveExtAgentBinary,
+} from "./resolve-ext-agent-binary.js";
+import { getExtAgentProjectPathCwd } from "./project-path-store.js";
 import type { ExtAgentBackend, ExtAgentSidecarKind } from "./types.js";
 
 export interface OneShotCliBackendOptions {
@@ -75,7 +81,7 @@ export abstract class OneShotCliBackend implements ExtAgentBackend {
   constructor(opts: OneShotCliBackendOptions) {
     this.command = opts.command;
     this.defaultArgs = opts.args ?? [];
-    this.env = { ...process.env, ...(opts.env ?? {}) };
+    this.env = augmentPathForExtAgentBins({ ...process.env, ...(opts.env ?? {}) });
     this.requestTimeoutMs = opts.requestTimeoutMs ?? 60_000;
     this.installHint =
       opts.installHint ?? `Install the \`${opts.command}\` CLI and ensure it is on PATH.`;
@@ -106,10 +112,13 @@ export abstract class OneShotCliBackend implements ExtAgentBackend {
       });
     }
     const args = [...this.defaultArgs, ...this.buildArgs(text, sessionKey)];
+    const resolvedCmd = resolveExtAgentBinary(this.command) ?? this.command;
+    const cwd = getExtAgentProjectPathCwd(this.kind);
     return new Promise<string>((resolve, reject) => {
-      const proc = spawn(this.command, args, {
+      const proc = spawn(resolvedCmd, args, {
         env: this.env,
         stdio: ["ignore", "pipe", "pipe"],
+        ...(cwd ? { cwd } : {}),
       });
       let stdout = "";
       let stderr = "";
@@ -257,45 +266,16 @@ function truncateForError(s: string, max = 200): string {
 }
 
 /**
- * Inline `command -v <bin>` (POSIX) / `where <bin>` (Windows) check.
- * Inlined here (not imported from `probe.ts`) to break a circular
- * import: `probe.ts` imports `createBackend` from `backends.ts` which
- * imports this file — pulling `defaultBinaryOnPath` back through
- * `probe.ts` would resolve to `undefined` at module-init time.
+ * Inline PATH + well-known-bin check. Prefer
+ * {@link isExtAgentBinaryAvailable} so GUI-stripped PATH still finds
+ * `npm i -g` installs under `~/.npm-global/bin`.
  *
- * Behaviour matches `defaultBinaryOnPath` in `probe.ts:74`:
- * - `true`  → binary is on PATH
+ * Behaviour matches `defaultBinaryOnPath` in `probe.ts`:
+ * - `true`  → binary is available
  * - `false` → binary is missing
- * - `null`  → check failed for an unrelated reason (timeout / spawn
- *   error / unknown platform). Callers surface this as
- *   `installState: "unknown"`.
+ * - `null`  → check failed for an unrelated reason (unused here —
+ *   sync resolver returns boolean only)
  */
 function checkBinaryOnPath(command: string): Promise<boolean | null> {
-  return new Promise<boolean | null>((resolve) => {
-    const isWin = process.platform === "win32";
-    const checkCmd = isWin ? "where" : "command";
-    const checkArgs = isWin ? [command] : ["-v", command];
-    let resolved = false;
-    const done = (v: boolean | null) => {
-      if (resolved) return;
-      resolved = true;
-      resolve(v);
-    };
-    const t = setTimeout(() => done(null), 2_000);
-    t.unref?.();
-    try {
-      const proc = spawn(checkCmd, checkArgs, { stdio: "ignore" });
-      proc.on("error", () => {
-        clearTimeout(t);
-        done(null);
-      });
-      proc.on("close", (code) => {
-        clearTimeout(t);
-        done(code === 0);
-      });
-    } catch {
-      clearTimeout(t);
-      done(null);
-    }
-  });
+  return Promise.resolve(isExtAgentBinaryAvailable(command));
 }

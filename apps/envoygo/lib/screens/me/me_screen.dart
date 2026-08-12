@@ -17,6 +17,7 @@ import '../browser/browser_screen.dart';
 import '../chains/active_chains_screen.dart';
 import '../chains/recent_chains_screen.dart';
 import '../chains/start_chain_screen.dart';
+import '../files/home_files_screen.dart';
 import '../pairing/pairing_scan_screen.dart';
 import '../profile/profile_screen.dart';
 import '../settings/ai_engine_settings_screen.dart';
@@ -565,6 +566,20 @@ class _MeScreenState extends ConsumerState<MeScreen> {
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const BrowserScreen()),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.folder_open),
+              title: const Text('Home files'),
+              subtitle: const Text('Browse and preview files on your home computer'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const HomeFilesScreen()),
                 );
               },
             ),

@@ -121,38 +121,53 @@ export const en = {
   },
   guide: {
     title: "Welcome to Envoy",
-    lede: "Here's the 30-second tour. You can reopen this anytime from the ? button in the top bar.",
-    reopenHint: "Tip: reopen this guide anytime from the ? button in the top bar.",
+    lede: "A quick tour of the major features. Reopen anytime from the ? button in the top bar — or ask EnvoyAI with /about, /terminal, /team, and more.",
+    reopenHint: "Tip: reopen this guide anytime from the ? button. In EnvoyAI, type / for feature commands.",
     done: "Got it",
     discover: {
       title: "Find people",
-      body: "Open Discover to search the mesh by name, interest, or location. We already searched for people who share your interests — say hello to connect.",
+      body: "Open Discover to search the mesh by name, interest, or location. Say hello to bond — each contact gets a trust tier that controls what they can access.",
       cta: "Open Discover",
     },
     chat: {
       title: "Chat with friends",
-      body: "Direct messages and group chats live here. Calls happen peer-to-peer — no central server, no new ports.",
+      body: "Direct messages, group chats, and calls live in Chat. Everything is peer-to-peer — no central server, no new ports.",
       cta: "Open Chat",
     },
-    agent: {
-      title: "Your AI agent",
-      body: "Your personal AI runs on this device, follows your policy, and can talk to other people's agents to coordinate tasks. Message it like any contact.",
-      cta: "Open AI chat",
+    envoyai: {
+      title: "EnvoyAI",
+      body: "Your built-in OpenClaw assistant on this home node. It can use mesh tools, skills, and approvals. Type / in the composer for help and feature guides.",
+      cta: "Open EnvoyAI",
+    },
+    extagent: {
+      title: "Ext Agent",
+      body: "Optionally bridge chat to an external agent (Codex, Claude Code, Hermes, and more). Pick one under Settings → AI — each agent has its own / commands.",
+      cta: "Open AI settings",
+    },
+    terminals: {
+      title: "Terminals",
+      body: "Open a shell on your home node from Chat → Terminals. Terminal Agent can propose commands in Manual or Agent mode — its /goal and /watch commands stay in that panel.",
+      cta: "Open Terminals",
+    },
+    pi: {
+      title: "Pi coding agent",
+      body: "Pi is a local coding agent that works in a project folder (edit files, run shell). It does not use mesh tools — start it from Chat → Terminals or New Pi.",
+      cta: "Open Terminals",
     },
     chains: {
-      title: "Team jobs",
-      body: "Open Team jobs to split a goal (like 'research then summarize') across your bonded contacts' agents. They bid, you award, and results merge into one report.",
+      title: "Team jobs & Agent Network",
+      body: "Split a goal across bonded agents (Team jobs). For same-Wi-Fi offices: on each desk machine open Team jobs → Manage workers → Enable office LAN team, then copy the shared fleet token to the others. That joins Agent Network + LAN Auto-Bond so peers bond at direct trust and become recruitable workers. Ask EnvoyAI /team for the full LAN setup.",
       cta: "Open Team jobs",
     },
-    contacts: {
-      title: "Contacts & trust",
-      body: "Each contact has a trust tier (public, introduced, friend) that controls what they can access. Upgrade trust when you know someone better.",
-      cta: "See contacts",
+    family: {
+      title: "Family Network",
+      body: "Create private home profiles (Mom/Dad) and invite family phones with a QR. Family devices get EnvoyAI and family chat only — not mesh contacts, vault, or terminal.",
+      cta: "Open Family settings",
     },
-    settings: {
-      title: "Settings",
-      body: "Configure your model provider, network, agent network, and privacy. Add a profile photo and interests here too.",
-      cta: "Open Settings",
+    content: {
+      title: "Content",
+      body: "Publish a short Feed for bonded contacts, longer Blog posts on the mesh, browse peers in Explore, and manage vault files under My Files.",
+      cta: "Open Content",
     },
     privacy: {
       title: "You're in control",

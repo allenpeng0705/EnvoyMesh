@@ -36,6 +36,17 @@ import type { TFunction } from "../../context/I18nContext.js";
 import { ConfigureAiBanner } from "./ConfigureAiBanner.js";
 import { SkillManagerModal } from "../SkillManagerModal.js";
 import type { PendingApprovalSummary } from "@envoymesh/api";
+import type { ExtAgentCommandCatalog } from "@envoymesh/api";
+import {
+  formatEnvoyAiSlashHelp,
+  parseEnvoyAiSlashCommand,
+} from "../../lib/envoy-ai-slash-commands.js";
+import {
+  formatMmxMediaResult,
+  parseMmxMediaCommand,
+} from "../../lib/ext-agent-slash-commands.js";
+import { MmxMediaResultBlock } from "../MmxMediaResultBlock.js";
+import type { RunMmxMediaCommandResult } from "@envoymesh/api";
 
 interface AiMessageTurnMeta extends Pick<
   OwnerAgentTurnResult,
@@ -55,6 +66,7 @@ interface AiMessage {
   timestamp: string;
   turn?: AiMessageTurnMeta;
   chainReport?: { chainId: string; report: ChainReport };
+  mmxResult?: RunMmxMediaCommandResult;
 }
 
 export interface AIChatPanelProps {
@@ -290,6 +302,8 @@ export function AIChatPanel({
   const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalSummary[]>([]);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [showApprovals, setShowApprovals] = useState(false);
+  const [envoyAiSlashCatalog, setEnvoyAiSlashCatalog] =
+    useState<ExtAgentCommandCatalog | null>(null);
   const draftRef = useRef<ReturnType<typeof createAssistantDraftCrdt> | null>(null);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reloadSeqRef = useRef(0);
@@ -302,9 +316,25 @@ export function AIChatPanel({
       .then(setPendingApprovals)
       .catch(() => setPendingApprovals([]));
     // EnvoyAI always keeps built-in web search on (no UI toggle).
-    void (nodeService as { saveWebSearchEnabled?: (enabled: boolean) => Promise<unknown> })
-      .saveWebSearchEnabled?.(true)
-      .catch(() => {});
+    void Promise.resolve(
+      (nodeService as { saveWebSearchEnabled?: (enabled: boolean) => Promise<unknown> })
+        .saveWebSearchEnabled?.(true),
+    ).catch(() => {});
+  }, [nodeService]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void nodeService
+      .getEnvoyAiCommandCatalog()
+      .then((catalog) => {
+        if (!cancelled) setEnvoyAiSlashCatalog(catalog);
+      })
+      .catch(() => {
+        if (!cancelled) setEnvoyAiSlashCatalog(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [nodeService]);
 
   const reloadEnvoyAiHistory = useCallback(async (turn?: OwnerAgentTurnResult) => {
@@ -351,9 +381,11 @@ export function AIChatPanel({
         );
         const pendingLocal = prev.filter(
           (m) =>
-            m.role === "user" &&
-            !serverIds.has(m.id) &&
-            !serverUserTexts.has(m.text.trim()),
+            (m.role === "user" &&
+              !serverIds.has(m.id) &&
+              !serverUserTexts.has(m.text.trim())) ||
+            Boolean(m.mmxResult) ||
+            m.id.startsWith("local-mmx-"),
         );
         const merged = [...converted, ...pendingLocal].sort(
           (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
@@ -523,6 +555,165 @@ export function AIChatPanel({
     if (!question.trim() || isAiLoading) return;
 
     pinToBottom();
+
+    const mmxParsed = parseMmxMediaCommand(question);
+    if (mmxParsed) {
+      if (!mmxParsed.ok) {
+        toast.showToast(mmxParsed.error, "error");
+        return;
+      }
+      draftRef.current?.setPlainText("");
+      toast.showToast(`Running MiniMax /${mmxParsed.params.kind}…`, "info");
+      const userMsg: AiMessage = {
+        id: `local-mmx-user-${crypto.randomUUID()}`,
+        role: "user",
+        text: question.trim(),
+        timestamp: new Date().toISOString(),
+      };
+      setAiMessages((prev) => [...prev, userMsg]);
+      setEnvoyAiInflight(true);
+      try {
+        const result = await nodeService.runMmxMediaCommand(mmxParsed.params);
+        setAiMessages((prev) => [
+          ...prev,
+          {
+            id: `local-mmx-${crypto.randomUUID()}`,
+            role: "ai",
+            text: formatMmxMediaResult(result),
+            timestamp: new Date().toISOString(),
+            mmxResult: result,
+          },
+        ]);
+        if (!result.ok) {
+          toast.showToast(
+            result.error ??
+              `MiniMax /${result.kind} failed. Install mmx-cli and run mmx auth login.`,
+            "error",
+          );
+        } else {
+          toast.showToast(
+            result.path ? `Saved: ${result.path}` : "MiniMax done",
+            "success",
+          );
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        toast.showToast(
+          `MiniMax media failed: ${msg}. Install: npm install -g mmx-cli`,
+          "error",
+        );
+        setAiMessages((prev) => [
+          ...prev,
+          {
+            id: `local-mmx-${crypto.randomUUID()}`,
+            role: "ai",
+            text: `MiniMax failed: ${msg}`,
+            timestamp: new Date().toISOString(),
+            mmxResult: {
+              ok: false,
+              kind: mmxParsed.params.kind,
+              error: msg,
+            },
+          },
+        ]);
+      } finally {
+        setEnvoyAiInflight(false);
+      }
+      return;
+    }
+
+    const slash = parseEnvoyAiSlashCommand(question);
+    if (slash) {
+      if (slash.type === "help") {
+        const help =
+          envoyAiSlashCatalog != null
+            ? formatEnvoyAiSlashHelp(envoyAiSlashCatalog)
+            : "Slash commands unavailable — reconnect to your home node and try /help again.";
+        toast.showToast(help, "info");
+        draftRef.current?.setPlainText("");
+        return;
+      }
+      if (slash.type === "clear") {
+        draftRef.current?.setPlainText("");
+        handleClearAiChat();
+        return;
+      }
+      if (slash.type === "skills") {
+        draftRef.current?.setPlainText("");
+        setSkillsOpen(true);
+        return;
+      }
+      if (slash.type === "approvals") {
+        draftRef.current?.setPlainText("");
+        setShowApprovals(true);
+        return;
+      }
+      if (slash.type === "model") {
+        draftRef.current?.setPlainText("");
+        toast.showToast(
+          "Change the EnvoyAI model in Settings → AI (model provider). Session /model override is not wired for OpenClaw yet.",
+          "info",
+        );
+        return;
+      }
+      if (slash.type === "status") {
+        draftRef.current?.setPlainText("");
+        void (async () => {
+          try {
+            const status = await nodeService.getOpenClawStatus();
+            const state = status.running
+              ? "running"
+              : status.enabled
+                ? "enabled but not running"
+                : "disabled";
+            toast.showToast(
+              `EnvoyAI / OpenClaw: ${state}${status.url ? ` (${status.url})` : ""}`,
+              "info",
+            );
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            toast.showToast(`Could not read OpenClaw status: ${msg}`, "error");
+          }
+        })();
+        return;
+      }
+      if (slash.type === "report") {
+        draftRef.current?.setPlainText("");
+        void (async () => {
+          setEnvoyAiInflight(true);
+          try {
+            const report = await nodeService.generateMeshIntelligenceReport();
+            setAiMessages((prev) => [
+              ...prev,
+              {
+                id: crypto.randomUUID(),
+                role: "user",
+                text: "/report",
+                timestamp: new Date().toISOString(),
+              },
+              {
+                id: crypto.randomUUID(),
+                role: "ai",
+                text: typeof report === "string" ? report : String(report),
+                timestamp: new Date().toISOString(),
+              },
+            ]);
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            toast.showToast(`Mesh report failed: ${msg}`, "error");
+          } finally {
+            setEnvoyAiInflight(false);
+          }
+        })();
+        return;
+      }
+      if (slash.type === "expand") {
+        // Fall through with expanded NL prompt for OpenClaw mesh tools.
+        question = slash.prompt;
+      } else if (slash.type === "unknown_slash") {
+        // Unknown /verb — still send as chat so OpenClaw can interpret if it wants.
+      }
+    }
 
     if (!assistantReady) {
       setAiMessages((prev) => [
@@ -838,6 +1029,8 @@ export function AIChatPanel({
                                 report={msg.chainReport.report}
                                 onOpenChains={onOpenChains}
                               />
+                            ) : msg.mmxResult ? (
+                              <MmxMediaResultBlock result={msg.mmxResult} />
                             ) : (
                               <AnswerRenderer
                                 text={msg.text}
@@ -921,6 +1114,7 @@ export function AIChatPanel({
           disabled={isAiLoading || !assistantReady}
           sendDisabled={isAiLoading || !assistantReady}
           autoFocus={active}
+          slashCommands={envoyAiSlashCatalog?.commands ?? []}
         />
       </footer>
       {confirm ? (

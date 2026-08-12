@@ -123,25 +123,40 @@ export const de = mergeMessages(en, {
       body: "Direktnachrichten und Gruppenchats sind hier. Anrufe laufen Peer-to-Peer — kein zentraler Server, keine neuen Ports.",
       cta: "Chat öffnen",
     },
-    agent: {
-      title: "Ihr KI-Agent",
-      body: "Ihre persönliche KI läuft auf diesem Gerät, folgt Ihrer Richtlinie und kann mit den Agenten anderer Leute sprechen, um Aufgaben zu koordinieren. Schreiben Sie ihm wie jedem Kontakt.",
-      cta: "KI-Chat öffnen",
+    envoyai: {
+      title: "EnvoyAI",
+      body: "Ihr integrierter OpenClaw-Assistent auf diesem Heimknoten. Er kann Mesh-Tools, Skills und Freigaben nutzen. Tippen Sie / im Composer für Hilfe und Funktionsleitfäden.",
+      cta: "EnvoyAI öffnen",
+    },
+    extagent: {
+      title: "Ext Agent",
+      body: "Optional Chat an einen externen Agenten weiterleiten (Codex, Claude Code, Hermes u. a.). Unter Einstellungen → KI wählen — jeder Agent hat eigene /-Befehle.",
+      cta: "KI-Einstellungen öffnen",
+    },
+    terminals: {
+      title: "Terminals",
+      body: "Öffnen Sie eine Shell auf dem Heimknoten unter Chat → Terminals. Terminal Agent kann Befehle im Manual- oder Agent-Modus vorschlagen — /goal und /watch bleiben in diesem Panel.",
+      cta: "Terminals öffnen",
+    },
+    pi: {
+      title: "Pi-Coding-Agent",
+      body: "Pi ist ein lokaler Coding-Agent in einem Projektordner (Dateien bearbeiten, Shell). Keine Mesh-Tools — starten Sie ihn unter Chat → Terminals oder Neues Pi.",
+      cta: "Terminals öffnen",
     },
     chains: {
-      title: "Multi-Agent-Ketten",
-      body: 'Öffnen Sie Ketten, um ein Ziel (wie „recherchieren, dann zusammenfassen") auf die Agenten Ihrer verbundenen Kontakte zu verteilen. Sie bieten, Sie vergeben, und Ergebnisse werden zu einem Bericht zusammengeführt.',
-      cta: "Ketten öffnen",
+      title: "Team jobs & Agentennetzwerk",
+      body: "Teilen Sie ein Ziel auf verbundene Agenten auf (Team jobs). Für Büro-WLAN: auf jedem Rechner Team jobs → Arbeiter verwalten → Office-LAN-Team aktivieren und den gemeinsamen Fleet-Token kopieren. Das aktiviert Agent Network + LAN Auto-Bond. Fragen Sie EnvoyAI /team für die vollständige LAN-Einrichtung.",
+      cta: "Team jobs öffnen",
     },
-    contacts: {
-      title: "Kontakte & Vertrauen",
-      body: "Jeder Kontakt hat eine Vertrauensstufe (öffentlich, empfohlen, Freund), die steuert, worauf er zugreifen kann. Stufen Sie Vertrauen hoch, wenn Sie jemanden besser kennen.",
-      cta: "Kontakte anzeigen",
+    family: {
+      title: "Familiennetzwerk",
+      body: "Private Heimprofile (Mama/Papa) anlegen und Familienhandys per QR einladen. Familiengeräte erhalten nur EnvoyAI und Familienchat — nicht Mesh-Kontakte, Tresor oder Terminal.",
+      cta: "Familieneinstellungen öffnen",
     },
-    settings: {
-      title: "Einstellungen",
-      body: "Konfigurieren Sie Ihren Modellanbieter, Ihr Netzwerk, Ihr Agenten-Netzwerk und Ihre Privatsphäre. Fügen Sie hier auch ein Profilfoto und Interessen hinzu.",
-      cta: "Einstellungen öffnen",
+    content: {
+      title: "Inhalt",
+      body: "Kurzer Feed für gebondete Kontakte, längere Blog-Beiträge im Mesh, Peers in Entdecken durchstöbern und Tresor-Dateien unter Meine Dateien verwalten.",
+      cta: "Inhalt öffnen",
     },
     privacy: {
       title: "Sie haben die Kontrolle",

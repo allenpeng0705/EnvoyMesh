@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../l10n/app_localizations.dart';
 import '../../ext_agent/ext_agent_presets.dart';
+import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
+import '../../providers/node_provider.dart';
 import '../../services/node_service_client.dart';
 import '../../utils/open_external_url.dart';
+import '../../widgets/home_folder_browser.dart';
 
 /// AI Engine settings — Ext Agent selection with bidirectional sync.
 ///
@@ -154,11 +156,78 @@ class _AiEngineSettingsScreenState
     }
   }
 
+  Future<void> _pickProjectFolder() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    if (!extAgentUsesProjectPath(_activeExtAgentId)) return;
+    final active = _activeAgent;
+    final current = active?['projectPath']?.toString();
+    final picked = await HomeFolderBrowser.open(
+      context,
+      client: client,
+      initialPath: current,
+    );
+    if (picked == null || !mounted) return;
+    try {
+      final result = await client.setExtAgentProjectPath(
+        agentId: _activeExtAgentId,
+        projectPath: picked,
+      );
+      if (!mounted) return;
+      final resolved = result['projectPath']?.toString();
+      setState(() {
+        _extAgents = _extAgents.map((agent) {
+          if (agent['id'] != _activeExtAgentId) return agent;
+          if (resolved == null || resolved.isEmpty) {
+            final next = Map<String, dynamic>.from(agent);
+            next.remove('projectPath');
+            return next;
+          }
+          return {...agent, 'projectPath': resolved};
+        }).toList();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
+  }
+
+  Future<void> _clearProjectFolder() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    if (!extAgentUsesProjectPath(_activeExtAgentId)) return;
+    try {
+      await client.setExtAgentProjectPath(
+        agentId: _activeExtAgentId,
+        projectPath: null,
+      );
+      if (!mounted) return;
+      setState(() {
+        _extAgents = _extAgents.map((agent) {
+          if (agent['id'] != _activeExtAgentId) return agent;
+          final next = Map<String, dynamic>.from(agent);
+          next.remove('projectPath');
+          return next;
+        }).toList();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final isOwner = ref.watch(nodeProvider).isOwnerProfile;
     final active = _activeAgent;
     final install = getExtAgentInstallInfo(_activeExtAgentId);
+    final projectPath = active?['projectPath']?.toString();
+    final usesProjectPath = extAgentUsesProjectPath(_activeExtAgentId);
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.meAiEngine),
@@ -170,7 +239,9 @@ class _AiEngineSettingsScreenState
           ),
         ],
       ),
-      body: _loading
+      body: !isOwner
+          ? Center(child: Text(l10n.chatAiDisabledFamily))
+          : _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? _ErrorView(message: _error!, onRetry: _load)
@@ -227,6 +298,36 @@ class _AiEngineSettingsScreenState
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
+                          ListTile(
+                            title: const Text('Project folder'),
+                            subtitle: Text(
+                              !usesProjectPath
+                                  ? 'Used when the active Ext Agent is Codex, Claude Code, Cursor, Aider, or MiniMax. Switch agent above to browse.'
+                                  : projectPath?.isNotEmpty == true
+                                      ? projectPath!
+                                      : 'Not set (home node default)',
+                              maxLines: 4,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: usesProjectPath
+                                ? Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (projectPath?.isNotEmpty == true)
+                                        IconButton(
+                                          tooltip: 'Clear',
+                                          icon: const Icon(Icons.clear),
+                                          onPressed: _clearProjectFolder,
+                                        ),
+                                      IconButton(
+                                        tooltip: 'Browse',
+                                        icon: const Icon(Icons.folder_open),
+                                        onPressed: _pickProjectFolder,
+                                      ),
+                                    ],
+                                  )
+                                : const Icon(Icons.folder_off_outlined),
+                          ),
                           ListTile(
                             title: Text(l10n.settingsHowToStart),
                             subtitle: Text(install.startHint),

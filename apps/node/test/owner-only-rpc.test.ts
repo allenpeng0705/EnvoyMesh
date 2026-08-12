@@ -25,6 +25,20 @@ describe("isOwnerOnlyRpcMethod", () => {
     expect(isOwnerOnlyRpcMethod("listTerminalSessions")).toBe(true)
   })
 
+  it("gates home folder browse + Ext Agent project path for family", () => {
+    for (const method of [
+      "getHomeFsInfo",
+      "listHomeFsEntries",
+      "getExtAgentProjectPath",
+      "setExtAgentProjectPath",
+      "previewHomeFsFile",
+      "runMmxMediaCommand",
+      "revealHomeFsPath",
+    ]) {
+      expect(isOwnerOnlyRpcMethod(method), method).toBe(true)
+    }
+  })
+
   it("allows family chat RPCs", () => {
     expect(isOwnerOnlyRpcMethod("sendFamilyMessage")).toBe(false)
     expect(isOwnerOnlyRpcMethod("listFamilyRooms")).toBe(false)

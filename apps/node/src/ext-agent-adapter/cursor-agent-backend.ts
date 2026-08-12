@@ -20,6 +20,7 @@ import {
   OneShotCliBackend,
   type OneShotCliBackendOptions,
 } from "./one-shot-cli-backend.js";
+import { getExtAgentProjectPathCwd } from "./project-path-store.js";
 import type { ExtAgentBackend } from "./types.js";
 
 const CURSOR_DEFAULTS = {
@@ -72,7 +73,10 @@ export class CursorAgentBackend extends OneShotCliBackend {
   }
 
   protected buildArgs(text: string, _sessionKey: string): string[] {
-    return ["--prompt", text, "--output", "json", ...this.extraArgs];
+    const args = ["--prompt", text, "--output", "json", ...this.extraArgs];
+    const workspace = getExtAgentProjectPathCwd("cursor");
+    if (workspace) args.push("--workspace", workspace);
+    return args;
   }
 
   protected parseOutput(

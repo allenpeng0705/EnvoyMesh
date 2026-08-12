@@ -4932,6 +4932,152 @@ You are the owner's personal AI assistant on EnvoyMesh.
       reachable: false,
       hint: "Home node is offline — Ext Agent reachability can only be checked on the home node.",
       checkedAt: new Date().toISOString(),
+      installState: "unknown",
+    };
+  }
+
+  async getExtAgentCommandCatalog(
+    params?: import("@envoymesh/api").GetExtAgentCommandCatalogParams,
+  ): Promise<import("@envoymesh/api").ExtAgentCommandCatalog> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      try {
+        return await this._homeRemoteCall<import("@envoymesh/api").ExtAgentCommandCatalog>(
+          "getExtAgentCommandCatalog",
+          (params ?? {}) as Record<string, unknown>,
+        );
+      } catch {
+        // fall through
+      }
+    }
+    const agentId = params?.agentId?.trim() || "pi";
+    return {
+      agentId,
+      agentName: agentId,
+      commands: [],
+      catalogVersion: "1",
+      fetchedAt: new Date().toISOString(),
+      limitations: [
+        "Home node is offline — Ext Agent slash commands are only available when paired.",
+      ],
+    };
+  }
+
+  async setExtAgentSessionModel(
+    params: import("@envoymesh/api").SetExtAgentSessionModelParams,
+  ): Promise<import("@envoymesh/api").SetExtAgentSessionModelResult> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      return await this._homeRemoteCall<import("@envoymesh/api").SetExtAgentSessionModelResult>(
+        "setExtAgentSessionModel",
+        params as Record<string, unknown>,
+      );
+    }
+    const agentId = params.agentId?.trim() || "pi";
+    return { agentId, supportsSessionModel: false };
+  }
+
+  async getHomeFsInfo(): Promise<import("@envoymesh/api").HomeFsInfo> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      return await this._homeRemoteCall<import("@envoymesh/api").HomeFsInfo>(
+        "getHomeFsInfo",
+        {},
+      );
+    }
+    throw new Error("Home node is offline — folder browse requires a paired home node.");
+  }
+
+  async listHomeFsEntries(
+    params?: import("@envoymesh/api").ListHomeFsEntriesParams,
+  ): Promise<import("@envoymesh/api").ListHomeFsEntriesResult> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      return await this._homeRemoteCall<import("@envoymesh/api").ListHomeFsEntriesResult>(
+        "listHomeFsEntries",
+        (params ?? {}) as Record<string, unknown>,
+      );
+    }
+    throw new Error("Home node is offline — folder browse requires a paired home node.");
+  }
+
+  async getExtAgentProjectPath(
+    params?: import("@envoymesh/api").GetExtAgentProjectPathParams,
+  ): Promise<import("@envoymesh/api").ExtAgentProjectPathResult> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      return await this._homeRemoteCall<import("@envoymesh/api").ExtAgentProjectPathResult>(
+        "getExtAgentProjectPath",
+        (params ?? {}) as Record<string, unknown>,
+      );
+    }
+    const agentId = params?.agentId?.trim() || "pi";
+    return { agentId, usesProjectPath: false };
+  }
+
+  async setExtAgentProjectPath(
+    params: import("@envoymesh/api").SetExtAgentProjectPathParams,
+  ): Promise<import("@envoymesh/api").ExtAgentProjectPathResult> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      return await this._homeRemoteCall<import("@envoymesh/api").ExtAgentProjectPathResult>(
+        "setExtAgentProjectPath",
+        params as Record<string, unknown>,
+      );
+    }
+    throw new Error("Home node is offline — cannot set Ext Agent project folder.");
+  }
+
+  async previewHomeFsFile(
+    params: import("@envoymesh/api").PreviewHomeFsFileParams,
+  ): Promise<import("@envoymesh/api").PreviewHomeFsFileResult> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      return await this._homeRemoteCall<import("@envoymesh/api").PreviewHomeFsFileResult>(
+        "previewHomeFsFile",
+        params as Record<string, unknown>,
+      );
+    }
+    throw new Error("Home node is offline — file preview requires a paired home node.");
+  }
+
+  async runMmxMediaCommand(
+    params: import("@envoymesh/api").RunMmxMediaCommandParams,
+  ): Promise<import("@envoymesh/api").RunMmxMediaCommandResult> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      return await this._homeRemoteCall<import("@envoymesh/api").RunMmxMediaCommandResult>(
+        "runMmxMediaCommand",
+        params as Record<string, unknown>,
+      );
+    }
+    throw new Error("Home node is offline — MiniMax media requires a paired home node.");
+  }
+
+  async revealHomeFsPath(
+    params: import("@envoymesh/api").RevealHomeFsPathParams,
+  ): Promise<import("@envoymesh/api").RevealHomeFsPathResult> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      return await this._homeRemoteCall<import("@envoymesh/api").RevealHomeFsPathResult>(
+        "revealHomeFsPath",
+        params as Record<string, unknown>,
+      );
+    }
+    throw new Error("Home node is offline — reveal requires a paired home node.");
+  }
+
+  async getEnvoyAiCommandCatalog(): Promise<import("@envoymesh/api").ExtAgentCommandCatalog> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      try {
+        return await this._homeRemoteCall<import("@envoymesh/api").ExtAgentCommandCatalog>(
+          "getEnvoyAiCommandCatalog",
+          {},
+        );
+      } catch {
+        // fall through
+      }
+    }
+    return {
+      agentId: "envoyai",
+      agentName: "EnvoyAI",
+      commands: [],
+      catalogVersion: "1",
+      fetchedAt: new Date().toISOString(),
+      limitations: [
+        "Home node is offline — EnvoyAI slash commands are only available when paired.",
+      ],
     };
   }
 
