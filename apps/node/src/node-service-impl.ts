@@ -8248,7 +8248,8 @@ class NodeServiceImpl implements NodeService {
       extAgents: fields.extAgents,
     });
     // Settings / updateNodeConfig can change projectPath without going through
-    // setExtAgentProjectPath — force-restart so Codex/Claude cwd takes effect.
+    // setExtAgentProjectPath — force-restart so coding agents + Hermes/OpenHuman
+    // spawn cwd takes effect.
     void this._syncExtAgentSidecarFromStatus(liveCfg, {
       forceRestart: activeProjectPathChanged,
     });

@@ -8,27 +8,26 @@
  * or `/rpc` endpoints, same auth headers — so the sidecar HTTP
  * contract is identical.
  *
- * Only active when `ENVOYMESH_EXT_AGENT_AUTOSTART=1` (default off).
- * OpenHuman users typically have `OpenHuman.app` running on the
- * desktop and don't want the node to spawn a CLI core that
- * conflicts with the desktop's `:7788` port. See `backends.ts` for
- * the env-var dispatch.
+ * Default on via `createBackend("openhuman")` (force off with
+ * `ENVOYMESH_EXT_AGENT_AUTOSTART=0`). Probe-first: if the HTTP core is
+ * already healthy (e.g. OpenHuman.app), we reuse it and do not spawn.
+ *
+ * Project folder: optional spawn `cwd` from {@link getExtAgentProjectPathCwd}
+ * (only applies when EnvoyMesh spawns the daemon).
  *
  * Note: the actual CLI subcommand is implementation-defined; the
  * default is `openhuman serve` which the OpenHuman CLI accepts as
  * a long-running core. Users can override `command` / `args` /
  * `env` via the constructor options.
  *
- * Pre-flight behavior: the supervisor's healthcheck is a cheap
- * HTTP GET to `${base}/health` (the same probe the existing
- * backend already does). Install card surfacing: `start()` rejects
- * with `InstallMissingError` if the binary is missing, which the
- * 55A.1 / 55D.1 install card paths surface.
+ * Install card surfacing: `start()` rejects with `InstallMissingError`
+ * if the binary is missing, which the 55A.1 / 55D.1 install card paths surface.
  */
 
 import { DaemonSupervisor, InstallMissingError } from "./daemon-supervisor.js";
 import type { ExtAgentBackend } from "./types.js";
 import { createOpenHumanBackend, openHumanHttpBase } from "./backends.js";
+import { getExtAgentProjectPathCwd } from "./project-path-store.js";
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -58,6 +57,8 @@ export interface OpenHumanSupervisedBackendOptions {
   args?: string[];
   /** Extra env vars; merged on top of `process.env`. */
   env?: NodeJS.ProcessEnv;
+  /** Working directory for a spawned core. Default: Ext Agent projectPath. */
+  cwd?: string;
   /** Override the supervisor entirely (for tests). */
   supervisor?: DaemonSupervisor;
   /**
@@ -130,6 +131,7 @@ export class OpenHumanSupervisedBackend implements ExtAgentBackend {
         command: opts.command ?? DEFAULT_OPENHUMAN_COMMAND,
         args: [...(opts.args ?? DEFAULT_OPENHUMAN_ARGS)],
         env: opts.env,
+        cwd: opts.cwd ?? getExtAgentProjectPathCwd("openhuman"),
         healthcheck: healthcheckOpenHuman,
         healthcheckIntervalMs: DEFAULT_HEALTHCHECK_INTERVAL_MS,
         healthcheckTimeoutMs: DEFAULT_HEALTHCHECK_TIMEOUT_MS,
@@ -159,14 +161,24 @@ export class OpenHumanSupervisedBackend implements ExtAgentBackend {
     }
     if (this.lastStartError) throw this.lastStartError;
 
-    // Short-circuit when the supervisor was already healthy — the
-    // real `DaemonSupervisor.start()` is a fast no-op in that case
-    // (early return when state.healthy && proc still running), but
-    // skipping the call entirely saves a microtask hop + makes
-    // test mocks deterministic.
+    // Probe-first: reuse OpenHuman.app / already-running core — no second spawn.
+    if (!this.wasEverHealthy) {
+      try {
+        const up = await this.inner.probe?.();
+        if (up) {
+          this.wasEverHealthy = true;
+          this.lastStartError = null;
+        }
+      } catch {
+        /* fall through to spawn */
+      }
+    }
+
     if (!this.wasEverHealthy) {
       try {
         await this.supervisor.start();
+        this.wasEverHealthy = true;
+        this.lastStartError = null;
       } catch (err) {
         this.lastStartError = err instanceof Error ? err : new Error(String(err));
         throw this.lastStartError;
@@ -179,6 +191,7 @@ export class OpenHumanSupervisedBackend implements ExtAgentBackend {
     try {
       const up = await this.inner.probe?.();
       if (up === false) return false;
+      if (up) this.wasEverHealthy = true;
       return true;
     } catch {
       return false;
@@ -188,7 +201,20 @@ export class OpenHumanSupervisedBackend implements ExtAgentBackend {
   async start(): Promise<void> {
     if (!this.supervisor) return;
     try {
+      const up = await this.inner.probe?.();
+      if (up) {
+        this.wasEverHealthy = true;
+        this.lastStartError = null;
+        return;
+      }
+    } catch {
+      /* fall through to spawn */
+    }
+    if (this.wasEverHealthy) return;
+    try {
       await this.supervisor.start();
+      this.wasEverHealthy = true;
+      this.lastStartError = null;
     } catch (err) {
       this.lastStartError = err instanceof Error ? err : new Error(String(err));
       throw this.lastStartError;

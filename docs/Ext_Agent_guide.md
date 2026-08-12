@@ -31,7 +31,7 @@ still rebind the bridge HTTP listener in-process).
 
 | | HomeClaw | Hermes | OpenHuman | Codex | Claude Code | Cursor CLI | Aider | MMX-CLI |
 |---|----------|--------|-----------|-------|-------------|------------|-------|---------|
-| Start with product | Start HomeClaw | `hermes gateway run` | OpenHuman.app **or** CLI core | `codex app-server` (auto) | SDK (auto) | `cursor-agent --prompt …` (auto) | `aider --message …` (auto) | `mmx text chat --message …` (auto) |
+| Start with product | Start HomeClaw | Auto (probe-first) **or** `hermes gateway run` | Auto (probe-first) **or** OpenHuman.app / CLI | `codex app-server` (auto) | SDK (auto) | `cursor-agent --prompt …` (auto) | `aider --message …` (auto) | `mmx text chat --message …` (auto) |
 | EnvoyMesh sidecar | No | Yes `:8020` | Yes `:8021` | Yes `:8023` (stdio bridge) | Yes `:8024` (in-proc) | Yes `:8025` (one-shot) | Yes `:8026` (one-shot) | Yes `:8027` (one-shot) |
 | Auth | Optional bridge secret | Hermes `API_SERVER_KEY` ↔ `HERMES_API_KEY` | `/v1` API key (auto) or `/rpc` `core.token` | `OPENAI_API_KEY` env | `ANTHROPIC_API_KEY` env | `cursor-agent login` (browser OAuth) | `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` | `mmx auth login --api-key …` |
 | Transport | HomeClaw channel | HTTP `:8642` | HTTP `:7788` | `codex` stdio JSON-RPC | `@anthropic-ai/claude-agent-sdk` | `cursor-agent` stdio one-shot | `aider` one-shot subprocess | `mmx` one-shot subprocess |
@@ -349,29 +349,31 @@ is down (missing `API_SERVER_KEY` / gateway not running) or auth mismatch.
 
 ### Autostart (Phase 55E)
 
-By default, the Hermes sidecar assumes the user runs their own
-`hermes gateway run` (or installed service) on `:8642`. If you'd
-rather have EnvoyMesh spawn it on demand, set
-`ENVOYMESH_EXT_AGENT_AUTOSTART=1` on the home node. The node will
-then lazily spawn `hermes gateway run` on the first chat message
-and respawn it on crash via the 55A `DaemonSupervisor`. Healthcheck
-is `GET :8642/v1/models`. Install-missing surfaces the same Install
-card as codex / claudecode (55A.1 + 55D.1).
+**Default on.** On the first Ext Agent chat ask, EnvoyMesh probe-first
+checks `GET :8642/v1/models`. If Hermes is already healthy (your own
+`hermes gateway run` / service), it reuses that gateway — no second
+spawn. If the core is down and the `hermes` CLI is on `$PATH`, it
+lazily spawns `hermes gateway run` and respawns on crash via the 55A
+`DaemonSupervisor`. Install-missing surfaces the same Install card as
+codex / claudecode (55A.1 + 55D.1).
+
+Force HTTP-only (never spawn) with
+`ENVOYMESH_EXT_AGENT_AUTOSTART=0` (aliases: `false` / `no` / `off`).
+
+**Project folder:** Settings / chat project folder for Hermes is used
+as spawn `cwd` when EnvoyMesh starts the daemon. An already-running
+external gateway ignores that cwd.
 
 **Caveats**:
-- If you have a separate `hermes gateway run` already running, do
-  **not** set this flag — the supervisor would try to spawn a second
-  instance and fail on the `:8642` port conflict.
-- The OpenHuman equivalent is `ENVOYMESH_EXT_AGENT_AUTOSTART=1` for
-  the OpenHuman core (`:7788`). Same caveat — don't enable when
-  OpenHuman.app is already running.
+- Prefer letting probe-first reuse an existing gateway; only force-off
+  autostart if you never want the node to spawn Hermes.
 
 ### Minimal checklist
 
 - [ ] `API_SERVER_ENABLED=true` + `API_SERVER_KEY=<secret>` in Hermes `.env` (`hermes config env-path`)
 - [ ] `HERMES_API_KEY=<same secret>` on the EnvoyMesh node (or `HERMES_ENV_FILE` / shared `HERMES_HOME`)
-- [ ] `hermes gateway run` (or installed service) is running — no “api_server failed”
-- [ ] `curl -H "Authorization: Bearer …" http://127.0.0.1:8642/v1/models` works
+- [ ] `hermes gateway run` (or installed service) is running — **or** let autostart spawn it when the CLI is installed
+- [ ] `curl -H "Authorization: Bearer …" http://127.0.0.1:8642/v1/models` works (after gateway is up)
 - [ ] EnvoyMesh Ext Agent = Hermes, bridge enabled
 - [ ] Log line `[ext-agent:hermes] listening …:8020/message`
 - [ ] Chat Ext Agent contact
@@ -512,22 +514,27 @@ curl -sS http://127.0.0.1:7788/v1/models \
 
 ### Autostart (Phase 55E)
 
-By default, the OpenHuman sidecar assumes the user runs OpenHuman.app
-or the CLI core on `:7788`. If you'd rather have EnvoyMesh spawn the
-CLI core on demand, set `ENVOYMESH_EXT_AGENT_AUTOSTART=1` on the home
-node. The node will then lazily spawn `openhuman serve` on the first
-chat message and respawn on crash. Healthcheck is `GET :7788/health`.
-Install-missing surfaces the same Install card as codex / claudecode.
+**Default on.** On the first Ext Agent chat ask, EnvoyMesh probe-first
+checks `GET :7788/health`. If OpenHuman.app / a CLI core is already
+healthy, it reuses that core — no second spawn. If the core is down
+and the `openhuman` CLI is on `$PATH`, it lazily spawns
+`openhuman serve` and respawns on crash. Install-missing surfaces the
+same Install card as codex / claudecode.
+
+Force HTTP-only (never spawn) with
+`ENVOYMESH_EXT_AGENT_AUTOSTART=0` (aliases: `false` / `no` / `off`).
+
+**Project folder:** Settings / chat project folder for OpenHuman is
+used as spawn `cwd` when EnvoyMesh starts the daemon. OpenHuman.app
+(or any already-running core) ignores that cwd.
 
 **Caveats**:
-- If OpenHuman.app is already running, do **not** set this flag —
-  the supervisor would try to spawn a second core and fail on the
-  `:7788` port conflict.
+- Prefer probe-first reuse of OpenHuman.app; only force-off autostart
+  if you never want the node to spawn a CLI core.
 - The OpenHuman CLI's exact `serve` subcommand is
   implementation-defined; if your install uses a different CLI
   shape (e.g. `openhuman-core run`), the supervisor will surface
-  the error in the logs. Override the command via the constructor
-  options in a follow-up.
+  the error in the logs.
 
 ### Minimal checklist
 
@@ -1050,8 +1057,11 @@ same list rendered by the Settings UI Install Required card).
 - **Hermes health endpoint**: `GET http://127.0.0.1:8642/v1/models`.
   If this returns 401, the key is wrong.
 - **`hermes gateway run` fails to start** — check the config file
-  for typos; the supervisor will retry on the next `ask()` (if
-  autostart is enabled) or you can start the daemon manually.
+  for typos; the supervisor will retry on the next `ask()` (autostart
+  is on by default; set `ENVOYMESH_EXT_AGENT_AUTOSTART=0` to disable
+  spawn) or you can start the daemon manually.
+- **Project folder** applies as spawn `cwd` only when EnvoyMesh
+  starts Hermes; an already-running gateway ignores it.
 
 ### OpenHuman (Phase 55 + 55E)
 
@@ -1059,9 +1069,10 @@ same list rendered by the Settings UI Install Required card).
 - **OpenHuman requires the `openhuman-core` binary on PATH.**
 - **OpenHuman health endpoint**: `GET http://127.0.0.1:7788/health`.
 - **OpenHuman.app keeps a per-launch token in-memory only** — the
-  supervisor can't read it. Use CLI `openhuman serve` /
-  `openhuman core run`, or set a shared `OPENHUMAN_CORE_TOKEN` on
-  a non-desktop core.
+  supervisor can't read it. Prefer `/v1` auto-key with the desktop
+  app, or CLI `openhuman serve` / a shared `OPENHUMAN_CORE_TOKEN`.
+- **Project folder** applies as spawn `cwd` only when EnvoyMesh
+  starts the CLI core; OpenHuman.app ignores it.
 
 ### Pi (built-in)
 
@@ -1090,8 +1101,8 @@ same list rendered by the Settings UI Install Required card).
 | `codex app-server` crashes repeatedly | `OPENAI_API_KEY` invalid / CLI version too old | Verify `codex --version`; rotate key; supervisor will surface `crash.stuck` after 5 restarts/5 min |
 | `claude --version` missing in PATH | Package not installed / wrong binary | `npm i -g @anthropic-ai/claude-code`; the binary is `claude`, not `claudecode` |
 | Chat switcher opens install modal after picking an agent | Binary is missing / install state is `unknown` | Run the install command from the card, then click **Retry**. The dialog auto-closes when the agent is reachable. |
-| `EADDRINUSE` on the Hermes / OpenHuman port when autostart is enabled | A separate daemon (or a previous EnvoyMesh node) is already bound to the port | Quit the other daemon (or unset `ENVOYMESH_EXT_AGENT_AUTOSTART` so EnvoyMesh uses the existing one) |
-| `hermes: not found` / `openhuman: not found` in node logs after enabling autostart | Binary isn't on `$PATH` | Run the install command (see the Install card or the table above); the supervisor will retry on the next `ask()` |
+| `EADDRINUSE` on the Hermes / OpenHuman port | Spawn raced a second process onto a busy port | Prefer probe-first reuse; set `ENVOYMESH_EXT_AGENT_AUTOSTART=0` if you only run an external gateway |
+| `hermes: not found` / `openhuman: not found` in node logs (autostart spawn) | Binary isn't on `$PATH` | Run the install command (see the Install card or the table above); the supervisor will retry on the next `ask()` |
 | Chat switcher shows 3s toast, no modal | Binary is installed but the daemon is down | Start the agent's daemon (e.g. `codex app-server`, `hermes gateway run`); the toast is informational. |
 | `bridge unreachable` in sidecar log | Wrong bridge port | Match `ENVOYMESH_BRIDGE_PORT` (e.g. `4031`) |
 | Sidecar not listening | Bridge off or wrong agent | Enable bridge; select Hermes/OpenHuman/Codex/Claude Code |

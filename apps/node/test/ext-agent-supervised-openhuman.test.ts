@@ -51,12 +51,15 @@ class FakeSupervisor extends EventEmitter {
   }
 }
 
-function makeInner(askImpl: (text: string, sessionKey: string) => Promise<string> = async () => "from-inner"): ExtAgentBackend {
+function makeInner(
+  askImpl: (text: string, sessionKey: string) => Promise<string> = async () => "from-inner",
+  probeResult: boolean = false,
+): ExtAgentBackend {
   return {
     kind: "openhuman",
     label: "OpenHuman (inner)",
     ask: vi.fn(askImpl),
-    probe: vi.fn().mockResolvedValue(true),
+    probe: vi.fn().mockResolvedValue(probeResult),
   };
 }
 
@@ -94,9 +97,9 @@ describe("OpenHumanSupervisedBackend (Phase 55E)", () => {
     expect(backend.kind).toBe("openhuman");
   });
 
-  it("ask() calls supervisor.start() before delegating to inner.ask()", async () => {
+  it("ask() calls supervisor.start() when probe is down, then delegates to inner.ask()", async () => {
     const innerAsk = vi.fn(async (text: string) => `openhuman-reply:${text}`);
-    const inner = makeInner(innerAsk);
+    const inner = makeInner(innerAsk, false);
     const sup = new FakeSupervisor();
     const backend = new OpenHumanSupervisedBackend({
       inner,
@@ -109,9 +112,25 @@ describe("OpenHumanSupervisedBackend (Phase 55E)", () => {
     expect(innerAsk).toHaveBeenCalledWith("hi", "sess-1");
   });
 
+  it("ask() skips supervisor.start() when inner.probe() is already healthy (probe-first)", async () => {
+    const innerAsk = vi.fn(async (text: string) => `openhuman-reply:${text}`);
+    const inner = makeInner(innerAsk, true);
+    const sup = new FakeSupervisor();
+    const backend = new OpenHumanSupervisedBackend({
+      inner,
+      supervisor: sup as unknown as DaemonSupervisor,
+    });
+
+    const reply = await backend.ask("hi", "sess-1");
+    expect(reply).toBe("openhuman-reply:hi");
+    expect(sup.start).toHaveBeenCalledTimes(0);
+    expect(backend.isEverHealthy()).toBe(true);
+    expect(innerAsk).toHaveBeenCalledWith("hi", "sess-1");
+  });
+
   it("ask() does NOT re-call supervisor.start() when already healthy", async () => {
     const innerAsk = vi.fn(async (text: string) => `openhuman-reply:${text}`);
-    const inner = makeInner(innerAsk);
+    const inner = makeInner(innerAsk, false);
     const sup = new FakeSupervisor();
     const backend = new OpenHumanSupervisedBackend({
       inner,
@@ -195,19 +214,29 @@ describe("OpenHumanSupervisedBackend (Phase 55E)", () => {
     expect(await backend.probe()).toBe(false);
   });
 
-  it("start() and stop() are idempotent", async () => {
-    const inner = makeInner();
-    const sup = new FakeSupervisor();
-    const backend = new OpenHumanSupervisedBackend({
-      inner,
-      supervisor: sup as unknown as DaemonSupervisor,
+  it("start() skips spawn when probe is healthy; otherwise spawns once", async () => {
+    const healthyInner = makeInner(undefined, true);
+    const healthySup = new FakeSupervisor();
+    const healthyBackend = new OpenHumanSupervisedBackend({
+      inner: healthyInner,
+      supervisor: healthySup as unknown as DaemonSupervisor,
     });
-    await backend.start();
-    await backend.start();
-    await backend.stop();
-    await backend.stop();
-    expect(sup.start).toHaveBeenCalledTimes(2);
-    expect(sup.stop).toHaveBeenCalledTimes(2);
+    await healthyBackend.start();
+    await healthyBackend.start();
+    expect(healthySup.start).toHaveBeenCalledTimes(0);
+
+    const downInner = makeInner(undefined, false);
+    const downSup = new FakeSupervisor();
+    const downBackend = new OpenHumanSupervisedBackend({
+      inner: downInner,
+      supervisor: downSup as unknown as DaemonSupervisor,
+    });
+    await downBackend.start();
+    await downBackend.start();
+    await downBackend.stop();
+    await downBackend.stop();
+    expect(downSup.start).toHaveBeenCalledTimes(1);
+    expect(downSup.stop).toHaveBeenCalledTimes(2);
   });
 
   it("isEverHealthy() is true after the supervisor emits 'healthy'", () => {

@@ -9,8 +9,10 @@ export interface ExtAgentDefinition {
   url: string;
   enabled: boolean;
   /**
-   * Absolute project folder on the home node (cwd for coding agents).
-   * Used by Codex / Claude Code / Cursor / Aider / MiniMax; ignored by others.
+   * Absolute project folder on the home node (cwd for coding agents /
+   * Hermes / OpenHuman when EnvoyMesh spawns them).
+   * Used by Codex / Claude Code / Cursor / Aider / MiniMax / Hermes / OpenHuman;
+   * ignored by Pi and HomeClaw.
    */
   projectPath?: string;
 }
@@ -377,6 +379,8 @@ export const EXT_AGENTS_WITH_PROJECT_PATH = [
   "cursor",
   "aider",
   "mmx",
+  "hermes",
+  "openhuman",
 ] as const;
 
 export function extAgentUsesProjectPath(agentId: string | undefined | null): boolean {

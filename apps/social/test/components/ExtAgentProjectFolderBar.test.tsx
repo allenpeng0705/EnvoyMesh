@@ -19,6 +19,8 @@ describe("Ext Agent project folder chat chrome", () => {
   it("gates coding agents that show the chat header folder bar", () => {
     expect(extAgentUsesProjectPath("codex")).toBe(true);
     expect(extAgentUsesProjectPath("claudecode")).toBe(true);
+    expect(extAgentUsesProjectPath("hermes")).toBe(true);
+    expect(extAgentUsesProjectPath("openhuman")).toBe(true);
     expect(extAgentUsesProjectPath("pi")).toBe(false);
   });
 

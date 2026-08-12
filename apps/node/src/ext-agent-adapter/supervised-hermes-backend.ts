@@ -7,16 +7,12 @@
  * call shape is unchanged — same `/v1/chat/completions` endpoint, same
  * auth headers — so the sidecar HTTP contract is identical.
  *
- * Only active when `ENVOYMESH_EXT_AGENT_AUTOSTART=1` (default off —
- * Hermes users typically have their own `hermes gateway run` running
- * and don't want the node to spawn a second instance). See
- * `backends.ts` for the env-var dispatch.
+ * Default on via `createBackend("hermes")` (force off with
+ * `ENVOYMESH_EXT_AGENT_AUTOSTART=0`). Probe-first: if the HTTP core is
+ * already healthy, we reuse it and do not spawn a second instance.
  *
- * Pre-flight behavior: the supervisor's healthcheck is a cheap HTTP
- * GET to `${base}/v1/models` (the same probe the existing backend
- * already does). If the daemon is already running on the network,
- * the supervisor skips the spawn path — but the spawn would still
- * happen in a "no other daemon" world, hence the user-toggle.
+ * Project folder: optional spawn `cwd` from {@link getExtAgentProjectPathCwd}
+ * (only applies when EnvoyMesh spawns the daemon).
  *
  * Install card surfacing: `start()` rejects with `InstallMissingError`
  * if the binary is missing or `preSpawnCheck` fails, which the
@@ -27,6 +23,7 @@
 import { DaemonSupervisor, InstallMissingError } from "./daemon-supervisor.js";
 import type { ExtAgentBackend } from "./types.js";
 import { createHermesBackend, hermesApiBase, hermesApiKey } from "./backends.js";
+import { getExtAgentProjectPathCwd } from "./project-path-store.js";
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -56,6 +53,8 @@ export interface HermesSupervisedBackendOptions {
   args?: string[];
   /** Extra env vars; merged on top of `process.env`. */
   env?: NodeJS.ProcessEnv;
+  /** Working directory for a spawned gateway. Default: Ext Agent projectPath. */
+  cwd?: string;
   /** Override the supervisor entirely (for tests). */
   supervisor?: DaemonSupervisor;
   /**
@@ -139,6 +138,7 @@ export class HermesSupervisedBackend implements ExtAgentBackend {
         command: opts.command ?? DEFAULT_HERMES_COMMAND,
         args: [...(opts.args ?? DEFAULT_HERMES_ARGS)],
         env: opts.env,
+        cwd: opts.cwd ?? getExtAgentProjectPathCwd("hermes"),
         healthcheck: healthcheckHermes,
         healthcheckIntervalMs: DEFAULT_HEALTHCHECK_INTERVAL_MS,
         healthcheckTimeoutMs: DEFAULT_HEALTHCHECK_TIMEOUT_MS,
@@ -171,14 +171,25 @@ export class HermesSupervisedBackend implements ExtAgentBackend {
     // — saves a spawn round-trip + ENOENT log spam.
     if (this.lastStartError) throw this.lastStartError;
 
-    // Short-circuit when the supervisor was already healthy — the
-    // real `DaemonSupervisor.start()` is a fast no-op in that case
-    // (early return when state.healthy && proc still running), but
-    // skipping the call entirely saves a microtask hop + makes
-    // test mocks deterministic.
+    // Probe-first: reuse an already-running Hermes gateway (user service /
+    // OpenHuman.app equivalent) — do not spawn a second instance.
+    if (!this.wasEverHealthy) {
+      try {
+        const up = await this.inner.probe?.();
+        if (up) {
+          this.wasEverHealthy = true;
+          this.lastStartError = null;
+        }
+      } catch {
+        /* fall through to spawn */
+      }
+    }
+
     if (!this.wasEverHealthy) {
       try {
         await this.supervisor.start();
+        this.wasEverHealthy = true;
+        this.lastStartError = null;
       } catch (err) {
         this.lastStartError = err instanceof Error ? err : new Error(String(err));
         throw this.lastStartError;
@@ -197,6 +208,7 @@ export class HermesSupervisedBackend implements ExtAgentBackend {
     try {
       const up = await this.inner.probe?.();
       if (up === false) return false;
+      if (up) this.wasEverHealthy = true;
       return true;
     } catch {
       return false;
@@ -204,14 +216,27 @@ export class HermesSupervisedBackend implements ExtAgentBackend {
   }
 
   /**
-   * Eagerly start the daemon. Idempotent. The sidecar manager
-   * doesn't currently call this directly (it lazily spawns via
-   * `ask()`) but tests + future autostart-paths use it.
+   * Eagerly start the daemon. Idempotent. Probe-first: skip spawn when
+   * Hermes is already up. After a successful spawn, further start()
+   * calls are no-ops until the process is stopped.
    */
   async start(): Promise<void> {
     if (!this.supervisor) return;
     try {
+      const up = await this.inner.probe?.();
+      if (up) {
+        this.wasEverHealthy = true;
+        this.lastStartError = null;
+        return;
+      }
+    } catch {
+      /* fall through to spawn */
+    }
+    if (this.wasEverHealthy) return;
+    try {
       await this.supervisor.start();
+      this.wasEverHealthy = true;
+      this.lastStartError = null;
     } catch (err) {
       this.lastStartError = err instanceof Error ? err : new Error(String(err));
       throw this.lastStartError;

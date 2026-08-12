@@ -35,18 +35,18 @@ import {
 
 /**
  * Phase 55E — when `true`, `createBackend("hermes" | "openhuman")`
- * returns a `*SupervisedBackend` that spawns the daemon on demand
- * via the 55A `DaemonSupervisor`. Otherwise the unwrapped HTTP
- * backends are used (the historical default).
+ * returns a `*SupervisedBackend` that can spawn the daemon on demand
+ * via the 55A `DaemonSupervisor` (probe-first: reuses an already-running
+ * gateway; only spawns when the HTTP core is down).
  *
- * Default: `false` (preserves the existing behavior — most Hermes
- * users run their own `hermes gateway run`, and OpenHuman desktop
- * users have the .app running; the node should not spawn a second
- * instance on the same port).
+ * Default: `true` (start Hermes/OpenHuman if we can). Force off with
+ * `ENVOYMESH_EXT_AGENT_AUTOSTART=0|false|off` to use unwrapped HTTP only.
  */
 function isAutostartEnabled(): boolean {
   const v = process.env.ENVOYMESH_EXT_AGENT_AUTOSTART?.trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes" || v === "on";
+  if (v === "0" || v === "false" || v === "no" || v === "off") return false;
+  if (v === "1" || v === "true" || v === "yes" || v === "on") return true;
+  return true;
 }
 
 /** OpenHuman auth-profile provider id for the stable `/v1` bearer. */
@@ -977,16 +977,14 @@ export function createPiBackend(): ExtAgentBackend {
 export function createBackend(kind: ExtAgentSidecarKind): ExtAgentBackend {
   if (kind === "pi") return createPiBackend();
   if (kind === "hermes") {
-    // Phase 55E — when autostart is on, wrap the HTTP backend with a
-    // supervisor that spawns `hermes gateway run` on demand. Default
-    // off (see `isAutostartEnabled`).
+    // Phase 55E — supervised by default (probe-first; spawn only if down).
+    // Force unwrapped HTTP with ENVOYMESH_EXT_AGENT_AUTOSTART=0.
     return isAutostartEnabled()
       ? createHermesSupervisedBackend()
       : createHermesBackend();
   }
   if (kind === "openhuman") {
-    // Phase 55E — same pattern for OpenHuman; the CLI subcommand
-    // defaults to `openhuman serve` (override via constructor opts).
+    // Phase 55E — same pattern for OpenHuman (`openhuman serve`).
     return isAutostartEnabled()
       ? createOpenHumanSupervisedBackend()
       : createOpenHumanBackend();

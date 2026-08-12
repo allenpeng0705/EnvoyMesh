@@ -123,9 +123,10 @@ describe("ext agent project path store", () => {
         },
       ]);
       expect(getExtAgentProjectPathCwd("codex")).toBe(root);
-      expect(getExtAgentProjectPathCwd("hermes")).toBeUndefined();
+      expect(getExtAgentProjectPathCwd("hermes")).toBe(root);
       expect(extAgentUsesProjectPath("codex")).toBe(true);
-      expect(extAgentUsesProjectPath("hermes")).toBe(false);
+      expect(extAgentUsesProjectPath("hermes")).toBe(true);
+      expect(extAgentUsesProjectPath("openhuman")).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

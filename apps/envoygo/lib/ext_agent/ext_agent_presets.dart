@@ -136,6 +136,8 @@ const _extAgentsWithProjectPath = {
   'cursor',
   'aider',
   'mmx',
+  'hermes',
+  'openhuman',
 };
 
 /// Whether this Ext Agent uses a home-node project folder as cwd.

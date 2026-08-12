@@ -244,11 +244,12 @@ void main() {
       expect(extAgentUsesProjectPath('cursor'), isTrue);
       expect(extAgentUsesProjectPath('aider'), isTrue);
       expect(extAgentUsesProjectPath('mmx'), isTrue);
+      expect(extAgentUsesProjectPath('hermes'), isTrue);
+      expect(extAgentUsesProjectPath('openhuman'), isTrue);
     });
 
     test('false for agents that ignore project folders', () {
       expect(extAgentUsesProjectPath('pi'), isFalse);
-      expect(extAgentUsesProjectPath('hermes'), isFalse);
       expect(extAgentUsesProjectPath('homeclaw'), isFalse);
       expect(extAgentUsesProjectPath(null), isFalse);
     });

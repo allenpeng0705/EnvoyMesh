@@ -60,12 +60,17 @@ class FakeSupervisor extends EventEmitter {
   }
 }
 
-function makeInner(askImpl: (text: string, sessionKey: string) => Promise<string> = async () => "from-inner"): ExtAgentBackend {
+function makeInner(
+  askImpl: (text: string, sessionKey: string) => Promise<string> = async () => "from-inner",
+  probeResult: boolean = false,
+): ExtAgentBackend {
   return {
     kind: "hermes",
     label: "Hermes (inner)",
     ask: vi.fn(askImpl),
-    probe: vi.fn().mockResolvedValue(true),
+    // Default false so ask()/start() exercise the spawn path unless a
+    // test opts into probe-first reuse.
+    probe: vi.fn().mockResolvedValue(probeResult),
   };
 }
 
@@ -105,9 +110,9 @@ describe("HermesSupervisedBackend (Phase 55E)", () => {
     expect(backend.kind).toBe("hermes");
   });
 
-  it("ask() calls supervisor.start() before delegating to inner.ask()", async () => {
+  it("ask() calls supervisor.start() when probe is down, then delegates to inner.ask()", async () => {
     const innerAsk = vi.fn(async (text: string) => `reply:${text}`);
-    const inner = makeInner(innerAsk);
+    const inner = makeInner(innerAsk, false);
     const sup = new FakeSupervisor();
     const backend = new HermesSupervisedBackend({
       inner,
@@ -120,9 +125,25 @@ describe("HermesSupervisedBackend (Phase 55E)", () => {
     expect(innerAsk).toHaveBeenCalledWith("hello", "sess-1");
   });
 
+  it("ask() skips supervisor.start() when inner.probe() is already healthy (probe-first)", async () => {
+    const innerAsk = vi.fn(async (text: string) => `reply:${text}`);
+    const inner = makeInner(innerAsk, true);
+    const sup = new FakeSupervisor();
+    const backend = new HermesSupervisedBackend({
+      inner,
+      supervisor: sup as unknown as DaemonSupervisor,
+    });
+
+    const reply = await backend.ask("hello", "sess-1");
+    expect(reply).toBe("reply:hello");
+    expect(sup.start).toHaveBeenCalledTimes(0);
+    expect(backend.isEverHealthy()).toBe(true);
+    expect(innerAsk).toHaveBeenCalledWith("hello", "sess-1");
+  });
+
   it("ask() does NOT re-call supervisor.start() when already healthy", async () => {
     const innerAsk = vi.fn(async (text: string) => `reply:${text}`);
-    const inner = makeInner(innerAsk);
+    const inner = makeInner(innerAsk, false);
     const sup = new FakeSupervisor();
     const backend = new HermesSupervisedBackend({
       inner,
@@ -212,16 +233,26 @@ describe("HermesSupervisedBackend (Phase 55E)", () => {
     expect(await backend.probe()).toBe(false);
   });
 
-  it("start() calls supervisor.start() and is idempotent", async () => {
-    const inner = makeInner();
-    const sup = new FakeSupervisor();
-    const backend = new HermesSupervisedBackend({
-      inner,
-      supervisor: sup as unknown as DaemonSupervisor,
+  it("start() skips spawn when probe is healthy; otherwise spawns once", async () => {
+    const healthyInner = makeInner(undefined, true);
+    const healthySup = new FakeSupervisor();
+    const healthyBackend = new HermesSupervisedBackend({
+      inner: healthyInner,
+      supervisor: healthySup as unknown as DaemonSupervisor,
     });
-    await backend.start();
-    await backend.start();
-    expect(sup.start).toHaveBeenCalledTimes(2); // two calls, but each is fast-noop
+    await healthyBackend.start();
+    await healthyBackend.start();
+    expect(healthySup.start).toHaveBeenCalledTimes(0);
+
+    const downInner = makeInner(undefined, false);
+    const downSup = new FakeSupervisor();
+    const downBackend = new HermesSupervisedBackend({
+      inner: downInner,
+      supervisor: downSup as unknown as DaemonSupervisor,
+    });
+    await downBackend.start();
+    await downBackend.start();
+    expect(downSup.start).toHaveBeenCalledTimes(1);
   });
 
   it("stop() calls supervisor.stop() and is idempotent", async () => {
