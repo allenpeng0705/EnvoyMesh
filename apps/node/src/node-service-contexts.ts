@@ -484,6 +484,9 @@ export interface ChatMessageContextDeps {
   sendAgentChat: ChatMessageContext["sendAgentChat"];
   tagBondedContactReachability: ChatMessageContext["tagBondedContactReachability"];
   isOwnerOnline: ChatMessageContext["isOwnerOnline"];
+  askOpenClaw?: ChatMessageContext["askOpenClaw"];
+  buildOpenClawTurnContext?: ChatMessageContext["buildOpenClawTurnContext"];
+  ensureOpenClawReady?: ChatMessageContext["ensureOpenClawReady"];
 }
 
 export interface RequestPeerProfileContextDeps {
@@ -1214,6 +1217,15 @@ export function buildChatMessageContext(deps: ChatMessageContextDeps): ChatMessa
     tagBondedContactReachability: (remotePeerId) =>
       deps.tagBondedContactReachability(remotePeerId),
     isOwnerOnline: () => deps.isOwnerOnline(),
+    askOpenClaw: deps.askOpenClaw
+      ? (prompt, context) => deps.askOpenClaw!(prompt, context)
+      : undefined,
+    buildOpenClawTurnContext: deps.buildOpenClawTurnContext
+      ? () => deps.buildOpenClawTurnContext!()
+      : undefined,
+    ensureOpenClawReady: deps.ensureOpenClawReady
+      ? () => deps.ensureOpenClawReady!()
+      : undefined,
   };
 }
 

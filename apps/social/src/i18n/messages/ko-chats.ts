@@ -131,6 +131,13 @@ export const koContactChatMessages = {
   autoTitle: "자동 응답: AI가 자동 응답",
   autoDisabledTitle: "설정에서 소셜 자동 전송을 활성화하세요",
   autoAria: "자동 응답 모드",
+  agentModeOffTitle: "Agent Mode off — Assist uses public knowledge only. Click to enable OpenClaw with home files, private knowledge, and tools.",
+  agentModeOnTitle: "Agent Mode on — OpenClaw may use home files, private knowledge, and tools. Click to turn off.",
+  agentModeAria: "Toggle Agent Mode for this contact",
+  agentModeConfirmTitle: "Enable Agent Mode for this chat?",
+  agentModeConfirmMessage:
+    "Agent Mode uses EnvoyAI/OpenClaw and can read local files, private knowledge, and run tools on your home node. Only enable for contacts you fully trust.",
+  agentModeConfirmEnable: "Enable Agent Mode",
   emptyDesc: "인사하여 대화를 시작하세요",
   privateNotesSummary: "비공개 메모 (기기 간 동기화)",
   privateNotesPlaceholder: "나만 볼 수 있는 메모 — 메시지에 전송되지 않음",

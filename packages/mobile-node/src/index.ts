@@ -5058,6 +5058,30 @@ You are the owner's personal AI assistant on EnvoyMesh.
     throw new Error("Home node is offline — reveal requires a paired home node.");
   }
 
+  async uploadEnvoyAttachment(
+    params: import("@envoymesh/api").UploadEnvoyAttachmentParams,
+  ): Promise<import("@envoymesh/api").UploadEnvoyAttachmentResult> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      return await this._homeRemoteCall<import("@envoymesh/api").UploadEnvoyAttachmentResult>(
+        "uploadEnvoyAttachment",
+        params as Record<string, unknown>,
+      );
+    }
+    throw new Error("Home node is offline — upload requires a paired home node.");
+  }
+
+  async buildAgentAttachmentContext(
+    params: import("@envoymesh/api").BuildAgentAttachmentContextParams,
+  ): Promise<import("@envoymesh/api").BuildAgentAttachmentContextResult> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      return await this._homeRemoteCall<import("@envoymesh/api").BuildAgentAttachmentContextResult>(
+        "buildAgentAttachmentContext",
+        params as Record<string, unknown>,
+      );
+    }
+    throw new Error("Home node is offline — attachment context requires a paired home node.");
+  }
+
   async getEnvoyAiCommandCatalog(): Promise<import("@envoymesh/api").ExtAgentCommandCatalog> {
     if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
       try {

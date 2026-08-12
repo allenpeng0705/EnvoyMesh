@@ -107,6 +107,10 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "previewHomeFsFile",
   "runMmxMediaCommand",
   "revealHomeFsPath",
+  "uploadEnvoyAttachment",
+  "buildAgentAttachmentContext",
+  "getChatDrafts",
+  "deleteChatDraft",
 ]);
 
 /** True when a thin-client family session must not call this RPC. */
@@ -763,6 +767,18 @@ export async function routeRpcMethod(
     case "revealHomeFsPath":
       return ns.revealHomeFsPath({
         path: String(params.path ?? ""),
+      });
+    case "uploadEnvoyAttachment":
+      return ns.uploadEnvoyAttachment({
+        filename: String(params.filename ?? ""),
+        mimeType: typeof params.mimeType === "string" ? params.mimeType : undefined,
+        contentBase64: String(params.contentBase64 ?? ""),
+      });
+    case "buildAgentAttachmentContext":
+      return ns.buildAgentAttachmentContext({
+        attachments: Array.isArray(params.attachments)
+          ? (params.attachments as import("@envoymesh/api").AgentAttachmentRef[])
+          : [],
       });
     case "getEnvoyAiCommandCatalog":
       return ns.getEnvoyAiCommandCatalog();

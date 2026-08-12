@@ -37,6 +37,8 @@ import {
 import {
   persistEnvoyAiChatExchangeViaRuntime,
   recordEnvoyAiHumanOutgoingViaRuntime,
+  buildOpenClawTurnContextViaRuntime,
+  ensureOpenClawReadyViaRuntime,
 } from "./node-service-openclaw-runtime.js";
 import { upsertTransferStatusViaRuntime } from "./node-service-transfer-inbound.js";
 import {
@@ -672,6 +674,11 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             tagBondedContactReachability: (remotePeerId) =>
               host._tagBondedContactReachability(remotePeerId),
             isOwnerOnline: () => host.isOwnerOnline(),
+            askOpenClaw: (prompt, context) => host.askOpenClaw(prompt, context as never),
+            buildOpenClawTurnContext: () =>
+              buildOpenClawTurnContextViaRuntime(host._openClawRuntimeDeps()),
+            ensureOpenClawReady: () =>
+              ensureOpenClawReadyViaRuntime(host._openClawState, host._openClawRuntimeDeps()),
           },
       requestPeerProfile: {
             requireMesh: () => host._requireMesh() as never,

@@ -6962,6 +6962,15 @@ button:disabled {
   background: var(--color-primary-hover);
 }
 
+.assistant-switch-btn.agent-mode-btn.active.armed {
+  background: var(--color-warning, #d97706);
+  color: var(--color-on-warning, #fff);
+}
+
+.assistant-switch-btn.agent-mode-btn.active.armed:hover {
+  background: var(--color-warning-hover, #b45309);
+}
+
 .assistant-switch-btn.disabled {
   opacity: 0.4;
   cursor: not-allowed;

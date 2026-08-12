@@ -31,7 +31,7 @@ import { ChatMessageText } from "../ChatMessageText.js";
 import { ChatFileAttachment } from "../ChatFileAttachment.js";
 import { ChatAudioAttachment } from "../ChatAudioAttachment.js";
 import { ShareFileDialog } from "../file-share/ShareFileDialog.js";
-import { EditIcon, ChatIcon, BridgeIcon, P2PIcon, AttachIcon, RemoveIcon } from "../../icons.js";
+import { EditIcon, ChatIcon, BridgeIcon, P2PIcon, AttachIcon, RemoveIcon, AIIcon } from "../../icons.js";
 import { ChatComposer } from "../ChatComposer.js";
 import { VoiceNoteRecorderBar } from "../VoiceNoteRecorderBar.js";
 import { useVoiceNoteRecorder } from "../../hooks/useVoiceNoteRecorder.js";
@@ -61,6 +61,17 @@ import type { ExtAgentCommandCatalog, RunMmxMediaCommandResult } from "@envoymes
 import { extAgentUsesProjectPath } from "@envoymesh/api";
 import { HomeFolderPicker } from "../HomeFolderPicker.js";
 import { MmxMediaResultBlock } from "../MmxMediaResultBlock.js";
+import { AgentAttachmentChips } from "../AgentAttachmentChips.js";
+import {
+  assertAttachableFileSize,
+  attachmentBasename,
+  fileToBase64 as fileToBase64Agent,
+  guessMimeFromName,
+  mergeAgentPromptWithAttachments,
+  toAgentAttachmentRefs,
+  type AgentDraftAttachment,
+} from "../../lib/agent-attachments.js";
+import { isTauriShell, pickTauriFiles } from "../../lib/tauri-shell.js";
 
 interface ContactChatPanelProps {
   selectedContact: string;
@@ -157,9 +168,19 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     Array<{ messageId: string; timestamp: string; result: RunMmxMediaCommandResult }>
   >([]);
   const [mmxBusy, setMmxBusy] = useState(false);
+  const [agentAttachments, setAgentAttachments] = useState<AgentDraftAttachment[]>([]);
+  const [agentAttachBusy, setAgentAttachBusy] = useState(false);
+  const agentFileInputRef = useRef<HTMLInputElement | null>(null);
   const [confirm, setConfirm] = useState<{ title: string; message?: ReactNode; variant?: "default" | "destructive"; confirmLabel?: string; cancelLabel?: string; onConfirm: () => void } | null>(null);
   const draftRef = useRef<ReturnType<typeof createContactComposeDraftCrdt> | null>(null);
   const draftSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Serialize contactAiPreferences writes so mode + Agent Mode toggles cannot clobber each other. */
+  const contactAiPrefWriteChainRef = useRef(Promise.resolve());
+  const enqueueContactAiPrefWrite = useCallback((write: () => Promise<void>) => {
+    const next = contactAiPrefWriteChainRef.current.then(write, write);
+    contactAiPrefWriteChainRef.current = next.catch(() => undefined);
+    return next;
+  }, []);
   // Tracks any pending "auto-clear sendError" timer so we can cancel it on
   // unmount and on subsequent errors. Fire-and-forget setTimeouts are a
   // common source of "setState on unmounted component" warnings — keep this
@@ -236,6 +257,12 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   useEffect(() => {
     voiceRecorder.cancel();
     setMmxLocalResults([]);
+    setAgentAttachments((prev) => {
+      for (const a of prev) {
+        if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
+      }
+      return [];
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset when switching threads
   }, [selectedContact]);
 
@@ -349,34 +376,94 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     async (ownerId: string, mode: AssistantMode) => {
       setContactAiModes({ ...contactAiModes, [ownerId]: mode });
 
-      const currentPrefs = nodeConfig?.contactAiPreferences ?? [];
-      const existingPref = currentPrefs.find((p) => p.peerOwnerId === ownerId);
-      const otherPrefs = currentPrefs.filter((p) => p.peerOwnerId !== ownerId);
-      const aiAccessLevel = contactAiAccessLevelForAssistantMode(mode);
-      const newPrefs: ContactAiPreferences[] = [
-        ...otherPrefs,
-        {
-          peerOwnerId: ownerId,
-          aiAccessLevel,
-          knowledgeAccess: existingPref?.knowledgeAccess ?? "public",
-          priority: existingPref?.priority ?? "high",
-        },
-      ];
-      const configPatch: { contactAiPreferences: ContactAiPreferences[]; chatAssistEnabled?: boolean } = {
-        contactAiPreferences: newPrefs,
-      };
-      if (mode === "assistant" && !nodeConfig?.chatAssistEnabled) {
-        configPatch.chatAssistEnabled = true;
-      }
-      await nodeService.updateNodeConfig(configPatch);
-      await refreshNodeConfig();
+      await enqueueContactAiPrefWrite(async () => {
+        const latest = await nodeService.getNodeConfig();
+        const currentPrefs = latest.contactAiPreferences ?? [];
+        const existingPref = currentPrefs.find((p) => p.peerOwnerId === ownerId);
+        const otherPrefs = currentPrefs.filter((p) => p.peerOwnerId !== ownerId);
+        const aiAccessLevel = contactAiAccessLevelForAssistantMode(mode);
+        // Manual clears Agent Mode so returning to Assist requires a fresh confirm.
+        const keepAgentMode = mode !== "manual" && existingPref?.agentModeEnabled === true;
+        const newPrefs: ContactAiPreferences[] = [
+          ...otherPrefs,
+          {
+            peerOwnerId: ownerId,
+            aiAccessLevel,
+            knowledgeAccess: existingPref?.knowledgeAccess ?? "public",
+            priority: existingPref?.priority ?? "high",
+            ...(existingPref?.syndicationMaxSensitivity
+              ? { syndicationMaxSensitivity: existingPref.syndicationMaxSensitivity }
+              : {}),
+            ...(keepAgentMode ? { agentModeEnabled: true } : {}),
+          },
+        ];
+        const configPatch: { contactAiPreferences: ContactAiPreferences[]; chatAssistEnabled?: boolean } = {
+          contactAiPreferences: newPrefs,
+        };
+        if (mode === "assistant" && !latest.chatAssistEnabled) {
+          configPatch.chatAssistEnabled = true;
+        }
+        await nodeService.updateNodeConfig(configPatch);
+        await refreshNodeConfig();
+      });
     },
-    [contactAiModes, nodeConfig, nodeService, refreshNodeConfig, setContactAiModes],
+    [contactAiModes, enqueueContactAiPrefWrite, nodeService, refreshNodeConfig, setContactAiModes],
+  );
+
+  const updateContactAgentMode = useCallback(
+    async (ownerId: string, enabled: boolean) => {
+      await enqueueContactAiPrefWrite(async () => {
+        const latest = await nodeService.getNodeConfig();
+        const currentPrefs = latest.contactAiPreferences ?? [];
+        const existingPref = currentPrefs.find((p) => p.peerOwnerId === ownerId);
+        const otherPrefs = currentPrefs.filter((p) => p.peerOwnerId !== ownerId);
+        // Prefer the UI mode (optimistic) over a stale disk pref so enabling
+        // Agent Mode right after switching to Assistant does not persist "none".
+        const uiMode = contactAiModes[ownerId];
+        const aiAccessLevel = uiMode
+          ? contactAiAccessLevelForAssistantMode(uiMode)
+          : (existingPref?.aiAccessLevel ?? "assistant_only");
+        const newPrefs: ContactAiPreferences[] = [
+          ...otherPrefs,
+          {
+            peerOwnerId: ownerId,
+            aiAccessLevel,
+            knowledgeAccess: existingPref?.knowledgeAccess ?? "public",
+            priority: existingPref?.priority ?? "high",
+            ...(existingPref?.syndicationMaxSensitivity
+              ? { syndicationMaxSensitivity: existingPref.syndicationMaxSensitivity }
+              : {}),
+            ...(enabled ? { agentModeEnabled: true } : {}),
+          },
+        ];
+        await nodeService.updateNodeConfig({ contactAiPreferences: newPrefs });
+        await refreshNodeConfig();
+      });
+    },
+    [contactAiModes, enqueueContactAiPrefWrite, nodeService, refreshNodeConfig],
+  );
+
+  const requestEnableAgentMode = useCallback(
+    (ownerId: string) => {
+      setConfirm({
+        title: t("contactChat.agentModeConfirmTitle"),
+        message: t("contactChat.agentModeConfirmMessage"),
+        variant: "destructive",
+        confirmLabel: t("contactChat.agentModeConfirmEnable"),
+        cancelLabel: t("common.cancel"),
+        onConfirm: () => {
+          setConfirm(null);
+          void updateContactAgentMode(ownerId, true);
+        },
+      });
+    },
+    [t, updateContactAgentMode],
   );
 
   const handleSendMessage = () => {
     const text = chatInput.trim();
-    if (!text || mmxBusy) return;
+    const draftAtts = isExtAgentContact ? agentAttachments : [];
+    if ((!text && draftAtts.length === 0) || mmxBusy || agentAttachBusy) return;
 
     pinToBottom();
 
@@ -384,6 +471,10 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     if (isExtAgentContact) {
       const mmxParsed = parseMmxMediaCommand(text);
       if (mmxParsed) {
+        if (draftAtts.length > 0) {
+          showToast("Clear attachments before using MiniMax media slash commands.", "info");
+          return;
+        }
         if (!homeRpcOnline) {
           setSendError(t("contactChat.nodeOffline"));
           scheduleClearSendError(5000);
@@ -515,7 +606,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       }
     }
 
-    if (!nodeMeshOnline) {
+    if (!nodeMeshOnline && !(isExtAgentContact && homeRpcOnline)) {
       setSendError(t("contactChat.nodeOffline"));
       scheduleClearSendError(5000);
       return;
@@ -546,19 +637,44 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       clearTimeout(draftSyncTimerRef.current);
       draftSyncTimerRef.current = null;
     }
+    const displayText =
+      text ||
+      (draftAtts.length
+        ? `(${draftAtts.length} attachment${draftAtts.length === 1 ? "" : "s"})`
+        : "");
     const now = Date.now();
     const last = lastChatSendRef.current;
-    if (last && last.contact === selectedContact && last.text === text && now - last.at < 1500) {
+    if (
+      last &&
+      last.contact === selectedContact &&
+      last.text === displayText &&
+      now - last.at < 1500
+    ) {
       return;
     }
-    lastChatSendRef.current = { at: now, contact: selectedContact, text };
+    lastChatSendRef.current = { at: now, contact: selectedContact, text: displayText };
 
+    const attsToSend = draftAtts;
     const tempId = `pending-${crypto.randomUUID()}`;
     const pendingMsg: ChatMessage = {
       messageId: tempId,
       sender: { nodeId: "", ownerId: "", displayName: t("messageBubble.you") },
       recipient: { nodeId: "", ownerId: selectedContact, displayName: selectedContact },
-      content: { text },
+      content: {
+        text: displayText,
+        ...(isExtAgentContact && attsToSend.length > 0
+          ? {
+              attachments: attsToSend.map((a) => ({
+                id: a.id,
+                filename: a.name?.trim() || attachmentBasename(a.path),
+                mimeType: a.mimeType || "application/octet-stream",
+                sizeBytes: 0,
+                sensitivity: "friends" as const,
+                // Absolute home path — show chip label only; do not treat as vault path.
+              })),
+            }
+          : {}),
+      },
       metadata: { timestamp: new Date().toISOString(), deliveryReceipt: "pending" },
       signature: "",
     };
@@ -566,11 +682,22 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     setPendingOutbound((prev) => [...prev, pendingMsg]);
     setChatInput("");
     draftRef.current?.setPlainText("", { skipWireSync: true });
+    setAgentAttachments([]);
     setSendError(null);
 
     void (async () => {
       try {
-        const result = await nodeService.sendChat(selectedContact, text);
+        let outbound = text;
+        if (isExtAgentContact && attsToSend.length > 0) {
+          const built = await nodeService.buildAgentAttachmentContext({
+            attachments: toAgentAttachmentRefs(attsToSend),
+          });
+          if (!built.ok) {
+            throw new Error(built.error ?? "Could not read attachments");
+          }
+          outbound = mergeAgentPromptWithAttachments(text, built.contextText);
+        }
+        const result = await nodeService.sendChat(selectedContact, outbound);
         setPendingOutbound((prev) =>
           prev.map((m) =>
             m.messageId === tempId
@@ -591,13 +718,10 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       } catch (error) {
         const msg = error instanceof Error ? error.message : t("contactChat.sendFailed");
         console.error("[ContactChatPanel] sendChat failed:", error);
-        setPendingOutbound((prev) =>
-          prev.map((m) =>
-            m.messageId === tempId
-              ? { ...m, metadata: { ...m.metadata, deliveryReceipt: "failed" as const } }
-              : m,
-          ),
-        );
+        setPendingOutbound((prev) => prev.filter((m) => m.messageId !== tempId));
+        setAgentAttachments(attsToSend);
+        setChatInput(text);
+        draftRef.current?.setPlainText(text, { skipWireSync: true });
         setSendError(msg);
         scheduleClearSendError(8000);
       }
@@ -607,6 +731,9 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   const defaultContactAiMode: AssistantMode =
     nodeConfig?.aiSettings?.defaultModeForNewContacts ?? "manual";
   const currentAiMode: AssistantMode = contactAiModes[selectedContact] ?? defaultContactAiMode;
+  const contactAgentModeEnabled =
+    nodeConfig?.contactAiPreferences?.find((p) => p.peerOwnerId === selectedContact)
+      ?.agentModeEnabled === true;
   const autoSendEnabled = (nodeConfig?.autonomousPolicies ?? []).some(
     (p) => p.domain === "social" && p.autoSendChat,
   );
@@ -637,6 +764,93 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   };
 
   const voiceNoteExtension = (mimeType: string) => (mimeType.includes("mp4") ? "m4a" : "webm");
+
+  const removeAgentAttachment = useCallback((id: string) => {
+    setAgentAttachments((prev) => {
+      const hit = prev.find((a) => a.id === id);
+      if (hit?.previewUrl) URL.revokeObjectURL(hit.previewUrl);
+      return prev.filter((a) => a.id !== id);
+    });
+  }, []);
+
+  const addHomePathAttachments = useCallback((paths: string[]) => {
+    setAgentAttachments((prev) => {
+      const next = [...prev];
+      for (const path of paths) {
+        const trimmedPath = path.trim();
+        if (!trimmedPath) continue;
+        if (next.some((a) => a.path === trimmedPath)) continue;
+        const name = attachmentBasename(trimmedPath);
+        next.push({
+          id: crypto.randomUUID(),
+          path: trimmedPath,
+          name,
+          mimeType: guessMimeFromName(name),
+        });
+      }
+      return next;
+    });
+  }, []);
+
+  const uploadAgentBrowserFiles = useCallback(
+    async (files: FileList | File[]) => {
+      const list = Array.from(files);
+      if (list.length === 0) return;
+      setAgentAttachBusy(true);
+      try {
+        for (const file of list) {
+          const sizeErr = assertAttachableFileSize(file.size);
+          if (sizeErr) {
+            showToast(`${file.name}: ${sizeErr}`, "error");
+            continue;
+          }
+          const contentBase64 = await fileToBase64Agent(file);
+          const result = await nodeService.uploadEnvoyAttachment({
+            filename: file.name,
+            mimeType: file.type || guessMimeFromName(file.name),
+            contentBase64,
+          });
+          if (!result.ok || !result.path) {
+            showToast(result.error ?? `Upload failed: ${file.name}`, "error");
+            continue;
+          }
+          const previewUrl = file.type.startsWith("image/")
+            ? URL.createObjectURL(file)
+            : undefined;
+          setAgentAttachments((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              path: result.path!,
+              name: result.name ?? file.name,
+              mimeType: result.mimeType ?? file.type,
+              previewUrl,
+            },
+          ]);
+        }
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : String(e), "error");
+      } finally {
+        setAgentAttachBusy(false);
+      }
+    },
+    [nodeService, showToast],
+  );
+
+  const handleAgentAttachClick = useCallback(() => {
+    if (isTauriShell()) {
+      void (async () => {
+        const picked = await pickTauriFiles({ title: "Attach files for Ext Agent" });
+        if (!picked.ok) {
+          showToast(picked.error, "error");
+          return;
+        }
+        if (picked.paths?.length) addHomePathAttachments(picked.paths);
+      })();
+      return;
+    }
+    agentFileInputRef.current?.click();
+  }, [addHomePathAttachments, showToast]);
 
   const handleSendVoiceNote = useCallback(async () => {
     if (voiceRecorder.phase === "sending") {
@@ -835,6 +1049,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     threadKind === "human" &&
     !selectedContact.startsWith("room:") &&
     Boolean(bonds.find((c) => c.peerOwnerId === selectedContact));
+  const showAgentModeToggle = isBondedHumanContact && currentAiMode !== "manual";
 
   const handleClearChat = async () => {
     if (displayMessages.length === 0) return;
@@ -1152,6 +1367,25 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                 void updateContactAiMode(selectedContact, "auto");
               }}
             ><BridgeIcon size={16} /></button>
+            {showAgentModeToggle ? (
+              <button
+                className={`assistant-switch-btn agent-mode-btn ${contactAgentModeEnabled ? "active armed" : ""}`}
+                title={
+                  contactAgentModeEnabled
+                    ? t("contactChat.agentModeOnTitle")
+                    : t("contactChat.agentModeOffTitle")
+                }
+                aria-label={t("contactChat.agentModeAria")}
+                aria-pressed={contactAgentModeEnabled}
+                onClick={() => {
+                  if (contactAgentModeEnabled) {
+                    void updateContactAgentMode(selectedContact, false);
+                  } else {
+                    requestEnableAgentMode(selectedContact);
+                  }
+                }}
+              ><AIIcon size={16} /></button>
+            ) : null}
           </div>
         </div>
       </header>
@@ -1231,19 +1465,31 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                           ) : (
                             <>
                               <ChatMessageText text={msg.content.text} identity={aiIdentity} />
-                              {msg.content.attachments?.map((attachment) => {
-                                const isAudio =
-                                  attachment.mimeType?.split(";")[0]?.startsWith("audio/") === true;
-                                return isAudio ? (
-                                  <ChatAudioAttachment
-                                    key={attachment.id}
-                                    attachment={attachment}
-                                    transcription={msg.content.text?.trim() || undefined}
-                                  />
-                                ) : (
-                                  <ChatFileAttachment key={attachment.id} attachment={attachment} />
-                                );
-                              })}
+                              {isExtAgentContact && msg.content.attachments?.length ? (
+                                <AgentAttachmentChips
+                                  attachments={msg.content.attachments.map((a) => ({
+                                    id: a.id,
+                                    path: a.vaultRelativePath || a.filename,
+                                    name: a.filename,
+                                    mimeType: a.mimeType,
+                                  }))}
+                                  readOnly
+                                />
+                              ) : (
+                                msg.content.attachments?.map((attachment) => {
+                                  const isAudio =
+                                    attachment.mimeType?.split(";")[0]?.startsWith("audio/") === true;
+                                  return isAudio ? (
+                                    <ChatAudioAttachment
+                                      key={attachment.id}
+                                      attachment={attachment}
+                                      transcription={msg.content.text?.trim() || undefined}
+                                    />
+                                  ) : (
+                                    <ChatFileAttachment key={attachment.id} attachment={attachment} />
+                                  );
+                                })
+                              )}
                             </>
                           )}
                         </ChatMessageBubble>
@@ -1302,13 +1548,29 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
             onSend={() => void handleSendVoiceNote()}
           />
         ) : (
+          <>
+            <input
+              ref={agentFileInputRef}
+              type="file"
+              multiple
+              className="chat-file-input-hidden"
+              accept="*/*"
+              aria-hidden
+              tabIndex={-1}
+              onChange={(e) => {
+                const files = e.target.files;
+                if (files?.length) void uploadAgentBrowserFiles(files);
+                e.target.value = "";
+              }}
+            />
           <ChatComposer
             value={chatInput}
             onChange={(next) => draftRef.current?.setPlainText(next)}
             onSend={handleSendMessage}
             placeholder={chatInputPlaceholder}
             sendLabel={t("contactChat.send")}
-            disabled={!composerOnline || mmxBusy}
+            disabled={!composerOnline || mmxBusy || agentAttachBusy}
+            allowEmptySend={isExtAgentContact && agentAttachments.length > 0}
             slashCommands={
               isHomeBridgeThread ? (extAgentSlashCatalog?.commands ?? []) : undefined
             }
@@ -1317,23 +1579,47 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
             }
             leading={
               <>
-                <button
-                  type="button"
-                  className="secondary chat-mic-btn"
-                  title={t("chat.audioMessage.record")}
-                  aria-label={t("chat.audioMessage.record")}
-                  disabled={!nodeMeshOnline || mmxBusy}
-                  onClick={() => void voiceRecorder.start()}
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-                </button>
+                {!isExtAgentContact ? (
+                  <button
+                    type="button"
+                    className="secondary chat-mic-btn"
+                    title={t("chat.audioMessage.record")}
+                    aria-label={t("chat.audioMessage.record")}
+                    disabled={!nodeMeshOnline || mmxBusy}
+                    onClick={() => void voiceRecorder.start()}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                  </button>
+                ) : null}
+                {isExtAgentContact ? (
+                  <AgentAttachmentChips
+                    attachments={agentAttachments}
+                    onRemove={removeAgentAttachment}
+                    onClearAll={() => {
+                      setAgentAttachments((prev) => {
+                        for (const a of prev) {
+                          if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
+                        }
+                        return [];
+                      });
+                    }}
+                  />
+                ) : null}
                 <button
                   type="button"
                   className="secondary chat-attach-file-btn"
                   title={t("contactChat.attachFileTitle")}
                   aria-label={t("contactChat.attachFileAria")}
-                  disabled={!nodeMeshOnline || attachBusy || mmxBusy}
-                  onClick={() => fileInputRef.current?.click()}
+                  disabled={
+                    isExtAgentContact
+                      ? !homeRpcOnline || agentAttachBusy || mmxBusy
+                      : !nodeMeshOnline || attachBusy || mmxBusy
+                  }
+                  onClick={() =>
+                    isExtAgentContact
+                      ? handleAgentAttachClick()
+                      : fileInputRef.current?.click()
+                  }
                 >
                   <AttachIcon size={18} />
                 </button>
@@ -1349,18 +1635,21 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                     if (file) void handleAttachFile(file);
                   }}
                 />
-                <button
-                  type="button"
-                  className="secondary chat-share-file-btn"
-                  title={t("contactChat.shareVaultTitle")}
-                  aria-label={t("contactChat.shareVaultAria")}
-                  onClick={() => setShareOpen(true)}
-                >
-                  <P2PIcon size={18} />
-                </button>
+                {!isExtAgentContact ? (
+                  <button
+                    type="button"
+                    className="secondary chat-share-file-btn"
+                    title={t("contactChat.shareVaultTitle")}
+                    aria-label={t("contactChat.shareVaultAria")}
+                    onClick={() => setShareOpen(true)}
+                  >
+                    <P2PIcon size={18} />
+                  </button>
+                ) : null}
               </>
             }
           />
+          </>
         )}
       </footer>
       </div>

@@ -271,3 +271,182 @@ describe("runInboundChatAssist auto-send policy", () => {
     expect(sendChat).not.toHaveBeenCalled();
   });
 });
+
+describe("runInboundChatAssist Agent Mode", () => {
+  const assistRule = {
+    id: "greet",
+    enabled: true,
+    name: "Greet",
+    category: "availability" as const,
+    priority: 1,
+    trigger: { isGreeting: true },
+    action: { type: "draft" as const, template: "Assist draft for {ownerName}" },
+  };
+
+  it("uses OpenClaw when agentModeEnabled is true", async () => {
+    const sendChat = vi.fn();
+    const emitDraft = vi.fn();
+    const askOpenClaw = vi.fn().mockResolvedValue("Agent Mode reply for Bob");
+
+    await runInboundChatAssist({
+      envelope: chatEnvelope("peer-a", "envoy:owner:bob", "Hello there"),
+      senderOwnerId: "envoy:owner:bob",
+      chatText: "Hello there",
+      remotePeerId: "remote-libp2p",
+      receivedAt: Date.now(),
+      correlationId: "corr-agent",
+      config: {
+        chatAssistEnabled: true,
+        autonomousKillSwitch: false,
+        autonomousPolicies: [{ domain: "social", maxSensitivity: "friends", autoAnswer: false, autoSendChat: false }],
+        contactAiPreferences: [
+          {
+            peerOwnerId: "envoy:owner:bob",
+            aiAccessLevel: "assistant_only",
+            knowledgeAccess: "public",
+            priority: "high",
+            agentModeEnabled: true,
+          },
+        ],
+        aiSettings: {
+          status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" },
+          identity: { mode: "transparent" },
+          defaultModeForNewContacts: "manual",
+          rules: [assistRule],
+        },
+        modelProviders: { mode: "mock" },
+      },
+      modelProviders: { mode: "mock" },
+      profile: makeTestProfile(),
+      taskStore,
+      trustStore,
+      peerDirectoryStore,
+      draftStore,
+      chatLogStore: null,
+      humanProfileStore: { loadHumanProfile: async () => null } as never,
+      vaultDir: profileDir,
+      styleAdapter: null,
+      sendChat,
+      emitDraft,
+      isOwnerOnline: () => true,
+      askOpenClaw,
+      ensureOpenClawReady: async () => true,
+    });
+
+    expect(askOpenClaw).toHaveBeenCalledOnce();
+    expect(emitDraft).toHaveBeenCalled();
+    const draft = emitDraft.mock.calls[0]?.[1];
+    expect(draft?.text).toContain("Agent Mode reply");
+  });
+
+  it("uses Assist when agentModeEnabled is false/undefined", async () => {
+    const sendChat = vi.fn();
+    const emitDraft = vi.fn();
+    const askOpenClaw = vi.fn().mockResolvedValue("should not be used");
+
+    await runInboundChatAssist({
+      envelope: chatEnvelope("peer-a", "envoy:owner:bob", "Hi"),
+      senderOwnerId: "envoy:owner:bob",
+      chatText: "Hi",
+      remotePeerId: "remote-libp2p",
+      receivedAt: Date.now(),
+      correlationId: "corr-assist",
+      config: {
+        chatAssistEnabled: true,
+        autonomousKillSwitch: false,
+        autonomousPolicies: [{ domain: "social", maxSensitivity: "friends", autoAnswer: false, autoSendChat: false }],
+        contactAiPreferences: [
+          {
+            peerOwnerId: "envoy:owner:bob",
+            aiAccessLevel: "assistant_only",
+            knowledgeAccess: "public",
+            priority: "high",
+          },
+        ],
+        aiSettings: {
+          status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" },
+          identity: { mode: "transparent" },
+          defaultModeForNewContacts: "manual",
+          rules: [assistRule],
+        },
+        modelProviders: { mode: "mock" },
+      },
+      modelProviders: { mode: "mock" },
+      profile: makeTestProfile(),
+      taskStore,
+      trustStore,
+      peerDirectoryStore,
+      draftStore,
+      chatLogStore: null,
+      humanProfileStore: { loadHumanProfile: async () => null } as never,
+      vaultDir: profileDir,
+      styleAdapter: null,
+      sendChat,
+      emitDraft,
+      isOwnerOnline: () => true,
+      askOpenClaw,
+    });
+
+    expect(askOpenClaw).not.toHaveBeenCalled();
+    expect(emitDraft).toHaveBeenCalled();
+    const draft = emitDraft.mock.calls[0]?.[1];
+    expect(typeof draft?.text).toBe("string");
+    expect(draft.text.length).toBeGreaterThan(0);
+  });
+
+  it("forces Agent Mode off for group threads (disableAutoSend)", async () => {
+    const sendChat = vi.fn();
+    const emitDraft = vi.fn();
+    const askOpenClaw = vi.fn().mockResolvedValue("should not be used");
+
+    await runInboundChatAssist({
+      envelope: chatEnvelope("peer-a", "envoy:owner:bob", "Hi"),
+      senderOwnerId: "envoy:owner:bob",
+      chatText: "Hi",
+      remotePeerId: "remote-libp2p",
+      receivedAt: Date.now(),
+      correlationId: "corr-group",
+      draftThreadKey: "room:abc",
+      disableAutoSend: true,
+      config: {
+        chatAssistEnabled: true,
+        autonomousKillSwitch: false,
+        autonomousPolicies: [{ domain: "social", maxSensitivity: "friends", autoAnswer: false, autoSendChat: true }],
+        contactAiPreferences: [
+          {
+            peerOwnerId: "room:abc",
+            aiAccessLevel: "assistant_only",
+            knowledgeAccess: "public",
+            priority: "high",
+            agentModeEnabled: true,
+          },
+        ],
+        aiSettings: {
+          status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" },
+          identity: { mode: "transparent" },
+          defaultModeForNewContacts: "manual",
+          rules: [assistRule],
+        },
+        modelProviders: { mode: "mock" },
+      },
+      modelProviders: { mode: "mock" },
+      profile: makeTestProfile(),
+      taskStore,
+      trustStore,
+      peerDirectoryStore,
+      draftStore,
+      chatLogStore: null,
+      humanProfileStore: { loadHumanProfile: async () => null } as never,
+      vaultDir: profileDir,
+      styleAdapter: null,
+      sendChat,
+      emitDraft,
+      isOwnerOnline: () => true,
+      askOpenClaw,
+      ensureOpenClawReady: async () => true,
+    });
+
+    expect(askOpenClaw).not.toHaveBeenCalled();
+    expect(emitDraft).toHaveBeenCalled();
+  });
+});

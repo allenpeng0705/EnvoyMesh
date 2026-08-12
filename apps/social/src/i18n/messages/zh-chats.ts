@@ -157,6 +157,13 @@ export const zhContactChatMessages = {
   autoTitle: "自动回复：AI 自动响应",
   autoDisabledTitle: "请在设置中启用社交自动发送",
   autoAria: "自动回复模式",
+  agentModeOffTitle: "代理模式关闭 — 助手仅使用公开知识。点击启用 OpenClaw（可访问家庭文件、私有知识与工具）。",
+  agentModeOnTitle: "代理模式开启 — OpenClaw 可使用家庭文件、私有知识与工具。点击关闭。",
+  agentModeAria: "切换此联系人的代理模式",
+  agentModeConfirmTitle: "为此聊天启用代理模式？",
+  agentModeConfirmMessage:
+    "代理模式使用 EnvoyAI/OpenClaw，可读取本地文件、私有知识，并在家庭节点上运行工具。请仅对您完全信任的联系人启用。",
+  agentModeConfirmEnable: "启用代理模式",
   emptyDesc: "打个招呼开始对话",
   privateNotesSummary: "私人笔记（跨设备同步）",
   privateNotesPlaceholder: "仅您可见的笔记 — 不会发送到网格",

@@ -190,7 +190,7 @@ import { DigestGenerator, createDefaultDigestConfig, getDigestPeriodDates } from
 import type { AutonomousDomain, AutonomousPolicy, AiSettings, ChatMessage, ContactAiPreferences } from "@envoymesh/api";
 import { buildVaultIndexOptionsFromKnowledgeBase } from "@envoymesh/api";
 import { deriveLocationDiscoveryTopics } from "@envoymesh/api";
-import { stripModelThinking, applyAiIdentityForIdentity, ENVOY_AI_THREAD_KEY } from "@envoymesh/api";
+import { stripModelThinking, applyAiIdentityForIdentity, ENVOY_AI_THREAD_KEY, OWNER_FAMILY_PROFILE_ID } from "@envoymesh/api";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
 import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
 import { installEnvoyDataTransferReceiver } from "./data-transfer-inbound.js";
@@ -2103,7 +2103,7 @@ async function handleInboundMeshMessage({
             return nodeService.sendAgentChat(targetOwnerId, text);
           },
           emitDraft: (threadPeerOwnerId, draft) => {
-            wsServerForEvents?.emitEvent("chat:draft", {
+            wsServerForEvents?.emitEventToProfile(OWNER_FAMILY_PROFILE_ID, "chat:draft", {
               threadPeerOwnerId,
               draft: { ...draft, threadPeerOwnerId },
             });
@@ -2116,6 +2116,10 @@ async function handleInboundMeshMessage({
           onAutoReplyPaused: (notification) => {
             wsServerForEvents?.emitEvent("chat:auto-reply-paused", notification);
           },
+          askOpenClaw:
+            nodeService instanceof NodeServiceImpl
+              ? (prompt, context) => nodeService.askOpenClaw(prompt, context as never)
+              : undefined,
         });
       })().catch((err) => console.warn(`[chat-assist] failed:`, err));
     }
@@ -3566,12 +3570,11 @@ nodeService.on("content:engage", (data) => wsServer.emitEvent("content:engage", 
 nodeService.on("share:offered", (data) => wsServer.emitEvent("share:offered", data));
 nodeService.on("share:accepted", (data) => wsServer.emitEvent("share:accepted", data));
 nodeService.on("share:declined", (data) => wsServer.emitEvent("share:declined", data));
-// Do NOT re-broadcast chat:message / chat:room-* / agent:activity here.
+// Do NOT re-broadcast chat:message / chat:room-* / agent:activity / chat:draft here.
 // WsServer.start() already wires them with profile-scoped emitEventToProfile.
 // A second unfiltered emitEvent leaked Dad/Mom EnvoyAI into Owner Social
 // (messages appear live, then vanish on history reload from __envoy_ai__:owner).
 nodeService.on("chat:delivered", (data) => wsServer.emitEvent("chat:delivered", data));
-nodeService.on("chat:draft", (data) => wsServer.emitEvent("chat:draft", data));
 nodeService.on("chain:state", (data) => wsServer.emitEvent("chain:state", data));
 nodeService.on("chain:report", (data) => wsServer.emitEvent("chain:report", data));
 nodeService.on("chain:iteration", (data) => wsServer.emitEvent("chain:iteration", data));

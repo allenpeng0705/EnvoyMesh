@@ -103,6 +103,12 @@ export function FamilyChatPanel({ threadKey }: FamilyChatPanelProps) {
           aiAccessLevel,
           knowledgeAccess: existingPref?.knowledgeAccess ?? "public",
           priority: existingPref?.priority ?? "high",
+          ...(existingPref?.syndicationMaxSensitivity
+            ? { syndicationMaxSensitivity: existingPref.syndicationMaxSensitivity }
+            : {}),
+          ...(mode !== "manual" && existingPref?.agentModeEnabled
+            ? { agentModeEnabled: true }
+            : {}),
         },
       ];
       const configPatch: {

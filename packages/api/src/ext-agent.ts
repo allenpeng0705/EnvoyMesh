@@ -337,6 +337,39 @@ export interface RevealHomeFsPathResult {
   error?: string;
 }
 
+/** Home-node file ref for EnvoyAI / Ext Agent chat attachments. */
+export interface AgentAttachmentRef {
+  /** Absolute path on the home node. */
+  path: string;
+  name?: string;
+  mimeType?: string;
+}
+
+export interface UploadEnvoyAttachmentParams {
+  filename: string;
+  mimeType?: string;
+  contentBase64: string;
+}
+
+export interface UploadEnvoyAttachmentResult {
+  ok: boolean;
+  path?: string;
+  name?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  error?: string;
+}
+
+export interface BuildAgentAttachmentContextParams {
+  attachments: AgentAttachmentRef[];
+}
+
+export interface BuildAgentAttachmentContextResult {
+  ok: boolean;
+  contextText?: string;
+  error?: string;
+}
+
 /** Agents that honor {@link ExtAgentDefinition.projectPath} as cwd. */
 export const EXT_AGENTS_WITH_PROJECT_PATH = [
   "codex",

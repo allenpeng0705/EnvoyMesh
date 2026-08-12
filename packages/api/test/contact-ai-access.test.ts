@@ -3,7 +3,9 @@ import {
   applyGlobalAutoSendGate,
   contactAiAccessLevelForAssistantMode,
   capGroupChatAiAccessLevel,
+  isContactAgentModeEnabled,
   resolveContactAiAccessLevel,
+  resolveInboundContactAgentMode,
   resolveInboundContactAiAccess,
 } from "../src/contact-ai-access.js";
 
@@ -28,6 +30,38 @@ describe("resolveContactAiAccessLevel", () => {
 
   it("falls back to none when default is manual", () => {
     expect(resolveContactAiAccessLevel("envoy:owner:new", [], "manual")).toBe("none");
+  });
+});
+
+describe("isContactAgentModeEnabled", () => {
+  it("defaults to off when missing or false", () => {
+    expect(isContactAgentModeEnabled(undefined)).toBe(false);
+    expect(isContactAgentModeEnabled(null)).toBe(false);
+    expect(isContactAgentModeEnabled({ agentModeEnabled: false })).toBe(false);
+  });
+
+  it("is true only when explicitly enabled", () => {
+    expect(isContactAgentModeEnabled({ agentModeEnabled: true })).toBe(true);
+  });
+});
+
+describe("resolveInboundContactAgentMode", () => {
+  it("prefers Assist when agentModeEnabled is false/undefined", () => {
+    expect(resolveInboundContactAgentMode({ preference: undefined })).toBe(false);
+    expect(resolveInboundContactAgentMode({ preference: { agentModeEnabled: false } })).toBe(false);
+  });
+
+  it("enables Agent Mode when preference is on", () => {
+    expect(resolveInboundContactAgentMode({ preference: { agentModeEnabled: true } })).toBe(true);
+  });
+
+  it("forces Agent Mode off for group threads", () => {
+    expect(
+      resolveInboundContactAgentMode({
+        preference: { agentModeEnabled: true },
+        forceOff: true,
+      }),
+    ).toBe(false);
   });
 });
 

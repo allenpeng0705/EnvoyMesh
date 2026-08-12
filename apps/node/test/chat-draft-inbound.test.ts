@@ -4,7 +4,7 @@ import { buildVaultIndex, type VaultIndex } from "@envoymesh/vault";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { generateChatDraft } from "../src/chat-draft-inbound.js";
 import type { AiRule, AiIdentity } from "@envoymesh/api";
 
@@ -1083,6 +1083,41 @@ describe("Contact AI Access Level", () => {
     });
 
     expect(result.ok).toBe(true);
+  });
+
+  it("passes contact knowledgeAccess to Assist vault search (not hardcoded public)", async () => {
+    await setupBondedPeer("envoy:owner:bob", "peer-b", "Bob");
+    const searchVaultKnowledgeBase = vi.fn().mockResolvedValue([]);
+    const ragService = {
+      searchVaultKnowledgeBase,
+      getExternalKnowledgeContext: vi.fn().mockResolvedValue(""),
+    };
+
+    const result = await generateChatDraft({
+      envelope: chatEnvelope("peer-b", "envoy:owner:bob", "Hello!"),
+      senderOwnerId: "envoy:owner:bob",
+      senderDisplayName: "Bob",
+      chatText: "Hello!",
+      remotePeerId: "remote-libp2p",
+      receivedAt: Date.now(),
+      correlationId: "corr-ka-pass",
+      taskStore,
+      trustStore,
+      peerDirectoryStore,
+      profile: makeTestProfile(),
+      draftStore,
+      modelProviders: { mode: "mock" },
+      chatAssistEnabled: true,
+      contactAiAccessLevel: "assistant_only",
+      knowledgeAccess: "friends",
+      vaultIndex: { documents: [], chunks: [] } as never,
+      ragService: ragService as never,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(searchVaultKnowledgeBase).toHaveBeenCalled();
+    expect(searchVaultKnowledgeBase.mock.calls[0]?.[0]?.knowledgeAccess).toBe("friends");
+    expect(searchVaultKnowledgeBase.mock.calls[0]?.[0]?.knowledgeScope).toBe("public");
   });
 });
 

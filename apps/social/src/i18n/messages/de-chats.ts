@@ -127,6 +127,13 @@ export const deContactChatMessages = {
   autoTitle: "Auto-Antwort: KI antwortet automatisch",
   autoDisabledTitle: "Aktivieren Sie das automatische soziale Senden in den Einstellungen",
   autoAria: "Auto-Antwort-Modus",
+  agentModeOffTitle: "Agent Mode off — Assist uses public knowledge only. Click to enable OpenClaw with home files, private knowledge, and tools.",
+  agentModeOnTitle: "Agent Mode on — OpenClaw may use home files, private knowledge, and tools. Click to turn off.",
+  agentModeAria: "Toggle Agent Mode for this contact",
+  agentModeConfirmTitle: "Enable Agent Mode for this chat?",
+  agentModeConfirmMessage:
+    "Agent Mode uses EnvoyAI/OpenClaw and can read local files, private knowledge, and run tools on your home node. Only enable for contacts you fully trust.",
+  agentModeConfirmEnable: "Enable Agent Mode",
   emptyDesc: "Sagen Sie Hallo, um das Gespräch zu beginnen",
   privateNotesSummary: "Private Notizen (geräteübergreifend synchronisiert)",
   privateNotesPlaceholder: "Nur für Sie sichtbar — wird nicht ins Mesh gesendet",

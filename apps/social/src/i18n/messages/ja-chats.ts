@@ -127,6 +127,13 @@ export const jaContactChatMessages = {
   autoTitle: "自動返信: AI が自動応答",
   autoDisabledTitle: "設定でソーシャル自動送信を有効にしてください",
   autoAria: "自動返信モード",
+  agentModeOffTitle: "Agent Mode off — Assist uses public knowledge only. Click to enable OpenClaw with home files, private knowledge, and tools.",
+  agentModeOnTitle: "Agent Mode on — OpenClaw may use home files, private knowledge, and tools. Click to turn off.",
+  agentModeAria: "Toggle Agent Mode for this contact",
+  agentModeConfirmTitle: "Enable Agent Mode for this chat?",
+  agentModeConfirmMessage:
+    "Agent Mode uses EnvoyAI/OpenClaw and can read local files, private knowledge, and run tools on your home node. Only enable for contacts you fully trust.",
+  agentModeConfirmEnable: "Enable Agent Mode",
   emptyDesc: "挨拶して会話を始めましょう",
   privateNotesSummary: "プライベートメモ (デバイス間で同期)",
   privateNotesPlaceholder: "自分だけが見るメモ — メッシュには送信されません",

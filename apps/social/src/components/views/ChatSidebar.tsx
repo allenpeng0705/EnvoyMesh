@@ -167,6 +167,11 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
       aiAccessLevel: level,
       knowledgeAccess: existingPref?.knowledgeAccess ?? "public",
       priority: existingPref?.priority ?? "high",
+      ...(existingPref?.syndicationMaxSensitivity
+        ? { syndicationMaxSensitivity: existingPref.syndicationMaxSensitivity }
+        : {}),
+      // Manual / none clears Agent Mode — re-enable requires the warning confirm.
+      ...(level !== "none" && existingPref?.agentModeEnabled ? { agentModeEnabled: true } : {}),
     }];
     await nodeService.updateNodeConfig({ contactAiPreferences: newPrefs });
     await refreshNodeConfig();

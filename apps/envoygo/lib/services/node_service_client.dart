@@ -253,6 +253,30 @@ class NodeServiceClient {
     await _client.call('updateNodeConfig', patch);
   }
 
+  /// List AI chat drafts for a contact thread (owner Assist / Agent Mode).
+  Future<List<Map<String, dynamic>>> getChatDrafts({
+    String? threadPeerOwnerId,
+  }) async {
+    final result = await _client.call(
+      'getChatDrafts',
+      threadPeerOwnerId != null && threadPeerOwnerId.isNotEmpty
+          ? {'threadPeerOwnerId': threadPeerOwnerId}
+          : <String, dynamic>{},
+    );
+    if (result is! List) return const [];
+    return result
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  /// Dismiss / delete a chat draft by id.
+  Future<void> deleteChatDraft(String draftId) async {
+    final id = draftId.trim();
+    if (id.isEmpty) return;
+    await _client.call('deleteChatDraft', {'draftId': id});
+  }
+
   /// Create or replace the full `aiBots` list on the home node.
   Future<void> updateAiBots(List<Map<String, dynamic>> aiBots) async {
     await updateNodeConfig({'aiBots': aiBots});
@@ -605,6 +629,34 @@ class NodeServiceClient {
         if (target != null) 'target': target,
       },
       const Duration(seconds: 920),
+    ) as Map<String, dynamic>;
+  }
+
+  /// Upload a phone/browser blob into home `{profileDir}/envoy-uploads/`.
+  Future<Map<String, dynamic>> uploadEnvoyAttachment({
+    required String filename,
+    required String contentBase64,
+    String? mimeType,
+  }) async {
+    return await _client.call(
+      'uploadEnvoyAttachment',
+      {
+        'filename': filename,
+        'contentBase64': contentBase64,
+        if (mimeType != null) 'mimeType': mimeType,
+      },
+      const Duration(seconds: 120),
+    ) as Map<String, dynamic>;
+  }
+
+  /// Build agent prompt appendix from home absolute paths.
+  Future<Map<String, dynamic>> buildAgentAttachmentContext(
+    List<Map<String, String>> attachments,
+  ) async {
+    return await _client.call(
+      'buildAgentAttachmentContext',
+      {'attachments': attachments},
+      const Duration(seconds: 60),
     ) as Map<String, dynamic>;
   }
 

@@ -1418,6 +1418,216 @@ fn pick_directory(
     }
 }
 
+/// Native multi-file picker for EnvoyAI / Ext Agent attachments.
+///
+/// Returns `Ok(Some(paths))` when the user picks one or more files,
+/// `Ok(None)` when they cancel.
+#[tauri::command]
+fn pick_files(
+    title: Option<String>,
+    default_path: Option<String>,
+) -> Result<Option<Vec<String>>, String> {
+    let title = title
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Choose files");
+    let default_path = default_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    #[cfg(target_os = "macos")]
+    {
+        fn applescript_escape(s: &str) -> String {
+            s.replace('\\', "\\\\").replace('"', "\\\"")
+        }
+        let mut script = format!(
+            "set theFiles to choose file with prompt \"{}\" with multiple selections allowed",
+            applescript_escape(title)
+        );
+        if let Some(raw) = default_path {
+            let path = std::path::PathBuf::from(raw);
+            let start = if path.is_dir() {
+                path
+            } else {
+                path.parent()
+                    .filter(|p| p.is_dir())
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or(path)
+            };
+            script.push_str(&format!(
+                " default location (POSIX file \"{}\")",
+                applescript_escape(&start.to_string_lossy())
+            ));
+        }
+        script.push_str(
+            "\nset out to \"\"\n\
+             repeat with f in theFiles\n\
+               set out to out & (POSIX path of f) & linefeed\n\
+             end repeat\n\
+             return out",
+        );
+        let output = Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !output.status.success() {
+            return Ok(None);
+        }
+        let paths: Vec<String> = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(|l| l.trim().trim_end_matches('/').to_string())
+            .filter(|l| !l.is_empty())
+            .collect();
+        return Ok(if paths.is_empty() { None } else { Some(paths) });
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        fn ps_escape(s: &str) -> String {
+            s.replace('\'', "''")
+        }
+        let mut script = String::from(
+            "Add-Type -AssemblyName System.Windows.Forms; \
+             $d = New-Object System.Windows.Forms.OpenFileDialog; \
+             $d.Title = '",
+        );
+        script.push_str(&ps_escape(title));
+        script.push_str("'; $d.Multiselect = $true; $d.CheckFileExists = $true; ");
+        if let Some(raw) = default_path {
+            let path = std::path::PathBuf::from(raw);
+            let start = if path.is_dir() {
+                path
+            } else {
+                path.parent()
+                    .filter(|p| p.is_dir())
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or(path)
+            };
+            script.push_str(&format!(
+                "$d.InitialDirectory = '{}'; ",
+                ps_escape(&start.to_string_lossy())
+            ));
+        }
+        script.push_str(
+            "$r = $d.ShowDialog(); \
+             if ($r -eq [System.Windows.Forms.DialogResult]::OK) { \
+               $d.FileNames | ForEach-Object { [Console]::Out.WriteLine($_) } \
+             } elseif ($r -eq [System.Windows.Forms.DialogResult]::Cancel) { \
+               exit 0 \
+             } else { \
+               [Console]::Error.WriteLine(\"OpenFileDialog failed: $r\"); \
+               exit 2 \
+             }",
+        );
+        let output = Command::new("powershell")
+            .args(["-NoProfile", "-STA", "-Command", &script])
+            .output()
+            .map_err(|e| format!("file picker powershell failed: {e}"))?;
+        if !output.status.success() {
+            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            if err.is_empty() {
+                return Err(format!(
+                    "file picker failed (exit {:?})",
+                    output.status.code()
+                ));
+            }
+            return Err(err);
+        }
+        let paths: Vec<String> = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect();
+        return Ok(if paths.is_empty() { None } else { Some(paths) });
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let mut tried = Vec::new();
+        {
+            let mut cmd = Command::new("zenity");
+            cmd.args([
+                "--file-selection",
+                "--multiple",
+                "--separator=|",
+                "--title",
+                title,
+            ]);
+            if let Some(raw) = default_path {
+                let path = std::path::PathBuf::from(raw);
+                let start = if path.is_dir() {
+                    path
+                } else {
+                    path.parent()
+                        .filter(|p| p.is_dir())
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or(path)
+                };
+                cmd.arg(format!("--filename={}", start.display()));
+            }
+            match cmd.output() {
+                Ok(output) if output.status.success() => {
+                    let paths: Vec<String> = String::from_utf8_lossy(&output.stdout)
+                        .split('|')
+                        .map(|l| l.trim().to_string())
+                        .filter(|l| !l.is_empty())
+                        .collect();
+                    return Ok(if paths.is_empty() { None } else { Some(paths) });
+                }
+                Ok(output) if output.status.code() == Some(1) => return Ok(None),
+                Ok(_) | Err(_) => tried.push("zenity"),
+            }
+        }
+        {
+            let mut args = vec!["--getopenfilename".to_string()];
+            if let Some(raw) = default_path {
+                let path = std::path::PathBuf::from(raw);
+                let start = if path.is_dir() {
+                    path
+                } else {
+                    path.parent()
+                        .filter(|p| p.is_dir())
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or(path)
+                };
+                args.push(start.to_string_lossy().into_owned());
+            } else {
+                args.push(".".to_string());
+            }
+            args.push(title.to_string());
+            match Command::new("kdialog").args(&args).output() {
+                Ok(output) if output.status.success() => {
+                    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    return Ok(if path.is_empty() {
+                        None
+                    } else {
+                        Some(vec![path])
+                    });
+                }
+                Ok(output) if output.status.code() == Some(1) => return Ok(None),
+                Ok(_) | Err(_) => tried.push("kdialog"),
+            }
+        }
+        return Err(format!(
+            "No file dialog available (tried {}). Install zenity or kdialog.",
+            tried.join(", ")
+        ));
+    }
+
+    #[cfg(not(any(
+        target_os = "macos",
+        target_os = "windows",
+        all(unix, not(target_os = "macos"))
+    )))]
+    {
+        let _ = (title, default_path);
+        Err("File picker is not supported on this platform".into())
+    }
+}
+
 /// Returns the OpenClaw self-reference heal status captured at launch.
 ///
 /// Used by the Social UI to render a doctor chip and by `envoymesh doctor`
@@ -1455,7 +1665,8 @@ fn main() {
             append_social_log,
             reveal_log_dir,
             get_openclaw_heal_status,
-            pick_directory
+            pick_directory,
+            pick_files
         ])
         .setup(move |app| {
             info!("Tauri app setup starting");

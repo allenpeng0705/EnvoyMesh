@@ -240,6 +240,58 @@ void main() {
       );
       expect(next.map((m) => m.id), ['srv_voice']);
     });
+
+    test('promotes local attachment bubble over expanded home echo', () {
+      final local = ChatMessage(
+        id: 'temp_att',
+        threadId: 'node:envoyai',
+        text: 'summarize this',
+        isOutbound: true,
+        createdAt: '2026-07-31T12:00:00.000Z',
+        attachments: [
+          ChatAttachment(
+            id: 'a1',
+            filename: 'notes.txt',
+            mimeType: 'text/plain',
+            sizeBytes: 10,
+            sensitivity: 'friends',
+            vaultRelativePath: '/Users/me/.envoymesh/envoy-uploads/notes.txt',
+          ),
+        ],
+      );
+      final echo = msg(
+        id: 'srv_att',
+        text:
+            'summarize this\n\nAttached files (on home node):\n--- file: notes.txt ---\npath: /tmp/notes.txt\nhello',
+      );
+      final next = reconcileChatMessages(
+        existing: [local],
+        incoming: echo,
+        showAsMine: true,
+        collapseMatchingOutbound: true,
+      );
+      expect(next, hasLength(1));
+      expect(next.first.id, 'srv_att');
+      expect(next.first.text, 'summarize this');
+      expect(next.first.attachments, isNotNull);
+      expect(next.first.attachments!.first.filename, 'notes.txt');
+      expect(next.first.text!.contains('Attached files'), isFalse);
+    });
+
+    test('strips attachment context when no local bubble matched', () {
+      final echo = msg(
+        id: 'srv_hist',
+        text:
+            'hello\n\nAttached files (on home node):\n--- file: a.txt ---\npath: /a\nbody',
+      );
+      final next = reconcileChatMessages(
+        existing: const [],
+        incoming: echo,
+        showAsMine: true,
+        collapseMatchingOutbound: true,
+      );
+      expect(next.single.text, 'hello');
+    });
   });
 
   group('filenameForMime', () {

@@ -1230,6 +1230,96 @@ abstract class AppLocalizations {
   /// **'All messages in this thread will be deleted.'**
   String get chatClearThreadBody;
 
+  /// No description provided for @chatAiManual.
+  ///
+  /// In en, this message translates to:
+  /// **'Manual'**
+  String get chatAiManual;
+
+  /// No description provided for @chatAiAssistant.
+  ///
+  /// In en, this message translates to:
+  /// **'Assistant'**
+  String get chatAiAssistant;
+
+  /// No description provided for @chatAiAuto.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto'**
+  String get chatAiAuto;
+
+  /// No description provided for @chatAiManualTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Manual: type yourself'**
+  String get chatAiManualTooltip;
+
+  /// No description provided for @chatAiAssistantTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Assistant: AI suggests drafts'**
+  String get chatAiAssistantTooltip;
+
+  /// No description provided for @chatAiAutoTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-reply: AI responds automatically'**
+  String get chatAiAutoTooltip;
+
+  /// No description provided for @chatAgentMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Agent'**
+  String get chatAgentMode;
+
+  /// No description provided for @chatAgentModeOffTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Agent Mode off — Assist uses public knowledge only'**
+  String get chatAgentModeOffTooltip;
+
+  /// No description provided for @chatAgentModeOnTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Agent Mode on — OpenClaw may use home files, private knowledge, and tools'**
+  String get chatAgentModeOnTooltip;
+
+  /// No description provided for @chatAgentModeConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable Agent Mode for this chat?'**
+  String get chatAgentModeConfirmTitle;
+
+  /// No description provided for @chatAgentModeConfirmBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Agent Mode uses EnvoyAI/OpenClaw and can read local files, private knowledge, and run tools on your home node. Only enable for contacts you fully trust.'**
+  String get chatAgentModeConfirmBody;
+
+  /// No description provided for @chatAgentModeConfirmEnable.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable Agent Mode'**
+  String get chatAgentModeConfirmEnable;
+
+  /// No description provided for @chatSuggestedReply.
+  ///
+  /// In en, this message translates to:
+  /// **'Suggested reply'**
+  String get chatSuggestedReply;
+
+  /// No description provided for @chatSuggestedReplyUse.
+  ///
+  /// In en, this message translates to:
+  /// **'Use'**
+  String get chatSuggestedReplyUse;
+
+  /// No description provided for @chatSuggestedReplyDismiss.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get chatSuggestedReplyDismiss;
+
   /// No description provided for @chatDeleteMessageTitle.
   ///
   /// In en, this message translates to:

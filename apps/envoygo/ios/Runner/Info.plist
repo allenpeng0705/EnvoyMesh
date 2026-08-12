@@ -36,6 +36,8 @@
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Microphone access is used for voice notes and voice/video calls.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Attach photos from your library to EnvoyAI and Ext Agent chats.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>

@@ -2,6 +2,25 @@ import type { AiSettings, ContactAiPreferences } from "./ws-protocol.js";
 
 export type ContactAiAccessLevel = "none" | "assistant_only" | "full";
 
+/** True when the contact preference explicitly enables Agent Mode (default off). */
+export function isContactAgentModeEnabled(
+  pref: Pick<ContactAiPreferences, "agentModeEnabled"> | null | undefined,
+): boolean {
+  return pref?.agentModeEnabled === true;
+}
+
+/**
+ * Resolve Agent Mode for inbound assist.
+ * Group threads (`forceOff`) never use Agent Mode — same force-off as auto-send.
+ */
+export function resolveInboundContactAgentMode(input: {
+  preference: Pick<ContactAiPreferences, "agentModeEnabled"> | null | undefined;
+  forceOff?: boolean;
+}): boolean {
+  if (input.forceOff) return false;
+  return isContactAgentModeEnabled(input.preference);
+}
+
 /** Resolve effective AI access for a contact (explicit prefs, else default mode for new contacts). */
 export function resolveContactAiAccessLevel(
   contactOwnerId: string,

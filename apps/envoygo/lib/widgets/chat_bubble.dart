@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../ext_agent/agent_attachments.dart';
 import '../l10n/app_localizations.dart';
 import '../models/chat_message.dart';
+import 'agent_attachment_bar.dart';
 import 'chat_audio_player.dart';
 
 /// Chat bubble widget for a single message.
@@ -17,8 +19,17 @@ class ChatBubble extends StatelessWidget {
     this.onLoadAudio,
   });
 
-  /// Whether this message has an audio attachment.
-  bool get _hasAudio => message.attachments?.any((a) => a.isAudio) ?? false;
+  /// Agent home-path attaches (absolute / envoy-uploads) — never voice-note UI.
+  bool get _hasAgentHomeAttach =>
+      message.attachments?.any(
+        (a) => isAgentHomePathAttachmentPath(a.vaultRelativePath),
+      ) ??
+      false;
+
+  /// Whether this message has a vault voice-note (not agent home attach).
+  bool get _hasAudio =>
+      !_hasAgentHomeAttach &&
+      (message.attachments?.any((a) => a.isAudio) ?? false);
 
   @override
   Widget build(BuildContext context) {
@@ -103,10 +114,48 @@ class ChatBubble extends StatelessWidget {
                     fontStyle: FontStyle.italic,
                   ),
                 )
-              else
+              else if (message.text != null && message.text!.isNotEmpty)
                 Text(
-                  message.text ?? '',
+                  message.text!,
                   style: TextStyle(color: colorScheme.onSurface),
+                ),
+              if (_hasAgentHomeAttach)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: AgentAttachmentBar(
+                    readOnly: true,
+                    attachments: [
+                      for (final a in message.attachments!)
+                        AgentDraftAttachment(
+                          id: a.id.isNotEmpty
+                              ? a.id
+                              : 'att_${a.filename.hashCode}',
+                          path: a.vaultRelativePath ?? a.filename,
+                          name: a.filename,
+                          mimeType: a.mimeType,
+                        ),
+                    ],
+                  ),
+                )
+              else if (message.attachments != null &&
+                  message.attachments!.any((a) => !a.isAudio))
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: AgentAttachmentBar(
+                    readOnly: true,
+                    attachments: [
+                      for (final a
+                          in message.attachments!.where((x) => !x.isAudio))
+                        AgentDraftAttachment(
+                          id: a.id.isNotEmpty
+                              ? a.id
+                              : 'att_${a.filename.hashCode}',
+                          path: a.vaultRelativePath ?? a.filename,
+                          name: a.filename,
+                          mimeType: a.mimeType,
+                        ),
+                    ],
+                  ),
                 ),
             ],
           ],

@@ -100,6 +100,39 @@ export async function pickTauriDirectory(opts?: {
   }
 }
 
+export type PickTauriFilesResult =
+  | { ok: true; paths: string[] | null }
+  | { ok: false; error: string };
+
+/**
+ * Native OS multi-file picker. `paths: null` means the user cancelled.
+ */
+export async function pickTauriFiles(opts?: {
+  title?: string;
+  defaultPath?: string;
+}): Promise<PickTauriFilesResult> {
+  const invoke = readTauriInvoke();
+  if (!invoke) {
+    return { ok: false, error: "File picker is only available in the desktop app." };
+  }
+  try {
+    const picked = (await invoke("pick_files", {
+      title: opts?.title,
+      defaultPath: opts?.defaultPath,
+    })) as string[] | null;
+    if (!Array.isArray(picked) || picked.length === 0) {
+      return { ok: true, paths: null };
+    }
+    const paths = picked
+      .map((p) => (typeof p === "string" ? p.trim() : ""))
+      .filter(Boolean);
+    return { ok: true, paths: paths.length ? paths : null };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: msg || "File picker failed." };
+  }
+}
+
 /**
  * Status of the install-time OpenClaw self-reference heal probe.
  *

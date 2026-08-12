@@ -1041,6 +1041,7 @@ export function SettingsNodeTab() {
                                   aiAccessLevel: existing?.aiAccessLevel ?? "none",
                                   knowledgeAccess: existing?.knowledgeAccess ?? "public",
                                   priority: existing?.priority ?? "high",
+                                  ...(existing?.agentModeEnabled ? { agentModeEnabled: true } : {}),
                                   ...(value !== ""
                                     ? {
                                         syndicationMaxSensitivity: value as

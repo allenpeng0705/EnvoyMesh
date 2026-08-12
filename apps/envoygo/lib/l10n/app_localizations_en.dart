@@ -599,6 +599,54 @@ class AppLocalizationsEn extends AppLocalizations {
       'All messages in this thread will be deleted.';
 
   @override
+  String get chatAiManual => 'Manual';
+
+  @override
+  String get chatAiAssistant => 'Assistant';
+
+  @override
+  String get chatAiAuto => 'Auto';
+
+  @override
+  String get chatAiManualTooltip => 'Manual: type yourself';
+
+  @override
+  String get chatAiAssistantTooltip => 'Assistant: AI suggests drafts';
+
+  @override
+  String get chatAiAutoTooltip => 'Auto-reply: AI responds automatically';
+
+  @override
+  String get chatAgentMode => 'Agent';
+
+  @override
+  String get chatAgentModeOffTooltip =>
+      'Agent Mode off — Assist uses public knowledge only';
+
+  @override
+  String get chatAgentModeOnTooltip =>
+      'Agent Mode on — OpenClaw may use home files, private knowledge, and tools';
+
+  @override
+  String get chatAgentModeConfirmTitle => 'Enable Agent Mode for this chat?';
+
+  @override
+  String get chatAgentModeConfirmBody =>
+      'Agent Mode uses EnvoyAI/OpenClaw and can read local files, private knowledge, and run tools on your home node. Only enable for contacts you fully trust.';
+
+  @override
+  String get chatAgentModeConfirmEnable => 'Enable Agent Mode';
+
+  @override
+  String get chatSuggestedReply => 'Suggested reply';
+
+  @override
+  String get chatSuggestedReplyUse => 'Use';
+
+  @override
+  String get chatSuggestedReplyDismiss => 'Dismiss';
+
+  @override
   String get chatDeleteMessageTitle => 'Delete message?';
 
   @override

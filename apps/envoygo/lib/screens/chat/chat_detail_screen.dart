@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -8,6 +9,7 @@ import 'package:record/record.dart';
 import '../../ext_agent/envoy_ai_slash_commands.dart';
 import '../../ext_agent/ext_agent_presets.dart';
 import '../../ext_agent/ext_agent_slash_commands.dart';
+import '../../ext_agent/agent_attachments.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/chat_message.dart';
 import '../../models/chat_thread.dart';
@@ -15,6 +17,7 @@ import '../../providers/chat_provider.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../services/vault_content_fetch.dart';
+import '../../widgets/agent_attachment_bar.dart';
 import '../../widgets/chat_bubble.dart';
 import '../../widgets/ext_agent_offline_banner.dart';
 import '../../widgets/ext_agent_switcher.dart';
@@ -22,6 +25,7 @@ import '../../widgets/home_folder_browser.dart';
 import '../../widgets/voice_note_recorder_bar.dart';
 import '../call/voice_call_screen.dart';
 import '../content/published_content_sheet.dart';
+import '../files/home_file_pick_screen.dart';
 
 /// Chat detail view — message list with compose bar.
 ///
@@ -67,10 +71,26 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   bool _recordingGuard = false; // only during start/stop async work
   bool _isSendingVoice = false;
   bool _mmxBusy = false;
+  bool _attachBusy = false;
+  bool _agentSendBusy = false;
+  final List<AgentDraftAttachment> _agentAttachments = [];
+  /// Snapshot token for the in-flight agent send — ignore stale restore.
+  int _agentSendGeneration = 0;
   Timer? _recordTimer;
   int _recordingSeconds = 0;
   String? _activeRecordingPath;
   static const _maxRecordSeconds = 120;
+
+  /// Contact AI prefs (owner bonded human DMs only).
+  String _contactAiMode = 'manual'; // manual | assistant | auto
+  bool _contactAgentMode = false;
+  bool _chatAssistEnabled = false;
+  bool _autoSendEnabled = false;
+  bool _contactAiPrefsLoaded = false;
+  Map<String, dynamic>? _latestChatDraft;
+  void Function()? _chatDraftUnsub;
+  void Function()? _configUpdatedUnsub;
+  Future<void> _contactAiWriteChain = Future.value();
 
   bool get _isRoom =>
       widget.chatRoomId != null && widget.chatRoomId!.isNotEmpty;
@@ -142,8 +162,418 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         if (_isEnvoyAi) {
           unawaited(_reloadEnvoyAiCatalog());
         }
+        if (!_isAgent && !_isRoom && !_isFamily) {
+          unawaited(_loadContactAiPreferences());
+          _subscribeContactAiEvents();
+        }
       }
     });
+  }
+
+  bool get _showContactAiControls {
+    if (_isAgent || _isRoom || _isFamily) return false;
+    if (_resolvedContactOwnerId == null) return false;
+    return ref.read(nodeProvider).isOwnerProfile;
+  }
+
+  bool get _showDraftSuggestions =>
+      _showContactAiControls &&
+      _contactAiMode == 'assistant' &&
+      (_chatAssistEnabled || _autoSendEnabled);
+
+  void _subscribeContactAiEvents() {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null || !_showContactAiControls) return;
+
+    _configUpdatedUnsub?.call();
+    _configUpdatedUnsub = client.on('home:config-updated', (_) {
+      if (mounted) unawaited(_loadContactAiPreferences());
+    });
+
+    _resyncChatDraftSubscription();
+  }
+
+  void _resyncChatDraftSubscription() {
+    _chatDraftUnsub?.call();
+    _chatDraftUnsub = null;
+
+    final client = ref.read(nodeServiceProvider);
+    final ownerId = _resolvedContactOwnerId;
+    if (client == null || ownerId == null || !_showDraftSuggestions) {
+      if (mounted && _latestChatDraft != null) {
+        setState(() => _latestChatDraft = null);
+      } else {
+        _latestChatDraft = null;
+      }
+      return;
+    }
+
+    unawaited(_loadChatDrafts(ownerId));
+    _chatDraftUnsub = client.on('chat:draft', (data) {
+      if (!mounted || !_showDraftSuggestions) return;
+      if (data is! Map) return;
+      final tid = data['threadPeerOwnerId']?.toString();
+      if (tid != ownerId) return;
+      final draftRaw = data['draft'];
+      final draft = draftRaw is Map
+          ? Map<String, dynamic>.from(draftRaw)
+          : Map<String, dynamic>.from(data);
+      final text = draft['text']?.toString().trim() ?? '';
+      if (text.isEmpty) return;
+      setState(() => _latestChatDraft = draft);
+    });
+  }
+
+  Future<void> _loadChatDrafts(String ownerId) async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      final list = await client.getChatDrafts(threadPeerOwnerId: ownerId);
+      if (!mounted || !_showDraftSuggestions) return;
+      if (list.isEmpty) {
+        setState(() => _latestChatDraft = null);
+        return;
+      }
+      list.sort((a, b) {
+        final at = DateTime.tryParse(a['createdAt']?.toString() ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final bt = DateTime.tryParse(b['createdAt']?.toString() ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        return at.compareTo(bt);
+      });
+      setState(() => _latestChatDraft = list.last);
+    } catch (_) {
+      // keep last-known
+    }
+  }
+
+  Future<void> _dismissChatDraft() async {
+    final draft = _latestChatDraft;
+    final draftId = draft?['draftId']?.toString();
+    if (draftId == null || draftId.isEmpty) {
+      setState(() => _latestChatDraft = null);
+      return;
+    }
+    final client = ref.read(nodeServiceProvider);
+    setState(() => _latestChatDraft = null);
+    try {
+      await client?.deleteChatDraft(draftId);
+    } catch (_) {
+      // local dismiss still applies
+    }
+  }
+
+  void _useChatDraft() {
+    final text = _latestChatDraft?['text']?.toString().trim() ?? '';
+    if (text.isEmpty) return;
+    _textController.text = text;
+    _textController.selection = TextSelection.collapsed(offset: text.length);
+    unawaited(_dismissChatDraft());
+  }
+
+  Future<void> _loadContactAiPreferences() async {
+    if (!_showContactAiControls) return;
+    final client = ref.read(nodeServiceProvider);
+    final ownerId = _resolvedContactOwnerId;
+    if (client == null || ownerId == null) return;
+    try {
+      final cfg = await client.getNodeConfig();
+      if (!mounted) return;
+      final prefs = cfg['contactAiPreferences'];
+      Map<String, dynamic>? pref;
+      if (prefs is List) {
+        for (final item in prefs) {
+          if (item is Map && item['peerOwnerId'] == ownerId) {
+            pref = Map<String, dynamic>.from(item);
+            break;
+          }
+        }
+      }
+      final level = pref?['aiAccessLevel']?.toString() ?? 'none';
+      String mode = 'manual';
+      if (level == 'assistant_only') mode = 'assistant';
+      if (level == 'full') mode = 'auto';
+      final defaultMode =
+          (cfg['aiSettings'] is Map
+                  ? (cfg['aiSettings'] as Map)['defaultModeForNewContacts']
+                  : null)
+              ?.toString();
+      if (pref == null && defaultMode != null) {
+        if (defaultMode == 'assistant') mode = 'assistant';
+        if (defaultMode == 'auto') mode = 'auto';
+        if (defaultMode == 'manual') mode = 'manual';
+      }
+      final policies = cfg['autonomousPolicies'];
+      var autoSend = false;
+      if (policies is List) {
+        for (final p in policies) {
+          if (p is Map &&
+              p['domain'] == 'social' &&
+              p['autoSendChat'] == true) {
+            autoSend = true;
+            break;
+          }
+        }
+      }
+      setState(() {
+        _contactAiMode = mode;
+        _contactAgentMode = pref?['agentModeEnabled'] == true;
+        _chatAssistEnabled = cfg['chatAssistEnabled'] == true;
+        _autoSendEnabled = autoSend;
+        _contactAiPrefsLoaded = true;
+      });
+      _resyncChatDraftSubscription();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _contactAiPrefsLoaded = true;
+      });
+    }
+  }
+
+  Future<void> _persistContactAiPreferences({
+    required String mode,
+    required bool agentMode,
+  }) {
+    final run = () async {
+      final client = ref.read(nodeServiceProvider);
+      final ownerId = _resolvedContactOwnerId;
+      if (client == null || ownerId == null) return;
+      try {
+        final cfg = await client.getNodeConfig();
+        final current = <Map<String, dynamic>>[];
+        final raw = cfg['contactAiPreferences'];
+        if (raw is List) {
+          for (final item in raw) {
+            if (item is Map && item['peerOwnerId'] != ownerId) {
+              current.add(Map<String, dynamic>.from(item));
+            }
+          }
+        }
+        Map<String, dynamic>? existing;
+        if (raw is List) {
+          for (final item in raw) {
+            if (item is Map && item['peerOwnerId'] == ownerId) {
+              existing = Map<String, dynamic>.from(item);
+              break;
+            }
+          }
+        }
+        String aiAccessLevel = 'none';
+        if (mode == 'assistant') aiAccessLevel = 'assistant_only';
+        if (mode == 'auto') aiAccessLevel = 'full';
+        final next = <String, dynamic>{
+          'peerOwnerId': ownerId,
+          'aiAccessLevel': aiAccessLevel,
+          'knowledgeAccess': existing?['knowledgeAccess'] ?? 'public',
+          'priority': existing?['priority'] ?? 'high',
+        };
+        if (existing?['syndicationMaxSensitivity'] != null) {
+          next['syndicationMaxSensitivity'] =
+              existing!['syndicationMaxSensitivity'];
+        }
+        if (agentMode) next['agentModeEnabled'] = true;
+        current.add(next);
+        final patch = <String, dynamic>{'contactAiPreferences': current};
+        if (mode == 'assistant' && cfg['chatAssistEnabled'] != true) {
+          patch['chatAssistEnabled'] = true;
+        }
+        await client.updateNodeConfig(patch);
+        if (!mounted) return;
+        setState(() {
+          _contactAiMode = mode;
+          _contactAgentMode = agentMode;
+          if (mode == 'assistant') _chatAssistEnabled = true;
+        });
+        _resyncChatDraftSubscription();
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
+      }
+    };
+    _contactAiWriteChain = _contactAiWriteChain.then((_) => run()).catchError((_) {});
+    return _contactAiWriteChain;
+  }
+
+  Future<void> _setContactAiMode(String mode) async {
+    if (mode == 'assistant' && !_chatAssistEnabled && !_autoSendEnabled) {
+      return;
+    }
+    if (mode == 'auto' && !_autoSendEnabled) return;
+    // Manual clears Agent Mode so returning to Assist requires a fresh confirm.
+    await _persistContactAiPreferences(
+      mode: mode,
+      agentMode: mode == 'manual' ? false : _contactAgentMode,
+    );
+  }
+
+  Future<void> _toggleAgentMode() async {
+    if (_contactAgentMode) {
+      await _persistContactAiPreferences(
+        mode: _contactAiMode,
+        agentMode: false,
+      );
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        final d = AppLocalizations.of(ctx);
+        return AlertDialog(
+          title: Text(d.chatAgentModeConfirmTitle),
+          content: Text(d.chatAgentModeConfirmBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(d.commonCancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(d.chatAgentModeConfirmEnable),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed == true) {
+      await _persistContactAiPreferences(
+        mode: _contactAiMode,
+        agentMode: true,
+      );
+    }
+  }
+
+  Widget _buildContactAiModeBar(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    Widget modeChip(String mode, String label, String tooltip, {bool enabled = true}) {
+      final active = _contactAiMode == mode;
+      return Tooltip(
+        message: tooltip,
+        child: FilterChip(
+          label: Text(label),
+          selected: active,
+          onSelected: enabled
+              ? (_) {
+                  if (!active) unawaited(_setContactAiMode(mode));
+                }
+              : null,
+          visualDensity: VisualDensity.compact,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+      );
+    }
+
+    return Material(
+      color: scheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Row(
+          children: [
+            Text('AI', style: Theme.of(context).textTheme.labelMedium),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  modeChip('manual', l10n.chatAiManual, l10n.chatAiManualTooltip),
+                  modeChip(
+                    'assistant',
+                    l10n.chatAiAssistant,
+                    l10n.chatAiAssistantTooltip,
+                    enabled: _chatAssistEnabled || _autoSendEnabled,
+                  ),
+                  modeChip(
+                    'auto',
+                    l10n.chatAiAuto,
+                    l10n.chatAiAutoTooltip,
+                    enabled: _autoSendEnabled,
+                  ),
+                  if (_contactAiMode != 'manual')
+                    Tooltip(
+                      message: _contactAgentMode
+                          ? l10n.chatAgentModeOnTooltip
+                          : l10n.chatAgentModeOffTooltip,
+                      child: FilterChip(
+                        label: Text(l10n.chatAgentMode),
+                        selected: _contactAgentMode,
+                        selectedColor: scheme.errorContainer,
+                        checkmarkColor: scheme.onErrorContainer,
+                        labelStyle: TextStyle(
+                          color: _contactAgentMode
+                              ? scheme.onErrorContainer
+                              : null,
+                        ),
+                        onSelected: (_) => unawaited(_toggleAgentMode()),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChatDraftSuggestion(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final text = _latestChatDraft?['text']?.toString().trim() ?? '';
+    if (text.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: scheme.secondaryContainer.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                l10n.chatSuggestedReply,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: scheme.onSecondaryContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                text,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSecondaryContainer,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => unawaited(_dismissChatDraft()),
+                    child: Text(l10n.chatSuggestedReplyDismiss),
+                  ),
+                  const SizedBox(width: 4),
+                  FilledButton(
+                    onPressed: _useChatDraft,
+                    child: Text(l10n.chatSuggestedReplyUse),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _onComposerChanged() {
@@ -341,6 +771,10 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   void dispose() {
     _extAgentBridgeUnsub?.call();
     _extAgentBridgeUnsub = null;
+    _chatDraftUnsub?.call();
+    _chatDraftUnsub = null;
+    _configUpdatedUnsub?.call();
+    _configUpdatedUnsub = null;
     _textController.removeListener(_onComposerChanged);
     _textController.dispose();
     _cancelRecordTimer();
@@ -718,6 +1152,13 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
               ),
             ),
           if (_isExtAgent) const ExtAgentOfflineBanner(),
+          if (isOwner &&
+              !_isAgent &&
+              !_isRoom &&
+              !_isFamily &&
+              _resolvedContactOwnerId != null &&
+              _contactAiPrefsLoaded)
+            _buildContactAiModeBar(context),
           if (_isAiBot && _modelDisabled)
             Container(
               width: double.infinity,
@@ -803,6 +1244,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        if (_showDraftSuggestions && _latestChatDraft != null)
+                          _buildChatDraftSuggestion(context),
                         if (_isExtAgent)
                           _buildAgentSlashSuggest(
                             catalog: _extAgentCatalog,
@@ -816,10 +1259,48 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                         Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
+                        if ((_isExtAgent || _isEnvoyAi) &&
+                            _agentAttachments.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6, right: 2),
+                            child: AgentAttachmentBar(
+                              attachments: _agentAttachments,
+                              onRemove: _attachBusy
+                                  ? null
+                                  : (id) => setState(() {
+                                        _agentAttachments.removeWhere(
+                                          (a) => a.id == id,
+                                        );
+                                      }),
+                              onClearAll: _attachBusy
+                                  ? null
+                                  : () => setState(() {
+                                        _agentAttachments.clear();
+                                      }),
+                            ),
+                          ),
                         IconButton(
-                          icon: const Icon(Icons.image_outlined),
-                          tooltip: l10n.chatTypeMessage,
-                          onPressed: _pickAndSendImage,
+                          icon: Icon(
+                            (_isExtAgent || _isEnvoyAi)
+                                ? Icons.attach_file
+                                : Icons.image_outlined,
+                          ),
+                          tooltip: (_isExtAgent || _isEnvoyAi)
+                              ? 'Attach files'
+                              : l10n.chatTypeMessage,
+                          onPressed: (_mmxBusy ||
+                                  _attachBusy ||
+                                  _agentSendBusy ||
+                                  ((_isExtAgent || _isEnvoyAi) &&
+                                      !ref.watch(nodeProvider).isOwnerProfile))
+                              ? null
+                              : () {
+                                  if (_isExtAgent || _isEnvoyAi) {
+                                    unawaited(_showAgentAttachSheet());
+                                  } else {
+                                    unawaited(_pickAndSendImage());
+                                  }
+                                },
                         ),
                         if (!_isAgent && !_isRoom && !_isFamily)
                           Padding(
@@ -848,11 +1329,15 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                             controller: _textController,
                             minLines: 1,
                             maxLines: 4,
-                            enabled: !_mmxBusy,
+                            enabled: !_mmxBusy && !_attachBusy && !_agentSendBusy,
                             decoration: InputDecoration(
                               hintText: _mmxBusy
                                   ? 'MiniMax running…'
-                                  : l10n.chatTypeMessage,
+                                  : _attachBusy
+                                      ? 'Uploading…'
+                                      : _agentSendBusy
+                                          ? 'Sending…'
+                                          : l10n.chatTypeMessage,
                               border: const OutlineInputBorder(
                                 borderRadius:
                                     BorderRadius.all(Radius.circular(24)),
@@ -867,7 +1352,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                         ),
                         IconButton(
                           icon: const Icon(Icons.send),
-                          onPressed: _mmxBusy ? null : _sendMessage,
+                          onPressed: (_mmxBusy || _attachBusy || _agentSendBusy)
+                              ? null
+                              : _sendMessage,
                         ),
                       ],
                     ),
@@ -934,11 +1421,26 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
   void _sendMessage() {
     final text = _textController.text.trim();
-    if (text.isEmpty || _mmxBusy) return;
+    if ((text.isEmpty && _agentAttachments.isEmpty) ||
+        _mmxBusy ||
+        _attachBusy ||
+        _agentSendBusy) {
+      return;
+    }
 
     if (_isExtAgent || _isEnvoyAi) {
       final mmxParsed = parseMmxMediaCommand(text);
       if (mmxParsed != null) {
+        if (_agentAttachments.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Clear attachments before using MiniMax media slash commands.',
+              ),
+            ),
+          );
+          return;
+        }
         if (!mmxParsed.ok) {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1044,7 +1546,275 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     // re-read the same draft, and the composer never sticks after EnvoyAI
     // (void RPC used to throw on null→Map after the message was already sent).
     _textController.clear();
-    unawaited(_sendText(text, restoreComposerOnFailure: true));
+    final atts = List<AgentDraftAttachment>.from(_agentAttachments);
+    final sendGen = ++_agentSendGeneration;
+    setState(() {
+      _agentAttachments.clear();
+      _agentSendBusy = true;
+    });
+    unawaited(
+      _sendTextWithAttachments(
+        text,
+        atts,
+        restoreComposerOnFailure: true,
+        sendGeneration: sendGen,
+      ).whenComplete(() {
+        if (!mounted) return;
+        if (_agentSendGeneration == sendGen) {
+          setState(() => _agentSendBusy = false);
+        }
+      }),
+    );
+  }
+
+  Future<void> _showAgentAttachSheet() async {
+    if (!ref.read(nodeProvider).isOwnerProfile) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Only the node owner can attach files to agent chats.'),
+        ),
+      );
+      return;
+    }
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.folder_open),
+              title: const Text('Home file'),
+              onTap: () => Navigator.pop(ctx, 'home'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Photo'),
+              onTap: () => Navigator.pop(ctx, 'photo'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.insert_drive_file_outlined),
+              title: const Text('Phone file'),
+              onTap: () => Navigator.pop(ctx, 'file'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'home') {
+      final path = await Navigator.of(context).push<String>(
+        MaterialPageRoute(builder: (_) => const HomeFilePickScreen()),
+      );
+      if (!mounted || path == null || path.isEmpty) return;
+      setState(() {
+        _agentAttachments.add(
+          AgentDraftAttachment(
+            id: 'att_${DateTime.now().microsecondsSinceEpoch}',
+            path: path,
+            name: attachmentBasename(path),
+            mimeType: guessMimeFromName(path),
+          ),
+        );
+      });
+      return;
+    }
+    if (choice == 'photo') {
+      await _pickPhonePhotoForAgent();
+      return;
+    }
+    await _pickPhoneFilesForAgent();
+  }
+
+  Future<void> _uploadPhoneBytesForAgent({
+    required String name,
+    required List<int> bytes,
+    String? mimeType,
+    bool manageBusy = true,
+  }) async {
+    if (bytes.length > maxAgentAttachmentBytes) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$name: file too large (max 25 MiB)')),
+      );
+      return;
+    }
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Not connected to home node')),
+      );
+      return;
+    }
+    if (manageBusy) setState(() => _attachBusy = true);
+    try {
+      final result = await client.uploadEnvoyAttachment(
+        filename: name,
+        contentBase64: base64Encode(bytes),
+        mimeType: mimeType ?? guessMimeFromName(name),
+      );
+      if (!mounted) return;
+      if (result['ok'] != true || result['path'] == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['error']?.toString() ?? 'Upload failed: $name'),
+          ),
+        );
+        return;
+      }
+      setState(() {
+        _agentAttachments.add(
+          AgentDraftAttachment(
+            id: 'att_${DateTime.now().microsecondsSinceEpoch}',
+            path: result['path'].toString(),
+            name: result['name']?.toString() ?? name,
+            mimeType: result['mimeType']?.toString() ??
+                mimeType ??
+                guessMimeFromName(name),
+          ),
+        );
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Upload failed: $e')),
+      );
+    } finally {
+      if (manageBusy && mounted) setState(() => _attachBusy = false);
+    }
+  }
+
+  Future<void> _pickPhonePhotoForAgent() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 2048,
+      maxHeight: 2048,
+      imageQuality: 85,
+    );
+    if (picked == null) return;
+    final bytes = await File(picked.path).readAsBytes();
+    final name = picked.name.isNotEmpty
+        ? picked.name
+        : 'phone-${DateTime.now().millisecondsSinceEpoch}.jpg';
+    await _uploadPhoneBytesForAgent(
+      name: name,
+      bytes: bytes,
+      mimeType: 'image/jpeg',
+    );
+  }
+
+  Future<void> _pickPhoneFilesForAgent() async {
+    final result = await FilePicker.platform.pickFiles(
+      allowMultiple: true,
+      withData: false,
+    );
+    if (result == null || result.files.isEmpty) return;
+    setState(() => _attachBusy = true);
+    try {
+      for (final f in result.files) {
+        final path = f.path;
+        if (path == null || path.isEmpty) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${f.name}: could not read file path')),
+          );
+          continue;
+        }
+        final bytes = await File(path).readAsBytes();
+        final name = f.name.isNotEmpty ? f.name : attachmentBasename(path);
+        final ext = f.extension;
+        await _uploadPhoneBytesForAgent(
+          name: name,
+          bytes: bytes,
+          mimeType: ext != null && ext.isNotEmpty
+              ? guessMimeFromName('file.$ext')
+              : guessMimeFromName(name),
+          manageBusy: false,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _attachBusy = false);
+    }
+  }
+
+  Future<void> _sendTextWithAttachments(
+    String text,
+    List<AgentDraftAttachment> attachments, {
+    required bool restoreComposerOnFailure,
+    int? sendGeneration,
+  }) async {
+    void restoreDraftsIfStillCurrent() {
+      if (!restoreComposerOnFailure || !mounted) return;
+      if (sendGeneration != null && sendGeneration != _agentSendGeneration) {
+        return;
+      }
+      // Only restore attachments if the user has not started a new draft set.
+      if (_agentAttachments.isNotEmpty) return;
+      _textController.text = text;
+      setState(() {
+        _agentAttachments
+          ..clear()
+          ..addAll(attachments);
+      });
+    }
+
+    var outbound = text;
+    if (attachments.isNotEmpty) {
+      final client = ref.read(nodeServiceProvider);
+      if (client == null) {
+        restoreDraftsIfStillCurrent();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Not connected to home node')),
+          );
+        }
+        return;
+      }
+      try {
+        final built = await client.buildAgentAttachmentContext(
+          attachments.map((a) => a.toRpc()).toList(),
+        );
+        if (built['ok'] != true) {
+          throw StateError(
+            built['error']?.toString() ?? 'Attachment context failed',
+          );
+        }
+        outbound = mergeAgentPromptWithAttachments(
+          text,
+          built['contextText']?.toString(),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        restoreDraftsIfStillCurrent();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Attachments failed: $e')),
+        );
+        return;
+      }
+    }
+    await _sendText(
+      outbound,
+      restoreComposerOnFailure: restoreComposerOnFailure,
+      displayText: attachments.isNotEmpty ? text : null,
+      displayAttachments: attachments.isEmpty
+          ? null
+          : attachments
+              .map(
+                (a) => ChatAttachment(
+                  id: a.id,
+                  filename: a.name ?? attachmentBasename(a.path),
+                  mimeType: a.mimeType ?? 'application/octet-stream',
+                  sizeBytes: 0,
+                  sensitivity: 'friends',
+                  vaultRelativePath: a.path,
+                ),
+              )
+              .toList(),
+      sendGeneration: sendGeneration,
+    );
   }
 
   Future<void> _handleMmxMediaCommand(Map<String, String> params) async {
@@ -1237,14 +2007,19 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
   /// [restoreComposerOnFailure] — for typed sends only. Image sends pass
   /// false so a failed upload never dumps a data-URI into the composer.
+  /// [displayText] / [displayAttachments] — local bubble when outbound was
+  /// expanded with attachment context for agent turns.
   Future<void> _sendText(
     String text, {
     required bool restoreComposerOnFailure,
+    String? displayText,
+    List<ChatAttachment>? displayAttachments,
+    int? sendGeneration,
   }) async {
     if (text.isEmpty) return;
     if (_isAiBot && _modelDisabled) {
       if (restoreComposerOnFailure && mounted) {
-        _textController.text = text;
+        _textController.text = displayText ?? text;
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1256,9 +2031,12 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
     try {
       if (_isAgent) {
-        await ref
-            .read(chatProvider.notifier)
-            .sendAgentMessage(text, agentType: widget.agentType ?? 'envoyai');
+        await ref.read(chatProvider.notifier).sendAgentMessage(
+              text,
+              agentType: widget.agentType ?? 'envoyai',
+              displayText: displayText,
+              displayAttachments: displayAttachments,
+            );
       } else if (_isFamilyRoom && widget.chatRoomId != null) {
         await ref
             .read(chatProvider.notifier)
@@ -1277,18 +2055,46 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
             .sendMessage(_resolvedContactOwnerId!, text);
       } else {
         if (restoreComposerOnFailure && mounted) {
-          _textController.text = text;
+          _textController.text = displayText ?? text;
         }
         return;
       }
     } catch (e) {
       if (!mounted) return;
+      final stillCurrent = sendGeneration == null ||
+          sendGeneration == _agentSendGeneration;
       // Restore typed draft only when the composer is still empty (user did
       // not start typing a follow-up). Never restore image data-URIs.
-      if (restoreComposerOnFailure && _textController.text.trim().isEmpty) {
-        _textController.text = text;
+      if (restoreComposerOnFailure &&
+          stillCurrent &&
+          _textController.text.trim().isEmpty) {
+        final restore = displayText ?? text;
+        _textController.text = restore;
         _textController.selection =
-            TextSelection.collapsed(offset: text.length);
+            TextSelection.collapsed(offset: restore.length);
+      }
+      // Only restore attachment drafts if this is still the latest send and
+      // the user has not already attached something new.
+      if (restoreComposerOnFailure &&
+          stillCurrent &&
+          displayAttachments != null &&
+          displayAttachments.isNotEmpty &&
+          (_isExtAgent || _isEnvoyAi) &&
+          _agentAttachments.isEmpty) {
+        setState(() {
+          _agentAttachments
+            ..clear()
+            ..addAll(
+              displayAttachments.map(
+                (a) => AgentDraftAttachment(
+                  id: a.id,
+                  path: a.vaultRelativePath ?? a.filename,
+                  name: a.filename,
+                  mimeType: a.mimeType,
+                ),
+              ),
+            );
+        });
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

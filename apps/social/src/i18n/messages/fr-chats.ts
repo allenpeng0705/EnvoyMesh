@@ -127,6 +127,13 @@ export const frContactChatMessages = {
   autoTitle: "Réponse automatique : l'IA répond automatiquement",
   autoDisabledTitle: "Activez l'envoi social automatique dans les paramètres",
   autoAria: "Mode réponse automatique",
+  agentModeOffTitle: "Agent Mode off — Assist uses public knowledge only. Click to enable OpenClaw with home files, private knowledge, and tools.",
+  agentModeOnTitle: "Agent Mode on — OpenClaw may use home files, private knowledge, and tools. Click to turn off.",
+  agentModeAria: "Toggle Agent Mode for this contact",
+  agentModeConfirmTitle: "Enable Agent Mode for this chat?",
+  agentModeConfirmMessage:
+    "Agent Mode uses EnvoyAI/OpenClaw and can read local files, private knowledge, and run tools on your home node. Only enable for contacts you fully trust.",
+  agentModeConfirmEnable: "Enable Agent Mode",
   emptyDesc: "Dites bonjour pour démarrer la conversation",
   privateNotesSummary: "Notes privées (synchronisées entre vos appareils)",
   privateNotesPlaceholder: "Notes que vous seul voyez — non envoyées sur le maillage",

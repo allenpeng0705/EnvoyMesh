@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../ext_agent/agent_attachments.dart';
 import '../models/chat_message.dart';
 import '../models/chat_room.dart';
 import '../models/chat_thread.dart';
@@ -83,6 +84,8 @@ String chatTextKey(String? text) => (text ?? '').trim();
 ///
 /// - Drops optimistic `temp_*` rows with the same trimmed text (the usual
 ///   EnvoyAI / DM echo path).
+/// - When the home echo is an attachment-expanded prompt, keeps the local
+///   display bubble (short text + chips) and adopts the server message id.
 /// - When [collapseMatchingOutbound] is true (AI threads), also drops any
 ///   other outbound row with the same trimmed text — mirrors Social's
 ///   `withoutDuplicateUser` so family-member EnvoyAI does not show two
@@ -98,12 +101,59 @@ List<ChatMessage> reconcileChatMessages({
   final key = chatTextKey(incoming.text);
   var list = List<ChatMessage>.from(existing);
 
+  // Attachment send: home persists the expanded outbound prompt, but the
+  // optimistic bubble stores user text + chips. Promote the local bubble
+  // to the server id and never show the fat context dump.
+  if (showAsMine &&
+      incoming.isOutbound &&
+      looksLikeAgentAttachmentOutbound(incoming.text)) {
+    ChatMessage? localMatch;
+    for (final m in list) {
+      if (!m.isOutbound) continue;
+      final hasHomeAtts = messageHasAgentHomeAttachments(m);
+      final isTemp = m.id.startsWith('temp_');
+      if (!hasHomeAtts && !isTemp) continue;
+      if (!agentAttachmentEchoMatchesDisplay(
+        displayText: m.text,
+        outboundEcho: incoming.text,
+      )) {
+        continue;
+      }
+      localMatch = m;
+      break;
+    }
+    if (localMatch != null) {
+      final kept = localMatch;
+      list = list
+          .where((m) => m.id != kept.id && m.id != incoming.id)
+          .toList();
+      final promoted = ChatMessage(
+        id: incoming.id,
+        threadId: incoming.threadId,
+        senderOwnerId: incoming.senderOwnerId ?? kept.senderOwnerId,
+        senderDisplayName: kept.senderDisplayName ?? incoming.senderDisplayName,
+        text: kept.text,
+        createdAt: incoming.createdAt ?? kept.createdAt,
+        isOutbound: true,
+        attachments: kept.attachments ?? incoming.attachments,
+      );
+      return [promoted, ...list];
+    }
+  }
+
   if (key.isNotEmpty) {
     list = list
-        .where(
-          (m) =>
-              !(m.id.startsWith('temp_') && chatTextKey(m.text) == key),
-        )
+        .where((m) {
+          if (!m.id.startsWith('temp_')) return true;
+          if (chatTextKey(m.text) == key) return false;
+          if (agentAttachmentEchoMatchesDisplay(
+            displayText: m.text,
+            outboundEcho: incoming.text,
+          )) {
+            return false;
+          }
+          return true;
+        })
         .toList();
   }
 
@@ -113,7 +163,8 @@ List<ChatMessage> reconcileChatMessages({
           (m) =>
               !(m.isOutbound &&
                   m.id != incoming.id &&
-                  chatTextKey(m.text) == key),
+                  chatTextKey(m.text) == key &&
+                  !messageHasAgentHomeAttachments(m)),
         )
         .toList();
   }
@@ -125,8 +176,25 @@ List<ChatMessage> reconcileChatMessages({
     list = list.where((m) => !m.id.startsWith('pending-voice-')).toList();
   }
 
-  list = list.where((m) => m.id != incoming.id).toList();
-  return [incoming, ...list];
+  // History / other-device attachment echoes: show stripped text, not the dump.
+  var toInsert = incoming;
+  if (showAsMine &&
+      incoming.isOutbound &&
+      looksLikeAgentAttachmentOutbound(incoming.text)) {
+    toInsert = ChatMessage(
+      id: incoming.id,
+      threadId: incoming.threadId,
+      senderOwnerId: incoming.senderOwnerId,
+      senderDisplayName: incoming.senderDisplayName,
+      text: stripAgentAttachmentContextForDisplay(incoming.text ?? ''),
+      createdAt: incoming.createdAt,
+      isOutbound: incoming.isOutbound,
+      attachments: incoming.attachments,
+    );
+  }
+
+  list = list.where((m) => m.id != toInsert.id).toList();
+  return [toInsert, ...list];
 }
 
 /// Default voice-note filename for a MIME type (EnvoyGo records WAV).
@@ -809,7 +877,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     var changed = false;
     for (final m in messages) {
       // Normalize thread_id to the UI thread key (not "envoyai"/"external").
-      final msg = ChatMessage(
+      var msg = ChatMessage(
         id: m.id,
         threadId: threadId,
         senderOwnerId: m.senderOwnerId,
@@ -819,6 +887,54 @@ class ChatNotifier extends StateNotifier<ChatState> {
         isOutbound: m.isOutbound,
         attachments: m.attachments,
       );
+
+      // Promote local attachment display bubble over expanded home echo.
+      if (msg.isOutbound && looksLikeAgentAttachmentOutbound(msg.text)) {
+        ChatMessage? localMatch;
+        for (final e in byId.values) {
+          if (!e.isOutbound) continue;
+          if (!agentAttachmentEchoMatchesDisplay(
+            displayText: e.text,
+            outboundEcho: msg.text,
+          )) {
+            continue;
+          }
+          if (e.id.startsWith('temp_') || messageHasAgentHomeAttachments(e)) {
+            localMatch = e;
+            break;
+          }
+        }
+        if (localMatch != null) {
+          final kept = localMatch;
+          if (kept.id.startsWith('temp_')) {
+            byId.remove(kept.id);
+            changed = true;
+            await _localDb.deleteMessage(kept.id);
+          }
+          msg = ChatMessage(
+            id: msg.id,
+            threadId: threadId,
+            senderOwnerId: msg.senderOwnerId ?? kept.senderOwnerId,
+            senderDisplayName: kept.senderDisplayName ?? msg.senderDisplayName,
+            text: kept.text,
+            createdAt: msg.createdAt ?? kept.createdAt,
+            isOutbound: true,
+            attachments: kept.attachments ?? msg.attachments,
+          );
+        } else {
+          msg = ChatMessage(
+            id: msg.id,
+            threadId: threadId,
+            senderOwnerId: msg.senderOwnerId,
+            senderDisplayName: msg.senderDisplayName,
+            text: stripAgentAttachmentContextForDisplay(msg.text ?? ''),
+            createdAt: msg.createdAt,
+            isOutbound: msg.isOutbound,
+            attachments: msg.attachments,
+          );
+        }
+      }
+
       final prev = byId[msg.id];
       if (prev == null ||
           prev.isOutbound != msg.isOutbound ||
@@ -831,13 +947,18 @@ class ChatNotifier extends StateNotifier<ChatState> {
       // Drop optimistic duplicates that history has now confirmed.
       if (msg.isOutbound) {
         final key = chatTextKey(msg.text);
-        if (key.isEmpty) continue;
         final tempIds = byId.keys
-            .where(
-              (id) =>
-                  id.startsWith('temp_') &&
-                  chatTextKey(byId[id]?.text) == key,
-            )
+            .where((id) {
+              if (!id.startsWith('temp_')) return false;
+              final temp = byId[id];
+              if (key.isNotEmpty && chatTextKey(temp?.text) == key) {
+                return true;
+              }
+              return agentAttachmentEchoMatchesDisplay(
+                displayText: temp?.text,
+                outboundEcho: m.text,
+              );
+            })
             .toList();
         for (final tempId in tempIds) {
           byId.remove(tempId);
@@ -1248,14 +1369,19 @@ class ChatNotifier extends StateNotifier<ChatState> {
       collapseMatchingOutbound: isAiThread,
     );
 
-    // Persist: drop optimistic rows that were reconciled away, then upsert.
+    // Persist: drop optimistic rows that were reconciled away, then upsert
+    // the reconciled head (may be a promoted attachment bubble, not raw echo).
     final nextIds = nextMessages.map((m) => m.id).toSet();
     for (final old in existingMessages) {
       if (old.id.startsWith('temp_') && !nextIds.contains(old.id)) {
         unawaited(_localDb.deleteMessage(old.id));
       }
     }
-    unawaited(_localDb.insertMessage(msg.toJson()));
+    final toPersist = nextMessages.cast<ChatMessage?>().firstWhere(
+          (m) => m!.id == msg.id,
+          orElse: () => msg,
+        )!;
+    unawaited(_localDb.insertMessage(toPersist.toJson()));
 
     state = state.copyWith(
       messages: {...state.messages, threadId: nextMessages},
@@ -1641,7 +1767,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
   /// Send a message to an AI agent.
   /// [agentType] is "envoyai" for the built-in OpenClaw assistant,
   /// or "external" for the bridge HTTP agent.
-  Future<void> sendAgentMessage(String text, {String agentType = 'envoyai'}) async {
+  ///
+  /// [text] is what goes to the home agent (may include attachment context).
+  /// [displayText] / [displayAttachments] control the local bubble when the
+  /// outbound prompt was expanded with attachment context.
+  Future<void> sendAgentMessage(
+    String text, {
+    String agentType = 'envoyai',
+    String? displayText,
+    List<ChatAttachment>? displayAttachments,
+  }) async {
     final nodeService = _liveNodeService();
     final nodeState = _ref.read(nodeProvider);
     if (nodeService == null || nodeState.activeNode == null) {
@@ -1672,16 +1807,24 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     final threadId = '${nodeState.activeNode!.id}:$agentType';
     final now = DateTime.now().toUtc().toIso8601String();
+    final bubbleBody = (displayText ?? trimmed).trim();
+    final atts = displayAttachments;
+    final bubbleText = bubbleBody.isNotEmpty
+        ? bubbleBody
+        : (atts != null && atts.isNotEmpty
+            ? '(${atts.length} attachment${atts.length == 1 ? '' : 's'})'
+            : trimmed);
     final tempMsg = ChatMessage(
       id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
-      text: trimmed,
+      text: bubbleText,
       createdAt: now,
       isOutbound: true,
       senderDisplayName: 'You',
       senderOwnerId: nodeState.effectiveFamilyProfileId != 'owner'
           ? nodeState.effectiveFamilyProfileId
           : (nodeState.familyProfileId ?? nodeState.ownerId),
+      attachments: atts,
     );
 
     // Persist to local DB immediately so the message survives app restarts
@@ -1700,6 +1843,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     final isEnvoyAi = agentType == 'envoyai';
     final isBot = agentType.startsWith('bot:');
+    final priorThread = state.threads.where((t) => t.id == threadId).firstOrNull;
+    final priorLastText = priorThread?.lastMessageText;
+    final priorLastAt = priorThread?.lastMessageAt;
     _upsertThread(
       threadId: threadId,
       nodeId: nodeState.activeNode!.id,
@@ -1718,19 +1864,58 @@ class ChatNotifier extends StateNotifier<ChatState> {
                   agentType
               : ThreadTitleSentinels.extAgent,
       agentType: agentType,
-      lastMessageText: trimmed,
+      lastMessageText: bubbleText,
       lastMessageAt: DateTime.now(),
     );
 
     // Branch: built-in EnvoyAI uses sendToOpenClaw; external bridge uses
     // sendToBridge; AI bots use sendToAiBot.
-    if (agentType == 'external') {
-      await nodeService.sendToBridge(trimmed);
-    } else if (agentType.startsWith('bot:')) {
-      final botId = agentType.substring(4); // strip "bot:" prefix
-      await nodeService.sendToAiBot(botId, trimmed);
-    } else {
-      await nodeService.sendToOpenClaw(trimmed);
+    try {
+      if (agentType == 'external') {
+        await nodeService.sendToBridge(trimmed);
+      } else if (agentType.startsWith('bot:')) {
+        final botId = agentType.substring(4); // strip "bot:" prefix
+        await nodeService.sendToAiBot(botId, trimmed);
+      } else {
+        await nodeService.sendToOpenClaw(trimmed);
+      }
+    } catch (e) {
+      unawaited(_localDb.deleteMessage(tempMsg.id));
+      final remaining = [
+        for (final m in state.messages[threadId] ?? const <ChatMessage>[])
+          if (m.id != tempMsg.id) m,
+      ];
+      state = state.copyWith(
+        messages: {
+          ...state.messages,
+          threadId: remaining,
+        },
+      );
+      // Restore chat-list preview to whatever was there before this failed send.
+      final rollbackText = remaining.isNotEmpty
+          ? (remaining.first.text ?? priorLastText)
+          : priorLastText;
+      final rollbackAt = remaining.isNotEmpty
+          ? (DateTime.tryParse(remaining.first.createdAt ?? '') ?? priorLastAt)
+          : priorLastAt;
+      _upsertThread(
+        threadId: threadId,
+        nodeId: nodeState.activeNode!.id,
+        type: isEnvoyAi
+            ? ChatThreadType.envoyai
+            : isBot
+                ? ChatThreadType.aiBot
+                : ChatThreadType.externalAgent,
+        displayName: isEnvoyAi
+            ? 'EnvoyAI'
+            : isBot
+                ? priorThread?.displayName ?? agentType
+                : ThreadTitleSentinels.extAgent,
+        agentType: agentType,
+        lastMessageText: rollbackText,
+        lastMessageAt: rollbackAt,
+      );
+      rethrow;
     }
   }
 

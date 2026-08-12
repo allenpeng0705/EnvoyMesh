@@ -234,7 +234,9 @@ export class WsServer {
           kind: "family",
         });
       });
-      nodeServiceImpl.on("chat:draft", (data: unknown) => this.emitEvent("chat:draft", data));
+      nodeServiceImpl.on("chat:draft", (data: unknown) =>
+        this.emitEventToProfile(OWNER_FAMILY_PROFILE_ID, "chat:draft", data),
+      );
       nodeServiceImpl.on("chat:auto-reply-paused", (data: unknown) =>
         this.emitEvent("chat:auto-reply-paused", data),
       );

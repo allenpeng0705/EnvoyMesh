@@ -47,6 +47,10 @@ export interface ChatMessageContext {
   sendAgentChat(targetOwnerId: string, text: string): Promise<any>;
   tagBondedContactReachability(remotePeerId: string): Promise<void> | void;
   isOwnerOnline(): Promise<boolean>;
+  /** Agent Mode: OpenClaw draft hooks (optional). */
+  askOpenClaw?(prompt: string, context?: unknown): Promise<string>;
+  buildOpenClawTurnContext?(): Promise<unknown>;
+  ensureOpenClawReady?(): Promise<boolean>;
 }
 
 export interface ChatMessageParams {
@@ -203,6 +207,15 @@ export async function handleChatMessageViaRuntime(
         onAutoReplyPaused: (notification: any) => {
           ctx.emit("chat:auto-reply-paused", notification);
         },
+        askOpenClaw: ctx.askOpenClaw
+          ? (prompt, context) => ctx.askOpenClaw!(prompt, context)
+          : undefined,
+        buildOpenClawTurnContext: ctx.buildOpenClawTurnContext
+          ? () => ctx.buildOpenClawTurnContext!()
+          : undefined,
+        ensureOpenClawReady: ctx.ensureOpenClawReady
+          ? () => ctx.ensureOpenClawReady!()
+          : undefined,
       });
     });
   }

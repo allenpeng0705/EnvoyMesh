@@ -1,6 +1,7 @@
 import type { ModelProviderConfig, SendChatResult } from "@envoymesh/api";
 import {
   resolveInboundContactAiAccess,
+  resolveInboundContactAgentMode,
   applyAiIdentityForIdentity,
   stripModelThinking,
   capGroupChatAiAccessLevel,
@@ -27,6 +28,7 @@ import {
   recordAutoReplyAfterSend,
 } from "./auto-reply-gate.js";
 import { generateChatDraft } from "./chat-draft-inbound.js";
+import { generateAgentModeChatDraft } from "./chat-draft-agent-mode.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
 import type { StyleAdapter } from "./style-adapter.js";
 
@@ -65,6 +67,10 @@ export async function runInboundChatAssist(input: {
   /** Group chat: prefs + drafts keyed by room thread; never auto-send when true. */
   draftThreadKey?: string;
   disableAutoSend?: boolean;
+  /** OpenClaw hooks for Agent Mode (owner-scoped draft). Optional — missing → Assist. */
+  askOpenClaw?: (prompt: string, context?: unknown) => Promise<string>;
+  buildOpenClawTurnContext?: () => Promise<unknown>;
+  ensureOpenClawReady?: () => boolean | Promise<boolean>;
 }): Promise<void> {
   const {
     envelope,
@@ -95,6 +101,9 @@ export async function runInboundChatAssist(input: {
     modeController = null,
     draftThreadKey,
     disableAutoSend = false,
+    askOpenClaw,
+    buildOpenClawTurnContext,
+    ensureOpenClawReady,
   } = input;
 
   const config: PersistedNodeConfig = {
@@ -154,39 +163,81 @@ export async function runInboundChatAssist(input: {
   const selfHuman = await humanProfileStore.loadHumanProfile().catch(() => null);
   const contactPref = contactPrefs.find((p) => p.peerOwnerId === accessThreadKey);
 
-  const vaultIndex = await getCachedVaultIndex(vaultDir);
-
-  const result = await generateChatDraft({
-    envelope,
-    senderOwnerId,
-    senderDisplayName,
-    chatText,
-    remotePeerId,
-    receivedAt,
-    correlationId,
-    taskStore,
-    trustStore,
-    peerDirectoryStore,
-    profile,
-    draftStore,
-    modelProviders,
-    chatAssistEnabled: effectiveChatAssist,
-    aiIdentity: config.aiSettings?.identity,
-    contactAiAccessLevel: aiAccessLevel,
-    knowledgeAccess: contactPref?.knowledgeAccess ?? "public",
-    rules: config.aiSettings?.rules ?? [],
-    vaultIndex,
-    isOnline: await Promise.resolve(isOwnerOnline()),
-    ownerDisplayName: selfHuman?.displayName,
-    chatLogStore,
-    humanProfileStore,
-    agentIdentityStore,
-    modeController: modeController ?? undefined,
-    allowWhileOwnerOnline,
-    knowledgeBase: config.aiSettings?.knowledgeBase,
-    ragService,
-    threadKey: draftThread,
+  const agentModeEnabled = resolveInboundContactAgentMode({
+    preference: contactPref,
+    forceOff: disableAutoSend,
   });
+
+  let result:
+    | Awaited<ReturnType<typeof generateChatDraft>>
+    | Awaited<ReturnType<typeof generateAgentModeChatDraft>>;
+
+  if (agentModeEnabled && askOpenClaw) {
+    console.log(`[chat-assist] Agent Mode for ${senderOwnerId} — OpenClaw owner-scoped draft`);
+    result = await generateAgentModeChatDraft({
+      envelope,
+      senderOwnerId,
+      senderDisplayName,
+      chatText,
+      remotePeerId,
+      receivedAt,
+      correlationId,
+      threadKey: draftThread,
+      taskStore,
+      draftStore,
+      askOpenClaw,
+      buildOpenClawTurnContext,
+      ensureOpenClawReady,
+    });
+    if (!result.ok) {
+      // Fail closed to Assist (public KB only) — do not escalate private via Assist.
+      console.warn(
+        `[chat-assist] Agent Mode unavailable for ${senderOwnerId} (${result.reason}); falling back to Assist`,
+      );
+    }
+  } else {
+    if (agentModeEnabled && !askOpenClaw) {
+      console.warn(
+        `[chat-assist] Agent Mode on for ${senderOwnerId} but OpenClaw hook missing; using Assist`,
+      );
+    }
+    result = { ok: false, reason: "use-assist" };
+  }
+
+  if (!result.ok) {
+    const vaultIndex = await getCachedVaultIndex(vaultDir);
+    result = await generateChatDraft({
+      envelope,
+      senderOwnerId,
+      senderDisplayName,
+      chatText,
+      remotePeerId,
+      receivedAt,
+      correlationId,
+      taskStore,
+      trustStore,
+      peerDirectoryStore,
+      profile,
+      draftStore,
+      modelProviders,
+      chatAssistEnabled: effectiveChatAssist,
+      aiIdentity: config.aiSettings?.identity,
+      contactAiAccessLevel: aiAccessLevel,
+      knowledgeAccess: contactPref?.knowledgeAccess ?? "public",
+      rules: config.aiSettings?.rules ?? [],
+      vaultIndex,
+      isOnline: await Promise.resolve(isOwnerOnline()),
+      ownerDisplayName: selfHuman?.displayName,
+      chatLogStore,
+      humanProfileStore,
+      agentIdentityStore,
+      modeController: modeController ?? undefined,
+      allowWhileOwnerOnline,
+      knowledgeBase: config.aiSettings?.knowledgeBase,
+      ragService,
+      threadKey: draftThread,
+    });
+  }
 
   if (!result.ok) {
     console.log(`[chat-assist] draft skipped for ${senderOwnerId}: ${result.reason}`);

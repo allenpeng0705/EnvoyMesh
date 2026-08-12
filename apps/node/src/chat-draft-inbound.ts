@@ -264,11 +264,13 @@ Be courteous and professional. If you cannot help, politely explain limitations.
         `[chat-draft] querying vault: path=${ruleVaultQuery.path}, maxSensitivity=${ruleVaultQuery.maxSensitivity}`,
       );
     }
+    // Assist path: honor per-contact knowledgeAccess for sensitivity filtering.
+    // Keep knowledgeScope "public" (no owner/private vault roots) — Agent Mode uses OpenClaw.
     const vaultResults = ragService
       ? await ragService.searchVaultKnowledgeBase({
           vaultIndex,
           query: chatText,
-          knowledgeAccess: "public",
+          knowledgeAccess,
           knowledgeBase,
           knowledgeScope: "public",
           ruleVaultQuery,
@@ -276,7 +278,7 @@ Be courteous and professional. If you cannot help, politely explain limitations.
       : searchVaultKnowledgeBase({
           vaultIndex,
           query: chatText,
-          knowledgeAccess: "public",
+          knowledgeAccess,
           knowledgeBase,
           knowledgeScope: "public",
           ruleVaultQuery,

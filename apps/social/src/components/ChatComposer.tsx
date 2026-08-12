@@ -20,6 +20,8 @@ export interface ChatComposerProps {
   sendLabel: string;
   disabled?: boolean;
   sendDisabled?: boolean;
+  /** When true, Send/Enter work even if the text field is empty (e.g. attachment-only). */
+  allowEmptySend?: boolean;
   /** Focus the text field when true (e.g. chat panel became active). */
   autoFocus?: boolean;
   /** Leading controls (attach, vault share, etc.) rendered before the text field. */
@@ -38,6 +40,7 @@ export function ChatComposer({
   sendLabel,
   disabled = false,
   sendDisabled,
+  allowEmptySend = false,
   autoFocus = false,
   leading,
   slashCommands,
@@ -203,7 +206,8 @@ export function ChatComposer({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [pickerOpen]);
 
-  const canSend = !(sendDisabled ?? disabled) && value.trim().length > 0;
+  const canSend =
+    !(sendDisabled ?? disabled) && (value.trim().length > 0 || allowEmptySend);
 
   return (
     <>

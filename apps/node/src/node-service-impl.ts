@@ -553,6 +553,8 @@ import {
   resolveHomeFsDirectory,
 } from "./home-fs.js";
 import { runMmxMediaCommand as executeMmxMediaCommand } from "./mmx-media.js";
+import { saveEnvoyUpload } from "./envoy-uploads.js";
+import { buildAgentAttachmentContext } from "./agent-attachment-context.js";
 import type { BridgeConfig } from "./bridge/config.js";
 import { forwardToAgent, receiveFromAgent } from "./bridge/index.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
@@ -8283,6 +8285,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async getChatDrafts(threadPeerOwnerId?: string): Promise<Array<{ draftId: string; threadPeerOwnerId: string; inReplyToMessageId: string; text: string; createdAt: string }>> {
+    requireOwnerProfile("list chat drafts");
     if (!this._chatDraftStore) return [];
     if (threadPeerOwnerId) {
       return this._chatDraftStore.listByThread(threadPeerOwnerId);
@@ -8291,6 +8294,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async deleteChatDraft(draftId: string): Promise<void> {
+    requireOwnerProfile("delete chat draft");
     if (!this._chatDraftStore) return;
     await this._chatDraftStore.delete(draftId);
   }
@@ -9367,6 +9371,20 @@ class NodeServiceImpl implements NodeService {
         error: err instanceof Error ? err.message : String(err),
       };
     }
+  }
+
+  async uploadEnvoyAttachment(
+    params: import("@envoymesh/api").UploadEnvoyAttachmentParams,
+  ): Promise<import("@envoymesh/api").UploadEnvoyAttachmentResult> {
+    requireOwnerProfile("upload agent attachment");
+    return saveEnvoyUpload(this._profileDir, params);
+  }
+
+  async buildAgentAttachmentContext(
+    params: import("@envoymesh/api").BuildAgentAttachmentContextParams,
+  ): Promise<import("@envoymesh/api").BuildAgentAttachmentContextResult> {
+    requireOwnerProfile("build agent attachment context");
+    return buildAgentAttachmentContext(params.attachments ?? []);
   }
 
   /** EnvoyAI (OpenClaw) slash catalog for Social / EnvoyGo composers. */

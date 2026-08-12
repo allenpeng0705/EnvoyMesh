@@ -1,7 +1,7 @@
 name: envoygo
 description: EnvoyGo — Flutter thin client for EnvoyMesh remote access
 publish_to: 'none'
-version: 1.1.0+31
+version: 1.1.1+32
 
 environment:
   sdk: ^3.9.0
@@ -26,6 +26,8 @@ dependencies:
   # v6 pulls GoogleMLKit which excludes arm64 sims and breaks Apple Silicon.
   mobile_scanner: ^7.1.0
   image_picker: ^1.1.2
+  # Phone file attach for agent chats (any type → home envoy-uploads)
+  file_picker: ^8.1.7
   # Audio recording (voice messages) — ^6 uses record_ios (SwiftPM-ready)
   # instead of CocoaPods-only record_darwin.
   record: ^6.2.1

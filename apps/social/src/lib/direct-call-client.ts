@@ -689,6 +689,18 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.revealHomeFsPath(params);
   }
 
+  async uploadEnvoyAttachment(
+    params: import("@envoymesh/api").UploadEnvoyAttachmentParams,
+  ) {
+    return this._ns.uploadEnvoyAttachment(params);
+  }
+
+  async buildAgentAttachmentContext(
+    params: import("@envoymesh/api").BuildAgentAttachmentContextParams,
+  ) {
+    return this._ns.buildAgentAttachmentContext(params);
+  }
+
   async getEnvoyAiCommandCatalog() {
     return this._ns.getEnvoyAiCommandCatalog();
   }

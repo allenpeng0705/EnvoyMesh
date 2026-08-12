@@ -2570,6 +2570,22 @@ export interface NodeService {
   ): Promise<import("./ext-agent.js").RevealHomeFsPathResult>;
 
   /**
+   * Upload a client blob into `{profileDir}/envoy-uploads/` for agent chat
+   * attachments (owner only). Used by EnvoyGo phone picks and browser file input.
+   */
+  uploadEnvoyAttachment(
+    params: import("./ext-agent.js").UploadEnvoyAttachmentParams,
+  ): Promise<import("./ext-agent.js").UploadEnvoyAttachmentResult>;
+
+  /**
+   * Build a shared text context block from home absolute paths for EnvoyAI /
+   * Ext Agent turns (owner only).
+   */
+  buildAgentAttachmentContext(
+    params: import("./ext-agent.js").BuildAgentAttachmentContextParams,
+  ): Promise<import("./ext-agent.js").BuildAgentAttachmentContextResult>;
+
+  /**
    * Slash-command catalog for EnvoyAI (built-in OpenClaw) chat autocomplete.
    * EnvoyMesh-owned verbs + hybrid expand prompts for mesh tools.
    */

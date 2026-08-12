@@ -369,6 +369,12 @@ export interface NodeServiceClient {
   revealHomeFsPath(
     params: import("@envoymesh/api").RevealHomeFsPathParams,
   ): Promise<import("@envoymesh/api").RevealHomeFsPathResult>;
+  uploadEnvoyAttachment(
+    params: import("@envoymesh/api").UploadEnvoyAttachmentParams,
+  ): Promise<import("@envoymesh/api").UploadEnvoyAttachmentResult>;
+  buildAgentAttachmentContext(
+    params: import("@envoymesh/api").BuildAgentAttachmentContextParams,
+  ): Promise<import("@envoymesh/api").BuildAgentAttachmentContextResult>;
   /** EnvoyAI (OpenClaw) slash catalog. */
   getEnvoyAiCommandCatalog(): Promise<import("@envoymesh/api").ExtAgentCommandCatalog>;
   /** Force-restart the built-in OpenClaw gateway. */
@@ -1396,7 +1402,7 @@ function createWsNodeServiceClient(
     ) {
       return wsClient.rpc(
         "runMmxMediaCommand",
-        params as Record<string, unknown>,
+        params as unknown as Record<string, unknown>,
         { timeoutMs: 920_000 },
       ) as Promise<import("@envoymesh/api").RunMmxMediaCommandResult>;
     },
@@ -1408,6 +1414,24 @@ function createWsNodeServiceClient(
         { path: params.path } as Record<string, unknown>,
         { timeoutMs: 15_000 },
       ) as Promise<import("@envoymesh/api").RevealHomeFsPathResult>;
+    },
+    async uploadEnvoyAttachment(
+      params: import("@envoymesh/api").UploadEnvoyAttachmentParams,
+    ) {
+      return wsClient.rpc(
+        "uploadEnvoyAttachment",
+        params as unknown as Record<string, unknown>,
+        { timeoutMs: 120_000 },
+      ) as Promise<import("@envoymesh/api").UploadEnvoyAttachmentResult>;
+    },
+    async buildAgentAttachmentContext(
+      params: import("@envoymesh/api").BuildAgentAttachmentContextParams,
+    ) {
+      return wsClient.rpc(
+        "buildAgentAttachmentContext",
+        params as unknown as Record<string, unknown>,
+        { timeoutMs: 60_000 },
+      ) as Promise<import("@envoymesh/api").BuildAgentAttachmentContextResult>;
     },
     async getEnvoyAiCommandCatalog() {
       return wsClient.rpc("getEnvoyAiCommandCatalog", {}, { timeoutMs: 5_000 }) as Promise<

@@ -167,6 +167,13 @@ export const contactChatMessages = {
   autoTitle: "Auto-reply: AI responds automatically",
   autoDisabledTitle: "Enable social auto-send in Settings",
   autoAria: "Auto-reply mode",
+  agentModeOffTitle: "Agent Mode off — Assist uses public knowledge only. Click to enable OpenClaw with home files, private knowledge, and tools.",
+  agentModeOnTitle: "Agent Mode on — OpenClaw may use home files, private knowledge, and tools. Click to turn off.",
+  agentModeAria: "Toggle Agent Mode for this contact",
+  agentModeConfirmTitle: "Enable Agent Mode for this chat?",
+  agentModeConfirmMessage:
+    "Agent Mode uses EnvoyAI/OpenClaw and can read local files, private knowledge, and run tools on your home node. Only enable for contacts you fully trust.",
+  agentModeConfirmEnable: "Enable Agent Mode",
   emptyDesc: "Say hello to start the conversation",
   privateNotesSummary: "Private notes (synced across your devices)",
   privateNotesPlaceholder: "Notes only you see — not sent on the mesh",

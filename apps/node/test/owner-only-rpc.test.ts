@@ -34,9 +34,16 @@ describe("isOwnerOnlyRpcMethod", () => {
       "previewHomeFsFile",
       "runMmxMediaCommand",
       "revealHomeFsPath",
+      "uploadEnvoyAttachment",
+      "buildAgentAttachmentContext",
     ]) {
       expect(isOwnerOnlyRpcMethod(method), method).toBe(true)
     }
+  })
+
+  it("gates chat draft RPCs for family (Agent Mode / Assist drafts)", () => {
+    expect(isOwnerOnlyRpcMethod("getChatDrafts")).toBe(true)
+    expect(isOwnerOnlyRpcMethod("deleteChatDraft")).toBe(true)
   })
 
   it("allows family chat RPCs", () => {

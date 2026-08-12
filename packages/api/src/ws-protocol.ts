@@ -261,6 +261,8 @@ export type RpcMethods =
    | "previewHomeFsFile"
    | "runMmxMediaCommand"
    | "revealHomeFsPath"
+   | "uploadEnvoyAttachment"
+   | "buildAgentAttachmentContext"
    | "getEnvoyAiCommandCatalog"
    // Phase 49 — Pi (built-in local coding agent)
    | "getPiStatus"
@@ -1126,6 +1128,12 @@ export interface ContactAiPreferences {
   aiAccessLevel: "none" | "assistant_only" | "full";
   /** Knowledge access level for vault queries. Default: "public" */
   knowledgeAccess: "public" | "friends" | "private";
+  /**
+   * Opt-in Agent Mode for inbound contact chat assist.
+   * When true (and OpenClaw available), drafts use owner-scoped OpenClaw instead of Assist.
+   * Missing / false = Assist path. Default: off.
+   */
+  agentModeEnabled?: boolean;
   /**
    * Phase 14B — optional per-contact inbound syndication cap (tighter than global ceiling).
    * Unset = use global `knowledgeSyndicationMaxSensitivity` only.
