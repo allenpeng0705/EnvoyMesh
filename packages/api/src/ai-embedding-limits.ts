@@ -3,6 +3,13 @@ export interface EmbeddingLimitSettings {
   modelName?: string;
 }
 
+/**
+ * llama-server `--ctx-size` for the Envoy Local **embed** sidecar
+ * (`apps/node` envoy-local-embed-runtime). Keep in sync with runtime startup.
+ * Qwen3-Embedding supports larger windows, but the sidecar stays lean on CPU.
+ */
+export const ENVOY_LOCAL_EMBED_CTX_SIZE = 2048;
+
 /** Provider-documented input limits (tokens). Override via embedding.maxInputTokens in node-config. */
 export const KNOWN_EMBEDDING_MAX_INPUT_TOKENS: Readonly<Record<string, number>> = {
   "embo-01": 4096,
@@ -13,6 +20,40 @@ export const KNOWN_EMBEDDING_MAX_INPUT_TOKENS: Readonly<Record<string, number>> 
   "Qwen3-Embedding-4B": 8192,
   "qwen3-embedding-0.6b-q4_k_m": 8192,
 };
+
+export function isEnvoyLocalEmbeddingMode(mode?: string | null): boolean {
+  return mode == null || mode === "envoy-local" || mode === "inherit";
+}
+
+/**
+ * Effective per-call embed token budget. For Envoy Local this is always capped
+ * at {@link ENVOY_LOCAL_EMBED_CTX_SIZE} (sidecar `--ctx-size`), even when the
+ * model card advertises 8k+.
+ */
+export function resolveEffectiveEmbeddingMaxInputTokens(
+  embedding?: (EmbeddingLimitSettings & { mode?: string | null }) | null,
+  resolvedModelName?: string,
+): number | undefined {
+  const tokens = resolveEmbeddingMaxInputTokens(embedding, resolvedModelName);
+  if (isEnvoyLocalEmbeddingMode(embedding?.mode)) {
+    return Math.min(tokens ?? ENVOY_LOCAL_EMBED_CTX_SIZE, ENVOY_LOCAL_EMBED_CTX_SIZE);
+  }
+  return tokens;
+}
+
+/**
+ * Soft max vault chunk size that fits the effective embed token budget.
+ * Used to auto-cap Knowledge `chunkSizeChars` for Envoy Local.
+ */
+export function recommendedVaultChunkCharsForEmbedding(
+  embedding?: (EmbeddingLimitSettings & { mode?: string | null }) | null,
+  resolvedModelName?: string,
+): number | undefined {
+  const tokens = resolveEffectiveEmbeddingMaxInputTokens(embedding, resolvedModelName);
+  if (tokens == null) return undefined;
+  // Leave a little headroom for special tokens / template wrappers.
+  return Math.max(200, Math.floor(maxVaultChunkCharsForEmbeddingTokens(tokens) * 0.9));
+}
 
 export function resolveEmbeddingMaxInputTokens(
   embedding?: EmbeddingLimitSettings | null,

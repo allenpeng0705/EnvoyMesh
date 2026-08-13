@@ -208,7 +208,7 @@ export function SettingsAppTab() {
       {/* Activity — embedded here so a single "App" tab covers everything
           the user previously had to visit via a separate tab. The
           embedded flag hides the ActivityView's own h2/lede. */}
-      <div className="settings-card">
+      <div className="settings-card settings-card--activity">
         <h4>{t("settings.app.activityTitle")}</h4>
         <p className="settings-hint">{t("settings.app.activityDesc")}</p>
         <ActivityView embedded />

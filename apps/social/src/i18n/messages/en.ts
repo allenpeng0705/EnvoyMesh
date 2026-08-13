@@ -25,6 +25,7 @@ import {
   libraryViewMessages,
   browserViewMessages,
   contentViewMessages,
+  socialViewMessages,
   knowledgeViewMessages,
   blogViewMessages,
   feedViewMessages,
@@ -43,6 +44,14 @@ import { piMessages } from "./en-pi.js";
 
 export const en = {
   nav: {
+    social: "Social",
+    socialEngageOne: "Social — {count} new engagement",
+    socialEngageMany: "Social — {count} new engagements",
+    terminal: "Terminal",
+    knowledge: "Knowledge",
+    inbox: "Inbox",
+    inboxOne: "Inbox — {count} item",
+    inboxMany: "Inbox — {count} items",
     chat: "Chat",
     chatInboxOne: "Chat — {count} item in inbox",
     chatInboxMany: "Chat — {count} items in inbox",
@@ -127,13 +136,13 @@ export const en = {
     done: "Got it",
     discover: {
       title: "Find people",
-      body: "Open Discover to search the mesh by name, interest, or location. Say hello to bond — each contact gets a trust tier that controls what they can access.",
+      body: "Open Social → Explore → Discover to search the mesh by name, interest, or location. Say hello to bond — each contact gets a trust tier that controls what they can access.",
       cta: "Open Discover",
     },
     chat: {
       title: "Chat with friends",
-      body: "Direct messages, group chats, and calls live in Chat. Everything is peer-to-peer — no central server, no new ports.",
-      cta: "Open Chat",
+      body: "Direct messages, group chats, and calls live under Social → Chats. Everything is peer-to-peer — no central server, no new ports.",
+      cta: "Open Chats",
     },
     envoyai: {
       title: "EnvoyAI",
@@ -147,13 +156,13 @@ export const en = {
     },
     terminals: {
       title: "Terminals",
-      body: "Open a shell on your home node from Chat → Terminals. Terminal Agent can propose commands in Manual or Agent mode — its /goal and /watch commands stay in that panel.",
-      cta: "Open Terminals",
+      body: "Open a shell on your home node from the Terminal tab. Terminal Agent can propose commands in Manual or Agent mode — its /goal and /watch commands stay in that panel.",
+      cta: "Open Terminal",
     },
     pi: {
       title: "Pi coding agent",
-      body: "Pi is a local coding agent that works in a project folder (edit files, run shell). It does not use mesh tools — start it from Chat → Terminals or New Pi.",
-      cta: "Open Terminals",
+      body: "Pi is a local coding agent that works in a project folder (edit files, run shell). It does not use mesh tools — start it from Terminal or New Pi.",
+      cta: "Open Terminal",
     },
     chains: {
       title: "Team jobs & Agent Network",
@@ -166,9 +175,9 @@ export const en = {
       cta: "Open Family settings",
     },
     content: {
-      title: "Content",
-      body: "Publish a short Feed for bonded contacts, longer Blog posts on the mesh, browse peers in Explore, and manage vault files under My Files.",
-      cta: "Open Content",
+      title: "Social",
+      body: "Publish a short Feed for bonded contacts, longer Blog posts on the mesh, and Explore (Discover people or Browse the mesh). Knowledge lives in its own top tab.",
+      cta: "Open Social",
     },
     privacy: {
       title: "You're in control",
@@ -530,7 +539,7 @@ export const en = {
     nearby: {
       title: "People on this network",
       lede:
-        "Shows other Envoy users on the same Wi‑Fi. Tap Say hello to send a friend request — they accept here or in Chat → Inbox.",
+        "Shows other Envoy users on the same Wi‑Fi. Tap Say hello to send a friend request — they accept here or in Inbox.",
       offline: "Your connection is off. Open Settings → Network to connect, then try again.",
       subtitle: "Nearby on your network",
       subtitleIdentifying: "Heard on this Wi‑Fi — identifying…",
@@ -697,6 +706,7 @@ export const en = {
   library: libraryViewMessages,
   browser: browserViewMessages,
   content: contentViewMessages,
+  social: socialViewMessages,
   knowledge: knowledgeViewMessages,
   blog: blogViewMessages,
   feed: feedViewMessages,

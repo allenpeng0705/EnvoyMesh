@@ -4,10 +4,13 @@
  */
 
 import {
+  ENVOY_LOCAL_EMBED_CTX_SIZE,
+  isEnvoyLocalEmbeddingMode,
   maxVaultChunkCharsForEmbeddingTokens,
-  resolveEmbeddingMaxInputTokens,
+  recommendedVaultChunkCharsForEmbedding,
+  resolveEffectiveEmbeddingMaxInputTokens,
 } from "./ai-embedding-limits.js";
-import { DEFAULT_AI_EMBEDDING } from "./embedding-presets.js";
+import { DEFAULT_AI_EMBEDDING, DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID, defaultEnvoyLocalEmbedEndpoint } from "./embedding-presets.js";
 
 export type KnowledgeBaseExternalProvider = "none" | "mcp";
 
@@ -214,11 +217,12 @@ export function resolveAiKnowledgeBaseSettings(
     ragMode === "lexical" || ragMode === "hybrid" || ragMode === "vector" ? ragMode : "vector";
 
   const legacyPublic = (input?.vaultPaths ?? []).map((p) => p.trim()).filter(Boolean);
-  const publicVaultPaths =
+  const publicVaultPaths = ensureNotesCorpusPath(
     (input?.publicVaultPaths ?? (legacyPublic.length > 0 ? legacyPublic : undefined) ??
       DEFAULT_AI_KNOWLEDGE_BASE.publicVaultPaths)
       .map((p) => p.trim())
-      .filter(Boolean);
+      .filter(Boolean),
+  );
   const privateVaultPaths = (input?.privateVaultPaths ?? DEFAULT_AI_KNOWLEDGE_BASE.privateVaultPaths)
     .map((p) => p.trim())
     .filter(Boolean);
@@ -228,6 +232,25 @@ export function resolveAiKnowledgeBaseSettings(
   const dismissedObsidianVaultPaths = (input?.dismissedObsidianVaultPaths ?? [])
     .map((p) => p.trim())
     .filter(Boolean);
+
+  const embedding = normalizeKnowledgeEmbedding(input?.embedding);
+  let chunkSizeChars = clampInt(
+    input?.chunkSizeChars,
+    200,
+    4000,
+    DEFAULT_AI_KNOWLEDGE_BASE.chunkSizeChars,
+  );
+  const chunkCap = recommendedVaultChunkCharsForEmbedding(embedding);
+  if (chunkCap != null && isEnvoyLocalEmbeddingMode(embedding.mode)) {
+    chunkSizeChars = Math.min(chunkSizeChars, chunkCap);
+  }
+  let chunkOverlapChars = clampInt(
+    input?.chunkOverlapChars,
+    0,
+    1000,
+    DEFAULT_AI_KNOWLEDGE_BASE.chunkOverlapChars,
+  );
+  chunkOverlapChars = Math.min(chunkOverlapChars, Math.max(0, chunkSizeChars - 1));
 
   return {
     enabled: input?.enabled ?? DEFAULT_AI_KNOWLEDGE_BASE.enabled,
@@ -246,18 +269,8 @@ export function resolveAiKnowledgeBaseSettings(
       512 * 1024 * 1024,
       DEFAULT_AI_KNOWLEDGE_BASE.maxFileBytes,
     ),
-    chunkSizeChars: clampInt(
-      input?.chunkSizeChars,
-      200,
-      4000,
-      DEFAULT_AI_KNOWLEDGE_BASE.chunkSizeChars,
-    ),
-    chunkOverlapChars: clampInt(
-      input?.chunkOverlapChars,
-      0,
-      1000,
-      DEFAULT_AI_KNOWLEDGE_BASE.chunkOverlapChars,
-    ),
+    chunkSizeChars,
+    chunkOverlapChars,
     purgeChatRagOnDelete: input?.purgeChatRagOnDelete ?? DEFAULT_AI_KNOWLEDGE_BASE.purgeChatRagOnDelete,
     externalMcpServer: input?.externalMcpServer?.trim() || undefined,
     mcpServerUrl: input?.mcpServerUrl?.trim() || undefined,
@@ -268,7 +281,31 @@ export function resolveAiKnowledgeBaseSettings(
         ? Math.min(30_000, Math.max(1_000, Math.floor(input.mcpTimeoutMs)))
         : undefined,
     mcpWriteBackEnabled: input?.mcpWriteBackEnabled === true,
-    embedding: input?.embedding ?? { ...DEFAULT_AI_KNOWLEDGE_BASE.embedding },
+    embedding,
+  };
+}
+
+/**
+ * Materialize Envoy Local embed fields so rebuild/index always see the sidecar
+ * budget (ctx / maxInputTokens) without relying on UI-only defaults.
+ */
+export function normalizeKnowledgeEmbedding(
+  embedding?: AiEmbeddingSettings | null,
+): AiEmbeddingSettings {
+  const mode = embedding?.mode ?? DEFAULT_AI_EMBEDDING.mode ?? "envoy-local";
+  if (!isEnvoyLocalEmbeddingMode(mode)) {
+    return {
+      ...embedding,
+      mode: mode === "mock" || mode === "ollama" || mode === "openai-compatible" ? mode : "openai-compatible",
+    };
+  }
+  return {
+    mode: "envoy-local",
+    modelName: embedding?.modelName?.trim() || DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID,
+    endpoint: embedding?.endpoint?.trim() || defaultEnvoyLocalEmbedEndpoint(),
+    responseShape: embedding?.responseShape ?? DEFAULT_AI_EMBEDDING.responseShape ?? "openai",
+    // Always lock to sidecar ctx — ignore stale higher values from older configs.
+    maxInputTokens: ENVOY_LOCAL_EMBED_CTX_SIZE,
   };
 }
 
@@ -293,7 +330,7 @@ export function buildVaultIndexOptionsFromKnowledgeBase(
   maxFileBytes: number;
 } {
   const kb = resolveAiKnowledgeBaseSettings(knowledgeBase);
-  const maxInputTokens = resolveEmbeddingMaxInputTokens(kb.embedding);
+  const maxInputTokens = resolveEffectiveEmbeddingMaxInputTokens(kb.embedding);
   const tokenChunkCap =
     maxInputTokens != null ? maxVaultChunkCharsForEmbeddingTokens(maxInputTokens) : kb.chunkSizeChars;
   return {
@@ -302,6 +339,20 @@ export function buildVaultIndexOptionsFromKnowledgeBase(
     chunkOverlapChars: kb.chunkOverlapChars,
     maxFileBytes: kb.maxFileBytes,
   };
+}
+
+/**
+ * Markdown-first corpus lives under `notes/`. Configs that only list
+ * `knowledge/public|private` would otherwise index zero docs while Browse
+ * still shows notes — always include `notes/` in the public RAG path list.
+ */
+function ensureNotesCorpusPath(paths: string[]): string[] {
+  const hasNotes = paths.some((raw) => {
+    const p = raw.replace(/\\/g, "/").replace(/\/$/, "");
+    return p === "notes" || p.startsWith("notes/");
+  });
+  if (hasNotes) return paths;
+  return [...paths, "notes/"];
 }
 
 function clampInt(value: number | undefined, min: number, max: number, fallback: number): number {

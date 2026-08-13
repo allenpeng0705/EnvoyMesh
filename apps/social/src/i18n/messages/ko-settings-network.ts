@@ -5,7 +5,7 @@ export const koNetworkSettingsMessages = {
     incomingMany: "수신 대기 파일 공유 {count}건. ",
     suggestionsOne: "에이전트 공유 제안 {count}건. ",
     suggestionsMany: "에이전트 공유 제안 {count}건. ",
-    inboxHint: "채팅 → 받은함에서 수락, 전송 또는 무시하세요.",
+    inboxHint: "받은함에서 수락, 전송 또는 무시하세요.",
   },
   nodeControl: {
     title: "노드 제어",

@@ -5,7 +5,7 @@ export const zhNetworkSettingsMessages = {
     incomingMany: "{count} 个待接收的文件共享。 ",
     suggestionsOne: "{count} 条智能体共享建议。 ",
     suggestionsMany: "{count} 条智能体共享建议。 ",
-    inboxHint: "打开 聊天 → 收件箱 以接受、发送或忽略。",
+    inboxHint: "打开收件箱以接受、发送或忽略。",
   },
   nodeControl: {
     title: "节点控制",

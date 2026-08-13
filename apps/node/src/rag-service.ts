@@ -14,7 +14,7 @@ import type {
 import { DEFAULT_RAG_INDEX_PROGRESS, DEFAULT_RAG_INDEX_STATUS, resolveAiKnowledgeBaseSettings } from "@envoymesh/api";
 import type { LocalChatLogStore } from "@envoymesh/local-store";
 import type { VaultDocumentMetadata, VaultIndex, VaultSearchResult } from "@envoymesh/vault";
-import { VAULT_TEXT_EXTRACTOR_ID } from "@envoymesh/vault";
+import { isVaultExtractableExtension, VAULT_TEXT_EXTRACTOR_ID } from "@envoymesh/vault";
 import {
   chatCollectionId,
   createEmbeddingProvider,
@@ -54,7 +54,14 @@ export interface RagService {
     force?: boolean;
     /** Per-item sensitivity overrides (Phase 44A1). */
     sensitivityOverrides?: Map<string, KnowledgeAccessLevel>;
+    /**
+     * Prefer on-disk Markdown: skip embedding these Office/PDF originals when a
+     * `notes/imports` companion already exists (or was just materialized).
+     */
+    skipDocumentPaths?: ReadonlySet<string> | readonly string[];
   }): Promise<void>;
+  /** Emit a progress tick (e.g. materialize phase before vault embed). */
+  notifyProgress(partial: Partial<RagIndexProgress> & Pick<RagIndexProgress, "phase">): void;
   getIndexStatus(): RagIndexStatus;
   /**
    * One-shot embed call against the effective provider (no index rebuild).
@@ -427,12 +434,21 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
       }
     },
 
-    async reindexVault({ vaultIndex, knowledgeBase: kbOverride, force = false, sensitivityOverrides }) {
+    async reindexVault({ vaultIndex, knowledgeBase: kbOverride, force = false, sensitivityOverrides, skipDocumentPaths }) {
       const kb = resolveAiKnowledgeBaseSettings(kbOverride ?? knowledgeBase);
       if (!kb.enabled || kb.ragMode === "lexical") {
         reportProgress({ phase: "idle", processed: 0, total: 0, indexed: 0, skipped: 0, removed: 0 });
         return;
       }
+
+      const skipOffice =
+        skipDocumentPaths instanceof Set
+          ? skipDocumentPaths
+          : new Set(
+              Array.from(skipDocumentPaths ?? []).map((p) =>
+                p.replace(/\\/g, "/").replace(/^\//, ""),
+              ),
+            );
 
       const { embedder: activeEmbedder, store: activeStore } = await ensureRuntime();
       const manifest = await loadRagVaultManifest(input.profileDir);
@@ -453,6 +469,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           manifest,
           force,
           sensitivityOverrides: overrides,
+          skipOfficeSources: skipOffice,
           onProgress: (partial) => {
             reportProgress({ phase: "public", indexed, skipped, removed, ...partial });
           },
@@ -471,6 +488,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           manifest,
           force,
           sensitivityOverrides: overrides,
+          skipOfficeSources: skipOffice,
           onProgress: (partial) => {
             reportProgress({ phase: "private", indexed, skipped, removed, ...partial });
           },
@@ -507,6 +525,10 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
         });
         throw error;
       }
+    },
+
+    notifyProgress(partial) {
+      reportProgress(partial);
     },
 
     async searchChatHistoryRag({ threadOwnerId, query, messages, knowledgeBase: kbOverride, recentLimit, ragLimit }) {
@@ -701,11 +723,31 @@ async function indexVaultTier(input: {
   manifest: RagVaultManifest;
   force: boolean;
   sensitivityOverrides?: Map<string, KnowledgeAccessLevel>;
+  /** Prefer Markdown corpus: do not embed these Office/PDF originals. */
+  skipOfficeSources?: ReadonlySet<string>;
   onProgress: (partial: Pick<RagIndexProgress, "processed" | "total">) => void;
 }): Promise<{ indexed: number; skipped: number; removed: number }> {
-  const { embedder, store, vaultIndex, paths, tier, kb, manifest, force, sensitivityOverrides, onProgress } = input;
+  const {
+    embedder,
+    store,
+    vaultIndex,
+    paths,
+    tier,
+    kb,
+    manifest,
+    force,
+    sensitivityOverrides,
+    skipOfficeSources,
+    onProgress,
+  } = input;
   const collection = vaultCollectionId(tier);
-  const documents = vaultDocumentsForPaths(vaultIndex, paths);
+  const documents = vaultDocumentsForPaths(vaultIndex, paths).filter((doc) => {
+    if (!skipOfficeSources || skipOfficeSources.size === 0) return true;
+    const rel = doc.relativePath.replace(/\\/g, "/");
+    if (!skipOfficeSources.has(rel)) return true;
+    // Only skip binary/Office extractables — never skip the Markdown companion itself.
+    return !isVaultExtractableExtension(doc.extension);
+  });
   const chunksByDocument = groupChunksByDocument(vaultIndex, documents);
   const activeKeys = new Set(documents.map((doc) => ragVaultManifestKey(tier, doc.relativePath)));
 

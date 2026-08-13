@@ -84,7 +84,7 @@ async function prepareBrowserPage(page: Page, fx: TestFixtures): Promise<void> {
   );
   await page.goto("/");
   // Wait for the app shell / header nav (not the connecting splash).
-  await page.getByTestId("nav-content").waitFor({ state: "visible", timeout: 60_000 });
+  await page.getByTestId("nav-social").waitFor({ state: "visible", timeout: 60_000 });
   await fx.social.openBrowser();
 }
 

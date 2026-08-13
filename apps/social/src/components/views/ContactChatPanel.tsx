@@ -38,7 +38,6 @@ import { useVoiceNoteRecorder } from "../../hooks/useVoiceNoteRecorder.js";
 import { useToast } from "../../hooks/useToast.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 import { ContactWebContentShortcuts } from "../ContactWebContentShortcuts.js";
-import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import { ExtAgentOfflineBanner } from "./ExtAgentOfflineBanner.js";
 import type { TFunction } from "../../context/I18nContext.js";
@@ -241,7 +240,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   }, [nodeService]);
 
   const [shareOpen, setShareOpen] = useState(false);
-  const [removeContactOpen, setRemoveContactOpen] = useState(false);
   const [attachBusy, setAttachBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1291,17 +1289,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                 </button>
               </>
             ) : null}
-            {isBondedHumanContact ? (
-              <button
-                type="button"
-                className="chat-header-remove-contact-btn"
-                title={t("contactChat.removeContactTitle")}
-                aria-label={t("contactChat.removeContactAria", { name: displayName })}
-                onClick={() => setRemoveContactOpen(true)}
-              >
-                {t("contacts.remove")}
-              </button>
-            ) : null}
             <button
               type="button"
               className="chat-header-clear-btn"
@@ -1646,17 +1633,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
         )}
       </footer>
       </div>
-      {removeContactOpen && isBondedHumanContact ? (
-        <RemoveContactConfirmModal
-          peerOwnerId={selectedContact}
-          displayName={displayName}
-          onClose={() => setRemoveContactOpen(false)}
-          onRemoved={() => {
-            showToast(t("contactChat.removeContactSuccess"), "success");
-            onSelectContact(null);
-          }}
-        />
-      ) : null}
       {confirm ? (
         <ConfirmDialog
           title={confirm.title}

@@ -9,6 +9,7 @@ import {
 } from "../../hooks/useNodeService.js";
 import { useOptimisticToggle } from "../../hooks/useOptimisticToggle.js";
 import { AgentSettings } from "./settings/AgentSettings.js";
+import { ConfirmDialog } from "../ConfirmDialog.js";
 import type {
   AiIdentityMode,
   AiKnowledgeBaseSettings,
@@ -78,12 +79,14 @@ import {
   embeddingSettingsFromPreset,
   EMBEDDING_PROVIDER_PRESETS,
   inferEmbeddingProviderPresetId,
+  recommendedVaultChunkCharsForEmbedding,
+  resolveAiKnowledgeBaseSettings,
+  ENVOY_LOCAL_EMBED_CTX_SIZE,
   type EmbeddingProviderPresetId,
 } from "@envoymesh/api";
 import { resolveEmbeddingConfig } from "@envoymesh/rag/embedding-resolver";
 import { useEnvoyLocalEmbedReadiness } from "../../hooks/useEnvoyLocalEmbedReadiness.js";
 import { waitForEnvoyLocalIdle } from "../../lib/envoy-local-wait.js";
-import { openContentKnowledge } from "../../lib/content-knowledge-nav.js";
 import { KnowledgeEmbedGate } from "./KnowledgeEmbedGate.js";
 
 // ---------------------------------------------------------------------------
@@ -511,7 +514,15 @@ export function KnowledgeBaseSettings(props: {
   const embedBusy = embed.inFlight;
 
   const patch = async (partial: Partial<AiKnowledgeBaseSettings>) => {
-    const next = { ...kb, ...partial };
+    const merged = { ...kb, ...partial };
+    // Auto-lock Envoy Local embed budget + chunk caps on every save.
+    const normalized = resolveAiKnowledgeBaseSettings(merged);
+    const next: AiKnowledgeBaseSettings = {
+      ...merged,
+      embedding: normalized.embedding,
+      chunkSizeChars: normalized.chunkSizeChars,
+      chunkOverlapChars: normalized.chunkOverlapChars,
+    };
     if (partial.embedding !== undefined) {
       const prevKey = resolveEmbeddingConfig({
         embedding: kb.embedding,
@@ -626,9 +637,21 @@ export function KnowledgeBaseSettings(props: {
                 value={presetId}
                 onChange={async (e) => {
                   const nextId = e.target.value as EmbeddingProviderPresetId;
-                  await patch({
-                    embedding: embeddingSettingsFromPreset(nextId, kb.embedding),
-                  });
+                  const embedding = embeddingSettingsFromPreset(nextId, kb.embedding);
+                  const partial: Partial<AiKnowledgeBaseSettings> = { embedding };
+                  if (nextId === "envoy-local") {
+                    const cap = recommendedVaultChunkCharsForEmbedding(embedding);
+                    if (
+                      cap != null &&
+                      (kb.chunkSizeChars ?? DEFAULT_AI_KNOWLEDGE_BASE.chunkSizeChars) > cap
+                    ) {
+                      partial.chunkSizeChars = Math.min(
+                        DEFAULT_AI_KNOWLEDGE_BASE.chunkSizeChars,
+                        cap,
+                      );
+                    }
+                  }
+                  await patch(partial);
                 }}
               >
                 {EMBEDDING_PROVIDER_PRESETS.map((p) => (
@@ -763,28 +786,51 @@ export function KnowledgeBaseSettings(props: {
                 </select>
               </div>
             ) : null}
-            <div className="form-group">
-              <label htmlFor="kb-embed-tokens">
-                {t("settings.ai.rag.embeddingMaxInputTokens")}
-              </label>
-              <input
-                id="kb-embed-tokens"
-                type="number"
-                min={1}
-                placeholder="4096"
-                value={kb.embedding?.maxInputTokens ?? ""}
-                onChange={async (e) => {
-                  const raw = e.target.value.trim();
-                  await patch({
-                    embedding: {
-                      ...kb.embedding,
-                      mode: kb.embedding?.mode ?? "envoy-local",
-                      maxInputTokens: raw ? Number.parseInt(raw, 10) : undefined,
-                    },
-                  });
-                }}
-              />
-            </div>
+            {isEnvoyLocalEmbed ? (
+              <div className="form-group">
+                <label htmlFor="kb-embed-tokens">
+                  {t("settings.ai.rag.embeddingMaxInputTokens")}
+                </label>
+                <input
+                  id="kb-embed-tokens"
+                  type="number"
+                  readOnly
+                  disabled
+                  value={kb.embedding?.maxInputTokens ?? ENVOY_LOCAL_EMBED_CTX_SIZE}
+                  data-testid="kb-embed-tokens-auto"
+                />
+                <p className="field-desc">
+                  {t(
+                    "settings.ai.rag.embeddingMaxInputTokensAutoLocal",
+                    "Auto-configured for Envoy Local embed context ({tokens} tokens).",
+                    { tokens: ENVOY_LOCAL_EMBED_CTX_SIZE },
+                  )}
+                </p>
+              </div>
+            ) : (
+              <div className="form-group">
+                <label htmlFor="kb-embed-tokens">
+                  {t("settings.ai.rag.embeddingMaxInputTokens")}
+                </label>
+                <input
+                  id="kb-embed-tokens"
+                  type="number"
+                  min={1}
+                  placeholder="4096"
+                  value={kb.embedding?.maxInputTokens ?? ""}
+                  onChange={async (e) => {
+                    const raw = e.target.value.trim();
+                    await patch({
+                      embedding: {
+                        ...kb.embedding,
+                        mode: kb.embedding?.mode ?? "openai-compatible",
+                        maxInputTokens: raw ? Number.parseInt(raw, 10) : undefined,
+                      },
+                    });
+                  }}
+                />
+              </div>
+            )}
             {showEndpoint ? (
               <div className="form-group knowledge-setup-grid__span-2">
                 <label htmlFor="kb-embed-endpoint">{t("settings.ai.rag.embeddingEndpoint")}</label>
@@ -927,7 +973,11 @@ export function KnowledgeBaseSettings(props: {
                 id="kb-chunk-size"
                 type="number"
                 min={200}
-                max={4000}
+                max={
+                  isEnvoyLocalEmbed
+                    ? (recommendedVaultChunkCharsForEmbedding(kb.embedding) ?? 4000)
+                    : 4000
+                }
                 value={kb.chunkSizeChars ?? DEFAULT_AI_KNOWLEDGE_BASE.chunkSizeChars}
                 onChange={async (e) => {
                   await patch({
@@ -937,6 +987,20 @@ export function KnowledgeBaseSettings(props: {
                   });
                 }}
               />
+              {isEnvoyLocalEmbed ? (
+                <p className="field-desc">
+                  {t(
+                    "settings.ai.rag.chunkSizeAutoCappedLocal",
+                    "Capped automatically for Envoy Local (max {max} chars for {tokens}-token context).",
+                    {
+                      max:
+                        recommendedVaultChunkCharsForEmbedding(kb.embedding) ??
+                        ENVOY_LOCAL_EMBED_CTX_SIZE,
+                      tokens: ENVOY_LOCAL_EMBED_CTX_SIZE,
+                    },
+                  )}
+                </p>
+              ) : null}
             </div>
             <div className="form-group">
               <label htmlFor="kb-chunk-overlap">
@@ -992,6 +1056,12 @@ export function KnowledgeBaseSettings(props: {
                 }}
               />
               <p className="field-desc">{t("settings.ai.rag.publicPathsDesc")}</p>
+              <p className="field-desc">
+                {t(
+                  "settings.ai.rag.publicPathsNotesAlways",
+                  "notes/ is always included for the Markdown knowledge corpus (even if omitted above). Rebuild also syncs linked Obsidian → notes/imports/obsidian/ and Notion/MCP → notes/mcp/ before embedding.",
+                )}
+              </p>
             </div>
             <div className="form-group">
               <label htmlFor="kb-private-paths">
@@ -1312,7 +1382,7 @@ function AutoReplyLimitsSettings({
       </div>
       <div className="form-group">
         <label htmlFor="auto-reply-max-hour">{t("settings.ai.chat.limitsPerHour")}</label>
-        <div className="settings-inline-row">
+        <div className="settings-inline-row settings-cap-row">
           <input
             id="auto-reply-max-hour"
             type="number"
@@ -1325,26 +1395,26 @@ function AutoReplyLimitsSettings({
               if (Number.isFinite(n) && n >= 1) patchLimits({ maxPerContactPerHour: n });
             }}
           />
-          <label className="settings-checkbox-inline">
-            <input
-              type="checkbox"
-              checked={hourlyUnlimited}
-              disabled={!limits.enabled}
-              onChange={(e) =>
-                patchLimits({
-                  maxPerContactPerHour: e.target.checked
-                    ? AUTO_REPLY_CAP_UNLIMITED
-                    : DEFAULT_AUTO_REPLY_LIMITS.maxPerContactPerHour,
-                })
-              }
-            />
+          <button
+            type="button"
+            className={`chip-button${hourlyUnlimited ? " chip-button--active" : ""}`}
+            disabled={!limits.enabled}
+            aria-pressed={hourlyUnlimited}
+            onClick={() =>
+              patchLimits({
+                maxPerContactPerHour: hourlyUnlimited
+                  ? DEFAULT_AUTO_REPLY_LIMITS.maxPerContactPerHour
+                  : AUTO_REPLY_CAP_UNLIMITED,
+              })
+            }
+          >
             {t("settings.ai.chat.limitsUnlimited")}
-          </label>
+          </button>
         </div>
       </div>
       <div className="form-group">
         <label htmlFor="auto-reply-max-day">{t("settings.ai.chat.limitsPerDay")}</label>
-        <div className="settings-inline-row">
+        <div className="settings-inline-row settings-cap-row">
           <input
             id="auto-reply-max-day"
             type="number"
@@ -1357,21 +1427,21 @@ function AutoReplyLimitsSettings({
               if (Number.isFinite(n) && n >= 1) patchLimits({ maxPerContactPerDay: n });
             }}
           />
-          <label className="settings-checkbox-inline">
-            <input
-              type="checkbox"
-              checked={dailyUnlimited}
-              disabled={!limits.enabled}
-              onChange={(e) =>
-                patchLimits({
-                  maxPerContactPerDay: e.target.checked
-                    ? AUTO_REPLY_CAP_UNLIMITED
-                    : DEFAULT_AUTO_REPLY_LIMITS.maxPerContactPerDay,
-                })
-              }
-            />
+          <button
+            type="button"
+            className={`chip-button${dailyUnlimited ? " chip-button--active" : ""}`}
+            disabled={!limits.enabled}
+            aria-pressed={dailyUnlimited}
+            onClick={() =>
+              patchLimits({
+                maxPerContactPerDay: dailyUnlimited
+                  ? DEFAULT_AUTO_REPLY_LIMITS.maxPerContactPerDay
+                  : AUTO_REPLY_CAP_UNLIMITED,
+              })
+            }
+          >
             {t("settings.ai.chat.limitsUnlimited")}
-          </label>
+          </button>
         </div>
       </div>
       <div className="settings-toggle-row">
@@ -2050,8 +2120,8 @@ function formatTokens(n: number): string {
 /**
  * Owner-facing cost dashboard. Reads from the daily/monthly rollup store via
  * getCostSummary — no raw audit scanning, so it stays fast even for a year of
- * history. Renders nothing when the node reports no recorded calls (e.g. fresh
- * install or mock-only provider).
+ * history. Always keeps the range chips visible; shows an empty or error hint
+ * when there is no usable summary for the selected range.
  */
 function CostDashboardPanel() {
   const t = useT();
@@ -2059,16 +2129,21 @@ function CostDashboardPanel() {
   const [summary, setSummary] = useState<CostSummary | null>(null);
   const [range, setRange] = useState<CostRangePreset>("7d");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       setLoading(true);
+      setLoadError(false);
       try {
         const next = await nodeService.getCostSummary({ since: costRangeToSince(range) });
         if (!cancelled) setSummary(next);
       } catch {
-        if (!cancelled) setSummary(null);
+        if (!cancelled) {
+          setSummary(null);
+          setLoadError(true);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -2078,91 +2153,90 @@ function CostDashboardPanel() {
     };
   }, [nodeService, range]);
 
-  if (loading) {
-    return (
-      <section className="settings-section">
-        <h4>{t("settings.ai.cost.heading", "Model Cost")}</h4>
-        <p className="settings-hint">{t("settings.ai.cost.loading", "Loading…")}</p>
-      </section>
-    );
-  }
-
-  if (!summary || (summary.totalCalls === 0 && summary.byProvider.length === 0)) {
-    return null;
-  }
-
-  const maxProviderCost = Math.max(0.0001, ...summary.byProvider.map((p) => p.costUsd));
+  const empty =
+    !loading &&
+    !loadError &&
+    (!summary || (summary.totalCalls === 0 && summary.byProvider.length === 0));
+  const maxProviderCost = Math.max(
+    0.0001,
+    ...(summary?.byProvider.map((p) => p.costUsd) ?? [0]),
+  );
 
   return (
-    <section className="settings-section">
-      <h4>{t("settings.ai.cost.heading", "Model Cost")}</h4>
-      <p className="section-desc">
-        {t(
-          "settings.ai.cost.sectionDesc",
-          "Per-call cost tracked across cloud and local LLM providers.",
-        )}
-      </p>
+    <section className="settings-section settings-section--compact">
+      <h4>{t("settings.ai.cost.heading")}</h4>
+      <p className="section-desc">{t("settings.ai.cost.sectionDesc")}</p>
 
-      <div className="settings-toggle-row" style={{ justifyContent: "flex-start", gap: 8 }}>
+      <div
+        className="settings-cost-range"
+        role="radiogroup"
+        aria-label={t("settings.ai.cost.heading")}
+      >
         {COST_RANGE_PRESETS.map((preset) => (
           <button
             key={preset}
             type="button"
+            role="radio"
+            aria-checked={range === preset}
             className={`chip-button${range === preset ? " chip-button--active" : ""}`}
             onClick={() => setRange(preset)}
           >
-            {t(`settings.ai.cost.range.${preset}`, preset)}
+            {t(`settings.ai.cost.range.${preset}`)}
           </button>
         ))}
       </div>
 
-      <div className="form-group">
-        <div className="settings-cost-totals">
-          <div className="settings-cost-total">
-            <span className="settings-cost-total-value">{formatCost(summary.totalCostUsd)}</span>
-            <span className="settings-cost-total-label">
-              {t("settings.ai.cost.totalCost", "Total cost")}
-            </span>
+      {loading ? (
+        <p className="settings-hint">{t("settings.ai.cost.loading")}</p>
+      ) : loadError ? (
+        <p className="settings-hint settings-hint--error" role="alert">
+          {t("settings.ai.cost.loadError")}
+        </p>
+      ) : empty ? (
+        <p className="settings-hint">{t("settings.ai.cost.empty")}</p>
+      ) : summary ? (
+        <>
+          <div className="settings-cost-totals">
+            <div className="settings-cost-total">
+              <span className="settings-cost-total-value">{formatCost(summary.totalCostUsd)}</span>
+              <span className="settings-cost-total-label">{t("settings.ai.cost.totalCost")}</span>
+            </div>
+            <div className="settings-cost-total">
+              <span className="settings-cost-total-value">{summary.totalCalls}</span>
+              <span className="settings-cost-total-label">{t("settings.ai.cost.totalCalls")}</span>
+            </div>
+            <div className="settings-cost-total">
+              <span className="settings-cost-total-value">
+                {formatTokens(summary.totalInputTokens)} / {formatTokens(summary.totalOutputTokens)}
+              </span>
+              <span className="settings-cost-total-label">{t("settings.ai.cost.tokensInOut")}</span>
+            </div>
           </div>
-          <div className="settings-cost-total">
-            <span className="settings-cost-total-value">{summary.totalCalls}</span>
-            <span className="settings-cost-total-label">
-              {t("settings.ai.cost.totalCalls", "Calls")}
-            </span>
-          </div>
-          <div className="settings-cost-total">
-            <span className="settings-cost-total-value">
-              {formatTokens(summary.totalInputTokens)} / {formatTokens(summary.totalOutputTokens)}
-            </span>
-            <span className="settings-cost-total-label">
-              {t("settings.ai.cost.tokensInOut", "Tokens in / out")}
-            </span>
-          </div>
-        </div>
-      </div>
 
-      {summary.byProvider.length > 0 && (
-        <div className="form-group">
-          <label>{t("settings.ai.cost.byProvider", "By provider")}</label>
-          <ul className="settings-cost-breakdown">
-            {summary.byProvider.map((row) => (
-              <li key={row.providerId} className="settings-cost-breakdown-row">
-                <span className="settings-cost-breakdown-label">{row.providerId}</span>
-                <div className="settings-cost-breakdown-bar" aria-hidden="true">
-                  <div
-                    className="settings-cost-breakdown-fill"
-                    style={{ width: `${(row.costUsd / maxProviderCost) * 100}%` }}
-                  />
-                </div>
-                <span className="settings-cost-breakdown-value">
-                  {formatCost(row.costUsd)}{" "}
-                  <span className="settings-cost-breakdown-calls">×{row.calls}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+          {summary.byProvider.length > 0 ? (
+            <div className="form-group">
+              <label>{t("settings.ai.cost.byProvider")}</label>
+              <ul className="settings-cost-breakdown">
+                {summary.byProvider.map((row) => (
+                  <li key={row.providerId} className="settings-cost-breakdown-row">
+                    <span className="settings-cost-breakdown-label">{row.providerId}</span>
+                    <div className="settings-cost-breakdown-bar" aria-hidden="true">
+                      <div
+                        className="settings-cost-breakdown-fill"
+                        style={{ width: `${(row.costUsd / maxProviderCost) * 100}%` }}
+                      />
+                    </div>
+                    <span className="settings-cost-breakdown-value">
+                      {formatCost(row.costUsd)}{" "}
+                      <span className="settings-cost-breakdown-calls">×{row.calls}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </>
+      ) : null}
     </section>
   );
 }
@@ -3778,6 +3852,8 @@ export function SettingsAITab() {
   const [botSaved, setBotSaved] = useState(false);
   const [showBotForm, setShowBotForm] = useState(false);
 
+  const [botDeleteId, setBotDeleteId] = useState<string | null>(null);
+
   const handleAddBot = useCallback(async () => {
     const name = botDraft.name.trim();
     const systemPrompt = botDraft.systemPrompt.trim();
@@ -3788,7 +3864,7 @@ export function SettingsAITab() {
     try {
       const existing = nodeConfig?.aiBots ?? [];
       if (existing.some((b) => b.name.trim().toLowerCase() === name.toLowerCase())) {
-        setBotError(t("settings.ai.aiBots.nameTaken", "A bot named “{name}” already exists.", { name }));
+        setBotError(t("settings.ai.aiBots.nameTaken", { name }));
         setBotSaving(false);
         return;
       }
@@ -3822,14 +3898,19 @@ export function SettingsAITab() {
   }, [botDraft, nodeConfig?.aiBots, updateNodeConfigPartial, t]);
 
   const handleDeleteBot = useCallback(async (botId: string) => {
+    setBotError(null);
     try {
       const existing = nodeConfig?.aiBots ?? [];
       const newBots = existing.filter((b) => b.id !== botId);
       await updateNodeConfigPartial({ aiBots: newBots });
     } catch (err) {
-      setBotError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setBotError(message);
+      showToast(t("settings.ai.aiBots.deleteFailed", { error: message }), "error");
     }
-  }, [nodeConfig?.aiBots, updateNodeConfigPartial]);
+  }, [nodeConfig?.aiBots, updateNodeConfigPartial, showToast, t]);
+
+  const botPendingDelete = (nodeConfig?.aiBots ?? []).find((b) => b.id === botDeleteId);
 
   // Pi-only model override (does not affect OpenClaw / Hermes / OpenHuman).
   const piOverride = nodeConfig?.piSettings?.modelOverride;
@@ -3945,8 +4026,8 @@ export function SettingsAITab() {
   // its own tab so neither tab is overstuffed.
 
   return (
-    <>
-      <section className="settings-section">
+    <div className="settings-ai-panel">
+      <section className="settings-section settings-section--compact">
         <h3>{t("settings.ai.title")}</h3>
         <p className="section-desc">{t("settings.ai.sectionDesc")}</p>
       </section>
@@ -3964,13 +4045,13 @@ export function SettingsAITab() {
        * 9. AI rules                                 — set when authoring
        * 10. Agent operating instructions              — set once
        * --------- Defaults / set-once ----------
-       * 11. Knowledge base (RAG)                     — many default fields
-       * 12. Profile gallery media policy             — default share tier
-       * 13. Document autonomy policy                 — default share tier
-       * 14. Terminal assist                          — advanced, set once
-       * 15. Contact default mode                    — has default "manual"
+       * 11. Profile gallery media policy             — default share tier
+       * 12. Document autonomy policy                 — default share tier
+       * 13. Terminal assist                          — advanced, set once
+       * 14. Contact default mode                    — has default "manual"
        * --------- Developer-only ----------
-       * 16. Debug prefix                             — dev / debug toggle
+       * 15. Debug prefix                             — dev / debug toggle
+       * (Knowledge base / RAG setup lives under Knowledge, not this tab.)
        * ============================================================ */}
 
       <section className="settings-section">
@@ -4308,147 +4389,113 @@ export function SettingsAITab() {
 
       {/* AI Character Bots — user-created bots with personality, synced
           to all clients (EnvoyGo, Social UI) via config broadcast. */}
-      <section className="settings-section">
-        <h4>{t("settings.ai.aiBots.heading", "AI Character Bots")}</h4>
-        <p className="section-desc">
-          {t("settings.ai.aiBots.desc", "Create custom AI characters with unique personalities. They appear in your chat list and sync to all your devices automatically.")}
-        </p>
+      <section className="settings-section settings-section--compact">
+        <h4>{t("settings.ai.aiBots.heading")}</h4>
+        <p className="section-desc">{t("settings.ai.aiBots.desc")}</p>
 
         <div className="agent-block">
-          {/* Existing bots list */}
           {(nodeConfig?.aiBots ?? []).length > 0 ? (
-            <div className="agent-block-fields">
+            <div className="ai-bots-list">
               {(nodeConfig?.aiBots ?? []).map((bot) => (
-                <div key={bot.id} className="agent-field agent-field--readonly">
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", width: "100%" }}>
-                    <span
-                      style={{
-                        background: bot.avatarColor ?? "#6366f1",
-                        width: "2rem",
-                        height: "2rem",
-                        borderRadius: "0.5rem",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: "#fff",
-                        fontSize: "0.8rem",
-                        fontWeight: 600,
-                        flexShrink: 0,
-                      }}
-                    >
-                      {(bot.name ?? bot.id).charAt(0).toUpperCase()}
-                    </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 500, fontSize: "0.85rem" }}>
-                        {bot.name} {bot.enabled === false ? "(disabled)" : ""}
-                      </div>
-                      {bot.description ? (
-                        <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted, #64748b)" }}>
-                          {bot.description}
-                        </div>
+                <div key={bot.id} className="ai-bots-row">
+                  <span
+                    className="ai-bots-avatar"
+                    style={{ background: bot.avatarColor ?? "#6366f1" }}
+                    aria-hidden
+                  >
+                    {(bot.name ?? bot.id).charAt(0).toUpperCase()}
+                  </span>
+                  <div className="ai-bots-meta">
+                    <div className="ai-bots-name">
+                      {bot.name}
+                      {bot.enabled === false ? (
+                        <span className="ai-bots-disabled"> {t("settings.ai.aiBots.disabled")}</span>
                       ) : null}
                     </div>
-                    <button
-                      type="button"
-                      className="settings-action-btn"
-                      onClick={() => { void handleDeleteBot(bot.id) }}
-                      style={{ color: "var(--color-danger, #ef4444)", border: "1px solid var(--color-border, #e2e8f0)" }}
-                    >
-                      {t("settings.ai.aiBots.delete", "Delete")}
-                    </button>
+                    {bot.description ? <div className="ai-bots-desc">{bot.description}</div> : null}
                   </div>
+                  <button
+                    type="button"
+                    className="settings-icon-btn settings-icon-btn--danger"
+                    title={t("settings.ai.aiBots.delete")}
+                    aria-label={t("settings.ai.aiBots.delete")}
+                    onClick={() => setBotDeleteId(bot.id)}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      <line x1="10" y1="11" x2="10" y2="17" />
+                      <line x1="14" y1="11" x2="14" y2="17" />
+                    </svg>
+                  </button>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="settings-hint">
-              {t("settings.ai.aiBots.empty", "No bots yet. Click \"Add Bot\" to create one.")}
-            </p>
+            <p className="settings-hint">{t("settings.ai.aiBots.empty")}</p>
           )}
 
           {botSaved ? (
-            <p className="settings-hint" style={{ color: "#10b981" }}>
-              {t("settings.ai.aiBots.saved", "Bot added! It will appear in your chat list.")}
-            </p>
+            <p className="settings-hint settings-hint--success">{t("settings.ai.aiBots.saved")}</p>
           ) : null}
 
-          {/* Add Bot form — collapsible */}
+          {botError ? (
+            <p className="pi-error" role="alert">{botError}</p>
+          ) : null}
+
           {showBotForm ? (
             <div className="agent-block-fields" style={{ marginTop: "0.75rem" }}>
               <div className="agent-field">
-                <label className="agent-field-label">
-                  {t("settings.ai.aiBots.name", "Bot name")}
-                </label>
+                <label className="agent-field-label" htmlFor="ai-bot-name">{t("settings.ai.aiBots.name")}</label>
                 <input
+                  id="ai-bot-name"
                   type="text"
                   className="agent-field-input"
                   value={botDraft.name}
                   onChange={(e) => setBotDraft({ ...botDraft, name: e.target.value })}
-                  placeholder={t("settings.ai.aiBots.namePlaceholder", "e.g. Luna the Librarian")}
+                  placeholder={t("settings.ai.aiBots.namePlaceholder")}
                   autoFocus
                 />
               </div>
               <div className="agent-field">
-                <label className="agent-field-label">
-                  {t("settings.ai.aiBots.personality", "Personality / System prompt")}
-                </label>
+                <label className="agent-field-label" htmlFor="ai-bot-personality">{t("settings.ai.aiBots.personality")}</label>
                 <textarea
+                  id="ai-bot-personality"
                   className="agent-field-input"
                   value={botDraft.systemPrompt}
                   onChange={(e) => setBotDraft({ ...botDraft, systemPrompt: e.target.value })}
-                  placeholder={t(
-                    "settings.ai.aiBots.personalityPlaceholder",
-                    "You are Luna, my girlfriend. You love music, movies, and travelling. Speak warmly and affectionately.",
-                  )}
+                  placeholder={t("settings.ai.aiBots.personalityPlaceholder")}
                   rows={3}
                   style={{ fontFamily: "inherit", fontSize: "0.85rem", resize: "vertical" }}
                 />
-                <p className="settings-hint">
-                  {t(
-                    "settings.ai.aiBots.personalityHint",
-                    "Write as the character in first person (“You are …”). Avoid third person (“Luna is …”) or assistant wording (“I am an AI that helps…”). We reshape this on save.",
-                  )}
-                </p>
+                <p className="settings-hint">{t("settings.ai.aiBots.personalityHint")}</p>
               </div>
               <div className="agent-field">
-                <label className="agent-field-label">
-                  {t("settings.ai.aiBots.description", "Short description (optional)")}
-                </label>
+                <label className="agent-field-label" htmlFor="ai-bot-desc">{t("settings.ai.aiBots.description")}</label>
                 <input
+                  id="ai-bot-desc"
                   type="text"
                   className="agent-field-input"
                   value={botDraft.description}
                   onChange={(e) => setBotDraft({ ...botDraft, description: e.target.value })}
-                  placeholder={t(
-                    "settings.ai.aiBots.descPlaceholder",
-                    "My girlfriend · music & travel",
-                  )}
+                  placeholder={t("settings.ai.aiBots.descPlaceholder")}
                 />
-                <p className="settings-hint">
-                  {t(
-                    "settings.ai.aiBots.descHint",
-                    "One short line for the chat list. Leave blank to auto-fill from the personality.",
-                  )}
-                </p>
+                <p className="settings-hint">{t("settings.ai.aiBots.descHint")}</p>
               </div>
               <div className="agent-field">
-                <label className="agent-field-label">
-                  {t("settings.ai.aiBots.avatarColor", "Avatar color")}
-                </label>
+                <label className="agent-field-label" htmlFor="ai-bot-color">{t("settings.ai.aiBots.avatarColor")}</label>
                 <input
+                  id="ai-bot-color"
                   type="color"
+                  className="agent-field-input"
                   value={botDraft.avatarColor ?? "#6366f1"}
                   onChange={(e) => setBotDraft({ ...botDraft, avatarColor: e.target.value })}
-                  style={{ width: "3rem", height: "2rem", border: "1px solid var(--color-border, #e2e8f0)", borderRadius: "0.375rem", cursor: "pointer" }}
+                  style={{ width: "3rem", height: "2.25rem", padding: "0.15rem" }}
                 />
               </div>
-              {botError ? (
-                <p className="pi-error">{botError}</p>
-              ) : null}
             </div>
           ) : null}
 
-          {/* Action buttons */}
           <div className="agent-block-actions">
             {showBotForm ? (
               <>
@@ -4458,40 +4505,50 @@ export function SettingsAITab() {
                   onClick={() => { void handleAddBot() }}
                   disabled={!botDraft.name.trim() || !botDraft.systemPrompt.trim() || botSaving}
                 >
-                  {botSaving
-                    ? t("settings.ai.aiBots.saving", "Saving…")
-                    : t("settings.ai.aiBots.create", "Create Bot")}
+                  {botSaving ? t("settings.ai.aiBots.saving") : t("settings.ai.aiBots.create")}
                 </button>
                 <button
                   type="button"
-                  className="settings-action-btn"
+                  className="settings-button"
                   onClick={() => { setShowBotForm(false); setBotError(null); }}
                   disabled={botSaving}
                 >
-                  {t("settings.ai.aiBots.cancel", "Cancel")}
+                  {t("settings.ai.aiBots.cancel")}
                 </button>
               </>
             ) : (
               <button
                 type="button"
-                className="settings-action-btn"
+                className="settings-button"
                 onClick={() => { setShowBotForm(true); setBotError(null); }}
               >
-                + {t("settings.ai.aiBots.add", "Add Bot")}
+                {t("settings.ai.aiBots.add")}
               </button>
             )}
           </div>
         </div>
       </section>
 
-      {/* Per-call model cost dashboard. Reads from the rollup store so it
-          stays fast for a year of history. Renders nothing on a fresh
-          install (no recorded calls) or on mobile (stubbed to empty). */}
-      <section className="settings-section">
-        <CostDashboardPanel />
-      </section>
+      {botPendingDelete ? (
+        <ConfirmDialog
+          title={t("settings.ai.aiBots.deleteConfirmTitle")}
+          message={t("settings.ai.aiBots.deleteConfirmMessage", { name: botPendingDelete.name })}
+          variant="destructive"
+          confirmLabel={t("settings.ai.aiBots.delete")}
+          cancelLabel={t("settings.ai.aiBots.cancel")}
+          onConfirm={() => {
+            const id = botPendingDelete.id;
+            setBotDeleteId(null);
+            void handleDeleteBot(id);
+          }}
+          onCancel={() => setBotDeleteId(null)}
+        />
+      ) : null}
 
-      <section className="settings-section">
+      {/* Per-call model cost dashboard — keeps range tabs visible even when empty. */}
+      <CostDashboardPanel />
+
+      <section className="settings-section settings-section--compact">
         <h4>{t("settings.ai.chat.heading")}</h4>
         <p className="section-desc">{t("settings.ai.chat.sectionDesc")}</p>
         <div className="settings-toggle-row">
@@ -4884,7 +4941,6 @@ export function SettingsAITab() {
             </select>
           </div>
         </div>
-        </div>
         <div className="form-group">
           <label>{t("settings.ai.rules.templateLabel")}</label>
           <textarea className="settings-input" placeholder={t("settings.ai.rules.templatePlaceholder")}
@@ -4894,26 +4950,11 @@ export function SettingsAITab() {
         <div className="settings-buttons">
           <button type="button" className="settings-save-btn" onClick={handleAddRule}>{t("settings.ai.rules.addButton")}</button>
         </div>
+        </div>
       </section>
 
       <section className="settings-section">
         <AgentIdentityEditor />
-      </section>
-
-      <section className="settings-section">
-        <h4>{t("settings.ai.rag.heading")}</h4>
-        <p className="section-desc">{t("settings.ai.rag.movedToKnowledgeDesc")}</p>
-        <div className="settings-buttons">
-          <button
-            type="button"
-            className="settings-button"
-            onClick={() => {
-              openContentKnowledge("plugins");
-            }}
-          >
-            {t("settings.ai.rag.openKnowledgeSetup")}
-          </button>
-        </div>
       </section>
 
       <section className="settings-section">
@@ -5082,6 +5123,6 @@ export function SettingsAITab() {
         />
       </div>
       </section>
-    </>
+    </div>
   );
 }

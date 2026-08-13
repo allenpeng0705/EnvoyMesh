@@ -559,6 +559,30 @@ describe("resolveEmbeddingConfig — independent of chat", () => {
     expect(config.mode).toBe("envoy-local");
     expect(config.endpoint).toContain(":18791");
     expect(config.modelName).toContain("qwen3-embedding");
+    // Cap at sidecar ctx (not the model card 8k) so truncate matches llama-server.
+    expect(config.maxInputTokens).toBe(2048);
+  });
+
+  it("embeds envoy-local batches one input at a time", async () => {
+    const calls: unknown[] = [];
+    const fetchImplementation = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input?: unknown };
+      calls.push(body.input);
+      return new Response(
+        JSON.stringify({
+          data: [{ embedding: [0.1, 0.2, 0.3], index: 0 }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    const provider = createEmbeddingProvider({
+      embedding: { mode: "envoy-local" },
+      fetchImplementation: fetchImplementation as unknown as typeof fetch,
+    });
+    const vectors = await provider.embedBatch(["one", "two", "three"]);
+    expect(vectors).toHaveLength(3);
+    expect(calls).toEqual(["one", "two", "three"]);
+    expect(fetchImplementation).toHaveBeenCalledTimes(3);
   });
 
   it("ignores chat modelProviders when resolving", () => {

@@ -45,6 +45,14 @@ import {
 
 export const zh = mergeMessages(en, {
   nav: {
+    social: "社交",
+    socialEngageOne: "社交 — {count} 条新互动",
+    socialEngageMany: "社交 — {count} 条新互动",
+    terminal: "终端",
+    knowledge: "知识库",
+    inbox: "收件箱",
+    inboxOne: "收件箱 — {count} 条待处理",
+    inboxMany: "收件箱 — {count} 条待处理",
     chat: "聊天",
     chatInboxOne: "聊天 — 收件箱 {count} 条待处理",
     chatInboxMany: "聊天 — 收件箱 {count} 条待处理",
@@ -128,12 +136,12 @@ export const zh = mergeMessages(en, {
     done: "明白了",
     discover: {
       title: "找人",
-      body: "打开「发现」，按姓名、兴趣或位置搜索网格。打个招呼即可建立联结 — 每位联系人有信任等级，控制可访问内容。",
+      body: "打开 社交 → 探索 → 发现，按姓名、兴趣或位置搜索网格。打个招呼即可建立联结 — 每位联系人有信任等级，控制可访问内容。",
       cta: "打开发现",
     },
     chat: {
       title: "和朋友聊天",
-      body: "私聊、群聊和通话都在「聊天」。一切点对点 — 无需中央服务器，无需额外端口。",
+      body: "私聊、群聊和通话都在 社交 → 聊天。一切点对点 — 无需中央服务器，无需额外端口。",
       cta: "打开聊天",
     },
     envoyai: {
@@ -148,12 +156,12 @@ export const zh = mergeMessages(en, {
     },
     terminals: {
       title: "终端",
-      body: "在 聊天 → 终端 打开本机 shell。终端代理可在手动/代理模式提议命令 — /goal、/watch 等命令仅在该面板可用。",
+      body: "在顶部「终端」打开本机 shell。终端代理可在手动/代理模式提议命令 — /goal、/watch 等命令仅在该面板可用。",
       cta: "打开终端",
     },
     pi: {
       title: "Pi 编程代理",
-      body: "Pi 是本地编程代理，在项目目录中改文件、跑命令，不使用网格工具。从 聊天 → 终端 或「新建 Pi」启动。",
+      body: "Pi 是本地编程代理，在项目目录中改文件、跑命令，不使用网格工具。从顶部「终端」或「新建 Pi」启动。",
       cta: "打开终端",
     },
     chains: {
@@ -167,9 +175,9 @@ export const zh = mergeMessages(en, {
       cta: "打开家庭设置",
     },
     content: {
-      title: "内容",
-      body: "向联结联系人发短动态（动态），在网格发长文（博客），在探索浏览同伴站点，在「我的文件」管理保险库文档。",
-      cta: "打开内容",
+      title: "社交",
+      body: "发布动态（Feed）、博客，并在「探索」里发现人或浏览网格。知识库在顶部独立标签。",
+      cta: "打开社交",
     },
     privacy: {
       title: "由你掌控",
@@ -509,7 +517,7 @@ export const zh = mergeMessages(en, {
     },
     nearby: {
       title: "同一网络上的人",
-      lede: "显示同一 Wi‑Fi 上的其他 Envoy 用户。点击「打招呼」发送好友请求 — 对方可在此或聊天 → 收件箱中接受。",
+      lede: "显示同一 Wi‑Fi 上的其他 Envoy 用户。点击「打招呼」发送好友请求 — 对方可在此或收件箱中接受。",
       offline: "连接已关闭。请打开设置 → 网络进行连接后再试。",
       subtitle: "您附近网络上",
       subtitleIdentifying: "已在此 Wi‑Fi 上发现 — 正在识别…",
@@ -658,6 +666,12 @@ export const zh = mergeMessages(en, {
   library: zhLibraryViewMessages,
   browser: zhBrowserViewMessages,
   content: zhContentViewMessages,
+  social: {
+    tabs: "社交",
+    tabChats: "聊天",
+    tabDiscover: "发现",
+    tabExplore: "逛逛",
+  },
   knowledge: zhKnowledgeViewMessages,
   blog: zhBlogViewMessages,
   feed: zhFeedViewMessages,

@@ -37,6 +37,14 @@ import {
 
 export const de = mergeMessages(en, {
   nav: {
+    social: "Social",
+    socialEngageOne: "Social — {count} neue Interaktion",
+    socialEngageMany: "Social — {count} neue Interaktionen",
+    terminal: "Terminal",
+    knowledge: "Wissen",
+    inbox: "Posteingang",
+    inboxOne: "Posteingang — {count} Element",
+    inboxMany: "Posteingang — {count} Elemente",
     chat: "Chat",
     chatInboxOne: "Chat — {count} Element im Posteingang",
     chatInboxMany: "Chat — {count} Elemente im Posteingang",
@@ -136,12 +144,12 @@ export const de = mergeMessages(en, {
     },
     terminals: {
       title: "Terminals",
-      body: "Öffnen Sie eine Shell auf dem Heimknoten unter Chat → Terminals. Terminal Agent kann Befehle im Manual- oder Agent-Modus vorschlagen — /goal und /watch bleiben in diesem Panel.",
+      body: "Öffnen Sie eine Shell auf dem Heimknoten unter Terminal. Terminal Agent kann Befehle im Manual- oder Agent-Modus vorschlagen — /goal und /watch bleiben in diesem Panel.",
       cta: "Terminals öffnen",
     },
     pi: {
       title: "Pi-Coding-Agent",
-      body: "Pi ist ein lokaler Coding-Agent in einem Projektordner (Dateien bearbeiten, Shell). Keine Mesh-Tools — starten Sie ihn unter Chat → Terminals oder Neues Pi.",
+      body: "Pi ist ein lokaler Coding-Agent in einem Projektordner (Dateien bearbeiten, Shell). Keine Mesh-Tools — starten Sie ihn unter Terminal oder Neues Pi.",
       cta: "Terminals öffnen",
     },
     chains: {
@@ -155,9 +163,9 @@ export const de = mergeMessages(en, {
       cta: "Familieneinstellungen öffnen",
     },
     content: {
-      title: "Inhalt",
-      body: "Kurzer Feed für gebondete Kontakte, längere Blog-Beiträge im Mesh, Peers in Entdecken durchstöbern und Tresor-Dateien unter Meine Dateien verwalten.",
-      cta: "Inhalt öffnen",
+      title: "Social",
+      body: "Kurzer Feed für gebondete Kontakte, längere Blog-Beiträge, Explore (Personen finden oder Mesh durchsuchen). Wissen liegt im eigenen oberen Tab.",
+      cta: "Social öffnen",
     },
     privacy: {
       title: "Sie haben die Kontrolle",
@@ -496,7 +504,7 @@ export const de = mergeMessages(en, {
     },
     nearby: {
       title: "Personen in diesem Netzwerk",
-      lede: "Zeigt andere Envoy-Benutzer im gleichen WLAN. Tippen Sie auf Hallo sagen, um eine Freundschaftsanfrage zu senden — sie nehmen hier oder in Chat → Posteingang an.",
+      lede: "Zeigt andere Envoy-Benutzer im gleichen WLAN. Tippen Sie auf Hallo sagen, um eine Freundschaftsanfrage zu senden — sie nehmen hier oder im Posteingang an.",
       offline: "Ihre Verbindung ist aus. Öffnen Sie Einstellungen → Netzwerk zum Verbinden, dann erneut versuchen.",
       subtitle: "In der Nähe in Ihrem Netzwerk",
       empty: "Noch niemand in der Nähe. Stellen Sie sicher, dass Sie im gleichen WLAN sind und beide in Einstellungen → Netzwerk verbunden sind.",
@@ -619,6 +627,12 @@ export const de = mergeMessages(en, {
       empty: "Keine Kontakte haben Ergebnisse zurückgegeben (oder keine passenden Dateien).",
       noFiles: "Keine passenden veröffentlichten Dateien.",
     },
+  },
+  social: {
+    tabs: "Social",
+    tabChats: "Chats",
+    tabDiscover: "Personen finden",
+    tabExplore: "Entdecken",
   },
   library: {
     title: "Bibliothek",

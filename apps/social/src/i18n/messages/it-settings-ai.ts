@@ -48,6 +48,23 @@ export const itAiSettingsMessages = {
     autoSendChatDesc: "L'IA risponde automaticamente in chat (predefinito: disattivato)",
     pauseAllAi: "Metti in pausa tutta l'IA",
     pauseAllAiDesc: "Interruttore principale per azioni autonome",
+    limitsHeading: "Limiti di risposta automatica",
+    limitsDesc:
+      "Limita gli invii automatici per contatto quando l'altra parte è un agente IA — per evitare loop IA-IA. I contatti umani non sono limitati.",
+    limitsEnabled: "Applica limiti per contatto",
+    limitsEnabledDesc: "Se disattivato, valgono solo lo switch di emergenza e l'invio automatico",
+    limitsOnlyAgentPeers: "Solo se il peer è un agente IA",
+    limitsOnlyAgentPeersDesc:
+      "Applica i limiti orari/giornalieri solo ai messaggi di agenti verificati; i contatti umani possono ricevere risposte auto illimitate",
+    limitsPerHour: "Max risposte auto all'ora (per contatto)",
+    limitsPerDay: "Max risposte auto al giorno (per contatto)",
+    limitsUnlimited: "Illimitato",
+    limitsPauseThread: "Metti in pausa il thread quando si raggiunge un limite",
+    limitsPauseThreadDesc: "Interrompe l'invio auto per quel contatto fino al reset della finestra oraria o giornaliera",
+    toastHourly:
+      "Risposta auto in pausa per {name}: limite orario raggiunto ({count}/{max}). Passa a Manuale o attendi il reset.",
+    toastDaily:
+      "Risposta auto in pausa per {name}: limite giornaliero raggiunto ({count}/{max}). Passa a Manuale o attendi domani (UTC).",
     activityNotifications: "Notifiche attività chat",
     notificationsOff: "Disattivato",
     notificationsMilestonesOnly: "Solo traguardi",
@@ -64,6 +81,7 @@ export const itAiSettingsMessages = {
     notifyBrief: "Breve",
     notifySilent: "Silenzioso",
     notifyApprovalOnly: "Solo approvazione",
+    notificationsHeading: "Notifiche e visibilità",
   },
   presence: {
     heading: "Stato",
@@ -103,6 +121,7 @@ export const itAiSettingsMessages = {
       "Se abilitato, aggiunge il prefisso configurabile (predefinito [AI Agent]) ai byte dei messaggi in uscita per log e ispezione wire. Mai mostrato nell'UI chat Social.",
     debugPrefixLabel: "Stringa prefisso debug",
     debugPrefixPlaceholder: "[AI Agent]",
+    debugHeading: "Opzioni di debug",
   },
   postures: {
     heading: "Posture EnvoyAI",
@@ -122,6 +141,8 @@ export const itAiSettingsMessages = {
     lastSaved: "Ultimo salvataggio {time}",
   },
   contacts: {
+    heading: "Predefiniti contatti",
+    sectionDesc: "Comportamento predefinito per i nuovi contatti.",
     defaultModeHeading: "Modalità predefinita per nuovi contatti",
     defaultModeDesc:
       "Modalità IA predefinita quando apri una chat con qualcuno senza override per contatto. Per cambiare la modalità di un contatto esistente, usa i pulsanti Manuale / Assistente / Auto nell'intestazione di quella chat.",
@@ -262,5 +283,49 @@ export const itAiSettingsMessages = {
     templatePlaceholder:
       "es. Ciao, {ownerName} è attualmente assente. Farò sapere che hai contattato!",
     addButton: "Aggiungi regola",
+  },
+  cost: {
+    heading: "Costo modello",
+    sectionDesc: "Costo per chiamata tracciato su provider LLM cloud e locali.",
+    loading: "Caricamento…",
+    empty: "Nessun utilizzo registrato per questo intervallo.",
+    loadError: "Impossibile caricare il riepilogo costi. Riprova.",
+    totalCost: "Costo totale",
+    totalCalls: "Chiamate",
+    tokensInOut: "Token in / out",
+    byProvider: "Per provider",
+    range: {
+      today: "Oggi",
+      "7d": "7 giorni",
+      "30d": "30 giorni",
+      all: "Tutto",
+    },
+  },
+  aiBots: {
+    heading: "Bot personaggio IA",
+    desc: "Crea personaggi IA personalizzati con personalità uniche. Appaiono nell'elenco chat e si sincronizzano automaticamente su tutti i dispositivi.",
+    empty: "Nessun bot ancora. Clicca « Aggiungi bot ».",
+    saved: "Bot aggiunto! Apparirà nell'elenco chat.",
+    name: "Nome bot",
+    namePlaceholder: "es. Luna la bibliotecaria",
+    nameTaken: "Esiste già un bot chiamato « {name} ».",
+    personality: "Personalità / Prompt di sistema",
+    personalityPlaceholder:
+      "Sei Luna, la mia ragazza. Ami musica, film e viaggi. Parla in modo caldo e affettuoso.",
+    personalityHint:
+      "Scrivi il personaggio in prima persona (« Sei… »). Evita la terza persona (« Luna è… ») o il tono assistente (« Sono un'IA che aiuta… »). Il testo viene normalizzato al salvataggio.",
+    description: "Breve descrizione (opzionale)",
+    descPlaceholder: "La mia ragazza · musica e viaggi",
+    descHint: "Una riga per l'elenco chat. Lascia vuoto per compilare dalla personalità.",
+    avatarColor: "Colore avatar",
+    add: "Aggiungi bot",
+    create: "Crea bot",
+    saving: "Salvataggio…",
+    cancel: "Annulla",
+    delete: "Elimina",
+    deleteConfirmTitle: "Eliminare questo bot?",
+    deleteConfirmMessage: "« {name} » sarà rimosso da questo nodo e da tutti i dispositivi associati.",
+    deleteFailed: "Impossibile eliminare il bot: {error}",
+    disabled: "(disabilitato)",
   },
 } as const;

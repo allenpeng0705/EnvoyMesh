@@ -5,7 +5,7 @@ export const jaNetworkSettingsMessages = {
     incomingMany: "受信ファイル共有 {count} 件。",
     suggestionsOne: "エージェント共有提案 {count} 件。",
     suggestionsMany: "エージェント共有提案 {count} 件。",
-    inboxHint: "チャット → 受信トレイで承認、送信、または却下できます。",
+    inboxHint: "受信トレイで承認、送信、または却下できます。",
   },
   nodeControl: {
     title: "ノード制御",

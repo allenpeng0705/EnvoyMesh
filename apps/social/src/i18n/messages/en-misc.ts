@@ -23,7 +23,7 @@ export const discoverCardsMessages = {
   morningReportLede: "Ranked discovery candidates from overnight bond and DHT activity.",
   friendSuggestionsTitle: "Help finding friends",
   friendSuggestionsLede:
-    "People Envoy noticed on the network who might be a good match. Say hello to send a friend request — they can accept here or in Chat → Inbox.",
+    "People Envoy noticed on the network who might be a good match. Say hello to send a friend request — they can accept here or in Inbox.",
   suggestionUnknownName: "Someone on the network",
   suggestionReferred: "Introduced through someone you know",
   suggestionOnNetwork: "Recently seen on the network",
@@ -528,7 +528,7 @@ export const fileShareMessages = {
   dialogAria: "Share file",
   shareTitle: "Share “{title}”",
   shareFromLibrary: "Share from library",
-  hint: "Sends a verified P2P file offer; the recipient accepts from Chat → Inbox.",
+  hint: "Sends a verified P2P file offer; the recipient accepts from Inbox.",
   bondedContact: "Bonded contact",
   selectContact: "Select a contact…",
   vaultFile: "Vault file",
@@ -579,7 +579,7 @@ export const browserViewMessages = {
   idleHintPaste: "Paste a shared envoy:// link, then press Go.",
   idleHintContacts:
     "From a contact’s chat header, open Profile, Blog, or PhotoWall without typing a URL.",
-  idleHintPublish: "Publish under Content → Blog or Feed.",
+  idleHintPublish: "Publish under Social → Blog or Feed.",
   modes: "Explore modes",
   modeBrowse: "Browse",
   modeBazaar: "Bazaar",
@@ -588,7 +588,7 @@ export const browserViewMessages = {
   modeOpen: "Open",
   openHelloHint: "Not bonded yet — say hello to connect with this person.",
   statusPlaceholder: "Not published yet — showing a local placeholder page",
-  idleHintBlog: "Write your own posts under Content → Blog.",
+  idleHintBlog: "Write your own posts under Social → Blog.",
   bazaar: {
     intro: "Find people you haven’t bonded with — open their public profile or blog, then say hello.",
     refresh: "Refresh",
@@ -786,6 +786,13 @@ export const contentViewMessages = {
   tabSites: "Sites",
   tabBazaar: "Bazaar",
   tabFriends: "Friends",
+} as const;
+
+export const socialViewMessages = {
+  tabs: "Social",
+  tabChats: "Chats",
+  tabDiscover: "Discover",
+  tabExplore: "Explore",
 } as const;
 
 export const knowledgeViewMessages = {

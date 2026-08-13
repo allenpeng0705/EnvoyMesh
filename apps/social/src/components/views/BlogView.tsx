@@ -8,7 +8,6 @@ import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { contactLabel } from "../../lib/display.js";
 import { openBrowserAt } from "../../lib/browser-nav.js";
-import { webContentUrl } from "../../lib/web-content-urls.js";
 import { AuthorAiDraftField, applyAuthorDraft } from "../AuthorAiDraftField.js";
 import { MarkdownEditor } from "../MarkdownEditor.js";
 import { VisibilitySelector } from "../VisibilitySelector.js";
@@ -140,16 +139,6 @@ export function BlogView() {
           </p>
         </div>
         <div className="blog-view__header-actions">
-          {selfOwnerId ? (
-            <button
-              type="button"
-              className="btn-secondary btn-small"
-              data-testid="blog-open-listing"
-              onClick={() => openBrowserAt(webContentUrl(selfOwnerId, "blog"))}
-            >
-              {t("blog.openListing", "Open blog")}
-            </button>
-          ) : null}
           <button
             type="button"
             className="feed-view__icon-btn"

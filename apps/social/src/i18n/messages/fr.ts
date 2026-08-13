@@ -37,6 +37,14 @@ import {
 
 export const fr = mergeMessages(en, {
   nav: {
+    social: "Social",
+    socialEngageOne: "Social — {count} nouvelle interaction",
+    socialEngageMany: "Social — {count} nouvelles interactions",
+    terminal: "Terminal",
+    knowledge: "Connaissances",
+    inbox: "Boîte de réception",
+    inboxOne: "Boîte de réception — {count} élément",
+    inboxMany: "Boîte de réception — {count} éléments",
     chat: "Discussion",
     chatInboxOne: "Discussion — {count} élément dans la boîte de réception",
     chatInboxMany: "Discussion — {count} éléments dans la boîte de réception",
@@ -136,12 +144,12 @@ export const fr = mergeMessages(en, {
     },
     terminals: {
       title: "Terminaux",
-      body: "Ouvrez un shell sur le nœud domestique via Chat → Terminaux. Terminal Agent peut proposer des commandes en mode Manuel ou Agent — /goal et /watch restent dans ce panneau.",
+      body: "Ouvrez un shell sur le nœud domestique via Terminal. Terminal Agent peut proposer des commandes en mode Manuel ou Agent — /goal et /watch restent dans ce panneau.",
       cta: "Ouvrir les terminaux",
     },
     pi: {
       title: "Agent de code Pi",
-      body: "Pi est un agent de code local dans un dossier projet (éditer des fichiers, shell). Pas d'outils mesh — démarrez-le via Chat → Terminaux ou Nouveau Pi.",
+      body: "Pi est un agent de code local dans un dossier projet (éditer des fichiers, shell). Pas d'outils mesh — démarrez-le via Terminal ou Nouveau Pi.",
       cta: "Ouvrir les terminaux",
     },
     chains: {
@@ -155,9 +163,9 @@ export const fr = mergeMessages(en, {
       cta: "Ouvrir les réglages Famille",
     },
     content: {
-      title: "Contenu",
-      body: "Publiez un Feed court pour les contacts liés, des articles Blog plus longs sur le mesh, parcourez les pairs dans Explorer, et gérez les fichiers du coffre sous Mes fichiers.",
-      cta: "Ouvrir Contenu",
+      title: "Social",
+      body: "Publiez un Feed court, des articles Blog, et explorez (Découvrir ou Parcourir). Les connaissances sont dans l’onglet Knowledge en haut.",
+      cta: "Ouvrir Social",
     },
     privacy: {
       title: "Vous avez le contrôle",
@@ -496,7 +504,7 @@ export const fr = mergeMessages(en, {
     },
     nearby: {
       title: "Personnes sur ce réseau",
-      lede: "Affiche les autres utilisateurs Envoy sur le même Wi‑Fi. Appuyez sur Dire bonjour pour envoyer une demande d'ami — ils acceptent ici ou dans Chat → Boîte de réception.",
+      lede: "Affiche les autres utilisateurs Envoy sur le même Wi‑Fi. Appuyez sur Dire bonjour pour envoyer une demande d'ami — ils acceptent ici ou dans Boîte de réception.",
       offline: "Votre connexion est désactivée. Ouvrez Paramètres → Réseau pour vous connecter, puis réessayez.",
       subtitle: "À proximité sur votre réseau",
       empty: "Personne à proximité pour l'instant. Assurez-vous d'être sur le même Wi‑Fi et que les deux sont connectés dans Paramètres → Réseau.",
@@ -619,6 +627,12 @@ export const fr = mergeMessages(en, {
       empty: "Aucun contact n'a renvoyé de résultats (ou aucun fichier correspondant).",
       noFiles: "Aucun fichier publié correspondant.",
     },
+  },
+  social: {
+    tabs: "Social",
+    tabChats: "Discussions",
+    tabDiscover: "Découvrir",
+    tabExplore: "Explorer",
   },
   library: {
     title: "Bibliothèque",

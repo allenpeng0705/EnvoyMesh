@@ -192,7 +192,7 @@ export function AuthorizedDevicesSection() {
   const hasWork = duplicateCount > 0 || revokedCount > 0;
 
   return (
-    <div className="settings-card">
+    <div className="settings-card settings-card--devices">
       <h4>{t("settings.account.devices.title", "Authorized Devices")}</h4>
       <p className="settings-hint">
         {t(
@@ -219,16 +219,14 @@ export function AuthorizedDevicesSection() {
           {t("settings.account.devices.noDevices", "No authorized devices yet.")}
         </p>
       ) : (
-        <ul className="settings-list">
+        <ul className="authorized-devices-list">
           {authorizedDevices.map((device) => (
-            <li
-              key={device.deviceId}
-              className="settings-list-item"
-              style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}
-            >
-              <div>
-                <div>{device.displayName ?? device.deviceProfile}</div>
-                <div className="settings-hint" style={{ fontSize: "0.75rem" }}>
+            <li key={device.deviceId} className="authorized-devices-item">
+              <div className="authorized-devices-meta">
+                <div className="authorized-devices-name">
+                  {device.displayName ?? device.deviceProfile}
+                </div>
+                <div className="authorized-devices-detail">
                   {device.deviceProfile}
                   {device.revoked
                     ? ` ${t("settings.account.devices.revoked", "revoked")}`
@@ -241,9 +239,8 @@ export function AuthorizedDevicesSection() {
                       })}
                     </>
                   ) : null}
-                  <br />
-                  <code style={{ fontSize: "0.65rem" }}>{device.deviceId}</code>
                 </div>
+                <code className="authorized-devices-id">{device.deviceId}</code>
               </div>
               {!device.revoked && (
                 <button
@@ -265,13 +262,13 @@ export function AuthorizedDevicesSection() {
       )}
 
       {cleanupMessage ? (
-        <p className="settings-hint" style={{ marginTop: 8 }}>
+        <p className="settings-hint settings-hint--spaced">
           {cleanupMessage}
         </p>
       ) : null}
 
       {!isMobileNode && (
-        <div className="settings-buttons" style={{ marginTop: 8, gap: 8, display: "flex" }}>
+        <div className="settings-buttons authorized-devices-actions">
           <button
             type="button"
             className="settings-button"

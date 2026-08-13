@@ -13,12 +13,17 @@ import {
   collectMarkdownDestinationPath,
   extractVaultDocumentText,
   isMarkdownCollectCandidate,
+  isUnderNotesImportsBlog,
+  isUnderNotesImportsObsidian,
   isVaultExtractableExtension,
+  normalizeVaultRelativePath,
   notesImportsBlogPathForWebPost,
   notesImportsPathForSource,
   uniqueRelativePath,
   wrapMaterializedMarkdown,
+  VAULT_NOTES_IMPORTS_DIR,
   VAULT_TEXT_EXTRACTOR_ID,
+  type VaultIndex,
 } from "@envoymesh/vault";
 
 export type MaterializeSensitivity = "public" | "friends" | "private";
@@ -227,3 +232,132 @@ export async function collectLooseMarkdownIntoNotes(
 
   return { moved };
 }
+
+/** Vault prefixes that must not be auto-materialized into `notes/imports/`. */
+const MATERIALIZE_SKIP_PREFIXES = [
+  "notes/",
+  "chat/",
+  "profile/",
+  "blog/",
+  "feeds/",
+  ".obsidian/",
+  ".envoy/",
+] as const;
+
+export interface MaterializePendingResult {
+  materialized: string[];
+  skippedExisting: string[];
+  failed: Array<{ path: string; reason?: string }>;
+  /** Office/PDF (etc.) sources that already have a `notes/imports` Markdown companion. */
+  coveredSources: string[];
+}
+
+/**
+ * Convert extractable Office/PDF/HTML vault files into `notes/imports/*.md` when missing.
+ * Does not overwrite existing materialized notes (preserves Obsidian edits).
+ * Used by Rebuild index so embedding prefers on-disk Markdown.
+ */
+export async function materializePendingExtractableDocuments(
+  vaultDir: string,
+  options?: MaterializeOfficeOptions,
+): Promise<MaterializePendingResult> {
+  const index = await buildVaultIndex({ rootDir: vaultDir });
+  const covered = await collectMaterializedOfficeSources(vaultDir, index);
+  const materialized: string[] = [];
+  const skippedExisting: string[] = [];
+  const failed: Array<{ path: string; reason?: string }> = [];
+
+  const candidates = index.documents
+    .map((d) => d.relativePath.replace(/\\/g, "/"))
+    .filter((p) => shouldAutoMaterializeSource(p))
+    .sort();
+
+  for (const source of candidates) {
+    if (covered.has(source)) {
+      skippedExisting.push(source);
+      continue;
+    }
+    const result = await materializeOfficeDocumentToNotes(vaultDir, source, options);
+    if (result.ok && result.markdownRelativePath) {
+      materialized.push(result.markdownRelativePath);
+      covered.add(source);
+    } else {
+      failed.push({ path: source, reason: result.reason });
+    }
+  }
+
+  return {
+    materialized,
+    skippedExisting,
+    failed,
+    coveredSources: [...covered].sort(),
+  };
+}
+
+function shouldAutoMaterializeSource(relativePath: string): boolean {
+  const p = normalizeVaultRelativePath(relativePath);
+  const ext = extname(p).toLowerCase();
+  if (!isVaultExtractableExtension(ext)) return false;
+  for (const prefix of MATERIALIZE_SKIP_PREFIXES) {
+    const bare = prefix.slice(0, -1);
+    if (p === bare || p.startsWith(prefix)) return false;
+  }
+  return true;
+}
+
+/**
+ * Read `source:` frontmatter from materialized notes under `notes/imports/`.
+ */
+export async function collectMaterializedOfficeSources(
+  vaultDir: string,
+  vaultIndex?: VaultIndex,
+): Promise<Set<string>> {
+  const index = vaultIndex ?? (await buildVaultIndex({ rootDir: vaultDir }));
+  const covered = new Set<string>();
+  for (const doc of index.documents) {
+    const rel = doc.relativePath.replace(/\\/g, "/");
+    if (!rel.startsWith(`${VAULT_NOTES_IMPORTS_DIR}/`)) continue;
+    if (!rel.toLowerCase().endsWith(".md")) continue;
+    // Blog / Obsidian mirrors are not Office companions.
+    if (isUnderNotesImportsBlog(rel) || isUnderNotesImportsObsidian(rel)) continue;
+    try {
+      const abs = resolve(vaultDir, rel);
+      assertPathInsideVault(vaultDir, abs);
+      const body = await readFile(abs, "utf8");
+      const source = parseMaterializedSourceFrontmatter(body);
+      if (source) covered.add(source);
+    } catch {
+      // ignore unreadable companions
+    }
+  }
+  return covered;
+}
+
+/** Parse `source:` from YAML frontmatter on a materialized Markdown note. */
+export function parseMaterializedSourceFrontmatter(markdown: string): string | null {
+  const trimmed = markdown.replace(/^\uFEFF/, "");
+  if (!/^---[ \t]*\r?\n/.test(trimmed)) return null;
+  const afterOpen = trimmed.slice(trimmed.indexOf("\n") + 1);
+  const closeMatch = afterOpen.match(/^[ \t]*---[ \t]*\r?\n/m);
+  if (!closeMatch || closeMatch.index === undefined) return null;
+  const yaml = afterOpen.slice(0, closeMatch.index);
+  const m = yaml.match(/^source:\s*(.+?)\s*$/m);
+  if (!m?.[1]) return null;
+  let raw = m[1].trim();
+  if (
+    (raw.startsWith('"') && raw.endsWith('"')) ||
+    (raw.startsWith("'") && raw.endsWith("'"))
+  ) {
+    const inner = raw.slice(1, -1);
+    try {
+      raw = JSON.parse(`"${inner.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`) as string;
+    } catch {
+      raw = inner;
+    }
+  }
+  const source = normalizeVaultRelativePath(raw);
+  // Skip non-file sources (e.g. blog mirrors use `web:…`).
+  if (!source || source.includes(":") || source.startsWith("web:")) return null;
+  return source;
+}
+

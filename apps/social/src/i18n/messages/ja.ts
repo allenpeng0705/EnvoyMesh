@@ -39,10 +39,19 @@ import {
 
 export const ja = mergeMessages(en, {
   nav: {
+    social: "ソーシャル",
+    socialEngageOne: "ソーシャル — 新しい反応 {count} 件",
+    socialEngageMany: "ソーシャル — 新しい反応 {count} 件",
+    terminal: "ターミナル",
+    knowledge: "ナレッジ",
+    inbox: "受信トレイ",
+    inboxOne: "受信トレイ — {count} 件",
+    inboxMany: "受信トレイ — {count} 件",
     chat: "チャット",
     chatInboxOne: "チャット — 受信トレイ {count} 件",
     chatInboxMany: "チャット — 受信トレイ {count} 件",
     contacts: "連絡先 ({count})",
+    discover: "見つける",
     content: "Content",
     chains: "チームの仕事",
     activity: "アクティビティ",
@@ -137,12 +146,12 @@ export const ja = mergeMessages(en, {
     },
     terminals: {
       title: "ターミナル",
-      body: "チャット → ターミナルからホームノードのシェルを開きます。Terminal Agent は手動/エージェントモードでコマンドを提案できます — /goal や /watch はそのパネル専用です。",
+      body: "上部の「ターミナル」からホームノードのシェルを開きます。Terminal Agent は手動/エージェントモードでコマンドを提案できます — /goal や /watch はそのパネル専用です。",
       cta: "ターミナルを開く",
     },
     pi: {
       title: "Pi コーディングエージェント",
-      body: "Pi はプロジェクトフォルダで動くローカルのコーディングエージェントです（ファイル編集・シェル）。メッシュツールは使いません — チャット → ターミナルまたは新規 Pi から起動します。",
+      body: "Pi はプロジェクトフォルダで動くローカルのコーディングエージェントです（ファイル編集・シェル）。メッシュツールは使いません — 上部の「ターミナル」または新規 Pi から起動します。",
       cta: "ターミナルを開く",
     },
     chains: {
@@ -156,9 +165,9 @@ export const ja = mergeMessages(en, {
       cta: "ファミリー設定を開く",
     },
     content: {
-      title: "コンテンツ",
-      body: "ボンディング済み連絡先向けの短いフィード、メッシュ上の長文ブログ、探索でのピア閲覧、マイファイルでの保管庫管理。",
-      cta: "コンテンツを開く",
+      title: "ソーシャル",
+      body: "ボンディング済み連絡先向けの短いフィード、メッシュ上の長文ブログ、「探索」で人を見つける／閲覧。ナレッジは上部の独立タブです。",
+      cta: "ソーシャルを開く",
     },
     privacy: {
       title: "あなたが管理します",
@@ -497,7 +506,7 @@ export const ja = mergeMessages(en, {
     },
     nearby: {
       title: "このネットワークの人",
-      lede: "同じ Wi‑Fi 上の他の Envoy ユーザーを表示します。「挨拶する」をタップして友達リクエストを送信 — 相手はここまたはチャット → 受信箱で承認します。",
+      lede: "同じ Wi‑Fi 上の他の Envoy ユーザーを表示します。「挨拶する」をタップして友達リクエストを送信 — 相手はここまたは受信トレイで承認します。",
       offline: "接続がオフです。設定 → ネットワークで接続してから再試行してください。",
       subtitle: "近くのネットワークで",
       empty: "まだ近くに誰もいません。同じ Wi‑Fi で、設定 → ネットワークで両方が接続されていることを確認してください。",
@@ -620,6 +629,12 @@ export const ja = mergeMessages(en, {
       empty: "結果を返した連絡先がありません (または一致するファイルがありません)。",
       noFiles: "一致する公開ファイルがありません。",
     },
+  },
+  social: {
+    tabs: "ソーシャル",
+    tabChats: "チャット",
+    tabDiscover: "見つける",
+    tabExplore: "探索",
   },
   library: {
     title: "ライブラリ",

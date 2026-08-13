@@ -1,5 +1,5 @@
 /**
- * Knowledge hub — Content → Knowledge.
+ * Knowledge hub — top-level Knowledge view.
  * Browse + Ask (combined), Plugins, Setup.
  * Browse is gated until Envoy Local embed is ready (when that mode is selected).
  */

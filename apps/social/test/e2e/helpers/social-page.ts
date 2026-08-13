@@ -145,10 +145,10 @@ export class SocialPage {
   // Phase 45 — Web Content Browser helpers
   // --------------------------------------------------------------------------
 
-  /** Open Content → Explore (browser). */
+  /** Open Social → Explore (browser). */
   async openBrowser(): Promise<void> {
-    await this.page.getByTestId("nav-content").click();
-    await this.page.getByTestId("content-tab-explore").click();
+    await this.page.getByTestId("nav-social").click();
+    await this.page.getByTestId("social-tab-explore").click();
     await this.page.getByTestId("browser-view").waitFor({ state: "visible", timeout: 10_000 });
     // Address bar lives under Open mode.
     const openMode = this.page.getByTestId("browser-mode-open");
@@ -206,13 +206,13 @@ export class SocialPage {
     await this.page.getByTestId("browser-error").waitFor({ state: "visible", timeout: 30_000 });
   }
 
-  /** Content → Blog — compose and publish a blog post. */
+  /** Social → Blog — compose and publish a blog post. */
   async publishBlogPost(opts: {
     title: string;
     body: string;
     visibility?: "public" | "bonded" | "contacts" | "private";
   }): Promise<void> {
-    await this.page.getByTestId("content-tab-blog").click();
+    await this.page.getByTestId("social-tab-blog").click();
     await this.page.getByTestId("blog-view").waitFor({ state: "visible" });
     await this.page.getByTestId("blog-compose-open").click();
     await this.page.getByTestId("blog-composer").waitFor({ state: "visible" });
@@ -242,7 +242,7 @@ export class SocialPage {
         new CustomEvent("envoymesh:open-browser", { detail: { authorTemplate: "photo" } }),
       );
     });
-    await this.page.getByTestId("content-tab-explore").waitFor({ state: "visible", timeout: 15_000 });
+    await this.page.getByTestId("social-tab-explore").waitFor({ state: "visible", timeout: 15_000 });
     await this.page.getByTestId("browser-author-panel").waitFor({ state: "visible" });
     await this.page.getByTestId("browser-author-template-photo").click();
     await this.page.getByTestId("browser-author-title").fill(opts.title);
@@ -260,11 +260,10 @@ export class SocialPage {
     });
   }
 
-  /** Open Chat → Inbox panel. */
+  /** Open Inbox header popover. */
   async openInbox(): Promise<void> {
-    await this.page.getByTestId("nav-chat").click();
-    await this.page.getByTestId("chat-tab-inbox").click();
-    await this.page.getByTestId("chat-tab-inbox").waitFor({ state: "visible" });
+    await this.page.getByTestId("nav-inbox").click();
+    await this.page.getByTestId("inbox-popover").waitFor({ state: "visible" });
   }
 
   /** Wait for a Phase 45E feed.notify inbox row (title optional). */

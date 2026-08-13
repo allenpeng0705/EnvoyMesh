@@ -11,6 +11,7 @@ import { join, resolve } from "node:path";
 import {
   DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID,
   DEFAULT_ENVOY_LOCAL_SERVER_PARAMS,
+  ENVOY_LOCAL_EMBED_CTX_SIZE,
   normalizeEnvoyLocalEmbedConfig,
   type EnableEnvoyLocalEmbedParams,
   type EnvoyLocalCatalogModel,
@@ -300,7 +301,7 @@ async function startEmbedSidecar(
 
   const serverParams: EnvoyLocalServerParams = {
     ...DEFAULT_ENVOY_LOCAL_SERVER_PARAMS,
-    ctxSize: 2048,
+    ctxSize: ENVOY_LOCAL_EMBED_CTX_SIZE,
     parallel: 1,
     nGpuLayers: 0, // prefer CPU for embed so chat GPU stays free
     ...(cfg.serverParams ?? {}),
@@ -427,7 +428,7 @@ export async function getEnvoyLocalEmbedStatusViaRuntime(
     operationInProgress: Boolean(state.enablePromise) || downloadingPhase,
     serverParams: {
       ...DEFAULT_ENVOY_LOCAL_SERVER_PARAMS,
-      ctxSize: 2048,
+      ctxSize: ENVOY_LOCAL_EMBED_CTX_SIZE,
       parallel: 1,
       nGpuLayers: 0,
       ...(cfg.serverParams ? { ...cfg.serverParams, nGpuLayers: 0 } : {}),

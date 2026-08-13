@@ -5,7 +5,7 @@ export const deNetworkSettingsMessages = {
     incomingMany: "{count} eingehende Dateifreigaben. ",
     suggestionsOne: "{count} Agent-Freigabevorschlag. ",
     suggestionsMany: "{count} Agent-Freigabevorschläge. ",
-    inboxHint: "Öffnen Sie Chat → Posteingang zum Annehmen, Senden oder Verwerfen.",
+    inboxHint: "Öffnen Sie Posteingang zum Annehmen, Senden oder Verwerfen.",
   },
   nodeControl: {
     title: "Knotensteuerung",

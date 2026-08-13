@@ -5,7 +5,7 @@ export const networkSettingsMessages = {
     incomingMany: "{count} incoming file shares. ",
     suggestionsOne: "{count} agent share suggestion. ",
     suggestionsMany: "{count} agent share suggestions. ",
-    inboxHint: "Open Chat → Inbox to accept, send, or dismiss.",
+    inboxHint: "Open Inbox to accept, send, or dismiss.",
   },
   nodeControl: {
     title: "Node Control",

@@ -37,6 +37,14 @@ import {
 
 export const it = mergeMessages(en, {
   nav: {
+    social: "Social",
+    socialEngageOne: "Social — {count} nuovo coinvolgimento",
+    socialEngageMany: "Social — {count} nuovi coinvolgimenti",
+    terminal: "Terminale",
+    knowledge: "Conoscenza",
+    inbox: "Posta in arrivo",
+    inboxOne: "Posta in arrivo — {count} elemento",
+    inboxMany: "Posta in arrivo — {count} elementi",
     chat: "Chat",
     chatInboxOne: "Chat — {count} elemento in arrivo",
     chatInboxMany: "Chat — {count} elementi in arrivo",
@@ -136,12 +144,12 @@ export const it = mergeMessages(en, {
     },
     terminals: {
       title: "Terminal",
-      body: "Apri una shell sul nodo home da Chat → Terminal. Terminal Agent può proporre comandi in modalità Manuale o Agent — /goal e /watch restano in quel pannello.",
+      body: "Apri una shell sul nodo home da Terminal. Terminal Agent può proporre comandi in modalità Manuale o Agent — /goal e /watch restano in quel pannello.",
       cta: "Apri Terminal",
     },
     pi: {
       title: "Agente di coding Pi",
-      body: "Pi è un agente di coding locale in una cartella progetto (modifica file, shell). Nessuno strumento mesh — avvialo da Chat → Terminal o Nuovo Pi.",
+      body: "Pi è un agente di coding locale in una cartella progetto (modifica file, shell). Nessuno strumento mesh — avvialo da Terminal o Nuovo Pi.",
       cta: "Apri Terminal",
     },
     chains: {
@@ -155,9 +163,9 @@ export const it = mergeMessages(en, {
       cta: "Apri impostazioni Famiglia",
     },
     content: {
-      title: "Contenuti",
-      body: "Pubblica un Feed breve per i contatti collegati, post Blog più lunghi sulla mesh, esplora i peer in Esplora e gestisci i file del vault in I miei file.",
-      cta: "Apri Contenuti",
+      title: "Social",
+      body: "Pubblica Feed e Blog, ed esplora (Scopri o Sfoglia). La Knowledge è nella scheda in alto.",
+      cta: "Apri Social",
     },
     privacy: {
       title: "Il controllo è tuo",
@@ -496,7 +504,7 @@ export const it = mergeMessages(en, {
     },
     nearby: {
       title: "Persone su questa rete",
-      lede: "Mostra altri utenti Envoy sullo stesso Wi-Fi. Tocca Saluta per inviare una richiesta di amicizia — accettano qui o in Chat → Posta in arrivo.",
+      lede: "Mostra altri utenti Envoy sullo stesso Wi-Fi. Tocca Saluta per inviare una richiesta di amicizia — accettano qui o in Posta in arrivo.",
       offline: "La tua connessione è disattivata. Apri Impostazioni → Rete per connetterti, poi riprova.",
       subtitle: "Nelle vicinanze sulla tua rete",
       empty: "Nessuno nelle vicinanze per ora. Assicurati di essere sullo stesso Wi-Fi e che entrambi siano connessi in Impostazioni → Rete.",
@@ -619,6 +627,12 @@ export const it = mergeMessages(en, {
       empty: "Nessun contatto ha restituito risultati (o nessun file corrispondente).",
       noFiles: "Nessun file pubblicato corrispondente.",
     },
+  },
+  social: {
+    tabs: "Social",
+    tabChats: "Chat",
+    tabDiscover: "Scopri",
+    tabExplore: "Esplora",
   },
   library: itLibraryViewMessages,
   chains: itChainsMessages,

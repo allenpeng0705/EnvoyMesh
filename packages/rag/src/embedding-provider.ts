@@ -81,6 +81,32 @@ export function createEmbeddingProvider(input: CreateEmbeddingProviderInput = {}
     };
   }
 
+  // Envoy Local llama-server counts *all* batch inputs against one n_ctx.
+  // Reindex batches of vault chunks easily exceed the 2048-token sidecar ctx
+  // (especially CJK). Embed one input per request, like Ollama.
+  if (config.mode === "envoy-local") {
+    return {
+      modelKey: config.modelKey,
+      async embed(text) {
+        const vectors = await embedOpenAiCompatible(
+          config,
+          prepareTexts([text]),
+          fetchImplementation,
+        );
+        return vectors[0] ?? [];
+      },
+      async embedBatch(texts) {
+        const prepared = prepareTexts(texts);
+        const vectors: number[][] = [];
+        for (const text of prepared) {
+          const batch = await embedOpenAiCompatible(config, [text], fetchImplementation);
+          vectors.push(batch[0] ?? []);
+        }
+        return vectors;
+      },
+    };
+  }
+
   return {
     modelKey: config.modelKey,
     async embed(text) {

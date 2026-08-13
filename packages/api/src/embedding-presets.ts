@@ -4,6 +4,7 @@
  */
 
 import type { AiEmbeddingSettings, EmbeddingResponseShape } from "./ai-knowledge-base.js";
+import { ENVOY_LOCAL_EMBED_CTX_SIZE } from "./ai-embedding-limits.js";
 
 /** Default Envoy Local embed model id (GGUF catalog entry; swappable). */
 export const DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID = "qwen3-embedding-4b-q4_k_m";
@@ -234,7 +235,13 @@ export function embeddingSettingsFromPreset(
 ): AiEmbeddingSettings {
   const preset = getEmbeddingProviderPreset(presetId);
   if (!preset) {
-    return { ...prev, mode: "envoy-local" };
+    return {
+      mode: "envoy-local",
+      modelName: DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID,
+      endpoint: defaultEnvoyLocalEmbedEndpoint(),
+      responseShape: "openai",
+      maxInputTokens: ENVOY_LOCAL_EMBED_CTX_SIZE,
+    };
   }
   const next: AiEmbeddingSettings = {
     mode: preset.mode,
@@ -245,7 +252,10 @@ export function embeddingSettingsFromPreset(
   if (preset.showApiKey && prev?.apiKey?.trim()) {
     next.apiKey = prev.apiKey;
   }
-  if (typeof prev?.maxInputTokens === "number") {
+  if (preset.id === "envoy-local") {
+    // Always match sidecar ctx — do not carry over a higher cloud/Ollama budget.
+    next.maxInputTokens = ENVOY_LOCAL_EMBED_CTX_SIZE;
+  } else if (typeof prev?.maxInputTokens === "number") {
     next.maxInputTokens = prev.maxInputTokens;
   }
   return next;
@@ -258,4 +268,5 @@ export const DEFAULT_AI_EMBEDDING: AiEmbeddingSettings = {
     return defaultEnvoyLocalEmbedEndpoint();
   },
   responseShape: "openai",
+  maxInputTokens: ENVOY_LOCAL_EMBED_CTX_SIZE,
 };

@@ -73,7 +73,7 @@ async function openSocialAs(
     { wsUrl, ownerId },
   );
   await page.goto("/");
-  await page.getByTestId("nav-content").waitFor({ state: "visible", timeout: 60_000 });
+  await page.getByTestId("nav-social").waitFor({ state: "visible", timeout: 60_000 });
   const social = new SocialPage(page, label);
   await social.openBrowser();
   return social;

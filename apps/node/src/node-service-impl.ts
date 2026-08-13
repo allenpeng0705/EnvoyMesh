@@ -7204,13 +7204,85 @@ class NodeServiceImpl implements NodeService {
       );
     }
 
+    // Sync linked Obsidian + Notion/MCP into notes/ so Rebuild embeds the full knowledge set.
+    try {
+      const { syncKnowledgeConnectorsForRagViaRuntime } = await import("./knowledge-hub.js");
+      rag.notifyProgress({
+        phase: "materialize",
+        processed: 0,
+        total: 0,
+        indexed: 0,
+        skipped: 0,
+        removed: 0,
+        message: "Syncing Obsidian & Notion into knowledge notes…",
+      });
+      const synced = await syncKnowledgeConnectorsForRagViaRuntime(this._fileShareContext());
+      console.info(
+        `[rag] connector sync before reindex: obsidian=${synced.obsidianImported} mcp=${synced.mcpImported}` +
+          (synced.mcpError ? ` mcpError=${synced.mcpError}` : ""),
+      );
+      rag.notifyProgress({
+        phase: "materialize",
+        processed: synced.obsidianImported + synced.mcpImported,
+        total: synced.obsidianImported + synced.mcpImported,
+        indexed: synced.obsidianImported + synced.mcpImported,
+        skipped: synced.obsidianSkipped,
+        removed: 0,
+        message: `Synced Obsidian ${synced.obsidianImported}, Notion/MCP ${synced.mcpImported}`,
+      });
+    } catch (err) {
+      console.warn(
+        "[rag] connector sync before reindex failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+
     await rag.refreshConfig({
       knowledgeBase: config.aiSettings?.knowledgeBase,
       modelProviders: config.modelProviders,
       envoyLocalEmbed: await this._envoyLocalEmbedOverlay(),
     });
 
+    let skipDocumentPaths: string[] = [];
     if (this._vaultDir) {
+      // Markdown-first: materialize Office/PDF → notes/imports before embedding.
+      try {
+        const { materializePendingExtractableDocuments } = await import("./vault-markdown-corpus.js");
+        rag.notifyProgress({
+          phase: "materialize",
+          processed: 0,
+          total: 0,
+          indexed: 0,
+          skipped: 0,
+          removed: 0,
+          message: "Converting Office/PDF to Markdown notes…",
+        });
+        const pending = await materializePendingExtractableDocuments(this._vaultDir, {
+          profileDir: this._profileDir,
+          sensitivity: "private",
+        });
+        skipDocumentPaths = pending.coveredSources;
+        if (pending.materialized.length > 0 || pending.failed.length > 0) {
+          console.info(
+            `[rag] materialize before reindex: created=${pending.materialized.length} existing=${pending.skippedExisting.length} failed=${pending.failed.length}`,
+          );
+        }
+        rag.notifyProgress({
+          phase: "materialize",
+          processed: pending.materialized.length + pending.skippedExisting.length,
+          total: pending.materialized.length + pending.skippedExisting.length + pending.failed.length,
+          indexed: pending.materialized.length,
+          skipped: pending.skippedExisting.length,
+          removed: 0,
+          message: `Converted ${pending.materialized.length} document(s) to Markdown`,
+        });
+      } catch (err) {
+        console.warn(
+          "[rag] materialize before reindex failed:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+
       try {
         const vaultIndex = await buildVaultIndex(
           buildVaultIndexOptionsFromKnowledgeBase(this._vaultDir, config.aiSettings?.knowledgeBase),
@@ -7219,6 +7291,7 @@ class NodeServiceImpl implements NodeService {
           vaultIndex,
           knowledgeBase: config.aiSettings?.knowledgeBase,
           force,
+          skipDocumentPaths,
         });
       } catch (error) {
         console.warn(`[rag] vault reindex failed:`, error);

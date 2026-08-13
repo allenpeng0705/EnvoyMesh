@@ -204,4 +204,46 @@ describe("knowledge-hub MCP cache + export", () => {
     expect(result.exported.map((e) => e.relativePath)).toEqual(["a.md", "c.md"]);
     expect(result.reason).toMatch(/partial/);
   });
+
+  it("syncKnowledgeConnectorsForRag pulls Obsidian + MCP into notes for embedding", async () => {
+    const { syncKnowledgeConnectorsForRagViaRuntime } = await import("../src/knowledge-hub.js");
+    const { readFile } = await import("node:fs/promises");
+
+    const linked = await mkdtemp(join(tmpdir(), "envoy-sync-obs-"));
+    const vault = await mkdtemp(join(tmpdir(), "envoy-sync-vault-"));
+    await writeFile(join(linked, "note.md"), "Obsidian sync body", "utf8");
+
+    vi.mocked(searchExternalMcpKnowledge).mockResolvedValue({
+      snippets: [{ title: "Notion Card", source: "mcp", text: "Notion body for RAG" }],
+    });
+
+    const result = await syncKnowledgeConnectorsForRagViaRuntime({
+      getVaultDir: () => vault,
+      getNodeConfig: async () => ({
+        aiSettings: {
+          knowledgeBase: {
+            linkedObsidianVaultPaths: [linked],
+            externalProvider: "mcp",
+            mcpServerUrl: "http://127.0.0.1:9",
+          },
+        },
+      }),
+      recordOwnerActivity: () => {},
+    });
+
+    expect(result.obsidianImported).toBe(1);
+    expect(result.mcpImported).toBe(1);
+    expect(result.mcpError).toBeUndefined();
+
+    const listed = await listLinkedObsidianMarkdownFiles([linked]);
+    const dest = notesImportsObsidianPathForLinked(listed[0]!.relativePath);
+    await expect(readFile(join(vault, dest), "utf8")).resolves.toContain("Obsidian sync body");
+    await expect(readFile(join(vault, "notes", "mcp"), "utf8").catch(() => "")).resolves.toBeDefined();
+    const { readdir } = await import("node:fs/promises");
+    const mcpFiles = await readdir(join(vault, "notes", "mcp"));
+    expect(mcpFiles.some((f) => f.endsWith(".md"))).toBe(true);
+    const mcpBody = await readFile(join(vault, "notes", "mcp", mcpFiles[0]!), "utf8");
+    expect(mcpBody).toContain("Notion body for RAG");
+    expect(mcpBody).toContain("mcp-external-id:");
+  });
 });

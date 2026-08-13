@@ -10,11 +10,11 @@ import { PairingQRModal } from "./components/PairingQRModal.js";
 import { EnvoyLocalAutoProvisionDialog } from "./components/EnvoyLocalAutoProvisionDialog.js";
 import { SwipeBack } from "./components/SwipeBack.js";
 import { SetupView } from "./components/views/SetupView.js";
-import { ChatView } from "./components/views/ChatView.js";
-import { DiscoverView } from "./components/views/DiscoverView.js";
 import { ProfileView } from "./components/views/ProfileView.js";
 import { SettingsView, type SettingsTabId } from "./components/views/SettingsView.js";
-import { ContentView, type ContentTab } from "./components/views/ContentView.js";
+import { SocialView, type SocialTab } from "./components/views/SocialView.js";
+import { TerminalView } from "./components/views/TerminalView.js";
+import { KnowledgeView, type KnowledgeHubPanel } from "./components/views/KnowledgeView.js";
 import { H2AChannelView } from "./components/views/H2AChannelView.js";
 import { ChainsView } from "./components/views/ChainsView.js";
 import { AutoReplyPausedNotifier } from "./components/AutoReplyPausedNotifier.js";
@@ -33,8 +33,14 @@ import {
   getEnvoyAiInflight,
   subscribeEnvoyAiInflight,
 } from "./lib/envoy-ai-inflight.js";
-import { OPEN_CONTENT_KNOWLEDGE_EVENT } from "./lib/content-knowledge-nav.js";
+import {
+  OPEN_CONTENT_KNOWLEDGE_EVENT,
+  normalizeKnowledgeHubPanel,
+  type OpenContentKnowledgeDetail,
+} from "./lib/content-knowledge-nav.js";
 import { OPEN_ENVOY_AI_EVENT } from "./lib/open-envoy-ai-nav.js";
+import { OPEN_TERMINAL_EVENT } from "./lib/open-terminal-nav.js";
+import { hasPendingBrowserOpen } from "./lib/browser-nav.js";
 import {
   isFirstRunSetupComplete,
   hasCompletedFirstRunSetup,
@@ -46,10 +52,21 @@ import { resolveDevLoopbackWsUrlHeal } from "./lib/discover-local-node.js";
 import { WS_LOOPBACK_URL, ENVOY_AI_THREAD_KEY } from "@envoymesh/api";
 import type { HumanProfile, NodeConfig, NodeStatus } from "@envoymesh/api";
 
-export type ViewName = "chat" | "assistant" | "pi" | "discover" | "content" | "chains" | "profile" | "settings";
+/** Primary top views + legacy aliases remapped by navigateTo. */
+export type ViewName =
+  | "social"
+  | "terminal"
+  | "knowledge"
+  | "chains"
+  | "profile"
+  | "settings"
+  | "chat"
+  | "assistant"
+  | "pi"
+  | "discover"
+  | "content";
 
-export type ChatPanelMode = "threads" | "inbox" | "terminals";
-
+export type { SocialTab, KnowledgeHubPanel };
 type TauriBootstrapPhase = "node" | "gateway" | "slow";
 
 function useTauriBootstrapPhase(active: boolean): TauriBootstrapPhase {
@@ -299,27 +316,35 @@ export function App() {
   const inboxActivityCount = useInboxActivityCount();
   const contentEngage = useContentEngageNotifications();
   const feedNotify = useFeedNotifications();
-  const [currentView, setCurrentView] = useState<ViewName>("chat");
+  const [currentView, setCurrentView] = useState<ViewName>("social");
+  const [socialTab, setSocialTab] = useState<SocialTab>(() =>
+    hasPendingBrowserOpen() ? "explore" : "chats",
+  );
+  const [knowledgePanel, setKnowledgePanel] = useState<KnowledgeHubPanel>("browse");
+  const [inboxOpen, setInboxOpen] = useState(false);
   // Keep Envoy AI mounted (hidden) while a turn is in flight so leaving the
   // page does not tear down the wait / chat:message handlers mid-reply.
   const [envoyAiInflight, setEnvoyAiInflightState] = useState(getEnvoyAiInflight);
   useEffect(() => subscribeEnvoyAiInflight(() => setEnvoyAiInflightState(getEnvoyAiInflight())), []);
-  // Settings / deep-link: jump to Content so KnowledgeView can show Setup/Ask/Browse.
+  // Settings / deep-link → top Knowledge.
   useEffect(() => {
-    const goContent = () => setCurrentView("content");
-    window.addEventListener(OPEN_CONTENT_KNOWLEDGE_EVENT, goContent);
-    return () => window.removeEventListener(OPEN_CONTENT_KNOWLEDGE_EVENT, goContent);
+    const goKnowledge = (ev: Event) => {
+      const detail = (ev as CustomEvent<OpenContentKnowledgeDetail>).detail;
+      setCurrentView("knowledge");
+      if (detail?.panel) setKnowledgePanel(normalizeKnowledgeHubPanel(detail.panel));
+    };
+    window.addEventListener(OPEN_CONTENT_KNOWLEDGE_EVENT, goKnowledge);
+    return () => window.removeEventListener(OPEN_CONTENT_KNOWLEDGE_EVENT, goKnowledge);
   }, []);
-  // While Content → Feed/Blog is open, don't badge Like/Comment for that surface.
-  const [contentSurface, setContentSurface] = useState<ContentTab>("feed");
-  const viewingContentFeed = currentView === "content" && contentSurface === "feed";
-  const viewingContentBlog = currentView === "content" && contentSurface === "blog";
+  // While Social → Feed/Blog is open, don't badge Like/Comment for that surface.
+  const viewingSocialFeed = currentView === "social" && socialTab === "feed";
+  const viewingSocialBlog = currentView === "social" && socialTab === "blog";
   const visibleEngageCount =
     contentEngage.totalCount -
-    (viewingContentFeed ? contentEngage.feedCount : 0) -
-    (viewingContentBlog ? contentEngage.blogCount : 0);
+    (viewingSocialFeed ? contentEngage.feedCount : 0) -
+    (viewingSocialBlog ? contentEngage.blogCount : 0);
   // While on Feed, hide peer-post notify badges too (don't auto-mark them read).
-  const visibleFeedNotifyCount = viewingContentFeed ? 0 : feedNotify.unread.length;
+  const visibleFeedNotifyCount = viewingSocialFeed ? 0 : feedNotify.unread.length;
   const contentBadgeCount = visibleEngageCount + visibleFeedNotifyCount;
   // Engage count only for auto-dismiss while viewing (must not include feed.notify).
   const feedTabEngageCount = contentEngage.feedCount;
@@ -451,41 +476,68 @@ export function App() {
 
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>("account");
   const [chatSelectedContact, setChatSelectedContact] = useState<string | null>(null);
-  const [chatPanelMode, setChatPanelMode] = useState<ChatPanelMode>("threads");
+  // Legacy H2A shell only when explicitly on "assistant" (navigateTo remaps that
+  // away). Inflight keep-alive while NOT on Social — ChatView already keeps
+  // AIChatPanel mounted during inflight turns when Social is visible.
   const oldAssistantVisible = currentView === "assistant";
-  const keepAssistantMounted = oldAssistantVisible || envoyAiInflight;
+  const keepAssistantMounted =
+    oldAssistantVisible ||
+    (envoyAiInflight &&
+      currentView !== "social" &&
+      currentView !== "chat" &&
+      currentView !== "discover" &&
+      currentView !== "content");
 
-  // Navigation handler. Legacy "pi" view → Terminals (Pi TUI).
-  // "assistant" now routes to ChatView with ENVOY_AI_THREAD_KEY instead of
-  // the separate H2AChannelView page.
+  // Navigation handler. Legacy aliases map onto the new IA.
   const navigateTo = (view: ViewName) => {
     if (view === "pi") {
-      setCurrentView("chat");
-      setChatPanelMode("terminals");
+      setCurrentView("terminal");
       return;
     }
     if (view === "assistant") {
-      setCurrentView("chat");
-      setChatPanelMode("threads");
+      setCurrentView("social");
+      setSocialTab("chats");
       setChatSelectedContact(ENVOY_AI_THREAD_KEY);
       return;
     }
-    setCurrentView(view);
     if (view === "chat") {
-      setChatPanelMode("threads");
+      setCurrentView("social");
+      setSocialTab("chats");
       setChatSelectedContact(null);
+      return;
     }
+    if (view === "discover") {
+      setCurrentView("social");
+      setSocialTab("discover");
+      return;
+    }
+    if (view === "content") {
+      setCurrentView("social");
+      setSocialTab("feed");
+      return;
+    }
+    // Top Social: preserve Feed/Blog/Discover/Explore when re-clicking or returning from
+    // Terminal/Knowledge. Default Chats only comes from initial state / chat alias.
+    setCurrentView(view);
   };
 
   // Knowledge Ask → EnvoyAI chat thread.
   useEffect(() => {
     const goEnvoyAi = () => {
-      setCurrentView("chat");
-      setChatPanelMode("threads");
+      setCurrentView("social");
+      setSocialTab("chats");
       setChatSelectedContact(ENVOY_AI_THREAD_KEY);
     };
     window.addEventListener(OPEN_ENVOY_AI_EVENT, goEnvoyAi);
     return () => window.removeEventListener(OPEN_ENVOY_AI_EVENT, goEnvoyAi);
+  }, []);
+
+  useEffect(() => {
+    const goTerminal = (_ev: Event) => {
+      setCurrentView("terminal");
+    };
+    window.addEventListener(OPEN_TERMINAL_EVENT, goTerminal);
+    return () => window.removeEventListener(OPEN_TERMINAL_EVENT, goTerminal);
   }, []);
 
   const navigateGuide = (dest: GuideDestination) => {
@@ -497,11 +549,11 @@ export function App() {
         navigateTo("assistant");
         return;
       case "terminals":
-        setCurrentView("chat");
-        setChatPanelMode("terminals");
+        setCurrentView("terminal");
         return;
       case "content":
-        navigateTo("content");
+        navigateTo("social");
+        setSocialTab("feed");
         return;
       case "settings":
         setSettingsTab(dest.tab);
@@ -512,11 +564,11 @@ export function App() {
 
   useEffect(() => {
     const onOpenBrowser = () => {
-      navigateTo("content");
+      setCurrentView("social");
+      setSocialTab("explore");
     };
     const onOpenInbox = () => {
-      setCurrentView("chat");
-      setChatPanelMode("inbox");
+      setInboxOpen(true);
     };
     window.addEventListener("envoymesh:open-browser", onOpenBrowser);
     window.addEventListener("envoymesh:open-inbox", onOpenInbox);
@@ -525,7 +577,6 @@ export function App() {
       window.removeEventListener("envoymesh:open-inbox", onOpenInbox);
     };
   }, []);
-
   const [pairingOpen, setPairingOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
 
@@ -607,6 +658,8 @@ export function App() {
             currentView={currentView}
             onNavigate={navigateTo}
             inboxActivityCount={inboxActivityCount}
+            inboxOpen={inboxOpen}
+            onInboxOpenChange={setInboxOpen}
             contentEngageCount={contentBadgeCount}
             isPublicNetwork={isPublicNetwork}
             connectionStatus={connectionStatus}
@@ -622,26 +675,43 @@ export function App() {
 
         <ErrorBoundary>
           <main className="main">
-            {currentView === "chat" && (
-              <ChatView
-                selectedContact={chatSelectedContact}
-                onSelectedContactChange={setChatSelectedContact}
-                panelMode={chatPanelMode}
-                onPanelModeChange={setChatPanelMode}
-                inboxActivityCount={inboxActivityCount}
-                onOpenAssistant={() => navigateTo("assistant")}
-                onOpenDiscover={() => navigateTo("discover")}
-                onOpenActivity={() => {
-                  setSettingsTab("app");
-                  navigateTo("settings");
+            {(currentView === "social" ||
+              currentView === "chat" ||
+              currentView === "discover" ||
+              currentView === "content") && (
+              <SocialView
+                activeTab={socialTab}
+                onActiveTabChange={setSocialTab}
+                feedEngageCount={feedTabEngageCount}
+                feedNotifyCount={visibleFeedNotifyCount}
+                blogEngageCount={contentEngage.blogCount}
+                onDismissEngage={async (surface, options) => {
+                  await contentEngage.dismiss(surface);
+                  if (
+                    options?.feedNotify &&
+                    (surface === "all" || surface === "feed")
+                  ) {
+                    await feedNotify.dismissAll();
+                  }
                 }}
-                onOpenInbox={() => {
-                  setChatPanelMode("inbox");
-                }}
-                onOpenChains={() => navigateTo("chains")}
-                onOpenSettingsAi={() => {
-                  setSettingsTab("ai");
-                  navigateTo("settings");
+                chatProps={{
+                  selectedContact: chatSelectedContact,
+                  onSelectedContactChange: setChatSelectedContact,
+                  onOpenAssistant: () => navigateTo("assistant"),
+                  onOpenDiscover: () => {
+                    setSocialTab("discover");
+                  },
+                  onOpenPi: () => setCurrentView("terminal"),
+                  onOpenActivity: () => {
+                    setSettingsTab("app");
+                    navigateTo("settings");
+                  },
+                  onOpenInbox: () => setInboxOpen(true),
+                  onOpenChains: () => navigateTo("chains"),
+                  onOpenSettingsAi: () => {
+                    setSettingsTab("ai");
+                    navigateTo("settings");
+                  },
                 }}
               />
             )}
@@ -651,19 +721,19 @@ export function App() {
                 hidden={!oldAssistantVisible}
                 aria-hidden={!oldAssistantVisible}
               >
-                <SwipeBack onSwipeBack={() => navigateTo("chat")}>
+                <SwipeBack onSwipeBack={() => navigateTo("social")}>
                   <H2AChannelView
-                    onBackToChats={() => navigateTo("chat")}
+                    onBackToChats={() => navigateTo("social")}
                     onOpenActivity={() => {
                       setSettingsTab("app");
                       navigateTo("settings");
                     }}
-                    onOpenInbox={() => {
-                      navigateTo("chat");
-                      setChatPanelMode("inbox");
-                    }}
+                    onOpenInbox={() => setInboxOpen(true)}
                     onOpenChains={() => navigateTo("chains")}
-                    onOpenDiscover={() => navigateTo("discover")}
+                    onOpenDiscover={() => {
+                      setCurrentView("social");
+                      setSocialTab("discover");
+                    }}
                     onOpenSettingsAi={() => {
                       setSettingsTab("ai");
                       navigateTo("settings");
@@ -672,51 +742,42 @@ export function App() {
                 </SwipeBack>
               </div>
             )}
-            {currentView === "discover" && (
-              <SwipeBack onSwipeBack={() => navigateTo("chat")}>
-                <DiscoverView />
+            {(currentView === "terminal" || currentView === "pi") && (
+              <SwipeBack onSwipeBack={() => navigateTo("social")}>
+                <TerminalView
+                  active={currentView === "terminal" || currentView === "pi"}
+                  onOpenAssistant={() => navigateTo("assistant")}
+                />
               </SwipeBack>
             )}
-            {currentView === "content" && (
-              <SwipeBack onSwipeBack={() => navigateTo("chat")}>
-                <ContentView
-                  feedEngageCount={feedTabEngageCount}
-                  feedNotifyCount={visibleFeedNotifyCount}
-                  blogEngageCount={contentEngage.blogCount}
-                  onActiveSurfaceChange={setContentSurface}
-                  onDismissEngage={async (surface, options) => {
-                    await contentEngage.dismiss(surface);
-                    if (
-                      options?.feedNotify &&
-                      (surface === "all" || surface === "feed")
-                    ) {
-                      await feedNotify.dismissAll();
-                    }
+            {currentView === "knowledge" && (
+              <SwipeBack onSwipeBack={() => navigateTo("social")}>
+                <KnowledgeView initialPanel={knowledgePanel} />
+              </SwipeBack>
+            )}
+            {currentView === "chains" && (
+              <SwipeBack onSwipeBack={() => navigateTo("social")}>
+                <ChainsView
+                  onBack={() => navigateTo("social")}
+                  onOpenDiscover={() => {
+                    setCurrentView("social");
+                    setSocialTab("discover");
                   }}
                 />
               </SwipeBack>
             )}
-            {currentView === "chains" && (
-              <SwipeBack onSwipeBack={() => navigateTo("chat")}>
-                <ChainsView
-                  onBack={() => navigateTo("chat")}
-                  onOpenDiscover={() => navigateTo("discover")}
-                />
-              </SwipeBack>
-            )}
             {currentView === "profile" && (
-              <SwipeBack onSwipeBack={() => navigateTo("chat")}>
+              <SwipeBack onSwipeBack={() => navigateTo("social")}>
                 <ProfileView />
               </SwipeBack>
             )}
             {currentView === "settings" && (
-              <SwipeBack onSwipeBack={() => navigateTo("chat")}>
+              <SwipeBack onSwipeBack={() => navigateTo("social")}>
                 <SettingsView tab={settingsTab} onTabChange={setSettingsTab} />
               </SwipeBack>
             )}
           </main>
-        </ErrorBoundary>
-        {pairingOpen && <PairingQRModal onClose={() => setPairingOpen(false)} />}
+        </ErrorBoundary>        {pairingOpen && <PairingQRModal onClose={() => setPairingOpen(false)} />}
         <EnvoyLocalAutoProvisionDialog
           onOpenSettingsAi={() => {
             setSettingsTab("ai");

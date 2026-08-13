@@ -20,6 +20,7 @@ import type {
   LocalFileItem,
   ReadLibraryItemContentResult,
 } from "@envoymesh/api";
+import { resolveAiKnowledgeBaseSettings } from "@envoymesh/api";
 import {
   formatMcpSnippetAsNote,
   mcpRemoteBrowsePath,
@@ -405,6 +406,116 @@ export async function importExternalMcpKnowledgeViaRuntime(
   }
 
   return { ok: true, imported };
+}
+
+const RAG_SYNC_MCP_LIMIT = 100;
+const RAG_SYNC_OBSIDIAN_MAX_FILES = 400;
+
+export interface SyncKnowledgeConnectorsForRagResult {
+  obsidianImported: number;
+  obsidianSkipped: number;
+  mcpImported: number;
+  mcpError?: string;
+}
+
+/**
+ * Pull linked Obsidian + Notion/MCP cards into the vault Markdown corpus so Rebuild
+ * can embed them. Does not trigger RAG reindex (caller owns that).
+ *
+ * - Obsidian → `notes/imports/obsidian/…` (stable paths; overwrites)
+ * - MCP/Notion → `notes/mcp/<externalId>.md` (stable paths; overwrites)
+ */
+export async function syncKnowledgeConnectorsForRagViaRuntime(
+  ctx: KnowledgeHubContext,
+): Promise<SyncKnowledgeConnectorsForRagResult> {
+  let obsidianImported = 0;
+  let obsidianSkipped = 0;
+  let mcpImported = 0;
+  let mcpError: string | undefined;
+
+  try {
+    const config = await ctx.getNodeConfig();
+    const roots = config?.aiSettings?.knowledgeBase?.linkedObsidianVaultPaths ?? [];
+    if (roots.length > 0) {
+      const files = (await listLinkedObsidianMarkdownFiles(roots)).slice(
+        0,
+        RAG_SYNC_OBSIDIAN_MAX_FILES,
+      );
+      const obsidian = await importLinkedObsidianNotesViaRuntime(ctx, {
+        paths: files.map((f) => f.relativePath),
+      });
+      obsidianImported = obsidian.imported.length;
+      obsidianSkipped = obsidian.skipped;
+    }
+  } catch (err) {
+    console.warn(
+      "[knowledge-hub] Obsidian sync for RAG failed:",
+      err instanceof Error ? err.message : err,
+    );
+  }
+
+  try {
+    const vaultDir = ctx.getVaultDir();
+    const config = await ctx.getNodeConfig();
+    const kb = config?.aiSettings?.knowledgeBase;
+    if (!vaultDir || !kb) {
+      return { obsidianImported, obsidianSkipped, mcpImported };
+    }
+    const resolved = resolveAiKnowledgeBaseSettings(kb);
+    if (resolved.externalProvider !== "mcp" || !resolved.mcpServerUrl?.trim()) {
+      return { obsidianImported, obsidianSkipped, mcpImported };
+    }
+
+    const listed = await listExternalMcpKnowledgeViaRuntime(ctx, {
+      query: "*",
+      limit: RAG_SYNC_MCP_LIMIT,
+    });
+    if (listed.error && listed.items.length === 0) {
+      mcpError = listed.error;
+      return { obsidianImported, obsidianSkipped, mcpImported, mcpError };
+    }
+
+    const queriedAt = new Date().toISOString();
+    const attribution = {
+      server: resolved.mcpServerUrl ?? resolved.externalMcpServer ?? "mcp",
+      tool: resolved.mcpSearchTool?.trim() || "memex_search",
+      query: "*",
+      queriedAt,
+    };
+
+    for (const item of listed.items) {
+      const cached = mcpRemoteCache.get(item.relativePath);
+      if (!cached) continue;
+      const externalId = cached.externalId || item.externalId || item.relativePath;
+      const safeId =
+        externalId
+          .replace(/[^a-zA-Z0-9._-]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 80) || "snippet";
+      const destRel = `notes/mcp/${safeId}.md`;
+      const formatted = formatMcpSnippetAsNote(cached.snippet, {
+        attribution,
+        sensitivity: "private",
+        subfolder: "mcp",
+        title: cached.snippet.title,
+      });
+      // Stable id in frontmatter so rebuilds overwrite the same note.
+      let content = formatted.content;
+      if (!/^mcp-external-id\s*:/m.test(content)) {
+        content = content.replace(/^---\n/, `---\nmcp-external-id: ${JSON.stringify(externalId)}\n`);
+      }
+      const abs = resolve(vaultDir, destRel);
+      assertPathInsideVault(vaultDir, abs);
+      await mkdir(dirname(abs), { recursive: true });
+      await writeFile(abs, content, { encoding: "utf8", mode: 0o600 });
+      mcpImported += 1;
+    }
+  } catch (err) {
+    mcpError = err instanceof Error ? err.message : String(err);
+    console.warn("[knowledge-hub] MCP/Notion sync for RAG failed:", mcpError);
+  }
+
+  return { obsidianImported, obsidianSkipped, mcpImported, mcpError };
 }
 
 export async function exportNotesToLinkedObsidianViaRuntime(

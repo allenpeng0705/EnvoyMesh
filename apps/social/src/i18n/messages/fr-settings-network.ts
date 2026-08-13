@@ -5,7 +5,7 @@ export const frNetworkSettingsMessages = {
     incomingMany: "{count} partages de fichiers entrants. ",
     suggestionsOne: "{count} suggestion de partage par l'agent. ",
     suggestionsMany: "{count} suggestions de partage par l'agent. ",
-    inboxHint: "Ouvrez Chat → Boîte de réception pour accepter, envoyer ou ignorer.",
+    inboxHint: "Ouvrez Boîte de réception pour accepter, envoyer ou ignorer.",
   },
   nodeControl: {
     title: "Contrôle du nœud",

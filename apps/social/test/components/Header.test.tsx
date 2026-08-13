@@ -15,6 +15,10 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
   }),
 }));
 
+vi.mock("../../src/components/views/InboxView.js", () => ({
+  InboxView: () => <div data-testid="inbox-view-stub" />,
+}));
+
 afterEach(() => cleanup());
 
 function renderHeader(props: React.ComponentProps<typeof Header>) {
@@ -43,9 +47,11 @@ beforeEach(() => {
 
 describe("Header", () => {
   const baseProps = {
-    currentView: "chat" as ViewName,
+    currentView: "social" as ViewName,
     onNavigate: vi.fn(),
     inboxActivityCount: 0,
+    inboxOpen: false,
+    onInboxOpenChange: vi.fn(),
     contentEngageCount: 0,
     isPublicNetwork: false,
     connectionStatus: null,
@@ -63,11 +69,14 @@ describe("Header", () => {
     renderHeader(baseProps);
     const nav = screen.getByRole("navigation", { name: /primary/i });
     expect(within(nav).queryByRole("button", { name: /^assistant$/i })).toBeNull();
-    expect(within(nav).getByRole("button", { name: /^chat$/i })).toBeDefined();
-    expect(within(nav).getByRole("button", { name: /^discover$/i })).toBeDefined();
-    expect(within(nav).getByRole("button", { name: /^content$/i })).toBeDefined();
-    expect(within(nav).queryByRole("button", { name: /^activity$/i })).toBeNull();
-    expect(within(nav).getByRole("button", { name: /^settings$/i })).toBeDefined();
+    expect(within(nav).getByTestId("nav-social")).toBeDefined();
+    expect(within(nav).getByTestId("nav-terminal")).toBeDefined();
+    expect(within(nav).getByTestId("nav-knowledge")).toBeDefined();
+    expect(within(nav).getByTestId("nav-chains")).toBeDefined();
+    expect(within(nav).getByTestId("nav-settings")).toBeDefined();
+    expect(within(nav).getByTestId("nav-inbox")).toBeDefined();
+    expect(within(nav).queryByRole("button", { name: /^discover$/i })).toBeNull();
+    expect(within(nav).queryByRole("button", { name: /^content$/i })).toBeNull();
     expect(within(nav).queryByRole("button", { name: /^profile$/i })).toBeNull();
     expect(screen.getByRole("button", { name: /^profile$/i })).toBeDefined();
   });
@@ -82,36 +91,49 @@ describe("Header", () => {
   it("navigates to Settings when Settings is clicked", () => {
     const onNavigate = vi.fn();
     renderHeader({ ...baseProps, onNavigate });
-    fireEvent.click(screen.getByRole("button", { name: /^settings$/i }));
+    fireEvent.click(screen.getByTestId("nav-settings"));
     expect(onNavigate).toHaveBeenCalledWith("settings");
   });
 
-  it("calls onNavigate when Chat is clicked", () => {
+  it("calls onNavigate when Social is clicked", () => {
     const onNavigate = vi.fn();
     renderHeader({ ...baseProps, onNavigate });
-    fireEvent.click(screen.getByRole("button", { name: /^chat$/i }));
-    expect(onNavigate).toHaveBeenCalledWith("chat");
+    fireEvent.click(screen.getByTestId("nav-social"));
+    expect(onNavigate).toHaveBeenCalledWith("social");
   });
 
-  it("calls onNavigate when Content is clicked", () => {
+  it("calls onNavigate when Knowledge is clicked", () => {
     const onNavigate = vi.fn();
     renderHeader({ ...baseProps, onNavigate });
-    fireEvent.click(screen.getByTestId("nav-content"));
-    expect(onNavigate).toHaveBeenCalledWith("content");
+    fireEvent.click(screen.getByTestId("nav-knowledge"));
+    expect(onNavigate).toHaveBeenCalledWith("knowledge");
   });
 
-  it("shows inbox activity on Chat control", () => {
-    const onNavigate = vi.fn();
-    renderHeader({ ...baseProps, onNavigate, inboxActivityCount: 3 });
-    expect(screen.getByRole("button", { name: /3 items in inbox/i })).toBeDefined();
+  it("shows inbox activity on Inbox control", () => {
+    const onInboxOpenChange = vi.fn();
+    renderHeader({ ...baseProps, onInboxOpenChange, inboxActivityCount: 3 });
+    expect(screen.getByRole("button", { name: /3 items/i })).toBeDefined();
     expect(screen.getByText("3")).toBeDefined();
   });
 
-  it("navigates to Discover when Discover is clicked", () => {
+  it("opens inbox popover when Inbox is clicked", () => {
+    const onInboxOpenChange = vi.fn();
+    renderHeader({ ...baseProps, onInboxOpenChange });
+    fireEvent.click(screen.getByTestId("nav-inbox"));
+    expect(onInboxOpenChange).toHaveBeenCalledWith(true);
+  });
+
+  it("shows inbox popover content when inboxOpen", () => {
+    renderHeader({ ...baseProps, inboxOpen: true });
+    expect(screen.getByTestId("inbox-popover")).toBeDefined();
+    expect(screen.getByTestId("inbox-view-stub")).toBeDefined();
+  });
+
+  it("navigates to Terminal when Terminal is clicked", () => {
     const onNavigate = vi.fn();
     renderHeader({ ...baseProps, onNavigate });
-    fireEvent.click(screen.getByRole("button", { name: /^discover$/i }));
-    expect(onNavigate).toHaveBeenCalledWith("discover");
+    fireEvent.click(screen.getByTestId("nav-terminal"));
+    expect(onNavigate).toHaveBeenCalledWith("terminal");
   });
 
   it("shows display name on Profile nav when profile has displayName", () => {

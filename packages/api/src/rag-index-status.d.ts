@@ -1,6 +1,6 @@
 /** Live progress for vault/chat vector indexing. */
 export interface RagIndexProgress {
-    phase: "idle" | "public" | "private" | "chat" | "flush" | "done" | "error";
+    phase: "idle" | "materialize" | "public" | "private" | "chat" | "flush" | "done" | "error";
     processed: number;
     total: number;
     indexed: number;

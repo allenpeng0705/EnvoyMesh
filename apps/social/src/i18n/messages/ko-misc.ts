@@ -25,7 +25,7 @@ export const koDiscoverCardsMessages = {
   morningReportLede: "밤사이의 바인딩 및 DHT 활동을 기준으로 정렬된 발견 후보.",
   friendSuggestionsTitle: "친구 찾기 도움",
   friendSuggestionsLede:
-    "Envoy가 네트워크에서 발견한 잘 어울릴 수 있는 사람들. 인사를 보내 친구 요청을 보낼 수 있습니다 — 상대는 여기 또는 채팅 → 받은함에서 수락할 수 있습니다.",
+    "Envoy가 네트워크에서 발견한 잘 어울릴 수 있는 사람들. 인사를 보내 친구 요청을 보낼 수 있습니다 — 상대는 여기 또는 받은함에서 수락할 수 있습니다.",
   suggestionUnknownName: "네트워크의 누군가",
   suggestionReferred: "아는 사람을 통한 소개",
   suggestionOnNetwork: "최근 네트워크에서 발견",
@@ -418,7 +418,7 @@ export const koFileShareMessages = {
   dialogAria: "파일 공유",
   shareTitle: "「{title}」 공유",
   shareFromLibrary: "라이브러리에서 공유",
-  hint: "검증된 P2P 파일 제안을 보냅니다; 수신자는 채팅 → 받은함에서 수락합니다.",
+  hint: "검증된 P2P 파일 제안을 보냅니다; 수신자는 받은함에서 수락합니다.",
   bondedContact: "바인딩된 연락처",
   selectContact: "연락처 선택…",
   vaultFile: "볼트 파일",

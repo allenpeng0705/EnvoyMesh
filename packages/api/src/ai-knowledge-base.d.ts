@@ -90,6 +90,7 @@ export declare function resolveAiKnowledgeBaseSettings(input?: AiKnowledgeBaseSe
     mcpWriteBackEnabled?: boolean;
     embedding?: AiEmbeddingSettings;
 };
+export declare function normalizeKnowledgeEmbedding(embedding?: AiEmbeddingSettings | null): AiEmbeddingSettings;
 export declare function resolveKnowledgeBaseVaultPaths(kb: ReturnType<typeof resolveAiKnowledgeBaseSettings>, scope: AiKnowledgeBaseScope): string[];
 export declare function buildVaultIndexOptionsFromKnowledgeBase(rootDir: string, knowledgeBase?: AiKnowledgeBaseSettings | null): {
     rootDir: string;

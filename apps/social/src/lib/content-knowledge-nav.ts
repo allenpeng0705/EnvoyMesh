@@ -1,5 +1,5 @@
 /**
- * Navigate Content → Knowledge (and optional sub-panel).
+ * Navigate to Knowledge (and optional sub-panel).
  * Mirrors browser-nav openBrowserAt for Settings deep-links.
  */
 

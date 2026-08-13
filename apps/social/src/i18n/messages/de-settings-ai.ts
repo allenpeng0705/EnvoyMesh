@@ -48,6 +48,23 @@ export const deAiSettingsMessages = {
     autoSendChatDesc: "KI antwortet automatisch im Chat (Standard: aus)",
     pauseAllAi: "Alle KI pausieren",
     pauseAllAiDesc: "Hauptschalter für autonome Aktionen",
+    limitsHeading: "Auto-Antwort-Limits",
+    limitsDesc:
+      "Begrenzt automatische Sends pro Kontakt, wenn die Gegenseite ein KI-Agent ist — verhindert außer Kontrolle geratene KI-zu-KI-Schleifen. Menschliche Kontakte sind nicht begrenzt.",
+    limitsEnabled: "Limits pro Kontakt erzwingen",
+    limitsEnabledDesc: "Wenn aus, gelten nur Kill-Switch und Auto-Send-Schalter",
+    limitsOnlyAgentPeers: "Nur wenn Peer ein KI-Agent ist",
+    limitsOnlyAgentPeersDesc:
+      "Stunden-/Tageslimits nur auf verifizierte Agentennachrichten anwenden; menschliche Kontakte können unbegrenzt Auto-Antworten erhalten",
+    limitsPerHour: "Max. Auto-Antworten pro Stunde (pro Kontakt)",
+    limitsPerDay: "Max. Auto-Antworten pro Tag (pro Kontakt)",
+    limitsUnlimited: "Unbegrenzt",
+    limitsPauseThread: "Thread pausieren, wenn ein Limit erreicht ist",
+    limitsPauseThreadDesc: "Stoppt Auto-Send für diesen Kontakt, bis das Stunden- oder Tagesfenster zurückgesetzt wird",
+    toastHourly:
+      "Auto-Antwort für {name} pausiert: Stundenlimit erreicht ({count}/{max}). Auf Manuell wechseln oder auf Fenster-Reset warten.",
+    toastDaily:
+      "Auto-Antwort für {name} pausiert: Tageslimit erreicht ({count}/{max}). Auf Manuell wechseln oder bis morgen (UTC) warten.",
     activityNotifications: "Chat-Aktivitätsbenachrichtigungen",
     notificationsOff: "Aus",
     notificationsMilestonesOnly: "Nur Meilensteine",
@@ -64,6 +81,7 @@ export const deAiSettingsMessages = {
     notifyBrief: "Kurz",
     notifySilent: "Stumm",
     notifyApprovalOnly: "Nur Genehmigung",
+    notificationsHeading: "Benachrichtigungen & Sichtbarkeit",
   },
   presence: {
     heading: "Status",
@@ -103,6 +121,7 @@ export const deAiSettingsMessages = {
       "Wenn aktiviert, wird Ihr konfigurierbares Präfix (Standard [AI Agent]) zu ausgehenden Nachrichtenbytes für Logs und Wire-Inspektion hinzugefügt. Nie in der Social-Chat-UI angezeigt.",
     debugPrefixLabel: "Debug-Präfix-Zeichenkette",
     debugPrefixPlaceholder: "[AI Agent]",
+    debugHeading: "Debug-Optionen",
   },
   postures: {
     heading: "EnvoyAI-Haltungen",
@@ -122,6 +141,8 @@ export const deAiSettingsMessages = {
     lastSaved: "Zuletzt gespeichert {time}",
   },
   contacts: {
+    heading: "Kontakt-Standards",
+    sectionDesc: "Standardverhalten für neue Kontakte.",
     defaultModeHeading: "Standardmodus für neue Kontakte",
     defaultModeDesc:
       "Standard-KI-Modus beim Öffnen eines Chats mit jemandem ohne Kontakt-Override. Zum Ändern des Modus für einen bestehenden Kontakt die Schaltflächen Manuell / Assistent / Auto in der Chat-Kopfzeile verwenden.",
@@ -262,5 +283,49 @@ export const deAiSettingsMessages = {
     templatePlaceholder:
       "z. B. Hallo, {ownerName} ist derzeit abwesend. Ich werde mitteilen, dass Sie sich gemeldet haben!",
     addButton: "Regel hinzufügen",
+  },
+  cost: {
+    heading: "Modellkosten",
+    sectionDesc: "Kosten pro Aufruf über Cloud- und lokale LLM-Anbieter.",
+    loading: "Laden…",
+    empty: "Für diesen Zeitraum noch keine Nutzung erfasst.",
+    loadError: "Kostenübersicht konnte nicht geladen werden. Bitte erneut versuchen.",
+    totalCost: "Gesamtkosten",
+    totalCalls: "Aufrufe",
+    tokensInOut: "Tokens ein / aus",
+    byProvider: "Nach Anbieter",
+    range: {
+      today: "Heute",
+      "7d": "7 Tage",
+      "30d": "30 Tage",
+      all: "Gesamt",
+    },
+  },
+  aiBots: {
+    heading: "KI-Charakter-Bots",
+    desc: "Erstellen Sie benutzerdefinierte KI-Charaktere mit eigener Persönlichkeit. Sie erscheinen in der Chat-Liste und synchronisieren sich automatisch mit allen Geräten.",
+    empty: "Noch keine Bots. Klicken Sie auf „Bot hinzufügen“.",
+    saved: "Bot hinzugefügt! Er erscheint in Ihrer Chat-Liste.",
+    name: "Bot-Name",
+    namePlaceholder: "z. B. Luna die Bibliothekarin",
+    nameTaken: "Ein Bot namens „{name}“ existiert bereits.",
+    personality: "Persönlichkeit / Systemprompt",
+    personalityPlaceholder:
+      "Du bist Luna, meine Freundin. Du liebst Musik, Filme und Reisen. Sprich warm und liebevoll.",
+    personalityHint:
+      "Schreiben Sie die Figur in der ersten Person („Du bist …“). Vermeiden Sie dritte Person („Luna ist …“) oder Assistententon („Ich bin eine KI, die hilft…“). Beim Speichern wird der Text normalisiert.",
+    description: "Kurzbeschreibung (optional)",
+    descPlaceholder: "Meine Freundin · Musik & Reisen",
+    descHint: "Eine kurze Zeile für die Chat-Liste. Leer lassen für Auto-Füllung aus der Persönlichkeit.",
+    avatarColor: "Avatar-Farbe",
+    add: "Bot hinzufügen",
+    create: "Bot erstellen",
+    saving: "Speichern…",
+    cancel: "Abbrechen",
+    delete: "Löschen",
+    deleteConfirmTitle: "Diesen Bot löschen?",
+    deleteConfirmMessage: "„{name}“ wird von diesem Knoten und allen gekoppelten Geräten entfernt.",
+    deleteFailed: "Bot konnte nicht gelöscht werden: {error}",
+    disabled: "(deaktiviert)",
   },
 } as const;

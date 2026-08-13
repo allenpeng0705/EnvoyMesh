@@ -160,16 +160,6 @@ export function TerminalSidebar({
         {runningSessions.length === 0 ? (
           <li className="terminal-session-empty">
             {t("terminals.empty")}
-            {onStartPi ? (
-              <button
-                type="button"
-                className="primary terminal-session-empty-pi"
-                disabled={busy || disabled}
-                onClick={() => onStartPi()}
-              >
-                {t("pi.startPiCta", "Start Pi coding terminal")}
-              </button>
-            ) : null}
           </li>
         ) : (
           runningSessions.map((session) => {

@@ -83,3 +83,35 @@ describe("materializeOfficeDocumentToNotes", () => {
     await rm(profileDir, { recursive: true, force: true });
   });
 });
+
+describe("materializePendingExtractableDocuments", () => {
+  it("converts pending Office/HTML and skips when companion already exists", async () => {
+    const {
+      materializePendingExtractableDocuments,
+      parseMaterializedSourceFrontmatter,
+    } = await import("../src/vault-markdown-corpus.js");
+
+    await mkdir(join(vaultDir, "imports"), { recursive: true });
+    await writeFile(
+      join(vaultDir, "imports", "brief.html"),
+      "<html><body><h1>Brief</h1><p>Hello knowledge</p></body></html>",
+      "utf8",
+    );
+
+    const first = await materializePendingExtractableDocuments(vaultDir, {
+      sensitivity: "private",
+    });
+    expect(first.materialized).toEqual(["notes/imports/brief.md"]);
+    expect(first.coveredSources).toContain("imports/brief.html");
+    expect(first.failed).toEqual([]);
+
+    const md = await readFile(join(vaultDir, "notes", "imports", "brief.md"), "utf8");
+    expect(parseMaterializedSourceFrontmatter(md)).toBe("imports/brief.html");
+    expect(md).toMatch(/Brief|Hello knowledge/i);
+
+    const second = await materializePendingExtractableDocuments(vaultDir);
+    expect(second.materialized).toEqual([]);
+    expect(second.skippedExisting).toContain("imports/brief.html");
+    expect(second.coveredSources).toContain("imports/brief.html");
+  });
+});

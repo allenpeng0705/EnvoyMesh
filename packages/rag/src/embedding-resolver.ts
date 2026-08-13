@@ -23,7 +23,7 @@ import {
   ENVOY_LOCAL_CHAT_PORT_BASE,
   ENVOY_LOCAL_EMBED_PORT_BASE,
   parseLoopbackServicePort,
-  resolveEmbeddingMaxInputTokens,
+  resolveEffectiveEmbeddingMaxInputTokens,
 } from "@envoymesh/api";
 
 export type EmbeddingProviderMode =
@@ -201,7 +201,10 @@ export function resolveEmbeddingConfig(input: ResolveEmbeddingConfigInput): Reso
 
   const apiKey = embedding.apiKey?.trim() || undefined;
   const modelKey = `${mode}:${modelName}@${endpoint}`;
-  const maxInputTokens = resolveEmbeddingMaxInputTokens(embedding, modelName);
+  const maxInputTokens = resolveEffectiveEmbeddingMaxInputTokens(
+    { ...embedding, mode },
+    modelName,
+  );
 
   let responseShape: EmbeddingResponseShape;
   if (embedding.responseShape) {
@@ -228,6 +231,16 @@ export function migrateEmbeddingSettings(
 ): AiEmbeddingSettings {
   const mode = embedding?.mode;
   if (mode && mode !== "inherit") {
+    if (mode === "envoy-local") {
+      return {
+        ...DEFAULT_AI_EMBEDDING,
+        ...embedding,
+        mode: "envoy-local",
+        maxInputTokens: DEFAULT_AI_EMBEDDING.maxInputTokens,
+        endpoint: embedding.endpoint?.trim() || defaultEnvoyLocalEmbedEndpoint(),
+        modelName: embedding.modelName?.trim() || DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID,
+      };
+    }
     return {
       ...embedding,
       mode,
@@ -238,7 +251,6 @@ export function migrateEmbeddingSettings(
   const endpoint = embedding?.endpoint?.trim();
   const modelName = embedding?.modelName?.trim();
   const apiKey = embedding?.apiKey?.trim();
-  const maxInputTokens = embedding?.maxInputTokens;
   const responseShape = embedding?.responseShape;
 
   // inherit/missing with no custom targeting → product default.
@@ -246,7 +258,7 @@ export function migrateEmbeddingSettings(
     return {
       ...DEFAULT_AI_EMBEDDING,
       endpoint: defaultEnvoyLocalEmbedEndpoint(),
-      ...(typeof maxInputTokens === "number" ? { maxInputTokens } : {}),
+      maxInputTokens: DEFAULT_AI_EMBEDDING.maxInputTokens,
     };
   }
 
@@ -258,7 +270,7 @@ export function migrateEmbeddingSettings(
     return {
       ...DEFAULT_AI_EMBEDDING,
       endpoint: defaultEnvoyLocalEmbedEndpoint(),
-      ...(typeof maxInputTokens === "number" ? { maxInputTokens } : {}),
+      maxInputTokens: DEFAULT_AI_EMBEDDING.maxInputTokens,
     };
   }
 

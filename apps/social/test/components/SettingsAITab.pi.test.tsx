@@ -180,7 +180,7 @@ describe("SettingsAITab — Pi block (Phase 49F)", () => {
     expect(select).toBeDefined()
     expect(select.value).toBe("always-confirm")
 
-    // Switch to trust mode.
+    // Switch to off (always preview / confirm).
     fireEvent.change(select, { target: { value: "off" } })
 
     await waitFor(() => {

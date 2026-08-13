@@ -5,7 +5,7 @@ export const itNetworkSettingsMessages = {
     incomingMany: "{count} condivisioni file in arrivo. ",
     suggestionsOne: "{count} suggerimento di condivisione agente. ",
     suggestionsMany: "{count} suggerimenti di condivisione agente. ",
-    inboxHint: "Apri Chat → Posta in arrivo per accettare, inviare o ignorare.",
+    inboxHint: "Apri Posta in arrivo per accettare, inviare o ignorare.",
   },
   nodeControl: {
     title: "Controllo nodo",

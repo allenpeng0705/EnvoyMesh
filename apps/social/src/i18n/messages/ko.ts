@@ -38,6 +38,14 @@ import {
 
 export const ko = mergeMessages(en, {
   nav: {
+    social: "소셜",
+    socialEngageOne: "소셜 — 새 반응 {count}건",
+    socialEngageMany: "소셜 — 새 반응 {count}건",
+    terminal: "터미널",
+    knowledge: "지식",
+    inbox: "받은함",
+    inboxOne: "받은함 — {count}건",
+    inboxMany: "받은함 — {count}건",
     chat: "채팅",
     chatInboxOne: "채팅 — 받은함 {count}건",
     chatInboxMany: "채팅 — 받은함 {count}건",
@@ -138,12 +146,12 @@ export const ko = mergeMessages(en, {
     },
     terminals: {
       title: "터미널",
-      body: "채팅 → 터미널에서 홈 노드 셸을 엽니다. Terminal Agent는 수동/에이전트 모드로 명령을 제안할 수 있습니다 — /goal, /watch 는 그 패널에만 있습니다.",
+      body: "상단 「터미널」에서 홈 노드 셸을 엽니다. Terminal Agent는 수동/에이전트 모드로 명령을 제안할 수 있습니다 — /goal, /watch 는 그 패널에만 있습니다.",
       cta: "터미널 열기",
     },
     pi: {
       title: "Pi 코딩 에이전트",
-      body: "Pi는 프로젝트 폴더에서 동작하는 로컬 코딩 에이전트입니다(파일 편집, 셸). 메시 도구는 쓰지 않습니다 — 채팅 → 터미널 또는 새 Pi에서 시작하세요.",
+      body: "Pi는 프로젝트 폴더에서 동작하는 로컬 코딩 에이전트입니다(파일 편집, 셸). 메시 도구는 쓰지 않습니다 — 상단 「터미널」 또는 새 Pi에서 시작하세요.",
       cta: "터미널 열기",
     },
     chains: {
@@ -157,9 +165,9 @@ export const ko = mergeMessages(en, {
       cta: "가족 설정 열기",
     },
     content: {
-      title: "콘텐츠",
-      body: "연결된 연락처용 짧은 피드, 메시의 긴 블로그, 탐색에서 피어 둘러보기, 내 파일에서 보관소 관리.",
-      cta: "콘텐츠 열기",
+      title: "소셜",
+      body: "연결된 연락처용 짧은 피드, 메시의 긴 블로그, 「탐색」에서 사람 찾기/둘러보기. 지식은 상단의 독립 탭입니다.",
+      cta: "소셜 열기",
     },
     privacy: {
       title: "당신이 결정합니다",
@@ -542,7 +550,7 @@ export const ko = mergeMessages(en, {
     },
     nearby: {
       title: "이 네트워크의 사람",
-      lede: "같은 Wi‑Fi의 다른 Envoy 사용자를 표시합니다. 「인사하기」를 탭해 친구 요청을 보내세요 — 상대는 여기 또는 채팅 → 받은함에서 수락합니다.",
+      lede: "같은 Wi‑Fi의 다른 Envoy 사용자를 표시합니다. 「인사하기」를 탭해 친구 요청을 보내세요 — 상대는 여기 또는 받은함에서 수락합니다.",
       offline: "연결이 꺼져 있습니다. 설정 → 네트워크에서 연결한 후 다시 시도하세요.",
       subtitle: "주변 네트워크에서",
       empty: "아직 주변에 사람이 없습니다. 같은 Wi‑Fi에 있고 설정 → 네트워크에서 양쪽이 모두 연결되어 있는지 확인하세요.",
@@ -665,6 +673,12 @@ export const ko = mergeMessages(en, {
       empty: "결과를 반환한 연락처가 없습니다 (또는 일치하는 파일 없음).",
       noFiles: "일치하는 게시 파일이 없습니다.",
     },
+  },
+  social: {
+    tabs: "소셜",
+    tabChats: "채팅",
+    tabDiscover: "찾기",
+    tabExplore: "탐색",
   },
   library: {
     title: "라이브러리",

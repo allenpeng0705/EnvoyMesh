@@ -280,7 +280,7 @@ export function ActivityView({ embedded = false }: { embedded?: boolean }) {
   }, [nodeService, domainFilter, contactFilter, dateRange.since, dateRange.until]);
 
   return (
-    <div className="activity-view">
+    <div className={`activity-view${embedded ? " activity-view--embedded" : ""}`}>
       <div className="activity-header">
         <div>
           {!embedded ? (
