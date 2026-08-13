@@ -1,22 +1,37 @@
 /**
  * Browser-safe embedding resolver — pure logic, no Node-only imports.
  *
- * Split from `embedding-provider.ts` (which owns the HTTP/cache/mock
- * implementation and depends on `node:crypto`) so the Social UI can
- * import `resolveEmbeddingConfig` to surface "effective value" hints in
- * Settings without dragging Node builtins into the browser bundle.
+ * Embeddings are independent of chat `modelProviders`. Changing the chat
+ * model must not retarget the embedder. Legacy `inherit` is mapped once by
+ * `migrateEmbeddingSettings` (node config load) and treated as `envoy-local`
+ * here if still present.
  *
- * `embedding-provider.ts` re-exports everything from here so node-side
- * callers see no API change.
+ * Split from `embedding-provider.ts` so Social can show effective hints
+ * without dragging Node builtins into the browser bundle.
  */
 import type {
   AiEmbeddingSettings,
   EmbeddingResponseShape,
   ModelProviderConfig,
 } from "@envoymesh/api";
-import { resolveEmbeddingMaxInputTokens } from "@envoymesh/api";
+import {
+  DEFAULT_AI_EMBEDDING,
+  DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID,
+  defaultEnvoyLocalEmbedEndpoint,
+  envoyLocalChatPort,
+  envoyLocalEmbedPort,
+  ENVOY_LOCAL_CHAT_PORT_BASE,
+  ENVOY_LOCAL_EMBED_PORT_BASE,
+  parseLoopbackServicePort,
+  resolveEmbeddingMaxInputTokens,
+} from "@envoymesh/api";
 
-export type EmbeddingProviderMode = "mock" | "ollama" | "openai-compatible" | "inherit";
+export type EmbeddingProviderMode =
+  | "mock"
+  | "ollama"
+  | "openai-compatible"
+  | "envoy-local"
+  | "inherit";
 
 export interface ResolvedEmbeddingConfig {
   mode: EmbeddingProviderMode;
@@ -25,13 +40,23 @@ export interface ResolvedEmbeddingConfig {
   apiKey?: string;
   modelKey: string;
   maxInputTokens?: number;
-  /** How to parse the upstream embeddings response. Only meaningful when mode=openai-compatible. */
+  /** How to parse the upstream embeddings response. Meaningful for openai-compatible / envoy-local. */
   responseShape: EmbeddingResponseShape;
 }
 
 export interface ResolveEmbeddingConfigInput {
   embedding?: AiEmbeddingSettings | null;
-  modelProviders?: ModelProviderConfig;
+  /**
+   * @deprecated Unused for resolution. Kept so older call sites compile;
+   * migration may still read chat providers separately.
+   */
+  modelProviders?: ModelProviderConfig | null;
+  /** Live embed sidecar endpoint/model when mode is envoy-local. */
+  envoyLocalEmbed?: {
+    endpoint?: string;
+    modelName?: string;
+    running?: boolean;
+  } | null;
 }
 
 const DEFAULT_MOCK_EMBED_MODEL = "mock-embed";
@@ -41,15 +66,7 @@ const DEFAULT_OPENAI_EMBED_MODEL = "text-embedding-3-small";
 
 /**
  * Default embedding model + response shape for a known upstream host.
- *
- * Used by `inferEmbeddingProviderFromEndpoint` so that the embedding
- * resolver inherits sensible defaults from the chat model when the user
- * hasn't set them explicitly. Per-field overrides on the embedding
- * settings still win.
- *
- * Add a rule to surface a new provider's defaults — the order of rules
- * matters: the first matching hostname wins, so list more-specific rules
- * first.
+ * Used when the user picks a cloud OpenAI-compatible endpoint — not from chat.
  */
 export interface EmbeddingProviderPreset {
   defaultEmbeddingModel: string;
@@ -57,7 +74,6 @@ export interface EmbeddingProviderPreset {
 }
 
 export interface EmbeddingProviderRule {
-  /** Hostname regex. Matched against `URL(...).hostname` (or the host portion if the endpoint is not a full URL). */
   hostname: RegExp;
   preset: EmbeddingProviderPreset;
 }
@@ -66,14 +82,6 @@ export const KNOWN_EMBEDDING_PROVIDERS: ReadonlyArray<EmbeddingProviderRule> = [
   {
     hostname: /^api\.minimaxi\.com$/i,
     preset: {
-      // `auto` defers shape detection to the first call. The
-      // sniff-and-cache machinery in `embedOpenAiCompatible` tries the
-      // OpenAI envelope first (covers MiniMax's actual international
-      // response), falls back to the legacy MiniMax flat shape if needed,
-      // and caches the winner per endpoint for the rest of the process.
-      // Hardcoding `"minimax"` here broke chat backfill 2026-07-10 because
-      // the international endpoint returns the OpenAI-compatible envelope.
-      // Explicit per-field overrides on the embedding settings still win.
       defaultEmbeddingModel: "embo-01",
       defaultResponseShape: "auto",
     },
@@ -85,10 +93,6 @@ export const KNOWN_EMBEDDING_PROVIDERS: ReadonlyArray<EmbeddingProviderRule> = [
       defaultResponseShape: "openai",
     },
   },
-  // Zhipu (Z.AI / 智谱) — OpenAI-compatible envelope. `embedding-2` is the
-  // current GA model; `embedding-3` is the newer one with larger dims.
-  // Either works on the same endpoint, so defaulting to `embedding-2` keeps
-  // existing dims for any pre-existing Zhipu integrations.
   {
     hostname: /^open\.bigmodel\.cn$/i,
     preset: {
@@ -96,9 +100,6 @@ export const KNOWN_EMBEDDING_PROVIDERS: ReadonlyArray<EmbeddingProviderRule> = [
       defaultResponseShape: "openai",
     },
   },
-  // Alibaba DashScope — `text-embedding-v3` is the default model and the
-  // OpenAI-compatible mode at `/compatible-mode/v1` returns the
-  // `{ data: [{ embedding }] }` envelope, same as OpenAI proper.
   {
     hostname: /^dashscope\.aliyuncs\.com$/i,
     preset: {
@@ -108,14 +109,6 @@ export const KNOWN_EMBEDDING_PROVIDERS: ReadonlyArray<EmbeddingProviderRule> = [
   },
 ];
 
-/**
- * Resolve the provider preset for a host. Returns `undefined` for
- * unrecognized hosts or non-URL endpoints (e.g. `mock://local`).
- *
- * Tolerant of partial inputs — `api.minimaxi.com/v1`,
- * `https://api.minimaxi.com`, `http://api.minimaxi.com:443/v1`,
- * and `api.minimaxi.com` all resolve to the same preset.
- */
 export function inferEmbeddingProviderFromEndpoint(
   endpoint: string,
 ): EmbeddingProviderPreset | undefined {
@@ -124,8 +117,6 @@ export function inferEmbeddingProviderFromEndpoint(
   try {
     host = new URL(endpoint).hostname;
   } catch {
-    // Manual protocol-stripping handles inputs like `api.minimaxi.com/v1`
-    // or `mock://local` that `new URL` rejects.
     const stripped = endpoint.replace(/^[a-z]+:\/\//i, "");
     host = stripped.split("/")[0]?.split(":")[0] ?? "";
   }
@@ -136,82 +127,68 @@ export function inferEmbeddingProviderFromEndpoint(
 
 /**
  * True when the chat endpoint is Envoy Local llama-server (chat GGUF only).
- * That process typically does **not** serve a usable `/v1/embeddings` model —
- * inheriting it as the embedding provider fails and RAG falls back to lexical.
+ * Kept for UI banners / migration helpers — embeddings no longer inherit this.
  */
 export function isEnvoyLocalChatEndpoint(
   endpoint: string | undefined,
   modelProviders?: ModelProviderConfig | null,
 ): boolean {
   if (modelProviders?.presetId === "envoy-local") return true;
-  const raw = endpoint?.trim() ?? "";
-  if (!raw) return false;
-  try {
-    const url = new URL(raw.includes("://") ? raw : `http://${raw}`);
-    const host = url.hostname.toLowerCase();
-    if (host !== "127.0.0.1" && host !== "localhost") return false;
-    // Default ENVOY_LOCAL_PORT_BASE; also accept env-overridden ports only when
-    // presetId already marked envoy-local above.
-    return url.port === "18790" || raw.includes(":18790");
-  } catch {
-    return /127\.0\.0\.1:18790|localhost:18790/i.test(raw);
-  }
+  const port = parseLoopbackServicePort(endpoint);
+  if (port == null) return false;
+  return port === envoyLocalChatPort() || port === ENVOY_LOCAL_CHAT_PORT_BASE;
+}
+
+export function isEnvoyLocalEmbedEndpoint(endpoint: string | undefined): boolean {
+  const port = parseLoopbackServicePort(endpoint);
+  if (port == null) return false;
+  return port === envoyLocalEmbedPort() || port === ENVOY_LOCAL_EMBED_PORT_BASE;
 }
 
 export function resolveEmbeddingConfig(input: ResolveEmbeddingConfigInput): ResolvedEmbeddingConfig {
   const embedding = input.embedding ?? {};
-  const inherit = embedding.mode === "inherit" || embedding.mode === undefined;
-  let mode: EmbeddingProviderMode = inherit
-    ? resolveInheritedEmbeddingMode(input.modelProviders?.mode)
-    : (embedding.mode ?? "mock");
+  let mode: EmbeddingProviderMode =
+    embedding.mode === undefined || (embedding.mode as string) === "inherit"
+      ? "envoy-local"
+      : embedding.mode;
 
-  // 1. Resolve the effective endpoint first — this decides which preset
-  //    (if any) matches. Inheritance + normalization happens here.
+  // Legacy inherit string without migration → Envoy Local embed (product default).
+  if ((mode as string) === "inherit") mode = "envoy-local";
+
   let endpoint = embedding.endpoint?.trim() ?? "";
   if (!endpoint) {
     if (mode === "ollama") {
-      endpoint = input.modelProviders?.endpoint?.replace(/\/v1\/?$/, "") ?? DEFAULT_OLLAMA_ENDPOINT;
+      endpoint = DEFAULT_OLLAMA_ENDPOINT;
     } else if (mode === "openai-compatible") {
-      endpoint = normalizeOpenAiRoot(input.modelProviders?.endpoint ?? "https://api.openai.com/v1");
+      endpoint = normalizeOpenAiRoot("https://api.openai.com/v1");
+    } else if (mode === "envoy-local") {
+      endpoint =
+        input.envoyLocalEmbed?.endpoint?.trim() ||
+        defaultEnvoyLocalEmbedEndpoint();
     } else {
       endpoint = "mock://local";
     }
-  } else if (mode === "openai-compatible") {
+  } else if (mode === "openai-compatible" || mode === "envoy-local") {
     endpoint = normalizeOpenAiRoot(endpoint);
   } else if (mode === "ollama") {
     endpoint = endpoint.replace(/\/v1\/?$/, "");
   }
 
-  // Envoy Local chat sidecar has no dedicated embedding GGUF. Pure inherit would
-  // call POST /v1/embeddings with text-embedding-3-small against llama-server and
-  // fail. Fall back to deterministic mock until the user configures Ollama /
-  // a real embedding API (or lexical mode).
-  const pureInherit =
-    inherit &&
-    !embedding.endpoint?.trim() &&
-    !embedding.modelName?.trim() &&
-    embedding.mode !== "openai-compatible" &&
-    embedding.mode !== "ollama" &&
-    embedding.mode !== "mock";
-  if (
-    pureInherit &&
-    mode === "openai-compatible" &&
-    isEnvoyLocalChatEndpoint(endpoint, input.modelProviders)
-  ) {
-    mode = "mock";
-    endpoint = "mock://local";
+  if (mode === "envoy-local") {
+    const live = input.envoyLocalEmbed?.endpoint?.trim();
+    if (live) endpoint = normalizeOpenAiRoot(live);
   }
 
-  // 2. Hostname-driven preset gives provider-aware defaults that follow
-  //    the chat model config. Only used when the corresponding field is
-  //    unset on the embedding settings.
   const providerPreset = inferEmbeddingProviderFromEndpoint(endpoint);
 
-  // 3. modelName: explicit > preset > mode default.
   const explicitModelName = embedding.modelName?.trim();
   let modelName: string;
   if (explicitModelName) {
     modelName = explicitModelName;
+  } else if (mode === "envoy-local") {
+    modelName =
+      input.envoyLocalEmbed?.modelName?.trim() ||
+      DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID;
   } else if (providerPreset) {
     modelName = providerPreset.defaultEmbeddingModel;
   } else if (mode === "ollama") {
@@ -222,14 +199,15 @@ export function resolveEmbeddingConfig(input: ResolveEmbeddingConfigInput): Reso
     modelName = DEFAULT_MOCK_EMBED_MODEL;
   }
 
-  const apiKey = embedding.apiKey?.trim() || input.modelProviders?.apiKey?.trim() || undefined;
+  const apiKey = embedding.apiKey?.trim() || undefined;
   const modelKey = `${mode}:${modelName}@${endpoint}`;
   const maxInputTokens = resolveEmbeddingMaxInputTokens(embedding, modelName);
 
-  // 4. responseShape: explicit > preset > auto.
   let responseShape: EmbeddingResponseShape;
   if (embedding.responseShape) {
     responseShape = embedding.responseShape;
+  } else if (mode === "envoy-local") {
+    responseShape = DEFAULT_AI_EMBEDDING.responseShape ?? "openai";
   } else if (providerPreset) {
     responseShape = providerPreset.defaultResponseShape;
   } else {
@@ -239,26 +217,84 @@ export function resolveEmbeddingConfig(input: ResolveEmbeddingConfigInput): Reso
   return { mode, modelName, endpoint, apiKey, modelKey, maxInputTokens, responseShape };
 }
 
-function resolveInheritedEmbeddingMode(
-  modelMode: ModelProviderConfig["mode"] | undefined,
-): EmbeddingProviderMode {
-  switch (modelMode) {
-    case "ollama":
-    case "litellm":
-      return "ollama";
-    case "openai-compatible":
-    case "anthropic-compatible":
-      return "openai-compatible";
-    default:
-      return "mock";
+/**
+ * One-time materialization of legacy `inherit` (or missing mode) into an
+ * explicit embedding block. Preserves custom cloud/Ollama fields that were
+ * stored under inherit; otherwise defaults to Envoy Local embed.
+ */
+export function migrateEmbeddingSettings(
+  embedding: AiEmbeddingSettings | null | undefined,
+  _modelProviders?: ModelProviderConfig | null,
+): AiEmbeddingSettings {
+  const mode = embedding?.mode;
+  if (mode && mode !== "inherit") {
+    return {
+      ...embedding,
+      mode,
+      presetId: embedding?.presetId,
+    };
   }
+
+  const endpoint = embedding?.endpoint?.trim();
+  const modelName = embedding?.modelName?.trim();
+  const apiKey = embedding?.apiKey?.trim();
+  const maxInputTokens = embedding?.maxInputTokens;
+  const responseShape = embedding?.responseShape;
+
+  // inherit/missing with no custom targeting → product default.
+  if (!endpoint && !modelName && !apiKey) {
+    return {
+      ...DEFAULT_AI_EMBEDDING,
+      endpoint: defaultEnvoyLocalEmbedEndpoint(),
+      ...(typeof maxInputTokens === "number" ? { maxInputTokens } : {}),
+    };
+  }
+
+  // Local Envoy endpoints under inherit → dedicated embed sidecar.
+  if (
+    endpoint &&
+    (isEnvoyLocalEmbedEndpoint(endpoint) || isEnvoyLocalChatEndpoint(endpoint))
+  ) {
+    return {
+      ...DEFAULT_AI_EMBEDDING,
+      endpoint: defaultEnvoyLocalEmbedEndpoint(),
+      ...(typeof maxInputTokens === "number" ? { maxInputTokens } : {}),
+    };
+  }
+
+  // Ollama-shaped endpoint.
+  if (endpoint && (/11434/i.test(endpoint) || /ollama/i.test(endpoint))) {
+    return {
+      mode: "ollama",
+      presetId: "ollama",
+      endpoint: endpoint.replace(/\/v1\/?$/, ""),
+      modelName: modelName || DEFAULT_OLLAMA_EMBED_MODEL,
+      ...(apiKey ? { apiKey } : {}),
+      ...(typeof maxInputTokens === "number" ? { maxInputTokens } : {}),
+      ...(responseShape ? { responseShape } : {}),
+    };
+  }
+
+  // Custom / cloud OpenAI-compatible fields under inherit — keep them.
+  const normalized = normalizeOpenAiRoot(endpoint || "https://api.openai.com/v1");
+  const hostPreset = inferEmbeddingProviderFromEndpoint(normalized);
+  return {
+    mode: "openai-compatible",
+    presetId: "custom",
+    endpoint: normalized,
+    modelName:
+      modelName ||
+      hostPreset?.defaultEmbeddingModel ||
+      DEFAULT_OPENAI_EMBED_MODEL,
+    ...(apiKey ? { apiKey } : {}),
+    ...(typeof maxInputTokens === "number" ? { maxInputTokens } : {}),
+    responseShape:
+      responseShape || hostPreset?.defaultResponseShape || "auto",
+  };
 }
 
 function normalizeOpenAiRoot(endpoint: string): string {
   const trimmed = endpoint.trim().replace(/\/$/, "");
-  // Already a versioned OpenAI-style root? Leave it alone — preserves
-  // Zhipu's `/api/paas/v4`, DeepSeek's `/v1` (no change), and any other
-  // provider that ships a non-`/v1` API version in the URL.
   if (/\/v\d+$/.test(trimmed)) return trimmed;
   return trimmed.endsWith("/v1") ? trimmed : `${trimmed}/v1`;
 }

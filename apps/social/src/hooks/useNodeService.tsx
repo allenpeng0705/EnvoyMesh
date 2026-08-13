@@ -395,6 +395,12 @@ export interface NodeServiceClient {
   enableEnvoyLocal(
     params?: import("@envoymesh/api").EnableEnvoyLocalParams,
   ): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
+  getEnvoyLocalEmbedStatus(): Promise<import("@envoymesh/api").EnvoyLocalEmbedStatus>;
+  enableEnvoyLocalEmbed(
+    params?: import("@envoymesh/api").EnableEnvoyLocalEmbedParams,
+  ): Promise<import("@envoymesh/api").EnvoyLocalEmbedStatus>;
+  stopEnvoyLocalEmbed(): Promise<import("@envoymesh/api").EnvoyLocalEmbedStatus>;
+  disableEnvoyLocalEmbed(): Promise<import("@envoymesh/api").EnvoyLocalEmbedStatus>;
   declineEnvoyLocalAutoProvision(): Promise<
     import("@envoymesh/api").EnvoyLocalStatus
   >;
@@ -648,6 +654,8 @@ export interface NodeServiceClient {
   getIpfsEngineStatus(): Promise<IpfsEngineStatus>;
   getRagIndexStatus(): Promise<RagIndexStatus>;
   reindexRagKnowledge(params?: { force?: boolean }): Promise<RagIndexStatus>;
+  testRagEmbedding(): Promise<import("@envoymesh/api").RagEmbeddingProbeResult>;
+  testChatModel(): Promise<import("@envoymesh/api").ChatModelProbeResult>;
   verifyLibraryItemIpfsGateway(
     params: VerifyLibraryItemIpfsGatewayParams,
   ): Promise<VerifyLibraryItemIpfsGatewayResult>;
@@ -1499,6 +1507,31 @@ function createWsNodeServiceClient(
         import("@envoymesh/api").EnvoyLocalStatus
       >;
     },
+    async getEnvoyLocalEmbedStatus() {
+      return wsClient.rpc("getEnvoyLocalEmbedStatus") as Promise<
+        import("@envoymesh/api").EnvoyLocalEmbedStatus
+      >;
+    },
+    async enableEnvoyLocalEmbed(
+      params?: import("@envoymesh/api").EnableEnvoyLocalEmbedParams,
+    ) {
+      // Detached on the node; poll getEnvoyLocalEmbedStatus for progress.
+      return wsClient.rpc(
+        "enableEnvoyLocalEmbed",
+        (params ?? {}) as Record<string, unknown>,
+        { timeoutMs: 60_000 },
+      ) as Promise<import("@envoymesh/api").EnvoyLocalEmbedStatus>;
+    },
+    async stopEnvoyLocalEmbed() {
+      return wsClient.rpc("stopEnvoyLocalEmbed", {}, { timeoutMs: 30_000 }) as Promise<
+        import("@envoymesh/api").EnvoyLocalEmbedStatus
+      >;
+    },
+    async disableEnvoyLocalEmbed() {
+      return wsClient.rpc("disableEnvoyLocalEmbed", {}, { timeoutMs: 30_000 }) as Promise<
+        import("@envoymesh/api").EnvoyLocalEmbedStatus
+      >;
+    },
     async enableEnvoyLocal(params?: import("@envoymesh/api").EnableEnvoyLocalParams) {
       // Job is detached on the node; poll getEnvoyLocalStatus for progress.
       return wsClient.rpc(
@@ -2100,6 +2133,16 @@ function createWsNodeServiceClient(
     },
     async reindexRagKnowledge(params?: { force?: boolean }) {
       return wsClient.rpc("reindexRagKnowledge", (params ?? {}) as Record<string, unknown>) as Promise<RagIndexStatus>;
+    },
+    async testRagEmbedding() {
+      return wsClient.rpc("testRagEmbedding", {}) as Promise<
+        import("@envoymesh/api").RagEmbeddingProbeResult
+      >;
+    },
+    async testChatModel() {
+      return wsClient.rpc("testChatModel", {}) as Promise<
+        import("@envoymesh/api").ChatModelProbeResult
+      >;
     },
     async verifyLibraryItemIpfsGateway(params: VerifyLibraryItemIpfsGatewayParams) {
       return wsClient.rpc("verifyLibraryItemIpfsGateway", params as unknown as Record<string, unknown>) as Promise<

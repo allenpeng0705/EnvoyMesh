@@ -175,7 +175,7 @@ describe("AgentSettings — phase 32", () => {
     expect(hermesLink.href).toContain("hermes-agent.nousresearch.com");
   });
 
-  it("always shows Project folder path field (disabled when agent has no cwd)", () => {
+  it("hides Project folder when active agent has no cwd (Pi / HomeClaw)", () => {
     renderWithI18n(
       <AgentSettings
         envoyAI={{ enabled: true, running: true, url: "http://127.0.0.1:18789/webhook/envoymesh" }}
@@ -199,20 +199,14 @@ describe("AgentSettings — phase 32", () => {
         onExtAgentSave={noopAsync}
       />,
     );
-    const folder = screen.getByTestId("ext-agent-project-folder-settings");
-    expect(folder).toBeTruthy();
-    expect(screen.getByTestId("ext-agent-project-folder-hint").textContent).toMatch(
-      /Codex|Claude Code|Cursor/i,
-    );
-    const input = screen.getByLabelText(/Project folder/i) as HTMLInputElement;
-    expect(input.disabled).toBe(true);
+    expect(screen.queryByTestId("ext-agent-project-folder-settings")).toBeNull();
   });
 
-  it("routes project folder Set through onProjectPathChange (not onExtAgentSave)", async () => {
+  it("routes project folder Clear through onProjectPathChange (not onExtAgentSave)", async () => {
     const onExtAgentSave = vi.fn().mockResolvedValue(undefined);
     const onProjectPathChange = vi.fn().mockResolvedValue({
       usesProjectPath: true,
-      projectPath: "/tmp/codex-proj",
+      projectPath: undefined,
     });
     renderWithI18n(
       <AgentSettings
@@ -231,6 +225,7 @@ describe("AgentSettings — phase 32", () => {
               adapter: "envoymesh-message",
               url: "http://x",
               enabled: true,
+              projectPath: "/tmp/codex-proj",
             },
           ],
         }}
@@ -238,14 +233,15 @@ describe("AgentSettings — phase 32", () => {
         onProjectPathChange={onProjectPathChange}
       />,
     );
+    expect(screen.getByTestId("ext-agent-project-folder-settings")).toBeTruthy();
     const input = screen.getByLabelText(/Project folder/i) as HTMLInputElement;
-    expect(input.disabled).toBe(false);
-    fireEvent.change(input, { target: { value: "/tmp/codex-proj" } });
-    fireEvent.click(screen.getByRole("button", { name: /^Set$/i }));
+    expect(input.readOnly).toBe(true);
+    expect(input.value).toBe("/tmp/codex-proj");
+    fireEvent.click(screen.getByRole("button", { name: /^Clear$/i }));
     await waitFor(() =>
       expect(onProjectPathChange).toHaveBeenCalledWith({
         agentId: "codex",
-        projectPath: "/tmp/codex-proj",
+        projectPath: null,
       }),
     );
     expect(onExtAgentSave).not.toHaveBeenCalled();

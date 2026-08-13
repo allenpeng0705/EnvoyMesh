@@ -36,6 +36,7 @@ class _AiModelSettingsScreenState
   bool _envoyLocalInUse = false;
   bool _obscureApiKey = true;
   bool _saving = false;
+  bool _testing = false;
   bool _loaded = false;
   ProviderSubscription<NodeServiceClient?>? _clientSub;
   void Function()? _configUnsub;
@@ -229,6 +230,34 @@ class _AiModelSettingsScreenState
     }
   }
 
+  Future<void> _testChatModel() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    final l10n = AppLocalizations.of(context);
+    setState(() => _testing = true);
+    try {
+      final result = await client.testChatModel();
+      if (!mounted) return;
+      final ok = result['ok'] == true;
+      final msg = ok
+          ? l10n.settingsAiModelTestChatOk(
+              result['modelName']?.toString() ?? 'unknown',
+              (result['latencyMs'] as num?)?.toInt() ?? 0,
+            )
+          : l10n.settingsAiModelTestChatFail(
+              result['error']?.toString() ?? 'unknown',
+            );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.settingsAiModelTestChatFail('$e'))),
+      );
+    } finally {
+      if (mounted) setState(() => _testing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -393,6 +422,15 @@ class _AiModelSettingsScreenState
                             )
                           : const Icon(Icons.save),
                       label: Text(l10n.commonSave),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton(
+                      onPressed: (_saving || _testing) ? null : _testChatModel,
+                      child: Text(
+                        _testing
+                            ? l10n.settingsAiModelTestChatBusy
+                            : l10n.settingsAiModelTestChat,
+                      ),
                     ),
                   ],
                 ],

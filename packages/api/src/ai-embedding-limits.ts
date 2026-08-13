@@ -9,6 +9,9 @@ export const KNOWN_EMBEDDING_MAX_INPUT_TOKENS: Readonly<Record<string, number>> 
   "text-embedding-3-small": 8191,
   "text-embedding-3-large": 8191,
   "nomic-embed-text": 8192,
+  "qwen3-embedding-4b-q4_k_m": 8192,
+  "Qwen3-Embedding-4B": 8192,
+  "qwen3-embedding-0.6b-q4_k_m": 8192,
 };
 
 export function resolveEmbeddingMaxInputTokens(
@@ -26,6 +29,7 @@ export function resolveEmbeddingMaxInputTokens(
   if (model.includes("embo")) return 4096;
   if (model.includes("text-embedding-3")) return 8191;
   if (model.includes("nomic-embed")) return 8192;
+  if (model.includes("qwen3-embedding") || model.includes("qwen3_embedding")) return 8192;
   return undefined;
 }
 

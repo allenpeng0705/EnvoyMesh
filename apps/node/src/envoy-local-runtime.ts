@@ -655,6 +655,42 @@ async function ensureRuntimeInstalled(
   return exe;
 }
 
+/**
+ * Install / locate the shared llama-server binary under `{profile}/envoy-local/runtime/{tag}/`.
+ * Used by chat (:18790) and embed (:18791) sidecars — same binary, different GGUF + port.
+ * Concurrent callers coalesce onto one download (chat enable + embed boot).
+ */
+let sharedRuntimeInstallPromise: Promise<string> | null = null;
+
+export async function ensureEnvoyLocalSharedRuntimeBinary(
+  state: EnvoyLocalRuntimeState,
+  profileDir: string,
+  platform: EnvoyLocalPlatform,
+  signal: AbortSignal,
+  opts?: { force?: boolean; region?: EnvoyLocalModelRegion },
+): Promise<string> {
+  const exeName = process.platform === "win32" ? "llama-server.exe" : "llama-server";
+  if (!opts?.force) {
+    const existing = await findExecutable(runtimeDir(profileDir), [exeName]);
+    if (existing) return existing;
+  }
+
+  if (sharedRuntimeInstallPromise) {
+    return sharedRuntimeInstallPromise;
+  }
+
+  sharedRuntimeInstallPromise = ensureRuntimeInstalled(
+    state,
+    profileDir,
+    platform,
+    signal,
+    opts,
+  ).finally(() => {
+    sharedRuntimeInstallPromise = null;
+  });
+  return sharedRuntimeInstallPromise;
+}
+
 async function downloadCatalogModel(
   state: EnvoyLocalRuntimeState,
   profileDir: string,
@@ -1099,7 +1135,7 @@ export async function enableEnvoyLocalViaRuntime(
       });
 
       const region = await loadDownloadRegion(deps);
-      const exe = await ensureRuntimeInstalled(
+      const exe = await ensureEnvoyLocalSharedRuntimeBinary(
         state,
         profileDir,
         platform,
@@ -1686,7 +1722,7 @@ export async function updateEnvoyLocalEngineViaRuntime(
       const platform = detectEnvoyLocalPlatform();
       state.platform = platform;
       const region = await loadDownloadRegion(deps);
-      await ensureRuntimeInstalled(
+      await ensureEnvoyLocalSharedRuntimeBinary(
         state,
         deps.getProfileDir(),
         platform,

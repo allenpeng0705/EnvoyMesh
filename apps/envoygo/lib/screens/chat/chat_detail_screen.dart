@@ -1063,8 +1063,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     final chatState = ref.watch(chatProvider);
     final messages = chatState.messages[widget.threadId] ?? [];
     final isOwner = ref.watch(nodeProvider).isOwnerProfile;
-    final showProjectFolder = _isExtAgent && isOwner;
-    final projectFolderSupported = extAgentUsesProjectPath(_extAgentActiveId);
+    final showProjectFolder =
+        _isExtAgent && isOwner && extAgentUsesProjectPath(_extAgentActiveId);
 
     return Scaffold(
       appBar: AppBar(
@@ -1120,41 +1120,28 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                 dense: true,
                 leading: const Icon(Icons.folder_outlined, size: 20),
                 title: Text(
-                  projectFolderSupported
-                      ? (_extAgentProjectPath?.isNotEmpty == true
-                          ? _extAgentProjectPath!
-                          : 'Project folder not set')
-                      : 'Used by Codex, Claude Code, Cursor, Aider, MiniMax — switch agent to set a folder',
-                  maxLines: projectFolderSupported ? 1 : 2,
+                  _extAgentProjectPath?.isNotEmpty == true
+                      ? _extAgentProjectPath!
+                      : 'Project folder not set',
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontFamily:
-                            projectFolderSupported ? 'monospace' : null,
+                        fontFamily: 'monospace',
                       ),
                 ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (projectFolderSupported &&
-                        _extAgentProjectPath?.isNotEmpty == true)
+                    if (_extAgentProjectPath?.isNotEmpty == true)
                       IconButton(
                         tooltip: 'Clear',
                         icon: const Icon(Icons.clear, size: 18),
                         onPressed: _clearExtAgentProjectFolder,
                       ),
                     IconButton(
-                      tooltip: projectFolderSupported
-                          ? 'Browse'
-                          : 'Switch to Codex / Claude Code / Cursor / Aider / MiniMax',
-                      icon: Icon(
-                        projectFolderSupported
-                            ? Icons.folder_open
-                            : Icons.folder_off_outlined,
-                        size: 18,
-                      ),
-                      onPressed: projectFolderSupported
-                          ? _pickExtAgentProjectFolder
-                          : null,
+                      tooltip: 'Browse',
+                      icon: const Icon(Icons.folder_open, size: 18),
+                      onPressed: _pickExtAgentProjectFolder,
                     ),
                   ],
                 ),

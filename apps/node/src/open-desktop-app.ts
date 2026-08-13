@@ -1,13 +1,15 @@
 /**
  * Open allowlisted desktop apps on the home node (owner-only).
  * Mac / Windows / Linux — never accepts free-form executable paths from clients.
+ * When the app is not installed, opens the official product website instead.
  */
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
+import { DESKTOP_APP_SITE, type DesktopAppId } from "@envoymesh/api";
 
-export type DesktopAppId = "obsidian" | "notion";
+export type { DesktopAppId };
 
 export const DESKTOP_APP_IDS: readonly DesktopAppId[] = ["obsidian", "notion"] as const;
 
@@ -18,6 +20,18 @@ export function isDesktopAppId(value: unknown): value is DesktopAppId {
 export interface OpenDesktopAppResult {
   ok: boolean;
   error?: string;
+  openedWebsite?: boolean;
+  websiteUrl?: string;
+}
+
+/** Product home page used when Open cannot launch a local install. */
+export function desktopAppHomeUrl(app: DesktopAppId): string {
+  return DESKTOP_APP_SITE[app].home;
+}
+
+/** Download / desktop-install page for Plugins card links. */
+export function desktopAppDownloadUrl(app: DesktopAppId): string {
+  return DESKTOP_APP_SITE[app].download;
 }
 
 function spawnDetached(command: string, args: string[]): Promise<void> {
@@ -80,26 +94,47 @@ export function windowsDesktopAppExe(app: DesktopAppId): string | null {
   return null;
 }
 
-function notInstalledError(app: DesktopAppId): OpenDesktopAppResult {
-  return {
-    ok: false,
-    error:
-      app === "obsidian"
-        ? "Obsidian is not installed on this computer. Install it from obsidian.md."
-        : "Notion is not installed on this computer. Install it from notion.so.",
-  };
+async function openUrlInDefaultBrowser(url: string): Promise<void> {
+  const os = platform();
+  if (os === "darwin") {
+    await runAndWait("open", [url]);
+    return;
+  }
+  if (os === "win32") {
+    // `cmd /c start "" <url>` — empty title avoids swallowing the URL as the window title.
+    await spawnDetached("cmd.exe", ["/c", "start", "", url]);
+    return;
+  }
+  await spawnDetached("xdg-open", [url]);
+}
+
+async function openWebsiteFallback(app: DesktopAppId): Promise<OpenDesktopAppResult> {
+  const websiteUrl = desktopAppHomeUrl(app);
+  try {
+    await openUrlInDefaultBrowser(websiteUrl);
+    return { ok: true, openedWebsite: true, websiteUrl };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      error:
+        app === "obsidian"
+          ? `Obsidian is not installed. Could not open ${websiteUrl} (${detail}).`
+          : `Notion is not installed. Could not open ${websiteUrl} (${detail}).`,
+      websiteUrl,
+    };
+  }
 }
 
 async function openOnDarwin(app: DesktopAppId): Promise<OpenDesktopAppResult> {
-  if (!macDesktopAppInstalled(app)) return notInstalledError(app);
-  // `open -a` exits non-zero when the app cannot be resolved.
+  if (!macDesktopAppInstalled(app)) return openWebsiteFallback(app);
   await runAndWait("open", ["-a", macAppName(app)]);
   return { ok: true };
 }
 
 async function openOnWin32(app: DesktopAppId): Promise<OpenDesktopAppResult> {
   const exe = windowsDesktopAppExe(app);
-  if (!exe) return notInstalledError(app);
+  if (!exe) return openWebsiteFallback(app);
   await spawnDetached(exe, []);
   return { ok: true };
 }
@@ -109,7 +144,7 @@ async function openOnLinux(app: DesktopAppId): Promise<OpenDesktopAppResult> {
   try {
     await runAndWait("which", [bin]);
   } catch {
-    return notInstalledError(app);
+    return openWebsiteFallback(app);
   }
   await spawnDetached(bin, []);
   return { ok: true };
@@ -118,7 +153,7 @@ async function openOnLinux(app: DesktopAppId): Promise<OpenDesktopAppResult> {
 /**
  * Launch Obsidian or Notion on the home machine.
  * Allowlist-only — clients cannot pass arbitrary commands.
- * Returns ok:false when the app is not installed (does not pretend URI launch succeeded).
+ * If the app is not installed, opens the official website in the default browser.
  */
 export async function openDesktopApp(app: DesktopAppId): Promise<OpenDesktopAppResult> {
   const os = platform();

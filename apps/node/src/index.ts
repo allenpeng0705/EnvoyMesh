@@ -3924,8 +3924,8 @@ if (typeof openClawCapable.startOpenClaw === "function") {
   });
 }
 
-// Phase 54 — Envoy Local: start sidecar only when enabled + assets on disk;
-// never download here; never start when cloud/Ollama is the active provider.
+// Phase 54 — Envoy Local **chat** sidecar (:18790): start only when enabled +
+// assets already on disk. Never downloads here; never steals the embed process.
 const envoyLocalCapable = nodeService as unknown as {
   maybeStartEnvoyLocalOnBoot?: () => Promise<void>;
 };
@@ -3933,6 +3933,23 @@ if (typeof envoyLocalCapable.maybeStartEnvoyLocalOnBoot === "function") {
   void envoyLocalCapable.maybeStartEnvoyLocalOnBoot().catch((err) => {
     console.warn(
       "[envoy-local] Boot start skipped/failed:",
+      err instanceof Error ? err.message : String(err),
+    );
+  });
+}
+
+const envoyLocalEmbedCapable = nodeService as unknown as {
+  maybeStartEnvoyLocalEmbedOnBoot?: () => Promise<void>;
+};
+// Phase 57E — Envoy Local **embed** sidecar (:18791): on every Tauri/node
+// launch, if Knowledge embedding mode is envoy-local (default) and llama.cpp
+// and/or the embed GGUF are missing, download in the background and start a
+// *second* llama-server process (separate from chat Local on :18790).
+// Detached; failures retry next boot. Manual retry stays on Knowledge → Setup.
+if (typeof envoyLocalEmbedCapable.maybeStartEnvoyLocalEmbedOnBoot === "function") {
+  void envoyLocalEmbedCapable.maybeStartEnvoyLocalEmbedOnBoot().catch((err) => {
+    console.warn(
+      "[envoy-local-embed] Boot provision skipped/failed:",
       err instanceof Error ? err.message : String(err),
     );
   });
@@ -4451,6 +4468,11 @@ async function shutdown(): Promise<void> {
       }
       try {
         await nodeService.haltEnvoyLocalChild?.();
+      } catch {
+        /* ok */
+      }
+      try {
+        await (nodeService as { haltEnvoyLocalEmbedChild?: () => Promise<void> }).haltEnvoyLocalEmbedChild?.();
       } catch {
         /* ok */
       }

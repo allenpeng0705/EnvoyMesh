@@ -63,6 +63,19 @@ describe("home-fs", () => {
     expect(dirsOnly.entries.map((e) => e.name)).toEqual(["subdir"]);
   });
 
+  it("listHomeFsEntries returns parent so clients can navigate up", () => {
+    const root = mkdtempSync(join(tmpdir(), "envoy-home-fs-"));
+    dirs.push(root);
+    const child = join(root, "child");
+    mkdirSync(child);
+    const listed = listHomeFsEntries({ path: child, dirsOnly: true });
+    expect(listed.path).toBe(child);
+    expect(listed.parent).toBe(root);
+    const up = listHomeFsEntries({ path: listed.parent, dirsOnly: true });
+    expect(up.path).toBe(root);
+    expect(up.entries.some((e) => e.name === "child")).toBe(true);
+  });
+
   it("previewHomeFsFile returns html for text and markdown", async () => {
     const root = mkdtempSync(join(tmpdir(), "envoy-home-fs-"));
     dirs.push(root);

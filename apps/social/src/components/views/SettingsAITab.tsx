@@ -29,6 +29,7 @@ import type {
   EnvoyLocalFitMode,
   EnvoyLocalKvCacheType,
   RagIndexStatus,
+  RagEmbeddingProbeResult,
   AutonomousPolicy,
   A2aChatNotificationMode,
   AgentActivityDomain,
@@ -73,9 +74,17 @@ import {
 // Browser-safe subpath — does NOT pull in node:crypto / node:fs. The full
 // `@envoymesh/rag` root depends on Node builtins and is intentionally not
 // imported here; the resolver subpath is the only entry point the UI uses.
-import { isEnvoyLocalChatEndpoint, resolveEmbeddingConfig } from "@envoymesh/rag/embedding-resolver";
+import {
+  embeddingSettingsFromPreset,
+  EMBEDDING_PROVIDER_PRESETS,
+  inferEmbeddingProviderPresetId,
+  type EmbeddingProviderPresetId,
+} from "@envoymesh/api";
+import { resolveEmbeddingConfig } from "@envoymesh/rag/embedding-resolver";
+import { useEnvoyLocalEmbedReadiness } from "../../hooks/useEnvoyLocalEmbedReadiness.js";
 import { waitForEnvoyLocalIdle } from "../../lib/envoy-local-wait.js";
 import { openContentKnowledge } from "../../lib/content-knowledge-nav.js";
+import { KnowledgeEmbedGate } from "./KnowledgeEmbedGate.js";
 
 // ---------------------------------------------------------------------------
 // "Add Rule" form — now fully controlled via React state (fixes the
@@ -107,6 +116,78 @@ const EMPTY_RULE_FORM: RuleFormState = {
   identityOverride: "",
   template: "",
 };
+
+export function EmbeddingProbePanel() {
+  const t = useT();
+  const nodeService = useNodeService();
+  const { showToast } = useToast();
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<RagEmbeddingProbeResult | null>(null);
+
+  const handleTest = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const next = await nodeService.testRagEmbedding();
+      setResult(next);
+      if (next.ok) {
+        showToast(
+          t("settings.ai.rag.testEmbeddingOkToast", {
+            dimensions: next.dimensions,
+            latencyMs: next.latencyMs,
+          }),
+          "success",
+        );
+      } else {
+        showToast(
+          t("settings.ai.rag.testEmbeddingFailToast", { error: next.error }),
+          "error",
+        );
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setResult({ ok: false, error: message, latencyMs: 0 });
+      showToast(t("settings.ai.rag.testEmbeddingFailToast", { error: message }), "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="knowledge-embed-probe" data-testid="rag-embedding-probe">
+      <div className="knowledge-embed-probe__row">
+        <button
+          type="button"
+          className="primary"
+          disabled={busy}
+          onClick={() => void handleTest()}
+        >
+          {busy ? t("settings.ai.rag.testEmbeddingBusy") : t("settings.ai.rag.testEmbedding")}
+        </button>
+        <p className="knowledge-embed-probe__hint">{t("settings.ai.rag.testEmbeddingHint")}</p>
+      </div>
+      {result?.ok ? (
+        <p className="knowledge-embed-probe__ok" role="status">
+          {t("settings.ai.rag.testEmbeddingOkDetail", {
+            dimensions: result.dimensions,
+            latencyMs: result.latencyMs,
+            modelKey: result.modelKey,
+            mode: result.mode,
+          })}
+        </p>
+      ) : null}
+      {result && !result.ok ? (
+        <p className="knowledge-embed-probe__fail" role="alert">
+          {t("settings.ai.rag.testEmbeddingFailDetail", {
+            error: result.error,
+            mode: result.mode ?? t("settings.ai.rag.indexStatusUnknown"),
+            endpoint: result.endpoint ?? t("settings.ai.rag.indexStatusUnknown"),
+          })}
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 export function RagIndexStatusPanel() {
   const t = useT();
@@ -170,68 +251,91 @@ export function RagIndexStatusPanel() {
     }
   };
 
+  const summary = status.isIndexing
+    ? t("settings.ai.rag.indexStatusIndexing", {
+        phase: progress.phase,
+        processed: progress.processed,
+        total: progress.total,
+      })
+    : progress.phase === "done"
+      ? t("settings.ai.rag.indexStatusDone", {
+          indexed: progress.indexed,
+          skipped: progress.skipped,
+          removed: progress.removed,
+        })
+      : progress.phase === "error"
+        ? t("settings.ai.rag.indexStatusError", {
+            message: progress.message ?? t("settings.ai.rag.indexStatusUnknown"),
+          })
+        : t("settings.ai.rag.indexStatusIdle");
+
+  const stateLabel = status.isIndexing
+    ? t("settings.ai.rag.indexStateIndexing")
+    : progress.phase === "error"
+      ? t("settings.ai.rag.indexStateError")
+      : progress.phase === "done"
+        ? t("settings.ai.rag.indexStateReady")
+        : t("settings.ai.rag.indexStateIdle");
+
   return (
-    <div className="form-group">
-      <label>{t("settings.ai.rag.indexStatusLabel")}</label>
-      <div className="settings-status-panel">
-        <div className="settings-progress-bar" aria-hidden="true">
-          <div className="settings-progress-fill" style={{ width: `${pct}%` }} />
-        </div>
-        <p className="field-desc">
-          {status.isIndexing
-            ? t("settings.ai.rag.indexStatusIndexing", {
-                phase: progress.phase,
-                processed: progress.processed,
-                total: progress.total,
-              })
-            : progress.phase === "done"
-              ? t("settings.ai.rag.indexStatusDone", {
-                  indexed: progress.indexed,
-                  skipped: progress.skipped,
-                  removed: progress.removed,
-                })
-              : progress.phase === "error"
-                ? t("settings.ai.rag.indexStatusError", {
-                    message: progress.message ?? t("settings.ai.rag.indexStatusUnknown"),
-                  })
-                : t("settings.ai.rag.indexStatusIdle")}
-          {status.lastCompletedAt
-            ? t("settings.ai.rag.indexStatusLastRunSuffix", {
-                time: new Date(status.lastCompletedAt).toLocaleString(),
-              })
-            : ""}
-          {status.trackedDocuments > 0
-            ? t("settings.ai.rag.indexStatusTrackedSuffix", { count: status.trackedDocuments })
-            : ""}
-        </p>
-        {status.embedderModelKey ? (
-          <p className="field-desc">
-            {t("settings.ai.rag.indexStatusEmbedder", { modelKey: status.embedderModelKey })}
-          </p>
-        ) : null}
-        {status.lastEmbedError ? (
-          <p className="field-desc" style={{ color: "var(--error, #c0392b)" }}>
-            {t("settings.ai.rag.indexStatusEmbedError", {
-              message: status.lastEmbedError,
-              time: status.lastEmbedErrorAt
-                ? new Date(status.lastEmbedErrorAt).toLocaleString()
-                : t("settings.ai.rag.indexStatusUnknown"),
-            })}
-          </p>
-        ) : null}
-        <div className="settings-buttons" style={{ marginTop: "0.5rem" }}>
-          <button
-            type="button"
-            className="settings-button"
-            disabled={rebuilding || status.isIndexing}
-            onClick={() => void handleRebuild()}
+    <div className="knowledge-index-status" data-testid="rag-index-status">
+      <div className="knowledge-index-status__header">
+        <div className="knowledge-index-status__title">
+          <span
+            className={`knowledge-index-status__badge knowledge-index-status__badge--${
+              status.isIndexing
+                ? "busy"
+                : progress.phase === "error"
+                  ? "error"
+                  : "ready"
+            }`}
           >
-            {rebuilding || status.isIndexing
-              ? t("settings.ai.rag.rebuildIndexBusy")
-              : t("settings.ai.rag.rebuildIndex")}
-          </button>
+            {stateLabel}
+          </span>
+          <p className="knowledge-index-status__summary">{summary}</p>
         </div>
+        <button
+          type="button"
+          className="primary knowledge-index-status__rebuild"
+          disabled={rebuilding || status.isIndexing}
+          onClick={() => void handleRebuild()}
+        >
+          {rebuilding || status.isIndexing
+            ? t("settings.ai.rag.rebuildIndexBusy")
+            : t("settings.ai.rag.rebuildIndex")}
+        </button>
       </div>
+      <div className="settings-progress-bar" aria-hidden="true">
+        <div className="settings-progress-fill" style={{ width: `${pct}%` }} />
+      </div>
+      <dl className="knowledge-index-status__metrics">
+        <div>
+          <dt>{t("settings.ai.rag.indexMetricTracked")}</dt>
+          <dd>{status.trackedDocuments}</dd>
+        </div>
+        {status.embedderModelKey ? (
+          <div>
+            <dt>{t("settings.ai.rag.indexMetricEmbedder")}</dt>
+            <dd title={status.embedderModelKey}>{status.embedderModelKey}</dd>
+          </div>
+        ) : null}
+        {status.lastCompletedAt ? (
+          <div>
+            <dt>{t("settings.ai.rag.indexMetricLastRun")}</dt>
+            <dd>{new Date(status.lastCompletedAt).toLocaleString()}</dd>
+          </div>
+        ) : null}
+      </dl>
+      {status.lastEmbedError ? (
+        <p className="knowledge-index-status__error" role="alert">
+          {t("settings.ai.rag.indexStatusEmbedError", {
+            message: status.lastEmbedError,
+            time: status.lastEmbedErrorAt
+              ? new Date(status.lastEmbedErrorAt).toLocaleString()
+              : t("settings.ai.rag.indexStatusUnknown"),
+          })}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -392,19 +496,28 @@ export function KnowledgeBaseSettings(props: {
   value: AiKnowledgeBaseSettings;
   onChange: (next: AiKnowledgeBaseSettings) => Promise<void>;
   modelProviders?: import("@envoymesh/api").ModelProviderConfig;
+  /** Shared readiness from Knowledge hub (optional — falls back to local poll). */
+  embedReadiness?: ReturnType<typeof useEnvoyLocalEmbedReadiness>;
 }) {
   const t = useT();
+  const nodeService = useNodeService();
+  const { showToast } = useToast();
   const kb = props.value;
+  const localEmbed = useEnvoyLocalEmbedReadiness(kb.embedding, {
+    enabled: !props.embedReadiness,
+  });
+  const embed = props.embedReadiness ?? localEmbed;
+  const embedStatus = embed.status;
+  const embedBusy = embed.inFlight;
+
   const patch = async (partial: Partial<AiKnowledgeBaseSettings>) => {
     const next = { ...kb, ...partial };
     if (partial.embedding !== undefined) {
       const prevKey = resolveEmbeddingConfig({
         embedding: kb.embedding,
-        modelProviders: props.modelProviders,
       }).modelKey;
       const nextKey = resolveEmbeddingConfig({
         embedding: next.embedding,
-        modelProviders: props.modelProviders,
       }).modelKey;
       if (prevKey !== nextKey) {
         if (!window.confirm(t("settings.ai.rag.embeddingChangeConfirm"))) {
@@ -415,412 +528,569 @@ export function KnowledgeBaseSettings(props: {
     await props.onChange(next);
   };
 
-  // Compute the effective embedding config against the chat-model
-  // providers, so we can show users the value that will actually be used
-  // when they leave a field blank. Re-runs whenever the embedding panel
-  // or the chat model provider changes.
   const resolved = useMemo(
-    () => resolveEmbeddingConfig({
-      embedding: kb.embedding,
-      modelProviders: props.modelProviders,
-    }),
-    [kb.embedding, props.modelProviders],
+    () =>
+      resolveEmbeddingConfig({
+        embedding: kb.embedding,
+        envoyLocalEmbed: embedStatus
+          ? {
+              endpoint: embedStatus.endpoint,
+              modelName: embedStatus.activeModelId,
+              running: embedStatus.running,
+            }
+          : null,
+      }),
+    [kb.embedding, embedStatus],
   );
 
-  // Which fields are *not* explicitly set by the user? Only those get an
-  // inherited-value hint below the input.
-  const hasExplicitModelName = !!kb.embedding?.modelName?.trim();
-  const hasExplicitResponseShape = !!kb.embedding?.responseShape;
-  const hasExplicitEndpoint = !!kb.embedding?.endpoint?.trim();
-  const hasExplicitApiKey = !!kb.embedding?.apiKey?.trim();
-  const showEnvoyLocalEmbedBanner =
-    (kb.embedding?.mode === "inherit" || kb.embedding?.mode === undefined) &&
-    !hasExplicitEndpoint &&
-    !hasExplicitModelName &&
-    (props.modelProviders?.presetId === "envoy-local" ||
-      isEnvoyLocalChatEndpoint(props.modelProviders?.endpoint, props.modelProviders));
+  const presetId = inferEmbeddingProviderPresetId(kb.embedding);
+  const preset = EMBEDDING_PROVIDER_PRESETS.find((p) => p.id === presetId);
+  const showEndpoint = preset?.showEndpoint === true;
+  const showModel = preset?.showModel !== false;
+  const showApiKey = preset?.showApiKey === true;
+  const showResponseShape = preset?.showResponseShape === true;
+  const isEnvoyLocalEmbed = (kb.embedding?.mode ?? "envoy-local") === "envoy-local";
 
   return (
-    <>
-      <div className="settings-toggle-row">
-        <div className="toggle-info">
-          <strong>{t("settings.ai.rag.enableVaultKb")}</strong>
-          <span className="toggle-desc">{t("settings.ai.rag.enableVaultKbDesc")}</span>
-        </div>
-        <label className="toggle-switch">
-          <input
-            type="checkbox"
-            checked={kb.enabled !== false}
-            onChange={async (e) => {
-              await patch({ enabled: e.target.checked });
-            }}
-          />
-          <span className="slider" />
-        </label>
-      </div>
-
-      <div className="form-row">
-        <div className="form-group">
-          <label>{t("settings.ai.rag.retrievalMode")}</label>
-          <select
-            value={kb.ragMode ?? DEFAULT_AI_KNOWLEDGE_BASE.ragMode}
-            onChange={async (e) => {
-              await patch({ ragMode: e.target.value as AiRagMode });
-            }}
-          >
-            <option value="vector">{t("settings.ai.rag.retrievalVector")}</option>
-            <option value="hybrid">{t("settings.ai.rag.retrievalHybrid")}</option>
-            <option value="lexical">{t("settings.ai.rag.retrievalLexical")}</option>
-          </select>
-        </div>
-      <p className="rag-inherit-banner">{t("settings.ai.rag.embeddingInheritBanner")}</p>
-      {showEnvoyLocalEmbedBanner ? (
-        <p className="rag-inherit-banner">{t("settings.ai.rag.embeddingEnvoyLocalBanner")}</p>
-      ) : null}
-      <div className="form-group">
-        <label>{t("settings.ai.rag.embeddingProvider")}</label>
-          <select
-            value={kb.embedding?.mode ?? "inherit"}
-            onChange={async (e) => {
-              const nextMode = e.target.value as "inherit" | "mock" | "ollama" | "openai-compatible";
-              await patch({
-                embedding: {
-                  ...kb.embedding,
-                  mode: nextMode,
-                  modelName: kb.embedding?.modelName,
-                  endpoint: kb.embedding?.endpoint,
-                  apiKey: kb.embedding?.apiKey,
-                  maxInputTokens: kb.embedding?.maxInputTokens,
-                },
-              });
-            }}
-          >
-            <option value="inherit">{t("settings.ai.rag.embeddingModeInherit")}</option>
-            <option value="openai-compatible">{t("settings.ai.rag.embeddingModeOpenAiCompatible")}</option>
-            <option value="ollama">{t("settings.ai.rag.embeddingModeOllama")}</option>
-            <option value="mock">{t("settings.ai.rag.embeddingModeMock")}</option>
-          </select>
-        </div>
-        <div className="form-group">
-          <label>{t("settings.ai.rag.embeddingModel")}</label>
-          <input
-            type="text"
-            placeholder={t("settings.ai.rag.embeddingPlaceholder")}
-            value={kb.embedding?.modelName ?? ""}
-            onChange={async (e) => {
-              await patch({
-                embedding: {
-                  ...kb.embedding,
-                  mode: kb.embedding?.mode ?? "inherit",
-                  modelName: e.target.value.trim() || undefined,
-                },
-              });
-            }}
-          />
-          {!hasExplicitModelName && resolved.modelName ? (
-            <p className="rag-resolved-hint">
-              {t("settings.ai.rag.embeddingResolvedHint", { value: resolved.modelName })}
-            </p>
-          ) : null}
-        </div>
-        <div className="form-group">
-          <label>{t("settings.ai.rag.embeddingResponseShape")}</label>
-          <select
-            value={kb.embedding?.responseShape ?? "auto"}
-            onChange={async (e) => {
-              await patch({
-                embedding: {
-                  ...kb.embedding,
-                  mode: kb.embedding?.mode ?? "inherit",
-                  responseShape: e.target.value as "openai" | "minimax" | "auto",
-                },
-              });
-            }}
-          >
-            <option value="openai">{t("settings.ai.rag.embeddingResponseShapeOpenAi")}</option>
-            <option value="minimax">{t("settings.ai.rag.embeddingResponseShapeMinimax")}</option>
-            <option value="auto">{t("settings.ai.rag.embeddingResponseShapeAuto")}</option>
-          </select>
-          <p className="field-desc">{t("settings.ai.rag.embeddingResponseShapeHint")}</p>
-          {!hasExplicitResponseShape && resolved.responseShape && resolved.responseShape !== "auto" ? (
-            <p className="rag-resolved-hint">
-              {t("settings.ai.rag.embeddingResolvedHint", { value: resolved.responseShape })}
-            </p>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="form-row">
-        <div className="form-group">
-          <label>{t("settings.ai.rag.embeddingEndpoint")}</label>
-          <input
-            type="text"
-            placeholder={t("settings.ai.rag.embeddingEndpointPlaceholder")}
-            value={kb.embedding?.endpoint ?? ""}
-            onChange={async (e) => {
-              await patch({
-                embedding: {
-                  ...kb.embedding,
-                  mode: kb.embedding?.mode ?? "inherit",
-                  endpoint: e.target.value.trim() || undefined,
-                },
-              });
-            }}
-          />
-          <p className="field-desc">{t("settings.ai.rag.embeddingEndpointHint")}</p>
-          {!hasExplicitEndpoint && resolved.endpoint && resolved.endpoint !== "mock://local" ? (
-            <p className="rag-resolved-hint">
-              {t("settings.ai.rag.embeddingResolvedHint", { value: resolved.endpoint })}
-            </p>
-          ) : null}
-        </div>
-        <div className="form-group">
-          <label>{t("settings.ai.rag.embeddingApiKey")}</label>
-          <input
-            type="password"
-            placeholder={t("settings.ai.rag.embeddingApiKeyPlaceholder")}
-            value={kb.embedding?.apiKey ?? ""}
-            onChange={async (e) => {
-              await patch({
-                embedding: {
-                  ...kb.embedding,
-                  mode: kb.embedding?.mode ?? "inherit",
-                  apiKey: e.target.value.trim() || undefined,
-                },
-              });
-            }}
-          />
-          {/* Don't reveal the inherited chat key in the DOM — just say
-              that an inheritance is in effect so the user knows the
-              password field is intentionally blank. */}
-          {!hasExplicitApiKey && resolved.apiKey ? (
-            <p className="rag-resolved-hint">{t("settings.ai.rag.embeddingApiKeyInherited")}</p>
-          ) : null}
-        </div>
-        <div className="form-group">
-          <label>{t("settings.ai.rag.embeddingMaxInputTokens")}</label>
-          <input
-            type="number"
-            min={1}
-            placeholder="4096"
-            value={kb.embedding?.maxInputTokens ?? ""}
-            onChange={async (e) => {
-              const raw = e.target.value.trim();
-              await patch({
-                embedding: {
-                  ...kb.embedding,
-                  mode: kb.embedding?.mode ?? "inherit",
-                  maxInputTokens: raw ? Number.parseInt(raw, 10) : undefined,
-                },
-              });
-            }}
-          />
-          <p className="field-desc">{t("settings.ai.rag.embeddingMaxInputTokensHint")}</p>
-          {!kb.embedding?.maxInputTokens && resolved.maxInputTokens ? (
-            <p className="rag-resolved-hint">
-              {t("settings.ai.rag.embeddingResolvedHint", { value: resolved.maxInputTokens })}
-            </p>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="settings-toggle-row">
-        <div className="toggle-info">
-          <strong>{t("settings.ai.rag.purgeRagOnDelete")}</strong>
-          <span className="toggle-desc">{t("settings.ai.rag.purgeRagOnDeleteDesc")}</span>
-        </div>
-        <label className="toggle-switch">
-          <input
-            type="checkbox"
-            checked={kb.purgeChatRagOnDelete === true}
-            onChange={async (e) => {
-              await patch({ purgeChatRagOnDelete: e.target.checked });
-            }}
-          />
-          <span className="slider" />
-        </label>
-      </div>
-
-      <div className="form-row">
-        <div className="form-group">
-          <label>{t("settings.ai.rag.recentMessagesInContext")}</label>
-          <input
-            type="number"
-            min={1}
-            max={50}
-            value={kb.recentMessageLimit ?? DEFAULT_AI_KNOWLEDGE_BASE.recentMessageLimit}
-            onChange={async (e) => {
-              await patch({ recentMessageLimit: parseInt(e.target.value, 10) || DEFAULT_AI_KNOWLEDGE_BASE.recentMessageLimit });
-            }}
-          />
-        </div>
-        <div className="form-group">
-          <label>{t("settings.ai.rag.ragHistoryMessages")}</label>
-          <input
-            type="number"
-            min={0}
-            max={20}
-            value={kb.ragMessageLimit ?? DEFAULT_AI_KNOWLEDGE_BASE.ragMessageLimit}
-            onChange={async (e) => {
-              await patch({ ragMessageLimit: parseInt(e.target.value, 10) || 0 });
-            }}
-          />
-        </div>
-        <div className="form-group">
-          <label>{t("settings.ai.rag.vaultSnippetsPerPrompt")}</label>
-          <input
-            type="number"
-            min={0}
-            max={20}
-            value={kb.vaultSnippetLimit ?? DEFAULT_AI_KNOWLEDGE_BASE.vaultSnippetLimit}
-            onChange={async (e) => {
-              await patch({ vaultSnippetLimit: parseInt(e.target.value, 10) || 0 });
-            }}
-          />
-        </div>
-      </div>
-
-      <div className="form-row">
-        <div className="form-group">
-          <label>{t("settings.ai.rag.maxFileSizeMb")}</label>
-          <input
-            type="number"
-            min={1}
-            max={512}
-            value={Math.round(
-              (kb.maxFileBytes ?? DEFAULT_AI_KNOWLEDGE_BASE.maxFileBytes) / (1024 * 1024),
-            )}
-            onChange={async (e) => {
-              const mb = parseInt(e.target.value, 10) || 25;
-              await patch({ maxFileBytes: mb * 1024 * 1024 });
-            }}
-          />
-        </div>
-        <div className="form-group">
-          <label>{t("settings.ai.rag.chunkSizeChars")}</label>
-          <input
-            type="number"
-            min={200}
-            max={4000}
-            value={kb.chunkSizeChars ?? DEFAULT_AI_KNOWLEDGE_BASE.chunkSizeChars}
-            onChange={async (e) => {
-              await patch({
-                chunkSizeChars: parseInt(e.target.value, 10) || DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_SIZE_CHARS,
-              });
-            }}
-          />
-        </div>
-        <div className="form-group">
-          <label>{t("settings.ai.rag.chunkOverlapChars")}</label>
-          <input
-            type="number"
-            min={0}
-            max={1000}
-            value={kb.chunkOverlapChars ?? DEFAULT_AI_KNOWLEDGE_BASE.chunkOverlapChars}
-            onChange={async (e) => {
-              await patch({
-                chunkOverlapChars: parseInt(e.target.value, 10) || DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_OVERLAP_CHARS,
-              });
-            }}
-          />
-        </div>
-      </div>
-
-      <RagIndexStatusPanel />
-
-      <div className="form-group">
-        <label>{t("settings.ai.rag.publicKnowledgePaths")}</label>
-        <input
-          type="text"
-          placeholder={t("settings.ai.rag.publicPathsPlaceholder")}
-          value={(kb.publicVaultPaths ?? kb.vaultPaths ?? DEFAULT_AI_KNOWLEDGE_BASE.publicVaultPaths).join(", ")}
-          onChange={async (e) => {
-            const publicVaultPaths = e.target.value
-              .split(",")
-              .map((p) => p.trim())
-              .filter(Boolean);
-            await patch({ publicVaultPaths, vaultPaths: undefined });
-          }}
-        />
-        <p className="field-desc">{t("settings.ai.rag.publicPathsDesc")}</p>
-      </div>
-
-      <div className="form-group">
-        <label>{t("settings.ai.rag.privateKnowledgePaths")}</label>
-        <input
-          type="text"
-          placeholder={t("settings.ai.rag.privatePathsPlaceholder")}
-          value={(kb.privateVaultPaths ?? DEFAULT_AI_KNOWLEDGE_BASE.privateVaultPaths).join(", ")}
-          onChange={async (e) => {
-            const privateVaultPaths = e.target.value
-              .split(",")
-              .map((p) => p.trim())
-              .filter(Boolean);
-            await patch({ privateVaultPaths });
-          }}
-        />
-        <p className="field-desc">{t("settings.ai.rag.privatePathsDesc")}</p>
-      </div>
-
-      <div className="form-row">
-        <div className="form-group">
-          <label>{t("settings.ai.rag.externalProvider")}</label>
-          <select
-            value={kb.externalProvider ?? DEFAULT_AI_KNOWLEDGE_BASE.externalProvider}
-            onChange={async (e) => {
-              await patch({
-                externalProvider: e.target.value as "none" | "mcp",
-              });
-            }}
-          >
-            <option value="none">{t("settings.ai.rag.externalNone")}</option>
-            <option value="mcp">{t("settings.ai.rag.externalMcp")}</option>
-          </select>
-          <p className="field-desc">{t("settings.ai.rag.externalMcpDesc")}</p>
-        </div>
-        <div className="form-group">
-          <label>{t("settings.ai.rag.mcpServerUrl")}</label>
-          <input
-            type="text"
-            placeholder={t("settings.ai.rag.mcpUrlPlaceholder")}
-            value={kb.mcpServerUrl ?? ""}
-            disabled={kb.externalProvider !== "mcp"}
-            onChange={async (e) => {
-              await patch({ mcpServerUrl: e.target.value.trim() || undefined });
-            }}
-          />
-        </div>
-      </div>
-
-      {kb.externalProvider === "mcp" && (
-        <>
-          <div className="form-row">
-            <div className="form-group">
-              <label>{t("settings.ai.rag.mcpSearchTool")}</label>
+    <div className="knowledge-setup-form" data-testid="kb-settings">
+      <section className="knowledge-setup-card">
+        <header className="knowledge-setup-card__head">
+          <h3>{t("settings.ai.rag.sectionGeneral")}</h3>
+          <p>{t("settings.ai.rag.sectionGeneralDesc")}</p>
+        </header>
+        <div className="knowledge-setup-card__body">
+          <div className="settings-toggle-row knowledge-setup-toggle">
+            <div className="toggle-info">
+              <strong>{t("settings.ai.rag.enableVaultKb")}</strong>
+              <span className="toggle-desc">{t("settings.ai.rag.enableVaultKbDesc")}</span>
+            </div>
+            <label className="toggle-switch">
               <input
-                type="text"
-                placeholder={t("settings.ai.rag.mcpSearchToolPlaceholder")}
-                value={kb.mcpSearchTool ?? ""}
+                type="checkbox"
+                checked={kb.enabled !== false}
                 onChange={async (e) => {
-                  await patch({ mcpSearchTool: e.target.value.trim() || undefined });
+                  await patch({ enabled: e.target.checked });
+                }}
+              />
+              <span className="slider" />
+            </label>
+          </div>
+          <div className="knowledge-setup-grid knowledge-setup-grid--2">
+            <div className="form-group">
+              <label htmlFor="kb-retrieval-mode">{t("settings.ai.rag.retrievalMode")}</label>
+              <select
+                id="kb-retrieval-mode"
+                value={kb.ragMode ?? DEFAULT_AI_KNOWLEDGE_BASE.ragMode}
+                onChange={async (e) => {
+                  await patch({ ragMode: e.target.value as AiRagMode });
+                }}
+              >
+                <option value="vector">{t("settings.ai.rag.retrievalVector")}</option>
+                <option value="hybrid">{t("settings.ai.rag.retrievalHybrid")}</option>
+                <option value="lexical">{t("settings.ai.rag.retrievalLexical")}</option>
+              </select>
+            </div>
+          </div>
+          <div className="settings-toggle-row knowledge-setup-toggle">
+            <div className="toggle-info">
+              <strong>{t("settings.ai.rag.purgeRagOnDelete")}</strong>
+              <span className="toggle-desc">{t("settings.ai.rag.purgeRagOnDeleteDesc")}</span>
+            </div>
+            <label className="toggle-switch">
+              <input
+                type="checkbox"
+                checked={kb.purgeChatRagOnDelete === true}
+                onChange={async (e) => {
+                  await patch({ purgeChatRagOnDelete: e.target.checked });
+                }}
+              />
+              <span className="slider" />
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section className="knowledge-setup-card">
+        <header className="knowledge-setup-card__head">
+          <h3>{t("settings.ai.rag.sectionEmbedding")}</h3>
+          <p>{t("settings.ai.rag.sectionEmbeddingDesc")}</p>
+        </header>
+        <div className="knowledge-setup-card__body">
+          <p className="knowledge-setup-callout">{t("settings.ai.rag.embeddingIndependentBanner")}</p>
+          <div className="knowledge-setup-grid knowledge-setup-grid--2">
+            <div className="form-group knowledge-setup-grid__span-2">
+              <label htmlFor="kb-embed-preset">{t("settings.ai.rag.embeddingMode")}</label>
+              <select
+                id="kb-embed-preset"
+                data-testid="kb-embed-preset"
+                value={presetId}
+                onChange={async (e) => {
+                  const nextId = e.target.value as EmbeddingProviderPresetId;
+                  await patch({
+                    embedding: embeddingSettingsFromPreset(nextId, kb.embedding),
+                  });
+                }}
+              >
+                {EMBEDDING_PROVIDER_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {isEnvoyLocalEmbed ? (
+              <div className="form-group knowledge-setup-grid__span-2">
+                {embed.blocked ? (
+                  <KnowledgeEmbedGate
+                    kind={embed.kind}
+                    status={embed.status}
+                    loadError={embed.loadError}
+                    inFlight={embed.inFlight}
+                    showSetupLink={false}
+                    onDownload={() => {
+                      void embed.startDownload().then((st) => {
+                        if (st?.running) {
+                          showToast(
+                            t("settings.ai.rag.embeddingLocalReadyToast"),
+                            "success",
+                          );
+                        } else if (st?.lastError) {
+                          showToast(st.lastError, "error");
+                        } else {
+                          showToast(
+                            t("knowledge.embedGate.downloadStartedToast"),
+                            "success",
+                          );
+                        }
+                      });
+                    }}
+                    onOpenSetup={() => undefined}
+                  />
+                ) : null}
+                <p className="field-desc">
+                  {embedStatus?.running
+                    ? t("settings.ai.rag.embeddingLocalRunning", {
+                        model: embedStatus.activeModelId ?? resolved.modelName,
+                        endpoint: embedStatus.endpoint,
+                      })
+                    : t("settings.ai.rag.embeddingLocalNotRunning")}
+                </p>
+                {embedStatus?.running || !embed.blocked ? (
+                  <div className="form-actions">
+                    {!embed.blocked ? (
+                      <button
+                        type="button"
+                        className="primary"
+                        data-testid="enable-envoy-local-embed"
+                        disabled={embedBusy || embedStatus?.running === true}
+                        onClick={async () => {
+                          const st = await embed.startDownload();
+                          if (st?.running) {
+                            showToast(
+                              t("settings.ai.rag.embeddingLocalReadyToast"),
+                              "success",
+                            );
+                          } else if (st?.lastError) {
+                            showToast(st.lastError, "error");
+                          }
+                        }}
+                      >
+                        {embedBusy
+                          ? t("settings.ai.rag.embeddingLocalInstalling")
+                          : t("settings.ai.rag.embeddingLocalInstall")}
+                      </button>
+                    ) : null}
+                    {embedStatus?.running ? (
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={embedBusy}
+                        onClick={async () => {
+                          await embed.stop();
+                        }}
+                      >
+                        {t("settings.ai.rag.embeddingLocalStop")}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {showModel ? (
+              <div className="form-group">
+                <label htmlFor="kb-embed-model">{t("settings.ai.rag.embeddingModel")}</label>
+                <input
+                  id="kb-embed-model"
+                  type="text"
+                  placeholder={t("settings.ai.rag.embeddingPlaceholder")}
+                  value={kb.embedding?.modelName ?? ""}
+                  onChange={async (e) => {
+                    await patch({
+                      embedding: {
+                        ...kb.embedding,
+                        mode: kb.embedding?.mode ?? "envoy-local",
+                        modelName: e.target.value.trim() || undefined,
+                      },
+                    });
+                  }}
+                />
+                {!kb.embedding?.modelName?.trim() && resolved.modelName ? (
+                  <p className="rag-resolved-hint">
+                    {t("settings.ai.rag.embeddingResolvedHint", { value: resolved.modelName })}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            {showResponseShape ? (
+              <div className="form-group">
+                <label htmlFor="kb-embed-shape">{t("settings.ai.rag.embeddingResponseShape")}</label>
+                <select
+                  id="kb-embed-shape"
+                  value={kb.embedding?.responseShape ?? "auto"}
+                  onChange={async (e) => {
+                    await patch({
+                      embedding: {
+                        ...kb.embedding,
+                        mode: kb.embedding?.mode ?? "openai-compatible",
+                        responseShape: e.target.value as "openai" | "minimax" | "auto",
+                      },
+                    });
+                  }}
+                >
+                  <option value="auto">{t("settings.ai.rag.embeddingResponseShapeAuto")}</option>
+                  <option value="openai">{t("settings.ai.rag.embeddingResponseShapeOpenAi")}</option>
+                  <option value="minimax">{t("settings.ai.rag.embeddingResponseShapeMinimax")}</option>
+                </select>
+              </div>
+            ) : null}
+            <div className="form-group">
+              <label htmlFor="kb-embed-tokens">
+                {t("settings.ai.rag.embeddingMaxInputTokens")}
+              </label>
+              <input
+                id="kb-embed-tokens"
+                type="number"
+                min={1}
+                placeholder="4096"
+                value={kb.embedding?.maxInputTokens ?? ""}
+                onChange={async (e) => {
+                  const raw = e.target.value.trim();
+                  await patch({
+                    embedding: {
+                      ...kb.embedding,
+                      mode: kb.embedding?.mode ?? "envoy-local",
+                      maxInputTokens: raw ? Number.parseInt(raw, 10) : undefined,
+                    },
+                  });
+                }}
+              />
+            </div>
+            {showEndpoint ? (
+              <div className="form-group knowledge-setup-grid__span-2">
+                <label htmlFor="kb-embed-endpoint">{t("settings.ai.rag.embeddingEndpoint")}</label>
+                <input
+                  id="kb-embed-endpoint"
+                  type="text"
+                  placeholder={t("settings.ai.rag.embeddingEndpointPlaceholder")}
+                  value={kb.embedding?.endpoint ?? ""}
+                  onChange={async (e) => {
+                    await patch({
+                      embedding: {
+                        ...kb.embedding,
+                        mode: kb.embedding?.mode ?? "openai-compatible",
+                        endpoint: e.target.value.trim() || undefined,
+                      },
+                    });
+                  }}
+                />
+              </div>
+            ) : null}
+            {showApiKey ? (
+              <div className="form-group knowledge-setup-grid__span-2">
+                <label htmlFor="kb-embed-key">{t("settings.ai.rag.embeddingApiKey")}</label>
+                <input
+                  id="kb-embed-key"
+                  type="password"
+                  placeholder={t("settings.ai.rag.embeddingApiKeyPlaceholder")}
+                  value={kb.embedding?.apiKey ?? ""}
+                  onChange={async (e) => {
+                    await patch({
+                      embedding: {
+                        ...kb.embedding,
+                        mode: kb.embedding?.mode ?? "openai-compatible",
+                        apiKey: e.target.value.trim() || undefined,
+                      },
+                    });
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
+          <EmbeddingProbePanel />
+        </div>
+      </section>
+
+      <section className="knowledge-setup-card">
+        <header className="knowledge-setup-card__head">
+          <h3>{t("settings.ai.rag.sectionContext")}</h3>
+          <p>{t("settings.ai.rag.sectionContextDesc")}</p>
+        </header>
+        <div className="knowledge-setup-card__body">
+          <div className="knowledge-setup-grid knowledge-setup-grid--3">
+            <div className="form-group">
+              <label htmlFor="kb-recent-msgs">
+                {t("settings.ai.rag.recentMessagesInContext")}
+              </label>
+              <input
+                id="kb-recent-msgs"
+                type="number"
+                min={1}
+                max={50}
+                value={
+                  kb.recentMessageLimit ?? DEFAULT_AI_KNOWLEDGE_BASE.recentMessageLimit
+                }
+                onChange={async (e) => {
+                  await patch({
+                    recentMessageLimit:
+                      parseInt(e.target.value, 10) ||
+                      DEFAULT_AI_KNOWLEDGE_BASE.recentMessageLimit,
+                  });
                 }}
               />
             </div>
             <div className="form-group">
-              <label>{t("settings.ai.rag.mcpApiKeyOptional")}</label>
+              <label htmlFor="kb-rag-msgs">{t("settings.ai.rag.ragHistoryMessages")}</label>
               <input
-                type="password"
-                value={kb.mcpApiKey ?? ""}
+                id="kb-rag-msgs"
+                type="number"
+                min={0}
+                max={20}
+                value={kb.ragMessageLimit ?? DEFAULT_AI_KNOWLEDGE_BASE.ragMessageLimit}
                 onChange={async (e) => {
-                  await patch({ mcpApiKey: e.target.value.trim() || undefined });
+                  await patch({
+                    ragMessageLimit: parseInt(e.target.value, 10) || 0,
+                  });
+                }}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="kb-vault-snips">
+                {t("settings.ai.rag.vaultSnippetsPerPrompt")}
+              </label>
+              <input
+                id="kb-vault-snips"
+                type="number"
+                min={0}
+                max={20}
+                value={
+                  kb.vaultSnippetLimit ?? DEFAULT_AI_KNOWLEDGE_BASE.vaultSnippetLimit
+                }
+                onChange={async (e) => {
+                  await patch({
+                    vaultSnippetLimit: parseInt(e.target.value, 10) || 0,
+                  });
                 }}
               />
             </div>
           </div>
-          <McpWriteBackControls kb={kb} onPatch={patch} />
-        </>
-      )}
-    </>
+        </div>
+      </section>
+
+      <section className="knowledge-setup-card">
+        <header className="knowledge-setup-card__head">
+          <h3>{t("settings.ai.rag.sectionIndex")}</h3>
+          <p>{t("settings.ai.rag.sectionIndexDesc")}</p>
+        </header>
+        <div className="knowledge-setup-card__body">
+          <RagIndexStatusPanel />
+          <div className="knowledge-setup-grid knowledge-setup-grid--3">
+            <div className="form-group">
+              <label htmlFor="kb-max-file">{t("settings.ai.rag.maxFileSizeMb")}</label>
+              <input
+                id="kb-max-file"
+                type="number"
+                min={1}
+                max={512}
+                value={Math.round(
+                  (kb.maxFileBytes ?? DEFAULT_AI_KNOWLEDGE_BASE.maxFileBytes) /
+                    (1024 * 1024),
+                )}
+                onChange={async (e) => {
+                  const mb = parseInt(e.target.value, 10) || 25;
+                  await patch({ maxFileBytes: mb * 1024 * 1024 });
+                }}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="kb-chunk-size">{t("settings.ai.rag.chunkSizeChars")}</label>
+              <input
+                id="kb-chunk-size"
+                type="number"
+                min={200}
+                max={4000}
+                value={kb.chunkSizeChars ?? DEFAULT_AI_KNOWLEDGE_BASE.chunkSizeChars}
+                onChange={async (e) => {
+                  await patch({
+                    chunkSizeChars:
+                      parseInt(e.target.value, 10) ||
+                      DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_SIZE_CHARS,
+                  });
+                }}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="kb-chunk-overlap">
+                {t("settings.ai.rag.chunkOverlapChars")}
+              </label>
+              <input
+                id="kb-chunk-overlap"
+                type="number"
+                min={0}
+                max={1000}
+                value={
+                  kb.chunkOverlapChars ?? DEFAULT_AI_KNOWLEDGE_BASE.chunkOverlapChars
+                }
+                onChange={async (e) => {
+                  await patch({
+                    chunkOverlapChars:
+                      parseInt(e.target.value, 10) ||
+                      DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_OVERLAP_CHARS,
+                  });
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="knowledge-setup-card">
+        <header className="knowledge-setup-card__head">
+          <h3>{t("settings.ai.rag.sectionPaths")}</h3>
+          <p>{t("settings.ai.rag.sectionPathsDesc")}</p>
+        </header>
+        <div className="knowledge-setup-card__body">
+          <div className="knowledge-setup-grid knowledge-setup-grid--2">
+            <div className="form-group">
+              <label htmlFor="kb-public-paths">
+                {t("settings.ai.rag.publicKnowledgePaths")}
+              </label>
+              <input
+                id="kb-public-paths"
+                type="text"
+                placeholder={t("settings.ai.rag.publicPathsPlaceholder")}
+                value={(
+                  kb.publicVaultPaths ??
+                  kb.vaultPaths ??
+                  DEFAULT_AI_KNOWLEDGE_BASE.publicVaultPaths
+                ).join(", ")}
+                onChange={async (e) => {
+                  const publicVaultPaths = e.target.value
+                    .split(",")
+                    .map((p) => p.trim())
+                    .filter(Boolean);
+                  await patch({ publicVaultPaths, vaultPaths: undefined });
+                }}
+              />
+              <p className="field-desc">{t("settings.ai.rag.publicPathsDesc")}</p>
+            </div>
+            <div className="form-group">
+              <label htmlFor="kb-private-paths">
+                {t("settings.ai.rag.privateKnowledgePaths")}
+              </label>
+              <input
+                id="kb-private-paths"
+                type="text"
+                placeholder={t("settings.ai.rag.privatePathsPlaceholder")}
+                value={(
+                  kb.privateVaultPaths ?? DEFAULT_AI_KNOWLEDGE_BASE.privateVaultPaths
+                ).join(", ")}
+                onChange={async (e) => {
+                  const privateVaultPaths = e.target.value
+                    .split(",")
+                    .map((p) => p.trim())
+                    .filter(Boolean);
+                  await patch({ privateVaultPaths });
+                }}
+              />
+              <p className="field-desc">{t("settings.ai.rag.privatePathsDesc")}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="knowledge-setup-card">
+        <header className="knowledge-setup-card__head">
+          <h3>{t("settings.ai.rag.sectionExternal")}</h3>
+          <p>{t("settings.ai.rag.sectionExternalDesc")}</p>
+        </header>
+        <div className="knowledge-setup-card__body">
+          <div className="knowledge-setup-grid knowledge-setup-grid--2">
+            <div className="form-group">
+              <label htmlFor="kb-ext-provider">{t("settings.ai.rag.externalProvider")}</label>
+              <select
+                id="kb-ext-provider"
+                value={kb.externalProvider ?? DEFAULT_AI_KNOWLEDGE_BASE.externalProvider}
+                onChange={async (e) => {
+                  await patch({
+                    externalProvider: e.target.value as "none" | "mcp",
+                  });
+                }}
+              >
+                <option value="none">{t("settings.ai.rag.externalNone")}</option>
+                <option value="mcp">{t("settings.ai.rag.externalMcp")}</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label htmlFor="kb-mcp-url">{t("settings.ai.rag.mcpServerUrl")}</label>
+              <input
+                id="kb-mcp-url"
+                type="text"
+                placeholder={t("settings.ai.rag.mcpUrlPlaceholder")}
+                value={kb.mcpServerUrl ?? ""}
+                disabled={kb.externalProvider !== "mcp"}
+                onChange={async (e) => {
+                  await patch({ mcpServerUrl: e.target.value.trim() || undefined });
+                }}
+              />
+            </div>
+          </div>
+          {kb.externalProvider === "mcp" ? (
+            <>
+              <div className="knowledge-setup-grid knowledge-setup-grid--2">
+                <div className="form-group">
+                  <label htmlFor="kb-mcp-tool">{t("settings.ai.rag.mcpSearchTool")}</label>
+                  <input
+                    id="kb-mcp-tool"
+                    type="text"
+                    placeholder={t("settings.ai.rag.mcpSearchToolPlaceholder")}
+                    value={kb.mcpSearchTool ?? ""}
+                    onChange={async (e) => {
+                      await patch({
+                        mcpSearchTool: e.target.value.trim() || undefined,
+                      });
+                    }}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="kb-mcp-key">{t("settings.ai.rag.mcpApiKeyOptional")}</label>
+                  <input
+                    id="kb-mcp-key"
+                    type="password"
+                    value={kb.mcpApiKey ?? ""}
+                    onChange={async (e) => {
+                      await patch({
+                        mcpApiKey: e.target.value.trim() || undefined,
+                      });
+                    }}
+                  />
+                </div>
+              </div>
+              <McpWriteBackControls kb={kb} onPatch={patch} />
+            </>
+          ) : null}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -1164,6 +1434,7 @@ function ModelProviderSettings({
 }) {
   const t = useT();
   const nodeService = useNodeService();
+  const { showToast } = useToast();
   const modelProviderUiScope = useModelProviderUiScope();
   const cloudOnlyMobile = modelProviderUiScope === "cloud-only";
   const isMobileNode = useIsInProcessMobileNode();
@@ -1175,6 +1446,10 @@ function ModelProviderSettings({
   const [modelName, setModelName] = useState(nodeConfig?.modelProviders?.modelName ?? "");
   const [modelApiKey, setModelApiKey] = useState(nodeConfig?.modelProviders?.apiKey ?? "");
   const [settingsSaveStatus, setSettingsSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [chatProbeBusy, setChatProbeBusy] = useState(false);
+  const [chatProbeResult, setChatProbeResult] = useState<
+    import("@envoymesh/api").ChatModelProbeResult | null
+  >(null);
   const modelProviderFieldsDirtyRef = useRef(false);
 
   useEffect(() => {
@@ -1393,23 +1668,7 @@ function ModelProviderSettings({
                   ? { endpoint: undefined, modelName: undefined, apiKey: undefined }
                   : {}),
               };
-              const kbEmbedding = nodeConfig?.aiSettings?.knowledgeBase?.embedding;
-              const prevKey = resolveEmbeddingConfig({
-                embedding: kbEmbedding,
-                modelProviders: nodeConfig?.modelProviders,
-              }).modelKey;
-              const nextKey = resolveEmbeddingConfig({
-                embedding: kbEmbedding,
-                modelProviders: nextProviders,
-              }).modelKey;
-              if (prevKey !== nextKey) {
-                if (!window.confirm(t("settings.ai.rag.embeddingChangeConfirm"))) {
-                  setSettingsSaveStatus("idle");
-                  return;
-                }
-              }
-              // When clearing mock/disabled, drop leftover endpoint/key so they cannot
-              // resurrect via a later shallow merge or confuse OpenClaw inference.
+              // Embeddings are independent of chat — do not reindex on chat provider save.
               await updateNodeConfig({
                 modelProviders: nextProviders,
               });
@@ -1430,6 +1689,44 @@ function ModelProviderSettings({
         </button>
         <button
           type="button"
+          className="primary"
+          data-testid="test-chat-model"
+          disabled={chatProbeBusy || settingsSaveStatus === "saving"}
+          onClick={async () => {
+            setChatProbeBusy(true);
+            setChatProbeResult(null);
+            try {
+              const next = await nodeService.testChatModel();
+              setChatProbeResult(next);
+              if (next.ok) {
+                showToast(
+                  t("settings.ai.model.testChatOkToast", {
+                    latencyMs: next.latencyMs,
+                    modelName: next.modelName,
+                  }),
+                  "success",
+                );
+              } else {
+                showToast(
+                  t("settings.ai.model.testChatFailToast", { error: next.error }),
+                  "error",
+                );
+              }
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              setChatProbeResult({ ok: false, error: message, latencyMs: 0 });
+              showToast(t("settings.ai.model.testChatFailToast", { error: message }), "error");
+            } finally {
+              setChatProbeBusy(false);
+            }
+          }}
+        >
+          {chatProbeBusy
+            ? t("settings.ai.model.testChatBusy")
+            : t("settings.ai.model.testChat")}
+        </button>
+        <button
+          type="button"
           className="settings-cancel-btn"
           onClick={() => {
             modelProviderFieldsDirtyRef.current = false;
@@ -1447,6 +1744,25 @@ function ModelProviderSettings({
           <span className="settings-save-error">{t("settings.ai.model.saveFailed")}</span>
         )}
       </div>
+      {chatProbeResult?.ok ? (
+        <p className="knowledge-embed-probe__ok" role="status" data-testid="test-chat-model-ok">
+          {t("settings.ai.model.testChatOkDetail", {
+            latencyMs: chatProbeResult.latencyMs,
+            modelName: chatProbeResult.modelName,
+            providerId: chatProbeResult.providerId,
+            replyPreview: chatProbeResult.replyPreview,
+          })}
+        </p>
+      ) : null}
+      {chatProbeResult && !chatProbeResult.ok ? (
+        <p className="knowledge-embed-probe__fail" role="alert" data-testid="test-chat-model-fail">
+          {t("settings.ai.model.testChatFailDetail", {
+            error: chatProbeResult.error,
+            mode: chatProbeResult.mode ?? t("settings.ai.rag.indexStatusUnknown"),
+            endpoint: chatProbeResult.endpoint ?? t("settings.ai.rag.indexStatusUnknown"),
+          })}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -1875,6 +2191,10 @@ function EnvoyLocalSettings({
   const [hfSearchError, setHfSearchError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [chatProbeBusy, setChatProbeBusy] = useState(false);
+  const [chatProbeResult, setChatProbeResult] = useState<
+    import("@envoymesh/api").ChatModelProbeResult | null
+  >(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [ctxSize, setCtxSize] = useState(DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.ctxSize);
   const [nglMode, setNglMode] = useState<"auto" | "off" | "custom">("auto");
@@ -2460,7 +2780,70 @@ function EnvoyLocalSettings({
             >
               {t("settings.ai.envoyLocal.restart")}
             </button>
+            <button
+              type="button"
+              className="primary"
+              data-testid="envoy-local-test-chat"
+              disabled={inFlight || chatProbeBusy}
+              onClick={async () => {
+                setChatProbeBusy(true);
+                setChatProbeResult(null);
+                try {
+                  const next = await nodeService.testChatModel();
+                  setChatProbeResult(next);
+                  if (next.ok) {
+                    showToast(
+                      t("settings.ai.model.testChatOkToast", {
+                        latencyMs: next.latencyMs,
+                        modelName: next.modelName,
+                      }),
+                      "success",
+                    );
+                  } else {
+                    showToast(
+                      t("settings.ai.model.testChatFailToast", { error: next.error }),
+                      "error",
+                    );
+                  }
+                } catch (e) {
+                  const message = e instanceof Error ? e.message : String(e);
+                  setChatProbeResult({ ok: false, error: message, latencyMs: 0 });
+                  showToast(
+                    t("settings.ai.model.testChatFailToast", { error: message }),
+                    "error",
+                  );
+                } finally {
+                  setChatProbeBusy(false);
+                }
+              }}
+            >
+              {chatProbeBusy
+                ? t("settings.ai.model.testChatBusy")
+                : t("settings.ai.model.testChat")}
+            </button>
             <div className="settings-hint">{t("settings.ai.envoyLocal.stopHint")}</div>
+            {chatProbeResult?.ok ? (
+              <p className="knowledge-embed-probe__ok" role="status">
+                {t("settings.ai.model.testChatOkDetail", {
+                  latencyMs: chatProbeResult.latencyMs,
+                  modelName: chatProbeResult.modelName,
+                  providerId: chatProbeResult.providerId,
+                  replyPreview: chatProbeResult.replyPreview,
+                })}
+              </p>
+            ) : null}
+            {chatProbeResult && !chatProbeResult.ok ? (
+              <p className="knowledge-embed-probe__fail" role="alert">
+                {t("settings.ai.model.testChatFailDetail", {
+                  error: chatProbeResult.error,
+                  mode: chatProbeResult.mode ?? "envoy-local",
+                  endpoint:
+                    chatProbeResult.endpoint ??
+                    status?.endpoint ??
+                    t("settings.ai.rag.indexStatusUnknown"),
+                })}
+              </p>
+            ) : null}
           </>
         ) : null}
         {inFlight && status?.phase !== "starting" ? (

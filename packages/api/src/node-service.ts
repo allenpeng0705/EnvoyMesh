@@ -38,7 +38,12 @@ export type {
   DeactivateKbPluginParams,
   UpdateKbPluginConfigParams,
 } from "./kb-plugin.js";
-import type { RagIndexProgress, RagIndexStatus } from "./rag-index-status.js";
+import type {
+  RagEmbeddingProbeResult,
+  RagIndexProgress,
+  RagIndexStatus,
+} from "./rag-index-status.js";
+import type { ChatModelProbeResult } from "./chat-model-probe.js";
 import type {
   ChainPlanParams,
   ChainPlanResult,
@@ -2381,6 +2386,18 @@ export interface NodeService {
   reindexRagKnowledge(params?: { force?: boolean }): Promise<RagIndexStatus>;
 
   /**
+   * Probe the effective embedding provider with a single short embed call.
+   * Confirms Knowledge → Setup embedding settings without rebuilding the index.
+   */
+  testRagEmbedding(): Promise<RagEmbeddingProbeResult>;
+
+  /**
+   * Probe the effective chat model provider with a short static completion.
+   * Confirms Settings → AI model endpoint/key without opening a chat thread.
+   */
+  testChatModel(): Promise<ChatModelProbeResult>;
+
+  /**
    * Phase 57D — MCP search → attributed Markdown note under `notes/mcp/`.
    * Requires `aiSettings.knowledgeBase.mcpWriteBackEnabled` and `externalProvider: "mcp"`.
    */
@@ -2850,6 +2867,15 @@ export interface NodeService {
     import("./envoy-local.js").EnvoyLocalEngineUpdateInfo
   >;
   updateEnvoyLocalEngine(): Promise<import("./envoy-local.js").EnvoyLocalStatus>;
+
+  // --- Phase 57E: Envoy Local embed sidecar (independent of chat) ---
+  getEnvoyLocalEmbedStatus(): Promise<import("./envoy-local.js").EnvoyLocalEmbedStatus>;
+  enableEnvoyLocalEmbed(
+    params?: import("./envoy-local.js").EnableEnvoyLocalEmbedParams,
+  ): Promise<import("./envoy-local.js").EnvoyLocalEmbedStatus>;
+  stopEnvoyLocalEmbed(): Promise<import("./envoy-local.js").EnvoyLocalEmbedStatus>;
+  disableEnvoyLocalEmbed(): Promise<import("./envoy-local.js").EnvoyLocalEmbedStatus>;
+
   /** One-shot prompt — used by the sendToPi JSON-RPC method. Returns the text. */
   sendToPi(text: string): Promise<string>;
   /** Dynamic AI bot — send a message to a character bot, get a reply. */

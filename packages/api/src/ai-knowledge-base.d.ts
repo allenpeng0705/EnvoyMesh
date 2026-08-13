@@ -6,9 +6,14 @@ export type KnowledgeBaseExternalProvider = "none" | "mcp";
 export type AiRagMode = "vector" | "lexical" | "hybrid";
 /** Which vault KB partitions to search. */
 export type AiKnowledgeBaseScope = "public" | "owner";
+export type EmbeddingResponseShape = "openai" | "minimax" | "auto";
 export interface AiEmbeddingSettings {
-    /** mock | ollama | openai-compatible | inherit (from modelProviders). Default: inherit */
-    mode?: "mock" | "ollama" | "openai-compatible" | "inherit";
+    /**
+     * Embedding provider. Independent of chat. Default: envoy-local.
+     * Legacy `inherit` accepted only for migration.
+     */
+    mode?: "mock" | "ollama" | "openai-compatible" | "envoy-local" | "inherit";
+    presetId?: string;
     /** Embedding model name (e.g. nomic-embed-text, text-embedding-3-small). */
     modelName?: string;
     /** API root. OpenAI-compatible uses `/v1/embeddings`; Ollama uses `/api/embeddings`. */
@@ -16,6 +21,7 @@ export interface AiEmbeddingSettings {
     apiKey?: string;
     /** Max tokens per embed API call (e.g. MiniMax embo-01 = 4096). Caps vault chunk size and truncates at embed time. */
     maxInputTokens?: number;
+    responseShape?: EmbeddingResponseShape;
 }
 export interface AiKnowledgeBaseSettings {
     /** Retrieval strategy. Default: vector (falls back to lexical on embed errors). */
@@ -49,48 +55,22 @@ export interface AiKnowledgeBaseSettings {
      * Shown in Knowledge Browse — never moved or rewritten. Mesh publish stays Envoy vault only.
      */
     linkedObsidianVaultPaths?: string[];
-    /**
-     * Vault paths the owner explicitly unlinked. Auto-discover will not re-add these.
-     */
     dismissedObsidianVaultPaths?: string[];
-    /**
-     * External KB via MCP (e.g. Notion search). Default: `mcp`.
-     * Soft-fails when URL is missing — no Notion desktop app required.
-     */
     externalProvider?: KnowledgeBaseExternalProvider;
-    /** MCP server id when externalProvider is "mcp" (future). */
     externalMcpServer?: string;
-    /** MCP HTTP endpoint for tools/call (e.g. memex bridge). */
     mcpServerUrl?: string;
-    /** MCP tool name used for knowledge search. Default: memex_search */
     mcpSearchTool?: string;
-    /** Optional bearer token for MCP HTTP bridge. */
     mcpApiKey?: string;
-    /**
-     * MCP HTTP tools/call timeout in milliseconds (Phase 57D).
-     * Default: 8000; clamped 1000–30000.
-     */
     mcpTimeoutMs?: number;
-    /**
-     * When true, owner may save MCP search hits into `notes/mcp/` via
-     * `saveExternalMcpSearchAsNote` (Phase 57D). Default: false.
-     */
     mcpWriteBackEnabled?: boolean;
-    /** Max vault file size indexed for RAG (bytes). Default: 25 MiB. */
     maxFileBytes?: number;
-    /** Target chunk size for vault RAG (characters). Default: 800. */
     chunkSizeChars?: number;
-    /** Overlap between consecutive chunks (characters). Default: 120. */
     chunkOverlapChars?: number;
-    /**
-     * When deleting or clearing chat history, also remove matching chat vectors from RAG.
-     * Default: false — deleted messages stay in the vector index for AI context (hidden from chat UI only).
-     */
     purgeChatRagOnDelete?: boolean;
 }
 export declare const DEFAULT_AI_KNOWLEDGE_BASE_MAX_FILE_BYTES: number;
-export declare const DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_SIZE_CHARS = 800;
-export declare const DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_OVERLAP_CHARS = 120;
+export declare const DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_SIZE_CHARS: number;
+export declare const DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_OVERLAP_CHARS: number;
 export declare const DEFAULT_AI_KNOWLEDGE_BASE: Required<Pick<AiKnowledgeBaseSettings, "enabled" | "recentMessageLimit" | "ragMessageLimit" | "vaultSnippetLimit" | "externalProvider" | "ragMode" | "maxFileBytes" | "chunkSizeChars" | "chunkOverlapChars" | "purgeChatRagOnDelete">> & {
     publicVaultPaths: string[];
     privateVaultPaths: string[];
@@ -100,6 +80,8 @@ export declare const DEFAULT_AI_KNOWLEDGE_BASE: Required<Pick<AiKnowledgeBaseSet
 export declare function resolveAiKnowledgeBaseSettings(input?: AiKnowledgeBaseSettings | null): Required<Pick<AiKnowledgeBaseSettings, "enabled" | "recentMessageLimit" | "ragMessageLimit" | "vaultSnippetLimit" | "externalProvider" | "ragMode" | "maxFileBytes" | "chunkSizeChars" | "chunkOverlapChars" | "purgeChatRagOnDelete">> & {
     publicVaultPaths: string[];
     privateVaultPaths: string[];
+    linkedObsidianVaultPaths: string[];
+    dismissedObsidianVaultPaths: string[];
     externalMcpServer?: string;
     mcpServerUrl?: string;
     mcpSearchTool?: string;
@@ -108,7 +90,6 @@ export declare function resolveAiKnowledgeBaseSettings(input?: AiKnowledgeBaseSe
     mcpWriteBackEnabled?: boolean;
     embedding?: AiEmbeddingSettings;
 };
-/** Resolve vault path prefixes for a given retrieval scope. */
 export declare function resolveKnowledgeBaseVaultPaths(kb: ReturnType<typeof resolveAiKnowledgeBaseSettings>, scope: AiKnowledgeBaseScope): string[];
 export declare function buildVaultIndexOptionsFromKnowledgeBase(rootDir: string, knowledgeBase?: AiKnowledgeBaseSettings | null): {
     rootDir: string;
@@ -116,4 +97,3 @@ export declare function buildVaultIndexOptionsFromKnowledgeBase(rootDir: string,
     chunkOverlapChars: number;
     maxFileBytes: number;
 };
-//# sourceMappingURL=ai-knowledge-base.d.ts.map

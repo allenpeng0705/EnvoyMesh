@@ -6,6 +6,12 @@
   "navContent": "Content",
   "navMe": "Me",
   "commonCancel": "Cancel",
+  "commonConfirm": "Confirm",
+  "homeFolderDrives": "Drives",
+  "homeFolderComputer": "Computer",
+  "homeFolderHome": "Home",
+  "homeFolderParent": "↑ Parent folder",
+  "homeFolderNoSubfolders": "No subfolders",
   "commonSave": "Save",
   "commonDelete": "Delete",
   "commonRetry": "Retry",
@@ -147,6 +153,21 @@
   "knowledgeAskEnvoyAiHint": "For multi-turn chat with tools, continue in EnvoyAI.",
   "knowledgeLibraryHeading": "Your files",
   "knowledgeLibraryCaption": "Notes, documents, and what you’ve published.",
+  "knowledgeEmbedGateTitleNeeded": "Embedding model required",
+  "knowledgeEmbedGateTitleDownloading": "Downloading embedding model…",
+  "knowledgeEmbedGateTitleError": "Embedding setup failed",
+  "knowledgeEmbedGateBodyNeeded": "Knowledge search needs a local embedding model on your home node. Download starts automatically when the app launches — Browse stays unavailable until it finishes. You can also start or retry from here.",
+  "knowledgeEmbedGateBodyDownloading": "Download is running on your home node (started with the app). You can leave this screen; Knowledge unlocks when the embedder is ready.",
+  "knowledgeEmbedGateBodyError": "The embedding runtime or model could not be installed on the home node. Retry the download, or fix Setup on the desktop app.",
+  "knowledgeEmbedGateDownload": "Download on home",
+  "knowledgeEmbedGateDownloading": "Downloading…",
+  "knowledgeEmbedGateRetry": "Retry download",
+  "knowledgeEmbedGateOpenSetup": "Open Setup",
+  "knowledgeEmbedGateBackgroundHint": "Safe to keep using other parts of the app while this finishes.",
+  "knowledgeEmbedGateStripNeeded": "Knowledge unavailable — embedding model not installed on home",
+  "knowledgeEmbedGateStripDownloading": "Knowledge unavailable — embedding model downloading on home",
+  "knowledgeEmbedGateStripError": "Knowledge unavailable — embedding setup failed on home",
+  "knowledgeEmbedGateDownloadStarted": "Embedding download started on home",
   "knowledgePluginsLede": "Optional connectors. Notion needs an MCP URL — not the Notion app.",
   "knowledgePluginsObsidianTitle": "Obsidian",
   "knowledgePluginsObsidianDesc": "Enrich vault notes. Desktop app optional.",
@@ -166,6 +187,9 @@
   "knowledgePluginsOpenNotion": "Open Notion",
   "knowledgePluginsOpeningApp": "Opening…",
   "knowledgePluginsOpenAppFailed": "Could not open the app on this computer.",
+  "knowledgePluginsOpenedWebsite": "App not installed locally — opened the official website on the home computer.",
+  "knowledgePluginsDownloadObsidian": "Download Obsidian",
+  "knowledgePluginsDownloadNotion": "Download Notion",
   "knowledgePluginsLinkedVaultAutoOne": "Linked Obsidian vault found on this computer.",
   "knowledgePluginsLinkedVaultAutoMany": "Linked {count} Obsidian vaults found on this computer.",
   "@knowledgePluginsLinkedVaultAutoMany": {
@@ -208,6 +232,21 @@
   "knowledgeSetupReindex": "Rebuild index",
   "knowledgeSetupReindexDone": "Reindex started",
   "knowledgeSetupReindexConfirm": "Rebuild the vault vector index on the home node?",
+  "knowledgeSetupTestEmbedding": "Test embedding",
+  "knowledgeSetupTestEmbeddingBusy": "Testing…",
+  "knowledgeSetupTestEmbeddingOk": "Embedding OK — {dimensions} dims in {latencyMs} ms",
+  "@knowledgeSetupTestEmbeddingOk": {
+    "placeholders": {
+      "dimensions": { "type": "int" },
+      "latencyMs": { "type": "int" }
+    }
+  },
+  "knowledgeSetupTestEmbeddingFail": "Embedding failed: {error}",
+  "@knowledgeSetupTestEmbeddingFail": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
   "knowledgeSetupRagMode": "Retrieval mode",
   "knowledgeSetupRagHybrid": "Hybrid",
   "knowledgeSetupRagVector": "Vector",
@@ -672,6 +711,21 @@
   "settingsApiKey": "API key",
   "settingsApiKeySaved": "A key is already saved on the home node",
   "settingsAiModelSaved": "AI model saved",
+  "settingsAiModelTestChat": "Test chat model",
+  "settingsAiModelTestChatBusy": "Testing…",
+  "settingsAiModelTestChatOk": "Chat model OK — {modelName} in {latencyMs} ms",
+  "@settingsAiModelTestChatOk": {
+    "placeholders": {
+      "modelName": { "type": "String" },
+      "latencyMs": { "type": "int" }
+    }
+  },
+  "settingsAiModelTestChatFail": "Chat model failed: {error}",
+  "@settingsAiModelTestChatFail": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
   "settingsSaveFailed": "Save failed: {error}",
   "@settingsSaveFailed": {
     "placeholders": {

@@ -9,6 +9,8 @@ import {
   isKnowledgeObsidianPath,
   isProfileMediaFile,
   knowledgeBrowseSource,
+  knowledgeBrowseDisplayPath,
+  knowledgeObsidianOrigin,
   matchesKnowledgeBrowseFilter,
 } from "../../src/lib/local-file-display.js";
 
@@ -108,5 +110,18 @@ describe("knowledge browse filters", () => {
     expect(knowledgeBrowseSource("mcp-remote/x.md")).toBe("notion");
     expect(knowledgeBrowseSource("notes/imports/blog/hello.md")).toBe("blog");
     expect(knowledgeBrowseSource("documents/a.pdf")).toBe("document");
+    expect(knowledgeObsidianOrigin("linked-obsidian/V/a.md")).toBe("linked");
+    expect(knowledgeObsidianOrigin("notes/imports/obsidian/x.md")).toBe("imported");
+    expect(knowledgeObsidianOrigin("notes/hello.md")).toBeNull();
+    expect(knowledgeBrowseDisplayPath("linked-obsidian/Vault/note.md")).toBe(
+      "note.md",
+    );
+    expect(
+      knowledgeBrowseDisplayPath("linked-obsidian/Obsidian vault/Inbox/a.md"),
+    ).toBe("Inbox/a.md");
+    expect(knowledgeBrowseDisplayPath("notes/imports/obsidian/Vault/a.md")).toBe(
+      "a.md",
+    );
+    expect(knowledgeBrowseDisplayPath("notes/hello.md")).toBe("notes/hello.md");
   });
 });

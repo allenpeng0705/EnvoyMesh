@@ -96,7 +96,9 @@ export const koChatMessages = {
   openclawOfflineSettings: "설정 열기",
   openclawOfflineRestarting: "재시작 중…",
   audioMessage: koInboxAudioMessages,
-} as const;
+
+  extAgentOfflineHintHermes: "EnvoyMesh는 필요할 때 Hermes를 시작합니다. Hermes 설정에서 API_SERVER_ENABLED=true 및 API_SERVER_KEY를 설정하고 `hermes`를 PATH에 두세요.",
+  extAgentOfflineHintOpenHuman: "OpenHuman.app을 열고 채팅하는 동안 계속 실행해 두세요(EnvoyMesh는 :7788 사용).",} as const;
 
 export const koContactChatMessages = {
   dateToday: "오늘",

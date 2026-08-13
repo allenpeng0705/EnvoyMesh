@@ -27,6 +27,24 @@ class AppLocalizationsFr extends AppLocalizations {
   String get commonCancel => 'Annuler';
 
   @override
+  String get commonConfirm => 'Confirmer';
+
+  @override
+  String get homeFolderDrives => 'Lecteurs';
+
+  @override
+  String get homeFolderComputer => 'Ordinateur';
+
+  @override
+  String get homeFolderHome => 'Accueil';
+
+  @override
+  String get homeFolderParent => '↑ Dossier parent';
+
+  @override
+  String get homeFolderNoSubfolders => 'Aucun sous-dossier';
+
+  @override
   String get commonSave => 'Enregistrer';
 
   @override
@@ -293,325 +311,409 @@ class AppLocalizationsFr extends AppLocalizations {
   String get contentMyFiles => 'Mes fichiers';
 
   @override
-  String get contentKnowledge => 'Knowledge';
+  String get contentKnowledge => 'Connaissances';
 
   @override
-  String get knowledgeTitle => 'Knowledge';
+  String get knowledgeTitle => 'Connaissances';
 
   @override
   String get knowledgeLede =>
-      'Your vault knowledge base — notes under notes/ power EnvoyAI. Documents stay as originals.';
+      'Votre base de connaissances du coffre — les notes sous notes/ alimentent EnvoyAI. Les documents restent à l\'original.';
 
   @override
-  String get knowledgePanelBrowse => 'Browse';
+  String get knowledgePanelBrowse => 'Parcourir';
 
   @override
-  String get knowledgePanelAsk => 'Ask';
+  String get knowledgePanelAsk => 'Demander';
 
   @override
   String get knowledgePanelPlugins => 'Plugins';
 
   @override
-  String get knowledgePanelSetup => 'Setup';
+  String get knowledgePanelSetup => 'Configuration';
 
   @override
   String get knowledgeAskHint =>
-      'Answers use notes and documents on this node. Peers only see what you Publish.';
+      'Les réponses utilisent les notes et documents de ce nœud. Les contacts ne voient que ce que vous publiez.';
 
   @override
-  String get knowledgeAskHeading => 'Ask your vault';
+  String get knowledgeAskHeading => 'Interroger votre coffre';
 
   @override
   String get knowledgeAskLabel => 'Question';
 
   @override
-  String get knowledgeAskPlaceholder => 'What did I write about onboarding?';
+  String get knowledgeAskPlaceholder => 'Qu\'ai-je écrit sur l\'onboarding ?';
 
   @override
-  String get knowledgeAskSubmit => 'Ask';
+  String get knowledgeAskSubmit => 'Demander';
 
   @override
-  String get knowledgeAskBusy => 'Searching…';
+  String get knowledgeAskBusy => 'Recherche…';
 
   @override
-  String get knowledgeAskAnswerHeading => 'Answer';
+  String get knowledgeAskAnswerHeading => 'Réponse';
 
   @override
   String get knowledgeAskEmptyAnswer =>
-      'No answer returned. Check Setup → enable vault knowledge and rebuild the index.';
+      'Aucune réponse. Vérifiez la configuration — activez la base de connaissances et reconstruisez l\'index.';
 
   @override
-  String get knowledgeAskContinueEnvoyAi => 'Open in EnvoyAI';
+  String get knowledgeAskContinueEnvoyAi => 'Ouvrir dans EnvoyAI';
 
   @override
   String get knowledgeAskEnvoyAiHint =>
-      'For multi-turn chat with tools, continue in EnvoyAI.';
+      'Pour des conversations multi-tours avec outils, continuez dans EnvoyAI.';
 
   @override
-  String get knowledgeLibraryHeading => 'Your files';
+  String get knowledgeLibraryHeading => 'Vos fichiers';
 
   @override
   String get knowledgeLibraryCaption =>
-      'Notes, documents, and what you’ve published.';
+      'Notes, documents et ce que vous avez publié.';
+
+  @override
+  String get knowledgeEmbedGateTitleNeeded => 'Modèle d\'embedding requis';
+
+  @override
+  String get knowledgeEmbedGateTitleDownloading =>
+      'Téléchargement du modèle d\'embedding…';
+
+  @override
+  String get knowledgeEmbedGateTitleError =>
+      'Échec de la configuration d\'embedding';
+
+  @override
+  String get knowledgeEmbedGateBodyNeeded =>
+      'La recherche de connaissances nécessite un modèle d\'embedding local sur le nœud domicile. Le téléchargement démarre automatiquement au lancement de l\'app — Parcourir reste indisponible jusqu\'à la fin. Vous pouvez aussi démarrer ou réessayer depuis ici.';
+
+  @override
+  String get knowledgeEmbedGateBodyDownloading =>
+      'Téléchargement en cours sur le nœud domicile (démarré avec l\'app). Vous pouvez quitter cet écran ; les connaissances s\'ouvrent quand l\'embedder est prêt.';
+
+  @override
+  String get knowledgeEmbedGateBodyError =>
+      'Le runtime ou le modèle d\'embedding n\'a pas pu être installé sur le nœud domicile. Réessayez le téléchargement, ou réparez la configuration dans l\'app de bureau.';
+
+  @override
+  String get knowledgeEmbedGateDownload => 'Télécharger sur le nœud domicile';
+
+  @override
+  String get knowledgeEmbedGateDownloading => 'Téléchargement…';
+
+  @override
+  String get knowledgeEmbedGateRetry => 'Réessayer le téléchargement';
+
+  @override
+  String get knowledgeEmbedGateOpenSetup => 'Ouvrir Configuration';
+
+  @override
+  String get knowledgeEmbedGateBackgroundHint =>
+      'Vous pouvez continuer à utiliser les autres parties de l\'app pendant que cela se termine.';
+
+  @override
+  String get knowledgeEmbedGateStripNeeded =>
+      'Connaissances indisponibles — modèle d\'embedding non installé sur le domicile';
+
+  @override
+  String get knowledgeEmbedGateStripDownloading =>
+      'Connaissances indisponibles — téléchargement du modèle d\'embedding sur le domicile';
+
+  @override
+  String get knowledgeEmbedGateStripError =>
+      'Connaissances indisponibles — échec de la configuration d\'embedding sur le domicile';
+
+  @override
+  String get knowledgeEmbedGateDownloadStarted =>
+      'Téléchargement d\'embedding lancé sur le domicile';
 
   @override
   String get knowledgePluginsLede =>
-      'Optional connectors. Notion needs an MCP URL — not the Notion app.';
+      'Connecteurs optionnels. Notion nécessite une URL MCP — pas l\'application Notion.';
 
   @override
   String get knowledgePluginsObsidianTitle => 'Obsidian';
 
   @override
   String get knowledgePluginsObsidianDesc =>
-      'Enrich vault notes. Desktop app optional.';
+      'Enrichir les notes du coffre. Application de bureau optionnelle.';
 
   @override
   String get knowledgePluginsNotionTitle => 'Notion (via MCP)';
 
   @override
   String get knowledgePluginsNotionDesc =>
-      'Browse and search via MCP. Soft-fails without a URL.';
+      'Recherche et navigation via MCP. Échec en douceur sans URL.';
 
   @override
-  String get knowledgePluginsMcpUrl => 'MCP server URL';
+  String get knowledgePluginsMcpUrl => 'URL du serveur MCP';
 
   @override
-  String get knowledgePluginsMcpTool => 'Search tool name';
+  String get knowledgePluginsMcpTool => 'Nom de l\'outil de recherche';
 
   @override
-  String get knowledgePluginsSyncNow => 'Sync now';
+  String get knowledgePluginsSyncNow => 'Synchroniser maintenant';
 
   @override
   String get knowledgePluginsLinkedVaultLabel =>
-      'Linked Obsidian vault path(s)';
+      'Chemins du coffre Obsidian lié';
 
   @override
-  String get knowledgePluginsLinkedVaultHint => '/path/to/ObsidianVault';
+  String get knowledgePluginsLinkedVaultHint => '/chemin/vers/ObsidianVault';
 
   @override
-  String get knowledgePluginsLinkedVaultEmpty => 'No linked vaults yet.';
+  String get knowledgePluginsLinkedVaultEmpty =>
+      'Aucun coffre lié pour l\'instant.';
 
   @override
-  String get knowledgePluginsLinkedVaultRemove => 'Remove';
+  String get knowledgePluginsLinkedVaultRemove => 'Retirer';
 
   @override
-  String get knowledgePluginsLinkedVaultAdd => 'Add vault folder…';
+  String get knowledgePluginsLinkedVaultAdd => 'Ajouter un dossier coffre…';
 
   @override
   String get knowledgePluginsLinkedVaultPickTitle =>
-      'Choose Obsidian vault folder';
+      'Choisir le dossier du coffre Obsidian';
 
   @override
   String get knowledgePluginsLinkedVaultHelper =>
-      'Vaults from Obsidian on this home computer are linked automatically. Remove a row to unlink (it will not auto-link again). Add vault folder… for more.';
+      'Les coffres Obsidian sur cet ordinateur domestique sont liés automatiquement. Effacez une ligne pour délier (ne sera pas ré-lié). Ajouter un dossier coffre… pour en ajouter.';
 
   @override
-  String get knowledgePluginsOpenObsidian => 'Open Obsidian';
+  String get knowledgePluginsOpenObsidian => 'Ouvrir Obsidian';
 
   @override
-  String get knowledgePluginsOpenNotion => 'Open Notion';
+  String get knowledgePluginsOpenNotion => 'Ouvrir Notion';
 
   @override
-  String get knowledgePluginsOpeningApp => 'Opening…';
+  String get knowledgePluginsOpeningApp => 'Ouverture…';
 
   @override
   String get knowledgePluginsOpenAppFailed =>
-      'Could not open the app on this computer.';
+      'Impossible d\'ouvrir l\'application sur cet ordinateur.';
+
+  @override
+  String get knowledgePluginsOpenedWebsite =>
+      'Application non installée localement — site officiel ouvert sur le nœud domicile.';
+
+  @override
+  String get knowledgePluginsDownloadObsidian => 'Télécharger Obsidian';
+
+  @override
+  String get knowledgePluginsDownloadNotion => 'Télécharger Notion';
 
   @override
   String get knowledgePluginsLinkedVaultAutoOne =>
-      'Linked Obsidian vault found on this computer.';
+      'Coffre Obsidian lié trouvé sur cet ordinateur.';
 
   @override
   String knowledgePluginsLinkedVaultAutoMany(int count) {
-    return 'Linked $count Obsidian vaults found on this computer.';
+    return '$count coffres Obsidian liés trouvés sur cet ordinateur.';
   }
 
   @override
-  String get knowledgeHubImportObsidianAll => 'Import all linked';
+  String get knowledgeHubImportObsidianAll => 'Tout importer (liés)';
 
   @override
-  String get knowledgeHubImportNotionVisible => 'Import visible cards';
+  String get knowledgeHubImportNotionVisible => 'Importer les cartes visibles';
 
   @override
-  String get knowledgeHubExportToObsidian => 'Export to Obsidian';
+  String get knowledgeHubExportToObsidian => 'Exporter vers Obsidian';
 
   @override
-  String get knowledgeHubExportToNotion => 'Export to Notion/MCP';
+  String get knowledgeHubExportToNotion => 'Exporter vers Notion/MCP';
 
   @override
   String knowledgeHubImportObsidianOk(int count) {
-    return 'Imported $count Obsidian note(s)';
+    return '$count note(s) Obsidian importée(s)';
   }
 
   @override
   String knowledgeHubImportNotionOk(int count) {
-    return 'Imported $count Notion/MCP note(s)';
+    return '$count note(s) Notion/MCP importée(s)';
   }
 
   @override
   String knowledgeHubExportObsidianOk(int count) {
-    return 'Exported $count note(s) to Obsidian';
+    return '$count note(s) exportée(s) vers Obsidian';
   }
 
   @override
   String knowledgeHubExportNotionOk(int count) {
-    return 'Exported $count note(s) via MCP';
+    return '$count note(s) exportée(s) via MCP';
   }
 
   @override
-  String get knowledgeHubImportFailed => 'Import failed';
+  String get knowledgeHubImportFailed => 'Échec de l\'importation';
 
   @override
-  String get knowledgeHubExportFailed => 'Export failed';
+  String get knowledgeHubExportFailed => 'Échec de l\'exportation';
 
   @override
   String get knowledgeHubImportMcpEmpty =>
-      'No live MCP cards to import — refresh Browse';
+      'Aucune carte MCP en direct à importer — actualisez Parcourir d\'abord';
 
   @override
-  String get knowledgeHubExportEmpty => 'No vault Markdown notes to export';
+  String get knowledgeHubExportEmpty =>
+      'Aucune note Markdown du coffre à exporter';
 
   @override
   String get knowledgeHubShareVaultOnly =>
-      'Share works for vault files only — import first';
+      'Le partage ne fonctionne que pour les fichiers du coffre — importez d\'abord';
 
   @override
   String knowledgeHubMcpListError(String error) {
-    return 'MCP list: $error';
+    return 'Liste MCP : $error';
   }
 
   @override
   String get knowledgeSetupHint =>
-      'Index status and retrieval. Chat models stay in Me → AI Model.';
+      'État de l\'index et récupération. Les modèles de chat restent dans Moi → Modèle IA.';
 
   @override
-  String get knowledgeSetupEnabled => 'Enable vault knowledge';
+  String get knowledgeSetupEnabled => 'Activer la base de connaissances';
 
   @override
   String get knowledgeSetupStatusHint =>
-      'Tap Rebuild to refresh the vector index.';
+      'Appuyez sur Reconstruire pour rafraîchir l\'index vectoriel.';
 
   @override
-  String get knowledgeSetupReindex => 'Rebuild index';
+  String get knowledgeSetupReindex => 'Reconstruire l\'index';
 
   @override
-  String get knowledgeSetupReindexDone => 'Reindex started';
+  String get knowledgeSetupReindexDone => 'Réindexation lancée';
 
   @override
   String get knowledgeSetupReindexConfirm =>
-      'Rebuild the vault vector index on the home node?';
+      'Reconstruire l\'index vectoriel du coffre sur le nœud domicile ?';
 
   @override
-  String get knowledgeSetupRagMode => 'Retrieval mode';
+  String get knowledgeSetupTestEmbedding => 'Tester l\'embedding';
 
   @override
-  String get knowledgeSetupRagHybrid => 'Hybrid';
+  String get knowledgeSetupTestEmbeddingBusy => 'Test…';
 
   @override
-  String get knowledgeSetupRagVector => 'Vector';
+  String knowledgeSetupTestEmbeddingOk(int dimensions, int latencyMs) {
+    return 'Embedding OK — $dimensions dims en $latencyMs ms';
+  }
+
+  @override
+  String knowledgeSetupTestEmbeddingFail(String error) {
+    return 'Échec embedding : $error';
+  }
+
+  @override
+  String get knowledgeSetupRagMode => 'Mode de récupération';
+
+  @override
+  String get knowledgeSetupRagHybrid => 'Hybride';
+
+  @override
+  String get knowledgeSetupRagVector => 'Vectoriel';
 
   @override
   String get knowledgeSetupRagLexical => 'Lexical';
 
   @override
-  String get knowledgeSetupSnippetLimit => 'Vault snippets per answer';
+  String get knowledgeSetupSnippetLimit => 'Extraits du coffre par réponse';
 
   @override
   String knowledgeBrowseIndexIndexingProgress(int processed, int total) {
-    return 'Indexing $processed/$total…';
+    return 'Indexation $processed/$total…';
   }
 
   @override
-  String get knowledgeHubOpenPlugins => 'Open Plugins';
+  String get knowledgeHubOpenPlugins => 'Ouvrir Plugins';
 
   @override
-  String get knowledgeNoteNewTitle => 'New note';
+  String get knowledgeNoteNewTitle => 'Nouvelle note';
 
   @override
-  String get knowledgeNoteEditTitle => 'Edit note';
+  String get knowledgeNoteEditTitle => 'Modifier la note';
 
   @override
-  String get knowledgeNoteFilename => 'Filename';
+  String get knowledgeNoteFilename => 'Nom du fichier';
 
   @override
-  String get knowledgeNoteFilenameRequired => 'Enter a note filename';
+  String get knowledgeNoteFilenameRequired =>
+      'Saisir un nom de fichier de note';
 
   @override
   String get knowledgeNoteContent => 'Markdown';
 
   @override
-  String get knowledgeNoteSensitivity => 'Visibility';
+  String get knowledgeNoteSensitivity => 'Visibilité';
 
   @override
-  String get knowledgeNotePrivate => 'Private';
+  String get knowledgeNotePrivate => 'Privé';
 
   @override
-  String get knowledgeNoteFriends => 'Friends';
+  String get knowledgeNoteFriends => 'Amis';
 
   @override
-  String get knowledgeNotePublished => 'Published';
+  String get knowledgeNotePublished => 'Publié';
 
   @override
-  String get knowledgeNoteAlsoBlog => 'Also publish as blog';
+  String get knowledgeNoteAlsoBlog => 'Publier aussi comme blog';
 
   @override
-  String get knowledgeFilePreview => 'Preview';
+  String get knowledgeFilePreview => 'Aperçu';
 
   @override
-  String get knowledgeFileOpenOnHome => 'Open on home';
+  String get knowledgeFileOpenOnHome => 'Ouvrir sur l\'ordinateur';
 
   @override
-  String get knowledgeFileOpenedOnHome => 'Opened on the home computer';
+  String get knowledgeFileOpenedOnHome => 'Ouvert sur l\'ordinateur domicile';
 
   @override
-  String get knowledgeFilePublish => 'Publish';
+  String get knowledgeFilePublish => 'Publier';
 
   @override
-  String get knowledgeFileMakePrivate => 'Make private';
+  String get knowledgeFileMakePrivate => 'Rendre privé';
 
   @override
-  String get knowledgeFileMore => 'More actions';
+  String get knowledgeFileMore => 'Plus d\'actions';
 
   @override
-  String get knowledgeFileConvert => 'Convert to Markdown note';
+  String get knowledgeFileConvert => 'Convertir en note Markdown';
 
   @override
   String knowledgeFileConvertOk(String path) {
-    return 'Saved Markdown note $path';
+    return 'Note Markdown enregistrée : $path';
   }
 
   @override
-  String get knowledgeFileConvertFailed => 'Could not convert to Markdown';
+  String get knowledgeFileConvertFailed => 'Échec de la conversion en Markdown';
 
   @override
-  String get knowledgeFileDeleteTitle => 'Delete file?';
+  String get knowledgeFileDeleteTitle => 'Supprimer le fichier ?';
 
   @override
   String knowledgeFileDeleteBody(String title) {
-    return 'Delete “$title” from the home vault?';
+    return 'Supprimer « $title » du coffre domicile ?';
   }
 
   @override
-  String get knowledgeFileDeleteConfirm => 'Delete';
+  String get knowledgeFileDeleteConfirm => 'Supprimer';
 
   @override
-  String get meKnowledge => 'Knowledge setup';
+  String get meKnowledge => 'Configuration des connaissances';
 
   @override
-  String get meKnowledgeHint => 'Index and retrieval for vault Ask';
+  String get meKnowledgeHint => 'Index et récupération pour Questions Vault';
 
   @override
-  String get meKnowledgePlugins => 'Knowledge plugins';
+  String get meKnowledgePlugins => 'Plugins Connaissances';
 
   @override
-  String get meKnowledgePluginsHint => 'Obsidian link and Notion/MCP';
+  String get meKnowledgePluginsHint => 'Lien Obsidian et Notion/MCP';
 
   @override
-  String get knowledgeBrowseFilterAll => 'All';
+  String get knowledgeBrowseFilterAll => 'Tous';
 
   @override
-  String get knowledgeBrowseFiltersLabel => 'SHOW';
+  String get knowledgeBrowseFiltersLabel => 'AFFICHER';
 
   @override
   String get knowledgeBrowseFilterNotes => 'Notes';
@@ -629,27 +731,27 @@ class AppLocalizationsFr extends AppLocalizations {
   String get knowledgeBrowseFilterDocuments => 'Documents';
 
   @override
-  String get knowledgeBrowseFilterPublished => 'Published';
+  String get knowledgeBrowseFilterPublished => 'Publié';
 
   @override
   String knowledgeBrowseIndexReady(int count) {
-    return '$count indexed';
+    return '$count indexé(s)';
   }
 
   @override
   String knowledgeBrowseIndexReadyLinked(int count, int linked) {
-    return '$count indexed · $linked linked Obsidian';
+    return '$count indexé(s) · $linked Obsidian lié(s)';
   }
 
   @override
-  String get knowledgeBrowseIndexIndexing => 'Indexing…';
+  String get knowledgeBrowseIndexIndexing => 'Indexation…';
 
   @override
-  String get knowledgeBrowseIndexEmpty => 'Index empty';
+  String get knowledgeBrowseIndexEmpty => 'Index vide';
 
   @override
   String get knowledgeBrowseIndexChipHint =>
-      'Open Knowledge → Setup to manage the index.';
+      'Ouvrir Connaissances → Configuration pour gérer l\'index.';
 
   @override
   String get contentNewPost => 'Nouvelle publication';
@@ -963,7 +1065,7 @@ class AppLocalizationsFr extends AppLocalizations {
       'Tous les messages de ce fil seront supprimés.';
 
   @override
-  String get chatAiManual => 'Manual';
+  String get chatAiManual => 'Manuel';
 
   @override
   String get chatAiAssistant => 'Assistant';
@@ -972,43 +1074,45 @@ class AppLocalizationsFr extends AppLocalizations {
   String get chatAiAuto => 'Auto';
 
   @override
-  String get chatAiManualTooltip => 'Manual: type yourself';
+  String get chatAiManualTooltip => 'Manuel : écrivez vous-même';
 
   @override
-  String get chatAiAssistantTooltip => 'Assistant: AI suggests drafts';
+  String get chatAiAssistantTooltip =>
+      'Assistant : l\'IA suggère des brouillons';
 
   @override
-  String get chatAiAutoTooltip => 'Auto-reply: AI responds automatically';
+  String get chatAiAutoTooltip => 'Réponse auto : l\'IA répond automatiquement';
 
   @override
   String get chatAgentMode => 'Agent';
 
   @override
   String get chatAgentModeOffTooltip =>
-      'Agent Mode off — Assist uses public knowledge only';
+      'Mode Agent désactivé — l\'assistant n\'utilise que les connaissances publiques';
 
   @override
   String get chatAgentModeOnTooltip =>
-      'Agent Mode on — OpenClaw may use home files, private knowledge, and tools';
+      'Mode Agent activé — OpenClaw peut utiliser les fichiers du domicile, les connaissances privées et les outils';
 
   @override
-  String get chatAgentModeConfirmTitle => 'Enable Agent Mode for this chat?';
+  String get chatAgentModeConfirmTitle =>
+      'Activer le mode Agent pour ce chat ?';
 
   @override
   String get chatAgentModeConfirmBody =>
-      'Agent Mode uses EnvoyAI/OpenClaw and can read local files, private knowledge, and run tools on your home node. Only enable for contacts you fully trust.';
+      'Le mode Agent utilise EnvoyAI/OpenClaw et peut lire les fichiers locaux, les connaissances privées et exécuter des outils sur votre nœud domicile. Activez-le uniquement pour les contacts en qui vous avez une confiance totale.';
 
   @override
-  String get chatAgentModeConfirmEnable => 'Enable Agent Mode';
+  String get chatAgentModeConfirmEnable => 'Activer le mode Agent';
 
   @override
-  String get chatSuggestedReply => 'Suggested reply';
+  String get chatSuggestedReply => 'Réponse suggérée';
 
   @override
-  String get chatSuggestedReplyUse => 'Use';
+  String get chatSuggestedReplyUse => 'Utiliser';
 
   @override
-  String get chatSuggestedReplyDismiss => 'Dismiss';
+  String get chatSuggestedReplyDismiss => 'Ignorer';
 
   @override
   String get chatDeleteMessageTitle => 'Supprimer le message ?';
@@ -1620,6 +1724,22 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get settingsAiModelSaved => 'Modèle IA enregistré';
+
+  @override
+  String get settingsAiModelTestChat => 'Tester le modèle chat';
+
+  @override
+  String get settingsAiModelTestChatBusy => 'Test…';
+
+  @override
+  String settingsAiModelTestChatOk(String modelName, int latencyMs) {
+    return 'Modèle chat OK — $modelName en $latencyMs ms';
+  }
+
+  @override
+  String settingsAiModelTestChatFail(String error) {
+    return 'Échec modèle chat : $error';
+  }
 
   @override
   String settingsSaveFailed(String error) {

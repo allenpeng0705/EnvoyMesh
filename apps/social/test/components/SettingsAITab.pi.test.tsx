@@ -48,6 +48,8 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     restartPi,
     getRagIndexStatus: vi.fn().mockResolvedValue(null),
     reindexRagKnowledge: vi.fn().mockResolvedValue(null),
+    testRagEmbedding: vi.fn().mockResolvedValue({ ok: true, dimensions: 8, latencyMs: 1, modelKey: "mock", mode: "mock", modelName: "mock", endpoint: "mock://local", hasApiKey: false }),
+    testChatModel: vi.fn().mockResolvedValue({ ok: true, providerId: "mock", modelName: "mock", replyPreview: "pong", latencyMs: 1 }),
     getAgentIdentity: vi.fn().mockResolvedValue({ content: "", updatedAt: null }),
     getEnvoyLocalStatus: vi.fn().mockResolvedValue({
       enabled: false,

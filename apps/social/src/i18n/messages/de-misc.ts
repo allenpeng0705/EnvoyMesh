@@ -397,7 +397,9 @@ export const deLibraryViewMessages = {
   ipfsMobileHeliaOn: "Der Export verwendet Helia in-process auf diesem Gerät. Fügen Sie eine Gateway-Allowlist in den Einstellungen hinzu, um CIDs via HTTP zu verifizieren.",
   ipfsDesktopHelia: "Der Export verwendet Helia in-process — kein Kubo-Daemon erforderlich. Wechseln Sie in den Einstellungen zu Kubo, wenn Sie das mitgelieferte Sidecar benötigen.",
   ipfsDesktopKubo: "Der Export startet automatisch die IPFS-Engine bei der ersten Verwendung mit dem Desktop-App-Bundle.",
-} as const;
+
+  publishedHint: "Veröffentlicht — zum Privatstellen klicken",
+  privateHint: "Privat — zum Veröffentlichen klicken",} as const;
 
 export const deFileShareMessages = {
   dialogAria: "Datei teilen",
@@ -583,4 +585,40 @@ export const deDisplayMessages = {
     unknown: "Kontakt",
   },
   nearbyPeerFallback: "Jemand in der Nähe",
+} as const;
+
+// Partial override: new keys added by the Knowledge feature (31da3dd0).
+// mergeMessages with EN fills in the pre-existing keys (browse index, plugins lede, etc).
+export const deKnowledgeViewMessages = {
+  browse: {
+    sourceNote: "Notiz",
+    mcpListError: "Notion/MCP: {error}",
+    openPlugins: "Plugins öffnen",
+    importObsidianAll: "Alle verknüpften importieren",
+    importNotionVisible: "Sichtbare Karten importieren",
+    exportToObsidian: "Nach Obsidian exportieren",
+    exportToNotion: "Nach Notion/MCP exportieren",
+    importObsidianOk: "{count} Obsidian-Notiz(en) in den Vault importiert",
+    importNotionOk: "{count} Notion/MCP-Notiz(en) in den Vault importiert",
+    exportObsidianOk: "{count} Notiz(en) ins verknüpfte Obsidian exportiert",
+    exportNotionOk: "{count} Notiz(en) über MCP exportiert",
+    importFailed: "Import fehlgeschlagen",
+    exportFailed: "Export fehlgeschlagen",
+    importMcpEmpty: "Keine Live-MCP-Karten zum Importieren — Browse zuerst aktualisieren",
+    exportEmpty: "Keine Vault-Markdown-Notizen in dieser Liste zum Exportieren",
+    indexReadyLinked: "{count} indiziert · {linked} Obsidian verknüpft",
+  },
+  plugins: {
+    linkedVaultAdd: "Vault-Ordner hinzufügen…",
+    linkedVaultPickTitle: "Obsidian-Vault-Ordner wählen",
+    linkedVaultEmpty: "Auf diesem Computer wird nach Obsidian-Vaults gesucht… Falls keine erscheinen, „Vault-Ordner hinzufügen…“ verwenden.",
+    linkedVaultAutoOne: "Verknüpfter Obsidian-Vault auf diesem Computer gefunden.",
+    linkedVaultAutoMany: "{count} verknüpfte Obsidian-Vaults auf diesem Computer gefunden.",
+    openObsidian: "Obsidian öffnen",
+    openNotion: "Notion öffnen",
+    openingApp: "Wird geöffnet…",
+    openAppFailed: "App konnte auf diesem Computer nicht geöffnet werden.",
+    notionTagline: "Suche und Browsen über MCP. Schlägt ohne URL weich fehl.",
+    notionNoLocalPath: "Notion-Wissenssync nutzt MCP (kein lokaler Vault-Ordner wie Obsidian). Mit einer MCP-Server-URL unten verbinden. „Notion öffnen“ startet die App separat, falls installiert.",
+  },
 } as const;

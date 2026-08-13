@@ -18,6 +18,7 @@ class _HomeFilesScreenState extends ConsumerState<HomeFilesScreen> {
   bool _loading = true;
   String? _error;
   String _platform = 'other';
+  String _homeDir = '';
   String _currentPath = '';
   String? _parent;
   List<Map<String, dynamic>> _entries = const [];
@@ -55,9 +56,10 @@ class _HomeFilesScreenState extends ConsumerState<HomeFilesScreen> {
       if (!mounted) return;
       setState(() {
         _platform = platform;
+        _homeDir = homeDir;
         _roots = roots;
       });
-      await _loadPath(homeDir);
+      await _loadPath(homeDir.isNotEmpty ? homeDir : (roots.isNotEmpty ? roots.first : '/'));
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -75,7 +77,22 @@ class _HomeFilesScreenState extends ConsumerState<HomeFilesScreen> {
       _error = null;
     });
     try {
-      if (roots && _platform == 'win32') {
+      if (roots) {
+        if (_platform != 'win32' && _roots.length == 1) {
+          final result = await client.listHomeFsEntries(path: _roots.first);
+          if (!mounted) return;
+          setState(() {
+            _showingRoots = false;
+            _currentPath = result['path']?.toString() ?? '';
+            _parent = result['parent']?.toString();
+            _entries = (result['entries'] as List<dynamic>? ?? const [])
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList();
+            _loading = false;
+          });
+          return;
+        }
         if (!mounted) return;
         setState(() {
           _showingRoots = true;
@@ -190,7 +207,9 @@ class _HomeFilesScreenState extends ConsumerState<HomeFilesScreen> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Text(
               _showingRoots
-                  ? 'Drives'
+                  ? (_platform == 'win32'
+                      ? l10n.homeFolderDrives
+                      : l10n.homeFolderComputer)
                   : (_currentPath.isEmpty ? '…' : _currentPath),
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     fontFamily: 'monospace',
@@ -215,16 +234,30 @@ class _HomeFilesScreenState extends ConsumerState<HomeFilesScreen> {
                     ),
                     child: ListView(
                       children: [
-                        if (_platform == 'win32' && !_showingRoots)
+                        if (!_showingRoots &&
+                            (_platform == 'win32' ||
+                                !_roots.contains(_currentPath)))
                           ListTile(
                             leading: const Icon(Icons.storage),
-                            title: const Text('Drives'),
+                            title: Text(
+                              _platform == 'win32'
+                                  ? l10n.homeFolderDrives
+                                  : l10n.homeFolderComputer,
+                            ),
                             onTap: () => _loadPath(null, roots: true),
+                          ),
+                        if (!_showingRoots &&
+                            _homeDir.isNotEmpty &&
+                            _currentPath != _homeDir)
+                          ListTile(
+                            leading: const Icon(Icons.home_outlined),
+                            title: Text(l10n.homeFolderHome),
+                            onTap: () => _loadPath(_homeDir),
                           ),
                         if (_parent != null && !_showingRoots)
                           ListTile(
                             leading: const Icon(Icons.arrow_upward),
-                            title: const Text('..'),
+                            title: Text(l10n.homeFolderParent),
                             onTap: () => _loadPath(_parent),
                           ),
                         for (final entry in _entries)
@@ -242,7 +275,7 @@ class _HomeFilesScreenState extends ConsumerState<HomeFilesScreen> {
                             },
                           ),
                         if (!_loading && _entries.isEmpty)
-                          const ListTile(title: Text('Empty folder')),
+                          ListTile(title: Text(l10n.homeFolderNoSubfolders)),
                       ],
                     ),
                   ),

@@ -6,6 +6,12 @@
   "navContent": "内容",
   "navMe": "我",
   "commonCancel": "取消",
+  "commonConfirm": "确认",
+  "homeFolderDrives": "磁盘",
+  "homeFolderComputer": "此电脑",
+  "homeFolderHome": "主目录",
+  "homeFolderParent": "↑ 上级文件夹",
+  "homeFolderNoSubfolders": "没有子文件夹",
   "commonSave": "保存",
   "commonDelete": "删除",
   "commonRetry": "重试",
@@ -105,6 +111,21 @@
   "knowledgeAskEnvoyAiHint": "需要多轮对话或工具时，请到 EnvoyAI 继续。",
   "knowledgeLibraryHeading": "你的文件",
   "knowledgeLibraryCaption": "笔记、文档，以及已发布的内容。",
+  "knowledgeEmbedGateTitleNeeded": "需要嵌入模型",
+  "knowledgeEmbedGateTitleDownloading": "正在下载嵌入模型…",
+  "knowledgeEmbedGateTitleError": "嵌入安装失败",
+  "knowledgeEmbedGateBodyNeeded": "知识库检索依赖家节点上的本地嵌入模型。应用启动时会自动在后台下载 — 完成前无法使用「浏览」。也可在此手动启动或重试。",
+  "knowledgeEmbedGateBodyDownloading": "下载正在家节点后台进行（随应用启动）。你可以离开本页；嵌入就绪后知识库会自动解锁。",
+  "knowledgeEmbedGateBodyError": "家节点无法安装嵌入运行时或模型。请重试下载，或在桌面端「设置」中排查。",
+  "knowledgeEmbedGateDownload": "在家节点下载",
+  "knowledgeEmbedGateDownloading": "下载中…",
+  "knowledgeEmbedGateRetry": "重试下载",
+  "knowledgeEmbedGateOpenSetup": "打开设置",
+  "knowledgeEmbedGateBackgroundHint": "下载期间可继续使用应用的其他功能。",
+  "knowledgeEmbedGateStripNeeded": "知识库不可用 — 家节点尚未安装嵌入模型",
+  "knowledgeEmbedGateStripDownloading": "知识库不可用 — 家节点正在下载嵌入模型",
+  "knowledgeEmbedGateStripError": "知识库不可用 — 家节点嵌入安装失败",
+  "knowledgeEmbedGateDownloadStarted": "已开始在家节点下载嵌入模型",
   "knowledgePluginsLede": "可选连接器。Notion 需要 MCP URL，不需要 Notion 应用。",
   "knowledgePluginsObsidianTitle": "Obsidian",
   "knowledgePluginsObsidianDesc": "增强 vault 笔记。桌面应用可选。",
@@ -124,11 +145,16 @@
   "knowledgePluginsOpenNotion": "打开 Notion",
   "knowledgePluginsOpeningApp": "正在打开…",
   "knowledgePluginsOpenAppFailed": "无法在本机打开该应用。",
+  "knowledgePluginsOpenedWebsite": "本机未安装应用 — 已在家节点打开官网。",
+  "knowledgePluginsDownloadObsidian": "下载 Obsidian",
+  "knowledgePluginsDownloadNotion": "下载 Notion",
   "knowledgePluginsLinkedVaultAutoOne": "已自动关联本机上的 Obsidian 库。",
   "knowledgePluginsLinkedVaultAutoMany": "已自动关联本机上的 {count} 个 Obsidian 库。",
   "@knowledgePluginsLinkedVaultAutoMany": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "knowledgeHubImportObsidianAll": "导入全部关联笔记",
@@ -137,19 +163,35 @@
   "knowledgeHubExportToNotion": "导出到 Notion/MCP",
   "knowledgeHubImportObsidianOk": "已导入 {count} 条 Obsidian 笔记",
   "@knowledgeHubImportObsidianOk": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "knowledgeHubImportNotionOk": "已导入 {count} 条 Notion/MCP 笔记",
   "@knowledgeHubImportNotionOk": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "knowledgeHubExportObsidianOk": "已导出 {count} 条笔记到 Obsidian",
   "@knowledgeHubExportObsidianOk": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "knowledgeHubExportNotionOk": "已通过 MCP 导出 {count} 条笔记",
   "@knowledgeHubExportNotionOk": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "knowledgeHubImportFailed": "导入失败",
   "knowledgeHubExportFailed": "导出失败",
@@ -158,7 +200,11 @@
   "knowledgeHubShareVaultOnly": "仅 vault 文件可分享 — 请先导入",
   "knowledgeHubMcpListError": "MCP 列表：{error}",
   "@knowledgeHubMcpListError": {
-    "placeholders": { "error": { "type": "String" } }
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
   },
   "knowledgeSetupHint": "索引状态与检索。聊天模型在「我 → AI 模型」。",
   "knowledgeSetupEnabled": "启用资料库知识",
@@ -166,6 +212,21 @@
   "knowledgeSetupReindex": "重建索引",
   "knowledgeSetupReindexDone": "已开始重建",
   "knowledgeSetupReindexConfirm": "在家节点上重建资料库向量索引？",
+  "knowledgeSetupTestEmbedding": "测试嵌入",
+  "knowledgeSetupTestEmbeddingBusy": "测试中…",
+  "knowledgeSetupTestEmbeddingOk": "嵌入正常 — {dimensions} 维，{latencyMs} ms",
+  "@knowledgeSetupTestEmbeddingOk": {
+    "placeholders": {
+      "dimensions": { "type": "int" },
+      "latencyMs": { "type": "int" }
+    }
+  },
+  "knowledgeSetupTestEmbeddingFail": "嵌入失败：{error}",
+  "@knowledgeSetupTestEmbeddingFail": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
   "knowledgeSetupRagMode": "检索模式",
   "knowledgeSetupRagHybrid": "混合",
   "knowledgeSetupRagVector": "向量",
@@ -174,8 +235,12 @@
   "knowledgeBrowseIndexIndexingProgress": "索引中 {processed}/{total}…",
   "@knowledgeBrowseIndexIndexingProgress": {
     "placeholders": {
-      "processed": { "type": "int" },
-      "total": { "type": "int" }
+      "processed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
     }
   },
   "knowledgeHubOpenPlugins": "打开插件",
@@ -198,13 +263,21 @@
   "knowledgeFileConvert": "转为 Markdown 笔记",
   "knowledgeFileConvertOk": "已保存 Markdown 笔记 {path}",
   "@knowledgeFileConvertOk": {
-    "placeholders": { "path": { "type": "String" } }
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
   },
   "knowledgeFileConvertFailed": "无法转换为 Markdown",
   "knowledgeFileDeleteTitle": "删除文件？",
   "knowledgeFileDeleteBody": "从家节点资料库删除「{title}」？",
   "@knowledgeFileDeleteBody": {
-    "placeholders": { "title": { "type": "String" } }
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
   },
   "knowledgeFileDeleteConfirm": "删除",
   "meKnowledge": "知识库设置",
@@ -222,14 +295,20 @@
   "knowledgeBrowseIndexReady": "已索引 {count}",
   "@knowledgeBrowseIndexReady": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "knowledgeBrowseIndexReadyLinked": "已索引 {count} · 关联 Obsidian {linked}",
   "@knowledgeBrowseIndexReadyLinked": {
     "placeholders": {
-      "count": { "type": "int" },
-      "linked": { "type": "int" }
+      "count": {
+        "type": "int"
+      },
+      "linked": {
+        "type": "int"
+      }
     }
   },
   "knowledgeBrowseIndexIndexing": "索引中…",
@@ -521,6 +600,21 @@
   "settingsApiKey": "API key",
   "settingsApiKeySaved": "家庭节点上已保存密钥",
   "settingsAiModelSaved": "AI 模型已保存",
+  "settingsAiModelTestChat": "测试聊天模型",
+  "settingsAiModelTestChatBusy": "测试中…",
+  "settingsAiModelTestChatOk": "聊天模型正常 — {modelName}，{latencyMs} ms",
+  "@settingsAiModelTestChatOk": {
+    "placeholders": {
+      "modelName": { "type": "String" },
+      "latencyMs": { "type": "int" }
+    }
+  },
+  "@settingsAiModelTestChatFail": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "settingsAiModelTestChatFail": "聊天模型失败：{error}",
   "settingsSaveFailed": "保存失败：{error}",
   "settingsDefault": "（默认）",
   "settingsAiEngineIntro": "选择家庭节点将助手回合转发到哪个外部智能体。",
@@ -786,5 +880,20 @@
   "settingsEnvoyLocalCatalog": "目录",
   "settingsEnvoyLocalHfError": "Hugging Face 搜索不可用：{error}",
   "settingsEnvoyLocalRefresh": "刷新",
-  "settingsEnvoyLocalPhoneNote": "高级服务参数（上下文大小、GPU 层数等）请在家庭节点 Social 界面中调整。"
+  "settingsEnvoyLocalPhoneNote": "高级服务参数（上下文大小、GPU 层数等）请在家庭节点 Social 界面中调整。",
+  "chatAiManual": "手動",
+  "chatAiAssistant": "アシスタント",
+  "chatAiAuto": "自動",
+  "chatAiManualTooltip": "手動：自分で入力",
+  "chatAiAssistantTooltip": "アシスタント：AIが下書きを提案",
+  "chatAiAutoTooltip": "自動返信：AIが自動的に応答",
+  "chatAgentMode": "エージェント",
+  "chatAgentModeOffTooltip": "エージェントモードオフ — アシスタントは公開ナレッジのみ使用",
+  "chatAgentModeOnTooltip": "エージェントモードオン — OpenClawがホームファイル・非公開ナレッジ・ツールを利用可能",
+  "chatAgentModeConfirmTitle": "このチャットのエージェントモードを有効にしますか？",
+  "chatAgentModeConfirmBody": "エージェントモードはEnvoyAI/OpenClawを使用し、ローカルファイル・非公開ナレッジの読み取り、ホームノードでのツール実行が可能です。完全に信頼できる相手にのみ有効化してください。",
+  "chatAgentModeConfirmEnable": "エージェントモードを有効化",
+  "chatSuggestedReply": "提案された返信",
+  "chatSuggestedReplyUse": "使用",
+  "chatSuggestedReplyDismiss": "却下"
 }

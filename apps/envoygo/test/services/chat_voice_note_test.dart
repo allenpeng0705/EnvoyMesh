@@ -25,6 +25,21 @@ void main() {
     expect(knowledgeBrowseSource('notes/imports/obsidian/x.md'), 'obsidian');
     expect(knowledgeBrowseSource('mcp-remote/x.md'), 'notion');
     expect(knowledgeBrowseSource('notes/imports/blog/hello.md'), 'blog');
+    expect(knowledgeObsidianOrigin('linked-obsidian/V/a.md'), 'linked');
+    expect(knowledgeObsidianOrigin('notes/imports/obsidian/x.md'), 'imported');
+    expect(knowledgeObsidianOrigin('notes/hello.md'), isNull);
+    expect(
+      knowledgeBrowseDisplayPath('linked-obsidian/Vault/note.md'),
+      'note.md',
+    );
+    expect(
+      knowledgeBrowseDisplayPath('linked-obsidian/Obsidian vault/Inbox/a.md'),
+      'Inbox/a.md',
+    );
+    expect(
+      knowledgeBrowseDisplayPath('notes/imports/obsidian/Vault/a.md'),
+      'a.md',
+    );
     expect(
       matchesKnowledgeBrowseFilter(
         relativePath: 'mcp-remote/x.md',

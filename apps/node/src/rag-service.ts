@@ -7,6 +7,7 @@ import type {
   AiKnowledgeBaseSettings,
   AiVaultQuery,
   ModelProviderConfig,
+  RagEmbeddingProbeResult,
   RagIndexProgress,
   RagIndexStatus,
 } from "@envoymesh/api";
@@ -21,6 +22,7 @@ import {
   formatExternalKnowledgeSection,
   loadRagVaultManifest,
   ragVaultManifestKey,
+  resolveEmbeddingConfig,
   saveRagVaultManifest,
   searchExternalMcpKnowledge,
   vaultCollectionId,
@@ -54,6 +56,11 @@ export interface RagService {
     sensitivityOverrides?: Map<string, KnowledgeAccessLevel>;
   }): Promise<void>;
   getIndexStatus(): RagIndexStatus;
+  /**
+   * One-shot embed call against the effective provider (no index rebuild).
+   * Updates `lastEmbedError` on failure / clears it on success.
+   */
+  probeEmbedding(): Promise<RagEmbeddingProbeResult>;
   searchChatHistoryRag(input: {
     threadOwnerId: string;
     query: string;
@@ -80,6 +87,11 @@ export interface RagService {
   refreshConfig(input: {
     knowledgeBase?: AiKnowledgeBaseSettings | null;
     modelProviders?: ModelProviderConfig;
+    envoyLocalEmbed?: {
+      endpoint?: string;
+      modelName?: string;
+      running?: boolean;
+    } | null;
   }): Promise<void>;
 }
 
@@ -87,6 +99,11 @@ export interface CreateRagServiceInput {
   profileDir: string;
   knowledgeBase?: AiKnowledgeBaseSettings | null;
   modelProviders?: ModelProviderConfig;
+  envoyLocalEmbed?: {
+    endpoint?: string;
+    modelName?: string;
+    running?: boolean;
+  } | null;
   chatLogStore?: LocalChatLogStore | null;
   onProgress?: (progress: RagIndexProgress) => void;
 }
@@ -94,10 +111,12 @@ export interface CreateRagServiceInput {
 export async function createRagService(input: CreateRagServiceInput): Promise<RagService> {
   let knowledgeBase = input.knowledgeBase;
   let modelProviders = input.modelProviders;
+  let envoyLocalEmbed = input.envoyLocalEmbed;
   let indexStatus: RagIndexStatus = { ...DEFAULT_RAG_INDEX_STATUS };
   let embedder = createEmbeddingProvider({
     embedding: knowledgeBase?.embedding,
     modelProviders,
+    envoyLocalEmbed,
   });
   let store = await createVectorStore({
     profileDir: input.profileDir,
@@ -190,6 +209,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
     const nextEmbedder = createEmbeddingProvider({
       embedding: knowledgeBase?.embedding,
       modelProviders,
+      envoyLocalEmbed,
     });
     if (nextEmbedder.modelKey !== embedder.modelKey) {
       embedder = nextEmbedder;
@@ -208,6 +228,9 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
     async refreshConfig(next) {
       knowledgeBase = next.knowledgeBase ?? knowledgeBase;
       modelProviders = next.modelProviders ?? modelProviders;
+      if (next.envoyLocalEmbed !== undefined) {
+        envoyLocalEmbed = next.envoyLocalEmbed;
+      }
       await ensureRuntime();
     },
 
@@ -360,6 +383,48 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
 
     getIndexStatus() {
       return indexStatus;
+    },
+
+    async probeEmbedding(): Promise<RagEmbeddingProbeResult> {
+      const resolved = resolveEmbeddingConfig({
+        embedding: knowledgeBase?.embedding,
+        modelProviders,
+        envoyLocalEmbed,
+      });
+      const base = {
+        modelKey: resolved.modelKey,
+        mode: resolved.mode,
+        modelName: resolved.modelName,
+        endpoint: resolved.endpoint,
+        hasApiKey: Boolean(resolved.apiKey?.trim()),
+      };
+      const started = Date.now();
+      try {
+        const { embedder: activeEmbedder } = await ensureRuntime();
+        const vector = await activeEmbedder.embed("EnvoyMesh embedding probe");
+        const latencyMs = Date.now() - started;
+        if (!Array.isArray(vector) || vector.length === 0) {
+          throw new Error("embedding provider returned an empty vector");
+        }
+        clearEmbedError();
+        indexStatus = { ...indexStatus, embedderModelKey: activeEmbedder.modelKey };
+        return {
+          ok: true,
+          ...base,
+          modelKey: activeEmbedder.modelKey,
+          dimensions: vector.length,
+          latencyMs,
+        };
+      } catch (error) {
+        const latencyMs = Date.now() - started;
+        recordEmbedError(error);
+        return {
+          ok: false,
+          ...base,
+          error: error instanceof Error ? error.message : String(error),
+          latencyMs,
+        };
+      }
     },
 
     async reindexVault({ vaultIndex, knowledgeBase: kbOverride, force = false, sensitivityOverrides }) {

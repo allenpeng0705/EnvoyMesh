@@ -51,6 +51,8 @@ describe("isOwnerOnlyRpcMethod", () => {
   it("gates Phase 57 KB mutation / reindex RPCs for family", () => {
     for (const method of [
       "reindexRagKnowledge",
+      "testRagEmbedding",
+      "testChatModel",
       "saveExternalMcpSearchAsNote",
       "listExternalMcpKnowledge",
       "importLinkedObsidianNotes",

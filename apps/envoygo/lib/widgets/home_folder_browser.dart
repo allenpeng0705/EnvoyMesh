@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../services/node_service_client.dart';
 
 /// Browse and select a folder on the paired home node (owner-only RPCs).
+///
+/// Starts at homeDir. Use Computer (/) or Drives, Home, and Parent to navigate
+/// outside the home directory (same model as Social HomeFolderBrowserModal).
 class HomeFolderBrowser extends StatefulWidget {
   const HomeFolderBrowser({
     super.key,
@@ -40,6 +44,7 @@ class _HomeFolderBrowserState extends State<HomeFolderBrowser> {
   bool _loading = true;
   String? _error;
   String _platform = 'other';
+  String _homeDir = '';
   String _currentPath = '';
   String? _parent;
   List<Map<String, dynamic>> _entries = const [];
@@ -67,10 +72,11 @@ class _HomeFolderBrowserState extends State<HomeFolderBrowser> {
           const <String>[];
       final start = widget.initialPath?.trim().isNotEmpty == true
           ? widget.initialPath!.trim()
-          : homeDir;
+          : (homeDir.isNotEmpty ? homeDir : (roots.isNotEmpty ? roots.first : '/'));
       if (!mounted) return;
       setState(() {
         _platform = platform;
+        _homeDir = homeDir;
         _roots = roots;
       });
       await _loadPath(start);
@@ -89,7 +95,16 @@ class _HomeFolderBrowserState extends State<HomeFolderBrowser> {
       _error = null;
     });
     try {
-      if (roots && _platform == 'win32') {
+      if (roots) {
+        // macOS/Linux: only `/` — open it directly.
+        if (_platform != 'win32' && _roots.length == 1) {
+          final result = await widget.client.listHomeFsEntries(
+            path: _roots.first,
+            dirsOnly: true,
+          );
+          _applyListing(result);
+          return;
+        }
         if (!mounted) return;
         setState(() {
           _showingRoots = true;
@@ -106,19 +121,7 @@ class _HomeFolderBrowserState extends State<HomeFolderBrowser> {
         path: path,
         dirsOnly: true,
       );
-      final entries = (result['entries'] as List<dynamic>? ?? const [])
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .where((e) => e['kind']?.toString() == 'dir')
-          .toList();
-      if (!mounted) return;
-      setState(() {
-        _showingRoots = false;
-        _currentPath = result['path']?.toString() ?? '';
-        _parent = result['parent']?.toString();
-        _entries = entries;
-        _loading = false;
-      });
+      _applyListing(result);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -128,8 +131,34 @@ class _HomeFolderBrowserState extends State<HomeFolderBrowser> {
     }
   }
 
+  void _applyListing(Map<String, dynamic> result) {
+    final entries = (result['entries'] as List<dynamic>? ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((e) => e['kind']?.toString() == 'dir')
+        .toList();
+    if (!mounted) return;
+    setState(() {
+      _showingRoots = false;
+      _currentPath = result['path']?.toString() ?? '';
+      _parent = result['parent']?.toString();
+      _entries = entries;
+      _loading = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final rootsLabel =
+        _platform == 'win32' ? l10n.homeFolderDrives : l10n.homeFolderComputer;
+    final atRoot =
+        !_showingRoots && _roots.isNotEmpty && _roots.contains(_currentPath);
+    final showRootsJump =
+        !_showingRoots && (_platform == 'win32' || !atRoot);
+    final showHomeJump =
+        !_showingRoots && _homeDir.isNotEmpty && _currentPath != _homeDir;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.title),
@@ -138,7 +167,7 @@ class _HomeFolderBrowserState extends State<HomeFolderBrowser> {
             onPressed: _currentPath.isEmpty || _showingRoots
                 ? null
                 : () => Navigator.of(context).pop(_currentPath),
-            child: const Text('Select'),
+            child: Text(l10n.commonConfirm),
           ),
         ],
       ),
@@ -148,7 +177,9 @@ class _HomeFolderBrowserState extends State<HomeFolderBrowser> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Text(
-              _showingRoots ? 'Drives' : (_currentPath.isEmpty ? '…' : _currentPath),
+              _showingRoots
+                  ? rootsLabel
+                  : (_currentPath.isEmpty ? '…' : _currentPath),
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     fontFamily: 'monospace',
                   ),
@@ -167,16 +198,22 @@ class _HomeFolderBrowserState extends State<HomeFolderBrowser> {
                 ? const Center(child: CircularProgressIndicator())
                 : ListView(
                     children: [
-                      if (_platform == 'win32' && !_showingRoots)
+                      if (showRootsJump)
                         ListTile(
                           leading: const Icon(Icons.storage),
-                          title: const Text('Drives'),
+                          title: Text(rootsLabel),
                           onTap: () => _loadPath(null, roots: true),
+                        ),
+                      if (showHomeJump)
+                        ListTile(
+                          leading: const Icon(Icons.home_outlined),
+                          title: Text(l10n.homeFolderHome),
+                          onTap: () => _loadPath(_homeDir),
                         ),
                       if (_parent != null && !_showingRoots)
                         ListTile(
                           leading: const Icon(Icons.arrow_upward),
-                          title: const Text('..'),
+                          title: Text(l10n.homeFolderParent),
                           onTap: () => _loadPath(_parent),
                         ),
                       for (final entry in _entries)
@@ -187,8 +224,8 @@ class _HomeFolderBrowserState extends State<HomeFolderBrowser> {
                               _loadPath(entry['path']?.toString()),
                         ),
                       if (!_loading && _entries.isEmpty)
-                        const ListTile(
-                          title: Text('No subfolders'),
+                        ListTile(
+                          title: Text(l10n.homeFolderNoSubfolders),
                         ),
                     ],
                   ),

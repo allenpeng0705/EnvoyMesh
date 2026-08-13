@@ -1243,6 +1243,18 @@ import {
   type EnvoyLocalRuntimeState,
 } from "./envoy-local-runtime.js";
 import {
+  createEnvoyLocalEmbedRuntimeState,
+  disableEnvoyLocalEmbedViaRuntime,
+  enableEnvoyLocalEmbedViaRuntime,
+  getEnvoyLocalEmbedStatusViaRuntime,
+  haltEnvoyLocalEmbedChildViaRuntime,
+  maybeStartEnvoyLocalEmbedOnBootViaRuntime,
+  stopEnvoyLocalEmbedViaRuntime,
+  type EnvoyLocalEmbedRuntimeDeps,
+  type EnvoyLocalEmbedRuntimeState,
+} from "./envoy-local-embed-runtime.js";
+import { migrateEmbeddingSettings } from "@envoymesh/rag";
+import {
   acceptShareViaRuntime,
   buildTransferInboundContext,
   clearPendingShareStateForPreviewViaRuntime,
@@ -3287,10 +3299,12 @@ class NodeServiceImpl implements NodeService {
     if (!this._ragServiceInit) {
       this._ragServiceInit = (async () => {
         const config = await this.getNodeConfig();
+        const envoyLocalEmbed = await this._envoyLocalEmbedOverlay();
         this._ragService = await createRagService({
           profileDir: this._profileDir,
           knowledgeBase: config.aiSettings?.knowledgeBase,
           modelProviders: config.modelProviders,
+          envoyLocalEmbed,
           chatLogStore: this._chatLogStore,
           onProgress: (progress) => {
             if (this.hasListeners("rag:reindex")) {
@@ -4433,6 +4447,8 @@ class NodeServiceImpl implements NodeService {
 
   // Phase 54 — Envoy Local (downloadable llama-server)
   private readonly _envoyLocalState: EnvoyLocalRuntimeState = createEnvoyLocalRuntimeState();
+  private readonly _envoyLocalEmbedState: EnvoyLocalEmbedRuntimeState =
+    createEnvoyLocalEmbedRuntimeState();
 
   private _bindOpenClawPersistence(): void {
     if (this._profileDir === "/tmp/unknown") {
@@ -4789,6 +4805,8 @@ class NodeServiceImpl implements NodeService {
   }
 
   async updateEnvoyLocalEngine() {
+    // Chat + embed share the same llama-server binary; stop embed before force reinstall.
+    await haltEnvoyLocalEmbedChildViaRuntime(this._envoyLocalEmbedState);
     return updateEnvoyLocalEngineViaRuntime(
       this._envoyLocalState,
       this._envoyLocalRuntimeDeps(),
@@ -4806,6 +4824,132 @@ class NodeServiceImpl implements NodeService {
   /** Process shutdown — always kill the sidecar child. */
   async haltEnvoyLocalChild(): Promise<void> {
     await haltEnvoyLocalChildViaRuntime(this._envoyLocalState);
+  }
+
+  // --- Phase 57E: Envoy Local embed sidecar ---
+
+  private _envoyLocalEmbedRuntimeDeps(): EnvoyLocalEmbedRuntimeDeps {
+    return {
+      getProfileDir: () => this._profileDir,
+      loadEnvoyLocalEmbedConfig: async () => {
+        const cfg = await this._configStore.load();
+        return cfg?.envoyLocalEmbed;
+      },
+      saveEnvoyLocalEmbedConfig: async (patch) => {
+        const existing = await this._configStore.load();
+        const prev = existing?.envoyLocalEmbed ?? {};
+        await this.updateNodeConfig({
+          envoyLocalEmbed: { ...prev, ...patch },
+        });
+      },
+      loadDownloadRegionPreference: async () => {
+        const cfg = await this._configStore.load();
+        return cfg?.envoyLocal?.downloadRegion;
+      },
+      shouldAutoProvisionEmbed: async () => {
+        await this._ensureEmbeddingSettingsMigrated();
+        const cfg = await this._configStore.load();
+        const mode = cfg?.aiSettings?.knowledgeBase?.embedding?.mode;
+        // Default / unset / legacy inherit → Envoy Local embed.
+        return (
+          mode == null ||
+          mode === "envoy-local" ||
+          (mode as string) === "inherit"
+        );
+      },
+    };
+  }
+
+  private async _envoyLocalEmbedOverlay(): Promise<{
+    endpoint?: string;
+    modelName?: string;
+    running?: boolean;
+  } | null> {
+    try {
+      const st = await getEnvoyLocalEmbedStatusViaRuntime(
+        this._envoyLocalEmbedState,
+        this._envoyLocalEmbedRuntimeDeps(),
+      );
+      return {
+        endpoint: st.endpoint,
+        modelName: st.activeModelId,
+        running: st.running,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private _embeddingMigrated = false;
+
+  private async _ensureEmbeddingSettingsMigrated(): Promise<void> {
+    if (this._embeddingMigrated) return;
+    const cfg = await this._configStore.load();
+    if (!cfg) {
+      this._embeddingMigrated = true;
+      return;
+    }
+    const emb = cfg.aiSettings?.knowledgeBase?.embedding;
+    if (emb?.mode && emb.mode !== "inherit") {
+      this._embeddingMigrated = true;
+      return;
+    }
+    const migrated = migrateEmbeddingSettings(emb, cfg.modelProviders);
+    if (!cfg.aiSettings) {
+      this._embeddingMigrated = true;
+      return;
+    }
+    await this._configStore.save({
+      ...cfg,
+      aiSettings: {
+        ...cfg.aiSettings,
+        knowledgeBase: {
+          ...(cfg.aiSettings.knowledgeBase ?? {}),
+          embedding: migrated,
+        },
+      },
+    });
+    this._embeddingMigrated = true;
+  }
+
+  async getEnvoyLocalEmbedStatus() {
+    return getEnvoyLocalEmbedStatusViaRuntime(
+      this._envoyLocalEmbedState,
+      this._envoyLocalEmbedRuntimeDeps(),
+    );
+  }
+
+  async enableEnvoyLocalEmbed(params?: import("@envoymesh/api").EnableEnvoyLocalEmbedParams) {
+    return enableEnvoyLocalEmbedViaRuntime(
+      this._envoyLocalEmbedState,
+      this._envoyLocalEmbedRuntimeDeps(),
+      params,
+    );
+  }
+
+  async stopEnvoyLocalEmbed() {
+    return stopEnvoyLocalEmbedViaRuntime(
+      this._envoyLocalEmbedState,
+      this._envoyLocalEmbedRuntimeDeps(),
+    );
+  }
+
+  async disableEnvoyLocalEmbed() {
+    return disableEnvoyLocalEmbedViaRuntime(
+      this._envoyLocalEmbedState,
+      this._envoyLocalEmbedRuntimeDeps(),
+    );
+  }
+
+  async maybeStartEnvoyLocalEmbedOnBoot(): Promise<void> {
+    await maybeStartEnvoyLocalEmbedOnBootViaRuntime(
+      this._envoyLocalEmbedState,
+      this._envoyLocalEmbedRuntimeDeps(),
+    );
+  }
+
+  async haltEnvoyLocalEmbedChild(): Promise<void> {
+    await haltEnvoyLocalEmbedChildViaRuntime(this._envoyLocalEmbedState);
   }
 
   /** One-shot prompt — used by the sendToPi JSON-RPC method. */
@@ -7063,6 +7207,7 @@ class NodeServiceImpl implements NodeService {
     await rag.refreshConfig({
       knowledgeBase: config.aiSettings?.knowledgeBase,
       modelProviders: config.modelProviders,
+      envoyLocalEmbed: await this._envoyLocalEmbedOverlay(),
     });
 
     if (this._vaultDir) {
@@ -7088,6 +7233,134 @@ class NodeServiceImpl implements NodeService {
     }
 
     return rag.getIndexStatus();
+  }
+
+  async testRagEmbedding(): Promise<import("@envoymesh/api").RagEmbeddingProbeResult> {
+    const config = await this.getNodeConfig();
+    const rag = await this._getRagService();
+    if (!rag) {
+      return {
+        ok: false,
+        error: "RAG service is unavailable on this node",
+        latencyMs: 0,
+      };
+    }
+    await rag.refreshConfig({
+      knowledgeBase: config.aiSettings?.knowledgeBase,
+      modelProviders: config.modelProviders,
+      envoyLocalEmbed: await this._envoyLocalEmbedOverlay(),
+    });
+    return rag.probeEmbedding();
+  }
+
+  async testChatModel(): Promise<import("@envoymesh/api").ChatModelProbeResult> {
+    const started = Date.now();
+    try {
+      const localStatus = await this.getEnvoyLocalStatus();
+      const effective = await this.getEffectiveModelProviders();
+      const usingEnvoyLocal = effective.presetId === "envoy-local";
+
+      if (
+        localStatus.enabled &&
+        localStatus.running &&
+        (!localStatus.endpoint?.trim() || !localStatus.activeModelId?.trim())
+      ) {
+        return {
+          ok: false,
+          mode: "envoy-local",
+          endpoint: localStatus.endpoint ?? undefined,
+          modelName: localStatus.activeModelId ?? undefined,
+          error: "Envoy Local is running but has no active model or endpoint",
+          latencyMs: Date.now() - started,
+        };
+      }
+
+      const providers = buildModelProviders(effective, true);
+      if (providers.length === 0) {
+        return {
+          ok: false,
+          mode: usingEnvoyLocal ? "envoy-local" : effective.mode,
+          endpoint: effective.endpoint ?? localStatus.endpoint ?? undefined,
+          modelName: effective.modelName ?? localStatus.activeModelId ?? undefined,
+          error:
+            localStatus.enabled && !localStatus.running
+              ? "No chat model available — start Envoy Local or save a cloud/Ollama provider"
+              : "No chat model provider is configured",
+          latencyMs: Date.now() - started,
+        };
+      }
+
+      const result = await routeModelRequest(
+        {
+          taskType: "settings.chat_model_probe",
+          prompt: "Reply with exactly one word: pong",
+          sensitivity: "public",
+          ownerApproved: true,
+        },
+        providers,
+      );
+      const latencyMs = Date.now() - started;
+      const base = {
+        mode: usingEnvoyLocal ? "envoy-local" : effective.mode,
+        endpoint: effective.endpoint,
+        modelName: effective.modelName,
+      };
+      if (result.decision.action !== "allow") {
+        const decision = result.decision;
+        return {
+          ok: false,
+          ...base,
+          providerId:
+            "provider" in decision ? decision.provider.providerId : undefined,
+          error: decision.reason || `model route ${decision.action}`,
+          latencyMs,
+        };
+      }
+      const text = result.response?.text?.trim() ?? "";
+      if (!text) {
+        return {
+          ok: false,
+          ...base,
+          providerId: result.decision.provider.providerId,
+          modelName: result.response?.modelName ?? base.modelName,
+          error: "chat model returned an empty response",
+          latencyMs,
+        };
+      }
+      return {
+        ok: true,
+        providerId: result.decision.provider.providerId,
+        modelName: result.response?.modelName ?? base.modelName ?? "unknown",
+        mode: base.mode,
+        endpoint: base.endpoint,
+        replyPreview: text.length > 120 ? `${text.slice(0, 117)}…` : text,
+        latencyMs,
+      };
+    } catch (error) {
+      const config = await this.getNodeConfig().catch(() => null);
+      const mp = config?.modelProviders;
+      let localHint: { mode?: string; endpoint?: string; modelName?: string } = {};
+      try {
+        const st = await this.getEnvoyLocalStatus();
+        if (st.enabled && st.running) {
+          localHint = {
+            mode: "envoy-local",
+            endpoint: st.endpoint ?? undefined,
+            modelName: st.activeModelId ?? undefined,
+          };
+        }
+      } catch {
+        // ignore
+      }
+      return {
+        ok: false,
+        mode: localHint.mode ?? mp?.mode,
+        endpoint: localHint.endpoint ?? mp?.endpoint,
+        modelName: localHint.modelName ?? mp?.modelName,
+        error: error instanceof Error ? error.message : String(error),
+        latencyMs: Date.now() - started,
+      };
+    }
   }
 
   async saveExternalMcpSearchAsNote(
@@ -7208,6 +7481,7 @@ class NodeServiceImpl implements NodeService {
     await this._ragService.refreshConfig({
       knowledgeBase: config.aiSettings?.knowledgeBase,
       modelProviders: config.modelProviders,
+      envoyLocalEmbed: await this._envoyLocalEmbedOverlay(),
     });
     const nextKey = this._ragService.getIndexStatus().embedderModelKey;
     if (
@@ -8165,6 +8439,7 @@ class NodeServiceImpl implements NodeService {
 
   async getNodeConfig(): Promise<NodeConfig> {
     await this._ensureFamilyOwnerMigrated();
+    await this._ensureEmbeddingSettingsMigrated();
     const config = await getNodeConfigViaRuntime(this._nodeConfigContext());
     const profiles = this._familyProfileStore
       ? (await this._familyProfileStore.list()).map(toFamilyProfile)

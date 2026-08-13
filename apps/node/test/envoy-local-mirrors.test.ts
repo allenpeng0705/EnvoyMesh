@@ -61,7 +61,7 @@ describe("envoy-local-mirrors", () => {
     ).toBe("cn");
   });
 
-  it("orders China candidates ModelScope then hf-mirror (no huggingface.co)", () => {
+  it("orders China candidates ModelScope → hf-mirror → Hugging Face last", () => {
     const urls = resolveEnvoyLocalModelDownloadUrls(
       {
         url: "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/a.gguf",
@@ -72,10 +72,10 @@ describe("envoy-local-mirrors", () => {
     );
     expect(urls[0]).toContain("modelscope.cn");
     expect(urls[1]).toContain("hf-mirror.com");
-    expect(urls.every((u) => !u.includes("huggingface.co"))).toBe(true);
+    expect(urls[2]).toContain("huggingface.co");
   });
 
-  it("uses Hugging Face only for global region", () => {
+  it("uses Hugging Face then hf-mirror for global region", () => {
     const urls = resolveEnvoyLocalModelDownloadUrls(
       {
         url: "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/a.gguf",
@@ -84,10 +84,11 @@ describe("envoy-local-mirrors", () => {
     );
     expect(urls).toEqual([
       "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/a.gguf",
+      "https://hf-mirror.com/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/a.gguf",
     ]);
   });
 
-  it("falls back to hf-mirror only when ModelScope URL is absent (CN)", () => {
+  it("falls back to hf-mirror then Hugging Face when ModelScope URL is absent (CN)", () => {
     const urls = resolveEnvoyLocalModelDownloadUrls(
       {
         url: "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/a.gguf",
@@ -96,6 +97,7 @@ describe("envoy-local-mirrors", () => {
     );
     expect(urls).toEqual([
       "https://hf-mirror.com/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/a.gguf",
+      "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/a.gguf",
     ]);
   });
 

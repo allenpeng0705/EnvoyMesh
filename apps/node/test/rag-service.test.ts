@@ -105,4 +105,18 @@ describe("createRagService", () => {
     expect(rag.getIndexStatus().progress.skipped).toBeGreaterThan(0);
     expect(rag.getIndexStatus().progress.indexed).toBe(0);
   });
+
+  it("probeEmbedding confirms mock provider without rebuilding", async () => {
+    const rag = await createRagService({
+      profileDir,
+      knowledgeBase: { ragMode: "vector", embedding: { mode: "mock" } },
+    });
+    const result = await rag.probeEmbedding();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.dimensions).toBeGreaterThan(0);
+    expect(result.mode).toBe("mock");
+    expect(result.modelKey.length).toBeGreaterThan(0);
+    expect(rag.getIndexStatus().lastEmbedError).toBeUndefined();
+  });
 });

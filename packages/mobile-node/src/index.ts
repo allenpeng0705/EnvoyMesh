@@ -3566,6 +3566,22 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return { ...DEFAULT_RAG_INDEX_STATUS };
   }
 
+  async testRagEmbedding(): Promise<import("@envoymesh/api").RagEmbeddingProbeResult> {
+    return {
+      ok: false,
+      error: "RAG embedding probe is not available on this client",
+      latencyMs: 0,
+    };
+  }
+
+  async testChatModel(): Promise<import("@envoymesh/api").ChatModelProbeResult> {
+    return {
+      ok: false,
+      error: "Chat model probe is not available on this client",
+      latencyMs: 0,
+    };
+  }
+
   async verifyLibraryItemIpfsGateway(
     params: VerifyLibraryItemIpfsGatewayParams,
   ): Promise<VerifyLibraryItemIpfsGatewayResult> {

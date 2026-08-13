@@ -7,6 +7,7 @@ import {
   maxVaultChunkCharsForEmbeddingTokens,
   resolveEmbeddingMaxInputTokens,
 } from "./ai-embedding-limits.js";
+import { DEFAULT_AI_EMBEDDING } from "./embedding-presets.js";
 
 export type KnowledgeBaseExternalProvider = "none" | "mcp";
 
@@ -35,17 +36,26 @@ export type AiKnowledgeBaseScope = "public" | "owner";
 export type EmbeddingResponseShape = "openai" | "minimax" | "auto";
 
 export interface AiEmbeddingSettings {
-  /** mock | ollama | openai-compatible | inherit (from modelProviders). Default: inherit */
-  mode?: "mock" | "ollama" | "openai-compatible" | "inherit";
+  /**
+   * Embedding provider. Independent of chat `modelProviders`.
+   * Default: `envoy-local` (dedicated llama.cpp embed sidecar).
+   * Legacy `inherit` is accepted only for one-time migration.
+   */
+  mode?: "mock" | "ollama" | "openai-compatible" | "envoy-local" | "inherit";
+  /**
+   * Optional UI preset id (`openai`, `minimax`, `envoy-local`, …).
+   * Does not affect resolution by itself — mode/endpoint/model do.
+   */
+  presetId?: string;
   /** Embedding model name (e.g. nomic-embed-text, text-embedding-3-small, embo-01). */
   modelName?: string;
-  /** API root. OpenAI-compatible uses `/v1/embeddings`; Ollama uses `/api/embeddings`. */
+  /** API root. OpenAI-compatible / Envoy Local use `/v1/embeddings`; Ollama uses `/api/embeddings`. */
   endpoint?: string;
   apiKey?: string;
   /** Max tokens per embed API call (e.g. MiniMax embo-01 = 4096). Caps vault chunk size and truncates at embed time. */
   maxInputTokens?: number;
   /**
-   * Parser hint for the HTTP response when `mode` is `openai-compatible`.
+   * Parser hint for the HTTP response when `mode` is `openai-compatible` or `envoy-local`.
    * See `EmbeddingResponseShape` for the full list. The HTTP transport
    * (`POST {endpoint}/embeddings` with `{model, input}` body and
    * `Authorization: Bearer …`) is identical across providers — only the
@@ -166,6 +176,8 @@ export const DEFAULT_AI_KNOWLEDGE_BASE: Required<
   chunkSizeChars: DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_SIZE_CHARS,
   chunkOverlapChars: DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_OVERLAP_CHARS,
   purgeChatRagOnDelete: false,
+  /** Default: Envoy Local embed sidecar — not inherited from chat. */
+  embedding: { ...DEFAULT_AI_EMBEDDING },
 };
 
 export function resolveAiKnowledgeBaseSettings(
@@ -256,7 +268,7 @@ export function resolveAiKnowledgeBaseSettings(
         ? Math.min(30_000, Math.max(1_000, Math.floor(input.mcpTimeoutMs)))
         : undefined,
     mcpWriteBackEnabled: input?.mcpWriteBackEnabled === true,
-    embedding: input?.embedding,
+    embedding: input?.embedding ?? { ...DEFAULT_AI_KNOWLEDGE_BASE.embedding },
   };
 }
 

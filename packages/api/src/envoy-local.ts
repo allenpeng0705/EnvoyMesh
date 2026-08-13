@@ -328,6 +328,54 @@ export interface EnvoyLocalConfig {
   fallbackModelProviders?: import("./ws-protocol.js").ModelProviderConfig;
 }
 
+/** Persisted under node-config.json (`envoyLocalEmbed`) — embedding sidecar only. */
+export interface EnvoyLocalEmbedConfig {
+  /** Download/start embed llama-server when enable RPC runs or node boots. */
+  enabled?: boolean;
+  activeModelId?: string;
+  serverParams?: EnvoyLocalServerParams;
+  runtimeVersion?: string;
+}
+
+export function normalizeEnvoyLocalEmbedConfig(
+  value: EnvoyLocalEmbedConfig | undefined,
+): Required<Pick<EnvoyLocalEmbedConfig, "enabled">> & EnvoyLocalEmbedConfig {
+  return {
+    // Default on: Knowledge uses Envoy Local embed unless the user disabled it.
+    enabled: value?.enabled !== false,
+    activeModelId: value?.activeModelId?.trim() || undefined,
+    serverParams: value?.serverParams
+      ? resolveEnvoyLocalServerParams(value.serverParams)
+      : undefined,
+    runtimeVersion: value?.runtimeVersion?.trim() || undefined,
+  };
+}
+
+export interface EnvoyLocalEmbedStatus {
+  enabled: boolean;
+  running: boolean;
+  phase: EnvoyLocalPhase;
+  port: number;
+  endpoint: string;
+  runtimeInstalled: boolean;
+  activeModelId?: string;
+  activeModelPath?: string;
+  modelsDir?: string;
+  childPid?: number;
+  lastError?: string | null;
+  lastErrorAt?: string | null;
+  download?: EnvoyLocalDownloadProgress | null;
+  /** True while enable/download/start is in flight (UI should poll). */
+  operationInProgress?: boolean;
+  serverParams: EnvoyLocalServerParams;
+}
+
+export interface EnableEnvoyLocalEmbedParams {
+  /** Skip GGUF download when a model is already on disk. */
+  skipModelDownload?: boolean;
+  modelId?: string;
+}
+
 export function normalizeEnvoyLocalConfig(
   value: EnvoyLocalConfig | undefined,
 ): Required<Pick<EnvoyLocalConfig, "enabled">> & EnvoyLocalConfig {

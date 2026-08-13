@@ -1106,11 +1106,11 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   ]);
 
   const activeExtAgentId = bridgeStatus?.activeExtAgentId?.trim() || "pi";
-  const showExtAgentProjectFolder = isExtAgentContact;
   const extAgentProjectFolderSupported = extAgentUsesProjectPath(activeExtAgentId);
+  const showExtAgentProjectFolder = isExtAgentContact && extAgentProjectFolderSupported;
 
   useEffect(() => {
-    if (!showExtAgentProjectFolder || !extAgentProjectFolderSupported) {
+    if (!showExtAgentProjectFolder) {
       setExtAgentProjectPath(undefined);
       return;
     }
@@ -1128,7 +1128,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     };
   }, [
     showExtAgentProjectFolder,
-    extAgentProjectFolderSupported,
     activeExtAgentId,
     nodeService,
     bridgeStatus?.extAgents,
@@ -1321,16 +1320,10 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
               <span className="chat-header-project-folder-label">
                 {t("settings.ai.aiEngine.projectFolder", "Project folder")}
               </span>
-              {!extAgentProjectFolderSupported ? (
-                <p className="chat-header-project-folder-hint">
-                  {t("settings.ai.aiEngine.projectFolderUnsupported")}
-                </p>
-              ) : null}
               <HomeFolderPicker
                 className="home-folder-picker home-folder-picker--compact"
                 value={extAgentProjectPath}
                 onChange={(path) => void handleExtAgentProjectPathChange(path)}
-                disabled={!extAgentProjectFolderSupported}
                 title={t("settings.ai.aiEngine.projectFolderTitle", "Choose project folder")}
               />
             </div>

@@ -152,6 +152,12 @@ class _KnowledgePluginsPanelState extends ConsumerState<KnowledgePluginsPanel> {
             ),
           ),
         );
+        return;
+      }
+      if (result['openedWebsite'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.knowledgePluginsOpenedWebsite)),
+        );
       }
     } catch (e) {
       if (!mounted) return;

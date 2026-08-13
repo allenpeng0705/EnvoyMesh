@@ -135,19 +135,27 @@ export function toHfMirrorUrl(huggingfaceUrl: string): string {
 
 /**
  * Ordered download candidates for a catalog entry.
- * First URL is preferred; callers should fail over on network/HTTP errors.
+ * First URL is preferred; callers fail over on network/HTTP errors.
+ *
+ * - **global:** Hugging Face → hf-mirror.com (China mirror as soft failover)
+ * - **cn:** ModelScope (when listed) → hf-mirror.com → Hugging Face last
+ *   (HF is often blocked/slow in CN; trying it first would hang first-run)
  */
 export function resolveEnvoyLocalModelDownloadUrls(
   model: Pick<EnvoyLocalCatalogModel, "url" | "modelScopeUrl">,
   region: EnvoyLocalModelRegion = detectEnvoyLocalModelRegion(),
 ): string[] {
+  const hf = model.url.trim();
+  const mirror = toHfMirrorUrl(hf);
+  const scope = model.modelScopeUrl?.trim();
   if (region === "cn") {
     const out: string[] = [];
-    if (model.modelScopeUrl?.trim()) out.push(model.modelScopeUrl.trim());
-    out.push(toHfMirrorUrl(model.url));
+    if (scope) out.push(scope);
+    out.push(mirror);
+    out.push(hf);
     return [...new Set(out)];
   }
-  return [model.url];
+  return [...new Set([hf, mirror])];
 }
 
 /** Catalog entry with `url` set to the preferred mirror for the region (UI/status). */

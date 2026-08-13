@@ -410,7 +410,9 @@ export const koLibraryViewMessages = {
   ipfsMobileHeliaOn: "이 기기에서 프로세스 내 Helia를 사용하여 내보냅니다. HTTP로 CID를 검증하려면 설정에서 게이트웨이 허용 목록을 추가하세요.",
   ipfsDesktopHelia: "프로세스 내 Helia를 사용하여 내보내기 — Kubo 데몬이 필요하지 않습니다. 번들 sidecar가 필요하면 설정에서 Kubo로 전환하세요.",
   ipfsDesktopKubo: "데스크톱 앱 번들을 사용할 때 IPFS 엔진은 첫 사용 시 자동으로 시작됩니다.",
-} as const;
+
+  publishedHint: "게시됨 — 클릭하면 비공개로 변경",
+  privateHint: "비공개 — 클릭하면 게시",} as const;
 
 export const koFileShareMessages = {
   dialogAria: "파일 공유",
@@ -596,4 +598,40 @@ export const koDisplayMessages = {
     unknown: "연락처",
   },
   nearbyPeerFallback: "주변의 누군가",
+} as const;
+
+// Partial override: new keys added by the Knowledge feature (31da3dd0).
+// mergeMessages with EN fills in the pre-existing keys (browse index, plugins lede, etc).
+export const koKnowledgeViewMessages = {
+  browse: {
+    sourceNote: "노트",
+    mcpListError: "Notion/MCP: {error}",
+    openPlugins: "플러그인 열기",
+    importObsidianAll: "연결된 항목 모두 가져오기",
+    importNotionVisible: "보이는 카드 가져오기",
+    exportToObsidian: "Obsidian로 내보내기",
+    exportToNotion: "Notion/MCP로 내보내기",
+    importObsidianOk: "Obsidian 노트 {count}개를 볼트로 가져왔습니다",
+    importNotionOk: "Notion/MCP 노트 {count}개를 볼트로 가져왔습니다",
+    exportObsidianOk: "노트 {count}개를 연결된 Obsidian으로 내보냈습니다",
+    exportNotionOk: "MCP를 통해 노트 {count}개 내보냈습니다",
+    importFailed: "가져오기 실패",
+    exportFailed: "내보내기 실패",
+    importMcpEmpty: "가져올 라이브 MCP 카드가 없습니다 — 먼저 탐색 새로 고침",
+    exportEmpty: "이 목록에 내보낼 볼트 Markdown 노트가 없습니다",
+    indexReadyLinked: "{count}개 인덱싱됨 · Obsidian {linked}개 연결",
+  },
+  plugins: {
+    linkedVaultAdd: "볼트 폴더 추가…",
+    linkedVaultPickTitle: "Obsidian 볼트 폴더 선택",
+    linkedVaultEmpty: "이 컴퓨터에서 Obsidian 볼트를 검색 중… 표시되지 않으면 '볼트 폴더 추가…'를 사용하세요.",
+    linkedVaultAutoOne: "이 컴퓨터에서 연결된 Obsidian 볼트를 찾았습니다.",
+    linkedVaultAutoMany: "이 컴퓨터에서 연결된 Obsidian 볼트 {count}개를 찾았습니다.",
+    openObsidian: "Obsidian 열기",
+    openNotion: "Notion 열기",
+    openingApp: "여는 중…",
+    openAppFailed: "이 컴퓨터에서 앱을 열 수 없습니다.",
+    notionTagline: "MCP를 통한 검색 및 탐색. URL이 없으면 소프트 페일.",
+    notionNoLocalPath: "Notion 지식 동기화는 MCP를 사용합니다 (Obsidian 같은 로컬 볼트 폴더 없음). 아래 MCP 서버 URL로 연결하세요. 'Notion 열기'는 설치된 경우 앱을 별도로 엽니다.",
+  },
 } as const;

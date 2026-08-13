@@ -24,7 +24,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useIsInProcessMobileNode, useNodeService } from "../../hooks/useNodeService.js";
 import type { ChatRoom, FamilyRoom } from "@envoymesh/api";
 import { loadTerminalSelectedSessionId, saveTerminalSelectedSessionId } from "../../lib/storage.js";
-import { isTauriShell, pickTauriDirectory } from "../../lib/tauri-shell.js";
+import { HomeFolderPicker } from "../HomeFolderPicker.js";
 import { OpenClawOfflineBanner } from "./OpenClawOfflineBanner.js";
 import { BotChatPanel } from "./BotChatPanel.js";
 import { AIChatPanel } from "./AIChatPanel.js";
@@ -176,23 +176,7 @@ export function ChatView({
       setPiProjectForceRestart(true);
       setPiRestartSessionId(target.sessionId);
       setPiProjectDraft(target.cwd || savedPiProject);
-      if (isTauriShell()) {
-        const picked = await pickTauriDirectory({
-          title: t("pi.changeProjectTitle", "Change Pi project folder"),
-          defaultPath: target.cwd || savedPiProject || undefined,
-        });
-        if (!picked.ok) {
-          setPiEnsureError(picked.error);
-          return;
-        }
-        if (!picked.path) return; // cancelled
-        setPiProjectDraft(picked.path);
-        void startPiWithPath(picked.path, {
-          forceRestart: true,
-          sessionId: target.sessionId,
-        });
-        return;
-      }
+      // Same HomeFolderPicker as Ext Agent (Tauri native dialog / web home FS modal).
       setPiProjectModalOpen(true);
       return;
     }
@@ -211,28 +195,13 @@ export function ChatView({
     setPiProjectForceRestart(false);
     setPiRestartSessionId(null);
     setPiProjectDraft(savedPiProject);
-    if (isTauriShell()) {
-      const picked = await pickTauriDirectory({
-        title: t("pi.chooseProjectTitle", "Choose Pi project folder"),
-        defaultPath: savedPiProject || undefined,
-      });
-      if (!picked.ok) {
-        setPiEnsureError(picked.error);
-        setPiProjectModalOpen(true);
-        return;
-      }
-      if (!picked.path) return; // cancelled
-      setPiProjectDraft(picked.path);
-      void startPiWithPath(picked.path, { forceRestart: false, sessionId: null });
-      return;
-    }
     setPiProjectModalOpen(true);
   };
 
   const submitPiProject = () => {
     const path = piProjectDraft.trim();
     if (!path) {
-      setPiEnsureError(t("pi.projectPathRequired", "Enter a project folder path."));
+      setPiEnsureError(t("pi.projectPathRequired", "Choose a project folder."));
       return;
     }
     void startPiWithPath(path, {
@@ -240,29 +209,6 @@ export function ChatView({
       sessionId: piRestartSessionId,
     });
   };
-
-  const browsePiProject = async () => {
-    setPiEnsureError(null);
-    const picked = await pickTauriDirectory({
-      title: piProjectForceRestart
-        ? t("pi.changeProjectTitle", "Change Pi project folder")
-        : t("pi.chooseProjectTitle", "Choose Pi project folder"),
-      defaultPath: piProjectDraft.trim() || savedPiProject || undefined,
-    });
-    if (!picked.ok) {
-      setPiEnsureError(picked.error);
-      return;
-    }
-    if (!picked.path) return; // cancelled
-    setPiProjectDraft(picked.path);
-    // OS dialog already confirmed the folder — start immediately.
-    void startPiWithPath(picked.path, {
-      forceRestart: piProjectForceRestart,
-      sessionId: piRestartSessionId,
-    });
-  };
-
-  const tauriShell = isTauriShell();
 
   const homeRemote = connectionStatus?.homeRemote;
   const terminalsAvailable =
@@ -606,54 +552,27 @@ export function ChatView({
                 : t("pi.chooseProjectTitle", "Choose Pi project folder")}
             </h2>
             <p className="modal-desc">
-              {tauriShell
-                ? t(
-                    "pi.chooseProjectDescBrowse",
-                    "Pi runs in this folder (reads AGENTS.md, edits files, runs shell). Use Browse to pick a folder.",
-                  )
-                : t(
-                    "pi.chooseProjectDesc",
-                    "Pi runs in this folder (reads AGENTS.md, edits files, runs shell). Use an absolute path. You can run up to 5 Pi terminals on different projects.",
-                  )}
+              {t(
+                "pi.chooseProjectDescBrowse",
+                "Pi runs in this folder (reads AGENTS.md, edits files, runs shell). Use Browse to pick a folder. You can run up to 5 Pi terminals on different projects.",
+              )}
             </p>
-            {tauriShell ? (
-              <div className="modal-field">
-                <span>{t("pi.projectPathLabel", "Project folder")}</span>
-                <div className="modal-field-row">
-                  <input
-                    type="text"
-                    value={piProjectDraft}
-                    readOnly
-                    placeholder={t("pi.projectPathBrowsePlaceholder", "No folder selected yet")}
-                    disabled={piEnsureBusy}
-                    aria-label={t("pi.projectPathLabel", "Project folder")}
-                  />
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={piEnsureBusy}
-                    onClick={() => void browsePiProject()}
-                  >
-                    {t("pi.browseFolder", "Browse…")}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <label className="modal-field">
-                <span>{t("pi.projectPathLabel", "Project folder")}</span>
-                <input
-                  type="text"
-                  value={piProjectDraft}
-                  onChange={(e) => setPiProjectDraft(e.target.value)}
-                  placeholder={t("pi.projectPathPlaceholder", "/path/to/your/repo")}
-                  disabled={piEnsureBusy}
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") submitPiProject();
-                  }}
-                />
-              </label>
-            )}
+            <div className="modal-field">
+              <span>{t("pi.projectPathLabel", "Project folder")}</span>
+              <HomeFolderPicker
+                value={piProjectDraft.trim() || undefined}
+                onChange={(path) => {
+                  setPiEnsureError(null);
+                  setPiProjectDraft(path ?? "");
+                }}
+                title={
+                  piProjectForceRestart
+                    ? t("pi.changeProjectTitle", "Change Pi project folder")
+                    : t("pi.chooseProjectTitle", "Choose Pi project folder")
+                }
+                disabled={piEnsureBusy}
+              />
+            </div>
             {piEnsureError ? <p className="modal-error">{piEnsureError}</p> : null}
             <div className="modal-actions">
               <button
@@ -664,31 +583,18 @@ export function ChatView({
               >
                 {t("common.cancel", "Cancel")}
               </button>
-              {tauriShell ? (
-                <button
-                  type="button"
-                  className="primary"
-                  disabled={piEnsureBusy}
-                  onClick={() => void browsePiProject()}
-                >
-                  {piEnsureBusy
-                    ? t("pi.ensuringTerminal", "Starting Pi coding terminal…")
-                    : t("pi.browseFolder", "Browse…")}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="primary"
-                  disabled={piEnsureBusy || !piProjectDraft.trim()}
-                  onClick={submitPiProject}
-                >
-                  {piEnsureBusy
-                    ? t("pi.ensuringTerminal", "Starting Pi coding terminal…")
-                    : piProjectForceRestart
-                      ? t("pi.restartWithProject", "Restart Pi here")
-                      : t("pi.startWithProject", "Start Pi")}
-                </button>
-              )}
+              <button
+                type="button"
+                className="primary"
+                disabled={piEnsureBusy || !piProjectDraft.trim()}
+                onClick={submitPiProject}
+              >
+                {piEnsureBusy
+                  ? t("pi.ensuringTerminal", "Starting Pi coding terminal…")
+                  : piProjectForceRestart
+                    ? t("pi.restartWithProject", "Restart Pi here")
+                    : t("pi.startWithProject", "Start Pi")}
+              </button>
             </div>
           </div>
         </div>

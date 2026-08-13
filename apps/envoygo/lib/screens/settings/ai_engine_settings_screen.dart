@@ -298,36 +298,33 @@ class _AiEngineSettingsScreenState
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                          ListTile(
-                            title: const Text('Project folder'),
-                            subtitle: Text(
-                              !usesProjectPath
-                                  ? 'Used when the active Ext Agent is Codex, Claude Code, Cursor, Aider, or MiniMax. Switch agent above to browse.'
-                                  : projectPath?.isNotEmpty == true
-                                      ? projectPath!
-                                      : 'Not set (home node default)',
-                              maxLines: 4,
-                              overflow: TextOverflow.ellipsis,
+                          if (usesProjectPath)
+                            ListTile(
+                              title: const Text('Project folder'),
+                              subtitle: Text(
+                                projectPath?.isNotEmpty == true
+                                    ? projectPath!
+                                    : 'Not set (home node default)',
+                                maxLines: 4,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (projectPath?.isNotEmpty == true)
+                                    IconButton(
+                                      tooltip: 'Clear',
+                                      icon: const Icon(Icons.clear),
+                                      onPressed: _clearProjectFolder,
+                                    ),
+                                  IconButton(
+                                    tooltip: 'Browse',
+                                    icon: const Icon(Icons.folder_open),
+                                    onPressed: _pickProjectFolder,
+                                  ),
+                                ],
+                              ),
                             ),
-                            trailing: usesProjectPath
-                                ? Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (projectPath?.isNotEmpty == true)
-                                        IconButton(
-                                          tooltip: 'Clear',
-                                          icon: const Icon(Icons.clear),
-                                          onPressed: _clearProjectFolder,
-                                        ),
-                                      IconButton(
-                                        tooltip: 'Browse',
-                                        icon: const Icon(Icons.folder_open),
-                                        onPressed: _pickProjectFolder,
-                                      ),
-                                    ],
-                                  )
-                                : const Icon(Icons.folder_off_outlined),
-                          ),
                           ListTile(
                             title: Text(l10n.settingsHowToStart),
                             subtitle: Text(install.startHint),

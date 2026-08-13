@@ -196,11 +196,105 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
 
   Future<void> _togglePublished(LocalFileItem item) async {
     final client = ref.read(nodeServiceProvider);
-    final id = item.documentId;
-    if (client == null || id == null || id.isEmpty) return;
+    if (client == null) return;
+    final l10n = AppLocalizations.of(context);
     final next = !(item.published ?? false);
+    final id = item.documentId;
+
     try {
-      await client.setLibraryItemPublished(documentId: id, published: next);
+      if (id != null && id.isNotEmpty && item.source == 'vault') {
+        await client.setLibraryItemPublished(documentId: id, published: next);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              next
+                  ? l10n.knowledgeFilePublish
+                  : l10n.knowledgeFileMakePrivate,
+            ),
+          ),
+        );
+        await _reload();
+        return;
+      }
+
+      if (!next) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Import this note into the vault first, then you can publish it.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      String? docId;
+      if (item.source == 'linked-obsidian') {
+        final result = await client.importLinkedObsidianNotes(
+          paths: [item.relativePath],
+        );
+        final ok = result['ok'] == true;
+        final imported = (result['imported'] as List?) ?? const [];
+        if (!ok || imported.isEmpty) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                result['reason']?.toString() ?? 'Import failed',
+              ),
+            ),
+          );
+          return;
+        }
+        final first = imported.first;
+        if (first is Map) {
+          docId = first['documentId']?.toString();
+        }
+      } else if (item.source == 'mcp-remote') {
+        final result = await client.importExternalMcpKnowledge(
+          paths: [item.relativePath],
+        );
+        final ok = result['ok'] == true;
+        final imported = (result['imported'] as List?) ?? const [];
+        if (!ok || imported.isEmpty) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                result['reason']?.toString() ?? 'Import failed',
+              ),
+            ),
+          );
+          return;
+        }
+        final first = imported.first;
+        if (first is Map) {
+          docId = first['documentId']?.toString();
+        }
+      } else {
+        return;
+      }
+
+      if (docId == null || docId.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Imported, but could not publish yet — try Publish again from the imported note.',
+            ),
+          ),
+        );
+        await _reload();
+        return;
+      }
+
+      await client.setLibraryItemPublished(documentId: docId, published: true);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Imported and published')),
+      );
       await _reload();
     } catch (e) {
       if (!mounted) return;
@@ -301,7 +395,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
     final canEdit = isVault &&
         item.relativePath.startsWith('notes/') &&
         (item.extension == '.md' || item.extension == 'md');
-    final canPublish = isVault && (item.documentId?.isNotEmpty ?? false);
+    final canPublish = _canPublish(item);
     final canConvert = isVault &&
         !item.relativePath.startsWith('notes/') &&
         const {'.pdf', 'pdf', '.docx', 'docx', '.doc', 'doc', '.xlsx', 'xlsx'}
@@ -340,7 +434,10 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
                   title: Text(
                     (item.published ?? false)
                         ? l10n.knowledgeFileMakePrivate
-                        : l10n.knowledgeFilePublish,
+                        : (item.source == 'linked-obsidian' ||
+                                item.source == 'mcp-remote')
+                            ? 'Import and publish'
+                            : l10n.knowledgeFilePublish,
                   ),
                   onTap: () {
                     Navigator.pop(ctx);
@@ -774,17 +871,22 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
                                                 overflow: TextOverflow.ellipsis,
                                               ),
                                             ),
-                                            const SizedBox(width: 8),
-                                            _SourceChip(
-                                              source: knowledgeBrowseSource(
-                                                item.relativePath,
+                                            if (_shouldShowSourceChip(item)) ...[
+                                              const SizedBox(width: 8),
+                                              _SourceChip(
+                                                source: knowledgeBrowseSource(
+                                                  item.relativePath,
+                                                ),
+                                                origin: knowledgeObsidianOrigin(
+                                                  item.relativePath,
+                                                ),
                                               ),
-                                            ),
+                                            ],
                                           ],
                                         )
                                       : Text(item.title),
                                   subtitle: Text(
-                                    '${item.relativePath} · ${_fmtBytes(item.byteLength)}',
+                                    '${widget.knowledgeBrowse ? knowledgeBrowseDisplayPath(item.relativePath) : item.relativePath} · ${_fmtBytes(item.byteLength)}',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -793,13 +895,16 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
                                   trailing: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      if (item.source == 'vault' &&
-                                          (item.documentId?.isNotEmpty ??
-                                              false))
+                                      if (_canPublish(item))
                                         IconButton(
                                           tooltip: (item.published ?? false)
                                               ? l10n.knowledgeFileMakePrivate
-                                              : l10n.knowledgeFilePublish,
+                                              : (item.source ==
+                                                          'linked-obsidian' ||
+                                                      item.source ==
+                                                          'mcp-remote')
+                                                  ? 'Import and publish'
+                                                  : l10n.knowledgeFilePublish,
                                           icon: Icon(
                                             (item.published ?? false)
                                                 ? Icons.lock_open_outlined
@@ -841,6 +946,28 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
     }
   }
 
+  bool _canPublish(LocalFileItem item) {
+    if (item.source == 'vault' &&
+        (item.documentId?.isNotEmpty ?? false)) {
+      return true;
+    }
+    return item.source == 'linked-obsidian' || item.source == 'mcp-remote';
+  }
+
+  bool _shouldShowSourceChip(LocalFileItem item) {
+    if (!widget.knowledgeBrowse) return false;
+    final source = knowledgeBrowseSource(item.relativePath);
+    if (source == 'document') return false;
+    if (_browseFilter == KnowledgeBrowseFilter.obsidian &&
+        source == 'obsidian') {
+      return false;
+    }
+    if (_browseFilter == KnowledgeBrowseFilter.notion && source == 'notion') {
+      return false;
+    }
+    return true;
+  }
+
   IconData _iconFor(LocalFileItem item) {
     final ext = item.extension.toLowerCase();
     if (['png', 'jpg', 'jpeg', 'webp', 'gif'].contains(ext)) {
@@ -860,36 +987,58 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
 
 class _SourceChip extends StatelessWidget {
   final String source;
-  const _SourceChip({required this.source});
+  final String? origin;
+  const _SourceChip({required this.source, this.origin});
 
   @override
   Widget build(BuildContext context) {
+    if (source == 'obsidian') {
+      final tip = origin == 'linked'
+          ? 'Obsidian · Linked vault'
+          : origin == 'imported'
+              ? 'Obsidian · Imported'
+              : 'Obsidian';
+      return Tooltip(
+        message: tip,
+        child: Container(
+          width: 20,
+          height: 20,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFF6C5CE7),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: const Icon(Icons.auto_awesome, size: 12, color: Colors.white),
+        ),
+      );
+    }
+
     final label = switch (source) {
       'notion' => 'Notion',
-      'obsidian' => 'Obsidian',
       'blog' => 'Blog',
       'note' => 'Note',
       _ => 'File',
     };
-    final color = switch (source) {
+    final scheme = Theme.of(context).colorScheme;
+    final accent = switch (source) {
       'notion' => const Color(0xFF2F3437),
-      'obsidian' => const Color(0xFF5B4BD6),
       'blog' => const Color(0xFF0F766E),
-      'note' => const Color(0xFF334155),
-      _ => Theme.of(context).colorScheme.outline,
+      'note' => scheme.outline,
+      _ => scheme.outline,
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
+        color: accent.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: accent.withValues(alpha: 0.28)),
       ),
       child: Text(
         label,
         style: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w600,
-          color: color,
+          color: scheme.onSurface,
         ),
       ),
     );

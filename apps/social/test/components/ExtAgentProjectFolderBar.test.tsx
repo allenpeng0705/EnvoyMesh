@@ -24,7 +24,7 @@ describe("Ext Agent project folder chat chrome", () => {
     expect(extAgentUsesProjectPath("pi")).toBe(false);
   });
 
-  it("browser Social uses editable path input (Pi-style), not Browse", () => {
+  it("browser Social uses Browse → home folder modal (same as Tauri, read-only path)", () => {
     const onChange = vi.fn();
     renderWithI18n(
       <div data-testid="ext-agent-project-folder">
@@ -37,10 +37,10 @@ describe("Ext Agent project folder chat chrome", () => {
     );
     expect(screen.getByTestId("ext-agent-project-folder")).toBeTruthy();
     const input = screen.getByDisplayValue("/tmp/project") as HTMLInputElement;
-    expect(input.readOnly).toBe(false);
-    expect(screen.queryByRole("button", { name: /Browse/i })).toBeNull();
-    fireEvent.change(input, { target: { value: "/tmp/other" } });
-    fireEvent.click(screen.getByRole("button", { name: /^Set$/i }));
-    expect(onChange).toHaveBeenCalledWith("/tmp/other");
+    expect(input.readOnly).toBe(true);
+    expect(screen.getByRole("button", { name: /Browse/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Set$/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Clear$/i }));
+    expect(onChange).toHaveBeenCalledWith(undefined);
   });
 });

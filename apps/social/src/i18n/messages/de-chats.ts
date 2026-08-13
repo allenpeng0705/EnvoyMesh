@@ -93,7 +93,9 @@ export const deChatMessages = {
   openclawOfflineSettings: "Einstellungen öffnen",
   openclawOfflineRestarting: "Neustart…",
   audioMessage: deInboxAudioMessages,
-} as const;
+
+  extAgentOfflineHintHermes: "EnvoyMesh startet Hermes bei Bedarf. Setzen Sie API_SERVER_ENABLED=true und API_SERVER_KEY in der Hermes-Konfiguration; halten Sie `hermes` auf dem PATH.",
+  extAgentOfflineHintOpenHuman: "Öffnen Sie OpenHuman.app und lassen Sie es laufen, während Sie chatten (EnvoyMesh verwendet :7788).",} as const;
 
 export const deContactChatMessages = {
   dateToday: "Heute",

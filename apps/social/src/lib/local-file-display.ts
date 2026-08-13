@@ -74,18 +74,65 @@ export function isKnowledgeDocumentsPath(relativePath: string): boolean {
 
 export type KnowledgeBrowseSource = "notion" | "obsidian" | "blog" | "note" | "document";
 
+/** Linked vault vs imported copy (both browse as source "obsidian"). */
+export type KnowledgeObsidianOrigin = "linked" | "imported";
+
+export function knowledgeObsidianOrigin(
+  relativePath: string,
+): KnowledgeObsidianOrigin | null {
+  const p = normalizeVaultRelativePath(relativePath).toLowerCase();
+  if (p === "linked-obsidian" || p.startsWith("linked-obsidian/")) return "linked";
+  if (p === "notes/imports/obsidian" || p.startsWith("notes/imports/obsidian/")) {
+    return "imported";
+  }
+  return null;
+}
+
 export function knowledgeBrowseSource(
   relativePath: string,
 ): KnowledgeBrowseSource {
   if (isKnowledgeNotionPath(relativePath)) return "notion";
   if (isKnowledgeBlogPath(relativePath)) return "blog";
-  const p = normalizeVaultRelativePath(relativePath).toLowerCase();
-  if (p === "linked-obsidian" || p.startsWith("linked-obsidian/")) return "obsidian";
-  if (p === "notes/imports/obsidian" || p.startsWith("notes/imports/obsidian/")) {
-    return "obsidian";
-  }
+  if (knowledgeObsidianOrigin(relativePath)) return "obsidian";
   if (isKnowledgeNotesPath(relativePath)) return "note";
   return "document";
+}
+
+/**
+ * Path shown under the title — strip source prefixes and the vault label
+ * so rows don’t all start with e.g. `Obsidian vault/…`.
+ * Full `relativePath` remains on the tooltip.
+ */
+export function knowledgeBrowseDisplayPath(relativePath: string): string {
+  const raw = normalizeVaultRelativePath(relativePath);
+  const lower = raw.toLowerCase();
+  const strip = (prefix: string): string | null => {
+    if (lower === prefix) return "";
+    if (lower.startsWith(`${prefix}/`)) return raw.slice(prefix.length + 1);
+    return null;
+  };
+  /** Drop `linked-obsidian/<vaultLabel>/` or `notes/imports/obsidian/<vaultLabel>/`. */
+  const stripVaultLabel = (rest: string): string => {
+    if (!rest) return rest;
+    const slash = rest.indexOf("/");
+    if (slash <= 0) return rest;
+    return rest.slice(slash + 1);
+  };
+
+  const afterLinked = strip("linked-obsidian");
+  if (afterLinked !== null) return stripVaultLabel(afterLinked) || afterLinked;
+
+  const afterImportObsidian = strip("notes/imports/obsidian");
+  if (afterImportObsidian !== null) {
+    return stripVaultLabel(afterImportObsidian) || afterImportObsidian;
+  }
+
+  return (
+    strip("notes/imports/blog") ??
+    strip("mcp-remote") ??
+    strip("notes/mcp") ??
+    raw
+  );
 }
 
 export function matchesKnowledgeBrowseFilter(

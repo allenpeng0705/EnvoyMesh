@@ -13,13 +13,16 @@ export {
 // can keep using the `@envoymesh/rag` root import above.
 export {
   resolveEmbeddingConfig as resolveEmbeddingConfigBrowserSafe,
+  migrateEmbeddingSettings,
   inferEmbeddingProviderFromEndpoint,
   isEnvoyLocalChatEndpoint,
+  isEnvoyLocalEmbedEndpoint,
   KNOWN_EMBEDDING_PROVIDERS,
   type EmbeddingProviderPreset,
   type EmbeddingProviderRule,
   type ResolveEmbeddingConfigInput,
 } from "./embedding-resolver.js";
+
 export {
   formatExternalKnowledgeSection,
   searchExternalMcpKnowledge,

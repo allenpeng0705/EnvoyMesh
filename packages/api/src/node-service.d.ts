@@ -8,7 +8,8 @@ import type { ResolveDidImportResult, ResolvedDidImport } from "./did-import.js"
 import type { CommerceReceiptRecord, ListCommerceReceiptsParams, RecordCommerceReceiptParams } from "./commerce-receipt.js";
 export type { ResolveDidImportResult, ResolvedDidImport };
 export type { CommerceReceiptRecord, ListCommerceReceiptsParams, RecordCommerceReceiptParams };
-import type { RagIndexProgress, RagIndexStatus } from "./rag-index-status.js";
+import type { RagEmbeddingProbeResult, RagIndexProgress, RagIndexStatus } from "./rag-index-status.js";
+import type { ChatModelProbeResult } from "./chat-model-probe.js";
 import type { TransferStatus } from "./transfer-status.js";
 import type { BridgeStatus, NodeConfig, RelayConfig, NodeStatus, InitNodeOptions, NodeInitResult, ChatDraft, CapabilityManifest, UpdateCapabilityManifestParams, AutonomousPolicy, ModelProviderConfig, AiSettings, ContactAiPreferences, PairingPayload, HomeClawCoreProxyParams, HomeClawCoreProxyResult, PairDeviceParams, PairDeviceResult, PairSharedIdentityParams, PairSharedIdentityResult, PairWithHomeNodeParams, PairWithHomeNodeResult, ListAuthorizedDevicesResult, RevokeAuthorizedDeviceParams, RevokeAuthorizedDeviceResult, MergeAuthorizedDevicesParams, MergeAuthorizedDevicesResult, PruneRevokedDevicesResult, ListDeviceRevocationsResult } from "./ws-protocol.js";
 export interface NodeProfile {
@@ -1320,6 +1321,16 @@ export interface NodeService {
     reindexRagKnowledge(params?: {
         force?: boolean;
     }): Promise<RagIndexStatus>;
+    /**
+     * Probe the effective embedding provider with a single short embed call.
+     * Confirms Knowledge → Setup embedding settings without rebuilding the index.
+     */
+    testRagEmbedding(): Promise<RagEmbeddingProbeResult>;
+    /**
+     * Probe the effective chat model provider with a short static completion.
+     * Confirms Settings → AI model endpoint/key without opening a chat thread.
+     */
+    testChatModel(): Promise<ChatModelProbeResult>;
     /**
      * Phase 57D — MCP search → attributed Markdown note under `notes/mcp/`.
      * Requires `aiSettings.knowledgeBase.mcpWriteBackEnabled` and `externalProvider: "mcp"`.

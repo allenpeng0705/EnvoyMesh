@@ -87,6 +87,9 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "updateEnvoyLocalServerParams",
   "resetEnvoyLocalServerParams",
   "updateEnvoyLocalEngine",
+  "enableEnvoyLocalEmbed",
+  "stopEnvoyLocalEmbed",
+  "disableEnvoyLocalEmbed",
   "createWanJoinInvite",
   "createCompanyInvite",
   "listCompanyInvites",
@@ -114,6 +117,8 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "getChatDrafts",
   "deleteChatDraft",
   "reindexRagKnowledge",
+  "testRagEmbedding",
+  "testChatModel",
   "saveExternalMcpSearchAsNote",
   "listExternalMcpKnowledge",
   "importLinkedObsidianNotes",
@@ -507,6 +512,10 @@ export async function routeRpcMethod(
           ? { force: (params as { force?: boolean }).force !== false }
           : undefined,
       );
+    case "testRagEmbedding":
+      return ns.testRagEmbedding();
+    case "testChatModel":
+      return ns.testChatModel();
     case "saveExternalMcpSearchAsNote":
       return ns.saveExternalMcpSearchAsNote({
         query: params.query as string,
@@ -896,6 +905,17 @@ export async function routeRpcMethod(
       return ns.checkEnvoyLocalEngineUpdate();
     case "updateEnvoyLocalEngine":
       return ns.updateEnvoyLocalEngine();
+    case "getEnvoyLocalEmbedStatus":
+      return ns.getEnvoyLocalEmbedStatus();
+    case "enableEnvoyLocalEmbed":
+      return ns.enableEnvoyLocalEmbed({
+        skipModelDownload: params.skipModelDownload === true,
+        modelId: typeof params.modelId === "string" ? params.modelId : undefined,
+      });
+    case "stopEnvoyLocalEmbed":
+      return ns.stopEnvoyLocalEmbed();
+    case "disableEnvoyLocalEmbed":
+      return ns.disableEnvoyLocalEmbed();
     case "getPairingPayload":
       return ns.getPairingPayload();
     case "createWanJoinInvite":

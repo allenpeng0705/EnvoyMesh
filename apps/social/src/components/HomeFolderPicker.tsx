@@ -1,10 +1,9 @@
 /**
- * Project-folder picker — same UX as Pi:
+ * Shared project-folder picker (Pi, Ext Agent, Obsidian vaults, …):
  * - Tauri desktop: read-only field + Browse → native OS folder dialog
- * - Social (browser): Browse → home-node folder modal via listHomeFsEntries
- *   (typed path + Set still available as fallback)
+ * - Social (browser): read-only field + Browse → home-node folder modal
  */
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { isTauriShell, pickTauriDirectory } from "../lib/tauri-shell.js";
 import { useT } from "../context/I18nContext.js";
 import { HomeFolderBrowserModal } from "./HomeFolderBrowserModal.js";
@@ -31,25 +30,11 @@ export function HomeFolderPicker({
   const [browsing, setBrowsing] = useState(false);
   const [webBrowserOpen, setWebBrowserOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [draft, setDraft] = useState(value ?? "");
-
-  useEffect(() => {
-    setDraft(value ?? "");
-  }, [value]);
 
   const pickLabel = t("settings.ai.aiEngine.browseFolder", "Browse…");
   const clearLabel = t("settings.ai.aiEngine.clearFolder", "Clear");
-  const applyLabel = t("settings.ai.aiEngine.applyFolder", "Set");
   const pickerTitle =
     title ?? t("settings.ai.aiEngine.projectFolderTitle", "Choose project folder");
-
-  const commitDraft = useCallback(() => {
-    if (disabled) return;
-    const next = draft.trim();
-    const prev = (value ?? "").trim();
-    if (next === prev) return;
-    onChange(next ? next : undefined);
-  }, [disabled, draft, onChange, value]);
 
   const handleBrowse = useCallback(async () => {
     if (disabled) return;
@@ -77,78 +62,33 @@ export function HomeFolderPicker({
   return (
     <div className={className ?? "home-folder-picker"}>
       <div className="home-folder-picker-row">
-        {tauriShell ? (
-          <>
-            <input
-              type="text"
-              className="agent-field-input agent-field-input--mono"
-              value={value ?? ""}
-              readOnly
-              placeholder={t(
-                "settings.ai.aiEngine.projectFolderPlaceholder",
-                "No folder selected",
-              )}
-              aria-label={t("settings.ai.aiEngine.projectFolder", "Project folder")}
-              disabled={disabled}
-            />
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => void handleBrowse()}
-              disabled={disabled || browsing}
-            >
-              {browsing
-                ? t("settings.ai.aiEngine.browsingFolder", "Browsing…")
-                : pickLabel}
-            </button>
-          </>
-        ) : (
-          <>
-            <input
-              type="text"
-              className="agent-field-input agent-field-input--mono"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={() => commitDraft()}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  commitDraft();
-                }
-              }}
-              placeholder={t(
-                "settings.ai.aiEngine.projectFolderPathPlaceholder",
-                "/absolute/path/on/home/node",
-              )}
-              aria-label={t("settings.ai.aiEngine.projectFolder", "Project folder")}
-              disabled={disabled}
-            />
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => void handleBrowse()}
-              disabled={disabled}
-            >
-              {pickLabel}
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => commitDraft()}
-              disabled={disabled || draft.trim() === (value ?? "").trim()}
-            >
-              {applyLabel}
-            </button>
-          </>
-        )}
+        <input
+          type="text"
+          className="agent-field-input agent-field-input--mono"
+          value={value ?? ""}
+          readOnly
+          placeholder={t(
+            "settings.ai.aiEngine.projectFolderPlaceholder",
+            "No folder selected",
+          )}
+          aria-label={t("settings.ai.aiEngine.projectFolder", "Project folder")}
+          disabled={disabled}
+        />
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => void handleBrowse()}
+          disabled={disabled || browsing}
+        >
+          {browsing
+            ? t("settings.ai.aiEngine.browsingFolder", "Browsing…")
+            : pickLabel}
+        </button>
         {value ? (
           <button
             type="button"
             className="btn btn-secondary"
-            onClick={() => {
-              setDraft("");
-              onChange(undefined);
-            }}
+            onClick={() => onChange(undefined)}
             disabled={disabled}
           >
             {clearLabel}
@@ -163,7 +103,6 @@ export function HomeFolderPicker({
           onClose={() => setWebBrowserOpen(false)}
           onSelect={(path) => {
             setWebBrowserOpen(false);
-            setDraft(path);
             onChange(path);
           }}
         />

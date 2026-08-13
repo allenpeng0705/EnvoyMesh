@@ -63,6 +63,10 @@ export function buildEnvoyLocalLlamaServerArgs(opts: {
   profileDir: string;
   chatTemplate?: string;
   forceCpu?: boolean;
+  /** When true, pass `--embedding` (dedicated embed GGUF sidecar). */
+  embedding?: boolean;
+  /** Optional `--pooling` (e.g. `mean` for nomic-embed). */
+  pooling?: string;
 }): string[] {
   const sp = {
     ...DEFAULT_ENVOY_LOCAL_SERVER_PARAMS,
@@ -89,6 +93,12 @@ export function buildEnvoyLocalLlamaServerArgs(opts: {
     "--fit",
     sp.fit ?? DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.fit,
   ];
+  if (opts.embedding) {
+    args.push("--embedding");
+  }
+  if (opts.pooling?.trim()) {
+    args.push("--pooling", opts.pooling.trim());
+  }
   if (typeof sp.threads === "number" && sp.threads > 0) {
     args.push("-t", String(sp.threads));
   }

@@ -34,6 +34,7 @@ import {
   jaArtifactRendererMessages,
   jaAgentCardMessages,
   jaDisplayMessages,
+  jaKnowledgeViewMessages,
 } from "./ja-misc.js";
 
 export const ja = mergeMessages(en, {
@@ -664,6 +665,7 @@ export const ja = mergeMessages(en, {
     ipfsDesktopHelia: "エクスポートはプロセス内 Helia を使用 — Kubo デーモンは不要です。バンドルされた sidecar が必要な場合は設定で Kubo に切り替えてください。",
     ipfsDesktopKubo: "デスクトップアプリバンドルを使用する場合、IPFS エンジンは初回使用時に自動的に起動します。",
   },
+knowledge: jaKnowledgeViewMessages,
   chains: jaChainsMessages,
   workerCapability: {
     title: "エージェントワーカー",

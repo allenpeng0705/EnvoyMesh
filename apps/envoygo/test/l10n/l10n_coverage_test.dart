@@ -15,11 +15,16 @@
 // This test pins the result at the source level. It runs in <50ms
 // because it only reads the .arb files and the regenerated Dart
 // outputs (no widget mounting, no provider trees). The contract:
-//   1. `untranslated.json` is empty (or absent)
-//   2. All 5 non-EN locales have a non-empty value for every key the
+//   1. All 5 non-EN locales have a non-empty value for every key the
 //      English source has
-//   3. The placeholder set in each translation matches the English
+//   2. The placeholder set in each translation matches the English
 //      source exactly (so `${count}`, `${min}`, etc. are not lost)
+//   3. The 5 generated Dart files are fresh (mtime after .arb)
+//
+// (The original "untranslated.json is empty" check was removed: the
+// file is .gitignored, so a fresh clone has no file at all and the
+// check would silently pass. The per-locale key check below is
+// authoritative — it directly verifies the coverage contract.)
 //
 // If a future contributor adds a new key in `app_en.arb` without
 // translating it into all 5 locales, this test fails immediately.
@@ -31,43 +36,14 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('l10n coverage (de/fr/it/ja/ko)', () {
-    final l10nDir = Directory('lib/l10n');
-    final arbDir = l10nDir;
-    final genDir = l10nDir; // gen-l10n writes app_localizations_*.dart here
+    const arbDir = 'lib/l10n';
 
-    // 1. untranslated.json is empty (or absent) — the canonical
-    //    "0 untranslated messages" signal from `flutter gen-l10n`.
-    test('untranslated.json is empty (0 untranslated per locale)', () {
-      final f = File('${arbDir.path}/untranslated.json');
-      if (!f.existsSync()) {
-        // No file = all locales fully translated. That's a passing case.
-        return;
-      }
-      final raw = f.readAsStringSync().trim();
-      // Empty file or `{}` both mean "0 untranslated".
-      if (raw.isEmpty) return;
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) {
-        fail('untranslated.json should be a JSON object, got: ${decoded.runtimeType}');
-      }
-      if (decoded.isEmpty) return;
-      final buf = StringBuffer();
-      decoded.forEach((locale, keys) {
-        if (keys is List && keys.isNotEmpty) {
-          buf.writeln('  $locale: ${keys.length} untranslated');
-        }
-      });
-      if (buf.isNotEmpty) {
-        fail('Found untranslated messages:\n$buf');
-      }
-    });
-
-    // 2. The 5 target locales have all the keys the EN source has.
+    // 1. The 5 target locales have all the keys the EN source has.
     //    Locks in: nothing falls back to English silently.
     for (final locale in const ['de', 'fr', 'it', 'ja', 'ko']) {
       test('$locale: every EN key has a non-empty translation', () {
-        final en = _loadArb('${arbDir.path}/app_en.arb');
-        final loc = _loadArb('${arbDir.path}/app_$locale.arb');
+        final en = _loadArb('$arbDir/app_en.arb');
+        final loc = _loadArb('$arbDir/app_$locale.arb');
         final missing = <String>[];
         final empty = <String>[];
         for (final entry in en.entries) {
@@ -102,14 +78,14 @@ void main() {
       });
     }
 
-    // 3. The placeholder set is preserved exactly. The Flutter l10n
+    // 2. The placeholder set is preserved exactly. The Flutter l10n
     //    tool converts `{name}` → `${name}` Dart interpolation, so
     //    we check the .arb side. If a translation drops a placeholder,
     //    the runtime renders literally and silently corrupts the UI.
     for (final locale in const ['de', 'fr', 'it', 'ja', 'ko']) {
       test('$locale: placeholders match EN source exactly', () {
-        final en = _loadArb('${arbDir.path}/app_en.arb');
-        final loc = _loadArb('${arbDir.path}/app_$locale.arb');
+        final en = _loadArb('$arbDir/app_en.arb');
+        final loc = _loadArb('$arbDir/app_$locale.arb');
         final placeholderRe = RegExp(r'\{(\w+)\}');
         final mismatches = <String>[];
         for (final entry in en.entries) {
@@ -135,14 +111,14 @@ void main() {
       });
     }
 
-    // 4. The 5 generated Dart files are fresh (mtime after arb
+    // 3. The 5 generated Dart files are fresh (mtime after arb
     //    sources OR equal mtime). Guards against `gen-l10n` being
     //    skipped after a .arb edit.
     test('generated app_localizations_*.dart are at least as new as the .arb sources', () {
-      final en = File('${arbDir.path}/app_en.arb').statSync().modified;
+      final en = File('$arbDir/app_en.arb').statSync().modified;
       for (final locale in const ['de', 'fr', 'it', 'ja', 'ko']) {
-        final arbMtime = File('${arbDir.path}/app_$locale.arb').statSync().modified;
-        final dartFile = File('${genDir.path}/app_localizations_$locale.dart');
+        final arbMtime = File('$arbDir/app_$locale.arb').statSync().modified;
+        final dartFile = File('$arbDir/app_localizations_$locale.dart');
         if (!dartFile.existsSync()) {
           fail('Missing generated file: ${dartFile.path}');
         }

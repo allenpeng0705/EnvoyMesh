@@ -397,7 +397,9 @@ export const jaLibraryViewMessages = {
   ipfsMobileHeliaOn: "エクスポートはこのデバイスのプロセス内 Helia を使用します。HTTP で CID を検証するには設定でゲートウェイ許可リストを追加してください。",
   ipfsDesktopHelia: "エクスポートはプロセス内 Helia を使用 — Kubo デーモンは不要です。バンドルされた sidecar が必要な場合は設定で Kubo に切り替えてください。",
   ipfsDesktopKubo: "デスクトップアプリバンドルを使用する場合、IPFS エンジンは初回使用時に自動的に起動します。",
-} as const;
+
+  publishedHint: "公開済み — クリックで非公開に",
+  privateHint: "非公開 — クリックで公開",} as const;
 
 export const jaFileShareMessages = {
   dialogAria: "ファイルを共有",
@@ -583,4 +585,40 @@ export const jaDisplayMessages = {
     unknown: "連絡先",
   },
   nearbyPeerFallback: "近くにいる誰か",
+} as const;
+
+// Partial override: new keys added by the Knowledge feature (31da3dd0).
+// mergeMessages with EN fills in the pre-existing keys (browse index, plugins lede, etc).
+export const jaKnowledgeViewMessages = {
+  browse: {
+    sourceNote: "ノート",
+    mcpListError: "Notion/MCP: {error}",
+    openPlugins: "プラグインを開く",
+    importObsidianAll: "リンク済みすべてをインポート",
+    importNotionVisible: "表示中のカードをインポート",
+    exportToObsidian: "Obsidianにエクスポート",
+    exportToNotion: "Notion/MCPにエクスポート",
+    importObsidianOk: "Obsidianノート{count}件をVaultにインポートしました",
+    importNotionOk: "Notion/MCPノート{count}件をVaultにインポートしました",
+    exportObsidianOk: "ノート{count}件をリンク済みObsidianにエクスポートしました",
+    exportNotionOk: "MCP経由でノート{count}件をエクスポートしました",
+    importFailed: "インポート失敗",
+    exportFailed: "エクスポート失敗",
+    importMcpEmpty: "インポートするライブMCPカードがありません — 先に参照を更新",
+    exportEmpty: "このリストにはエクスポートできるVaultのMarkdownノートがありません",
+    indexReadyLinked: "{count}件インデックス済み · Obsidian {linked}件リンク",
+  },
+  plugins: {
+    linkedVaultAdd: "ボールトフォルダーを追加…",
+    linkedVaultPickTitle: "Obsidianボールトフォルダーを選択",
+    linkedVaultEmpty: "このコンピューターでObsidianボールトを検索中… 表示されない場合は「ボールトフォルダーを追加…」を使用してください。",
+    linkedVaultAutoOne: "このコンピューターでリンク済みObsidianボールトが見つかりました。",
+    linkedVaultAutoMany: "このコンピューターで{count}個のリンク済みObsidianボールトが見つかりました。",
+    openObsidian: "Obsidianを開く",
+    openNotion: "Notionを開く",
+    openingApp: "起動中…",
+    openAppFailed: "このコンピューターでアプリを開けませんでした。",
+    notionTagline: "MCP経由で検索・参照。URLがない場合はソフトに失敗します。",
+    notionNoLocalPath: "Notionナレッジ同期はMCPを使用します（Obsidianのようなローカルボールトフォルダーは不要）。下のMCPサーバURLで接続。「Notionを開く」はインストールされていれば別途アプリを開きます。",
+  },
 } as const;

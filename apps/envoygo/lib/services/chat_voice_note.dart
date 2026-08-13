@@ -12,6 +12,8 @@ export '../knowledge/local_file_display.dart'
         isKnowledgeObsidianPath,
         isKnowledgeDocumentsPath,
         knowledgeBrowseSource,
+        knowledgeObsidianOrigin,
+        knowledgeBrowseDisplayPath,
         matchesKnowledgeBrowseFilter,
         isVaultShareableSource;
 

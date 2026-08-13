@@ -184,6 +184,8 @@ export type RpcMethods =
   | "getIpfsEngineStatus"
   | "getRagIndexStatus"
   | "reindexRagKnowledge"
+  | "testRagEmbedding"
+  | "testChatModel"
   | "saveExternalMcpSearchAsNote"
   | "listExternalMcpKnowledge"
   | "importLinkedObsidianNotes"
@@ -297,6 +299,10 @@ export type RpcMethods =
    | "resetEnvoyLocalServerParams"
    | "checkEnvoyLocalEngineUpdate"
    | "updateEnvoyLocalEngine"
+   | "getEnvoyLocalEmbedStatus"
+   | "enableEnvoyLocalEmbed"
+   | "stopEnvoyLocalEmbed"
+   | "disableEnvoyLocalEmbed"
    // ClawHub skills
    | "getOpenClawPlugins"
     | "searchOpenClawPlugins"
@@ -608,6 +614,8 @@ export interface NodeConfig {
    * downloads into `{profileDir}/envoy-local/` when enabled.
    */
   envoyLocal?: import("./envoy-local.js").EnvoyLocalConfig;
+  /** Phase 57E — dedicated embed llama-server (independent of chat). */
+  envoyLocalEmbed?: import("./envoy-local.js").EnvoyLocalEmbedConfig;
   /**
    * Phase 49 — whether the built-in Pi local coding agent is enabled.
    * Default: true on full builds; false on Windows slim builds (where the

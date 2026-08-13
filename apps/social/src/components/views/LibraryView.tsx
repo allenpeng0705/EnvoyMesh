@@ -10,7 +10,9 @@ import {
   isHiddenFromLibraryList,
   isKnowledgeBlogPath,
   isKnowledgeNotionPath,
+  knowledgeBrowseDisplayPath,
   knowledgeBrowseSource,
+  knowledgeObsidianOrigin,
   localFileRowKey,
   matchesKnowledgeBrowseFilter,
   vaultLibraryItemFromLocalFile,
@@ -193,10 +195,36 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
   const sourceLabel = (relativePath: string): string => {
     const src = knowledgeBrowseSource(relativePath);
     if (src === "notion") return t("knowledge.browse.sourceNotion");
-    if (src === "obsidian") return t("knowledge.browse.sourceObsidian");
+    if (src === "obsidian") {
+      const origin = knowledgeObsidianOrigin(relativePath);
+      if (origin === "linked") {
+        return t("knowledge.browse.sourceObsidianLinked", "Linked");
+      }
+      if (origin === "imported") {
+        return t("knowledge.browse.sourceObsidianImported", "Imported");
+      }
+      return t("knowledge.browse.sourceObsidian");
+    }
     if (src === "blog") return t("knowledge.browse.sourceBlog");
     if (src === "note") return t("knowledge.browse.sourceNote", "Note");
     return t("knowledge.browse.sourceDocument");
+  };
+
+  const sourceChipTitle = (relativePath: string): string | undefined => {
+    const origin = knowledgeObsidianOrigin(relativePath);
+    if (origin === "linked") {
+      return t("knowledge.browse.sourceObsidianLinkedHint", "Obsidian · Linked vault");
+    }
+    if (origin === "imported") {
+      return t(
+        "knowledge.browse.sourceObsidianImportedHint",
+        "Obsidian · Imported",
+      );
+    }
+    if (knowledgeBrowseSource(relativePath) === "obsidian") {
+      return t("knowledge.browse.sourceObsidian", "Obsidian");
+    }
+    return undefined;
   };
   const load = useCallback(async () => {
     setLoading(true);
@@ -400,17 +428,48 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
       fileActionBusy === `open:${localFileRowKey(row)}`
         ? t("library.opening")
         : t("library.open");
-    const meta = `${row.relativePath} · ${formatBytes(row.byteLength)}`;
+    const displayPath = knowledgeBrowseDisplayPath(row.relativePath);
+    const meta = `${displayPath} · ${formatBytes(row.byteLength)}`;
     const source = knowledgeBrowseSource(row.relativePath);
-    const showSourceBadge = embedded && source !== "document";
+    const filterImpliesSource =
+      (browseFilter === "obsidian" && source === "obsidian") ||
+      (browseFilter === "notion" && source === "notion");
+    const showSourceBadge =
+      embedded && source !== "document" && !filterImpliesSource;
     const titleNode = (
       <>
         <span className="library-view-title__inner">
           <span className="library-view-title__text">{row.title}</span>
           {showSourceBadge ? (
-            <span className={`library-view-source library-view-source--${source}`}>
-              {sourceLabel(row.relativePath)}
-            </span>
+            source === "obsidian" ? (
+              <span
+                className="library-view-source library-view-source--obsidian library-view-source--icon-only"
+                title={
+                  sourceChipTitle(row.relativePath) ??
+                  t("knowledge.browse.sourceObsidian", "Obsidian")
+                }
+                aria-label={
+                  sourceChipTitle(row.relativePath) ??
+                  t("knowledge.browse.sourceObsidian", "Obsidian")
+                }
+              >
+                <span className="library-view-source__mark" aria-hidden>
+                  <svg viewBox="0 0 24 24" width="12" height="12" focusable="false">
+                    <path
+                      fill="currentColor"
+                      d="M12.4 2.2 5.1 8.4c-.5.45-.6 1.2-.25 1.75l5.55 8.75c.45.7 1.5.7 1.95 0l5.55-8.75c.35-.55.25-1.3-.25-1.75L12.4 2.2Zm.05 3.35 4.2 3.55-4.2 6.65-4.2-6.65 4.2-3.55Z"
+                    />
+                  </svg>
+                </span>
+              </span>
+            ) : (
+              <span
+                className={`library-view-source library-view-source--${source}`}
+                title={sourceChipTitle(row.relativePath)}
+              >
+                {sourceLabel(row.relativePath)}
+              </span>
+            )
           ) : null}
         </span>
         {embedded ? (
@@ -437,9 +496,123 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
     );
   };
 
+  const publishLibraryRow = async (row: LocalFileItem, nextPublished: boolean) => {
+    const rowKey = localFileRowKey(row);
+    setFileActionBusy(`publish:${rowKey}`);
+    try {
+      const vaultItem = vaultLibraryItemFromLocalFile(row);
+      if (vaultItem) {
+        await nodeService.setLibraryItemPublished(
+          vaultItem.documentId,
+          nextPublished,
+        );
+        showToast(
+          nextPublished
+            ? t("knowledge.browse.publishedOk", "Published")
+            : t("knowledge.browse.unpublishedOk", "Made private"),
+          "success",
+        );
+        await load();
+        return;
+      }
+
+      if (!nextPublished) {
+        showToast(
+          t(
+            "knowledge.browse.publishImportOnly",
+            "Import this note into the vault first, then you can publish it.",
+          ),
+          "error",
+        );
+        return;
+      }
+
+      if (row.source === "linked-obsidian") {
+        const result = await nodeService.importLinkedObsidianNotes({
+          paths: [row.relativePath],
+        });
+        if (!result.ok || !result.imported.length) {
+          showToast(
+            result.reason ?? t("knowledge.browse.importFailed"),
+            "error",
+          );
+          return;
+        }
+        const docId = result.imported[0]?.documentId;
+        if (!docId) {
+          showToast(
+            t(
+              "knowledge.browse.publishImportNoDoc",
+              "Imported, but could not publish yet — try Publish again from the imported note.",
+            ),
+            "error",
+          );
+          await load();
+          return;
+        }
+        await nodeService.setLibraryItemPublished(docId, true);
+        showToast(
+          t("knowledge.browse.importedAndPublished", "Imported and published"),
+          "success",
+        );
+        await load();
+        return;
+      }
+
+      if (row.source === "mcp-remote") {
+        const result = await nodeService.importExternalMcpKnowledge({
+          paths: [row.relativePath],
+        });
+        if (!result.ok || !result.imported.length) {
+          showToast(
+            result.reason ?? t("knowledge.browse.importFailed"),
+            "error",
+          );
+          return;
+        }
+        const docId = result.imported[0]?.documentId;
+        if (!docId) {
+          showToast(
+            t(
+              "knowledge.browse.publishImportNoDoc",
+              "Imported, but could not publish yet — try Publish again from the imported note.",
+            ),
+            "error",
+          );
+          await load();
+          return;
+        }
+        await nodeService.setLibraryItemPublished(docId, true);
+        showToast(
+          t("knowledge.browse.importedAndPublished", "Imported and published"),
+          "success",
+        );
+        await load();
+        return;
+      }
+
+      showToast(
+        t(
+          "knowledge.browse.publishUnavailable",
+          "This file cannot be published on the mesh.",
+        ),
+        "error",
+      );
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e), "error");
+    } finally {
+      setFileActionBusy(null);
+    }
+  };
+
   const renderRowActions = (row: LocalFileItem) => {
     const rowKey = localFileRowKey(row);
     const vaultItem = vaultLibraryItemFromLocalFile(row);
+    const canImportPublish =
+      row.source === "linked-obsidian" || row.source === "mcp-remote";
+    const showPublish = Boolean(vaultItem) || canImportPublish;
+    const isPublished = vaultItem?.published === true;
+    const publishBusy = fileActionBusy === `publish:${rowKey}`;
     const openLabel =
       fileActionBusy === `open:${rowKey}` ? t("library.opening") : t("library.open");
     const canEditNote = row.extension === ".md" && row.relativePath.startsWith("notes/");
@@ -451,35 +624,32 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
 
     return (
       <div className="library-view-actions">
-        {vaultItem ? (
+        {showPublish ? (
           <button
             type="button"
             className="library-view__icon-btn library-view__icon-btn--privacy"
+            disabled={publishBusy}
             title={
-              vaultItem.published
-                ? t("library.publishedHint", "Published — click to make private")
-                : t("library.privateHint", "Private — click to publish")
+              canImportPublish && !vaultItem
+                ? t(
+                    "knowledge.browse.publishImportHint",
+                    "Import into vault and publish for mesh discovery",
+                  )
+                : isPublished
+                  ? t("library.publishedHint", "Published — click to make private")
+                  : t("library.privateHint", "Private — click to publish")
             }
             aria-label={
-              vaultItem.published ? t("library.published") : t("library.private")
+              publishBusy
+                ? t("knowledge.browse.publishing", "Publishing…")
+                : isPublished
+                  ? t("library.published")
+                  : t("library.private")
             }
-            aria-pressed={vaultItem.published}
-            onClick={() => {
-              void (async () => {
-                try {
-                  await nodeService.setLibraryItemPublished(
-                    vaultItem.documentId,
-                    !vaultItem.published,
-                  );
-                  await load();
-                } catch (err) {
-                  console.error(err);
-                }
-              })();
-            }}
+            aria-pressed={isPublished}
+            onClick={() => void publishLibraryRow(row, !isPublished)}
           >
-            {/* Status glyph: public = open lock, private = closed lock */}
-            {vaultItem.published ? <LibraryIconUnlock /> : <LibraryIconLock />}
+            {isPublished ? <LibraryIconUnlock /> : <LibraryIconLock />}
           </button>
         ) : null}
         <button

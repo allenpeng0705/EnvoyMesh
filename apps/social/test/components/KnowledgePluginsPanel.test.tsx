@@ -72,6 +72,17 @@ describe("KnowledgePluginsPanel", () => {
     expect(screen.getByText("knowledge.plugins.linkedVaultAdd")).toBeTruthy();
     expect(screen.getByTestId("open-desktop-obsidian")).toBeTruthy();
     expect(screen.getByTestId("open-desktop-notion")).toBeTruthy();
+    const obsidianFooter = screen
+      .getByTestId("plugin-card-obsidian")
+      .querySelector(".knowledge-plugin-card__footer");
+    expect(obsidianFooter).toBeTruthy();
+    expect(obsidianFooter?.querySelector('[data-testid="download-obsidian"]')).toBeTruthy();
+    expect(
+      (screen.getByTestId("download-obsidian") as HTMLAnchorElement).href,
+    ).toContain("https://obsidian.md/download");
+    expect(
+      (screen.getByTestId("download-notion") as HTMLAnchorElement).href,
+    ).toContain("https://www.notion.com/desktop");
   });
 
   it("opens and closes both Install & use sections together", async () => {

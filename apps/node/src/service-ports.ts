@@ -18,6 +18,12 @@ export const OPENCLAW_GATEWAY_PORT_BASE = 18789;
  */
 export const ENVOY_LOCAL_PORT_BASE = 18790;
 
+/**
+ * Envoy Local embedding llama-server (Phase 57E).
+ * Separate process from chat (:18790) — loads an embedding GGUF.
+ */
+export const ENVOY_LOCAL_EMBED_PORT_BASE = 18791;
+
 function parseNonNegativeInt(raw: string | undefined): number {
   if (!raw?.trim()) return 0;
   const n = Number.parseInt(raw.trim(), 10);
@@ -67,11 +73,21 @@ export const ENVOY_LOCAL_PORT = parsePort(
   ENVOY_LOCAL_PORT_BASE + offset,
 );
 
+/** Effective Envoy Local embed llama-server port. Env: `ENVOYMESH_ENVOY_LOCAL_EMBED_PORT`. */
+export const ENVOY_LOCAL_EMBED_PORT = parsePort(
+  process.env.ENVOYMESH_ENVOY_LOCAL_EMBED_PORT,
+  ENVOY_LOCAL_EMBED_PORT_BASE + offset,
+);
+
 export function openClawGatewayWebhookUrl(port: number = OPENCLAW_GATEWAY_PORT): string {
   return `http://127.0.0.1:${port}/webhook/envoymesh`;
 }
 
 export function envoyLocalOpenAiBaseUrl(port: number = ENVOY_LOCAL_PORT): string {
+  return `http://127.0.0.1:${port}/v1`;
+}
+
+export function envoyLocalEmbedOpenAiBaseUrl(port: number = ENVOY_LOCAL_EMBED_PORT): string {
   return `http://127.0.0.1:${port}/v1`;
 }
 
@@ -87,7 +103,9 @@ export function devServicePortsConfigured(): boolean {
     Boolean(process.env.ENVOYMESH_BRIDGE_PORT?.trim()) ||
     Boolean(process.env.ENVOYMESH_TERMINAL_WS_PORT?.trim()) ||
     Boolean(process.env.ENVOYMESH_GATEWAY_PORT?.trim()) ||
-    Boolean(process.env.OPENCLAW_PORT?.trim())
+    Boolean(process.env.OPENCLAW_PORT?.trim()) ||
+    Boolean(process.env.ENVOYMESH_ENVOY_LOCAL_PORT?.trim()) ||
+    Boolean(process.env.ENVOYMESH_ENVOY_LOCAL_EMBED_PORT?.trim())
   );
 }
 

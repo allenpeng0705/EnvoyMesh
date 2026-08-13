@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DEFAULT_AI_KNOWLEDGE_BASE,
+  DESKTOP_APP_SITE,
   type AiKnowledgeBaseSettings,
   type AiSettings,
   type KbPluginInfo,
@@ -246,6 +247,16 @@ export function KnowledgePluginsPanel() {
             t("knowledge.plugins.openAppFailed", "Could not open the app on this computer."),
           "error",
         );
+        return;
+      }
+      if (result.openedWebsite) {
+        showToast(
+          t(
+            "knowledge.plugins.openedWebsite",
+            "App not installed locally — opened the official website.",
+          ),
+          "success",
+        );
       }
     } catch (err) {
       showToast(
@@ -352,26 +363,37 @@ export function KnowledgePluginsPanel() {
             <p className="field-desc">{t("knowledge.plugins.linkedVaultDesc")}</p>
           </div>
 
-          <details
-            className="knowledge-plugin-card__details"
-            open={helpOpen}
-            onToggle={(e) => {
-              setHelpOpen((e.currentTarget as HTMLDetailsElement).open);
-            }}
-          >
-            <summary>{t("knowledge.plugins.showHelp")}</summary>
-            <div className="knowledge-plugin-card__hints">
-              <p>
-                <strong>{t("knowledge.plugins.howToInstall")}</strong>{" "}
-                {t("knowledge.plugins.obsidianInstall")}
-              </p>
-              <p>
-                <strong>{t("knowledge.plugins.howToUse")}</strong>{" "}
-                {t("knowledge.plugins.obsidianUse")}
-              </p>
-              <p className="field-desc">{t("knowledge.plugins.obsidianIfMissing")}</p>
-            </div>
-          </details>
+          <div className="knowledge-plugin-card__footer">
+            <details
+              className="knowledge-plugin-card__details"
+              open={helpOpen}
+              onToggle={(e) => {
+                setHelpOpen((e.currentTarget as HTMLDetailsElement).open);
+              }}
+            >
+              <summary>{t("knowledge.plugins.showHelp")}</summary>
+              <div className="knowledge-plugin-card__hints">
+                <p>
+                  <strong>{t("knowledge.plugins.howToInstall")}</strong>{" "}
+                  {t("knowledge.plugins.obsidianInstall")}
+                </p>
+                <p>
+                  <strong>{t("knowledge.plugins.howToUse")}</strong>{" "}
+                  {t("knowledge.plugins.obsidianUse")}
+                </p>
+                <p className="field-desc">{t("knowledge.plugins.obsidianIfMissing")}</p>
+              </div>
+            </details>
+            <a
+              className="knowledge-plugin-card__download-link"
+              href={DESKTOP_APP_SITE.obsidian.download}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="download-obsidian"
+            >
+              {t("knowledge.plugins.downloadObsidian", "Download Obsidian")}
+            </a>
+          </div>
         </article>
 
         {/* —— Notion / MCP —— */}
@@ -454,26 +476,37 @@ export function KnowledgePluginsPanel() {
             </div>
           ) : null}
 
-          <details
-            className="knowledge-plugin-card__details"
-            open={helpOpen}
-            onToggle={(e) => {
-              setHelpOpen((e.currentTarget as HTMLDetailsElement).open);
-            }}
-          >
-            <summary>{t("knowledge.plugins.showHelp")}</summary>
-            <div className="knowledge-plugin-card__hints">
-              <p>
-                <strong>{t("knowledge.plugins.howToInstall")}</strong>{" "}
-                {t("knowledge.plugins.notionInstall")}
-              </p>
-              <p>
-                <strong>{t("knowledge.plugins.howToUse")}</strong>{" "}
-                {t("knowledge.plugins.notionUse")}
-              </p>
-              <p className="field-desc">{t("knowledge.plugins.notionIfMissing")}</p>
-            </div>
-          </details>
+          <div className="knowledge-plugin-card__footer">
+            <details
+              className="knowledge-plugin-card__details"
+              open={helpOpen}
+              onToggle={(e) => {
+                setHelpOpen((e.currentTarget as HTMLDetailsElement).open);
+              }}
+            >
+              <summary>{t("knowledge.plugins.showHelp")}</summary>
+              <div className="knowledge-plugin-card__hints">
+                <p>
+                  <strong>{t("knowledge.plugins.howToInstall")}</strong>{" "}
+                  {t("knowledge.plugins.notionInstall")}
+                </p>
+                <p>
+                  <strong>{t("knowledge.plugins.howToUse")}</strong>{" "}
+                  {t("knowledge.plugins.notionUse")}
+                </p>
+                <p className="field-desc">{t("knowledge.plugins.notionIfMissing")}</p>
+              </div>
+            </details>
+            <a
+              className="knowledge-plugin-card__download-link"
+              href={DESKTOP_APP_SITE.notion.download}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="download-notion"
+            >
+              {t("knowledge.plugins.downloadNotion", "Download Notion")}
+            </a>
+          </div>
         </article>
       </div>
 

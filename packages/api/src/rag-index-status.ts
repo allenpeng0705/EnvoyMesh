@@ -27,6 +27,32 @@ export interface RagIndexStatus {
   linkedObsidianNoteCount?: number;
 }
 
+/**
+ * One-shot embedding health check (Knowledge → Setup → Test embedding).
+ * Does not rebuild the index — only confirms the current provider can embed.
+ */
+export type RagEmbeddingProbeResult =
+  | {
+      ok: true;
+      modelKey: string;
+      mode: string;
+      modelName: string;
+      endpoint: string;
+      dimensions: number;
+      latencyMs: number;
+      hasApiKey: boolean;
+    }
+  | {
+      ok: false;
+      modelKey?: string;
+      mode?: string;
+      modelName?: string;
+      endpoint?: string;
+      hasApiKey?: boolean;
+      error: string;
+      latencyMs: number;
+    };
+
 export const DEFAULT_RAG_INDEX_PROGRESS: RagIndexProgress = {
   phase: "idle",
   processed: 0,

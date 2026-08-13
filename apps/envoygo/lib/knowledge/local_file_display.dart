@@ -47,16 +47,58 @@ bool isKnowledgeDocumentsPath(String relativePath) =>
 String knowledgeBrowseSource(String relativePath) {
   if (isKnowledgeNotionPath(relativePath)) return 'notion';
   if (isKnowledgeBlogPath(relativePath)) return 'blog';
+  if (knowledgeObsidianOrigin(relativePath) != null) return 'obsidian';
+  if (isKnowledgeNotesPath(relativePath)) return 'note';
+  return 'document';
+}
+
+/// Linked vault vs imported copy (both browse as source "obsidian").
+String? knowledgeObsidianOrigin(String relativePath) {
   final p = normalizeKnowledgePath(relativePath).toLowerCase();
   if (p == 'linked-obsidian' || p.startsWith('linked-obsidian/')) {
-    return 'obsidian';
+    return 'linked';
   }
   if (p == 'notes/imports/obsidian' ||
       p.startsWith('notes/imports/obsidian/')) {
-    return 'obsidian';
+    return 'imported';
   }
-  if (isKnowledgeNotesPath(relativePath)) return 'note';
-  return 'document';
+  return null;
+}
+
+/// Path under the title — strip source prefixes and vault label
+/// (e.g. drop `Obsidian vault/` so notes show as `Folder/note.md`).
+String knowledgeBrowseDisplayPath(String relativePath) {
+  final raw = normalizeKnowledgePath(relativePath);
+  final lower = raw.toLowerCase();
+  String? strip(String prefix) {
+    if (lower == prefix) return '';
+    if (lower.startsWith('$prefix/')) return raw.substring(prefix.length + 1);
+    return null;
+  }
+
+  String stripVaultLabel(String rest) {
+    if (rest.isEmpty) return rest;
+    final slash = rest.indexOf('/');
+    if (slash <= 0) return rest;
+    return rest.substring(slash + 1);
+  }
+
+  final afterLinked = strip('linked-obsidian');
+  if (afterLinked != null) {
+    final inner = stripVaultLabel(afterLinked);
+    return inner.isEmpty ? afterLinked : inner;
+  }
+
+  final afterImport = strip('notes/imports/obsidian');
+  if (afterImport != null) {
+    final inner = stripVaultLabel(afterImport);
+    return inner.isEmpty ? afterImport : inner;
+  }
+
+  return strip('notes/imports/blog') ??
+      strip('mcp-remote') ??
+      strip('notes/mcp') ??
+      raw;
 }
 
 bool matchesKnowledgeBrowseFilter({

@@ -32,6 +32,7 @@ import {
   itArtifactRendererMessages,
   itAgentCardMessages,
   itDisplayMessages,
+  itKnowledgeViewMessages,
 } from "./it-misc.js";
 
 export const it = mergeMessages(en, {

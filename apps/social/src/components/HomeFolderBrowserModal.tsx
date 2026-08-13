@@ -1,6 +1,12 @@
 /**
  * Browse folders on the home node via listHomeFsEntries (web Social).
  * Tauri uses the native OS dialog instead — see HomeFolderPicker.
+ *
+ * Starts at homeDir for convenience. Navigation:
+ * - Parent (..) when not at filesystem root / drive root
+ * - Computer (/) on macOS/Linux — jump to roots (usually `/`)
+ * - Drives on Windows — jump to C:\, D:\, …
+ * - Home — jump back to the home-node user directory
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "../context/I18nContext.js";
@@ -25,6 +31,7 @@ export function HomeFolderBrowserModal({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [platform, setPlatform] = useState("other");
+  const [homeDir, setHomeDir] = useState("");
   const [currentPath, setCurrentPath] = useState("");
   const [parent, setParent] = useState<string | undefined>();
   const [entries, setEntries] = useState<
@@ -56,19 +63,38 @@ export function HomeFolderBrowserModal({
     [],
   );
 
+  const showRootsList = useCallback(() => {
+    setShowingRoots(true);
+    setCurrentPath("");
+    setParent(undefined);
+    setEntries(
+      rootsRef.current.map((r) => ({
+        name: r === "/" ? "/" : r,
+        kind: "dir",
+        path: r,
+      })),
+    );
+    setLoading(false);
+    setError(null);
+  }, []);
+
   const loadPath = useCallback(
     async (path: string | null | undefined, opts?: { roots?: boolean }) => {
       setLoading(true);
       setError(null);
       try {
-        if (opts?.roots && platformRef.current === "win32") {
-          setShowingRoots(true);
-          setCurrentPath("");
-          setParent(undefined);
-          setEntries(
-            rootsRef.current.map((r) => ({ name: r, kind: "dir", path: r })),
-          );
-          setLoading(false);
+        if (opts?.roots) {
+          const rootList = rootsRef.current;
+          // macOS/Linux: only `/` — open it directly instead of a one-item list.
+          if (platformRef.current !== "win32" && rootList.length === 1) {
+            const result = await nodeService.listHomeFsEntries({
+              path: rootList[0],
+              dirsOnly: true,
+            });
+            applyListing(result);
+            return;
+          }
+          showRootsList();
           return;
         }
         const result = await nodeService.listHomeFsEntries({
@@ -82,7 +108,7 @@ export function HomeFolderBrowserModal({
         setLoading(false);
       }
     },
-    [applyListing, nodeService],
+    [applyListing, nodeService, showRootsList],
   );
 
   useEffect(() => {
@@ -92,15 +118,16 @@ export function HomeFolderBrowserModal({
       try {
         const info = await nodeService.getHomeFsInfo();
         if (cancelled) return;
-        const homeDir = info.homeDir ?? "";
+        const nextHome = info.homeDir ?? "";
         const nextPlatform = info.platform ?? "other";
         const nextRoots = info.roots ?? [];
         platformRef.current = nextPlatform;
         rootsRef.current = nextRoots;
         setPlatform(nextPlatform);
+        setHomeDir(nextHome);
         setRoots(nextRoots);
         const start =
-          initialPath?.trim() || homeDir || (nextRoots[0] ?? "/");
+          initialPath?.trim() || nextHome || (nextRoots[0] ?? "/");
         const result = await nodeService.listHomeFsEntries({
           path: start,
           dirsOnly: true,
@@ -132,6 +159,26 @@ export function HomeFolderBrowserModal({
   const dialogTitle =
     title ?? t("settings.ai.aiEngine.projectFolderTitle", "Choose project folder");
 
+  const rootsLabel =
+    platform === "win32"
+      ? t("settings.ai.aiEngine.folderRoots", "Drives")
+      : t("settings.ai.aiEngine.folderComputer", "Computer");
+
+  const atFilesystemRoot =
+    !showingRoots &&
+    roots.length > 0 &&
+    roots.some((r) => r === currentPath);
+
+  // Windows: always offer Drives so you can switch C: ↔ D:.
+  // Unix: offer Computer whenever we are not already at `/`.
+  const showRootsJump =
+    !showingRoots && (platform === "win32" || !atFilesystemRoot);
+
+  const showHomeJump =
+    !showingRoots &&
+    Boolean(homeDir) &&
+    currentPath !== homeDir;
+
   return (
     <ModalPortal>
       <div className="modal-overlay" role="presentation" onClick={onClose}>
@@ -154,9 +201,7 @@ export function HomeFolderBrowserModal({
             </button>
           </div>
           <p className="home-folder-browser-path">
-            {showingRoots
-              ? t("settings.ai.aiEngine.drives", "Drives")
-              : currentPath || "…"}
+            {showingRoots ? rootsLabel : currentPath || "…"}
           </p>
           {error ? <p className="home-folder-picker-error">{error}</p> : null}
           <div className="home-folder-browser-list">
@@ -164,14 +209,25 @@ export function HomeFolderBrowserModal({
               <p className="home-folder-browser-empty">{t("common.loading")}</p>
             ) : (
               <ul>
-                {platform === "win32" && !showingRoots ? (
+                {showRootsJump ? (
                   <li>
                     <button
                       type="button"
-                      className="home-folder-browser-item"
+                      className="home-folder-browser-item home-folder-browser-item--nav"
                       onClick={() => void loadPath(null, { roots: true })}
                     >
-                      {t("settings.ai.aiEngine.drives", "Drives")}
+                      {rootsLabel}
+                    </button>
+                  </li>
+                ) : null}
+                {showHomeJump ? (
+                  <li>
+                    <button
+                      type="button"
+                      className="home-folder-browser-item home-folder-browser-item--nav"
+                      onClick={() => void loadPath(homeDir)}
+                    >
+                      {t("settings.ai.aiEngine.folderHome", "Home")}
                     </button>
                   </li>
                 ) : null}
@@ -179,10 +235,10 @@ export function HomeFolderBrowserModal({
                   <li>
                     <button
                       type="button"
-                      className="home-folder-browser-item"
+                      className="home-folder-browser-item home-folder-browser-item--nav"
                       onClick={() => void loadPath(parent)}
                     >
-                      ..
+                      {t("settings.ai.aiEngine.folderParent", "↑ Parent folder")}
                     </button>
                   </li>
                 ) : null}
@@ -199,7 +255,7 @@ export function HomeFolderBrowserModal({
                 ))}
                 {!loading && entries.length === 0 ? (
                   <li className="home-folder-browser-empty">
-                    {t("settings.ai.aiEngine.noSubfolders", "No subfolders")}
+                    {t("settings.ai.aiEngine.folderEmpty")}
                   </li>
                 ) : null}
               </ul>
@@ -207,7 +263,7 @@ export function HomeFolderBrowserModal({
           </div>
           <div className="modal-actions">
             <button type="button" className="secondary" onClick={onClose}>
-              {t("common.cancel", "Cancel")}
+              {t("common.cancel")}
             </button>
             <button
               type="button"

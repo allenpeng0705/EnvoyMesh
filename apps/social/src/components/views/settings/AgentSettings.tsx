@@ -319,7 +319,6 @@ export function AgentSettings({
   );
 
   const projectFolderField = (opts: {
-    usesPath: boolean;
     path?: string;
     onChange: (path: string | undefined) => void;
   }) => (
@@ -328,17 +327,14 @@ export function AgentSettings({
         {t("settings.ai.aiEngine.projectFolder")}
       </label>
       <p className="agent-field-hint" data-testid="ext-agent-project-folder-hint">
-        {opts.usesPath
-          ? t(
-              "settings.ai.aiEngine.projectFolderHint",
-              "Working folder on this home node for coding agents (cwd).",
-            )
-          : t("settings.ai.aiEngine.projectFolderUnsupported")}
+        {t(
+          "settings.ai.aiEngine.projectFolderHint",
+          "Working folder on this home node for coding agents (cwd).",
+        )}
       </p>
       <HomeFolderPicker
         value={opts.path}
         onChange={opts.onChange}
-        disabled={!opts.usesPath}
         title={t("settings.ai.aiEngine.projectFolderTitle", "Choose project folder")}
       />
       {projectPathError ? (
@@ -521,11 +517,12 @@ export function AgentSettings({
                 <dd className="agent-field-value--mono">{extAgent.listenPort ?? 3031}</dd>
               </div>
             </dl>
-            {projectFolderField({
-              usesPath: viewUsesProjectPath,
-              path: viewProjectPath,
-              onChange: (path) => void persistActiveAgentProjectPath(path),
-            })}
+            {viewUsesProjectPath
+              ? projectFolderField({
+                  path: viewProjectPath,
+                  onChange: (path) => void persistActiveAgentProjectPath(path),
+                })
+              : null}
             <div className="agent-block-actions">
               <button
                 type="button"
@@ -605,11 +602,12 @@ export function AgentSettings({
                   onChange={(e) => setDraft({ ...draft, listenPort: parseInt(e.target.value, 10) || 3031 })}
                 />
               </div>
-              {projectFolderField({
-                usesPath: draftUsesProjectPath,
-                path: draftProjectPath,
-                onChange: (path) => void applyProjectPath(draftAgentId, path),
-              })}
+              {draftUsesProjectPath
+                ? projectFolderField({
+                    path: draftProjectPath,
+                    onChange: (path) => void applyProjectPath(draftAgentId, path),
+                  })
+                : null}
             </div>
             <div className="agent-field agent-field--checkbox">
               <label className="agent-field-label agent-field-label--inline">

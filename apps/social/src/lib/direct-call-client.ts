@@ -730,6 +730,22 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getEnvoyLocalStatus();
   }
 
+  async getEnvoyLocalEmbedStatus() {
+    return this._ns.getEnvoyLocalEmbedStatus();
+  }
+
+  async enableEnvoyLocalEmbed(params?: import("@envoymesh/api").EnableEnvoyLocalEmbedParams) {
+    return this._ns.enableEnvoyLocalEmbed(params);
+  }
+
+  async stopEnvoyLocalEmbed() {
+    return this._ns.stopEnvoyLocalEmbed();
+  }
+
+  async disableEnvoyLocalEmbed() {
+    return this._ns.disableEnvoyLocalEmbed();
+  }
+
   async enableEnvoyLocal(params?: import("@envoymesh/api").EnableEnvoyLocalParams) {
     return this._ns.enableEnvoyLocal(params);
   }
@@ -1207,6 +1223,12 @@ export class DirectCallClient implements NodeServiceClient {
   }
   async reindexRagKnowledge(params?: { force?: boolean }) {
     return this._ns.reindexRagKnowledge(params);
+  }
+  async testRagEmbedding() {
+    return this._ns.testRagEmbedding();
+  }
+  async testChatModel() {
+    return this._ns.testChatModel();
   }
 
   async verifyLibraryItemIpfsGateway(params: Parameters<NodeService["verifyLibraryItemIpfsGateway"]>[0]) {

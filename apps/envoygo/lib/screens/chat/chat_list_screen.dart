@@ -7,6 +7,7 @@ import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../utils/localized_labels.dart';
 import '../../widgets/ext_agent_switcher.dart';
+import '../../widgets/home_folder_browser.dart';
 import '../../widgets/thread_tile.dart';
 import '../terminals/terminal_detail_screen.dart';
 import 'chat_detail_screen.dart';
@@ -810,25 +811,47 @@ class ChatListScreen extends ConsumerWidget {
                     style: const TextStyle(fontSize: 13),
                   ),
                   const SizedBox(height: 12),
-                  TextField(
-                    controller: pathController,
-                    enabled: !starting,
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      labelText: l10n.chatsPiFolder,
-                      hintText: l10n.chatsPiFolderHint,
-                      border: const OutlineInputBorder(),
-                    ),
-                    onSubmitted: starting
-                        ? null
-                        : (_) => _submitNewPi(
-                            context,
-                            ctx,
-                            ref,
-                            pathController,
-                            starting,
-                            (v) => setLocal(() => starting = v),
+                  Text(
+                    l10n.chatsPiFolder,
+                    style: Theme.of(ctx).textTheme.labelLarge,
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          pathController.text.trim().isEmpty
+                              ? l10n.chatsPiFolderHint
+                              : pathController.text.trim(),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: pathController.text.trim().isEmpty
+                                ? Theme.of(ctx).colorScheme.onSurfaceVariant
+                                : Theme.of(ctx).colorScheme.onSurface,
                           ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: starting
+                            ? null
+                            : () async {
+                                final client = ref.read(nodeServiceProvider);
+                                if (client == null) return;
+                                final picked = await HomeFolderBrowser.open(
+                                  ctx,
+                                  client: client,
+                                  initialPath: pathController.text.trim().isEmpty
+                                      ? null
+                                      : pathController.text.trim(),
+                                );
+                                if (picked == null) return;
+                                setLocal(() => pathController.text = picked);
+                              },
+                        child: Text(l10n.knowledgePanelBrowse),
+                      ),
+                    ],
                   ),
                 ],
               ),

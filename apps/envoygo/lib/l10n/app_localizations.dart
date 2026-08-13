@@ -144,6 +144,42 @@ abstract class AppLocalizations {
   /// **'Cancel'**
   String get commonCancel;
 
+  /// No description provided for @commonConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm'**
+  String get commonConfirm;
+
+  /// No description provided for @homeFolderDrives.
+  ///
+  /// In en, this message translates to:
+  /// **'Drives'**
+  String get homeFolderDrives;
+
+  /// No description provided for @homeFolderComputer.
+  ///
+  /// In en, this message translates to:
+  /// **'Computer'**
+  String get homeFolderComputer;
+
+  /// No description provided for @homeFolderHome.
+  ///
+  /// In en, this message translates to:
+  /// **'Home'**
+  String get homeFolderHome;
+
+  /// No description provided for @homeFolderParent.
+  ///
+  /// In en, this message translates to:
+  /// **'↑ Parent folder'**
+  String get homeFolderParent;
+
+  /// No description provided for @homeFolderNoSubfolders.
+  ///
+  /// In en, this message translates to:
+  /// **'No subfolders'**
+  String get homeFolderNoSubfolders;
+
   /// No description provided for @commonSave.
   ///
   /// In en, this message translates to:
@@ -738,6 +774,96 @@ abstract class AppLocalizations {
   /// **'Notes, documents, and what you’ve published.'**
   String get knowledgeLibraryCaption;
 
+  /// No description provided for @knowledgeEmbedGateTitleNeeded.
+  ///
+  /// In en, this message translates to:
+  /// **'Embedding model required'**
+  String get knowledgeEmbedGateTitleNeeded;
+
+  /// No description provided for @knowledgeEmbedGateTitleDownloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading embedding model…'**
+  String get knowledgeEmbedGateTitleDownloading;
+
+  /// No description provided for @knowledgeEmbedGateTitleError.
+  ///
+  /// In en, this message translates to:
+  /// **'Embedding setup failed'**
+  String get knowledgeEmbedGateTitleError;
+
+  /// No description provided for @knowledgeEmbedGateBodyNeeded.
+  ///
+  /// In en, this message translates to:
+  /// **'Knowledge search needs a local embedding model on your home node. Download starts automatically when the app launches — Browse stays unavailable until it finishes. You can also start or retry from here.'**
+  String get knowledgeEmbedGateBodyNeeded;
+
+  /// No description provided for @knowledgeEmbedGateBodyDownloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Download is running on your home node (started with the app). You can leave this screen; Knowledge unlocks when the embedder is ready.'**
+  String get knowledgeEmbedGateBodyDownloading;
+
+  /// No description provided for @knowledgeEmbedGateBodyError.
+  ///
+  /// In en, this message translates to:
+  /// **'The embedding runtime or model could not be installed on the home node. Retry the download, or fix Setup on the desktop app.'**
+  String get knowledgeEmbedGateBodyError;
+
+  /// No description provided for @knowledgeEmbedGateDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download on home'**
+  String get knowledgeEmbedGateDownload;
+
+  /// No description provided for @knowledgeEmbedGateDownloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading…'**
+  String get knowledgeEmbedGateDownloading;
+
+  /// No description provided for @knowledgeEmbedGateRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry download'**
+  String get knowledgeEmbedGateRetry;
+
+  /// No description provided for @knowledgeEmbedGateOpenSetup.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Setup'**
+  String get knowledgeEmbedGateOpenSetup;
+
+  /// No description provided for @knowledgeEmbedGateBackgroundHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Safe to keep using other parts of the app while this finishes.'**
+  String get knowledgeEmbedGateBackgroundHint;
+
+  /// No description provided for @knowledgeEmbedGateStripNeeded.
+  ///
+  /// In en, this message translates to:
+  /// **'Knowledge unavailable — embedding model not installed on home'**
+  String get knowledgeEmbedGateStripNeeded;
+
+  /// No description provided for @knowledgeEmbedGateStripDownloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Knowledge unavailable — embedding model downloading on home'**
+  String get knowledgeEmbedGateStripDownloading;
+
+  /// No description provided for @knowledgeEmbedGateStripError.
+  ///
+  /// In en, this message translates to:
+  /// **'Knowledge unavailable — embedding setup failed on home'**
+  String get knowledgeEmbedGateStripError;
+
+  /// No description provided for @knowledgeEmbedGateDownloadStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'Embedding download started on home'**
+  String get knowledgeEmbedGateDownloadStarted;
+
   /// No description provided for @knowledgePluginsLede.
   ///
   /// In en, this message translates to:
@@ -851,6 +977,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not open the app on this computer.'**
   String get knowledgePluginsOpenAppFailed;
+
+  /// No description provided for @knowledgePluginsOpenedWebsite.
+  ///
+  /// In en, this message translates to:
+  /// **'App not installed locally — opened the official website on the home computer.'**
+  String get knowledgePluginsOpenedWebsite;
+
+  /// No description provided for @knowledgePluginsDownloadObsidian.
+  ///
+  /// In en, this message translates to:
+  /// **'Download Obsidian'**
+  String get knowledgePluginsDownloadObsidian;
+
+  /// No description provided for @knowledgePluginsDownloadNotion.
+  ///
+  /// In en, this message translates to:
+  /// **'Download Notion'**
+  String get knowledgePluginsDownloadNotion;
 
   /// No description provided for @knowledgePluginsLinkedVaultAutoOne.
   ///
@@ -983,6 +1127,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Rebuild the vault vector index on the home node?'**
   String get knowledgeSetupReindexConfirm;
+
+  /// No description provided for @knowledgeSetupTestEmbedding.
+  ///
+  /// In en, this message translates to:
+  /// **'Test embedding'**
+  String get knowledgeSetupTestEmbedding;
+
+  /// No description provided for @knowledgeSetupTestEmbeddingBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'Testing…'**
+  String get knowledgeSetupTestEmbeddingBusy;
+
+  /// No description provided for @knowledgeSetupTestEmbeddingOk.
+  ///
+  /// In en, this message translates to:
+  /// **'Embedding OK — {dimensions} dims in {latencyMs} ms'**
+  String knowledgeSetupTestEmbeddingOk(int dimensions, int latencyMs);
+
+  /// No description provided for @knowledgeSetupTestEmbeddingFail.
+  ///
+  /// In en, this message translates to:
+  /// **'Embedding failed: {error}'**
+  String knowledgeSetupTestEmbeddingFail(String error);
 
   /// No description provided for @knowledgeSetupRagMode.
   ///
@@ -3065,6 +3233,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'AI model saved'**
   String get settingsAiModelSaved;
+
+  /// No description provided for @settingsAiModelTestChat.
+  ///
+  /// In en, this message translates to:
+  /// **'Test chat model'**
+  String get settingsAiModelTestChat;
+
+  /// No description provided for @settingsAiModelTestChatBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'Testing…'**
+  String get settingsAiModelTestChatBusy;
+
+  /// No description provided for @settingsAiModelTestChatOk.
+  ///
+  /// In en, this message translates to:
+  /// **'Chat model OK — {modelName} in {latencyMs} ms'**
+  String settingsAiModelTestChatOk(String modelName, int latencyMs);
+
+  /// No description provided for @settingsAiModelTestChatFail.
+  ///
+  /// In en, this message translates to:
+  /// **'Chat model failed: {error}'**
+  String settingsAiModelTestChatFail(String error);
 
   /// No description provided for @settingsSaveFailed.
   ///

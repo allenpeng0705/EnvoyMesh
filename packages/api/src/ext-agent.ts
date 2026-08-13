@@ -259,6 +259,18 @@ export interface DiscoverObsidianVaultsResult {
 /** Allowlisted desktop apps the home node may launch (owner only). */
 export type DesktopAppId = "obsidian" | "notion";
 
+/** Official product / download pages (Open fallback + Plugins card links). */
+export const DESKTOP_APP_SITE = {
+  obsidian: {
+    home: "https://obsidian.md",
+    download: "https://obsidian.md/download",
+  },
+  notion: {
+    home: "https://www.notion.so",
+    download: "https://www.notion.com/desktop",
+  },
+} as const;
+
 export interface OpenDesktopAppParams {
   app: DesktopAppId;
 }
@@ -266,6 +278,13 @@ export interface OpenDesktopAppParams {
 export interface OpenDesktopAppResult {
   ok: boolean;
   error?: string;
+  /**
+   * True when the local app was missing and the product website was opened instead
+   * (download / web home).
+   */
+  openedWebsite?: boolean;
+  /** URL opened when `openedWebsite` is true. */
+  websiteUrl?: string;
 }
 
 export interface GetExtAgentProjectPathParams {

@@ -599,13 +599,20 @@ export function buildModelProviders(
     case "openai-compatible": {
       const rawEndpoint = effectiveConfig.endpoint ?? "https://api.openai.com/v1";
       const base = normalizeOpenAiCompatibleBaseUrl(rawEndpoint);
+      const isEnvoyLocal = effectiveConfig.presetId === "envoy-local";
       return [
         createOpenAiProvider({
-          providerId: "cloud.openai-compatible",
+          providerId: isEnvoyLocal ? "local.envoy-local" : "cloud.openai-compatible",
           modelName: effectiveConfig.modelName ?? "gpt-4o-mini",
           apiKey: effectiveConfig.apiKey,
           endpoint: base,
-          policy: relaxedCloudPolicy,
+          policy: isEnvoyLocal
+            ? {
+                providerType: "local",
+                allowedSensitivity: ["public", "friends", "trusted", "private"],
+                requiresOwnerApproval: false,
+              }
+            : relaxedCloudPolicy,
         }),
       ];
     }

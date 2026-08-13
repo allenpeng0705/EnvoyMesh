@@ -759,6 +759,27 @@ class NodeServiceClient {
     ) as Map<String, dynamic>;
   }
 
+  // -- Envoy Local embed (home-node embedding sidecar; downloads on home) --
+
+  Future<Map<String, dynamic>> getEnvoyLocalEmbedStatus() async {
+    return await _client.call('getEnvoyLocalEmbedStatus')
+        as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> enableEnvoyLocalEmbed({
+    bool skipModelDownload = false,
+    String? modelId,
+  }) async {
+    return await _client.call(
+      'enableEnvoyLocalEmbed',
+      {
+        'skipModelDownload': skipModelDownload,
+        if (modelId != null && modelId.trim().isNotEmpty) 'modelId': modelId.trim(),
+      },
+      const Duration(seconds: 60),
+    ) as Map<String, dynamic>;
+  }
+
   // -- Pi (built-in coding agent) --
 
   Future<Map<String, dynamic>> getPiStatus() async {
@@ -1276,6 +1297,18 @@ class NodeServiceClient {
     final result = await _client.call('reindexRagKnowledge', {
       if (force) 'force': true,
     }) as Map<String, dynamic>;
+    return result;
+  }
+
+  Future<Map<String, dynamic>> testRagEmbedding() async {
+    final result =
+        await _client.call('testRagEmbedding', {}) as Map<String, dynamic>;
+    return result;
+  }
+
+  Future<Map<String, dynamic>> testChatModel() async {
+    final result =
+        await _client.call('testChatModel', {}) as Map<String, dynamic>;
     return result;
   }
 

@@ -6,12 +6,30 @@ import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/re
 import { KnowledgeView } from "../../src/components/views/KnowledgeView.js";
 import { OPEN_ENVOY_AI_EVENT, takeEnvoyAiDraftHint } from "../../src/lib/open-envoy-ai-nav.js";
 
-const { knowledgeQuery, listKbPlugins, activateKbPlugin } = vi.hoisted(() => ({
+const {
+  knowledgeQuery,
+  listKbPlugins,
+  activateKbPlugin,
+  getEnvoyLocalEmbedStatus,
+  enableEnvoyLocalEmbed,
+} = vi.hoisted(() => ({
   knowledgeQuery: vi.fn().mockResolvedValue("vault says hello"),
   listKbPlugins: vi.fn().mockResolvedValue([
     { pluginId: "obsidian", displayName: "Obsidian", status: "registered", version: "1" },
   ]),
   activateKbPlugin: vi.fn().mockResolvedValue({ ok: true }),
+  getEnvoyLocalEmbedStatus: vi.fn().mockResolvedValue({
+    running: true,
+    phase: "ready",
+    endpoint: "http://127.0.0.1:18791",
+    activeModelId: "qwen3-embedding-4b-q4_k_m",
+  }),
+  enableEnvoyLocalEmbed: vi.fn().mockResolvedValue({
+    running: false,
+    phase: "downloading-model",
+    operationInProgress: true,
+    download: { label: "Downloading model", fraction: 0.1 },
+  }),
 }));
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
@@ -21,6 +39,9 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     activateKbPlugin,
     deactivateKbPlugin: vi.fn().mockResolvedValue({ ok: true }),
     updateNodeConfig: vi.fn().mockResolvedValue(undefined),
+    getEnvoyLocalEmbedStatus,
+    enableEnvoyLocalEmbed,
+    stopEnvoyLocalEmbed: vi.fn().mockResolvedValue({ running: false, phase: "idle" }),
     on: () => () => {},
     getRagIndexStatus: vi.fn().mockResolvedValue(null),
     listAllLocalFiles: vi.fn().mockResolvedValue({ items: [] }),
@@ -60,6 +81,13 @@ vi.mock("../../src/context/I18nContext.js", () => ({
       "knowledge.libraryCaption": "Notes and documents",
       "knowledge.setupHint": "Setup hint",
       "knowledge.plugins.obsidianAutoFail": "Auto fail",
+      "knowledge.embedGate.titleNeeded": "Embedding model required",
+      "knowledge.embedGate.bodyNeeded": "Need embed",
+      "knowledge.embedGate.download": "Download embedding model",
+      "knowledge.embedGate.openSetup": "Open Setup",
+      "knowledge.embedGate.stripNeeded": "Knowledge unavailable",
+      "knowledge.embedGate.downloadStartedToast": "Download started",
+      "knowledge.embedGate.blockedToast": "Blocked",
       "settings.ai.rag.heading": "KB",
       "settings.ai.rag.sectionDesc": "KB desc",
       "library.hint": "Browse hint",
@@ -91,16 +119,24 @@ describe("KnowledgeView", () => {
     knowledgeQuery.mockClear();
     listKbPlugins.mockClear();
     activateKbPlugin.mockClear();
+    getEnvoyLocalEmbedStatus.mockClear();
+    enableEnvoyLocalEmbed.mockClear();
     knowledgeQuery.mockResolvedValue("vault says hello");
     listKbPlugins.mockResolvedValue([
       { pluginId: "obsidian", displayName: "Obsidian", status: "registered", version: "1" },
     ]);
     activateKbPlugin.mockResolvedValue({ ok: true });
+    getEnvoyLocalEmbedStatus.mockResolvedValue({
+      running: true,
+      phase: "ready",
+      endpoint: "http://127.0.0.1:18791",
+      activeModelId: "qwen3-embedding-4b-q4_k_m",
+    });
   });
 
   it("defaults to Browse with Ask embedded and auto-activates Obsidian", async () => {
     render(<KnowledgeView />);
-    expect(screen.getByTestId("knowledge-browse")).toBeTruthy();
+    expect(await screen.findByTestId("knowledge-browse")).toBeTruthy();
     expect(screen.getByTestId("knowledge-ask")).toBeTruthy();
     expect(screen.getByTestId("library-stub").textContent).toBe("embedded");
     expect(screen.queryByTestId("knowledge-panel-ask")).toBeNull();
@@ -109,8 +145,28 @@ describe("KnowledgeView", () => {
     });
   });
 
+  it("gates Browse until local embed is ready (manual download; boot provisions separately)", async () => {
+    getEnvoyLocalEmbedStatus.mockResolvedValue({
+      running: false,
+      phase: "idle",
+      lastError: null,
+    });
+    render(<KnowledgeView />);
+    expect(await screen.findByTestId("knowledge-embed-gate")).toBeTruthy();
+    expect(screen.queryByTestId("knowledge-browse")).toBeNull();
+    expect(screen.getByTestId("knowledge-embed-strip")).toBeTruthy();
+    // Opening Knowledge must NOT kick off enable — that is node/Tauri boot.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(enableEnvoyLocalEmbed).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("knowledge-embed-gate-download"));
+    await waitFor(() => {
+      expect(enableEnvoyLocalEmbed).toHaveBeenCalled();
+    });
+  });
+
   it("runs knowledgeQuery from Browse Ask row", async () => {
     render(<KnowledgeView />);
+    expect(await screen.findByTestId("knowledge-browse")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Question"), {
       target: { value: "what is onboarding?" },
     });
@@ -121,21 +177,22 @@ describe("KnowledgeView", () => {
     expect(await screen.findByText("vault says hello")).toBeTruthy();
   });
 
-  it("maps legacy ask initialPanel to Browse", () => {
+  it("maps legacy ask initialPanel to Browse", async () => {
     render(<KnowledgeView initialPanel="ask" />);
-    expect(screen.getByTestId("knowledge-browse")).toBeTruthy();
+    expect(await screen.findByTestId("knowledge-browse")).toBeTruthy();
     expect(screen.getByTestId("knowledge-panel-browse").getAttribute("aria-selected")).toBe(
       "true",
     );
   });
 
-  it("dispatches open EnvoyAI event from Ask handoff", () => {
+  it("dispatches open EnvoyAI event from Ask handoff", async () => {
     const seen: unknown[] = [];
     const onOpen = (ev: Event) => {
       seen.push((ev as CustomEvent).detail);
     };
     window.addEventListener(OPEN_ENVOY_AI_EVENT, onOpen);
     render(<KnowledgeView />);
+    expect(await screen.findByTestId("knowledge-browse")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Question"), {
       target: { value: "draft for envoy" },
     });

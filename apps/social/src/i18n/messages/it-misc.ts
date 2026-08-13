@@ -397,7 +397,9 @@ export const itLibraryViewMessages = {
   ipfsMobileHeliaOn: "L'esportazione usa Helia in-process su questo dispositivo. Aggiungi una allowlist di gateway nelle Impostazioni per verificare i CID via HTTP.",
   ipfsDesktopHelia: "L'esportazione usa Helia in-process — non è richiesto un demone Kubo. Passa a Kubo nelle Impostazioni se hai bisogno del sidecar incluso.",
   ipfsDesktopKubo: "L'esportazione avvia automaticamente il motore IPFS al primo utilizzo con il bundle dell'app desktop.",
-} as const;
+
+  publishedHint: "Pubblicato — clicca per rendere privato",
+  privateHint: "Privato — clicca per pubblicare",} as const;
 
 export const itFileShareMessages = {
   dialogAria: "Condividi un file",
@@ -583,4 +585,40 @@ export const itDisplayMessages = {
     unknown: "Contatto",
   },
   nearbyPeerFallback: "Qualcuno nelle vicinanze",
+} as const;
+
+// Partial override: new keys added by the Knowledge feature (31da3dd0).
+// mergeMessages with EN fills in the pre-existing keys (browse index, plugins lede, etc).
+export const itKnowledgeViewMessages = {
+  browse: {
+    sourceNote: "Nota",
+    mcpListError: "Notion/MCP: {error}",
+    openPlugins: "Apri Plugin",
+    importObsidianAll: "Importa tutti i collegati",
+    importNotionVisible: "Importa le carte visibili",
+    exportToObsidian: "Esporta in Obsidian",
+    exportToNotion: "Esporta in Notion/MCP",
+    importObsidianOk: "{count} nota/e Obsidian importata/e nel vault",
+    importNotionOk: "{count} nota/e Notion/MCP importata/e nel vault",
+    exportObsidianOk: "{count} nota/e esportata/e nell'Obsidian collegato",
+    exportNotionOk: "{count} nota/e esportata/e via MCP",
+    importFailed: "Importazione non riuscita",
+    exportFailed: "Esportazione non riuscita",
+    importMcpEmpty: "Nessuna carta MCP attiva da importare — aggiorna prima Esplora",
+    exportEmpty: "Nessuna nota Markdown del vault da esportare in questo elenco",
+    indexReadyLinked: "{count} indicizzato/i · {linked} Obsidian collegato/i",
+  },
+  plugins: {
+    linkedVaultAdd: "Aggiungi cartella vault…",
+    linkedVaultPickTitle: "Scegli cartella del vault Obsidian",
+    linkedVaultEmpty: "Cerco vault Obsidian su questo computer… Se non ne appare nessuno, usa « Aggiungi cartella vault… ».",
+    linkedVaultAutoOne: "Vault Obsidian collegato trovato su questo computer.",
+    linkedVaultAutoMany: "{count} vault Obsidian collegati trovati su questo computer.",
+    openObsidian: "Apri Obsidian",
+    openNotion: "Apri Notion",
+    openingApp: "Apertura…",
+    openAppFailed: "Impossibile aprire l'app su questo computer.",
+    notionTagline: "Cerca e sfoglia via MCP. Errore soft senza URL.",
+    notionNoLocalPath: "La sincronizzazione Notion usa MCP (nessuna cartella vault locale come Obsidian). Connetti con un URL MCP qui sotto. « Apri Notion » avvia l'app separatamente se installata.",
+  },
 } as const;

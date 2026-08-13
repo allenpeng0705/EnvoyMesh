@@ -32,6 +32,7 @@ import {
   frArtifactRendererMessages,
   frAgentCardMessages,
   frDisplayMessages,
+  frKnowledgeViewMessages,
 } from "./fr-misc.js";
 
 export const fr = mergeMessages(en, {
@@ -663,6 +664,7 @@ export const fr = mergeMessages(en, {
     ipfsDesktopHelia: "L'exportation utilise Helia in-process — pas de démon Kubo requis. Basculez vers Kubo dans Paramètres si vous avez besoin du sidecar inclus.",
     ipfsDesktopKubo: "L'exportation démarre automatiquement le moteur IPFS lors de la première utilisation avec le bundle de l'app de bureau.",
   },
+knowledge: frKnowledgeViewMessages,
   chains: frChainsMessages,
   workerCapability: {
     title: "Travailleurs d'agent",

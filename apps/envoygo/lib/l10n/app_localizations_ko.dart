@@ -27,6 +27,24 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonCancel => '취소';
 
   @override
+  String get commonConfirm => '확인';
+
+  @override
+  String get homeFolderDrives => '드라이브';
+
+  @override
+  String get homeFolderComputer => '컴퓨터';
+
+  @override
+  String get homeFolderHome => '홈';
+
+  @override
+  String get homeFolderParent => '↑ 상위 폴더';
+
+  @override
+  String get homeFolderNoSubfolders => '하위 폴더 없음';
+
+  @override
   String get commonSave => '저장';
 
   @override
@@ -280,328 +298,392 @@ class AppLocalizationsKo extends AppLocalizations {
   String get contentMyFiles => '내 파일';
 
   @override
-  String get contentKnowledge => 'Knowledge';
+  String get contentKnowledge => '지식';
 
   @override
-  String get knowledgeTitle => 'Knowledge';
+  String get knowledgeTitle => '지식';
 
   @override
   String get knowledgeLede =>
-      'Your vault knowledge base — notes under notes/ power EnvoyAI. Documents stay as originals.';
+      '볼트 지식 베이스 — notes/의 노트가 EnvoyAI를 구동합니다. 문서는 원본 그대로 유지됩니다.';
 
   @override
-  String get knowledgePanelBrowse => 'Browse';
+  String get knowledgePanelBrowse => '탐색';
 
   @override
-  String get knowledgePanelAsk => 'Ask';
+  String get knowledgePanelAsk => '질문';
 
   @override
-  String get knowledgePanelPlugins => 'Plugins';
+  String get knowledgePanelPlugins => '플러그인';
 
   @override
-  String get knowledgePanelSetup => 'Setup';
+  String get knowledgePanelSetup => '설정';
 
   @override
-  String get knowledgeAskHint =>
-      'Answers use notes and documents on this node. Peers only see what you Publish.';
+  String get knowledgeAskHint => '이 노드의 노트와 문서로 답변합니다. 연락처에는 내가 게시한 내용만 보입니다.';
 
   @override
-  String get knowledgeAskHeading => 'Ask your vault';
+  String get knowledgeAskHeading => '볼트에 질문';
 
   @override
-  String get knowledgeAskLabel => 'Question';
+  String get knowledgeAskLabel => '질문';
 
   @override
-  String get knowledgeAskPlaceholder => 'What did I write about onboarding?';
+  String get knowledgeAskPlaceholder => '온보딩에 대해 뭐라고 적었지?';
 
   @override
-  String get knowledgeAskSubmit => 'Ask';
+  String get knowledgeAskSubmit => '질문';
 
   @override
-  String get knowledgeAskBusy => 'Searching…';
+  String get knowledgeAskBusy => '검색 중…';
 
   @override
-  String get knowledgeAskAnswerHeading => 'Answer';
+  String get knowledgeAskAnswerHeading => '답변';
 
   @override
   String get knowledgeAskEmptyAnswer =>
-      'No answer returned. Check Setup → enable vault knowledge and rebuild the index.';
+      '답변 없음. 설정을 확인 — 볼트 지식을 활성화하고 인덱스를 재구축하세요.';
 
   @override
-  String get knowledgeAskContinueEnvoyAi => 'Open in EnvoyAI';
+  String get knowledgeAskContinueEnvoyAi => 'EnvoyAI에서 열기';
 
   @override
-  String get knowledgeAskEnvoyAiHint =>
-      'For multi-turn chat with tools, continue in EnvoyAI.';
+  String get knowledgeAskEnvoyAiHint => '도구를 사용하는 멀티턴 대화는 EnvoyAI에서 계속하세요.';
 
   @override
-  String get knowledgeLibraryHeading => 'Your files';
+  String get knowledgeLibraryHeading => '내 파일';
 
   @override
-  String get knowledgeLibraryCaption =>
-      'Notes, documents, and what you’ve published.';
+  String get knowledgeLibraryCaption => '노트, 문서, 내가 게시한 콘텐츠.';
+
+  @override
+  String get knowledgeEmbedGateTitleNeeded => '임베딩 모델 필요';
+
+  @override
+  String get knowledgeEmbedGateTitleDownloading => '임베딩 모델 다운로드 중…';
+
+  @override
+  String get knowledgeEmbedGateTitleError => '임베딩 설정 실패';
+
+  @override
+  String get knowledgeEmbedGateBodyNeeded =>
+      '지식 검색은 홈 노드의 로컬 임베딩 모델이 필요합니다. 앱 실행 시 다운로드가 자동 시작되며 완료 전까지 탐색을 사용할 수 없습니다. 여기서 시작하거나 재시도할 수도 있습니다.';
+
+  @override
+  String get knowledgeEmbedGateBodyDownloading =>
+      '홈 노드에서 다운로드 중(앱 실행 시 시작됨). 이 화면을 닫아도 됩니다. 임베더가 준비되면 지식이 잠금 해제됩니다.';
+
+  @override
+  String get knowledgeEmbedGateBodyError =>
+      '홈 노드에 임베딩 런타임 또는 모델을 설치할 수 없습니다. 다운로드를 재시도하거나 데스크톱 앱에서 설정을 수정하세요.';
+
+  @override
+  String get knowledgeEmbedGateDownload => '홈에 다운로드';
+
+  @override
+  String get knowledgeEmbedGateDownloading => '다운로드 중…';
+
+  @override
+  String get knowledgeEmbedGateRetry => '다운로드 재시도';
+
+  @override
+  String get knowledgeEmbedGateOpenSetup => '설정 열기';
+
+  @override
+  String get knowledgeEmbedGateBackgroundHint =>
+      '완료될 때까지 앱의 다른 부분을 안심하고 계속 사용할 수 있습니다.';
+
+  @override
+  String get knowledgeEmbedGateStripNeeded => '지식 사용 불가 — 홈에 임베딩 모델 미설치';
+
+  @override
+  String get knowledgeEmbedGateStripDownloading =>
+      '지식 사용 불가 — 홈에 임베딩 모델 다운로드 중';
+
+  @override
+  String get knowledgeEmbedGateStripError => '지식 사용 불가 — 홈에서 임베딩 설정 실패';
+
+  @override
+  String get knowledgeEmbedGateDownloadStarted => '홈에서 임베딩 다운로드 시작';
 
   @override
   String get knowledgePluginsLede =>
-      'Optional connectors. Notion needs an MCP URL — not the Notion app.';
+      '선택적 커넥터. Notion은 MCP URL이 필요합니다 (Notion 앱이 아님).';
 
   @override
   String get knowledgePluginsObsidianTitle => 'Obsidian';
 
   @override
-  String get knowledgePluginsObsidianDesc =>
-      'Enrich vault notes. Desktop app optional.';
+  String get knowledgePluginsObsidianDesc => '볼트 노트 보강. 데스크톱 앱은 선택 사항.';
 
   @override
-  String get knowledgePluginsNotionTitle => 'Notion (via MCP)';
+  String get knowledgePluginsNotionTitle => 'Notion (MCP 경유)';
 
   @override
-  String get knowledgePluginsNotionDesc =>
-      'Browse and search via MCP. Soft-fails without a URL.';
+  String get knowledgePluginsNotionDesc => 'MCP를 통한 검색 및 탐색. URL이 없으면 소프트 페일.';
 
   @override
-  String get knowledgePluginsMcpUrl => 'MCP server URL';
+  String get knowledgePluginsMcpUrl => 'MCP 서버 URL';
 
   @override
-  String get knowledgePluginsMcpTool => 'Search tool name';
+  String get knowledgePluginsMcpTool => '검색 도구 이름';
 
   @override
-  String get knowledgePluginsSyncNow => 'Sync now';
+  String get knowledgePluginsSyncNow => '지금 동기화';
 
   @override
-  String get knowledgePluginsLinkedVaultLabel =>
-      'Linked Obsidian vault path(s)';
+  String get knowledgePluginsLinkedVaultLabel => '연결된 Obsidian 볼트 경로';
 
   @override
-  String get knowledgePluginsLinkedVaultHint => '/path/to/ObsidianVault';
+  String get knowledgePluginsLinkedVaultHint => '/경로/obsidianVault';
 
   @override
-  String get knowledgePluginsLinkedVaultEmpty => 'No linked vaults yet.';
+  String get knowledgePluginsLinkedVaultEmpty => '연결된 볼트가 아직 없습니다.';
 
   @override
-  String get knowledgePluginsLinkedVaultRemove => 'Remove';
+  String get knowledgePluginsLinkedVaultRemove => '제거';
 
   @override
-  String get knowledgePluginsLinkedVaultAdd => 'Add vault folder…';
+  String get knowledgePluginsLinkedVaultAdd => '볼트 폴더 추가…';
 
   @override
-  String get knowledgePluginsLinkedVaultPickTitle =>
-      'Choose Obsidian vault folder';
+  String get knowledgePluginsLinkedVaultPickTitle => 'Obsidian 볼트 폴더 선택';
 
   @override
   String get knowledgePluginsLinkedVaultHelper =>
-      'Vaults from Obsidian on this home computer are linked automatically. Remove a row to unlink (it will not auto-link again). Add vault folder… for more.';
+      '이 홈 컴퓨터의 Obsidian 볼트는 자동으로 연결됩니다. 행을 제거하면 연결이 해제됩니다(자동 재연결되지 않음). 더 추가하려면 \'볼트 폴더 추가…\'를 사용하세요.';
 
   @override
-  String get knowledgePluginsOpenObsidian => 'Open Obsidian';
+  String get knowledgePluginsOpenObsidian => 'Obsidian 열기';
 
   @override
-  String get knowledgePluginsOpenNotion => 'Open Notion';
+  String get knowledgePluginsOpenNotion => 'Notion 열기';
 
   @override
-  String get knowledgePluginsOpeningApp => 'Opening…';
+  String get knowledgePluginsOpeningApp => '여는 중…';
 
   @override
-  String get knowledgePluginsOpenAppFailed =>
-      'Could not open the app on this computer.';
+  String get knowledgePluginsOpenAppFailed => '이 컴퓨터에서 앱을 열 수 없습니다.';
+
+  @override
+  String get knowledgePluginsOpenedWebsite =>
+      '로컬에 설치되지 않음 — 홈 노드에서 공식 사이트를 열었습니다.';
+
+  @override
+  String get knowledgePluginsDownloadObsidian => 'Obsidian 다운로드';
+
+  @override
+  String get knowledgePluginsDownloadNotion => 'Notion 다운로드';
 
   @override
   String get knowledgePluginsLinkedVaultAutoOne =>
-      'Linked Obsidian vault found on this computer.';
+      '이 컴퓨터에서 연결된 Obsidian 볼트를 찾았습니다.';
 
   @override
   String knowledgePluginsLinkedVaultAutoMany(int count) {
-    return 'Linked $count Obsidian vaults found on this computer.';
+    return '이 컴퓨터에서 연결된 Obsidian 볼트 $count개를 찾았습니다.';
   }
 
   @override
-  String get knowledgeHubImportObsidianAll => 'Import all linked';
+  String get knowledgeHubImportObsidianAll => '연결된 항목 모두 가져오기';
 
   @override
-  String get knowledgeHubImportNotionVisible => 'Import visible cards';
+  String get knowledgeHubImportNotionVisible => '보이는 카드 가져오기';
 
   @override
-  String get knowledgeHubExportToObsidian => 'Export to Obsidian';
+  String get knowledgeHubExportToObsidian => 'Obsidian로 내보내기';
 
   @override
-  String get knowledgeHubExportToNotion => 'Export to Notion/MCP';
+  String get knowledgeHubExportToNotion => 'Notion/MCP로 내보내기';
 
   @override
   String knowledgeHubImportObsidianOk(int count) {
-    return 'Imported $count Obsidian note(s)';
+    return 'Obsidian 노트 $count개 가져옴';
   }
 
   @override
   String knowledgeHubImportNotionOk(int count) {
-    return 'Imported $count Notion/MCP note(s)';
+    return 'Notion/MCP 노트 $count개 가져옴';
   }
 
   @override
   String knowledgeHubExportObsidianOk(int count) {
-    return 'Exported $count note(s) to Obsidian';
+    return '노트 $count개를 Obsidian로 내보냄';
   }
 
   @override
   String knowledgeHubExportNotionOk(int count) {
-    return 'Exported $count note(s) via MCP';
+    return 'MCP를 통해 노트 $count개 내보냄';
   }
 
   @override
-  String get knowledgeHubImportFailed => 'Import failed';
+  String get knowledgeHubImportFailed => '가져오기 실패';
 
   @override
-  String get knowledgeHubExportFailed => 'Export failed';
+  String get knowledgeHubExportFailed => '내보내기 실패';
 
   @override
-  String get knowledgeHubImportMcpEmpty =>
-      'No live MCP cards to import — refresh Browse';
+  String get knowledgeHubImportMcpEmpty => '가져올 라이브 MCP 카드가 없습니다 — 먼저 탐색 새로 고침';
 
   @override
-  String get knowledgeHubExportEmpty => 'No vault Markdown notes to export';
+  String get knowledgeHubExportEmpty => '내보낼 볼트 Markdown 노트가 없습니다';
 
   @override
-  String get knowledgeHubShareVaultOnly =>
-      'Share works for vault files only — import first';
+  String get knowledgeHubShareVaultOnly => '공유는 볼트 파일에서만 작동 — 먼저 가져오기';
 
   @override
   String knowledgeHubMcpListError(String error) {
-    return 'MCP list: $error';
+    return 'MCP 목록: $error';
   }
 
   @override
   String get knowledgeSetupHint =>
-      'Index status and retrieval. Chat models stay in Me → AI Model.';
+      '인덱스 상태 및 검색. 채팅 모델은 \'내 정보 → AI 모델\'에 있습니다.';
 
   @override
-  String get knowledgeSetupEnabled => 'Enable vault knowledge';
+  String get knowledgeSetupEnabled => '볼트 지식 활성화';
 
   @override
-  String get knowledgeSetupStatusHint =>
-      'Tap Rebuild to refresh the vector index.';
+  String get knowledgeSetupStatusHint => '재구축을 눌러 벡터 인덱스를 새로 고치세요.';
 
   @override
-  String get knowledgeSetupReindex => 'Rebuild index';
+  String get knowledgeSetupReindex => '인덱스 재구축';
 
   @override
-  String get knowledgeSetupReindexDone => 'Reindex started';
+  String get knowledgeSetupReindexDone => '재인덱싱 시작';
 
   @override
-  String get knowledgeSetupReindexConfirm =>
-      'Rebuild the vault vector index on the home node?';
+  String get knowledgeSetupReindexConfirm => '홈 노드에서 볼트의 벡터 인덱스를 재구축할까요?';
 
   @override
-  String get knowledgeSetupRagMode => 'Retrieval mode';
+  String get knowledgeSetupTestEmbedding => '임베딩 테스트';
 
   @override
-  String get knowledgeSetupRagHybrid => 'Hybrid';
+  String get knowledgeSetupTestEmbeddingBusy => '테스트 중…';
 
   @override
-  String get knowledgeSetupRagVector => 'Vector';
-
-  @override
-  String get knowledgeSetupRagLexical => 'Lexical';
-
-  @override
-  String get knowledgeSetupSnippetLimit => 'Vault snippets per answer';
-
-  @override
-  String knowledgeBrowseIndexIndexingProgress(int processed, int total) {
-    return 'Indexing $processed/$total…';
+  String knowledgeSetupTestEmbeddingOk(int dimensions, int latencyMs) {
+    return '임베딩 OK — $dimensions차원 / $latencyMs ms';
   }
 
   @override
-  String get knowledgeHubOpenPlugins => 'Open Plugins';
+  String knowledgeSetupTestEmbeddingFail(String error) {
+    return '임베딩 실패: $error';
+  }
 
   @override
-  String get knowledgeNoteNewTitle => 'New note';
+  String get knowledgeSetupRagMode => '검색 모드';
 
   @override
-  String get knowledgeNoteEditTitle => 'Edit note';
+  String get knowledgeSetupRagHybrid => '하이브리드';
 
   @override
-  String get knowledgeNoteFilename => 'Filename';
+  String get knowledgeSetupRagVector => '벡터';
 
   @override
-  String get knowledgeNoteFilenameRequired => 'Enter a note filename';
+  String get knowledgeSetupRagLexical => '어휘';
+
+  @override
+  String get knowledgeSetupSnippetLimit => '답변당 볼트 발췌';
+
+  @override
+  String knowledgeBrowseIndexIndexingProgress(int processed, int total) {
+    return '인덱싱 중 $processed/$total…';
+  }
+
+  @override
+  String get knowledgeHubOpenPlugins => '플러그인 열기';
+
+  @override
+  String get knowledgeNoteNewTitle => '새 노트';
+
+  @override
+  String get knowledgeNoteEditTitle => '노트 편집';
+
+  @override
+  String get knowledgeNoteFilename => '파일 이름';
+
+  @override
+  String get knowledgeNoteFilenameRequired => '노트 파일 이름 입력';
 
   @override
   String get knowledgeNoteContent => 'Markdown';
 
   @override
-  String get knowledgeNoteSensitivity => 'Visibility';
+  String get knowledgeNoteSensitivity => '공개 범위';
 
   @override
-  String get knowledgeNotePrivate => 'Private';
+  String get knowledgeNotePrivate => '비공개';
 
   @override
-  String get knowledgeNoteFriends => 'Friends';
+  String get knowledgeNoteFriends => '친구';
 
   @override
-  String get knowledgeNotePublished => 'Published';
+  String get knowledgeNotePublished => '게시됨';
 
   @override
-  String get knowledgeNoteAlsoBlog => 'Also publish as blog';
+  String get knowledgeNoteAlsoBlog => '블로그로도 게시';
 
   @override
-  String get knowledgeFilePreview => 'Preview';
+  String get knowledgeFilePreview => '미리보기';
 
   @override
-  String get knowledgeFileOpenOnHome => 'Open on home';
+  String get knowledgeFileOpenOnHome => '홈에서 열기';
 
   @override
-  String get knowledgeFileOpenedOnHome => 'Opened on the home computer';
+  String get knowledgeFileOpenedOnHome => '홈 컴퓨터에서 열림';
 
   @override
-  String get knowledgeFilePublish => 'Publish';
+  String get knowledgeFilePublish => '게시';
 
   @override
-  String get knowledgeFileMakePrivate => 'Make private';
+  String get knowledgeFileMakePrivate => '비공개로 설정';
 
   @override
-  String get knowledgeFileMore => 'More actions';
+  String get knowledgeFileMore => '더보기';
 
   @override
-  String get knowledgeFileConvert => 'Convert to Markdown note';
+  String get knowledgeFileConvert => 'Markdown 노트로 변환';
 
   @override
   String knowledgeFileConvertOk(String path) {
-    return 'Saved Markdown note $path';
+    return 'Markdown 노트 저장됨: $path';
   }
 
   @override
-  String get knowledgeFileConvertFailed => 'Could not convert to Markdown';
+  String get knowledgeFileConvertFailed => 'Markdown 변환 실패';
 
   @override
-  String get knowledgeFileDeleteTitle => 'Delete file?';
+  String get knowledgeFileDeleteTitle => '파일을 삭제할까요?';
 
   @override
   String knowledgeFileDeleteBody(String title) {
-    return 'Delete “$title” from the home vault?';
+    return '홈 볼트에서 “$title”을(를) 삭제할까요?';
   }
 
   @override
-  String get knowledgeFileDeleteConfirm => 'Delete';
+  String get knowledgeFileDeleteConfirm => '삭제';
 
   @override
-  String get meKnowledge => 'Knowledge setup';
+  String get meKnowledge => '지식 설정';
 
   @override
-  String get meKnowledgeHint => 'Index and retrieval for vault Ask';
+  String get meKnowledgeHint => '볼트 질문의 인덱스 및 검색';
 
   @override
-  String get meKnowledgePlugins => 'Knowledge plugins';
+  String get meKnowledgePlugins => '지식 플러그인';
 
   @override
-  String get meKnowledgePluginsHint => 'Obsidian link and Notion/MCP';
+  String get meKnowledgePluginsHint => 'Obsidian 연결 및 Notion/MCP';
 
   @override
-  String get knowledgeBrowseFilterAll => 'All';
+  String get knowledgeBrowseFilterAll => '전체';
 
   @override
-  String get knowledgeBrowseFiltersLabel => 'SHOW';
+  String get knowledgeBrowseFiltersLabel => '표시';
 
   @override
-  String get knowledgeBrowseFilterNotes => 'Notes';
+  String get knowledgeBrowseFilterNotes => '노트';
 
   @override
   String get knowledgeBrowseFilterObsidian => 'Obsidian';
@@ -610,33 +692,32 @@ class AppLocalizationsKo extends AppLocalizations {
   String get knowledgeBrowseFilterNotion => 'Notion';
 
   @override
-  String get knowledgeBrowseFilterBlog => 'Blog';
+  String get knowledgeBrowseFilterBlog => '블로그';
 
   @override
-  String get knowledgeBrowseFilterDocuments => 'Documents';
+  String get knowledgeBrowseFilterDocuments => '문서';
 
   @override
-  String get knowledgeBrowseFilterPublished => 'Published';
+  String get knowledgeBrowseFilterPublished => '게시됨';
 
   @override
   String knowledgeBrowseIndexReady(int count) {
-    return '$count indexed';
+    return '$count개 인덱싱됨';
   }
 
   @override
   String knowledgeBrowseIndexReadyLinked(int count, int linked) {
-    return '$count indexed · $linked linked Obsidian';
+    return '$count개 인덱싱됨 · Obsidian $linked개 연결';
   }
 
   @override
-  String get knowledgeBrowseIndexIndexing => 'Indexing…';
+  String get knowledgeBrowseIndexIndexing => '인덱싱 중…';
 
   @override
-  String get knowledgeBrowseIndexEmpty => 'Index empty';
+  String get knowledgeBrowseIndexEmpty => '인덱스 비어 있음';
 
   @override
-  String get knowledgeBrowseIndexChipHint =>
-      'Open Knowledge → Setup to manage the index.';
+  String get knowledgeBrowseIndexChipHint => '인덱스 관리는 \'지식 → 설정\'을 여세요.';
 
   @override
   String get contentNewPost => '새 게시물';
@@ -945,52 +1026,51 @@ class AppLocalizationsKo extends AppLocalizations {
   String get chatClearThreadBody => '이 스레드의 모든 메시지가 삭제됩니다.';
 
   @override
-  String get chatAiManual => 'Manual';
+  String get chatAiManual => '수동';
 
   @override
-  String get chatAiAssistant => 'Assistant';
+  String get chatAiAssistant => '어시스턴트';
 
   @override
-  String get chatAiAuto => 'Auto';
+  String get chatAiAuto => '자동';
 
   @override
-  String get chatAiManualTooltip => 'Manual: type yourself';
+  String get chatAiManualTooltip => '수동: 직접 입력';
 
   @override
-  String get chatAiAssistantTooltip => 'Assistant: AI suggests drafts';
+  String get chatAiAssistantTooltip => '어시스턴트: AI가 초안 제안';
 
   @override
-  String get chatAiAutoTooltip => 'Auto-reply: AI responds automatically';
+  String get chatAiAutoTooltip => '자동 응답: AI가 자동으로 응답';
 
   @override
-  String get chatAgentMode => 'Agent';
+  String get chatAgentMode => '에이전트';
 
   @override
-  String get chatAgentModeOffTooltip =>
-      'Agent Mode off — Assist uses public knowledge only';
+  String get chatAgentModeOffTooltip => '에이전트 모드 꺼짐 — 어시스턴트는 공개 지식만 사용';
 
   @override
   String get chatAgentModeOnTooltip =>
-      'Agent Mode on — OpenClaw may use home files, private knowledge, and tools';
+      '에이전트 모드 켜짐 — OpenClaw가 홈 파일, 비공개 지식, 도구 사용 가능';
 
   @override
-  String get chatAgentModeConfirmTitle => 'Enable Agent Mode for this chat?';
+  String get chatAgentModeConfirmTitle => '이 채팅의 에이전트 모드를 활성화할까요?';
 
   @override
   String get chatAgentModeConfirmBody =>
-      'Agent Mode uses EnvoyAI/OpenClaw and can read local files, private knowledge, and run tools on your home node. Only enable for contacts you fully trust.';
+      '에이전트 모드는 EnvoyAI/OpenClaw를 사용하며 로컬 파일과 비공개 지식을 읽고 홈 노드에서 도구를 실행할 수 있습니다. 완전히 신뢰하는 연락처에게만 활성화하세요.';
 
   @override
-  String get chatAgentModeConfirmEnable => 'Enable Agent Mode';
+  String get chatAgentModeConfirmEnable => '에이전트 모드 활성화';
 
   @override
-  String get chatSuggestedReply => 'Suggested reply';
+  String get chatSuggestedReply => '추천 답변';
 
   @override
-  String get chatSuggestedReplyUse => 'Use';
+  String get chatSuggestedReplyUse => '사용';
 
   @override
-  String get chatSuggestedReplyDismiss => 'Dismiss';
+  String get chatSuggestedReplyDismiss => '무시';
 
   @override
   String get chatDeleteMessageTitle => '메시지를 삭제할까요?';
@@ -1574,6 +1654,22 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsAiModelSaved => 'AI 모델 저장됨';
+
+  @override
+  String get settingsAiModelTestChat => '채팅 모델 테스트';
+
+  @override
+  String get settingsAiModelTestChatBusy => '테스트 중…';
+
+  @override
+  String settingsAiModelTestChatOk(String modelName, int latencyMs) {
+    return '채팅 모델 OK — $modelName / $latencyMs ms';
+  }
+
+  @override
+  String settingsAiModelTestChatFail(String error) {
+    return '채팅 모델 실패: $error';
+  }
 
   @override
   String settingsSaveFailed(String error) {

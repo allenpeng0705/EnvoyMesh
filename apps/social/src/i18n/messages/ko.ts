@@ -33,6 +33,7 @@ import {
   koArtifactRendererMessages,
   koAgentCardMessages,
   koDisplayMessages,
+  koKnowledgeViewMessages,
 } from "./ko-misc.js";
 
 export const ko = mergeMessages(en, {
@@ -710,6 +711,7 @@ export const ko = mergeMessages(en, {
     ipfsDesktopHelia: "프로세스 내 Helia를 사용하여 내보내기 — Kubo 데몬이 필요하지 않습니다. 번들 sidecar가 필요하면 설정에서 Kubo로 전환하세요.",
     ipfsDesktopKubo: "데스크톱 앱 번들을 사용할 때 IPFS 엔진은 첫 사용 시 자동으로 시작됩니다.",
   },
+knowledge: koKnowledgeViewMessages,
   browser: {
     authorAi: {
       trigger: "AI로 초안 작성",

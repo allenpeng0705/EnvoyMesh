@@ -93,7 +93,9 @@ export const jaChatMessages = {
   openclawOfflineSettings: "設定を開く",
   openclawOfflineRestarting: "再起動中…",
   audioMessage: jaInboxAudioMessages,
-} as const;
+
+  extAgentOfflineHintHermes: "EnvoyMeshは必要に応じてHermesを起動します。Hermes設定でAPI_SERVER_ENABLED=trueとAPI_SERVER_KEYを設定し、`hermes`をPATHに含めてください。",
+  extAgentOfflineHintOpenHuman: "OpenHuman.appを開き、チャット中は起動したままにしてください（EnvoyMeshは:7788を使用）。",} as const;
 
 export const jaContactChatMessages = {
   dateToday: "今日",

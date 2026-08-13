@@ -1,9 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../l10n/app_localizations.dart';
 import '../../knowledge/knowledge_nav.dart';
 import '../../knowledge/knowledge_plugins_panel.dart';
+import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../providers/node_provider.dart';
 import '../../screens/chat/chat_detail_screen.dart';
@@ -18,10 +20,37 @@ class KnowledgeScreen extends ConsumerStatefulWidget {
   ConsumerState<KnowledgeScreen> createState() => _KnowledgeScreenState();
 }
 
+enum _EmbedGateKind { ready, notRequired, downloading, error, needsInstall, unknown }
+
 class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
   bool _obsidianAutoTried = false;
+  Timer? _embedPoll;
+  bool _embedRequired = true;
+  _EmbedGateKind _embedKind = _EmbedGateKind.unknown;
+  Map<String, dynamic>? _embedStatus;
+  String? _embedLoadError;
+  bool _embedKickoffBusy = false;
+
+  bool get _embedInFlight {
+    final st = _embedStatus;
+    if (_embedKickoffBusy) return true;
+    if (st == null) return false;
+    if (st['operationInProgress'] == true) return true;
+    if (st['download'] is Map) return true;
+    final phase = st['phase']?.toString();
+    return phase == 'detecting' ||
+        phase == 'downloading-runtime' ||
+        phase == 'extracting-runtime' ||
+        phase == 'downloading-model' ||
+        phase == 'starting';
+  }
+
+  bool get _embedBlocked =>
+      _embedRequired &&
+      _embedKind != _EmbedGateKind.ready &&
+      _embedKind != _EmbedGateKind.notRequired;
 
   @override
   void initState() {
@@ -30,6 +59,7 @@ class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _autoActivateObsidian();
       _consumePanelRequest();
+      _refreshEmbedReadiness();
     });
   }
 
@@ -66,8 +96,126 @@ class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
     }
   }
 
+  bool _usesEnvoyLocalEmbed(Map<String, dynamic>? embedding) {
+    final mode = embedding?['mode']?.toString();
+    return mode == null || mode == 'envoy-local' || mode == 'inherit';
+  }
+
+  Future<void> _refreshEmbedReadiness() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      final cfg = await client.getNodeConfig();
+      final ai = Map<String, dynamic>.from(
+        (cfg['aiSettings'] as Map?)?.map((k, v) => MapEntry('$k', v)) ?? {},
+      );
+      final kb = Map<String, dynamic>.from(
+        (ai['knowledgeBase'] as Map?)?.map((k, v) => MapEntry('$k', v)) ?? {},
+      );
+      final embedding = (kb['embedding'] as Map?)
+          ?.map((k, v) => MapEntry('$k', v));
+      final required = _usesEnvoyLocalEmbed(
+        embedding == null ? null : Map<String, dynamic>.from(embedding),
+      );
+      if (!required) {
+        if (!mounted) return;
+        setState(() {
+          _embedRequired = false;
+          _embedKind = _EmbedGateKind.notRequired;
+          _embedStatus = null;
+          _embedLoadError = null;
+        });
+        _rescheduleEmbedPoll();
+        return;
+      }
+      final st = await client.getEnvoyLocalEmbedStatus();
+      if (!mounted) return;
+      setState(() {
+        _embedRequired = true;
+        _embedStatus = st;
+        _embedLoadError = null;
+        _embedKind = _deriveEmbedKind(st, null);
+      });
+      _rescheduleEmbedPoll();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _embedRequired = true;
+        _embedLoadError = '$e';
+        _embedKind = _EmbedGateKind.error;
+      });
+      _rescheduleEmbedPoll();
+    }
+  }
+
+  Future<void> _startEmbedDownload({bool quiet = false}) async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    final l10n = AppLocalizations.of(context);
+    setState(() => _embedKickoffBusy = true);
+    try {
+      final st = await client.enableEnvoyLocalEmbed();
+      if (!mounted) return;
+      setState(() {
+        _embedStatus = st;
+        _embedLoadError = null;
+        _embedKind = _deriveEmbedKind(st, null);
+      });
+      if (!quiet) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.knowledgeEmbedGateDownloadStarted)),
+        );
+      }
+      _rescheduleEmbedPoll();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _embedLoadError = '$e';
+        _embedKind = _EmbedGateKind.error;
+      });
+      if (!quiet) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$e')),
+        );
+      }
+      _rescheduleEmbedPoll();
+    } finally {
+      if (mounted) setState(() => _embedKickoffBusy = false);
+    }
+  }
+
+  _EmbedGateKind _deriveEmbedKind(
+    Map<String, dynamic>? st,
+    String? loadError,
+  ) {
+    if (!_embedRequired) return _EmbedGateKind.notRequired;
+    if (st?['running'] == true) return _EmbedGateKind.ready;
+    if (_embedInFlight) return _EmbedGateKind.downloading;
+    if (st?['phase']?.toString() == 'error' ||
+        (st?['lastError']?.toString().trim().isNotEmpty ?? false) ||
+        (loadError?.trim().isNotEmpty ?? false)) {
+      return _EmbedGateKind.error;
+    }
+    if (st != null) return _EmbedGateKind.needsInstall;
+    return _EmbedGateKind.unknown;
+  }
+
+  void _rescheduleEmbedPoll() {
+    _embedPoll?.cancel();
+    if (!_embedRequired) return;
+    if (_embedKind == _EmbedGateKind.ready) return;
+    final interval = _embedInFlight
+        ? const Duration(seconds: 1)
+        : const Duration(seconds: 2);
+    _embedPoll = Timer(interval, () {
+      if (!mounted) return;
+      _refreshEmbedReadiness();
+    });
+  }
+
   @override
   void dispose() {
+    _embedPoll?.cancel();
     _tabs.dispose();
     super.dispose();
   }
@@ -79,6 +227,12 @@ class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) => _consumePanelRequest());
     });
     final l10n = AppLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final stripText = switch (_embedKind) {
+      _EmbedGateKind.downloading => l10n.knowledgeEmbedGateStripDownloading,
+      _EmbedGateKind.error => l10n.knowledgeEmbedGateStripError,
+      _ => l10n.knowledgeEmbedGateStripNeeded,
+    };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -99,6 +253,31 @@ class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
             ],
           ),
         ),
+        if (_embedBlocked)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            child: Material(
+              color: scheme.tertiaryContainer.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(10),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        stripText,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => _tabs.animateTo(2),
+                      child: Text(l10n.knowledgeEmbedGateOpenSetup),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         TabBar(
           controller: _tabs,
           isScrollable: true,
@@ -113,14 +292,149 @@ class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
         Expanded(
           child: TabBarView(
             controller: _tabs,
-            children: const [
-              _KnowledgeBrowsePanel(),
-              KnowledgePluginsPanel(),
-              _KnowledgeSetupPanel(),
+            children: [
+              _embedBlocked
+                  ? ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+                      children: [
+                        _KnowledgeEmbedGatePanel(
+                          kind: _embedKind,
+                          status: _embedStatus,
+                          loadError: _embedLoadError,
+                          inFlight: _embedInFlight,
+                          onDownload: _startEmbedDownload,
+                          onOpenSetup: () => _tabs.animateTo(2),
+                        ),
+                      ],
+                    )
+                  : const _KnowledgeBrowsePanel(),
+              const KnowledgePluginsPanel(),
+              _KnowledgeSetupPanel(
+                embedBlocked: _embedBlocked,
+                embedKind: _embedKind,
+                embedStatus: _embedStatus,
+                embedLoadError: _embedLoadError,
+                embedInFlight: _embedInFlight,
+                onEmbedDownload: _startEmbedDownload,
+              ),
             ],
           ),
         ),
       ],
+    );
+  }
+}
+
+class _KnowledgeEmbedGatePanel extends StatelessWidget {
+  const _KnowledgeEmbedGatePanel({
+    required this.kind,
+    required this.status,
+    required this.loadError,
+    required this.inFlight,
+    required this.onDownload,
+    required this.onOpenSetup,
+    this.showSetupLink = true,
+  });
+
+  final _EmbedGateKind kind;
+  final Map<String, dynamic>? status;
+  final String? loadError;
+  final bool inFlight;
+  final VoidCallback onDownload;
+  final VoidCallback onOpenSetup;
+  final bool showSetupLink;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final title = switch (kind) {
+      _EmbedGateKind.downloading => l10n.knowledgeEmbedGateTitleDownloading,
+      _EmbedGateKind.error => l10n.knowledgeEmbedGateTitleError,
+      _ => l10n.knowledgeEmbedGateTitleNeeded,
+    };
+    final body = switch (kind) {
+      _EmbedGateKind.downloading => l10n.knowledgeEmbedGateBodyDownloading,
+      _EmbedGateKind.error => l10n.knowledgeEmbedGateBodyError,
+      _ => l10n.knowledgeEmbedGateBodyNeeded,
+    };
+    final errorText = status?['lastError']?.toString().trim().isNotEmpty == true
+        ? status!['lastError'].toString()
+        : (loadError?.trim().isNotEmpty == true ? loadError : null);
+    final download = status?['download'];
+    final fraction = download is Map
+        ? (download['fraction'] as num?)?.toDouble()
+        : null;
+    final progressLabel = download is Map
+        ? download['label']?.toString()
+        : null;
+
+    return Card(
+      elevation: 0,
+      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(title, style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Text(body, style: theme.textTheme.bodySmall),
+            if (errorText != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                errorText,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ],
+            if (kind == _EmbedGateKind.downloading || inFlight) ...[
+              const SizedBox(height: 14),
+              if (progressLabel != null && progressLabel.isNotEmpty)
+                Text(
+                  fraction != null
+                      ? '$progressLabel (${(fraction.clamp(0, 1) * 100).round()}%)'
+                      : progressLabel,
+                  style: theme.textTheme.bodySmall,
+                ),
+              const SizedBox(height: 8),
+              LinearProgressIndicator(
+                value: fraction?.clamp(0, 1),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                l10n.knowledgeEmbedGateBackgroundHint,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton(
+                  onPressed: inFlight ? null : onDownload,
+                  child: Text(
+                    inFlight
+                        ? l10n.knowledgeEmbedGateDownloading
+                        : kind == _EmbedGateKind.error
+                            ? l10n.knowledgeEmbedGateRetry
+                            : l10n.knowledgeEmbedGateDownload,
+                  ),
+                ),
+                if (showSetupLink)
+                  OutlinedButton(
+                    onPressed: onOpenSetup,
+                    child: Text(l10n.knowledgeEmbedGateOpenSetup),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -360,7 +674,21 @@ class _KnowledgeAskPanelState extends ConsumerState<_KnowledgeAskPanel> {
 }
 
 class _KnowledgeSetupPanel extends ConsumerStatefulWidget {
-  const _KnowledgeSetupPanel();
+  const _KnowledgeSetupPanel({
+    this.embedBlocked = false,
+    this.embedKind = _EmbedGateKind.unknown,
+    this.embedStatus,
+    this.embedLoadError,
+    this.embedInFlight = false,
+    this.onEmbedDownload,
+  });
+
+  final bool embedBlocked;
+  final _EmbedGateKind embedKind;
+  final Map<String, dynamic>? embedStatus;
+  final String? embedLoadError;
+  final bool embedInFlight;
+  final VoidCallback? onEmbedDownload;
 
   @override
   ConsumerState<_KnowledgeSetupPanel> createState() =>
@@ -514,9 +842,40 @@ class _KnowledgeSetupPanelState extends ConsumerState<_KnowledgeSetupPanel> {
     }
   }
 
+  Future<void> _testEmbedding() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    final l10n = AppLocalizations.of(context);
+    setState(() => _busy = true);
+    try {
+      final result = await client.testRagEmbedding();
+      if (!mounted) return;
+      final ok = result['ok'] == true;
+      final msg = ok
+          ? l10n.knowledgeSetupTestEmbeddingOk(
+              (result['dimensions'] as num?)?.toInt() ?? 0,
+              (result['latencyMs'] as num?)?.toInt() ?? 0,
+            )
+          : l10n.knowledgeSetupTestEmbeddingFail(
+              result['error']?.toString() ?? 'unknown',
+            );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      await _refreshStatus();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.knowledgeSetupTestEmbeddingFail('$e'))),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final tracked = (_status?['trackedDocuments'] as num?)?.toInt() ?? 0;
     final linked = (_status?['linkedObsidianNoteCount'] as num?)?.toInt() ?? 0;
     final indexing = _status?['isIndexing'] == true;
@@ -524,91 +883,218 @@ class _KnowledgeSetupPanelState extends ConsumerState<_KnowledgeSetupPanel> {
     final total = (_status?['totalDocuments'] as num?)?.toInt();
     final lastError = _status?['lastEmbedError']?.toString() ??
         _status?['lastExternalKbError']?.toString();
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text(l10n.knowledgeSetupHint, style: Theme.of(context).textTheme.bodySmall),
-        const SizedBox(height: 12),
-        SwitchListTile(
-          title: Text(l10n.knowledgeSetupEnabled),
-          value: _enabled,
-          onChanged: _busy ? null : _setEnabled,
+    final embedder = _status?['embedderModelKey']?.toString();
+
+    Widget sectionCard({
+      required String title,
+      String? subtitle,
+      required List<Widget> children,
+    }) {
+      return Card(
+        margin: EdgeInsets.zero,
+        elevation: 0,
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.55)),
         ),
-        DropdownButtonFormField<String>(
-          value: _ragMode,
-          decoration: InputDecoration(labelText: l10n.knowledgeSetupRagMode),
-          items: [
-            DropdownMenuItem(
-              value: 'hybrid',
-              child: Text(l10n.knowledgeSetupRagHybrid),
-            ),
-            DropdownMenuItem(
-              value: 'vector',
-              child: Text(l10n.knowledgeSetupRagVector),
-            ),
-            DropdownMenuItem(
-              value: 'lexical',
-              child: Text(l10n.knowledgeSetupRagLexical),
-            ),
-          ],
-          onChanged: _busy
-              ? null
-              : (v) {
-                  if (v != null) _patchKb({'ragMode': v});
-                },
-        ),
-        const SizedBox(height: 8),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text(l10n.knowledgeSetupSnippetLimit),
-          subtitle: Text('$_vaultSnippetLimit'),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              IconButton(
-                onPressed: _busy || _vaultSnippetLimit <= 1
-                    ? null
-                    : () => _patchKb({'vaultSnippetLimit': _vaultSnippetLimit - 1}),
-                icon: const Icon(Icons.remove),
+              Text(
+                title,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-              IconButton(
-                onPressed: _busy || _vaultSnippetLimit >= 20
-                    ? null
-                    : () => _patchKb({'vaultSnippetLimit': _vaultSnippetLimit + 1}),
-                icon: const Icon(Icons.add),
-              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              ...children,
             ],
           ),
         ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            linked > 0
-                ? l10n.knowledgeBrowseIndexReadyLinked(tracked, linked)
-                : l10n.knowledgeBrowseIndexReady(tracked),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: [
+        if (widget.embedBlocked) ...[
+          _KnowledgeEmbedGatePanel(
+            kind: widget.embedKind,
+            status: widget.embedStatus,
+            loadError: widget.embedLoadError,
+            inFlight: widget.embedInFlight,
+            onDownload: widget.onEmbedDownload ?? () {},
+            onOpenSetup: () {},
+            showSetupLink: false,
           ),
-          subtitle: Text(
-            indexing
-                ? (processed != null && total != null && total > 0
-                    ? l10n.knowledgeBrowseIndexIndexingProgress(processed, total)
-                    : l10n.knowledgeBrowseIndexIndexing)
-                : l10n.knowledgeSetupStatusHint,
+          const SizedBox(height: 8),
+        ],
+        Text(
+          l10n.knowledgeSetupHint,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant,
           ),
         ),
-        if (indexing && processed != null && total != null && total > 0)
-          LinearProgressIndicator(value: processed / total),
-        if (lastError != null && lastError.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              lastError,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+        const SizedBox(height: 14),
+        sectionCard(
+          title: l10n.knowledgePanelSetup,
+          children: [
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(l10n.knowledgeSetupEnabled),
+              value: _enabled,
+              onChanged: _busy ? null : _setEnabled,
             ),
-          ),
+            const SizedBox(height: 4),
+            DropdownButtonFormField<String>(
+              value: _ragMode,
+              decoration: InputDecoration(
+                labelText: l10n.knowledgeSetupRagMode,
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: [
+                DropdownMenuItem(
+                  value: 'hybrid',
+                  child: Text(l10n.knowledgeSetupRagHybrid),
+                ),
+                DropdownMenuItem(
+                  value: 'vector',
+                  child: Text(l10n.knowledgeSetupRagVector),
+                ),
+                DropdownMenuItem(
+                  value: 'lexical',
+                  child: Text(l10n.knowledgeSetupRagLexical),
+                ),
+              ],
+              onChanged: _busy
+                  ? null
+                  : (v) {
+                      if (v != null) _patchKb({'ragMode': v});
+                    },
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(l10n.knowledgeSetupSnippetLimit),
+              subtitle: Text('$_vaultSnippetLimit'),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    onPressed: _busy || _vaultSnippetLimit <= 1
+                        ? null
+                        : () => _patchKb(
+                              {'vaultSnippetLimit': _vaultSnippetLimit - 1},
+                            ),
+                    icon: const Icon(Icons.remove),
+                  ),
+                  IconButton(
+                    onPressed: _busy || _vaultSnippetLimit >= 20
+                        ? null
+                        : () => _patchKb(
+                              {'vaultSnippetLimit': _vaultSnippetLimit + 1},
+                            ),
+                    icon: const Icon(Icons.add),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 12),
-        FilledButton(
-          onPressed: _busy ? null : _reindex,
-          child: Text(l10n.knowledgeSetupReindex),
+        sectionCard(
+          title: l10n.knowledgeSetupReindex,
+          subtitle: l10n.knowledgeSetupStatusHint,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: indexing
+                        ? scheme.primaryContainer
+                        : (lastError != null && lastError.isNotEmpty
+                            ? scheme.errorContainer
+                            : scheme.secondaryContainer),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    indexing
+                        ? l10n.knowledgeBrowseIndexIndexing
+                        : (tracked <= 0
+                            ? l10n.knowledgeBrowseIndexEmpty
+                            : l10n.knowledgeBrowseIndexReady(tracked)),
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                OutlinedButton(
+                  onPressed: _busy ? null : _testEmbedding,
+                  child: Text(
+                    _busy
+                        ? l10n.knowledgeSetupTestEmbeddingBusy
+                        : l10n.knowledgeSetupTestEmbedding,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: _busy ? null : _reindex,
+                  child: Text(l10n.knowledgeSetupReindex),
+                ),
+              ],
+            ),
+            if (linked > 0) ...[
+              const SizedBox(height: 10),
+              Text(
+                l10n.knowledgeBrowseIndexReadyLinked(tracked, linked),
+                style: theme.textTheme.bodyMedium,
+              ),
+            ],
+            if (embedder != null && embedder.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                embedder,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                  fontFamily: 'monospace',
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            if (indexing && processed != null && total != null && total > 0) ...[
+              const SizedBox(height: 10),
+              Text(
+                l10n.knowledgeBrowseIndexIndexingProgress(processed, total),
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 6),
+              LinearProgressIndicator(value: processed / total),
+            ],
+            if (lastError != null && lastError.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                lastError,
+                style: TextStyle(color: scheme.error, fontSize: 13),
+              ),
+            ],
+          ],
         ),
       ],
     );

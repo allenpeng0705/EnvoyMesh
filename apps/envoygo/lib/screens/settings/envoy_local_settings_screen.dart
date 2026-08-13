@@ -23,6 +23,7 @@ class _EnvoyLocalSettingsScreenState
   bool _loading = true;
   bool _connected = false;
   bool _busy = false;
+  bool _testing = false;
   /// Bumped on each primary action so Cancel cannot clear another action's busy.
   int _actionGen = 0;
   String? _error;
@@ -178,6 +179,34 @@ class _EnvoyLocalSettingsScreenState
       await Future<void>.delayed(const Duration(seconds: 1));
     }
     return false;
+  }
+
+  Future<void> _testChatModel() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    final l10n = AppLocalizations.of(context);
+    setState(() => _testing = true);
+    try {
+      final result = await client.testChatModel();
+      if (!mounted) return;
+      final ok = result['ok'] == true;
+      final msg = ok
+          ? l10n.settingsAiModelTestChatOk(
+              result['modelName']?.toString() ?? 'envoy-local',
+              (result['latencyMs'] as num?)?.toInt() ?? 0,
+            )
+          : l10n.settingsAiModelTestChatFail(
+              result['error']?.toString() ?? 'unknown',
+            );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.settingsAiModelTestChatFail('$e'))),
+      );
+    } finally {
+      if (mounted) setState(() => _testing = false);
+    }
   }
 
   Future<void> _runAction(
@@ -586,6 +615,15 @@ class _EnvoyLocalSettingsScreenState
                                   ),
                           icon: const Icon(Icons.restart_alt),
                           label: Text(l10n.settingsEnvoyLocalRestart),
+                        ),
+                        FilledButton(
+                          onPressed:
+                              (_inFlight || _testing) ? null : _testChatModel,
+                          child: Text(
+                            _testing
+                                ? l10n.settingsAiModelTestChatBusy
+                                : l10n.settingsAiModelTestChat,
+                          ),
                         ),
                       ],
                       if (_inFlight &&

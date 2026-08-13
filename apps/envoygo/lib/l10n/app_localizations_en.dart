@@ -27,6 +27,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonCancel => 'Cancel';
 
   @override
+  String get commonConfirm => 'Confirm';
+
+  @override
+  String get homeFolderDrives => 'Drives';
+
+  @override
+  String get homeFolderComputer => 'Computer';
+
+  @override
+  String get homeFolderHome => 'Home';
+
+  @override
+  String get homeFolderParent => '↑ Parent folder';
+
+  @override
+  String get homeFolderNoSubfolders => 'No subfolders';
+
+  @override
   String get commonSave => 'Save';
 
   @override
@@ -351,6 +369,60 @@ class AppLocalizationsEn extends AppLocalizations {
       'Notes, documents, and what you’ve published.';
 
   @override
+  String get knowledgeEmbedGateTitleNeeded => 'Embedding model required';
+
+  @override
+  String get knowledgeEmbedGateTitleDownloading =>
+      'Downloading embedding model…';
+
+  @override
+  String get knowledgeEmbedGateTitleError => 'Embedding setup failed';
+
+  @override
+  String get knowledgeEmbedGateBodyNeeded =>
+      'Knowledge search needs a local embedding model on your home node. Download starts automatically when the app launches — Browse stays unavailable until it finishes. You can also start or retry from here.';
+
+  @override
+  String get knowledgeEmbedGateBodyDownloading =>
+      'Download is running on your home node (started with the app). You can leave this screen; Knowledge unlocks when the embedder is ready.';
+
+  @override
+  String get knowledgeEmbedGateBodyError =>
+      'The embedding runtime or model could not be installed on the home node. Retry the download, or fix Setup on the desktop app.';
+
+  @override
+  String get knowledgeEmbedGateDownload => 'Download on home';
+
+  @override
+  String get knowledgeEmbedGateDownloading => 'Downloading…';
+
+  @override
+  String get knowledgeEmbedGateRetry => 'Retry download';
+
+  @override
+  String get knowledgeEmbedGateOpenSetup => 'Open Setup';
+
+  @override
+  String get knowledgeEmbedGateBackgroundHint =>
+      'Safe to keep using other parts of the app while this finishes.';
+
+  @override
+  String get knowledgeEmbedGateStripNeeded =>
+      'Knowledge unavailable — embedding model not installed on home';
+
+  @override
+  String get knowledgeEmbedGateStripDownloading =>
+      'Knowledge unavailable — embedding model downloading on home';
+
+  @override
+  String get knowledgeEmbedGateStripError =>
+      'Knowledge unavailable — embedding setup failed on home';
+
+  @override
+  String get knowledgeEmbedGateDownloadStarted =>
+      'Embedding download started on home';
+
+  @override
   String get knowledgePluginsLede =>
       'Optional connectors. Notion needs an MCP URL — not the Notion app.';
 
@@ -413,6 +485,16 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get knowledgePluginsOpenAppFailed =>
       'Could not open the app on this computer.';
+
+  @override
+  String get knowledgePluginsOpenedWebsite =>
+      'App not installed locally — opened the official website on the home computer.';
+
+  @override
+  String get knowledgePluginsDownloadObsidian => 'Download Obsidian';
+
+  @override
+  String get knowledgePluginsDownloadNotion => 'Download Notion';
 
   @override
   String get knowledgePluginsLinkedVaultAutoOne =>
@@ -497,6 +579,22 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get knowledgeSetupReindexConfirm =>
       'Rebuild the vault vector index on the home node?';
+
+  @override
+  String get knowledgeSetupTestEmbedding => 'Test embedding';
+
+  @override
+  String get knowledgeSetupTestEmbeddingBusy => 'Testing…';
+
+  @override
+  String knowledgeSetupTestEmbeddingOk(int dimensions, int latencyMs) {
+    return 'Embedding OK — $dimensions dims in $latencyMs ms';
+  }
+
+  @override
+  String knowledgeSetupTestEmbeddingFail(String error) {
+    return 'Embedding failed: $error';
+  }
 
   @override
   String get knowledgeSetupRagMode => 'Retrieval mode';
@@ -1603,6 +1701,22 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsAiModelSaved => 'AI model saved';
+
+  @override
+  String get settingsAiModelTestChat => 'Test chat model';
+
+  @override
+  String get settingsAiModelTestChatBusy => 'Testing…';
+
+  @override
+  String settingsAiModelTestChatOk(String modelName, int latencyMs) {
+    return 'Chat model OK — $modelName in $latencyMs ms';
+  }
+
+  @override
+  String settingsAiModelTestChatFail(String error) {
+    return 'Chat model failed: $error';
+  }
 
   @override
   String settingsSaveFailed(String error) {

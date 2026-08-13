@@ -2,8 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_ENVOY_LOCAL_SERVER_PARAMS,
   normalizeEnvoyLocalConfig,
+  normalizeEnvoyLocalEmbedConfig,
   resolveEnvoyLocalServerParams,
 } from "../src/envoy-local.js";
+import {
+  defaultEnvoyLocalEmbedEndpoint,
+  envoyLocalEmbedPort,
+  ENVOY_LOCAL_EMBED_PORT_BASE,
+} from "../src/embedding-presets.js";
 
 describe("envoy-local config", () => {
   it("defaults enabled to false", () => {
@@ -37,5 +43,21 @@ describe("envoy-local config", () => {
     expect(p.parallel).toBe(1);
     expect(p.flashAttn).toBe("auto");
     expect(p.fit).toBe("on");
+  });
+});
+
+describe("envoy-local-embed config", () => {
+  it("defaults enabled to true (auto-provision on boot)", () => {
+    expect(normalizeEnvoyLocalEmbedConfig(undefined).enabled).toBe(true);
+    expect(normalizeEnvoyLocalEmbedConfig({}).enabled).toBe(true);
+  });
+
+  it("honors explicit disable", () => {
+    expect(normalizeEnvoyLocalEmbedConfig({ enabled: false }).enabled).toBe(false);
+  });
+
+  it("default embed endpoint tracks port offset helpers", () => {
+    expect(envoyLocalEmbedPort()).toBe(ENVOY_LOCAL_EMBED_PORT_BASE + 0);
+    expect(defaultEnvoyLocalEmbedEndpoint()).toContain(`:${envoyLocalEmbedPort()}/v1`);
   });
 });

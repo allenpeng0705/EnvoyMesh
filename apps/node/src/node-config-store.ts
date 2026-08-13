@@ -186,6 +186,8 @@ export interface PersistedNodeConfig {
   openclawEnabled?: boolean;
   /** Phase 54 — Envoy Local (post-install llama-server). */
   envoyLocal?: import("@envoymesh/api").EnvoyLocalConfig;
+  /** Phase 57E — Envoy Local embedding sidecar (separate llama-server + embed GGUF). */
+  envoyLocalEmbed?: import("@envoymesh/api").EnvoyLocalEmbedConfig;
   /**
    * Phase 49 — whether the built-in Pi local coding agent is enabled.
    * Default: true on full builds (macOS/Linux); false on Windows slim

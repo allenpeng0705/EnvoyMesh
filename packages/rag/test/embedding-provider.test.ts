@@ -11,7 +11,7 @@ import {
 } from "../src/embedding-provider.js";
 
 describe("embedding-provider", () => {
-  it("inherits openai-compatible mode from chat model config", () => {
+  it("defaults to Envoy Local embed (independent of chat providers)", () => {
     const config = resolveEmbeddingConfig({
       modelProviders: {
         mode: "openai-compatible",
@@ -20,11 +20,10 @@ describe("embedding-provider", () => {
         apiKey: "test-key",
       },
     });
-    expect(config.mode).toBe("openai-compatible");
-    expect(config.endpoint).toBe("https://api.example.com/v1");
-    expect(config.apiKey).toBe("test-key");
-    // Hostname doesn't match any preset → responseShape stays `auto`.
-    expect(config.responseShape).toBe("auto");
+    expect(config.mode).toBe("envoy-local");
+    expect(config.endpoint).toContain("18791");
+    expect(config.apiKey).toBeUndefined();
+    expect(config.responseShape).toBe("openai");
   });
 
   it("applies embo-01 token limit from model name", () => {
@@ -44,13 +43,12 @@ describe("embedding-provider", () => {
     expect(c.some((value, index) => value !== a[index])).toBe(true);
   });
 
-  it("defaults responseShape to 'auto' for unrecognized hosts (BYO-provider)", () => {
-    // mode:inherit + no modelProviders → "mock" mode → mock://local endpoint,
-    // which matches no preset, so responseShape falls through to "auto".
+  it("maps legacy inherit to envoy-local defaults", () => {
     const config = resolveEmbeddingConfig({
       embedding: { mode: "inherit" },
     });
-    expect(config.responseShape).toBe("auto");
+    expect(config.mode).toBe("envoy-local");
+    expect(config.responseShape).toBe("openai");
   });
 
   it("passes through explicit responseShape (minimax)", () => {
@@ -496,31 +494,27 @@ describe("inferEmbeddingProviderFromEndpoint", () => {
   });
 });
 
-describe("resolveEmbeddingConfig — chat-model inheritance", () => {
-  it("inherits MiniMax defaults when chat points at api.minimaxi.com", () => {
+describe("resolveEmbeddingConfig — independent of chat", () => {
+  it("uses MiniMax host presets when endpoint is set explicitly", () => {
     const config = resolveEmbeddingConfig({
-      embedding: { mode: "inherit" },
-      modelProviders: {
+      embedding: {
         mode: "openai-compatible",
         endpoint: "https://api.minimaxi.com/v1",
-        modelName: "MiniMax-M3",
         apiKey: "test",
       },
     });
     expect(config.mode).toBe("openai-compatible");
     expect(config.endpoint).toBe("https://api.minimaxi.com/v1");
-    expect(config.modelName).toBe("embo-01");             // inherited from preset
-    expect(config.responseShape).toBe("auto");           // inherited from preset (sniff-and-cache)
-    expect(config.apiKey).toBe("test");                  // inherited from chat
+    expect(config.modelName).toBe("embo-01");
+    expect(config.responseShape).toBe("auto");
+    expect(config.apiKey).toBe("test");
   });
 
-  it("inherits OpenAI defaults when chat points at api.openai.com", () => {
+  it("uses OpenAI host presets when endpoint is set explicitly", () => {
     const config = resolveEmbeddingConfig({
-      embedding: { mode: "inherit" },
-      modelProviders: {
+      embedding: {
         mode: "openai-compatible",
         endpoint: "https://api.openai.com/v1",
-        modelName: "gpt-4o-mini",
         apiKey: "sk-test",
       },
     });
@@ -528,198 +522,121 @@ describe("resolveEmbeddingConfig — chat-model inheritance", () => {
     expect(config.responseShape).toBe("openai");
   });
 
-  it("falls through to existing defaults for unknown hosts", () => {
-    const config = resolveEmbeddingConfig({
-      embedding: { mode: "inherit" },
-      modelProviders: {
-        mode: "openai-compatible",
-        endpoint: "https://api.custom-llm.example/v1",
-        modelName: "custom-model",
-      },
-    });
-    // No preset matched — keep OpenAI-shape defaults (text-embedding-3-small).
-    expect(config.modelName).toBe("text-embedding-3-small");
-    expect(config.responseShape).toBe("auto");           // no preset → fall back to auto
-  });
-
-  it("honors explicit modelName override even when a preset matches", () => {
+  it("preserves non-/v1 API version roots (Zhipu /v4)", () => {
     const config = resolveEmbeddingConfig({
       embedding: {
-        mode: "inherit",
-        modelName: "custom-embed-v2",
-      },
-      modelProviders: {
-        mode: "openai-compatible",
-        endpoint: "https://api.minimaxi.com/v1",
-        apiKey: "test",
-      },
-    });
-    expect(config.modelName).toBe("custom-embed-v2");
-    expect(config.responseShape).toBe("auto");           // preset still applies for unset fields
-  });
-
-  it("honors explicit responseShape override even when a preset matches", () => {
-    const config = resolveEmbeddingConfig({
-      embedding: {
-        mode: "inherit",
-        responseShape: "openai",                        // user pinned OpenAI shape despite MiniMax host
-      },
-      modelProviders: {
-        mode: "openai-compatible",
-        endpoint: "https://api.minimaxi.com/v1",
-        apiKey: "test",
-      },
-    });
-    expect(config.responseShape).toBe("openai");
-  });
-
-  it("inherits Zhipu defaults when chat points at open.bigmodel.cn", () => {
-    const config = resolveEmbeddingConfig({
-      embedding: { mode: "inherit" },
-      modelProviders: {
         mode: "openai-compatible",
         endpoint: "https://open.bigmodel.cn/api/paas/v4",
-        modelName: "glm-4-plus",
-        apiKey: "test",
-      },
-    });
-    expect(config.mode).toBe("openai-compatible");
-    expect(config.endpoint).toBe("https://open.bigmodel.cn/api/paas/v4");
-    expect(config.modelName).toBe("embedding-2");        // Zhipu preset
-    expect(config.responseShape).toBe("openai");         // Zhipu uses OpenAI envelope
-    expect(config.apiKey).toBe("test");                  // inherited from chat
-  });
-
-  it("inherits DashScope defaults when chat points at dashscope.aliyuncs.com", () => {
-    const config = resolveEmbeddingConfig({
-      embedding: { mode: "inherit" },
-      modelProviders: {
-        mode: "openai-compatible",
-        endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        modelName: "qwen-max",
-        apiKey: "test",
-      },
-    });
-    expect(config.mode).toBe("openai-compatible");
-    expect(config.endpoint).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
-    expect(config.modelName).toBe("text-embedding-v3");  // DashScope preset
-    expect(config.responseShape).toBe("openai");         // OpenAI-compat envelope
-  });
-
-  it("preserves non-`/v1` API version roots (Zhipu /v4) without appending `/v1`", () => {
-    // Regression: the resolver used to blindly append `/v1` to any root
-    // that didn't end in `/v1`, breaking Zhipu's canonical
-    // `/api/paas/v4` base. The fix recognizes any `/v\d+$` suffix as a
-    // version marker and leaves the URL untouched.
-    const config = resolveEmbeddingConfig({
-      embedding: { mode: "openai-compatible" },
-      modelProviders: {
-        mode: "openai-compatible",
-        endpoint: "https://open.bigmodel.cn/api/paas/v4",
-        modelName: "glm-4-plus",
       },
     });
     expect(config.endpoint).toBe("https://open.bigmodel.cn/api/paas/v4");
+    expect(config.modelName).toBe("embedding-2");
   });
 
-  it("still appends `/v1` to a bare OpenAI root (back-compat)", () => {
-    // The fix above must not regress the OpenAI case where users paste
-    // `https://api.openai.com` without the trailing `/v1`.
+  it("appends /v1 to a bare OpenAI root", () => {
     const config = resolveEmbeddingConfig({
-      embedding: { mode: "openai-compatible" },
-      modelProviders: {
+      embedding: {
         mode: "openai-compatible",
         endpoint: "https://api.openai.com",
-        modelName: "gpt-4o-mini",
       },
     });
     expect(config.endpoint).toBe("https://api.openai.com/v1");
   });
 
-  it("honors explicit endpoint override and still applies the preset for that host", () => {
-    // User typed the MiniMax host directly into the embedding endpoint.
+  it("resolves ollama defaults without chat inherit", () => {
     const config = resolveEmbeddingConfig({
-      embedding: {
-        mode: "openai-compatible",
-        endpoint: "https://api.minimaxi.com/v1",
-      },
-      modelProviders: { mode: "anthropic-compatible", endpoint: "https://api.anthropic.com" },
-    });
-    // Even with mode explicit and endpoint explicit, the preset matches the host,
-    // so modelName + responseShape inherit. Explicit modelName override still wins.
-    expect(config.modelName).toBe("embo-01");
-    expect(config.responseShape).toBe("auto");
-  });
-
-  it("honors explicit modelName from a different host", () => {
-    // User is on OpenAI but wants to use a custom embedding model.
-    const config = resolveEmbeddingConfig({
-      embedding: {
-        mode: "openai-compatible",
-        endpoint: "https://api.openai.com/v1",
-        modelName: "my-custom-embed",
-      },
-      modelProviders: { mode: "openai-compatible", endpoint: "https://api.openai.com/v1" },
-    });
-    expect(config.modelName).toBe("my-custom-embed");
-    expect(config.responseShape).toBe("openai");         // preset still applied for responseShape
-  });
-
-  it("falls back to Ollama defaults when chat is ollama (preset doesn't apply)", () => {
-    const config = resolveEmbeddingConfig({
-      embedding: { mode: "inherit" },
-      modelProviders: {
-        mode: "ollama",
-        endpoint: "http://127.0.0.1:11434",
-      },
+      embedding: { mode: "ollama" },
     });
     expect(config.mode).toBe("ollama");
     expect(config.modelName).toBe("nomic-embed-text");
     expect(config.endpoint).toBe("http://127.0.0.1:11434");
   });
 
-  it("falls back to mock default when chat is disabled", () => {
+  it("resolves envoy-local to embed port 18791", () => {
     const config = resolveEmbeddingConfig({
-      embedding: { mode: "inherit" },
-      modelProviders: { mode: "disabled" },
+      embedding: { mode: "envoy-local" },
     });
-    expect(config.mode).toBe("mock");
-    expect(config.modelName).toBe("mock-embed");
+    expect(config.mode).toBe("envoy-local");
+    expect(config.endpoint).toContain(":18791");
+    expect(config.modelName).toContain("qwen3-embedding");
   });
 
-  it("falls back to mock when inheriting Envoy Local chat (no embedding GGUF)", () => {
+  it("ignores chat modelProviders when resolving", () => {
     const config = resolveEmbeddingConfig({
-      embedding: { mode: "inherit" },
+      embedding: { mode: "envoy-local" },
       modelProviders: {
-        mode: "openai-compatible",
-        presetId: "envoy-local",
-        endpoint: "http://127.0.0.1:18790/v1",
-        modelName: "Qwen3.5-0.8B",
-      },
-    });
-    expect(config.mode).toBe("mock");
-    expect(config.endpoint).toBe("mock://local");
-    expect(config.modelName).toBe("mock-embed");
-  });
-
-  it("does not force mock when embedding endpoint is set explicitly on Envoy Local", () => {
-    const config = resolveEmbeddingConfig({
-      embedding: {
         mode: "openai-compatible",
         endpoint: "https://api.openai.com/v1",
-        modelName: "text-embedding-3-small",
-        apiKey: "sk-test",
-      },
-      modelProviders: {
-        mode: "openai-compatible",
-        presetId: "envoy-local",
-        endpoint: "http://127.0.0.1:18790/v1",
-        modelName: "Qwen3.5-0.8B",
+        apiKey: "sk-chat",
       },
     });
-    expect(config.mode).toBe("openai-compatible");
-    expect(config.endpoint).toBe("https://api.openai.com/v1");
-    expect(config.modelName).toBe("text-embedding-3-small");
+    expect(config.mode).toBe("envoy-local");
+    expect(config.apiKey).toBeUndefined();
+    expect(config.endpoint).not.toContain("openai.com");
+  });
+});
+
+describe("migrateEmbeddingSettings", () => {
+  it("maps bare inherit to envoy-local default", async () => {
+    const { migrateEmbeddingSettings } = await import("../src/embedding-resolver.js");
+    const next = migrateEmbeddingSettings(
+      { mode: "inherit" },
+      {
+        mode: "openai-compatible",
+        endpoint: "https://api.minimaxi.com/v1",
+        apiKey: "test",
+      },
+    );
+    expect(next.mode).toBe("envoy-local");
+    expect(next.modelName).toMatch(/qwen3-embedding/);
+  });
+
+  it("preserves custom cloud fields stored under inherit", async () => {
+    const { migrateEmbeddingSettings } = await import("../src/embedding-resolver.js");
+    const next = migrateEmbeddingSettings({
+      mode: "inherit",
+      endpoint: "https://api.minimaxi.com/v1",
+      modelName: "embo-01",
+      apiKey: "sk-test",
+      responseShape: "minimax",
+    });
+    expect(next.mode).toBe("openai-compatible");
+    expect(next.endpoint).toBe("https://api.minimaxi.com/v1");
+    expect(next.modelName).toBe("embo-01");
+    expect(next.apiKey).toBe("sk-test");
+    expect(next.responseShape).toBe("minimax");
+  });
+
+  it("preserves ollama endpoint under inherit", async () => {
+    const { migrateEmbeddingSettings } = await import("../src/embedding-resolver.js");
+    const next = migrateEmbeddingSettings({
+      mode: "inherit",
+      endpoint: "http://127.0.0.1:11434",
+      modelName: "nomic-embed-text",
+    });
+    expect(next.mode).toBe("ollama");
+    expect(next.endpoint).toBe("http://127.0.0.1:11434");
+    expect(next.modelName).toBe("nomic-embed-text");
+  });
+
+  it("maps missing mode to envoy-local embed default", async () => {
+    const { migrateEmbeddingSettings } = await import("../src/embedding-resolver.js");
+    const next = migrateEmbeddingSettings(undefined, {
+      mode: "openai-compatible",
+      presetId: "envoy-local",
+      endpoint: "http://127.0.0.1:18790/v1",
+    });
+    expect(next.mode).toBe("envoy-local");
+  });
+
+  it("leaves explicit non-inherit modes unchanged", async () => {
+    const { migrateEmbeddingSettings } = await import("../src/embedding-resolver.js");
+    const next = migrateEmbeddingSettings({
+      mode: "ollama",
+      modelName: "nomic-embed-text",
+    });
+    expect(next.mode).toBe("ollama");
+    expect(next.modelName).toBe("nomic-embed-text");
   });
 });
 
@@ -734,5 +651,26 @@ describe("isEnvoyLocalChatEndpoint", () => {
     ).toBe(true);
     expect(isEnvoyLocalChatEndpoint("http://127.0.0.1:18790/v1")).toBe(true);
     expect(isEnvoyLocalChatEndpoint("https://api.openai.com/v1")).toBe(false);
+  });
+});
+
+describe("envoy local ports with ENVOYMESH_PORT_OFFSET", () => {
+  it("resolves offset embed/chat endpoints", async () => {
+    const prev = process.env.ENVOYMESH_PORT_OFFSET;
+    process.env.ENVOYMESH_PORT_OFFSET = "100";
+    try {
+      const { isEnvoyLocalEmbedEndpoint, isEnvoyLocalChatEndpoint } = await import(
+        "../src/embedding-resolver.js"
+      );
+      const { defaultEnvoyLocalEmbedEndpoint } = await import("@envoymesh/api");
+      expect(defaultEnvoyLocalEmbedEndpoint()).toContain(":18891/");
+      expect(isEnvoyLocalEmbedEndpoint("http://127.0.0.1:18891/v1")).toBe(true);
+      expect(isEnvoyLocalChatEndpoint("http://127.0.0.1:18890/v1")).toBe(true);
+      // Canonical base remains accepted so fixtures without offset still work.
+      expect(isEnvoyLocalEmbedEndpoint("http://127.0.0.1:18791/v1")).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env.ENVOYMESH_PORT_OFFSET;
+      else process.env.ENVOYMESH_PORT_OFFSET = prev;
+    }
   });
 });

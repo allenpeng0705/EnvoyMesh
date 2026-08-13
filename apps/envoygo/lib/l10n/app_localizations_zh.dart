@@ -27,6 +27,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonCancel => '取消';
 
   @override
+  String get commonConfirm => '确认';
+
+  @override
+  String get homeFolderDrives => '磁盘';
+
+  @override
+  String get homeFolderComputer => '此电脑';
+
+  @override
+  String get homeFolderHome => '主目录';
+
+  @override
+  String get homeFolderParent => '↑ 上级文件夹';
+
+  @override
+  String get homeFolderNoSubfolders => '没有子文件夹';
+
+  @override
   String get commonSave => '保存';
 
   @override
@@ -336,6 +354,54 @@ class AppLocalizationsZh extends AppLocalizations {
   String get knowledgeLibraryCaption => '笔记、文档，以及已发布的内容。';
 
   @override
+  String get knowledgeEmbedGateTitleNeeded => '需要嵌入模型';
+
+  @override
+  String get knowledgeEmbedGateTitleDownloading => '正在下载嵌入模型…';
+
+  @override
+  String get knowledgeEmbedGateTitleError => '嵌入安装失败';
+
+  @override
+  String get knowledgeEmbedGateBodyNeeded =>
+      '知识库检索依赖家节点上的本地嵌入模型。应用启动时会自动在后台下载 — 完成前无法使用「浏览」。也可在此手动启动或重试。';
+
+  @override
+  String get knowledgeEmbedGateBodyDownloading =>
+      '下载正在家节点后台进行（随应用启动）。你可以离开本页；嵌入就绪后知识库会自动解锁。';
+
+  @override
+  String get knowledgeEmbedGateBodyError =>
+      '家节点无法安装嵌入运行时或模型。请重试下载，或在桌面端「设置」中排查。';
+
+  @override
+  String get knowledgeEmbedGateDownload => '在家节点下载';
+
+  @override
+  String get knowledgeEmbedGateDownloading => '下载中…';
+
+  @override
+  String get knowledgeEmbedGateRetry => '重试下载';
+
+  @override
+  String get knowledgeEmbedGateOpenSetup => '打开设置';
+
+  @override
+  String get knowledgeEmbedGateBackgroundHint => '下载期间可继续使用应用的其他功能。';
+
+  @override
+  String get knowledgeEmbedGateStripNeeded => '知识库不可用 — 家节点尚未安装嵌入模型';
+
+  @override
+  String get knowledgeEmbedGateStripDownloading => '知识库不可用 — 家节点正在下载嵌入模型';
+
+  @override
+  String get knowledgeEmbedGateStripError => '知识库不可用 — 家节点嵌入安装失败';
+
+  @override
+  String get knowledgeEmbedGateDownloadStarted => '已开始在家节点下载嵌入模型';
+
+  @override
   String get knowledgePluginsLede => '可选连接器。Notion 需要 MCP URL，不需要 Notion 应用。';
 
   @override
@@ -392,6 +458,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get knowledgePluginsOpenAppFailed => '无法在本机打开该应用。';
+
+  @override
+  String get knowledgePluginsOpenedWebsite => '本机未安装应用 — 已在家节点打开官网。';
+
+  @override
+  String get knowledgePluginsDownloadObsidian => '下载 Obsidian';
+
+  @override
+  String get knowledgePluginsDownloadNotion => '下载 Notion';
 
   @override
   String get knowledgePluginsLinkedVaultAutoOne => '已自动关联本机上的 Obsidian 库。';
@@ -470,6 +545,22 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get knowledgeSetupReindexConfirm => '在家节点上重建资料库向量索引？';
+
+  @override
+  String get knowledgeSetupTestEmbedding => '测试嵌入';
+
+  @override
+  String get knowledgeSetupTestEmbeddingBusy => '测试中…';
+
+  @override
+  String knowledgeSetupTestEmbeddingOk(int dimensions, int latencyMs) {
+    return '嵌入正常 — $dimensions 维，$latencyMs ms';
+  }
+
+  @override
+  String knowledgeSetupTestEmbeddingFail(String error) {
+    return '嵌入失败：$error';
+  }
 
   @override
   String get knowledgeSetupRagMode => '检索模式';
@@ -926,52 +1017,51 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatClearThreadBody => '此会话中的所有消息将被删除。';
 
   @override
-  String get chatAiManual => 'Manual';
+  String get chatAiManual => '手動';
 
   @override
-  String get chatAiAssistant => 'Assistant';
+  String get chatAiAssistant => 'アシスタント';
 
   @override
-  String get chatAiAuto => 'Auto';
+  String get chatAiAuto => '自動';
 
   @override
-  String get chatAiManualTooltip => 'Manual: type yourself';
+  String get chatAiManualTooltip => '手動：自分で入力';
 
   @override
-  String get chatAiAssistantTooltip => 'Assistant: AI suggests drafts';
+  String get chatAiAssistantTooltip => 'アシスタント：AIが下書きを提案';
 
   @override
-  String get chatAiAutoTooltip => 'Auto-reply: AI responds automatically';
+  String get chatAiAutoTooltip => '自動返信：AIが自動的に応答';
 
   @override
-  String get chatAgentMode => 'Agent';
+  String get chatAgentMode => 'エージェント';
 
   @override
-  String get chatAgentModeOffTooltip =>
-      'Agent Mode off — Assist uses public knowledge only';
+  String get chatAgentModeOffTooltip => 'エージェントモードオフ — アシスタントは公開ナレッジのみ使用';
 
   @override
   String get chatAgentModeOnTooltip =>
-      'Agent Mode on — OpenClaw may use home files, private knowledge, and tools';
+      'エージェントモードオン — OpenClawがホームファイル・非公開ナレッジ・ツールを利用可能';
 
   @override
-  String get chatAgentModeConfirmTitle => 'Enable Agent Mode for this chat?';
+  String get chatAgentModeConfirmTitle => 'このチャットのエージェントモードを有効にしますか？';
 
   @override
   String get chatAgentModeConfirmBody =>
-      'Agent Mode uses EnvoyAI/OpenClaw and can read local files, private knowledge, and run tools on your home node. Only enable for contacts you fully trust.';
+      'エージェントモードはEnvoyAI/OpenClawを使用し、ローカルファイル・非公開ナレッジの読み取り、ホームノードでのツール実行が可能です。完全に信頼できる相手にのみ有効化してください。';
 
   @override
-  String get chatAgentModeConfirmEnable => 'Enable Agent Mode';
+  String get chatAgentModeConfirmEnable => 'エージェントモードを有効化';
 
   @override
-  String get chatSuggestedReply => 'Suggested reply';
+  String get chatSuggestedReply => '提案された返信';
 
   @override
-  String get chatSuggestedReplyUse => 'Use';
+  String get chatSuggestedReplyUse => '使用';
 
   @override
-  String get chatSuggestedReplyDismiss => 'Dismiss';
+  String get chatSuggestedReplyDismiss => '却下';
 
   @override
   String get chatDeleteMessageTitle => '删除消息？';
@@ -1552,6 +1642,22 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsAiModelSaved => 'AI 模型已保存';
+
+  @override
+  String get settingsAiModelTestChat => '测试聊天模型';
+
+  @override
+  String get settingsAiModelTestChatBusy => '测试中…';
+
+  @override
+  String settingsAiModelTestChatOk(String modelName, int latencyMs) {
+    return '聊天模型正常 — $modelName，$latencyMs ms';
+  }
+
+  @override
+  String settingsAiModelTestChatFail(String error) {
+    return '聊天模型失败：$error';
+  }
 
   @override
   String settingsSaveFailed(String error) {
