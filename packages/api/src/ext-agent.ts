@@ -250,6 +250,24 @@ export interface ListHomeFsEntriesResult {
   entries: HomeFsEntry[];
 }
 
+/** Result of {@link NodeService.discoverObsidianVaults} — owner only. */
+export interface DiscoverObsidianVaultsResult {
+  paths: string[];
+  sources: Array<{ path: string; source: "obsidian.json" | "scan" }>;
+}
+
+/** Allowlisted desktop apps the home node may launch (owner only). */
+export type DesktopAppId = "obsidian" | "notion";
+
+export interface OpenDesktopAppParams {
+  app: DesktopAppId;
+}
+
+export interface OpenDesktopAppResult {
+  ok: boolean;
+  error?: string;
+}
+
 export interface GetExtAgentProjectPathParams {
   agentId?: string;
 }

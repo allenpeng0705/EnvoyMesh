@@ -470,6 +470,8 @@ export const libraryViewMessages = {
   revealVaultOnly: "Show in folder is only available for vault files on desktop",
   published: "Published",
   private: "Private",
+  publishedHint: "Published — click to make private",
+  privateHint: "Private — click to publish",
   share: "Share…",
   moreActions: "More actions",
   export: "Export",
@@ -822,22 +824,38 @@ export const knowledgeViewMessages = {
     sourceObsidian: "Obsidian",
     sourceNotion: "Notion",
     sourceBlog: "Blog",
+    sourceNote: "Note",
     sourceDocument: "File",
     emptyAll:
       "No vault files yet. Create a note or import a document to start your knowledge base.",
     emptyNotes:
-      "No notes yet. Create a note, or import/convert a document to materialize Markdown under notes/imports/.",
+      "No notes yet. Create a note, publish a Blog post (mirrors under notes/imports/blog/), or import/convert a document.",
     emptyObsidian:
-      "No Obsidian-style notes yet. Notes live under notes/ (except notes/mcp/ and notes/imports/blog/).",
+      "No Obsidian notes yet. Link an existing vault under Plugins, or keep notes under notes/ in the Envoy vault.",
     emptyNotion:
-      "No saved Notion notes yet. Enable MCP under Plugins, then save search hits to notes/mcp/.",
+      "No Notion/MCP cards yet. Set the MCP URL under Plugins — live cards appear here; Import saves them to notes/mcp/.",
+    mcpListError: "Notion/MCP: {error}",
     emptyBlog:
       "No blog knowledge yet. Publish a Blog post, or create a note with “Also publish as public blog”.",
     emptyDocuments:
       "No documents outside notes/. Import PDFs and Office files — originals stay in the vault.",
     emptyPublished:
       "Nothing published yet. Publish a note from Browse so contacts can query it on the mesh.",
+    openPlugins: "Open Plugins",
+    importObsidianAll: "Import all linked",
+    importNotionVisible: "Import visible cards",
+    exportToObsidian: "Export to Obsidian",
+    exportToNotion: "Export to Notion/MCP",
+    importObsidianOk: "Imported {count} Obsidian note(s) into the vault",
+    importNotionOk: "Imported {count} Notion/MCP note(s) into the vault",
+    exportObsidianOk: "Exported {count} note(s) to linked Obsidian",
+    exportNotionOk: "Exported {count} note(s) via MCP",
+    importFailed: "Import failed",
+    exportFailed: "Export failed",
+    importMcpEmpty: "No live MCP cards to import — refresh Browse first",
+    exportEmpty: "No vault Markdown notes to export in this list",
     indexReady: "{count} indexed",
+    indexReadyLinked: "{count} indexed · {linked} linked Obsidian",
     indexIndexing: "Indexing {processed}/{total}…",
     indexError: "Index error — open Setup",
     indexEmpty: "Index empty — open Setup",
@@ -864,15 +882,27 @@ export const knowledgeViewMessages = {
     linkedVaultLabel: "Linked Obsidian vault path(s)",
     linkedVaultPlaceholder: "/path/to/existing/ObsidianVault",
     linkedVaultDesc:
-      "Optional. Absolute path to an existing Obsidian vault (comma-separate multiple). Read-only in Browse under Obsidian — your files are never moved. Mesh Publish still uses the Envoy vault only.",
+      "Vaults from Obsidian on this home computer are linked automatically. Clear a row to unlink (it will not auto-link again). Use Add vault folder… to browse and link more. Import copies into notes/imports/obsidian/. Ask can search linked files (owner-only). Mesh Publish still uses the Envoy vault only.",
+    linkedVaultAdd: "Add vault folder…",
+    linkedVaultPickTitle: "Choose Obsidian vault folder",
+    linkedVaultEmpty:
+      "Looking for Obsidian vaults on this computer… Use Add vault folder… if none appear.",
+    linkedVaultAutoOne: "Linked Obsidian vault found on this computer.",
+    linkedVaultAutoMany: "Linked {count} Obsidian vaults found on this computer.",
+    openObsidian: "Open Obsidian",
+    openNotion: "Open Notion",
+    openingApp: "Opening…",
+    openAppFailed: "Could not open the app on this computer.",
     notionTitle: "Notion (via MCP)",
-    notionTagline: "Search via MCP. On by default; soft-fails without a URL.",
+    notionTagline: "Search and browse via MCP. Soft-fails without a URL.",
     notionDesc:
-      "Search Notion-class knowledge through an MCP server you run. Envoy does not sign into Notion or sync a workspace — results merge into owner prompts; save notes stay private until you Publish.",
+      "Browse live MCP cards under the Notion filter, import into notes/mcp/, and optionally export vault notes back via the write tool. Knowledge sync uses MCP — Open Notion launches the desktop/web app on this computer when installed.",
+    notionNoLocalPath:
+      "Notion knowledge sync uses MCP (no local vault folder like Obsidian). Connect with an MCP server URL below. Open Notion launches the app separately if installed.",
     notionInstall:
-      "Run an MCP server that talks to Notion (or Memex / similar), note its http(s) URL and search tool name. No Notion desktop app or OAuth inside Envoy.",
+      "Run an MCP server that talks to Notion (or Memex / similar), note its http(s) URL and search tool name. Optionally install the Notion app and use Open Notion from this card.",
     notionUse:
-      "Paste the server URL, then ask EnvoyAI. Optional write-back saves under notes/mcp/ (private by default). Browse shows those saved notes under the Notion filter.",
+      "Paste the server URL, then open Browse → Notion. Import saves under notes/mcp/ (private by default). Export uses memex_write when available.",
     notionIfMissing:
       "If no MCP server is configured: Browse / Ask use the local vault only. Cloud Notion is simply skipped (soft-fail).",
     notionEnable: "MCP search",

@@ -83,17 +83,30 @@ describe("knowledge browse filters", () => {
     expect(matchesKnowledgeBrowseFilter(mcp, "obsidian")).toBe(false);
     expect(matchesKnowledgeBrowseFilter(mcp, "notion")).toBe(true);
     expect(matchesKnowledgeBrowseFilter(note, "notion")).toBe(false);
-    expect(matchesKnowledgeBrowseFilter(blog, "blog")).toBe(true);
+    expect(matchesKnowledgeBrowseFilter(blog, "notes")).toBe(true);
     expect(matchesKnowledgeBrowseFilter(blog, "obsidian")).toBe(false);
     expect(matchesKnowledgeBrowseFilter(linked, "obsidian")).toBe(true);
+    const remote = {
+      relativePath: "mcp-remote/abc-card.md",
+      published: false,
+      source: "mcp-remote" as const,
+    };
+    expect(matchesKnowledgeBrowseFilter(remote, "notion")).toBe(true);
+    expect(matchesKnowledgeBrowseFilter(remote, "obsidian")).toBe(false);
   });
 
   it("classifies Obsidian vs Notion note paths", () => {
     expect(isKnowledgeObsidianPath("notes/hello.md")).toBe(true);
     expect(isKnowledgeNotionPath("notes/mcp/x.md")).toBe(true);
     expect(isKnowledgeObsidianPath("notes/mcp/x.md")).toBe(false);
-    expect(knowledgeBrowseSource("notes/hello.md")).toBe("obsidian");
+    expect(isKnowledgeNotionPath("mcp-remote/x.md")).toBe(true);
+    expect(isKnowledgeObsidianPath("linked-obsidian/V/a.md")).toBe(true);
+    expect(knowledgeBrowseSource("notes/hello.md")).toBe("note");
+    expect(knowledgeBrowseSource("linked-obsidian/V/a.md")).toBe("obsidian");
+    expect(knowledgeBrowseSource("notes/imports/obsidian/x.md")).toBe("obsidian");
     expect(knowledgeBrowseSource("notes/mcp/x.md")).toBe("notion");
+    expect(knowledgeBrowseSource("mcp-remote/x.md")).toBe("notion");
+    expect(knowledgeBrowseSource("notes/imports/blog/hello.md")).toBe("blog");
     expect(knowledgeBrowseSource("documents/a.pdf")).toBe("document");
   });
 });

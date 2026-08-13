@@ -1,6 +1,6 @@
 /**
  * Read-only listing of Markdown from optional linked Obsidian vault roots.
- * Does not move, rename, or write into those trees.
+ * Does not move, rename, or write into those trees (import/export live in knowledge-hub).
  */
 
 import { readdir, stat } from "node:fs/promises";
@@ -14,6 +14,11 @@ const SKIP_DIR_NAMES = new Set([
   ".envoy",
 ]);
 
+export interface LinkedObsidianRoot {
+  absRoot: string;
+  label: string;
+}
+
 function assertInsideRoot(root: string, candidate: string): void {
   const rootResolved = resolve(root);
   const cand = resolve(candidate);
@@ -21,6 +26,30 @@ function assertInsideRoot(root: string, candidate: string): void {
   if (cand !== rootResolved && !cand.startsWith(prefix)) {
     throw new Error("Path escapes linked Obsidian root");
   }
+}
+
+/** Public path-safety check for writes into a linked Obsidian root. */
+export function assertPathInsideLinkedObsidianRoot(root: string, candidate: string): void {
+  assertInsideRoot(root, candidate);
+}
+
+function disambiguateLabels(absoluteRoots: readonly string[]): LinkedObsidianRoot[] {
+  const out: LinkedObsidianRoot[] = [];
+  const seenLabels = new Set<string>();
+  for (const raw of absoluteRoots) {
+    const root = raw.trim();
+    if (!root) continue;
+    const absRoot = resolve(root);
+    let label = basename(absRoot) || "obsidian";
+    let n = 2;
+    while (seenLabels.has(label)) {
+      label = `${basename(absRoot)}-${n}`;
+      n += 1;
+    }
+    seenLabels.add(label);
+    out.push({ absRoot, label });
+  }
+  return out;
 }
 
 async function walkMarkdown(
@@ -36,10 +65,8 @@ async function walkMarkdown(
     return;
   }
   for (const ent of entries) {
-    if (ent.name.startsWith(".") && ent.name !== ".obsidian") {
-      // Skip hidden except we skip .obsidian entirely below
-    }
     if (ent.name === ".obsidian" || SKIP_DIR_NAMES.has(ent.name)) continue;
+    if (ent.name.startsWith(".")) continue;
     const abs = join(dir, ent.name);
     assertInsideRoot(root, abs);
     if (ent.isDirectory()) {
@@ -80,24 +107,25 @@ export async function resolveLinkedObsidianAbsolutePath(
   const inside = rest.slice(slash + 1);
   if (!inside || inside.includes("..")) return null;
 
-  const seenLabels = new Set<string>();
-  for (const raw of absoluteRoots) {
-    const root = raw.trim();
-    if (!root) continue;
-    const absRoot = resolve(root);
-    let vaultLabel = basename(absRoot) || "obsidian";
-    let n = 2;
-    while (seenLabels.has(vaultLabel)) {
-      vaultLabel = `${basename(absRoot)}-${n}`;
-      n += 1;
-    }
-    seenLabels.add(vaultLabel);
-    if (vaultLabel !== label) continue;
-    const abs = resolve(absRoot, inside);
-    assertInsideRoot(absRoot, abs);
+  for (const root of disambiguateLabels(absoluteRoots)) {
+    if (root.label !== label) continue;
+    const abs = resolve(root.absRoot, inside);
+    assertInsideRoot(root.absRoot, abs);
     return abs;
   }
   return null;
+}
+
+/** Resolve a vault label (or first root when label omitted) to an absolute root. */
+export async function resolveLinkedObsidianRootByLabel(
+  absoluteRoots: readonly string[],
+  label?: string,
+): Promise<LinkedObsidianRoot | null> {
+  const roots = disambiguateLabels(absoluteRoots);
+  if (!roots.length) return null;
+  if (!label?.trim()) return roots[0] ?? null;
+  const want = label.trim();
+  return roots.find((r) => r.label === want) ?? null;
 }
 
 /** List `.md` files from configured absolute Obsidian vault roots (read-only). */
@@ -105,28 +133,16 @@ export async function listLinkedObsidianMarkdownFiles(
   absoluteRoots: readonly string[],
 ): Promise<LocalFileItem[]> {
   const out: LocalFileItem[] = [];
-  const seenLabels = new Set<string>();
 
-  for (const raw of absoluteRoots) {
-    const root = raw.trim();
-    if (!root) continue;
-    const absRoot = resolve(root);
-    let label = basename(absRoot) || "obsidian";
-    let n = 2;
-    while (seenLabels.has(label)) {
-      label = `${basename(absRoot)}-${n}`;
-      n += 1;
-    }
-    seenLabels.add(label);
-
+  for (const root of disambiguateLabels(absoluteRoots)) {
     let st;
     try {
-      st = await stat(absRoot);
+      st = await stat(root.absRoot);
     } catch {
       continue;
     }
     if (!st.isDirectory()) continue;
-    await walkMarkdown(absRoot, absRoot, label, out);
+    await walkMarkdown(root.absRoot, root.absRoot, root.label, out);
   }
 
   return out;

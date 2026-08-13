@@ -5004,6 +5004,30 @@ You are the owner's personal AI assistant on EnvoyMesh.
     throw new Error("Home node is offline — folder browse requires a paired home node.");
   }
 
+  async discoverObsidianVaults(): Promise<
+    import("@envoymesh/api").DiscoverObsidianVaultsResult
+  > {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      return await this._homeRemoteCall<import("@envoymesh/api").DiscoverObsidianVaultsResult>(
+        "discoverObsidianVaults",
+        {},
+      );
+    }
+    throw new Error("Home node is offline — Obsidian discovery requires a paired home node.");
+  }
+
+  async openDesktopApp(
+    params: import("@envoymesh/api").OpenDesktopAppParams,
+  ): Promise<import("@envoymesh/api").OpenDesktopAppResult> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      return await this._homeRemoteCall<import("@envoymesh/api").OpenDesktopAppResult>(
+        "openDesktopApp",
+        params as unknown as Record<string, unknown>,
+      );
+    }
+    throw new Error("Home node is offline — opening desktop apps requires a paired home node.");
+  }
+
   async getExtAgentProjectPath(
     params?: import("@envoymesh/api").GetExtAgentProjectPathParams,
   ): Promise<import("@envoymesh/api").ExtAgentProjectPathResult> {
@@ -9322,6 +9346,30 @@ You are the owner's personal AI assistant on EnvoyMesh.
 
   async createNote(_params: any): Promise<any> {
     return { documentId: "", relativePath: "", sizeBytes: 0 };
+  }
+
+  async saveExternalMcpSearchAsNote(_params: any): Promise<any> {
+    return { ok: false, reason: "Not available on mobile" };
+  }
+
+  async listExternalMcpKnowledge(_params?: any): Promise<any> {
+    return { items: [], error: "Not available on mobile" };
+  }
+
+  async importLinkedObsidianNotes(_params: any): Promise<any> {
+    return { ok: false, imported: [], skipped: 0, reason: "Not available on mobile" };
+  }
+
+  async importExternalMcpKnowledge(_params: any): Promise<any> {
+    return { ok: false, imported: [], reason: "Not available on mobile" };
+  }
+
+  async exportNotesToLinkedObsidian(_params: any): Promise<any> {
+    return { ok: false, exported: [], reason: "Not available on mobile" };
+  }
+
+  async exportNotesToMcp(_params: any): Promise<any> {
+    return { ok: false, exported: [], reason: "Not available on mobile" };
   }
 
   async deleteVaultItem(_params: any): Promise<void> {

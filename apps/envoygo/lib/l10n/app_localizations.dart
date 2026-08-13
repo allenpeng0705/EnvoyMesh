@@ -765,7 +765,7 @@ abstract class AppLocalizations {
   /// No description provided for @knowledgePluginsNotionDesc.
   ///
   /// In en, this message translates to:
-  /// **'Search via MCP. On by default; soft-fails without a URL.'**
+  /// **'Browse and search via MCP. Soft-fails without a URL.'**
   String get knowledgePluginsNotionDesc;
 
   /// No description provided for @knowledgePluginsMcpUrl.
@@ -779,6 +779,174 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Search tool name'**
   String get knowledgePluginsMcpTool;
+
+  /// No description provided for @knowledgePluginsSyncNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync now'**
+  String get knowledgePluginsSyncNow;
+
+  /// No description provided for @knowledgePluginsLinkedVaultLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Linked Obsidian vault path(s)'**
+  String get knowledgePluginsLinkedVaultLabel;
+
+  /// No description provided for @knowledgePluginsLinkedVaultHint.
+  ///
+  /// In en, this message translates to:
+  /// **'/path/to/ObsidianVault'**
+  String get knowledgePluginsLinkedVaultHint;
+
+  /// No description provided for @knowledgePluginsLinkedVaultEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No linked vaults yet.'**
+  String get knowledgePluginsLinkedVaultEmpty;
+
+  /// No description provided for @knowledgePluginsLinkedVaultRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get knowledgePluginsLinkedVaultRemove;
+
+  /// No description provided for @knowledgePluginsLinkedVaultAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add vault folder…'**
+  String get knowledgePluginsLinkedVaultAdd;
+
+  /// No description provided for @knowledgePluginsLinkedVaultPickTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose Obsidian vault folder'**
+  String get knowledgePluginsLinkedVaultPickTitle;
+
+  /// No description provided for @knowledgePluginsLinkedVaultHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'Vaults from Obsidian on this home computer are linked automatically. Remove a row to unlink (it will not auto-link again). Add vault folder… for more.'**
+  String get knowledgePluginsLinkedVaultHelper;
+
+  /// No description provided for @knowledgePluginsOpenObsidian.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Obsidian'**
+  String get knowledgePluginsOpenObsidian;
+
+  /// No description provided for @knowledgePluginsOpenNotion.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Notion'**
+  String get knowledgePluginsOpenNotion;
+
+  /// No description provided for @knowledgePluginsOpeningApp.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening…'**
+  String get knowledgePluginsOpeningApp;
+
+  /// No description provided for @knowledgePluginsOpenAppFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open the app on this computer.'**
+  String get knowledgePluginsOpenAppFailed;
+
+  /// No description provided for @knowledgePluginsLinkedVaultAutoOne.
+  ///
+  /// In en, this message translates to:
+  /// **'Linked Obsidian vault found on this computer.'**
+  String get knowledgePluginsLinkedVaultAutoOne;
+
+  /// No description provided for @knowledgePluginsLinkedVaultAutoMany.
+  ///
+  /// In en, this message translates to:
+  /// **'Linked {count} Obsidian vaults found on this computer.'**
+  String knowledgePluginsLinkedVaultAutoMany(int count);
+
+  /// No description provided for @knowledgeHubImportObsidianAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Import all linked'**
+  String get knowledgeHubImportObsidianAll;
+
+  /// No description provided for @knowledgeHubImportNotionVisible.
+  ///
+  /// In en, this message translates to:
+  /// **'Import visible cards'**
+  String get knowledgeHubImportNotionVisible;
+
+  /// No description provided for @knowledgeHubExportToObsidian.
+  ///
+  /// In en, this message translates to:
+  /// **'Export to Obsidian'**
+  String get knowledgeHubExportToObsidian;
+
+  /// No description provided for @knowledgeHubExportToNotion.
+  ///
+  /// In en, this message translates to:
+  /// **'Export to Notion/MCP'**
+  String get knowledgeHubExportToNotion;
+
+  /// No description provided for @knowledgeHubImportObsidianOk.
+  ///
+  /// In en, this message translates to:
+  /// **'Imported {count} Obsidian note(s)'**
+  String knowledgeHubImportObsidianOk(int count);
+
+  /// No description provided for @knowledgeHubImportNotionOk.
+  ///
+  /// In en, this message translates to:
+  /// **'Imported {count} Notion/MCP note(s)'**
+  String knowledgeHubImportNotionOk(int count);
+
+  /// No description provided for @knowledgeHubExportObsidianOk.
+  ///
+  /// In en, this message translates to:
+  /// **'Exported {count} note(s) to Obsidian'**
+  String knowledgeHubExportObsidianOk(int count);
+
+  /// No description provided for @knowledgeHubExportNotionOk.
+  ///
+  /// In en, this message translates to:
+  /// **'Exported {count} note(s) via MCP'**
+  String knowledgeHubExportNotionOk(int count);
+
+  /// No description provided for @knowledgeHubImportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Import failed'**
+  String get knowledgeHubImportFailed;
+
+  /// No description provided for @knowledgeHubExportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Export failed'**
+  String get knowledgeHubExportFailed;
+
+  /// No description provided for @knowledgeHubImportMcpEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No live MCP cards to import — refresh Browse'**
+  String get knowledgeHubImportMcpEmpty;
+
+  /// No description provided for @knowledgeHubExportEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No vault Markdown notes to export'**
+  String get knowledgeHubExportEmpty;
+
+  /// No description provided for @knowledgeHubShareVaultOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Share works for vault files only — import first'**
+  String get knowledgeHubShareVaultOnly;
+
+  /// No description provided for @knowledgeHubMcpListError.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP list: {error}'**
+  String knowledgeHubMcpListError(String error);
 
   /// No description provided for @knowledgeSetupHint.
   ///
@@ -810,6 +978,210 @@ abstract class AppLocalizations {
   /// **'Reindex started'**
   String get knowledgeSetupReindexDone;
 
+  /// No description provided for @knowledgeSetupReindexConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Rebuild the vault vector index on the home node?'**
+  String get knowledgeSetupReindexConfirm;
+
+  /// No description provided for @knowledgeSetupRagMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Retrieval mode'**
+  String get knowledgeSetupRagMode;
+
+  /// No description provided for @knowledgeSetupRagHybrid.
+  ///
+  /// In en, this message translates to:
+  /// **'Hybrid'**
+  String get knowledgeSetupRagHybrid;
+
+  /// No description provided for @knowledgeSetupRagVector.
+  ///
+  /// In en, this message translates to:
+  /// **'Vector'**
+  String get knowledgeSetupRagVector;
+
+  /// No description provided for @knowledgeSetupRagLexical.
+  ///
+  /// In en, this message translates to:
+  /// **'Lexical'**
+  String get knowledgeSetupRagLexical;
+
+  /// No description provided for @knowledgeSetupSnippetLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'Vault snippets per answer'**
+  String get knowledgeSetupSnippetLimit;
+
+  /// No description provided for @knowledgeBrowseIndexIndexingProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Indexing {processed}/{total}…'**
+  String knowledgeBrowseIndexIndexingProgress(int processed, int total);
+
+  /// No description provided for @knowledgeHubOpenPlugins.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Plugins'**
+  String get knowledgeHubOpenPlugins;
+
+  /// No description provided for @knowledgeNoteNewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'New note'**
+  String get knowledgeNoteNewTitle;
+
+  /// No description provided for @knowledgeNoteEditTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit note'**
+  String get knowledgeNoteEditTitle;
+
+  /// No description provided for @knowledgeNoteFilename.
+  ///
+  /// In en, this message translates to:
+  /// **'Filename'**
+  String get knowledgeNoteFilename;
+
+  /// No description provided for @knowledgeNoteFilenameRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a note filename'**
+  String get knowledgeNoteFilenameRequired;
+
+  /// No description provided for @knowledgeNoteContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Markdown'**
+  String get knowledgeNoteContent;
+
+  /// No description provided for @knowledgeNoteSensitivity.
+  ///
+  /// In en, this message translates to:
+  /// **'Visibility'**
+  String get knowledgeNoteSensitivity;
+
+  /// No description provided for @knowledgeNotePrivate.
+  ///
+  /// In en, this message translates to:
+  /// **'Private'**
+  String get knowledgeNotePrivate;
+
+  /// No description provided for @knowledgeNoteFriends.
+  ///
+  /// In en, this message translates to:
+  /// **'Friends'**
+  String get knowledgeNoteFriends;
+
+  /// No description provided for @knowledgeNotePublished.
+  ///
+  /// In en, this message translates to:
+  /// **'Published'**
+  String get knowledgeNotePublished;
+
+  /// No description provided for @knowledgeNoteAlsoBlog.
+  ///
+  /// In en, this message translates to:
+  /// **'Also publish as blog'**
+  String get knowledgeNoteAlsoBlog;
+
+  /// No description provided for @knowledgeFilePreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Preview'**
+  String get knowledgeFilePreview;
+
+  /// No description provided for @knowledgeFileOpenOnHome.
+  ///
+  /// In en, this message translates to:
+  /// **'Open on home'**
+  String get knowledgeFileOpenOnHome;
+
+  /// No description provided for @knowledgeFileOpenedOnHome.
+  ///
+  /// In en, this message translates to:
+  /// **'Opened on the home computer'**
+  String get knowledgeFileOpenedOnHome;
+
+  /// No description provided for @knowledgeFilePublish.
+  ///
+  /// In en, this message translates to:
+  /// **'Publish'**
+  String get knowledgeFilePublish;
+
+  /// No description provided for @knowledgeFileMakePrivate.
+  ///
+  /// In en, this message translates to:
+  /// **'Make private'**
+  String get knowledgeFileMakePrivate;
+
+  /// No description provided for @knowledgeFileMore.
+  ///
+  /// In en, this message translates to:
+  /// **'More actions'**
+  String get knowledgeFileMore;
+
+  /// No description provided for @knowledgeFileConvert.
+  ///
+  /// In en, this message translates to:
+  /// **'Convert to Markdown note'**
+  String get knowledgeFileConvert;
+
+  /// No description provided for @knowledgeFileConvertOk.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved Markdown note {path}'**
+  String knowledgeFileConvertOk(String path);
+
+  /// No description provided for @knowledgeFileConvertFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not convert to Markdown'**
+  String get knowledgeFileConvertFailed;
+
+  /// No description provided for @knowledgeFileDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete file?'**
+  String get knowledgeFileDeleteTitle;
+
+  /// No description provided for @knowledgeFileDeleteBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete “{title}” from the home vault?'**
+  String knowledgeFileDeleteBody(String title);
+
+  /// No description provided for @knowledgeFileDeleteConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get knowledgeFileDeleteConfirm;
+
+  /// No description provided for @meKnowledge.
+  ///
+  /// In en, this message translates to:
+  /// **'Knowledge setup'**
+  String get meKnowledge;
+
+  /// No description provided for @meKnowledgeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Index and retrieval for vault Ask'**
+  String get meKnowledgeHint;
+
+  /// No description provided for @meKnowledgePlugins.
+  ///
+  /// In en, this message translates to:
+  /// **'Knowledge plugins'**
+  String get meKnowledgePlugins;
+
+  /// No description provided for @meKnowledgePluginsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Obsidian link and Notion/MCP'**
+  String get meKnowledgePluginsHint;
+
   /// No description provided for @knowledgeBrowseFilterAll.
   ///
   /// In en, this message translates to:
@@ -840,6 +1212,12 @@ abstract class AppLocalizations {
   /// **'Notion'**
   String get knowledgeBrowseFilterNotion;
 
+  /// No description provided for @knowledgeBrowseFilterBlog.
+  ///
+  /// In en, this message translates to:
+  /// **'Blog'**
+  String get knowledgeBrowseFilterBlog;
+
   /// No description provided for @knowledgeBrowseFilterDocuments.
   ///
   /// In en, this message translates to:
@@ -857,6 +1235,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count} indexed'**
   String knowledgeBrowseIndexReady(int count);
+
+  /// No description provided for @knowledgeBrowseIndexReadyLinked.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} indexed · {linked} linked Obsidian'**
+  String knowledgeBrowseIndexReadyLinked(int count, int linked);
 
   /// No description provided for @knowledgeBrowseIndexIndexing.
   ///

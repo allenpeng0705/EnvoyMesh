@@ -367,13 +367,116 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get knowledgePluginsNotionDesc =>
-      'Search via MCP. On by default; soft-fails without a URL.';
+      'Browse and search via MCP. Soft-fails without a URL.';
 
   @override
   String get knowledgePluginsMcpUrl => 'MCP server URL';
 
   @override
   String get knowledgePluginsMcpTool => 'Search tool name';
+
+  @override
+  String get knowledgePluginsSyncNow => 'Sync now';
+
+  @override
+  String get knowledgePluginsLinkedVaultLabel =>
+      'Linked Obsidian vault path(s)';
+
+  @override
+  String get knowledgePluginsLinkedVaultHint => '/path/to/ObsidianVault';
+
+  @override
+  String get knowledgePluginsLinkedVaultEmpty => 'No linked vaults yet.';
+
+  @override
+  String get knowledgePluginsLinkedVaultRemove => 'Remove';
+
+  @override
+  String get knowledgePluginsLinkedVaultAdd => 'Add vault folder…';
+
+  @override
+  String get knowledgePluginsLinkedVaultPickTitle =>
+      'Choose Obsidian vault folder';
+
+  @override
+  String get knowledgePluginsLinkedVaultHelper =>
+      'Vaults from Obsidian on this home computer are linked automatically. Remove a row to unlink (it will not auto-link again). Add vault folder… for more.';
+
+  @override
+  String get knowledgePluginsOpenObsidian => 'Open Obsidian';
+
+  @override
+  String get knowledgePluginsOpenNotion => 'Open Notion';
+
+  @override
+  String get knowledgePluginsOpeningApp => 'Opening…';
+
+  @override
+  String get knowledgePluginsOpenAppFailed =>
+      'Could not open the app on this computer.';
+
+  @override
+  String get knowledgePluginsLinkedVaultAutoOne =>
+      'Linked Obsidian vault found on this computer.';
+
+  @override
+  String knowledgePluginsLinkedVaultAutoMany(int count) {
+    return 'Linked $count Obsidian vaults found on this computer.';
+  }
+
+  @override
+  String get knowledgeHubImportObsidianAll => 'Import all linked';
+
+  @override
+  String get knowledgeHubImportNotionVisible => 'Import visible cards';
+
+  @override
+  String get knowledgeHubExportToObsidian => 'Export to Obsidian';
+
+  @override
+  String get knowledgeHubExportToNotion => 'Export to Notion/MCP';
+
+  @override
+  String knowledgeHubImportObsidianOk(int count) {
+    return 'Imported $count Obsidian note(s)';
+  }
+
+  @override
+  String knowledgeHubImportNotionOk(int count) {
+    return 'Imported $count Notion/MCP note(s)';
+  }
+
+  @override
+  String knowledgeHubExportObsidianOk(int count) {
+    return 'Exported $count note(s) to Obsidian';
+  }
+
+  @override
+  String knowledgeHubExportNotionOk(int count) {
+    return 'Exported $count note(s) via MCP';
+  }
+
+  @override
+  String get knowledgeHubImportFailed => 'Import failed';
+
+  @override
+  String get knowledgeHubExportFailed => 'Export failed';
+
+  @override
+  String get knowledgeHubImportMcpEmpty =>
+      'No live MCP cards to import — refresh Browse';
+
+  @override
+  String get knowledgeHubExportEmpty => 'No vault Markdown notes to export';
+
+  @override
+  String get knowledgeHubShareVaultOnly =>
+      'Share works for vault files only — import first';
+
+  @override
+  String knowledgeHubMcpListError(String error) {
+    return 'MCP list: $error';
+  }
 
   @override
   String get knowledgeSetupHint =>
@@ -393,6 +496,115 @@ class AppLocalizationsIt extends AppLocalizations {
   String get knowledgeSetupReindexDone => 'Reindex started';
 
   @override
+  String get knowledgeSetupReindexConfirm =>
+      'Rebuild the vault vector index on the home node?';
+
+  @override
+  String get knowledgeSetupRagMode => 'Retrieval mode';
+
+  @override
+  String get knowledgeSetupRagHybrid => 'Hybrid';
+
+  @override
+  String get knowledgeSetupRagVector => 'Vector';
+
+  @override
+  String get knowledgeSetupRagLexical => 'Lexical';
+
+  @override
+  String get knowledgeSetupSnippetLimit => 'Vault snippets per answer';
+
+  @override
+  String knowledgeBrowseIndexIndexingProgress(int processed, int total) {
+    return 'Indexing $processed/$total…';
+  }
+
+  @override
+  String get knowledgeHubOpenPlugins => 'Open Plugins';
+
+  @override
+  String get knowledgeNoteNewTitle => 'New note';
+
+  @override
+  String get knowledgeNoteEditTitle => 'Edit note';
+
+  @override
+  String get knowledgeNoteFilename => 'Filename';
+
+  @override
+  String get knowledgeNoteFilenameRequired => 'Enter a note filename';
+
+  @override
+  String get knowledgeNoteContent => 'Markdown';
+
+  @override
+  String get knowledgeNoteSensitivity => 'Visibility';
+
+  @override
+  String get knowledgeNotePrivate => 'Private';
+
+  @override
+  String get knowledgeNoteFriends => 'Friends';
+
+  @override
+  String get knowledgeNotePublished => 'Published';
+
+  @override
+  String get knowledgeNoteAlsoBlog => 'Also publish as blog';
+
+  @override
+  String get knowledgeFilePreview => 'Preview';
+
+  @override
+  String get knowledgeFileOpenOnHome => 'Open on home';
+
+  @override
+  String get knowledgeFileOpenedOnHome => 'Opened on the home computer';
+
+  @override
+  String get knowledgeFilePublish => 'Publish';
+
+  @override
+  String get knowledgeFileMakePrivate => 'Make private';
+
+  @override
+  String get knowledgeFileMore => 'More actions';
+
+  @override
+  String get knowledgeFileConvert => 'Convert to Markdown note';
+
+  @override
+  String knowledgeFileConvertOk(String path) {
+    return 'Saved Markdown note $path';
+  }
+
+  @override
+  String get knowledgeFileConvertFailed => 'Could not convert to Markdown';
+
+  @override
+  String get knowledgeFileDeleteTitle => 'Delete file?';
+
+  @override
+  String knowledgeFileDeleteBody(String title) {
+    return 'Delete “$title” from the home vault?';
+  }
+
+  @override
+  String get knowledgeFileDeleteConfirm => 'Delete';
+
+  @override
+  String get meKnowledge => 'Knowledge setup';
+
+  @override
+  String get meKnowledgeHint => 'Index and retrieval for vault Ask';
+
+  @override
+  String get meKnowledgePlugins => 'Knowledge plugins';
+
+  @override
+  String get meKnowledgePluginsHint => 'Obsidian link and Notion/MCP';
+
+  @override
   String get knowledgeBrowseFilterAll => 'All';
 
   @override
@@ -408,6 +620,9 @@ class AppLocalizationsIt extends AppLocalizations {
   String get knowledgeBrowseFilterNotion => 'Notion';
 
   @override
+  String get knowledgeBrowseFilterBlog => 'Blog';
+
+  @override
   String get knowledgeBrowseFilterDocuments => 'Documents';
 
   @override
@@ -416,6 +631,11 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String knowledgeBrowseIndexReady(int count) {
     return '$count indexed';
+  }
+
+  @override
+  String knowledgeBrowseIndexReadyLinked(int count, int linked) {
+    return '$count indexed · $linked linked Obsidian';
   }
 
   @override

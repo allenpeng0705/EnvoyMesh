@@ -29,6 +29,8 @@ describe("isOwnerOnlyRpcMethod", () => {
     for (const method of [
       "getHomeFsInfo",
       "listHomeFsEntries",
+      "discoverObsidianVaults",
+      "openDesktopApp",
       "getExtAgentProjectPath",
       "setExtAgentProjectPath",
       "previewHomeFsFile",
@@ -50,6 +52,11 @@ describe("isOwnerOnlyRpcMethod", () => {
     for (const method of [
       "reindexRagKnowledge",
       "saveExternalMcpSearchAsNote",
+      "listExternalMcpKnowledge",
+      "importLinkedObsidianNotes",
+      "importExternalMcpKnowledge",
+      "exportNotesToLinkedObsidian",
+      "exportNotesToMcp",
       "convertLibraryItemToMarkdown",
     ]) {
       expect(isOwnerOnlyRpcMethod(method), method).toBe(true)

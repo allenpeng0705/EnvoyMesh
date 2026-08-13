@@ -24,6 +24,7 @@ import '../settings/ai_engine_settings_screen.dart';
 import '../settings/ai_model_settings_screen.dart';
 import '../settings/envoy_local_settings_screen.dart';
 import '../settings/pi_settings_screen.dart';
+import '../../knowledge/knowledge_nav.dart';
 import 'node_switcher_sheet.dart';
 import '../../utils/localized_labels.dart';
 import '../../services/push_preferences.dart';
@@ -688,6 +689,34 @@ class _MeScreenState extends ConsumerState<MeScreen> {
                     MaterialPageRoute(
                       builder: (_) => const AiModelSettingsScreen(),
                     ),
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.menu_book_outlined),
+                  title: Text(l10n.meKnowledge),
+                  subtitle: Text(
+                    l10n.meKnowledgeHint,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => openContentKnowledge(
+                    ref,
+                    panel: KnowledgeHubPanel.setup,
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.extension_outlined),
+                  title: Text(l10n.meKnowledgePlugins),
+                  subtitle: Text(
+                    l10n.meKnowledgePluginsHint,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => openContentKnowledge(
+                    ref,
+                    panel: KnowledgeHubPanel.plugins,
                   ),
                 ),
                 const Divider(height: 1),

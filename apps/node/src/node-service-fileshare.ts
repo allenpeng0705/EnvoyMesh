@@ -69,6 +69,11 @@ import {
 } from "./openclaw-workspace-files.js";
 import { openClawWorkspaceDir } from "./openclaw-workspace.js";
 import { buildAllLocalFilesList } from "./local-files.js";
+import {
+  listExternalMcpKnowledgeViaRuntime,
+  readLinkedObsidianFileContentViaRuntime,
+  readMcpRemoteFileContent,
+} from "./knowledge-hub.js";
 import { createPublishedLibraryStore } from "./published-library-store.js";
 import { createPublishedExternalStore } from "./published-external-store.js";
 import { exportVaultDocumentToIpfs } from "./vault-ipfs-export-service.js";
@@ -189,17 +194,38 @@ export async function listOpenClawWorkspaceFilesViaRuntime(
 
 export async function listAllLocalFilesViaRuntime(
   ctx: FileShareContext,
-  params?: { query?: string; include?: "vault" | "workspace" | "both" },
+  params?: {
+    query?: string;
+    include?: "vault" | "workspace" | "both";
+    includeMcpRemote?: boolean;
+    mcpListQuery?: string;
+  },
 ): Promise<ListAllLocalFilesResult> {
   // Periodically mirror Content → Blog into notes/imports/blog/ for Knowledge Browse.
   await maybeSyncBlogPostsToKnowledge(ctx);
 
-  const [vaultItems, workspaceItems, linkedObsidianItems] = await Promise.all([
+  const includeMcp = params?.includeMcpRemote !== false;
+  const [vaultItems, workspaceItems, linkedObsidianItems, mcpRemote] = await Promise.all([
     listLibraryItemsViaRuntime(ctx, params),
     listOpenClawWorkspaceFilesViaRuntime(ctx, params),
     listLinkedObsidianItemsViaRuntime(ctx),
+    includeMcp
+      ? listExternalMcpKnowledgeViaRuntime(ctx, { query: params?.mcpListQuery }).catch((err) => ({
+          items: [] as import("@envoymesh/api").LocalFileItem[],
+          error: err instanceof Error ? err.message : String(err),
+        }))
+      : Promise.resolve({
+          items: [] as import("@envoymesh/api").LocalFileItem[],
+          error: undefined as string | undefined,
+        }),
   ]);
-  return buildAllLocalFilesList({ vaultItems, workspaceItems, linkedObsidianItems });
+  return buildAllLocalFilesList({
+    vaultItems,
+    workspaceItems,
+    linkedObsidianItems,
+    mcpRemoteItems: mcpRemote.items,
+    mcpRemoteError: mcpRemote.error,
+  });
 }
 
 async function listLinkedObsidianItemsViaRuntime(
@@ -360,6 +386,22 @@ export async function openLocalFileViaRuntime(
     await openPathWithDefaultApp(absolutePath);
     return;
   }
+  if (params.source === "mcp-remote") {
+    const { mkdtemp, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const maxBytes = MAX_LIBRARY_ITEM_PREVIEW_BYTES;
+    const content = await readMcpRemoteFileContent(params.relativePath, maxBytes);
+    const bytes = Buffer.from(content.contentBase64, "base64");
+    const dir = await mkdtemp(join(tmpdir(), "envoymesh-mcp-"));
+    const safeName =
+      basename(params.relativePath).replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 80) ||
+      "notion-card.md";
+    const absolutePath = join(dir, safeName.endsWith(".md") ? safeName : `${safeName}.md`);
+    await writeFile(absolutePath, bytes, { mode: 0o600 });
+    await openPathWithDefaultApp(absolutePath);
+    return;
+  }
   await openVaultFile(params.relativePath);
 }
 
@@ -380,6 +422,25 @@ export async function readLocalFileContentViaRuntime(
       maxBytes: params.maxBytes,
       offset: params.offset,
     });
+  }
+  if (params.source === "linked-obsidian") {
+    const maxBytes = Math.min(
+      params.maxBytes ?? MAX_LIBRARY_ITEM_PREVIEW_BYTES,
+      MAX_LIBRARY_ITEM_PREVIEW_BYTES,
+    );
+    return readLinkedObsidianFileContentViaRuntime(
+      ctx,
+      params.relativePath,
+      maxBytes,
+      params.offset,
+    );
+  }
+  if (params.source === "mcp-remote") {
+    const maxBytes = Math.min(
+      params.maxBytes ?? MAX_LIBRARY_ITEM_PREVIEW_BYTES,
+      MAX_LIBRARY_ITEM_PREVIEW_BYTES,
+    );
+    return readMcpRemoteFileContent(params.relativePath, maxBytes);
   }
   let relativePath = params.relativePath.trim().replace(/^[\\/]+/, "");
   if (!relativePath && params.documentId?.trim()) {
@@ -421,7 +482,17 @@ export async function getRagIndexStatusViaRuntime(
   ctx: FileShareContext,
 ): Promise<RagIndexStatus> {
   const rag = await ctx.getRagService();
-  return rag?.getIndexStatus() ?? DEFAULT_RAG_INDEX_STATUS;
+  const base = rag?.getIndexStatus() ?? DEFAULT_RAG_INDEX_STATUS;
+  try {
+    const config = await ctx.getNodeConfig();
+    const paths = config?.aiSettings?.knowledgeBase?.linkedObsidianVaultPaths ?? [];
+    if (!paths.length) return { ...base, linkedObsidianNoteCount: 0 };
+    const { listLinkedObsidianMarkdownFiles } = await import("./linked-obsidian-files.js");
+    const files = await listLinkedObsidianMarkdownFiles(paths);
+    return { ...base, linkedObsidianNoteCount: files.length };
+  } catch {
+    return base;
+  }
 }
 
 /* ---------- IPFS export + pin + gateway (audit-event integrations) ---------- */

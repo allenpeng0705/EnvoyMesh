@@ -1,3 +1,4 @@
+import 'package:envoygo/knowledge/local_file_display.dart';
 import 'package:envoygo/services/chat_voice_note.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -7,60 +8,39 @@ void main() {
     expect(isChatAttachmentPath('chat/out/a1/resume.pdf'), isTrue);
     expect(isChatAttachmentPath('chat/in/bob/photo.jpg'), isTrue);
     expect(isChatAttachmentPath('imports/photo.jpg'), isFalse);
-    expect(isChatAttachmentPath('skills/tavily/SKILL.md'), isFalse);
-  });
-
-  test('isProfileMediaPath matches profile thumbnail and gallery', () {
-    expect(isProfileMediaPath('profile/thumbnail.jpg'), isTrue);
-    expect(
-      isProfileMediaPath('profile/gallery/0fd7139a-9596-43fa-8733-401496c7dc98.jpg'),
-      isTrue,
-    );
-    expect(isProfileMediaPath('photos/wall/lake.jpg'), isFalse);
-  });
-
-  test('isHiddenFromLibraryList covers chat and profile media', () {
-    expect(isHiddenFromLibraryList('chat/out/a/x.pdf'), isTrue);
-    expect(isHiddenFromLibraryList('profile/thumbnail.jpg'), isTrue);
-    expect(isHiddenFromLibraryList('notes/hello.md'), isFalse);
   });
 
   test('knowledge browse filters classify notes vs documents', () {
     expect(isKnowledgeNotesPath('notes/hello.md'), isTrue);
     expect(isKnowledgeDocumentsPath('documents/a.pdf'), isTrue);
     expect(isKnowledgeObsidianPath('notes/hello.md'), isTrue);
+    expect(isKnowledgeObsidianPath('linked-obsidian/V/a.md'), isTrue);
     expect(isKnowledgeNotionPath('notes/mcp/x.md'), isTrue);
+    expect(isKnowledgeNotionPath('mcp-remote/x.md'), isTrue);
+    expect(isKnowledgeBlogPath('notes/imports/blog/hello.md'), isTrue);
     expect(isKnowledgeObsidianPath('notes/mcp/x.md'), isFalse);
+    expect(knowledgeBrowseSource('notes/hello.md'), 'note');
     expect(knowledgeBrowseSource('notes/mcp/x.md'), 'notion');
+    expect(knowledgeBrowseSource('linked-obsidian/V/a.md'), 'obsidian');
+    expect(knowledgeBrowseSource('notes/imports/obsidian/x.md'), 'obsidian');
+    expect(knowledgeBrowseSource('mcp-remote/x.md'), 'notion');
+    expect(knowledgeBrowseSource('notes/imports/blog/hello.md'), 'blog');
     expect(
       matchesKnowledgeBrowseFilter(
-        relativePath: 'notes/a.md',
-        published: true,
-        filter: KnowledgeBrowseFilter.published,
-      ),
-      isTrue,
-    );
-    expect(
-      matchesKnowledgeBrowseFilter(
-        relativePath: 'notes/a.md',
-        published: false,
-        filter: KnowledgeBrowseFilter.published,
-      ),
-      isFalse,
-    );
-    expect(
-      matchesKnowledgeBrowseFilter(
-        relativePath: 'notes/mcp/x.md',
+        relativePath: 'mcp-remote/x.md',
+        source: 'mcp-remote',
         filter: KnowledgeBrowseFilter.notion,
       ),
       isTrue,
     );
     expect(
       matchesKnowledgeBrowseFilter(
-        relativePath: 'notes/hello.md',
-        filter: KnowledgeBrowseFilter.obsidian,
+        relativePath: 'notes/imports/blog/hello.md',
+        filter: KnowledgeBrowseFilter.notes,
       ),
       isTrue,
     );
+    expect(isVaultShareableSource('vault'), isTrue);
+    expect(isVaultShareableSource('linked-obsidian'), isFalse);
   });
 }

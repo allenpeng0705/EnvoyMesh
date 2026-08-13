@@ -183,6 +183,8 @@ class LocalFileItem {
   final String updatedAt;
   final String? documentId;
   final bool? published;
+  final String? externalId;
+  final String? snippetPreview;
 
   const LocalFileItem({
     required this.source,
@@ -193,6 +195,8 @@ class LocalFileItem {
     required this.updatedAt,
     this.documentId,
     this.published,
+    this.externalId,
+    this.snippetPreview,
   });
 
   factory LocalFileItem.fromJson(Map<String, dynamic> json) {
@@ -205,6 +209,8 @@ class LocalFileItem {
       updatedAt: (json['updatedAt'] as String?) ?? '',
       documentId: json['documentId'] as String?,
       published: json['published'] as bool?,
+      externalId: json['externalId'] as String?,
+      snippetPreview: json['snippetPreview'] as String?,
     );
   }
 }
@@ -213,11 +219,17 @@ class ListAllLocalFilesResult {
   final List<LocalFileItem> items;
   final int vaultCount;
   final int workspaceCount;
+  final int linkedObsidianCount;
+  final int mcpRemoteCount;
+  final String? mcpRemoteError;
 
   const ListAllLocalFilesResult({
     required this.items,
     required this.vaultCount,
     required this.workspaceCount,
+    this.linkedObsidianCount = 0,
+    this.mcpRemoteCount = 0,
+    this.mcpRemoteError,
   });
 
   factory ListAllLocalFilesResult.fromJson(Map<String, dynamic> json) {
@@ -228,6 +240,9 @@ class ListAllLocalFilesResult {
           .toList(),
       vaultCount: (json['vaultCount'] as num?)?.toInt() ?? 0,
       workspaceCount: (json['workspaceCount'] as num?)?.toInt() ?? 0,
+      linkedObsidianCount: (json['linkedObsidianCount'] as num?)?.toInt() ?? 0,
+      mcpRemoteCount: (json['mcpRemoteCount'] as num?)?.toInt() ?? 0,
+      mcpRemoteError: json['mcpRemoteError'] as String?,
     );
   }
 }

@@ -766,6 +766,8 @@ export interface ListAllLocalFilesResult {
   workspaceCount: number;
   linkedObsidianCount?: number;
   mcpRemoteCount?: number;
+  /** Soft-fail reason when MCP remote list failed (Browse still returns vault/linked items). */
+  mcpRemoteError?: string;
 }
 
 export interface ReadLocalFileContentParams {
@@ -2703,6 +2705,22 @@ export interface NodeService {
   listHomeFsEntries(
     params?: import("./ext-agent.js").ListHomeFsEntriesParams,
   ): Promise<import("./ext-agent.js").ListHomeFsEntriesResult>;
+
+  /**
+   * Discover Obsidian vault folders on the home node (owner only).
+   * Reads Obsidian's vault registry and/or scans for `.obsidian` markers.
+   */
+  discoverObsidianVaults(): Promise<
+    import("./ext-agent.js").DiscoverObsidianVaultsResult
+  >;
+
+  /**
+   * Open Obsidian or Notion on the home node (owner only; allowlisted apps).
+   * macOS / Windows / Linux.
+   */
+  openDesktopApp(
+    params: import("./ext-agent.js").OpenDesktopAppParams,
+  ): Promise<import("./ext-agent.js").OpenDesktopAppResult>;
 
   /**
    * Read the project folder for an Ext Agent (owner only).

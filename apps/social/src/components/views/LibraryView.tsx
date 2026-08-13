@@ -5,8 +5,11 @@ import { useT } from "../../context/I18nContext.js";
 import { useIsInProcessMobileNode, useNodeService } from "../../hooks/useNodeService.js";
 import { useToast } from "../../hooks/useToast.js";
 import { openLocalFile, revealVaultLibraryFile } from "../../lib/library-file-actions.js";
+import { openContentKnowledge } from "../../lib/content-knowledge-nav.js";
 import {
   isHiddenFromLibraryList,
+  isKnowledgeBlogPath,
+  isKnowledgeNotionPath,
   knowledgeBrowseSource,
   localFileRowKey,
   matchesKnowledgeBrowseFilter,
@@ -25,7 +28,6 @@ const BROWSE_FILTERS: KnowledgeBrowseFilter[] = [
   "notes",
   "obsidian",
   "notion",
-  "blog",
   "documents",
   "published",
 ];
@@ -93,6 +95,7 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
   const [rawItems, setRawItems] = useState<LocalFileItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [mcpRemoteError, setMcpRemoteError] = useState<string | null>(null);
   const [importBusy, setImportBusy] = useState(false);
 
   const [shareFor, setShareFor] = useState<LibraryItem | null>(null);
@@ -144,7 +147,7 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
       rawItems.filter((r) => {
         if (isHiddenFromLibraryList(r.relativePath)) return false;
         if (r.source === "vault") return true;
-        if (embedded && r.source === "linked-obsidian") return true;
+        if (embedded && (r.source === "linked-obsidian" || r.source === "mcp-remote")) return true;
         return false;
       }),
     [rawItems, embedded],
@@ -175,7 +178,6 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
     if (browseFilter === "documents") return t("knowledge.browse.emptyDocuments");
     if (browseFilter === "obsidian") return t("knowledge.browse.emptyObsidian");
     if (browseFilter === "notion") return t("knowledge.browse.emptyNotion");
-    if (browseFilter === "blog") return t("knowledge.browse.emptyBlog");
     return t("knowledge.browse.emptyPublished");
   })();
 
@@ -185,7 +187,6 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
     if (id === "documents") return t("knowledge.browse.filterDocuments");
     if (id === "obsidian") return t("knowledge.browse.filterObsidian");
     if (id === "notion") return t("knowledge.browse.filterNotion");
-    if (id === "blog") return t("knowledge.browse.filterBlog");
     return t("knowledge.browse.filterPublished");
   };
 
@@ -194,6 +195,7 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
     if (src === "notion") return t("knowledge.browse.sourceNotion");
     if (src === "obsidian") return t("knowledge.browse.sourceObsidian");
     if (src === "blog") return t("knowledge.browse.sourceBlog");
+    if (src === "note") return t("knowledge.browse.sourceNote", "Note");
     return t("knowledge.browse.sourceDocument");
   };
   const load = useCallback(async () => {
@@ -202,13 +204,136 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
     try {
       const result = await nodeService.listAllLocalFiles();
       setRawItems(result.items);
+      // Soft-fail MCP issues stay on the Notion filter as a quiet banner —
+      // never toast on every Browse refresh (e.g. after toggling Private).
+      const remoteErr = result.mcpRemoteError?.trim() || null;
+      setMcpRemoteError(
+        remoteErr && remoteErr !== "mcp_url_missing" ? remoteErr : null,
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setRawItems([]);
+      setMcpRemoteError(null);
     } finally {
       setLoading(false);
     }
   }, [nodeService]);
+
+  const [hubBusy, setHubBusy] = useState(false);
+
+  const handleImportLinkedObsidian = async (all: boolean) => {
+    setHubBusy(true);
+    setError(null);
+    try {
+      const paths = all
+        ? undefined
+        : items.filter((r) => r.source === "linked-obsidian").map((r) => r.relativePath);
+      const result = await nodeService.importLinkedObsidianNotes(
+        all ? { all: true } : { paths },
+      );
+      if (!result.ok) {
+        showToast(result.reason ?? t("knowledge.browse.importFailed"), "error");
+      } else {
+        showToast(
+          t("knowledge.browse.importObsidianOk", { count: result.imported.length }),
+          "success",
+        );
+        await load();
+      }
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e), "error");
+    } finally {
+      setHubBusy(false);
+    }
+  };
+
+  const handleImportMcpRemote = async () => {
+    setHubBusy(true);
+    setError(null);
+    try {
+      const paths = items
+        .filter((r) => r.source === "mcp-remote")
+        .map((r) => r.relativePath);
+      if (!paths.length) {
+        showToast(t("knowledge.browse.importMcpEmpty"), "error");
+        return;
+      }
+      const result = await nodeService.importExternalMcpKnowledge({ paths });
+      if (!result.ok) {
+        showToast(result.reason ?? t("knowledge.browse.importFailed"), "error");
+      } else {
+        showToast(
+          t("knowledge.browse.importNotionOk", { count: result.imported.length }),
+          "success",
+        );
+        await load();
+      }
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e), "error");
+    } finally {
+      setHubBusy(false);
+    }
+  };
+
+  const handleExportToObsidian = async () => {
+    setHubBusy(true);
+    try {
+      const relativePaths = items
+        .filter(
+          (r) =>
+            r.source === "vault" &&
+            r.relativePath.endsWith(".md") &&
+            !isKnowledgeBlogPath(r.relativePath) &&
+            !isKnowledgeNotionPath(r.relativePath),
+        )
+        .slice(0, 20)
+        .map((r) => r.relativePath);
+      if (!relativePaths.length) {
+        showToast(t("knowledge.browse.exportEmpty"), "error");
+        return;
+      }
+      const result = await nodeService.exportNotesToLinkedObsidian({ relativePaths });
+      if (!result.ok) {
+        showToast(result.reason ?? t("knowledge.browse.exportFailed"), "error");
+      } else {
+        showToast(
+          t("knowledge.browse.exportObsidianOk", { count: result.exported.length }),
+          "success",
+        );
+      }
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e), "error");
+    } finally {
+      setHubBusy(false);
+    }
+  };
+
+  const handleExportToMcp = async () => {
+    setHubBusy(true);
+    try {
+      const relativePaths = items
+        .filter((r) => r.source === "vault" && r.relativePath.endsWith(".md"))
+        .slice(0, 10)
+        .map((r) => r.relativePath);
+      if (!relativePaths.length) {
+        showToast(t("knowledge.browse.exportEmpty"), "error");
+        return;
+      }
+      const result = await nodeService.exportNotesToMcp({ relativePaths });
+      if (!result.ok) {
+        showToast(result.reason ?? t("knowledge.browse.exportFailed"), "error");
+      } else {
+        showToast(
+          t("knowledge.browse.exportNotionOk", { count: result.exported.length }),
+          "success",
+        );
+      }
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e), "error");
+    } finally {
+      setHubBusy(false);
+    }
+  };
 
   useEffect(() => {
     void load();
@@ -329,11 +454,11 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
         {vaultItem ? (
           <button
             type="button"
-            className={`library-view__icon-btn${
-              vaultItem.published ? " library-view__icon-btn--unlocked" : ""
-            }`}
+            className="library-view__icon-btn library-view__icon-btn--privacy"
             title={
-              vaultItem.published ? t("library.published") : t("library.private")
+              vaultItem.published
+                ? t("library.publishedHint", "Published — click to make private")
+                : t("library.privateHint", "Private — click to publish")
             }
             aria-label={
               vaultItem.published ? t("library.published") : t("library.private")
@@ -353,6 +478,7 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
               })();
             }}
           >
+            {/* Status glyph: public = open lock, private = closed lock */}
             {vaultItem.published ? <LibraryIconUnlock /> : <LibraryIconLock />}
           </button>
         ) : null}
@@ -369,7 +495,7 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
         {vaultItem ? (
           <button
             type="button"
-            className="library-view__icon-btn library-view__icon-btn--primary"
+            className="library-view__icon-btn"
             title={t("library.share")}
             aria-label={t("library.share")}
             onClick={() => setShareFor(vaultItem)}
@@ -679,6 +805,68 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
           <KnowledgeIndexChip />
         </div>
       ) : null}
+      {embedded && (browseFilter === "obsidian" || browseFilter === "notion") ? (
+        <div className="library-view-hub-actions" data-testid="knowledge-hub-actions">
+          {browseFilter === "obsidian" ? (
+            <>
+              <button
+                type="button"
+                className="secondary"
+                disabled={hubBusy}
+                onClick={() => void handleImportLinkedObsidian(true)}
+              >
+                {t("knowledge.browse.importObsidianAll")}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={hubBusy}
+                onClick={() => void handleExportToObsidian()}
+              >
+                {t("knowledge.browse.exportToObsidian")}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => openContentKnowledge("plugins")}
+              >
+                {t("knowledge.browse.openPlugins")}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="secondary"
+                disabled={hubBusy}
+                onClick={() => void handleImportMcpRemote()}
+              >
+                {t("knowledge.browse.importNotionVisible")}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={hubBusy}
+                onClick={() => void handleExportToMcp()}
+              >
+                {t("knowledge.browse.exportToNotion")}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => openContentKnowledge("plugins")}
+              >
+                {t("knowledge.browse.openPlugins")}
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
+      {embedded && browseFilter === "notion" && mcpRemoteError ? (
+        <p className="library-view-hint library-view-hint--warn" role="status">
+          {t("knowledge.browse.mcpListError", { error: mcpRemoteError })}
+        </p>
+      ) : null}
       <div className="library-view-toolbar">
         <input
           type="search"
@@ -760,6 +948,19 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
                 onClick={() => fileInputRef.current?.click()}
               >
                 {importBusy ? t("library.importing") : t("library.importFile")}
+              </button>
+            </div>
+          ) : null}
+          {embedded &&
+          !query.trim() &&
+          (browseFilter === "obsidian" || browseFilter === "notion") ? (
+            <div className="library-view-empty__actions">
+              <button
+                type="button"
+                className="primary"
+                onClick={() => openContentKnowledge("plugins")}
+              >
+                {t("knowledge.browse.openPlugins")}
               </button>
             </div>
           ) : null}
@@ -875,6 +1076,7 @@ function LibraryIconLock() {
 }
 
 function LibraryIconUnlock() {
+  // Open padlock — shackle open at the top-right (public / published).
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
       <rect
@@ -887,7 +1089,7 @@ function LibraryIconUnlock() {
         strokeWidth="2"
       />
       <path
-        d="M8 11V8a4 4 0 0 1 7.5-2"
+        d="M7 11V7a5 5 0 0 1 9.9-1"
         stroke="currentColor"
         strokeWidth="2"
         strokeLinecap="round"

@@ -3,6 +3,9 @@ import {
   formatExternalKnowledgeSection,
   searchExternalMcpKnowledge,
   formatMcpResultsAsNote,
+  formatMcpSnippetAsNote,
+  mcpRemoteBrowsePath,
+  writeExternalMcpKnowledge,
   validateMcpServerUrl,
   type ExternalKnowledgeSnippet,
 } from "../src/mcp-knowledge-client.js";
@@ -206,5 +209,22 @@ describe("formatMcpResultsAsNote", () => {
     const frontmatter = fmMatch?.[1] ?? "";
     // The server value should not contain an unescaped " breaking the YAML
     expect(frontmatter).toContain('\\"');
+  });
+
+  it("builds mcp-remote browse paths and formats a single snippet note", () => {
+    expect(mcpRemoteBrowsePath("abc123", "Hello World")).toBe("mcp-remote/abc123-hello-world.md");
+    const { filename, content } = formatMcpSnippetAsNote(snippets[0]!, { attribution });
+    expect(filename.endsWith(".md")).toBe(true);
+    expect(content).toContain(snippets[0]!.title);
+  });
+
+  it("soft-fails MCP write when url missing", async () => {
+    const result = await writeExternalMcpKnowledge({
+      knowledgeBase: { externalProvider: "mcp" },
+      title: "T",
+      content: "Body",
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe("mcp_url_missing");
   });
 });

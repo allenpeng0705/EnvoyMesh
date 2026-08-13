@@ -198,6 +198,26 @@ export async function buildEnvoyMeshRetrievedContext(input: {
     }
   }
 
+  if (knowledgeScope === "owner") {
+    const roots = resolveAiKnowledgeBaseSettings(input.knowledgeBase).linkedObsidianVaultPaths ?? [];
+    if (roots.length) {
+      try {
+        const {
+          searchLinkedObsidianKnowledge,
+          formatLinkedObsidianKnowledgeSection,
+        } = await import("./knowledge-hub.js");
+        const hits = await searchLinkedObsidianKnowledge({
+          absoluteRoots: roots,
+          query: input.message,
+        });
+        const section = formatLinkedObsidianKnowledgeSection(hits);
+        if (section.trim()) sections.push(section.trim());
+      } catch {
+        /* linked vault optional */
+      }
+    }
+  }
+
   if (input.humanProfileStore) {
     const profileContext = await buildContextInjection(
       input.ownerId,

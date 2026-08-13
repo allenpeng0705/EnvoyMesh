@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../knowledge/knowledge_nav.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/content_engage_provider.dart';
 import '../../providers/feed_notify_provider.dart';
@@ -55,6 +56,13 @@ class _ContentScreenState extends ConsumerState<ContentScreen>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<int?>(contentSurfaceRequestProvider, (_, next) {
+      if (next == null || !mounted) return;
+      ref.read(contentSurfaceRequestProvider.notifier).state = null;
+      if (next >= 0 && next < _tabs.length && _tabs.index != next) {
+        _tabs.animateTo(next);
+      }
+    });
     final l10n = AppLocalizations.of(context);
     final engage = ref.watch(contentEngageProvider);
     final feedNotify = ref.watch(feedNotifyProvider);

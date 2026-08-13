@@ -90,6 +90,10 @@ export interface AiKnowledgeBaseSettings {
    */
   linkedObsidianVaultPaths?: string[];
   /**
+   * Vault paths the owner explicitly unlinked. Auto-discover will not re-add these.
+   */
+  dismissedObsidianVaultPaths?: string[];
+  /**
    * External KB via MCP (e.g. Notion search). Default: `mcp`.
    * Soft-fails when URL is missing — no Notion desktop app required.
    */
@@ -184,6 +188,7 @@ export function resolveAiKnowledgeBaseSettings(
   publicVaultPaths: string[];
   privateVaultPaths: string[];
   linkedObsidianVaultPaths: string[];
+  dismissedObsidianVaultPaths: string[];
   externalMcpServer?: string;
   mcpServerUrl?: string;
   mcpSearchTool?: string;
@@ -208,6 +213,9 @@ export function resolveAiKnowledgeBaseSettings(
   const linkedObsidianVaultPaths = (input?.linkedObsidianVaultPaths ?? [])
     .map((p) => p.trim())
     .filter(Boolean);
+  const dismissedObsidianVaultPaths = (input?.dismissedObsidianVaultPaths ?? [])
+    .map((p) => p.trim())
+    .filter(Boolean);
 
   return {
     enabled: input?.enabled ?? DEFAULT_AI_KNOWLEDGE_BASE.enabled,
@@ -218,6 +226,7 @@ export function resolveAiKnowledgeBaseSettings(
     publicVaultPaths,
     privateVaultPaths,
     linkedObsidianVaultPaths,
+    dismissedObsidianVaultPaths,
     externalProvider: input?.externalProvider ?? DEFAULT_AI_KNOWLEDGE_BASE.externalProvider,
     maxFileBytes: clampInt(
       input?.maxFileBytes,

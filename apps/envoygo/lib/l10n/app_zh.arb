@@ -109,25 +109,127 @@
   "knowledgePluginsObsidianTitle": "Obsidian",
   "knowledgePluginsObsidianDesc": "增强 vault 笔记。桌面应用可选。",
   "knowledgePluginsNotionTitle": "Notion（经 MCP）",
-  "knowledgePluginsNotionDesc": "经 MCP 搜索。默认开启；无 URL 时软失败。",
+  "knowledgePluginsNotionDesc": "经 MCP 浏览与搜索。无 URL 时软失败。",
   "knowledgePluginsMcpUrl": "MCP 服务 URL",
   "knowledgePluginsMcpTool": "搜索工具名",
+  "knowledgePluginsSyncNow": "立即同步",
+  "knowledgePluginsLinkedVaultLabel": "关联的 Obsidian 库路径",
+  "knowledgePluginsLinkedVaultHint": "/path/to/ObsidianVault",
+  "knowledgePluginsLinkedVaultEmpty": "尚未关联库。",
+  "knowledgePluginsLinkedVaultRemove": "移除",
+  "knowledgePluginsLinkedVaultAdd": "添加库文件夹…",
+  "knowledgePluginsLinkedVaultPickTitle": "选择 Obsidian 库文件夹",
+  "knowledgePluginsLinkedVaultHelper": "会自动关联本机 Obsidian 已登记的库。移除一行即可取消关联（不会再自动加回）。也可用「添加库文件夹…」添加更多。",
+  "knowledgePluginsOpenObsidian": "打开 Obsidian",
+  "knowledgePluginsOpenNotion": "打开 Notion",
+  "knowledgePluginsOpeningApp": "正在打开…",
+  "knowledgePluginsOpenAppFailed": "无法在本机打开该应用。",
+  "knowledgePluginsLinkedVaultAutoOne": "已自动关联本机上的 Obsidian 库。",
+  "knowledgePluginsLinkedVaultAutoMany": "已自动关联本机上的 {count} 个 Obsidian 库。",
+  "@knowledgePluginsLinkedVaultAutoMany": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "knowledgeHubImportObsidianAll": "导入全部关联笔记",
+  "knowledgeHubImportNotionVisible": "导入可见卡片",
+  "knowledgeHubExportToObsidian": "导出到 Obsidian",
+  "knowledgeHubExportToNotion": "导出到 Notion/MCP",
+  "knowledgeHubImportObsidianOk": "已导入 {count} 条 Obsidian 笔记",
+  "@knowledgeHubImportObsidianOk": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "knowledgeHubImportNotionOk": "已导入 {count} 条 Notion/MCP 笔记",
+  "@knowledgeHubImportNotionOk": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "knowledgeHubExportObsidianOk": "已导出 {count} 条笔记到 Obsidian",
+  "@knowledgeHubExportObsidianOk": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "knowledgeHubExportNotionOk": "已通过 MCP 导出 {count} 条笔记",
+  "@knowledgeHubExportNotionOk": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "knowledgeHubImportFailed": "导入失败",
+  "knowledgeHubExportFailed": "导出失败",
+  "knowledgeHubImportMcpEmpty": "没有可导入的 MCP 卡片 — 请先刷新浏览",
+  "knowledgeHubExportEmpty": "没有可导出的 vault Markdown 笔记",
+  "knowledgeHubShareVaultOnly": "仅 vault 文件可分享 — 请先导入",
+  "knowledgeHubMcpListError": "MCP 列表：{error}",
+  "@knowledgeHubMcpListError": {
+    "placeholders": { "error": { "type": "String" } }
+  },
   "knowledgeSetupHint": "索引状态与检索。聊天模型在「我 → AI 模型」。",
   "knowledgeSetupEnabled": "启用资料库知识",
   "knowledgeSetupStatusHint": "点「重建索引」刷新向量索引。",
   "knowledgeSetupReindex": "重建索引",
   "knowledgeSetupReindexDone": "已开始重建",
+  "knowledgeSetupReindexConfirm": "在家节点上重建资料库向量索引？",
+  "knowledgeSetupRagMode": "检索模式",
+  "knowledgeSetupRagHybrid": "混合",
+  "knowledgeSetupRagVector": "向量",
+  "knowledgeSetupRagLexical": "关键词",
+  "knowledgeSetupSnippetLimit": "每次回答引用片段数",
+  "knowledgeBrowseIndexIndexingProgress": "索引中 {processed}/{total}…",
+  "@knowledgeBrowseIndexIndexingProgress": {
+    "placeholders": {
+      "processed": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "knowledgeHubOpenPlugins": "打开插件",
+  "knowledgeNoteNewTitle": "新建笔记",
+  "knowledgeNoteEditTitle": "编辑笔记",
+  "knowledgeNoteFilename": "文件名",
+  "knowledgeNoteFilenameRequired": "请输入笔记文件名",
+  "knowledgeNoteContent": "Markdown",
+  "knowledgeNoteSensitivity": "可见性",
+  "knowledgeNotePrivate": "私密",
+  "knowledgeNoteFriends": "好友",
+  "knowledgeNotePublished": "已发布",
+  "knowledgeNoteAlsoBlog": "同时发布为博客",
+  "knowledgeFilePreview": "预览",
+  "knowledgeFileOpenOnHome": "在家节点打开",
+  "knowledgeFileOpenedOnHome": "已在家电脑打开",
+  "knowledgeFilePublish": "发布",
+  "knowledgeFileMakePrivate": "改为私密",
+  "knowledgeFileMore": "更多操作",
+  "knowledgeFileConvert": "转为 Markdown 笔记",
+  "knowledgeFileConvertOk": "已保存 Markdown 笔记 {path}",
+  "@knowledgeFileConvertOk": {
+    "placeholders": { "path": { "type": "String" } }
+  },
+  "knowledgeFileConvertFailed": "无法转换为 Markdown",
+  "knowledgeFileDeleteTitle": "删除文件？",
+  "knowledgeFileDeleteBody": "从家节点资料库删除「{title}」？",
+  "@knowledgeFileDeleteBody": {
+    "placeholders": { "title": { "type": "String" } }
+  },
+  "knowledgeFileDeleteConfirm": "删除",
+  "meKnowledge": "知识库设置",
+  "meKnowledgeHint": "资料库提问的索引与检索",
+  "meKnowledgePlugins": "知识库插件",
+  "meKnowledgePluginsHint": "Obsidian 关联与 Notion/MCP",
   "knowledgeBrowseFilterAll": "全部",
   "knowledgeBrowseFiltersLabel": "显示",
   "knowledgeBrowseFilterNotes": "笔记",
   "knowledgeBrowseFilterObsidian": "Obsidian",
   "knowledgeBrowseFilterNotion": "Notion",
+  "knowledgeBrowseFilterBlog": "博客",
   "knowledgeBrowseFilterDocuments": "文档",
   "knowledgeBrowseFilterPublished": "已发布",
   "knowledgeBrowseIndexReady": "已索引 {count}",
   "@knowledgeBrowseIndexReady": {
     "placeholders": {
       "count": { "type": "int" }
+    }
+  },
+  "knowledgeBrowseIndexReadyLinked": "已索引 {count} · 关联 Obsidian {linked}",
+  "@knowledgeBrowseIndexReadyLinked": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "linked": { "type": "int" }
     }
   },
   "knowledgeBrowseIndexIndexing": "索引中…",

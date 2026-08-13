@@ -354,6 +354,12 @@ export interface NodeServiceClient {
   listHomeFsEntries(
     params?: import("@envoymesh/api").ListHomeFsEntriesParams,
   ): Promise<import("@envoymesh/api").ListHomeFsEntriesResult>;
+  discoverObsidianVaults(): Promise<
+    import("@envoymesh/api").DiscoverObsidianVaultsResult
+  >;
+  openDesktopApp(
+    params: import("@envoymesh/api").OpenDesktopAppParams,
+  ): Promise<import("@envoymesh/api").OpenDesktopAppResult>;
   getExtAgentProjectPath(
     params?: import("@envoymesh/api").GetExtAgentProjectPathParams,
   ): Promise<import("@envoymesh/api").ExtAgentProjectPathResult>;
@@ -652,6 +658,21 @@ export interface NodeServiceClient {
   saveExternalMcpSearchAsNote(
     params: import("@envoymesh/api").SaveExternalMcpSearchAsNoteParams,
   ): Promise<import("@envoymesh/api").SaveExternalMcpSearchAsNoteResult>;
+  listExternalMcpKnowledge(
+    params?: import("@envoymesh/api").ListExternalMcpKnowledgeParams,
+  ): Promise<import("@envoymesh/api").ListExternalMcpKnowledgeResult>;
+  importLinkedObsidianNotes(
+    params: import("@envoymesh/api").ImportLinkedObsidianNotesParams,
+  ): Promise<import("@envoymesh/api").ImportLinkedObsidianNotesResult>;
+  importExternalMcpKnowledge(
+    params: import("@envoymesh/api").ImportExternalMcpKnowledgeParams,
+  ): Promise<import("@envoymesh/api").ImportExternalMcpKnowledgeResult>;
+  exportNotesToLinkedObsidian(
+    params: import("@envoymesh/api").ExportNotesToLinkedObsidianParams,
+  ): Promise<import("@envoymesh/api").ExportNotesToLinkedObsidianResult>;
+  exportNotesToMcp(
+    params: import("@envoymesh/api").ExportNotesToMcpParams,
+  ): Promise<import("@envoymesh/api").ExportNotesToMcpResult>;
   createNote(params: CreateNoteParams): Promise<CreateNoteResult>;
   deleteVaultItem(params: DeleteVaultItemParams): Promise<void>;
   listKbPlugins(params?: ListKbPluginsParams): Promise<KbPluginInfo[]>;
@@ -1377,6 +1398,18 @@ function createWsNodeServiceClient(
         { timeoutMs: 15_000 },
       ) as Promise<import("@envoymesh/api").ListHomeFsEntriesResult>;
     },
+    async discoverObsidianVaults() {
+      return wsClient.rpc("discoverObsidianVaults", {}, { timeoutMs: 30_000 }) as Promise<
+        import("@envoymesh/api").DiscoverObsidianVaultsResult
+      >;
+    },
+    async openDesktopApp(params: import("@envoymesh/api").OpenDesktopAppParams) {
+      return wsClient.rpc(
+        "openDesktopApp",
+        params as unknown as Record<string, unknown>,
+        { timeoutMs: 15_000 },
+      ) as Promise<import("@envoymesh/api").OpenDesktopAppResult>;
+    },
     async getExtAgentProjectPath(
       params?: import("@envoymesh/api").GetExtAgentProjectPathParams,
     ) {
@@ -2093,6 +2126,44 @@ function createWsNodeServiceClient(
         "saveExternalMcpSearchAsNote",
         params as unknown as Record<string, unknown>,
       ) as Promise<import("@envoymesh/api").SaveExternalMcpSearchAsNoteResult>;
+    },
+    async listExternalMcpKnowledge(
+      params?: import("@envoymesh/api").ListExternalMcpKnowledgeParams,
+    ) {
+      return wsClient.rpc(
+        "listExternalMcpKnowledge",
+        (params ?? {}) as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").ListExternalMcpKnowledgeResult>;
+    },
+    async importLinkedObsidianNotes(
+      params: import("@envoymesh/api").ImportLinkedObsidianNotesParams,
+    ) {
+      return wsClient.rpc(
+        "importLinkedObsidianNotes",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").ImportLinkedObsidianNotesResult>;
+    },
+    async importExternalMcpKnowledge(
+      params: import("@envoymesh/api").ImportExternalMcpKnowledgeParams,
+    ) {
+      return wsClient.rpc(
+        "importExternalMcpKnowledge",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").ImportExternalMcpKnowledgeResult>;
+    },
+    async exportNotesToLinkedObsidian(
+      params: import("@envoymesh/api").ExportNotesToLinkedObsidianParams,
+    ) {
+      return wsClient.rpc(
+        "exportNotesToLinkedObsidian",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").ExportNotesToLinkedObsidianResult>;
+    },
+    async exportNotesToMcp(params: import("@envoymesh/api").ExportNotesToMcpParams) {
+      return wsClient.rpc(
+        "exportNotesToMcp",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").ExportNotesToMcpResult>;
     },
     async createNote(params: CreateNoteParams) {
       return wsClient.rpc("createNote", params as unknown as Record<string, unknown>) as Promise<

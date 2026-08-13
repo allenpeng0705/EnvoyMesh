@@ -386,6 +386,38 @@ This is powered by the link graph index in `.envoy/plugins/obsidian/link-graph.j
 
 ---
 
+## Knowledge hub (Obsidian + Notion connectors)
+
+**Envoy vault is the center** for Ask, Publish, and mesh. Obsidian and Notion are
+connectors — browse in place, import into the vault, optionally export back.
+
+```
+Linked Obsidian vault ──list/open──► Knowledge Browse
+        │                              │
+        └── Import ──► notes/imports/obsidian/ ──► vault RAG / Publish
+MCP (Notion-class) ──list/search──► Browse (mcp-remote rows)
+        │                              │
+        └── Import ──► notes/mcp/ ──► vault RAG
+Vault notes ── Export ──► linked Obsidian / MCP write tool
+```
+
+| Capability | Obsidian | Notion (MCP) |
+|---|---|---|
+| Browse existing | Linked paths in Plugins → Obsidian filter | Live MCP cards when URL set |
+| Import into vault | `importLinkedObsidianNotes` → `notes/imports/obsidian/` | `importExternalMcpKnowledge` → `notes/mcp/` |
+| Owner Ask | Linked files searched at query time + imported vault notes | Live MCP merge + imported `notes/mcp/` |
+| Export back | `exportNotesToLinkedObsidian` (writes `envoymesh-export/`) | `exportNotesToMcp` (`memex_write` when available) |
+| Mesh Publish | Vault only (after import + Published) | Vault only |
+
+**Not in v1:** continuous two-way sync or conflict UI. Linked Obsidian files are never
+deleted or renamed by Envoy. Official Notion OAuth is out of scope — use an MCP bridge.
+
+Configure under **Content → Knowledge → Plugins**:
+- **Linked Obsidian vault path(s)** — absolute paths (comma-separated)
+- **MCP server URL** + search tool (default `memex_search`)
+
+---
+
 ## MCP Plugin (External Knowledge)
 
 ### Purpose

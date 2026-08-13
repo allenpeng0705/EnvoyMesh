@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   collectMarkdownDestinationPath,
   isMarkdownCollectCandidate,
+  isUnderNotesImportsObsidian,
   notesImportsBlogPathForWebPost,
+  notesImportsObsidianPathForLinked,
   notesImportsPathForSource,
   resolveImportDestinationPath,
   uniqueRelativePath,
@@ -29,6 +31,15 @@ describe("notesImportsBlogPathForWebPost", () => {
     expect(notesImportsBlogPathForWebPost("blog/posts/hello.md")).toBe(
       "notes/imports/blog/hello.md",
     );
+  });
+});
+
+describe("notesImportsObsidianPathForLinked", () => {
+  it("maps linked browse path under notes/imports/obsidian/", () => {
+    expect(notesImportsObsidianPathForLinked("linked-obsidian/MyVault/a/b.md")).toBe(
+      "notes/imports/obsidian/MyVault/a/b.md",
+    );
+    expect(isUnderNotesImportsObsidian("notes/imports/obsidian/MyVault/a/b.md")).toBe(true);
   });
 });
 

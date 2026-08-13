@@ -348,13 +348,110 @@ class AppLocalizationsZh extends AppLocalizations {
   String get knowledgePluginsNotionTitle => 'Notion（经 MCP）';
 
   @override
-  String get knowledgePluginsNotionDesc => '经 MCP 搜索。默认开启；无 URL 时软失败。';
+  String get knowledgePluginsNotionDesc => '经 MCP 浏览与搜索。无 URL 时软失败。';
 
   @override
   String get knowledgePluginsMcpUrl => 'MCP 服务 URL';
 
   @override
   String get knowledgePluginsMcpTool => '搜索工具名';
+
+  @override
+  String get knowledgePluginsSyncNow => '立即同步';
+
+  @override
+  String get knowledgePluginsLinkedVaultLabel => '关联的 Obsidian 库路径';
+
+  @override
+  String get knowledgePluginsLinkedVaultHint => '/path/to/ObsidianVault';
+
+  @override
+  String get knowledgePluginsLinkedVaultEmpty => '尚未关联库。';
+
+  @override
+  String get knowledgePluginsLinkedVaultRemove => '移除';
+
+  @override
+  String get knowledgePluginsLinkedVaultAdd => '添加库文件夹…';
+
+  @override
+  String get knowledgePluginsLinkedVaultPickTitle => '选择 Obsidian 库文件夹';
+
+  @override
+  String get knowledgePluginsLinkedVaultHelper =>
+      '会自动关联本机 Obsidian 已登记的库。移除一行即可取消关联（不会再自动加回）。也可用「添加库文件夹…」添加更多。';
+
+  @override
+  String get knowledgePluginsOpenObsidian => '打开 Obsidian';
+
+  @override
+  String get knowledgePluginsOpenNotion => '打开 Notion';
+
+  @override
+  String get knowledgePluginsOpeningApp => '正在打开…';
+
+  @override
+  String get knowledgePluginsOpenAppFailed => '无法在本机打开该应用。';
+
+  @override
+  String get knowledgePluginsLinkedVaultAutoOne => '已自动关联本机上的 Obsidian 库。';
+
+  @override
+  String knowledgePluginsLinkedVaultAutoMany(int count) {
+    return '已自动关联本机上的 $count 个 Obsidian 库。';
+  }
+
+  @override
+  String get knowledgeHubImportObsidianAll => '导入全部关联笔记';
+
+  @override
+  String get knowledgeHubImportNotionVisible => '导入可见卡片';
+
+  @override
+  String get knowledgeHubExportToObsidian => '导出到 Obsidian';
+
+  @override
+  String get knowledgeHubExportToNotion => '导出到 Notion/MCP';
+
+  @override
+  String knowledgeHubImportObsidianOk(int count) {
+    return '已导入 $count 条 Obsidian 笔记';
+  }
+
+  @override
+  String knowledgeHubImportNotionOk(int count) {
+    return '已导入 $count 条 Notion/MCP 笔记';
+  }
+
+  @override
+  String knowledgeHubExportObsidianOk(int count) {
+    return '已导出 $count 条笔记到 Obsidian';
+  }
+
+  @override
+  String knowledgeHubExportNotionOk(int count) {
+    return '已通过 MCP 导出 $count 条笔记';
+  }
+
+  @override
+  String get knowledgeHubImportFailed => '导入失败';
+
+  @override
+  String get knowledgeHubExportFailed => '导出失败';
+
+  @override
+  String get knowledgeHubImportMcpEmpty => '没有可导入的 MCP 卡片 — 请先刷新浏览';
+
+  @override
+  String get knowledgeHubExportEmpty => '没有可导出的 vault Markdown 笔记';
+
+  @override
+  String get knowledgeHubShareVaultOnly => '仅 vault 文件可分享 — 请先导入';
+
+  @override
+  String knowledgeHubMcpListError(String error) {
+    return 'MCP 列表：$error';
+  }
 
   @override
   String get knowledgeSetupHint => '索引状态与检索。聊天模型在「我 → AI 模型」。';
@@ -372,6 +469,114 @@ class AppLocalizationsZh extends AppLocalizations {
   String get knowledgeSetupReindexDone => '已开始重建';
 
   @override
+  String get knowledgeSetupReindexConfirm => '在家节点上重建资料库向量索引？';
+
+  @override
+  String get knowledgeSetupRagMode => '检索模式';
+
+  @override
+  String get knowledgeSetupRagHybrid => '混合';
+
+  @override
+  String get knowledgeSetupRagVector => '向量';
+
+  @override
+  String get knowledgeSetupRagLexical => '关键词';
+
+  @override
+  String get knowledgeSetupSnippetLimit => '每次回答引用片段数';
+
+  @override
+  String knowledgeBrowseIndexIndexingProgress(int processed, int total) {
+    return '索引中 $processed/$total…';
+  }
+
+  @override
+  String get knowledgeHubOpenPlugins => '打开插件';
+
+  @override
+  String get knowledgeNoteNewTitle => '新建笔记';
+
+  @override
+  String get knowledgeNoteEditTitle => '编辑笔记';
+
+  @override
+  String get knowledgeNoteFilename => '文件名';
+
+  @override
+  String get knowledgeNoteFilenameRequired => '请输入笔记文件名';
+
+  @override
+  String get knowledgeNoteContent => 'Markdown';
+
+  @override
+  String get knowledgeNoteSensitivity => '可见性';
+
+  @override
+  String get knowledgeNotePrivate => '私密';
+
+  @override
+  String get knowledgeNoteFriends => '好友';
+
+  @override
+  String get knowledgeNotePublished => '已发布';
+
+  @override
+  String get knowledgeNoteAlsoBlog => '同时发布为博客';
+
+  @override
+  String get knowledgeFilePreview => '预览';
+
+  @override
+  String get knowledgeFileOpenOnHome => '在家节点打开';
+
+  @override
+  String get knowledgeFileOpenedOnHome => '已在家电脑打开';
+
+  @override
+  String get knowledgeFilePublish => '发布';
+
+  @override
+  String get knowledgeFileMakePrivate => '改为私密';
+
+  @override
+  String get knowledgeFileMore => '更多操作';
+
+  @override
+  String get knowledgeFileConvert => '转为 Markdown 笔记';
+
+  @override
+  String knowledgeFileConvertOk(String path) {
+    return '已保存 Markdown 笔记 $path';
+  }
+
+  @override
+  String get knowledgeFileConvertFailed => '无法转换为 Markdown';
+
+  @override
+  String get knowledgeFileDeleteTitle => '删除文件？';
+
+  @override
+  String knowledgeFileDeleteBody(String title) {
+    return '从家节点资料库删除「$title」？';
+  }
+
+  @override
+  String get knowledgeFileDeleteConfirm => '删除';
+
+  @override
+  String get meKnowledge => '知识库设置';
+
+  @override
+  String get meKnowledgeHint => '资料库提问的索引与检索';
+
+  @override
+  String get meKnowledgePlugins => '知识库插件';
+
+  @override
+  String get meKnowledgePluginsHint => 'Obsidian 关联与 Notion/MCP';
+
+  @override
   String get knowledgeBrowseFilterAll => '全部';
 
   @override
@@ -387,6 +592,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get knowledgeBrowseFilterNotion => 'Notion';
 
   @override
+  String get knowledgeBrowseFilterBlog => '博客';
+
+  @override
   String get knowledgeBrowseFilterDocuments => '文档';
 
   @override
@@ -395,6 +603,11 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String knowledgeBrowseIndexReady(int count) {
     return '已索引 $count';
+  }
+
+  @override
+  String knowledgeBrowseIndexReadyLinked(int count, int linked) {
+    return '已索引 $count · 关联 Obsidian $linked';
   }
 
   @override

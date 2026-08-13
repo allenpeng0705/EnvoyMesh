@@ -31,17 +31,24 @@ export function buildAllLocalFilesList(params: {
   vaultItems: LibraryItem[];
   workspaceItems: WorkspaceFileItem[];
   linkedObsidianItems?: LocalFileItem[];
+  mcpRemoteItems?: LocalFileItem[];
+  mcpRemoteError?: string;
 }): ListAllLocalFilesResult {
   const linked = params.linkedObsidianItems ?? [];
+  const mcpRemote = params.mcpRemoteItems ?? [];
   const items = [
     ...params.vaultItems.map(mapVaultItemToLocalFile),
     ...params.workspaceItems.map(mapWorkspaceItemToLocalFile),
     ...linked,
+    ...mcpRemote,
   ].sort((left, right) => left.relativePath.localeCompare(right.relativePath));
   return {
     items,
     vaultCount: params.vaultItems.length,
     workspaceCount: params.workspaceItems.length,
+    linkedObsidianCount: linked.length,
+    mcpRemoteCount: mcpRemote.length,
+    ...(params.mcpRemoteError ? { mcpRemoteError: params.mcpRemoteError } : {}),
   };
 }
 

@@ -1,17 +1,21 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../models/contact.dart';
 import '../../models/web_content.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
+import '../../knowledge/knowledge_hub_actions.dart';
+import '../../knowledge/knowledge_nav.dart';
+import '../../services/chat_voice_note.dart';
 import '../../services/library_read_cache.dart';
 import '../../services/vault_content_fetch.dart';
-import '../../services/chat_voice_note.dart';
+import 'note_editor_screen.dart';
 
 /// My Files — list / import / preview / share home vault files via thin client.
 class ContentFilesTab extends ConsumerStatefulWidget {
@@ -31,13 +35,32 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
   String _query = '';
   KnowledgeBrowseFilter _browseFilter = KnowledgeBrowseFilter.all;
   Map<String, dynamic>? _indexStatus;
+  void Function()? _unsubRag;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _reload();
-      if (widget.knowledgeBrowse) _refreshIndex();
+      if (widget.knowledgeBrowse) {
+        _refreshIndex();
+        _subscribeRag();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _unsubRag?.call();
+    super.dispose();
+  }
+
+  void _subscribeRag() {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    _unsubRag?.call();
+    _unsubRag = client.on('rag:reindex', (_) {
+      if (mounted) _refreshIndex();
     });
   }
 
@@ -85,19 +108,30 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
   Future<void> _importFile() async {
     final client = ref.read(nodeServiceProvider);
     if (client == null) return;
-    final picker = ImagePicker();
-    final file = await picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 2048,
-      imageQuality: 85,
+    final picked = await FilePicker.platform.pickFiles(
+      withData: true,
+      allowMultiple: false,
+      type: FileType.any,
     );
-    if (file == null) return;
-    final bytes = await file.readAsBytes();
+    if (picked == null || picked.files.isEmpty) return;
+    final file = picked.files.first;
+    final bytes = file.bytes;
+    if (bytes == null || bytes.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context).filesImportFailed('empty')),
+        ),
+      );
+      return;
+    }
     final name = file.name.isNotEmpty
         ? file.name
         : 'import-${DateTime.now().millisecondsSinceEpoch}';
     final path = 'imports/$name';
-    final mime = file.mimeType ?? 'application/octet-stream';
+    final mime = file.extension == null
+        ? 'application/octet-stream'
+        : _mimeForExt(file.extension!);
     try {
       await client.importToLibrary(
         relativePath: path,
@@ -125,24 +159,270 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
     }
   }
 
+  String _mimeForExt(String ext) {
+    switch (ext.toLowerCase()) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'pdf':
+        return 'application/pdf';
+      case 'md':
+        return 'text/markdown';
+      case 'txt':
+        return 'text/plain';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'xlsx':
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      default:
+        return 'application/octet-stream';
+    }
+  }
+
+  Future<void> _openNoteEditor({String mode = 'create', String? path}) async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => NoteEditorScreen(mode: mode, relativePath: path),
+      ),
+    );
+    if (saved == true) await _reload();
+  }
+
+  Future<void> _togglePublished(LocalFileItem item) async {
+    final client = ref.read(nodeServiceProvider);
+    final id = item.documentId;
+    if (client == null || id == null || id.isEmpty) return;
+    final next = !(item.published ?? false);
+    try {
+      await client.setLibraryItemPublished(documentId: id, published: next);
+      await _reload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e')),
+      );
+    }
+  }
+
+  Future<void> _openOnHome(LocalFileItem item) async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      await client.openLocalFile(
+        source: item.source,
+        relativePath: item.relativePath,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context).knowledgeFileOpenedOnHome),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e')),
+      );
+    }
+  }
+
+  Future<void> _deleteItem(LocalFileItem item) async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null || item.source != 'vault') return;
+    final l10n = AppLocalizations.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.knowledgeFileDeleteTitle),
+        content: Text(l10n.knowledgeFileDeleteBody(item.title)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.commonCancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.knowledgeFileDeleteConfirm),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await client.deleteVaultItem(relativePath: item.relativePath);
+      await _reload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e')),
+      );
+    }
+  }
+
+  Future<void> _convertItem(LocalFileItem item) async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      final result = await client.convertLibraryItemToMarkdown(
+        documentId: item.documentId,
+        relativePath: item.relativePath,
+      );
+      if (!mounted) return;
+      final ok = result['ok'] == true;
+      final path = result['markdownRelativePath']?.toString();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok && path != null
+                ? AppLocalizations.of(context).knowledgeFileConvertOk(path)
+                : (result['reason']?.toString() ??
+                    AppLocalizations.of(context).knowledgeFileConvertFailed),
+          ),
+        ),
+      );
+      if (ok) await _reload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e')),
+      );
+    }
+  }
+
+  Future<void> _showRowActions(LocalFileItem item) async {
+    final l10n = AppLocalizations.of(context);
+    final isVault = item.source == 'vault';
+    final canEdit = isVault &&
+        item.relativePath.startsWith('notes/') &&
+        (item.extension == '.md' || item.extension == 'md');
+    final canPublish = isVault && (item.documentId?.isNotEmpty ?? false);
+    final canConvert = isVault &&
+        !item.relativePath.startsWith('notes/') &&
+        const {'.pdf', 'pdf', '.docx', 'docx', '.doc', 'doc', '.xlsx', 'xlsx'}
+            .contains(item.extension.toLowerCase());
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.visibility_outlined),
+                title: Text(l10n.knowledgeFilePreview),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _preview(item);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.open_in_new),
+                title: Text(l10n.knowledgeFileOpenOnHome),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openOnHome(item);
+                },
+              ),
+              if (canPublish)
+                ListTile(
+                  leading: Icon(
+                    (item.published ?? false)
+                        ? Icons.lock_open_outlined
+                        : Icons.lock_outline,
+                  ),
+                  title: Text(
+                    (item.published ?? false)
+                        ? l10n.knowledgeFileMakePrivate
+                        : l10n.knowledgeFilePublish,
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _togglePublished(item);
+                  },
+                ),
+              if (canEdit)
+                ListTile(
+                  leading: const Icon(Icons.edit_outlined),
+                  title: Text(l10n.knowledgeNoteEditTitle),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _openNoteEditor(mode: 'edit', path: item.relativePath);
+                  },
+                ),
+              if (canConvert)
+                ListTile(
+                  leading: const Icon(Icons.notes_outlined),
+                  title: Text(l10n.knowledgeFileConvert),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _convertItem(item);
+                  },
+                ),
+              if (isVaultShareableSource(item.source))
+                ListTile(
+                  leading: const Icon(Icons.ios_share),
+                  title: Text(l10n.commonShare),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _share(item);
+                  },
+                ),
+              if (isVault)
+                ListTile(
+                  leading: Icon(Icons.delete_outline,
+                      color: Theme.of(ctx).colorScheme.error),
+                  title: Text(l10n.knowledgeFileDeleteConfirm),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _deleteItem(item);
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _preview(LocalFileItem item) async {
     final client = ref.read(nodeServiceProvider);
     final homePeerId = ref.read(nodeProvider).activeNode?.homePeerId.trim();
     if (client == null || homePeerId == null || homePeerId.isEmpty) return;
     try {
-      final fetched = await getOrFetchVaultContent(
-        ({required relativePath, int? maxBytes, int? offset}) =>
-            client.readLibraryItemContent(
-          relativePath: relativePath,
-          maxBytes: maxBytes,
-          offset: offset,
-        ),
-        homePeerId: homePeerId,
-        relativePath: item.relativePath,
-      );
-      if (fetched.bytes.isEmpty || !mounted) return;
-      final bytes = fetched.bytes;
-      var mime = fetched.mimeType;
+      late final Uint8List bytes;
+      var mime = '';
+      if (item.source == 'vault') {
+        final fetched = await getOrFetchVaultContent(
+          ({required relativePath, int? maxBytes, int? offset}) =>
+              client.readLibraryItemContent(
+            relativePath: relativePath,
+            maxBytes: maxBytes,
+            offset: offset,
+          ),
+          homePeerId: homePeerId,
+          relativePath: item.relativePath,
+        );
+        if (fetched.bytes.isEmpty || !mounted) return;
+        bytes = fetched.bytes;
+        mime = fetched.mimeType;
+      } else {
+        final raw = await client.readLocalFileContent(
+          source: item.source,
+          relativePath: item.relativePath,
+          documentId: item.documentId,
+        );
+        final b64 = (raw['contentBase64'] as String?) ?? '';
+        if (b64.isEmpty || !mounted) return;
+        bytes = base64Decode(b64);
+        mime = (raw['mimeType'] as String?) ?? '';
+      }
       if (mime.isEmpty || mime == 'application/octet-stream') {
         mime = _mimeGuess(item);
       }
@@ -156,7 +436,9 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
             body = InteractiveViewer(child: Image.memory(bytes));
           } else if (mime.startsWith('text/') ||
               mime == 'application/json' ||
-              item.extension == 'md') {
+              mime.contains('markdown') ||
+              item.extension == 'md' ||
+              item.extension == '.md') {
             body = SingleChildScrollView(
               padding: const EdgeInsets.all(12),
               child: SelectableText(utf8.decode(bytes, allowMalformed: true)),
@@ -218,6 +500,12 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
 
   Future<void> _share(LocalFileItem item) async {
     final l10n = AppLocalizations.of(context);
+    if (!isVaultShareableSource(item.source)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.knowledgeHubShareVaultOnly)),
+      );
+      return;
+    }
     final contacts = ref.read(contactProvider).bonds
         .where((c) => c.bondLevel != 'blocked')
         .toList();
@@ -289,7 +577,11 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
 
     final items = (_result?.items ?? const <LocalFileItem>[])
         .where(
-          (i) => i.source == 'vault' && !isHiddenFromLibraryList(i.relativePath),
+          (i) =>
+              !isHiddenFromLibraryList(i.relativePath) &&
+              (i.source == 'vault' ||
+                  (widget.knowledgeBrowse &&
+                      (i.source == 'linked-obsidian' || i.source == 'mcp-remote'))),
         )
         .where(
           (i) =>
@@ -297,18 +589,29 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
               matchesKnowledgeBrowseFilter(
                 relativePath: i.relativePath,
                 published: i.published,
+                source: i.source,
                 filter: _browseFilter,
               ),
         )
+        .where((i) {
+          final q = _query.trim().toLowerCase();
+          if (q.isEmpty) return true;
+          return i.title.toLowerCase().contains(q) ||
+              i.relativePath.toLowerCase().contains(q);
+        })
         .toList();
 
     final tracked = (_indexStatus?['trackedDocuments'] as num?)?.toInt() ?? 0;
+    final linked =
+        (_indexStatus?['linkedObsidianNoteCount'] as num?)?.toInt() ?? 0;
     final indexing = _indexStatus?['isIndexing'] == true;
     String indexLabel;
     if (indexing) {
       indexLabel = l10n.knowledgeBrowseIndexIndexing;
     } else if (tracked > 0) {
-      indexLabel = l10n.knowledgeBrowseIndexReady(tracked);
+      indexLabel = linked > 0
+          ? l10n.knowledgeBrowseIndexReadyLinked(tracked, linked)
+          : l10n.knowledgeBrowseIndexReady(tracked);
     } else {
       indexLabel = l10n.knowledgeBrowseIndexEmpty;
     }
@@ -347,14 +650,35 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
                   label: Text(indexLabel),
                   visualDensity: VisualDensity.compact,
                   onPressed: () {
-                    // Parent KnowledgeScreen Setup is tab index 3 — best-effort snack.
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(l10n.knowledgeBrowseIndexChipHint)),
+                    openContentKnowledge(
+                      ref,
+                      panel: KnowledgeHubPanel.setup,
                     );
                     _refreshIndex();
                   },
                 ),
               ],
+            ),
+          ),
+        if (widget.knowledgeBrowse)
+          KnowledgeHubActionsBar(
+            filter: _browseFilter,
+            visibleItems: items,
+            onChanged: () {
+              _reload();
+              _refreshIndex();
+            },
+          ),
+        if (widget.knowledgeBrowse &&
+            (_result?.mcpRemoteError?.isNotEmpty ?? false) &&
+            _result!.mcpRemoteError != 'mcp_url_missing')
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              l10n.knowledgeHubMcpListError(_result!.mcpRemoteError!),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
             ),
           ),
         Padding(
@@ -368,7 +692,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
                     isDense: true,
                     prefixIcon: const Icon(Icons.search),
                   ),
-                  onChanged: (v) => _query = v,
+                  onChanged: (v) => setState(() => _query = v),
                   onSubmitted: (_) => _reload(),
                 ),
               ),
@@ -385,6 +709,12 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
                 onPressed: _importFile,
                 icon: const Icon(Icons.upload_file),
               ),
+              if (widget.knowledgeBrowse)
+                IconButton(
+                  tooltip: l10n.knowledgeNoteNewTitle,
+                  onPressed: () => _openNoteEditor(mode: 'create'),
+                  icon: const Icon(Icons.note_add_outlined),
+                ),
             ],
           ),
         ),
@@ -459,10 +789,31 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                   onTap: () => _preview(item),
-                                  trailing: IconButton(
-                                    tooltip: l10n.commonShare,
-                                    icon: const Icon(Icons.ios_share),
-                                    onPressed: () => _share(item),
+                                  onLongPress: () => _showRowActions(item),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (item.source == 'vault' &&
+                                          (item.documentId?.isNotEmpty ??
+                                              false))
+                                        IconButton(
+                                          tooltip: (item.published ?? false)
+                                              ? l10n.knowledgeFileMakePrivate
+                                              : l10n.knowledgeFilePublish,
+                                          icon: Icon(
+                                            (item.published ?? false)
+                                                ? Icons.lock_open_outlined
+                                                : Icons.lock_outline,
+                                          ),
+                                          onPressed: () =>
+                                              _togglePublished(item),
+                                        ),
+                                      IconButton(
+                                        tooltip: l10n.knowledgeFileMore,
+                                        icon: const Icon(Icons.more_vert),
+                                        onPressed: () => _showRowActions(item),
+                                      ),
+                                    ],
                                   ),
                                 );
                               },
@@ -516,11 +867,15 @@ class _SourceChip extends StatelessWidget {
     final label = switch (source) {
       'notion' => 'Notion',
       'obsidian' => 'Obsidian',
+      'blog' => 'Blog',
+      'note' => 'Note',
       _ => 'File',
     };
     final color = switch (source) {
       'notion' => const Color(0xFF2F3437),
       'obsidian' => const Color(0xFF5B4BD6),
+      'blog' => const Color(0xFF0F766E),
+      'note' => const Color(0xFF334155),
       _ => Theme.of(context).colorScheme.outline,
     };
     return Container(

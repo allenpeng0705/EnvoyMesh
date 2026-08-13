@@ -378,6 +378,7 @@ export interface ListAllLocalFilesResult {
     workspaceCount: number;
     linkedObsidianCount?: number;
     mcpRemoteCount?: number;
+    mcpRemoteError?: string;
 }
 export interface ReadLocalFileContentParams {
     source: LocalFileSource;

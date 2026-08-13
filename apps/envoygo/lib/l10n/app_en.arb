@@ -151,25 +151,127 @@
   "knowledgePluginsObsidianTitle": "Obsidian",
   "knowledgePluginsObsidianDesc": "Enrich vault notes. Desktop app optional.",
   "knowledgePluginsNotionTitle": "Notion (via MCP)",
-  "knowledgePluginsNotionDesc": "Search via MCP. On by default; soft-fails without a URL.",
+  "knowledgePluginsNotionDesc": "Browse and search via MCP. Soft-fails without a URL.",
   "knowledgePluginsMcpUrl": "MCP server URL",
   "knowledgePluginsMcpTool": "Search tool name",
+  "knowledgePluginsSyncNow": "Sync now",
+  "knowledgePluginsLinkedVaultLabel": "Linked Obsidian vault path(s)",
+  "knowledgePluginsLinkedVaultHint": "/path/to/ObsidianVault",
+  "knowledgePluginsLinkedVaultEmpty": "No linked vaults yet.",
+  "knowledgePluginsLinkedVaultRemove": "Remove",
+  "knowledgePluginsLinkedVaultAdd": "Add vault folder…",
+  "knowledgePluginsLinkedVaultPickTitle": "Choose Obsidian vault folder",
+  "knowledgePluginsLinkedVaultHelper": "Vaults from Obsidian on this home computer are linked automatically. Remove a row to unlink (it will not auto-link again). Add vault folder… for more.",
+  "knowledgePluginsOpenObsidian": "Open Obsidian",
+  "knowledgePluginsOpenNotion": "Open Notion",
+  "knowledgePluginsOpeningApp": "Opening…",
+  "knowledgePluginsOpenAppFailed": "Could not open the app on this computer.",
+  "knowledgePluginsLinkedVaultAutoOne": "Linked Obsidian vault found on this computer.",
+  "knowledgePluginsLinkedVaultAutoMany": "Linked {count} Obsidian vaults found on this computer.",
+  "@knowledgePluginsLinkedVaultAutoMany": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "knowledgeHubImportObsidianAll": "Import all linked",
+  "knowledgeHubImportNotionVisible": "Import visible cards",
+  "knowledgeHubExportToObsidian": "Export to Obsidian",
+  "knowledgeHubExportToNotion": "Export to Notion/MCP",
+  "knowledgeHubImportObsidianOk": "Imported {count} Obsidian note(s)",
+  "@knowledgeHubImportObsidianOk": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "knowledgeHubImportNotionOk": "Imported {count} Notion/MCP note(s)",
+  "@knowledgeHubImportNotionOk": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "knowledgeHubExportObsidianOk": "Exported {count} note(s) to Obsidian",
+  "@knowledgeHubExportObsidianOk": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "knowledgeHubExportNotionOk": "Exported {count} note(s) via MCP",
+  "@knowledgeHubExportNotionOk": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "knowledgeHubImportFailed": "Import failed",
+  "knowledgeHubExportFailed": "Export failed",
+  "knowledgeHubImportMcpEmpty": "No live MCP cards to import — refresh Browse",
+  "knowledgeHubExportEmpty": "No vault Markdown notes to export",
+  "knowledgeHubShareVaultOnly": "Share works for vault files only — import first",
+  "knowledgeHubMcpListError": "MCP list: {error}",
+  "@knowledgeHubMcpListError": {
+    "placeholders": { "error": { "type": "String" } }
+  },
   "knowledgeSetupHint": "Index status and retrieval. Chat models stay in Me → AI Model.",
   "knowledgeSetupEnabled": "Enable vault knowledge",
   "knowledgeSetupStatusHint": "Tap Rebuild to refresh the vector index.",
   "knowledgeSetupReindex": "Rebuild index",
   "knowledgeSetupReindexDone": "Reindex started",
+  "knowledgeSetupReindexConfirm": "Rebuild the vault vector index on the home node?",
+  "knowledgeSetupRagMode": "Retrieval mode",
+  "knowledgeSetupRagHybrid": "Hybrid",
+  "knowledgeSetupRagVector": "Vector",
+  "knowledgeSetupRagLexical": "Lexical",
+  "knowledgeSetupSnippetLimit": "Vault snippets per answer",
+  "knowledgeBrowseIndexIndexingProgress": "Indexing {processed}/{total}…",
+  "@knowledgeBrowseIndexIndexingProgress": {
+    "placeholders": {
+      "processed": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "knowledgeHubOpenPlugins": "Open Plugins",
+  "knowledgeNoteNewTitle": "New note",
+  "knowledgeNoteEditTitle": "Edit note",
+  "knowledgeNoteFilename": "Filename",
+  "knowledgeNoteFilenameRequired": "Enter a note filename",
+  "knowledgeNoteContent": "Markdown",
+  "knowledgeNoteSensitivity": "Visibility",
+  "knowledgeNotePrivate": "Private",
+  "knowledgeNoteFriends": "Friends",
+  "knowledgeNotePublished": "Published",
+  "knowledgeNoteAlsoBlog": "Also publish as blog",
+  "knowledgeFilePreview": "Preview",
+  "knowledgeFileOpenOnHome": "Open on home",
+  "knowledgeFileOpenedOnHome": "Opened on the home computer",
+  "knowledgeFilePublish": "Publish",
+  "knowledgeFileMakePrivate": "Make private",
+  "knowledgeFileMore": "More actions",
+  "knowledgeFileConvert": "Convert to Markdown note",
+  "knowledgeFileConvertOk": "Saved Markdown note {path}",
+  "@knowledgeFileConvertOk": {
+    "placeholders": { "path": { "type": "String" } }
+  },
+  "knowledgeFileConvertFailed": "Could not convert to Markdown",
+  "knowledgeFileDeleteTitle": "Delete file?",
+  "knowledgeFileDeleteBody": "Delete “{title}” from the home vault?",
+  "@knowledgeFileDeleteBody": {
+    "placeholders": { "title": { "type": "String" } }
+  },
+  "knowledgeFileDeleteConfirm": "Delete",
+  "meKnowledge": "Knowledge setup",
+  "meKnowledgeHint": "Index and retrieval for vault Ask",
+  "meKnowledgePlugins": "Knowledge plugins",
+  "meKnowledgePluginsHint": "Obsidian link and Notion/MCP",
   "knowledgeBrowseFilterAll": "All",
   "knowledgeBrowseFiltersLabel": "SHOW",
   "knowledgeBrowseFilterNotes": "Notes",
   "knowledgeBrowseFilterObsidian": "Obsidian",
   "knowledgeBrowseFilterNotion": "Notion",
+  "knowledgeBrowseFilterBlog": "Blog",
   "knowledgeBrowseFilterDocuments": "Documents",
   "knowledgeBrowseFilterPublished": "Published",
   "knowledgeBrowseIndexReady": "{count} indexed",
   "@knowledgeBrowseIndexReady": {
     "placeholders": {
       "count": { "type": "int" }
+    }
+  },
+  "knowledgeBrowseIndexReadyLinked": "{count} indexed · {linked} linked Obsidian",
+  "@knowledgeBrowseIndexReadyLinked": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "linked": { "type": "int" }
     }
   },
   "knowledgeBrowseIndexIndexing": "Indexing…",

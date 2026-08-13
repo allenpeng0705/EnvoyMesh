@@ -264,6 +264,8 @@ export type RpcMethods =
    | "setExtAgentSessionModel"
    | "getHomeFsInfo"
    | "listHomeFsEntries"
+   | "discoverObsidianVaults"
+   | "openDesktopApp"
    | "getExtAgentProjectPath"
    | "setExtAgentProjectPath"
    | "previewHomeFsFile"

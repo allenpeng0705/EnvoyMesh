@@ -102,6 +102,8 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "syncPairingKioskFromConfig",
   "getHomeFsInfo",
   "listHomeFsEntries",
+  "discoverObsidianVaults",
+  "openDesktopApp",
   "getExtAgentProjectPath",
   "setExtAgentProjectPath",
   "previewHomeFsFile",
@@ -113,6 +115,11 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "deleteChatDraft",
   "reindexRagKnowledge",
   "saveExternalMcpSearchAsNote",
+  "listExternalMcpKnowledge",
+  "importLinkedObsidianNotes",
+  "importExternalMcpKnowledge",
+  "exportNotesToLinkedObsidian",
+  "exportNotesToMcp",
   "convertLibraryItemToMarkdown",
 ]);
 
@@ -506,6 +513,26 @@ export async function routeRpcMethod(
         title: params.title as string | undefined,
         sensitivity: params.sensitivity as "public" | "friends" | "private" | undefined,
       });
+    case "listExternalMcpKnowledge":
+      return ns.listExternalMcpKnowledge(
+        params as import("@envoymesh/api").ListExternalMcpKnowledgeParams | undefined,
+      );
+    case "importLinkedObsidianNotes":
+      return ns.importLinkedObsidianNotes(
+        params as unknown as import("@envoymesh/api").ImportLinkedObsidianNotesParams,
+      );
+    case "importExternalMcpKnowledge":
+      return ns.importExternalMcpKnowledge(
+        params as unknown as import("@envoymesh/api").ImportExternalMcpKnowledgeParams,
+      );
+    case "exportNotesToLinkedObsidian":
+      return ns.exportNotesToLinkedObsidian(
+        params as unknown as import("@envoymesh/api").ExportNotesToLinkedObsidianParams,
+      );
+    case "exportNotesToMcp":
+      return ns.exportNotesToMcp(
+        params as unknown as import("@envoymesh/api").ExportNotesToMcpParams,
+      );
     case "verifyLibraryItemIpfsGateway":
       return ns.verifyLibraryItemIpfsGateway({
         documentId: params.documentId as string,
@@ -765,6 +792,12 @@ export async function routeRpcMethod(
       return ns.listHomeFsEntries({
         path: params.path as string | undefined,
         dirsOnly: params.dirsOnly === true ? true : params.dirsOnly === false ? false : undefined,
+      });
+    case "discoverObsidianVaults":
+      return ns.discoverObsidianVaults();
+    case "openDesktopApp":
+      return ns.openDesktopApp({
+        app: params.app as import("@envoymesh/api").DesktopAppId,
       });
     case "getExtAgentProjectPath":
       return ns.getExtAgentProjectPath({

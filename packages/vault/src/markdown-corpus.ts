@@ -12,6 +12,7 @@ import { VAULT_TEXT_EXTRACTOR_ID } from "./vault-formats.js";
 export const VAULT_NOTES_DIR = "notes";
 export const VAULT_NOTES_IMPORTS_DIR = "notes/imports";
 export const VAULT_NOTES_IMPORTS_BLOG_DIR = "notes/imports/blog";
+export const VAULT_NOTES_IMPORTS_OBSIDIAN_DIR = "notes/imports/obsidian";
 export const VAULT_DOCUMENTS_DIR = "documents";
 
 /** Extractor id for blog → knowledge mirrors. */
@@ -108,6 +109,31 @@ export function isUnderNotesImportsBlog(relativePath: string): boolean {
   return (
     p === VAULT_NOTES_IMPORTS_BLOG_DIR || p.startsWith(`${VAULT_NOTES_IMPORTS_BLOG_DIR}/`)
   );
+}
+
+export function isUnderNotesImportsObsidian(relativePath: string): boolean {
+  const p = normalizeVaultRelativePath(relativePath);
+  return (
+    p === VAULT_NOTES_IMPORTS_OBSIDIAN_DIR ||
+    p.startsWith(`${VAULT_NOTES_IMPORTS_OBSIDIAN_DIR}/`)
+  );
+}
+
+/**
+ * Knowledge mirror path for a linked Obsidian note.
+ * `linked-obsidian/MyVault/foo/bar.md` → `notes/imports/obsidian/MyVault/foo/bar.md`
+ */
+export function notesImportsObsidianPathForLinked(browseRelativePath: string): string {
+  const p = normalizeVaultRelativePath(browseRelativePath);
+  const prefix = "linked-obsidian/";
+  if (!p.startsWith(prefix)) {
+    throw new Error(`Not a linked Obsidian browse path: ${p}`);
+  }
+  const rest = p.slice(prefix.length);
+  if (!rest || rest.includes("..")) {
+    throw new Error(`Invalid linked Obsidian browse path: ${p}`);
+  }
+  return posix.join(VAULT_NOTES_IMPORTS_OBSIDIAN_DIR, rest);
 }
 
 /**

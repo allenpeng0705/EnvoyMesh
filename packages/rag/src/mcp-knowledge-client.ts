@@ -276,3 +276,148 @@ export function formatMcpResultsAsNote(
     subfolder,
   };
 }
+
+/** Format a single MCP card as a vault note under `notes/mcp/`. */
+export function formatMcpSnippetAsNote(
+  snippet: ExternalKnowledgeSnippet,
+  options: McpWriteBackOptions,
+): { content: string; filename: string; subfolder: string } {
+  return formatMcpResultsAsNote([snippet], {
+    ...options,
+    title: options.title || snippet.title,
+  });
+}
+
+export interface CallMcpToolInput {
+  knowledgeBase?: AiKnowledgeBaseSettings | null;
+  toolName: string;
+  args: Record<string, unknown>;
+  fetchImplementation?: typeof fetch;
+  timeoutMs?: number;
+}
+
+export interface CallMcpToolResult {
+  textBlocks: string[];
+  error?: string;
+}
+
+/** Low-level MCP `tools/call` (soft-fail). */
+export async function callMcpTool(input: CallMcpToolInput): Promise<CallMcpToolResult> {
+  const kb = resolveAiKnowledgeBaseSettings(input.knowledgeBase);
+  if (kb.externalProvider !== "mcp") {
+    return { textBlocks: [], error: "mcp_disabled" };
+  }
+  const url = kb.mcpServerUrl?.trim();
+  if (!url) {
+    return { textBlocks: [], error: "mcp_url_missing" };
+  }
+  const urlError = validateMcpServerUrl(url);
+  if (urlError) {
+    return { textBlocks: [], error: urlError };
+  }
+
+  const fetchImplementation = input.fetchImplementation ?? fetch;
+  const timeoutMs = clampTimeoutMs(input.timeoutMs ?? kb.mcpTimeoutMs);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetchImplementation(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        ...(kb.mcpApiKey ? { authorization: `Bearer ${kb.mcpApiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: `rag-${Date.now()}`,
+        method: "tools/call",
+        params: {
+          name: input.toolName,
+          arguments: input.args,
+        },
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      return { textBlocks: [], error: `mcp_http_${response.status}` };
+    }
+
+    const payload = (await response.json()) as {
+      result?: { content?: Array<{ type?: string; text?: string }> };
+      error?: { message?: string };
+    };
+    if (payload.error?.message) {
+      return { textBlocks: [], error: `mcp_rpc: ${payload.error.message}` };
+    }
+
+    const textBlocks =
+      payload.result?.content
+        ?.map((block) => block.text?.trim())
+        .filter((text): text is string => Boolean(text)) ?? [];
+    return { textBlocks };
+  } catch (err) {
+    if (isAbortError(err)) {
+      return { textBlocks: [], error: `mcp_timeout_${timeoutMs}ms` };
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    return { textBlocks: [], error: `mcp_fetch: ${message}` };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Push a Markdown note to MCP write tool (default `memex_write`).
+ * Soft-fails when the tool is missing or the server errors.
+ */
+export async function writeExternalMcpKnowledge(input: {
+  knowledgeBase?: AiKnowledgeBaseSettings | null;
+  title: string;
+  content: string;
+  fetchImplementation?: typeof fetch;
+  /** Override write tool name. Default: memex_write */
+  writeTool?: string;
+}): Promise<{ ok: boolean; externalId?: string; error?: string }> {
+  const kb = resolveAiKnowledgeBaseSettings(input.knowledgeBase);
+  const toolName = input.writeTool?.trim() || "memex_write";
+  const result = await callMcpTool({
+    knowledgeBase: kb,
+    toolName,
+    args: {
+      title: input.title,
+      content: input.content,
+      body: input.content,
+      text: input.content,
+    },
+    fetchImplementation: input.fetchImplementation,
+  });
+  if (result.error) {
+    return { ok: false, error: result.error };
+  }
+  const joined = result.textBlocks.join("\n");
+  let externalId: string | undefined;
+  try {
+    const parsed = JSON.parse(joined) as { id?: string };
+    if (typeof parsed.id === "string") externalId = parsed.id;
+  } catch {
+    // plain-text ack is fine
+  }
+  return { ok: true, externalId };
+}
+
+/** Stable browse path for an MCP remote card. */
+export function mcpRemoteBrowsePath(externalId: string, title: string): string {
+  const safeId = externalId
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "card";
+  const safeTitle = title
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .toLowerCase() || "note";
+  return `mcp-remote/${safeId}-${safeTitle}.md`;
+}

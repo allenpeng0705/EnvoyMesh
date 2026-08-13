@@ -1196,6 +1196,64 @@ class NodeServiceClient {
     return ListAllLocalFilesResult.fromJson(result);
   }
 
+  Future<Map<String, dynamic>> readLocalFileContent({
+    required String source,
+    required String relativePath,
+    String? documentId,
+    int? maxBytes,
+    int? offset,
+  }) async {
+    return await _client.call('readLocalFileContent', {
+      'source': source,
+      'relativePath': relativePath,
+      if (documentId != null) 'documentId': documentId,
+      if (maxBytes != null) 'maxBytes': maxBytes,
+      if (offset != null) 'offset': offset,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> importLinkedObsidianNotes({
+    List<String>? paths,
+    bool all = false,
+  }) async {
+    return await _client.call('importLinkedObsidianNotes', {
+      if (paths != null) 'paths': paths,
+      if (all) 'all': true,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> importExternalMcpKnowledge({
+    List<String>? paths,
+    List<String>? externalIds,
+    String? query,
+    String? title,
+  }) async {
+    return await _client.call('importExternalMcpKnowledge', {
+      if (paths != null) 'paths': paths,
+      if (externalIds != null) 'externalIds': externalIds,
+      if (query != null) 'query': query,
+      if (title != null) 'title': title,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> exportNotesToLinkedObsidian({
+    required List<String> relativePaths,
+    String? targetRootLabel,
+  }) async {
+    return await _client.call('exportNotesToLinkedObsidian', {
+      'relativePaths': relativePaths,
+      if (targetRootLabel != null) 'targetRootLabel': targetRootLabel,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> exportNotesToMcp({
+    required List<String> relativePaths,
+  }) async {
+    return await _client.call('exportNotesToMcp', {
+      'relativePaths': relativePaths,
+    }) as Map<String, dynamic>;
+  }
+
   /// Owner vault knowledge.query — returns answer text.
   Future<String> knowledgeQuery(String question) async {
     final result = await _client.call('knowledgeQuery', {
@@ -1239,6 +1297,26 @@ class NodeServiceClient {
     return const [];
   }
 
+  /// Discover Obsidian vault folders on the home node (owner-only).
+  Future<List<String>> discoverObsidianVaults() async {
+    final result =
+        await _client.call('discoverObsidianVaults', {}) as Map<String, dynamic>;
+    final paths = result['paths'];
+    if (paths is! List) return const [];
+    return paths
+        .map((e) => e.toString().trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+  }
+
+  /// Open Obsidian or Notion on the home computer (owner-only allowlist).
+  Future<Map<String, dynamic>> openDesktopApp({required String app}) async {
+    final result = await _client.call('openDesktopApp', {
+      'app': app,
+    }) as Map<String, dynamic>;
+    return result;
+  }
+
   Future<Map<String, dynamic>> activateKbPlugin({
     required String pluginId,
   }) async {
@@ -1255,6 +1333,58 @@ class NodeServiceClient {
       'pluginId': pluginId,
     }) as Map<String, dynamic>;
     return result;
+  }
+
+  Future<void> setLibraryItemPublished({
+    required String documentId,
+    required bool published,
+  }) async {
+    await _client.call('setLibraryItemPublished', {
+      'documentId': documentId,
+      'published': published,
+    });
+  }
+
+  Future<void> openLocalFile({
+    required String source,
+    required String relativePath,
+  }) async {
+    await _client.call('openLocalFile', {
+      'source': source,
+      'relativePath': relativePath,
+    });
+  }
+
+  Future<Map<String, dynamic>> createNote({
+    required String filename,
+    required String content,
+    String? subfolder,
+    String sensitivity = 'private',
+    bool alsoPublishAsBlog = false,
+  }) async {
+    return await _client.call('createNote', {
+      'filename': filename,
+      'content': content,
+      if (subfolder != null && subfolder.isNotEmpty) 'subfolder': subfolder,
+      'sensitivity': sensitivity,
+      if (alsoPublishAsBlog) 'alsoPublishAsBlog': true,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<void> deleteVaultItem({required String relativePath}) async {
+    await _client.call('deleteVaultItem', {
+      'relativePath': relativePath,
+    });
+  }
+
+  Future<Map<String, dynamic>> convertLibraryItemToMarkdown({
+    String? documentId,
+    String? relativePath,
+  }) async {
+    return await _client.call('convertLibraryItemToMarkdown', {
+      if (documentId != null) 'documentId': documentId,
+      if (relativePath != null) 'relativePath': relativePath,
+    }) as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> importToLibrary({

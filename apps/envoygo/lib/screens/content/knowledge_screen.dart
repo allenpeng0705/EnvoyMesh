@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../knowledge/knowledge_nav.dart';
+import '../../knowledge/knowledge_plugins_panel.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../providers/node_provider.dart';
 import '../../screens/chat/chat_detail_screen.dart';
@@ -25,7 +27,22 @@ class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _autoActivateObsidian());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _autoActivateObsidian();
+      _consumePanelRequest();
+    });
+  }
+
+  void _consumePanelRequest() {
+    final requested = ref.read(knowledgeHubPanelRequestProvider);
+    if (requested == null) return;
+    ref.read(knowledgeHubPanelRequestProvider.notifier).state = null;
+    final index = switch (requested) {
+      KnowledgeHubPanel.browse => 0,
+      KnowledgeHubPanel.plugins => 1,
+      KnowledgeHubPanel.setup => 2,
+    };
+    if (_tabs.index != index) _tabs.animateTo(index);
   }
 
   Future<void> _autoActivateObsidian() async {
@@ -57,6 +74,10 @@ class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<KnowledgeHubPanel?>(knowledgeHubPanelRequestProvider, (_, next) {
+      if (next == null || !mounted) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _consumePanelRequest());
+    });
     final l10n = AppLocalizations.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -94,7 +115,7 @@ class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
             controller: _tabs,
             children: const [
               _KnowledgeBrowsePanel(),
-              _KnowledgePluginsPanel(),
+              KnowledgePluginsPanel(),
               _KnowledgeSetupPanel(),
             ],
           ),
@@ -338,210 +359,6 @@ class _KnowledgeAskPanelState extends ConsumerState<_KnowledgeAskPanel> {
   }
 }
 
-class _KnowledgePluginsPanel extends ConsumerStatefulWidget {
-  const _KnowledgePluginsPanel();
-
-  @override
-  ConsumerState<_KnowledgePluginsPanel> createState() =>
-      _KnowledgePluginsPanelState();
-}
-
-class _KnowledgePluginsPanelState extends ConsumerState<_KnowledgePluginsPanel> {
-  List<Map<String, dynamic>> _plugins = const [];
-  bool _loading = true;
-  String? _busyId;
-  bool _mcpEnabled = false;
-  final _mcpUrl = TextEditingController();
-  final _mcpTool = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _load();
-      _loadMcp();
-    });
-  }
-
-  @override
-  void dispose() {
-    _mcpUrl.dispose();
-    _mcpTool.dispose();
-    super.dispose();
-  }
-
-  Future<void> _load() async {
-    final client = ref.read(nodeServiceProvider);
-    if (client == null) {
-      setState(() {
-        _loading = false;
-        _plugins = const [];
-      });
-      return;
-    }
-    setState(() => _loading = true);
-    try {
-      final list = await client.listKbPlugins();
-      if (!mounted) return;
-      setState(() {
-        _plugins = list;
-        _loading = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _plugins = const [];
-      });
-    }
-  }
-
-  Future<void> _loadMcp() async {
-    final client = ref.read(nodeServiceProvider);
-    if (client == null) return;
-    try {
-      final cfg = await client.getNodeConfig();
-      final ai = cfg['aiSettings'];
-      final kb = ai is Map ? ai['knowledgeBase'] : null;
-      if (kb is! Map || !mounted) return;
-      setState(() {
-        final provider = kb['externalProvider'] as String?;
-        // Match Social / DEFAULT_AI_KNOWLEDGE_BASE: mcp when unset.
-        _mcpEnabled = provider == null || provider == 'mcp';
-        _mcpUrl.text = (kb['mcpServerUrl'] as String?) ?? '';
-        _mcpTool.text = (kb['mcpSearchTool'] as String?) ?? '';
-      });
-    } catch (_) {}
-  }
-
-  Future<void> _setObsidianActive(bool active) async {
-    final client = ref.read(nodeServiceProvider);
-    if (client == null) return;
-    setState(() => _busyId = 'obsidian');
-    try {
-      if (active) {
-        await client.activateKbPlugin(pluginId: 'obsidian');
-      } else {
-        await client.deactivateKbPlugin(pluginId: 'obsidian');
-      }
-      await _load();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-    } finally {
-      if (mounted) setState(() => _busyId = null);
-    }
-  }
-
-  Future<void> _saveMcp(bool enabled) async {
-    final client = ref.read(nodeServiceProvider);
-    if (client == null) return;
-    setState(() => _busyId = 'mcp');
-    try {
-      final cfg = await client.getNodeConfig();
-      final ai = Map<String, dynamic>.from(
-        (cfg['aiSettings'] as Map?)?.map((k, v) => MapEntry('$k', v)) ?? {},
-      );
-      final kb = Map<String, dynamic>.from(
-        (ai['knowledgeBase'] as Map?)?.map((k, v) => MapEntry('$k', v)) ?? {},
-      );
-      kb['externalProvider'] = enabled ? 'mcp' : 'none';
-      if (_mcpUrl.text.trim().isNotEmpty) {
-        kb['mcpServerUrl'] = _mcpUrl.text.trim();
-      }
-      if (_mcpTool.text.trim().isNotEmpty) {
-        kb['mcpSearchTool'] = _mcpTool.text.trim();
-      }
-      ai['knowledgeBase'] = kb;
-      await client.updateNodeConfig({'aiSettings': ai});
-      if (!mounted) return;
-      setState(() => _mcpEnabled = enabled);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-    } finally {
-      if (mounted) setState(() => _busyId = null);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    Map<String, dynamic>? obsidian;
-    for (final p in _plugins) {
-      if (p['pluginId'] == 'obsidian') {
-        obsidian = p;
-        break;
-      }
-    }
-    final obsidianActive = obsidian?['status'] == 'active';
-
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text(l10n.knowledgePluginsLede,
-            style: Theme.of(context).textTheme.bodySmall),
-        const SizedBox(height: 12),
-        Card(
-          child: ListTile(
-            title: Text(l10n.knowledgePluginsObsidianTitle),
-            subtitle: Text(l10n.knowledgePluginsObsidianDesc),
-            trailing: _busyId == 'obsidian'
-                ? const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Switch(
-                    value: obsidianActive,
-                    onChanged: obsidian == null ? null : _setObsidianActive,
-                  ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(l10n.knowledgePluginsNotionTitle),
-                  subtitle: Text(l10n.knowledgePluginsNotionDesc),
-                  value: _mcpEnabled,
-                  onChanged: _busyId == 'mcp' ? null : _saveMcp,
-                ),
-                TextField(
-                  controller: _mcpUrl,
-                  decoration: InputDecoration(
-                    labelText: l10n.knowledgePluginsMcpUrl,
-                    isDense: true,
-                  ),
-                  onEditingComplete: () => _saveMcp(_mcpEnabled),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _mcpTool,
-                  decoration: InputDecoration(
-                    labelText: l10n.knowledgePluginsMcpTool,
-                    isDense: true,
-                  ),
-                  onEditingComplete: () => _saveMcp(_mcpEnabled),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _KnowledgeSetupPanel extends ConsumerStatefulWidget {
   const _KnowledgeSetupPanel();
 
@@ -553,14 +370,45 @@ class _KnowledgeSetupPanel extends ConsumerStatefulWidget {
 class _KnowledgeSetupPanelState extends ConsumerState<_KnowledgeSetupPanel> {
   Map<String, dynamic>? _status;
   bool _enabled = true;
+  String _ragMode = 'hybrid';
+  int _vaultSnippetLimit = 5;
   bool _busy = false;
+  void Function()? _unsubRag;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refreshStatus();
-      _loadEnabled();
+      _loadSettings();
+      _subscribeRag();
+    });
+  }
+
+  @override
+  void dispose() {
+    _unsubRag?.call();
+    super.dispose();
+  }
+
+  void _subscribeRag() {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    _unsubRag?.call();
+    _unsubRag = client.on('rag:reindex', (data) {
+      if (!mounted) return;
+      if (data is Map) {
+        setState(() {
+          _status = {
+            ...?_status,
+            ...Map<String, dynamic>.from(
+              data.map((k, v) => MapEntry('$k', v)),
+            ),
+          };
+        });
+      } else {
+        _refreshStatus();
+      }
     });
   }
 
@@ -574,7 +422,7 @@ class _KnowledgeSetupPanelState extends ConsumerState<_KnowledgeSetupPanel> {
     } catch (_) {}
   }
 
-  Future<void> _loadEnabled() async {
+  Future<void> _loadSettings() async {
     final client = ref.read(nodeServiceProvider);
     if (client == null) return;
     try {
@@ -582,12 +430,20 @@ class _KnowledgeSetupPanelState extends ConsumerState<_KnowledgeSetupPanel> {
       final ai = cfg['aiSettings'];
       final kb = ai is Map ? ai['knowledgeBase'] : null;
       if (kb is Map && mounted) {
-        setState(() => _enabled = kb['enabled'] != false);
+        setState(() {
+          _enabled = kb['enabled'] != false;
+          final mode = kb['ragMode']?.toString();
+          if (mode == 'vector' || mode == 'hybrid' || mode == 'lexical') {
+            _ragMode = mode!;
+          }
+          final limit = (kb['vaultSnippetLimit'] as num?)?.toInt();
+          if (limit != null && limit > 0) _vaultSnippetLimit = limit;
+        });
       }
     } catch (_) {}
   }
 
-  Future<void> _setEnabled(bool value) async {
+  Future<void> _patchKb(Map<String, dynamic> patch) async {
     final client = ref.read(nodeServiceProvider);
     if (client == null) return;
     setState(() => _busy = true);
@@ -599,11 +455,17 @@ class _KnowledgeSetupPanelState extends ConsumerState<_KnowledgeSetupPanel> {
       final kb = Map<String, dynamic>.from(
         (ai['knowledgeBase'] as Map?)?.map((k, v) => MapEntry('$k', v)) ?? {},
       );
-      kb['enabled'] = value;
+      kb.addAll(patch);
       ai['knowledgeBase'] = kb;
       await client.updateNodeConfig({'aiSettings': ai});
       if (!mounted) return;
-      setState(() => _enabled = value);
+      setState(() {
+        if (patch.containsKey('enabled')) _enabled = patch['enabled'] == true;
+        if (patch['ragMode'] is String) _ragMode = patch['ragMode'] as String;
+        if (patch['vaultSnippetLimit'] is int) {
+          _vaultSnippetLimit = patch['vaultSnippetLimit'] as int;
+        }
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
@@ -612,18 +474,37 @@ class _KnowledgeSetupPanelState extends ConsumerState<_KnowledgeSetupPanel> {
     }
   }
 
+  Future<void> _setEnabled(bool value) => _patchKb({'enabled': value});
+
   Future<void> _reindex() async {
     final client = ref.read(nodeServiceProvider);
     if (client == null) return;
+    final l10n = AppLocalizations.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.knowledgeSetupReindex),
+        content: Text(l10n.knowledgeSetupReindexConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.commonCancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.knowledgeSetupReindex),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
     setState(() => _busy = true);
     try {
       final st = await client.reindexRagKnowledge(force: true);
       if (!mounted) return;
       setState(() => _status = st);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(AppLocalizations.of(context).knowledgeSetupReindexDone),
-        ),
+        SnackBar(content: Text(l10n.knowledgeSetupReindexDone)),
       );
     } catch (e) {
       if (!mounted) return;
@@ -637,7 +518,12 @@ class _KnowledgeSetupPanelState extends ConsumerState<_KnowledgeSetupPanel> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final tracked = (_status?['trackedDocuments'] as num?)?.toInt() ?? 0;
+    final linked = (_status?['linkedObsidianNoteCount'] as num?)?.toInt() ?? 0;
     final indexing = _status?['isIndexing'] == true;
+    final processed = (_status?['processedDocuments'] as num?)?.toInt();
+    final total = (_status?['totalDocuments'] as num?)?.toInt();
+    final lastError = _status?['lastEmbedError']?.toString() ??
+        _status?['lastExternalKbError']?.toString();
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -648,12 +534,78 @@ class _KnowledgeSetupPanelState extends ConsumerState<_KnowledgeSetupPanel> {
           value: _enabled,
           onChanged: _busy ? null : _setEnabled,
         ),
-        ListTile(
-          title: Text(l10n.knowledgeBrowseIndexReady(tracked)),
-          subtitle: indexing
-              ? Text(l10n.knowledgeBrowseIndexIndexing)
-              : Text(l10n.knowledgeSetupStatusHint),
+        DropdownButtonFormField<String>(
+          value: _ragMode,
+          decoration: InputDecoration(labelText: l10n.knowledgeSetupRagMode),
+          items: [
+            DropdownMenuItem(
+              value: 'hybrid',
+              child: Text(l10n.knowledgeSetupRagHybrid),
+            ),
+            DropdownMenuItem(
+              value: 'vector',
+              child: Text(l10n.knowledgeSetupRagVector),
+            ),
+            DropdownMenuItem(
+              value: 'lexical',
+              child: Text(l10n.knowledgeSetupRagLexical),
+            ),
+          ],
+          onChanged: _busy
+              ? null
+              : (v) {
+                  if (v != null) _patchKb({'ragMode': v});
+                },
         ),
+        const SizedBox(height: 8),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(l10n.knowledgeSetupSnippetLimit),
+          subtitle: Text('$_vaultSnippetLimit'),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                onPressed: _busy || _vaultSnippetLimit <= 1
+                    ? null
+                    : () => _patchKb({'vaultSnippetLimit': _vaultSnippetLimit - 1}),
+                icon: const Icon(Icons.remove),
+              ),
+              IconButton(
+                onPressed: _busy || _vaultSnippetLimit >= 20
+                    ? null
+                    : () => _patchKb({'vaultSnippetLimit': _vaultSnippetLimit + 1}),
+                icon: const Icon(Icons.add),
+              ),
+            ],
+          ),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            linked > 0
+                ? l10n.knowledgeBrowseIndexReadyLinked(tracked, linked)
+                : l10n.knowledgeBrowseIndexReady(tracked),
+          ),
+          subtitle: Text(
+            indexing
+                ? (processed != null && total != null && total > 0
+                    ? l10n.knowledgeBrowseIndexIndexingProgress(processed, total)
+                    : l10n.knowledgeBrowseIndexIndexing)
+                : l10n.knowledgeSetupStatusHint,
+          ),
+        ),
+        if (indexing && processed != null && total != null && total > 0)
+          LinearProgressIndicator(value: processed / total),
+        if (lastError != null && lastError.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              lastError,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        const SizedBox(height: 12),
         FilledButton(
           onPressed: _busy ? null : _reindex,
           child: Text(l10n.knowledgeSetupReindex),

@@ -659,6 +659,14 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.listHomeFsEntries(params);
   }
 
+  async discoverObsidianVaults() {
+    return this._ns.discoverObsidianVaults();
+  }
+
+  async openDesktopApp(params: import("@envoymesh/api").OpenDesktopAppParams) {
+    return this._ns.openDesktopApp(params);
+  }
+
   async getExtAgentProjectPath(
     params?: import("@envoymesh/api").GetExtAgentProjectPathParams,
   ) {
@@ -1219,6 +1227,34 @@ export class DirectCallClient implements NodeServiceClient {
     params: Parameters<NodeService["saveExternalMcpSearchAsNote"]>[0],
   ) {
     return this._ns.saveExternalMcpSearchAsNote(params);
+  }
+
+  async listExternalMcpKnowledge(
+    params?: Parameters<NodeService["listExternalMcpKnowledge"]>[0],
+  ) {
+    return this._ns.listExternalMcpKnowledge(params);
+  }
+
+  async importLinkedObsidianNotes(
+    params: Parameters<NodeService["importLinkedObsidianNotes"]>[0],
+  ) {
+    return this._ns.importLinkedObsidianNotes(params);
+  }
+
+  async importExternalMcpKnowledge(
+    params: Parameters<NodeService["importExternalMcpKnowledge"]>[0],
+  ) {
+    return this._ns.importExternalMcpKnowledge(params);
+  }
+
+  async exportNotesToLinkedObsidian(
+    params: Parameters<NodeService["exportNotesToLinkedObsidian"]>[0],
+  ) {
+    return this._ns.exportNotesToLinkedObsidian(params);
+  }
+
+  async exportNotesToMcp(params: Parameters<NodeService["exportNotesToMcp"]>[0]) {
+    return this._ns.exportNotesToMcp(params);
   }
 
   async resolveLibraryItemPath(relativePath: string) {

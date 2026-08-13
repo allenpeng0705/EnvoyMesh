@@ -1,18 +1,21 @@
 /**
  * Knowledge → Plugins — Obsidian + Notion/MCP cards.
- * Obsidian app optional. Notion = MCP only (no desktop app / OAuth).
+ * Obsidian app optional. Notion = MCP only (no desktop app / OAuth / local path).
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DEFAULT_AI_KNOWLEDGE_BASE,
   type AiKnowledgeBaseSettings,
   type AiSettings,
   type KbPluginInfo,
 } from "@envoymesh/api";
+import { HomeFolderPicker } from "../HomeFolderPicker.js";
+import { HomeFolderBrowserModal } from "../HomeFolderBrowserModal.js";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { useToast } from "../../hooks/useToast.js";
+import { isTauriShell, pickTauriDirectory } from "../../lib/tauri-shell.js";
 
 function statusLabel(
   t: (k: string, f?: string) => string,
@@ -30,6 +33,34 @@ function statusLabel(
   }
 }
 
+/** Simplified Obsidian gem mark — high contrast on brand purple. */
+function ObsidianMark() {
+  return (
+    <span className="knowledge-plugin-card__mark knowledge-plugin-card__mark--obsidian" aria-hidden>
+      <svg viewBox="0 0 24 24" width="18" height="18" focusable="false">
+        <path
+          fill="currentColor"
+          d="M12.4 2.2 5.1 8.4c-.5.45-.6 1.2-.25 1.75l5.55 8.75c.45.7 1.5.7 1.95 0l5.55-8.75c.35-.55.25-1.3-.25-1.75L12.4 2.2Zm.05 3.35 4.2 3.55-4.2 6.65-4.2-6.65 4.2-3.55Z"
+        />
+      </svg>
+    </span>
+  );
+}
+
+/** Notion-style geometric N — white on black so it stays visible in dark mode. */
+function NotionMark() {
+  return (
+    <span className="knowledge-plugin-card__mark knowledge-plugin-card__mark--notion" aria-hidden>
+      <svg viewBox="0 0 24 24" width="16" height="16" focusable="false">
+        <path
+          fill="currentColor"
+          d="M5.5 4.2h3.1l6.2 10.2V4.2H18v15.6h-3.1L8.7 9.6v10.2H5.5V4.2Z"
+        />
+      </svg>
+    </span>
+  );
+}
+
 export function KnowledgePluginsPanel() {
   const t = useT();
   const nodeService = useNodeService();
@@ -38,6 +69,9 @@ export function KnowledgePluginsPanel() {
 
   const [plugins, setPlugins] = useState<KbPluginInfo[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  /** Obsidian + Notion "Install & use" stay in sync. */
+  const [helpOpen, setHelpOpen] = useState(false);
+  const autoLinkTried = useRef(false);
 
   const kb: AiKnowledgeBaseSettings = {
     ...DEFAULT_AI_KNOWLEDGE_BASE,
@@ -60,13 +94,90 @@ export function KnowledgePluginsPanel() {
     void loadPlugins();
   }, [loadPlugins]);
 
-  const updateKb = async (patch: Partial<AiKnowledgeBaseSettings>) => {
-    const current = nodeConfig?.aiSettings ?? {};
-    const nextKb = { ...kb, ...patch };
-    await nodeService.updateNodeConfig({
-      aiSettings: { ...current, knowledgeBase: nextKb } as AiSettings,
+  const updateKb = useCallback(
+    async (patch: Partial<AiKnowledgeBaseSettings>) => {
+      const current = nodeConfig?.aiSettings;
+      const nextKb = {
+        ...DEFAULT_AI_KNOWLEDGE_BASE,
+        ...(current?.knowledgeBase ?? {}),
+        ...patch,
+      };
+      await nodeService.updateNodeConfig({
+        aiSettings: { ...(current ?? {}), knowledgeBase: nextKb } as AiSettings,
+      });
+      await refreshNodeConfig();
+    },
+    [nodeConfig?.aiSettings, nodeService, refreshNodeConfig],
+  );
+
+  // Auto-link Obsidian vaults found on the home node (respect dismissals).
+  useEffect(() => {
+    if (!nodeConfig || autoLinkTried.current) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const discovered = await nodeService.discoverObsidianVaults();
+        if (cancelled) return;
+        const linked = (kb.linkedObsidianVaultPaths ?? [])
+          .map((p) => p.trim())
+          .filter(Boolean);
+        const dismissed = new Set(
+          (kb.dismissedObsidianVaultPaths ?? []).map((p) => p.trim()).filter(Boolean),
+        );
+        const toAdd = (discovered.paths ?? []).filter(
+          (p) => p && !linked.includes(p) && !dismissed.has(p),
+        );
+        if (toAdd.length) {
+          await updateKb({
+            linkedObsidianVaultPaths: [...linked, ...toAdd],
+          });
+          if (cancelled) return;
+          showToast(
+            toAdd.length === 1
+              ? t(
+                  "knowledge.plugins.linkedVaultAutoOne",
+                  "Linked Obsidian vault found on this computer.",
+                )
+              : t(
+                  "knowledge.plugins.linkedVaultAutoMany",
+                  "Linked {count} Obsidian vaults found on this computer.",
+                  { count: toAdd.length },
+                ),
+            "success",
+          );
+        }
+        if (!cancelled) autoLinkTried.current = true;
+      } catch {
+        // Leave autoLinkTried false so a later config refresh can retry.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodeConfig]);
+
+  const commitLinkedVaults = (nextPaths: string[]) => {
+    const prev = new Set(
+      (kb.linkedObsidianVaultPaths ?? []).map((p) => p.trim()).filter(Boolean),
+    );
+    const next = [...new Set(nextPaths.map((p) => p.trim()).filter(Boolean))];
+    const nextSet = new Set(next);
+    const removed = [...prev].filter((p) => !nextSet.has(p));
+    const added = next.filter((p) => !prev.has(p));
+    let dismissed = [
+      ...new Set(
+        (kb.dismissedObsidianVaultPaths ?? []).map((p) => p.trim()).filter(Boolean),
+      ),
+    ];
+    for (const r of removed) {
+      if (!dismissed.includes(r)) dismissed.push(r);
+    }
+    dismissed = dismissed.filter((d) => !added.includes(d));
+    void updateKb({
+      linkedObsidianVaultPaths: next.length ? next : undefined,
+      dismissedObsidianVaultPaths: dismissed.length ? dismissed : undefined,
     });
-    await refreshNodeConfig();
   };
 
   const handleActivate = async (pluginId: string) => {
@@ -125,6 +236,29 @@ export function KnowledgePluginsPanel() {
     }
   };
 
+  const handleOpenDesktopApp = async (app: "obsidian" | "notion") => {
+    setBusy(`open:${app}`);
+    try {
+      const result = await nodeService.openDesktopApp({ app });
+      if (!result.ok) {
+        showToast(
+          result.error ??
+            t("knowledge.plugins.openAppFailed", "Could not open the app on this computer."),
+          "error",
+        );
+      }
+    } catch (err) {
+      showToast(
+        err instanceof Error
+          ? err.message
+          : t("knowledge.plugins.openAppFailed", "Could not open the app on this computer."),
+        "error",
+      );
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const obsidian = plugins.find((p) => p.pluginId === "obsidian");
   const otherPlugins = plugins.filter(
     (p) => p.pluginId !== "obsidian" && p.pluginId !== "mcp-knowledge",
@@ -139,9 +273,7 @@ export function KnowledgePluginsPanel() {
         <article className="knowledge-plugin-card" data-testid="plugin-card-obsidian">
           <header className="knowledge-plugin-card__header">
             <div className="knowledge-plugin-card__identity">
-              <span className="knowledge-plugin-card__mark knowledge-plugin-card__mark--obsidian" aria-hidden>
-                Ob
-              </span>
+              <ObsidianMark />
               <div>
                 <h3>{t("knowledge.plugins.obsidianTitle")}</h3>
                 <p className="knowledge-plugin-card__tagline">{t("knowledge.plugins.obsidianTagline")}</p>
@@ -196,29 +328,37 @@ export function KnowledgePluginsPanel() {
                 </button>
               </>
             )}
+            <button
+              type="button"
+              className="secondary"
+              data-testid="open-desktop-obsidian"
+              disabled={busy === "open:obsidian"}
+              onClick={() => void handleOpenDesktopApp("obsidian")}
+            >
+              {busy === "open:obsidian"
+                ? t("knowledge.plugins.openingApp", "Opening…")
+                : t("knowledge.plugins.openObsidian", "Open Obsidian")}
+            </button>
           </div>
 
           <div className="knowledge-plugin-card__fields">
-            <label htmlFor="knowledge-linked-obsidian">{t("knowledge.plugins.linkedVaultLabel")}</label>
-            <input
-              id="knowledge-linked-obsidian"
-              type="text"
-              placeholder={t("knowledge.plugins.linkedVaultPlaceholder")}
-              value={(kb.linkedObsidianVaultPaths ?? []).join(", ")}
-              onChange={(e) => {
-                const paths = e.target.value
-                  .split(",")
-                  .map((p) => p.trim())
-                  .filter(Boolean);
-                void updateKb({
-                  linkedObsidianVaultPaths: paths.length ? paths : undefined,
-                });
-              }}
+            <span className="knowledge-plugin-card__field-label" id="knowledge-linked-obsidian-label">
+              {t("knowledge.plugins.linkedVaultLabel")}
+            </span>
+            <LinkedObsidianVaultPaths
+              paths={kb.linkedObsidianVaultPaths ?? []}
+              onChange={commitLinkedVaults}
             />
             <p className="field-desc">{t("knowledge.plugins.linkedVaultDesc")}</p>
           </div>
 
-          <details className="knowledge-plugin-card__details">
+          <details
+            className="knowledge-plugin-card__details"
+            open={helpOpen}
+            onToggle={(e) => {
+              setHelpOpen((e.currentTarget as HTMLDetailsElement).open);
+            }}
+          >
             <summary>{t("knowledge.plugins.showHelp")}</summary>
             <div className="knowledge-plugin-card__hints">
               <p>
@@ -238,9 +378,7 @@ export function KnowledgePluginsPanel() {
         <article className="knowledge-plugin-card" data-testid="plugin-card-notion-mcp">
           <header className="knowledge-plugin-card__header">
             <div className="knowledge-plugin-card__identity">
-              <span className="knowledge-plugin-card__mark knowledge-plugin-card__mark--notion" aria-hidden>
-                N
-              </span>
+              <NotionMark />
               <div>
                 <h3>{t("knowledge.plugins.notionTitle")}</h3>
                 <p className="knowledge-plugin-card__tagline">{t("knowledge.plugins.notionTagline")}</p>
@@ -256,6 +394,20 @@ export function KnowledgePluginsPanel() {
                 : t("knowledge.plugins.notionStatusOff")}
             </span>
           </header>
+
+          <div className="knowledge-plugin-card__actions">
+            <button
+              type="button"
+              className="secondary"
+              data-testid="open-desktop-notion"
+              disabled={busy === "open:notion"}
+              onClick={() => void handleOpenDesktopApp("notion")}
+            >
+              {busy === "open:notion"
+                ? t("knowledge.plugins.openingApp", "Opening…")
+                : t("knowledge.plugins.openNotion", "Open Notion")}
+            </button>
+          </div>
 
           <div className="knowledge-plugin-card__toggle">
             <div className="toggle-info">
@@ -278,6 +430,7 @@ export function KnowledgePluginsPanel() {
 
           {mcpEnabled ? (
             <div className="knowledge-plugin-card__fields">
+              <p className="field-desc">{t("knowledge.plugins.notionNoLocalPath")}</p>
               <label htmlFor="knowledge-mcp-url">{t("settings.ai.rag.mcpServerUrl")}</label>
               <input
                 id="knowledge-mcp-url"
@@ -301,7 +454,13 @@ export function KnowledgePluginsPanel() {
             </div>
           ) : null}
 
-          <details className="knowledge-plugin-card__details">
+          <details
+            className="knowledge-plugin-card__details"
+            open={helpOpen}
+            onToggle={(e) => {
+              setHelpOpen((e.currentTarget as HTMLDetailsElement).open);
+            }}
+          >
             <summary>{t("knowledge.plugins.showHelp")}</summary>
             <div className="knowledge-plugin-card__hints">
               <p>
@@ -338,3 +497,107 @@ export function KnowledgePluginsPanel() {
     </div>
   );
 }
+
+/** Multi-folder linked Obsidian vaults — OS picker (Tauri) or home-node browser (web). */
+function LinkedObsidianVaultPaths({
+  paths,
+  onChange,
+}: {
+  paths: string[];
+  onChange: (paths: string[]) => void;
+}) {
+  const t = useT();
+  const tauriShell = isTauriShell();
+  const [adding, setAdding] = useState(false);
+  const [webBrowserOpen, setWebBrowserOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pickTitle = t(
+    "knowledge.plugins.linkedVaultPickTitle",
+    "Choose Obsidian vault folder",
+  );
+
+  const commitPaths = (next: string[]) => {
+    const unique: string[] = [];
+    for (const raw of next) {
+      const p = raw.trim();
+      if (!p || unique.includes(p)) continue;
+      unique.push(p);
+    }
+    onChange(unique);
+  };
+
+  const handleAdd = async () => {
+    setError(null);
+    if (tauriShell) {
+      setAdding(true);
+      try {
+        const picked = await pickTauriDirectory({ title: pickTitle });
+        if (!picked.ok) {
+          setError(picked.error);
+          return;
+        }
+        if (picked.path) commitPaths([...paths, picked.path]);
+      } finally {
+        setAdding(false);
+      }
+      return;
+    }
+    setWebBrowserOpen(true);
+  };
+
+  return (
+    <div
+      className="knowledge-linked-vaults"
+      data-testid="linked-obsidian-vault-paths"
+      aria-labelledby="knowledge-linked-obsidian-label"
+    >
+      {paths.length === 0 ? (
+        <p className="field-desc" data-testid="linked-obsidian-vault-empty">
+          {t(
+            "knowledge.plugins.linkedVaultEmpty",
+            "No linked vaults yet. Use Add vault folder… to browse folders on this home computer.",
+          )}
+        </p>
+      ) : null}
+      {paths.map((path, index) => (
+        <HomeFolderPicker
+          key={`${path}-${index}`}
+          className="knowledge-linked-vaults__row"
+          value={path}
+          title={pickTitle}
+          onChange={(next) => {
+            const copy = [...paths];
+            if (!next?.trim()) copy.splice(index, 1);
+            else copy[index] = next.trim();
+            commitPaths(copy);
+          }}
+        />
+      ))}
+      <div className="knowledge-linked-vaults__add">
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          disabled={adding}
+          onClick={() => void handleAdd()}
+        >
+          {adding
+            ? t("settings.ai.aiEngine.browsingFolder", "Browsing…")
+            : t("knowledge.plugins.linkedVaultAdd", "Add vault folder…")}
+        </button>
+      </div>
+      {error ? <p className="home-folder-picker-error">{error}</p> : null}
+      {webBrowserOpen ? (
+        <HomeFolderBrowserModal
+          title={pickTitle}
+          initialPath={paths[paths.length - 1]}
+          onClose={() => setWebBrowserOpen(false)}
+          onSelect={(path) => {
+            setWebBrowserOpen(false);
+            commitPaths([...paths, path]);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+

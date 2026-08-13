@@ -24,24 +24,24 @@ export function isHiddenFromLibraryList(relativePath: string): boolean {
   return isChatAttachmentFile(relativePath) || isProfileMediaFile(relativePath);
 }
 
-/** Browse filter for Knowledge → Browse. */
+/** Browse filter for Knowledge → Browse. Blog posts live under Notes. */
 export type KnowledgeBrowseFilter =
   | "all"
   | "notes"
   | "documents"
   | "published"
   | "obsidian"
-  | "notion"
-  | "blog";
+  | "notion";
 
 export function isKnowledgeNotesPath(relativePath: string): boolean {
   const p = normalizeVaultRelativePath(relativePath).toLowerCase();
   return p === "notes" || p.startsWith("notes/");
 }
 
-/** Saved Notion/MCP write-back notes (`notes/mcp/…`). */
+/** Saved Notion/MCP write-back notes (`notes/mcp/…`) or live MCP remote cards. */
 export function isKnowledgeNotionPath(relativePath: string): boolean {
   const p = normalizeVaultRelativePath(relativePath).toLowerCase();
+  if (p === "mcp-remote" || p.startsWith("mcp-remote/")) return true;
   return p === "notes/mcp" || p.startsWith("notes/mcp/");
 }
 
@@ -53,11 +53,13 @@ export function isKnowledgeBlogPath(relativePath: string): boolean {
 
 /**
  * Obsidian-managed vault notes: under `notes/` but not MCP write-back or blog mirrors.
- * Also includes read-only linked Obsidian vault overlays (`linked-obsidian/…`).
+ * Also includes read-only linked Obsidian vault overlays (`linked-obsidian/…`)
+ * and imported mirrors under `notes/imports/obsidian/`.
  */
 export function isKnowledgeObsidianPath(relativePath: string): boolean {
   const p = normalizeVaultRelativePath(relativePath).toLowerCase();
   if (p === "linked-obsidian" || p.startsWith("linked-obsidian/")) return true;
+  if (p === "notes/imports/obsidian" || p.startsWith("notes/imports/obsidian/")) return true;
   return (
     isKnowledgeNotesPath(relativePath) &&
     !isKnowledgeNotionPath(relativePath) &&
@@ -70,28 +72,42 @@ export function isKnowledgeDocumentsPath(relativePath: string): boolean {
   return !isKnowledgeNotesPath(relativePath);
 }
 
-export type KnowledgeBrowseSource = "notion" | "obsidian" | "blog" | "document";
+export type KnowledgeBrowseSource = "notion" | "obsidian" | "blog" | "note" | "document";
 
 export function knowledgeBrowseSource(
   relativePath: string,
 ): KnowledgeBrowseSource {
   if (isKnowledgeNotionPath(relativePath)) return "notion";
   if (isKnowledgeBlogPath(relativePath)) return "blog";
-  if (isKnowledgeNotesPath(relativePath)) return "obsidian";
+  const p = normalizeVaultRelativePath(relativePath).toLowerCase();
+  if (p === "linked-obsidian" || p.startsWith("linked-obsidian/")) return "obsidian";
+  if (p === "notes/imports/obsidian" || p.startsWith("notes/imports/obsidian/")) {
+    return "obsidian";
+  }
+  if (isKnowledgeNotesPath(relativePath)) return "note";
   return "document";
 }
 
 export function matchesKnowledgeBrowseFilter(
-  item: { relativePath: string; published?: boolean },
+  item: { relativePath: string; published?: boolean; source?: LocalFileSource },
   filter: KnowledgeBrowseFilter,
 ): boolean {
   if (filter === "all") return true;
-  if (filter === "notes") return isKnowledgeNotesPath(item.relativePath);
-  if (filter === "documents") return isKnowledgeDocumentsPath(item.relativePath);
+  if (filter === "notes") {
+    return (
+      isKnowledgeNotesPath(item.relativePath) ||
+      item.source === "linked-obsidian" ||
+      item.source === "mcp-remote"
+    );
+  }
+  if (filter === "documents") return isKnowledgeDocumentsPath(item.relativePath) && item.source !== "linked-obsidian" && item.source !== "mcp-remote";
   if (filter === "published") return item.published === true;
-  if (filter === "obsidian") return isKnowledgeObsidianPath(item.relativePath);
-  if (filter === "notion") return isKnowledgeNotionPath(item.relativePath);
-  if (filter === "blog") return isKnowledgeBlogPath(item.relativePath);
+  if (filter === "obsidian") {
+    return item.source === "linked-obsidian" || isKnowledgeObsidianPath(item.relativePath);
+  }
+  if (filter === "notion") {
+    return item.source === "mcp-remote" || isKnowledgeNotionPath(item.relativePath);
+  }
   return true;
 }
 

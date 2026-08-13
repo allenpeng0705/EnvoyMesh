@@ -147,6 +147,9 @@ import type {
   HomeFsInfo,
   ListHomeFsEntriesParams,
   ListHomeFsEntriesResult,
+  DiscoverObsidianVaultsResult,
+  OpenDesktopAppParams,
+  OpenDesktopAppResult,
   SetExtAgentProjectPathParams,
   PreviewHomeFsFileParams,
   PreviewHomeFsFileResult,
@@ -558,6 +561,11 @@ import {
   previewHomeFsFile as readHomeFsPreview,
   resolveHomeFsDirectory,
 } from "./home-fs.js";
+import { discoverObsidianVaults as scanObsidianVaults } from "./discover-obsidian-vaults.js";
+import {
+  isDesktopAppId,
+  openDesktopApp as launchDesktopApp,
+} from "./open-desktop-app.js";
 import { runMmxMediaCommand as executeMmxMediaCommand } from "./mmx-media.js";
 import { saveEnvoyUpload } from "./envoy-uploads.js";
 import { buildAgentAttachmentContext } from "./agent-attachment-context.js";
@@ -7131,6 +7139,67 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
+  async listExternalMcpKnowledge(
+    params?: import("@envoymesh/api").ListExternalMcpKnowledgeParams,
+  ): Promise<import("@envoymesh/api").ListExternalMcpKnowledgeResult> {
+    const { listExternalMcpKnowledgeViaRuntime } = await import("./knowledge-hub.js");
+    return listExternalMcpKnowledgeViaRuntime(this._fileShareContext(), params);
+  }
+
+  async importLinkedObsidianNotes(
+    params: import("@envoymesh/api").ImportLinkedObsidianNotesParams,
+  ): Promise<import("@envoymesh/api").ImportLinkedObsidianNotesResult> {
+    const { importLinkedObsidianNotesViaRuntime } = await import("./knowledge-hub.js");
+    const result = await importLinkedObsidianNotesViaRuntime(this._fileShareContext(), params);
+    if (result.imported.length > 0) {
+      try {
+        await this.reindexRagKnowledge({ force: false });
+      } catch {
+        /* best-effort reindex */
+      }
+    }
+    return result;
+  }
+
+  async importExternalMcpKnowledge(
+    params: import("@envoymesh/api").ImportExternalMcpKnowledgeParams,
+  ): Promise<import("@envoymesh/api").ImportExternalMcpKnowledgeResult> {
+    const { importExternalMcpKnowledgeViaRuntime } = await import("./knowledge-hub.js");
+    const result = await importExternalMcpKnowledgeViaRuntime(
+      this._fileShareContext(),
+      params,
+      async (args) =>
+        this.createNote({
+          filename: args.filename,
+          content: args.content,
+          subfolder: args.subfolder,
+          sensitivity: args.sensitivity,
+        }),
+    );
+    if (result.imported.length > 0) {
+      try {
+        await this.reindexRagKnowledge({ force: false });
+      } catch {
+        /* best-effort */
+      }
+    }
+    return result;
+  }
+
+  async exportNotesToLinkedObsidian(
+    params: import("@envoymesh/api").ExportNotesToLinkedObsidianParams,
+  ): Promise<import("@envoymesh/api").ExportNotesToLinkedObsidianResult> {
+    const { exportNotesToLinkedObsidianViaRuntime } = await import("./knowledge-hub.js");
+    return exportNotesToLinkedObsidianViaRuntime(this._fileShareContext(), params);
+  }
+
+  async exportNotesToMcp(
+    params: import("@envoymesh/api").ExportNotesToMcpParams,
+  ): Promise<import("@envoymesh/api").ExportNotesToMcpResult> {
+    const { exportNotesToMcpViaRuntime } = await import("./knowledge-hub.js");
+    return exportNotesToMcpViaRuntime(this._fileShareContext(), params);
+  }
+
   /** Keep in-memory RAG embedder/config aligned after Settings saves (Tauri / Social path). */
   private async _syncRagConfigFromNodeConfig(opts?: { reindexIfEmbedderChanged?: boolean }): Promise<void> {
     if (!this._ragService) return;
@@ -9579,6 +9648,19 @@ class NodeServiceImpl implements NodeService {
   ): Promise<ListHomeFsEntriesResult> {
     requireOwnerProfile("browse home folders");
     return readHomeFsEntries(params ?? {});
+  }
+
+  async discoverObsidianVaults(): Promise<DiscoverObsidianVaultsResult> {
+    requireOwnerProfile("discover Obsidian vaults");
+    return scanObsidianVaults();
+  }
+
+  async openDesktopApp(params: OpenDesktopAppParams): Promise<OpenDesktopAppResult> {
+    requireOwnerProfile("open desktop app");
+    if (!isDesktopAppId(params?.app)) {
+      return { ok: false, error: "Unsupported app (allowed: obsidian, notion)" };
+    }
+    return launchDesktopApp(params.app);
   }
 
   async getExtAgentProjectPath(

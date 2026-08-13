@@ -50,6 +50,10 @@ export interface AiKnowledgeBaseSettings {
      */
     linkedObsidianVaultPaths?: string[];
     /**
+     * Vault paths the owner explicitly unlinked. Auto-discover will not re-add these.
+     */
+    dismissedObsidianVaultPaths?: string[];
+    /**
      * External KB via MCP (e.g. Notion search). Default: `mcp`.
      * Soft-fails when URL is missing — no Notion desktop app required.
      */

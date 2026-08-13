@@ -1,8 +1,8 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { cleanup, render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { KnowledgePluginsPanel } from "../../src/components/views/KnowledgePluginsPanel.js";
 
 const { listKbPlugins } = vi.hoisted(() => ({
@@ -15,6 +15,8 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     activateKbPlugin: vi.fn().mockResolvedValue({ ok: true }),
     deactivateKbPlugin: vi.fn().mockResolvedValue({ ok: true }),
     updateNodeConfig: vi.fn().mockResolvedValue(undefined),
+    discoverObsidianVaults: vi.fn().mockResolvedValue({ paths: [], sources: [] }),
+    openDesktopApp: vi.fn().mockResolvedValue({ ok: true }),
   }),
 }));
 
@@ -38,6 +40,10 @@ vi.mock("../../src/context/I18nContext.js", () => ({
 }));
 
 describe("KnowledgePluginsPanel", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     listKbPlugins.mockResolvedValue([
       {
@@ -61,5 +67,31 @@ describe("KnowledgePluginsPanel", () => {
     expect(screen.getAllByText("knowledge.plugins.showHelp").length).toBeGreaterThan(0);
     expect(screen.getByText("knowledge.plugins.obsidianInstall")).toBeTruthy();
     expect(screen.getByText("knowledge.plugins.notionInstall")).toBeTruthy();
+    expect(screen.getByTestId("linked-obsidian-vault-paths")).toBeTruthy();
+    expect(screen.getByTestId("linked-obsidian-vault-empty")).toBeTruthy();
+    expect(screen.getByText("knowledge.plugins.linkedVaultAdd")).toBeTruthy();
+    expect(screen.getByTestId("open-desktop-obsidian")).toBeTruthy();
+    expect(screen.getByTestId("open-desktop-notion")).toBeTruthy();
+  });
+
+  it("opens and closes both Install & use sections together", async () => {
+    const { container } = render(<KnowledgePluginsPanel />);
+    const details = Array.from(
+      container.querySelectorAll<HTMLDetailsElement>(
+        "[data-testid='plugin-card-obsidian'] details, [data-testid='plugin-card-notion-mcp'] details",
+      ),
+    );
+    expect(details.length).toBe(2);
+    expect(details.every((d) => !d.open)).toBe(true);
+
+    fireEvent.click(details[0]!.querySelector("summary")!);
+    await waitFor(() => {
+      expect(details.every((d) => d.open)).toBe(true);
+    });
+
+    fireEvent.click(details[1]!.querySelector("summary")!);
+    await waitFor(() => {
+      expect(details.every((d) => !d.open)).toBe(true);
+    });
   });
 });

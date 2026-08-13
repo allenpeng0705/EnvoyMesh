@@ -1,16 +1,18 @@
 /**
  * Project-folder picker — same UX as Pi:
  * - Tauri desktop: read-only field + Browse → native OS folder dialog
- * - Social (browser): editable absolute-path input (path is on the home node)
+ * - Social (browser): Browse → home-node folder modal via listHomeFsEntries
+ *   (typed path + Set still available as fallback)
  */
 import React, { useCallback, useEffect, useState } from "react";
 import { isTauriShell, pickTauriDirectory } from "../lib/tauri-shell.js";
 import { useT } from "../context/I18nContext.js";
+import { HomeFolderBrowserModal } from "./HomeFolderBrowserModal.js";
 
 export interface HomeFolderPickerProps {
   value?: string;
   onChange: (path: string | undefined) => void;
-  /** Title for the native Tauri folder dialog. */
+  /** Title for the native Tauri / home-node folder dialog. */
   title?: string;
   disabled?: boolean;
   /** Optional class on the field wrapper. */
@@ -27,6 +29,7 @@ export function HomeFolderPicker({
   const t = useT();
   const tauriShell = isTauriShell();
   const [browsing, setBrowsing] = useState(false);
+  const [webBrowserOpen, setWebBrowserOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState(value ?? "");
 
@@ -49,22 +52,26 @@ export function HomeFolderPicker({
   }, [disabled, draft, onChange, value]);
 
   const handleBrowse = useCallback(async () => {
-    if (disabled || !tauriShell) return;
+    if (disabled) return;
     setError(null);
-    setBrowsing(true);
-    try {
-      const picked = await pickTauriDirectory({
-        title: pickerTitle,
-        defaultPath: value?.trim() || undefined,
-      });
-      if (!picked.ok) {
-        setError(picked.error);
-        return;
+    if (tauriShell) {
+      setBrowsing(true);
+      try {
+        const picked = await pickTauriDirectory({
+          title: pickerTitle,
+          defaultPath: value?.trim() || undefined,
+        });
+        if (!picked.ok) {
+          setError(picked.error);
+          return;
+        }
+        if (picked.path) onChange(picked.path);
+      } finally {
+        setBrowsing(false);
       }
-      if (picked.path) onChange(picked.path);
-    } finally {
-      setBrowsing(false);
+      return;
     }
+    setWebBrowserOpen(true);
   }, [disabled, onChange, pickerTitle, tauriShell, value]);
 
   return (
@@ -119,10 +126,16 @@ export function HomeFolderPicker({
             <button
               type="button"
               className="btn btn-secondary"
+              onClick={() => void handleBrowse()}
+              disabled={disabled}
+            >
+              {pickLabel}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
               onClick={() => commitDraft()}
-              disabled={
-                disabled || draft.trim() === (value ?? "").trim()
-              }
+              disabled={disabled || draft.trim() === (value ?? "").trim()}
             >
               {applyLabel}
             </button>
@@ -143,6 +156,18 @@ export function HomeFolderPicker({
         ) : null}
       </div>
       {error ? <p className="home-folder-picker-error">{error}</p> : null}
+      {webBrowserOpen ? (
+        <HomeFolderBrowserModal
+          title={pickerTitle}
+          initialPath={value?.trim() || undefined}
+          onClose={() => setWebBrowserOpen(false)}
+          onSelect={(path) => {
+            setWebBrowserOpen(false);
+            setDraft(path);
+            onChange(path);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

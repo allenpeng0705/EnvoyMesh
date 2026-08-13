@@ -59,7 +59,15 @@ export function KnowledgeIndexChip() {
     tone = "warn";
     label = t("knowledge.browse.indexError");
   } else if (status.trackedDocuments > 0) {
-    label = t("knowledge.browse.indexReady", { count: status.trackedDocuments });
+    const linked = status.linkedObsidianNoteCount ?? 0;
+    label =
+      linked > 0
+        ? t("knowledge.browse.indexReadyLinked", {
+            count: status.trackedDocuments,
+            linked,
+          })
+        : t("knowledge.browse.indexReady", { count: status.trackedDocuments });
+    if (status.lastExternalKbError) tone = "warn";
   } else {
     tone = "warn";
     label = t("knowledge.browse.indexEmpty");

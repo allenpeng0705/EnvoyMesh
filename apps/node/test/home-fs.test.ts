@@ -150,6 +150,7 @@ describe("home-fs owner-only RPC gate", () => {
     for (const method of [
       "getHomeFsInfo",
       "listHomeFsEntries",
+      "discoverObsidianVaults",
       "getExtAgentProjectPath",
       "setExtAgentProjectPath",
       "previewHomeFsFile",

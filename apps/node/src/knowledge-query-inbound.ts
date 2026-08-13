@@ -12,6 +12,7 @@ import type { VaultIndex } from "@envoymesh/vault";
 import { buildModelProviders } from "@envoymesh/models";
 import { routeModelRequestWithCostTracking } from "./model-cost-tracking.js";
 import {
+  resolveAiKnowledgeBaseSettings,
   resolveKnowledgeSyndicationSensitivity,
   syndicationSensitivityToKnowledgeAccess,
   type AiKnowledgeBaseSettings,
@@ -316,13 +317,33 @@ export async function handleInboundKnowledgeQuery(input: {
       })
     : "";
 
+  let linkedObsidianContext = "";
+  if (knowledgeScope === "owner") {
+    const roots = resolveAiKnowledgeBaseSettings(knowledgeBase).linkedObsidianVaultPaths ?? [];
+    if (roots.length) {
+      try {
+        const {
+          searchLinkedObsidianKnowledge,
+          formatLinkedObsidianKnowledgeSection,
+        } = await import("./knowledge-hub.js");
+        const hits = await searchLinkedObsidianKnowledge({
+          absoluteRoots: roots,
+          query: payload.query,
+        });
+        linkedObsidianContext = formatLinkedObsidianKnowledgeSection(hits);
+      } catch {
+        /* linked vault optional */
+      }
+    }
+  }
+
   const agentIdentitySection = await loadAgentIdentitySection(agentIdentityStore);
 
   const prompt = `You are answering a knowledge query from a contact on the EnvoyMesh P2P network.\n\
 ${agentIdentitySection}Answer only based on the provided context. If the context does not contain relevant information, say so.\n\
 Do not make up information. Keep the answer concise (2-4 sentences).\n\
 Sensitivity level of this answer: ${allowedSensitivity}.\n\n\
-Context:\n${promptContext}\n${injectedContext}${externalContext}\n\
+Context:\n${promptContext}\n${injectedContext}${externalContext}${linkedObsidianContext ? `\n${linkedObsidianContext}` : ""}\n\
 Query: ${payload.query}`;
 
   // Cap sensitivity for cloud providers (they only allow "public" by default)

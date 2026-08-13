@@ -22,6 +22,7 @@ export interface RagIndexStatus {
     /** Last external MCP knowledge search failure (owner prompt path); cleared after a successful MCP search. */
     lastExternalKbError?: string;
     lastExternalKbErrorAt?: string;
+    linkedObsidianNoteCount?: number;
 }
 export declare const DEFAULT_RAG_INDEX_PROGRESS: RagIndexProgress;
 export declare const DEFAULT_RAG_INDEX_STATUS: RagIndexStatus;
