@@ -56,4 +56,20 @@ describe("createFamilyProfileStore", () => {
       await rm(dir, { recursive: true, force: true })
     }
   })
+
+  it("persists extAgentEnabled true/false for members", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "envoy-family-"))
+    try {
+      const store = createFamilyProfileStore(dir)
+      await store.ensureOwnerProfile({ name: "Dad" })
+      const mom = await store.create({ name: "Mom" })
+      expect(mom.extAgentEnabled).toBe(false)
+      const allowed = await store.update({ id: mom.id, extAgentEnabled: true })
+      expect(allowed.extAgentEnabled).toBe(true)
+      const denied = await store.update({ id: mom.id, extAgentEnabled: false })
+      expect(denied.extAgentEnabled).toBe(false)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
 })

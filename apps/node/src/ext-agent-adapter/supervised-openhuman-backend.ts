@@ -2,26 +2,21 @@
  * OpenHuman ext agent backend with autostart supervisor (Phase 55E).
  *
  * Wraps the existing `createOpenHumanBackend()` HTTP backend with a
- * `DaemonSupervisor` (55A) that lazily spawns the OpenHuman core
- * process on the first `ask()` when the daemon is not already
- * running. The HTTP call shape is unchanged — same `/v1/chat/completions`
- * or `/rpc` endpoints, same auth headers — so the sidecar HTTP
- * contract is identical.
+ * `DaemonSupervisor` (55A) that lazily spawns the OpenHuman **headless
+ * core** when the HTTP core is down. The HTTP call shape is unchanged.
  *
- * Default on via `createBackend("openhuman")` (force off with
- * `ENVOYMESH_EXT_AGENT_AUTOSTART=0`). Probe-first: if the HTTP core is
- * already healthy (e.g. OpenHuman.app), we reuse it and do not spawn.
+ * Recommended path for most users: keep **OpenHuman.app** running
+ * (probe-first reuses `:7788` — no spawn). The curl `install.sh` installs
+ * the desktop app, not a CLI.
+ *
+ * Optional headless path: install the separate `openhuman-core` binary
+ * from GitHub Releases / Docker; EnvoyMesh then spawns
+ * `openhuman-core serve` when the core is down.
+ *
+ * Force off spawn with `ENVOYMESH_EXT_AGENT_AUTOSTART=0`.
  *
  * Project folder: optional spawn `cwd` from {@link getExtAgentProjectPathCwd}
- * (only applies when EnvoyMesh spawns the daemon).
- *
- * Note: the actual CLI subcommand is implementation-defined; the
- * default is `openhuman serve` which the OpenHuman CLI accepts as
- * a long-running core. Users can override `command` / `args` /
- * `env` via the constructor options.
- *
- * Install card surfacing: `start()` rejects with `InstallMissingError`
- * if the binary is missing, which the 55A.1 / 55D.1 install card paths surface.
+ * (only applies when EnvoyMesh spawns `openhuman-core`).
  */
 
 import { DaemonSupervisor, InstallMissingError } from "./daemon-supervisor.js";
@@ -33,9 +28,12 @@ import { getExtAgentProjectPathCwd } from "./project-path-store.js";
 // Defaults
 // ---------------------------------------------------------------------------
 
-/** OpenHuman CLI command. Override via `command` option. */
-const DEFAULT_OPENHUMAN_COMMAND = "openhuman";
-/** Args to pass when spawning the daemon. */
+/**
+ * Headless OpenHuman core binary (not the desktop app).
+ * Desktop install.sh → OpenHuman.app; cloud/headless → openhuman-core.
+ */
+const DEFAULT_OPENHUMAN_COMMAND = "openhuman-core";
+/** Args to pass when spawning the headless core. */
 const DEFAULT_OPENHUMAN_ARGS = ["serve"] as const;
 /** Startup healthcheck budget. OpenHuman core takes 5-10s to bind :7788. */
 const DEFAULT_STARTUP_TIMEOUT_MS = 10_000;
@@ -51,7 +49,7 @@ const OPENHUMAN_ASK_TIMEOUT_MS = 280_000; // matches backends.ts OPENHUMAN_TIMEO
 // ---------------------------------------------------------------------------
 
 export interface OpenHumanSupervisedBackendOptions {
-  /** Override the daemon command. Default: "openhuman". */
+  /** Override the daemon command. Default: "openhuman-core". */
   command?: string;
   /** Override the daemon args. Default: ["serve"]. */
   args?: string[];
@@ -71,7 +69,7 @@ export interface OpenHumanSupervisedBackendOptions {
   /**
    * Pre-spawn check (PATH probe for the binary). Set to `false` to
    * skip the check and let spawn ENOENT surface as `installMissing`.
-   * Default: an async `command -v openhuman` probe.
+   * Default: an async `command -v openhuman-core` probe.
    */
   preSpawnCheck?: () => Promise<boolean>;
 }
@@ -101,7 +99,7 @@ async function defaultPreSpawnCheck(): Promise<boolean> {
   const isWin = process.platform === "win32";
   const res = spawnSync(
     isWin ? "where" : "command",
-    [isWin ? "/Q" : "-v", "openhuman"],
+    [isWin ? "/Q" : "-v", "openhuman-core"],
     { encoding: "utf8", timeout: 2_000 },
   );
   return res.status === 0;
@@ -138,8 +136,9 @@ export class OpenHumanSupervisedBackend implements ExtAgentBackend {
         startupTimeoutMs: DEFAULT_STARTUP_TIMEOUT_MS,
         preSpawnCheck: opts.preSpawnCheck ?? defaultPreSpawnCheck,
         installHint:
-          "Install OpenHuman: `curl -fsSL https://raw.githubusercontent.com/tinyhumansai/openhuman/main/scripts/install.sh | bash` " +
-          "(set OPENHUMAN_TOKEN or place core.token in your workspace).",
+          "Keep OpenHuman.app running (recommended), or install the headless core: " +
+          "download `openhuman-core` from https://github.com/tinyhumansai/openhuman/releases " +
+          "and run `openhuman-core serve` (Docker image also available).",
       });
     } else {
       this.supervisor = opts.supervisor;
@@ -159,9 +158,9 @@ export class OpenHumanSupervisedBackend implements ExtAgentBackend {
     if (!this.supervisor) {
       return this.inner.ask(text, sessionKey);
     }
-    if (this.lastStartError) throw this.lastStartError;
 
-    // Probe-first: reuse OpenHuman.app / already-running core — no second spawn.
+    // Probe-first before replaying a cached spawn failure — OpenHuman.app
+    // may have come up after a prior CLI InstallMissingError.
     if (!this.wasEverHealthy) {
       try {
         const up = await this.inner.probe?.();
@@ -173,6 +172,8 @@ export class OpenHumanSupervisedBackend implements ExtAgentBackend {
         /* fall through to spawn */
       }
     }
+
+    if (this.lastStartError) throw this.lastStartError;
 
     if (!this.wasEverHealthy) {
       try {
@@ -187,11 +188,30 @@ export class OpenHumanSupervisedBackend implements ExtAgentBackend {
     return this.inner.ask(text, sessionKey);
   }
 
+  /**
+   * Soft readiness probe used by the switcher / sidecar `/status`.
+   * Reuse a live OpenHuman.app core when possible. Only attempt CLI
+   * spawn when the core is down — and do not permanently cache spawn
+   * failures (desktop-app users have no `openhuman` on PATH).
+   */
   async probe(): Promise<boolean> {
     try {
       const up = await this.inner.probe?.();
-      if (up === false) return false;
-      if (up) this.wasEverHealthy = true;
+      if (up) {
+        this.wasEverHealthy = true;
+        this.lastStartError = null;
+        return true;
+      }
+      const prevErr = this.lastStartError;
+      try {
+        await this.start();
+      } catch {
+        this.lastStartError = prevErr;
+        return false;
+      }
+      const up2 = await this.inner.probe?.();
+      if (up2 === false) return false;
+      if (up2) this.wasEverHealthy = true;
       return true;
     } catch {
       return false;

@@ -13,16 +13,23 @@ describe("getExtAgentInstallInfo", () => {
     const info = getExtAgentInstallInfo("homeclaw")
     expect(info.builtIn).toBe(false)
     expect(info.homepageUrl).toBe("https://www.homeclaw.cn/")
+    expect(info.startHint).toMatch(/homeclaw\.cn|install\.sh|8010\/status/i)
+    expect(info.startHint).toMatch(/python -m main start/i)
   })
 
   it("returns Hermes docs", () => {
     const info = getExtAgentInstallInfo("hermes")
     expect(info.homepageUrl).toContain("hermes-agent.nousresearch.com")
+    expect(info.startHint).toMatch(/starts Hermes/i)
+    expect(info.startHint).toContain("API_SERVER_ENABLED=true")
   })
 
   it("returns OpenHuman website", () => {
     const info = getExtAgentInstallInfo("openhuman")
     expect(info.homepageUrl).toBe("https://tinyhumans.ai/openhuman")
+    expect(info.startHint).toMatch(/OpenHuman\.app/i)
+    expect(info.startHint).toMatch(/keep it running|:7788/i)
+    expect(info.startHint).not.toMatch(/openhuman-core/)
   })
 
   // Phase 56A / 56B / 56C — three one-shot CLI backends.

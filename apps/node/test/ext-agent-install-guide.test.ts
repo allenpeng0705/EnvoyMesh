@@ -14,6 +14,23 @@ import {
 } from "@envoymesh/api";
 
 describe("getExtAgentInstallGuide — known agents", () => {
+  describe("homeclaw", () => {
+    it("not-installed: website install + Core start + :8010 verify", () => {
+      const g = getExtAgentInstallGuide("homeclaw", "not-installed");
+      expect(g.agentId).toBe("homeclaw");
+      expect(g.installed).toBe(false);
+      expect(g.command).toBe("HomeClaw");
+      expect(g.installCommand).toContain("allenpeng0705/HomeClaw");
+      expect(g.installCommand).toContain("./install.sh");
+      expect(g.verifyCommand).toBe("curl -sS http://127.0.0.1:8010/status");
+      expect(g.homepageUrl).toBe("https://www.homeclaw.cn/");
+      expect(g.commonIssues.some((s) => s.includes("homeclaw.cn"))).toBe(true);
+      expect(g.commonIssues.some((s) => s.includes("python -m main start"))).toBe(true);
+      // Must not pretend there is a PATH CLI named `homeclaw`.
+      expect(g.verifyCommand).not.toMatch(/homeclaw --version/);
+    });
+  });
+
   describe("codex", () => {
     it("not-installed: returns full install card with npm + verify + 3 issues", () => {
       const g: ExtAgentInstallGuide = getExtAgentInstallGuide("codex", "not-installed");
@@ -73,8 +90,9 @@ describe("getExtAgentInstallGuide — known agents", () => {
       expect(g.command).toBe("openhuman");
       expect(g.installCommand).toContain("curl");
       expect(g.installCommand).toContain("openhuman");
-      expect(g.verifyCommand).toBe("openhuman --version");
-      expect(g.commonIssues.some((s) => s.includes("OPENHUMAN_TOKEN") || s.includes("core.token"))).toBe(true);
+      expect(g.verifyCommand).toMatch(/7788\/health/);
+      expect(g.commonIssues.some((s) => s.includes("OpenHuman.app"))).toBe(true);
+      expect(g.commonIssues.every((s) => !s.includes("openhuman-core"))).toBe(true);
     });
   });
 
@@ -96,20 +114,24 @@ describe("getExtAgentInstallGuide — known agents", () => {
   });
 
   describe("aider (Phase 56B)", () => {
-    it("not-installed: pip-based install with API-key / Python hints", () => {
+    it("not-installed: PATH-safe install with conda / API-key hints", () => {
       const g = getExtAgentInstallGuide("aider", "not-installed");
       expect(g.agentId).toBe("aider");
       expect(g.installed).toBe(false);
       expect(g.command).toBe("aider");
-      expect(g.installCommand).toContain("pip install aider-chat");
+      expect(g.installCommand).toContain("uv tool install aider-chat");
       expect(g.verifyCommand).toBe("aider --version");
       expect(g.homepageUrl).toBe("https://aider.chat/docs/");
+      expect(g.startHint.toLowerCase()).toContain("path");
       // Issues mention BOTH supported API keys (Aider is multi-provider).
       expect(
         g.commonIssues.some(
           (s) => s.includes("ANTHROPIC_API_KEY") || s.includes("OPENAI_API_KEY"),
         ),
       ).toBe(true);
+      expect(g.commonIssues.some((s) => /conda|PATH|~\.?\/?\.local\/bin/i.test(s))).toBe(
+        true,
+      );
       expect(g.commonIssues.some((s) => s.includes("Python"))).toBe(true);
     });
   });
@@ -197,11 +219,15 @@ describe("getExtAgentInstallGuide — common issues content", () => {
     expect(joined).toMatch(/8642/);
   });
 
-  it("openhuman issues mention core.token and the local health port", () => {
+  it("openhuman issues are app-only (no openhuman-core)", () => {
     const g = getExtAgentInstallGuide("openhuman", "not-installed");
     const joined = g.commonIssues.join("\n");
-    expect(joined).toMatch(/OPENHUMAN_TOKEN|core\.token/);
+    expect(joined).toMatch(/OpenHuman\.app/);
+    expect(joined).not.toContain("openhuman-core");
     expect(joined).toMatch(/7788/);
+    expect(g.installCommand).toContain(
+      "https://raw.githubusercontent.com/tinyhumansai/openhuman/main/scripts/install.sh",
+    );
   });
 });
 
@@ -254,17 +280,19 @@ describe("getExtAgentInstallGuide — unknown id returns empty install commands"
     expect(g.commonIssues.join("\n")).toContain("No install recipe");
   });
 
-  it("returns empty command/installCommand/verifyCommand for homeclaw (no CLI binary)", () => {
-    // HomeClaw is reached over its own :8010 channel; it has no CLI
-    // to verify with. The Install Required card should not suggest
-    // `homeclaw --version` — that's a lie. HomeClaw is not in the
-    // INSTALL_TABLE (it's an app, not a CLI), so it falls into the
-    // "unknown id" path with empty command/verify.
+  it("returns HomeClaw website install recipe (app/core, not a PATH CLI)", () => {
+    // HomeClaw is reached over :8010 — not `homeclaw --version`.
+    // Still ship a real install/start/verify guide from homeclaw.cn.
     const g = getExtAgentInstallGuide("homeclaw", "not-installed");
-    expect(g.command).toBe("");
-    expect(g.installCommand).toBe("");
-    expect(g.verifyCommand).toBe("");
-    // commonIssues should still surface the "no install recipe" hint.
-    expect(g.commonIssues.join("\n")).toContain("No install recipe");
+    expect(g.command).toBe("HomeClaw");
+    expect(g.installCommand).toContain("allenpeng0705/HomeClaw");
+    expect(g.installCommand).toContain("install.sh");
+    expect(g.verifyCommand).toContain("8010/status");
+    expect(g.homepageUrl).toBe("https://www.homeclaw.cn/");
+    expect(g.startHint).toMatch(/python -m main start/i);
+    expect(g.commonIssues.some((s) => s.includes("homeclaw.cn"))).toBe(true);
+    expect(g.commonIssues.some((s) => /8010\/status|ENVOYMESH_BRIDGE_URL/i.test(s))).toBe(
+      true,
+    );
   });
 });

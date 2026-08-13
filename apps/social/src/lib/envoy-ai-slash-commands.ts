@@ -47,7 +47,7 @@ const FEATURE_EXPAND = {
   pi:
     "Explain the Pi local coding agent in EnvoyMesh: it works in a project folder (edit files, run shell) and does not use mesh tools. Tell me how to start Pi from Chat → Terminals or New Pi on desktop and EnvoyGo, and how it differs from EnvoyAI and Ext Agent.",
   content:
-    "Explain EnvoyMesh Content surfaces: Feed (short updates for bonded contacts), Blog (longer posts on the mesh), Explore (browse peer sites), and My Files (vault library — import, publish, share). Tell me where to open Content on desktop Social and on EnvoyGo.",
+    "Explain EnvoyMesh Content surfaces: Feed (short updates for bonded contacts), Blog (longer posts on the mesh), Explore (browse peer sites), and Knowledge (vault knowledge base — Browse / Ask / Setup). Tell me where to open Content on desktop Social and on EnvoyGo.",
 } as const;
 
 /**

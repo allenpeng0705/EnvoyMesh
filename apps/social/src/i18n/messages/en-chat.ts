@@ -21,9 +21,9 @@ export const chatMessages = {
   extAgentOfflineHintHomeClaw:
     "Start HomeClaw, then confirm http://127.0.0.1:8010/status responds.",
   extAgentOfflineHintHermes:
-    "Run `hermes gateway run` with API_SERVER_ENABLED=true (API on :8642).",
+    "EnvoyMesh starts Hermes when needed. Set API_SERVER_ENABLED=true and API_SERVER_KEY in Hermes config; keep `hermes` on PATH.",
   extAgentOfflineHintOpenHuman:
-    "Start OpenHuman.app or the OpenHuman CLI core (health on :7788).",
+    "Open OpenHuman.app and keep it running while you chat (EnvoyMesh uses :7788).",
   extAgentOfflineRecheck: "Check again",
   extAgentOfflineChecking: "Checking…",
   extAgentOfflineSwitcherHint: "{name} is not running — start it before chatting.",

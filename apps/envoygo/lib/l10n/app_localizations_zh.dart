@@ -279,6 +279,134 @@ class AppLocalizationsZh extends AppLocalizations {
   String get contentMyFiles => '我的文件';
 
   @override
+  String get contentKnowledge => '知识库';
+
+  @override
+  String get knowledgeTitle => '知识库';
+
+  @override
+  String get knowledgeLede => '本地知识库 — notes/ 下的笔记供 EnvoyAI 使用。文档原件保留。';
+
+  @override
+  String get knowledgePanelBrowse => '浏览';
+
+  @override
+  String get knowledgePanelAsk => '提问';
+
+  @override
+  String get knowledgePanelPlugins => '插件';
+
+  @override
+  String get knowledgePanelSetup => '设置';
+
+  @override
+  String get knowledgeAskHint => '基于本节点的笔记与文档作答。联系人只能看到你已发布的内容。';
+
+  @override
+  String get knowledgeAskHeading => '向知识库提问';
+
+  @override
+  String get knowledgeAskLabel => '问题';
+
+  @override
+  String get knowledgeAskPlaceholder => '我关于入职流程写了什么？';
+
+  @override
+  String get knowledgeAskSubmit => '提问';
+
+  @override
+  String get knowledgeAskBusy => '搜索中…';
+
+  @override
+  String get knowledgeAskAnswerHeading => '回答';
+
+  @override
+  String get knowledgeAskEmptyAnswer => '没有返回答案。请到「设置」启用知识库并重建索引。';
+
+  @override
+  String get knowledgeAskContinueEnvoyAi => '在 EnvoyAI 中打开';
+
+  @override
+  String get knowledgeAskEnvoyAiHint => '需要多轮对话或工具时，请到 EnvoyAI 继续。';
+
+  @override
+  String get knowledgeLibraryHeading => '你的文件';
+
+  @override
+  String get knowledgeLibraryCaption => '笔记、文档，以及已发布的内容。';
+
+  @override
+  String get knowledgePluginsLede => '可选连接器。Notion 需要 MCP URL，不需要 Notion 应用。';
+
+  @override
+  String get knowledgePluginsObsidianTitle => 'Obsidian';
+
+  @override
+  String get knowledgePluginsObsidianDesc => '增强 vault 笔记。桌面应用可选。';
+
+  @override
+  String get knowledgePluginsNotionTitle => 'Notion（经 MCP）';
+
+  @override
+  String get knowledgePluginsNotionDesc => '经 MCP 搜索。默认开启；无 URL 时软失败。';
+
+  @override
+  String get knowledgePluginsMcpUrl => 'MCP 服务 URL';
+
+  @override
+  String get knowledgePluginsMcpTool => '搜索工具名';
+
+  @override
+  String get knowledgeSetupHint => '索引状态与检索。聊天模型在「我 → AI 模型」。';
+
+  @override
+  String get knowledgeSetupEnabled => '启用资料库知识';
+
+  @override
+  String get knowledgeSetupStatusHint => '点「重建索引」刷新向量索引。';
+
+  @override
+  String get knowledgeSetupReindex => '重建索引';
+
+  @override
+  String get knowledgeSetupReindexDone => '已开始重建';
+
+  @override
+  String get knowledgeBrowseFilterAll => '全部';
+
+  @override
+  String get knowledgeBrowseFiltersLabel => '显示';
+
+  @override
+  String get knowledgeBrowseFilterNotes => '笔记';
+
+  @override
+  String get knowledgeBrowseFilterObsidian => 'Obsidian';
+
+  @override
+  String get knowledgeBrowseFilterNotion => 'Notion';
+
+  @override
+  String get knowledgeBrowseFilterDocuments => '文档';
+
+  @override
+  String get knowledgeBrowseFilterPublished => '已发布';
+
+  @override
+  String knowledgeBrowseIndexReady(int count) {
+    return '已索引 $count';
+  }
+
+  @override
+  String get knowledgeBrowseIndexIndexing => '索引中…';
+
+  @override
+  String get knowledgeBrowseIndexEmpty => '索引为空';
+
+  @override
+  String get knowledgeBrowseIndexChipHint => '打开「知识库 → 设置」管理索引。';
+
+  @override
   String get contentNewPost => '新帖子';
 
   @override

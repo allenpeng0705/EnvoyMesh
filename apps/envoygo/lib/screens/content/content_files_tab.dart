@@ -15,7 +15,10 @@ import '../../services/chat_voice_note.dart';
 
 /// My Files — list / import / preview / share home vault files via thin client.
 class ContentFilesTab extends ConsumerStatefulWidget {
-  const ContentFilesTab({super.key});
+  /// When true (Knowledge → Browse), show Notes/Documents/Published filters + index chip.
+  final bool knowledgeBrowse;
+
+  const ContentFilesTab({super.key, this.knowledgeBrowse = false});
 
   @override
   ConsumerState<ContentFilesTab> createState() => _ContentFilesTabState();
@@ -26,11 +29,26 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
   bool _loading = true;
   String? _error;
   String _query = '';
+  KnowledgeBrowseFilter _browseFilter = KnowledgeBrowseFilter.all;
+  Map<String, dynamic>? _indexStatus;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _reload());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _reload();
+      if (widget.knowledgeBrowse) _refreshIndex();
+    });
+  }
+
+  Future<void> _refreshIndex() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      final st = await client.getRagIndexStatus();
+      if (!mounted) return;
+      setState(() => _indexStatus = st);
+    } catch (_) {}
   }
 
   Future<void> _reload() async {
@@ -273,10 +291,72 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
         .where(
           (i) => i.source == 'vault' && !isHiddenFromLibraryList(i.relativePath),
         )
+        .where(
+          (i) =>
+              !widget.knowledgeBrowse ||
+              matchesKnowledgeBrowseFilter(
+                relativePath: i.relativePath,
+                published: i.published,
+                filter: _browseFilter,
+              ),
+        )
         .toList();
+
+    final tracked = (_indexStatus?['trackedDocuments'] as num?)?.toInt() ?? 0;
+    final indexing = _indexStatus?['isIndexing'] == true;
+    String indexLabel;
+    if (indexing) {
+      indexLabel = l10n.knowledgeBrowseIndexIndexing;
+    } else if (tracked > 0) {
+      indexLabel = l10n.knowledgeBrowseIndexReady(tracked);
+    } else {
+      indexLabel = l10n.knowledgeBrowseIndexEmpty;
+    }
 
     return Column(
       children: [
+        if (widget.knowledgeBrowse)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (final f in KnowledgeBrowseFilter.values)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: FilterChip(
+                              label: Text(_filterLabel(l10n, f)),
+                              selected: _browseFilter == f,
+                              showCheckmark: false,
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              onSelected: (_) =>
+                                  setState(() => _browseFilter = f),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                ActionChip(
+                  label: Text(indexLabel),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    // Parent KnowledgeScreen Setup is tab index 3 — best-effort snack.
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(l10n.knowledgeBrowseIndexChipHint)),
+                    );
+                    _refreshIndex();
+                  },
+                ),
+              ],
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
           child: Row(
@@ -294,7 +374,10 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
               ),
               IconButton(
                 tooltip: l10n.commonRefresh,
-                onPressed: _reload,
+                onPressed: () {
+                  _reload();
+                  if (widget.knowledgeBrowse) _refreshIndex();
+                },
                 icon: const Icon(Icons.refresh),
               ),
               IconButton(
@@ -351,7 +434,25 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
                                 final item = items[index];
                                 return ListTile(
                                   leading: Icon(_iconFor(item)),
-                                  title: Text(item.title),
+                                  title: widget.knowledgeBrowse
+                                      ? Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                item.title,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            _SourceChip(
+                                              source: knowledgeBrowseSource(
+                                                item.relativePath,
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                      : Text(item.title),
                                   subtitle: Text(
                                     '${item.relativePath} · ${_fmtBytes(item.byteLength)}',
                                     maxLines: 1,
@@ -372,6 +473,23 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
     );
   }
 
+  String _filterLabel(AppLocalizations l10n, KnowledgeBrowseFilter f) {
+    switch (f) {
+      case KnowledgeBrowseFilter.all:
+        return l10n.knowledgeBrowseFilterAll;
+      case KnowledgeBrowseFilter.notes:
+        return l10n.knowledgeBrowseFilterNotes;
+      case KnowledgeBrowseFilter.obsidian:
+        return l10n.knowledgeBrowseFilterObsidian;
+      case KnowledgeBrowseFilter.notion:
+        return l10n.knowledgeBrowseFilterNotion;
+      case KnowledgeBrowseFilter.documents:
+        return l10n.knowledgeBrowseFilterDocuments;
+      case KnowledgeBrowseFilter.published:
+        return l10n.knowledgeBrowseFilterPublished;
+    }
+  }
+
   IconData _iconFor(LocalFileItem item) {
     final ext = item.extension.toLowerCase();
     if (['png', 'jpg', 'jpeg', 'webp', 'gif'].contains(ext)) {
@@ -386,5 +504,39 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
     if (n < 1024) return '$n B';
     if (n < 1024 * 1024) return '${(n / 1024).toStringAsFixed(1)} KiB';
     return '${(n / (1024 * 1024)).toStringAsFixed(1)} MiB';
+  }
+}
+
+class _SourceChip extends StatelessWidget {
+  final String source;
+  const _SourceChip({required this.source});
+
+  @override
+  Widget build(BuildContext context) {
+    final label = switch (source) {
+      'notion' => 'Notion',
+      'obsidian' => 'Obsidian',
+      _ => 'File',
+    };
+    final color = switch (source) {
+      'notion' => const Color(0xFF2F3437),
+      'obsidian' => const Color(0xFF5B4BD6),
+      _ => Theme.of(context).colorScheme.outline,
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
   }
 }

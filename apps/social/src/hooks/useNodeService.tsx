@@ -641,10 +641,17 @@ export interface NodeServiceClient {
   pinLibraryItemExternal(documentId: string): Promise<import("@envoymesh/api").PinLibraryItemExternalResult>;
   getIpfsEngineStatus(): Promise<IpfsEngineStatus>;
   getRagIndexStatus(): Promise<RagIndexStatus>;
+  reindexRagKnowledge(params?: { force?: boolean }): Promise<RagIndexStatus>;
   verifyLibraryItemIpfsGateway(
     params: VerifyLibraryItemIpfsGatewayParams,
   ): Promise<VerifyLibraryItemIpfsGatewayResult>;
   importToLibrary(params: ImportToLibraryParams): Promise<ImportToLibraryResult>;
+  convertLibraryItemToMarkdown(
+    params: import("@envoymesh/api").ConvertLibraryItemToMarkdownParams,
+  ): Promise<import("@envoymesh/api").ConvertLibraryItemToMarkdownResult>;
+  saveExternalMcpSearchAsNote(
+    params: import("@envoymesh/api").SaveExternalMcpSearchAsNoteParams,
+  ): Promise<import("@envoymesh/api").SaveExternalMcpSearchAsNoteResult>;
   createNote(params: CreateNoteParams): Promise<CreateNoteResult>;
   deleteVaultItem(params: DeleteVaultItemParams): Promise<void>;
   listKbPlugins(params?: ListKbPluginsParams): Promise<KbPluginInfo[]>;
@@ -2058,6 +2065,9 @@ function createWsNodeServiceClient(
     async getRagIndexStatus() {
       return wsClient.rpc("getRagIndexStatus", {}) as Promise<RagIndexStatus>;
     },
+    async reindexRagKnowledge(params?: { force?: boolean }) {
+      return wsClient.rpc("reindexRagKnowledge", (params ?? {}) as Record<string, unknown>) as Promise<RagIndexStatus>;
+    },
     async verifyLibraryItemIpfsGateway(params: VerifyLibraryItemIpfsGatewayParams) {
       return wsClient.rpc("verifyLibraryItemIpfsGateway", params as unknown as Record<string, unknown>) as Promise<
         VerifyLibraryItemIpfsGatewayResult
@@ -2067,6 +2077,22 @@ function createWsNodeServiceClient(
       return wsClient.rpc("importToLibrary", params as unknown as Record<string, unknown>) as Promise<
         ImportToLibraryResult
       >;
+    },
+    async convertLibraryItemToMarkdown(
+      params: import("@envoymesh/api").ConvertLibraryItemToMarkdownParams,
+    ) {
+      return wsClient.rpc(
+        "convertLibraryItemToMarkdown",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").ConvertLibraryItemToMarkdownResult>;
+    },
+    async saveExternalMcpSearchAsNote(
+      params: import("@envoymesh/api").SaveExternalMcpSearchAsNoteParams,
+    ) {
+      return wsClient.rpc(
+        "saveExternalMcpSearchAsNote",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").SaveExternalMcpSearchAsNoteResult>;
     },
     async createNote(params: CreateNoteParams) {
       return wsClient.rpc("createNote", params as unknown as Record<string, unknown>) as Promise<

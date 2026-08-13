@@ -5,7 +5,7 @@
  * Local (Envoy Local) uses leaner caps than cloud so llama.cpp prefill stays snappy.
  */
 
-import type { AiKnowledgeBaseSettings } from "@envoymesh/api";
+import type { AiKnowledgeBaseScope, AiKnowledgeBaseSettings } from "@envoymesh/api";
 import { resolveAiKnowledgeBaseSettings } from "@envoymesh/api";
 import type { AgentIdentityStore, HumanProfileStore, LocalChatLogStore, LocalTrustStore } from "@envoymesh/local-store";
 import { buildVaultIndex } from "@envoymesh/vault";
@@ -13,10 +13,12 @@ import { loadAgentIdentitySection } from "./agent-identity-context.js";
 import {
   formatThreadMessagesSection,
   formatVaultKnowledgeSection,
+  loadKnowledgeSensitivityOverrides,
   loadThreadMessages,
   searchChatHistoryRag,
   searchVaultKnowledgeBase,
   selectRecentThreadMessages,
+  type KnowledgeAccessLevel,
 } from "./ai-context.js";
 import { buildContextInjection } from "./context-injector.js";
 import type { RagService } from "./rag-service.js";
@@ -126,8 +128,24 @@ export async function buildEnvoyMeshRetrievedContext(input: {
   knowledgeBase?: AiKnowledgeBaseSettings | null;
   /** Defaults to cloud (OpenClaw historical behavior). */
   profile?: OpenClawRetrievedContextProfile;
+  /** Profile dir for Published-toggle sensitivity overrides (57B). */
+  profileDir?: string;
+  /**
+   * Vault sensitivity ceiling. Default `private` (owner EnvoyAI).
+   * Contact-facing Agent Mode drafts should pass contact prefs (often `public`).
+   */
+  knowledgeAccess?: KnowledgeAccessLevel;
+  /**
+   * Vault path scope. Default `owner` (public + private roots).
+   * Contact-facing drafts should pass `public`.
+   */
+  knowledgeScope?: AiKnowledgeBaseScope;
+  /** When set, only include bond-chat RAG for this contact thread. */
+  contactThreadOwnerId?: string;
 }): Promise<string> {
   const caps = OPENCLAW_RETRIEVED_CONTEXT_CAPS[input.profile ?? "cloud"];
+  const knowledgeAccess = input.knowledgeAccess ?? "private";
+  const knowledgeScope = input.knowledgeScope ?? "owner";
   const sections: string[] = [];
 
   const agentIdentity = await loadAgentIdentitySection(input.agentIdentityStore);
@@ -137,20 +155,23 @@ export async function buildEnvoyMeshRetrievedContext(input: {
 
   try {
     const vaultIndex = await buildVaultIndex({ rootDir: input.vaultDir });
+    const sensitivityOverrides = await loadKnowledgeSensitivityOverrides(input.profileDir);
     const vaultResults = input.ragService
       ? await input.ragService.searchVaultKnowledgeBase({
           vaultIndex,
           query: input.message,
-          knowledgeAccess: "private",
+          knowledgeAccess,
           knowledgeBase: input.knowledgeBase,
-          knowledgeScope: "owner",
+          knowledgeScope,
+          sensitivityOverrides,
         })
       : searchVaultKnowledgeBase({
           vaultIndex,
           query: input.message,
-          knowledgeAccess: "private",
+          knowledgeAccess,
           knowledgeBase: input.knowledgeBase,
-          knowledgeScope: "owner",
+          knowledgeScope,
+          sensitivityOverrides,
         });
     if (vaultResults.length > 0) {
       sections.push(
@@ -161,7 +182,8 @@ export async function buildEnvoyMeshRetrievedContext(input: {
     /* vault optional */
   }
 
-  if (input.ragService) {
+  // External MCP is owner-only (same gate as rag-service.getExternalKnowledgeContext).
+  if (input.ragService && knowledgeScope === "owner") {
     try {
       const external = await input.ragService.getExternalKnowledgeContext({
         query: input.message,
@@ -193,9 +215,13 @@ export async function buildEnvoyMeshRetrievedContext(input: {
     }
   }
 
+  const bondsForChat = input.contactThreadOwnerId
+    ? input.bonds.filter((b) => b.peerOwnerId === input.contactThreadOwnerId)
+    : input.bonds;
+
   const bondSections = await buildBondChatSections({
     message: input.message,
-    bonds: input.bonds,
+    bonds: bondsForChat,
     chatLogStore: input.chatLogStore,
     ragService: input.ragService,
     knowledgeBase: input.knowledgeBase,

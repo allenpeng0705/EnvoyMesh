@@ -111,9 +111,9 @@ export const zhChatMessages = {
   extAgentOfflineHintHomeClaw:
     "请先启动 HomeClaw，并确认 http://127.0.0.1:8010/status 可访问。",
   extAgentOfflineHintHermes:
-    "运行 `hermes gateway run`，并设置 API_SERVER_ENABLED=true（API 在 :8642）。",
+    "EnvoyMesh 会在需要时自动启动 Hermes。请在 Hermes 配置中设置 API_SERVER_ENABLED=true 与 API_SERVER_KEY，并确保 `hermes` 在 PATH 中。",
   extAgentOfflineHintOpenHuman:
-    "请先启动 OpenHuman.app 或 OpenHuman CLI 核心（健康检查在 :7788）。",
+    "请打开并保持 OpenHuman.app 运行（EnvoyMesh 使用 :7788）。",
   extAgentOfflineRecheck: "重新检查",
   extAgentOfflineChecking: "检查中…",
   extAgentOfflineSwitcherHint: "{name} 未运行 — 开始聊天前请先启动它。",

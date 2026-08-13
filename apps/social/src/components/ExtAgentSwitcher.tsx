@@ -120,6 +120,17 @@ export function ExtAgentSwitcher({
    * lands in the silent branch.
    */
   const showReachability = useCallback((reach: ExtAgentReachability) => {
+    // Prefer live reachability over install-state guesses. OpenHuman.app
+    // users often have no `openhuman` CLI on PATH — a healthy `:7788`
+    // core must not open the Install card.
+    if (reach.reachable) {
+      if (toastTimer.current != null) {
+        window.clearTimeout(toastTimer.current)
+        toastTimer.current = null
+      }
+      setDialog({ kind: "closed" })
+      return
+    }
     if (
       reach.installState === "not-installed" ||
       reach.installState === "unsupported" ||
@@ -133,33 +144,23 @@ export function ExtAgentSwitcher({
       })
       return
     }
-    if (!reach.reachable) {
-      const hint = reach.hint || t(
-        "chat.extAgentOfflineSwitcherHint",
-        "{name} is not running — start it before chatting.",
-      ).replace("{name}", reach.agentName)
-      // Toast — auto-dismiss after TOAST_TTL_MS.
-      if (toastTimer.current != null) {
-        window.clearTimeout(toastTimer.current)
-      }
-      setDialog({
-        kind: "offline-toast",
-        agentId: reach.agentId,
-        agentName: reach.agentName,
-        hint,
-      })
-      toastTimer.current = window.setTimeout(() => {
-        setDialog((cur) => (cur.kind === "offline-toast" ? { kind: "closed" } : cur))
-        toastTimer.current = null
-      }, TOAST_TTL_MS)
-      return
-    }
-    // Healthy — clear any prior toast.
+    const hint = reach.hint || t(
+      "chat.extAgentOfflineSwitcherHint",
+      "{name} is not running — start it before chatting.",
+    ).replace("{name}", reach.agentName)
     if (toastTimer.current != null) {
       window.clearTimeout(toastTimer.current)
-      toastTimer.current = null
     }
-    setDialog({ kind: "closed" })
+    setDialog({
+      kind: "offline-toast",
+      agentId: reach.agentId,
+      agentName: reach.agentName,
+      hint,
+    })
+    toastTimer.current = window.setTimeout(() => {
+      setDialog((cur) => (cur.kind === "offline-toast" ? { kind: "closed" } : cur))
+      toastTimer.current = null
+    }, TOAST_TTL_MS)
   }, [t])
 
   /**

@@ -1,12 +1,19 @@
 import { extname } from "node:path";
-import { isVaultExtractableExtension } from "./vault-formats.js";
+import {
+  isVaultAnydocExtension,
+  isVaultExtractableExtension,
+} from "./vault-formats.js";
 
 export {
   VAULT_EXTRACTABLE_EXTENSIONS,
+  VAULT_TEXT_EXTRACTOR_ID,
   type VaultExtractableExtension,
   isVaultExtractableExtension,
   isVaultSearchableExtension,
 } from "./vault-formats.js";
+
+let anydocLoadFailedLogged = false;
+let anydocConvertFallbackLogged = false;
 
 export async function extractVaultDocumentText(
   extension: string,
@@ -20,26 +27,88 @@ export async function extractVaultDocumentText(
     return null;
   }
 
+  if (isVaultAnydocExtension(ext)) {
+    const anydocText = await tryAnydocExtract(ext, raw);
+    if (anydocText) {
+      return anydocText;
+    }
+  }
+
+  return extractLegacyDocumentText(ext, raw);
+}
+
+async function tryAnydocExtract(ext: string, raw: Buffer): Promise<string | null> {
+  let toMarkdownBytes: typeof import("@firecrawl/anydoc").toMarkdownBytes;
+  let formatFromExtension: typeof import("@firecrawl/anydoc").formatFromExtension;
+  try {
+    const anydoc = await import("@firecrawl/anydoc");
+    toMarkdownBytes = anydoc.toMarkdownBytes;
+    formatFromExtension = anydoc.formatFromExtension;
+  } catch (error) {
+    if (!anydocLoadFailedLogged) {
+      anydocLoadFailedLogged = true;
+      console.warn("[vault] @firecrawl/anydoc failed to load; using legacy extractors", error);
+    }
+    return null;
+  }
+
+  try {
+    const format = formatFromExtension(ext);
+    const markdown = await toMarkdownBytes(raw, format);
+    return normalizeGfmMarkdown(markdown);
+  } catch (error) {
+    if (!anydocConvertFallbackLogged) {
+      anydocConvertFallbackLogged = true;
+      const code =
+        error && typeof error === "object" && "code" in error
+          ? String((error as { code?: unknown }).code ?? "error")
+          : "error";
+      console.warn(
+        `[vault] anydoc convert failed (${code}); falling back to legacy extractors`,
+      );
+    }
+    return null;
+  }
+}
+
+async function extractLegacyDocumentText(
+  ext: string,
+  raw: Buffer,
+): Promise<string | null> {
   try {
     switch (ext) {
       case ".pdf":
         return await extractPdfText(raw);
       case ".docx":
+      case ".docm":
         return await extractDocxText(raw);
       case ".doc":
         return await extractDocText(raw);
       case ".pptx":
+      case ".pptm":
+      case ".ppsx":
+      case ".ppsm":
         return await extractPptxText(raw);
       case ".ppt":
+      case ".pps":
+      case ".pot":
         return await extractPptText(raw);
       case ".xlsx":
       case ".xls":
+      case ".xlsm":
+      case ".xlsb":
         return await extractSpreadsheetText(raw);
       case ".html":
       case ".htm":
         return stripHtmlText(raw.toString("utf8"));
       case ".rtf":
         return stripRtfText(raw.toString("utf8"));
+      case ".odt":
+      case ".ods":
+      case ".odp":
+      case ".epub":
+        // anydoc-only formats: no legacy path
+        return null;
       default:
         return null;
     }
@@ -152,8 +221,19 @@ export function stripRtfText(rtf: string): string | null {
   return normalizeExtractedText(decoded);
 }
 
+/** Collapse whitespace for legacy plain-text extractors. */
 function normalizeExtractedText(text: string | undefined): string | null {
   const normalized = text?.replace(/\s+/g, " ").trim();
+  return normalized ? normalized : null;
+}
+
+/** Preserve GFM structure from anydoc; trim and collapse excessive blank lines. */
+function normalizeGfmMarkdown(text: string | undefined): string | null {
+  const normalized = text
+    ?.replace(/\r\n/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
   return normalized ? normalized : null;
 }
 

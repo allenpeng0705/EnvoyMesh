@@ -51,7 +51,7 @@ class ContentEngageState {
   }
 }
 
-/// Content sub-tab: 0=feed, 1=blog, 2=explore, 3=files.
+/// Content sub-tab: 0=feed, 1=blog, 2=knowledge, 3=explore.
 final contentSurfaceProvider = StateProvider<int>((ref) => 0);
 
 final contentEngageProvider =

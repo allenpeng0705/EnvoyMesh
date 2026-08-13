@@ -8,9 +8,9 @@ import '../../providers/feed_notify_provider.dart';
 import 'content_blog_tab.dart';
 import 'content_explore_tab.dart';
 import 'content_feed_tab.dart';
-import 'content_files_tab.dart';
+import 'knowledge_screen.dart';
 
-/// Content — Feed | Blog | People | My Files (mirrors Social ContentView).
+/// Content — Feed | Blog | Knowledge | People (mirrors Social ContentView order).
 class ContentScreen extends ConsumerStatefulWidget {
   const ContentScreen({super.key});
 
@@ -111,8 +111,8 @@ class _ContentScreenState extends ConsumerState<ContentScreen>
             tabs: [
               tabLabel(l10n.contentFeed, feedBadge),
               tabLabel(l10n.contentBlog, blogBadge),
+              Tab(text: l10n.contentKnowledge),
               Tab(text: l10n.contentPeople),
-              Tab(text: l10n.contentMyFiles),
             ],
           ),
         ),
@@ -122,8 +122,8 @@ class _ContentScreenState extends ConsumerState<ContentScreen>
             children: const [
               ContentFeedTab(),
               ContentBlogTab(),
+              KnowledgeScreen(),
               ContentExploreTab(),
-              ContentFilesTab(),
             ],
           ),
         ),

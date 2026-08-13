@@ -1368,6 +1368,7 @@ async function handleInboundMeshMessage({
         getAgentIdentityStore: () => agentIdentityStore,
         getKnowledgeBase: () => currentAiSettings?.knowledgeBase,
         getRagService: () => ragService,
+        getProfileDir: () => args.profileDir,
         getKnowledgeSyndicationMaxSensitivity: () =>
           currentKnowledgeSyndicationMaxSensitivity,
         appendAuditEvent: (event: any) => taskStore.appendAuditEvent(event),
@@ -2095,6 +2096,7 @@ async function handleInboundMeshMessage({
           humanProfileStore,
           agentIdentityStore,
           vaultDir: vaultDirForNode,
+          profileDir: args.profileDir,
           styleAdapter,
           sendChat: async (targetOwnerId, text) => {
             if (!(nodeService instanceof NodeServiceImpl)) {

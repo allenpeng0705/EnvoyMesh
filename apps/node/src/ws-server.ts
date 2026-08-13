@@ -17,7 +17,7 @@ import {
   stampConfigCallerForSession,
   type RpcCallerContext,
 } from "./rpc-caller-context.js";
-import { OWNER_FAMILY_PROFILE_ID } from "@envoymesh/api";
+import { OWNER_FAMILY_PROFILE_ID, maskBridgeEnabledForExtAgentAccess } from "@envoymesh/api";
 import {
   parseAiBotThreadKey,
   parseBridgeThreadKey,
@@ -250,7 +250,9 @@ export class WsServer {
       nodeServiceImpl.on("node:online", (data: unknown) => this.emitEvent("node:online", data));
       nodeServiceImpl.on("node:ready", (data: unknown) => this.emitEvent("node:ready", data));
       nodeServiceImpl.on("node:offline", (data: unknown) => this.emitEvent("node:offline", data));
-      nodeServiceImpl.on("bridge:status", (data: unknown) => this.emitEvent("bridge:status", data));
+      nodeServiceImpl.on("bridge:status", (data: unknown) => {
+        void this.emitBridgeStatus(data);
+      });
       nodeServiceImpl.on("config:updated", (data: unknown) =>
         this.emitEvent("config:updated", data),
       );
@@ -814,6 +816,51 @@ export class WsServer {
       const session = this.authenticatedSessions.get(ws);
       const config = stampConfigCallerForSession({ ...fullConfig }, session);
       this.sendEvent(ws, "home:config-updated", { config });
+    }
+  }
+
+  /**
+   * Fan out bridge:status with per-session `enabled` masking.
+   * Family profiles without `extAgentEnabled` must never see enabled:true
+   * (otherwise EnvoyGo re-shows the Ext Agent chat row after a real push).
+   */
+  private async emitBridgeStatus(data: unknown): Promise<void> {
+    const listeners = this.subscriptions.get("bridge:status");
+    if (!listeners) return;
+    const status =
+      data && typeof data === "object"
+        ? (data as { enabled: boolean })
+        : null;
+    const ns = this.nodeService as NodeServiceImpl;
+    for (const ws of listeners) {
+      if (ws.readyState !== WebSocket.OPEN) continue;
+      if (!status || status.enabled !== true) {
+        this.sendEvent(ws, "bridge:status", data);
+        continue;
+      }
+      const session = this.authenticatedSessions.get(ws);
+      // Untokened local clients (desktop Social) → owner.
+      if (!session || session.isOwnerProfile) {
+        this.sendEvent(ws, "bridge:status", data);
+        continue;
+      }
+      try {
+        const mayUse = await ns.mayFamilyProfileUseExtAgent(
+          session.profileId,
+          session.isOwnerProfile,
+        );
+        this.sendEvent(
+          ws,
+          "bridge:status",
+          maskBridgeEnabledForExtAgentAccess(status, mayUse),
+        );
+      } catch {
+        this.sendEvent(
+          ws,
+          "bridge:status",
+          maskBridgeEnabledForExtAgentAccess(status, false),
+        );
+      }
     }
   }
 

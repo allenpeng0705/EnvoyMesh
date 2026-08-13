@@ -516,6 +516,9 @@ export const aiSettingsMessages = {
     heading: "Knowledge Base",
     sectionDesc:
       "Local vault files are split into public (auto-reply) and private (Envoy AI) partitions, indexed in SQLite with an HNSW ANN index.",
+    movedToKnowledgeDesc:
+      "Browse, Ask, Plugins (Obsidian / Notion MCP), and index setup live under Content → Knowledge. Chat models and Ext Agent stay here.",
+    openKnowledgeSetup: "Open Knowledge",
     indexStatusLabel: "Vector index status",
     indexStatusIdle: "Idle",
     indexStatusUnknown: "unknown",
@@ -524,6 +527,14 @@ export const aiSettingsMessages = {
     indexStatusError: "Index error: {message}",
     indexStatusLastRunSuffix: " · Last run {time}",
     indexStatusTrackedSuffix: " · {count} tracked file(s)",
+    indexStatusEmbedder: "Embedder: {modelKey}",
+    indexStatusEmbedError: "Embedding error: {message} · {time}",
+    rebuildIndex: "Rebuild knowledge index",
+    rebuildIndexBusy: "Rebuilding…",
+    rebuildIndexConfirm:
+      "Rebuild the vector index now? This re-embeds vault files and chat history with the current embedding model. It can take a while and may use API quota.",
+    embeddingChangeConfirm:
+      "This changes the effective embedding model. Existing vectors cannot be reused — the knowledge index will be cleared and rebuilt. Continue?",
     enableVaultKb: "Enable vault knowledge base",
     enableVaultKbDesc: "Inject matching vault snippets into AI prompts",
     retrievalMode: "Retrieval mode",
@@ -532,6 +543,8 @@ export const aiSettingsMessages = {
     retrievalLexical: "Lexical (keywords only)",
     embeddingInheritBanner:
       "Each field falls back to the chat-model setting when blank. Pick a chat-model provider above (OpenAI, MiniMax, Zhipu, Qwen, etc.) and these drop-downs follow automatically. Set a field here only to override.",
+    embeddingEnvoyLocalBanner:
+      "Envoy Local is a chat GGUF server — it does not ship an embedding model. Inherit currently uses local mock embeddings so indexing still works offline. For better retrieval, set Embedding provider to Ollama (nomic-embed-text) or an OpenAI-compatible embedding API, or use Lexical mode.",
     embeddingModel: "Embedding model",
     embeddingPlaceholder: "inherit from chat model (e.g. embo-01 on MiniMax, text-embedding-3-small on OpenAI)",
     embeddingResolvedHint: "→ Effective value when blank: {value}",
@@ -573,12 +586,24 @@ export const aiSettingsMessages = {
     privatePathsDesc: "Owner-only: Envoy AI tab and local knowledge queries.",
     externalProvider: "External provider",
     externalNone: "None (local vault only)",
-    externalMcp: "MCP server (e.g. Memex)",
+    externalMcp: "MCP search (Notion-class — not vault sync)",
+    externalMcpDesc:
+      "Merges remote MCP search hits into owner EnvoyAI prompts only. Does not sync or replace your vault; mesh knowledge.query still uses local vault files.",
     mcpServerUrl: "MCP server URL",
     mcpUrlPlaceholder: "http://127.0.0.1:PORT/mcp",
     mcpSearchTool: "MCP search tool",
     mcpSearchToolPlaceholder: "memex_search",
     mcpApiKeyOptional: "MCP API key (optional)",
+    mcpWriteBack: "Allow write-back to notes/mcp/",
+    mcpWriteBackDesc:
+      "When on, you can save an MCP search as an attributed Markdown note under notes/mcp/ (private by default — not mesh-visible until you publish). Off by default — search stays prompt-only.",
+    mcpWriteBackQuery: "Search query to save",
+    mcpWriteBackQueryPlaceholder: "e.g. deployment runbook",
+    mcpWriteBackSave: "Search MCP & save note",
+    mcpWriteBackSaving: "Saving…",
+    mcpWriteBackSaved: "Saved {path} ({count} hits)",
+    mcpWriteBackFailed: "MCP write-back failed",
+    mcpLastError: "Last MCP error: {message}",
   },
   profileMedia: {
     heading: "Profile gallery photos",

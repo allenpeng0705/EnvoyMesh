@@ -454,6 +454,7 @@ export interface ChatRoomMessageContextDeps {
   getPeerDirectoryStore: ChatRoomMessageContext["getPeerDirectoryStore"];
   getStyleAdapter: ChatRoomMessageContext["getStyleAdapter"];
   getVaultDir: ChatRoomMessageContext["getVaultDir"];
+  getProfileDir?: ChatRoomMessageContext["getProfileDir"];
   getConfigStore: ChatRoomMessageContext["getConfigStore"];
   getApprovalQueue: ChatRoomMessageContext["getApprovalQueue"];
   getAutoReplyLimitStore: ChatRoomMessageContext["getAutoReplyLimitStore"];
@@ -473,6 +474,7 @@ export interface ChatMessageContextDeps {
   getPeerDirectoryStore: ChatMessageContext["getPeerDirectoryStore"];
   getStyleAdapter: ChatMessageContext["getStyleAdapter"];
   getVaultDir: ChatMessageContext["getVaultDir"];
+  getProfileDir?: ChatMessageContext["getProfileDir"];
   getConfigStore: ChatMessageContext["getConfigStore"];
   getApprovalQueue: ChatMessageContext["getApprovalQueue"];
   getAutoReplyLimitStore: ChatMessageContext["getAutoReplyLimitStore"];
@@ -1180,6 +1182,7 @@ export function buildChatRoomMessageContext(deps: ChatRoomMessageContextDeps): C
     getPeerDirectoryStore: () => deps.getPeerDirectoryStore(),
     getStyleAdapter: () => deps.getStyleAdapter(),
     getVaultDir: () => deps.getVaultDir(),
+    getProfileDir: deps.getProfileDir ? () => deps.getProfileDir!() : undefined,
     getConfigStore: () => deps.getConfigStore(),
     getApprovalQueue: () => deps.getApprovalQueue(),
     getAutoReplyLimitStore: () => deps.getAutoReplyLimitStore(),
@@ -1202,6 +1205,7 @@ export function buildChatMessageContext(deps: ChatMessageContextDeps): ChatMessa
     getPeerDirectoryStore: () => deps.getPeerDirectoryStore(),
     getStyleAdapter: () => deps.getStyleAdapter(),
     getVaultDir: () => deps.getVaultDir(),
+    getProfileDir: deps.getProfileDir ? () => deps.getProfileDir!() : undefined,
     getConfigStore: () => deps.getConfigStore(),
     getApprovalQueue: () => deps.getApprovalQueue(),
     getAutoReplyLimitStore: () => deps.getAutoReplyLimitStore(),

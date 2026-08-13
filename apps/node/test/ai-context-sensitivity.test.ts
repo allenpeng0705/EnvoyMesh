@@ -36,6 +36,13 @@ describe("inferDocumentSensitivity (3-tier)", () => {
     expect(inferDocumentSensitivity("friends/list.md")).toBe("friends");
   });
 
+  it("returns 'private' for notes/imports and notes/mcp (Phase 57 materialize / MCP)", () => {
+    expect(inferDocumentSensitivity("notes/imports/report.md")).toBe("private");
+    expect(inferDocumentSensitivity("notes/imports/page-2.md")).toBe("private");
+    expect(inferDocumentSensitivity("notes/mcp/mcp-deployment.md")).toBe("private");
+    expect(inferDocumentSensitivity("Notes/Imports/Report.md")).toBe("private");
+  });
+
   it("returns 'public' for all other paths", () => {
     expect(inferDocumentSensitivity("notes/research/llm-benchmarks.md")).toBe("public");
     expect(inferDocumentSensitivity("tutorials/setup.md")).toBe("public");
@@ -169,6 +176,17 @@ describe("filterVaultResultsBySensitivity (3-tier)", () => {
     expect(filtered).toHaveLength(3);
   });
 
+  it("public access excludes notes/imports and notes/mcp (Phase 57 private defaults)", () => {
+    const results = [
+      makeResult("notes/research/open.md"), // public
+      makeResult("notes/imports/secret-report.md"), // private via path
+      makeResult("notes/mcp/mcp-notion-hit.md"), // private via path
+    ];
+    const filtered = filterVaultResultsBySensitivity(results, "public");
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]!.document.relativePath).toBe("notes/research/open.md");
+  });
+
   it("normalizes legacy maxSensitivity values", () => {
     const results = [
       makeResult("public/article.md"),     // public
@@ -205,5 +223,29 @@ describe("filterVaultResultsBySensitivity (3-tier)", () => {
     const filtered = filterVaultResultsBySensitivity(results, "friends", "public");
     expect(filtered).toHaveLength(1);
     expect(filtered[0].document.relativePath).toBe("public/article.md");
+  });
+
+  it("gates snippets by path/override even when chunk text is GFM (anydoc extract)", () => {
+    const gfm = "# Memo\n\n| Metric | Value |\n| --- | --- |\n| Revenue | 120000 |\n";
+    const results = [
+      makeResult("knowledge/public/memo.docx"),
+      makeResult("knowledge/private/diary.docx"),
+    ].map((r) => ({
+      ...r,
+      chunk: { ...r.chunk, text: gfm },
+    }));
+    const filtered = filterVaultResultsBySensitivity(results, "public");
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]?.document.relativePath).toBe("knowledge/public/memo.docx");
+    const overrides = new Map<string, KnowledgeAccessLevel>([
+      [results[1]!.document.documentId, "public"],
+    ]);
+    expect(
+      resolveDocumentSensitivityById(
+        results[1]!.document.documentId,
+        results[1]!.document.relativePath,
+        overrides,
+      ),
+    ).toBe("public");
   });
 });

@@ -12,19 +12,54 @@
 import {
   buildVaultIndex,
   assertPathInsideVault,
+  resolveImportDestinationPath,
+  isVaultExtractableExtension,
 } from "@envoymesh/vault";
-import type {
-  LibraryItem,
-  ListAllLocalFilesResult,
-  ListLibraryItemsParams,
-  NodeConfig,
-  OpenLocalFileParams,
-  ReadLibraryItemContentParams,
-  ReadLibraryItemContentResult,
-  ReadLocalFileContentParams,
+import {
+  bondTrustRank,
+  DEFAULT_RAG_INDEX_STATUS,
+  MAX_LIBRARY_ITEM_PREVIEW_BYTES,
+  pinCidToProvider,
+  type AgentShareProposal,
+  type BondLevel,
+  type ConvertLibraryItemToMarkdownParams,
+  type ConvertLibraryItemToMarkdownResult,
+  type CreateNoteParams,
+  type CreateNoteResult,
+  type DeleteVaultItemParams,
+  type DiscoverPublishedLibraryParams,
+  type DiscoverPublishedLibraryPeerResult,
+  type ExportLibraryItemToIpfsResult,
+  type ImportToLibraryParams,
+  type ImportToLibraryResult,
+  type IpfsEngineStatus,
+  type LibraryItem,
+  type LibraryReadParams,
+  type LibraryReadResult,
+  type ListAllLocalFilesResult,
+  type ListLibraryItemsParams,
+  type NodeConfig,
+  type NodeProfile,
+  type OpenLocalFileParams,
+  type PinLibraryItemExternalResult,
+  type PublishedLibraryFileHit,
+  type RagIndexStatus,
+  type ReadLibraryItemContentParams,
+  type ReadLibraryItemContentResult,
+  type ReadLocalFileContentParams,
+  type SubmitAgentShareProposalParams,
+  type VerifyLibraryItemIpfsGatewayParams,
+  type VerifyLibraryItemIpfsGatewayResult,
 } from "@envoymesh/api";
 import {
+  collectLooseMarkdownIntoNotes,
+  materializeBlogPostToNotes,
+  materializeOfficeDocumentToNotes,
+} from "./vault-markdown-corpus.js";
+import { listBlogPosts as listBlogPostsAuthor } from "./web-content-author.js";
+import {
   openPathWithDefaultApp,
+  revealPathInFileManager,
 } from "./vault-file-open.js";
 import {
   assertPathInsideOpenClawWorkspace,
@@ -43,14 +78,17 @@ import {
   getIpfsEngineStatus as getIpfsEngineStatusRouter,
   resolveIpfsExportEngineSelection,
 } from "./ipfs-export-router.js";
-import { revealPathInFileManager } from "./vault-file-open.js";
 import { createAgentShareProposalStore } from "./agent-share-proposal-store.js";
-import { createAuditEvent, type AuditEvent, createSensitivityOverrideStore, type VaultItemSensitivity } from "@envoymesh/local-store";
+import {
+  createAuditEvent,
+  type AuditEvent,
+  createSensitivityOverrideStore,
+  type VaultItemSensitivity,
+} from "@envoymesh/local-store";
 import { mkdir, open, readFile, stat, unlink, writeFile } from "node:fs/promises";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import { derivePeerId } from "@envoymesh/identity";
-import { signUnsignedEnvelope } from "@envoymesh/identity";
+import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
 import {
   createDiscoveryRequestPayload,
   createLibraryReadPayload,
@@ -60,38 +98,9 @@ import {
   parseLibraryReadResponsePayload,
   type LibraryReadResponsePayload,
 } from "@envoymesh/protocol";
-import {
-  bondTrustRank,
-  type BondLevel,
-  type CreateNoteParams,
-  type CreateNoteResult,
-  type DeleteVaultItemParams,
-  type DiscoverPublishedLibraryParams,
-  type DiscoverPublishedLibraryPeerResult,
-  type LibraryReadParams,
-  type LibraryReadResult,
-  type NodeProfile,
-  type PublishedLibraryFileHit,
-} from "@envoymesh/api";
 import type { EnvoyMesh } from "@envoymesh/network";
 import { PUBLISHED_LIB_CAPABILITY } from "./discovery-inbound.js";
 import { sendExpectReplyWithRetry } from "./chat-outbound-deliver.js";
-import { join } from "node:path";
-import {
-  DEFAULT_RAG_INDEX_STATUS,
-  MAX_LIBRARY_ITEM_PREVIEW_BYTES,
-  pinCidToProvider,
-  type AgentShareProposal,
-  type ExportLibraryItemToIpfsResult,
-  type ImportToLibraryParams,
-  type ImportToLibraryResult,
-  type IpfsEngineStatus,
-  type PinLibraryItemExternalResult,
-  type RagIndexStatus,
-  type SubmitAgentShareProposalParams,
-  type VerifyLibraryItemIpfsGatewayParams,
-  type VerifyLibraryItemIpfsGatewayResult,
-} from "@envoymesh/api";
 
 export interface FileShareContext {
   /** Local vault dir, or null if not initialised. */
@@ -182,11 +191,43 @@ export async function listAllLocalFilesViaRuntime(
   ctx: FileShareContext,
   params?: { query?: string; include?: "vault" | "workspace" | "both" },
 ): Promise<ListAllLocalFilesResult> {
-  const [vaultItems, workspaceItems] = await Promise.all([
+  // Periodically mirror Content → Blog into notes/imports/blog/ for Knowledge Browse.
+  await maybeSyncBlogPostsToKnowledge(ctx);
+
+  const [vaultItems, workspaceItems, linkedObsidianItems] = await Promise.all([
     listLibraryItemsViaRuntime(ctx, params),
     listOpenClawWorkspaceFilesViaRuntime(ctx, params),
+    listLinkedObsidianItemsViaRuntime(ctx),
   ]);
-  return buildAllLocalFilesList({ vaultItems, workspaceItems });
+  return buildAllLocalFilesList({ vaultItems, workspaceItems, linkedObsidianItems });
+}
+
+async function listLinkedObsidianItemsViaRuntime(
+  ctx: FileShareContext,
+): Promise<import("@envoymesh/api").LocalFileItem[]> {
+  try {
+    const config = await ctx.getNodeConfig();
+    const paths = config?.aiSettings?.knowledgeBase?.linkedObsidianVaultPaths ?? [];
+    if (!paths.length) return [];
+    const { listLinkedObsidianMarkdownFiles } = await import("./linked-obsidian-files.js");
+    return listLinkedObsidianMarkdownFiles(paths);
+  } catch {
+    return [];
+  }
+}
+
+let lastBlogKnowledgeSyncAt = 0;
+const BLOG_KNOWLEDGE_SYNC_INTERVAL_MS = 60_000;
+
+async function maybeSyncBlogPostsToKnowledge(ctx: FileShareContext): Promise<void> {
+  const now = Date.now();
+  if (now - lastBlogKnowledgeSyncAt < BLOG_KNOWLEDGE_SYNC_INTERVAL_MS) return;
+  lastBlogKnowledgeSyncAt = now;
+  try {
+    await syncBlogPostsToKnowledgeViaRuntime(ctx);
+  } catch {
+    // Best-effort — Browse still lists existing vault files.
+  }
 }
 
 /* ---------- publish ---------- */
@@ -200,6 +241,41 @@ export async function setLibraryItemPublishedViaRuntime(
   if (!profileDir) return;
   await createPublishedLibraryStore(profileDir).setPublished(documentId, published);
   await writeSensitivityOverride(ctx, documentId, published ? "public" : false);
+
+  // 57C: when Obsidian is active, mirror Library Published into note frontmatter.
+  await syncPublishedToObsidianFrontmatter(ctx, documentId, published);
+}
+
+/**
+ * Write `published: true/false` into a Markdown note's YAML frontmatter when
+ * the Obsidian KB plugin is active. Best-effort; never fails the Library toggle.
+ */
+async function syncPublishedToObsidianFrontmatter(
+  ctx: FileShareContext,
+  documentId: string,
+  published: boolean,
+): Promise<void> {
+  try {
+    const registry = ctx.getPluginRegistry?.();
+    if (registry?.getPluginInfo("obsidian")?.status !== "active") return;
+
+    const vaultDir = ctx.getVaultDir();
+    if (!vaultDir) return;
+
+    const index = await buildVaultIndex({ rootDir: vaultDir });
+    const doc = index.documents.find((d) => d.documentId === documentId);
+    if (!doc || doc.extension !== ".md") return;
+
+    const absolutePath = resolve(vaultDir, doc.relativePath);
+    assertPathInsideVault(vaultDir, absolutePath);
+    const raw = await readFile(absolutePath, "utf8");
+    const { setFrontmatterBoolean } = await import("@envoymesh/kb-obsidian");
+    const next = setFrontmatterBoolean(raw, "published", published);
+    if (next === raw) return;
+    await writeFile(absolutePath, next, { mode: 0o600 });
+  } catch {
+    // Best-effort: published-library + sensitivity already updated.
+  }
 }
 
 /**
@@ -272,6 +348,15 @@ export async function openLocalFileViaRuntime(
       ctx,
       params.relativePath,
     );
+    await openPathWithDefaultApp(absolutePath);
+    return;
+  }
+  if (params.source === "linked-obsidian") {
+    const config = await ctx.getNodeConfig();
+    const roots = config?.aiSettings?.knowledgeBase?.linkedObsidianVaultPaths ?? [];
+    const { resolveLinkedObsidianAbsolutePath } = await import("./linked-obsidian-files.js");
+    const absolutePath = await resolveLinkedObsidianAbsolutePath(roots, params.relativePath);
+    if (!absolutePath) throw new Error("Linked Obsidian file not found");
     await openPathWithDefaultApp(absolutePath);
     return;
   }
@@ -442,15 +527,26 @@ export async function importToLibraryViaRuntime(
   ctx.recordOwnerActivity();
   const vaultDir = ctx.getVaultDir();
   if (!vaultDir) throw new Error("Vault dir not initialised");
-  const norm = params.relativePath.trim().replace(/^[\\/]+/, "");
-  if (!norm || norm.includes("..") || norm.includes("~")) {
-    throw new Error("Invalid vault path");
-  }
+
+  const norm = resolveImportDestinationPath(params.relativePath);
   const abs = resolve(vaultDir, norm);
   assertPathInsideVault(vaultDir, abs);
   const bytes = Buffer.from(params.contentBase64, "base64");
   await mkdir(dirname(abs), { recursive: true });
   await writeFile(abs, bytes, { mode: 0o600 });
+
+  let markdownRelativePath: string | undefined;
+  const ext = extname(norm).toLowerCase();
+  if (isVaultExtractableExtension(ext)) {
+    const materialized = await materializeOfficeDocumentToNotes(vaultDir, norm, {
+      profileDir: ctx.getProfileDir(),
+      sensitivity: "private",
+    });
+    if (materialized.ok && materialized.markdownRelativePath) {
+      markdownRelativePath = materialized.markdownRelativePath;
+    }
+  }
+
   const index = await buildVaultIndex({ rootDir: vaultDir });
   const doc = index.documents.find((d) => d.relativePath === norm);
   if (!doc) throw new Error(`Imported file not indexed: ${norm}`);
@@ -458,7 +554,39 @@ export async function importToLibraryViaRuntime(
     documentId: doc.documentId,
     relativePath: doc.relativePath,
     sizeBytes: doc.byteLength,
+    ...(markdownRelativePath ? { markdownRelativePath } : {}),
   };
+}
+
+export async function convertLibraryItemToMarkdownViaRuntime(
+  ctx: FileShareContext,
+  params: ConvertLibraryItemToMarkdownParams,
+): Promise<ConvertLibraryItemToMarkdownResult> {
+  ctx.recordOwnerActivity();
+  const vaultDir = ctx.getVaultDir();
+  if (!vaultDir) return { ok: false, reason: "vault_unavailable" };
+
+  let relativePath = params.relativePath?.trim().replace(/^[\\/]+/, "").replace(/\\/g, "/");
+  if (!relativePath && params.documentId?.trim()) {
+    const index = await buildVaultIndex({ rootDir: vaultDir });
+    const doc = index.documents.find((d) => d.documentId === params.documentId!.trim());
+    relativePath = doc?.relativePath;
+  }
+  if (!relativePath) return { ok: false, reason: "not_found" };
+
+  return materializeOfficeDocumentToNotes(vaultDir, relativePath, {
+    profileDir: ctx.getProfileDir(),
+    sensitivity: "private",
+  });
+}
+
+/** Collect loose Markdown into `notes/` then (optionally) used by Obsidian sync. */
+export async function collectVaultMarkdownIntoNotesViaRuntime(
+  ctx: FileShareContext,
+): Promise<{ moved: Array<{ from: string; to: string }> }> {
+  const vaultDir = ctx.getVaultDir();
+  if (!vaultDir) return { moved: [] };
+  return collectLooseMarkdownIntoNotes(vaultDir);
 }
 
 /* ---------- native notes (Phase 44A2) ---------- */
@@ -508,6 +636,48 @@ export async function createNoteViaRuntime(
     relativePath: doc.relativePath,
     sizeBytes: doc.byteLength,
   };
+}
+
+/**
+ * Mirror all web blog posts into `notes/imports/blog/` for Knowledge Browse / RAG.
+ * Idempotent overwrite per slug. Best-effort; skips unreadable posts.
+ */
+export async function syncBlogPostsToKnowledgeViaRuntime(
+  ctx: FileShareContext,
+  ownerId?: string,
+): Promise<{ written: number; failed: number }> {
+  const vaultDir = ctx.getVaultDir();
+  const profileDir = ctx.getProfileDir();
+  if (!vaultDir || !profileDir) return { written: 0, failed: 0 };
+
+  const oid = ownerId?.trim() || "local";
+  let posts: Awaited<ReturnType<typeof listBlogPostsAuthor>> = [];
+  try {
+    posts = await listBlogPostsAuthor(profileDir, oid);
+  } catch {
+    return { written: 0, failed: 0 };
+  }
+
+  const webDir = join(profileDir, "web");
+  let written = 0;
+  let failed = 0;
+  for (const post of posts) {
+    try {
+      const markdown = await readFile(join(webDir, post.path), "utf8");
+      const result = await materializeBlogPostToNotes(vaultDir, {
+        webRelativePath: post.path,
+        title: post.title,
+        markdown,
+        profileDir,
+        sensitivity: "private",
+      });
+      if (result.ok) written += 1;
+      else failed += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+  return { written, failed };
 }
 
 export async function deleteVaultItemViaRuntime(
@@ -1150,5 +1320,16 @@ export function mimeTypeForFilename(filename: string): string {
   const dot = filename.lastIndexOf(".");
   if (dot < 0) return "application/octet-stream";
   const ext = filename.slice(dot);
-  return MIME_BY_EXT[ext] ?? "application/octet-stream";
+  const mime = MIME_BY_EXT[ext] ?? "application/octet-stream";
+  if (
+    mime.startsWith("text/") ||
+    mime === "application/json" ||
+    mime === "application/javascript" ||
+    mime === "application/typescript" ||
+    mime === "application/xml" ||
+    mime.endsWith("+xml")
+  ) {
+    return `${mime}; charset=utf-8`;
+  }
+  return mime;
 }

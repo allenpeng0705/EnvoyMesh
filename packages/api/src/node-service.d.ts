@@ -352,7 +352,7 @@ export interface LibraryItem {
     /** Latest Kubo-aligned IPFS export for this document, when present. */
     publishedExternal?: PublishedExternalRecord;
 }
-export type LocalFileSource = "vault" | "workspace";
+export type LocalFileSource = "vault" | "workspace" | "linked-obsidian" | "mcp-remote";
 export interface LocalFileItem {
     source: LocalFileSource;
     relativePath: string;
@@ -364,14 +364,20 @@ export interface LocalFileItem {
     contentHash?: string;
     published?: boolean;
     publishedExternal?: PublishedExternalRecord;
+    externalId?: string;
+    snippetPreview?: string;
 }
 export interface ListAllLocalFilesParams {
     query?: string;
+    includeMcpRemote?: boolean;
+    mcpListQuery?: string;
 }
 export interface ListAllLocalFilesResult {
     items: LocalFileItem[];
     vaultCount: number;
     workspaceCount: number;
+    linkedObsidianCount?: number;
+    mcpRemoteCount?: number;
 }
 export interface ReadLocalFileContentParams {
     source: LocalFileSource;
@@ -475,6 +481,102 @@ export interface ImportToLibraryResult {
     documentId: string;
     relativePath: string;
     sizeBytes: number;
+    /**
+     * When an Office/PDF import is materialized to Markdown under `notes/imports/`,
+     * the companion note path (Phase 57 item-4).
+     */
+    markdownRelativePath?: string;
+}
+/**
+ * Convert an existing vault Office/PDF (etc.) into a Markdown note under `notes/imports/`.
+ * Original bytes are retained. Phase 57 item-4 / 57E.
+ */
+export interface ConvertLibraryItemToMarkdownParams {
+    /** Vault document id **or** vault-relative path of the original. */
+    documentId?: string;
+    relativePath?: string;
+}
+export interface ConvertLibraryItemToMarkdownResult {
+    ok: boolean;
+    markdownRelativePath?: string;
+    documentId?: string;
+    reason?: string;
+}
+/**
+ * Phase 57D — run MCP search and (when write-back is enabled) save attributed note under `notes/mcp/`.
+ */
+export interface SaveExternalMcpSearchAsNoteParams {
+    query: string;
+    title?: string;
+    sensitivity?: "public" | "friends" | "private";
+}
+export interface SaveExternalMcpSearchAsNoteResult {
+    ok: boolean;
+    relativePath?: string;
+    documentId?: string;
+    snippetCount?: number;
+    reason?: string;
+}
+export interface ListExternalMcpKnowledgeParams {
+    query?: string;
+    limit?: number;
+}
+export interface ListExternalMcpKnowledgeResult {
+    items: LocalFileItem[];
+    error?: string;
+}
+export interface ImportLinkedObsidianNotesParams {
+    paths?: string[];
+    all?: boolean;
+}
+export interface ImportLinkedObsidianNotesResult {
+    ok: boolean;
+    imported: Array<{
+        from: string;
+        to: string;
+        documentId?: string;
+    }>;
+    skipped: number;
+    reason?: string;
+}
+export interface ImportExternalMcpKnowledgeParams {
+    paths?: string[];
+    externalIds?: string[];
+    query?: string;
+    title?: string;
+    sensitivity?: "public" | "friends" | "private";
+}
+export interface ImportExternalMcpKnowledgeResult {
+    ok: boolean;
+    imported: Array<{
+        relativePath: string;
+        documentId?: string;
+        title: string;
+    }>;
+    reason?: string;
+}
+export interface ExportNotesToLinkedObsidianParams {
+    relativePaths: string[];
+    targetRootLabel?: string;
+}
+export interface ExportNotesToLinkedObsidianResult {
+    ok: boolean;
+    exported: Array<{
+        from: string;
+        to: string;
+    }>;
+    reason?: string;
+}
+export interface ExportNotesToMcpParams {
+    relativePaths: string[];
+}
+export interface ExportNotesToMcpResult {
+    ok: boolean;
+    exported: Array<{
+        relativePath: string;
+        externalId?: string;
+    }>;
+    reason?: string;
 }
 /** Max raw bytes for a chat attachment send (25 MiB). */
 export declare const MAX_CHAT_ATTACHMENT_BYTES: number;
@@ -1212,14 +1314,36 @@ export interface NodeService {
     /** Vector RAG vault indexing status (incremental reindex progress). */
     getRagIndexStatus(): Promise<RagIndexStatus>;
     /**
+     * Force rebuild vault (+ chat backfill) vector indexes for the current embedding config.
+     */
+    reindexRagKnowledge(params?: {
+        force?: boolean;
+    }): Promise<RagIndexStatus>;
+    /**
+     * Phase 57D — MCP search → attributed Markdown note under `notes/mcp/`.
+     * Requires `aiSettings.knowledgeBase.mcpWriteBackEnabled` and `externalProvider: "mcp"`.
+     */
+    saveExternalMcpSearchAsNote(params: SaveExternalMcpSearchAsNoteParams): Promise<SaveExternalMcpSearchAsNoteResult>;
+    listExternalMcpKnowledge(params?: ListExternalMcpKnowledgeParams): Promise<ListExternalMcpKnowledgeResult>;
+    importLinkedObsidianNotes(params: ImportLinkedObsidianNotesParams): Promise<ImportLinkedObsidianNotesResult>;
+    importExternalMcpKnowledge(params: ImportExternalMcpKnowledgeParams): Promise<ImportExternalMcpKnowledgeResult>;
+    exportNotesToLinkedObsidian(params: ExportNotesToLinkedObsidianParams): Promise<ExportNotesToLinkedObsidianResult>;
+    exportNotesToMcp(params: ExportNotesToMcpParams): Promise<ExportNotesToMcpResult>;
+    /**
      * Fetch exported content from an allowlisted IPFS gateway and verify bytes match vault contentHash.
      * Requires `externalPublish.allowIpfs` and a non-empty gateway allowlist (desktop Kubo or mobile Helia).
      */
     verifyLibraryItemIpfsGateway(params: VerifyLibraryItemIpfsGatewayParams): Promise<VerifyLibraryItemIpfsGatewayResult>;
     /**
      * Write bytes into the local shared vault at a relative path (import from file picker).
+     * Office/PDF imports also materialize GFM under `notes/imports/` when extract succeeds.
      */
     importToLibrary(params: ImportToLibraryParams): Promise<ImportToLibraryResult>;
+    /**
+     * Materialize anydoc/legacy extract of an existing vault document into `notes/imports/`.
+     * Originals are retained (Phase 57 item-4 / 57E).
+     */
+    convertLibraryItemToMarkdown(params: ConvertLibraryItemToMarkdownParams): Promise<ConvertLibraryItemToMarkdownResult>;
     /** Resolve a vault-relative path to an absolute path on this device (path safety enforced). */
     resolveLibraryItemPath(relativePath: string): Promise<{
         vaultRelativePath: string;

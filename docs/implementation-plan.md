@@ -91,6 +91,8 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 53 — Artifact handoff + worker stickiness](#phase-53--artifact-handoff--worker-stickiness)
 - [Phase 54 — EnvoyAI model guidance + Envoy Local (llama.cpp)](#phase-54--envoyai-model-guidance--envoy-local-llamacpp)
 - [Phase 55 — Ext Agent: codex + claudecode (Plan B + daemon supervisor)](#phase-55--ext-agent-codex--claudecode-plan-b--daemon-supervisor)
+- [Phase 56 — Ext Agent: cursor-agent + aider + mmx (one-shot CLI pattern)](#phase-56--ext-agent-cursor-agent--aider--mmx-one-shot-cli-pattern)
+- [Phase 57 — Knowledge Base production hardening (Markdown-first + anydoc)](#phase-57--knowledge-base-production-hardening-markdown-first--anydoc-)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -1178,6 +1180,7 @@ Milestone: **Phases 0–48 shipped for interop bridges** — Core protocol throu
 12. **Phase 47 — Team job multi-round iteration (A ∩ B)** — **47A–47D shipped**. Outer seal→draft→replan (B) + capped intra-round extend (A) + judge/UX + handoff knobs/`iterationState` + `chain:iteration`. Design: [agent-network-iteration.md](./agent-network-iteration.md).
 13. **Phase 48 — A2A + MCP Interop Bridges** — **48A–48D.5 shipped** (SDK MCP consumer, MCP server adapter, Agent Card + streaming, production Task Bridge executor, relay `forwardToHome` home-tunnel, `message/stream` SSE, vault HTTP). [a2a-mcp-interop-design.md](./a2a-mcp-interop-design.md).
 14. **Phase 54 — EnvoyAI model guidance + Envoy Local** — Configure AI when no usable model; optional downloadable `llama-server` (never packaged); cloud/Ollama remain equal choices. [envoy-local-design.md](./envoy-local-design.md).
+15. **Phase 57 — Knowledge Base production hardening (Markdown-first + anydoc)** — `[x]` 57A–57E + item-4 shipped. Design: [knowledge-base-and-rag.md](./knowledge-base-and-rag.md) · checklist below.
 
 ### Phase 9 Architecture Overview
 
@@ -7126,9 +7129,9 @@ All three are **one-shot CLIs per ask** — no long-lived protocol, no daemon to
 - `docs/Ext_Agent_guide.md` extended with three new sections.
 - i18n: only keys that are actually used by the new install cards / status messages.
 
-**Out of scope (deferred to Phase 57+):**
+**Out of scope (deferred — not Phase 57 KB):**
 
-- GLM as a model endpoint provider (GLM is a model, not an agent — its OpenAI-compatible API at `open.bigmodel.cn/api/paas/v4` is a model router concern, not an ext-agent-adapter concern).
+- GLM as a model endpoint provider (GLM is a model, not an agent — its OpenAI-compatible API at `open.bigmodel.cn/api/paas/v4` is a model router concern, not an ext-agent-adapter concern). Future **Model Router / Providers** phase, not Phase 57 Knowledge Base.
 - Touching the existing `pi` / `homeclaw` / `hermes` / `openhuman` / `codex` / `claudecode` backends.
 - "Add as model endpoint" wiring for GLM / MiniMax-M3 (model router is a separate package, not ext-agent-adapter).
 - Long-lived multi-turn support for any of the three (each ask is fresh; the agent's own in-process history handles context).
@@ -7241,7 +7244,167 @@ Aider and mmx backends are similarly small — just override `buildArgs` and `pa
 - The `OneShotCliBackend` base deliberately does **not** reuse `DaemonSupervisor` (55A) — `DaemonSupervisor` is for long-lived processes; one-shot CLIs are simpler.
 - Session continuity is the responsibility of the CLI itself, not EnvoyMesh. Cursor's `--resume <sessionId>` and Aider's `--chat-history-file` could be added in a follow-up, but the chat-bridge contract (`ask(text, sessionKey) → string`) doesn't require it.
 - MiniMax's own MMX-CLI is a natural fit for "Ext Agent bridge on the home node" — the same node that runs EnvoyMesh can route asks to MMX-CLI, which then calls the MiniMax API. Future: an "MMX in-loop" path could skip the CLI entirely and use the MiniMax SDK directly. Out of scope for Phase 56.
-- GLM is **deferred to Phase 57 (Model Router / Providers)** — GLM is a model, not an agent, and the right plumbing is `@envoymesh/models` not `ext-agent-adapter`.
+- GLM is **deferred to a future Model Router / Providers phase** (not Phase 57 below) — GLM is a model, not an agent, and the right plumbing is `@envoymesh/models` not `ext-agent-adapter`. Phase **57** is Knowledge Base production + anydoc.
+
+---
+
+## Phase 57 — Knowledge Base production hardening (Markdown-first + anydoc) `[x]`
+
+**Status:** `[x]` **57A–57E + item-4 shipped.**
+
+#### Item-4 — Markdown corpus → Obsidian `[x]`
+
+| Task | Status |
+|------|--------|
+| Import originals → `documents/`; `.md` → `notes/imports/` | `[x]` |
+| anydoc/legacy materialize to `notes/imports/*.md` on import | `[x]` |
+| Library **Convert to Markdown note** RPC + UI | `[x]` |
+| Obsidian activate/Sync collects loose `.md` into `notes/` | `[x]` |
+| No second live MD mirror (originals = Envoy backup) | `[x]` |
+
+**Design docs:** [knowledge-base-and-rag.md](./knowledge-base-and-rag.md) (architecture + anydoc subsection) · Phase 44 (shipped foundation).
+
+**Upstream:** [firecrawl/anydoc](https://github.com/firecrawl/anydoc) (MIT) — Rust office→GFM converter with Node bindings `@firecrawl/anydoc`.
+
+### Goals
+
+1. **P0 — Vault / RAG production** — reliable Markdown-centric ingestion and retrieval for EnvoyAI, chat assist, and `knowledge.query`.
+2. **anydoc as primary extractor** — replace the uneven plain-text stitch (`pdf-parse` / `mammoth` / `xlsx` / …) with one GFM pipeline; keep legacy extractors as fallback.
+3. **P1 — Obsidian polish** — optional enrich plugin stays production-usable without replacing the vault.
+4. **P2 — MCP external KB** — Notion-class search via MCP only (no first-class Notion OAuth sync).
+5. **Secondary anydoc surfaces** — Library convert-to-note, attachments, acquisition (after 57A).
+
+### Locked product decision
+
+**Keep original files** under `vault/documents/` (Library download/share / Envoy backup). **Markdown corpus** lives under `notes/` (Obsidian-managed when the plugin is active). Import materializes anydoc/legacy GFM to `notes/imports/`; Library **Convert to Markdown note** does the same for existing files. RAG still falls back to extract-at-index when no on-disk MD exists.
+
+Scanned / image-only PDFs that anydoc rejects as `unsupported` stay local-first: surface a clear UI error — **no** Firecrawl cloud OCR in this phase.
+
+### Architecture (ingestion)
+
+```
+Import / file change
+    → vault stores original bytes
+    → extractVaultDocumentText() tries @firecrawl/anydoc first
+    → fallback to legacy extractors if native binding missing / ConvertError
+    → chunk GFM → embed → rag-vectors.sqlite + HNSW
+```
+
+Primary code touchpoints:
+
+| Area | Location |
+|------|----------|
+| Extract API | `packages/vault/src/document-text-extract.ts` |
+| Extensions | `packages/vault/src/vault-formats.ts` |
+| RAG orchestration | `apps/node/src/rag-service.ts` |
+| Vault search / inject | `apps/node/src/ai-context.ts` |
+| Mesh knowledge.query | `apps/node/src/knowledge-query-inbound.ts` |
+| MCP external search | `packages/rag/src/mcp-knowledge-client.ts` |
+| Obsidian plugin | `packages/kb-obsidian/` |
+
+### Sub-phases
+
+#### 57A — P0 Vault / RAG + anydoc ingestion `[x]`
+
+| Task | Status |
+|------|--------|
+| Add `@firecrawl/anydoc` dependency to `@envoymesh/vault`; primary path in `extractVaultDocumentText` | `[x]` |
+| Legacy extractors remain fallback when native load fails or ConvertError (`encrypted` / `unsupported` / …) | `[x]` |
+| Extend `VAULT_EXTRACTABLE_EXTENSIONS` for anydoc formats (odt/ods/odp/epub/docm/xlsb/…) | `[x]` |
+| Reindex invalidation includes extractor id/version (manifest / content-hash) | `[x]` |
+| Embedding misconfig / index-status honesty in Settings → AI (build on existing backfill backoff) | `[x]` |
+| Sensitivity overrides still gate snippets after GFM extract | `[x]` |
+| Fixture tests: docx/pptx/xlsx/pdf/odt → GFM has expected structure; fallback path covered | `[x]` |
+| NOTICE / attribution for MIT anydoc | `[x]` (`packages/vault/THIRD_PARTY_NOTICES.md`) |
+
+**Exit criteria:**
+
+- `[x]` Import Office/PDF → searchable vault snippets (unit-covered); EnvoyAI / `knowledge.query` path unchanged + sensitivity still gates
+- `[x]` No cloud OCR dependency; image-only PDF fails with clear reason (anydoc `unsupported` → legacy; both empty → no chunks)
+- `[x]` Vault + rag + sensitivity unit coverage green; Envoy Local inherit → mock embeddings (chat GGUF ≠ embed model)
+
+#### 57B — P0 Prompt / query path hardening `[x]`
+
+| Task | Status |
+|------|--------|
+| Audit inject paths: `rag-service`, `ai-context`, `knowledge-query-inbound`, OpenClaw turn context | `[x]` |
+| Confirm owner / friends / public ceilings + Phase 44B stranger rate limits + syndication ceiling | `[x]` (audit; rate limit remains 5/min — no hourly cap in code) |
+| Align call-site matrix in `knowledge-base-and-rag.md` with code | `[x]` |
+| Wire `sensitivityOverrides` on vault search (was reindex-only) | `[x]` |
+| Unit/e2e coverage: stranger vs bonded vs owner | `[x]` inbound + Agent Mode contact-draft scope tests |
+| Agent Mode contact drafts: contact-scoped vault/chat RAG (not full owner vault) | `[x]` |
+
+**Exit criteria:**
+
+- `[x]` Documented call-site matrix matches code
+- `[x]` Stranger / bonded / owner sensitivity behavior covered by tests (policy + override load)
+- `[x]` Agent Mode contact drafts use `knowledgeScope: "public"` + contact `knowledgeAccess` + single-contact bond chat
+
+#### 57C — P1 Obsidian polish `[x]`
+
+| Task | Status |
+|------|--------|
+| Activate/config UX (Settings → KB plugins); shared vault = Obsidian folder + Sync now | `[x]` |
+| `published:` ↔ sensitivity sync reliability (documentId key + published-library + reverse frontmatter write) | `[x]` |
+| Link-graph rebuild on activate; agent traversal helpers remain sensitivity-aware | `[x]` (rebuild on activate/Sync; traversal APIs already in kb-obsidian) |
+| Deactivate plugin without deleting notes or sensitivity labels | `[x]` (link graph only) |
+
+**Exit criteria:**
+
+- `[x]` Same folder works in Obsidian + EnvoyMesh (shared vault root)
+- `[x]` Publish via frontmatter or Library Published toggle
+- `[x]` Deactivate plugin leaves vault + RAG + sensitivity intact
+
+#### 57D — P2 MCP external KB (Notion-class) `[x]`
+
+| Task | Status |
+|------|--------|
+| Harden `externalProvider: "mcp"` (`mcp-knowledge-client.ts`): timeouts, error surfacing | `[x]` |
+| Settings copy: “Notion/MCP search — not vault sync” | `[x]` |
+| Optional gated write-back via existing MCP note formatter → attributed `notes/mcp/` | `[x]` |
+| **No** first-class Notion OAuth / bidirectional sync in 57D | `[x]` (explicitly out of scope) |
+
+**Exit criteria:**
+
+- `[x]` Configured MCP search merges into owner prompts (soft-fail + `lastExternalKbError`)
+- `[x]` Vault remains source of truth for mesh share / `knowledge.query`
+
+#### 57E — Secondary anydoc surfaces `[x]` (after 57A)
+
+| Task | Status |
+|------|--------|
+| Library “Convert to Markdown note” (explicit; originals retained) | `[x]` (+ auto on import → `notes/imports/`) |
+| Collect loose `.md` into `notes/` on Obsidian activate/Sync | `[x]` |
+| Chat attachment text extract via anydoc | `[x]` (`buildAgentAttachmentContext`) |
+| Document-acquisition / share ingest prefer anydoc | `[x]` (inbox keeps extension; inbound transfer materializes) |
+
+**Exit criteria:**
+
+- `[x]` Library convert + import materialize ship with tests
+- `[x]` At least one non-KB call site (chat attachments + acquisition/share ingest)
+
+### Settled defaults
+
+| Topic | Default |
+|-------|---------|
+| Canonical bytes | Originals kept; MD for RAG |
+| OCR / scanned PDF | Unsupported locally; clear UI error |
+| Packaging | npm `@firecrawl/anydoc`; fallback extractors if native load fails |
+| Notion | MCP only in 57D |
+| WASM / agent skill CLI | Deferred past 57A |
+
+### Risks & mitigations
+
+- **Native napi / Tauri bundling** — ship platform natives; if load fails, fall back to legacy extractors and log once.
+- **Extractor upgrade changes chunk hashes** — bump extractor id in manifest so reindex is intentional, not silent drift.
+- **Quality vs mammoth on edge DOCX** — keep fallback; add fixtures when regressions appear.
+
+### Out of scope
+
+- Firecrawl hosted Parse / cloud OCR
+- Replacing Obsidian or vault-as-foundation
+- First-class Notion workspace sync
+- GLM / model-provider work (separate future phase)
 
 ---
 
@@ -7249,6 +7412,16 @@ Aider and mmx backends are similarly small — just override `buildArgs` and `pa
 
 | Date | Change |
 |------|--------|
+| 2026-08-13 | **Phase 57 security follow-up.** Materialize + MCP write-back default **private** (path heuristic for `notes/imports/` + `notes/mcp/`, sensitivity override on write); owner-gate `saveExternalMcpSearchAsNote` / `convertLibraryItemToMarkdown` / `reindexRagKnowledge`; Obsidian collect triggers RAG reindex when paths move. |
+| 2026-08-13 | **Phase 57E complete.** Chat/Ext Agent attachments extract Office/PDF/HTML via `extractVaultDocumentText`; acquisition inbox preserves real extensions; inbound share/chat transfer best-effort materializes to `notes/imports/`. Phase 57 closed. |
+| 2026-08-13 | **Phase 57D MCP external KB.** Soft-fail MCP search with timeout/URL validation; `lastExternalKbError` on RAG status; Settings copy clarifies search≠vault sync; gated `mcpWriteBackEnabled` + `saveExternalMcpSearchAsNote` → `notes/mcp/`. Next: remaining **57E**. |
+| 2026-08-13 | **Item-4 Markdown corpus.** Import rewrites to `documents/` (office) / `notes/imports/` (md); anydoc materialize on import + Library Convert → `notes/imports/` with `source:` frontmatter; Obsidian activate/Sync collects loose MD into `notes/`. Originals remain the Envoy backup. Next: **57D** MCP. |
+| 2026-08-13 | **Embedding stability UX.** Confirm when effective embedder `modelKey` changes (KB settings or chat inherit); `reindexRagKnowledge` RPC + Settings **Rebuild knowledge index**; auto-reindex after embedder change on config save; docs: Obsidian collects MD when active, else self-managed `notes/`. |
+| 2026-08-13 | **Phase 57C Obsidian polish.** Activate runs frontmatter→sensitivity/`published-library` sync + link-graph rebuild (keyed by `documentId`); Library Published reverse-writes `published:` frontmatter when Obsidian is active; Settings Sync now + hint; deactivate drops link graph only. Next: **item-4** MD collect into Obsidian when active. |
+| 2026-08-13 | **Phase 57B complete.** Audited KB inject paths; wired `vault-sensitivity-overrides.json` into vault **search**; Agent Mode contact drafts use public scope + contact `knowledgeAccess` + single-contact bond chat (no full owner vault leak via OpenClaw). Next: **57C** Obsidian polish; item-4 MD-into-Obsidian deferred until after 57C. |
+| 2026-08-13 | **Phase 57A complete.** anydoc primary extract + legacy fallback; format expansion; manifest `extractorId`; Settings index-status honesty (`embedderModelKey` / `lastEmbedError`); Envoy Local inherit → mock embeddings (chat GGUF ≠ embed API) + UI banner; sensitivity still path/override-gated after GFM. Next: **57B**. |
+| 2026-08-13 | **Phase 57A code started — anydoc vault extract.** `@firecrawl/anydoc` primary in `extractVaultDocumentText` with legacy fallback; extended extractable formats (odt/ods/odp/epub/docm/xlsb/…); RAG manifest `extractorId` (`VAULT_TEXT_EXTRACTOR_ID`) forces reindex; vault fixture tests + `packages/vault/THIRD_PARTY_NOTICES.md`. Remaining 57A: Settings embedding honesty + sensitivity spot-check + `test:dev` gate. |
+| 2026-08-13 | **Phase 57 designed — Knowledge Base production hardening (Markdown-first + anydoc).** Checklist 57A–57E: P0 vault/RAG + `@firecrawl/anydoc` GFM ingestion (originals kept; MD at extract time) → P0 query-path audit → P1 Obsidian polish → P2 MCP/Notion-class search (no OAuth sync) → secondary anydoc surfaces. Investigation notes + settled defaults in phase section; anydoc subsection in [knowledge-base-and-rag.md](./knowledge-base-and-rag.md). TOC + Next planning pulls updated. **No code yet.** |
 | 2026-08-10 | **Phase 55 designed — Ext Agent codex + claudecode (Plan B + daemon supervisor).** Two new backends (codex via `app-server` stdio, claudecode via `@anthropic-ai/claude-agent-sdk`); generic `daemon-supervisor.ts` for spawn + healthcheck + exponential restart; existing Hermes/OpenHuman keep their HTTP transport (55E optional). Status: `[!]` awaiting review. |
 | 2026-08-10 | **Phase 55 — 55A daemon-supervisor shipped.** `apps/node/src/ext-agent-adapter/daemon-supervisor.ts` (~785 LOC) + `apps/node/test/daemon-supervisor.test.ts` (49 cases, all pass in ~11s). `DaemonSupervisor` class with `start()` / `stop()` / `isRunning()` / `isHealthy()` / `restartsInWindow()`; events `start` / `stop` / `crash` / `crash.stuck` / `healthy` / `unhealthy` / `install-missing` / `stdout` / `stderr`. Exponential backoff `1s→2s→4s→8s→16s→30s` capped; `maxRestartsInWindow` defaults 5/5min. Async ENOENT on macOS (where `spawn()` returns a child that immediately emits `error`) handled with a 100ms stability grace after the first passing healthcheck. `InstallMissingError` thrown by `start()` for both pre-check fail and ENOENT (sync or async); also emitted as `install-missing` event. 55A.1 install detection already included in this commit (state.installMissing flag, `installHint` option). |
 | 2026-08-10 | **Phase 55 — 55A.1 install guide + installState shipped.** `packages/api/src/ext-agent.ts` extended with `InstallState` type, `ExtAgentInstallGuide` interface, `getExtAgentInstallGuide(agentId, installState?)` factory, and per-agent install command table for codex / claudecode / hermes / openhuman (npm install + curl one-liner + verify command + 3 common-issues bullets each). `ExtAgentReachability` extended with `installState: "installed" \| "not-installed" \| "unsupported" \| "unknown"` and `installGuide?`. `apps/node/src/ext-agent-adapter/probe.ts` adds `defaultBinaryOnPath` (`command -v` / `where`) + `classifyExtAgentInstallState`; probe now returns `installState` and (when not installed) `installGuide`. Built-in Pi is always `"installed"`; homeclaw stays `"unknown"` (separate channel); external agents PATH-checked. Tests: 16 new in `apps/node/test/ext-agent-install-guide.test.ts` + 14 new cases in `apps/node/test/ext-agent-probe.test.ts` (39 total for the two files, all pass). `defaultExtAgentStartHint` extended with `codex` / `claudecode` cases; `getExtAgentInstallInfo` extended with the same. |

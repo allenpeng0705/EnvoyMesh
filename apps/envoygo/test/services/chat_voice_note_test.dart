@@ -24,4 +24,43 @@ void main() {
     expect(isHiddenFromLibraryList('profile/thumbnail.jpg'), isTrue);
     expect(isHiddenFromLibraryList('notes/hello.md'), isFalse);
   });
+
+  test('knowledge browse filters classify notes vs documents', () {
+    expect(isKnowledgeNotesPath('notes/hello.md'), isTrue);
+    expect(isKnowledgeDocumentsPath('documents/a.pdf'), isTrue);
+    expect(isKnowledgeObsidianPath('notes/hello.md'), isTrue);
+    expect(isKnowledgeNotionPath('notes/mcp/x.md'), isTrue);
+    expect(isKnowledgeObsidianPath('notes/mcp/x.md'), isFalse);
+    expect(knowledgeBrowseSource('notes/mcp/x.md'), 'notion');
+    expect(
+      matchesKnowledgeBrowseFilter(
+        relativePath: 'notes/a.md',
+        published: true,
+        filter: KnowledgeBrowseFilter.published,
+      ),
+      isTrue,
+    );
+    expect(
+      matchesKnowledgeBrowseFilter(
+        relativePath: 'notes/a.md',
+        published: false,
+        filter: KnowledgeBrowseFilter.published,
+      ),
+      isFalse,
+    );
+    expect(
+      matchesKnowledgeBrowseFilter(
+        relativePath: 'notes/mcp/x.md',
+        filter: KnowledgeBrowseFilter.notion,
+      ),
+      isTrue,
+    );
+    expect(
+      matchesKnowledgeBrowseFilter(
+        relativePath: 'notes/hello.md',
+        filter: KnowledgeBrowseFilter.obsidian,
+      ),
+      isTrue,
+    );
+  });
 }

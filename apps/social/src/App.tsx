@@ -33,6 +33,8 @@ import {
   getEnvoyAiInflight,
   subscribeEnvoyAiInflight,
 } from "./lib/envoy-ai-inflight.js";
+import { OPEN_CONTENT_KNOWLEDGE_EVENT } from "./lib/content-knowledge-nav.js";
+import { OPEN_ENVOY_AI_EVENT } from "./lib/open-envoy-ai-nav.js";
 import {
   isFirstRunSetupComplete,
   hasCompletedFirstRunSetup,
@@ -302,6 +304,12 @@ export function App() {
   // page does not tear down the wait / chat:message handlers mid-reply.
   const [envoyAiInflight, setEnvoyAiInflightState] = useState(getEnvoyAiInflight);
   useEffect(() => subscribeEnvoyAiInflight(() => setEnvoyAiInflightState(getEnvoyAiInflight())), []);
+  // Settings / deep-link: jump to Content so KnowledgeView can show Setup/Ask/Browse.
+  useEffect(() => {
+    const goContent = () => setCurrentView("content");
+    window.addEventListener(OPEN_CONTENT_KNOWLEDGE_EVENT, goContent);
+    return () => window.removeEventListener(OPEN_CONTENT_KNOWLEDGE_EVENT, goContent);
+  }, []);
   // While Content → Feed/Blog is open, don't badge Like/Comment for that surface.
   const [contentSurface, setContentSurface] = useState<ContentTab>("feed");
   const viewingContentFeed = currentView === "content" && contentSurface === "feed";
@@ -468,6 +476,17 @@ export function App() {
       setChatSelectedContact(null);
     }
   };
+
+  // Knowledge Ask → EnvoyAI chat thread.
+  useEffect(() => {
+    const goEnvoyAi = () => {
+      setCurrentView("chat");
+      setChatPanelMode("threads");
+      setChatSelectedContact(ENVOY_AI_THREAD_KEY);
+    };
+    window.addEventListener(OPEN_ENVOY_AI_EVENT, goEnvoyAi);
+    return () => window.removeEventListener(OPEN_ENVOY_AI_EVENT, goEnvoyAi);
+  }, []);
 
   const navigateGuide = (dest: GuideDestination) => {
     switch (dest.kind) {

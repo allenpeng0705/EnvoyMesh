@@ -46,10 +46,10 @@ describe("E2E library import", () => {
       mimeType: "text/plain",
     });
 
-    expect(result.relativePath).toBe("imports/report.txt");
+    expect(result.relativePath).toBe("documents/report.txt");
     expect(result.sizeBytes).toBe(body.length);
 
-    const onDisk = await readFile(join(vaultDir, "imports/report.txt"), "utf8");
+    const onDisk = await readFile(join(vaultDir, "documents/report.txt"), "utf8");
     expect(onDisk).toBe(body);
 
     const items = await svc.listLibraryItems();
@@ -79,6 +79,7 @@ describe("E2E library import", () => {
     await svc.setLibraryItemPublished(documentId, true);
     const items = await svc.listLibraryItems({ query: "publish" });
     expect(items).toHaveLength(1);
+    expect(items[0].relativePath).toBe("notes/imports/publish-me.md");
     expect(items[0].published).toBe(true);
   });
 });

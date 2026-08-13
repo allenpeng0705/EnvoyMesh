@@ -544,6 +544,9 @@ export const zhAiSettingsMessages = {
     heading: "知识库",
     sectionDesc:
       "本地 vault 文件分为公开（自动回复）与私有（Envoy AI）分区，在 SQLite 中用 HNSW ANN 索引建立向量索引。",
+    movedToKnowledgeDesc:
+      "浏览、提问、插件（Obsidian / Notion MCP）与索引设置已移至「内容 → 知识库」。聊天模型与扩展智能体仍在此处。",
+    openKnowledgeSetup: "打开知识库",
     indexStatusLabel: "向量索引状态",
     indexStatusIdle: "空闲",
     indexStatusUnknown: "未知",
@@ -552,6 +555,14 @@ export const zhAiSettingsMessages = {
     indexStatusError: "索引错误：{message}",
     indexStatusLastRunSuffix: " · 上次运行 {time}",
     indexStatusTrackedSuffix: " · {count} 个已跟踪文件",
+    indexStatusEmbedder: "嵌入器：{modelKey}",
+    indexStatusEmbedError: "嵌入错误：{message} · {time}",
+    rebuildIndex: "重建知识索引",
+    rebuildIndexBusy: "重建中…",
+    rebuildIndexConfirm:
+      "立即重建向量索引？将用当前嵌入模型重新嵌入 vault 文件与聊天历史，可能较久并消耗 API 配额。",
+    embeddingChangeConfirm:
+      "这将更改有效的嵌入模型。已有向量无法复用 — 知识索引会被清空并重建。是否继续？",
     enableVaultKb: "启用 vault 知识库",
     enableVaultKbDesc: "将匹配的 vault 片段注入 AI 提示",
     retrievalMode: "检索模式",
@@ -577,13 +588,27 @@ export const zhAiSettingsMessages = {
     privatePathsDesc: "仅所有者：Envoy AI 标签页与本地知识查询。",
     externalProvider: "外部提供商",
     externalNone: "无（仅本地 vault）",
-    externalMcp: "MCP 服务器（如 Memex）",
+    externalMcp: "MCP 搜索（Notion 类 — 非 vault 同步）",
+    externalMcpDesc:
+      "仅将远程 MCP 搜索结果合并进所有者 EnvoyAI 提示。不会同步或替换 vault；mesh knowledge.query 仍只用本地 vault 文件。",
     mcpServerUrl: "MCP 服务器 URL",
     mcpUrlPlaceholder: "http://127.0.0.1:PORT/mcp",
     mcpSearchTool: "MCP 搜索工具",
     mcpSearchToolPlaceholder: "memex_search",
     mcpApiKeyOptional: "MCP API 密钥（可选）",
+    mcpWriteBack: "允许写回 notes/mcp/",
+    mcpWriteBackDesc:
+      "开启后可将一次 MCP 搜索保存为带来源标注的 Markdown 笔记到 notes/mcp/（默认 private，未发布前对联系人/网格不可见）。默认关闭 — 搜索仅用于提示。",
+    mcpWriteBackQuery: "要保存的搜索词",
+    mcpWriteBackQueryPlaceholder: "例如：部署手册",
+    mcpWriteBackSave: "搜索 MCP 并保存笔记",
+    mcpWriteBackSaving: "保存中…",
+    mcpWriteBackSaved: "已保存 {path}（{count} 条）",
+    mcpWriteBackFailed: "MCP 写回失败",
+    mcpLastError: "最近 MCP 错误：{message}",
     embeddingInheritBanner: "留空时各字段会回退到聊天模型设置。在上方选择聊天模型提供商（OpenAI、MiniMax、智谱、千问等），这些下拉框会自动跟随。仅在需要覆盖时才在此处设置。",
+    embeddingEnvoyLocalBanner:
+      "Envoy Local 是聊天用 GGUF 服务，不自带嵌入模型。继承模式下会改用本地 mock 嵌入，以便离线仍可建索引。更好检索请将嵌入提供商设为 Ollama（nomic-embed-text）或 OpenAI 兼容嵌入 API，或改用词法检索。",
     embeddingResolvedHint: "→ 留空时的有效值：{value}",
     embeddingApiKeyInherited: "→ 继承自聊天模型的 API 密钥",
     embeddingMode: "嵌入提供商",

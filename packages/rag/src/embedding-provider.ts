@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 import {
   KNOWN_EMBEDDING_PROVIDERS,
   inferEmbeddingProviderFromEndpoint,
+  isEnvoyLocalChatEndpoint,
   resolveEmbeddingConfig as resolveEmbeddingConfigCore,
   type EmbeddingProviderMode,
   type EmbeddingProviderPreset,
@@ -18,7 +19,11 @@ import {
 
 export type { EmbeddingProviderMode, EmbeddingResponseShape };
 export type { EmbeddingProviderPreset, EmbeddingProviderRule };
-export { KNOWN_EMBEDDING_PROVIDERS, inferEmbeddingProviderFromEndpoint };
+export {
+  KNOWN_EMBEDDING_PROVIDERS,
+  inferEmbeddingProviderFromEndpoint,
+  isEnvoyLocalChatEndpoint,
+};
 
 // Re-export so existing `ResolvedEmbeddingConfig` consumers continue to work.
 export type { ResolvedEmbeddingConfig } from "./embedding-resolver.js";

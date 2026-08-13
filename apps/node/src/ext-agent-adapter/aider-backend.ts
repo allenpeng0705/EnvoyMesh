@@ -2,7 +2,8 @@
  * Phase 56B — Aider ext agent backend.
  *
  * Drives `aider --message <text> --no-pretty --no-git --yes-always` (one-shot
- * per ask). Install via `pip install aider-chat` (or `aider-install`).
+ * per ask). Prefer `uv tool install aider-chat` or
+ * `pip install --user aider-chat` so `aider` is on PATH for the home node.
  *
  * Critical safety flags:
  * - `--no-git`       — disables ALL git operations (no auto-commits, no
@@ -32,7 +33,7 @@ const AIDER_DEFAULTS = {
   // first cold call + typical multi-file refactors.
   requestTimeoutMs: 120_000,
   installHint:
-    "Install Aider: `pip install aider-chat` (or `python -m pip install aider-install` then `aider-install`). Set ANTHROPIC_API_KEY or OPENAI_API_KEY in your shell.",
+    "Install Aider onto a PATH the home node can see: `uv tool install aider-chat` (preferred) or `pip install --user aider-chat`, then `aider --version` and restart the node. Conda-only installs often fail discovery — symlink to ~/.local/bin or reinstall with uv. Set ANTHROPIC_API_KEY or OPENAI_API_KEY in the home-node environment.",
 } as const;
 
 export interface AiderBackendOptions {

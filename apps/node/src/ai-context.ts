@@ -4,8 +4,11 @@
 
 import type { AiKnowledgeBaseScope, AiKnowledgeBaseSettings, AiVaultQuery } from "@envoymesh/api";
 import { resolveAiKnowledgeBaseSettings, resolveKnowledgeBaseVaultPaths } from "@envoymesh/api";
-import type { LocalChatLogStore } from "@envoymesh/local-store";
-import type { ChatLogEnvelope } from "@envoymesh/local-store";
+import {
+  createSensitivityOverrideStore,
+  type LocalChatLogStore,
+  type ChatLogEnvelope,
+} from "@envoymesh/local-store";
 import { searchVault, type VaultIndex, type VaultSearchResult } from "@envoymesh/vault";
 
 // ---------------------------------------------------------------------------
@@ -35,6 +38,23 @@ export function normalizeLegacySensitivity(
   if (s === "personal" || s === "private") return "private";
   if (s === "professional" || s === "friends" || s === "trusted") return "friends";
   return "public";
+}
+
+/**
+ * Load Published-toggle / Obsidian sensitivity overrides for vault RAG filtering.
+ * Returns `undefined` when the store is empty or unavailable (callers keep path heuristics).
+ */
+export async function loadKnowledgeSensitivityOverrides(
+  profileDir: string | null | undefined,
+): Promise<Map<string, KnowledgeAccessLevel> | undefined> {
+  if (!profileDir?.trim()) return undefined;
+  try {
+    const store = createSensitivityOverrideStore(profileDir);
+    const loaded = await store.load();
+    return loaded.size > 0 ? (loaded as Map<string, KnowledgeAccessLevel>) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -84,7 +104,17 @@ export function resolveDocumentSensitivityById(
 export function inferDocumentSensitivity(
   relativePath: string,
 ): KnowledgeAccessLevel {
-  const path = relativePath.toLowerCase();
+  const path = relativePath.toLowerCase().replace(/\\/g, "/");
+  // Phase 57 — anydoc materializations + MCP write-back notes stay owner-private
+  // unless Published / override promotes them (publicVaultPaths includes notes/).
+  if (
+    path === "notes/imports" ||
+    path.startsWith("notes/imports/") ||
+    path === "notes/mcp" ||
+    path.startsWith("notes/mcp/")
+  ) {
+    return "private";
+  }
   if (path.includes("personal") || path.includes("private")) return "private";
   if (path.includes("work") || path.includes("professional") || path.includes("office")) {
     return "friends";

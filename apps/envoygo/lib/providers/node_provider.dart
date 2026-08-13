@@ -934,6 +934,22 @@ class NodeNotifier extends StateNotifier<NodeState> {
     if (profileChanged) {
       unawaited(registerPushToken());
     }
+    // Owner toggled Ext Agent allow — refresh chat-row visibility from RPC
+    // (masked getBridgeStatus) so we do not wait for an unrelated bridge push.
+    if (!nextIsOwner) {
+      unawaited(_refreshExtAgentBridgeVisibility());
+    }
+  }
+
+  Future<void> _refreshExtAgentBridgeVisibility() async {
+    final ns = _nodeService;
+    if (ns == null) return;
+    try {
+      final status = await ns.getBridgeStatus();
+      _ref.read(chatProvider.notifier).onBridgeStatus(status);
+    } catch (e) {
+      _log('refresh Ext Agent bridge visibility failed: $e');
+    }
   }
 
   /// Resolve owner vs family from persisted flags.

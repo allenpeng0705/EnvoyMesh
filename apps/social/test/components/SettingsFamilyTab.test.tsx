@@ -107,6 +107,31 @@ describe("SettingsFamilyTab", () => {
     });
   });
 
+  it("toggles Allow Ext Agent chat for a member (default off → on)", async () => {
+    updateFamilyProfile.mockResolvedValue({
+      profile: {
+        id: "mom",
+        name: "Mom",
+        isOwner: false,
+        active: true,
+        extAgentEnabled: true,
+        createdAt: "2026-07-30T00:00:00.000Z",
+      },
+    });
+    renderWithI18n(<SettingsFamilyTab />);
+    const toggle = await screen.findByRole("checkbox", {
+      name: /Allow Ext Agent chat/i,
+    });
+    expect((toggle as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(toggle);
+    await waitFor(() => {
+      expect(updateFamilyProfile).toHaveBeenCalledWith({
+        id: "mom",
+        extAgentEnabled: true,
+      });
+    });
+  });
+
   it("Remove… offers Deactivate and Wipe; Wipe confirms then calls wipeFamilyProfile", async () => {
     wipeFamilyProfile.mockResolvedValue({
       ok: true,

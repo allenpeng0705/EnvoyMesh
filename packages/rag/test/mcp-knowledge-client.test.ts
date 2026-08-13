@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatExternalKnowledgeSection, searchExternalMcpKnowledge, formatMcpResultsAsNote, type ExternalKnowledgeSnippet } from "../src/mcp-knowledge-client.js";
+import {
+  formatExternalKnowledgeSection,
+  searchExternalMcpKnowledge,
+  formatMcpResultsAsNote,
+  validateMcpServerUrl,
+  type ExternalKnowledgeSnippet,
+} from "../src/mcp-knowledge-client.js";
 
 describe("mcp-knowledge-client", () => {
   it("returns empty when external provider is disabled", async () => {
@@ -7,7 +13,28 @@ describe("mcp-knowledge-client", () => {
       query: "test",
       knowledgeBase: { externalProvider: "none" },
     });
-    expect(hits).toEqual([]);
+    expect(hits).toEqual({ snippets: [] });
+  });
+
+  it("soft-fails when mcp url is missing", async () => {
+    const hits = await searchExternalMcpKnowledge({
+      query: "test",
+      knowledgeBase: { externalProvider: "mcp" },
+    });
+    expect(hits.snippets).toEqual([]);
+    expect(hits.error).toBe("mcp_url_missing");
+  });
+
+  it("rejects non-http mcp urls", async () => {
+    expect(validateMcpServerUrl("file:///tmp/x")).toBe("mcp_url_protocol");
+    const hits = await searchExternalMcpKnowledge({
+      query: "test",
+      knowledgeBase: {
+        externalProvider: "mcp",
+        mcpServerUrl: "ftp://example.com/mcp",
+      },
+    });
+    expect(hits.error).toBe("mcp_url_protocol");
   });
 
   it("parses MCP tools/call JSON content", async () => {
@@ -19,9 +46,7 @@ describe("mcp-knowledge-client", () => {
             content: [
               {
                 type: "text",
-                text: JSON.stringify([
-                  { title: "Card A", text: "EnvoyMesh deployment notes" },
-                ]),
+                text: JSON.stringify([{ title: "Card A", text: "EnvoyMesh deployment notes" }]),
               },
             ],
           },
@@ -37,8 +62,47 @@ describe("mcp-knowledge-client", () => {
       fetchImplementation,
     });
 
-    expect(hits[0]?.title).toBe("Card A");
-    expect(formatExternalKnowledgeSection(hits)).toContain("External knowledge base");
+    expect(hits.error).toBeUndefined();
+    expect(hits.snippets[0]?.title).toBe("Card A");
+    expect(formatExternalKnowledgeSection(hits.snippets)).toContain("External knowledge base");
+  });
+
+  it("soft-fails on http errors", async () => {
+    const fetchImplementation = async () => ({ ok: false, status: 503 }) as Response;
+    const hits = await searchExternalMcpKnowledge({
+      query: "x",
+      knowledgeBase: {
+        externalProvider: "mcp",
+        mcpServerUrl: "http://127.0.0.1:9999/mcp",
+      },
+      fetchImplementation,
+    });
+    expect(hits.snippets).toEqual([]);
+    expect(hits.error).toBe("mcp_http_503");
+  });
+
+  it("soft-fails on timeout/abort", async () => {
+    const fetchImplementation = async (_url: string, init?: RequestInit) => {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const err = new Error("aborted");
+          err.name = "AbortError";
+          reject(err);
+        });
+      });
+    };
+    const hits = await searchExternalMcpKnowledge({
+      query: "x",
+      knowledgeBase: {
+        externalProvider: "mcp",
+        mcpServerUrl: "http://127.0.0.1:9999/mcp",
+        mcpTimeoutMs: 1000,
+      },
+      fetchImplementation: fetchImplementation as typeof fetch,
+      timeoutMs: 1000,
+    });
+    expect(hits.snippets).toEqual([]);
+    expect(hits.error).toMatch(/^mcp_timeout_/);
   });
 });
 
@@ -74,7 +138,7 @@ describe("formatMcpResultsAsNote", () => {
     expect(result.subfolder).toBe("mcp");
   });
 
-  it("defaults sensitivity to friends (published: false)", () => {
+  it("defaults sensitivity to private (published: false)", () => {
     const { content } = formatMcpResultsAsNote(snippets, { attribution });
     expect(content).toContain("published: false");
   });

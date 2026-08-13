@@ -1,12 +1,14 @@
 /**
  * Resolve Ext Agent CLI binaries when GUI / Tauri / non-login shells strip
- * user PATH entries (e.g. `~/.npm-global/bin` from `npm i -g`).
+ * user PATH entries (e.g. `~/.npm-global/bin` from `npm i -g`, or conda
+ * env bins like `/opt/anaconda3/envs/pytorch/bin/aider`).
  *
- * Symptom: user has `codex` in their terminal, but Ext Agent Settings shows
- * "Install `codex` CLI…" because the home-node process cannot `command -v codex`.
+ * Symptom: user has `codex` / `aider` in their terminal, but Ext Agent
+ * Settings shows "Install …" because the home-node process cannot
+ * `command -v` that binary.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 
@@ -39,13 +41,92 @@ export function commonExtAgentBinDirs(home = homedir()): string[] {
   return dirs;
 }
 
+export interface CondaExtAgentBinDirsOptions {
+  /** Override `process.env.CONDA_PREFIX`. */
+  condaPrefix?: string | null;
+  /** Directory existence check (tests). Default: `existsSync`. */
+  exists?: (p: string) => boolean;
+  /** List env names under `<root>/envs` (tests). Default: `readdirSync`. */
+  listEnvs?: (envsDir: string) => string[];
+}
+
 /**
- * Absolute path to `command` if found on PATH or in {@link commonExtAgentBinDirs}.
- * Returns `null` when not found.
+ * Conda / Miniconda / Miniforge bin dirs (active prefix + common installs).
+ * Used only for absolute-path lookup — not prepended wholesale to PATH
+ * (that would mix unrelated env packages into every spawn).
+ */
+export function condaExtAgentBinDirs(
+  home = homedir(),
+  opts: CondaExtAgentBinDirsOptions = {},
+): string[] {
+  const exists = opts.exists ?? existsSync;
+  const listEnvs =
+    opts.listEnvs ??
+    ((envsDir: string) => {
+      try {
+        return readdirSync(envsDir);
+      } catch {
+        return [];
+      }
+    });
+  const dirs: string[] = [];
+  const seen = new Set<string>();
+  const push = (dir: string) => {
+    if (!dir || seen.has(dir)) return;
+    seen.add(dir);
+    dirs.push(dir);
+  };
+
+  const prefix = (opts.condaPrefix ?? process.env.CONDA_PREFIX)?.trim();
+  if (prefix) push(join(prefix, "bin"));
+
+  const roots: string[] = [];
+  if (home) {
+    roots.push(
+      join(home, "anaconda3"),
+      join(home, "miniconda3"),
+      join(home, "miniforge3"),
+      join(home, "mambaforge"),
+    );
+  }
+  if (process.platform === "darwin" || process.platform === "linux") {
+    roots.push("/opt/anaconda3", "/opt/miniconda3", "/opt/miniforge3");
+  }
+  if (process.platform === "win32" && home) {
+    roots.push(
+      join(home, "anaconda3"),
+      join(home, "miniconda3"),
+      join(home, "AppData", "Local", "anaconda3"),
+      join(home, "AppData", "Local", "miniconda3"),
+    );
+  }
+
+  for (const root of roots) {
+    if (!exists(root)) continue;
+    push(join(root, "bin"));
+    const envsDir = join(root, "envs");
+    if (!exists(envsDir)) continue;
+    for (const name of listEnvs(envsDir)) {
+      if (!name || name.startsWith(".")) continue;
+      push(join(envsDir, name, "bin"));
+    }
+  }
+  return dirs;
+}
+
+/**
+ * Absolute path to `command` if found on PATH, well-known user bins, or
+ * conda env bins. Returns `null` when not found.
  */
 export function resolveExtAgentBinary(
   command: string,
-  opts?: { envPath?: string; home?: string; exists?: (p: string) => boolean },
+  opts?: {
+    envPath?: string;
+    home?: string;
+    exists?: (p: string) => boolean;
+    condaPrefix?: string | null;
+    listCondaEnvs?: (envsDir: string) => string[];
+  },
 ): string | null {
   const name = command.trim();
   if (!name) return null;
@@ -60,7 +141,17 @@ export function resolveExtAgentBinary(
   const seen = new Set<string>();
   const candidates: string[] = [];
 
-  for (const dir of [...pathDirs, ...commonExtAgentBinDirs(opts?.home)]) {
+  const searchDirs = [
+    ...pathDirs,
+    ...commonExtAgentBinDirs(opts?.home),
+    ...condaExtAgentBinDirs(opts?.home, {
+      condaPrefix: opts?.condaPrefix,
+      exists,
+      listEnvs: opts?.listCondaEnvs,
+    }),
+  ];
+
+  for (const dir of searchDirs) {
     if (!dir || seen.has(dir)) continue;
     seen.add(dir);
     if (process.platform === "win32") {

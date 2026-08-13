@@ -14,6 +14,7 @@ import {
   searchVault,
   stripHtmlText,
   stripRtfText,
+  VAULT_TEXT_EXTRACTOR_ID,
 } from "../src/index.js";
 
 const MINIMAL_PDF = Buffer.from(
@@ -75,6 +76,22 @@ async function writeMinimalXls(outputPath: string, rows: string[][]): Promise<vo
   await writeFile(outputPath, raw);
 }
 
+async function writeMinimalOdt(outputPath: string, text: string): Promise<void> {
+  const workDir = join(tmpdir(), `envoymesh-odt-${randomUUID()}`);
+  await mkdir(join(workDir, "META-INF"), { recursive: true });
+  await writeFile(join(workDir, "mimetype"), "application/vnd.oasis.opendocument.text");
+  await writeFile(
+    join(workDir, "META-INF", "manifest.xml"),
+    '<?xml version="1.0" encoding="UTF-8"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"><manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.text"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/></manifest:manifest>',
+  );
+  await writeFile(
+    join(workDir, "content.xml"),
+    `<?xml version="1.0" encoding="UTF-8"?><office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" office:version="1.2"><office:body><office:text><text:p>${text}</text:p></office:text></office:body></office:document-content>`,
+  );
+  execSync(`cd "${workDir}" && zip -X0 "${outputPath}" mimetype && zip -Xr "${outputPath}" META-INF content.xml`);
+  await rm(workDir, { recursive: true, force: true });
+}
+
 describe("document text extraction", () => {
   it("recognizes searchable extensions", () => {
     expect(isVaultExtractableExtension(".pdf")).toBe(true);
@@ -83,22 +100,40 @@ describe("document text extraction", () => {
     expect(isVaultExtractableExtension(".ppt")).toBe(true);
     expect(isVaultExtractableExtension(".xlsx")).toBe(true);
     expect(isVaultExtractableExtension(".xls")).toBe(true);
+    expect(isVaultExtractableExtension(".odt")).toBe(true);
+    expect(isVaultExtractableExtension(".ods")).toBe(true);
+    expect(isVaultExtractableExtension(".odp")).toBe(true);
+    expect(isVaultExtractableExtension(".epub")).toBe(true);
+    expect(isVaultExtractableExtension(".docm")).toBe(true);
+    expect(isVaultExtractableExtension(".xlsb")).toBe(true);
     expect(isVaultSearchableExtension(".csv")).toBe(true);
     expect(isVaultSearchableExtension(".bin")).toBe(false);
+    expect(VAULT_TEXT_EXTRACTOR_ID).toContain("anydoc");
   });
 
-  it("extracts text from PDF buffers", async () => {
+  it("extracts text from PDF buffers via legacy fallback when anydoc rejects", async () => {
     const text = await extractVaultDocumentText(".pdf", MINIMAL_PDF);
     expect(text).toContain("Distributed PDF guide");
   });
 
-  it("extracts text from DOCX buffers", async () => {
+  it("extracts GFM text from DOCX buffers via anydoc", async () => {
     const docxPath = join(tmpdir(), `sample-${randomUUID()}.docx`);
     await writeMinimalDocx(docxPath, "Quarterly planning memo");
     const raw = await import("node:fs/promises").then((m) => m.readFile(docxPath));
     const text = await extractVaultDocumentText(".docx", raw);
     expect(text).toContain("Quarterly planning memo");
+    // anydoc preserves newlines; legacy would collapse to a single line with spaces only
+    expect(text).toMatch(/Quarterly planning memo/);
     await rm(docxPath, { force: true });
+  });
+
+  it("extracts text from ODT buffers via anydoc", async () => {
+    const odtPath = join(tmpdir(), `sample-${randomUUID()}.odt`);
+    await writeMinimalOdt(odtPath, "OpenDocument planning notes");
+    const raw = await import("node:fs/promises").then((m) => m.readFile(odtPath));
+    const text = await extractVaultDocumentText(".odt", raw);
+    expect(text).toContain("OpenDocument planning notes");
+    await rm(odtPath, { force: true });
   });
 
   it("extracts text from PPTX, XLSX, and XLS buffers", async () => {
@@ -190,6 +225,17 @@ describe("buildVaultIndex with extractable documents", () => {
 
     expect(results).toHaveLength(1);
     expect(results[0].document.relativePath).toBe("knowledge/public/memo.docx");
+  });
+
+  it("indexes ODT content for search", async () => {
+    const odtPath = join(vaultDir, "knowledge", "public", "memo.odt");
+    await writeMinimalOdt(odtPath, "OpenDocument budget review");
+
+    const index = await buildVaultIndex({ rootDir: vaultDir });
+    const results = searchVault(index, "opendocument budget", { limit: 1 });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].document.relativePath).toBe("knowledge/public/memo.odt");
   });
 
   it("indexes PPTX, XLSX, XLS, and PPT content for search", async () => {

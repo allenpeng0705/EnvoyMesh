@@ -59,13 +59,27 @@ export interface DocumentAcquisitionWorkerDeps {
   ) => Promise<{ ok: boolean; summary: string }>;
 }
 
-function inboxPathForJob(job: DocumentAcquisitionJob): string {
-  const slug = (job.fileTitleHint ?? job.query)
+/**
+ * Vault-relative inbox path for an acquisition auto-accept.
+ * Preserves a recognizable extension from pathHint/fileTitleHint when present
+ * so anydoc/RAG can extract (Phase 57E); falls back to `.bin`.
+ */
+export function inboxPathForJob(job: {
+  jobId: string;
+  query: string;
+  fileTitleHint?: string;
+  pathHint?: string;
+}): string {
+  const hint = `${job.pathHint ?? ""} ${job.fileTitleHint ?? ""}`.trim();
+  const extMatch = hint.match(/(\.[a-z0-9]{1,8})\b/i);
+  const ext = (extMatch?.[1] ?? ".bin").toLowerCase();
+  const slugSource = (job.fileTitleHint ?? job.query)
     .toLowerCase()
+    .replace(/\.[a-z0-9]{1,8}$/i, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 48);
-  return `inbox/acq-${slug || job.jobId.slice(0, 8)}.bin`;
+  return `inbox/acq-${slugSource || job.jobId.slice(0, 8)}${ext}`;
 }
 
 export async function startDocumentAcquisitionJob(

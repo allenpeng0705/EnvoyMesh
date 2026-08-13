@@ -7,8 +7,16 @@
  * binary is on `$PATH`. The result is exposed as `installState` and
  * (when not installed) `installGuide` on `ExtAgentReachability` so
  * the Settings UI can show an Install Required card.
+ *
+ * OpenHuman is special: many users only install **OpenHuman.app** via
+ * curl `install.sh` (desktop app — not a separate CLI). We treat the
+ * desktop app / a healthy `:7788` core as installed so the switcher
+ * does not show a false "Install OpenHuman" card.
  */
 
+import { existsSync } from "node:fs"
+import { homedir } from "node:os"
+import { join } from "node:path"
 import { spawn } from "node:child_process"
 import {
   defaultExtAgentStartHint,
@@ -16,7 +24,7 @@ import {
   type ExtAgentReachability,
   type InstallState,
 } from "@envoymesh/api"
-import { createBackend } from "./backends.js"
+import { createBackend, openHumanHttpBase } from "./backends.js"
 import { isExtAgentBinaryAvailable, resolveExtAgentBinary } from "./resolve-ext-agent-binary.js"
 import { isExtAgentSidecarKind } from "./types.js"
 
@@ -159,15 +167,65 @@ export function defaultBinaryOnPath(
 }
 
 /**
+ * Detect OpenHuman without requiring the `openhuman` CLI on PATH.
+ * OpenHuman.app (macOS) is the recommended Path A in Ext_Agent_guide —
+ * it does not ship a CLI shim.
+ */
+export function isOpenHumanDesktopPresent(): boolean {
+  const home = homedir()
+  if (process.platform === "darwin") {
+    const candidates = [
+      "/Applications/OpenHuman.app",
+      join(home, "Applications", "OpenHuman.app"),
+    ]
+    if (candidates.some((p) => existsSync(p))) return true
+  }
+  if (process.platform === "win32") {
+    const local = process.env.LOCALAPPDATA?.trim()
+    if (local) {
+      const winCandidates = [
+        join(local, "OpenHuman", "OpenHuman.exe"),
+        join(local, "Programs", "OpenHuman", "OpenHuman.exe"),
+      ]
+      if (winCandidates.some((p) => existsSync(p))) return true
+    }
+  }
+  // Data dir from a prior OpenHuman.app / CLI run (all platforms).
+  if (home && existsSync(join(home, ".openhuman"))) return true
+  if (home && existsSync(join(home, ".openhuman-staging"))) return true
+  return false
+}
+
+/** True when something is already serving the OpenHuman core health port. */
+export async function isOpenHumanCoreHealthy(
+  timeoutMs = 1_500,
+): Promise<boolean> {
+  try {
+    return await probeHttpOk(`${openHumanHttpBase()}/health`, timeoutMs)
+  } catch {
+    return false
+  }
+}
+
+/**
  * Classify the install state of an Ext Agent. Built-in agents (pi)
  * are always `"installed"`. External agents (codex / claudecode /
  * hermes / openhuman) are checked against `$PATH`. HomeClaw is its
  * own channel — we don't PATH-check it, so we report `"unknown"`
  * (the homeclaw-core-ws status probe still drives `reachable`).
+ *
+ * OpenHuman additionally accepts OpenHuman.app / `~/.openhuman` /
+ * a healthy `:7788` core as installed (desktop Path A has no CLI).
  */
 export async function classifyExtAgentInstallState(
   agentId: string,
   binaryOnPath: (command: string) => Promise<boolean | null> = defaultBinaryOnPath,
+  opts?: {
+    /** Override desktop / data-dir detection (tests). */
+    openHumanDesktopPresent?: () => boolean
+    /** Override `:7788/health` check (tests). */
+    openHumanCoreHealthy?: () => Promise<boolean>
+  },
 ): Promise<{ installState: InstallState; installGuide?: ExtAgentReachability["installGuide"] }> {
   const id = agentId.trim();
   if (id === "pi") {
@@ -188,6 +246,18 @@ export async function classifyExtAgentInstallState(
   if (onPath === true) {
     return { installState: "installed" };
   }
+
+  if (id === "openhuman") {
+    const desktopOk = (opts?.openHumanDesktopPresent ?? isOpenHumanDesktopPresent)()
+    if (desktopOk) {
+      return { installState: "installed" }
+    }
+    const coreOk = await (opts?.openHumanCoreHealthy ?? isOpenHumanCoreHealthy)()
+    if (coreOk) {
+      return { installState: "installed" }
+    }
+  }
+
   if (onPath === false) {
     return {
       installState: "not-installed",
@@ -209,6 +279,10 @@ export async function probeExtAgentReachability(params: {
    * Tests pass a stub to avoid spawning child processes.
    */
   binaryOnPath?: (command: string) => Promise<boolean | null>
+  /** Test override: OpenHuman.app / `~/.openhuman` detection. */
+  openHumanDesktopPresent?: () => boolean
+  /** Test override: OpenHuman `:7788/health`. */
+  openHumanCoreHealthy?: () => Promise<boolean>
 }): Promise<ExtAgentReachability> {
   const agentId = params.agentId.trim() || "pi"
   const agentName = params.agentName.trim() || agentId
@@ -219,6 +293,14 @@ export async function probeExtAgentReachability(params: {
   const { installState, installGuide } = await classifyExtAgentInstallState(
     agentId,
     binaryOnPath,
+    {
+      ...(params.openHumanDesktopPresent
+        ? { openHumanDesktopPresent: params.openHumanDesktopPresent }
+        : {}),
+      ...(params.openHumanCoreHealthy
+        ? { openHumanCoreHealthy: params.openHumanCoreHealthy }
+        : {}),
+    },
   )
 
   if (agentId === "pi") {

@@ -281,6 +281,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
         unawaited(_localDb.upsertThread(t.toJson()));
       }
       // Phase 51E — non-owners only restore AI + family threads from cache.
+      // Ext Agent is opt-in per profile: never restore from cache when denied
+      // (App Review family QR must not see a stale Ext Agent row).
+      if (!isOwner && t.type == ChatThreadType.externalAgent) {
+        if (_isDeniedExtAgentFamily(_ref.read(nodeProvider))) {
+          continue;
+        }
+      }
       if (!isOwner &&
           t.type != ChatThreadType.envoyai &&
           t.type != ChatThreadType.externalAgent &&
@@ -2179,6 +2186,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
   /// active Ext Agent name (`agentName` / `activeExtAgentId`, often "Pi").
   /// Those must not be conflated — EnvoyAI keeps a fixed title; only the
   /// Ext Agent row reflects the selected external agent.
+  ///
+  /// Visibility rule:
+  /// - **Denied family** (non-owner without `extAgentEnabled: true`) → hide.
+  ///   Fail closed: unknown / unloaded profiles stay hidden. App Review
+  ///   joins via family QR and must not see Ext Agent.
+  /// - **Owner / opted-in family** → always show the row (even if the
+  ///   bridge reports `enabled: false` / offline).
   void onBridgeStatus(Map<String, dynamic> data) {
     final nodeState = _ref.read(nodeProvider);
     if (nodeState.activeNode == null) return;
@@ -2192,14 +2206,46 @@ class ChatNotifier extends StateNotifier<ChatState> {
       agentType: 'envoyai',
     );
 
+    final extThreadId = '$nodeId:external';
+    final deniedFamily = _isDeniedExtAgentFamily(nodeState);
+    if (deniedFamily) {
+      final next = state.threads.where((t) => t.id != extThreadId).toList();
+      if (next.length != state.threads.length) {
+        state = state.copyWith(threads: next);
+      }
+      return;
+    }
+
     final extName = resolveExtAgentDisplayName(data);
     _upsertThread(
-      threadId: '$nodeId:external',
+      threadId: extThreadId,
       nodeId: nodeId,
       type: ChatThreadType.externalAgent,
       displayName: extName.isNotEmpty ? extName : ThreadTitleSentinels.extAgent,
       agentType: 'external',
     );
+  }
+
+  /// True when this session must not see Ext Agent chat.
+  /// Non-owners require an explicit `extAgentEnabled: true` on their
+  /// loaded profile; anything else (missing list, missing row, false,
+  /// omitted) is denied.
+  bool _isDeniedExtAgentFamily(NodeState nodeState) {
+    if (nodeState.isOwnerProfile) return false;
+    final pid = nodeState.familyProfileId?.trim();
+    if (pid == null || pid.isEmpty || pid == 'owner') {
+      // Non-owner session without a clear family id — fail closed.
+      return true;
+    }
+    Map<String, dynamic>? mine;
+    for (final p in nodeState.familyProfiles) {
+      if (p['id']?.toString() == pid) {
+        mine = p;
+        break;
+      }
+    }
+    if (mine == null) return true;
+    return mine['extAgentEnabled'] != true;
   }
 
   /// Sync terminal sessions from the home node as threads.

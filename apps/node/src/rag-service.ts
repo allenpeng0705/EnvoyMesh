@@ -13,6 +13,7 @@ import type {
 import { DEFAULT_RAG_INDEX_PROGRESS, DEFAULT_RAG_INDEX_STATUS, resolveAiKnowledgeBaseSettings } from "@envoymesh/api";
 import type { LocalChatLogStore } from "@envoymesh/local-store";
 import type { VaultDocumentMetadata, VaultIndex, VaultSearchResult } from "@envoymesh/vault";
+import { VAULT_TEXT_EXTRACTOR_ID } from "@envoymesh/vault";
 import {
   chatCollectionId,
   createEmbeddingProvider,
@@ -30,6 +31,7 @@ import {
 import {
   chatLogRowsToViews,
   inferDocumentSensitivity,
+  loadKnowledgeSensitivityOverrides,
   normalizeLegacySensitivity,
   resolveDocumentSensitivityById,
   SENSITIVITY_ORDER,
@@ -101,11 +103,52 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
     profileDir: input.profileDir,
     modelKey: embedder.modelKey,
   });
+  indexStatus = {
+    ...indexStatus,
+    embedderModelKey: embedder.modelKey,
+  };
+
+  const clearEmbedError = () => {
+    if (!indexStatus.lastEmbedError && !indexStatus.lastEmbedErrorAt) return;
+    indexStatus = {
+      ...indexStatus,
+      lastEmbedError: undefined,
+      lastEmbedErrorAt: undefined,
+    };
+  };
+
+  const recordEmbedError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    indexStatus = {
+      ...indexStatus,
+      embedderModelKey: embedder.modelKey,
+      lastEmbedError: message,
+      lastEmbedErrorAt: new Date().toISOString(),
+    };
+  };
+
+  const clearExternalKbError = () => {
+    if (!indexStatus.lastExternalKbError && !indexStatus.lastExternalKbErrorAt) return;
+    indexStatus = {
+      ...indexStatus,
+      lastExternalKbError: undefined,
+      lastExternalKbErrorAt: undefined,
+    };
+  };
+
+  const recordExternalKbError = (message: string) => {
+    indexStatus = {
+      ...indexStatus,
+      lastExternalKbError: message,
+      lastExternalKbErrorAt: new Date().toISOString(),
+    };
+  };
 
   const reportProgress = (partial: Partial<RagIndexProgress> & Pick<RagIndexProgress, "phase">) => {
     indexStatus = {
       ...indexStatus,
       isIndexing: partial.phase !== "done" && partial.phase !== "idle" && partial.phase !== "error",
+      embedderModelKey: embedder.modelKey,
       progress: {
         ...indexStatus.progress,
         ...partial,
@@ -157,6 +200,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
       await saveRagVaultManifest(input.profileDir, { version: "0.1", documents: {} });
       await syncTrackedDocuments();
     }
+    indexStatus = { ...indexStatus, embedderModelKey: embedder.modelKey };
     return { embedder, store };
   }
 
@@ -189,8 +233,10 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
             },
           },
         ]);
+        clearEmbedError();
         void flushSoon();
       } catch (error) {
+        recordEmbedError(error);
         const msg = error instanceof Error ? error.message : String(error);
         if (!msg.includes("embeddings response missing vector")) {
           console.warn(`[rag] chat index skipped: ${msg}`);
@@ -279,6 +325,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
         } catch (error) {
           const errMsg = error instanceof Error ? error.message : String(error);
           lastBackfillFailureAt = nowMs;
+          recordEmbedError(error);
           console.warn(
             `[rag] chat backfill batch failed (provider=${activeEmbedder.modelKey}, will retry in ${Math.round(
               BACKFILL_FAILURE_BACKOFF_MS / 1000,
@@ -306,6 +353,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
 
       // Successful run — clear the failure flag.
       lastBackfillFailureAt = 0;
+      clearEmbedError();
       void flushSoon();
       console.log(`[rag] chat history backfill complete (${rows.length} message(s) scanned)`);
     },
@@ -323,6 +371,8 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
 
       const { embedder: activeEmbedder, store: activeStore } = await ensureRuntime();
       const manifest = await loadRagVaultManifest(input.profileDir);
+      const overrides =
+        sensitivityOverrides ?? (await loadKnowledgeSensitivityOverrides(input.profileDir));
       let indexed = 0;
       let skipped = 0;
       let removed = 0;
@@ -337,7 +387,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           kb,
           manifest,
           force,
-          sensitivityOverrides,
+          sensitivityOverrides: overrides,
           onProgress: (partial) => {
             reportProgress({ phase: "public", indexed, skipped, removed, ...partial });
           },
@@ -355,7 +405,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           kb,
           manifest,
           force,
-          sensitivityOverrides,
+          sensitivityOverrides: overrides,
           onProgress: (partial) => {
             reportProgress({ phase: "private", indexed, skipped, removed, ...partial });
           },
@@ -378,7 +428,9 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           removed,
           message: `Indexed ${indexed}, skipped ${skipped}, removed ${removed}`,
         });
+        clearEmbedError();
       } catch (error) {
+        recordEmbedError(error);
         reportProgress({
           phase: "error",
           processed: 0,
@@ -461,6 +513,10 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
       if (!kb.enabled && !ruleVaultQuery) {
         return [];
       }
+
+      const overrides =
+        sensitivityOverrides ?? (await loadKnowledgeSensitivityOverrides(input.profileDir));
+
       if (kb.ragMode === "lexical") {
         return lexicalVaultKnowledgeBase({
           vaultIndex,
@@ -469,7 +525,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           knowledgeBase: kbOverride ?? knowledgeBase,
           knowledgeScope,
           ruleVaultQuery,
-          sensitivityOverrides,
+          sensitivityOverrides: overrides,
         });
       }
 
@@ -501,9 +557,9 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           }
         }
 
-        // Phase 44A1: filter vector results with sensitivity overrides when available
-        const sensitivityFiltered = sensitivityOverrides
-          ? filterVectorResultsWithOverrides(merged, knowledgeAccess, ruleVaultQuery?.maxSensitivity, sensitivityOverrides)
+        // Phase 44A1 / 57B: filter with sensitivity overrides when available
+        const sensitivityFiltered = overrides
+          ? filterVectorResultsWithOverrides(merged, knowledgeAccess, ruleVaultQuery?.maxSensitivity, overrides)
           : filterVectorResultsBySensitivity(merged, knowledgeAccess, ruleVaultQuery?.maxSensitivity);
         if (sensitivityFiltered.length > 0) {
           return sensitivityFiltered.slice(0, kb.vaultSnippetLimit);
@@ -516,7 +572,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
             knowledgeBase: kbOverride ?? knowledgeBase,
             knowledgeScope,
             ruleVaultQuery,
-            sensitivityOverrides,
+            sensitivityOverrides: overrides,
           });
         }
       } catch (error) {
@@ -533,7 +589,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
         knowledgeBase: kbOverride ?? knowledgeBase,
         knowledgeScope,
         ruleVaultQuery,
-        sensitivityOverrides,
+        sensitivityOverrides: overrides,
       });
     },
 
@@ -545,16 +601,17 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
       if (kb.externalProvider !== "mcp") {
         return "";
       }
-      try {
-        const snippets = await searchExternalMcpKnowledge({
-          query,
-          knowledgeBase: kbOverride ?? knowledgeBase,
-        });
-        return formatExternalKnowledgeSection(snippets);
-      } catch (error) {
+      const { snippets, error } = await searchExternalMcpKnowledge({
+        query,
+        knowledgeBase: kbOverride ?? knowledgeBase,
+      });
+      if (error) {
+        recordExternalKbError(error);
         console.warn(`[rag] external MCP knowledge failed: ${error}`);
         return "";
       }
+      clearExternalKbError();
+      return formatExternalKnowledgeSection(snippets);
     },
   };
 
@@ -614,7 +671,8 @@ async function indexVaultTier(input: {
       existing.chunkCount === chunks.length &&
       existing.modelKey === embedder.modelKey &&
       existing.chunkSizeChars === kb.chunkSizeChars &&
-      existing.chunkOverlapChars === kb.chunkOverlapChars;
+      existing.chunkOverlapChars === kb.chunkOverlapChars &&
+      existing.extractorId === VAULT_TEXT_EXTRACTOR_ID;
 
     onProgress({ processed: docIndex + 1, total });
 
@@ -668,6 +726,7 @@ async function indexVaultTier(input: {
         chunkSizeChars: kb.chunkSizeChars,
         chunkOverlapChars: kb.chunkOverlapChars,
         indexedAt: new Date().toISOString(),
+        extractorId: VAULT_TEXT_EXTRACTOR_ID,
       };
     }
     indexed += 1;

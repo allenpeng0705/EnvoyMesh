@@ -41,6 +41,9 @@ class ChatDetailScreen extends ConsumerStatefulWidget {
   /// Phase 51D — when true, compose uses sendFamilyRoomMessage.
   final bool isFamilyRoom;
 
+  /// Optional one-shot composer prefill (e.g. Knowledge Ask → EnvoyAI).
+  final String? initialComposerText;
+
   const ChatDetailScreen({
     super.key,
     required this.threadId,
@@ -49,6 +52,7 @@ class ChatDetailScreen extends ConsumerStatefulWidget {
     this.chatRoomId,
     this.agentType,
     this.isFamilyRoom = false,
+    this.initialComposerText,
   });
 
   @override
@@ -126,6 +130,11 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   void initState() {
     super.initState();
     _textController.addListener(_onComposerChanged);
+    final prefill = widget.initialComposerText?.trim();
+    if (prefill != null && prefill.isNotEmpty) {
+      _textController.text = prefill;
+      _textController.selection = TextSelection.collapsed(offset: prefill.length);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_initialized) {
         _initialized = true;
@@ -1061,7 +1070,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       appBar: AppBar(
         title: Text(widget.displayName),
         actions: [
-          if (_isExtAgent) const ExtAgentSwitcher(iconOnly: true),
+          if (_isExtAgent && isOwner) const ExtAgentSwitcher(iconOnly: true),
           // Phase 42F — voice call action for direct-message chats
           // (not rooms / agents). Routes through CallProvider.startCall
           // which generates the SDP and posts sendCallInvite.

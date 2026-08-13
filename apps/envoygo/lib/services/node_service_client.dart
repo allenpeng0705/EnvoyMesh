@@ -1187,13 +1187,74 @@ class NodeServiceClient {
     return PublishWebContentResult.fromJson(result);
   }
 
-  // -- My Files (home vault via thin client) --
+  // -- My Files / Knowledge (home vault via thin client) --
 
   Future<ListAllLocalFilesResult> listAllLocalFiles({String? query}) async {
     final result = await _client.call('listAllLocalFiles', {
       if (query != null && query.isNotEmpty) 'query': query,
     }) as Map<String, dynamic>;
     return ListAllLocalFilesResult.fromJson(result);
+  }
+
+  /// Owner vault knowledge.query — returns answer text.
+  Future<String> knowledgeQuery(String question) async {
+    final result = await _client.call('knowledgeQuery', {
+      'question': question,
+    });
+    if (result is String) return result;
+    if (result is Map && result['answer'] is String) {
+      return result['answer'] as String;
+    }
+    return result?.toString() ?? '';
+  }
+
+  Future<Map<String, dynamic>> getRagIndexStatus() async {
+    final result =
+        await _client.call('getRagIndexStatus', {}) as Map<String, dynamic>;
+    return result;
+  }
+
+  Future<Map<String, dynamic>> reindexRagKnowledge({bool force = false}) async {
+    final result = await _client.call('reindexRagKnowledge', {
+      if (force) 'force': true,
+    }) as Map<String, dynamic>;
+    return result;
+  }
+
+  Future<List<Map<String, dynamic>>> listKbPlugins() async {
+    final result = await _client.call('listKbPlugins', {});
+    if (result is List) {
+      return result
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    if (result is Map) {
+      final list = (result['plugins'] as List<dynamic>?) ?? const [];
+      return list
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    return const [];
+  }
+
+  Future<Map<String, dynamic>> activateKbPlugin({
+    required String pluginId,
+  }) async {
+    final result = await _client.call('activateKbPlugin', {
+      'pluginId': pluginId,
+    }) as Map<String, dynamic>;
+    return result;
+  }
+
+  Future<Map<String, dynamic>> deactivateKbPlugin({
+    required String pluginId,
+  }) async {
+    final result = await _client.call('deactivateKbPlugin', {
+      'pluginId': pluginId,
+    }) as Map<String, dynamic>;
+    return result;
   }
 
   Future<Map<String, dynamic>> importToLibrary({

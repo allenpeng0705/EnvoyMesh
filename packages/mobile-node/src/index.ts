@@ -3559,6 +3559,13 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return { ...DEFAULT_RAG_INDEX_STATUS };
   }
 
+  async reindexRagKnowledge(_params?: {
+    force?: boolean;
+  }): Promise<import("@envoymesh/api").RagIndexStatus> {
+    const { DEFAULT_RAG_INDEX_STATUS } = await import("@envoymesh/api");
+    return { ...DEFAULT_RAG_INDEX_STATUS };
+  }
+
   async verifyLibraryItemIpfsGateway(
     params: VerifyLibraryItemIpfsGatewayParams,
   ): Promise<VerifyLibraryItemIpfsGatewayResult> {

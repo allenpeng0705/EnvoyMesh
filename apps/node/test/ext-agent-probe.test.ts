@@ -145,15 +145,42 @@ describe("probeExtAgentReachability", () => {
     expect(r.installGuide!.installCommand).toContain("hermes-agent")
   })
 
-  it("openhuman with binary missing → installGuide with curl install line", async () => {
+  it("openhuman with binary missing and no desktop/core → installGuide with curl install line", async () => {
     const r = await probeExtAgentReachability({
       agentId: "openhuman",
       agentName: "OpenHuman",
       agentUrl: "http://127.0.0.1:8021/message",
       binaryOnPath: async () => false,
+      openHumanDesktopPresent: () => false,
+      openHumanCoreHealthy: async () => false,
     })
     expect(r.installState).toBe("not-installed")
     expect(r.installGuide!.installCommand).toContain("openhuman")
+  })
+
+  it("openhuman with OpenHuman.app present (no CLI) → installState installed", async () => {
+    const r = await probeExtAgentReachability({
+      agentId: "openhuman",
+      agentName: "OpenHuman",
+      agentUrl: "http://127.0.0.1:8021/message",
+      binaryOnPath: async () => false,
+      openHumanDesktopPresent: () => true,
+      openHumanCoreHealthy: async () => false,
+    })
+    expect(r.installState).toBe("installed")
+    expect(r.installGuide).toBeUndefined()
+  })
+
+  it("openhuman with healthy :7788 core (no CLI) → installState installed", async () => {
+    const r = await probeExtAgentReachability({
+      agentId: "openhuman",
+      agentName: "OpenHuman",
+      agentUrl: "http://127.0.0.1:8021/message",
+      binaryOnPath: async () => false,
+      openHumanDesktopPresent: () => false,
+      openHumanCoreHealthy: async () => true,
+    })
+    expect(r.installState).toBe("installed")
   })
 
   it("binary check returns null (uncertain) → installState 'unknown' + generic installGuide", async () => {
@@ -303,6 +330,24 @@ describe("classifyExtAgentInstallState", () => {
   // card would never fire for them. The regression guard below pins
   // the path-probe to the actual CLI binary name (cursor uses
   // `cursor-agent`, not `cursor`).
+  it("openhuman with no CLI but OpenHuman.app → installed", async () => {
+    const r = await classifyExtAgentInstallState("openhuman", async () => false, {
+      openHumanDesktopPresent: () => true,
+      openHumanCoreHealthy: async () => false,
+    })
+    expect(r.installState).toBe("installed")
+    expect(r.installGuide).toBeUndefined()
+  })
+
+  it("openhuman with no CLI / desktop / core → not-installed", async () => {
+    const r = await classifyExtAgentInstallState("openhuman", async () => false, {
+      openHumanDesktopPresent: () => false,
+      openHumanCoreHealthy: async () => false,
+    })
+    expect(r.installState).toBe("not-installed")
+    expect(r.installGuide).toBeDefined()
+  })
+
   it("cursor uses `cursor-agent` (not `cursor`) for the PATH check", async () => {
     let checked: string | undefined
     const r = await classifyExtAgentInstallState("cursor", async (cmd) => {
@@ -338,7 +383,7 @@ describe("classifyExtAgentInstallState", () => {
     expect(r.installState).toBe("not-installed")
     expect(r.installGuide).toBeDefined()
     expect(r.installGuide!.command).toBe("aider")
-    expect(r.installGuide!.installCommand).toBe("pip install aider-chat")
+    expect(r.installGuide!.installCommand).toBe("uv tool install aider-chat")
     expect(r.installGuide!.verifyCommand).toBe("aider --version")
   })
 

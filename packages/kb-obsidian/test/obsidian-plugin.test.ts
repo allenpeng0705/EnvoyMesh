@@ -241,8 +241,8 @@ describe("createObsidianPlugin", () => {
     await plugin.enrichMetadata(documents)
 
     expect(syncCalls).toHaveLength(2)
-    expect(syncCalls.find(c => c.documentId === "notes/project-alpha.md")!.published).toBe(true)
-    expect(syncCalls.find(c => c.documentId === "notes/private-diary.md")!.published).toBe(false)
+    expect(syncCalls.find(c => c.documentId === "doc-1")!.published).toBe(true)
+    expect(syncCalls.find(c => c.documentId === "doc-2")!.published).toBe(false)
   })
 
   it("continues on individual file read errors", async () => {

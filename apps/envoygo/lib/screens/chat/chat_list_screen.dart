@@ -198,7 +198,8 @@ class ChatListScreen extends ConsumerWidget {
                         child: ThreadTile(
                           thread: thread,
                           trailingAction:
-                              thread.type == ChatThreadType.externalAgent
+                              thread.type == ChatThreadType.externalAgent &&
+                                      isOwner
                               ? const ExtAgentSwitcher(iconOnly: true)
                               : thread.type == ChatThreadType.aiBot
                               ? _AiBotRowMenu(

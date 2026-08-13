@@ -728,7 +728,7 @@ export interface LibraryItem {
 }
 
 /** Vault or OpenClaw workspace — unified local file entry for Library UI and agent tools. */
-export type LocalFileSource = "vault" | "workspace";
+export type LocalFileSource = "vault" | "workspace" | "linked-obsidian" | "mcp-remote";
 
 export interface LocalFileItem {
   source: LocalFileSource;
@@ -742,17 +742,30 @@ export interface LocalFileItem {
   contentHash?: string;
   published?: boolean;
   publishedExternal?: PublishedExternalRecord;
+  /** MCP remote card id (when source is mcp-remote). */
+  externalId?: string;
+  /** Short preview text for mcp-remote browse rows (not persisted). */
+  snippetPreview?: string;
 }
 
 export interface ListAllLocalFilesParams {
   /** Case-insensitive substring match on title or relative path */
   query?: string;
+  /**
+   * When true (default), also list live MCP/Notion cards for Knowledge Browse.
+   * Soft-fails when MCP is unset or unreachable.
+   */
+  includeMcpRemote?: boolean;
+  /** Optional MCP list/search query (default: "*"). */
+  mcpListQuery?: string;
 }
 
 export interface ListAllLocalFilesResult {
   items: LocalFileItem[];
   vaultCount: number;
   workspaceCount: number;
+  linkedObsidianCount?: number;
+  mcpRemoteCount?: number;
 }
 
 export interface ReadLocalFileContentParams {
@@ -895,6 +908,113 @@ export interface ImportToLibraryResult {
   documentId: string;
   relativePath: string;
   sizeBytes: number;
+  /**
+   * When an Office/PDF import is materialized to Markdown under `notes/imports/`,
+   * the companion note path (Phase 57 item-4).
+   */
+  markdownRelativePath?: string;
+}
+
+/**
+ * Convert an existing vault Office/PDF (etc.) into a Markdown note under `notes/imports/`.
+ * Original bytes are retained. Phase 57 item-4 / 57E.
+ */
+export interface ConvertLibraryItemToMarkdownParams {
+  /** Vault document id **or** vault-relative path of the original. */
+  documentId?: string;
+  relativePath?: string;
+}
+
+export interface ConvertLibraryItemToMarkdownResult {
+  ok: boolean;
+  markdownRelativePath?: string;
+  documentId?: string;
+  reason?: string;
+}
+
+/**
+ * Phase 57D — run MCP search and (when write-back is enabled) save attributed note under `notes/mcp/`.
+ */
+export interface SaveExternalMcpSearchAsNoteParams {
+  query: string;
+  /** Optional note title override. */
+  title?: string;
+  sensitivity?: "public" | "friends" | "private";
+}
+
+export interface SaveExternalMcpSearchAsNoteResult {
+  ok: boolean;
+  relativePath?: string;
+  documentId?: string;
+  snippetCount?: number;
+  reason?: string;
+}
+
+/** List live MCP/Notion cards for Knowledge Browse (no write-back required). */
+export interface ListExternalMcpKnowledgeParams {
+  query?: string;
+  limit?: number;
+}
+
+export interface ListExternalMcpKnowledgeResult {
+  items: LocalFileItem[];
+  error?: string;
+}
+
+/** Copy linked Obsidian `.md` files into `notes/imports/obsidian/…`. */
+export interface ImportLinkedObsidianNotesParams {
+  /** Browse paths (`linked-obsidian/<label>/…`). Omit with `all: true`. */
+  paths?: string[];
+  /** Import every linked Obsidian markdown file. */
+  all?: boolean;
+}
+
+export interface ImportLinkedObsidianNotesResult {
+  ok: boolean;
+  imported: Array<{ from: string; to: string; documentId?: string }>;
+  skipped: number;
+  reason?: string;
+}
+
+/** Save selected MCP remote cards (or a fresh search) into `notes/mcp/`. */
+export interface ImportExternalMcpKnowledgeParams {
+  /** Prefer importing these mcp-remote browse paths / external ids. */
+  paths?: string[];
+  externalIds?: string[];
+  /** When set, run MCP search and import all hits (like saveExternalMcpSearchAsNote). */
+  query?: string;
+  title?: string;
+  sensitivity?: "public" | "friends" | "private";
+}
+
+export interface ImportExternalMcpKnowledgeResult {
+  ok: boolean;
+  imported: Array<{ relativePath: string; documentId?: string; title: string }>;
+  reason?: string;
+}
+
+/** Write vault notes into a linked Obsidian vault root (never deletes remote files). */
+export interface ExportNotesToLinkedObsidianParams {
+  relativePaths: string[];
+  /** Vault label from browse path (`linked-obsidian/<label>/…`). First root if omitted. */
+  targetRootLabel?: string;
+}
+
+export interface ExportNotesToLinkedObsidianResult {
+  ok: boolean;
+  exported: Array<{ from: string; to: string }>;
+  reason?: string;
+}
+
+/** Push vault notes to MCP write tool (e.g. memex_write). */
+export interface ExportNotesToMcpParams {
+  relativePaths: string[];
+}
+
+export interface ExportNotesToMcpResult {
+  ok: boolean;
+  exported: Array<{ relativePath: string; externalId?: string }>;
+  reason?: string;
 }
 
 /**
@@ -912,6 +1032,11 @@ export interface CreateNoteParams {
   subfolder?: string;
   /** Sensitivity for the note — written to per-item overrides (Phase 44A1). */
   sensitivity?: "public" | "friends" | "private";
+  /**
+   * When true, also publish the note as a public Blog post (Content → Blog).
+   * Default false. Knowledge mirror under `notes/imports/blog/` stays private until Published.
+   */
+  alsoPublishAsBlog?: boolean;
 }
 
 export interface CreateNoteResult {
@@ -2248,6 +2373,46 @@ export interface NodeService {
   getRagIndexStatus(): Promise<RagIndexStatus>;
 
   /**
+   * Force rebuild vault (+ chat backfill) vector indexes for the current embedding config.
+   * Use after changing embedding model/provider, or when the index looks stale.
+   */
+  reindexRagKnowledge(params?: { force?: boolean }): Promise<RagIndexStatus>;
+
+  /**
+   * Phase 57D — MCP search → attributed Markdown note under `notes/mcp/`.
+   * Requires `aiSettings.knowledgeBase.mcpWriteBackEnabled` and `externalProvider: "mcp"`.
+   */
+  saveExternalMcpSearchAsNote(
+    params: SaveExternalMcpSearchAsNoteParams,
+  ): Promise<SaveExternalMcpSearchAsNoteResult>;
+
+  /** List live MCP/Notion knowledge cards for Browse (soft-fail). */
+  listExternalMcpKnowledge(
+    params?: ListExternalMcpKnowledgeParams,
+  ): Promise<ListExternalMcpKnowledgeResult>;
+
+  /** Import linked Obsidian notes into `notes/imports/obsidian/`. */
+  importLinkedObsidianNotes(
+    params: ImportLinkedObsidianNotesParams,
+  ): Promise<ImportLinkedObsidianNotesResult>;
+
+  /**
+   * Import MCP remote cards / search hits into `notes/mcp/`.
+   * Browse import does not require `mcpWriteBackEnabled` (Settings toggle still gates the legacy save button).
+   */
+  importExternalMcpKnowledge(
+    params: ImportExternalMcpKnowledgeParams,
+  ): Promise<ImportExternalMcpKnowledgeResult>;
+
+  /** Export vault Markdown notes into a linked Obsidian vault. */
+  exportNotesToLinkedObsidian(
+    params: ExportNotesToLinkedObsidianParams,
+  ): Promise<ExportNotesToLinkedObsidianResult>;
+
+  /** Export vault Markdown notes via MCP write tool when available. */
+  exportNotesToMcp(params: ExportNotesToMcpParams): Promise<ExportNotesToMcpResult>;
+
+  /**
    * Fetch exported content from an allowlisted IPFS gateway and verify bytes match vault contentHash.
    * Requires `externalPublish.allowIpfs` and a non-empty gateway allowlist (desktop Kubo or mobile Helia).
    */
@@ -2257,8 +2422,17 @@ export interface NodeService {
 
   /**
    * Write bytes into the local shared vault at a relative path (import from file picker).
+   * Office/PDF imports also materialize GFM under `notes/imports/` when extract succeeds.
    */
   importToLibrary(params: ImportToLibraryParams): Promise<ImportToLibraryResult>;
+
+  /**
+   * Materialize anydoc/legacy extract of an existing vault document into `notes/imports/`.
+   * Originals are retained (Phase 57 item-4 / 57E).
+   */
+  convertLibraryItemToMarkdown(
+    params: ConvertLibraryItemToMarkdownParams,
+  ): Promise<ConvertLibraryItemToMarkdownResult>;
 
   /**
    * Create or overwrite a markdown note in the vault `notes/` folder (Phase 44A2).

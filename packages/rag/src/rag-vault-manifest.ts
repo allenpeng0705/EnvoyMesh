@@ -12,6 +12,8 @@ export interface RagVaultManifestEntry {
   chunkSizeChars: number;
   chunkOverlapChars: number;
   indexedAt: string;
+  /** Vault text extractor pipeline id; missing → treat as stale for reindex. */
+  extractorId?: string;
 }
 
 export interface RagVaultManifest {

@@ -334,6 +334,13 @@ describe("runInboundChatAssist Agent Mode", () => {
     });
 
     expect(askOpenClaw).toHaveBeenCalledOnce();
+    expect(askOpenClaw.mock.calls[0]?.[1]).toMatchObject({
+      retrievedContext: {
+        knowledgeAccess: "public",
+        knowledgeScope: "public",
+        contactThreadOwnerId: "envoy:owner:bob",
+      },
+    });
     expect(emitDraft).toHaveBeenCalled();
     const draft = emitDraft.mock.calls[0]?.[1];
     expect(draft?.text).toContain("Agent Mode reply");

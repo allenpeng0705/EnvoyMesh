@@ -1,16 +1,17 @@
 /**
  * Phase 56A — Cursor CLI (Anysphere) ext agent backend.
  *
- * Drives `cursor-agent --prompt <text> --output json` (one-shot per
- * `ask()`). Install via `curl https://cursor.com/install -fsS | bash`
+ * Drives current Cursor Agent CLI (2026.06+):
+ *   `cursor-agent --print --output-format json --trust <prompt>`
+ * (one-shot per `ask()`). Older docs used `--prompt` / `--output json`;
+ * those flags were removed — the CLI now takes a positional prompt and
+ * `--print` for non-interactive runs.
+ *
+ * Install via `curl https://cursor.com/install -fsS | bash`
  * (the binary name is `cursor-agent`, not `cursor`).
  *
- * Output format: when `--output json` is supported, the CLI emits a
- * JSON object — typically `{ "result": "...", "session_id": "..." }`,
- * but some builds use `text` / `response` / `output` as the field
- * name. We try all four. Older builds that don't accept `--output
- * json` emit plain text — we fall back to trimming the raw stdout in
- * that case.
+ * JSON shape: typically `{ "result": "..." }` (also try `text` /
+ * `response` / `output`). Plain-text stdout is accepted as a fallback.
  *
  * See `docs/Ext_Agent_guide.md` (Phase 56 section) for the install
  * command and the first-run browser login caveat.
@@ -18,8 +19,8 @@
 
 import {
   OneShotCliBackend,
-  type OneShotCliBackendOptions,
 } from "./one-shot-cli-backend.js";
+import { extractOneShotAssistantText } from "./parse-one-shot-json.js";
 import { getExtAgentProjectPathCwd } from "./project-path-store.js";
 import type { ExtAgentBackend } from "./types.js";
 
@@ -29,6 +30,9 @@ const CURSOR_DEFAULTS = {
   installHint:
     "Install the Cursor CLI: `curl https://cursor.com/install -fsS | bash` — then run `cursor-agent --version` to confirm. First run opens a browser for OAuth login.",
 } as const;
+
+/** Cursor prefers `result` before generic text fields / content blocks. */
+const CURSOR_FLAT_KEYS = ["result", "text", "response", "output"] as const;
 
 export interface CursorAgentBackendOptions {
   /** Binary to spawn. Default: `cursor-agent`. */
@@ -40,8 +44,8 @@ export interface CursorAgentBackendOptions {
   /** Per-ask timeout. Default: 60_000ms. */
   requestTimeoutMs?: number;
   /**
-   * Extra args inserted after the prompt. Example:
-   * `["--model", "gpt-4", "--workspace", "/path"]`. Default: `[]`.
+   * Extra args inserted before the positional prompt. Example:
+   * `["--model", "gpt-5"]`. Default: `[]`.
    */
   extraArgs?: string[];
   /**
@@ -73,9 +77,18 @@ export class CursorAgentBackend extends OneShotCliBackend {
   }
 
   protected buildArgs(text: string, _sessionKey: string): string[] {
-    const args = ["--prompt", text, "--output", "json", ...this.extraArgs];
+    // Current Cursor Agent CLI (2026.06+): positional prompt + --print
+    // for headless. Do not use --prompt / --output (removed).
+    const args = [
+      "--print",
+      "--output-format",
+      "json",
+      "--trust",
+      ...this.extraArgs,
+    ];
     const workspace = getExtAgentProjectPathCwd("cursor");
     if (workspace) args.push("--workspace", workspace);
+    args.push(text);
     return args;
   }
 
@@ -84,21 +97,14 @@ export class CursorAgentBackend extends OneShotCliBackend {
     _stderr: string,
     _exitCode: number,
   ): string {
-    const trimmed = stdout.trim();
-    if (!trimmed) return "";
-    // Try JSON first: { result, session_id, ... }
-    if (trimmed.startsWith("{")) {
-      try {
-        const obj = JSON.parse(trimmed) as Record<string, unknown>;
-        for (const k of ["result", "text", "response", "output"]) {
-          const v = obj[k];
-          if (typeof v === "string" && v.trim()) return v.trim();
-        }
-      } catch {
-        // Not valid JSON — fall through to raw text.
-      }
-    }
-    return trimmed;
+    // Flat-first so a Cursor `{ result }` payload is never overridden by
+    // an incidental Messages-style `content` array (and vice versa for mmx).
+    const extracted = extractOneShotAssistantText(stdout, {
+      flatKeys: CURSOR_FLAT_KEYS,
+      prefer: "flat-first",
+      ndjson: true,
+    });
+    return extracted ?? stdout.trim();
   }
 }
 

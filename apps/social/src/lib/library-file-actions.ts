@@ -42,13 +42,33 @@ export function isBrowserInlineViewableMime(mimeType: string): boolean {
   return normalized.endsWith("+json") || normalized.endsWith("+xml");
 }
 
+/** Ensure text-like MIME types declare UTF-8 so Blob preview tabs don't mojibake. */
+export function withUtf8Charset(mimeType: string): string {
+  const raw = mimeType.trim();
+  if (!raw) return "application/octet-stream";
+  const lower = raw.toLowerCase();
+  if (lower.includes("charset=")) return raw;
+  if (
+    lower.startsWith("text/") ||
+    lower === "application/json" ||
+    lower === "application/javascript" ||
+    lower === "application/xml" ||
+    lower.endsWith("+json") ||
+    lower.endsWith("+xml")
+  ) {
+    return `${raw}; charset=utf-8`;
+  }
+  return raw;
+}
+
 export function openContentInBrowser(params: {
   contentBase64: string;
   mimeType: string;
   filename: string;
 }): void {
   const bytes = base64ToBytes(params.contentBase64);
-  const blob = new Blob([bytes.slice()], { type: params.mimeType || "application/octet-stream" });
+  const mimeType = withUtf8Charset(params.mimeType || "application/octet-stream");
+  const blob = new Blob([bytes.slice()], { type: mimeType });
   const url = URL.createObjectURL(blob);
   try {
     if (isBrowserInlineViewableMime(params.mimeType)) {

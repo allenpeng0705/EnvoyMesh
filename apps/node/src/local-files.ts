@@ -30,10 +30,13 @@ export function mapWorkspaceItemToLocalFile(item: WorkspaceFileItem): LocalFileI
 export function buildAllLocalFilesList(params: {
   vaultItems: LibraryItem[];
   workspaceItems: WorkspaceFileItem[];
+  linkedObsidianItems?: LocalFileItem[];
 }): ListAllLocalFilesResult {
+  const linked = params.linkedObsidianItems ?? [];
   const items = [
     ...params.vaultItems.map(mapVaultItemToLocalFile),
     ...params.workspaceItems.map(mapWorkspaceItemToLocalFile),
+    ...linked,
   ].sort((left, right) => left.relativePath.localeCompare(right.relativePath));
   return {
     items,

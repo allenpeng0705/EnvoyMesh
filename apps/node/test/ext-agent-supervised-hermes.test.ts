@@ -210,7 +210,7 @@ describe("HermesSupervisedBackend (Phase 55E)", () => {
     expect(backend.didLastStartFail()).toBe(false);
   });
 
-  it("probe() delegates to the inner backend's probe()", async () => {
+  it("probe() warms via start() then delegates to the inner probe()", async () => {
     const probe = vi.fn().mockResolvedValue(true);
     const inner: ExtAgentBackend = { kind: "hermes", label: "x", ask: vi.fn(), probe };
     const sup = new FakeSupervisor();
@@ -219,10 +219,29 @@ describe("HermesSupervisedBackend (Phase 55E)", () => {
       supervisor: sup as unknown as DaemonSupervisor,
     });
     expect(await backend.probe()).toBe(true);
-    expect(probe).toHaveBeenCalledTimes(1);
+    // start() probe-first + final health check
+    expect(probe.mock.calls.length).toBeGreaterThanOrEqual(1);
+    expect(sup.start).toHaveBeenCalledTimes(0); // already healthy
   });
 
-  it("probe() returns false when the inner probe returns false", async () => {
+  it("probe() spawns when the core is down (Codex-style soft warm)", async () => {
+    let calls = 0;
+    const probe = vi.fn(async () => {
+      calls += 1;
+      // Calls: outer probe, start() probe-first, post-start health.
+      return calls >= 3;
+    });
+    const inner: ExtAgentBackend = { kind: "hermes", label: "x", ask: vi.fn(), probe };
+    const sup = new FakeSupervisor();
+    const backend = new HermesSupervisedBackend({
+      inner,
+      supervisor: sup as unknown as DaemonSupervisor,
+    });
+    expect(await backend.probe()).toBe(true);
+    expect(sup.start).toHaveBeenCalledTimes(1);
+  });
+
+  it("probe() returns false when the inner probe returns false after warm", async () => {
     const probe = vi.fn().mockResolvedValue(false);
     const inner: ExtAgentBackend = { kind: "hermes", label: "x", ask: vi.fn(), probe };
     const sup = new FakeSupervisor();
@@ -231,6 +250,7 @@ describe("HermesSupervisedBackend (Phase 55E)", () => {
       supervisor: sup as unknown as DaemonSupervisor,
     });
     expect(await backend.probe()).toBe(false);
+    expect(sup.start).toHaveBeenCalledTimes(1);
   });
 
   it("start() skips spawn when probe is healthy; otherwise spawns once", async () => {

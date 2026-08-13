@@ -139,6 +139,24 @@ describe("ExtAgentSwitcher (Phase 55D.1 tri-state UX)", () => {
     expect(screen.queryByTestId("ext-agent-install-dialog")).toBeNull()
   })
 
+  it("does not show the install dialog when reachable even if installState is not-installed", async () => {
+    getBridgeStatus.mockResolvedValue({ activeExtAgentId: "openhuman" })
+    probeExtAgent.mockResolvedValue({
+      ...NOT_INSTALLED_PROBE,
+      agentId: "openhuman",
+      agentName: "OpenHuman",
+      reachable: true,
+    })
+    render(<ExtAgentSwitcher />)
+    fireEvent.click(screen.getByTestId("ext-agent-switcher-btn"))
+    fireEvent.click(screen.getByTestId("ext-agent-option-openhuman"))
+    await waitFor(() => {
+      expect(probeExtAgent).toHaveBeenCalled()
+    })
+    expect(screen.queryByTestId("ext-agent-install-dialog")).toBeNull()
+    expect(screen.queryByTestId("ext-agent-switcher-toast")).toBeNull()
+  })
+
   it("shows the install dialog when the agent's installState is 'not-installed'", async () => {
     getBridgeStatus.mockResolvedValue({ activeExtAgentId: "codex" })
     probeExtAgent.mockResolvedValue(NOT_INSTALLED_PROBE)

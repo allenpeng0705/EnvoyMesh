@@ -134,10 +134,34 @@ export function inferEmbeddingProviderFromEndpoint(
   return rule?.preset;
 }
 
+/**
+ * True when the chat endpoint is Envoy Local llama-server (chat GGUF only).
+ * That process typically does **not** serve a usable `/v1/embeddings` model —
+ * inheriting it as the embedding provider fails and RAG falls back to lexical.
+ */
+export function isEnvoyLocalChatEndpoint(
+  endpoint: string | undefined,
+  modelProviders?: ModelProviderConfig | null,
+): boolean {
+  if (modelProviders?.presetId === "envoy-local") return true;
+  const raw = endpoint?.trim() ?? "";
+  if (!raw) return false;
+  try {
+    const url = new URL(raw.includes("://") ? raw : `http://${raw}`);
+    const host = url.hostname.toLowerCase();
+    if (host !== "127.0.0.1" && host !== "localhost") return false;
+    // Default ENVOY_LOCAL_PORT_BASE; also accept env-overridden ports only when
+    // presetId already marked envoy-local above.
+    return url.port === "18790" || raw.includes(":18790");
+  } catch {
+    return /127\.0\.0\.1:18790|localhost:18790/i.test(raw);
+  }
+}
+
 export function resolveEmbeddingConfig(input: ResolveEmbeddingConfigInput): ResolvedEmbeddingConfig {
   const embedding = input.embedding ?? {};
   const inherit = embedding.mode === "inherit" || embedding.mode === undefined;
-  const mode: EmbeddingProviderMode = inherit
+  let mode: EmbeddingProviderMode = inherit
     ? resolveInheritedEmbeddingMode(input.modelProviders?.mode)
     : (embedding.mode ?? "mock");
 
@@ -156,6 +180,26 @@ export function resolveEmbeddingConfig(input: ResolveEmbeddingConfigInput): Reso
     endpoint = normalizeOpenAiRoot(endpoint);
   } else if (mode === "ollama") {
     endpoint = endpoint.replace(/\/v1\/?$/, "");
+  }
+
+  // Envoy Local chat sidecar has no dedicated embedding GGUF. Pure inherit would
+  // call POST /v1/embeddings with text-embedding-3-small against llama-server and
+  // fail. Fall back to deterministic mock until the user configures Ollama /
+  // a real embedding API (or lexical mode).
+  const pureInherit =
+    inherit &&
+    !embedding.endpoint?.trim() &&
+    !embedding.modelName?.trim() &&
+    embedding.mode !== "openai-compatible" &&
+    embedding.mode !== "ollama" &&
+    embedding.mode !== "mock";
+  if (
+    pureInherit &&
+    mode === "openai-compatible" &&
+    isEnvoyLocalChatEndpoint(endpoint, input.modelProviders)
+  ) {
+    mode = "mock";
+    endpoint = "mock://local";
   }
 
   // 2. Hostname-driven preset gives provider-aware defaults that follow

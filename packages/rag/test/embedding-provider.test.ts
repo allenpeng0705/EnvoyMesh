@@ -686,4 +686,53 @@ describe("resolveEmbeddingConfig — chat-model inheritance", () => {
     expect(config.mode).toBe("mock");
     expect(config.modelName).toBe("mock-embed");
   });
+
+  it("falls back to mock when inheriting Envoy Local chat (no embedding GGUF)", () => {
+    const config = resolveEmbeddingConfig({
+      embedding: { mode: "inherit" },
+      modelProviders: {
+        mode: "openai-compatible",
+        presetId: "envoy-local",
+        endpoint: "http://127.0.0.1:18790/v1",
+        modelName: "Qwen3.5-0.8B",
+      },
+    });
+    expect(config.mode).toBe("mock");
+    expect(config.endpoint).toBe("mock://local");
+    expect(config.modelName).toBe("mock-embed");
+  });
+
+  it("does not force mock when embedding endpoint is set explicitly on Envoy Local", () => {
+    const config = resolveEmbeddingConfig({
+      embedding: {
+        mode: "openai-compatible",
+        endpoint: "https://api.openai.com/v1",
+        modelName: "text-embedding-3-small",
+        apiKey: "sk-test",
+      },
+      modelProviders: {
+        mode: "openai-compatible",
+        presetId: "envoy-local",
+        endpoint: "http://127.0.0.1:18790/v1",
+        modelName: "Qwen3.5-0.8B",
+      },
+    });
+    expect(config.mode).toBe("openai-compatible");
+    expect(config.endpoint).toBe("https://api.openai.com/v1");
+    expect(config.modelName).toBe("text-embedding-3-small");
+  });
+});
+
+describe("isEnvoyLocalChatEndpoint", () => {
+  it("detects presetId and default port", async () => {
+    const { isEnvoyLocalChatEndpoint } = await import("../src/embedding-resolver.js");
+    expect(
+      isEnvoyLocalChatEndpoint("http://127.0.0.1:18790/v1", {
+        mode: "openai-compatible",
+        presetId: "envoy-local",
+      }),
+    ).toBe(true);
+    expect(isEnvoyLocalChatEndpoint("http://127.0.0.1:18790/v1")).toBe(true);
+    expect(isEnvoyLocalChatEndpoint("https://api.openai.com/v1")).toBe(false);
+  });
 });

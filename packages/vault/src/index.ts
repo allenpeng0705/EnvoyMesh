@@ -20,16 +20,40 @@ import {
 export const DEFAULT_SHARED_VAULT_DIR = "shared_vault";
 
 export {
+  VAULT_ANYDOC_EXTENSIONS,
   VAULT_EXTRACTABLE_EXTENSIONS,
   VAULT_TEXT_CHUNK_EXTENSIONS,
+  VAULT_TEXT_EXTRACTOR_ID,
+  isVaultAnydocExtension,
   isVaultExtractableExtension,
   isVaultSearchableExtension,
   isVaultTextChunkExtension,
+  type VaultAnydocExtension,
   type VaultExtractableExtension,
   type VaultTextChunkExtension,
 } from "./vault-formats.js";
 
 export { extractVaultDocumentText, stripHtmlText, stripRtfText } from "./document-text-extract.js";
+
+export {
+  VAULT_NOTES_DIR,
+  VAULT_NOTES_IMPORTS_DIR,
+  VAULT_NOTES_IMPORTS_BLOG_DIR,
+  VAULT_DOCUMENTS_DIR,
+  VAULT_MD_COLLECT_EXCLUDE_PREFIXES,
+  BLOG_KNOWLEDGE_EXTRACTOR_ID,
+  normalizeVaultRelativePath,
+  isUnderNotes,
+  isUnderNotesImportsBlog,
+  isMarkdownCollectCandidate,
+  resolveImportDestinationPath,
+  notesImportsPathForSource,
+  notesImportsBlogPathForWebPost,
+  collectMarkdownDestinationPath,
+  uniqueRelativePath,
+  wrapMaterializedMarkdown,
+  type MaterializedMarkdownFrontmatter,
+} from "./markdown-corpus.js";
 
 /** @deprecated Use {@link VAULT_TEXT_CHUNK_EXTENSIONS} — kept for callers that relied on this name */
 export const SUPPORTED_VAULT_EXTENSIONS = VAULT_TEXT_CHUNK_EXTENSIONS;

@@ -56,7 +56,8 @@ The owner manages profiles (create, rename, delete) and configures infrastructur
 │  │ FULL:    │  │ LIMITED: │  │ LIMITED: │                 │
 │  │ AI: ✓    │  │ AI: ✓    │  │ AI: ✓    │                 │
 │  │ Bots: ✓  │  │ Bots: ✓  │  │ Bots: ✓  │                 │
-│  │ Ext: ✓   │  │ Ext: ✓   │  │ Ext: ✓   │                 │
+│  │ Ext: ✓*  │  │ Ext: ✓*  │  │ Ext: ✓*  │                 │
+│  │ (*owner can deny Ext Agent per member)                 │
 │  │ Family:✓ │  │ Family:✓ │  │ Family:✓ │                 │
 │  │ Push: ✓  │  │ Push: ✓  │  │ Push: ✓  │                 │
 │  │ Pi: ✓    │  │ Pi: ✗    │  │ Pi: ✗    │                 │
@@ -142,6 +143,11 @@ interface FamilyProfile {
   lastSeenAt?: string
   /** Whether this profile is active (owner can deactivate without deleting). */
   active: boolean
+  /**
+   * Owner-controlled: may this profile use Ext Agent chat?
+   * Omitted / undefined = **off** for non-owners (opt-in). Owner is always allowed.
+   */
+  extAgentEnabled?: boolean
   /** Per-profile bot definitions (each user creates their own bots). */
   aiBots?: AiBotDefinition[]
 }
@@ -206,7 +212,7 @@ When a device pairs, the pairing flow asks "Who are you?" (select existing profi
 |---|---|---|
 | **EnvoyAI** | Thread key: `__envoy_ai__:<profileId>` | Dad's AI conversations are invisible to Mom |
 | **AI Character Bots** | Per-profile `aiBots` in `family-profiles.json` | Dad creates "Luna", Mom creates "Chef Marco" |
-| **Ext Agent chat** | Thread key: `bridge:<agentId>:<profileId>` | Each profile chats with the active Ext Agent privately |
+| **Ext Agent chat** | Thread key: `bridge:<agentId>:<profileId>`; gated by per-profile `extAgentEnabled` (**default off** for members; owner opts in via Settings → Family). **Which** agent is active is global + **owner-only** (`activeExtAgentId`) | Opted-in profiles chat with the same active Ext Agent privately; they cannot switch agents |
 | **Family direct chat** | Thread key: `family:<sortedProfileA>:<sortedProfileB>` | Dad ↔ Mom |
 | **Family group chat** | Room with `memberProfileIds` (family only) | Dad + Mom + Alex |
 | **Push** | Token tagged with `profileId` | Mom's phone doesn't buzz for Dad's messages |

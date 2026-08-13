@@ -128,6 +128,28 @@ describe("OpenHumanSupervisedBackend (Phase 55E)", () => {
     expect(innerAsk).toHaveBeenCalledWith("hi", "sess-1");
   });
 
+  it("ask() clears a cached spawn error when the HTTP core becomes healthy", async () => {
+    const innerAsk = vi.fn(async () => "ok");
+    const inner = makeInner(innerAsk, false);
+    const sup = new FakeSupervisor();
+    sup.nextStartResult = {
+      err: new InstallMissingError({
+        command: "openhuman-core",
+        reason: "spawn-enoent",
+      }),
+    };
+    const backend = new OpenHumanSupervisedBackend({
+      inner,
+      supervisor: sup as unknown as DaemonSupervisor,
+    });
+    await expect(backend.ask("hi", "sess-1")).rejects.toBeInstanceOf(InstallMissingError);
+    // OpenHuman.app comes up — probe flips to healthy.
+    ;(inner.probe as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+    const reply = await backend.ask("hi-again", "sess-1");
+    expect(reply).toBe("ok");
+    expect(backend.didLastStartFail()).toBe(false);
+  });
+
   it("ask() does NOT re-call supervisor.start() when already healthy", async () => {
     const innerAsk = vi.fn(async (text: string) => `openhuman-reply:${text}`);
     const inner = makeInner(innerAsk, false);
@@ -152,7 +174,7 @@ describe("OpenHumanSupervisedBackend (Phase 55E)", () => {
     const inner = makeInner();
     const sup = new FakeSupervisor();
     sup.nextStartResult = { err: new InstallMissingError({
-      command: "openhuman",
+      command: "openhuman-core",
       reason: "spawn-enoent",
     }) };
     const backend = new OpenHumanSupervisedBackend({
@@ -175,7 +197,7 @@ describe("OpenHumanSupervisedBackend (Phase 55E)", () => {
     const inner = makeInner();
     const sup = new FakeSupervisor();
     sup.nextStartResult = { err: new InstallMissingError({
-      command: "openhuman",
+      command: "openhuman-core",
       reason: "spawn-enoent",
     }) };
     const backend = new OpenHumanSupervisedBackend({
@@ -191,7 +213,7 @@ describe("OpenHumanSupervisedBackend (Phase 55E)", () => {
     expect(backend.didLastStartFail()).toBe(false);
   });
 
-  it("probe() delegates to the inner backend's probe()", async () => {
+  it("probe() warms via start() then delegates to the inner probe()", async () => {
     const probe = vi.fn().mockResolvedValue(true);
     const inner: ExtAgentBackend = { kind: "openhuman", label: "x", ask: vi.fn(), probe };
     const sup = new FakeSupervisor();
@@ -200,10 +222,27 @@ describe("OpenHumanSupervisedBackend (Phase 55E)", () => {
       supervisor: sup as unknown as DaemonSupervisor,
     });
     expect(await backend.probe()).toBe(true);
-    expect(probe).toHaveBeenCalledTimes(1);
+    expect(probe.mock.calls.length).toBeGreaterThanOrEqual(1);
+    expect(sup.start).toHaveBeenCalledTimes(0);
   });
 
-  it("probe() returns false when the inner probe returns false", async () => {
+  it("probe() spawns when the core is down (Codex-style soft warm)", async () => {
+    let calls = 0;
+    const probe = vi.fn(async () => {
+      calls += 1;
+      return calls >= 3;
+    });
+    const inner: ExtAgentBackend = { kind: "openhuman", label: "x", ask: vi.fn(), probe };
+    const sup = new FakeSupervisor();
+    const backend = new OpenHumanSupervisedBackend({
+      inner,
+      supervisor: sup as unknown as DaemonSupervisor,
+    });
+    expect(await backend.probe()).toBe(true);
+    expect(sup.start).toHaveBeenCalledTimes(1);
+  });
+
+  it("probe() returns false when the inner probe returns false after warm", async () => {
     const probe = vi.fn().mockResolvedValue(false);
     const inner: ExtAgentBackend = { kind: "openhuman", label: "x", ask: vi.fn(), probe };
     const sup = new FakeSupervisor();
@@ -212,6 +251,7 @@ describe("OpenHumanSupervisedBackend (Phase 55E)", () => {
       supervisor: sup as unknown as DaemonSupervisor,
     });
     expect(await backend.probe()).toBe(false);
+    expect(sup.start).toHaveBeenCalledTimes(1);
   });
 
   it("start() skips spawn when probe is healthy; otherwise spawns once", async () => {

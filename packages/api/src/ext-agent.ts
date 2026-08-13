@@ -439,11 +439,11 @@ export interface ExtAgentInstallGuide {
 export function defaultExtAgentStartHint(agentId: string): string {
   switch (agentId) {
     case "homeclaw":
-      return "Start HomeClaw, then confirm http://127.0.0.1:8010/status responds.";
+      return "Install HomeClaw from https://www.homeclaw.cn (clone repo → ./install.sh on Mac/Linux, or .\\install.ps1 / install.bat on Windows). Start Core with `python -m main start` (or Portal: `python -m main portal`), keep it running, then confirm http://127.0.0.1:8010/status. EnvoyMesh does not start HomeClaw for you.";
     case "hermes":
-      return "Run `hermes gateway run` with API_SERVER_ENABLED=true (OpenAI API on :8642).";
+      return "EnvoyMesh starts Hermes when needed (`hermes gateway run`). Set API_SERVER_ENABLED=true and API_SERVER_KEY in Hermes config; keep `hermes` on PATH.";
     case "openhuman":
-      return "Start OpenHuman.app or the OpenHuman CLI core (health on :7788).";
+      return "Install and open OpenHuman.app, and keep it running while you chat. EnvoyMesh reuses the app’s core on :7788.";
     case "codex":
       return "Codex CLI found but app-server is not ready — confirm OPENAI_API_KEY is in the home-node environment, then retry (or send a chat message to warm it up).";
     case "claudecode":
@@ -451,7 +451,7 @@ export function defaultExtAgentStartHint(agentId: string): string {
     case "cursor":
       return "Install the Cursor CLI: `curl https://cursor.com/install -fsS | bash`. First run opens a browser for OAuth login; ensure `cursor-agent --version` works.";
     case "aider":
-      return "Install Aider: `pip install aider-chat` (or `python -m pip install aider-install` then `aider-install`). Set ANTHROPIC_API_KEY or OPENAI_API_KEY for the model provider.";
+      return "Install Aider onto a PATH the home node can see: `uv tool install aider-chat` (preferred) or `pip install --user aider-chat`. Then `aider --version`, set ANTHROPIC_API_KEY or OPENAI_API_KEY on the home node, and restart the node.";
     case "mmx":
       return "Install MMX-CLI: `npm install -g mmx-cli`. Then run `mmx auth login --api-key sk-xxxx` to authenticate; the CLI auto-detects global vs CN region from the key prefix.";
     case "pi":
@@ -580,6 +580,22 @@ interface InstallTableRow {
 }
 
 const INSTALL_TABLE: Record<string, InstallTableRow> = {
+  homeclaw: {
+    // Not a PATH CLI — EnvoyMesh probes :8010. `command` is a display
+    // label for the Install Required card body ("Install {command}…").
+    command: "HomeClaw",
+    installCommand:
+      "git clone https://github.com/allenpeng0705/HomeClaw.git && cd HomeClaw && chmod +x install.sh && ./install.sh",
+    verifyCommand: "curl -sS http://127.0.0.1:8010/status",
+    homepageUrl: "https://www.homeclaw.cn/",
+    homepageLabel: "HomeClaw website",
+    commonIssues: [
+      "Install guide: https://www.homeclaw.cn/en/install/ — Mac/Linux: `./install.sh`. Windows: `.\\install.ps1` or `install.bat` (PowerShell Bypass if unsigned).",
+      "Start Core from the HomeClaw repo: `python -m main start`. Or open Portal (`python -m main portal` → http://127.0.0.1:18472) and start Core there. Keep Core running while you chat.",
+      "Verify the EnvoyMesh channel: `curl -sS http://127.0.0.1:8010/status`. EnvoyMesh does not autostart HomeClaw.",
+      "If chat has no reply, set HomeClaw `ENVOYMESH_BRIDGE_URL` to the home-node bridge (default `http://127.0.0.1:3031/bridge/send`, or `:4031` with port offset) and confirm the EnvoyMesh channel is enabled.",
+    ],
+  },
   codex: {
     command: "codex",
     installCommand: "npm install -g @openai/codex",
@@ -613,7 +629,7 @@ const INSTALL_TABLE: Record<string, InstallTableRow> = {
     homepageLabel: "Hermes docs",
     commonIssues: [
       "Set API_SERVER_ENABLED=true and API_SERVER_KEY in your hermes config (e.g. ~/.hermes/.env).",
-      "If `hermes gateway run` fails to start, check the config file for typos.",
+      "EnvoyMesh autostarts `hermes gateway run` when the CLI is on PATH; disable with ENVOYMESH_EXT_AGENT_AUTOSTART=0.",
       "Hermes health endpoint: GET http://127.0.0.1:8642/v1/models.",
     ],
   },
@@ -621,13 +637,14 @@ const INSTALL_TABLE: Record<string, InstallTableRow> = {
     command: "openhuman",
     installCommand:
       "curl -fsSL https://raw.githubusercontent.com/tinyhumansai/openhuman/main/scripts/install.sh | bash",
-    verifyCommand: "openhuman --version",
+    verifyCommand:
+      "curl -sS http://127.0.0.1:7788/health  # after launching OpenHuman.app",
     homepageUrl: "https://tinyhumans.ai/openhuman",
     homepageLabel: "OpenHuman website",
     commonIssues: [
-      "Set OPENHUMAN_TOKEN or place core.token in your workspace.",
-      "OpenHuman requires the openhuman-core binary on PATH.",
-      "OpenHuman health endpoint: GET http://127.0.0.1:7788/health.",
+      "Install OpenHuman.app (website or: curl -fsSL https://raw.githubusercontent.com/tinyhumansai/openhuman/main/scripts/install.sh | bash).",
+      "Keep OpenHuman.app running while chatting — EnvoyMesh reuses its core on :7788.",
+      "Health check: GET http://127.0.0.1:7788/health.",
     ],
   },
   cursor: {
@@ -644,14 +661,18 @@ const INSTALL_TABLE: Record<string, InstallTableRow> = {
   },
   aider: {
     command: "aider",
-    installCommand: "pip install aider-chat",
+    // Prefer uv/user install so `~/.local/bin/aider` is on PATH for the
+    // home node (conda-only installs are easy to miss when the env is
+    // not activated for that process).
+    installCommand: "uv tool install aider-chat",
     verifyCommand: "aider --version",
     homepageUrl: "https://aider.chat/docs/",
     homepageLabel: "Aider docs",
     commonIssues: [
-      "Set ANTHROPIC_API_KEY or OPENAI_API_KEY in your shell before running aider.",
-      "If `aider --version` fails, try `python -m pip install aider-chat --upgrade`.",
-      "Aider requires Python 3.8+; verify with `python --version`.",
+      "Preferred: `uv tool install aider-chat` (puts `aider` in ~/.local/bin). Alternative: `pip install --user aider-chat`. Avoid bare `pip install` into a random conda/venv unless that `aider` is also on PATH.",
+      "Verify in a new terminal: `which aider` and `aider --version`. Then restart the EnvoyMesh home node so the Ext Agent probe picks it up.",
+      "If Aider only lives in a conda env (`conda activate …`), either symlink it (`ln -sf \"$(which aider)\" ~/.local/bin/aider` while the env is active) or install with uv/`pip --user` instead.",
+      "Set ANTHROPIC_API_KEY or OPENAI_API_KEY in the home-node environment (not only your interactive shell), then restart the node. Python 3.8+ required.",
     ],
   },
   mmx: {

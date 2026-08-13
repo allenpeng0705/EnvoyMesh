@@ -84,6 +84,8 @@ export interface ObsidianPluginConfig {
 // ---------------------------------------------------------------------------
 
 interface NoteEntry {
+  /** Vault document id (sensitivity / published-library key). */
+  documentId: string
   /** Relative path from vault root (e.g. "notes/project.md"). */
   relativePath: string
   /** Filename without extension (used as wiki-link target). */
@@ -142,6 +144,7 @@ export function createObsidianPlugin(deps: ObsidianPluginDeps): KnowledgeBasePlu
         const title = basename(doc.relativePath, extname(doc.relativePath))
 
         newNotes.set(title, {
+          documentId: doc.documentId,
           relativePath: doc.relativePath,
           title,
           frontmatter,
@@ -166,7 +169,8 @@ export function createObsidianPlugin(deps: ObsidianPluginDeps): KnowledgeBasePlu
       const published = frontmatterBoolean(entry.frontmatter.data, "published")
       if (published !== undefined) {
         try {
-          await deps.onSensitivitySync(entry.relativePath, published)
+          // Must key by vault documentId (same as Library Published toggle / RAG).
+          await deps.onSensitivitySync(entry.documentId, published)
         } catch {
           // Non-fatal — individual sync failures don't block other notes.
         }
@@ -215,7 +219,8 @@ export function createObsidianPlugin(deps: ObsidianPluginDeps): KnowledgeBasePlu
 
       profileDir = cfg.profileDir as string | undefined
 
-      // Load existing link graph from disk (if available).
+      // Load existing link graph from disk (if available). Full rebuild happens
+      // on enrichMetadata (called by the host on activate / Library list).
       if (profileDir) {
         graph = await loadLinkGraph(profileDir)
       }
@@ -224,7 +229,8 @@ export function createObsidianPlugin(deps: ObsidianPluginDeps): KnowledgeBasePlu
     },
 
     async deactivate(): Promise<void> {
-      // Clean up persisted link graph.
+      // Drop plugin-owned link graph only. Notes stay in the vault; sensitivity
+      // overrides and published-library entries are preserved (57C).
       if (profileDir) {
         await deleteLinkGraph(profileDir)
       }

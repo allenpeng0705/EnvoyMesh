@@ -6,7 +6,7 @@ import type { VaultIndex } from "@envoymesh/vault";
 import type { AiIdentity, AiKnowledgeBaseSettings, AiRule, ModelProviderConfig } from "@envoymesh/api";
 import { applyAiIdentityToDraftText } from "@envoymesh/api";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
-import { formatVaultKnowledgeSection, searchVaultKnowledgeBase } from "./ai-context.js";
+import { formatVaultKnowledgeSection, loadKnowledgeSensitivityOverrides, searchVaultKnowledgeBase } from "./ai-context.js";
 import { buildContextInjection } from "./context-injector.js";
 import { loadAgentIdentitySection } from "./agent-identity-context.js";
 import type { ModeController } from "./mode-controller.js";
@@ -75,6 +75,8 @@ export async function generateChatDraft(input: {
   allowWhileOwnerOnline?: boolean;
   /** Persist drafts and load thread context under this key (e.g. room:uuid for group chat). */
   threadKey?: string;
+  /** Profile dir for Published-toggle sensitivity overrides (57B). */
+  profileDir?: string;
 }): Promise<ChatDraftResult | ChatDraftFailure> {
   const {
     envelope,
@@ -105,6 +107,7 @@ export async function generateChatDraft(input: {
     ragService = null,
     allowWhileOwnerOnline = false,
     threadKey: threadKeyOverride,
+    profileDir,
   } = input;
 
   const threadKey = threadKeyOverride ?? senderOwnerId;
@@ -266,6 +269,7 @@ Be courteous and professional. If you cannot help, politely explain limitations.
     }
     // Assist path: honor per-contact knowledgeAccess for sensitivity filtering.
     // Keep knowledgeScope "public" (no owner/private vault roots) — Agent Mode uses OpenClaw.
+    const sensitivityOverrides = await loadKnowledgeSensitivityOverrides(profileDir);
     const vaultResults = ragService
       ? await ragService.searchVaultKnowledgeBase({
           vaultIndex,
@@ -274,6 +278,7 @@ Be courteous and professional. If you cannot help, politely explain limitations.
           knowledgeBase,
           knowledgeScope: "public",
           ruleVaultQuery,
+          sensitivityOverrides,
         })
       : searchVaultKnowledgeBase({
           vaultIndex,
@@ -282,6 +287,7 @@ Be courteous and professional. If you cannot help, politely explain limitations.
           knowledgeBase,
           knowledgeScope: "public",
           ruleVaultQuery,
+          sensitivityOverrides,
         });
     vaultContext = formatVaultKnowledgeSection(vaultResults);
     if (vaultResults.length > 0) {

@@ -20,7 +20,7 @@ import {
   stripModelThinking,
 } from "@envoymesh/api";
 import { ZodError } from "zod";
-import { formatVaultKnowledgeSection, searchVaultKnowledgeBase, type KnowledgeAccessLevel } from "./ai-context.js";
+import { formatVaultKnowledgeSection, loadKnowledgeSensitivityOverrides, searchVaultKnowledgeBase, type KnowledgeAccessLevel } from "./ai-context.js";
 import type { RagService } from "./rag-service.js";
 
 export type KnowledgeQueryInboundResult =
@@ -101,6 +101,8 @@ export async function handleInboundKnowledgeQuery(input: {
   knowledgeSyndicationMaxSensitivity?: KnowledgeSyndicationSensitivity;
   /** Phase 14B — optional per-contact ceiling (tighter than global). */
   contactSyndicationMaxSensitivity?: KnowledgeSyndicationSensitivity;
+  /** Profile dir for Published-toggle sensitivity overrides (57B). */
+  profileDir?: string;
 }): Promise<KnowledgeQueryInboundResult> {
   const {
     envelope,
@@ -123,6 +125,7 @@ export async function handleInboundKnowledgeQuery(input: {
     ragService = null,
     knowledgeSyndicationMaxSensitivity,
     contactSyndicationMaxSensitivity,
+    profileDir,
   } = input;
 
   let payload: ReturnType<typeof parseKnowledgeQueryPayload>;
@@ -257,6 +260,7 @@ export async function handleInboundKnowledgeQuery(input: {
   let vaultSnippets: Awaited<ReturnType<RagService["searchVaultKnowledgeBase"]>> = [];
   const knowledgeScope = isLocalSelfQuery ? "owner" : "public";
   if (vaultIndex) {
+    const sensitivityOverrides = await loadKnowledgeSensitivityOverrides(profileDir);
     vaultSnippets = ragService
       ? await ragService.searchVaultKnowledgeBase({
           vaultIndex,
@@ -264,6 +268,7 @@ export async function handleInboundKnowledgeQuery(input: {
           knowledgeAccess: effectiveKnowledgeAccess,
           knowledgeBase,
           knowledgeScope,
+          sensitivityOverrides,
         })
       : searchVaultKnowledgeBase({
           vaultIndex,
@@ -271,6 +276,7 @@ export async function handleInboundKnowledgeQuery(input: {
           knowledgeAccess: effectiveKnowledgeAccess,
           knowledgeBase,
           knowledgeScope,
+          sensitivityOverrides,
         });
     await taskStore.appendAuditEvent(
       createAuditEvent({

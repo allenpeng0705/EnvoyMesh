@@ -73,8 +73,9 @@ import {
 // Browser-safe subpath — does NOT pull in node:crypto / node:fs. The full
 // `@envoymesh/rag` root depends on Node builtins and is intentionally not
 // imported here; the resolver subpath is the only entry point the UI uses.
-import { resolveEmbeddingConfig } from "@envoymesh/rag/embedding-resolver";
+import { isEnvoyLocalChatEndpoint, resolveEmbeddingConfig } from "@envoymesh/rag/embedding-resolver";
 import { waitForEnvoyLocalIdle } from "../../lib/envoy-local-wait.js";
+import { openContentKnowledge } from "../../lib/content-knowledge-nav.js";
 
 // ---------------------------------------------------------------------------
 // "Add Rule" form — now fully controlled via React state (fixes the
@@ -107,10 +108,11 @@ const EMPTY_RULE_FORM: RuleFormState = {
   template: "",
 };
 
-function RagIndexStatusPanel() {
+export function RagIndexStatusPanel() {
   const t = useT();
   const nodeService = useNodeService();
   const [status, setStatus] = useState<RagIndexStatus | null>(null);
+  const [rebuilding, setRebuilding] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,6 +131,10 @@ function RagIndexStatusPanel() {
         progress,
         lastCompletedAt: progress.phase === "done" ? progress.updatedAt : prev?.lastCompletedAt,
         trackedDocuments: prev?.trackedDocuments ?? 0,
+        embedderModelKey: prev?.embedderModelKey,
+        lastEmbedError: progress.phase === "error" ? progress.message : prev?.lastEmbedError,
+        lastEmbedErrorAt:
+          progress.phase === "error" ? progress.updatedAt : prev?.lastEmbedErrorAt,
       }));
     });
     const timer = window.setInterval(() => {
@@ -146,6 +152,23 @@ function RagIndexStatusPanel() {
   const { progress } = status;
   const pct =
     progress.total > 0 ? Math.min(100, Math.round((progress.processed / progress.total) * 100)) : status.isIndexing ? 0 : 100;
+
+  const handleRebuild = async () => {
+    if (
+      !window.confirm(t("settings.ai.rag.rebuildIndexConfirm"))
+    ) {
+      return;
+    }
+    setRebuilding(true);
+    try {
+      const next = await nodeService.reindexRagKnowledge({ force: true });
+      setStatus(next);
+    } catch {
+      // Status panel will show lastEmbedError / error phase on next poll.
+    } finally {
+      setRebuilding(false);
+    }
+  };
 
   return (
     <div className="form-group">
@@ -181,6 +204,33 @@ function RagIndexStatusPanel() {
             ? t("settings.ai.rag.indexStatusTrackedSuffix", { count: status.trackedDocuments })
             : ""}
         </p>
+        {status.embedderModelKey ? (
+          <p className="field-desc">
+            {t("settings.ai.rag.indexStatusEmbedder", { modelKey: status.embedderModelKey })}
+          </p>
+        ) : null}
+        {status.lastEmbedError ? (
+          <p className="field-desc" style={{ color: "var(--error, #c0392b)" }}>
+            {t("settings.ai.rag.indexStatusEmbedError", {
+              message: status.lastEmbedError,
+              time: status.lastEmbedErrorAt
+                ? new Date(status.lastEmbedErrorAt).toLocaleString()
+                : t("settings.ai.rag.indexStatusUnknown"),
+            })}
+          </p>
+        ) : null}
+        <div className="settings-buttons" style={{ marginTop: "0.5rem" }}>
+          <button
+            type="button"
+            className="settings-button"
+            disabled={rebuilding || status.isIndexing}
+            onClick={() => void handleRebuild()}
+          >
+            {rebuilding || status.isIndexing
+              ? t("settings.ai.rag.rebuildIndexBusy")
+              : t("settings.ai.rag.rebuildIndex")}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -190,7 +240,7 @@ function RagIndexStatusPanel() {
  * Phase 44C — Knowledge Base Plugin management panel.
  * Lists registered plugins with activate/deactivate controls.
  */
-function KbPluginSettings() {
+export function KbPluginSettings() {
   const t = useT();
   const nodeService = useNodeService();
   const { showToast } = useToast();
@@ -241,6 +291,24 @@ function KbPluginSettings() {
     }
   };
 
+  /** Re-run activate to rebuild frontmatter sync + link graph (57C). */
+  const handleSync = async (pluginId: string) => {
+    setBusy(`sync:${pluginId}`);
+    try {
+      const result = await nodeService.activateKbPlugin({ pluginId });
+      if (!result.ok) {
+        showToast(t("kbPlugins.syncError") + (result.reason ? `: ${result.reason}` : ""), "error");
+      } else {
+        showToast(t("kbPlugins.syncDone"), "success");
+      }
+      await loadPlugins();
+    } catch {
+      showToast(t("kbPlugins.syncError"), "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const statusLabel = (status: KbPluginInfo["status"]) => {
     switch (status) {
       case "active": return t("kbPlugins.statusActive");
@@ -265,6 +333,11 @@ function KbPluginSettings() {
               <div className="rule-item-triggers">
                 {p.description}
               </div>
+              {p.pluginId === "obsidian" && (
+                <div className="rule-item-triggers field-desc" style={{ marginTop: "0.35rem" }}>
+                  {t("kbPlugins.obsidianHint")}
+                </div>
+              )}
               <div className="rule-item-triggers" style={{ opacity: 0.7 }}>
                 {t("kbPlugins.pluginStatus")}: {statusLabel(p.status)}
                 {p.activatedAt && ` · ${t("kbPlugins.activatedAt")}: ${new Date(p.activatedAt).toLocaleDateString()}`}
@@ -285,14 +358,26 @@ function KbPluginSettings() {
                     {busy === p.pluginId ? t("kbPlugins.activating") : t("kbPlugins.activate")}
                   </button>
                 ) : (
-                  <button
-                    type="button"
-                    className="settings-button"
-                    disabled={busy === p.pluginId}
-                    onClick={() => void handleDeactivate(p.pluginId)}
-                  >
-                    {busy === p.pluginId ? t("kbPlugins.deactivating") : t("kbPlugins.deactivate")}
-                  </button>
+                  <>
+                    {p.pluginId === "obsidian" && (
+                      <button
+                        type="button"
+                        className="settings-button"
+                        disabled={busy === `sync:${p.pluginId}`}
+                        onClick={() => void handleSync(p.pluginId)}
+                      >
+                        {busy === `sync:${p.pluginId}` ? t("kbPlugins.syncing") : t("kbPlugins.syncNow")}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="settings-button"
+                      disabled={busy === p.pluginId}
+                      onClick={() => void handleDeactivate(p.pluginId)}
+                    >
+                      {busy === p.pluginId ? t("kbPlugins.deactivating") : t("kbPlugins.deactivate")}
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -303,7 +388,7 @@ function KbPluginSettings() {
   );
 }
 
-function KnowledgeBaseSettings(props: {
+export function KnowledgeBaseSettings(props: {
   value: AiKnowledgeBaseSettings;
   onChange: (next: AiKnowledgeBaseSettings) => Promise<void>;
   modelProviders?: import("@envoymesh/api").ModelProviderConfig;
@@ -311,7 +396,23 @@ function KnowledgeBaseSettings(props: {
   const t = useT();
   const kb = props.value;
   const patch = async (partial: Partial<AiKnowledgeBaseSettings>) => {
-    await props.onChange({ ...kb, ...partial });
+    const next = { ...kb, ...partial };
+    if (partial.embedding !== undefined) {
+      const prevKey = resolveEmbeddingConfig({
+        embedding: kb.embedding,
+        modelProviders: props.modelProviders,
+      }).modelKey;
+      const nextKey = resolveEmbeddingConfig({
+        embedding: next.embedding,
+        modelProviders: props.modelProviders,
+      }).modelKey;
+      if (prevKey !== nextKey) {
+        if (!window.confirm(t("settings.ai.rag.embeddingChangeConfirm"))) {
+          return;
+        }
+      }
+    }
+    await props.onChange(next);
   };
 
   // Compute the effective embedding config against the chat-model
@@ -332,6 +433,12 @@ function KnowledgeBaseSettings(props: {
   const hasExplicitResponseShape = !!kb.embedding?.responseShape;
   const hasExplicitEndpoint = !!kb.embedding?.endpoint?.trim();
   const hasExplicitApiKey = !!kb.embedding?.apiKey?.trim();
+  const showEnvoyLocalEmbedBanner =
+    (kb.embedding?.mode === "inherit" || kb.embedding?.mode === undefined) &&
+    !hasExplicitEndpoint &&
+    !hasExplicitModelName &&
+    (props.modelProviders?.presetId === "envoy-local" ||
+      isEnvoyLocalChatEndpoint(props.modelProviders?.endpoint, props.modelProviders));
 
   return (
     <>
@@ -367,6 +474,9 @@ function KnowledgeBaseSettings(props: {
           </select>
         </div>
       <p className="rag-inherit-banner">{t("settings.ai.rag.embeddingInheritBanner")}</p>
+      {showEnvoyLocalEmbedBanner ? (
+        <p className="rag-inherit-banner">{t("settings.ai.rag.embeddingEnvoyLocalBanner")}</p>
+      ) : null}
       <div className="form-group">
         <label>{t("settings.ai.rag.embeddingProvider")}</label>
           <select
@@ -656,7 +766,7 @@ function KnowledgeBaseSettings(props: {
         <div className="form-group">
           <label>{t("settings.ai.rag.externalProvider")}</label>
           <select
-            value={kb.externalProvider ?? "none"}
+            value={kb.externalProvider ?? DEFAULT_AI_KNOWLEDGE_BASE.externalProvider}
             onChange={async (e) => {
               await patch({
                 externalProvider: e.target.value as "none" | "mcp",
@@ -666,6 +776,7 @@ function KnowledgeBaseSettings(props: {
             <option value="none">{t("settings.ai.rag.externalNone")}</option>
             <option value="mcp">{t("settings.ai.rag.externalMcp")}</option>
           </select>
+          <p className="field-desc">{t("settings.ai.rag.externalMcpDesc")}</p>
         </div>
         <div className="form-group">
           <label>{t("settings.ai.rag.mcpServerUrl")}</label>
@@ -682,30 +793,130 @@ function KnowledgeBaseSettings(props: {
       </div>
 
       {kb.externalProvider === "mcp" && (
+        <>
+          <div className="form-row">
+            <div className="form-group">
+              <label>{t("settings.ai.rag.mcpSearchTool")}</label>
+              <input
+                type="text"
+                placeholder={t("settings.ai.rag.mcpSearchToolPlaceholder")}
+                value={kb.mcpSearchTool ?? ""}
+                onChange={async (e) => {
+                  await patch({ mcpSearchTool: e.target.value.trim() || undefined });
+                }}
+              />
+            </div>
+            <div className="form-group">
+              <label>{t("settings.ai.rag.mcpApiKeyOptional")}</label>
+              <input
+                type="password"
+                value={kb.mcpApiKey ?? ""}
+                onChange={async (e) => {
+                  await patch({ mcpApiKey: e.target.value.trim() || undefined });
+                }}
+              />
+            </div>
+          </div>
+          <McpWriteBackControls kb={kb} onPatch={patch} />
+        </>
+      )}
+    </>
+  );
+}
+
+function McpWriteBackControls(props: {
+  kb: AiKnowledgeBaseSettings;
+  onPatch: (partial: Partial<AiKnowledgeBaseSettings>) => Promise<void>;
+}) {
+  const t = useT();
+  const nodeService = useNodeService();
+  const { showToast } = useToast();
+  const { kb, onPatch } = props;
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [lastError, setLastError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void nodeService.getRagIndexStatus().then((status) => {
+      setLastError(status.lastExternalKbError ?? null);
+    }).catch(() => {});
+  }, [nodeService, kb.mcpServerUrl, kb.externalProvider]);
+
+  return (
+    <>
+      <div className="settings-toggle-row">
+        <div className="toggle-info">
+          <strong>{t("settings.ai.rag.mcpWriteBack")}</strong>
+          <span className="toggle-desc">{t("settings.ai.rag.mcpWriteBackDesc")}</span>
+        </div>
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={kb.mcpWriteBackEnabled === true}
+            onChange={async (e) => {
+              await onPatch({ mcpWriteBackEnabled: e.target.checked });
+            }}
+          />
+          <span className="toggle-slider" />
+        </label>
+      </div>
+      {kb.mcpWriteBackEnabled ? (
         <div className="form-row">
-          <div className="form-group">
-            <label>{t("settings.ai.rag.mcpSearchTool")}</label>
+          <div className="form-group" style={{ flex: 1 }}>
+            <label>{t("settings.ai.rag.mcpWriteBackQuery")}</label>
             <input
               type="text"
-              placeholder={t("settings.ai.rag.mcpSearchToolPlaceholder")}
-              value={kb.mcpSearchTool ?? ""}
-              onChange={async (e) => {
-                await patch({ mcpSearchTool: e.target.value.trim() || undefined });
-              }}
+              placeholder={t("settings.ai.rag.mcpWriteBackQueryPlaceholder")}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
             />
           </div>
-          <div className="form-group">
-            <label>{t("settings.ai.rag.mcpApiKeyOptional")}</label>
-            <input
-              type="password"
-              value={kb.mcpApiKey ?? ""}
-              onChange={async (e) => {
-                await patch({ mcpApiKey: e.target.value.trim() || undefined });
+          <div className="form-group" style={{ alignSelf: "flex-end" }}>
+            <button
+              type="button"
+              className="settings-button"
+              disabled={busy || !query.trim()}
+              onClick={() => {
+                void (async () => {
+                  setBusy(true);
+                  try {
+                    const result = await nodeService.saveExternalMcpSearchAsNote({
+                      query: query.trim(),
+                    });
+                    if (!result.ok) {
+                      showToast(
+                        `${t("settings.ai.rag.mcpWriteBackFailed")}${result.reason ? `: ${result.reason}` : ""}`,
+                        "error",
+                      );
+                    } else {
+                      showToast(
+                        t("settings.ai.rag.mcpWriteBackSaved", {
+                          path: result.relativePath ?? "",
+                          count: String(result.snippetCount ?? 0),
+                        }),
+                        "success",
+                      );
+                    }
+                    const status = await nodeService.getRagIndexStatus();
+                    setLastError(status.lastExternalKbError ?? null);
+                  } catch (err) {
+                    showToast(err instanceof Error ? err.message : String(err), "error");
+                  } finally {
+                    setBusy(false);
+                  }
+                })();
               }}
-            />
+            >
+              {busy ? t("settings.ai.rag.mcpWriteBackSaving") : t("settings.ai.rag.mcpWriteBackSave")}
+            </button>
           </div>
         </div>
-      )}
+      ) : null}
+      {lastError ? (
+        <p className="field-desc" style={{ color: "var(--error, #e74c3c)" }}>
+          {t("settings.ai.rag.mcpLastError", { message: lastError })}
+        </p>
+      ) : null}
     </>
   );
 }
@@ -1171,21 +1382,37 @@ function ModelProviderSettings({
             setSettingsSaveStatus("saving");
             try {
               const preset = getModelProviderPreset(presetId) ?? activePreset;
-  // When clearing mock/disabled, drop leftover endpoint/key so they cannot
-  // resurrect via a later shallow merge or confuse OpenClaw inference.
-  await updateNodeConfig({
-    modelProviders: {
-      ...(nodeConfig?.modelProviders ?? { mode: "mock" as ModelProviderMode }),
-      presetId: preset.id,
-      mode: preset.mode,
-      endpoint: showEndpoint ? modelEndpoint : undefined,
-      modelName: showModelAndKey ? modelName : undefined,
-      apiKey: showModelAndKey ? modelApiKey : undefined,
-      ...(preset.mode === "mock" || preset.mode === "disabled"
-        ? { endpoint: undefined, modelName: undefined, apiKey: undefined }
-        : {}),
-    },
-  });
+              const nextProviders: import("@envoymesh/api").ModelProviderConfig = {
+                ...(nodeConfig?.modelProviders ?? { mode: "mock" as ModelProviderMode }),
+                presetId: preset.id,
+                mode: preset.mode,
+                endpoint: showEndpoint ? modelEndpoint : undefined,
+                modelName: showModelAndKey ? modelName : undefined,
+                apiKey: showModelAndKey ? modelApiKey : undefined,
+                ...(preset.mode === "mock" || preset.mode === "disabled"
+                  ? { endpoint: undefined, modelName: undefined, apiKey: undefined }
+                  : {}),
+              };
+              const kbEmbedding = nodeConfig?.aiSettings?.knowledgeBase?.embedding;
+              const prevKey = resolveEmbeddingConfig({
+                embedding: kbEmbedding,
+                modelProviders: nodeConfig?.modelProviders,
+              }).modelKey;
+              const nextKey = resolveEmbeddingConfig({
+                embedding: kbEmbedding,
+                modelProviders: nextProviders,
+              }).modelKey;
+              if (prevKey !== nextKey) {
+                if (!window.confirm(t("settings.ai.rag.embeddingChangeConfirm"))) {
+                  setSettingsSaveStatus("idle");
+                  return;
+                }
+              }
+              // When clearing mock/disabled, drop leftover endpoint/key so they cannot
+              // resurrect via a later shallow merge or confuse OpenClaw inference.
+              await updateNodeConfig({
+                modelProviders: nextProviders,
+              });
               modelProviderFieldsDirtyRef.current = false;
               setSettingsSaveStatus("saved");
               setTimeout(() => setSettingsSaveStatus("idle"), 2000);
@@ -4292,20 +4519,18 @@ export function SettingsAITab() {
 
       <section className="settings-section">
         <h4>{t("settings.ai.rag.heading")}</h4>
-        <p className="section-desc">{t("settings.ai.rag.sectionDesc")}</p>
-        <KnowledgeBaseSettings
-          value={aiSettings.knowledgeBase ?? { ...DEFAULT_AI_KNOWLEDGE_BASE }}
-          onChange={async (knowledgeBase) => {
-            await updateAiSettings({ knowledgeBase });
-          }}
-          modelProviders={nodeConfig?.modelProviders}
-        />
-      </section>
-
-      <section className="settings-section">
-        <h4>{t("kbPlugins.heading")}</h4>
-        <p className="section-desc">{t("kbPlugins.sectionDesc")}</p>
-        <KbPluginSettings />
+        <p className="section-desc">{t("settings.ai.rag.movedToKnowledgeDesc")}</p>
+        <div className="settings-buttons">
+          <button
+            type="button"
+            className="settings-button"
+            onClick={() => {
+              openContentKnowledge("plugins");
+            }}
+          >
+            {t("settings.ai.rag.openKnowledgeSetup")}
+          </button>
+        </div>
       </section>
 
       <section className="settings-section">

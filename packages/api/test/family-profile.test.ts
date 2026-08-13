@@ -6,6 +6,8 @@ import {
   threadVisibleTo,
   OWNER_FAMILY_PROFILE_ID,
   slugifyFamilyProfileId,
+  familyProfileMayUseExtAgent,
+  maskBridgeEnabledForExtAgentAccess,
 } from "../src/family-profile.js"
 
 describe("familyThreadKey", () => {
@@ -50,5 +52,65 @@ describe("slugifyFamilyProfileId", () => {
   it("slugifies display names", () => {
     expect(slugifyFamilyProfileId("Chef Marco!")).toBe("chef-marco")
     expect(slugifyFamilyProfileId("   ")).toBe("member")
+  })
+})
+
+describe("familyProfileMayUseExtAgent", () => {
+  it("allows owner always", () => {
+    expect(
+      familyProfileMayUseExtAgent({
+        id: OWNER_FAMILY_PROFILE_ID,
+        isOwner: true,
+        extAgentEnabled: false,
+      }),
+    ).toBe(true)
+  })
+
+  it("defaults non-owner to denied when flag omitted", () => {
+    expect(
+      familyProfileMayUseExtAgent({ id: "mom", isOwner: false }),
+    ).toBe(false)
+  })
+
+  it("allows non-owner only when extAgentEnabled is true", () => {
+    expect(
+      familyProfileMayUseExtAgent({
+        id: "mom",
+        isOwner: false,
+        extAgentEnabled: true,
+      }),
+    ).toBe(true)
+    expect(
+      familyProfileMayUseExtAgent({
+        id: "mom",
+        isOwner: false,
+        extAgentEnabled: false,
+      }),
+    ).toBe(false)
+  })
+
+  it("denies missing profile (fail closed)", () => {
+    expect(familyProfileMayUseExtAgent(null)).toBe(false)
+    expect(familyProfileMayUseExtAgent(undefined)).toBe(false)
+  })
+})
+
+describe("maskBridgeEnabledForExtAgentAccess", () => {
+  it("clears enabled when caller may not use Ext Agent", () => {
+    const status = {
+      enabled: true,
+      agentPeerId: "p1",
+      listenPort: 3031,
+    }
+    expect(maskBridgeEnabledForExtAgentAccess(status, true)).toEqual(status)
+    expect(maskBridgeEnabledForExtAgentAccess(status, false)).toEqual({
+      ...status,
+      enabled: false,
+    })
+  })
+
+  it("leaves already-disabled status alone", () => {
+    const status = { enabled: false, agentPeerId: "p1" }
+    expect(maskBridgeEnabledForExtAgentAccess(status, false)).toEqual(status)
   })
 })

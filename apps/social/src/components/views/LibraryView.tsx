@@ -7,14 +7,61 @@ import { useToast } from "../../hooks/useToast.js";
 import { openLocalFile, revealVaultLibraryFile } from "../../lib/library-file-actions.js";
 import {
   isHiddenFromLibraryList,
+  knowledgeBrowseSource,
   localFileRowKey,
+  matchesKnowledgeBrowseFilter,
   vaultLibraryItemFromLocalFile,
+  type KnowledgeBrowseFilter,
 } from "../../lib/local-file-display.js";
 import { ShareFileDialog } from "../file-share/ShareFileDialog.js";
 import { FriendsFilesPanel } from "../discover/FriendsFilesPanel.js";
+import { KnowledgeIndexChip } from "./KnowledgeIndexChip.js";
 import { NoteEditorView } from "./NoteEditorView.js";
 import type { LibraryItem, LocalFileItem } from "@envoymesh/api";
 import type { NoteEditorMode } from "./NoteEditorView.js";
+
+const BROWSE_FILTERS: KnowledgeBrowseFilter[] = [
+  "all",
+  "notes",
+  "obsidian",
+  "notion",
+  "blog",
+  "documents",
+  "published",
+];
+
+/** Matches `@envoymesh/vault` extractable formats (anydoc + HTML). */
+const LIBRARY_CONVERTIBLE_EXTENSIONS = new Set([
+  ".pdf",
+  ".docx",
+  ".doc",
+  ".docm",
+  ".pptx",
+  ".ppt",
+  ".pptm",
+  ".ppsx",
+  ".ppsm",
+  ".pps",
+  ".pot",
+  ".xlsx",
+  ".xls",
+  ".xlsm",
+  ".xlsb",
+  ".odt",
+  ".ods",
+  ".odp",
+  ".epub",
+  ".rtf",
+  ".html",
+  ".htm",
+]);
+
+function canConvertLibraryRowToMarkdown(row: LocalFileItem): boolean {
+  return (
+    row.source === "vault" &&
+    LIBRARY_CONVERTIBLE_EXTENSIONS.has((row.extension || "").toLowerCase())
+  );
+}
 
 type LibraryRowMenu = {
   rowKey: string;
@@ -23,7 +70,7 @@ type LibraryRowMenu = {
   y: number;
 };
 
-export function LibraryView() {
+export function LibraryView({ embedded = false }: { embedded?: boolean }) {
   const t = useT();
   const nodeService = useNodeService();
   const { nodeConfig } = useNodeState();
@@ -42,6 +89,7 @@ export function LibraryView() {
   const ipfsGatewayVerifyEnabled =
     ipfsPolicyEnabled && (nodeConfig?.externalPublish?.gatewayAllowlist?.length ?? 0) > 0;
   const [query, setQuery] = useState("");
+  const [browseFilter, setBrowseFilter] = useState<KnowledgeBrowseFilter>("all");
   const [rawItems, setRawItems] = useState<LocalFileItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -91,24 +139,63 @@ export function LibraryView() {
     }
   };
 
+  const vaultVisible = useMemo(
+    () =>
+      rawItems.filter((r) => {
+        if (isHiddenFromLibraryList(r.relativePath)) return false;
+        if (r.source === "vault") return true;
+        if (embedded && r.source === "linked-obsidian") return true;
+        return false;
+      }),
+    [rawItems, embedded],
+  );
+
   const items = useMemo(() => {
-    const visible = rawItems.filter(
-      (r) => r.source === "vault" && !isHiddenFromLibraryList(r.relativePath),
-    );
+    const scoped = embedded
+      ? vaultVisible.filter((r) => matchesKnowledgeBrowseFilter(r, browseFilter))
+      : vaultVisible;
     const q = query.trim().toLowerCase();
-    if (!q) return visible;
-    return visible.filter(
+    if (!q) return scoped;
+    return scoped.filter(
       (r) => r.title.toLowerCase().includes(q) || r.relativePath.toLowerCase().includes(q),
     );
-  }, [rawItems, query]);
+  }, [vaultVisible, query, embedded, browseFilter]);
 
-  const visibleCount = useMemo(
-    () =>
-      rawItems.filter(
-        (r) => r.source === "vault" && !isHiddenFromLibraryList(r.relativePath),
-      ).length,
-    [rawItems],
-  );
+  const visibleCount = vaultVisible.length;
+
+  const emptyMessage = (() => {
+    if (query.trim()) return t("library.emptyFilter");
+    if (!embedded) {
+      return visibleCount === 0 ? t("library.empty") : t("library.emptyFilter");
+    }
+    if (browseFilter === "all") {
+      return visibleCount === 0 ? t("knowledge.browse.emptyAll") : t("library.emptyFilter");
+    }
+    if (browseFilter === "notes") return t("knowledge.browse.emptyNotes");
+    if (browseFilter === "documents") return t("knowledge.browse.emptyDocuments");
+    if (browseFilter === "obsidian") return t("knowledge.browse.emptyObsidian");
+    if (browseFilter === "notion") return t("knowledge.browse.emptyNotion");
+    if (browseFilter === "blog") return t("knowledge.browse.emptyBlog");
+    return t("knowledge.browse.emptyPublished");
+  })();
+
+  const filterLabel = (id: KnowledgeBrowseFilter): string => {
+    if (id === "all") return t("knowledge.browse.filterAll");
+    if (id === "notes") return t("knowledge.browse.filterNotes");
+    if (id === "documents") return t("knowledge.browse.filterDocuments");
+    if (id === "obsidian") return t("knowledge.browse.filterObsidian");
+    if (id === "notion") return t("knowledge.browse.filterNotion");
+    if (id === "blog") return t("knowledge.browse.filterBlog");
+    return t("knowledge.browse.filterPublished");
+  };
+
+  const sourceLabel = (relativePath: string): string => {
+    const src = knowledgeBrowseSource(relativePath);
+    if (src === "notion") return t("knowledge.browse.sourceNotion");
+    if (src === "obsidian") return t("knowledge.browse.sourceObsidian");
+    if (src === "blog") return t("knowledge.browse.sourceBlog");
+    return t("knowledge.browse.sourceDocument");
+  };
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -160,7 +247,17 @@ export function LibraryView() {
         contentBase64,
         mimeType: file.type || undefined,
       });
-      showToast(t("library.importedToast", { path: result.relativePath }), "success");
+      if (result.markdownRelativePath) {
+        showToast(
+          t("library.importedMarkdownToast", {
+            path: result.relativePath,
+            mdPath: result.markdownRelativePath,
+          }),
+          "success",
+        );
+      } else {
+        showToast(t("library.importedToast", { path: result.relativePath }), "success");
+      }
       await load();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -173,6 +270,48 @@ export function LibraryView() {
 
   const closeRowMenu = () => setRowMenu(null);
 
+  const renderTitleContent = (row: LocalFileItem) => {
+    const openLabel =
+      fileActionBusy === `open:${localFileRowKey(row)}`
+        ? t("library.opening")
+        : t("library.open");
+    const meta = `${row.relativePath} · ${formatBytes(row.byteLength)}`;
+    const source = knowledgeBrowseSource(row.relativePath);
+    const showSourceBadge = embedded && source !== "document";
+    const titleNode = (
+      <>
+        <span className="library-view-title__inner">
+          <span className="library-view-title__text">{row.title}</span>
+          {showSourceBadge ? (
+            <span className={`library-view-source library-view-source--${source}`}>
+              {sourceLabel(row.relativePath)}
+            </span>
+          ) : null}
+        </span>
+        {embedded ? (
+          <span className="library-view-title__meta" title={row.relativePath}>
+            {meta}
+          </span>
+        ) : null}
+      </>
+    );
+
+    if (!embedded) return titleNode;
+
+    return (
+      <button
+        type="button"
+        className="library-view-title__btn"
+        title={row.relativePath}
+        aria-label={`${openLabel}: ${row.title}`}
+        disabled={fileActionBusy === `open:${localFileRowKey(row)}`}
+        onClick={() => void runLibraryFileAction(row, "open")}
+      >
+        {titleNode}
+      </button>
+    );
+  };
+
   const renderRowActions = (row: LocalFileItem) => {
     const rowKey = localFileRowKey(row);
     const vaultItem = vaultLibraryItemFromLocalFile(row);
@@ -180,33 +319,42 @@ export function LibraryView() {
       fileActionBusy === `open:${rowKey}` ? t("library.opening") : t("library.open");
     const canEditNote = row.extension === ".md" && row.relativePath.startsWith("notes/");
     const canReveal = !isMobileNode && row.source === "vault";
+    const canConvert = canConvertLibraryRowToMarkdown(row);
     const menuOpen = rowMenu?.rowKey === rowKey;
     const hasOverflow =
-      canEditNote || canReveal || (Boolean(vaultItem) && ipfsExportActionsEnabled);
+      canEditNote || canReveal || canConvert || (Boolean(vaultItem) && ipfsExportActionsEnabled);
 
     return (
       <div className="library-view-actions">
         {vaultItem ? (
-          <label className="library-published-toggle">
-            <input
-              type="checkbox"
-              checked={vaultItem.published}
-              onChange={(e) => {
-                void (async () => {
-                  try {
-                    await nodeService.setLibraryItemPublished(
-                      vaultItem.documentId,
-                      e.target.checked,
-                    );
-                    await load();
-                  } catch (err) {
-                    console.error(err);
-                  }
-                })();
-              }}
-            />
-            {vaultItem.published ? t("library.published") : t("library.private")}
-          </label>
+          <button
+            type="button"
+            className={`library-view__icon-btn${
+              vaultItem.published ? " library-view__icon-btn--unlocked" : ""
+            }`}
+            title={
+              vaultItem.published ? t("library.published") : t("library.private")
+            }
+            aria-label={
+              vaultItem.published ? t("library.published") : t("library.private")
+            }
+            aria-pressed={vaultItem.published}
+            onClick={() => {
+              void (async () => {
+                try {
+                  await nodeService.setLibraryItemPublished(
+                    vaultItem.documentId,
+                    !vaultItem.published,
+                  );
+                  await load();
+                } catch (err) {
+                  console.error(err);
+                }
+              })();
+            }}
+          >
+            {vaultItem.published ? <LibraryIconUnlock /> : <LibraryIconLock />}
+          </button>
         ) : null}
         <button
           type="button"
@@ -269,6 +417,7 @@ export function LibraryView() {
       fileActionBusy === `reveal:${rowKey}` ? t("library.opening") : t("library.showInFolder");
     const canEditNote = liveRow.extension === ".md" && liveRow.relativePath.startsWith("notes/");
     const canReveal = !isMobileNode && liveRow.source === "vault";
+    const canConvert = canConvertLibraryRowToMarkdown(liveRow);
 
     return createPortal(
       <div
@@ -293,6 +442,51 @@ export function LibraryView() {
               <LibraryIconEdit />
             </span>
             {t("notes.editNote")}
+          </button>
+        ) : null}
+        {canConvert && vaultItem ? (
+          <button
+            type="button"
+            className="library-view__menu-item"
+            role="menuitem"
+            disabled={fileActionBusy === `convert:${rowKey}`}
+            onClick={() => {
+              void (async () => {
+                setFileActionBusy(`convert:${rowKey}`);
+                closeRowMenu();
+                try {
+                  const result = await nodeService.convertLibraryItemToMarkdown({
+                    documentId: vaultItem.documentId,
+                    relativePath: liveRow.relativePath,
+                  });
+                  if (!result.ok || !result.markdownRelativePath) {
+                    showToast(
+                      t("library.convertToMarkdownFailed") +
+                        (result.reason ? `: ${result.reason}` : ""),
+                      "error",
+                    );
+                  } else {
+                    showToast(
+                      t("library.convertToMarkdownDone", { path: result.markdownRelativePath }),
+                      "success",
+                    );
+                    await load();
+                  }
+                } catch (err) {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  showToast(msg, "error");
+                } finally {
+                  setFileActionBusy(null);
+                }
+              })();
+            }}
+          >
+            <span className="library-view__menu-icon" aria-hidden>
+              <LibraryIconEdit />
+            </span>
+            {fileActionBusy === `convert:${rowKey}`
+              ? t("library.convertingToMarkdown")
+              : t("library.convertToMarkdown")}
           </button>
         ) : null}
         {canReveal ? (
@@ -452,10 +646,39 @@ export function LibraryView() {
     );
   };
   return (
-    <div className="library-view">
+    <div className={`library-view${embedded ? " library-view--embedded" : ""}`}>
       {renderOverflowMenu()}
-      <h2>{t("library.title")}</h2>
-      <p className="library-view-hint">{t("library.hint")}</p>
+      {!embedded ? (
+        <>
+          <h2>{t("library.title")}</h2>
+          <p className="library-view-hint">{t("library.hint")}</p>
+        </>
+      ) : null}
+      {embedded ? (
+        <div className="library-view-browse-bar">
+          <div
+            className="library-view-browse-filters"
+            role="group"
+            aria-label={t("knowledge.browse.filtersAria")}
+          >
+            {BROWSE_FILTERS.map((id) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={browseFilter === id}
+                className={`library-view-browse-filter${
+                  browseFilter === id ? " library-view-browse-filter--active" : ""
+                }`}
+                data-testid={`knowledge-browse-filter-${id}`}
+                onClick={() => setBrowseFilter(id)}
+              >
+                {filterLabel(id)}
+              </button>
+            ))}
+          </div>
+          <KnowledgeIndexChip />
+        </div>
+      ) : null}
       <div className="library-view-toolbar">
         <input
           type="search"
@@ -465,24 +688,26 @@ export function LibraryView() {
           onChange={(e) => setQuery(e.target.value)}
           aria-label={t("library.filterAria")}
         />
-        <button type="button" className="secondary" onClick={() => void load()} disabled={loading}>
-          {loading ? t("common.loading") : t("common.refresh")}
-        </button>
-        <button
-          type="button"
-          className="primary"
-          disabled={importBusy}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          {importBusy ? t("library.importing") : t("library.importFile")}
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => openNoteEditor("create")}
-        >
-          {t("notes.newNote")}
-        </button>
+        <div className="library-view-toolbar__actions">
+          <button type="button" className="secondary" onClick={() => void load()} disabled={loading}>
+            {loading ? t("common.loading") : t("common.refresh")}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => openNoteEditor("create")}
+          >
+            {t("notes.newNote")}
+          </button>
+          <button
+            type="button"
+            className="primary"
+            disabled={importBusy}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {importBusy ? t("library.importing") : t("library.importFile")}
+          </button>
+        </div>
         <input
           ref={fileInputRef}
           type="file"
@@ -497,35 +722,65 @@ export function LibraryView() {
       {error && <p className="library-view-error" role="alert">{error}</p>}
       {ipfsErr && <p className="library-view-error" role="alert">{ipfsErr}</p>}
       {ipfsOk && <p className="library-view-hint" role="status">{ipfsOk}</p>}
-      {isMobileNode && !ipfsMobileHeliaEnabled && (
+      {!embedded && isMobileNode && !ipfsMobileHeliaEnabled && (
         <p className="library-view-hint">{t("library.heliaHint")}</p>
       )}
-      {isMobileNode && ipfsMobileHeliaEnabled && (
+      {!embedded && isMobileNode && ipfsMobileHeliaEnabled && (
         <p className="library-view-hint">{t("library.ipfsMobileHeliaOn")}</p>
       )}
-      {!isMobileNode && !ipfsPolicyEnabled && (
+      {!embedded && !isMobileNode && !ipfsPolicyEnabled && (
         <p className="library-view-hint">{t("library.ipfsDisabled")}</p>
       )}
-      {!isMobileNode && ipfsPolicyEnabled && ipfsHeliaPrimaryEnabled && (
+      {!embedded && !isMobileNode && ipfsPolicyEnabled && ipfsHeliaPrimaryEnabled && (
         <p className="library-view-hint">{t("library.ipfsDesktopHelia")}</p>
       )}
-      {!isMobileNode && ipfsPolicyEnabled && !ipfsHeliaPrimaryEnabled && (
+      {!embedded && !isMobileNode && ipfsPolicyEnabled && !ipfsHeliaPrimaryEnabled && (
         <p className="library-view-hint">{t("library.ipfsDesktopKubo")}</p>
       )}
-      <FriendsFilesPanel />
+      {!embedded ? <FriendsFilesPanel /> : null}
       {!loading && !error && items.length === 0 && (
-        <p className="library-view-empty">
-          {visibleCount === 0 ? t("library.empty") : t("library.emptyFilter")}
-        </p>
+        <div className="library-view-empty" data-testid="library-empty">
+          <p>{emptyMessage}</p>
+          {embedded &&
+          visibleCount === 0 &&
+          browseFilter === "all" &&
+          !query.trim() ? (
+            <div className="library-view-empty__actions">
+              <button
+                type="button"
+                className="primary"
+                onClick={() => openNoteEditor("create")}
+              >
+                {t("notes.newNote")}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={importBusy}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {importBusy ? t("library.importing") : t("library.importFile")}
+              </button>
+            </div>
+          ) : null}
+        </div>
       )}
       {items.length > 0 && (
-        <>
+        <div
+          className={
+            embedded ? "library-view-list-scroll" : undefined
+          }
+        >
           <table className="library-view-table">
             <thead>
               <tr>
                 <th scope="col">{t("library.colTitle")}</th>
-                <th scope="col">{t("library.colPath")}</th>
-                <th scope="col">{t("library.colSize")}</th>
+                {!embedded ? (
+                  <>
+                    <th scope="col">{t("library.colPath")}</th>
+                    <th scope="col">{t("library.colSize")}</th>
+                  </>
+                ) : null}
                 <th scope="col">{t("library.colUpdated")}</th>
                 <th scope="col">{t("library.colActions")}</th>
               </tr>
@@ -533,13 +788,21 @@ export function LibraryView() {
             <tbody>
               {items.map((row) => (
                 <tr key={localFileRowKey(row)}>
-                  <td className="library-view-title">{row.title}</td>
-                  <td className="library-view-path" title={row.relativePath}>
-                    {row.relativePath}
+                  <td className="library-view-title">{renderTitleContent(row)}</td>
+                  {!embedded ? (
+                    <>
+                      <td className="library-view-path" title={row.relativePath}>
+                        {row.relativePath}
+                      </td>
+                      <td>{formatBytes(row.byteLength)}</td>
+                    </>
+                  ) : null}
+                  <td className="library-view-updated">
+                    {embedded
+                      ? formatDateShort(row.updatedAt)
+                      : formatDate(row.updatedAt)}
                   </td>
-                  <td>{formatBytes(row.byteLength)}</td>
-                  <td>{formatDate(row.updatedAt)}</td>
-                  <td>{renderRowActions(row)}</td>
+                  <td className="library-view-actions-cell">{renderRowActions(row)}</td>
                 </tr>
               ))}
             </tbody>
@@ -548,18 +811,24 @@ export function LibraryView() {
             {items.map((row) => (
               <li key={localFileRowKey(row)} className="library-view-card">
                 <div className="library-view-card-head">
-                  <strong className="library-view-title">{row.title}</strong>
-                  <span className="library-view-card-meta">{formatBytes(row.byteLength)}</span>
+                  <div className="library-view-title">{renderTitleContent(row)}</div>
+                  {!embedded ? (
+                    <span className="library-view-card-meta">
+                      {formatBytes(row.byteLength)}
+                    </span>
+                  ) : null}
                 </div>
-                <div className="library-view-path" title={row.relativePath}>
-                  {row.relativePath}
-                </div>
+                {!embedded ? (
+                  <div className="library-view-path" title={row.relativePath}>
+                    {row.relativePath}
+                  </div>
+                ) : null}
                 <div className="library-view-card-meta">{formatDate(row.updatedAt)}</div>
                 {renderRowActions(row)}
               </li>
             ))}
           </ul>
-        </>
+        </div>
       )}
       {shareFor && (
         <ShareFileDialog
@@ -580,6 +849,50 @@ export function LibraryView() {
         />
       )}
     </div>
+  );
+}
+
+function LibraryIconLock() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect
+        x="5"
+        y="11"
+        width="14"
+        height="10"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+      <path
+        d="M8 11V8a4 4 0 0 1 8 0v3"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function LibraryIconUnlock() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect
+        x="5"
+        y="11"
+        width="14"
+        height="10"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+      <path
+        d="M8 11V8a4 4 0 0 1 7.5-2"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }
 
@@ -732,6 +1045,19 @@ function formatBytes(n: number): string {
 function formatDate(iso: string): string {
   try {
     return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
+}
+
+/** Compact date for Browse table — keeps Updated / Actions columns aligned. */
+function formatDateShort(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
   } catch {
     return iso;
   }

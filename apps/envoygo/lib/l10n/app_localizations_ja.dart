@@ -280,6 +280,145 @@ class AppLocalizationsJa extends AppLocalizations {
   String get contentMyFiles => 'マイファイル';
 
   @override
+  String get contentKnowledge => 'Knowledge';
+
+  @override
+  String get knowledgeTitle => 'Knowledge';
+
+  @override
+  String get knowledgeLede =>
+      'Your vault knowledge base — notes under notes/ power EnvoyAI. Documents stay as originals.';
+
+  @override
+  String get knowledgePanelBrowse => 'Browse';
+
+  @override
+  String get knowledgePanelAsk => 'Ask';
+
+  @override
+  String get knowledgePanelPlugins => 'Plugins';
+
+  @override
+  String get knowledgePanelSetup => 'Setup';
+
+  @override
+  String get knowledgeAskHint =>
+      'Answers use notes and documents on this node. Peers only see what you Publish.';
+
+  @override
+  String get knowledgeAskHeading => 'Ask your vault';
+
+  @override
+  String get knowledgeAskLabel => 'Question';
+
+  @override
+  String get knowledgeAskPlaceholder => 'What did I write about onboarding?';
+
+  @override
+  String get knowledgeAskSubmit => 'Ask';
+
+  @override
+  String get knowledgeAskBusy => 'Searching…';
+
+  @override
+  String get knowledgeAskAnswerHeading => 'Answer';
+
+  @override
+  String get knowledgeAskEmptyAnswer =>
+      'No answer returned. Check Setup → enable vault knowledge and rebuild the index.';
+
+  @override
+  String get knowledgeAskContinueEnvoyAi => 'Open in EnvoyAI';
+
+  @override
+  String get knowledgeAskEnvoyAiHint =>
+      'For multi-turn chat with tools, continue in EnvoyAI.';
+
+  @override
+  String get knowledgeLibraryHeading => 'Your files';
+
+  @override
+  String get knowledgeLibraryCaption =>
+      'Notes, documents, and what you’ve published.';
+
+  @override
+  String get knowledgePluginsLede =>
+      'Optional connectors. Notion needs an MCP URL — not the Notion app.';
+
+  @override
+  String get knowledgePluginsObsidianTitle => 'Obsidian';
+
+  @override
+  String get knowledgePluginsObsidianDesc =>
+      'Enrich vault notes. Desktop app optional.';
+
+  @override
+  String get knowledgePluginsNotionTitle => 'Notion (via MCP)';
+
+  @override
+  String get knowledgePluginsNotionDesc =>
+      'Search via MCP. On by default; soft-fails without a URL.';
+
+  @override
+  String get knowledgePluginsMcpUrl => 'MCP server URL';
+
+  @override
+  String get knowledgePluginsMcpTool => 'Search tool name';
+
+  @override
+  String get knowledgeSetupHint =>
+      'Index status and retrieval. Chat models stay in Me → AI Model.';
+
+  @override
+  String get knowledgeSetupEnabled => 'Enable vault knowledge';
+
+  @override
+  String get knowledgeSetupStatusHint =>
+      'Tap Rebuild to refresh the vector index.';
+
+  @override
+  String get knowledgeSetupReindex => 'Rebuild index';
+
+  @override
+  String get knowledgeSetupReindexDone => 'Reindex started';
+
+  @override
+  String get knowledgeBrowseFilterAll => 'All';
+
+  @override
+  String get knowledgeBrowseFiltersLabel => 'SHOW';
+
+  @override
+  String get knowledgeBrowseFilterNotes => 'Notes';
+
+  @override
+  String get knowledgeBrowseFilterObsidian => 'Obsidian';
+
+  @override
+  String get knowledgeBrowseFilterNotion => 'Notion';
+
+  @override
+  String get knowledgeBrowseFilterDocuments => 'Documents';
+
+  @override
+  String get knowledgeBrowseFilterPublished => 'Published';
+
+  @override
+  String knowledgeBrowseIndexReady(int count) {
+    return '$count indexed';
+  }
+
+  @override
+  String get knowledgeBrowseIndexIndexing => 'Indexing…';
+
+  @override
+  String get knowledgeBrowseIndexEmpty => 'Index empty';
+
+  @override
+  String get knowledgeBrowseIndexChipHint =>
+      'Open Knowledge → Setup to manage the index.';
+
+  @override
   String get contentNewPost => '新しい投稿';
 
   @override

@@ -26,6 +26,13 @@ export interface FamilyProfile {
   lastSeenAt?: string
   /** Owner can deactivate without deleting (history preserved). */
   active: boolean
+  /**
+   * Whether this profile may use Ext Agent chat (bridge).
+   * Omitted / undefined = **denied** for non-owner profiles (opt-in).
+   * Owner profile is always allowed regardless of this flag.
+   * Only the node owner may change this (Settings → Family).
+   */
+  extAgentEnabled?: boolean
   /** Per-profile character bots. */
   aiBots?: AiBotDefinition[]
 }
@@ -45,6 +52,8 @@ export interface UpdateFamilyProfileParams {
   name?: string
   avatarColor?: string
   active?: boolean
+  /** Owner-only: allow / deny Ext Agent chat for this profile. */
+  extAgentEnabled?: boolean
   aiBots?: AiBotDefinition[]
 }
 
@@ -272,4 +281,30 @@ export function slugifyFamilyProfileId(name: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 32)
   return base || "member"
+}
+
+/**
+ * Whether a family profile may use Ext Agent chat.
+ * Owner is always allowed. Non-owners require explicit
+ * `extAgentEnabled: true` (default / omitted = off).
+ * Missing profile → denied (fail closed).
+ */
+export function familyProfileMayUseExtAgent(
+  profile: Pick<FamilyProfile, "isOwner" | "id" | "extAgentEnabled"> | null | undefined,
+): boolean {
+  if (!profile) return false
+  if (profile.isOwner || profile.id === OWNER_FAMILY_PROFILE_ID) return true
+  return profile.extAgentEnabled === true
+}
+
+/**
+ * Mask `BridgeStatus.enabled` for callers who may not use Ext Agent.
+ * Other fields stay intact so UI still knows which agent is active.
+ */
+export function maskBridgeEnabledForExtAgentAccess<T extends { enabled: boolean }>(
+  status: T,
+  mayUse: boolean,
+): T {
+  if (!status.enabled || mayUse) return status
+  return { ...status, enabled: false }
 }

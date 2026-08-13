@@ -5,7 +5,7 @@ import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import type { ChatDraftFailure, ChatDraftResult } from "./chat-draft-inbound.js";
 
 /**
- * Generate a contact-chat draft via OpenClaw (owner-scoped knowledge + tools).
+ * Generate a contact-chat draft via OpenClaw (contact-scoped knowledge).
  * Used when per-contact Agent Mode is enabled.
  */
 export async function generateAgentModeChatDraft(input: {
@@ -22,6 +22,8 @@ export async function generateAgentModeChatDraft(input: {
   askOpenClaw: (prompt: string, context?: unknown) => Promise<string>;
   buildOpenClawTurnContext?: () => Promise<unknown>;
   ensureOpenClawReady?: () => boolean | Promise<boolean>;
+  /** Contact knowledge ceiling (default public). */
+  knowledgeAccess?: "public" | "friends" | "private";
 }): Promise<ChatDraftResult | ChatDraftFailure> {
   const {
     envelope,
@@ -37,6 +39,7 @@ export async function generateAgentModeChatDraft(input: {
     askOpenClaw,
     buildOpenClawTurnContext,
     ensureOpenClawReady,
+    knowledgeAccess = "public",
   } = input;
 
   if (ensureOpenClawReady) {
@@ -58,15 +61,27 @@ ${chatText}
 Task: draft a short reply (1–3 sentences) the owner can send to this contact.
 Guidelines:
 - Match the tone and topic of the inbound message.
-- You may use owner knowledge, local files, and tools when needed.
+- Use only knowledge appropriate to share with this contact (public/friends ceiling as configured).
 - Reply with only the draft text — no preamble, labels, or quotes around it.`;
 
-  let context: unknown;
+  let baseContext: Record<string, unknown> = {};
   try {
-    context = buildOpenClawTurnContext ? await buildOpenClawTurnContext() : undefined;
+    const built = buildOpenClawTurnContext ? await buildOpenClawTurnContext() : undefined;
+    if (built && typeof built === "object") {
+      baseContext = { ...(built as Record<string, unknown>) };
+    }
   } catch {
-    context = undefined;
+    baseContext = {};
   }
+
+  const context = {
+    ...baseContext,
+    retrievedContext: {
+      knowledgeAccess,
+      knowledgeScope: "public" as const,
+      contactThreadOwnerId: senderOwnerId,
+    },
+  };
 
   let rawText: string;
   try {

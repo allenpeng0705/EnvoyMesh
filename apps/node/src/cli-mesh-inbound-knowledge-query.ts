@@ -85,6 +85,7 @@ export async function handleKnowledgeQueryViaRuntime(
     knowledgeSyndicationMaxSensitivity:
       ctx.getKnowledgeSyndicationMaxSensitivity(),
     contactSyndicationMaxSensitivity,
+    profileDir: ctx.getProfileDir?.() ?? ctx.getProfile()?.profileDir,
   });
   if (!kq.ok) {
     await ctx.appendAuditEvent({

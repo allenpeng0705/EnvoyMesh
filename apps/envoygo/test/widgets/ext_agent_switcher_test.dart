@@ -142,6 +142,27 @@ void main() {
         expect(src, contains("import 'package:flutter/material.dart'"));
       },
     );
+    test(
+      'owner-only: switcher hides / no-ops for non-owner family profiles',
+      () {
+        final src = _readSource();
+        expect(
+          src,
+          contains('isOwnerProfile'),
+          reason:
+              'ExtAgentSwitcher must gate on isOwnerProfile so family members '
+              'cannot change the shared active Ext Agent (one agent for the '
+              'whole home node; only the owner configures which one).',
+        );
+        expect(
+          src,
+          contains('SizedBox.shrink()'),
+          reason:
+              'Non-owner build path should return SizedBox.shrink() so the '
+              'switch control is not visible on family EnvoyGo sessions.',
+        );
+      },
+    );
   });
 }
 

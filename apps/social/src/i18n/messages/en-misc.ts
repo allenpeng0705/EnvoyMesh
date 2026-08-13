@@ -451,13 +451,19 @@ export const profilePhotosMessages = {
 } as const;
 
 export const libraryViewMessages = {
-  title: "Library",
+  title: "Knowledge files",
   hint:
-    "Your vault documents — import, publish for discovery, export to IPFS, or share P2P. Chat attachments and profile photos stay in chat / Profile.",
+    "Vault notes and documents — import Office/PDF (Markdown note is saved privately under notes/imports/), publish for discovery, or share P2P. EnvoyAI uses this corpus when answering.",
   filterPlaceholder: "Filter by name or path…",
   filterAria: "Filter library",
   importFile: "Import file…",
   importing: "Importing…",
+  importedToast: "Imported {path}",
+  importedMarkdownToast: "Imported {path} · Markdown note {mdPath}",
+  convertToMarkdown: "Convert to Markdown note",
+  convertingToMarkdown: "Converting…",
+  convertToMarkdownDone: "Saved Markdown note {path}",
+  convertToMarkdownFailed: "Could not convert to Markdown",
   open: "Open",
   opening: "Opening…",
   showInFolder: "Show in folder",
@@ -489,7 +495,6 @@ export const libraryViewMessages = {
   cidCopied: "CID copied",
   ipfsExportComplete: "IPFS export complete",
   cidPinnedToast: "CID pinned to provider",
-  importedToast: "Imported {path}",
   pinnedStatus: "Pinned via {provider}{pinId}",
   gatewayVerifiedStatus: "Gateway verified ({bytes} bytes) — {url}",
   ipfsMobileHeliaOn:
@@ -512,6 +517,7 @@ export const noteEditorMessages = {
   sensitivityPublic: "Public",
   sensitivityFriends: "Friends",
   sensitivityPrivate: "Private",
+  alsoPublishAsBlog: "Also publish as public blog",
   contentPlaceholder: "Write in Markdown…",
   saving: "Saving…",
 } as const;
@@ -774,10 +780,110 @@ export const contentViewMessages = {
   tabFeed: "Feed",
   tabBlog: "Blog",
   tabExplore: "Explore",
-  tabFiles: "My Files",
+  tabFiles: "Knowledge",
   tabSites: "Sites",
   tabBazaar: "Bazaar",
   tabFriends: "Friends",
+} as const;
+
+export const knowledgeViewMessages = {
+  title: "Knowledge",
+  lede:
+    "Your vault knowledge base — notes under notes/ power EnvoyAI and mesh answers when you Publish. Documents stay as originals; convert or import creates private Markdown under notes/imports/.",
+  panelsAria: "Knowledge panels",
+  panelBrowse: "Browse",
+  panelPlugins: "Plugins",
+  panelSetup: "Setup",
+  askHeading: "Ask your vault",
+  askHint:
+    "Answers use notes and documents on this node. Peers only see what you Publish.",
+  askLabel: "Question",
+  askPlaceholder: "What did I write about onboarding?",
+  askSubmit: "Ask",
+  askBusy: "Searching…",
+  askAnswerHeading: "Answer",
+  askEmptyAnswer: "No answer returned. Check Setup → enable vault knowledge and rebuild the index.",
+  askContinueEnvoyAi: "Open in EnvoyAI",
+  askEnvoyAiHint: "For multi-turn chat with tools, continue in EnvoyAI.",
+  libraryHeading: "Your files",
+  libraryCaption: "Notes, documents, and what you’ve published.",
+  setupHint:
+    "Index status, embeddings, and retrieval. Obsidian and Notion/MCP live under Plugins. Chat models and Ext Agent stay in Settings → AI.",
+  browse: {
+    filtersAria: "Browse filters",
+    filtersLabel: "Show",
+    filterAll: "All",
+    filterNotes: "Notes",
+    filterObsidian: "Obsidian",
+    filterNotion: "Notion",
+    filterBlog: "Blog",
+    filterDocuments: "Documents",
+    filterPublished: "Published",
+    sourceObsidian: "Obsidian",
+    sourceNotion: "Notion",
+    sourceBlog: "Blog",
+    sourceDocument: "File",
+    emptyAll:
+      "No vault files yet. Create a note or import a document to start your knowledge base.",
+    emptyNotes:
+      "No notes yet. Create a note, or import/convert a document to materialize Markdown under notes/imports/.",
+    emptyObsidian:
+      "No Obsidian-style notes yet. Notes live under notes/ (except notes/mcp/ and notes/imports/blog/).",
+    emptyNotion:
+      "No saved Notion notes yet. Enable MCP under Plugins, then save search hits to notes/mcp/.",
+    emptyBlog:
+      "No blog knowledge yet. Publish a Blog post, or create a note with “Also publish as public blog”.",
+    emptyDocuments:
+      "No documents outside notes/. Import PDFs and Office files — originals stay in the vault.",
+    emptyPublished:
+      "Nothing published yet. Publish a note from Browse so contacts can query it on the mesh.",
+    indexReady: "{count} indexed",
+    indexIndexing: "Indexing {processed}/{total}…",
+    indexError: "Index error — open Setup",
+    indexEmpty: "Index empty — open Setup",
+    indexChipTitle: "Open Knowledge Setup",
+  },
+  plugins: {
+    lede: "Optional connectors for your vault. Notion needs an MCP server URL — not the Notion app.",
+    showHelp: "Install & use",
+    howToInstall: "Install:",
+    howToUse: "Use:",
+    statusUnavailable: "Unavailable",
+    obsidianTitle: "Obsidian",
+    obsidianTagline: "Enrich vault notes. Desktop app optional.",
+    obsidianDesc:
+      "Envoy’s Obsidian plugin enriches notes (wiki-links, published: sync, link graph). It does not require the Obsidian desktop app.",
+    obsidianInstall:
+      "Optional: install Obsidian from obsidian.md and Open folder as vault → choose your Envoy vault directory. No separate Envoy plugin package to download.",
+    obsidianUse:
+      "Keep this plugin Active here. Use Sync now after editing notes in Obsidian. Browse and Ask keep working either way.",
+    obsidianIfMissing:
+      "If Obsidian is not installed: Envoy still manages notes/ and this plugin can stay Active. You simply edit Markdown inside Envoy.",
+    obsidianNotRegistered: "Obsidian plugin is not registered on this node.",
+    obsidianAutoFail: "Could not auto-enable Obsidian",
+    linkedVaultLabel: "Linked Obsidian vault path(s)",
+    linkedVaultPlaceholder: "/path/to/existing/ObsidianVault",
+    linkedVaultDesc:
+      "Optional. Absolute path to an existing Obsidian vault (comma-separate multiple). Read-only in Browse under Obsidian — your files are never moved. Mesh Publish still uses the Envoy vault only.",
+    notionTitle: "Notion (via MCP)",
+    notionTagline: "Search via MCP. On by default; soft-fails without a URL.",
+    notionDesc:
+      "Search Notion-class knowledge through an MCP server you run. Envoy does not sign into Notion or sync a workspace — results merge into owner prompts; save notes stay private until you Publish.",
+    notionInstall:
+      "Run an MCP server that talks to Notion (or Memex / similar), note its http(s) URL and search tool name. No Notion desktop app or OAuth inside Envoy.",
+    notionUse:
+      "Paste the server URL, then ask EnvoyAI. Optional write-back saves under notes/mcp/ (private by default). Browse shows those saved notes under the Notion filter.",
+    notionIfMissing:
+      "If no MCP server is configured: Browse / Ask use the local vault only. Cloud Notion is simply skipped (soft-fail).",
+    notionEnable: "MCP search",
+    notionEnableDesc: "Owner EnvoyAI only — not mesh knowledge.query.",
+    notionStatusOn: "On",
+    notionStatusOff: "Off",
+    futureTitle: "More plugins",
+    futureDesc:
+      "Future connectors will appear here with the same Install / Use hints. Mesh share always stays vault-backed.",
+    futureEmpty: "More connectors will appear here when registered.",
+  },
 } as const;
 
 export const blogViewMessages = {
@@ -1052,6 +1158,10 @@ export const kbPluginMessages = {
   deactivate: "Deactivate",
   activating: "Activating…",
   deactivating: "Deactivating…",
+  syncNow: "Sync now",
+  syncing: "Syncing…",
+  syncDone: "Obsidian frontmatter and link graph synced.",
+  syncError: "Failed to sync Obsidian metadata.",
   activatedAt: "Activated",
   errorLabel: "Error",
   configSection: "Configuration",
@@ -1066,6 +1176,8 @@ export const kbPluginMessages = {
   statusActive: "Active",
   statusDisabled: "Disabled",
   statusError: "Error",
+  obsidianHint:
+    "Open the same Envoy vault folder in Obsidian. Activate or Sync now collects loose Markdown into notes/, syncs published: with Library, rebuilds the link graph, and reindexes RAG when paths move. Office/PDF imports keep originals under documents/ and write private GFM under notes/imports/. Deactivate removes the graph only — notes and sensitivity stay.",
 } as const;
 
 // ----- Generic display helpers (bond level, mDNS fallback name) -----

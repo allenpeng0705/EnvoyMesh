@@ -293,13 +293,11 @@ describe("createBackend autostart dispatch (Phase 55E)", () => {
     );
   });
 
-  it("default (env unset) returns the supervised backend for openhuman", () => {
+  it("default (env unset) returns the HTTP backend for openhuman (app-only; no spawn)", () => {
     delete process.env.ENVOYMESH_EXT_AGENT_AUTOSTART;
     const backend = createBackend("openhuman");
     expect(backend.kind).toBe("openhuman");
-    expect((backend as unknown as { isEverHealthy?: unknown }).isEverHealthy).toBeTypeOf(
-      "function",
-    );
+    expect((backend as unknown as { isEverHealthy?: unknown }).isEverHealthy).toBeUndefined();
   });
 
   it("ENVOYMESH_EXT_AGENT_AUTOSTART=1 returns the supervised backend for hermes", () => {
@@ -311,13 +309,11 @@ describe("createBackend autostart dispatch (Phase 55E)", () => {
     );
   });
 
-  it("ENVOYMESH_EXT_AGENT_AUTOSTART=1 returns the supervised backend for openhuman", () => {
+  it("ENVOYMESH_EXT_AGENT_AUTOSTART=1 still returns HTTP-only for openhuman", () => {
     process.env.ENVOYMESH_EXT_AGENT_AUTOSTART = "1";
     const backend = createBackend("openhuman");
     expect(backend.kind).toBe("openhuman");
-    expect((backend as unknown as { isEverHealthy?: unknown }).isEverHealthy).toBeTypeOf(
-      "function",
-    );
+    expect((backend as unknown as { isEverHealthy?: unknown }).isEverHealthy).toBeUndefined();
   });
 
   it("autostart env-var dispatch accepts 'true' / 'yes' / 'on' aliases", () => {

@@ -5,10 +5,15 @@ import {
   hasPendingBrowserOpen,
   OPEN_BROWSER_EVENT,
 } from "../../lib/browser-nav.js";
-import { LibraryView } from "./LibraryView.js";
+import { KnowledgeView, type KnowledgeHubPanel } from "./KnowledgeView.js";
 import { BrowserView } from "./BrowserView.js";
 import { FeedView } from "./FeedView.js";
 import { BlogView } from "./BlogView.js";
+import {
+  OPEN_CONTENT_KNOWLEDGE_EVENT,
+  normalizeKnowledgeHubPanel,
+  type OpenContentKnowledgeDetail,
+} from "../../lib/content-knowledge-nav.js";
 
 export type ContentTab = "feed" | "blog" | "explore" | "files";
 
@@ -50,6 +55,7 @@ export function ContentView({
   const [activeTab, setActiveTab] = useState<ContentTab>(() =>
     hasPendingBrowserOpen() ? "explore" : "feed",
   );
+  const [knowledgePanel, setKnowledgePanel] = useState<KnowledgeHubPanel>("browse");
   const clearedOnOpen = useRef(false);
   const dismissRef = useRef(onDismissEngage);
   dismissRef.current = onDismissEngage;
@@ -87,6 +93,17 @@ export function ContentView({
     return () => window.removeEventListener(OPEN_BROWSER_EVENT, goExplore);
   }, []);
 
+  // Settings / deep-link → Content → Knowledge (optional Setup / Plugins panel).
+  useEffect(() => {
+    const goKnowledge = (ev: Event) => {
+      const detail = (ev as CustomEvent<OpenContentKnowledgeDetail>).detail;
+      setActiveTab("files");
+      if (detail?.panel) setKnowledgePanel(normalizeKnowledgeHubPanel(detail.panel));
+    };
+    window.addEventListener(OPEN_CONTENT_KNOWLEDGE_EVENT, goKnowledge);
+    return () => window.removeEventListener(OPEN_CONTENT_KNOWLEDGE_EVENT, goKnowledge);
+  }, []);
+
   const selectTab = (tab: ContentTab) => {
     setActiveTab(tab);
     if (tab === "feed") {
@@ -98,8 +115,8 @@ export function ContentView({
   const tabs: { id: ContentTab; label: string }[] = [
     { id: "feed", label: t("content.tabFeed", "Feed") },
     { id: "blog", label: t("content.tabBlog", "Blog") },
+    { id: "files", label: t("content.tabFiles", "Knowledge") },
     { id: "explore", label: t("content.tabExplore", "Explore") },
-    { id: "files", label: t("content.tabFiles", "My Files") },
   ];
 
   const renderContent = () => {
@@ -109,7 +126,7 @@ export function ContentView({
       case "blog":
         return <BlogView />;
       case "files":
-        return <LibraryView />;
+        return <KnowledgeView initialPanel={knowledgePanel} />;
       case "explore":
         return <BrowserView initialMode="bazaar" />;
       default:

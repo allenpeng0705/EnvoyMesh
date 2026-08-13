@@ -1089,6 +1089,13 @@ async function withOpenClawTimeout<T>(
 async function buildEnvoyMeshOpenClawPrompts(
   deps: OpenClawRuntimeDeps,
   message: string,
+  options?: {
+    retrievedContext?: {
+      knowledgeAccess?: import("./ai-context.js").KnowledgeAccessLevel;
+      knowledgeScope?: import("@envoymesh/api").AiKnowledgeBaseScope;
+      contactThreadOwnerId?: string;
+    };
+  },
 ): Promise<{
   policyPrompt: string;
   retrievedContext: string;
@@ -1146,6 +1153,7 @@ async function buildEnvoyMeshOpenClawPrompts(
         inferModelProviderPreset(effectiveProviders).id === "envoy-local"
           ? "local"
           : "cloud";
+      const scope = options?.retrievedContext;
       retrievedContext = await withOpenClawTimeout(
         buildEnvoyMeshRetrievedContext({
           message,
@@ -1162,6 +1170,10 @@ async function buildEnvoyMeshOpenClawPrompts(
           ragService: await deps.getRagService(),
           knowledgeBase: nodeConfig.aiSettings?.knowledgeBase,
           profile: retrievedProfile,
+          profileDir: deps.getProfileDir(),
+          knowledgeAccess: scope?.knowledgeAccess,
+          knowledgeScope: scope?.knowledgeScope,
+          contactThreadOwnerId: scope?.contactThreadOwnerId,
         }),
         OPEN_CLAW_RETRIEVED_CONTEXT_TIMEOUT_MS,
         "",
@@ -1715,19 +1727,27 @@ export async function askOpenClawViaRuntime(
   state: OpenClawRuntimeState,
   deps: OpenClawRuntimeDeps,
   prompt: string,
-  _context?: {
+  context?: {
     ownerDisplayName?: string;
     bonds?: Array<{ name: string; level: string; dormantDays?: number }>;
     interests?: string[];
     capabilities?: string[];
     permissions?: { bondAutonomy: boolean; maxBondsPerDay: number; autoCircleContacts: boolean; maxSensitivity: string };
     model?: { provider: string; baseUrl?: string; model?: string };
+    /** Contact-facing Agent Mode drafts: limit vault/chat RAG scope. */
+    retrievedContext?: {
+      knowledgeAccess?: import("./ai-context.js").KnowledgeAccessLevel;
+      knowledgeScope?: import("@envoymesh/api").AiKnowledgeBaseScope;
+      contactThreadOwnerId?: string;
+    };
   },
 ): Promise<string> {
   if (!(await ensureOpenClawReadyViaRuntime(state, deps))) {
     throw new Error("OpenClaw not available");
   }
-  const { policyPrompt, retrievedContext } = await buildEnvoyMeshOpenClawPrompts(deps, prompt);
+  const { policyPrompt, retrievedContext } = await buildEnvoyMeshOpenClawPrompts(deps, prompt, {
+    retrievedContext: context?.retrievedContext,
+  });
   return withOpenClawAskLock(state, () =>
     askOpenClawViaWebhook(state, deps, prompt, { policyPrompt, retrievedContext }),
   );

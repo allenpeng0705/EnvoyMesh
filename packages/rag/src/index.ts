@@ -14,6 +14,7 @@ export {
 export {
   resolveEmbeddingConfig as resolveEmbeddingConfigBrowserSafe,
   inferEmbeddingProviderFromEndpoint,
+  isEnvoyLocalChatEndpoint,
   KNOWN_EMBEDDING_PROVIDERS,
   type EmbeddingProviderPreset,
   type EmbeddingProviderRule,
@@ -23,7 +24,11 @@ export {
   formatExternalKnowledgeSection,
   searchExternalMcpKnowledge,
   formatMcpResultsAsNote,
+  validateMcpServerUrl,
+  DEFAULT_MCP_KNOWLEDGE_TIMEOUT_MS,
+  MAX_MCP_KNOWLEDGE_TIMEOUT_MS,
   type ExternalKnowledgeSnippet,
+  type ExternalMcpSearchResult,
   type McpQueryAttribution,
   type McpWriteBackOptions,
 } from "./mcp-knowledge-client.js";

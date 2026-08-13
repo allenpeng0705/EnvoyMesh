@@ -136,6 +136,8 @@ export interface TransferInboundContext {
   recordOwnerActivity(): void;
   requireProfile(): NodeProfile;
   getVaultDir(): string;
+  /** Profile dir for sensitivity overrides after inbound materialize (Phase 57). */
+  getProfileDir(): string | null;
   deliverCallEnvelope(
     transportPeerId: string,
     envelope: EnvoyEnvelope,
@@ -363,11 +365,13 @@ export function notifyInboundTransferVerifiedViaRuntime(
   },
 ): void {
   const state = ctx.getTransferState();
+  let matchedPath = input.relativePath;
   for (const [shareId, pending] of state.inboundTransferByShareId.entries()) {
     if (pending.senderNodeId !== input.remotePeerId) continue;
     if (pending.savePath !== input.relativePath && pending.senderVaultRelativePath !== input.relativePath) {
       continue;
     }
+    matchedPath = pending.savePath || input.relativePath;
     const correlationId = state.correlationByPreviewMsgId.get(shareId) ?? shareId;
     ctx.upsertTransferStatus({
       correlationId,
@@ -376,7 +380,7 @@ export function notifyInboundTransferVerifiedViaRuntime(
       totalBytes: input.totalBytes,
       remotePeerId: input.remotePeerId,
       remotePeerOwnerId: pending.senderOwnerId,
-      vaultRelativePath: input.relativePath,
+      vaultRelativePath: matchedPath,
       updatedAt: new Date().toISOString(),
     });
     state.inboundTransferByShareId.delete(shareId);
@@ -385,23 +389,24 @@ export function notifyInboundTransferVerifiedViaRuntime(
         roomId: pending.chatRoomId,
         messageId: pending.chatMessageId,
         attachmentId: pending.chatAttachmentId,
-        vaultRelativePath: input.relativePath,
+        vaultRelativePath: matchedPath,
       });
     } else if (pending.chatMessageId && pending.chatAttachmentId && pending.senderOwnerId) {
       void applyDirectChatAttachmentVaultPathViaRuntime(ctx, {
         peerOwnerId: pending.senderOwnerId,
         messageId: pending.chatMessageId,
         attachmentId: pending.chatAttachmentId,
-        vaultRelativePath: input.relativePath,
+        vaultRelativePath: matchedPath,
       });
     } else {
       void ctx.recordFileShareInChat({
         peerOwnerId: pending.senderOwnerId ?? pending.senderNodeId,
         outgoing: false,
-        vaultRelativePath: input.relativePath,
+        vaultRelativePath: matchedPath,
         byteLength: input.totalBytes,
       });
     }
+    void maybeMaterializeInboundOfficeNote(ctx, matchedPath);
     return;
   }
   ctx.upsertTransferStatus({
@@ -413,6 +418,26 @@ export function notifyInboundTransferVerifiedViaRuntime(
     vaultRelativePath: input.relativePath,
     updatedAt: new Date().toISOString(),
   });
+  void maybeMaterializeInboundOfficeNote(ctx, input.relativePath);
+}
+
+/** Phase 57E — best-effort anydoc materialize after inbound share/chat transfer. */
+async function maybeMaterializeInboundOfficeNote(
+  ctx: Pick<TransferInboundContext, "getVaultDir" | "getProfileDir">,
+  relativePath: string,
+): Promise<void> {
+  try {
+    const { materializeOfficeDocumentToNotes } = await import("./vault-markdown-corpus.js");
+    await materializeOfficeDocumentToNotes(ctx.getVaultDir(), relativePath, {
+      profileDir: ctx.getProfileDir(),
+      sensitivity: "private",
+    });
+  } catch (err) {
+    console.warn(
+      `[share] materialize after inbound transfer failed path=${relativePath}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
 }
 
 export function linkOutboundSharePreviewFromInboundViaRuntime(

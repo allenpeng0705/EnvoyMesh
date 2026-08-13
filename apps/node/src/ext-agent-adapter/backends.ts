@@ -20,7 +20,8 @@ import { createClaudeCodeBackend } from "./claudecode-backend.js";
 // default HTTP backends (this file) are used unchanged — they
 // assume the daemon is already running.
 import { createHermesSupervisedBackend } from "./supervised-hermes-backend.js";
-import { createOpenHumanSupervisedBackend } from "./supervised-openhuman-backend.js";
+// OpenHuman uses the HTTP backend only (OpenHuman.app). Supervised
+// spawn of openhuman-core was removed from the product path.
 // Phase 56A — Cursor CLI (Anysphere) one-shot subprocess per ask
 // via the shared `OneShotCliBackend` base. Phase 56B (aider) and
 // 56C (mmx) follow the same pattern.
@@ -34,13 +35,14 @@ import {
 } from "./model-list.js";
 
 /**
- * Phase 55E — when `true`, `createBackend("hermes" | "openhuman")`
- * returns a `*SupervisedBackend` that can spawn the daemon on demand
- * via the 55A `DaemonSupervisor` (probe-first: reuses an already-running
- * gateway; only spawns when the HTTP core is down).
+ * Phase 55E — when `true`, `createBackend("hermes")` returns a
+ * supervised backend that can spawn `hermes gateway run` on demand
+ * (probe-first: reuses an already-running gateway).
  *
- * Default: `true` (start Hermes/OpenHuman if we can). Force off with
- * `ENVOYMESH_EXT_AGENT_AUTOSTART=0|false|off` to use unwrapped HTTP only.
+ * OpenHuman is **not** supervised: use OpenHuman.app only.
+ *
+ * Default: `true` for Hermes. Force off with
+ * `ENVOYMESH_EXT_AGENT_AUTOSTART=0|false|off`.
  */
 function isAutostartEnabled(): boolean {
   const v = process.env.ENVOYMESH_EXT_AGENT_AUTOSTART?.trim().toLowerCase();
@@ -332,7 +334,7 @@ export function openHumanEnvCandidatePaths(
  *
  * Note: OpenHuman.app (Tauri desktop) keeps a per-launch bearer in-memory only —
  * it does **not** write `core.token` or set `OPENHUMAN_CORE_TOKEN`. Ext Agent
- * cannot discover that token; use CLI `openhuman serve` / `openhuman core run`,
+ * cannot discover that token; use OpenHuman.app with `/v1` auto-key.
  * or set a shared `OPENHUMAN_CORE_TOKEN` on a non-desktop core.
  */
 export function openHumanTokenCandidatePaths(
@@ -984,10 +986,9 @@ export function createBackend(kind: ExtAgentSidecarKind): ExtAgentBackend {
       : createHermesBackend();
   }
   if (kind === "openhuman") {
-    // Phase 55E — same pattern for OpenHuman (`openhuman serve`).
-    return isAutostartEnabled()
-      ? createOpenHumanSupervisedBackend()
-      : createOpenHumanBackend();
+    // OpenHuman.app only — reuse a running desktop core on :7788.
+    // No headless spawn (openhuman-core is a separate advanced product path).
+    return createOpenHumanBackend();
   }
   if (kind === "codex") {
     // Phase 55B — real codex app-server JSON-RPC over stdio,

@@ -35,6 +35,9 @@ export function toFamilyProfile(record: FamilyProfileRecord): FamilyProfile {
     createdAt: record.createdAt,
     lastSeenAt: record.lastSeenAt,
     active: record.active,
+    ...(typeof record.extAgentEnabled === "boolean"
+      ? { extAgentEnabled: record.extAgentEnabled }
+      : {}),
     aiBots: Array.isArray(record.aiBots)
       ? (record.aiBots as AiBotDefinition[])
       : undefined,
@@ -76,13 +79,16 @@ export async function updateFamilyProfileViaRuntime(
   const targetId = typeof params.id === "string" ? params.id.trim() : ""
   if (!targetId) throw new Error("id is required")
 
-  // Non-owners may only update their own name / avatar / bots (not active).
+  // Non-owners may only update their own name / avatar / bots (not active / extAgent).
   if (!isOwner) {
     if (caller!.profileId !== targetId) {
       throw new Error("You can only update your own family profile")
     }
     if (params.active !== undefined) {
       throw new Error("Only the node owner can activate or deactivate profiles")
+    }
+    if (params.extAgentEnabled !== undefined) {
+      throw new Error("Only the node owner can change Ext Agent access for family profiles")
     }
   }
 
@@ -91,6 +97,7 @@ export async function updateFamilyProfileViaRuntime(
     name: params.name,
     avatarColor: params.avatarColor,
     active: isOwner ? params.active : undefined,
+    extAgentEnabled: isOwner ? params.extAgentEnabled : undefined,
     aiBots: params.aiBots,
   })
   return { profile: toFamilyProfile(profile) }

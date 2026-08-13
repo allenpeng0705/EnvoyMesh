@@ -96,6 +96,10 @@ import type {
   VerifyLibraryItemIpfsGatewayResult,
   ImportToLibraryParams,
   ImportToLibraryResult,
+  ConvertLibraryItemToMarkdownParams,
+  ConvertLibraryItemToMarkdownResult,
+  SaveExternalMcpSearchAsNoteParams,
+  SaveExternalMcpSearchAsNoteResult,
   CreateNoteParams,
   CreateNoteResult,
   DeleteVaultItemParams,
@@ -403,6 +407,8 @@ import {
   parseFamilyThreadKey,
   threadVisibleTo,
   isFamilyThreadKey,
+  familyProfileMayUseExtAgent,
+  maskBridgeEnabledForExtAgentAccess,
 } from "@envoymesh/api";
 import { createNodeConfigStore, createStubNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
 import { startPairingKioskServer, type PairingKioskServerHandle } from "./pairing-kiosk-server.js";
@@ -752,6 +758,9 @@ import {
 import {
   createNoteViaRuntime,
   deleteVaultItemViaRuntime,
+  convertLibraryItemToMarkdownViaRuntime,
+  collectVaultMarkdownIntoNotesViaRuntime,
+  syncBlogPostsToKnowledgeViaRuntime,
   listAllLocalFilesViaRuntime,
   listLibraryItemsViaRuntime,
   listOpenClawWorkspaceFilesViaRuntime,
@@ -780,6 +789,8 @@ import {
   shareFileViaRuntime,
   requestShareFromLibraryViaRuntime,
 } from "./node-service-fileshare.js";
+import { needsRagReindexAfterMarkdownCollect } from "./vault-markdown-corpus.js";
+
 import {
   createPluginRegistry,
   type PluginRegistry,
@@ -2439,6 +2450,7 @@ class NodeServiceImpl implements NodeService {
       recordOwnerActivity: () => this.recordOwnerActivity(),
       requireProfile: () => this._requireProfile(),
       getVaultDir: () => this._vaultDir,
+      getProfileDir: () => this._profileDir,
       deliverCallEnvelope: (transportPeerId, envelope, dialHints, listenAddrs) =>
         this._deliverCallEnvelope(transportPeerId, envelope, dialHints, listenAddrs),
       tagBondedContactReachability: (peerId) => {
@@ -4855,6 +4867,38 @@ class NodeServiceImpl implements NodeService {
   }
 
   /**
+   * Owner-controlled Ext Agent chat gate (Phase 51 follow-up).
+   * Owner always allowed; non-owner profiles require explicit
+   * `extAgentEnabled: true` (default / omitted = off).
+   */
+  private async _callerMayUseExtAgent(): Promise<boolean> {
+    const caller = getRpcCaller();
+    if (caller?.isOwnerProfile) return true;
+    const profileId = this._callerFamilyProfileId();
+    return this.mayFamilyProfileUseExtAgent(
+      profileId,
+      profileId === OWNER_FAMILY_PROFILE_ID,
+    );
+  }
+
+  /**
+   * Profile-scoped Ext Agent allow check (no RPC ALS required).
+   * Used by {@link getBridgeStatus} / send gates and by WS `bridge:status`
+   * fan-out so denied family sessions never see `enabled: true`.
+   */
+  async mayFamilyProfileUseExtAgent(
+    profileId: string,
+    isOwnerProfile: boolean,
+  ): Promise<boolean> {
+    if (isOwnerProfile || profileId === OWNER_FAMILY_PROFILE_ID) return true;
+    if (!this._familyProfileStore) return false;
+    const record = await this._familyProfileStore.get(profileId);
+    return familyProfileMayUseExtAgent(
+      record ? toFamilyProfile(record) : { id: profileId, isOwner: false },
+    );
+  }
+
+  /**
    * Session key used by Ext Agent `ask()` / bridge `fromOwnerId`.
    * Must stay in sync with {@link sendToBridge}'s `humanSenderOwnerId`.
    */
@@ -5317,6 +5361,11 @@ class NodeServiceImpl implements NodeService {
     capabilities?: string[];
     permissions?: { bondAutonomy: boolean; maxBondsPerDay: number; autoCircleContacts: boolean; maxSensitivity: string };
     model?: { provider: string; baseUrl?: string; model?: string };
+    retrievedContext?: {
+      knowledgeAccess?: import("./ai-context.js").KnowledgeAccessLevel;
+      knowledgeScope?: import("@envoymesh/api").AiKnowledgeBaseScope;
+      contactThreadOwnerId?: string;
+    };
   }): Promise<string> {
     return askOpenClawViaRuntime(this._openClawState, this._openClawRuntimeDeps(), prompt, _context);
   }
@@ -5351,7 +5400,16 @@ class NodeServiceImpl implements NodeService {
     );
   }
 
+  private _extAgentDeniedError(): Error {
+    return new Error(
+      "Ext Agent chat is disabled for this family profile. Ask the home-node owner to enable it in Settings → Family.",
+    );
+  }
+
   async sendToBridge(text: string): Promise<void> {
+    if (!(await this._callerMayUseExtAgent())) {
+      throw this._extAgentDeniedError();
+    }
     const mesh = this._reachableMesh();
     const ownerId = this._profile?.owner?.ownerId ?? "";
     const meshPeerId = mesh?.peerId;
@@ -6975,6 +7033,139 @@ class NodeServiceImpl implements NodeService {
     return getRagIndexStatusViaRuntime(this._fileShareContext());
   }
 
+  async reindexRagKnowledge(params?: { force?: boolean }): Promise<RagIndexStatus> {
+    const force = params?.force !== false;
+    const config = await this.getNodeConfig();
+    const rag = await this._getRagService();
+    if (!rag) return { ...DEFAULT_RAG_INDEX_STATUS };
+
+    // Keep Knowledge Browse in sync with Content → Blog (mirrors under notes/imports/blog/).
+    try {
+      const ownerId =
+        this._profile?.owner?.ownerId?.trim() ||
+        (await this.getHumanProfile())?.ownerId?.trim();
+      await syncBlogPostsToKnowledgeViaRuntime(this._fileShareContext(), ownerId);
+    } catch (err) {
+      console.warn(
+        "[knowledge] blog→notes sync before reindex failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+
+    await rag.refreshConfig({
+      knowledgeBase: config.aiSettings?.knowledgeBase,
+      modelProviders: config.modelProviders,
+    });
+
+    if (this._vaultDir) {
+      try {
+        const vaultIndex = await buildVaultIndex(
+          buildVaultIndexOptionsFromKnowledgeBase(this._vaultDir, config.aiSettings?.knowledgeBase),
+        );
+        await rag.reindexVault({
+          vaultIndex,
+          knowledgeBase: config.aiSettings?.knowledgeBase,
+          force,
+        });
+      } catch (error) {
+        console.warn(`[rag] vault reindex failed:`, error);
+        throw error;
+      }
+    }
+
+    try {
+      await rag.backfillChatHistory(this._chatLogStore);
+    } catch (error) {
+      console.warn(`[rag] chat backfill after reindex failed:`, error);
+    }
+
+    return rag.getIndexStatus();
+  }
+
+  async saveExternalMcpSearchAsNote(
+    params: SaveExternalMcpSearchAsNoteParams,
+  ): Promise<SaveExternalMcpSearchAsNoteResult> {
+    const query = params.query?.trim();
+    if (!query) return { ok: false, reason: "query_required" };
+
+    const config = await this.getNodeConfig();
+    const kb = resolveAiKnowledgeBaseSettings(config.aiSettings?.knowledgeBase);
+    if (kb.externalProvider !== "mcp") {
+      return { ok: false, reason: "mcp_disabled" };
+    }
+    if (!kb.mcpWriteBackEnabled) {
+      return { ok: false, reason: "write_back_disabled" };
+    }
+
+    const { searchExternalMcpKnowledge, formatMcpResultsAsNote } = await import("@envoymesh/rag");
+    const { snippets, error } = await searchExternalMcpKnowledge({
+      query,
+      knowledgeBase: config.aiSettings?.knowledgeBase,
+    });
+    if (error) return { ok: false, reason: error, snippetCount: 0 };
+    if (snippets.length === 0) return { ok: false, reason: "no_results", snippetCount: 0 };
+
+    const formatted = formatMcpResultsAsNote(snippets, {
+      attribution: {
+        server: kb.mcpServerUrl ?? kb.externalMcpServer ?? "mcp",
+        tool: kb.mcpSearchTool?.trim() || "memex_search",
+        query,
+        queriedAt: new Date().toISOString(),
+      },
+      sensitivity: params.sensitivity ?? "private",
+      title: params.title,
+      subfolder: "mcp",
+    });
+
+    const note = await this.createNote({
+      filename: formatted.filename,
+      content: formatted.content,
+      subfolder: formatted.subfolder,
+      sensitivity: params.sensitivity ?? "private",
+    });
+    return {
+      ok: true,
+      relativePath: note.relativePath,
+      documentId: note.documentId,
+      snippetCount: snippets.length,
+    };
+  }
+
+  /** Keep in-memory RAG embedder/config aligned after Settings saves (Tauri / Social path). */
+  private async _syncRagConfigFromNodeConfig(opts?: { reindexIfEmbedderChanged?: boolean }): Promise<void> {
+    if (!this._ragService) return;
+    const config = await this.getNodeConfig();
+    const prevKey = this._ragService.getIndexStatus().embedderModelKey;
+    await this._ragService.refreshConfig({
+      knowledgeBase: config.aiSettings?.knowledgeBase,
+      modelProviders: config.modelProviders,
+    });
+    const nextKey = this._ragService.getIndexStatus().embedderModelKey;
+    if (
+      opts?.reindexIfEmbedderChanged &&
+      prevKey &&
+      nextKey &&
+      prevKey !== nextKey &&
+      this._vaultDir
+    ) {
+      try {
+        const vaultIndex = await buildVaultIndex(
+          buildVaultIndexOptionsFromKnowledgeBase(this._vaultDir, config.aiSettings?.knowledgeBase),
+        );
+        await this._ragService.reindexVault({
+          vaultIndex,
+          knowledgeBase: config.aiSettings?.knowledgeBase,
+          force: true,
+        });
+        void this._ragService.backfillChatHistory(this._chatLogStore).catch((error) => {
+          console.warn(`[rag] chat backfill after embedder change failed:`, error);
+        });
+      } catch (error) {
+        console.warn(`[rag] auto-reindex after embedder change failed:`, error);
+      }
+    }
+  }
+
   async verifyLibraryItemIpfsGateway(
     params: VerifyLibraryItemIpfsGatewayParams,
   ): Promise<VerifyLibraryItemIpfsGatewayResult> {
@@ -6985,8 +7176,32 @@ class NodeServiceImpl implements NodeService {
     return importToLibraryViaRuntime(this._fileShareContext(), params);
   }
 
+  async convertLibraryItemToMarkdown(
+    params: ConvertLibraryItemToMarkdownParams,
+  ): Promise<ConvertLibraryItemToMarkdownResult> {
+    return convertLibraryItemToMarkdownViaRuntime(this._fileShareContext(), params);
+  }
+
   async createNote(params: CreateNoteParams): Promise<CreateNoteResult> {
-    return createNoteViaRuntime(this._fileShareContext(), params);
+    const result = await createNoteViaRuntime(this._fileShareContext(), params);
+    if (params.alsoPublishAsBlog) {
+      try {
+        const title = titleFromNoteContent(params.content, params.filename);
+        const body = stripLeadingMarkdownTitle(params.content);
+        await this.publishWebContentEntry({
+          template: "blog-post",
+          title,
+          body,
+          visibility: "public",
+        });
+      } catch (err) {
+        console.warn(
+          "[knowledge] alsoPublishAsBlog failed after createNote:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+    return result;
   }
 
   async deleteVaultItem(params: DeleteVaultItemParams): Promise<void> {
@@ -7005,6 +7220,7 @@ class NodeServiceImpl implements NodeService {
       const vaultDir = this._serviceContextDeps().fileShare.getVaultDir();
       if (vaultDir) {
         const sensitivityStore = createSensitivityOverrideStore(profileDir);
+        const publishedStore = createPublishedLibraryStore(profileDir);
         const obsidian = createObsidianPlugin({
           readVaultFile: async (relativePath: string) => {
             try {
@@ -7018,6 +7234,8 @@ class NodeServiceImpl implements NodeService {
             }
           },
           onSensitivitySync: async (documentId: string, published: boolean) => {
+            // Keep Library Published toggle + RAG overrides aligned with frontmatter.
+            await publishedStore.setPublished(documentId, published);
             if (published) {
               await sensitivityStore.set(documentId, "public");
             } else {
@@ -7045,7 +7263,55 @@ class NodeServiceImpl implements NodeService {
   async activateKbPlugin(
     params: ActivateKbPluginParams,
   ): Promise<{ ok: boolean; reason?: string }> {
-    return this._getOrCreatePluginRegistry().activatePlugin(params.pluginId, params.config);
+    const registry = this._getOrCreatePluginRegistry();
+    const profileDir = this._serviceContextDeps().fileShare.getProfileDir();
+    const vaultDir = this._serviceContextDeps().fileShare.getVaultDir();
+    const config: Record<string, unknown> = {
+      ...(params.config ?? {}),
+      ...(profileDir ? { profileDir } : {}),
+      ...(vaultDir ? { vaultDir } : {}),
+      autoSyncPublished: true,
+    };
+    const result = await registry.activatePlugin(params.pluginId, config);
+    if (result.ok && params.pluginId === "obsidian") {
+      await this._syncObsidianMetadata();
+    }
+    return result;
+  }
+
+  /** Collect loose MD into notes/, then rebuild Obsidian frontmatter sync + link graph. */
+  private async _syncObsidianMetadata(): Promise<void> {
+    const vaultDir = this._serviceContextDeps().fileShare.getVaultDir();
+    if (!vaultDir) return;
+    try {
+      const collected = await collectVaultMarkdownIntoNotesViaRuntime(this._fileShareContext());
+      const index = await buildVaultIndex({ rootDir: vaultDir });
+      await this._getOrCreatePluginRegistry().runEnrichMetadata(
+        index.documents.map((d) => ({
+          documentId: d.documentId,
+          relativePath: d.relativePath,
+          title: d.title,
+          extension: d.extension,
+          byteLength: d.byteLength,
+        })),
+      );
+      // Path moves invalidate RAG relativePath keys — rebuild when anything moved.
+      if (needsRagReindexAfterMarkdownCollect(collected.moved)) {
+        try {
+          await this.reindexRagKnowledge({ force: true });
+        } catch (reindexErr) {
+          console.warn(
+            "[kb-plugin] RAG reindex after Obsidian markdown collect failed:",
+            reindexErr instanceof Error ? reindexErr.message : String(reindexErr),
+          );
+        }
+      }
+    } catch (err) {
+      console.warn(
+        "[kb-plugin] Obsidian activate sync failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
   }
 
   async deactivateKbPlugin(
@@ -7187,6 +7453,25 @@ class NodeServiceImpl implements NodeService {
       ...params,
       ownerId,
     });
+    if (params.template === "blog-post" && this._vaultDir) {
+      try {
+        const webPath = join(this._profileDir, "web", result.path);
+        const markdown = await readFile(webPath, "utf8");
+        const { materializeBlogPostToNotes } = await import("./vault-markdown-corpus.js");
+        await materializeBlogPostToNotes(this._vaultDir, {
+          webRelativePath: result.path,
+          title: result.title,
+          markdown,
+          profileDir: this._profileDir,
+          sensitivity: "private",
+        });
+      } catch (err) {
+        console.warn(
+          "[knowledge] blog→notes materialize failed:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
     void this._fanOutFeedNotifyAfterPublish(result, params).catch((err) =>
       console.warn(
         "[feed.notify] fan-out failed:",
@@ -8024,6 +8309,17 @@ class NodeServiceImpl implements NodeService {
           err instanceof Error ? err.message : err,
         );
       }
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(nodePatch, "modelProviders") ||
+      Object.prototype.hasOwnProperty.call(nodePatch, "aiSettings")
+    ) {
+      void this._syncRagConfigFromNodeConfig({ reindexIfEmbedderChanged: true }).catch((err) => {
+        console.warn(
+          "[rag] sync after config save failed:",
+          err instanceof Error ? err.message : err,
+        );
+      });
     }
     // Sync the runtime relay-public-WS-URL with the persisted config so
     // the user's preference takes effect immediately. `setRelayPublicWsUrl`
@@ -9114,7 +9410,11 @@ class NodeServiceImpl implements NodeService {
   }
 
   async getBridgeStatus(): Promise<BridgeStatus> {
-    return getBridgeStatusViaRuntime(this._connectionStatusContext());
+    const status = getBridgeStatusViaRuntime(this._connectionStatusContext());
+    return maskBridgeEnabledForExtAgentAccess(
+      status,
+      await this._callerMayUseExtAgent(),
+    );
   }
 
   /**
@@ -9144,6 +9444,25 @@ class NodeServiceImpl implements NodeService {
    * used by Social for post-switch hints and the Ext Agent chat banner.
    */
   async probeExtAgent(params?: ProbeExtAgentParams): Promise<ExtAgentReachability> {
+    if (!(await this._callerMayUseExtAgent())) {
+      const status = this.getBridgeStatusSnapshot();
+      const agents = mergeExtAgentPresets(status?.extAgents);
+      const requested = params?.agentId?.trim();
+      const active =
+        (requested ? agents.find((a) => a.id === requested) : undefined) ??
+        resolveActiveExtAgent(agents, status?.activeExtAgentId) ??
+        agents[0];
+      const agentId = active?.id ?? requested ?? "pi";
+      return {
+        agentId,
+        agentName: active?.name ?? agentId,
+        builtIn: agentId === "pi",
+        reachable: false,
+        hint: "Ext Agent chat is disabled for this family profile.",
+        checkedAt: new Date().toISOString(),
+        installState: "unknown",
+      };
+    }
     const status = this.getBridgeStatusSnapshot() ?? (await this.getBridgeStatus());
     const agents = mergeExtAgentPresets(status.extAgents);
     const requested = params?.agentId?.trim();
@@ -9166,6 +9485,9 @@ class NodeServiceImpl implements NodeService {
   async getExtAgentCommandCatalog(
     params?: GetExtAgentCommandCatalogParams,
   ): Promise<ExtAgentCommandCatalog> {
+    if (!(await this._callerMayUseExtAgent())) {
+      throw this._extAgentDeniedError();
+    }
     const status = this.getBridgeStatusSnapshot() ?? (await this.getBridgeStatus());
     const agents = mergeExtAgentPresets(status.extAgents);
     const requested = params?.agentId?.trim();
@@ -9218,6 +9540,9 @@ class NodeServiceImpl implements NodeService {
   async setExtAgentSessionModel(
     params: SetExtAgentSessionModelParams,
   ): Promise<SetExtAgentSessionModelResult> {
+    if (!(await this._callerMayUseExtAgent())) {
+      throw this._extAgentDeniedError();
+    }
     const status = this.getBridgeStatusSnapshot() ?? (await this.getBridgeStatus());
     const agents = mergeExtAgentPresets(status.extAgents);
     const requested = params.agentId?.trim();
@@ -9490,6 +9815,17 @@ class NodeServiceImpl implements NodeService {
       this.emit("home:config-updated", { config: full });
     } catch {
       /* ignore */
+    }
+    // Ext Agent allow/deny must refresh chat-row visibility on family devices
+    // (they listen to bridge:status; home:config-updated alone is not enough
+    // for older EnvoyGo builds that only hide on enabled=false).
+    if (params.extAgentEnabled !== undefined) {
+      try {
+        const snap = this.getBridgeStatusSnapshot();
+        if (snap) this.emit("bridge:status", snap);
+      } catch {
+        /* ignore */
+      }
     }
     return result;
   }
@@ -10721,6 +11057,7 @@ class NodeServiceImpl implements NodeService {
       humanProfileStore: this._humanProfileStore,
       agentIdentityStore: this._agentIdentityStore,
       ragService,
+      profileDir: this._profileDir,
     });
 
     if (!result.ok) {
@@ -11902,6 +12239,17 @@ class NodeServiceImpl implements NodeService {
     // No check wired yet → assume offline → push fires.
     return false;
   }
+}
+
+function titleFromNoteContent(content: string, filename: string): string {
+  const heading = content.match(/^#\s+(.+)$/m);
+  if (heading?.[1]?.trim()) return heading[1].trim().slice(0, 200);
+  const stem = filename.replace(/\.md$/i, "").trim();
+  return stem || "Untitled";
+}
+
+function stripLeadingMarkdownTitle(content: string): string {
+  return content.replace(/^#\s+[^\n]+\n*/, "").trim();
 }
 
 function mimeTypeForFilename(filename: string): string {

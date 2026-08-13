@@ -28,6 +28,7 @@ import {
   saveAssistantLinkedTerminalSessionId,
 } from "../../lib/storage.js";
 import { createAssistantDraftCrdt, ASSISTANT_DRAFT_SYNC_SCOPE } from "../../lib/assistant-draft-crdt.js";
+import { takeEnvoyAiDraftHint } from "../../lib/open-envoy-ai-nav.js";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { ChatComposer } from "../ChatComposer.js";
 import { AnswerRenderer } from "../AnswerRenderer.js";
@@ -458,6 +459,15 @@ export function AIChatPanel({
       draftRef.current = null;
     };
   }, [ownerId, nodeService]);
+
+  // Knowledge Ask → Continue in EnvoyAI: apply one-shot composer prefill when visible.
+  useEffect(() => {
+    if (!active) return;
+    const hint = takeEnvoyAiDraftHint();
+    if (!hint) return;
+    draftRef.current?.setPlainText(hint);
+    setAiInput(hint);
+  }, [active]);
 
   useEffect(() => {
     const unsub = nodeService.on("crdt:sync", (data) => {

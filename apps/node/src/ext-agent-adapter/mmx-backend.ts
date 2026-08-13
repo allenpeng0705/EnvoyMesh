@@ -10,23 +10,24 @@
  * OR set `MINIMAX_API_KEY` in the shell. Region is auto-detected by
  * the CLI from the API key prefix (global vs CN).
  *
- * JSON output shape (with `--output json`):
- *   { "text": "the assistant response",
- *     "session_id": "...",     // optional
- *     "model": "MiniMax-M2.7", // optional
- *     "usage": { ... } }       // optional
+ * JSON output shape (mmx 1.x `--output json`) matches the MiniMax
+ * Messages API assistant message, e.g.:
+ *   { "id": "...", "type": "message", "role": "assistant",
+ *     "content": [{ "type": "text", "text": "…" }], "usage": {…} }
+ * Older / alternate shapes may use a flat `{ "text": "…" }` (or
+ * `response` / `output` / `message`). Plain-text stdout is accepted
+ * when JSON parsing fails.
  *
- * We try `text` first; fall back to `response` / `output` / `message`
- * for forward compat. If stdout isn't JSON, fall back to trimming the
- * raw text.
+ * Parsing is isolated via {@link extractOneShotAssistantText} with
+ * `prefer: "content-first"` so Cursor/Aider shapes are not affected.
  *
  * See `docs/Ext_Agent_guide.md` (Phase 56 section) for install + start.
  */
 
 import {
   OneShotCliBackend,
-  type OneShotCliBackendOptions,
 } from "./one-shot-cli-backend.js";
+import { extractOneShotAssistantText } from "./parse-one-shot-json.js";
 import type { ExtAgentBackend } from "./types.js";
 
 const MMX_DEFAULTS = {
@@ -35,6 +36,9 @@ const MMX_DEFAULTS = {
   installHint:
     "Install MMX-CLI: `npm install -g mmx-cli` (or `npx skills add MiniMax-AI/cli -y -g`). Then run `mmx auth login --api-key sk-xxxx` to authenticate.",
 } as const;
+
+/** Flat fields for older mmx / alternate wrappers (after content blocks). */
+const MMX_FLAT_KEYS = ["text", "response", "output", "message"] as const;
 
 export interface MmxBackendOptions {
   /** Binary to spawn. Default: `mmx`. */
@@ -55,7 +59,7 @@ export interface MmxBackendOptions {
    * `OneShotCliBackendOptions.binaryOnPath`).
    */
   binaryOnPath?: (command: string) => Promise<boolean | null>;
-  /** Override the args passed to `probe()`. Default: `["auth", "status"]`. */
+  /** Override the args passed to `probe()`. Default: `["--version"]`. */
   probeArgs?: string[];
 }
 
@@ -94,23 +98,11 @@ export class MmxBackend extends OneShotCliBackend {
     _stderr: string,
     _exitCode: number,
   ): string {
-    const trimmed = stdout.trim();
-    if (!trimmed) return "";
-    // MMX-CLI --output json typically wraps the response in
-    // `{ text, session_id, model, usage }`. Field names are not
-    // guaranteed across versions; try the most likely first.
-    if (trimmed.startsWith("{")) {
-      try {
-        const obj = JSON.parse(trimmed) as Record<string, unknown>;
-        for (const k of ["text", "response", "output", "message", "content"]) {
-          const v = obj[k];
-          if (typeof v === "string" && v.trim()) return v.trim();
-        }
-      } catch {
-        // Fall through to raw text on parse failure.
-      }
-    }
-    return trimmed;
+    const extracted = extractOneShotAssistantText(stdout, {
+      flatKeys: MMX_FLAT_KEYS,
+      prefer: "content-first",
+    });
+    return extracted ?? stdout.trim();
   }
 }
 

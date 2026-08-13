@@ -218,15 +218,19 @@ export abstract class OneShotCliBackend implements ExtAgentBackend {
   }
 
   /**
-   * Cheap readiness probe: pre-spawn `command -v` + run the
+   * Cheap readiness probe: pre-spawn PATH/well-known-bin check + run the
    * `probeArgs` (default `--version`) with a 5s timeout. Never throws.
+   * Uses {@link resolveExtAgentBinary} so conda / ~/.local installs work
+   * the same way as `ask()` (bare `spawn("aider")` is ENOENT when PATH
+   * omits the env bin dir).
    */
   async probe(): Promise<boolean> {
     try {
       const onPath = await this.binaryOnPathFn(this.command);
       if (onPath === false) return false;
+      const resolvedCmd = resolveExtAgentBinary(this.command) ?? this.command;
       return await new Promise<boolean>((resolve) => {
-        const proc = spawn(this.command, this.probeArgsList, {
+        const proc = spawn(resolvedCmd, this.probeArgsList, {
           env: this.env,
           stdio: ["ignore", "pipe", "pipe"],
         });

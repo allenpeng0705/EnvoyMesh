@@ -1197,6 +1197,9 @@ export class DirectCallClient implements NodeServiceClient {
   async getRagIndexStatus() {
     return this._ns.getRagIndexStatus();
   }
+  async reindexRagKnowledge(params?: { force?: boolean }) {
+    return this._ns.reindexRagKnowledge(params);
+  }
 
   async verifyLibraryItemIpfsGateway(params: Parameters<NodeService["verifyLibraryItemIpfsGateway"]>[0]) {
     return this._ns.verifyLibraryItemIpfsGateway(params);
@@ -1204,6 +1207,18 @@ export class DirectCallClient implements NodeServiceClient {
 
   async importToLibrary(params: Parameters<NodeService["importToLibrary"]>[0]) {
     return this._ns.importToLibrary(params);
+  }
+
+  async convertLibraryItemToMarkdown(
+    params: Parameters<NodeService["convertLibraryItemToMarkdown"]>[0],
+  ) {
+    return this._ns.convertLibraryItemToMarkdown(params);
+  }
+
+  async saveExternalMcpSearchAsNote(
+    params: Parameters<NodeService["saveExternalMcpSearchAsNote"]>[0],
+  ) {
+    return this._ns.saveExternalMcpSearchAsNote(params);
   }
 
   async resolveLibraryItemPath(relativePath: string) {

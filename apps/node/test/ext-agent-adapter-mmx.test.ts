@@ -18,13 +18,26 @@ import { InstallMissingError } from "../src/ext-agent-adapter/daemon-supervisor.
 // Fake "mmx" scripts
 // ---------------------------------------------------------------------------
 
-/** Canonical MMX-CLI JSON output: `{ text, session_id, model, usage }`. */
+/** Canonical older flat JSON: `{ text, session_id, model, usage }`. */
 const SCRIPT_HAPPY = `#!/usr/bin/env node
 process.stdout.write(JSON.stringify({
   text: "hello from MiniMax (M2.7)",
   session_id: "mmx-sess-001",
   model: "MiniMax-M2.7",
   usage: { prompt_tokens: 5, completion_tokens: 7, total_tokens: 12 },
+}) + "\\n");
+`;
+
+/** Current mmx 1.x Messages API shape (content blocks). */
+const SCRIPT_MESSAGES_API = `#!/usr/bin/env node
+process.stdout.write(JSON.stringify({
+  id: "06cc5309146f1d85b765ae48fe138e33",
+  type: "message",
+  role: "assistant",
+  model: "MiniMax-M3",
+  content: [{ text: "Hello! How can I help you today?", type: "text" }],
+  usage: { input_tokens: 36, output_tokens: 10 },
+  stop_reason: "end_turn",
 }) + "\\n");
 `;
 
@@ -106,6 +119,17 @@ describe("MmxBackend", () => {
       });
       const out = await backend.ask("hi", "session-A");
       expect(out).toBe("hello from MiniMax (M2.7)");
+    });
+
+    it("parses Messages API content blocks (mmx 1.x --output json)", async () => {
+      const { command, args } = await fakeMmxScript(SCRIPT_MESSAGES_API);
+      const backend = new MmxBackend({
+        command,
+        args,
+        binaryOnPath: async () => true,
+      });
+      const out = await backend.ask("hi", "session-A");
+      expect(out).toBe("Hello! How can I help you today?");
     });
 
     it("falls back to `response` field on older versions", async () => {

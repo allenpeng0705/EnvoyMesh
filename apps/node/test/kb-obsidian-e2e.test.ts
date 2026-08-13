@@ -215,23 +215,24 @@ No published field.
     const docs = await getMdDocuments();
     await registry.runEnrichMetadata(docs);
 
-    // published=true should trigger sync
-    const publishedCall = syncCalls.find(
-      ([path]) => path.includes("published-note"),
-    );
-    expect(publishedCall).toBeDefined();
-    expect(publishedCall![1]).toBe(true);
+    // published=true should trigger sync with vault documentId (not path)
+    const publishedDoc = docs.find((d) => d.relativePath.includes("published-note"))
+    const unpublishedDoc = docs.find((d) => d.relativePath.includes("unpublished-note"))
+    expect(publishedDoc).toBeDefined()
+    expect(unpublishedDoc).toBeDefined()
+    const publishedCall = syncCalls.find(([id]) => id === publishedDoc!.documentId)
+    expect(publishedCall).toBeDefined()
+    expect(publishedCall![1]).toBe(true)
 
-    // published=false should trigger sync
-    const unpublishedCall = syncCalls.find(
-      ([path]) => path.includes("unpublished-note"),
-    );
-    expect(unpublishedCall).toBeDefined();
-    expect(unpublishedCall![1]).toBe(false);
+    // published=false should also trigger sync
+    const unpublishedCall = syncCalls.find(([id]) => id === unpublishedDoc!.documentId)
+    expect(unpublishedCall).toBeDefined()
+    expect(unpublishedCall![1]).toBe(false)
 
-    // no published field → no sync call
+    // no published field → no sync call for that note
+    expect(syncCalls).toHaveLength(2)
     const noPublishedCall = syncCalls.find(
-      ([path]) => path.includes("no-published"),
+      ([id]) => id === docs.find((d) => d.relativePath.includes("no-published"))?.documentId,
     );
     expect(noPublishedCall).toBeUndefined();
   });

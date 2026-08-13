@@ -313,6 +313,24 @@ describe("AiderBackend", () => {
       const ok = await backend.probe();
       expect(ok).toBe(false);
     });
+
+    it("probe spawns an absolute command path (conda-style off-PATH install)", async () => {
+      // Regression: install detection can find ~/.local or conda bins via
+      // resolveExtAgentBinary, but probe() used to spawn the bare name
+      // (`aider`) and hit ENOENT → backend_reachable:false forever.
+      const dir = await mkdtemp(join(tmpdir(), "aider-abs-probe-"));
+      const absBin = join(dir, "aider");
+      await writeFile(
+        absBin,
+        `#!/usr/bin/env node\nprocess.stdout.write("aider 0.0.0-test");\n`,
+        { mode: 0o755 },
+      );
+      const backend = new AiderBackend({
+        command: absBin,
+        binaryOnPath: async () => true,
+      });
+      expect(await backend.probe()).toBe(true);
+    });
   });
 
   describe("env pass-through", () => {

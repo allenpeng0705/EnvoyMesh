@@ -44,7 +44,15 @@ export interface AiKnowledgeBaseSettings {
      * @deprecated Use `publicVaultPaths`. Kept for backward-compatible configs.
      */
     vaultPaths?: string[];
-    /** Reserved: plug in external KB via MCP or similar. Default: none */
+    /**
+     * Optional absolute paths to existing Obsidian vaults (read-only overlay).
+     * Shown in Knowledge Browse — never moved or rewritten. Mesh publish stays Envoy vault only.
+     */
+    linkedObsidianVaultPaths?: string[];
+    /**
+     * External KB via MCP (e.g. Notion search). Default: `mcp`.
+     * Soft-fails when URL is missing — no Notion desktop app required.
+     */
     externalProvider?: KnowledgeBaseExternalProvider;
     /** MCP server id when externalProvider is "mcp" (future). */
     externalMcpServer?: string;
@@ -54,6 +62,16 @@ export interface AiKnowledgeBaseSettings {
     mcpSearchTool?: string;
     /** Optional bearer token for MCP HTTP bridge. */
     mcpApiKey?: string;
+    /**
+     * MCP HTTP tools/call timeout in milliseconds (Phase 57D).
+     * Default: 8000; clamped 1000–30000.
+     */
+    mcpTimeoutMs?: number;
+    /**
+     * When true, owner may save MCP search hits into `notes/mcp/` via
+     * `saveExternalMcpSearchAsNote` (Phase 57D). Default: false.
+     */
+    mcpWriteBackEnabled?: boolean;
     /** Max vault file size indexed for RAG (bytes). Default: 25 MiB. */
     maxFileBytes?: number;
     /** Target chunk size for vault RAG (characters). Default: 800. */
@@ -82,6 +100,8 @@ export declare function resolveAiKnowledgeBaseSettings(input?: AiKnowledgeBaseSe
     mcpServerUrl?: string;
     mcpSearchTool?: string;
     mcpApiKey?: string;
+    mcpTimeoutMs?: number;
+    mcpWriteBackEnabled?: boolean;
     embedding?: AiEmbeddingSettings;
 };
 /** Resolve vault path prefixes for a given retrieval scope. */

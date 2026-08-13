@@ -47,6 +47,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     getPiStatus,
     restartPi,
     getRagIndexStatus: vi.fn().mockResolvedValue(null),
+    reindexRagKnowledge: vi.fn().mockResolvedValue(null),
     getAgentIdentity: vi.fn().mockResolvedValue({ content: "", updatedAt: null }),
     getEnvoyLocalStatus: vi.fn().mockResolvedValue({
       enabled: false,

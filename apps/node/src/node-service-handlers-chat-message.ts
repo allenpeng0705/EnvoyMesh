@@ -34,6 +34,7 @@ export interface ChatMessageContext {
   getPeerDirectoryStore(): any;
   getStyleAdapter(): any;
   getVaultDir(): string;
+  getProfileDir?: () => string;
   getConfigStore(): any;
   getApprovalQueue(): any;
   getAutoReplyLimitStore(): any;
@@ -192,6 +193,7 @@ export async function handleChatMessageViaRuntime(
         humanProfileStore: ctx.getHumanProfileStore(),
         agentIdentityStore: undefined,
         vaultDir: ctx.getVaultDir(),
+        profileDir: ctx.getProfileDir?.(),
         styleAdapter: ctx.getStyleAdapter(),
         sendChat: (targetOwnerId: string, text: string) =>
           ctx.sendAgentChat(targetOwnerId, text),

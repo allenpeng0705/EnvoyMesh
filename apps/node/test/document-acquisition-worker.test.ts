@@ -4,7 +4,10 @@ import {
   type DocumentAcquisitionCandidate,
   type DocumentAcquisitionJob,
 } from "@envoymesh/api";
-import { advanceDocumentAcquisitionJob } from "../src/document-acquisition-worker.js";
+import {
+  advanceDocumentAcquisitionJob,
+  inboxPathForJob,
+} from "../src/document-acquisition-worker.js";
 
 function candidate(overrides: Partial<DocumentAcquisitionCandidate> = {}): DocumentAcquisitionCandidate {
   return {
@@ -303,5 +306,37 @@ describe("document acquisition worker bonded_catalog", () => {
     expect(result?.candidates[0]?.sourceRelativePath).toBe("shared/obscure-x7f9.dat");
     expect(result?.candidates[0]?.score).toBeLessThanOrEqual(0.1);
     expect(result?.stage).not.toBe("bonded_catalog");
+  });
+});
+
+describe("inboxPathForJob (Phase 57E)", () => {
+  it("preserves extractable extension from pathHint", () => {
+    expect(
+      inboxPathForJob({
+        jobId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        query: "quarterly report",
+        pathHint: "shared/reports/q1.docx",
+      }),
+    ).toMatch(/^inbox\/acq-quarterly-report\.docx$/);
+  });
+
+  it("preserves extension from fileTitleHint", () => {
+    expect(
+      inboxPathForJob({
+        jobId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        query: "briefing",
+        fileTitleHint: "Board Brief.pdf",
+      }),
+    ).toMatch(/^inbox\/acq-board-brief\.pdf$/);
+  });
+
+  it("falls back to .bin when no extension is hinted", () => {
+    expect(
+      inboxPathForJob({
+        jobId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        query: "mystery blob",
+        fileTitleHint: "mystery blob",
+      }),
+    ).toMatch(/^inbox\/acq-mystery-blob\.bin$/);
   });
 });

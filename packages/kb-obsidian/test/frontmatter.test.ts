@@ -4,6 +4,7 @@ import {
   frontmatterString,
   frontmatterBoolean,
   frontmatterStringArray,
+  setFrontmatterBoolean,
 } from "../src/frontmatter.js"
 
 describe("parseFrontmatter", () => {
@@ -162,5 +163,28 @@ describe("frontmatterStringArray", () => {
 
   it("returns undefined for mixed-type array", () => {
     expect(frontmatterStringArray({ tags: ["a", 5] }, "tags")).toBeUndefined()
+  })
+})
+
+describe("setFrontmatterBoolean", () => {
+  it("prepends frontmatter when none exists", () => {
+    const next = setFrontmatterBoolean("# Hello\n", "published", true)
+    expect(next.startsWith("---\npublished: true\n---\n")).toBe(true)
+    expect(next).toContain("# Hello")
+  })
+
+  it("updates an existing published key", () => {
+    const src = `---\ntitle: Note\npublished: false\n---\n\nBody\n`
+    const next = setFrontmatterBoolean(src, "published", true)
+    expect(next).toContain("published: true")
+    expect(next).not.toContain("published: false")
+    expect(parseFrontmatter(next).data.published).toBe(true)
+  })
+
+  it("appends published when frontmatter lacks the key", () => {
+    const src = `---\ntags: [a]\n---\n\nBody\n`
+    const next = setFrontmatterBoolean(src, "published", true)
+    expect(parseFrontmatter(next).data.published).toBe(true)
+    expect(parseFrontmatter(next).data.tags).toEqual(["a"])
   })
 })

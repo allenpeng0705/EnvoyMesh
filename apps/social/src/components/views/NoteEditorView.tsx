@@ -50,6 +50,7 @@ export function NoteEditorView({
   const [sensitivity, setSensitivity] = useState<"public" | "friends" | "private">(
     defaultSensitivity ?? "public",
   )
+  const [alsoPublishAsBlog, setAlsoPublishAsBlog] = useState(false)
   const [content, setContent] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -102,6 +103,7 @@ export function NoteEditorView({
           content,
           subfolder: subfolder.trim() || undefined,
           sensitivity,
+          alsoPublishAsBlog: alsoPublishAsBlog || undefined,
         })
         onSaved?.(result.relativePath)
       } catch (err) {
@@ -129,7 +131,7 @@ export function NoteEditorView({
         setBusy(false)
       }
     }
-  }, [mode, filename, content, subfolder, sensitivity, initialRelativePath, nodeService, onSaved, t])
+  }, [mode, filename, content, subfolder, sensitivity, alsoPublishAsBlog, initialRelativePath, nodeService, onSaved, t])
 
   const isEditingExistingNote = initialRelativePath?.startsWith("notes/")
   const title = mode === "create" ? t("notes.newNote") : t("notes.editNote")
@@ -202,6 +204,16 @@ export function NoteEditorView({
                 <option value="friends">{t("notes.sensitivityFriends")}</option>
                 <option value="private">{t("notes.sensitivityPrivate")}</option>
               </select>
+              <label className="note-editor-modal__blog-toggle">
+                <input
+                  type="checkbox"
+                  checked={alsoPublishAsBlog}
+                  onChange={(e) => setAlsoPublishAsBlog(e.target.checked)}
+                  disabled={busy}
+                  data-testid="note-editor-also-blog"
+                />
+                <span>{t("notes.alsoPublishAsBlog")}</span>
+              </label>
             </div>
           )}
 

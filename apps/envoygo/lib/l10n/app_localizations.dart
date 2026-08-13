@@ -624,6 +624,258 @@ abstract class AppLocalizations {
   /// **'My Files'**
   String get contentMyFiles;
 
+  /// No description provided for @contentKnowledge.
+  ///
+  /// In en, this message translates to:
+  /// **'Knowledge'**
+  String get contentKnowledge;
+
+  /// No description provided for @knowledgeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Knowledge'**
+  String get knowledgeTitle;
+
+  /// No description provided for @knowledgeLede.
+  ///
+  /// In en, this message translates to:
+  /// **'Your vault knowledge base — notes under notes/ power EnvoyAI. Documents stay as originals.'**
+  String get knowledgeLede;
+
+  /// No description provided for @knowledgePanelBrowse.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse'**
+  String get knowledgePanelBrowse;
+
+  /// No description provided for @knowledgePanelAsk.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask'**
+  String get knowledgePanelAsk;
+
+  /// No description provided for @knowledgePanelPlugins.
+  ///
+  /// In en, this message translates to:
+  /// **'Plugins'**
+  String get knowledgePanelPlugins;
+
+  /// No description provided for @knowledgePanelSetup.
+  ///
+  /// In en, this message translates to:
+  /// **'Setup'**
+  String get knowledgePanelSetup;
+
+  /// No description provided for @knowledgeAskHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Answers use notes and documents on this node. Peers only see what you Publish.'**
+  String get knowledgeAskHint;
+
+  /// No description provided for @knowledgeAskHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask your vault'**
+  String get knowledgeAskHeading;
+
+  /// No description provided for @knowledgeAskLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Question'**
+  String get knowledgeAskLabel;
+
+  /// No description provided for @knowledgeAskPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'What did I write about onboarding?'**
+  String get knowledgeAskPlaceholder;
+
+  /// No description provided for @knowledgeAskSubmit.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask'**
+  String get knowledgeAskSubmit;
+
+  /// No description provided for @knowledgeAskBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching…'**
+  String get knowledgeAskBusy;
+
+  /// No description provided for @knowledgeAskAnswerHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Answer'**
+  String get knowledgeAskAnswerHeading;
+
+  /// No description provided for @knowledgeAskEmptyAnswer.
+  ///
+  /// In en, this message translates to:
+  /// **'No answer returned. Check Setup → enable vault knowledge and rebuild the index.'**
+  String get knowledgeAskEmptyAnswer;
+
+  /// No description provided for @knowledgeAskContinueEnvoyAi.
+  ///
+  /// In en, this message translates to:
+  /// **'Open in EnvoyAI'**
+  String get knowledgeAskContinueEnvoyAi;
+
+  /// No description provided for @knowledgeAskEnvoyAiHint.
+  ///
+  /// In en, this message translates to:
+  /// **'For multi-turn chat with tools, continue in EnvoyAI.'**
+  String get knowledgeAskEnvoyAiHint;
+
+  /// No description provided for @knowledgeLibraryHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Your files'**
+  String get knowledgeLibraryHeading;
+
+  /// No description provided for @knowledgeLibraryCaption.
+  ///
+  /// In en, this message translates to:
+  /// **'Notes, documents, and what you’ve published.'**
+  String get knowledgeLibraryCaption;
+
+  /// No description provided for @knowledgePluginsLede.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional connectors. Notion needs an MCP URL — not the Notion app.'**
+  String get knowledgePluginsLede;
+
+  /// No description provided for @knowledgePluginsObsidianTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Obsidian'**
+  String get knowledgePluginsObsidianTitle;
+
+  /// No description provided for @knowledgePluginsObsidianDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Enrich vault notes. Desktop app optional.'**
+  String get knowledgePluginsObsidianDesc;
+
+  /// No description provided for @knowledgePluginsNotionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Notion (via MCP)'**
+  String get knowledgePluginsNotionTitle;
+
+  /// No description provided for @knowledgePluginsNotionDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Search via MCP. On by default; soft-fails without a URL.'**
+  String get knowledgePluginsNotionDesc;
+
+  /// No description provided for @knowledgePluginsMcpUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP server URL'**
+  String get knowledgePluginsMcpUrl;
+
+  /// No description provided for @knowledgePluginsMcpTool.
+  ///
+  /// In en, this message translates to:
+  /// **'Search tool name'**
+  String get knowledgePluginsMcpTool;
+
+  /// No description provided for @knowledgeSetupHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Index status and retrieval. Chat models stay in Me → AI Model.'**
+  String get knowledgeSetupHint;
+
+  /// No description provided for @knowledgeSetupEnabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable vault knowledge'**
+  String get knowledgeSetupEnabled;
+
+  /// No description provided for @knowledgeSetupStatusHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap Rebuild to refresh the vector index.'**
+  String get knowledgeSetupStatusHint;
+
+  /// No description provided for @knowledgeSetupReindex.
+  ///
+  /// In en, this message translates to:
+  /// **'Rebuild index'**
+  String get knowledgeSetupReindex;
+
+  /// No description provided for @knowledgeSetupReindexDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Reindex started'**
+  String get knowledgeSetupReindexDone;
+
+  /// No description provided for @knowledgeBrowseFilterAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get knowledgeBrowseFilterAll;
+
+  /// No description provided for @knowledgeBrowseFiltersLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'SHOW'**
+  String get knowledgeBrowseFiltersLabel;
+
+  /// No description provided for @knowledgeBrowseFilterNotes.
+  ///
+  /// In en, this message translates to:
+  /// **'Notes'**
+  String get knowledgeBrowseFilterNotes;
+
+  /// No description provided for @knowledgeBrowseFilterObsidian.
+  ///
+  /// In en, this message translates to:
+  /// **'Obsidian'**
+  String get knowledgeBrowseFilterObsidian;
+
+  /// No description provided for @knowledgeBrowseFilterNotion.
+  ///
+  /// In en, this message translates to:
+  /// **'Notion'**
+  String get knowledgeBrowseFilterNotion;
+
+  /// No description provided for @knowledgeBrowseFilterDocuments.
+  ///
+  /// In en, this message translates to:
+  /// **'Documents'**
+  String get knowledgeBrowseFilterDocuments;
+
+  /// No description provided for @knowledgeBrowseFilterPublished.
+  ///
+  /// In en, this message translates to:
+  /// **'Published'**
+  String get knowledgeBrowseFilterPublished;
+
+  /// No description provided for @knowledgeBrowseIndexReady.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} indexed'**
+  String knowledgeBrowseIndexReady(int count);
+
+  /// No description provided for @knowledgeBrowseIndexIndexing.
+  ///
+  /// In en, this message translates to:
+  /// **'Indexing…'**
+  String get knowledgeBrowseIndexIndexing;
+
+  /// No description provided for @knowledgeBrowseIndexEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Index empty'**
+  String get knowledgeBrowseIndexEmpty;
+
+  /// No description provided for @knowledgeBrowseIndexChipHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Knowledge → Setup to manage the index.'**
+  String get knowledgeBrowseIndexChipHint;
+
   /// No description provided for @contentNewPost.
   ///
   /// In en, this message translates to:

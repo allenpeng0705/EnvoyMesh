@@ -8,11 +8,19 @@ import {
   openLocalFile,
   openVaultLibraryFile,
   vaultFilenameFromRelativePath,
+  withUtf8Charset,
 } from "../../src/lib/library-file-actions.js";
 
 describe("library-file-actions", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("withUtf8Charset adds charset for text and markdown", () => {
+    expect(withUtf8Charset("text/markdown")).toBe("text/markdown; charset=utf-8");
+    expect(withUtf8Charset("text/plain")).toBe("text/plain; charset=utf-8");
+    expect(withUtf8Charset("text/plain; charset=utf-8")).toBe("text/plain; charset=utf-8");
+    expect(withUtf8Charset("application/pdf")).toBe("application/pdf");
   });
 
   it("vaultFilenameFromRelativePath returns basename", () => {

@@ -55,6 +55,8 @@ export async function runInboundChatAssist(input: {
   humanProfileStore: HumanProfileStore;
   agentIdentityStore?: AgentIdentityStore | null;
   vaultDir: string;
+  /** Profile dir for Published-toggle sensitivity overrides (57B). */
+  profileDir?: string;
   styleAdapter: StyleAdapter | null;
   sendChat: (targetOwnerId: string, text: string) => Promise<SendChatResult>;
   emitDraft: (threadPeerOwnerId: string, draft: { draftId: string; text: string; inReplyToMessageId: string; createdAt: string }) => void;
@@ -90,6 +92,7 @@ export async function runInboundChatAssist(input: {
     humanProfileStore,
     agentIdentityStore = null,
     vaultDir,
+    profileDir,
     styleAdapter,
     sendChat,
     emitDraft,
@@ -173,7 +176,7 @@ export async function runInboundChatAssist(input: {
     | Awaited<ReturnType<typeof generateAgentModeChatDraft>>;
 
   if (agentModeEnabled && askOpenClaw) {
-    console.log(`[chat-assist] Agent Mode for ${senderOwnerId} — OpenClaw owner-scoped draft`);
+    console.log(`[chat-assist] Agent Mode for ${senderOwnerId} — OpenClaw contact-scoped draft`);
     result = await generateAgentModeChatDraft({
       envelope,
       senderOwnerId,
@@ -188,6 +191,7 @@ export async function runInboundChatAssist(input: {
       askOpenClaw,
       buildOpenClawTurnContext,
       ensureOpenClawReady,
+      knowledgeAccess: contactPref?.knowledgeAccess ?? "public",
     });
     if (!result.ok) {
       // Fail closed to Assist (public KB only) — do not escalate private via Assist.
@@ -236,6 +240,7 @@ export async function runInboundChatAssist(input: {
       knowledgeBase: config.aiSettings?.knowledgeBase,
       ragService,
       threadKey: draftThread,
+      profileDir,
     });
   }
 

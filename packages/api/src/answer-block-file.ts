@@ -21,7 +21,14 @@ function parseFileRef(value: unknown): StructuredCardFileRef | undefined {
         ? normalizeRelativePath(obj.path)
         : "";
   if (!relativePath) return undefined;
-  const source: LocalFileSource = obj.source === "workspace" ? "workspace" : "vault";
+  const source: LocalFileSource =
+    obj.source === "workspace"
+      ? "workspace"
+      : obj.source === "linked-obsidian"
+        ? "linked-obsidian"
+        : obj.source === "mcp-remote"
+          ? "mcp-remote"
+          : "vault";
   const documentId = typeof obj.documentId === "string" ? obj.documentId.trim() : undefined;
   return { source, relativePath, ...(documentId ? { documentId } : {}) };
 }

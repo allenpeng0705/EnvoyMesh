@@ -14,6 +14,7 @@ export {
   frontmatterString,
   frontmatterBoolean,
   frontmatterStringArray,
+  setFrontmatterBoolean,
   type FrontmatterValue,
   type ParsedFrontmatter,
 } from "./frontmatter.js"

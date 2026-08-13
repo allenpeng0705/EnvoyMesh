@@ -446,13 +446,19 @@ export const zhProfilePhotosMessages = {
 } as const;
 
 export const zhLibraryViewMessages = {
-  title: "资料库",
+  title: "知识文件",
   hint:
-    "资料库文档 — 可导入、发布发现、导出 IPFS 或 P2P 分享。聊天附件与头像相册请在聊天 / 个人资料中管理。",
+    "资料库笔记与文档 — 可导入 Office/PDF（会在 notes/imports/ 生成私密 Markdown）、发布发现或 P2P 分享。EnvoyAI 回答时会使用此语料。",
   filterPlaceholder: "按名称或路径筛选…",
   filterAria: "筛选资料库",
   importFile: "导入文件…",
   importing: "导入中…",
+  importedToast: "已导入 {path}",
+  importedMarkdownToast: "已导入 {path} · Markdown 笔记 {mdPath}",
+  convertToMarkdown: "转换为 Markdown 笔记",
+  convertingToMarkdown: "转换中…",
+  convertToMarkdownDone: "已保存 Markdown 笔记 {path}",
+  convertToMarkdownFailed: "无法转换为 Markdown",
   open: "打开",
   opening: "打开中…",
   showInFolder: "在文件夹中显示",
@@ -484,7 +490,6 @@ export const zhLibraryViewMessages = {
   cidCopied: "CID 已复制",
   ipfsExportComplete: "IPFS 导出完成",
   cidPinnedToast: "CID 已固定到提供者",
-  importedToast: "已导入 {path}",
   pinnedStatus: "已通过 {provider} 固定{pinId}",
   gatewayVerifiedStatus: "网关已验证（{bytes} 字节） — {url}",
   ipfsMobileHeliaOn: "导出使用本设备上的进程内 Helia。如需通过 HTTP 验证 CID，请在设置中添加网关白名单。",
@@ -715,10 +720,102 @@ export const zhContentViewMessages = {
   tabFeed: "朋友圈",
   tabBlog: "博客",
   tabExplore: "逛逛",
-  tabFiles: "我的文件",
+  tabFiles: "知识库",
   tabSites: "站点",
   tabBazaar: "集市",
   tabFriends: "好友",
+} as const;
+
+export const zhKnowledgeViewMessages = {
+  title: "知识库",
+  lede:
+    "本地知识库 — notes/ 下的笔记供 EnvoyAI 使用；发布后联系人可通过 knowledge.query 查询。文档原件保留；导入/转换会在 notes/imports/ 生成私密 Markdown。",
+  panelsAria: "知识库面板",
+  panelBrowse: "浏览",
+  panelPlugins: "插件",
+  panelSetup: "设置",
+  askHeading: "向知识库提问",
+  askHint: "基于本节点的笔记与文档作答。联系人只能看到你已发布的内容。",
+  askLabel: "问题",
+  askPlaceholder: "我关于入职流程写了什么？",
+  askSubmit: "提问",
+  askBusy: "搜索中…",
+  askAnswerHeading: "回答",
+  askEmptyAnswer: "没有返回答案。请到「设置」启用知识库并重建索引。",
+  askContinueEnvoyAi: "在 EnvoyAI 中打开",
+  askEnvoyAiHint: "需要多轮对话或工具时，请到 EnvoyAI 继续。",
+  libraryHeading: "你的文件",
+  libraryCaption: "笔记、文档，以及已发布的内容。",
+  setupHint:
+    "索引状态、嵌入与检索。Obsidian 与 Notion/MCP 在「插件」页。聊天模型与扩展智能体仍在「设置 → AI」。",
+  browse: {
+    filtersAria: "浏览筛选",
+    filtersLabel: "显示",
+    filterAll: "全部",
+    filterNotes: "笔记",
+    filterObsidian: "Obsidian",
+    filterNotion: "Notion",
+    filterBlog: "博客",
+    filterDocuments: "文档",
+    filterPublished: "已发布",
+    sourceObsidian: "Obsidian",
+    sourceNotion: "Notion",
+    sourceBlog: "博客",
+    sourceDocument: "文件",
+    emptyAll: "资料库还是空的。新建笔记或导入文档，开始构建知识库。",
+    emptyNotes:
+      "还没有笔记。新建笔记，或导入/转换文档以在 notes/imports/ 生成 Markdown。",
+    emptyObsidian:
+      "还没有 Obsidian 风格笔记。笔记在 notes/ 下（notes/mcp/ 与 notes/imports/blog/ 不计入此项）。",
+    emptyNotion:
+      "还没有已保存的 Notion 笔记。在「插件」启用 MCP 后，可将搜索结果保存到 notes/mcp/。",
+    emptyBlog:
+      "还没有博客知识。发布一篇博客，或新建笔记并勾选「同时发布为公开博客」。",
+    emptyDocuments: "notes/ 之外还没有文档。可导入 PDF、Office 等原件。",
+    emptyPublished: "还没有已发布内容。在浏览中发布笔记后，联系人才能在网格上查询。",
+    indexReady: "已索引 {count}",
+    indexIndexing: "索引中 {processed}/{total}…",
+    indexError: "索引出错 — 打开设置",
+    indexEmpty: "索引为空 — 打开设置",
+    indexChipTitle: "打开知识库设置",
+  },
+  plugins: {
+    lede: "可选连接器。Notion 需要 MCP 服务 URL，不需要安装 Notion 应用。",
+    showHelp: "安装与使用",
+    howToInstall: "安装：",
+    howToUse: "使用：",
+    statusUnavailable: "不可用",
+    obsidianTitle: "Obsidian",
+    obsidianTagline: "增强 vault 笔记。桌面应用可选。",
+    obsidianDesc:
+      "Envoy 的 Obsidian 插件负责笔记增强（双向链接、published: 同步、链接图）。不要求安装 Obsidian 桌面应用。",
+    obsidianInstall:
+      "可选：从 obsidian.md 安装 Obsidian，用「打开文件夹作为库」选择 Envoy 的 vault 目录。无需另下 Envoy 插件包。",
+    obsidianUse: "在此保持插件为「已启用」。在 Obsidian 中改完笔记后点「立即同步」。浏览与提问在任何情况下都可用。",
+    obsidianIfMissing: "若未安装 Obsidian：Envoy 仍管理 notes/，本插件也可保持启用，直接在 Envoy 中编辑 Markdown。",
+    obsidianNotRegistered: "此节点未注册 Obsidian 插件。",
+    obsidianAutoFail: "无法自动启用 Obsidian",
+    linkedVaultLabel: "关联的 Obsidian 库路径",
+    linkedVaultPlaceholder: "/path/to/existing/ObsidianVault",
+    linkedVaultDesc:
+      "可选。填写已有 Obsidian 库的绝对路径（多个用逗号分隔）。在浏览的 Obsidian 筛选中只读展示 — 不会移动你的文件。网格发布仍只用 Envoy vault。",
+    notionTitle: "Notion（经 MCP）",
+    notionTagline: "经 MCP 搜索。默认开启；无 URL 时软失败。",
+    notionDesc:
+      "通过你运行的 MCP 服务搜索 Notion 类知识。Envoy 不会登录 Notion，也不会同步工作区 — 结果仅合并进所有者提示；保存的笔记默认私密，发布后才进网格。",
+    notionInstall:
+      "运行可访问 Notion（或 Memex 等）的 MCP 服务，记下 http(s) URL 与搜索工具名。无需 Notion 桌面应用，Envoy 内无 OAuth。",
+    notionUse:
+      "填写服务器 URL，然后在 EnvoyAI 中提问。可选写回保存到 notes/mcp/（默认私密）。浏览页可用 Notion 筛选查看这些笔记。",
+    notionIfMissing: "若未配置 MCP：浏览/提问只用本地资料库，云端 Notion 会被跳过（软失败）。",
+    notionEnable: "MCP 搜索",
+    notionEnableDesc: "仅所有者 EnvoyAI — 不进入网格 knowledge.query。",
+    notionStatusOn: "开",
+    notionStatusOff: "关",
+    futureTitle: "更多插件",
+    futureDesc: "未来连接器会出现在此，并附带同样的安装/使用说明。网格分享始终以 vault 为准。",
+    futureEmpty: "更多连接器注册后会出现在此。",
+  },
 } as const;
 
 export const zhBlogViewMessages = {
@@ -854,6 +951,7 @@ export const zhNoteEditorMessages = {
   sensitivityPublic: "公开",
   sensitivityFriends: "好友",
   sensitivityPrivate: "私密",
+  alsoPublishAsBlog: "同时发布为公开博客",
   contentPlaceholder: "用 Markdown 撰写…",
   saving: "保存中…",
 } as const;

@@ -111,6 +111,9 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "buildAgentAttachmentContext",
   "getChatDrafts",
   "deleteChatDraft",
+  "reindexRagKnowledge",
+  "saveExternalMcpSearchAsNote",
+  "convertLibraryItemToMarkdown",
 ]);
 
 /** True when a thin-client family session must not call this RPC. */
@@ -491,6 +494,18 @@ export async function routeRpcMethod(
       return ns.getIpfsEngineStatus();
     case "getRagIndexStatus":
       return ns.getRagIndexStatus();
+    case "reindexRagKnowledge":
+      return ns.reindexRagKnowledge(
+        params && typeof params === "object"
+          ? { force: (params as { force?: boolean }).force !== false }
+          : undefined,
+      );
+    case "saveExternalMcpSearchAsNote":
+      return ns.saveExternalMcpSearchAsNote({
+        query: params.query as string,
+        title: params.title as string | undefined,
+        sensitivity: params.sensitivity as "public" | "friends" | "private" | undefined,
+      });
     case "verifyLibraryItemIpfsGateway":
       return ns.verifyLibraryItemIpfsGateway({
         documentId: params.documentId as string,
@@ -502,12 +517,18 @@ export async function routeRpcMethod(
         contentBase64: params.contentBase64 as string,
         mimeType: params.mimeType as string | undefined,
       });
+    case "convertLibraryItemToMarkdown":
+      return ns.convertLibraryItemToMarkdown({
+        documentId: params.documentId as string | undefined,
+        relativePath: params.relativePath as string | undefined,
+      });
     case "createNote":
       return ns.createNote({
         filename: params.filename as string,
         content: params.content as string,
         subfolder: params.subfolder as string | undefined,
         sensitivity: params.sensitivity as "public" | "friends" | "private" | undefined,
+        alsoPublishAsBlog: params.alsoPublishAsBlog === true,
       });
     case "deleteVaultItem":
       return ns.deleteVaultItem({

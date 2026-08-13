@@ -42,7 +42,11 @@ export type StructuredBlock =
       title: string;
       subtitle?: string;
       meta?: string[];
-      file?: { source: "vault" | "workspace"; relativePath: string; documentId?: string };
+      file?: {
+        source: "vault" | "workspace" | "linked-obsidian" | "mcp-remote";
+        relativePath: string;
+        documentId?: string;
+      };
       cta?: { label: string; action: string };
     }
   | { type: "status"; tone: "info" | "success" | "warn" | "error"; text: string };

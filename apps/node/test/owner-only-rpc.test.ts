@@ -46,6 +46,16 @@ describe("isOwnerOnlyRpcMethod", () => {
     expect(isOwnerOnlyRpcMethod("deleteChatDraft")).toBe(true)
   })
 
+  it("gates Phase 57 KB mutation / reindex RPCs for family", () => {
+    for (const method of [
+      "reindexRagKnowledge",
+      "saveExternalMcpSearchAsNote",
+      "convertLibraryItemToMarkdown",
+    ]) {
+      expect(isOwnerOnlyRpcMethod(method), method).toBe(true)
+    }
+  })
+
   it("allows family chat RPCs", () => {
     expect(isOwnerOnlyRpcMethod("sendFamilyMessage")).toBe(false)
     expect(isOwnerOnlyRpcMethod("listFamilyRooms")).toBe(false)

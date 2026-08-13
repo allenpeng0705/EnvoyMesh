@@ -83,7 +83,16 @@ export interface AiKnowledgeBaseSettings {
    * @deprecated Use `publicVaultPaths`. Kept for backward-compatible configs.
    */
   vaultPaths?: string[];
-  /** Reserved: plug in external KB via MCP or similar. Default: none */
+  /**
+   * Optional absolute paths to existing Obsidian vaults (read-only overlay).
+   * Shown in Knowledge Browse / used for owner RAG — never moved or rewritten.
+   * Mesh publish still uses the Envoy vault only.
+   */
+  linkedObsidianVaultPaths?: string[];
+  /**
+   * External KB via MCP (e.g. Notion search). Default: `mcp`.
+   * Soft-fails when URL is missing — no Notion desktop app required.
+   */
   externalProvider?: KnowledgeBaseExternalProvider;
   /** MCP server id when externalProvider is "mcp" (future). */
   externalMcpServer?: string;
@@ -93,6 +102,16 @@ export interface AiKnowledgeBaseSettings {
   mcpSearchTool?: string;
   /** Optional bearer token for MCP HTTP bridge. */
   mcpApiKey?: string;
+  /**
+   * MCP HTTP tools/call timeout in milliseconds (Phase 57D).
+   * Default: 8000; clamped 1000–30000.
+   */
+  mcpTimeoutMs?: number;
+  /**
+   * When true, owner may save MCP search hits into `notes/mcp/` via
+   * `saveExternalMcpSearchAsNote` (Phase 57D). Default: false — search merges into prompts only.
+   */
+  mcpWriteBackEnabled?: boolean;
   /** Max vault file size indexed for RAG (bytes). Default: 25 MiB. */
   maxFileBytes?: number;
   /** Target chunk size for vault RAG (characters). Default: 800. */
@@ -137,7 +156,8 @@ export const DEFAULT_AI_KNOWLEDGE_BASE: Required<
   vaultSnippetLimit: 5,
   publicVaultPaths: ["knowledge/public/", "notes/"],
   privateVaultPaths: ["knowledge/private/"],
-  externalProvider: "none",
+  /** Prefer MCP when a server URL is configured; soft-fails if URL missing. */
+  externalProvider: "mcp",
   maxFileBytes: DEFAULT_AI_KNOWLEDGE_BASE_MAX_FILE_BYTES,
   chunkSizeChars: DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_SIZE_CHARS,
   chunkOverlapChars: DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_OVERLAP_CHARS,
@@ -163,10 +183,13 @@ export function resolveAiKnowledgeBaseSettings(
 > & {
   publicVaultPaths: string[];
   privateVaultPaths: string[];
+  linkedObsidianVaultPaths: string[];
   externalMcpServer?: string;
   mcpServerUrl?: string;
   mcpSearchTool?: string;
   mcpApiKey?: string;
+  mcpTimeoutMs?: number;
+  mcpWriteBackEnabled?: boolean;
   embedding?: AiEmbeddingSettings;
 } {
   const ragMode = input?.ragMode ?? DEFAULT_AI_KNOWLEDGE_BASE.ragMode;
@@ -182,6 +205,9 @@ export function resolveAiKnowledgeBaseSettings(
   const privateVaultPaths = (input?.privateVaultPaths ?? DEFAULT_AI_KNOWLEDGE_BASE.privateVaultPaths)
     .map((p) => p.trim())
     .filter(Boolean);
+  const linkedObsidianVaultPaths = (input?.linkedObsidianVaultPaths ?? [])
+    .map((p) => p.trim())
+    .filter(Boolean);
 
   return {
     enabled: input?.enabled ?? DEFAULT_AI_KNOWLEDGE_BASE.enabled,
@@ -191,6 +217,7 @@ export function resolveAiKnowledgeBaseSettings(
     vaultSnippetLimit: clampInt(input?.vaultSnippetLimit, 0, 20, DEFAULT_AI_KNOWLEDGE_BASE.vaultSnippetLimit),
     publicVaultPaths,
     privateVaultPaths,
+    linkedObsidianVaultPaths,
     externalProvider: input?.externalProvider ?? DEFAULT_AI_KNOWLEDGE_BASE.externalProvider,
     maxFileBytes: clampInt(
       input?.maxFileBytes,
@@ -215,6 +242,11 @@ export function resolveAiKnowledgeBaseSettings(
     mcpServerUrl: input?.mcpServerUrl?.trim() || undefined,
     mcpSearchTool: input?.mcpSearchTool?.trim() || undefined,
     mcpApiKey: input?.mcpApiKey?.trim() || undefined,
+    mcpTimeoutMs:
+      typeof input?.mcpTimeoutMs === "number" && Number.isFinite(input.mcpTimeoutMs)
+        ? Math.min(30_000, Math.max(1_000, Math.floor(input.mcpTimeoutMs)))
+        : undefined,
+    mcpWriteBackEnabled: input?.mcpWriteBackEnabled === true,
     embedding: input?.embedding,
   };
 }

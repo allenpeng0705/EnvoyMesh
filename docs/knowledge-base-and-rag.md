@@ -135,7 +135,13 @@ Private items            ✅      ❌       ❌       ✅
 **Extracted text** (parsed at index time): `.pdf`, `.docx`, `.doc`, `.pptx`, `.ppt`,
 `.xlsx`, `.xls`, `.html`, `.htm`, `.rtf`
 
-Implementation: `@envoymesh/vault` (`document-text-extract.ts`, `vault-formats.ts`).
+Implementation today: `@envoymesh/vault` (`document-text-extract.ts`, `vault-formats.ts`)
+via a stitch of `pdf-parse` / `mammoth` / `word-extractor` / JSZip / `xlsx` → **plain text**.
+
+**Phase 57A** replaces that stitch with **[anydoc](https://github.com/firecrawl/anydoc)**
+(`@firecrawl/anydoc`) as the primary converter → clean GitHub-Flavored Markdown, with the
+legacy extractors kept as fallback. See [Anydoc (Markdown extraction)](#anydoc-markdown-extraction)
+below.
 
 ### Where Files Live
 
@@ -258,6 +264,41 @@ next activation. The vault index and sensitivity labels are unaffected.
 
 ---
 
+## Anydoc (Markdown extraction)
+
+**Status:** shipped under [Phase 57](./implementation-plan.md#phase-57--knowledge-base-production-hardening-markdown-first--anydoc-) (57A extract + 57E secondary surfaces).
+
+**Upstream:** [firecrawl/anydoc](https://github.com/firecrawl/anydoc) (MIT) — Rust library
+with Node bindings (`@firecrawl/anydoc`: `toMarkdown`, `toMarkdownBytes`, `toDocument`).
+Converts Word, PowerPoint, Excel, OpenDocument, RTF, EPUB, CSV, and text-based PDF into
+one consistent GitHub-Flavored Markdown pipeline (median conversion ~single-digit ms;
+no ML, no network). Scanned / image-only PDFs return `unsupported` locally — Firecrawl’s
+hosted OCR is **out of scope** for EnvoyMesh local-first.
+
+### Product rule
+
+| Concern | Behavior |
+|---------|----------|
+| Canonical bytes | Originals stay in `vault/documents/` (Library download/share) |
+| RAG / LLM text | Prefer on-disk `notes/imports/*.md` when materialized; else anydoc GFM at **extract/index** time |
+| Materialize | Import + Library **Convert** + inbound share → `notes/imports/` with `source:` + **`sensitivity: private`** (override + path heuristic); promote via Library Published only |
+| MCP write-back | `notes/mcp/` defaults to **private** (owner prompts / owner vault); not mesh-visible until published |
+| Binding fail / ConvertError | Fall back to legacy extractors; log once |
+
+### Why anydoc
+
+Today’s extractors produce uneven plain text (weak tables/headings; missing ODT/ODS/ODP/EPUB/.docm/.xlsb quality). anydoc funnels every format through one document model + GFM serializer — better structure for chunking and Obsidian-friendly Markdown notes when users choose to convert.
+
+### Other call sites (57E)
+
+- **Chat / Ext Agent attachments** — `buildAgentAttachmentContext` extracts Office/PDF/HTML via `extractVaultDocumentText` (anydoc + legacy); images stay binary placeholders.
+- **Library convert-to-note / import** — materialize to `notes/imports/` as **private** (item-4).
+- **Share / document-acquisition ingest** — inbox paths keep real extensions; verified inbound transfers best-effort materialize extractable files as **private**.
+- **MCP → note** — `notes/mcp/` private by default; live MCP search remains owner-prompt only.
+- A2A vault HTTP text — still via vault index/extract pipeline (unchanged).
+
+---
+
 ## Obsidian Plugin (Detailed Design)
 
 ### Purpose
@@ -294,7 +335,7 @@ date: 2025-06-15
 
 | Frontmatter Field | Maps To |
 |---|---|
-| `published: true/false` | Sensitivity override (synced to `.envoy/sensitivity.json`) |
+| `published: true/false` | Sensitivity override + Library Published (`documentId` key in `vault-sensitivity-overrides.json` / `published-library.json`). Synced on Obsidian activate, Sync now, and Library list enrich. Library Published toggle also writes this frontmatter when the plugin is active. |
 | `tags: [...]` | Enriches vault index metadata for tag-based search |
 | `aliases: [...]` | Alternative titles for search/discovery |
 | `date:` | Creation date for sorting |
@@ -354,7 +395,7 @@ and merge their results into the vault context for LLM prompts.
 
 ### How It Works
 
-Already partially implemented via `kb.externalProvider = "mcp"`:
+Already implemented via `kb.externalProvider = "mcp"`:
 
 ```json
 "aiSettings": {
@@ -362,24 +403,26 @@ Already partially implemented via `kb.externalProvider = "mcp"`:
     "externalProvider": "mcp",
     "mcpServerUrl": "http://localhost:3000",
     "mcpSearchTool": "search",
-    "mcpApiKey": "optional-key"
+    "mcpApiKey": "optional-key",
+    "mcpWriteBackEnabled": false
   }
 }
 ```
 
 When enabled, the context injector calls the MCP server's search tool and merges
-results alongside vault RAG hits. This is a **read-only bridge** — MCP results are
-not stored in the vault, just included in prompts.
+results alongside vault RAG hits for **owner EnvoyAI prompts only**. This is a
+**search bridge — not vault sync**. Mesh `knowledge.query` and Library sharing
+still use local vault files.
 
-### Future: MCP Write-Back
+HTTP `tools/call` requests time out after 8s by default (configurable via
+`mcpTimeoutMs`, max 30s). Failures soft-fail into prompts (empty section) and
+surface as `lastExternalKbError` on RAG index status / Settings.
 
-Allow the agent to write discovered knowledge back into the vault:
+### MCP Write-Back (gated)
 
-```
-Agent receives MCP search result → deems it valuable
-→ creates note in vault/notes/ with source attribution
-→ sets sensitivity based on policy
-```
+With `mcpWriteBackEnabled: true`, Settings can run **Search MCP & save note**,
+which writes an attributed Markdown file under `notes/mcp/` (`source: mcp` frontmatter).
+Default remains off so MCP stays prompt-only.
 
 ---
 
@@ -508,19 +551,16 @@ capped so a single chunk fits the embed API.
 
 ### Context Injection Paths
 
-**Path A: Inbound Chat Assist** (ext agent / bridge)
-1. Load agent identity
-2. Search vault RAG (scope = contact ceiling)
-3. Inject recent + RAG chat history
-4. Inject relationship + profile context
-5. Optional external MCP knowledge
+| Caller | Scope | Sensitivity ceiling | Rate limit | Notes |
+|--------|-------|---------------------|------------|-------|
+| Inbound `knowledge.query` (`knowledge-query-inbound.ts`) | Peer: `public` collections; Self: `owner` | Stranger/`referred` → public; direct bond → friends (after syndication clamp); self → private | Stranger: 5/min | Loads `vault-sensitivity-overrides.json` (57B) |
+| Local `NodeService.knowledgeQuery` | `owner` | private | No | Owner AI tab |
+| Chat Assist draft (`chat-draft-inbound.ts`) | `public` paths only | Per-contact `knowledgeAccess` | No | MCP skipped (owner-scope gate) |
+| OpenClaw / EnvoyAI (`openclaw-turn-context.ts`) | Owner: `owner`; Agent Mode contact draft: `public` | Owner: private; Agent Mode: contact `knowledgeAccess` (default public) | No | Contact drafts also filter bond-chat RAG to that contact; MCP skipped unless `owner` scope |
+| Document acquisition `searchLocalVault` | `owner` | private | No | Internal tool |
+| External MCP (`getExternalKnowledgeContext`) | `owner` only | N/A | No | Prompt merge only |
 
-**Path B: OpenClaw EnvoyAI Gateway**
-1. Load agent identity
-2. Search vault RAG (full owner scope)
-3. External MCP knowledge (if configured)
-4. Bond thread context (up to 8 contacts)
-5. Truncate to 20k chars max
+**Sensitivity overrides file:** `{profileDir}/vault-sensitivity-overrides.json` (Published toggle / Obsidian sync). Applied on vault **search** and **reindex** (not only metadata).
 
 ### Knowledge Query Prompt Assembly
 
@@ -553,9 +593,22 @@ Chat and embeddings use **different** config blocks:
 | Field | Options |
 |---|---|
 | `embedding.mode` | `mock` \| `ollama` \| `openai-compatible` \| `inherit` |
-| `inherit` | Copies chat endpoint + apiKey, default model `text-embedding-3-small` |
+| `inherit` | Copies chat endpoint + apiKey when the chat host has an embedding preset (OpenAI / MiniMax / Zhipu / Qwen). **Envoy Local** chat (`presetId: envoy-local` / `:18790`) has no embedding GGUF — inherit falls back to **mock** so indexing stays offline-safe. Prefer Ollama `nomic-embed-text` or a real embedding API for quality. |
 | `apiKey` | Optional; if omitted, uses `modelProviders.apiKey` |
 | `maxInputTokens` | Per-request cap for embedding API |
+
+Settings → AI → Knowledge shows the effective embedder (`embedderModelKey`) and the last embedding error when indexing/backfill fails. Changing the effective embedder (including chat-provider **inherit**) prompts a confirm dialog; **Rebuild knowledge index** force-reindexes vault + chat.
+
+### Markdown corpus ownership (stable text for rework)
+
+| Obsidian | Behavior |
+|----------|----------|
+| **Active** (plugin enabled / vault shared with Obsidian) | Markdown under `notes/` is the human corpus (Obsidian edits). Activate / Sync **collects** loose `.md` into `notes/` (skips `blog/` / `feeds/` / `profile/`). Office/PDF stay in `documents/`; anydoc GFM is **materialized** to `notes/imports/*.md` on import or Library **Convert to Markdown note**. |
+| **Not installed / plugin off** | Same on-disk layout; EnvoyMesh is the only editor. Originals remain in `documents/`; notes still live under `notes/`. |
+
+**Backup rule:** originals in `documents/` are Envoy’s durable backup of Office/PDF. There is **no** second live Markdown tree — one corpus under `notes/`.
+
+Re-embedding always re-reads current vault text (prefer on-disk MD when present). A Markdown-first corpus makes rebuilds cheaper and more predictable than re-parsing Office binaries every time — but vectors still must be rebuilt when the embedder changes.
 
 ---
 
@@ -680,34 +733,38 @@ settings changed are re-embedded; unchanged files are skipped.
 
 ## Future Work
 
+> **Active production track:** [Phase 57](./implementation-plan.md#phase-57--knowledge-base-production-hardening-markdown-first--anydoc-)
+> (Markdown-first + anydoc → Obsidian polish → MCP/Notion-class). Phase 44 (A–E) already
+> shipped native notes, sensitivity, public mesh hooks, plugin registry, Obsidian, and MCP write-back scaffolding.
+
 ### Phase 1: Native Note Creation
-- Basic Markdown editor in Library UI (create, edit, preview)
+- Basic Markdown editor in Library UI (create, edit, preview) — **largely shipped in 44A2**; polish remains
 - Note organization (folder navigation in UI)
 
 ### Phase 2: Public Knowledge Mesh
-- Relax `knowledge.query` trust tier for public-scope queries
+- Relax `knowledge.query` trust tier for public-scope queries — **shipped in 44B**; harden in **57B**
 - Public discovery catalog advertisement via DHT/relay
-- Per-stranger rate limiting
+- Per-stranger rate limiting — **shipped baseline**; verify in **57B**
 - Cross-peer `library_discover` for all peers
 
 ### Phase 3: Obsidian Plugin
-- Plugin interface (registry, lifecycle, metadata hooks)
-- Frontmatter parsing → sensitivity auto-sync
-- `[[wiki-link]]` resolution and link graph index
-- Agent link traversal
+- Plugin interface / frontmatter / wiki-links — **shipped in 44C–44D**; polish in **57C**
 - Optional graph view + backlinks UI extension
 
-### Phase 4: Future KB Plugins
+### Phase 4: Future KB Plugins + Markdown ingestion
+- **anydoc GFM extraction** — **57A** / **57E** (see [Anydoc](#anydoc-markdown-extraction))
+- MCP write-back / Notion-class search — **57D** (MCP only; no Notion OAuth sync)
 - Plugin SDK for third-party integrations
-- MCP write-back (agent saves discovered knowledge to vault)
-- Notion, Logseq, or other KB tool plugins
+- Logseq or other KB tool plugins
 
 ---
 
 ## Related Docs
 
+- [implementation-plan.md Phase 57](./implementation-plan.md#phase-57--knowledge-base-production-hardening-markdown-first--anydoc-) — production KB + anydoc checklist
 - [ai-response-settings-design.md](./ai-response-settings-design.md) — AI modes, rules, contact permissions
 - [run-local-model.md](./run-local-model.md) — Ollama / LiteLLM / provider setup
 - [ai-document-backbone-plan.md](./ai-document-backbone-plan.md) — Envoy AI document agent and library tools
 - [document-acquisition-agent.md](./document-acquisition-agent.md) — Autonomous document acquisition worker
 - [openclaw-extension.md](./openclaw-extension.md) — OpenClaw channel plugin
+- [firecrawl/anydoc](https://github.com/firecrawl/anydoc) — office → GFM converter (upstream)

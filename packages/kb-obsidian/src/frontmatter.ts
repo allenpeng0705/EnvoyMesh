@@ -198,3 +198,50 @@ export function frontmatterStringArray(
   const v = data[key];
   return Array.isArray(v) && v.every((item) => typeof item === "string") ? v : undefined;
 }
+
+/**
+ * Set or update a boolean frontmatter key (`published`, etc.) in a Markdown file.
+ *
+ * - With existing frontmatter: updates the key in place, or appends it before the closing `---`.
+ * - Without frontmatter: prepends a new YAML block.
+ * Returns the full file text (unchanged if the value is already correct).
+ */
+export function setFrontmatterBoolean(
+  markdown: string,
+  key: string,
+  value: boolean,
+): string {
+  const boolText = value ? "true" : "false"
+  const keyLine = `${key}: ${boolText}`
+
+  if (!FRONTMATTER_OPEN.test(markdown)) {
+    return `---\n${keyLine}\n---\n\n${markdown}`
+  }
+
+  const openEnd = markdown.indexOf("\n") + 1
+  const afterOpen = markdown.slice(openEnd)
+  const closeIdx = afterOpen.search(FRONTMATTER_CLOSE)
+  if (closeIdx === -1) {
+    return `---\n${keyLine}\n---\n\n${markdown}`
+  }
+
+  const yamlBlock = afterOpen.slice(0, closeIdx)
+  const closeLineEnd = afterOpen.indexOf("\n", closeIdx)
+  const rest = closeLineEnd === -1 ? "" : afterOpen.slice(closeLineEnd + 1)
+
+  const keyRe = new RegExp(`^([ \\t]*)${escapeRegExp(key)}[ \\t]*:[ \\t]*.*$`, "m")
+  let nextYaml: string
+  if (keyRe.test(yamlBlock)) {
+    nextYaml = yamlBlock.replace(keyRe, `$1${keyLine}`)
+  } else {
+    const trimmed = yamlBlock.replace(/\s+$/, "")
+    nextYaml = trimmed.length > 0 ? `${trimmed}\n${keyLine}\n` : `${keyLine}\n`
+  }
+
+  if (nextYaml === yamlBlock) return markdown
+  return `---\n${nextYaml}---\n${rest}`
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}

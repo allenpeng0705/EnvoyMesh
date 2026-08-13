@@ -31,12 +31,12 @@ still rebind the bridge HTTP listener in-process).
 
 | | HomeClaw | Hermes | OpenHuman | Codex | Claude Code | Cursor CLI | Aider | MMX-CLI |
 |---|----------|--------|-----------|-------|-------------|------------|-------|---------|
-| Start with product | Start HomeClaw | Auto (probe-first) **or** `hermes gateway run` | Auto (probe-first) **or** OpenHuman.app / CLI | `codex app-server` (auto) | SDK (auto) | `cursor-agent --prompt …` (auto) | `aider --message …` (auto) | `mmx text chat --message …` (auto) |
+| Start with product | Start HomeClaw | Auto (probe-first) **or** `hermes gateway run` | Keep **OpenHuman.app** running | `codex app-server` (auto) | SDK (auto) | `cursor-agent --print …` (auto) | `aider --message …` (auto) | `mmx text chat --message …` (auto) |
 | EnvoyMesh sidecar | No | Yes `:8020` | Yes `:8021` | Yes `:8023` (stdio bridge) | Yes `:8024` (in-proc) | Yes `:8025` (one-shot) | Yes `:8026` (one-shot) | Yes `:8027` (one-shot) |
 | Auth | Optional bridge secret | Hermes `API_SERVER_KEY` ↔ `HERMES_API_KEY` | `/v1` API key (auto) or `/rpc` `core.token` | `OPENAI_API_KEY` env | `ANTHROPIC_API_KEY` env | `cursor-agent login` (browser OAuth) | `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` | `mmx auth login --api-key …` |
 | Transport | HomeClaw channel | HTTP `:8642` | HTTP `:7788` | `codex` stdio JSON-RPC | `@anthropic-ai/claude-agent-sdk` | `cursor-agent` stdio one-shot | `aider` one-shot subprocess | `mmx` one-shot subprocess |
 | Typical failure | HomeClaw down / wrong `ENVOYMESH_BRIDGE_URL` | API not enabled / key mismatch | Desktop `/rpc` 401 → use `/v1` auto-key | CLI not on `$PATH` | CLI not on `$PATH` | First-run browser login skipped | First-run prompts hang in non-TTY | `mmx auth` not run yet |
-| Install | separate product | `curl …/install.sh \| bash` | `curl …/install.sh \| bash` | `npm i -g @openai/codex` | `npm i -g @anthropic-ai/claude-code` | `curl …/cursor.com/install \| bash` | `pip install aider-chat` | `npm i -g mmx-cli` |
+| Install | [homeclaw.cn](https://www.homeclaw.cn) (`./install.sh`) | `curl …/install.sh \| bash` | `curl …/install.sh \| bash` | `npm i -g @openai/codex` | `npm i -g @anthropic-ai/claude-code` | `curl …/cursor.com/install \| bash` | `uv tool install aider-chat` | `npm i -g mmx-cli` |
 
 > **Phase 56 additions** (cursor / aider / mmx) all use the shared
 > `OneShotCliBackend` base — one subprocess per `ask()`, no long-lived
@@ -115,9 +115,26 @@ Ext Agent chat
 
 ### Run
 
-1. Start the **EnvoyMesh home node** with Ext Agent / bridge enabled
+1. Install HomeClaw from [homeclaw.cn](https://www.homeclaw.cn/)
+   ([install guide](https://www.homeclaw.cn/en/install/)):
+
+```bash
+git clone https://github.com/allenpeng0705/HomeClaw.git
+cd HomeClaw
+chmod +x install.sh && ./install.sh   # Mac/Linux
+# Windows: .\install.ps1  or  install.bat
+```
+
+2. Start **HomeClaw Core** (EnvoyMesh does **not** start it):
+
+```bash
+python -m main start
+# or Portal UI:
+python -m main portal   # → http://127.0.0.1:18472
+```
+
+3. Start the **EnvoyMesh home node** with Ext Agent / bridge enabled
    (HomeClaw selected → `http://127.0.0.1:8010/message`).
-2. Start **HomeClaw** the usual way (gateway / Core — whatever your install uses).
    The EnvoyMesh channel comes up with HomeClaw; no separate channel command.
 
 Optional env / config (if defaults do not match your bridge port):
@@ -382,19 +399,18 @@ external gateway ignores that cwd.
 
 ## OpenHuman
 
-Same pattern as Hermes: EnvoyMesh auto-starts `:8021/message` and talks to the
-local OpenHuman core on `:7788`.
+EnvoyMesh auto-starts the `:8021/message` sidecar and talks to
+**OpenHuman.app** on `:7788`. Keep the app running while you chat.
 
 **Important:** OpenHuman.app’s per-launch `/rpc` bearer is **in-memory only**.
-EnvoyMesh cannot discover it. With the desktop app, use the **stable `/v1`
-OpenAI-compatible API** (Path A, default). Use `/rpc` + `core.token` only with a
-CLI / headless core (Path B).
+EnvoyMesh cannot discover it. Use the **stable `/v1` OpenAI-compatible API**
+(automatic key; default).
 
 ```
 Ext Agent chat
   → EnvoyMesh bridge
   → POST http://127.0.0.1:8021/message     (EnvoyMesh sidecar, auto-started)
-  → OpenHuman :7788  (/v1/chat/completions  or  /rpc agent.chat)
+  → OpenHuman.app :7788  (/v1/chat/completions)
   → POST http://127.0.0.1:<bridgePort>/bridge/send
   → reply in chat
 ```
@@ -405,11 +421,18 @@ Ext Agent chat
 |---------|------|------|
 | EnvoyMesh bridge | `3031` (or `4031` with offset) | `POST /bridge/send` replies |
 | EnvoyMesh OpenHuman sidecar | `8021` | EnvoyMesh `/message` contract |
-| OpenHuman core | `7788` | `/health`, `/v1/*`, `/rpc` |
+| OpenHuman.app | `7788` | `/health`, `/v1/*` |
 
-### Path A — OpenHuman.app (automatic key; recommended)
+### Setup — OpenHuman.app
 
 Keep OpenHuman.app running (it owns `http://127.0.0.1:7788`).
+
+Install (macOS/Linux):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tinyhumansai/openhuman/main/scripts/install.sh | bash
+# then open OpenHuman.app and leave it running
+```
 
 EnvoyMesh **auto-loads** a `/v1` API key (no shell `export` needed), in order:
 
@@ -443,31 +466,13 @@ export OPENHUMAN_TRANSPORT=v1
 # export OPENHUMAN_AUTO_PROVISION_API_KEY=0   # opt out of writing into OpenHuman
 ```
 
-### Path B — CLI / headless core (`/rpc`)
-
-Quit OpenHuman.app first (it holds `:7788`), then:
-
-```bash
-# Example: pin a shared secret (works across platforms)
-export OPENHUMAN_CORE_TOKEN="$(openssl rand -hex 32)"
-openhuman-core serve   # or: openhuman serve / openhuman core run
-# same OPENHUMAN_CORE_TOKEN (or OPENHUMAN_RPC_TOKEN) on the EnvoyMesh node
-export OPENHUMAN_TRANSPORT=rpc
-```
-
-When `OPENHUMAN_CORE_TOKEN` is unset, CLI writes `<workspace>/core.token`
-(EnvoyMesh auto-reads it).
-
 ### Token / key resolution (first hit wins)
 
 **`/v1` key:** env → dotenv → `~/.envoymesh/openhuman.api-key` → OpenHuman
 keychain/`dev-keychain.json` → auto-provision (unless
 `OPENHUMAN_AUTO_PROVISION_API_KEY=0`)
 
-**`/rpc` bearer:** `OPENHUMAN_RPC_TOKEN` → `OPENHUMAN_CORE_TOKEN` → dotenv →
-`OPENHUMAN_TOKEN_FILE` → `<workspace>/core.token`
-
-**Transport:** `OPENHUMAN_TRANSPORT=rpc|v1`, or auto (RPC if bearer found, else V1)
+**Transport:** prefer `OPENHUMAN_TRANSPORT=v1` with OpenHuman.app.
 
 ### Workspace / data roots (platform-aware)
 
@@ -486,13 +491,11 @@ Home is resolved via `os.homedir()` plus `HOME` / `USERPROFILE`.
 |----------|---------|---------|
 | `OPENHUMAN_CORE_RPC_URL` | `http://127.0.0.1:7788/rpc` | Explicit RPC URL (also derives HTTP base for `/v1` / `/health`) |
 | `OPENHUMAN_CORE_HOST` / `OPENHUMAN_CORE_PORT` | `127.0.0.1` / `7788` | Used when RPC URL unset |
-| `OPENHUMAN_TRANSPORT` | auto | Force `v1` or `rpc` |
+| `OPENHUMAN_TRANSPORT` | `v1` preferred | Force `v1` with OpenHuman.app |
 | `OPENHUMAN_API_KEY` | unset | Stable `/v1` Bearer (usually auto) |
 | `OPENHUMAN_API_KEY_FILE` | unset | Raw key file override |
 | `OPENHUMAN_AUTO_PROVISION_API_KEY` | `1` | `0` = never write into OpenHuman’s store |
 | `OPENHUMAN_API_MODEL` | `openhuman` | Model id for `/v1/chat/completions` |
-| `OPENHUMAN_RPC_TOKEN` / `OPENHUMAN_CORE_TOKEN` | unset | `/rpc` bearer (CLI path) |
-| `OPENHUMAN_TOKEN_FILE` | unset | Raw `/rpc` token file |
 | `OPENHUMAN_ENV_FILE` / `OPENHUMAN_WORKSPACE` / `OPENHUMAN_HOME` | unset | Discovery roots |
 | `OPENHUMAN_APP_ENV` | unset | `staging` probes `~/.openhuman-staging` first |
 | `ENVOYMESH_OPENHUMAN_PORT` | `8021` | Sidecar `/message` listen port |
@@ -500,7 +503,7 @@ Home is resolved via `os.homedir()` plus `HOME` / `USERPROFILE`.
 ### Verify
 
 ```bash
-# Health (public)
+# Health (public) — OpenHuman.app must be running
 curl -sS http://127.0.0.1:7788/health
 
 # Sidecar (after OpenHuman selected + bridge on)
@@ -512,35 +515,11 @@ curl -sS http://127.0.0.1:7788/v1/models \
   -H "Authorization: Bearer $KEY"
 ```
 
-### Autostart (Phase 55E)
-
-**Default on.** On the first Ext Agent chat ask, EnvoyMesh probe-first
-checks `GET :7788/health`. If OpenHuman.app / a CLI core is already
-healthy, it reuses that core — no second spawn. If the core is down
-and the `openhuman` CLI is on `$PATH`, it lazily spawns
-`openhuman serve` and respawns on crash. Install-missing surfaces the
-same Install card as codex / claudecode.
-
-Force HTTP-only (never spawn) with
-`ENVOYMESH_EXT_AGENT_AUTOSTART=0` (aliases: `false` / `no` / `off`).
-
-**Project folder:** Settings / chat project folder for OpenHuman is
-used as spawn `cwd` when EnvoyMesh starts the daemon. OpenHuman.app
-(or any already-running core) ignores that cwd.
-
-**Caveats**:
-- Prefer probe-first reuse of OpenHuman.app; only force-off autostart
-  if you never want the node to spawn a CLI core.
-- The OpenHuman CLI's exact `serve` subcommand is
-  implementation-defined; if your install uses a different CLI
-  shape (e.g. `openhuman-core run`), the supervisor will surface
-  the error in the logs.
-
 ### Minimal checklist
 
-- [ ] OpenHuman.app running **or** CLI core on `:7788`
+- [ ] OpenHuman.app installed and **running**
 - [ ] EnvoyMesh Ext Agent = OpenHuman, bridge enabled
-- [ ] Log: `[ext-agent:openhuman] listening …:8021/message` (label shows `/v1` or `RPC`)
+- [ ] Log: `[ext-agent:openhuman] listening …:8021/message`
 - [ ] If 401 after first auto-provision: restart OpenHuman.app once
 - [ ] Chat Ext Agent contact
 
@@ -705,11 +684,11 @@ the same **one-shot subprocess per ask** pattern as the other Phase 56
 agents (shared `OneShotCliBackend` base). Each `ask(text)` spawns:
 
 ```
-cursor-agent --prompt <text> --output json [--model <m>] [--workspace <w>]
+cursor-agent --print --output-format json --trust [--workspace <w>] <prompt>
 ```
 
-`--output json` is the canonical machine-readable shape. When the flag
-is unsupported the backend falls back to trimming raw stdout.
+`--print` is required for non-interactive / scripted use. `--output-format
+json` is the machine-readable shape (plain text if parsing fails).
 
 ### Install
 
@@ -769,17 +748,37 @@ aider --message <text> --no-pretty --no-git --yes-always [--model …]
 
 ### Install
 
+EnvoyMesh must find the `aider` binary from the **home node** process
+(often without your conda/venv activated). Prefer a user-global install:
+
 ```bash
-pip install aider-chat
-# or
-python -m pip install aider-install
-aider-install   # isolated venv + Aider
+# Preferred — installs to ~/.local/bin (visible to EnvoyMesh)
+uv tool install aider-chat
+
+# Alternative
+pip install --user aider-chat
+
+which aider && aider --version
+# Then restart the EnvoyMesh home node
+```
+
+**Avoid** installing only into an activated conda/venv unless that
+`aider` is also on PATH for the home node. If you already have a
+conda install:
+
+```bash
+conda activate <env>          # where aider lives
+ln -sf "$(which aider)" ~/.local/bin/aider
 aider --version
 ```
 
+Common Anaconda/Miniconda env bins are auto-scanned as a fallback, but
+a `~/.local/bin` install is more reliable.
+
 ### Auth
 
-Set the API key for the model provider you want Aider to use:
+Set the API key in the **home-node** environment (the process EnvoyMesh
+runs as), not only in an interactive terminal:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...   # Claude (recommended)
@@ -789,7 +788,8 @@ export OPENAI_API_KEY=sk-...         # GPT-4o / o3-mini
 export DEEPSEEK_API_KEY=...          # DeepSeek (cheaper, also supported)
 ```
 
-Aider auto-detects the key by env var name. Pick a model with
+Then restart the home node so Ext Agent inherits the key. Aider
+auto-detects the key by env var name. Pick a model with
 `aider --model anthropic/claude-sonnet-4-20250514` (set in
 `ext-agent-adapter` extraArgs or per-session).
 
@@ -828,19 +828,21 @@ Wire per `ask(text)`:
 mmx text chat --message <text> --output json [--model MiniMax-M3]
 ```
 
-Output shape (with `--output json`):
+Output shape (mmx 1.x `--output json` — MiniMax Messages API):
 
 ```json
 {
-  "text": "the assistant response",
-  "session_id": "mmx-sess-001",
-  "model": "MiniMax-M2.7",
-  "usage": { "prompt_tokens": 5, "completion_tokens": 7, "total_tokens": 12 }
+  "id": "…",
+  "type": "message",
+  "role": "assistant",
+  "model": "MiniMax-M3",
+  "content": [{ "type": "text", "text": "the assistant response" }],
+  "usage": { "input_tokens": 36, "output_tokens": 10 }
 }
 ```
 
-The backend tries `text` → `response` → `output` → `message` → `content`
-(field name fallback for forward compat with CLI versions).
+The backend joins `content[].text` blocks. Older flat shapes
+(`{ "text": "…" }` / `response` / `output` / `message`) still work.
 
 ### Install
 
@@ -900,12 +902,13 @@ verify command, install docs link, and 2-4 `commonIssues` bullets.
 
 | id | command | installCommand | verifyCommand | homepage |
 |---|---|---|---|---|
+| `homeclaw` | HomeClaw (Core) | `git clone …/HomeClaw.git && cd HomeClaw && ./install.sh` | `curl -sS http://127.0.0.1:8010/status` | <https://www.homeclaw.cn/> |
 | `codex` | `codex` | `npm install -g @openai/codex` | `codex --version` | <https://github.com/openai/codex> |
 | `claudecode` | `claude` | `npm install -g @anthropic-ai/claude-code` | `claude --version` | <https://docs.claude.com/en/docs/claude-code> |
 | `hermes` | `hermes` | `curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \| bash` | `hermes --version` | <https://hermes-agent.nousresearch.com/docs> |
-| `openhuman` | `openhuman` | `curl -fsSL https://raw.githubusercontent.com/tinyhumansai/openhuman/main/scripts/install.sh \| bash` | `openhuman --version` | <https://tinyhumans.ai/openhuman> |
+| `openhuman` | `openhuman` / app | `curl -fsSL …/install.sh \| bash` (desktop app) | Launch OpenHuman.app; `curl :7788/health` | <https://tinyhumans.ai/openhuman> |
 | `cursor` (56A) | `cursor-agent` | `curl https://cursor.com/install -fsS \| bash` | `cursor-agent --version` | <https://docs.cursor.com/en/cli> |
-| `aider` (56B) | `aider` | `pip install aider-chat` | `aider --version` | <https://aider.chat/docs/> |
+| `aider` (56B) | `aider` | `uv tool install aider-chat` | `aider --version` | <https://aider.chat/docs/> |
 | `mmx` (56C) | `mmx` | `npm install -g mmx-cli` | `mmx --version` | <https://github.com/MiniMax-AI/cli> |
 
 The status indicator next to the active agent in Settings reflects
@@ -960,8 +963,9 @@ re-probes immediately.
 `apps/social/src/components/views/settings/AgentSettings.tsx`. The
 view + edit mode for the active agent both look up
 `getExtAgentInstallGuide(agentId, "unknown")` and render the card
-when the guide is non-empty. Built-in Pi / HomeClaw keep the simple
-hint (the card returns `null` for `installed: true`).
+when the guide is non-empty. Built-in Pi keeps `installed: true`
+(card hidden). HomeClaw ships the website install/start recipe
+(`./install.sh` → `python -m main start` → `:8010/status`).
 
 ### Shared card
 
@@ -1003,6 +1007,11 @@ same list rendered by the Settings UI Install Required card).
 - **Aider version is too old** — `aider --version` should be ≥0.70
   for the `--no-pretty` flag to exist. Update with
   `python -m pip install aider-chat --upgrade`.
+- **`aider` works in a conda shell but Ext Agent says install** —
+  prefer `uv tool install aider-chat` or symlink:
+  `ln -sf "$(which aider)" ~/.local/bin/aider` while the env is
+  active, then restart the home node. Common conda env bins are
+  auto-scanned as a fallback only.
 - **Aider is editing files in the working dir** — the chat-bridge
   forces `--no-git` and `--yes-always`; if you see diffs being
   applied, the safety flags are being overridden. Report this as
@@ -1063,16 +1072,12 @@ same list rendered by the Settings UI Install Required card).
 - **Project folder** applies as spawn `cwd` only when EnvoyMesh
   starts Hermes; an already-running gateway ignores it.
 
-### OpenHuman (Phase 55 + 55E)
+### OpenHuman
 
-- **Set `OPENHUMAN_TOKEN`** or place `core.token` in your workspace.
-- **OpenHuman requires the `openhuman-core` binary on PATH.**
-- **OpenHuman health endpoint**: `GET http://127.0.0.1:7788/health`.
-- **OpenHuman.app keeps a per-launch token in-memory only** — the
-  supervisor can't read it. Prefer `/v1` auto-key with the desktop
-  app, or CLI `openhuman serve` / a shared `OPENHUMAN_CORE_TOKEN`.
-- **Project folder** applies as spawn `cwd` only when EnvoyMesh
-  starts the CLI core; OpenHuman.app ignores it.
+- **Open OpenHuman.app and keep it running** on `:7788`.
+- Prefer `/v1` auto-key (EnvoyMesh provisions when needed).
+- Health: `GET http://127.0.0.1:7788/health`.
+- OpenHuman.app’s per-launch `/rpc` token is in-memory only — use `/v1`.
 
 ### Pi (built-in)
 
@@ -1094,16 +1099,16 @@ same list rendered by the Settings UI Install Required card).
 | Ext Agent: `401` / Invalid API key (Hermes) | Key mismatch | Set `HERMES_API_KEY` on node = Hermes `API_SERVER_KEY` (or `HERMES_ENV_FILE`) |
 | Hermes: `No messaging platforms enabled` | API server not enabled | Set `API_SERVER_ENABLED=true` in Hermes `.env`, restart gateway |
 | Hermes: `No user allowlists configured` | No Telegram/etc. allowlists | **Ignore for EnvoyMesh**; only needed for messaging bots |
-| Delivered, no reply (OpenHuman) | Core not running / auth | OpenHuman.app + `/v1` auto-key, or CLI + `core.token` |
-| OpenHuman: `401` / missing bearer | Desktop in-memory `/rpc` token / stale creds | Prefer `/v1` auto-key; restart OpenHuman.app after auto-provision |
+| Delivered, no reply (OpenHuman) | OpenHuman.app not running / auth | Open OpenHuman.app; use `/v1` auto-key |
+| OpenHuman: `401` / missing bearer | Stale `/v1` creds | Restart OpenHuman.app after auto-provision |
 | Settings shows "Install required" for codex / claudecode | CLI not on `$PATH` | Run the install command shown on the card, then click **Retry** |
 | Ext Agent picker: codex / claudecode not in the list | Bridge off or wrong agent preset | Settings → AI → Ext Agent; bridge must be enabled; presets are additive (no `bridge-config.json` migration needed) |
 | `codex app-server` crashes repeatedly | `OPENAI_API_KEY` invalid / CLI version too old | Verify `codex --version`; rotate key; supervisor will surface `crash.stuck` after 5 restarts/5 min |
 | `claude --version` missing in PATH | Package not installed / wrong binary | `npm i -g @anthropic-ai/claude-code`; the binary is `claude`, not `claudecode` |
 | Chat switcher opens install modal after picking an agent | Binary is missing / install state is `unknown` | Run the install command from the card, then click **Retry**. The dialog auto-closes when the agent is reachable. |
-| `EADDRINUSE` on the Hermes / OpenHuman port | Spawn raced a second process onto a busy port | Prefer probe-first reuse; set `ENVOYMESH_EXT_AGENT_AUTOSTART=0` if you only run an external gateway |
-| `hermes: not found` / `openhuman: not found` in node logs (autostart spawn) | Binary isn't on `$PATH` | Run the install command (see the Install card or the table above); the supervisor will retry on the next `ask()` |
-| Chat switcher shows 3s toast, no modal | Binary is installed but the daemon is down | Start the agent's daemon (e.g. `codex app-server`, `hermes gateway run`); the toast is informational. |
+| `EADDRINUSE` on the Hermes port when autostart is enabled | A separate daemon is already bound to the port | Prefer probe-first reuse; set `ENVOYMESH_EXT_AGENT_AUTOSTART=0` if you only run an external gateway |
+| `hermes: not found` in node logs (autostart spawn) | Binary isn't on `$PATH` | Run the Hermes install command; the supervisor will retry on the next `ask()` |
+| Chat switcher shows 3s toast, no modal | Binary is installed but the daemon is down | Start the agent's daemon (e.g. `codex app-server`, `hermes gateway run`, or OpenHuman.app); the toast is informational. |
 | `bridge unreachable` in sidecar log | Wrong bridge port | Match `ENVOYMESH_BRIDGE_PORT` (e.g. `4031`) |
 | Sidecar not listening | Bridge off or wrong agent | Enable bridge; select Hermes/OpenHuman/Codex/Claude Code |
 | Port in use | Another process on `8010`/`8020`/`8021`/`8023`/`8024` | Stop old process / set `ENVOYMESH_*_PORT` (e.g. `ENVOYMESH_CODEX_PORT`) |

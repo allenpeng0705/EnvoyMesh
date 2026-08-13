@@ -3,7 +3,13 @@ import {
   isChatAttachmentFile,
   isChatVoiceNoteFile,
   isHiddenFromLibraryList,
+  isKnowledgeDocumentsPath,
+  isKnowledgeNotesPath,
+  isKnowledgeNotionPath,
+  isKnowledgeObsidianPath,
   isProfileMediaFile,
+  knowledgeBrowseSource,
+  matchesKnowledgeBrowseFilter,
 } from "../../src/lib/local-file-display.js";
 
 describe("isChatAttachmentFile", () => {
@@ -48,5 +54,46 @@ describe("isChatVoiceNoteFile", () => {
     expect(isChatVoiceNoteFile("chat/out/a1/voice-note.webm")).toBe(true);
     expect(isChatVoiceNoteFile("chat/out/a1/voice-note.wav")).toBe(true);
     expect(isChatVoiceNoteFile("chat/out/a1/photo.jpg")).toBe(false);
+  });
+});
+
+describe("knowledge browse filters", () => {
+  it("classifies notes vs documents paths", () => {
+    expect(isKnowledgeNotesPath("notes/hello.md")).toBe(true);
+    expect(isKnowledgeNotesPath("notes/imports/x.md")).toBe(true);
+    expect(isKnowledgeNotesPath("documents/resume.pdf")).toBe(false);
+    expect(isKnowledgeDocumentsPath("documents/resume.pdf")).toBe(true);
+    expect(isKnowledgeDocumentsPath("notes/hello.md")).toBe(false);
+  });
+
+  it("matches KnowledgeBrowseFilter", () => {
+    const note = { relativePath: "notes/a.md", published: false };
+    const mcp = { relativePath: "notes/mcp/notion-hit.md", published: false };
+    const blog = { relativePath: "notes/imports/blog/hello.md", published: false };
+    const linked = { relativePath: "linked-obsidian/Vault/x.md", published: false };
+    const doc = { relativePath: "documents/a.pdf", published: false };
+    const pub = { relativePath: "notes/b.md", published: true };
+    expect(matchesKnowledgeBrowseFilter(note, "all")).toBe(true);
+    expect(matchesKnowledgeBrowseFilter(note, "notes")).toBe(true);
+    expect(matchesKnowledgeBrowseFilter(note, "documents")).toBe(false);
+    expect(matchesKnowledgeBrowseFilter(doc, "documents")).toBe(true);
+    expect(matchesKnowledgeBrowseFilter(pub, "published")).toBe(true);
+    expect(matchesKnowledgeBrowseFilter(note, "published")).toBe(false);
+    expect(matchesKnowledgeBrowseFilter(note, "obsidian")).toBe(true);
+    expect(matchesKnowledgeBrowseFilter(mcp, "obsidian")).toBe(false);
+    expect(matchesKnowledgeBrowseFilter(mcp, "notion")).toBe(true);
+    expect(matchesKnowledgeBrowseFilter(note, "notion")).toBe(false);
+    expect(matchesKnowledgeBrowseFilter(blog, "blog")).toBe(true);
+    expect(matchesKnowledgeBrowseFilter(blog, "obsidian")).toBe(false);
+    expect(matchesKnowledgeBrowseFilter(linked, "obsidian")).toBe(true);
+  });
+
+  it("classifies Obsidian vs Notion note paths", () => {
+    expect(isKnowledgeObsidianPath("notes/hello.md")).toBe(true);
+    expect(isKnowledgeNotionPath("notes/mcp/x.md")).toBe(true);
+    expect(isKnowledgeObsidianPath("notes/mcp/x.md")).toBe(false);
+    expect(knowledgeBrowseSource("notes/hello.md")).toBe("obsidian");
+    expect(knowledgeBrowseSource("notes/mcp/x.md")).toBe("notion");
+    expect(knowledgeBrowseSource("documents/a.pdf")).toBe("document");
   });
 });

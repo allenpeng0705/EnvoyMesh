@@ -167,12 +167,9 @@ export class HermesSupervisedBackend implements ExtAgentBackend {
       // No supervisor wired (shouldn't happen with the default ctor).
       return this.inner.ask(text, sessionKey);
     }
-    // Replay the last install-missing error without spawning again
-    // — saves a spawn round-trip + ENOENT log spam.
-    if (this.lastStartError) throw this.lastStartError;
 
-    // Probe-first: reuse an already-running Hermes gateway (user service /
-    // OpenHuman.app equivalent) — do not spawn a second instance.
+    // Probe-first before replaying a cached spawn failure — a user-run
+    // gateway may have come up after a prior InstallMissingError.
     if (!this.wasEverHealthy) {
       try {
         const up = await this.inner.probe?.();
@@ -184,6 +181,8 @@ export class HermesSupervisedBackend implements ExtAgentBackend {
         /* fall through to spawn */
       }
     }
+
+    if (this.lastStartError) throw this.lastStartError;
 
     if (!this.wasEverHealthy) {
       try {
@@ -199,16 +198,29 @@ export class HermesSupervisedBackend implements ExtAgentBackend {
   }
 
   /**
-   * Cheap readiness probe. Returns `true` when the inner HTTP
-   * backend's `probe()` succeeds. The supervisor's healthcheck
-   * (driven by the healthcheck timer) is the source of truth for
-   * "is the daemon up"; the inner probe hits the same endpoint.
+   * Soft readiness probe used by the switcher / sidecar `/status`.
+   * Same pattern as Codex: bring the gateway up when we can (probe-first
+   * reuse, else spawn), then report whether the HTTP core is healthy.
+   * Soft failures must not permanently poison ask() via lastStartError.
    */
   async probe(): Promise<boolean> {
     try {
       const up = await this.inner.probe?.();
-      if (up === false) return false;
-      if (up) this.wasEverHealthy = true;
+      if (up) {
+        this.wasEverHealthy = true;
+        this.lastStartError = null;
+        return true;
+      }
+      const prevErr = this.lastStartError;
+      try {
+        await this.start();
+      } catch {
+        this.lastStartError = prevErr;
+        return false;
+      }
+      const up2 = await this.inner.probe?.();
+      if (up2 === false) return false;
+      if (up2) this.wasEverHealthy = true;
       return true;
     } catch {
       return false;

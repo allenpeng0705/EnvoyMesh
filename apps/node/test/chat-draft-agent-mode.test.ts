@@ -42,7 +42,43 @@ describe("generateAgentModeChatDraft", () => {
     if (!result.ok) return;
     expect(result.draft.text).toContain("Thanks Bob");
     expect(askOpenClaw).toHaveBeenCalledOnce();
+    expect(askOpenClaw.mock.calls[0]?.[1]).toMatchObject({
+      ownerDisplayName: "Me",
+      retrievedContext: {
+        knowledgeAccess: "public",
+        knowledgeScope: "public",
+        contactThreadOwnerId: "envoy:owner:bob",
+      },
+    });
     expect(save).toHaveBeenCalledOnce();
+  });
+
+  it("passes contact knowledgeAccess into retrievedContext", async () => {
+    const askOpenClaw = vi.fn().mockResolvedValue("Friends-tier draft.");
+    const result = await generateAgentModeChatDraft({
+      envelope: chatEnvelope("Share notes?"),
+      senderOwnerId: "envoy:owner:bob",
+      senderDisplayName: "Bob",
+      chatText: "Share notes?",
+      remotePeerId: "remote",
+      receivedAt: Date.now(),
+      correlationId: "corr",
+      threadKey: "envoy:owner:bob",
+      taskStore: { appendAuditEvent: vi.fn() },
+      draftStore: { save: vi.fn() } as never,
+      askOpenClaw,
+      ensureOpenClawReady: async () => true,
+      knowledgeAccess: "friends",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(askOpenClaw.mock.calls[0]?.[1]).toMatchObject({
+      retrievedContext: {
+        knowledgeAccess: "friends",
+        knowledgeScope: "public",
+        contactThreadOwnerId: "envoy:owner:bob",
+      },
+    });
   });
 
   it("fails closed when OpenClaw is not ready", async () => {

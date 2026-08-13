@@ -159,18 +159,16 @@ export function parseStructuredBlocks(value: unknown): StructuredBlock[] | undef
       continue;
     }
     if (type === "card" && typeof obj.title === "string" && obj.title.trim()) {
-      const card: StructuredBlock = {
+      const file = parseStructuredCardFile(obj.file);
+      const card: Extract<StructuredBlock, { type: "card" }> = {
         type: "card",
         title: obj.title.trim(),
         subtitle: typeof obj.subtitle === "string" ? obj.subtitle : undefined,
         meta: Array.isArray(obj.meta)
           ? obj.meta.filter((s): s is string => typeof s === "string" && s.trim().length > 0)
           : undefined,
+        ...(file ? { file } : {}),
       };
-      const file = parseStructuredCardFile(obj.file);
-      if (file) {
-        (card as Extract<StructuredBlock, { type: "card" }>).file = file;
-      }
       if (obj.cta && typeof obj.cta === "object" && !Array.isArray(obj.cta)) {
         const cta = obj.cta as Record<string, unknown>;
         if (typeof cta.label === "string" && typeof cta.action === "string") {

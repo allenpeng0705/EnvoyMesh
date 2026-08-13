@@ -4,11 +4,14 @@ import '../ext_agent/ext_agent_presets.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/chat_provider.dart';
 import '../providers/contact_provider.dart' show nodeServiceProvider;
+import '../providers/node_provider.dart';
 import '../services/node_service_client.dart';
 
 /// Icon-button switcher for the active Ext Agent (Pi / HomeClaw / …).
 ///
 /// Switches via `activeExtAgentId` only. Soft-probes after switch.
+/// **Owner-only:** family profiles never see or invoke this control
+/// (home node `updateNodeConfig` is owner-gated; one active agent for all).
 class ExtAgentSwitcher extends ConsumerStatefulWidget {
   /// When true, only the swap icon is shown (list row). Name lives elsewhere.
   final bool iconOnly;
@@ -61,6 +64,8 @@ class _ExtAgentSwitcherState extends ConsumerState<ExtAgentSwitcher> {
   Future<void> _reload() async {
     final client = ref.read(nodeServiceProvider);
     if (client == null || !mounted) return;
+    // Family members cannot switch — skip bridge reload work.
+    if (!ref.read(nodeProvider).isOwnerProfile) return;
     try {
       final bridge = await client.getBridgeStatus();
       if (!mounted) return;
@@ -90,6 +95,7 @@ class _ExtAgentSwitcherState extends ConsumerState<ExtAgentSwitcher> {
   }
 
   Future<void> _openPicker() async {
+    if (!ref.read(nodeProvider).isOwnerProfile) return;
     if (_busy || _agents.length < 2) return;
     final l10n = AppLocalizations.of(context);
     final selected = await showModalBottomSheet<String>(
@@ -165,6 +171,7 @@ class _ExtAgentSwitcherState extends ConsumerState<ExtAgentSwitcher> {
   }
 
   Future<void> _select(String nextId) async {
+    if (!ref.read(nodeProvider).isOwnerProfile) return;
     final client = ref.read(nodeServiceProvider);
     if (client == null || _busy) return;
     final trimmed = nextId.trim();
@@ -224,6 +231,10 @@ class _ExtAgentSwitcherState extends ConsumerState<ExtAgentSwitcher> {
 
   @override
   Widget build(BuildContext context) {
+    // Defense in depth: never show switcher to family profiles.
+    if (!ref.watch(nodeProvider).isOwnerProfile) {
+      return const SizedBox.shrink();
+    }
     if (!_bridgeEnabled || _agents.length < 2) {
       return const SizedBox.shrink();
     }

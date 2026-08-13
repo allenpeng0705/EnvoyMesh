@@ -211,7 +211,7 @@ describe("CursorAgentBackend", () => {
   });
 
   describe("arg shape", () => {
-    it("passes --prompt <text> --output json to the CLI", async () => {
+    it("passes --print --output-format json --trust and a positional prompt", async () => {
       const { command, args } = await fakeCursorScript(SCRIPT_CAPTURE_ARGV);
       const backend = new CursorAgentBackend({
         command,
@@ -220,28 +220,30 @@ describe("CursorAgentBackend", () => {
       });
       const out = await backend.ask("hello world", "session-XYZ");
       const argv = JSON.parse(out);
-      expect(argv).toContain("--prompt");
-      expect(argv).toContain("hello world");
-      expect(argv).toContain("--output");
+      expect(argv).toContain("--print");
+      expect(argv).toContain("--output-format");
       expect(argv).toContain("json");
+      expect(argv).toContain("--trust");
+      expect(argv).not.toContain("--prompt");
+      expect(argv).not.toContain("--output");
+      expect(argv[argv.length - 1]).toBe("hello world");
     });
 
-    it("inserts extraArgs after the --output json flag", async () => {
+    it("inserts extraArgs before the positional prompt", async () => {
       const { command, args } = await fakeCursorScript(SCRIPT_CAPTURE_ARGV);
       const backend = new CursorAgentBackend({
         command,
         args,
         binaryOnPath: async () => true,
-        extraArgs: ["--model", "gpt-4", "--workspace", "/tmp/x"],
+        extraArgs: ["--model", "gpt-5"],
       });
       const out = await backend.ask("hi", "session-A");
-      const argv = JSON.parse(out);
+      const argv = JSON.parse(out) as string[];
       expect(argv).toContain("--model");
-      expect(argv).toContain("gpt-4");
-      expect(argv).toContain("--workspace");
-      expect(argv).toContain("/tmp/x");
-      // --model should come after --output json (not before --prompt).
-      expect(argv.indexOf("--model")).toBeGreaterThan(argv.indexOf("--output"));
+      expect(argv).toContain("gpt-5");
+      expect(argv.indexOf("--model")).toBeGreaterThan(argv.indexOf("--print"));
+      expect(argv.indexOf("--model")).toBeLessThan(argv.length - 1);
+      expect(argv[argv.length - 1]).toBe("hi");
     });
   });
 

@@ -12,76 +12,138 @@ export interface SearchExternalKnowledgeInput {
   knowledgeBase?: AiKnowledgeBaseSettings | null;
   limit?: number;
   fetchImplementation?: typeof fetch;
+  /** Override default timeout (ms). Clamped 1s–30s. */
+  timeoutMs?: number;
 }
+
+/** Soft-fail MCP search result (never throws for network/parse failures). */
+export interface ExternalMcpSearchResult {
+  snippets: ExternalKnowledgeSnippet[];
+  /** Present when search was skipped or failed. */
+  error?: string;
+}
+
+export const DEFAULT_MCP_KNOWLEDGE_TIMEOUT_MS = 8_000;
+export const MAX_MCP_KNOWLEDGE_TIMEOUT_MS = 30_000;
 
 /**
  * Query an external MCP knowledge server via JSON-RPC `tools/call`.
  * Expects an MCP-compatible HTTP endpoint (Streamable HTTP or simple POST bridge).
+ *
+ * Soft-fails: returns `{ snippets: [], error }` instead of throwing so prompt
+ * paths stay resilient (Phase 57D).
  */
 export async function searchExternalMcpKnowledge(
   input: SearchExternalKnowledgeInput,
-): Promise<ExternalKnowledgeSnippet[]> {
+): Promise<ExternalMcpSearchResult> {
   const kb = resolveAiKnowledgeBaseSettings(input.knowledgeBase);
   if (kb.externalProvider !== "mcp") {
-    return [];
+    return { snippets: [] };
   }
   const url = kb.mcpServerUrl?.trim();
   if (!url) {
-    return [];
+    return { snippets: [], error: "mcp_url_missing" };
+  }
+
+  const urlError = validateMcpServerUrl(url);
+  if (urlError) {
+    return { snippets: [], error: urlError };
   }
 
   const toolName = kb.mcpSearchTool?.trim() || "memex_search";
   const fetchImplementation = input.fetchImplementation ?? fetch;
   const limit = input.limit ?? kb.vaultSnippetLimit;
+  const timeoutMs = clampTimeoutMs(input.timeoutMs ?? kb.mcpTimeoutMs);
 
-  const response = await fetchImplementation(url, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json",
-      ...(kb.mcpApiKey ? { authorization: `Bearer ${kb.mcpApiKey}` } : {}),
-    },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: `rag-${Date.now()}`,
-      method: "tools/call",
-      params: {
-        name: toolName,
-        arguments: {
-          query: input.query,
-          limit,
-        },
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetchImplementation(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        ...(kb.mcpApiKey ? { authorization: `Bearer ${kb.mcpApiKey}` } : {}),
       },
-    }),
-  });
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: `rag-${Date.now()}`,
+        method: "tools/call",
+        params: {
+          name: toolName,
+          arguments: {
+            query: input.query,
+            limit,
+          },
+        },
+      }),
+      signal: controller.signal,
+    });
 
-  if (!response.ok) {
-    throw new Error(`MCP knowledge search failed (${response.status})`);
+    if (!response.ok) {
+      return { snippets: [], error: `mcp_http_${response.status}` };
+    }
+
+    const payload = (await response.json()) as {
+      result?: { content?: Array<{ type?: string; text?: string }> };
+      error?: { message?: string };
+    };
+    if (payload.error?.message) {
+      return { snippets: [], error: `mcp_rpc: ${payload.error.message}` };
+    }
+
+    const textBlocks =
+      payload.result?.content
+        ?.map((block) => block.text?.trim())
+        .filter((text): text is string => Boolean(text)) ?? [];
+
+    if (textBlocks.length === 0) {
+      return { snippets: [] };
+    }
+
+    const snippets = parseMcpKnowledgeText(textBlocks.join("\n"), limit).map((entry) => ({
+      title: entry.title,
+      source: kb.externalMcpServer ?? toolName,
+      text: entry.text,
+    }));
+    return { snippets };
+  } catch (err) {
+    if (isAbortError(err)) {
+      return { snippets: [], error: `mcp_timeout_${timeoutMs}ms` };
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    return { snippets: [], error: `mcp_fetch: ${message}` };
+  } finally {
+    clearTimeout(timer);
   }
+}
 
-  const payload = (await response.json()) as {
-    result?: { content?: Array<{ type?: string; text?: string }> };
-    error?: { message?: string };
-  };
-  if (payload.error?.message) {
-    throw new Error(payload.error.message);
+/** Allow only http(s) URLs; reject file/data/etc. */
+export function validateMcpServerUrl(url: string): string | undefined {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return "mcp_url_invalid";
   }
-
-  const textBlocks =
-    payload.result?.content
-      ?.map((block) => block.text?.trim())
-      .filter((text): text is string => Boolean(text)) ?? [];
-
-  if (textBlocks.length === 0) {
-    return [];
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return "mcp_url_protocol";
   }
+  return undefined;
+}
 
-  return parseMcpKnowledgeText(textBlocks.join("\n"), limit).map((entry, index) => ({
-    title: entry.title,
-    source: kb.externalMcpServer ?? toolName,
-    text: entry.text,
-    ...(index >= 0 ? {} : {}),
-  }));
+function clampTimeoutMs(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_MCP_KNOWLEDGE_TIMEOUT_MS;
+  }
+  return Math.min(MAX_MCP_KNOWLEDGE_TIMEOUT_MS, Math.max(1_000, Math.floor(value)));
+}
+
+function isAbortError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const name = (err as { name?: string }).name;
+  return name === "AbortError" || name === "TimeoutError";
 }
 
 function parseMcpKnowledgeText(raw: string, limit: number): Array<{ title: string; text: string }> {
@@ -126,7 +188,7 @@ export function formatExternalKnowledgeSection(snippets: ExternalKnowledgeSnippe
 }
 
 // ---------------------------------------------------------------------------
-// Phase 44E — MCP write-back: save results as a vault note
+// Phase 44E / 57D — MCP write-back: save results as a vault note
 // ---------------------------------------------------------------------------
 
 /**
@@ -149,7 +211,7 @@ export interface McpQueryAttribution {
 export interface McpWriteBackOptions {
   /** Attribution metadata to embed in frontmatter. */
   attribution: McpQueryAttribution;
-  /** Sensitivity level for the created note (default: "friends"). */
+  /** Sensitivity level for the created note (default: "private"). */
   sensitivity?: "public" | "friends" | "private";
   /** Optional subfolder within `notes/` (e.g. "mcp"). */
   subfolder?: string;
@@ -171,7 +233,7 @@ export function formatMcpResultsAsNote(
   snippets: ExternalKnowledgeSnippet[],
   options: McpWriteBackOptions,
 ): { content: string; filename: string; subfolder: string } {
-  const { attribution, sensitivity = "friends", subfolder = "mcp" } = options;
+  const { attribution, sensitivity = "private", subfolder = "mcp" } = options;
   const published = sensitivity === "public";
 
   // Sanitize title for use in filename.
@@ -203,8 +265,8 @@ export function formatMcpResultsAsNote(
     "",
     "## Results",
     "",
-    ...snippets.map((s, i) =>
-      `### ${i + 1}. ${s.title}\n\n${s.text}\n\n*Source: ${s.source}*\n`,
+    ...snippets.map(
+      (s, i) => `### ${i + 1}. ${s.title}\n\n${s.text}\n\n*Source: ${s.source}*\n`,
     ),
   ];
 
