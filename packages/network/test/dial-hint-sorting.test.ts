@@ -100,6 +100,28 @@ describe("dial hint sorting", () => {
     });
   });
 
+  describe("preferPublicHopCircuitCandidates", () => {
+    it("drops loopback/RFC1918 hops when a public hop exists", async () => {
+      const { preferPublicHopCircuitCandidates } = await import("../src/index.js");
+      const publicHop =
+        "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWPeer";
+      const loopback =
+        "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWPeer";
+      const privateHop =
+        "/ip4/172.16.0.161/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWPeer";
+      expect(preferPublicHopCircuitCandidates([loopback, privateHop, publicHop])).toEqual([
+        publicHop,
+      ]);
+    });
+
+    it("keeps private hop when no public hop is available", async () => {
+      const { preferPublicHopCircuitCandidates } = await import("../src/index.js");
+      const privateHop =
+        "/ip4/172.16.0.161/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWPeer";
+      expect(preferPublicHopCircuitCandidates([privateHop])).toEqual([privateHop]);
+    });
+  });
+
   describe("hasDirectTcpDialHints", () => {
     it("detects LAN direct TCP among relay hints", () => {
       const hints = [

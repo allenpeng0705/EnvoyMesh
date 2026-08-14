@@ -192,6 +192,39 @@ const PRIVATE_LAN_HINT_DIAL_TIMEOUT_MS = 3_000;
 const MAX_EPHEMERAL_PRIVATE_LAN_DIALS = 2;
 /** Faster fail for high-port LAN dials (tcp/0 listeners + stale inbound snapshots). */
 const EPHEMERAL_PRIVATE_LAN_HINT_DIAL_TIMEOUT_MS = 1_000;
+/** After NO_RESERVATION, skip speculative circuit retries for this peer. */
+const NO_RESERVATION_BACKOFF_MS = 90_000;
+/** Rate-limit identical NO_RESERVATION console.warn lines per peer. */
+const NO_RESERVATION_LOG_INTERVAL_MS = 60_000;
+/** When dialQueue is this high, skip speculative ensurePeerReachable dials. */
+export const ENSURE_PEER_DIAL_QUEUE_DEFER_THRESHOLD = 100;
+/** When dialQueue is this high, skip DHT provide / interest advertise fanout. */
+export const DHT_PROVIDE_DIAL_QUEUE_DEFER_THRESHOLD = 50;
+/** Home-node default: keep DHT/bootstrap from opening 100 parallel dials. */
+export const DEFAULT_CLIENT_MAX_PARALLEL_DIALS = 12;
+/** Home-node default: refuse to enqueue hundreds of pending dials. */
+export const DEFAULT_CLIENT_MAX_DIAL_QUEUE_LENGTH = 64;
+/** Home-node default: fewer multiaddrs per peer before giving up. */
+export const DEFAULT_CLIENT_MAX_PEER_ADDRS_TO_DIAL = 8;
+
+/** Speculative ensurePeerReachable should wait when the dial queue is flooded. */
+export function shouldDeferEnsurePeerForDialQueue(input: {
+  dialQueueLength: number | undefined;
+  forceFreshDial?: boolean;
+  priorityDial?: boolean;
+  threshold?: number;
+}): boolean {
+  if (input.forceFreshDial === true || input.priorityDial === true) return false;
+  return (input.dialQueueLength ?? 0) > (input.threshold ?? ENSURE_PEER_DIAL_QUEUE_DEFER_THRESHOLD);
+}
+
+/** DHT provide / interest advertise should wait when the dial queue is flooded. */
+export function isDialQueueLengthCongested(
+  dialQueueLength: number | undefined,
+  threshold: number = DHT_PROVIDE_DIAL_QUEUE_DEFER_THRESHOLD,
+): boolean {
+  return (dialQueueLength ?? 0) > threshold;
+}
 
 /**
  * circuit-relay-v2 reservation-protocol timeout.
@@ -333,6 +366,12 @@ export interface MeshOutboundOptions {
   privateLanDialTimeoutMs?: number;
   /** Abort in-flight dials when an outer warm/send budget elapses. */
   signal?: AbortSignal;
+  /**
+   * Bonded / user-facing dial: bypass dialQueue congestion deferral in
+   * {@link EnvoyMesh.ensurePeerReachable}. Speculative discovery warm omits this.
+   * Does not clear NO_RESERVATION backoff (use {@link forceFreshDial} for that).
+   */
+  priorityDial?: boolean;
 }
 
 /**
@@ -477,6 +516,21 @@ export interface EnvoyMeshOptions {
    */
   maxConnections?: number;
   /**
+   * Cap concurrent outbound dials across all peers. Default 12 for home nodes
+   * (libp2p default is 100) so wan-default DHT churn cannot flood dialQueue.
+   */
+  maxParallelDials?: number;
+  /**
+   * Cap dial-queue depth. Default 64 for home nodes (libp2p default 500).
+   * Excess dial promises wait until the queue drains — better than 300+
+   * in-flight NO_RESERVATION attempts starving circuit CONNECT.
+   */
+  maxDialQueueLength?: number;
+  /**
+   * Cap addresses tried per peer dial. Default 8 (libp2p default 25).
+   */
+  maxPeerAddrsToDial?: number;
+  /**
    * When enabled, a libp2p `connectionGater` blocks outbound dials to peers
    * NOT in the set returned by {@link allowedDialPeerIds}. This is
    * defense-in-depth for quietWan / DHT-off modes: even if some path
@@ -605,9 +659,48 @@ export class EnvoyMesh {
    * surface the active limits without re-reading the options object.
    */
   private readonly circuitRelayServerConfig: CircuitRelayServerConfig | undefined;
+  /** peerId → epoch ms until speculative circuit dials are allowed again. */
+  private readonly noReservationBackoffUntil = new Map<string, number>();
+  /** peerId → last NO_RESERVATION console.warn time. */
+  private readonly noReservationLastLogAt = new Map<string, number>();
 
   constructor(private readonly options: EnvoyMeshOptions = {}) {
     this.circuitRelayServerConfig = options.circuitRelayServer;
+  }
+
+  private clearNoReservationBackoff(peerId: string | undefined): void {
+    if (!peerId) return;
+    this.noReservationBackoffUntil.delete(peerId);
+  }
+
+  private noteNoReservation(peerId: string | undefined): void {
+    if (!peerId) return;
+    this.noReservationBackoffUntil.set(peerId, Date.now() + NO_RESERVATION_BACKOFF_MS);
+  }
+
+  private isInNoReservationBackoff(peerId: string | undefined): boolean {
+    if (!peerId) return false;
+    const until = this.noReservationBackoffUntil.get(peerId);
+    if (until == null) return false;
+    if (Date.now() >= until) {
+      this.noReservationBackoffUntil.delete(peerId);
+      return false;
+    }
+    return true;
+  }
+
+  private logNoReservationOnce(peerId: string | undefined, detail: string): void {
+    const key = peerId ?? detail.slice(0, 24);
+    const now = Date.now();
+    const last = this.noReservationLastLogAt.get(key) ?? 0;
+    if (now - last < NO_RESERVATION_LOG_INTERVAL_MS) {
+      return;
+    }
+    this.noReservationLastLogAt.set(key, now);
+    console.warn(
+      `[network] NO_RESERVATION: peer ${peerId ?? key.slice(0, 16)}… has no active reservation on the relay. ` +
+        `Is the target connected to a relay? Error: ${detail.slice(0, 120)}`,
+    );
   }
 
   async start(): Promise<void> {
@@ -712,6 +805,15 @@ export class EnvoyMesh {
       },
       connectionManager: {
         ...(maxConnections != null ? { maxConnections } : {}),
+        maxParallelDials:
+          this.options.maxParallelDials ??
+          (this.options.enableRelayServer ? 50 : DEFAULT_CLIENT_MAX_PARALLEL_DIALS),
+        maxDialQueueLength:
+          this.options.maxDialQueueLength ??
+          (this.options.enableRelayServer ? 500 : DEFAULT_CLIENT_MAX_DIAL_QUEUE_LENGTH),
+        maxPeerAddrsToDial:
+          this.options.maxPeerAddrsToDial ??
+          (this.options.enableRelayServer ? 25 : DEFAULT_CLIENT_MAX_PEER_ADDRS_TO_DIAL),
         reconnectRetries: 10,
         reconnectRetryInterval: 5000,
         reconnectBackoffFactor: 1.5,
@@ -2288,11 +2390,26 @@ export class EnvoyMesh {
     }
   }
 
+  /**
+   * True when the libp2p dial queue is congested enough that DHT provide /
+   * interest advertise should wait (relay.checkin already mirrors topics).
+   */
+  isDialQueueCongested(threshold: number = DHT_PROVIDE_DIAL_QUEUE_DEFER_THRESHOLD): boolean {
+    return isDialQueueLengthCongested(this.getConnectionStats().dialQueueLength, threshold);
+  }
+
   async provideSelf(): Promise<{ advertised: number; timedOut: boolean }> {
     console.log("[p2p] provideSelf: starting...");
     if (!this.options.enableDht) {
       console.warn("[p2p] provideSelf: DHT not enabled, skipping self-advertisement");
       return { advertised: 0, timedOut: false };
+    }
+    if (this.isDialQueueCongested()) {
+      const dq = this.getConnectionStats().dialQueueLength ?? 0;
+      console.warn(
+        `[p2p] provideSelf: deferred (dialQueue=${dq} > ${DHT_PROVIDE_DIAL_QUEUE_DEFER_THRESHOLD})`,
+      );
+      return { advertised: 0, timedOut: true };
     }
     const node = this.requireNode();
     const selfPeerId = node.peerId.toString();
@@ -2451,6 +2568,14 @@ export class EnvoyMesh {
     },
   ): Promise<{ cid: CID; signedRecord?: import("@envoymesh/protocol").SignedCapabilityTopicRecord; timedOut: boolean }> {
     this.requireDhtForCapabilityTopics();
+    if (this.isDialQueueCongested()) {
+      const dq = this.getConnectionStats().dialQueueLength ?? 0;
+      console.warn(
+        `[p2p] provideCapabilityTopic: deferred for ${topic} (dialQueue=${dq} > ${DHT_PROVIDE_DIAL_QUEUE_DEFER_THRESHOLD})`,
+      );
+      const cid = await cidForCapabilityTopic(topic);
+      return { cid, timedOut: true };
+    }
     const cid = await cidForCapabilityTopic(topic);
     let timedOut = false;
 
@@ -3089,6 +3214,30 @@ export class EnvoyMesh {
       // Node not started — skip the self-dial check.
     }
     const peerIdStr = parsePeerIdFromDialTarget(target);
+    if (sendOptions?.forceFreshDial === true) {
+      this.clearNoReservationBackoff(peerIdStr);
+    } else if (this.isInNoReservationBackoff(peerIdStr)) {
+      // Speculative warm / retry: don't re-flood circuit dials for peers that
+      // just returned NO_RESERVATION. Intentional sends pass forceFreshDial.
+      const cooled = peerIdStr ? this.getPeerConnectionInfo(peerIdStr) : { connected: false, direct: false };
+      if (cooled.connected) return cooled;
+      return { connected: false, direct: false };
+    }
+    // Protect circuit hoppability during dial storms (wan-default DHT churn).
+    // Bonded warm / intentional send set priorityDial or forceFreshDial.
+    if (
+      shouldDeferEnsurePeerForDialQueue({
+        dialQueueLength: this.getConnectionStats().dialQueueLength,
+        forceFreshDial: sendOptions?.forceFreshDial,
+        priorityDial: sendOptions?.priorityDial,
+      })
+    ) {
+      const existing = peerIdStr
+        ? this.getPeerConnectionInfo(peerIdStr)
+        : { connected: false, direct: false };
+      if (existing.connected) return existing;
+      return { connected: false, direct: false };
+    }
     // Relay→Direct must keep tcp/0 private-LAN listens from identify/mDNS even
     // when policy has not yet proven same-/24 (circuit-only directory was the
     // stuck Online-Relay-on-LAN case).
@@ -3230,14 +3379,10 @@ export class EnvoyMesh {
           detail.includes("Protocol selection failed") ||
           detail.includes("could not negotiate"));
       if (!isDhtNoise) {
-        // Classify common relay-specific errors for faster diagnosis.
-        const noReservation =
-          detail.includes("NO_RESERVATION") || detail.includes("no reservation") || detail.includes("relay reservation");
+        const noReservation = isRelayReservationDialError(detail);
         if (noReservation) {
-          console.warn(
-            `[network] NO_RESERVATION: peer ${peerIdStr ?? target.slice(0, 16)}… has no active reservation on the relay. ` +
-              `Is the target connected to a relay? Error: ${detail.slice(0, 120)}`,
-          );
+          this.noteNoReservation(peerIdStr);
+          this.logNoReservationOnce(peerIdStr, detail);
         } else {
           console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
         }
@@ -3526,9 +3671,14 @@ export class EnvoyMesh {
       return dialOnce(this._normalizeDialTarget(target));
     }
 
-    const routableHints = preferNonLoopbackDialHints(hintsRaw);
+    // Drop loopback/RFC1918 hop circuits when a public hop exists — common
+    // relay.lookup pollution that only burns dialQueue on wan-default.
+    const routableHints = preferPublicHopCircuitCandidates(preferNonLoopbackDialHints(hintsRaw));
     /** True when hints include at least one non-loopback circuit/LAN/WAN addr — try before bare `/p2p/id` dial (peerstore may prioritize remote loopback → ECONNREFUSED here). */
     const hasRoutableHint = routableHints.some((h) => !isLoopbackOrUnspecifiedDialHint(h));
+    const hasPublicCircuitHint = routableHints.some(
+      (h) => h.includes("/p2p-circuit/") && !isPrivateRelayHopCircuitDialHint(h),
+    );
 
     let lastError: unknown = new Error("no outbound dial attempted");
 
@@ -3545,6 +3695,9 @@ export class EnvoyMesh {
           throw new Error("outbound dial aborted");
         }
         const addrStr = String(ma);
+        if (hasPublicCircuitHint && isPrivateRelayHopCircuitDialHint(addrStr)) {
+          continue;
+        }
         if (
           sendOptions?.sameSubnetLanFirst === true &&
           isPrivateLanTcpDialHint(addrStr) &&
@@ -3560,6 +3713,9 @@ export class EnvoyMesh {
           return await dialOnce(ma);
         } catch (e) {
           lastError = e;
+          if (isRelayReservationDialError(e)) {
+            this.noteNoReservation(peerIdStr);
+          }
           if (sendOptions?.signal?.aborted) {
             throw e instanceof Error ? e : new Error(String(e));
           }
@@ -4640,6 +4796,8 @@ export {
   buildSyntheticRelayCircuitHints,
   dedupeDialHintStrings,
   isPrivateRelayHopCircuitDialHint,
+  isPublicRelayHopCircuitDialHint,
+  preferPublicHopCircuitCandidates,
   prioritizeCircuitDialHints,
   relayCircuitToPeer,
 } from "./relay-circuit-hints.js";
@@ -4651,6 +4809,7 @@ export {
 } from "./relay-listen-addrs.js";
 import {
   isPrivateRelayHopCircuitDialHint,
+  preferPublicHopCircuitCandidates,
   prioritizeCircuitDialHints,
 } from "./relay-circuit-hints.js";
 export { CapabilityRegistry, type CapabilityRegistryOptions, type CapabilityRegistryVerbosity } from "./capability-registry.js";

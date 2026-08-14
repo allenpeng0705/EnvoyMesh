@@ -165,7 +165,7 @@ import { handleInboundBondIntent } from "./bond-inbound.js";
 import { tryBondAutonomyInboundAutoAccept } from "./bond-autonomy-inbound.js";
 import { createBondAutonomyDailyCounter } from "./bond-autonomy-daily-counter.js";
 import { handleInboundSocialIntroIntent } from "./social-intro-inbound.js";
-import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent, expandCircuitDialCandidates, processDiscoveryQueue, clearExpiredQueueEntries } from "./discovery-inbound.js";
+import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent, processDiscoveryQueue, clearExpiredQueueEntries, relayLookupCircuitAddrsForSeedStore } from "./discovery-inbound.js";
 import { handleInboundSyncStateIntent } from "./sync-state-inbound.js";
 import { handleInboundBroadcastRequest, handleInboundBroadcastResponse } from "./broadcast-inbound.js";
 import { pushNotificationService } from "./push-notification.js";
@@ -251,7 +251,7 @@ import { preferRelayPeerCandidate } from "./relay-lookup-merge.js";
 import { getRelayClientAdvertisedTopics } from "./relay-client-cycle.js";
 import { createRelayLookupRouter } from "./relay-lookup-router.js";
 import { collectRelayControlTargets } from "./relay-reservation-health.js";
-import { logRelayReachableAddrsForCheckin, logRelayServerCheckinAccepted, logRelayServerLookupResponse, logClientRelayLookupResponse, describeMultiaddrReachability } from "./relay-checkin-log.js";
+import { logRelayReachableAddrsForCheckin, logRelayServerCheckinAccepted, logRelayServerLookupResponse, logClientRelayLookupResponse } from "./relay-checkin-log.js";
 import {
   createInitialRelayHealthState,
   evaluateRelayHealth,
@@ -5803,29 +5803,16 @@ async function processRelayLookupResponse(payload: RelayLookupResponsePayload): 
     multiaddrs: flat,
   });
   addRelayCandidates(relayClientState, payload.relayHints);
-  const relayedAddrs = flat;
-  if (relayedAddrs.length > 0) {
-    await discoverySeedStore.upsertMany(relayedAddrs, "relay-peers");
-  }
-  for (const addr of relayedAddrs) {
-    const candidates = expandCircuitDialCandidates(addr, effectiveBootstrapPeers);
-    let dialOk = false;
-    for (const cand of candidates) {
-      try {
-        console.log(`[relay-discovery] probe [${describeMultiaddrReachability(cand)}] ${cand}`);
-        const latencyMs = await mesh.probePeer(cand);
-        await appendRelayTrace("relay.lookup.dial.ok", cand, `relay lookup candidate dial ok addr=${cand}`, latencyMs);
-        dialOk = true;
-        break;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        await appendRelayTrace(
-          "relay.lookup.dial.fail",
-          cand,
-          `relay lookup candidate dial failed addr=${cand} error=${message}`,
-        );
-      }
-    }
+
+  // Expand private/loopback hop views onto public bootstrap bases, then store
+  // only public-hop circuits (skip self). Do not probe — that fed dial storms.
+  const storeAddrs = relayLookupCircuitAddrsForSeedStore(
+    flat,
+    effectiveBootstrapPeers,
+    mesh.peerId,
+  );
+  if (storeAddrs.length > 0) {
+    await discoverySeedStore.upsertMany(storeAddrs, "relay-peers");
   }
 }
 

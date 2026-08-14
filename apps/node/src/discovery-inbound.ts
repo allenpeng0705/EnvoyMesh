@@ -32,6 +32,10 @@ import {
   verifyDiscoveryReferralAttestation,
 } from "@envoymesh/api/discovery-referral-attestation";
 import type { HumanProfilePayload } from "@envoymesh/protocol";
+import {
+  isPublicRelayHopCircuitDialHint,
+  preferPublicHopCircuitCandidates,
+} from "@envoymesh/network";
 
 /** Requesting this capability (alone or with file/hash selectors) enables published-library metadata in the response. */
 export const PUBLISHED_LIB_CAPABILITY = "envoymesh.published-library";
@@ -888,24 +892,24 @@ export function buildRelayCircuitMultiaddrs(relayMultiaddrs: string[], targetPee
 export function expandCircuitDialCandidates(circuitAddr: string, relaySeedMultiaddrs: string[]): string[] {
   const trimmed = circuitAddr.trim();
   if (!trimmed || relaySeedMultiaddrs.length === 0 || !trimmed.includes("/p2p-circuit/p2p/")) {
-    return dedupeCircuitAddrs([trimmed].filter(Boolean));
+    return preferPublicHopCircuitCandidates(dedupeCircuitAddrs([trimmed].filter(Boolean)));
   }
 
   const parts = trimmed.split("/p2p-circuit/p2p/");
   if (parts.length < 2 || !parts[1]) {
-    return dedupeCircuitAddrs([trimmed]);
+    return preferPublicHopCircuitCandidates(dedupeCircuitAddrs([trimmed]));
   }
 
   const relayBase = parts[0]!;
   const targetPeerId = parts[1]!.split("/")[0]!.trim();
   if (!targetPeerId) {
-    return dedupeCircuitAddrs([trimmed]);
+    return preferPublicHopCircuitCandidates(dedupeCircuitAddrs([trimmed]));
   }
 
   const relayIdMatch = relayBase.match(/\/p2p\/([^/]+)$/);
   const relayId = relayIdMatch?.[1];
   if (!relayId) {
-    return dedupeCircuitAddrs([trimmed]);
+    return preferPublicHopCircuitCandidates(dedupeCircuitAddrs([trimmed]));
   }
 
   const alternates: string[] = [];
@@ -920,7 +924,35 @@ export function expandCircuitDialCandidates(circuitAddr: string, relaySeedMultia
     alternates.push(`${seed}/p2p-circuit/p2p/${targetPeerId}`);
   }
 
-  return dedupeCircuitAddrs([...alternates, trimmed]);
+  return preferPublicHopCircuitCandidates(dedupeCircuitAddrs([...alternates, trimmed]));
+}
+
+/**
+ * Turn relay.lookup multiaddrs into seed-store entries that are actually
+ * WAN-dialable. Expand private/loopback hop views onto known public relay
+ * bases first, then keep only public-hop circuits (and never self).
+ */
+export function relayLookupCircuitAddrsForSeedStore(
+  multiaddrs: readonly string[],
+  relaySeedMultiaddrs: readonly string[],
+  selfPeerId?: string,
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const self = selfPeerId?.trim();
+  for (const raw of multiaddrs) {
+    const target = raw.match(/\/p2p-circuit\/p2p\/([^/]+)/)?.[1];
+    if (self && target === self) continue;
+    for (const cand of expandCircuitDialCandidates(raw, [...relaySeedMultiaddrs])) {
+      if (!isPublicRelayHopCircuitDialHint(cand)) continue;
+      const candTarget = cand.match(/\/p2p-circuit\/p2p\/([^/]+)/)?.[1];
+      if (self && candTarget === self) continue;
+      if (seen.has(cand)) continue;
+      seen.add(cand);
+      out.push(cand);
+    }
+  }
+  return out;
 }
 
 function dedupeCircuitAddrs(addrs: string[]): string[] {

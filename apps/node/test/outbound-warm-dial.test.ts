@@ -45,10 +45,12 @@ describe("ensureReachableWithLanFirstBudget", () => {
     expect(ensurePeerReachable.mock.calls[0]?.[2]).toMatchObject({
       dialHints: ["/ip4/10.0.0.2/tcp/57944/p2p/12D3KooWPeer"],
       preferCircuitHints: false,
+      priorityDial: true,
     });
     expect(ensurePeerReachable.mock.calls[1]?.[2]).toMatchObject({
       preferCircuitHints: false,
       sameSubnetLanFirst: true,
+      priorityDial: true,
       dialHints: [
         "/ip4/10.0.0.2/tcp/57944/p2p/12D3KooWPeer",
         "/ip4/1.2.3.4/tcp/4001/p2p/12Relay/p2p-circuit/p2p/12D3KooWPeer",

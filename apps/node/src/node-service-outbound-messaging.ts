@@ -1247,7 +1247,7 @@ export async function warmContactConnectionTransportViaRuntime(
     }
 
     const forceFreshDial =
-      options?.redial === true || !existing.connected || tearingDown || probeFailed;
+      options?.redial === true || tearingDown || probeFailed;
     // Only explicit upgrade requests — do not treat redial as upgrade.
     const upgradeRelayToDirect = options?.upgradeRelayToDirect === true;
 

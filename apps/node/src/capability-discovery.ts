@@ -316,6 +316,23 @@ export async function runCapabilityDiscoveryCycle(deps: {
     return;
   }
 
+  if (typeof mesh.isDialQueueCongested === "function" && mesh.isDialQueueCongested()) {
+    const dq = mesh.getConnectionStats?.()?.dialQueueLength ?? "?";
+    console.log(
+      `[node-service] capability discovery: dialQueue congested (${dq}) — skipping DHT provide for ${topics.length} topic(s) source=${options.source}`,
+    );
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "p2p.trace",
+        direction: "outbound",
+        protocol: "discovery.capability.provide.skipped-dial-queue",
+        outcome: "record",
+        summary: `skipped DHT provide for ${topics.length} topic(s) — dialQueue congested source=${options.source}`,
+      }),
+    );
+    return;
+  }
+
   // Discovery (findProviders) runs only when explicitly requested via
   // `options.runFind: true` (on-demand search / agent / bond flow). Periodic
   // and startup cycles advertise only — never free-running findProviders.

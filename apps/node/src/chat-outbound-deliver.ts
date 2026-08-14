@@ -216,7 +216,11 @@ export async function prepareOutboundPeerConnection(input: {
 
   if (!conn.connected) {
     try {
-      const result = await warmReachable({});
+      const result = await warmReachable({
+        // Offline prepare is user-facing (chat/call/bond send). Bypass the
+        // dial-queue / NO_RESERVATION deferral that exists for speculative warm.
+        forceFreshDial: true,
+      });
       if (result.connected) {
         markOutboundPeerVerified(input.transportPeerId);
       }

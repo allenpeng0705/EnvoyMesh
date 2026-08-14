@@ -73,6 +73,11 @@ export type EnsureReachableWithBudgetInput = {
   preferCircuitHints?: boolean;
   sameSubnetLanFirst: boolean;
   forceFreshDial?: boolean;
+  /**
+   * Bonded contact warm: bypass dialQueue congestion deferral.
+   * Defaults true — this helper is only used for contacts / send prepare.
+   */
+  priorityDial?: boolean;
   upgradeRelayToDirect?: boolean;
   /** Warm already identified; avoid a second identify in ensurePeerReachable. */
   skipIdentifyRefresh?: boolean;
@@ -121,6 +126,8 @@ export async function ensureReachableWithLanFirstBudget(
       preferCircuitHints: opts?.preferCircuitHints ?? preferCircuitHints,
       sameSubnetLanFirst: sameSubnet,
       forceFreshDial: input.forceFreshDial,
+      // Bonded/contact warm and pre-send prepare — never starve behind DHT dial storms.
+      priorityDial: input.priorityDial !== false,
       upgradeRelayToDirect: input.upgradeRelayToDirect,
       skipIdentifyRefresh: input.skipIdentifyRefresh,
       verifyConnection: input.verifyConnection,

@@ -15,7 +15,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { parseNodeArgs, printHelp } from "./args.js";
 import { createDiscoverySeedStore } from "./discovery-seed-store.js";
-import { expandCircuitDialCandidates } from "./discovery-inbound.js";
+import { expandCircuitDialCandidates, relayLookupCircuitAddrsForSeedStore } from "./discovery-inbound.js";
 import { createInboundMessageGuard, peerIdFromRelayTarget } from "./inbound-guard.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { deliverOutboundEnvelope, deliverOutboundExpectReply } from "./mesh-outbound-helper.js";
@@ -192,10 +192,24 @@ Examples:
     }
 
     const relayedAddrs = dedupeAddrs(payload.peers.flatMap((peer) => peer.multiaddrs));
-    if (relayedAddrs.length > 0) {
-      await discoverySeedStore.upsertMany(relayedAddrs, "relay-peers");
+    const storeAddrs = relayLookupCircuitAddrsForSeedStore(
+      relayedAddrs,
+      args.bootstrapPeers,
+      mesh.peerId,
+    );
+    if (storeAddrs.length > 0) {
+      await discoverySeedStore.upsertMany(storeAddrs, "relay-peers");
     }
-    for (const addr of relayedAddrs) {
+    const dialQueue = mesh.getConnectionStats?.()?.dialQueueLength ?? 0;
+    if (dialQueue > 50) {
+      console.log(`[auto-relay-query] dial deferred (dialQueue=${dialQueue} > 50)`);
+      return;
+    }
+    // Cap speculative discovery dials — only public-hop circuits, one try each.
+    let dialed = 0;
+    const MAX_DISCOVERY_DIALS = 2;
+    for (const addr of storeAddrs) {
+      if (dialed >= MAX_DISCOVERY_DIALS) break;
       const candidates = expandCircuitDialCandidates(addr, args.bootstrapPeers);
       let dialOkForAddr = false;
       for (const cand of candidates) {
@@ -204,6 +218,7 @@ Examples:
           await mesh.dial(cand);
           relayDialOk++;
           dialOkForAddr = true;
+          dialed++;
           console.log(`[auto-relay-query] relay.lookup candidate dial ok: ${cand}`);
           break;
         } catch (err) {

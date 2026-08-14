@@ -16,6 +16,7 @@ import {
   expandCircuitDialCandidates,
   handleInboundDiscoveryIntent,
   handleInboundRelayPeersIntent,
+  relayLookupCircuitAddrsForSeedStore,
 } from "../src/discovery-inbound.js";
 
 let profileDir: string;
@@ -300,13 +301,12 @@ describe("buildRelayCircuitMultiaddrs", () => {
 });
 
 describe("expandCircuitDialCandidates", () => {
-  it("prepends bootstrap-matched relay bases before the original circuit addr", () => {
+  it("prepends bootstrap-matched relay bases and drops private hop when public exists", () => {
     const circuit =
       "/ip4/10.0.0.1/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWTarget";
     const publicBootstrap = "/ip4/203.0.113.50/tcp/4001/p2p/12D3KooWRelay";
     expect(expandCircuitDialCandidates(circuit, [publicBootstrap])).toEqual([
       "/ip4/203.0.113.50/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWTarget",
-      circuit,
     ]);
   });
 
@@ -323,5 +323,38 @@ describe("expandCircuitDialCandidates", () => {
       "/ip4/203.0.113.50/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWTarget";
     const seed = "/ip4/203.0.113.50/tcp/4001/p2p/12D3KooWRelay";
     expect(expandCircuitDialCandidates(circuit, [seed])).toEqual([circuit]);
+  });
+});
+
+describe("relayLookupCircuitAddrsForSeedStore", () => {
+  it("rewrites private hop views onto public bootstrap before storing", () => {
+    const privateHop =
+      "/ip4/10.0.0.1/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWTarget";
+    const publicBootstrap = "/ip4/203.0.113.50/tcp/4001/p2p/12D3KooWRelay";
+    expect(
+      relayLookupCircuitAddrsForSeedStore([privateHop], [publicBootstrap]),
+    ).toEqual([
+      "/ip4/203.0.113.50/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWTarget",
+    ]);
+  });
+
+  it("skips self-target circuits", () => {
+    const self = "12D3KooWSelfPeerIdxxxxxxxxxxxx";
+    const circuit =
+      `/ip4/203.0.113.50/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${self}`;
+    expect(
+      relayLookupCircuitAddrsForSeedStore([circuit], [`/ip4/203.0.113.50/tcp/4001/p2p/12D3KooWRelay`], self),
+    ).toEqual([]);
+  });
+
+  it("drops private-only circuits when no public seed matches", () => {
+    const privateHop =
+      "/ip4/10.0.0.1/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWTarget";
+    expect(
+      relayLookupCircuitAddrsForSeedStore(
+        [privateHop],
+        ["/ip4/203.0.113.50/tcp/4001/p2p/12D3KooWOther"],
+      ),
+    ).toEqual([]);
   });
 });

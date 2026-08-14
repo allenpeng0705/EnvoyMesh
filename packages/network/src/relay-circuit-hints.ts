@@ -59,6 +59,27 @@ export function isPrivateRelayHopCircuitDialHint(addr: string): boolean {
   return false;
 }
 
+/** True for `/p2p-circuit/` paths whose hop is WAN-dialable (not RFC1918/loopback). */
+export function isPublicRelayHopCircuitDialHint(addr: string): boolean {
+  const a = addr.trim();
+  return a.includes("/p2p-circuit/") && !isPrivateRelayHopCircuitDialHint(a);
+}
+
+/**
+ * Prefer public-hop circuit candidates. When any public hop exists, drop
+ * loopback/RFC1918 hop views that only waste dial-queue slots (relay.lookup
+ * often returns all three bases for the same target).
+ */
+export function preferPublicHopCircuitCandidates(addrs: readonly string[]): string[] {
+  const list = dedupeDialHintStrings([...addrs]);
+  const publicHops = list.filter(isPublicRelayHopCircuitDialHint);
+  if (publicHops.length === 0) {
+    return list;
+  }
+  const nonCircuit = list.filter((a) => !a.includes("/p2p-circuit/"));
+  return [...publicHops, ...nonCircuit];
+}
+
 /** Put relay circuit hints first — public hops before private-hop circuits. */
 export function prioritizeCircuitDialHints(hints: string[]): string[] {
   const publicCircuits = hints.filter(
