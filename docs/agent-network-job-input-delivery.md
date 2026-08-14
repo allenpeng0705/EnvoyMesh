@@ -3,7 +3,7 @@
 > Deliver composer attachments (and optional step outputs) to **recruited
 > workers’ homes** for a **single Team job** — one-shot, audited, size-capped.
 >
-> Status: **Phase 59 — `[~]` in progress** (59A design lock shipped; 59B+ next).
+> Status: **Phase 59 — `[~]` in progress** (59A–59B shipped; 59C+ next).
 >
 > Related: [`agent-network-ux-team-jobs.md`](./agent-network-ux-team-jobs.md)
 > (Phase 58 honesty / visibility) ·
@@ -210,7 +210,7 @@ the JSON path (≤ ~48 KiB) without a data-channel hop.
 | Wave | Status | Scope |
 |------|--------|-------|
 | **59A** | `[x]` | Design lock: schema + reuse voucher; caps; vault layout; open Qs settled |
-| **59B** | `[ ]` | Assigner deliver-on-award + verify hash; local-You skip; unit tests |
+| **59B** | `[x]` | Assigner deliver-on-award + verify hash; local-You skip; unit tests |
 | **59C** | `[ ]` | Wire into propose/`inputArtifacts` so worker executor sees local path |
 | **59D** | `[ ]` | Social + EnvoyGo delivery status + retry; i18n |
 | **59E** | `[ ]` | Two/three-home E2E; GC on terminal |

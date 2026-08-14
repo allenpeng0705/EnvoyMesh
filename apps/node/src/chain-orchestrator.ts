@@ -65,6 +65,11 @@ import {
   type TaskChainReportPayload,
 } from "@envoymesh/protocol";
 
+import {
+  DEFAULT_CHAIN_INPUT_DELIVERY_POLICY,
+  parseChainInputAttachmentsFromGoal,
+} from "@envoymesh/api";
+
 import { signCanonicalPayload } from "@envoymesh/identity";
 
 import {
@@ -167,6 +172,15 @@ export interface ChainOrchestratorHandlerDeps extends ChainOrchestratorSendDeps 
   >;
   /** Default heartbeat interval in ms. Default 30_000. */
   heartbeatIntervalMs?: number;
+  /**
+   * Phase 59B — after accept is sent for an award, push job inputs to the worker.
+   * Fire-and-forget from award paths; errors are recorded on `state.inputDeliveries`.
+   */
+  onAwardAccepted?: (
+    state: ChainState,
+    subtaskId: string,
+    workerPeerId: string,
+  ) => void | Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -260,6 +274,12 @@ export interface ChainState {
    * Competitive = propose → bid → evaluate.
    */
   awardMode: "direct" | "competitive";
+  /** Phase 59 — composer attachments for this job (Assigner-home paths). */
+  inputAttachments?: import("@envoymesh/api").ChainInputAttachment[];
+  /** Phase 59 — per-worker delivery progress. */
+  inputDeliveries?: import("@envoymesh/api").ChainInputDeliveryRecord[];
+  /** Phase 59 — delivery policy (defaults from 59A lock). */
+  inputDeliveryPolicy?: import("@envoymesh/api").ChainInputDeliveryPolicy;
 }
 
 // ---------------------------------------------------------------------------
@@ -272,6 +292,7 @@ export function createChainState(
 ): ChainState {
   const ledger = createChainBudgetLedger(chainMandate);
   const goal = opts?.goal?.trim();
+  const inputAttachments = goal ? parseChainInputAttachmentsFromGoal(goal) : [];
   return {
     chainId: chainMandate.chainId,
     chainMandate,
@@ -300,6 +321,9 @@ export function createChainState(
     // Default competitive keeps unit/e2e propose→bid paths intact; production
     // Team jobs always pass awardMode explicitly (usually "direct").
     awardMode: opts?.awardMode === "direct" ? "direct" : "competitive",
+    inputAttachments,
+    inputDeliveries: [],
+    inputDeliveryPolicy: { ...DEFAULT_CHAIN_INPUT_DELIVERY_POLICY },
   };
 }
 
@@ -971,6 +995,16 @@ export async function directAwardSubtask(
       `direct_assign subtask=${subtaskId.slice(0, 12)}` +
       ` worker=${workerPeerId.slice(0, 14)}`,
   });
+  if (deps.onAwardAccepted) {
+    try {
+      await deps.onAwardAccepted(state, subtaskId, workerPeerId);
+    } catch (err) {
+      console.warn(
+        `[chain.input] onAwardAccepted failed for ${state.chainId}/${subtaskId}:`,
+        err,
+      );
+    }
+  }
   return { ok: true, award: evaluated.award };
 }
 

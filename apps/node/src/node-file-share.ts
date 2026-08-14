@@ -18,6 +18,14 @@ export async function sendVaultFileViaDataTransfer(input: {
   taskStore: LocalTaskStore;
   vaultDir: string;
   relativePath: string;
+  /**
+   * Path written on the receiver (defaults to `relativePath`).
+   * Phase 59B job inputs: read Assigner source, voucher = worker
+   * `imports/team-jobs/<chainId>/in/<name>`.
+   */
+  voucherRelativePath?: string;
+  /** Override voucher expiry (ISO). Default protocol helper uses +15m. */
+  expiresAt?: string;
   toPeerId: string;
   dialHints?: string[];
   peerListenAddrs?: string[];
@@ -27,11 +35,15 @@ export async function sendVaultFileViaDataTransfer(input: {
     correlationId: string;
     remotePeerOwnerId?: string;
   };
-}): Promise<void> {
+}): Promise<{ contentHash: string; transferId: string }> {
   const { mesh, profile, taskStore, vaultDir, relativePath, toPeerId, dialHints, transferHooks } = input;
   const norm = relativePath.replace(/^[\\/]+/, "");
+  const voucherPath = (input.voucherRelativePath ?? relativePath).replace(/^[\\/]+/, "");
   if (!isSafeVaultPath(vaultDir, norm)) {
     throw new Error("Unsafe vault path for data transfer");
+  }
+  if (!isSafeVaultPath(vaultDir, voucherPath)) {
+    throw new Error("Unsafe voucher path for data transfer");
   }
   const filePath = join(vaultDir, norm);
   const content = await readFile(filePath);
@@ -43,16 +55,17 @@ export async function sendVaultFileViaDataTransfer(input: {
     bytesTransferred: 0,
     remotePeerId: toPeerId,
     remotePeerOwnerId: transferHooks.remotePeerOwnerId,
-    vaultRelativePath: norm,
+    vaultRelativePath: voucherPath,
     updatedAt: new Date().toISOString(),
   });
   const unsignedVoucher = createUnsignedDataTransferVoucher({
     issuerPeerId: mesh.peerId,
     issuerOwnerId: profile.owner.ownerId,
     issuerDeviceId: profile.device.deviceId,
-    relativePath: norm,
+    relativePath: voucherPath,
     totalBytes: content.byteLength,
     contentHash: hash,
+    ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
   });
   const voucher = createSignedDataTransferVoucher({
     unsigned: unsignedVoucher,
@@ -80,7 +93,7 @@ export async function sendVaultFileViaDataTransfer(input: {
     bytesTransferred: content.byteLength,
     remotePeerId: toPeerId,
     remotePeerOwnerId: transferHooks.remotePeerOwnerId,
-    vaultRelativePath: norm,
+    vaultRelativePath: voucherPath,
     updatedAt: new Date().toISOString(),
   });
   const createdAt = new Date().toISOString();
@@ -89,14 +102,15 @@ export async function sendVaultFileViaDataTransfer(input: {
       type: "message.sent",
       intent: "sync.state",
       messageId: `data_${relativePath.replace(/[^a-zA-Z0-9_-]+/g, "_")}_${Date.now()}`,
-      correlationId: undefined,
+      correlationId: transferHooks?.correlationId,
       remotePeerId: toPeerId,
       direction: "outbound",
       latencyMs,
       protocol: ENVOY_DATA_PROTOCOL,
       outcome: "record",
-      summary: `Sent data transfer ${relativePath} (${content.byteLength} bytes).`,
+      summary: `Sent data transfer ${norm} → ${voucherPath} (${content.byteLength} bytes).`,
       createdAt,
     }),
   );
+  return { contentHash: hash, transferId: voucher.transferId };
 }

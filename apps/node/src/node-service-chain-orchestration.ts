@@ -53,6 +53,11 @@ import {
   type ChainState,
 } from "./chain-orchestrator.js";
 import {
+  copyChainInputInVault,
+  deliverChainInputsOnAward,
+} from "./chain-input-delivery-runtime.js";
+import { sendVaultFileViaDataTransfer } from "./node-file-share.js";
+import {
   chainBudgetWarningLevel,
   iterationReplanGoal,
   markIterationRoundOpened,
@@ -84,6 +89,7 @@ import {
 } from "./chain-ready-probe.js";
 import {
   extractChainIdFromEnvelope,
+  resolveChainTransportPeerId,
   sendChainEnvelopeOverMesh,
   type ChainTransportResolver,
 } from "./chain-production.js";
@@ -267,6 +273,8 @@ export interface ChainOrchestrationContext {
   askExtAgent(prompt: string): Promise<string>;
   /** Live Ext Agent reachability hello (HTTP/sidecar) for AN ready probes. */
   probeExtAgent(): Promise<{ reachable: boolean }>;
+  /** Local vault root for job input byte delivery (Phase 59B). */
+  getVaultDir(): string | undefined;
 }
 
 /** Peer card cache plus the local Join'd worker (creator is also a worker). */
@@ -318,6 +326,10 @@ export function buildChainOrchestrationContext(host: any): ChainOrchestrationCon
       const reach = await host.probeExtAgent();
       return { reachable: reach?.reachable === true };
     },
+    getVaultDir: () =>
+      typeof host._vaultDir === "string" && host._vaultDir.length > 0
+        ? host._vaultDir
+        : undefined,
   };
 }
 
@@ -1147,6 +1159,56 @@ export async function buildChainOrchestratorDeps(
     },
     llmDecompose,
     llmMerge: await buildLlmMergeAsync(deps),
+    onAwardAccepted: async (state, subtaskId, workerPeerId) => {
+      const vaultDir = deps.getVaultDir();
+      const mesh = deps.getReachableMesh();
+      const taskStore = deps.getTaskStore();
+      if (!vaultDir || !mesh || !taskStore || !profile) return;
+      const transportPeerId = transport
+        ? await resolveChainTransportPeerId(transport, workerPeerId)
+        : null;
+      await deliverChainInputsOnAward({
+        state,
+        subtaskId,
+        workerPeerId,
+        orchestratorPeerId: agentIdentity.agentPeerId,
+        transportPeerId: transportPeerId ?? undefined,
+        copyLocal: async ({ sourceRelativePath, deliveredRelativePath }) =>
+          copyChainInputInVault({ vaultDir, sourceRelativePath, deliveredRelativePath }),
+        pushFile: async ({
+          sourceRelativePath,
+          voucherRelativePath,
+          toPeerId,
+          chainId,
+          expiresAt,
+        }) => {
+          const dialHints = transport?.resolveDialHints
+            ? await transport.resolveDialHints(toPeerId)
+            : [];
+          return sendVaultFileViaDataTransfer({
+            mesh,
+            profile,
+            taskStore,
+            vaultDir,
+            relativePath: sourceRelativePath,
+            voucherRelativePath,
+            expiresAt,
+            toPeerId,
+            dialHints,
+            rebuildDialHints: transport?.resolveDialHints
+              ? () => transport.resolveDialHints!(toPeerId)
+              : undefined,
+            transferHooks: {
+              correlationId: chainId,
+              onUpdate: () => {
+                /* TransferTracker optional for 59B; state.inputDeliveries is source of truth */
+              },
+            },
+          });
+        },
+        onUpdate: () => _emitChainState(deps, state.chainId),
+      });
+    },
   };
 }
 
@@ -1603,6 +1665,13 @@ export async function _evaluateAwardAndAccept(
       `subtask=${subtaskId} worker=${result.bid.workerPeerId} cost=${result.bid.proposedCostUsd}` +
       (acceptOk ? "" : " accept_send_failed"),
   });
+  if (acceptOk && orchDeps.onAwardAccepted) {
+    try {
+      await orchDeps.onAwardAccepted(runtime.state, subtaskId, result.bid.workerPeerId);
+    } catch (err) {
+      console.warn(`[chain.input] onAwardAccepted failed for ${chainId}/${subtaskId}:`, err);
+    }
+  }
   return result;
 }
 
@@ -1774,6 +1843,8 @@ export function _emitChainState(deps: ChainOrchestrationContext, chainId: string
   state.showCostUi = chainSide.showCostUi.get(chainId) ?? false;
   state.budgetWarningLevel = chainBudgetWarningLevel(runtime.state);
   state.steps = buildChainLiveSteps(runtime.state);
+  state.inputAttachments = runtime.state.inputAttachments;
+  state.inputDeliveries = runtime.state.inputDeliveries;
   populateIterationInState(runtime, state);
   deps.emit("chain:state", state);
   // Fan-out read-only status to joined workers (debounced).
