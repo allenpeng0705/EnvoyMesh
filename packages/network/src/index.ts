@@ -981,6 +981,42 @@ export class EnvoyMesh {
     }
   }
 
+  /**
+   * Peer ids with private-LAN dial hints (mDNS / identify), including those
+   * currently connected. Does **not** include arbitrary DHT/relay connections —
+   * those are not "People on this network".
+   */
+  async listNearbyDiscoveryCandidatePeerIds(): Promise<string[]> {
+    const out = new Set<string>();
+    const consider = async (id: string | undefined) => {
+      const peerId = id?.trim();
+      if (!peerId || out.has(peerId)) return;
+      try {
+        const hints = await this.getPeerStoreDialHints(peerId, {
+          allowEphemeralPrivateLan: true,
+        });
+        if (hints.some((h) => isPrivateLanTcpDialHint(h))) {
+          out.add(peerId);
+        }
+      } catch {
+        // ignore per-peer store errors
+      }
+    };
+    for (const id of this.getConnectedPeerIds()) {
+      await consider(id);
+    }
+    if (!this.node) return [...out];
+    try {
+      const peers = await this.requireNode().peerStore.all();
+      for (const peer of peers) {
+        await consider(peer.id?.toString?.());
+      }
+    } catch {
+      // peerStore.all unavailable — connected LAN set above is still useful
+    }
+    return [...out];
+  }
+
   /** Drop libp2p auto-learned ephemeral observed addrs; keep only filtered direct dial paths. */
   async scrubPeerStoreDialHints(peerIdStr: string, extraAddrs: readonly string[] = []): Promise<string[]> {
     const idStr = peerIdStr.trim();

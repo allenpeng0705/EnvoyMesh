@@ -21,7 +21,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get navContent => 'Inhalt';
 
   @override
-  String get navSocial => 'Social';
+  String get navSocial => 'Sozial';
 
   @override
   String get navTerminal => 'Terminal';
@@ -312,7 +312,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get inboxEmptyHint => 'Bond-Anfragen und Feed-Updates erscheinen hier';
 
   @override
-  String get contentFeed => 'Feed';
+  String get contentFeed => 'Neuigkeiten';
 
   @override
   String get contentBlog => 'Blog';
@@ -826,7 +826,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get blogHint => 'Längere Beiträge im Mesh.';
 
   @override
-  String get feedTitle => 'Feed';
+  String get feedTitle => 'Neuigkeiten';
 
   @override
   String get feedComposeTitle => 'Neuer Feed-Beitrag';
@@ -1610,7 +1610,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get authorTypeProfile => 'Profil';
 
   @override
-  String get authorTypePhoto => 'PhotoWall-Foto';
+  String get authorTypePhoto => 'Fotowand-Foto';
 
   @override
   String get authorTypeBlog => 'Blog-Beitrag';
@@ -2116,6 +2116,41 @@ class AppLocalizationsDe extends AppLocalizations {
   String chainsStartGoalTooShort(int min) {
     return 'Das Ziel muss mindestens $min Zeichen umfassen';
   }
+
+  @override
+  String get chainsStartAttachmentsLabel => 'Anhänge';
+
+  @override
+  String get chainsStartAttachmentsAdd => 'Dateien hinzufügen';
+
+  @override
+  String get chainsStartAttachmentsHint =>
+      'Tipp: Kurzes Label pro Datei (z. B. brief), dann [brief] im Ziel nennen — so wissen Worker, welche Datei gemeint ist, auch bei langen oder unklaren Namen.';
+
+  @override
+  String chainsStartAttachmentsMax(int max) {
+    return 'Sie können bis zu $max Dateien anhängen';
+  }
+
+  @override
+  String chainsStartAttachmentTooLarge(String name, int maxMb) {
+    return '$name ist zu groß (max. $maxMb MB)';
+  }
+
+  @override
+  String get chainsStartAttachmentUploading => 'Wird hochgeladen…';
+
+  @override
+  String get chainsStartAttachmentFailed => 'Upload fehlgeschlagen';
+
+  @override
+  String get chainsStartAttachmentLabel => 'Label';
+
+  @override
+  String get chainsStartAttachmentLabelHint => 'z. B. brief, Verkaufsdaten';
+
+  @override
+  String get chainsStartAttachmentRemove => 'Anhang entfernen';
 
   @override
   String get chainsStartPreview => 'Plan in der Vorschau';

@@ -56,14 +56,15 @@ export function SocialView({
   // Feed/Blog engage (+ feed.notify) when the user only opens Chats would hide
   // Social/Feed badges before they visit those surfaces.
 
-  // Already on Feed/Blog: keep that surface's Like/Comment inbox clear.
+  // Dismiss when Feed/Blog is active — covers tab clicks AND programmatic opens
+  // (legacy `content` alias, Getting Started, setSocialTab("feed")).
   useEffect(() => {
     const dismiss = dismissRef.current;
     if (!dismiss) return;
-    if (activeTab === "feed" && feedEngageCount > 0) {
-      void dismiss("feed").catch(console.error);
+    if (activeTab === "feed") {
+      void dismiss("feed", { feedNotify: true }).catch(console.error);
     }
-    if (activeTab === "blog" && blogEngageCount > 0) {
+    if (activeTab === "blog") {
       void dismiss("blog").catch(console.error);
     }
   }, [activeTab, feedEngageCount, blogEngageCount]);
@@ -80,10 +81,6 @@ export function SocialView({
 
   const selectTab = (tab: SocialTab) => {
     onActiveTabChange(tab);
-    if (tab === "feed") {
-      void dismissRef.current?.("feed", { feedNotify: true }).catch(console.error);
-    }
-    if (tab === "blog") void dismissRef.current?.("blog").catch(console.error);
   };
 
   const tabs: { id: SocialTab; label: string }[] = [

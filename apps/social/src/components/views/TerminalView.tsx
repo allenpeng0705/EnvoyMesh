@@ -195,10 +195,13 @@ export function TerminalView({
     setSelectedTerminalId(running[0]?.sessionId ?? null);
   }, [selectedTerminalId, terminalSessions]);
 
+  const openPiTerminalRef = useRef(openPiTerminal);
+  openPiTerminalRef.current = openPiTerminal;
+
   useEffect(() => {
     const runDetail = (detail?: OpenTerminalDetail | null) => {
       if (detail?.startPi) {
-        void openPiTerminal({ startNew: detail.startNew === true });
+        void openPiTerminalRef.current({ startNew: detail.startNew === true });
       }
     };
     runDetail(takePendingTerminalOpen());
@@ -208,7 +211,6 @@ export function TerminalView({
     };
     window.addEventListener(OPEN_TERMINAL_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_TERMINAL_EVENT, onOpen);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- consume pending on mount; openPi uses latest closures via calls
   }, []);
 
   if (terminalsNeedPair) {

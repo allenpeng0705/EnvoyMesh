@@ -554,13 +554,25 @@ export const en = {
       empty: "No one nearby yet. Make sure you are on the same Wi‑Fi and both connected in Settings → Network.",
       someoneNearby: "Someone nearby",
       identifyingMore: "Still identifying {count} other device(s) on this Wi‑Fi…",
+      refresh: "Refresh",
+      refreshing: "Scanning…",
+      refreshFound: "Found {count} Envoy user(s) on this network.",
+      refreshUnreachable:
+        "Heard {count} nearby device(s), but couldn't identify them as Envoy yet.",
+      refreshProbed: "Checked {count} nearby connection(s) — waiting for Envoy profiles…",
+      refreshNoEnvoy:
+        "Checked {count} same-Wi‑Fi device(s); none answered as Envoy yet. Keep the other node running, wait for mDNS, then Refresh again.",
+      refreshNone:
+        "No other devices seen on this Wi‑Fi yet. Keep both nodes running on the same network, then tap Refresh again.",
+      refreshFailed: "Could not scan this network right now.",
     },
     troubleshooter: {
       summary: "Not seeing anyone?",
       connected: "Your node is connected",
       connectFirst: "Connect in Settings → Network first",
-      sameWifiOk: "Network preset is Same Wi‑Fi / home (good for nearby discovery)",
-      sameWifiWarn: "For nearby discovery, set Settings → Network to Same Wi‑Fi / home",
+      sameWifiOk: "Local discovery (mDNS) is on — good for people nearby",
+      sameWifiWarn:
+        "Turn on mDNS in Settings → Network, or pick Same Wi‑Fi / home so this network can find nearby Envoy users",
       bothOnline: "Both of you need Envoy open and connected on the same Wi‑Fi",
       usePasteLink: "If you are far apart, use Paste a link instead of People nearby",
     },

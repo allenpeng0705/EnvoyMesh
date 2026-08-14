@@ -1462,7 +1462,7 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
-  String get publishedPhotoWall => 'PhotoWall';
+  String get publishedPhotoWall => 'フォトウォール';
 
   @override
   String get engagementCommentHint => 'コメントを書く…';
@@ -1546,7 +1546,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get authorTypeProfile => 'プロフィール';
 
   @override
-  String get authorTypePhoto => 'PhotoWall 写真';
+  String get authorTypePhoto => 'フォトウォール写真';
 
   @override
   String get authorTypeBlog => 'ブログ投稿';
@@ -1649,7 +1649,7 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get settingsEditOnSocial =>
-      '詳細オプションはホームノード Social UI でこのプロバイダーを編集してください。';
+      '詳細オプションはホームノードのソーシャル画面でこのプロバイダーを編集してください。';
 
   @override
   String get settingsProvider => 'Provider';
@@ -1965,11 +1965,10 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get chainsEmptyHint =>
-      'ホームノードで実行したチームジョブがここに表示されます。\nホームノード Social UI から作成してください。';
+      'ホームノードで実行したチームジョブがここに表示されます。\nホームノードのソーシャル画面から作成してください。';
 
   @override
-  String get chainsNoActive =>
-      'ホームノードにアクティブなチェーンがありません。\nSocial UI から開始してください。';
+  String get chainsNoActive => 'ホームノードにアクティブなチェーンがありません。\nソーシャル画面から開始してください。';
 
   @override
   String get chainsReportGone => 'このレポートは利用できません';
@@ -1999,7 +1998,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get chainsDuration => '所要時間';
 
   @override
-  String get chainsManageOnSocial => 'ホームノード Social UI でチェーンを管理します。';
+  String get chainsManageOnSocial => 'ホームノードのソーシャル画面でチェーンを管理します。';
 
   @override
   String get chainsStartTitle => 'チームジョブを開始';
@@ -2036,6 +2035,41 @@ class AppLocalizationsJa extends AppLocalizations {
   String chainsStartGoalTooShort(int min) {
     return '目標は $min 文字以上で入力してください';
   }
+
+  @override
+  String get chainsStartAttachmentsLabel => '添付ファイル';
+
+  @override
+  String get chainsStartAttachmentsAdd => 'ファイルを追加';
+
+  @override
+  String get chainsStartAttachmentsHint =>
+      'ヒント: ファイルごとに短いラベル（例: brief）を付け、目標に [brief] と書くと、ファイル名が長くてもどれを使うか伝わります。';
+
+  @override
+  String chainsStartAttachmentsMax(int max) {
+    return '添付できるファイルは最大 $max 個です';
+  }
+
+  @override
+  String chainsStartAttachmentTooLarge(String name, int maxMb) {
+    return '$name が大きすぎます（上限 $maxMb MB）';
+  }
+
+  @override
+  String get chainsStartAttachmentUploading => 'アップロード中…';
+
+  @override
+  String get chainsStartAttachmentFailed => 'アップロードに失敗しました';
+
+  @override
+  String get chainsStartAttachmentLabel => 'ラベル';
+
+  @override
+  String get chainsStartAttachmentLabelHint => '例: brief、売上データ';
+
+  @override
+  String get chainsStartAttachmentRemove => '添付を削除';
 
   @override
   String get chainsStartPreview => 'プランをプレビュー';
@@ -2180,7 +2214,7 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String chainsChainId(String id) {
-    return 'Chain $id';
+    return 'チェーン $id';
   }
 
   @override
@@ -2603,5 +2637,5 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get settingsEnvoyLocalPhoneNote =>
-      '詳細なサーバー パラメータ（コンテキスト サイズ、GPU レイヤー）はホームノードの Social UI にあります。';
+      '詳細なサーバー パラメータ（コンテキスト サイズ、GPU レイヤー）はホームノードのソーシャル画面にあります。';
 }

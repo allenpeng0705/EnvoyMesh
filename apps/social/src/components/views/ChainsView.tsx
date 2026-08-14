@@ -10,7 +10,7 @@
  * "Run as chain" affordance under a chat message.
  */
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import type {
   BondRecord,
   CachedAgentCardSummary,
@@ -26,6 +26,14 @@ import { useNodeService, useAgentCards, useTransportWsOpen } from "../../hooks/u
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { computeChainBondHealth, isTeamJobListed, mergeReachability } from "../../lib/chain-bond-health.js";
 import type { ChainBondHealth } from "../../lib/chain-bond-health.js";
+import {
+  buildChainGoalWithAttachments,
+  CHAIN_ATTACHMENT_LABEL_MAX_CHARS,
+  CHAIN_COMPOSER_MAX_ATTACHMENTS,
+  CHAIN_COMPOSER_MAX_FILE_BYTES,
+  sanitizeAttachmentLabel,
+  sanitizeTeamJobFileName,
+} from "../../lib/chain-goal-attachments.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import { ChainReportView } from "../ChainReportView.js";
 import { ChainStartDialog } from "../ChainStartDialog.js";
@@ -34,6 +42,16 @@ import { ChainDetailPanel } from "../ChainDetailPanel.js";
 import { AgentNetworkSettingsModal } from "../AgentNetworkSettingsModal.js";
 import { AgentNetworkSkillsPreview } from "../AgentNetworkSkillsPreview.js";
 import { WorkerMembershipSection } from "./settings/agent-network-sections.js";
+
+type ComposerAttachment = {
+  id: string;
+  fileName: string;
+  relativePath?: string;
+  /** Short alias written into the job goal as [label]. */
+  label?: string;
+  uploading?: boolean;
+  error?: string;
+};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -297,9 +315,16 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
   // Chain creation flow (Phase 43 follow-up): a "New chain" button opens a
   // goal composer; the preview+launch reuses ChainStartDialog.
   const [newChainGoal, setNewChainGoal] = useState<string | null>(null);
+  const [newChainDisplayGoal, setNewChainDisplayGoal] = useState<string>("");
+  const [newChainAttachments, setNewChainAttachments] = useState<
+    Array<{ fileName: string; relativePath: string; label?: string }>
+  >([]);
   const [composing, setComposing] = useState(false);
   const [goalDraft, setGoalDraft] = useState("");
   const [composerAssignmentMode, setComposerAssignmentMode] = useState<"skill" | "role">("skill");
+  const [composerAttachments, setComposerAttachments] = useState<ComposerAttachment[]>([]);
+  const [composerBatchId, setComposerBatchId] = useState(() => `tj_${Date.now().toString(36)}`);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Agent Network settings modal (fleet onboarding + advanced) — opened from
   // the "Manage workers" button in the header.
@@ -510,6 +535,8 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
   const openComposer = useCallback(
     (initialGoal?: string) => {
       setGoalDraft(initialGoal ?? "");
+      setComposerAttachments([]);
+      setComposerBatchId(`tj_${Date.now().toString(36)}`);
       setComposerAssignmentMode("skill");
       setComposing(true);
       void nodeService
@@ -520,6 +547,87 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
         .catch(() => undefined);
     },
     [nodeService],
+  );
+
+  const closeComposer = useCallback(() => {
+    setComposing(false);
+    setComposerAttachments([]);
+  }, []);
+
+  const uploadComposerFile = useCallback(
+    async (id: string, file: File) => {
+      setComposerAttachments((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, uploading: true, error: undefined } : a)),
+      );
+      try {
+        const buf = await file.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let binary = "";
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+        const contentBase64 = btoa(binary);
+        const safeName = sanitizeTeamJobFileName(file.name);
+        const relativePath = `imports/team-jobs/${composerBatchId}/${safeName}`;
+        const result = await nodeService.importToLibrary({
+          relativePath,
+          contentBase64,
+          mimeType: file.type || undefined,
+        });
+        const path = result.relativePath || relativePath;
+        setComposerAttachments((prev) =>
+          prev.map((a) =>
+            a.id === id
+              ? { ...a, uploading: false, relativePath: path, error: undefined }
+              : a,
+          ),
+        );
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setComposerAttachments((prev) =>
+          prev.map((a) => (a.id === id ? { ...a, uploading: false, error: msg } : a)),
+        );
+        showToast(msg, "error");
+      }
+    },
+    [composerBatchId, nodeService, showToast],
+  );
+
+  const onPickComposerFiles = useCallback(
+    (fileList: FileList | null) => {
+      if (!fileList?.length) return;
+      const incoming = Array.from(fileList);
+      const room = CHAIN_COMPOSER_MAX_ATTACHMENTS - composerAttachments.length;
+      if (room <= 0) {
+        showToast(t("chains.start.attachmentsMax", { max: CHAIN_COMPOSER_MAX_ATTACHMENTS }), "error");
+        return;
+      }
+      const toUpload: Array<{ id: string; file: File }> = [];
+      const accepted: ComposerAttachment[] = [];
+      for (const file of incoming) {
+        if (accepted.length >= room) {
+          showToast(t("chains.start.attachmentsMax", { max: CHAIN_COMPOSER_MAX_ATTACHMENTS }), "error");
+          break;
+        }
+        if (file.size > CHAIN_COMPOSER_MAX_FILE_BYTES) {
+          showToast(
+            t("chains.start.attachmentTooLarge", {
+              name: file.name,
+              maxMb: Math.round(CHAIN_COMPOSER_MAX_FILE_BYTES / (1024 * 1024)),
+            }),
+            "error",
+          );
+          continue;
+        }
+        const id = `att_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+        accepted.push({ id, fileName: file.name, uploading: true });
+        toUpload.push({ id, file });
+      }
+      if (accepted.length === 0) return;
+      setComposerAttachments((prev) => [...prev, ...accepted]);
+      for (const item of toUpload) {
+        void uploadComposerFile(item.id, item.file);
+      }
+    },
+    [composerAttachments.length, showToast, t, uploadComposerFile],
   );
 
   const localPrimaryRole = agentNetworkPrimaryRole(
@@ -537,15 +645,34 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
     }, 50);
   }, []);
 
+  const attachmentsUploading = composerAttachments.some((a) => a.uploading);
+  const readyAttachments = useMemo(
+    () =>
+      composerAttachments
+        .filter((a) => a.relativePath && !a.uploading && !a.error)
+        .map((a) => ({
+          fileName: a.fileName,
+          relativePath: a.relativePath!,
+          label: sanitizeAttachmentLabel(a.label),
+        })),
+    [composerAttachments],
+  );
+
   const launchChain = useCallback(() => {
     const goal = goalDraft.trim();
-    if (!goal) return;
+    if (!goal || attachmentsUploading) return;
+    const effective = buildChainGoalWithAttachments(goal, readyAttachments);
     setComposing(false);
-    setNewChainGoal(goal);
-  }, [goalDraft]);
+    setComposerAttachments([]);
+    setNewChainDisplayGoal(goal);
+    setNewChainAttachments(readyAttachments);
+    setNewChainGoal(effective);
+  }, [attachmentsUploading, goalDraft, readyAttachments]);
 
   const handleStarted = useCallback(() => {
     setNewChainGoal(null);
+    setNewChainDisplayGoal("");
+    setNewChainAttachments([]);
     void loadChains();
   }, [loadChains]);
 
@@ -729,9 +856,85 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
             value={goalDraft}
             onChange={(e) => setGoalDraft(e.target.value)}
             placeholder={t("chains.start.composerPlaceholder")}
-            rows={3}
+            rows={5}
             autoFocus
           />
+          <div className="chain-composer__attachments" data-testid="chain-composer-attachments">
+            <div className="chain-composer__attachments-header">
+              <span className="chain-composer__label">{t("chains.start.attachmentsLabel")}</span>
+              <button
+                type="button"
+                className="secondary btn-sm"
+                data-testid="chain-composer-add-files"
+                disabled={composerAttachments.length >= CHAIN_COMPOSER_MAX_ATTACHMENTS}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {t("chains.start.attachmentsAdd")}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                hidden
+                onChange={(e) => {
+                  onPickComposerFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+            </div>
+            <p className="chain-composer__attachments-hint">{t("chains.start.attachmentsHint")}</p>
+            {composerAttachments.length > 0 ? (
+              <ul className="chain-composer__attachments-list">
+                {composerAttachments.map((att) => (
+                  <li key={att.id} className="chain-composer__attachment" data-testid="chain-composer-attachment">
+                    <div className="chain-composer__attachment-row">
+                      <span className="chain-composer__attachment-name" title={att.fileName}>
+                        {att.fileName}
+                      </span>
+                      {att.uploading ? (
+                        <span className="chain-composer__attachment-status">
+                          {t("chains.start.attachmentUploading")}
+                        </span>
+                      ) : att.error ? (
+                        <span className="chain-composer__attachment-status chain-composer__attachment-status--error">
+                          {t("chains.start.attachmentFailed")}
+                        </span>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="secondary btn-sm"
+                        aria-label={t("chains.start.attachmentRemove")}
+                        onClick={() =>
+                          setComposerAttachments((prev) => prev.filter((a) => a.id !== att.id))
+                        }
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <label className="chain-composer__attachment-label-row">
+                      <span className="chain-composer__attachment-label-caption">
+                        {t("chains.start.attachmentLabel")}
+                      </span>
+                      <input
+                        type="text"
+                        className="chain-composer__attachment-label"
+                        value={att.label ?? ""}
+                        maxLength={CHAIN_ATTACHMENT_LABEL_MAX_CHARS}
+                        placeholder={t("chains.start.attachmentLabelPlaceholder")}
+                        disabled={!!att.uploading}
+                        onChange={(e) => {
+                          const label = e.target.value;
+                          setComposerAttachments((prev) =>
+                            prev.map((a) => (a.id === att.id ? { ...a, label } : a)),
+                          );
+                        }}
+                      />
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
           <div className="chain-composer__templates">
             {goalTemplates.map((tpl) => (
               <button
@@ -745,14 +948,14 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
             ))}
           </div>
           <div className="chain-composer__actions">
-            <button type="button" className="secondary btn-sm" onClick={() => setComposing(false)}>
+            <button type="button" className="secondary btn-sm" onClick={closeComposer}>
               {t("chains.start.cancel")}
             </button>
             <button
               type="button"
               className="primary btn-sm"
               onClick={launchChain}
-              disabled={goalDraft.trim().length < 8}
+              disabled={goalDraft.trim().length < 8 || attachmentsUploading}
             >
               {t("chains.start.preview")}
             </button>
@@ -763,8 +966,14 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
       {newChainGoal ? (
         <ChainStartDialog
           goal={newChainGoal}
+          displayGoal={newChainDisplayGoal}
+          attachments={newChainAttachments}
           assignmentMode={composerAssignmentMode}
-          onClose={() => setNewChainGoal(null)}
+          onClose={() => {
+            setNewChainGoal(null);
+            setNewChainDisplayGoal("");
+            setNewChainAttachments([]);
+          }}
           onStarted={handleStarted}
           onOpenDiscover={onOpenDiscover}
           workerCandidates={workerCandidates}

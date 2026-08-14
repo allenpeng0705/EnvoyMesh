@@ -1,6 +1,5 @@
 import type { NodeConfig } from "@envoymesh/api";
 import { useT } from "../../context/I18nContext.js";
-import { resolveNetworkPreset } from "../../lib/network-presets.js";
 
 export function DiscoveryTroubleshooter({
   nodeStatus,
@@ -14,9 +13,11 @@ export function DiscoveryTroubleshooter({
   const t = useT();
   if (discoveredCount > 0) return null;
 
-  const preset = resolveNetworkPreset(nodeConfig?.discoveryProfile, nodeConfig?.bootstrapPresets);
   const online = nodeStatus === "running";
-  const sameWifiPreset = preset === "same-wifi";
+  const mdnsOn = nodeConfig?.enableMdns !== false;
+  const profile = nodeConfig?.discoveryProfile;
+  const nearbyFriendly =
+    mdnsOn && profile !== "contacts-only" && profile !== "relay-only";
 
   return (
     <details className="discovery-troubleshooter">
@@ -25,8 +26,10 @@ export function DiscoveryTroubleshooter({
         <li className={online ? "discovery-troubleshooter__ok" : "discovery-troubleshooter__warn"}>
           {online ? t("discover.troubleshooter.connected") : t("discover.troubleshooter.connectFirst")}
         </li>
-        <li className={sameWifiPreset ? "discovery-troubleshooter__ok" : "discovery-troubleshooter__warn"}>
-          {sameWifiPreset ? t("discover.troubleshooter.sameWifiOk") : t("discover.troubleshooter.sameWifiWarn")}
+        <li className={nearbyFriendly ? "discovery-troubleshooter__ok" : "discovery-troubleshooter__warn"}>
+          {nearbyFriendly
+            ? t("discover.troubleshooter.sameWifiOk")
+            : t("discover.troubleshooter.sameWifiWarn")}
         </li>
         <li>{t("discover.troubleshooter.bothOnline")}</li>
         <li>{t("discover.troubleshooter.usePasteLink")}</li>

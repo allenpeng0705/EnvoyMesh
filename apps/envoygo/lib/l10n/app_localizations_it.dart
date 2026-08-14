@@ -312,7 +312,7 @@ class AppLocalizationsIt extends AppLocalizations {
       'Richieste di bond e aggiornamenti feed compariranno qui';
 
   @override
-  String get contentFeed => 'Feed';
+  String get contentFeed => 'Bacheca';
 
   @override
   String get contentBlog => 'Blog';
@@ -825,7 +825,7 @@ class AppLocalizationsIt extends AppLocalizations {
   String get blogHint => 'Post più lunghi pubblicati sulla mesh.';
 
   @override
-  String get feedTitle => 'Feed';
+  String get feedTitle => 'Bacheca';
 
   @override
   String get feedComposeTitle => 'Nuovo post feed';
@@ -1609,7 +1609,7 @@ class AppLocalizationsIt extends AppLocalizations {
   String get authorTypeProfile => 'Profilo';
 
   @override
-  String get authorTypePhoto => 'Foto PhotoWall';
+  String get authorTypePhoto => 'Foto muro';
 
   @override
   String get authorTypeBlog => 'Post Blog';
@@ -2116,6 +2116,41 @@ class AppLocalizationsIt extends AppLocalizations {
   String chainsStartGoalTooShort(int min) {
     return 'L\'obiettivo deve contenere almeno $min caratteri';
   }
+
+  @override
+  String get chainsStartAttachmentsLabel => 'Allegati';
+
+  @override
+  String get chainsStartAttachmentsAdd => 'Aggiungi file';
+
+  @override
+  String get chainsStartAttachmentsHint =>
+      'Suggerimento: aggiungi un\'etichetta breve per file (es. brief), poi cita [brief] nell\'obiettivo così i worker sanno quale file usare — anche con nomi lunghi o poco chiari.';
+
+  @override
+  String chainsStartAttachmentsMax(int max) {
+    return 'Puoi allegare fino a $max file';
+  }
+
+  @override
+  String chainsStartAttachmentTooLarge(String name, int maxMb) {
+    return '$name è troppo grande (max $maxMb MB)';
+  }
+
+  @override
+  String get chainsStartAttachmentUploading => 'Caricamento…';
+
+  @override
+  String get chainsStartAttachmentFailed => 'Caricamento non riuscito';
+
+  @override
+  String get chainsStartAttachmentLabel => 'Etichetta';
+
+  @override
+  String get chainsStartAttachmentLabelHint => 'es. brief, dati vendite';
+
+  @override
+  String get chainsStartAttachmentRemove => 'Rimuovi allegato';
 
   @override
   String get chainsStartPreview => 'Anteprima piano';

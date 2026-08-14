@@ -466,8 +466,9 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
   ctx: IdentityContext,
   peerId: string,
   multiaddrs: string[],
+  opts?: { force?: boolean },
 ): Promise<void> {
-  const mesh = ctx.getMesh();
+  const mesh = ctx.getMesh() ?? ctx.getExternalMesh() ?? ctx.reachableMesh();
   const profile = ctx.getProfile();
   const contactOwnerKeyStore = ctx.getContactOwnerKeyStore();
   const peerProfileCacheStore = ctx.getPeerProfileCacheStore();
@@ -480,8 +481,12 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
   }
   const lastAtMap = ctx.getNearbyProfileProbeLastAt();
   const inflight = ctx.getNearbyProfileProbeInflight();
+  if (opts?.force) {
+    lastAtMap.delete(peerId);
+    ctx.resetNonEnvoyPeerFailCount(peerId);
+  }
   const lastAt = lastAtMap.get(peerId) ?? 0;
-  if (Date.now() - lastAt < NEARBY_PROFILE_PROBE_COOLDOWN_MS) {
+  if (!opts?.force && Date.now() - lastAt < NEARBY_PROFILE_PROBE_COOLDOWN_MS) {
     return;
   }
   if (inflight.has(peerId)) {
@@ -537,10 +542,12 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
       dialHintsFor: (transportPeerId, addrs) => ctx.dialHintsForChat(transportPeerId, addrs ?? multiaddrs),
       selfPeerId: mesh.peerId,
       selfOwnerId: profile.owner.ownerId,
+      // Discover refresh should finish quickly instead of hanging on dozens of strangers.
+      timeoutMs: opts?.force ? 4_000 : undefined,
     });
     lastAtMap.set(peerId, Date.now());
     if (!enriched) {
-      emitNearbyProfileProbeFailure(ctx, peerId);
+      emitNearbyProfileProbeFailure(ctx, peerId, opts);
       return;
     }
     ctx.resetNonEnvoyPeerFailCount(peerId);
@@ -562,7 +569,7 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
     void ctx.maybeFireLanAutoBond(peerId);
   } catch (err) {
     console.warn(`[node-service] nearby profile probe failed for ${peerId}:`, err);
-    emitNearbyProfileProbeFailure(ctx, peerId);
+    emitNearbyProfileProbeFailure(ctx, peerId, opts);
   } finally {
     inflight.delete(peerId);
   }
@@ -627,13 +634,25 @@ async function resolveKnownNearbyPeer(
   };
 }
 
-/** Keep unresolved LAN peers visible until suppression; then drop them. */
-function emitNearbyProfileProbeFailure(ctx: IdentityContext, peerId: string): void {
-  ctx.markNonEnvoyPeerFailed(peerId);
-  if (ctx.isNonEnvoyPeerSuppressed(peerId)) {
-    ctx.emit("peer:lost", { nodeId: peerId });
+/** Keep unresolved LAN peers visible until suppression; then drop them.
+ * Background mDNS/DHT probes must NOT emit unreachable cards — that flooded
+ * Discover with thousands of "heard on Wi‑Fi" rows. Force refresh still emits
+ * so the Refresh button can report a count.
+ */
+function emitNearbyProfileProbeFailure(
+  ctx: IdentityContext,
+  peerId: string,
+  opts?: { force?: boolean },
+): void {
+  if (!opts?.force) {
+    ctx.markNonEnvoyPeerFailed(peerId);
+    if (ctx.isNonEnvoyPeerSuppressed(peerId)) {
+      ctx.emit("peer:lost", { nodeId: peerId });
+    }
     return;
   }
+  // Discover refresh: leave a short-lived unreachable marker for the RPC
+  // summary, then the UI snapshot keeps only resolved people.
   ctx.emit("peer:discovered", {
     nodeId: peerId,
     ownerId: "",

@@ -410,7 +410,9 @@ function applyRuntimeConfigCaches(input: {
 function logRuntimeConfigCaches(source: string): void {
   console.log(`[config] ${source}: model=${currentModelProviders.mode} assist=${currentChatAssistEnabled} killSwitch=${currentAutonomousKillSwitch} policies=${currentAutonomousPolicies.length} trustMode=${currentTrustModeEnabled} contactPrefs=${currentContactAiPrefs.size}`);
   if (currentAiSettings) {
-    console.log(`[ai] identity mode=${currentAiSettings.identity.mode}, onlineAssistant=${currentAiSettings.status.onlineAssistantEnabled}, offlineAgent=${currentAiSettings.status.offlineAgentEnabled}`);
+    console.log(
+      `[ai] identity mode=${currentAiSettings.identity?.mode ?? "transparent"}, onlineAssistant=${currentAiSettings.status?.onlineAssistantEnabled ?? false}, offlineAgent=${currentAiSettings.status?.offlineAgentEnabled ?? false}`,
+    );
   }
 }
 
@@ -649,6 +651,36 @@ try {
   console.warn(`[vault] index build failed (vault may be missing or empty):`, err);
 }
 
+/** First envoy-local boot reindex is owned by onEmbedReady (see embed runtime). */
+async function shouldDeferRagReindexForEmbed(): Promise<boolean> {
+  if (!(nodeService instanceof NodeServiceImpl)) return false;
+  const mode = currentAiSettings?.knowledgeBase?.embedding?.mode;
+  // Cloud / Ollama / mock — embed sidecar is irrelevant; reindex immediately.
+  if (mode != null && mode !== "envoy-local" && mode !== "inherit") return false;
+  // Cold start: refreshRagService runs long before maybeStartEnvoyLocalEmbedOnBoot.
+  // Always wait for onEmbedReady once so first-run DMG/EXE download + restart
+  // both get a single successful reindex.
+  if (!nodeService.embedBootRagReindexCompleted) {
+    try {
+      const st = await nodeService.getEnvoyLocalEmbedStatus();
+      // User disabled embed — don't block Knowledge refresh forever.
+      if (!st.enabled) {
+        nodeService.embedBootRagReindexCompleted = true;
+        return false;
+      }
+    } catch {
+      /* keep waiting for onEmbedReady */
+    }
+    return true;
+  }
+  try {
+    const st = await nodeService.getEnvoyLocalEmbedStatus();
+    return !st.running;
+  } catch {
+    return true;
+  }
+}
+
 async function refreshRagService(): Promise<void> {
   try {
     try {
@@ -676,12 +708,18 @@ async function refreshRagService(): Promise<void> {
       });
     }
     if (vaultIndex) {
-      void ragService
-        .reindexVault({
-          vaultIndex,
-          knowledgeBase: currentAiSettings?.knowledgeBase,
-        })
-        .catch((err) => console.warn(`[rag] deferred vault reindex failed:`, err));
+      if (await shouldDeferRagReindexForEmbed()) {
+        console.log(
+          "[rag] deferring vault reindex until Envoy Local embed sidecar is ready",
+        );
+      } else {
+        void ragService
+          .reindexVault({
+            vaultIndex,
+            knowledgeBase: currentAiSettings?.knowledgeBase,
+          })
+          .catch((err) => console.warn(`[rag] deferred vault reindex failed:`, err));
+      }
     }
   } catch (error) {
     console.warn(`[rag] service refresh failed:`, error);

@@ -75,18 +75,30 @@ export async function discoverLocalNodeWsUrl(opts?: {
 }
 
 /**
- * If the saved loopback URL is down but another known local node port is up,
- * return that URL so Social can reconnect without opening Settings.
+ * If the saved loopback URL is a dead **alt** port (4030) but the default
+ * node (3030) is up, return 3030 so Social is not stuck after a one-off
+ * `social:dev:4030` session.
+ *
+ * Never auto-heal **away** from 3030 → 4030: with two local nodes, a brief
+ * coco restart would otherwise lock Settings onto Allen's port forever.
  */
 export async function resolveDevLoopbackWsUrlHeal(
   savedWsUrl: string,
   signal?: AbortSignal,
 ): Promise<string | null> {
+  // Explicit Vite pin wins — do not rewrite Settings behind the user's back.
+  if (import.meta.env.DEV && import.meta.env.VITE_ENVOYMESH_WS_URL?.trim()) {
+    return null;
+  }
   const savedPort = parseLoopbackWsPort(savedWsUrl);
   if (savedPort == null) return null;
+  // Only recover from alt → primary. Prefer staying on the saved primary port.
+  if (savedPort === WS_PORT) return null;
   const discovered = await discoverLocalNodeWsUrl({ preferUrl: savedWsUrl, signal });
   if (!discovered?.ok || !discovered.wsUrl) return null;
   if (discovered.preferredOpen) return null;
+  const healedPort = parseLoopbackWsPort(discovered.wsUrl);
+  if (healedPort !== WS_PORT) return null;
   if (normalizeLoopbackWsUrl(discovered.wsUrl) === normalizeLoopbackWsUrl(savedWsUrl)) {
     return null;
   }

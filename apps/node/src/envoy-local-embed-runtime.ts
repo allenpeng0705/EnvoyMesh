@@ -39,7 +39,7 @@ import {
   resolveStartupTimeoutMs,
 } from "./envoy-local-manifest.js";
 import {
-  detectEnvoyLocalModelRegion,
+  resolveEnvoyLocalDownloadRegion,
   resolveEnvoyLocalModelDownloadUrls,
 } from "./envoy-local-mirrors.js";
 import { detectEnvoyLocalPlatform } from "./envoy-local-platform.js";
@@ -65,12 +65,40 @@ export interface EnvoyLocalEmbedRuntimeDeps {
    * False when Knowledge embedding provider is cloud/Ollama/mock.
    */
   shouldAutoProvisionEmbed?: () => Promise<boolean>;
+  /**
+   * Fired once when the embed sidecar first becomes ready in this process
+   * (fresh start or orphan reuse). Used to run RAG reindex after first-run
+   * download — boot refresh often races ahead of :18791.
+   */
+  onEmbedReady?: () => void | Promise<void>;
 }
 
-export type EnvoyLocalEmbedRuntimeState = EnvoyLocalRuntimeState;
+export type EnvoyLocalEmbedRuntimeState = EnvoyLocalRuntimeState & {
+  /** Prevents duplicate onEmbedReady → reindex storms in one process. */
+  embedReadyNotified?: boolean;
+};
 
 export function createEnvoyLocalEmbedRuntimeState(): EnvoyLocalEmbedRuntimeState {
   return createEnvoyLocalRuntimeState();
+}
+
+async function notifyEmbedReady(
+  state: EnvoyLocalEmbedRuntimeState,
+  deps: EnvoyLocalEmbedRuntimeDeps,
+): Promise<void> {
+  if (state.embedReadyNotified) return;
+  state.embedReadyNotified = true;
+  if (!deps.onEmbedReady) return;
+  try {
+    await deps.onEmbedReady();
+  } catch (err) {
+    // Allow a later retry (e.g. reindex after vault finishes building).
+    state.embedReadyNotified = false;
+    console.warn(
+      "[envoy-local-embed] onEmbedReady failed:",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
 }
 
 function rootDir(profileDir: string): string {
@@ -135,6 +163,7 @@ async function saveEmbedIndex(profileDir: string, index: EmbedModelsIndex): Prom
 
 async function downloadEmbedModel(
   state: EnvoyLocalEmbedRuntimeState,
+  deps: EnvoyLocalEmbedRuntimeDeps,
   profileDir: string,
   catalog: EnvoyLocalCatalogModel,
   signal: AbortSignal,
@@ -153,7 +182,10 @@ async function downloadEmbedModel(
       rootDir(profileDir),
       Math.max(ENVOY_LOCAL_MIN_FREE_BYTES, catalog.approxBytes + 50_000_000),
     );
-    const region = detectEnvoyLocalModelRegion();
+    const preference = deps.loadDownloadRegionPreference
+      ? await deps.loadDownloadRegionPreference()
+      : undefined;
+    const region = resolveEnvoyLocalDownloadRegion({ preference });
     const candidates = resolveEnvoyLocalModelDownloadUrls(catalog, region);
     let lastErr: unknown;
     for (const url of candidates) {
@@ -339,6 +371,7 @@ async function startEmbedSidecar(
     state.download = null;
     state.lastError = null;
     armEmbedWatchdog(state, deps);
+    await notifyEmbedReady(state, deps);
     return;
   }
 
@@ -375,6 +408,7 @@ async function startEmbedSidecar(
       state.download = null;
       state.lastError = null;
       armEmbedWatchdog(state, deps);
+      await notifyEmbedReady(state, deps);
       return;
     }
     if (!state.child) {
@@ -477,22 +511,28 @@ export async function enableEnvoyLocalEmbedViaRuntime(
 
       await deps.saveEnvoyLocalEmbedConfig({ enabled: true });
 
+      const preference = deps.loadDownloadRegionPreference
+        ? await deps.loadDownloadRegionPreference()
+        : undefined;
+      const region = resolveEnvoyLocalDownloadRegion({ preference });
+
       await ensureEnvoyLocalSharedRuntimeBinary(
         state,
         profileDir,
         platform,
         abort.signal,
+        { region },
       );
 
       const catalog =
         getEnvoyLocalEmbedCatalogModel(params?.modelId) ?? DEFAULT_ENVOY_LOCAL_EMBED_MODEL;
       if (params?.skipModelDownload !== true) {
-        await downloadEmbedModel(state, profileDir, catalog, abort.signal);
+        await downloadEmbedModel(state, deps, profileDir, catalog, abort.signal);
       } else {
         const index = await loadEmbedIndex(profileDir);
         const existing = index.models.find((m) => m.id === catalog.id);
         if (!existing || !(await fileExists(existing.path))) {
-          await downloadEmbedModel(state, profileDir, catalog, abort.signal);
+          await downloadEmbedModel(state, deps, profileDir, catalog, abort.signal);
         }
       }
 
@@ -536,6 +576,7 @@ export async function stopEnvoyLocalEmbedViaRuntime(
   state.abort?.abort();
   await stopChild(state);
   state.phase = "idle";
+  state.embedReadyNotified = false;
   state.download = null;
   return getEnvoyLocalEmbedStatusViaRuntime(state, deps);
 }
@@ -572,10 +613,14 @@ export async function maybeStartEnvoyLocalEmbedOnBootViaRuntime(
   // Honor explicit disable (Setup → stop embed / disable). Default enabled is true.
   if (!cfg.enabled) return;
 
-  // Already healthy — nothing to download.
+  // Already healthy — still notify once so boot RAG reindex (which often raced
+  // ahead of :18791) can run after embed is confirmed.
   try {
     const st = await getEnvoyLocalEmbedStatusViaRuntime(state, deps);
-    if (st.running) return;
+    if (st.running) {
+      await notifyEmbedReady(state, deps);
+      return;
+    }
   } catch {
     /* continue to provision */
   }

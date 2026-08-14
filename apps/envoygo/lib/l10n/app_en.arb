@@ -934,6 +934,33 @@
       }
     }
   },
+  "chainsStartAttachmentsLabel": "Attachments",
+  "chainsStartAttachmentsAdd": "Add files",
+  "chainsStartAttachmentsHint": "Tip: add a short label per file (e.g. brief), then mention [brief] in your goal so workers know which file to use — even when the filename is long or unclear.",
+  "chainsStartAttachmentsMax": "You can attach up to {max} files",
+  "@chainsStartAttachmentsMax": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "chainsStartAttachmentTooLarge": "{name} is too large (max {maxMb} MB)",
+  "@chainsStartAttachmentTooLarge": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "maxMb": {
+        "type": "int"
+      }
+    }
+  },
+  "chainsStartAttachmentUploading": "Uploading…",
+  "chainsStartAttachmentFailed": "Upload failed",
+  "chainsStartAttachmentLabel": "Label",
+  "chainsStartAttachmentLabelHint": "e.g. brief, sales data",
+  "chainsStartAttachmentRemove": "Remove attachment",
   "chainsStartPreview": "Preview plan",
   "chainsStartPreviewing": "Planning…",
   "chainsStartPreviewFailed": "Could not build a plan",

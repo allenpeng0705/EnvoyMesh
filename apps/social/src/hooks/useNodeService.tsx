@@ -276,6 +276,8 @@ export interface NodeServiceClient {
 
   // Search
   searchPeers(query: SearchQuery): Promise<PeerSearchResult[]>;
+  getNearbyDiscoveredPeers(): Promise<PeerSearchResult[]>;
+  refreshNearbyDiscovery(): Promise<{ peered: number; resolved: number; unreachable: number }>;
   advertiseTopic(topic: string): Promise<void>;
   stopAdvertiseTopic(topic: string): Promise<void>;
 
@@ -1137,6 +1139,16 @@ function createWsNodeServiceClient(
     },
     async deleteChatDraft(draftId: string) { return wsClient.rpc("deleteChatDraft", { draftId }); },
     async searchPeers(query: SearchQuery) { return wsClient.rpc("searchPeers", query as unknown as Record<string, unknown>); },
+    async getNearbyDiscoveredPeers() {
+      return wsClient.rpc("getNearbyDiscoveredPeers", {}) as Promise<import("@envoymesh/api").PeerSearchResult[]>;
+    },
+    async refreshNearbyDiscovery() {
+      return wsClient.rpc("refreshNearbyDiscovery", {}) as Promise<{
+        peered: number;
+        resolved: number;
+        unreachable: number;
+      }>;
+    },
     async runCapabilityDiscovery(params?: { find?: boolean }) {
       return wsClient.rpc("runCapabilityDiscovery", params ?? {});
     },

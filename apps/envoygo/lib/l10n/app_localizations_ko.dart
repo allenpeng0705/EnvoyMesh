@@ -1461,7 +1461,7 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get publishedPhotoWall => 'PhotoWall';
+  String get publishedPhotoWall => '포토월';
 
   @override
   String get engagementCommentHint => '댓글 작성…';
@@ -1545,7 +1545,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get authorTypeProfile => '프로필';
 
   @override
-  String get authorTypePhoto => 'PhotoWall 사진';
+  String get authorTypePhoto => '포토월 사진';
 
   @override
   String get authorTypeBlog => '블로그 게시물';
@@ -1647,7 +1647,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsModelLabel => 'Model:';
 
   @override
-  String get settingsEditOnSocial => '고급 옵션은 홈 노드 Social UI에서 이 제공자를 편집하세요.';
+  String get settingsEditOnSocial => '고급 옵션은 홈 노드 소셜 화면에서 이 제공자를 편집하세요.';
 
   @override
   String get settingsProvider => 'Provider';
@@ -1963,10 +1963,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get chainsEmptyHint =>
-      '홈 노드에서 실행한 팀 작업이 여기에 표시됩니다.\n홈 노드 Social UI에서 팀 작업을 만드세요.';
+      '홈 노드에서 실행한 팀 작업이 여기에 표시됩니다.\n홈 노드 소셜 화면에서 팀 작업을 만드세요.';
 
   @override
-  String get chainsNoActive => '홈 노드에 활성 체인이 없습니다.\nSocial UI에서 시작하세요.';
+  String get chainsNoActive => '홈 노드에 활성 체인이 없습니다.\n소셜 화면에서 시작하세요.';
 
   @override
   String get chainsReportGone => '이 보고서를 더 이상 사용할 수 없습니다';
@@ -1996,7 +1996,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get chainsDuration => '소요 시간';
 
   @override
-  String get chainsManageOnSocial => '홈 노드 Social UI에서 체인을 관리하세요.';
+  String get chainsManageOnSocial => '홈 노드 소셜 화면에서 체인을 관리하세요.';
 
   @override
   String get chainsStartTitle => '팀 작업 시작';
@@ -2033,6 +2033,41 @@ class AppLocalizationsKo extends AppLocalizations {
   String chainsStartGoalTooShort(int min) {
     return '목표는 최소 $min자 이상이어야 합니다';
   }
+
+  @override
+  String get chainsStartAttachmentsLabel => '첨부 파일';
+
+  @override
+  String get chainsStartAttachmentsAdd => '파일 추가';
+
+  @override
+  String get chainsStartAttachmentsHint =>
+      '팁: 파일마다 짧은 라벨(예: brief)을 달고 목표에 [brief]를 쓰면, 파일명이 길거나 애매해도 어떤 파일을 쓸지 알 수 있습니다.';
+
+  @override
+  String chainsStartAttachmentsMax(int max) {
+    return '최대 $max개까지 첨부할 수 있습니다';
+  }
+
+  @override
+  String chainsStartAttachmentTooLarge(String name, int maxMb) {
+    return '$name이(가) 너무 큽니다(최대 $maxMb MB)';
+  }
+
+  @override
+  String get chainsStartAttachmentUploading => '업로드 중…';
+
+  @override
+  String get chainsStartAttachmentFailed => '업로드 실패';
+
+  @override
+  String get chainsStartAttachmentLabel => '라벨';
+
+  @override
+  String get chainsStartAttachmentLabelHint => '예: brief, 매출 데이터';
+
+  @override
+  String get chainsStartAttachmentRemove => '첨부 제거';
 
   @override
   String get chainsStartPreview => '계획 미리보기';
@@ -2177,7 +2212,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String chainsChainId(String id) {
-    return 'Chain $id';
+    return '체인 $id';
   }
 
   @override
@@ -2599,5 +2634,5 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsEnvoyLocalPhoneNote =>
-      '고급 서버 매개변수(컨텍스트 크기, GPU 레이어)는 홈 노드 Social UI에 남아 있습니다.';
+      '고급 서버 매개변수(컨텍스트 크기, GPU 레이어)는 홈 노드 소셜 화면에 남아 있습니다.';
 }

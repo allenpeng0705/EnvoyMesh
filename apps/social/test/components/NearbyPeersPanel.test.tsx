@@ -13,16 +13,20 @@ vi.mock("../../src/context/I18nContext.js", () => ({
       "discover.nearby.empty": "No one nearby yet.",
       "discover.nearby.someoneNearby": "Someone nearby",
       "discover.nearby.subtitle": "Nearby on your network",
-      "discover.nearby.identifying": "Heard someone on this Wi‑Fi — identifying…",
-      "discover.nearby.identifyingMore": `Still identifying ${params?.count ?? "?"}…`,
-      "discover.nearby.heardUnreachable": `Heard ${params?.count ?? "?"} device(s) — couldn't identify`,
-      "discover.nearby.someUnreachable": `${params?.count ?? "?"} unreachable`,
+      "discover.nearby.refresh": "Refresh",
+      "discover.nearby.refreshing": "Scanning…",
       "common.sayHello": "Say hello",
       "common.connected": "Connected",
       "common.helloSentWaiting": "Hello sent",
     };
     return map[key] ?? key;
   },
+}));
+
+vi.mock("../../src/context/NodeStateContext.js", () => ({
+  useNodeState: () => ({
+    refreshDiscoveredPeers: vi.fn(async () => ({ peered: 0, resolved: 0, unreachable: 0 })),
+  }),
 }));
 
 vi.mock("../../src/components/PeerProfileAvatar.js", () => ({
@@ -44,7 +48,7 @@ function peer(partial: Partial<PeerSearchResult> & Pick<PeerSearchResult, "nodeI
 describe("NearbyPeersPanel", () => {
   afterEach(() => cleanup());
 
-  it("does not list nameless pending peers as cards — only a status note", () => {
+  it("does not list nameless pending peers as cards", () => {
     render(
       <NearbyPeersPanel
         discoveredPeers={[
@@ -58,7 +62,7 @@ describe("NearbyPeersPanel", () => {
       />,
     );
     expect(screen.queryByTestId("nearby-peers-list")).toBeNull();
-    expect(screen.getByTestId("nearby-status-note").textContent).toMatch(/identifying/i);
+    expect(screen.getByText("No one nearby yet.")).toBeTruthy();
   });
 
   it("shows bonded contact by name instead of stuck identifying when mDNS peer matches bond", () => {
@@ -82,11 +86,10 @@ describe("NearbyPeersPanel", () => {
     );
     expect(screen.getByTestId("nearby-peers-list").textContent).toContain("Alice");
     expect(screen.getByText("Connected")).toBeTruthy();
-    expect(screen.queryByTestId("nearby-status-note")).toBeNull();
     expect(screen.getByTestId("discover-open-profile")).toBeTruthy();
   });
 
-  it("folds unreachable probes into one diagnostic, not N empty cards", () => {
+  it("ignores unreachable noise in the empty state", () => {
     render(
       <NearbyPeersPanel
         discoveredPeers={[
@@ -100,7 +103,8 @@ describe("NearbyPeersPanel", () => {
       />,
     );
     expect(screen.queryByTestId("nearby-peers-list")).toBeNull();
-    expect(screen.getByTestId("nearby-status-note").textContent).toContain("Heard 2");
+    expect(screen.queryByTestId("nearby-status-note")).toBeNull();
+    expect(screen.getByText("No one nearby yet.")).toBeTruthy();
   });
 
   it("lists only identifiable people with Say hello", () => {
@@ -126,6 +130,6 @@ describe("NearbyPeersPanel", () => {
     expect(list.textContent).toContain("Alice");
     expect(list.textContent).not.toContain("Someone nearby");
     expect(screen.getByRole("button", { name: "Say hello" })).toBeTruthy();
-    expect(screen.getByTestId("nearby-status-note").textContent).toContain("1 unreachable");
+    expect(screen.queryByTestId("nearby-status-note")).toBeNull();
   });
 });

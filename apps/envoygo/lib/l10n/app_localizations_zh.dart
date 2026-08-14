@@ -1450,7 +1450,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get publishedPhotoWall => 'PhotoWall';
+  String get publishedPhotoWall => '照片墙';
 
   @override
   String get engagementCommentHint => '写评论…';
@@ -1534,7 +1534,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get authorTypeProfile => '资料';
 
   @override
-  String get authorTypePhoto => 'PhotoWall 照片';
+  String get authorTypePhoto => '照片墙照片';
 
   @override
   String get authorTypeBlog => '博文';
@@ -1635,7 +1635,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsModelLabel => 'Model:';
 
   @override
-  String get settingsEditOnSocial => '在家庭节点 Social UI 中编辑此提供方以进行高级设置。';
+  String get settingsEditOnSocial => '请在家庭节点的社交界面中编辑此提供方以进行高级设置。';
 
   @override
   String get settingsProvider => 'Provider';
@@ -1947,8 +1947,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chainsNoReports => '还没有报告';
 
   @override
-  String get chainsEmptyHint =>
-      '在家庭节点上运行的团队任务会显示在这里。\n可从本手机或家庭节点 Social UI 启动。';
+  String get chainsEmptyHint => '在家庭节点上运行的团队任务会显示在这里。\n可从本手机或家庭节点的社交界面启动。';
 
   @override
   String get chainsNoActive => '家庭节点上没有进行中的团队任务。\n请用下方按钮启动一个。';
@@ -1981,7 +1980,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chainsDuration => '耗时';
 
   @override
-  String get chainsManageOnSocial => '高级协作控制（取消、再平衡、置顶）请在家庭节点 Social UI 中操作。';
+  String get chainsManageOnSocial => '高级协作控制（取消、再平衡、置顶）请在家庭节点的社交界面中操作。';
 
   @override
   String get chainsStartTitle => '启动团队任务';
@@ -2017,6 +2016,41 @@ class AppLocalizationsZh extends AppLocalizations {
   String chainsStartGoalTooShort(int min) {
     return '目标至少需要 $min 个字符';
   }
+
+  @override
+  String get chainsStartAttachmentsLabel => '附件';
+
+  @override
+  String get chainsStartAttachmentsAdd => '添加文件';
+
+  @override
+  String get chainsStartAttachmentsHint =>
+      '提示：为每个文件加短标签（如 brief），并在目标里写 [brief]，方便工作节点识别要用哪个文件——即使文件名很长或看不懂。';
+
+  @override
+  String chainsStartAttachmentsMax(int max) {
+    return '最多可添加 $max 个附件';
+  }
+
+  @override
+  String chainsStartAttachmentTooLarge(String name, int maxMb) {
+    return '$name 过大（上限 $maxMb MB）';
+  }
+
+  @override
+  String get chainsStartAttachmentUploading => '上传中…';
+
+  @override
+  String get chainsStartAttachmentFailed => '上传失败';
+
+  @override
+  String get chainsStartAttachmentLabel => '标签';
+
+  @override
+  String get chainsStartAttachmentLabelHint => '例如：brief、销售数据';
+
+  @override
+  String get chainsStartAttachmentRemove => '移除附件';
 
   @override
   String get chainsStartPreview => '预览计划';
@@ -2159,7 +2193,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String chainsChainId(String id) {
-    return 'Chain $id';
+    return '链 $id';
   }
 
   @override
@@ -2579,5 +2613,5 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsEnvoyLocalPhoneNote =>
-      '高级服务参数（上下文大小、GPU 层数等）请在家庭节点 Social 界面中调整。';
+      '高级服务参数（上下文大小、GPU 层数等）请在家庭节点的社交界面中调整。';
 }

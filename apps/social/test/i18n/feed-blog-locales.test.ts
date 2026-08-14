@@ -21,12 +21,17 @@ describe("Feed/Blog locale coverage", () => {
   });
 
   it("does not leave de/fr/it/ja/ko Feed tabs on English defaults", () => {
-    expect(de.content.tabFeed).toBe("Feed");
+    expect(de.content.tabFeed).toBe("Neuigkeiten");
     expect(fr.content.tabFeed).toBe("Fil");
-    expect(itMessages.content.tabFeed).toBe("Feed");
+    expect(itMessages.content.tabFeed).toBe("Bacheca");
     expect(ja.content.tabFeed).toBe("フィード");
     expect(ko.content.tabFeed).toBe("피드");
     expect(zh.content.tabFeed).toBe("朋友圈");
+
+    expect(de.nav.social).toBe("Sozial");
+    expect(de.social.tabs).toBe("Sozial");
+    expect(de.feed.title).toBe("Neuigkeiten");
+    expect(itMessages.feed.title).toBe("Bacheca");
 
     expect(de.feed.lede).not.toBe(en.feed.lede);
     expect(fr.feed.lede).not.toBe(en.feed.lede);

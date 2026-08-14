@@ -343,7 +343,7 @@ export function App() {
     contentEngage.totalCount -
     (viewingSocialFeed ? contentEngage.feedCount : 0) -
     (viewingSocialBlog ? contentEngage.blogCount : 0);
-  // While on Feed, hide peer-post notify badges too (don't auto-mark them read).
+  // While on Feed, hide peer-post notify badges (SocialView dismisses them).
   const visibleFeedNotifyCount = viewingSocialFeed ? 0 : feedNotify.unread.length;
   const contentBadgeCount = visibleEngageCount + visibleFeedNotifyCount;
   // Engage count only for auto-dismiss while viewing (must not include feed.notify).
@@ -406,8 +406,9 @@ export function App() {
         lastError?.includes("WebSocket connection closed") ||
         false));
 
-  // Vite DEV: if localStorage still points at a dead alt port (e.g. 4030) but
-  // `npm run node:dev` is on 3030, auto-switch so the splash is not bricked.
+  // Vite DEV: if localStorage still points at a dead alt port (4030) but
+  // the default node is on 3030, auto-switch so the splash is not bricked.
+  // Never heal 3030 → 4030 (two-node local setups would steal coco → Allen).
   useEffect(() => {
     if (!import.meta.env.DEV || isConnected || !isLocalWs || tauriShell) return;
     let cancelled = false;

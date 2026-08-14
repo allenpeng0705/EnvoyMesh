@@ -2094,6 +2094,41 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get chainsStartAttachmentsLabel => 'Attachments';
+
+  @override
+  String get chainsStartAttachmentsAdd => 'Add files';
+
+  @override
+  String get chainsStartAttachmentsHint =>
+      'Tip: add a short label per file (e.g. brief), then mention [brief] in your goal so workers know which file to use — even when the filename is long or unclear.';
+
+  @override
+  String chainsStartAttachmentsMax(int max) {
+    return 'You can attach up to $max files';
+  }
+
+  @override
+  String chainsStartAttachmentTooLarge(String name, int maxMb) {
+    return '$name is too large (max $maxMb MB)';
+  }
+
+  @override
+  String get chainsStartAttachmentUploading => 'Uploading…';
+
+  @override
+  String get chainsStartAttachmentFailed => 'Upload failed';
+
+  @override
+  String get chainsStartAttachmentLabel => 'Label';
+
+  @override
+  String get chainsStartAttachmentLabelHint => 'e.g. brief, sales data';
+
+  @override
+  String get chainsStartAttachmentRemove => 'Remove attachment';
+
+  @override
   String get chainsStartPreview => 'Preview plan';
 
   @override

@@ -23,10 +23,24 @@
 .chat-view {
   display: grid;
   grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
-  grid-template-rows: auto 1fr;
+  /* Default: one body row that fills the viewport. Tabs moved out of ChatView
+     into SocialView; when OpenClawOfflineBanner is absent the sole child must
+     not land in a leftover `auto` row (content-height collapse with 0–1 contacts). */
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
   min-height: 0;
+  flex: 1;
   background: var(--color-bg);
+}
+
+.chat-view:has(> .openclaw-offline-banner),
+.chat-view:has(> .chat-view-primary-tabs) {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.chat-view > .openclaw-offline-banner,
+.chat-view > .chat-view-primary-tabs {
+  grid-column: 1 / -1;
 }
 
 .chat-view-primary-tabs {
@@ -85,10 +99,17 @@
 
 .chat-view-threads-shell {
   grid-column: 1 / -1;
+  grid-row: 1 / -1;
   display: grid;
   grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   min-height: 0;
+  height: 100%;
+}
+
+.chat-view:has(> .openclaw-offline-banner) .chat-view-threads-shell,
+.chat-view:has(> .chat-view-primary-tabs) .chat-view-threads-shell {
+  grid-row: 2 / -1;
 }
 
 .chat-view-inbox-panel {
@@ -3479,7 +3500,12 @@
 @media (max-width: 768px) {
   .chat-view {
     grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .chat-view:has(> .openclaw-offline-banner),
+  .chat-view:has(> .chat-view-primary-tabs) {
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .chat-view-threads-shell {

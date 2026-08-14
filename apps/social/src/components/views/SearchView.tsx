@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { useToastOptional } from "../../hooks/useToast.js";
-import { SUGGESTED_TOPICS, nearbyPeerLabel } from "../../lib/display.js";
+import { SUGGESTED_TOPICS } from "../../lib/display.js";
 import {
   FriendSuggestionsPanel,
   MultiHopResultCard,
@@ -78,6 +78,8 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
     value: string | undefined;
   }>({ state: "pending", value: undefined });
 
+  // Opening Discover no longer auto-scans — user taps Refresh on People nearby.
+
   useEffect(() => {
     if (proofOfContextRef.current.state !== "pending") return;
     let cancelled = false;
@@ -112,7 +114,6 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
   const [pasteResults, setPasteResults] = useState<PeerSearchResult[]>([]);
   const [networkSearching, setNetworkSearching] = useState(false);
   const [pasteSearching, setPasteSearching] = useState(false);
-  const [discoveryVisibleCount, setDiscoveryVisibleCount] = useState(20);
   const [morningReport, setMorningReport] = useState<MorningReportEntry[] | null>(null);
   const [morningReportLoading, setMorningReportLoading] = useState(false);
 
@@ -563,13 +564,6 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
     const setQuery = isPaste ? setPasteQuery : setNetworkQuery;
     const searchResults = isPaste ? pasteResults : networkResults;
     const isSearching = isPaste ? pasteSearching : networkSearching;
-    // Only show peers with real profiles (non-empty ownerId, not "Someone
-    // nearby") — placeholders are useless since "Say hello" can't work.
-    const realPeers = discoveredPeers.filter((p) => {
-      if (!p.ownerId) return false;
-      const label = nearbyPeerLabel(t, p.displayName, p.nodeId);
-      return label !== t("display.nearbyPeerFallback", "Someone nearby");
-    });
     return (
       <section className="discover-panel discover-lookup-panel">
         {isPaste ? (
@@ -850,52 +844,6 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
               </p>
             )}
           </>
-        ) : realPeers.length > 0 ? (
-          <div className="search-empty search-empty--browse">
-            <p className="search-empty__heading">
-              {t("discover.search.browsePeersHeading", "People you can reach")}
-            </p>
-            <p className="search-empty__hint">
-              {t(
-                "discover.search.browsePeersHint",
-                "Searched the mesh for matching topics — here are the peers we found on the network. You can say hello to start a conversation.",
-              )}
-            </p>
-            <ul className="search-results peer-results-list">
-              {realPeers.slice(0, discoveryVisibleCount).map((peer) => {
-                const helloState = resolvePeerHelloState(peer.ownerId, peer.nodeId, bonds, outboundHellos);
-                const fakeResult = {
-                  nodeId: peer.nodeId,
-                  ownerId: peer.ownerId,
-                  displayName: nearbyPeerLabel(t, peer.displayName, peer.nodeId),
-                  username: undefined,
-                  bio: undefined,
-                  interests: peer.interests ?? [],
-                  profileVisibility: peer.profileVisibility ?? ("public" as const),
-                  trustLevel: helloState === "connected" ? ("direct" as const) : undefined,
-                  signedRecordValid: true,
-                };
-                return (
-                  <PeerResultCard
-                    key={peer.nodeId}
-                    result={fakeResult}
-                    index={0}
-                    helloState={helloState}
-                    onSayHello={handleSayHello}
-                  />
-                );
-              })}
-            </ul>
-            {realPeers.length > discoveryVisibleCount && (
-              <button
-                type="button"
-                className="search-empty__show-more"
-                onClick={() => setDiscoveryVisibleCount((c) => c + 20)}
-              >
-                {t("discover.search.showMore", { remaining: realPeers.length - discoveryVisibleCount })}
-              </button>
-            )}
-          </div>
         ) : query.trim() && !isSearching && !(isPaste && codeInviteHint) ? (
           <div className="search-empty">
             <p>{t("discover.search.noResults", { query })}</p>

@@ -164,6 +164,8 @@ export type RpcMethods =
   | "deleteChatDraft"
   // Search
   | "searchPeers"
+  | "getNearbyDiscoveredPeers"
+  | "refreshNearbyDiscovery"
   | "advertiseTopic"
   | "stopAdvertiseTopic"
   // Capability Manifest

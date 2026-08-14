@@ -24,8 +24,19 @@ export interface WorkerCandidate {
 /** Stable default — a fresh `[]` each render retriggers candidate memos/effects. */
 const EMPTY_WORKER_CANDIDATES: WorkerCandidate[] = [];
 
+export interface ChainStartAttachment {
+  fileName: string;
+  relativePath: string;
+  label?: string;
+}
+
 export interface ChainStartDialogProps {
+  /** Effective goal sent to chainPreviewGoal / chainStartFromGoal (may include Attachments:). */
   goal: string;
+  /** User-authored goal only; when set, shown instead of the effective goal string. */
+  displayGoal?: string;
+  /** Read-only files imported for this launch (shown below the goal). */
+  attachments?: ChainStartAttachment[];
   onClose: () => void;
   onStarted?: (chainId: string) => void;
   /** Optional — send the user to Discover when no workers are available. */
@@ -41,6 +52,8 @@ export interface ChainStartDialogProps {
 
 export function ChainStartDialog({
   goal,
+  displayGoal,
+  attachments = [],
   onClose,
   onStarted,
   onOpenDiscover,
@@ -333,7 +346,25 @@ export function ChainStartDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <h3 id="chain-start-title">{t("chains.start.title")}</h3>
-        <p className="chain-start-goal">{goal}</p>
+        <p className={`chain-start-goal${displayGoal ? " chain-start-goal--user" : ""}`}>
+          {displayGoal ?? goal}
+        </p>
+        {attachments.length > 0 ? (
+          <div className="chain-start-attachments" data-testid="chain-start-attachments">
+            <p className="chain-start-attachments__title">{t("chains.start.attachmentsLabel")}</p>
+            <ul className="chain-start-attachments__list">
+              {attachments.map((att) => (
+                <li key={att.relativePath} className="chain-start-attachments__item">
+                  {att.label?.trim() ? (
+                    <span className="chain-start-attachments__label">[{att.label.trim()}]</span>
+                  ) : null}{" "}
+                  <span>{att.fileName}</span>
+                  <span className="chain-start-attachments__path">{att.relativePath}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
         {loading ? (
           <p>{t("chains.loading")}</p>

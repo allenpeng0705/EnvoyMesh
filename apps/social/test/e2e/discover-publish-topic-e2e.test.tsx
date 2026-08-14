@@ -57,6 +57,7 @@ vi.mock("../../src/context/NodeStateContext.js", () => ({
     refreshNodeConfig: vi.fn(),
     sendHello: vi.fn(),
     discoveredPeers: [],
+    refreshDiscoveredPeers: vi.fn(async () => ({ peered: 0, resolved: 0, unreachable: 0 })),
     pendingHellOs: [],
     acceptHello: vi.fn(),
     declineHello: vi.fn(),

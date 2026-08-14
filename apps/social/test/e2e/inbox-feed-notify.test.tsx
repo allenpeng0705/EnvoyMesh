@@ -1,6 +1,6 @@
 /**
  * @vitest-environment jsdom
- * Light UI test: Inbox shows feed.notify rows and Open in Browser.
+ * Inbox shows feed.notify rows and Open in Browser (also Social → Feed badges).
  */
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -58,10 +58,15 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
   useShareOffers: () => ({ offers: [] }),
   useAgentShareProposals: () => ({ proposals: [], dismiss: vi.fn() }),
   usePendingApprovals: () => ({ items: [], approve: vi.fn(), reject: vi.fn() }),
-  useFeedNotifications: () => ({ items: feedItems, dismiss: dismissFeed }),
+  useFeedNotifications: () => ({
+    items: feedItems,
+    unread: feedItems,
+    dismiss: dismissFeed,
+    dismissAll: vi.fn(async () => undefined),
+  }),
 }));
 
-describe("Inbox feed.notify (Phase 45E)", () => {
+describe("Inbox feed.notify", () => {
   beforeEach(() => {
     feedItems = [sampleNotify];
     openBrowserAt.mockClear();

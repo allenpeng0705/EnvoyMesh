@@ -1,15 +1,39 @@
 // Start a team job on the home node (preview → launch).
 //
 // Mirrors Social's one-click flow with a phone-sized surface: goal,
-// skill/role assignment mode, plan preview, light worker picker, then start.
-// Advanced fleet / iteration setup stays on Social.
+// optional vault attachments, skill/role assignment mode, plan preview,
+// light worker picker, then start. Advanced fleet / iteration setup stays
+// on Social.
 
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../chain_goal_attachments.dart';
+import '../../ext_agent/agent_attachments.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/node_provider.dart';
 import '../../services/node_service_client.dart';
+
+class _ComposerAttachment {
+  _ComposerAttachment({
+    required this.id,
+    required this.fileName,
+  }) : labelCtl = TextEditingController();
+
+  final String id;
+  final String fileName;
+  String? relativePath;
+  final TextEditingController labelCtl;
+  bool uploading = true;
+  String? error;
+
+  String? get label => sanitizeAttachmentLabel(labelCtl.text);
+
+  void dispose() => labelCtl.dispose();
+}
 
 class StartChainScreen extends ConsumerStatefulWidget {
   const StartChainScreen({super.key});
@@ -32,6 +56,9 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
   /// Selected agent peer ids for start (auto-seeded from suggested workers).
   final Set<String> _selectedWorkerPeerIds = {};
   bool _workerSelectionTouched = false;
+  final List<_ComposerAttachment> _attachments = [];
+  final String _composerBatchId =
+      'tj_${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
 
   static const _minGoalLen = 8;
 
@@ -44,6 +71,9 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
   @override
   void dispose() {
     _goalCtl.dispose();
+    for (final a in _attachments) {
+      a.dispose();
+    }
     super.dispose();
   }
 
@@ -136,6 +166,34 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
 
   bool get _previewOk => _preview?['ok'] == true && _subtasks.isNotEmpty;
 
+  bool get _attachmentsUploading => _attachments.any((a) => a.uploading);
+
+  List<ChainGoalAttachment> get _readyAttachments => _attachments
+      .where(
+        (a) =>
+            a.relativePath != null &&
+            a.relativePath!.isNotEmpty &&
+            !a.uploading &&
+            a.error == null,
+      )
+      .map(
+        (a) => ChainGoalAttachment(
+          relativePath: a.relativePath!,
+          fileName: a.fileName,
+          label: a.label,
+        ),
+      )
+      .toList(growable: false);
+
+  String get _effectiveGoal =>
+      buildChainGoalWithAttachments(_goalCtl.text.trim(), _readyAttachments);
+
+  void _clearPreview() {
+    _preview = null;
+    _selectedWorkerPeerIds.clear();
+    _workerSelectionTouched = false;
+  }
+
   void _seedWorkersFromPreview(Map<String, dynamic> result) {
     if (_workerSelectionTouched) return;
     final suggestedOnline = <String>{};
@@ -160,6 +218,129 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
       ..addAll(ids);
   }
 
+  Future<void> _pickAttachments() async {
+    final l10n = AppLocalizations.of(context);
+    final room = chainComposerMaxAttachments - _attachments.length;
+    if (room <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.chainsStartAttachmentsMax(chainComposerMaxAttachments)),
+        ),
+      );
+      return;
+    }
+    final picked = await FilePicker.platform.pickFiles(
+      withData: true,
+      allowMultiple: true,
+      type: FileType.any,
+    );
+    if (picked == null || picked.files.isEmpty) return;
+
+    final toUpload = <({String id, PlatformFile file})>[];
+    final accepted = <_ComposerAttachment>[];
+    for (final file in picked.files) {
+      if (accepted.length >= room) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                l10n.chainsStartAttachmentsMax(chainComposerMaxAttachments),
+              ),
+            ),
+          );
+        }
+        break;
+      }
+      final size = file.size;
+      final bytes = file.bytes;
+      if (size > chainComposerMaxFileBytes ||
+          (bytes != null && bytes.length > chainComposerMaxFileBytes)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                l10n.chainsStartAttachmentTooLarge(
+                  file.name,
+                  chainComposerMaxFileBytes ~/ (1024 * 1024),
+                ),
+              ),
+            ),
+          );
+        }
+        continue;
+      }
+      if (bytes == null || bytes.isEmpty) continue;
+      final id =
+          'att_${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}_${accepted.length}';
+      accepted.add(_ComposerAttachment(id: id, fileName: file.name));
+      toUpload.add((id: id, file: file));
+    }
+    if (accepted.isEmpty) return;
+    setState(() {
+      _attachments.addAll(accepted);
+      _clearPreview();
+    });
+    for (final item in toUpload) {
+      await _uploadAttachment(item.id, item.file);
+    }
+  }
+
+  Future<void> _uploadAttachment(String id, PlatformFile file) async {
+    final client = _clientOrNull();
+    final bytes = file.bytes;
+    if (client == null || bytes == null || bytes.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        for (final a in _attachments) {
+          if (a.id == id) {
+            a.uploading = false;
+            a.error = 'empty';
+          }
+        }
+      });
+      return;
+    }
+    try {
+      final safeName = sanitizeTeamJobFileName(
+        file.name.isNotEmpty
+            ? file.name
+            : 'file-${DateTime.now().millisecondsSinceEpoch}',
+      );
+      final relativePath = 'imports/team-jobs/$_composerBatchId/$safeName';
+      final result = await client.importToLibrary(
+        relativePath: relativePath,
+        contentBase64: base64Encode(bytes),
+        mimeType: guessMimeFromName(safeName),
+      );
+      final path = (result['relativePath'] as String?)?.trim();
+      if (!mounted) return;
+      setState(() {
+        for (final a in _attachments) {
+          if (a.id == id) {
+            a.uploading = false;
+            a.relativePath =
+                (path != null && path.isNotEmpty) ? path : relativePath;
+            a.error = null;
+          }
+        }
+        _clearPreview();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        for (final a in _attachments) {
+          if (a.id == id) {
+            a.uploading = false;
+            a.error = e.toString();
+          }
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
+  }
+
   Future<void> _previewPlan() async {
     final l10n = AppLocalizations.of(context);
     final goal = _goalCtl.text.trim();
@@ -167,6 +348,7 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
       setState(() => _error = l10n.chainsStartGoalTooShort(_minGoalLen));
       return;
     }
+    if (_attachmentsUploading) return;
     final client = _clientOrNull();
     if (client == null) {
       setState(() => _error = l10n.commonNotConnectedHome);
@@ -179,7 +361,7 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
     });
     try {
       final result = await client.chainPreviewGoal(
-        goal: goal,
+        goal: _effectiveGoal,
         assignmentMode: _assignmentMode,
       );
       if (!mounted) return;
@@ -210,11 +392,11 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
 
   Future<void> _startJob() async {
     final l10n = AppLocalizations.of(context);
-    final goal = _goalCtl.text.trim();
     if (!_previewOk) {
       setState(() => _error = l10n.chainsStartNeedPreview);
       return;
     }
+    if (_attachmentsUploading) return;
     if (_workerSelectionTouched && _selectedWorkerPeerIds.isEmpty) {
       setState(() => _error = l10n.chainsStartNeedWorkers);
       return;
@@ -249,7 +431,7 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
               })
           .toList();
       final result = await client.chainStartFromGoal(
-        goal: goal,
+        goal: _effectiveGoal,
         assignmentMode: _assignmentMode,
         plannedSubtasks: planned,
         planWarnings: _warnings.isEmpty ? null : _warnings,
@@ -284,6 +466,120 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
     }
   }
 
+  Widget _buildAttachmentsSection(AppLocalizations l10n, ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                l10n.chainsStartAttachmentsLabel,
+                style: theme.textTheme.titleSmall,
+              ),
+            ),
+            TextButton.icon(
+              onPressed: (_previewing ||
+                      _starting ||
+                      _attachments.length >= chainComposerMaxAttachments)
+                  ? null
+                  : _pickAttachments,
+              icon: const Icon(Icons.attach_file, size: 18),
+              label: Text(l10n.chainsStartAttachmentsAdd),
+            ),
+          ],
+        ),
+        Text(
+          l10n.chainsStartAttachmentsHint,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        if (_attachments.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          ..._attachments.map((att) {
+            final status = att.uploading
+                ? l10n.chainsStartAttachmentUploading
+                : (att.error != null ? l10n.chainsStartAttachmentFailed : null);
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.insert_drive_file_outlined, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            att.fileName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (status != null)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: Text(
+                              status,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: att.error != null
+                                    ? theme.colorScheme.error
+                                    : theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        IconButton(
+                          tooltip: l10n.chainsStartAttachmentRemove,
+                          onPressed: _previewing || _starting
+                              ? null
+                              : () {
+                                  setState(() {
+                                    final idx = _attachments.indexWhere(
+                                      (a) => a.id == att.id,
+                                    );
+                                    if (idx >= 0) {
+                                      _attachments.removeAt(idx).dispose();
+                                    }
+                                    _clearPreview();
+                                  });
+                                },
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, right: 8),
+                      child: TextField(
+                        enabled: !_previewing && !_starting && !att.uploading,
+                        controller: att.labelCtl,
+                        maxLength: chainAttachmentLabelMaxChars,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          labelText: l10n.chainsStartAttachmentLabel,
+                          hintText: l10n.chainsStartAttachmentLabelHint,
+                          border: const OutlineInputBorder(),
+                          counterText: '',
+                        ),
+                        onChanged: (_) {
+                          if (_preview != null) {
+                            setState(_clearPreview);
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -292,6 +588,7 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
     final workerRows = _workerPickerRows;
     final startBlockedByEmptyWorkers =
         _workerSelectionTouched && _selectedWorkerPeerIds.isEmpty;
+    final previewBlocked = busy || _attachmentsUploading;
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.chainsStartTitle)),
@@ -330,9 +627,7 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
                           if (next.isEmpty) return;
                           setState(() {
                             _assignmentMode = next.first;
-                            _preview = null;
-                            _selectedWorkerPeerIds.clear();
-                            _workerSelectionTouched = false;
+                            _clearPreview();
                           });
                         },
                 ),
@@ -358,14 +653,12 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
                   ),
                   onChanged: (_) {
                     if (_preview != null) {
-                      setState(() {
-                        _preview = null;
-                        _selectedWorkerPeerIds.clear();
-                        _workerSelectionTouched = false;
-                      });
+                      setState(_clearPreview);
                     }
                   },
                 ),
+                const SizedBox(height: 16),
+                _buildAttachmentsSection(l10n, theme),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
                   Text(
@@ -375,7 +668,7 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
                 ],
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
-                  onPressed: busy ? null : _previewPlan,
+                  onPressed: previewBlocked ? null : _previewPlan,
                   icon: _previewing
                       ? const SizedBox(
                           width: 16,
@@ -390,6 +683,27 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
                   ),
                 ),
                 if (_preview != null) ...[
+                  if (_readyAttachments.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      l10n.chainsStartAttachmentsLabel,
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    ..._readyAttachments.map(
+                      (att) => Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(
+                          [
+                            if (att.label != null) '[${att.label}]',
+                            att.fileName ?? att.relativePath,
+                            att.relativePath,
+                          ].where((s) => s.isNotEmpty).join('\n'),
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   Text(
                     l10n.chainsStartPlanHeading,
@@ -516,6 +830,7 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
                   FilledButton.icon(
                     onPressed: (!_previewOk ||
                             busy ||
+                            _attachmentsUploading ||
                             startBlockedByEmptyWorkers)
                         ? null
                         : _startJob,

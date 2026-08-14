@@ -549,6 +549,14 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.searchPeers(query);
   }
 
+  async getNearbyDiscoveredPeers() {
+    return this._ns.getNearbyDiscoveredPeers();
+  }
+
+  async refreshNearbyDiscovery() {
+    return this._ns.refreshNearbyDiscovery();
+  }
+
   async runCapabilityDiscovery(params?: Parameters<NodeService["runCapabilityDiscovery"]>[0]) {
     return this._ns.runCapabilityDiscovery(params);
   }

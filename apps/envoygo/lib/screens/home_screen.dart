@@ -79,8 +79,11 @@ class HomeScreen extends ConsumerWidget {
         selectedIndex: tab,
         onDestinationSelected: (index) {
           ref.read(chatProvider.notifier).selectTab(index);
+          // Match former Content-tab UX: opening Social clears Feed/Blog badges
+          // (sub-tabs also dismiss per-surface when Feeds/Blog are selected).
           if (isOwner && index == OwnerTabs.social) {
-            // Keep badges; SocialScreen dismisses per-surface when opening Feeds/Blog.
+            ref.read(contentEngageProvider.notifier).dismiss(surface: 'all');
+            ref.read(feedNotifyProvider.notifier).dismissAll();
           }
         },
         destinations: [

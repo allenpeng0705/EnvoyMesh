@@ -174,11 +174,19 @@ Future<void> showCreatePiDialog(BuildContext context, WidgetRef ref) async {
                           if (!ctx.mounted) return;
                           Navigator.of(ctx).pop();
                           if (!context.mounted) return;
+                          final base = path
+                              .replaceAll(RegExp(r'[/\\]+$'), '')
+                              .split(RegExp(r'[/\\]'))
+                              .where((s) => s.isNotEmpty)
+                              .lastOrNull;
+                          final title = (base != null && base.isNotEmpty)
+                              ? base
+                              : path;
                           await Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) => TerminalDetailScreen(
                                 sessionId: sessionId,
-                                sessionName: 'π $path',
+                                sessionName: 'π $title',
                               ),
                             ),
                           );

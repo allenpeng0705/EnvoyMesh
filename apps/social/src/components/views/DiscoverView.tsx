@@ -19,7 +19,7 @@ export function DiscoverView() {
           </p>
         ) : null}
       </header>
-      <SponsorSetupTile />
+      {emptyGraph ? <SponsorSetupTile /> : null}
       <SearchView embedded />
     </div>
   );

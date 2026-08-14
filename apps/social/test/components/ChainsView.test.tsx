@@ -38,12 +38,16 @@ const mockNodeService = {
 vi.mock("../../src/components/ChainStartDialog.js", () => ({
   ChainStartDialog: (props: {
     goal: string;
+    displayGoal?: string;
     assignmentMode?: "skill" | "role";
+    attachments?: Array<{ fileName: string; relativePath: string; label?: string }>;
   }) => (
     <div
       data-testid="chain-start-dialog-stub"
       data-assignment-mode={props.assignmentMode ?? ""}
       data-goal={props.goal}
+      data-display-goal={props.displayGoal ?? ""}
+      data-attachment-count={String(props.attachments?.length ?? 0)}
     />
   ),
 }));

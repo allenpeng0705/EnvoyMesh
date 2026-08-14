@@ -41,9 +41,9 @@ import {
 
 export const de = mergeMessages(en, {
   nav: {
-    social: "Social",
-    socialEngageOne: "Social — {count} neue Interaktion",
-    socialEngageMany: "Social — {count} neue Interaktionen",
+    social: "Sozial",
+    socialEngageOne: "Sozial — {count} neue Interaktion",
+    socialEngageMany: "Sozial — {count} neue Interaktionen",
     terminal: "Terminal",
     knowledge: "Wissen",
     inbox: "Posteingang",
@@ -633,7 +633,7 @@ export const de = mergeMessages(en, {
     },
   },
   social: {
-    tabs: "Social",
+    tabs: "Sozial",
     tabChats: "Chats",
     tabDiscover: "Personen finden",
     tabExplore: "Entdecken",

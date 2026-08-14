@@ -3918,6 +3918,66 @@ abstract class AppLocalizations {
   /// **'Goal must be at least {min} characters'**
   String chainsStartGoalTooShort(int min);
 
+  /// No description provided for @chainsStartAttachmentsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Attachments'**
+  String get chainsStartAttachmentsLabel;
+
+  /// No description provided for @chainsStartAttachmentsAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add files'**
+  String get chainsStartAttachmentsAdd;
+
+  /// No description provided for @chainsStartAttachmentsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Tip: add a short label per file (e.g. brief), then mention [brief] in your goal so workers know which file to use — even when the filename is long or unclear.'**
+  String get chainsStartAttachmentsHint;
+
+  /// No description provided for @chainsStartAttachmentsMax.
+  ///
+  /// In en, this message translates to:
+  /// **'You can attach up to {max} files'**
+  String chainsStartAttachmentsMax(int max);
+
+  /// No description provided for @chainsStartAttachmentTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} is too large (max {maxMb} MB)'**
+  String chainsStartAttachmentTooLarge(String name, int maxMb);
+
+  /// No description provided for @chainsStartAttachmentUploading.
+  ///
+  /// In en, this message translates to:
+  /// **'Uploading…'**
+  String get chainsStartAttachmentUploading;
+
+  /// No description provided for @chainsStartAttachmentFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload failed'**
+  String get chainsStartAttachmentFailed;
+
+  /// No description provided for @chainsStartAttachmentLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Label'**
+  String get chainsStartAttachmentLabel;
+
+  /// No description provided for @chainsStartAttachmentLabelHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. brief, sales data'**
+  String get chainsStartAttachmentLabelHint;
+
+  /// No description provided for @chainsStartAttachmentRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove attachment'**
+  String get chainsStartAttachmentRemove;
+
   /// No description provided for @chainsStartPreview.
   ///
   /// In en, this message translates to:

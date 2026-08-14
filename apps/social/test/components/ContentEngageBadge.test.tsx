@@ -89,7 +89,23 @@ describe("SocialView engagement badges", () => {
     });
   });
 
-  it("auto-dismisses feed engage without clearing feed.notify", async () => {
+  it("dismisses feed.notify when Feed opens programmatically", async () => {
+    const onDismissEngage = vi.fn(async () => {});
+    renderWithI18n(
+      <SocialHarness
+        initialTab="feed"
+        feedEngageCount={0}
+        feedNotifyCount={0}
+        blogEngageCount={0}
+        onDismissEngage={onDismissEngage}
+      />,
+    );
+    await waitFor(() => {
+      expect(onDismissEngage).toHaveBeenCalledWith("feed", { feedNotify: true });
+    });
+  });
+
+  it("re-dismisses feed engage (with feed.notify) when count rises while on Feed", async () => {
     const onDismissEngage = vi.fn(async () => {});
     const view = renderWithI18n(
       <SocialHarness
@@ -99,6 +115,9 @@ describe("SocialView engagement badges", () => {
         onDismissEngage={onDismissEngage}
       />,
     );
+    await waitFor(() => {
+      expect(onDismissEngage).toHaveBeenCalled();
+    });
     onDismissEngage.mockClear();
 
     view.rerender(
@@ -114,9 +133,8 @@ describe("SocialView engagement badges", () => {
       </I18nTestProvider>,
     );
     await waitFor(() => {
-      expect(onDismissEngage).toHaveBeenCalledWith("feed");
+      expect(onDismissEngage).toHaveBeenCalledWith("feed", { feedNotify: true });
     });
-    expect(onDismissEngage.mock.calls.some((c) => c[1]?.feedNotify === true)).toBe(false);
   });
 
   it("shows blog badge when Feed is active (Feed badge hidden)", () => {

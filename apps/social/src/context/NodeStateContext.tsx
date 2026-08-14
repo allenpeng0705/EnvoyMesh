@@ -66,6 +66,12 @@ interface NodeStateValue {
 
   // Discovery
   discoveredPeers: PeerSearchResult[];
+  /** One-shot LAN scan; replaces the Discover nearby list (no live churn). */
+  refreshDiscoveredPeers: () => Promise<{
+    peered: number;
+    resolved: number;
+    unreachable: number;
+  }>;
 
   // Inbox
   pendingMessages: ChatMessage[];
@@ -390,90 +396,82 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, [nodeService, wsTransportOpen]);
 
-  // peer:discovered + peer:lost — track nearby peers. Debounce removals so
-  // brief disconnect / probe churn does not flash the Discover page.
+  // People on this network — hydrate once, then stay static until the user
+  // taps Refresh. Live peer:discovered/lost used to flood the list with
+  // thousands of unreachable DHT probes and wipe real names like Allen.
   useEffect(() => {
     if (!wsTransportOpen) return;
     const selfOwnerId = humanProfile?.ownerId?.trim() ?? "";
-    const pendingLost = new Map<string, ReturnType<typeof setTimeout>>();
+    let cancelled = false;
 
-    const cancelPendingLost = (nodeId: string) => {
-      const timer = pendingLost.get(nodeId);
-      if (timer) {
-        clearTimeout(timer);
-        pendingLost.delete(nodeId);
+    const onlyPeople = (peers: PeerSearchResult[]): PeerSearchResult[] => {
+      const byId = new Map<string, PeerSearchResult>();
+      for (const peer of peers) {
+        if (!peer?.nodeId) continue;
+        if (selfOwnerId && peer.ownerId === selfOwnerId) continue;
+        if (peer.profileStatus !== "resolved") continue;
+        if (!peer.ownerId?.trim()) continue;
+        byId.set(peer.nodeId, peer);
       }
+      return [...byId.values()];
     };
 
+    void nodeService
+      .getNearbyDiscoveredPeers()
+      .then((peers) => {
+        if (cancelled) return;
+        setDiscoveredPeers(onlyPeople(peers ?? []));
+      })
+      .catch(() => undefined);
+
+    // Accept rare resolved people after hydrate; never pending/unreachable noise.
     const unsub1 = nodeService.on("peer:discovered", (data: any) => {
       if (selfOwnerId && data.ownerId === selfOwnerId) return;
       const nodeId = typeof data?.nodeId === "string" ? data.nodeId : "";
       if (!nodeId) return;
-      cancelPendingLost(nodeId);
+      if (data.profileStatus !== "resolved" || !data.ownerId?.trim()) return;
       setDiscoveredPeers((prev) => {
         const existing = prev.find((p) => p.nodeId === nodeId);
         if (existing) {
           if (
             existing.ownerId === (data.ownerId ?? "") &&
             existing.displayName === (data.displayName ?? "") &&
-            existing.profileStatus === data.profileStatus &&
-            existing.username === data.username &&
-            existing.discoverySource === data.discoverySource
+            existing.username === data.username
           ) {
             return prev;
           }
           return prev.map((p) => (p.nodeId === nodeId ? { ...p, ...data } : p));
         }
-        // Ignore pending-only placeholders if any older node still emits them.
-        if (!data.ownerId?.trim() && data.profileStatus === "pending") {
-          return prev;
-        }
-        return [...prev, data];
+        return [...prev, data as PeerSearchResult];
       });
     });
 
-    const unsub2 = nodeService.on("peer:lost", (data: any) => {
-      const nodeId = typeof data?.nodeId === "string" ? data.nodeId : "";
-      if (!nodeId) return;
-      cancelPendingLost(nodeId);
-      pendingLost.set(
-        nodeId,
-        setTimeout(() => {
-          pendingLost.delete(nodeId);
-          setDiscoveredPeers((prev) => {
-            if (!prev.some((p) => p.nodeId === nodeId)) return prev;
-            return prev.filter((p) => p.nodeId !== nodeId);
-          });
-        }, 2_500),
-      );
-    });
-
+    // Never remove an identified person on peer:lost — mDNS churn was
+    // clearing Allen and replacing the panel with unreachable noise.
     return () => {
+      cancelled = true;
       unsub1();
-      unsub2();
-      for (const timer of pendingLost.values()) clearTimeout(timer);
-      pendingLost.clear();
     };
   }, [nodeService, wsTransportOpen, humanProfile?.ownerId]);
 
-  // Safety net: drop only resolved peers that still carry a raw "Peer 12D3…"
-  // label. Keep pending/unreachable placeholders for diagnostics.
-  useEffect(() => {
-    if (!wsTransportOpen) return;
-    const timer = setInterval(() => {
-      setDiscoveredPeers((prev) => {
-        if (prev.length === 0) return prev;
-        const cleaned = prev.filter((p) => {
-          if (p.profileStatus === "pending" || p.profileStatus === "unreachable") return true;
-          if (!p.ownerId?.trim()) return true;
-          const name = p.displayName?.trim() ?? "";
-          return name.length > 0 && !/^Peer\s\w{8}$/.test(name);
-        });
-        return cleaned.length === prev.length ? prev : cleaned;
-      });
-    }, 30_000);
-    return () => clearInterval(timer);
-  }, [wsTransportOpen]);
+  const refreshDiscoveredPeers = useCallback(async () => {
+    const selfOwnerId = humanProfile?.ownerId?.trim() ?? "";
+    const result = await nodeService.refreshNearbyDiscovery();
+    const peers = await nodeService.getNearbyDiscoveredPeers().catch(() => []);
+    const next: PeerSearchResult[] = [];
+    for (const peer of peers ?? []) {
+      if (!peer?.nodeId) continue;
+      if (selfOwnerId && peer.ownerId === selfOwnerId) continue;
+      if (peer.profileStatus !== "resolved" || !peer.ownerId?.trim()) continue;
+      next.push(peer);
+    }
+    setDiscoveredPeers(next);
+    return {
+      peered: result?.peered ?? 0,
+      resolved: result?.resolved ?? next.length,
+      unreachable: result?.unreachable ?? 0,
+    };
+  }, [nodeService, humanProfile?.ownerId]);
 
   // profile:updated — refresh nearby card names after profile probe
   useEffect(() => {
@@ -699,6 +697,7 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     pendingIntroProposals,
     connectionStatus,
     discoveredPeers,
+    refreshDiscoveredPeers,
     pendingMessages,
     appSettings,
     bridgeStatus,

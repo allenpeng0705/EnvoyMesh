@@ -1646,6 +1646,8 @@ class NodeServiceImpl implements NodeService {
   private readonly _profileRequestLastAt = new Map<string, number>();
   private readonly _nearbyProfileProbeLastAt = new Map<string, number>();
   private readonly _nearbyProfileProbeInflight = new Set<string>();
+  /** Last peer:discovered payloads for Discover hydrate (WS reconnect / tab open). */
+  private readonly _nearbyDiscoveredByPeerId = new Map<string, PeerSearchResult>();
   /** Consecutive failed profile-probe count per peer (for non-EnvoyMesh suppression). */
   private readonly _nonEnvoyPeerFailCount = new Map<string, number>();
   /** Timestamp of last failed probe per peer (for non-EnvoyMesh suppression). */
@@ -2412,9 +2414,14 @@ class NodeServiceImpl implements NodeService {
   /**
    * CLI path (`index.ts`): mDNS / relay discovery learned a libp2p peer + dialable addrs.
    * Merge addrs into an existing peer-directory row and probe for bonded profile sync.
+   * Pass `{ force: true }` from Discover refresh to bypass the probe cooldown.
    */
-  async handleMeshPeerDiscovered(peerId: string, multiaddrs: string[]): Promise<void> {
-    return handleMeshPeerDiscoveredViaRuntime(this._reachabilityContext(), peerId, multiaddrs);
+  async handleMeshPeerDiscovered(
+    peerId: string,
+    multiaddrs: string[],
+    opts?: { force?: boolean },
+  ): Promise<void> {
+    return handleMeshPeerDiscoveredViaRuntime(this._reachabilityContext(), peerId, multiaddrs, opts);
   }
 
   private _reachableMesh(): EnvoyMesh | undefined {
@@ -2564,8 +2571,12 @@ class NodeServiceImpl implements NodeService {
     return requestPeerProfileViaRuntime(this._requestPeerProfileContext(), ownerId);
   }
 
-  private async _probeNearbyPeerProfileAfterDiscovery(peerId: string, multiaddrs: string[]): Promise<void> {
-    return _probeNearbyPeerProfileAfterDiscovery(this._identityContext(), peerId, multiaddrs);
+  private async _probeNearbyPeerProfileAfterDiscovery(
+    peerId: string,
+    multiaddrs: string[],
+    opts?: { force?: boolean },
+  ): Promise<void> {
+    return _probeNearbyPeerProfileAfterDiscovery(this._identityContext(), peerId, multiaddrs, opts);
   }
 
   /**
@@ -4449,6 +4460,11 @@ class NodeServiceImpl implements NodeService {
   private readonly _envoyLocalState: EnvoyLocalRuntimeState = createEnvoyLocalRuntimeState();
   private readonly _envoyLocalEmbedState: EnvoyLocalEmbedRuntimeState =
     createEnvoyLocalEmbedRuntimeState();
+  /**
+   * After first onEmbedReady (or skipped auto-provision), boot RAG may reindex
+   * on config:updated without waiting forever for :18791.
+   */
+  embedBootRagReindexCompleted = false;
 
   private _bindOpenClawPersistence(): void {
     if (this._profileDir === "/tmp/unknown") {
@@ -4856,6 +4872,21 @@ class NodeServiceImpl implements NodeService {
           mode === "envoy-local" ||
           (mode as string) === "inherit"
         );
+      },
+      onEmbedReady: async () => {
+        // Boot refreshRagService often races ahead of :18791 (especially first
+        // DMG/EXE download). Reindex once the sidecar answers /v1/models.
+        try {
+          await this.reindexRagKnowledge({ force: false });
+        } catch (err) {
+          console.warn(
+            "[rag] reindex after embed ready failed:",
+            err instanceof Error ? err.message : String(err),
+          );
+          throw err;
+        } finally {
+          this.embedBootRagReindexCompleted = true;
+        }
       },
     };
   }
@@ -6960,6 +6991,89 @@ class NodeServiceImpl implements NodeService {
 
   async searchPeers(query: SearchQuery): Promise<PeerSearchResult[]> {
     return this._discoveryRuntime().searchPeers(query);
+  }
+
+  /** Snapshot of identifiable People-on-this-network cards for UI hydrate. */
+  async getNearbyDiscoveredPeers(): Promise<PeerSearchResult[]> {
+    return [...this._nearbyDiscoveredByPeerId.values()].filter(
+      (p) => p.profileStatus === "resolved" && Boolean(p.ownerId?.trim()),
+    );
+  }
+
+  /**
+   * Re-probe connected + peerstore LAN + bonded transport peers so Discover
+   * can populate "People on this network" even if peer:discovered fired
+   * before the UI subscribed (or mDNS has not reconnected yet).
+   */
+  async refreshNearbyDiscovery(): Promise<{
+    peered: number;
+    resolved: number;
+    unreachable: number;
+  }> {
+    const mesh = this._reachableMesh();
+    if (!mesh || this._nodeStatus !== "running") {
+      return { peered: 0, resolved: 0, unreachable: 0 };
+    }
+    const selfId = mesh.peerId;
+    const bootstrap = this._bootstrapPeerIdSet ?? new Set<string>();
+    const peerIds = new Set<string>();
+    const bondPeerIds = new Set<string>();
+    try {
+      for (const id of await mesh.listNearbyDiscoveryCandidatePeerIds()) {
+        if (id) peerIds.add(id);
+      }
+    } catch {
+      // LAN candidate listing failed — bonds below may still help.
+    }
+    try {
+      const bonds = await this.getBonds();
+      for (const bond of bonds) {
+        if (!bond || bond.level === "blocked") continue;
+        const resolved = await this._resolveLibp2pPeerForBondOwner(bond.peerOwnerId);
+        const transportId = resolved?.transportPeerId?.trim();
+        if (transportId) {
+          peerIds.add(transportId);
+          bondPeerIds.add(transportId);
+        }
+      }
+    } catch {
+      // Bonds are optional enrichment for refresh candidates.
+    }
+
+    let peered = 0;
+    const tasks: Promise<void>[] = [];
+    for (const peerId of peerIds) {
+      if (!peerId || peerId === selfId) continue;
+      if (bootstrap.has(peerId)) continue;
+      let addrs: string[] = [];
+      try {
+        addrs = await mesh.getPeerStoreDialHints(peerId, {
+          allowEphemeralPrivateLan: true,
+        });
+      } catch {
+        addrs = [];
+      }
+      const lan = addrs.filter((a) => isPrivateLanTcpDialHint(a));
+      // Non-bond strangers must look like same-LAN; bonded contacts may be
+      // refreshed even over relay so Discover can show known people nearby.
+      if (lan.length === 0 && !bondPeerIds.has(peerId)) continue;
+      const dial = lan.length > 0 ? lan : addrs;
+      tasks.push(this.handleMeshPeerDiscovered(peerId, dial, { force: true }));
+      peered += 1;
+    }
+    await Promise.all(tasks);
+    const snap = [...this._nearbyDiscoveredByPeerId.values()];
+    const resolved = snap.filter(
+      (p) => p.profileStatus === "resolved" && Boolean(p.ownerId?.trim()),
+    ).length;
+    const unreachable = snap.filter((p) => p.profileStatus === "unreachable").length;
+    // Drop unreachable noise from the long-lived cache so Discover stays stable.
+    for (const [id, peer] of this._nearbyDiscoveredByPeerId) {
+      if (peer.profileStatus !== "resolved" || !peer.ownerId?.trim()) {
+        this._nearbyDiscoveredByPeerId.delete(id);
+      }
+    }
+    return { peered, resolved, unreachable };
   }
 
   async discoverCapabilityTopic(params: DiscoverCapabilityTopicParams): Promise<DiscoverCapabilityTopicResult> {
@@ -11893,6 +12007,14 @@ class NodeServiceImpl implements NodeService {
   // ============================================
 
   emit<K extends keyof NodeServiceEvents>(event: K, data: NodeServiceEvents[K]): void {
+    if (event === "peer:discovered") {
+      const peer = data as PeerSearchResult;
+      const nodeId = peer?.nodeId?.trim();
+      if (nodeId) this._nearbyDiscoveredByPeerId.set(nodeId, peer);
+    } else if (event === "peer:lost") {
+      const nodeId = (data as { nodeId?: string })?.nodeId?.trim();
+      if (nodeId) this._nearbyDiscoveredByPeerId.delete(nodeId);
+    }
     const handlers = this.listeners.get(event);
     if (handlers) {
       for (const handler of handlers) {

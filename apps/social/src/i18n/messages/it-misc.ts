@@ -625,7 +625,7 @@ export const itKnowledgeViewMessages = {
 // --- Feed / Blog / Content engagement (Social) ---
 export const itContentViewMessages = {
   tabs: "Contenuti",
-  tabFeed: "Feed",
+  tabFeed: "Bacheca",
   tabBlog: "Blog",
   tabExplore: "Esplora",
   tabFiles: "Conoscenza",
@@ -686,7 +686,7 @@ export const itEngagementMessages = {
 } as const;
 
 export const itFeedViewMessages = {
-  title: "Feed",
+  title: "Bacheca",
   lede: "Aggiornamenti da te e dai contatti collegati.",
   you: "Tu",
   compose: "Nuovo post",

@@ -3368,6 +3368,36 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return searchResults;
   }
 
+  async getNearbyDiscoveredPeers(): Promise<PeerSearchResult[]> {
+    if (this._homeRemoteCall) {
+      try {
+        return await this._homeRemoteCall<PeerSearchResult[]>("getNearbyDiscoveredPeers", {});
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }
+
+  async refreshNearbyDiscovery(): Promise<{
+    peered: number;
+    resolved: number;
+    unreachable: number;
+  }> {
+    if (this._homeRemoteCall) {
+      try {
+        return await this._homeRemoteCall<{
+          peered: number;
+          resolved: number;
+          unreachable: number;
+        }>("refreshNearbyDiscovery", {});
+      } catch {
+        return { peered: 0, resolved: 0, unreachable: 0 };
+      }
+    }
+    return { peered: 0, resolved: 0, unreachable: 0 };
+  }
+
   /** Send a rendezvous.query to the relay and wait for rendezvous.response. */
   private _searchRelayRendezvous(query: {
     peerId?: string;

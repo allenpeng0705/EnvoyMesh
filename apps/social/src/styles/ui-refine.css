@@ -440,6 +440,23 @@
   margin-bottom: var(--space-3);
 }
 
+.nearby-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.nearby-panel__heading {
+  min-width: 0;
+  flex: 1;
+}
+
+.nearby-panel__refresh {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .discover-panel__title {
   margin: 0 0 var(--space-1);
   font-size: var(--text-base);

@@ -217,6 +217,48 @@ describe("handleMeshPeerDiscoveredViaRuntime", () => {
     expect(probe).not.toHaveBeenCalled();
   });
 
+  it("force=true re-probes even within cooldown (Discover refresh)", async () => {
+    const probeLastAt = new Map<string, number>();
+    probeLastAt.set("12D3KooWPeerA", Date.now() - 5000);
+    const probe = vi.fn().mockResolvedValue(undefined);
+    const ctx = mockContext({
+      getNearbyProfileProbeLastAt: () => probeLastAt,
+      probeNearbyPeerProfileAfterDiscovery: probe,
+    });
+
+    await handleMeshPeerDiscoveredViaRuntime(ctx, "12D3KooWPeerA", LAN_MULTIADDRS, {
+      force: true,
+    });
+
+    expect(probeLastAt.has("12D3KooWPeerA")).toBe(false);
+    expect(probe).toHaveBeenCalledWith("12D3KooWPeerA", LAN_MULTIADDRS, { force: true });
+  });
+
+  it("force=true re-probes suppressed non-Envoy peers", async () => {
+    const failCount = new Map<string, number>();
+    failCount.set("12D3KooWPeerA", NON_ENVOY_PEER_SUPPRESS_AFTER_FAILURES);
+    const lastFailed = new Map<string, number>();
+    lastFailed.set("12D3KooWPeerA", Date.now() - 10_000);
+    const probe = vi.fn().mockResolvedValue(undefined);
+    const ctx = mockContext({
+      isNonEnvoyPeerSuppressed: (peerId) => {
+        const count = failCount.get(peerId) ?? 0;
+        const at = lastFailed.get(peerId) ?? 0;
+        return (
+          count >= NON_ENVOY_PEER_SUPPRESS_AFTER_FAILURES &&
+          Date.now() - at < NON_ENVOY_PEER_SUPPRESS_COOLDOWN_MS
+        );
+      },
+      probeNearbyPeerProfileAfterDiscovery: probe,
+    });
+
+    await handleMeshPeerDiscoveredViaRuntime(ctx, "12D3KooWPeerA", LAN_MULTIADDRS, {
+      force: true,
+    });
+
+    expect(probe).toHaveBeenCalledWith("12D3KooWPeerA", LAN_MULTIADDRS, { force: true });
+  });
+
   it("allows probe after probe cooldown expires", async () => {
     const probeLastAt = new Map<string, number>();
     probeLastAt.set("12D3KooWPeerA", Date.now() - 40_000); // 40s ago (> 30s cooldown)

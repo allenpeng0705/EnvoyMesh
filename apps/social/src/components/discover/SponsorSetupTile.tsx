@@ -14,6 +14,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useT } from "../../context/I18nContext.js";
+import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { parseContactCode } from "../../lib/discover-contact-code.js";
 
@@ -29,6 +30,7 @@ type RunState =
 export function SponsorSetupTile() {
   const t = useT();
   const nodeService = useNodeService();
+  const { bonds } = useNodeState();
   const [status, setStatus] = useState<
     import("@envoymesh/api").SetupSponsorFriendStatus | null
   >(null);
@@ -109,7 +111,8 @@ export function SponsorSetupTile() {
   // Gate on `isActive` so the poll stops once the tile hides itself
   // (lastRunSucceeded → return null). One RPC per 2s while visible.
   const isActive = Boolean(
-    status?.config.enabled &&
+    bonds.length === 0 &&
+      status?.config.enabled &&
       status.config.ownerId &&
       !(status.state?.completedAt && runState.kind !== "running"),
   );
@@ -118,6 +121,26 @@ export function SponsorSetupTile() {
     const id = window.setInterval(() => { void refresh(); }, 2_000);
     return () => window.clearInterval(id);
   }, [refresh, isActive]);
+
+  // If the bundled sponsor is already bonded (e.g. via Discover / LAN / QR
+  // while auto-setup still had a stale mesh error), mark the setup complete
+  // so persisted lastError/cooldown don't resurrect the tile later.
+  useEffect(() => {
+    const sponsorId = status?.config.ownerId;
+    if (!sponsorId) return;
+    const bonded = bonds.some(
+      (b) => b.peerOwnerId === sponsorId && b.level !== "blocked",
+    );
+    if (!bonded) return;
+    if (status.state?.completedAt && !status.state.lastError) return;
+    void nodeService.runSetupSponsorFriend({}).catch(() => undefined);
+  }, [
+    bonds,
+    nodeService,
+    status?.config.ownerId,
+    status?.state?.completedAt,
+    status?.state?.lastError,
+  ]);
 
   const sponsorName = useMemo(
     () => status?.config.displayName ?? status?.config.ownerId ?? null,
@@ -214,6 +237,14 @@ export function SponsorSetupTile() {
       setPasteBusy(false);
     }
   }, [pasteValue, nodeService, handleRetry, t]);
+
+  // Hide when the user already has any contact — this tile is only for
+  // first-friend onboarding. Stale mesh/cooldown errors from a prior
+  // auto-attempt must not keep "Add your first contact" visible after
+  // Allen Peng (or anyone) is already bonded via Discover / LAN / QR.
+  if (bonds.length > 0) {
+    return null;
+  }
 
   // Hide the tile when the resolved config has no ownerId (no sponsor at
   // all). The discover view's "no contacts" empty state will surface the

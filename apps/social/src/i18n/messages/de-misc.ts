@@ -625,7 +625,7 @@ export const deKnowledgeViewMessages = {
 // --- Feed / Blog / Content engagement (Social) ---
 export const deContentViewMessages = {
   tabs: "Inhalt",
-  tabFeed: "Feed",
+  tabFeed: "Neuigkeiten",
   tabBlog: "Blog",
   tabExplore: "Entdecken",
   tabFiles: "Wissen",
@@ -686,7 +686,7 @@ export const deEngagementMessages = {
 } as const;
 
 export const deFeedViewMessages = {
-  title: "Feed",
+  title: "Neuigkeiten",
   lede: "Updates von Ihnen und verbundenen Kontakten.",
   you: "Sie",
   compose: "Neuer Beitrag",

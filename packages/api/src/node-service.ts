@@ -2229,6 +2229,22 @@ export interface NodeService {
   searchPeers(query: SearchQuery): Promise<PeerSearchResult[]>;
 
   /**
+   * Snapshot of People-on-this-network cards from recent mDNS/profile probes.
+   * Used to hydrate Discover when the UI missed live `peer:discovered` events.
+   */
+  getNearbyDiscoveredPeers(): Promise<PeerSearchResult[]>;
+
+  /**
+   * Re-probe LAN / connected mesh peers so Discover can show contacts
+   * immediately (bypasses the normal nearby-probe cooldown).
+   */
+  refreshNearbyDiscovery(): Promise<{
+    peered: number;
+    resolved: number;
+    unreachable: number;
+  }>;
+
+  /**
    * Run DHT capability discovery on demand (used when lazy mode skips periodic find).
    */
   runCapabilityDiscovery(params?: { find?: boolean }): Promise<void>;

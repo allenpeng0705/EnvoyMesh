@@ -471,6 +471,10 @@ export async function routeRpcMethod(
       return ns.deleteChatDraft(params.draftId as string);
     case "searchPeers":
       return ns.searchPeers(params as any);
+    case "getNearbyDiscoveredPeers":
+      return ns.getNearbyDiscoveredPeers();
+    case "refreshNearbyDiscovery":
+      return ns.refreshNearbyDiscovery();
     case "shareFile":
       return ns.shareFile(params.targetOwnerId as string, params.file as any);
     case "acceptShare":

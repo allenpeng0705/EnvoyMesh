@@ -1,6 +1,7 @@
 import type { BondRecord, PeerSearchResult } from "@envoymesh/api";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useT } from "../../context/I18nContext.js";
+import { useNodeState } from "../../context/NodeStateContext.js";
 import { nearbyPeerLabel } from "../../lib/display.js";
 import { DiscoverPeerCard } from "./DiscoverPeerCard.js";
 import { resolvePeerHelloState } from "../../lib/discover-peer-state.js";
@@ -63,47 +64,6 @@ export function enrichNearbyPeersWithBonds(
   return out;
 }
 
-function isBondMatchedNoise(
-  peer: PeerSearchResult,
-  bonds: readonly BondRecord[],
-): boolean {
-  return bonds.some(
-    (b) =>
-      b.level !== "blocked" &&
-      ((b.libp2pPeerId && b.libp2pPeerId === peer.nodeId) ||
-        (peer.ownerId && b.peerOwnerId === peer.ownerId)),
-  );
-}
-
-function nearbyStatusNote(
-  peers: readonly PeerSearchResult[],
-  bonds: readonly BondRecord[],
-  identifiableCount: number,
-  t: ReturnType<typeof useT>,
-): string | null {
-  // Ignore pending/unreachable for peers we already know as bonds — those
-  // are shown as contacts above, not "still identifying".
-  const noise = peers.filter((p) => !isBondMatchedNoise(p, bonds));
-  const pending = noise.filter(
-    (p) => !p.ownerId?.trim() && p.profileStatus !== "unreachable",
-  ).length;
-  const unreachable = noise.filter((p) => p.profileStatus === "unreachable").length;
-
-  if (unreachable > 0 && identifiableCount === 0) {
-    return t("discover.nearby.heardUnreachable", { count: String(unreachable) });
-  }
-  if (unreachable > 0) {
-    return t("discover.nearby.someUnreachable", { count: String(unreachable) });
-  }
-  if (pending > 0 && identifiableCount === 0) {
-    return t("discover.nearby.identifying");
-  }
-  if (pending > 0) {
-    return t("discover.nearby.identifyingMore", { count: String(pending) });
-  }
-  return null;
-}
-
 export function NearbyPeersPanel({
   discoveredPeers,
   bonds,
@@ -122,21 +82,75 @@ export function NearbyPeersPanel({
   onSayHello: (targetId: string) => void;
 }) {
   const t = useT();
+  const { refreshDiscoveredPeers } = useNodeState();
   const hint = emptyHint ?? t("discover.nearby.empty");
   const identifiable = useMemo(
     () => enrichNearbyPeersWithBonds(t, discoveredPeers, bonds),
     [discoveredPeers, bonds, t],
   );
-  const statusNote = nearbyStatusNote(discoveredPeers, bonds, identifiable.length, t);
-  const showEmpty = identifiable.length === 0 && !statusNote;
+  const showEmpty = identifiable.length === 0;
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshNote, setRefreshNote] = useState<string | null>(null);
+
+  const handleRefresh = async () => {
+    if (refreshing || nodeStatus !== "running") return;
+    setRefreshing(true);
+    setRefreshNote(null);
+    try {
+      const result = await refreshDiscoveredPeers();
+      const peered = result?.peered ?? 0;
+      const resolved = result?.resolved ?? 0;
+      const unreachable = result?.unreachable ?? 0;
+      if (resolved > 0) {
+        setRefreshNote(
+          t("discover.nearby.refreshFound", {
+            count: String(resolved),
+          }),
+        );
+      } else if (unreachable > 0) {
+        setRefreshNote(
+          t("discover.nearby.refreshUnreachable", {
+            count: String(unreachable),
+          }),
+        );
+      } else if (peered > 0) {
+        setRefreshNote(
+          t("discover.nearby.refreshNoEnvoy", {
+            count: String(peered),
+          }),
+        );
+      } else {
+        setRefreshNote(t("discover.nearby.refreshNone"));
+      }
+    } catch (err) {
+      setRefreshNote(
+        err instanceof Error ? err.message : t("discover.nearby.refreshFailed"),
+      );
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   return (
     <section className="discover-panel nearby-panel" aria-labelledby="nearby-peers-heading">
-      <header className="discover-panel__header">
-        <h4 id="nearby-peers-heading" className="discover-panel__title">
-          {t("discover.nearby.title")}
-        </h4>
-        <p className="discover-panel__lede">{t("discover.nearby.lede")}</p>
+      <header className="discover-panel__header nearby-panel__header">
+        <div className="nearby-panel__heading">
+          <h4 id="nearby-peers-heading" className="discover-panel__title">
+            {t("discover.nearby.title")}
+          </h4>
+          <p className="discover-panel__lede">{t("discover.nearby.lede")}</p>
+        </div>
+        <button
+          type="button"
+          className="discover-secondary-btn nearby-panel__refresh"
+          disabled={refreshing || nodeStatus !== "running"}
+          onClick={() => void handleRefresh()}
+          data-testid="nearby-refresh-btn"
+        >
+          {refreshing
+            ? t("discover.nearby.refreshing", "Scanning…")
+            : t("discover.nearby.refresh", "Refresh")}
+        </button>
       </header>
 
       {nodeStatus !== "running" ? (
@@ -151,19 +165,9 @@ export function NearbyPeersPanel({
         </p>
       ) : null}
 
-      {statusNote ? (
-        <p
-          className={`discover-status ${
-            discoveredPeers.some(
-              (p) => p.profileStatus === "unreachable" && !isBondMatchedNoise(p, bonds),
-            )
-              ? "discover-status--warn"
-              : "discover-status--ok"
-          }`}
-          role="status"
-          data-testid="nearby-status-note"
-        >
-          {statusNote}
+      {refreshNote ? (
+        <p className="discover-status discover-status--ok" role="status" data-testid="nearby-refresh-note">
+          {refreshNote}
         </p>
       ) : null}
 

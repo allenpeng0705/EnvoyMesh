@@ -171,7 +171,11 @@ export interface ReachabilityContext {
     options?: WarmContactConnectionOptions,
   ): Promise<PeerConnectionInfo>;
   getPeerConnectionInfo(ownerId: string): Promise<PeerConnectionInfo>;
-  probeNearbyPeerProfileAfterDiscovery(peerId: string, multiaddrs: string[]): Promise<void>;
+  probeNearbyPeerProfileAfterDiscovery(
+    peerId: string,
+    multiaddrs: string[],
+    opts?: { force?: boolean },
+  ): Promise<void>;
   maybeFireLanAutoBond(peerId: string): Promise<void>;
   emit(event: string, payload: unknown): void;
   getBondWarmTimer(): ReturnType<typeof setInterval> | undefined;
@@ -212,8 +216,8 @@ export function buildReachabilityContext(host: any): ReachabilityContext {
     resolvePeerTransportForOwner: (ownerId) => host._resolvePeerTransportForOwner(ownerId),
     warmContactConnection: (ownerId, options) => host.warmContactConnection(ownerId, options),
     getPeerConnectionInfo: (ownerId) => host.getPeerConnectionInfo(ownerId),
-    probeNearbyPeerProfileAfterDiscovery: (peerId, multiaddrs) =>
-      host._probeNearbyPeerProfileAfterDiscovery(peerId, multiaddrs),
+    probeNearbyPeerProfileAfterDiscovery: (peerId, multiaddrs, opts) =>
+      host._probeNearbyPeerProfileAfterDiscovery(peerId, multiaddrs, opts),
     maybeFireLanAutoBond: (peerId) => host._maybeFireLanAutoBond(peerId),
     emit: (event, payload) => host.emit(event, payload),
     getBondWarmTimer: () => host._bondWarmTimer,
@@ -260,6 +264,7 @@ export async function handleMeshPeerDiscoveredViaRuntime(
   ctx: ReachabilityContext,
   peerId: string,
   multiaddrs: string[],
+  opts?: { force?: boolean },
 ): Promise<void> {
   try {
     const config = await ctx.loadConfig();
@@ -305,21 +310,30 @@ export async function handleMeshPeerDiscoveredViaRuntime(
     // --- Discovery placeholder suppression ---
     // Skip probe dispatch for peers whose profile probe recently ran
     // (success or failure). Prevents UI flicker from mDNS re-discovery.
+    // Discover tab refresh passes force=true to bypass this cooldown.
     const probeLastAt = ctx.getNearbyProfileProbeLastAt();
+    if (opts?.force) {
+      probeLastAt.delete(peerId);
+    }
     const lastProbeAt = probeLastAt.get(peerId) ?? 0;
     const probeCooldownMs = ctx.getNearbyProfileProbeCooldownMs();
-    if (Date.now() - lastProbeAt < probeCooldownMs) {
+    if (!opts?.force && Date.now() - lastProbeAt < probeCooldownMs) {
       return;
     }
     // Peers that have failed ≥ N consecutive probes are known non-EnvoyMesh
     // devices (printers, TVs, etc.).  Suppress them for a longer cooldown.
-    if (ctx.isNonEnvoyPeerSuppressed(peerId)) {
+    if (!opts?.force && ctx.isNonEnvoyPeerSuppressed(peerId)) {
       return;
     }
     // Do NOT emit a pending placeholder here — pending→lost→rediscover
     // cycles flash the Discover page after restart. The probe emits a
     // single resolved or unreachable result when it finishes.
-    void ctx.probeNearbyPeerProfileAfterDiscovery(peerId, multiaddrs);
+    if (opts?.force) {
+      // Discover refresh awaits probes so hydrate can show results immediately.
+      await ctx.probeNearbyPeerProfileAfterDiscovery(peerId, multiaddrs, opts);
+    } else {
+      void ctx.probeNearbyPeerProfileAfterDiscovery(peerId, multiaddrs);
+    }
     // Auto-bond is fired inside probeNearbyPeerProfileAfterDiscovery on
     // probe success — the peer must be connected (probe dials first) and
     // confirmed as an EnvoyMesh node before we attempt pairing.

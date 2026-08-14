@@ -1613,7 +1613,7 @@ class AppLocalizationsFr extends AppLocalizations {
   String get authorTypeProfile => 'Profil';
 
   @override
-  String get authorTypePhoto => 'Photo PhotoWall';
+  String get authorTypePhoto => 'Photo du mur';
 
   @override
   String get authorTypeBlog => 'Article Blog';
@@ -2120,6 +2120,41 @@ class AppLocalizationsFr extends AppLocalizations {
   String chainsStartGoalTooShort(int min) {
     return 'L\'objectif doit comporter au moins $min caractères';
   }
+
+  @override
+  String get chainsStartAttachmentsLabel => 'Pièces jointes';
+
+  @override
+  String get chainsStartAttachmentsAdd => 'Ajouter des fichiers';
+
+  @override
+  String get chainsStartAttachmentsHint =>
+      'Astuce : ajoutez un court libellé par fichier (ex. brief), puis citez [brief] dans l\'objectif pour indiquer quel fichier utiliser — même si le nom est long ou peu clair.';
+
+  @override
+  String chainsStartAttachmentsMax(int max) {
+    return 'Vous pouvez joindre jusqu\'à $max fichiers';
+  }
+
+  @override
+  String chainsStartAttachmentTooLarge(String name, int maxMb) {
+    return '$name est trop volumineux (max. $maxMb Mo)';
+  }
+
+  @override
+  String get chainsStartAttachmentUploading => 'Envoi…';
+
+  @override
+  String get chainsStartAttachmentFailed => 'Échec de l\'envoi';
+
+  @override
+  String get chainsStartAttachmentLabel => 'Libellé';
+
+  @override
+  String get chainsStartAttachmentLabelHint => 'ex. brief, données ventes';
+
+  @override
+  String get chainsStartAttachmentRemove => 'Retirer la pièce jointe';
 
   @override
   String get chainsStartPreview => 'Prévisualiser le plan';

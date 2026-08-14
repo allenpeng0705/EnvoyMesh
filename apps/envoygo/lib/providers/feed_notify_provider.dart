@@ -88,22 +88,24 @@ class FeedNotifyNotifier extends StateNotifier<FeedNotifyState> {
     }
   }
 
-  /// Mark all read (Inbox open) without dropping Feed timeline rows.
+  /// Mark all read (Inbox open / Social tab) without dropping Feed timeline rows.
   Future<void> dismissAll() async {
     final client = _ref.read(nodeServiceProvider);
-    if (client == null) return;
-    try {
-      await client.dismissAllFeedNotifications();
-      final readAt = DateTime.now().toUtc().toIso8601String();
-      state = state.copyWith(
-        items: state.items
-            .map((i) => i.isUnread ? i.copyWith(readAt: readAt) : i)
-            .toList(),
-        clearError: true,
-      );
-    } catch (e) {
-      state = state.copyWith(error: e.toString());
+    if (client != null) {
+      try {
+        await client.dismissAllFeedNotifications();
+      } catch (e) {
+        state = state.copyWith(error: e.toString());
+        return;
+      }
     }
+    final readAt = DateTime.now().toUtc().toIso8601String();
+    state = state.copyWith(
+      items: state.items
+          .map((i) => i.isUnread ? i.copyWith(readAt: readAt) : i)
+          .toList(),
+      clearError: true,
+    );
   }
 
   void clear() {
