@@ -52,6 +52,7 @@ import {
   mergeProposeInputArtifacts,
   type ChainOrchestratorHandlerDeps,
   type ChainState,
+  type EvaluateBidsResult,
 } from "./chain-orchestrator.js";
 import {
   copyChainInputInVault,
@@ -1634,10 +1635,7 @@ export async function _evaluateAwardAndAccept(
     pickWorkerPeerId?: string;
     skipSensitivityGate?: boolean;
   },
-): Promise<
-  | Awaited<ReturnType<typeof evaluateBids>>
-  | { ok: false; reason: "input_delivery_pending" | "input_delivery_failed" }
-> {
+): Promise<EvaluateBidsResult> {
   const runtime = deps.getChainStore().getRuntime(chainId);
   if (!runtime) return { ok: false, reason: "no_bids" };
   const awardMode = deps.getChainSideState().awardModes.get(chainId) ?? "direct";

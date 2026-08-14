@@ -183,7 +183,9 @@ export function KnowledgeView({ initialPanel = "browse" }: KnowledgeViewProps) {
               loadError={embed.loadError}
               inFlight={embed.inFlight}
               onDownload={() => {
-                void embed.startDownload().then(() => {
+                void embed
+                  .startDownload()
+                  .then(() => {
                   showToast(t("knowledge.embedGate.downloadStartedToast"), "success");
                 });
               }}

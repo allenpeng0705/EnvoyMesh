@@ -686,6 +686,10 @@ export const zhAiSettingsMessages = {
     embeddingLocalRunning: "Envoy Local 嵌入服务运行中 — {model} @ {endpoint}",
     embeddingLocalNotRunning: "Envoy Local 嵌入服务尚未运行。",
     embeddingLocalReadyToast: "Envoy Local 嵌入服务已就绪",
+    embeddingLocalModelDefault: "{label} — 默认",
+    embeddingLocalModelHint:
+      "默认使用较小的 0.6B 模型（约 0.5 GB）。需要更强检索时可选手动选择 4B（约 2.5 GB）；选定后会自动下载。",
+    embeddingLocalSwitchStartedToast: "正在下载/启动所选嵌入模型…",
     testEmbedding: "测试嵌入",
     testEmbeddingBusy: "测试中…",
     testEmbeddingHint: "用当前嵌入提供商发送一小段样本文本。",

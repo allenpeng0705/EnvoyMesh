@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AiEmbeddingSettings, EnvoyLocalEmbedStatus } from "@envoymesh/api";
+import { resolveEnvoyLocalEmbedModelId } from "@envoymesh/api";
 import { useNodeService } from "./useNodeService.js";
 
 export type KnowledgeEmbedGateKind =
@@ -91,11 +92,12 @@ export function useEnvoyLocalEmbedReadiness(
     return () => window.clearInterval(id);
   }, [required, status?.running, inFlight, refresh]);
 
-  const startDownload = useCallback(async () => {
+  const startDownload = useCallback(async (modelId?: string) => {
     if (!required) return null;
     setKickoffBusy(true);
     try {
-      const st = await nodeService.enableEnvoyLocalEmbed();
+      const id = resolveEnvoyLocalEmbedModelId(modelId ?? embedding?.modelName);
+      const st = await nodeService.enableEnvoyLocalEmbed({ modelId: id });
       setStatus(st);
       setLoadError(null);
       return st;
@@ -107,7 +109,7 @@ export function useEnvoyLocalEmbedReadiness(
     } finally {
       setKickoffBusy(false);
     }
-  }, [nodeService, required, refresh]);
+  }, [nodeService, required, refresh, embedding?.modelName]);
 
   const stop = useCallback(async () => {
     if (!required) return null;

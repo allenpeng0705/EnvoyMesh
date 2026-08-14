@@ -362,6 +362,41 @@ export function buildFeedIndexMarkdown(
   return lines.join("\n");
 }
 
+/** One row from `feeds/index.md` (see {@link buildFeedIndexMarkdown}). */
+export type ParsedFeedIndexEntry = {
+  title: string;
+  url: string;
+  /** ISO timestamp derived from the listing date (`YYYY-MM-DD` → noon UTC). */
+  publishedAt: string;
+  summary?: string;
+};
+
+/**
+ * Parse `feeds/index.md` bullet rows produced by {@link buildFeedIndexMarkdown}.
+ * Only `envoy://…/feeds/…` URLs are kept (skips empty / non-feed lines).
+ */
+export function parseFeedIndexMarkdown(markdown: string): ParsedFeedIndexEntry[] {
+  const lineRe =
+    /^-\s+\[([^\]]*)\]\((envoy:\/\/[^)\s]+)\)\s+\((\d{4}-\d{2}-\d{2})\)(?:\s+[—–-]\s+(.*))?$/;
+  const out: ParsedFeedIndexEntry[] = [];
+  for (const raw of markdown.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line.startsWith("- ")) continue;
+    const m = lineRe.exec(line);
+    if (!m) continue;
+    const url = m[2]!;
+    if (!url.includes("/feeds/")) continue;
+    const summary = m[4]?.trim();
+    out.push({
+      title: m[1]!.trim() || "Untitled",
+      url,
+      publishedAt: `${m[3]}T12:00:00.000Z`,
+      ...(summary ? { summary } : {}),
+    });
+  }
+  return out;
+}
+
 /** PhotoWall gallery page (`photos/{gallery}/index.md`). */
 export function buildPhotoWallMarkdown(
   ownerId: string,

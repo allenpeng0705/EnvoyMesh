@@ -8,7 +8,11 @@ import {
 import {
   defaultEnvoyLocalEmbedEndpoint,
   envoyLocalEmbedPort,
+  ENVOY_LOCAL_EMBED_MODEL_OPTIONS,
   ENVOY_LOCAL_EMBED_PORT_BASE,
+  DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID,
+  QWEN3_EMBEDDING_4B_MODEL_ID,
+  resolveEnvoyLocalEmbedModelId,
 } from "../src/embedding-presets.js";
 
 describe("envoy-local config", () => {
@@ -59,5 +63,19 @@ describe("envoy-local-embed config", () => {
   it("default embed endpoint tracks port offset helpers", () => {
     expect(envoyLocalEmbedPort()).toBe(ENVOY_LOCAL_EMBED_PORT_BASE + 0);
     expect(defaultEnvoyLocalEmbedEndpoint()).toContain(`:${envoyLocalEmbedPort()}/v1`);
+  });
+
+  it("curates 0.6B as default with 4B as optional upgrade", () => {
+    expect(DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID).toBe("qwen3-embedding-0.6b-q4_k_m");
+    expect(ENVOY_LOCAL_EMBED_MODEL_OPTIONS[0]?.id).toBe(DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID);
+    expect(ENVOY_LOCAL_EMBED_MODEL_OPTIONS[0]?.recommended).toBe(true);
+    expect(ENVOY_LOCAL_EMBED_MODEL_OPTIONS.some((m) => m.id === QWEN3_EMBEDDING_4B_MODEL_ID)).toBe(
+      true,
+    );
+    expect(resolveEnvoyLocalEmbedModelId(undefined)).toBe(DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID);
+    expect(resolveEnvoyLocalEmbedModelId("unknown")).toBe(DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID);
+    expect(resolveEnvoyLocalEmbedModelId(QWEN3_EMBEDDING_4B_MODEL_ID)).toBe(
+      QWEN3_EMBEDDING_4B_MODEL_ID,
+    );
   });
 });

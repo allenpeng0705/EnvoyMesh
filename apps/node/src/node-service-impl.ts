@@ -998,6 +998,7 @@ import {
   compactFeedEngageOutbox,
 } from "./feed-engage-outbox.js";
 import { listFeedTimeline as listFeedTimelineMerged } from "./feed-timeline.js";
+import { scheduleFeedBackfillForMissingPeers } from "./feed-backfill.js";
 import { sendFeedEngageToOwner } from "./content-engage-outbound.js";
 import {
   addContentCommentInStore,
@@ -4994,6 +4995,11 @@ class NodeServiceImpl implements NodeService {
           (mode as string) === "inherit"
         );
       },
+      preferredEmbedModelId: async () => {
+        await this._ensureEmbeddingSettingsMigrated();
+        const cfg = await this._configStore.load();
+        return cfg?.aiSettings?.knowledgeBase?.embedding?.modelName;
+      },
       isEmbedBusy: () => this._envoyLocalEmbedIdleHold > 0,
       onEmbedReady: async () => {
         // Boot refreshRagService often races ahead of :18791 (especially first
@@ -8206,12 +8212,22 @@ class NodeServiceImpl implements NodeService {
       throw new Error("listFeedTimeline: owner identity not ready");
     }
     const bonds = await this.getBonds();
-    return listFeedTimelineMerged({
+    const page = await listFeedTimelineMerged({
       profileDir: this._profileDir,
       ownerId,
       bonds,
       params,
     });
+    // Existing bonds: seed peer Feed if we have no local rows yet (push-only notify).
+    scheduleFeedBackfillForMissingPeers({
+      profileDir: this._profileDir,
+      bondedOwnerIds: bonds
+        .filter((b) => b.level === "direct" || b.level === "referred")
+        .map((b) => b.peerOwnerId),
+      libraryRead: (p) => this.libraryRead(p),
+      emit: (item) => this.storeFeedNotification(item),
+    });
+    return page;
   }
 
   async listBlogPosts(): Promise<import("@envoymesh/api").BlogPostSummary[]> {

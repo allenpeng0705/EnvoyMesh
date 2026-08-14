@@ -78,9 +78,11 @@ import {
 import {
   embeddingSettingsFromPreset,
   EMBEDDING_PROVIDER_PRESETS,
+  ENVOY_LOCAL_EMBED_MODEL_OPTIONS,
   inferEmbeddingProviderPresetId,
   recommendedVaultChunkCharsForEmbedding,
   resolveAiKnowledgeBaseSettings,
+  resolveEnvoyLocalEmbedModelId,
   ENVOY_LOCAL_EMBED_CTX_SIZE,
   type EmbeddingProviderPresetId,
 } from "@envoymesh/api";
@@ -513,7 +515,7 @@ export function KnowledgeBaseSettings(props: {
   const embedStatus = embed.status;
   const embedBusy = embed.inFlight;
 
-  const patch = async (partial: Partial<AiKnowledgeBaseSettings>) => {
+  const patch = async (partial: Partial<AiKnowledgeBaseSettings>): Promise<boolean> => {
     const merged = { ...kb, ...partial };
     // Auto-lock Envoy Local embed budget + chunk caps on every save.
     const normalized = resolveAiKnowledgeBaseSettings(merged);
@@ -532,11 +534,12 @@ export function KnowledgeBaseSettings(props: {
       }).modelKey;
       if (prevKey !== nextKey) {
         if (!window.confirm(t("settings.ai.rag.embeddingChangeConfirm"))) {
-          return;
+          return false;
         }
       }
     }
     await props.onChange(next);
+    return true;
   };
 
   const resolved = useMemo(
@@ -671,7 +674,13 @@ export function KnowledgeBaseSettings(props: {
                     inFlight={embed.inFlight}
                     showSetupLink={false}
                     onDownload={() => {
-                      void embed.startDownload().then((st) => {
+                      void embed
+                        .startDownload(
+                          resolveEnvoyLocalEmbedModelId(
+                            kb.embedding?.modelName ?? embedStatus?.activeModelId,
+                          ),
+                        )
+                        .then((st) => {
                         if (st?.running) {
                           showToast(
                             t("settings.ai.rag.embeddingLocalReadyToast"),
@@ -707,7 +716,11 @@ export function KnowledgeBaseSettings(props: {
                         data-testid="enable-envoy-local-embed"
                         disabled={embedBusy || embedStatus?.running === true}
                         onClick={async () => {
-                          const st = await embed.startDownload();
+                          const st = await embed.startDownload(
+                            resolveEnvoyLocalEmbedModelId(
+                              kb.embedding?.modelName ?? embedStatus?.activeModelId,
+                            ),
+                          );
                           if (st?.running) {
                             showToast(
                               t("settings.ai.rag.embeddingLocalReadyToast"),
@@ -739,7 +752,64 @@ export function KnowledgeBaseSettings(props: {
                 ) : null}
               </div>
             ) : null}
-            {showModel ? (
+            {isEnvoyLocalEmbed ? (
+              <div className="form-group knowledge-setup-grid__span-2">
+                <label htmlFor="kb-embed-model">{t("settings.ai.rag.embeddingModel")}</label>
+                <select
+                  id="kb-embed-model"
+                  data-testid="kb-embed-model"
+                  value={resolveEnvoyLocalEmbedModelId(
+                    kb.embedding?.modelName ?? embedStatus?.activeModelId,
+                  )}
+                  disabled={embedBusy}
+                  onChange={async (e) => {
+                    const modelId = resolveEnvoyLocalEmbedModelId(e.target.value);
+                    const saved = await patch({
+                      embedding: {
+                        ...kb.embedding,
+                        mode: "envoy-local",
+                        modelName: modelId,
+                        endpoint:
+                          kb.embedding?.endpoint ??
+                          EMBEDDING_PROVIDER_PRESETS.find((p) => p.id === "envoy-local")
+                            ?.defaultEndpoint,
+                        responseShape: "openai",
+                        maxInputTokens: ENVOY_LOCAL_EMBED_CTX_SIZE,
+                      },
+                    });
+                    if (!saved) return;
+                    // Selecting a curated model also provisions/downloads it.
+                    const st = await embed.startDownload(modelId);
+                    if (st?.running) {
+                      showToast(
+                        t("settings.ai.rag.embeddingLocalReadyToast"),
+                        "success",
+                      );
+                    } else if (st?.lastError) {
+                      showToast(st.lastError, "error");
+                    } else {
+                      showToast(
+                        t("settings.ai.rag.embeddingLocalSwitchStartedToast"),
+                        "success",
+                      );
+                    }
+                  }}
+                >
+                  {ENVOY_LOCAL_EMBED_MODEL_OPTIONS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.recommended
+                        ? t("settings.ai.rag.embeddingLocalModelDefault", {
+                            label: m.label,
+                          })
+                        : m.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="field-desc">
+                  {t("settings.ai.rag.embeddingLocalModelHint")}
+                </p>
+              </div>
+            ) : showModel ? (
               <div className="form-group">
                 <label htmlFor="kb-embed-model">{t("settings.ai.rag.embeddingModel")}</label>
                 <input
@@ -1155,7 +1225,7 @@ export function KnowledgeBaseSettings(props: {
                   />
                 </div>
               </div>
-              <McpWriteBackControls kb={kb} onPatch={patch} />
+              <McpWriteBackControls kb={kb} onPatch={async (partial) => { await patch(partial); }} />
             </>
           ) : null}
         </div>

@@ -359,3 +359,26 @@ export async function dismissAllFeedNotifyInboxItems(
     return loadFeedNotifyInbox(profileDir);
   });
 }
+
+/**
+ * Mark specific timeline URLs read (bond backfill) without deleting rows.
+ * Idempotent — already-read URLs are left unchanged.
+ */
+export async function markFeedNotifyUrlsRead(
+  profileDir: string,
+  urls: readonly string[],
+  readAt: string = new Date().toISOString(),
+): Promise<void> {
+  const cleaned = [...new Set(urls.map((u) => u.trim()).filter(Boolean))];
+  if (cleaned.length === 0) return;
+  return enqueueReadMap(profileDir, async () => {
+    const map = await loadReadMap(profileDir);
+    let changed = false;
+    for (const url of cleaned) {
+      if (map[url]) continue;
+      map[url] = readAt;
+      changed = true;
+    }
+    if (changed) await writeReadMap(profileDir, map);
+  });
+}

@@ -173,9 +173,9 @@ export async function buildEnvoyMeshRetrievedContext(input: {
           knowledgeScope,
           sensitivityOverrides,
         });
-    if (vaultResults.length > 0) {
+      if (vaultResults.length > 0) {
       let wikiLinkSection = "";
-      if (knowledgeScope === "owner") {
+      if (knowledgeScope === "owner" && input.profileDir) {
         try {
           const { enrichOwnerVaultAskContext } = await import("./obsidian-ask-context.js");
           const enriched = await enrichOwnerVaultAskContext({

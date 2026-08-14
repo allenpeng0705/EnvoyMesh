@@ -1501,7 +1501,17 @@ export type CounterBidResult =
 
 export type EvaluateBidsResult =
   | { ok: true; award: ChainSubtaskAward; round: number; bid: ChainSubtaskBid }
-  | { ok: false; reason: "no_bids" | "all_bids_expired" | "budget_exceeded" | "cancelled" | "max_rounds_exceeded" };
+  | {
+      ok: false;
+      reason:
+        | "no_bids"
+        | "all_bids_expired"
+        | "budget_exceeded"
+        | "cancelled"
+        | "max_rounds_exceeded"
+        | "input_delivery_pending"
+        | "input_delivery_failed";
+    };
 
 export async function evaluateBids(
   deps: ChainOrchestratorHandlerDeps,

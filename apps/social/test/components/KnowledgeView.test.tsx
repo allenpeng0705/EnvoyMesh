@@ -160,7 +160,9 @@ describe("KnowledgeView", () => {
     expect(enableEnvoyLocalEmbed).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId("knowledge-embed-gate-download"));
     await waitFor(() => {
-      expect(enableEnvoyLocalEmbed).toHaveBeenCalled();
+      expect(enableEnvoyLocalEmbed).toHaveBeenCalledWith({
+        modelId: "qwen3-embedding-0.6b-q4_k_m",
+      });
     });
   });
 

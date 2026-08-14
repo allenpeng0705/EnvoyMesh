@@ -632,6 +632,10 @@ export const aiSettingsMessages = {
     embeddingLocalRunning: "Envoy Local embedder running — {model} at {endpoint}",
     embeddingLocalNotRunning: "Envoy Local embedder is not running yet.",
     embeddingLocalReadyToast: "Envoy Local embedder is ready",
+    embeddingLocalModelDefault: "{label} — default",
+    embeddingLocalModelHint:
+      "Default is the small 0.6B model (~0.5 GB). Choose 4B for stronger retrieval (~2.5 GB); it downloads when you select it.",
+    embeddingLocalSwitchStartedToast: "Downloading / starting the selected embed model…",
     testEmbedding: "Test embedding",
     testEmbeddingBusy: "Testing…",
     testEmbeddingHint: "Sends a short sample through the current embedding provider.",

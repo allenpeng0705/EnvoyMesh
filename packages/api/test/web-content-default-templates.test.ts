@@ -8,6 +8,7 @@ import {
   buildProfilePortalHtml,
   buildVisitorPlaceholderMarkdown,
   defaultWebSurfaceForPath,
+  parseFeedIndexMarkdown,
 } from "../src/web-content-default-templates.js";
 
 describe("web-content-default-templates", () => {
@@ -75,6 +76,35 @@ describe("web-content-default-templates", () => {
     expect(withPost).toContain("# Feed");
     expect(withPost).toContain("[Hello](envoy://envoy:owner:alice/feeds/hello.md)");
     expect(withPost).toContain("Moments");
+  });
+
+  it("parses feed index markdown (round-trip with builder)", () => {
+    const md = buildFeedIndexMarkdown("envoy:owner:alice", [
+      {
+        path: "feeds/newer.md",
+        title: "Newer",
+        updatedAt: "2026-08-02T00:00:00.000Z",
+        publishedAt: "2026-08-02T15:00:00.000Z",
+        summary: "Second",
+      },
+      {
+        path: "feeds/older.md",
+        title: "Older",
+        updatedAt: "2026-07-20T00:00:00.000Z",
+        publishedAt: "2026-07-20T00:00:00.000Z",
+      },
+    ]);
+    const parsed = parseFeedIndexMarkdown(md);
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0]).toMatchObject({
+      title: "Newer",
+      url: "envoy://envoy:owner:alice/feeds/newer.md",
+      publishedAt: "2026-08-02T12:00:00.000Z",
+      summary: "Second",
+    });
+    expect(parsed[1]?.title).toBe("Older");
+    expect(parsed[1]?.summary).toBeUndefined();
+    expect(parseFeedIndexMarkdown("# Feed\n\n_No posts yet._\n")).toEqual([]);
   });
 
   it("includes photo captions in PhotoWall markdown when summary differs from title", () => {

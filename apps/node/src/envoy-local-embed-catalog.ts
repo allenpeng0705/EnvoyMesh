@@ -6,7 +6,10 @@
  * @see https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF
  */
 import type { EnvoyLocalCatalogModel } from "@envoymesh/api";
-import { DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID } from "@envoymesh/api";
+import {
+  DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID,
+  QWEN3_EMBEDDING_4B_MODEL_ID,
+} from "@envoymesh/api";
 
 /**
  * Default embed model (~0.5 GB). Auto-downloaded on launch when missing.
@@ -29,7 +32,7 @@ export const DEFAULT_ENVOY_LOCAL_EMBED_MODEL: EnvoyLocalCatalogModel = {
 
 /** Optional larger alternate — stronger retrieval, heavier CPU/RAM when warm. */
 export const QWEN3_EMBEDDING_4B_MODEL: EnvoyLocalCatalogModel = {
-  id: "qwen3-embedding-4b-q4_k_m",
+  id: QWEN3_EMBEDDING_4B_MODEL_ID,
   label: "Qwen3 Embedding 4B (Q4_K_M)",
   description:
     "Higher-quality multilingual embedder (~2.5 GB). Prefer when you need stronger retrieval and can spare CPU/RAM.",

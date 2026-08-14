@@ -263,6 +263,7 @@ export function migrateEmbeddingSettings(
   const modelName = embedding?.modelName?.trim();
   const apiKey = embedding?.apiKey?.trim();
   const responseShape = embedding?.responseShape;
+  const maxInputTokens = embedding?.maxInputTokens;
 
   // inherit/missing with no custom targeting → product default.
   if (!endpoint && !modelName && !apiKey) {

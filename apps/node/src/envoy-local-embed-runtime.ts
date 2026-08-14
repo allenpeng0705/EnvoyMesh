@@ -13,6 +13,7 @@ import {
   DEFAULT_ENVOY_LOCAL_SERVER_PARAMS,
   ENVOY_LOCAL_EMBED_CTX_SIZE,
   normalizeEnvoyLocalEmbedConfig,
+  resolveEnvoyLocalEmbedModelId,
   type EnableEnvoyLocalEmbedParams,
   type EnvoyLocalCatalogModel,
   type EnvoyLocalEmbedConfig,
@@ -65,6 +66,11 @@ export interface EnvoyLocalEmbedRuntimeDeps {
    * False when Knowledge embedding provider is cloud/Ollama/mock.
    */
   shouldAutoProvisionEmbed?: () => Promise<boolean>;
+  /**
+   * Knowledge Setup embedding.modelName when set — preferred over a stale
+   * envoyLocalEmbed.activeModelId on boot/enable without explicit modelId.
+   */
+  preferredEmbedModelId?: () => Promise<string | undefined>;
   /**
    * Fired once when the embed sidecar first becomes ready in this process
    * (fresh start or orphan reuse). Used to run RAG reindex after first-run
@@ -639,8 +645,16 @@ export async function enableEnvoyLocalEmbedViaRuntime(
         { region },
       );
 
+      // Prefer: explicit RPC modelId → Knowledge Setup model → last active → 0.6B.
+      const cfg = normalizeEnvoyLocalEmbedConfig(await deps.loadEnvoyLocalEmbedConfig());
+      const preferredKb = deps.preferredEmbedModelId
+        ? await deps.preferredEmbedModelId()
+        : undefined;
+      const modelId = resolveEnvoyLocalEmbedModelId(
+        params?.modelId ?? preferredKb ?? cfg.activeModelId,
+      );
       const catalog =
-        getEnvoyLocalEmbedCatalogModel(params?.modelId) ?? DEFAULT_ENVOY_LOCAL_EMBED_MODEL;
+        getEnvoyLocalEmbedCatalogModel(modelId) ?? DEFAULT_ENVOY_LOCAL_EMBED_MODEL;
       if (params?.skipModelDownload !== true) {
         await downloadEmbedModel(state, deps, profileDir, catalog, abort.signal);
       } else {

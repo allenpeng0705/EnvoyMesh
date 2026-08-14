@@ -175,6 +175,7 @@ import { handleInboundTaskFeedback, handleInboundOfficialCredential } from "./re
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { handleInboundLibraryRead } from "./library-read-inbound.js";
 import { handleInboundFeedNotify } from "./feed-notify-inbound.js";
+import { backfillBondedPeerFeed } from "./feed-backfill.js";
 import { handleDaemonAgentCardInbound } from "./daemon-agent-card-inbound.js";
 import { handleDaemonTaskInbound } from "./daemon-task-inbound.js";
 import { handleInboundShareRequest, handleInboundShareAccept, resolveSenderOwnerId, isSafeVaultPath } from "./share-inbound.js";
@@ -3631,6 +3632,28 @@ nodeService.on("peer:lost", (data) => wsServer.emitEvent("peer:lost", data));
 nodeService.on("bond:established", (data) => {
   console.log(`[index.ts] nodeService bond:established event fired, peerOwnerId=${data.peerOwnerId}`);
   wsServer.emitEvent("bond:established", data);
+  // Seed peer Feed timeline from feeds/index.md (posts before bond never arrived via feed.notify).
+  void backfillBondedPeerFeed({
+    profileDir: args.profileDir,
+    peerOwnerId: data.peerOwnerId,
+    libraryRead: (params) => nodeService.libraryRead(params),
+    emit: (item) => {
+      if (nodeService instanceof NodeServiceImpl) {
+        nodeService.storeFeedNotification(item);
+      }
+    },
+  }).then((result) => {
+    if (!result.ok) {
+      console.warn(`[feed.backfill] failed for ${data.peerOwnerId}: ${result.reason}`);
+      return;
+    }
+    if (result.inserted > 0 || (result.reason && result.reason !== "no_entries")) {
+      console.log(
+        `[feed.backfill] ${data.peerOwnerId}: inserted=${result.inserted} skipped=${result.skipped}` +
+          (result.reason ? ` reason=${result.reason}` : ""),
+      );
+    }
+  });
 });
 nodeService.on("config:updated", (data) => {
   console.log(`[index.ts] config:updated event fired`);

@@ -155,7 +155,9 @@ class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
     final l10n = AppLocalizations.of(context);
     setState(() => _embedKickoffBusy = true);
     try {
-      final st = await client.enableEnvoyLocalEmbed();
+      final st = await client.enableEnvoyLocalEmbed(
+        modelId: 'qwen3-embedding-0.6b-q4_k_m',
+      );
       if (!mounted) return;
       setState(() {
         _embedStatus = st;

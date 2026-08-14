@@ -9,6 +9,54 @@ import { ENVOY_LOCAL_EMBED_CTX_SIZE } from "./ai-embedding-limits.js";
 /** Default Envoy Local embed model id (GGUF catalog entry; swappable). */
 export const DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID = "qwen3-embedding-0.6b-q4_k_m";
 
+/** Optional larger Envoy Local embedder (curated catalog). */
+export const QWEN3_EMBEDDING_4B_MODEL_ID = "qwen3-embedding-4b-q4_k_m";
+
+/** Lightweight UI / preference entries for curated embed GGUFs. */
+export interface EnvoyLocalEmbedModelOption {
+  id: string;
+  label: string;
+  description: string;
+  approxBytes: number;
+  /** Shown as the recommended / default choice. */
+  recommended?: boolean;
+}
+
+/**
+ * Curated Envoy Local embed models (0.6B default first; 4B optional upgrade).
+ * Download URLs live in `apps/node` catalog — ids must stay in sync.
+ */
+export const ENVOY_LOCAL_EMBED_MODEL_OPTIONS: readonly EnvoyLocalEmbedModelOption[] = [
+  {
+    id: DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID,
+    label: "Qwen3 Embedding 0.6B (Q4_K_M)",
+    description: "Default — small, keep-warm friendly (~0.5 GB).",
+    approxBytes: 500_000_000,
+    recommended: true,
+  },
+  {
+    id: QWEN3_EMBEDDING_4B_MODEL_ID,
+    label: "Qwen3 Embedding 4B (Q4_K_M)",
+    description: "Higher quality (~2.5 GB). Downloads when you select and install.",
+    approxBytes: 2_500_000_000,
+  },
+];
+
+export function isEnvoyLocalEmbedCatalogModelId(id: string | undefined | null): boolean {
+  const trimmed = id?.trim();
+  if (!trimmed) return false;
+  return ENVOY_LOCAL_EMBED_MODEL_OPTIONS.some((m) => m.id === trimmed);
+}
+
+/** Prefer a curated id; otherwise fall back to the 0.6B default. */
+export function resolveEnvoyLocalEmbedModelId(
+  preferred?: string | null,
+): string {
+  const trimmed = preferred?.trim();
+  if (trimmed && isEnvoyLocalEmbedCatalogModelId(trimmed)) return trimmed;
+  return DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID;
+}
+
 /** Canonical bases — match `apps/node/src/service-ports.ts` (before offset). */
 export const ENVOY_LOCAL_CHAT_PORT_BASE = 18790;
 export const ENVOY_LOCAL_EMBED_PORT_BASE = 18791;
