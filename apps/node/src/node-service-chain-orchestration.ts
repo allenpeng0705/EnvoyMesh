@@ -49,12 +49,15 @@ import {
   sendChainHandoff,
   reassignStalledSubtask,
   trackChain,
+  mergeProposeInputArtifacts,
   type ChainOrchestratorHandlerDeps,
   type ChainState,
 } from "./chain-orchestrator.js";
 import {
   copyChainInputInVault,
   deliverChainInputsOnAward,
+  buildJobInputFileArtifacts,
+  jobInputsReadyForAward,
 } from "./chain-input-delivery-runtime.js";
 import { sendVaultFileViaDataTransfer } from "./node-file-share.js";
 import {
@@ -1609,7 +1612,10 @@ export async function _evaluateAwardAndAccept(
     pickWorkerPeerId?: string;
     skipSensitivityGate?: boolean;
   },
-): Promise<Awaited<ReturnType<typeof evaluateBids>>> {
+): Promise<
+  | Awaited<ReturnType<typeof evaluateBids>>
+  | { ok: false; reason: "input_delivery_pending" | "input_delivery_failed" }
+> {
   const runtime = deps.getChainStore().getRuntime(chainId);
   if (!runtime) return { ok: false, reason: "no_bids" };
   const awardMode = deps.getChainSideState().awardModes.get(chainId) ?? "direct";
@@ -1633,16 +1639,51 @@ export async function _evaluateAwardAndAccept(
   }
 
   const subtask = runtime.state.subtasks.get(subtaskId);
-  const inputArtifacts =
+
+  // Phase 59C — deliver before accept; stall award if required inputs fail.
+  if (orchDeps.onAwardAccepted) {
+    try {
+      await orchDeps.onAwardAccepted(runtime.state, subtaskId, result.bid.workerPeerId);
+    } catch (err) {
+      console.warn(`[chain.input] onAwardAccepted failed for ${chainId}/${subtaskId}:`, err);
+    }
+  }
+  const inputsReady = jobInputsReadyForAward(
+    runtime.state,
+    subtaskId,
+    result.bid.workerPeerId,
+  );
+  if (!inputsReady.ok) {
+    await _rollbackSubtaskAward(runtime.state, subtaskId);
+    orchDeps.audit.record({
+      type: "chain.awarded",
+      outcome: "deny",
+      intent: "task.chain.accept",
+      correlationId: chainId,
+      summary:
+        `input_delivery_block subtask=${subtaskId} worker=${result.bid.workerPeerId}` +
+        ` reason=${inputsReady.reason}`,
+    });
+    _emitChainState(deps, chainId);
+    return { ok: false, reason: inputsReady.reason };
+  }
+
+  const parentArts =
     subtask && subtask.dependsOn.length > 0
       ? buildInputArtifacts(runtime.state, subtask)
       : undefined;
+  const jobArts = buildJobInputFileArtifacts(
+    runtime.state,
+    subtaskId,
+    result.bid.workerPeerId,
+  ) as import("@envoymesh/protocol").NamedArtifact[];
+  const inputArtifacts = mergeProposeInputArtifacts(parentArts, jobArts);
   let acceptOk = await sendChainAccept(
     orchDeps,
     result.bid.workerPeerId,
     result.award,
     subtask,
-    inputArtifacts && inputArtifacts.length > 0 ? inputArtifacts : undefined,
+    inputArtifacts,
   );
   if (!acceptOk) {
     // Critical: evaluateBids already reserved/awarded in state — retry once so
@@ -1653,7 +1694,7 @@ export async function _evaluateAwardAndAccept(
       result.bid.workerPeerId,
       result.award,
       subtask,
-      inputArtifacts && inputArtifacts.length > 0 ? inputArtifacts : undefined,
+      inputArtifacts,
     );
   }
   orchDeps.audit.record({
@@ -1665,13 +1706,6 @@ export async function _evaluateAwardAndAccept(
       `subtask=${subtaskId} worker=${result.bid.workerPeerId} cost=${result.bid.proposedCostUsd}` +
       (acceptOk ? "" : " accept_send_failed"),
   });
-  if (acceptOk && orchDeps.onAwardAccepted) {
-    try {
-      await orchDeps.onAwardAccepted(runtime.state, subtaskId, result.bid.workerPeerId);
-    } catch (err) {
-      console.warn(`[chain.input] onAwardAccepted failed for ${chainId}/${subtaskId}:`, err);
-    }
-  }
   return result;
 }
 

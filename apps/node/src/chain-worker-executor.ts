@@ -69,10 +69,14 @@ export function formatInputArtifactsForPrompt(
         `schemaRef: ${art.schemaRef ?? "unknown"}\n${JSON.stringify(art.data ?? {}, null, 2)}`,
       );
     } else if (art.kind === "file") {
+      const path = art.vaultPath ?? "unknown";
+      const isJobWorkspace = path.includes("imports/team-jobs/");
       sections.push(
         [
-          `File ref (contents not inlined — resolve via vault if available):`,
-          `- path: ${art.vaultPath ?? "unknown"}`,
+          isJobWorkspace
+            ? `Job input file (local Team job workspace — use this vault path):`
+            : `File ref (contents not inlined — resolve via vault if available):`,
+          `- path: ${path}`,
           `- contentHash: ${art.contentHash ?? "unknown"}`,
           art.displayName ? `- displayName: ${art.displayName}` : "",
           art.mimeType ? `- mimeType: ${art.mimeType}` : "",

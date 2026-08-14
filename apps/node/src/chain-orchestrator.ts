@@ -85,6 +85,10 @@ import {
 import type { ChainAuditSink, ChainInboundDecision } from "./chain-inbound-types.js";
 import { chainLog, chainWarn, shortPeerId } from "./chain-debug.js";
 import { shouldSkipWorkerForEngineProbe } from "./chain-ready-probe.js";
+import {
+  buildJobInputFileArtifacts,
+  jobInputsReadyForAward,
+} from "./chain-input-delivery-runtime.js";
 
 // ---------------------------------------------------------------------------
 // Outbound send surface — what the orchestrator needs from the runtime
@@ -519,6 +523,15 @@ export function prepareSubtaskPropose(
     subtask: enriched,
     ...(inputArtifacts.length > 0 ? { inputArtifacts } : {}),
   };
+}
+
+/** Phase 59C — merge parent handoffs + job-input file refs (max 16). */
+export function mergeProposeInputArtifacts(
+  parent: NamedArtifact[] | undefined,
+  jobInputs: NamedArtifact[] | undefined,
+): NamedArtifact[] | undefined {
+  const merged = [...(parent ?? []), ...(jobInputs ?? [])].slice(0, 16);
+  return merged.length > 0 ? merged : undefined;
 }
 
 /** Read-only view of the chain state, useful for the UI to render progress. */
@@ -970,13 +983,44 @@ export async function directAwardSubtask(
     return { ok: false, reason: evaluated.reason };
   }
 
+  // Phase 59C — deliver job inputs before accept so file refs exist on the worker.
+  if (deps.onAwardAccepted) {
+    try {
+      await deps.onAwardAccepted(state, subtaskId, workerPeerId);
+    } catch (err) {
+      console.warn(
+        `[chain.input] onAwardAccepted failed for ${state.chainId}/${subtaskId}:`,
+        err,
+      );
+    }
+  }
+  const inputsReady = jobInputsReadyForAward(state, subtaskId, workerPeerId);
+  if (!inputsReady.ok) {
+    await state.ledger.release(subtaskId, inputsReady.reason);
+    state.awards.delete(subtaskId);
+    state.awardedAt.delete(subtaskId);
+    state.bids.delete(`${subtaskId}::${workerPeerId}`);
+    deps.audit.record({
+      type: "chain.awarded",
+      outcome: "deny",
+      intent: "task.chain.accept",
+      correlationId: state.chainId,
+      summary:
+        `input_delivery_block subtask=${subtaskId.slice(0, 12)}` +
+        ` worker=${workerPeerId.slice(0, 14)} reason=${inputsReady.reason}`,
+    });
+    return { ok: false, reason: inputsReady.reason };
+  }
+
   const prepared = prepareSubtaskPropose(state, subtask);
+  const jobArts = buildJobInputFileArtifacts(state, subtaskId, workerPeerId) as NamedArtifact[];
+  const inputArtifacts = mergeProposeInputArtifacts(prepared.inputArtifacts, jobArts);
   const sent = await sendChainAccept(
     deps,
     workerPeerId,
     evaluated.award,
     prepared.subtask,
-    prepared.inputArtifacts,
+    inputArtifacts,
   );
   if (!sent) {
     await state.ledger.release(subtaskId, "direct-assign send failed");
@@ -995,16 +1039,6 @@ export async function directAwardSubtask(
       `direct_assign subtask=${subtaskId.slice(0, 12)}` +
       ` worker=${workerPeerId.slice(0, 14)}`,
   });
-  if (deps.onAwardAccepted) {
-    try {
-      await deps.onAwardAccepted(state, subtaskId, workerPeerId);
-    } catch (err) {
-      console.warn(
-        `[chain.input] onAwardAccepted failed for ${state.chainId}/${subtaskId}:`,
-        err,
-      );
-    }
-  }
   return { ok: true, award: evaluated.award };
 }
 
@@ -1150,13 +1184,19 @@ export async function retryStaleAccepts(
     }
 
     const subtask = state.subtasks.get(subtaskId);
-    const inputArtifacts = subtask ? buildInputArtifacts(state, subtask) : undefined;
+    const parentArts = subtask ? buildInputArtifacts(state, subtask) : undefined;
+    const jobArts = buildJobInputFileArtifacts(
+      state,
+      subtaskId,
+      award.workerPeerId,
+    ) as NamedArtifact[];
+    const inputArtifacts = mergeProposeInputArtifacts(parentArts, jobArts);
     const ok = await sendChainAccept(
       deps,
       award.workerPeerId,
       award,
       subtask,
-      inputArtifacts && inputArtifacts.length > 0 ? inputArtifacts : undefined,
+      inputArtifacts,
     );
     state.acceptResendCount.set(subtaskId, retries + 1);
     // Bump awardedAt so the wait window resets between resends.

@@ -69,6 +69,88 @@ export function attachmentsForAwardedSubtask(
   });
 }
 
+/**
+ * Phase 59C — whether selected job inputs for this award are safe to execute.
+ * No selected attachments → ready. Any failed → not ready. Any non-verified → pending.
+ */
+export function jobInputsReadyForAward(
+  state: ChainState,
+  subtaskId: string,
+  workerPeerId: string,
+): { ok: true } | { ok: false; reason: "input_delivery_pending" | "input_delivery_failed" } {
+  const selected = attachmentsForAwardedSubtask(state, subtaskId);
+  if (selected.length === 0) return { ok: true };
+  const deliveries = state.inputDeliveries ?? [];
+  for (const att of selected) {
+    const source = att.sourceRelativePath.replace(/^[\\/]+/, "");
+    const rec = deliveries.find(
+      (d) => d.workerPeerId === workerPeerId && d.sourceRelativePath === source,
+    );
+    if (!rec) return { ok: false, reason: "input_delivery_pending" };
+    if (rec.phase === "failed") return { ok: false, reason: "input_delivery_failed" };
+    if (rec.phase !== "verified") return { ok: false, reason: "input_delivery_pending" };
+  }
+  return { ok: true };
+}
+
+/**
+ * Phase 59C — file `inputArtifacts` for the worker (local vault paths after 59B).
+ */
+export function buildJobInputFileArtifacts(
+  state: ChainState,
+  subtaskId: string,
+  workerPeerId: string,
+): Array<{
+  key: string;
+  artifact: {
+    kind: "file";
+    vaultPath: string;
+    contentHash: string;
+    displayName?: string;
+  };
+}> {
+  const selected = attachmentsForAwardedSubtask(state, subtaskId);
+  if (selected.length === 0) return [];
+  const deliveries = state.inputDeliveries ?? [];
+  const out: Array<{
+    key: string;
+    artifact: {
+      kind: "file";
+      vaultPath: string;
+      contentHash: string;
+      displayName?: string;
+    };
+  }> = [];
+  const usedKeys = new Set<string>();
+  for (const att of selected) {
+    const source = att.sourceRelativePath.replace(/^[\\/]+/, "");
+    const rec = deliveries.find(
+      (d) =>
+        d.workerPeerId === workerPeerId &&
+        d.sourceRelativePath === source &&
+        d.phase === "verified",
+    );
+    if (!rec?.deliveredRelativePath) continue;
+    const hash = rec.contentHash?.trim();
+    if (!hash) continue;
+    let key = (att.label?.trim() || att.fileName || "input").slice(0, 64);
+    if (usedKeys.has(key)) key = `${key}_${usedKeys.size}`;
+    usedKeys.add(key);
+    out.push({
+      key,
+      artifact: {
+        kind: "file",
+        vaultPath: rec.deliveredRelativePath,
+        contentHash: hash,
+        ...(att.fileName || att.label
+          ? { displayName: att.fileName ?? att.label }
+          : {}),
+      },
+    });
+  }
+  return out;
+}
+
 export type ChainInputPushFile = (input: {
   sourceRelativePath: string;
   voucherRelativePath: string;
@@ -83,8 +165,9 @@ export type ChainInputCopyLocal = (input: {
 }) => Promise<{ contentHash: string }>;
 
 /**
- * After award+accept: push selected inputs to the worker (or local copy for You).
- * Failures mark `failed` and do not throw (award already succeeded).
+ * On award (before accept / Phase 59C): push selected inputs to the worker
+ * (or local copy for You). Failures mark `failed` and do not throw —
+ * callers use `jobInputsReadyForAward` to stall the accept.
  */
 export async function deliverChainInputsOnAward(opts: {
   state: ChainState;
@@ -142,7 +225,7 @@ export async function deliverChainInputsOnAward(opts: {
             workerPeerId,
             sourceRelativePath,
             deliveredRelativePath: sourceRelativePath,
-            contentHash: att.contentHash,
+            contentHash: att.contentHash ?? "local",
             phase: "verified",
           });
         } else {

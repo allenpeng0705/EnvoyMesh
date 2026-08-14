@@ -3,8 +3,10 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildOpenClawSubtaskPrompt,
   createExtAgentChainSubtaskExecutor,
   createOpenClawChainSubtaskExecutor,
+  formatInputArtifactsForPrompt,
 } from "../src/chain-worker-executor.js";
 import {
   CHAIN_SUBTASK_PARTIAL_NOTE_MAX,
@@ -162,6 +164,34 @@ describe("createOpenClawChainSubtaskExecutor", () => {
     expect(result.ok).toBe(true);
     expect(result.finalNote?.length).toBe(CHAIN_SUBTASK_PARTIAL_NOTE_MAX);
     expect(partials.at(-1)?.length).toBe(CHAIN_SUBTASK_PARTIAL_NOTE_MAX);
+  });
+});
+
+describe("formatInputArtifactsForPrompt (Phase 59C)", () => {
+  it("labels Team job workspace file paths for the worker", () => {
+    const text = formatInputArtifactsForPrompt([
+      {
+        key: "brief",
+        artifact: {
+          kind: "file",
+          vaultPath: "imports/team-jobs/chain_1/in/brief.pdf",
+          contentHash: "h",
+          displayName: "brief.pdf",
+        },
+      },
+    ]);
+    expect(text).toContain("Job input file (local Team job workspace");
+    expect(text).toContain("imports/team-jobs/chain_1/in/brief.pdf");
+    expect(buildOpenClawSubtaskPrompt(sampleSubtask(), [
+      {
+        key: "brief",
+        artifact: {
+          kind: "file",
+          vaultPath: "imports/team-jobs/chain_1/in/brief.pdf",
+          contentHash: "h",
+        },
+      },
+    ])).toContain("imports/team-jobs/chain_1/in/brief.pdf");
   });
 });
 

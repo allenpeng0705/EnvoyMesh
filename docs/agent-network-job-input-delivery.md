@@ -3,7 +3,7 @@
 > Deliver composer attachments (and optional step outputs) to **recruited
 > workers’ homes** for a **single Team job** — one-shot, audited, size-capped.
 >
-> Status: **Phase 59 — `[~]` in progress** (59A–59B shipped; 59C+ next).
+> Status: **Phase 59 — `[~]` in progress** (59A–59C shipped; 59D+ next).
 >
 > Related: [`agent-network-ux-team-jobs.md`](./agent-network-ux-team-jobs.md)
 > (Phase 58 honesty / visibility) ·
@@ -173,8 +173,9 @@ Never write outside `imports/team-jobs/<chainId>/`. Sanitize names; reject `..`.
 - **Do not** add `task.chain.input.*` intents in v1 unless reuse proves
   insufficient (parked).
 
-After verified write (59C): refresh propose `inputArtifacts` with worker-local
-`file` refs (`vaultPath` + `contentHash`). Keep Phase 53 small text packs on
+After verified write (59C): deliver **before** accept; accept/`inputArtifacts`
+carry worker-local `file` refs (`vaultPath` + `contentHash`). Stall the award
+when required inputs are pending/failed. Keep Phase 53 small text packs on
 the JSON path (≤ ~48 KiB) without a data-channel hop.
 
 ## 7. Policy & safety
@@ -211,7 +212,7 @@ the JSON path (≤ ~48 KiB) without a data-channel hop.
 |------|--------|-------|
 | **59A** | `[x]` | Design lock: schema + reuse voucher; caps; vault layout; open Qs settled |
 | **59B** | `[x]` | Assigner deliver-on-award + verify hash; local-You skip; unit tests |
-| **59C** | `[ ]` | Wire into propose/`inputArtifacts` so worker executor sees local path |
+| **59C** | `[x]` | Wire into propose/`inputArtifacts` so worker executor sees local path |
 | **59D** | `[ ]` | Social + EnvoyGo delivery status + retry; i18n |
 | **59E** | `[ ]` | Two/three-home E2E; GC on terminal |
 
