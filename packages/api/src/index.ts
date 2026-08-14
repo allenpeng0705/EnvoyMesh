@@ -62,6 +62,7 @@ export * from "./owner-agent-tool-allowlist.js";
 export * from "./owner-agent-planner.js";
 export * from "./library-request-share.js";
 export * from "./transfer-status.js";
+export * from "./chain-input-delivery.js";
 export * from "./knowledge-syndication.js";
 export * from "./kb-plugin.js";
 export * from "./envoy-disclosure.js";

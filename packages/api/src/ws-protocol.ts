@@ -1997,6 +1997,16 @@ export interface ChainGetStateResult {
     }>;
     produced?: Array<{ key: string; kind: string; label?: string }>;
   }>;
+  /**
+   * Phase 59 — composer / job input attachments on the Assigner home
+   * (parsed from goal `Attachments:` or stored at start).
+   */
+  inputAttachments?: import("./chain-input-delivery.js").ChainInputAttachment[];
+  /**
+   * Phase 59 — per-worker delivery progress for job inputs
+   * (`pending` → `verified` / `failed`).
+   */
+  inputDeliveries?: import("./chain-input-delivery.js").ChainInputDeliveryRecord[];
 }
 
 /** Read-only snapshot of a team job where this node is a worker (not assigner). */

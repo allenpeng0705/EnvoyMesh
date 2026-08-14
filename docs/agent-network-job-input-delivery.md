@@ -3,7 +3,7 @@
 > Deliver composer attachments (and optional step outputs) to **recruited
 > workers’ homes** for a **single Team job** — one-shot, audited, size-capped.
 >
-> Status: **designed (Phase 59)** — implement **after Phase 58**.
+> Status: **Phase 59 — `[~]` in progress** (59A design lock shipped; 59B+ next).
 >
 > Related: [`agent-network-ux-team-jobs.md`](./agent-network-ux-team-jobs.md)
 > (Phase 58 honesty / visibility) ·
@@ -56,20 +56,23 @@ That gap is real and useful to close — but **not** as “cross-home vault sync
 - Replacing Phase 53 `inputArtifacts` for small text/structured packs
 - Chat-based “share this file into a Team job” as the primary path (can link
   later)
+- Full `share.request` / `share.preview` / `share.accept` negotiation for job
+  inputs (bond + award is enough trust context)
 
 ## 5. Lifecycle
 
 ```text
 Owner attaches [brief] on Assigner home
-  → chainStartFromGoal (paths in goal / attachment manifest)
+  → staged under imports/team-jobs/<composerBatchId>/…
+  → chainStartFromGoal (Attachments: in goal + structured manifest)
   → plan+assign → award worker W for step S
-  → Assigner: for each attachment needed by S (or job-global inputs):
+  → Assigner (auto, default): for each attachment selected for S:
        issue voucher → /envoymesh/data → W writes
          imports/team-jobs/<chainId>/in/<safeName>
   → verify contentHash
   → propose/accept carries local path on W (or refreshed inputArtifacts)
   → W executes with local file
-  → on chain terminal (optional): GC job workspace or retain until report GC
+  → on chain terminal: GC imports/team-jobs/<chainId>/ (default)
 ```
 
 ```mermaid
@@ -85,34 +88,94 @@ sequenceDiagram
   Worker->>Assigner: partial + optional namedArtifacts
 ```
 
-**When to deliver**
+### Locked defaults (59A)
 
-| Trigger | Default |
-|---------|---------|
-| On **award** of a step that references the attachment / expects the key | Preferred |
-| Job-global attachments to **all** awarded workers once | Optional setting |
-| Before first propose (block propose until verified) | Recommended for file-required steps |
+| Decision | Lock |
+|----------|------|
+| **When to deliver** | **Auto on award** (`autoDeliverOnAward: true`). No owner click required. |
+| **Which files** | **`referenced` scope**: attachments whose `[label]` appears in the step objective / expects; if none match, **fall back to all** job attachments for that worker. Advanced may expose `all` later (59D). |
+| **Local “You”** | Skip network transfer; optionally copy into `imports/team-jobs/<chainId>/in/` for path consistency (59B). |
+| **GC** | **`on_terminal`**: delete `imports/team-jobs/<chainId>/` when the chain completes or is cancelled. |
+| **WAN failure** | Attempt data path (same dial/retry as chat share). On failure: mark delivery `failed`, stall required-file steps, surface Retry — **never** silent-run without the file. |
 
-**Local “You” worker:** skip transfer; path already on Assigner home (or
-copy into the same job workspace for consistency).
+## 6. Data model (59A locked)
 
-## 6. Data model (sketch)
+Shared types live in `@envoymesh/api` (`chain-input-delivery.ts`).
 
-Keep additive; exact schemas land in 59A.
+### Attachment manifest
 
-- **Attachment manifest** on the chain (already implied by composer):  
-  `{ relativePath, label?, contentHash?, byteLength?, sensitivity? }`
-- **Delivery record** per `(chainId, workerPeerId, relativePath)`:  
-  `pending | transferring | verified | failed` + error + `deliveredPath`
-- Worker vault layout:  
-  `imports/team-jobs/<chainId>/in/<sanitize(name)>`  
-  Optional outs: `.../out/` for worker-produced files (future)
+```typescript
+interface ChainInputAttachment {
+  sourceRelativePath: string; // Assigner vault path
+  label?: string;             // ≤40 chars
+  fileName?: string;
+  contentHash?: string;
+  byteLength?: number;
+  sensitivity?: "public" | "friends" | "private";
+}
+```
 
-Wire options (pick in 59A; prefer least new surface):
+Parsed from the goal `Attachments:` block via `parseChainInputAttachmentsFromGoal`
+(supports `- [label] path` and `- path`). Composer still stages under
+`imports/team-jobs/<composerBatchId>/…`; delivery remaps to `chainId`.
 
-1. **Reuse share/data transfer** under the chain’s `correlationId` (fastest).
-2. Thin `task.chain.input.offer` / `.ack` envelopes if we need explicit
-   job semantics without looking like a Library share.
+### Delivery record
+
+```typescript
+type ChainInputDeliveryPhase = "pending" | "transferring" | "verified" | "failed";
+
+interface ChainInputDeliveryRecord {
+  chainId: string;
+  workerPeerId: string;
+  sourceRelativePath: string;
+  deliveredRelativePath?: string; // worker-local after verify
+  contentHash?: string;
+  phase: ChainInputDeliveryPhase;
+  error?: string;
+  transferId?: string;
+  updatedAt: string; // ISO
+}
+```
+
+Surfaced on `ChainGetStateResult.inputAttachments` / `inputDeliveries` (optional;
+populated in 59B+).
+
+### Vault layout
+
+| Role | Path |
+|------|------|
+| Composer staging (pre-chain) | `imports/team-jobs/<composerBatchId>/<safeName>` |
+| Worker inbound (post-delivery) | `imports/team-jobs/<chainId>/in/<safeName>` |
+| Future outs (not 59) | `imports/team-jobs/<chainId>/out/…` |
+
+Never write outside `imports/team-jobs/<chainId>/`. Sanitize names; reject `..`.
+
+### Caps
+
+| Cap | Value |
+|-----|--------|
+| Attachments per job | 8 |
+| Per-file size | 25 MiB (composer) |
+| Network inbound stream | 64 MiB (`MAX_DATA_INBOUND_BYTES`) |
+| Job input voucher TTL | 60 minutes (re-issue on Retry) |
+
+### Wire (59A lock)
+
+**Reuse Data Transfer Voucher + `/envoymesh/data/0.1.0`.**
+
+- Call assigner send path directly on award (same machinery as
+  `sendVaultFileViaDataTransfer`) — **skip** `share.request` / preview / accept.
+- Remap inbound write via existing `resolveInboundRelativePath` /
+  `pendingDataTransferSavePath` so voucher source path → worker
+  `imports/team-jobs/<chainId>/in/…`.
+- Correlate progress with `chainId` (and optional `transferId`); reuse
+  `TransferStatus` phases where useful.
+- **Do not** add `task.chain.input.*` intents in v1 unless reuse proves
+  insufficient (parked).
+
+After verified write (59C): refresh propose `inputArtifacts` with worker-local
+`file` refs (`vaultPath` + `contentHash`). Keep Phase 53 small text packs on
+the JSON path (≤ ~48 KiB) without a data-channel hop.
 
 ## 7. Policy & safety
 
@@ -120,22 +183,22 @@ Wire options (pick in 59A; prefer least new surface):
   for chain propose/accept).
 - Sensitivity: attachment ceiling ≤ mandate / job maxSensitivity; deny or
   require owner approval when higher.
-- Size: hard cap per file and per job (start from composer 25 MiB × 8; may
-  lower for WAN).
 - Path safety: sanitize names; never write outside `imports/team-jobs/<chainId>/`.
-- Audit: `chain.input_delivered` / `chain.input_failed` with peer, hash, bytes.
+- Audit: `chain.input_delivered` / `chain.input_failed` with peer, hash, bytes
+  (59B).
 - Failure: step can stall with visible “input delivery failed — retry”; do
   not silently run without the file if the step marked it required.
+- Voucher verify still needs peer-directory device key material (same as
+  Library share).
 
 ## 8. UX
 
 **Assigner (Social / EnvoyGo start + detail)**
 
 - Start: keep honesty from 58B; add “Workers will receive a copy of these
-  inputs when assigned” when Phase 59 is live.
-- Detail: per attachment × worker delivery chips; Retry on failure.
-- Optional Advanced: “Deliver job inputs to all workers” vs “Only steps that
-  reference them.”
+  inputs when assigned” when Phase 59 deliver path is live (59D).
+- Detail: per attachment × worker delivery chips; Retry on failure (59D).
+- Optional Advanced: scope `referenced` vs `all` (59D).
 
 **Worker (observed / local activity)**
 
@@ -144,13 +207,13 @@ Wire options (pick in 59A; prefer least new surface):
 
 ## 9. Waves (Phase 59)
 
-| Wave | Scope |
-|------|--------|
-| **59A** | Design lock: schema + reuse voucher vs new intent; caps; vault layout |
-| **59B** | Assigner deliver-on-award + verify hash; local-You skip; unit tests |
-| **59C** | Wire into propose/`inputArtifacts` so worker executor sees local path |
-| **59D** | Social + EnvoyGo delivery status + retry; i18n |
-| **59E** | Two/three-home E2E (attach → award → deliver → worker reads file); GC policy |
+| Wave | Status | Scope |
+|------|--------|-------|
+| **59A** | `[x]` | Design lock: schema + reuse voucher; caps; vault layout; open Qs settled |
+| **59B** | `[ ]` | Assigner deliver-on-award + verify hash; local-You skip; unit tests |
+| **59C** | `[ ]` | Wire into propose/`inputArtifacts` so worker executor sees local path |
+| **59D** | `[ ]` | Social + EnvoyGo delivery status + retry; i18n |
+| **59E** | `[ ]` | Two/three-home E2E; GC on terminal |
 
 ## 10. Success criteria
 
@@ -161,11 +224,11 @@ Wire options (pick in 59A; prefer least new surface):
   workspace.
 - Small text packs still use Phase 53 without forcing a data-channel hop.
 
-## 11. Open questions (settle in 59A)
+## 11. Settled questions (was open; locked in 59A)
 
-1. Auto-deliver on award vs owner toggle default-on?
-2. Deliver only attachments referenced by `[label]` / `expects`, or all
-   composer attachments to every awarded worker?
-3. Retain workspace until report pin expiry vs delete on terminal?
-4. WAN: require circuit-capable data path; fail clearly if only envelope-size
-   packs are possible?
+| # | Question | Decision |
+|---|----------|----------|
+| 1 | Auto-deliver on award vs owner toggle? | **Auto on award** (default). Toggle later only if needed. |
+| 2 | Referenced-only vs all attachments? | **`referenced` with all-job fallback** when the step mentions no labels. |
+| 3 | GC timing? | **Delete workspace on chain terminal** (`on_terminal`). |
+| 4 | WAN failure UX? | **Fail delivery + stall + Retry**; never silent-run without required file. |

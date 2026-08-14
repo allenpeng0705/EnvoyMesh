@@ -96,7 +96,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 57 — Knowledge Base production hardening (Markdown-first + anydoc)](#phase-57--knowledge-base-production-hardening-markdown-first--anydoc-)
 - [Phase 58 — Team jobs UX (fleet readiness, live story, multi-node)](#phase-58--team-jobs-ux-fleet-readiness-live-story-multi-node)
 
-- [Phase 59 — Team job input delivery (bytes to workers, not vault sync)](#phase-59--team-job-input-delivery-bytes-to-workers-not-vault-sync-designed)
+- [Phase 59 — Team job input delivery (bytes to workers, not vault sync)](#phase-59--team-job-input-delivery-bytes-to-workers-not-vault-sync)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -1166,7 +1166,7 @@ Milestone: **Phases 0–48 shipped for interop bridges** — Core protocol throu
 
 **Last shipped:** **Phase 48 — A2A + MCP Interop Bridges (48A–48D).** MCP tool consumer (`mesh.mcp.*`), MCP server adapter (`npx envoymesh mcp-server`), A2A Agent Card on relay `/.well-known/agent-card.json`, and A2A Task Bridge JSON-RPC (`message/send` / `tasks/get` / `tasks/cancel`) with auth + state/artifact maps + relay proxy. **~191 dedicated unit tests green.** Design: [a2a-mcp-interop-design.md](./a2a-mcp-interop-design.md). Earlier recent ship: Phase 47 Team job multi-round iteration (47A–47D).
 
-**Active:** **Phase 59 — Team job input delivery** (designed; after Phase 58). Design: [agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md). Also tracked: Phase 54 Envoy Local; ICE media-transport ([voice-video-call-support.md](./voice-video-call-support.md)).
+**Active:** **Phase 59 — Team job input delivery** (`[~]` 59A locked; next **59B** deliver-on-award). Design: [agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md). Also tracked: Phase 54 Envoy Local; ICE media-transport ([voice-video-call-support.md](./voice-video-call-support.md)).
 
 
 ### Next planning pulls
@@ -1187,7 +1187,7 @@ Milestone: **Phases 0–48 shipped for interop bridges** — Core protocol throu
 14. **Phase 54 — EnvoyAI model guidance + Envoy Local** — Configure AI when no usable model; optional downloadable `llama-server` (never packaged); cloud/Ollama remain equal choices. [envoy-local-design.md](./envoy-local-design.md).
 15. **Phase 57 — Knowledge Base production hardening (Markdown-first + anydoc)** — `[x]` 57A–57E + item-4 shipped. Design: [knowledge-base-and-rag.md](./knowledge-base-and-rag.md) · checklist below.
 16. **Phase 58 — Team jobs UX (fleet readiness, live story, multi-node)** — designed; **58A first**. Chat→team-job recruitment explicitly parked. Design: [agent-network-ux-team-jobs.md](./agent-network-ux-team-jobs.md) · checklist below.
-17. **Phase 59 — Team job input delivery** — designed; **after Phase 58**. One-shot bytes to worker job workspace (not vault sync). Design: [agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md) · checklist below.
+17. **Phase 59 — Team job input delivery** — `[~]` **59A locked**; next **59B** deliver-on-award. One-shot bytes to worker job workspace (not vault sync). Design: [agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md) · checklist below.
 
 ### Phase 9 Architecture Overview
 
@@ -7465,9 +7465,9 @@ Primary code touchpoints:
 
 ---
 
-## Phase 59 — Team job input delivery (bytes to workers, not vault sync) **designed**
+## Phase 59 — Team job input delivery (bytes to workers, not vault sync)
 
-> **Status:** `[ ]` designed — **no code yet.** Start **after Phase 58** (especially 58B honesty / delivery-status hooks).  
+> **Status:** `[~]` **59A shipped** — design lock + shared types. Next: **59B** deliver-on-award.  
 > **Design (source of truth):** [agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md)  
 > **Related:** [agent-network-artifacts.md](./agent-network-artifacts.md) (Phase 53 refs) · [p2p-file-sharing-plan.md](./p2p-file-sharing-plan.md) (voucher + `/envoymesh/data`) · [agent-network-ux-team-jobs.md](./agent-network-ux-team-jobs.md) (Phase 58)
 
@@ -7475,8 +7475,8 @@ Primary code touchpoints:
 
 **Hard rules:**
 
-- **Handoff, not sync** — one-shot copy under `imports/team-jobs/<chainId>/in/…`; GC with the job (policy settled in 59A/59E).
-- **Reuse** Data Transfer Voucher + `/envoymesh/data/0.1.0` when possible; avoid a parallel byte protocol.
+- **Handoff, not sync** — one-shot copy under `imports/team-jobs/<chainId>/in/…`; GC with the job (`on_terminal` default).
+- **Reuse** Data Transfer Voucher + `/envoymesh/data/0.1.0` (skip `share.*` negotiation for job inputs).
 - Deliver only to **awarded / needed** workers (bonded + AN), not the whole contact list.
 - Keep Phase 53 small text/structured `inputArtifacts` packs; do not force a data-channel hop for tiny payloads.
 - Size caps, sensitivity ≤ job/mandate ceiling, path sanitization, full audit (`chainId` / `correlationId`).
@@ -7487,17 +7487,18 @@ Primary code touchpoints:
 - Delivering the owner’s entire Library / vault tree
 - Auto-publish into peer public knowledge
 - Chat-first “share into Team job” as the primary path
+- New `task.chain.input.*` intents in v1 (parked)
 
-### 59A — Design lock + schema `[ ]`
+### 59A — Design lock + schema `[x]`
 
-- `[ ]` Settle open questions in design §11 (auto-on-award vs toggle; all attachments vs referenced-only; GC; WAN failure UX)
-- `[ ]` Attachment manifest + per-`(chainId, worker, path)` delivery record types in `@envoymesh/api` / protocol as needed
-- `[ ]` Choose wire: reuse share/data transfer under chain correlation vs thin `task.chain.input.*` intents
-- `[ ]` Document vault layout + caps
+- `[x]` Settle open questions (auto-on-award; referenced+fallback; GC on terminal; WAN fail+Retry)
+- `[x]` Attachment manifest + delivery record types in `@envoymesh/api` (`chain-input-delivery.ts`); optional fields on `ChainGetStateResult`
+- `[x]` Wire: reuse voucher + `/envoymesh/data` + inbound path remap; no parallel byte protocol
+- `[x]` Document vault layout + caps (composer staging → `chainId/in/`; 8×25 MiB; voucher TTL 60m)
 
 ### 59B — Assigner deliver-on-award `[ ]`
 
-- `[ ]` On award (or configured trigger): push attachments to worker via voucher + data stream
+- `[ ]` On award: push selected attachments to worker via voucher + data stream
 - `[ ]` Verify `contentHash` on worker write
 - `[ ]` Skip transfer for local “You” worker (or copy into job workspace for path consistency)
 - `[ ]` Unit tests: success / hash mismatch / offline failure
@@ -7519,7 +7520,7 @@ Primary code touchpoints:
 ### 59E — Multi-home E2E + GC `[ ]`
 
 - `[ ]` Two/three-home E2E: attach → award → deliver → worker reads file → partial
-- `[ ]` GC / retain policy for `imports/team-jobs/<chainId>/` on terminal
+- `[ ]` GC `imports/team-jobs/<chainId>/` on terminal
 - `[ ]` Docs: guide + artifacts pointer; Phase 53 non-goal remains “sync”; delivery is this phase
 
 ### Exit criteria (overall)
@@ -7528,7 +7529,7 @@ Primary code touchpoints:
 - `[ ]` Owner sees per-worker delivery success/failure and can retry
 - `[ ]` No standing vault mirror; job workspace GC policy implemented
 - `[ ]` Tiny text packs still use Phase 53 without mandatory data-channel hop
-- `[ ]` Design doc remains authoritative; Phase 58 complete before implementation start
+- `[x]` Design doc authoritative; Phase 58 complete; **59A locked**
 
 ---
 
@@ -7537,6 +7538,7 @@ Primary code touchpoints:
 
 | Date | Change |
 |------|--------|
+| 2026-08-14 | **Phase 59A shipped — Job input delivery design lock.** Settled auto-on-award, referenced+fallback scope, GC on terminal, WAN fail+Retry; reuse voucher + `/envoymesh/data` (no `share.*` / no new byte protocol). Types + helpers in `@envoymesh/api` `chain-input-delivery.ts`; optional `inputAttachments` / `inputDeliveries` on `ChainGetStateResult`. Next: **59B** deliver-on-award. |
 | 2026-08-14 | **Phase 59 designed — Team job input delivery (bytes to workers, not vault sync).** Design doc [agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md); checklist 59A–59E after Phase 58. Standing vault sync remains a non-goal; one-shot job-scoped handoff planned instead. TOC + Related + Next planning pulls + Phase 58 out-of-scope pointer updated. **No code yet.** |
 | 2026-08-14 | **Phase 58 complete (58A–58E).** Fleet readiness, live steps + honesty, per-step cancel/reassign + observed badges, EnvoyGo iteration/observed, Advanced Assigner picker. Next: **Phase 59** job input delivery. |
 | 2026-08-14 | **Phase 58B shipped — Live job story + attachment honesty.** `buildChainLiveSteps` → `chainGetState` / listActive / `chain:state`; Social `ChainLiveSteps` + honesty; EnvoyGo step list. Next: **58C**. |
