@@ -213,8 +213,9 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
   const BACKFILL_FAILURE_BACKOFF_MS = 5 * 60_000;
 
   async function ensureRuntime(): Promise<{ embedder: EmbeddingProvider; store: VectorStore }> {
+    const kb = resolveAiKnowledgeBaseSettings(knowledgeBase);
     const nextEmbedder = createEmbeddingProvider({
-      embedding: knowledgeBase?.embedding,
+      embedding: kb.embedding,
       modelProviders,
       envoyLocalEmbed,
     });

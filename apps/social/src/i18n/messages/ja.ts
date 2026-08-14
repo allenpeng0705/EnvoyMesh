@@ -35,6 +35,10 @@ import {
   jaAgentCardMessages,
   jaDisplayMessages,
   jaKnowledgeViewMessages,
+  jaContentViewMessages,
+  jaBlogViewMessages,
+  jaFeedViewMessages,
+  jaEngagementMessages,
 } from "./ja-misc.js";
 
 export const ja = mergeMessages(en, {
@@ -52,7 +56,7 @@ export const ja = mergeMessages(en, {
     chatInboxMany: "チャット — 受信トレイ {count} 件",
     contacts: "連絡先 ({count})",
     discover: "見つける",
-    content: "Content",
+    content: "コンテンツ",
     chains: "チームの仕事",
     activity: "アクティビティ",
     settings: "設定",
@@ -681,6 +685,10 @@ export const ja = mergeMessages(en, {
     ipfsDesktopKubo: "デスクトップアプリバンドルを使用する場合、IPFS エンジンは初回使用時に自動的に起動します。",
   },
 knowledge: jaKnowledgeViewMessages,
+  content: jaContentViewMessages,
+  blog: jaBlogViewMessages,
+  feed: jaFeedViewMessages,
+  engagement: jaEngagementMessages,
   chains: jaChainsMessages,
   workerCapability: {
     title: "エージェントワーカー",

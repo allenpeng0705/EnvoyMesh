@@ -221,14 +221,20 @@
   "knowledgeSetupTestEmbeddingOk": "嵌入正常 — {dimensions} 维，{latencyMs} ms",
   "@knowledgeSetupTestEmbeddingOk": {
     "placeholders": {
-      "dimensions": { "type": "int" },
-      "latencyMs": { "type": "int" }
+      "dimensions": {
+        "type": "int"
+      },
+      "latencyMs": {
+        "type": "int"
+      }
     }
   },
   "knowledgeSetupTestEmbeddingFail": "嵌入失败：{error}",
   "@knowledgeSetupTestEmbeddingFail": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "knowledgeSetupRagMode": "检索模式",
@@ -482,8 +488,8 @@
   "feedHint": "来自你和已绑定联系人的动态。",
   "feedDeleteTitle": "删除帖子？",
   "feedDeleteBody": "此操作无法撤销。",
-  "blogPairHint": "与家庭节点配对以撰写和管理 Blog 帖子。",
-  "blogConnectHint": "连接到家庭节点以管理 Blog。",
+  "blogPairHint": "与家庭节点配对以撰写和管理博客文章。",
+  "blogConnectHint": "连接到家庭节点以管理博客。",
   "blogDeleteTitle": "删除帖子？",
   "blogDeleteBody": "删除「{title}」？此操作无法撤销。",
   "feedWhatsOnMind": "在想什么？",
@@ -512,7 +518,7 @@
   "peopleResults": "结果",
   "peopleEmpty": "暂无可显示的用户。",
   "peopleProfile": "资料",
-  "peopleBlog": "Blog",
+  "peopleBlog": "博客",
   "peopleSayHello": "打招呼",
   "peopleHelloSent": "已发送打招呼",
   "peopleEnterSearch": "输入话题或兴趣进行搜索。",
@@ -564,7 +570,7 @@
   "authorType": "类型",
   "authorTypeProfile": "资料",
   "authorTypePhoto": "PhotoWall 照片",
-  "authorTypeBlog": "Blog 帖子",
+  "authorTypeBlog": "博文",
   "authorVisPublic": "公开",
   "authorVisBonded": "已绑定",
   "authorVisPrivate": "私密",
@@ -589,7 +595,7 @@
   "aiDraftNoModel": "家庭节点上未配置 AI 模型。",
   "aiDraftEmpty": "模型返回空草稿",
   "aiDraftBio": "起草简介",
-  "aiDraftBlog": "起草 Blog 帖子",
+  "aiDraftBlog": "起草博文",
   "aiDraftFeed": "起草动态",
   "aiDraftCaption": "起草说明",
   "settingsAiModelIntro": "家庭节点助手的云端模型提供方。更改将在下次助手回合生效。",
@@ -609,13 +615,19 @@
   "settingsAiModelTestChatOk": "聊天模型正常 — {modelName}，{latencyMs} ms",
   "@settingsAiModelTestChatOk": {
     "placeholders": {
-      "modelName": { "type": "String" },
-      "latencyMs": { "type": "int" }
+      "modelName": {
+        "type": "String"
+      },
+      "latencyMs": {
+        "type": "int"
+      }
     }
   },
   "@settingsAiModelTestChatFail": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "settingsAiModelTestChatFail": "聊天模型失败：{error}",

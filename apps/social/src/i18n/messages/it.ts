@@ -33,6 +33,10 @@ import {
   itAgentCardMessages,
   itDisplayMessages,
   itKnowledgeViewMessages,
+  itContentViewMessages,
+  itBlogViewMessages,
+  itFeedViewMessages,
+  itEngagementMessages,
 } from "./it-misc.js";
 
 export const it = mergeMessages(en, {
@@ -50,7 +54,7 @@ export const it = mergeMessages(en, {
     chatInboxMany: "Chat — {count} elementi in arrivo",
     contacts: "Contatti ({count})",
     discover: "Scopri",
-    content: "Content",
+    content: "Contenuti",
     chains: "Lavori di squadra",
     activity: "Attività",
     settings: "Impostazioni",
@@ -635,6 +639,11 @@ export const it = mergeMessages(en, {
     tabExplore: "Esplora",
   },
   library: itLibraryViewMessages,
+  knowledge: itKnowledgeViewMessages,
+  content: itContentViewMessages,
+  blog: itBlogViewMessages,
+  feed: itFeedViewMessages,
+  engagement: itEngagementMessages,
   chains: itChainsMessages,
   workerCapability: {
     title: "Lavoratori dell'agente",

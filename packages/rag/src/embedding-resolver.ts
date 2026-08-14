@@ -179,6 +179,12 @@ export function resolveEmbeddingConfig(input: ResolveEmbeddingConfigInput): Reso
     if (live) endpoint = normalizeOpenAiRoot(live);
   }
 
+  // Misconfigured "openai-compatible" pointing at the embed sidecar still has
+  // only ENVOY_LOCAL_EMBED_CTX_SIZE — force local mode so budgets/batching match.
+  if (mode === "openai-compatible" && isEnvoyLocalEmbedEndpoint(endpoint)) {
+    mode = "envoy-local";
+  }
+
   const providerPreset = inferEmbeddingProviderFromEndpoint(endpoint);
 
   const explicitModelName = embedding.modelName?.trim();
@@ -201,10 +207,15 @@ export function resolveEmbeddingConfig(input: ResolveEmbeddingConfigInput): Reso
 
   const apiKey = embedding.apiKey?.trim() || undefined;
   const modelKey = `${mode}:${modelName}@${endpoint}`;
-  const maxInputTokens = resolveEffectiveEmbeddingMaxInputTokens(
+  let maxInputTokens = resolveEffectiveEmbeddingMaxInputTokens(
     { ...embedding, mode },
     modelName,
   );
+  // llama.cpp token counts can exceed our soft estimate — keep headroom so
+  // a "2048-token" payload does not still trip exceed_context_size_error.
+  if (mode === "envoy-local" && maxInputTokens != null) {
+    maxInputTokens = Math.max(256, Math.floor(maxInputTokens * 0.8));
+  }
 
   let responseShape: EmbeddingResponseShape;
   if (embedding.responseShape) {

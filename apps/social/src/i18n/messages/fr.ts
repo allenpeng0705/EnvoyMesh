@@ -33,6 +33,10 @@ import {
   frAgentCardMessages,
   frDisplayMessages,
   frKnowledgeViewMessages,
+  frContentViewMessages,
+  frBlogViewMessages,
+  frFeedViewMessages,
+  frEngagementMessages,
 } from "./fr-misc.js";
 
 export const fr = mergeMessages(en, {
@@ -50,7 +54,7 @@ export const fr = mergeMessages(en, {
     chatInboxMany: "Discussion — {count} éléments dans la boîte de réception",
     contacts: "Contacts ({count})",
     discover: "Découvrir",
-    content: "Content",
+    content: "Contenu",
     chains: "Tâches d'équipe",
     activity: "Activité",
     settings: "Paramètres",
@@ -679,6 +683,10 @@ export const fr = mergeMessages(en, {
     ipfsDesktopKubo: "L'exportation démarre automatiquement le moteur IPFS lors de la première utilisation avec le bundle de l'app de bureau.",
   },
 knowledge: frKnowledgeViewMessages,
+  content: frContentViewMessages,
+  blog: frBlogViewMessages,
+  feed: frFeedViewMessages,
+  engagement: frEngagementMessages,
   chains: frChainsMessages,
   workerCapability: {
     title: "Travailleurs d'agent",

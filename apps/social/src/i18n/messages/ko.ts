@@ -34,6 +34,10 @@ import {
   koAgentCardMessages,
   koDisplayMessages,
   koKnowledgeViewMessages,
+  koContentViewMessages,
+  koBlogViewMessages,
+  koFeedViewMessages,
+  koEngagementMessages,
 } from "./ko-misc.js";
 
 export const ko = mergeMessages(en, {
@@ -51,7 +55,7 @@ export const ko = mergeMessages(en, {
     chatInboxMany: "채팅 — 받은함 {count}건",
     contacts: "연락처 ({count})",
     discover: "찾기",
-    content: "Content",
+    content: "콘텐츠",
     chains: "팀 작업",
     activity: "활동",
     settings: "설정",
@@ -726,6 +730,10 @@ export const ko = mergeMessages(en, {
     ipfsDesktopKubo: "데스크톱 앱 번들을 사용할 때 IPFS 엔진은 첫 사용 시 자동으로 시작됩니다.",
   },
 knowledge: koKnowledgeViewMessages,
+  content: koContentViewMessages,
+  blog: koBlogViewMessages,
+  feed: koFeedViewMessages,
+  engagement: koEngagementMessages,
   browser: {
     authorAi: {
       trigger: "AI로 초안 작성",

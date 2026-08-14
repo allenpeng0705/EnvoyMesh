@@ -1288,10 +1288,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get feedDeleteBody => '되돌릴 수 없습니다.';
 
   @override
-  String get blogPairHint => '홈 노드와 페어링하여 Blog 게시물을 작성하고 관리하세요.';
+  String get blogPairHint => '홈 노드와 페어링하여 블로그 게시물을 작성하고 관리하세요.';
 
   @override
-  String get blogConnectHint => '홈 노드에 연결하여 Blog를 관리하세요.';
+  String get blogConnectHint => '홈 노드에 연결하여 블로그를 관리하세요.';
 
   @override
   String get blogDeleteTitle => '게시물을 삭제할까요?';
@@ -1380,7 +1380,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get peopleProfile => '프로필';
 
   @override
-  String get peopleBlog => 'Blog';
+  String get peopleBlog => '블로그';
 
   @override
   String get peopleSayHello => '인사하기';
@@ -1548,7 +1548,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get authorTypePhoto => 'PhotoWall 사진';
 
   @override
-  String get authorTypeBlog => 'Blog 게시물';
+  String get authorTypeBlog => '블로그 게시물';
 
   @override
   String get authorVisPublic => '공개';
@@ -1623,7 +1623,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get aiDraftBio => '소개 작성';
 
   @override
-  String get aiDraftBlog => 'Blog 게시물 작성';
+  String get aiDraftBlog => '블로그 게시물 초안';
 
   @override
   String get aiDraftFeed => '피드 업데이트 작성';

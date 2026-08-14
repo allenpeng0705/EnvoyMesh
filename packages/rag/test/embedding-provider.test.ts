@@ -559,8 +559,9 @@ describe("resolveEmbeddingConfig — independent of chat", () => {
     expect(config.mode).toBe("envoy-local");
     expect(config.endpoint).toContain(":18791");
     expect(config.modelName).toContain("qwen3-embedding");
-    // Cap at sidecar ctx (not the model card 8k) so truncate matches llama-server.
-    expect(config.maxInputTokens).toBe(2048);
+    // Cap at sidecar ctx (not the model card 8k), then leave headroom for
+    // llama tokenizer vs soft estimate (0.8 × ctx = 20% headroom).
+    expect(config.maxInputTokens).toBe(Math.floor(2048 * 0.8));
   });
 
   it("embeds envoy-local batches one input at a time", async () => {

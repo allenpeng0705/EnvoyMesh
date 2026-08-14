@@ -1277,10 +1277,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get feedDeleteBody => '此操作无法撤销。';
 
   @override
-  String get blogPairHint => '与家庭节点配对以撰写和管理 Blog 帖子。';
+  String get blogPairHint => '与家庭节点配对以撰写和管理博客文章。';
 
   @override
-  String get blogConnectHint => '连接到家庭节点以管理 Blog。';
+  String get blogConnectHint => '连接到家庭节点以管理博客。';
 
   @override
   String get blogDeleteTitle => '删除帖子？';
@@ -1369,7 +1369,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peopleProfile => '资料';
 
   @override
-  String get peopleBlog => 'Blog';
+  String get peopleBlog => '博客';
 
   @override
   String get peopleSayHello => '打招呼';
@@ -1537,7 +1537,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get authorTypePhoto => 'PhotoWall 照片';
 
   @override
-  String get authorTypeBlog => 'Blog 帖子';
+  String get authorTypeBlog => '博文';
 
   @override
   String get authorVisPublic => '公开';
@@ -1612,7 +1612,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiDraftBio => '起草简介';
 
   @override
-  String get aiDraftBlog => '起草 Blog 帖子';
+  String get aiDraftBlog => '起草博文';
 
   @override
   String get aiDraftFeed => '起草动态';

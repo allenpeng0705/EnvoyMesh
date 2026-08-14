@@ -9,6 +9,7 @@ import {
   KNOWN_EMBEDDING_PROVIDERS,
   inferEmbeddingProviderFromEndpoint,
   isEnvoyLocalChatEndpoint,
+  isEnvoyLocalEmbedEndpoint,
   resolveEmbeddingConfig as resolveEmbeddingConfigCore,
   type EmbeddingProviderMode,
   type EmbeddingProviderPreset,
@@ -23,6 +24,7 @@ export {
   KNOWN_EMBEDDING_PROVIDERS,
   inferEmbeddingProviderFromEndpoint,
   isEnvoyLocalChatEndpoint,
+  isEnvoyLocalEmbedEndpoint,
 };
 
 // Re-export so existing `ResolvedEmbeddingConfig` consumers continue to work.
@@ -82,9 +84,12 @@ export function createEmbeddingProvider(input: CreateEmbeddingProviderInput = {}
   }
 
   // Envoy Local llama-server counts *all* batch inputs against one n_ctx.
-  // Reindex batches of vault chunks easily exceed the 2048-token sidecar ctx
-  // (especially CJK). Embed one input per request, like Ollama.
-  if (config.mode === "envoy-local") {
+  // Also treat openai-compatible → :18791 as sequential — mis-set mode still
+  // hits the same sidecar and must not batch past ctx.
+  const sequentialOpenAi =
+    config.mode === "envoy-local" || isEnvoyLocalEmbedEndpoint(config.endpoint);
+
+  if (sequentialOpenAi) {
     return {
       modelKey: config.modelKey,
       async embed(text) {

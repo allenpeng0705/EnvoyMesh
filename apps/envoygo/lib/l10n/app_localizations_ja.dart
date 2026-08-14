@@ -1288,10 +1288,10 @@ class AppLocalizationsJa extends AppLocalizations {
   String get feedDeleteBody => '元に戻せません。';
 
   @override
-  String get blogPairHint => 'ホームノードとペアリングして Blog 投稿を書き管理します。';
+  String get blogPairHint => 'ホームノードとペアリングしてブログ投稿を書き管理します。';
 
   @override
-  String get blogConnectHint => 'ホームノードに接続して Blog を管理します。';
+  String get blogConnectHint => 'ホームノードに接続してブログを管理します。';
 
   @override
   String get blogDeleteTitle => '投稿を削除しますか？';
@@ -1381,7 +1381,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get peopleProfile => 'プロフィール';
 
   @override
-  String get peopleBlog => 'Blog';
+  String get peopleBlog => 'ブログ';
 
   @override
   String get peopleSayHello => '挨拶する';
@@ -1549,7 +1549,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get authorTypePhoto => 'PhotoWall 写真';
 
   @override
-  String get authorTypeBlog => 'Blog 投稿';
+  String get authorTypeBlog => 'ブログ投稿';
 
   @override
   String get authorVisPublic => '公開';
@@ -1624,10 +1624,10 @@ class AppLocalizationsJa extends AppLocalizations {
   String get aiDraftBio => '自己紹介を下書き';
 
   @override
-  String get aiDraftBlog => 'Blog 投稿を下書き';
+  String get aiDraftBlog => 'ブログ投稿を下書き';
 
   @override
-  String get aiDraftFeed => 'Feed 更新を下書き';
+  String get aiDraftFeed => 'フィード更新を下書き';
 
   @override
   String get aiDraftCaption => 'キャプションを下書き';
