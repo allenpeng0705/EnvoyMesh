@@ -2214,7 +2214,9 @@ export interface ChainEvaluateBidsResult {
     | "all_bids_expired"
     | "budget_exceeded"
     | "cancelled"
-    | "max_rounds_exceeded";
+    | "max_rounds_exceeded"
+    | "input_delivery_pending"
+    | "input_delivery_failed";
 }
 
 /** Phase 40D — counter-bid. Reject all current bids and rebroadcast with a new cost ceiling. */

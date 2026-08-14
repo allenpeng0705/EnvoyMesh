@@ -1193,6 +1193,31 @@ export async function retryStaleAccepts(
     }
 
     const subtask = state.subtasks.get(subtaskId);
+    // Phase 59 — ensure job inputs are delivered before accept resend (rebalance /
+    // race after award without deliver). Skip resend until verified.
+    if (deps.onAwardAccepted) {
+      try {
+        await deps.onAwardAccepted(state, subtaskId, award.workerPeerId);
+      } catch (err) {
+        console.warn(
+          `[chain.input] onAwardAccepted (accept resend) failed for ${state.chainId}/${subtaskId}:`,
+          err,
+        );
+      }
+    }
+    const inputsReady = jobInputsReadyForAward(state, subtaskId, award.workerPeerId);
+    if (!inputsReady.ok) {
+      deps.audit.record({
+        type: "chain.awarded",
+        outcome: "deny",
+        intent: "task.chain.accept",
+        correlationId: state.chainId,
+        summary:
+          `accept_resend_blocked subtask=${subtaskId.slice(0, 12)}` +
+          ` reason=${inputsReady.reason}`,
+      });
+      continue;
+    }
     const parentArts = subtask ? buildInputArtifacts(state, subtask) : undefined;
     const jobArts = buildJobInputFileArtifacts(
       state,

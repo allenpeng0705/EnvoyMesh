@@ -426,4 +426,61 @@ describe("chain-input-delivery-runtime (Phase 59C)", () => {
       }),
     ]);
   });
+
+  it("deliverChainInputsOnAward skips already-verified rows", async () => {
+    const state = createChainState(mandate() as never, {
+      goal: ["G", "", "Attachments:", "- [brief] imports/a/brief.pdf"].join("\n"),
+    });
+    state.subtasks.set("subtask_a", subtaskWithBrief());
+    let pushes = 0;
+    await deliverChainInputsOnAward({
+      state,
+      subtaskId: "subtask_a",
+      workerPeerId: "envoy_agent_w",
+      orchestratorPeerId: "envoy_agent_o",
+      transportPeerId: "12D3KooWworker",
+      pushFile: async () => {
+        pushes += 1;
+        return { contentHash: "h1" };
+      },
+    });
+    await deliverChainInputsOnAward({
+      state,
+      subtaskId: "subtask_a",
+      workerPeerId: "envoy_agent_w",
+      orchestratorPeerId: "envoy_agent_o",
+      transportPeerId: "12D3KooWworker",
+      pushFile: async () => {
+        pushes += 1;
+        return { contentHash: "h2" };
+      },
+    });
+    expect(pushes).toBe(1);
+    expect(state.inputDeliveries?.[0]?.phase).toBe("verified");
+    expect(state.inputDeliveries?.[0]?.contentHash).toBe("h1");
+  });
+
+  it("retryFailedChainInputDeliveries retries stuck pending", async () => {
+    const state = createChainState(mandate() as never, {
+      goal: ["G", "", "Attachments:", "- [brief] imports/a/brief.pdf"].join("\n"),
+    });
+    state.inputDeliveries = [
+      {
+        chainId: state.chainId,
+        workerPeerId: "envoy_agent_w",
+        sourceRelativePath: "imports/a/brief.pdf",
+        deliveredRelativePath: "imports/team-jobs/chain_test-1/in/brief.pdf",
+        phase: "pending",
+        updatedAt: NOW.toISOString(),
+      },
+    ];
+    const counts = await retryFailedChainInputDeliveries({
+      state,
+      orchestratorPeerId: "envoy_agent_o",
+      resolveTransportPeerId: async () => "12D3KooWworker",
+      pushFile: async () => ({ contentHash: "retried_h" }),
+    });
+    expect(counts).toEqual({ retried: 1, verified: 1, failed: 0 });
+    expect(state.inputDeliveries?.[0]?.phase).toBe("verified");
+  });
 });

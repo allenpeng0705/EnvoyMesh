@@ -208,6 +208,17 @@ export async function deliverChainInputsOnAward(opts: {
 
   for (const att of selected) {
     const sourceRelativePath = att.sourceRelativePath.replace(/^[\\/]+/, "");
+    const existing = state.inputDeliveries?.find(
+      (r) =>
+        r.workerPeerId === workerPeerId &&
+        r.sourceRelativePath === sourceRelativePath &&
+        r.phase === "verified" &&
+        r.deliveredRelativePath,
+    );
+    if (existing) {
+      results.push(existing);
+      continue;
+    }
     const fileName = att.fileName ?? sourceRelativePath.split("/").pop() ?? "file";
     const deliveredRelativePath = chainInputDeliveredRelativePath(state.chainId, fileName);
     upsertChainInputDelivery(state, {
@@ -354,7 +365,9 @@ export async function retryFailedChainInputDeliveries(opts: {
   ensureChainInputManifest(state);
   const wantSource = sourceRelativePath?.replace(/^[\\/]+/, "");
   const targets = (state.inputDeliveries ?? []).filter((r) => {
-    if (r.phase !== "failed" && r.phase !== "transferring") return false;
+    if (r.phase !== "failed" && r.phase !== "transferring" && r.phase !== "pending") {
+      return false;
+    }
     if (workerPeerId && r.workerPeerId !== workerPeerId) return false;
     if (wantSource && r.sourceRelativePath !== wantSource) return false;
     return true;

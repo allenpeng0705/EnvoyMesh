@@ -645,8 +645,12 @@ export async function buildChainInboundDeps(deps: ChainOrchestrationContext): Pr
       if (result.ok) {
         const cached = chainSide.workerSubtasks.get(payload.award.subtaskId);
         let subtask = cached?.subtask;
-        // Prefer propose-cache inputs; fall back to accept payload (restart / race).
-        let inputArtifacts = cached?.inputArtifacts ?? payload.inputArtifacts;
+        // Prefer accept payload when present — Phase 59 merges parent + job-input
+        // file refs on accept; propose cache often has parents only.
+        let inputArtifacts =
+          payload.inputArtifacts && payload.inputArtifacts.length > 0
+            ? payload.inputArtifacts
+            : cached?.inputArtifacts;
         if (!subtask && payload.subtask) {
           subtask = payload.subtask;
           chainSide.workerSubtasks.set(payload.award.subtaskId, {
@@ -654,7 +658,7 @@ export async function buildChainInboundDeps(deps: ChainOrchestrationContext): Pr
             orchestratorPeerId: envelope.senderPeerId,
             inputArtifacts,
           });
-        } else if (subtask && !cached?.inputArtifacts && payload.inputArtifacts?.length) {
+        } else if (subtask && payload.inputArtifacts && payload.inputArtifacts.length > 0) {
           chainSide.workerSubtasks.set(payload.award.subtaskId, {
             subtask,
             orchestratorPeerId: envelope.senderPeerId,
@@ -1177,10 +1181,14 @@ export async function buildChainOrchestratorDeps(
       const vaultDir = deps.getVaultDir();
       const mesh = deps.getReachableMesh();
       const taskStore = deps.getTaskStore();
-      if (!vaultDir || !mesh || !taskStore || !profile) return;
-      const transportPeerId = transport
-        ? await resolveChainTransportPeerId(transport, workerPeerId)
-        : null;
+      if (!vaultDir) return;
+      const isSelf = workerPeerId === agentIdentity.agentPeerId;
+      // Local You only needs vault copy; remote push needs mesh + task store.
+      if (!isSelf && (!mesh || !taskStore || !profile)) return;
+      const transportPeerId =
+        !isSelf && transport
+          ? await resolveChainTransportPeerId(transport, workerPeerId)
+          : null;
       await deliverChainInputsOnAward({
         state,
         subtaskId,
@@ -1189,37 +1197,40 @@ export async function buildChainOrchestratorDeps(
         transportPeerId: transportPeerId ?? undefined,
         copyLocal: async ({ sourceRelativePath, deliveredRelativePath }) =>
           copyChainInputInVault({ vaultDir, sourceRelativePath, deliveredRelativePath }),
-        pushFile: async ({
-          sourceRelativePath,
-          voucherRelativePath,
-          toPeerId,
-          chainId,
-          expiresAt,
-        }) => {
-          const dialHints = transport?.resolveDialHints
-            ? await transport.resolveDialHints(toPeerId)
-            : [];
-          return sendVaultFileViaDataTransfer({
-            mesh,
-            profile,
-            taskStore,
-            vaultDir,
-            relativePath: sourceRelativePath,
-            voucherRelativePath,
-            expiresAt,
-            toPeerId,
-            dialHints,
-            rebuildDialHints: transport?.resolveDialHints
-              ? () => transport.resolveDialHints!(toPeerId)
-              : undefined,
-            transferHooks: {
-              correlationId: chainId,
-              onUpdate: () => {
-                /* TransferTracker optional for 59B; state.inputDeliveries is source of truth */
-              },
-            },
-          });
-        },
+        pushFile:
+          mesh && taskStore && profile
+            ? async ({
+                sourceRelativePath,
+                voucherRelativePath,
+                toPeerId,
+                chainId,
+                expiresAt,
+              }) => {
+                const dialHints = transport?.resolveDialHints
+                  ? await transport.resolveDialHints(toPeerId)
+                  : [];
+                return sendVaultFileViaDataTransfer({
+                  mesh,
+                  profile,
+                  taskStore,
+                  vaultDir,
+                  relativePath: sourceRelativePath,
+                  voucherRelativePath,
+                  expiresAt,
+                  toPeerId,
+                  dialHints,
+                  rebuildDialHints: transport?.resolveDialHints
+                    ? () => transport.resolveDialHints!(toPeerId)
+                    : undefined,
+                  transferHooks: {
+                    correlationId: chainId,
+                    onUpdate: () => {
+                      /* TransferTracker optional for 59B; state.inputDeliveries is source of truth */
+                    },
+                  },
+                });
+              }
+            : undefined,
         onUpdate: () => _emitChainState(deps, state.chainId),
       });
     },
@@ -1953,6 +1964,20 @@ export async function retryInputDeliveryOwnerAction(
       await advanceReadySubtasks(orchDeps, runtime.state);
     } catch (err) {
       console.warn(`[chain.input] advance after retry failed for ${params.chainId}:`, err);
+    }
+    // Competitive (and any rolled-back award): deliveries may now be verified while
+    // the subtask still has bids and no award — re-run award+accept.
+    if (counts.verified > 0) {
+      for (const subtaskId of subtasksAwaitingAward(runtime.state)) {
+        try {
+          await _evaluateAwardAndAccept(deps, params.chainId, subtaskId);
+        } catch (err) {
+          console.warn(
+            `[chain.input] re-award after retry failed for ${params.chainId}/${subtaskId}:`,
+            err,
+          );
+        }
+      }
     }
     _emitChainState(deps, params.chainId);
     return {
