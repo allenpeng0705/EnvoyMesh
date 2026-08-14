@@ -507,6 +507,13 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
+        const SizedBox(height: 8),
+        Text(
+          l10n.chainsAttachmentHonesty,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
         if (_attachments.isNotEmpty) ...[
           const SizedBox(height: 8),
           ..._attachments.map((att) {
@@ -685,6 +692,13 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
                           if (next.isEmpty) return;
                           setState(() => _inputDeliveryScope = next.first);
                         },
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  l10n.chainsInputDeliveryScopeHint,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 TextField(

@@ -4152,6 +4152,12 @@ abstract class AppLocalizations {
   /// **'All attachments'**
   String get chainsInputDeliveryScopeAll;
 
+  /// No description provided for @chainsInputDeliveryScopeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Referenced (default) sends files mentioned as [label] in a step; if none match, all job attachments are sent. All sends every attachment to each awarded worker.'**
+  String get chainsInputDeliveryScopeHint;
+
   /// No description provided for @chainsIterationAskOwnerTitle.
   ///
   /// In en, this message translates to:
@@ -4319,6 +4325,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Cancelled from EnvoyGo'**
   String get chainsCancelReason;
+
+  /// No description provided for @chainsCancelStep.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel step'**
+  String get chainsCancelStep;
+
+  /// No description provided for @chainsCancelStepTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel this step?'**
+  String get chainsCancelStepTitle;
+
+  /// No description provided for @chainsCancelStepBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This step and any steps that depend on it will stop. Partial results already collected are kept.'**
+  String get chainsCancelStepBody;
+
+  /// No description provided for @chainsCancelStepFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not cancel this step'**
+  String get chainsCancelStepFailed;
+
+  /// No description provided for @chainsReassignStep.
+  ///
+  /// In en, this message translates to:
+  /// **'Reassign'**
+  String get chainsReassignStep;
+
+  /// No description provided for @chainsStepCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Step cancelled'**
+  String get chainsStepCancelled;
+
+  /// No description provided for @chainsStepReassigned.
+  ///
+  /// In en, this message translates to:
+  /// **'Step reassigned'**
+  String get chainsStepReassigned;
+
+  /// No description provided for @chainsReassignFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not reassign this step'**
+  String get chainsReassignFailed;
+
+  /// No description provided for @chainsCancelStepReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled step from EnvoyGo'**
+  String get chainsCancelStepReason;
 
   /// No description provided for @chainsDetailCancelled.
   ///

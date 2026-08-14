@@ -161,6 +161,7 @@ class ChainInputDelivery {
   final String? contentHash;
   final String? error;
   final String? label;
+  final String? updatedAt;
 
   const ChainInputDelivery({
     required this.chainId,
@@ -171,6 +172,7 @@ class ChainInputDelivery {
     this.contentHash,
     this.error,
     this.label,
+    this.updatedAt,
   });
 
   factory ChainInputDelivery.fromJson(Map<String, dynamic> json) {
@@ -184,6 +186,7 @@ class ChainInputDelivery {
       contentHash: json['contentHash'] as String?,
       error: json['error'] as String?,
       label: json['label'] as String?,
+      updatedAt: json['updatedAt'] as String?,
     );
   }
 
@@ -296,6 +299,7 @@ class ChainActiveSummary {
           contentHash: base.contentHash,
           error: base.error,
           label: label,
+          updatedAt: base.updatedAt,
         );
       }).toList(),
     );

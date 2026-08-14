@@ -141,6 +141,7 @@ export const chainsMessages = {
     cancelStep: "Cancel step",
     reassignStep: "Reassign",
     stepCancelled: "Step cancelled",
+    stepCancelFailed: "Could not cancel this step",
     stepReassigned: "Step reassigned",
     reassignFailed: "Could not reassign this step",
     reassignUnavailable: "Reassign is not available on this node",

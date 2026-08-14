@@ -2250,6 +2250,10 @@ class AppLocalizationsFr extends AppLocalizations {
   String get chainsInputDeliveryScopeAll => 'All attachments';
 
   @override
+  String get chainsInputDeliveryScopeHint =>
+      'Referenced (default) sends files mentioned as [label] in a step; if none match, all job attachments are sent. All sends every attachment to each awarded worker.';
+
+  @override
   String get chainsIterationAskOwnerTitle => 'Review draft before publish';
 
   @override
@@ -2346,6 +2350,34 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get chainsCancelReason => 'Annulé depuis EnvoyGo';
+
+  @override
+  String get chainsCancelStep => 'Cancel step';
+
+  @override
+  String get chainsCancelStepTitle => 'Cancel this step?';
+
+  @override
+  String get chainsCancelStepBody =>
+      'This step and any steps that depend on it will stop. Partial results already collected are kept.';
+
+  @override
+  String get chainsCancelStepFailed => 'Could not cancel this step';
+
+  @override
+  String get chainsReassignStep => 'Reassign';
+
+  @override
+  String get chainsStepCancelled => 'Step cancelled';
+
+  @override
+  String get chainsStepReassigned => 'Step reassigned';
+
+  @override
+  String get chainsReassignFailed => 'Could not reassign this step';
+
+  @override
+  String get chainsCancelStepReason => 'Cancelled step from EnvoyGo';
 
   @override
   String get chainsDetailCancelled => 'Ce job a été annulé.';

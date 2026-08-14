@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../chain_step_control.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/chain_active.dart';
 import '../../providers/node_provider.dart';
@@ -32,7 +33,7 @@ class _ActiveChainDetailScreenState
   bool _busy = false;
   /// Connection / poll / missing-chain errors (safe for polls to replace).
   String? _loadError;
-  /// Cancel / rebalance errors — polls must not wipe these.
+  /// Cancel / rebalance / step-control errors — polls must not wipe these.
   String? _actionError;
   Timer? _poll;
   final _rebalanceCtl = TextEditingController(text: '1.00');
@@ -180,6 +181,95 @@ class _ActiveChainDetailScreenState
     if (_refreshQueued && mounted) {
       _refreshQueued = false;
       unawaited(_refresh());
+    }
+  }
+
+  Future<void> _cancelStep(String subtaskId) async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.chainsCancelStepTitle),
+        content: Text(l10n.chainsCancelStepBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.commonCancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.chainsCancelStep),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final client = _clientOrNull();
+    if (client == null) {
+      setState(() => _actionError = l10n.commonNotConnectedHome);
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _actionError = null;
+    });
+    try {
+      final result = await client.chainCancel(
+        chainId: widget.chainId,
+        subtaskId: subtaskId,
+        reason: l10n.chainsCancelStepReason,
+      );
+      if (!mounted) return;
+      final cancelled = result['cancelled'];
+      final ok = cancelled is List && cancelled.contains(subtaskId);
+      if (!ok) {
+        setState(() => _actionError = l10n.chainsCancelStepFailed);
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.chainsStepCancelled)),
+      );
+      await _refresh();
+    } catch (e) {
+      if (mounted) setState(() => _actionError = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _reassignStep(String subtaskId) async {
+    final l10n = AppLocalizations.of(context);
+    final client = _clientOrNull();
+    if (client == null) {
+      setState(() => _actionError = l10n.commonNotConnectedHome);
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _actionError = null;
+    });
+    try {
+      final result = await client.chainReassignSubtask(
+        chainId: widget.chainId,
+        subtaskId: subtaskId,
+      );
+      if (!mounted) return;
+      if (result['ok'] != true) {
+        setState(() {
+          _actionError = (result['error'] as String?)?.isNotEmpty == true
+              ? result['error'] as String
+              : l10n.chainsReassignFailed;
+        });
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.chainsStepReassigned)),
+      );
+      await _refresh();
+    } catch (e) {
+      if (mounted) setState(() => _actionError = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -475,7 +565,10 @@ class _ActiveChainDetailScreenState
                         final canRetry =
                             !st.published &&
                             !st.chainCancelled &&
-                            (d.phase == 'failed' || d.phase == 'transferring');
+                            canRetryChainInputDelivery(
+                              phase: d.phase,
+                              updatedAt: d.updatedAt,
+                            );
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 8),
                           child: Row(
@@ -509,6 +602,11 @@ class _ActiveChainDetailScreenState
                       final waiting = step.waitingOn.isEmpty
                           ? null
                           : '${l10n.chainsStepsWaitingOn} ${step.waitingOn.map((w) => w.label ?? w.key).join(", ")}';
+                      final allowStepControl = !finalized;
+                      final showCancel =
+                          allowStepControl && canCancelChainStep(step.state);
+                      final showReassign =
+                          allowStepControl && canReassignChainStep(step.state);
                       return Padding(
                         padding: EdgeInsets.only(
                           left: entry.depth * 12.0,
@@ -524,6 +622,30 @@ class _ActiveChainDetailScreenState
                             ),
                             if (waiting != null)
                               Text(waiting, style: theme.textTheme.bodySmall),
+                            if (showCancel || showReassign)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Wrap(
+                                  spacing: 8,
+                                  children: [
+                                    if (showCancel)
+                                      TextButton(
+                                        onPressed: _busy
+                                            ? null
+                                            : () => _cancelStep(step.subtaskId),
+                                        child: Text(l10n.chainsCancelStep),
+                                      ),
+                                    if (showReassign)
+                                      TextButton(
+                                        onPressed: _busy
+                                            ? null
+                                            : () =>
+                                                _reassignStep(step.subtaskId),
+                                        child: Text(l10n.chainsReassignStep),
+                                      ),
+                                  ],
+                                ),
+                              ),
                           ],
                         ),
                       );

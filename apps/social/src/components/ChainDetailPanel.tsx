@@ -155,12 +155,16 @@ export function ChainDetailPanel({
     async (subtaskId: string) => {
       setBusySubtaskId(subtaskId);
       try {
-        await nodeService.chainCancel({
+        const result = await nodeService.chainCancel({
           chainId,
           subtaskId,
           reason: "owner_cancel_step",
           cancelledBy: "owner",
         });
+        if (!result.cancelled?.includes(subtaskId)) {
+          showToast(t("chains.detail.stepCancelFailed"), "error");
+          return;
+        }
         showToast(t("chains.detail.stepCancelled"), "success");
         await load();
         onChanged?.();

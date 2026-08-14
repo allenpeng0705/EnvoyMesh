@@ -1617,6 +1617,21 @@ class NodeServiceClient {
     ) as Map<String, dynamic>;
   }
 
+  /// Phase 58C — reassign a stalled/failed step to the next worker.
+  Future<Map<String, dynamic>> chainReassignSubtask({
+    required String chainId,
+    required String subtaskId,
+  }) async {
+    return await _client.call(
+      'chainReassignSubtask',
+      {
+        'chainId': chainId,
+        'subtaskId': subtaskId,
+      },
+      const Duration(seconds: 60),
+    ) as Map<String, dynamic>;
+  }
+
   /// Phase 59D — retry failed/stuck job input deliveries.
   Future<Map<String, dynamic>> chainRetryInputDelivery({
     required String chainId,

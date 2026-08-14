@@ -2143,6 +2143,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chainsInputDeliveryScopeAll => '全部附件';
 
   @override
+  String get chainsInputDeliveryScopeHint =>
+      '「仅引用」默认只发送步骤中以 [标签] 提到的附件；若无匹配则回退为全部任务附件。「全部」会把每个附件发给每位获派工作节点。';
+
+  @override
   String get chainsIterationAskOwnerTitle => '发布前审阅草稿';
 
   @override
@@ -2232,6 +2236,33 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chainsCancelReason => '已从 EnvoyGo 取消';
+
+  @override
+  String get chainsCancelStep => '取消此步骤';
+
+  @override
+  String get chainsCancelStepTitle => '取消此步骤？';
+
+  @override
+  String get chainsCancelStepBody => '将停止此步骤及其依赖步骤。已收集的部分结果会保留。';
+
+  @override
+  String get chainsCancelStepFailed => '无法取消此步骤';
+
+  @override
+  String get chainsReassignStep => '重新分配';
+
+  @override
+  String get chainsStepCancelled => '步骤已取消';
+
+  @override
+  String get chainsStepReassigned => '步骤已重新分配';
+
+  @override
+  String get chainsReassignFailed => '无法重新分配此步骤';
+
+  @override
+  String get chainsCancelStepReason => '已从 EnvoyGo 取消步骤';
 
   @override
   String get chainsDetailCancelled => '此任务已取消。';

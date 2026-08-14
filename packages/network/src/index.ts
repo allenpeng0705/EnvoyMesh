@@ -196,8 +196,12 @@ const EPHEMERAL_PRIVATE_LAN_HINT_DIAL_TIMEOUT_MS = 1_000;
 const NO_RESERVATION_BACKOFF_MS = 90_000;
 /** Rate-limit identical NO_RESERVATION console.warn lines per peer. */
 const NO_RESERVATION_LOG_INTERVAL_MS = 60_000;
-/** When dialQueue is this high, skip speculative ensurePeerReachable dials. */
-export const ENSURE_PEER_DIAL_QUEUE_DEFER_THRESHOLD = 100;
+/**
+ * When dialQueue is this high, skip speculative ensurePeerReachable dials.
+ * Must stay below DEFAULT_CLIENT_MAX_DIAL_QUEUE_LENGTH — otherwise libp2p
+ * rejects with "Dial queue is full" before we soft-defer.
+ */
+export const ENSURE_PEER_DIAL_QUEUE_DEFER_THRESHOLD = 48;
 /** When dialQueue is this high, skip DHT provide / interest advertise fanout. */
 export const DHT_PROVIDE_DIAL_QUEUE_DEFER_THRESHOLD = 50;
 /** Home-node default: keep DHT/bootstrap from opening 100 parallel dials. */
@@ -206,6 +210,8 @@ export const DEFAULT_CLIENT_MAX_PARALLEL_DIALS = 12;
 export const DEFAULT_CLIENT_MAX_DIAL_QUEUE_LENGTH = 64;
 /** Home-node default: fewer multiaddrs per peer before giving up. */
 export const DEFAULT_CLIENT_MAX_PEER_ADDRS_TO_DIAL = 8;
+/** Rate-limit identical "Dial queue is full" ensurePeerReachable warnings. */
+const DIAL_QUEUE_FULL_LOG_INTERVAL_MS = 10_000;
 
 /** Speculative ensurePeerReachable should wait when the dial queue is flooded. */
 export function shouldDeferEnsurePeerForDialQueue(input: {
@@ -213,9 +219,15 @@ export function shouldDeferEnsurePeerForDialQueue(input: {
   forceFreshDial?: boolean;
   priorityDial?: boolean;
   threshold?: number;
+  /** Soft-defer everyone (incl. priority) at/above this — libp2p would reject. */
+  hardCap?: number;
 }): boolean {
+  const len = input.dialQueueLength ?? 0;
+  const hardCap = input.hardCap ?? DEFAULT_CLIENT_MAX_DIAL_QUEUE_LENGTH;
+  // Queue already at capacity: dialing will throw "Dial queue is full". Soft-defer.
+  if (len >= hardCap) return true;
   if (input.forceFreshDial === true || input.priorityDial === true) return false;
-  return (input.dialQueueLength ?? 0) > (input.threshold ?? ENSURE_PEER_DIAL_QUEUE_DEFER_THRESHOLD);
+  return len > (input.threshold ?? ENSURE_PEER_DIAL_QUEUE_DEFER_THRESHOLD);
 }
 
 /** DHT provide / interest advertise should wait when the dial queue is flooded. */
@@ -663,6 +675,9 @@ export class EnvoyMesh {
   private readonly noReservationBackoffUntil = new Map<string, number>();
   /** peerId → last NO_RESERVATION console.warn time. */
   private readonly noReservationLastLogAt = new Map<string, number>();
+  /** Last "Dial queue is full" ensurePeerReachable warn + suppressed count. */
+  private dialQueueFullLastLogAt = 0;
+  private dialQueueFullSuppressed = 0;
 
   constructor(private readonly options: EnvoyMeshOptions = {}) {
     this.circuitRelayServerConfig = options.circuitRelayServer;
@@ -687,6 +702,22 @@ export class EnvoyMesh {
       return false;
     }
     return true;
+  }
+
+  private logDialQueueFullOnce(target: string, detail: string): void {
+    const now = Date.now();
+    if (now - this.dialQueueFullLastLogAt < DIAL_QUEUE_FULL_LOG_INTERVAL_MS) {
+      this.dialQueueFullSuppressed += 1;
+      return;
+    }
+    const suppressed = this.dialQueueFullSuppressed;
+    this.dialQueueFullSuppressed = 0;
+    this.dialQueueFullLastLogAt = now;
+    const suffix =
+      suppressed > 0 ? ` (+${suppressed} similar suppressed)` : "";
+    console.warn(
+      `[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}${suffix}`,
+    );
   }
 
   private logNoReservationOnce(peerId: string | undefined, detail: string): void {
@@ -3383,6 +3414,8 @@ export class EnvoyMesh {
         if (noReservation) {
           this.noteNoReservation(peerIdStr);
           this.logNoReservationOnce(peerIdStr, detail);
+        } else if (detail.includes("Dial queue is full")) {
+          this.logDialQueueFullOnce(target, detail);
         } else {
           console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
         }

@@ -3,6 +3,7 @@
  */
 
 import type { ChainGetStateResult } from "@envoymesh/api";
+import { canRetryChainInputDelivery } from "@envoymesh/api";
 import { useT } from "../context/I18nContext.js";
 
 export interface ChainInputDeliveriesProps {
@@ -48,7 +49,7 @@ export function ChainInputDeliveries({
           const showRetry =
             allowRetry &&
             onRetry &&
-            (d.phase === "failed" || d.phase === "transferring");
+            canRetryChainInputDelivery(d.phase, d.updatedAt);
           const busy = busyKey === key;
           return (
             <li

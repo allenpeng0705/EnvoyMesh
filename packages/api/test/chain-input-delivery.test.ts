@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CHAIN_INPUT_DELIVERY_POLICY,
+  canRetryChainInputDelivery,
   chainInputComposerStagingDir,
   chainInputDeliveredRelativePath,
   chainInputJobWorkspaceDir,
@@ -90,5 +91,21 @@ describe("chain-input-delivery (Phase 59A)", () => {
         scope: "all",
       }),
     ).toHaveLength(2);
+  });
+
+  it("gates pending Retry by updatedAt age", () => {
+    const now = Date.parse("2026-08-14T12:00:30.000Z");
+    expect(canRetryChainInputDelivery("failed", undefined, now)).toBe(true);
+    expect(canRetryChainInputDelivery("transferring", undefined, now)).toBe(true);
+    expect(canRetryChainInputDelivery("verified", "2026-01-01T00:00:00.000Z", now)).toBe(
+      false,
+    );
+    expect(canRetryChainInputDelivery("pending", undefined, now)).toBe(false);
+    expect(
+      canRetryChainInputDelivery("pending", "2026-08-14T12:00:20.000Z", now),
+    ).toBe(false);
+    expect(
+      canRetryChainInputDelivery("pending", "2026-08-14T12:00:00.000Z", now),
+    ).toBe(true);
   });
 });

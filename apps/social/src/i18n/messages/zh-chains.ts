@@ -137,6 +137,7 @@ export const zhChainsMessages = {
     cancelStep: "取消此步骤",
     reassignStep: "重新分配",
     stepCancelled: "已取消该步骤",
+    stepCancelFailed: "无法取消此步骤",
     stepReassigned: "已重新分配",
     reassignFailed: "无法重新分配此步骤",
     reassignUnavailable: "当前节点不支持重新分配",

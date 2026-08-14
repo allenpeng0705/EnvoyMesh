@@ -774,5 +774,56 @@ void main() {
       mock.simulateMessage({'id': sent['id'], 'result': null});
       await expectLater(callFuture, completes);
     });
+
+    test('chainCancel includes subtaskId and returns cancelled list', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.chainCancel(
+        chainId: 'chain_x',
+        reason: 'test',
+        subtaskId: 'sub_1',
+      );
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'chainCancel');
+      expect(sent['params'], {
+        'chainId': 'chain_x',
+        'reason': 'test',
+        'cancelledBy': 'owner',
+        'subtaskId': 'sub_1',
+      });
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {'chainId': 'chain_x', 'cancelled': <String>['sub_1']},
+      });
+      final result = await callFuture;
+      expect(result['cancelled'], ['sub_1']);
+    });
+
+    test('chainReassignSubtask sends chainId and subtaskId', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.chainReassignSubtask(
+        chainId: 'chain_x',
+        subtaskId: 'sub_2',
+      );
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'chainReassignSubtask');
+      expect(sent['params'], {
+        'chainId': 'chain_x',
+        'subtaskId': 'sub_2',
+      });
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {'ok': true, 'subtaskId': 'sub_2'},
+      });
+      final result = await callFuture;
+      expect(result['ok'], isTrue);
+    });
   });
 }

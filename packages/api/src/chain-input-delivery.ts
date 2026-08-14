@@ -81,6 +81,31 @@ export const DEFAULT_CHAIN_INPUT_DELIVERY_POLICY: ChainInputDeliveryPolicy = {
   gc: "on_terminal",
 };
 
+/**
+ * Pending rows younger than this should not offer Retry — home may still be
+ * flipping pending → transferring on the award path.
+ */
+export const CHAIN_INPUT_PENDING_RETRY_MIN_AGE_MS = 15_000;
+
+/**
+ * Whether assigner UI should show Retry for a delivery row.
+ * Failed / transferring: always. Pending: only when `updatedAt` is old enough
+ * (or missing `updatedAt` → false, to avoid racing a fresh award push).
+ */
+export function canRetryChainInputDelivery(
+  phase: ChainInputDeliveryPhase | string,
+  updatedAt: string | undefined | null,
+  nowMs: number = Date.now(),
+  pendingMinAgeMs: number = CHAIN_INPUT_PENDING_RETRY_MIN_AGE_MS,
+): boolean {
+  if (phase === "failed" || phase === "transferring") return true;
+  if (phase !== "pending") return false;
+  if (!updatedAt) return false;
+  const t = Date.parse(updatedAt);
+  if (!Number.isFinite(t)) return false;
+  return nowMs - t >= pendingMinAgeMs;
+}
+
 /** Sanitize a file name segment for vault paths under the job workspace. */
 export function sanitizeChainInputFileName(name: string): string {
   const base = name.replace(/^[\\/]+/, "").replace(/[\\/]/g, "_").trim();
