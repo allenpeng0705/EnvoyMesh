@@ -1,7 +1,7 @@
 # Agent Network — Artifact handoff & worker stickiness
 
 > **Status:** **Phase 53 — implemented** (53A–53E).  
-> **Related:** [plan+assign](./agent-network-plan-assign.md) · [roles](./agent-network-roles.md) · [vocabulary](./agent-network-vocabulary.md) · [implementation plan §Phase 53](./implementation-plan.md#phase-53--artifact-handoff--worker-stickiness)
+> **Related:** [plan+assign](./agent-network-plan-assign.md) · [roles](./agent-network-roles.md) · [vocabulary](./agent-network-vocabulary.md) · [implementation plan §Phase 53](./implementation-plan.md#phase-53--artifact-handoff--worker-stickiness) · **UX visibility / attachment honesty:** [agent-network-ux-team-jobs.md](./agent-network-ux-team-jobs.md) (Phase 58B) · **Job input delivery (bytes, not sync):** [agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md) (Phase 59)
 
 ## 1. Goals
 
