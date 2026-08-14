@@ -70,6 +70,7 @@ import {
 import { openClawWorkspaceDir } from "./openclaw-workspace.js";
 import { buildAllLocalFilesList } from "./local-files.js";
 import {
+  KNOWLEDGE_SYNC_CAPS,
   listExternalMcpKnowledgeViaRuntime,
   readLinkedObsidianFileContentViaRuntime,
   readMcpRemoteFileContent,
@@ -225,6 +226,10 @@ export async function listAllLocalFilesViaRuntime(
     linkedObsidianItems,
     mcpRemoteItems: mcpRemote.items,
     mcpRemoteError: mcpRemote.error,
+    knowledgeSyncCaps: {
+      linkedObsidianMaxFiles: KNOWLEDGE_SYNC_CAPS.linkedObsidianMaxFiles,
+      mcpRebuildMaxCards: KNOWLEDGE_SYNC_CAPS.mcpRebuildMaxCards,
+    },
   });
 }
 
@@ -236,7 +241,35 @@ async function listLinkedObsidianItemsViaRuntime(
     const paths = config?.aiSettings?.knowledgeBase?.linkedObsidianVaultPaths ?? [];
     if (!paths.length) return [];
     const { listLinkedObsidianMarkdownFiles } = await import("./linked-obsidian-files.js");
-    return listLinkedObsidianMarkdownFiles(paths);
+    const { notesImportsObsidianPathForLinked } = await import("@envoymesh/vault");
+    const { parseFrontmatter, frontmatterString } = await import("@envoymesh/kb-obsidian");
+    const items = await listLinkedObsidianMarkdownFiles(paths);
+    const vaultDir = ctx.getVaultDir();
+    if (!vaultDir) return items;
+
+    const { readFile } = await import("node:fs/promises");
+    const { resolve } = await import("node:path");
+    return Promise.all(
+      items.map(async (item) => {
+        try {
+          const destRel = notesImportsObsidianPathForLinked(item.relativePath);
+          const raw = await readFile(resolve(vaultDir, destRel), "utf8");
+          const importedAt = frontmatterString(parseFrontmatter(raw).data, "importedAt");
+          if (!importedAt) return item;
+          const liveMs = Date.parse(item.updatedAt);
+          const mirrorMs = Date.parse(importedAt);
+          const syncStale =
+            Number.isFinite(liveMs) && Number.isFinite(mirrorMs) ? liveMs > mirrorMs : undefined;
+          return {
+            ...item,
+            mirrorImportedAt: importedAt,
+            ...(syncStale !== undefined ? { syncStale } : {}),
+          };
+        } catch {
+          return item;
+        }
+      }),
+    );
   } catch {
     return [];
   }
@@ -697,10 +730,9 @@ export async function createNoteViaRuntime(
   const doc = index.documents.find((d) => d.relativePath === relativePath);
   if (!doc) throw new Error(`Created note not indexed: ${relativePath}`);
 
-  // Persist per-item sensitivity override when sensitivity is explicitly set.
-  if (params.sensitivity) {
-    await writeSensitivityOverride(ctx, doc.documentId, params.sensitivity);
-  }
+  // Persist per-item sensitivity — default private (Phase 4: Publish for mesh).
+  const sensitivity = params.sensitivity ?? "private";
+  await writeSensitivityOverride(ctx, doc.documentId, sensitivity);
 
   return {
     documentId: doc.documentId,

@@ -259,6 +259,7 @@ export async function handleInboundKnowledgeQuery(input: {
 
   // 4. Search vault knowledge base (best-effort)
   let vaultSnippets: Awaited<ReturnType<RagService["searchVaultKnowledgeBase"]>> = [];
+  let wikiLinkSection = "";
   const knowledgeScope = isLocalSelfQuery ? "owner" : "public";
   if (vaultIndex) {
     const sensitivityOverrides = await loadKnowledgeSensitivityOverrides(profileDir);
@@ -279,6 +280,23 @@ export async function handleInboundKnowledgeQuery(input: {
           knowledgeScope,
           sensitivityOverrides,
         });
+    if (knowledgeScope === "owner" && profileDir && vaultSnippets.length > 0) {
+      try {
+        const { enrichOwnerVaultAskContext } = await import("./obsidian-ask-context.js");
+        const enriched = await enrichOwnerVaultAskContext({
+          profileDir,
+          vaultRoot: vaultIndex.rootDir,
+          query: payload.query,
+          vaultResults: vaultSnippets,
+          docs: vaultIndex.documents,
+          sensitivityOverrides,
+        });
+        vaultSnippets = enriched.vaultResults;
+        wikiLinkSection = enriched.wikiLinkSection;
+      } catch {
+        /* wiki/tag enrichment optional */
+      }
+    }
     await taskStore.appendAuditEvent(
       createAuditEvent({
         type: "vault.searched",
@@ -343,7 +361,7 @@ export async function handleInboundKnowledgeQuery(input: {
 ${agentIdentitySection}Answer only based on the provided context. If the context does not contain relevant information, say so.\n\
 Do not make up information. Keep the answer concise (2-4 sentences).\n\
 Sensitivity level of this answer: ${allowedSensitivity}.\n\n\
-Context:\n${promptContext}\n${injectedContext}${externalContext}${linkedObsidianContext ? `\n${linkedObsidianContext}` : ""}\n\
+Context:\n${promptContext}\n${injectedContext}${externalContext}${wikiLinkSection ? `\n${wikiLinkSection}` : ""}${linkedObsidianContext ? `\n${linkedObsidianContext}` : ""}\n\
 Query: ${payload.query}`;
 
   // Cap sensitivity for cloud providers (they only allow "public" by default)

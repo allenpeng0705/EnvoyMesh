@@ -71,15 +71,47 @@ export interface EnvoyLocalEmbedRuntimeDeps {
    * download — boot refresh often races ahead of :18791.
    */
   onEmbedReady?: () => void | Promise<void>;
+  /**
+   * When true, idle-stop is deferred (e.g. vault reindex / connector sync in
+   * progress). Checked when the idle timer fires.
+   */
+  isEmbedBusy?: () => boolean;
 }
 
 export type EnvoyLocalEmbedRuntimeState = EnvoyLocalRuntimeState & {
   /** Prevents duplicate onEmbedReady → reindex storms in one process. */
   embedReadyNotified?: boolean;
+  /** Last embed HTTP use / ensure (ms since epoch). */
+  lastEmbedActivityAt?: number;
+  /** Stops the owned sidecar after quiet period — frees CPU/RAM. */
+  idleStopTimer?: ReturnType<typeof setTimeout> | null;
 };
 
+/** Default quiet time before stopping the embed llama-server (ms).
+ * 0 = keep warm (preferred for the small default 0.6B embedder). */
+export const ENVOY_LOCAL_EMBED_IDLE_STOP_MS_DEFAULT = 0;
+
+/**
+ * Idle unload delay. `ENVOYMESH_ENVOY_LOCAL_EMBED_IDLE_MS`:
+ * - unset → 0 (keep running)
+ * - `0` → never auto-stop
+ * - positive → that many ms
+ */
+export function resolveEnvoyLocalEmbedIdleStopMs(
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const raw = env.ENVOYMESH_ENVOY_LOCAL_EMBED_IDLE_MS?.trim();
+  if (raw == null || raw === "") return ENVOY_LOCAL_EMBED_IDLE_STOP_MS_DEFAULT;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return ENVOY_LOCAL_EMBED_IDLE_STOP_MS_DEFAULT;
+  return Math.floor(n);
+}
+
 export function createEnvoyLocalEmbedRuntimeState(): EnvoyLocalEmbedRuntimeState {
-  return createEnvoyLocalRuntimeState();
+  return {
+    ...createEnvoyLocalRuntimeState(),
+    idleStopTimer: null,
+  };
 }
 
 async function notifyEmbedReady(
@@ -244,7 +276,88 @@ async function downloadEmbedModel(
   return { id: catalog.id, path: dest };
 }
 
+function clearIdleStopTimer(state: EnvoyLocalEmbedRuntimeState): void {
+  if (state.idleStopTimer) {
+    clearTimeout(state.idleStopTimer);
+    state.idleStopTimer = null;
+  }
+}
+
+/**
+ * Mark embed use and (re)arm idle unload. Call around every embed HTTP burst
+ * and after reindex finishes so the sidecar does not stay at multi-core forever.
+ */
+export function noteEnvoyLocalEmbedActivity(
+  state: EnvoyLocalEmbedRuntimeState,
+  deps: EnvoyLocalEmbedRuntimeDeps,
+  options?: { idleMs?: number },
+): void {
+  state.lastEmbedActivityAt = Date.now();
+  armEnvoyLocalEmbedIdleStop(state, deps, options);
+}
+
+/**
+ * After quiet period, stop the **owned** embed child (SIGTERM). Orphan servers
+ * from another node process are not killed — only local ready/watchdog state
+ * is cleared. Idle unload is skipped while `deps.isEmbedBusy()` is true.
+ */
+export function armEnvoyLocalEmbedIdleStop(
+  state: EnvoyLocalEmbedRuntimeState,
+  deps: EnvoyLocalEmbedRuntimeDeps,
+  options?: { idleMs?: number },
+): void {
+  const idleMs = options?.idleMs ?? resolveEnvoyLocalEmbedIdleStopMs();
+  clearIdleStopTimer(state);
+  if (idleMs <= 0) return;
+
+  const startedAt = state.lastEmbedActivityAt ?? Date.now();
+  state.idleStopTimer = setTimeout(() => {
+    void (async () => {
+      try {
+        if ((state.lastEmbedActivityAt ?? 0) > startedAt) return;
+        if (deps.isEmbedBusy?.()) {
+          noteEnvoyLocalEmbedActivity(state, deps, options);
+          return;
+        }
+        const idleMsNow = options?.idleMs ?? resolveEnvoyLocalEmbedIdleStopMs();
+        if (idleMsNow <= 0) return;
+        if (Date.now() - (state.lastEmbedActivityAt ?? 0) < idleMsNow - 25) {
+          armEnvoyLocalEmbedIdleStop(state, deps, options);
+          return;
+        }
+
+        if (!state.child) {
+          // Orphan reuse: do not SIGKILL another profile's llama-server.
+          if (state.watchdog) {
+            clearInterval(state.watchdog);
+            state.watchdog = null;
+          }
+          if (state.phase === "ready") state.phase = "idle";
+          console.info(
+            "[envoy-local-embed] idle: released orphan handle (left foreign process running)",
+          );
+          return;
+        }
+
+        console.info(
+          `[envoy-local-embed] idle: stopping sidecar after ${idleMsNow}ms quiet`,
+        );
+        await stopChild(state);
+        state.phase = "idle";
+        state.embedReadyNotified = false;
+      } catch (err) {
+        console.warn(
+          "[envoy-local-embed] idle stop failed:",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    })();
+  }, idleMs);
+  state.idleStopTimer.unref?.();
+}
+
 async function stopChild(state: EnvoyLocalEmbedRuntimeState): Promise<void> {
+  clearIdleStopTimer(state);
   if (state.watchdog) {
     clearInterval(state.watchdog);
     state.watchdog = null;
@@ -371,6 +484,7 @@ async function startEmbedSidecar(
     state.download = null;
     state.lastError = null;
     armEmbedWatchdog(state, deps);
+    noteEnvoyLocalEmbedActivity(state, deps);
     await notifyEmbedReady(state, deps);
     return;
   }
@@ -408,6 +522,7 @@ async function startEmbedSidecar(
       state.download = null;
       state.lastError = null;
       armEmbedWatchdog(state, deps);
+      noteEnvoyLocalEmbedActivity(state, deps);
       await notifyEmbedReady(state, deps);
       return;
     }
@@ -581,6 +696,47 @@ export async function stopEnvoyLocalEmbedViaRuntime(
   return getEnvoyLocalEmbedStatusViaRuntime(state, deps);
 }
 
+/**
+ * Lazy-start: make sure :18791 answers before RAG embeds. No-op when Knowledge
+ * embedding mode is not Envoy Local, or embed is explicitly disabled.
+ * Re-arms idle unload after success.
+ */
+export async function ensureEnvoyLocalEmbedRunningViaRuntime(
+  state: EnvoyLocalEmbedRuntimeState,
+  deps: EnvoyLocalEmbedRuntimeDeps,
+): Promise<void> {
+  const should =
+    deps.shouldAutoProvisionEmbed == null
+      ? true
+      : await deps.shouldAutoProvisionEmbed();
+  if (!should) return;
+
+  const cfg = normalizeEnvoyLocalEmbedConfig(await deps.loadEnvoyLocalEmbedConfig());
+  if (!cfg.enabled) return;
+
+  const endpoint = envoyLocalEmbedOpenAiBaseUrl(ENVOY_LOCAL_EMBED_PORT);
+  if (await probeModels(endpoint)) {
+    if (state.phase !== "ready" && state.phase !== "error") {
+      state.phase = "ready";
+      state.lastError = null;
+    }
+    if (!state.watchdog && state.child) {
+      armEmbedWatchdog(state, deps);
+    }
+    noteEnvoyLocalEmbedActivity(state, deps);
+    return;
+  }
+
+  if (state.enablePromise) {
+    await state.enablePromise;
+    noteEnvoyLocalEmbedActivity(state, deps);
+    return;
+  }
+
+  await enableEnvoyLocalEmbedViaRuntime(state, deps);
+  noteEnvoyLocalEmbedActivity(state, deps);
+}
+
 export async function disableEnvoyLocalEmbedViaRuntime(
   state: EnvoyLocalEmbedRuntimeState,
   deps: EnvoyLocalEmbedRuntimeDeps,
@@ -633,4 +789,6 @@ export async function haltEnvoyLocalEmbedChildViaRuntime(
 ): Promise<void> {
   state.abort?.abort();
   await stopChild(state);
+  state.phase = "idle";
+  state.embedReadyNotified = false;
 }

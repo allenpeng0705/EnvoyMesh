@@ -4,7 +4,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import type {
   ExportNotesToLinkedObsidianParams,
@@ -21,6 +21,7 @@ import type {
   ReadLibraryItemContentResult,
 } from "@envoymesh/api";
 import { resolveAiKnowledgeBaseSettings } from "@envoymesh/api";
+import { parseFrontmatter } from "@envoymesh/kb-obsidian";
 import {
   formatMcpSnippetAsNote,
   mcpRemoteBrowsePath,
@@ -41,6 +42,12 @@ import {
   assertPathInsideLinkedObsidianRoot,
   type LinkedObsidianRoot,
 } from "./linked-obsidian-files.js";
+
+/** Honesty caps for Rebuild / Ask sync (Phase 2 Browse transparency). */
+export const KNOWLEDGE_SYNC_CAPS = {
+  linkedObsidianMaxFiles: 400,
+  mcpRebuildMaxCards: 100,
+} as const;
 /** Minimal ctx to avoid circular import with node-service-fileshare. */
 export interface KnowledgeHubContext {
   getVaultDir: () => string | null | undefined;
@@ -101,7 +108,7 @@ function upsertMcpRemoteCache(
 
 
 function snippetExternalId(snippet: ExternalKnowledgeSnippet, index: number): string {
-  const fromSnippet = (snippet as { id?: string }).id?.trim();
+  const fromSnippet = snippet.externalId?.trim() || (snippet as { id?: string }).id?.trim();
   if (fromSnippet) return fromSnippet;
   return (
     createHash("sha256").update(`${snippet.title}\n${snippet.text}`).digest("hex").slice(0, 16) ||
@@ -133,11 +140,36 @@ export async function listExternalMcpKnowledgeViaRuntime(
   const config = await ctx.getNodeConfig();
   const kb = config?.aiSettings?.knowledgeBase;
   const query = params?.query?.trim() || "*";
-  const { snippets, error } = await searchExternalMcpKnowledge({
-    query,
-    knowledgeBase: kb,
-    limit: params?.limit,
-  });
+  const limit = Math.min(
+    params?.limit ?? KNOWLEDGE_SYNC_CAPS.mcpRebuildMaxCards,
+    KNOWLEDGE_SYNC_CAPS.mcpRebuildMaxCards,
+  );
+  const pageSize = Math.min(50, limit);
+  const snippets: ExternalKnowledgeSnippet[] = [];
+  const seenKeys = new Set<string>();
+  let error: string | undefined;
+  for (let offset = 0; offset < limit; offset += pageSize) {
+    const pageLimit = Math.min(pageSize, limit - offset);
+    const page = await searchExternalMcpKnowledge({
+      query,
+      knowledgeBase: kb,
+      limit: pageLimit,
+      offset,
+    });
+    if (page.error) error = page.error;
+    if (page.snippets.length === 0) break;
+    let newOnPage = 0;
+    for (const snippet of page.snippets) {
+      if (snippets.length >= limit) break;
+      const key = snippetExternalId(snippet, snippets.length);
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      snippets.push(snippet);
+      newOnPage += 1;
+    }
+    // Tool ignored offset (same page again) or no unique hits — stop paging.
+    if (newOnPage === 0 || page.snippets.length < pageLimit) break;
+  }
   // Not configured → silent skip for Browse (do not toast mcp_url_missing).
   if (error === "mcp_url_missing") {
     return { items: [] };
@@ -269,6 +301,7 @@ export async function importLinkedObsidianNotesViaRuntime(
   const imported: ImportLinkedObsidianNotesResult["imported"] = [];
   let skipped = 0;
   const writtenRels: string[] = [];
+  const force = params.force === true;
 
   for (const item of candidates) {
     try {
@@ -277,16 +310,44 @@ export async function importLinkedObsidianNotesViaRuntime(
         skipped += 1;
         continue;
       }
-      const raw = await readFile(abs, "utf8");
       const destRel = notesImportsObsidianPathForLinked(item.relativePath);
+      const destAbs = resolve(vaultDir, destRel);
+      assertPathInsideVault(vaultDir, destAbs);
+
+      if (!force) {
+        try {
+          const existing = await readFile(destAbs, "utf8");
+          const fm = parseFrontmatter(existing).data;
+          const importedAtRaw = fm.importedAt;
+          const importedAt =
+            typeof importedAtRaw === "string"
+              ? importedAtRaw
+              : typeof importedAtRaw === "number"
+                ? new Date(importedAtRaw).toISOString()
+                : undefined;
+          if (importedAt) {
+            const importedMs = Date.parse(importedAt);
+            if (Number.isFinite(importedMs)) {
+              const srcStat = await stat(abs);
+              // Allow 2s skew so mirror write clocks vs fs mtime don't thrash.
+              if (srcStat.mtimeMs <= importedMs + 2_000) {
+                skipped += 1;
+                continue;
+              }
+            }
+          }
+        } catch {
+          // No usable mirror yet — import.
+        }
+      }
+
+      const raw = await readFile(abs, "utf8");
       const content = wrapMaterializedMarkdown(raw, {
         source: item.relativePath,
         title: item.title,
         extractor: "obsidian-linked",
         sensitivity: "private",
       });
-      const destAbs = resolve(vaultDir, destRel);
-      assertPathInsideVault(vaultDir, destAbs);
       await mkdir(dirname(destAbs), { recursive: true });
       await writeFile(destAbs, content, { encoding: "utf8", mode: 0o600 });
       writtenRels.push(destRel);
@@ -408,8 +469,8 @@ export async function importExternalMcpKnowledgeViaRuntime(
   return { ok: true, imported };
 }
 
-const RAG_SYNC_MCP_LIMIT = 100;
-const RAG_SYNC_OBSIDIAN_MAX_FILES = 400;
+const RAG_SYNC_MCP_LIMIT = KNOWLEDGE_SYNC_CAPS.mcpRebuildMaxCards;
+const RAG_SYNC_OBSIDIAN_MAX_FILES = KNOWLEDGE_SYNC_CAPS.linkedObsidianMaxFiles;
 
 export interface SyncKnowledgeConnectorsForRagResult {
   obsidianImported: number;
@@ -443,6 +504,7 @@ export async function syncKnowledgeConnectorsForRagViaRuntime(
       );
       const obsidian = await importLinkedObsidianNotesViaRuntime(ctx, {
         paths: files.map((f) => f.relativePath),
+        force: false,
       });
       obsidianImported = obsidian.imported.length;
       obsidianSkipped = obsidian.skipped;
@@ -493,12 +555,18 @@ export async function syncKnowledgeConnectorsForRagViaRuntime(
           .replace(/^-+|-+$/g, "")
           .slice(0, 80) || "snippet";
       const destRel = `notes/mcp/${safeId}.md`;
-      const formatted = formatMcpSnippetAsNote(cached.snippet, {
-        attribution,
-        sensitivity: "private",
-        subfolder: "mcp",
-        title: cached.snippet.title,
-      });
+      const formatted = formatMcpSnippetAsNote(
+        {
+          ...cached.snippet,
+          externalId: cached.snippet.externalId ?? externalId,
+        },
+        {
+          attribution,
+          sensitivity: "private",
+          subfolder: "mcp",
+          title: cached.snippet.title,
+        },
+      );
       // Stable id in frontmatter so rebuilds overwrite the same note.
       let content = formatted.content;
       if (!/^mcp-external-id\s*:/m.test(content)) {
@@ -527,11 +595,19 @@ export async function exportNotesToLinkedObsidianViaRuntime(
   if (!vaultDir) return { ok: false, exported: [], reason: "vault_missing" };
 
   const config = await ctx.getNodeConfig();
-  const roots = config?.aiSettings?.knowledgeBase?.linkedObsidianVaultPaths ?? [];
+  const kb = resolveAiKnowledgeBaseSettings(config?.aiSettings?.knowledgeBase);
+  const roots = kb.linkedObsidianVaultPaths ?? [];
   if (!roots.length) return { ok: false, exported: [], reason: "no_linked_vaults" };
 
   const target = await resolveLinkedObsidianRootByLabel(roots, params.targetRootLabel);
   if (!target) return { ok: false, exported: [], reason: "root_not_found" };
+
+  const mode =
+    params.mode === "mirror-source" || params.mode === "envoymesh-export"
+      ? params.mode
+      : kb.obsidianExportMode === "mirror-source"
+        ? "mirror-source"
+        : "envoymesh-export";
 
   const exported: ExportNotesToLinkedObsidianResult["exported"] = [];
   for (const rel of params.relativePaths) {
@@ -545,37 +621,95 @@ export async function exportNotesToLinkedObsidianViaRuntime(
     } catch {
       continue;
     }
-    const withMeta = /^---\r?\n[\s\S]*?\bexported-from\s*:/m.test(body)
-      ? body
-      : [
-          wrapMaterializedMarkdown(body, {
-            source: vaultRel,
-            title: basename(vaultRel, ".md"),
-            extractor: "envoymesh-export",
-            sensitivity: "private",
-          }).replace(
-            /^extractor: envoymesh-export$/m,
-            "exported-from: envoymesh\nextractor: envoymesh-export",
-          ),
-        ].join("");
 
-    // Preserve vault-relative folder under export dir to avoid basename collisions.
-    const safeInside = vaultRel.replace(/^notes\//, "").replace(/[^a-zA-Z0-9._/-]+/g, "-");
-    const destAbs = resolve(target.absRoot, "envoymesh-export", safeInside);
-    try {
-      assertPathInsideLinkedObsidianRoot(target.absRoot, destAbs);
-    } catch {
-      continue;
+    let destAbs: string | undefined;
+    let destBrowse: string | undefined;
+
+    if (mode === "mirror-source") {
+      const sourcePath = frontmatterSourceLinkedPath(body);
+      if (sourcePath) {
+        const mirrored = await resolveLinkedObsidianAbsolutePath(roots, sourcePath);
+        if (mirrored) {
+          destAbs = mirrored;
+          destBrowse = sourcePath;
+        }
+      }
     }
+
+    if (!destAbs || !destBrowse) {
+      body = stampEnvoyExportFrontmatter(body, vaultRel);
+      const safeInside = vaultRel.replace(/^notes\//, "").replace(/[^a-zA-Z0-9._/-]+/g, "-");
+      destAbs = resolve(target.absRoot, "envoymesh-export", safeInside);
+      try {
+        assertPathInsideLinkedObsidianRoot(target.absRoot, destAbs);
+      } catch {
+        continue;
+      }
+      destBrowse = `linked-obsidian/${target.label}/envoymesh-export/${safeInside}`;
+    } else {
+      // mirror-source: strip Envoy import/export envelope so live Obsidian notes stay clean.
+      body = stripEnvoyEnvelopeForMirrorWrite(body);
+    }
+
     await mkdir(dirname(destAbs), { recursive: true });
-    await writeFile(destAbs, withMeta, { encoding: "utf8", mode: 0o600 });
-    exported.push({
-      from: vaultRel,
-      to: `linked-obsidian/${target.label}/envoymesh-export/${safeInside}`,
-    });
+    await writeFile(destAbs, body, { encoding: "utf8", mode: 0o600 });
+    exported.push({ from: vaultRel, to: destBrowse });
   }
 
   return { ok: exported.length > 0, exported, reason: exported.length ? undefined : "nothing_exported" };
+}
+
+function frontmatterSourceLinkedPath(body: string): string | undefined {
+  const { data } = parseFrontmatter(body);
+  const source = typeof data.source === "string" ? data.source.trim() : "";
+  if (!source.startsWith("linked-obsidian/")) return undefined;
+  if (source.includes("..")) return undefined;
+  return source.replace(/^[\\/]+/, "");
+}
+
+/** Remove Envoy-managed frontmatter keys when writing back to a live linked note. */
+function stripEnvoyEnvelopeForMirrorWrite(body: string): string {
+  const { data, content } = parseFrontmatter(body);
+  const envoyKeys = new Set([
+    "extractor",
+    "importedAt",
+    "exported-from",
+    "exported_from",
+    "sensitivity",
+  ]);
+  const kept: Array<[string, string | boolean | number | string[]]> = [];
+  for (const [key, value] of Object.entries(data)) {
+    if (envoyKeys.has(key)) continue;
+    if (key === "source" && typeof value === "string" && value.startsWith("linked-obsidian/")) {
+      continue;
+    }
+    kept.push([key, value]);
+  }
+  if (kept.length === 0) return content;
+  const lines = kept.map(([key, value]) => {
+    if (typeof value === "boolean" || typeof value === "number") return `${key}: ${value}`;
+    if (Array.isArray(value)) {
+      return `${key}: [${value.map((v) => JSON.stringify(v)).join(", ")}]`;
+    }
+    if (/[:#{}[\],&*!|>'"%@`]/.test(value) || /^\s|\s$/.test(value)) {
+      return `${key}: ${JSON.stringify(value)}`;
+    }
+    return `${key}: ${value}`;
+  });
+  return `---\n${lines.join("\n")}\n---\n${content}`;
+}
+
+function stampEnvoyExportFrontmatter(body: string, vaultRel: string): string {
+  if (/^---\r?\n[\s\S]*?\bexported-from\s*:/m.test(body)) return body;
+  return wrapMaterializedMarkdown(body, {
+    source: vaultRel,
+    title: basename(vaultRel, ".md"),
+    extractor: "envoymesh-export",
+    sensitivity: "private",
+  }).replace(
+    /^extractor: envoymesh-export$/m,
+    "exported-from: envoymesh\nextractor: envoymesh-export",
+  );
 }
 
 export async function exportNotesToMcpViaRuntime(
@@ -587,7 +721,14 @@ export async function exportNotesToMcpViaRuntime(
   if (!vaultDir) return { ok: false, exported: [], reason: "vault_missing" };
 
   const config = await ctx.getNodeConfig();
-  const kb = config?.aiSettings?.knowledgeBase;
+  const kb = resolveAiKnowledgeBaseSettings(config?.aiSettings?.knowledgeBase);
+  if (kb.externalProvider !== "mcp") {
+    return { ok: false, exported: [], reason: "mcp_disabled" };
+  }
+  if (!kb.mcpWriteBackEnabled) {
+    return { ok: false, exported: [], reason: "write_back_disabled" };
+  }
+
   const exported: ExportNotesToMcpResult["exported"] = [];
   const failures: string[] = [];
 
@@ -604,7 +745,7 @@ export async function exportNotesToMcpViaRuntime(
     }
     const title = basename(vaultRel, ".md");
     const result = await writeExternalMcpKnowledge({
-      knowledgeBase: kb,
+      knowledgeBase: config?.aiSettings?.knowledgeBase,
       title,
       content: body,
     });
@@ -629,6 +770,36 @@ export async function exportNotesToMcpViaRuntime(
       ? `partial: ${failures.length} failed (${failures.slice(0, 3).join("; ")})`
       : undefined,
   };
+}
+
+/**
+ * Best-effort Phase 4 auto-export after createNote (never throws).
+ */
+export async function maybeAutoExportCreatedNoteViaRuntime(
+  ctx: KnowledgeHubContext,
+  relativePath: string,
+): Promise<void> {
+  try {
+    const config = await ctx.getNodeConfig();
+    const kb = resolveAiKnowledgeBaseSettings(config?.aiSettings?.knowledgeBase);
+    const path = relativePath.trim().replace(/^[\\/]+/, "");
+    if (!path.endsWith(".md")) return;
+
+    if (kb.obsidianAutoExportOnCreate && kb.linkedObsidianVaultPaths.length > 0) {
+      await exportNotesToLinkedObsidianViaRuntime(ctx, {
+        relativePaths: [path],
+        mode: kb.obsidianExportMode,
+      });
+    }
+    if (kb.mcpAutoExportOnCreate && kb.mcpWriteBackEnabled) {
+      await exportNotesToMcpViaRuntime(ctx, { relativePaths: [path] });
+    }
+  } catch (err) {
+    console.warn(
+      "[knowledge-hub] auto-export after createNote failed:",
+      err instanceof Error ? err.message : err,
+    );
+  }
 }
 
 /** Owner-only lexical search over linked Obsidian markdown (query-time; mesh stays vault-only). */
@@ -678,10 +849,10 @@ export function formatLinkedObsidianKnowledgeSection(
   hits: Array<{ title: string; relativePath: string; text: string }>,
 ): string {
   if (hits.length === 0) return "";
-  const lines = hits.map(
-    (h) =>
-      `- ${h.title} (${h.relativePath}): "${h.text.replace(/\s+/g, " ").replace(/"/g, "'").slice(0, 400)}"`,
-  );
+  const lines = hits.map((h) => {
+    const snippet = h.text.replace(/\s+/g, " ").replace(/"/g, "'").slice(0, 400);
+    return `- ${h.title} (linked-obsidian:${h.relativePath}) [live linked vault]: "${snippet}"`;
+  });
   return `## Linked Obsidian vault\n${lines.join("\n")}`;
 }
 

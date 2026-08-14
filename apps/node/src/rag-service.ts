@@ -14,7 +14,7 @@ import type {
 import { DEFAULT_RAG_INDEX_PROGRESS, DEFAULT_RAG_INDEX_STATUS, resolveAiKnowledgeBaseSettings } from "@envoymesh/api";
 import type { LocalChatLogStore } from "@envoymesh/local-store";
 import type { VaultDocumentMetadata, VaultIndex, VaultSearchResult } from "@envoymesh/vault";
-import { isVaultExtractableExtension, VAULT_TEXT_EXTRACTOR_ID } from "@envoymesh/vault";
+import { isVaultExtractableExtension, VAULT_CHUNK_ALGORITHM_ID, VAULT_TEXT_EXTRACTOR_ID } from "@envoymesh/vault";
 import {
   chatCollectionId,
   createEmbeddingProvider,
@@ -113,6 +113,13 @@ export interface CreateRagServiceInput {
   } | null;
   chatLogStore?: LocalChatLogStore | null;
   onProgress?: (progress: RagIndexProgress) => void;
+  /**
+   * Lazy-start Envoy Local embed (:18791) before HTTP embed calls.
+   * No-op for cloud/Ollama/mock providers.
+   */
+  ensureEmbedReady?: () => Promise<void>;
+  /** Bump embed idle-unload timer after each successful embed burst. */
+  onEmbedActivity?: () => void;
 }
 
 export async function createRagService(input: CreateRagServiceInput): Promise<RagService> {
@@ -213,6 +220,16 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
   const BACKFILL_FAILURE_BACKOFF_MS = 5 * 60_000;
 
   async function ensureRuntime(): Promise<{ embedder: EmbeddingProvider; store: VectorStore }> {
+    if (input.ensureEmbedReady) {
+      try {
+        await input.ensureEmbedReady();
+      } catch (error) {
+        // Surface on the next embed call via recordEmbedError paths.
+        console.warn(
+          `[rag] ensure embed ready failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
     const kb = resolveAiKnowledgeBaseSettings(knowledgeBase);
     const nextEmbedder = createEmbeddingProvider({
       embedding: kb.embedding,
@@ -231,6 +248,14 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
     indexStatus = { ...indexStatus, embedderModelKey: embedder.modelKey };
     return { embedder, store };
   }
+
+  const noteEmbedActivity = () => {
+    try {
+      input.onEmbedActivity?.();
+    } catch {
+      /* ignore */
+    }
+  };
 
   const service: RagService = {
     async refreshConfig(next) {
@@ -265,6 +290,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           },
         ]);
         clearEmbedError();
+        noteEmbedActivity();
         void flushSoon();
       } catch (error) {
         recordEmbedError(error);
@@ -350,6 +376,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
             },
           }));
           await activeStore.upsert(records);
+          noteEmbedActivity();
           for (const record of records) {
             existingByCollection.get(record.collection)?.add(record.sourceKey);
           }
@@ -415,6 +442,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           throw new Error("embedding provider returned an empty vector");
         }
         clearEmbedError();
+        noteEmbedActivity();
         indexStatus = { ...indexStatus, embedderModelKey: activeEmbedder.modelKey };
         return {
           ok: true,
@@ -471,6 +499,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           force,
           sensitivityOverrides: overrides,
           skipOfficeSources: skipOffice,
+          onEmbedActivity: noteEmbedActivity,
           onProgress: (partial) => {
             reportProgress({ phase: "public", indexed, skipped, removed, ...partial });
           },
@@ -490,6 +519,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           force,
           sensitivityOverrides: overrides,
           skipOfficeSources: skipOffice,
+          onEmbedActivity: noteEmbedActivity,
           onProgress: (partial) => {
             reportProgress({ phase: "private", indexed, skipped, removed, ...partial });
           },
@@ -554,6 +584,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
       try {
         const queryVector = await activeEmbedder.embed(query);
         const hits = activeStore.search(chatCollectionId(threadOwnerId), queryVector, ragLimit * 3);
+        noteEmbedActivity();
         const vectorHits = hits
           .filter((hit) => !recentIds.has(hit.sourceKey))
           .slice(0, ragLimit)
@@ -623,6 +654,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
       const { embedder: activeEmbedder, store: activeStore } = await ensureRuntime();
       try {
         const queryVector = await activeEmbedder.embed(query.trim() || ruleVaultQuery?.path?.trim() || "");
+        noteEmbedActivity();
         const documentsById = new Map(vaultIndex.documents.map((doc) => [doc.documentId, doc]));
         const merged: VaultSearchResult[] = [];
 
@@ -727,6 +759,7 @@ async function indexVaultTier(input: {
   /** Prefer Markdown corpus: do not embed these Office/PDF originals. */
   skipOfficeSources?: ReadonlySet<string>;
   onProgress: (partial: Pick<RagIndexProgress, "processed" | "total">) => void;
+  onEmbedActivity?: () => void;
 }): Promise<{ indexed: number; skipped: number; removed: number }> {
   const {
     embedder,
@@ -740,6 +773,7 @@ async function indexVaultTier(input: {
     sensitivityOverrides,
     skipOfficeSources,
     onProgress,
+    onEmbedActivity,
   } = input;
   const collection = vaultCollectionId(tier);
   const documents = vaultDocumentsForPaths(vaultIndex, paths).filter((doc) => {
@@ -780,7 +814,8 @@ async function indexVaultTier(input: {
       existing.modelKey === embedder.modelKey &&
       existing.chunkSizeChars === kb.chunkSizeChars &&
       existing.chunkOverlapChars === kb.chunkOverlapChars &&
-      existing.extractorId === VAULT_TEXT_EXTRACTOR_ID;
+      existing.extractorId === VAULT_TEXT_EXTRACTOR_ID &&
+      existing.chunkAlgorithmId === VAULT_CHUNK_ALGORITHM_ID;
 
     onProgress({ processed: docIndex + 1, total });
 
@@ -800,6 +835,7 @@ async function indexVaultTier(input: {
         const batch = chunks.slice(offset, offset + batchSize);
         const texts = batch.map((chunk) => chunk.text);
         const vectors = await embedder.embedBatch(texts);
+        onEmbedActivity?.();
         const records = batch.map((chunk, index) => ({
           id: `${collection}:${doc.documentId}:${chunk.index}`,
           collection,
@@ -835,6 +871,7 @@ async function indexVaultTier(input: {
         chunkOverlapChars: kb.chunkOverlapChars,
         indexedAt: new Date().toISOString(),
         extractorId: VAULT_TEXT_EXTRACTOR_ID,
+        chunkAlgorithmId: VAULT_CHUNK_ALGORITHM_ID,
       };
     }
     indexed += 1;

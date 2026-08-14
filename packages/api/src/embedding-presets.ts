@@ -7,7 +7,7 @@ import type { AiEmbeddingSettings, EmbeddingResponseShape } from "./ai-knowledge
 import { ENVOY_LOCAL_EMBED_CTX_SIZE } from "./ai-embedding-limits.js";
 
 /** Default Envoy Local embed model id (GGUF catalog entry; swappable). */
-export const DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID = "qwen3-embedding-4b-q4_k_m";
+export const DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID = "qwen3-embedding-0.6b-q4_k_m";
 
 /** Canonical bases — match `apps/node/src/service-ports.ts` (before offset). */
 export const ENVOY_LOCAL_CHAT_PORT_BASE = 18790;

@@ -346,6 +346,83 @@ export class ToolRegistry {
     });
 
     this.register({
+      name: "mesh.notes_create",
+      description:
+        "Create a Markdown note under vault notes/ (default private — use mesh.library_publish for mesh). Optional export to linked Obsidian / MCP when those connectors are configured.",
+      paramSchema: {
+        type: "object",
+        properties: {
+          filename: { type: "string", description: "Simple basename ending in .md (e.g. meeting-notes.md)" },
+          content: { type: "string", description: "Markdown body" },
+          subfolder: { type: "string", description: "Optional subfolder under notes/" },
+          sensitivity: {
+            type: "string",
+            enum: ["public", "friends", "private"],
+            description: "Default private",
+          },
+          exportToObsidian: {
+            type: "boolean",
+            description: "Also write to linked Obsidian (envoymesh-export/ or mirror-source)",
+          },
+          exportToMcp: {
+            type: "boolean",
+            description: "Also push via MCP write tool (requires write-back enabled)",
+          },
+        },
+        required: ["filename", "content"],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: true,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.notes_export_obsidian",
+      description:
+        "Export vault Markdown notes to a linked Obsidian vault (envoymesh-export/ by default; opt-in mirror-source for notes with linked-obsidian source frontmatter)",
+      paramSchema: {
+        type: "object",
+        properties: {
+          relativePaths: {
+            type: "array",
+            items: { type: "string" },
+            description: "Vault-relative .md paths",
+          },
+          mode: {
+            type: "string",
+            enum: ["envoymesh-export", "mirror-source"],
+            description: "Override export layout",
+          },
+          targetRootLabel: { type: "string", description: "Linked vault label when multiple roots exist" },
+        },
+        required: ["relativePaths"],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: true,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.notes_export_mcp",
+      description:
+        "Push vault Markdown notes to the configured MCP write tool (requires MCP write-back enabled in Settings)",
+      paramSchema: {
+        type: "object",
+        properties: {
+          relativePaths: {
+            type: "array",
+            items: { type: "string" },
+            description: "Vault-relative .md paths",
+          },
+        },
+        required: ["relativePaths"],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: true,
+      isMeshTool: false,
+    });
+
+    this.register({
       name: "mesh.share_profile_gallery_photo",
       description:
         "Share a profile gallery photo with a bonded contact (autonomous when Settings → AI profile media policy allows)",
@@ -1339,6 +1416,24 @@ export interface MeshToolContext {
     gatewayUrl?: string;
   }) => Promise<unknown>;
   setLibraryItemPublished?: (documentId: string, published: boolean) => Promise<void>;
+  createNote?: (params: {
+    filename: string;
+    content: string;
+    subfolder?: string;
+    sensitivity?: "public" | "friends" | "private";
+  }) => Promise<{ documentId: string; relativePath: string; sizeBytes: number }>;
+  exportNotesToLinkedObsidian?: (params: {
+    relativePaths: string[];
+    targetRootLabel?: string;
+    mode?: "envoymesh-export" | "mirror-source";
+  }) => Promise<{ ok: boolean; exported: Array<{ from: string; to: string }>; reason?: string }>;
+  exportNotesToMcp?: (params: {
+    relativePaths: string[];
+  }) => Promise<{
+    ok: boolean;
+    exported: Array<{ relativePath: string; externalId?: string }>;
+    reason?: string;
+  }>;
   submitAgentShareProposal?: (params: {
     targetOwnerId: string;
     vaultRelativePath: string;
@@ -1745,6 +1840,135 @@ export async function executeTool(
       return {
         ok: true,
         result: { documentId: documentId.trim(), published },
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.notes_create") {
+      if (!context.createNote) {
+        return {
+          ok: false,
+          error: "createNote is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const filename = typeof params.filename === "string" ? params.filename.trim() : "";
+      const content = typeof params.content === "string" ? params.content : "";
+      if (!filename || !content) {
+        return {
+          ok: false,
+          error: "filename and content are required",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const sensitivity =
+        params.sensitivity === "public" || params.sensitivity === "friends"
+          ? params.sensitivity
+          : "private";
+      try {
+        const note = await context.createNote({
+          filename,
+          content,
+          subfolder: typeof params.subfolder === "string" ? params.subfolder : undefined,
+          sensitivity,
+        });
+        const exports: Record<string, unknown> = {};
+        if (params.exportToObsidian === true && context.exportNotesToLinkedObsidian) {
+          exports.obsidian = await context.exportNotesToLinkedObsidian({
+            relativePaths: [note.relativePath],
+          });
+        }
+        if (params.exportToMcp === true && context.exportNotesToMcp) {
+          exports.mcp = await context.exportNotesToMcp({
+            relativePaths: [note.relativePath],
+          });
+        }
+        return {
+          ok: true,
+          result: { ...note, sensitivity, exports },
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+    } else if (toolName === "mesh.notes_export_obsidian") {
+      if (!context.exportNotesToLinkedObsidian) {
+        return {
+          ok: false,
+          error: "exportNotesToLinkedObsidian is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const relativePaths = Array.isArray(params.relativePaths)
+        ? params.relativePaths.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+        : [];
+      if (!relativePaths.length) {
+        return {
+          ok: false,
+          error: "relativePaths is required",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const result = await context.exportNotesToLinkedObsidian({
+        relativePaths,
+        targetRootLabel:
+          typeof params.targetRootLabel === "string" ? params.targetRootLabel : undefined,
+        mode:
+          params.mode === "mirror-source" || params.mode === "envoymesh-export"
+            ? params.mode
+            : undefined,
+      });
+      return {
+        ok: result.ok,
+        result,
+        error: result.ok ? undefined : result.reason,
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.notes_export_mcp") {
+      if (!context.exportNotesToMcp) {
+        return {
+          ok: false,
+          error: "exportNotesToMcp is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const relativePaths = Array.isArray(params.relativePaths)
+        ? params.relativePaths.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+        : [];
+      if (!relativePaths.length) {
+        return {
+          ok: false,
+          error: "relativePaths is required",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const result = await context.exportNotesToMcp({ relativePaths });
+      return {
+        ok: result.ok,
+        result,
+        error: result.ok ? undefined : result.reason,
         toolName,
         correlationId,
         latencyMs: Date.now() - startTime,

@@ -44,7 +44,7 @@ describe("inferDocumentSensitivity (3-tier)", () => {
   });
 
   it("returns 'public' for all other paths", () => {
-    expect(inferDocumentSensitivity("notes/research/llm-benchmarks.md")).toBe("public");
+    expect(inferDocumentSensitivity("notes/research/llm-benchmarks.md")).toBe("private");
     expect(inferDocumentSensitivity("tutorials/setup.md")).toBe("public");
     expect(inferDocumentSensitivity("random-folder/file.md")).toBe("public");
     expect(inferDocumentSensitivity("README.md")).toBe("public");
@@ -176,15 +176,15 @@ describe("filterVaultResultsBySensitivity (3-tier)", () => {
     expect(filtered).toHaveLength(3);
   });
 
-  it("public access excludes notes/imports and notes/mcp (Phase 57 private defaults)", () => {
+  it("public access excludes notes/ by default (Phase 4 private defaults)", () => {
     const results = [
-      makeResult("notes/research/open.md"), // public
+      makeResult("docs/research/open.md"), // public
       makeResult("notes/imports/secret-report.md"), // private via path
       makeResult("notes/mcp/mcp-notion-hit.md"), // private via path
     ];
     const filtered = filterVaultResultsBySensitivity(results, "public");
     expect(filtered).toHaveLength(1);
-    expect(filtered[0]!.document.relativePath).toBe("notes/research/open.md");
+    expect(filtered[0]!.document.relativePath).toBe("docs/research/open.md");
   });
 
   it("normalizes legacy maxSensitivity values", () => {

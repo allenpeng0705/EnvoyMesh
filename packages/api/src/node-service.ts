@@ -751,6 +751,13 @@ export interface LocalFileItem {
   externalId?: string;
   /** Short preview text for mcp-remote browse rows (not persisted). */
   snippetPreview?: string;
+  /**
+   * For linked-obsidian rows: ISO mtime of vault mirror `importedAt` when present.
+   * Used by Browse to show stale vs indexed.
+   */
+  mirrorImportedAt?: string;
+  /** True when live `updatedAt` is newer than {@link mirrorImportedAt}. */
+  syncStale?: boolean;
 }
 
 export interface ListAllLocalFilesParams {
@@ -773,6 +780,11 @@ export interface ListAllLocalFilesResult {
   mcpRemoteCount?: number;
   /** Soft-fail reason when MCP remote list failed (Browse still returns vault/linked items). */
   mcpRemoteError?: string;
+  /** Honesty caps for Knowledge Browse (Phase 2). */
+  knowledgeSyncCaps?: {
+    linkedObsidianMaxFiles: number;
+    mcpRebuildMaxCards: number;
+  };
 }
 
 export interface ReadLocalFileContentParams {
@@ -974,6 +986,11 @@ export interface ImportLinkedObsidianNotesParams {
   paths?: string[];
   /** Import every linked Obsidian markdown file. */
   all?: boolean;
+  /**
+   * When true, rewrite mirrors even if source mtime ≤ mirror `importedAt`.
+   * Default false (incremental).
+   */
+  force?: boolean;
 }
 
 export interface ImportLinkedObsidianNotesResult {
@@ -1005,6 +1022,11 @@ export interface ExportNotesToLinkedObsidianParams {
   relativePaths: string[];
   /** Vault label from browse path (`linked-obsidian/<label>/…`). First root if omitted. */
   targetRootLabel?: string;
+  /**
+   * Override knowledge-base `obsidianExportMode` for this call.
+   * Default: settings / `envoymesh-export`.
+   */
+  mode?: "envoymesh-export" | "mirror-source";
 }
 
 export interface ExportNotesToLinkedObsidianResult {

@@ -133,8 +133,11 @@ export async function writeVaultContentManifestFile(
 
 export {
   chunkDocument,
+  stripYamlFrontmatter,
+  splitMarkdownSections,
   DEFAULT_CHUNK_OVERLAP_CHARS,
   DEFAULT_MAX_CHUNK_CHARS,
+  VAULT_CHUNK_ALGORITHM_ID,
   type ChunkDocumentOptions,
 } from "./chunk-document.js";
 

@@ -33,6 +33,7 @@ export function buildAllLocalFilesList(params: {
   linkedObsidianItems?: LocalFileItem[];
   mcpRemoteItems?: LocalFileItem[];
   mcpRemoteError?: string;
+  knowledgeSyncCaps?: ListAllLocalFilesResult["knowledgeSyncCaps"];
 }): ListAllLocalFilesResult {
   const linked = params.linkedObsidianItems ?? [];
   const mcpRemote = params.mcpRemoteItems ?? [];
@@ -49,6 +50,7 @@ export function buildAllLocalFilesList(params: {
     linkedObsidianCount: linked.length,
     mcpRemoteCount: mcpRemote.length,
     ...(params.mcpRemoteError ? { mcpRemoteError: params.mcpRemoteError } : {}),
+    ...(params.knowledgeSyncCaps ? { knowledgeSyncCaps: params.knowledgeSyncCaps } : {}),
   };
 }
 

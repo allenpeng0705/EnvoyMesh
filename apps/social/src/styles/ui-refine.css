@@ -869,8 +869,10 @@
 /* Discover view (formerly contacts tab) */
 .discover-view {
   padding: var(--space-6);
-  max-width: 800px;
+  width: 100%;
+  max-width: min(800px, 100%);
   margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .discover-view__header {

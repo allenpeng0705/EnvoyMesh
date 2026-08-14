@@ -98,6 +98,10 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mcpRemoteError, setMcpRemoteError] = useState<string | null>(null);
+  const [knowledgeSyncCaps, setKnowledgeSyncCaps] = useState<{
+    linkedObsidianMaxFiles: number;
+    mcpRebuildMaxCards: number;
+  } | null>(null);
   const [importBusy, setImportBusy] = useState(false);
 
   const [shareFor, setShareFor] = useState<LibraryItem | null>(null);
@@ -232,6 +236,7 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
     try {
       const result = await nodeService.listAllLocalFiles();
       setRawItems(result.items);
+      setKnowledgeSyncCaps(result.knowledgeSyncCaps ?? null);
       // Soft-fail MCP issues stay on the Notion filter as a quiet banner —
       // never toast on every Browse refresh (e.g. after toggling Private).
       const remoteErr = result.mcpRemoteError?.trim() || null;
@@ -242,6 +247,7 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
       setError(e instanceof Error ? e.message : String(e));
       setRawItems([]);
       setMcpRemoteError(null);
+      setKnowledgeSyncCaps(null);
     } finally {
       setLoading(false);
     }
@@ -257,7 +263,7 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
         ? undefined
         : items.filter((r) => r.source === "linked-obsidian").map((r) => r.relativePath);
       const result = await nodeService.importLinkedObsidianNotes(
-        all ? { all: true } : { paths },
+        all ? { all: true, force: true } : { paths, force: true },
       );
       if (!result.ok) {
         showToast(result.reason ?? t("knowledge.browse.importFailed"), "error");
@@ -471,6 +477,39 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
               </span>
             )
           ) : null}
+          {embedded && row.source === "linked-obsidian" ? (
+            row.syncStale ? (
+              <span
+                className="library-view-source library-view-source--stale"
+                title={t(
+                  "knowledge.browse.syncStaleHint",
+                  "Linked file is newer than the vault mirror — re-import or Rebuild",
+                )}
+              >
+                {t("knowledge.browse.syncStale", "Stale")}
+              </span>
+            ) : row.mirrorImportedAt ? (
+              <span
+                className="library-view-source library-view-source--indexed"
+                title={t(
+                  "knowledge.browse.syncIndexedHint",
+                  "Vault mirror is up to date with this linked file",
+                )}
+              >
+                {t("knowledge.browse.syncIndexed", "Indexed")}
+              </span>
+            ) : (
+              <span
+                className="library-view-source library-view-source--live"
+                title={t(
+                  "knowledge.browse.syncLiveHint",
+                  "Live linked file — not mirrored into the vault yet",
+                )}
+              >
+                {t("knowledge.browse.syncLive", "Live")}
+              </span>
+            )
+          ) : null}
         </span>
         {embedded ? (
           <span className="library-view-title__meta" title={row.relativePath}>
@@ -530,6 +569,7 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
       if (row.source === "linked-obsidian") {
         const result = await nodeService.importLinkedObsidianNotes({
           paths: [row.relativePath],
+          force: true,
         });
         if (!result.ok || !result.imported.length) {
           showToast(
@@ -620,7 +660,13 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
     const canConvert = canConvertLibraryRowToMarkdown(row);
     const menuOpen = rowMenu?.rowKey === rowKey;
     const hasOverflow =
-      canEditNote || canReveal || canConvert || (Boolean(vaultItem) && ipfsExportActionsEnabled);
+      canEditNote ||
+      canReveal ||
+      canConvert ||
+      (Boolean(vaultItem) && ipfsExportActionsEnabled) ||
+      (embedded &&
+        row.source === "vault" &&
+        row.relativePath.endsWith(".md"));
 
     return (
       <div className="library-view-actions">
@@ -714,6 +760,13 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
     const canEditNote = liveRow.extension === ".md" && liveRow.relativePath.startsWith("notes/");
     const canReveal = !isMobileNode && liveRow.source === "vault";
     const canConvert = canConvertLibraryRowToMarkdown(liveRow);
+    const canExportObsidian =
+      embedded &&
+      liveRow.source === "vault" &&
+      liveRow.relativePath.endsWith(".md") &&
+      !isKnowledgeBlogPath(liveRow.relativePath);
+    const canExportMcp =
+      embedded && liveRow.source === "vault" && liveRow.relativePath.endsWith(".md");
 
     return createPortal(
       <div
@@ -738,6 +791,66 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
               <LibraryIconEdit />
             </span>
             {t("notes.editNote")}
+          </button>
+        ) : null}
+        {canExportObsidian ? (
+          <button
+            type="button"
+            className="library-view__menu-item"
+            role="menuitem"
+            disabled={fileActionBusy === `export-obs:${rowKey}`}
+            onClick={() => {
+              void (async () => {
+                setFileActionBusy(`export-obs:${rowKey}`);
+                closeRowMenu();
+                try {
+                  const result = await nodeService.exportNotesToLinkedObsidian({
+                    relativePaths: [liveRow.relativePath],
+                  });
+                  if (!result.ok) {
+                    showToast(result.reason ?? t("knowledge.browse.exportFailed"), "error");
+                  } else {
+                    showToast(t("knowledge.browse.exportRowOk"), "success");
+                  }
+                } catch (err) {
+                  showToast(err instanceof Error ? err.message : String(err), "error");
+                } finally {
+                  setFileActionBusy(null);
+                }
+              })();
+            }}
+          >
+            {t("knowledge.browse.exportRowObsidian")}
+          </button>
+        ) : null}
+        {canExportMcp ? (
+          <button
+            type="button"
+            className="library-view__menu-item"
+            role="menuitem"
+            disabled={fileActionBusy === `export-mcp:${rowKey}`}
+            onClick={() => {
+              void (async () => {
+                setFileActionBusy(`export-mcp:${rowKey}`);
+                closeRowMenu();
+                try {
+                  const result = await nodeService.exportNotesToMcp({
+                    relativePaths: [liveRow.relativePath],
+                  });
+                  if (!result.ok) {
+                    showToast(result.reason ?? t("knowledge.browse.exportFailed"), "error");
+                  } else {
+                    showToast(t("knowledge.browse.exportRowOk"), "success");
+                  }
+                } catch (err) {
+                  showToast(err instanceof Error ? err.message : String(err), "error");
+                } finally {
+                  setFileActionBusy(null);
+                }
+              })();
+            }}
+          >
+            {t("knowledge.browse.exportRowMcp")}
           </button>
         ) : null}
         {canConvert && vaultItem ? (
@@ -1031,6 +1144,17 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
             </>
           )}
         </div>
+      ) : null}
+      {embedded && (browseFilter === "obsidian" || browseFilter === "notion") && knowledgeSyncCaps ? (
+        <p className="library-view-hint" data-testid="knowledge-sync-caps" role="note">
+          {browseFilter === "obsidian"
+            ? t("knowledge.browse.syncCapObsidian", {
+                max: knowledgeSyncCaps.linkedObsidianMaxFiles,
+              })
+            : t("knowledge.browse.syncCapMcp", {
+                max: knowledgeSyncCaps.mcpRebuildMaxCards,
+              })}
+        </p>
       ) : null}
       {embedded && browseFilter === "notion" && mcpRemoteError ? (
         <p className="library-view-hint library-view-hint--warn" role="status">

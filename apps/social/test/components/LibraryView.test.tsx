@@ -187,11 +187,10 @@ describe("LibraryView IPFS UI", () => {
     expect(within(menu).getByRole("menuitem", { name: /^Export$/i })).toBeDefined();
   });
 
-  it("shows Private checkbox, Open, Share, and More as the primary row actions", async () => {
+  it("shows Private publish toggle, Open, Share, and More as the primary row actions", async () => {
     renderWithI18n(<LibraryView />);
     const table = await screen.findByRole("table");
-    expect(within(table).getByRole("checkbox")).toBeDefined();
-    expect(within(table).getByText(/^Private$/i)).toBeDefined();
+    expect(within(table).getByRole("button", { name: /^Private$/i })).toBeDefined();
     expect(within(table).getByRole("button", { name: /^Open$/i })).toBeDefined();
     expect(within(table).getByRole("button", { name: /Share/i })).toBeDefined();
     expect(within(table).getByRole("button", { name: /More actions/i })).toBeDefined();

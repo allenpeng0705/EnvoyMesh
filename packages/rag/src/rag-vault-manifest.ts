@@ -14,6 +14,8 @@ export interface RagVaultManifestEntry {
   indexedAt: string;
   /** Vault text extractor pipeline id; missing → treat as stale for reindex. */
   extractorId?: string;
+  /** Chunk layout algorithm id; missing → treat as stale for reindex. */
+  chunkAlgorithmId?: string;
 }
 
 export interface RagVaultManifest {

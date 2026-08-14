@@ -3065,6 +3065,7 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
           // KadDHT a real chance to populate its routing table before the
           // first provide. At +5s the DHT was still bootstrapping and every
           // topic timed out at 30s.
+          nodeService.startVaultRagWatcher();
           setTimeout(() => {
             void nodeService._advertiseInterestsIfPublic()
               .then(() => {

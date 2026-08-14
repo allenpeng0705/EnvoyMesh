@@ -105,21 +105,15 @@ export function inferDocumentSensitivity(
   relativePath: string,
 ): KnowledgeAccessLevel {
   const path = relativePath.toLowerCase().replace(/\\/g, "/");
-  // Phase 57 — anydoc materializations + MCP write-back notes stay owner-private
-  // unless Published / override promotes them (publicVaultPaths includes notes/).
-  if (
-    path === "notes/imports" ||
-    path.startsWith("notes/imports/") ||
-    path === "notes/mcp" ||
-    path.startsWith("notes/mcp/")
-  ) {
-    return "private";
-  }
   if (path.includes("personal") || path.includes("private")) return "private";
   if (path.includes("work") || path.includes("professional") || path.includes("office")) {
     return "friends";
   }
   if (path.includes("friends") || path.includes("shared")) return "friends";
+  // Phase 4 — vault notes stay owner-private unless Published / keyword folders above.
+  if (path === "notes" || path.startsWith("notes/")) {
+    return "private";
+  }
   return "public";
 }
 
@@ -350,11 +344,30 @@ export function formatThreadMessagesSection(
 
 export function formatVaultKnowledgeSection(results: VaultSearchResult[], maxSnippetChars = 200): string {
   if (results.length === 0) return "";
-  const lines = results.map(
-    (r) =>
-      `- ${r.document.title} (${r.document.relativePath}): "${truncate(r.chunk.text, maxSnippetChars)}"`,
-  );
+  const lines = results.map((r) => {
+    const path = r.document.relativePath;
+    const origin = vaultKnowledgeOriginHint(path);
+    return `- ${r.document.title} (${path})${origin}: "${truncate(r.chunk.text, maxSnippetChars)}"`;
+  });
   return `## Knowledge base\n${lines.join("\n")}`;
+}
+
+/** Label imported / mirrored corpora so Ask citations are actionable. */
+export function vaultKnowledgeOriginHint(relativePath: string): string {
+  const p = relativePath.replace(/\\/g, "/");
+  if (p.startsWith("notes/imports/obsidian/") || p.includes("/imports/obsidian/")) {
+    return " [Obsidian import — open linked vault or vault copy]";
+  }
+  if (p.startsWith("notes/mcp/") || p.includes("/notes/mcp/")) {
+    return " [Notion/MCP import]";
+  }
+  if (p.startsWith("notes/imports/blog/") || p.includes("/imports/blog/")) {
+    return " [Blog mirror]";
+  }
+  if (p.startsWith("notes/imports/")) {
+    return " [Imported document]";
+  }
+  return "";
 }
 
 export async function loadThreadMessages(

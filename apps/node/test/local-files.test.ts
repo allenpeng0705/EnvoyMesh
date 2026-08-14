@@ -25,9 +25,14 @@ describe("local-files", () => {
           updatedAt: "2026-01-02T00:00:00.000Z",
         },
       ],
+      knowledgeSyncCaps: {
+        linkedObsidianMaxFiles: 400,
+        mcpRebuildMaxCards: 100,
+      },
     });
     expect(result.vaultCount).toBe(1);
     expect(result.workspaceCount).toBe(1);
+    expect(result.knowledgeSyncCaps?.linkedObsidianMaxFiles).toBe(400);
     expect(result.items.map((item) => `${item.source}:${item.relativePath}`)).toEqual([
       "workspace:IDENTITY.md",
       "vault:vault/z.txt",

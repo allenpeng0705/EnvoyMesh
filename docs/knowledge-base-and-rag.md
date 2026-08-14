@@ -44,7 +44,9 @@ for chat drafts, knowledge queries, and Envoy AI.
 For AI **modes, rules, and autonomy** (Manual / Assistant / Auto-Reply, document share
 tiers), see [ai-response-settings-design.md](./ai-response-settings-design.md). For
 **model provider setup** (Ollama, MiniMax, API keys), see
-[run-local-model.md](./run-local-model.md).
+[run-local-model.md](./run-local-model.md). For **Obsidian / Notion power-ups**
+(freshness, citations, graph retrieval roadmap), see
+[knowledge-obsidian-notion-roadmap.md](./knowledge-obsidian-notion-roadmap.md).
 
 ---
 
@@ -406,7 +408,8 @@ Vault notes ── Export ──► linked Obsidian / MCP write tool
 | Browse existing | Linked paths in Plugins → Obsidian filter | Live MCP cards when URL set |
 | Import into vault | `importLinkedObsidianNotes` → `notes/imports/obsidian/` | `importExternalMcpKnowledge` → `notes/mcp/` |
 | Owner Ask | Linked files searched at query time + imported vault notes | Live MCP merge + imported `notes/mcp/` |
-| Export back | `exportNotesToLinkedObsidian` (writes `envoymesh-export/`) | `exportNotesToMcp` (`memex_write` when available) |
+| Export back | `exportNotesToLinkedObsidian` (`envoymesh-export/` or opt-in `mirror-source`) | `exportNotesToMcp` (requires `mcpWriteBackEnabled`; `memex_write`) |
+| Agent write-back | `mesh.notes_create` / `mesh.notes_export_obsidian` (approval) | `mesh.notes_export_mcp` (approval + write-back) |
 | Mesh Publish | Vault only (after import + Published) | Vault only |
 
 **Not in v1:** continuous two-way sync or conflict UI. Linked Obsidian files are never

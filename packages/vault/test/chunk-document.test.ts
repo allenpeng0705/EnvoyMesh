@@ -31,4 +31,25 @@ describe("chunkDocument", () => {
     const chunks = chunkDocument(metadata, content, { maxChunkChars: 40, overlapChars: 0 });
     expect(chunks.every((chunk) => !chunk.text.endsWith("Delt"))).toBe(true);
   });
+
+  it("strips YAML frontmatter and chunks on markdown headings", () => {
+    const content = `---
+title: Guide
+tags: [mesh]
+---
+
+# Intro
+
+First section about bonding.
+
+## Details
+
+Second section about relays and vault search with enough text to stay in its own chunk.
+`;
+    const chunks = chunkDocument(metadata, content, { maxChunkChars: 800, overlapChars: 0 });
+    const joined = chunks.map((c) => c.text).join("\n");
+    expect(joined).not.toContain("tags: [mesh]");
+    expect(chunks.some((c) => c.text.includes("# Intro"))).toBe(true);
+    expect(chunks.some((c) => c.text.includes("## Details"))).toBe(true);
+  });
 });

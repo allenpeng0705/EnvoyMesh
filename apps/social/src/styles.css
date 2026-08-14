@@ -3083,6 +3083,24 @@ textarea::placeholder {
   border-color: color-mix(in srgb, #2f3437 22%, transparent);
 }
 
+.library-view-source--stale {
+  color: #9a6700;
+  background: color-mix(in srgb, #f59e0b 14%, transparent);
+  border-color: color-mix(in srgb, #f59e0b 28%, transparent);
+}
+
+.library-view-source--indexed {
+  color: #157f3c;
+  background: color-mix(in srgb, #22c55e 12%, transparent);
+  border-color: color-mix(in srgb, #22c55e 26%, transparent);
+}
+
+.library-view-source--live {
+  color: var(--color-text-muted, #64748b);
+  background: color-mix(in srgb, #94a3b8 12%, transparent);
+  border-color: color-mix(in srgb, #94a3b8 24%, transparent);
+}
+
 .library-view-source--blog {
   color: var(--color-text, #0f172a);
   background: color-mix(in srgb, #0b6e4f 10%, transparent);
@@ -16086,7 +16104,9 @@ button:disabled {
   height: auto;
 }
 
-/* Content → Feed (Friend Circle / Moments) — match Discover column width */
+/* Content → Feed (Friend Circle / Moments) — match Discover column width.
+   width:100% is required: margin:auto in a flex column cancels stretch, so an
+   empty Feed/Blog would shrink to the empty-state text instead of the column. */
 .feed-view {
   --feed-max: 800px;
   position: relative;
@@ -16094,8 +16114,10 @@ button:disabled {
   flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-6) var(--space-6) var(--space-10);
-  max-width: var(--feed-max);
+  width: 100%;
+  max-width: min(var(--feed-max), 100%);
   margin: 0 auto;
+  box-sizing: border-box;
   color: var(--color-text);
   isolation: isolate;
 }

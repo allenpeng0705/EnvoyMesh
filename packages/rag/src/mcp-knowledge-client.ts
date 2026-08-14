@@ -5,12 +5,20 @@ export interface ExternalKnowledgeSnippet {
   title: string;
   source: string;
   text: string;
+  /** Optional outbound URL (Notion page, etc.) when the MCP tool provides one. */
+  url?: string;
+  /** Stable remote page/card id when provided by MCP. */
+  externalId?: string;
+  /** Remote last-edited timestamp when provided by MCP. */
+  editedAt?: string;
 }
 
 export interface SearchExternalKnowledgeInput {
   query: string;
   knowledgeBase?: AiKnowledgeBaseSettings | null;
   limit?: number;
+  /** Pagination offset passed to MCP tool args when supported. */
+  offset?: number;
   fetchImplementation?: typeof fetch;
   /** Override default timeout (ms). Clamped 1s–30s. */
   timeoutMs?: number;
@@ -75,6 +83,9 @@ export async function searchExternalMcpKnowledge(
           arguments: {
             query: input.query,
             limit,
+            ...(typeof input.offset === "number" && Number.isFinite(input.offset)
+              ? { offset: Math.max(0, Math.floor(input.offset)) }
+              : {}),
           },
         },
       }),
@@ -106,6 +117,9 @@ export async function searchExternalMcpKnowledge(
       title: entry.title,
       source: kb.externalMcpServer ?? toolName,
       text: entry.text,
+      ...(entry.url ? { url: entry.url } : {}),
+      ...(entry.externalId ? { externalId: entry.externalId } : {}),
+      ...(entry.editedAt ? { editedAt: entry.editedAt } : {}),
     }));
     return { snippets };
   } catch (err) {
@@ -146,7 +160,10 @@ function isAbortError(err: unknown): boolean {
   return name === "AbortError" || name === "TimeoutError";
 }
 
-function parseMcpKnowledgeText(raw: string, limit: number): Array<{ title: string; text: string }> {
+function parseMcpKnowledgeText(
+  raw: string,
+  limit: number,
+): Array<{ title: string; text: string; url?: string; externalId?: string; editedAt?: string }> {
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (Array.isArray(parsed)) {
@@ -168,7 +185,10 @@ function parseMcpKnowledgeText(raw: string, limit: number): Array<{ title: strin
   return [{ title: "MCP result", text: raw.slice(0, 2000) }];
 }
 
-function normalizeSnippet(item: unknown, index: number): { title: string; text: string } {
+function normalizeSnippet(
+  item: unknown,
+  index: number,
+): { title: string; text: string; url?: string; externalId?: string; editedAt?: string } {
   if (typeof item === "string") {
     return { title: `Result ${index + 1}`, text: item };
   }
@@ -176,14 +196,31 @@ function normalizeSnippet(item: unknown, index: number): { title: string; text: 
     const row = item as Record<string, unknown>;
     const title = String(row.title ?? row.name ?? row.id ?? `Result ${index + 1}`);
     const text = String(row.text ?? row.content ?? row.summary ?? row.body ?? JSON.stringify(row));
-    return { title, text: text.slice(0, 2000) };
+    const urlRaw = row.url ?? row.link ?? row.permalink ?? row.notionUrl ?? row.notion_url;
+    const url = typeof urlRaw === "string" && urlRaw.trim() ? urlRaw.trim() : undefined;
+    const idRaw = row.id ?? row.externalId ?? row.pageId ?? row.page_id ?? row.notionId;
+    const externalId = typeof idRaw === "string" && idRaw.trim() ? idRaw.trim() : undefined;
+    const editedRaw =
+      row.editedAt ?? row.edited_at ?? row.updatedAt ?? row.updated_at ?? row.lastEdited;
+    const editedAt =
+      typeof editedRaw === "string" && editedRaw.trim() ? editedRaw.trim() : undefined;
+    return {
+      title,
+      text: text.slice(0, 2000),
+      ...(url ? { url } : {}),
+      ...(externalId ? { externalId } : {}),
+      ...(editedAt ? { editedAt } : {}),
+    };
   }
   return { title: `Result ${index + 1}`, text: String(item) };
 }
 
 export function formatExternalKnowledgeSection(snippets: ExternalKnowledgeSnippet[]): string {
   if (snippets.length === 0) return "";
-  const lines = snippets.map((s) => `- ${s.title} (${s.source}): "${s.text.replace(/"/g, "'")}"`);
+  const lines = snippets.map((s) => {
+    const link = s.url?.trim() ? ` · ${s.url.trim()}` : "";
+    return `- ${s.title} (${s.source}${link}): "${s.text.replace(/"/g, "'")}"`;
+  });
   return `## External knowledge base\n${lines.join("\n")}`;
 }
 
@@ -235,6 +272,7 @@ export function formatMcpResultsAsNote(
 ): { content: string; filename: string; subfolder: string } {
   const { attribution, sensitivity = "private", subfolder = "mcp" } = options;
   const published = sensitivity === "public";
+  const primary = snippets[0];
 
   // Sanitize title for use in filename.
   const rawTitle = options.title || `MCP ${attribution.query.slice(0, 40)}`;
@@ -254,9 +292,17 @@ export function formatMcpResultsAsNote(
     `mcp-queried-at: "${attribution.queriedAt}"`,
     `published: ${published}`,
     `tags: [mcp, knowledge]`,
-    `---`,
-    "",
   ];
+  if (primary?.externalId?.trim()) {
+    frontmatterLines.push(`mcp-page-id: ${JSON.stringify(primary.externalId.trim())}`);
+  }
+  if (primary?.url?.trim()) {
+    frontmatterLines.push(`notion-url: ${JSON.stringify(primary.url.trim())}`);
+  }
+  if (primary?.editedAt?.trim()) {
+    frontmatterLines.push(`mcp-edited-at: ${JSON.stringify(primary.editedAt.trim())}`);
+  }
+  frontmatterLines.push(`---`, "");
 
   const bodyLines = [
     `# ${options.title || rawTitle}`,
@@ -265,9 +311,10 @@ export function formatMcpResultsAsNote(
     "",
     "## Results",
     "",
-    ...snippets.map(
-      (s, i) => `### ${i + 1}. ${s.title}\n\n${s.text}\n\n*Source: ${s.source}*\n`,
-    ),
+    ...snippets.map((s, i) => {
+      const link = s.url?.trim() ? `\n\n[Open source](${s.url.trim()})` : "";
+      return `### ${i + 1}. ${s.title}\n\n${s.text}${link}\n\n*Source: ${s.source}*\n`;
+    }),
   ];
 
   return {

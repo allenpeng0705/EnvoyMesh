@@ -1246,14 +1246,20 @@ import {
   createEnvoyLocalEmbedRuntimeState,
   disableEnvoyLocalEmbedViaRuntime,
   enableEnvoyLocalEmbedViaRuntime,
+  ensureEnvoyLocalEmbedRunningViaRuntime,
   getEnvoyLocalEmbedStatusViaRuntime,
   haltEnvoyLocalEmbedChildViaRuntime,
   maybeStartEnvoyLocalEmbedOnBootViaRuntime,
+  noteEnvoyLocalEmbedActivity,
   stopEnvoyLocalEmbedViaRuntime,
   type EnvoyLocalEmbedRuntimeDeps,
   type EnvoyLocalEmbedRuntimeState,
 } from "./envoy-local-embed-runtime.js";
 import { migrateEmbeddingSettings } from "@envoymesh/rag";
+import {
+  createVaultRagWatcher,
+  type VaultRagWatcherHandle,
+} from "./vault-rag-watcher.js";
 import {
   acceptShareViaRuntime,
   buildTransferInboundContext,
@@ -3317,6 +3323,18 @@ class NodeServiceImpl implements NodeService {
           modelProviders: config.modelProviders,
           envoyLocalEmbed,
           chatLogStore: this._chatLogStore,
+          ensureEmbedReady: async () => {
+            await ensureEnvoyLocalEmbedRunningViaRuntime(
+              this._envoyLocalEmbedState,
+              this._envoyLocalEmbedRuntimeDeps(),
+            );
+          },
+          onEmbedActivity: () => {
+            noteEnvoyLocalEmbedActivity(
+              this._envoyLocalEmbedState,
+              this._envoyLocalEmbedRuntimeDeps(),
+            );
+          },
           onProgress: (progress) => {
             if (this.hasListeners("rag:reindex")) {
               this.emit("rag:reindex", progress);
@@ -3324,6 +3342,7 @@ class NodeServiceImpl implements NodeService {
           },
         });
         if (this._vaultDir) {
+          const releaseIdle = this._holdEnvoyLocalEmbedIdle();
           try {
             const vaultIndex = await buildVaultIndex(
               buildVaultIndexOptionsFromKnowledgeBase(this._vaultDir, config.aiSettings?.knowledgeBase),
@@ -3334,6 +3353,12 @@ class NodeServiceImpl implements NodeService {
             });
           } catch (error) {
             console.warn(`[rag] vault reindex on init failed:`, error);
+          } finally {
+            releaseIdle();
+            noteEnvoyLocalEmbedActivity(
+              this._envoyLocalEmbedState,
+              this._envoyLocalEmbedRuntimeDeps(),
+            );
           }
         }
         return this._ragService;
@@ -4465,6 +4490,99 @@ class NodeServiceImpl implements NodeService {
    * on config:updated without waiting forever for :18791.
    */
   embedBootRagReindexCompleted = false;
+  /** >0 while reindex/connector sync holds embed idle-unload. */
+  private _envoyLocalEmbedIdleHold = 0;
+  private _vaultRagWatcher: VaultRagWatcherHandle | null = null;
+  private _vaultRagWatchTimer: ReturnType<typeof setTimeout> | null = null;
+  private _vaultRagWatchInflight: Promise<void> | null = null;
+
+  private _holdEnvoyLocalEmbedIdle(): () => void {
+    this._envoyLocalEmbedIdleHold += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this._envoyLocalEmbedIdleHold = Math.max(0, this._envoyLocalEmbedIdleHold - 1);
+    };
+  }
+
+  /** Debounced incremental vault → vector reindex (no Obsidian/MCP connector sync). */
+  scheduleVaultRagIncrementalReindex(reason = "watch"): void {
+    if (this._vaultDir === "/tmp/unknown" || !this._vaultDir) return;
+    if (this._vaultRagWatchTimer) clearTimeout(this._vaultRagWatchTimer);
+    this._vaultRagWatchTimer = setTimeout(() => {
+      this._vaultRagWatchTimer = null;
+      void this._runVaultRagIncrementalReindex(reason);
+    }, 500);
+    this._vaultRagWatchTimer.unref?.();
+  }
+
+  private async _runVaultRagIncrementalReindex(reason: string): Promise<void> {
+    if (this._vaultRagWatchInflight) {
+      await this._vaultRagWatchInflight.catch(() => undefined);
+    }
+    const job = (async () => {
+      const releaseIdle = this._holdEnvoyLocalEmbedIdle();
+      try {
+        const rag = await this._getRagService();
+        if (!rag || !this._vaultDir) return;
+        const config = await this.getNodeConfig();
+        await rag.refreshConfig({
+          knowledgeBase: config.aiSettings?.knowledgeBase,
+          modelProviders: config.modelProviders,
+          envoyLocalEmbed: await this._envoyLocalEmbedOverlay(),
+        });
+        const vaultIndex = await buildVaultIndex(
+          buildVaultIndexOptionsFromKnowledgeBase(
+            this._vaultDir,
+            config.aiSettings?.knowledgeBase,
+          ),
+        );
+        await rag.reindexVault({
+          vaultIndex,
+          knowledgeBase: config.aiSettings?.knowledgeBase,
+          force: false,
+        });
+        console.info(`[rag] incremental vault reindex ok (${reason})`);
+      } catch (err) {
+        console.warn(
+          `[rag] incremental vault reindex failed (${reason}):`,
+          err instanceof Error ? err.message : err,
+        );
+      } finally {
+        releaseIdle();
+      }
+    })();
+    this._vaultRagWatchInflight = job;
+    await job;
+    if (this._vaultRagWatchInflight === job) this._vaultRagWatchInflight = null;
+  }
+
+  startVaultRagWatcher(): void {
+    this.stopVaultRagWatcher();
+    if (!this._vaultDir || this._vaultDir === "/tmp/unknown") return;
+    this._vaultRagWatcher = createVaultRagWatcher({
+      vaultDir: this._vaultDir,
+      debounceMs: 3_000,
+      onChange: (paths) => {
+        const label =
+          paths.length === 0
+            ? "watch"
+            : `watch:${paths.slice(0, 3).filter(Boolean).join(",")}`;
+        this.scheduleVaultRagIncrementalReindex(label);
+      },
+    });
+    console.info(`[rag] vault watcher started on ${this._vaultDir}`);
+  }
+
+  stopVaultRagWatcher(): void {
+    if (this._vaultRagWatchTimer) {
+      clearTimeout(this._vaultRagWatchTimer);
+      this._vaultRagWatchTimer = null;
+    }
+    this._vaultRagWatcher?.stop();
+    this._vaultRagWatcher = null;
+  }
 
   private _bindOpenClawPersistence(): void {
     if (this._profileDir === "/tmp/unknown") {
@@ -4873,6 +4991,7 @@ class NodeServiceImpl implements NodeService {
           (mode as string) === "inherit"
         );
       },
+      isEmbedBusy: () => this._envoyLocalEmbedIdleHold > 0,
       onEmbedReady: async () => {
         // Boot refreshRagService often races ahead of :18791 (especially first
         // DMG/EXE download). Reindex once the sidecar answers /v1/models.
@@ -4886,6 +5005,10 @@ class NodeServiceImpl implements NodeService {
           throw err;
         } finally {
           this.embedBootRagReindexCompleted = true;
+          noteEnvoyLocalEmbedActivity(
+            this._envoyLocalEmbedState,
+            this._envoyLocalEmbedRuntimeDeps(),
+          );
         }
       },
     };
@@ -7305,63 +7428,24 @@ class NodeServiceImpl implements NodeService {
     const rag = await this._getRagService();
     if (!rag) return { ...DEFAULT_RAG_INDEX_STATUS };
 
-    // Keep Knowledge Browse in sync with Content → Blog (mirrors under notes/imports/blog/).
+    const releaseIdle = this._holdEnvoyLocalEmbedIdle();
     try {
-      const ownerId =
-        this._profile?.owner?.ownerId?.trim() ||
-        (await this.getHumanProfile())?.ownerId?.trim();
-      await syncBlogPostsToKnowledgeViaRuntime(this._fileShareContext(), ownerId);
-    } catch (err) {
-      console.warn(
-        "[knowledge] blog→notes sync before reindex failed:",
-        err instanceof Error ? err.message : err,
-      );
-    }
-
-    // Sync linked Obsidian + Notion/MCP into notes/ so Rebuild embeds the full knowledge set.
-    try {
-      const { syncKnowledgeConnectorsForRagViaRuntime } = await import("./knowledge-hub.js");
-      rag.notifyProgress({
-        phase: "materialize",
-        processed: 0,
-        total: 0,
-        indexed: 0,
-        skipped: 0,
-        removed: 0,
-        message: "Syncing Obsidian & Notion into knowledge notes…",
-      });
-      const synced = await syncKnowledgeConnectorsForRagViaRuntime(this._fileShareContext());
-      console.info(
-        `[rag] connector sync before reindex: obsidian=${synced.obsidianImported} mcp=${synced.mcpImported}` +
-          (synced.mcpError ? ` mcpError=${synced.mcpError}` : ""),
-      );
-      rag.notifyProgress({
-        phase: "materialize",
-        processed: synced.obsidianImported + synced.mcpImported,
-        total: synced.obsidianImported + synced.mcpImported,
-        indexed: synced.obsidianImported + synced.mcpImported,
-        skipped: synced.obsidianSkipped,
-        removed: 0,
-        message: `Synced Obsidian ${synced.obsidianImported}, Notion/MCP ${synced.mcpImported}`,
-      });
-    } catch (err) {
-      console.warn(
-        "[rag] connector sync before reindex failed:",
-        err instanceof Error ? err.message : err,
-      );
-    }
-
-    await rag.refreshConfig({
-      knowledgeBase: config.aiSettings?.knowledgeBase,
-      modelProviders: config.modelProviders,
-      envoyLocalEmbed: await this._envoyLocalEmbedOverlay(),
-    });
-
-    let skipDocumentPaths: string[] = [];
-    if (this._vaultDir) {
-      // Markdown-first: materialize Office/PDF → notes/imports before embedding.
+      // Keep Knowledge Browse in sync with Content → Blog (mirrors under notes/imports/blog/).
       try {
-        const { materializePendingExtractableDocuments } = await import("./vault-markdown-corpus.js");
+        const ownerId =
+          this._profile?.owner?.ownerId?.trim() ||
+          (await this.getHumanProfile())?.ownerId?.trim();
+        await syncBlogPostsToKnowledgeViaRuntime(this._fileShareContext(), ownerId);
+      } catch (err) {
+        console.warn(
+          "[knowledge] blog→notes sync before reindex failed:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+
+      // Sync linked Obsidian + Notion/MCP into notes/ so Rebuild embeds the full knowledge set.
+      try {
+        const { syncKnowledgeConnectorsForRagViaRuntime } = await import("./knowledge-hub.js");
         rag.notifyProgress({
           phase: "materialize",
           processed: 0,
@@ -7369,57 +7453,101 @@ class NodeServiceImpl implements NodeService {
           indexed: 0,
           skipped: 0,
           removed: 0,
-          message: "Converting Office/PDF to Markdown notes…",
+          message: "Syncing Obsidian & Notion into knowledge notes…",
         });
-        const pending = await materializePendingExtractableDocuments(this._vaultDir, {
-          profileDir: this._profileDir,
-          sensitivity: "private",
-        });
-        skipDocumentPaths = pending.coveredSources;
-        if (pending.materialized.length > 0 || pending.failed.length > 0) {
-          console.info(
-            `[rag] materialize before reindex: created=${pending.materialized.length} existing=${pending.skippedExisting.length} failed=${pending.failed.length}`,
-          );
-        }
+        const synced = await syncKnowledgeConnectorsForRagViaRuntime(this._fileShareContext());
+        console.info(
+          `[rag] connector sync before reindex: obsidian=${synced.obsidianImported} mcp=${synced.mcpImported}` +
+            (synced.mcpError ? ` mcpError=${synced.mcpError}` : ""),
+        );
         rag.notifyProgress({
           phase: "materialize",
-          processed: pending.materialized.length + pending.skippedExisting.length,
-          total: pending.materialized.length + pending.skippedExisting.length + pending.failed.length,
-          indexed: pending.materialized.length,
-          skipped: pending.skippedExisting.length,
+          processed: synced.obsidianImported + synced.mcpImported,
+          total: synced.obsidianImported + synced.mcpImported,
+          indexed: synced.obsidianImported + synced.mcpImported,
+          skipped: synced.obsidianSkipped,
           removed: 0,
-          message: `Converted ${pending.materialized.length} document(s) to Markdown`,
+          message: `Synced Obsidian ${synced.obsidianImported}, Notion/MCP ${synced.mcpImported}`,
         });
       } catch (err) {
         console.warn(
-          "[rag] materialize before reindex failed:",
+          "[rag] connector sync before reindex failed:",
           err instanceof Error ? err.message : err,
         );
       }
 
-      try {
-        const vaultIndex = await buildVaultIndex(
-          buildVaultIndexOptionsFromKnowledgeBase(this._vaultDir, config.aiSettings?.knowledgeBase),
-        );
-        await rag.reindexVault({
-          vaultIndex,
-          knowledgeBase: config.aiSettings?.knowledgeBase,
-          force,
-          skipDocumentPaths,
-        });
-      } catch (error) {
-        console.warn(`[rag] vault reindex failed:`, error);
-        throw error;
+      await rag.refreshConfig({
+        knowledgeBase: config.aiSettings?.knowledgeBase,
+        modelProviders: config.modelProviders,
+        envoyLocalEmbed: await this._envoyLocalEmbedOverlay(),
+      });
+
+      let skipDocumentPaths: string[] = [];
+      if (this._vaultDir) {
+        // Markdown-first: materialize Office/PDF → notes/imports before embedding.
+        try {
+          const { materializePendingExtractableDocuments } = await import("./vault-markdown-corpus.js");
+          rag.notifyProgress({
+            phase: "materialize",
+            processed: 0,
+            total: 0,
+            indexed: 0,
+            skipped: 0,
+            removed: 0,
+            message: "Converting Office/PDF to Markdown notes…",
+          });
+          const pending = await materializePendingExtractableDocuments(this._vaultDir, {
+            profileDir: this._profileDir,
+            sensitivity: "private",
+          });
+          skipDocumentPaths = pending.coveredSources;
+          if (pending.materialized.length > 0 || pending.failed.length > 0) {
+            console.info(
+              `[rag] materialize before reindex: created=${pending.materialized.length} existing=${pending.skippedExisting.length} failed=${pending.failed.length}`,
+            );
+          }
+          rag.notifyProgress({
+            phase: "materialize",
+            processed: pending.materialized.length + pending.skippedExisting.length,
+            total: pending.materialized.length + pending.skippedExisting.length + pending.failed.length,
+            indexed: pending.materialized.length,
+            skipped: pending.skippedExisting.length,
+            removed: 0,
+            message: `Converted ${pending.materialized.length} document(s) to Markdown`,
+          });
+        } catch (err) {
+          console.warn(
+            "[rag] materialize before reindex failed:",
+            err instanceof Error ? err.message : err,
+          );
+        }
+
+        try {
+          const vaultIndex = await buildVaultIndex(
+            buildVaultIndexOptionsFromKnowledgeBase(this._vaultDir, config.aiSettings?.knowledgeBase),
+          );
+          await rag.reindexVault({
+            vaultIndex,
+            knowledgeBase: config.aiSettings?.knowledgeBase,
+            force,
+            skipDocumentPaths,
+          });
+        } catch (error) {
+          console.warn(`[rag] vault reindex failed:`, error);
+          throw error;
+        }
       }
-    }
 
-    try {
-      await rag.backfillChatHistory(this._chatLogStore);
-    } catch (error) {
-      console.warn(`[rag] chat backfill after reindex failed:`, error);
-    }
+      try {
+        await rag.backfillChatHistory(this._chatLogStore);
+      } catch (error) {
+        console.warn(`[rag] chat backfill after reindex failed:`, error);
+      }
 
-    return rag.getIndexStatus();
+      return rag.getIndexStatus();
+    } finally {
+      releaseIdle();
+    }
   }
 
   async testRagEmbedding(): Promise<import("@envoymesh/api").RagEmbeddingProbeResult> {
@@ -7731,11 +7859,19 @@ class NodeServiceImpl implements NodeService {
         );
       }
     }
+    try {
+      const { maybeAutoExportCreatedNoteViaRuntime } = await import("./knowledge-hub.js");
+      await maybeAutoExportCreatedNoteViaRuntime(this._fileShareContext(), result.relativePath);
+    } catch {
+      // best-effort
+    }
+    this.scheduleVaultRagIncrementalReindex(`createNote:${result.relativePath}`);
     return result;
   }
 
   async deleteVaultItem(params: DeleteVaultItemParams): Promise<void> {
-    return deleteVaultItemViaRuntime(this._fileShareContext(), params);
+    await deleteVaultItemViaRuntime(this._fileShareContext(), params);
+    this.scheduleVaultRagIncrementalReindex(`delete:${params.relativePath}`);
   }
 
   // ----- Phase 44C — Knowledge Base Plugins -----
@@ -9194,9 +9330,11 @@ class NodeServiceImpl implements NodeService {
           err instanceof Error ? err.message : err,
         );
       });
+      this.startVaultRagWatcher();
       return;
     }
     await startNodeViaRuntime(this._startNodeContext());
+    this.startVaultRagWatcher();
     void this.ensureDefaultWebSite().catch((err) => {
       console.warn(
         "[web] ensureDefaultWebSite after startNode failed:",
@@ -9395,6 +9533,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async stopNode(): Promise<void> {
+    this.stopVaultRagWatcher();
     if (this._agentNetworkIndexRefreshTimers.length > 0) {
       for (const t of this._agentNetworkIndexRefreshTimers) clearTimeout(t);
       this._agentNetworkIndexRefreshTimers = [];
@@ -11841,6 +11980,9 @@ class NodeServiceImpl implements NodeService {
       exportLibraryItemToIpfs: (documentId) => this.exportLibraryItemToIpfs(documentId),
       verifyLibraryItemIpfsGateway: (p) => this.verifyLibraryItemIpfsGateway(p),
       setLibraryItemPublished: (documentId, published) => this.setLibraryItemPublished(documentId, published),
+      createNote: (params) => this.createNote(params),
+      exportNotesToLinkedObsidian: (params) => this.exportNotesToLinkedObsidian(params),
+      exportNotesToMcp: (params) => this.exportNotesToMcp(params),
       submitAgentShareProposal: (params) => this.submitAgentShareProposal(params),
       getBonds: () => this.getBonds(),
       sendChat: (targetOwnerId, text) => this.sendAgentChat(targetOwnerId, text),

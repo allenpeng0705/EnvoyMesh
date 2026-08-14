@@ -129,6 +129,23 @@ export interface AiKnowledgeBaseSettings {
    * `saveExternalMcpSearchAsNote` (Phase 57D). Default: false — search merges into prompts only.
    */
   mcpWriteBackEnabled?: boolean;
+  /**
+   * Phase 4 — after `createNote`, also copy the note into a linked Obsidian vault
+   * (`envoymesh-export/` or mirror-source). Default: false (opt-in).
+   */
+  obsidianAutoExportOnCreate?: boolean;
+  /**
+   * Phase 4 — Obsidian write-back layout.
+   * - `envoymesh-export` (default): always write under `envoymesh-export/`
+   * - `mirror-source`: when the note has `source: linked-obsidian/…`, overwrite that live file;
+   *   otherwise fall back to `envoymesh-export/`
+   */
+  obsidianExportMode?: "envoymesh-export" | "mirror-source";
+  /**
+   * Phase 4 — after `createNote`, also push to MCP write tool.
+   * Requires {@link mcpWriteBackEnabled}. Default: false.
+   */
+  mcpAutoExportOnCreate?: boolean;
   /** Max vault file size indexed for RAG (bytes). Default: 25 MiB. */
   maxFileBytes?: number;
   /** Target chunk size for vault RAG (characters). Default: 800. */
@@ -210,6 +227,9 @@ export function resolveAiKnowledgeBaseSettings(
   mcpApiKey?: string;
   mcpTimeoutMs?: number;
   mcpWriteBackEnabled?: boolean;
+  obsidianAutoExportOnCreate?: boolean;
+  obsidianExportMode?: "envoymesh-export" | "mirror-source";
+  mcpAutoExportOnCreate?: boolean;
   embedding?: AiEmbeddingSettings;
 } {
   const ragMode = input?.ragMode ?? DEFAULT_AI_KNOWLEDGE_BASE.ragMode;
@@ -281,6 +301,10 @@ export function resolveAiKnowledgeBaseSettings(
         ? Math.min(30_000, Math.max(1_000, Math.floor(input.mcpTimeoutMs)))
         : undefined,
     mcpWriteBackEnabled: input?.mcpWriteBackEnabled === true,
+    obsidianAutoExportOnCreate: input?.obsidianAutoExportOnCreate === true,
+    obsidianExportMode:
+      input?.obsidianExportMode === "mirror-source" ? "mirror-source" : "envoymesh-export",
+    mcpAutoExportOnCreate: input?.mcpAutoExportOnCreate === true,
     embedding,
   };
 }

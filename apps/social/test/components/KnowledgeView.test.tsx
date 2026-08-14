@@ -22,7 +22,7 @@ const {
     running: true,
     phase: "ready",
     endpoint: "http://127.0.0.1:18791",
-    activeModelId: "qwen3-embedding-4b-q4_k_m",
+    activeModelId: "qwen3-embedding-0.6b-q4_k_m",
   }),
   enableEnvoyLocalEmbed: vi.fn().mockResolvedValue({
     running: false,
@@ -130,7 +130,7 @@ describe("KnowledgeView", () => {
       running: true,
       phase: "ready",
       endpoint: "http://127.0.0.1:18791",
-      activeModelId: "qwen3-embedding-4b-q4_k_m",
+      activeModelId: "qwen3-embedding-0.6b-q4_k_m",
     });
   });
 

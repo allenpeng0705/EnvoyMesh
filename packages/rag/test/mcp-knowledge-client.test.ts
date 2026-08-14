@@ -141,6 +141,24 @@ describe("formatMcpResultsAsNote", () => {
     expect(result.subfolder).toBe("mcp");
   });
 
+  it("embeds notion-url / page id / edited-at when present", () => {
+    const rich: ExternalKnowledgeSnippet[] = [
+      {
+        title: "Page",
+        source: "memex",
+        text: "Body",
+        url: "https://notion.so/abc",
+        externalId: "page-123",
+        editedAt: "2026-08-01T12:00:00.000Z",
+      },
+    ];
+    const { content } = formatMcpResultsAsNote(rich, { attribution });
+    expect(content).toContain('notion-url: "https://notion.so/abc"');
+    expect(content).toContain('mcp-page-id: "page-123"');
+    expect(content).toContain('mcp-edited-at: "2026-08-01T12:00:00.000Z"');
+    expect(content).toContain("[Open source](https://notion.so/abc)");
+  });
+
   it("defaults sensitivity to private (published: false)", () => {
     const { content } = formatMcpResultsAsNote(snippets, { attribution });
     expect(content).toContain("published: false");

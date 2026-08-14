@@ -174,9 +174,30 @@ export async function buildEnvoyMeshRetrievedContext(input: {
           sensitivityOverrides,
         });
     if (vaultResults.length > 0) {
+      let wikiLinkSection = "";
+      if (knowledgeScope === "owner") {
+        try {
+          const { enrichOwnerVaultAskContext } = await import("./obsidian-ask-context.js");
+          const enriched = await enrichOwnerVaultAskContext({
+            profileDir: input.profileDir,
+            vaultRoot: vaultIndex.rootDir,
+            query: input.message,
+            vaultResults,
+            docs: vaultIndex.documents,
+            sensitivityOverrides,
+          });
+          vaultResults.splice(0, vaultResults.length, ...enriched.vaultResults);
+          wikiLinkSection = enriched.wikiLinkSection;
+        } catch {
+          /* wiki/tag enrichment optional */
+        }
+      }
       sections.push(
         formatVaultKnowledgeSection(vaultResults).replace(/^## Knowledge base\n/, "### Knowledge base\n"),
       );
+      if (wikiLinkSection.trim()) {
+        sections.push(wikiLinkSection.replace(/^## /, "### "));
+      }
     }
   } catch {
     /* vault optional */

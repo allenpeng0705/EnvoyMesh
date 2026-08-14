@@ -367,6 +367,8 @@ export interface LocalFileItem {
     publishedExternal?: PublishedExternalRecord;
     externalId?: string;
     snippetPreview?: string;
+    mirrorImportedAt?: string;
+    syncStale?: boolean;
 }
 export interface ListAllLocalFilesParams {
     query?: string;
@@ -380,6 +382,10 @@ export interface ListAllLocalFilesResult {
     linkedObsidianCount?: number;
     mcpRemoteCount?: number;
     mcpRemoteError?: string;
+    knowledgeSyncCaps?: {
+        linkedObsidianMaxFiles: number;
+        mcpRebuildMaxCards: number;
+    };
 }
 export interface ReadLocalFileContentParams {
     source: LocalFileSource;
@@ -530,6 +536,7 @@ export interface ListExternalMcpKnowledgeResult {
 export interface ImportLinkedObsidianNotesParams {
     paths?: string[];
     all?: boolean;
+    force?: boolean;
 }
 export interface ImportLinkedObsidianNotesResult {
     ok: boolean;
@@ -560,6 +567,7 @@ export interface ImportExternalMcpKnowledgeResult {
 export interface ExportNotesToLinkedObsidianParams {
     relativePaths: string[];
     targetRootLabel?: string;
+    mode?: "envoymesh-export" | "mirror-source";
 }
 export interface ExportNotesToLinkedObsidianResult {
     ok: boolean;

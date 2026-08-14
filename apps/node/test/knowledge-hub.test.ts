@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   listLinkedObsidianMarkdownFiles,
@@ -97,6 +97,37 @@ describe("knowledge-hub import + search", () => {
     expect(section).toContain("unique-token-xyz");
   });
 
+  it("skips unchanged linked notes unless force is set", async () => {
+    const linked = await mkdtemp(join(tmpdir(), "envoy-obs-incr-"));
+    const vault = await mkdtemp(join(tmpdir(), "envoy-obs-incr-vault-"));
+    await writeFile(join(linked, "alpha.md"), "Alpha body", "utf8");
+    const listed = await listLinkedObsidianMarkdownFiles([linked]);
+    const ctx = {
+      getVaultDir: () => vault,
+      getNodeConfig: async () => ({
+        aiSettings: { knowledgeBase: { linkedObsidianVaultPaths: [linked] } },
+      }),
+      recordOwnerActivity: () => {},
+    };
+
+    const first = await importLinkedObsidianNotesViaRuntime(ctx, { all: true });
+    expect(first.ok).toBe(true);
+    expect(first.imported).toHaveLength(1);
+
+    const second = await importLinkedObsidianNotesViaRuntime(ctx, { all: true });
+    expect(second.ok).toBe(false);
+    expect(second.imported).toHaveLength(0);
+    expect(second.skipped).toBeGreaterThan(0);
+
+    const forced = await importLinkedObsidianNotesViaRuntime(ctx, {
+      all: true,
+      force: true,
+    });
+    expect(forced.ok).toBe(true);
+    expect(forced.imported).toHaveLength(1);
+    expect(forced.imported[0]!.from).toBe(listed[0]!.relativePath);
+  });
+
   it("returns a reason when no linked vaults are configured", async () => {
     const vault = await mkdtemp(join(tmpdir(), "envoy-obs-empty-"));
     const result = await importLinkedObsidianNotesViaRuntime(
@@ -191,7 +222,11 @@ describe("knowledge-hub MCP cache + export", () => {
         getVaultDir: () => vault,
         getNodeConfig: async () => ({
           aiSettings: {
-            knowledgeBase: { externalProvider: "mcp", mcpServerUrl: "http://x" },
+            knowledgeBase: {
+              externalProvider: "mcp",
+              mcpServerUrl: "http://x",
+              mcpWriteBackEnabled: true,
+            },
           },
         }),
         recordOwnerActivity: () => {},
@@ -203,6 +238,75 @@ describe("knowledge-hub MCP cache + export", () => {
     expect(result.exported).toHaveLength(2);
     expect(result.exported.map((e) => e.relativePath)).toEqual(["a.md", "c.md"]);
     expect(result.reason).toMatch(/partial/);
+  });
+
+  it("blocks MCP export when write-back is disabled", async () => {
+    const vault = await mkdtemp(join(tmpdir(), "envoy-mcp-gate-"));
+    await writeFile(join(vault, "a.md"), "# A\n", "utf8");
+    const result = await exportNotesToMcpViaRuntime(
+      {
+        getVaultDir: () => vault,
+        getNodeConfig: async () => ({
+          aiSettings: {
+            knowledgeBase: { externalProvider: "mcp", mcpServerUrl: "http://x" },
+          },
+        }),
+        recordOwnerActivity: () => {},
+      },
+      { relativePaths: ["a.md"] },
+    );
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("write_back_disabled");
+    expect(writeExternalMcpKnowledge).not.toHaveBeenCalled();
+  });
+
+  it("mirror-source export overwrites the linked Obsidian file", async () => {
+    const linked = await mkdtemp(join(tmpdir(), "envoy-obs-mirror-"));
+    const vault = await mkdtemp(join(tmpdir(), "envoy-obs-mirror-vault-"));
+    await writeFile(join(linked, "alpha.md"), "live original", "utf8");
+    const listed = await listLinkedObsidianMarkdownFiles([linked]);
+    const browsePath = listed[0]!.relativePath;
+    const dest = notesImportsObsidianPathForLinked(browsePath);
+    await mkdir(dirname(join(vault, dest)), { recursive: true });
+    await writeFile(
+      join(vault, dest),
+      [
+        "---",
+        `source: ${browsePath}`,
+        "extractor: obsidian-linked",
+        "sensitivity: private",
+        "---",
+        "",
+        "edited in envoy",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const { exportNotesToLinkedObsidianViaRuntime } = await import("../src/knowledge-hub.js");
+    const result = await exportNotesToLinkedObsidianViaRuntime(
+      {
+        getVaultDir: () => vault,
+        getNodeConfig: async () => ({
+          aiSettings: {
+            knowledgeBase: {
+              linkedObsidianVaultPaths: [linked],
+              obsidianExportMode: "mirror-source",
+            },
+          },
+        }),
+        recordOwnerActivity: () => {},
+      },
+      { relativePaths: [dest], mode: "mirror-source" },
+    );
+    expect(result.ok).toBe(true);
+    expect(result.exported[0]!.to).toBe(browsePath);
+    const live = await import("node:fs/promises").then((fs) =>
+      fs.readFile(join(linked, "alpha.md"), "utf8"),
+    );
+    expect(live).toContain("edited in envoy");
+    expect(live).not.toContain("extractor:");
+    expect(live).not.toContain("importedAt:");
+    expect(live).not.toContain("linked-obsidian/");
   });
 
   it("syncKnowledgeConnectorsForRag pulls Obsidian + MCP into notes for embedding", async () => {

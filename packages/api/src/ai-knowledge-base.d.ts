@@ -63,6 +63,9 @@ export interface AiKnowledgeBaseSettings {
     mcpApiKey?: string;
     mcpTimeoutMs?: number;
     mcpWriteBackEnabled?: boolean;
+    obsidianAutoExportOnCreate?: boolean;
+    obsidianExportMode?: "envoymesh-export" | "mirror-source";
+    mcpAutoExportOnCreate?: boolean;
     maxFileBytes?: number;
     chunkSizeChars?: number;
     chunkOverlapChars?: number;
@@ -88,6 +91,9 @@ export declare function resolveAiKnowledgeBaseSettings(input?: AiKnowledgeBaseSe
     mcpApiKey?: string;
     mcpTimeoutMs?: number;
     mcpWriteBackEnabled?: boolean;
+    obsidianAutoExportOnCreate?: boolean;
+    obsidianExportMode?: "envoymesh-export" | "mirror-source";
+    mcpAutoExportOnCreate?: boolean;
     embedding?: AiEmbeddingSettings;
 };
 export declare function normalizeKnowledgeEmbedding(embedding?: AiEmbeddingSettings | null): AiEmbeddingSettings;

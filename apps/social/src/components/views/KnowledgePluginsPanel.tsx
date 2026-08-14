@@ -363,6 +363,46 @@ export function KnowledgePluginsPanel() {
             <p className="field-desc">{t("knowledge.plugins.linkedVaultDesc")}</p>
           </div>
 
+          <div className="knowledge-plugin-card__toggle">
+            <div className="toggle-info">
+              <strong>{t("knowledge.plugins.obsidianAutoExport")}</strong>
+              <span className="toggle-desc">{t("knowledge.plugins.obsidianAutoExportDesc")}</span>
+            </div>
+            <label className="toggle-switch">
+              <input
+                type="checkbox"
+                checked={kb.obsidianAutoExportOnCreate === true}
+                onChange={(e) => {
+                  void updateKb({ obsidianAutoExportOnCreate: e.target.checked });
+                }}
+              />
+              <span className="slider" />
+            </label>
+          </div>
+          <div className="knowledge-plugin-card__fields">
+            <label htmlFor="knowledge-obsidian-export-mode">
+              {t("knowledge.plugins.obsidianExportMode")}
+            </label>
+            <select
+              id="knowledge-obsidian-export-mode"
+              value={kb.obsidianExportMode === "mirror-source" ? "mirror-source" : "envoymesh-export"}
+              onChange={(e) => {
+                void updateKb({
+                  obsidianExportMode:
+                    e.target.value === "mirror-source" ? "mirror-source" : "envoymesh-export",
+                });
+              }}
+            >
+              <option value="envoymesh-export">
+                {t("knowledge.plugins.obsidianExportModeFolder")}
+              </option>
+              <option value="mirror-source">
+                {t("knowledge.plugins.obsidianExportModeMirror")}
+              </option>
+            </select>
+            <p className="field-desc">{t("knowledge.plugins.obsidianExportModeDesc")}</p>
+          </div>
+
           <div className="knowledge-plugin-card__footer">
             <details
               className="knowledge-plugin-card__details"
@@ -473,6 +513,40 @@ export function KnowledgePluginsPanel() {
                   void updateKb({ mcpSearchTool: e.target.value.trim() || undefined });
                 }}
               />
+              <div className="knowledge-plugin-card__toggle">
+                <div className="toggle-info">
+                  <strong>{t("settings.ai.rag.mcpWriteBack")}</strong>
+                  <span className="toggle-desc">{t("settings.ai.rag.mcpWriteBackDesc")}</span>
+                </div>
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={kb.mcpWriteBackEnabled === true}
+                    onChange={(e) => {
+                      void updateKb({ mcpWriteBackEnabled: e.target.checked });
+                    }}
+                  />
+                  <span className="slider" />
+                </label>
+              </div>
+              {kb.mcpWriteBackEnabled ? (
+                <div className="knowledge-plugin-card__toggle">
+                  <div className="toggle-info">
+                    <strong>{t("knowledge.plugins.mcpAutoExport")}</strong>
+                    <span className="toggle-desc">{t("knowledge.plugins.mcpAutoExportDesc")}</span>
+                  </div>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={kb.mcpAutoExportOnCreate === true}
+                      onChange={(e) => {
+                        void updateKb({ mcpAutoExportOnCreate: e.target.checked });
+                      }}
+                    />
+                    <span className="slider" />
+                  </label>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
