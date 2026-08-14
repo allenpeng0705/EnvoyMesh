@@ -30,6 +30,12 @@ import { ConfirmDialog } from "../ConfirmDialog.js";
 import { ChainReportView } from "../ChainReportView.js";
 import { ChainStartDialog } from "../ChainStartDialog.js";
 import type { WorkerCandidate } from "../ChainStartDialog.js";
+import { FleetReadinessPanel } from "../FleetReadinessPanel.js";
+import {
+  buildFleetReadinessChecklist,
+  summarizeFleetReadinessInput,
+} from "../../lib/fleet-readiness.js";
+import { classifyObservedJobBadge } from "../../lib/observed-job-badge.js";
 import { ChainDetailPanel } from "../ChainDetailPanel.js";
 import { AgentNetworkSettingsModal } from "../AgentNetworkSettingsModal.js";
 import { AgentNetworkSkillsPreview } from "../AgentNetworkSkillsPreview.js";
@@ -145,9 +151,10 @@ function formatReportListTime(iso: string): string {
 export interface ChainsViewProps {
   onBack?: () => void;
   onOpenDiscover?: () => void;
+  onOpenSettingsAi?: () => void;
 }
 
-export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
+export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsViewProps = {}) {
   const t = useT();
   const nodeService = useNodeService();
   const wsOpen = useTransportWsOpen();
@@ -292,6 +299,20 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
   const teamListedCandidates = useMemo(
     () => workerCandidates.filter((w) => isTeamJobListed(w.card, w.health)),
     [workerCandidates],
+  );
+
+  const fleetReadiness = useMemo(
+    () =>
+      buildFleetReadinessChecklist(
+        summarizeFleetReadinessInput({
+          localJoin: nodeConfig?.capabilityProviderEnabled === true,
+          engineReady:
+            nodeConfig?.capabilityProviderEnabled === true ? anEngineReady : null,
+          bondedPeerCount: bonds.filter((b) => b.level !== "blocked").length,
+          candidates: workerCandidates,
+        }),
+      ),
+    [anEngineReady, bonds, nodeConfig?.capabilityProviderEnabled, workerCandidates],
   );
 
   // Chain creation flow (Phase 43 follow-up): a "New chain" button opens a
@@ -619,7 +640,23 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
           goal={chain?.goal}
           onBack={() => setDetailChainId(null)}
           onChanged={() => void loadChains()}
+          readinessPanel={
+            <FleetReadinessPanel
+              readiness={fleetReadiness}
+              variant="compact"
+              onManageWorkers={() => setShowSettings(true)}
+              onOpenSettingsAi={onOpenSettingsAi}
+              onOpenDiscover={onOpenDiscover}
+              onRefreshCards={() => {
+                void nodeService.refreshAgentNetworkWorkers().catch(() => undefined);
+              }}
+              onRetryProbe={() => void loadReachability()}
+            />
+          }
         />
+        {showSettings ? (
+          <AgentNetworkSettingsModal onClose={() => setShowSettings(false)} />
+        ) : null}
       </div>
     );
   }
@@ -767,6 +804,19 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
           onClose={() => setNewChainGoal(null)}
           onStarted={handleStarted}
           onOpenDiscover={onOpenDiscover}
+          onOpenManageWorkers={() => setShowSettings(true)}
+          onOpenSettingsAi={onOpenSettingsAi}
+          onRefreshWorkers={() => {
+            void nodeService.refreshAgentNetworkWorkers().catch(() => undefined);
+            void nodeService
+              .getLocalAgentNetworkWorkerCard()
+              .then((card) => setLocalWorkerCard(card))
+              .catch(() => undefined);
+          }}
+          onRetryReachability={() => void loadReachability()}
+          localJoinEnabled={nodeConfig?.capabilityProviderEnabled === true}
+          engineReady={anEngineReady}
+          bondedPeerCount={bonds.filter((b) => b.level !== "blocked").length}
           workerCandidates={workerCandidates}
         />
       ) : null}
@@ -779,6 +829,19 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
         <div className="chains-empty">
           <p>{t("chains.active.empty")}</p>
           <p className="chains-empty__hint">{t("chains.active.prerequisite")}</p>
+          {fleetReadiness.blocked ? (
+            <FleetReadinessPanel
+              readiness={fleetReadiness}
+              variant="compact"
+              onManageWorkers={() => setShowSettings(true)}
+              onOpenSettingsAi={onOpenSettingsAi}
+              onOpenDiscover={onOpenDiscover}
+              onRefreshCards={() => {
+                void nodeService.refreshAgentNetworkWorkers().catch(() => undefined);
+              }}
+              onRetryProbe={() => void loadReachability()}
+            />
+          ) : null}
           {teamListedCandidates.length > 0 || workerCandidates.length > 0 ? (
             <div className="chains-empty__contacts">
               <h4 className="chains-empty__contacts-title">{t("chains.start.contactsTitle")}</h4>
@@ -949,8 +1012,34 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
         <section className="chains-observed" data-testid="chains-observed">
           <h4 className="chains-empty__contacts-title">{t("chains.observed.title")}</h4>
           <p className="chains-empty__contacts-desc">{t("chains.detail.observedHint")}</p>
-          {activeObserved.map((job) => (
-            <div key={job.chainId} className="chain-card chain-card--observed">
+          {activeObserved.map((job) => {
+            const badge = classifyObservedJobBadge({
+              phase: job.phase,
+              steps: job.steps,
+              localAgentPeerId: localWorkerCard?.sourceAgentPeerId,
+            });
+            const badgeKey =
+              badge === "assignedToYou"
+                ? "badgeAssigned"
+                : badge === "waitingOnAssigner"
+                  ? "badgeWaitingAssigner"
+                  : badge === "blockedOnPrior"
+                    ? "badgeBlocked"
+                    : badge === "done"
+                      ? "badgeDone"
+                      : badge === "failed"
+                        ? "badgeFailed"
+                        : "badgeWatching";
+            const badgeMod =
+              badge === "assignedToYou"
+                ? "assigned"
+                : badge === "blockedOnPrior"
+                  ? "blocked"
+                  : badge === "waitingOnAssigner"
+                    ? "waiting"
+                    : "";
+            return (
+            <div key={job.chainId} className="chain-card chain-card--observed" data-testid="chain-observed-card">
               <div className="chain-card-header">
                 <span className={`chain-status-badge status-${job.phase}`}>
                   {t(
@@ -961,9 +1050,16 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
                     }`,
                   )}
                 </span>
+                <span
+                  className={`chain-observed-badge${badgeMod ? ` chain-observed-badge--${badgeMod}` : ""}`}
+                  data-testid="chain-observed-badge"
+                >
+                  {t(`chains.observed.${badgeKey}`)}
+                </span>
                 <span className="chain-observed-readonly">{t("chains.observed.readOnly")}</span>
                 <code className="chain-id">{job.chainId.slice(0, 12)}…</code>
               </div>
+              <p className="chains-empty__contacts-desc">{t("chains.observed.onlyAssignerCanManage")}</p>
               {job.goal ? <p className="chain-card-goal">{job.goal}</p> : null}
               <div className="chain-card-progress">
                 <span>
@@ -984,12 +1080,19 @@ export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
                       <span className="chain-observed-step__objective">
                         {step.objective?.trim() || step.subtaskId}
                       </span>
+                      {step.waitingOn && step.waitingOn.length > 0 ? (
+                        <span className="chain-observed-step__waiting">
+                          {t("chains.detail.waitingOn")}{" "}
+                          {step.waitingOn.map((w) => w.label ?? w.key).join(", ")}
+                        </span>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
               ) : null}
             </div>
-          ))}
+            );
+          })}
         </section>
       ) : null}
 

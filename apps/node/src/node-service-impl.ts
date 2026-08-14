@@ -666,7 +666,6 @@ import {
 } from "./node-service-continuity.js";
 import {
   ChainStore,
-  chainCancelViaRuntime,
   chainCounterBidViaRuntime,
   chainDeleteRecipeViaRuntime,
   chainEvaluateBidsViaRuntime,
@@ -1064,6 +1063,8 @@ import {
   _chainDiagnosticsForSubtasks,
   _emitChainReport,
   _emitChainState,
+  cancelChainOwnerAction,
+  reassignSubtaskOwnerAction,
   _evaluateAwardAndAccept,
   _executeApprovedChainAward,
   _queueChainAwardApproval,
@@ -12030,7 +12031,13 @@ class NodeServiceImpl implements NodeService {
   }
 
   async chainCancel(params: ChainCancelParams): Promise<ChainCancelResult> {
-    return chainCancelViaRuntime(this._chainContext(), params);
+    return cancelChainOwnerAction(this._chainOrchestrationContext(), params);
+  }
+
+  async chainReassignSubtask(
+    params: import("@envoymesh/api").ChainReassignSubtaskParams,
+  ): Promise<import("@envoymesh/api").ChainReassignSubtaskResult> {
+    return reassignSubtaskOwnerAction(this._chainOrchestrationContext(), params);
   }
 
   async chainListReports(params?: ChainListReportsParams): Promise<ChainListReportsResult> {

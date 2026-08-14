@@ -298,6 +298,15 @@ export async function routeRpcMethod(
       ) ?? { chains: [] };
     case "chainCancel":
       return ns.chainCancel(params as unknown as ChainCancelParams);
+    case "chainReassignSubtask":
+      return ns.chainReassignSubtask?.(
+        params as unknown as import("@envoymesh/api").ChainReassignSubtaskParams,
+      ) ?? {
+        ok: false,
+        chainId: (params as { chainId?: string })?.chainId ?? "",
+        subtaskId: (params as { subtaskId?: string })?.subtaskId ?? "",
+        error: "unsupported",
+      };
     case "chainListReports":
       return ns.chainListReports((params as unknown as ChainListReportsParams | undefined) ?? {});
     case "chainGetReport":

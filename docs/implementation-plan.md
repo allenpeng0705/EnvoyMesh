@@ -2,7 +2,7 @@
 
 This is the living plan for EnvoyMesh. Update it whenever scope changes, decisions are made, or milestones are completed.
 
-**Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · **[EMP / EnvoyAI](./protocol-standard.md)** · [EnvoyAI design guide](./envoyai-protocol.md) · [QuickStart](../QuickStart.md) · [Agentic next step](./next-step.md) · [Discovery/connectivity POC](./poc-discovery-connectivity.md) · **[Live connectivity testing](./live-connectivity-testing.md)** · **[Operator relay fleet](./operator-relay-fleet.md)** · **[Relay server design (multi-relay fleet)](./relay-server-design.md)** · **[SQLite adoption](./sqlite-adoption.md)** · **[P2P file sharing (design plan)](./p2p-file-sharing-plan.md)** · **[AI Document Backbone (agent publish/find/share)](./ai-document-backbone-plan.md)** · **[Native owner agent (Assistant = Agent)](./native-owner-agent.md)** · **[IPFS / Helia integration](./helia-ipfs-integration-plan.md)** · **[External distribution via IPFS](./external-distribution-ipfs-plan.md)** · **[Kubo + Helia operator runbook](./envoymesh-with-kubo-helia.md)** · **[Trust mode & bilateral social mediation](./trust-mode-social-protocol.md)** · **[Trust mode implementation plan](./trust-mode-implementation-plan.md)** · **[A2A routing, actor disclosure & owner visibility](./a2a-actor-visibility-plan.md)** · **[Redesign strategy](./redesign-strategy.md)** · **[Team job iteration (A ∩ B)](./agent-network-iteration.md)** · **[Fleet bootstrap](./fleet-bootstrap.md)**
+**Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · **[EMP / EnvoyAI](./protocol-standard.md)** · [EnvoyAI design guide](./envoyai-protocol.md) · [QuickStart](../QuickStart.md) · [Agentic next step](./next-step.md) · [Discovery/connectivity POC](./poc-discovery-connectivity.md) · **[Live connectivity testing](./live-connectivity-testing.md)** · **[Operator relay fleet](./operator-relay-fleet.md)** · **[Relay server design (multi-relay fleet)](./relay-server-design.md)** · **[SQLite adoption](./sqlite-adoption.md)** · **[P2P file sharing (design plan)](./p2p-file-sharing-plan.md)** · **[AI Document Backbone (agent publish/find/share)](./ai-document-backbone-plan.md)** · **[Native owner agent (Assistant = Agent)](./native-owner-agent.md)** · **[IPFS / Helia integration](./helia-ipfs-integration-plan.md)** · **[External distribution via IPFS](./external-distribution-ipfs-plan.md)** · **[Kubo + Helia operator runbook](./envoymesh-with-kubo-helia.md)** · **[Trust mode & bilateral social mediation](./trust-mode-social-protocol.md)** · **[Trust mode implementation plan](./trust-mode-implementation-plan.md)** · **[A2A routing, actor disclosure & owner visibility](./a2a-actor-visibility-plan.md)** · **[Redesign strategy](./redesign-strategy.md)** · **[Team job iteration (A ∩ B)](./agent-network-iteration.md)** · **[Team jobs UX](./agent-network-ux-team-jobs.md)** · **[Team job input delivery](./agent-network-job-input-delivery.md)** · **[Fleet bootstrap](./fleet-bootstrap.md)**
 
 ## Status Legend
 
@@ -93,6 +93,8 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 55 — Ext Agent: codex + claudecode (Plan B + daemon supervisor)](#phase-55--ext-agent-codex--claudecode-plan-b--daemon-supervisor)
 - [Phase 56 — Ext Agent: cursor-agent + aider + mmx (one-shot CLI pattern)](#phase-56--ext-agent-cursor-agent--aider--mmx-one-shot-cli-pattern)
 - [Phase 57 — Knowledge Base production hardening (Markdown-first + anydoc)](#phase-57--knowledge-base-production-hardening-markdown-first--anydoc-)
+- [Phase 58 — Team jobs UX (fleet readiness, live story, multi-node)](#phase-58--team-jobs-ux-fleet-readiness-live-story-multi-node)
+- [Phase 59 — Team job input delivery (bytes to workers, not vault sync)](#phase-59--team-job-input-delivery-bytes-to-workers-not-vault-sync-designed)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -1162,7 +1164,7 @@ Milestone: **Phases 0–48 shipped for interop bridges** — Core protocol throu
 
 **Last shipped:** **Phase 48 — A2A + MCP Interop Bridges (48A–48D).** MCP tool consumer (`mesh.mcp.*`), MCP server adapter (`npx envoymesh mcp-server`), A2A Agent Card on relay `/.well-known/agent-card.json`, and A2A Task Bridge JSON-RPC (`message/send` / `tasks/get` / `tasks/cancel`) with auth + state/artifact maps + relay proxy. **~191 dedicated unit tests green.** Design: [a2a-mcp-interop-design.md](./a2a-mcp-interop-design.md). Earlier recent ship: Phase 47 Team job multi-round iteration (47A–47D).
 
-**Active:** **Phase 54 — EnvoyAI model guidance + Envoy Local** (Configure AI UX + optional post-install llama.cpp download; cloud-only remains first-class). Design: [envoy-local-design.md](./envoy-local-design.md). Also: ICE media-transport wiring (config/UI shipped; see [voice-video-call-support.md](./voice-video-call-support.md)); Phase 41 UX checklist in [agent_network.md §13](./agent_network.md#13-phase-41--making-agent-network-usable--powerful).
+**Active:** **Phase 59 — Team job input delivery** (designed; after Phase 58). Design: [agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md). Also tracked: Phase 54 Envoy Local; ICE media-transport ([voice-video-call-support.md](./voice-video-call-support.md)).
 
 ### Next planning pulls
 
@@ -5639,7 +5641,7 @@ While finalizing Phase 42 we discovered a few of the shipped pieces were wire-le
 - `[x]` Two-home libp2p smoke in CI (43F — `chain-two-home-smoke.test.ts`)
 - `[x]` EnvoyGo read-only active-chains mirror (43H — `ActiveChainsScreen`)
 - `[x]` Bid justification + cost range shown before and during chain (43E)
-- `[ ]` Zero-worker and stale-agent-card errors are user-actionable (43F diagnostics copy)
+- `[x]` Zero-worker and stale-agent-card errors are user-actionable (43F → **Phase 58A** `FleetReadinessPanel`)
 - `[x]` Budget warning + one-tap cancel from primary UI (43G)
 
 ### Cross-references
@@ -7408,10 +7410,79 @@ Primary code touchpoints:
 
 ---
 
+## Phase 58 — Team jobs UX (fleet readiness, live story, multi-node)
+
+> **Status:** `[x]` **58A–58E shipped**.  
+> **Design:** [agent-network-ux-team-jobs.md](./agent-network-ux-team-jobs.md)
+
+**Goal:** Actionable fleet readiness, live job story, per-step control, worker UX, EnvoyGo unblock, Advanced Assigner — **without** chat recruitment.
+
+### Explicitly out of scope
+
+- Chat / 1:1 / group “Run as team job” recruitment
+- Standing vault sync (byte delivery → Phase 59)
+- Competitive bid inbox on EnvoyGo
+
+### 58A — Fleet readiness checklist `[x]`
+
+- `[x]` `FleetReadinessPanel` + `fleet-readiness.ts` (Join → engine → bond → peer Join → card → online → other ready)
+- `[x]` Skip Preview when `skipPreview` (empty pool / Join off / engine down)
+- `[x]` Wire start dialog, Team jobs empty, detail no-workers
+- `[x]` EnvoyGo thin readiness hints
+- `[x]` i18n en+zh + unit/component tests
+- `[x]` Phase 43 zero-worker criterion closed
+
+### 58B — Live job story + artifact honesty `[x]`
+
+- `[x]` `ChainGetStateResult.steps[]` with objectives / deps / waitingOn / produced
+- `[x]` Social detail DAG + attachment honesty copy
+- `[x]` EnvoyGo step list (light)
+
+### 58C — Per-step control + worker UX `[x]`
+
+- `[x]` Cancel/reassign one step; observed read-only badges
+
+### 58D — EnvoyGo control surface `[x]`
+
+- `[x]` `waitingForOwner` → `chainResolveIteration`; observed list
+
+### 58E — Assigner picker (Advanced) `[x]`
+
+- `[x]` Orchestrate on this node / bonded peer via existing handoff
+
+### Exit criteria
+
+- `[x]` 58A cold-start checklist
+- `[x]` 58B live job story + honesty
+- `[x]` 58C–58E as designed
+
+---
+
+## Phase 59 — Team job input delivery (bytes to workers, not vault sync) **designed**
+
+> **Status:** `[ ]` designed — **after Phase 58**.  
+> **Design:** [agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md)
+
+**Goal:** One-shot push of composer attachments into worker `imports/team-jobs/<chainId>/in/…` (voucher + `/envoymesh/data`) — **not** vault sync.
+
+### 59A–59E `[ ]`
+
+- `[ ]` 59A schema + wire choice
+- `[ ]` 59B deliver-on-award + hash verify
+- `[ ]` 59C executor local path
+- `[ ]` 59D Social/EnvoyGo status + retry
+- `[ ]` 59E multi-home E2E + GC
+
+---
+
 ## Changelog (this document)
+
 
 | Date | Change |
 |------|--------|
+| 2026-08-14 | **Phase 58 complete (58A–58E).** Fleet readiness, live steps + honesty, per-step cancel/reassign + observed badges, EnvoyGo iteration/observed, Advanced Assigner picker. Next: **Phase 59** job input delivery. |
+| 2026-08-14 | **Phase 58B shipped — Live job story + attachment honesty.** `buildChainLiveSteps` → `chainGetState` / listActive / `chain:state`; Social `ChainLiveSteps` + honesty; EnvoyGo step list. Next: **58C**. |
+| 2026-08-14 | **Phase 58A shipped — Fleet readiness checklist.** `FleetReadinessPanel` + skip Preview; Social + EnvoyGo; Phase 43 zero-worker closed. Next: **58B**. Design: [agent-network-ux-team-jobs.md](./agent-network-ux-team-jobs.md). |
 | 2026-08-13 | **Phase 57 security follow-up.** Materialize + MCP write-back default **private** (path heuristic for `notes/imports/` + `notes/mcp/`, sensitivity override on write); owner-gate `saveExternalMcpSearchAsNote` / `convertLibraryItemToMarkdown` / `reindexRagKnowledge`; Obsidian collect triggers RAG reindex when paths move. |
 | 2026-08-13 | **Phase 57E complete.** Chat/Ext Agent attachments extract Office/PDF/HTML via `extractVaultDocumentText`; acquisition inbox preserves real extensions; inbound share/chat transfer best-effort materializes to `notes/imports/`. Phase 57 closed. |
 | 2026-08-13 | **Phase 57D MCP external KB.** Soft-fail MCP search with timeout/URL validation; `lastExternalKbError` on RAG status; Settings copy clarifies search≠vault sync; gated `mcpWriteBackEnabled` + `saveExternalMcpSearchAsNote` → `notes/mcp/`. Next: remaining **57E**. |

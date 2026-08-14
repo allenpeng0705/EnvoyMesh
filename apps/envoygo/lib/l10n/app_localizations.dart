@@ -3954,6 +3954,59 @@ abstract class AppLocalizations {
   /// **'No reachable Agent Network workers. Bond contacts with agents on the home node first.'**
   String get chainsStartNoWorkers;
 
+  /// No description provided for @chainsStartReadinessTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Get workers ready'**
+  String get chainsStartReadinessTitle;
+
+  /// No description provided for @chainsStartReadinessJoinOff.
+  ///
+  /// In en, this message translates to:
+  /// **'On the home computer: Team jobs → Manage workers → turn on Join Agent Network.'**
+  String get chainsStartReadinessJoinOff;
+
+  /// No description provided for @chainsStartReadinessBond.
+  ///
+  /// In en, this message translates to:
+  /// **'Bond contacts in Discover (Social or this phone), then ask them to Join Agent Network.'**
+  String get chainsStartReadinessBond;
+
+  /// No description provided for @chainsStartReadinessRefresh.
+  ///
+  /// In en, this message translates to:
+  /// **'On Social Team jobs, open Manage workers and refresh cards, then preview again here.'**
+  String get chainsStartReadinessRefresh;
+
+  /// No description provided for @chainsStepsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Job steps'**
+  String get chainsStepsTitle;
+
+  /// No description provided for @chainsStepsWaitingOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting on:'**
+  String get chainsStepsWaitingOn;
+
+  /// No description provided for @chainsAttachmentHonesty.
+  ///
+  /// In en, this message translates to:
+  /// **'Files you attach live on this home’s vault. Workers get references or packed artifacts between steps — not an automatic vault copy.'**
+  String get chainsAttachmentHonesty;
+  String get chainsIterationAskOwnerTitle;
+  String get chainsIterationAskOwnerBody;
+  String get chainsIterationAcceptDraft;
+  String get chainsIterationContinue;
+  String get chainsIterationAccepted;
+  String get chainsIterationContinued;
+  String get chainsIterationResolveFailed;
+  String get chainsObservedTitle;
+  String get chainsObservedHint;
+  String get chainsObservedReadOnly;
+
+
   /// No description provided for @chainsStartNeedWorkers.
   ///
   /// In en, this message translates to:

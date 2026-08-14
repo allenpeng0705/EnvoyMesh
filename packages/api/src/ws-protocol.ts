@@ -446,6 +446,7 @@ export type RpcMethods =
   | "chainListActive"
   | "chainListObserved"
   | "chainCancel"
+  | "chainReassignSubtask"
   | "chainListReports"
   | "chainGetReport"
   | "chainPinReport"
@@ -1972,6 +1973,28 @@ export interface ChainGetStateResult {
       judgeReason?: string;
     }>;
   };
+  /**
+   * Phase 58B — live subtask story for assigner UI (aligned with observed steps,
+   * plus deps / artifact handoff hints). Labels and keys only — no artifact bodies.
+   */
+  steps?: Array<{
+    subtaskId: string;
+    objective: string;
+    state: "pending" | "offered" | "awarded" | "running" | "done" | "failed" | "cancelled";
+    dependsOn?: string[];
+    workerPeerId?: string;
+    requiredRole?: string;
+    threadId?: string;
+    expects?: string[];
+    produces?: string[];
+    waitingOn?: Array<{
+      fromSubtaskId: string;
+      key: string;
+      kind: "text" | "file" | "structured";
+      label?: string;
+    }>;
+    produced?: Array<{ key: string; kind: string; label?: string }>;
+  }>;
 }
 
 /** Read-only snapshot of a team job where this node is a worker (not assigner). */
@@ -1997,6 +2020,12 @@ export interface ChainObservedStatus {
     objective?: string;
     state: "pending" | "offered" | "awarded" | "running" | "done" | "failed" | "cancelled";
     workerPeerId?: string;
+    waitingOn?: Array<{
+      fromSubtaskId: string;
+      key: string;
+      kind: "text" | "file" | "structured";
+      label?: string;
+    }>;
   }>;
   orchestratorPeerId: string;
   updatedAt: string;
@@ -2032,6 +2061,20 @@ export interface ChainCancelParams {
 export interface ChainCancelResult {
   chainId: string;
   cancelled: string[]; // subtaskIds that were cancelled
+}
+
+/** Phase 58C — owner-forced reassign of a stalled/failed step (uses stall-reassign path). */
+export interface ChainReassignSubtaskParams {
+  chainId: string;
+  subtaskId: string;
+}
+
+export interface ChainReassignSubtaskResult {
+  ok: boolean;
+  chainId: string;
+  subtaskId: string;
+  nextWorkerPeerId?: string;
+  error?: string;
 }
 
 export interface ChainListReportsParams {

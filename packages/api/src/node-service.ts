@@ -3485,6 +3485,11 @@ export interface NodeService {
   /** Cancel a chain or a single subtask within a chain. */
   chainCancel(params: ChainCancelParams): Promise<ChainCancelResult>;
 
+  /** Phase 58C — reassign one stalled/failed subtask to a backup worker. */
+  chainReassignSubtask?(
+    params: import("./ws-protocol.js").ChainReassignSubtaskParams,
+  ): Promise<import("./ws-protocol.js").ChainReassignSubtaskResult>;
+
   /** List published chain reports (newest first). */
   chainListReports(params?: ChainListReportsParams): Promise<ChainListReportsResult>;
 

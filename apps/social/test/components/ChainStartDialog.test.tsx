@@ -57,7 +57,32 @@ afterEach(() => {
 });
 
 describe("ChainStartDialog", () => {
-  it("blocks start and shows Discover CTA when every subtask has 0 workers", async () => {
+  it("shows fleet readiness checklist with Discover CTA when the pool is empty", async () => {
+    const { ChainStartDialog } = await import("../../src/components/ChainStartDialog.js");
+    const onOpenDiscover = vi.fn();
+    const onClose = vi.fn();
+    renderDialog(
+      <ChainStartDialog
+        goal="Research local LLMs"
+        onClose={onClose}
+        onOpenDiscover={onOpenDiscover}
+        localJoinEnabled={false}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("fleet-readiness-panel")).toBeTruthy();
+      expect(screen.getByTestId("chain-start-no-workers")).toBeTruthy();
+    });
+    expect(mocks.chainPreviewGoal).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("fleet-readiness-cta-bonds"));
+    expect(onClose).toHaveBeenCalled();
+    expect(onOpenDiscover).toHaveBeenCalled();
+    expect(mocks.chainStartFromGoal).not.toHaveBeenCalled();
+  });
+
+  it("shows readiness after preview when every subtask has 0 workers", async () => {
     const { ChainStartDialog } = await import("../../src/components/ChainStartDialog.js");
     mocks.chainPreviewGoal.mockResolvedValue({
       ok: true,
@@ -73,25 +98,46 @@ describe("ChainStartDialog", () => {
       diagnostics: ["No workers for `task.execute`"],
     });
     const onOpenDiscover = vi.fn();
-    const onClose = vi.fn();
     renderDialog(
-      <ChainStartDialog goal="Research local LLMs" onClose={onClose} onOpenDiscover={onOpenDiscover} />,
+      <ChainStartDialog
+        goal="Research local LLMs"
+        onClose={() => undefined}
+        onOpenDiscover={onOpenDiscover}
+        localJoinEnabled={true}
+        engineReady={true}
+        bondedPeerCount={1}
+        workerCandidates={[
+          {
+            bond: {
+              peerOwnerId: "envoy:owner:bob",
+              level: "direct",
+              createdAt: new Date().toISOString(),
+            },
+            card: {
+              ownerId: "envoy:owner:bob",
+              displayName: "Bob",
+              sourceAgentPeerId: "envoy_agent_bob",
+              membership: ["task.execute", "agent-network-worker"],
+              cachedAt: new Date().toISOString(),
+            },
+            health: {
+              status: "ready",
+              cardStatus: "ready",
+              onlineStatus: "online",
+              optIn: true,
+              capabilityCount: 2,
+              label: "Ready",
+            },
+          },
+        ]}
+      />,
     );
 
     await waitFor(() => {
       expect(screen.getByTestId("chain-start-no-workers")).toBeTruthy();
+      expect(screen.getByTestId("fleet-readiness-panel")).toBeTruthy();
     });
-    expect(screen.getByText(/No workers found/i)).toBeTruthy();
-
-    const startBtn = screen.getByTestId("chain-start-confirm") as HTMLButtonElement;
-    await waitFor(() => {
-      expect(startBtn.disabled).toBe(true);
-    });
-
-    fireEvent.click(screen.getByTestId("chain-start-open-discover"));
-    expect(onClose).toHaveBeenCalled();
-    expect(onOpenDiscover).toHaveBeenCalled();
-    expect(mocks.chainStartFromGoal).not.toHaveBeenCalled();
+    expect(mocks.chainPreviewGoal).toHaveBeenCalled();
   });
 
   it("allows start when at least one worker is available", async () => {
@@ -112,7 +158,14 @@ describe("ChainStartDialog", () => {
     const onStarted = vi.fn();
     const onClose = vi.fn();
     renderDialog(
-      <ChainStartDialog goal="Research local LLMs" onClose={onClose} onStarted={onStarted} />,
+      <ChainStartDialog
+        goal="Research local LLMs"
+        onClose={onClose}
+        onStarted={onStarted}
+        localJoinEnabled={true}
+        engineReady={true}
+        bondedPeerCount={1}
+      />,
     );
 
     const startBtn = await waitFor(() => {
@@ -156,7 +209,14 @@ describe("ChainStartDialog", () => {
     });
     mocks.chainStartFromGoal.mockResolvedValue({ ok: true, chainId: "chain_2" });
     renderDialog(
-      <ChainStartDialog goal="Research local LLMs" onClose={() => undefined} onStarted={() => undefined} />,
+      <ChainStartDialog
+        goal="Research local LLMs"
+        onClose={() => undefined}
+        onStarted={() => undefined}
+        localJoinEnabled={true}
+        engineReady={true}
+        bondedPeerCount={1}
+      />,
     );
     await waitFor(() => {
       expect((screen.getByTestId("chain-start-confirm") as HTMLButtonElement).disabled).toBe(false);
@@ -194,6 +254,9 @@ describe("ChainStartDialog", () => {
         goal="Research local LLMs"
         assignmentMode="role"
         onClose={() => undefined}
+        localJoinEnabled={true}
+        engineReady={true}
+        bondedPeerCount={1}
       />,
     );
     await waitFor(() => {

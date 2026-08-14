@@ -1503,6 +1503,31 @@ class NodeServiceClient {
     return ChainActiveSummary.fromJson(result);
   }
 
+  /// Phase 58D — jobs where this home is a worker (read-only).
+  Future<List<ChainObservedSummary>> listObservedChains({
+    bool includeTerminal = false,
+  }) async {
+    final result = await _client.call('chainListObserved', {
+      'includeTerminal': includeTerminal,
+    }) as Map<String, dynamic>;
+    final list = (result['chains'] as List<dynamic>?) ?? const [];
+    return list
+        .whereType<Map>()
+        .map((e) => ChainObservedSummary.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// Phase 58D — owner decision after ask_owner iteration hold.
+  Future<Map<String, dynamic>> chainResolveIteration({
+    required String chainId,
+    required String decision,
+  }) async {
+    return await _client.call('chainResolveIteration', {
+      'chainId': chainId,
+      'decision': decision,
+    }) as Map<String, dynamic>;
+  }
+
   /// Node defaults for new team jobs (assignment mode, iteration, …).
   Future<Map<String, dynamic>> chainGetDefaults() async {
     final result =

@@ -45,8 +45,13 @@ class _ActiveChainDetailScreenState
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refresh();
-      _poll = Timer.periodic(const Duration(seconds: 8), (_) => _refresh());
+      _restartPoll(const Duration(seconds: 8));
     });
+  }
+
+  void _restartPoll(Duration interval) {
+    _poll?.cancel();
+    _poll = Timer.periodic(interval, (_) => _refresh());
   }
 
   @override
@@ -101,6 +106,10 @@ class _ActiveChainDetailScreenState
       if (state != null && (state.published || state.chainCancelled)) {
         _poll?.cancel();
         _poll = null;
+      } else if (state?.iteration?.waitingForOwner == true) {
+        _restartPoll(const Duration(seconds: 3));
+      } else {
+        _restartPoll(const Duration(seconds: 8));
       }
     } catch (e) {
       if (!mounted || gen != _refreshGen) {
@@ -211,6 +220,48 @@ class _ActiveChainDetailScreenState
     }
   }
 
+  Future<void> _resolveIteration(String decision) async {
+    final l10n = AppLocalizations.of(context);
+    final client = _clientOrNull();
+    if (client == null) {
+      setState(() => _actionError = l10n.commonNotConnectedHome);
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _actionError = null;
+    });
+    try {
+      final result = await client.chainResolveIteration(
+        chainId: widget.chainId,
+        decision: decision,
+      );
+      if (!mounted) return;
+      if (result['ok'] != true) {
+        setState(() {
+          _actionError = (result['error'] as String?)?.isNotEmpty == true
+              ? result['error'] as String
+              : l10n.chainsIterationResolveFailed;
+        });
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            decision == 'continue'
+                ? l10n.chainsIterationContinued
+                : l10n.chainsIterationAccepted,
+          ),
+        ),
+      );
+      await _refresh();
+    } catch (e) {
+      if (mounted) setState(() => _actionError = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   bool get _showRebalance {
     final st = _state;
     if (st == null) return false;
@@ -259,6 +310,54 @@ class _ActiveChainDetailScreenState
                   const SizedBox(height: 12),
                 ],
                 if (st != null) ...[
+                  if (st.iteration?.waitingForOwner == true) ...[
+                    Card(
+                      color: theme.colorScheme.secondaryContainer,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              l10n.chainsIterationAskOwnerTitle,
+                              style: theme.textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(l10n.chainsIterationAskOwnerBody),
+                            if ((st.iteration?.latestDraftSummary ?? '')
+                                .isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                st.iteration!.latestDraftSummary!,
+                                maxLines: 6,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              children: [
+                                OutlinedButton(
+                                  onPressed: _busy
+                                      ? null
+                                      : () => _resolveIteration('stop'),
+                                  child: Text(l10n.chainsIterationAcceptDraft),
+                                ),
+                                FilledButton(
+                                  onPressed: _busy
+                                      ? null
+                                      : () => _resolveIteration('continue'),
+                                  child: Text(l10n.chainsIterationContinue),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
@@ -304,6 +403,52 @@ class _ActiveChainDetailScreenState
                       ),
                     ),
                   ),
+                  if (st.steps.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      l10n.chainsStepsTitle,
+                      style: theme.textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      l10n.chainsAttachmentHonesty,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 8),
+                    ..._orderedSteps(st.steps).map((entry) {
+                      final step = entry.step;
+                      final obj = step.objective.length > 100
+                          ? '${step.objective.substring(0, 100)}…'
+                          : step.objective;
+                      final waiting = step.waitingOn.isEmpty
+                          ? null
+                          : '${l10n.chainsStepsWaitingOn} ${step.waitingOn.map((w) => w.label ?? w.key).join(", ")}';
+                      return Padding(
+                        padding: EdgeInsets.only(
+                          left: entry.depth * 12.0,
+                          bottom: 10,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(obj, style: theme.textTheme.bodyMedium),
+                            Text(
+                              '${step.state}${step.requiredRole != null ? " · ${step.requiredRole}" : ""}',
+                              style: theme.textTheme.bodySmall,
+                            ),
+                            if (waiting != null)
+                              Text(waiting, style: theme.textTheme.bodySmall),
+                          ],
+                        ),
+                      );
+                    }),
+                  ] else ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      l10n.chainsAttachmentHonesty,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
                   if (_showRebalance) ...[
                     const SizedBox(height: 16),
                     Text(
@@ -365,6 +510,38 @@ class _ActiveChainDetailScreenState
             ),
     );
   }
+}
+
+List<({ChainLiveStep step, int depth})> _orderedSteps(List<ChainLiveStep> steps) {
+  final byId = {for (final s in steps) s.subtaskId: s};
+  final depthMemo = <String, int>{};
+  int depthOf(String id, Set<String> stack) {
+    final cached = depthMemo[id];
+    if (cached != null) return cached;
+    if (stack.contains(id)) return 0;
+    stack.add(id);
+    final step = byId[id];
+    var d = 0;
+    for (final dep in step?.dependsOn ?? const <String>[]) {
+      if (!byId.containsKey(dep)) continue;
+      final nested = depthOf(dep, stack) + 1;
+      if (nested > d) d = nested;
+    }
+    stack.remove(id);
+    depthMemo[id] = d;
+    return d;
+  }
+
+  final ordered = [...steps];
+  ordered.sort((a, b) {
+    final da = depthOf(a.subtaskId, {});
+    final db = depthOf(b.subtaskId, {});
+    if (da != db) return da.compareTo(db);
+    return a.subtaskId.compareTo(b.subtaskId);
+  });
+  return [
+    for (final s in ordered) (step: s, depth: depthOf(s.subtaskId, {})),
+  ];
 }
 
 String _shortId(String id) {

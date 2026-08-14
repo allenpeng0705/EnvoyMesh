@@ -701,6 +701,10 @@ export function App() {
                 <ChainsView
                   onBack={() => navigateTo("chat")}
                   onOpenDiscover={() => navigateTo("discover")}
+                  onOpenSettingsAi={() => {
+                    setSettingsTab("ai");
+                    navigateTo("settings");
+                  }}
                 />
               </SwipeBack>
             )}

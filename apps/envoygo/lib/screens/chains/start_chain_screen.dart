@@ -32,6 +32,8 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
   /// Selected agent peer ids for start (auto-seeded from suggested workers).
   final Set<String> _selectedWorkerPeerIds = {};
   bool _workerSelectionTouched = false;
+  /// Home Join Agent Network — used for Phase 58A readiness hints.
+  bool? _localJoinEnabled;
 
   static const _minGoalLen = 8;
 
@@ -65,6 +67,13 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
     }
     try {
       final defaults = await client.chainGetDefaults();
+      bool? join;
+      try {
+        final cfg = await client.getNodeConfig();
+        join = cfg['capabilityProviderEnabled'] == true;
+      } catch (_) {
+        join = null;
+      }
       if (!mounted) return;
       final mode = defaults['assignmentMode'] as String?;
       setState(() {
@@ -72,6 +81,7 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
         _iterationMaxRounds = defaults['iterationMaxRounds'] as int?;
         _iterationJudgeMode = defaults['iterationJudgeMode'] as String?;
         _extendMaxStepsPerRound = defaults['extendMaxStepsPerRound'] as int?;
+        _localJoinEnabled = join;
         _loadingDefaults = false;
         _error = null;
       });
@@ -304,6 +314,17 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
                   l10n.chainsStartIntro,
                   style: theme.textTheme.bodySmall,
                 ),
+                if (_localJoinEnabled == false ||
+                    (_error != null &&
+                        (_error == l10n.chainsStartNoWorkers ||
+                            _error!.contains('no_workers')))) ...[
+                  const SizedBox(height: 12),
+                  _FleetReadinessHints(
+                    joinOff: _localJoinEnabled == false,
+                    l10n: l10n,
+                    theme: theme,
+                  ),
+                ],
                 const SizedBox(height: 16),
                 Text(
                   l10n.chainsStartAssignmentMode,
@@ -535,6 +556,55 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
                 ],
               ],
             ),
+    );
+  }
+}
+
+/// Phase 58A — thin phone checklist (CTAs live on home Social).
+class _FleetReadinessHints extends StatelessWidget {
+  const _FleetReadinessHints({
+    required this.joinOff,
+    required this.l10n,
+    required this.theme,
+  });
+
+  final bool joinOff;
+  final AppLocalizations l10n;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    final steps = <String>[
+      if (joinOff) l10n.chainsStartReadinessJoinOff,
+      l10n.chainsStartReadinessBond,
+      l10n.chainsStartReadinessRefresh,
+    ];
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              l10n.chainsStartReadinessTitle,
+              style: theme.textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
+            for (var i = 0; i < steps.length; i++) ...[
+              if (i > 0) const SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${i + 1}. ', style: theme.textTheme.bodySmall),
+                  Expanded(
+                    child: Text(steps[i], style: theme.textTheme.bodySmall),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

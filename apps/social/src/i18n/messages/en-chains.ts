@@ -108,11 +108,42 @@ export const chainsMessages = {
       "Direct assign is on — workers are offered the step and awarded as soon as they confirm ready (no cost auction). Turn on competitive bidding in Team job defaults only if you want cost ranking.",
     observedHint:
       "You are a worker on this job. You can watch progress here; only the assigner can manage or cancel it.",
+    stepsTitle: "Job steps",
+    inputsTitle: "Inputs on this home",
+    attachmentHonesty:
+      "Files you attach live on this home’s vault. Workers receive references or packed artifacts the Assigner passes between steps — not an automatic copy of your vault.",
+    waitingOn: "Waiting on:",
+    produced: "Produced:",
+    stepMore: "More",
+    stepLess: "Less",
+    stepN: "Step {n}",
+    stepState: {
+      pending: "Pending",
+      offered: "Offered",
+      awarded: "Awarded",
+      running: "Running",
+      done: "Done",
+      failed: "Failed",
+      cancelled: "Cancelled",
+    },
+    cancelStep: "Cancel step",
+    reassignStep: "Reassign",
+    stepCancelled: "Step cancelled",
+    stepReassigned: "Step reassigned",
+    reassignFailed: "Could not reassign this step",
+    reassignUnavailable: "Reassign is not available on this node",
   },
   observed: {
     title: "Jobs you’re on",
     empty: "No jobs from other assigners yet.",
     readOnly: "View only",
+    badgeAssigned: "Assigned to you",
+    badgeWaitingAssigner: "Waiting on Assigner",
+    badgeBlocked: "Blocked on prior step",
+    badgeDone: "Done",
+    badgeFailed: "Failed",
+    badgeWatching: "Watching",
+    onlyAssignerCanManage: "Only the Assigner can manage or cancel this job.",
   },
   tree: {
     title: "Subtask tree",
@@ -208,6 +239,7 @@ export const chainsMessages = {
     starting: "Starting…",
     cancel: "Cancel",
     started: "Team job started — watch progress in Team jobs",
+    handedOff: "Job handed off to the remote Assigner — watch progress there",
     failed: "Could not start team job",
     previewFailed: "Could not preview plan",
     noWorkersTitle: "No workers found",
@@ -280,6 +312,10 @@ export const chainsMessages = {
     showCostUiHint:
       "Displays the estimated cost range in the plan preview. Competitive mode always shows this.",
     jobSettingsTitle: "Job settings",
+    assignerLabel: "Orchestrate on",
+    assignerThisNode: "This node",
+    assignerHint:
+      "Default is this node. Pick a bonded peer who joined Agent Network to run the Assigner there (Advanced).",
     assignmentMode: "Assignment mode",
     assignmentModeSkill: "Skill based",
     assignmentModeRole: "Role based",
@@ -318,6 +354,51 @@ export const chainsMessages = {
     intro:
       "Bring more workers online and configure how your node connects with them. For most teams, Office LAN + LAN Auto-Bond is all you need.",
     advancedGroup: "Advanced",
+  },
+  readiness: {
+    title: "Get workers ready",
+    desc: "Team jobs need Join Agent Network on, then bonded contacts who joined and are online. Fix each item below.",
+    ctaManageWorkers: "Manage workers",
+    ctaOpenSettingsAi: "Open AI settings",
+    ctaOpenDiscover: "Open Discover",
+    ctaRefreshCards: "Refresh cards",
+    ctaRetryProbe: "Check again",
+    row: {
+      join: "Join Agent Network on this node",
+      engine: "Local agent engine running",
+      bonds: "At least one bonded contact",
+      peerJoin: "A contact joined Agent Network",
+      freshCard: "Fresh agent card from a contact",
+      online: "A contact is online now",
+      otherReady: "Another ready worker (besides you)",
+    },
+    hint: {
+      join: {
+        fail: "Turn on Join so your agent can work on team jobs.",
+      },
+      engine: {
+        fail: "Start your Team jobs engine (OpenClaw or Ext Agent) in Settings → AI.",
+        warn: "Could not confirm the engine is running.",
+      },
+      bonds: {
+        fail: "Bond with someone in Discover first.",
+      },
+      peerJoin: {
+        fail: "Ask a bonded contact to enable Join Agent Network on their node.",
+      },
+      freshCard: {
+        fail: "No usable agent card yet — refresh after they join.",
+        warn: "Some agent cards are stale — refresh to pull the latest.",
+      },
+      online: {
+        fail: "Joined contacts look offline — ask them to open EnvoyMesh, then check again.",
+        warn: "Still checking reachability, or no peer is online yet.",
+      },
+      otherReady: {
+        fail: "No selectable workers yet — finish the steps above.",
+        warn: "Only your agent is ready. Bond a peer who joined for multi-home jobs.",
+      },
+    },
   },
   workerProfile: {
     title: "Your worker profile",
