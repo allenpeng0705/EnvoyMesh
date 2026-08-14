@@ -21,7 +21,22 @@ class AppLocalizationsJa extends AppLocalizations {
   String get navContent => 'コンテンツ';
 
   @override
+  String get navSocial => 'ソーシャル';
+
+  @override
+  String get navTerminal => 'ターミナル';
+
+  @override
+  String get navKnowledge => 'ナレッジ';
+
+  @override
   String get navMe => '自分';
+
+  @override
+  String get contentExplore => '探索';
+
+  @override
+  String get termEmptyHint => 'ホームノードで Pi コーディングセッションまたはシェルターミナルを開始します。';
 
   @override
   String get commonCancel => 'キャンセル';

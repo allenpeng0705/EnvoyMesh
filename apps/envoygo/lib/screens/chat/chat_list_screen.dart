@@ -3,16 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/chat_thread.dart';
 import '../../providers/chat_provider.dart';
-import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../utils/localized_labels.dart';
 import '../../widgets/ext_agent_switcher.dart';
-import '../../widgets/home_folder_browser.dart';
 import '../../widgets/thread_tile.dart';
 import '../terminals/terminal_detail_screen.dart';
 import 'chat_detail_screen.dart';
 
-/// Unified thread list — direct chats, group chats, AI chats, and terminals.
+/// Unified thread list — direct chats, group chats, and AI chats.
 class ChatListScreen extends ConsumerWidget {
   const ChatListScreen({super.key});
 
@@ -42,37 +40,54 @@ class ChatListScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final chatState = ref.watch(chatProvider);
-    final threads = chatState.threads;
+    final threads = chatState.threads
+        .where((t) => t.type != ChatThreadType.terminal && t.type != ChatThreadType.pi)
+        .toList();
+    final isOwner = ref.watch(nodeProvider).isOwnerProfile;
 
     if (threads.isEmpty) {
-      return ListView(
+      return Stack(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: SearchBar(
-              hintText: l10n.chatsSearchHint,
-              leading: const Icon(Icons.search),
-              onChanged: (_) {},
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(top: 80),
-            child: Center(
-              child: Column(
-                children: [
-                  const Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey),
-                  const SizedBox(height: 16),
-                  Text(
-                    l10n.chatsEmpty,
-                    style: const TextStyle(fontSize: 18, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    l10n.chatsEmptyHint,
-                    style: const TextStyle(color: Colors.grey),
-                  ),
-                ],
+          ListView(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: SearchBar(
+                  hintText: l10n.chatsSearchHint,
+                  leading: const Icon(Icons.search),
+                  onChanged: (_) {},
+                ),
               ),
+              Padding(
+                padding: const EdgeInsets.only(top: 80),
+                child: Center(
+                  child: Column(
+                    children: [
+                      const Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey),
+                      const SizedBox(height: 16),
+                      Text(
+                        l10n.chatsEmpty,
+                        style: const TextStyle(fontSize: 18, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        l10n.chatsEmptyHint,
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Positioned(
+            right: 16,
+            bottom: 16,
+            child: FloatingActionButton(
+              heroTag: 'compose',
+              tooltip: l10n.chatsFabNew,
+              onPressed: () => _showNewActions(context, ref),
+              child: const Icon(Icons.add),
             ),
           ),
         ],
@@ -80,7 +95,6 @@ class ChatListScreen extends ConsumerWidget {
     }
 
     // Group threads by type for sectioned display.
-    final isOwner = ref.watch(nodeProvider).isOwnerProfile;
     final ai =
         threads
             .where(
@@ -117,10 +131,6 @@ class ChatListScreen extends ConsumerWidget {
     final groups = isOwner
         ? threads.where((t) => t.type == ChatThreadType.group).toList()
         : <ChatThread>[];
-    final terminals = isOwner
-        ? threads.where((t) => t.type == ChatThreadType.terminal).toList()
-        : <ChatThread>[];
-
     final sections = <_ThreadSection>[];
     if (ai.isNotEmpty) sections.add(_ThreadSection(l10n.chatsSectionAi, ai));
     if (family.isNotEmpty) {
@@ -131,9 +141,6 @@ class ChatListScreen extends ConsumerWidget {
     }
     if (groups.isNotEmpty) {
       sections.add(_ThreadSection(l10n.chatsSectionGroups, groups));
-    }
-    if (terminals.isNotEmpty) {
-      sections.add(_ThreadSection(l10n.chatsSectionTerminals, terminals));
     }
 
     return Stack(
@@ -235,7 +242,7 @@ class ChatListScreen extends ConsumerWidget {
             ),
           ],
         ),
-        // Single compose FAB → popup with Create Bot / New Pi / Terminal / Group.
+        // Compose FAB → Create Bot / New Group / New Family Group.
         Positioned(
           right: 16,
           bottom: 16,
@@ -274,35 +281,6 @@ class ChatListScreen extends ConsumerWidget {
                 },
               ),
               if (isOwner) ...[
-                ListTile(
-                  leading: const SizedBox(
-                    width: 24,
-                    child: Center(
-                      child: Text(
-                        'π',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                  title: Text(l10n.chatsNewPi),
-                  subtitle: Text(l10n.chatsNewPiHint),
-                  onTap: () {
-                    Navigator.of(sheetContext).pop();
-                    _createPi(context, ref);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.terminal),
-                  title: Text(l10n.chatsNewTerminal),
-                  subtitle: Text(l10n.chatsNewTerminalHint),
-                  onTap: () {
-                    Navigator.of(sheetContext).pop();
-                    _createTerminal(context, ref);
-                  },
-                ),
                 ListTile(
                   leading: const Icon(Icons.group_add),
                   title: Text(l10n.chatsNewGroup),
@@ -370,7 +348,19 @@ class ChatListScreen extends ConsumerWidget {
         );
         return;
       case ChatThreadType.pi:
-        // Legacy type — Pi lives under Terminals now.
+        // Legacy type — open like a terminal session if still present.
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) {
+              final parts = thread.id.split(':term:');
+              final sessionId = parts.length > 1 ? parts[1] : '';
+              return TerminalDetailScreen(
+                sessionId: sessionId,
+                sessionName: _terminalSessionTitle(thread.displayName),
+              );
+            },
+          ),
+        );
         return;
       default:
         break;
@@ -391,62 +381,6 @@ class ChatListScreen extends ConsumerWidget {
           chatRoomId: isRoom ? thread.chatRoomId : null,
           isFamilyRoom: thread.type == ChatThreadType.familyGroup,
         ),
-      ),
-    );
-  }
-
-  void _createTerminal(BuildContext context, WidgetRef ref) {
-    final l10n = AppLocalizations.of(context);
-    final nameController = TextEditingController(text: 'zsh');
-    final cwdController = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l10n.chatsNewTerminal),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: l10n.chatsShellHint,
-                border: const OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: cwdController,
-              decoration: InputDecoration(
-                hintText: l10n.chatsCwdHint,
-                border: const OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(l10n.commonCancel),
-          ),
-          FilledButton(
-            onPressed: () {
-              final name = nameController.text.trim();
-              if (name.isNotEmpty) {
-                ref
-                    .read(chatProvider.notifier)
-                    .createTerminal(
-                      name: name,
-                      cwd: cwdController.text.trim().isEmpty
-                          ? null
-                          : cwdController.text.trim(),
-                    );
-                Navigator.of(ctx).pop();
-              }
-            },
-            child: Text(l10n.commonCreate),
-          ),
-        ],
       ),
     );
   }
@@ -772,168 +706,6 @@ class ChatListScreen extends ConsumerWidget {
   }
 
   /// Start a Pi coding TUI on the home node (project folder required).
-  void _createPi(BuildContext context, WidgetRef ref) {
-    final pathController = TextEditingController();
-    var starting = false;
-
-    // Prefill last project path from piSettings.allowedPaths when available.
-    () async {
-      final client = ref.read(nodeServiceProvider);
-      if (client == null) return;
-      try {
-        final cfg = await client.getNodeConfig();
-        final settings = (cfg['piSettings'] as Map?)?.cast<String, dynamic>();
-        final paths = settings?['allowedPaths'];
-        if (paths is List && paths.isNotEmpty) {
-          final first = paths.first?.toString().trim() ?? '';
-          if (first.isNotEmpty && pathController.text.isEmpty) {
-            pathController.text = first;
-          }
-        }
-      } catch (_) {}
-    }();
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        final l10n = AppLocalizations.of(ctx);
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            return AlertDialog(
-              title: Text(l10n.chatsNewPi),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    l10n.chatsPiBody,
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    l10n.chatsPiFolder,
-                    style: Theme.of(ctx).textTheme.labelLarge,
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          pathController.text.trim().isEmpty
-                              ? l10n.chatsPiFolderHint
-                              : pathController.text.trim(),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: pathController.text.trim().isEmpty
-                                ? Theme.of(ctx).colorScheme.onSurfaceVariant
-                                : Theme.of(ctx).colorScheme.onSurface,
-                          ),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: starting
-                            ? null
-                            : () async {
-                                final client = ref.read(nodeServiceProvider);
-                                if (client == null) return;
-                                final picked = await HomeFolderBrowser.open(
-                                  ctx,
-                                  client: client,
-                                  initialPath: pathController.text.trim().isEmpty
-                                      ? null
-                                      : pathController.text.trim(),
-                                );
-                                if (picked == null) return;
-                                setLocal(() => pathController.text = picked);
-                              },
-                        child: Text(l10n.knowledgePanelBrowse),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: starting ? null : () => Navigator.of(ctx).pop(),
-                  child: Text(l10n.commonCancel),
-                ),
-                FilledButton(
-                  onPressed: starting
-                      ? null
-                      : () => _submitNewPi(
-                          context,
-                          ctx,
-                          ref,
-                          pathController,
-                          starting,
-                          (v) => setLocal(() => starting = v),
-                        ),
-                  child: starting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(l10n.chatsPiTitle),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<void> _submitNewPi(
-    BuildContext listContext,
-    BuildContext dialogContext,
-    WidgetRef ref,
-    TextEditingController pathController,
-    bool starting,
-    void Function(bool) setStarting,
-  ) async {
-    if (starting) return;
-    final path = pathController.text.trim();
-    if (path.isEmpty) {
-      ScaffoldMessenger.of(listContext).showSnackBar(
-        SnackBar(
-          content: Text(
-            AppLocalizations.of(listContext).chatsPiFolderRequired,
-          ),
-        ),
-      );
-      return;
-    }
-    setStarting(true);
-    try {
-      final sessionId = await ref
-          .read(chatProvider.notifier)
-          .createPiTerminal(projectPath: path);
-      if (dialogContext.mounted) Navigator.of(dialogContext).pop();
-      if (!listContext.mounted) return;
-      final title = path
-          .split(RegExp(r'[/\\]'))
-          .where((s) => s.isNotEmpty)
-          .last;
-      await Navigator.of(listContext).push(
-        MaterialPageRoute(
-          builder: (_) => TerminalDetailScreen(
-            sessionId: sessionId,
-            sessionName: title.isNotEmpty ? 'π Pi · $title' : 'π Pi',
-          ),
-        ),
-      );
-    } catch (e) {
-      setStarting(false);
-      if (!listContext.mounted) return;
-      ScaffoldMessenger.of(listContext).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst('Bad state: ', ''))),
-      );
-    }
-  }
 
   void _showCreateRoomDialog(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);

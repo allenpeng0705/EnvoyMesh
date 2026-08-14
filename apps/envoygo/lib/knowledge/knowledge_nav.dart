@@ -1,7 +1,7 @@
-// Deep-link Content → Knowledge (Browse / Plugins / Setup), mirrors Social
-// `openContentKnowledge`.
+// Deep-link Knowledge (Browse / Plugins / Setup) and Social → Explore.
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../navigation/owner_tabs.dart';
 import '../providers/chat_provider.dart';
 import '../providers/content_engage_provider.dart';
 
@@ -11,17 +11,21 @@ enum KnowledgeHubPanel { browse, plugins, setup }
 final knowledgeHubPanelRequestProvider =
     StateProvider<KnowledgeHubPanel?>((ref) => null);
 
-/// Requested Content surface index (0 Feed, 1 Blog, 2 Knowledge, 3 People).
+/// Requested Social surface index (0 Chats, 1 Feeds, 2 Blog, 3 Explore).
 final contentSurfaceRequestProvider = StateProvider<int?>((ref) => null);
 
-/// Jump to Content → Knowledge (optional panel). Owner home tabs only.
+/// Jump to Knowledge tab (optional panel). Owner home tabs only.
 void openContentKnowledge(
   WidgetRef ref, {
   KnowledgeHubPanel panel = KnowledgeHubPanel.browse,
 }) {
-  ref.read(chatProvider.notifier).selectTab(2);
-  ref.read(contentEngageProvider.notifier).dismiss(surface: 'all');
-  ref.read(contentSurfaceRequestProvider.notifier).state = 2;
+  ref.read(chatProvider.notifier).selectTab(OwnerTabs.knowledge);
   ref.read(knowledgeHubPanelRequestProvider.notifier).state = panel;
-  ref.read(contentSurfaceProvider.notifier).state = 2;
+}
+
+/// Jump to Social → Explore (Browser).
+void openSocialExplore(WidgetRef ref) {
+  ref.read(chatProvider.notifier).selectTab(OwnerTabs.social);
+  ref.read(contentSurfaceRequestProvider.notifier).state = SocialSurfaces.explore;
+  ref.read(contentSurfaceProvider.notifier).state = SocialSurfaces.explore;
 }

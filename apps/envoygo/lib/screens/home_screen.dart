@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/app_localizations.dart';
+import '../../navigation/owner_tabs.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/content_engage_provider.dart';
 import '../../providers/feed_notify_provider.dart';
@@ -8,14 +9,15 @@ import '../../providers/node_provider.dart';
 import '../../widgets/connection_indicator.dart';
 import '../../widgets/incoming_call_overlay.dart';
 import 'chat/chat_list_screen.dart';
-import 'content/content_screen.dart';
-import 'inbox/inbox_screen.dart';
+import 'content/knowledge_screen.dart';
 import 'me/me_screen.dart';
+import 'social/social_screen.dart';
+import 'terminals/terminal_list_screen.dart';
 
 /// Main scaffold with bottom navigation.
 ///
-/// Owner: Chats / Inbox / Content / Me.
-/// Family member (Phase 51E): Chats / Me only — no mesh Inbox/Content.
+/// Owner: Social / Terminal / Knowledge / Me.
+/// Family member (Phase 51E): Chats / Me only — no mesh Terminal/Knowledge.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -28,52 +30,45 @@ class HomeScreen extends ConsumerWidget {
     final feedNotify = ref.watch(feedNotifyProvider);
     final contentSurface = ref.watch(contentSurfaceProvider);
     final isOwner = ref.watch(nodeProvider).isOwnerProfile;
-    final maxTab = isOwner ? 3 : 1;
+    final maxTab = isOwner ? OwnerTabs.me : 1;
     final tab = chatState.selectedTab.clamp(0, maxTab);
-    final viewingContent = isOwner && tab == 2;
-    final viewingFeed = viewingContent && contentSurface == 0;
+    final viewingSocial = isOwner && tab == OwnerTabs.social;
+    final viewingFeeds =
+        viewingSocial && contentSurface == SocialSurfaces.feeds;
     final engageBadge = engage.visibleTotalCount(
-      viewingContent: viewingContent,
+      viewingContent: viewingSocial,
       surfaceIndex: contentSurface,
     );
-    final feedNotifyBadge = viewingFeed ? 0 : feedNotify.unread.length;
-    final contentBadge = engageBadge + feedNotifyBadge;
+    final feedNotifyBadge = viewingFeeds ? 0 : feedNotify.unread.length;
+    final socialBadge = engageBadge + feedNotifyBadge;
 
     final bodyIndex = isOwner ? tab : (tab == 0 ? 0 : 1);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.asset(
-                'assets/logo.png',
-                width: 28,
-                height: 28,
-                fit: BoxFit.cover,
-                filterQuality: FilterQuality.medium,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Text(l10n.appTitle),
-          ],
-        ),
-        actions: const [ConnectionIndicator(), SizedBox(width: 12)],
-      ),
       body: Stack(
         children: [
           IndexedStack(
             index: bodyIndex,
             children: isOwner
                 ? const [
-                    ChatListScreen(),
-                    InboxScreen(),
-                    ContentScreen(),
+                    SocialScreen(),
+                    TerminalHomeScreen(),
+                    KnowledgeScreen(),
                     MeScreen(),
                   ]
-                : const [ChatListScreen(), MeScreen()],
+                : [
+                    Scaffold(
+                      appBar: AppBar(
+                        title: Text(l10n.navChats),
+                        actions: const [
+                          ConnectionIndicator(),
+                          SizedBox(width: 12),
+                        ],
+                      ),
+                      body: const ChatListScreen(),
+                    ),
+                    const MeScreen(),
+                  ],
           ),
           Positioned.fill(
             child: IncomingCallOverlay(callProvider: callProviderRef),
@@ -84,35 +79,41 @@ class HomeScreen extends ConsumerWidget {
         selectedIndex: tab,
         onDestinationSelected: (index) {
           ref.read(chatProvider.notifier).selectTab(index);
-          if (isOwner && index == 2) {
-            ref.read(contentEngageProvider.notifier).dismiss(surface: 'all');
-            ref.read(feedNotifyProvider.notifier).dismissAll();
+          if (isOwner && index == OwnerTabs.social) {
+            // Keep badges; SocialScreen dismisses per-surface when opening Feeds/Blog.
           }
         },
         destinations: [
-          NavigationDestination(
-            icon: const Icon(Icons.chat_bubble_outline),
-            selectedIcon: const Icon(Icons.chat_bubble),
-            label: l10n.navChats,
-          ),
-          if (isOwner) ...[
-            NavigationDestination(
-              icon: const Icon(Icons.inbox_outlined),
-              selectedIcon: const Icon(Icons.inbox),
-              label: l10n.navInbox,
-            ),
+          if (isOwner)
             NavigationDestination(
               icon: Badge(
-                isLabelVisible: contentBadge > 0,
-                label: Text(contentBadge > 99 ? '99+' : '$contentBadge'),
-                child: const Icon(Icons.language_outlined),
+                isLabelVisible: socialBadge > 0,
+                label: Text(socialBadge > 99 ? '99+' : '$socialBadge'),
+                child: const Icon(Icons.groups_outlined),
               ),
               selectedIcon: Badge(
-                isLabelVisible: contentBadge > 0,
-                label: Text(contentBadge > 99 ? '99+' : '$contentBadge'),
-                child: const Icon(Icons.language),
+                isLabelVisible: socialBadge > 0,
+                label: Text(socialBadge > 99 ? '99+' : '$socialBadge'),
+                child: const Icon(Icons.groups),
               ),
-              label: l10n.navContent,
+              label: l10n.navSocial,
+            )
+          else
+            NavigationDestination(
+              icon: const Icon(Icons.chat_bubble_outline),
+              selectedIcon: const Icon(Icons.chat_bubble),
+              label: l10n.navChats,
+            ),
+          if (isOwner) ...[
+            NavigationDestination(
+              icon: const Icon(Icons.terminal_outlined),
+              selectedIcon: const Icon(Icons.terminal),
+              label: l10n.navTerminal,
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.menu_book_outlined),
+              selectedIcon: const Icon(Icons.menu_book),
+              label: l10n.navKnowledge,
             ),
           ],
           NavigationDestination(

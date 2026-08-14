@@ -21,7 +21,22 @@ class AppLocalizationsKo extends AppLocalizations {
   String get navContent => '콘텐츠';
 
   @override
+  String get navSocial => '소셜';
+
+  @override
+  String get navTerminal => '터미널';
+
+  @override
+  String get navKnowledge => '지식';
+
+  @override
   String get navMe => '나';
+
+  @override
+  String get contentExplore => '탐색';
+
+  @override
+  String get termEmptyHint => '홈 노드에서 Pi 코딩 세션 또는 셸 터미널을 시작하세요.';
 
   @override
   String get commonCancel => '취소';

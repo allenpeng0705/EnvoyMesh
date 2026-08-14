@@ -4,16 +4,18 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../../knowledge/knowledge_nav.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/stored_node.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../providers/locale_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../services/locale_preferences.dart';
+import '../../services/push_preferences.dart';
+import '../../utils/localized_labels.dart';
 import '../../widgets/ai_engine_section.dart';
 import '../../widgets/connection_indicator.dart';
 import '../../widgets/profile_avatar.dart';
-import '../browser/browser_screen.dart';
 import '../chains/active_chains_screen.dart';
 import '../chains/recent_chains_screen.dart';
 import '../chains/start_chain_screen.dart';
@@ -24,10 +26,7 @@ import '../settings/ai_engine_settings_screen.dart';
 import '../settings/ai_model_settings_screen.dart';
 import '../settings/envoy_local_settings_screen.dart';
 import '../settings/pi_settings_screen.dart';
-import '../../knowledge/knowledge_nav.dart';
 import 'node_switcher_sheet.dart';
-import '../../utils/localized_labels.dart';
-import '../../services/push_preferences.dart';
 
 /// Profile + node management screen.
 class MeScreen extends ConsumerStatefulWidget {
@@ -258,7 +257,15 @@ class _MeScreenState extends ConsumerState<MeScreen> {
         ? '@$_username'
         : ((_bio != null && _bio!.isNotEmpty) ? _bio! : null);
 
-    return ListView(
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(l10n.navMe),
+        actions: const [
+          ConnectionIndicator(),
+          SizedBox(width: 12),
+        ],
+      ),
+      body: ListView(
       padding: const EdgeInsets.all(16),
       children: [
         const SizedBox(height: 8),
@@ -564,11 +571,7 @@ class _MeScreenState extends ConsumerState<MeScreen> {
               title: Text(l10n.meBrowser),
               subtitle: Text(l10n.meBrowserHint),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const BrowserScreen()),
-                );
-              },
+              onTap: () => openSocialExplore(ref),
             ),
           ),
           const SizedBox(height: 8),
@@ -693,34 +696,6 @@ class _MeScreenState extends ConsumerState<MeScreen> {
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.menu_book_outlined),
-                  title: Text(l10n.meKnowledge),
-                  subtitle: Text(
-                    l10n.meKnowledgeHint,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => openContentKnowledge(
-                    ref,
-                    panel: KnowledgeHubPanel.setup,
-                  ),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.extension_outlined),
-                  title: Text(l10n.meKnowledgePlugins),
-                  subtitle: Text(
-                    l10n.meKnowledgePluginsHint,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => openContentKnowledge(
-                    ref,
-                    panel: KnowledgeHubPanel.plugins,
-                  ),
-                ),
-                const Divider(height: 1),
-                ListTile(
                   leading: const Icon(Icons.memory),
                   title: Text(l10n.meEnvoyLocal),
                   subtitle: Text(
@@ -816,6 +791,7 @@ class _MeScreenState extends ConsumerState<MeScreen> {
           const SizedBox(height: 8),
         ],
       ],
+      ),
     );
   }
 

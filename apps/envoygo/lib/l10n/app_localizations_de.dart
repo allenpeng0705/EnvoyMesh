@@ -21,7 +21,23 @@ class AppLocalizationsDe extends AppLocalizations {
   String get navContent => 'Inhalt';
 
   @override
+  String get navSocial => 'Social';
+
+  @override
+  String get navTerminal => 'Terminal';
+
+  @override
+  String get navKnowledge => 'Wissen';
+
+  @override
   String get navMe => 'Ich';
+
+  @override
+  String get contentExplore => 'Entdecken';
+
+  @override
+  String get termEmptyHint =>
+      'Starten Sie eine Pi-Coding-Sitzung oder ein Shell-Terminal auf Ihrem Heimknoten.';
 
   @override
   String get commonCancel => 'Abbrechen';

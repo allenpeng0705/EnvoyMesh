@@ -21,7 +21,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get navContent => '内容';
 
   @override
+  String get navSocial => '社交';
+
+  @override
+  String get navTerminal => '终端';
+
+  @override
+  String get navKnowledge => '知识库';
+
+  @override
   String get navMe => '我';
+
+  @override
+  String get contentExplore => '探索';
+
+  @override
+  String get termEmptyHint => '在家庭节点上启动 Pi 编程会话或 Shell 终端。';
 
   @override
   String get commonCancel => '取消';

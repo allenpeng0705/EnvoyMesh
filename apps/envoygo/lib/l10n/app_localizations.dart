@@ -132,11 +132,41 @@ abstract class AppLocalizations {
   /// **'Content'**
   String get navContent;
 
+  /// No description provided for @navSocial.
+  ///
+  /// In en, this message translates to:
+  /// **'Social'**
+  String get navSocial;
+
+  /// No description provided for @navTerminal.
+  ///
+  /// In en, this message translates to:
+  /// **'Terminal'**
+  String get navTerminal;
+
+  /// No description provided for @navKnowledge.
+  ///
+  /// In en, this message translates to:
+  /// **'Knowledge'**
+  String get navKnowledge;
+
   /// No description provided for @navMe.
   ///
   /// In en, this message translates to:
   /// **'Me'**
   String get navMe;
+
+  /// No description provided for @contentExplore.
+  ///
+  /// In en, this message translates to:
+  /// **'Explore'**
+  String get contentExplore;
+
+  /// No description provided for @termEmptyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Start a Pi coding session or a shell terminal on your home node.'**
+  String get termEmptyHint;
 
   /// No description provided for @commonCancel.
   ///

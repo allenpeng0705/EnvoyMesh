@@ -16,15 +16,15 @@ class ContentEngageState {
   int get blogCount => items.where((i) => i.surface == 'blog').length;
   int get totalCount => items.length;
 
-  /// Content nav badge while [viewingContent]; hide Like/Comment for the open
-  /// Feed/Blog surface (same as Social ContentView folder-open UX).
+  /// Content / Social sub-tab index for Like/Comment badge folder-open UX.
+  /// Social surfaces: 0=chats, 1=feeds, 2=blog, 3=explore.
   int visibleTotalCount({
     required bool viewingContent,
     required int surfaceIndex,
   }) {
     var n = totalCount;
-    if (viewingContent && surfaceIndex == 0) n -= feedCount;
-    if (viewingContent && surfaceIndex == 1) n -= blogCount;
+    if (viewingContent && surfaceIndex == 1) n -= feedCount;
+    if (viewingContent && surfaceIndex == 2) n -= blogCount;
     return n < 0 ? 0 : n;
   }
 
@@ -32,13 +32,13 @@ class ContentEngageState {
     required bool viewingContent,
     required int surfaceIndex,
   }) =>
-      viewingContent && surfaceIndex == 0 ? 0 : feedCount;
+      viewingContent && surfaceIndex == 1 ? 0 : feedCount;
 
   int visibleBlogCount({
     required bool viewingContent,
     required int surfaceIndex,
   }) =>
-      viewingContent && surfaceIndex == 1 ? 0 : blogCount;
+      viewingContent && surfaceIndex == 2 ? 0 : blogCount;
 
   ContentEngageState copyWith({
     List<ContentEngageNotification>? items,
@@ -51,7 +51,7 @@ class ContentEngageState {
   }
 }
 
-/// Content sub-tab: 0=feed, 1=blog, 2=knowledge, 3=explore.
+/// Social sub-tab: 0=chats, 1=feeds, 2=blog, 3=explore.
 final contentSurfaceProvider = StateProvider<int>((ref) => 0);
 
 final contentEngageProvider =

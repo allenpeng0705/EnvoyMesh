@@ -9,6 +9,7 @@ import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../providers/node_provider.dart';
 import '../../screens/chat/chat_detail_screen.dart';
+import '../../widgets/connection_indicator.dart';
 import 'content_files_tab.dart';
 
 /// Knowledge hub — Content → Knowledge (Browse+Ask | Plugins | Setup).
@@ -233,7 +234,15 @@ class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
       _EmbedGateKind.error => l10n.knowledgeEmbedGateStripError,
       _ => l10n.knowledgeEmbedGateStripNeeded,
     };
-    return Column(
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(l10n.navKnowledge),
+        actions: const [
+          ConnectionIndicator(),
+          SizedBox(width: 12),
+        ],
+      ),
+      body: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
@@ -241,11 +250,6 @@ class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                l10n.knowledgeTitle,
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 4),
               Text(
                 l10n.knowledgeLede,
                 style: Theme.of(context).textTheme.bodySmall,
@@ -321,6 +325,7 @@ class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
           ),
         ),
       ],
+      ),
     );
   }
 }

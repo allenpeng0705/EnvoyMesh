@@ -4,13 +4,17 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
+import 'knowledge/knowledge_nav.dart';
 import 'l10n/app_localizations.dart';
 import 'models/chat_thread.dart';
+import 'navigation/owner_tabs.dart';
 import 'providers/chat_provider.dart';
+import 'providers/content_engage_provider.dart';
 import 'providers/locale_provider.dart';
 import 'providers/node_provider.dart';
 import 'screens/browser/browser_screen.dart';
 import 'screens/chat/chat_detail_screen.dart';
+import 'screens/inbox/inbox_screen.dart';
 import 'services/locale_preferences.dart';
 import 'services/push_notification_service.dart';
 import 'utils/localized_labels.dart';
@@ -109,11 +113,18 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
       case 'feed_notify':
         // Feed / vault is owner-only (Phase 51E).
         if (!isOwner) {
-          ref.read(chatProvider.notifier).selectTab(0);
+          ref.read(chatProvider.notifier).selectTab(OwnerTabs.social);
           break;
         }
         final url = hint['url'] as String?;
         if (url != null && url.isNotEmpty) {
+          // Land on Social → Explore underneath, then open the URL
+          // (same full-browser push pattern as Inbox rows).
+          ref.read(chatProvider.notifier).selectTab(OwnerTabs.social);
+          ref.read(contentSurfaceRequestProvider.notifier).state =
+              SocialSurfaces.explore;
+          ref.read(contentSurfaceProvider.notifier).state =
+              SocialSurfaces.explore;
           nav.push(MaterialPageRoute(
             builder: (_) => BrowserScreen(initialUrl: url),
           ));
@@ -121,16 +132,26 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
         break;
       case 'bond_request':
       case 'approval':
-        // Inbox is owner-only; family stack has no Inbox tab.
+        // Inbox is owner-only; open as a pushed screen from Social.
         if (!isOwner) {
-          ref.read(chatProvider.notifier).selectTab(0);
+          ref.read(chatProvider.notifier).selectTab(OwnerTabs.social);
           break;
         }
-        ref.read(chatProvider.notifier).selectTab(1);
+        ref.read(chatProvider.notifier).selectTab(OwnerTabs.social);
+        nav.push(MaterialPageRoute(
+          builder: (_) => Scaffold(
+            appBar: AppBar(title: Text(l10n.navInbox)),
+            body: const InboxScreen(),
+          ),
+        ));
         break;
       case 'pi_proposal':
-        // Pi is owner-only.
-        ref.read(chatProvider.notifier).selectTab(0);
+        // Pi lives under the Terminal tab.
+        if (!isOwner) {
+          ref.read(chatProvider.notifier).selectTab(OwnerTabs.social);
+          break;
+        }
+        ref.read(chatProvider.notifier).selectTab(OwnerTabs.terminal);
         break;
       default:
         // Chat thread (direct, room, or Ext Agent).
@@ -144,7 +165,7 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
           _pendingColdStartTap = raw;
           return;
         }
-        ref.read(chatProvider.notifier).selectTab(0);
+        ref.read(chatProvider.notifier).selectTab(OwnerTabs.social);
         if (threadType == 'external' || agentType == 'external') {
           nav.push(MaterialPageRoute(
             builder: (_) => ChatDetailScreen(
@@ -255,7 +276,7 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
         if (senderOwnerId == null) return;
         // Mesh DMs are owner-only.
         if (!isOwner) {
-          ref.read(chatProvider.notifier).selectTab(0);
+          ref.read(chatProvider.notifier).selectTab(OwnerTabs.social);
           break;
         }
         nav.push(MaterialPageRoute(

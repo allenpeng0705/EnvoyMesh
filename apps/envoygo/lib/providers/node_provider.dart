@@ -655,6 +655,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
       ownerId: result.ownerId,
     );
     _sessionRepairAttempted = false;
+    // Fresh pair — always start on Social/Chats (owner vs family tab sets differ).
+    _ref.read(chatProvider.notifier).selectTab(0);
 
     // Build the StoredNode with relays from the QR code.
     // Extra `rels` / bootstrapPeers WS URLs enable regional fallback.
@@ -904,6 +906,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
     final profileChanged = nextProfileId != state.familyProfileId ||
         nextIsOwner != state.isOwnerProfile;
+    final ownerRoleChanged = nextIsOwner != state.isOwnerProfile;
     final pairedChanged = nextPairedId != state.pairedFamilyProfileId;
 
     state = state.copyWith(
@@ -933,6 +936,11 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // on every home:config-updated).
     if (profileChanged) {
       unawaited(registerPushToken());
+      // Owner (4 tabs) vs family (2 tabs) share selectedTab indices differently
+      // (1 = Terminal vs Me). Reset to Social/Chats on identity flip.
+      if (ownerRoleChanged) {
+        _ref.read(chatProvider.notifier).selectTab(0);
+      }
     }
     // Owner toggled Ext Agent allow — refresh chat-row visibility from RPC
     // (masked getBridgeStatus) so we do not wait for an unrelated bridge push.

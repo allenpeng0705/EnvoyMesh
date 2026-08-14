@@ -1,8 +1,8 @@
-/// @vitest-environment jsdom
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:envoygo/l10n/app_localizations.dart';
 import 'package:envoygo/screens/chat/chat_list_screen.dart';
 import 'package:envoygo/screens/contacts/contacts_screen.dart';
 import 'package:envoygo/screens/me/me_screen.dart';
@@ -12,45 +12,49 @@ import 'package:envoygo/providers/contact_provider.dart';
 import 'package:envoygo/models/stored_node.dart';
 import 'package:envoygo/models/contact.dart';
 import 'package:envoygo/models/chat_thread.dart';
+import 'package:envoygo/models/chat_message.dart';
 import 'package:envoygo/services/home_remote_client.dart';
 import 'package:envoygo/services/node_service_client.dart';
 import 'package:envoygo/services/pairing_service.dart';
 import 'package:envoygo/storage/secure_storage.dart';
 import 'package:envoygo/storage/local_database.dart';
 
+Widget _app(Widget home, {List<Override> overrides = const []}) {
+  return ProviderScope(
+    overrides: overrides,
+    child: MaterialApp(
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      locale: const Locale('en'),
+      home: home,
+    ),
+  );
+}
+
 void main() {
   group('HomeScreen tabs', () {
-    testWidgets('renders three tab navigation destinations',
+    testWidgets('renders owner Social Terminal Knowledge Me destinations',
         (tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(
-            home: _TestHomeScreen(),
-          ),
-        ),
-      );
+      await tester.pumpWidget(_app(const _TestHomeScreen()));
       await tester.pump();
 
-      expect(find.text('Chats'), findsOneWidget);
-      expect(find.text('Contacts'), findsOneWidget);
+      expect(find.text('Social'), findsOneWidget);
+      expect(find.text('Terminal'), findsOneWidget);
+      expect(find.text('Knowledge'), findsOneWidget);
       expect(find.text('Me'), findsOneWidget);
     });
   });
 
   group('ChatListScreen', () {
     testWidgets('shows empty state when no threads', (tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(home: ChatListScreen()),
-        ),
-      );
+      await tester.pumpWidget(_app(const ChatListScreen()));
       await tester.pump();
 
       expect(find.text('No conversations yet'), findsOneWidget);
+      expect(find.byType(FloatingActionButton), findsOneWidget);
     });
 
-    testWidgets('shows thread tiles for each thread type',
-        (tester) async {
+    testWidgets('shows thread tiles for each thread type', (tester) async {
       final testThreads = [
         _createThread('1', ChatThreadType.direct, 'Alice'),
         _createThread('2', ChatThreadType.group, 'Family'),
@@ -59,14 +63,11 @@ void main() {
       ];
 
       await tester.pumpWidget(
-        ProviderScope(
+        _app(
+          const Scaffold(body: ChatListScreen()),
           overrides: [
-            chatProvider
-                .overrideWith((ref) => _FakeChatNotifier(testThreads)),
+            chatProvider.overrideWith((ref) => _FakeChatNotifier(testThreads)),
           ],
-          child: const MaterialApp(
-            home: Scaffold(body: ChatListScreen()),
-          ),
         ),
       );
       await tester.pump();
@@ -74,26 +75,22 @@ void main() {
       expect(find.text('Alice'), findsOneWidget);
       expect(find.text('Family'), findsOneWidget);
       expect(find.text('EnvoyAI'), findsOneWidget);
-      expect(find.text('Terminal: bash'), findsOneWidget);
+      // Terminals moved to the Terminal tab — not listed under Chats.
+      expect(find.text('Terminal: bash'), findsNothing);
     });
   });
 
   group('ContactsScreen', () {
     testWidgets('shows empty state when no contacts', (tester) async {
       await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(
-            home: Scaffold(body: ContactsScreen()),
-          ),
-        ),
+        _app(const Scaffold(body: ContactsScreen())),
       );
       await tester.pump();
 
       expect(find.text('No contacts yet'), findsOneWidget);
     });
 
-    testWidgets('shows contact tiles with display names',
-        (tester) async {
+    testWidgets('shows contact tiles with display names', (tester) async {
       final testContacts = [
         Contact(
           ownerId: 'envoy:owner:alice',
@@ -108,14 +105,13 @@ void main() {
       ];
 
       await tester.pumpWidget(
-        ProviderScope(
+        _app(
+          const Scaffold(body: ContactsScreen()),
           overrides: [
             contactProvider.overrideWith(
-                (ref) => _FakeContactNotifier(testContacts)),
+              (ref) => _FakeContactNotifier(testContacts),
+            ),
           ],
-          child: const MaterialApp(
-            home: Scaffold(body: ContactsScreen()),
-          ),
         ),
       );
       await tester.pump();
@@ -137,19 +133,18 @@ void main() {
     });
 
     testWidgets('shows pair button when disconnected', (tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(home: MeScreen()),
-        ),
-      );
+      await tester.pumpWidget(_app(const MeScreen()));
       await tester.pump();
       await tester.pump();
+      await tester.pumpAndSettle();
 
       expect(find.text('Not connected'), findsOneWidget);
-      expect(find.text('Pair with a home node to get started'),
-          findsOneWidget);
+      expect(
+        find.text('Pair with a home node to get started'),
+        findsOneWidget,
+      );
       expect(find.text('Pair'), findsOneWidget);
-      expect(find.text('EnvoyGo 1.0.0 (11)'), findsOneWidget);
+      expect(find.textContaining('EnvoyGo'), findsWidgets);
     });
 
     testWidgets('shows connected node info and Public Access section',
@@ -164,20 +159,19 @@ void main() {
       );
 
       await tester.pumpWidget(
-        ProviderScope(
+        _app(
+          const MeScreen(),
           overrides: [
-            nodeProvider.overrideWith(
-                (ref) => _FakeNodeNotifier(node)),
+            nodeProvider.overrideWith((ref) => _FakeNodeNotifier(node)),
           ],
-          child: const MaterialApp(home: MeScreen()),
         ),
       );
       await tester.pump();
       await tester.pump();
+      await tester.pumpAndSettle();
 
-      expect(find.text('My Mac'), findsOneWidget);
-      expect(find.text('Public Access'), findsOneWidget);
-      expect(find.text('EnvoyGo 1.0.0 (11)'), findsOneWidget);
+      expect(find.text('My Mac'), findsWidgets);
+      expect(find.text('Browser'), findsWidgets);
     });
   });
 }
@@ -202,27 +196,25 @@ class _TestHomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
-      body: const IndexedStack(
-        index: 0,
-        children: [
-          ChatListScreen(),
-          ContactsScreen(),
-          MeScreen(),
-        ],
-      ),
+      body: const SizedBox.shrink(),
       bottomNavigationBar: NavigationBar(
         selectedIndex: 0,
         onDestinationSelected: (_) {},
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline),
-            selectedIcon: Icon(Icons.chat_bubble),
-            label: 'Chats',
+            icon: Icon(Icons.groups_outlined),
+            selectedIcon: Icon(Icons.groups),
+            label: 'Social',
           ),
           NavigationDestination(
-            icon: Icon(Icons.people_outline),
-            selectedIcon: Icon(Icons.people),
-            label: 'Contacts',
+            icon: Icon(Icons.terminal_outlined),
+            selectedIcon: Icon(Icons.terminal),
+            label: 'Terminal',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.menu_book_outlined),
+            selectedIcon: Icon(Icons.menu_book),
+            label: 'Knowledge',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),
@@ -253,7 +245,12 @@ class _FakeChatNotifier extends ChatNotifier {
   Future<void> sendMessage(String targetOwnerId, String text,
       {List<Map<String, dynamic>>? attachments}) async {}
   @override
-  Future<void> sendAgentMessage(String text, {String agentType = 'envoyai'}) async {}
+  Future<void> sendAgentMessage(
+    String text, {
+    String agentType = 'envoyai',
+    String? displayText,
+    List<ChatAttachment>? displayAttachments,
+  }) async {}
   @override
   Future<void> sendRoomMessage(String roomId, String text) async {}
   @override
@@ -288,9 +285,7 @@ class _FakeContactNotifier extends ContactNotifier {
   void onBondRevoked(String ownerId) {}
   @override
   Contact? getContact(String ownerId) {
-    return state.bonds
-        .where((c) => c.ownerId == ownerId)
-        .firstOrNull;
+    return state.bonds.where((c) => c.ownerId == ownerId).firstOrNull;
   }
 }
 

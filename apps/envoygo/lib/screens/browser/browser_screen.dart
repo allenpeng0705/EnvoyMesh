@@ -36,7 +36,10 @@ class BrowserScreen extends ConsumerStatefulWidget {
   /// Optional deep-link URL (e.g. from Inbox `feed.notify` → Open in Browser).
   final String? initialUrl;
 
-  const BrowserScreen({super.key, this.initialUrl});
+  /// When true, omit outer [Scaffold]/[AppBar] (hosted inside Social → Explore).
+  final bool embedded;
+
+  const BrowserScreen({super.key, this.initialUrl, this.embedded = false});
 
   @override
   ConsumerState<BrowserScreen> createState() => _BrowserScreenState();
@@ -321,12 +324,8 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
         isEnvoyContentUrl(_urlController.text);
 
     final l10n = AppLocalizations.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.browserTitle),
-      ),
-      body: Column(
-        children: [
+    final body = Column(
+      children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
             child: Row(
@@ -386,7 +385,15 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
           const Divider(height: 1),
           Expanded(child: _buildBody(context)),
         ],
+    );
+
+    if (widget.embedded) return body;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(l10n.browserTitle),
       ),
+      body: body,
     );
   }
 
