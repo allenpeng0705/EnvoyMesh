@@ -28,6 +28,7 @@ import { createApprovalItem, isAgentNetworkMember, rankWorkersByScore, scoreAgen
 import { hasDirectPrivateLanDialHints, type EnvoyMesh } from "@envoymesh/network";
 import { anLog, shortId } from "./agent-network-debug.js";
 import {
+  buildChainLiveSteps,
   buildInputArtifacts,
   chainStateSnapshot,
   chooseWorkersForSubtask,
@@ -44,7 +45,9 @@ import {
   retryStaleAccepts,
   retryStaleProposals,
   sendChainAccept,
+  sendChainCancel,
   sendChainHandoff,
+  reassignStalledSubtask,
   trackChain,
   type ChainOrchestratorHandlerDeps,
   type ChainState,
@@ -1620,6 +1623,145 @@ export async function _executeApprovedChainAward(
 
 const CHAIN_STATUS_BROADCAST_MIN_INTERVAL_MS = 2_000;
 
+/** Collect root + transitive dependents for owner cancel-by-subtask. */
+export function collectSubtaskCancelClosure(
+  state: ChainState,
+  rootSubtaskId: string,
+): string[] {
+  const out = new Set<string>([rootSubtaskId]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const sub of state.subtasks.values()) {
+      if (out.has(sub.subtaskId)) continue;
+      if ((sub.dependsOn ?? []).some((d) => out.has(d))) {
+        out.add(sub.subtaskId);
+        grew = true;
+      }
+    }
+  }
+  return [...out];
+}
+
+/**
+ * Phase 58C — owner cancel (whole chain or subtask + dependents), notify
+ * awarded workers, emit live state.
+ */
+export async function cancelChainOwnerAction(
+  deps: ChainOrchestrationContext,
+  params: import("@envoymesh/api").ChainCancelParams,
+): Promise<import("@envoymesh/api").ChainCancelResult> {
+  const runtime = deps.getChainStore().getRuntime(params.chainId);
+  if (!runtime) {
+    return { chainId: params.chainId, cancelled: [] };
+  }
+  const state = runtime.state;
+  let cancelled: string[];
+  if (params.subtaskId) {
+    cancelled = collectSubtaskCancelClosure(state, params.subtaskId);
+    for (const id of cancelled) state.cancelledSubtasks.add(id);
+  } else {
+    state.chainCancelled = true;
+    cancelled = [...state.subtasks.keys()];
+  }
+
+  try {
+    const orchDeps = await buildChainOrchestratorDeps(deps);
+    const nowIso = new Date().toISOString();
+    // Release budget for every cancelled award (subtask or whole-chain).
+    for (const id of cancelled) {
+      if (!state.awards.has(id)) continue;
+      try {
+        await state.ledger.release(id, "owner cancel");
+      } catch (err) {
+        console.warn(`[chain.cancel] ledger release failed for ${id}:`, err);
+      }
+    }
+
+    if (params.subtaskId) {
+      // Notify each awarded cancelled step with its own subtaskId so workers
+      // abort the correct work (dependents must not receive only the root id).
+      for (const id of cancelled) {
+        const award = state.awards.get(id);
+        if (!award?.workerPeerId) continue;
+        await sendChainCancel(orchDeps, award.workerPeerId, {
+          chainId: params.chainId,
+          subtaskId: id,
+          reason: params.reason.slice(0, 2000),
+          cancelledBy: params.cancelledBy,
+          notifyWorkerPeerIds: [award.workerPeerId],
+          createdAt: nowIso,
+        });
+      }
+    } else {
+      // Whole-chain: one cancel per involved peer (no subtaskId) so workers
+      // drop all pending bids / in-flight work for the chain.
+      const peers = new Set<string>();
+      for (const award of state.awards.values()) {
+        if (award.workerPeerId) peers.add(award.workerPeerId);
+      }
+      for (const workers of state.workersBySubtask.values()) {
+        for (const w of workers) peers.add(w);
+      }
+      for (const peer of peers) {
+        await sendChainCancel(orchDeps, peer, {
+          chainId: params.chainId,
+          reason: params.reason.slice(0, 2000),
+          cancelledBy: params.cancelledBy,
+          notifyWorkerPeerIds: [peer],
+          createdAt: nowIso,
+        });
+      }
+    }
+  } catch (err) {
+    console.warn(`[chain.cancel] notify failed for ${params.chainId}:`, err);
+  }
+  _emitChainState(deps, params.chainId);
+  return { chainId: params.chainId, cancelled };
+}
+
+/** Phase 58C — owner-forced stall reassign for one step. */
+export async function reassignSubtaskOwnerAction(
+  deps: ChainOrchestrationContext,
+  params: import("@envoymesh/api").ChainReassignSubtaskParams,
+): Promise<import("@envoymesh/api").ChainReassignSubtaskResult> {
+  const runtime = deps.getChainStore().getRuntime(params.chainId);
+  if (!runtime) {
+    return {
+      ok: false,
+      chainId: params.chainId,
+      subtaskId: params.subtaskId,
+      error: "chain_not_found",
+    };
+  }
+  try {
+    const orchDeps = await buildChainOrchestratorDeps(deps);
+    const result = await reassignStalledSubtask(orchDeps, runtime.state, params.subtaskId);
+    _emitChainState(deps, params.chainId);
+    if (!result.ok) {
+      return {
+        ok: false,
+        chainId: params.chainId,
+        subtaskId: params.subtaskId,
+        error: result.reason,
+      };
+    }
+    return {
+      ok: true,
+      chainId: params.chainId,
+      subtaskId: params.subtaskId,
+      nextWorkerPeerId: result.nextWorkerPeerId,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      chainId: params.chainId,
+      subtaskId: params.subtaskId,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 export function _emitChainState(deps: ChainOrchestrationContext, chainId: string): void {
   const runtime = deps.getChainStore().getRuntime(chainId);
   if (!runtime) return;
@@ -1631,6 +1773,7 @@ export function _emitChainState(deps: ChainOrchestrationContext, chainId: string
   state.awardMode = chainSide.awardModes.get(chainId) ?? "direct";
   state.showCostUi = chainSide.showCostUi.get(chainId) ?? false;
   state.budgetWarningLevel = chainBudgetWarningLevel(runtime.state);
+  state.steps = buildChainLiveSteps(runtime.state);
   populateIterationInState(runtime, state);
   deps.emit("chain:state", state);
   // Fan-out read-only status to joined workers (debounced).

@@ -4,6 +4,7 @@ This is the living plan for EnvoyMesh. Update it whenever scope changes, decisio
 
 **Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · **[EMP / EnvoyAI](./protocol-standard.md)** · [EnvoyAI design guide](./envoyai-protocol.md) · [QuickStart](../QuickStart.md) · [Agentic next step](./next-step.md) · [Discovery/connectivity POC](./poc-discovery-connectivity.md) · **[Live connectivity testing](./live-connectivity-testing.md)** · **[Operator relay fleet](./operator-relay-fleet.md)** · **[Relay server design (multi-relay fleet)](./relay-server-design.md)** · **[SQLite adoption](./sqlite-adoption.md)** · **[P2P file sharing (design plan)](./p2p-file-sharing-plan.md)** · **[AI Document Backbone (agent publish/find/share)](./ai-document-backbone-plan.md)** · **[Native owner agent (Assistant = Agent)](./native-owner-agent.md)** · **[IPFS / Helia integration](./helia-ipfs-integration-plan.md)** · **[External distribution via IPFS](./external-distribution-ipfs-plan.md)** · **[Kubo + Helia operator runbook](./envoymesh-with-kubo-helia.md)** · **[Trust mode & bilateral social mediation](./trust-mode-social-protocol.md)** · **[Trust mode implementation plan](./trust-mode-implementation-plan.md)** · **[A2A routing, actor disclosure & owner visibility](./a2a-actor-visibility-plan.md)** · **[Redesign strategy](./redesign-strategy.md)** · **[Team job iteration (A ∩ B)](./agent-network-iteration.md)** · **[Team jobs UX (readiness + live story)](./agent-network-ux-team-jobs.md)** · **[Team job input delivery](./agent-network-job-input-delivery.md)** · **[Fleet bootstrap](./fleet-bootstrap.md)**
 
+
 ## Status Legend
 
 - `[ ]` Not started
@@ -93,7 +94,8 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 55 — Ext Agent: codex + claudecode (Plan B + daemon supervisor)](#phase-55--ext-agent-codex--claudecode-plan-b--daemon-supervisor)
 - [Phase 56 — Ext Agent: cursor-agent + aider + mmx (one-shot CLI pattern)](#phase-56--ext-agent-cursor-agent--aider--mmx-one-shot-cli-pattern)
 - [Phase 57 — Knowledge Base production hardening (Markdown-first + anydoc)](#phase-57--knowledge-base-production-hardening-markdown-first--anydoc-)
-- [Phase 58 — Team jobs UX (fleet readiness, live story, multi-node)](#phase-58--team-jobs-ux-fleet-readiness-live-story-multi-node-designed)
+- [Phase 58 — Team jobs UX (fleet readiness, live story, multi-node)](#phase-58--team-jobs-ux-fleet-readiness-live-story-multi-node)
+
 - [Phase 59 — Team job input delivery (bytes to workers, not vault sync)](#phase-59--team-job-input-delivery-bytes-to-workers-not-vault-sync-designed)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
@@ -1164,7 +1166,8 @@ Milestone: **Phases 0–48 shipped for interop bridges** — Core protocol throu
 
 **Last shipped:** **Phase 48 — A2A + MCP Interop Bridges (48A–48D).** MCP tool consumer (`mesh.mcp.*`), MCP server adapter (`npx envoymesh mcp-server`), A2A Agent Card on relay `/.well-known/agent-card.json`, and A2A Task Bridge JSON-RPC (`message/send` / `tasks/get` / `tasks/cancel`) with auth + state/artifact maps + relay proxy. **~191 dedicated unit tests green.** Design: [a2a-mcp-interop-design.md](./a2a-mcp-interop-design.md). Earlier recent ship: Phase 47 Team job multi-round iteration (47A–47D).
 
-**Active:** **Phase 58 — Team jobs UX** (fleet readiness checklist, live job story / artifacts honesty, per-step + worker UX, EnvoyGo iteration, Advanced Assigner picker). Design: [agent-network-ux-team-jobs.md](./agent-network-ux-team-jobs.md). **Next after 58:** Phase 59 job input delivery ([agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md)). Also tracked: Phase 54 Envoy Local (shipped checklist); ICE media-transport ([voice-video-call-support.md](./voice-video-call-support.md)); Phase 41 UX checklist in [agent_network.md §13](./agent_network.md#13-phase-41--making-agent-network-usable--powerful).
+**Active:** **Phase 59 — Team job input delivery** (designed; after Phase 58). Design: [agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md). Also tracked: Phase 54 Envoy Local; ICE media-transport ([voice-video-call-support.md](./voice-video-call-support.md)).
+
 
 ### Next planning pulls
 
@@ -5643,13 +5646,14 @@ While finalizing Phase 42 we discovered a few of the shipped pieces were wire-le
 - `[x]` Two-home libp2p smoke in CI (43F — `chain-two-home-smoke.test.ts`)
 - `[x]` EnvoyGo read-only active-chains mirror (43H — `ActiveChainsScreen`)
 - `[x]` Bid justification + cost range shown before and during chain (43E)
-- `[ ]` Zero-worker and stale-agent-card errors are user-actionable (43F diagnostics copy) — **tracked under Phase 58A** ([agent-network-ux-team-jobs.md](./agent-network-ux-team-jobs.md))
+- `[x]` Zero-worker and stale-agent-card errors are user-actionable (43F → **Phase 58A** `FleetReadinessPanel`)
+
 - `[x]` Budget warning + one-tap cancel from primary UI (43G)
 
 ### Cross-references
 
 - [agent_network.md §13](./agent_network.md#13-phase-41--making-agent-network-usable--powerful) — original 41A–41G design (superseded for tracking by Phase 43)
-- [Phase 58](#phase-58--team-jobs-ux-fleet-readiness-live-story-multi-node-designed) — fleet readiness + live story follow-on
+- [Phase 58](#phase-58--team-jobs-ux-fleet-readiness-live-story-multi-node) — fleet readiness + live story follow-on
 - Phase 40F — production wiring baseline
 - `apps/node/src/chain-worker.ts` — `executeSubtask` hook (43A)
 - `apps/node/src/chain-bid-strategy.ts` — `rankBids()` (43C)
@@ -7413,78 +7417,51 @@ Primary code touchpoints:
 
 ---
 
-## Phase 58 — Team jobs UX (fleet readiness, live story, multi-node) **designed**
+## Phase 58 — Team jobs UX (fleet readiness, live story, multi-node)
 
-> **Status:** `[ ]` designed — **no code yet.** Implement **58A → 58B → 58C → 58D → 58E**.  
-> **Design (source of truth):** [agent-network-ux-team-jobs.md](./agent-network-ux-team-jobs.md)  
-> **Related:** [agent-network-guide.md](./agent-network-guide.md) · [agent-network-artifacts.md](./agent-network-artifacts.md) · [agent-network-iteration.md](./agent-network-iteration.md) · [agent-network-plan-assign.md](./agent-network-plan-assign.md) · Phase 43 open diagnostics criterion
+> **Status:** `[x]` **58A–58E shipped**.  
+> **Design:** [agent-network-ux-team-jobs.md](./agent-network-ux-team-jobs.md)
 
-**Goal:** Make Team jobs hireable and operable across bonded homes — actionable fleet readiness, a trustworthy live job story (objectives / DAG / artifact handoff visibility), per-step control, clearer worker UX, EnvoyGo owner unblock, and an Advanced remote Assigner picker — **without** mixing chat recruitment into the default product.
+**Goal:** Actionable fleet readiness, live job story, per-step control, worker UX, EnvoyGo unblock, Advanced Assigner — **without** chat recruitment.
 
-**Hard rules:**
+### Explicitly out of scope
 
-- Team jobs live in **Team jobs** (and Me → Team jobs on EnvoyGo). Chat stays chat.
-- Most nodes leave Agent Network **off** — never assume peers are recruitable.
-- Composer attachments live on the **Assigner home vault**; Phase 53 passes **refs / packed artifacts**, not silent cross-home vault sync.
-- Prefer exposing existing RPC (`chainCancel` by `subtaskId`, `chainListObserved`, `assignerPeerId` / handoff, `chainResolveIteration`) before inventing new wire.
+- Chat / 1:1 / group “Run as team job” recruitment
+- Standing vault sync (byte delivery → Phase 59)
+- Competitive bid inbox on EnvoyGo
 
-### Explicitly out of scope (parked)
+### 58A — Fleet readiness checklist `[x]`
 
-- `[ ]` Always-on “Run as team job” in chat / message chrome (Phase 43B strings may remain unused)
-- `[ ]` 1:1 / group chat = automatic worker pool (eligibility mismatch)
-- `[ ]` Standing **vault sync** across homes — wrong shape; **byte delivery** is [Phase 59](#phase-59--team-job-input-delivery-bytes-to-workers-not-vault-sync-designed)
-- `[ ]` Competitive bid inbox on EnvoyGo
+- `[x]` `FleetReadinessPanel` + `fleet-readiness.ts` (Join → engine → bond → peer Join → card → online → other ready)
+- `[x]` Skip Preview when `skipPreview` (empty pool / Join off / engine down)
+- `[x]` Wire start dialog, Team jobs empty, detail no-workers
+- `[x]` EnvoyGo thin readiness hints
+- `[x]` i18n en+zh + unit/component tests
+- `[x]` Phase 43 zero-worker criterion closed
 
-### 58A — Fleet readiness checklist `[ ]`
+### 58B — Live job story + artifact honesty `[x]`
 
-Closes Phase 43’s open “zero-worker / stale card” criterion.
+- `[x]` `ChainGetStateResult.steps[]` with objectives / deps / waitingOn / produced
+- `[x]` Social detail DAG + attachment honesty copy
+- `[x]` EnvoyGo step list (light)
 
-- `[ ]` Shared `FleetReadinessPanel` (Join → engine → bond → peer Join → fresh card → online → other ready peer), each row one CTA
-- `[ ]` Show **before Preview** when selectable pool is empty (skip useless LLM plan when Join off / no ready peers)
-- `[ ]` Replace dead-end `noWorkers` blocks in start dialog + bid inbox with the checklist
-- `[ ]` EnvoyGo start screen: same checklist, thinner CTAs
-- `[ ]` i18n (`chains.readiness.*` / extend `chains.start.*`) + component tests
-- `[ ]` Flip Phase 43 exit criterion to `[x]` when actionable
+### 58C — Per-step control + worker UX `[x]`
 
-### 58B — Live job story + artifact / attachment honesty `[ ]`
+- `[x]` Cancel/reassign one step; observed read-only badges
 
-- `[ ]` Extend `ChainGetStateResult` with optional `steps[]` (objective, state, `dependsOn`, worker/role/`threadId`, `waitingOn` / `produced` — labels/keys only; see design §6.1)
-- `[ ]` Populate from orchestrator runtime (plan + awards + partials + `buildInputArtifacts` bookkeeping)
-- `[ ]` Social detail: DAG-ish tree with objectives + waiting-on / produced lines (retire best-effort-only tree)
-- `[ ]` Job header: **Inputs on this home** for composer attachments; short honesty copy (no cross-home sync promise)
-- `[ ]` EnvoyGo active detail: step list + waiting-on one-liners
-- `[ ]` Unit + UI fixture tests
+### 58D — EnvoyGo control surface `[x]`
 
-### 58C — Per-step control + worker-side UX `[ ]`
+- `[x]` `waitingForOwner` → `chainResolveIteration`; observed list
 
-- `[ ]` Assigner UI: cancel single step via `chainCancel({ subtaskId })`; dependents terminal with reason
-- `[ ]` Assigner UI: one-click reassign (existing stall-reassign path; respect cap) — no free-form peer picker in v1
-- `[ ]` Observed cards: badges for assigned / waiting on Assigner / blocked on prior / done; **no** Cancel/Award
-- `[ ]` Tests for cancel-by-subtask sibling survival + observed read-only
+### 58E — Assigner picker (Advanced) `[x]`
 
-### 58D — EnvoyGo control surface `[ ]`
+- `[x]` Orchestrate on this node / bonded peer via existing handoff
 
-- `[ ]` `waitingForOwner` banner → `chainResolveIteration` (Approve / Continue / Stop)
-- `[ ]` Prefer WS `chain:state` / `chain:iteration` when available; else shorten poll while awaiting owner
-- `[ ]` Observed jobs list (read-only; same semantics as Social)
-- `[ ]` Widget / client tests
+### Exit criteria
 
-### 58E — Assigner picker (Advanced) `[ ]`
-
-- `[ ]` Collapsed Advanced on start: “Orchestrate on: This node | Bonded peer (Join + ready)”
-- `[ ]` Wire existing `assignerPeerId` / `task.chain.handoff`; surface pending → accepted / rejected / expired
-- `[ ]` Default remains this node; no chat entry
-- `[ ]` Reuse / extend handoff E2E
-
-### Exit criteria (overall)
-
-- `[ ]` Cold start: Join → bond → refresh → ≥1 selectable worker without guessing (58A)
-- `[ ]` Running job: owner can answer “what’s stuck and why?” from detail (58B)
-- `[ ]` Cancel/reassign one step without always killing the whole job (58C)
-- `[ ]` Worker never sees manage actions on observed jobs (58C)
-- `[ ]` Phone can unblock `waitingForOwner` without Social (58D)
-- `[ ]` Remote Assigner optional under Advanced only (58E)
-- `[ ]` Design doc stays authoritative; Phase 43 diagnostics criterion closed via 58A
+- `[x]` 58A cold-start checklist
+- `[x]` 58B live job story + honesty
+- `[x]` 58C–58E as designed
 
 ---
 
@@ -7557,10 +7534,13 @@ Closes Phase 43’s open “zero-worker / stale card” criterion.
 
 ## Changelog (this document)
 
+
 | Date | Change |
 |------|--------|
 | 2026-08-14 | **Phase 59 designed — Team job input delivery (bytes to workers, not vault sync).** Design doc [agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md); checklist 59A–59E after Phase 58. Standing vault sync remains a non-goal; one-shot job-scoped handoff planned instead. TOC + Related + Next planning pulls + Phase 58 out-of-scope pointer updated. **No code yet.** |
-| 2026-08-14 | **Phase 58 designed — Team jobs UX (fleet readiness, live story, multi-node).** Design doc [agent-network-ux-team-jobs.md](./agent-network-ux-team-jobs.md); checklist 58A–58E. Chat→team-job recruitment explicitly parked. Phase 43 open zero-worker criterion tracked under 58A. TOC + Active milestone + Next planning pulls updated. **No code yet.** |
+| 2026-08-14 | **Phase 58 complete (58A–58E).** Fleet readiness, live steps + honesty, per-step cancel/reassign + observed badges, EnvoyGo iteration/observed, Advanced Assigner picker. Next: **Phase 59** job input delivery. |
+| 2026-08-14 | **Phase 58B shipped — Live job story + attachment honesty.** `buildChainLiveSteps` → `chainGetState` / listActive / `chain:state`; Social `ChainLiveSteps` + honesty; EnvoyGo step list. Next: **58C**. |
+| 2026-08-14 | **Phase 58A shipped — Fleet readiness checklist.** `FleetReadinessPanel` + skip Preview; Social + EnvoyGo; Phase 43 zero-worker closed. Next: **58B**. Design: [agent-network-ux-team-jobs.md](./agent-network-ux-team-jobs.md). |
 | 2026-08-13 | **Phase 57 security follow-up.** Materialize + MCP write-back default **private** (path heuristic for `notes/imports/` + `notes/mcp/`, sensitivity override on write); owner-gate `saveExternalMcpSearchAsNote` / `convertLibraryItemToMarkdown` / `reindexRagKnowledge`; Obsidian collect triggers RAG reindex when paths move. |
 | 2026-08-13 | **Phase 57E complete.** Chat/Ext Agent attachments extract Office/PDF/HTML via `extractVaultDocumentText`; acquisition inbox preserves real extensions; inbound share/chat transfer best-effort materializes to `notes/imports/`. Phase 57 closed. |
 | 2026-08-13 | **Phase 57D MCP external KB.** Soft-fail MCP search with timeout/URL validation; `lastExternalKbError` on RAG status; Settings copy clarifies search≠vault sync; gated `mcpWriteBackEnabled` + `saveExternalMcpSearchAsNote` → `notes/mcp/`. Next: remaining **57E**. |

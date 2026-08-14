@@ -278,7 +278,7 @@ say `chain`.
 | [implementation-plan.md](./implementation-plan.md) | Phase checklists (32, 35–36, 40–43, 47) |
 | [agent-network-plan-assign.md](./agent-network-plan-assign.md) | Assigner plan+assign + merge (shipped) |
 | [agent-network-artifacts.md](./agent-network-artifacts.md) | Parent→child artifact handoff + thread stickiness (Phase 53) |
-| [agent-network-ux-team-jobs.md](./agent-network-ux-team-jobs.md) | Fleet readiness, live job story, multi-node UX (Phase 58, designed) |
+| [agent-network-ux-team-jobs.md](./agent-network-ux-team-jobs.md) | Fleet readiness + live job story UX (Phase 58 shipped) |
 | [agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md) | Job input delivery to workers — one-shot bytes, not vault sync (Phase 59, after 58) |
 | [agent-network-iteration.md](./agent-network-iteration.md) | Multi-round Team job iteration A ∩ B (Phase 47, shipped) |
 

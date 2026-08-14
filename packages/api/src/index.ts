@@ -14,6 +14,7 @@ export * from "./chat-model-probe.js";
 export * from "./connectivity-tuning.js";
 export * from "./contact-ai-access.js";
 export * from "./ai-identity-prefix.js";
+export * from "./ai-settings.js";
 export * from "./autonomous-policy.js";
 export * from "./auto-reply-limits.js";
 export * from "./agent-circle.js";

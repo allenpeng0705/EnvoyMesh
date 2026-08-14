@@ -2384,34 +2384,13 @@ export function buildChainStatusPayload(
 ): TaskChainStatusPayload {
   const awardMode = opts?.awardMode === "competitive" ? "competitive" : "direct";
   const createdAt = (opts?.now ?? (() => new Date()))().toISOString();
-  const steps = [...state.subtasks.values()].map((sub) => {
-    let stepState: TaskChainStatusPayload["steps"][number]["state"] = "pending";
-    if (state.cancelledSubtasks.has(sub.subtaskId) || state.chainCancelled) {
-      stepState = "cancelled";
-    } else if (state.awards.has(sub.subtaskId)) {
-      const partial = state.partials.get(sub.subtaskId);
-      const body = partial?.partial;
-      if (body?.isFinal) {
-        stepState = isFailedWorkerFinalPartial({
-          partial: body,
-        } as TaskChainPartialPayload)
-          ? "failed"
-          : "done";
-      } else if (partial) {
-        stepState = "running";
-      } else {
-        stepState = "awarded";
-      }
-    } else if (state.proposedSubtasks.has(sub.subtaskId)) {
-      stepState = "offered";
-    }
-    return {
-      subtaskId: sub.subtaskId,
-      objective: sub.objective.slice(0, 500),
-      state: stepState,
-      workerPeerId: state.awards.get(sub.subtaskId)?.workerPeerId,
-    };
-  });
+  const steps = buildChainLiveSteps(state).map((s) => ({
+    subtaskId: s.subtaskId,
+    objective: s.objective.slice(0, 500),
+    state: s.state,
+    workerPeerId: s.workerPeerId,
+    waitingOn: s.waitingOn,
+  }));
   let finalPartialCount = 0;
   for (const p of state.partials.values()) {
     if (p.partial?.isFinal) finalPartialCount += 1;
@@ -2444,6 +2423,124 @@ export function buildChainStatusPayload(
     steps,
     readOnly: true,
     createdAt,
+  });
+}
+
+/**
+ * Phase 58B — assigner live steps (objectives, deps, waitingOn / produced).
+ * Shared state machine with {@link buildChainStatusPayload}.
+ */
+export type ChainLiveStep = {
+  subtaskId: string;
+  objective: string;
+  state: "pending" | "offered" | "awarded" | "running" | "done" | "failed" | "cancelled";
+  dependsOn?: string[];
+  workerPeerId?: string;
+  requiredRole?: string;
+  threadId?: string;
+  expects?: string[];
+  produces?: string[];
+  waitingOn?: Array<{
+    fromSubtaskId: string;
+    key: string;
+    kind: "text" | "file" | "structured";
+    label?: string;
+  }>;
+  produced?: Array<{ key: string; kind: string; label?: string }>;
+};
+
+function artifactKindOf(artifact: { type?: string; kind?: string } | undefined): "text" | "file" | "structured" {
+  const k = artifact?.kind ?? artifact?.type;
+  if (k === "file") return "file";
+  if (k === "structured") return "structured";
+  return "text";
+}
+
+export function buildChainLiveSteps(state: ChainState): ChainLiveStep[] {
+  return [...state.subtasks.values()].map((sub) => {
+    let stepState: ChainLiveStep["state"] = "pending";
+    if (state.cancelledSubtasks.has(sub.subtaskId) || state.chainCancelled) {
+      stepState = "cancelled";
+    } else if (state.awards.has(sub.subtaskId)) {
+      const partial = state.partials.get(sub.subtaskId);
+      const body = partial?.partial;
+      if (body?.isFinal) {
+        stepState = isFailedWorkerFinalPartial({
+          partial: body,
+        } as TaskChainPartialPayload)
+          ? "failed"
+          : "done";
+      } else if (partial) {
+        stepState = "running";
+      } else {
+        stepState = "awarded";
+      }
+    } else if (state.proposedSubtasks.has(sub.subtaskId)) {
+      stepState = "offered";
+    }
+
+    // waitingOn = unsatisfied deps only (blocked on prior). Parent outputs
+    // live on the parent's `produced` once final — do not mirror them here
+    // or observed badges mis-classify ready children as blockedOnPrior.
+    const waitingOn: NonNullable<ChainLiveStep["waitingOn"]> = [];
+    if (stepState === "pending" || stepState === "offered") {
+      for (const depId of sub.dependsOn ?? []) {
+        const parentPartial = state.partials.get(depId);
+        if (parentPartial?.partial.isFinal) continue;
+        const expects = (sub.expects ?? []).filter(
+          (exp) => !exp.fromSubtaskId || exp.fromSubtaskId === depId,
+        );
+        if (expects.length > 0) {
+          for (const exp of expects) {
+            waitingOn.push({
+              fromSubtaskId: depId,
+              key: exp.key,
+              kind: "text",
+              label: exp.key,
+            });
+          }
+        } else {
+          waitingOn.push({
+            fromSubtaskId: depId,
+            key: "result",
+            kind: "text",
+            label: "prior step",
+          });
+        }
+      }
+    }
+
+    const produced: NonNullable<ChainLiveStep["produced"]> = [];
+    if (stepState === "done" || stepState === "failed") {
+      const partial = state.partials.get(sub.subtaskId)?.partial;
+      const named = partial?.namedArtifacts ?? [];
+      for (const n of named) {
+        produced.push({
+          key: n.key,
+          kind: artifactKindOf(n.artifact as { type?: string; kind?: string }),
+          label: n.key,
+        });
+      }
+      if (produced.length === 0 && partial?.isFinal) {
+        produced.push({ key: "result", kind: "text", label: "result" });
+      }
+    }
+
+    const expectsKeys = (sub.expects ?? []).map((e) => e.key);
+
+    return {
+      subtaskId: sub.subtaskId,
+      objective: sub.objective,
+      state: stepState,
+      dependsOn: sub.dependsOn?.length ? [...sub.dependsOn] : undefined,
+      workerPeerId: state.awards.get(sub.subtaskId)?.workerPeerId,
+      requiredRole: sub.requiredRole,
+      threadId: sub.threadId,
+      expects: expectsKeys.length > 0 ? expectsKeys : undefined,
+      produces: sub.produces?.length ? [...sub.produces] : undefined,
+      waitingOn: waitingOn.length > 0 ? waitingOn : undefined,
+      produced: produced.length > 0 ? produced : undefined,
+    };
   });
 }
 

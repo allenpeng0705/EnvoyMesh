@@ -2087,6 +2087,59 @@ class AppLocalizationsZh extends AppLocalizations {
       '没有可到达的 Agent Network 工作代理。请先在家庭节点上绑定带智能体的联系人。';
 
   @override
+  String get chainsStartReadinessTitle => '先准备好工作节点';
+
+  @override
+  String get chainsStartReadinessJoinOff => '在家庭电脑上：团队任务 → 管理工作节点 → 开启加入智能体网络。';
+
+  @override
+  String get chainsStartReadinessBond => '在发现中绑定联系人，并请对方开启加入智能体网络。';
+
+  @override
+  String get chainsStartReadinessRefresh =>
+      '在 Social 的团队任务中打开管理工作节点并刷新代理卡，然后在此重新预览。';
+
+  @override
+  String get chainsStepsTitle => '任务步骤';
+
+  @override
+  String get chainsStepsWaitingOn => '等待：';
+
+  @override
+  String get chainsAttachmentHonesty =>
+      '你附加的文件保存在本机保险库。工作节点收到的是步骤间传递的引用或打包产物 — 不会自动复制保险库。';
+
+  @override
+  String get chainsIterationAskOwnerTitle => '发布前审阅草稿';
+
+  @override
+  String get chainsIterationAskOwnerBody => '接受即可发布，或继续再精炼一轮。';
+
+  @override
+  String get chainsIterationAcceptDraft => '接受并发布';
+
+  @override
+  String get chainsIterationContinue => '继续精炼';
+
+  @override
+  String get chainsIterationAccepted => '已接受草稿 — 正在发布';
+
+  @override
+  String get chainsIterationContinued => '开始新一轮精炼';
+
+  @override
+  String get chainsIterationResolveFailed => '无法应用您的决定';
+
+  @override
+  String get chainsObservedTitle => '你参与的任务';
+
+  @override
+  String get chainsObservedHint => '只读 — 只有发起方可以管理这些任务。';
+
+  @override
+  String get chainsObservedReadOnly => '只读';
+
+  @override
   String get chainsStartNeedWorkers => '请至少选择一个在线工作代理，或重新预览以恢复推荐池。';
 
   @override

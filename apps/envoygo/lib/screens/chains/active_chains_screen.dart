@@ -1,4 +1,5 @@
 // Active team jobs on the home node, plus entry to start a new one.
+// Phase 58D — also lists observed jobs (read-only worker view).
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,6 +20,7 @@ class ActiveChainsScreen extends ConsumerStatefulWidget {
 
 class _ActiveChainsScreenState extends ConsumerState<ActiveChainsScreen> {
   List<ChainActiveSummary>? _chains;
+  List<ChainObservedSummary> _observed = const [];
   bool _loading = true;
   String? _error;
 
@@ -39,6 +41,7 @@ class _ActiveChainsScreenState extends ConsumerState<ActiveChainsScreen> {
       setState(() {
         _loading = false;
         _chains = null;
+        _observed = const [];
         _error = AppLocalizations.of(context).commonNotConnectedHome;
       });
       return;
@@ -46,9 +49,16 @@ class _ActiveChainsScreenState extends ConsumerState<ActiveChainsScreen> {
     final client = NodeServiceClient(homeClient);
     try {
       final chains = await client.listActiveChains();
+      List<ChainObservedSummary> observed = const [];
+      try {
+        observed = await client.listObservedChains();
+      } catch (_) {
+        // Older homes may lack chainListObserved — ignore.
+      }
       if (!mounted) return;
       setState(() {
         _chains = chains;
+        _observed = observed;
         _loading = false;
       });
     } catch (e) {
@@ -104,7 +114,7 @@ class _ActiveChainsScreenState extends ConsumerState<ActiveChainsScreen> {
       );
     }
     final chains = _chains ?? const <ChainActiveSummary>[];
-    if (chains.isEmpty) {
+    if (chains.isEmpty && _observed.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -129,47 +139,84 @@ class _ActiveChainsScreenState extends ConsumerState<ActiveChainsScreen> {
     }
     return RefreshIndicator(
       onRefresh: _refresh,
-      child: ListView.separated(
+      child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
-        itemCount: chains.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 8),
-        itemBuilder: (context, index) {
-          final chain = chains[index];
-          final goal = chain.goal?.trim().isNotEmpty == true
-              ? chain.goal!
-              : chain.chainId;
-          return Card(
-            child: ListTile(
-              title: Text(
-                goal,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: Text(
-                '${l10n.chainsAwardedSummary(chain.statusLabel, chain.awardedCount, chain.subtaskCount)} · '
-                '\$${chain.budgetSpentUsd.toStringAsFixed(2)}/\$${chain.budgetMaxUsd.toStringAsFixed(2)}',
-              ),
-              trailing: chain.budgetWarningLevel == 'warn' ||
-                      chain.budgetWarningLevel == 'exceeded'
-                  ? const Icon(Icons.warning_amber, color: Colors.orange)
-                  : const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.of(context)
-                    .push(
-                  MaterialPageRoute(
-                    builder: (_) => ActiveChainDetailScreen(
-                      chainId: chain.chainId,
-                      initialGoal: chain.goal,
-                    ),
-                  ),
-                )
-                    .then((_) {
-                  if (mounted) _refresh();
-                });
-              },
+        children: [
+          if (chains.isNotEmpty) ...[
+            for (var i = 0; i < chains.length; i++) ...[
+              if (i > 0) const SizedBox(height: 8),
+              _activeCard(l10n, chains[i]),
+            ],
+          ],
+          if (_observed.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            Text(
+              l10n.chainsObservedTitle,
+              style: Theme.of(context).textTheme.titleMedium,
             ),
-          );
+            const SizedBox(height: 4),
+            Text(
+              l10n.chainsObservedHint,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            for (var i = 0; i < _observed.length; i++) ...[
+              if (i > 0) const SizedBox(height: 8),
+              _observedCard(l10n, _observed[i]),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _activeCard(AppLocalizations l10n, ChainActiveSummary chain) {
+    final goal = chain.goal?.trim().isNotEmpty == true
+        ? chain.goal!
+        : chain.chainId;
+    return Card(
+      child: ListTile(
+        title: Text(
+          goal,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          '${l10n.chainsAwardedSummary(chain.statusLabel, chain.awardedCount, chain.subtaskCount)} · '
+          '\$${chain.budgetSpentUsd.toStringAsFixed(2)}/\$${chain.budgetMaxUsd.toStringAsFixed(2)}',
+        ),
+        trailing: chain.budgetWarningLevel == 'warn' ||
+                chain.budgetWarningLevel == 'exceeded'
+            ? const Icon(Icons.warning_amber, color: Colors.orange)
+            : const Icon(Icons.chevron_right),
+        onTap: () {
+          Navigator.of(context)
+              .push(
+            MaterialPageRoute(
+              builder: (_) => ActiveChainDetailScreen(
+                chainId: chain.chainId,
+                initialGoal: chain.goal,
+              ),
+            ),
+          )
+              .then((_) {
+            if (mounted) _refresh();
+          });
         },
+      ),
+    );
+  }
+
+  Widget _observedCard(AppLocalizations l10n, ChainObservedSummary job) {
+    final goal = job.goal?.trim().isNotEmpty == true ? job.goal! : job.chainId;
+    return Card(
+      child: ListTile(
+        title: Text(goal, maxLines: 2, overflow: TextOverflow.ellipsis),
+        subtitle: Text(
+          '${l10n.chainsObservedReadOnly} · ${job.phase} · '
+          '${job.partialCount}/${job.awardedCount}/${job.subtaskCount}',
+        ),
+        trailing: const Icon(Icons.visibility_outlined),
       ),
     );
   }

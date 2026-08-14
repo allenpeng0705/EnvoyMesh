@@ -40,6 +40,7 @@ import {
   retryStaleAccepts,
   resolveProposeTargets,
   buildChainStatusPayload,
+  buildChainLiveSteps,
   sendChainAccept,
   sendChainPropose,
   synthesizeChain,
@@ -395,6 +396,92 @@ describe("launchChain", () => {
     expect(direct.bidCount).toBe(1);
     const competitive = buildChainStatusPayload(state, { awardMode: "competitive" });
     expect(competitive.phase).toBe("bidding");
+  });
+
+  it("buildChainLiveSteps includes deps waitingOn and produced keys", () => {
+    const state = createChainState(mandate());
+    state.subtasks.set("subtask_a", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      chainMandateId: "chainmandate_test-1",
+      depth: 1,
+      requiredSkill: "task.execute",
+      objective: "research",
+      requestedResult: "r1",
+      constraints: [],
+      dependsOn: [],
+      produces: ["summary"],
+      createdAt: NOW.toISOString(),
+    });
+    state.subtasks.set("subtask_b", {
+      version: "0.1",
+      subtaskId: "subtask_b",
+      chainId: "chain_test-1",
+      chainMandateId: "chainmandate_test-1",
+      depth: 2,
+      requiredSkill: "task.execute",
+      objective: "write",
+      requestedResult: "r2",
+      constraints: [],
+      dependsOn: ["subtask_a"],
+      expects: [{ key: "summary", fromSubtaskId: "subtask_a" }],
+      createdAt: NOW.toISOString(),
+    });
+    state.awards.set("subtask_a", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      workerPeerId: "12D3KooW-w1",
+      negotiationRound: 1,
+      acceptedCostUsd: 0,
+      deadlineAt: new Date(NOW.getTime() + 3600_000).toISOString(),
+      createdAt: NOW.toISOString(),
+    });
+
+    // Parent not final → child waitingOn pending dep.
+    let steps = buildChainLiveSteps(state);
+    let b = steps.find((s) => s.subtaskId === "subtask_b");
+    expect(b?.state).toBe("pending");
+    expect(b?.waitingOn?.[0]).toMatchObject({
+      fromSubtaskId: "subtask_a",
+      key: "summary",
+      kind: "text",
+    });
+
+    state.partials.set("subtask_a", {
+      version: "0.1",
+      chainId: "chain_test-1",
+      partial: {
+        version: "0.1",
+        subtaskId: "subtask_a",
+        chainId: "chain_test-1",
+        workerPeerId: "12D3KooW-w1",
+        sequence: 1,
+        isFinal: true,
+        confidence: 0.9,
+        note: "done",
+        artifact: { kind: "text", content: "parent" },
+        namedArtifacts: [
+          {
+            key: "summary",
+            artifact: { kind: "text", content: "ok" },
+          },
+        ],
+        createdAt: NOW.toISOString(),
+      },
+    } as TaskChainPartialPayload);
+
+    steps = buildChainLiveSteps(state);
+    const a = steps.find((s) => s.subtaskId === "subtask_a");
+    b = steps.find((s) => s.subtaskId === "subtask_b");
+    expect(steps).toHaveLength(2);
+    expect(a?.state).toBe("done");
+    expect(a?.produced?.[0]?.key).toBe("summary");
+    expect(b?.state).toBe("pending");
+    expect(b?.dependsOn).toEqual(["subtask_a"]);
+    // Deps satisfied → waitingOn cleared (produced lives on parent).
+    expect(b?.waitingOn).toBeUndefined();
   });
 
   it("retryStaleAccepts re-sends accept with subtask when no partial arrives", async () => {

@@ -764,6 +764,10 @@ export function App() {
                     setCurrentView("social");
                     setSocialTab("discover");
                   }}
+                  onOpenSettingsAi={() => {
+                    setSettingsTab("ai");
+                    navigateTo("settings");
+                  }}
                 />
               </SwipeBack>
             )}

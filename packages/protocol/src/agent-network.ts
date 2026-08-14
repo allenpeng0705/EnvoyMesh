@@ -589,6 +589,17 @@ export const TaskChainStatusStepSchema = z.object({
     "cancelled",
   ]),
   workerPeerId: z.string().min(1).optional(),
+  waitingOn: z
+    .array(
+      z.object({
+        fromSubtaskId: ChainSubtaskIdSchema,
+        key: z.string().min(1).max(64),
+        kind: z.enum(["text", "file", "structured"]),
+        label: z.string().max(128).optional(),
+      }),
+    )
+    .max(16)
+    .optional(),
 });
 
 export const TaskChainStatusPayloadSchema = z.object({

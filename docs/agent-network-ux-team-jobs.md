@@ -3,15 +3,25 @@
 > Design for making Team jobs understandable and operable across bonded homes
 > **without** mixing chat recruitment into the default product.
 >
-> Status: **designed (Phase 58)** — not implemented yet.
+> Status: **Phase 58 — `[x]` shipped** (58A–58E).
 >
 > Related: [`agent-network-guide.md`](./agent-network-guide.md) ·
 > [`agent-network-plan-assign.md`](./agent-network-plan-assign.md) ·
 > [`agent-network-artifacts.md`](./agent-network-artifacts.md) ·
 > [`agent-network-iteration.md`](./agent-network-iteration.md) ·
 > [`agent-network-fleet.md`](./agent-network-fleet.md) ·
-> [`agent-network-job-input-delivery.md`](./agent-network-job-input-delivery.md) (Phase 59, after this) ·
+> [`agent-network-job-input-delivery.md`](./agent-network-job-input-delivery.md) (Phase 59) ·
 > [`implementation-plan.md`](./implementation-plan.md) Phase 58.
+
+## Shipped waves
+
+| Wave | Status | Outcome |
+|------|--------|---------|
+| **58A** | `[x]` | Fleet readiness checklist + skip useless Preview |
+| **58B** | `[x]` | Live `steps[]` + artifact / attachment honesty |
+| **58C** | `[x]` | Per-step cancel/reassign + observed badges |
+| **58D** | `[x]` | EnvoyGo iteration resolve + observed list |
+| **58E** | `[x]` | Advanced Assigner picker |
 
 ## 1. Problem
 

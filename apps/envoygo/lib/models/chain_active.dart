@@ -3,6 +3,154 @@
 // Mirrors `chainListActive` / `chainGetState` from the home node JSON-RPC
 // surface. Mobile shows in-progress chains; authoring stays on the home UI.
 
+class ChainLiveStep {
+  final String subtaskId;
+  final String objective;
+  final String state;
+  final List<String> dependsOn;
+  final String? workerPeerId;
+  final String? requiredRole;
+  final List<ChainStepHandoff> waitingOn;
+  final List<ChainStepHandoff> produced;
+
+  const ChainLiveStep({
+    required this.subtaskId,
+    required this.objective,
+    required this.state,
+    this.dependsOn = const [],
+    this.workerPeerId,
+    this.requiredRole,
+    this.waitingOn = const [],
+    this.produced = const [],
+  });
+
+  factory ChainLiveStep.fromJson(Map<String, dynamic> json) {
+    List<ChainStepHandoff> parseHandoffs(String key) {
+      final raw = json[key] as List<dynamic>? ?? const [];
+      return raw
+          .whereType<Map>()
+          .map((e) => ChainStepHandoff.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+
+    return ChainLiveStep(
+      subtaskId: json['subtaskId'] as String? ?? '',
+      objective: json['objective'] as String? ?? '',
+      state: json['state'] as String? ?? 'pending',
+      dependsOn: (json['dependsOn'] as List<dynamic>? ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+      workerPeerId: json['workerPeerId'] as String?,
+      requiredRole: json['requiredRole'] as String?,
+      waitingOn: parseHandoffs('waitingOn'),
+      produced: parseHandoffs('produced'),
+    );
+  }
+}
+
+class ChainStepHandoff {
+  final String key;
+  final String kind;
+  final String? label;
+  final String? fromSubtaskId;
+
+  const ChainStepHandoff({
+    required this.key,
+    required this.kind,
+    this.label,
+    this.fromSubtaskId,
+  });
+
+  factory ChainStepHandoff.fromJson(Map<String, dynamic> json) {
+    return ChainStepHandoff(
+      key: json['key'] as String? ?? '',
+      kind: json['kind'] as String? ?? 'text',
+      label: json['label'] as String?,
+      fromSubtaskId: json['fromSubtaskId'] as String?,
+    );
+  }
+}
+
+class ChainIterationState {
+  final int round;
+  final int maxRounds;
+  final int extendsInRound;
+  final bool waitingForOwner;
+  final String? stopReason;
+  final String? latestDraftSummary;
+
+  const ChainIterationState({
+    required this.round,
+    required this.maxRounds,
+    this.extendsInRound = 0,
+    this.waitingForOwner = false,
+    this.stopReason,
+    this.latestDraftSummary,
+  });
+
+  factory ChainIterationState.fromJson(Map<String, dynamic> json) {
+    final drafts = json['drafts'] as List<dynamic>? ?? const [];
+    String? summary;
+    if (drafts.isNotEmpty) {
+      final last = drafts.last;
+      if (last is Map) {
+        summary = last['summary'] as String?;
+      }
+    }
+    return ChainIterationState(
+      round: (json['round'] as num?)?.toInt() ?? 1,
+      maxRounds: (json['maxRounds'] as num?)?.toInt() ?? 1,
+      extendsInRound: (json['extendsInRound'] as num?)?.toInt() ?? 0,
+      waitingForOwner: json['waitingForOwner'] == true,
+      stopReason: json['stopReason'] as String?,
+      latestDraftSummary: summary,
+    );
+  }
+}
+
+/// Phase 58D — read-only observed job (worker view).
+class ChainObservedSummary {
+  final String chainId;
+  final String? goal;
+  final String phase;
+  final String awardMode;
+  final int subtaskCount;
+  final int awardedCount;
+  final int partialCount;
+  final List<ChainLiveStep> steps;
+  final String orchestratorPeerId;
+
+  const ChainObservedSummary({
+    required this.chainId,
+    this.goal,
+    required this.phase,
+    this.awardMode = 'direct',
+    required this.subtaskCount,
+    required this.awardedCount,
+    required this.partialCount,
+    this.steps = const [],
+    this.orchestratorPeerId = '',
+  });
+
+  factory ChainObservedSummary.fromJson(Map<String, dynamic> json) {
+    final stepsRaw = json['steps'] as List<dynamic>? ?? const [];
+    return ChainObservedSummary(
+      chainId: json['chainId'] as String? ?? '',
+      goal: json['goal'] as String?,
+      phase: json['phase'] as String? ?? 'running',
+      awardMode: json['awardMode'] as String? ?? 'direct',
+      subtaskCount: (json['subtaskCount'] as num?)?.toInt() ?? 0,
+      awardedCount: (json['awardedCount'] as num?)?.toInt() ?? 0,
+      partialCount: (json['partialCount'] as num?)?.toInt() ?? 0,
+      orchestratorPeerId: json['orchestratorPeerId'] as String? ?? '',
+      steps: stepsRaw
+          .whereType<Map>()
+          .map((e) => ChainLiveStep.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+    );
+  }
+}
+
 class ChainActiveSummary {
   final String chainId;
   final String chainMandateId;
@@ -20,6 +168,10 @@ class ChainActiveSummary {
   final String awardMode;
   /// `manual` | `auto` | `never` — from live state when known.
   final String? rebalancePolicy;
+  /// Phase 58B — live step story (objectives / waitingOn).
+  final List<ChainLiveStep> steps;
+  /// Phase 58D — iteration progress / owner hold.
+  final ChainIterationState? iteration;
 
   const ChainActiveSummary({
     required this.chainId,
@@ -36,9 +188,13 @@ class ChainActiveSummary {
     this.budgetWarningLevel,
     this.awardMode = 'direct',
     this.rebalancePolicy,
+    this.steps = const [],
+    this.iteration,
   });
 
   factory ChainActiveSummary.fromJson(Map<String, dynamic> json) {
+    final stepsRaw = json['steps'] as List<dynamic>? ?? const [];
+    final iterationRaw = json['iteration'];
     return ChainActiveSummary(
       chainId: json['chainId'] as String,
       chainMandateId: json['chainMandateId'] as String? ?? '',
@@ -54,6 +210,13 @@ class ChainActiveSummary {
       budgetWarningLevel: json['budgetWarningLevel'] as String?,
       awardMode: (json['awardMode'] as String?) ?? 'direct',
       rebalancePolicy: json['rebalancePolicy'] as String?,
+      steps: stepsRaw
+          .whereType<Map>()
+          .map((e) => ChainLiveStep.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+      iteration: iterationRaw is Map
+          ? ChainIterationState.fromJson(Map<String, dynamic>.from(iterationRaw))
+          : null,
     );
   }
 
@@ -72,6 +235,17 @@ class ChainActiveSummary {
         if (budgetWarningLevel != null) 'budgetWarningLevel': budgetWarningLevel,
         'awardMode': awardMode,
         if (rebalancePolicy != null) 'rebalancePolicy': rebalancePolicy,
+        if (steps.isNotEmpty)
+          'steps': steps
+              .map((s) => {
+                    'subtaskId': s.subtaskId,
+                    'objective': s.objective,
+                    'state': s.state,
+                    if (s.dependsOn.isNotEmpty) 'dependsOn': s.dependsOn,
+                    if (s.workerPeerId != null) 'workerPeerId': s.workerPeerId,
+                    if (s.requiredRole != null) 'requiredRole': s.requiredRole,
+                  })
+              .toList(),
       };
 
   String get statusLabel {

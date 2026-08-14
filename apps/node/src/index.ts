@@ -188,6 +188,7 @@ import { TriggerStore } from "./trigger-store.js";
 import { ApprovalQueue } from "@envoymesh/api";
 import { DigestGenerator, createDefaultDigestConfig, getDigestPeriodDates } from "./digest-generator.js";
 import type { AutonomousDomain, AutonomousPolicy, AiSettings, ChatMessage, ContactAiPreferences } from "@envoymesh/api";
+import { normalizeAiSettings } from "@envoymesh/api";
 import { buildVaultIndexOptionsFromKnowledgeBase } from "@envoymesh/api";
 import { deriveLocationDiscoveryTopics } from "@envoymesh/api";
 import { stripModelThinking, applyAiIdentityForIdentity, ENVOY_AI_THREAD_KEY, OWNER_FAMILY_PROFILE_ID } from "@envoymesh/api";
@@ -393,7 +394,9 @@ function applyRuntimeConfigCaches(input: {
   currentTrustModeEnabled = input.trustModeEnabled ?? false;
   currentKnowledgeSyndicationMaxSensitivity =
     input.knowledgeSyndicationMaxSensitivity ?? undefined;
-  currentAiSettings = input.aiSettings;
+  currentAiSettings = input.aiSettings
+    ? normalizeAiSettings(input.aiSettings)
+    : undefined;
   currentContactAiPrefs = new Map(
     (input.contactAiPreferences ?? []).map((p: ContactAiPreferences) => [
       p.peerOwnerId,
@@ -410,8 +413,11 @@ function applyRuntimeConfigCaches(input: {
 function logRuntimeConfigCaches(source: string): void {
   console.log(`[config] ${source}: model=${currentModelProviders.mode} assist=${currentChatAssistEnabled} killSwitch=${currentAutonomousKillSwitch} policies=${currentAutonomousPolicies.length} trustMode=${currentTrustModeEnabled} contactPrefs=${currentContactAiPrefs.size}`);
   if (currentAiSettings) {
+    const identityMode = currentAiSettings.identity?.mode ?? "transparent";
+    const online = currentAiSettings.status?.onlineAssistantEnabled ?? true;
+    const offline = currentAiSettings.status?.offlineAgentEnabled ?? false;
     console.log(
-      `[ai] identity mode=${currentAiSettings.identity?.mode ?? "transparent"}, onlineAssistant=${currentAiSettings.status?.onlineAssistantEnabled ?? false}, offlineAgent=${currentAiSettings.status?.offlineAgentEnabled ?? false}`,
+      `[ai] identity mode=${identityMode}, onlineAssistant=${online}, offlineAgent=${offline}`,
     );
   }
 }

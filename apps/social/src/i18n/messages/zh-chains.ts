@@ -104,11 +104,42 @@ export const zhChainsMessages = {
     directAssignHint:
       "当前为直接分配 — 工作节点确认可接单后立即获派（无费用竞拍）。仅在需要按费用排序时，才在协作任务默认值中开启竞争性竞标。",
     observedHint: "你是此任务的工作节点，可查看进度；仅发起方可以管理或取消。",
+    stepsTitle: "任务步骤",
+    inputsTitle: "本机输入",
+    attachmentHonesty:
+      "你附加的文件保存在本机保险库。工作节点收到的是发起方在步骤间传递的引用或打包产物 — 不会自动复制你的保险库。",
+    waitingOn: "等待：",
+    produced: "已产出：",
+    stepMore: "展开",
+    stepLess: "收起",
+    stepN: "步骤 {n}",
+    stepState: {
+      pending: "等待中",
+      offered: "已发出",
+      awarded: "已分配",
+      running: "运行中",
+      done: "完成",
+      failed: "失败",
+      cancelled: "已取消",
+    },
+    cancelStep: "取消此步骤",
+    reassignStep: "重新分配",
+    stepCancelled: "已取消该步骤",
+    stepReassigned: "已重新分配",
+    reassignFailed: "无法重新分配此步骤",
+    reassignUnavailable: "当前节点不支持重新分配",
   },
   observed: {
     title: "你参与的任务",
     empty: "暂无来自其他发起方的任务。",
     readOnly: "只读",
+    badgeAssigned: "分配给你",
+    badgeWaitingAssigner: "等待发起方",
+    badgeBlocked: "等待前置步骤",
+    badgeDone: "已完成",
+    badgeFailed: "失败",
+    badgeWatching: "仅查看",
+    onlyAssignerCanManage: "只有发起方可以管理或取消此任务。",
   },
   tree: {
     title: "子任务树",
@@ -203,6 +234,7 @@ export const zhChainsMessages = {
     starting: "正在启动…",
     cancel: "取消",
     started: "协作任务已启动 — 在「协作任务」中查看进度",
+    handedOff: "任务已交给远程发起方 — 请在对方节点查看进度",
     failed: "无法启动协作任务",
     previewFailed: "无法预览计划",
     noWorkersTitle: "未找到工作节点",
@@ -288,6 +320,10 @@ export const zhChainsMessages = {
     showCostUi: "启动前显示成本预估",
     showCostUiHint: "在方案预览中显示预估成本区间。竞价模式下始终展示。",
     jobSettingsTitle: "任务设置",
+    assignerLabel: "在何处编排",
+    assignerThisNode: "本节点",
+    assignerHint:
+      "默认在本节点编排。可选择已加入智能体网络的已建联联系人作为远程发起方（高级）。",
     template: {
       research: "研究某个主题",
       researchGoal: "研究 {topic} 的最新进展并总结关键发现",
@@ -321,6 +357,51 @@ export const zhChainsMessages = {
     intro:
       "让更多工作节点上线并配置你的节点如何与它们连接。对大多数团队来说，办公局域网 + LAN 自动绑定已满足所有需求。",
     advancedGroup: "高级",
+  },
+  readiness: {
+    title: "先准备好工作节点",
+    desc: "团队任务需要本机开启加入智能体网络，以及已加入且在线的已绑定联系人。按下面各项逐一处理。",
+    ctaManageWorkers: "管理工作节点",
+    ctaOpenSettingsAi: "打开 AI 设置",
+    ctaOpenDiscover: "打开发现",
+    ctaRefreshCards: "刷新代理卡",
+    ctaRetryProbe: "再检查一次",
+    row: {
+      join: "本机已加入智能体网络",
+      engine: "本机智能体引擎在运行",
+      bonds: "至少一个已绑定联系人",
+      peerJoin: "有联系人已加入智能体网络",
+      freshCard: "有联系人的代理卡可用",
+      online: "有联系人当前在线",
+      otherReady: "除你以外还有可用工作节点",
+    },
+    hint: {
+      join: {
+        fail: "开启加入，以便你的智能体参与团队任务。",
+      },
+      engine: {
+        fail: "在 设置 → AI 中启动团队任务引擎（OpenClaw 或 Ext Agent）。",
+        warn: "无法确认引擎是否在运行。",
+      },
+      bonds: {
+        fail: "请先在发现中与某人建立绑定。",
+      },
+      peerJoin: {
+        fail: "请让已绑定的联系人在其节点上开启加入智能体网络。",
+      },
+      freshCard: {
+        fail: "尚无可用代理卡 — 对方加入后请刷新。",
+        warn: "部分代理卡已过期 — 请刷新以拉取最新。",
+      },
+      online: {
+        fail: "已加入的联系人似乎离线 — 请对方打开 EnvoyMesh，然后再次检查。",
+        warn: "仍在探测可达性，或尚无在线对端。",
+      },
+      otherReady: {
+        fail: "还没有可选工作节点 — 请先完成上面的步骤。",
+        warn: "目前只有你的智能体可用。绑定已加入的联系人以进行多节点协作。",
+      },
+    },
   },
   workerProfile: {
     title: "你的工作节点名片",

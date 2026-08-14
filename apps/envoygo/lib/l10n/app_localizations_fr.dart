@@ -2192,6 +2192,63 @@ class AppLocalizationsFr extends AppLocalizations {
       'Aucun worker Agent Network joignable. Liez d\'abord des contacts avec des agents sur le nœud domicile.';
 
   @override
+  String get chainsStartReadinessTitle => 'Get workers ready';
+
+  @override
+  String get chainsStartReadinessJoinOff =>
+      'On the home computer: Team jobs → Manage workers → turn on Join Agent Network.';
+
+  @override
+  String get chainsStartReadinessBond =>
+      'Bond contacts in Discover (Social or this phone), then ask them to Join Agent Network.';
+
+  @override
+  String get chainsStartReadinessRefresh =>
+      'On Social Team jobs, open Manage workers and refresh cards, then preview again here.';
+
+  @override
+  String get chainsStepsTitle => 'Job steps';
+
+  @override
+  String get chainsStepsWaitingOn => 'Waiting on:';
+
+  @override
+  String get chainsAttachmentHonesty =>
+      'Files you attach live on this home’s vault. Workers get references or packed artifacts between steps — not an automatic vault copy.';
+
+  @override
+  String get chainsIterationAskOwnerTitle => 'Review draft before publish';
+
+  @override
+  String get chainsIterationAskOwnerBody =>
+      'Accept to publish, or continue for another refinement round.';
+
+  @override
+  String get chainsIterationAcceptDraft => 'Accept & publish';
+
+  @override
+  String get chainsIterationContinue => 'Continue refining';
+
+  @override
+  String get chainsIterationAccepted => 'Draft accepted — publishing';
+
+  @override
+  String get chainsIterationContinued => 'Starting another refinement round';
+
+  @override
+  String get chainsIterationResolveFailed => 'Could not apply your decision';
+
+  @override
+  String get chainsObservedTitle => 'Jobs you’re on';
+
+  @override
+  String get chainsObservedHint =>
+      'View only — only the Assigner can manage these jobs.';
+
+  @override
+  String get chainsObservedReadOnly => 'View only';
+
+  @override
   String get chainsStartNeedWorkers =>
       'Sélectionnez au moins un worker en ligne, ou prévisualisez à nouveau pour restaurer le pool recommandé.';
 

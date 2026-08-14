@@ -1,17 +1,14 @@
 /**
  * Phase 43 follow-up — per-chain management panel.
  *
- * Wires together the three previously-orphaned owner-control components:
+ *   - ChainLiveSteps   (Phase 58B — objectives / deps / waitingOn)
  *   - ChainBidInbox     (Award / Counter-bid live bids)
  *   - ChainRebalanceBar (raise budget & retry)
- *   - ChainTreeView      (subtask lineage — rendered when subtask detail is
- *                         available; chainGetState does not return full
- *                         subtask objectives, so the tree is best-effort)
  *
  * Pulls live state from `chainGetState` on mount and on the `chain:state`
  * WebSocket event, so the bid inbox and rebalance bar reflect fresh bids.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type {
   ChainGetStateResult,
   ChainEvaluateBidsResult,
@@ -22,6 +19,7 @@ import { useT } from "../context/I18nContext.js";
 import { useToast } from "../hooks/useToast.js";
 import { useNodeService } from "../hooks/useNodeService.js";
 import { ChainBidInbox, type ChainBidInboxSubtask } from "./ChainBidInbox.js";
+import { ChainLiveSteps } from "./ChainLiveSteps.js";
 import { ChainRebalanceBar } from "./ChainRebalanceBar.js";
 import { BackIcon } from "../icons.js";
 
@@ -38,6 +36,8 @@ export interface ChainDetailPanelProps {
   }>;
   onBack: () => void;
   onChanged?: () => void;
+  /** Phase 58A — replace dead-end no-workers copy with fleet checklist. */
+  readinessPanel?: ReactNode;
 }
 
 export function ChainDetailPanel({
@@ -46,12 +46,14 @@ export function ChainDetailPanel({
   subtasks,
   onBack,
   onChanged,
+  readinessPanel,
 }: ChainDetailPanelProps) {
   const t = useT();
   const nodeService = useNodeService();
   const { showToast } = useToast();
   const [state, setState] = useState<ChainGetStateResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [busySubtaskId, setBusySubtaskId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -146,6 +148,53 @@ export function ChainDetailPanel({
       return result;
     },
     [nodeService, load, onChanged],
+  );
+
+  const handleCancelStep = useCallback(
+    async (subtaskId: string) => {
+      setBusySubtaskId(subtaskId);
+      try {
+        await nodeService.chainCancel({
+          chainId,
+          subtaskId,
+          reason: "owner_cancel_step",
+          cancelledBy: "owner",
+        });
+        showToast(t("chains.detail.stepCancelled"), "success");
+        await load();
+        onChanged?.();
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : String(err), "error");
+      } finally {
+        setBusySubtaskId(null);
+      }
+    },
+    [nodeService, chainId, load, onChanged, showToast, t],
+  );
+
+  const handleReassignStep = useCallback(
+    async (subtaskId: string) => {
+      if (!nodeService.chainReassignSubtask) {
+        showToast(t("chains.detail.reassignUnavailable"), "error");
+        return;
+      }
+      setBusySubtaskId(subtaskId);
+      try {
+        const result = await nodeService.chainReassignSubtask({ chainId, subtaskId });
+        if (!result.ok) {
+          showToast(result.error ?? t("chains.detail.reassignFailed"), "error");
+          return;
+        }
+        showToast(t("chains.detail.stepReassigned"), "success");
+        await load();
+        onChanged?.();
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : String(err), "error");
+      } finally {
+        setBusySubtaskId(null);
+      }
+    },
+    [nodeService, chainId, load, onChanged, showToast, t],
   );
 
   // Map chainGetState.bidsBySubtask + optional captured subtask detail into
@@ -247,6 +296,21 @@ export function ChainDetailPanel({
             ) : null}
           </section>
 
+          {(state.steps ?? []).length > 0 ? (
+            <ChainLiveSteps
+              steps={state.steps!}
+              goal={state.goal ?? goal}
+              allowStepControl={!isFinalized}
+              busySubtaskId={busySubtaskId}
+              onCancelStep={handleCancelStep}
+              onReassignStep={handleReassignStep}
+            />
+          ) : (
+            <p className="chain-live-steps__honesty chain-live-steps__honesty--solo">
+              {t("chains.detail.attachmentHonesty")}
+            </p>
+          )}
+
           {(state.planWarnings ?? []).length > 0 ? (
             <section
               className="chain-detail-panel__section chain-detail-plan-warnings"
@@ -338,8 +402,12 @@ export function ChainDetailPanel({
                   <h4>{t("chains.detail.bidsTitle")}</h4>
                   {waitingForWorkers ? (
                     <div className="chains-empty chains-empty--inline" data-testid="chain-detail-no-workers">
-                      <p>{t("chains.bidInbox.noWorkersTitle")}</p>
-                      <p className="chains-empty__hint">{t("chains.bidInbox.noWorkersDesc")}</p>
+                      {readinessPanel ?? (
+                        <>
+                          <p>{t("chains.bidInbox.noWorkersTitle")}</p>
+                          <p className="chains-empty__hint">{t("chains.bidInbox.noWorkersDesc")}</p>
+                        </>
+                      )}
                     </div>
                   ) : bidInboxSubtasks.length === 0 ? (
                     <p className="chains-empty chains-empty--inline">
@@ -362,8 +430,12 @@ export function ChainDetailPanel({
                 </section>
               ) : waitingForWorkers ? (
                 <div className="chains-empty chains-empty--inline" data-testid="chain-detail-no-workers">
-                  <p>{t("chains.bidInbox.noWorkersTitle")}</p>
-                  <p className="chains-empty__hint">{t("chains.bidInbox.noWorkersDesc")}</p>
+                  {readinessPanel ?? (
+                    <>
+                      <p>{t("chains.bidInbox.noWorkersTitle")}</p>
+                      <p className="chains-empty__hint">{t("chains.bidInbox.noWorkersDesc")}</p>
+                    </>
+                  )}
                 </div>
               ) : (
                 <p className="chain-detail-panel__direct-hint">{t("chains.detail.directAssignHint")}</p>

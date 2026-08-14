@@ -14,6 +14,7 @@
 import { randomUUID } from "node:crypto";
 import { chainBudgetWarningLevel } from "./chain-auto-orchestrator.js";
 import {
+  buildChainLiveSteps,
   chainStateSnapshot,
   counterBid,
   createChainState,
@@ -408,6 +409,7 @@ export function chainGetStateViaRuntime(
   result.estimatedCostRange = ctx.getChainCostEstimate(params.chainId) as never;
   result.awardMode = ctx.getChainAwardMode?.(params.chainId) ?? "direct";
   result.showCostUi = ctx.getChainShowCostUi?.(params.chainId) ?? false;
+  result.steps = buildChainLiveSteps(entry.state);
   const side = ctx.getChainSideState?.();
   result.assignmentMode = side?.assignmentModes.get(params.chainId);
   result.planWarnings = side?.planWarnings.get(params.chainId) as ChainGetStateResult["planWarnings"];
@@ -446,6 +448,7 @@ export function chainListActiveViaRuntime(
       snap.estimatedCostRange = ctx.getChainCostEstimate(chainId) as never;
       snap.awardMode = ctx.getChainAwardMode?.(chainId) ?? "direct";
       snap.showCostUi = ctx.getChainShowCostUi?.(chainId) ?? false;
+      snap.steps = buildChainLiveSteps(entry.state);
       const side = ctx.getChainSideState?.();
       snap.assignmentMode = side?.assignmentModes.get(chainId);
       snap.planWarnings = side?.planWarnings.get(chainId) as ChainGetStateResult["planWarnings"];

@@ -11,7 +11,12 @@ import { useNodeService } from "../hooks/useNodeService.js";
 import { useToast } from "../hooks/useToast.js";
 import { isTeamJobReady } from "../lib/chain-bond-health.js";
 import type { ChainBondHealth } from "../lib/chain-bond-health.js";
+import {
+  buildFleetReadinessChecklist,
+  summarizeFleetReadinessInput,
+} from "../lib/fleet-readiness.js";
 import { AgentNetworkSkillsPreview } from "./AgentNetworkSkillsPreview.js";
+import { FleetReadinessPanel } from "./FleetReadinessPanel.js";
 
 export interface WorkerCandidate {
   bond: BondRecord;
@@ -41,6 +46,20 @@ export interface ChainStartDialogProps {
   onStarted?: (chainId: string) => void;
   /** Optional — send the user to Discover when no workers are available. */
   onOpenDiscover?: () => void;
+  /** Optional — Team jobs → Manage workers (Join / fleet). */
+  onOpenManageWorkers?: () => void;
+  /** Optional — Settings → AI for engine offline. */
+  onOpenSettingsAi?: () => void;
+  /** Refresh bonded agent cards / local worker card. */
+  onRefreshWorkers?: () => void;
+  /** Re-run reachability probe. */
+  onRetryReachability?: () => void;
+  /** Local Join Agent Network. */
+  localJoinEnabled?: boolean;
+  /** Local AN engine ready (`null` = unknown). */
+  engineReady?: boolean | null;
+  /** Bonded peer count excluding local You (for checklist). */
+  bondedPeerCount?: number;
   /** Bonded contacts with agent-card health, passed from ChainsView. */
   workerCandidates?: WorkerCandidate[];
   /**
@@ -57,6 +76,13 @@ export function ChainStartDialog({
   onClose,
   onStarted,
   onOpenDiscover,
+  onOpenManageWorkers,
+  onOpenSettingsAi,
+  onRefreshWorkers,
+  onRetryReachability,
+  localJoinEnabled = false,
+  engineReady = null,
+  bondedPeerCount,
   workerCandidates = EMPTY_WORKER_CANDIDATES,
   assignmentMode: assignmentModeProp,
 }: ChainStartDialogProps) {
@@ -75,6 +101,8 @@ export function ChainStartDialog({
     "llm" | "always_stop" | "owner"
   >("llm");
   const [showJobSettings, setShowJobSettings] = useState(false);
+  /** Phase 58E — empty = this node; else bonded ready peer agent id. */
+  const [assignerPeerId, setAssignerPeerId] = useState("");
   const [assignmentMode, setAssignmentMode] = useState<"skill" | "role">(
     assignmentModeProp === "role" ? "role" : "skill",
   );
@@ -98,6 +126,60 @@ export function ChainStartDialog({
   const selectableCandidates = useMemo(
     () => workerCandidates.filter((w) => isTeamJobReady(w.card, w.health)),
     [workerCandidates],
+  );
+
+  const assignerCandidates = useMemo(
+    () =>
+      selectableCandidates.filter(
+        (w) => !w.isSelf && Boolean(w.card?.sourceAgentPeerId),
+      ),
+    [selectableCandidates],
+  );
+
+  const readiness = useMemo(() => {
+    const peerBonds =
+      bondedPeerCount ??
+      workerCandidates.filter((w) => !w.isSelf).length;
+    return buildFleetReadinessChecklist(
+      summarizeFleetReadinessInput({
+        localJoin: localJoinEnabled,
+        engineReady: localJoinEnabled ? engineReady : null,
+        bondedPeerCount: peerBonds,
+        candidates: workerCandidates,
+      }),
+    );
+  }, [bondedPeerCount, engineReady, localJoinEnabled, workerCandidates]);
+
+  const readinessPanel = (
+    <FleetReadinessPanel
+      readiness={readiness}
+      onManageWorkers={
+        onOpenManageWorkers
+          ? () => {
+              onClose();
+              onOpenManageWorkers();
+            }
+          : undefined
+      }
+      onOpenSettingsAi={
+        onOpenSettingsAi
+          ? () => {
+              onClose();
+              onOpenSettingsAi();
+            }
+          : undefined
+      }
+      onOpenDiscover={
+        onOpenDiscover
+          ? () => {
+              onClose();
+              onOpenDiscover();
+            }
+          : undefined
+      }
+      onRefreshCards={onRefreshWorkers}
+      onRetryProbe={onRetryReachability}
+    />
   );
 
   // System-recommended workers from the preview, keyed by agent peer id.
@@ -190,6 +272,11 @@ export function ChainStartDialog({
 
   useEffect(() => {
     if (!defaultsReady) return;
+    if (readiness.skipPreview) {
+      setLoading(false);
+      setPreview(null);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     void nodeService
@@ -208,7 +295,7 @@ export function ChainStartDialog({
     return () => {
       cancelled = true;
     };
-  }, [goal, nodeService, assignmentMode, defaultsReady]);
+  }, [goal, nodeService, assignmentMode, defaultsReady, readiness.skipPreview]);
 
   const hasWorkers = useMemo(
     () => Boolean(preview?.ok && preview.subtasks.some((s) => s.workerCount > 0)),
@@ -264,6 +351,7 @@ export function ChainStartDialog({
   }, [workerCandidates, suggestedByPeer]);
 
   const handleStart = useCallback(async () => {
+    if (!localJoinEnabled || engineReady === false) return;
     if (!hasWorkers) {
       showToast(t("chains.start.noWorkersToast"), "error");
       return;
@@ -277,6 +365,7 @@ export function ChainStartDialog({
         iterationMaxRounds,
         iterationJudgeMode,
         extendMaxStepsPerRound,
+        assignerPeerId: assignerPeerId.trim() || undefined,
         preferredWorkerPeerIds:
           selectedPeerIds.size > 0 ? [...selectedPeerIds] : undefined,
         plannedSubtasks:
@@ -306,7 +395,12 @@ export function ChainStartDialog({
         showToast(err, "error");
         return;
       }
-      showToast(t("chains.start.started"), "success");
+      showToast(
+        result.handedOff
+          ? t("chains.start.handedOff")
+          : t("chains.start.started"),
+        "success",
+      );
       if (result.chainId) onStarted?.(result.chainId);
       onClose();
     } catch (err) {
@@ -314,7 +408,7 @@ export function ChainStartDialog({
     } finally {
       setStarting(false);
     }
-  }, [assignmentMode, goal, hasWorkers, iterationMaxRounds, iterationJudgeMode, extendMaxStepsPerRound, nodeService, onClose, onStarted, preview, selectedPeerIds, showToast, t]);
+  }, [assignmentMode, assignerPeerId, engineReady, goal, hasWorkers, iterationMaxRounds, iterationJudgeMode, extendMaxStepsPerRound, localJoinEnabled, nodeService, onClose, onStarted, preview, selectedPeerIds, showToast, t]);
 
   const handleSaveRecipe = useCallback(async () => {
     setSavingRecipe(true);
@@ -365,11 +459,19 @@ export function ChainStartDialog({
             </ul>
           </div>
         ) : null}
+        <p className="chain-start-attachment-honesty" data-testid="chain-start-attachment-honesty">
+          {t("chains.detail.attachmentHonesty")}
+        </p>
 
         {loading ? (
           <p>{t("chains.loading")}</p>
+        ) : readiness.skipPreview ? (
+          <div data-testid="chain-start-no-workers">{readinessPanel}</div>
         ) : preview && !preview.ok ? (
-          <p className="chain-start-error">{preview.reason ?? t("chains.start.previewFailed")}</p>
+          <>
+            <p className="chain-start-error">{preview.reason ?? t("chains.start.previewFailed")}</p>
+            {readiness.blocked ? readinessPanel : null}
+          </>
         ) : preview ? (
           <>
             {showCostUi && preview.estimatedCostRange ? (
@@ -532,25 +634,7 @@ export function ChainStartDialog({
 
             {noWorkers ? (
               <div className="chain-start-no-workers" data-testid="chain-start-no-workers">
-                <p className="chain-start-no-workers__title">
-                  {t("chains.start.noWorkersTitle")}
-                </p>
-                <p className="chain-start-no-workers__desc">
-                  {t("chains.start.noWorkersDesc")}
-                </p>
-                {onOpenDiscover ? (
-                  <button
-                    type="button"
-                    className="secondary"
-                    data-testid="chain-start-open-discover"
-                    onClick={() => {
-                      onClose();
-                      onOpenDiscover();
-                    }}
-                  >
-                    {t("chains.start.openDiscover")}
-                  </button>
-                ) : null}
+                {readinessPanel}
               </div>
             ) : (preview.diagnostics ?? []).length > 0 ? (
               <ul className="chain-start-diagnostics">
@@ -614,6 +698,32 @@ export function ChainStartDialog({
               </button>
               {showJobSettings ? (
                 <div className="chain-start-job-settings__body">
+                  <label className="chain-start-iteration-label">
+                    <span>{t("chains.start.assignerLabel")}</span>
+                    <select
+                      value={assignerPeerId}
+                      onChange={(e) => setAssignerPeerId(e.target.value)}
+                      disabled={starting || savingRecipe}
+                      data-testid="chain-start-assigner"
+                    >
+                      <option value="">{t("chains.start.assignerThisNode")}</option>
+                      {assignerCandidates.map((w) => {
+                        const peerId = w.card!.sourceAgentPeerId!;
+                        const name =
+                          w.bond.displayName ??
+                          w.bond.libp2pPeerId?.slice(0, 10) ??
+                          peerId.slice(0, 12);
+                        return (
+                          <option key={peerId} value={peerId}>
+                            {name}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <small className="chain-start-hint">
+                      {t("chains.start.assignerHint")}
+                    </small>
+                  </label>
                   <label className="chain-start-iteration-label">
                     <span>{t("chains.start.assignmentMode")}</span>
                     <select
@@ -743,11 +853,19 @@ export function ChainStartDialog({
               loading ||
               starting ||
               savingRecipe ||
+              !localJoinEnabled ||
+              engineReady === false ||
               !preview?.ok ||
               preview.subtasks.length === 0 ||
               !hasWorkers
             }
-            title={!hasWorkers ? t("chains.start.noWorkersTitle") : undefined}
+            title={
+              !localJoinEnabled || engineReady === false
+                ? t("chains.readiness.title")
+                : !hasWorkers
+                  ? t("chains.start.noWorkersTitle")
+                  : undefined
+            }
           >
             {starting ? t("chains.start.starting") : t("chains.start.confirm")}
           </button>
