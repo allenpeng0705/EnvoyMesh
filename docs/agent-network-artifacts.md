@@ -13,7 +13,7 @@
 
 - New `cid` artifact kind (reuse `text` / `file` / `structured`)
 - Hard block when soft `expects` are missing
-- Cross-home vault byte transfer protocol (v1 passes **refs**: `vaultPath` + `contentHash`)
+- Cross-home vault byte transfer protocol **in Phase 53** (v1 passes **refs**: `vaultPath` + `contentHash`). Composer attachment **bytes** are Phase 59 ([job input delivery](./agent-network-job-input-delivery.md)), not vault sync.
 - Job-scoped cast overrides
 
 ## 3. Data model

@@ -3,6 +3,7 @@ import {
   DEFAULT_CHAIN_INPUT_DELIVERY_POLICY,
   chainInputComposerStagingDir,
   chainInputDeliveredRelativePath,
+  chainInputJobWorkspaceDir,
   chainInputWorkspaceInDir,
   parseChainInputAttachmentsFromGoal,
   sanitizeChainInputFileName,
@@ -20,6 +21,7 @@ describe("chain-input-delivery (Phase 59A)", () => {
 
   it("builds staging and workspace paths", () => {
     expect(chainInputComposerStagingDir("tj_abc")).toBe("imports/team-jobs/tj_abc");
+    expect(chainInputJobWorkspaceDir("chain_1")).toBe("imports/team-jobs/chain_1");
     expect(chainInputWorkspaceInDir("chain_1")).toBe("imports/team-jobs/chain_1/in");
     expect(chainInputDeliveredRelativePath("chain_1", "Brief.PDF")).toBe(
       "imports/team-jobs/chain_1/in/Brief.PDF",

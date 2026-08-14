@@ -7,9 +7,11 @@ import {
   buildJobInputFileArtifacts,
   deliverChainInputsOnAward,
   ensureChainInputManifest,
+  gcChainInputWorkspace,
   jobInputsReadyForAward,
   retryFailedChainInputDeliveries,
 } from "../src/chain-input-delivery-runtime.js";
+import { DEFAULT_CHAIN_INPUT_DELIVERY_POLICY } from "@envoymesh/api";
 
 const NOW = new Date("2026-08-14T12:00:00.000Z");
 
@@ -187,6 +189,58 @@ describe("chain-input-delivery-runtime (Phase 59B)", () => {
     expect(counts).toEqual({ retried: 1, verified: 1, failed: 0 });
     expect(state.inputDeliveries?.[0]?.phase).toBe("verified");
     expect(state.inputDeliveries?.[0]?.contentHash).toBe("retry_h");
+  });
+});
+
+describe("gcChainInputWorkspace (Phase 59E)", () => {
+  it("removes imports/team-jobs/<chainId>/ under vault", async () => {
+    const { mkdtemp, mkdir, writeFile, access } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const vaultDir = await mkdtemp(join(tmpdir(), "envoy-gc-"));
+    const ws = join(vaultDir, "imports/team-jobs/chain_gc1/in");
+    await mkdir(ws, { recursive: true });
+    await writeFile(join(ws, "brief.pdf"), "x");
+    const result = await gcChainInputWorkspace({
+      vaultDir,
+      chainId: "chain_gc1",
+    });
+    expect(result).toEqual({
+      ok: true,
+      removed: true,
+      relativePath: "imports/team-jobs/chain_gc1",
+    });
+    await expect(access(join(vaultDir, "imports/team-jobs/chain_gc1"))).rejects.toThrow();
+  });
+
+  it("skips when policy.gc is retain_until_report_gc", async () => {
+    const { mkdtemp, mkdir, writeFile, access } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const vaultDir = await mkdtemp(join(tmpdir(), "envoy-gc-retain-"));
+    const ws = join(vaultDir, "imports/team-jobs/chain_gc2/in");
+    await mkdir(ws, { recursive: true });
+    await writeFile(join(ws, "brief.pdf"), "x");
+    const result = await gcChainInputWorkspace({
+      vaultDir,
+      chainId: "chain_gc2",
+      policy: { ...DEFAULT_CHAIN_INPUT_DELIVERY_POLICY, gc: "retain_until_report_gc" },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.removed).toBe(false);
+    await access(join(vaultDir, "imports/team-jobs/chain_gc2/in/brief.pdf"));
+  });
+
+  it("rejects path traversal chain ids", async () => {
+    const { mkdtemp } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const vaultDir = await mkdtemp(join(tmpdir(), "envoy-gc-bad-"));
+    const result = await gcChainInputWorkspace({
+      vaultDir,
+      chainId: "../escape",
+    });
+    expect(result.ok).toBe(false);
   });
 });
 

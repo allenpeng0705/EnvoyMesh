@@ -59,6 +59,7 @@ import {
   buildJobInputFileArtifacts,
   jobInputsReadyForAward,
   retryFailedChainInputDeliveries,
+  gcChainInputWorkspace,
 } from "./chain-input-delivery-runtime.js";
 import { sendVaultFileViaDataTransfer } from "./node-file-share.js";
 import {
@@ -190,6 +191,8 @@ export interface ChainSideState {
   lastStatusBroadcastAt: Map<string, number>;
   /** Cached `task.chain.ready` probe results (worker peer id → ready). */
   readyProbeCache: Map<string, ChainReadyProbeCacheEntry>;
+  /** Phase 59E — chainIds whose job input workspace was already GC'd. */
+  inputGcDone: Set<string>;
 }
 
 /** Worker-side read-only view of an assigner's team job. */
@@ -773,6 +776,7 @@ export async function buildChainInboundDeps(deps: ChainOrchestrationContext): Pr
         deps.getChainSideState().observedChains.set(payload.report.chainId, snap);
         deps.emit("chain:observed", snap);
       }
+      void maybeGcChainInputWorkspace(deps, payload.report.chainId);
       await taskStore.appendAuditEvent(
         createAuditEvent({
           type: "chain.report_received",
@@ -969,6 +973,12 @@ export async function buildChainWorkerDeps(deps: ChainOrchestrationContext): Pro
       };
       deps.getChainSideState().observedChains.set(payload.chainId, snap);
       deps.emit("chain:observed", snap);
+      if (payload.phase === "completed" || payload.phase === "cancelled") {
+        void maybeGcChainInputWorkspace(deps, payload.chainId);
+      }
+    },
+    onWholeChainCancelled: (chainId) => {
+      void maybeGcChainInputWorkspace(deps, chainId);
     },
   };
 }
@@ -1964,6 +1974,38 @@ export async function retryInputDeliveryOwnerAction(
   }
 }
 
+/** Phase 59E — GC job input workspace once per chain when terminal. */
+export async function maybeGcChainInputWorkspace(
+  deps: ChainOrchestrationContext,
+  chainId: string,
+  opts?: { policy?: import("@envoymesh/api").ChainInputDeliveryPolicy; force?: boolean },
+): Promise<void> {
+  const side = deps.getChainSideState();
+  if (!opts?.force && side.inputGcDone.has(chainId)) return;
+  const vaultDir = deps.getVaultDir();
+  if (!vaultDir) return;
+  const runtime = deps.getChainStore().getRuntime(chainId);
+  const policy =
+    opts?.policy ??
+    runtime?.state.inputDeliveryPolicy ??
+    undefined;
+  const result = await gcChainInputWorkspace({ vaultDir, chainId, policy });
+  if (result.ok) {
+    side.inputGcDone.add(chainId);
+    if (result.removed) {
+      void _appendChainAudit(deps, {
+        type: "chain.cancelled",
+        outcome: "record",
+        intent: "task.chain.cancel",
+        correlationId: chainId,
+        summary: `input_workspace_gc path=${result.relativePath}`,
+      });
+    }
+  } else {
+    console.warn(`[chain.input] GC failed for ${chainId}: ${result.reason}`);
+  }
+}
+
 export function _emitChainState(deps: ChainOrchestrationContext, chainId: string): void {
   const runtime = deps.getChainStore().getRuntime(chainId);
   if (!runtime) return;
@@ -1998,6 +2040,9 @@ export function _emitChainState(deps: ChainOrchestrationContext, chainId: string
         console.warn(`[chain.status] broadcast failed for ${chainId}:`, err);
       }
     })();
+  }
+  if (terminal) {
+    void maybeGcChainInputWorkspace(deps, chainId);
   }
 }
 

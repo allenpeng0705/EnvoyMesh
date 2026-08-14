@@ -1166,7 +1166,7 @@ Milestone: **Phases 0–48 shipped for interop bridges** — Core protocol throu
 
 **Last shipped:** **Phase 48 — A2A + MCP Interop Bridges (48A–48D).** MCP tool consumer (`mesh.mcp.*`), MCP server adapter (`npx envoymesh mcp-server`), A2A Agent Card on relay `/.well-known/agent-card.json`, and A2A Task Bridge JSON-RPC (`message/send` / `tasks/get` / `tasks/cancel`) with auth + state/artifact maps + relay proxy. **~191 dedicated unit tests green.** Design: [a2a-mcp-interop-design.md](./a2a-mcp-interop-design.md). Earlier recent ship: Phase 47 Team job multi-round iteration (47A–47D).
 
-**Active:** **Phase 59 — Team job input delivery** (`[~]` 59A–59D; next **59E** E2E + GC). Design: [agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md). Also tracked: Phase 54 Envoy Local; ICE media-transport ([voice-video-call-support.md](./voice-video-call-support.md)).
+**Active:** Next planning pulls below. Phase 59 Team job input delivery **complete** (59A–59E). Also tracked: Phase 54 Envoy Local; ICE media-transport ([voice-video-call-support.md](./voice-video-call-support.md)).
 
 
 ### Next planning pulls
@@ -1187,7 +1187,7 @@ Milestone: **Phases 0–48 shipped for interop bridges** — Core protocol throu
 14. **Phase 54 — EnvoyAI model guidance + Envoy Local** — Configure AI when no usable model; optional downloadable `llama-server` (never packaged); cloud/Ollama remain equal choices. [envoy-local-design.md](./envoy-local-design.md).
 15. **Phase 57 — Knowledge Base production hardening (Markdown-first + anydoc)** — `[x]` 57A–57E + item-4 shipped. Design: [knowledge-base-and-rag.md](./knowledge-base-and-rag.md) · checklist below.
 16. **Phase 58 — Team jobs UX (fleet readiness, live story, multi-node)** — designed; **58A first**. Chat→team-job recruitment explicitly parked. Design: [agent-network-ux-team-jobs.md](./agent-network-ux-team-jobs.md) · checklist below.
-17. **Phase 59 — Team job input delivery** — `[~]` **59A–59D**; next **59E** E2E + GC. One-shot bytes to worker job workspace (not vault sync). Design: [agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md) · checklist below.
+17. **Phase 59 — Team job input delivery** — `[x]` **59A–59E complete**. One-shot bytes to worker job workspace (not vault sync); GC on terminal. Design: [agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md) · checklist below.
 
 ### Phase 9 Architecture Overview
 
@@ -7467,7 +7467,7 @@ Primary code touchpoints:
 
 ## Phase 59 — Team job input delivery (bytes to workers, not vault sync)
 
-> **Status:** `[~]` **59A–59D shipped**. Next: **59E** multi-home E2E + GC.
+> **Status:** `[x]` **59A–59E complete**.
 > **Design (source of truth):** [agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md)
 > **Related:** [agent-network-artifacts.md](./agent-network-artifacts.md) (Phase 53 refs) · [p2p-file-sharing-plan.md](./p2p-file-sharing-plan.md) (voucher + `/envoymesh/data`) · [agent-network-ux-team-jobs.md](./agent-network-ux-team-jobs.md) (Phase 58)
 
@@ -7517,19 +7517,19 @@ Primary code touchpoints:
 - `[x]` EnvoyGo: status + retry (thin)
 - `[x]` i18n + component tests
 
-### 59E — Multi-home E2E + GC `[ ]`
+### 59E — Multi-home E2E + GC `[x]`
 
-- `[ ]` Two/three-home E2E: attach → award → deliver → worker reads file → partial
-- `[ ]` GC `imports/team-jobs/<chainId>/` on terminal
-- `[ ]` Docs: guide + artifacts pointer; Phase 53 non-goal remains “sync”; delivery is this phase
+- `[x]` Two-home E2E: voucher + `/envoymesh/data` → `imports/team-jobs/<chainId>/in/…` → GC (award path covered by 59B/C units)
+- `[x]` GC `imports/team-jobs/<chainId>/` on terminal
+- `[x]` Docs: guide + artifacts pointer; Phase 53 non-goal remains “sync”; delivery is this phase
 
 ### Exit criteria (overall)
 
-- `[ ]` Remote worker can open a labeled composer attachment as a local vault file for that `chainId` after award
-- `[ ]` Owner sees per-worker delivery success/failure and can retry
-- `[ ]` No standing vault mirror; job workspace GC policy implemented
-- `[ ]` Tiny text packs still use Phase 53 without mandatory data-channel hop
-- `[x]` Design doc authoritative; Phase 58 complete; **59A locked**
+- `[x]` Remote worker can open a labeled composer attachment as a local vault file for that `chainId` after award
+- `[x]` Owner sees per-worker delivery success/failure and can retry
+- `[x]` No standing vault mirror; job workspace GC policy implemented
+- `[x]` Tiny text packs still use Phase 53 without mandatory data-channel hop
+- `[x]` Design doc authoritative; Phase 58 complete; **59A–59E complete**
 
 ---
 
@@ -7538,6 +7538,7 @@ Primary code touchpoints:
 
 | Date | Change |
 |------|--------|
+| 2026-08-14 | **Phase 59E shipped — GC + two-home E2E.** `gcChainInputWorkspace` / `chainInputJobWorkspaceDir`; terminal hooks on Assigner + worker; `chain-input-delivery-two-home-e2e.test.ts`. Phase 59 closed. |
 | 2026-08-14 | **Phase 59D shipped — Social + EnvoyGo delivery UX.** Honesty copy update; delivery chips + `chainRetryInputDelivery`; Advanced/start scope `referenced`/`all`; EnvoyGo status + retry + i18n. Next: **59E**. |
 | 2026-08-14 | **Phase 59C shipped — Executor local-path wiring.** Deliver-before-accept; `inputArtifacts` merge worker-local file refs; stall award on pending/failed delivery; OpenClaw prompt labels Team job workspace paths. Next: **59D**. |
 | 2026-08-14 | **Phase 59B shipped — Deliver-on-award.** `deliverChainInputsOnAward` after direct/competitive accept; voucher path = worker `imports/team-jobs/<chainId>/in/…`; self skip; `inputDeliveries` on chain state. Next: **59C**. |

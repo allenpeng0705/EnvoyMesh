@@ -3,7 +3,7 @@
 > Deliver composer attachments (and optional step outputs) to **recruited
 > workers’ homes** for a **single Team job** — one-shot, audited, size-capped.
 >
-> Status: **Phase 59 — `[~]` in progress** (59A–59D shipped; 59E next).
+> Status: **Phase 59 — complete** (59A–59E shipped).
 >
 > Related: [`agent-network-ux-team-jobs.md`](./agent-network-ux-team-jobs.md)
 > (Phase 58 honesty / visibility) ·
@@ -150,6 +150,16 @@ populated in 59B+).
 
 Never write outside `imports/team-jobs/<chainId>/`. Sanitize names; reject `..`.
 
+### GC (59E)
+
+When `inputDeliveryPolicy.gc === "on_terminal"` (default), delete
+`imports/team-jobs/<chainId>/` via `gcChainInputWorkspace` /
+`chainInputJobWorkspaceDir` after the chain **publishes** or is
+**cancelled** (whole-chain). Hooks: Assigner `_emitChainState` terminal;
+worker `task.chain.status` completed/cancelled, whole-chain cancel, and
+inbound report. Idempotent via `inputGcDone`. Composer staging
+(`imports/team-jobs/<composerBatchId>/`) is not auto-deleted in v1.
+
 ### Caps
 
 | Cap | Value |
@@ -214,7 +224,7 @@ the JSON path (≤ ~48 KiB) without a data-channel hop.
 | **59B** | `[x]` | Assigner deliver-on-award + verify hash; local-You skip; unit tests |
 | **59C** | `[x]` | Wire into propose/`inputArtifacts` so worker executor sees local path |
 | **59D** | `[x]` | Social + EnvoyGo delivery status + retry; i18n |
-| **59E** | `[ ]` | Two/three-home E2E; GC on terminal |
+| **59E** | `[x]` | Two-home data-channel E2E + GC on terminal |
 
 ## 10. Success criteria
 

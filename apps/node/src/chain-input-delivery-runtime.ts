@@ -6,12 +6,13 @@
  * Assigner source path).
  */
 
-import { copyFile, mkdir } from "node:fs/promises";
+import { copyFile, mkdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   CHAIN_INPUT_VOUCHER_TTL_MS,
   DEFAULT_CHAIN_INPUT_DELIVERY_POLICY,
   chainInputDeliveredRelativePath,
+  chainInputJobWorkspaceDir,
   parseChainInputAttachmentsFromGoal,
   selectChainInputsForSubtask,
   type ChainInputAttachment,
@@ -459,4 +460,38 @@ export async function retryFailedChainInputDeliveries(opts: {
     onUpdate?.();
   }
   return { retried, verified, failed };
+}
+
+/**
+ * Phase 59E — delete `imports/team-jobs/<chainId>/` when policy is `on_terminal`.
+ * Safe-path gated; missing dirs are a no-op success.
+ */
+export async function gcChainInputWorkspace(opts: {
+  vaultDir: string;
+  chainId: string;
+  policy?: ChainInputDeliveryPolicy;
+}): Promise<{ ok: true; removed: boolean; relativePath: string } | { ok: false; reason: string }> {
+  const policy = opts.policy ?? DEFAULT_CHAIN_INPUT_DELIVERY_POLICY;
+  if (policy.gc !== "on_terminal") {
+    return {
+      ok: true,
+      removed: false,
+      relativePath: chainInputJobWorkspaceDir(opts.chainId),
+    };
+  }
+  const relativePath = chainInputJobWorkspaceDir(opts.chainId).replace(/^[\\/]+/, "");
+  if (!relativePath.startsWith("imports/team-jobs/")) {
+    return { ok: false, reason: "unsafe_workspace_prefix" };
+  }
+  if (!isSafeVaultPath(opts.vaultDir, relativePath)) {
+    return { ok: false, reason: "unsafe_vault_path" };
+  }
+  const abs = join(opts.vaultDir, relativePath);
+  try {
+    await rm(abs, { recursive: true, force: true });
+    return { ok: true, removed: true, relativePath };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, reason: msg.slice(0, 500) };
+  }
 }

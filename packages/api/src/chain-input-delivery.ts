@@ -118,6 +118,15 @@ export function chainInputWorkspaceInDir(chainId: string): string {
   return `imports/team-jobs/${id}/in`;
 }
 
+/**
+ * Job-scoped workspace root (GC target on terminal).
+ * Example: `imports/team-jobs/chain_xyz`
+ */
+export function chainInputJobWorkspaceDir(chainId: string): string {
+  const id = chainId.trim() || "chain_unknown";
+  return `imports/team-jobs/${id}`;
+}
+
 /** Full worker-local path for a delivered file. */
 export function chainInputDeliveredRelativePath(
   chainId: string,

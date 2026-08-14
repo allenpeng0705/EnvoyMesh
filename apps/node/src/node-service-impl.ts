@@ -1592,6 +1592,7 @@ class NodeServiceImpl implements NodeService {
     observedChains: new Map(),
     lastStatusBroadcastAt: new Map<string, number>(),
     readyProbeCache: new Map(),
+    inputGcDone: new Set<string>(),
   } as const;
 
   /** Latest QR / `getPairingPayload` token for optional companion auto-pair (short TTL). */

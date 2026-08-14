@@ -279,7 +279,7 @@ say `chain`.
 | [agent-network-plan-assign.md](./agent-network-plan-assign.md) | Assigner plan+assign + merge (shipped) |
 | [agent-network-artifacts.md](./agent-network-artifacts.md) | Parent→child artifact handoff + thread stickiness (Phase 53) |
 | [agent-network-ux-team-jobs.md](./agent-network-ux-team-jobs.md) | Fleet readiness + live job story UX (Phase 58 shipped) |
-| [agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md) | Job input delivery to workers — one-shot bytes, not vault sync (Phase 59; 59A locked) |
+| [agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md) | Job input delivery to workers — one-shot bytes on award, workspace GC on terminal (Phase 59 shipped) |
 | [agent-network-iteration.md](./agent-network-iteration.md) | Multi-round Team job iteration A ∩ B (Phase 47, shipped) |
 
 ---

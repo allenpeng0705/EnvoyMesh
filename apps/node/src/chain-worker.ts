@@ -99,6 +99,10 @@ export interface ChainWorkerHandlerDeps extends ChainWorkerSendDeps {
   agentNetworkEngineDenyReason?: () => string;
   /** Optional: persist/display read-only job snapshots from the assigner. */
   onObservedStatus?: (orchestratorPeerId: string, payload: TaskChainStatusPayload) => void;
+  /**
+   * Phase 59E — whole-chain cancel (no subtaskId): GC local job input workspace.
+   */
+  onWholeChainCancelled?: (chainId: string) => void;
   /** Optional executor — runs the task body and emits partials. */
   executeSubtask?: (
     subtask: ChainSubtask,
@@ -353,6 +357,13 @@ export async function handleWorkerCancel(
     correlationId: envelope.correlationId,
     summary: payload.reason,
   });
+  if (!payload.subtaskId) {
+    try {
+      deps.onWholeChainCancelled?.(payload.chainId);
+    } catch (err) {
+      console.warn(`[chain.input] worker GC on cancel failed for ${payload.chainId}:`, err);
+    }
+  }
   // The worker-runtime hook for actual task abort is the `executeSubtask`
   // contract — callers wire their executor to honor this by tracking
   // cancelled subtaskIds externally.
