@@ -1571,6 +1571,7 @@ class NodeServiceClient {
     int? iterationMaxRounds,
     String? iterationJudgeMode,
     int? extendMaxStepsPerRound,
+    String? inputDeliveryScope,
   }) async {
     return await _client.call(
       'chainStartFromGoal',
@@ -1588,6 +1589,8 @@ class NodeServiceClient {
           'iterationJudgeMode': iterationJudgeMode,
         if (extendMaxStepsPerRound != null)
           'extendMaxStepsPerRound': extendMaxStepsPerRound,
+        if (inputDeliveryScope != null && inputDeliveryScope.isNotEmpty)
+          'inputDeliveryScope': inputDeliveryScope,
       },
       const Duration(seconds: 120),
     ) as Map<String, dynamic>;
@@ -1611,6 +1614,25 @@ class NodeServiceClient {
         if (subtaskId != null && subtaskId.isNotEmpty) 'subtaskId': subtaskId,
       },
       const Duration(seconds: 60),
+    ) as Map<String, dynamic>;
+  }
+
+  /// Phase 59D — retry failed/stuck job input deliveries.
+  Future<Map<String, dynamic>> chainRetryInputDelivery({
+    required String chainId,
+    String? workerPeerId,
+    String? sourceRelativePath,
+  }) async {
+    return await _client.call(
+      'chainRetryInputDelivery',
+      {
+        'chainId': chainId,
+        if (workerPeerId != null && workerPeerId.isNotEmpty)
+          'workerPeerId': workerPeerId,
+        if (sourceRelativePath != null && sourceRelativePath.isNotEmpty)
+          'sourceRelativePath': sourceRelativePath,
+      },
+      const Duration(seconds: 120),
     ) as Map<String, dynamic>;
   }
 

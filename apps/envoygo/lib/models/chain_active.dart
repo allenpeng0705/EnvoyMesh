@@ -151,6 +151,54 @@ class ChainObservedSummary {
   }
 }
 
+/// Phase 59 — per worker × file delivery progress for Team job inputs.
+class ChainInputDelivery {
+  final String chainId;
+  final String workerPeerId;
+  final String sourceRelativePath;
+  final String phase;
+  final String? deliveredRelativePath;
+  final String? contentHash;
+  final String? error;
+  final String? label;
+
+  const ChainInputDelivery({
+    required this.chainId,
+    required this.workerPeerId,
+    required this.sourceRelativePath,
+    required this.phase,
+    this.deliveredRelativePath,
+    this.contentHash,
+    this.error,
+    this.label,
+  });
+
+  factory ChainInputDelivery.fromJson(Map<String, dynamic> json) {
+    return ChainInputDelivery(
+      chainId: json['chainId'] as String? ?? '',
+      workerPeerId: json['workerPeerId'] as String? ?? '',
+      sourceRelativePath: (json['sourceRelativePath'] as String? ?? '')
+          .replaceFirst(RegExp(r'^[\\/]+'), ''),
+      phase: json['phase'] as String? ?? 'pending',
+      deliveredRelativePath: json['deliveredRelativePath'] as String?,
+      contentHash: json['contentHash'] as String?,
+      error: json['error'] as String?,
+      label: json['label'] as String?,
+    );
+  }
+
+  String get shortWorker {
+    final id = workerPeerId;
+    return id.length > 14 ? '${id.substring(0, 12)}…' : id;
+  }
+
+  String get displayName {
+    if (label != null && label!.trim().isNotEmpty) return label!.trim();
+    final parts = sourceRelativePath.split('/');
+    return parts.isNotEmpty ? parts.last : sourceRelativePath;
+  }
+}
+
 class ChainActiveSummary {
   final String chainId;
   final String chainMandateId;
@@ -172,6 +220,8 @@ class ChainActiveSummary {
   final List<ChainLiveStep> steps;
   /// Phase 58D — iteration progress / owner hold.
   final ChainIterationState? iteration;
+  /// Phase 59D — job input delivery chips.
+  final List<ChainInputDelivery> inputDeliveries;
 
   const ChainActiveSummary({
     required this.chainId,
@@ -190,11 +240,27 @@ class ChainActiveSummary {
     this.rebalancePolicy,
     this.steps = const [],
     this.iteration,
+    this.inputDeliveries = const [],
   });
 
   factory ChainActiveSummary.fromJson(Map<String, dynamic> json) {
     final stepsRaw = json['steps'] as List<dynamic>? ?? const [];
     final iterationRaw = json['iteration'];
+    final deliveriesRaw = json['inputDeliveries'] as List<dynamic>? ?? const [];
+    final attachmentsRaw = json['inputAttachments'] as List<dynamic>? ?? const [];
+    final labelBySource = <String, String>{};
+    for (final raw in attachmentsRaw.whereType<Map>()) {
+      final m = Map<String, dynamic>.from(raw);
+      final source = (m['sourceRelativePath'] as String? ?? '')
+          .replaceFirst(RegExp(r'^[\\/]+'), '');
+      final label = (m['label'] as String?)?.trim();
+      final fileName = m['fileName'] as String?;
+      if (source.isNotEmpty) {
+        labelBySource[source] = (label != null && label.isNotEmpty)
+            ? label
+            : (fileName ?? source.split('/').last);
+      }
+    }
     return ChainActiveSummary(
       chainId: json['chainId'] as String,
       chainMandateId: json['chainMandateId'] as String? ?? '',
@@ -217,6 +283,21 @@ class ChainActiveSummary {
       iteration: iterationRaw is Map
           ? ChainIterationState.fromJson(Map<String, dynamic>.from(iterationRaw))
           : null,
+      inputDeliveries: deliveriesRaw.whereType<Map>().map((e) {
+        final base = ChainInputDelivery.fromJson(Map<String, dynamic>.from(e));
+        final label = labelBySource[base.sourceRelativePath];
+        if (label == null) return base;
+        return ChainInputDelivery(
+          chainId: base.chainId,
+          workerPeerId: base.workerPeerId,
+          sourceRelativePath: base.sourceRelativePath,
+          phase: base.phase,
+          deliveredRelativePath: base.deliveredRelativePath,
+          contentHash: base.contentHash,
+          error: base.error,
+          label: label,
+        );
+      }).toList(),
     );
   }
 

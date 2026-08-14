@@ -307,6 +307,17 @@ export async function routeRpcMethod(
         subtaskId: (params as { subtaskId?: string })?.subtaskId ?? "",
         error: "unsupported",
       };
+    case "chainRetryInputDelivery":
+      return ns.chainRetryInputDelivery?.(
+        params as unknown as import("@envoymesh/api").ChainRetryInputDeliveryParams,
+      ) ?? {
+        ok: false,
+        chainId: (params as { chainId?: string })?.chainId ?? "",
+        retried: 0,
+        verified: 0,
+        failed: 0,
+        error: "unsupported",
+      };
     case "chainListReports":
       return ns.chainListReports((params as unknown as ChainListReportsParams | undefined) ?? {});
     case "chainGetReport":

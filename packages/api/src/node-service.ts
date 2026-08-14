@@ -3528,6 +3528,11 @@ export interface NodeService {
     params: import("./ws-protocol.js").ChainReassignSubtaskParams,
   ): Promise<import("./ws-protocol.js").ChainReassignSubtaskResult>;
 
+  /** Phase 59D — retry failed job input deliveries for a chain. */
+  chainRetryInputDelivery?(
+    params: import("./ws-protocol.js").ChainRetryInputDeliveryParams,
+  ): Promise<import("./ws-protocol.js").ChainRetryInputDeliveryResult>;
+
   /** List published chain reports (newest first). */
   chainListReports(params?: ChainListReportsParams): Promise<ChainListReportsResult>;
 

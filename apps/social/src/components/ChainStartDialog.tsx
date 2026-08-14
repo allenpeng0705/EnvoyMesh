@@ -106,6 +106,10 @@ export function ChainStartDialog({
   const [assignmentMode, setAssignmentMode] = useState<"skill" | "role">(
     assignmentModeProp === "role" ? "role" : "skill",
   );
+  /** Phase 59D — referenced (default) vs all attachments. */
+  const [inputDeliveryScope, setInputDeliveryScope] = useState<"referenced" | "all">(
+    "referenced",
+  );
   /** Wait for defaults so the first preview uses the node default mode. */
   const [defaultsReady, setDefaultsReady] = useState(assignmentModeProp != null);
   const iterationTouchedRef = useRef(false);
@@ -362,6 +366,7 @@ export function ChainStartDialog({
         goal,
         allowLlm: true,
         assignmentMode,
+        inputDeliveryScope,
         iterationMaxRounds,
         iterationJudgeMode,
         extendMaxStepsPerRound,
@@ -408,7 +413,7 @@ export function ChainStartDialog({
     } finally {
       setStarting(false);
     }
-  }, [assignmentMode, assignerPeerId, engineReady, goal, hasWorkers, iterationMaxRounds, iterationJudgeMode, extendMaxStepsPerRound, localJoinEnabled, nodeService, onClose, onStarted, preview, selectedPeerIds, showToast, t]);
+  }, [assignmentMode, assignerPeerId, engineReady, goal, hasWorkers, inputDeliveryScope, iterationMaxRounds, iterationJudgeMode, extendMaxStepsPerRound, localJoinEnabled, nodeService, onClose, onStarted, preview, selectedPeerIds, showToast, t]);
 
   const handleSaveRecipe = useCallback(async () => {
     setSavingRecipe(true);
@@ -740,6 +745,25 @@ export function ChainStartDialog({
                     </select>
                     <small className="chain-start-hint">
                       {t("chains.start.assignmentModeHint")}
+                    </small>
+                  </label>
+                  <label className="chain-start-iteration-label">
+                    <span>{t("chains.start.inputDeliveryScope")}</span>
+                    <select
+                      value={inputDeliveryScope}
+                      onChange={(e) =>
+                        setInputDeliveryScope(e.target.value === "all" ? "all" : "referenced")
+                      }
+                      disabled={starting || savingRecipe}
+                      data-testid="chain-start-input-delivery-scope"
+                    >
+                      <option value="referenced">
+                        {t("chains.start.inputDeliveryScopeReferenced")}
+                      </option>
+                      <option value="all">{t("chains.start.inputDeliveryScopeAll")}</option>
+                    </select>
+                    <small className="chain-start-hint">
+                      {t("chains.start.inputDeliveryScopeHint")}
                     </small>
                   </label>
                   <label className="chain-start-iteration-label">

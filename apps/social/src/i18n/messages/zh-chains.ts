@@ -107,7 +107,19 @@ export const zhChainsMessages = {
     stepsTitle: "任务步骤",
     inputsTitle: "本机输入",
     attachmentHonesty:
-      "你附加的文件保存在本机保险库。工作节点收到的是发起方在步骤间传递的引用或打包产物 — 不会自动复制你的保险库。",
+      "你附加的文件保存在本机保险库。工作节点获派后会收到这些输入的一份副本，放在其协作任务工作区 — 不会形成对你资料库的长期镜像。",
+    deliveryTitle: "输入送达",
+    deliveryRetry: "重试",
+    deliveryRetrying: "重试中…",
+    deliveryRetried: "已重试输入送达",
+    deliveryRetryFailed: "无法重试输入送达",
+    deliveryRetryUnavailable: "当前节点不支持输入送达重试",
+    deliveryPhase: {
+      pending: "等待中",
+      transferring: "传输中",
+      verified: "已送达",
+      failed: "失败",
+    },
     waitingOn: "等待：",
     produced: "已产出：",
     stepMore: "展开",
@@ -306,6 +318,11 @@ export const zhChainsMessages = {
     assignmentModeRole: "按角色",
     assignmentModeHint:
       "按角色优先使用各工作节点的协作角色；按技能匹配专长。缺失角色时由分配器回退（并给出警告）。",
+    inputDeliveryScope: "输入送达范围",
+    inputDeliveryScopeReferenced: "仅步骤引用的附件",
+    inputDeliveryScopeAll: "全部任务附件",
+    inputDeliveryScopeHint:
+      "默认仅发送步骤中以 [标签] 引用的附件；若无匹配则回退为全部附件。全部则向每位获派工作节点发送所有附件。",
     iterationMaxRounds: "精炼轮数",
     iterationRounds1: "1（首稿后发布）",
     iterationRounds2: "最多 2 轮",

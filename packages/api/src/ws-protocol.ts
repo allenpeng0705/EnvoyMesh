@@ -449,6 +449,7 @@ export type RpcMethods =
   | "chainListObserved"
   | "chainCancel"
   | "chainReassignSubtask"
+  | "chainRetryInputDelivery"
   | "chainListReports"
   | "chainGetReport"
   | "chainPinReport"
@@ -2007,6 +2008,10 @@ export interface ChainGetStateResult {
    * (`pending` → `verified` / `failed`).
    */
   inputDeliveries?: import("./chain-input-delivery.js").ChainInputDeliveryRecord[];
+  /**
+   * Phase 59D — job input delivery policy (scope / auto / gc).
+   */
+  inputDeliveryPolicy?: import("./chain-input-delivery.js").ChainInputDeliveryPolicy;
 }
 
 /** Read-only snapshot of a team job where this node is a worker (not assigner). */
@@ -2086,6 +2091,24 @@ export interface ChainReassignSubtaskResult {
   chainId: string;
   subtaskId: string;
   nextWorkerPeerId?: string;
+  error?: string;
+}
+
+/** Phase 59D — re-push failed (or stuck) job input deliveries. */
+export interface ChainRetryInputDeliveryParams {
+  chainId: string;
+  /** Optional: only this worker. */
+  workerPeerId?: string;
+  /** Optional: only this Assigner source path. */
+  sourceRelativePath?: string;
+}
+
+export interface ChainRetryInputDeliveryResult {
+  ok: boolean;
+  chainId: string;
+  retried: number;
+  verified: number;
+  failed: number;
   error?: string;
 }
 
@@ -2412,6 +2435,11 @@ export interface ChainStartFromGoalParams {
    * so Start does not depend on a process-global lastPlanMeta latch.
    */
   planWarnings?: ChainPlanWarning[];
+  /**
+   * Phase 59D — deliver attachments referenced by the step (`referenced`,
+   * default) vs every job attachment to every awarded worker (`all`).
+   */
+  inputDeliveryScope?: "referenced" | "all";
 }
 
 export interface ChainResolveIterationParams {

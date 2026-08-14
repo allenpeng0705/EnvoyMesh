@@ -283,6 +283,21 @@ export class DirectCallClient implements NodeServiceClient {
     }
     return this._ns.chainReassignSubtask(params);
   }
+  chainRetryInputDelivery(
+    params: Parameters<NonNullable<NodeService["chainRetryInputDelivery"]>>[0],
+  ): ReturnType<NonNullable<NodeService["chainRetryInputDelivery"]>> {
+    if (typeof this._ns.chainRetryInputDelivery !== "function") {
+      return Promise.resolve({
+        ok: false,
+        chainId: params.chainId,
+        retried: 0,
+        verified: 0,
+        failed: 0,
+        error: "unsupported",
+      });
+    }
+    return this._ns.chainRetryInputDelivery(params);
+  }
   chainListReports(params?: Parameters<NodeService["chainListReports"]>[0]): ReturnType<NodeService["chainListReports"]> {
     return this._ns.chainListReports(params ?? {});
   }

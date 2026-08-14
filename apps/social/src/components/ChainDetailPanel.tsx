@@ -54,6 +54,7 @@ export function ChainDetailPanel({
   const [state, setState] = useState<ChainGetStateResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [busySubtaskId, setBusySubtaskId] = useState<string | null>(null);
+  const [busyDeliveryKey, setBusyDeliveryKey] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -197,6 +198,36 @@ export function ChainDetailPanel({
     [nodeService, chainId, load, onChanged, showToast, t],
   );
 
+  const handleRetryInputDelivery = useCallback(
+    async (input: { workerPeerId: string; sourceRelativePath: string }) => {
+      if (!nodeService.chainRetryInputDelivery) {
+        showToast(t("chains.detail.deliveryRetryUnavailable"), "error");
+        return;
+      }
+      const key = `${input.workerPeerId}::${input.sourceRelativePath}`;
+      setBusyDeliveryKey(key);
+      try {
+        const result = await nodeService.chainRetryInputDelivery({
+          chainId,
+          workerPeerId: input.workerPeerId,
+          sourceRelativePath: input.sourceRelativePath,
+        });
+        if (!result.ok) {
+          showToast(result.error ?? t("chains.detail.deliveryRetryFailed"), "error");
+          return;
+        }
+        showToast(t("chains.detail.deliveryRetried"), "success");
+        await load();
+        onChanged?.();
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : String(err), "error");
+      } finally {
+        setBusyDeliveryKey(null);
+      }
+    },
+    [nodeService, chainId, load, onChanged, showToast, t],
+  );
+
   // Map chainGetState.bidsBySubtask + optional captured subtask detail into
   // the shape ChainBidInbox expects. Keep zero-bid rows so solo/stalled
   // chains show an actionable empty state instead of "No subtasks yet".
@@ -300,10 +331,14 @@ export function ChainDetailPanel({
             <ChainLiveSteps
               steps={state.steps!}
               goal={state.goal ?? goal}
+              inputAttachments={state.inputAttachments}
+              inputDeliveries={state.inputDeliveries}
               allowStepControl={!isFinalized}
               busySubtaskId={busySubtaskId}
+              busyDeliveryKey={busyDeliveryKey}
               onCancelStep={handleCancelStep}
               onReassignStep={handleReassignStep}
+              onRetryInputDelivery={handleRetryInputDelivery}
             />
           ) : (
             <p className="chain-live-steps__honesty chain-live-steps__honesty--solo">

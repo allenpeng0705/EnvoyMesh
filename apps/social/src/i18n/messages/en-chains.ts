@@ -111,7 +111,19 @@ export const chainsMessages = {
     stepsTitle: "Job steps",
     inputsTitle: "Inputs on this home",
     attachmentHonesty:
-      "Files you attach live on this home’s vault. Workers receive references or packed artifacts the Assigner passes between steps — not an automatic copy of your vault.",
+      "Files you attach live on this home’s vault. When a worker is assigned, they receive a copy of those inputs under their Team job workspace — not a standing mirror of your Library.",
+    deliveryTitle: "Input delivery",
+    deliveryRetry: "Retry",
+    deliveryRetrying: "Retrying…",
+    deliveryRetried: "Input delivery retried",
+    deliveryRetryFailed: "Could not retry input delivery",
+    deliveryRetryUnavailable: "Input delivery retry is not available on this node",
+    deliveryPhase: {
+      pending: "Pending",
+      transferring: "Transferring",
+      verified: "Delivered",
+      failed: "Failed",
+    },
     waitingOn: "Waiting on:",
     produced: "Produced:",
     stepMore: "More",
@@ -332,6 +344,11 @@ export const chainsMessages = {
     assignmentModeRole: "Role based",
     assignmentModeHint:
       "Role based prefers each worker’s collaboration role (PM / programmer / tester…). Skill based matches specialties. Missing roles fall back via the Assigner (with warnings).",
+    inputDeliveryScope: "Input delivery",
+    inputDeliveryScopeReferenced: "Referenced attachments only",
+    inputDeliveryScopeAll: "All job attachments",
+    inputDeliveryScopeHint:
+      "Referenced (default) sends files mentioned as [label] in a step; if none match, all job attachments are sent. All sends every attachment to each awarded worker.",
     template: {
       research: "Research a topic",
       researchGoal: "Research the latest developments in {topic} and summarize the key findings",

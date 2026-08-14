@@ -10199,6 +10199,37 @@ button.activity-row:hover,
 .chain-live-steps__inputs li + li {
   margin-top: 0.25rem;
 }
+.chain-input-deliveries {
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--color-surface-muted, #f8fafc);
+  font-size: var(--text-xs, 0.75rem);
+}
+.chain-input-deliveries__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.chain-input-deliveries__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+}
+.chain-input-deliveries__item + .chain-input-deliveries__item {
+  margin-top: 0.4rem;
+}
+.chain-input-deliveries__main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.chain-input-deliveries__error {
+  flex: 1 1 100%;
+  color: var(--color-danger, #b91c1c);
+  opacity: 0.9;
+}
 .chain-live-steps__list {
   list-style: none;
   margin: 0.5rem 0 0;

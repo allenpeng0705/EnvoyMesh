@@ -58,6 +58,7 @@ import {
   deliverChainInputsOnAward,
   buildJobInputFileArtifacts,
   jobInputsReadyForAward,
+  retryFailedChainInputDeliveries,
 } from "./chain-input-delivery-runtime.js";
 import { sendVaultFileViaDataTransfer } from "./node-file-share.js";
 import {
@@ -1865,6 +1866,104 @@ export async function reassignSubtaskOwnerAction(
   }
 }
 
+/** Phase 59D — retry failed/stuck job input deliveries, then advance ready steps. */
+export async function retryInputDeliveryOwnerAction(
+  deps: ChainOrchestrationContext,
+  params: import("@envoymesh/api").ChainRetryInputDeliveryParams,
+): Promise<import("@envoymesh/api").ChainRetryInputDeliveryResult> {
+  const runtime = deps.getChainStore().getRuntime(params.chainId);
+  if (!runtime) {
+    return {
+      ok: false,
+      chainId: params.chainId,
+      retried: 0,
+      verified: 0,
+      failed: 0,
+      error: "chain_not_found",
+    };
+  }
+  try {
+    const orchDeps = await buildChainOrchestratorDeps(deps);
+    const vaultDir = deps.getVaultDir();
+    const mesh = deps.getReachableMesh();
+    const taskStore = deps.getTaskStore();
+    const profile = deps.getProfile();
+    const transport = await _chainTransportResolver(deps);
+    const counts = await retryFailedChainInputDeliveries({
+      state: runtime.state,
+      workerPeerId: params.workerPeerId,
+      sourceRelativePath: params.sourceRelativePath,
+      orchestratorPeerId: orchDeps.orchestratorPeerId,
+      resolveTransportPeerId: transport
+        ? async (workerPeerId) =>
+            (await resolveChainTransportPeerId(transport, workerPeerId)) ?? undefined
+        : undefined,
+      copyLocal:
+        vaultDir
+          ? ({ sourceRelativePath, deliveredRelativePath }) =>
+              copyChainInputInVault({ vaultDir, sourceRelativePath, deliveredRelativePath })
+          : undefined,
+      pushFile:
+        vaultDir && mesh && taskStore && profile
+          ? async ({
+              sourceRelativePath,
+              voucherRelativePath,
+              toPeerId,
+              chainId,
+              expiresAt,
+            }) => {
+              const dialHints = transport?.resolveDialHints
+                ? await transport.resolveDialHints(toPeerId)
+                : [];
+              return sendVaultFileViaDataTransfer({
+                mesh,
+                profile,
+                taskStore,
+                vaultDir,
+                relativePath: sourceRelativePath,
+                voucherRelativePath,
+                expiresAt,
+                toPeerId,
+                dialHints,
+                rebuildDialHints: transport?.resolveDialHints
+                  ? () => transport.resolveDialHints!(toPeerId)
+                  : undefined,
+                transferHooks: {
+                  correlationId: chainId,
+                  onUpdate: () => {
+                    /* state.inputDeliveries is source of truth */
+                  },
+                },
+              });
+            }
+          : undefined,
+      onUpdate: () => _emitChainState(deps, params.chainId),
+    });
+    try {
+      await advanceReadySubtasks(orchDeps, runtime.state);
+    } catch (err) {
+      console.warn(`[chain.input] advance after retry failed for ${params.chainId}:`, err);
+    }
+    _emitChainState(deps, params.chainId);
+    return {
+      ok: true,
+      chainId: params.chainId,
+      retried: counts.retried,
+      verified: counts.verified,
+      failed: counts.failed,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      chainId: params.chainId,
+      retried: 0,
+      verified: 0,
+      failed: 0,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 export function _emitChainState(deps: ChainOrchestrationContext, chainId: string): void {
   const runtime = deps.getChainStore().getRuntime(chainId);
   if (!runtime) return;
@@ -1879,6 +1978,7 @@ export function _emitChainState(deps: ChainOrchestrationContext, chainId: string
   state.steps = buildChainLiveSteps(runtime.state);
   state.inputAttachments = runtime.state.inputAttachments;
   state.inputDeliveries = runtime.state.inputDeliveries;
+  state.inputDeliveryPolicy = runtime.state.inputDeliveryPolicy;
   populateIterationInState(runtime, state);
   deps.emit("chain:state", state);
   // Fan-out read-only status to joined workers (debounced).
@@ -2046,6 +2146,8 @@ export async function _runChainGoal(
     }>;
     /** Preview warnings — preferred over process-global lastPlanMeta. */
     planWarnings?: ChainPlanMeta["warnings"];
+    /** Phase 59D — input delivery scope for this job. */
+    inputDeliveryScope?: "referenced" | "all";
   },
 ): Promise<{
   ok: boolean;
@@ -2121,7 +2223,11 @@ export async function _runChainGoal(
     },
     ownerPrivateKeyPem,
   );
-  const state = createChainState(mandate, { awardMode, goal: input.goal });
+  const state = createChainState(mandate, {
+    awardMode,
+    goal: input.goal,
+    inputDeliveryScope: input.inputDeliveryScope,
+  });
   const chainSide = deps.getChainSideState();
   chainSide.goals.set(chainId, input.goal);
   chainSide.awardModes.set(chainId, awardMode);

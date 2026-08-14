@@ -304,6 +304,9 @@ export interface NodeServiceClient {
   chainReassignSubtask?(
     params: import("@envoymesh/api").ChainReassignSubtaskParams,
   ): Promise<import("@envoymesh/api").ChainReassignSubtaskResult>;
+  chainRetryInputDelivery?(
+    params: import("@envoymesh/api").ChainRetryInputDeliveryParams,
+  ): Promise<import("@envoymesh/api").ChainRetryInputDeliveryResult>;
   chainListReports(params?: ChainListReportsParams): Promise<ChainListReportsResult>;
   chainGetReport(params: ChainGetReportParams): Promise<ChainGetReportResult>;
   chainPinReport(params: ChainPinReportParams): Promise<ChainPinReportResult>;
@@ -1210,6 +1213,11 @@ function createWsNodeServiceClient(
     async chainReassignSubtask(params: import("@envoymesh/api").ChainReassignSubtaskParams) {
       return wsClient.rpc("chainReassignSubtask", params as unknown as Record<string, unknown>) as unknown as Promise<
         import("@envoymesh/api").ChainReassignSubtaskResult
+      >;
+    },
+    async chainRetryInputDelivery(params: import("@envoymesh/api").ChainRetryInputDeliveryParams) {
+      return wsClient.rpc("chainRetryInputDelivery", params as unknown as Record<string, unknown>) as unknown as Promise<
+        import("@envoymesh/api").ChainRetryInputDeliveryResult
       >;
     },
     async chainListReports(params?: ChainListReportsParams) {

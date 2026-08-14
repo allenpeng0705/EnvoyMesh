@@ -48,8 +48,11 @@ export function upsertChainInputDelivery(
       r.workerPeerId === next.workerPeerId &&
       r.sourceRelativePath === next.sourceRelativePath,
   );
-  if (idx >= 0) list[idx] = { ...list[idx], ...next };
-  else list.push(next);
+  if (idx >= 0) {
+    const merged: ChainInputDeliveryRecord = { ...list[idx], ...next };
+    if (!("error" in patch) || patch.error === undefined) delete merged.error;
+    list[idx] = merged;
+  } else list.push(next);
   return idx >= 0 ? list[idx]! : next;
 }
 
@@ -319,4 +322,141 @@ export async function copyChainInputInVault(opts: {
   }
   const content = await readFile(absDest);
   return { contentHash: createHash("sha256").update(content).digest("base64url") };
+}
+
+/**
+ * Phase 59D — re-push failed (or stuck transferring) deliveries.
+ * Does not require a subtask id; uses stored source/dest paths on the record.
+ */
+export async function retryFailedChainInputDeliveries(opts: {
+  state: ChainState;
+  workerPeerId?: string;
+  sourceRelativePath?: string;
+  orchestratorPeerId: string;
+  resolveTransportPeerId?: (workerPeerId: string) => Promise<string | undefined>;
+  now?: () => Date;
+  pushFile?: ChainInputPushFile;
+  copyLocal?: ChainInputCopyLocal;
+  onUpdate?: () => void;
+}): Promise<{ retried: number; verified: number; failed: number }> {
+  const {
+    state,
+    workerPeerId,
+    sourceRelativePath,
+    orchestratorPeerId,
+    resolveTransportPeerId,
+    pushFile,
+    copyLocal,
+    onUpdate,
+  } = opts;
+  const now = opts.now ?? (() => new Date());
+  ensureChainInputManifest(state);
+  const wantSource = sourceRelativePath?.replace(/^[\\/]+/, "");
+  const targets = (state.inputDeliveries ?? []).filter((r) => {
+    if (r.phase !== "failed" && r.phase !== "transferring") return false;
+    if (workerPeerId && r.workerPeerId !== workerPeerId) return false;
+    if (wantSource && r.sourceRelativePath !== wantSource) return false;
+    return true;
+  });
+  let retried = 0;
+  let verified = 0;
+  let failed = 0;
+  for (const rec of targets) {
+    retried += 1;
+    const source = rec.sourceRelativePath.replace(/^[\\/]+/, "");
+    const fileName = source.split("/").pop() ?? "file";
+    const deliveredRelativePath =
+      rec.deliveredRelativePath?.replace(/^[\\/]+/, "") ||
+      chainInputDeliveredRelativePath(state.chainId, fileName);
+    const isSelf = rec.workerPeerId === orchestratorPeerId;
+    upsertChainInputDelivery(state, {
+      chainId: state.chainId,
+      workerPeerId: rec.workerPeerId,
+      sourceRelativePath: source,
+      deliveredRelativePath,
+      phase: "pending",
+      error: undefined,
+    });
+    onUpdate?.();
+    try {
+      if (isSelf) {
+        if (!copyLocal) {
+          upsertChainInputDelivery(state, {
+            chainId: state.chainId,
+            workerPeerId: rec.workerPeerId,
+            sourceRelativePath: source,
+            deliveredRelativePath: source,
+            contentHash: rec.contentHash ?? "local",
+            phase: "verified",
+          });
+        } else {
+          upsertChainInputDelivery(state, {
+            chainId: state.chainId,
+            workerPeerId: rec.workerPeerId,
+            sourceRelativePath: source,
+            deliveredRelativePath,
+            phase: "transferring",
+          });
+          onUpdate?.();
+          const copied = await copyLocal({
+            sourceRelativePath: source,
+            deliveredRelativePath,
+          });
+          upsertChainInputDelivery(state, {
+            chainId: state.chainId,
+            workerPeerId: rec.workerPeerId,
+            sourceRelativePath: source,
+            deliveredRelativePath,
+            contentHash: copied.contentHash,
+            phase: "verified",
+          });
+        }
+      } else {
+        if (!pushFile) throw new Error("push_unavailable");
+        const transportPeerId = resolveTransportPeerId
+          ? await resolveTransportPeerId(rec.workerPeerId)
+          : undefined;
+        if (!transportPeerId) throw new Error("no_transport_peer");
+        upsertChainInputDelivery(state, {
+          chainId: state.chainId,
+          workerPeerId: rec.workerPeerId,
+          sourceRelativePath: source,
+          deliveredRelativePath,
+          phase: "transferring",
+        });
+        onUpdate?.();
+        const expiresAt = new Date(now().getTime() + CHAIN_INPUT_VOUCHER_TTL_MS).toISOString();
+        const pushed = await pushFile({
+          sourceRelativePath: source,
+          voucherRelativePath: deliveredRelativePath,
+          toPeerId: transportPeerId,
+          chainId: state.chainId,
+          expiresAt,
+        });
+        upsertChainInputDelivery(state, {
+          chainId: state.chainId,
+          workerPeerId: rec.workerPeerId,
+          sourceRelativePath: source,
+          deliveredRelativePath,
+          contentHash: pushed.contentHash,
+          transferId: pushed.transferId,
+          phase: "verified",
+        });
+      }
+      verified += 1;
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      upsertChainInputDelivery(state, {
+        chainId: state.chainId,
+        workerPeerId: rec.workerPeerId,
+        sourceRelativePath: source,
+        deliveredRelativePath,
+        phase: "failed",
+        error: error.slice(0, 500),
+      });
+      failed += 1;
+    }
+    onUpdate?.();
+  }
+  return { retried, verified, failed };
 }

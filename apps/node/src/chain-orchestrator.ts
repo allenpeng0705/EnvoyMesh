@@ -292,7 +292,11 @@ export interface ChainState {
 
 export function createChainState(
   chainMandate: ChainMandate,
-  opts?: { awardMode?: "direct" | "competitive"; goal?: string },
+  opts?: {
+    awardMode?: "direct" | "competitive";
+    goal?: string;
+    inputDeliveryScope?: "referenced" | "all";
+  },
 ): ChainState {
   const ledger = createChainBudgetLedger(chainMandate);
   const goal = opts?.goal?.trim();
@@ -327,7 +331,12 @@ export function createChainState(
     awardMode: opts?.awardMode === "direct" ? "direct" : "competitive",
     inputAttachments,
     inputDeliveries: [],
-    inputDeliveryPolicy: { ...DEFAULT_CHAIN_INPUT_DELIVERY_POLICY },
+    inputDeliveryPolicy: {
+      ...DEFAULT_CHAIN_INPUT_DELIVERY_POLICY,
+      ...(opts?.inputDeliveryScope === "all" || opts?.inputDeliveryScope === "referenced"
+        ? { scope: opts.inputDeliveryScope }
+        : {}),
+    },
   };
 }
 

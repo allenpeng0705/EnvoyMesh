@@ -348,6 +348,8 @@ export interface ChainContext {
     assignKind?: string;
     message: string;
   }>;
+  /** Phase 59D — input delivery scope for this job. */
+  inputDeliveryScope?: "referenced" | "all";
 }): Promise<
   | {
       ok: true;
@@ -412,6 +414,7 @@ export function chainGetStateViaRuntime(
   result.steps = buildChainLiveSteps(entry.state);
   result.inputAttachments = entry.state.inputAttachments;
   result.inputDeliveries = entry.state.inputDeliveries;
+  result.inputDeliveryPolicy = entry.state.inputDeliveryPolicy;
   const side = ctx.getChainSideState?.();
   result.assignmentMode = side?.assignmentModes.get(params.chainId);
   result.planWarnings = side?.planWarnings.get(params.chainId) as ChainGetStateResult["planWarnings"];
@@ -453,6 +456,7 @@ export function chainListActiveViaRuntime(
       snap.steps = buildChainLiveSteps(entry.state);
       snap.inputAttachments = entry.state.inputAttachments;
       snap.inputDeliveries = entry.state.inputDeliveries;
+      snap.inputDeliveryPolicy = entry.state.inputDeliveryPolicy;
       const side = ctx.getChainSideState?.();
       snap.assignmentMode = side?.assignmentModes.get(chainId);
       snap.planWarnings = side?.planWarnings.get(chainId) as ChainGetStateResult["planWarnings"];
@@ -1085,6 +1089,7 @@ export async function chainStartFromGoalViaRuntime(
       preferredWorkerPeerIds: params.preferredWorkerPeerIds,
       plannedSubtasks: reused,
       planWarnings: preview.planWarnings,
+      inputDeliveryScope: params.inputDeliveryScope,
     });
     if (!result.ok) {
       return {
@@ -1128,6 +1133,7 @@ export async function chainStartFromGoalViaRuntime(
     preferredWorkerPeerIds: params.preferredWorkerPeerIds,
     plannedSubtasks,
     planWarnings: params.planWarnings,
+    inputDeliveryScope: params.inputDeliveryScope,
   });
   if (!result.ok) {
     return { ok: false, error: result.error };

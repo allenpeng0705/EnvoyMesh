@@ -2107,7 +2107,40 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chainsAttachmentHonesty =>
-      '你附加的文件保存在本机保险库。工作节点收到的是步骤间传递的引用或打包产物 — 不会自动复制保险库。';
+      '你附加的文件保存在本机保险库。工作节点获派后会收到这些输入的一份副本，放在其协作任务工作区 — 不会形成对你资料库的长期镜像。';
+
+  @override
+  String get chainsDeliveryTitle => '输入送达';
+
+  @override
+  String get chainsDeliveryRetry => '重试';
+
+  @override
+  String get chainsDeliveryRetried => '已重试输入送达';
+
+  @override
+  String get chainsDeliveryRetryFailed => '无法重试输入送达';
+
+  @override
+  String get chainsDeliveryPhasePending => '等待中';
+
+  @override
+  String get chainsDeliveryPhaseTransferring => '传输中';
+
+  @override
+  String get chainsDeliveryPhaseVerified => '已送达';
+
+  @override
+  String get chainsDeliveryPhaseFailed => '失败';
+
+  @override
+  String get chainsInputDeliveryScope => '输入送达范围';
+
+  @override
+  String get chainsInputDeliveryScopeReferenced => '仅引用附件';
+
+  @override
+  String get chainsInputDeliveryScopeAll => '全部附件';
 
   @override
   String get chainsIterationAskOwnerTitle => '发布前审阅草稿';

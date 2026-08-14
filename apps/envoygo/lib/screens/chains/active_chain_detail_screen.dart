@@ -69,6 +69,56 @@ class _ActiveChainDetailScreenState
 
   String? get _displayError => _actionError ?? _loadError;
 
+  Future<void> _retryInputDelivery(ChainInputDelivery d) async {
+    final l10n = AppLocalizations.of(context);
+    final client = _clientOrNull();
+    if (client == null) {
+      setState(() => _actionError = l10n.commonNotConnectedHome);
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _actionError = null;
+    });
+    try {
+      final result = await client.chainRetryInputDelivery(
+        chainId: widget.chainId,
+        workerPeerId: d.workerPeerId,
+        sourceRelativePath: d.sourceRelativePath,
+      );
+      if (!mounted) return;
+      if (result['ok'] != true) {
+        setState(() {
+          _actionError = (result['error'] as String?)?.isNotEmpty == true
+              ? result['error'] as String
+              : l10n.chainsDeliveryRetryFailed;
+        });
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.chainsDeliveryRetried)),
+      );
+      await _refresh();
+    } catch (e) {
+      if (mounted) setState(() => _actionError = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _deliveryPhaseLabel(AppLocalizations l10n, String phase) {
+    switch (phase) {
+      case 'verified':
+        return l10n.chainsDeliveryPhaseVerified;
+      case 'failed':
+        return l10n.chainsDeliveryPhaseFailed;
+      case 'transferring':
+        return l10n.chainsDeliveryPhaseTransferring;
+      default:
+        return l10n.chainsDeliveryPhasePending;
+    }
+  }
+
   Future<void> _refresh() async {
     if (_refreshInFlight) {
       _refreshQueued = true;
@@ -414,6 +464,42 @@ class _ActiveChainDetailScreenState
                       l10n.chainsAttachmentHonesty,
                       style: theme.textTheme.bodySmall,
                     ),
+                    if (st.inputDeliveries.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        l10n.chainsDeliveryTitle,
+                        style: theme.textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 6),
+                      ...st.inputDeliveries.map((d) {
+                        final canRetry =
+                            !st.published &&
+                            !st.chainCancelled &&
+                            (d.phase == 'failed' || d.phase == 'transferring');
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '[${d.displayName}] → ${d.shortWorker} · ${_deliveryPhaseLabel(l10n, d.phase)}'
+                                  '${d.phase == 'failed' && (d.error?.isNotEmpty ?? false) ? '\n${d.error}' : ''}',
+                                  style: theme.textTheme.bodySmall,
+                                ),
+                              ),
+                              if (canRetry)
+                                TextButton(
+                                  onPressed: _busy
+                                      ? null
+                                      : () => _retryInputDelivery(d),
+                                  child: Text(l10n.chainsDeliveryRetry),
+                                ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
                     const SizedBox(height: 8),
                     ..._orderedSteps(st.steps).map((entry) {
                       final step = entry.step;

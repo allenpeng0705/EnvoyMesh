@@ -8,6 +8,7 @@ import {
   deliverChainInputsOnAward,
   ensureChainInputManifest,
   jobInputsReadyForAward,
+  retryFailedChainInputDeliveries,
 } from "../src/chain-input-delivery-runtime.js";
 
 const NOW = new Date("2026-08-14T12:00:00.000Z");
@@ -159,6 +160,33 @@ describe("chain-input-delivery-runtime (Phase 59B)", () => {
     });
     expect(records[0]?.phase).toBe("failed");
     expect(records[0]?.error).toContain("offline");
+  });
+
+  it("retryFailedChainInputDeliveries re-pushes failed rows (Phase 59D)", async () => {
+    const state = createChainState(mandate() as never, {
+      goal: ["G", "", "Attachments:", "- [brief] imports/a/brief.pdf"].join("\n"),
+    });
+    state.subtasks.set("subtask_a", subtaskWithBrief());
+    await deliverChainInputsOnAward({
+      state,
+      subtaskId: "subtask_a",
+      workerPeerId: "envoy_agent_w",
+      orchestratorPeerId: "envoy_agent_o",
+      transportPeerId: "12D3KooWworker",
+      pushFile: async () => {
+        throw new Error("offline");
+      },
+    });
+    const pushFile = vi.fn().mockResolvedValue({ contentHash: "retry_h" });
+    const counts = await retryFailedChainInputDeliveries({
+      state,
+      orchestratorPeerId: "envoy_agent_o",
+      resolveTransportPeerId: async () => "12D3KooWworker",
+      pushFile,
+    });
+    expect(counts).toEqual({ retried: 1, verified: 1, failed: 0 });
+    expect(state.inputDeliveries?.[0]?.phase).toBe("verified");
+    expect(state.inputDeliveries?.[0]?.contentHash).toBe("retry_h");
   });
 });
 

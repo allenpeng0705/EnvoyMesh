@@ -2128,7 +2128,40 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get chainsAttachmentHonesty =>
-      'Files you attach live on this home’s vault. Workers get references or packed artifacts between steps — not an automatic vault copy.';
+      'Files you attach live on this home’s vault. When a worker is assigned, they receive a copy of those inputs under their Team job workspace — not a standing mirror of your Library.';
+
+  @override
+  String get chainsDeliveryTitle => 'Input delivery';
+
+  @override
+  String get chainsDeliveryRetry => 'Retry';
+
+  @override
+  String get chainsDeliveryRetried => 'Input delivery retried';
+
+  @override
+  String get chainsDeliveryRetryFailed => 'Could not retry input delivery';
+
+  @override
+  String get chainsDeliveryPhasePending => 'Pending';
+
+  @override
+  String get chainsDeliveryPhaseTransferring => 'Transferring';
+
+  @override
+  String get chainsDeliveryPhaseVerified => 'Delivered';
+
+  @override
+  String get chainsDeliveryPhaseFailed => 'Failed';
+
+  @override
+  String get chainsInputDeliveryScope => 'Input delivery';
+
+  @override
+  String get chainsInputDeliveryScopeReferenced => 'Referenced only';
+
+  @override
+  String get chainsInputDeliveryScopeAll => 'All attachments';
 
   @override
   String get chainsIterationAskOwnerTitle => 'Review draft before publish';

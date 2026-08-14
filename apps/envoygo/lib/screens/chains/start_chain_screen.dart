@@ -45,6 +45,7 @@ class StartChainScreen extends ConsumerStatefulWidget {
 class _StartChainScreenState extends ConsumerState<StartChainScreen> {
   final _goalCtl = TextEditingController();
   String _assignmentMode = 'skill';
+  String _inputDeliveryScope = 'referenced';
   bool _loadingDefaults = true;
   bool _previewing = false;
   bool _starting = false;
@@ -443,6 +444,7 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
       final result = await client.chainStartFromGoal(
         goal: _effectiveGoal,
         assignmentMode: _assignmentMode,
+        inputDeliveryScope: _inputDeliveryScope,
         plannedSubtasks: planned,
         planWarnings: _warnings.isEmpty ? null : _warnings,
         preferredWorkerPeerIds: _selectedWorkerPeerIds.isEmpty
@@ -658,6 +660,31 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
                       ? l10n.chainsStartModeRoleHint
                       : l10n.chainsStartModeSkillHint,
                   style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  l10n.chainsInputDeliveryScope,
+                  style: theme.textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+                SegmentedButton<String>(
+                  segments: [
+                    ButtonSegment(
+                      value: 'referenced',
+                      label: Text(l10n.chainsInputDeliveryScopeReferenced),
+                    ),
+                    ButtonSegment(
+                      value: 'all',
+                      label: Text(l10n.chainsInputDeliveryScopeAll),
+                    ),
+                  ],
+                  selected: {_inputDeliveryScope},
+                  onSelectionChanged: busy
+                      ? null
+                      : (next) {
+                          if (next.isEmpty) return;
+                          setState(() => _inputDeliveryScope = next.first);
+                        },
                 ),
                 const SizedBox(height: 16),
                 TextField(

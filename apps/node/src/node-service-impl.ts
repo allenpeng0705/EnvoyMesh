@@ -1065,6 +1065,7 @@ import {
   _emitChainState,
   cancelChainOwnerAction,
   reassignSubtaskOwnerAction,
+  retryInputDeliveryOwnerAction,
   _evaluateAwardAndAccept,
   _executeApprovedChainAward,
   _queueChainAwardApproval,
@@ -12375,6 +12376,12 @@ class NodeServiceImpl implements NodeService {
     params: import("@envoymesh/api").ChainReassignSubtaskParams,
   ): Promise<import("@envoymesh/api").ChainReassignSubtaskResult> {
     return reassignSubtaskOwnerAction(this._chainOrchestrationContext(), params);
+  }
+
+  async chainRetryInputDelivery(
+    params: import("@envoymesh/api").ChainRetryInputDeliveryParams,
+  ): Promise<import("@envoymesh/api").ChainRetryInputDeliveryResult> {
+    return retryInputDeliveryOwnerAction(this._chainOrchestrationContext(), params);
   }
 
   async chainListReports(params?: ChainListReportsParams): Promise<ChainListReportsResult> {

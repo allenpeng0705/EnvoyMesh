@@ -6,15 +6,23 @@ import { useState } from "react";
 import type { ChainGetStateResult } from "@envoymesh/api";
 import { useT } from "../context/I18nContext.js";
 import { orderLiveSteps, parseGoalInputRefs } from "../lib/chain-live-steps.js";
+import { ChainInputDeliveries } from "./ChainInputDeliveries.js";
 
 export interface ChainLiveStepsProps {
   steps: NonNullable<ChainGetStateResult["steps"]>;
   goal?: string;
+  inputAttachments?: ChainGetStateResult["inputAttachments"];
+  inputDeliveries?: ChainGetStateResult["inputDeliveries"];
   /** When false/omitted, hide owner control buttons (observed / finalized). */
   allowStepControl?: boolean;
   busySubtaskId?: string | null;
+  busyDeliveryKey?: string | null;
   onCancelStep?: (subtaskId: string) => void;
   onReassignStep?: (subtaskId: string) => void;
+  onRetryInputDelivery?: (input: {
+    workerPeerId: string;
+    sourceRelativePath: string;
+  }) => void;
 }
 
 function shortPeer(peerId: string | undefined): string {
@@ -33,10 +41,14 @@ function canReassignStep(state: string): boolean {
 export function ChainLiveSteps({
   steps,
   goal,
+  inputAttachments,
+  inputDeliveries,
   allowStepControl = false,
   busySubtaskId = null,
+  busyDeliveryKey = null,
   onCancelStep,
   onReassignStep,
+  onRetryInputDelivery,
 }: ChainLiveStepsProps) {
   const t = useT();
   const ordered = orderLiveSteps(steps);
@@ -76,6 +88,16 @@ export function ChainLiveSteps({
             ))}
           </ul>
         </div>
+      ) : null}
+
+      {inputDeliveries && inputDeliveries.length > 0 ? (
+        <ChainInputDeliveries
+          deliveries={inputDeliveries}
+          attachments={inputAttachments}
+          allowRetry={allowStepControl}
+          busyKey={busyDeliveryKey}
+          onRetry={onRetryInputDelivery}
+        />
       ) : null}
 
       <p className="chain-live-steps__honesty">{t("chains.detail.attachmentHonesty")}</p>

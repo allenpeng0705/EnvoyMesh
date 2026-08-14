@@ -4083,19 +4083,134 @@ abstract class AppLocalizations {
   /// No description provided for @chainsAttachmentHonesty.
   ///
   /// In en, this message translates to:
-  /// **'Files you attach live on this home’s vault. Workers get references or packed artifacts between steps — not an automatic vault copy.'**
+  /// **'Files you attach live on this home’s vault. When a worker is assigned, they receive a copy of those inputs under their Team job workspace — not a standing mirror of your Library.'**
   String get chainsAttachmentHonesty;
-  String get chainsIterationAskOwnerTitle;
-  String get chainsIterationAskOwnerBody;
-  String get chainsIterationAcceptDraft;
-  String get chainsIterationContinue;
-  String get chainsIterationAccepted;
-  String get chainsIterationContinued;
-  String get chainsIterationResolveFailed;
-  String get chainsObservedTitle;
-  String get chainsObservedHint;
-  String get chainsObservedReadOnly;
 
+  /// No description provided for @chainsDeliveryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Input delivery'**
+  String get chainsDeliveryTitle;
+
+  /// No description provided for @chainsDeliveryRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get chainsDeliveryRetry;
+
+  /// No description provided for @chainsDeliveryRetried.
+  ///
+  /// In en, this message translates to:
+  /// **'Input delivery retried'**
+  String get chainsDeliveryRetried;
+
+  /// No description provided for @chainsDeliveryRetryFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not retry input delivery'**
+  String get chainsDeliveryRetryFailed;
+
+  /// No description provided for @chainsDeliveryPhasePending.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending'**
+  String get chainsDeliveryPhasePending;
+
+  /// No description provided for @chainsDeliveryPhaseTransferring.
+  ///
+  /// In en, this message translates to:
+  /// **'Transferring'**
+  String get chainsDeliveryPhaseTransferring;
+
+  /// No description provided for @chainsDeliveryPhaseVerified.
+  ///
+  /// In en, this message translates to:
+  /// **'Delivered'**
+  String get chainsDeliveryPhaseVerified;
+
+  /// No description provided for @chainsDeliveryPhaseFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get chainsDeliveryPhaseFailed;
+
+  /// No description provided for @chainsInputDeliveryScope.
+  ///
+  /// In en, this message translates to:
+  /// **'Input delivery'**
+  String get chainsInputDeliveryScope;
+
+  /// No description provided for @chainsInputDeliveryScopeReferenced.
+  ///
+  /// In en, this message translates to:
+  /// **'Referenced only'**
+  String get chainsInputDeliveryScopeReferenced;
+
+  /// No description provided for @chainsInputDeliveryScopeAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All attachments'**
+  String get chainsInputDeliveryScopeAll;
+
+  /// No description provided for @chainsIterationAskOwnerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Review draft before publish'**
+  String get chainsIterationAskOwnerTitle;
+
+  /// No description provided for @chainsIterationAskOwnerBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Accept to publish, or continue for another refinement round.'**
+  String get chainsIterationAskOwnerBody;
+
+  /// No description provided for @chainsIterationAcceptDraft.
+  ///
+  /// In en, this message translates to:
+  /// **'Accept & publish'**
+  String get chainsIterationAcceptDraft;
+
+  /// No description provided for @chainsIterationContinue.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue refining'**
+  String get chainsIterationContinue;
+
+  /// No description provided for @chainsIterationAccepted.
+  ///
+  /// In en, this message translates to:
+  /// **'Draft accepted — publishing'**
+  String get chainsIterationAccepted;
+
+  /// No description provided for @chainsIterationContinued.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting another refinement round'**
+  String get chainsIterationContinued;
+
+  /// No description provided for @chainsIterationResolveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not apply your decision'**
+  String get chainsIterationResolveFailed;
+
+  /// No description provided for @chainsObservedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Jobs you’re on'**
+  String get chainsObservedTitle;
+
+  /// No description provided for @chainsObservedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'View only — only the Assigner can manage these jobs.'**
+  String get chainsObservedHint;
+
+  /// No description provided for @chainsObservedReadOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'View only'**
+  String get chainsObservedReadOnly;
 
   /// No description provided for @chainsStartNeedWorkers.
   ///
