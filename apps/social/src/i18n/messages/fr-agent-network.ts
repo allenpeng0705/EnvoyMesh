@@ -13,23 +13,28 @@ export const frAgentNetworkSettingsMessages = {
   groupOperatorDesc: "Pré-configurez la confiance pour de nombreux nœuds à la fois, ou liez automatiquement tout le monde sur le Wi-Fi du bureau.",
   officeLan: {
     heading: "LAN de bureau",
-    desc: "Jobs d'équipe sur le même Wi-Fi au même endroit : rejoindre le réseau d'agents, liaison LAN automatique et jeton de flotte partagé. Activez sur chaque machine avec le même jeton.",
+    desc: "Jobs d'équipe sur le même Wi-Fi : rejoindre le réseau d'agents + liaison LAN. Le jeton est optionnel — laissez-le vide pour lier toute machine qui a aussi activé le LAN de bureau sans jeton (Wi‑Fi de bureau de confiance uniquement).",
     enableButton: "Activer l'équipe LAN de bureau",
     enabling: "Activation…",
     enabled: "Équipe LAN de bureau activée",
     disableButton: "Désactiver l'équipe LAN de bureau",
     disabling: "Désactivation…",
     disableHint:
-      "Désactive l'adhésion au réseau d'agents et la liaison LAN automatique sur ce nœud. Le jeton partagé est conservé pour une réactivation facile.",
+      "Désactive l'adhésion et la liaison LAN sur ce nœud. Un jeton existant est conservé.",
     copyToken: "Copier le jeton",
     tokenCopied: "Jeton copié",
-    tokenLabel: "Jeton de flotte",
+    tokenLabel: "Jeton de flotte (optionnel)",
+    tokenPlaceholder: "vide = LAN ouvert, ou collez un secret partagé",
     tokenHelp:
-      "Secret partagé pour ce bureau. Collez la même valeur sur chaque machine (générez une fois, puis copiez). Jamais écrit dans le journal d'audit.",
+      "Secret optionnel. Même valeur non vide partout = flotte protégée. Vide partout = LAN ouvert. Jamais écrit dans le journal d'audit.",
     saveToken: "Enregistrer le jeton",
+    clearToken: "Effacer",
     shareHint:
-      "Copiez ce jeton, partagez-le avec les autres machines, collez-le, puis activez l'équipe LAN de bureau sur chacune.",
-    alreadyOn: "Équipe LAN de bureau active — adhésion et liaison LAN avec ce jeton partagé.",
+      "Copiez ce jeton, collez-le sur les autres machines (Enregistrer), puis activez l'équipe LAN de bureau sur chacune.",
+    openLanHint:
+      "Pas de jeton → LAN ouvert. Activez sur chaque poste ; les pairs sans jeton sur ce Wi‑Fi se lient automatiquement. Préférez un jeton en café.",
+    alreadyOnTokened: "LAN de bureau actif avec jeton (protégé).",
+    alreadyOnOpen: "LAN de bureau actif en mode ouvert (sans jeton).",
   },
   workersStatus: {
     heading: "État des workers",

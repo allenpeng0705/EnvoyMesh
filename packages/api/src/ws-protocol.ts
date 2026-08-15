@@ -656,9 +656,9 @@ export interface NodeConfig {
    */
   lanAutoBondEnabled?: boolean;
   /**
-   * Phase 35C — shared fleet secret. When `lanAutoBondEnabled` is true and this
-   * is set, nodes on the same LAN that carry the same value will auto-bond
-   * without an approval prompt.
+   * Phase 35C — optional shared fleet secret. When `lanAutoBondEnabled` is true:
+   * matching non-empty tokens auto-bond; empty on both sides = open LAN
+   * (any opted-in peer on the subnet). Mixed token/open does not bond.
    */
   lanAutoBondFleetToken?: string;
   /**

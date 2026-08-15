@@ -13,23 +13,28 @@ export const itAgentNetworkSettingsMessages = {
   groupOperatorDesc: "Preconfigura la fiducia per molti nodi contemporaneamente, o collega automaticamente tutti sulla Wi-Fi dell'ufficio.",
   officeLan: {
     heading: "LAN ufficio",
-    desc: "Job di team sulla stessa Wi-Fi in un solo posto: unisciti alla rete agenti, collegamento LAN automatico e token di flotta condiviso. Abilitalo su ogni macchina con lo stesso token.",
+    desc: "Job di team sulla stessa Wi-Fi: unisciti alla rete agenti + collegamento LAN. Il token è opzionale — lascialo vuoto per collegarti a ogni desk che ha abilitato LAN ufficio senza token (solo Wi‑Fi d'ufficio affidabile).",
     enableButton: "Abilita team LAN ufficio",
     enabling: "Abilitazione…",
     enabled: "Team LAN ufficio abilitato",
     disableButton: "Disabilita team LAN ufficio",
     disabling: "Disabilitazione…",
     disableHint:
-      "Disattiva l'adesione alla rete agenti e il collegamento LAN automatico su questo nodo. Il token condiviso viene conservato per riabilitare facilmente.",
+      "Disattiva adesione e collegamento LAN su questo nodo. Un token esistente viene conservato.",
     copyToken: "Copia token",
     tokenCopied: "Token copiato",
-    tokenLabel: "Token di flotta",
+    tokenLabel: "Token di flotta (opzionale)",
+    tokenPlaceholder: "vuoto = LAN aperta, oppure incolla un segreto condiviso",
     tokenHelp:
-      "Segreto condiviso per questo ufficio. Incolla lo stesso valore su ogni macchina (genera una volta, poi copia). Mai scritto nel log di audit.",
+      "Segreto opzionale. Stesso valore non vuoto = flotta protetta. Vuoto ovunque = LAN aperta. Mai scritto nel log di audit.",
     saveToken: "Salva token",
+    clearToken: "Cancella",
     shareHint:
-      "Copia questo token, condividilo con le altre macchine, incollalo lì e abilita il team LAN ufficio su ciascuna.",
-    alreadyOn: "Team LAN ufficio attivo — adesione e collegamento LAN con questo token condiviso.",
+      "Copia questo token, incollalo sulle altre macchine (Salva), poi abilita il team LAN ufficio su ciascuna.",
+    openLanHint:
+      "Nessun token → LAN aperta. Abilita su ogni desk; i peer senza token su questa Wi‑Fi si collegano automaticamente. In caffè preferisci un token.",
+    alreadyOnTokened: "LAN ufficio attiva con token (protetta).",
+    alreadyOnOpen: "LAN ufficio attiva in modalità aperta (senza token).",
   },
   workersStatus: {
     heading: "Stato worker",

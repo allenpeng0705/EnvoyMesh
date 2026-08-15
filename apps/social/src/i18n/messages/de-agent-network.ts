@@ -13,23 +13,28 @@ export const deAgentNetworkSettingsMessages = {
   groupOperatorDesc: "Vertrauen für viele Knoten auf einmal vorkonfigurieren oder alle im Büro-WLAN automatisch verbinden.",
   officeLan: {
     heading: "Büro-LAN",
-    desc: "Team-Jobs im gleichen WLAN an einem Ort: Agentennetzwerk beitreten, LAN-Auto-Bond und gemeinsames Flotten-Token. Auf jedem Schreibtisch-Rechner mit demselben Token aktivieren.",
+    desc: "Team-Jobs im gleichen WLAN: Agentennetzwerk beitreten + LAN-Auto-Bond. Flotten-Token ist optional — leer lassen, um mit jedem Schreibtisch zu binden, der Büro-LAN ebenfalls ohne Token aktiviert hat (nur vertrauenswürdiges Büro-WLAN).",
     enableButton: "Büro-LAN-Team aktivieren",
     enabling: "Wird aktiviert…",
     enabled: "Büro-LAN-Team aktiviert",
     disableButton: "Büro-LAN-Team deaktivieren",
     disabling: "Wird deaktiviert…",
     disableHint:
-      "Schaltet Beitritt zum Agentennetzwerk und LAN-Auto-Bond auf diesem Knoten aus. Das gemeinsame Token bleibt erhalten, damit Sie später wieder aktivieren können.",
+      "Schaltet Beitritt zum Agentennetzwerk und LAN-Auto-Bond auf diesem Knoten aus. Ein vorhandenes Token bleibt erhalten.",
     copyToken: "Token kopieren",
     tokenCopied: "Token kopiert",
-    tokenLabel: "Flotten-Token",
+    tokenLabel: "Flotten-Token (optional)",
+    tokenPlaceholder: "leer = offenes LAN, oder gemeinsames Geheimnis einfügen",
     tokenHelp:
-      "Gemeinsames Geheimnis für dieses Büro. Denselben Wert auf jedem Rechner einfügen (einmal generieren, dann kopieren). Wird nie ins Audit-Log geschrieben.",
+      "Optionales Geheimnis. Gleicher nicht-leerer Wert auf jedem Rechner = geschützte Flotte. Überall leer = offenes LAN. Wird nie ins Audit-Log geschrieben.",
     saveToken: "Token speichern",
+    clearToken: "Löschen",
     shareHint:
-      "Token kopieren, an die anderen Rechner weitergeben, dort einfügen und jeweils Büro-LAN-Team aktivieren.",
-    alreadyOn: "Büro-LAN-Team ist an — Beitritt und LAN-Auto-Bond sind mit diesem Token aktiv.",
+      "Token kopieren, auf den anderen Rechnern einfügen (speichern) und jeweils Büro-LAN-Team aktivieren.",
+    openLanHint:
+      "Kein Token → offenes LAN. Auf jedem Schreibtisch aktivieren; Peers in diesem WLAN ohne Token bonden automatisch. In Cafés lieber ein Token nutzen.",
+    alreadyOnTokened: "Büro-LAN ist an (mit Token, geschützt).",
+    alreadyOnOpen: "Büro-LAN ist an (offen, ohne Token) — bondet opted-in Peers in diesem LAN.",
   },
   workersStatus: {
     heading: "Worker-Status",

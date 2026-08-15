@@ -31,8 +31,8 @@ const FEATURE_EXPAND = {
     "Prerequisites for LAN: each desk machine runs EnvoyMesh with its own owner identity (do not clone profile dirs); same Wi-Fi/Ethernet subnet; firewall allows libp2p + mDNS; assigner has a usable AI model under Settings → AI. No public relay required for a LAN lab.\n\n" +
     "Recommended path — Office LAN (do this on EVERY desk machine):\n" +
     "1. Open Team jobs → Manage workers.\n" +
-    "2. Under Office LAN, set or Generate a fleet token (Copy and share it). Then click Enable office LAN team. That turns on Join Agent Network, LAN auto-bond, auto-join Agent Network, and lan-fast discovery. To turn it off later: same place → Disable office LAN team (keeps the token for easy re-enable).\n" +
-    "3. On other machines, paste the same fleet token → Save token → Enable office LAN team.\n" +
+    "2. Under Office LAN, optionally Generate/paste a fleet token (or leave empty for open LAN on a trusted office Wi‑Fi). Then click Enable office LAN team. That turns on Join Agent Network, LAN auto-bond, auto-join Agent Network, and lan-fast discovery. To turn it off later: same place → Disable office LAN team.\n" +
+    "3. Tokened mode: paste the same token on other machines → Save token → Enable. Open mode: leave token empty on every desk → Enable — peers auto-bond only if both sides have no token.\n" +
     "4. Pass check: Contacts shows the other machines at direct trust; New team job no longer fails with no_workers.\n\n" +
     "If peers bond on LAN but are not recruitable: expand Your worker profile on that machine and turn on Join Agent Network (Office LAN Enable already does this for you).\n\n" +
     "Advanced (optional): Fleet Manifest for pre-staged large fleets; Pairing Kiosk for walk-up invites. Prefer Office LAN for same-Wi-Fi desks.\n\n" +

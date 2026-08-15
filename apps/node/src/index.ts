@@ -2270,6 +2270,8 @@ async function handleInboundMeshMessage({
       if (
         lanResult.outcome === "declined" &&
         (lanResult.reason === "token-mismatch" ||
+          lanResult.reason === "open-mode-mismatch" ||
+          lanResult.reason === "no-local-token" ||
           lanResult.reason === "disabled" ||
           lanResult.reason === "self-target")
       ) {

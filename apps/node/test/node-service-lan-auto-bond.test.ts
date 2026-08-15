@@ -10,6 +10,8 @@ import {
   buildLanAutoBondRequest,
   evaluateLanAutoBondReceipt,
   fingerprintFleetToken,
+  LAN_AUTO_BOND_NOTE,
+  OPEN_LAN_FINGERPRINT,
   sendLanAutoBondRequest,
   type LanAutoBondDeps,
 } from "../src/node-service-lan-auto-bond.js";
@@ -79,7 +81,7 @@ describe("buildLanAutoBondRequest", () => {
     expect(result).toEqual({ ok: false, reason: "disabled" });
   });
 
-  it("refuses when no token is configured", async () => {
+  it("builds an open-LAN payload when enabled with no token", async () => {
     const deps = baseDeps({
       loadConfig: async () => ({
         ...((await baseDeps().loadConfig()) as PersistedNodeConfig),
@@ -88,7 +90,11 @@ describe("buildLanAutoBondRequest", () => {
       }),
     });
     const result = await buildLanAutoBondRequest(deps, "peer-1");
-    expect(result).toEqual({ ok: false, reason: "no-token" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.payload.lanFleetToken).toBeUndefined();
+    expect(result.payload.note).toBe(LAN_AUTO_BOND_NOTE);
+    expect(result.fingerprint).toBe(OPEN_LAN_FINGERPRINT);
   });
 
   it("refuses self-targeting", async () => {
@@ -168,7 +174,10 @@ describe("sendLanAutoBondRequest", () => {
 });
 
 describe("evaluateLanAutoBondReceipt", () => {
-  function makeEnvelope(token: string | undefined): { payload: unknown } {
+  function makeEnvelope(
+    token: string | undefined,
+    note?: string,
+  ): { payload: unknown } {
     const payload: Partial<DevicePairRequestPayload> = {
       requestId: "req-1",
       requesterOwnerId: "envoy:owner:other",
@@ -176,11 +185,12 @@ describe("evaluateLanAutoBondReceipt", () => {
       requesterDevicePublicKeyPem: "pem",
       createdAt: new Date().toISOString(),
       lanFleetToken: token,
+      note,
     };
     return { payload };
   }
 
-  it("rejects an envelope without a token", async () => {
+  it("rejects an ordinary envelope without a token or lan-auto note", async () => {
     const deps = baseDeps();
     const decision = await evaluateLanAutoBondReceipt(deps, makeEnvelope(undefined));
     expect(decision).toEqual({ accept: false, reason: "no-token-on-envelope" });
@@ -198,7 +208,7 @@ describe("evaluateLanAutoBondReceipt", () => {
     expect(decision).toEqual({ accept: false, reason: "disabled" });
   });
 
-  it("rejects when local has no token", async () => {
+  it("rejects when local has no token but remote sent one", async () => {
     const deps = baseDeps({
       loadConfig: async () => ({
         ...((await baseDeps().loadConfig()) as PersistedNodeConfig),
@@ -207,6 +217,37 @@ describe("evaluateLanAutoBondReceipt", () => {
     });
     const decision = await evaluateLanAutoBondReceipt(deps, makeEnvelope("fleet-secret-1"));
     expect(decision).toEqual({ accept: false, reason: "no-local-token" });
+  });
+
+  it("rejects open remote when local has a token", async () => {
+    const deps = baseDeps({
+      loadConfig: async () => ({
+        ...((await baseDeps().loadConfig()) as PersistedNodeConfig),
+        lanAutoBondEnabled: true,
+        lanAutoBondFleetToken: "fleet-secret-1",
+      }),
+    });
+    const decision = await evaluateLanAutoBondReceipt(
+      deps,
+      makeEnvelope(undefined, LAN_AUTO_BOND_NOTE),
+    );
+    expect(decision).toEqual({ accept: false, reason: "open-mode-mismatch" });
+  });
+
+  it("accepts open LAN when both sides have no token", async () => {
+    const deps = baseDeps({
+      loadConfig: async () => ({
+        ...((await baseDeps().loadConfig()) as PersistedNodeConfig),
+        lanAutoBondEnabled: true,
+      }),
+    });
+    const decision = await evaluateLanAutoBondReceipt(
+      deps,
+      makeEnvelope(undefined, LAN_AUTO_BOND_NOTE),
+    );
+    expect(decision.accept).toBe(true);
+    expect(decision.reason).toBe("matched-open-lan");
+    expect(decision.fingerprint).toBe(OPEN_LAN_FINGERPRINT);
   });
 
   it("rejects on token mismatch", async () => {

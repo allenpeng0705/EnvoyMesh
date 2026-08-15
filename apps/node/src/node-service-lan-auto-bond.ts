@@ -2,21 +2,23 @@
  * LAN auto-bond runtime — Phase 35C (Fleet Onboarding C: LAN Auto-Bond).
  *
  * Two home nodes on the same LAN advertise themselves over mDNS. When both
- * nodes have:
- *   - `lanAutoBondEnabled === true`, and
- *   - the same non-empty `lanAutoBondFleetToken`,
- * they exchange a `device.pair.request` envelope carrying that token in the
- * new `lanFleetToken` field. The recipient auto-accepts the bond as "direct"
- * trust, **without** an approval prompt.
+ * nodes have `lanAutoBondEnabled === true`, they exchange a `device.pair.request`
+ * with `note: "lan-auto-bond"` and auto-accept as "direct" trust **without**
+ * an approval prompt when either:
+ *   - both carry the same non-empty `lanAutoBondFleetToken` (recommended), or
+ *   - both have **no** token (open LAN — any peer on the subnet that also
+ *     enabled Office LAN / LAN auto-bond will bond; use only on trusted Wi‑Fi).
+ *
+ * Mixed modes do not bond: a tokened node will not open-bond with a
+ * tokenless peer (and vice versa). Wrong tokens are a silent mismatch.
  *
  * This is **opt-in, disabled by default** — see `createDefaultPersistedNodeConfig`
- * for the default `lanAutoBondEnabled` value of `false`. A node with the
- * feature enabled but no token configured will not auto-bond (the token
- * check is a hard fail, not a warning).
+ * for the default `lanAutoBondEnabled` value of `false`.
  *
  * Auditing: every auto-bond is logged with `summary` containing the source
  * `lan-auto` and the trust level. The fleet token itself is never written
- * to the audit log or any peer-visible field.
+ * to the audit log or any peer-visible field. Open-mode bonds use fingerprint
+ * {@link OPEN_LAN_FINGERPRINT}.
  */
 
 import { createHash, randomUUID } from "node:crypto";
@@ -27,6 +29,12 @@ import { derivePeerId } from "@envoymesh/identity";
 import type { PersistedNodeConfig } from "./node-config-store.js";
 import type { NodeService } from "@envoymesh/api";
 import { anLog, anWarn, shortId } from "./agent-network-debug.js";
+
+/** Audit fingerprint when both sides auto-bond with no fleet token. */
+export const OPEN_LAN_FINGERPRINT = "open-lan";
+
+/** Pair-request `note` that marks an outbound as LAN auto-bond (not QR/companion). */
+export const LAN_AUTO_BOND_NOTE = "lan-auto-bond";
 
 /**
  * Compute a stable, short fingerprint of the fleet token. Stored in the
@@ -78,7 +86,6 @@ export interface LanAutoBondSendResult {
   ok: boolean;
   reason?:
     | "disabled"
-    | "no-token"
     | "no-target"
     | "transport-failed"
     | "self-target";
@@ -89,10 +96,12 @@ export interface LanAutoBondReceiveDecision {
   accept: boolean;
   reason:
     | "matched-fleet-token"
+    | "matched-open-lan"
     | "no-token-on-envelope"
     | "no-local-token"
     | "disabled"
     | "token-mismatch"
+    | "open-mode-mismatch"
     | "self-target";
   fingerprint?: string;
 }
@@ -101,8 +110,8 @@ export interface LanAutoBondReceiveDecision {
  * Decide whether to send a `device.pair.request` to a freshly-discovered peer
  * and, if so, build the payload. We only send when:
  *  1. `lanAutoBondEnabled === true`
- *  2. `lanAutoBondFleetToken` is set
- *  3. The target isn't our own peer id
+ *  2. The target isn't our own peer id
+ * Token is optional: present → gated fleet; absent → open LAN mode.
  * The caller is responsible for actually calling `sendPairRequest`.
  */
 export async function buildLanAutoBondRequest(
@@ -111,8 +120,7 @@ export async function buildLanAutoBondRequest(
 ): Promise<{ ok: true; payload: DevicePairRequestPayload; fingerprint: string } | { ok: false; reason: LanAutoBondSendResult["reason"] }> {
   const cfg = await deps.loadConfig();
   if (!cfg?.lanAutoBondEnabled) return { ok: false, reason: "disabled" };
-  const token = cfg.lanAutoBondFleetToken?.trim();
-  if (!token) return { ok: false, reason: "no-token" };
+  const token = cfg.lanAutoBondFleetToken?.trim() ?? "";
   const ownOwner = deps.getOwnOwnerId();
   if (!targetPeerId) return { ok: false, reason: "self-target" };
   // Self-bond guard: targetPeerId is a libp2p transport ID — also compare
@@ -125,10 +133,14 @@ export async function buildLanAutoBondRequest(
     requesterOwnerId: identity.ownerId,
     requesterDeviceId: identity.deviceId,
     requesterDevicePublicKeyPem: identity.devicePublicKeyPem,
-    note: "lan-auto-bond",
-    lanFleetToken: token,
+    note: LAN_AUTO_BOND_NOTE,
+    ...(token ? { lanFleetToken: token } : {}),
   });
-  return { ok: true, payload, fingerprint: fingerprintFleetToken(token) };
+  return {
+    ok: true,
+    payload,
+    fingerprint: token ? fingerprintFleetToken(token) : OPEN_LAN_FINGERPRINT,
+  };
 }
 
 /**
@@ -179,8 +191,14 @@ export async function sendLanAutoBondRequest(
 
 /**
  * Evaluate an inbound `device.pair.request` envelope. Returns `accept: true`
- * only when the envelope carries a `lanFleetToken` that exactly matches
- * our own configured `lanAutoBondFleetToken` *and* the local feature is on.
+ * when LAN auto-bond is on and either:
+ *   - both sides share the same non-empty fleet token, or
+ *   - the envelope is a lan-auto-bond note with no token and local has no token
+ *     (open LAN).
+ *
+ * Ordinary pair requests (QR / companion) without the lan-auto note and
+ * without a fleet token stay `no-token-on-envelope` so the normal approval
+ * path can handle them.
  *
  * Auditing is performed by the caller (the dispatcher) — we keep this pure
  * so it's easy to unit-test.
@@ -197,7 +215,11 @@ export async function evaluateLanAutoBondReceipt(
     // Stay silent — not a LAN auto-bond event.
     return { accept: false, reason: "no-token-on-envelope" };
   }
-  if (!payload.lanFleetToken) {
+
+  const remoteToken = payload.lanFleetToken?.trim() ?? "";
+  const isLanAutoNote = payload.note === LAN_AUTO_BOND_NOTE;
+
+  if (!remoteToken && !isLanAutoNote) {
     return { accept: false, reason: "no-token-on-envelope" };
   }
 
@@ -211,22 +233,49 @@ export async function evaluateLanAutoBondReceipt(
 
   const cfg = await deps.loadConfig();
   if (!cfg?.lanAutoBondEnabled) {
-    anWarn("lan-auto-bond", "receive reject — fleet token present but LAN auto-bond off", {
+    anWarn("lan-auto-bond", "receive reject — LAN auto-bond off", {
       reason: "disabled",
       from: shortId(payload.requesterOwnerId),
+      hadRemoteToken: Boolean(remoteToken),
     });
     return { accept: false, reason: "disabled" };
   }
-  const own = cfg.lanAutoBondFleetToken?.trim();
-  if (!own) {
+  const own = cfg.lanAutoBondFleetToken?.trim() ?? "";
+
+  // Open LAN: both sides enabled with no token.
+  if (!remoteToken && !own) {
+    const decision = {
+      accept: true as const,
+      reason: "matched-open-lan" as const,
+      fingerprint: OPEN_LAN_FINGERPRINT,
+    };
+    anLog("lan-auto-bond", "receive accept (open LAN)", {
+      fingerprint: decision.fingerprint,
+      from: shortId(payload.requesterOwnerId),
+    });
+    return decision;
+  }
+
+  // Remote open, local tokened — do not dilute a gated fleet.
+  if (!remoteToken && own) {
+    anWarn("lan-auto-bond", "receive reject — open peer vs local token", {
+      reason: "open-mode-mismatch",
+      from: shortId(payload.requesterOwnerId),
+    });
+    return { accept: false, reason: "open-mode-mismatch" };
+  }
+
+  // Remote tokened, local open — require them to clear/match first.
+  if (remoteToken && !own) {
     anWarn("lan-auto-bond", "receive reject — fleet token present but no local token", {
       reason: "no-local-token",
       from: shortId(payload.requesterOwnerId),
     });
     return { accept: false, reason: "no-local-token" };
   }
-  if (own !== payload.lanFleetToken) {
-    const fp = fingerprintFleetToken(payload.lanFleetToken);
+
+  if (own !== remoteToken) {
+    const fp = fingerprintFleetToken(remoteToken);
     anWarn("lan-auto-bond", "receive reject — token mismatch", {
       reason: "token-mismatch",
       fingerprint: fp,
@@ -294,7 +343,7 @@ export async function applyLanAutoBondAccept(
     peerOwnerId: params.requesterOwnerId,
     level: "direct",
     displayName: "Fleet peer",
-    note: "lan-auto-bond",
+    note: LAN_AUTO_BOND_NOTE,
   });
   try {
     await params.peerDirectory.ensurePeerFromInboundChat({
@@ -395,7 +444,10 @@ export type LanAutoBondInboundHandleResult =
   | { outcome: "accepted"; payload: DevicePairRequestPayload; fingerprint: string }
   | {
       outcome: "declined";
-      reason: Exclude<LanAutoBondReceiveDecision["reason"], "no-token-on-envelope">;
+      reason: Exclude<
+        LanAutoBondReceiveDecision["reason"],
+        "no-token-on-envelope" | "matched-fleet-token" | "matched-open-lan"
+      >;
       fingerprint?: string;
       payload: DevicePairRequestPayload;
     }
@@ -452,7 +504,7 @@ export async function handleLanAutoBondInbound(input: {
       outcome: "declined",
       reason: decision.reason as Exclude<
         LanAutoBondReceiveDecision["reason"],
-        "no-token-on-envelope"
+        "no-token-on-envelope" | "matched-fleet-token" | "matched-open-lan"
       >,
       fingerprint: decision.fingerprint,
       payload,

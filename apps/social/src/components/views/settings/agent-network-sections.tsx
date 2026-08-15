@@ -74,7 +74,8 @@ export function OfficeLanPresetSection() {
   const joinOn = nodeConfig?.capabilityProviderEnabled === true;
   const lanOn = nodeConfig?.lanAutoBondEnabled === true;
   const storedToken = (nodeConfig?.lanAutoBondFleetToken ?? "").trim();
-  const alreadyOn = joinOn && lanOn && storedToken.length >= 8;
+  const alreadyOn = joinOn && lanOn;
+  const tokenGated = storedToken.length >= 8;
 
   useEffect(() => {
     setDraftToken(nodeConfig?.lanAutoBondFleetToken ?? "");
@@ -105,19 +106,23 @@ export function OfficeLanPresetSection() {
     setJustEnabled(false);
     try {
       const trimmed = draftToken.trim();
-      const nextToken = trimmed.length >= 8 ? trimmed : generateRandomToken(32);
+      if (trimmed.length > 0 && trimmed.length < 8) {
+        setError(t("settings.agentNetwork.lanAutoBond.validationTokenTooShort"));
+        setBusy(false);
+        return;
+      }
       console.info("[agent-network.ui] Office LAN enable", {
-        hadToken: trimmed.length >= 8,
-        tokenLen: nextToken.length,
+        openLan: trimmed.length === 0,
+        tokenLen: trimmed.length,
       });
       await persistOfficeLan({
         capabilityProviderEnabled: true,
         lanAutoBondEnabled: true,
-        lanAutoBondFleetToken: nextToken,
+        // Empty string clears any prior token → open LAN mode.
+        lanAutoBondFleetToken: trimmed,
         lanAutoBondAutoJoinAgentNetwork: true,
         discoveryProfile: "lan-fast",
       });
-      setDraftToken(nextToken);
       console.info("[agent-network.ui] Office LAN enable done");
       setJustEnabled(true);
       window.setTimeout(() => setJustEnabled(false), 4000);
@@ -127,7 +132,7 @@ export function OfficeLanPresetSection() {
     } finally {
       setBusy(false);
     }
-  }, [draftToken, persistOfficeLan]);
+  }, [draftToken, persistOfficeLan, t]);
 
   const handleDisable = useCallback(async () => {
     setBusy(true);
@@ -151,10 +156,10 @@ export function OfficeLanPresetSection() {
     }
   }, [persistOfficeLan]);
 
-  /** Apply a pasted token while already enabled (or prepare token before Enable). */
+  /** Save or clear fleet token (empty = open LAN when enabled). */
   const handleSaveToken = useCallback(async () => {
     const trimmed = draftToken.trim();
-    if (trimmed.length < 8) {
+    if (trimmed.length > 0 && trimmed.length < 8) {
       setError(t("settings.agentNetwork.lanAutoBond.validationTokenTooShort"));
       return;
     }
@@ -162,7 +167,10 @@ export function OfficeLanPresetSection() {
     setError(null);
     setSaved(false);
     try {
-      console.info("[agent-network.ui] Office LAN save token", { tokenLen: trimmed.length });
+      console.info("[agent-network.ui] Office LAN save token", {
+        openLan: trimmed.length === 0,
+        tokenLen: trimmed.length,
+      });
       if (alreadyOn) {
         await nodeService.updateNodeConfig({
           lanAutoBondFleetToken: trimmed,
@@ -186,6 +194,10 @@ export function OfficeLanPresetSection() {
 
   const handleGenerate = useCallback(() => {
     setDraftToken(generateRandomToken(32));
+  }, []);
+
+  const handleClearToken = useCallback(() => {
+    setDraftToken("");
   }, []);
 
   const handleCopy = useCallback(async () => {
@@ -212,8 +224,8 @@ export function OfficeLanPresetSection() {
         id="office-lan-fleet-token"
         data-testid="office-lan-fleet-token"
         type="text"
-        minLength={8}
-        placeholder={t("settings.agentNetwork.lanAutoBond.tokenPlaceholder")}
+        minLength={0}
+        placeholder={t("settings.agentNetwork.officeLan.tokenPlaceholder")}
         value={draftToken}
         onChange={(e) => setDraftToken(e.target.value)}
         disabled={busy}
@@ -232,6 +244,15 @@ export function OfficeLanPresetSection() {
           disabled={busy}
         >
           {t("settings.agentNetwork.lanAutoBond.generate")}
+        </button>
+        <button
+          type="button"
+          className="settings-button"
+          data-testid="office-lan-clear-token"
+          onClick={handleClearToken}
+          disabled={busy || !draftToken}
+        >
+          {t("settings.agentNetwork.officeLan.clearToken")}
         </button>
         <button
           type="button"
@@ -295,7 +316,11 @@ export function OfficeLanPresetSection() {
           </button>
         )}
         {alreadyOn ? (
-          <span className="settings-hint">{t("settings.agentNetwork.officeLan.alreadyOn")}</span>
+          <span className="settings-hint">
+            {tokenGated
+              ? t("settings.agentNetwork.officeLan.alreadyOnTokened")
+              : t("settings.agentNetwork.officeLan.alreadyOnOpen")}
+          </span>
         ) : null}
         {justEnabled ? (
           <span className="settings-hint">{t("settings.agentNetwork.officeLan.enabled")}</span>
@@ -305,7 +330,9 @@ export function OfficeLanPresetSection() {
       <p className="field-desc" style={{ marginTop: 8 }}>
         {alreadyOn
           ? t("settings.agentNetwork.officeLan.disableHint")
-          : t("settings.agentNetwork.officeLan.shareHint")}
+          : tokenGated || draftToken.trim().length >= 8
+            ? t("settings.agentNetwork.officeLan.shareHint")
+            : t("settings.agentNetwork.officeLan.openLanHint")}
       </p>
       {error ? <p className="library-view-error">{error}</p> : null}
     </section>

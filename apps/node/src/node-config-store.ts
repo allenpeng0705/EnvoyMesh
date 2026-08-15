@@ -203,15 +203,17 @@ export interface PersistedNodeConfig {
   agentCardAutoFetchMaxAgeMs?: number;
   /**
    * Phase 35C — opt-in LAN auto-bond. When true, two home nodes on the same
-   * network with matching `lanAutoBondFleetToken` automatically bond as
-   * "direct" trust on first mDNS contact. **Default: false.** This is a fleet
-   * onboarding lever for company LANs; it must never be enabled by default.
+   * network auto-bond as "direct" trust on first mDNS contact when either both
+   * share the same `lanAutoBondFleetToken`, or both have no token (open LAN).
+   * **Default: false.** Never enable by default — open mode bonds anyone on
+   * the subnet who also opted in.
    */
   lanAutoBondEnabled?: boolean;
   /**
-   * Phase 35C — shared fleet secret used to gate LAN auto-bond. A node will
-   * only auto-bond with another node whose envelope carries the same value.
-   * Empty/undefined = never auto-bond, even when `lanAutoBondEnabled` is true.
+   * Phase 35C — optional shared fleet secret used to gate LAN auto-bond.
+   * When set, peers must carry the same value. When empty/undefined and
+   * `lanAutoBondEnabled` is true, open LAN mode applies (any opted-in peer
+   * on the LAN can auto-bond).
    */
   lanAutoBondFleetToken?: string;
   /**

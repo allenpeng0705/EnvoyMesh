@@ -133,7 +133,7 @@ describe("AgentNetworkSettingsModal — Office LAN", () => {
     expect(screen.queryByText("LAN Auto-Bond")).toBeNull();
   });
 
-  it("enables Join + LAN auto-bond and generates a fleet token when empty", async () => {
+  it("enables Join + LAN auto-bond in open mode when token is empty", async () => {
     nodeConfig = {
       ...nodeConfig,
       capabilityProviderEnabled: false,
@@ -153,9 +153,33 @@ describe("AgentNetworkSettingsModal — Office LAN", () => {
     };
     expect(call.capabilityProviderEnabled).toBe(true);
     expect(call.lanAutoBondEnabled).toBe(true);
-    expect(call.lanAutoBondFleetToken).toMatch(/^[A-Za-z0-9]{32}$/);
+    expect(call.lanAutoBondFleetToken).toBe("");
     await waitFor(() => {
       expect(refreshAgentNetworkWorkers).toHaveBeenCalled();
+    });
+  });
+
+  it("enables with a pasted fleet token when provided", async () => {
+    nodeConfig = {
+      ...nodeConfig,
+      capabilityProviderEnabled: false,
+      lanAutoBondEnabled: false,
+      lanAutoBondFleetToken: "",
+    };
+    renderWithI18n(<AgentNetworkSettingsModal onClose={() => {}} />);
+    const tokenInput = await waitFor(
+      () => screen.getByTestId("office-lan-fleet-token") as HTMLInputElement,
+    );
+    fireEvent.change(tokenInput, { target: { value: "shared-office-token-99" } });
+    fireEvent.click(screen.getByTestId("office-lan-enable"));
+    await waitFor(() => {
+      expect(updateNodeConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          capabilityProviderEnabled: true,
+          lanAutoBondEnabled: true,
+          lanAutoBondFleetToken: "shared-office-token-99",
+        }),
+      );
     });
   });
 
@@ -198,7 +222,25 @@ describe("AgentNetworkSettingsModal — Office LAN", () => {
     });
   });
 
-  it("rejects a too-short fleet token without persisting", async () => {
+  it("clears the fleet token to open LAN mode", async () => {
+    nodeConfig = {
+      ...nodeConfig,
+      capabilityProviderEnabled: true,
+      lanAutoBondEnabled: true,
+      lanAutoBondFleetToken: "fleet-token-12345678",
+    };
+    renderWithI18n(<AgentNetworkSettingsModal onClose={() => {}} />);
+    await waitFor(() => screen.getByTestId("office-lan-fleet-token"));
+    fireEvent.click(screen.getByTestId("office-lan-clear-token"));
+    fireEvent.click(screen.getByTestId("office-lan-save-token"));
+    await waitFor(() => {
+      expect(updateNodeConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ lanAutoBondFleetToken: "" }),
+      );
+    });
+  });
+
+  it("rejects a too-short non-empty fleet token without persisting", async () => {
     renderWithI18n(<AgentNetworkSettingsModal onClose={() => {}} />);
     const tokenInput = await waitFor(
       () => screen.getByTestId("office-lan-fleet-token") as HTMLInputElement,

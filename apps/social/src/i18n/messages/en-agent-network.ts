@@ -91,23 +91,28 @@ export const agentNetworkSettingsMessages = {
   officeLan: {
     heading: "Office LAN",
     desc:
-      "Same-Wi-Fi Team jobs setup in one place: Join Agent Network, auto-bond on the LAN, and a shared fleet token. Enable on every desk machine with the same token.",
+      "Same-Wi-Fi Team jobs setup: Join Agent Network + LAN auto-bond. Fleet token is optional — leave it empty to auto-bond with any other desk that also enabled Office LAN with no token (trusted office Wi‑Fi only).",
     enableButton: "Enable office LAN team",
     enabling: "Enabling…",
     enabled: "Office LAN team enabled",
     disableButton: "Disable office LAN team",
     disabling: "Disabling…",
     disableHint:
-      "Turns off Join Agent Network and LAN auto-bond on this node. The shared token is kept so you can re-enable later.",
+      "Turns off Join Agent Network and LAN auto-bond on this node. The shared token (if any) is kept so you can re-enable later.",
     copyToken: "Copy token",
     tokenCopied: "Token copied",
-    tokenLabel: "Fleet token",
+    tokenLabel: "Fleet token (optional)",
+    tokenPlaceholder: "leave empty for open LAN, or paste a shared secret",
     tokenHelp:
-      "Shared secret for this office. Paste the same value on every desk machine (Generate once, then Copy). Never written to the audit log.",
+      "Optional shared secret. Same non-empty value on every desk = gated fleet. Empty on every desk = open LAN (anyone on this Wi‑Fi who enables Office LAN can auto-bond). Never written to the audit log.",
     saveToken: "Save token",
+    clearToken: "Clear",
     shareHint:
-      "Copy this token, share it with the other machines, paste it there, then click Enable office LAN team on each.",
-    alreadyOn: "Office LAN team is on — Join and LAN auto-bond are active with this shared token.",
+      "Copy this token, paste it on the other machines (Save token), then Enable office LAN team on each.",
+    openLanHint:
+      "No token → open LAN. Enable on each desk; peers on this Wi‑Fi that also enabled with no token will auto-bond. Prefer a token on cafés or shared networks.",
+    alreadyOnTokened: "Office LAN is on with a shared token (gated).",
+    alreadyOnOpen: "Office LAN is on in open mode (no token) — auto-bonds opted-in peers on this LAN.",
   },
   workersStatus: {
     heading: "Workers status",
