@@ -57,10 +57,14 @@ void main() {
       );
     });
 
-    test('builds blog and photos with trailing slash', () {
+    test('builds blog, feed, and photos with trailing slash', () {
       expect(
         webContentUrl('envoy:owner:abc', WebContentSurface.blog),
         'envoy://envoy:owner:abc/blog/',
+      );
+      expect(
+        webContentUrl('envoy:owner:abc', WebContentSurface.feed),
+        'envoy://envoy:owner:abc/feeds/',
       );
       expect(
         webContentUrl('envoy:owner:abc', WebContentSurface.photos),

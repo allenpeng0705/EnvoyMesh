@@ -67,6 +67,7 @@ import {
 import {
   buildEnvoyLocalLlamaServerArgs,
 } from "./envoy-local-server-args.js";
+import { listListeningPidsOnPort } from "./openclaw-gateway-port.js";
 import {
   DEFAULT_ENVOY_LOCAL_MODEL,
   detectEnvoyLocalPlatform,
@@ -947,7 +948,26 @@ function armWatchdog(
       const cfg = normalizeEnvoyLocalConfig(await deps.loadEnvoyLocalConfig());
       if (!cfg.enabled) return;
       try {
+        console.warn("[envoy-local] watchdog: /v1/models unreachable — restarting chat sidecar");
         await stopChild(state);
+        // Orphans from a previous node can hold :18790 after stopChild no-ops.
+        for (const pid of listListeningPidsOnPort(ENVOY_LOCAL_PORT)) {
+          if (pid === process.pid) continue;
+          try {
+            process.kill(pid, "SIGTERM");
+          } catch {
+            /* ignore */
+          }
+        }
+        await new Promise((r) => setTimeout(r, 800));
+        for (const pid of listListeningPidsOnPort(ENVOY_LOCAL_PORT)) {
+          if (pid === process.pid) continue;
+          try {
+            process.kill(pid, "SIGKILL");
+          } catch {
+            /* ignore */
+          }
+        }
         await startSidecar(state, deps);
       } catch (err) {
         setError(state, err instanceof Error ? err.message : String(err));

@@ -172,7 +172,7 @@ describe("handleInboundLibraryRead", () => {
     if (result.ok) {
       expect(result.responsePayload.status).toBe("ok");
       expect(result.responsePayload.body).toBe(content);
-      expect(result.responsePayload.contentType).toBe("text/markdown");
+      expect(result.responsePayload.contentType).toBe("text/markdown; charset=utf-8");
       expect(result.responsePayload.byteLength).toBe(Buffer.byteLength(content, "utf8"));
     }
   });
@@ -213,7 +213,7 @@ describe("handleInboundLibraryRead", () => {
     if (result.ok) {
       expect(result.responsePayload.status).toBe("ok");
       expect(result.responsePayload.body).toContain("portal");
-      expect(result.responsePayload.contentType).toBe("text/html");
+      expect(result.responsePayload.contentType).toBe("text/html; charset=utf-8");
     }
   });
 

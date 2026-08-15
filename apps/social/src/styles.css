@@ -14647,6 +14647,31 @@ button:disabled {
   font-family: Georgia, "Times New Roman", Times, serif;
   font-size: 1.05rem;
 }
+
+/* Peer Feed / Blog indexes in Browser — reuse Content Feed/Blog card chrome */
+.browser-peer-listing {
+  padding-top: var(--space-2);
+}
+.browser-peer-listing__hit {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.browser-peer-listing__hit:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-md);
+}
+.browser-peer-listing__engage {
+  padding-top: 0;
+}
 .browser-view__html-doc {
   margin: -1.25rem -1.5rem -1.5rem;
   min-height: 12rem;
@@ -16353,6 +16378,29 @@ button:disabled {
   gap: var(--space-3);
 }
 
+.feed-view__header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.feed-view__text-btn {
+  margin: 0;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.feed-view__text-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
 .blog-view.feed-view {
   --blog-accent: color-mix(in srgb, var(--color-primary) 70%, var(--color-text));
 }
@@ -16475,6 +16523,10 @@ button:disabled {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.blog-view__card-media {
+  padding: 0 0.75rem 0.35rem 1.05rem;
 }
 
 .blog-view__card-footer {

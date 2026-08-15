@@ -105,6 +105,30 @@ export const DISCOVERY_ADVERTISE_RETRY_BACKOFF_MS = 60_000;
 export const DISCOVERY_ADVERTISE_RETRY_HEALTHY_MS = 5 * 60_000;
 /** Maximum backoff after consecutive all-fail cycles (capped so a recovered DHT is picked up within 5 min). */
 export const DISCOVERY_ADVERTISE_RETRY_BACKOFF_MAX_MS = 5 * 60_000;
+/** Max parallel DHT provides per advertise cycle (caps overnight microtask fan-out). */
+export const DISCOVERY_ADVERTISE_CONCURRENCY = 8;
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.min(Math.max(1, concurrency), Math.max(1, items.length)) },
+    async () => {
+      while (true) {
+        const i = next++;
+        if (i >= items.length) return;
+        results[i] = await fn(items[i]!);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return results;
+}
+
 export const NEARBY_PROFILE_PROBE_COOLDOWN_MS = 30_000;
 /** @deprecated Prefer {@link PEER_PATH_SOFT_CONNECTION_CAP} — shared with PeerPath. */
 export const BOND_WARM_MAX_CONNECTIONS = PEER_PATH_SOFT_CONNECTION_CAP;
@@ -1083,7 +1107,9 @@ export async function _advertisePublicDiscoveryTopics(
   const advertisedTopics: string[] = [];
   let allSuccess = true;
 
-  const advertiseOnce = async (topic: string): Promise<boolean> => {
+  const advertiseOnce = async (
+    topic: string,
+  ): Promise<"ok" | "timed_out" | "failed"> => {
     try {
       // provideCapabilityTopic now returns { timedOut } so we can
       // distinguish "put landed" from "put stalled waiting for DHT peers"
@@ -1096,18 +1122,14 @@ export async function _advertisePublicDiscoveryTopics(
         `provideCapabilityTopic(${topic})`,
       );
       if (result.timedOut) {
-        console.warn(
-          `[node-service] advertiseTopic "${topic}" TIMED OUT — ` +
-          `DHT likely has no reachable peers. Will retry next cycle.`,
-        );
-        return false;
+        return "timed_out";
       }
       console.log(`[node-service] Successfully advertised topic: ${topic}`);
-      return true;
+      return "ok";
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[node-service] Failed to advertise topic "${topic}": ${msg}`);
-      return false;
+      return "failed";
     }
   };
 
@@ -1141,18 +1163,36 @@ export async function _advertisePublicDiscoveryTopics(
     );
   }
 
-  // Advertise all topics concurrently — bounded by DISCOVERY_TOPIC_OP_TIMEOUT_MS
-  // (60s) per topic. With 8 topics in parallel, the worst case for this
-  // initial fan-out is ~60s instead of ~8 × 60s sequentially.
+  // Advertise topics with bounded concurrency — unbounded Promise.all on
+  // 18 topics can peg the event loop with DHT provide microtasks overnight.
   const results = skipPublishThisCycle
-    ? new Array<boolean>(allTopics.length).fill(false)
-    : await Promise.all(allTopics.map((topic) => advertiseOnce(topic)));
+    ? new Array<"ok" | "timed_out" | "failed">(allTopics.length).fill("timed_out")
+    : await mapWithConcurrency(allTopics, DISCOVERY_ADVERTISE_CONCURRENCY, (topic) =>
+        advertiseOnce(topic),
+      );
+  let timedOutCount = 0;
+  let failedCount = 0;
   for (let i = 0; i < allTopics.length; i++) {
-    if (results[i]) {
-      advertisedTopics.push(allTopics[i]);
+    const status = results[i];
+    if (status === "ok") {
+      advertisedTopics.push(allTopics[i]!);
     } else {
       allSuccess = false;
+      if (status === "timed_out") timedOutCount += 1;
+      else failedCount += 1;
     }
+  }
+  if (!skipPublishThisCycle && timedOutCount > 0) {
+    const dq = ctx.requireMesh().getConnectionStats().dialQueueLength;
+    const dqHint =
+      dq != null && dq > 50
+        ? ` dialQueue=${dq} (congested — provides deferred)`
+        : " DHT cold or unreachable";
+    console.warn(
+      `[node-service] Discovery advertise: ${advertisedTopics.length} ok, ` +
+        `${timedOutCount} timed out/deferred${failedCount > 0 ? `, ${failedCount} failed` : ""}.` +
+        `${dqHint}. Will retry next cycle.`,
+    );
   }
 
   ctx.emit("discovery:advertising-complete", { topics: advertisedTopics, success: allSuccess });
@@ -1220,8 +1260,22 @@ export async function _advertisePublicDiscoveryTopics(
       retryInFlight = true;
       void (async () => {
         try {
-          const results = await Promise.all(allTopics.map((topic) => advertiseOnce(topic)));
-          const allOk = results.every((ok) => ok);
+          const connected = ctx.requireMesh().getConnectedPeerIds();
+          const skip = connected.length < 1;
+          if (skip) {
+            console.warn(
+              `[node-service] Discovery advertise retry: no peers connected. ` +
+                `Skipping ${allTopics.length} DHT topic publishes this cycle.`,
+            );
+          }
+          const results = skip
+            ? new Array<"ok" | "timed_out" | "failed">(allTopics.length).fill("timed_out")
+            : await mapWithConcurrency(
+                allTopics,
+                DISCOVERY_ADVERTISE_CONCURRENCY,
+                (topic) => advertiseOnce(topic),
+              );
+          const allOk = results.every((status) => status === "ok");
           if (allOk) {
             if (consecutiveFailureCycles > 0) {
               // First successful cycle after a streak of failures — useful
@@ -1238,7 +1292,7 @@ export async function _advertisePublicDiscoveryTopics(
             // a wall of identical `[p2p] provideCapabilityTopic: provide
             // timeout for <topic>` entries every cycle, drowning out
             // operator-relevant messages.
-            const failedCount = results.filter((ok) => !ok).length;
+            const failedCount = results.filter((status) => status !== "ok").length;
             console.warn(
               `[node-service] Discovery advertise cycle: ${failedCount}/${allTopics.length} topics timed out. ` +
               `Backoff streak: ${consecutiveFailureCycles} cycle(s); next attempt in ` +

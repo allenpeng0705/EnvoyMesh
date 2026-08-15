@@ -1589,7 +1589,14 @@ async function startOpenClawInner(
   console.log("[openclaw] Built-in OpenClaw gateway at", assistantUrl);
   console.log("[openclaw] Gateway config:", gwConfigPathAbs);
   if (modelProviderCfg && modelProviderCfg.mode && modelProviderCfg.mode !== "disabled") {
-    console.log("[openclaw] Model config:", JSON.stringify(modelProviderCfg));
+    const { apiKey: _secret, ...safeCfg } = modelProviderCfg;
+    console.log(
+      "[openclaw] Model config:",
+      JSON.stringify({
+        ...safeCfg,
+        ...(_secret ? { apiKey: "[redacted]" } : {}),
+      }),
+    );
   }
   return gatewayReady;
 }

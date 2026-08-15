@@ -148,6 +148,7 @@ class BlogPostSummary {
   final String publishedAt;
   final String visibility;
   final String publisherOwnerId;
+  final List<String> imageUrls;
 
   const BlogPostSummary({
     required this.path,
@@ -158,9 +159,14 @@ class BlogPostSummary {
     required this.publishedAt,
     required this.visibility,
     required this.publisherOwnerId,
+    this.imageUrls = const [],
   });
 
   factory BlogPostSummary.fromJson(Map<String, dynamic> json) {
+    final images = (json['imageUrls'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        const <String>[];
     return BlogPostSummary(
       path: (json['path'] as String?) ?? '',
       url: (json['url'] as String?) ?? '',
@@ -170,6 +176,24 @@ class BlogPostSummary {
       publishedAt: (json['publishedAt'] as String?) ?? '',
       visibility: (json['visibility'] as String?) ?? 'bonded',
       publisherOwnerId: (json['publisherOwnerId'] as String?) ?? '',
+      imageUrls: images,
+    );
+  }
+
+  BlogPostSummary copyWith({
+    String? bodyPreview,
+    List<String>? imageUrls,
+  }) {
+    return BlogPostSummary(
+      path: path,
+      url: url,
+      title: title,
+      summary: summary,
+      bodyPreview: bodyPreview ?? this.bodyPreview,
+      publishedAt: publishedAt,
+      visibility: visibility,
+      publisherOwnerId: publisherOwnerId,
+      imageUrls: imageUrls ?? this.imageUrls,
     );
   }
 }

@@ -119,10 +119,48 @@ describe("ChatSidebar — remove bonded contact", () => {
     const menu = await screen.findByTestId("contact-context-menu");
     expect(menu.parentElement).toBe(document.body);
     expect(screen.getByTestId("context-web-content-profile").tagName).toBe("BUTTON");
-    expect(screen.getByTestId("context-web-content-feeds").textContent).toContain("Feeds");
+    expect(screen.getByTestId("context-web-content-feeds").textContent).toContain("Feed");
+    const labels = [
+      "context-web-content-profile",
+      "context-web-content-feeds",
+      "context-web-content-blog",
+      "context-web-content-photowall",
+    ].map((id) => screen.getByTestId(id).textContent);
+    expect(labels).toEqual(["Profile", "Feed", "Blog", "Photo"]);
     const headerRow = menu.querySelector(".context-menu-header--row");
     expect(headerRow).not.toBeNull();
     expect(headerRow?.querySelector(".context-menu-links")).not.toBeNull();
+  });
+
+  it("routes context Feed/Blog to Content tabs via open-social-content", async () => {
+    const onSocial = vi.fn();
+    window.addEventListener("envoymesh:open-social-content", onSocial as EventListener);
+
+    renderWithI18n(<ChatSidebar selectedContact={null} onSelectContact={vi.fn()} />);
+    const row = screen.getByRole("button", {
+      name: (accessibleName: string) =>
+        /Alice/i.test(accessibleName) && !/Remove/i.test(accessibleName),
+    });
+    fireEvent.contextMenu(row);
+    await screen.findByTestId("contact-context-menu");
+
+    fireEvent.click(screen.getByTestId("context-web-content-feeds"));
+    expect(onSocial).toHaveBeenCalledTimes(1);
+    expect((onSocial.mock.calls[0]![0] as CustomEvent).detail).toEqual({
+      surface: "feed",
+      ownerId: "envoy:owner:alice",
+    });
+
+    fireEvent.contextMenu(row);
+    await screen.findByTestId("contact-context-menu");
+    fireEvent.click(screen.getByTestId("context-web-content-blog"));
+    expect(onSocial).toHaveBeenCalledTimes(2);
+    expect((onSocial.mock.calls[1]![0] as CustomEvent).detail).toEqual({
+      surface: "blog",
+      ownerId: "envoy:owner:alice",
+    });
+
+    window.removeEventListener("envoymesh:open-social-content", onSocial as EventListener);
   });
 });
 

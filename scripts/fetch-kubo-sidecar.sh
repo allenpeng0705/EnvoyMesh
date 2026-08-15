@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Download Kubo sidecar binary into apps/tauri/resources/kubo/ (Option B).
+# Download Kubo sidecar binary into apps/tauri/src-tauri/resources/kubo/.
+# That path is what tauri.conf.full.json bundles (resources/kubo/**/* relative
+# to src-tauri/). The legacy apps/tauri/resources/kubo/ tree is only a README
+# pointer for older docs — do not stage binaries there.
 # Usage: ./scripts/fetch-kubo-sidecar.sh [version]
 set -euo pipefail
 
 VERSION="${1:-0.32.1}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEST="$ROOT/apps/tauri/resources/kubo"
+DEST="$ROOT/apps/tauri/src-tauri/resources/kubo"
 mkdir -p "$DEST"
 
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"

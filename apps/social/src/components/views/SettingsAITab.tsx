@@ -89,6 +89,7 @@ import {
 import { resolveEmbeddingConfig } from "@envoymesh/rag/embedding-resolver";
 import { useEnvoyLocalEmbedReadiness } from "../../hooks/useEnvoyLocalEmbedReadiness.js";
 import { waitForEnvoyLocalIdle } from "../../lib/envoy-local-wait.js";
+import { localizeEnvoyLocalDownloadProgress } from "../../lib/localize-envoy-local-progress.js";
 import { KnowledgeEmbedGate } from "./KnowledgeEmbedGate.js";
 
 // ---------------------------------------------------------------------------
@@ -659,7 +660,7 @@ export function KnowledgeBaseSettings(props: {
               >
                 {EMBEDDING_PROVIDER_PRESETS.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.label}
+                    {t(`settings.ai.rag.embeddingPreset.${p.id}`, p.label)}
                   </option>
                 ))}
               </select>
@@ -799,9 +800,12 @@ export function KnowledgeBaseSettings(props: {
                     <option key={m.id} value={m.id}>
                       {m.recommended
                         ? t("settings.ai.rag.embeddingLocalModelDefault", {
-                            label: m.label,
+                            label: t(
+                              `settings.ai.rag.embeddingLocalModel.${m.id}`,
+                              m.label,
+                            ),
                           })
-                        : m.label}
+                        : t(`settings.ai.rag.embeddingLocalModel.${m.id}`, m.label)}
                     </option>
                   ))}
                 </select>
@@ -870,11 +874,9 @@ export function KnowledgeBaseSettings(props: {
                   data-testid="kb-embed-tokens-auto"
                 />
                 <p className="field-desc">
-                  {t(
-                    "settings.ai.rag.embeddingMaxInputTokensAutoLocal",
-                    "Auto-configured for Envoy Local embed context ({tokens} tokens).",
-                    { tokens: ENVOY_LOCAL_EMBED_CTX_SIZE },
-                  )}
+                  {t("settings.ai.rag.embeddingMaxInputTokensAutoLocal", {
+                    tokens: ENVOY_LOCAL_EMBED_CTX_SIZE,
+                  })}
                 </p>
               </div>
             ) : (
@@ -1059,16 +1061,12 @@ export function KnowledgeBaseSettings(props: {
               />
               {isEnvoyLocalEmbed ? (
                 <p className="field-desc">
-                  {t(
-                    "settings.ai.rag.chunkSizeAutoCappedLocal",
-                    "Capped automatically for Envoy Local (max {max} chars for {tokens}-token context).",
-                    {
-                      max:
-                        recommendedVaultChunkCharsForEmbedding(kb.embedding) ??
-                        ENVOY_LOCAL_EMBED_CTX_SIZE,
-                      tokens: ENVOY_LOCAL_EMBED_CTX_SIZE,
-                    },
-                  )}
+                  {t("settings.ai.rag.chunkSizeAutoCappedLocal", {
+                    max:
+                      recommendedVaultChunkCharsForEmbedding(kb.embedding) ??
+                      ENVOY_LOCAL_EMBED_CTX_SIZE,
+                    tokens: ENVOY_LOCAL_EMBED_CTX_SIZE,
+                  })}
                 </p>
               ) : null}
             </div>
@@ -2663,9 +2661,11 @@ function EnvoyLocalSettings({
       {status?.download?.label || (inFlight && status?.operationInProgress) ? (
         <div className="envoy-local-download-progress" data-testid="envoy-local-download-progress">
           <p className="settings-hint">
-            {status?.download?.label
-              ? t("settings.ai.envoyLocal.progress", { label: status.download.label })
-              : t("settings.ai.envoyLocal.statusDownloading")}
+            {localizeEnvoyLocalDownloadProgress(t, {
+              phase: status?.phase,
+              label: status?.download?.label,
+              ns: "settings.ai.envoyLocal",
+            })}
             {downloadFraction != null ? ` (${Math.round(downloadFraction * 100)}%)` : ""}
             {downloadBytesLabel ? ` · ${downloadBytesLabel}` : ""}
           </p>
@@ -2675,7 +2675,11 @@ function EnvoyLocalSettings({
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={downloadFraction != null ? Math.round(downloadFraction * 100) : undefined}
-            aria-label={status?.download?.label ?? t("settings.ai.envoyLocal.statusDownloading")}
+            aria-label={localizeEnvoyLocalDownloadProgress(t, {
+              phase: status?.phase,
+              label: status?.download?.label,
+              ns: "settings.ai.envoyLocal",
+            })}
           >
             <div
               className="settings-progress-fill"

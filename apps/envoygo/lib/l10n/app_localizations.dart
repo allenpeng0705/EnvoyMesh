@@ -2853,8 +2853,14 @@ abstract class AppLocalizations {
   /// No description provided for @publishedPhotoWall.
   ///
   /// In en, this message translates to:
-  /// **'PhotoWall'**
+  /// **'Photo'**
   String get publishedPhotoWall;
+
+  /// No description provided for @publishedFeed.
+  ///
+  /// In en, this message translates to:
+  /// **'Feed'**
+  String get publishedFeed;
 
   /// No description provided for @engagementCommentHint.
   ///

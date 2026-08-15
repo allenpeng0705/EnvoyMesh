@@ -1508,7 +1508,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get publishedPhotoWall => 'PhotoWall';
+  String get publishedPhotoWall => 'Photo';
+
+  @override
+  String get publishedFeed => 'Feed';
 
   @override
   String get engagementCommentHint => 'Write a comment…';

@@ -1450,7 +1450,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get publishedPhotoWall => '照片墙';
+  String get publishedPhotoWall => '相册';
+
+  @override
+  String get publishedFeed => '动态';
 
   @override
   String get engagementCommentHint => '写评论…';

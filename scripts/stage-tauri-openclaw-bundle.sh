@@ -8,8 +8,11 @@
 # Usage: bash scripts/stage-tauri-openclaw-bundle.sh
 #
 # Environment variables:
-#   STAGE_OPENCLAW_BUNDLE=1   Force re-stage (default: reuse cached tree)
-#   STAGE_OPENCLAW_BUNDLE=0   Skip gate entirely (debug escape hatch)
+#   STAGE_OPENCLAW_BUNDLE unset  Reuse staged tree when complete AND source
+#                                stamp matches (see openclaw-stage-stamp.mjs).
+#                                Auto re-stages after packages/openclaw upgrades.
+#   STAGE_OPENCLAW_BUNDLE=1      Force re-stage (ignore cache + stamp)
+#   STAGE_OPENCLAW_BUNDLE=0      Skip OpenClaw staging entirely (debug only)
 #   OPENCLAW_EXTENSIONS=default  EnvoyMesh agent allowlist (build-desktop.sh default)
 #   OPENCLAW_EXTENSIONS=all      Keep ALL OpenClaw extensions
 #   OPENCLAW_EXTENSIONS="ext1 ext2 ..."  Keep only the named extensions
@@ -126,25 +129,71 @@ _openclaw_scrub_dev_tooling() {
   fi
 }
 
-# Reuse-path gate. Default behavior: reuse the staged tree at $DEST
-# and skip pnpm install (network) on rebuilds. STAGE_OPENCLAW_BUNDLE=1
-# forces a re-stage; =0 skips the gate entirely (debug escape hatch).
-# The reuse-path also self-heals prune artefacts and the workspace
-# self-reference (see below).
+# Reuse-path gate. Default: reuse $DEST when complete and the source stamp
+# still matches packages/openclaw (auto re-stage after upgrades).
+# STAGE_OPENCLAW_BUNDLE=1 forces a re-stage; =0 skips staging entirely.
 #
 # Require node_modules/openclaw/package.json (the runtime plugin-SDK
 # self-reference) to actually exist — a missing self-ref makes the
 # gateway refuse to start with "OpenClaw tree is incomplete", so fall
 # through to a fresh stage when it's absent instead of silently
 # reusing broken cached state.
-if [ "${STAGE_OPENCLAW_BUNDLE:-0}" = "0" ]; then
-  : # debug escape hatch — skip the gate, fall through to stage_from_source
-elif [ "${STAGE_OPENCLAW_BUNDLE:-0}" != "1" ] \
-   && [ -f "$DEST/openclaw.mjs" ] \
+STAMP_SCRIPT="$ROOT/scripts/openclaw-stage-stamp.mjs"
+STAMP_FILE="$DEST/.openclaw-stage-stamp"
+
+_openclaw_source_stamp() {
+  if [ -f "$STAMP_SCRIPT" ] && [ -d "$SOURCE" ]; then
+    node "$STAMP_SCRIPT" "$SOURCE" 2>/dev/null | tr -d '\r' | head -n1
+  else
+    echo ""
+  fi
+}
+
+_openclaw_write_stamp() {
+  local stamp
+  stamp="$(_openclaw_source_stamp)"
+  if [ -n "$stamp" ]; then
+    printf '%s\n' "$stamp" > "$STAMP_FILE"
+    echo "  Wrote source stamp → .openclaw-stage-stamp"
+  fi
+}
+
+if [ "${STAGE_OPENCLAW_BUNDLE:-}" = "0" ]; then
+  echo "[stage-tauri-openclaw-bundle] STAGE_OPENCLAW_BUNDLE=0 — skipping OpenClaw staging."
+  echo "  (debug escape hatch — bundle may lack / keep a stale openclaw tree)"
+  exit 0
+fi
+
+_try_reuse=0
+if [ "${STAGE_OPENCLAW_BUNDLE:-}" = "1" ]; then
+  echo "[stage-tauri-openclaw-bundle] STAGE_OPENCLAW_BUNDLE=1 — forcing re-stage."
+elif [ -f "$DEST/openclaw.mjs" ] \
    && [ -f "$DEST/package.json" ] \
    && [ -d "$DEST/node_modules" ] \
    && [ -f "$DEST/node_modules/openclaw/package.json" ]; then
+  expected_stamp="$(_openclaw_source_stamp)"
+  staged_stamp=""
+  if [ -f "$STAMP_FILE" ]; then
+    staged_stamp="$(tr -d '\r' < "$STAMP_FILE" | head -n1)"
+  fi
+  if [ -n "$expected_stamp" ] && [ "$staged_stamp" != "$expected_stamp" ]; then
+    if [ -z "$staged_stamp" ]; then
+      echo "[stage-tauri-openclaw-bundle] No .openclaw-stage-stamp on staged tree — re-staging (first stamp)."
+    else
+      echo "[stage-tauri-openclaw-bundle] packages/openclaw changed — re-staging."
+      echo "  staged:  ${staged_stamp}"
+      echo "  source:  ${expected_stamp}"
+    fi
+  else
+    _try_reuse=1
+  fi
+fi
+
+if [ "$_try_reuse" = "1" ]; then
   echo "[stage-tauri-openclaw-bundle] Reusing staged OpenClaw at $DEST"
+  if [ -n "${expected_stamp:-}" ]; then
+    echo "  stamp: $expected_stamp"
+  fi
   echo "[stage-tauri-openclaw-bundle] Set STAGE_OPENCLAW_BUNDLE=1 to force re-stage."
 
   # Always clean stale source-only dirs that should never be in resources/
@@ -166,11 +215,9 @@ elif [ "${STAGE_OPENCLAW_BUNDLE:-0}" != "1" ] \
   need_restage=false
   if [ ! -f "$DEST/dist/entry.js" ]; then
     echo "  ⚠ dist/entry.js is missing — forcing re-stage"
-    echo "  Set STAGE_OPENCLAW_BUNDLE=0 to skip this check."
     need_restage=true
   elif grep -qE "EnvoyMesh bootstrap|from.*src/cli/run-main" "$DEST/dist/entry.js" 2>/dev/null; then
     echo "  ⚠ dist/entry.js is a broken stub — forcing re-stage"
-    echo "  Set STAGE_OPENCLAW_BUNDLE=0 to skip this check."
     need_restage=true
   fi
 
@@ -235,6 +282,7 @@ elif [ "${STAGE_OPENCLAW_BUNDLE:-0}" != "1" ] \
         [ -d "$ext_base" ] || continue
         removed=0
         for ext_dir in "$ext_base"/*/; do
+          [ -d "$ext_dir" ] || continue
           ext_name="$(basename "$ext_dir")"
           # shellcheck disable=SC2086
           if ! echo " $_ext_allowlist " | grep -q " $ext_name "; then
@@ -262,6 +310,10 @@ elif [ "${STAGE_OPENCLAW_BUNDLE:-0}" != "1" ] \
     fi
 
     if [ "$need_restage" = false ]; then
+      # Backfill stamp on older valid trees that predate stamping.
+      if [ -n "${expected_stamp:-}" ] && [ ! -f "$STAMP_FILE" ]; then
+        _openclaw_write_stamp
+      fi
       exit 0
     fi
   fi
@@ -591,6 +643,8 @@ with open(p, 'w') as f: json.dump(d, f, indent=2); f.write('\n')
     echo "  ✗ Staged tree missing openclaw.mjs/package.json" >&2
     return 1
   fi
+
+  _openclaw_write_stamp
 
   echo "  ✓ OpenClaw staged at $DEST"
 

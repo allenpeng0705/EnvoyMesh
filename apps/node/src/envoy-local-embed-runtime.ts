@@ -50,6 +50,7 @@ import {
   type EnvoyLocalRuntimeState,
 } from "./envoy-local-runtime.js";
 import { buildEnvoyLocalLlamaServerArgs } from "./envoy-local-server-args.js";
+import { listListeningPidsOnPort } from "./openclaw-gateway-port.js";
 import {
   ENVOY_LOCAL_EMBED_PORT,
   envoyLocalEmbedOpenAiBaseUrl,
@@ -91,6 +92,16 @@ export type EnvoyLocalEmbedRuntimeState = EnvoyLocalRuntimeState & {
   lastEmbedActivityAt?: number;
   /** Stops the owned sidecar after quiet period — frees CPU/RAM. */
   idleStopTimer?: ReturnType<typeof setTimeout> | null;
+  /**
+   * Consecutive failed /v1/embeddings health probes (models OK but inference
+   * hung — the wedge we saw when slots stuck). Separate from
+   * consecutiveHealthFailures (/models).
+   */
+  consecutiveEmbedProbeFailures?: number;
+  /** Serialize watchdog restart so overlapping ticks don't double-spawn. */
+  watchdogRestartPromise?: Promise<void> | null;
+  /** Skip a tick while the previous /models+/embeddings probe is still running. */
+  watchdogTickInFlight?: boolean;
 };
 
 /** Default quiet time before stopping the embed llama-server (ms).
@@ -117,6 +128,9 @@ export function createEnvoyLocalEmbedRuntimeState(): EnvoyLocalEmbedRuntimeState
   return {
     ...createEnvoyLocalRuntimeState(),
     idleStopTimer: null,
+    consecutiveEmbedProbeFailures: 0,
+    watchdogRestartPromise: null,
+    watchdogTickInFlight: false,
   };
 }
 
@@ -398,15 +412,146 @@ async function stopChild(state: EnvoyLocalEmbedRuntimeState): Promise<void> {
   state.childPid = undefined;
 }
 
-async function probeModels(endpoint: string): Promise<boolean> {
+/**
+ * Stop the process we spawned, then SIGTERM/SIGKILL any leftover listener on
+ * the embed port (orphans from a previous node / wedged llama-server).
+ */
+async function stopEmbedListenerHard(state: EnvoyLocalEmbedRuntimeState): Promise<void> {
+  await stopChild(state);
+  const pids = listListeningPidsOnPort(ENVOY_LOCAL_EMBED_PORT).filter(
+    (pid) => pid !== process.pid,
+  );
+  if (pids.length === 0) return;
+  console.warn(
+    `[envoy-local-embed] reclaiming port ${ENVOY_LOCAL_EMBED_PORT} — stopping PID(s): ${pids.join(", ")}`,
+  );
+  for (const pid of pids) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      /* ignore */
+    }
+  }
+  await new Promise((r) => setTimeout(r, 1_200));
+  for (const pid of listListeningPidsOnPort(ENVOY_LOCAL_EMBED_PORT)) {
+    if (pid === process.pid) continue;
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      /* ignore */
+    }
+  }
+  await new Promise((r) => setTimeout(r, 200));
+}
+
+/** GET /v1/models — process is listening. Does NOT detect a stuck slot. */
+export async function probeEnvoyLocalEmbedModels(
+  endpoint: string,
+  timeoutMs = 3_000,
+): Promise<boolean> {
   try {
     const res = await fetch(`${endpoint.replace(/\/$/, "")}/models`, {
       method: "GET",
-      signal: AbortSignal.timeout(3_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+/**
+ * POST /v1/embeddings with a tiny payload. Detects the "models OK but slots
+ * wedged" failure mode that only probing /models misses.
+ */
+export async function probeEnvoyLocalEmbedInference(
+  endpoint: string,
+  modelName: string,
+  timeoutMs = 12_000,
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${endpoint.replace(/\/$/, "")}/embeddings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: modelName || DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID,
+        input: "ping",
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return false;
+    const payload = (await res.json()) as {
+      data?: Array<{ embedding?: unknown }>;
+      embedding?: unknown;
+    };
+    const vec = payload.data?.[0]?.embedding ?? payload.embedding;
+    return Array.isArray(vec) && vec.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveProbeModelId(
+  state: EnvoyLocalEmbedRuntimeState,
+  deps: EnvoyLocalEmbedRuntimeDeps,
+): Promise<string> {
+  try {
+    const cfg = normalizeEnvoyLocalEmbedConfig(await deps.loadEnvoyLocalEmbedConfig());
+    if (cfg.activeModelId?.trim()) return cfg.activeModelId.trim();
+  } catch {
+    /* fall through */
+  }
+  try {
+    const preferred = await deps.preferredEmbedModelId?.();
+    if (preferred?.trim()) return preferred.trim();
+  } catch {
+    /* fall through */
+  }
+  void state;
+  return DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID;
+}
+
+/** True when /v1/models and a tiny /v1/embeddings both succeed. */
+export async function confirmEnvoyLocalEmbedInferenceReady(
+  state: EnvoyLocalEmbedRuntimeState,
+  deps: EnvoyLocalEmbedRuntimeDeps,
+): Promise<boolean> {
+  const endpoint = envoyLocalEmbedOpenAiBaseUrl(ENVOY_LOCAL_EMBED_PORT);
+  if (!(await probeEnvoyLocalEmbedModels(endpoint))) return false;
+  const modelId = await resolveProbeModelId(state, deps);
+  return probeEnvoyLocalEmbedInference(endpoint, modelId);
+}
+
+async function restartEmbedSidecarFromWatchdog(
+  state: EnvoyLocalEmbedRuntimeState,
+  deps: EnvoyLocalEmbedRuntimeDeps,
+  reason: string,
+): Promise<void> {
+  if (state.watchdogRestartPromise) {
+    await state.watchdogRestartPromise;
+    return;
+  }
+  state.watchdogRestartPromise = (async () => {
+    console.warn(`[envoy-local-embed] watchdog restart: ${reason}`);
+    const cfg = normalizeEnvoyLocalEmbedConfig(await deps.loadEnvoyLocalEmbedConfig());
+    if (!cfg.enabled) return;
+    if (state.enablePromise) {
+      await state.enablePromise;
+      return;
+    }
+    try {
+      await stopEmbedListenerHard(state);
+      await startEmbedSidecar(state, deps);
+      state.consecutiveHealthFailures = 0;
+      state.consecutiveEmbedProbeFailures = 0;
+    } catch (err) {
+      setError(state, err instanceof Error ? err.message : String(err));
+    }
+  })();
+  try {
+    await state.watchdogRestartPromise;
+  } finally {
+    state.watchdogRestartPromise = null;
   }
 }
 
@@ -416,28 +561,61 @@ function armEmbedWatchdog(
 ): void {
   if (state.watchdog) clearInterval(state.watchdog);
   state.consecutiveHealthFailures = 0;
+  state.consecutiveEmbedProbeFailures = 0;
+  state.watchdogTickInFlight = false;
+  // Tick every 15s: /models always; /embeddings when not busy (reindex holds the sole slot).
   state.watchdog = setInterval(() => {
     void (async () => {
-      const endpoint = envoyLocalEmbedOpenAiBaseUrl(ENVOY_LOCAL_EMBED_PORT);
-      const ok = await probeModels(endpoint);
-      if (ok) {
-        state.consecutiveHealthFailures = 0;
+      if (
+        state.watchdogTickInFlight ||
+        state.watchdogRestartPromise ||
+        state.enablePromise
+      ) {
         return;
       }
-      state.consecutiveHealthFailures += 1;
-      if (state.consecutiveHealthFailures < 5) return;
-      state.consecutiveHealthFailures = 0;
-      const cfg = normalizeEnvoyLocalEmbedConfig(await deps.loadEnvoyLocalEmbedConfig());
-      if (!cfg.enabled) return;
-      if (state.enablePromise) return;
+      state.watchdogTickInFlight = true;
       try {
-        await stopChild(state);
-        await startEmbedSidecar(state, deps);
-      } catch (err) {
-        setError(state, err instanceof Error ? err.message : String(err));
+        const endpoint = envoyLocalEmbedOpenAiBaseUrl(ENVOY_LOCAL_EMBED_PORT);
+        const modelsOk = await probeEnvoyLocalEmbedModels(endpoint);
+        if (!modelsOk) {
+          state.consecutiveHealthFailures = (state.consecutiveHealthFailures ?? 0) + 1;
+          if (state.consecutiveHealthFailures < 3) return;
+          state.consecutiveHealthFailures = 0;
+          await restartEmbedSidecarFromWatchdog(
+            state,
+            deps,
+            "/v1/models unreachable (3 consecutive)",
+          );
+          return;
+        }
+        state.consecutiveHealthFailures = 0;
+
+        // Skip inference probe while RAG is embedding — parallel=1 would queue
+        // behind real work and false-positive as a wedge.
+        if (deps.isEmbedBusy?.()) return;
+
+        const modelId = await resolveProbeModelId(state, deps);
+        const inferOk = await probeEnvoyLocalEmbedInference(endpoint, modelId);
+        if (inferOk) {
+          state.consecutiveEmbedProbeFailures = 0;
+          return;
+        }
+        state.consecutiveEmbedProbeFailures = (state.consecutiveEmbedProbeFailures ?? 0) + 1;
+        console.warn(
+          `[envoy-local-embed] embeddings probe failed (${state.consecutiveEmbedProbeFailures}/2) — models still OK`,
+        );
+        if ((state.consecutiveEmbedProbeFailures ?? 0) < 2) return;
+        state.consecutiveEmbedProbeFailures = 0;
+        await restartEmbedSidecarFromWatchdog(
+          state,
+          deps,
+          "/v1/embeddings hung or empty while /v1/models OK (wedged slot)",
+        );
+      } finally {
+        state.watchdogTickInFlight = false;
       }
     })();
-  }, 12_000);
+  }, 15_000);
   state.watchdog.unref?.();
 }
 
@@ -484,18 +662,24 @@ async function startEmbedSidecar(
   });
 
   const endpoint = envoyLocalEmbedOpenAiBaseUrl(ENVOY_LOCAL_EMBED_PORT);
-  // Orphan from a previous node process — reuse instead of failing on bind.
-  if (await probeModels(endpoint)) {
-    state.phase = "ready";
-    state.download = null;
-    state.lastError = null;
-    armEmbedWatchdog(state, deps);
-    noteEnvoyLocalEmbedActivity(state, deps);
-    await notifyEmbedReady(state, deps);
-    return;
+  // Orphan from a previous node process — reuse only if embeddings work too.
+  // /v1/models alone can look healthy while the slot is wedged.
+  if (await probeEnvoyLocalEmbedModels(endpoint)) {
+    if (await probeEnvoyLocalEmbedInference(endpoint, model.id)) {
+      state.phase = "ready";
+      state.download = null;
+      state.lastError = null;
+      armEmbedWatchdog(state, deps);
+      noteEnvoyLocalEmbedActivity(state, deps);
+      await notifyEmbedReady(state, deps);
+      return;
+    }
+    console.warn(
+      "[envoy-local-embed] orphan on port answers /models but not /embeddings — reclaiming",
+    );
   }
 
-  await stopChild(state);
+  await stopEmbedListenerHard(state);
 
   const child: ChildProcess = spawn(exe, args, {
     cwd: join(exe, ".."),
@@ -523,7 +707,7 @@ async function startEmbedSidecar(
   const timeoutMs = resolveStartupTimeoutMs(serverParams, modelStat.size);
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
-    if (await probeModels(endpoint)) {
+    if (await probeEnvoyLocalEmbedModels(endpoint)) {
       state.phase = "ready";
       state.download = null;
       state.lastError = null;
@@ -537,7 +721,7 @@ async function startEmbedSidecar(
     }
     await new Promise((r) => setTimeout(r, 400));
   }
-  await stopChild(state);
+  await stopEmbedListenerHard(state);
   throw new Error(`embed llama-server did not become ready within ${timeoutMs}ms`);
 }
 
@@ -553,7 +737,7 @@ export async function getEnvoyLocalEmbedStatusViaRuntime(
   const activeId = cfg.activeModelId ?? index.activeModelId;
   const active = index.models.find((m) => m.id === activeId);
   const endpoint = envoyLocalEmbedOpenAiBaseUrl(ENVOY_LOCAL_EMBED_PORT);
-  const probed = await probeModels(endpoint);
+  const probed = await probeEnvoyLocalEmbedModels(endpoint);
   // Probe success counts as running (covers orphans after node restart).
   if (probed && state.phase !== "error" && !downloadingPhaseHint(state)) {
     if (state.phase !== "ready") {
@@ -703,7 +887,7 @@ export async function stopEnvoyLocalEmbedViaRuntime(
   deps: EnvoyLocalEmbedRuntimeDeps,
 ): Promise<EnvoyLocalEmbedStatus> {
   state.abort?.abort();
-  await stopChild(state);
+  await stopEmbedListenerHard(state);
   state.phase = "idle";
   state.embedReadyNotified = false;
   state.download = null;
@@ -729,12 +913,33 @@ export async function ensureEnvoyLocalEmbedRunningViaRuntime(
   if (!cfg.enabled) return;
 
   const endpoint = envoyLocalEmbedOpenAiBaseUrl(ENVOY_LOCAL_EMBED_PORT);
-  if (await probeModels(endpoint)) {
+  if (await probeEnvoyLocalEmbedModels(endpoint)) {
+    const modelId = await resolveProbeModelId(state, deps);
+    // Heal wedged orphans before RAG starts embedding (models OK ≠ slots OK).
+    if (!(await probeEnvoyLocalEmbedInference(endpoint, modelId))) {
+      console.warn(
+        "[envoy-local-embed] ensure: /v1/models OK but /v1/embeddings failed — restarting",
+      );
+      await restartEmbedSidecarFromWatchdog(
+        state,
+        deps,
+        "ensureEnvoyLocalEmbed: embeddings probe failed",
+      );
+      if (!(await confirmEnvoyLocalEmbedInferenceReady(state, deps))) {
+        noteEnvoyLocalEmbedActivity(state, deps);
+        throw new Error(
+          state.lastError ??
+            "Envoy Local embed still unhealthy after restart (/v1/embeddings)",
+        );
+      }
+    }
     if (state.phase !== "ready" && state.phase !== "error") {
       state.phase = "ready";
       state.lastError = null;
     }
-    if (!state.watchdog && state.child) {
+    // Arm even for orphans (no state.child) — otherwise wedged reused
+    // processes are never watched.
+    if (!state.watchdog) {
       armEmbedWatchdog(state, deps);
     }
     noteEnvoyLocalEmbedActivity(state, deps);
@@ -743,11 +948,25 @@ export async function ensureEnvoyLocalEmbedRunningViaRuntime(
 
   if (state.enablePromise) {
     await state.enablePromise;
+    if (!(await confirmEnvoyLocalEmbedInferenceReady(state, deps))) {
+      noteEnvoyLocalEmbedActivity(state, deps);
+      throw new Error(
+        state.lastError ??
+          "Envoy Local embed still unhealthy after enable (/v1/embeddings)",
+      );
+    }
     noteEnvoyLocalEmbedActivity(state, deps);
     return;
   }
 
   await enableEnvoyLocalEmbedViaRuntime(state, deps);
+  if (!(await confirmEnvoyLocalEmbedInferenceReady(state, deps))) {
+    noteEnvoyLocalEmbedActivity(state, deps);
+    throw new Error(
+      state.lastError ??
+        "Envoy Local embed still unhealthy after enable (/v1/embeddings)",
+    );
+  }
   noteEnvoyLocalEmbedActivity(state, deps);
 }
 
@@ -756,7 +975,7 @@ export async function disableEnvoyLocalEmbedViaRuntime(
   deps: EnvoyLocalEmbedRuntimeDeps,
 ): Promise<EnvoyLocalEmbedStatus> {
   state.abort?.abort();
-  await stopChild(state);
+  await stopEmbedListenerHard(state);
   await deps.saveEnvoyLocalEmbedConfig({ enabled: false });
   state.phase = "disabled";
   state.download = null;
@@ -783,11 +1002,33 @@ export async function maybeStartEnvoyLocalEmbedOnBootViaRuntime(
   // Honor explicit disable (Setup → stop embed / disable). Default enabled is true.
   if (!cfg.enabled) return;
 
-  // Already healthy — still notify once so boot RAG reindex (which often raced
-  // ahead of :18791) can run after embed is confirmed.
+  // Already listening — confirm embeddings work, arm watchdog for orphans,
+  // then notify once so boot RAG reindex (often raced ahead of :18791) runs.
   try {
     const st = await getEnvoyLocalEmbedStatusViaRuntime(state, deps);
     if (st.running) {
+      let healthy = await confirmEnvoyLocalEmbedInferenceReady(state, deps);
+      if (!healthy) {
+        console.warn(
+          "[envoy-local-embed] boot: /v1/models OK but /v1/embeddings failed — restarting",
+        );
+        await restartEmbedSidecarFromWatchdog(
+          state,
+          deps,
+          "maybeStartEnvoyLocalEmbedOnBoot: embeddings probe failed",
+        );
+        healthy = await confirmEnvoyLocalEmbedInferenceReady(state, deps);
+      }
+      if (!state.watchdog) {
+        armEmbedWatchdog(state, deps);
+      }
+      noteEnvoyLocalEmbedActivity(state, deps);
+      if (!healthy) {
+        console.warn(
+          "[envoy-local-embed] boot: embed still unhealthy after restart — skipping onEmbedReady",
+        );
+        return;
+      }
       await notifyEmbedReady(state, deps);
       return;
     }
@@ -802,7 +1043,7 @@ export async function haltEnvoyLocalEmbedChildViaRuntime(
   state: EnvoyLocalEmbedRuntimeState,
 ): Promise<void> {
   state.abort?.abort();
-  await stopChild(state);
+  await stopEmbedListenerHard(state);
   state.phase = "idle";
   state.embedReadyNotified = false;
 }

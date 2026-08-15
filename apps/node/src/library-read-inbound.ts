@@ -40,6 +40,16 @@ function resolveContentType(normalizedPath: string, entryMimeType?: string): str
   return entryMimeType ?? fromName;
 }
 
+/** Strip parameters (`application/json; charset=utf-8` → `application/json`). */
+function baseMimeType(mime: string): string {
+  return mime.split(";")[0]?.trim().toLowerCase() ?? "";
+}
+
+function isLibraryReadTextMime(mime: string): boolean {
+  const base = baseMimeType(mime);
+  return base.startsWith("text/") || base === "application/json";
+}
+
 async function resolveSenderOwnerId(
   envelope: EnvoyEnvelope,
   remotePeerId: string,
@@ -511,8 +521,7 @@ export async function handleInboundLibraryRead(
     }
 
     const contentTypeEarly = resolveContentType(normalizedPath, entry?.mimeType);
-    const isTextMime =
-      contentTypeEarly.startsWith("text/") || contentTypeEarly === "application/json";
+    const isTextMime = isLibraryReadTextMime(contentTypeEarly);
 
     // Range handling — always base64 on the wire, so enforce the binary cap.
     if (payload.range) {
@@ -615,9 +624,7 @@ export async function handleInboundLibraryRead(
 
   // Body encoding: full responses use UTF-8 for text/*; range slices are
   // always base64 so multi-byte UTF-8 characters are never split mid-codepoint.
-  const isText =
-    !payload.range &&
-    (contentType.startsWith("text/") || contentType === "application/json");
+  const isText = !payload.range && isLibraryReadTextMime(contentType);
   const body = isText ? fileBytes.toString("utf8") : fileBytes.toString("base64");
 
   const responsePayload = createLibraryReadResponsePayload({

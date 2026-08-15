@@ -212,6 +212,10 @@ export const DEFAULT_CLIENT_MAX_DIAL_QUEUE_LENGTH = 64;
 export const DEFAULT_CLIENT_MAX_PEER_ADDRS_TO_DIAL = 8;
 /** Rate-limit identical "Dial queue is full" ensurePeerReachable warnings. */
 const DIAL_QUEUE_FULL_LOG_INTERVAL_MS = 10_000;
+/** Rate-limit soft ensurePeerReachable noise (aborted / no addresses). */
+const ENSURE_PEER_SOFT_FAIL_LOG_INTERVAL_MS = 15_000;
+/** Rate-limit provideCapabilityTopic dial-queue deferral lines. */
+const PROVIDE_DEFER_LOG_INTERVAL_MS = 15_000;
 
 /** Speculative ensurePeerReachable should wait when the dial queue is flooded. */
 export function shouldDeferEnsurePeerForDialQueue(input: {
@@ -678,6 +682,12 @@ export class EnvoyMesh {
   /** Last "Dial queue is full" ensurePeerReachable warn + suppressed count. */
   private dialQueueFullLastLogAt = 0;
   private dialQueueFullSuppressed = 0;
+  /** Soft ensurePeerReachable failures (aborted / no addresses), rate-limited. */
+  private softEnsureFailLastLogAt = 0;
+  private softEnsureFailSuppressed = 0;
+  /** provideCapabilityTopic dial-queue deferrals, rate-limited. */
+  private provideDeferLastLogAt = 0;
+  private provideDeferSuppressed = 0;
 
   constructor(private readonly options: EnvoyMeshOptions = {}) {
     this.circuitRelayServerConfig = options.circuitRelayServer;
@@ -717,6 +727,38 @@ export class EnvoyMesh {
       suppressed > 0 ? ` (+${suppressed} similar suppressed)` : "";
     console.warn(
       `[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}${suffix}`,
+    );
+  }
+
+  private logSoftEnsurePeerFailOnce(target: string, detail: string): void {
+    const now = Date.now();
+    if (now - this.softEnsureFailLastLogAt < ENSURE_PEER_SOFT_FAIL_LOG_INTERVAL_MS) {
+      this.softEnsureFailSuppressed += 1;
+      return;
+    }
+    const suppressed = this.softEnsureFailSuppressed;
+    this.softEnsureFailSuppressed = 0;
+    this.softEnsureFailLastLogAt = now;
+    const suffix =
+      suppressed > 0 ? ` (+${suppressed} similar suppressed)` : "";
+    console.warn(
+      `[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}${suffix}`,
+    );
+  }
+
+  private logProvideDeferredOnce(topic: string, dialQueueLength: number): void {
+    const now = Date.now();
+    if (now - this.provideDeferLastLogAt < PROVIDE_DEFER_LOG_INTERVAL_MS) {
+      this.provideDeferSuppressed += 1;
+      return;
+    }
+    const suppressed = this.provideDeferSuppressed;
+    this.provideDeferSuppressed = 0;
+    this.provideDeferLastLogAt = now;
+    const suffix =
+      suppressed > 0 ? ` (+${suppressed} similar topics suppressed)` : "";
+    console.warn(
+      `[p2p] provideCapabilityTopic: deferred for ${topic} (dialQueue=${dialQueueLength} > ${DHT_PROVIDE_DIAL_QUEUE_DEFER_THRESHOLD})${suffix}`,
     );
   }
 
@@ -2601,9 +2643,7 @@ export class EnvoyMesh {
     this.requireDhtForCapabilityTopics();
     if (this.isDialQueueCongested()) {
       const dq = this.getConnectionStats().dialQueueLength ?? 0;
-      console.warn(
-        `[p2p] provideCapabilityTopic: deferred for ${topic} (dialQueue=${dq} > ${DHT_PROVIDE_DIAL_QUEUE_DEFER_THRESHOLD})`,
-      );
+      this.logProvideDeferredOnce(topic, dq);
       const cid = await cidForCapabilityTopic(topic);
       return { cid, timedOut: true };
     }
@@ -3416,6 +3456,12 @@ export class EnvoyMesh {
           this.logNoReservationOnce(peerIdStr, detail);
         } else if (detail.includes("Dial queue is full")) {
           this.logDialQueueFullOnce(target, detail);
+        } else if (
+          detail.includes("This operation was aborted") ||
+          detail.includes("no valid addresses") ||
+          detail.includes("The dial request has no valid addresses")
+        ) {
+          this.logSoftEnsurePeerFailOnce(target, detail);
         } else {
           console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
         }

@@ -571,11 +571,18 @@ export function App() {
     const onOpenInbox = () => {
       setInboxOpen(true);
     };
+    const onOpenSocialContent = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ surface?: string; ownerId?: string }>).detail;
+      setCurrentView("social");
+      setSocialTab(detail?.surface === "blog" ? "blog" : "feed");
+    };
     window.addEventListener("envoymesh:open-browser", onOpenBrowser);
     window.addEventListener("envoymesh:open-inbox", onOpenInbox);
+    window.addEventListener("envoymesh:open-social-content", onOpenSocialContent);
     return () => {
       window.removeEventListener("envoymesh:open-browser", onOpenBrowser);
       window.removeEventListener("envoymesh:open-inbox", onOpenInbox);
+      window.removeEventListener("envoymesh:open-social-content", onOpenSocialContent);
     };
   }, []);
   const [pairingOpen, setPairingOpen] = useState(false);

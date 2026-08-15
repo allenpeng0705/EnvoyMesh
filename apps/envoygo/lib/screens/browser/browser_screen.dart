@@ -32,6 +32,12 @@ final _linkedImageRe = RegExp(
   r'\[(!\[[^\]]*\]\((envoy://[^)]+)\))\]\((envoy://[^)]+)\)',
 );
 
+/// Strip MIME parameters (`text/markdown; charset=utf-8` → `text/markdown`).
+String _baseMimeType(String mime) {
+  final base = mime.split(';').first.trim().toLowerCase();
+  return base;
+}
+
 class BrowserScreen extends ConsumerStatefulWidget {
   /// Optional deep-link URL (e.g. from Inbox `feed.notify` → Open in Browser).
   final String? initialUrl;
@@ -425,7 +431,7 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
       );
     }
 
-    final mime = _mimeType!;
+    final mime = _baseMimeType(_mimeType!);
     if (mime == 'text/html' && _body!.contains('em-profile-portal')) {
       final portal = _parseProfilePortal(_body!);
       if (portal != null) {

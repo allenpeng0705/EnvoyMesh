@@ -1527,6 +1527,9 @@ class AppLocalizationsIt extends AppLocalizations {
   String get publishedPhotoWall => 'Muro foto';
 
   @override
+  String get publishedFeed => 'Feed';
+
+  @override
   String get engagementCommentHint => 'Scrivi un commento…';
 
   @override

@@ -28,9 +28,9 @@ Watch logs for: `liveReservation=1 advCircuits≥1 dialQueue` low.
 
 | Guidance | Status |
 |----------|--------|
-| Don’t leave bare `tsx` overnight **without watchdog** | **Automated for kill:** sibling `/health` watchdog is on by default. Still **not** a full 24×7 story — kill ≠ respawn. Use Tauri, `npm run node:supervised:4030`, or launchd/systemd. |
+| Don’t leave bare `tsx` overnight **without watchdog** | **Automated for kill:** sibling `/health` watchdog is on by default. Still **not** a full 24×7 story — kill ≠ respawn. Use Tauri, `npm run node:supervised -- --profile …`, `npm run node:supervised:4030`, or launchd/systemd. |
 | On CGNAT prefer `quietWan` until reachable | **Mostly automated:** CGNAT detection can auto-apply `quietWan`. Prefer watching **`liveReservation=1` / `advCircuits≥1`**, not `circuitPeers>0` (that counts hoppers dialing you). |
-| Watch `[node-stats]` `dialQueue` / peers / RSS | **Still useful.** Prune starts at `dialQueue>20`; bootstrap reprobe defers at `>50`; stats warn at `>50`. If `dialQueue` stays high, storm mitigations are losing. |
+| Watch `[node-stats]` `dialQueue` / `eventLoopLag` / peers / RSS | **Still useful.** Lag warn at `>500ms`; health exit at sustained `>2s`. Prune starts at `dialQueue>20`; bootstrap reprobe defers at `>50`. If lag rises with dialQueue≈0, suspect DHT provide / RAG / microtask storms. |
 
 ---
 
@@ -50,9 +50,13 @@ These **kill** a wedge; they do **not** respawn. Pair with launchd / systemd / `
 
 ```bash
 chmod +x scripts/supervise-home-node.sh
-./scripts/supervise-home-node.sh
-# or default Social WS 3030:
-HOME_NODE_NPM_SCRIPT=node:dev ./scripts/supervise-home-node.sh --profile ./apps/node/data/default
+# Default Social WS (3030) — e.g. coco profile:
+npm run node:supervised -- --profile ./apps/node/data/coco
+# Or port 4030 fleet:
+npm run node:supervised:4030 -- --profile ./apps/node/data/default
+# or:
+./scripts/supervise-home-node.sh --profile ./apps/node/data/default
+HOME_NODE_NPM_SCRIPT=node:dev ./scripts/supervise-home-node.sh --profile ./apps/node/data/coco
 ```
 
 Optional external probe (same idea as Tauri, useful under systemd):

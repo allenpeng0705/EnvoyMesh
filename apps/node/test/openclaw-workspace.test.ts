@@ -28,6 +28,26 @@ describe("ensureOpenClawWorkspace", () => {
     const identity = await readFile(join(dir, "IDENTITY.md"), "utf-8");
     expect(identity).toContain("EnvoyAI");
 
+    const guide = await readFile(join(dir, "ENVOYMESH_GUIDE.md"), "utf-8");
+    expect(guide).toContain("Team jobs");
+    expect(guide).toContain("Knowledge");
+    expect(guide).toContain("Browse · Plugins · Setup");
+    expect(guide).toContain("same embedding database");
+    expect(guide).toContain("Enable office LAN team");
+    expect(guide).toContain("EnvoyGo");
+    expect(guide).toContain("Envoy Local (on-device llama.cpp)");
+    expect(guide).toContain("Install & start Envoy Local embedder");
+    expect(guide).toContain("18790");
+    expect(guide).toContain("18791");
+    expect(guide).toContain("does **not** embed vault text");
+    expect(guide).not.toContain("Sidebar: **Chat · Discover · Library · Chains**");
+
+    const soul = await readFile(join(dir, "SOUL.md"), "utf-8");
+    expect(soul).toContain("Team jobs");
+    expect(soul).toContain("Knowledge (Browse, Ask, Plugins, Setup)");
+    expect(soul).toContain("Envoy Local (chat llama-server)");
+    expect(soul).toContain("Envoy Local embedder");
+
     const user = await readFile(join(dir, "USER.md"), "utf-8");
     expect(user).toContain("Alice");
     expect(user).toContain("Bonds on mesh: 2");

@@ -20,7 +20,12 @@ export interface NodeStatsLogContext {
    * See docs/connectivity-internals-and-design.md Solution C1.
    */
   maxConnections?: number;
+  /** Latest event-loop lag sample (ms); logged when elevated. */
+  getEventLoopLagMs?: () => number;
 }
+
+/** Warn when lag exceeds this (below the 2s health-exit threshold). */
+export const NODE_STATS_LAG_WARN_MS = 500;
 
 export function logNodeRuntimeStats(mesh: EnvoyMesh, context: NodeStatsLogContext): void {
   const uptimeSeconds = Math.floor((Date.now() - context.processStartedAtMs) / 1000);
@@ -35,6 +40,9 @@ export function logNodeRuntimeStats(mesh: EnvoyMesh, context: NodeStatsLogContex
     const extMB = Math.floor((mem.external ?? 0) / 1024 / 1024);
     const abMB = Math.floor((mem.arrayBuffers ?? 0) / 1024 / 1024);
     const dialPart = conn.dialQueueLength != null ? ` dialQueue=${conn.dialQueueLength}` : "";
+    const lagMs = context.getEventLoopLagMs?.();
+    const lagPart =
+      typeof lagMs === "number" && Number.isFinite(lagMs) ? ` eventLoopLag=${Math.round(lagMs)}ms` : "";
     // circuitPeers = open hop connections TO us; liveReservation+advCircuits =
     // whether EnvoyGo can dial US via /p2p-circuit/ under CGNAT.
     const liveReservation =
@@ -50,7 +58,15 @@ export function logNodeRuntimeStats(mesh: EnvoyMesh, context: NodeStatsLogContex
         ? mesh.getRelayAdvertisedMultiaddrs().filter((a) => a.includes("/p2p-circuit")).length
         : 0;
     console.log(
-      `[node-stats] uptime=${uptimeSeconds}s circuitPeers=${conn.circuitPeerIds.length} circuitConns=${conn.circuitConnections} liveReservation=${liveReservation} advCircuits=${advCircuits} resvFailStreak=${failureStreak} totalPeers=${conn.totalPeerIds} totalConns=${conn.totalConnections}${rosterPart}${dialPart} memoryRss=${rssMB}MB heapUsed=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB`,
+      `[node-stats] uptime=${uptimeSeconds}s circuitPeers=${conn.circuitPeerIds.length} circuitConns=${conn.circuitConnections} liveReservation=${liveReservation} advCircuits=${advCircuits} resvFailStreak=${failureStreak} totalPeers=${conn.totalPeerIds} totalConns=${conn.totalConnections}${rosterPart}${dialPart}${lagPart} memoryRss=${rssMB}MB heapUsed=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB`,
+    );
+  }
+
+  const lagSample = context.getEventLoopLagMs?.();
+  if (typeof lagSample === "number" && lagSample > NODE_STATS_LAG_WARN_MS) {
+    const dialPart = conn.dialQueueLength != null ? ` dialQueue=${conn.dialQueueLength}` : "";
+    console.warn(
+      `[node-stats] WARNING: eventLoopLag=${Math.round(lagSample)}ms (>${NODE_STATS_LAG_WARN_MS})${dialPart} — soft wedge risk; sibling /health watchdog will SIGKILL if /health stops answering`,
     );
   }
 

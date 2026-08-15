@@ -2,13 +2,19 @@
  * Social shell — Chats | Feed | Blog | Discover | Explore.
  * Discover = people discovery; Explore = web content browser (former Browse).
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ContentEngageSurface } from "@envoymesh/api";
 import { useT } from "../../context/I18nContext.js";
 import {
   hasPendingBrowserOpen,
   OPEN_BROWSER_EVENT,
 } from "../../lib/browser-nav.js";
+import {
+  clearSocialContentPeerFilter,
+  OPEN_SOCIAL_CONTENT_EVENT,
+  takePendingSocialContentPeer,
+  type OpenSocialContentDetail,
+} from "../../lib/social-content-nav.js";
 import { ChatView, type ChatViewProps } from "./ChatView.js";
 import { FeedView } from "./FeedView.js";
 import { BlogView } from "./BlogView.js";
@@ -51,6 +57,8 @@ export function SocialView({
   const t = useT();
   const dismissRef = useRef(onDismissEngage);
   dismissRef.current = onDismissEngage;
+  /** Contact Feed/Blog shortcut — filter Content tabs to that publisher. */
+  const [peerOwnerId, setPeerOwnerId] = useState<string | null>(null);
 
   // Do NOT dismiss-all on Social mount: Chats is the default tab, and clearing
   // Feed/Blog engage (+ feed.notify) when the user only opens Chats would hide
@@ -79,7 +87,31 @@ export function SocialView({
     return () => window.removeEventListener(OPEN_BROWSER_EVENT, goExplore);
   }, [onActiveTabChange]);
 
+  useEffect(() => {
+    const pending = takePendingSocialContentPeer();
+    if (pending) {
+      setPeerOwnerId(pending.ownerId);
+      onActiveTabChange(pending.surface === "blog" ? "blog" : "feed");
+    }
+    const onOpen = (ev: Event) => {
+      const detail = (ev as CustomEvent<OpenSocialContentDetail>).detail;
+      if (!detail?.ownerId?.trim()) return;
+      setPeerOwnerId(detail.ownerId.trim());
+      onActiveTabChange(detail.surface === "blog" ? "blog" : "feed");
+    };
+    window.addEventListener(OPEN_SOCIAL_CONTENT_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_SOCIAL_CONTENT_EVENT, onOpen);
+  }, [onActiveTabChange]);
+
+  const clearPeerFilter = () => {
+    clearSocialContentPeerFilter();
+    setPeerOwnerId(null);
+  };
+
   const selectTab = (tab: SocialTab) => {
+    // Manual tab click clears contact filter so Feed/Blog mean the full circle again.
+    // Programmatic openSocialContent sets peerOwnerId via the event listener instead.
+    clearPeerFilter();
     onActiveTabChange(tab);
   };
 
@@ -130,9 +162,15 @@ export function SocialView({
         {activeTab === "chats" ? (
           <ChatView {...chatProps} />
         ) : activeTab === "feed" ? (
-          <FeedView />
+          <FeedView
+            peerOwnerId={peerOwnerId}
+            onClearPeerFilter={clearPeerFilter}
+          />
         ) : activeTab === "blog" ? (
-          <BlogView />
+          <BlogView
+            peerOwnerId={peerOwnerId}
+            onClearPeerFilter={clearPeerFilter}
+          />
         ) : activeTab === "discover" ? (
           <DiscoverView />
         ) : (

@@ -74,26 +74,33 @@ describe("logNodeRuntimeStats", () => {
     warnSpy.mockRestore();
   });
 
-  it("warns when libp2p connection count is high", () => {
+  it("warns when event-loop lag is elevated", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     logNodeRuntimeStats(
       {
         getConnectionStats: () => ({
-          totalPeerIds: 70,
-          totalConnections: 89,
-          circuitPeerIds: ["12D3KooWRelay"],
-          circuitConnections: 12,
+          totalPeerIds: 4,
+          totalConnections: 4,
+          circuitPeerIds: [],
+          circuitConnections: 0,
+          dialQueueLength: 0,
         }),
+        hasLiveRelayReservation: () => false,
+        getRelayReservationStatus: () => ({ state: "none", failureStreak: 0 }),
+        getRelayAdvertisedMultiaddrs: () => [],
         pruneExcessSwarmConnections: vi.fn(async () => ({ closedPeers: 0 })),
       } as never,
-      { processStartedAtMs: Date.now() - 30_000 },
+      {
+        processStartedAtMs: Date.now() - 30_000,
+        getEventLoopLagMs: () => 1200,
+      },
     );
 
-    expect(warnSpy).toHaveBeenCalled();
-    const line = String(warnSpy.mock.calls.find((c) => String(c[0]).includes("89 open"))?.[0] ?? "");
-    expect(line).toContain("89 open libp2p connections");
+    expect(
+      warnSpy.mock.calls.some((c) => String(c[0]).includes("eventLoopLag=1200ms")),
+    ).toBe(true);
 
     logSpy.mockRestore();
     warnSpy.mockRestore();

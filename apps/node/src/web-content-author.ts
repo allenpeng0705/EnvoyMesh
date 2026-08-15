@@ -12,15 +12,18 @@ import { access, mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises
 import { dirname, extname, join } from "node:path";
 
 import {
+  BLOG_INDEX_MAX_POSTS,
   buildBlogIndexMarkdown as buildBlogIndexMarkdownShared,
   buildFeedIndexMarkdown as buildFeedIndexMarkdownShared,
   buildPhotoWallMarkdown as buildPhotoWallMarkdownShared,
   buildPhotosRootMarkdown as buildPhotosRootMarkdownShared,
   buildProfilePortalHtml,
   DEFAULT_PHOTO_GALLERY,
+  extractEnvoyMarkdownImageUrls,
   MAX_IMAGE_INPUT_BYTES,
   photoWallCanonicalPath,
   photoWallPageTitle,
+  previewFromWebContentMarkdown,
   PROFILE_PHOTO_MIME_TYPES,
   stripImageMetadata,
   type ProfilePhotoMime,
@@ -326,7 +329,17 @@ async function regenerateBlogListing(
     e.path.startsWith("blog/posts/"),
   );
   const indexMd = buildBlogIndexMarkdown(ownerId, articles);
+  if (articles.length > BLOG_INDEX_MAX_POSTS) {
+    console.info(
+      `[web-content] blog index truncated to ${BLOG_INDEX_MAX_POSTS} of ${articles.length}`,
+    );
+  }
   const indexVisibility = mostOpenVisibility(articles, visibilityFallback);
+  const listed = Math.min(articles.length, BLOG_INDEX_MAX_POSTS);
+  const summary =
+    articles.length > BLOG_INDEX_MAX_POSTS
+      ? `${listed} newest of ${articles.length} posts`
+      : `${articles.length} post${articles.length === 1 ? "" : "s"}`;
   await upsertListing(
     store,
     webDir,
@@ -336,7 +349,7 @@ async function regenerateBlogListing(
     indexVisibility,
     now,
     "article",
-    `${articles.length} post${articles.length === 1 ? "" : "s"}`,
+    summary,
   );
   return `envoy://${ownerId}/blog/`;
 }
@@ -1066,14 +1079,7 @@ export interface FeedPostSummary {
 
 /** Extract envoy:// image URLs from Feed markdown. */
 export function extractFeedImageUrls(markdown: string): string[] {
-  const urls: string[] = [];
-  const re = /!\[[^\]]*\]\((envoy:\/\/[^)\s]+)\)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(markdown)) !== null) {
-    const u = m[1]?.trim();
-    if (u) urls.push(u);
-  }
-  return urls;
+  return extractEnvoyMarkdownImageUrls(markdown);
 }
 
 export interface DeleteWebContentParams {
@@ -1191,9 +1197,8 @@ export async function listFeedPosts(
     try {
       const raw = await readFile(join(webDir, e.path), "utf8");
       imageUrls = extractFeedImageUrls(raw);
-      const withoutHeading = raw.replace(/^#\s+[^\n]+\n*/, "").trim();
-      const withoutImages = withoutHeading.replace(/!\[[^\]]*\]\([^)]+\)/g, "").trim();
-      if (withoutImages) bodyPreview = withoutImages.slice(0, 280);
+      const preview = previewFromWebContentMarkdown(raw);
+      if (preview) bodyPreview = preview;
     } catch {
       /* listing still useful without body parse */
     }
@@ -1222,6 +1227,8 @@ export interface BlogPostSummary {
   publishedAt: string;
   visibility: WebContentVisibility;
   publisherOwnerId: string;
+  /** First-party markdown image embeds (`envoy://…`), for card previews. */
+  imageUrls?: string[];
 }
 
 /** List own Blog posts (kind `article` under `blog/posts/`), newest first. */
@@ -1237,11 +1244,12 @@ export async function listBlogPosts(
   for (const e of entries) {
     if (!e.path.startsWith("blog/posts/") || !e.path.endsWith(".md")) continue;
     let bodyPreview = e.summary;
+    let imageUrls: string[] = [];
     try {
       const raw = await readFile(join(webDir, e.path), "utf8");
-      const withoutHeading = raw.replace(/^#\s+[^\n]+\n*/, "").trim();
-      const withoutImages = withoutHeading.replace(/!\[[^\]]*\]\([^)]+\)/g, "").trim();
-      if (withoutImages) bodyPreview = withoutImages.slice(0, 280);
+      imageUrls = extractEnvoyMarkdownImageUrls(raw);
+      const preview = previewFromWebContentMarkdown(raw);
+      if (preview) bodyPreview = preview;
     } catch {
       /* listing still useful without body parse */
     }
@@ -1254,6 +1262,7 @@ export async function listBlogPosts(
       publishedAt: e.publishedAt ?? e.updatedAt,
       visibility: e.visibility,
       publisherOwnerId: ownerId,
+      ...(imageUrls.length ? { imageUrls } : {}),
     });
   }
   out.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));

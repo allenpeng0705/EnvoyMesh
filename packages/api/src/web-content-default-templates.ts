@@ -309,7 +309,13 @@ body.em-profile-portal,
 </html>`;
 }
 
-/** Blog listing (`blog/index.md`) — empty or with posts. */
+/** Max rows written into `blog/index.md` (newest-first). Keeps library.read under the text size cap. */
+export const BLOG_INDEX_MAX_POSTS = 50;
+
+/** Peer Blog UI: how many index rows to show / enrich per page. */
+export const BLOG_PEER_PAGE_SIZE = 20;
+
+/** Blog listing (`blog/index.md`) — empty or with posts (newest {@link BLOG_INDEX_MAX_POSTS} only). */
 export function buildBlogIndexMarkdown(
   ownerId: string,
   posts: readonly WebContentListingItem[],
@@ -319,12 +325,13 @@ export function buildBlogIndexMarkdown(
     const tb = b.publishedAt ?? b.updatedAt;
     return tb.localeCompare(ta);
   });
+  const capped = sorted.slice(0, BLOG_INDEX_MAX_POSTS);
   const lines = ["# Blog", ""];
-  if (sorted.length === 0) {
+  if (capped.length === 0) {
     lines.push("_No posts yet._", "");
     return lines.join("\n");
   }
-  for (const post of sorted) {
+  for (const post of capped) {
     const href = `envoy://${ownerId}/${post.path}`;
     const date = (post.publishedAt ?? post.updatedAt).slice(0, 10);
     const summary = post.summary?.trim() ? ` — ${post.summary.trim()}` : "";
@@ -332,6 +339,26 @@ export function buildBlogIndexMarkdown(
   }
   lines.push("");
   return lines.join("\n");
+}
+
+/**
+ * Slice a parsed peer Blog index for progressive UI.
+ * `offset` is how many rows are already shown; returns the next page.
+ */
+export function slicePeerBlogIndexPage<T>(
+  entries: readonly T[],
+  offset: number,
+  pageSize: number = BLOG_PEER_PAGE_SIZE,
+): { page: T[]; nextOffset: number; hasMore: boolean } {
+  const start = Math.max(0, Math.floor(offset));
+  const size = Math.max(1, Math.floor(pageSize));
+  const page = entries.slice(start, start + size);
+  const nextOffset = start + page.length;
+  return {
+    page,
+    nextOffset,
+    hasMore: nextOffset < entries.length,
+  };
 }
 
 /**
@@ -376,6 +403,22 @@ export type ParsedFeedIndexEntry = {
  * Only `envoy://…/feeds/…` URLs are kept (skips empty / non-feed lines).
  */
 export function parseFeedIndexMarkdown(markdown: string): ParsedFeedIndexEntry[] {
+  return parseWebListingIndexMarkdown(markdown, "/feeds/");
+}
+
+/**
+ * Parse `blog/index.md` bullet rows produced by {@link buildBlogIndexMarkdown}.
+ * Only `envoy://…/blog/…` post URLs are kept.
+ */
+export function parseBlogIndexMarkdown(markdown: string): ParsedFeedIndexEntry[] {
+  return parseWebListingIndexMarkdown(markdown, "/blog/");
+}
+
+/** Shared listing bullet parser for Feed / Blog indexes. */
+export function parseWebListingIndexMarkdown(
+  markdown: string,
+  pathIncludes: string,
+): ParsedFeedIndexEntry[] {
   const lineRe =
     /^-\s+\[([^\]]*)\]\((envoy:\/\/[^)\s]+)\)\s+\((\d{4}-\d{2}-\d{2})\)(?:\s+[—–-]\s+(.*))?$/;
   const out: ParsedFeedIndexEntry[] = [];
@@ -385,7 +428,7 @@ export function parseFeedIndexMarkdown(markdown: string): ParsedFeedIndexEntry[]
     const m = lineRe.exec(line);
     if (!m) continue;
     const url = m[2]!;
-    if (!url.includes("/feeds/")) continue;
+    if (!url.includes(pathIncludes)) continue;
     const summary = m[4]?.trim();
     out.push({
       title: m[1]!.trim() || "Untitled",
@@ -395,6 +438,29 @@ export function parseFeedIndexMarkdown(markdown: string): ParsedFeedIndexEntry[]
     });
   }
   return out;
+}
+
+/**
+ * Extract `envoy://…` image targets from markdown `![alt](envoy://…)` embeds.
+ * Used for Feed Moments cards and Blog card previews.
+ */
+export function extractEnvoyMarkdownImageUrls(markdown: string): string[] {
+  const urls: string[] = [];
+  const re = /!\[[^\]]*\]\((envoy:\/\/[^)\s]+)\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(markdown)) !== null) {
+    const u = m[1]?.trim();
+    if (u) urls.push(u);
+  }
+  return urls;
+}
+
+/** Plain-text preview from a Feed/Blog markdown body (heading + image embeds stripped). */
+export function previewFromWebContentMarkdown(markdown: string, maxLen = 280): string {
+  const withoutHeading = markdown.replace(/^#\s+[^\n]+\n*/, "").trim();
+  const withoutImages = withoutHeading.replace(/!\[[^\]]*\]\([^)]+\)/g, "").trim();
+  if (!withoutImages) return "";
+  return withoutImages.length > maxLen ? withoutImages.slice(0, maxLen) : withoutImages;
 }
 
 /** PhotoWall gallery page (`photos/{gallery}/index.md`). */

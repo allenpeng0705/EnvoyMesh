@@ -20,8 +20,6 @@
 # or Linux requires xwin + lld + MSVC header splicing, which is fragile and
 # out of scope for this project.
 #
-# Usage: ./scripts/build-desktop.sh [macos|linux|all]
-#
 # Output (copied from Cargo target dir into the repo):
 #   release/envoymesh-desktop-{version}-macos-{arch}.dmg
 #   release/envoymesh-desktop-{version}-linux-{arch}.deb
@@ -29,9 +27,9 @@
 #   release/envoymesh-desktop-{version}-{platform}-{arch}/   (folder with all of the above)
 #
 # Slim / Full / default presets (Phase 49 — Pi optional on Windows):
-#   default     Uses tauri.conf.json           — includes Pi + OpenClaw + Kubo.
-#               Linux DMG/Deb/AppImage are always full builds in this script
-#               (slim is a Windows-specific escape hatch for the NSIS 2 GB cap).
+#   default     Uses tauri.conf.json           — includes Pi + OpenClaw
+#               (no Kubo; Helia / system ipfs for IPFS). Linux Deb/AppImage
+#               follow the same default here.
 #
 #   STAGE_PI_BUNDLE=0
 #               Skip Pi staging only (Node/OpenClaw/EnvoyMesh node still stage),
@@ -42,6 +40,10 @@
 #               Force re-fetch of Pi even when a matching version is cached
 #               (passed through to stage-tauri-pi-bundle.sh).
 #
+#   STAGE_KUBO_BUNDLE=1
+#               Fetch Kubo into src-tauri/resources/kubo and build with
+#               tauri.conf.full.json (matches CI release / -Full on Windows).
+#
 # OpenClaw extensions (macOS/Linux):
 #   Default OPENCLAW_EXTENSIONS=default — EnvoyMesh agent allowlist only
 #   (envoymesh + search/agent utils). Omits OpenClaw Diff UI and all
@@ -50,12 +52,16 @@
 #   OPENCLAW_EXTENSIONS=all — ship the full OpenClaw extension tree.
 #
 #   Slim/full entry points for Windows live in apps/tauri/package.json:
-#     npm run build:win        → tauri.conf.slim.json   (mirrors PS -SkipPi)
-#     npm run build:win:full   → tauri.conf.full.json
-#     npm run build            → tauri.conf.json        (default)
+#     npm run build:win:slim   → tauri.conf.slim.json   (mirrors PS -SkipPi)
+#     npm run build:win:full   → tauri.conf.full.json   (Pi + Kubo)
+#     npm run build:win        → build:win:full
+#     npm run build            → tauri.conf.json        (default: Pi, no Kubo)
 #
-#   This script (mac/linux) defaults to the full preset. Set STAGE_PI_BUNDLE=0
-#   for a slim build, or use the package.json slim scripts directly.
+#   This script (mac/linux) defaults to tauri.conf.json. Set STAGE_PI_BUNDLE=0
+#   for slim, or STAGE_KUBO_BUNDLE=1 for full (Kubo + Pi).
+#
+# Usage: ./scripts/build-desktop.sh [macos|linux|all]
+#   all  = native host only (darwin→macos, linux→linux). Not a cross-compile.
 #
 # Pi pin override (advanced): export ENVOYMESH_PI_VERSION=<version> to
 #   override the pinned 0.82.1 default. fetch-pi-sidecar.sh,
@@ -226,10 +232,19 @@ echo "[1/6] continued — Staging sidecars (Node.js, OpenClaw, Pi, EnvoyMesh nod
 #   STAGE_PI_BUNDLE=1  → force re-fetch Pi (passed through to stage-tauri-pi-bundle.sh)
 #   unset              → include Pi, reuse staged tree when version matches
 SKIP_PI=0
+USE_FULL=0
+if [ "${STAGE_PI_BUNDLE:-1}" = "0" ] && [ "${STAGE_KUBO_BUNDLE:-0}" = "1" ]; then
+  echo "error: STAGE_PI_BUNDLE=0 and STAGE_KUBO_BUNDLE=1 are mutually exclusive" >&2
+  echo "  (full config includes Pi; use default or STAGE_KUBO_BUNDLE=1 alone, or slim alone)." >&2
+  exit 1
+fi
 if [ "${STAGE_PI_BUNDLE:-1}" = "0" ]; then
   SKIP_PI=1
   echo "  ⚠ STAGE_PI_BUNDLE=0 — skipping Pi sidecar staging."
   echo "    Tauri build will use tauri.conf.slim.json (omits resources/pi/**/*)."
+elif [ "${STAGE_KUBO_BUNDLE:-0}" = "1" ]; then
+  USE_FULL=1
+  echo "  STAGE_KUBO_BUNDLE=1 — will fetch Kubo and use tauri.conf.full.json."
 else
   # Ensure a previous slim run did not leave us without a Pi tree expectation;
   # staging is idempotent.
@@ -254,6 +269,14 @@ else
   if [ -d "${PROJECT_DIR}/apps/tauri/src-tauri/resources/pi" ]; then
     echo "  Removing staged resources/pi/ (slim build — will not be bundled)."
     rm -rf "${PROJECT_DIR}/apps/tauri/src-tauri/resources/pi"
+  fi
+fi
+if [ "${USE_FULL}" = "1" ]; then
+  bash scripts/fetch-kubo-sidecar.sh
+  if [ ! -x "${PROJECT_DIR}/apps/tauri/src-tauri/resources/kubo/ipfs" ] && \
+     [ ! -f "${PROJECT_DIR}/apps/tauri/src-tauri/resources/kubo/ipfs.exe" ]; then
+    echo "error: STAGE_KUBO_BUNDLE=1 but Kubo binary missing under src-tauri/resources/kubo/" >&2
+    exit 1
   fi
 fi
 bash scripts/stage-tauri-node-bundle.sh
@@ -334,8 +357,10 @@ run_tauri_build() {
       npm install -w @envoymesh/tauri
     fi
     cd "${PROJECT_DIR}/apps/tauri"
-    # Slim config when Pi was skipped — must match PowerShell -SkipPi so the
-    # installer does not reference a missing resources/pi/**/* glob.
+    # Config selection (mirrors build-desktop.ps1 -SkipPi / -Full):
+    #   SKIP_PI=1     → tauri.conf.slim.json
+    #   USE_FULL=1    → tauri.conf.full.json (Kubo + Pi)
+    #   default       → tauri.conf.json (Pi, no Kubo)
     if [ "${SKIP_PI:-0}" = "1" ]; then
       local slim_conf="src-tauri/tauri.conf.slim.json"
       if [ ! -f "${slim_conf}" ]; then
@@ -348,8 +373,20 @@ run_tauri_build() {
       else
         npx tauri build --config "${slim_conf}" "$@"
       fi
+    elif [ "${USE_FULL:-0}" = "1" ]; then
+      local full_conf="src-tauri/tauri.conf.full.json"
+      if [ ! -f "${full_conf}" ]; then
+        echo "error: full config missing at apps/tauri/${full_conf} (required for STAGE_KUBO_BUNDLE=1)" >&2
+        exit 1
+      fi
+      echo "  Using full config: ${full_conf} (Pi + Kubo)"
+      if command -v cargo-tauri &> /dev/null; then
+        cargo tauri build --config "${full_conf}" "$@"
+      else
+        npx tauri build --config "${full_conf}" "$@"
+      fi
     else
-      echo "  Using default config: tauri.conf.json (Pi + OpenClaw + Kubo)"
+      echo "  Using default config: tauri.conf.json (Pi + OpenClaw; no Kubo)"
       if command -v cargo-tauri &> /dev/null; then
         cargo tauri build "$@"
       else
@@ -360,16 +397,33 @@ run_tauri_build() {
 
 PUBLISHED=""
 
+# Resolve "all" → native host platform (never cross-compile Windows from here).
+if [ "${TARGET}" = "all" ]; then
+  case "$(uname -s)" in
+    Darwin) TARGET="macos" ;;
+    Linux) TARGET="linux" ;;
+    *)
+      echo "error: TARGET=all is only supported on macOS or Linux (got $(uname -s))." >&2
+      echo "  For Windows use scripts/build-desktop.ps1 on a Windows host." >&2
+      exit 1
+      ;;
+  esac
+  echo "  TARGET=all → native ${TARGET}"
+fi
+
 case "${TARGET}" in
-    macos|all)
+    macos)
         echo "  Building for macOS..."
         install_tauri_cli
         if run_tauri_build --target universal-apple-darwin 2>&1; then
             :
         elif run_tauri_build --target aarch64-apple-darwin 2>&1; then
             :
+        elif run_tauri_build --target x86_64-apple-darwin 2>&1; then
+            :
         else
             echo "error: Tauri macOS build failed. Install Xcode CLT: xcode-select --install" >&2
+            echo "  Also ensure rustup targets: rustup target add aarch64-apple-darwin x86_64-apple-darwin" >&2
             exit 1
         fi
         echo ""

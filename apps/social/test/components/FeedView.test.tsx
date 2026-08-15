@@ -10,6 +10,7 @@ import { FeedView } from "../../src/components/views/FeedView.js";
 const listFeedTimeline = vi.fn();
 const publishWebContentEntry = vi.fn();
 const deleteWebContentEntry = vi.fn();
+const libraryRead = vi.fn();
 const on = vi.fn(() => () => undefined);
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
@@ -17,7 +18,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     listFeedTimeline,
     publishWebContentEntry,
     deleteWebContentEntry,
-    libraryRead: vi.fn(),
+    libraryRead,
     on,
   }),
 }));
@@ -42,7 +43,9 @@ vi.mock("../../src/components/PeerProfileAvatar.js", () => ({
 }));
 
 vi.mock("../../src/components/FeedMediaGrid.js", () => ({
-  FeedMediaGrid: () => null,
+  FeedMediaGrid: ({ urls }: { urls: string[] }) => (
+    <div data-testid="feed-media-grid">{urls.join(",")}</div>
+  ),
 }));
 
 vi.mock("../../src/components/ContentEngagementBar.js", () => ({
@@ -59,6 +62,10 @@ describe("FeedView", () => {
     listFeedTimeline.mockReset();
     publishWebContentEntry.mockReset();
     deleteWebContentEntry.mockReset();
+    libraryRead.mockReset();
+    on.mockReset();
+    on.mockImplementation(() => () => undefined);
+    libraryRead.mockResolvedValue({ status: "ok", body: "" });
     listFeedTimeline.mockResolvedValue({
       items: [
         {
@@ -192,5 +199,64 @@ describe("FeedView", () => {
     await waitFor(() => {
       expect(deleteWebContentEntry).toHaveBeenCalledWith({ path: "feeds/hello.md" });
     });
+  });
+
+  it("enriches peer cards missing imageUrls from post markdown", async () => {
+    libraryRead.mockResolvedValue({
+      peerOwnerId: "envoy:owner:bob",
+      libp2pPeerId: "12D3",
+      status: "ok",
+      body: [
+        "# Bob",
+        "",
+        "From Bob",
+        "",
+        "![p](envoy://envoy:owner:bob/feeds/media/bob/0.jpg)",
+        "",
+      ].join("\n"),
+    });
+    renderWithI18n(<FeedView />);
+    await screen.findByText("From Bob");
+    await waitFor(() => {
+      expect(libraryRead).toHaveBeenCalledWith(
+        expect.objectContaining({
+          targetOwnerId: "envoy:owner:bob",
+          path: "feeds/bob.md",
+        }),
+      );
+    });
+    expect((await screen.findByTestId("feed-media-grid")).textContent).toContain(
+      "envoy://envoy:owner:bob/feeds/media/bob/0.jpg",
+    );
+  });
+
+  it("upgrades an existing timeline row when feed:notify brings imageUrls", async () => {
+    const handlers = new Map<string, (data: unknown) => void>();
+    on.mockImplementation((event: string, handler: (data: unknown) => void) => {
+      handlers.set(event, handler);
+      return () => handlers.delete(event);
+    });
+    renderWithI18n(<FeedView />);
+    await screen.findByText("From Bob");
+    expect(screen.queryByTestId("feed-media-grid")).toBeNull();
+
+    handlers.get("feed:notify")?.({
+      id: "n1",
+      receivedAt: "2026-07-26T02:00:00.000Z",
+      messageId: "m1",
+      publisherOwnerId: "envoy:owner:bob",
+      publishedAt: "2026-07-26T02:00:00.000Z",
+      title: "Bob post",
+      url: "envoy://envoy:owner:bob/feeds/bob.md",
+      kind: "feed",
+      visibility: "bonded",
+      summary: "From Bob",
+      senderPeerId: "12D3",
+      imageUrls: ["envoy://envoy:owner:bob/feeds/media/bob/0.jpg"],
+    });
+
+    expect((await screen.findByTestId("feed-media-grid")).textContent).toContain(
+      "envoy://envoy:owner:bob/feeds/media/bob/0.jpg",
+    );
   });
 });

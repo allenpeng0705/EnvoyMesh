@@ -1465,6 +1465,9 @@ class AppLocalizationsJa extends AppLocalizations {
   String get publishedPhotoWall => 'フォトウォール';
 
   @override
+  String get publishedFeed => 'Feed';
+
+  @override
   String get engagementCommentHint => 'コメントを書く…';
 
   @override

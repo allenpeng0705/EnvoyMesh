@@ -26,6 +26,12 @@ import { BrowserMarkdown } from "../BrowserMarkdown.js";
 import { BrowserPhotoGallery } from "../BrowserPhotoGallery.js";
 import { BrowserHtmlDocument } from "../BrowserHtmlDocument.js";
 import { BrowserProfilePortal } from "../BrowserProfilePortal.js";
+import {
+  BrowserPeerListing,
+  isPeerListingMarkdown,
+  parsePeerListingEntries,
+  peerListingKindForUrl,
+} from "../BrowserPeerListing.js";
 import { parsePhotoWallMarkdown } from "../../lib/parse-photo-wall-markdown.js";
 import { parseProfilePortalHtml } from "../../lib/parse-profile-portal-html.js";
 import {
@@ -45,6 +51,7 @@ import {
   toggleBrowserBookmark,
 } from "../../lib/browser-bookmark-store.js";
 import {
+  baseMimeType,
   fetchLibraryContent,
   type BrowserFetchCacheEntry,
   type LibraryReadFn,
@@ -115,7 +122,8 @@ async function verifyContentHash(
 }
 
 function titleFromBody(mimeType: string, body: string, url: string): string {
-  if (mimeType === "text/markdown" || mimeType === "text/x-markdown") {
+  const mime = baseMimeType(mimeType);
+  if (mime === "text/markdown" || mime === "text/x-markdown") {
     const m = /^#\s+(.+)$/m.exec(body);
     if (m?.[1]) return m[1].trim();
   }
@@ -331,7 +339,7 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
                         ? t("agentCard.openProfile", "Profile")
                         : surface === "blog"
                           ? t("agentCard.openBlog", "Blog")
-                          : t("agentCard.openPhotoWall", "PhotoWall"),
+                          : t("agentCard.openPhotoWall", "Photo"),
                   })
                 : t("browser.statusContactContentMissing")
               : t("browser.statusNotFound");
@@ -701,9 +709,11 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
         )}
         {state.kind === "ok" && state.isText && (
           <RenderText
+            url={state.url}
             mimeType={state.mimeType}
             body={state.body}
             onLinkClick={onContentLinkClick}
+            onOpenUrl={(href) => void navigate(href)}
             libraryRead={libraryRead}
             t={t}
           />
@@ -881,27 +891,50 @@ function BrowserIconStar({ filled }: { filled: boolean }) {
 }
 
 function RenderText({
+  url,
   mimeType,
   body,
   onLinkClick,
+  onOpenUrl,
   libraryRead,
   t,
 }: {
+  url: string;
   mimeType: string;
   body: string;
   onLinkClick: (e: MouseEvent<HTMLElement>) => void;
+  onOpenUrl: (href: string) => void;
   libraryRead: LibraryReadFn;
   t: (key: string, fallback?: string, params?: Record<string, string | number>) => string;
 }) {
+  const mime = baseMimeType(mimeType);
   const gallery = useMemo(() => {
-    if (mimeType !== "text/markdown" && mimeType !== "text/x-markdown") return null;
+    if (mime !== "text/markdown" && mime !== "text/x-markdown") return null;
     return parsePhotoWallMarkdown(body);
-  }, [mimeType, body]);
+  }, [mime, body]);
 
   const profilePortal = useMemo(() => {
-    if (mimeType !== "text/html") return null;
+    if (mime !== "text/html") return null;
     return parseProfilePortalHtml(body);
-  }, [mimeType, body]);
+  }, [mime, body]);
+
+  const peerListing = useMemo(() => {
+    if (mime !== "text/markdown" && mime !== "text/x-markdown") return null;
+    const kind = peerListingKindForUrl(url);
+    if (!kind || !isPeerListingMarkdown(kind, body)) return null;
+    let publisherOwnerId = "";
+    try {
+      publisherOwnerId = resolveEnvoyUrl(parseEnvoyUrl(url)).targetOwnerId.trim();
+    } catch {
+      return null;
+    }
+    if (!publisherOwnerId) return null;
+    return {
+      kind,
+      publisherOwnerId,
+      entries: parsePeerListingEntries(kind, body),
+    };
+  }, [mime, url, body]);
 
   if (profilePortal) {
     return <BrowserProfilePortal portal={profilePortal} libraryRead={libraryRead} />;
@@ -917,7 +950,18 @@ function RenderText({
     );
   }
 
-  if (mimeType === "text/markdown" || mimeType === "text/x-markdown") {
+  if (peerListing) {
+    return (
+      <BrowserPeerListing
+        kind={peerListing.kind}
+        entries={peerListing.entries}
+        publisherOwnerId={peerListing.publisherOwnerId}
+        onOpenUrl={onOpenUrl}
+      />
+    );
+  }
+
+  if (mime === "text/markdown" || mime === "text/x-markdown") {
     return (
       <article
         className="browser-view__markdown"
@@ -928,7 +972,7 @@ function RenderText({
       </article>
     );
   }
-  if (mimeType === "text/html") {
+  if (mime === "text/html") {
     return (
       <BrowserHtmlDocument
         html={body}
@@ -968,7 +1012,7 @@ function RenderBinary({
     return () => URL.revokeObjectURL(objectUrl);
   }, [objectUrl]);
 
-  if (mimeType === "application/pdf") {
+  if (baseMimeType(mimeType) === "application/pdf") {
     return (
       <iframe
         className="browser-view__pdf"

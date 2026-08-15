@@ -148,22 +148,49 @@ async function embedOllama(
   return vectors;
 }
 
+/** Local llama-server can wedge with /models still OK; fail fast for UI. */
+const ENVOY_LOCAL_EMBED_FETCH_TIMEOUT_MS = 60_000;
+
 async function embedOpenAiCompatible(
   config: ResolvedEmbeddingConfig,
   texts: string[],
   fetchImplementation: typeof fetch,
 ): Promise<number[][]> {
-  const response = await fetchImplementation(`${config.endpoint.replace(/\/$/, "")}/embeddings`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}),
-    },
-    body: JSON.stringify({
-      model: config.modelName,
-      input: texts.length === 1 ? texts[0] : texts,
-    }),
-  });
+  const localEmbed = isEnvoyLocalEmbedEndpoint(config.endpoint);
+  const url = `${config.endpoint.replace(/\/$/, "")}/embeddings`;
+  let response: Response;
+  try {
+    response = await fetchImplementation(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        model: config.modelName,
+        input: texts.length === 1 ? texts[0] : texts,
+      }),
+      ...(localEmbed
+        ? { signal: AbortSignal.timeout(ENVOY_LOCAL_EMBED_FETCH_TIMEOUT_MS) }
+        : {}),
+    });
+  } catch (err) {
+    const name = err instanceof Error ? err.name : "";
+    const msg = err instanceof Error ? err.message : String(err);
+    if (localEmbed && (name === "TimeoutError" || name === "AbortError" || /aborted|timeout/i.test(msg))) {
+      throw new Error(
+        `Envoy Local embed timed out after ${ENVOY_LOCAL_EMBED_FETCH_TIMEOUT_MS}ms ` +
+          `(${config.endpoint}) — llama-server may be wedged; check Knowledge → Setup or restart embed`,
+      );
+    }
+    if (localEmbed && /fetch failed/i.test(msg)) {
+      throw new Error(
+        `Envoy Local embed unreachable (${config.endpoint}): ${msg} — ` +
+          `is the embed sidecar running on :18791?`,
+      );
+    }
+    throw err instanceof Error ? err : new Error(String(err));
+  }
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     throw new Error(`embeddings failed (${response.status})${body ? `: ${body.slice(0, 200)}` : ""}`);

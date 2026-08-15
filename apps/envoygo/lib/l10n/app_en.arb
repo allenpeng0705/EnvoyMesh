@@ -640,7 +640,8 @@
       }
     }
   },
-  "publishedPhotoWall": "PhotoWall",
+  "publishedPhotoWall": "Photo",
+  "publishedFeed": "Feed",
   "engagementCommentHint": "Write a comment…",
   "engagementRemoveCommentTooltip": "Remove comment",
   "profileTitle": "Profile",

@@ -14,6 +14,9 @@ final knowledgeHubPanelRequestProvider =
 /// Requested Social surface index (0 Chats, 1 Feeds, 2 Blog, 3 Explore).
 final contentSurfaceRequestProvider = StateProvider<int?>((ref) => null);
 
+/// Contact peer filter for Social → Feed / Blog card tabs (from Chat shortcuts).
+final socialContentPeerOwnerIdProvider = StateProvider<String?>((ref) => null);
+
 /// Jump to Knowledge tab (optional panel). Owner home tabs only.
 void openContentKnowledge(
   WidgetRef ref, {
@@ -25,7 +28,38 @@ void openContentKnowledge(
 
 /// Jump to Social → Explore (Browser).
 void openSocialExplore(WidgetRef ref) {
+  openSocialContent(
+    ref,
+    surface: SocialSurfaces.explore,
+    peerOwnerId: null,
+  );
+}
+
+/// Jump to Social → Feed / Blog / Explore. Optional [peerOwnerId] filters card tabs.
+void openSocialContent(
+  WidgetRef ref, {
+  required int surface,
+  String? peerOwnerId,
+}) {
+  final id = peerOwnerId?.trim();
   ref.read(chatProvider.notifier).selectTab(OwnerTabs.social);
-  ref.read(contentSurfaceRequestProvider.notifier).state = SocialSurfaces.explore;
-  ref.read(contentSurfaceProvider.notifier).state = SocialSurfaces.explore;
+  ref.read(socialContentPeerOwnerIdProvider.notifier).state =
+      (id != null && id.isNotEmpty) ? id : null;
+  ref.read(contentSurfaceRequestProvider.notifier).state = surface;
+  ref.read(contentSurfaceProvider.notifier).state = surface;
+}
+
+/// Same as [openSocialContent] for callers that only have a [ProviderContainer]
+/// (e.g. modal sheets).
+void openSocialContentOn(
+  ProviderContainer container, {
+  required int surface,
+  String? peerOwnerId,
+}) {
+  final id = peerOwnerId?.trim();
+  container.read(chatProvider.notifier).selectTab(OwnerTabs.social);
+  container.read(socialContentPeerOwnerIdProvider.notifier).state =
+      (id != null && id.isNotEmpty) ? id : null;
+  container.read(contentSurfaceRequestProvider.notifier).state = surface;
+  container.read(contentSurfaceProvider.notifier).state = surface;
 }

@@ -26,8 +26,8 @@
 # Flags:
 #   -Out <dir>               Output directory (default: release\)
 #   -Version <ver>            Override bundle version (default: from package.json)
-#   -ForceOpenClaw            Re-stage OpenClaw even if apps\tauri\src-tauri\resources\openclaw
-#                             is already populated
+#   -ForceOpenClaw            Force re-stage OpenClaw (normally automatic when
+#                             packages\openclaw source stamp changes)
 #   -ForceNodeSidecar         Re-download the Node.js sidecar even if it is already
 #                             staged at apps\tauri\src-tauri\resources\node-runtime
 #   -SkipTypecheck            Skip tsc -b before bundling
@@ -56,17 +56,17 @@
 #   Use -OpenClawExtensions all only when you intentionally want the full tree.
 #
 # Slim / Full / default presets (Phase 49 — Pi optional on Windows):
-#   default       Uses tauri.conf.json           — includes Pi + OpenClaw + Kubo.
-#   -Full         Uses tauri.conf.full.json      — explicit "all sidecars" preset.
-#                 Same as default; useful when paired with -SkipPi to force a
-#                 known config without runtime guessing.
-#   -SkipPi       Switches to tauri.conf.slim.json — omits resources/pi/**/* AND
-#                 resources/kubo/**/* to stay well under NSIS's 2 GB cap.
+#   default       Uses tauri.conf.json           — includes Pi + OpenClaw
+#                 (no Kubo; Helia / system ipfs for IPFS).
+#   -Full         Uses tauri.conf.full.json      — Pi + OpenClaw + Kubo
+#                 (fetches Kubo into src-tauri\resources\kubo). Matches CI.
+#   -SkipPi       Switches to tauri.conf.slim.json — omits resources/pi/**/*
+#                 (and Kubo) to stay well under NSIS's 2 GB cap.
 #                 The Pi chat panel will be auto-disabled at runtime by the
 #                 defensive isPiEnabledViaRuntime() check.
 #
 #   Prefer full Pi builds (this script without -SkipPi, or package.json):
-#     build:win / build:win:full / npm run tauri:build:win  → full (with Pi)
+#     build:win / build:win:full / npm run tauri:build:win  → full (Pi + Kubo)
 #     build:win:slim / npm run tauri:build:win:slim         → slim (no Pi)
 #
 #   Pi terminal (TUI) needs staged pi/ + pi/bin/{fd,rg}.exe and
@@ -128,10 +128,8 @@ param(
     # and know what you're doing.
     [switch]$SkipPiPrune,
 
-    # Force the "full" Tauri config preset (tauri.conf.full.json). Same
-    # resource set as the default but explicit. Useful when -SkipPi is
-    # NOT set and you want to be sure no slim config is silently picked
-    # up by the environment.
+    # Force the "full" Tauri config preset (tauri.conf.full.json) and fetch
+    # Kubo into src-tauri\resources\kubo. Mutually exclusive with -SkipPi.
     [switch]$Full,
 
     # Re-download Node sidecar even if already staged
@@ -753,8 +751,42 @@ $openclawStaged = (Test-Path (Join-Path $openclawDest "openclaw.mjs")) -and `
 # gateway refuse to start with "OpenClaw tree is incomplete", so force
 # a fresh re-stage instead of silently reusing broken cached state.
 # Matches the gate in scripts/stage-tauri-openclaw-bundle.sh.
+#
+# Source stamp (scripts/openclaw-stage-stamp.mjs): auto re-stage when
+# packages/openclaw changes — no manual -ForceOpenClaw after upgrades.
+$openclawStampScript = Join-Path $PSScriptRoot "openclaw-stage-stamp.mjs"
+$openclawStampFile = Join-Path $openclawDest ".openclaw-stage-stamp"
+$openclawExpectedStamp = $null
+if ((Test-Path $openclawStampScript) -and (Test-Path $openclawSrc)) {
+    try {
+        $openclawExpectedStamp = (& node $openclawStampScript $openclawSrc 2>$null | Select-Object -First 1)
+        if ($openclawExpectedStamp) { $openclawExpectedStamp = $openclawExpectedStamp.Trim() }
+    } catch {
+        $openclawExpectedStamp = $null
+    }
+}
+if ($openclawStaged -and -not $ForceOpenClaw -and $openclawExpectedStamp) {
+    $stagedStamp = $null
+    if (Test-Path $openclawStampFile) {
+        $stagedStamp = (Get-Content -Path $openclawStampFile -TotalCount 1 -ErrorAction SilentlyContinue)
+        if ($stagedStamp) { $stagedStamp = $stagedStamp.Trim() }
+    }
+    if ($stagedStamp -ne $openclawExpectedStamp) {
+        if ([string]::IsNullOrEmpty($stagedStamp)) {
+            Write-Info "No .openclaw-stage-stamp on staged OpenClaw — re-staging (first stamp)."
+        } else {
+            Write-Info "packages\openclaw changed — re-staging OpenClaw."
+            Write-Info "  staged:  $stagedStamp"
+            Write-Info "  source:  $openclawExpectedStamp"
+        }
+        $openclawStaged = $false
+    }
+}
 if ($openclawStaged -and -not $ForceOpenClaw) {
     Write-Info "Reusing staged OpenClaw at $openclawDest. Use -ForceOpenClaw to re-stage."
+    if ($openclawExpectedStamp) {
+        Write-Info "  stamp: $openclawExpectedStamp"
+    }
 
     # Validate dist/entry.js — if it's missing or a broken stub, force re-stage.
     # EnvoyMesh writes bootstrap stubs at runtime that reference src/ (excluded
@@ -1570,6 +1602,21 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Ok "EnvoyMesh OpenClaw extension staged"
 
+# Persist source fingerprint AFTER stage/heal so it matches post-build
+# dist/entry.js (a pre-stage stamp would thrash re-stage every run).
+if ((Test-Path $openclawStampScript) -and (Test-Path (Join-Path $openclawDest "openclaw.mjs"))) {
+    try {
+        $stampNow = (& node $openclawStampScript $openclawSrc 2>$null | Select-Object -First 1)
+        if ($stampNow) {
+            $stampNow = $stampNow.Trim()
+            Set-Content -Path $openclawStampFile -Value $stampNow -Encoding ascii
+            Write-Info "Wrote OpenClaw source stamp → .openclaw-stage-stamp"
+        }
+    } catch {
+        Write-Warn "Could not write .openclaw-stage-stamp: $($_.Exception.Message)"
+    }
+}
+
 # 1d. Pi agent (local coding sidecar).
 #     Pi is a Node.js package, not a prebuilt binary, so staging = npm-install
 #     the pinned upstream CLI + its transitive deps into resources/pi/.
@@ -1893,6 +1940,49 @@ Write-Ok "Sidecars look complete (full resource verify after Social)"
 Write-Host ""
 
 # -----------------------------------------------------------------------------
+# Step 1f: Discovery E2E (parity with build-desktop.sh / npm run test:discovery)
+# -----------------------------------------------------------------------------
+
+Write-Step "1f/5  Running discovery E2E tests..."
+$discExit = Invoke-ExternalQuiet npx vitest run apps/node/test/discovery-search-roundtrip.test.ts
+if ($discExit -ne 0) {
+    Write-Fail "discovery E2E tests failed — aborting build. Fix tests before rebuilding."
+    exit 1
+}
+Write-Ok "Discovery E2E passed"
+Write-Host ""
+
+# -----------------------------------------------------------------------------
+# Step 1g: Kubo (only when -Full — required by tauri.conf.full.json)
+# -----------------------------------------------------------------------------
+
+if ($Full) {
+    Write-Info "Fetching Kubo sidecar into src-tauri\resources\kubo (-Full)..."
+    $fetchKubo = Join-Path $PSScriptRoot "fetch-kubo-sidecar.sh"
+    if (-not (Test-Path $fetchKubo)) {
+        Write-Fail "fetch-kubo-sidecar.sh missing at $fetchKubo"
+        exit 1
+    }
+    $bash = Get-Command bash -ErrorAction SilentlyContinue
+    if (-not $bash) {
+        Write-Fail "bash not found — install Git for Windows so -Full can run fetch-kubo-sidecar.sh"
+        exit 1
+    }
+    & bash $fetchKubo
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "fetch-kubo-sidecar.sh failed (exit $LASTEXITCODE)"
+        exit 1
+    }
+    $kuboExe = Join-Path $TauriResources "kubo\ipfs.exe"
+    $kuboBin = Join-Path $TauriResources "kubo\ipfs"
+    if (-not (Test-Path $kuboExe) -and -not (Test-Path $kuboBin)) {
+        Write-Fail "Kubo binary missing after fetch (expected $kuboExe)"
+        exit 1
+    }
+    Write-Ok "Kubo staged for full bundle"
+}
+
+# -----------------------------------------------------------------------------
 # Step 2: Build Social UI (Tauri frontendDist → apps/social/src/dist)
 # Social includes family-network Settings UI + all i18n locales.
 # -----------------------------------------------------------------------------
@@ -2101,8 +2191,8 @@ if (Get-Command "cargo-tauri" -ErrorAction SilentlyContinue) {
 #
 # Slim / Full / default config selection (mirrors apps/tauri/package.json):
 #   -SkipPi   → --config src-tauri/tauri.conf.slim.json  (Pi + Kubo omitted)
-#   -Full     → --config src-tauri/tauri.conf.full.json  (explicit full preset)
-#   default   → no --config flag                         (uses tauri.conf.json)
+#   -Full     → --config src-tauri/tauri.conf.full.json  (Pi + Kubo; Kubo fetched above)
+#   default   → no --config flag                         (uses tauri.conf.json — Pi, no Kubo)
 # Prefer no -SkipPi (or -Full) for Pi terminal. build:win / tauri:build:win are full.
 #
 # Refuse nonsensical combinations rather than silently picking one.
@@ -2110,7 +2200,7 @@ if ($SkipPi -and $Full) {
     Write-Fail "-SkipPi and -Full are mutually exclusive (-SkipPi picks the slim config)."
     exit 1
 }
-$tauriArgs = @("tauri", "build")
+$tauriArgs = @("tauri", "build", "--target", "x86_64-pc-windows-msvc")
 if ($SkipMsi) {
     $tauriArgs += @("--bundles", "nsis")
 }
@@ -2128,10 +2218,10 @@ if ($SkipPi) {
         Write-Fail "full config not found at $fullConf (cannot honor -Full)"
         exit 1
     }
-    Write-Info "Full config: tauri.conf.full.json (all sidecars explicit)"
+    Write-Info "Full config: tauri.conf.full.json (Pi + Kubo)"
     $tauriArgs += @("--config", $fullConf)
 } else {
-    Write-Info "Default config: tauri.conf.json (Pi + OpenClaw + Kubo)"
+    Write-Info "Default config: tauri.conf.json (Pi + OpenClaw; no Kubo)"
 }
 
 Push-Location $TauriAppDir
@@ -2206,19 +2296,19 @@ Write-Host ""
 
 Write-Step "4/5  Publishing Windows artifacts to $Out\..."
 
-# Tauri 2.x bundle layout. We look in both bundle\nsis and bundle\msi under
-# the most recent target/ tree (cargo's target-dir). Tauri 2's default
-# bundle.targets="all" produces both formats.
-$nsisExe = Get-ChildItem -Path (Join-Path $TauriTarget "release/bundle/nsis") -Filter "*.exe" -ErrorAction SilentlyContinue |
+# Tauri 2.x bundle layout. With --target x86_64-pc-windows-msvc artifacts land
+# under target\x86_64-pc-windows-msvc\release\bundle\; without an explicit
+# target they may land under target\release\bundle\. Search both (newest wins).
+$nsisExe = Get-ChildItem -Path $TauriTarget -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue |
+          Where-Object { $_.FullName -match '[\\/]release[\\/]bundle[\\/]nsis[\\/][^\\/]+\.exe$' } |
           Sort-Object LastWriteTime -Descending | Select-Object -First 1
-$msiMsi = Get-ChildItem -Path (Join-Path $TauriTarget "release/bundle/msi") -Filter "*.msi" -ErrorAction SilentlyContinue |
+$msiMsi = Get-ChildItem -Path $TauriTarget -Recurse -Filter "*.msi" -ErrorAction SilentlyContinue |
+          Where-Object { $_.FullName -match '[\\/]release[\\/]bundle[\\/]msi[\\/][^\\/]+\.msi$' } |
           Sort-Object LastWriteTime -Descending | Select-Object -First 1
 
 if (-not $nsisExe -and -not $msiMsi) {
-    Write-Fail "No NSIS .exe or MSI .msi found under $TauriTarget\release\bundle\"
-    Write-Info "  Looked in:"
-    Write-Info "    $TauriTarget\release\bundle\nsis\"
-    Write-Info "    $TauriTarget\release\bundle\msi\"
+    Write-Fail "No NSIS .exe or MSI .msi found under $TauriTarget\"
+    Write-Info "  Looked for **/release/bundle/nsis/*.exe and **/release/bundle/msi/*.msi"
     exit 1
 }
 

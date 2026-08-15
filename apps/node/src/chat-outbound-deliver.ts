@@ -39,6 +39,68 @@ export function resolveChatDeliveryAckTimeoutMs(dialHints: readonly string[]): n
 const CHAT_SEND_MAX_ATTEMPTS = 3;
 const CHAT_SEND_RETRY_BASE_MS = 800;
 
+/** Collapse identical expect-reply failure spam (protocol selection / DHT peers). */
+const EXPECT_REPLY_FAIL_LOG_INTERVAL_MS = 15_000;
+
+type ExpectReplyFailBucket = {
+  lastLogAt: number;
+  suppressed: number;
+};
+
+const expectReplyFailBuckets = new Map<string, ExpectReplyFailBucket>();
+
+/** Classify common expect-reply failures for rate-limited logging (exported for tests). */
+export function classifyExpectReplyFailure(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes("protocol selection failed") || m.includes("could not negotiate")) {
+    return "protocol_selection";
+  }
+  if (m.includes("no outbound dial attempted")) return "no_dial";
+  if (m.includes("dial queue is full")) return "dial_queue_full";
+  if (m.includes("no_reservation") || m.includes("no active reservation")) {
+    return "no_reservation";
+  }
+  if (m.includes("aborted")) return "aborted";
+  if (m.includes("no valid addresses")) return "no_addresses";
+  return "other";
+}
+
+function logExpectReplyAttemptFailure(
+  peerId: string,
+  attempt: number,
+  maxAttempts: number,
+  err: unknown,
+): void {
+  const msg = err instanceof Error ? err.message : String(err);
+  const kind = classifyExpectReplyFailure(msg);
+  // Rare / unexpected failures: always log (still one line per attempt).
+  if (kind === "other") {
+    console.warn(
+      `[expect-reply] attempt ${attempt}/${maxAttempts} failed for ${peerId.slice(0, 12)}…:`,
+      msg,
+    );
+    return;
+  }
+  const now = Date.now();
+  const bucket = expectReplyFailBuckets.get(kind) ?? { lastLogAt: 0, suppressed: 0 };
+  if (now - bucket.lastLogAt < EXPECT_REPLY_FAIL_LOG_INTERVAL_MS) {
+    bucket.suppressed += 1;
+    expectReplyFailBuckets.set(kind, bucket);
+    return;
+  }
+  const suppressed = bucket.suppressed;
+  expectReplyFailBuckets.set(kind, { lastLogAt: now, suppressed: 0 });
+  const suffix = suppressed > 0 ? ` (+${suppressed} similar suppressed)` : "";
+  console.warn(
+    `[expect-reply] attempt ${attempt}/${maxAttempts} failed for ${peerId.slice(0, 12)}…: ${msg}${suffix}`,
+  );
+}
+
+/** Test helper — clear expect-reply log rate-limit state. */
+export function resetExpectReplyFailLogBucketsForTests(): void {
+  expectReplyFailBuckets.clear();
+}
+
 function meshLocalListenAddrs(mesh: unknown): string[] | undefined {
   const addrs = (mesh as { multiaddrs?: unknown }).multiaddrs;
   return Array.isArray(addrs) ? (addrs as string[]) : undefined;
@@ -1136,10 +1198,7 @@ export async function deliverExpectReplyWithRetry(input: {
       return reply;
     } catch (err) {
       lastErr = err;
-      console.warn(
-        `[expect-reply] attempt ${attempt + 1}/${maxAttempts} failed for ${input.transportPeerId.slice(0, 12)}…:`,
-        err instanceof Error ? err.message : err,
-      );
+      logExpectReplyAttemptFailure(input.transportPeerId, attempt + 1, maxAttempts, err);
     }
   }
 

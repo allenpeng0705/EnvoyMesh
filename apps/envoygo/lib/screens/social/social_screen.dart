@@ -49,6 +49,11 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
   void _onTabChanged() {
     if (_tabs.indexIsChanging) return;
     ref.read(contentSurfaceProvider.notifier).state = _tabs.index;
+    // Leaving Feed/Blog clears contact filter (programmatic open stays on Feed/Blog).
+    if (_tabs.index != SocialSurfaces.feeds &&
+        _tabs.index != SocialSurfaces.blog) {
+      ref.read(socialContentPeerOwnerIdProvider.notifier).state = null;
+    }
     final engage = ref.read(contentEngageProvider.notifier);
     if (_tabs.index == SocialSurfaces.feeds) {
       engage.dismiss(surface: 'feed');

@@ -5,6 +5,7 @@
 import type { EnvoyLocalEmbedStatus } from "@envoymesh/api";
 import { useT } from "../../context/I18nContext.js";
 import type { KnowledgeEmbedGateKind } from "../../hooks/useEnvoyLocalEmbedReadiness.js";
+import { localizeEnvoyLocalDownloadProgress } from "../../lib/localize-envoy-local-progress.js";
 
 export function KnowledgeEmbedGate(props: {
   kind: KnowledgeEmbedGateKind;
@@ -33,13 +34,11 @@ export function KnowledgeEmbedGate(props: {
     typeof status?.download?.fraction === "number"
       ? Math.max(0, Math.min(1, status.download.fraction))
       : undefined;
-  const progressLabel =
-    status?.download?.label?.trim() ||
-    (status?.phase === "starting"
-      ? t("knowledge.embedGate.phaseStarting")
-      : status?.phase === "extracting-runtime"
-        ? t("knowledge.embedGate.phaseExtracting")
-        : t("knowledge.embedGate.phaseDownloading"));
+  const progressLabel = localizeEnvoyLocalDownloadProgress(t, {
+    phase: status?.phase,
+    label: status?.download?.label,
+    ns: "knowledge.embedGate",
+  });
   const errorText = status?.lastError?.trim() || loadError?.trim() || null;
 
   const title =

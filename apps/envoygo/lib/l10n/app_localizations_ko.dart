@@ -1464,6 +1464,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get publishedPhotoWall => '포토월';
 
   @override
+  String get publishedFeed => 'Feed';
+
+  @override
   String get engagementCommentHint => '댓글 작성…';
 
   @override

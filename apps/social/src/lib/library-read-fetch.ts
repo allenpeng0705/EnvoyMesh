@@ -41,7 +41,13 @@ export interface BrowserFetchResult {
 }
 
 function isTextMime(mime: string): boolean {
-  return mime.startsWith("text/") || mime === "application/json";
+  const base = baseMimeType(mime);
+  return base.startsWith("text/") || base === "application/json";
+}
+
+/** Strip parameters (`text/markdown; charset=utf-8` → `text/markdown`). */
+export function baseMimeType(mime: string): string {
+  return mime.split(";")[0]?.trim().toLowerCase() ?? "";
 }
 
 function concatBase64Chunks(chunks: string[]): string {

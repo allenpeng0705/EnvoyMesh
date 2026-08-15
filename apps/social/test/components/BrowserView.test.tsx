@@ -64,6 +64,15 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     searchPeers: vi.fn(async () => []),
     runCapabilityDiscovery: vi.fn(async () => undefined),
     listAgentCards: vi.fn(async () => []),
+    getPeerProfile: vi.fn(async () => null),
+    getContentEngagement: vi.fn(async () => ({
+      url: "",
+      starCount: 0,
+      commentCount: 0,
+      starredByMe: false,
+      stars: [],
+      comments: [],
+    })),
     on: vi.fn(() => () => undefined),
     isConnected: true,
   }),
@@ -185,6 +194,93 @@ describe("BrowserView", () => {
       const markdown = screen.getByTestId("browser-markdown");
       expect(markdown.textContent).toContain("Hello from Alice");
     });
+  });
+
+  it("renders markdown when contentType includes charset (node mimeTypeForFilename)", async () => {
+    libraryReadMock = async () => ({
+      status: "ok",
+      peerOwnerId: "envoy:owner:abc123",
+      libp2pPeerId: "12D3KooWTest",
+      body: "# Hello from Alice",
+      contentType: "text/markdown; charset=utf-8",
+      byteLength: 18,
+      latencyMs: 10,
+    });
+    libraryRead.mockImplementation(libraryReadMock);
+
+    renderWithI18n(<BrowserView />);
+    openReader();
+    fireEvent.change(screen.getByTestId("browser-address-bar"), {
+      target: { value: "envoy://envoy:owner:abc123/feeds/hello.md" },
+    });
+    fireEvent.click(screen.getByTestId("browser-go"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("browser-markdown").textContent).toContain("Hello from Alice");
+    });
+    expect(screen.queryByTestId("browser-text")).toBeNull();
+  });
+
+  it("renders peer Feed index with Feed card chrome (not raw markdown)", async () => {
+    libraryReadMock = async () => ({
+      status: "ok",
+      peerOwnerId: "envoy:owner:abc123",
+      libp2pPeerId: "12D3KooWTest",
+      body: [
+        "# Feed",
+        "",
+        "- [Hello](envoy://envoy:owner:abc123/feeds/hello.md) (2026-08-01) — Moments",
+        "",
+      ].join("\n"),
+      contentType: "text/markdown; charset=utf-8",
+      byteLength: 80,
+      latencyMs: 10,
+    });
+    libraryRead.mockImplementation(libraryReadMock);
+
+    renderWithI18n(<BrowserView />);
+    openReader();
+    fireEvent.change(screen.getByTestId("browser-address-bar"), {
+      target: { value: "envoy://envoy:owner:abc123/feeds/" },
+    });
+    fireEvent.click(screen.getByTestId("browser-go"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("browser-peer-feed")).toBeTruthy();
+    });
+    expect(screen.getByTestId("browser-peer-feed-list").textContent).toContain("Moments");
+    expect(screen.queryByTestId("browser-markdown")).toBeNull();
+  });
+
+  it("renders peer Blog index with Blog card chrome (not raw markdown)", async () => {
+    libraryReadMock = async () => ({
+      status: "ok",
+      peerOwnerId: "envoy:owner:abc123",
+      libp2pPeerId: "12D3KooWTest",
+      body: [
+        "# Blog",
+        "",
+        "- [Hello](envoy://envoy:owner:abc123/blog/posts/hello.md) (2026-07-20) — First",
+        "",
+      ].join("\n"),
+      contentType: "text/markdown; charset=utf-8",
+      byteLength: 80,
+      latencyMs: 10,
+    });
+    libraryRead.mockImplementation(libraryReadMock);
+
+    renderWithI18n(<BrowserView />);
+    openReader();
+    fireEvent.change(screen.getByTestId("browser-address-bar"), {
+      target: { value: "envoy://envoy:owner:abc123/blog/" },
+    });
+    fireEvent.click(screen.getByTestId("browser-go"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("browser-peer-blog")).toBeTruthy();
+    });
+    expect(screen.getByTestId("browser-peer-blog-card").textContent).toContain("Hello");
+    expect(screen.queryByTestId("browser-markdown")).toBeNull();
   });
 
   it("shows Say Hello in Open mode for a non-bonded page owner", async () => {

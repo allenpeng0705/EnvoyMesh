@@ -319,6 +319,50 @@ export async function appendFeedNotifyInboxItem(
   });
 }
 
+/**
+ * Patch metadata on an existing peer Feed row (e.g. backfill imageUrls).
+ * Appends an updated JSONL line — later lines win on load.
+ */
+export async function patchFeedNotifyInboxItem(
+  profileDir: string,
+  url: string,
+  patch: Partial<Pick<FeedNotifyInboxItem, "imageUrls" | "summary" | "title">>,
+): Promise<boolean> {
+  const target = url.trim();
+  if (!target) return false;
+  return enqueueTimeline(profileDir, async () => {
+    await ensureMigrated(profileDir);
+    const existing = await loadTimelineRaw(profileDir);
+    const row = existing.find((r) => r.url.trim() === target);
+    if (!row) return false;
+    const imageUrls = patch.imageUrls?.filter((u) => typeof u === "string" && u.trim()) ?? [];
+    const next: FeedNotifyInboxItem = {
+      ...row,
+      url: target,
+      ...(imageUrls.length ? { imageUrls } : {}),
+      ...(typeof patch.summary === "string" && patch.summary.trim()
+        ? { summary: patch.summary.trim() }
+        : {}),
+      ...(typeof patch.title === "string" && patch.title.trim()
+        ? { title: patch.title.trim() }
+        : {}),
+    };
+    const sameImages =
+      JSON.stringify(row.imageUrls ?? []) === JSON.stringify(next.imageUrls ?? []);
+    const sameSummary = (row.summary ?? "") === (next.summary ?? "");
+    const sameTitle = row.title === next.title;
+    if (sameImages && sameSummary && sameTitle) return false;
+
+    const path = timelinePath(profileDir);
+    await mkdir(dirname(path), { recursive: true });
+    await appendFile(path, `${JSON.stringify(stripReadAt(next))}\n`, { mode: 0o600 });
+    const merged = existing.filter((r) => r.url.trim() !== target);
+    merged.push(next);
+    await compactTimelineIfNeeded(profileDir, merged);
+    return true;
+  });
+}
+
 /** Mark one row read (Inbox dismiss). Keeps the row for Feed. */
 export async function dismissFeedNotifyInboxItem(
   profileDir: string,

@@ -586,6 +586,30 @@ describe("resolveEmbeddingConfig — independent of chat", () => {
     expect(fetchImplementation).toHaveBeenCalledTimes(3);
   });
 
+  it("rewrites Envoy Local embed AbortError into a wedged-sidecar hint", async () => {
+    const fetchImplementation = vi.fn(async () => {
+      const err = new Error("The operation was aborted");
+      err.name = "AbortError";
+      throw err;
+    });
+    const provider = createEmbeddingProvider({
+      embedding: { mode: "envoy-local" },
+      fetchImplementation: fetchImplementation as unknown as typeof fetch,
+    });
+    await expect(provider.embed("hello")).rejects.toThrow(/wedged|timed out/i);
+  });
+
+  it("rewrites Envoy Local 'fetch failed' into an unreachable hint", async () => {
+    const fetchImplementation = vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    });
+    const provider = createEmbeddingProvider({
+      embedding: { mode: "envoy-local" },
+      fetchImplementation: fetchImplementation as unknown as typeof fetch,
+    });
+    await expect(provider.embed("hello")).rejects.toThrow(/unreachable|:18791/i);
+  });
+
   it("ignores chat modelProviders when resolving", () => {
     const config = resolveEmbeddingConfig({
       embedding: { mode: "envoy-local" },

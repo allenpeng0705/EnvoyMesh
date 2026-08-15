@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  BLOG_INDEX_MAX_POSTS,
+  BLOG_PEER_PAGE_SIZE,
   buildBlogIndexMarkdown,
   buildFeedIndexMarkdown,
   buildDefaultProfileMarkdown,
@@ -9,6 +11,8 @@ import {
   buildVisitorPlaceholderMarkdown,
   defaultWebSurfaceForPath,
   parseFeedIndexMarkdown,
+  parseBlogIndexMarkdown,
+  slicePeerBlogIndexPage,
 } from "../src/web-content-default-templates.js";
 
 describe("web-content-default-templates", () => {
@@ -62,6 +66,38 @@ describe("web-content-default-templates", () => {
     expect(withPost).toContain("First");
   });
 
+  it(`caps blog index at ${BLOG_INDEX_MAX_POSTS} newest posts`, () => {
+    const posts = Array.from({ length: BLOG_INDEX_MAX_POSTS + 10 }, (_, i) => {
+      const day = String(i + 1).padStart(2, "0");
+      return {
+        path: `blog/posts/p${i}.md`,
+        title: `Post ${i}`,
+        updatedAt: `2026-07-${day}T00:00:00.000Z`,
+        publishedAt: `2026-07-${day}T00:00:00.000Z`,
+      };
+    });
+    const md = buildBlogIndexMarkdown("envoy:owner:alice", posts);
+    const parsed = parseBlogIndexMarkdown(md);
+    expect(parsed).toHaveLength(BLOG_INDEX_MAX_POSTS);
+    // Newest first: highest day wins among July (i=30 → day 31).
+    expect(parsed[0]?.title).toBe(`Post ${BLOG_INDEX_MAX_POSTS + 9}`);
+    expect(md).not.toContain("blog/posts/p0.md");
+  });
+
+  it("slices peer blog pages with hasMore", () => {
+    const entries = Array.from({ length: 45 }, (_, i) => i);
+    const first = slicePeerBlogIndexPage(entries, 0);
+    expect(first.page).toHaveLength(BLOG_PEER_PAGE_SIZE);
+    expect(first.nextOffset).toBe(BLOG_PEER_PAGE_SIZE);
+    expect(first.hasMore).toBe(true);
+    const second = slicePeerBlogIndexPage(entries, first.nextOffset);
+    expect(second.page).toHaveLength(BLOG_PEER_PAGE_SIZE);
+    expect(second.hasMore).toBe(true);
+    const third = slicePeerBlogIndexPage(entries, second.nextOffset);
+    expect(third.page).toHaveLength(5);
+    expect(third.hasMore).toBe(false);
+  });
+
   it("builds empty and populated feed indexes", () => {
     expect(buildFeedIndexMarkdown("envoy:owner:alice", [])).toContain("_No posts yet._");
     const withPost = buildFeedIndexMarkdown("envoy:owner:alice", [
@@ -105,6 +141,25 @@ describe("web-content-default-templates", () => {
     expect(parsed[1]?.title).toBe("Older");
     expect(parsed[1]?.summary).toBeUndefined();
     expect(parseFeedIndexMarkdown("# Feed\n\n_No posts yet._\n")).toEqual([]);
+  });
+
+  it("parses blog index markdown (round-trip with builder)", () => {
+    const md = buildBlogIndexMarkdown("envoy:owner:alice", [
+      {
+        path: "blog/posts/hello.md",
+        title: "Hello",
+        updatedAt: "2026-07-20T00:00:00.000Z",
+        publishedAt: "2026-07-20T00:00:00.000Z",
+        summary: "First",
+      },
+    ]);
+    const parsed = parseBlogIndexMarkdown(md);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]).toMatchObject({
+      title: "Hello",
+      url: "envoy://envoy:owner:alice/blog/posts/hello.md",
+      summary: "First",
+    });
   });
 
   it("includes photo captions in PhotoWall markdown when summary differs from title", () => {

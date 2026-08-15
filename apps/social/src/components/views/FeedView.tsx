@@ -9,6 +9,7 @@ import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { contactLabel, shortOwnerId } from "../../lib/display.js";
+import { enrichWebContentMediaFromUrl } from "../../lib/enrich-web-content-media.js";
 import { AuthorAiDraftField, applyAuthorDraft } from "../AuthorAiDraftField.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 import { ProfilePhotoAvatar } from "../ProfilePhotoAvatar.js";
@@ -55,7 +56,33 @@ function notifyToTimelineItem(n: FeedNotification): FeedTimelineItem {
   };
 }
 
-export function FeedView() {
+/** Keep client-enriched Moments images across timeline reloads. */
+function mergeTimelineImageUrls(
+  prev: FeedTimelineItem[],
+  next: FeedTimelineItem[],
+): FeedTimelineItem[] {
+  if (prev.length === 0) return next;
+  const prior = new Map(
+    prev
+      .filter((row) => row.imageUrls.length > 0)
+      .map((row) => [row.url, row.imageUrls] as const),
+  );
+  if (prior.size === 0) return next;
+  return next.map((item) => {
+    if (item.imageUrls.length > 0) return item;
+    const kept = prior.get(item.url);
+    return kept ? { ...item, imageUrls: [...kept] } : item;
+  });
+}
+
+export function FeedView({
+  peerOwnerId,
+  onClearPeerFilter,
+}: {
+  /** When set (from Chat contact → Feed), show only that publisher’s posts. */
+  peerOwnerId?: string | null;
+  onClearPeerFilter?: () => void;
+} = {}) {
   const t = useT();
   const nodeService = useNodeService();
   const { bonds, humanProfile } = useNodeState();
@@ -114,7 +141,7 @@ export function FeedView() {
     try {
       const page = await nodeService.listFeedTimeline({ limit: FEED_PAGE_SIZE });
       if (epoch !== loadEpochRef.current) return;
-      setTimeline(page.items);
+      setTimeline((prev) => mergeTimelineImageUrls(prev, page.items));
       setHasMore(page.hasMore);
       setNextBefore(page.nextBefore);
       setNextBeforeUrl(page.nextBeforeUrl);
@@ -141,7 +168,7 @@ export function FeedView() {
       setTimeline((prev) => {
         const seen = new Set(prev.map((p) => p.key));
         const added = page.items.filter((item) => !seen.has(item.key));
-        return [...prev, ...added];
+        return mergeTimelineImageUrls(prev, [...prev, ...added]);
       });
       setHasMore(page.hasMore);
       setNextBefore(page.nextBefore);
@@ -175,8 +202,20 @@ export function FeedView() {
       if (!bondedIds.has(data.publisherOwnerId)) return;
       const item = notifyToTimelineItem(data);
       setTimeline((prev) => {
-        if (prev.some((p) => p.key === item.key || p.url === item.url)) return prev;
-        return [item, ...prev];
+        const idx = prev.findIndex((p) => p.key === item.key || p.url === item.url);
+        if (idx < 0) return [item, ...prev];
+        const existing = prev[idx]!;
+        const betterImages =
+          item.imageUrls.length > 0 && existing.imageUrls.length === 0;
+        const betterBody = Boolean(item.body?.trim()) && !existing.body?.trim();
+        if (!betterImages && !betterBody) return prev;
+        const next = [...prev];
+        next[idx] = {
+          ...existing,
+          imageUrls: betterImages ? item.imageUrls : existing.imageUrls,
+          body: betterBody ? item.body : existing.body,
+        };
+        return next;
       });
     });
     return () => {
@@ -189,6 +228,48 @@ export function FeedView() {
       for (const url of imagePreviews) URL.revokeObjectURL(url);
     };
   }, [imagePreviews]);
+
+  // Older backfills omitted imageUrls — recover from post markdown for visible peer cards.
+  const enrichAttemptedRef = useRef(new Set<string>());
+  useEffect(() => {
+    const missing = timeline.filter(
+      (item) =>
+        item.source === "peer" &&
+        item.imageUrls.length === 0 &&
+        item.url.includes("/feeds/") &&
+        !enrichAttemptedRef.current.has(item.url),
+    );
+    if (missing.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      for (const item of missing) {
+        if (cancelled) return;
+        const enriched = await enrichWebContentMediaFromUrl(
+          (params) => nodeService.libraryRead(params),
+          item.url,
+        );
+        // Hard failure — leave unmarked so refresh / later timeline updates retry.
+        if (enriched.outcome === "unavailable") continue;
+        enrichAttemptedRef.current.add(item.url);
+        if (enriched.outcome !== "enriched" || !enriched.imageUrls.length) continue;
+        // Apply even if this effect was superseded — attempted-set prevents duplicate reads.
+        setTimeline((prev) =>
+          prev.map((row) =>
+            row.url === item.url && row.imageUrls.length === 0
+              ? {
+                  ...row,
+                  imageUrls: enriched.imageUrls,
+                  ...(enriched.bodyPreview && !row.body ? { body: enriched.bodyPreview } : {}),
+                }
+              : row,
+          ),
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [timeline, nodeService]);
 
   function onPickImages(files: FileList | null) {
     if (!files?.length) return;
@@ -280,36 +361,63 @@ export function FeedView() {
     }
   }
 
+  const peerFilter = peerOwnerId?.trim() || "";
+  const visibleTimeline = useMemo(() => {
+    if (!peerFilter) return timeline;
+    return timeline.filter((item) => item.publisherOwnerId === peerFilter);
+  }, [timeline, peerFilter]);
+  const peerName = peerFilter ? nameFor(peerFilter) : "";
+
   return (
     <div className="feed-view" data-testid="feed-view">
       <div className="feed-view__atmosphere" aria-hidden />
 
       <header className="feed-view__header">
         <div className="feed-view__brand">
-          <h2 className="feed-view__title">{t("feed.title", "Feed")}</h2>
-          <p className="feed-view__lede">{t("feed.lede", "Updates from you and bonded contacts.")}</p>
+          <h2 className="feed-view__title">
+            {peerFilter
+              ? t("feed.peerTitle", "{name}'s Feed", { name: peerName })
+              : t("feed.title", "Feed")}
+          </h2>
+          <p className="feed-view__lede">
+            {peerFilter
+              ? t("feed.peerLede", "Posts from this contact.")
+              : t("feed.lede", "Updates from you and bonded contacts.")}
+          </p>
         </div>
-        <button
-          type="button"
-          className="feed-view__icon-btn"
-          onClick={() => void refresh()}
-          disabled={busy || publishing || loadingMore}
-          title={busy ? t("feed.refreshing", "Refreshing…") : t("feed.refresh", "Refresh")}
-          aria-label={t("feed.refresh", "Refresh")}
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-            <path
-              d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+        <div className="feed-view__header-actions">
+          {peerFilter ? (
+            <button
+              type="button"
+              className="feed-view__text-btn"
+              data-testid="feed-clear-peer-filter"
+              onClick={() => onClearPeerFilter?.()}
+            >
+              {t("feed.showAll", "Show all")}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="feed-view__icon-btn"
+            onClick={() => void refresh()}
+            disabled={busy || publishing || loadingMore}
+            title={busy ? t("feed.refreshing", "Refreshing…") : t("feed.refresh", "Refresh")}
+            aria-label={t("feed.refresh", "Refresh")}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path
+                d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
       </header>
 
-      {!composeOpen ? (
+      {!peerFilter && !composeOpen ? (
         <button
           type="button"
           className="feed-view__compose-prompt"
@@ -327,7 +435,8 @@ export function FeedView() {
           </span>
           <span className="feed-view__compose-cta">{t("feed.compose", "New post")}</span>
         </button>
-      ) : (
+      ) : null}
+      {!peerFilter && composeOpen ? (
         <section className="feed-view__composer" data-testid="feed-composer">
           <div className="feed-view__composer-top">
             <ProfilePhotoAvatar
@@ -490,7 +599,7 @@ export function FeedView() {
             </fieldset>
           ) : null}
         </section>
-      )}
+      ) : null}
 
       {error ? (
         <p className="feed-view__error" role="alert">
@@ -498,19 +607,36 @@ export function FeedView() {
         </p>
       ) : null}
 
-      {timeline.length === 0 && !busy ? (
+      {visibleTimeline.length === 0 && !busy ? (
         <div className="feed-view__empty">
           <div className="feed-view__empty-orb" aria-hidden />
-          <h3>{t("feed.emptyTitle", "Your circle is quiet")}</h3>
-          <p>{t("feed.empty", "No posts yet. Share an update with your bonded contacts.")}</p>
-          <button type="button" className="primary" onClick={() => setComposeOpen(true)}>
-            {t("feed.compose", "New post")}
-          </button>
+          <h3>
+            {peerFilter
+              ? t("feed.peerEmptyTitle", "No posts from this contact yet")
+              : t("feed.emptyTitle", "Your circle is quiet")}
+          </h3>
+          <p>
+            {peerFilter
+              ? t(
+                  "feed.peerEmpty",
+                  "Their Feed posts will show here after they share, or after your node backfills their archive.",
+                )
+              : t("feed.empty", "No posts yet. Share an update with your bonded contacts.")}
+          </p>
+          {!peerFilter ? (
+            <button type="button" className="primary" onClick={() => setComposeOpen(true)}>
+              {t("feed.compose", "New post")}
+            </button>
+          ) : (
+            <button type="button" className="primary" onClick={() => onClearPeerFilter?.()}>
+              {t("feed.showAll", "Show all")}
+            </button>
+          )}
         </div>
       ) : (
         <>
           <ul className="feed-view__list" data-testid="feed-timeline">
-            {timeline.map((item, index) => {
+            {visibleTimeline.map((item, index) => {
               const name = nameFor(item.publisherOwnerId);
               return (
                 <li

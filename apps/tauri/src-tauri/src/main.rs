@@ -358,10 +358,17 @@ fn bundled_ipfs_candidates(repo_root: Option<&Path>, resource_dir: Option<&Path>
         }
     }
     if let Some(repo) = repo_root {
+        // Canonical staging path (fetch-kubo-sidecar.sh + tauri.conf.full.json).
         #[cfg(windows)]
-        paths.push(repo.join("apps/tauri/resources/kubo/ipfs.exe"));
+        {
+            paths.push(repo.join("apps/tauri/src-tauri/resources/kubo/ipfs.exe"));
+            paths.push(repo.join("apps/tauri/resources/kubo/ipfs.exe")); // legacy
+        }
         #[cfg(not(windows))]
-        paths.push(repo.join("apps/tauri/resources/kubo/ipfs"));
+        {
+            paths.push(repo.join("apps/tauri/src-tauri/resources/kubo/ipfs"));
+            paths.push(repo.join("apps/tauri/resources/kubo/ipfs")); // legacy
+        }
     }
     paths
 }

@@ -105,13 +105,15 @@ String buildEnvoyUrl(String ownerId, [String? path]) {
   return 'envoy://$id/$encoded';
 }
 
-enum WebContentSurface { profile, blog, photos, notes }
+enum WebContentSurface { profile, feed, blog, photos, notes }
 
 /// Canonical published-surface URLs (mirrors Social `webContentUrl`).
 String webContentUrl(String ownerId, WebContentSurface surface) {
   switch (surface) {
     case WebContentSurface.profile:
       return buildEnvoyUrl(ownerId);
+    case WebContentSurface.feed:
+      return buildEnvoyUrl(ownerId, 'feeds/');
     case WebContentSurface.blog:
       return buildEnvoyUrl(ownerId, 'blog/');
     case WebContentSurface.photos:

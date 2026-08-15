@@ -15,6 +15,7 @@ class FeedNotification {
   final String? listingUrl;
   final String senderPeerId;
   final String? readAt;
+  final List<String> imageUrls;
 
   const FeedNotification({
     required this.id,
@@ -32,6 +33,7 @@ class FeedNotification {
     this.listingUrl,
     required this.senderPeerId,
     this.readAt,
+    this.imageUrls = const [],
   });
 
   factory FeedNotification.fromJson(Map<String, dynamic> json) {
@@ -52,6 +54,13 @@ class FeedNotification {
     if (tagsRaw is List) {
       tags = tagsRaw.map((e) => e.toString()).toList();
     }
+    final imagesRaw = json['imageUrls'];
+    final imageUrls = imagesRaw is List
+        ? imagesRaw
+            .map((e) => e.toString().trim())
+            .where((u) => u.isNotEmpty)
+            .toList()
+        : const <String>[];
     return FeedNotification(
       id: id,
       receivedAt: (json['receivedAt'] as String?) ?? '',
@@ -68,6 +77,7 @@ class FeedNotification {
       listingUrl: json['listingUrl'] as String?,
       senderPeerId: (json['senderPeerId'] as String?) ?? '',
       readAt: json['readAt'] as String?,
+      imageUrls: imageUrls,
     );
   }
 
@@ -87,11 +97,12 @@ class FeedNotification {
         if (listingUrl != null) 'listingUrl': listingUrl,
         'senderPeerId': senderPeerId,
         if (readAt != null) 'readAt': readAt,
+        if (imageUrls.isNotEmpty) 'imageUrls': imageUrls,
       };
 
   bool get isUnread => readAt == null || readAt!.trim().isEmpty;
 
-  FeedNotification copyWith({String? readAt}) {
+  FeedNotification copyWith({String? readAt, List<String>? imageUrls}) {
     return FeedNotification(
       id: id,
       receivedAt: receivedAt,
@@ -108,6 +119,7 @@ class FeedNotification {
       listingUrl: listingUrl,
       senderPeerId: senderPeerId,
       readAt: readAt ?? this.readAt,
+      imageUrls: imageUrls ?? this.imageUrls,
     );
   }
 }

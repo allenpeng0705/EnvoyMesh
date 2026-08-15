@@ -381,7 +381,9 @@ describe("discovery topic advertising — timeout + adaptive retry", () => {
       const delayMs = Number(delayMatch![1].replace(/_/g, ""));
       expect(delayMs).toBe(15_000);
 
-      // Sanity: the periodic setInterval still uses 5 * 60 * 1000 (unchanged).
+      // Sanity: the periodic setInterval still uses 5 * 60 * 1000 (profile /
+      // rendezvous soft refresh). DHT provide storms are capped inside
+      // `_advertisePublicDiscoveryTopics` (DISCOVERY_ADVERTISE_CONCURRENCY).
       expect(src).toMatch(/setInterval\([\s\S]*?5\s*\*\s*60\s*\*\s*1000/);
     });
   });
@@ -436,6 +438,57 @@ describe("discovery topic advertising — timeout + adaptive retry", () => {
       expect(message).toMatch(/Skipping \d+ DHT topic publishes/i);
 
       warnSpy.mockRestore();
+    });
+
+    it("retry cycle also skips DHT provides when still zero peers", async () => {
+      vi.useFakeTimers();
+      try {
+        const mesh = createMockMesh(async () => ({ cid: {} as never }));
+        (mesh.getConnectedPeerIds as ReturnType<typeof vi.fn>).mockReturnValue([]);
+
+        const nodeService = new NodeServiceImpl(
+          mesh as any,
+          createMockTrustStore(),
+          createMockPeerDirectoryStore(),
+          createMockHumanProfileStore(),
+          "/tmp/test",
+        );
+        setConfigStore(nodeService, createNullConfigStore());
+        setExternalMesh(nodeService, mesh);
+
+        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+        const advertisePromise = _advertisePublicDiscoveryTopics(
+          (nodeService as any)._identityContext(),
+          {
+            interests: ["music"],
+            username: "alice",
+            displayName: "",
+            locationTopics: [],
+          },
+        );
+        await flushAsync();
+        await advertisePromise;
+        expect(mesh.provideCapabilityTopic).not.toHaveBeenCalled();
+
+        // First retry uses DISCOVERY_ADVERTISE_RETRY_BACKOFF_MS after a failed cycle.
+        await vi.advanceTimersByTimeAsync(DISCOVERY_ADVERTISE_RETRY_BACKOFF_MS);
+        await flushAsync();
+
+        expect(mesh.provideCapabilityTopic).not.toHaveBeenCalled();
+        expect(
+          warnSpy.mock.calls.some(
+            (args) =>
+              typeof args[0] === "string" &&
+              (args[0] as string).includes("Discovery advertise retry") &&
+              (args[0] as string).includes("no peers connected"),
+          ),
+        ).toBe(true);
+
+        warnSpy.mockRestore();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("still attempts provide when only one peer (e.g. community relay) is connected", async () => {

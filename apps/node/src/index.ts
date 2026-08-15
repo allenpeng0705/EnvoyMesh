@@ -3090,7 +3090,11 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
                 console.warn("[node] advertiseInterestsIfPublic failed:", err);
               });
           }, 15_000);
-          // Re-advertise periodically (NodeService path also does this).
+          // Soft refresh every 5 min: re-read profile, re-register rendezvous,
+          // and refresh relay topic hashes. DHT provide retries between refreshes
+          // are owned by `_advertisePublicDiscoveryTopics` (adaptive setTimeout).
+          // Bounded concurrency there prevents this interval from re-creating the
+          // overnight provide fan-out storm.
           setInterval(() => {
             void nodeService._advertiseInterestsIfPublic().catch((err) => {
               console.warn("[node] advertiseInterestsIfPublic (periodic) failed:", err);
@@ -3141,6 +3145,7 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
         processStartedAtMs: processStartedAt,
         relayRosterSize: () => relayRoster.entries().length,
         maxConnections: connectivityRuntime.maxConnections,
+        getEventLoopLagMs: () => lastEventLoopLagMs,
       });
 
       await registerClientProxyHandler();

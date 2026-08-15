@@ -1,12 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../knowledge/knowledge_nav.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/feed_notification.dart';
 import '../../models/web_content.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/feed_notify_provider.dart';
 import '../../providers/node_provider.dart';
+import '../../services/envoy_url.dart';
+import '../../services/web_content_markdown.dart';
 import '../../utils/moments_time.dart';
 import '../../widgets/content_engagement_bar.dart';
 import '../../widgets/feed_media_grid.dart';
@@ -51,6 +56,9 @@ class _ContentFeedTabState extends ConsumerState<ContentFeedTab> {
   bool _loading = false;
   String? _error;
   String? _selfDisplayName;
+  /// Client enrich for older peer rows that omit `imageUrls`.
+  final Map<String, List<String>> _peerImageUrls = {};
+  final Set<String> _enrichAttempted = {};
 
   @override
   void initState() {
@@ -156,6 +164,8 @@ class _ContentFeedTabState extends ConsumerState<ContentFeedTab> {
       if (n.kind != 'feed' && !n.url.contains('/feeds/')) continue;
       if (!bonded.contains(n.publisherOwnerId)) continue;
       if (_own.any((p) => p.url == n.url)) continue;
+      final fromNotify = n.imageUrls;
+      final fromEnrich = _peerImageUrls[n.url] ?? const <String>[];
       items.add(
         _TimelineItem(
           key: 'peer:${n.id}',
@@ -164,12 +174,45 @@ class _ContentFeedTabState extends ConsumerState<ContentFeedTab> {
           body: n.summary,
           url: n.url,
           publishedAt: n.publishedAt.isNotEmpty ? n.publishedAt : n.receivedAt,
-          imageUrls: const [],
+          imageUrls: fromNotify.isNotEmpty ? fromNotify : fromEnrich,
         ),
       );
     }
     items.sort((a, b) => b.publishedAt.compareTo(a.publishedAt));
     return items;
+  }
+
+  Future<void> _enrichMissingPeerImages(List<_TimelineItem> items) async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    final missing = items
+        .where(
+          (item) =>
+              !item.isOwn &&
+              item.imageUrls.isEmpty &&
+              item.url.contains('/feeds/') &&
+              !_enrichAttempted.contains(item.url),
+        )
+        .toList();
+    if (missing.isEmpty) return;
+    for (final item in missing) {
+      try {
+        final parsed = parseEnvoyContentUrl(item.url);
+        final result = await client.libraryRead(
+          targetOwnerId: parsed.targetOwnerId,
+          path: parsed.path,
+          timeoutMs: 20000,
+        );
+        // Hard failure — leave unmarked so a later refresh can retry.
+        if (result.status != 'ok' || result.body == null) continue;
+        _enrichAttempted.add(item.url);
+        final images = extractEnvoyMarkdownImageUrls(result.body!);
+        if (images.isEmpty || !mounted) continue;
+        setState(() => _peerImageUrls[item.url] = images);
+      } catch (_) {
+        /* leave unmarked for retry */
+      }
+    }
   }
 
   Future<void> _openCompose() async {
@@ -236,9 +279,10 @@ class _ContentFeedTabState extends ConsumerState<ContentFeedTab> {
     );
   }
 
-  Widget _emptyState(BuildContext context) {
+  Widget _emptyState(BuildContext context, {required String? peerFilter}) {
     final scheme = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context);
+    final peerMode = peerFilter != null && peerFilter.isNotEmpty;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -280,11 +324,20 @@ class _ContentFeedTabState extends ConsumerState<ContentFeedTab> {
               ).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: _openCompose,
-              icon: const Icon(Icons.edit_outlined, size: 18),
-              label: Text(l10n.contentNewPost),
-            ),
+            if (peerMode)
+              FilledButton(
+                onPressed: () {
+                  ref.read(socialContentPeerOwnerIdProvider.notifier).state =
+                      null;
+                },
+                child: Text(l10n.feedTitle),
+              )
+            else
+              FilledButton.icon(
+                onPressed: _openCompose,
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: Text(l10n.contentNewPost),
+              ),
           ],
         ),
       ),
@@ -385,9 +438,32 @@ class _ContentFeedTabState extends ConsumerState<ContentFeedTab> {
   @override
   Widget build(BuildContext context) {
     final feedState = ref.watch(feedNotifyProvider);
-    final timeline = _buildTimeline(feedState.items);
+    final peerFilter =
+        ref.watch(socialContentPeerOwnerIdProvider)?.trim() ?? '';
+    final peerMode = peerFilter.isNotEmpty;
+    var timeline = _buildTimeline(feedState.items);
+    if (peerMode) {
+      timeline = timeline
+          .where((item) => item.publisherOwnerId == peerFilter)
+          .toList();
+    }
+    final needsEnrich = timeline.any(
+      (item) =>
+          !item.isOwn &&
+          item.imageUrls.isEmpty &&
+          item.url.contains('/feeds/') &&
+          !_enrichAttempted.contains(item.url),
+    );
+    if (needsEnrich) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_enrichMissingPeerImages(timeline));
+      });
+    }
     final scheme = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context);
+    final peerTitle = peerMode
+        ? _nameFor(context, peerFilter)
+        : l10n.feedTitle;
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -413,7 +489,7 @@ class _ContentFeedTabState extends ConsumerState<ContentFeedTab> {
                       children: [
                         Expanded(
                           child: Text(
-                            l10n.feedTitle,
+                            peerMode ? "$peerTitle's Feed" : l10n.feedTitle,
                             style: Theme.of(context).textTheme.headlineSmall
                                 ?.copyWith(
                                   fontWeight: FontWeight.w800,
@@ -421,11 +497,25 @@ class _ContentFeedTabState extends ConsumerState<ContentFeedTab> {
                                 ),
                           ),
                         ),
-                        TextButton.icon(
-                          onPressed: _openCompose,
-                          icon: const Icon(Icons.edit_outlined, size: 18),
-                          label: Text(l10n.contentNewPost),
-                        ),
+                        if (peerMode)
+                          TextButton(
+                            onPressed: () {
+                              ref
+                                      .read(
+                                        socialContentPeerOwnerIdProvider
+                                            .notifier,
+                                      )
+                                      .state =
+                                  null;
+                            },
+                            child: Text(l10n.feedTitle),
+                          )
+                        else
+                          TextButton.icon(
+                            onPressed: _openCompose,
+                            icon: const Icon(Icons.edit_outlined, size: 18),
+                            label: Text(l10n.contentNewPost),
+                          ),
                       ],
                     ),
                     const SizedBox(height: 4),
@@ -461,7 +551,7 @@ class _ContentFeedTabState extends ConsumerState<ContentFeedTab> {
             else if (timeline.isEmpty)
               SliverFillRemaining(
                 hasScrollBody: false,
-                child: _emptyState(context),
+                child: _emptyState(context, peerFilter: peerMode ? peerFilter : null),
               )
             else
               SliverPadding(

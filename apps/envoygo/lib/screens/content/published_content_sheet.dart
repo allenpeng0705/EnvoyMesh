@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../knowledge/knowledge_nav.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/web_content.dart';
+import '../../navigation/owner_tabs.dart';
 import '../../services/envoy_url.dart';
 import '../browser/browser_screen.dart';
 
-/// Bottom sheet: Profile / Blog / PhotoWall (+ custom sections when listing own site).
+/// Bottom sheet: Profile / Feed / Blog / Photo (+ custom sections when listing own site).
+/// Feed + Blog open Social card tabs; Profile + Photo open Browser.
 Future<void> showPublishedContentSheet(
   BuildContext context, {
   required String ownerId,
@@ -20,6 +24,7 @@ Future<void> showPublishedContentSheet(
     showDragHandle: true,
     builder: (ctx) {
       final l10n = AppLocalizations.of(ctx);
+      final container = ProviderScope.containerOf(ctx, listen: false);
       return SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -48,17 +53,29 @@ Future<void> showPublishedContentSheet(
               },
             ),
             ListTile(
+              leading: const Icon(Icons.dynamic_feed_outlined),
+              title: Text(l10n.publishedFeed),
+              onTap: () {
+                Navigator.pop(ctx);
+                // Pop chat detail so Home Social tabs are visible.
+                Navigator.of(context).popUntil((route) => route.isFirst);
+                openSocialContentOn(
+                  container,
+                  surface: SocialSurfaces.feeds,
+                  peerOwnerId: ownerId,
+                );
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.article_outlined),
               title: Text(l10n.peopleBlog),
               onTap: () {
                 Navigator.pop(ctx);
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => BrowserScreen(
-                      initialUrl:
-                          webContentUrl(ownerId, WebContentSurface.blog),
-                    ),
-                  ),
+                Navigator.of(context).popUntil((route) => route.isFirst);
+                openSocialContentOn(
+                  container,
+                  surface: SocialSurfaces.blog,
+                  peerOwnerId: ownerId,
                 );
               },
             ),

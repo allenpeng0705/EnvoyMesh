@@ -8,6 +8,8 @@ import {
   prepareOutboundPeerConnection,
   resolveChatDeliveryAckTimeoutMs,
   rotateDialHintsForRetry,
+  classifyExpectReplyFailure,
+  resetExpectReplyFailLogBucketsForTests,
 } from "../src/chat-outbound-deliver.js";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import { CHAT_DELIVERY_ACK_TIMEOUT_MS } from "@envoymesh/protocol";
@@ -792,5 +794,53 @@ describe("deliverChatEnvelopeWithRetry ack timeout", () => {
     expect(sendChat).toHaveBeenCalledTimes(1);
     expect(sendChatExpectReply).not.toHaveBeenCalled();
     expect(ensurePeerReachable).not.toHaveBeenCalled();
+  });
+});
+
+describe("expect-reply failure log rate-limit", () => {
+  it("classifies protocol selection failures", () => {
+    expect(
+      classifyExpectReplyFailure(
+        "Protocol selection failed - could not negotiate /envoymesh/chat/0.1.0",
+      ),
+    ).toBe("protocol_selection");
+    expect(classifyExpectReplyFailure("Dial queue is full")).toBe("dial_queue_full");
+    expect(classifyExpectReplyFailure("unexpected boom")).toBe("other");
+  });
+
+  it("suppresses repeated protocol-selection expect-reply warns", async () => {
+    resetExpectReplyFailLogBucketsForTests();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const sendChatExpectEnvelopeReply = vi
+      .fn()
+      .mockRejectedValue(
+        new Error("Protocol selection failed - could not negotiate /envoymesh/chat/0.1.0"),
+      );
+    const mesh = {
+      sendChatExpectEnvelopeReply,
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+      ensurePeerReachable: vi.fn().mockResolvedValue({ connected: true, direct: false }),
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: false }),
+      getConnectedPeerIds: vi.fn().mockImplementation((peer: string) => [peer]),
+    };
+    const profileEnvelope = { intent: "profile.request" } as EnvoyEnvelope;
+
+    for (const peer of ["12D3KooWPeerAAA", "12D3KooWPeerBBB", "12D3KooWPeerCCC"]) {
+      await expect(
+        deliverExpectReplyWithRetry({
+          mesh,
+          transportPeerId: peer,
+          envelope: profileEnvelope,
+          dialHints: [],
+          maxAttempts: 1,
+          timeoutMs: 100,
+        }),
+      ).rejects.toThrow(/Protocol selection failed/);
+    }
+
+    // First failure logs; subsequent similar failures within the window are suppressed.
+    expect(warn.mock.calls.filter((c) => String(c[0]).includes("[expect-reply]")).length).toBe(1);
+    warn.mockRestore();
+    resetExpectReplyFailLogBucketsForTests();
   });
 });

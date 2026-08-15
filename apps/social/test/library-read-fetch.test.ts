@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchLibraryContent, LIBRARY_READ_CHUNK_BYTES } from "../src/lib/library-read-fetch.js";
+import {
+  baseMimeType,
+  fetchLibraryContent,
+  LIBRARY_READ_CHUNK_BYTES,
+} from "../src/lib/library-read-fetch.js";
 import type { LibraryReadResult } from "@envoymesh/api";
 
 function okResult(partial: Partial<LibraryReadResult>): LibraryReadResult {
@@ -11,6 +15,14 @@ function okResult(partial: Partial<LibraryReadResult>): LibraryReadResult {
     ...partial,
   };
 }
+
+describe("baseMimeType", () => {
+  it("strips charset parameters", () => {
+    expect(baseMimeType("text/markdown; charset=utf-8")).toBe("text/markdown");
+    expect(baseMimeType("text/html; charset=utf-8")).toBe("text/html");
+    expect(baseMimeType("TEXT/Markdown")).toBe("text/markdown");
+  });
+});
 
 describe("fetchLibraryContent", () => {
   it("returns a normal ok response", async () => {
@@ -29,6 +41,23 @@ describe("fetchLibraryContent", () => {
     });
     expect(result.status).toBe("ok");
     expect(result.body).toBe("# Hi");
+    expect(result.isText).toBe(true);
+  });
+
+  it("treats text/*; charset=utf-8 as text", async () => {
+    const libraryRead = vi.fn(async () =>
+      okResult({
+        body: "# Hi",
+        contentType: "text/markdown; charset=utf-8",
+        contentHash: "abc",
+        byteLength: 4,
+      }),
+    );
+    const result = await fetchLibraryContent(libraryRead, {
+      targetOwnerId: "envoy:owner:a",
+      path: "hello.md",
+    });
+    expect(result.status).toBe("ok");
     expect(result.isText).toBe(true);
   });
 

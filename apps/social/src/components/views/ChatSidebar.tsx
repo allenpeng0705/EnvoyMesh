@@ -35,6 +35,7 @@ import { PullToRefresh } from "../PullToRefresh.js";
 import { loadOutboundHellos } from "../../lib/discover-peer-state.js";
 import type { BondRecord } from "@envoymesh/api";
 import { openBrowserAt } from "../../lib/browser-nav.js";
+import { openSocialContent } from "../../lib/social-content-nav.js";
 import { webContentUrl } from "../../lib/web-content-urls.js";
 
 const CONTEXT_MENU_PAD = 8;
@@ -764,8 +765,9 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
                 {(
                   [
                     ["profile", "agentCard.openProfile", "Profile"],
+                    ["feeds", "agentCard.openFeeds", "Feed"],
                     ["blog", "agentCard.openBlog", "Blog"],
-                    ["photowall", "agentCard.openPhotoWall", "PhotoWall"],
+                    ["photowall", "agentCard.openPhotoWall", "Photo"],
                   ] as const
                 ).map(([surface, key, fallback], i) => (
                   <span key={surface} className="context-menu-links__item">
@@ -778,6 +780,14 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
                       onClick={() => {
                         const ownerId = contextMenu.ownerId;
                         setContextMenu(null);
+                        if (surface === "feeds") {
+                          openSocialContent("feed", ownerId);
+                          return;
+                        }
+                        if (surface === "blog") {
+                          openSocialContent("blog", ownerId);
+                          return;
+                        }
                         openBrowserAt(webContentUrl(ownerId, surface));
                       }}
                     >
@@ -785,22 +795,6 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
                     </button>
                   </span>
                 ))}
-                <span className="context-menu-links__item">
-                  <span className="context-menu-links__sep" aria-hidden="true">·</span>
-                  <button
-                    type="button"
-                    className="context-menu-link"
-                    role="menuitem"
-                    data-testid="context-web-content-feeds"
-                    onClick={() => {
-                      const ownerId = contextMenu.ownerId;
-                      setContextMenu(null);
-                      openBrowserAt(webContentUrl(ownerId, "feeds"));
-                    }}
-                  >
-                    {t("agentCard.openFeeds", "Feeds")}
-                  </button>
-                </span>
               </div>
             </div>
             {(["none", "assistant_only", "full"] as const).map((level) => {

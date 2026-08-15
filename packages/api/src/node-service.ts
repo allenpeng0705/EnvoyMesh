@@ -1321,6 +1321,8 @@ export interface BlogPostSummary {
   publishedAt: string;
   visibility: PublishWebContentVisibility;
   publisherOwnerId: string;
+  /** Markdown image embeds for card previews (Feed-style grid). */
+  imageUrls?: string[];
 }
 
 /** Delete a published web-content path under `web/` (manifest + files). */
