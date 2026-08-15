@@ -17,6 +17,10 @@ export const frAgentNetworkSettingsMessages = {
     enableButton: "Activer l'équipe LAN de bureau",
     enabling: "Activation…",
     enabled: "Équipe LAN de bureau activée",
+    disableButton: "Désactiver l'équipe LAN de bureau",
+    disabling: "Désactivation…",
+    disableHint:
+      "Désactive l'adhésion au réseau d'agents et la liaison LAN automatique sur ce nœud. Le jeton partagé est conservé pour une réactivation facile.",
     copyToken: "Copier le jeton",
     tokenCopied: "Jeton copié",
     shareHint: "Partagez ce jeton avec les autres machines, puis activez l'équipe LAN de bureau sur chacune (ou collez-le sous Liaison automatique LAN).",

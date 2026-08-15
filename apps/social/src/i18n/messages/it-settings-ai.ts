@@ -211,7 +211,35 @@ export const itAiSettingsMessages = {
     mcpWriteBackSaving: "Salvataggio…",
     mcpWriteBackSaved: "{path} salvato ({count} risultati)",
     mcpWriteBackFailed: "Scrittura MCP non riuscita",
-    mcpLastError: "Ultimo errore MCP: {message}",},
+    mcpLastError: "Ultimo errore MCP: {message}",
+    chatModelsFolder: "Cartella modelli chat",
+    chatModelsFolderHint:
+      "GGUF chat/instruct (non embedding). I download del catalogo Envoy Local chat finiscono qui.",
+    embeddingLocalModelsFolder: "Cartella modelli embedding",
+    embeddingLocalModelsFolderHint:
+      "Copia qui i .gguf di embedding, poi Aggiorna. Anche i download curati finiscono qui.",
+    embeddingLocalRefreshModels: "Aggiorna modelli embedding",
+    embeddingLocalModelsRefreshed: "Elenco modelli embedding aggiornato",
+    embeddingLocalModelInstalled: "installato",
+    embeddingLocalSwitchStartedToast:
+      "Download / avvio del modello embedding selezionato…",
+    embeddingLocalModelHint:
+      "Metti un .gguf nella cartella embed-models e Aggiorna, oppure scegli un modello curato (scarica solo se manca). Predefinito: 0.6B Q8 (~0.6 GB).",
+    embeddingLocalModelDefault: "{label} — predefinito",
+  },
+  envoyLocal: {
+    modelsDesc:
+      "I GGUF di chat vanno in models; i GGUF di embedding Knowledge in embed-models. Metti i file, Aggiorna, poi scegli il modello attivo.",
+    modelsFolder: "Cartella modelli chat",
+    modelsFolderHint:
+      "Copia qui i .gguf chat/instruct, poi Aggiorna. Anche i download del catalogo finiscono qui.",
+    embedModelsFolder: "Cartella modelli embedding",
+    embedModelsFolderHint:
+      "Copia qui i .gguf di embedding (embedder Knowledge predefinito). Gestisci il modello attivo in Conoscenza → Impostazioni.",
+    chatModel: "Modello chat",
+    embedModel: "Modello embedding",
+    embedEndpoint: "Endpoint embedding",
+  },
   profileMedia: {
     heading: "Foto galleria profilo",
     sectionDesc:

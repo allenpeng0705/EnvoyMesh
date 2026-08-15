@@ -90,6 +90,7 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "enableEnvoyLocalEmbed",
   "stopEnvoyLocalEmbed",
   "disableEnvoyLocalEmbed",
+  "setEnvoyLocalEmbedActiveModel",
   "createWanJoinInvite",
   "createCompanyInvite",
   "listCompanyInvites",
@@ -940,6 +941,12 @@ export async function routeRpcMethod(
       return ns.stopEnvoyLocalEmbed();
     case "disableEnvoyLocalEmbed":
       return ns.disableEnvoyLocalEmbed();
+    case "listEnvoyLocalInstalledEmbedModels":
+      return ns.listEnvoyLocalInstalledEmbedModels();
+    case "setEnvoyLocalEmbedActiveModel":
+      return ns.setEnvoyLocalEmbedActiveModel({
+        modelId: String(params.modelId ?? ""),
+      });
     case "getPairingPayload":
       return ns.getPairingPayload();
     case "createWanJoinInvite":

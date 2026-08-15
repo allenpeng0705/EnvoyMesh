@@ -477,5 +477,32 @@ export const jaAiSettingsMessages = {
     mcpWriteBackSaving: "保存中…",
     mcpWriteBackSaved: "{path} を保存しました（{count}件）",
     mcpWriteBackFailed: "MCP書き戻しに失敗",
-    mcpLastError: "直近のMCPエラー: {message}",},
+    mcpLastError: "直近のMCPエラー: {message}",
+    chatModelsFolder: "チャットモデルフォルダ",
+    chatModelsFolderHint:
+      "チャット/指示用 GGUF（埋め込みではない）。Envoy Local チャットのカタログダウンロードもここに保存されます。",
+    embeddingLocalModelsFolder: "埋め込みモデルフォルダ",
+    embeddingLocalModelsFolderHint:
+      "埋め込み用 .gguf をここにコピーしてから更新。キュレーション済みダウンロードもここに保存されます。",
+    embeddingLocalRefreshModels: "埋め込みモデルを更新",
+    embeddingLocalModelsRefreshed: "埋め込みモデル一覧を更新しました",
+    embeddingLocalModelInstalled: "インストール済み",
+    embeddingLocalSwitchStartedToast: "選択した埋め込みモデルをダウンロード/起動中…",
+    embeddingLocalModelHint:
+      "embed-models フォルダに .gguf を入れて更新するか、キュレーション済みモデルを選択（欠けている場合のみダウンロード）。既定は 0.6B Q8（約 0.6 GB）。",
+    embeddingLocalModelDefault: "{label} — 既定",
+  },
+  envoyLocal: {
+    modelsDesc:
+      "チャット用 GGUF は models、Knowledge 埋め込み用 GGUF は embed-models へ。ファイルを置き、更新してからアクティブモデルを選びます。",
+    modelsFolder: "チャットモデルフォルダ",
+    modelsFolderHint:
+      "チャット/指示用 .gguf をここにコピーしてから更新。カタログダウンロードもここに保存されます。",
+    embedModelsFolder: "埋め込みモデルフォルダ",
+    embedModelsFolderHint:
+      "埋め込み用 .gguf をここに（既定の Knowledge 埋め込みモデル）。アクティブな埋め込みは「知識 → 設定」で管理します。",
+    chatModel: "チャットモデル",
+    embedModel: "埋め込みモデル",
+    embedEndpoint: "埋め込みエンドポイント",
+  },
 } as const;

@@ -2915,6 +2915,12 @@ export interface NodeService {
   ): Promise<import("./envoy-local.js").EnvoyLocalEmbedStatus>;
   stopEnvoyLocalEmbed(): Promise<import("./envoy-local.js").EnvoyLocalEmbedStatus>;
   disableEnvoyLocalEmbed(): Promise<import("./envoy-local.js").EnvoyLocalEmbedStatus>;
+  listEnvoyLocalInstalledEmbedModels(): Promise<
+    import("./envoy-local.js").EnvoyLocalInstalledModel[]
+  >;
+  setEnvoyLocalEmbedActiveModel(
+    params: import("./envoy-local.js").SetEnvoyLocalEmbedActiveModelParams,
+  ): Promise<import("./envoy-local.js").EnvoyLocalEmbedStatus>;
 
   /** One-shot prompt — used by the sendToPi JSON-RPC method. Returns the text. */
   sendToPi(text: string): Promise<string>;

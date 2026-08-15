@@ -211,7 +211,34 @@ export const deAiSettingsMessages = {
     mcpWriteBackSaving: "Wird gespeichert…",
     mcpWriteBackSaved: "{path} gespeichert ({count} Treffer)",
     mcpWriteBackFailed: "MCP-Rückschreiben fehlgeschlagen",
-    mcpLastError: "Letzter MCP-Fehler: {message}",},
+    mcpLastError: "Letzter MCP-Fehler: {message}",
+    chatModelsFolder: "Chat-Modellordner",
+    chatModelsFolderHint:
+      "Chat/Instruct-GGUFs (keine Embeddings). Katalog-Downloads für Envoy Local Chat landen hier.",
+    embeddingLocalModelsFolder: "Embed-Modellordner",
+    embeddingLocalModelsFolderHint:
+      "Embedding-.gguf-Dateien hierher kopieren, dann Aktualisieren. Kuratierte Downloads landen ebenfalls hier.",
+    embeddingLocalRefreshModels: "Embed-Modelle aktualisieren",
+    embeddingLocalModelsRefreshed: "Embed-Modellliste aktualisiert",
+    embeddingLocalModelInstalled: "installiert",
+    embeddingLocalSwitchStartedToast: "Ausgewähltes Embed-Modell wird heruntergeladen/gestartet…",
+    embeddingLocalModelHint:
+      "Eine .gguf-Datei in den embed-models-Ordner legen und Aktualisieren, oder ein kuratiertes Modell wählen (nur bei Fehlen herunterladen). Standard: 0.6B Q8 (~0.6 GB).",
+    embeddingLocalModelDefault: "{label} — Standard",
+  },
+  envoyLocal: {
+    modelsDesc:
+      "Chat-GGUFs gehören in den models-Ordner; Knowledge-Embedding-GGUFs in embed-models. Eigene Dateien ablegen, Aktualisieren, aktives Modell wählen.",
+    modelsFolder: "Chat-Modellordner",
+    modelsFolderHint:
+      "Chat/Instruct-.gguf-Dateien hierher kopieren, dann Aktualisieren. Katalog-Downloads landen ebenfalls hier.",
+    embedModelsFolder: "Embed-Modellordner",
+    embedModelsFolderHint:
+      "Embedding-.gguf-Dateien hierher (Standard-Knowledge-Embedder). Aktives Embed-Modell unter Wissen → Setup verwalten.",
+    chatModel: "Chat-Modell",
+    embedModel: "Embed-Modell",
+    embedEndpoint: "Embed-Endpunkt",
+  },
   profileMedia: {
     heading: "Profil-Galeriefotos",
     sectionDesc:

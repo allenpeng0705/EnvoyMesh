@@ -595,8 +595,36 @@ describe("resolveEmbeddingConfig — independent of chat", () => {
     const provider = createEmbeddingProvider({
       embedding: { mode: "envoy-local" },
       fetchImplementation: fetchImplementation as unknown as typeof fetch,
+      onEnvoyLocalEmbedTimeout: async () => undefined,
     });
     await expect(provider.embed("hello")).rejects.toThrow(/wedged|timed out/i);
+    // First attempt + one retry after heal hook.
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries once after Envoy Local timeout when onEnvoyLocalEmbedTimeout heals", async () => {
+    let calls = 0;
+    const fetchImplementation = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) {
+        const err = new Error("The operation was aborted");
+        err.name = "TimeoutError";
+        throw err;
+      }
+      return new Response(
+        JSON.stringify({ data: [{ embedding: [0.1, 0.2, 0.3] }] }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    const heal = vi.fn(async () => undefined);
+    const provider = createEmbeddingProvider({
+      embedding: { mode: "envoy-local" },
+      fetchImplementation: fetchImplementation as unknown as typeof fetch,
+      onEnvoyLocalEmbedTimeout: heal,
+    });
+    await expect(provider.embed("hello")).resolves.toEqual([0.1, 0.2, 0.3]);
+    expect(heal).toHaveBeenCalledTimes(1);
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
   });
 
   it("rewrites Envoy Local 'fetch failed' into an unreachable hint", async () => {

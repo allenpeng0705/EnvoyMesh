@@ -120,6 +120,18 @@ export interface CreateRagServiceInput {
   ensureEmbedReady?: () => Promise<void>;
   /** Bump embed idle-unload timer after each successful embed burst. */
   onEmbedActivity?: () => void;
+  /** Successful Envoy Local / other embed HTTP — for embed-sidecar stall watchdog. */
+  onEmbedSuccess?: () => void;
+  /**
+   * Called when an embed HTTP call fails. Used to surface errors; wedge restarts
+   * are handled via {@link onEnvoyLocalEmbedTimeout} before retry.
+   */
+  onEmbedError?: (message: string) => void;
+  /**
+   * Awaited after an Envoy Local embed timeout, before a single retry
+   * (restart wedged llama-server on :18791).
+   */
+  onEnvoyLocalEmbedTimeout?: () => void | Promise<void>;
 }
 
 export async function createRagService(input: CreateRagServiceInput): Promise<RagService> {
@@ -131,6 +143,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
     embedding: knowledgeBase?.embedding,
     modelProviders,
     envoyLocalEmbed,
+    onEnvoyLocalEmbedTimeout: input.onEnvoyLocalEmbedTimeout,
   });
   let store = await createVectorStore({
     profileDir: input.profileDir,
@@ -235,6 +248,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
       embedding: kb.embedding,
       modelProviders,
       envoyLocalEmbed,
+      onEnvoyLocalEmbedTimeout: input.onEnvoyLocalEmbedTimeout,
     });
     if (nextEmbedder.modelKey !== embedder.modelKey) {
       embedder = nextEmbedder;
@@ -252,6 +266,25 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
   const noteEmbedActivity = () => {
     try {
       input.onEmbedActivity?.();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const noteEmbedSuccess = () => {
+    noteEmbedActivity();
+    try {
+      input.onEmbedSuccess?.();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const noteEmbedError = (error: unknown) => {
+    recordEmbedError(error);
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      input.onEmbedError?.(message);
     } catch {
       /* ignore */
     }
@@ -290,10 +323,10 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           },
         ]);
         clearEmbedError();
-        noteEmbedActivity();
+        noteEmbedSuccess();
         void flushSoon();
       } catch (error) {
-        recordEmbedError(error);
+        noteEmbedError(error);
         const msg = error instanceof Error ? error.message : String(error);
         if (!msg.includes("embeddings response missing vector")) {
           console.warn(`[rag] chat index skipped: ${msg}`);
@@ -376,14 +409,14 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
             },
           }));
           await activeStore.upsert(records);
-          noteEmbedActivity();
+          noteEmbedSuccess();
           for (const record of records) {
             existingByCollection.get(record.collection)?.add(record.sourceKey);
           }
         } catch (error) {
           const errMsg = error instanceof Error ? error.message : String(error);
           lastBackfillFailureAt = nowMs;
-          recordEmbedError(error);
+          noteEmbedError(error);
           console.warn(
             `[rag] chat backfill batch failed (provider=${activeEmbedder.modelKey}, will retry in ${Math.round(
               BACKFILL_FAILURE_BACKOFF_MS / 1000,
@@ -442,7 +475,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           throw new Error("embedding provider returned an empty vector");
         }
         clearEmbedError();
-        noteEmbedActivity();
+        noteEmbedSuccess();
         indexStatus = { ...indexStatus, embedderModelKey: activeEmbedder.modelKey };
         return {
           ok: true,
@@ -453,7 +486,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
         };
       } catch (error) {
         const latencyMs = Date.now() - started;
-        recordEmbedError(error);
+        noteEmbedError(error);
         return {
           ok: false,
           ...base,
@@ -499,7 +532,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           force,
           sensitivityOverrides: overrides,
           skipOfficeSources: skipOffice,
-          onEmbedActivity: noteEmbedActivity,
+          onEmbedActivity: noteEmbedSuccess,
           onProgress: (partial) => {
             reportProgress({ phase: "public", indexed, skipped, removed, ...partial });
           },
@@ -519,7 +552,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           force,
           sensitivityOverrides: overrides,
           skipOfficeSources: skipOffice,
-          onEmbedActivity: noteEmbedActivity,
+          onEmbedActivity: noteEmbedSuccess,
           onProgress: (partial) => {
             reportProgress({ phase: "private", indexed, skipped, removed, ...partial });
           },
@@ -544,7 +577,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
         });
         clearEmbedError();
       } catch (error) {
-        recordEmbedError(error);
+        noteEmbedError(error);
         reportProgress({
           phase: "error",
           processed: 0,
@@ -584,7 +617,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
       try {
         const queryVector = await activeEmbedder.embed(query);
         const hits = activeStore.search(chatCollectionId(threadOwnerId), queryVector, ragLimit * 3);
-        noteEmbedActivity();
+        noteEmbedSuccess();
         const vectorHits = hits
           .filter((hit) => !recentIds.has(hit.sourceKey))
           .slice(0, ragLimit)
@@ -606,6 +639,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           return runLexical();
         }
       } catch (error) {
+        noteEmbedError(error);
         const msg = error instanceof Error ? error.message : String(error);
         // Suppress "embeddings response missing vector" — this is expected when
         // the model provider doesn't support embeddings (e.g. MiniMax). The
@@ -654,7 +688,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
       const { embedder: activeEmbedder, store: activeStore } = await ensureRuntime();
       try {
         const queryVector = await activeEmbedder.embed(query.trim() || ruleVaultQuery?.path?.trim() || "");
-        noteEmbedActivity();
+        noteEmbedSuccess();
         const documentsById = new Map(vaultIndex.documents.map((doc) => [doc.documentId, doc]));
         const merged: VaultSearchResult[] = [];
 
@@ -696,6 +730,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           });
         }
       } catch (error) {
+        noteEmbedError(error);
         const msg = error instanceof Error ? error.message : String(error);
         if (!msg.includes("embeddings response missing vector")) {
           console.warn(`[rag] vault vector search failed, falling back to lexical: ${msg}`);

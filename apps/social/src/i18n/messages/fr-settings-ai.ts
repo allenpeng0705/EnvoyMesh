@@ -211,7 +211,35 @@ export const frAiSettingsMessages = {
     mcpWriteBackSaving: "Enregistrement…",
     mcpWriteBackSaved: "{path} enregistré ({count} résultats)",
     mcpWriteBackFailed: "Échec de l'écriture MCP",
-    mcpLastError: "Dernière erreur MCP : {message}",},
+    mcpLastError: "Dernière erreur MCP : {message}",
+    chatModelsFolder: "Dossier des modèles de chat",
+    chatModelsFolderHint:
+      "GGUF chat/instruct (pas d’embeddings). Les téléchargements du catalogue Envoy Local chat vont ici.",
+    embeddingLocalModelsFolder: "Dossier des modèles d’embedding",
+    embeddingLocalModelsFolderHint:
+      "Copiez les .gguf d’embedding ici, puis Actualiser. Les téléchargements curatés arrivent aussi ici.",
+    embeddingLocalRefreshModels: "Actualiser les modèles d’embedding",
+    embeddingLocalModelsRefreshed: "Liste des modèles d’embedding actualisée",
+    embeddingLocalModelInstalled: "installé",
+    embeddingLocalSwitchStartedToast:
+      "Téléchargement / démarrage du modèle d’embedding sélectionné…",
+    embeddingLocalModelHint:
+      "Déposez un .gguf dans le dossier embed-models puis Actualiser, ou choisissez un modèle curaté (téléchargement seulement s’il manque). Par défaut : 0.6B Q8 (~0.6 Go).",
+    embeddingLocalModelDefault: "{label} — par défaut",
+  },
+  envoyLocal: {
+    modelsDesc:
+      "Les GGUF de chat vont dans models ; les GGUF d’embedding Knowledge dans embed-models. Déposez vos fichiers, Actualiser, puis choisissez le modèle actif.",
+    modelsFolder: "Dossier des modèles de chat",
+    modelsFolderHint:
+      "Copiez les .gguf chat/instruct ici, puis Actualiser. Les téléchargements du catalogue arrivent aussi ici.",
+    embedModelsFolder: "Dossier des modèles d’embedding",
+    embedModelsFolderHint:
+      "Copiez les .gguf d’embedding ici (embeddeur Knowledge par défaut). Gérez le modèle actif sous Connaissance → Configuration.",
+    chatModel: "Modèle de chat",
+    embedModel: "Modèle d’embedding",
+    embedEndpoint: "Point de terminaison d’embedding",
+  },
   profileMedia: {
     heading: "Photos de la galerie du profil",
     sectionDesc:

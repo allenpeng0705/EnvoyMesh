@@ -376,6 +376,9 @@ export interface EnableEnvoyLocalEmbedParams {
   modelId?: string;
 }
 
+/** Same shape as chat active-model switch; kept as alias for embed callers. */
+export type SetEnvoyLocalEmbedActiveModelParams = SetEnvoyLocalActiveModelParams;
+
 export function normalizeEnvoyLocalConfig(
   value: EnvoyLocalConfig | undefined,
 ): Required<Pick<EnvoyLocalConfig, "enabled">> & EnvoyLocalConfig {

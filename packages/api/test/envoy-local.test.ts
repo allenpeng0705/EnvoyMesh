@@ -66,7 +66,7 @@ describe("envoy-local-embed config", () => {
   });
 
   it("curates 0.6B as default with 4B as optional upgrade", () => {
-    expect(DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID).toBe("qwen3-embedding-0.6b-q4_k_m");
+    expect(DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID).toBe("qwen3-embedding-0.6b-q8_0");
     expect(ENVOY_LOCAL_EMBED_MODEL_OPTIONS[0]?.id).toBe(DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID);
     expect(ENVOY_LOCAL_EMBED_MODEL_OPTIONS[0]?.recommended).toBe(true);
     expect(ENVOY_LOCAL_EMBED_MODEL_OPTIONS.some((m) => m.id === QWEN3_EMBEDDING_4B_MODEL_ID)).toBe(
@@ -74,8 +74,14 @@ describe("envoy-local-embed config", () => {
     );
     expect(resolveEnvoyLocalEmbedModelId(undefined)).toBe(DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID);
     expect(resolveEnvoyLocalEmbedModelId("unknown")).toBe(DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID);
+    expect(resolveEnvoyLocalEmbedModelId("qwen3-embedding-0.6b-q4_k_m")).toBe(
+      DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID,
+    );
     expect(resolveEnvoyLocalEmbedModelId(QWEN3_EMBEDDING_4B_MODEL_ID)).toBe(
       QWEN3_EMBEDDING_4B_MODEL_ID,
+    );
+    expect(resolveEnvoyLocalEmbedModelId("local:my-custom-embed")).toBe(
+      "local:my-custom-embed",
     );
   });
 });

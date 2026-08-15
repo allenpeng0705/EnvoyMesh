@@ -1294,9 +1294,14 @@ class NodeServiceClient {
   }
 
   Future<Map<String, dynamic>> reindexRagKnowledge({bool force = false}) async {
-    final result = await _client.call('reindexRagKnowledge', {
-      if (force) 'force': true,
-    }) as Map<String, dynamic>;
+    // Large vaults reindex for a long time on Envoy Local CPU embed.
+    final result = await _client.call(
+      'reindexRagKnowledge',
+      {
+        if (force) 'force': true,
+      },
+      const Duration(minutes: 45),
+    ) as Map<String, dynamic>;
     return result;
   }
 

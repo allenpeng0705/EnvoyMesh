@@ -379,15 +379,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get knowledgeEmbedGateBodyNeeded =>
-      '知识库检索依赖家节点上的本地嵌入模型。应用启动时会自动在后台下载 — 完成前无法使用「浏览」。也可在此手动启动或重试。';
+      '「提问」需要家节点上的本地嵌入模型；「浏览」不依赖它。应用启动时会自动在后台下载，也可在设置中手动启动或重试。';
 
   @override
   String get knowledgeEmbedGateBodyDownloading =>
-      '下载正在家节点后台进行（随应用启动）。你可以离开本页；嵌入就绪后知识库会自动解锁。';
+      '下载正在家节点后台进行（随应用启动）。你可以离开本页；嵌入就绪后「提问」会自动可用。';
 
   @override
   String get knowledgeEmbedGateBodyError =>
-      '家节点无法安装嵌入运行时或模型。请重试下载，或在桌面端「设置」中排查。';
+      '家节点无法安装嵌入运行时或模型。请重试下载，或在桌面端「设置」中排查。「浏览」仍可用。';
 
   @override
   String get knowledgeEmbedGateDownload => '在家节点下载';
@@ -405,16 +405,41 @@ class AppLocalizationsZh extends AppLocalizations {
   String get knowledgeEmbedGateBackgroundHint => '下载期间可继续使用应用的其他功能。';
 
   @override
-  String get knowledgeEmbedGateStripNeeded => '知识库不可用 — 家节点尚未安装嵌入模型';
+  String get knowledgeEmbedGateStripNeeded => '「提问」需要家节点嵌入模型 —「浏览」仍可用';
 
   @override
-  String get knowledgeEmbedGateStripDownloading => '知识库不可用 — 家节点正在下载嵌入模型';
+  String get knowledgeEmbedGateStripDownloading =>
+      '家节点正在下载嵌入模型 —「提问」暂不可用，「浏览」可用';
 
   @override
-  String get knowledgeEmbedGateStripError => '知识库不可用 — 家节点嵌入安装失败';
+  String get knowledgeEmbedGateStripError => '家节点嵌入安装失败 — 请在设置中重试。「浏览」仍可用';
 
   @override
   String get knowledgeEmbedGateDownloadStarted => '已开始在家节点下载嵌入模型';
+
+  @override
+  String get knowledgeEmbedGateBlockedToast => '请先完成嵌入设置再提问。';
+
+  @override
+  String get knowledgeEmbedGatePhaseDetecting => '正在检测平台…';
+
+  @override
+  String get knowledgeEmbedGatePhaseDownloadingRuntime => '正在下载 llama.cpp 运行时…';
+
+  @override
+  String get knowledgeEmbedGatePhaseExtracting => '正在解压运行时…';
+
+  @override
+  String get knowledgeEmbedGatePhaseDownloadingModel => '正在下载嵌入模型…';
+
+  @override
+  String get knowledgeEmbedGatePhaseStarting => '正在启动嵌入服务…';
+
+  @override
+  String get knowledgeEmbedGatePhaseDownloading => '下载中…';
+
+  @override
+  String get knowledgeEmbedGateStepsAria => '嵌入安装步骤';
 
   @override
   String get knowledgePluginsLede => '可选连接器。Notion 需要 MCP URL，不需要 Notion 应用。';

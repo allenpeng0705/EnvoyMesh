@@ -825,19 +825,19 @@ abstract class AppLocalizations {
   /// No description provided for @knowledgeEmbedGateBodyNeeded.
   ///
   /// In en, this message translates to:
-  /// **'Knowledge search needs a local embedding model on your home node. Download starts automatically when the app launches — Browse stays unavailable until it finishes. You can also start or retry from here.'**
+  /// **'Vault Ask needs a local embedding model on your home node. Browse works without it. Download starts automatically when the app launches — you can also start or retry from Setup.'**
   String get knowledgeEmbedGateBodyNeeded;
 
   /// No description provided for @knowledgeEmbedGateBodyDownloading.
   ///
   /// In en, this message translates to:
-  /// **'Download is running on your home node (started with the app). You can leave this screen; Knowledge unlocks when the embedder is ready.'**
+  /// **'Download is running on your home node (started with the app). You can leave this screen; Ask unlocks when the embedder is ready.'**
   String get knowledgeEmbedGateBodyDownloading;
 
   /// No description provided for @knowledgeEmbedGateBodyError.
   ///
   /// In en, this message translates to:
-  /// **'The embedding runtime or model could not be installed on the home node. Retry the download, or fix Setup on the desktop app.'**
+  /// **'The embedding runtime or model could not be installed on the home node. Retry the download, or fix Setup on the desktop app. Browse still works.'**
   String get knowledgeEmbedGateBodyError;
 
   /// No description provided for @knowledgeEmbedGateDownload.
@@ -873,19 +873,19 @@ abstract class AppLocalizations {
   /// No description provided for @knowledgeEmbedGateStripNeeded.
   ///
   /// In en, this message translates to:
-  /// **'Knowledge unavailable — embedding model not installed on home'**
+  /// **'Ask needs an embedding model on home — Browse still works'**
   String get knowledgeEmbedGateStripNeeded;
 
   /// No description provided for @knowledgeEmbedGateStripDownloading.
   ///
   /// In en, this message translates to:
-  /// **'Knowledge unavailable — embedding model downloading on home'**
+  /// **'Embedding model downloading on home — Ask waits; Browse works'**
   String get knowledgeEmbedGateStripDownloading;
 
   /// No description provided for @knowledgeEmbedGateStripError.
   ///
   /// In en, this message translates to:
-  /// **'Knowledge unavailable — embedding setup failed on home'**
+  /// **'Embedding setup failed on home — retry in Setup. Browse still works'**
   String get knowledgeEmbedGateStripError;
 
   /// No description provided for @knowledgeEmbedGateDownloadStarted.
@@ -893,6 +893,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Embedding download started on home'**
   String get knowledgeEmbedGateDownloadStarted;
+
+  /// No description provided for @knowledgeEmbedGateBlockedToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish embedding setup before asking the vault.'**
+  String get knowledgeEmbedGateBlockedToast;
+
+  /// No description provided for @knowledgeEmbedGatePhaseDetecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Detecting platform…'**
+  String get knowledgeEmbedGatePhaseDetecting;
+
+  /// No description provided for @knowledgeEmbedGatePhaseDownloadingRuntime.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading llama.cpp runtime…'**
+  String get knowledgeEmbedGatePhaseDownloadingRuntime;
+
+  /// No description provided for @knowledgeEmbedGatePhaseExtracting.
+  ///
+  /// In en, this message translates to:
+  /// **'Extracting runtime…'**
+  String get knowledgeEmbedGatePhaseExtracting;
+
+  /// No description provided for @knowledgeEmbedGatePhaseDownloadingModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading embedding model…'**
+  String get knowledgeEmbedGatePhaseDownloadingModel;
+
+  /// No description provided for @knowledgeEmbedGatePhaseStarting.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting embedder…'**
+  String get knowledgeEmbedGatePhaseStarting;
+
+  /// No description provided for @knowledgeEmbedGatePhaseDownloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading…'**
+  String get knowledgeEmbedGatePhaseDownloading;
+
+  /// No description provided for @knowledgeEmbedGateStepsAria.
+  ///
+  /// In en, this message translates to:
+  /// **'Embedding install steps'**
+  String get knowledgeEmbedGateStepsAria;
 
   /// No description provided for @knowledgePluginsLede.
   ///

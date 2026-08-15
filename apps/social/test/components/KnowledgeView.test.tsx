@@ -22,7 +22,7 @@ const {
     running: true,
     phase: "ready",
     endpoint: "http://127.0.0.1:18791",
-    activeModelId: "qwen3-embedding-0.6b-q4_k_m",
+    activeModelId: "qwen3-embedding-0.6b-q8_0",
   }),
   enableEnvoyLocalEmbed: vi.fn().mockResolvedValue({
     running: false,
@@ -130,7 +130,7 @@ describe("KnowledgeView", () => {
       running: true,
       phase: "ready",
       endpoint: "http://127.0.0.1:18791",
-      activeModelId: "qwen3-embedding-0.6b-q4_k_m",
+      activeModelId: "qwen3-embedding-0.6b-q8_0",
     });
   });
 
@@ -145,25 +145,22 @@ describe("KnowledgeView", () => {
     });
   });
 
-  it("gates Browse until local embed is ready (manual download; boot provisions separately)", async () => {
+  it("keeps Browse available when local embed is not ready (Ask stays gated)", async () => {
     getEnvoyLocalEmbedStatus.mockResolvedValue({
       running: false,
       phase: "idle",
       lastError: null,
     });
     render(<KnowledgeView />);
-    expect(await screen.findByTestId("knowledge-embed-gate")).toBeTruthy();
-    expect(screen.queryByTestId("knowledge-browse")).toBeNull();
+    expect(await screen.findByTestId("knowledge-browse")).toBeTruthy();
     expect(screen.getByTestId("knowledge-embed-strip")).toBeTruthy();
+    expect(screen.queryByTestId("knowledge-embed-gate")).toBeNull();
+    expect(
+      (screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
     // Opening Knowledge must NOT kick off enable — that is node/Tauri boot.
     await new Promise((r) => setTimeout(r, 50));
     expect(enableEnvoyLocalEmbed).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByTestId("knowledge-embed-gate-download"));
-    await waitFor(() => {
-      expect(enableEnvoyLocalEmbed).toHaveBeenCalledWith({
-        modelId: "qwen3-embedding-0.6b-q4_k_m",
-      });
-    });
   });
 
   it("runs knowledgeQuery from Browse Ask row", async () => {

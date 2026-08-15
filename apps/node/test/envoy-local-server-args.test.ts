@@ -140,4 +140,58 @@ describe("buildEnvoyLocalLlamaServerArgs", () => {
       ]),
     );
   });
+
+  it("passes embedding flags with fit off, CPU device, and batch 512", () => {
+    const args = buildEnvoyLocalLlamaServerArgs({
+      modelPath: "/models/e.gguf",
+      modelId: "embed",
+      port: 18791,
+      platform: metal,
+      serverParams: {
+        ctxSize: 2048,
+        parallel: 1,
+        nGpuLayers: 0,
+        fit: "off",
+        flashAttn: "off",
+        batchSize: 512,
+        ubatchSize: 512,
+      },
+      profileDir: "/profile",
+      forceCpu: true,
+      embedding: true,
+      pooling: "last",
+    });
+    expect(args).toEqual(
+      expect.arrayContaining([
+        "--embedding",
+        "--pooling",
+        "last",
+        "--fit",
+        "off",
+        "-fa",
+        "off",
+        "-dev",
+        "none",
+        "-b",
+        "512",
+        "-ub",
+        "512",
+        "-ngl",
+        "0",
+      ]),
+    );
+  });
+
+  it("pins -dev none when forceCpu without embedding", () => {
+    const args = buildEnvoyLocalLlamaServerArgs({
+      modelPath: "/models/m.gguf",
+      modelId: "m",
+      port: 18790,
+      platform: metal,
+      serverParams: {},
+      profileDir: "/profile",
+      forceCpu: true,
+    });
+    expect(args).toEqual(expect.arrayContaining(["-dev", "none", "-ngl", "0"]));
+  });
 });

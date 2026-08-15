@@ -95,6 +95,10 @@ export const agentNetworkSettingsMessages = {
     enableButton: "Enable office LAN team",
     enabling: "Enabling…",
     enabled: "Office LAN team enabled",
+    disableButton: "Disable office LAN team",
+    disabling: "Disabling…",
+    disableHint:
+      "Turns off Join Agent Network and LAN Auto-Bond on this node. The shared token is kept so you can re-enable later.",
     copyToken: "Copy token",
     tokenCopied: "Token copied",
     shareHint:

@@ -23,6 +23,7 @@ import type {
   ModelProviderMode,
   PiStatus,
   EnvoyLocalStatus,
+  EnvoyLocalEmbedStatus,
   EnvoyLocalInstalledModel,
   EnvoyLocalCatalogModel,
   EnvoyLocalEngineUpdateInfo,
@@ -252,6 +253,13 @@ export function RagIndexStatusPanel() {
       setStatus(next);
     } catch {
       // Status panel will show lastEmbedError / error phase on next poll.
+      // Keep showing busy if the node is still indexing (progress events).
+      try {
+        const next = await nodeService.getRagIndexStatus();
+        setStatus(next);
+      } catch {
+        /* ignore */
+      }
     } finally {
       setRebuilding(false);
     }
@@ -515,6 +523,29 @@ export function KnowledgeBaseSettings(props: {
   const embed = props.embedReadiness ?? localEmbed;
   const embedStatus = embed.status;
   const embedBusy = embed.inFlight;
+  const [installedEmbedModels, setInstalledEmbedModels] = useState<
+    EnvoyLocalInstalledModel[]
+  >([]);
+  const [embedModelsBusy, setEmbedModelsBusy] = useState(false);
+  const [chatModelsDir, setChatModelsDir] = useState<string | null>(null);
+
+  const refreshInstalledEmbedModels = useCallback(async () => {
+    try {
+      const list = await nodeService.listEnvoyLocalInstalledEmbedModels();
+      setInstalledEmbedModels(Array.isArray(list) ? list : []);
+    } catch {
+      setInstalledEmbedModels([]);
+    }
+  }, [nodeService]);
+
+  useEffect(() => {
+    if ((kb.embedding?.mode ?? "envoy-local") !== "envoy-local") return;
+    void refreshInstalledEmbedModels();
+    void nodeService
+      .getEnvoyLocalStatus()
+      .then((st) => setChatModelsDir(st?.modelsDir?.trim() ? st.modelsDir : null))
+      .catch(() => setChatModelsDir(null));
+  }, [kb.embedding?.mode, refreshInstalledEmbedModels, embedStatus?.activeModelId, embedStatus?.running, nodeService]);
 
   const patch = async (partial: Partial<AiKnowledgeBaseSettings>): Promise<boolean> => {
     const merged = { ...kb, ...partial };
@@ -733,7 +764,11 @@ export function KnowledgeBaseSettings(props: {
                         }}
                       >
                         {embedBusy
-                          ? t("settings.ai.rag.embeddingLocalInstalling")
+                          ? localizeEnvoyLocalDownloadProgress(t, {
+                              phase: embedStatus?.phase,
+                              label: embedStatus?.download?.label,
+                              ns: "knowledge.embedGate",
+                            })
                           : t("settings.ai.rag.embeddingLocalInstall")}
                       </button>
                     ) : null}
@@ -756,13 +791,52 @@ export function KnowledgeBaseSettings(props: {
             {isEnvoyLocalEmbed ? (
               <div className="form-group knowledge-setup-grid__span-2">
                 <label htmlFor="kb-embed-model">{t("settings.ai.rag.embeddingModel")}</label>
+                {chatModelsDir ? (
+                  <div className="settings-hint" data-testid="kb-chat-models-dir">
+                    <strong>{t("settings.ai.rag.chatModelsFolder")}:</strong>{" "}
+                    <span className="settings-mono">{chatModelsDir}</span>
+                    <div>{t("settings.ai.rag.chatModelsFolderHint")}</div>
+                  </div>
+                ) : null}
+                {embedStatus?.modelsDir ? (
+                  <div className="settings-hint" data-testid="kb-embed-models-dir">
+                    <strong>{t("settings.ai.rag.embeddingLocalModelsFolder")}:</strong>{" "}
+                    <span className="settings-mono">{embedStatus.modelsDir}</span>
+                    <div>{t("settings.ai.rag.embeddingLocalModelsFolderHint")}</div>
+                  </div>
+                ) : null}
+                <div className="settings-buttons" style={{ marginBottom: "0.5rem" }}>
+                  <button
+                    type="button"
+                    className="settings-cancel-btn"
+                    data-testid="kb-embed-refresh-models"
+                    disabled={embedBusy || embedModelsBusy}
+                    onClick={async () => {
+                      setEmbedModelsBusy(true);
+                      try {
+                        await refreshInstalledEmbedModels();
+                        await embed.refresh();
+                        showToast(t("settings.ai.rag.embeddingLocalModelsRefreshed"), "success");
+                      } catch (err) {
+                        showToast(
+                          err instanceof Error ? err.message : String(err),
+                          "error",
+                        );
+                      } finally {
+                        setEmbedModelsBusy(false);
+                      }
+                    }}
+                  >
+                    {t("settings.ai.rag.embeddingLocalRefreshModels")}
+                  </button>
+                </div>
                 <select
                   id="kb-embed-model"
                   data-testid="kb-embed-model"
                   value={resolveEnvoyLocalEmbedModelId(
                     kb.embedding?.modelName ?? embedStatus?.activeModelId,
                   )}
-                  disabled={embedBusy}
+                  disabled={embedBusy || embedModelsBusy}
                   onChange={async (e) => {
                     const modelId = resolveEnvoyLocalEmbedModelId(e.target.value);
                     const saved = await patch({
@@ -779,19 +853,48 @@ export function KnowledgeBaseSettings(props: {
                       },
                     });
                     if (!saved) return;
-                    // Selecting a curated model also provisions/downloads it.
-                    const st = await embed.startDownload(modelId);
-                    if (st?.running) {
+                    const installed = installedEmbedModels.some((m) => m.id === modelId);
+                    try {
+                      if (installed) {
+                        const st = await nodeService.setEnvoyLocalEmbedActiveModel({
+                          modelId,
+                        });
+                        await embed.refresh();
+                        await refreshInstalledEmbedModels();
+                        if (st?.running) {
+                          showToast(
+                            t("settings.ai.rag.embeddingLocalReadyToast"),
+                            "success",
+                          );
+                        } else if (st?.lastError) {
+                          showToast(st.lastError, "error");
+                        } else {
+                          showToast(
+                            t("settings.ai.rag.embeddingLocalSwitchStartedToast"),
+                            "success",
+                          );
+                        }
+                      } else {
+                        const st = await embed.startDownload(modelId);
+                        await refreshInstalledEmbedModels();
+                        if (st?.running) {
+                          showToast(
+                            t("settings.ai.rag.embeddingLocalReadyToast"),
+                            "success",
+                          );
+                        } else if (st?.lastError) {
+                          showToast(st.lastError, "error");
+                        } else {
+                          showToast(
+                            t("settings.ai.rag.embeddingLocalSwitchStartedToast"),
+                            "success",
+                          );
+                        }
+                      }
+                    } catch (err) {
                       showToast(
-                        t("settings.ai.rag.embeddingLocalReadyToast"),
-                        "success",
-                      );
-                    } else if (st?.lastError) {
-                      showToast(st.lastError, "error");
-                    } else {
-                      showToast(
-                        t("settings.ai.rag.embeddingLocalSwitchStartedToast"),
-                        "success",
+                        err instanceof Error ? err.message : String(err),
+                        "error",
                       );
                     }
                   }}
@@ -806,8 +909,24 @@ export function KnowledgeBaseSettings(props: {
                             ),
                           })
                         : t(`settings.ai.rag.embeddingLocalModel.${m.id}`, m.label)}
+                      {installedEmbedModels.some((i) => i.id === m.id)
+                        ? ` — ${t("settings.ai.rag.embeddingLocalModelInstalled")}`
+                        : ""}
                     </option>
                   ))}
+                  {installedEmbedModels
+                    .filter(
+                      (m) =>
+                        !ENVOY_LOCAL_EMBED_MODEL_OPTIONS.some((c) => c.id === m.id),
+                    )
+                    .map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.fileName} ({m.id})
+                        {m.active
+                          ? ` — ${t("settings.ai.envoyLocal.activeBadge")}`
+                          : ""}
+                      </option>
+                    ))}
                 </select>
                 <p className="field-desc">
                   {t("settings.ai.rag.embeddingLocalModelHint")}
@@ -2324,6 +2443,7 @@ function EnvoyLocalSettings({
   const nodeService = useNodeService();
   const { nodeConfig } = useNodeState();
   const [status, setStatus] = useState<EnvoyLocalStatus | null>(null);
+  const [embedStatus, setEmbedStatus] = useState<EnvoyLocalEmbedStatus | null>(null);
   const [installed, setInstalled] = useState<EnvoyLocalInstalledModel[]>([]);
   const [catalog, setCatalog] = useState<EnvoyLocalCatalogModel[]>([]);
   const [engineInfo, setEngineInfo] = useState<EnvoyLocalEngineUpdateInfo | null>(null);
@@ -2357,12 +2477,14 @@ function EnvoyLocalSettings({
 
   const refresh = useCallback(async (opts?: { syncParams?: boolean }) => {
     try {
-      const [st, models, eng] = await Promise.all([
+      const [st, models, eng, embedSt] = await Promise.all([
         nodeService.getEnvoyLocalStatus(),
         nodeService.listEnvoyLocalInstalledModels(),
         nodeService.checkEnvoyLocalEngineUpdate(),
+        nodeService.getEnvoyLocalEmbedStatus().catch(() => null),
       ]);
       setStatus(st);
+      setEmbedStatus(embedSt);
       setInstalled(Array.isArray(models) ? models : []);
       setEngineInfo(eng);
       if (opts?.syncParams !== false) {
@@ -2451,12 +2573,14 @@ function EnvoyLocalSettings({
       (status.phase === "downloading-runtime" ||
         status.phase === "extracting-runtime" ||
         status.phase === "downloading-model" ||
-        status.phase === "detecting")
+        status.phase === "detecting" ||
+        status.phase === "starting")
     ) {
-      return t("settings.ai.envoyLocal.statusDownloading");
-    }
-    if (inFlight && status.phase === "starting") {
-      return t("settings.ai.envoyLocal.statusStarting");
+      return localizeEnvoyLocalDownloadProgress(t, {
+        phase: status.phase,
+        label: status.download?.label,
+        ns: "settings.ai.envoyLocal",
+      });
     }
     if (status.running || status.phase === "ready") return t("settings.ai.envoyLocal.statusReady");
     if (status.phase === "error") return t("settings.ai.envoyLocal.statusError");
@@ -2580,10 +2704,14 @@ function EnvoyLocalSettings({
           </dd>
           <dt>{t("settings.ai.envoyLocal.accel")}</dt>
           <dd>{status.accel ?? "—"}</dd>
-          <dt>{t("settings.ai.envoyLocal.model")}</dt>
+          <dt>{t("settings.ai.envoyLocal.chatModel")}</dt>
           <dd>{status.activeModelId ?? "—"}</dd>
           <dt>{t("settings.ai.envoyLocal.endpoint")}</dt>
           <dd className="settings-mono">{status.endpoint}</dd>
+          <dt>{t("settings.ai.envoyLocal.embedModel")}</dt>
+          <dd>{embedStatus?.activeModelId ?? "—"}</dd>
+          <dt>{t("settings.ai.envoyLocal.embedEndpoint")}</dt>
+          <dd className="settings-mono">{embedStatus?.endpoint ?? "—"}</dd>
           <dt>{t("settings.ai.envoyLocal.downloadRegion")}</dt>
           <dd>
             <label className="settings-label">
@@ -3014,6 +3142,13 @@ function EnvoyLocalSettings({
           <strong>{t("settings.ai.envoyLocal.modelsFolder")}:</strong>{" "}
           <span className="settings-mono">{status.modelsDir}</span>
           <div>{t("settings.ai.envoyLocal.modelsFolderHint")}</div>
+        </div>
+      ) : null}
+      {embedStatus?.modelsDir ? (
+        <div className="settings-hint" data-testid="envoy-local-embed-models-dir">
+          <strong>{t("settings.ai.envoyLocal.embedModelsFolder")}:</strong>{" "}
+          <span className="settings-mono">{embedStatus.modelsDir}</span>
+          <div>{t("settings.ai.envoyLocal.embedModelsFolderHint")}</div>
         </div>
       ) : null}
       <div className="settings-buttons">

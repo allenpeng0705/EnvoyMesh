@@ -422,6 +422,31 @@ class AppLocalizationsKo extends AppLocalizations {
   String get knowledgeEmbedGateDownloadStarted => '홈에서 임베딩 다운로드 시작';
 
   @override
+  String get knowledgeEmbedGateBlockedToast => '볼트에 질문하기 전에 임베딩 설정을 완료하세요.';
+
+  @override
+  String get knowledgeEmbedGatePhaseDetecting => '플랫폼 감지 중…';
+
+  @override
+  String get knowledgeEmbedGatePhaseDownloadingRuntime =>
+      'llama.cpp 런타임 다운로드 중…';
+
+  @override
+  String get knowledgeEmbedGatePhaseExtracting => '런타임 압축 해제 중…';
+
+  @override
+  String get knowledgeEmbedGatePhaseDownloadingModel => '임베딩 모델 다운로드 중…';
+
+  @override
+  String get knowledgeEmbedGatePhaseStarting => '임베더 시작 중…';
+
+  @override
+  String get knowledgeEmbedGatePhaseDownloading => '다운로드 중…';
+
+  @override
+  String get knowledgeEmbedGateStepsAria => '임베딩 설치 단계';
+
+  @override
   String get knowledgePluginsLede =>
       '선택적 커넥터. Notion은 MCP URL이 필요합니다 (Notion 앱이 아님).';
 
@@ -1464,7 +1489,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get publishedPhotoWall => '포토월';
 
   @override
-  String get publishedFeed => 'Feed';
+  String get publishedFeed => '피드';
 
   @override
   String get engagementCommentHint => '댓글 작성…';
@@ -2107,98 +2132,96 @@ class AppLocalizationsKo extends AppLocalizations {
       '도달 가능한 Agent Network 워커가 없습니다. 먼저 홈 노드의 에이전트와 연락처를 본드하세요.';
 
   @override
-  String get chainsStartReadinessTitle => 'Get workers ready';
+  String get chainsStartReadinessTitle => '워커 준비하기';
 
   @override
   String get chainsStartReadinessJoinOff =>
-      'On the home computer: Team jobs → Manage workers → turn on Join Agent Network.';
+      '홈 컴퓨터에서: 팀 작업 → 워커 관리 → 에이전트 네트워크 참여를 켜세요.';
 
   @override
   String get chainsStartReadinessBond =>
-      'Bond contacts in Discover (Social or this phone), then ask them to Join Agent Network.';
+      '발견(Social 또는 이 휴대폰)에서 연락처를 본딩한 뒤, 상대에게도 에이전트 네트워크 참여를 요청하세요.';
 
   @override
   String get chainsStartReadinessRefresh =>
-      'On Social Team jobs, open Manage workers and refresh cards, then preview again here.';
+      'Social 팀 작업에서 워커 관리를 열고 카드를 새로고침한 다음, 여기서 다시 미리보기 하세요.';
 
   @override
-  String get chainsStepsTitle => 'Job steps';
+  String get chainsStepsTitle => '작업 단계';
 
   @override
-  String get chainsStepsWaitingOn => 'Waiting on:';
+  String get chainsStepsWaitingOn => '대기 중:';
 
   @override
   String get chainsAttachmentHonesty =>
-      'Files you attach live on this home’s vault. When a worker is assigned, they receive a copy of those inputs under their Team job workspace — not a standing mirror of your Library.';
+      '첨부 파일은 이 홈의 볼트에 저장됩니다. 워커가 배정되면 해당 입력 사본이 팀 작업 작업 공간으로 전달됩니다 — 라이브러리의 상시 미러가 아닙니다.';
 
   @override
-  String get chainsDeliveryTitle => 'Input delivery';
+  String get chainsDeliveryTitle => '입력 전달';
 
   @override
-  String get chainsDeliveryRetry => 'Retry';
+  String get chainsDeliveryRetry => '다시 시도';
 
   @override
-  String get chainsDeliveryRetried => 'Input delivery retried';
+  String get chainsDeliveryRetried => '입력 전달을 다시 시도했습니다';
 
   @override
-  String get chainsDeliveryRetryFailed => 'Could not retry input delivery';
+  String get chainsDeliveryRetryFailed => '입력 전달을 다시 시도할 수 없습니다';
 
   @override
-  String get chainsDeliveryPhasePending => 'Pending';
+  String get chainsDeliveryPhasePending => '대기 중';
 
   @override
-  String get chainsDeliveryPhaseTransferring => 'Transferring';
+  String get chainsDeliveryPhaseTransferring => '전송 중';
 
   @override
-  String get chainsDeliveryPhaseVerified => 'Delivered';
+  String get chainsDeliveryPhaseVerified => '전달됨';
 
   @override
-  String get chainsDeliveryPhaseFailed => 'Failed';
+  String get chainsDeliveryPhaseFailed => '실패';
 
   @override
-  String get chainsInputDeliveryScope => 'Input delivery';
+  String get chainsInputDeliveryScope => '입력 전달';
 
   @override
-  String get chainsInputDeliveryScopeReferenced => 'Referenced only';
+  String get chainsInputDeliveryScopeReferenced => '참조만';
 
   @override
-  String get chainsInputDeliveryScopeAll => 'All attachments';
+  String get chainsInputDeliveryScopeAll => '모든 첨부';
 
   @override
   String get chainsInputDeliveryScopeHint =>
-      'Referenced (default) sends files mentioned as [label] in a step; if none match, all job attachments are sent. All sends every attachment to each awarded worker.';
+      '「참조만」(기본)은 단계에서 [label]로 언급된 파일을 보냅니다. 일치가 없으면 모든 첨부를 보냅니다. 「모두」는 배정된 각 워커에게 모든 첨부를 보냅니다.';
 
   @override
-  String get chainsIterationAskOwnerTitle => 'Review draft before publish';
+  String get chainsIterationAskOwnerTitle => '게시 전 초안 검토';
 
   @override
-  String get chainsIterationAskOwnerBody =>
-      'Accept to publish, or continue for another refinement round.';
+  String get chainsIterationAskOwnerBody => '게시하려면 수락하거나, 추가 다듬기 라운드를 계속하세요.';
 
   @override
-  String get chainsIterationAcceptDraft => 'Accept & publish';
+  String get chainsIterationAcceptDraft => '수락 및 게시';
 
   @override
-  String get chainsIterationContinue => 'Continue refining';
+  String get chainsIterationContinue => '계속 다듬기';
 
   @override
-  String get chainsIterationAccepted => 'Draft accepted — publishing';
+  String get chainsIterationAccepted => '초안 수락됨 — 게시 중';
 
   @override
-  String get chainsIterationContinued => 'Starting another refinement round';
+  String get chainsIterationContinued => '다른 다듬기 라운드 시작';
 
   @override
-  String get chainsIterationResolveFailed => 'Could not apply your decision';
+  String get chainsIterationResolveFailed => '결정을 적용할 수 없습니다';
 
   @override
-  String get chainsObservedTitle => 'Jobs you’re on';
+  String get chainsObservedTitle => '참여 중인 작업';
 
   @override
-  String get chainsObservedHint =>
-      'View only — only the Assigner can manage these jobs.';
+  String get chainsObservedHint => '읽기 전용 — 이 작업은 할당자만 관리할 수 있습니다.';
 
   @override
-  String get chainsObservedReadOnly => 'View only';
+  String get chainsObservedReadOnly => '읽기 전용';
 
   @override
   String get chainsStartNeedWorkers =>
@@ -2264,32 +2287,32 @@ class AppLocalizationsKo extends AppLocalizations {
   String get chainsCancelReason => 'EnvoyGo에서 취소됨';
 
   @override
-  String get chainsCancelStep => 'Cancel step';
+  String get chainsCancelStep => '단계 취소';
 
   @override
-  String get chainsCancelStepTitle => 'Cancel this step?';
+  String get chainsCancelStepTitle => '이 단계를 취소할까요?';
 
   @override
   String get chainsCancelStepBody =>
-      'This step and any steps that depend on it will stop. Partial results already collected are kept.';
+      '이 단계와 이에 의존하는 단계가 중지됩니다. 이미 수집된 부분 결과는 유지됩니다.';
 
   @override
-  String get chainsCancelStepFailed => 'Could not cancel this step';
+  String get chainsCancelStepFailed => '이 단계를 취소할 수 없습니다';
 
   @override
-  String get chainsReassignStep => 'Reassign';
+  String get chainsReassignStep => '재배정';
 
   @override
-  String get chainsStepCancelled => 'Step cancelled';
+  String get chainsStepCancelled => '단계가 취소됨';
 
   @override
-  String get chainsStepReassigned => 'Step reassigned';
+  String get chainsStepReassigned => '단계가 재배정됨';
 
   @override
-  String get chainsReassignFailed => 'Could not reassign this step';
+  String get chainsReassignFailed => '이 단계를 재배정할 수 없습니다';
 
   @override
-  String get chainsCancelStepReason => 'Cancelled step from EnvoyGo';
+  String get chainsCancelStepReason => 'EnvoyGo에서 단계 취소됨';
 
   @override
   String get chainsDetailCancelled => '이 작업은 취소되었습니다.';

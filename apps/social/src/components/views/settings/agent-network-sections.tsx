@@ -102,6 +102,32 @@ export function OfficeLanPresetSection() {
     }
   }, [nodeService, refreshNodeConfig, token]);
 
+  const handleDisable = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setJustEnabled(false);
+    try {
+      console.info("[agent-network.ui] Office LAN disable");
+      // Turn off Join + LAN auto-bond. Keep the fleet token so re-enable is one click.
+      await nodeService.updateNodeConfig({
+        capabilityProviderEnabled: false,
+        lanAutoBondEnabled: false,
+        lanAutoBondAutoJoinAgentNetwork: false,
+        discoveryProfile: "wan-default",
+      } as Parameters<typeof nodeService.updateNodeConfig>[0]);
+      await refreshNodeConfig();
+      if (typeof nodeService.refreshAgentNetworkWorkers === "function") {
+        await nodeService.refreshAgentNetworkWorkers().catch(() => undefined);
+      }
+      console.info("[agent-network.ui] Office LAN disable done");
+    } catch (err) {
+      console.warn("[agent-network.ui] Office LAN disable failed", err);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }, [nodeService, refreshNodeConfig]);
+
   const handleCopy = useCallback(async () => {
     const value = (nodeConfig?.lanAutoBondFleetToken ?? "").trim();
     if (!value) return;
@@ -119,19 +145,35 @@ export function OfficeLanPresetSection() {
       <h4>{t("settings.agentNetwork.officeLan.heading")}</h4>
       <p className="section-desc">{t("settings.agentNetwork.officeLan.desc")}</p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <button
-          type="button"
-          className="settings-button"
-          data-testid="office-lan-enable"
-          onClick={() => {
-            void handleEnable();
-          }}
-          disabled={busy || alreadyOn}
-        >
-          {busy
-            ? t("settings.agentNetwork.officeLan.enabling")
-            : t("settings.agentNetwork.officeLan.enableButton")}
-        </button>
+        {!alreadyOn ? (
+          <button
+            type="button"
+            className="settings-button"
+            data-testid="office-lan-enable"
+            onClick={() => {
+              void handleEnable();
+            }}
+            disabled={busy}
+          >
+            {busy
+              ? t("settings.agentNetwork.officeLan.enabling")
+              : t("settings.agentNetwork.officeLan.enableButton")}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="settings-button"
+            data-testid="office-lan-disable"
+            onClick={() => {
+              void handleDisable();
+            }}
+            disabled={busy}
+          >
+            {busy
+              ? t("settings.agentNetwork.officeLan.disabling")
+              : t("settings.agentNetwork.officeLan.disableButton")}
+          </button>
+        )}
         {token.length >= 8 ? (
           <button
             type="button"
@@ -153,7 +195,12 @@ export function OfficeLanPresetSection() {
           <span className="settings-hint">{t("settings.agentNetwork.officeLan.enabled")}</span>
         ) : null}
       </div>
-      {token.length >= 8 ? (
+      {alreadyOn ? (
+        <p className="field-desc" style={{ marginTop: 8 }}>
+          {t("settings.agentNetwork.officeLan.disableHint")}
+        </p>
+      ) : null}
+      {token.length >= 8 && !alreadyOn ? (
         <p className="field-desc" style={{ marginTop: 8 }}>
           {t("settings.agentNetwork.officeLan.shareHint")}
         </p>

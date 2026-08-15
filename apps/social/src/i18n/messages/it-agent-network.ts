@@ -17,6 +17,10 @@ export const itAgentNetworkSettingsMessages = {
     enableButton: "Abilita team LAN ufficio",
     enabling: "Abilitazione…",
     enabled: "Team LAN ufficio abilitato",
+    disableButton: "Disabilita team LAN ufficio",
+    disabling: "Disabilitazione…",
+    disableHint:
+      "Disattiva l'adesione alla rete agenti e il collegamento LAN automatico su questo nodo. Il token condiviso viene conservato per riabilitare facilmente.",
     copyToken: "Copia token",
     tokenCopied: "Token copiato",
     shareHint: "Condividi questo token con le altre macchine, poi abilita il team LAN ufficio su ciascuna (o incollalo sotto Collegamento automatico LAN).",

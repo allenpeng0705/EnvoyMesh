@@ -409,6 +409,12 @@ export interface NodeServiceClient {
   ): Promise<import("@envoymesh/api").EnvoyLocalEmbedStatus>;
   stopEnvoyLocalEmbed(): Promise<import("@envoymesh/api").EnvoyLocalEmbedStatus>;
   disableEnvoyLocalEmbed(): Promise<import("@envoymesh/api").EnvoyLocalEmbedStatus>;
+  listEnvoyLocalInstalledEmbedModels(): Promise<
+    import("@envoymesh/api").EnvoyLocalInstalledModel[]
+  >;
+  setEnvoyLocalEmbedActiveModel(
+    params: import("@envoymesh/api").SetEnvoyLocalEmbedActiveModelParams,
+  ): Promise<import("@envoymesh/api").EnvoyLocalEmbedStatus>;
   declineEnvoyLocalAutoProvision(): Promise<
     import("@envoymesh/api").EnvoyLocalStatus
   >;
@@ -1560,6 +1566,20 @@ function createWsNodeServiceClient(
         import("@envoymesh/api").EnvoyLocalEmbedStatus
       >;
     },
+    async listEnvoyLocalInstalledEmbedModels() {
+      return wsClient.rpc("listEnvoyLocalInstalledEmbedModels") as Promise<
+        import("@envoymesh/api").EnvoyLocalInstalledModel[]
+      >;
+    },
+    async setEnvoyLocalEmbedActiveModel(
+      params: import("@envoymesh/api").SetEnvoyLocalEmbedActiveModelParams,
+    ) {
+      return wsClient.rpc(
+        "setEnvoyLocalEmbedActiveModel",
+        { modelId: params.modelId },
+        { timeoutMs: 120_000 },
+      ) as Promise<import("@envoymesh/api").EnvoyLocalEmbedStatus>;
+    },
     async enableEnvoyLocal(params?: import("@envoymesh/api").EnableEnvoyLocalParams) {
       // Job is detached on the node; poll getEnvoyLocalStatus for progress.
       return wsClient.rpc(
@@ -2160,7 +2180,10 @@ function createWsNodeServiceClient(
       return wsClient.rpc("getRagIndexStatus", {}) as Promise<RagIndexStatus>;
     },
     async reindexRagKnowledge(params?: { force?: boolean }) {
-      return wsClient.rpc("reindexRagKnowledge", (params ?? {}) as Record<string, unknown>) as Promise<RagIndexStatus>;
+      // Large vaults take many minutes on CPU embed; default 30s RPC cuts off Rebuild.
+      return wsClient.rpc("reindexRagKnowledge", (params ?? {}) as Record<string, unknown>, {
+        timeoutMs: 45 * 60_000,
+      }) as Promise<RagIndexStatus>;
     },
     async testRagEmbedding() {
       return wsClient.rpc("testRagEmbedding", {}) as Promise<

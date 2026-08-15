@@ -2170,6 +2170,44 @@ textarea::placeholder {
   margin: 0 0 1rem;
 }
 
+.knowledge-embed-gate__steps {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.knowledge-embed-gate__step {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-size: var(--text-sm);
+  line-height: 1.35;
+  color: var(--color-text-muted);
+}
+
+.knowledge-embed-gate__step--done {
+  color: var(--color-text-muted);
+  opacity: 0.85;
+}
+
+.knowledge-embed-gate__step--current {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.knowledge-embed-gate__step--pending {
+  opacity: 0.55;
+}
+
+.knowledge-embed-gate__step-mark {
+  flex: 0 0 1.1rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .knowledge-embed-gate__actions {
   display: flex;
   flex-wrap: wrap;

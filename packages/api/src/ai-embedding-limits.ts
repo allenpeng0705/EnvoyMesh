@@ -18,6 +18,7 @@ export const KNOWN_EMBEDDING_MAX_INPUT_TOKENS: Readonly<Record<string, number>> 
   "nomic-embed-text": 8192,
   "qwen3-embedding-4b-q4_k_m": 8192,
   "Qwen3-Embedding-4B": 8192,
+  "qwen3-embedding-0.6b-q8_0": 8192,
   "qwen3-embedding-0.6b-q4_k_m": 8192,
 };
 

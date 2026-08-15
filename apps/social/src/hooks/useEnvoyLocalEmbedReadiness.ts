@@ -1,7 +1,8 @@
 /**
- * Poll Envoy Local embed sidecar readiness for Knowledge gating.
- * When embedding.mode is envoy-local (default), Knowledge Browse/Ask stay
- * blocked until `running`. Cloud/Ollama/mock do not gate.
+ * Poll Envoy Local embed sidecar readiness for Knowledge Ask (RAG).
+ * When embedding.mode is envoy-local (default), Ask stays blocked until
+ * `running`. Browse/file UI does not gate on this. Cloud/Ollama/mock do not
+ * gate Ask either.
  *
  * Download/start is kicked off on **node boot** (Tauri launches the home
  * node), not when opening Knowledge. This hook only polls + manual retry.
@@ -26,6 +27,9 @@ export function usesEnvoyLocalEmbed(embedding?: AiEmbeddingSettings | null): boo
 
 export function isEmbedOperationInFlight(status: EnvoyLocalEmbedStatus | null): boolean {
   if (!status) return false;
+  // Ready sidecar means install finished — never show "Downloading" because a
+  // background enable job or reindex is still wrapping up.
+  if (status.running || status.phase === "ready") return false;
   if (status.operationInProgress) return true;
   if (status.download) return true;
   const phase = status.phase;

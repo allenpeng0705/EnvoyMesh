@@ -17,6 +17,10 @@ export const jaAgentNetworkSettingsMessages = {
     enableButton: "オフィス LAN チームを有効化",
     enabling: "有効化中…",
     enabled: "オフィス LAN チームを有効化しました",
+    disableButton: "オフィス LAN チームを無効化",
+    disabling: "無効化中…",
+    disableHint:
+      "このノードのエージェントネットワーク参加と LAN 自動バンディングをオフにします。共有トークンは保持されるため、後から再有効化できます。",
     copyToken: "トークンをコピー",
     tokenCopied: "トークンをコピーしました",
     shareHint: "このトークンを他のマシンと共有し、それぞれでオフィス LAN チームを有効化してください（または下の LAN 自動バンディングに貼り付け）。",

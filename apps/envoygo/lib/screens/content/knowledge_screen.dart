@@ -13,7 +13,7 @@ import '../../widgets/connection_indicator.dart';
 import 'content_files_tab.dart';
 
 /// Knowledge hub — Content → Knowledge (Browse+Ask | Plugins | Setup).
-/// Mirrors Social [KnowledgeView].
+/// Mirrors Social [KnowledgeView]. Browse does not require embed; Ask does.
 class KnowledgeScreen extends ConsumerStatefulWidget {
   const KnowledgeScreen({super.key});
 
@@ -22,6 +22,65 @@ class KnowledgeScreen extends ConsumerStatefulWidget {
 }
 
 enum _EmbedGateKind { ready, notRequired, downloading, error, needsInstall, unknown }
+
+const _embedInstallSteps = <String>[
+  'detecting',
+  'downloading-runtime',
+  'extracting-runtime',
+  'downloading-model',
+  'starting',
+];
+
+int _embedInstallStepIndex(String? phase) {
+  final idx = _embedInstallSteps.indexOf(phase ?? '');
+  return idx;
+}
+
+String _embedPhaseLabel(AppLocalizations l10n, Map<String, dynamic>? status) {
+  final phase = status?['phase']?.toString() ?? '';
+  final download = status?['download'];
+  final label = download is Map ? download['label']?.toString() ?? '' : '';
+  switch (phase) {
+    case 'detecting':
+      return l10n.knowledgeEmbedGatePhaseDetecting;
+    case 'downloading-runtime':
+      if (label.toLowerCase().startsWith('downloading ')) {
+        return label;
+      }
+      return l10n.knowledgeEmbedGatePhaseDownloadingRuntime;
+    case 'extracting-runtime':
+      return l10n.knowledgeEmbedGatePhaseExtracting;
+    case 'downloading-model':
+      if (label.toLowerCase().startsWith('downloading ')) {
+        return label;
+      }
+      return l10n.knowledgeEmbedGatePhaseDownloadingModel;
+    case 'starting':
+      return l10n.knowledgeEmbedGatePhaseStarting;
+  }
+  if (label.toLowerCase().startsWith('starting ')) {
+    return l10n.knowledgeEmbedGatePhaseStarting;
+  }
+  if (label.toLowerCase().startsWith('detecting ')) {
+    return l10n.knowledgeEmbedGatePhaseDetecting;
+  }
+  if (label.toLowerCase().startsWith('extracting ')) {
+    return l10n.knowledgeEmbedGatePhaseExtracting;
+  }
+  if (label.isNotEmpty) return label;
+  return l10n.knowledgeEmbedGatePhaseDownloading;
+}
+
+String _embedStepLabel(AppLocalizations l10n, String step) {
+  return switch (step) {
+    'detecting' => l10n.knowledgeEmbedGatePhaseDetecting,
+    'downloading-runtime' => l10n.knowledgeEmbedGatePhaseDownloadingRuntime,
+    'extracting-runtime' => l10n.knowledgeEmbedGatePhaseExtracting,
+    'downloading-model' => l10n.knowledgeEmbedGatePhaseDownloadingModel,
+    'starting' => l10n.knowledgeEmbedGatePhaseStarting,
+    _ => l10n.knowledgeEmbedGatePhaseDownloading,
+  };
+}
 
 class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
     with SingleTickerProviderStateMixin {
@@ -156,7 +215,7 @@ class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
     setState(() => _embedKickoffBusy = true);
     try {
       final st = await client.enableEnvoyLocalEmbed(
-        modelId: 'qwen3-embedding-0.6b-q4_k_m',
+        modelId: 'qwen3-embedding-0.6b-q8_0',
       );
       if (!mounted) return;
       setState(() {
@@ -232,7 +291,7 @@ class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
     final stripText = switch (_embedKind) {
-      _EmbedGateKind.downloading => l10n.knowledgeEmbedGateStripDownloading,
+      _EmbedGateKind.downloading => _embedPhaseLabel(l10n, _embedStatus),
       _EmbedGateKind.error => l10n.knowledgeEmbedGateStripError,
       _ => l10n.knowledgeEmbedGateStripNeeded,
     };
@@ -299,21 +358,7 @@ class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
           child: TabBarView(
             controller: _tabs,
             children: [
-              _embedBlocked
-                  ? ListView(
-                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
-                      children: [
-                        _KnowledgeEmbedGatePanel(
-                          kind: _embedKind,
-                          status: _embedStatus,
-                          loadError: _embedLoadError,
-                          inFlight: _embedInFlight,
-                          onDownload: _startEmbedDownload,
-                          onOpenSetup: () => _tabs.animateTo(2),
-                        ),
-                      ],
-                    )
-                  : const _KnowledgeBrowsePanel(),
+              _KnowledgeBrowsePanel(embedBlocked: _embedBlocked),
               const KnowledgePluginsPanel(),
               _KnowledgeSetupPanel(
                 embedBlocked: _embedBlocked,
@@ -355,16 +400,20 @@ class _KnowledgeEmbedGatePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
-    final title = switch (kind) {
-      _EmbedGateKind.downloading => l10n.knowledgeEmbedGateTitleDownloading,
-      _EmbedGateKind.error => l10n.knowledgeEmbedGateTitleError,
-      _ => l10n.knowledgeEmbedGateTitleNeeded,
-    };
-    final body = switch (kind) {
-      _EmbedGateKind.downloading => l10n.knowledgeEmbedGateBodyDownloading,
-      _EmbedGateKind.error => l10n.knowledgeEmbedGateBodyError,
-      _ => l10n.knowledgeEmbedGateBodyNeeded,
-    };
+    final showProgress = kind == _EmbedGateKind.downloading || inFlight;
+    final progressLabel = _embedPhaseLabel(l10n, status);
+    final title = showProgress
+        ? progressLabel
+        : switch (kind) {
+            _EmbedGateKind.error => l10n.knowledgeEmbedGateTitleError,
+            _ => l10n.knowledgeEmbedGateTitleNeeded,
+          };
+    final body = showProgress
+        ? l10n.knowledgeEmbedGateBodyDownloading
+        : switch (kind) {
+            _EmbedGateKind.error => l10n.knowledgeEmbedGateBodyError,
+            _ => l10n.knowledgeEmbedGateBodyNeeded,
+          };
     final errorText = status?['lastError']?.toString().trim().isNotEmpty == true
         ? status!['lastError'].toString()
         : (loadError?.trim().isNotEmpty == true ? loadError : null);
@@ -372,9 +421,12 @@ class _KnowledgeEmbedGatePanel extends StatelessWidget {
     final fraction = download is Map
         ? (download['fraction'] as num?)?.toDouble()
         : null;
-    final progressLabel = download is Map
-        ? download['label']?.toString()
-        : null;
+    final stepIndex = showProgress
+        ? (() {
+            final idx = _embedInstallStepIndex(status?['phase']?.toString());
+            return idx < 0 ? 0 : idx;
+          })()
+        : -1;
 
     return Card(
       elevation: 0,
@@ -396,15 +448,48 @@ class _KnowledgeEmbedGatePanel extends StatelessWidget {
                 ),
               ),
             ],
-            if (kind == _EmbedGateKind.downloading || inFlight) ...[
+            if (showProgress) ...[
               const SizedBox(height: 14),
-              if (progressLabel != null && progressLabel.isNotEmpty)
-                Text(
-                  fraction != null
-                      ? '$progressLabel (${(fraction.clamp(0, 1) * 100).round()}%)'
-                      : progressLabel,
-                  style: theme.textTheme.bodySmall,
-                ),
+              ...List<Widget>.generate(_embedInstallSteps.length, (i) {
+                final step = _embedInstallSteps[i];
+                final done = i < stepIndex;
+                final current = i == stepIndex;
+                final mark = done
+                    ? '✓'
+                    : current
+                        ? '→'
+                        : '·';
+                final style = theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: current ? FontWeight.w600 : FontWeight.w400,
+                  color: current
+                      ? theme.colorScheme.onSurface
+                      : theme.colorScheme.onSurfaceVariant.withValues(
+                          alpha: done ? 0.85 : 0.55,
+                        ),
+                );
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: 18,
+                        child: Text(mark, style: style),
+                      ),
+                      Expanded(
+                        child: Text(_embedStepLabel(l10n, step), style: style),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              const SizedBox(height: 8),
+              Text(
+                fraction != null
+                    ? '$progressLabel (${(fraction.clamp(0, 1) * 100).round()}%)'
+                    : progressLabel,
+                style: theme.textTheme.bodySmall,
+              ),
               const SizedBox(height: 8),
               LinearProgressIndicator(
                 value: fraction?.clamp(0, 1),
@@ -426,7 +511,7 @@ class _KnowledgeEmbedGatePanel extends StatelessWidget {
                   onPressed: inFlight ? null : onDownload,
                   child: Text(
                     inFlight
-                        ? l10n.knowledgeEmbedGateDownloading
+                        ? progressLabel
                         : kind == _EmbedGateKind.error
                             ? l10n.knowledgeEmbedGateRetry
                             : l10n.knowledgeEmbedGateDownload,
@@ -447,8 +532,11 @@ class _KnowledgeEmbedGatePanel extends StatelessWidget {
 }
 
 /// Browse files + Ask vault (combined; mirrors Social Knowledge Browse panel).
+/// File browse does not require embed; Ask does.
 class _KnowledgeBrowsePanel extends StatelessWidget {
-  const _KnowledgeBrowsePanel();
+  const _KnowledgeBrowsePanel({required this.embedBlocked});
+
+  final bool embedBlocked;
 
   @override
   Widget build(BuildContext context) {
@@ -478,7 +566,7 @@ class _KnowledgeBrowsePanel extends StatelessWidget {
             ],
           ),
         ),
-        const _KnowledgeAskPanel(compact: true),
+        _KnowledgeAskPanel(compact: true, embedBlocked: embedBlocked),
         const Divider(height: 24),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -508,9 +596,10 @@ class _KnowledgeBrowsePanel extends StatelessWidget {
 }
 
 class _KnowledgeAskPanel extends ConsumerStatefulWidget {
-  const _KnowledgeAskPanel({this.compact = false});
+  const _KnowledgeAskPanel({this.compact = false, this.embedBlocked = false});
 
   final bool compact;
+  final bool embedBlocked;
 
   @override
   ConsumerState<_KnowledgeAskPanel> createState() => _KnowledgeAskPanelState();
@@ -536,6 +625,15 @@ class _KnowledgeAskPanelState extends ConsumerState<_KnowledgeAskPanel> {
   Future<void> _ask() async {
     final q = _controller.text.trim();
     if (q.isEmpty) return;
+    if (widget.embedBlocked) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context).knowledgeEmbedGateBlockedToast),
+        ),
+      );
+      return;
+    }
     final client = ref.read(nodeServiceProvider);
     if (client == null) return;
     setState(() {
@@ -591,7 +689,7 @@ class _KnowledgeAskPanelState extends ConsumerState<_KnowledgeAskPanel> {
           border: const OutlineInputBorder(),
           isDense: widget.compact,
         ),
-        enabled: !_busy,
+        enabled: !_busy && !widget.embedBlocked,
       ),
       const SizedBox(height: 8),
       Wrap(
@@ -599,7 +697,11 @@ class _KnowledgeAskPanelState extends ConsumerState<_KnowledgeAskPanel> {
         runSpacing: 8,
         children: [
           FilledButton(
-            onPressed: _busy || _controller.text.trim().isEmpty ? null : _ask,
+            onPressed: _busy ||
+                    widget.embedBlocked ||
+                    _controller.text.trim().isEmpty
+                ? null
+                : _ask,
             child: Text(_busy ? l10n.knowledgeAskBusy : l10n.knowledgeAskSubmit),
           ),
           OutlinedButton(
@@ -639,14 +741,17 @@ class _KnowledgeAskPanelState extends ConsumerState<_KnowledgeAskPanel> {
                   isDense: true,
                   filled: true,
                 ),
-                enabled: !_busy,
+                enabled: !_busy && !widget.embedBlocked,
               ),
               const SizedBox(height: 8),
               Row(
                 children: [
                   FilledButton(
-                    onPressed:
-                        _busy || _controller.text.trim().isEmpty ? null : _ask,
+                    onPressed: _busy ||
+                            widget.embedBlocked ||
+                            _controller.text.trim().isEmpty
+                        ? null
+                        : _ask,
                     child: Text(
                       _busy ? l10n.knowledgeAskBusy : l10n.knowledgeAskSubmit,
                     ),

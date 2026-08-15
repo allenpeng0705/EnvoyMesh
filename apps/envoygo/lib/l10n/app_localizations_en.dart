@@ -396,15 +396,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get knowledgeEmbedGateBodyNeeded =>
-      'Knowledge search needs a local embedding model on your home node. Download starts automatically when the app launches — Browse stays unavailable until it finishes. You can also start or retry from here.';
+      'Vault Ask needs a local embedding model on your home node. Browse works without it. Download starts automatically when the app launches — you can also start or retry from Setup.';
 
   @override
   String get knowledgeEmbedGateBodyDownloading =>
-      'Download is running on your home node (started with the app). You can leave this screen; Knowledge unlocks when the embedder is ready.';
+      'Download is running on your home node (started with the app). You can leave this screen; Ask unlocks when the embedder is ready.';
 
   @override
   String get knowledgeEmbedGateBodyError =>
-      'The embedding runtime or model could not be installed on the home node. Retry the download, or fix Setup on the desktop app.';
+      'The embedding runtime or model could not be installed on the home node. Retry the download, or fix Setup on the desktop app. Browse still works.';
 
   @override
   String get knowledgeEmbedGateDownload => 'Download on home';
@@ -424,19 +424,46 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get knowledgeEmbedGateStripNeeded =>
-      'Knowledge unavailable — embedding model not installed on home';
+      'Ask needs an embedding model on home — Browse still works';
 
   @override
   String get knowledgeEmbedGateStripDownloading =>
-      'Knowledge unavailable — embedding model downloading on home';
+      'Embedding model downloading on home — Ask waits; Browse works';
 
   @override
   String get knowledgeEmbedGateStripError =>
-      'Knowledge unavailable — embedding setup failed on home';
+      'Embedding setup failed on home — retry in Setup. Browse still works';
 
   @override
   String get knowledgeEmbedGateDownloadStarted =>
       'Embedding download started on home';
+
+  @override
+  String get knowledgeEmbedGateBlockedToast =>
+      'Finish embedding setup before asking the vault.';
+
+  @override
+  String get knowledgeEmbedGatePhaseDetecting => 'Detecting platform…';
+
+  @override
+  String get knowledgeEmbedGatePhaseDownloadingRuntime =>
+      'Downloading llama.cpp runtime…';
+
+  @override
+  String get knowledgeEmbedGatePhaseExtracting => 'Extracting runtime…';
+
+  @override
+  String get knowledgeEmbedGatePhaseDownloadingModel =>
+      'Downloading embedding model…';
+
+  @override
+  String get knowledgeEmbedGatePhaseStarting => 'Starting embedder…';
+
+  @override
+  String get knowledgeEmbedGatePhaseDownloading => 'Downloading…';
+
+  @override
+  String get knowledgeEmbedGateStepsAria => 'Embedding install steps';
 
   @override
   String get knowledgePluginsLede =>

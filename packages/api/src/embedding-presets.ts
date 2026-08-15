@@ -7,7 +7,10 @@ import type { AiEmbeddingSettings, EmbeddingResponseShape } from "./ai-knowledge
 import { ENVOY_LOCAL_EMBED_CTX_SIZE } from "./ai-embedding-limits.js";
 
 /** Default Envoy Local embed model id (GGUF catalog entry; swappable). */
-export const DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID = "qwen3-embedding-0.6b-q4_k_m";
+export const DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID = "qwen3-embedding-0.6b-q8_0";
+
+/** Legacy id — Q4_K_M was removed from the official HF repo; maps to {@link DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID}. */
+export const LEGACY_ENVOY_LOCAL_EMBED_0_6B_Q4_ID = "qwen3-embedding-0.6b-q4_k_m";
 
 /** Optional larger Envoy Local embedder (curated catalog). */
 export const QWEN3_EMBEDDING_4B_MODEL_ID = "qwen3-embedding-4b-q4_k_m";
@@ -29,9 +32,9 @@ export interface EnvoyLocalEmbedModelOption {
 export const ENVOY_LOCAL_EMBED_MODEL_OPTIONS: readonly EnvoyLocalEmbedModelOption[] = [
   {
     id: DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID,
-    label: "Qwen3 Embedding 0.6B (Q4_K_M)",
-    description: "Default — small, keep-warm friendly (~0.5 GB).",
-    approxBytes: 500_000_000,
+    label: "Qwen3 Embedding 0.6B (Q8_0)",
+    description: "Default — small, keep-warm friendly (~0.6 GB).",
+    approxBytes: 639_150_592,
     recommended: true,
   },
   {
@@ -45,15 +48,21 @@ export const ENVOY_LOCAL_EMBED_MODEL_OPTIONS: readonly EnvoyLocalEmbedModelOptio
 export function isEnvoyLocalEmbedCatalogModelId(id: string | undefined | null): boolean {
   const trimmed = id?.trim();
   if (!trimmed) return false;
+  if (trimmed === LEGACY_ENVOY_LOCAL_EMBED_0_6B_Q4_ID) return true;
   return ENVOY_LOCAL_EMBED_MODEL_OPTIONS.some((m) => m.id === trimmed);
 }
 
-/** Prefer a curated id; otherwise fall back to the 0.6B default. */
+/** Prefer a curated id; preserve `local:…` drop-in ids; else fall back to default. */
 export function resolveEnvoyLocalEmbedModelId(
   preferred?: string | null,
 ): string {
   const trimmed = preferred?.trim();
-  if (trimmed && isEnvoyLocalEmbedCatalogModelId(trimmed)) return trimmed;
+  if (!trimmed) return DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID;
+  if (trimmed.startsWith("local:")) return trimmed;
+  if (trimmed === LEGACY_ENVOY_LOCAL_EMBED_0_6B_Q4_ID) {
+    return DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID;
+  }
+  if (isEnvoyLocalEmbedCatalogModelId(trimmed)) return trimmed;
   return DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID;
 }
 

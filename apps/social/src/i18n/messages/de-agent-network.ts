@@ -17,6 +17,10 @@ export const deAgentNetworkSettingsMessages = {
     enableButton: "Büro-LAN-Team aktivieren",
     enabling: "Wird aktiviert…",
     enabled: "Büro-LAN-Team aktiviert",
+    disableButton: "Büro-LAN-Team deaktivieren",
+    disabling: "Wird deaktiviert…",
+    disableHint:
+      "Schaltet Beitritt zum Agentennetzwerk und LAN-Auto-Bond auf diesem Knoten aus. Das gemeinsame Token bleibt erhalten, damit Sie später wieder aktivieren können.",
     copyToken: "Token kopieren",
     tokenCopied: "Token kopiert",
     shareHint: "Dieses Token mit den anderen Rechnern teilen und dort ebenfalls Büro-LAN-Team aktivieren (oder unten unter LAN-Auto-Bond einfügen).",

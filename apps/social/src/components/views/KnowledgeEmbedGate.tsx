@@ -5,7 +5,12 @@
 import type { EnvoyLocalEmbedStatus } from "@envoymesh/api";
 import { useT } from "../../context/I18nContext.js";
 import type { KnowledgeEmbedGateKind } from "../../hooks/useEnvoyLocalEmbedReadiness.js";
-import { localizeEnvoyLocalDownloadProgress } from "../../lib/localize-envoy-local-progress.js";
+import {
+  ENVOY_LOCAL_INSTALL_STEPS,
+  envoyLocalInstallStepIndex,
+  localizeEnvoyLocalDownloadProgress,
+  localizeEnvoyLocalInstallStep,
+} from "../../lib/localize-envoy-local-progress.js";
 
 export function KnowledgeEmbedGate(props: {
   kind: KnowledgeEmbedGateKind;
@@ -40,33 +45,69 @@ export function KnowledgeEmbedGate(props: {
     ns: "knowledge.embedGate",
   });
   const errorText = status?.lastError?.trim() || loadError?.trim() || null;
+  const showProgress = kind === "downloading" || inFlight;
+  const stepIndex = showProgress
+    ? Math.max(0, envoyLocalInstallStepIndex(status?.phase))
+    : -1;
 
-  const title =
-    kind === "downloading"
-      ? t("knowledge.embedGate.titleDownloading")
-      : kind === "error"
-        ? t("knowledge.embedGate.titleError")
-        : t("knowledge.embedGate.titleNeeded");
+  const title = showProgress
+    ? progressLabel
+    : kind === "error"
+      ? t("knowledge.embedGate.titleError")
+      : t("knowledge.embedGate.titleNeeded");
 
-  const body =
-    kind === "downloading"
-      ? t("knowledge.embedGate.bodyDownloading")
-      : kind === "error"
-        ? t("knowledge.embedGate.bodyError")
-        : t("knowledge.embedGate.bodyNeeded");
+  const body = showProgress
+    ? t("knowledge.embedGate.bodyDownloading")
+    : kind === "error"
+      ? t("knowledge.embedGate.bodyError")
+      : t("knowledge.embedGate.bodyNeeded");
 
   return (
     <div className="knowledge-embed-gate" data-testid="knowledge-embed-gate" role="status">
       <div className="knowledge-embed-gate__card">
-        <h3>{title}</h3>
+        <h3 data-testid="knowledge-embed-gate-title">{title}</h3>
         <p>{body}</p>
         {errorText ? (
           <p className="knowledge-embed-gate__error" role="alert">
             {errorText}
           </p>
         ) : null}
-        {kind === "downloading" || inFlight ? (
+        {showProgress ? (
           <div className="envoy-local-download-progress knowledge-embed-gate__progress">
+            <ol
+              className="knowledge-embed-gate__steps"
+              data-testid="knowledge-embed-gate-steps"
+              aria-label={t("knowledge.embedGate.stepsAria")}
+            >
+              {ENVOY_LOCAL_INSTALL_STEPS.map((step, i) => {
+                const state =
+                  i < stepIndex ? "done" : i === stepIndex ? "current" : "pending";
+                const mark = state === "done" ? "✓" : state === "current" ? "→" : "·";
+                const stateLabel =
+                  state === "done"
+                    ? t("knowledge.embedGate.stepDone")
+                    : state === "current"
+                      ? t("knowledge.embedGate.stepCurrent")
+                      : t("knowledge.embedGate.stepPending");
+                return (
+                  <li
+                    key={step}
+                    className={`knowledge-embed-gate__step knowledge-embed-gate__step--${state}`}
+                    data-testid={`knowledge-embed-gate-step-${step}`}
+                    data-state={state}
+                    aria-current={state === "current" ? "step" : undefined}
+                  >
+                    <span className="knowledge-embed-gate__step-mark" aria-hidden>
+                      {mark}
+                    </span>
+                    <span className="knowledge-embed-gate__step-label">
+                      {localizeEnvoyLocalInstallStep(t, step, "knowledge.embedGate")}
+                    </span>
+                    <span className="visually-hidden">{stateLabel}</span>
+                  </li>
+                );
+              })}
+            </ol>
             <p className="settings-hint">
               {progressLabel}
               {fraction != null ? ` (${Math.round(fraction * 100)}%)` : ""}
@@ -102,7 +143,7 @@ export function KnowledgeEmbedGate(props: {
             onClick={() => onDownload()}
           >
             {inFlight
-              ? t("knowledge.embedGate.downloading")
+              ? progressLabel
               : kind === "error"
                 ? t("knowledge.embedGate.retry")
                 : t("knowledge.embedGate.download")}

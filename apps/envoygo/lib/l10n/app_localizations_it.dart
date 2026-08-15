@@ -441,6 +441,34 @@ class AppLocalizationsIt extends AppLocalizations {
       'Download embedding avviato sul nodo di casa';
 
   @override
+  String get knowledgeEmbedGateBlockedToast =>
+      'Completa la configurazione dell’embedding prima di chiedere al vault.';
+
+  @override
+  String get knowledgeEmbedGatePhaseDetecting => 'Rilevamento piattaforma…';
+
+  @override
+  String get knowledgeEmbedGatePhaseDownloadingRuntime =>
+      'Download del runtime llama.cpp…';
+
+  @override
+  String get knowledgeEmbedGatePhaseExtracting => 'Estrazione del runtime…';
+
+  @override
+  String get knowledgeEmbedGatePhaseDownloadingModel =>
+      'Download del modello di embedding…';
+
+  @override
+  String get knowledgeEmbedGatePhaseStarting => 'Avvio dell’embedder…';
+
+  @override
+  String get knowledgeEmbedGatePhaseDownloading => 'Download…';
+
+  @override
+  String get knowledgeEmbedGateStepsAria =>
+      'Passaggi di installazione embedding';
+
+  @override
   String get knowledgePluginsLede =>
       'Connettori opzionali. Notion richiede un URL MCP — non l\'app Notion.';
 
@@ -2191,98 +2219,102 @@ class AppLocalizationsIt extends AppLocalizations {
       'Nessun worker Agent Network raggiungibile. Prima collega i contatti con gli agenti sul nodo di casa.';
 
   @override
-  String get chainsStartReadinessTitle => 'Get workers ready';
+  String get chainsStartReadinessTitle => 'Prepara i worker';
 
   @override
   String get chainsStartReadinessJoinOff =>
-      'On the home computer: Team jobs → Manage workers → turn on Join Agent Network.';
+      'Sul computer di casa: Lavori di team → Gestisci worker → attiva Unisciti alla rete agenti.';
 
   @override
   String get chainsStartReadinessBond =>
-      'Bond contacts in Discover (Social or this phone), then ask them to Join Agent Network.';
+      'Collega i contatti in Scopri (Social o questo telefono), poi chiedi loro di unirsi alla rete agenti.';
 
   @override
   String get chainsStartReadinessRefresh =>
-      'On Social Team jobs, open Manage workers and refresh cards, then preview again here.';
+      'In Social → Lavori di team apri Gestisci worker, aggiorna le schede, poi anteprima di nuovo qui.';
 
   @override
-  String get chainsStepsTitle => 'Job steps';
+  String get chainsStepsTitle => 'Passi del lavoro';
 
   @override
-  String get chainsStepsWaitingOn => 'Waiting on:';
+  String get chainsStepsWaitingOn => 'In attesa di:';
 
   @override
   String get chainsAttachmentHonesty =>
-      'Files you attach live on this home’s vault. When a worker is assigned, they receive a copy of those inputs under their Team job workspace — not a standing mirror of your Library.';
+      'I file allegati restano nel vault di questa casa. Quando un worker viene assegnato, riceve una copia di quegli input nel suo spazio lavoro di team — non uno specchio permanente della Libreria.';
 
   @override
-  String get chainsDeliveryTitle => 'Input delivery';
+  String get chainsDeliveryTitle => 'Consegna degli input';
 
   @override
-  String get chainsDeliveryRetry => 'Retry';
+  String get chainsDeliveryRetry => 'Riprova';
 
   @override
-  String get chainsDeliveryRetried => 'Input delivery retried';
+  String get chainsDeliveryRetried => 'Consegna degli input riprovata';
 
   @override
-  String get chainsDeliveryRetryFailed => 'Could not retry input delivery';
+  String get chainsDeliveryRetryFailed =>
+      'Impossibile riprovare la consegna degli input';
 
   @override
-  String get chainsDeliveryPhasePending => 'Pending';
+  String get chainsDeliveryPhasePending => 'In attesa';
 
   @override
-  String get chainsDeliveryPhaseTransferring => 'Transferring';
+  String get chainsDeliveryPhaseTransferring => 'Trasferimento';
 
   @override
-  String get chainsDeliveryPhaseVerified => 'Delivered';
+  String get chainsDeliveryPhaseVerified => 'Consegnato';
 
   @override
-  String get chainsDeliveryPhaseFailed => 'Failed';
+  String get chainsDeliveryPhaseFailed => 'Non riuscito';
 
   @override
-  String get chainsInputDeliveryScope => 'Input delivery';
+  String get chainsInputDeliveryScope => 'Consegna degli input';
 
   @override
-  String get chainsInputDeliveryScopeReferenced => 'Referenced only';
+  String get chainsInputDeliveryScopeReferenced => 'Solo referenziati';
 
   @override
-  String get chainsInputDeliveryScopeAll => 'All attachments';
+  String get chainsInputDeliveryScopeAll => 'Tutti gli allegati';
 
   @override
   String get chainsInputDeliveryScopeHint =>
-      'Referenced (default) sends files mentioned as [label] in a step; if none match, all job attachments are sent. All sends every attachment to each awarded worker.';
+      '«Solo referenziati» (predefinito) invia i file citati come [label] in un passo; se nessuno corrisponde, vengono inviati tutti gli allegati. «Tutti» invia ogni allegato a ciascun worker assegnato.';
 
   @override
-  String get chainsIterationAskOwnerTitle => 'Review draft before publish';
+  String get chainsIterationAskOwnerTitle =>
+      'Rivedi la bozza prima della pubblicazione';
 
   @override
   String get chainsIterationAskOwnerBody =>
-      'Accept to publish, or continue for another refinement round.';
+      'Accetta per pubblicare, oppure continua per un altro giro di raffinamento.';
 
   @override
-  String get chainsIterationAcceptDraft => 'Accept & publish';
+  String get chainsIterationAcceptDraft => 'Accetta e pubblica';
 
   @override
-  String get chainsIterationContinue => 'Continue refining';
+  String get chainsIterationContinue => 'Continua a raffinare';
 
   @override
-  String get chainsIterationAccepted => 'Draft accepted — publishing';
+  String get chainsIterationAccepted => 'Bozza accettata — pubblicazione';
 
   @override
-  String get chainsIterationContinued => 'Starting another refinement round';
+  String get chainsIterationContinued =>
+      'Avvio di un altro giro di raffinamento';
 
   @override
-  String get chainsIterationResolveFailed => 'Could not apply your decision';
+  String get chainsIterationResolveFailed =>
+      'Impossibile applicare la tua decisione';
 
   @override
-  String get chainsObservedTitle => 'Jobs you’re on';
+  String get chainsObservedTitle => 'Lavori a cui partecipi';
 
   @override
   String get chainsObservedHint =>
-      'View only — only the Assigner can manage these jobs.';
+      'Solo lettura — solo l’assegnatore può gestire questi lavori.';
 
   @override
-  String get chainsObservedReadOnly => 'View only';
+  String get chainsObservedReadOnly => 'Solo lettura';
 
   @override
   String get chainsStartNeedWorkers =>
@@ -2351,32 +2383,32 @@ class AppLocalizationsIt extends AppLocalizations {
   String get chainsCancelReason => 'Annullato da EnvoyGo';
 
   @override
-  String get chainsCancelStep => 'Cancel step';
+  String get chainsCancelStep => 'Annulla passo';
 
   @override
-  String get chainsCancelStepTitle => 'Cancel this step?';
+  String get chainsCancelStepTitle => 'Annullare questo passo?';
 
   @override
   String get chainsCancelStepBody =>
-      'This step and any steps that depend on it will stop. Partial results already collected are kept.';
+      'Questo passo e quelli che dipendono da esso si fermeranno. I risultati parziali già raccolti vengono conservati.';
 
   @override
-  String get chainsCancelStepFailed => 'Could not cancel this step';
+  String get chainsCancelStepFailed => 'Impossibile annullare questo passo';
 
   @override
-  String get chainsReassignStep => 'Reassign';
+  String get chainsReassignStep => 'Riassegna';
 
   @override
-  String get chainsStepCancelled => 'Step cancelled';
+  String get chainsStepCancelled => 'Passo annullato';
 
   @override
-  String get chainsStepReassigned => 'Step reassigned';
+  String get chainsStepReassigned => 'Passo riassegnato';
 
   @override
-  String get chainsReassignFailed => 'Could not reassign this step';
+  String get chainsReassignFailed => 'Impossibile riassegnare questo passo';
 
   @override
-  String get chainsCancelStepReason => 'Cancelled step from EnvoyGo';
+  String get chainsCancelStepReason => 'Passo annullato da EnvoyGo';
 
   @override
   String get chainsDetailCancelled => 'Questo job è stato annullato.';

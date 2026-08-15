@@ -94,6 +94,20 @@ const TRACKED: Entry[] = [
   { file: "settings-ai", key: "mcpWriteBackSaved", constName: "aiSettingsMessages", nested: "rag" },
   { file: "settings-ai", key: "mcpWriteBackFailed", constName: "aiSettingsMessages", nested: "rag" },
   { file: "settings-ai", key: "mcpLastError", constName: "aiSettingsMessages", nested: "rag" },
+  // Embed / chat model drop folders (local model discovery)
+  { file: "settings-ai", key: "chatModelsFolder", constName: "aiSettingsMessages", nested: "rag" },
+  { file: "settings-ai", key: "chatModelsFolderHint", constName: "aiSettingsMessages", nested: "rag" },
+  { file: "settings-ai", key: "embeddingLocalModelsFolder", constName: "aiSettingsMessages", nested: "rag" },
+  { file: "settings-ai", key: "embeddingLocalModelsFolderHint", constName: "aiSettingsMessages", nested: "rag" },
+  { file: "settings-ai", key: "embeddingLocalRefreshModels", constName: "aiSettingsMessages", nested: "rag" },
+  { file: "settings-ai", key: "embeddingLocalModelsRefreshed", constName: "aiSettingsMessages", nested: "rag" },
+  { file: "settings-ai", key: "embeddingLocalModelInstalled", constName: "aiSettingsMessages", nested: "rag" },
+  { file: "misc", key: "syncStale", constName: "knowledgeViewMessages", nested: "browse" },
+  { file: "misc", key: "syncStaleHint", constName: "knowledgeViewMessages", nested: "browse" },
+  { file: "misc", key: "syncIndexed", constName: "knowledgeViewMessages", nested: "browse" },
+  { file: "misc", key: "exportRowObsidian", constName: "knowledgeViewMessages", nested: "browse" },
+  { file: "misc", key: "obsidianAutoExport", constName: "knowledgeViewMessages", nested: "plugins" },
+  { file: "misc", key: "mcpAutoExport", constName: "knowledgeViewMessages", nested: "plugins" },
   // aiSettingsMessages.aiEngine.extAgent.* (7bafa38d — agent folder selection)
   // The de/fr/it/ja/ko files have a flatter structure (no `extAgent`
   // sub-object) so these keys can't be inserted by a simple

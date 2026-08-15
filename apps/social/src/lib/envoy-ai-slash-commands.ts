@@ -31,7 +31,7 @@ const FEATURE_EXPAND = {
     "Prerequisites for LAN: each desk machine runs EnvoyMesh with its own owner identity (do not clone profile dirs); same Wi-Fi/Ethernet subnet; firewall allows libp2p + mDNS; assigner has a usable AI model under Settings → AI. No public relay required for a LAN lab.\n\n" +
     "Recommended path — Office LAN (do this on EVERY desk machine):\n" +
     "1. Open Team jobs → Manage workers.\n" +
-    "2. Under Office LAN, click Enable office LAN team. That turns on Join Agent Network, LAN Auto-Bond, auto-join Agent Network, lan-fast discovery, and creates a shared fleet token if missing.\n" +
+    "2. Under Office LAN, click Enable office LAN team. That turns on Join Agent Network, LAN Auto-Bond, auto-join Agent Network, lan-fast discovery, and creates a shared fleet token if missing. To turn it off later: same place → Disable office LAN team (keeps the token for easy re-enable).\n" +
     "3. On the first machine, Copy token and share it out-of-band.\n" +
     "4. On other machines, Enable office LAN team (or paste the same token under LAN Auto-Bond → Save).\n" +
     "5. Pass check: Contacts shows the other machines at direct trust; New team job no longer fails with no_workers.\n\n" +

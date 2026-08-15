@@ -195,6 +195,9 @@ export const aiSettingsMessages = {
     statusDisabled: "Off",
     statusError: "Error",
     statusDownloading: "Downloading…",
+    statusDetecting: "Detecting…",
+    statusDownloadingRuntime: "Downloading runtime…",
+    statusDownloadingModel: "Downloading model…",
     statusStarting: "Starting…",
     statusExtracting: "Extracting…",
     progressDownloadingNamed: "Downloading {name}…",
@@ -222,10 +225,16 @@ export const aiSettingsMessages = {
     cloudStandbyHint: "Cloud/Ollama stays configured: {provider} (used when Local is stopped).",
     modelsHeading: "Models",
     modelsDesc:
-      "Download several models, or copy your own .gguf files into the models folder. Choose which one is active — if only one is present, it is used automatically.",
-    modelsFolder: "Models folder",
+      "Chat GGUFs go in the models folder; Knowledge embedding GGUFs go in embed-models. Drop your own files, Refresh, then pick the active model.",
+    modelsFolder: "Chat models folder",
     modelsFolderHint:
-      "Copy .gguf files here, then Refresh. Catalog downloads also land in this folder.",
+      "Copy chat/instruct .gguf files here, then Refresh. Catalog downloads also land in this folder.",
+    embedModelsFolder: "Embed models folder",
+    embedModelsFolderHint:
+      "Copy embedding .gguf files here (default Knowledge embedder). Manage active embed model under Knowledge → Setup.",
+    chatModel: "Chat model",
+    embedModel: "Embed model",
+    embedEndpoint: "Embed endpoint",
     refreshModels: "Refresh models",
     catalogSearch: "Search curated or Hugging Face",
     catalogSearchPlaceholder: "qwen3.5, gemma-4, qwen3.6, owner/repo…",
@@ -636,7 +645,16 @@ export const aiSettingsMessages = {
     embeddingLocalReadyToast: "Envoy Local embedder is ready",
     embeddingLocalModelDefault: "{label} — default",
     embeddingLocalModelHint:
-      "Default is the small 0.6B model (~0.5 GB). Choose 4B for stronger retrieval (~2.5 GB); it downloads when you select it.",
+      "Drop a .gguf into the embed-models folder and Refresh, or pick a curated model (downloads only if missing). Default is 0.6B Q8 (~0.6 GB).",
+    chatModelsFolder: "Chat models folder",
+    chatModelsFolderHint:
+      "Chat/instruct GGUFs (not embeddings). Catalog downloads for Envoy Local chat land here.",
+    embeddingLocalModelsFolder: "Embed models folder",
+    embeddingLocalModelsFolderHint:
+      "Copy embedding .gguf files here, then Refresh. Curated downloads also land in this folder.",
+    embeddingLocalRefreshModels: "Refresh embed models",
+    embeddingLocalModelsRefreshed: "Embed models list refreshed",
+    embeddingLocalModelInstalled: "installed",
     embeddingLocalSwitchStartedToast: "Downloading / starting the selected embed model…",
     embeddingPreset: {
       "envoy-local": "Envoy Local (llama.cpp embed)",
@@ -649,7 +667,8 @@ export const aiSettingsMessages = {
       mock: "Mock (testing)",
     },
     embeddingLocalModel: {
-      "qwen3-embedding-0.6b-q4_k_m": "Qwen3 Embedding 0.6B (Q4_K_M)",
+      "qwen3-embedding-0.6b-q8_0": "Qwen3 Embedding 0.6B (Q8_0)",
+      "qwen3-embedding-0.6b-q4_k_m": "Qwen3 Embedding 0.6B (legacy → Q8_0)",
       "qwen3-embedding-4b-q4_k_m": "Qwen3 Embedding 4B (Q4_K_M)",
     },
     testEmbedding: "Test embedding",

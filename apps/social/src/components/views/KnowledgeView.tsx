@@ -1,7 +1,7 @@
 /**
  * Knowledge hub — top-level Knowledge view.
  * Browse + Ask (combined), Plugins, Setup.
- * Browse is gated until Envoy Local embed is ready (when that mode is selected).
+ * Ask (RAG) waits for Envoy Local embed when that mode is selected; Browse does not.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_AI_KNOWLEDGE_BASE, type AiSettings } from "@envoymesh/api";
@@ -17,7 +17,7 @@ import {
   type OpenContentKnowledgeDetail,
 } from "../../lib/content-knowledge-nav.js";
 import { openEnvoyAi } from "../../lib/open-envoy-ai-nav.js";
-import { KnowledgeEmbedGate } from "./KnowledgeEmbedGate.js";
+import { localizeEnvoyLocalDownloadProgress } from "../../lib/localize-envoy-local-progress.js";
 import { LibraryView } from "./LibraryView.js";
 import { KnowledgePluginsPanel } from "./KnowledgePluginsPanel.js";
 import { KnowledgeBaseSettings } from "./SettingsAITab.js";
@@ -137,7 +137,11 @@ export function KnowledgeView({ initialPanel = "browse" }: KnowledgeViewProps) {
       {embed.blocked ? (
         <p className="knowledge-view__embed-strip" data-testid="knowledge-embed-strip" role="status">
           {embed.kind === "downloading"
-            ? t("knowledge.embedGate.stripDownloading")
+            ? localizeEnvoyLocalDownloadProgress(t, {
+                phase: embed.status?.phase,
+                label: embed.status?.download?.label,
+                ns: "knowledge.embedGate",
+              })
             : embed.kind === "error"
               ? t("knowledge.embedGate.stripError")
               : t("knowledge.embedGate.stripNeeded")}
@@ -176,92 +180,75 @@ export function KnowledgeView({ initialPanel = "browse" }: KnowledgeViewProps) {
 
       <div className="knowledge-view__body" role="tabpanel">
         {panel === "browse" ? (
-          embed.blocked ? (
-            <KnowledgeEmbedGate
-              kind={embed.kind}
-              status={embed.status}
-              loadError={embed.loadError}
-              inFlight={embed.inFlight}
-              onDownload={() => {
-                void embed
-                  .startDownload()
-                  .then(() => {
-                  showToast(t("knowledge.embedGate.downloadStartedToast"), "success");
-                });
-              }}
-              onOpenSetup={() => setPanel("setup")}
-            />
-          ) : (
-            <div className="knowledge-browse" data-testid="knowledge-browse">
-              <section className="knowledge-browse__ask" aria-labelledby="knowledge-ask-heading">
-                <div className="knowledge-browse__section-head">
-                  <h3 id="knowledge-ask-heading">{t("knowledge.askHeading")}</h3>
-                  <p>{t("knowledge.askHint")}</p>
-                </div>
-                <div className="knowledge-ask knowledge-ask--embedded" data-testid="knowledge-ask">
-                  <label className="visually-hidden" htmlFor="knowledge-ask-input">
-                    {t("knowledge.askLabel")}
-                  </label>
-                  <div className="knowledge-ask__row">
-                    <input
-                      id="knowledge-ask-input"
-                      className="knowledge-ask__input knowledge-ask__input--inline"
-                      type="search"
-                      value={question}
-                      onChange={(e) => setQuestion(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          void runAsk();
-                        }
-                      }}
-                      placeholder={t("knowledge.askPlaceholder")}
-                      disabled={askBusy}
-                    />
-                    <button
-                      type="button"
-                      className="primary"
-                      disabled={askBusy || !question.trim()}
-                      onClick={() => void runAsk()}
-                    >
-                      {askBusy ? t("knowledge.askBusy") : t("knowledge.askSubmit")}
-                    </button>
-                  </div>
-                  <div className="knowledge-ask__meta">
-                    <button
-                      type="button"
-                      className="knowledge-ask__link"
-                      data-testid="knowledge-ask-envoy-ai"
-                      onClick={() =>
-                        openEnvoyAi({
-                          draftHint: question.trim() || undefined,
-                        })
+          <div className="knowledge-browse" data-testid="knowledge-browse">
+            <section className="knowledge-browse__ask" aria-labelledby="knowledge-ask-heading">
+              <div className="knowledge-browse__section-head">
+                <h3 id="knowledge-ask-heading">{t("knowledge.askHeading")}</h3>
+                <p>{t("knowledge.askHint")}</p>
+              </div>
+              <div className="knowledge-ask knowledge-ask--embedded" data-testid="knowledge-ask">
+                <label className="visually-hidden" htmlFor="knowledge-ask-input">
+                  {t("knowledge.askLabel")}
+                </label>
+                <div className="knowledge-ask__row">
+                  <input
+                    id="knowledge-ask-input"
+                    className="knowledge-ask__input knowledge-ask__input--inline"
+                    type="search"
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void runAsk();
                       }
-                    >
-                      {t("knowledge.askContinueEnvoyAi")}
-                    </button>
+                    }}
+                    placeholder={t("knowledge.askPlaceholder")}
+                    disabled={askBusy || embed.blocked}
+                  />
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={askBusy || embed.blocked || !question.trim()}
+                    onClick={() => void runAsk()}
+                  >
+                    {askBusy ? t("knowledge.askBusy") : t("knowledge.askSubmit")}
+                  </button>
+                </div>
+                <div className="knowledge-ask__meta">
+                  <button
+                    type="button"
+                    className="knowledge-ask__link"
+                    data-testid="knowledge-ask-envoy-ai"
+                    onClick={() =>
+                      openEnvoyAi({
+                        draftHint: question.trim() || undefined,
+                      })
+                    }
+                  >
+                    {t("knowledge.askContinueEnvoyAi")}
+                  </button>
+                </div>
+                {answer != null ? (
+                  <div className="knowledge-ask__answer" role="status">
+                    <h4>{t("knowledge.askAnswerHeading")}</h4>
+                    <pre className="knowledge-ask__answer-body">{answer}</pre>
                   </div>
-                  {answer != null ? (
-                    <div className="knowledge-ask__answer" role="status">
-                      <h4>{t("knowledge.askAnswerHeading")}</h4>
-                      <pre className="knowledge-ask__answer-body">{answer}</pre>
-                    </div>
-                  ) : null}
-                </div>
-              </section>
+                ) : null}
+              </div>
+            </section>
 
-              <section
-                className="knowledge-browse__library"
-                aria-labelledby="knowledge-library-heading"
-              >
-                <div className="knowledge-browse__section-head">
-                  <h3 id="knowledge-library-heading">{t("knowledge.libraryHeading")}</h3>
-                  <p>{t("knowledge.libraryCaption")}</p>
-                </div>
-                <LibraryView embedded />
-              </section>
-            </div>
-          )
+            <section
+              className="knowledge-browse__library"
+              aria-labelledby="knowledge-library-heading"
+            >
+              <div className="knowledge-browse__section-head">
+                <h3 id="knowledge-library-heading">{t("knowledge.libraryHeading")}</h3>
+                <p>{t("knowledge.libraryCaption")}</p>
+              </div>
+              <LibraryView embedded />
+            </section>
+          </div>
         ) : null}
 
         {panel === "plugins" ? <KnowledgePluginsPanel /> : null}

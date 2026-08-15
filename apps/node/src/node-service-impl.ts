@@ -182,6 +182,7 @@ import {
   resolveActiveExtAgent,
   normalizeAgentCardMembership,
   extAgentUsesProjectPath,
+  normalizeAiSettings,
 } from "@envoymesh/api";
 import { resolveDidImportInput } from "@envoymesh/api/did-import";
 import type {
@@ -1252,8 +1253,12 @@ import {
   ensureEnvoyLocalEmbedRunningViaRuntime,
   getEnvoyLocalEmbedStatusViaRuntime,
   haltEnvoyLocalEmbedChildViaRuntime,
+  healEnvoyLocalEmbedWedgeViaRuntime,
+  listEnvoyLocalInstalledEmbedModelsViaRuntime,
   maybeStartEnvoyLocalEmbedOnBootViaRuntime,
   noteEnvoyLocalEmbedActivity,
+  noteEnvoyLocalEmbedSuccess,
+  setEnvoyLocalEmbedActiveModelViaRuntime,
   stopEnvoyLocalEmbedViaRuntime,
   type EnvoyLocalEmbedRuntimeDeps,
   type EnvoyLocalEmbedRuntimeState,
@@ -3339,6 +3344,16 @@ class NodeServiceImpl implements NodeService {
               this._envoyLocalEmbedRuntimeDeps(),
             );
           },
+          onEmbedSuccess: () => {
+            noteEnvoyLocalEmbedSuccess(this._envoyLocalEmbedState);
+          },
+          onEnvoyLocalEmbedTimeout: async () => {
+            await healEnvoyLocalEmbedWedgeViaRuntime(
+              this._envoyLocalEmbedState,
+              this._envoyLocalEmbedRuntimeDeps(),
+              "RAG embed timeout — restart before retry",
+            );
+          },
           onProgress: (progress) => {
             if (this.hasListeners("rag:reindex")) {
               this.emit("rag:reindex", progress);
@@ -5102,6 +5117,63 @@ class NodeServiceImpl implements NodeService {
       this._envoyLocalEmbedState,
       this._envoyLocalEmbedRuntimeDeps(),
     );
+  }
+
+  async listEnvoyLocalInstalledEmbedModels() {
+    return listEnvoyLocalInstalledEmbedModelsViaRuntime(
+      this._envoyLocalEmbedRuntimeDeps(),
+    );
+  }
+
+  async setEnvoyLocalEmbedActiveModel(
+    params: import("@envoymesh/api").SetEnvoyLocalEmbedActiveModelParams,
+  ) {
+    const modelId = params.modelId?.trim() ?? "";
+    const status = await setEnvoyLocalEmbedActiveModelViaRuntime(
+      this._envoyLocalEmbedState,
+      this._envoyLocalEmbedRuntimeDeps(),
+      { modelId },
+    );
+    // Keep Knowledge Setup embedding.modelName aligned when using Envoy Local.
+    try {
+      await this._ensureEmbeddingSettingsMigrated();
+      const cfg = await this._configStore.load();
+      const kb = cfg?.aiSettings?.knowledgeBase;
+      const emb = kb?.embedding;
+      const mode = emb?.mode;
+      if (
+        mode == null ||
+        mode === "envoy-local" ||
+        (mode as string) === "inherit"
+      ) {
+        const activeId = status.activeModelId ?? modelId;
+        const prevAi = normalizeAiSettings(cfg?.aiSettings);
+        const prevKb = prevAi.knowledgeBase ?? {};
+        const prevEmb = prevKb.embedding ?? emb;
+        const nextAi: import("@envoymesh/api").AiSettings = {
+          ...prevAi,
+          status: prevAi.status,
+          identity: prevAi.identity,
+          knowledgeBase: {
+            ...prevKb,
+            embedding: {
+              ...prevEmb,
+              mode: "envoy-local",
+              modelName: activeId,
+              endpoint: prevEmb?.endpoint ?? status.endpoint,
+              responseShape: prevEmb?.responseShape ?? "openai",
+            },
+          },
+        };
+        await this.updateNodeConfig({ aiSettings: nextAi });
+      }
+    } catch (err) {
+      console.warn(
+        "[envoy-local-embed] sync knowledge embedding.modelName failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+    return status;
   }
 
   async maybeStartEnvoyLocalEmbedOnBoot(): Promise<void> {

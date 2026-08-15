@@ -305,6 +305,8 @@ export type RpcMethods =
    | "enableEnvoyLocalEmbed"
    | "stopEnvoyLocalEmbed"
    | "disableEnvoyLocalEmbed"
+   | "listEnvoyLocalInstalledEmbedModels"
+   | "setEnvoyLocalEmbedActiveModel"
    // ClawHub skills
    | "getOpenClawPlugins"
     | "searchOpenClawPlugins"

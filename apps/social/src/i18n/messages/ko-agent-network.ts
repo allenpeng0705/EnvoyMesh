@@ -17,6 +17,10 @@ export const koAgentNetworkSettingsMessages = {
     enableButton: "사무실 LAN 팀 활성화",
     enabling: "활성화 중…",
     enabled: "사무실 LAN 팀이 활성화됨",
+    disableButton: "사무실 LAN 팀 끄기",
+    disabling: "끄는 중…",
+    disableHint:
+      "이 노드에서 에이전트 네트워크 참가와 LAN 자동 바인딩을 끕니다. 공유 토큰은 남겨 두어 나중에 다시 켤 수 있습니다.",
     copyToken: "토큰 복사",
     tokenCopied: "토큰 복사됨",
     shareHint: "이 토큰을 다른 기기와 공유한 뒤 각 기기에서 사무실 LAN 팀을 활성화하세요(또는 아래 LAN 자동 바인딩에 붙여넣기).",

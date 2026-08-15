@@ -782,6 +782,16 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.disableEnvoyLocalEmbed();
   }
 
+  async listEnvoyLocalInstalledEmbedModels() {
+    return this._ns.listEnvoyLocalInstalledEmbedModels();
+  }
+
+  async setEnvoyLocalEmbedActiveModel(
+    params: import("@envoymesh/api").SetEnvoyLocalEmbedActiveModelParams,
+  ) {
+    return this._ns.setEnvoyLocalEmbedActiveModel(params);
+  }
+
   async enableEnvoyLocal(params?: import("@envoymesh/api").EnableEnvoyLocalParams) {
     return this._ns.enableEnvoyLocal(params);
   }

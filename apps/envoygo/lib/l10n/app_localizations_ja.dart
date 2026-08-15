@@ -422,6 +422,31 @@ class AppLocalizationsJa extends AppLocalizations {
   String get knowledgeEmbedGateDownloadStarted => 'ホームで埋め込みダウンロードを開始';
 
   @override
+  String get knowledgeEmbedGateBlockedToast => 'ボルトに質問する前に埋め込み設定を完了してください。';
+
+  @override
+  String get knowledgeEmbedGatePhaseDetecting => 'プラットフォームを検出中…';
+
+  @override
+  String get knowledgeEmbedGatePhaseDownloadingRuntime =>
+      'llama.cpp ランタイムをダウンロード中…';
+
+  @override
+  String get knowledgeEmbedGatePhaseExtracting => 'ランタイムを展開中…';
+
+  @override
+  String get knowledgeEmbedGatePhaseDownloadingModel => '埋め込みモデルをダウンロード中…';
+
+  @override
+  String get knowledgeEmbedGatePhaseStarting => '埋め込みサービスを起動中…';
+
+  @override
+  String get knowledgeEmbedGatePhaseDownloading => 'ダウンロード中…';
+
+  @override
+  String get knowledgeEmbedGateStepsAria => '埋め込みインストール手順';
+
+  @override
   String get knowledgePluginsLede =>
       'オプションのコネクタ。NotionはMCP URLが必要です（Notionアプリではありません）。';
 
@@ -1465,7 +1490,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get publishedPhotoWall => 'フォトウォール';
 
   @override
-  String get publishedFeed => 'Feed';
+  String get publishedFeed => 'フィード';
 
   @override
   String get engagementCommentHint => 'コメントを書く…';
@@ -2109,98 +2134,96 @@ class AppLocalizationsJa extends AppLocalizations {
       '到達可能な Agent Network ワーカーがありません。先にホームノードのエージェントと連絡先をボンドしてください。';
 
   @override
-  String get chainsStartReadinessTitle => 'Get workers ready';
+  String get chainsStartReadinessTitle => 'ワーカーを準備する';
 
   @override
   String get chainsStartReadinessJoinOff =>
-      'On the home computer: Team jobs → Manage workers → turn on Join Agent Network.';
+      'ホームPCで：チームジョブ → ワーカー管理 → 「エージェントネットワークに参加」をオン。';
 
   @override
   String get chainsStartReadinessBond =>
-      'Bond contacts in Discover (Social or this phone), then ask them to Join Agent Network.';
+      '発見（Social またはこの端末）で連絡先をボンディングし、相手にもエージェントネットワークへの参加を依頼してください。';
 
   @override
   String get chainsStartReadinessRefresh =>
-      'On Social Team jobs, open Manage workers and refresh cards, then preview again here.';
+      'Social のチームジョブでワーカー管理を開きカードを更新してから、ここで再度プレビューしてください。';
 
   @override
-  String get chainsStepsTitle => 'Job steps';
+  String get chainsStepsTitle => 'ジョブのステップ';
 
   @override
-  String get chainsStepsWaitingOn => 'Waiting on:';
+  String get chainsStepsWaitingOn => '待機中：';
 
   @override
   String get chainsAttachmentHonesty =>
-      'Files you attach live on this home’s vault. When a worker is assigned, they receive a copy of those inputs under their Team job workspace — not a standing mirror of your Library.';
+      '添付ファイルはこのホームのボルトに保存されます。ワーカーが割り当てられると、それらの入力のコピーがチームジョブ作業領域に届きます — ライブラリの常時ミラーではありません。';
 
   @override
-  String get chainsDeliveryTitle => 'Input delivery';
+  String get chainsDeliveryTitle => '入力の配信';
 
   @override
-  String get chainsDeliveryRetry => 'Retry';
+  String get chainsDeliveryRetry => '再試行';
 
   @override
-  String get chainsDeliveryRetried => 'Input delivery retried';
+  String get chainsDeliveryRetried => '入力配信を再試行しました';
 
   @override
-  String get chainsDeliveryRetryFailed => 'Could not retry input delivery';
+  String get chainsDeliveryRetryFailed => '入力配信を再試行できませんでした';
 
   @override
-  String get chainsDeliveryPhasePending => 'Pending';
+  String get chainsDeliveryPhasePending => '保留中';
 
   @override
-  String get chainsDeliveryPhaseTransferring => 'Transferring';
+  String get chainsDeliveryPhaseTransferring => '転送中';
 
   @override
-  String get chainsDeliveryPhaseVerified => 'Delivered';
+  String get chainsDeliveryPhaseVerified => '配信済み';
 
   @override
-  String get chainsDeliveryPhaseFailed => 'Failed';
+  String get chainsDeliveryPhaseFailed => '失敗';
 
   @override
-  String get chainsInputDeliveryScope => 'Input delivery';
+  String get chainsInputDeliveryScope => '入力の配信';
 
   @override
-  String get chainsInputDeliveryScopeReferenced => 'Referenced only';
+  String get chainsInputDeliveryScopeReferenced => '参照のみ';
 
   @override
-  String get chainsInputDeliveryScopeAll => 'All attachments';
+  String get chainsInputDeliveryScopeAll => 'すべての添付';
 
   @override
   String get chainsInputDeliveryScopeHint =>
-      'Referenced (default) sends files mentioned as [label] in a step; if none match, all job attachments are sent. All sends every attachment to each awarded worker.';
+      '「参照のみ」（既定）はステップ内で [label] として言及されたファイルを送ります。一致がなければ全添付を送ります。「すべて」は各割り当てワーカーに全添付を送ります。';
 
   @override
-  String get chainsIterationAskOwnerTitle => 'Review draft before publish';
+  String get chainsIterationAskOwnerTitle => '公開前に下書きを確認';
 
   @override
-  String get chainsIterationAskOwnerBody =>
-      'Accept to publish, or continue for another refinement round.';
+  String get chainsIterationAskOwnerBody => '公開するには承認するか、さらに洗練ラウンドを続けてください。';
 
   @override
-  String get chainsIterationAcceptDraft => 'Accept & publish';
+  String get chainsIterationAcceptDraft => '承認して公開';
 
   @override
-  String get chainsIterationContinue => 'Continue refining';
+  String get chainsIterationContinue => '洗練を続ける';
 
   @override
-  String get chainsIterationAccepted => 'Draft accepted — publishing';
+  String get chainsIterationAccepted => '下書きを承認 — 公開中';
 
   @override
-  String get chainsIterationContinued => 'Starting another refinement round';
+  String get chainsIterationContinued => '別の洗練ラウンドを開始';
 
   @override
-  String get chainsIterationResolveFailed => 'Could not apply your decision';
+  String get chainsIterationResolveFailed => '決定を適用できませんでした';
 
   @override
-  String get chainsObservedTitle => 'Jobs you’re on';
+  String get chainsObservedTitle => '参加中のジョブ';
 
   @override
-  String get chainsObservedHint =>
-      'View only — only the Assigner can manage these jobs.';
+  String get chainsObservedHint => '閲覧のみ — これらのジョブを管理できるのは依頼者だけです。';
 
   @override
-  String get chainsObservedReadOnly => 'View only';
+  String get chainsObservedReadOnly => '閲覧のみ';
 
   @override
   String get chainsStartNeedWorkers =>
@@ -2266,32 +2289,32 @@ class AppLocalizationsJa extends AppLocalizations {
   String get chainsCancelReason => 'EnvoyGo からキャンセル';
 
   @override
-  String get chainsCancelStep => 'Cancel step';
+  String get chainsCancelStep => 'ステップをキャンセル';
 
   @override
-  String get chainsCancelStepTitle => 'Cancel this step?';
+  String get chainsCancelStepTitle => 'このステップをキャンセルしますか？';
 
   @override
   String get chainsCancelStepBody =>
-      'This step and any steps that depend on it will stop. Partial results already collected are kept.';
+      'このステップと依存するステップが停止します。既に収集された部分結果は保持されます。';
 
   @override
-  String get chainsCancelStepFailed => 'Could not cancel this step';
+  String get chainsCancelStepFailed => 'このステップをキャンセルできませんでした';
 
   @override
-  String get chainsReassignStep => 'Reassign';
+  String get chainsReassignStep => '再割り当て';
 
   @override
-  String get chainsStepCancelled => 'Step cancelled';
+  String get chainsStepCancelled => 'ステップをキャンセルしました';
 
   @override
-  String get chainsStepReassigned => 'Step reassigned';
+  String get chainsStepReassigned => 'ステップを再割り当てしました';
 
   @override
-  String get chainsReassignFailed => 'Could not reassign this step';
+  String get chainsReassignFailed => 'このステップを再割り当てできませんでした';
 
   @override
-  String get chainsCancelStepReason => 'Cancelled step from EnvoyGo';
+  String get chainsCancelStepReason => 'EnvoyGo からステップをキャンセル';
 
   @override
   String get chainsDetailCancelled => 'このジョブはキャンセルされました。';

@@ -93,6 +93,11 @@ export function buildEnvoyLocalLlamaServerArgs(opts: {
     "--fit",
     sp.fit ?? DEFAULT_ENVOY_LOCAL_SERVER_PARAMS.fit,
   ];
+  // -ngl 0 alone still initializes Metal/CUDA (and can hang embeddings when
+  // chat already owns the GPU). Pin device to none for CPU-only embed/chat.
+  if (opts.forceCpu || opts.embedding) {
+    args.push("-dev", "none");
+  }
   if (opts.embedding) {
     args.push("--embedding");
   }

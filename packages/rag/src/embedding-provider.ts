@@ -39,6 +39,11 @@ export interface EmbeddingProvider {
 export interface CreateEmbeddingProviderInput extends ResolveEmbeddingConfigInput {
   fetchImplementation?: typeof fetch;
   mockDimensions?: number;
+  /**
+   * Envoy Local only: after a timed-out /embeddings call, await this (e.g. restart
+   * the sidecar) before a single retry. Without it, we still retry once after a short pause.
+   */
+  onEnvoyLocalEmbedTimeout?: () => void | Promise<void>;
 }
 
 const DEFAULT_MOCK_DIMENSIONS = 384;
@@ -52,6 +57,7 @@ export function createEmbeddingProvider(input: CreateEmbeddingProviderInput = {}
   const config = resolveEmbeddingConfig(input);
   const fetchImplementation = input.fetchImplementation ?? fetch;
   const mockDimensions = input.mockDimensions ?? DEFAULT_MOCK_DIMENSIONS;
+  const onEnvoyLocalEmbedTimeout = input.onEnvoyLocalEmbedTimeout;
 
   const prepareTexts = (texts: string[]): string[] => {
     if (config.maxInputTokens == null) return texts;
@@ -97,6 +103,7 @@ export function createEmbeddingProvider(input: CreateEmbeddingProviderInput = {}
           config,
           prepareTexts([text]),
           fetchImplementation,
+          onEnvoyLocalEmbedTimeout,
         );
         return vectors[0] ?? [];
       },
@@ -104,7 +111,12 @@ export function createEmbeddingProvider(input: CreateEmbeddingProviderInput = {}
         const prepared = prepareTexts(texts);
         const vectors: number[][] = [];
         for (const text of prepared) {
-          const batch = await embedOpenAiCompatible(config, [text], fetchImplementation);
+          const batch = await embedOpenAiCompatible(
+            config,
+            [text],
+            fetchImplementation,
+            onEnvoyLocalEmbedTimeout,
+          );
           vectors.push(batch[0] ?? []);
         }
         return vectors;
@@ -115,11 +127,21 @@ export function createEmbeddingProvider(input: CreateEmbeddingProviderInput = {}
   return {
     modelKey: config.modelKey,
     async embed(text) {
-      const vectors = await embedOpenAiCompatible(config, prepareTexts([text]), fetchImplementation);
+      const vectors = await embedOpenAiCompatible(
+        config,
+        prepareTexts([text]),
+        fetchImplementation,
+        onEnvoyLocalEmbedTimeout,
+      );
       return vectors[0] ?? [];
     },
     async embedBatch(texts) {
-      return embedOpenAiCompatible(config, prepareTexts(texts), fetchImplementation);
+      return embedOpenAiCompatible(
+        config,
+        prepareTexts(texts),
+        fetchImplementation,
+        onEnvoyLocalEmbedTimeout,
+      );
     },
   };
 }
@@ -148,48 +170,76 @@ async function embedOllama(
   return vectors;
 }
 
-/** Local llama-server can wedge with /models still OK; fail fast for UI. */
-const ENVOY_LOCAL_EMBED_FETCH_TIMEOUT_MS = 60_000;
+/** Local llama-server can wedge with /models still OK; fail fast for UI.
+ *  Large vault rebuilds embed many chunks on CPU — allow 3 minutes per call. */
+const ENVOY_LOCAL_EMBED_FETCH_TIMEOUT_MS = 180_000;
+
+function isEmbedTimeoutError(err: unknown): boolean {
+  const name = err instanceof Error ? err.name : "";
+  const msg = err instanceof Error ? err.message : String(err);
+  return name === "TimeoutError" || name === "AbortError" || /aborted|timeout/i.test(msg);
+}
 
 async function embedOpenAiCompatible(
   config: ResolvedEmbeddingConfig,
   texts: string[],
   fetchImplementation: typeof fetch,
+  onEnvoyLocalEmbedTimeout?: () => void | Promise<void>,
 ): Promise<number[][]> {
   const localEmbed = isEnvoyLocalEmbedEndpoint(config.endpoint);
   const url = `${config.endpoint.replace(/\/$/, "")}/embeddings`;
+
+  const attempt = async (): Promise<Response> => {
+    try {
+      return await fetchImplementation(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+          model: config.modelName,
+          input: texts.length === 1 ? texts[0] : texts,
+        }),
+        ...(localEmbed
+          ? { signal: AbortSignal.timeout(ENVOY_LOCAL_EMBED_FETCH_TIMEOUT_MS) }
+          : {}),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (localEmbed && isEmbedTimeoutError(err)) {
+        throw new Error(
+          `Envoy Local embed timed out after ${ENVOY_LOCAL_EMBED_FETCH_TIMEOUT_MS}ms ` +
+            `(${config.endpoint}) — llama-server may be wedged; check Knowledge → Setup or restart embed`,
+        );
+      }
+      if (localEmbed && /fetch failed/i.test(msg)) {
+        throw new Error(
+          `Envoy Local embed unreachable (${config.endpoint}): ${msg} — ` +
+            `is the embed sidecar running on :18791?`,
+        );
+      }
+      throw err instanceof Error ? err : new Error(String(err));
+    }
+  };
+
   let response: Response;
   try {
-    response = await fetchImplementation(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}),
-      },
-      body: JSON.stringify({
-        model: config.modelName,
-        input: texts.length === 1 ? texts[0] : texts,
-      }),
-      ...(localEmbed
-        ? { signal: AbortSignal.timeout(ENVOY_LOCAL_EMBED_FETCH_TIMEOUT_MS) }
-        : {}),
-    });
+    response = await attempt();
   } catch (err) {
-    const name = err instanceof Error ? err.name : "";
     const msg = err instanceof Error ? err.message : String(err);
-    if (localEmbed && (name === "TimeoutError" || name === "AbortError" || /aborted|timeout/i.test(msg))) {
-      throw new Error(
-        `Envoy Local embed timed out after ${ENVOY_LOCAL_EMBED_FETCH_TIMEOUT_MS}ms ` +
-          `(${config.endpoint}) — llama-server may be wedged; check Knowledge → Setup or restart embed`,
-      );
+    if (!localEmbed || !/timed out|wedged/i.test(msg)) throw err;
+    // One heal + retry: cold start / transient wedge should not fail the whole reindex.
+    try {
+      if (onEnvoyLocalEmbedTimeout) {
+        await onEnvoyLocalEmbedTimeout();
+      } else {
+        await new Promise((r) => setTimeout(r, 1_500));
+      }
+    } catch {
+      /* heal best-effort */
     }
-    if (localEmbed && /fetch failed/i.test(msg)) {
-      throw new Error(
-        `Envoy Local embed unreachable (${config.endpoint}): ${msg} — ` +
-          `is the embed sidecar running on :18791?`,
-      );
-    }
-    throw err instanceof Error ? err : new Error(String(err));
+    response = await attempt();
   }
   if (!response.ok) {
     const body = await response.text().catch(() => "");

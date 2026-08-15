@@ -442,6 +442,34 @@ class AppLocalizationsDe extends AppLocalizations {
       'Embedding-Download auf Heim gestartet';
 
   @override
+  String get knowledgeEmbedGateBlockedToast =>
+      'Schließe die Embedding-Einrichtung ab, bevor du den Vault fragst.';
+
+  @override
+  String get knowledgeEmbedGatePhaseDetecting => 'Plattform wird erkannt…';
+
+  @override
+  String get knowledgeEmbedGatePhaseDownloadingRuntime =>
+      'llama.cpp-Runtime wird heruntergeladen…';
+
+  @override
+  String get knowledgeEmbedGatePhaseExtracting => 'Runtime wird entpackt…';
+
+  @override
+  String get knowledgeEmbedGatePhaseDownloadingModel =>
+      'Embedding-Modell wird heruntergeladen…';
+
+  @override
+  String get knowledgeEmbedGatePhaseStarting => 'Embedder wird gestartet…';
+
+  @override
+  String get knowledgeEmbedGatePhaseDownloading => 'Wird heruntergeladen…';
+
+  @override
+  String get knowledgeEmbedGateStepsAria =>
+      'Schritte der Embedding-Installation';
+
+  @override
   String get knowledgePluginsLede =>
       'Optionale Konnektoren. Notion benötigt eine MCP-URL — nicht die Notion-App.';
 
@@ -2191,98 +2219,102 @@ class AppLocalizationsDe extends AppLocalizations {
       'Keine erreichbaren Agent-Network-Worker. Bitte zuerst Kontakte mit Agenten auf dem Heimknoten verbinden.';
 
   @override
-  String get chainsStartReadinessTitle => 'Get workers ready';
+  String get chainsStartReadinessTitle => 'Worker bereitmachen';
 
   @override
   String get chainsStartReadinessJoinOff =>
-      'On the home computer: Team jobs → Manage workers → turn on Join Agent Network.';
+      'Am Heimcomputer: Team-Aufgaben → Worker verwalten → Agentennetzwerk beitreten einschalten.';
 
   @override
   String get chainsStartReadinessBond =>
-      'Bond contacts in Discover (Social or this phone), then ask them to Join Agent Network.';
+      'Kontakte unter Entdecken verbinden (Social oder dieses Telefon), dann bitten, dem Agentennetzwerk beizutreten.';
 
   @override
   String get chainsStartReadinessRefresh =>
-      'On Social Team jobs, open Manage workers and refresh cards, then preview again here.';
+      'In Social unter Team-Aufgaben „Worker verwalten“ öffnen, Karten aktualisieren, dann hier erneut vorschauen.';
 
   @override
-  String get chainsStepsTitle => 'Job steps';
+  String get chainsStepsTitle => 'Aufgabenschritte';
 
   @override
-  String get chainsStepsWaitingOn => 'Waiting on:';
+  String get chainsStepsWaitingOn => 'Wartet auf:';
 
   @override
   String get chainsAttachmentHonesty =>
-      'Files you attach live on this home’s vault. When a worker is assigned, they receive a copy of those inputs under their Team job workspace — not a standing mirror of your Library.';
+      'Angehängte Dateien liegen im Vault dieses Homes. Wird ein Worker zugewiesen, erhält er eine Kopie dieser Eingaben in seinem Team-Arbeitsbereich — kein dauerhaftes Spiegelbild deiner Bibliothek.';
 
   @override
-  String get chainsDeliveryTitle => 'Input delivery';
+  String get chainsDeliveryTitle => 'Eingabezustellung';
 
   @override
-  String get chainsDeliveryRetry => 'Retry';
+  String get chainsDeliveryRetry => 'Erneut versuchen';
 
   @override
-  String get chainsDeliveryRetried => 'Input delivery retried';
+  String get chainsDeliveryRetried => 'Eingabezustellung erneut versucht';
 
   @override
-  String get chainsDeliveryRetryFailed => 'Could not retry input delivery';
+  String get chainsDeliveryRetryFailed =>
+      'Eingabezustellung konnte nicht erneut versucht werden';
 
   @override
-  String get chainsDeliveryPhasePending => 'Pending';
+  String get chainsDeliveryPhasePending => 'Ausstehend';
 
   @override
-  String get chainsDeliveryPhaseTransferring => 'Transferring';
+  String get chainsDeliveryPhaseTransferring => 'Übertragung';
 
   @override
-  String get chainsDeliveryPhaseVerified => 'Delivered';
+  String get chainsDeliveryPhaseVerified => 'Zugestellt';
 
   @override
-  String get chainsDeliveryPhaseFailed => 'Failed';
+  String get chainsDeliveryPhaseFailed => 'Fehlgeschlagen';
 
   @override
-  String get chainsInputDeliveryScope => 'Input delivery';
+  String get chainsInputDeliveryScope => 'Eingabezustellung';
 
   @override
-  String get chainsInputDeliveryScopeReferenced => 'Referenced only';
+  String get chainsInputDeliveryScopeReferenced => 'Nur referenzierte';
 
   @override
-  String get chainsInputDeliveryScopeAll => 'All attachments';
+  String get chainsInputDeliveryScopeAll => 'Alle Anhänge';
 
   @override
   String get chainsInputDeliveryScopeHint =>
-      'Referenced (default) sends files mentioned as [label] in a step; if none match, all job attachments are sent. All sends every attachment to each awarded worker.';
+      '„Nur referenzierte“ (Standard) sendet Dateien, die in einem Schritt als [label] genannt sind; ohne Treffer werden alle Anhänge gesendet. „Alle“ sendet jeden Anhang an jeden zugewiesenen Worker.';
 
   @override
-  String get chainsIterationAskOwnerTitle => 'Review draft before publish';
+  String get chainsIterationAskOwnerTitle =>
+      'Entwurf vor Veröffentlichung prüfen';
 
   @override
   String get chainsIterationAskOwnerBody =>
-      'Accept to publish, or continue for another refinement round.';
+      'Annehmen zum Veröffentlichen, oder weiter verfeinern.';
 
   @override
-  String get chainsIterationAcceptDraft => 'Accept & publish';
+  String get chainsIterationAcceptDraft => 'Annehmen & veröffentlichen';
 
   @override
-  String get chainsIterationContinue => 'Continue refining';
+  String get chainsIterationContinue => 'Weiter verfeinern';
 
   @override
-  String get chainsIterationAccepted => 'Draft accepted — publishing';
+  String get chainsIterationAccepted =>
+      'Entwurf angenommen — wird veröffentlicht';
 
   @override
-  String get chainsIterationContinued => 'Starting another refinement round';
+  String get chainsIterationContinued => 'Weitere Verfeinerungsrunde startet';
 
   @override
-  String get chainsIterationResolveFailed => 'Could not apply your decision';
+  String get chainsIterationResolveFailed =>
+      'Entscheidung konnte nicht angewendet werden';
 
   @override
-  String get chainsObservedTitle => 'Jobs you’re on';
+  String get chainsObservedTitle => 'Aufgaben, an denen du beteiligt bist';
 
   @override
   String get chainsObservedHint =>
-      'View only — only the Assigner can manage these jobs.';
+      'Nur Ansicht — nur der Auftraggeber kann diese Aufgaben verwalten.';
 
   @override
-  String get chainsObservedReadOnly => 'View only';
+  String get chainsObservedReadOnly => 'Nur Ansicht';
 
   @override
   String get chainsStartNeedWorkers =>
@@ -2351,32 +2383,34 @@ class AppLocalizationsDe extends AppLocalizations {
   String get chainsCancelReason => 'Von EnvoyGo abgebrochen';
 
   @override
-  String get chainsCancelStep => 'Cancel step';
+  String get chainsCancelStep => 'Schritt abbrechen';
 
   @override
-  String get chainsCancelStepTitle => 'Cancel this step?';
+  String get chainsCancelStepTitle => 'Diesen Schritt abbrechen?';
 
   @override
   String get chainsCancelStepBody =>
-      'This step and any steps that depend on it will stop. Partial results already collected are kept.';
+      'Dieser Schritt und abhängige Schritte werden gestoppt. Bereits gesammelte Teilergebnisse bleiben erhalten.';
 
   @override
-  String get chainsCancelStepFailed => 'Could not cancel this step';
+  String get chainsCancelStepFailed =>
+      'Schritt konnte nicht abgebrochen werden';
 
   @override
-  String get chainsReassignStep => 'Reassign';
+  String get chainsReassignStep => 'Neu zuweisen';
 
   @override
-  String get chainsStepCancelled => 'Step cancelled';
+  String get chainsStepCancelled => 'Schritt abgebrochen';
 
   @override
-  String get chainsStepReassigned => 'Step reassigned';
+  String get chainsStepReassigned => 'Schritt neu zugewiesen';
 
   @override
-  String get chainsReassignFailed => 'Could not reassign this step';
+  String get chainsReassignFailed =>
+      'Schritt konnte nicht neu zugewiesen werden';
 
   @override
-  String get chainsCancelStepReason => 'Cancelled step from EnvoyGo';
+  String get chainsCancelStepReason => 'Schritt von EnvoyGo abgebrochen';
 
   @override
   String get chainsDetailCancelled => 'Dieser Job wurde abgebrochen.';

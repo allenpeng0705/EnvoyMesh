@@ -481,5 +481,32 @@ export const koAiSettingsMessages = {
     mcpWriteBackSaving: "저장 중…",
     mcpWriteBackSaved: "{path} 저장됨 ({count}개 결과)",
     mcpWriteBackFailed: "MCP 다시 쓰기 실패",
-    mcpLastError: "마지막 MCP 오류: {message}",},
+    mcpLastError: "마지막 MCP 오류: {message}",
+    chatModelsFolder: "채팅 모델 폴더",
+    chatModelsFolderHint:
+      "채팅/지시용 GGUF(임베딩 아님). Envoy Local 채팅 카탈로그 다운로드도 여기에 저장됩니다.",
+    embeddingLocalModelsFolder: "임베딩 모델 폴더",
+    embeddingLocalModelsFolderHint:
+      "임베딩용 .gguf를 여기에 복사한 뒤 새로고침. 큐레이션 다운로드도 여기에 저장됩니다.",
+    embeddingLocalRefreshModels: "임베딩 모델 새로고침",
+    embeddingLocalModelsRefreshed: "임베딩 모델 목록을 새로고침했습니다",
+    embeddingLocalModelInstalled: "설치됨",
+    embeddingLocalSwitchStartedToast: "선택한 임베딩 모델을 다운로드/시작 중…",
+    embeddingLocalModelHint:
+      "embed-models 폴더에 .gguf를 넣고 새로고침하거나, 큐레이션 모델을 선택하세요(없을 때만 다운로드). 기본값: 0.6B Q8(약 0.6 GB).",
+    embeddingLocalModelDefault: "{label} — 기본",
+  },
+  envoyLocal: {
+    modelsDesc:
+      "채팅 GGUF는 models, Knowledge 임베딩 GGUF는 embed-models에 둡니다. 파일을 넣고 새로고침한 뒤 활성 모델을 선택하세요.",
+    modelsFolder: "채팅 모델 폴더",
+    modelsFolderHint:
+      "채팅/지시용 .gguf를 여기에 복사한 뒤 새로고침. 카탈로그 다운로드도 여기에 저장됩니다.",
+    embedModelsFolder: "임베딩 모델 폴더",
+    embedModelsFolderHint:
+      "임베딩용 .gguf를 여기에(기본 Knowledge 임베더). 활성 임베딩은 지식 → 설정에서 관리합니다.",
+    chatModel: "채팅 모델",
+    embedModel: "임베딩 모델",
+    embedEndpoint: "임베딩 엔드포인트",
+  },
 } as const;
