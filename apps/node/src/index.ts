@@ -2262,39 +2262,47 @@ async function handleInboundMeshMessage({
         },
       });
       if (lanResult.outcome === "accepted") {
+        // Accept is one-sided (receiver trusts requester). Fire back so the
+        // requester also lands a matching pair-request and both Contacts lists
+        // show the bond — common when only one side's discovery probe won the race.
+        void nodeService.maybeFireLanAutoBondForDiscoveredPeer(remotePeerId).catch((err) => {
+          anWarn("lan-auto-bond", "reciprocal fire after accept failed", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
         return;
       }
-      // If the envelope *did* carry a fleet token but we declined (disabled,
-      // token-mismatch, self-target, …) emit a `message.rejected` audit so the
-      // operator can see why nothing happened.
-      if (
-        lanResult.outcome === "declined" &&
-        (lanResult.reason === "token-mismatch" ||
+      // If the envelope *did* carry a fleet token / lan-auto note but we declined
+      // (disabled, token-mismatch, self-target, …) emit a `message.rejected` audit
+      // and stop — do not fall through to the manual pairing approval queue.
+      if (lanResult.outcome === "declined") {
+        if (
+          lanResult.reason === "token-mismatch" ||
           lanResult.reason === "open-mode-mismatch" ||
           lanResult.reason === "no-local-token" ||
           lanResult.reason === "disabled" ||
-          lanResult.reason === "self-target")
-      ) {
-        anWarn("lan-auto-bond", "daemon reject", {
-          reason: lanResult.reason,
-          fingerprint: lanResult.fingerprint,
-          from: shortId(lanResult.payload.requesterOwnerId),
-        });
-        void taskStore.appendAuditEvent(
-          createAuditEvent({
-            type: "message.rejected",
-            intent: "device.pair.request",
-            outcome: "deny",
-            summary: `lan-auto-bond rejected: ${lanResult.reason}${lanResult.fingerprint ? ` (fp=${lanResult.fingerprint})` : ""}`,
-            correlationId,
-            remotePeerId,
-            direction: "inbound",
-          }),
-        );
+          lanResult.reason === "self-target"
+        ) {
+          anWarn("lan-auto-bond", "daemon reject", {
+            reason: lanResult.reason,
+            fingerprint: lanResult.fingerprint,
+            from: shortId(lanResult.payload.requesterOwnerId),
+          });
+          void taskStore.appendAuditEvent(
+            createAuditEvent({
+              type: "message.rejected",
+              intent: "device.pair.request",
+              outcome: "deny",
+              summary: `lan-auto-bond rejected: ${lanResult.reason}${lanResult.fingerprint ? ` (fp=${lanResult.fingerprint})` : ""}`,
+              correlationId,
+              remotePeerId,
+              direction: "inbound",
+            }),
+          );
+        }
+        return;
       }
-      // Self-target short-circuit: skip the companion-pairing and manual-approval
-      // fallback paths — we should never accept a pair request from ourselves.
-      if (lanResult.outcome === "declined" && lanResult.reason === "self-target") {
+      if (lanResult.outcome === "sender-mismatch") {
         return;
       }
     }
@@ -2814,6 +2822,10 @@ mesh.onMessage(async (params) => {
     inboundEnvelope.intent === "share.request" ||
     inboundEnvelope.intent === "share.accept" ||
     inboundEnvelope.intent === "chat.delivered" ||
+    // Office LAN / LAN auto-bond must not be dropped after Discover probe chatter.
+    inboundEnvelope.intent === "device.pair.request" ||
+    inboundEnvelope.intent === "device.pair.approve" ||
+    inboundEnvelope.intent === "device.pair.deferred" ||
     // PhotoWall / Explore chunked reads can exceed 30 msg/min easily (40 KiB
     // ranges). Silent drop leaves the viewer spinner hung until expect-reply
     // timeout — exempt content reads; public strangers still hit the bonds
