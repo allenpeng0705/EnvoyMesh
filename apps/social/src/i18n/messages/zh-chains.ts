@@ -373,7 +373,7 @@ export const zhChainsMessages = {
     button: "管理工作节点",
     title: "管理工作节点与网络",
     intro:
-      "让更多工作节点上线并配置你的节点如何与它们连接。对大多数团队来说，办公局域网 + LAN 自动绑定已满足所有需求。",
+      "让更多工作节点上线并配置你的节点如何与它们连接。对大多数团队来说，办公局域网已满足所有需求。",
     advancedGroup: "高级",
   },
   readiness: {

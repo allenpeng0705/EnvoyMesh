@@ -13,7 +13,7 @@ export const jaAgentNetworkSettingsMessages = {
   groupOperatorDesc: "多くのノードの信頼を一度に事前設定するか、オフィス Wi-Fi の全員を自動バンディングします。",
   officeLan: {
     heading: "オフィス LAN",
-    desc: "同じ Wi-Fi 向けワンクリック設定：エージェントネットワーク参加 + LAN 自動バンディング + 共有フリートトークン。各デスクで有効化し、同じトークンを使います。",
+    desc: "同じ Wi-Fi のチームジョブ設定を一箇所に：エージェントネットワーク参加、LAN 自動バンディング、共有フリートトークン。各デスクで同じトークンを使って有効化します。",
     enableButton: "オフィス LAN チームを有効化",
     enabling: "有効化中…",
     enabled: "オフィス LAN チームを有効化しました",
@@ -23,8 +23,13 @@ export const jaAgentNetworkSettingsMessages = {
       "このノードのエージェントネットワーク参加と LAN 自動バンディングをオフにします。共有トークンは保持されるため、後から再有効化できます。",
     copyToken: "トークンをコピー",
     tokenCopied: "トークンをコピーしました",
-    shareHint: "このトークンを他のマシンと共有し、それぞれでオフィス LAN チームを有効化してください（または下の LAN 自動バンディングに貼り付け）。",
-    alreadyOn: "参加と LAN 自動バンディングは共有トークン付きで既にオンです。",
+    tokenLabel: "フリートトークン",
+    tokenHelp:
+      "このオフィス用の共有シークレット。各マシンに同じ値を貼り付けてください（一度生成してからコピー）。監査ログには書き込まれません。",
+    saveToken: "トークンを保存",
+    shareHint:
+      "このトークンをコピーして他のマシンと共有し、貼り付けたうえで各マシンでオフィス LAN チームを有効化してください。",
+    alreadyOn: "オフィス LAN チームはオンです — 参加と LAN 自動バンディングがこの共有トークンで有効です。",
   },
   workersStatus: {
     heading: "ワーカー状態",

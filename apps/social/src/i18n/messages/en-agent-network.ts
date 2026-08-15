@@ -91,19 +91,23 @@ export const agentNetworkSettingsMessages = {
   officeLan: {
     heading: "Office LAN",
     desc:
-      "One-click same-Wi-Fi setup for Team jobs: Join Agent Network + LAN Auto-Bond with a shared fleet token. Run this on every desk machine and paste the same token.",
+      "Same-Wi-Fi Team jobs setup in one place: Join Agent Network, auto-bond on the LAN, and a shared fleet token. Enable on every desk machine with the same token.",
     enableButton: "Enable office LAN team",
     enabling: "Enabling…",
     enabled: "Office LAN team enabled",
     disableButton: "Disable office LAN team",
     disabling: "Disabling…",
     disableHint:
-      "Turns off Join Agent Network and LAN Auto-Bond on this node. The shared token is kept so you can re-enable later.",
+      "Turns off Join Agent Network and LAN auto-bond on this node. The shared token is kept so you can re-enable later.",
     copyToken: "Copy token",
     tokenCopied: "Token copied",
+    tokenLabel: "Fleet token",
+    tokenHelp:
+      "Shared secret for this office. Paste the same value on every desk machine (Generate once, then Copy). Never written to the audit log.",
+    saveToken: "Save token",
     shareHint:
-      "Share this token with the other machines, then click Enable office LAN team on each (or paste into LAN Auto-Bond below).",
-    alreadyOn: "Join and LAN Auto-Bond are already on with a shared token.",
+      "Copy this token, share it with the other machines, paste it there, then click Enable office LAN team on each.",
+    alreadyOn: "Office LAN team is on — Join and LAN auto-bond are active with this shared token.",
   },
   workersStatus: {
     heading: "Workers status",

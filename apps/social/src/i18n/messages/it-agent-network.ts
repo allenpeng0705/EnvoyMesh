@@ -13,7 +13,7 @@ export const itAgentNetworkSettingsMessages = {
   groupOperatorDesc: "Preconfigura la fiducia per molti nodi contemporaneamente, o collega automaticamente tutti sulla Wi-Fi dell'ufficio.",
   officeLan: {
     heading: "LAN ufficio",
-    desc: "Configurazione Wi-Fi con un clic per i job di team: unisciti alla rete agenti + collegamento LAN automatico con token di flotta condiviso. Abilitalo su ogni macchina con lo stesso token.",
+    desc: "Job di team sulla stessa Wi-Fi in un solo posto: unisciti alla rete agenti, collegamento LAN automatico e token di flotta condiviso. Abilitalo su ogni macchina con lo stesso token.",
     enableButton: "Abilita team LAN ufficio",
     enabling: "Abilitazione…",
     enabled: "Team LAN ufficio abilitato",
@@ -23,8 +23,13 @@ export const itAgentNetworkSettingsMessages = {
       "Disattiva l'adesione alla rete agenti e il collegamento LAN automatico su questo nodo. Il token condiviso viene conservato per riabilitare facilmente.",
     copyToken: "Copia token",
     tokenCopied: "Token copiato",
-    shareHint: "Condividi questo token con le altre macchine, poi abilita il team LAN ufficio su ciascuna (o incollalo sotto Collegamento automatico LAN).",
-    alreadyOn: "Adesione e collegamento LAN sono già attivi con un token condiviso.",
+    tokenLabel: "Token di flotta",
+    tokenHelp:
+      "Segreto condiviso per questo ufficio. Incolla lo stesso valore su ogni macchina (genera una volta, poi copia). Mai scritto nel log di audit.",
+    saveToken: "Salva token",
+    shareHint:
+      "Copia questo token, condividilo con le altre macchine, incollalo lì e abilita il team LAN ufficio su ciascuna.",
+    alreadyOn: "Team LAN ufficio attivo — adesione e collegamento LAN con questo token condiviso.",
   },
   workersStatus: {
     heading: "Stato worker",

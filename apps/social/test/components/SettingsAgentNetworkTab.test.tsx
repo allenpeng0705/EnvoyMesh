@@ -1,16 +1,20 @@
 /**
  * @vitest-environment jsdom
+ *
+ * Covers Manage workers modal (AgentNetworkSettingsModal) — Office LAN
+ * (combined Join + LAN auto-bond + fleet token) and Advanced fleet tools.
  */
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { SettingsAgentNetworkTab } from "../../src/components/views/SettingsAgentNetworkTab.js";
+import { AgentNetworkSettingsModal } from "../../src/components/AgentNetworkSettingsModal.js";
+import {
+  FleetManifestSection,
+  WorkersStatusSection,
+} from "../../src/components/views/settings/agent-network-sections.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
-import type { CompanyInviteRecord, FleetManifest, FleetManifestRecord } from "@envoymesh/api";
+import type { FleetManifest, FleetManifestRecord } from "@envoymesh/api";
 
-const createCompanyInvite = vi.fn();
-const listCompanyInvites = vi.fn();
-const revokeCompanyInvite = vi.fn();
 const createFleetManifest = vi.fn();
 const importFleetManifest = vi.fn();
 const listFleetManifests = vi.fn();
@@ -24,14 +28,11 @@ const getBonds = vi.fn();
 const listAgentCards = vi.fn();
 const refreshAgentNetworkWorkers = vi.fn();
 const requestAgentCard = vi.fn();
+const refreshNodeConfig = vi.fn();
 
-let nodeStatus: "offline" | "starting" | "running" | "stopping" = "running";
 let nodeConfig: Record<string, unknown> = { modelProviders: { mode: "mock", modelName: "test-model" } };
 
 const mockNodeService = {
-  createCompanyInvite,
-  listCompanyInvites,
-  revokeCompanyInvite,
   createFleetManifest,
   importFleetManifest,
   listFleetManifests,
@@ -56,36 +57,17 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
 vi.mock("../../src/context/NodeStateContext.js", () => ({
   useNodeState: () => ({
     nodeConfig,
-    nodeStatus,
+    nodeStatus: "running" as const,
     humanProfile: { ownerId: "envoy:owner:test" },
     bridgeStatus: null,
-    refreshNodeConfig: vi.fn(),
+    refreshNodeConfig,
   }),
 }));
-
-const sampleInvite: CompanyInviteRecord = {
-  inviteId: "inv-1",
-  token: "tok-active",
-  ownerId: "envoy:owner:self",
-  wsUrl: "ws://localhost:3030/ws",
-  createdAt: "2024-01-01T00:00:00.000Z",
-  expiresAt: "2099-01-01T00:00:00.000Z",
-  note: "Marketing laptop",
-};
 
 beforeEach(() => {
   vi.clearAllMocks();
   nodeConfig = { modelProviders: { mode: "mock", modelName: "test-model" } };
-  listCompanyInvites.mockResolvedValue({ invites: [] });
   listAuthorizedDevices.mockResolvedValue({ devices: [] });
-  createCompanyInvite.mockResolvedValue({
-    invite: sampleInvite,
-    uri: "envoy://invite?token=tok-active&wsUrl=ws%3A%2F%2Flocalhost",
-  });
-  revokeCompanyInvite.mockResolvedValue({
-    ok: true,
-    invite: { ...sampleInvite, revokedAt: "2024-01-02T00:00:00.000Z" },
-  });
   listFleetManifests.mockResolvedValue({ manifests: [] });
   createFleetManifest.mockImplementation(
     async (input: { members: FleetManifest["members"]; label?: string }) => ({
@@ -128,6 +110,7 @@ beforeEach(() => {
   });
   syncPairingKioskFromConfig.mockResolvedValue(undefined);
   updateNodeConfig.mockResolvedValue(undefined);
+  refreshNodeConfig.mockResolvedValue(undefined);
   getNodeConfig.mockResolvedValue({ ...nodeConfig });
   getBonds.mockResolvedValue([]);
   listAgentCards.mockResolvedValue([]);
@@ -140,35 +123,24 @@ afterEach(() => {
   window.confirm = vi.fn(() => true);
 });
 
-describe("SettingsAgentNetworkTab — landing", () => {
-  it("renders the Agent Network title and quick-reference intro", async () => {
-    renderWithI18n(<SettingsAgentNetworkTab />);
+describe("AgentNetworkSettingsModal — Office LAN", () => {
+  it("shows Office LAN without a separate LAN Auto-Bond heading", async () => {
+    renderWithI18n(<AgentNetworkSettingsModal onClose={() => {}} />);
     await waitFor(() => {
-      expect(screen.getByText("Agent Network")).toBeDefined();
+      expect(screen.getByTestId("agent-network-office-lan-section")).toBeDefined();
     });
-    expect(screen.getByText("What can I configure here?")).toBeDefined();
+    expect(screen.getByText("Office LAN")).toBeDefined();
+    expect(screen.queryByText("LAN Auto-Bond")).toBeNull();
   });
 
-  it("renders all four section headings", async () => {
-    renderWithI18n(<SettingsAgentNetworkTab />);
-    await waitFor(() => {
-      expect(screen.getAllByText("LAN Auto-Bond").length).toBeGreaterThan(0);
-    });
-    expect(screen.getAllByText("Company Invites").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Pairing Kiosk").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Fleet Manifest").length).toBeGreaterThan(0);
-  });
-});
-
-describe("SettingsAgentNetworkTab — Office LAN preset", () => {
-  it("enables Join + LAN Auto-Bond + generates a fleet token", async () => {
+  it("enables Join + LAN auto-bond and generates a fleet token when empty", async () => {
     nodeConfig = {
       ...nodeConfig,
       capabilityProviderEnabled: false,
       lanAutoBondEnabled: false,
       lanAutoBondFleetToken: "",
     };
-    renderWithI18n(<SettingsAgentNetworkTab />);
+    renderWithI18n(<AgentNetworkSettingsModal onClose={() => {}} />);
     const enable = await waitFor(() => screen.getByTestId("office-lan-enable"));
     fireEvent.click(enable);
     await waitFor(() => {
@@ -187,7 +159,61 @@ describe("SettingsAgentNetworkTab — Office LAN preset", () => {
     });
   });
 
-  it("shows Join-off nudge when LAN Auto-Bond is on with bonded peers", async () => {
+  it("disables Join + LAN auto-bond while keeping the token off the patch", async () => {
+    nodeConfig = {
+      ...nodeConfig,
+      capabilityProviderEnabled: true,
+      lanAutoBondEnabled: true,
+      lanAutoBondFleetToken: "fleet-token-12345678",
+    };
+    renderWithI18n(<AgentNetworkSettingsModal onClose={() => {}} />);
+    const disable = await waitFor(() => screen.getByTestId("office-lan-disable"));
+    fireEvent.click(disable);
+    await waitFor(() => {
+      expect(updateNodeConfig).toHaveBeenCalled();
+    });
+    const call = updateNodeConfig.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(call.capabilityProviderEnabled).toBe(false);
+    expect(call.lanAutoBondEnabled).toBe(false);
+    expect(call.lanAutoBondFleetToken).toBeUndefined();
+  });
+
+  it("saves a pasted fleet token from the Office LAN section", async () => {
+    nodeConfig = {
+      ...nodeConfig,
+      capabilityProviderEnabled: false,
+      lanAutoBondEnabled: false,
+      lanAutoBondFleetToken: "",
+    };
+    renderWithI18n(<AgentNetworkSettingsModal onClose={() => {}} />);
+    const tokenInput = await waitFor(
+      () => screen.getByTestId("office-lan-fleet-token") as HTMLInputElement,
+    );
+    fireEvent.change(tokenInput, { target: { value: "shared-office-token-99" } });
+    fireEvent.click(screen.getByTestId("office-lan-save-token"));
+    await waitFor(() => {
+      expect(updateNodeConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ lanAutoBondFleetToken: "shared-office-token-99" }),
+      );
+    });
+  });
+
+  it("rejects a too-short fleet token without persisting", async () => {
+    renderWithI18n(<AgentNetworkSettingsModal onClose={() => {}} />);
+    const tokenInput = await waitFor(
+      () => screen.getByTestId("office-lan-fleet-token") as HTMLInputElement,
+    );
+    fireEvent.change(tokenInput, { target: { value: "abc" } });
+    fireEvent.click(screen.getByTestId("office-lan-save-token"));
+    expect(updateNodeConfig).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getByText(/at least 8 characters/)).toBeDefined();
+    });
+  });
+});
+
+describe("WorkersStatusSection", () => {
+  it("shows Join-off nudge when LAN auto-bond is on with bonded peers", async () => {
     nodeConfig = {
       ...nodeConfig,
       capabilityProviderEnabled: false,
@@ -201,7 +227,7 @@ describe("SettingsAgentNetworkTab — Office LAN preset", () => {
         note: "manual-bond",
       },
     ]);
-    renderWithI18n(<SettingsAgentNetworkTab />);
+    renderWithI18n(<WorkersStatusSection />);
     await waitFor(() => {
       expect(screen.getByTestId("join-off-after-lan-nudge")).toBeDefined();
     });
@@ -221,14 +247,14 @@ describe("SettingsAgentNetworkTab — Office LAN preset", () => {
         note: "lan-auto-bond",
       },
     ]);
-    renderWithI18n(<SettingsAgentNetworkTab />);
+    renderWithI18n(<WorkersStatusSection />);
     await waitFor(() => {
       expect(screen.getByTestId("join-off-after-lan-nudge")).toBeDefined();
     });
   });
 
   it("Refresh workers calls refreshAgentNetworkWorkers", async () => {
-    renderWithI18n(<SettingsAgentNetworkTab />);
+    renderWithI18n(<WorkersStatusSection />);
     const refresh = await waitFor(() => screen.getByTestId("refresh-workers"));
     fireEvent.click(refresh);
     await waitFor(() => {
@@ -237,93 +263,16 @@ describe("SettingsAgentNetworkTab — Office LAN preset", () => {
   });
 });
 
-describe("SettingsAgentNetworkTab — LAN auto-bond (Phase 35C)", () => {
-  it("calls updateNodeConfig when Save is clicked", async () => {
-    nodeConfig = {
-      ...nodeConfig,
-      lanAutoBondEnabled: false,
-      lanAutoBondFleetToken: "",
-    };
-    renderWithI18n(<SettingsAgentNetworkTab />);
-    // Find the LAN Auto-Bond section by its heading, then find the
-    // Generate + Save buttons within that section (the tab now has grouped
-    // sections with multiple Generate/Save buttons).
-    await waitFor(() => {
-      expect(screen.getAllByText("LAN Auto-Bond").length).toBeGreaterThan(0);
-    });
-    // The LAN section's Generate button generates a fleet token.
-    const allGenerates = screen.getAllByText("Generate");
-    // Click the last Generate button (LAN section is in the Operator group,
-    // which renders after Auto-bond + Invites).
-    fireEvent.click(allGenerates[allGenerates.length - 1] as HTMLElement);
-    const allSaves = screen.getAllByText("Save");
-    fireEvent.click(allSaves[allSaves.length - 1] as HTMLElement);
-    await waitFor(() => {
-      expect(updateNodeConfig).toHaveBeenCalled();
-    });
-    const call = updateNodeConfig.mock.calls[0]?.[0] as
-      | { lanAutoBondEnabled: boolean; lanAutoBondFleetToken: string }
-      | undefined;
-    expect(call?.lanAutoBondFleetToken).toMatch(/^[A-Za-z0-9]{32}$/);
-  });
-
-  it("rejects a too-short fleet token without persisting", async () => {
-    renderWithI18n(<SettingsAgentNetworkTab />);
-    const tokenInput = (await waitFor(
-      () => screen.getAllByPlaceholderText(/paste a long random string/)[0] as HTMLInputElement,
-    ));
-    fireEvent.change(tokenInput, { target: { value: "abc" } });
-    // The LAN Auto-Bond enable toggle — find the checkbox within the LAN section.
-    // After restructuring, the LAN section is last; its checkbox is the last one.
-    const checkboxes = screen.getAllByRole("checkbox");
-    fireEvent.click(checkboxes[checkboxes.length - 1] as HTMLElement);
-    const allSaves = screen.getAllByText("Save");
-    fireEvent.click(allSaves[allSaves.length - 1] as HTMLElement);
-    expect(updateNodeConfig).not.toHaveBeenCalled();
-    await waitFor(() => {
-      expect(screen.getByText(/at least 8 characters/)).toBeDefined();
-    });
-  });
-});
-
-describe("SettingsAgentNetworkTab — Company invites (Phase 35A)", () => {
-  it("renders the empty state when there are no invites", async () => {
-    renderWithI18n(<SettingsAgentNetworkTab />);
-    await waitFor(() => {
-      expect(screen.getByText("No company invites yet.")).toBeDefined();
-    });
-  });
-
-  it("invokes createCompanyInvite on click", async () => {
-    renderWithI18n(<SettingsAgentNetworkTab />);
-    const button = await waitFor(() => screen.getByText("New company invite"));
-    fireEvent.click(button);
-    await waitFor(() => {
-      expect(createCompanyInvite).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  it("invokes revokeCompanyInvite when revoke is clicked", async () => {
-    listCompanyInvites.mockResolvedValueOnce({ invites: [sampleInvite] });
-    renderWithI18n(<SettingsAgentNetworkTab />);
-    const revoke = await waitFor(() => screen.getByText("Revoke"));
-    fireEvent.click(revoke);
-    await waitFor(() => {
-      expect(revokeCompanyInvite).toHaveBeenCalledWith("inv-1");
-    });
-  });
-});
-
-describe("SettingsAgentNetworkTab — Fleet manifest (Phase 35B)", () => {
+describe("FleetManifestSection", () => {
   it("renders the empty state when there are no manifests", async () => {
-    renderWithI18n(<SettingsAgentNetworkTab />);
+    renderWithI18n(<FleetManifestSection />);
     await waitFor(() => {
       expect(screen.getByText("No fleet manifests imported yet.")).toBeDefined();
     });
   });
 
   it("rejects malformed member JSON before signing", async () => {
-    renderWithI18n(<SettingsAgentNetworkTab />);
+    renderWithI18n(<FleetManifestSection />);
     const textarea = (await waitFor(
       () => screen.getByPlaceholderText(/Members as JSON/) as HTMLTextAreaElement,
     ));
@@ -339,7 +288,7 @@ describe("SettingsAgentNetworkTab — Fleet manifest (Phase 35B)", () => {
   });
 
   it("signs a valid manifest", async () => {
-    renderWithI18n(<SettingsAgentNetworkTab />);
+    renderWithI18n(<FleetManifestSection />);
     const textarea = (await waitFor(
       () => screen.getByPlaceholderText(/Members as JSON/) as HTMLTextAreaElement,
     ));
@@ -364,7 +313,7 @@ describe("SettingsAgentNetworkTab — Fleet manifest (Phase 35B)", () => {
   });
 
   it("imports a signed manifest when the user clicks Import", async () => {
-    renderWithI18n(<SettingsAgentNetworkTab />);
+    renderWithI18n(<FleetManifestSection />);
     const textarea = (await waitFor(
       () => screen.getByPlaceholderText(/Members as JSON/) as HTMLTextAreaElement,
     ));
@@ -405,7 +354,7 @@ describe("SettingsAgentNetworkTab — Fleet manifest (Phase 35B)", () => {
         },
       ],
     });
-    renderWithI18n(<SettingsAgentNetworkTab />);
+    renderWithI18n(<FleetManifestSection />);
     await waitFor(() => {
       expect(screen.getByText(/2 member\(s\)/)).toBeDefined();
     });

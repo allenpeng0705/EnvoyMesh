@@ -13,7 +13,7 @@ export const frAgentNetworkSettingsMessages = {
   groupOperatorDesc: "Pré-configurez la confiance pour de nombreux nœuds à la fois, ou liez automatiquement tout le monde sur le Wi-Fi du bureau.",
   officeLan: {
     heading: "LAN de bureau",
-    desc: "Configuration Wi-Fi en un clic pour les jobs d'équipe : rejoindre le réseau d'agents + liaison LAN avec un jeton de flotte partagé. À activer sur chaque machine et avec le même jeton.",
+    desc: "Jobs d'équipe sur le même Wi-Fi au même endroit : rejoindre le réseau d'agents, liaison LAN automatique et jeton de flotte partagé. Activez sur chaque machine avec le même jeton.",
     enableButton: "Activer l'équipe LAN de bureau",
     enabling: "Activation…",
     enabled: "Équipe LAN de bureau activée",
@@ -23,8 +23,13 @@ export const frAgentNetworkSettingsMessages = {
       "Désactive l'adhésion au réseau d'agents et la liaison LAN automatique sur ce nœud. Le jeton partagé est conservé pour une réactivation facile.",
     copyToken: "Copier le jeton",
     tokenCopied: "Jeton copié",
-    shareHint: "Partagez ce jeton avec les autres machines, puis activez l'équipe LAN de bureau sur chacune (ou collez-le sous Liaison automatique LAN).",
-    alreadyOn: "Adhésion et liaison LAN sont déjà actives avec un jeton partagé.",
+    tokenLabel: "Jeton de flotte",
+    tokenHelp:
+      "Secret partagé pour ce bureau. Collez la même valeur sur chaque machine (générez une fois, puis copiez). Jamais écrit dans le journal d'audit.",
+    saveToken: "Enregistrer le jeton",
+    shareHint:
+      "Copiez ce jeton, partagez-le avec les autres machines, collez-le, puis activez l'équipe LAN de bureau sur chacune.",
+    alreadyOn: "Équipe LAN de bureau active — adhésion et liaison LAN avec ce jeton partagé.",
   },
   workersStatus: {
     heading: "État des workers",

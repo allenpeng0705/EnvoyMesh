@@ -13,7 +13,7 @@ export const deAgentNetworkSettingsMessages = {
   groupOperatorDesc: "Vertrauen für viele Knoten auf einmal vorkonfigurieren oder alle im Büro-WLAN automatisch verbinden.",
   officeLan: {
     heading: "Büro-LAN",
-    desc: "Ein-Klick-Einrichtung im gleichen WLAN für Team-Jobs: Agentennetzwerk beitreten + LAN-Auto-Bond mit gemeinsamem Flotten-Token. Auf jedem Schreibtisch-Rechner ausführen und dasselbe Token verwenden.",
+    desc: "Team-Jobs im gleichen WLAN an einem Ort: Agentennetzwerk beitreten, LAN-Auto-Bond und gemeinsames Flotten-Token. Auf jedem Schreibtisch-Rechner mit demselben Token aktivieren.",
     enableButton: "Büro-LAN-Team aktivieren",
     enabling: "Wird aktiviert…",
     enabled: "Büro-LAN-Team aktiviert",
@@ -23,8 +23,13 @@ export const deAgentNetworkSettingsMessages = {
       "Schaltet Beitritt zum Agentennetzwerk und LAN-Auto-Bond auf diesem Knoten aus. Das gemeinsame Token bleibt erhalten, damit Sie später wieder aktivieren können.",
     copyToken: "Token kopieren",
     tokenCopied: "Token kopiert",
-    shareHint: "Dieses Token mit den anderen Rechnern teilen und dort ebenfalls Büro-LAN-Team aktivieren (oder unten unter LAN-Auto-Bond einfügen).",
-    alreadyOn: "Beitritt und LAN-Auto-Bond sind bereits mit einem gemeinsamen Token aktiv.",
+    tokenLabel: "Flotten-Token",
+    tokenHelp:
+      "Gemeinsames Geheimnis für dieses Büro. Denselben Wert auf jedem Rechner einfügen (einmal generieren, dann kopieren). Wird nie ins Audit-Log geschrieben.",
+    saveToken: "Token speichern",
+    shareHint:
+      "Token kopieren, an die anderen Rechner weitergeben, dort einfügen und jeweils Büro-LAN-Team aktivieren.",
+    alreadyOn: "Büro-LAN-Team ist an — Beitritt und LAN-Auto-Bond sind mit diesem Token aktiv.",
   },
   workersStatus: {
     heading: "Worker-Status",

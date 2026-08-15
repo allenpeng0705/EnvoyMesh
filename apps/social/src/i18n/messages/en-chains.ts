@@ -381,7 +381,7 @@ export const chainsMessages = {
     button: "Manage workers",
     title: "Manage workers & network",
     intro:
-      "Bring more workers online and configure how your node connects with them. For most teams, Office LAN + LAN Auto-Bond is all you need.",
+      "Bring more workers online and configure how your node connects with them. For most teams, Office LAN is all you need.",
     advancedGroup: "Advanced",
   },
   readiness: {

@@ -13,7 +13,7 @@ export const koAgentNetworkSettingsMessages = {
   groupOperatorDesc: "많은 노드의 신뢰를 한 번에 사전 설정하거나, 사무실 Wi-Fi의 모든 사람을 자동 바인딩합니다.",
   officeLan: {
     heading: "사무실 LAN",
-    desc: "같은 Wi-Fi용 원클릭 설정: 에이전트 네트워크 참가 + LAN 자동 바인딩 + 공유 플릿 토큰. 각 데스크 기기에서 활성화하고 동일한 토큰을 사용하세요.",
+    desc: "같은 Wi-Fi 팀 작업 설정을 한곳에: 에이전트 네트워크 참가, LAN 자동 바인딩, 공유 플릿 토큰. 각 데스크에서 동일한 토큰으로 활성화하세요.",
     enableButton: "사무실 LAN 팀 활성화",
     enabling: "활성화 중…",
     enabled: "사무실 LAN 팀이 활성화됨",
@@ -23,8 +23,13 @@ export const koAgentNetworkSettingsMessages = {
       "이 노드에서 에이전트 네트워크 참가와 LAN 자동 바인딩을 끕니다. 공유 토큰은 남겨 두어 나중에 다시 켤 수 있습니다.",
     copyToken: "토큰 복사",
     tokenCopied: "토큰 복사됨",
-    shareHint: "이 토큰을 다른 기기와 공유한 뒤 각 기기에서 사무실 LAN 팀을 활성화하세요(또는 아래 LAN 자동 바인딩에 붙여넣기).",
-    alreadyOn: "참가와 LAN 자동 바인딩이 이미 공유 토큰과 함께 켜져 있습니다.",
+    tokenLabel: "플릿 토큰",
+    tokenHelp:
+      "이 사무실용 공유 비밀. 모든 기기에 같은 값을 붙여넣으세요(한 번 생성한 뒤 복사). 감사 로그에는 기록되지 않습니다.",
+    saveToken: "토큰 저장",
+    shareHint:
+      "이 토큰을 복사해 다른 기기와 공유하고 붙여넣은 뒤, 각 기기에서 사무실 LAN 팀을 활성화하세요.",
+    alreadyOn: "사무실 LAN 팀이 켜져 있습니다 — 참가와 LAN 자동 바인딩이 이 공유 토큰으로 활성입니다.",
   },
   workersStatus: {
     heading: "워커 상태",

@@ -3,7 +3,8 @@
  *
  * Three tiers:
  *
- *   1. Network setup (always visible) — Office LAN preset + LAN auto-bond
+ *   1. Network setup (always visible) — Office LAN (Join + LAN auto-bond +
+ *      shared fleet token in one section)
  *   2. Advanced (collapsed by default):
  *        a. Team job defaults (award mode, rebalance, stall — runtime knobs
  *           that are too low-level for the main Team jobs screen; per-job
@@ -24,7 +25,6 @@ import { ChainDefaultsPanel } from "./views/settings/ChainDefaultsPanel.js";
 import {
   BondAutonomySection,
   FleetManifestSection,
-  LanAutoBondSection,
   OfficeLanPresetSection,
   PairingKioskSection,
   SetupSponsorFriendSection,
@@ -98,7 +98,6 @@ export function AgentNetworkSettingsModal({ onClose }: AgentNetworkSettingsModal
               <p className="an-modal__intro">{t("chains.manageWorkers.intro")}</p>
 
               <OfficeLanPresetSection />
-              <LanAutoBondSection />
 
               <AccordionGroup
                 title={t("chains.manageWorkers.advancedGroup")}
