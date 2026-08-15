@@ -361,9 +361,13 @@ export function slicePeerBlogIndexPage<T>(
   };
 }
 
+/** Max rows written into `feeds/index.md` (newest-first). Keeps library.read under the text size cap. */
+export const FEED_INDEX_MAX_POSTS = 50;
+
 /**
  * Feed / Friend Circle listing (`feeds/index.md`) — reverse-chron posts for
  * contact archive browse (Emily → Allen's Feed via library.read).
+ * Newest {@link FEED_INDEX_MAX_POSTS} only.
  */
 export function buildFeedIndexMarkdown(
   ownerId: string,
@@ -374,12 +378,13 @@ export function buildFeedIndexMarkdown(
     const tb = b.publishedAt ?? b.updatedAt;
     return tb.localeCompare(ta);
   });
+  const capped = sorted.slice(0, FEED_INDEX_MAX_POSTS);
   const lines = ["# Feed", ""];
-  if (sorted.length === 0) {
+  if (capped.length === 0) {
     lines.push("_No posts yet._", "");
     return lines.join("\n");
   }
-  for (const post of sorted) {
+  for (const post of capped) {
     const href = `envoy://${ownerId}/${post.path}`;
     const date = (post.publishedAt ?? post.updatedAt).slice(0, 10);
     const summary = post.summary?.trim() ? ` — ${post.summary.trim()}` : "";

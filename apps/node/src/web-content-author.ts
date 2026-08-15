@@ -13,6 +13,7 @@ import { dirname, extname, join } from "node:path";
 
 import {
   BLOG_INDEX_MAX_POSTS,
+  FEED_INDEX_MAX_POSTS,
   buildBlogIndexMarkdown as buildBlogIndexMarkdownShared,
   buildFeedIndexMarkdown as buildFeedIndexMarkdownShared,
   buildPhotoWallMarkdown as buildPhotoWallMarkdownShared,
@@ -370,7 +371,17 @@ async function regenerateFeedListing(
       !e.path.includes("/media/"),
   );
   const indexMd = buildFeedIndexMarkdown(ownerId, posts);
+  if (posts.length > FEED_INDEX_MAX_POSTS) {
+    console.info(
+      `[web-content] feed index truncated to ${FEED_INDEX_MAX_POSTS} of ${posts.length}`,
+    );
+  }
   const indexVisibility = mostOpenVisibility(posts, visibilityFallback);
+  const listed = Math.min(posts.length, FEED_INDEX_MAX_POSTS);
+  const summary =
+    posts.length > FEED_INDEX_MAX_POSTS
+      ? `${listed} newest of ${posts.length} posts`
+      : `${posts.length} post${posts.length === 1 ? "" : "s"}`;
   await upsertListing(
     store,
     webDir,
@@ -380,7 +391,7 @@ async function regenerateFeedListing(
     indexVisibility,
     now,
     "feed",
-    `${posts.length} post${posts.length === 1 ? "" : "s"}`,
+    summary,
   );
   return `envoy://${ownerId}/feeds/`;
 }

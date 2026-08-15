@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   backfillBondedPeerFeed,
+  isFeedBackfillTerminalSuccess,
   resetFeedBackfillInFlightForTests,
   scheduleFeedBackfillForMissingPeers,
 } from "../src/feed-backfill.js";
@@ -29,6 +30,30 @@ afterEach(async () => {
 });
 
 describe("backfillBondedPeerFeed", () => {
+  it("isFeedBackfillTerminalSuccess treats too_large as retryable", () => {
+    expect(
+      isFeedBackfillTerminalSuccess({
+        ok: true,
+        inserted: 0,
+        skipped: 0,
+        patched: 0,
+        reason: "too_large",
+      }),
+    ).toBe(false);
+    expect(
+      isFeedBackfillTerminalSuccess({
+        ok: true,
+        inserted: 0,
+        skipped: 0,
+        patched: 0,
+        reason: "no_entries",
+      }),
+    ).toBe(true);
+    expect(
+      isFeedBackfillTerminalSuccess({ ok: false, reason: "dial failed" }),
+    ).toBe(false);
+  });
+
   it("seeds timeline from feeds/index.md and marks rows read", async () => {
     const md = buildFeedIndexMarkdown(PEER, [
       {
@@ -242,6 +267,103 @@ describe("backfillBondedPeerFeed", () => {
     await new Promise((r) => setTimeout(r, 80));
     // Already has feed rows → no second library.read for PEER
     expect(reads).toBe(readsBefore);
+  });
+
+  it("scheduleFeedBackfill retries after soft too_large", async () => {
+    let reads = 0;
+    scheduleFeedBackfillForMissingPeers({
+      profileDir,
+      bondedOwnerIds: [PEER],
+      libraryRead: async () => {
+        reads += 1;
+        return {
+          peerOwnerId: PEER,
+          libp2pPeerId: "",
+          status: "too_large",
+        };
+      },
+    });
+    for (let i = 0; i < 40 && reads < 1; i++) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(reads).toBeGreaterThanOrEqual(1);
+    const afterFirst = reads;
+
+    const md = buildFeedIndexMarkdown(PEER, [
+      {
+        path: "feeds/one.md",
+        title: "One",
+        updatedAt: "2026-08-01T00:00:00.000Z",
+        publishedAt: "2026-08-01T00:00:00.000Z",
+      },
+    ]);
+    scheduleFeedBackfillForMissingPeers({
+      profileDir,
+      bondedOwnerIds: [PEER],
+      libraryRead: async (params) => {
+        reads += 1;
+        if (params.path.includes("index")) {
+          return {
+            peerOwnerId: PEER,
+            libp2pPeerId: "12D3",
+            status: "ok",
+            body: md,
+          };
+        }
+        return {
+          peerOwnerId: PEER,
+          libp2pPeerId: "12D3",
+          status: "ok",
+          body: "# One\n",
+        };
+      },
+    });
+    for (let i = 0; i < 40 && (await loadFeedNotifyInbox(profileDir)).length < 1; i++) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(reads).toBeGreaterThan(afterFirst);
+    expect((await loadFeedNotifyInbox(profileDir)).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("enriches post bodies with bounded concurrency", async () => {
+    const posts = Array.from({ length: 6 }, (_, i) => ({
+      path: `feeds/p${i}.md`,
+      title: `P${i}`,
+      updatedAt: `2026-08-0${i + 1}T00:00:00.000Z`,
+      publishedAt: `2026-08-0${i + 1}T00:00:00.000Z`,
+    }));
+    const md = buildFeedIndexMarkdown(PEER, posts);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const result = await backfillBondedPeerFeed({
+      profileDir,
+      peerOwnerId: PEER,
+      maxPosts: 6,
+      libraryRead: async (params) => {
+        if (params.path.includes("index")) {
+          return {
+            peerOwnerId: PEER,
+            libp2pPeerId: "12D3",
+            status: "ok",
+            body: md,
+          };
+        }
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setTimeout(r, 30));
+        inFlight -= 1;
+        return {
+          peerOwnerId: PEER,
+          libp2pPeerId: "12D3",
+          status: "ok",
+          body: `# x\n\n![i](envoy://${PEER}/feeds/media/x/0.jpg)\n`,
+        };
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.inserted).toBe(6);
+    expect(maxInFlight).toBeLessThanOrEqual(3);
+    expect(maxInFlight).toBeGreaterThan(1);
   });
 
   it("scheduleFeedBackfill still seeds when peer only has non-feed inbox rows", async () => {

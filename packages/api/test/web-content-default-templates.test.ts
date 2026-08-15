@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BLOG_INDEX_MAX_POSTS,
   BLOG_PEER_PAGE_SIZE,
+  FEED_INDEX_MAX_POSTS,
   buildBlogIndexMarkdown,
   buildFeedIndexMarkdown,
   buildDefaultProfileMarkdown,
@@ -112,6 +113,23 @@ describe("web-content-default-templates", () => {
     expect(withPost).toContain("# Feed");
     expect(withPost).toContain("[Hello](envoy://envoy:owner:alice/feeds/hello.md)");
     expect(withPost).toContain("Moments");
+  });
+
+  it(`caps feed index at ${FEED_INDEX_MAX_POSTS} newest posts`, () => {
+    const posts = Array.from({ length: FEED_INDEX_MAX_POSTS + 10 }, (_, i) => {
+      const day = String(i + 1).padStart(2, "0");
+      return {
+        path: `feeds/p${i}.md`,
+        title: `Post ${i}`,
+        updatedAt: `2026-07-${day}T00:00:00.000Z`,
+        publishedAt: `2026-07-${day}T00:00:00.000Z`,
+      };
+    });
+    const md = buildFeedIndexMarkdown("envoy:owner:alice", posts);
+    const parsed = parseFeedIndexMarkdown(md);
+    expect(parsed).toHaveLength(FEED_INDEX_MAX_POSTS);
+    expect(parsed[0]?.title).toBe(`Post ${FEED_INDEX_MAX_POSTS + 9}`);
+    expect(md).not.toContain("feeds/p0.md");
   });
 
   it("parses feed index markdown (round-trip with builder)", () => {

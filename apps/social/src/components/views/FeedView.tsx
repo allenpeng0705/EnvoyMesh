@@ -242,29 +242,35 @@ export function FeedView({
     if (missing.length === 0) return;
     let cancelled = false;
     void (async () => {
-      for (const item of missing) {
-        if (cancelled) return;
-        const enriched = await enrichWebContentMediaFromUrl(
-          (params) => nodeService.libraryRead(params),
-          item.url,
-        );
-        // Hard failure — leave unmarked so refresh / later timeline updates retry.
-        if (enriched.outcome === "unavailable") continue;
-        enrichAttemptedRef.current.add(item.url);
-        if (enriched.outcome !== "enriched" || !enriched.imageUrls.length) continue;
-        // Apply even if this effect was superseded — attempted-set prevents duplicate reads.
-        setTimeline((prev) =>
-          prev.map((row) =>
-            row.url === item.url && row.imageUrls.length === 0
-              ? {
-                  ...row,
-                  imageUrls: enriched.imageUrls,
-                  ...(enriched.bodyPreview && !row.body ? { body: enriched.bodyPreview } : {}),
-                }
-              : row,
-          ),
-        );
-      }
+      const queue = [...missing];
+      const workers = Array.from({ length: Math.min(3, queue.length) }, async () => {
+        while (!cancelled && queue.length > 0) {
+          const item = queue.shift();
+          if (!item) return;
+          const enriched = await enrichWebContentMediaFromUrl(
+            (params) => nodeService.libraryRead(params),
+            item.url,
+          );
+          // Hard failure — leave unmarked so refresh / later timeline updates retry.
+          if (enriched.outcome === "unavailable") continue;
+          enrichAttemptedRef.current.add(item.url);
+          if (enriched.outcome !== "enriched" || !enriched.imageUrls.length) continue;
+          setTimeline((prev) =>
+            prev.map((row) =>
+              row.url === item.url && row.imageUrls.length === 0
+                ? {
+                    ...row,
+                    imageUrls: enriched.imageUrls,
+                    ...(enriched.bodyPreview && !row.body
+                      ? { body: enriched.bodyPreview }
+                      : {}),
+                  }
+                : row,
+            ),
+          );
+        }
+      });
+      await Promise.all(workers);
     })();
     return () => {
       cancelled = true;
