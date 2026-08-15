@@ -2612,6 +2612,23 @@ class NodeServiceImpl implements NodeService {
     return this._maybeFireLanAutoBond(peerId);
   }
 
+  /**
+   * After Office LAN / LAN auto-bond is enabled (or the fleet token changes),
+   * try auto-bond against peers we already have a live connection to.
+   * Discovery alone is not enough when the feature was off at first sighting.
+   */
+  private async _kickLanAutoBondForConnectedPeers(reason: string): Promise<void> {
+    const mesh = this._mesh;
+    if (!mesh || this._nodeStatus !== "running") return;
+    const peers = mesh
+      .getConnectedPeerIds()
+      .filter((id) => id !== mesh.peerId && !this._bootstrapPeerIdSet.has(id));
+    anLog("lan-auto-bond", "kick connected peers", { reason, count: peers.length });
+    for (const peerId of peers) {
+      void this._maybeFireLanAutoBond(peerId);
+    }
+  }
+
   private async _maybeFireLanAutoBond(peerId: string): Promise<void> {
     const profile = this._profile;
     const mesh = this._mesh;
@@ -8994,6 +9011,12 @@ class NodeServiceImpl implements NodeService {
           Object.prototype.hasOwnProperty.call(nodePatch, "bridgeEnabled")
         ) {
           this._refreshAgentNetworkWorkerEngineCache(nodePatch as Partial<NodeConfig>);
+        }
+        // Office LAN / LAN auto-bond often flips on after peers are already
+        // connected. Discovery probe cooldown would otherwise delay bonding
+        // until the next successful probe cycle — kick connected peers now.
+        if (lanPatched && persisted?.lanAutoBondEnabled === true) {
+          void this._kickLanAutoBondForConnectedPeers("config-enable-or-token");
         }
       } catch {
         /* keep previous cache */

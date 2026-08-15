@@ -318,6 +318,10 @@ export async function handleMeshPeerDiscoveredViaRuntime(
     const lastProbeAt = probeLastAt.get(peerId) ?? 0;
     const probeCooldownMs = ctx.getNearbyProfileProbeCooldownMs();
     if (!opts?.force && Date.now() - lastProbeAt < probeCooldownMs) {
+      // Still attempt LAN auto-bond: Office LAN is often enabled *after*
+      // peers were already discovered, and mDNS re-ads within the probe
+      // cooldown would otherwise never fire a pair-request.
+      void ctx.maybeFireLanAutoBond(peerId);
       return;
     }
     // Peers that have failed ≥ N consecutive probes are known non-EnvoyMesh
