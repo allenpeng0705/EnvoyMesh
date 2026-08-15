@@ -43,9 +43,11 @@ import type {
   ReputationAnchorStore,
 } from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";
+import { isPrivateLanTcpDialHint } from "@envoymesh/network";
 import {
   createRendezvousRegisterPayload,
   createUnsignedEnvelope,
+  parseProfileRequestPayload,
   ProfileGalleryPhotoSchema,
   ProfilePhotoRefSchema,
   type EnvoyEnvelope,
@@ -539,20 +541,33 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
     // LAN testing where 127.0.0.1 is the only path).
     const connectedPeerIds = mesh.getConnectedPeerIds();
     if (!connectedPeerIds.includes(peerId)) {
-      try {
-        const tcpAddr = multiaddrs.find((a) =>
-          a.includes("/tcp/") && !a.includes("/ws/") && !a.includes("/wss/"),
-        );
-        const dialTarget = tcpAddr ?? `/p2p/${peerId}`;
-        await Promise.race([
-          mesh.dial(dialTarget),
-          new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error("nearby dial timeout")), 5_000);
-          }),
-        ]);
-      } catch {
-        // Dial failed — still attempt the probe (relay or another path
-        // may succeed for WAN peers).
+      const lanTcpAddrs = multiaddrs.filter(
+        (a) =>
+          isPrivateLanTcpDialHint(a) &&
+          a.includes("/tcp/") &&
+          !a.includes("/ws/") &&
+          !a.includes("/wss/"),
+      );
+      const dialCandidates =
+        lanTcpAddrs.length > 0
+          ? lanTcpAddrs.slice(0, 3)
+          : [
+              multiaddrs.find(
+                (a) => a.includes("/tcp/") && !a.includes("/ws/") && !a.includes("/wss/"),
+              ) ?? `/p2p/${peerId}`,
+            ];
+      for (const dialTarget of dialCandidates) {
+        try {
+          await Promise.race([
+            mesh.dial(dialTarget),
+            new Promise<never>((_, reject) => {
+              setTimeout(() => reject(new Error("nearby dial timeout")), 8_000);
+            }),
+          ]);
+          break;
+        } catch {
+          // Try next LAN addr — one-way Wi‑Fi often has mixed reachable hints.
+        }
       }
     }
 
@@ -567,7 +582,7 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
       selfPeerId: mesh.peerId,
       selfOwnerId: profile.owner.ownerId,
       // Discover refresh should finish quickly instead of hanging on dozens of strangers.
-      timeoutMs: opts?.force ? 4_000 : undefined,
+      timeoutMs: opts?.force ? 6_000 : 10_000,
     });
     lastAtMap.set(peerId, Date.now());
     if (!enriched) {
@@ -661,13 +676,21 @@ async function resolveKnownNearbyPeer(
 /** Keep unresolved LAN peers visible until suppression; then drop them.
  * Background mDNS/DHT probes must NOT emit unreachable cards — that flooded
  * Discover with thousands of "heard on Wi‑Fi" rows. Force refresh still emits
- * so the Refresh button can report a count.
+ * so the Refresh button can report a count — but sticky resolved cards are
+ * preserved in NodeServiceImpl.emit.
  */
 function emitNearbyProfileProbeFailure(
   ctx: IdentityContext,
   peerId: string,
   opts?: { force?: boolean },
 ): void {
+  const mesh = ctx.getMesh() ?? ctx.getExternalMesh() ?? ctx.reachableMesh();
+  const connected = Boolean(mesh?.getConnectedPeerIds().includes(peerId));
+  // Live connection + failed profile round-trip is usually one-way dial / timing,
+  // not a printer. Do not suppress or drop Discover cards.
+  if (connected) {
+    return;
+  }
   if (!opts?.force) {
     ctx.markNonEnvoyPeerFailed(peerId);
     if (ctx.isNonEnvoyPeerSuppressed(peerId)) {
@@ -787,6 +810,14 @@ export async function handleInboundProfileIntentViaRuntime(
       },
     });
     if (result.handled) {
+      // One-way LAN is common: they dialed us (so we appear in their Discover)
+      // but our outbound dial to them fails (firewall / listen addrs). Learn them
+      // from this inbound profile.request and reverse-probe over the live link.
+      await learnPeerFromInboundProfileRequest(ctx, {
+        envelope,
+        transportPeerId,
+        remoteAddr: context?.remoteAddr,
+      });
       return true;
     }
     console.warn(`[profile.request] not handled: ${"reason" in result ? result.reason : "unknown"}`);
@@ -803,6 +834,86 @@ export async function handleInboundProfileIntentViaRuntime(
   }
   console.warn(`[${envelope.intent}] not handled: ${"reason" in result ? result.reason : "unknown"}`);
   return false;
+}
+
+/**
+ * When a peer successfully probes us, surface them in Discover and attempt
+ * LAN auto-bond — even if we cannot dial them outbound.
+ */
+async function learnPeerFromInboundProfileRequest(
+  ctx: IdentityContext,
+  input: {
+    envelope: EnvoyEnvelope;
+    transportPeerId: string;
+    remoteAddr?: string;
+  },
+): Promise<void> {
+  const transportPeerId = input.transportPeerId.trim();
+  if (!transportPeerId) return;
+
+  let requesterOwnerId = "";
+  try {
+    requesterOwnerId = parseProfileRequestPayload(input.envelope.payload).requesterOwnerId.trim();
+  } catch {
+    return;
+  }
+  if (!requesterOwnerId) return;
+
+  const selfOwnerId = ctx.getProfile()?.owner.ownerId?.trim() ?? "";
+  if (selfOwnerId && requesterOwnerId === selfOwnerId) return;
+
+  ctx.resetNonEnvoyPeerFailCount(transportPeerId);
+
+  const listenAddrs = input.remoteAddr?.trim() ? [input.remoteAddr.trim()] : [];
+  try {
+    await ctx.getPeerDirectoryStore().ensurePeerFromInboundChat({
+      ownerId: requesterOwnerId,
+      peerId: transportPeerId,
+      listenAddrs,
+    });
+  } catch {
+    /* non-critical */
+  }
+
+  const cache = ctx.getPeerProfileCacheStore();
+  const cached = cache ? await cache.get(requesterOwnerId).catch(() => undefined) : undefined;
+  if (cached?.profile) {
+    const hp = cached.profile;
+    ctx.emit("peer:discovered", {
+      nodeId: transportPeerId,
+      ownerId: requesterOwnerId,
+      displayName: hp.displayName,
+      username: hp.username,
+      bio: hp.bio,
+      interests: [...(hp.hobbies ?? []), ...(hp.knowledge ?? [])],
+      profileVisibility: hp.profileVisibility ?? "public",
+      discoverySource: "mdns",
+      profileStatus: "resolved" as const,
+    });
+    void ctx.maybeFireLanAutoBond(transportPeerId);
+    return;
+  }
+
+  // Immediate Discover card so one-way LAN is visible before reverse probe finishes.
+  const short =
+    requesterOwnerId.replace(/^envoy:owner:/i, "").slice(0, 10) || "Peer";
+  ctx.emit("peer:discovered", {
+    nodeId: transportPeerId,
+    ownerId: requesterOwnerId,
+    displayName: short,
+    interests: [],
+    profileVisibility: "public" as const,
+    discoverySource: "mdns",
+    profileStatus: "resolved" as const,
+  });
+  void ctx.maybeFireLanAutoBond(transportPeerId);
+
+  // Upgrade display name over the live connection. Prefer a soft probe so we
+  // do not clear cooldowns and thrash; force only after prior failures.
+  const failSuppressed = ctx.isNonEnvoyPeerSuppressed(transportPeerId);
+  void _probeNearbyPeerProfileAfterDiscovery(ctx, transportPeerId, listenAddrs, {
+    force: failSuppressed,
+  });
 }
 
 export async function _loadHumanProfileForPhotoUpdate(ctx: IdentityContext): Promise<{

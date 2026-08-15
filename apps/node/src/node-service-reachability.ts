@@ -318,16 +318,23 @@ export async function handleMeshPeerDiscoveredViaRuntime(
     const lastProbeAt = probeLastAt.get(peerId) ?? 0;
     const probeCooldownMs = ctx.getNearbyProfileProbeCooldownMs();
     if (!opts?.force && Date.now() - lastProbeAt < probeCooldownMs) {
-      // Still attempt LAN auto-bond: Office LAN is often enabled *after*
-      // peers were already discovered, and mDNS re-ads within the probe
-      // cooldown would otherwise never fire a pair-request.
-      void ctx.maybeFireLanAutoBond(peerId);
+      // Only kick auto-bond when we already have a live connection — otherwise
+      // every mDNS re-ad of printers/TVs would spam device.pair.request.
+      const meshForBond = ctx.getReachableMesh();
+      if (meshForBond?.getConnectedPeerIds().includes(peerId)) {
+        void ctx.maybeFireLanAutoBond(peerId);
+      }
       return;
     }
     // Peers that have failed ≥ N consecutive probes are known non-EnvoyMesh
-    // devices (printers, TVs, etc.).  Suppress them for a longer cooldown.
+    // devices (printers, TVs, etc.).  Suppress them for a longer cooldown —
+    // but never while we still have a live connection (one-way LAN probes
+    // often fail outbound while the peer is connected inbound).
     if (!opts?.force && ctx.isNonEnvoyPeerSuppressed(peerId)) {
-      return;
+      const meshLive = ctx.getReachableMesh();
+      if (!meshLive?.getConnectedPeerIds().includes(peerId)) {
+        return;
+      }
     }
     // Do NOT emit a pending placeholder here — pending→lost→rediscover
     // cycles flash the Discover page after restart. The probe emits a

@@ -12266,7 +12266,19 @@ class NodeServiceImpl implements NodeService {
     if (event === "peer:discovered") {
       const peer = data as PeerSearchResult;
       const nodeId = peer?.nodeId?.trim();
-      if (nodeId) this._nearbyDiscoveredByPeerId.set(nodeId, peer);
+      if (nodeId) {
+        const prev = this._nearbyDiscoveredByPeerId.get(nodeId);
+        const incomingOk =
+          peer.profileStatus === "resolved" && Boolean(peer.ownerId?.trim());
+        const prevOk =
+          prev?.profileStatus === "resolved" && Boolean(prev.ownerId?.trim());
+        // Sticky Discover: never replace a good card with unreachable/empty
+        // noise from a single failed re-probe (Refresh used to wipe peers).
+        if (prevOk && !incomingOk) {
+          return;
+        }
+        this._nearbyDiscoveredByPeerId.set(nodeId, peer);
+      }
     } else if (event === "peer:lost") {
       const nodeId = (data as { nodeId?: string })?.nodeId?.trim();
       if (nodeId) this._nearbyDiscoveredByPeerId.delete(nodeId);

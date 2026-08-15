@@ -191,23 +191,19 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
 
   // ---- Probe result: null (non-EnvoyMesh or unreachable) -----------------
 
-  it("keeps peer visible as unreachable when probe returns null (before suppression)", async () => {
+  it("marks non-Envoy failure without emitting unreachable on background probe null", async () => {
     mockedProbe.mockResolvedValue(null);
 
     const emit = vi.fn();
-    const ctx = mockIdentityContext({ emit });
+    const mark = vi.fn();
+    const ctx = mockIdentityContext({
+      emit,
+      markNonEnvoyPeerFailed: mark,
+    });
     await _probeNearbyPeerProfileAfterDiscovery(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
 
-    expect(emit).toHaveBeenCalledTimes(1);
-    expect(emit).toHaveBeenCalledWith(
-      "peer:discovered",
-      expect.objectContaining({
-        nodeId: "12D3KooWPeerA",
-        ownerId: "",
-        profileStatus: "unreachable",
-      }),
-    );
-    expect(ctx.markNonEnvoyPeerFailed).toHaveBeenCalledWith("12D3KooWPeerA");
+    expect(mark).toHaveBeenCalledWith("12D3KooWPeerA");
+    expect(emit).not.toHaveBeenCalled();
     expect(ctx.resetNonEnvoyPeerFailCount).not.toHaveBeenCalled();
   });
 
@@ -224,24 +220,55 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
     expect(emit).toHaveBeenCalledWith("peer:lost", { nodeId: "12D3KooWPeerA" });
   });
 
+  it("does not suppress when probe fails but peer is still connected", async () => {
+    mockedProbe.mockResolvedValue(null);
+    const emit = vi.fn();
+    const mark = vi.fn();
+    const connectedMesh = {
+      peerId: "12D3KooWSelf",
+      getConnectedPeerIds: () => ["12D3KooWPeerA"],
+      dial: vi.fn(),
+    };
+    const ctx = mockIdentityContext({
+      emit,
+      markNonEnvoyPeerFailed: mark,
+      getMesh: () => connectedMesh as any,
+      reachableMesh: () => connectedMesh as any,
+    });
+    await _probeNearbyPeerProfileAfterDiscovery(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
+    expect(mark).not.toHaveBeenCalled();
+    expect(emit).not.toHaveBeenCalled();
+  });
+
   // ---- Probe throws exception -------------------------------------------
 
-  it("keeps peer visible as unreachable when probe throws (before suppression)", async () => {
+  it("marks failure without unreachable noise when background probe throws", async () => {
     mockedProbe.mockRejectedValue(new Error("timeout"));
 
     const emit = vi.fn();
-    const ctx = mockIdentityContext({ emit });
+    const mark = vi.fn();
+    const ctx = mockIdentityContext({ emit, markNonEnvoyPeerFailed: mark });
     await _probeNearbyPeerProfileAfterDiscovery(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
 
-    expect(emit).toHaveBeenCalledTimes(1);
+    expect(mark).toHaveBeenCalledWith("12D3KooWPeerA");
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it("emits unreachable on force refresh when probe returns null", async () => {
+    mockedProbe.mockResolvedValue(null);
+    const emit = vi.fn();
+    const ctx = mockIdentityContext({ emit });
+    await _probeNearbyPeerProfileAfterDiscovery(ctx, "12D3KooWPeerA", LAN_MULTIADDRS, {
+      force: true,
+    });
     expect(emit).toHaveBeenCalledWith(
       "peer:discovered",
       expect.objectContaining({
         nodeId: "12D3KooWPeerA",
+        ownerId: "",
         profileStatus: "unreachable",
       }),
     );
-    expect(ctx.markNonEnvoyPeerFailed).toHaveBeenCalledWith("12D3KooWPeerA");
   });
 
   // ---- Early returns (guards) -------------------------------------------
@@ -250,6 +277,8 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
     const emit = vi.fn();
     const ctx = mockIdentityContext({
       getMesh: () => null,
+      getExternalMesh: () => undefined,
+      reachableMesh: () => undefined,
       emit,
     });
     await _probeNearbyPeerProfileAfterDiscovery(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);

@@ -87,7 +87,12 @@ export function resolveConnectivityRuntime(input: {
     enableMdns: resolveEnableMdns(profile, input.enableMdns, tuning),
     enableDht,
     maxConnections: resolveMaxConnections(tuning),
-    mdnsIntervalMs: resolveMdnsIntervalMs(tuning),
+    // Office LAN / lan-fast needs frequent multicast; optimized/smart presets
+    // otherwise slow mDNS to 45–120s and Discover feels "flaky".
+    mdnsIntervalMs:
+      profile === "lan-fast"
+        ? Math.min(resolveMdnsIntervalMs(tuning), 12_000)
+        : resolveMdnsIntervalMs(tuning),
     capabilityDiscoveryIntervalMs: capabilityBase,
     capabilityDiscoveryJitterMs: DEFAULT_CAPABILITY_DISCOVERY_JITTER_MS,
     lazyCapabilityDiscovery: resolveLazyCapabilityDiscovery(profile, tuning),
