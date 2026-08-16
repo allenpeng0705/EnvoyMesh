@@ -28,7 +28,7 @@ EnvoyMesh is a **decentralized, peer-to-peer mesh for autonomous AI agents**. Ag
 
 **Mobile app (product):** **EnvoyGo** — Flutter thin client in `apps/envoygo/`. Pairs to a home node; UI + JSON-RPC over WebSocket/libp2p. This is what "mobile / phone / iOS / Android" means in this repo.
 
-**Backup only:** `apps/mobile/` (Capacitor + in-process `mobile-node`) is a Phase 11 experiment that may be removed. Do **not** treat it as the primary mobile app unless the user explicitly asks for the Capacitor path.
+**Capacitor backup removed:** the Phase 11 `apps/mobile/` + in-process `mobile-node` / `mobile-storage` / `mobile-vault` stack was deleted (it was a backup experiment, not the product path). `packages/mobile-identity` survives as the browser-safe identity used by the Social web build — do **not** remove it.
 
 **Active roadmap:** See `docs/implementation-plan.md`. Phase 45 (web content browsing) and later work target Social (desktop) + **EnvoyGo** (mobile).
 
@@ -47,7 +47,6 @@ EnvoyMesh/
 │   │   ├── src/lib/         # storage.ts, display.ts, direct-call-client.ts
 │   │   └── test/            # Component + context tests (vitest + testing-library)
 │   ├── envoygo/       # ★ PRODUCT mobile app — Flutter thin client (pair to home)
-│   ├── mobile/        # BACKUP only — Capacitor experiment (Phase 11); may be removed
 │   └── tauri/         # End-user native wrapper: WebView loads Social web UI + spawns Node (no Electron)
 ├── packages/
 │   ├── protocol/      # Core protocol: Zod schemas, payload constructors, canonical JSON
@@ -57,10 +56,7 @@ EnvoyMesh/
 │   ├── vault/         # Local file vault: indexing, chunking, search, path safety
 │   ├── models/        # Model router: provider selection, semantic firewall, LiteLLM adapter
 │   ├── local-store/   # On-disk persistence: JSONL audit/journal, trust store, peer directory
-│   ├── mobile-identity/# Pure-JS Ed25519 (Capacitor backup / browser-dev — not EnvoyGo)
-│   ├── mobile-storage/ # SQLite stores (Capacitor backup path)
-│   ├── mobile-vault/   # Filesystem vault (Capacitor backup path)
-│   ├── mobile-node/    # In-process NodeService (Capacitor backup path)
+│   ├── mobile-identity/# Browser-safe pure-JS Ed25519 (noble-curves) — Social web build alias
 │   └── api/           # Shared TypeScript interfaces (NodeService, types)
 ├── docs/              # User stories, scenarios, security model, implementation plan
 ├── tsconfig.base.json # Shared TS configuration
@@ -74,20 +70,16 @@ EnvoyMesh/
 ```
 protocol  (Zod schemas, no deps beyond zod)
    ├── identity      (node:crypto Ed25519 — desktop)
-   ├── mobile-identity (@noble/curves — Capacitor backup / browser-dev)
+   ├── mobile-identity (@noble/curves — browser-safe identity; Social web build alias)
    ├── vault         (desktop file vault)
-   ├── mobile-vault  (Capacitor backup vault)
    ├── models        (protocol deps only)
    ├── bonds         (protocol deps only)
    └── api           (shared TypeScript interfaces)
 local-store       (depends on bonds, identity, protocol)
-mobile-storage    (Capacitor backup — SQLite)
 network           (depends on protocol + libp2p ecosystem)
-mobile-node       (Capacitor backup — in-process NodeService)
 apps/node         (depends on everything desktop)
 apps/social       (React SPA — desktop Social UI)
 apps/envoygo      (★ PRODUCT mobile — Flutter thin client → home JSON-RPC)
-apps/mobile       (BACKUP Capacitor wrapper — do not prefer for new mobile work)
 ```
 
 ---
@@ -196,11 +188,11 @@ EnvoyGo (phone) ── JSON-RPC / events ──► Home Node (computer)
                                            └── mesh (bonds, library.read, chat, …)
 ```
 
-### Capacitor backup (Phase 11) — not the product mobile app
+### Capacitor backup (Phase 11) — removed
 
-`apps/mobile/` + `packages/mobile-*` are a **backup / legacy** full-node-in-WebView experiment. Prefer EnvoyGo for all new mobile work. Treat Capacitor as archival unless the user explicitly asks for it.
+The Capacitor full-node-in-WebView stack (`apps/mobile/` + `packages/mobile-node` / `mobile-storage` / `mobile-vault`) was **removed**. It was a backup / legacy experiment, not the product path. `packages/mobile-identity` remains: it provides browser-safe pure-JS Ed25519 (`@noble/curves`) that the Social web app's Vite build aliases as `@envoymesh/identity` — keep it.
 
-Details (kept for historical Phase 11 context): Social UI + `MobileNode` in one Capacitor WebView, `DirectCallClient`, `@noble/curves`, SQLite/Filesystem — see Phase 11 in `docs/implementation-plan.md`.
+Historical details: Phase 11 in `docs/implementation-plan.md`.
 
 ### Agentic Topology (Phase 9)
 

@@ -66,7 +66,6 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
       relayPeerIds: [],
     }),
   }),
-  useIsInProcessMobileNode: () => false,
 }));
 
 vi.mock("../../src/hooks/useToast.js", () => ({

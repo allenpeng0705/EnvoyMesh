@@ -35,6 +35,10 @@ export const koAgentNetworkSettingsMessages = {
       "토큰 없음 → 개방 LAN. 각 데스크에서 활성화; 이 Wi‑Fi에서 토큰 없이 켠 피어가 자동 바인딩됩니다. 카페 등에서는 토큰을 권장합니다.",
     alreadyOnTokened: "사무실 LAN이 켜져 있음(토큰 있음·보호).",
     alreadyOnOpen: "사무실 LAN이 켜져 있음(개방·토큰 없음).",
+    openConfirmMessage:
+      "플릿 토큰이 설정되지 않았습니다. 활성화하면 이 Wi‑Fi에서 토큰 없이 사무실 LAN을 켠 다른 노드와 자동 바인딩됩니다(제한된 액세스 피어). 신뢰할 수 있고 제어하는 네트워크에서만 진행하세요.",
+    openConfirmEnable: "예, 개방 LAN 활성화",
+    openConfirmCancel: "취소",
   },
   workersStatus: {
     heading: "워커 상태",
@@ -160,7 +164,6 @@ export const koAgentNetworkSettingsMessages = {
     refresh: "매니페스트 새로 고침",
     error: "플릿 매니페스트 관리 실패: {error}",
   },
-  mobileNotAvailable: "모바일 디바이스에서는 에이전트 네트워크 온보딩을 사용할 수 없습니다. 데스크톱이나 노트북에서 플릿을 관리하세요.",
   bondAutonomy: {
     heading: "바인딩 자율 (자동 인사 수락)",
     desc: "활성화되면 노드는 아래 정책을 통과하는 인바운드 바인딩 요청을 자동으로 수락합니다. 인스톨러 빌드의 **Setup sponsor friend**와 페어링: 양쪽에 동일한 증명 토큰을 설정하세요.",

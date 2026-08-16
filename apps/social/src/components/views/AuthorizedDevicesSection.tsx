@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
-import { useIsInProcessMobileNode, useNodeService } from "../../hooks/useNodeService.js";
+import { useNodeService } from "../../hooks/useNodeService.js";
 import { useToast } from "../../hooks/useToast.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import type { AuthorizedDeviceSummary } from "@envoymesh/api";
@@ -11,14 +11,12 @@ import type { AuthorizedDeviceSummary } from "@envoymesh/api";
  *
  * Rendered inside the App settings tab (alongside Language, Appearance,
  * and Activity) so housekeeping/audit-style information lives in one
- * place. On mobile (in-process mobile node) the section is replaced by
- * a hint that device management happens on the home node.
+ * place.
  */
 export function AuthorizedDevicesSection() {
   const t = useT();
   const nodeService = useNodeService();
   const { showToast } = useToast();
-  const isMobileNode = useIsInProcessMobileNode();
   const { refreshNodeConfig } = useNodeState();
 
   const [authorizedDevices, setAuthorizedDevices] = useState<AuthorizedDeviceSummary[]>([]);
@@ -28,7 +26,6 @@ export function AuthorizedDevicesSection() {
   const [confirm, setConfirm] = useState<{ title: string; message?: string; variant?: "default" | "destructive"; onConfirm: () => void } | null>(null);
 
   const refreshAuthorizedDevices = useCallback(async () => {
-    if (isMobileNode) return;
     setAuthorizedDevicesLoading(true);
     setAuthorizedDevicesError(null);
     try {
@@ -39,12 +36,11 @@ export function AuthorizedDevicesSection() {
     } finally {
       setAuthorizedDevicesLoading(false);
     }
-  }, [isMobileNode, nodeService]);
+  }, [nodeService]);
 
   useEffect(() => {
-    if (isMobileNode) return;
     void refreshAuthorizedDevices();
-  }, [isMobileNode, refreshAuthorizedDevices]);
+  }, [refreshAuthorizedDevices]);
 
   // Clear cleanupMessage whenever the confirm dialog closes
   useEffect(() => {
@@ -54,7 +50,6 @@ export function AuthorizedDevicesSection() {
 
   const handleRevokeDevice = useCallback(
     async (deviceId: string) => {
-      if (isMobileNode) return;
       const label =
         authorizedDevices.find((d) => d.deviceId === deviceId)?.displayName ?? deviceId;
       setConfirm({
@@ -78,7 +73,7 @@ export function AuthorizedDevicesSection() {
         },
       });
     },
-    [authorizedDevices, isMobileNode, nodeService, refreshAuthorizedDevices, refreshNodeConfig, t, showToast],
+    [authorizedDevices, nodeService, refreshAuthorizedDevices, refreshNodeConfig, t, showToast],
   );
 
   // -- Clean up historical duplicates ------------------------------------
@@ -130,7 +125,6 @@ export function AuthorizedDevicesSection() {
   );
 
   const handleCleanupDuplicates = useCallback(async () => {
-    if (isMobileNode) return;
     // Build groups at open time so the dialog title reflects current state
     const groups = buildDuplicateGroups();
     const duplicateCount = groups.reduce((n, g) => n + g.mergeIds.length, 0);
@@ -179,7 +173,6 @@ export function AuthorizedDevicesSection() {
     });
   }, [
     buildDuplicateGroups,
-    isMobileNode,
     nodeService,
     refreshAuthorizedDevices,
     refreshNodeConfig,
@@ -201,14 +194,7 @@ export function AuthorizedDevicesSection() {
         )}
       </p>
 
-      {isMobileNode ? (
-        <p className="settings-hint">
-          {t(
-            "settings.account.devices.mobileNotAvailable",
-            "Device management is not available on mobile devices.",
-          )}
-        </p>
-      ) : authorizedDevicesLoading ? (
+      {authorizedDevicesLoading ? (
         <p className="settings-hint">
           {t("settings.account.devices.loading", "Loading devices…")}
         </p>
@@ -267,8 +253,7 @@ export function AuthorizedDevicesSection() {
         </p>
       ) : null}
 
-      {!isMobileNode && (
-        <div className="settings-buttons authorized-devices-actions">
+      <div className="settings-buttons authorized-devices-actions">
           <button
             type="button"
             className="settings-button"
@@ -297,7 +282,6 @@ export function AuthorizedDevicesSection() {
               : t("settings.account.devices.cleanup", "Clean up")}
           </button>
         </div>
-      )}
       {confirm ? (
         <ConfirmDialog
           title={confirm.title}

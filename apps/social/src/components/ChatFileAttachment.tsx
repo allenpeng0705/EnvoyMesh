@@ -1,7 +1,7 @@
 import type { ChatAttachment } from "@envoymesh/api";
 import { useEffect, useState } from "react";
 import { useT } from "../context/I18nContext.js";
-import { useIsInProcessMobileNode, useNodeService } from "../hooks/useNodeService.js";
+import { useNodeService } from "../hooks/useNodeService.js";
 import { useToast } from "../hooks/useToast.js";
 import {
   formatFileBytes,
@@ -20,7 +20,6 @@ function isImageMime(mimeType: string): boolean {
 export function ChatFileAttachment({ attachment }: ChatFileAttachmentProps) {
   const t = useT();
   const nodeService = useNodeService();
-  const isMobileNode = useIsInProcessMobileNode();
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -91,11 +90,9 @@ export function ChatFileAttachment({ attachment }: ChatFileAttachmentProps) {
           <button type="button" className="secondary" disabled={busy} onClick={() => void run("open")}>
             {busy ? t("library.opening") : t("library.open")}
           </button>
-          {!isMobileNode ? (
-            <button type="button" className="secondary" disabled={busy} onClick={() => void run("reveal")}>
-              {t("library.showInFolder")}
-            </button>
-          ) : null}
+          <button type="button" className="secondary" disabled={busy} onClick={() => void run("reveal")}>
+            {t("library.showInFolder")}
+          </button>
         </div>
       ) : null}
     </div>

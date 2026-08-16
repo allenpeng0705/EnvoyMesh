@@ -378,7 +378,6 @@ export const frLibraryViewMessages = {
   empty: "Pas encore de documents. Importez un fichier ou ajoutez des fichiers à votre dossier de coffre partagé.",
   emptyFilter: "Aucune entrée ne correspond à votre filtre.",
   ipfsDisabled: "L'exportation IPFS est désactivée dans Paramètres → Réseau.",
-  heliaHint: "Le mobile utilise Helia in-process pour l'exportation IPFS lorsqu'il est activé.",
   gatewayMatch: "Le contenu de la passerelle correspond au hachage du coffre",
   filesAria: "Fichiers de la bibliothèque",
   pinFailed: "Échec de l'épinglage",
@@ -394,7 +393,6 @@ export const frLibraryViewMessages = {
   importedToast: "Importé {path}",
   pinnedStatus: "Épinglé via {provider}{pinId}",
   gatewayVerifiedStatus: "Passerelle vérifiée ({bytes} octets) — {url}",
-  ipfsMobileHeliaOn: "L'exportation utilise Helia in-process sur cet appareil. Ajoutez une liste d'autorisation de passerelles dans Paramètres pour vérifier les CID via HTTP.",
   ipfsDesktopHelia: "L'exportation utilise Helia in-process — pas de démon Kubo requis. Basculez vers Kubo dans Paramètres si vous avez besoin du sidecar inclus.",
   ipfsDesktopKubo: "L'exportation démarre automatiquement le moteur IPFS lors de la première utilisation avec le bundle de l'app de bureau.",
 
@@ -499,7 +497,6 @@ export const frAccountSettingsMessages = {
     revokeConfirmMessage: "Cet appareil ne pourra plus accéder à votre compte.",
     revokeFailed: "Échec de la révocation de l'accès de l'appareil",
     refresh: "Actualiser",
-    mobileNotAvailable: "La gestion des appareils n'est pas disponible sur les appareils mobiles.",
     cleanup: "Nettoyer",
     cleaning: "Nettoyage…",
     cleanupUnavailable: "Rien à nettoyer.",

@@ -791,23 +791,10 @@ export function useTransportWsOpen(): boolean {
 /** Mobile shell only exposes cloud-friendly provider modes in Settings; desktop uses full. */
 export type ModelProviderUiScope = "full" | "cloud-only";
 
-/** How Social talks to NodeService — WebSocket desktop vs in-process Capacitor DirectCallClient. */
-export type NodeClientTransport = "websocket" | "direct-call";
-
 const ModelProviderUiScopeContext = createContext<ModelProviderUiScope>("full");
-const NodeClientTransportContext = createContext<NodeClientTransport>("websocket");
 
 export function useModelProviderUiScope(): ModelProviderUiScope {
   return useContext(ModelProviderUiScopeContext);
-}
-
-export function useNodeClientTransport(): NodeClientTransport {
-  return useContext(NodeClientTransportContext);
-}
-
-/** True when running the Capacitor mobile app (DirectCallClient → MobileNode). */
-export function useIsInProcessMobileNode(): boolean {
-  return useNodeClientTransport() === "direct-call";
 }
 
 type WsClientType = ReturnType<typeof createWsClient>;
@@ -2553,8 +2540,6 @@ export function NodeServiceProvider({
     }) as NodeServiceClient;
   }, [client, connected, ready, reconnectAttempts, lastError]);
 
-  const nodeClientTransport: NodeClientTransport = clientFactory ? "direct-call" : "websocket";
-
   if (!client) {
     return (
       <div className="app">
@@ -2574,13 +2559,11 @@ export function NodeServiceProvider({
   return (
     <DesktopConnectionPrefsContext.Provider value={{ updatePrefs: updateConnectionPrefs }}>
       <TransportWsContext.Provider value={connected}>
-        <NodeClientTransportContext.Provider value={nodeClientTransport}>
-          <ModelProviderUiScopeContext.Provider value={modelProviderUiScope}>
-            <NodeServiceContext.Provider value={ctx}>
-              {children}
-            </NodeServiceContext.Provider>
-          </ModelProviderUiScopeContext.Provider>
-        </NodeClientTransportContext.Provider>
+        <ModelProviderUiScopeContext.Provider value={modelProviderUiScope}>
+          <NodeServiceContext.Provider value={ctx}>
+            {children}
+          </NodeServiceContext.Provider>
+        </ModelProviderUiScopeContext.Provider>
       </TransportWsContext.Provider>
     </DesktopConnectionPrefsContext.Provider>
   );

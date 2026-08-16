@@ -71,7 +71,6 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     getHumanProfile,
     syncProfileToBonds,
   }),
-  useIsInProcessMobileNode: () => false,
 }));
 
 vi.mock("../../src/context/NodeStateContext.js", () => ({

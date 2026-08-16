@@ -1,11 +1,9 @@
 import { useRef, useState } from "react";
-import { useIsInProcessMobileNode } from "../../hooks/useNodeService.js";
 import { useT } from "../../context/I18nContext.js";
 import { QRCodeIcon } from "../../icons.js";
 
 export function ContactLinkScanner({ onScan }: { onScan: (text: string) => void }) {
   const t = useT();
-  const isMobile = useIsInProcessMobileNode();
   const inputRef = useRef<HTMLInputElement>(null);
   const [scanMsg, setScanMsg] = useState<string | null>(null);
 
@@ -36,13 +34,12 @@ export function ContactLinkScanner({ onScan }: { onScan: (text: string) => void 
     <div className="contact-link-scanner">
       <button type="button" className="discover-secondary-btn" onClick={() => inputRef.current?.click()}>
         <QRCodeIcon size={18} />
-        {isMobile ? t("discover.paste.scanQr") : t("discover.paste.scanQrPhoto")}
+        {t("discover.paste.scanQrPhoto")}
       </button>
       <input
         ref={inputRef}
         type="file"
         accept="image/*"
-        capture={isMobile ? "environment" : undefined}
         hidden
         onChange={(e) => {
           const file = e.target.files?.[0];

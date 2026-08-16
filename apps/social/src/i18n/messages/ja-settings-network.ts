@@ -173,8 +173,6 @@ export const jaNetworkSettingsMessages = {
   },
   ipfs: {
     title: "外部配布 (IPFS)",
-    descMobile:
-      "モバイルでは、ライブラリエクスポートはプロセス内 Helia を使用します（Kubo 不要）。ゲートウェイ検証にはホームデスクトップノードが必要です。",
     descDesktop:
       "有効にすると、ライブラリは vault ファイルを IPFS にエクスポートし、ルート CID をローカルに保存できます。EnvoyMesh は初回エクスポート時にバンドル IPFS エンジンを自動起動します — 別途インストールやターミナルコマンドは不要です。",
     engine: "IPFS エンジン",
@@ -182,10 +180,8 @@ export const jaNetworkSettingsMessages = {
     heliaInProcess: "Helia プロセス内",
     heliaInProcessPrimary: "Helia プロセス内（プライマリ）",
     heliaUnavailable: "Helia エンジン利用不可",
-    heliaMobileOnly: "Helia（モバイルのみ）",
     exportEngine: "エクスポートエンジン",
     allowExport: "IPFS エクスポートを許可",
-    allowExportDescMobile: "ライブラリでの明示的な vault → IPFS エクスポートを制御（デフォルト: オフ）",
     allowExportDescDesktop: "明示的な vault → IPFS エクスポート操作を制御（デフォルト: オフ）",
     kuboAlsoAvailable: "Kubo も利用可能{version} — エンジンを切り替えて使用",
     kuboNotRequired: "Helia エクスポートに Kubo は不要",

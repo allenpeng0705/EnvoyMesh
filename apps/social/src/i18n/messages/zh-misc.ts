@@ -479,7 +479,6 @@ export const zhLibraryViewMessages = {
   empty: "还没有文档。点「新建文件」撰写 Markdown，或导入已有文件。",
   emptyFilter: "没有符合筛选条件的条目。",
   ipfsDisabled: "IPFS 导出已在设置 → 网络中禁用。",
-  heliaHint: "移动端在启用时使用进程内 Helia 进行 IPFS 导出。",
   gatewayMatch: "网关内容与资料库哈希匹配",
   filesAria: "资料库文件",
   pinFailed: "固定失败",
@@ -494,7 +493,6 @@ export const zhLibraryViewMessages = {
   cidPinnedToast: "CID 已固定到提供者",
   pinnedStatus: "已通过 {provider} 固定{pinId}",
   gatewayVerifiedStatus: "网关已验证（{bytes} 字节） — {url}",
-  ipfsMobileHeliaOn: "导出使用本设备上的进程内 Helia。如需通过 HTTP 验证 CID，请在设置中添加网关白名单。",
   ipfsDesktopHelia: "导出使用进程内 Helia — 无需 Kubo 守护进程。如需使用打包的 sidecar，请在设置中切换回 Kubo。",
   ipfsDesktopKubo: "在使用桌面应用打包版本时，IPFS 引擎会在首次使用时自动启动。",
 } as const;
@@ -1110,7 +1108,6 @@ export const zhAccountSettingsMessages = {
     revokeConfirmMessage: "此设备将无法再访问您的账户。",
     revokeFailed: "撤销设备访问失败",
     refresh: "刷新",
-    mobileNotAvailable: "移动设备不支持设备管理。",
     cleanup: "清理",
     cleaning: "正在清理…",
     cleanupUnavailable: "没有可清理的内容。",

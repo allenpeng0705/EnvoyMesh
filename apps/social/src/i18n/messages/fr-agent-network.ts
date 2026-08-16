@@ -35,6 +35,10 @@ export const frAgentNetworkSettingsMessages = {
       "Pas de jeton → LAN ouvert. Activez sur chaque poste ; les pairs sans jeton sur ce Wi‑Fi se lient automatiquement. Préférez un jeton en café.",
     alreadyOnTokened: "LAN de bureau actif avec jeton (protégé).",
     alreadyOnOpen: "LAN de bureau actif en mode ouvert (sans jeton).",
+    openConfirmMessage:
+      "Aucun jeton défini. Activer lie (en pair à accès limité) tout nœud de ce Wi‑Fi ayant aussi activé le LAN de bureau sans jeton. Continuez uniquement sur un réseau de confiance que vous contrôlez.",
+    openConfirmEnable: "Oui, activer le LAN ouvert",
+    openConfirmCancel: "Annuler",
   },
   workersStatus: {
     heading: "État des workers",
@@ -160,7 +164,6 @@ export const frAgentNetworkSettingsMessages = {
     refresh: "Actualiser les manifestes",
     error: "Échec de la gestion des manifestes de flotte : {error}",
   },
-  mobileNotAvailable: "L'intégration du réseau d'agents n'est pas disponible sur les appareils mobiles. Gérez votre flotte depuis un bureau ou un ordinateur portable.",
   bondAutonomy: {
     heading: "Autonomie de liaison (acceptation automatique des bonjours)",
     desc: "Lorsqu'elle est activée, votre nœud accepte automatiquement les demandes de liaison entrantes qui passent la politique ci-dessous. À associer avec **Setup sponsor friend** sur les builds installateur : définissez le même jeton de preuve des deux côtés.",

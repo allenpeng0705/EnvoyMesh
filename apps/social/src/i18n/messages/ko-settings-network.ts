@@ -173,8 +173,6 @@ export const koNetworkSettingsMessages = {
   },
   ipfs: {
     title: "외부 배포 (IPFS)",
-    descMobile:
-      "모바일에서는 라이브러리 내보내기가 프로세스 내 Helia를 사용합니다 (Kubo 없음). 게이트웨이 확인은 여전히 홈 데스크톱 노드가 필요합니다.",
     descDesktop:
       "활성화하면 라이브러리가 vault 파일을 IPFS로 내보내고 루트 CID를 로컬에 저장할 수 있습니다. EnvoyMesh는 첫 내보내기 시 번들 IPFS 엔진을 자동 시작합니다 — 별도 설치나 터미널 명령 불필요.",
     engine: "IPFS 엔진",
@@ -182,10 +180,8 @@ export const koNetworkSettingsMessages = {
     heliaInProcess: "프로세스 내 Helia",
     heliaInProcessPrimary: "프로세스 내 Helia (기본)",
     heliaUnavailable: "Helia 엔진 사용 불가",
-    heliaMobileOnly: "Helia (모바일 전용)",
     exportEngine: "내보내기 엔진",
     allowExport: "IPFS 내보내기 허용",
-    allowExportDescMobile: "라이브러리에서 명시적 vault → IPFS 내보내기 제어 (기본 끄기)",
     allowExportDescDesktop: "명시적 vault → IPFS 내보내기 동작 제어 (기본 끄기)",
     kuboAlsoAvailable: "Kubo도 사용 가능{version} — 엔진을 전환하여 사용",
     kuboNotRequired: "Helia 내보내기에 Kubo 불필요",

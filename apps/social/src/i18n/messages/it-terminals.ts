@@ -20,8 +20,6 @@ export const itTerminalMessages = {
   exitedWithCode: "[Processo terminato con codice {code}]",
   runningOnHome: "In esecuzione sul nodo di casa",
   homeOffline: "Nodo di casa offline — accendi il computer e riprova.",
-  pairRequired: "Associa il tuo nodo di casa per usare i terminali remoti.",
-  pairRequiredDesc: "Scansiona il QR di associazione sulla tua app Envoy desktop (Impostazioni → Dispositivi).",
   badgeIdle: "Inattivo",
   badgeWorking: "In corso",
   badgeBlocked: "Bloccato",

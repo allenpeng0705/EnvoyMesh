@@ -29,7 +29,7 @@ export function ProfileView() {
           {t("profile.about")}
         </button>
       </nav>
-      {tab === "photos" ? <ProfilePhotosTab variant="desktop" /> : <ProfileAboutTab variant="desktop" />}
+      {tab === "photos" ? <ProfilePhotosTab /> : <ProfileAboutTab />}
     </div>
   );
 }

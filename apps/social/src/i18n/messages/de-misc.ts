@@ -378,7 +378,6 @@ export const deLibraryViewMessages = {
   empty: "Noch keine Dokumente. Importieren Sie eine Datei oder fügen Sie Dateien zu Ihrem freigegebenen Tresor-Ordner hinzu.",
   emptyFilter: "Kein Eintrag entspricht Ihrem Filter.",
   ipfsDisabled: "IPFS-Export ist unter Einstellungen → Netzwerk deaktiviert.",
-  heliaHint: "Mobil verwendet bei Aktivierung Helia in-process für IPFS-Export.",
   gatewayMatch: "Gateway-Inhalt stimmt mit Tresor-Hash überein",
   filesAria: "Bibliotheksdateien",
   pinFailed: "Anheften fehlgeschlagen",
@@ -394,7 +393,6 @@ export const deLibraryViewMessages = {
   importedToast: "{path} importiert",
   pinnedStatus: "Angeheftet via {provider}{pinId}",
   gatewayVerifiedStatus: "Gateway verifiziert ({bytes} Bytes) — {url}",
-  ipfsMobileHeliaOn: "Der Export verwendet Helia in-process auf diesem Gerät. Fügen Sie eine Gateway-Allowlist in den Einstellungen hinzu, um CIDs via HTTP zu verifizieren.",
   ipfsDesktopHelia: "Der Export verwendet Helia in-process — kein Kubo-Daemon erforderlich. Wechseln Sie in den Einstellungen zu Kubo, wenn Sie das mitgelieferte Sidecar benötigen.",
   ipfsDesktopKubo: "Der Export startet automatisch die IPFS-Engine bei der ersten Verwendung mit dem Desktop-App-Bundle.",
 
@@ -499,7 +497,6 @@ export const deAccountSettingsMessages = {
     revokeConfirmMessage: "Dieses Gerät kann nicht mehr auf Ihr Konto zugreifen.",
     revokeFailed: "Gerätezugriff konnte nicht widerrufen werden",
     refresh: "Aktualisieren",
-    mobileNotAvailable: "Geräteverwaltung ist auf mobilen Geräten nicht verfügbar.",
     cleanup: "Aufräumen",
     cleaning: "Wird aufgeräumt…",
     cleanupUnavailable: "Nichts aufzuräumen.",

@@ -56,11 +56,7 @@ function galleryPhotosToWallItems(
   return { items, ownerByUrl };
 }
 
-export interface ProfilePhotosTabProps {
-  variant?: "desktop" | "mobile";
-}
-
-export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps) {
+export function ProfilePhotosTab() {
   const t = useT();
   const nodeService = useNodeService();
   const { humanProfile, refreshHumanProfile } = useNodeState();
@@ -159,7 +155,7 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
     }
   };
 
-  const rootClass = variant === "mobile" ? "profile-photos-tab mv-profile-photos" : "profile-photos-tab";
+  const rootClass = "profile-photos-tab";
 
   return (
     <div className={rootClass} data-testid="profile-photos-tab">

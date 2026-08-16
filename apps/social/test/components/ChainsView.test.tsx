@@ -56,7 +56,6 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => mockNodeService,
   useTransportWsOpen: () => true,
   useAgentCards: () => [],
-  useIsInProcessMobileNode: () => false,
 }));
 
 // Stable references — a fresh `bonds: []` / `nodeConfig: {}` per call

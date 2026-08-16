@@ -3,7 +3,7 @@ import QRCode from "qrcode";
 import { buildEnvoyContactQrUri, buildEnvoyContactUri } from "@envoymesh/api";
 import type { WanJoinInviteExpiryPresetId } from "@envoymesh/api";
 import { useNodeState } from "../../context/NodeStateContext.js";
-import { useIsInProcessMobileNode, useNodeService } from "../../hooks/useNodeService.js";
+import { useNodeService } from "../../hooks/useNodeService.js";
 import { useCircuitReservationStatus } from "../../hooks/useCircuitReservationStatus.js";
 import { useT } from "../../context/I18nContext.js";
 import {
@@ -36,7 +36,6 @@ function ShareLinkIcon() {
 export function ShareContactCard({ compact = false }: { compact?: boolean }) {
   const t = useT();
   const nodeService = useNodeService();
-  const isMobileNode = useIsInProcessMobileNode();
   const { peerId, nodeStatus, humanProfile } = useNodeState();
 
   const [contactQr, setContactQr] = useState<string | null>(null);
@@ -49,7 +48,7 @@ export function ShareContactCard({ compact = false }: { compact?: boolean }) {
   const [expiryPreset, setExpiryPreset] = useState<WanJoinInviteExpiryPresetId>("days7");
   const [forceWithoutReservation, setForceWithoutReservation] = useState(false);
   const { chip: reservationChip, ready: reservationReady } = useCircuitReservationStatus({
-    enabled: nodeStatus === "running" && !isMobileNode,
+    enabled: nodeStatus === "running",
   });
   const reservationState = reservationChip?.state ?? "…";
 
@@ -57,7 +56,6 @@ export function ShareContactCard({ compact = false }: { compact?: boolean }) {
   const expiryLabel = t(`discover.share.expiry.${expiryPreset}`);
   const canCreate =
     nodeStatus === "running" &&
-    !isMobileNode &&
     !contactLoading &&
     (reservationReady || forceWithoutReservation);
 
@@ -139,8 +137,6 @@ export function ShareContactCard({ compact = false }: { compact?: boolean }) {
 
         {nodeStatus !== "running" ? (
           <p className="discover-status discover-status--warn">{t("discover.share.connectFirst")}</p>
-        ) : isMobileNode ? (
-          <p className="discover-status discover-status--warn">{t("discover.share.mobileHomeNodeOnly")}</p>
         ) : (
           <div className="share-contact-card__invite">
             <p className="discover-status" data-testid="share-circuit-reservation-chip">

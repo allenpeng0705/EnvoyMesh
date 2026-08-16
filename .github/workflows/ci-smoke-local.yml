@@ -28,9 +28,6 @@ jobs:
       - name: "Run test orchestrator (full: typecheck + unit + E2E + smoke)"
         run: npm run test:full
 
-      - name: Mobile Capacitor production build
-        run: npm run build -w @envoymesh/mobile
-
       # Lightweight structural check for the OpenClaw bundle self-reference
       # bug class ("node_modules/openclaw missing → gateway refuses to start").
       # The full spawn+probe smoke (scripts/smoke-openclaw-bundle.sh) is run

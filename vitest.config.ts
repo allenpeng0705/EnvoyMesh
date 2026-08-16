@@ -35,9 +35,6 @@ export default defineConfig({
       "@envoymesh/ipfs-helia/browser": resolve(rootDir, "packages/ipfs-helia/src/browser.ts"),
       "@envoymesh/ipfs-helia": resolve(rootDir, "packages/ipfs-helia/src/index.ts"),
       "@envoymesh/mobile-identity": resolve(rootDir, "packages/mobile-identity/src/index.ts"),
-      "@envoymesh/mobile-storage": resolve(rootDir, "packages/mobile-storage/src/index.ts"),
-      "@envoymesh/mobile-vault": resolve(rootDir, "packages/mobile-vault/src/index.ts"),
-      "@envoymesh/mobile-node": resolve(rootDir, "packages/mobile-node/src/index.ts"),
       "@envoymesh/rag/embedding-resolver": resolve(rootDir, "packages/rag/src/embedding-resolver.ts"),
       "@envoymesh/rag": resolve(rootDir, "packages/rag/src/index.ts"),
       "@envoymesh/kb-obsidian": resolve(rootDir, "packages/kb-obsidian/src/index.ts"),
@@ -46,17 +43,11 @@ export default defineConfig({
   test: {
     include: ["packages/*/test/**/*.test.{ts,tsx}", "apps/*/test/**/*.test.{ts,tsx}"],
     exclude: (() => {
-      // Capacitor apps/mobile + in-process mobile-* packages are BACKUP/LEGACY
-      // (product mobile = EnvoyGo). Keep them out of unit/e2e reports.
+      // Capacitor apps/mobile + in-process mobile-* packages were removed
+      // (backup/legacy; product mobile = EnvoyGo). Excludes kept for safety.
       const always = [
         "**/node_modules/**",
         "packages/openclaw/test/**",
-        "apps/mobile/**",
-        "packages/mobile-node/**",
-        "packages/mobile-storage/**",
-        "packages/mobile-vault/**",
-        "packages/mobile-models/**",
-        "packages/mobile-identity/**",
       ];
       // Default: skip E2E tests in `npm test`. They need libp2p mesh,
       // a relay server, or Chromium — see vitest.setup.ts. Opt in with

@@ -18,7 +18,6 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     getCircuitReservationStatus,
     createWanJoinInvite,
   }),
-  useIsInProcessMobileNode: () => false,
 }));
 
 vi.mock("../../src/context/NodeStateContext.js", () => ({

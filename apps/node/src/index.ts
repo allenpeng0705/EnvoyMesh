@@ -991,8 +991,11 @@ const MAX_RECORDED_FATAL_ERRORS = 20;
 
 // Per-peer inbound message rate limiting
 const peerRegistrationCount = new Map<string, { count: number; resetAt: number }>();
+const peerPairRequestCount = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute window
 const RATE_LIMIT_MAX_REGISTRATIONS = 30; // max inbound messages per peer per window
+/** Tighter cap for device.pair.* — exempt from the general limiter but not unlimited. */
+const PAIR_RATE_LIMIT_MAX = 5;
 const MAX_RATE_LIMIT_ENTRIES = 10_000; // Prevent memory exhaustion
 
 // Message deduplication to prevent replay attacks
@@ -1000,40 +1003,56 @@ const seenMessageIds = new Set<string>();
 const MAX_SEEN_MESSAGE_IDS = 100_000;
 
 // Maximum payload size to prevent memory exhaustion (1MB)
-function checkInboundRateLimit(peerId: string): boolean {
+function checkInboundRateLimit(
+  peerId: string,
+  store: Map<string, { count: number; resetAt: number }> = peerRegistrationCount,
+  maxPerWindow: number = RATE_LIMIT_MAX_REGISTRATIONS,
+): boolean {
   if (!peerId || typeof peerId !== "string") {
     return false;
   }
 
-  if (peerRegistrationCount.size >= MAX_RATE_LIMIT_ENTRIES) {
+  if (store.size >= MAX_RATE_LIMIT_ENTRIES) {
     const now = Date.now();
     let oldest: string | null = null;
     let oldestExpiry = Infinity;
-    for (const [id, entry] of peerRegistrationCount) {
+    for (const [id, entry] of store) {
       if (entry.resetAt < now && entry.resetAt < oldestExpiry) {
         oldest = id;
         oldestExpiry = entry.resetAt;
       }
     }
     if (oldest) {
-      peerRegistrationCount.delete(oldest);
+      store.delete(oldest);
     }
   }
 
   const now = Date.now();
-  const entry = peerRegistrationCount.get(peerId);
+  const entry = store.get(peerId);
 
   if (!entry || entry.resetAt < now) {
-    peerRegistrationCount.set(peerId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    store.set(peerId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
     return true;
   }
 
-  if (entry.count >= RATE_LIMIT_MAX_REGISTRATIONS) {
+  if (entry.count >= maxPerWindow) {
     return false;
   }
 
   entry.count++;
   return true;
+}
+
+function isPairingIntent(intent: string): boolean {
+  return (
+    intent === "device.pair.request" ||
+    intent === "device.pair.approve" ||
+    intent === "device.pair.deferred"
+  );
+}
+
+function checkInboundPairRateLimit(peerId: string): boolean {
+  return checkInboundRateLimit(peerId, peerPairRequestCount, PAIR_RATE_LIMIT_MAX);
 }
 
 function isMessageSeen(messageId: string): boolean {
@@ -2239,12 +2258,12 @@ async function handleInboundMeshMessage({
         remoteAddr,
         trustStore,
         peerDirectory: peerDirectoryStore,
-        onAccepted: async ({ payload: acceptedPayload }) => {
+        onAccepted: async ({ payload: acceptedPayload, bondLevel }) => {
           // Surface the new bond to Social (status strip, contacts) — LAN accept
           // previously wrote trust without emitting bond:established.
           nodeService.emit("bond:established", {
             peerOwnerId: acceptedPayload.requesterOwnerId,
-            displayName: "Fleet peer",
+            displayName: bondLevel === "direct" ? "Fleet peer" : "LAN peer",
           });
           try {
             const bonds = await nodeService.getBonds();
@@ -2822,17 +2841,19 @@ mesh.onMessage(async (params) => {
     inboundEnvelope.intent === "share.request" ||
     inboundEnvelope.intent === "share.accept" ||
     inboundEnvelope.intent === "chat.delivered" ||
-    // Office LAN / LAN auto-bond must not be dropped after Discover probe chatter.
-    inboundEnvelope.intent === "device.pair.request" ||
-    inboundEnvelope.intent === "device.pair.approve" ||
-    inboundEnvelope.intent === "device.pair.deferred" ||
     // PhotoWall / Explore chunked reads can exceed 30 msg/min easily (40 KiB
     // ranges). Silent drop leaves the viewer spinner hung until expect-reply
     // timeout — exempt content reads; public strangers still hit the bonds
     // checkPublicKnowledgeRateLimit inside library-read-inbound.
     inboundEnvelope.intent === "library.read" ||
     inboundEnvelope.intent === "library.read.response";
-  if (!isRateLimitExemptIntent && !checkInboundRateLimit(remotePeerId)) {
+  if (isPairingIntent(inboundEnvelope.intent)) {
+    // Office LAN sweep + reciprocal fire can churn pair requests; keep a
+    // dedicated cap instead of dropping them into the generic 30/min bucket.
+    if (!checkInboundPairRateLimit(remotePeerId)) {
+      return;
+    }
+  } else if (!isRateLimitExemptIntent && !checkInboundRateLimit(remotePeerId)) {
     return;
   }
   markMessageSeen(inboundEnvelope.messageId);
@@ -3250,6 +3271,12 @@ rateLimitCleanupInterval = setInterval(() => {
     for (const [peerId, entry] of peerRegistrationCount.entries()) {
       if (entry.resetAt < now) {
         peerRegistrationCount.delete(peerId);
+        cleaned++;
+      }
+    }
+    for (const [peerId, entry] of peerPairRequestCount.entries()) {
+      if (entry.resetAt < now) {
+        peerPairRequestCount.delete(peerId);
         cleaned++;
       }
     }

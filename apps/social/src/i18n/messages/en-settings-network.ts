@@ -186,8 +186,6 @@ export const networkSettingsMessages = {
   },
   ipfs: {
     title: "External distribution (IPFS)",
-    descMobile:
-      "On mobile, Library export uses in-process Helia (no Kubo). Gateway verify still requires your home desktop node.",
     descDesktop:
       "When enabled, Library can export vault files to IPFS and persist the root CID locally. EnvoyMesh starts the bundled IPFS engine automatically on first export — no separate install or terminal commands.",
     engine: "IPFS engine",
@@ -195,10 +193,8 @@ export const networkSettingsMessages = {
     heliaInProcess: "Helia in-process",
     heliaInProcessPrimary: "Helia in-process (primary)",
     heliaUnavailable: "Helia engine unavailable",
-    heliaMobileOnly: "Helia (mobile only)",
     exportEngine: "Export engine",
     allowExport: "Allow IPFS export",
-    allowExportDescMobile: "Gate explicit vault → IPFS export in Library (default off)",
     allowExportDescDesktop: "Gate explicit vault → IPFS export actions (default off)",
     kuboAlsoAvailable: "Kubo also available{version} — switch engine to use it",
     kuboNotRequired: "Kubo not required for Helia export",

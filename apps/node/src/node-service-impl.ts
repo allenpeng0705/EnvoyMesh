@@ -623,6 +623,11 @@ import {
 import { sendLanAutoBondRequest } from "./node-service-lan-auto-bond.js";
 import { anLog, anWarn, shortId } from "./agent-network-debug.js";
 import {
+  LAN_DISCOVERY_SWEEP_FORCE_EVERY_N,
+  LAN_DISCOVERY_SWEEP_INTERVAL_MS,
+  shouldRunLanDiscoverySweep,
+} from "./lan-discovery-sweep.js";
+import {
   consumeCompanyInviteViaRuntime,
   createCompanyInviteViaRuntime,
   listCompanyInvitesViaRuntime,
@@ -2626,6 +2631,95 @@ class NodeServiceImpl implements NodeService {
     anLog("lan-auto-bond", "kick connected peers", { reason, count: peers.length });
     for (const peerId of peers) {
       void this._maybeFireLanAutoBond(peerId);
+    }
+  }
+
+  /**
+   * While Office LAN / lan-fast is on, periodically re-probe peer-store LAN
+   * candidates. Needed because libp2p only emits peer:discovery once per peer;
+   * later mDNS ads are silent and Discover/auto-bond would otherwise stall.
+   */
+  private _lanDiscoverySweepTimer?: ReturnType<typeof setInterval>;
+  private _lanDiscoverySweepTick = 0;
+
+  private _stopLanDiscoverySweep(): void {
+    if (this._lanDiscoverySweepTimer) {
+      clearInterval(this._lanDiscoverySweepTimer);
+      this._lanDiscoverySweepTimer = undefined;
+    }
+    this._lanDiscoverySweepTick = 0;
+  }
+
+  private async _syncLanDiscoverySweep(reason: string): Promise<void> {
+    let cfg: Awaited<ReturnType<typeof this._configStore.load>> | undefined;
+    try {
+      cfg = await this._configStore.load();
+    } catch {
+      cfg = undefined;
+    }
+    const want = shouldRunLanDiscoverySweep(cfg) && this._nodeStatus === "running" && Boolean(this._mesh);
+    if (!want) {
+      if (this._lanDiscoverySweepTimer) {
+        anLog("lan-discovery", "sweep stopped", { reason });
+      }
+      this._stopLanDiscoverySweep();
+      return;
+    }
+    if (this._lanDiscoverySweepTimer) return;
+    anLog("lan-discovery", "sweep started", {
+      reason,
+      intervalMs: LAN_DISCOVERY_SWEEP_INTERVAL_MS,
+      profile: cfg?.discoveryProfile,
+      lanAutoBond: cfg?.lanAutoBondEnabled === true,
+    });
+    this._lanDiscoverySweepTimer = setInterval(() => {
+      void this._lanDiscoverySweepOnce();
+    }, LAN_DISCOVERY_SWEEP_INTERVAL_MS);
+    // Immediate pass so Enable Office LAN does not wait for the first interval.
+    void this._lanDiscoverySweepOnce();
+  }
+
+  private async _lanDiscoverySweepOnce(): Promise<void> {
+    if (this._nodeStatus !== "running" || !this._mesh) return;
+    this._lanDiscoverySweepTick += 1;
+    const force = this._lanDiscoverySweepTick % LAN_DISCOVERY_SWEEP_FORCE_EVERY_N === 0;
+    try {
+      if (force) {
+        const result = await this.refreshNearbyDiscovery();
+        anLog("lan-discovery", "sweep force refresh", {
+          tick: this._lanDiscoverySweepTick,
+          ...result,
+        });
+      } else {
+        const mesh = this._mesh;
+        const selfId = mesh.peerId;
+        const bootstrap = this._bootstrapPeerIdSet ?? new Set<string>();
+        let peered = 0;
+        for (const peerId of await mesh.listNearbyDiscoveryCandidatePeerIds()) {
+          if (!peerId || peerId === selfId || bootstrap.has(peerId)) continue;
+          let addrs: string[] = [];
+          try {
+            addrs = await mesh.getPeerStoreDialHints(peerId, {
+              allowEphemeralPrivateLan: true,
+            });
+          } catch {
+            addrs = [];
+          }
+          const lan = addrs.filter((a) => isPrivateLanTcpDialHint(a));
+          if (lan.length === 0) continue;
+          void this.handleMeshPeerDiscovered(peerId, lan);
+          peered += 1;
+        }
+        anLog("lan-discovery", "sweep soft probe", {
+          tick: this._lanDiscoverySweepTick,
+          peered,
+        });
+      }
+      void this._kickLanAutoBondForConnectedPeers("lan-sweep");
+    } catch (err) {
+      anWarn("lan-discovery", "sweep failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -9014,9 +9108,27 @@ class NodeServiceImpl implements NodeService {
         }
         // Office LAN / LAN auto-bond often flips on after peers are already
         // connected. Discovery probe cooldown would otherwise delay bonding
-        // until the next successful probe cycle — kick connected peers now.
+        // until the next successful probe cycle — refresh LAN candidates and
+        // kick connected peers now. Also start the periodic LAN sweep
+        // (libp2p only emits peer:discovery once per peer).
+        void this._syncLanDiscoverySweep("config-update");
         if (lanPatched && persisted?.lanAutoBondEnabled === true) {
-          void this._kickLanAutoBondForConnectedPeers("config-enable-or-token");
+          void this.refreshNearbyDiscovery()
+            .then(() => this._kickLanAutoBondForConnectedPeers("config-enable-or-token"))
+            .catch((err) => {
+              anWarn("lan-discovery", "refresh on Office LAN enable failed", {
+                error: err instanceof Error ? err.message : String(err),
+              });
+              void this._kickLanAutoBondForConnectedPeers("config-enable-or-token");
+            });
+        }
+        if (
+          Object.prototype.hasOwnProperty.call(nodePatch, "discoveryProfile") &&
+          persisted?.discoveryProfile === "lan-fast"
+        ) {
+          anLog("lan-discovery", "lan-fast profile saved — restart node for faster mDNS interval", {
+            note: "mdns interval is fixed at mesh create; sweep covers rediscovery without restart",
+          });
         }
       } catch {
         /* keep previous cache */
@@ -9644,10 +9756,12 @@ class NodeServiceImpl implements NodeService {
 
   private _startCapabilityDiscoveryScheduler(connectivityRuntime: ResolvedConnectivityRuntime): void {
     startCapabilityDiscoverySchedulerViaRuntime(this._capabilityDiscoveryContext(), connectivityRuntime);
+    void this._syncLanDiscoverySweep("start-node");
   }
 
   async stopNode(): Promise<void> {
     this.stopVaultRagWatcher();
+    this._stopLanDiscoverySweep();
     if (this._agentNetworkIndexRefreshTimers.length > 0) {
       for (const t of this._agentNetworkIndexRefreshTimers) clearTimeout(t);
       this._agentNetworkIndexRefreshTimers = [];

@@ -30,11 +30,7 @@ interface ProfileEditForm {
   locationPrecision: import("@envoymesh/api").DiscoveryLocationPrecision;
 }
 
-export interface ProfileAboutTabProps {
-  variant?: "desktop" | "mobile";
-}
-
-export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
+export function ProfileAboutTab() {
   const t = useT();
   const nodeService = useNodeService();
   const { showToast } = useToast();
@@ -156,7 +152,7 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
     }
   };
 
-  const rootClass = variant === "mobile" ? "profile-about-tab mv-profile-about" : "profile-about-tab";
+  const rootClass = "profile-about-tab";
 
   if (isEditingProfile) {
     return (

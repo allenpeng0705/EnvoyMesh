@@ -35,6 +35,10 @@ export const jaAgentNetworkSettingsMessages = {
       "トークンなし → オープン LAN。各デスクで有効化；この Wi‑Fi 上のトークンなしピアが自動バンディングします。カフェなどではトークンを推奨。",
     alreadyOnTokened: "オフィス LAN はオン（トークンあり・保護）。",
     alreadyOnOpen: "オフィス LAN はオン（オープントークンなし）。",
+    openConfirmMessage:
+      "フリートトークンが設定されていません。有効化すると、この Wi‑Fi 上でトークンなしで有効化した他のノードと自動バンディングします（アクセス制限付きのピアとして）。自分が管理する信頼できるネットワークでのみ続行してください。",
+    openConfirmEnable: "はい、オープン LAN を有効化",
+    openConfirmCancel: "キャンセル",
   },
   workersStatus: {
     heading: "ワーカー状態",
@@ -160,7 +164,6 @@ export const jaAgentNetworkSettingsMessages = {
     refresh: "マニフェストを更新",
     error: "フリートマニフェストの管理に失敗: {error}",
   },
-  mobileNotAvailable: "モバイルデバイスではエージェントネットワークのオン boarding は利用できません。デスクトップまたはラップトップからフリートを管理してください。",
   bondAutonomy: {
     heading: "バンディング自律 (ハロー自動承認)",
     desc: "有効にすると、ノードは下記のポリシーを満たすインバウンドバンディング リクエストを自動的に承認します。インストーラービルドの **Setup sponsor friend** と組み合わせ: 両側に同じ証明トークンを設定。",

@@ -20,8 +20,6 @@ export const frTerminalMessages = {
   exitedWithCode: "[Processus quitté avec le code {code}]",
   runningOnHome: "En cours sur le nœud domestique",
   homeOffline: "Nœud domestique hors ligne — allumez votre ordinateur et réessayez.",
-  pairRequired: "Jumelez votre nœud domestique pour utiliser les terminaux distants.",
-  pairRequiredDesc: "Scannez le QR de jumelage sur votre app Envoy de bureau (Paramètres → Appareils).",
   badgeIdle: "Inactif",
   badgeWorking: "En cours",
   badgeBlocked: "Bloqué",

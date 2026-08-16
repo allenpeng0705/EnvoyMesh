@@ -484,7 +484,6 @@ export const libraryViewMessages = {
   empty: "No documents yet. Use New File to write Markdown, or import an existing file.",
   emptyFilter: "No entries match your filter.",
   ipfsDisabled: "IPFS export is disabled in Settings → Network.",
-  heliaHint: "Mobile uses in-process Helia for IPFS export when enabled.",
   gatewayMatch: "Gateway content matches vault hash",
   filesAria: "Library files",
   pinFailed: "Pin failed",
@@ -499,8 +498,6 @@ export const libraryViewMessages = {
   cidPinnedToast: "CID pinned to provider",
   pinnedStatus: "Pinned via {provider}{pinId}",
   gatewayVerifiedStatus: "Gateway verified ({bytes} bytes) — {url}",
-  ipfsMobileHeliaOn:
-    "Export uses in-process Helia on this device. Add a gateway allowlist in Settings to verify CIDs over HTTP.",
   ipfsDesktopHelia:
     "Export uses in-process Helia — no Kubo daemon required. Switch back to Kubo in Settings if you need the bundled sidecar.",
   ipfsDesktopKubo:
@@ -1148,7 +1145,6 @@ export const accountSettingsMessages = {
       "This device will no longer be able to access your account.",
     revokeFailed: "Failed to revoke device access",
     refresh: "Refresh",
-    mobileNotAvailable: "Device management is not available on mobile devices.",
     // One-time cleanup of historical duplicate records created before
     // the mobile app started reusing a stable device keypair. Within each
     // group of devices sharing a display name, the most recently paired

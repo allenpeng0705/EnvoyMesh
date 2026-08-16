@@ -106,6 +106,10 @@ export const zhAgentNetworkSettingsMessages = {
     openLanHint: "无 token → 开放局域网。在每台电脑上启用即可；本 Wi‑Fi 上同样无 token 启用的节点会自动绑定。咖啡馆等公共网络请改用 token。",
     alreadyOnTokened: "办公局域网已开启（已设共享 token，受控模式）。",
     alreadyOnOpen: "办公局域网已开启（开放模式，无 token）— 会自动绑定本局域网内同样启用的节点。",
+    openConfirmMessage:
+      "未设置群 token。启用后，本 Wi‑Fi 上任何同样「无 token 启用」的节点都会与本机自动绑定（以受限的「已介绍」权限）。请仅在可信且由你控制的网络上继续。",
+    openConfirmEnable: "是，启用开放局域网",
+    openConfirmCancel: "取消",
   },
   workersStatus: {
     heading: "工作节点状态",
@@ -231,7 +235,6 @@ export const zhAgentNetworkSettingsMessages = {
     refresh: "刷新花名册",
     error: "管理群花名册失败：{error}",
   },
-  mobileNotAvailable: "移动设备不支持代理网络成员上线。请通过桌面或笔记本管理您的群。",
   bondAutonomy: {
     heading: "绑定自主（自动接受打招呼）",
     desc: "启用后，您的节点会自动接受通过下方策略的入站绑定请求。可与安装包中的**Setup sponsor friend**配合：两边设置相同的证明 token。",

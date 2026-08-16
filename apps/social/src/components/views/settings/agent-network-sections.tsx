@@ -13,10 +13,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNodeState } from "../../../context/NodeStateContext.js";
 import { useT } from "../../../context/I18nContext.js";
-import {
-  useIsInProcessMobileNode,
-  useNodeService,
-} from "../../../hooks/useNodeService.js";
+import { useNodeService } from "../../../hooks/useNodeService.js";
 import type {
   CompanyInviteRecord,
   FleetManifest,
@@ -70,6 +67,7 @@ export function OfficeLanPresetSection() {
   const [justEnabled, setJustEnabled] = useState(false);
   const [saved, setSaved] = useState(false);
   const [draftToken, setDraftToken] = useState("");
+  const [openLanConfirm, setOpenLanConfirm] = useState(false);
 
   const joinOn = nodeConfig?.capabilityProviderEnabled === true;
   const lanOn = nodeConfig?.lanAutoBondEnabled === true;
@@ -88,6 +86,7 @@ export function OfficeLanPresetSection() {
       lanAutoBondFleetToken?: string;
       lanAutoBondAutoJoinAgentNetwork: boolean;
       discoveryProfile: "lan-fast" | "wan-default";
+      mdnsIntervalMs?: number;
     }) => {
       await nodeService.updateNodeConfig(
         patch as Parameters<typeof nodeService.updateNodeConfig>[0],
@@ -101,11 +100,17 @@ export function OfficeLanPresetSection() {
   );
 
   const handleEnable = useCallback(async () => {
+    const trimmed = draftToken.trim();
+    // Open LAN (no token) is the risky mode: any opted-in peer on this Wi‑Fi
+    // auto-bonds (as referred). Require an explicit confirmation first.
+    if (trimmed.length === 0 && !openLanConfirm) {
+      setOpenLanConfirm(true);
+      return;
+    }
     setBusy(true);
     setError(null);
     setJustEnabled(false);
     try {
-      const trimmed = draftToken.trim();
       if (trimmed.length > 0 && trimmed.length < 8) {
         setError(t("settings.agentNetwork.lanAutoBond.validationTokenTooShort"));
         setBusy(false);
@@ -122,8 +127,12 @@ export function OfficeLanPresetSection() {
         lanAutoBondFleetToken: trimmed,
         lanAutoBondAutoJoinAgentNetwork: true,
         discoveryProfile: "lan-fast",
+        // Applied on next node start (mDNS interval is fixed at mesh create).
+        mdnsIntervalMs: 10_000,
       });
-      console.info("[agent-network.ui] Office LAN enable done");
+      console.info(
+        "[agent-network.ui] Office LAN enable done — restart both home nodes if mDNS still flaky; LAN sweep runs without restart",
+      );
       setJustEnabled(true);
       window.setTimeout(() => setJustEnabled(false), 4000);
     } catch (err) {
@@ -132,12 +141,13 @@ export function OfficeLanPresetSection() {
     } finally {
       setBusy(false);
     }
-  }, [draftToken, persistOfficeLan, t]);
+  }, [draftToken, openLanConfirm, persistOfficeLan, t]);
 
   const handleDisable = useCallback(async () => {
     setBusy(true);
     setError(null);
     setJustEnabled(false);
+    setOpenLanConfirm(false);
     try {
       console.info("[agent-network.ui] Office LAN disable");
       await persistOfficeLan({
@@ -227,7 +237,11 @@ export function OfficeLanPresetSection() {
         minLength={0}
         placeholder={t("settings.agentNetwork.officeLan.tokenPlaceholder")}
         value={draftToken}
-        onChange={(e) => setDraftToken(e.target.value)}
+        onChange={(e) => {
+          setDraftToken(e.target.value);
+          // Typing a token cancels the open-LAN confirm flow.
+          if (e.target.value.trim().length > 0) setOpenLanConfirm(false);
+        }}
         disabled={busy}
         style={{ width: "100%", marginBottom: 4 }}
       />
@@ -286,6 +300,44 @@ export function OfficeLanPresetSection() {
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        {!alreadyOn && openLanConfirm ? (
+          <div
+            className="settings-section"
+            data-testid="office-lan-open-confirm"
+            style={{
+              width: "100%",
+              border: "1px solid var(--color-warning, #b45309)",
+              padding: "8px 12px",
+              borderRadius: 8,
+            }}
+          >
+            <p className="field-desc" style={{ margin: 0, marginBottom: 8 }}>
+              {t("settings.agentNetwork.officeLan.openConfirmMessage")}
+            </p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="settings-button primary"
+                data-testid="office-lan-open-confirm-ok"
+                onClick={() => {
+                  void handleEnable();
+                }}
+                disabled={busy}
+              >
+                {t("settings.agentNetwork.officeLan.openConfirmEnable")}
+              </button>
+              <button
+                type="button"
+                className="settings-button"
+                data-testid="office-lan-open-confirm-cancel"
+                onClick={() => setOpenLanConfirm(false)}
+                disabled={busy}
+              >
+                {t("settings.agentNetwork.officeLan.openConfirmCancel")}
+              </button>
+            </div>
+          </div>
+        ) : null}
         {!alreadyOn ? (
           <button
             type="button"
@@ -516,7 +568,6 @@ export function WorkerMembershipSection() {
 export function CompanyInvitesSection() {
   const t = useT();
   const nodeService = useNodeService();
-  const isMobileNode = useIsInProcessMobileNode();
 
   const [invites, setInvites] = useState<CompanyInviteRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -529,7 +580,6 @@ export function CompanyInvitesSection() {
   const [revokingId, setRevokingId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (isMobileNode) return;
     setLoading(true);
     setError(null);
     try {
@@ -540,14 +590,13 @@ export function CompanyInvitesSection() {
     } finally {
       setLoading(false);
     }
-  }, [isMobileNode, nodeService]);
+  }, [nodeService]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
   const handleCreate = useCallback(async () => {
-    if (isMobileNode) return;
     setCreating(true);
     setError(null);
     try {
@@ -570,7 +619,7 @@ export function CompanyInvitesSection() {
     } finally {
       setCreating(false);
     }
-  }, [expiresHours, note, isMobileNode, nodeService, refresh]);
+  }, [expiresHours, note, nodeService, refresh]);
 
   const handleCopy = useCallback(async (inviteId: string) => {
     const uri = uriByInviteId[inviteId];
@@ -590,7 +639,6 @@ export function CompanyInvitesSection() {
   }, [uriByInviteId]);
 
   const handleRevoke = useCallback(async (inviteId: string) => {
-    if (isMobileNode) return;
     if (!window.confirm(t("settings.agentNetwork.companyInvites.revoke") + " — " + inviteId + "?")) {
       return;
     }
@@ -609,7 +657,7 @@ export function CompanyInvitesSection() {
     } finally {
       setRevokingId(null);
     }
-  }, [isMobileNode, nodeService, refresh, t]);
+  }, [nodeService, refresh, t]);
 
   const now = Date.now();
   return (
@@ -743,7 +791,6 @@ export function CompanyInvitesSection() {
 export function PairingKioskSection() {
   const t = useT();
   const nodeService = useNodeService();
-  const isMobileNode = useIsInProcessMobileNode();
   const { nodeConfig } = useNodeState();
 
   const [status, setStatus] = useState<PairingKioskStatus | null>(null);
@@ -758,21 +805,19 @@ export function PairingKioskSection() {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (isMobileNode) return;
     try {
       const next = await nodeService.getPairingKioskStatus();
       setStatus(next);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [isMobileNode, nodeService]);
+  }, [nodeService]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
   useEffect(() => {
-    if (isMobileNode) return;
     const cfg = nodeConfig as
       | {
           pairingKioskEnabled?: boolean;
@@ -792,7 +837,6 @@ export function PairingKioskSection() {
     setAllowLanDraft(cfg.pairingKioskAllowLanBind ?? false);
     setExpiresAtDraft(cfg.pairingKioskExpiresAt ?? "");
   }, [
-    isMobileNode,
     nodeConfig,
     (nodeConfig as { pairingKioskEnabled?: boolean } | null | undefined)
       ?.pairingKioskEnabled,
@@ -809,7 +853,6 @@ export function PairingKioskSection() {
   ]);
 
   const handleSave = useCallback(async () => {
-    if (isMobileNode) return;
     setSaving(true);
     setError(null);
     setSaved(false);
@@ -847,7 +890,6 @@ export function PairingKioskSection() {
     bindPortDraft,
     enabledDraft,
     expiresAtDraft,
-    isMobileNode,
     nodeService,
     refresh,
     tokenDraft,
@@ -1016,7 +1058,6 @@ function skeletonMembersForTemplate(templateId: string): string {
 export function FleetManifestSection() {
   const t = useT();
   const nodeService = useNodeService();
-  const isMobileNode = useIsInProcessMobileNode();
 
   const [manifests, setManifests] = useState<FleetManifestRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1032,7 +1073,6 @@ export function FleetManifestSection() {
   const [autoJoin, setAutoJoin] = useState(true);
 
   const refresh = useCallback(async () => {
-    if (isMobileNode) return;
     setLoading(true);
     setError(null);
     try {
@@ -1043,14 +1083,13 @@ export function FleetManifestSection() {
     } finally {
       setLoading(false);
     }
-  }, [isMobileNode, nodeService]);
+  }, [nodeService]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
   const handleSign = useCallback(async () => {
-    if (isMobileNode) return;
     if (!jsonDraft.trim().length) {
       setError(
         t("settings.agentNetwork.fleetManifest.invalidMembersJson"),
@@ -1094,10 +1133,9 @@ export function FleetManifestSection() {
     } finally {
       setSigning(false);
     }
-  }, [autoJoin, isMobileNode, jsonDraft, labelDraft, nodeService, t]);
+  }, [autoJoin, jsonDraft, labelDraft, nodeService, t]);
 
   const handleImport = useCallback(async () => {
-    if (isMobileNode) return;
     if (!signed) {
       setError("Sign the manifest first");
       return;
@@ -1133,7 +1171,7 @@ export function FleetManifestSection() {
     } finally {
       setImporting(false);
     }
-  }, [isMobileNode, nodeService, refresh, signed, t]);
+  }, [nodeService, refresh, signed, t]);
 
   const handleCopySigned = useCallback(async () => {
     if (!signed) return;
@@ -1148,7 +1186,6 @@ export function FleetManifestSection() {
 
   const handleRevoke = useCallback(
     async (manifestId: string) => {
-      if (isMobileNode) return;
       if (
         !window.confirm(
           t("settings.agentNetwork.fleetManifest.revoke") + " — " + manifestId + "?",
@@ -1167,7 +1204,7 @@ export function FleetManifestSection() {
         setRevokingId(null);
       }
     },
-    [isMobileNode, nodeService, refresh, t],
+    [nodeService, refresh, t],
   );
 
   return (

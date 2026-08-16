@@ -391,7 +391,6 @@ export const koLibraryViewMessages = {
   empty: "아직 문서가 없습니다. 파일을 가져오거나 공유 볼트 폴더에 추가하세요.",
   emptyFilter: "필터 조건에 맞는 항목이 없습니다.",
   ipfsDisabled: "IPFS 내보내기가 설정 → 네트워크에서 비활성화되었습니다.",
-  heliaHint: "모바일은 활성화 시 프로세스 내 Helia를 사용하여 IPFS로 내보냅니다.",
   gatewayMatch: "게이트웨이 내용이 볼트 해시와 일치합니다",
   filesAria: "라이브러리 파일",
   pinFailed: "고정 실패",
@@ -407,7 +406,6 @@ export const koLibraryViewMessages = {
   importedToast: "{path} 가져옴",
   pinnedStatus: "{provider}{pinId}을 통해 고정됨",
   gatewayVerifiedStatus: "게이트웨이 검증됨 ({bytes} 바이트) — {url}",
-  ipfsMobileHeliaOn: "이 기기에서 프로세스 내 Helia를 사용하여 내보냅니다. HTTP로 CID를 검증하려면 설정에서 게이트웨이 허용 목록을 추가하세요.",
   ipfsDesktopHelia: "프로세스 내 Helia를 사용하여 내보내기 — Kubo 데몬이 필요하지 않습니다. 번들 sidecar가 필요하면 설정에서 Kubo로 전환하세요.",
   ipfsDesktopKubo: "데스크톱 앱 번들을 사용할 때 IPFS 엔진은 첫 사용 시 자동으로 시작됩니다.",
 
@@ -512,7 +510,6 @@ export const koAccountSettingsMessages = {
     revokeConfirmMessage: "이 디바이스는 더 이상 계정에 접근할 수 없습니다.",
     revokeFailed: "디바이스 접근 취소 실패",
     refresh: "새로 고침",
-    mobileNotAvailable: "모바일에서는 디바이스 관리를 사용할 수 없습니다.",
     cleanup: "정리",
     cleaning: "정리 중…",
     cleanupUnavailable: "정리할 항목이 없습니다.",

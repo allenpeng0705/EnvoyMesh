@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useT } from "../../context/I18nContext.js";
-import { useIsInProcessMobileNode, useNodeService } from "../../hooks/useNodeService.js";
+import { useNodeService } from "../../hooks/useNodeService.js";
 import { useToast } from "../../hooks/useToast.js";
 import { openLocalFile, revealVaultLibraryFile } from "../../lib/library-file-actions.js";
 import { openContentKnowledge } from "../../lib/content-knowledge-nav.js";
@@ -79,17 +79,14 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
   const nodeService = useNodeService();
   const { nodeConfig } = useNodeState();
   const { showToast } = useToast();
-  const isMobileNode = useIsInProcessMobileNode();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const ipfsExportEngine = nodeConfig?.externalPublish?.ipfsExportEngine ?? (isMobileNode ? "helia" : "kubo");
+  const ipfsExportEngine = nodeConfig?.externalPublish?.ipfsExportEngine ?? "kubo";
   const ipfsPolicyEnabled = nodeConfig?.externalPublish?.allowIpfs ?? false;
   const ipfsPinningEnabled =
     ipfsPolicyEnabled && (nodeConfig?.externalPublish?.pinningEnabled ?? false);
-  const ipfsMobileHeliaEnabled =
-    isMobileNode && ipfsPolicyEnabled && ipfsExportEngine === "helia";
   const ipfsHeliaPrimaryEnabled =
-    ipfsPolicyEnabled && !isMobileNode && ipfsExportEngine === "helia";
-  const ipfsExportActionsEnabled = ipfsPolicyEnabled && (!isMobileNode || ipfsMobileHeliaEnabled);
+    ipfsPolicyEnabled && ipfsExportEngine === "helia";
+  const ipfsExportActionsEnabled = ipfsPolicyEnabled;
   const ipfsGatewayVerifyEnabled =
     ipfsPolicyEnabled && (nodeConfig?.externalPublish?.gatewayAllowlist?.length ?? 0) > 0;
   const [query, setQuery] = useState("");
@@ -656,7 +653,7 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
     const openLabel =
       fileActionBusy === `open:${rowKey}` ? t("library.opening") : t("library.open");
     const canEditNote = row.extension === ".md" && row.relativePath.startsWith("notes/");
-    const canReveal = !isMobileNode && row.source === "vault";
+    const canReveal = row.source === "vault";
     const canConvert = canConvertLibraryRowToMarkdown(row);
     const menuOpen = rowMenu?.rowKey === rowKey;
     const hasOverflow =
@@ -758,7 +755,7 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
     const revealLabel =
       fileActionBusy === `reveal:${rowKey}` ? t("library.opening") : t("library.showInFolder");
     const canEditNote = liveRow.extension === ".md" && liveRow.relativePath.startsWith("notes/");
-    const canReveal = !isMobileNode && liveRow.source === "vault";
+    const canReveal = liveRow.source === "vault";
     const canConvert = canConvertLibraryRowToMarkdown(liveRow);
     const canExportObsidian =
       embedded &&
@@ -1204,19 +1201,13 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
       {error && <p className="library-view-error" role="alert">{error}</p>}
       {ipfsErr && <p className="library-view-error" role="alert">{ipfsErr}</p>}
       {ipfsOk && <p className="library-view-hint" role="status">{ipfsOk}</p>}
-      {!embedded && isMobileNode && !ipfsMobileHeliaEnabled && (
-        <p className="library-view-hint">{t("library.heliaHint")}</p>
-      )}
-      {!embedded && isMobileNode && ipfsMobileHeliaEnabled && (
-        <p className="library-view-hint">{t("library.ipfsMobileHeliaOn")}</p>
-      )}
-      {!embedded && !isMobileNode && !ipfsPolicyEnabled && (
+      {!embedded && !ipfsPolicyEnabled && (
         <p className="library-view-hint">{t("library.ipfsDisabled")}</p>
       )}
-      {!embedded && !isMobileNode && ipfsPolicyEnabled && ipfsHeliaPrimaryEnabled && (
+      {!embedded && ipfsPolicyEnabled && ipfsHeliaPrimaryEnabled && (
         <p className="library-view-hint">{t("library.ipfsDesktopHelia")}</p>
       )}
-      {!embedded && !isMobileNode && ipfsPolicyEnabled && !ipfsHeliaPrimaryEnabled && (
+      {!embedded && ipfsPolicyEnabled && !ipfsHeliaPrimaryEnabled && (
         <p className="library-view-hint">{t("library.ipfsDesktopKubo")}</p>
       )}
       {!embedded ? <FriendsFilesPanel /> : null}

@@ -378,7 +378,6 @@ export const itLibraryViewMessages = {
   empty: "Ancora nessun documento. Importa un file o aggiungi file alla cartella condivisa del vault.",
   emptyFilter: "Nessuna voce corrisponde al filtro.",
   ipfsDisabled: "L'esportazione IPFS è disabilitata in Impostazioni → Rete.",
-  heliaHint: "Il mobile usa Helia in-process per l'esportazione IPFS quando abilitato.",
   gatewayMatch: "Il contenuto del gateway corrisponde all'hash del vault",
   filesAria: "File della libreria",
   pinFailed: "Fissaggio non riuscito",
@@ -394,7 +393,6 @@ export const itLibraryViewMessages = {
   importedToast: "Importato {path}",
   pinnedStatus: "Fissato tramite {provider}{pinId}",
   gatewayVerifiedStatus: "Gateway verificato ({bytes} byte) — {url}",
-  ipfsMobileHeliaOn: "L'esportazione usa Helia in-process su questo dispositivo. Aggiungi una allowlist di gateway nelle Impostazioni per verificare i CID via HTTP.",
   ipfsDesktopHelia: "L'esportazione usa Helia in-process — non è richiesto un demone Kubo. Passa a Kubo nelle Impostazioni se hai bisogno del sidecar incluso.",
   ipfsDesktopKubo: "L'esportazione avvia automaticamente il motore IPFS al primo utilizzo con il bundle dell'app desktop.",
 
@@ -499,7 +497,6 @@ export const itAccountSettingsMessages = {
     revokeConfirmMessage: "Questo dispositivo non potrà più accedere al tuo account.",
     revokeFailed: "Impossibile revocare l'accesso del dispositivo",
     refresh: "Aggiorna",
-    mobileNotAvailable: "La gestione dei dispositivi non è disponibile sui dispositivi mobili.",
     cleanup: "Pulisci",
     cleaning: "Pulizia…",
     cleanupUnavailable: "Niente da pulire.",

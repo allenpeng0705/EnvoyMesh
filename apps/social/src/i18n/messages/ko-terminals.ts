@@ -20,8 +20,6 @@ export const koTerminalMessages = {
   exitedWithCode: "[프로세스 종료, 코드 {code}]",
   runningOnHome: "홈 노드에서 실행 중",
   homeOffline: "홈 노드 오프라인 — 컴퓨터를 켜고 다시 시도하세요.",
-  pairRequired: "원격 터미널을 사용하려면 홈 노드와 페어링하세요.",
-  pairRequiredDesc: "데스크톱 Envoy 앱(설정 → 디바이스)에서 페어링 QR을 스캔하세요.",
   badgeIdle: "대기",
   badgeWorking: "작업 중",
   badgeBlocked: "차단됨",

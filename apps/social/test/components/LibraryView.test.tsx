@@ -21,7 +21,6 @@ let nodeConfig: {
 } = {
   externalPublish: { allowIpfs: false, gatewayAllowlist: [] },
 };
-let isInProcessMobileNode = false;
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => ({
@@ -30,11 +29,9 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     getBonds,
     setLibraryItemPublished,
     exportLibraryItemToIpfs,
-    exportLibraryItemToIpfs,
     verifyLibraryItemIpfsGateway,
     importToLibrary,
   }),
-  useIsInProcessMobileNode: () => isInProcessMobileNode,
 }));
 
 vi.mock("../../src/hooks/useToast.js", () => ({
@@ -90,7 +87,6 @@ afterEach(() => {
 
 beforeEach(() => {
   nodeConfig = { externalPublish: { allowIpfs: false, gatewayAllowlist: [] } };
-  isInProcessMobileNode = false;
   listLibraryItems.mockResolvedValue([sampleItem]);
   listAllLocalFiles.mockResolvedValue(unifiedList());
   getBonds.mockResolvedValue([]);
@@ -116,63 +112,6 @@ describe("LibraryView IPFS UI", () => {
     const menu = await openRowMenu(table);
     expect(within(menu).getByRole("menuitem", { name: /^Export$/i })).toBeDefined();
     expect(screen.queryByText(/IPFS export is off/i)).toBeNull();
-  });
-
-  it("hides IPFS export actions on in-process mobile when allowIpfs is false", async () => {
-    nodeConfig = { externalPublish: { allowIpfs: false, gatewayAllowlist: ["https://ipfs.io"] } };
-    isInProcessMobileNode = true;
-    renderWithI18n(<LibraryView />);
-
-    expect(await screen.findByText(/in-process Helia/i)).toBeDefined();
-    const table = await screen.findByRole("table");
-    // No Reveal / IPFS overflow items on mobile with IPFS off → no More menu.
-    expect(within(table).queryByRole("button", { name: /More actions/i })).toBeNull();
-    expect(screen.queryByRole("menuitem", { name: /^Export$/i })).toBeNull();
-    expect(screen.queryByRole("menuitem", { name: /Verify gateway/i })).toBeNull();
-  });
-
-  it("shows IPFS export on in-process mobile when allowIpfs is true (Helia)", async () => {
-    nodeConfig = {
-      externalPublish: { allowIpfs: true, gatewayAllowlist: [], ipfsExportEngine: "helia" },
-    };
-    isInProcessMobileNode = true;
-    renderWithI18n(<LibraryView />);
-
-    const table = await screen.findByRole("table");
-    const menu = await openRowMenu(table);
-    expect(within(menu).getByRole("menuitem", { name: /^Export$/i })).toBeDefined();
-    expect(within(menu).queryByRole("menuitem", { name: /Verify gateway/i })).toBeNull();
-  });
-
-  it("shows Verify gateway on mobile when allowlist is configured", async () => {
-    nodeConfig = {
-      externalPublish: {
-        allowIpfs: true,
-        gatewayAllowlist: ["https://ipfs.io"],
-        ipfsExportEngine: "helia",
-      },
-    };
-    isInProcessMobileNode = true;
-    listAllLocalFiles.mockResolvedValue(
-      unifiedList([
-        {
-          ...sampleItem,
-          publishedExternal: {
-            exportRevision: 1,
-            exportedAt: "2026-05-20T12:00:00.000Z",
-            cid: "bafytest",
-            ipfsInteropRecipe: "v1",
-            kuboVersion: "",
-            contentHash: "hash123",
-          },
-        },
-      ]),
-    );
-    renderWithI18n(<LibraryView />);
-
-    const table = await screen.findByRole("table");
-    const menu = await openRowMenu(table);
-    expect(within(menu).getByRole("menuitem", { name: /Verify gateway/i })).toBeDefined();
   });
 
   it("shows Helia hint on desktop when helia engine is selected", async () => {

@@ -378,7 +378,6 @@ export const jaLibraryViewMessages = {
   empty: "まだドキュメントがありません。ファイルをインポートするか、共有ボルトフォルダーに追加してください。",
   emptyFilter: "フィルター条件に一致するエントリがありません。",
   ipfsDisabled: "IPFS エクスポートは設定 → ネットワークで無効です。",
-  heliaHint: "モバイルは有効時にプロセス内 Helia を使用して IPFS にエクスポートします。",
   gatewayMatch: "ゲートウェイコンテンツがボルトハッシュと一致します",
   filesAria: "ライブラリファイル",
   pinFailed: "ピン留めに失敗",
@@ -394,7 +393,6 @@ export const jaLibraryViewMessages = {
   importedToast: "{path} をインポートしました",
   pinnedStatus: "{provider}{pinId} 経由でピン留め",
   gatewayVerifiedStatus: "ゲートウェイ検証済み ({bytes} バイト) — {url}",
-  ipfsMobileHeliaOn: "エクスポートはこのデバイスのプロセス内 Helia を使用します。HTTP で CID を検証するには設定でゲートウェイ許可リストを追加してください。",
   ipfsDesktopHelia: "エクスポートはプロセス内 Helia を使用 — Kubo デーモンは不要です。バンドルされた sidecar が必要な場合は設定で Kubo に切り替えてください。",
   ipfsDesktopKubo: "デスクトップアプリバンドルを使用する場合、IPFS エンジンは初回使用時に自動的に起動します。",
 
@@ -499,7 +497,6 @@ export const jaAccountSettingsMessages = {
     revokeConfirmMessage: "このデバイスはアカウントにアクセスできなくなります。",
     revokeFailed: "デバイスアクセスの取り消しに失敗",
     refresh: "更新",
-    mobileNotAvailable: "モバイルデバイスではデバイス管理は利用できません。",
     cleanup: "クリーンアップ",
     cleaning: "クリーンアップ中…",
     cleanupUnavailable: "クリーンアップする項目がありません。",

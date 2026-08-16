@@ -20,7 +20,6 @@ import { useState, type ReactNode } from "react";
 
 import { ModalPortal } from "./ModalPortal.js";
 import { useT } from "../context/I18nContext.js";
-import { useIsInProcessMobileNode } from "../hooks/useNodeService.js";
 import { ChainDefaultsPanel } from "./views/settings/ChainDefaultsPanel.js";
 import {
   BondAutonomySection,
@@ -63,7 +62,6 @@ function AccordionGroup({
 
 export function AgentNetworkSettingsModal({ onClose }: AgentNetworkSettingsModalProps) {
   const t = useT();
-  const isMobileNode = useIsInProcessMobileNode();
 
   return (
     <ModalPortal>
@@ -91,11 +89,8 @@ export function AgentNetworkSettingsModal({ onClose }: AgentNetworkSettingsModal
             </button>
           </div>
 
-          {isMobileNode ? (
-            <p className="section-desc">{t("settings.agentNetwork.mobileNotAvailable")}</p>
-          ) : (
-            <>
-              <p className="an-modal__intro">{t("chains.manageWorkers.intro")}</p>
+          <>
+            <p className="an-modal__intro">{t("chains.manageWorkers.intro")}</p>
 
               <OfficeLanPresetSection />
 
@@ -118,7 +113,6 @@ export function AgentNetworkSettingsModal({ onClose }: AgentNetworkSettingsModal
                 <SetupSponsorFriendSection />
               </AccordionGroup>
             </>
-          )}
         </div>
       </div>
     </ModalPortal>

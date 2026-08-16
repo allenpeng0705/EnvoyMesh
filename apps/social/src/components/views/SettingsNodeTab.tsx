@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useT } from "../../context/I18nContext.js";
 import {
-  useIsInProcessMobileNode,
   useNodeService,
   useShareOffers,
   useAgentShareProposals,
@@ -69,7 +68,6 @@ function loadWanTwoNatChecklistDone(): Record<string, boolean> {
 
 export function SettingsNodeTab() {
   const t = useT();
-  const isMobileNode = useIsInProcessMobileNode();
   const nodeService = useNodeService();
   const { nodeConfig, nodeStatus, peerId, bridgeStatus, refreshNodeConfig, connectionStatus, refreshConnectionStatus, bonds, appSettings, setAppSettings } =
     useNodeState();
@@ -179,7 +177,7 @@ export function SettingsNodeTab() {
           errorHint: t("settings.network.ipfs.statusReadError"),
         }),
       );
-  }, [nodeService, nodeConfig?.externalPublish?.allowIpfs, isMobileNode, t]);
+  }, [nodeService, nodeConfig?.externalPublish?.allowIpfs, t]);
 
   useEffect(() => {
     void refreshConnectionStatus();
@@ -243,7 +241,7 @@ export function SettingsNodeTab() {
     useState<WanJoinInviteExpiryPresetId>("days7");
   const [wanForceWithoutReservation, setWanForceWithoutReservation] = useState(false);
   const { chip: circuitReservationChip, ready: reservationReady } = useCircuitReservationStatus({
-    enabled: nodeStatus === "running" && !isMobileNode,
+    enabled: nodeStatus === "running",
   });
   const canMintWanInvite = reservationReady || wanForceWithoutReservation;
 
@@ -424,13 +422,11 @@ export function SettingsNodeTab() {
     () => ({
       allowIpfs: nodeConfig?.externalPublish?.allowIpfs ?? false,
       gatewayAllowlist: nodeConfig?.externalPublish?.gatewayAllowlist ?? [],
-      ipfsExportEngine: isMobileNode
-        ? ("helia" as const)
-        : (nodeConfig?.externalPublish?.ipfsExportEngine ?? "kubo"),
+      ipfsExportEngine: nodeConfig?.externalPublish?.ipfsExportEngine ?? "kubo",
       pinningEnabled: nodeConfig?.externalPublish?.pinningEnabled ?? false,
       pinningProvider: nodeConfig?.externalPublish?.pinningProvider ?? "pinata",
     }),
-    [nodeConfig?.externalPublish, isMobileNode],
+    [nodeConfig?.externalPublish],
   );
 
   const ipfsExportToggle = useOptimisticToggle(
@@ -1102,56 +1098,13 @@ export function SettingsNodeTab() {
         </div>
       </section>
 
-      {isMobileNode ? (
-        <section className="settings-section">
-          <h3>{t("settings.network.ipfs.title")}</h3>
-          <p className="section-desc">
-            {t("settings.network.ipfs.descMobile")}
-          </p>
-          <dl className="settings-list">
-            <dt>{t("settings.network.ipfs.engine")}</dt>
-            <dd>
-              {ipfsEngineStatus == null ? (
-                <span className="settings-hint">{t("settings.network.ipfs.checking")}</span>
-              ) : ipfsEngineStatus.helia?.available ? (
-                <span className="settings-hint">
-                  {t("settings.network.ipfs.heliaInProcess")}
-                  {ipfsEngineStatus.helia.heliaVersion ? ` (${ipfsEngineStatus.helia.heliaVersion})` : ""}
-                </span>
-              ) : (
-                <span className="settings-hint" role="alert">
-                  {ipfsEngineStatus.helia?.errorHint ?? t("settings.network.ipfs.heliaUnavailable")}
-                </span>
-              )}
-            </dd>
-            <dt>{t("settings.network.ipfs.exportEngine")}</dt>
-            <dd>
-              <span className="settings-hint">{t("settings.network.ipfs.heliaMobileOnly")}</span>
-            </dd>
-          </dl>
-          <div className="settings-toggle-row">
-            <div className="toggle-info">
-              <strong>{t("settings.network.ipfs.allowExport")}</strong>
-              <span className="toggle-desc">{t("settings.network.ipfs.allowExportDescMobile")}</span>
-            </div>
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
-                checked={ipfsExportToggle.checked}
-                onChange={ipfsExportToggle.onCheckboxChange}
-              />
-              <span className="slider" />
-            </label>
-          </div>
-        </section>
-      ) : (
-        <section className="settings-section">
-          <h3>{t("settings.network.ipfs.title")}</h3>
-          <p className="section-desc">
-            {t("settings.network.ipfs.descDesktop")}
-          </p>
-          <dl className="settings-list">
-            <dt>{t("settings.network.ipfs.engine")}</dt>
+      <section className="settings-section">
+        <h3>{t("settings.network.ipfs.title")}</h3>
+        <p className="section-desc">
+          {t("settings.network.ipfs.descDesktop")}
+        </p>
+        <dl className="settings-list">
+          <dt>{t("settings.network.ipfs.engine")}</dt>
             <dd>
               {currentExternalPublish.ipfsExportEngine === "helia" ? (
                 <>
@@ -1331,7 +1284,6 @@ export function SettingsNodeTab() {
             </dd>
           </dl>
         </section>
-      )}
 
       <section className="settings-section">
         <h3>{t("settings.network.agentBridge.title")}</h3>
@@ -1381,8 +1333,7 @@ export function SettingsNodeTab() {
         {/* Pairing QR for mobile app lives in the top-bar QR icon (PairingQRModal) */}
 
         {/* WAN join invite (Phase 15B) — bootstrap cold-start across NAT */}
-        {!isMobileNode ? (
-          <div style={{ marginTop: "16px" }}>
+        <div style={{ marginTop: "16px" }}>
             <strong>{t("settings.network.agentBridge.wanInviteTitle")}</strong>
             <p className="settings-hint" style={{ marginTop: 4 }}>
               {t("settings.network.agentBridge.wanInviteDesc")}
@@ -1472,7 +1423,6 @@ export function SettingsNodeTab() {
               </dd>
             </dl>
           </div>
-        ) : null}
         {/* Authorized devices live in the Account tab now (single source of truth). */}
       </section>
 

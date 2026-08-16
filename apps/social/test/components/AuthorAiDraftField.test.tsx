@@ -14,7 +14,6 @@ let mockNodeConfig: { modelProviders: { mode: string } } = {
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => ({ draftAuthorContent }),
-  useIsInProcessMobileNode: () => false,
 }));
 
 vi.mock("../../src/context/NodeStateContext.js", () => ({

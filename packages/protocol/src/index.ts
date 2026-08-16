@@ -464,11 +464,16 @@ export const DevicePairRequestPayloadSchema = z.object({
   /** When set, home node may auto-accept if this matches the latest token from `getPairingPayload`. */
   pairingToken: z.string().min(1).optional(),
   /**
-   * Phase 35C — shared fleet secret for LAN auto-bond. Carried in the pair-request
-   * envelope so the recipient can decide whether to auto-bond without scanning
-   * a QR. The token is treated as an opaque bearer; the home node never logs it.
+   * @deprecated Prefer {@link lanFleetTokenProof}. Legacy plaintext fleet
+   * secret — accepted only for older peers; never send from current nodes.
    */
   lanFleetToken: z.string().min(1).max(256).optional(),
+  /**
+   * Phase 35C — HMAC proof of the shared fleet token, bound to requester
+   * identity + requestId so a sniffed proof cannot be replayed as another peer.
+   * Format: `v1.` + base64url(HMAC-SHA256(token, binding)).
+   */
+  lanFleetTokenProof: z.string().min(1).max(128).optional(),
 });
 
 export const DevicePairApprovePayloadSchema = z.object({
@@ -3867,8 +3872,13 @@ export interface CreateDevicePairRequestPayloadInput {
   createdAt?: string;
   /** Same value as `PairingPayload.token` from the QR / `getPairingPayload` RPC. */
   pairingToken?: string;
-  /** Phase 35C — shared fleet secret for LAN auto-bond (when enabled). */
+  /**
+   * @deprecated Prefer {@link lanFleetTokenProof}. Do not send plaintext tokens
+   * from current nodes.
+   */
   lanFleetToken?: string;
+  /** Phase 35C — HMAC proof of fleet token (see DevicePairRequestPayloadSchema). */
+  lanFleetTokenProof?: string;
 }
 
 export function createDevicePairRequestPayload(
@@ -3885,6 +3895,7 @@ export function createDevicePairRequestPayload(
     createdAt: input.createdAt ?? new Date().toISOString(),
     pairingToken: input.pairingToken,
     lanFleetToken: input.lanFleetToken,
+    lanFleetTokenProof: input.lanFleetTokenProof,
   });
 }
 

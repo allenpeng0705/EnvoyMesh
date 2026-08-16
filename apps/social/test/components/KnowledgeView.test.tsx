@@ -46,7 +46,6 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     getRagIndexStatus: vi.fn().mockResolvedValue(null),
     listAllLocalFiles: vi.fn().mockResolvedValue({ items: [] }),
   }),
-  useIsInProcessMobileNode: () => false,
 }));
 
 vi.mock("../../src/context/NodeStateContext.js", () => ({

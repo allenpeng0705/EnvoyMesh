@@ -306,8 +306,6 @@ export const terminalMessages = {
   exitedWithCode: "[Process exited with code {code}]",
   runningOnHome: "Running on home node",
   homeOffline: "Home node offline — connect your computer and try again.",
-  pairRequired: "Pair with your home node to use remote terminals.",
-  pairRequiredDesc: "Scan the pairing QR on your desktop Envoy app (Settings → Devices).",
   unavailable: "Terminals unavailable",
   unavailableDesc:
     "Connect to a home node that supports remote terminals, then try again.",

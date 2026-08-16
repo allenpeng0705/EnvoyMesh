@@ -8,11 +8,14 @@ import type { DevicePairRequestPayload } from "@envoymesh/protocol";
 import {
   applyLanAutoBondAccept,
   buildLanAutoBondRequest,
+  createLanFleetTokenProof,
   evaluateLanAutoBondReceipt,
   fingerprintFleetToken,
   LAN_AUTO_BOND_NOTE,
+  lanFleetProofBinding,
   OPEN_LAN_FINGERPRINT,
   sendLanAutoBondRequest,
+  verifyLanFleetTokenProof,
   type LanAutoBondDeps,
 } from "../src/node-service-lan-auto-bond.js";
 
@@ -74,6 +77,48 @@ describe("fingerprintFleetToken", () => {
   });
 });
 
+describe("lanFleetTokenProof", () => {
+  const binding = {
+    requesterOwnerId: "envoy:owner:other",
+    requesterDeviceId: "envoy:device:other",
+    requestId: "req-1",
+  };
+
+  it("creates a v1 prefix proof and verifies", () => {
+    const proof = createLanFleetTokenProof("fleet-secret-1", binding);
+    expect(proof.startsWith("v1.")).toBe(true);
+    expect(verifyLanFleetTokenProof("fleet-secret-1", proof, binding)).toBe(true);
+    // Never contains the raw token.
+    expect(proof).not.toContain("fleet-secret-1");
+  });
+
+  it("fails for a different token", () => {
+    const proof = createLanFleetTokenProof("fleet-secret-1", binding);
+    expect(verifyLanFleetTokenProof("other-token", proof, binding)).toBe(false);
+  });
+
+  it("fails when replayed against a different requester (binding)", () => {
+    const proof = createLanFleetTokenProof("fleet-secret-1", binding);
+    const replayed = verifyLanFleetTokenProof("fleet-secret-1", proof, {
+      requesterOwnerId: "envoy:owner:attacker",
+      requesterDeviceId: "envoy:device:attacker",
+      requestId: binding.requestId,
+    });
+    expect(replayed).toBe(false);
+  });
+
+  it("fails when replayed with a different requestId", () => {
+    const proof = createLanFleetTokenProof("fleet-secret-1", binding);
+    expect(
+      verifyLanFleetTokenProof("fleet-secret-1", proof, { ...binding, requestId: "req-2" }),
+    ).toBe(false);
+  });
+
+  it("binding is stable for the same identity", () => {
+    expect(lanFleetProofBinding(binding)).toBe(lanFleetProofBinding(binding));
+  });
+});
+
 describe("buildLanAutoBondRequest", () => {
   it("refuses when lanAutoBondEnabled is off", async () => {
     const deps = baseDeps();
@@ -109,7 +154,7 @@ describe("buildLanAutoBondRequest", () => {
     expect(result).toEqual({ ok: false, reason: "self-target" });
   });
 
-  it("returns a payload with the fleet token when enabled and configured", async () => {
+  it("returns a payload with an HMAC token proof (never the raw token) when enabled and configured", async () => {
     const deps = baseDeps({
       loadConfig: async () => ({
         ...((await baseDeps().loadConfig()) as PersistedNodeConfig),
@@ -120,8 +165,24 @@ describe("buildLanAutoBondRequest", () => {
     const result = await buildLanAutoBondRequest(deps, "peer-1");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.payload.lanFleetToken).toBe("fleet-secret-1");
+    // Raw token must never be placed on the wire.
+    expect(result.payload.lanFleetToken).toBeUndefined();
+    expect(result.payload.lanFleetTokenProof).toBeDefined();
+    expect(result.payload.lanFleetTokenProof!.startsWith("v1.")).toBe(true);
+    expect(result.payload.lanFleetTokenProof).not.toContain("fleet-secret-1");
     expect(result.fingerprint).toBe(fingerprintFleetToken("fleet-secret-1"));
+    // Proof verifies against the requester identity bound in the payload.
+    expect(
+      verifyLanFleetTokenProof(
+        "fleet-secret-1",
+        result.payload.lanFleetTokenProof!,
+        {
+          requesterOwnerId: result.payload.requesterOwnerId,
+          requesterDeviceId: result.payload.requesterDeviceId,
+          requestId: result.payload.requestId,
+        },
+      ),
+    ).toBe(true);
   });
 });
 
@@ -190,6 +251,23 @@ describe("evaluateLanAutoBondReceipt", () => {
     return { payload };
   }
 
+  function makeProofEnvelope(token: string, note = LAN_AUTO_BOND_NOTE): { payload: unknown } {
+    const payload: Partial<DevicePairRequestPayload> = {
+      requestId: "req-proof",
+      requesterOwnerId: "envoy:owner:other",
+      requesterDeviceId: "envoy:device:other",
+      requesterDevicePublicKeyPem: "pem",
+      createdAt: new Date().toISOString(),
+      lanFleetTokenProof: createLanFleetTokenProof(token, {
+        requesterOwnerId: "envoy:owner:other",
+        requesterDeviceId: "envoy:device:other",
+        requestId: "req-proof",
+      }),
+      note,
+    };
+    return { payload };
+  }
+
   it("rejects an ordinary envelope without a token or lan-auto note", async () => {
     const deps = baseDeps();
     const decision = await evaluateLanAutoBondReceipt(deps, makeEnvelope(undefined));
@@ -248,6 +326,62 @@ describe("evaluateLanAutoBondReceipt", () => {
     expect(decision.accept).toBe(true);
     expect(decision.reason).toBe("matched-open-lan");
     expect(decision.fingerprint).toBe(OPEN_LAN_FINGERPRINT);
+    // Open LAN must never grant direct — limited referred tier.
+    expect(decision.bondLevel).toBe("referred");
+  });
+
+  it("accepts a matching HMAC proof as a tokened direct bond", async () => {
+    const deps = baseDeps({
+      loadConfig: async () => ({
+        ...((await baseDeps().loadConfig()) as PersistedNodeConfig),
+        lanAutoBondEnabled: true,
+        lanAutoBondFleetToken: "fleet-secret-1",
+      }),
+    });
+    const decision = await evaluateLanAutoBondReceipt(deps, makeProofEnvelope("fleet-secret-1"));
+    expect(decision.accept).toBe(true);
+    expect(decision.reason).toBe("matched-fleet-token");
+    expect(decision.bondLevel).toBe("direct");
+    expect(decision.fingerprint).toBe(fingerprintFleetToken("fleet-secret-1"));
+  });
+
+  it("rejects a proof made with a different token", async () => {
+    const deps = baseDeps({
+      loadConfig: async () => ({
+        ...((await baseDeps().loadConfig()) as PersistedNodeConfig),
+        lanAutoBondEnabled: true,
+        lanAutoBondFleetToken: "fleet-secret-1",
+      }),
+    });
+    const decision = await evaluateLanAutoBondReceipt(deps, makeProofEnvelope("wrong-token"));
+    expect(decision.accept).toBe(false);
+    expect(decision.reason).toBe("token-mismatch");
+  });
+
+  it("rejects a proof bound to a different requester (replay protection)", async () => {
+    const deps = baseDeps({
+      loadConfig: async () => ({
+        ...((await baseDeps().loadConfig()) as PersistedNodeConfig),
+        lanAutoBondEnabled: true,
+        lanAutoBondFleetToken: "fleet-secret-1",
+      }),
+    });
+    const payload: Partial<DevicePairRequestPayload> = {
+      requestId: "req-proof",
+      requesterOwnerId: "envoy:owner:attacker",
+      requesterDeviceId: "envoy:device:attacker",
+      requesterDevicePublicKeyPem: "pem",
+      createdAt: new Date().toISOString(),
+      lanFleetTokenProof: createLanFleetTokenProof("fleet-secret-1", {
+        requesterOwnerId: "envoy:owner:other",
+        requesterDeviceId: "envoy:device:other",
+        requestId: "req-proof",
+      }),
+      note: LAN_AUTO_BOND_NOTE,
+    };
+    const decision = await evaluateLanAutoBondReceipt(deps, { payload });
+    expect(decision.accept).toBe(false);
+    expect(decision.reason).toBe("token-mismatch");
   });
 
   it("rejects on token mismatch", async () => {
@@ -286,7 +420,7 @@ describe("evaluateLanAutoBondReceipt", () => {
     expect(decision).toEqual({ accept: false, reason: "self-target" });
   });
 
-  it("accepts on matching token", async () => {
+  it("accepts on matching token (legacy plaintext interop)", async () => {
     const deps = baseDeps({
       loadConfig: async () => ({
         ...((await baseDeps().loadConfig()) as PersistedNodeConfig),
@@ -298,6 +432,7 @@ describe("evaluateLanAutoBondReceipt", () => {
     expect(decision.accept).toBe(true);
     expect(decision.reason).toBe("matched-fleet-token");
     expect(decision.fingerprint).toBe(fingerprintFleetToken("fleet-secret-1"));
+    expect(decision.bondLevel).toBe("direct");
   });
 });
 
@@ -351,6 +486,86 @@ describe("applyLanAutoBondAccept", () => {
       peerId: "envoy:peer:other",
       listenAddrs: ["10.0.0.5:3030"],
     });
+  });
+
+  it("writes a 'referred' trust record for open LAN bonds", async () => {
+    const deps = baseDeps();
+    const trust = trustStoreSpy();
+    await applyLanAutoBondAccept(deps, {
+      requesterOwnerId: "envoy:owner:other",
+      requesterDeviceId: "envoy:device:other",
+      requesterPeerId: "envoy:peer:other",
+      fingerprint: OPEN_LAN_FINGERPRINT,
+      correlationId: "corr-1",
+      messageId: "msg-1",
+      bondLevel: "referred",
+      allowAutoJoinAgentNetwork: false,
+      trustStore: trust,
+      peerDirectory: peerDirSpy(),
+    });
+    expect(trust.setTrustRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        peerOwnerId: "envoy:owner:other",
+        level: "referred",
+        displayName: "LAN peer",
+      }),
+    );
+  });
+
+  it("auto-joins Agent Network only for tokened fleet bonds (allowAutoJoinAgentNetwork)", async () => {
+    const enableCapabilityProvider = vi.fn();
+    const deps: LanAutoBondDeps = {
+      ...baseDeps({
+        loadConfig: async () => ({
+          ...((await baseDeps().loadConfig()) as PersistedNodeConfig),
+          lanAutoBondEnabled: true,
+          lanAutoBondFleetToken: "fleet-secret-1",
+          lanAutoBondAutoJoinAgentNetwork: true,
+          capabilityProviderEnabled: false,
+        }),
+      }),
+      enableCapabilityProvider,
+    };
+    await applyLanAutoBondAccept(deps, {
+      requesterOwnerId: "envoy:owner:other",
+      requesterDeviceId: "envoy:device:other",
+      requesterPeerId: "envoy:peer:other",
+      fingerprint: "fp-1",
+      correlationId: "corr-1",
+      messageId: "msg-1",
+      bondLevel: "direct",
+      allowAutoJoinAgentNetwork: true,
+      trustStore: trustStoreSpy(),
+      peerDirectory: peerDirSpy(),
+    });
+    expect(enableCapabilityProvider).toHaveBeenCalledTimes(1);
+  });
+
+  it("never auto-joins Agent Network for open-LAN / referred bonds", async () => {
+    const enableCapabilityProvider = vi.fn();
+    const deps: LanAutoBondDeps = {
+      ...baseDeps({
+        loadConfig: async () => ({
+          ...((await baseDeps().loadConfig()) as PersistedNodeConfig),
+          lanAutoBondEnabled: true,
+          capabilityProviderEnabled: false,
+        }),
+      }),
+      enableCapabilityProvider,
+    };
+    await applyLanAutoBondAccept(deps, {
+      requesterOwnerId: "envoy:owner:other",
+      requesterDeviceId: "envoy:device:other",
+      requesterPeerId: "envoy:peer:other",
+      fingerprint: OPEN_LAN_FINGERPRINT,
+      correlationId: "corr-1",
+      messageId: "msg-1",
+      bondLevel: "referred",
+      allowAutoJoinAgentNetwork: false,
+      trustStore: trustStoreSpy(),
+      peerDirectory: peerDirSpy(),
+    });
+    expect(enableCapabilityProvider).not.toHaveBeenCalled();
   });
 
   it("emits a 'message.verified' audit event with the fingerprint and never the raw token", async () => {
@@ -424,7 +639,12 @@ describe("handleLanAutoBondInbound", () => {
       requesterDeviceId: "envoy:device:other",
       requesterDevicePublicKeyPem: "pem",
       createdAt: new Date().toISOString(),
-      lanFleetToken: "fleet-secret-1",
+      // Current nodes send an HMAC proof — never the raw token.
+      lanFleetTokenProof: createLanFleetTokenProof("fleet-secret-1", {
+        requesterOwnerId: "envoy:owner:other",
+        requesterDeviceId: "envoy:device:other",
+        requestId: "req-shared",
+      }),
     };
     let accepted = false;
     const result = await handleLanAutoBondInbound({
@@ -442,6 +662,50 @@ describe("handleLanAutoBondInbound", () => {
     expect(trust.setTrustRecord).toHaveBeenCalledWith(
       expect.objectContaining({ peerOwnerId: "envoy:owner:other", level: "direct" }),
     );
+    expect(enableCapabilityProvider).not.toHaveBeenCalled();
+  });
+
+  it("accepts open LAN with no token as a referred bond (no auto-join)", async () => {
+    const { handleLanAutoBondInbound } = await import("../src/node-service-lan-auto-bond.js");
+    const enableCapabilityProvider = vi.fn();
+    const deps: LanAutoBondDeps = {
+      ...baseDeps({
+        loadConfig: async () => ({
+          ...((await baseDeps().loadConfig()) as PersistedNodeConfig),
+          lanAutoBondEnabled: true,
+          lanAutoBondAutoJoinAgentNetwork: true,
+          capabilityProviderEnabled: false,
+        }),
+      }),
+      enableCapabilityProvider,
+    };
+    const trust = trustStoreSpy();
+    const peer = { ensurePeerFromInboundChat: vi.fn().mockResolvedValue(undefined) };
+    const result = await handleLanAutoBondInbound({
+      deps,
+      envelope: {
+        payload: {
+          requestId: "req-open",
+          requesterOwnerId: "envoy:owner:other",
+          requesterDeviceId: "envoy:device:other",
+          requesterDevicePublicKeyPem: "pem",
+          createdAt: new Date().toISOString(),
+          note: LAN_AUTO_BOND_NOTE,
+        },
+        messageId: "msg-open",
+        correlationId: "c-open",
+      },
+      remotePeerId: "12D3KooW-other",
+      trustStore: trust,
+      peerDirectory: peer,
+    });
+    expect(result.outcome).toBe("accepted");
+    if (result.outcome !== "accepted") return;
+    expect(result.bondLevel).toBe("referred");
+    expect(trust.setTrustRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ peerOwnerId: "envoy:owner:other", level: "referred" }),
+    );
+    // Open LAN must never auto-recruit a chain worker.
     expect(enableCapabilityProvider).not.toHaveBeenCalled();
   });
 

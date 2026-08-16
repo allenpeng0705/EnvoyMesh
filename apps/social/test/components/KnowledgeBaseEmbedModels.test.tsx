@@ -24,7 +24,6 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     reindexRagKnowledge: vi.fn(async () => undefined),
     listKbPlugins: vi.fn(async () => []),
   }),
-  useIsInProcessMobileNode: () => false,
   useModelProviderUiScope: () => "full",
 }));
 

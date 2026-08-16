@@ -72,7 +72,6 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     verifyLibraryItemIpfsGateway,
     importToLibrary,
   }),
-  useIsInProcessMobileNode: () => false,
 }));
 
 vi.mock("../../src/hooks/useToast.js", () => ({

@@ -15,10 +15,6 @@
     { "path": "./apps/node" },
     { "path": "./apps/relay" },
     { "path": "./apps/social" },
-    { "path": "./packages/mobile-identity" },
-    { "path": "./packages/mobile-storage" },
-    { "path": "./packages/mobile-vault" },
-    { "path": "./packages/mobile-node" },
-    { "path": "./apps/mobile" }
+    { "path": "./packages/mobile-identity" }
   ]
 }

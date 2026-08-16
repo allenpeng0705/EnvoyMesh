@@ -20,10 +20,7 @@
       "@envoymesh/ipfs-helia": ["./packages/ipfs-helia/src/index.ts"],
       "@envoymesh/ipfs-helia/browser": ["./packages/ipfs-helia/src/browser.ts"],
       "@envoymesh/mobile-identity": ["./packages/mobile-identity/src/index.ts"],
-      "@envoymesh/mobile-storage": ["./packages/mobile-storage/src/index.ts"],
-      "@envoymesh/mobile-vault": ["./packages/mobile-vault/src/index.ts"],
-      "@envoymesh/mobile-node": ["./packages/mobile-node/src/index.ts"],
-    "@envoymesh/rag": ["./packages/rag/src/index.ts"],
+      "@envoymesh/rag": ["./packages/rag/src/index.ts"],
     "@envoymesh/kb-obsidian": ["./packages/kb-obsidian/src/index.ts"]
     },
     "strict": true,

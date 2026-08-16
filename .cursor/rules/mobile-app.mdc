@@ -1,5 +1,5 @@
 ---
-description: Mobile app is EnvoyGo (Flutter). Capacitor apps/mobile is backup only.
+description: Mobile app is EnvoyGo (Flutter). Capacitor apps/mobile backup stack was removed.
 alwaysApply: true
 ---
 
@@ -10,6 +10,6 @@ alwaysApply: true
 When a task says "mobile", "phone", "iOS", "Android", or "EnvoyGo":
 - Work in **`apps/envoygo/`**
 - Pair to the home node via QR; call home JSON-RPC through `NodeServiceClient` / `HomeRemoteClient`
-- Do **not** implement features in `apps/mobile/` unless the user explicitly asks for the Capacitor backup
+- Do **not** recreate the removed Capacitor backup (`apps/mobile/`) unless the user explicitly asks for it
 
-**`apps/mobile/` (Capacitor) is a backup / legacy experiment** (Phase 11). It may be removed. Do not treat it as the primary mobile surface. Related packages (`mobile-node`, `mobile-identity`, `mobile-storage`, `mobile-vault`) support that backup path and browser-dev experiments — not the EnvoyGo product app.
+**The Capacitor backup stack (`apps/mobile/` + `packages/mobile-node` / `mobile-storage` / `mobile-vault`) was removed** (Phase 11 experiment). `packages/mobile-identity` remains and is **required**: it is the browser-safe pure-JS Ed25519 (`@noble/curves`) that the Social web app's Vite build aliases as `@envoymesh/identity` — do not delete it.

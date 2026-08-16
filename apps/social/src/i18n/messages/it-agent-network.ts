@@ -35,6 +35,10 @@ export const itAgentNetworkSettingsMessages = {
       "Nessun token → LAN aperta. Abilita su ogni desk; i peer senza token su questa Wi‑Fi si collegano automaticamente. In caffè preferisci un token.",
     alreadyOnTokened: "LAN ufficio attiva con token (protetta).",
     alreadyOnOpen: "LAN ufficio attiva in modalità aperta (senza token).",
+    openConfirmMessage:
+      "Nessun token impostato. L'attivazione collega (come peer ad accesso limitato) ogni nodo su questa Wi‑Fi che ha abilitato LAN ufficio senza token. Procedi solo su una rete di cui ti fidi e che controlli.",
+    openConfirmEnable: "Sì, attiva LAN aperta",
+    openConfirmCancel: "Annulla",
   },
   workersStatus: {
     heading: "Stato worker",
@@ -160,7 +164,6 @@ export const itAgentNetworkSettingsMessages = {
     refresh: "Aggiorna manifest",
     error: "Impossibile gestire i manifest di flotta: {error}",
   },
-  mobileNotAvailable: "L'integrazione della rete di agenti non è disponibile sui dispositivi mobili. Gestisci la tua flotta da un desktop o laptop.",
   bondAutonomy: {
     heading: "Autonomia di collegamento (accettazione automatica dei saluti)",
     desc: "Se abilitata, il tuo nodo accetta automaticamente le richieste di collegamento in arrivo che superano la policy qui sotto. Da abbinare a **Setup sponsor friend** sulle build installer: imposta lo stesso token di prova su entrambi i lati.",

@@ -33,7 +33,6 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     applyWanJoinInvite: vi.fn(),
     on: vi.fn(() => () => {}),
   }),
-  useIsInProcessMobileNode: () => false,
 }));
 
 vi.mock("../../src/hooks/useToast.js", () => ({

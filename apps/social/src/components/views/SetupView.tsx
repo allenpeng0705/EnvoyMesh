@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
-import { useNodeService, useIsInProcessMobileNode, useModelProviderUiScope } from "../../hooks/useNodeService.js";
+import { useNodeService, useModelProviderUiScope } from "../../hooks/useNodeService.js";
 import { useToastOptional } from "../../hooks/useToast.js";
 import { networkPresetById, type NetworkPresetId } from "../../lib/network-presets.js";
 import { markFirstRunSetupComplete } from "../../lib/storage.js";
@@ -103,8 +103,7 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
   const { isConnected, nodeConfig, refreshNodeConfig, refreshHumanProfile } = useNodeState();
   const tauriShell = isTauriShell();
   const modelProviderUiScope = useModelProviderUiScope();
-  const isMobileNode = useIsInProcessMobileNode();
-  const includeLocal = modelProviderUiScope !== "cloud-only" && !isMobileNode;
+  const includeLocal = modelProviderUiScope !== "cloud-only";
   const wanPreset = useMemo(() => networkPresetById(DEFAULT_SETUP_NETWORK_PRESET), []);
 
   // Waiting-for-node state: elapsed timer + restart recovery.

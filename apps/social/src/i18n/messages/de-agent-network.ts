@@ -35,6 +35,10 @@ export const deAgentNetworkSettingsMessages = {
       "Kein Token → offenes LAN. Auf jedem Schreibtisch aktivieren; Peers in diesem WLAN ohne Token bonden automatisch. In Cafés lieber ein Token nutzen.",
     alreadyOnTokened: "Büro-LAN ist an (mit Token, geschützt).",
     alreadyOnOpen: "Büro-LAN ist an (offen, ohne Token) — bondet opted-in Peers in diesem LAN.",
+    openConfirmMessage:
+      "Kein Flotten-Token gesetzt. Aktivieren bindet (als Peer mit eingeschränktem Zugriff) jeden Knoten in diesem WLAN, der Büro-LAN ebenfalls ohne Token aktiviert hat. Nur in einem vertrauenswürdigen, von Ihnen kontrollierten Netz fortsetzen.",
+    openConfirmEnable: "Ja, offenes LAN aktivieren",
+    openConfirmCancel: "Abbrechen",
   },
   workersStatus: {
     heading: "Worker-Status",
@@ -160,7 +164,6 @@ export const deAgentNetworkSettingsMessages = {
     refresh: "Manifeste aktualisieren",
     error: "Flotten-Manifeste konnten nicht verwaltet werden: {error}",
   },
-  mobileNotAvailable: "Agent-Netzwerk-Integration ist auf mobilen Geräten nicht verfügbar. Verwalten Sie Ihre Flotte von einem Desktop oder Laptop.",
   bondAutonomy: {
     heading: "Bond-Autonomie (Auto-Akzeptanz von Hallos)",
     desc: "Wenn aktiviert, akzeptiert Ihr Knoten automatisch eingehende Bond-Anfragen, die die unten stehende Richtlinie erfüllen. Zu koppeln mit **Setup sponsor friend** bei Installer-Builds: Legen Sie das gleiche Proof-Token auf beiden Seiten fest.",

@@ -113,6 +113,10 @@ export const agentNetworkSettingsMessages = {
       "No token → open LAN. Enable on each desk; peers on this Wi‑Fi that also enabled with no token will auto-bond. Prefer a token on cafés or shared networks.",
     alreadyOnTokened: "Office LAN is on with a shared token (gated).",
     alreadyOnOpen: "Office LAN is on in open mode (no token) — auto-bonds opted-in peers on this LAN.",
+    openConfirmMessage:
+      "No fleet token set. Enabling will auto-bond (as a limited-access LAN peer) with any other node on this Wi‑Fi that also enabled Office LAN with no token. Only proceed on a trusted network you control.",
+    openConfirmEnable: "Yes, enable open LAN",
+    openConfirmCancel: "Cancel",
   },
   workersStatus: {
     heading: "Workers status",
@@ -257,8 +261,6 @@ export const agentNetworkSettingsMessages = {
     refresh: "Refresh manifests",
     error: "Failed to manage fleet manifests: {error}",
   },
-  mobileNotAvailable:
-    "Agent network onboarding is not available on mobile devices. Manage your fleet from a desktop or laptop.",
   bondAutonomy: {
     heading: "Bond autonomy (auto-accept hellos)",
     desc:

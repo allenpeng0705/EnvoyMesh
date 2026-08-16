@@ -173,8 +173,6 @@ export const zhNetworkSettingsMessages = {
   },
   ipfs: {
     title: "外部分发（IPFS）",
-    descMobile:
-      "在移动端，资料库导出使用进程内 Helia（无 Kubo）。网关验证仍需要您的家庭桌面节点。",
     descDesktop:
       "启用后，资料库可将 vault 文件导出到 IPFS 并在本地持久化根 CID。EnvoyMesh 在首次导出时自动启动捆绑的 IPFS 引擎 — 无需单独安装或终端命令。",
     engine: "IPFS 引擎",
@@ -182,10 +180,8 @@ export const zhNetworkSettingsMessages = {
     heliaInProcess: "进程内 Helia",
     heliaInProcessPrimary: "进程内 Helia（主）",
     heliaUnavailable: "Helia 引擎不可用",
-    heliaMobileOnly: "Helia（仅移动端）",
     exportEngine: "导出引擎",
     allowExport: "允许 IPFS 导出",
-    allowExportDescMobile: "控制资料库中显式 vault → IPFS 导出（默认关闭）",
     allowExportDescDesktop: "控制显式 vault → IPFS 导出操作（默认关闭）",
     kuboAlsoAvailable: "Kubo 也可用{version} — 切换引擎以使用",
     kuboNotRequired: "Helia 导出不需要 Kubo",

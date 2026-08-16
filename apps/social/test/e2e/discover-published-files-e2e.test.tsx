@@ -37,7 +37,6 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     discoverPublishedLibrary,
     listAllLocalFiles,
   }),
-  useIsInProcessMobileNode: () => false,
 }));
 
 vi.mock("../../src/hooks/useToast.js", () => ({

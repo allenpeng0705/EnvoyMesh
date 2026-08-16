@@ -77,7 +77,6 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     isConnected: true,
   }),
   useAgentCards: () => [],
-  useIsInProcessMobileNode: () => false,
   useTransportWsOpen: () => true,
 }));
 

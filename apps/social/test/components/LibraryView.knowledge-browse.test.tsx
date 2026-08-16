@@ -22,7 +22,6 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     importToLibrary: vi.fn(),
     on: () => () => {},
   }),
-  useIsInProcessMobileNode: () => false,
 }));
 
 vi.mock("../../src/hooks/useToast.js", () => ({

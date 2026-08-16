@@ -23,8 +23,6 @@ export const zhTerminalMessages = {
   exitedWithCode: "[进程已退出，退出码 {code}]",
   runningOnHome: "正在主节点上运行",
   homeOffline: "主节点离线 — 请启动您的计算机后再试。",
-  pairRequired: "请先与主节点配对以使用远程终端。",
-  pairRequiredDesc: "在桌面 Envoy 应用的设置 → 设备中扫描配对二维码。",
   badgeIdle: "空闲",
   badgeWorking: "工作中",
   badgeBlocked: "已阻塞",

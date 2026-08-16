@@ -20,8 +20,6 @@ export const jaTerminalMessages = {
   exitedWithCode: "[プロセスがコード {code} で終了]",
   runningOnHome: "ホームノードで実行中",
   homeOffline: "ホームノードがオフライン — コンピューターを起動して再試行してください。",
-  pairRequired: "リモートターミナルを使用するにはホームノードとペアリングしてください。",
-  pairRequiredDesc: "デスクトップ Envoy アプリ (設定 → デバイス) でペアリング QR をスキャンしてください。",
   badgeIdle: "アイドル",
   badgeWorking: "作業中",
   badgeBlocked: "ブロック中",

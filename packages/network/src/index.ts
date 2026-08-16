@@ -4214,11 +4214,20 @@ export class EnvoyMesh {
   }
 
   attachPeerDiscovery(source: EnvoyMeshPeerDiscoveryService): void {
+    let discoveryLogBudget = 8;
     source.addEventListener("peer:discovery", (event) => {
-      void this.dispatchPeerDiscovery({
-        peerId: event.detail.id.toString(),
-        multiaddrs: event.detail.multiaddrs?.map((addr) => addr.toString()) ?? [],
-      });
+      const peerId = event.detail.id.toString();
+      const multiaddrs = event.detail.multiaddrs?.map((addr) => addr.toString()) ?? [];
+      if (discoveryLogBudget > 0) {
+        discoveryLogBudget -= 1;
+        const short =
+          peerId.length <= 16 ? peerId : `${peerId.slice(0, 12)}…`;
+        console.log(
+          `[p2p] peer:discovery ${short} addrs=${multiaddrs.length}` +
+            (discoveryLogBudget === 0 ? " (further discovery logs suppressed)" : ""),
+        );
+      }
+      void this.dispatchPeerDiscovery({ peerId, multiaddrs });
     });
   }
 
@@ -4567,8 +4576,13 @@ export class EnvoyMesh {
     } else {
       lines.push("dht=OFF");
     }
-    if (this.options.enableMdns) {
-      lines.push("mDNS=ON");
+    if (this.options.enableMdns !== false) {
+      const intervalMs = this.options.mdnsIntervalMs ?? DEFAULT_MDNS_INTERVAL_MS;
+      lines.push(`mDNS=ON interval=${intervalMs}ms`);
+      // libp2p emits peer:discovery once per peer; later mDNS replies update
+      // the peer store silently. Office LAN relies on peer:connect + periodic
+      // NodeService LAN sweeps — not on repeated discovery events.
+      lines.push("mDNS_note=peer:discovery-once-per-peer");
     } else {
       lines.push("mDNS=OFF");
     }

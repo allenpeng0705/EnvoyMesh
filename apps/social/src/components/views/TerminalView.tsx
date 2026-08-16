@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { TerminalSessionSummary } from "@envoymesh/api";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
-import { useIsInProcessMobileNode, useNodeService } from "../../hooks/useNodeService.js";
+import { useNodeService } from "../../hooks/useNodeService.js";
 import {
   loadTerminalSelectedSessionId,
   saveTerminalSelectedSessionId,
@@ -32,7 +32,6 @@ export function TerminalView({
 }: TerminalViewProps) {
   const t = useT();
   const nodeService = useNodeService();
-  const isMobileNode = useIsInProcessMobileNode();
   const { connectionStatus, nodeConfig } = useNodeState();
   const [terminalSessions, setTerminalSessions] = useState<TerminalSessionSummary[]>([]);
   const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(() =>
@@ -53,7 +52,6 @@ export function TerminalView({
   const homeRemote = connectionStatus?.homeRemote;
   const terminalsAvailable =
     connectionStatus?.terminalsAvailable === true || homeRemote?.terminalsAvailable === true;
-  const terminalsNeedPair = isMobileNode && homeRemote?.paired !== true;
 
   const selectedTerminal = useMemo(
     () => terminalSessions.find((s) => s.sessionId === selectedTerminalId) ?? null,
@@ -212,17 +210,6 @@ export function TerminalView({
     window.addEventListener(OPEN_TERMINAL_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_TERMINAL_EVENT, onOpen);
   }, []);
-
-  if (terminalsNeedPair) {
-    return (
-      <div className="chat-view chat-view--terminals" data-testid="terminal-view">
-        <div className="terminal-panel terminal-panel-empty chat-view-terminals-shell">
-          <h3>{t("terminals.pairRequired")}</h3>
-          <p>{t("terminals.pairRequiredDesc")}</p>
-        </div>
-      </div>
-    );
-  }
 
   if (!terminalsAvailable) {
     return (

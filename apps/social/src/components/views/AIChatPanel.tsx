@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { useT, useI18n } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
-import { useNodeService, useIsInProcessMobileNode } from "../../hooks/useNodeService.js";
+import { useNodeService } from "../../hooks/useNodeService.js";
 import { useToast } from "../../hooks/useToast.js";
 import { useChatStickToBottom } from "../../hooks/useChatStickToBottom.js";
 import { ChainReportInlineCard } from "../ChainReportInlineCard.js";
@@ -260,12 +260,8 @@ export function AIChatPanel({
   const { locale } = useI18n();
   const nodeService = useNodeService();
   const toast = useToast();
-  const isMobileNode = useIsInProcessMobileNode();
-  const { nodeConfig, humanProfile, nodeStatus, connectionStatus } = useNodeState();
-  const homeRemote = connectionStatus?.homeRemote;
-  const assistantHomeOffline =
-    isMobileNode && homeRemote?.paired === true && homeRemote?.homeOnline === false;
-  const assistantReady = nodeStatus === "running" && !assistantHomeOffline;
+  const { nodeConfig, humanProfile, nodeStatus } = useNodeState();
+  const assistantReady = nodeStatus === "running";
   const [localInUse, setLocalInUse] = useState(false);
   const [localModelName, setLocalModelName] = useState<string | null>(null);
   useEffect(() => {
@@ -295,9 +291,8 @@ export function AIChatPanel({
   const cloudConfigured = hasUsableModelProvider(nodeConfig?.modelProviders);
   const modelConfigured = cloudConfigured || localInUse;
   const configureAiCtaShownRef = useRef(false);
-  const assistantBlockedHint = assistantHomeOffline
-    ? t("aiChat.homeOffline")
-    : nodeStatus === "starting"
+  const assistantBlockedHint =
+    nodeStatus === "starting"
       ? t("aiChat.nodeStarting")
       : nodeStatus === "stopping"
         ? t("aiChat.nodeStopping")

@@ -48,7 +48,6 @@ const relativeTests = [
   join("apps", "node", "test", "daemon-agent-card-inbound.test.ts"),
   join("apps", "node", "test", "approval-executor.test.ts"),
   join("packages", "api", "test", "agent-interaction.test.ts"),
-  join("packages", "mobile-node", "test", "document-agent-mobile-e2e.test.ts"),
   join("apps", "node", "test", "call-two-home-e2e.test.ts"),
   join("apps", "node", "test", "chain-three-home-smoke.test.ts"),
   join("apps", "node", "test", "webrtc-call-e2e.test.ts"),

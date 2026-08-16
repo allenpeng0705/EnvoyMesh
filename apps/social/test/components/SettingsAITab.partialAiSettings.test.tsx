@@ -44,7 +44,6 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     isConnected: true,
   }),
   useModelProviderUiScope: () => "full",
-  useIsInProcessMobileNode: () => false,
 }));
 
 vi.mock("../../src/context/NodeStateContext.js", () => ({

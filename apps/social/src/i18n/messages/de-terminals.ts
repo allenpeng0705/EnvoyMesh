@@ -20,8 +20,6 @@ export const deTerminalMessages = {
   exitedWithCode: "[Prozess beendet mit Code {code}]",
   runningOnHome: "Läuft auf dem Heimknoten",
   homeOffline: "Heimknoten ist offline — schalten Sie Ihren Computer ein und versuchen Sie es erneut.",
-  pairRequired: "Koppeln Sie Ihren Heimknoten, um entfernte Terminals zu nutzen.",
-  pairRequiredDesc: "Scannen Sie den Pairing-QR in Ihrer Desktop-Envoy-App (Einstellungen → Geräte).",
   badgeIdle: "Inaktiv",
   badgeWorking: "Arbeitet",
   badgeBlocked: "Blockiert",

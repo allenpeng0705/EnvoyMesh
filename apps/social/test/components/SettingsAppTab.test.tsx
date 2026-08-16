@@ -38,8 +38,6 @@ const mergeAuthorizedDevices = vi.fn();
 const pruneRevokedDevices = vi.fn();
 const refreshNodeConfig = vi.fn();
 
-let isMobileNode = false;
-
 const mockNodeService = {
   listAgentActivity,
   listAuditEvents,
@@ -64,7 +62,6 @@ vi.mock("@tauri-apps/plugin-process", () => ({
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => mockNodeService,
-  useIsInProcessMobileNode: () => isMobileNode,
 }));
 
 vi.mock("../../src/context/NodeStateContext.js", () => ({
@@ -90,7 +87,6 @@ beforeEach(() => {
       dispatchEvent: vi.fn(),
     })),
   });
-  isMobileNode = false;
   listAgentActivity.mockResolvedValue([]);
   listAuditEvents.mockResolvedValue([]);
   listTaskJournalEntries.mockResolvedValue([]);
@@ -155,16 +151,6 @@ describe("SettingsAppTab (Language / Appearance / Authorized Devices / Activity)
         deviceId: "d-1",
         reason: "retired",
       });
-    });
-  });
-
-  it("hides the devices list and shows the mobile message on mobile nodes", async () => {
-    isMobileNode = true;
-    renderAppTab();
-    await waitFor(() => {
-      expect(
-        screen.getByText("Device management is not available on mobile devices."),
-      ).toBeDefined();
     });
   });
 

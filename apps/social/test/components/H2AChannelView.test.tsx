@@ -20,7 +20,6 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     sendSyncStateUpdate,
     on,
   }),
-  useIsInProcessMobileNode: () => false,
 }));
 
 vi.mock("../../src/context/NodeStateContext.js", () => ({

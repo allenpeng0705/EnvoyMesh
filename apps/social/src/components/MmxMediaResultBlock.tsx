@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { RunMmxMediaCommandResult } from "@envoymesh/api";
 import { formatMmxMediaResult } from "../lib/ext-agent-slash-commands.js";
-import { useIsInProcessMobileNode, useNodeService } from "../hooks/useNodeService.js";
+import { useNodeService } from "../hooks/useNodeService.js";
 import { useToast } from "../hooks/useToast.js";
 
 export interface MmxMediaResultBlockProps {
@@ -19,7 +19,6 @@ function isAudioMime(mime: string | undefined): boolean {
 /** Inline preview + path copy / reveal for MiniMax media slash results. */
 export function MmxMediaResultBlock({ result }: MmxMediaResultBlockProps) {
   const nodeService = useNodeService();
-  const isMobileNode = useIsInProcessMobileNode();
   const { showToast } = useToast();
   const [copied, setCopied] = useState(false);
   const [revealBusy, setRevealBusy] = useState(false);
@@ -77,16 +76,14 @@ export function MmxMediaResultBlock({ result }: MmxMediaResultBlockProps) {
           <button type="button" className="secondary" onClick={() => void copyPath()}>
             {copied ? "Copied" : "Copy path"}
           </button>
-          {!isMobileNode ? (
-            <button
-              type="button"
-              className="secondary"
-              disabled={revealBusy}
-              onClick={() => void revealPath()}
-            >
-              {revealBusy ? "Opening…" : "Reveal in folder"}
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className="secondary"
+            disabled={revealBusy}
+            onClick={() => void revealPath()}
+          >
+            {revealBusy ? "Opening…" : "Reveal in folder"}
+          </button>
         </div>
       ) : null}
     </div>

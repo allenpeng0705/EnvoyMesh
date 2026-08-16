@@ -190,7 +190,7 @@ function nodeDevSidecarPlugin(): Plugin {
  * Keep `@capacitor/geolocation` external in BOTH dev and build.
  *
  * This package only resolves inside the Capacitor native shell (it's a
- * dependency of apps/mobile, not apps/social). The web/Tauri Social app
+ * Capacitor-native package, not installed in apps/social). The web/Tauri Social app
  * reaches it via a runtime-guarded dynamic `import("@capacitor/geolocation")`
  * in src/lib/geolocation-adapter.ts — guarded by
  * `window.Capacitor.isNativePlatform()` so it's never actually evaluated on
@@ -262,7 +262,7 @@ export default defineConfig({
       "@envoymesh/api": resolve(repoRoot, "packages/api/src/index.ts"),
       "@envoymesh/protocol": resolve(repoRoot, "packages/protocol/src/index.ts"),
       // Browser-safe crypto — `@envoymesh/identity` uses node:crypto and breaks Vite.
-      // Same alias as apps/mobile (pure-JS Ed25519 via @noble/curves).
+      // mobile-identity is the browser-safe pure-JS Ed25519 (via @noble/curves).
       "@envoymesh/identity": resolve(repoRoot, "packages/mobile-identity/src/index.ts"),
       // Browser-safe subpath — does NOT pull in node:crypto / node:fs.
       // The full `@envoymesh/rag` root depends on Node builtins and is

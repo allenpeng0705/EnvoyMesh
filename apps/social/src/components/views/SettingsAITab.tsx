@@ -3,7 +3,6 @@ import { useT } from "../../context/I18nContext.js";
 import { useToast } from "../../hooks/useToast.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import {
-  useIsInProcessMobileNode,
   useModelProviderUiScope,
   useNodeService,
 } from "../../hooks/useNodeService.js";
@@ -1694,8 +1693,7 @@ function ModelProviderSettings({
   const { showToast } = useToast();
   const modelProviderUiScope = useModelProviderUiScope();
   const cloudOnlyMobile = modelProviderUiScope === "cloud-only";
-  const isMobileNode = useIsInProcessMobileNode();
-  const includeLocal = !cloudOnlyMobile && !isMobileNode;
+  const includeLocal = !cloudOnlyMobile;
 
   const inferredPreset = inferModelProviderPreset(nodeConfig?.modelProviders);
   const [presetId, setPresetId] = useState(inferredPreset.id);
@@ -2027,11 +2025,9 @@ function ModelProviderSettings({
 function TerminalAssistSettings({
   nodeConfig,
   refreshNodeConfig,
-  isMobileNode,
 }: {
   nodeConfig: import("@envoymesh/api").NodeConfig | null;
   refreshNodeConfig: () => Promise<void>;
-  isMobileNode: boolean;
 }) {
   const t = useT();
   const nodeService = useNodeService();
@@ -2056,12 +2052,6 @@ function TerminalAssistSettings({
     setDenyPatterns((nodeConfig?.terminalCommandDenyPatterns ?? []).join("\n"));
     setDestructivePatterns((nodeConfig?.terminalCommandDestructivePatterns ?? []).join("\n"));
   }, [nodeConfig, saveStatus]);
-
-  if (isMobileNode) {
-    return (
-      <p className="section-desc">{t("settings.ai.terminalAssist.sectionDesc")}</p>
-    );
-  }
 
   const splitPatterns = (raw: string) =>
     raw
@@ -3761,7 +3751,6 @@ export function SettingsAITab() {
   const t = useT();
   const nodeService = useNodeService();
   const { showToast } = useToast();
-  const isMobileNode = useIsInProcessMobileNode();
   const { nodeConfig, refreshNodeConfig, bridgeStatus } = useNodeState();
   const aiSettings = resolveAiSettings(nodeConfig?.aiSettings);
   const documentAutonomy = aiSettings.documentAutonomy!;
@@ -4286,11 +4275,9 @@ export function SettingsAITab() {
         )}
       </section>
 
-      {!isMobileNode ? (
-        <section className="settings-section">
-          <EnvoyLocalSettings refreshNodeConfig={refreshNodeConfig} />
-        </section>
-      ) : null}
+      <section className="settings-section">
+        <EnvoyLocalSettings refreshNodeConfig={refreshNodeConfig} />
+      </section>
 
       {/* Phase 49 — Pi (built-in local coding agent).
           A separate engine alongside Built-in OpenClaw. Writable in the UI
@@ -5271,7 +5258,6 @@ export function SettingsAITab() {
         <TerminalAssistSettings
           nodeConfig={nodeConfig}
           refreshNodeConfig={refreshNodeConfig}
-          isMobileNode={isMobileNode}
         />
       </section>
 

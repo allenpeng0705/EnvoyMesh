@@ -51,7 +51,6 @@ const mockNodeService = {
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => mockNodeService,
-  useIsInProcessMobileNode: () => false,
 }));
 
 vi.mock("../../src/context/NodeStateContext.js", () => ({
@@ -133,7 +132,7 @@ describe("AgentNetworkSettingsModal — Office LAN", () => {
     expect(screen.queryByText("LAN Auto-Bond")).toBeNull();
   });
 
-  it("enables Join + LAN auto-bond in open mode when token is empty", async () => {
+  it("enables Join + LAN auto-bond in open mode when token is empty (with confirm)", async () => {
     nodeConfig = {
       ...nodeConfig,
       capabilityProviderEnabled: false,
@@ -143,6 +142,11 @@ describe("AgentNetworkSettingsModal — Office LAN", () => {
     renderWithI18n(<AgentNetworkSettingsModal onClose={() => {}} />);
     const enable = await waitFor(() => screen.getByTestId("office-lan-enable"));
     fireEvent.click(enable);
+    // Open LAN is gated: an explicit confirmation must appear before enabling.
+    const confirm = await waitFor(() => screen.getByTestId("office-lan-open-confirm"));
+    expect(confirm).toBeDefined();
+    expect(updateNodeConfig).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("office-lan-open-confirm-ok"));
     await waitFor(() => {
       expect(updateNodeConfig).toHaveBeenCalled();
     });
@@ -157,6 +161,22 @@ describe("AgentNetworkSettingsModal — Office LAN", () => {
     await waitFor(() => {
       expect(refreshAgentNetworkWorkers).toHaveBeenCalled();
     });
+  });
+
+  it("cancels open-LAN confirmation and does not enable", async () => {
+    nodeConfig = {
+      ...nodeConfig,
+      capabilityProviderEnabled: false,
+      lanAutoBondEnabled: false,
+      lanAutoBondFleetToken: "",
+    };
+    renderWithI18n(<AgentNetworkSettingsModal onClose={() => {}} />);
+    const enable = await waitFor(() => screen.getByTestId("office-lan-enable"));
+    fireEvent.click(enable);
+    const cancel = await waitFor(() => screen.getByTestId("office-lan-open-confirm-cancel"));
+    fireEvent.click(cancel);
+    expect(screen.queryByTestId("office-lan-open-confirm")).toBeNull();
+    expect(updateNodeConfig).not.toHaveBeenCalled();
   });
 
   it("enables with a pasted fleet token when provided", async () => {

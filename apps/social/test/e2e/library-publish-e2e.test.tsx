@@ -21,7 +21,6 @@ let nodeConfig: {
 } = {
   externalPublish: { allowIpfs: false, gatewayAllowlist: [] },
 };
-let isInProcessMobileNode = false;
 
 const privateItem: LibraryItem = {
   documentId: "doc-publish-1",
@@ -67,7 +66,6 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     verifyLibraryItemIpfsGateway,
     importToLibrary,
   }),
-  useIsInProcessMobileNode: () => isInProcessMobileNode,
 }));
 
 vi.mock("../../src/hooks/useToast.js", () => ({
@@ -96,7 +94,6 @@ afterEach(() => {
 
 beforeEach(() => {
   nodeConfig = { externalPublish: { allowIpfs: false, gatewayAllowlist: [] } };
-  isInProcessMobileNode = false;
   listAllLocalFiles.mockResolvedValue(unifiedList([privateItem]));
   getBonds.mockResolvedValue([]);
   setLibraryItemPublished.mockImplementation(async (_documentId, published) => {
@@ -183,21 +180,5 @@ describe("E2E Library publish toggle", () => {
       expect(setLibraryItemPublished).toHaveBeenCalledWith("doc-publish-1", true);
     });
     expect(await within(table).findByText("Published")).toBeDefined();
-  });
-
-  it("mobile card layout exposes the same publish toggle", async () => {
-    isInProcessMobileNode = true;
-    renderLibrary();
-
-    const cards = await screen.findByRole("list", { name: /library files/i });
-    expect(within(cards).getByText("Private")).toBeDefined();
-
-    const checkbox = within(cards).getByRole("checkbox") as HTMLInputElement;
-    fireEvent.click(checkbox);
-
-    await waitFor(() => {
-      expect(setLibraryItemPublished).toHaveBeenCalledWith("doc-publish-1", true);
-    });
-    expect(await within(cards).findByText("Published")).toBeDefined();
   });
 });
