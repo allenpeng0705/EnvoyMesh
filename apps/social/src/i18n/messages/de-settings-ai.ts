@@ -38,6 +38,13 @@ export const deAiSettingsMessages = {
     saveProvider: "Anbieter speichern",
     reset: "Zurücksetzen",
     saveFailed: "Speichern fehlgeschlagen",
+    testChat: "Chat-Modell testen",
+    testChatBusy: "Wird getestet…",
+    testChatOkToast: "Chat OK — {modelName} antwortete in {latencyMs} ms",
+    testChatFailToast: "Chat-Test fehlgeschlagen: {error}",
+    testChatOkDetail:
+      "OK — {providerId} {modelName} antwortete in {latencyMs} ms · „{replyPreview}“",
+    testChatFailDetail: "Fehlgeschlagen: {error} · Modus {mode} · {endpoint}",
   },
   chat: {
     heading: "Chat-Verhalten",

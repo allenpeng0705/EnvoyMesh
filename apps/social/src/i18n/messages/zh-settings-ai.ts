@@ -43,6 +43,13 @@ export const zhAiSettingsMessages = {
     saveProvider: "保存提供商",
     reset: "重置",
     saveFailed: "保存失败",
+    testChat: "测试聊天模型",
+    testChatBusy: "测试中…",
+    testChatOkToast: "聊天正常 — {modelName} 在 {latencyMs} ms 内回复",
+    testChatFailToast: "聊天测试失败：{error}",
+    testChatOkDetail:
+      "成功 — {providerId} {modelName} 在 {latencyMs} ms 内回复 · “{replyPreview}”",
+    testChatFailDetail: "失败：{error} · 模式 {mode} · {endpoint}",
   },
   presence: {
     heading: "状态",

@@ -38,6 +38,13 @@ export const frAiSettingsMessages = {
     saveProvider: "Enregistrer le fournisseur",
     reset: "Réinitialiser",
     saveFailed: "Échec de l'enregistrement",
+    testChat: "Tester le modèle de chat",
+    testChatBusy: "Test en cours…",
+    testChatOkToast: "Chat OK — {modelName} a répondu en {latencyMs} ms",
+    testChatFailToast: "Échec du test de chat : {error}",
+    testChatOkDetail:
+      "OK — {providerId} {modelName} a répondu en {latencyMs} ms · « {replyPreview} »",
+    testChatFailDetail: "Échec : {error} · mode {mode} · {endpoint}",
   },
   chat: {
     heading: "Comportement du chat",

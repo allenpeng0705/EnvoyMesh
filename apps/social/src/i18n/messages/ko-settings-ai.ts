@@ -37,6 +37,13 @@ export const koAiSettingsMessages = {
     saveProvider: "제공자 저장",
     reset: "재설정",
     saveFailed: "저장 실패",
+    testChat: "채팅 모델 테스트",
+    testChatBusy: "테스트 중…",
+    testChatOkToast: "채팅 OK — {modelName}이(가) {latencyMs} ms 안에 응답",
+    testChatFailToast: "채팅 테스트 실패: {error}",
+    testChatOkDetail:
+      "OK — {providerId} {modelName}이(가) {latencyMs} ms 안에 응답 · “{replyPreview}”",
+    testChatFailDetail: "실패: {error} · 모드 {mode} · {endpoint}",
   },
   presence: {
     heading: "상태",

@@ -38,6 +38,13 @@ export const itAiSettingsMessages = {
     saveProvider: "Salva provider",
     reset: "Reimposta",
     saveFailed: "Salvataggio non riuscito",
+    testChat: "Testa modello chat",
+    testChatBusy: "Test in corso…",
+    testChatOkToast: "Chat OK — {modelName} ha risposto in {latencyMs} ms",
+    testChatFailToast: "Test chat non riuscito: {error}",
+    testChatOkDetail:
+      "OK — {providerId} {modelName} ha risposto in {latencyMs} ms · “{replyPreview}”",
+    testChatFailDetail: "Non riuscito: {error} · modalità {mode} · {endpoint}",
   },
   chat: {
     heading: "Comportamento chat",

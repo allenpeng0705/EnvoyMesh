@@ -38,6 +38,13 @@ export const jaAiSettingsMessages = {
     saveProvider: "プロバイダーを保存",
     reset: "リセット",
     saveFailed: "保存に失敗しました",
+    testChat: "チャットモデルをテスト",
+    testChatBusy: "テスト中…",
+    testChatOkToast: "チャットOK — {modelName} が {latencyMs} ms で応答",
+    testChatFailToast: "チャットテスト失敗: {error}",
+    testChatOkDetail:
+      "OK — {providerId} {modelName} が {latencyMs} ms で応答 · 「{replyPreview}」",
+    testChatFailDetail: "失敗: {error} · モード {mode} · {endpoint}",
   },
   presence: {
     heading: "ステータス",

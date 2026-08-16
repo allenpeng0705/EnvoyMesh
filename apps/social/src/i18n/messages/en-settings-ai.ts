@@ -367,6 +367,13 @@ export const aiSettingsMessages = {
     saveProvider: "Save provider",
     reset: "Reset",
     saveFailed: "Save failed",
+    testChat: "Test chat model",
+    testChatBusy: "Testing…",
+    testChatOkToast: "Chat OK — {modelName} replied in {latencyMs} ms",
+    testChatFailToast: "Chat test failed: {error}",
+    testChatOkDetail:
+      "OK — {providerId} {modelName} replied in {latencyMs} ms · “{replyPreview}”",
+    testChatFailDetail: "Failed: {error} · mode {mode} · {endpoint}",
   },
   terminalAssist: {
     heading: "Terminal assist",

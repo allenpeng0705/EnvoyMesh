@@ -4222,8 +4222,10 @@ export class EnvoyMesh {
         discoveryLogBudget -= 1;
         const short =
           peerId.length <= 16 ? peerId : `${peerId.slice(0, 12)}…`;
+        const addrsSample = multiaddrs.slice(0, 4).join(" ");
         console.log(
           `[p2p] peer:discovery ${short} addrs=${multiaddrs.length}` +
+            (addrsSample ? ` ${addrsSample}` : "") +
             (discoveryLogBudget === 0 ? " (further discovery logs suppressed)" : ""),
         );
       }
