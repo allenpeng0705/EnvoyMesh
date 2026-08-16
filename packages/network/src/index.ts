@@ -587,7 +587,20 @@ export type P2pDebugEvent =
 export interface EnvoyMeshPeerDiscoveryService {
   addEventListener(
     type: "peer:discovery",
-    handler: (event: { detail: { id: { toString(): string }; multiaddrs?: Array<{ toString(): string }> } }) => void,
+    handler: (event: {
+      detail: { id: { toString(): string }; multiaddrs?: Array<{ toString(): string }> };
+    }) => void,
+  ): void;
+  addEventListener(
+    type: "peer:update",
+    handler: (event: {
+      detail: {
+        peer: {
+          id: { toString(): string };
+          addresses?: Array<{ multiaddr?: { toString(): string } }>;
+        };
+      };
+    }) => void,
   ): void;
 }
 
@@ -1081,6 +1094,7 @@ export class EnvoyMesh {
     this.detachRelayLogging();
     this.detachReachabilityObservability();
     this.stopRelayReservationHealthLoop();
+    this._stopEmptyAddrDiscoveryRetries();
     await this.node.stop();
     this.node = undefined;
     this.relayEverReserved = false;
@@ -4213,6 +4227,87 @@ export class EnvoyMesh {
     await Promise.all([...this.peerDiscoveryHandlers].map((handler) => handler(peer)));
   }
 
+  private _emptyAddrDiscoveryRetry = new Map<
+    string,
+    { timer?: ReturnType<typeof setTimeout>; attempts: number; startedAtMs: number }
+  >();
+
+  /** How long to keep waiting for a silent peer-store address merge (~1 mDNS interval + margin). */
+  private static readonly _EMPTY_ADDR_RETRY_WINDOW_MS = 25_000;
+
+  /**
+   * libp2p's mDNS emits `peer:discovery` at most once per peer — the first
+   * time the peer enters the peer store. Later multicast replies that carry
+   * the peer's real LAN addrs only update the peer store silently (no new
+   * discovery event). If the first sighting had zero addrs (e.g. a fresh node
+   * answered before its address manager was ready, or the peer was seeded
+   * from the discovery seed store), the peer would stay invisible forever.
+   *
+   * We therefore hold empty-addrs discoveries instead of dispatching them
+   * (dispatching an empty event makes the app run a doomed profile probe,
+   * mark the peer non-Envoy, and start a 30s probe cooldown — poisoning it),
+   * and re-dispatch once the peer store gains usable addrs.
+   */
+  private _holdEmptyAddrDiscovery(peerId: string): void {
+    if (this._emptyAddrDiscoveryRetry.has(peerId)) {
+      return;
+    }
+    this._emptyAddrDiscoveryRetry.set(peerId, { attempts: 0, startedAtMs: Date.now() });
+    this._scheduleEmptyAddrDiscoveryRetry(peerId);
+  }
+
+  private _scheduleEmptyAddrDiscoveryRetry(peerId: string): void {
+    const entry = this._emptyAddrDiscoveryRetry.get(peerId);
+    if (!entry || entry.attempts >= 5) {
+      this._emptyAddrDiscoveryRetry.delete(peerId);
+      return;
+    }
+    entry.attempts += 1;
+    if (entry.timer) clearTimeout(entry.timer);
+    entry.timer = setTimeout(() => {
+      void this._rediscoverEmptyAddrPeer(peerId);
+    }, Math.min(entry.attempts * 5_000, 12_000));
+    this._emptyAddrDiscoveryRetry.set(peerId, entry);
+  }
+
+  private async _rediscoverEmptyAddrPeer(peerId: string, eventAddrs?: string[]): Promise<void> {
+    const entry = this._emptyAddrDiscoveryRetry.get(peerId);
+    if (!entry) return;
+    entry.timer = undefined;
+    try {
+      const candidates = eventAddrs ?? [];
+      const hints =
+        candidates.length > 0
+          ? candidates
+          : await this.getPeerStoreDialHints(peerId, {
+              allowEphemeralPrivateLan: true,
+            });
+      const usable = filterUsableOutboundPeerDialHints(hints, peerId, {
+        allowEphemeralPrivateLan: true,
+      });
+      if (usable.length > 0) {
+        this._emptyAddrDiscoveryRetry.delete(peerId);
+        void this.dispatchPeerDiscovery({ peerId, multiaddrs: usable });
+        return;
+      }
+    } catch {
+      // peer store unavailable — fall through to schedule next attempt
+    }
+    if (Date.now() - entry.startedAtMs >= EnvoyMesh._EMPTY_ADDR_RETRY_WINDOW_MS) {
+      // Give up silently — the peer has no usable addresses.
+      this._emptyAddrDiscoveryRetry.delete(peerId);
+      return;
+    }
+    this._scheduleEmptyAddrDiscoveryRetry(peerId);
+  }
+
+  private _stopEmptyAddrDiscoveryRetries(): void {
+    for (const [, entry] of this._emptyAddrDiscoveryRetry) {
+      if (entry.timer) clearTimeout(entry.timer);
+    }
+    this._emptyAddrDiscoveryRetry.clear();
+  }
+
   attachPeerDiscovery(source: EnvoyMeshPeerDiscoveryService): void {
     let discoveryLogBudget = 8;
     source.addEventListener("peer:discovery", (event) => {
@@ -4229,7 +4324,28 @@ export class EnvoyMesh {
             (discoveryLogBudget === 0 ? " (further discovery logs suppressed)" : ""),
         );
       }
+      if (multiaddrs.length === 0) {
+        // First sighting carried no usable address. Hold it; re-dispatch once
+        // the peer store gains real addrs (see peer:update handler below).
+        this._holdEmptyAddrDiscovery(peerId);
+        return;
+      }
       void this.dispatchPeerDiscovery({ peerId, multiaddrs });
+    });
+
+    // libp2p re-dispatches `peer:update` whenever a peer-store merge changes
+    // a peer's addresses — including the silent mDNS address updates that
+    // never produce another `peer:discovery`. Use that to recover held peers
+    // as soon as their real LAN addrs land in the store.
+    source.addEventListener("peer:update", (event) => {
+      const peerId = event.detail?.peer?.id?.toString?.();
+      if (!peerId || !this._emptyAddrDiscoveryRetry.has(peerId)) {
+        return;
+      }
+      const eventAddrs = (event.detail?.peer?.addresses ?? [])
+        .map((a) => a?.multiaddr?.toString?.())
+        .filter((a): a is string => Boolean(a));
+      void this._rediscoverEmptyAddrPeer(peerId, eventAddrs);
     });
   }
 
