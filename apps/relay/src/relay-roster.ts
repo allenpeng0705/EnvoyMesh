@@ -148,7 +148,12 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
         multiaddrs: entry.addrs,
         expiresAt: new Date(entry.expiresAt).toISOString(),
       }));
-    const fromRoster = [...entries.values()].flatMap((entry) => entry.relayHints);
+    // Peers report raw relayHints at checkin (stored verbatim on the roster
+    // entry). Echoing them unfiltered would leak self / bootstrap.libp2p.io
+    // junk into lookup responses — apply the same junk guard as book ingestion.
+    const fromRoster = [...entries.values()].flatMap((entry) =>
+      entry.relayHints.filter((hint) => !isJunkRelayHint(hint, selfPeerId)),
+    );
     return dedupeHints([...fromBook, ...fromRoster]).slice(0, limit);
   }
 

@@ -165,6 +165,47 @@ describe("standalone relay health", () => {
     expect(result.snapshot.actions).toContain("exit-for-supervisor");
   });
 
+  it("does not exit when gossip stall restart count is below threshold", () => {
+    const result = evaluateStandaloneRelayHealth({
+      now: () => now,
+      startedAtMs,
+      listenAddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/relay-a"],
+      connectedRelayPeerCount: 0,
+      httpEnabled: true,
+      httpListening: true,
+      consecutiveGossipFailures: 1,
+      gossipStallRestartCount: 1,
+      recentFatalErrors: [],
+      previous: createInitialStandaloneRelayHealthState(),
+    });
+
+    expect(result.snapshot.status).toBe("healthy");
+    expect(result.snapshot.actions).toEqual(["none"]);
+    expect(result.snapshot.gossipStallRestartCount).toBe(1);
+  });
+
+  it("exits for supervisor when a gossip stall persists across restarts", () => {
+    const result = evaluateStandaloneRelayHealth({
+      now: () => now,
+      startedAtMs,
+      listenAddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/relay-a"],
+      connectedRelayPeerCount: 0,
+      httpEnabled: true,
+      httpListening: true,
+      // Below the consecutive-tick threshold (3) — the persistent count alone
+      // must drive the escalation.
+      consecutiveGossipFailures: 1,
+      gossipStallRestartCount: 2,
+      recentFatalErrors: [],
+      previous: createInitialStandaloneRelayHealthState(),
+    });
+
+    expect(result.snapshot.status).toBe("critical");
+    expect(result.snapshot.actions).toContain("exit-for-supervisor");
+    expect(result.snapshot.actions).not.toContain("restart-libp2p");
+    expect(result.snapshot.reasons).toContain("gossip stall persisted across 2 restarts");
+  });
+
   it("exits for supervisor after repeated fatal errors", () => {
     const result = evaluateStandaloneRelayHealth({
       now: () => now,

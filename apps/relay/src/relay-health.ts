@@ -33,6 +33,7 @@ export interface StandaloneRelayHealthSnapshot {
   connectedRelayPeerCount: number;
   eventLoopLagMs?: number;
   consecutiveGossipFailures: number;
+  gossipStallRestartCount: number;
   rssBytes?: number;
   recentFatalErrorCount: number;
   lastFatalError?: string;
@@ -51,6 +52,11 @@ export interface StandaloneRelayHealthInput {
    *  (async I/O starvation) never trips the event-loop lag monitor, so this is
    *  the only signal that catches a wedged relay book / dial queue. */
   consecutiveGossipFailures?: number;
+  /** How many times a gossip-stall triggered a libp2p restart without gossip
+   *  recovering in between. Survives restarts (unlike consecutiveGossipFailures)
+   *  so a persistently stalled relay escalates to exit-for-supervisor instead
+   *  of flapping restarts forever. */
+  gossipStallRestartCount?: number;
   rssBytes?: number;
   recentFatalErrors: Array<{ at: number; message: string }>;
   previous?: StandaloneRelayHealthState;
@@ -78,6 +84,14 @@ const MAX_CONSECUTIVE_RESTART_REQUESTS = 2;
  * (junk dials saturating the connection manager) that never shows as lag.
  */
 const MAX_CONSECUTIVE_GOSSIP_FAILURES = 3;
+/**
+ * After this many gossip-stall restarts without a successful gossip tick in
+ * between, exit for the external supervisor. The counter survives libp2p
+ * restarts, so a permanently stalled relay can't flap restarts forever —
+ * it escalates to a clean process restart (which also clears the in-memory
+ * relay book) instead.
+ */
+const MAX_GOSSIP_STALL_RESTARTS = 2;
 /**
  * Tighter than home-node (~90s): with 15s health cadence + 2 ticks ≈ 30s of
  * sustained lag before exit-for-supervisor. Community relays must recover
@@ -152,6 +166,14 @@ export function evaluateStandaloneRelayHealth(input: StandaloneRelayHealthInput)
     reasons.push(`gossip stalled consecutiveFailures=${consecutiveGossipFailures}`);
     actions.add("restart-libp2p");
   }
+  // Escalate a stall that keeps surviving libp2p restarts. The counter is
+  // only reset by a successful gossip tick, so this fires after the stall
+  // has persisted across MAX_GOSSIP_STALL_RESTARTS repair attempts.
+  const gossipStallRestartCount = input.gossipStallRestartCount ?? 0;
+  if (gossipStallRestartCount >= MAX_GOSSIP_STALL_RESTARTS) {
+    reasons.push(`gossip stall persisted across ${gossipStallRestartCount} restarts`);
+    actions.add("exit-for-supervisor");
+  }
 
   if (recentFatalErrors.length >= MAX_FATAL_ERRORS_PER_WINDOW) {
     reasons.push(`recent fatal errors high=${recentFatalErrors.length}`);
@@ -222,6 +244,7 @@ function buildSnapshot(options: {
     connectedRelayPeerCount: input.connectedRelayPeerCount,
     eventLoopLagMs: input.eventLoopLagMs,
     consecutiveGossipFailures: input.consecutiveGossipFailures ?? 0,
+    gossipStallRestartCount: input.gossipStallRestartCount ?? 0,
     rssBytes: input.rssBytes,
     recentFatalErrorCount: recentFatalErrors.length,
     lastFatalError: recentFatalErrors.at(-1)?.message,

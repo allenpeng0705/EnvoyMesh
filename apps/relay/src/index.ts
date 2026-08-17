@@ -345,6 +345,9 @@ let relayHealthSnapshot: StandaloneRelayHealthSnapshot | undefined;
 let lastEventLoopLagMs = 0;
 /** Consecutive hints-gossip ticks where every probe failed (control-plane progress signal). */
 let consecutiveGossipFailures = 0;
+/** Gossip-stall libp2p restarts since the last successful gossip tick. Survives
+ *  restarts so a permanently stalled relay escalates to supervisor exit. */
+let gossipStallRestartCount = 0;
 let relayRepairInProgress = false;
 let stopRelayLivenessWatchdog: (() => void) | undefined;
 
@@ -362,6 +365,7 @@ function currentRelayHealthSnapshot(): StandaloneRelayHealthSnapshot {
       connectedRelayPeerCount: 0,
       eventLoopLagMs: lastEventLoopLagMs,
       consecutiveGossipFailures,
+      gossipStallRestartCount,
       recentFatalErrorCount: 0,
       recoveryCounters: createInitialStandaloneRelayHealthState().counters,
     }
@@ -656,6 +660,7 @@ async function runRelayHealthCycle(source: "startup" | "periodic"): Promise<void
     httpListening: args.httpPort == null || httpServer?.listening === true || (source === "startup" && httpServer != null),
     eventLoopLagMs: lastEventLoopLagMs,
     consecutiveGossipFailures,
+    gossipStallRestartCount,
     rssBytes: process.memoryUsage().rss,
     recentFatalErrors,
     previous: relayHealthState,
@@ -674,6 +679,14 @@ async function runRelayHealthCycle(source: "startup" | "periodic"): Promise<void
   }
 
   if (result.snapshot.actions.includes("restart-libp2p")) {
+    // A restart requested because gossip stalled counts toward escalation.
+    // The counter survives the restart and is only reset by a successful
+    // gossip tick (see startSiblingHintsGossip), so a relay that stays
+    // stalled will escalate to exit-for-supervisor after a bounded number
+    // of repair attempts instead of flapping restarts forever.
+    if (result.snapshot.reasons.some((reason) => reason.startsWith("gossip stalled"))) {
+      gossipStallRestartCount += 1;
+    }
     await restartLibp2pForHealth(reasonText);
   }
 }
@@ -845,8 +858,14 @@ function startSiblingHintsGossip(): void {
       );
       // Control-plane progress signal for the health watchdog. An empty book
       // is idle, not a stall; only an all-failed tick counts as a failure.
-      consecutiveGossipFailures =
-        targets.length === 0 || gossipSucceeded ? 0 : consecutiveGossipFailures + 1;
+      // A successful tick also clears the stall-restart counter, so a relay
+      // that recovers stops escalating.
+      if (targets.length === 0 || gossipSucceeded) {
+        consecutiveGossipFailures = 0;
+        gossipStallRestartCount = 0;
+      } else {
+        consecutiveGossipFailures += 1;
+      }
     } finally {
       gossipInFlight = false;
     }

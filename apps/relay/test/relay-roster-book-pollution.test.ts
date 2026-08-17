@@ -88,6 +88,47 @@ describe("relay roster — checkin hint ingestion filters (book pollution fix)",
     });
     expect(roster.relayBook().some((e) => e.relayId === SELF)).toBe(false);
   });
+
+  it("lookup responses do not echo junk hints from peer-reported checkins", () => {
+    const roster = createRelayRoster({ selfPeerId: SELF });
+    roster.checkin({
+      peerId: "12D3KooWClient",
+      relayReachableAddrs: [],
+      capabilities: [],
+      advertisements: [],
+      relayHints: [
+        { relayId: SELF, multiaddrs: [`/ip4/47.93.11.212/tcp/4001/p2p/${SELF}`], expiresAt: expiresAt() },
+        {
+          relayId: "QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
+          multiaddrs: ["/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN"],
+          expiresAt: expiresAt(),
+        },
+        { relayId: "12D3KooWGoodSibling", multiaddrs: ["/ip4/9.9.9.9/tcp/4001/p2p/12D3KooWGoodSibling"], expiresAt: expiresAt() },
+      ],
+      expiresAt: expiresAt(),
+    });
+
+    const response = roster.lookup({
+      payload: {
+        queryId: "lookup-pollution-check",
+        capability: "mesh.discovery",
+        maxResults: 10,
+        maxHops: 0,
+        maxFanout: 2,
+        visibilityScope: "public",
+        expiresAt: expiresAt(),
+      },
+      requesterPeerId: "12D3KooWOtherClient",
+      relayMultiaddrs: ["/ip4/47.93.11.212/tcp/4001/p2p/relay"],
+      relayPeerId: "relay",
+      hasLiveReservation: () => false,
+    });
+
+    const returnedIds = response.relayHints.map((h) => h.relayId);
+    expect(returnedIds).not.toContain(SELF);
+    expect(returnedIds.some((id) => id.includes("QmNnoo"))).toBe(false);
+    expect(returnedIds).toContain("12D3KooWGoodSibling");
+  });
 });
 
 describe("relay roster — failure demotion and eviction", () => {
