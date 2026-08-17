@@ -26,7 +26,7 @@ import {
   type RelayLookupPayload,
   type RelayLookupResponsePayload,
 } from "@envoymesh/protocol";
-import type { createRelayRoster } from "./relay-roster.js";
+import { isJunkRelayHint, type createRelayRoster } from "./relay-roster.js";
 import type { createRelayLookupRouter } from "./relay-lookup-router.js";
 import type { RelayControlIdentity } from "./relay-control-identity.js";
 import { mergeRelayLookupResponses } from "./relay-lookup-response-merge.js";
@@ -92,8 +92,7 @@ export function ingestSiblingHints(
 ): void {
   const expiresAt = new Date(Date.now() + bookTtlMs).toISOString();
   for (const hint of hints) {
-    if (!hint.relayId || hint.multiaddrs.length === 0) continue;
-    if (hint.relayId === mesh.peerId) continue;
+    if (isJunkRelayHint(hint, mesh.peerId)) continue;
     const existing = roster.relayBook().find((e) => e.relayId === hint.relayId);
     if (existing && (existing.state === "verified" || existing.state === "active" || existing.state === "seed")) {
       // Refresh addrs / TTL for already-verified siblings

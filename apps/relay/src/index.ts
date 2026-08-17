@@ -343,6 +343,8 @@ let homeTunnelProxy: ReturnType<typeof createHomeTunnelProxy> | undefined;
 let relayHealthState: StandaloneRelayHealthState = createInitialStandaloneRelayHealthState();
 let relayHealthSnapshot: StandaloneRelayHealthSnapshot | undefined;
 let lastEventLoopLagMs = 0;
+/** Consecutive hints-gossip ticks where every probe failed (control-plane progress signal). */
+let consecutiveGossipFailures = 0;
 let relayRepairInProgress = false;
 let stopRelayLivenessWatchdog: (() => void) | undefined;
 
@@ -358,6 +360,8 @@ function currentRelayHealthSnapshot(): StandaloneRelayHealthSnapshot {
       actions: ["none"],
       listenAddrCount: started ? mesh.multiaddrs.length : 0,
       connectedRelayPeerCount: 0,
+      eventLoopLagMs: lastEventLoopLagMs,
+      consecutiveGossipFailures,
       recentFatalErrorCount: 0,
       recoveryCounters: createInitialStandaloneRelayHealthState().counters,
     }
@@ -651,6 +655,7 @@ async function runRelayHealthCycle(source: "startup" | "periodic"): Promise<void
     httpEnabled: args.httpPort != null,
     httpListening: args.httpPort == null || httpServer?.listening === true || (source === "startup" && httpServer != null),
     eventLoopLagMs: lastEventLoopLagMs,
+    consecutiveGossipFailures,
     rssBytes: process.memoryUsage().rss,
     recentFatalErrors,
     previous: relayHealthState,
@@ -686,6 +691,10 @@ async function restartLibp2pForHealth(reason: string): Promise<void> {
     }
     await mesh.start();
     started = true;
+    // Give the control plane a fresh stall window after a repair; otherwise
+    // the still-stalled gossip counter would immediately re-trigger restart
+    // escalation before gossip has had a chance to recover (tick every 90s).
+    consecutiveGossipFailures = 0;
     console.warn("[relay] Libp2p restart completed.");
   } catch (error) {
     recordFatalError("libp2pRestart", error);
@@ -754,11 +763,15 @@ function startSiblingHintsGossip(): void {
     if (gossipInFlight) return;
     gossipInFlight = true;
     try {
+      const selfPeerId = mesh.peerId;
       // Primary gossip: probe verified/active/seed siblings (refresh + learn new candidates).
+      // Never probe self — the roster refuses to register self, but a stale
+      // entry could still appear (defense in depth against "Can not dial self").
       const verifiedBook = relayRoster
         .relayBook()
         .filter(
           (e) =>
+            e.relayId !== selfPeerId &&
             e.expiresAt > Date.now() &&
             (e.state === "verified" || e.state === "active" || e.state === "seed") &&
             e.addrs.length > 0,
@@ -773,41 +786,67 @@ function startSiblingHintsGossip(): void {
       const candidateBook = probeCandidates
         ? relayRoster
             .relayBook()
-            .filter((e) => e.expiresAt > Date.now() && e.state === "candidate" && e.addrs.length > 0)
+            .filter(
+              (e) =>
+                e.relayId !== selfPeerId &&
+                e.expiresAt > Date.now() &&
+                e.state === "candidate" &&
+                e.addrs.length > 0,
+            )
             .slice(0, 2)
         : [];
 
-      for (const entry of [...verifiedBook, ...candidateBook]) {
-        const target = entry.addrs[0];
-        if (!target) continue;
-        try {
-          const payload = createRelayHintsRequestPayload({
-            reason: "refresh",
-            maxResults: 8,
-            expiresAt: new Date(Date.now() + RELAY_BOOK_TTL_MS).toISOString(),
-          });
-          const envelope = relayControlIdentity.signControl({
-            intent: "relay.hints.request",
-            payload,
-            recipientPeerId: entry.relayId.startsWith("/") ? undefined : entry.relayId,
-          });
-          const reply = await mesh.sendExpectReply(target, envelope, {
-            timeoutMs: RELAY_FORWARD_LOOKUP_REPLY_MS,
-          });
-          if (reply.intent !== "relay.hints.response") continue;
-          const response = parseRelayHintsResponsePayload(reply.payload);
-          // Successful RTT → promote this peer and ingest returned siblings as candidates.
-          // For candidates this is the ONLY path to verified status (design B2.3).
-          relayRoster.promoteRelay(entry.relayId, "verified");
-          ingestSiblingHints(relayRoster, mesh, response.relayHints, { verified: false }, RELAY_BOOK_TTL_MS);
-          console.log(
-            `[relay] hints gossip ok target=${entry.relayId.slice(0, 12)}… state=${entry.state}→verified got=${response.relayHints.length}`,
-          );
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.warn(`[relay] hints gossip failed target=${entry.relayId.slice(0, 12)}… error=${msg}`);
-        }
-      }
+      // Probe in parallel so one slow/unreachable target cannot serialize
+      // the whole tick (a polluted book could otherwise block for 6×12s).
+      const targets = [...verifiedBook, ...candidateBook];
+      let gossipSucceeded = false;
+      await Promise.allSettled(
+        targets.map(async (entry) => {
+          const target = entry.addrs[0];
+          if (!target) return;
+          try {
+            const payload = createRelayHintsRequestPayload({
+              reason: "refresh",
+              maxResults: 8,
+              expiresAt: new Date(Date.now() + RELAY_BOOK_TTL_MS).toISOString(),
+            });
+            const envelope = relayControlIdentity.signControl({
+              intent: "relay.hints.request",
+              payload,
+              recipientPeerId: entry.relayId.startsWith("/") ? undefined : entry.relayId,
+            });
+            const reply = await mesh.sendExpectReply(target, envelope, {
+              timeoutMs: RELAY_FORWARD_LOOKUP_REPLY_MS,
+            });
+            if (reply.intent !== "relay.hints.response") {
+              relayRoster.recordRelayFailure(entry.relayId);
+              return;
+            }
+            const response = parseRelayHintsResponsePayload(reply.payload);
+            // Successful RTT → promote this peer and ingest returned siblings as candidates.
+            // For candidates this is the ONLY path to verified status (design B2.3).
+            relayRoster.promoteRelay(entry.relayId, "verified");
+            ingestSiblingHints(relayRoster, mesh, response.relayHints, { verified: false }, RELAY_BOOK_TTL_MS);
+            gossipSucceeded = true;
+            console.log(
+              `[relay] hints gossip ok target=${entry.relayId.slice(0, 12)}… state=${entry.state}→verified got=${response.relayHints.length}`,
+            );
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            const after = relayRoster.recordRelayFailure(entry.relayId);
+            const demoteNote = after
+              ? ` failures=${after.failureCount} state=${after.state}`
+              : " removed";
+            console.warn(
+              `[relay] hints gossip failed target=${entry.relayId.slice(0, 12)}… error=${msg}${demoteNote}`,
+            );
+          }
+        }),
+      );
+      // Control-plane progress signal for the health watchdog. An empty book
+      // is idle, not a stall; only an all-failed tick counts as a failure.
+      consecutiveGossipFailures =
+        targets.length === 0 || gossipSucceeded ? 0 : consecutiveGossipFailures + 1;
     } finally {
       gossipInFlight = false;
     }
@@ -829,6 +868,7 @@ try {
   console.log(`[relay] Control identity: ${relayControlIdentity.peerId}`);
   console.log(`[relay] Ready to accept relay connections.`);
 
+  relayRoster.setSelfPeerId(mesh.peerId);
   seedRelayBookFromBootstrap(mesh.peerId);
   startSiblingHintsGossip();
 

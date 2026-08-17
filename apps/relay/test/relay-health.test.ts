@@ -106,6 +106,65 @@ describe("standalone relay health", () => {
     expect(result.state.counters.exitRequested).toBe(1);
   });
 
+  it("degrades without libp2p restart when gossip failures are below threshold", () => {
+    const result = evaluateStandaloneRelayHealth({
+      now: () => now,
+      startedAtMs,
+      listenAddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/relay-a"],
+      connectedRelayPeerCount: 0,
+      httpEnabled: true,
+      httpListening: true,
+      consecutiveGossipFailures: 2,
+      recentFatalErrors: [],
+      previous: createInitialStandaloneRelayHealthState(),
+    });
+
+    expect(result.snapshot.status).toBe("healthy");
+    expect(result.snapshot.actions).toEqual(["none"]);
+    expect(result.snapshot.consecutiveGossipFailures).toBe(2);
+  });
+
+  it("requests libp2p restart when gossip has stalled across consecutive ticks", () => {
+    const result = evaluateStandaloneRelayHealth({
+      now: () => now,
+      startedAtMs,
+      listenAddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/relay-a"],
+      connectedRelayPeerCount: 0,
+      httpEnabled: true,
+      httpListening: true,
+      consecutiveGossipFailures: 3,
+      recentFatalErrors: [],
+      previous: createInitialStandaloneRelayHealthState(),
+    });
+
+    expect(result.snapshot.status).toBe("unhealthy");
+    expect(result.snapshot.actions).toContain("restart-libp2p");
+    expect(result.snapshot.reasons).toContain("gossip stalled consecutiveFailures=3");
+    expect(result.state.counters.restartRequested).toBe(1);
+  });
+
+  it("escalates a persistent gossip stall to supervisor exit after repeated restarts", () => {
+    const previous = {
+      ...createInitialStandaloneRelayHealthState(),
+      consecutiveRestartRequests: 2,
+    };
+    const result = evaluateStandaloneRelayHealth({
+      now: () => now,
+      startedAtMs,
+      listenAddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/relay-a"],
+      connectedRelayPeerCount: 0,
+      httpEnabled: true,
+      httpListening: true,
+      consecutiveGossipFailures: 5,
+      recentFatalErrors: [],
+      previous,
+    });
+
+    expect(result.snapshot.status).toBe("critical");
+    expect(result.snapshot.actions).toContain("restart-libp2p");
+    expect(result.snapshot.actions).toContain("exit-for-supervisor");
+  });
+
   it("exits for supervisor after repeated fatal errors", () => {
     const result = evaluateStandaloneRelayHealth({
       now: () => now,

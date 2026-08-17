@@ -50,10 +50,32 @@ export interface RelayRosterOptions {
   maxRosterEntries?: number;
   maxRelayHints?: number;
   maxRelayBookEntries?: number;
+  /** This relay's own peer ID. Used to refuse registering self / junk hints
+   *  learned from peer checkins (which caused "Can not dial self" gossip loops). */
+  selfPeerId?: string;
+  /** Consecutive gossip failures before a verified/active/seed entry demotes to candidate. */
+  demoteAfterFailures?: number;
+  /** Consecutive gossip failures before an entry is removed from the relay book. */
+  removeAfterFailures?: number;
 }
 
 export interface RelayRosterCheckinOptions {
   reservationExpireAtMs?: number;
+}
+
+/**
+ * A relay hint that should never be admitted into the relay book:
+ * - missing relayId / no multiaddrs
+ * - this relay's own peer ID (dialing self is always an error)
+ * - a public libp2p bootstrap peer (bootstrap.libp2p.io) — not an EnvoyMesh relay.
+ * Mirrors the self/bootstrap guards in `seedRelayBookFromBootstrap` and
+ * `ingestSiblingHints`, which checkin-time ingestion previously lacked.
+ */
+export function isJunkRelayHint(hint: RelayHint | undefined, selfPeerId?: string): boolean {
+  if (!hint) return true;
+  if (!hint.relayId || hint.multiaddrs.length === 0) return true;
+  if (selfPeerId && hint.relayId === selfPeerId) return true;
+  return hint.multiaddrs.some((addr) => PUBLIC_BOOTSTRAP_MARKERS.some((m) => addr.includes(m)));
 }
 
 export interface RelayRosterLookupInput {
@@ -72,6 +94,11 @@ const DEFAULT_MAX_RELAY_HINTS = 50;
 // Book cap (16) > gossip request (8) intentionally: a full book is never
 // shared in one gossip round, so peers learn incrementally. Phase 46C.
 const DEFAULT_MAX_RELAY_BOOK_ENTRIES = 16;
+// A public libp2p bootstrap peer is not an EnvoyMesh relay. Home nodes may
+// list it in their bootstrapPeers and thus in checkin relayHints; the relay
+// must never register it as a sibling (probes would burn dial slots on
+// unreachable hosts — observed as "connection error sv15.bootstrap.libp2p.io").
+const PUBLIC_BOOTSTRAP_MARKERS = ["bootstrap.libp2p.io"];
 
 export function createRelayRoster(options: RelayRosterOptions = {}) {
   const now = options.now ?? Date.now;
@@ -79,8 +106,15 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
   const maxRosterEntries = options.maxRosterEntries ?? DEFAULT_MAX_ROSTER_ENTRIES;
   const maxRelayHints = options.maxRelayHints ?? DEFAULT_MAX_RELAY_HINTS;
   const maxRelayBookEntries = options.maxRelayBookEntries ?? DEFAULT_MAX_RELAY_BOOK_ENTRIES;
+  let selfPeerId = options.selfPeerId;
+  const demoteAfterFailures = options.demoteAfterFailures ?? 3;
+  const removeAfterFailures = options.removeAfterFailures ?? 5;
   const entries = new Map<string, RelayRosterEntry>();
   const relayBook = new Map<string, RelayBookEntry>();
+
+  function setSelfPeerId(peerId: string | undefined): void {
+    selfPeerId = peerId;
+  }
 
   function pruneExpired(): void {
     const current = now();
@@ -152,6 +186,7 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
   }
 
   return {
+    setSelfPeerId,
     checkin(
       payload: RelayCheckinPayload,
       fallbackPeerId?: string,
@@ -193,7 +228,7 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
       };
       entries.set(peerId, entry);
       for (const hint of payload.relayHints) {
-        if (!hint.relayId || hint.multiaddrs.length === 0) continue;
+        if (isJunkRelayHint(hint, selfPeerId)) continue;
         if (relayBook.has(hint.relayId)) continue;
         registerRelayInternal({
           relayId: hint.relayId,
@@ -269,6 +304,32 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
         lastVerifiedAt: now(),
         failureCount: 0,
       };
+      relayBook.set(relayId, entry);
+      return entry;
+    },
+
+    /**
+     * Record a failed gossip/forward probe. After enough consecutive failures
+     * the entry is demoted (verified/active/seed → candidate) and eventually
+     * removed, so unreachable or junk entries cannot stay in the book forever
+     * and keep burning dial slots every gossip tick.
+     */
+    recordRelayFailure(relayId: string): RelayBookEntry | undefined {
+      pruneExpired();
+      const existing = relayBook.get(relayId);
+      if (!existing) return undefined;
+      const failureCount = existing.failureCount + 1;
+      const entry: RelayBookEntry = { ...existing, failureCount };
+      if (failureCount >= removeAfterFailures) {
+        relayBook.delete(relayId);
+        return entry;
+      }
+      if (
+        failureCount >= demoteAfterFailures &&
+        (entry.state === "verified" || entry.state === "active" || entry.state === "seed")
+      ) {
+        entry.state = "candidate";
+      }
       relayBook.set(relayId, entry);
       return entry;
     },
