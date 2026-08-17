@@ -505,6 +505,45 @@
   "chatAiDisabledAskOwner": "Bitten Sie den Heimbesitzer, ein KI-Modell für den Familienchat zu aktivieren.",
   "pairingLoadProfilesFailed": "Vorhandene Profile konnten nicht geladen werden: {error}",
   "pairingFailed": "Kopplung fehlgeschlagen: {error}",
+  "pairingInProgressTitle": "Kopplung mit Heimknoten",
+  "pairingInProgressSubtitle": "Verbindung mit {owner} wird aufgebaut",
+  "@pairingInProgressSubtitle": {
+    "placeholders": {
+      "owner": {"type": "String"}
+    }
+  },
+  "pairingElapsed": "Verstrichen: {time}",
+  "@pairingElapsed": {
+    "placeholders": {
+      "time": {"type": "String"}
+    }
+  },
+  "pairingHomeNodeLabel": "Heimknoten: {peer}",
+  "@pairingHomeNodeLabel": {
+    "placeholders": {
+      "peer": {"type": "String"}
+    }
+  },
+  "pairingStageInitial": "Wird vorbereitet",
+  "pairingStageInitialHint": "Sicherer Kanal zum Heimknoten wird aufgebaut.",
+  "pairingStageConnecting": "Heimknoten wird erreicht",
+  "pairingStageConnectingHint": "Heimknoten wird im lokalen Netzwerk und über das Relay gesucht.",
+  "pairingStageHandshaking": "Handshake läuft",
+  "pairingStageHandshakingHint": "Schlüssel werden ausgetauscht — bei der ersten Kopplung kann dies einen Moment dauern.",
+  "pairingStageVerifying": "Wird überprüft",
+  "pairingStageSlowHint": "Dauert länger als gewöhnlich. Stelle sicher, dass der Heimknoten im selben WLAN ist oder Internet hat.",
+  "pairingStageVerySlowHint": "Kopplung dauert deutlich länger als erwartet. Prüfe, ob beide Geräte online sind, brich ab und versuche es erneut.",
+  "pairingCancel": "Kopplung abbrechen",
+  "pairingCancelConfirmTitle": "Kopplung abbrechen?",
+  "pairingCancelConfirmBody": "Der Handshake wird gestoppt. Du kannst es mit dem QR-Code erneut versuchen.",
+  "commonKeepWaiting": "Weiter warten",
+  "pairingDontCloseApp": "App nicht schließen — die Kopplung läuft im Hintergrund.",
+  "pairingNowLan": "Verbinde jetzt mit Ihrem Home-Node im lokalen Netzwerk…",
+  "pairingNowP2p": "Stelle jetzt eine sichere Peer-to-Peer-Verbindung her…",
+  "pairingNowRelay": "Verbinde jetzt über einen Relay-Server…",
+  "pairingStillWorking": "Noch dabei — die erste Verbindung kann ein bis zwei Minuten dauern. Bitte halten Sie die App geöffnet.",
+  "pairingTroubleTitle": "Immer noch Probleme?",
+  "pairingTroubleBody": "Stellen Sie sicher, dass der Home-Node eingeschaltet und online ist und dass dieses Gerät Internetzugang hat. Wenn es weiterhin fehlschlägt, brechen Sie ab und versuchen Sie es erneut.",
   "pairingInviteAlreadyUsed": "Dieser Einladungs-QR wurde bereits verwendet. Bitte den Home-Besitzer Familie → Einladungs-QR anzeigen erneut öffnen lassen, den neuen Code scannen und unter Ich bin zurück Ihr Profil (z. B. Dad) wählen.",
   "feedDefaultTitle": "Feed-Beitrag",
   "aiDraftSection": "Entwurfsabschnitt",

@@ -571,6 +571,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
   }
 
   /// Pair with a home node using pairing data.
+  ///
+  /// [onConnectingCandidate] is invoked before each transport candidate is
+  /// attempted (LAN → P2P → relay) so the pairing UX can show live "now
+  /// connecting via …" feedback during the handshake.
   Future<PairResult> pairWithNode(
     PairingData data,
     String deviceName,
@@ -578,6 +582,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     String? profileName,
     String? profileAvatarColor,
     String? profileId,
+    void Function(HomeRemoteCandidate candidate)? onConnectingCandidate,
   }) async {
     state = state.copyWith(
         connectionState: NodeConnectionState.connecting);
@@ -589,6 +594,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     final opts = HomeRemoteClientOptions(
       resolveCandidates: () async => candidates,
       createTransport: (c) => _createTransportForCandidate(c),
+      onCandidateTrying: onConnectingCandidate,
     );
     _client = HomeRemoteClient(opts);
     _pushEventsClient = null;
@@ -752,6 +758,33 @@ class NodeNotifier extends StateNotifier<NodeState> {
     }
 
     return result;
+  }
+
+  /// Abort an in-flight `pairWithNode` call. Idempotent: safe to call
+  /// when no pairing is running. Forces the underlying transport to
+  /// close, which makes the pending `pairThinClient` RPC throw; the
+  /// awaiting `pairWithNode` future then lands in its catch block,
+  /// rethrows, and the progress screen navigates back to the confirm
+  /// screen with the error message intact.
+  ///
+  /// Used by `PairingProgressScreen` so the user can back out of a
+  /// 2-3 minute handshake (Apple HIG: don't strand the user on a
+  /// spinner for minutes with no way out).
+  void cancelPairing() {
+    if (state.connectionState != NodeConnectionState.connecting) return;
+    _log('cancelPairing: aborting in-flight pairing handshake');
+    final client = _client;
+    _client = null;
+    _pushEventsClient = null;
+    _nodeService = null;
+    _pairingService = null;
+    // Force-close the transport. The pending RPC throws and
+    // pairWithNode's catch handler runs; it tries `_client?.dispose()`
+    // which is now a no-op on the local null.
+    client?.dispose();
+    state = state.copyWith(
+      connectionState: NodeConnectionState.disconnected,
+    );
   }
 
   /// Sync all data from the home node after a successful connection.

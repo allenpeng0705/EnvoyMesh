@@ -2419,6 +2419,88 @@ class AppLocalizationsJa extends AppLocalizations {
       'この招待QRは既に使用済みです。ホーム所有者に「家族 → 招待QRを表示」で新しいコードを出してもらい、スキャン後「戻ってきました」でプロフィール（例: Dad）を選んでください。';
 
   @override
+  String get pairingInProgressTitle => 'ホームノードとペアリング中';
+
+  @override
+  String pairingInProgressSubtitle(String owner) {
+    return '$owner に接続しています';
+  }
+
+  @override
+  String pairingElapsed(String time) {
+    return '経過時間：$time';
+  }
+
+  @override
+  String pairingHomeNodeLabel(String peer) {
+    return 'ホーム：$peer';
+  }
+
+  @override
+  String get pairingStageInitial => '初期化中';
+
+  @override
+  String get pairingStageInitialHint => 'ホームノードとの安全なチャネルを準備しています。';
+
+  @override
+  String get pairingStageConnecting => 'ホームに接続中';
+
+  @override
+  String get pairingStageConnectingHint => 'ローカルネットワークとリレー経由でホームを探しています。';
+
+  @override
+  String get pairingStageHandshaking => 'ハンドシェイク中';
+
+  @override
+  String get pairingStageHandshakingHint => '鍵を交換しています。初回接続ではしばらくかかることがあります。';
+
+  @override
+  String get pairingStageVerifying => '確認中';
+
+  @override
+  String get pairingStageSlowHint =>
+      '通常より時間がかかっています。ホームノードが同じ Wi-Fi にいるか、インターネットに接続しているか確認してください。';
+
+  @override
+  String get pairingStageVerySlowHint =>
+      '予想より大幅に時間がかかっています。両デバイスがオンラインか確認し、キャンセルして再試行してください。';
+
+  @override
+  String get pairingCancel => 'ペアリングをキャンセル';
+
+  @override
+  String get pairingCancelConfirmTitle => 'ペアリングをキャンセルしますか？';
+
+  @override
+  String get pairingCancelConfirmBody => 'ハンドシェイクを停止します。QRコードから再試行できます。';
+
+  @override
+  String get commonKeepWaiting => 'そのまま待つ';
+
+  @override
+  String get pairingDontCloseApp => 'アプリを閉じないでください — ペアリングはバックグラウンドで続行中です。';
+
+  @override
+  String get pairingNowLan => 'ローカルネットワーク上のホームノードに接続しています…';
+
+  @override
+  String get pairingNowP2p => '安全なピアツーピア接続を確立しています…';
+
+  @override
+  String get pairingNowRelay => 'リレーサーバー経由で接続しています…';
+
+  @override
+  String get pairingStillWorking =>
+      '引き続き処理中です — 初回の接続には1〜2分かかることがあります。アプリを開いたままにしてください。';
+
+  @override
+  String get pairingTroubleTitle => 'それでも接続できませんか？';
+
+  @override
+  String get pairingTroubleBody =>
+      'ホームノードの電源が入っていてオンラインであること、このデバイスがインターネットに接続されていることを確認してください。それでも失敗する場合はキャンセルしてやり直してください。';
+
+  @override
   String get feedDefaultTitle => 'フィード投稿';
 
   @override

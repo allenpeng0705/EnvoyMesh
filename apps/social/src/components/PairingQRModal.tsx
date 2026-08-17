@@ -21,6 +21,10 @@ interface PairingQRModalProps {
  *
  * Phase 51 — includes a button to open the family invite QR (not shown by
  * default; owner pairing remains the primary code in this dialog).
+ *
+ * Family-only review home (Apple review build): the pairing payload embeds the
+ * derived family token (`family.…`), so this dialog renders the family invite
+ * QR as the ONLY QR — the owner pairing QR is never generated or shown.
  */
 export function PairingQRModal({ onClose }: PairingQRModalProps) {
   const t = useT();
@@ -31,6 +35,14 @@ export function PairingQRModal({ onClose }: PairingQRModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [showFamilyInvite, setShowFamilyInvite] = useState(false);
+  /**
+   * Family-only review home (Apple review build): every QR the home shows is a
+   * family-member invite — the owner pairing QR is never generated or offered.
+   * Detected via the derived review family token prefix ("family."), which
+   * review-pairing.ts embeds in the pairing payload in that mode. On normal
+   * homes the pairing payload token is a random UUID, so this stays false.
+   */
+  const [familyReviewHome, setFamilyReviewHome] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,6 +52,14 @@ export function PairingQRModal({ onClose }: PairingQRModalProps) {
       try {
         const payload = await nodeService.getPairingPayload();
         if (cancelled) return;
+
+        // Family-only review homes embed the derived family token in the
+        // "owner" pairing payload — swap to the family invite QR and never
+        // mint/display an owner pairing QR.
+        if (payload.token?.startsWith("family.")) {
+          setFamilyReviewHome(true);
+          return;
+        }
 
         // Encode all fields into a gzip-compressed token — keeps the QR short
         // enough to scan reliably despite the dense encoding.
@@ -71,6 +91,17 @@ export function PairingQRModal({ onClose }: PairingQRModalProps) {
       // Clipboard might be unavailable in some embedded contexts; fail quietly.
     }
   }, [uri]);
+
+  if (familyReviewHome) {
+    // No owner pairing QR exists on this home — closing the family invite
+    // dismisses the whole pairing dialog (there is no "back to owner").
+    return (
+      <FamilyInviteQRModal
+        closeAriaLabel={t("pairing.closeAria")}
+        onClose={onClose}
+      />
+    );
+  }
 
   if (showFamilyInvite) {
     return (

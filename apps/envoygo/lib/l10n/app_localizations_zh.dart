@@ -2394,6 +2394,84 @@ class AppLocalizationsZh extends AppLocalizations {
       '此邀请二维码已被使用。请让家庭节点所有者重新打开「家庭 → 显示邀请二维码」，扫描新码后选择「我回来了」并选中你的档案（例如 Dad）。';
 
   @override
+  String get pairingInProgressTitle => '正在与家庭节点配对';
+
+  @override
+  String pairingInProgressSubtitle(String owner) {
+    return '正在连接 $owner';
+  }
+
+  @override
+  String pairingElapsed(String time) {
+    return '已用时：$time';
+  }
+
+  @override
+  String pairingHomeNodeLabel(String peer) {
+    return '家庭节点：$peer';
+  }
+
+  @override
+  String get pairingStageInitial => '正在初始化';
+
+  @override
+  String get pairingStageInitialHint => '正在建立到家庭节点的安全通道。';
+
+  @override
+  String get pairingStageConnecting => '正在联络家庭节点';
+
+  @override
+  String get pairingStageConnectingHint => '正在本地网络和中继上寻找家庭节点。';
+
+  @override
+  String get pairingStageHandshaking => '正在握手';
+
+  @override
+  String get pairingStageHandshakingHint => '正在交换密钥 — 首次连接这一步可能需要一会儿。';
+
+  @override
+  String get pairingStageVerifying => '正在校验';
+
+  @override
+  String get pairingStageSlowHint => '比平时更久。请确认家庭节点在同一个 Wi‑Fi，或能访问互联网。';
+
+  @override
+  String get pairingStageVerySlowHint => '配对耗时明显超过预期。请确认两台设备都在线，然后取消并重试。';
+
+  @override
+  String get pairingCancel => '取消配对';
+
+  @override
+  String get pairingCancelConfirmTitle => '要取消配对吗？';
+
+  @override
+  String get pairingCancelConfirmBody => '握手会停止。可以重新扫描二维码再试。';
+
+  @override
+  String get commonKeepWaiting => '继续等待';
+
+  @override
+  String get pairingDontCloseApp => '请勿关闭应用 — 配对在后台继续进行。';
+
+  @override
+  String get pairingNowLan => '正在通过本地网络连接你的家庭节点…';
+
+  @override
+  String get pairingNowP2p => '正在建立安全的点对点连接…';
+
+  @override
+  String get pairingNowRelay => '正在通过中继服务器连接…';
+
+  @override
+  String get pairingStillWorking => '仍在进行中 — 首次连接可能需要一两分钟，请保持应用打开。';
+
+  @override
+  String get pairingTroubleTitle => '仍然无法连接？';
+
+  @override
+  String get pairingTroubleBody => '请确认家庭节点已开机且在线，并确认此设备可访问互联网。若仍然失败，请取消后重试。';
+
+  @override
   String get feedDefaultTitle => '动态帖子';
 
   @override

@@ -47,7 +47,7 @@ _openclaw_resolve_ext_allowlist() {
 # devDeps), so `pnpm prune --prod` cannot remove them. Verified by grepping
 # dist/*.js — none of these are imported at runtime (highlight.js IS used,
 # so it's kept). Saves ~250 MB on macOS, ~500-700 MB on Windows.
-_openclaw_dev_only_packages="typescript @typescript @oxlint @oxlint-tsgolint @shikijs vite @rolldown esbuild @esbuild vitest @vitest playwright-core playwright jsdom tree-sitter-bash tree-sitter @babel webpack rollup"
+_openclaw_dev_only_packages="typescript @typescript @oxlint @oxlint-tsgolint @shikijs vite @rolldown rolldown rolldown-plugin-dts esbuild @esbuild vitest @vitest playwright-core playwright jsdom tree-sitter-bash tree-sitter @babel webpack rollup lightningcss lightningcss-darwin-arm64 lightningcss-win32-x64-msvc lightningcss-linux-x64-gnu lightningcss-linux-arm64-gnu oxfmt @oxfmt tsdown"
 
 # Orphaned heavy native packages — deps of extensions that we typically
 # prune (copilot, codex, acpx, memory-lancedb, matrix, msteams, etc.).

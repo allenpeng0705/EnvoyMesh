@@ -45,6 +45,20 @@ export function localOwnerCaller(ownerId: string, profileId = OWNER_FAMILY_PROFI
 }
 
 /**
+ * Pre-auth pairing caller for store-review tokens on the client-proxy: NOT the
+ * owner. Only `pairThinClient` / `previewFamilyInvite` may run under it; every
+ * other RPC is rejected by the caller's isOwnerProfile=false gate.
+ */
+export function anonymousPairingCaller(): RpcCallerContext {
+  return {
+    ownerId: "",
+    profileId: "",
+    isOwnerProfile: false,
+    source: "session",
+  }
+}
+
+/**
  * Build RPC caller context from a thin-client session token record.
  * Legacy tokens without `profileId` bind to the owner profile.
  *

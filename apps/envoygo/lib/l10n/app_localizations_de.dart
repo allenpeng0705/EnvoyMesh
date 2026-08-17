@@ -2519,6 +2519,95 @@ class AppLocalizationsDe extends AppLocalizations {
       'Dieser Einladungs-QR wurde bereits verwendet. Bitte den Home-Besitzer Familie → Einladungs-QR anzeigen erneut öffnen lassen, den neuen Code scannen und unter Ich bin zurück Ihr Profil (z. B. Dad) wählen.';
 
   @override
+  String get pairingInProgressTitle => 'Kopplung mit Heimknoten';
+
+  @override
+  String pairingInProgressSubtitle(String owner) {
+    return 'Verbindung mit $owner wird aufgebaut';
+  }
+
+  @override
+  String pairingElapsed(String time) {
+    return 'Verstrichen: $time';
+  }
+
+  @override
+  String pairingHomeNodeLabel(String peer) {
+    return 'Heimknoten: $peer';
+  }
+
+  @override
+  String get pairingStageInitial => 'Wird vorbereitet';
+
+  @override
+  String get pairingStageInitialHint =>
+      'Sicherer Kanal zum Heimknoten wird aufgebaut.';
+
+  @override
+  String get pairingStageConnecting => 'Heimknoten wird erreicht';
+
+  @override
+  String get pairingStageConnectingHint =>
+      'Heimknoten wird im lokalen Netzwerk und über das Relay gesucht.';
+
+  @override
+  String get pairingStageHandshaking => 'Handshake läuft';
+
+  @override
+  String get pairingStageHandshakingHint =>
+      'Schlüssel werden ausgetauscht — bei der ersten Kopplung kann dies einen Moment dauern.';
+
+  @override
+  String get pairingStageVerifying => 'Wird überprüft';
+
+  @override
+  String get pairingStageSlowHint =>
+      'Dauert länger als gewöhnlich. Stelle sicher, dass der Heimknoten im selben WLAN ist oder Internet hat.';
+
+  @override
+  String get pairingStageVerySlowHint =>
+      'Kopplung dauert deutlich länger als erwartet. Prüfe, ob beide Geräte online sind, brich ab und versuche es erneut.';
+
+  @override
+  String get pairingCancel => 'Kopplung abbrechen';
+
+  @override
+  String get pairingCancelConfirmTitle => 'Kopplung abbrechen?';
+
+  @override
+  String get pairingCancelConfirmBody =>
+      'Der Handshake wird gestoppt. Du kannst es mit dem QR-Code erneut versuchen.';
+
+  @override
+  String get commonKeepWaiting => 'Weiter warten';
+
+  @override
+  String get pairingDontCloseApp =>
+      'App nicht schließen — die Kopplung läuft im Hintergrund.';
+
+  @override
+  String get pairingNowLan =>
+      'Verbinde jetzt mit Ihrem Home-Node im lokalen Netzwerk…';
+
+  @override
+  String get pairingNowP2p =>
+      'Stelle jetzt eine sichere Peer-to-Peer-Verbindung her…';
+
+  @override
+  String get pairingNowRelay => 'Verbinde jetzt über einen Relay-Server…';
+
+  @override
+  String get pairingStillWorking =>
+      'Noch dabei — die erste Verbindung kann ein bis zwei Minuten dauern. Bitte halten Sie die App geöffnet.';
+
+  @override
+  String get pairingTroubleTitle => 'Immer noch Probleme?';
+
+  @override
+  String get pairingTroubleBody =>
+      'Stellen Sie sicher, dass der Home-Node eingeschaltet und online ist und dass dieses Gerät Internetzugang hat. Wenn es weiterhin fehlschlägt, brechen Sie ab und versuchen Sie es erneut.';
+
+  @override
   String get feedDefaultTitle => 'Feed-Beitrag';
 
   @override

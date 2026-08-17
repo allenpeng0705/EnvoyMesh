@@ -20,6 +20,7 @@ import {
   stripRelayWsParams,
 } from "@envoymesh/api";
 import type { BridgeStatus, PairingPayload } from "@envoymesh/api";
+import { reviewFamilyInviteToken } from "./review-pairing.js";
 
 export interface ReachableMeshLike {
   peerId: string;
@@ -178,8 +179,14 @@ export async function getPairingPayloadViaRuntime(
   relayWsUrl = stripRelayWsParams(relayWsUrl);
 
   // Pairing token: stable review token when enabled, else fresh 30-min UUID.
+  // In family-only (Apple review) mode the QR embeds the derived family token,
+  // so even the "owner" QR scans as a family member, never the owner.
   const review = await Promise.resolve(ctx.getReviewPairing());
-  const token = review?.token ?? randomUUID();
+  const token = review
+    ? review.familyOnly
+      ? reviewFamilyInviteToken(review.token)
+      : review.token
+    : randomUUID();
   ctx.setPairingToken(token, Date.now());
 
   // Build wsUrl (relay URL with target+token params, or LAN fallback).

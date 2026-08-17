@@ -10307,6 +10307,38 @@ class NodeServiceImpl implements NodeService {
     return validatePairingTokenViaRuntime(this._validatePairingTokenContext(), token);
   }
 
+  /**
+   * True when `token` is an active store-review pairing token (owner form or
+   * the derived `family.<token>` form) within its TTL. Used by the client-proxy
+   * to keep review tokens limited to the pre-auth pairing RPCs.
+   */
+  async isReviewPairingToken(token: string): Promise<boolean> {
+    const review = resolveReviewPairing(
+      await this._configStore.load().catch(() => null),
+    );
+    return isActiveReviewPairingToken(review, token);
+  }
+
+  /**
+   * Store-review pairing tokens (Apple/Google) are deliberately shared with
+   * untrusted reviewers. The legacy companion RPCs `pairDevice` and
+   * `pairSharedIdentity` hand over the owner identity / owner key material —
+   * review tokens must never drive them, even after the reviewer paired as a
+   * family member (family sessions can otherwise reach these RPCs).
+   */
+  private async _assertReviewTokenNotAllowedForPairingOrThrow(
+    pairingToken: string,
+  ): Promise<void> {
+    const review = resolveReviewPairing(
+      await this._configStore.load().catch(() => null),
+    );
+    if (isActiveReviewPairingToken(review, pairingToken)) {
+      throw new Error(
+        "Store-review pairing tokens cannot be used for shared-identity or companion device pairing",
+      );
+    }
+  }
+
   async getBridgeStatus(): Promise<BridgeStatus> {
     const status = getBridgeStatusViaRuntime(this._connectionStatusContext());
     return maskBridgeEnabledForExtAgentAccess(
@@ -11246,6 +11278,7 @@ class NodeServiceImpl implements NodeService {
    * token for future reconnections, and sets up a "direct" trust record.
    */
   async pairDevice(params: PairDeviceParams): Promise<PairDeviceResult> {
+    await this._assertReviewTokenNotAllowedForPairingOrThrow(params.pairingToken);
     return pairDeviceViaRuntime(this._pairDeviceContext(), params);
   }
 
@@ -11260,6 +11293,7 @@ class NodeServiceImpl implements NodeService {
    * owner identity (same ownerId on both devices).
    */
   async pairSharedIdentity(params: PairSharedIdentityParams): Promise<PairSharedIdentityResult> {
+    await this._assertReviewTokenNotAllowedForPairingOrThrow(params.pairingToken);
     return pairSharedIdentityViaRuntime(
       this._pairSharedIdentityContext(),
       createDeviceCertificate as never,
@@ -11381,7 +11415,10 @@ class NodeServiceImpl implements NodeService {
       await this._configStore.load().catch(() => null),
     );
     const reviewReusable = isActiveReviewPairingToken(review, pairingToken);
-    const isFamilyInvite = invite?.kind === "family";
+    // Family-only review mode (Apple): ANY active review token — owner or the
+    // derived family form — binds the scanner as a family member, never owner.
+    const isFamilyInvite =
+      invite?.kind === "family" || (review?.familyOnly === true && reviewReusable);
 
     if (isFamilyInvite && invite) {
       if (invite.revokedAt) throw new Error("Family invite token has been revoked");
@@ -11420,7 +11457,12 @@ class NodeServiceImpl implements NodeService {
         }
         profile = existing;
       } else {
-        const name = params.profileName?.trim();
+        // In family-only review mode the reviewer scans the "owner" QR shape
+        // (envoy://pair) which may carry no family profile name — default to the
+        // device name so the reviewer still lands as a family member.
+        const name =
+          params.profileName?.trim() ||
+          (review?.familyOnly === true ? deviceName || "Reviewer" : "");
         if (!name) {
           throw new Error("profileName is required when creating a family profile");
         }

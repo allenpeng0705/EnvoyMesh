@@ -24,6 +24,27 @@ fi
 rm -rf "$DEST"
 mkdir -p "$DEST/node_modules"
 
+# Packages excluded from the staged bundle by default (opt-in via env).
+#
+# `@anthropic-ai/claude-agent-sdk` pulls a ~267 MB native Claude binary
+# (per-platform optional dep) that is only used by the in-process claudecode
+# ext-agent backend. The backend lazy-loads it and degrades gracefully when
+# missing, so excluding it from the bundle keeps the DMG small while Claude
+# users can still `npm install -g @anthropic-ai/claude-code` for the CLI.
+# Set INCLUDE_CLAUDE_SDK=1 to bundle it again.
+include_claude_sdk="${INCLUDE_CLAUDE_SDK:-0}"
+bundle_excluded_pkg() {
+  local name="$1"
+  if [ "${include_claude_sdk}" = "1" ]; then
+    return 1
+  fi
+  case "$name" in
+    "@anthropic-ai/claude-agent-sdk"|"@anthropic-ai/claude-agent-sdk-"*)
+      return 0 ;;
+  esac
+  return 1
+}
+
 echo "  Copying compiled node entrypoints..."
 mkdir -p "$DEST/dist"
 cp -R "$SRC/." "$DEST/dist/"
@@ -82,6 +103,10 @@ while IFS= read -r mod_path; do
   case "$pkg_name" in
     @envoymesh/*) continue ;;
   esac
+  if bundle_excluded_pkg "$pkg_name"; then
+    echo "  Skipping excluded package: $pkg_name"
+    continue
+  fi
   dest_mod="$DEST/node_modules/$pkg_name"
   if [ -d "$dest_mod" ]; then
     continue
@@ -168,6 +193,10 @@ while [ "$iter" -lt "$max_iterations" ]; do
         fi
       done
       [ -z "$src_dep" ] && continue
+      if bundle_excluded_pkg "$dep_name"; then
+        echo "  Skipping excluded package (safety net): $dep_name"
+        continue
+      fi
       mkdir -p "$(dirname "$dest_dep")"
       cp -R "$src_dep" "$dest_dep"
       copied_this_iter=$((copied_this_iter + 1))

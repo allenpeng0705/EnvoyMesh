@@ -505,6 +505,45 @@
   "chatAiDisabledAskOwner": "ファミリーチャット用の AI モデルをホーム所有者に有効にしてもらってください。",
   "pairingLoadProfilesFailed": "既存のプロフィールを読み込めません: {error}",
   "pairingFailed": "ペアリングに失敗: {error}",
+  "pairingInProgressTitle": "ホームノードとペアリング中",
+  "pairingInProgressSubtitle": "{owner} に接続しています",
+  "@pairingInProgressSubtitle": {
+    "placeholders": {
+      "owner": {"type": "String"}
+    }
+  },
+  "pairingElapsed": "経過時間：{time}",
+  "@pairingElapsed": {
+    "placeholders": {
+      "time": {"type": "String"}
+    }
+  },
+  "pairingHomeNodeLabel": "ホーム：{peer}",
+  "@pairingHomeNodeLabel": {
+    "placeholders": {
+      "peer": {"type": "String"}
+    }
+  },
+  "pairingStageInitial": "初期化中",
+  "pairingStageInitialHint": "ホームノードとの安全なチャネルを準備しています。",
+  "pairingStageConnecting": "ホームに接続中",
+  "pairingStageConnectingHint": "ローカルネットワークとリレー経由でホームを探しています。",
+  "pairingStageHandshaking": "ハンドシェイク中",
+  "pairingStageHandshakingHint": "鍵を交換しています。初回接続ではしばらくかかることがあります。",
+  "pairingStageVerifying": "確認中",
+  "pairingStageSlowHint": "通常より時間がかかっています。ホームノードが同じ Wi-Fi にいるか、インターネットに接続しているか確認してください。",
+  "pairingStageVerySlowHint": "予想より大幅に時間がかかっています。両デバイスがオンラインか確認し、キャンセルして再試行してください。",
+  "pairingCancel": "ペアリングをキャンセル",
+  "pairingCancelConfirmTitle": "ペアリングをキャンセルしますか？",
+  "pairingCancelConfirmBody": "ハンドシェイクを停止します。QRコードから再試行できます。",
+  "commonKeepWaiting": "そのまま待つ",
+  "pairingDontCloseApp": "アプリを閉じないでください — ペアリングはバックグラウンドで続行中です。",
+  "pairingNowLan": "ローカルネットワーク上のホームノードに接続しています…",
+  "pairingNowP2p": "安全なピアツーピア接続を確立しています…",
+  "pairingNowRelay": "リレーサーバー経由で接続しています…",
+  "pairingStillWorking": "引き続き処理中です — 初回の接続には1〜2分かかることがあります。アプリを開いたままにしてください。",
+  "pairingTroubleTitle": "それでも接続できませんか？",
+  "pairingTroubleBody": "ホームノードの電源が入っていてオンラインであること、このデバイスがインターネットに接続されていることを確認してください。それでも失敗する場合はキャンセルしてやり直してください。",
   "pairingInviteAlreadyUsed": "この招待QRは既に使用済みです。ホーム所有者に「家族 → 招待QRを表示」で新しいコードを出してもらい、スキャン後「戻ってきました」でプロフィール（例: Dad）を選んでください。",
   "feedDefaultTitle": "フィード投稿",
   "aiDraftSection": "下書きセクション",

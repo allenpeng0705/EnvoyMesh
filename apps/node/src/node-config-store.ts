@@ -25,6 +25,41 @@ import type { FriendMatchingPreferencesPayload } from "@envoymesh/protocol";
 const NODE_CONFIG_FILE = "node-config.json";
 const warnedInvalidConfigPaths = new Set<string>();
 
+/**
+ * Overlay store-review pairing fields from the bundled `node-config.json`
+ * onto a loaded/saved config whenever the bundled file has review pairing
+ * enabled — i.e. the Apple review package (`APPLE_REVIEW=1`).
+ *
+ * The bundled review config must stay authoritative for review fields so a
+ * stale profile-dir `node-config.json` (created by an earlier normal build
+ * on the same machine) or a config save that drops review fields can never
+ * silently turn the Apple-review home back into an owner-pairing home. For
+ * normal builds the bundled file has no review fields and this is a no-op.
+ */
+async function applyBundledReviewOverlay(
+  config: PersistedNodeConfig,
+  bundleDir?: string,
+): Promise<PersistedNodeConfig> {
+  const bundled = await loadBundledNodeConfig(bundleDir);
+  if (!bundled?.reviewPairingEnabled) return config;
+  return {
+    ...config,
+    reviewPairingEnabled: true,
+    ...(bundled.reviewPairingToken !== undefined
+      ? { reviewPairingToken: bundled.reviewPairingToken }
+      : {}),
+    ...(bundled.reviewPairingFamilyOnly !== undefined
+      ? { reviewPairingFamilyOnly: bundled.reviewPairingFamilyOnly }
+      : {}),
+    ...(bundled.reviewPairingTtlDays !== undefined
+      ? { reviewPairingTtlDays: bundled.reviewPairingTtlDays }
+      : {}),
+    ...(bundled.reviewPairingExpiresAt !== undefined
+      ? { reviewPairingExpiresAt: bundled.reviewPairingExpiresAt }
+      : {}),
+  };
+}
+
 const VALID_DISCOVERY_PROFILES = new Set<DiscoveryProfile>([
   "lan-fast",
   "wan-default",
@@ -261,10 +296,18 @@ export interface PersistedNodeConfig {
   reviewPairingEnabled?: boolean;
   /** Stable pairing token for review QR (required when enabled). */
   reviewPairingToken?: string;
-  /** Absolute ISO expiry for the review token. */
+  /**
+   * Absolute ISO expiry for the review token.
+   */
   reviewPairingExpiresAt?: string;
-  /** TTL in days when expiresAt is unset (default 14). */
+  /** TTL in days when expiresAt is unset (default 14, 30 in family-only mode). */
   reviewPairingTtlDays?: number;
+  /**
+   * Family-only review mode: every QR (including the EnvoyGo owner QR) binds
+   * the scanner as a family member, never the home owner. Set by the Apple
+   * review build (APPLE_REVIEW=1) so reviewers can never claim the home.
+   */
+  reviewPairingFamilyOnly?: boolean;
   /**
    * Phase 38 — WebRTC ICE servers (STUN/TURN) for voice/video calls.
    * When unset, the default set of public STUN servers is used.
@@ -416,6 +459,8 @@ export function createNodeConfigStore(profileDir: string): NodeConfigStore {
 
   return {
     async load() {
+      const overlayReview = (cfg: PersistedNodeConfig) =>
+        applyBundledReviewOverlay(cfg, process.env.ENVOYMESH_NODE_BUNDLE_DIR);
       try {
         const raw = await readFile(path, "utf8");
         const parsed = JSON.parse(stripJsonComments(raw)) as unknown;
@@ -424,16 +469,18 @@ export function createNodeConfigStore(profileDir: string): NodeConfigStore {
           if (autonomousPoliciesChanged(parsed, normalized)) {
             await serializedWrite(normalized);
           }
-          cachedConfig = normalized;
-          return normalized;
+          const overlaid = await overlayReview(normalized);
+          cachedConfig = overlaid;
+          return overlaid;
         }
         const reason = describeNodeConfigValidationFailure(parsed);
         const migrated = tryMigrateNodeConfig(parsed, profileDir);
         if (migrated) {
           console.warn(`[node-config] ${path} invalid (${reason}); migrated and repaired`);
           await serializedWrite(migrated);
-          cachedConfig = migrated;
-          return migrated;
+          const overlaid = await overlayReview(migrated);
+          cachedConfig = overlaid;
+          return overlaid;
         }
         const salvaged = tryMigrateNodeConfig(
           { ...createDefaultPersistedNodeConfig(profileDir), ...(parsed as Record<string, unknown>) },
@@ -442,8 +489,9 @@ export function createNodeConfigStore(profileDir: string): NodeConfigStore {
         if (salvaged) {
           console.warn(`[node-config] ${path} invalid (${reason}); repaired with defaults`);
           await serializedWrite(salvaged);
-          cachedConfig = salvaged;
-          return salvaged;
+          const overlaid = await overlayReview(salvaged);
+          cachedConfig = overlaid;
+          return overlaid;
         }
         if (!warnedInvalidConfigPaths.has(path)) {
           console.warn(`[node-config] ${path} has invalid shape (${reason}), treating as uninitialized`);
@@ -480,7 +528,9 @@ export function createNodeConfigStore(profileDir: string): NodeConfigStore {
           // a background save is in flight would reset the worker profile
           // to "disabled and empty" — the exact symptom reported on Windows.
           if (cachedConfig) {
-            return cachedConfig;
+            const overlaid = await overlayReview(cachedConfig);
+            cachedConfig = overlaid;
+            return overlaid;
           }
           return undefined;
         }
@@ -491,7 +541,10 @@ export function createNodeConfigStore(profileDir: string): NodeConfigStore {
 
     async save(config) {
       const payload: PersistedNodeConfig = {
-        ...config,
+        ...(await applyBundledReviewOverlay(
+          config,
+          process.env.ENVOYMESH_NODE_BUNDLE_DIR,
+        )),
         profileDir,
         updatedAt: new Date().toISOString(),
       };

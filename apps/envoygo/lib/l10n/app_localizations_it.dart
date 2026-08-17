@@ -2518,6 +2518,94 @@ class AppLocalizationsIt extends AppLocalizations {
       'Questo QR di invito è già stato usato. Chiedi al proprietario di aprire Famiglia → Mostra QR invito, scansiona il nuovo codice e scegli Sono tornato per selezionare il tuo profilo (es. Dad).';
 
   @override
+  String get pairingInProgressTitle => 'Associazione al nodo di casa';
+
+  @override
+  String pairingInProgressSubtitle(String owner) {
+    return 'Connessione a $owner in corso';
+  }
+
+  @override
+  String pairingElapsed(String time) {
+    return 'Trascorso: $time';
+  }
+
+  @override
+  String pairingHomeNodeLabel(String peer) {
+    return 'Casa: $peer';
+  }
+
+  @override
+  String get pairingStageInitial => 'Inizializzazione';
+
+  @override
+  String get pairingStageInitialHint =>
+      'Configurazione di un canale sicuro verso il nodo di casa.';
+
+  @override
+  String get pairingStageConnecting => 'Raggiungere casa';
+
+  @override
+  String get pairingStageConnectingHint =>
+      'Ricerca del nodo di casa nella rete locale e tramite relay.';
+
+  @override
+  String get pairingStageHandshaking => 'Handshake';
+
+  @override
+  String get pairingStageHandshakingHint =>
+      'Scambio delle chiavi — al primo collegamento può richiedere un momento.';
+
+  @override
+  String get pairingStageVerifying => 'Verifica';
+
+  @override
+  String get pairingStageSlowHint =>
+      'Più lento del solito. Assicurati che il nodo di casa sia sulla stessa Wi-Fi o abbia Internet.';
+
+  @override
+  String get pairingStageVerySlowHint =>
+      'L’associazione richiede molto più tempo del previsto. Verifica che entrambi i dispositivi siano online, quindi annulla e riprova.';
+
+  @override
+  String get pairingCancel => 'Annulla associazione';
+
+  @override
+  String get pairingCancelConfirmTitle => 'Annullare l’associazione?';
+
+  @override
+  String get pairingCancelConfirmBody =>
+      'L’handshake verrà interrotto. Potrai riprovare dal codice QR.';
+
+  @override
+  String get commonKeepWaiting => 'Continua ad attendere';
+
+  @override
+  String get pairingDontCloseApp =>
+      'Non chiudere l’app — l’associazione prosegue in background.';
+
+  @override
+  String get pairingNowLan => 'Connessione al nodo di casa sulla rete locale…';
+
+  @override
+  String get pairingNowP2p =>
+      'Creazione di una connessione sicura peer-to-peer…';
+
+  @override
+  String get pairingNowRelay => 'Connessione tramite un server relay…';
+
+  @override
+  String get pairingStillWorking =>
+      'Ancora in corso — la prima connessione può richiedere un paio di minuti. Tieni aperta l\'app.';
+
+  @override
+  String get pairingTroubleTitle => 'Ancora problemi?';
+
+  @override
+  String get pairingTroubleBody =>
+      'Verifica che il nodo di casa sia acceso e online e che questo dispositivo abbia accesso a Internet. Se continua a fallire, annulla e riprova.';
+
+  @override
   String get feedDefaultTitle => 'Post del feed';
 
   @override

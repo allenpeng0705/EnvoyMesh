@@ -89,6 +89,12 @@ class HomeRemoteClientOptions {
   final void Function(HomeRemoteCandidate? candidate)?
       onActiveTransportChange;
 
+  /// Called before each candidate connect attempt (initial connect and
+  /// upgrade sweeps) with the candidate about to be tried. Lets callers
+  /// surface live "now connecting via LAN / relay / …" feedback while the
+  /// first connection is still being established.
+  final void Function(HomeRemoteCandidate candidate)? onCandidateTrying;
+
   /// Called whenever a reconnection succeeds (after initial connect).
   /// Use this to resync data after network recovery.
   final void Function()? onReconnect;
@@ -107,6 +113,7 @@ class HomeRemoteClientOptions {
     this.createTransport,
     this.onHomeOnlineChange,
     this.onActiveTransportChange,
+    this.onCandidateTrying,
     this.onReconnect,
     this.perCandidateTimeoutMs = 8000,
     this.upgradeSweepMs = 30000,
@@ -277,6 +284,9 @@ class HomeRemoteClient {
 
     for (var i = startIndex; i < candidates.length; i++) {
       final candidate = candidates[i];
+      // Surface the candidate about to be tried so pairing/connect UIs can
+      // show live "now connecting via …" feedback instead of a silent spinner.
+      _options.onCandidateTrying?.call(candidate);
       try {
         await _openSocket(candidate, perTimeout, fastFailMs: fastFailMs);
         _probeCooldown.remove(candidate.name);

@@ -2484,6 +2484,94 @@ class AppLocalizationsEn extends AppLocalizations {
       'This invite QR was already used. Ask the home owner to open Family → Show invite QR again, then scan the new code and choose I\'m back to select your profile (e.g. Dad).';
 
   @override
+  String get pairingInProgressTitle => 'Pairing with home';
+
+  @override
+  String pairingInProgressSubtitle(String owner) {
+    return 'Connecting to $owner';
+  }
+
+  @override
+  String pairingElapsed(String time) {
+    return 'Elapsed: $time';
+  }
+
+  @override
+  String pairingHomeNodeLabel(String peer) {
+    return 'Home: $peer';
+  }
+
+  @override
+  String get pairingStageInitial => 'Initializing';
+
+  @override
+  String get pairingStageInitialHint =>
+      'Setting up a secure channel to the home node.';
+
+  @override
+  String get pairingStageConnecting => 'Reaching home';
+
+  @override
+  String get pairingStageConnectingHint =>
+      'Looking for the home on your local network and via relay.';
+
+  @override
+  String get pairingStageHandshaking => 'Handshaking';
+
+  @override
+  String get pairingStageHandshakingHint =>
+      'Exchanging keys — this step can take a moment on first connect.';
+
+  @override
+  String get pairingStageVerifying => 'Verifying';
+
+  @override
+  String get pairingStageSlowHint =>
+      'Taking longer than usual. Make sure the home node is on the same Wi-Fi or has internet.';
+
+  @override
+  String get pairingStageVerySlowHint =>
+      'Pairing is taking much longer than expected. Check both devices are online, then cancel and try again.';
+
+  @override
+  String get pairingCancel => 'Cancel pairing';
+
+  @override
+  String get pairingCancelConfirmTitle => 'Cancel pairing?';
+
+  @override
+  String get pairingCancelConfirmBody =>
+      'The handshake will stop. You can try again from the QR code.';
+
+  @override
+  String get commonKeepWaiting => 'Keep waiting';
+
+  @override
+  String get pairingDontCloseApp =>
+      'Don\'t close the app — pairing runs in the background.';
+
+  @override
+  String get pairingNowLan => 'Now trying your home node on the local network…';
+
+  @override
+  String get pairingNowP2p =>
+      'Now establishing a secure peer-to-peer connection…';
+
+  @override
+  String get pairingNowRelay => 'Now connecting through a relay server…';
+
+  @override
+  String get pairingStillWorking =>
+      'Still working — the first connection can take a minute or two. Please keep the app open.';
+
+  @override
+  String get pairingTroubleTitle => 'Still having trouble?';
+
+  @override
+  String get pairingTroubleBody =>
+      'Make sure the home node is powered on and online, and that this device has internet access. If it keeps failing, cancel and try again.';
+
+  @override
   String get feedDefaultTitle => 'Feed post';
 
   @override

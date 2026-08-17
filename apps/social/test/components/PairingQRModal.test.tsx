@@ -77,4 +77,42 @@ describe("PairingQRModal family invite button", () => {
       expect(screen.getByRole("button", { name: /Show family invite QR/i })).toBeTruthy();
     });
   });
+
+  it("on a family-only review home renders the family invite QR directly and never the owner QR", async () => {
+    getPairingPayload.mockResolvedValue({
+      token: "family.review-secret",
+      wsUrl: "ws://127.0.0.1:3030/ws",
+    });
+    renderWithI18n(<PairingQRModal onClose={() => {}} />);
+
+    await waitFor(() => {
+      expect(generateFamilyInviteToken).toHaveBeenCalled();
+      expect(screen.getByText(/Invite a family member/i)).toBeTruthy();
+    });
+
+    // No owner pairing QR, no "show family invite" secondary button, no
+    // "back to owner pairing" affordance, and no owner-grants-full-access hint.
+    expect(screen.queryByRole("button", { name: /Show family invite QR/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Back to owner pairing QR/i })).toBeNull();
+    expect(screen.queryByText(/full owner access/i)).toBeNull();
+    expect(screen.queryByText(/envoy:\/\/pair/i)).toBeNull();
+  });
+
+  it("family-only review home closing the QR dismisses the whole dialog (no owner QR behind it)", async () => {
+    getPairingPayload.mockResolvedValue({
+      token: "family.review-secret",
+      wsUrl: "ws://127.0.0.1:3030/ws",
+    });
+    const onClose = vi.fn();
+    renderWithI18n(<PairingQRModal onClose={onClose} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Invite a family member/i)).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Close pairing/i }));
+
+    await waitFor(() => {
+      expect(onClose).toHaveBeenCalled();
+    });
+  });
 });

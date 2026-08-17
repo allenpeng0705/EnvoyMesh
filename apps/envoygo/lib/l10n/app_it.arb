@@ -505,6 +505,45 @@
   "chatAiDisabledAskOwner": "Chiedi al proprietario di casa di abilitare un modello IA per la chat famiglia.",
   "pairingLoadProfilesFailed": "Impossibile caricare i profili esistenti: {error}",
   "pairingFailed": "Associazione non riuscita: {error}",
+  "pairingInProgressTitle": "Associazione al nodo di casa",
+  "pairingInProgressSubtitle": "Connessione a {owner} in corso",
+  "@pairingInProgressSubtitle": {
+    "placeholders": {
+      "owner": {"type": "String"}
+    }
+  },
+  "pairingElapsed": "Trascorso: {time}",
+  "@pairingElapsed": {
+    "placeholders": {
+      "time": {"type": "String"}
+    }
+  },
+  "pairingHomeNodeLabel": "Casa: {peer}",
+  "@pairingHomeNodeLabel": {
+    "placeholders": {
+      "peer": {"type": "String"}
+    }
+  },
+  "pairingStageInitial": "Inizializzazione",
+  "pairingStageInitialHint": "Configurazione di un canale sicuro verso il nodo di casa.",
+  "pairingStageConnecting": "Raggiungere casa",
+  "pairingStageConnectingHint": "Ricerca del nodo di casa nella rete locale e tramite relay.",
+  "pairingStageHandshaking": "Handshake",
+  "pairingStageHandshakingHint": "Scambio delle chiavi — al primo collegamento può richiedere un momento.",
+  "pairingStageVerifying": "Verifica",
+  "pairingStageSlowHint": "Più lento del solito. Assicurati che il nodo di casa sia sulla stessa Wi-Fi o abbia Internet.",
+  "pairingStageVerySlowHint": "L’associazione richiede molto più tempo del previsto. Verifica che entrambi i dispositivi siano online, quindi annulla e riprova.",
+  "pairingCancel": "Annulla associazione",
+  "pairingCancelConfirmTitle": "Annullare l’associazione?",
+  "pairingCancelConfirmBody": "L’handshake verrà interrotto. Potrai riprovare dal codice QR.",
+  "commonKeepWaiting": "Continua ad attendere",
+  "pairingDontCloseApp": "Non chiudere l’app — l’associazione prosegue in background.",
+  "pairingNowLan": "Connessione al nodo di casa sulla rete locale…",
+  "pairingNowP2p": "Creazione di una connessione sicura peer-to-peer…",
+  "pairingNowRelay": "Connessione tramite un server relay…",
+  "pairingStillWorking": "Ancora in corso — la prima connessione può richiedere un paio di minuti. Tieni aperta l'app.",
+  "pairingTroubleTitle": "Ancora problemi?",
+  "pairingTroubleBody": "Verifica che il nodo di casa sia acceso e online e che questo dispositivo abbia accesso a Internet. Se continua a fallire, annulla e riprova.",
   "pairingInviteAlreadyUsed": "Questo QR di invito è già stato usato. Chiedi al proprietario di aprire Famiglia → Mostra QR invito, scansiona il nuovo codice e scegli Sono tornato per selezionare il tuo profilo (es. Dad).",
   "feedDefaultTitle": "Post del feed",
   "aiDraftSection": "Sezione bozza",

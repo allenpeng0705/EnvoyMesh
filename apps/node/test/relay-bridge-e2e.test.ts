@@ -13,7 +13,7 @@
  *   4. Stream lifecycle
  */
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -167,6 +167,75 @@ describe("Relay bridge E2E (real libp2p)", () => {
     const resp = JSON.parse(new TextDecoder().decode(respBytes!.subarray()));
     expect(resp.type).toBe("proxy-reject");
     expect(resp.reason).toContain("invalid");
+
+    await stream.close();
+  });
+
+  it("review token: handshake accepted but only pairing RPCs are routed (no owner escalation)", async () => {
+    const home = await startMesh();
+    const relay = await startMesh();
+    const svc = makeNodeService(profileDir, home);
+
+    // Enable family-only review pairing (Apple review build) via node-config.
+    await writeFile(
+      join(profileDir, "node-config.json"),
+      JSON.stringify(
+        {
+          version: "0.1",
+          profileDir: "./data/default",
+          discoveryProfile: "wan-default",
+          relayEnabled: true,
+          relayServerEnabled: false,
+          advertiseAddrs: [],
+          bootstrapPeers: [],
+          bootstrapPresets: [],
+          configuredRelays: [],
+          modelProviders: { mode: "mock" },
+          chatAssistEnabled: false,
+          reviewPairingEnabled: true,
+          reviewPairingToken: "apple-review-secret",
+          reviewPairingFamilyOnly: true,
+          reviewPairingTtlDays: 30,
+        },
+        null,
+        2,
+      ),
+    );
+
+    await home.handleRawProtocol(CLIENT_PROXY_PROTOCOL, createClientProxyHandler(svc));
+
+    const stream = await relay.dialProtocol(home.multiaddrs[0], CLIENT_PROXY_PROTOCOL);
+    const streamIo = byteStream(stream);
+
+    // Handshake with the review token — accepted so pairThinClient can run.
+    await streamIo.write(
+      new TextEncoder().encode(JSON.stringify({ type: "proxy-connect", token: "apple-review-secret" })),
+    );
+    const acceptBytes = await streamIo.read();
+    expect(JSON.parse(new TextDecoder().decode(acceptBytes!.subarray())).type).toBe("proxy-accept");
+
+    // Owner-level RPC must be denied for the review token.
+    await streamIo.write(
+      new TextEncoder().encode(JSON.stringify({ id: "1", method: "getNodeConfig", params: {} })),
+    );
+    const denied = JSON.parse(new TextDecoder().decode((await streamIo.read())!.subarray()));
+    expect(denied.id).toBe("1");
+    expect(denied.error?.code).toBe("UNAUTHORIZED");
+
+    // pairThinClient must still work and bind a family member, never the owner.
+    await streamIo.write(
+      new TextEncoder().encode(
+        JSON.stringify({
+          id: "2",
+          method: "pairThinClient",
+          params: { pairingToken: "apple-review-secret", deviceName: "Reviewer", platform: "flutter" },
+        }),
+      ),
+    );
+    const paired = JSON.parse(new TextDecoder().decode((await streamIo.read())!.subarray()));
+    expect(paired.id).toBe("2");
+    expect(paired.error).toBeUndefined();
+    expect(paired.result?.isOwnerProfile).toBe(false);
 
     await stream.close();
   });

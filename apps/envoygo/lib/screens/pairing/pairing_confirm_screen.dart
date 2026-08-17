@@ -9,6 +9,7 @@ import '../../providers/node_provider.dart';
 import '../../services/candidate_resolver.dart';
 import '../../services/home_remote_client.dart';
 import '../../services/pairing_service.dart';
+import 'pairing_progress_screen.dart';
 
 /// Confirmation screen shown after scanning a pairing / family-invite QR.
 class PairingConfirmScreen extends ConsumerStatefulWidget {
@@ -36,7 +37,6 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
     '#7c3aed',
   ];
 
-  bool _pairing = false;
   String? _error;
   late final TextEditingController _nameController;
   late String _avatarColor;
@@ -305,19 +305,16 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
               ),
             ],
             const SizedBox(height: 24),
-            if (_pairing)
-                const Center(child: CircularProgressIndicator())
-              else
-                FilledButton.icon(
-                  onPressed: _pair,
-                  icon: Icon(_isFamilyInvite ? Icons.person_add : Icons.link),
-                  label: Text(
-                    _isFamilyInvite ? l10n.commonJoin : l10n.commonPair,
-                  ),
-                ),
+            FilledButton.icon(
+              onPressed: _pair,
+              icon: Icon(_isFamilyInvite ? Icons.person_add : Icons.link),
+              label: Text(
+                _isFamilyInvite ? l10n.commonJoin : l10n.commonPair,
+              ),
+            ),
             const SizedBox(height: 8),
             TextButton(
-              onPressed: _pairing ? null : () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(context).pop(),
               child: Text(l10n.commonCancel),
             ),
           ],
@@ -627,43 +624,50 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
       }
     }
 
-    setState(() {
-      _pairing = true;
-      _error = null;
-    });
+    setState(() => _error = null);
 
-    List<HomeRemoteCandidate> candidates = [];
+    final candidates = _resolveCandidates();
 
-    try {
-      candidates = _resolveCandidates();
+    // Hand off to the dedicated progress screen. It owns the
+    // spinner, elapsed-time counter, stage hints, and cancel
+    // button so the user is never stranded on a 2-3 minute
+    // bare spinner (Apple App Review rejection: previous UX
+    // gave no progress feedback and no way out).
+    final result = await Navigator.of(context).push<PairingProgressResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => PairingProgressScreen(
+          data: widget.data,
+          deviceName: 'EnvoyGo',
+          candidates: candidates,
+          profileId: _isFamilyInvite && _selectExisting
+              ? _selectedProfileId?.trim()
+              : null,
+          profileName: _isFamilyInvite && !_selectExisting
+              ? name
+              : (name.isEmpty ? null : name),
+          profileAvatarColor: _isFamilyInvite && !_selectExisting
+              ? _avatarColor
+              : (!_isFamilyInvite && name.isNotEmpty ? _avatarColor : null),
+        ),
+      ),
+    );
 
-      final notifier = ref.read(nodeProvider.notifier);
-      await notifier.pairWithNode(
-        widget.data,
-        'EnvoyGo',
-        candidates,
-        profileId: _isFamilyInvite && _selectExisting
-            ? _selectedProfileId?.trim()
-            : null,
-        profileName: _isFamilyInvite && !_selectExisting
-            ? name
-            : (name.isEmpty ? null : name),
-        profileAvatarColor: _isFamilyInvite && !_selectExisting
-            ? _avatarColor
-            : (!_isFamilyInvite && name.isNotEmpty ? _avatarColor : null),
-      );
+    if (!mounted) return;
 
-      if (mounted) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
-      }
-    } catch (e) {
-      if (!mounted) return;
-      final friendly = _friendlyInviteError(e);
+    if (result == null) {
+      // User backed out via system back — no change.
+      return;
+    }
+    if (result.cancelled) {
+      // User cancelled the handshake — no change; the form is
+      // already showing the Pair button again.
+      return;
+    }
+    if (result.error != null) {
+      final friendly = _friendlyInviteError(result.error!);
       if (friendly != null) {
-        setState(() {
-          _pairing = false;
-          _error = friendly;
-        });
+        setState(() => _error = friendly);
         return;
       }
       final bpList = <String>[];
@@ -675,15 +679,17 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
         bpList.addAll(CandidateResolver.resolveBootstrapPresets(
             widget.data.bootstrapPresetNames!));
       }
-      setState(() {
-        _pairing = false;
-        _error = AppLocalizations.of(context).pairingFailed(
-          '${e.toString().replaceFirst('Bad state: ', '').replaceFirst('Exception: ', '')}\n'
-          'bootstrapPeers (from QR): $bpList\n'
-          'homePeerId: ${widget.data.homeNodePeerId}\n'
-          'bootstrapPresetNames (from QR): ${widget.data.bootstrapPresetNames}',
-        );
-      });
+      setState(() => _error = AppLocalizations.of(context).pairingFailed(
+            '${result.error}\n'
+            'bootstrapPeers (from QR): $bpList\n'
+            'homePeerId: ${widget.data.homeNodePeerId}\n'
+            'bootstrapPresetNames (from QR): ${widget.data.bootstrapPresetNames}',
+          ));
+      return;
     }
+
+    // Success — the progress screen has popped itself; pop the
+    // remaining confirm/scan route stack to land on home.
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 }

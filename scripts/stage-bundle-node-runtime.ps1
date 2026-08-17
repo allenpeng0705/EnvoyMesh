@@ -66,6 +66,18 @@ foreach ($pkgDir in (Get-ChildItem -Path (Join-Path $Root "packages") -Directory
 Write-Host "  Staged $stagedWorkspacePkgs @envoymesh workspace packages"
 
 Write-Host "  Staging production npm dependencies..."
+# Packages excluded from the staged bundle by default (opt-in via env).
+# Mirrors the bash twin — `@anthropic-ai/claude-agent-sdk` pulls a ~267 MB
+# native Claude binary only used by the in-process claudecode ext-agent
+# backend. The backend lazy-loads it and degrades gracefully when missing.
+# Set INCLUDE_CLAUDE_SDK=1 to bundle it again.
+$includeClaudeSdk = if ($env:INCLUDE_CLAUDE_SDK -eq "1") { $true } else { $false }
+function Test-BundleExcludedPackage([string]$name) {
+    if ($includeClaudeSdk) { return $false }
+    if ($name -eq "@anthropic-ai/claude-agent-sdk") { return $true }
+    if ($name -like "@anthropic-ai/claude-agent-sdk-*") { return $true }
+    return $false
+}
 $npmLines = @()
 try {
     $npmLines = npm ls --omit=dev -w @envoymesh/node --all --parseable 2>$null
@@ -98,6 +110,10 @@ foreach ($modPath in $npmLines) {
     $pkgName = $pkgJson.name
     if ([string]::IsNullOrWhiteSpace($pkgName)) { continue }
     if ($pkgName -like "@envoymesh/*") { continue }
+    if (Test-BundleExcludedPackage $pkgName) {
+        Write-Host "  Skipping excluded package: $pkgName"
+        continue
+    }
     $destMod = Join-Path $Dest "node_modules/$pkgName"
     if (Test-Path $destMod) { continue }
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destMod) | Out-Null
@@ -175,6 +191,10 @@ for ($iter = 1; $iter -le $maxIterations; $iter++) {
         foreach ($depName in $depNames) {
             # Skip workspace packages — they're staged separately above.
             if ($depName -like "@envoymesh/*") { continue }
+            if (Test-BundleExcludedPackage $depName) {
+                Write-Host "  Skipping excluded package (safety net): $depName"
+                continue
+            }
             $destDep = Join-Path $stagedNodeModules $depName
             if (Test-Path $destDep) { continue }
             # Search all known node_modules locations for this dep.

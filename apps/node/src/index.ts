@@ -2335,7 +2335,11 @@ async function handleInboundMeshMessage({
       persistedCfg?.companionPairingAutoAcceptWithToken === true &&
       Boolean(payload.pairingToken) &&
       nodeService instanceof NodeServiceImpl &&
-      await nodeService.validatePairingToken(payload.pairingToken!);
+      (await nodeService.validatePairingToken(payload.pairingToken!)) &&
+      // Store-review tokens are shared with untrusted reviewers — never
+      // auto-accept a mesh companion bond with one, even if an operator
+      // combined review mode with companion auto-accept.
+      !(await nodeService.isReviewPairingToken(payload.pairingToken!));
 
     if (allowAuto) {
       await trustStore.setTrustRecord({

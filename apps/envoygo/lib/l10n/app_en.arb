@@ -1126,6 +1126,51 @@
       }
     }
   },
+  "pairingInProgressTitle": "Pairing with home",
+  "pairingInProgressSubtitle": "Connecting to {owner}",
+  "@pairingInProgressSubtitle": {
+    "placeholders": {
+      "owner": {
+        "type": "String"
+      }
+    }
+  },
+  "pairingElapsed": "Elapsed: {time}",
+  "@pairingElapsed": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "pairingHomeNodeLabel": "Home: {peer}",
+  "@pairingHomeNodeLabel": {
+    "placeholders": {
+      "peer": {
+        "type": "String"
+      }
+    }
+  },
+  "pairingStageInitial": "Initializing",
+  "pairingStageInitialHint": "Setting up a secure channel to the home node.",
+  "pairingStageConnecting": "Reaching home",
+  "pairingStageConnectingHint": "Looking for the home on your local network and via relay.",
+  "pairingStageHandshaking": "Handshaking",
+  "pairingStageHandshakingHint": "Exchanging keys — this step can take a moment on first connect.",
+  "pairingStageVerifying": "Verifying",
+  "pairingStageSlowHint": "Taking longer than usual. Make sure the home node is on the same Wi-Fi or has internet.",
+  "pairingStageVerySlowHint": "Pairing is taking much longer than expected. Check both devices are online, then cancel and try again.",
+  "pairingCancel": "Cancel pairing",
+  "pairingCancelConfirmTitle": "Cancel pairing?",
+  "pairingCancelConfirmBody": "The handshake will stop. You can try again from the QR code.",
+  "commonKeepWaiting": "Keep waiting",
+  "pairingDontCloseApp": "Don't close the app — pairing runs in the background.",
+  "pairingNowLan": "Now trying your home node on the local network…",
+  "pairingNowP2p": "Now establishing a secure peer-to-peer connection…",
+  "pairingNowRelay": "Now connecting through a relay server…",
+  "pairingStillWorking": "Still working — the first connection can take a minute or two. Please keep the app open.",
+  "pairingTroubleTitle": "Still having trouble?",
+  "pairingTroubleBody": "Make sure the home node is powered on and online, and that this device has internet access. If it keeps failing, cancel and try again.",
   "feedDefaultTitle": "Feed post",
   "aiDraftSection": "Draft section",
   "aiDraftFailed": "Could not draft ({reason})",

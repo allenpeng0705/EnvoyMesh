@@ -505,6 +505,45 @@
   "chatAiDisabledAskOwner": "Demandez au propriétaire d'activer un modèle IA pour le chat familial.",
   "pairingLoadProfilesFailed": "Impossible de charger les profils : {error}",
   "pairingFailed": "Échec de l'association : {error}",
+  "pairingInProgressTitle": "Association au nœud domicile",
+  "pairingInProgressSubtitle": "Connexion à {owner}…",
+  "@pairingInProgressSubtitle": {
+    "placeholders": {
+      "owner": {"type": "String"}
+    }
+  },
+  "pairingElapsed": "Écoulé : {time}",
+  "@pairingElapsed": {
+    "placeholders": {
+      "time": {"type": "String"}
+    }
+  },
+  "pairingHomeNodeLabel": "Domicile : {peer}",
+  "@pairingHomeNodeLabel": {
+    "placeholders": {
+      "peer": {"type": "String"}
+    }
+  },
+  "pairingStageInitial": "Initialisation",
+  "pairingStageInitialHint": "Mise en place d’un canal sécurisé vers le nœud domicile.",
+  "pairingStageConnecting": "Recherche du domicile",
+  "pairingStageConnectingHint": "Recherche du domicile sur le réseau local et via le relais.",
+  "pairingStageHandshaking": "Handshake",
+  "pairingStageHandshakingHint": "Échange des clés — cette étape peut prendre un moment lors de la première association.",
+  "pairingStageVerifying": "Vérification",
+  "pairingStageSlowHint": "Plus long que d’habitude. Vérifiez que le nœud domicile est sur le même Wi-Fi ou a Internet.",
+  "pairingStageVerySlowHint": "L’association prend bien plus de temps que prévu. Vérifiez que les deux appareils sont en ligne, puis annulez et réessayez.",
+  "pairingCancel": "Annuler l’association",
+  "pairingCancelConfirmTitle": "Annuler l’association ?",
+  "pairingCancelConfirmBody": "Le handshake sera interrompu. Vous pourrez réessayer depuis le QR code.",
+  "commonKeepWaiting": "Continuer d’attendre",
+  "pairingDontCloseApp": "Ne fermez pas l’application — l’association continue en arrière-plan.",
+  "pairingNowLan": "Connexion en cours à votre nœud domestique sur le réseau local…",
+  "pairingNowP2p": "Établissement d'une connexion sécurisée de pair à pair…",
+  "pairingNowRelay": "Connexion via un serveur relais…",
+  "pairingStillWorking": "Toujours en cours — la première connexion peut prendre une à deux minutes. Veuillez garder l'application ouverte.",
+  "pairingTroubleTitle": "Toujours des difficultés ?",
+  "pairingTroubleBody": "Assurez-vous que le nœud domestique est allumé et en ligne et que cet appareil a accès à Internet. Si cela échoue encore, annulez et réessayez.",
   "pairingInviteAlreadyUsed": "Ce QR d'invitation a déjà été utilisé. Demandez au propriétaire d'ouvrir Famille → Afficher le QR d'invitation, scannez le nouveau code, puis choisissez Je suis de retour et votre profil (ex. Dad).",
   "feedDefaultTitle": "Publication du fil",
   "aiDraftSection": "Section de brouillon",

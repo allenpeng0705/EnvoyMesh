@@ -4614,6 +4614,150 @@ abstract class AppLocalizations {
   /// **'This invite QR was already used. Ask the home owner to open Family → Show invite QR again, then scan the new code and choose I\'m back to select your profile (e.g. Dad).'**
   String get pairingInviteAlreadyUsed;
 
+  /// No description provided for @pairingInProgressTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pairing with home'**
+  String get pairingInProgressTitle;
+
+  /// No description provided for @pairingInProgressSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting to {owner}'**
+  String pairingInProgressSubtitle(String owner);
+
+  /// No description provided for @pairingElapsed.
+  ///
+  /// In en, this message translates to:
+  /// **'Elapsed: {time}'**
+  String pairingElapsed(String time);
+
+  /// No description provided for @pairingHomeNodeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Home: {peer}'**
+  String pairingHomeNodeLabel(String peer);
+
+  /// No description provided for @pairingStageInitial.
+  ///
+  /// In en, this message translates to:
+  /// **'Initializing'**
+  String get pairingStageInitial;
+
+  /// No description provided for @pairingStageInitialHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Setting up a secure channel to the home node.'**
+  String get pairingStageInitialHint;
+
+  /// No description provided for @pairingStageConnecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Reaching home'**
+  String get pairingStageConnecting;
+
+  /// No description provided for @pairingStageConnectingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Looking for the home on your local network and via relay.'**
+  String get pairingStageConnectingHint;
+
+  /// No description provided for @pairingStageHandshaking.
+  ///
+  /// In en, this message translates to:
+  /// **'Handshaking'**
+  String get pairingStageHandshaking;
+
+  /// No description provided for @pairingStageHandshakingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Exchanging keys — this step can take a moment on first connect.'**
+  String get pairingStageHandshakingHint;
+
+  /// No description provided for @pairingStageVerifying.
+  ///
+  /// In en, this message translates to:
+  /// **'Verifying'**
+  String get pairingStageVerifying;
+
+  /// No description provided for @pairingStageSlowHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Taking longer than usual. Make sure the home node is on the same Wi-Fi or has internet.'**
+  String get pairingStageSlowHint;
+
+  /// No description provided for @pairingStageVerySlowHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Pairing is taking much longer than expected. Check both devices are online, then cancel and try again.'**
+  String get pairingStageVerySlowHint;
+
+  /// No description provided for @pairingCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel pairing'**
+  String get pairingCancel;
+
+  /// No description provided for @pairingCancelConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel pairing?'**
+  String get pairingCancelConfirmTitle;
+
+  /// No description provided for @pairingCancelConfirmBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The handshake will stop. You can try again from the QR code.'**
+  String get pairingCancelConfirmBody;
+
+  /// No description provided for @commonKeepWaiting.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep waiting'**
+  String get commonKeepWaiting;
+
+  /// No description provided for @pairingDontCloseApp.
+  ///
+  /// In en, this message translates to:
+  /// **'Don\'t close the app — pairing runs in the background.'**
+  String get pairingDontCloseApp;
+
+  /// No description provided for @pairingNowLan.
+  ///
+  /// In en, this message translates to:
+  /// **'Now trying your home node on the local network…'**
+  String get pairingNowLan;
+
+  /// No description provided for @pairingNowP2p.
+  ///
+  /// In en, this message translates to:
+  /// **'Now establishing a secure peer-to-peer connection…'**
+  String get pairingNowP2p;
+
+  /// No description provided for @pairingNowRelay.
+  ///
+  /// In en, this message translates to:
+  /// **'Now connecting through a relay server…'**
+  String get pairingNowRelay;
+
+  /// No description provided for @pairingStillWorking.
+  ///
+  /// In en, this message translates to:
+  /// **'Still working — the first connection can take a minute or two. Please keep the app open.'**
+  String get pairingStillWorking;
+
+  /// No description provided for @pairingTroubleTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Still having trouble?'**
+  String get pairingTroubleTitle;
+
+  /// No description provided for @pairingTroubleBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Make sure the home node is powered on and online, and that this device has internet access. If it keeps failing, cancel and try again.'**
+  String get pairingTroubleBody;
+
   /// No description provided for @feedDefaultTitle.
   ///
   /// In en, this message translates to:

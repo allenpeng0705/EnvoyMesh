@@ -852,6 +852,45 @@
   "chatAiDisabledAskOwner": "请让家庭机主为家庭聊天启用 AI 模型。",
   "pairingLoadProfilesFailed": "无法加载已有档案：{error}",
   "pairingFailed": "配对失败：{error}",
+  "pairingInProgressTitle": "正在与家庭节点配对",
+  "pairingInProgressSubtitle": "正在连接 {owner}",
+  "@pairingInProgressSubtitle": {
+    "placeholders": {
+      "owner": {"type": "String"}
+    }
+  },
+  "pairingElapsed": "已用时：{time}",
+  "@pairingElapsed": {
+    "placeholders": {
+      "time": {"type": "String"}
+    }
+  },
+  "pairingHomeNodeLabel": "家庭节点：{peer}",
+  "@pairingHomeNodeLabel": {
+    "placeholders": {
+      "peer": {"type": "String"}
+    }
+  },
+  "pairingStageInitial": "正在初始化",
+  "pairingStageInitialHint": "正在建立到家庭节点的安全通道。",
+  "pairingStageConnecting": "正在联络家庭节点",
+  "pairingStageConnectingHint": "正在本地网络和中继上寻找家庭节点。",
+  "pairingStageHandshaking": "正在握手",
+  "pairingStageHandshakingHint": "正在交换密钥 — 首次连接这一步可能需要一会儿。",
+  "pairingStageVerifying": "正在校验",
+  "pairingStageSlowHint": "比平时更久。请确认家庭节点在同一个 Wi‑Fi，或能访问互联网。",
+  "pairingStageVerySlowHint": "配对耗时明显超过预期。请确认两台设备都在线，然后取消并重试。",
+  "pairingCancel": "取消配对",
+  "pairingCancelConfirmTitle": "要取消配对吗？",
+  "pairingCancelConfirmBody": "握手会停止。可以重新扫描二维码再试。",
+  "commonKeepWaiting": "继续等待",
+  "pairingDontCloseApp": "请勿关闭应用 — 配对在后台继续进行。",
+  "pairingNowLan": "正在通过本地网络连接你的家庭节点…",
+  "pairingNowP2p": "正在建立安全的点对点连接…",
+  "pairingNowRelay": "正在通过中继服务器连接…",
+  "pairingStillWorking": "仍在进行中 — 首次连接可能需要一两分钟，请保持应用打开。",
+  "pairingTroubleTitle": "仍然无法连接？",
+  "pairingTroubleBody": "请确认家庭节点已开机且在线，并确认此设备可访问互联网。若仍然失败，请取消后重试。",
   "pairingInviteAlreadyUsed": "此邀请二维码已被使用。请让家庭节点所有者重新打开「家庭 → 显示邀请二维码」，扫描新码后选择「我回来了」并选中你的档案（例如 Dad）。",
   "feedDefaultTitle": "动态帖子",
   "aiDraftSection": "草稿段落",

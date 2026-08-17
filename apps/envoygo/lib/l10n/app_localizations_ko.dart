@@ -2416,6 +2416,89 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 초대 QR은 이미 사용되었습니다. 홈 소유자에게 가족 → 초대 QR 다시 표시를 요청한 뒤, 새 코드를 스캔하고 \'돌아왔어요\'에서 프로필(예: Dad)을 선택하세요.';
 
   @override
+  String get pairingInProgressTitle => '홈 노드와 페어링 중';
+
+  @override
+  String pairingInProgressSubtitle(String owner) {
+    return '$owner에 연결 중';
+  }
+
+  @override
+  String pairingElapsed(String time) {
+    return '경과 시간: $time';
+  }
+
+  @override
+  String pairingHomeNodeLabel(String peer) {
+    return '홈: $peer';
+  }
+
+  @override
+  String get pairingStageInitial => '초기화 중';
+
+  @override
+  String get pairingStageInitialHint => '홈 노드와의 보안 채널을 설정하는 중입니다.';
+
+  @override
+  String get pairingStageConnecting => '홈 노드에 연결 중';
+
+  @override
+  String get pairingStageConnectingHint => '로컬 네트워크와 릴레이를 통해 홈 노드를 찾고 있습니다.';
+
+  @override
+  String get pairingStageHandshaking => '핸드셰이크 중';
+
+  @override
+  String get pairingStageHandshakingHint =>
+      '키를 교환하는 중입니다 — 첫 연결에서는 시간이 조금 걸릴 수 있습니다.';
+
+  @override
+  String get pairingStageVerifying => '확인 중';
+
+  @override
+  String get pairingStageSlowHint =>
+      '평소보다 오래 걸립니다. 홈 노드가 같은 Wi‑Fi에 있거나 인터넷에 연결되어 있는지 확인하세요.';
+
+  @override
+  String get pairingStageVerySlowHint =>
+      '페어링이 예상보다 훨씬 오래 걸립니다. 두 기기가 모두 온라인인지 확인하고 취소 후 다시 시도하세요.';
+
+  @override
+  String get pairingCancel => '페어링 취소';
+
+  @override
+  String get pairingCancelConfirmTitle => '페어링을 취소할까요?';
+
+  @override
+  String get pairingCancelConfirmBody => '핸드셰이크가 중단됩니다. QR 코드에서 다시 시도할 수 있습니다.';
+
+  @override
+  String get commonKeepWaiting => '계속 기다리기';
+
+  @override
+  String get pairingDontCloseApp => '앱을 닫지 마세요 — 페어링은 백그라운드에서 계속 진행됩니다.';
+
+  @override
+  String get pairingNowLan => '로컬 네트워크에서 홈 노드에 연결하는 중…';
+
+  @override
+  String get pairingNowP2p => '보안 피어투피어 연결을 설정하는 중…';
+
+  @override
+  String get pairingNowRelay => '릴레이 서버를 통해 연결하는 중…';
+
+  @override
+  String get pairingStillWorking =>
+      '아직 진행 중입니다 — 첫 연결은 1~2분이 걸릴 수 있습니다. 앱을 열어 둔 채로 기다려 주세요.';
+
+  @override
+  String get pairingTroubleTitle => '여전히 문제가 있나요?';
+
+  @override
+  String get pairingTroubleBody =>
+      '홈 노드가 켜져 있고 온라인인지, 이 기기가 인터넷에 연결되어 있는지 확인하세요. 계속 실패하면 취소한 후 다시 시도하세요.';
+
+  @override
   String get feedDefaultTitle => '피드 게시물';
 
   @override

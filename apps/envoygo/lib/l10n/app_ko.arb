@@ -505,6 +505,45 @@
   "chatAiDisabledAskOwner": "가족 채팅용 AI 모델을 홈 소유자에게 요청하세요.",
   "pairingLoadProfilesFailed": "기존 프로필을 불러올 수 없음: {error}",
   "pairingFailed": "페어링 실패: {error}",
+  "pairingInProgressTitle": "홈 노드와 페어링 중",
+  "pairingInProgressSubtitle": "{owner}에 연결 중",
+  "@pairingInProgressSubtitle": {
+    "placeholders": {
+      "owner": {"type": "String"}
+    }
+  },
+  "pairingElapsed": "경과 시간: {time}",
+  "@pairingElapsed": {
+    "placeholders": {
+      "time": {"type": "String"}
+    }
+  },
+  "pairingHomeNodeLabel": "홈: {peer}",
+  "@pairingHomeNodeLabel": {
+    "placeholders": {
+      "peer": {"type": "String"}
+    }
+  },
+  "pairingStageInitial": "초기화 중",
+  "pairingStageInitialHint": "홈 노드와의 보안 채널을 설정하는 중입니다.",
+  "pairingStageConnecting": "홈 노드에 연결 중",
+  "pairingStageConnectingHint": "로컬 네트워크와 릴레이를 통해 홈 노드를 찾고 있습니다.",
+  "pairingStageHandshaking": "핸드셰이크 중",
+  "pairingStageHandshakingHint": "키를 교환하는 중입니다 — 첫 연결에서는 시간이 조금 걸릴 수 있습니다.",
+  "pairingStageVerifying": "확인 중",
+  "pairingStageSlowHint": "평소보다 오래 걸립니다. 홈 노드가 같은 Wi‑Fi에 있거나 인터넷에 연결되어 있는지 확인하세요.",
+  "pairingStageVerySlowHint": "페어링이 예상보다 훨씬 오래 걸립니다. 두 기기가 모두 온라인인지 확인하고 취소 후 다시 시도하세요.",
+  "pairingCancel": "페어링 취소",
+  "pairingCancelConfirmTitle": "페어링을 취소할까요?",
+  "pairingCancelConfirmBody": "핸드셰이크가 중단됩니다. QR 코드에서 다시 시도할 수 있습니다.",
+  "commonKeepWaiting": "계속 기다리기",
+  "pairingDontCloseApp": "앱을 닫지 마세요 — 페어링은 백그라운드에서 계속 진행됩니다.",
+  "pairingNowLan": "로컬 네트워크에서 홈 노드에 연결하는 중…",
+  "pairingNowP2p": "보안 피어투피어 연결을 설정하는 중…",
+  "pairingNowRelay": "릴레이 서버를 통해 연결하는 중…",
+  "pairingStillWorking": "아직 진행 중입니다 — 첫 연결은 1~2분이 걸릴 수 있습니다. 앱을 열어 둔 채로 기다려 주세요.",
+  "pairingTroubleTitle": "여전히 문제가 있나요?",
+  "pairingTroubleBody": "홈 노드가 켜져 있고 온라인인지, 이 기기가 인터넷에 연결되어 있는지 확인하세요. 계속 실패하면 취소한 후 다시 시도하세요.",
   "pairingInviteAlreadyUsed": "이 초대 QR은 이미 사용되었습니다. 홈 소유자에게 가족 → 초대 QR 다시 표시를 요청한 뒤, 새 코드를 스캔하고 '돌아왔어요'에서 프로필(예: Dad)을 선택하세요.",
   "feedDefaultTitle": "피드 게시물",
   "aiDraftSection": "초안 섹션",

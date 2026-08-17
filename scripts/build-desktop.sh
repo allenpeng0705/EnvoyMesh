@@ -44,6 +44,18 @@
 #               Fetch Kubo into src-tauri/resources/kubo and build with
 #               tauri.conf.full.json (matches CI release / -Full on Windows).
 #
+# Apple review build (APPLE_REVIEW=1) — special home node for iOS/Android
+# store review. One flag controls it; normal builds are unaffected:
+#   APPLE_REVIEW=1 ./scripts/build-desktop.sh
+#   Stages a family-only review node-config.json into the node bundle:
+#     reviewPairingEnabled=true, reviewPairingFamilyOnly=true,
+#     reviewPairingTtlDays=30, stable reviewPairingToken (auto-generated, or
+#     set APPLE_REVIEW_TOKEN=<secret> to reuse one across rebuilds).
+#   Result: every QR — including the EnvoyGo pairing QR — binds the scanner as
+#   a family member (never the home owner) for 30 days. See
+#   apps/node/src/review-pairing.ts for the runtime semantics. Run this build
+#   on a fresh profile and NEVER ship it to normal users.
+#
 # OpenClaw extensions (macOS/Linux):
 #   Default OPENCLAW_EXTENSIONS=default — EnvoyMesh agent allowlist only
 #   (envoymesh + search/agent utils). Omits OpenClaw Diff UI and all
@@ -155,6 +167,45 @@ artifact_kind() {
     *.msi) echo "msi" ;;
     *) echo "${f##*.}" ;;
   esac
+}
+
+# Recompress the newest DMG under ${TAURI_TARGET_ROOT} to a stronger
+# compression format (default UDBZ/bzip2 ≈ 10-20% smaller than Tauri's
+# default UDZO/zlib, at the cost of slower creation). Override with
+# DMG_COMPRESSION=UDZO|ULFO|UDBZ to pick a different format (or UDZO to
+# keep Tauri's default). No-op when the DMG is already in the target
+# format or when hdiutil is unavailable (non-macOS).
+recompress_dmg() {
+  local dmg cur fmt tmp
+  # `newest_file` returns 1 when no DMG exists; `|| true` keeps this safe
+  # under `set -e` regardless of how the caller invokes the function.
+  dmg="$(newest_file '*/release/bundle/dmg/*.dmg')" || true
+  [ -n "$dmg" ] || { echo "  (no DMG found — skipping recompression)"; return 0; }
+  fmt="${DMG_COMPRESSION:-UDBZ}"
+  # `hdiutil imageinfo` has no plain "Format:" line — the compression lives in
+  # "Format Description:". Map the description back to the hdiutil format code
+  # so we can skip recompression when the DMG is already in the target format.
+  local cur_desc cur=""
+  cur_desc="$(hdiutil imageinfo "$dmg" 2>/dev/null | sed -n 's/^Format Description: *//p' | tr -d '\r')" || true
+  case "$cur_desc" in
+    *zlib*)  cur="UDZO" ;;
+    *bzip2*) cur="UDBZ" ;;
+    *lzfse*) cur="ULFO" ;;
+  esac
+  if [ "$cur" = "$fmt" ]; then
+    echo "  DMG already ${fmt}: $dmg ($(du -h "$dmg" | awk '{print $1}'))"
+    return 0
+  fi
+  tmp="${dmg}.recompress"
+  rm -f "$tmp"
+  echo "  Recompressing DMG ${cur:-?} → ${fmt}: $dmg"
+  hdiutil convert "$dmg" -format "$fmt" -ov -o "$tmp" >/dev/null 2>&1 || {
+    echo "  ⚠ hdiutil recompress failed — keeping original DMG" >&2
+    rm -f "$tmp"
+    return 0
+  }
+  mv -f "$tmp" "$dmg"
+  echo "  ✓ DMG ${fmt}: $dmg ($(du -h "$dmg" | awk '{print $1}'))"
 }
 
 # Copy the newest Tauri bundle artifacts (one per pattern) into ${PROJECT_DIR}/${OUT_DIR}/.
@@ -288,6 +339,53 @@ bash scripts/stage-tauri-node-bundle.sh
 # Default: fail the build if push-config.json exists but secrets are missing.
 export REQUIRE_PUSH_CREDENTIALS="${REQUIRE_PUSH_CREDENTIALS:-1}"
 bash scripts/stage-tauri-push-credentials.sh
+# Apple review build (APPLE_REVIEW=1) — family-only, 30-day review home.
+# One flag controls it; every QR (incl. EnvoyGo) binds as a family member so
+# store reviewers can never become the home owner. See runtime semantics in
+# apps/node/src/review-pairing.ts (familyOnly mode).
+if [ "${APPLE_REVIEW:-0}" = "1" ]; then
+  echo ""
+  echo "  ⚠ APPLE_REVIEW=1 — building a FAMILY-ONLY review home:"
+  echo "    • All QRs (incl. EnvoyGo) bind as family members, never the owner."
+  echo "    • EnvoyGo QR is valid 30 days."
+  echo "    • Do NOT ship this build to normal users."
+  APPLE_REVIEW_TOKEN="${APPLE_REVIEW_TOKEN:-$(node -e "process.stdout.write(require('node:crypto').randomBytes(24).toString('hex'))")}"
+  NODE_BUNDLE_DIR="${PROJECT_DIR}/apps/tauri/src-tauri/resources/node"
+  node - "$PROJECT_DIR/node-config.json" "$NODE_BUNDLE_DIR" "$APPLE_REVIEW_TOKEN" <<'EOF'
+const fs = require("node:fs")
+const path = require("node:path")
+const [src, destDir, token] = process.argv.slice(2)
+let cfg = {}
+try {
+  cfg = JSON.parse(fs.readFileSync(src, "utf8"))
+} catch (err) {
+  console.warn(`  ⚠ Could not read ${src} (${err.message}) — using minimal review config.`)
+  cfg = {
+    version: "0.1",
+    profileDir: "data/default",
+    discoveryProfile: "wan-default",
+    relayEnabled: true,
+    relayServerEnabled: false,
+    advertiseAddrs: [],
+    bootstrapPeers: [],
+    bootstrapPresets: ["public-libp2p", "public-libp2p-am6", "public-libp2p-am7", "cn-relay"],
+    configuredRelays: [],
+    modelProviders: { mode: "disabled" },
+    chatAssistEnabled: false,
+  }
+}
+cfg.reviewPairingEnabled = true
+cfg.reviewPairingToken = token
+cfg.reviewPairingFamilyOnly = true
+cfg.reviewPairingTtlDays = 30
+const out = path.join(destDir, "node-config.json")
+fs.mkdirSync(destDir, { recursive: true })
+fs.writeFileSync(out, JSON.stringify(cfg, null, 2) + "\n")
+console.log(`  ✓ Staged family-only review node-config.json → ${out}`)
+console.log(`  ✓ Review pairing token (matches the QR): ${token}`)
+EOF
+  echo ""
+fi
 echo ""
 
 # Step 2: Run discovery E2E tests (fast — ~15ms, catches relay/DHT regressions)
@@ -426,6 +524,9 @@ case "${TARGET}" in
             echo "  Also ensure rustup targets: rustup target add aarch64-apple-darwin x86_64-apple-darwin" >&2
             exit 1
         fi
+        echo ""
+        echo "[4.5/6] Recompressing DMG (default UDBZ — smaller download)..."
+        recompress_dmg || true
         echo ""
         echo "[5/6] Publishing macOS artifacts to ${OUT_DIR}/..."
         PUBLISHED="$(publish_desktop_release macos '*/release/bundle/dmg/*.dmg')" || true

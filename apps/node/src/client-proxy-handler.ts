@@ -9,9 +9,11 @@ import {
 } from "./home-terminal-ws.js";
 import { TERMINAL_WS_PORT } from "./service-ports.js";
 import {
+  anonymousPairingCaller,
   localOwnerCaller,
   runWithRpcCaller,
   sessionCallerFromToken,
+  type RpcCallerContext,
 } from "./rpc-caller-context.js";
 
 /**
@@ -54,12 +56,19 @@ export function createClientProxyHandler(
       }
 
       const tokenRecord = await nodeService.lookupSessionToken(token);
+      // Store-review tokens (Apple/Google) are deliberately shared with
+      // untrusted reviewers — they may ONLY drive the two pre-auth pairing
+      // RPCs (pairThinClient / previewFamilyInvite) and must never escalate
+      // to the owner caller the way legacy companion-pairing tokens do.
+      const reviewToken = tokenRecord ? false : await nodeService.isReviewPairingToken(token);
       // Phase 51 — bind family profile for every proxied RPC (same as WS).
       // Without this, `_callerFamilyProfileId()` defaults to "owner" and
       // EnvoyAI / Ext Agent history collapses onto the owner thread.
-      let rpcCaller = tokenRecord
+      let rpcCaller: RpcCallerContext = tokenRecord
         ? sessionCallerFromToken(tokenRecord)
-        : localOwnerCaller("");
+        : reviewToken
+          ? anonymousPairingCaller()
+          : localOwnerCaller("");
       if (tokenRecord) {
         try {
           const listed = await nodeService.listFamilyProfiles();
@@ -95,6 +104,24 @@ export function createClientProxyHandler(
           continue;
         }
         if (!msg.id || !msg.method) continue;
+
+        // Store-review tokens must never reach owner-level RPCs through the
+        // proxy — only the two pre-auth pairing methods may run under them.
+        if (
+          reviewToken &&
+          msg.method !== "pairThinClient" &&
+          msg.method !== "previewFamilyInvite"
+        ) {
+          await streamIo.write(
+            encoder.encode(
+              JSON.stringify({
+                id: msg.id,
+                error: { code: "UNAUTHORIZED", message: "Authentication required" },
+              }),
+            ),
+          );
+          continue;
+        }
 
         try {
           if (msg.method === "homeTerminalWsOpen") {

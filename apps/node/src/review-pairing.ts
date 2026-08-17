@@ -5,15 +5,27 @@
  * For a terminal demo home used by Apple/Google review, set env vars or
  * node-config.json fields below.
  *
+ * Two modes:
+ *  1. Owner + family (default): the owner QR binds the scanner as OWNER and a
+ *     separate family invite QR binds family members. For demos where a
+ *     reviewer may legitimately be the home's owner.
+ *  2. Family-only (Apple review): `ENVOY_APPLE_REVIEW=1` (or
+ *     `reviewPairingFamilyOnly`). Every QR — including the EnvoyGo owner QR —
+ *     embeds the derived `family.<token>` and `pairThinClient` ALWAYS binds
+ *     the scanner as a family member, never the owner. Default TTL is 30 days.
+ *
  * Env (preferred for a throwaway review node):
- *   ENVOY_REVIEW_PAIRING=1
+ *   ENVOY_APPLE_REVIEW=1                  # single flag: family-only + 30-day TTL
+ *   ENVOY_REVIEW_PAIRING=1                # review mode (owner+family)
  *   ENVOY_REVIEW_PAIRING_TOKEN=<secret>
- *   ENVOY_REVIEW_PAIRING_DAYS=14          # optional, default 14
+ *   ENVOY_REVIEW_PAIRING_FAMILY_ONLY=1    # force family-only (with REVIEW_PAIRING)
+ *   ENVOY_REVIEW_PAIRING_DAYS=14          # optional, default 14 (30 in family-only)
  *   ENVOY_REVIEW_PAIRING_EXPIRES_AT=ISO   # optional, overrides DAYS
  *
  * node-config.json (optional):
  *   "reviewPairingEnabled": true,
  *   "reviewPairingToken": "...",
+ *   "reviewPairingFamilyOnly": true,
  *   "reviewPairingExpiresAt": "2026-08-15T00:00:00.000Z",
  *   "reviewPairingTtlDays": 14
  *
@@ -25,6 +37,11 @@ export interface ReviewPairingSettings {
   token: string;
   /** Absolute expiry (ms epoch). */
   expiresAtMs: number;
+  /**
+   * Family-only review mode: EnvoyGo QR embeds the family token and pairing
+   * can NEVER bind the scanner as the home owner.
+   */
+  familyOnly: boolean;
 }
 
 export interface ReviewPairingConfigSource {
@@ -32,9 +49,11 @@ export interface ReviewPairingConfigSource {
   reviewPairingToken?: string;
   reviewPairingExpiresAt?: string;
   reviewPairingTtlDays?: number;
+  reviewPairingFamilyOnly?: boolean;
 }
 
 const DEFAULT_TTL_DAYS = 14;
+const APPLE_REVIEW_DEFAULT_TTL_DAYS = 30;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /** Process-start anchor so DAYS stays stable across getPairingPayload calls. */
@@ -63,9 +82,12 @@ export function resolveReviewPairing(
   env: NodeJS.ProcessEnv = process.env,
   nowMs: number = Date.now(),
 ): ReviewPairingSettings | null {
+  // Single umbrella flag for the Apple-review build: implies review pairing,
+  // forces family-only semantics, and defaults the TTL to 30 days.
+  const appleReview = envFlagTrue(env.ENVOY_APPLE_REVIEW);
   const envEnabled = envFlagTrue(env.ENVOY_REVIEW_PAIRING);
   const fileEnabled = file?.reviewPairingEnabled === true;
-  if (!envEnabled && !fileEnabled) return null;
+  if (!appleReview && !envEnabled && !fileEnabled) return null;
 
   const token = (
     env.ENVOY_REVIEW_PAIRING_TOKEN?.trim() ||
@@ -79,11 +101,17 @@ export function resolveReviewPairing(
     return null;
   }
 
+  const familyOnly =
+    appleReview ||
+    envFlagTrue(env.ENVOY_REVIEW_PAIRING_FAMILY_ONLY) ||
+    file?.reviewPairingFamilyOnly === true;
+
   const ttlDaysRaw =
     env.ENVOY_REVIEW_PAIRING_DAYS?.trim() ||
     (file?.reviewPairingTtlDays != null ? String(file.reviewPairingTtlDays) : "");
-  const ttlDays = ttlDaysRaw ? Number(ttlDaysRaw) : DEFAULT_TTL_DAYS;
-  const safeDays = Number.isFinite(ttlDays) && ttlDays > 0 ? ttlDays : DEFAULT_TTL_DAYS;
+  const defaultTtl = familyOnly ? APPLE_REVIEW_DEFAULT_TTL_DAYS : DEFAULT_TTL_DAYS;
+  const ttlDays = ttlDaysRaw ? Number(ttlDaysRaw) : defaultTtl;
+  const safeDays = Number.isFinite(ttlDays) && ttlDays > 0 ? ttlDays : defaultTtl;
 
   const expiresIso =
     env.ENVOY_REVIEW_PAIRING_EXPIRES_AT?.trim() ||
@@ -102,7 +130,7 @@ export function resolveReviewPairing(
     return null;
   }
 
-  return { enabled: true, token, expiresAtMs };
+  return { enabled: true, token, expiresAtMs, familyOnly };
 }
 
 /**
@@ -135,8 +163,11 @@ export function isActiveReviewPairingToken(
 export function logReviewPairingBanner(settings: ReviewPairingSettings | null): void {
   if (!settings) return;
   const until = new Date(settings.expiresAtMs).toISOString();
+  const mode = settings.familyOnly
+    ? "FAMILY-ONLY (reviewers can never become the owner)"
+    : "owner + family invite";
   console.warn(
-    `[review-pairing] ENABLED until ${until} — long-lived owner + family invite QR for store review only. ` +
+    `[review-pairing] ENABLED until ${until} — ${mode}, long-lived QR for store review only. ` +
       `Do not enable on end-user DMG/Tauri installs.`,
   );
 }

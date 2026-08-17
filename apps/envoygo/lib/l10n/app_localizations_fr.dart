@@ -2521,6 +2521,95 @@ class AppLocalizationsFr extends AppLocalizations {
       'Ce QR d\'invitation a déjà été utilisé. Demandez au propriétaire d\'ouvrir Famille → Afficher le QR d\'invitation, scannez le nouveau code, puis choisissez Je suis de retour et votre profil (ex. Dad).';
 
   @override
+  String get pairingInProgressTitle => 'Association au nœud domicile';
+
+  @override
+  String pairingInProgressSubtitle(String owner) {
+    return 'Connexion à $owner…';
+  }
+
+  @override
+  String pairingElapsed(String time) {
+    return 'Écoulé : $time';
+  }
+
+  @override
+  String pairingHomeNodeLabel(String peer) {
+    return 'Domicile : $peer';
+  }
+
+  @override
+  String get pairingStageInitial => 'Initialisation';
+
+  @override
+  String get pairingStageInitialHint =>
+      'Mise en place d’un canal sécurisé vers le nœud domicile.';
+
+  @override
+  String get pairingStageConnecting => 'Recherche du domicile';
+
+  @override
+  String get pairingStageConnectingHint =>
+      'Recherche du domicile sur le réseau local et via le relais.';
+
+  @override
+  String get pairingStageHandshaking => 'Handshake';
+
+  @override
+  String get pairingStageHandshakingHint =>
+      'Échange des clés — cette étape peut prendre un moment lors de la première association.';
+
+  @override
+  String get pairingStageVerifying => 'Vérification';
+
+  @override
+  String get pairingStageSlowHint =>
+      'Plus long que d’habitude. Vérifiez que le nœud domicile est sur le même Wi-Fi ou a Internet.';
+
+  @override
+  String get pairingStageVerySlowHint =>
+      'L’association prend bien plus de temps que prévu. Vérifiez que les deux appareils sont en ligne, puis annulez et réessayez.';
+
+  @override
+  String get pairingCancel => 'Annuler l’association';
+
+  @override
+  String get pairingCancelConfirmTitle => 'Annuler l’association ?';
+
+  @override
+  String get pairingCancelConfirmBody =>
+      'Le handshake sera interrompu. Vous pourrez réessayer depuis le QR code.';
+
+  @override
+  String get commonKeepWaiting => 'Continuer d’attendre';
+
+  @override
+  String get pairingDontCloseApp =>
+      'Ne fermez pas l’application — l’association continue en arrière-plan.';
+
+  @override
+  String get pairingNowLan =>
+      'Connexion en cours à votre nœud domestique sur le réseau local…';
+
+  @override
+  String get pairingNowP2p =>
+      'Établissement d\'une connexion sécurisée de pair à pair…';
+
+  @override
+  String get pairingNowRelay => 'Connexion via un serveur relais…';
+
+  @override
+  String get pairingStillWorking =>
+      'Toujours en cours — la première connexion peut prendre une à deux minutes. Veuillez garder l\'application ouverte.';
+
+  @override
+  String get pairingTroubleTitle => 'Toujours des difficultés ?';
+
+  @override
+  String get pairingTroubleBody =>
+      'Assurez-vous que le nœud domestique est allumé et en ligne et que cet appareil a accès à Internet. Si cela échoue encore, annulez et réessayez.';
+
+  @override
   String get feedDefaultTitle => 'Publication du fil';
 
   @override
