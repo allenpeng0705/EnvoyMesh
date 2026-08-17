@@ -137,12 +137,21 @@ class CandidateResolver {
     final result = <HomeRemoteCandidate>[];
     final bases = <String>[];
 
+    // A "relay" base that is identical to the LAN WS URL is not a real
+    // relay — it is the pairing QR's wsUrl fallback when no relay was
+    // configured (relayWsUrl ?? wsUrl where wsUrl == lanWsUrl). Dialing it
+    // with ?target= targets the home's own /ws server, which does not speak
+    // the proxy protocol, so the attempt can only burn time (especially from
+    // cellular, where the private IP is unreachable anyway).
+    final lanBase = _stripTokenParam(node.lanIp ?? '');
+
     void addBase(String? raw) {
       if (raw == null || raw.isEmpty) return;
       final base = _stripTokenParam(raw);
       if (base.isEmpty) return;
       // Skip built-in community here — added last as community-relay.
       if (base.contains(_communityRelayHost)) return;
+      if (lanBase.isNotEmpty && base == lanBase) return;
       if (!bases.contains(base)) bases.add(base);
     }
 

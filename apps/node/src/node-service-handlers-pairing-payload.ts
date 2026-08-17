@@ -8,10 +8,15 @@
  *   - extra configured Envoy relay WS bases (`relayWsUrls` / `rels`)
  *   - LAN / identity / pairing token
  *
- * Not embedded (EnvoyGo already has community hardcoded; DHT bootstraps
- * do not help first-pair):
- *   - built-in community relay
- *   - public libp2p DHT presets (am6/am7/…)
+ * The primary relay is always present when reachable: an operator-configured
+ * Envoy relay wins, otherwise the built-in community relay (a real WS proxy,
+ * the default WAN fallback for mobile pairing). A QR with only a LAN URL is
+ * unusable from cellular — EnvoyGo would have to burn its whole candidate
+ * walk before reaching the hardcoded community fallback.
+ *
+ * Not embedded:
+ *   - public libp2p DHT presets (am6/am7/…) — DHT-only, cannot serve the
+ *     client-proxy WebSocket protocol
  */
 import { randomUUID } from "node:crypto";
 import {
@@ -93,6 +98,25 @@ export function isBuiltinOrPublicBootstrap(entry: string): boolean {
   return false;
 }
 
+/**
+ * True for public libp2p DHT bootstrap entries that cannot serve the
+ * client-proxy WebSocket protocol — mobile pairing clients cannot use them
+ * as a relay hop.
+ *
+ * Unlike `isBuiltinOrPublicBootstrap`, the built-in community relay is NOT
+ * junk here: it is a real WS proxy relay (EnvoyGo dials
+ * `ws://…:15432/ws?target=…`), so it must stay in the QR as the default WAN
+ * fallback. Only pure DHT bootstraps (am6/am7/bootstrap.libp2p.io) are
+ * dropped.
+ */
+export function isPublicDhtOnlyBootstrap(entry: string): boolean {
+  const trimmed = entry.trim();
+  if (!trimmed) return true;
+  if (QR_OMIT_PRESETS.has(trimmed)) return true;
+  if (trimmed.includes("bootstrap.libp2p.io")) return true;
+  return false;
+}
+
 function deriveLanIp(multiaddrs: string[]): string {
   for (const addr of multiaddrs) {
     const m = addr.match(IPV4_RE);
@@ -170,9 +194,10 @@ export async function getPairingPayloadViaRuntime(
     relayWsUrl = allRelayWs[0];
   } else {
     relayWsUrl = await ctx.autoDiscoverRelayWsUrl();
-    // Never pack built-in community into QR when we have nothing else —
-    // EnvoyGo already falls back to it. Leaving rel empty uses LAN wsUrl.
-    if (relayWsUrl && isBuiltinOrPublicBootstrap(relayWsUrl)) {
+    // Keep the community relay (a real client-proxy WS relay and the default
+    // WAN fallback for mobile) but drop public DHT-only bootstraps, which
+    // cannot serve the WebSocket proxy protocol and only waste dial time.
+    if (relayWsUrl && isPublicDhtOnlyBootstrap(relayWsUrl)) {
       relayWsUrl = undefined;
     }
   }

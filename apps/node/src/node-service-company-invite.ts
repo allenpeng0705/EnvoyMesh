@@ -48,6 +48,8 @@ export interface CreateCompanyInviteDeps {
   wsUrl: string;
   lanWsUrl?: string;
   relayWsUrl?: string;
+  /** Extra Envoy relay WS bases, carried as comma-joined `rels` in the URI. */
+  relayWsUrls?: string[];
   homeNodePeerId?: string;
   now?: () => Date;
 }
@@ -87,6 +89,7 @@ export async function createCompanyInviteViaRuntime(
         wsUrl: deps.wsUrl,
         lanWsUrl: deps.lanWsUrl ?? existing.lanWsUrl,
         relayWsUrl: deps.relayWsUrl ?? existing.relayWsUrl,
+        relayWsUrls: deps.relayWsUrls ?? existing.relayWsUrls,
         homeNodePeerId: deps.homeNodePeerId ?? existing.homeNodePeerId,
         kind,
         expiresAt,
@@ -111,6 +114,7 @@ export async function createCompanyInviteViaRuntime(
     wsUrl: deps.wsUrl,
     lanWsUrl: deps.lanWsUrl,
     relayWsUrl: deps.relayWsUrl,
+    relayWsUrls: deps.relayWsUrls,
     homeNodePeerId: deps.homeNodePeerId,
     kind,
     createdAt: now.toISOString(),

@@ -62,6 +62,7 @@ export async function buildCompanyInviteInviteContext(host: any): Promise<{
   wsUrl: string;
   lanWsUrl?: string;
   relayWsUrl?: string;
+  relayWsUrls?: string[];
   homeNodePeerId?: string;
 }> {
   const profile = host._profile;
@@ -74,6 +75,7 @@ export async function buildCompanyInviteInviteContext(host: any): Promise<{
     wsUrl: payload.wsUrl,
     lanWsUrl: payload.lanWsUrl,
     relayWsUrl: payload.relayWsUrl ?? host._relayPublicWsUrl,
+    relayWsUrls: payload.relayWsUrls,
     homeNodePeerId: payload.homeNodePeerId,
   };
 }

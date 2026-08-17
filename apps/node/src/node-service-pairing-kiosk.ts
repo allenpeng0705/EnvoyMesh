@@ -34,6 +34,7 @@ export interface KioskInviteCtx {
   wsUrl: string;
   lanWsUrl?: string;
   relayWsUrl?: string;
+  relayWsUrls?: string[];
   homeNodePeerId?: string;
 }
 

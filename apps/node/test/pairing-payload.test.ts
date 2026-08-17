@@ -3,12 +3,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createHumanProfileStore,
+  createLocalCompanyInviteStore,
   createLocalPeerDirectoryStore,
   createLocalTrustStore,
 } from "@envoymesh/local-store";
+import type { CompanyInviteRecord } from "@envoymesh/api";
 import type { EnvoyMesh } from "@envoymesh/network";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeServiceImpl } from "../src/node-service-impl.js";
+import { createCompanyInviteViaRuntime } from "../src/node-service-company-invite.js";
+import { buildCompanyInviteInviteContext } from "../src/node-service-wan.js";
 import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
   DEFAULT_ENVOY_COMMUNITY_RELAY_HTTP_PORT,
@@ -273,5 +277,80 @@ describe("NodeServiceImpl getPairingPayload", () => {
     expect(p.wsUrl).toBe("ws://192.168.1.50:3030/ws");
     expect(p.relayWsUrl).toBeUndefined();
     expect(p.relayPeerId).toBeUndefined();
+  });
+
+  it("family invite QR always carries the auto-discovered relay when directly connected", async () => {
+    const trustStore = createLocalTrustStore(profileDir);
+    const peerDirectory = createLocalPeerDirectoryStore(profileDir);
+    const human = createHumanProfileStore(profileDir);
+    // Direct connection to the community relay → auto-discovery picks it up.
+    const mesh = mockMesh({
+      peerId: "12D3KooWHome",
+      multiaddrs: ["/ip4/192.168.1.50/tcp/63641"],
+      directConnections: [communityRelayPeerId()],
+    });
+
+    const svc = new NodeServiceImpl(mesh, trustStore, peerDirectory, human, profileDir);
+    svc.setWsListenAddress(3030, "/ws");
+
+    // The family-invite context is built from getPairingPayload — the relay
+    // must survive into the invite record.
+    const ctx = await buildCompanyInviteInviteContext(svc);
+    expect(ctx.relayWsUrl).toBe(communityRelayWsUrl());
+
+    const store = createLocalCompanyInviteStore(profileDir);
+    const taskStore = {
+      saveCompanyInvite: async (r: CompanyInviteRecord) => store.saveInvite(r),
+      getCompanyInvite: async (id: string) => store.getInvite(id),
+      findCompanyInviteByToken: async (t: string) => store.findByToken(t),
+      listCompanyInvites: async () => store.listInvites(),
+    } as unknown as Parameters<typeof createCompanyInviteViaRuntime>[0]["taskStore"];
+
+    const { uri } = await createCompanyInviteViaRuntime(
+      { taskStore, ...ctx },
+      { kind: "family" },
+    );
+    expect(uri.startsWith("envoy://invite?")).toBe(true);
+    // The relay must be in the QR URI so a phone on 5G has a WAN path.
+    expect(uri).toContain(`relayWsUrl=${encodeURIComponent(communityRelayWsUrl())}`);
+    expect(uri).toContain("lanWsUrl=");
+  });
+
+  it("family invite QR carries extra configured relays as comma-joined rels", async () => {
+    const trustStore = createLocalTrustStore(profileDir);
+    const peerDirectory = createLocalPeerDirectoryStore(profileDir);
+    const human = createHumanProfileStore(profileDir);
+    const mesh = mockMesh({
+      peerId: "12D3KooWHome",
+      multiaddrs: ["/ip4/192.168.1.50/tcp/63641"],
+      directConnections: [],
+    });
+
+    const svc = new NodeServiceImpl(mesh, trustStore, peerDirectory, human, profileDir);
+    svc.setWsListenAddress(3030, "/ws");
+    // Two operator relays (EU + US), primary explicit override = EU.
+    await svc.addRelay("/ip4/10.0.0.1/tcp/4001/p2p/12D3KooWEuRelay");
+    await svc.addRelay("/ip4/10.0.0.2/tcp/4001/p2p/12D3KooWUsRelay");
+    svc.setRelayPublicWsUrl("ws://10.0.0.1:15432/ws");
+
+    const ctx = await buildCompanyInviteInviteContext(svc);
+    expect(ctx.relayWsUrl).toBe("ws://10.0.0.1:15432/ws");
+    expect(ctx.relayWsUrls).toEqual(["ws://10.0.0.2:15432/ws"]);
+
+    const store = createLocalCompanyInviteStore(profileDir);
+    const taskStore = {
+      saveCompanyInvite: async (r: CompanyInviteRecord) => store.saveInvite(r),
+      getCompanyInvite: async (id: string) => store.getInvite(id),
+      findCompanyInviteByToken: async (t: string) => store.findByToken(t),
+      listCompanyInvites: async () => store.listInvites(),
+    } as unknown as Parameters<typeof createCompanyInviteViaRuntime>[0]["taskStore"];
+
+    const { uri } = await createCompanyInviteViaRuntime(
+      { taskStore, ...ctx },
+      { kind: "family" },
+    );
+    expect(uri).toContain(
+      `rels=${encodeURIComponent("ws://10.0.0.2:15432/ws")}`,
+    );
   });
 });

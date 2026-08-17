@@ -183,6 +183,7 @@ class PairingService {
 
     final relayWsUrl =
         _nullableTrim(parsed.queryParameters['relayWsUrl']) ?? wsUrl;
+    final rels = _parseCsv(parsed.queryParameters['rels']);
 
     return PairingData(
       token: token,
@@ -199,6 +200,7 @@ class PairingService {
           _parseBootstrapPeers(parsed.queryParameters['bootstrapPeers']),
       bootstrapPresetNames: _parseBootstrapPresetNames(
           parsed.queryParameters['bootstrapPresetNames']),
+      relayWsUrls: rels,
       inviteId: _nullableTrim(parsed.queryParameters['inviteId']),
       profileId: _nullableTrim(parsed.queryParameters['profileId']),
       isInviteUri: isInviteUri,
@@ -275,11 +277,19 @@ class PairingService {
     if (raw == null || raw.isEmpty) return null;
     final trimmed = raw.trim();
     if (trimmed.isEmpty) return null;
-    return trimmed
+    return _parseCsv(raw);
+  }
+
+  static List<String>? _parseCsv(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+    final parts = trimmed
         .split(',')
         .map((s) => s.trim())
         .where((s) => s.isNotEmpty)
         .toList();
+    return parts.isEmpty ? null : parts;
   }
 
   static List<String>? _parseBootstrapPresetNames(String? raw) {

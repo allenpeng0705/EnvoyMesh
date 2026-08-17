@@ -109,5 +109,37 @@ void main() {
       expect(data!.isInviteUri, isTrue);
       expect(data.token, 't1');
     });
+
+    test('parses comma-joined rels from a family invite URI', () {
+      final uri = 'envoy://invite'
+          '?token=fam123'
+          '&wsUrl=ws%3A%2F%2Frelay.example.com%2Fws'
+          '&ownerId=envoy%3Aowner%3Aabc'
+          '&rels=ws%3A%2F%2Feu.relay.example%3A15432%2Fws%2Cws%3A%2F%2Fus.relay.example%3A15432%2Fws';
+
+      final data = PairingService.parsePairingUri(uri);
+
+      expect(data, isNotNull);
+      expect(data!.isInviteUri, isTrue);
+      expect(data.relayWsUrls, [
+        'ws://eu.relay.example:15432/ws',
+        'ws://us.relay.example:15432/ws',
+      ]);
+      expect(data.bootstrapPeers, isNull);
+    });
+
+    test('treats missing or empty rels as null relayWsUrls', () {
+      final plain = PairingService.parsePairingUri(
+        'envoy://invite?token=t1&wsUrl=ws%3A%2F%2Fhome.local%2Fws&ownerId=o',
+      );
+      expect(plain, isNotNull);
+      expect(plain!.relayWsUrls, isNull);
+
+      final empty = PairingService.parsePairingUri(
+        'envoy://invite?token=t1&wsUrl=ws%3A%2F%2Fhome.local%2Fws&ownerId=o&rels=%2C%20%2C',
+      );
+      expect(empty, isNotNull);
+      expect(empty!.relayWsUrls, isNull);
+    });
   });
 }

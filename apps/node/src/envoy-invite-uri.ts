@@ -14,12 +14,27 @@ function appendOptional(params: URLSearchParams, key: string, value?: string): v
   }
 }
 
+/**
+ * Max extra relay bases packed into the invite URI. Each relay costs ~45–50
+ * URI chars and every extra one pushes the QR code into a denser version,
+ * which makes it harder to scan from a phone. EnvoyGo already carries the
+ * community relay as its last-resort fallback, so the QR only needs a few
+ * operator relays for regional redundancy — not the full configured list.
+ */
+export const MAX_INVITE_RELAY_WS_URLS = 3;
+
 export function getPairingUriForInvite(invite: CompanyInviteRecord): string {
   const params = new URLSearchParams();
   params.set("token", invite.token);
   params.set("wsUrl", invite.wsUrl);
   appendOptional(params, "lanWsUrl", invite.lanWsUrl);
   appendOptional(params, "relayWsUrl", invite.relayWsUrl);
+  if (invite.relayWsUrls && invite.relayWsUrls.length > 0) {
+    // Comma-joined to keep the URI compact; relay WS URLs never contain
+    // commas. Capped so QR density stays bounded however many relays the
+    // node has configured.
+    params.set("rels", invite.relayWsUrls.slice(0, MAX_INVITE_RELAY_WS_URLS).join(","));
+  }
   appendOptional(params, "ownerId", invite.ownerId);
   appendOptional(params, "ownerPublicKey", invite.ownerPublicKey);
   appendOptional(params, "agentPeerId", invite.agentPeerId);
@@ -35,6 +50,8 @@ export interface ParsedEnvoyInviteUri {
   inviteId?: string;
   lanWsUrl?: string;
   relayWsUrl?: string;
+  /** Extra Envoy relay WS bases from the comma-joined `rels` param. */
+  relayWsUrls?: string[];
   ownerId?: string;
   ownerPublicKey?: string;
   agentPeerId?: string;
@@ -87,10 +104,21 @@ export function parseEnvoyInviteUri(input: string): ParsedEnvoyInviteUri {
     inviteId: optional(search, "inviteId"),
     lanWsUrl: optional(search, "lanWsUrl"),
     relayWsUrl: optional(search, "relayWsUrl"),
+    relayWsUrls: parseCsvParam(search, "rels"),
     ownerId: optional(search, "ownerId"),
     ownerPublicKey: optional(search, "ownerPublicKey"),
     agentPeerId: optional(search, "agentPeerId"),
     agentName: optional(search, "agentName"),
     homeNodePeerId: optional(search, "homeNodePeerId"),
   };
+}
+
+function parseCsvParam(search: URLSearchParams, key: string): string[] | undefined {
+  const raw = search.get(key)?.trim();
+  if (!raw) return undefined;
+  const parts = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  return parts.length > 0 ? parts : undefined;
 }

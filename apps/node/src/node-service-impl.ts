@@ -7502,6 +7502,7 @@ class NodeServiceImpl implements NodeService {
     wsUrl: string;
     lanWsUrl?: string;
     relayWsUrl?: string;
+    relayWsUrls?: string[];
     homeNodePeerId?: string;
   }> {
     return buildCompanyInviteInviteContext(this);

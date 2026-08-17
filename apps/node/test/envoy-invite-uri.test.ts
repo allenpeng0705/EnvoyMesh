@@ -33,26 +33,78 @@ describe("getPairingUriForInvite", () => {
       ...baseInvite,
       lanWsUrl: undefined,
       relayWsUrl: undefined,
+      relayWsUrls: undefined,
       agentPeerId: undefined,
       agentName: undefined,
       homeNodePeerId: undefined,
     });
     expect(uri).not.toContain("lanWsUrl=");
     expect(uri).not.toContain("relayWsUrl=");
+    expect(uri).not.toContain("rels=");
     expect(uri).not.toContain("agentPeerId=");
     expect(uri).not.toContain("homeNodePeerId=");
+  });
+
+  it("serializes extra relay bases as comma-joined rels", () => {
+    const uri = getPairingUriForInvite({
+      ...baseInvite,
+      relayWsUrls: [
+        "ws://eu.relay.example:15432/ws",
+        "ws://us.relay.example:15432/ws",
+      ],
+    });
+    expect(uri).toContain(
+      "rels=ws%3A%2F%2Feu.relay.example%3A15432%2Fws%2Cws%3A%2F%2Fus.relay.example%3A15432%2Fws",
+    );
+  });
+
+  it("caps rels at MAX_INVITE_RELAY_WS_URLS to bound QR density", () => {
+    const uri = getPairingUriForInvite({
+      ...baseInvite,
+      relayWsUrls: [
+        "ws://r1.example:15432/ws",
+        "ws://r2.example:15432/ws",
+        "ws://r3.example:15432/ws",
+        "ws://r4.example:15432/ws",
+        "ws://r5.example:15432/ws",
+      ],
+    });
+    const rels = new URLSearchParams(uri.split("?")[1]).get("rels");
+    expect(rels).toBe(
+      "ws://r1.example:15432/ws,ws://r2.example:15432/ws,ws://r3.example:15432/ws",
+    );
   });
 });
 
 describe("parseEnvoyInviteUri", () => {
   it("round-trips through the URI", () => {
-    const uri = getPairingUriForInvite(baseInvite);
+    const uri = getPairingUriForInvite({
+      ...baseInvite,
+      relayWsUrls: [
+        "ws://eu.relay.example:15432/ws",
+        "ws://us.relay.example:15432/ws",
+      ],
+    });
     const parsed = parseEnvoyInviteUri(uri);
     expect(parsed.token).toBe(baseInvite.token);
     expect(parsed.wsUrl).toBe(baseInvite.wsUrl);
     expect(parsed.lanWsUrl).toBe(baseInvite.lanWsUrl);
     expect(parsed.ownerId).toBe(baseInvite.ownerId);
     expect(parsed.agentPeerId).toBe(baseInvite.agentPeerId);
+    expect(parsed.relayWsUrl).toBe(baseInvite.relayWsUrl);
+    expect(parsed.relayWsUrls).toEqual([
+      "ws://eu.relay.example:15432/ws",
+      "ws://us.relay.example:15432/ws",
+    ]);
+  });
+
+  it("returns undefined relayWsUrls when rels is absent or empty", () => {
+    const parsed = parseEnvoyInviteUri("invite?token=tok-xyz&wsUrl=ws%3A%2F%2Fhost");
+    expect(parsed.relayWsUrls).toBeUndefined();
+    const empty = parseEnvoyInviteUri(
+      "invite?token=tok-xyz&wsUrl=ws%3A%2F%2Fhost&rels=%2C%20%2C",
+    );
+    expect(empty.relayWsUrls).toBeUndefined();
   });
 
   it("accepts a raw query string with no envoy:// scheme", () => {

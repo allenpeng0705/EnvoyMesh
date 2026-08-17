@@ -25,6 +25,13 @@ export interface CompanyInviteRecord {
   wsUrl: string;
   lanWsUrl?: string;
   relayWsUrl?: string;
+  /**
+   * Extra Envoy relay WebSocket bases for fallback (mirrors
+   * `PairingPayload.relayWsUrls`). Serialized into the invite URI as
+   * comma-joined `rels` so mobile has regional relay fallback without
+   * relying only on the primary `relayWsUrl`.
+   */
+  relayWsUrls?: string[];
   homeNodePeerId?: string;
   /**
    * Phase 51 — `"family"` for family-invite QR; omit / `"company"` for fleet.

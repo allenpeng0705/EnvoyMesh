@@ -154,12 +154,27 @@ describe("getPairingPayloadViaRuntime", () => {
     expect(spies.autoDiscoverRelayWsUrl).not.toHaveBeenCalled();
   });
 
-  it("omits community-only auto-discover from QR (EnvoyGo has it built-in)", async () => {
+  it("keeps community-only auto-discover as the QR relay (default WAN fallback)", async () => {
     const { ctx } = makeCtx({
       autoDiscoverRelayWsUrl: async () => "ws://47.93.11.212:15432/ws",
       getReachableMesh: () => ({ peerId: "home-peer", multiaddrs: [] }) as never,
     });
     const out = (await getPairingPayloadViaRuntime(ctx)) as Record<string, unknown>;
+    // A QR with only a LAN URL is unusable from cellular. The community
+    // relay is a real WS proxy and must stay so the phone has a WAN path.
+    expect(out.relayWsUrl).toBe("ws://47.93.11.212:15432/ws");
+    expect(String(out.wsUrl)).toContain("ws://47.93.11.212:15432/ws");
+    expect(String(out.wsUrl)).toContain("target=home-peer");
+  });
+
+  it("drops public DHT-only bootstrap from QR (cannot serve WS proxy)", async () => {
+    const { ctx } = makeCtx({
+      autoDiscoverRelayWsUrl: async () => "ws://am6.bootstrap.libp2p.io:15432/ws",
+      getReachableMesh: () => ({ peerId: "home-peer", multiaddrs: [] }) as never,
+    });
+    const out = (await getPairingPayloadViaRuntime(ctx)) as Record<string, unknown>;
+    // Public libp2p DHT servers do not speak the client-proxy WS protocol —
+    // including them would only waste dial time on the phone.
     expect(out.relayWsUrl).toBeUndefined();
     expect(out.relayWsUrls).toBeUndefined();
     expect(out.wsUrl).toBe("ws://localhost:3030/ws");

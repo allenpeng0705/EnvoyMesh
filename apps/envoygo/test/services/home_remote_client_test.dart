@@ -163,6 +163,38 @@ void main() {
         }
       });
 
+      test('bounds a transport whose connect hangs (unreachable LAN from cellular)', () async {
+        candidates = [
+          const HomeRemoteCandidate(name: 'lan', url: 'ws://10.0.0.1:3030/ws'),
+          const HomeRemoteCandidate(
+              name: 'relay', url: 'wss://relay.example.com'),
+        ];
+        final client = HomeRemoteClient(HomeRemoteClientOptions(
+          resolveCandidates: () async => candidates,
+          createTransport: (candidate) {
+            if (candidate.name == 'lan') {
+              // Never completes — simulates a TCP SYN dropped on cellular.
+              return Completer<WebSocketLike>().future;
+            }
+            return MockWebSocket();
+          },
+          perCandidateTimeoutMs: 100,
+          upgradeSweepMs: 0,
+        ));
+
+        final sw = Stopwatch()..start();
+        Object? error;
+        await client.ensureConnected().catchError((Object e) {
+          error = e;
+        });
+        sw.stop();
+
+        // The hung transport must not stall the walk for the OS connect
+        // timeout — both candidates fail within their per-candidate budget.
+        expect(error, isNotNull);
+        expect(sw.elapsedMilliseconds, lessThan(2000));
+      });
+
       test('throws when no candidates configured', () async {
         candidates = [];
         final client = HomeRemoteClient(createOptions());

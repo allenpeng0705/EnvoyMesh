@@ -316,7 +316,10 @@ class HomeRemoteClient {
     int perTimeoutMs, {
     int fastFailMs = 0,
   }) async {
-    final ws = await _createTransportFor(candidate);
+    final ws = await _createTransportBounded(
+      candidate,
+      Duration(milliseconds: perTimeoutMs),
+    );
     _ws = ws;
 
     final completer = Completer<void>();
@@ -611,7 +614,10 @@ class HomeRemoteClient {
       HomeRemoteCandidate candidate, int timeoutMs) async {
     WebSocketLike ws;
     try {
-      ws = await _createTransportFor(candidate);
+      ws = await _createTransportBounded(
+        candidate,
+        Duration(milliseconds: timeoutMs),
+      );
     } catch (_) {
       return false;
     }
@@ -649,6 +655,24 @@ class HomeRemoteClient {
   }
 
   // -- Transport factory --
+
+  /// Create the transport for [candidate], bounding the connect phase to
+  /// [timeout].
+  ///
+  /// The per-candidate budget must cover the transport's own connect future:
+  /// without this, a candidate whose connect() hangs (e.g. a TCP SYN to a
+  /// private LAN IP silently dropped while on cellular) blocks the candidate
+  /// walk for the OS-level connect timeout instead of our budget — a doomed
+  /// candidate could stall the pairing handshake for minutes. Synchronous
+  /// factories (tests) are returned as-is.
+  Future<WebSocketLike> _createTransportBounded(
+    HomeRemoteCandidate candidate,
+    Duration timeout,
+  ) async {
+    final created = _createTransportFor(candidate);
+    if (created is! Future<WebSocketLike>) return created;
+    return created.timeout(timeout);
+  }
 
   FutureOr<WebSocketLike> _createTransportFor(
       HomeRemoteCandidate candidate) {
