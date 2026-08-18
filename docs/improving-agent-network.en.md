@@ -1240,12 +1240,13 @@ Week 1-2: Second adapter (e.g. Pi)
 - Add `packages/agent-adapter/src/pi-adapter.ts` — **first cut done 2026-08-18**
 - Pi-specific verifier (command sequence, loop detection) — **done 2026-08-18**
 - Node-side wiring seam `apps/node/src/pi-map-adapter.ts` (`createPiAdapterFromHost`) — **done 2026-08-18**. The Pi runtime now records `tool_use_start` events into `PiPromptResult.toolTrace` (forwarded into `PiRunResult.trace`), so the Pi verifier's loop / destructive-command checks run on live traces (`confidence: "medium"` on a clean trace; "low" only when Pi makes no tool calls).
-- Tests: side-by-side with Hermes/OpenClaw on the same task — package + node tests done; side-by-side harness pending
+- Tests: side-by-side with Hermes/OpenClaw on the same task — package + node tests done; **side-by-side harness done 2026-08-18** (`apps/node/test/side-by-side-harness.test.ts`: the same objective runs through the OpenClaw and Pi adapters via their node seams, each rule verifier runs first, then `CrossAgentDisagreementVerifier` asserts `pass` on agreement / `partial` on partial overlap / `disputed` on disagreement)
 
 Week 2-3: Cross-agent verification
 
-- `CrossAgentDisagreementVerifier` — **first cut done 2026-08-18**; the escalation *caller* in the orchestrator is pending
-- Verification budget in `chain-budget-ledger.ts` — pending
+- `CrossAgentDisagreementVerifier` — **first cut done 2026-08-18**
+- **Verification-loop wiring (`apps/node/src/chain-verify-loop.ts`) — first cut done 2026-08-18**: `runChainVerificationLoop` is called from `handleOrchestratorPartial`; writes `rule`/`cross` `VerdictEntry`s to the `ArbitrationStore`; escalates to a second runtime on demand.
+- **Verification budget in `chain-budget-ledger.ts` (`verificationReservedUsd` / `verificationCommittedUsd`) — done 2026-08-18** (`reserveVerification` / `tryCommitVerification` / `releaseVerification` + snapshot; `committedTotal` / `headroom` / `projectedSpend` all account for verification cost).
 - Owner UI: mark chain as `criticality: 'high'` in the chain proposal — pending
 - **Manifest broadcast (`apps/node/src/agent-adapter-broadcast.ts`) — first cut done 2026-08-18**: `adapter.manifest` intent added to the protocol (agent→agent); the node builds an owner-signed `SignedCapabilityManifest` (`buildSignedCapabilityManifest`) and pushes it to bonded peers every TTL/2 via `startManifestBroadcaster` (started at node startup). Inbound: `handleInboundCapabilityManifest` verifies the owner signature against the contact-owner key store and stores fresh manifests in `ChainSideState.remoteManifests`; `findAgentNetworkWorkersRanked` now prefers a fresh wire manifest over card synthesis — the manifest-carrying worker pool is **live**.
 
@@ -1296,6 +1297,8 @@ This section is the literal "what to type" for the first sprint.
 | `packages/agent-adapter/src/pi-adapter.ts` | 260 | Pi runtime adapter + Pi-specific verifier (loop, command sequence) (Sprint 3) — **done 2026-08-18** |
 | `packages/agent-adapter/src/cross-agent-verifier.ts` | 130 | Two-runtime disagreement verifier (Sprint 3) — **done 2026-08-18** |
 | `apps/node/src/pi-map-adapter.ts` | 70 | Host→Pi adapter wiring seam (Sprint 3) — **done 2026-08-18** |
+| `apps/node/src/chain-verify-loop.ts` | 210 | Orchestrator-side verification loop: `runChainVerificationLoop`, `shouldEscalateToCrossAgent`, `combineToVerdict` (Sprint 3) — **done 2026-08-18** |
+| `apps/node/test/side-by-side-harness.test.ts` | 110 | Two-doctor harness: same task through OpenClaw + Pi seams, `CrossAgentDisagreementVerifier` pass/partial/disputed — **done 2026-08-18** |
 
 **Sprint 1 total: ~1700 lines, mostly tests.**
 
@@ -1310,7 +1313,7 @@ This section is the literal "what to type" for the first sprint.
 | `apps/node/src/chain-arbitration.ts` (the `ChainArbitrationEntry` union) | Widened to `ChainArbitrationEntry | VerdictEntry`; added `recordVerdictEntry` / `getVerdictsFor` + narrowing guards (Sprint 2) — **done 2026-08-18** |
 | `apps/node/src/chain-reputation-3tuple.ts` (new) | `ReputationBook3Tuple`, `scoreFromVerdicts` (recency + defensive bias), `deriveReputationBySkillForPeer` (Sprint 2) — **done 2026-08-18** |
 | `apps/node/src/chain-sensitivity-gate.ts` | Add `requiresReputationApproval` (Sprint 2) — **done 2026-08-18** |
-| `apps/node/src/chain-budget-ledger.ts` | Add `verificationReservedUsd` / `verificationCommittedUsd` (Sprint 3) |
+| `apps/node/src/chain-budget-ledger.ts` | Add `verificationReservedUsd` / `verificationCommittedUsd` (Sprint 3) — **done 2026-08-18** |
 | `apps/node/src/chain-plan-assign.ts` (`scoreFor` / `bestPeerForRole`) | Blend 3-tuple reputation into role/skill scoring (Sprint 2) — **done 2026-08-18** |
 | `apps/node/src/chain-orchestrator.ts` (`findWorkers` seam) | Manifest-carrying worker pool: `ChainWorkerManifestEntry`, `findWorkersWithManifests?`, `resolveWorkerPool` (Sprint 2) — **done 2026-08-18** |
 | `packages/api/src/ws-protocol.ts` (`NodeConfig`) | Add `useMAP?: boolean` opt-in (Sprint 2 Week 3) — **done 2026-08-18**; live rollback via `ENVOYMESH_MAP_ROLLBACK=1` |
@@ -1354,7 +1357,7 @@ In `apps/node/test/`:
 
 In `apps/node/test/e2e/`:
 
-- **Two-doctor cross-agent**: a `criticality: 'high'` chain on the same task, two different runtimes, asserts `CrossAgentDisagreementVerifier` returns `pass` when results agree, `disputed` when they don't.
+- **Two-doctor cross-agent**: a `criticality: 'high'` chain on the same task, two different runtimes, asserts `CrossAgentDisagreementVerifier` returns `pass` when results agree, `disputed` when they don't. — **first cut done 2026-08-18** at the adapter-seam level (`apps/node/test/side-by-side-harness.test.ts`); a full orchestrator-level chain test is a later sprint
 - **Federated scoreboard pull**: peer A publishes a rule, peer B (running the same runtime) opts in to pull, asserts the rule is validated locally before adoption.
 - **Shadow mode parity**: a chain that runs in shadow mode for 2 weeks; asserts the orchestrator behavior is identical to non-shadow.
 

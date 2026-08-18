@@ -1204,7 +1204,7 @@ const FederatedEntrySchema = z.object({
 - 加 `packages/agent-adapter/src/pi-adapter.ts` — **首版完成 2026-08-18**
 - Pi 特有 verifier(命令序列、loop 检测)— **完成 2026-08-18**
 - 节点侧接线 `apps/node/src/pi-map-adapter.ts`(`createPiAdapterFromHost`)— **完成 2026-08-18**。Pi runtime 现在把 `tool_use_start` 事件记录进 `PiPromptResult.toolTrace`(转发进 `PiRunResult.trace`),Pi verifier 的 loop/命令序列检查在真实 trace 上生效(干净 trace 为 `confidence: "medium"`;只有 Pi 没发起任何 tool call 时才回落 "low")。
-- 测试:跟 Hermes/OpenClaw 同一任务对比 — 包级与节点级测试已完成;并排 harness 待做
+- 测试:跟 Hermes/OpenClaw 同一任务对比 — 包级与节点级测试已完成;**并排 harness 完成 2026-08-18**(`apps/node/test/side-by-side-harness.test.ts`:同一 objective 分别经 OpenClaw 与 Pi adapter 的节点 seam 执行,各自的 rule verifier 先跑,再由 `CrossAgentDisagreementVerifier` 断言 —— 一致为 `pass`、部分重叠为 `partial`、分歧为 `disputed`)
 
 第 2-3 周:跨 agent 验证
 
@@ -1262,6 +1262,7 @@ const FederatedEntrySchema = z.object({
 | `packages/agent-adapter/src/cross-agent-verifier.ts` | 130 | 双 runtime 分歧 verifier(Sprint 3)— **2026-08-18 完成** |
 | `apps/node/src/pi-map-adapter.ts` | 70 | Host→Pi adapter 接线 seam(Sprint 3)— **2026-08-18 完成** |
 | `apps/node/src/chain-verify-loop.ts` | 210 | orchestrator 侧验证循环:`runChainVerificationLoop`、`shouldEscalateToCrossAgent`、`combineToVerdict`(Sprint 3)— **2026-08-18 完成** |
+| `apps/node/test/side-by-side-harness.test.ts` | 110 | 双医生 harness:同一任务经 OpenClaw + Pi seam 执行,`CrossAgentDisagreementVerifier` pass/partial/disputed — **2026-08-18 完成** |
 
 **Sprint 1 总计:~1700 行,主要是测试。**
 
