@@ -45,6 +45,7 @@ import { SignedAgentResultSchema } from "@envoymesh/protocol";
 import type { AgentAdapter, ExecuteInput } from "@envoymesh/agent-adapter";
 import { chainLog, chainWarn, shortPeerId } from "./chain-debug.js";
 import type { ChainWorkerHandlerDeps } from "./chain-worker.js";
+import { buildOpenClawSubtaskPrompt } from "./chain-worker-executor.js";
 
 /** Text blocks longer than the protocol's TextArtifact max would fail Zod. Clip here. */
 const MAP_TEXT_ARTIFACT_MAX = 64_000;
@@ -131,7 +132,7 @@ export function mapChainSubtaskToExecuteInput(opts: {
 
   return {
     input: {
-      skillId: opts.subtask.requiredSkill,
+      skillId: normalizeSkillId(opts.subtask.requiredSkill),
       objective: opts.subtask.objective,
       inputArtifacts: opts.inputArtifacts ?? [],
       costCeilingUsd: opts.subtask.costCeilingUsd ?? 0,
@@ -141,6 +142,34 @@ export function mapChainSubtaskToExecuteInput(opts: {
     },
     signal: controller.signal,
   };
+}
+
+/**
+ * `SignedAgentResult.skillId` must match `^[a-z][a-z0-9_-]{1,63}$`, but
+ * `ChainSubtask.requiredSkill` is a free string (LLM plans can emit "Data
+ * Analysis" or "UI Design"). Normalize at the MAP boundary so an uppercase or
+ * spaced skill tag cannot fail the result-schema parse after a successful run.
+ */
+export function normalizeSkillId(raw: string): string {
+  const slug = raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const withPrefix = /^[a-z]/.test(slug) ? slug : `skill-${slug}`;
+  return withPrefix.slice(0, 64);
+}
+
+/**
+ * Adapter `buildPrompt` that preserves the legacy prompt's mandate surface:
+ * `subtask.constraints`, `requiredRole`, `threadId`, and the brief/report
+ * deliverable-policy constraints. The `OpenClawAdapter` default prompt only
+ * renders skill hint + objective + artifacts, so without this a `useMAP`
+ * worker silently ignores chain constraints (design §3.4 / §6.5).
+ */
+export function buildSubtaskPromptForAdapter(subtask: ChainSubtask) {
+  return (input: ExecuteInput): string => buildOpenClawSubtaskPrompt(subtask, input.inputArtifacts);
 }
 
 export interface ResultArtifacts {

@@ -128,7 +128,11 @@ import {
   createOpenClawChainSubtaskExecutor,
   executeAcceptedSubtask,
 } from "./chain-worker-executor.js";
-import { createMapChainSubtaskExecutor, manifestFromAgentNetworkProfile } from "./chain-map.js";
+import {
+  buildSubtaskPromptForAdapter,
+  createMapChainSubtaskExecutor,
+  manifestFromAgentNetworkProfile,
+} from "./chain-map.js";
 import { OpenClawAdapter } from "@envoymesh/agent-adapter";
 import { requiresChainAwardApproval } from "./chain-sensitivity-gate.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
@@ -1083,6 +1087,9 @@ export async function runOpenClawMapPrimary(input: {
     askViaRuntime: (prompt) => deps.askOpenClaw(prompt),
     isReady: () => deps.isOpenClawReady(),
     workerPeerId: agentIdentity.agentPeerId,
+    // Preserve the legacy prompt surface (constraints / role / thread /
+    // brief-report policy) that the adapter's default prompt would drop.
+    buildPrompt: buildSubtaskPromptForAdapter(subtask),
     signResult: (unsigned) => ({
       ...unsigned,
       signature: signCanonicalPayload(unsigned, agentIdentity.agentPrivateKeyPem),
@@ -1134,6 +1141,9 @@ export async function runOpenClawMapShadow(input: {
     askViaRuntime: (prompt) => deps.askOpenClaw(prompt),
     isReady: () => deps.isOpenClawReady(),
     workerPeerId: agentIdentity.agentPeerId,
+    // Shadow runs must see the same prompt surface as legacy so the diff is
+    // apples-to-apples (constraints / role / thread / brief-report policy).
+    buildPrompt: buildSubtaskPromptForAdapter(subtask),
     signResult: (unsigned) => ({
       ...unsigned,
       signature: signCanonicalPayload(unsigned, agentIdentity.agentPrivateKeyPem),

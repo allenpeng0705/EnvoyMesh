@@ -18,11 +18,13 @@ import {
 import type { AgentAdapter, ExecuteInput } from "@envoymesh/agent-adapter";
 import {
   MAP_DEFAULT_DEADLINE_MS,
+  buildSubtaskPromptForAdapter,
   combineVerdicts,
   contentBlocksToResultArtifacts,
   createMapChainSubtaskExecutor,
   manifestFromAgentNetworkProfile,
   mapChainSubtaskToExecuteInput,
+  normalizeSkillId,
 } from "../src/chain-map.js";
 
 function sampleSubtask(overrides?: Partial<ChainSubtask>): ChainSubtask {
@@ -457,5 +459,94 @@ describe("manifestFromAgentNetworkProfile", () => {
 
   it("returns undefined without a profile", () => {
     expect(manifestFromAgentNetworkProfile(undefined, "envoy_agent_plain", "envoy:owner:plain")).toBeUndefined();
+  });
+});
+
+describe("normalizeSkillId", () => {
+  it("lowercases, slugs spaces, and keeps the [a-z0-9_-] charset", () => {
+    expect(normalizeSkillId("Data Analysis")).toBe("data-analysis");
+    expect(normalizeSkillId("UI Design")).toBe("ui-design");
+    expect(normalizeSkillId("Research")).toBe("research");
+  });
+
+  it("prefixes non-alpha starts and caps length at 64", () => {
+    expect(normalizeSkillId("123")).toBe("skill-123");
+    expect(normalizeSkillId("x".repeat(100)).length).toBe(64);
+  });
+});
+
+describe("buildSubtaskPromptForAdapter", () => {
+  it("renders constraints, requiredRole, and threadId like the legacy prompt", () => {
+    const subtask = {
+      ...sampleSubtask(),
+      constraints: ["Keep under 200 words"],
+      requiredRole: "editor",
+      threadId: "thread_9",
+    };
+    const prompt = buildSubtaskPromptForAdapter(subtask)({
+      skillId: "research",
+      objective: subtask.objective,
+      inputArtifacts: [],
+      costCeilingUsd: 0,
+      deadlineMs: 1000,
+      correlationId: "c",
+      signal: new AbortController().signal,
+    });
+    expect(prompt).toContain("Required role: editor");
+    expect(prompt).toContain("Thread: thread_9");
+    expect(prompt).toContain("Constraints:");
+    expect(prompt).toContain("- Keep under 200 words");
+  });
+
+  it("includes brief-report policy constraints for synthesize subtasks", () => {
+    const subtask = {
+      ...sampleSubtask(),
+      objective: "Produce the chain report",
+      constraints: [],
+    };
+    const prompt = buildSubtaskPromptForAdapter(subtask)({
+      skillId: "research",
+      objective: subtask.objective,
+      inputArtifacts: [],
+      costCeilingUsd: 0,
+      deadlineMs: 1000,
+      correlationId: "c",
+      signal: new AbortController().signal,
+    });
+    expect(prompt).toContain("Produce the final brief/report markdown");
+  });
+});
+
+describe("mapChainSubtaskToExecuteInput skillId normalization", () => {
+  it("maps an uppercase/spaced requiredSkill to a schema-safe skillId", () => {
+    const { input } = mapChainSubtaskToExecuteInput({
+      subtask: sampleSubtask({ requiredSkill: "Data Analysis" }),
+    });
+    expect(input.skillId).toBe("data-analysis");
+    expect(input.skillId).toMatch(/^[a-z][a-z0-9_-]{1,63}$/);
+  });
+
+  it("executor succeeds when the engine echoes a normalized skillId", async () => {
+    const adapter = new StubAdapter();
+    adapter.execute = vi.fn(async (input: ExecuteInput) => ({
+      skillId: input.skillId,
+      runtime: "openclaw",
+      peerId: "envoy_agent_self",
+      correlationId: input.correlationId,
+      content: [{ kind: "text", text: "analysis result" }],
+      citations: [],
+      metrics: { durationMs: 1, costUsd: 0 },
+      completedAt: new Date().toISOString(),
+      signature: "test-signature",
+    }));
+    const executor = createMapChainSubtaskExecutor({
+      workerPeerId: "envoy_agent_self",
+      engineLabel: "OpenClaw (MAP)",
+      unavailableCode: "map_openclaw_unavailable",
+      isReady: () => true,
+      adapter,
+    });
+    const result = await executor(sampleSubtask({ requiredSkill: "Data Analysis" }), async () => undefined);
+    expect(result.ok).toBe(true);
   });
 });

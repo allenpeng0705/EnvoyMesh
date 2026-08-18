@@ -108,6 +108,12 @@ export function listOwnedSubtasks(
  * Append a signed verdict to the store. Idempotent: re-applying the same
  * signed entry is a no-op. A genuinely new verdict for the same
  * (subtask, runtime) slot replaces the old one (re-verification).
+ *
+ * **Who writes (Sprint 3):** the authoritative writer is the orchestrator's
+ * verification flow (rule/LLM/cross verifiers when it re-verifies a worker's
+ * result — design §7.1 rejects self-reported reputation, so the worker's own
+ * advisory `adapter.verify` must NOT record entries). Until that flow lands,
+ * readers (`getVerdictsFor` → the 3-tuple book) return empty by design.
  */
 export function recordVerdictEntry(
   store: ArbitrationStore,
