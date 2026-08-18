@@ -19,22 +19,19 @@
  * Design doc: `docs/improving-agent-network.en.md` §9.2.
  */
 
-import { z } from "zod"
-import type { AgentRuntime } from "@envoymesh/protocol"
+import { z } from "zod";
 import {
   hashCanonicalPayload,
   signCanonicalPayload,
   verifyCanonicalPayload,
-} from "@envoymesh/identity"
-import { AgentRuntimeSchema } from "@envoymesh/protocol"
-import type {
-  VerifierScoreboardEntry,
-} from "./verifier-scoreboard.js"
+} from "@envoymesh/identity";
+import { AgentRuntimeSchema, type AgentRuntime } from "@envoymesh/protocol";
+import type { VerifierScoreboardEntry } from "./verifier-scoreboard.js";
 
 /** A pulled rule needs at least this much cross-peer evidence to be considered. */
-export const MIN_FEDERATED_EVIDENCE = 20
+export const MIN_FEDERATED_EVIDENCE = 20;
 /** The local node needs at least this many own verdicts before comparing. */
-export const MIN_LOCAL_EVIDENCE = 10
+export const MIN_LOCAL_EVIDENCE = 10;
 
 /**
  * A peer's claim that a verifier ruleset works, with aggregate stats.
@@ -65,38 +62,38 @@ export const FederatedRuleSchema = z.object({
   signerOwnerId: z.string().min(1),
   /** Ed25519 of the publisher's owner over canonical JSON of the rest. */
   signature: z.string().min(1),
-})
-export type FederatedRule = z.infer<typeof FederatedRuleSchema>
+});
+export type FederatedRule = z.infer<typeof FederatedRuleSchema>;
 
 /** Strip the signature for signing / verification. */
 export function forFederatedRuleSigning(rule: FederatedRule): Omit<FederatedRule, "signature"> {
-  const { signature: _signature, ...unsigned } = rule
-  return unsigned
+  const { signature: _signature, ...unsigned } = rule;
+  return unsigned;
 }
 
 export interface PublishScoreboardRuleInput {
-  runtime: AgentRuntime
-  ruleVersion: number
-  hypothesis: string
-  ruleJson: string
-  federatedPasses: number
-  federatedFailures: number
-  meanImprovement: number
-  contributingPeers: string[]
+  runtime: AgentRuntime;
+  ruleVersion: number;
+  hypothesis: string;
+  ruleJson: string;
+  federatedPasses: number;
+  federatedFailures: number;
+  meanImprovement: number;
+  contributingPeers: string[];
   /** The publishing owner's signing key. */
-  ownerPrivateKeyPem: string
-  signerOwnerId: string
-  federatedAt?: string
-  now?: () => Date
+  ownerPrivateKeyPem: string;
+  signerOwnerId: string;
+  federatedAt?: string;
+  now?: () => Date;
 }
 
 /** Build an owner-signed federated rule ready to share with peers. */
 export function publishScoreboardRule(input: PublishScoreboardRuleInput): FederatedRule {
-  let rulesetHash: string
+  let rulesetHash: string;
   try {
-    rulesetHash = hashCanonicalPayload(JSON.parse(input.ruleJson))
+    rulesetHash = hashCanonicalPayload(JSON.parse(input.ruleJson));
   } catch {
-    throw new Error("federated rule must be valid JSON")
+    throw new Error("federated rule must be valid JSON");
   }
   const unsigned: Omit<FederatedRule, "signature"> = {
     version: "0.1",
@@ -109,25 +106,25 @@ export function publishScoreboardRule(input: PublishScoreboardRuleInput): Federa
     federatedFailures: input.federatedFailures,
     meanImprovement: input.meanImprovement,
     contributingPeers: input.contributingPeers,
-    federatedAt: (input.federatedAt ?? (input.now ?? (() => new Date()))().toISOString()),
+    federatedAt: input.federatedAt ?? (input.now ?? (() => new Date()))().toISOString(),
     signerOwnerId: input.signerOwnerId,
-  }
+  };
   return {
     ...unsigned,
     signature: signCanonicalPayload(unsigned, input.ownerPrivateKeyPem),
-  }
+  };
 }
 
 export interface PullScoreboardRuleDeps {
   /** Resolve a signer's owner public key PEM (from the contact key store). */
-  getOwnerPublicKey: (ownerId: string) => Promise<string | undefined>
+  getOwnerPublicKey: (ownerId: string) => Promise<string | undefined>;
   /** Runtimes this node actually runs. Pulls for other runtimes are rejected. */
-  listRuntimes?: () => readonly AgentRuntime[] | AgentRuntime[]
+  listRuntimes: () => readonly AgentRuntime[] | AgentRuntime[];
   /**
    * Local verdict-history pass rate for the runtime (derived from the
    * ArbitrationStore). `null` when there is no local evidence at all.
    */
-  getLocalPassRate: (runtime: AgentRuntime) => { n: number; passRate: number } | null
+  getLocalPassRate: (runtime: AgentRuntime) => { n: number; passRate: number } | null;
   /**
    * Called on adoption with the unsigned `kept` scoreboard entry minus
    * `version`/`ownerSignature` — the caller computes the next per-runtime
@@ -136,13 +133,13 @@ export interface PullScoreboardRuleDeps {
    */
   onAdopt?: (
     draft: Omit<VerifierScoreboardEntry, "ownerSignature" | "version">,
-  ) => void | Promise<void>
+  ) => void | Promise<void>;
 }
 
 export type PullScoreboardRuleResult =
   | { adopted: true; localPassRate: number; candidatePassRate: number }
   | { adopted: false; reason: string }
-  | { pending: true; reason: string }
+  | { pending: true; reason: string };
 
 /**
  * Pull a federated rule and run the local validation gate.
@@ -151,56 +148,71 @@ export type PullScoreboardRuleResult =
  *  1. schema valid
  *  2. owner signature verifies against a **known** contact owner key
  *  3. the rule targets a runtime this node runs
- *  4. the federation has enough aggregate evidence
- *  5. the local node has enough of its own verdict history to compare
+ *  4. the rule's `rulesetHash` actually matches its `ruleJson`
+ *  5. the federation has enough aggregate evidence
+ *  6. the local node has enough of its own verdict history to compare
  *     (insufficient ⇒ `pending`, never adopted blind)
- *  6. the candidate strictly beats the local incumbent pass rate
+ *  7. the candidate strictly beats the local incumbent pass rate
  *     (design §9.1 EVALUATE — "strict greater pass rate; otherwise restore")
  */
 export async function pullScoreboardRule(
   candidate: FederatedRule,
   deps: PullScoreboardRuleDeps,
 ): Promise<PullScoreboardRuleResult> {
-  const parsed = FederatedRuleSchema.safeParse(candidate)
+  const parsed = FederatedRuleSchema.safeParse(candidate);
   if (!parsed.success) {
-    return { adopted: false, reason: "invalid federated rule schema" }
+    return { adopted: false, reason: "invalid federated rule schema" };
   }
-  const rule = parsed.data
+  const rule = parsed.data;
 
-  const ownerPublicKeyPem = await deps.getOwnerPublicKey(rule.signerOwnerId)
+  const ownerPublicKeyPem = await deps.getOwnerPublicKey(rule.signerOwnerId);
   if (!ownerPublicKeyPem) {
-    return { adopted: false, reason: `signer owner key unknown — cannot verify ${rule.signerOwnerId}` }
+    return {
+      adopted: false,
+      reason: `signer owner key unknown — cannot verify ${rule.signerOwnerId}`,
+    };
   }
   if (!verifyCanonicalPayload(forFederatedRuleSigning(rule), rule.signature, ownerPublicKeyPem)) {
-    return { adopted: false, reason: "federated rule signature verification failed" }
+    return { adopted: false, reason: "federated rule signature verification failed" };
   }
 
-  if (deps.listRuntimes && !deps.listRuntimes().includes(rule.runtime)) {
-    return { adopted: false, reason: `this node does not run runtime=${rule.runtime}` }
+  if (!deps.listRuntimes().includes(rule.runtime)) {
+    return { adopted: false, reason: `this node does not run runtime=${rule.runtime}` };
   }
 
-  const totalEvidence = rule.federatedPasses + rule.federatedFailures
+  // The signature covers both fields, so a malicious signer is already
+  // bounded — but re-deriving the hash catches honest-bug / transport
+  // corruption where the two fields drifted apart.
+  try {
+    if (hashCanonicalPayload(JSON.parse(rule.ruleJson)) !== rule.rulesetHash) {
+      return { adopted: false, reason: "rulesetHash does not match ruleJson" };
+    }
+  } catch {
+    return { adopted: false, reason: "rule JSON invalid" };
+  }
+
+  const totalEvidence = rule.federatedPasses + rule.federatedFailures;
   if (totalEvidence < MIN_FEDERATED_EVIDENCE) {
     return {
       adopted: false,
       reason: `insufficient federation evidence (${totalEvidence} < ${MIN_FEDERATED_EVIDENCE})`,
-    }
+    };
   }
-  const candidatePassRate = rule.federatedPasses / totalEvidence
+  const candidatePassRate = rule.federatedPasses / totalEvidence;
 
-  const local = deps.getLocalPassRate(rule.runtime)
+  const local = deps.getLocalPassRate(rule.runtime);
   if (!local || local.n < MIN_LOCAL_EVIDENCE) {
     return {
       pending: true,
       reason: `insufficient local evidence (${local?.n ?? 0} < ${MIN_LOCAL_EVIDENCE})`,
-    }
+    };
   }
 
   if (candidatePassRate <= local.passRate) {
     return {
       adopted: false,
       reason: `candidate pass rate ${candidatePassRate.toFixed(3)} does not beat local incumbent ${local.passRate.toFixed(3)}`,
-    }
+    };
   }
 
   if (deps.onAdopt) {
@@ -214,8 +226,8 @@ export async function pullScoreboardRule(
       nRuns: totalEvidence,
       status: "kept",
       createdAt: new Date().toISOString(),
-    })
+    });
   }
 
-  return { adopted: true, localPassRate: local.passRate, candidatePassRate }
+  return { adopted: true, localPassRate: local.passRate, candidatePassRate };
 }

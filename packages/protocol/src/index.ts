@@ -107,6 +107,9 @@ export const EnvoyIntentSchema = z.enum([
   // MAP — periodic owner-signed capability manifest broadcast (Sprint 3).
   // Payload: SignedCapabilityManifest. agent→agent.
   "adapter.manifest",
+  // MAP §9.2 — federated scoreboard rule broadcast (opt-in pull).
+  // Payload: FederatedRule (owner-signed ruleset + aggregate stats). agent→agent.
+  "scoreboard.rule",
 ]);
 
 export const SensitivitySchema = z.enum(["public", "friends", "trusted", "private"]);

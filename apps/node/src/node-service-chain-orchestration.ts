@@ -109,7 +109,7 @@ import {
   recordVerdictEntry,
   type ArbitrationStore,
 } from "./chain-arbitration.js";
-import { deriveReputationBySkillForPeer } from "./chain-reputation-3tuple.js";
+import { deriveReputationBySkillForPeer, scoreFromVerdicts } from "./chain-reputation-3tuple.js";
 import { signCanonicalPayload } from "@envoymesh/identity";
 import {
   handleWorkerAccept,
@@ -279,6 +279,23 @@ function deriveRosterReputation(peerId: string): Record<string, number> | undefi
     verdicts.push(...getVerdictsFor(store, { workerPeerId: peerId }));
   }
   return deriveReputationBySkillForPeer(verdicts, peerId);
+}
+
+/**
+ * Federated-scoreboard input (design §9.2): the local verdict-history pass
+ * rate for one runtime, aggregated across every chain's ArbitrationStore.
+ * `null` when the node has no verdicts for the runtime at all — the pull
+ * gate then holds `pending`, never adopting blind.
+ */
+export function getLocalRuntimePassRate(
+  runtime: AgentRuntime,
+): { n: number; passRate: number } | null {
+  const verdicts: import("@envoymesh/protocol").VerdictEntry[] = [];
+  for (const store of chainArbitrationStores.values()) {
+    verdicts.push(...getVerdictsFor(store, { workerRuntime: runtime }));
+  }
+  if (verdicts.length === 0) return null;
+  return { n: verdicts.length, passRate: scoreFromVerdicts(verdicts) };
 }
 
 export interface ChainOrchestrationContext {

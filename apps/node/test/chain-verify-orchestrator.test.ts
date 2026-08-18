@@ -5,18 +5,18 @@
  * Drives the real production seam — `handleOrchestratorPartial` in
  * `chain-orchestrator.ts` — with a `chainVerify` deps wired exactly like
  * `buildChainOrchestratorDeps` does: verdicts land in a real `ArbitrationStore`
- * via `recordVerdictEntry`, the worker's runtime is resolved from a wire
- * manifest, and a second, distinct runtime re-runs the step when the rule
- * verdict is `partial`/`disputed` on a `criticality: "high"` chain.
+ * via `recordVerdictEntry`, the worker's runtime is resolved through the same
+ * `resolveWorkerRuntime` seam production uses (from wire manifests), and a
+ * second, distinct runtime re-runs the step when the rule verdict is
+ * `partial`/`disputed` on a `criticality: "high"` chain.
  *
- * - Two doctors agree   → rule `pass`, no escalation, one `rule` entry
- * - Two doctors disagree → rule `disputed`, escalate to a distinct runtime,
+ * - Rule verifier passes  → rule `pass`, no escalation, one `rule` entry
+ * - Rule verdict disputed → escalate to a distinct runtime,
  *   `cross` entry + verification budget committed
  * - Non-critical cheap chain → `partial` stays rule-only (no escalation)
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import { generateKeyPairSync } from "node:crypto";
-import { signCanonicalPayload } from "@envoymesh/identity";
 import type {
   AgentRuntime,
   ChainMandate,
@@ -47,13 +47,10 @@ const NOW = new Date("2026-08-18T00:00:00.000Z");
 const NOW_ISO = NOW.toISOString();
 
 let keyPair: { privateKey: string; publicKey: string };
-let ownerKeyPair: { privateKey: string; publicKey: string };
 
 beforeEach(() => {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   keyPair = { privateKey: privateKey.export({ format: "pem", type: "pkcs8" }).toString(), publicKey: publicKey.export({ format: "pem", type: "spki" }).toString() };
-  const { privateKey: opk, publicKey: opub } = generateKeyPairSync("ed25519");
-  ownerKeyPair = { privateKey: opk.export({ format: "pem", type: "pkcs8" }).toString(), publicKey: opub.export({ format: "pem", type: "spki" }).toString() };
 });
 
 function mandate(overrides: Partial<ChainMandate> = {}): ChainMandate {
@@ -75,14 +72,14 @@ function mandate(overrides: Partial<ChainMandate> = {}): ChainMandate {
   };
 }
 
-function subtask(requiredSkill = "research"): ChainSubtask {
+function subtask(): ChainSubtask {
   return {
     version: "0.1",
     subtaskId: "subtask_a",
     chainId: "chain_e2e-1",
     chainMandateId: "chainmandate_e2e-1",
     depth: 1,
-    requiredSkill,
+    requiredSkill: "research",
     objective: "Summarize the key risks of the mesh rollout.",
     requestedResult: "A short risk summary",
     constraints: [],
@@ -161,8 +158,6 @@ interface E2EDeps {
 /** Build the orchestrator handler deps with the production-shaped verify wiring. */
 function makeE2EDeps(opts: {
   ruleVerdicts: Verdict[];
-  listRuntimes?: () => AgentRuntime[];
-  workerRuntime?: AgentRuntime;
   crossVerdict?: Verdict;
   criticality?: "normal" | "high";
 }): E2EDeps {
@@ -195,8 +190,8 @@ function makeE2EDeps(opts: {
       }
       return undefined;
     },
-    listRuntimes: opts.listRuntimes ?? (() => ["openclaw", "pi"] as AgentRuntime[]),
-    resolveWorkerRuntime: () => opts.workerRuntime ?? "openclaw",
+    listRuntimes: () => ["openclaw", "pi"] as AgentRuntime[],
+    resolveWorkerRuntime: () => "openclaw",
     crossVerifier:
       opts.crossVerdict !== undefined
         ? { verify: async () => opts.crossVerdict! }
@@ -243,7 +238,7 @@ async function runPartialThroughOrchestrator(deps: E2EDeps, state: ChainState) {
 }
 
 describe("orchestrator-level two-doctor E2E", () => {
-  it("passes with a single rule verdict when both doctors agree", async () => {
+  it("records a single rule verdict when the rule verifier passes (no escalation)", async () => {
     const deps = makeE2EDeps({
       ruleVerdicts: [{ kind: "pass", score: 0.95, confidence: "high" }],
       criticality: "high",

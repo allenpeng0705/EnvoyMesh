@@ -307,6 +307,7 @@ import {
   type EnvoyEnvelope,
   type UnsignedEnvoyEnvelope,
   type DevicePairRequestPayload,
+  type AgentRuntime,
 } from "@envoymesh/protocol";
 import {
   createDeviceCertificate,
@@ -1106,6 +1107,13 @@ import {
   type ChainOrchestrationContext,
 } from "./node-service-chain-orchestration.js";
 import { handleInboundCapabilityManifest } from "./agent-adapter-manifest-inbound.js";
+import { getLocalRuntimePassRate } from "./node-service-chain-orchestration.js";
+import { handleInboundScoreboardRule } from "./scoreboard-rule-inbound.js";
+import {
+  startScoreboardRuleBroadcaster,
+  type ScoreboardRuleBroadcastMesh,
+} from "./scoreboard-rule-broadcast.js";
+import { VerifierScoreboard } from "./verifier-scoreboard.js";
 
 import {
   buildAgentPassesContext,
@@ -1495,6 +1503,8 @@ class NodeServiceImpl implements NodeService {
   private readonly _capabilityManifestStore: CapabilityManifestStore | null;
   private readonly _configStore: ReturnType<typeof createNodeConfigStore>;
   private readonly _profileDir: string;
+  /** Lazily-built local verifier scoreboard (§9.2); undefined = not computed yet. */
+  private _verifierScoreboard: VerifierScoreboard | undefined | null = undefined;
   /** Root directory for {@link listLibraryItems} (ENVOYMESH_VAULT or shared_vault). */
   private readonly _vaultDir: string;
   private _ragService: RagService | null = null;
@@ -12820,6 +12830,105 @@ class NodeServiceImpl implements NodeService {
           err instanceof Error ? err.message : err,
         ),
     });
+  }
+
+  /**
+   * MAP §9.2 — inbound `scoreboard.rule` broadcast (federated verifier rules).
+   * Verifies the signer owner against the contact key store, runs the local
+   * validation gate, and on adoption appends an owner-signed `kept` row to
+   * the local verifier scoreboard.
+   */
+  async handleInboundScoreboardRule(envelope: EnvoyEnvelope): Promise<boolean> {
+    const contactStore = this._identityContext().getContactOwnerKeyStore();
+    const scoreboard = await this._getVerifierScoreboard();
+    const profile = this.getProfile();
+    if (!contactStore || !scoreboard || !profile) return false;
+    const result = await handleInboundScoreboardRule({
+      envelope,
+      getOwnerPublicKey: async (ownerId) => {
+        const row = await contactStore.get(ownerId);
+        return row?.ownerPublicKeyPem;
+      },
+      listRuntimes: () =>
+        this._chainOrchestrationContext().isOpenClawReady()
+          ? (["openclaw"] as AgentRuntime[])
+          : [],
+      getLocalPassRate: (runtime) => getLocalRuntimePassRate(runtime),
+      scoreboard,
+      ownerPrivateKeyPem: profile.owner.privateKeyPem,
+    });
+    if (!result.handled) {
+      console.warn(
+        `[scoreboard.rule] dropped from ${envelope.senderPeerId.slice(0, 16)}…: ${result.reason}`,
+      );
+    }
+    return result.handled;
+  }
+
+  /**
+   * MAP §9.2 — start the periodic federated-rule broadcast to bonded peers.
+   * Cycles share the latest `kept` verifier-ruleset experiment per runtime
+   * the node runs; cycles with nothing to share are skipped. No-op (returns
+   * undefined) when the agent identity, profile, or scoreboard is unavailable.
+   */
+  async startScoreboardRuleBroadcaster(
+    mesh: EnvoyMesh,
+    opts?: { intervalMs?: number },
+  ): Promise<{ stop: () => void } | undefined> {
+    const profile = this.getProfile();
+    const agentIdentity = await this._ensureAgentIdentity();
+    const scoreboard = await this._getVerifierScoreboard();
+    if (!profile || !agentIdentity || !scoreboard) {
+      console.warn(
+        "[scoreboard.rule] broadcaster skipped: agent identity/profile/scoreboard unavailable",
+      );
+      return undefined;
+    }
+    const identityCtx = this._identityContext();
+    return startScoreboardRuleBroadcaster({
+      mesh: mesh as ScoreboardRuleBroadcastMesh,
+      scoreboard,
+      runtimes: () =>
+        this._chainOrchestrationContext().isOpenClawReady()
+          ? (["openclaw"] as AgentRuntime[])
+          : [],
+      ownerPrivateKeyPem: profile.owner.privateKeyPem,
+      signerOwnerId: profile.owner.ownerId,
+      publisherPeerId: agentIdentity.agentPeerId,
+      agentPublicKeyPem: agentIdentity.agentPublicKeyPem,
+      agentPrivateKeyPem: agentIdentity.agentPrivateKeyPem,
+      bondOwnerIds: async () => {
+        const bonds = await this.getBonds();
+        return bonds
+          .map((b) => b.peerOwnerId)
+          .filter((id): id is string => Boolean(id));
+      },
+      resolveLibp2pPeer: async (ownerId) => {
+        const resolved = await identityCtx.resolveLibp2pPeerForBondOwner(ownerId);
+        if (!resolved) return undefined;
+        return { peerId: resolved.transportPeerId, listenAddrs: resolved.listenAddrs };
+      },
+      dialHintsFor: (peerId, listenAddrs) => identityCtx.dialHintsForChat(peerId, listenAddrs),
+      intervalMs: opts?.intervalMs,
+      onError: (err) =>
+        console.warn(
+          "[scoreboard.rule] broadcast cycle failed:",
+          err instanceof Error ? err.message : err,
+        ),
+    });
+  }
+
+  /** Lazily build the local verifier scoreboard (§9.2), once a profile exists. */
+  private async _getVerifierScoreboard(): Promise<VerifierScoreboard | null> {
+    if (this._verifierScoreboard !== undefined) return this._verifierScoreboard;
+    if (this._profileDir === "/tmp/unknown") return null;
+    const profile = this.getProfile();
+    if (!profile) return null;
+    this._verifierScoreboard = new VerifierScoreboard({
+      filePath: join(this._profileDir, "verifier-scoreboard.jsonl"),
+      ownerPublicKeyPem: profile.owner.publicKeyPem,
+    });
+    return this._verifierScoreboard;
   }
 
   /** Skills for the node's own manifest, from the primary MAP runtime. */

@@ -1137,6 +1137,8 @@ const FederatedEntrySchema = z.object({
 
 跑 `pi` 的 peer 可以 **opt-in 从 peer A 拉 rule v7**(这个 rule 已经在 47 个其他 Pi 节点上验证过)。在本地节点,rule 走本地 5 步协议;过了就进本地 scoreboard;不过就拒绝 pull。
 
+**Wire seam(初始版,** **2026-08-18 完成**):`scoreboard.rule` intent(agent→agent)携带 owner 签名的 `FederatedRule`;发布方通过 `apps/node/src/scoreboard-rule-broadcast.ts` 把最新 `kept` 实验推给 bonded peers(镜像 `adapter.manifest` 广播),接收方在 `apps/node/src/scoreboard-rule-inbound.ts` 跑 fail-closed 闸门 —— 对 contact store 验 owner key、hash 完整性、证据下限,然后作为 owner 签名的 `kept` 行采用进本地 `VerifierScoreboard`(按 ruleset 幂等)。round-trip 端到端覆盖在模块级测试(`apps/node/test/scoreboard-rule-inbound.test.ts`);真实 libp2p 双节点 mesh 运行仍是后续。`ruleJson` 目前带占位 body —— 真正的数据驱动 ruleset 内容要等 §5.3 组合规则引擎落地。
+
 **这是 skill / rule 共享,不是 model 共享。** 风险面比"共享 model 权重"小得多。Rule 是个 JSON 文件;最坏情况是本地 evaluator 抓到一个坏 rule。
 
 ### 9.3 什么不共享
@@ -1218,7 +1220,7 @@ const FederatedEntrySchema = z.object({
 
 - `verifier-scoreboard.ts`(本地,per-runtime)— **2026-08-18 完成(初始)**:append-only、owner 签名、per-runtime 单调版本化的 JSONL 账本;5 步协议的 SNAPSHOT/COMMIT/REVERT 行的持久存储(LLM 驱动的 EVALUATE "重跑 50 个任务" 一步仍延后)。
 - `mesh-scoreboard.ts`(联邦,opt-in)— **2026-08-18 完成(初始)**:`FederatedRuleSchema`、owner 签名发布、采用前 fail-closed 的本地验证闸门 —— 候选规则必须能对一个*已知* contact owner key 验签、目标 runtime 是本节点在跑的、通过联邦证据下限、并且严格高于本节点自身 verdict 历史的 pass rate(本地证据不足 ⇒ `pending`,绝不盲目采用)。
-- 一个 peer-to-peer pull 在更广发布前手动测试 — **2026-08-18 完成**模块级(`apps/node/test/mesh-scoreboard.test.ts` 模拟发布方 + 拉取方);libp2p 线上往返仍为后续。
+- 一个 peer-to-peer pull 在更广发布前手动测试 — **2026-08-18 完成**:libp2p 线上往返已用 `scoreboard.rule` intent 闭合 —— `apps/node/src/scoreboard-rule-broadcast.ts` 把最新 `kept` 实验推给 bonded peers,`apps/node/src/scoreboard-rule-inbound.ts` 跑闸门并采用进本地 scoreboard —— 端到端覆盖在模块级测试(`apps/node/test/scoreboard-rule-inbound.test.ts`、`scoreboard-rule-broadcast.test.ts`)。剩余后续是真实双节点 libp2p mesh 运行。
 
 **总计:11 周,2 个工程师,约 3000 行新代码,不重写现有 orchestrator。**
 
@@ -1321,7 +1323,7 @@ const FederatedEntrySchema = z.object({
 在 `apps/node/test/e2e/`:
 
 - **Two-doctor cross-agent**:一条 `criticality: 'high'` 的 chain 跑同一任务,两个不同 runtime,断言 `CrossAgentDisagreementVerifier` 在结果一致时返回 `pass`,不一致时 `disputed`。— **2026-08-18 完成**于两层:adapter-seam(`apps/node/test/side-by-side-harness.test.ts`)与 orchestrator 级(`apps/node/test/chain-verify-orchestrator.test.ts`),后者用生产形状的 verify deps 驱动 `handleOrchestratorPartial`(真实 `ArbitrationStore` 写入、runtime 从 wire manifest 解析、升级到另一个 runtime、verification budget 提交)。
-- **联邦 scoreboard pull**:peer A 发一条规则,peer B(跑同一 runtime)opt-in 拉,断言规则在采用前先过本地验证。— **2026-08-18 完成**模块级(`apps/node/test/mesh-scoreboard.test.ts`:owner 签名发布、本地验证闸门 —— 验签、证据下限、严格优于本地 incumbent 才采用;本地证据不足时 `pending`)。
+- **联邦 scoreboard pull**:peer A 发一条规则,peer B(跑同一 runtime)opt-in 拉,断言规则在采用前先过本地验证。— **2026-08-18 完成**模块级,含 wire round-trip:`apps/node/test/mesh-scoreboard.test.ts` 覆盖验证闸门(验签、证据下限、严格优于本地 incumbent 才采用;本地证据不足时 `pending`),`apps/node/test/scoreboard-rule-inbound.test.ts` 驱动完整的 广播 → 信封 → 闸门 → 采用 闭环(含重广播幂等)。
 - **影子模式 parity**:一条 chain 在影子模式下跑 2 周;断言 orchestrator 行为跟非影子模式完全一致。
 
 ### 12.4 测试数据

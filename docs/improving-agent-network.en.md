@@ -1171,6 +1171,8 @@ const FederatedEntrySchema = z.object({
 
 A peer running `pi` can opt in to **pull rule v7 from peer A** (which has been validated on 47 other Pi nodes). On the local node, the rule runs through the local 5-step protocol; if it passes, it joins the local scoreboard; if it fails, the pull is rejected.
 
+**Wire seam (initial cut, done 2026-08-18):** the `scoreboard.rule` intent (agent→agent) carries an owner-signed `FederatedRule`; the publisher's latest `kept` experiment is pushed to bonded peers via `apps/node/src/scoreboard-rule-broadcast.ts` (mirroring the `adapter.manifest` broadcast), and the receiver runs the fail-closed gate in `apps/node/src/scoreboard-rule-inbound.ts` — owner key verified against the contact store, hash integrity, evidence floors, then adoption as an owner-signed `kept` row in the local `VerifierScoreboard` (idempotent per ruleset). The round-trip is covered end-to-end at the module level (`apps/node/test/scoreboard-rule-inbound.test.ts`); the real libp2p two-node mesh run remains a follow-up. `ruleJson` currently carries a placeholder body — the real data-driven ruleset content lands with the §5.3 composable rule engine.
+
 **This is skill / rule sharing, not model sharing.** The risk surface is much smaller than "share model weights". A rule is a JSON file; the worst case is a bad rule that the local evaluator catches.
 
 ### 9.3 What is not shared
@@ -1254,7 +1256,7 @@ Week 3-4: Federated scoreboard (initial)
 
 - `verifier-scoreboard.ts` (local, per-runtime) — **done 2026-08-18** (initial): append-only, owner-signed JSONL ledger with per-runtime monotonic versioning; the durable store for the 5-step protocol's SNAPSHOT/COMMIT/REVERT rows (the LLM-driven EVALUATE "re-run 50 tasks" step stays deferred).
 - `mesh-scoreboard.ts` (federated, opt-in) — **done 2026-08-18** (initial): `FederatedRuleSchema`, owner-signed publish, and a fail-closed local validation gate before adoption — the candidate must verify against a *known* contact owner key, target a runtime this node runs, clear the federation-evidence floor, and strictly beat the local node's own verdict-history pass rate (insufficient local evidence ⇒ `pending`, never adopted blind).
-- One peer-to-peer pull tested manually before wider rollout — **done 2026-08-18** at the module level (`apps/node/test/mesh-scoreboard.test.ts` simulates publisher + puller); a libp2p wire round-trip stays follow-up.
+- One peer-to-peer pull tested manually before wider rollout — **done 2026-08-18**: the libp2p wire round-trip is closed with the `scoreboard.rule` intent — `apps/node/src/scoreboard-rule-broadcast.ts` pushes the latest `kept` experiment to bonded peers, `apps/node/src/scoreboard-rule-inbound.ts` runs the gate and adopts into the local scoreboard — tested end-to-end at the module level (`apps/node/test/scoreboard-rule-inbound.test.ts`, `scoreboard-rule-broadcast.test.ts`). The remaining follow-up is a real two-node libp2p mesh run.
 
 **Total: 11 weeks, 2 engineers, ~3000 lines of new code, no rewrite of the existing orchestrator.**
 
@@ -1359,7 +1361,7 @@ In `apps/node/test/`:
 In `apps/node/test/e2e/`:
 
 - **Two-doctor cross-agent**: a `criticality: 'high'` chain on the same task, two different runtimes, asserts `CrossAgentDisagreementVerifier` returns `pass` when results agree, `disputed` when they don't. — **done 2026-08-18** at two levels: adapter-seam (`apps/node/test/side-by-side-harness.test.ts`) and orchestrator-level (`apps/node/test/chain-verify-orchestrator.test.ts`), the latter driving `handleOrchestratorPartial` with production-shaped verify deps (real `ArbitrationStore` writes, runtime resolved from a wire manifest, escalation to a distinct runtime, verification budget committed).
-- **Federated scoreboard pull**: peer A publishes a rule, peer B (running the same runtime) opts in to pull, asserts the rule is validated locally before adoption. — **done 2026-08-18** at the module level (`apps/node/test/mesh-scoreboard.test.ts`: owner-signed publish, local validation gate — signature-verified, evidence-floored, strictly-better-than-incumbent adoption; `pending` when local evidence is insufficient).
+- **Federated scoreboard pull**: peer A publishes a rule, peer B (running the same runtime) opts in to pull, asserts the rule is validated locally before adoption. — **done 2026-08-18** at the module level, wire round-trip included: `apps/node/test/mesh-scoreboard.test.ts` covers the validation gate (signature-verified, evidence-floored, strictly-better-than-incumbent adoption; `pending` when local evidence is insufficient), and `apps/node/test/scoreboard-rule-inbound.test.ts` drives the full broadcast → envelope → gate → adoption loop (plus re-broadcast idempotency) between a simulated publisher and receiver.
 - **Shadow mode parity**: a chain that runs in shadow mode for 2 weeks; asserts the orchestrator behavior is identical to non-shadow.
 
 ### 12.4 Test data

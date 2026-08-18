@@ -17,11 +17,11 @@
  * Design doc: `docs/improving-agent-network.en.md` §9.1.
  */
 
-import { promises as fs } from "node:fs"
-import { join } from "node:path"
-import { z } from "zod"
-import { AgentRuntimeSchema, type AgentRuntime } from "@envoymesh/protocol"
-import { verifyCanonicalPayload } from "@envoymesh/identity"
+import { promises as fs } from "node:fs";
+import { dirname } from "node:path";
+import { z } from "zod";
+import { AgentRuntimeSchema, type AgentRuntime } from "@envoymesh/protocol";
+import { verifyCanonicalPayload } from "@envoymesh/identity";
 
 export const VerifierScoreboardEntrySchema = z.object({
   /** Monotonically increasing per runtime. */
@@ -40,29 +40,29 @@ export const VerifierScoreboardEntrySchema = z.object({
   /** Ed25519 of the owner over the canonical JSON of the rest of the entry. */
   ownerSignature: z.string().min(1),
   createdAt: z.string().datetime(),
-})
-export type VerifierScoreboardEntry = z.infer<typeof VerifierScoreboardEntrySchema>
+});
+export type VerifierScoreboardEntry = z.infer<typeof VerifierScoreboardEntrySchema>;
 
 /** Strip the owner signature for signing / verification. */
 export function forScoreboardSigning(
   entry: VerifierScoreboardEntry,
 ): Omit<VerifierScoreboardEntry, "ownerSignature"> {
-  const { ownerSignature: _ownerSignature, ...unsigned } = entry
-  return unsigned
+  const { ownerSignature: _ownerSignature, ...unsigned } = entry;
+  return unsigned;
 }
 
 /** Next version in the per-runtime sequence (for adopters of pulled rules). */
 export function nextScoreboardVersion(latest: VerifierScoreboardEntry | null): number {
-  return (latest?.version ?? 0) + 1
+  return (latest?.version ?? 0) + 1;
 }
 
-const MAX_JSONL_LINE_CHARS = 1_000_000
+const MAX_JSONL_LINE_CHARS = 1_000_000;
 
 export interface VerifierScoreboardOptions {
   /** `~/.envoymesh/agent-state/<peer>/verifier-scoreboard.jsonl` */
-  filePath: string
+  filePath: string;
   /** The owner public key PEM — entries must verify against it. */
-  ownerPublicKeyPem: string
+  ownerPublicKeyPem: string;
 }
 
 /**
@@ -70,14 +70,14 @@ export interface VerifierScoreboardOptions {
  * owner-signed or that regress the per-runtime version sequence.
  */
 export class VerifierScoreboard {
-  private readonly appendQueued: (value: unknown) => Promise<void>
-  private readonly filePath: string
-  private readonly ownerPublicKeyPem: string
+  private readonly appendQueued: (value: unknown) => Promise<void>;
+  private readonly filePath: string;
+  private readonly ownerPublicKeyPem: string;
 
   constructor(opts: VerifierScoreboardOptions) {
-    this.filePath = opts.filePath
-    this.ownerPublicKeyPem = opts.ownerPublicKeyPem
-    this.appendQueued = createSerialJsonlAppender(this.filePath)
+    this.filePath = opts.filePath;
+    this.ownerPublicKeyPem = opts.ownerPublicKeyPem;
+    this.appendQueued = createSerialJsonlAppender(this.filePath);
   }
 
   /**
@@ -85,72 +85,78 @@ export class VerifierScoreboard {
    * public key and enforces `version > latest(version)` for the runtime.
    */
   async append(entry: VerifierScoreboardEntry): Promise<VerifierScoreboardEntry> {
-    const parsed = VerifierScoreboardEntrySchema.parse(entry)
-    if (!verifyCanonicalPayload(forScoreboardSigning(parsed), parsed.ownerSignature, this.ownerPublicKeyPem)) {
-      throw new Error("scoreboard entry is not signed by the owner")
+    const parsed = VerifierScoreboardEntrySchema.parse(entry);
+    if (
+      !verifyCanonicalPayload(
+        forScoreboardSigning(parsed),
+        parsed.ownerSignature,
+        this.ownerPublicKeyPem,
+      )
+    ) {
+      throw new Error("scoreboard entry is not signed by the owner");
     }
-    const latest = await this.latest(parsed.runtime)
+    const latest = await this.latest(parsed.runtime);
     if (latest && parsed.version <= latest.version) {
       throw new Error(
         `scoreboard version regressed for runtime=${parsed.runtime}: ${parsed.version} <= ${latest.version}`,
-      )
+      );
     }
-    await this.appendQueued(parsed)
-    return parsed
+    await this.appendQueued(parsed);
+    return parsed;
   }
 
   /** All entries, oldest first. Malformed lines are skipped, not fatal. */
   async readAll(): Promise<VerifierScoreboardEntry[]> {
-    let raw: string
+    let raw: string;
     try {
-      raw = await fs.readFile(this.filePath, "utf8")
+      raw = await fs.readFile(this.filePath, "utf8");
     } catch (err) {
-      if (isMissingFileError(err)) return []
-      throw err
+      if (isMissingFileError(err)) return [];
+      throw err;
     }
-    const out: VerifierScoreboardEntry[] = []
+    const out: VerifierScoreboardEntry[] = [];
     for (const line of raw.split("\n")) {
-      const trimmed = line.trim()
-      if (!trimmed) continue
+      const trimmed = line.trim();
+      if (!trimmed) continue;
       try {
-        out.push(VerifierScoreboardEntrySchema.parse(JSON.parse(trimmed)))
+        out.push(VerifierScoreboardEntrySchema.parse(JSON.parse(trimmed)));
       } catch {
         // Skip corrupt lines — the ledger must stay readable.
       }
     }
-    return out
+    return out;
   }
 
   /** Latest entry for a runtime (or `null` when none exist). */
   async latest(runtime: AgentRuntime): Promise<VerifierScoreboardEntry | null> {
-    const entries = await this.readAll()
-    const scoped = entries.filter((e) => e.runtime === runtime)
-    if (scoped.length === 0) return null
-    return scoped[scoped.length - 1]!
+    const entries = await this.readAll();
+    const scoped = entries.filter((e) => e.runtime === runtime);
+    if (scoped.length === 0) return null;
+    return scoped[scoped.length - 1]!;
   }
 }
 
 function createSerialJsonlAppender(path: string): (value: unknown) => Promise<void> {
-  let tail: Promise<unknown> = Promise.resolve()
+  let tail: Promise<unknown> = Promise.resolve();
   return (value: unknown) => {
-    const done = tail.then(() => appendJsonLine(path, value))
+    const done = tail.then(() => appendJsonLine(path, value));
     tail = done.then(
       () => {},
       () => {},
-    )
-    return done
-  }
+    );
+    return done;
+  };
 }
 
 async function appendJsonLine(path: string, value: unknown): Promise<void> {
-  const line = JSON.stringify(value)
+  const line = JSON.stringify(value);
   if (line.length > MAX_JSONL_LINE_CHARS) {
-    throw new Error(`JSONL record exceeds MAX_JSONL_LINE_CHARS (${MAX_JSONL_LINE_CHARS})`)
+    throw new Error(`JSONL record exceeds MAX_JSONL_LINE_CHARS (${MAX_JSONL_LINE_CHARS})`);
   }
-  await fs.mkdir(join(path, ".."), { recursive: true })
-  await fs.appendFile(path, `${line}\n`, { mode: 0o600 })
+  await fs.mkdir(dirname(path), { recursive: true });
+  await fs.appendFile(path, `${line}\n`, { mode: 0o600 });
 }
 
 function isMissingFileError(error: unknown): boolean {
-  return (error as NodeJS.ErrnoException)?.code === "ENOENT"
+  return (error as NodeJS.ErrnoException)?.code === "ENOENT";
 }

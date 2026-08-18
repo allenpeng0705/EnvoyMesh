@@ -1874,6 +1874,29 @@ async function handleInboundMeshMessage({
     return;
   }
 
+  // MAP §9.2 — federated scoreboard rule broadcast (scoreboard.rule, opt-in pull).
+  if (envelope.intent === "scoreboard.rule" && nodeService instanceof NodeServiceImpl) {
+    const handled = await nodeService.handleInboundScoreboardRule(envelope);
+    if (handled) {
+      void taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.verified",
+          intent: envelope.intent,
+          messageId: envelope.messageId,
+          correlationId: envelope.correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "verified",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "allow",
+          summary: "Handled scoreboard.rule.",
+          createdAt: envelope.createdAt,
+        }),
+      );
+    }
+    return;
+  }
+
   if (envelope.intent === "chat.room.sync" && nodeService instanceof NodeServiceImpl) {
     await handleChatRoomSyncViaRuntime(
       {

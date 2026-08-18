@@ -105,6 +105,8 @@ const INTENT_ROLE_POLICIES: Record<string, readonly RolePair[]> = {
   "feed.engage": HUMAN_HUMAN_ONLY,
   // MAP — capability manifest broadcast (agent→agent, worker pool advertisement).
   "adapter.manifest": AGENT_AGENT_ONLY,
+  // MAP §9.2 — federated scoreboard rule broadcast (agent→agent, opt-in pull).
+  "scoreboard.rule": AGENT_AGENT_ONLY,
 };
 
 /**
