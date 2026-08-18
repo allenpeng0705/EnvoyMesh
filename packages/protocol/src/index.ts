@@ -4323,3 +4323,47 @@ export type {
   AgentNetworkRoleId,
   AgentNetworkWellKnownRole,
 } from "./agent-network-profile.js";
+
+// ---------------------------------------------------------------------------
+// MAP (Mesh Adapter Pattern) — per-adapter wire surface
+// Re-exported from `./agent-adapter.js` (see that file for JSDoc).
+// Schemas: `AgentRuntimeSchema`, `SkillIdSchema`, `SkillDescriptorSchema`,
+//   `CapabilityManifestSchema`, `SignedCapabilityManifestSchema`,
+//   `ContentBlockSchema`, `AgentResultSchema`, `SignedAgentResultSchema`,
+//   `VerdictSchema`, `VerifierSourceSchema`, `VerdictEntrySchema`.
+// Types: matching `z.infer<typeof XxxSchema>` aliases.
+// ---------------------------------------------------------------------------
+
+export {
+  AgentRuntimeSchema,
+  SkillIdSchema,
+  SkillDescriptorSchema,
+  ReputationScoreSchema,
+  CapabilityManifestSchema,
+  SignedCapabilityManifestSchema,
+  ContentBlockSchema,
+  CitationSchema,
+  AgentMetricsSchema,
+  AgentResultSchema,
+  SignedAgentResultSchema,
+  VerdictSchema,
+  VerifierSourceSchema,
+  VerdictEntrySchema,
+} from "./agent-adapter.js";
+
+export type {
+  AgentRuntime,
+  SkillId,
+  SkillDescriptor,
+  ReputationScore,
+  CapabilityManifest,
+  SignedCapabilityManifest,
+  ContentBlock,
+  Citation,
+  AgentMetrics,
+  AgentResult,
+  SignedAgentResult,
+  Verdict,
+  VerifierSource,
+  VerdictEntry,
+} from "./agent-adapter.js";
