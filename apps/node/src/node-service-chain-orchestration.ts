@@ -122,6 +122,8 @@ import {
   createOpenClawChainSubtaskExecutor,
   executeAcceptedSubtask,
 } from "./chain-worker-executor.js";
+import { createMapChainSubtaskExecutor } from "./chain-map.js";
+import { OpenClawAdapter } from "@envoymesh/agent-adapter";
 import { requiresChainAwardApproval } from "./chain-sensitivity-gate.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 import type { MeshToolContext } from "./tool-registry.js";
@@ -941,7 +943,7 @@ export async function buildChainWorkerDeps(deps: ChainOrchestrationContext): Pro
         : "openclaw_unavailable",
     executeSubtask: async (subtask, onPartial, opts) => {
       const engine = deps.getAgentNetworkWorkerEngine();
-      const exec =
+      const legacyExec =
         engine === "ext"
           ? createExtAgentChainSubtaskExecutor({
               workerPeerId: agentIdentity.agentPeerId,
@@ -953,7 +955,20 @@ export async function buildChainWorkerDeps(deps: ChainOrchestrationContext): Pro
               isOpenClawReady: () => deps.isOpenClawReady(),
               askOpenClaw: (prompt) => deps.askOpenClaw(prompt),
             });
-      return exec(subtask, onPartial, opts);
+      // Sprint 1 MAP shadow mode (off by default). The legacy path still
+      // delivers the real result; the adapter path runs silently in parallel
+      // and records the diff as `chain.map_shadow` audit events.
+      if (engine === "openclaw" && isMapShadowEnabled()) {
+        return runOpenClawMapShadow({
+          deps,
+          agentIdentity,
+          legacyExec,
+          subtask,
+          onPartial,
+          opts,
+        });
+      }
+      return legacyExec(subtask, onPartial, opts);
     },
     onObservedStatus: (orchestratorPeerId, payload) => {
       const snap: ObservedChainSnapshot = {
@@ -986,6 +1001,72 @@ export async function buildChainWorkerDeps(deps: ChainOrchestrationContext): Pro
       void maybeGcChainInputWorkspace(deps, chainId);
     },
   };
+}
+
+/**
+ * Sprint 1 MAP shadow-mode gate. Off by default; enable with
+ * `ENVOYMESH_MAP_SHADOW=1`. While active, every OpenClaw subtask also runs
+ * through the MAP adapter path (silently) and the diff is audited.
+ */
+export function isMapShadowEnabled(): boolean {
+  return process.env.ENVOYMESH_MAP_SHADOW === "1";
+}
+
+/**
+ * Run the legacy OpenClaw executor (delivers the real result) AND the MAP
+ * adapter executor (silent shadow run), then compare. The shadow run uses a
+ * no-op partial sink so the orchestrator's `task.chain.partial` stream is
+ * unchanged; only audit events (`chain.map_shadow`) and chain logs carry the
+ * comparison.
+ */
+export async function runOpenClawMapShadow(input: {
+  deps: ChainOrchestrationContext;
+  agentIdentity: BridgeIdentity;
+  legacyExec: NonNullable<ChainWorkerHandlerDeps["executeSubtask"]>;
+  subtask: import("@envoymesh/protocol").ChainSubtask;
+  onPartial: (partial: import("@envoymesh/protocol").TaskChainPartialPayload) => Promise<void>;
+  opts?: { inputArtifacts?: import("@envoymesh/protocol").NamedArtifact[] };
+}): Promise<{ ok: boolean; finalNote?: string }> {
+  const { deps, agentIdentity, legacyExec, subtask, onPartial, opts } = input;
+  const adapter = new OpenClawAdapter({
+    askViaRuntime: (prompt) => deps.askOpenClaw(prompt),
+    isReady: () => deps.isOpenClawReady(),
+    workerPeerId: agentIdentity.agentPeerId,
+    signResult: (unsigned) => ({
+      ...unsigned,
+      signature: signCanonicalPayload(unsigned, agentIdentity.agentPrivateKeyPem),
+    }),
+  });
+  const mapExec = createMapChainSubtaskExecutor({
+    workerPeerId: agentIdentity.agentPeerId,
+    engineLabel: "OpenClaw (MAP shadow)",
+    unavailableCode: "openclaw_unavailable",
+    isReady: () => deps.isOpenClawReady(),
+    adapter,
+    onShadowRecord: (rec) => {
+      void _appendChainAudit(deps, {
+        type: "chain.map_shadow",
+        outcome: "record",
+        intent: "task.chain.partial",
+        correlationId: `${subtask.chainId}:${subtask.subtaskId}`,
+        summary:
+          `chainId=${subtask.chainId} subtaskId=${subtask.subtaskId} ` +
+          `ok=${rec.ok} overall=${rec.overall ?? "none"} verdicts=${rec.verdicts.length}`,
+      });
+    },
+  });
+
+  // Shadow run first (silent — no partials leak to the orchestrator).
+  const shadow = await mapExec(subtask, async () => undefined, opts);
+  // Deliver the real result via the legacy path (behavior unchanged).
+  const delivered = await legacyExec(subtask, onPartial, opts);
+
+  chainLog("map.shadow", `subtask=${subtask.subtaskId} legacy=${delivered.ok ? "ok" : "fail"} map=${shadow.ok ? "ok" : "fail"}`, {
+    chainId: subtask.chainId,
+    legacyNote: delivered.finalNote?.slice(0, 80),
+    mapNote: shadow.finalNote?.slice(0, 80),
+  });
+  return delivered;
 }
 
 async function buildLlmDecomposerAsync(

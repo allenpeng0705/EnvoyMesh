@@ -21,6 +21,9 @@ export {
   defaultRegistry,
 } from "./runtime-registry.js";
 
+export { OpenClawAdapter, OPENCLAW_SKILLS } from "./openclaw-adapter.js";
+export type { OpenClawAdapterInput } from "./openclaw-adapter.js";
+
 export type {
   AgentAdapter,
   BuildManifestInput,

@@ -1185,6 +1185,10 @@ A peer running `pi` can opt in to **pull rule v7 from peer A** (which has been v
 
 ### Sprint 1: MAP protocol + OpenClawAdapter, additive (4 weeks)
 
+### Sprint 1: Shadow mode (4 weeks)
+
+> **Status (2026-08-18):** implemented. `packages/agent-adapter/src/openclaw-adapter.ts` (canonical adapter wrapping the production ask path via injected `askViaRuntime`) and the worker-side interop layer `apps/node/src/chain-map.ts` exist and are unit-tested. The `executeSubtask` wiring in `node-service-chain-orchestration.ts` runs the MAP adapter path in shadow mode alongside the legacy OpenClaw path when `ENVOYMESH_MAP_SHADOW=1`, delivering via legacy while auditing `chain.map_shadow` diff events. Off by default.
+
 **Goal**: a manifest is broadcast, an `AgentResult` is returned, the orchestrator's existing path is unchanged.
 
 Week 1-2: New package
@@ -1206,6 +1210,8 @@ Week 3-4: Shadow mode
 - **Success criterion**: after 1-2 weeks of shadow, results are identical for ≥95% of tasks. (If not, the adapter is mis-modeling; iterate.)
 
 ### Sprint 2: Switch to adapter path; per-(peer, runtime, skill) reputation (3 weeks)
+
+> **Status (2026-08-18):** reputation-blend seam in progress. `chain-plan-assign.ts` now blends a per-skill reputation (`PlanAssignRosterEntry.reputationBySkill`, soft `+0.2×rep` addend) into `scoreFor` / `bestPeerForRole` and surfaces it in the Assigner prompt. The 3-tuple `ArbitrationStore` reader (`chain-reputation-3tuple.ts`) that feeds the roster is still to come.
 
 Week 1: Switch the seam
 

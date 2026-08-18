@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  REPUTATION_BLEND_WEIGHT,
+  blendScoreWithReputation,
   buildPlanAssignPrompt,
   hasDependsOnCycle,
   materializePlanAssignSubtasks,
   materializePlanAssignWithMeta,
   parsePlanAssignResult,
   parsePlanAssignSteps,
+  skillReputation,
 } from "../src/chain-plan-assign.js";
 import { synthesizePlanAssignFromRosterPrompt } from "@envoymesh/models";
 
@@ -397,5 +400,119 @@ describe("chain-plan-assign", () => {
     expect(parsed?.steps[2]?.assignedPeerId).toBe("envoy_agent_dev");
     expect(parsed?.steps[2]?.assignKind).toBe("role_substitute");
     expect(parsed?.warnings.some((w) => w.code === "role_substitute")).toBe(true);
+  });
+});
+
+describe("reputation-aware scoring (Sprint 2 MAP)", () => {
+  it("blendScoreWithReputation leaves the base score untouched when reputation is absent", () => {
+    expect(blendScoreWithReputation(3, undefined)).toBe(3);
+    expect(blendScoreWithReputation(0, undefined)).toBe(0);
+  });
+
+  it("blendScoreWithReputation adds a soft addend, clamped to [0, 1]", () => {
+    expect(blendScoreWithReputation(3, 1)).toBe(3 + REPUTATION_BLEND_WEIGHT);
+    expect(blendScoreWithReputation(3, 0)).toBe(3);
+    expect(blendScoreWithReputation(3, 1.5)).toBe(3 + REPUTATION_BLEND_WEIGHT);
+    expect(blendScoreWithReputation(3, -0.5)).toBe(3);
+  });
+
+  it("tier ordering is preserved: a zero-reputation specialist still beats a full-reputation executor", () => {
+    const specialist = blendScoreWithReputation(3, 0); // 3.0
+    const executor = blendScoreWithReputation(1, 1); // 1.2
+    expect(specialist).toBeGreaterThan(executor);
+  });
+
+  it("skillReputation matches the exact skill key, clamped", () => {
+    const entry = { membership: [], reputationBySkill: { summarization: 0.9, research: 1.5 } };
+    expect(skillReputation(entry, "summarization")).toBe(0.9);
+    expect(skillReputation(entry, "RESEARCH")).toBe(1); // clamped
+    expect(skillReputation(entry, "coding")).toBeUndefined();
+    expect(skillReputation({ membership: [] }, "coding")).toBeUndefined();
+  });
+
+  it("reputation breaks ties between same-skill specialists", () => {
+    const drafts = parsePlanAssignSteps(
+      JSON.stringify({
+        steps: [
+          {
+            objective: "Summarize the Q3 report",
+            requiredSkill: "summarization",
+            depth: 1,
+            dependsOn: [],
+          },
+        ],
+      }),
+    );
+    const subtasks = materializePlanAssignSubtasks({
+      goal: "summarize",
+      chainId: "chain_rep",
+      chainMandateId: "chainmandate_rep",
+      drafts: drafts!,
+      roster: [
+        {
+          peerId: "envoy_agent_a",
+          membership: ["task.execute", "agent-network-worker"],
+          profile: { skills: ["summarization"] },
+          reputationBySkill: { summarization: 0.2 },
+        },
+        {
+          peerId: "envoy_agent_b",
+          membership: ["task.execute", "agent-network-worker"],
+          profile: { skills: ["summarization"] },
+          reputationBySkill: { summarization: 0.9 },
+        },
+      ],
+      createdAt: "2026-07-22T00:00:00.000Z",
+    });
+    expect(subtasks[0]!.preferredWorkerPeerId).toBe("envoy_agent_b");
+  });
+
+  it("reputation never overrides the skill tier", () => {
+    const drafts = parsePlanAssignSteps(
+      JSON.stringify({
+        steps: [
+          {
+            objective: "Summarize the Q3 report",
+            requiredSkill: "summarization",
+            depth: 1,
+            dependsOn: [],
+          },
+        ],
+      }),
+    );
+    const subtasks = materializePlanAssignSubtasks({
+      goal: "summarize",
+      chainId: "chain_rep_tier",
+      chainMandateId: "chainmandate_rep_tier",
+      drafts: drafts!,
+      roster: [
+        {
+          peerId: "envoy_agent_specialist",
+          membership: ["task.execute", "agent-network-worker"],
+          profile: { skills: ["summarization"] },
+          reputationBySkill: { summarization: 0 },
+        },
+        {
+          peerId: "envoy_agent_general",
+          membership: ["task.execute", "agent-network-worker"],
+          profile: { skills: ["coding"] },
+          reputationBySkill: { coding: 1 },
+        },
+      ],
+      createdAt: "2026-07-22T00:00:00.000Z",
+    });
+    expect(subtasks[0]!.preferredWorkerPeerId).toBe("envoy_agent_specialist");
+  });
+
+  it("buildPlanAssignPrompt surfaces reputationBySkill in the roster", () => {
+    const prompt = buildPlanAssignPrompt("summarize the quarter", [
+      {
+        peerId: "envoy_agent_a",
+        membership: ["task.execute"],
+        reputationBySkill: { summarization: 0.9 },
+      },
+    ]);
+    expect(prompt).toContain('"reputationBySkill"');
+    expect(prompt).toContain("0.9");
   });
 });

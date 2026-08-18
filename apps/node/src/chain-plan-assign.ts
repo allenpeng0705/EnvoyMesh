@@ -65,6 +65,46 @@ export interface PlanAssignRosterEntry {
   sameLan?: boolean;
   isSelf?: boolean;
   scoreSummary?: string;
+  /**
+   * Per-skill reputation in [0, 1] (MAP 3-tuple derived; Sprint 2). Soft
+   * tiebreaker only — never overrides the skill tier in `scoreFor`.
+   */
+  reputationBySkill?: Readonly<Record<string, number>>;
+}
+
+/** How much a worker's per-skill reputation nudges the assignment score. */
+export const REPUTATION_BLEND_WEIGHT = 0.2;
+
+function clamp01(v: number): number {
+  return Math.min(1, Math.max(0, v));
+}
+
+/**
+ * Exact-match per-skill reputation, clamped to [0, 1]. Returns `undefined`
+ * when the roster entry carries no reputation or no match for the skill.
+ */
+export function skillReputation(
+  entry: PlanAssignRosterEntry,
+  skillKey: string,
+): number | undefined {
+  const map = entry.reputationBySkill;
+  if (!map) return undefined;
+  const v = map[skillKey.toLowerCase()];
+  return typeof v === "number" ? clamp01(v) : undefined;
+}
+
+/**
+ * Blend a base score with reputation as a *soft* addend so the skill tier
+ * ordering (specialist 3 > executor 1 > none 0) is preserved: a specialist
+ * with reputation 0 still outranks a reputation-1 general executor. Undefined
+ * reputation leaves the base score untouched.
+ */
+export function blendScoreWithReputation(
+  baseScore: number,
+  reputation: number | undefined,
+): number {
+  if (reputation === undefined) return baseScore;
+  return baseScore + REPUTATION_BLEND_WEIGHT * clamp01(reputation);
 }
 
 export interface PlanAssignStepDraft {
@@ -154,6 +194,7 @@ export function buildPlanAssignPrompt(
         contextWindow: w.profile?.contextWindow ?? null,
         spendPosture: w.profile?.spendPosture ?? null,
         throughputTokensPerSec: w.profile?.throughputTokensPerSec ?? null,
+        reputationBySkill: w.reputationBySkill ?? null,
         sameLan: w.sameLan === true,
         isSelf: w.isSelf === true,
       };
@@ -203,7 +244,7 @@ export function buildPlanAssignPrompt(
     "- If no specialist matches a step, still assign the best generalist from the roster. Never omit a step.",
     "- If eligibleWorkers has exactly one peer, assign every step to that peer.",
     "- When eligibleWorkers has 2+ peers OR the goal has multiple phases (research/draft/code/merge/etc.), produce 2–5 steps. Use a single step only for trivial one-shot goals.",
-    "- Prefer sameLan=true and higher throughputTokensPerSec when quality is otherwise equal.",
+    "- Prefer sameLan=true and higher throughputTokensPerSec when quality is otherwise equal. When reputationBySkill is present for the step's requiredSkill, use it as a further tiebreaker (higher reputation wins).",
     "- Soft-match skills (owner-attested specialties per agent). Mesh canExecute is membership only — never a specialty.",
     "- requiredSkill on each step is a specialty/strength hint (e.g. coding, research), NOT a mesh capability id.",
     "- When a non-self worker lists a skill that matches the step, prefer that specialist over isSelf=true. Do not assign every step to isSelf just because they are the creator.",
@@ -473,9 +514,11 @@ export function materializePlanAssignWithMeta(input: {
     if (!entry) return -1;
     const req = specialtyHint.toLowerCase();
     const skills = agentNetworkSkillIds(entry.profile?.skills);
-    if (skills.some((s) => s === req || s.includes(req) || req.includes(s))) return 3;
-    if ((entry.membership ?? []).includes("task.execute")) return 1;
-    return 0;
+    let base: number;
+    if (skills.some((s) => s === req || s.includes(req) || req.includes(s))) base = 3;
+    else if ((entry.membership ?? []).includes("task.execute")) base = 1;
+    else base = 0;
+    return blendScoreWithReputation(base, skillReputation(entry, req));
   };
 
   const filled = assignWorkersToSteps({

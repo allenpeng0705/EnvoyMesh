@@ -296,6 +296,9 @@ export type AuditEventType =
   | "chain.iteration.judge"
   | "chain.iteration.stopped"
   | "chain.iteration.progress"
+  // Phase 41 — Mesh Adapter Pattern (MAP): shadow-mode comparison of the
+  // adapter path vs the legacy engine path on the worker side.
+  | "chain.map_shadow"
   // Phase 45 — Web Content Browsing.
   | "library.read"
   | "library.read.served"

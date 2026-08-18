@@ -1151,6 +1151,8 @@ const FederatedEntrySchema = z.object({
 
 ### Sprint 1:MAP 协议 + OpenClawAdapter,增量(4 周)
 
+> **状态(2026-08-18):已实现。** `packages/agent-adapter/src/openclaw-adapter.ts`(规范 adapter,通过注入的 `askViaRuntime` 包住生产 ask 路径)和 worker 侧 interop 层 `apps/node/src/chain-map.ts` 已存在并有单测。`node-service-chain-orchestration.ts` 的 `executeSubtask` 接线在 `ENVOYMESH_MAP_SHADOW=1` 时,以影子模式在遗留 OpenClaw 路径旁跑 MAP adapter 路径 —— 结果仍由 legacy 路径投递,差异以 `chain.map_shadow` 审计事件记录。默认关闭。
+
 **目标**:manifest 被广播,`AgentResult` 被返回,orchestrator 现有路径不变。
 
 第 1-2 周:新包
@@ -1172,6 +1174,8 @@ const FederatedEntrySchema = z.object({
 - **成功标准**:1-2 周影子后,≥95% 任务结果相同。(如果不是,adapter 把 runtime 建模错了;迭代。)
 
 ### Sprint 2:切到 adapter 路径;per-(peer, runtime, skill) reputation(3 周)
+
+> **状态(2026-08-18):reputation 融合 seam 进行中。** `chain-plan-assign.ts` 现在把 per-skill reputation(`PlanAssignRosterEntry.reputationBySkill`,软加项 `+0.2×rep`)融入 `scoreFor` / `bestPeerForRole`,并把它暴露在 Assigner prompt 里。喂给 roster 的三元组 `ArbitrationStore` 读取器(`chain-reputation-3tuple.ts`)还没写。
 
 第 1 周:切换 seam
 
