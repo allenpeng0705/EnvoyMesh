@@ -31,7 +31,27 @@ import { isLocalEntryWinning } from "./chain-handoff.js";
 // Store
 // ---------------------------------------------------------------------------
 
-/** Per-chain arbitration ledger. Keyed by `subtaskId`. */
+/**
+ * Per-chain arbitration ledger. Keyed by `subtaskId`.
+ *
+ * **Future migration (Phase 41, MAP):** the design says
+ * `VerdictEntrySchema` from `@envoymesh/protocol/agent-adapter`
+ * ("MAP") is "designed to slot into the existing `ArbitrationStore`"
+ * (see `docs/improving-agent-network.md` §4.3). The migration is
+ * forward-looking:
+ *
+ * - Today, the store holds `ChainArbitrationEntry` (Phase 40E, the
+ *   handoff-dispute resolution schema). This is unchanged.
+ * - When Phase 41 lands, the store's value type widens to a union
+ *   `ChainArbitrationEntry | VerdictEntry`, and the existing
+ *   `append-only` + `idempotent` invariants apply to both halves
+ *   of the union. Per design §4.3: "The existing store's
+ *   `append-only` + `idempotent` invariants apply unchanged."
+ *
+ * Do not change this type signature in a way that breaks the
+ * existing `ChainArbitrationEntry` consumers; the migration is
+ * additive.
+ */
 export type ArbitrationStore = Map<string, ChainArbitrationEntry>;
 
 /** Empty store helper. */

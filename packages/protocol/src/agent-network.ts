@@ -643,7 +643,26 @@ export const TaskChainReadyRequestPayloadSchema = z.object({
   requestedAt: z.string().datetime(),
 });
 
-/** `task.chain.ready.response` — worker answers the readiness hello. */
+/**
+ * `task.chain.ready.response` — worker answers the readiness hello.
+ *
+ * **Note on `engine` vs `AgentRuntime`** (Phase 41, MAP): the
+ * `engine` field here is the **per-node worker engine policy** —
+ * it answers "which local AI Engine runs Agent Network work on
+ * this node?" (Built-in OpenClaw XOR Ext Agent — owner choice on
+ * their home). This is intentionally a closed 2-value enum and
+ * should NOT be confused with `AgentRuntimeSchema` from
+ * `./agent-adapter.js`, which is the **runtime that produced a
+ * specific result** (advertised in the manifest). A node can be
+ * configured with `engine: "ext"` and the Ext Agent can be
+ * `runtime: "envoy-harness"` or `runtime: "pi"` etc. — they're
+ * orthogonal.
+ *
+ * When Phase 41 lands, the readiness response may gain a
+ * `supportedRuntimes: AgentRuntime[]` field to advertise which
+ * MAP runtimes this node can dispatch to. The `engine` field
+ * stays for backward compatibility.
+ */
 export const TaskChainReadyResponsePayloadSchema = z.object({
   probeId: z.string().min(1).max(128),
   ready: z.boolean(),
