@@ -22,6 +22,7 @@ import {
   mergeUserPromptAddonForGoal,
   planPromptAddonForGoal,
 } from "./chain-deliverable-policy.js";
+import { contentBlocksToText } from "./chain-map.js";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -256,25 +257,33 @@ export function createLlmMergeAdapter(provider: LlmProvider) {
   const merge = createLlmMerge(provider);
 
   return async (input: {
-    contributions: Array<{ subtaskId: string; workerPeerId: string; text: string; confidence: number }>;
+    contributions: Array<{ subtaskId: string; workerPeerId: string; text: string; confidence: number; contentBlocks?: readonly import("@envoymesh/protocol").ContentBlock[] }>;
     goal?: string;
   }) => {
-    const adapted = input.contributions.map((c, i) => ({
-      workerIndex: i + 1,
-      partial: {
+    const adapted = input.contributions.map((c, i) => {
+      // Prefer the normalized ContentBlock[] projection; fall back to the
+      // pre-rendered text for legacy contributors that carried no blocks.
+      const mergeText =
+        c.contentBlocks && c.contentBlocks.length > 0
+          ? contentBlocksToText(c.contentBlocks)
+          : c.text;
+      return {
+        workerIndex: i + 1,
         partial: {
-          version: "0.1" as const,
-          subtaskId: c.subtaskId,
-          chainId: "",
-          workerPeerId: c.workerPeerId,
-          seq: 1,
-          isFinal: true,
-          confidence: c.confidence,
-          artifactFragment: cleanContributionTextForMerge(c.text),
-          createdAt: new Date().toISOString(),
+          partial: {
+            version: "0.1" as const,
+            subtaskId: c.subtaskId,
+            chainId: "",
+            workerPeerId: c.workerPeerId,
+            seq: 1,
+            isFinal: true,
+            confidence: c.confidence,
+            artifactFragment: cleanContributionTextForMerge(mergeText),
+            createdAt: new Date().toISOString(),
+          },
         },
-      },
-    }));
+      };
+    });
 
     const result = await merge({
       contributions: adapted,

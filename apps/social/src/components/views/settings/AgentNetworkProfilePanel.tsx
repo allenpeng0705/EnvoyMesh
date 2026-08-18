@@ -116,6 +116,8 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
   const [roleDraft, setRoleDraft] = useState("");
   const [roleDraftError, setRoleDraftError] = useState<string | null>(null);
   const [workerEngine, setWorkerEngine] = useState<"openclaw" | "ext">("openclaw");
+  const [useMap, setUseMap] = useState(false);
+  const [mapSaving, setMapSaving] = useState(false);
   const [activeExtLabel, setActiveExtLabel] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [showFineTune, setShowFineTune] = useState(false);
@@ -128,6 +130,7 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
         setProfile(createAgentNetworkProfile(cfg.agentNetworkProfile));
       }
       setWorkerEngine(cfg.agentNetworkWorkerEngine === "ext" ? "ext" : "openclaw");
+      setUseMap(cfg.useMAP === true);
       const activeId = cfg.activeExtAgentId;
       const active = cfg.extAgents?.find((a) => a.id === activeId);
       setActiveExtLabel(active?.name ?? cfg.bridgeStatus?.agentName ?? activeId ?? "");
@@ -149,6 +152,29 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
           showToast(err instanceof Error ? err.message : String(err), "error");
         } finally {
           setSaving(false);
+        }
+      })();
+    },
+    [nodeService, showToast, t],
+  );
+
+  /** Phase 41 / MAP — adapter worker path (Sprint 2 opt-in). */
+  const setUseMapAndPersist = useCallback(
+    (next: boolean) => {
+      setUseMap(next);
+      void (async () => {
+        setMapSaving(true);
+        try {
+          await nodeService.updateNodeConfig({ useMAP: next });
+          showToast(
+            next ? t(`${K}.mapSavedOn`) : t(`${K}.mapSavedOff`),
+            "success",
+          );
+        } catch (err) {
+          setUseMap(!next);
+          showToast(err instanceof Error ? err.message : String(err), "error");
+        } finally {
+          setMapSaving(false);
         }
       })();
     },
@@ -251,6 +277,29 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
             : t(`${K}.workerEngineHint`)}
         </small>
       </div>
+
+      {/* ---- MAP worker path (OpenClaw engine only; Phase 41 opt-in) ---- */}
+      {workerEngine === "openclaw" ? (
+        <div className="form-group" data-testid="agent-network-map-worker-path">
+          <label htmlFor="anp-use-map">{t(`${K}.mapLabel`)}</label>
+          <label className="settings-checkbox-row">
+            <input
+              type="checkbox"
+              id="anp-use-map"
+              checked={useMap}
+              disabled={mapSaving}
+              onChange={(e) => setUseMapAndPersist(e.target.checked)}
+            />
+            <span>{t(`${K}.mapToggleLabel`)}</span>
+          </label>
+          <small className="field-desc">
+            {useMap
+              ? t(`${K}.mapStatusPrimary`)
+              : t(`${K}.mapStatusLegacy`)}
+          </small>
+          <small className="field-desc">{t(`${K}.mapHint`)}</small>
+        </div>
+      ) : null}
 
       {/* ---- Collaboration role (Team job seats) ---- */}
       <div className="form-group" data-testid="agent-network-primary-role">

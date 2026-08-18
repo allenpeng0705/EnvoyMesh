@@ -1082,10 +1082,10 @@ orchestrator.trackChain(step, result)
   └─► if still disputed:
       └─► return to owner for human review
 ```
+|
+|> **Status 2026-08-18:** `CrossAgentDisagreementVerifier` first cut (`packages/agent-adapter/src/cross-agent-verifier.ts`) plus the node-side host seam (`apps/node/src/pi-map-adapter.ts`) are in and tested. The escalation *caller* — orchestrator branching to a second runtime when `criticality == 'high'` or a `partial` verdict — is still pending (Week 2-3).
 
 ---
-
-## 9. Federated self-evolution
 
 This is the part that comes from Penguin's `self-evolve.ts` (the 5-step protocol), applied at the **agent-runtime** level, with mesh-level sharing.
 
@@ -1211,9 +1211,9 @@ Week 3-4: Shadow mode
 
 ### Sprint 2: Switch to adapter path; per-(peer, runtime, skill) reputation (3 weeks)
 
-> **Status (2026-08-18):** Sprint 2 seam complete. Reputation: `chain-plan-assign.ts` blends per-skill reputation (`PlanAssignRosterEntry.reputationBySkill`, soft `+0.2×rep` addend) into `scoreFor` / `bestPeerForRole`; the 3-tuple reader (`chain-reputation-3tuple.ts`) derives scores from the widened `ArbitrationStore` (`recordVerdictEntry` / `getVerdictsFor`); the roster is enriched via `deriveRosterReputation`; `chain-sensitivity-gate.ts` gained `requiresReputationApproval`. Seam switch: `executeSubtask` now routes OpenClaw subtasks through the adapter-backed executor when `useMAP` is set (primary; shadow/legacy preserved), with the legacy prompt surface (constraints/role/thread/brief-report policy) preserved via `buildSubtaskPromptForAdapter`. Orchestrator pool: `findWorkers` gained a manifest-carrying pool (`findWorkersWithManifests` / `resolveWorkerPool`; `ChainRankedWorker.manifest` synthesized from the card profile via `manifestFromAgentNetworkProfile`). Roll out: `NodeConfig.useMAP` opt-in + live `ENVOYMESH_MAP_ROLLBACK=1` rollback flag.
+> **Status (2026-08-18):** Sprint 2 seam complete. Reputation: `chain-plan-assign.ts` blends per-skill reputation (`PlanAssignRosterEntry.reputationBySkill`, soft `+0.2×rep` addend) into `scoreFor` / `bestPeerForRole`; the 3-tuple reader (`chain-reputation-3tuple.ts`) derives scores from the widened `ArbitrationStore` (`recordVerdictEntry` / `getVerdictsFor`); the roster is enriched via `deriveRosterReputation`; `chain-sensitivity-gate.ts` gained `requiresReputationApproval`. Seam switch: `executeSubtask` now routes OpenClaw subtasks through the adapter-backed executor when `useMAP` is set (primary; shadow/legacy preserved), with the legacy prompt surface (constraints/role/thread/brief-report policy) preserved via `buildSubtaskPromptForAdapter`. Orchestrator pool: `findWorkers` gained a manifest-carrying pool (`findWorkersWithManifests` / `resolveWorkerPool`; `ChainRankedWorker.manifest` synthesized from the card profile via `manifestFromAgentNetworkProfile`). Merge unification: `synthesizeChain` consumes normalized `ContentBlock[]` — `chain-map.ts` owns the bidirectional artifact↔block map (`resultArtifactsToContentBlocks` / `contentBlocksToResultArtifacts`) and the one canonical text projection (`contentBlocksToText`), so legacy and adapter partials reach the merge step as the same typed currency; `WorkerContribution` carries `contentBlocks`, and the LLM merge adapter prefers the block projection. Roll out: `NodeConfig.useMAP` opt-in (Agent Network settings UI toggle) + live `ENVOYMESH_MAP_ROLLBACK=1` rollback flag.
 >
-> **Known gaps (by design):** (1) **Verdict write path** — no production code writes `VerdictEntry` yet; the authoritative writer is the orchestrator's verification flow (Sprint 3 cross-agent verification). Worker-side `adapter.verify` stays advisory per §7.1 (no self-reported reputation). Until then the 3-tuple readers and `requiresReputationApproval` are dormant. (2) **Manifest pool consumer** — `findWorkersWithManifests`/`resolveWorkerPool` are consumer-ready but not yet consulted by the proposal/award flow (which resolves workers from the assigner roster); they become live when wire-broadcast manifests land. (3) **`synthesizeChain` ContentBlock[]** — merge path still consumes `ChainSubtaskPartial` named artifacts (adapter already emits those), so this is optional unification.
+> **Known gaps (by design):** (1) **Verdict write path** — no production code writes `VerdictEntry` yet; the authoritative writer is the orchestrator's verification flow (Sprint 3 cross-agent verification). Worker-side `adapter.verify` stays advisory per §7.1 (no self-reported reputation). Until then the 3-tuple readers and `requiresReputationApproval` are dormant. (2) **Manifest pool consumer** — `findWorkersWithManifests`/`resolveWorkerPool` are consumer-ready but not yet consulted by the proposal/award flow (which resolves workers from the assigner roster); they become live when wire-broadcast manifests land.
 
 Week 1: Switch the seam
 
@@ -1237,9 +1237,10 @@ Week 3: Roll out
 
 Week 1-2: Second adapter (e.g. Pi)
 
-- Add `packages/agent-adapter/src/pi-adapter.ts`
-- Pi-specific verifier (command sequence, loop detection)
-- Tests: side-by-side with Hermes/OpenClaw on the same task
+- Add `packages/agent-adapter/src/pi-adapter.ts` — **first cut done 2026-08-18**
+- Pi-specific verifier (command sequence, loop detection) — **done 2026-08-18**
+- Node-side wiring seam `apps/node/src/pi-map-adapter.ts` (`createPiAdapterFromHost`) — **done 2026-08-18**. Live path runs with a tool-call *count* but no trace, so the Pi verifier passes with `confidence: "low"`; loop/command checks activate once the Pi runtime exposes the trace.
+- Tests: side-by-side with Hermes/OpenClaw on the same task — package + node tests done; side-by-side harness pending
 
 Week 2-3: Cross-agent verification
 
@@ -1290,6 +1291,9 @@ This section is the literal "what to type" for the first sprint.
 | `apps/node/src/agent-adapter-broadcast.ts` | 120 | Periodic manifest broadcast |
 | `apps/node/src/chain-map.ts` | 220 | MAP interop layer — worker-side bridge: `ChainSubtask → ExecuteInput`, `SignedAgentResult → ChainSubtaskPartial`, advisory verify gate (Sprint 1) |
 | `apps/node/test/chain-map.test.ts` | 150 | Chain-map bridge + shadow-mode equivalence tests |
+| `packages/agent-adapter/src/pi-adapter.ts` | 260 | Pi runtime adapter + Pi-specific verifier (loop, command sequence) (Sprint 3) — **done 2026-08-18** |
+| `packages/agent-adapter/src/cross-agent-verifier.ts` | 130 | Two-runtime disagreement verifier (Sprint 3) — **done 2026-08-18** |
+| `apps/node/src/pi-map-adapter.ts` | 70 | Host→Pi adapter wiring seam (Sprint 3) — **done 2026-08-18** |
 
 **Sprint 1 total: ~1700 lines, mostly tests.**
 

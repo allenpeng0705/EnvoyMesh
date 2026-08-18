@@ -24,6 +24,22 @@ export {
 export { OpenClawAdapter, OPENCLAW_SKILLS } from "./openclaw-adapter.js";
 export type { OpenClawAdapterInput } from "./openclaw-adapter.js";
 
+export { PiAdapter, PI_SKILLS, PI_RESULT_SCHEMA_REF, PI_LOOP_THRESHOLD } from "./pi-adapter.js";
+export type { PiAdapterInput, PiRunResult, PiTraceCall } from "./pi-adapter.js";
+export {
+  detectLoop,
+  detectDestructiveCommand,
+} from "./pi-adapter.js";
+
+export {
+  CrossAgentDisagreementVerifier,
+  CROSS_AGENT_PASS_THRESHOLD,
+  CROSS_AGENT_PARTIAL_THRESHOLD,
+  defaultSemanticSimilarity,
+  extractConclusion,
+} from "./cross-agent-verifier.js";
+export type { CrossAgentVerifyInput, SemanticSimilarityFn } from "./cross-agent-verifier.js";
+
 export type {
   AgentAdapter,
   BuildManifestInput,

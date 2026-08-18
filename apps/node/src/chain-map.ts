@@ -14,8 +14,12 @@
  * This module owns:
  *   1. `mapChainSubtaskToExecuteInput` — pure `ChainSubtask → ExecuteInput`.
  *   2. `contentBlocksToResultArtifacts` — pure `ContentBlock[] → ChainSubtaskPartial` artifacts.
- *   3. `combineVerdicts` — OR-of-pass / AND-of-fail / default-disputed (design §6.2).
- *   4. `createMapChainSubtaskExecutor` — an executor with the same shape as
+ *   3. `resultArtifactsToContentBlocks` / `contentBlocksToText` — the merge-step
+ *      currency: reconstructs the normalized `ContentBlock[]` a worker produced
+ *      and renders it to text through one canonical projection (used by
+ *      `synthesizeChain`, so the merge step never sees an opaque string).
+ *   4. `combineVerdicts` — OR-of-pass / AND-of-fail / default-disputed (design §6.2).
+ *   5. `createMapChainSubtaskExecutor` — an executor with the same shape as
  *      `createOpenClawChainSubtaskExecutor`, ready to slot into the
  *      `executeSubtask` wiring in `node-service-chain-orchestration.ts`.
  *
@@ -35,13 +39,14 @@ import {
   type CapabilityManifest,
   type Artifact,
   type ChainSubtask,
+  type ChainSubtaskPartial,
   type ContentBlock,
   type NamedArtifact,
   type SignedAgentResult,
   type SkillDescriptor,
   type Verdict,
 } from "@envoymesh/protocol";
-import { SignedAgentResultSchema } from "@envoymesh/protocol";
+import { ContentBlockSchema, SignedAgentResultSchema } from "@envoymesh/protocol";
 import type { AgentAdapter, ExecuteInput } from "@envoymesh/agent-adapter";
 import { chainLog, chainWarn, shortPeerId } from "./chain-debug.js";
 import type { ChainWorkerHandlerDeps } from "./chain-worker.js";
@@ -238,6 +243,78 @@ export function contentBlocksToResultArtifacts(
   }
 
   return { artifactFragment, namedArtifacts, skipped };
+}
+
+/**
+ * Reconstruct the normalized `ContentBlock[]` a worker produced from the
+ * `ChainSubtaskPartial` artifact channels. This is the inverse of
+ * `contentBlocksToResultArtifacts`, so MAP partials and legacy partials flow
+ * through the same merge-step currency (`ContentBlock[]`) no matter which
+ * executor produced them.
+ *
+ * Lossy edges (mirror of the forward map): `image` blocks were flattened to
+ * `file` artifacts on the wire, and text was clipped at the wire artifact max.
+ * The vault path + hash and the clipped text survive.
+ */
+export function resultArtifactsToContentBlocks(partial: ChainSubtaskPartial): ContentBlock[] {
+  const blocks: ContentBlock[] = [];
+  const fragment = partial.artifactFragment;
+  if (fragment && typeof fragment === "object" && (fragment as { kind?: unknown }).kind !== "composite") {
+    pushContentBlock(blocks, fragment);
+  }
+  for (const named of partial.namedArtifacts ?? []) {
+    const artifact = named?.artifact;
+    if (artifact && typeof artifact === "object" && (artifact as { kind?: unknown }).kind !== "composite") {
+      pushContentBlock(blocks, artifact);
+    }
+  }
+  return blocks;
+}
+
+/** Shape-checked block reconstruction — the wire schema is a loose sync copy. */
+function pushContentBlock(out: ContentBlock[], artifact: unknown): void {
+  if (artifact && typeof artifact === "object" && (artifact as { kind?: unknown }).kind === "text") {
+    // Text artifacts carry `content`; text blocks carry `text`. Remap here —
+    // the only field-name difference between the two shapes.
+    const t = artifact as { content?: unknown; mimeType?: unknown };
+    if (typeof t.content === "string") {
+      out.push({
+        kind: "text",
+        text: t.content,
+        mimeType: typeof t.mimeType === "string" ? t.mimeType : undefined,
+      });
+    }
+    return;
+  }
+  const parsed = ContentBlockSchema.safeParse(artifact);
+  if (parsed.success) out.push(parsed.data);
+}
+
+/**
+ * Canonical projection of normalized `ContentBlock[]` to merge-step text.
+ * This is the single place that knows how to render a block array, so the
+ * merge step (`synthesizeChain`) consumes the blocks themselves and gets a
+ * deterministic text view through here — never an opaque per-executor string.
+ */
+export function contentBlocksToText(blocks: readonly ContentBlock[]): string {
+  const parts: string[] = [];
+  for (const block of blocks) {
+    if (block.kind === "text") {
+      parts.push(block.text);
+    } else if (block.kind === "file") {
+      parts.push(`[file: ${block.vaultPath}]${block.displayName ? ` (${block.displayName})` : ""}`);
+    } else if (block.kind === "image") {
+      parts.push(`[image: ${block.vaultPath}]${block.altText ? ` (${block.altText})` : ""}`);
+    } else {
+      // structured — keep the schema ref so the merge prompt can tell data from prose
+      try {
+        parts.push(`[data: ${block.schemaRef}]\n${JSON.stringify(block.data)}`);
+      } catch {
+        parts.push(`[data: ${block.schemaRef}]`);
+      }
+    }
+  }
+  return parts.join("\n\n");
 }
 
 /**

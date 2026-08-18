@@ -29,6 +29,16 @@ export const zhAgentNetworkSettingsMessages = {
     workerEngineExtHint:
       "使用当前 Ext Agent（{name}）。可在 设置 → AI → Ext Agent 更换产品。选此项时 OpenClaw 不执行协作任务步骤。",
     workerEngineSaved: "协作任务引擎已保存",
+    mapLabel: "MAP 工作路径（适配器）",
+    mapToggleLabel: "子任务通过网格适配器路径执行",
+    mapStatusPrimary:
+      "状态：主路径 — 子任务经由适配器路径执行（设置 ENVOYMESH_MAP_SHADOW=1 仍可保留影子对比轨迹）。",
+    mapStatusLegacy:
+      "状态：旧路径 — 子任务经由传统引擎路径执行。开启后切换到适配器路径。",
+    mapHint:
+      "网格适配器模式（MAP）统一不同运行时在能力宣告、结果交付与验证上的差异。仅适用于 OpenClaw 引擎。实时回滚：在节点上设置 ENVOYMESH_MAP_ROLLBACK=1 即可强制回到传统路径。",
+    mapSavedOn: "已启用 MAP 工作路径 — 适配器成为主执行器",
+    mapSavedOff: "已关闭 MAP 工作路径 — 恢复传统引擎",
     primaryRole: "协作角色",
     primaryRoleHint:
       "面向角色型团队任务的席位（如程序员、测试）。与技能分开，需手动设置；开启加入后会随 Agent Card 分享给对等节点。",

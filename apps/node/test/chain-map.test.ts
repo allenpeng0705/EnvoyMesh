@@ -11,6 +11,7 @@ import {
   CHAIN_NAMED_ARTIFACTS_MAX,
   CHAIN_SUBTASK_PARTIAL_NOTE_MAX,
   type ChainSubtask,
+  type ChainSubtaskPartial,
   type ContentBlock,
   type NamedArtifact,
   type Verdict,
@@ -21,10 +22,12 @@ import {
   buildSubtaskPromptForAdapter,
   combineVerdicts,
   contentBlocksToResultArtifacts,
+  contentBlocksToText,
   createMapChainSubtaskExecutor,
   manifestFromAgentNetworkProfile,
   mapChainSubtaskToExecuteInput,
   normalizeSkillId,
+  resultArtifactsToContentBlocks,
 } from "../src/chain-map.js";
 
 function sampleSubtask(overrides?: Partial<ChainSubtask>): ChainSubtask {
@@ -173,6 +176,58 @@ describe("contentBlocksToResultArtifacts", () => {
     const out = contentBlocksToResultArtifacts(blocks);
     expect(out.namedArtifacts).toHaveLength(CHAIN_NAMED_ARTIFACTS_MAX);
     expect(out.skipped.length).toBe(12 - CHAIN_NAMED_ARTIFACTS_MAX);
+  });
+});
+
+describe("resultArtifactsToContentBlocks", () => {
+  const basePartial: ChainSubtaskPartial = {
+    version: "0.1",
+    subtaskId: "subtask_1",
+    chainId: "chain_1",
+    workerPeerId: "envoy_agent_self",
+    seq: 1,
+    isFinal: true,
+    createdAt: new Date("2026-01-01T00:00:00.000Z").toISOString(),
+  };
+
+  it("round-trips text/file/structured artifacts back into ContentBlock[]", () => {
+    const blocks = resultArtifactsToContentBlocks({
+      ...basePartial,
+      artifactFragment: { kind: "text", content: "hello", mimeType: "text/markdown" },
+      namedArtifacts: [
+        { key: "result", artifact: { kind: "file", vaultPath: "specs/api.md", contentHash: "h2", displayName: "api.md" } },
+        { key: "result.2", artifact: { kind: "structured", schemaRef: "envoymesh://x/v1", data: { ok: true } } },
+      ],
+    });
+    expect(blocks).toEqual([
+      { kind: "text", text: "hello", mimeType: "text/markdown" },
+      { kind: "file", vaultPath: "specs/api.md", contentHash: "h2", displayName: "api.md" },
+      { kind: "structured", schemaRef: "envoymesh://x/v1", data: { ok: true } },
+    ]);
+  });
+
+  it("returns an empty array for a note-only partial", () => {
+    expect(resultArtifactsToContentBlocks(basePartial)).toEqual([]);
+  });
+});
+
+describe("contentBlocksToText", () => {
+  it("projects every block kind into one deterministic text view", () => {
+    const text = contentBlocksToText([
+      { kind: "text", text: "First" },
+      { kind: "file", vaultPath: "specs/api.md", contentHash: "h", displayName: "api.md" },
+      { kind: "image", vaultPath: "shots/a.png", contentHash: "h1", mimeType: "image/png", altText: "chart" },
+      { kind: "structured", schemaRef: "envoymesh://x/v1", data: { a: 1 } },
+    ]);
+    expect(text).toContain("First");
+    expect(text).toContain("[file: specs/api.md] (api.md)");
+    expect(text).toContain("[image: shots/a.png] (chart)");
+    expect(text).toContain("[data: envoymesh://x/v1]");
+    expect(text).toContain('{"a":1}');
+  });
+
+  it("renders empty input to an empty string", () => {
+    expect(contentBlocksToText([])).toBe("");
   });
 });
 
@@ -498,7 +553,7 @@ describe("buildSubtaskPromptForAdapter", () => {
     expect(prompt).toContain("- Keep under 200 words");
   });
 
-  it("includes brief-report policy constraints for synthesize subtasks", () => {
+  it("includes brief-report policy constraints for chain-report subtasks", () => {
     const subtask = {
       ...sampleSubtask(),
       objective: "Produce the chain report",

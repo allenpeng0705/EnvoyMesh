@@ -3,7 +3,13 @@
  */
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { AgentNetworkProfilePanel } from "../../src/components/views/settings/AgentNetworkProfilePanel.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
@@ -11,8 +17,10 @@ const getNodeConfig = vi.fn();
 const updateNodeConfig = vi.fn();
 const showToast = vi.fn();
 
+const nodeService = { getNodeConfig, updateNodeConfig };
+
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({ getNodeConfig, updateNodeConfig }),
+  useNodeService: () => nodeService,
 }));
 
 vi.mock("../../src/hooks/useToast.js", () => ({
@@ -58,5 +66,40 @@ describe("AgentNetworkProfilePanel", () => {
       expect(select.value).toBe("custom:qa_lead");
       expect(screen.getByRole("option", { name: /qa lead/i })).toBeTruthy();
     });
+  });
+
+  it("toggles the MAP worker path (useMAP) and shows status", async () => {
+    renderWithI18n(<AgentNetworkProfilePanel enabled />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-network-map-worker-path")).toBeTruthy();
+    });
+
+    const group = screen.getByTestId("agent-network-map-worker-path");
+    const checkbox = within(group).getByRole("checkbox") as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+
+    fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(updateNodeConfig).toHaveBeenCalledWith({ useMAP: true });
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/Status:.*primary/i)).toBeTruthy();
+    });
+  });
+
+  it("hides the MAP worker path when the Ext Agent engine is selected", async () => {
+    getNodeConfig.mockResolvedValue({
+      agentNetworkProfile: undefined,
+      agentNetworkWorkerEngine: "ext",
+    });
+    renderWithI18n(<AgentNetworkProfilePanel enabled />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-network-worker-engine")).toBeTruthy();
+    });
+
+    expect(screen.queryByTestId("agent-network-map-worker-path")).toBeNull();
   });
 });

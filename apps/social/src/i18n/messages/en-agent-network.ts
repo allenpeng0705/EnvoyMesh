@@ -29,6 +29,16 @@ export const agentNetworkSettingsMessages = {
     workerEngineExtHint:
       "Uses your active Ext Agent ({name}). Change the product under Settings → AI → Ext Agent. OpenClaw will not run Team job steps while this is selected.",
     workerEngineSaved: "Team job engine saved",
+    mapLabel: "MAP worker path (adapter)",
+    mapToggleLabel: "Run subtasks through the Mesh Adapter Path",
+    mapStatusPrimary:
+      "Status: primary — subtasks run through the adapter path (shadow trail still available with ENVOYMESH_MAP_SHADOW=1).",
+    mapStatusLegacy:
+      "Status: legacy — subtasks run through the legacy engine path. Turn on to switch to the adapter path.",
+    mapHint:
+      "Mesh Adapter Pattern (MAP) normalizes capability advertisement, result delivery, and verification across runtimes. Applies to the OpenClaw engine. Live rollback: ENVOYMESH_MAP_ROLLBACK=1 forces the legacy path.",
+    mapSavedOn: "MAP worker path enabled — adapter is now the primary executor",
+    mapSavedOff: "MAP worker path disabled — legacy engine restored",
     primaryRole: "Collaboration role",
     primaryRoleHint:
       "Team seat for role-based jobs (e.g. programmer, tester). Separate from skills — set manually. Peers see this on your Agent Card when Join is on.",

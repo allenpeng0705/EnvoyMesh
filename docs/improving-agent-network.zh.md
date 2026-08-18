@@ -1048,10 +1048,10 @@ orchestrator.trackChain(step, result)
   └─► 如果还 disputed:
       └─► 返回给 owner 人类评审
 ```
+|
+|> **状态 2026-08-18:** `CrossAgentDisagreementVerifier` 首版(`packages/agent-adapter/src/cross-agent-verifier.ts`)与节点侧 host seam(`apps/node/src/pi-map-adapter.ts`)已落地并通过测试。升级 *调用方* —— orchestrator 在 `criticality == 'high'` 或收到 `partial` 时分支到第二个 runtime —— 仍在待做(第 2-3 周)。
 
 ---
-
-## 9. 联邦自进化
 
 这部分来自 Penguin 的 `self-evolve.ts`(5 步协议),用在 **agent-runtime** 级别,加上 mesh 层共享。
 
@@ -1175,9 +1175,9 @@ const FederatedEntrySchema = z.object({
 
 ### Sprint 2:切到 adapter 路径;per-(peer, runtime, skill) reputation(3 周)
 
-> **状态(2026-08-18):Sprint 2 seam 完成。** Reputation:`chain-plan-assign.ts` 把 per-skill reputation(`PlanAssignRosterEntry.reputationBySkill`,软加项 `+0.2×rep`)融入 `scoreFor` / `bestPeerForRole`;三元组读取器(`chain-reputation-3tuple.ts`)从拓宽后的 `ArbitrationStore`(`recordVerdictEntry` / `getVerdictsFor`)派生分数;roster 通过 `deriveRosterReputation` 补全;`chain-sensitivity-gate.ts` 新增 `requiresReputationApproval`。Seam 切换:`executeSubtask` 现在在 `useMAP` 开启时把 OpenClaw 子任务路由到 adapter 执行器(primary;shadow/legacy 保留),并通过 `buildSubtaskPromptForAdapter` 保留 legacy prompt 面(constraints/role/thread/brief-report 策略)。Orchestrator 池:`findWorkers` 新增携带 manifest 的 worker 池(`findWorkersWithManifests` / `resolveWorkerPool`;`ChainRankedWorker.manifest` 通过 `manifestFromAgentNetworkProfile` 从卡片 profile 合成)。Roll out:`NodeConfig.useMAP` opt-in + 实时 `ENVOYMESH_MAP_ROLLBACK=1` 回滚开关。
+> **状态(2026-08-18):Sprint 2 seam 完成。** Reputation:`chain-plan-assign.ts` 把 per-skill reputation(`PlanAssignRosterEntry.reputationBySkill`,软加项 `+0.2×rep`)融入 `scoreFor` / `bestPeerForRole`;三元组读取器(`chain-reputation-3tuple.ts`)从拓宽后的 `ArbitrationStore`(`recordVerdictEntry` / `getVerdictsFor`)派生分数;roster 通过 `deriveRosterReputation` 补全;`chain-sensitivity-gate.ts` 新增 `requiresReputationApproval`。Seam 切换:`executeSubtask` 现在在 `useMAP` 开启时把 OpenClaw 子任务路由到 adapter 执行器(primary;shadow/legacy 保留),并通过 `buildSubtaskPromptForAdapter` 保留 legacy prompt 面(constraints/role/thread/brief-report 策略)。Orchestrator 池:`findWorkers` 新增携带 manifest 的 worker 池(`findWorkersWithManifests` / `resolveWorkerPool`;`ChainRankedWorker.manifest` 通过 `manifestFromAgentNetworkProfile` 从卡片 profile 合成)。Merge 统一:`synthesizeChain` 消费归一化 `ContentBlock[]` — `chain-map.ts` 拥有 artifact↔block 双向映射(`resultArtifactsToContentBlocks` / `contentBlocksToResultArtifacts`)与唯一文本投影(`contentBlocksToText`),legacy 与 adapter partial 以同一类型化货币进入 merge 步骤;`WorkerContribution` 携带 `contentBlocks`,LLM merge adapter 优先使用 block 投影。Roll out:`NodeConfig.useMAP` opt-in(Agent Network 设置 UI 开关)+ 实时 `ENVOYMESH_MAP_ROLLBACK=1` 回滚开关。
 >
-> **已知缺口(有意为之):**(1) **Verdict 写入路径** — 尚无生产代码写 `VerdictEntry`;权威写入方是 orchestrator 的验证流程(Sprint 3 跨 agent 验证)。worker 侧 `adapter.verify` 保持 advisory(§7.1 拒绝自报 reputation)。在此之前 3-tuple 读取器与 `requiresReputationApproval` 处于休眠状态。(2) **Manifest 池消费者** — `findWorkersWithManifests` / `resolveWorkerPool` 已就绪但尚未被 proposal/award 流程调用(该流程从 assigner roster 解析 worker);wire 广播 manifest 落地后即生效。(3) **`synthesizeChain` ContentBlock[]** — merge 路径仍消费 `ChainSubtaskPartial` 具名 artifacts(adapter 已产出),属可选统一。
+> **已知缺口(有意为之):**(1) **Verdict 写入路径** — 尚无生产代码写 `VerdictEntry`;权威写入方是 orchestrator 的验证流程(Sprint 3 跨 agent 验证)。worker 侧 `adapter.verify` 保持 advisory(§7.1 拒绝自报 reputation)。在此之前 3-tuple 读取器与 `requiresReputationApproval` 处于休眠状态。(2) **Manifest 池消费者** — `findWorkersWithManifests` / `resolveWorkerPool` 已就绪但尚未被 proposal/award 流程调用(该流程从 assigner roster 解析 worker);wire 广播 manifest 落地后即生效。
 
 第 1 周:切换 seam
 
@@ -1201,9 +1201,10 @@ const FederatedEntrySchema = z.object({
 
 第 1-2 周:第二个 adapter(比如 Pi)
 
-- 加 `packages/agent-adapter/src/pi-adapter.ts`
-- Pi 特有 verifier(命令序列、loop 检测)
-- 测试:跟 Hermes/OpenClaw 同一任务对比
+- 加 `packages/agent-adapter/src/pi-adapter.ts` — **首版完成 2026-08-18**
+- Pi 特有 verifier(命令序列、loop 检测)— **完成 2026-08-18**
+- 节点侧接线 `apps/node/src/pi-map-adapter.ts`(`createPiAdapterFromHost`)— **完成 2026-08-18**。线上路径目前只有 tool-call 计数、没有 trace,所以 Pi verifier 以 `confidence: "low"` 通过;Pi runtime 暴露 trace 后 loop/命令检查即生效。
+- 测试:跟 Hermes/OpenClaw 同一任务对比 — 包级与节点级测试已完成;并排 harness 待做
 
 第 2-3 周:跨 agent 验证
 
@@ -1254,6 +1255,9 @@ const FederatedEntrySchema = z.object({
 | `apps/node/src/agent-adapter-broadcast.ts` | 120 | 周期 manifest 广播 |
 | `apps/node/src/chain-map.ts` | 220 | MAP interop 层 —— worker 侧桥梁:`ChainSubtask → ExecuteInput`、`SignedAgentResult → ChainSubtaskPartial`、advisory verify 闸门(Sprint 1)|
 | `apps/node/test/chain-map.test.ts` | 150 | chain-map 桥梁 + 影子模式等价性测试 |
+| `packages/agent-adapter/src/pi-adapter.ts` | 260 | Pi runtime adapter + Pi 特有 verifier(loop、命令序列)(Sprint 3)— **2026-08-18 完成** |
+| `packages/agent-adapter/src/cross-agent-verifier.ts` | 130 | 双 runtime 分歧 verifier(Sprint 3)— **2026-08-18 完成** |
+| `apps/node/src/pi-map-adapter.ts` | 70 | Host→Pi adapter 接线 seam(Sprint 3)— **2026-08-18 完成** |
 
 **Sprint 1 总计:~1700 行,主要是测试。**
 

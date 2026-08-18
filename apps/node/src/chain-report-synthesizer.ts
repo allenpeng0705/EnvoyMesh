@@ -40,10 +40,12 @@ import {
   type ChainSubtaskPartial,
   type CompositeArtifact,
   type CompositeArtifactPart,
+  type ContentBlock,
   type TextArtifact,
 } from "@envoymesh/protocol";
 
 import type { ChainBudgetLedger } from "./chain-budget-ledger.js";
+import { contentBlocksToResultArtifacts } from "./chain-map.js";
 
 // ---------------------------------------------------------------------------
 // Aggregation kinds
@@ -65,7 +67,13 @@ export interface WorkerContribution {
   subtaskId: string;
   workerPeerId: string;
   workerOwnerId: string;
-  /** Free-text or structured artifact produced by the worker. */
+  /**
+   * The normalized `ContentBlock[]` the worker produced (MAP currency). The
+   * merge step consumes these directly; `text` below is the canonical
+   * projection rendered by `contentBlocksToText`.
+   */
+  contentBlocks?: readonly ContentBlock[];
+  /** Canonical text view of the contribution (rendered from `contentBlocks`). */
   text: string;
   /** Confidence score [0..1]; used by `weighted_concat` to assign weights. */
   confidence: number;
@@ -172,15 +180,21 @@ async function doWeightedConcat(
   estimatedUsd: number,
 ): Promise<SynthesizeChainReportResult> {
   const weights = normalizeWeights(input.contributions);
-  const parts: CompositeArtifactPart[] = input.contributions.map((c, i) =>
-    CompositeArtifactPartSchema.parse({
+  const parts: CompositeArtifactPart[] = input.contributions.map((c, i) => {
+    // Preserve the worker's typed artifact when the contribution carried
+    // normalized blocks; otherwise fall back to the canonical text view.
+    const typed =
+      c.contentBlocks && c.contentBlocks.length > 0
+        ? contentBlocksToResultArtifacts(c.contentBlocks).artifactFragment
+        : undefined;
+    return CompositeArtifactPartSchema.parse({
       subtaskId: c.subtaskId,
       workerPeerId: c.workerPeerId,
       workerOwnerId: c.workerOwnerId,
       weight: weights[i],
-      artifact: textArtifact(c.text),
-    }),
-  );
+      artifact: typed ?? textArtifact(c.text),
+    });
+  });
   const composite = CompositeArtifactSchema.parse({
     kind: "composite",
     parts,

@@ -85,6 +85,10 @@ import {
 } from "./chain-report-synthesizer.js";
 import type { ChainAuditSink, ChainInboundDecision } from "./chain-inbound-types.js";
 import { chainLog, chainWarn, shortPeerId } from "./chain-debug.js";
+import {
+  contentBlocksToText,
+  resultArtifactsToContentBlocks,
+} from "./chain-map.js";
 import { shouldSkipWorkerForEngineProbe } from "./chain-ready-probe.js";
 import {
   buildJobInputFileArtifacts,
@@ -2069,19 +2073,17 @@ export async function synthesizeChain(
     if (allow && !allow.has(subtaskId)) continue;
     const partial = state.partials.get(subtaskId);
     if (!partial) continue;
-    const artifact = partial.partial.artifactFragment;
-    const artifactText =
-      artifact &&
-      typeof artifact === "object" &&
-      (artifact as { kind?: string }).kind === "text" &&
-      typeof (artifact as { content?: unknown }).content === "string"
-        ? (artifact as { content: string }).content
-        : undefined;
+    // MAP currency: reconstruct the worker's normalized ContentBlock[] and
+    // render it through the one canonical projection, so legacy and adapter
+    // partials reach the merge step as the same typed currency.
+    const blocks = resultArtifactsToContentBlocks(partial.partial);
+    const rendered = blocks.length > 0 ? contentBlocksToText(blocks) : "";
     contributions.push({
       subtaskId,
       workerPeerId: award.workerPeerId,
       workerOwnerId: award.workerPeerId, // owner-id resolution belongs to a higher layer
-      text: artifactText?.trim() || partial.partial.note || "(empty)",
+      contentBlocks: blocks.length > 0 ? blocks : undefined,
+      text: rendered.trim() || partial.partial.note || "(empty)",
       confidence: 0.5,
       award,
     });
