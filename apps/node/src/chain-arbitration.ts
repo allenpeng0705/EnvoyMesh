@@ -23,7 +23,7 @@
  * @see docs/agent_network.md §8.3 (Arbitration)
  */
 
-import type { ChainArbitrationEntry } from "@envoymesh/protocol";
+import type { AgentRuntime, ChainArbitrationEntry, VerdictEntry } from "@envoymesh/protocol";
 
 import { isLocalEntryWinning } from "./chain-handoff.js";
 
@@ -32,27 +32,35 @@ import { isLocalEntryWinning } from "./chain-handoff.js";
 // ---------------------------------------------------------------------------
 
 /**
- * Per-chain arbitration ledger. Keyed by `subtaskId`.
+ * Per-chain arbitration ledger. Keyed by `subtaskId` (arbitration entries)
+ * or `${subtaskId}::${workerRuntime}` (verdict entries, Phase 41).
  *
- * **Future migration (Phase 41, MAP):** the design says
- * `VerdictEntrySchema` from `@envoymesh/protocol/agent-adapter`
- * ("MAP") is "designed to slot into the existing `ArbitrationStore`"
- * (see `docs/improving-agent-network.en.md` §4.3). The migration is
- * forward-looking:
- *
- * - Today, the store holds `ChainArbitrationEntry` (Phase 40E, the
- *   handoff-dispute resolution schema). This is unchanged.
- * - When Phase 41 lands, the store's value type widens to a union
- *   `ChainArbitrationEntry | VerdictEntry`, and the existing
- *   `append-only` + `idempotent` invariants apply to both halves
- *   of the union. Per design §4.3: "The existing store's
- *   `append-only` + `idempotent` invariants apply unchanged."
- *
- * Do not change this type signature in a way that breaks the
- * existing `ChainArbitrationEntry` consumers; the migration is
- * additive.
+ * **Phase 41 (MAP):** the store now holds a union — `ChainArbitrationEntry`
+ * (Phase 40E, handoff-dispute resolution, unchanged) plus `VerdictEntry`
+ * (signed per-(subtask, runtime) verdicts, appended via
+ * `recordVerdictEntry`). The existing `append-only` + `idempotent`
+ * invariants apply to both halves (design §4.3). Consumers of
+ * `ChainArbitrationEntry` narrow via `isChainArbitrationEntry`.
  */
-export type ArbitrationStore = Map<string, ChainArbitrationEntry>;
+export type ArbitrationEntry = ChainArbitrationEntry | VerdictEntry;
+export type ArbitrationStore = Map<string, ArbitrationEntry>;
+
+/** Narrowing guard: true when the entry is a Phase 40E ownership entry. */
+export function isChainArbitrationEntry(
+  e: ArbitrationEntry | undefined,
+): e is ChainArbitrationEntry {
+  return !!e && "currentOwnerPeerId" in e && "arbitrationId" in e;
+}
+
+/** Narrowing guard: true when the entry is a signed verdict (Phase 41). */
+export function isVerdictEntry(e: ArbitrationEntry | undefined): e is VerdictEntry {
+  return !!e && "workerPeerId" in e && "verdict" in e;
+}
+
+/** Verdict slot key — one slot per (subtask, runtime). */
+export function verdictLedgerKey(subtaskId: string, workerRuntime: AgentRuntime): string {
+  return `${subtaskId}::${workerRuntime}`;
+}
 
 /** Empty store helper. */
 export function createArbitrationStore(): ArbitrationStore {
@@ -64,7 +72,8 @@ export function getCurrentOwner(
   store: ArbitrationStore,
   subtaskId: string,
 ): ChainArbitrationEntry | null {
-  return store.get(subtaskId) ?? null;
+  const entry = store.get(subtaskId);
+  return entry && isChainArbitrationEntry(entry) ? entry : null;
 }
 
 /** True when the local orchestrator currently owns this subtask. */
@@ -74,7 +83,7 @@ export function localOrchestratorOwns(
   localPeerId: string,
 ): boolean {
   const entry = store.get(subtaskId);
-  return entry?.currentOwnerPeerId === localPeerId;
+  return isChainArbitrationEntry(entry) && entry.currentOwnerPeerId === localPeerId;
 }
 
 /** Returns all subtasks owned by `localPeerId`. */
@@ -84,9 +93,58 @@ export function listOwnedSubtasks(
 ): string[] {
   const out: string[] = [];
   for (const [subtaskId, entry] of store.entries()) {
-    if (entry.currentOwnerPeerId === localPeerId) out.push(subtaskId);
+    if (isChainArbitrationEntry(entry) && entry.currentOwnerPeerId === localPeerId) {
+      out.push(subtaskId);
+    }
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Verdict ledger (Phase 41 / MAP — Sprint 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Append a signed verdict to the store. Idempotent: re-applying the same
+ * signed entry is a no-op. A genuinely new verdict for the same
+ * (subtask, runtime) slot replaces the old one (re-verification).
+ */
+export function recordVerdictEntry(
+  store: ArbitrationStore,
+  entry: VerdictEntry,
+): ArbitrationStore {
+  const key = verdictLedgerKey(entry.subtaskId, entry.workerRuntime);
+  const existing = store.get(key);
+  if (existing && isVerdictEntry(existing) && existing.signature === entry.signature) {
+    return store;
+  }
+  const next = new Map(store);
+  next.set(key, entry);
+  return next;
+}
+
+/**
+ * Read verdicts from the store, filtered by the optional criteria and sorted
+ * by `issuedAt` (oldest first). Verdict entries are the Phase 41 half of the
+ * store; arbitration entries are skipped.
+ */
+export function getVerdictsFor(
+  store: ArbitrationStore,
+  criteria?: {
+    workerPeerId?: string;
+    workerRuntime?: AgentRuntime;
+    skillId?: string;
+  },
+): VerdictEntry[] {
+  const out: VerdictEntry[] = [];
+  for (const entry of store.values()) {
+    if (!isVerdictEntry(entry)) continue;
+    if (criteria?.workerPeerId !== undefined && entry.workerPeerId !== criteria.workerPeerId) continue;
+    if (criteria?.workerRuntime !== undefined && entry.workerRuntime !== criteria.workerRuntime) continue;
+    if (criteria?.skillId !== undefined && entry.skillId !== criteria.skillId) continue;
+    out.push(entry);
+  }
+  return out.sort((a, b) => a.issuedAt.localeCompare(b.issuedAt));
 }
 
 // ---------------------------------------------------------------------------
@@ -128,6 +186,7 @@ export function applyArbitration(
       changed.push(subtaskId);
       continue;
     }
+    if (!isChainArbitrationEntry(existing)) continue; // verdict slots live under a different key
     if (existing.arbitrationId === remote.arbitrationId) {
       // Same entry — idempotent.
       continue;
@@ -189,7 +248,7 @@ export function releaseOwnership<A>(
   const newAwards = new Map(awards);
   for (const subtaskId of subtaskIds) {
     const entry = store.get(subtaskId);
-    if (!entry) continue;
+    if (!isChainArbitrationEntry(entry)) continue;
     if (entry.currentOwnerPeerId !== localPeerId) continue;
     // Caller is expected to also remove from the store. Here we just
     // note that ownership was released.
@@ -213,7 +272,7 @@ export function findLostSubtasks(
   const lost: string[] = [];
   for (const subtaskId of remote.subtaskIds) {
     const localEntry = store.get(subtaskId);
-    if (!localEntry) continue;
+    if (!isChainArbitrationEntry(localEntry)) continue;
     if (localEntry.currentOwnerPeerId === localPeerId) {
       // We had it, but the remote entry might steal it.
       if (isLocalEntryWinning(localEntry, remote)) continue;

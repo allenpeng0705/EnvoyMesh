@@ -1175,7 +1175,7 @@ const FederatedEntrySchema = z.object({
 
 ### Sprint 2:切到 adapter 路径;per-(peer, runtime, skill) reputation(3 周)
 
-> **状态(2026-08-18):reputation 融合 seam 进行中。** `chain-plan-assign.ts` 现在把 per-skill reputation(`PlanAssignRosterEntry.reputationBySkill`,软加项 `+0.2×rep`)融入 `scoreFor` / `bestPeerForRole`,并把它暴露在 Assigner prompt 里。喂给 roster 的三元组 `ArbitrationStore` 读取器(`chain-reputation-3tuple.ts`)还没写。
+> **状态(2026-08-18):reputation seam 已落地。** `chain-plan-assign.ts` 把 per-skill reputation(`PlanAssignRosterEntry.reputationBySkill`,软加项 `+0.2×rep`)融入 `scoreFor` / `bestPeerForRole`,并暴露在 Assigner prompt 里。三元组读取器(`chain-reputation-3tuple.ts` —— `ReputationBook3Tuple`、`scoreFromVerdicts` 带 recency + 防御性偏置)现在从拓宽后的 `ArbitrationStore`(`recordVerdictEntry` / `getVerdictsFor`)读 verdicts,Assigner roster 通过 `node-service-chain-orchestration.ts` 的 `deriveRosterReputation` 补全。`chain-sensitivity-gate.ts` 新增 `requiresReputationApproval`(public 永不 gate;friends ≥0.6;private ≥0.85 + ≥10 verdicts)。adapter 路径切换本身(Sprint 2 第 1 周)仍待做。
 
 第 1 周:切换 seam
 
@@ -1263,8 +1263,9 @@ const FederatedEntrySchema = z.object({
 | `packages/api/src/agent-network-settings.ts`(如果存在)| 加 `agentRuntime: AgentRuntime` 字段 |
 | `apps/node/src/node-service-chain-orchestration.ts`(line ~942,`executeSubtask` 接线)| 节点跑 MAP runtime 时,worker 侧执行器走 `chain-map.ts`(adapter 变体)(Sprint 1 影子 / Sprint 2 切换)|
 | `apps/node/src/chain-worker-executor.ts`(`createEngineChainSubtaskExecutor` 契约)| 与 adapter 共享 prompt/artifact 格式化;增加 adapter 执行器变体(Sprint 1)|
-| `apps/node/src/chain-arbitration.ts`(`ChainArbitrationEntry` 联合)| 加 `VerdictEntry` 作为成员(Sprint 2)|
-| `apps/node/src/chain-sensitivity-gate.ts` | 加 `requiresReputationApproval`(Sprint 2)|
+| `apps/node/src/chain-arbitration.ts`(`ChainArbitrationEntry` 联合)| 拓宽为 `ChainArbitrationEntry | VerdictEntry`;新增 `recordVerdictEntry` / `getVerdictsFor` + 类型守卫(Sprint 2)— **2026-08-18 完成** |
+| `apps/node/src/chain-reputation-3tuple.ts`(新)| `ReputationBook3Tuple`、`scoreFromVerdicts`(recency + 防御性偏置)、`deriveReputationBySkillForPeer`(Sprint 2)— **2026-08-18 完成** |
+| `apps/node/src/chain-sensitivity-gate.ts` | 加 `requiresReputationApproval`(Sprint 2)— **2026-08-18 完成** |
 | `apps/node/src/chain-budget-ledger.ts` | 加 `verificationReservedUsd` / `verificationCommittedUsd`(Sprint 3)|
 | `apps/node/src/chain-plan-assign.ts`(`scoreFor` / `bestPeerForRole`)| 把 3-tuple reputation 融入 role/skill 打分(Sprint 2)|
 | `apps/node/src/agent-chain-orchestrator.ts`(line 21,`ChainProvider` interface)| **死代码**(Phase 24B 遗留;生产没有任何地方 import `runAgentChain`)。新 manifest 优先于 `ChainProvider`;该遗留文件标记删除,不改(Sprint 2)|

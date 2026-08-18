@@ -102,7 +102,13 @@ import {
 import { dispatchChainEnvelope } from "./chain-inbound.js";
 import type { ChainInboundDeps } from "./chain-inbound-types.js";
 import { chainLog, chainWarn, shortPeerId } from "./chain-debug.js";
-import { applyArbitration, createArbitrationStore, type ArbitrationStore } from "./chain-arbitration.js";
+import {
+  applyArbitration,
+  createArbitrationStore,
+  getVerdictsFor,
+  type ArbitrationStore,
+} from "./chain-arbitration.js";
+import { deriveReputationBySkillForPeer } from "./chain-reputation-3tuple.js";
 import { signCanonicalPayload } from "@envoymesh/identity";
 import {
   handleWorkerAccept,
@@ -246,6 +252,20 @@ function getChainArbitrationStore(chainId: string): ArbitrationStore {
     chainArbitrationStores.set(chainId, store);
   }
   return store;
+}
+
+/**
+ * Sprint 2 MAP: derive a peer's per-skill reputation by aggregating verdicts
+ * across all chain arbitration stores. Returns `undefined` when the peer has
+ * no verdict history yet — the Assigner blend treats that as "unknown" and
+ * leaves the base score untouched.
+ */
+function deriveRosterReputation(peerId: string): Record<string, number> | undefined {
+  const verdicts: import("@envoymesh/protocol").VerdictEntry[] = [];
+  for (const store of chainArbitrationStores.values()) {
+    verdicts.push(...getVerdictsFor(store, { workerPeerId: peerId }));
+  }
+  return deriveReputationBySkillForPeer(verdicts, peerId);
 }
 
 export interface ChainOrchestrationContext {
@@ -1131,6 +1151,7 @@ async function buildLlmDecomposerAsync(
           isSelf,
           sameLan: r.sameLan === true || isSelf,
           scoreSummary: r.summary,
+          reputationBySkill: deriveRosterReputation(r.peerId),
         };
       });
     },

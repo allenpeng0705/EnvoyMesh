@@ -5,8 +5,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  MIN_REP_FOR_SENSITIVITY,
+  MIN_VERDICTS_FOR_PRIVATE,
   bondMaxSensitivity,
   requiresChainAwardApproval,
+  requiresReputationApproval,
 } from "../src/chain-sensitivity-gate.js";
 
 const mandate = {
@@ -43,5 +46,46 @@ describe("chain-sensitivity-gate", () => {
       required: true,
       reason: "worker bond is blocked",
     });
+  });
+});
+
+describe("requiresReputationApproval (Phase 41 progressive trust)", () => {
+  const friends = { ...mandate, maxSensitivity: "friends" as const };
+
+  it("public never gates on reputation", () => {
+    expect(
+      requiresReputationApproval({ ...mandate, maxSensitivity: "public" as const }, "pi", 0, 0),
+    ).toEqual({ required: false });
+  });
+
+  it("private requires ≥10 verdicts regardless of score", () => {
+    const gate = requiresReputationApproval(mandate, "pi", 0.95, 5);
+    expect(gate.required).toBe(true);
+    expect(gate.reason).toContain("verdicts");
+    expect(gate.reason).toContain(String(MIN_VERDICTS_FOR_PRIVATE));
+  });
+
+  it("friends requires 60%+ pass rate", () => {
+    expect(requiresReputationApproval(friends, "openclaw", 0.5, 50)).toEqual({
+      required: true,
+      reason: expect.stringContaining("0.6"),
+    });
+    expect(requiresReputationApproval(friends, "openclaw", 0.6, 50)).toEqual({
+      required: false,
+    });
+  });
+
+  it("private requires 85%+ with ≥10 verdicts", () => {
+    expect(requiresReputationApproval(mandate, "openclaw", 0.8, 12)).toEqual({
+      required: true,
+      reason: expect.stringContaining("0.85"),
+    });
+    expect(requiresReputationApproval(mandate, "openclaw", 0.85, 12)).toEqual({
+      required: false,
+    });
+  });
+
+  it("thresholds are exposed for tooling", () => {
+    expect(MIN_REP_FOR_SENSITIVITY).toEqual({ public: 0, friends: 0.6, private: 0.85 });
   });
 });
