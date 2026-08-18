@@ -397,6 +397,12 @@
     "@leichtgewicht/ip-codec" "^2.0.4"
     utf8-codec "^1.0.0"
 
+"@envoymesh/agent-adapter@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/agent-adapter":
+  version "0.2.2"
+  resolved "file:packages/agent-adapter"
+  dependencies:
+    "@envoymesh/protocol" "0.2.2"
+
 "@envoymesh/api@0.2.2", "@envoymesh/api@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/api":
   version "0.2.2"
   resolved "file:packages/api"

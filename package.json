@@ -9,6 +9,7 @@
   "workspaces": [
     "apps/*",
     "packages/api",
+    "packages/agent-adapter",
     "packages/bonds",
     "packages/identity",
     "packages/ipfs-helia",
