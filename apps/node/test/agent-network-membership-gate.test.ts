@@ -33,6 +33,8 @@ function makeDeps(
     selfAgentPeerId?: string;
     localWorkerCard?: (typeof cards)[number] | null;
     openClawReady?: boolean;
+    /** MAP — wire-received `adapter.manifest` broadcasts, keyed by agent peer id. */
+    remoteManifests?: Map<string, import("@envoymesh/protocol").SignedCapabilityManifest>;
   },
 ): ChainOrchestrationContext {
   const index = new AgentNetworkMembershipIndex();
@@ -68,6 +70,7 @@ function makeDeps(
       pendingBidExpirations: new Map(),
       trackAbort: new Map(),
       observedChains: new Map(),
+      remoteManifests: options?.remoteManifests ?? new Map(),
     }),
     getAgentNetworkWorkerEngine: () => "openclaw",
     isExtAgentBridgeReady: () => false,
@@ -427,5 +430,60 @@ describe("Agent Network worker discovery gate", () => {
     const ranked = await findAgentNetworkWorkersRanked(deps, "task.execute");
     expect(ranked[0]?.peerId).toBe("envoy_agent_self");
     expect(ranked[0]?.online).toBe(false);
+  });
+
+  it("prefers a fresh wire-broadcast manifest over card synthesis", async () => {
+    const wireManifests = new Map<string, import("@envoymesh/protocol").SignedCapabilityManifest>();
+    wireManifests.set("envoy_agent_remote", {
+      version: "0.1",
+      runtime: "pi",
+      runtimeVersion: "0.1.0",
+      peerId: "envoy_agent_remote",
+      ownerId: "envoy:owner:remote",
+      skills: [
+        {
+          skillId: "research",
+          description: "Attested Pi research skill",
+          costCeilingUsd: 1.5,
+          maxSensitivity: "friends",
+          tags: [],
+        },
+      ],
+      reputationBySkill: { research: 0.75 },
+      issuedAt: new Date(Date.now() - 30_000).toISOString(), // fresh within the 300s TTL
+      ttlSeconds: 300,
+      signature: "owner-signed",
+    });
+    const deps = makeDeps(
+      [
+        {
+          ownerId: "envoy:owner:remote",
+          displayName: "Remote",
+          membership: ["task.execute", "agent-network-worker"],
+          cachedAt: "2026-07-22T00:00:00.000Z",
+          sourceAgentPeerId: "envoy_agent_remote",
+          agentNetworkProfile: {
+            modelFreshness: 1,
+            spendPosture: "subscription",
+            contextWindow: "1M+",
+            skills: ["research"],
+          },
+        },
+      ],
+      {
+        selfAgentPeerId: "envoy_agent_self",
+        connectedLibp2pByOwnerId: {
+          "envoy:owner:remote": "12D3KooWRemotePeerxxxxxxx",
+        },
+        remoteManifests: wireManifests,
+      },
+    );
+    const ranked = await findAgentNetworkWorkersRanked(deps, "research");
+    const remote = ranked.find((r) => r.peerId === "envoy_agent_remote");
+    // The wire broadcast wins over the card-synthesized manifest: Pi runtime,
+    // the attested reputation, and the described skill.
+    expect(remote!.manifest!.runtime).toBe("pi");
+    expect(remote!.manifest!.reputationBySkill.research).toBe(0.75);
+    expect(remote!.manifest!.skills[0].description).toBe("Attested Pi research skill");
   });
 });

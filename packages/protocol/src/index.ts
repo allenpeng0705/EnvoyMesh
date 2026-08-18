@@ -104,6 +104,9 @@ export const EnvoyIntentSchema = z.enum([
   "feed.notify",
   // Feed/Blog star + comments (bonded human↔human).
   "feed.engage",
+  // MAP — periodic owner-signed capability manifest broadcast (Sprint 3).
+  // Payload: SignedCapabilityManifest. agent→agent.
+  "adapter.manifest",
 ]);
 
 export const SensitivitySchema = z.enum(["public", "friends", "trusted", "private"]);

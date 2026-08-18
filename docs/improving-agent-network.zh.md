@@ -1049,7 +1049,7 @@ orchestrator.trackChain(step, result)
       └─► 返回给 owner 人类评审
 ```
 |
-|> **状态 2026-08-18:** `CrossAgentDisagreementVerifier` 首版(`packages/agent-adapter/src/cross-agent-verifier.ts`)与节点侧 host seam(`apps/node/src/pi-map-adapter.ts`)已落地并通过测试。升级 *调用方* —— orchestrator 在 `criticality == 'high'` 或收到 `partial` 时分支到第二个 runtime —— 仍在待做(第 2-3 周)。
+|> **状态 2026-08-18:** `CrossAgentDisagreementVerifier` 首版(`packages/agent-adapter/src/cross-agent-verifier.ts`)与节点侧 host seam(`apps/node/src/pi-map-adapter.ts`)已落地并通过测试。**升级调用方已接线(同日):** `apps/node/src/chain-verify-loop.ts`(`runChainVerificationLoop`)在 `handleOrchestratorPartial` 收到最终 partial 时运行 —— 把 partial 重打包为 `SignedAgentResult`,跑 adapter 的 rule verifier,向链的 `ArbitrationStore` 写入 `rule` `VerdictEntry`(权威 reputation 写入),在 `partial`/`disputed` 时升级到第二个不同 runtime(由 ledger 的 `verificationReservedUsd`/`verificationCommittedUsd` 预算;预算不足则降级为仅 rule)并写入 `cross` `VerdictEntry`。今天的升级触发条件:`maxSensitivity: "private"` 且 `maxChainCostUsd ≥ $20` 的链上出现 `partial`/`disputed` rule verdict,或 owner `criticality: "high"` 提示(设置它的 owner-UI 接线是剩下的第 2-3 周事项)。
 
 ---
 
@@ -1177,7 +1177,7 @@ const FederatedEntrySchema = z.object({
 
 > **状态(2026-08-18):Sprint 2 seam 完成。** Reputation:`chain-plan-assign.ts` 把 per-skill reputation(`PlanAssignRosterEntry.reputationBySkill`,软加项 `+0.2×rep`)融入 `scoreFor` / `bestPeerForRole`;三元组读取器(`chain-reputation-3tuple.ts`)从拓宽后的 `ArbitrationStore`(`recordVerdictEntry` / `getVerdictsFor`)派生分数;roster 通过 `deriveRosterReputation` 补全;`chain-sensitivity-gate.ts` 新增 `requiresReputationApproval`。Seam 切换:`executeSubtask` 现在在 `useMAP` 开启时把 OpenClaw 子任务路由到 adapter 执行器(primary;shadow/legacy 保留),并通过 `buildSubtaskPromptForAdapter` 保留 legacy prompt 面(constraints/role/thread/brief-report 策略)。Orchestrator 池:`findWorkers` 新增携带 manifest 的 worker 池(`findWorkersWithManifests` / `resolveWorkerPool`;`ChainRankedWorker.manifest` 通过 `manifestFromAgentNetworkProfile` 从卡片 profile 合成)。Merge 统一:`synthesizeChain` 消费归一化 `ContentBlock[]` — `chain-map.ts` 拥有 artifact↔block 双向映射(`resultArtifactsToContentBlocks` / `contentBlocksToResultArtifacts`)与唯一文本投影(`contentBlocksToText`),legacy 与 adapter partial 以同一类型化货币进入 merge 步骤;`WorkerContribution` 携带 `contentBlocks`,LLM merge adapter 优先使用 block 投影。Roll out:`NodeConfig.useMAP` opt-in(Agent Network 设置 UI 开关)+ 实时 `ENVOYMESH_MAP_ROLLBACK=1` 回滚开关。
 >
-> **已知缺口(有意为之):**(1) **Verdict 写入路径** — 尚无生产代码写 `VerdictEntry`;权威写入方是 orchestrator 的验证流程(Sprint 3 跨 agent 验证)。worker 侧 `adapter.verify` 保持 advisory(§7.1 拒绝自报 reputation)。在此之前 3-tuple 读取器与 `requiresReputationApproval` 处于休眠状态。(2) **Manifest 池消费者** — `findWorkersWithManifests` / `resolveWorkerPool` 已就绪但尚未被 proposal/award 流程调用(该流程从 assigner roster 解析 worker);wire 广播 manifest 落地后即生效。
+> **已知缺口(有意为之):**(1) **Verdict 写入路径** — 尚无生产代码写 `VerdictEntry`;权威写入方是 orchestrator 的验证流程(Sprint 3 跨 agent 验证)。worker 侧 `adapter.verify` 保持 advisory(§7.1 拒绝自报 reputation)。在此之前 3-tuple 读取器与 `requiresReputationApproval` 处于休眠状态。(2) ~~Manifest 池消费者~~ **2026-08-18 已落地(first cut)** — `adapter.manifest` 广播已上线(`agent-adapter-broadcast.ts` + `handleInboundCapabilityManifest` → `ChainSideState.remoteManifests`),`findAgentNetworkWorkersRanked` 优先使用新鲜的 wire manifest 而非卡片合成,`findWorkersWithManifests` / `resolveWorkerPool` 已基于真实 wire 数据生效。加固项(首次接收时 owner 签名校验、manifest TTL 清理)留作后续。
 
 第 1 周:切换 seam
 
@@ -1203,14 +1203,16 @@ const FederatedEntrySchema = z.object({
 
 - 加 `packages/agent-adapter/src/pi-adapter.ts` — **首版完成 2026-08-18**
 - Pi 特有 verifier(命令序列、loop 检测)— **完成 2026-08-18**
-- 节点侧接线 `apps/node/src/pi-map-adapter.ts`(`createPiAdapterFromHost`)— **完成 2026-08-18**。线上路径目前只有 tool-call 计数、没有 trace,所以 Pi verifier 以 `confidence: "low"` 通过;Pi runtime 暴露 trace 后 loop/命令检查即生效。
+- 节点侧接线 `apps/node/src/pi-map-adapter.ts`(`createPiAdapterFromHost`)— **完成 2026-08-18**。Pi runtime 现在把 `tool_use_start` 事件记录进 `PiPromptResult.toolTrace`(转发进 `PiRunResult.trace`),Pi verifier 的 loop/命令序列检查在真实 trace 上生效(干净 trace 为 `confidence: "medium"`;只有 Pi 没发起任何 tool call 时才回落 "low")。
 - 测试:跟 Hermes/OpenClaw 同一任务对比 — 包级与节点级测试已完成;并排 harness 待做
 
 第 2-3 周:跨 agent 验证
 
-- `CrossAgentDisagreementVerifier`
-- `chain-budget-ledger.ts` 里的 verification budget
-- Owner UI:在 chain proposal 里标记 `criticality: 'high'`
+- `CrossAgentDisagreementVerifier` — **首版完成 2026-08-18**
+- **验证循环接线(`apps/node/src/chain-verify-loop.ts`)— 首版完成 2026-08-18**:`runChainVerificationLoop` 从 `handleOrchestratorPartial` 调用;写 `rule`/`cross` `VerdictEntry` 到 `ArbitrationStore`;按需升级到第二个 runtime。
+- **verification budget(`chain-budget-ledger.ts` 的 `verificationReservedUsd` / `verificationCommittedUsd`)— 完成 2026-08-18**(`reserveVerification` / `tryCommitVerification` / `releaseVerification` + 快照;`committedTotal` / `headroom` / `projectedSpend` 均计入验证成本)。
+- Owner UI:在 chain proposal 里标记 `criticality: 'high'` — 待做
+- **Manifest 广播(`apps/node/src/agent-adapter-broadcast.ts`)— 首版完成 2026-08-18**:协议新增 `adapter.manifest` intent(agent→agent);节点用 `buildSignedCapabilityManifest` 构建 owner 签名的 `SignedCapabilityManifest`,通过 `startManifestBroadcaster`(node 启动时拉起)每 TTL/2 推送给 bonded peers。入站:`handleInboundCapabilityManifest` 用 contact-owner key store 校验 owner 签名、新鲜度后存入 `ChainSideState.remoteManifests`;`findAgentNetworkWorkersRanked` 现在优先用新鲜的 wire manifest 而非卡片合成 — manifest-carrying worker 池**已生效**。
 
 第 3-4 周:联邦 scoreboard(初始)
 
@@ -1252,12 +1254,14 @@ const FederatedEntrySchema = z.object({
 | `packages/agent-adapter/src/verifier-rules/markdown-structure.ts` | 60 | 一条规则,export |
 | `packages/agent-adapter/src/verifier-rules/owner-allowed-topics.ts` | 80 | 一条规则,owner-policy-aware |
 | `packages/agent-adapter/test/openclaw-adapter.test.ts` | 250 | Adapter + verifier 测试 |
-| `apps/node/src/agent-adapter-broadcast.ts` | 120 | 周期 manifest 广播 |
+| `apps/node/src/agent-adapter-broadcast.ts` | 120 | 周期 manifest 广播 — **2026-08-18 done** |
+| `apps/node/src/agent-adapter-manifest-inbound.ts` | 120 | 入站 `adapter.manifest` 校验 + 存储 — **2026-08-18 done** |
 | `apps/node/src/chain-map.ts` | 220 | MAP interop 层 —— worker 侧桥梁:`ChainSubtask → ExecuteInput`、`SignedAgentResult → ChainSubtaskPartial`、advisory verify 闸门(Sprint 1)|
 | `apps/node/test/chain-map.test.ts` | 150 | chain-map 桥梁 + 影子模式等价性测试 |
 | `packages/agent-adapter/src/pi-adapter.ts` | 260 | Pi runtime adapter + Pi 特有 verifier(loop、命令序列)(Sprint 3)— **2026-08-18 完成** |
 | `packages/agent-adapter/src/cross-agent-verifier.ts` | 130 | 双 runtime 分歧 verifier(Sprint 3)— **2026-08-18 完成** |
 | `apps/node/src/pi-map-adapter.ts` | 70 | Host→Pi adapter 接线 seam(Sprint 3)— **2026-08-18 完成** |
+| `apps/node/src/chain-verify-loop.ts` | 210 | orchestrator 侧验证循环:`runChainVerificationLoop`、`shouldEscalateToCrossAgent`、`combineToVerdict`(Sprint 3)— **2026-08-18 完成** |
 
 **Sprint 1 总计:~1700 行,主要是测试。**
 
@@ -1272,7 +1276,7 @@ const FederatedEntrySchema = z.object({
 | `apps/node/src/chain-arbitration.ts`(`ChainArbitrationEntry` 联合)| 拓宽为 `ChainArbitrationEntry | VerdictEntry`;新增 `recordVerdictEntry` / `getVerdictsFor` + 类型守卫(Sprint 2)— **2026-08-18 完成** |
 | `apps/node/src/chain-reputation-3tuple.ts`(新)| `ReputationBook3Tuple`、`scoreFromVerdicts`(recency + 防御性偏置)、`deriveReputationBySkillForPeer`(Sprint 2)— **2026-08-18 完成** |
 | `apps/node/src/chain-sensitivity-gate.ts` | 加 `requiresReputationApproval`(Sprint 2)— **2026-08-18 完成** |
-| `apps/node/src/chain-budget-ledger.ts` | 加 `verificationReservedUsd` / `verificationCommittedUsd`(Sprint 3)|
+| `apps/node/src/chain-budget-ledger.ts` | 加 `verificationReservedUsd` / `verificationCommittedUsd`(Sprint 3)— **2026-08-18 完成** |
 | `apps/node/src/chain-plan-assign.ts`(`scoreFor` / `bestPeerForRole`)| 把 3-tuple reputation 融入 role/skill 打分(Sprint 2)— **2026-08-18 完成** |
 | `apps/node/src/chain-orchestrator.ts`(`findWorkers` seam)| 携带 manifest 的 worker 池:`ChainWorkerManifestEntry`、`findWorkersWithManifests?`、`resolveWorkerPool`(Sprint 2)— **2026-08-18 完成** |
 | `packages/api/src/ws-protocol.ts`(`NodeConfig`)| 加 `useMAP?: boolean` opt-in(Sprint 2 第 3 周)— **2026-08-18 完成**;实时回滚用 `ENVOYMESH_MAP_ROLLBACK=1` |

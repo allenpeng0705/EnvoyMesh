@@ -1851,6 +1851,29 @@ async function handleInboundMeshMessage({
     return;
   }
 
+  // MAP — periodic owner-signed capability manifest broadcast (adapter.manifest).
+  if (envelope.intent === "adapter.manifest" && nodeService instanceof NodeServiceImpl) {
+    const handled = await nodeService.handleInboundCapabilityManifest(envelope);
+    if (handled) {
+      void taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.verified",
+          intent: envelope.intent,
+          messageId: envelope.messageId,
+          correlationId: envelope.correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "verified",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "allow",
+          summary: "Handled adapter.manifest.",
+          createdAt: envelope.createdAt,
+        }),
+      );
+    }
+    return;
+  }
+
   if (envelope.intent === "chat.room.sync" && nodeService instanceof NodeServiceImpl) {
     await handleChatRoomSyncViaRuntime(
       {
@@ -4306,6 +4329,19 @@ if (args.enableRelay || args.enableRelayServer) {
   }
   scheduleRelayManagerSnapshot();
 }
+}
+
+// MAP — periodic owner-signed capability manifest broadcast to bonded peers
+// (activates the wire-manifest worker pool; see agent-adapter-broadcast.ts).
+if (nodeService instanceof NodeServiceImpl && mesh) {
+  void nodeService
+    .startManifestBroadcaster(mesh)
+    .catch((error) =>
+      console.warn(
+        "[adapter.manifest] broadcaster start failed:",
+        error instanceof Error ? error.message : error,
+      ),
+    );
 }
 
 // ─── Discovery Queue Processor (Phase 8I: low-priority queue for anonymous discovery) ───

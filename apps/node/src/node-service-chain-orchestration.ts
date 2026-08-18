@@ -22,7 +22,7 @@ import type {
   NodeProfile,
   NodeServiceEvents,
 } from "@envoymesh/api";
-import type { ChainReport, ChainSubtask, ChainSubtaskBid, EnvoyEnvelope, EnvoyIntent } from "@envoymesh/protocol";
+import type { ChainReport, ChainSubtask, ChainSubtaskBid, EnvoyEnvelope, EnvoyIntent, AgentRuntime } from "@envoymesh/protocol";
 import { ChainHandoffRequestPayloadSchema, ChainSubtaskSchema } from "@envoymesh/protocol";
 import { createApprovalItem, isAgentNetworkMember, rankWorkersByScore, scoreAgentNetworkWorker } from "@envoymesh/api";
 import { hasDirectPrivateLanDialHints, type EnvoyMesh } from "@envoymesh/network";
@@ -106,6 +106,7 @@ import {
   applyArbitration,
   createArbitrationStore,
   getVerdictsFor,
+  recordVerdictEntry,
   type ArbitrationStore,
 } from "./chain-arbitration.js";
 import { deriveReputationBySkillForPeer } from "./chain-reputation-3tuple.js";
@@ -133,6 +134,7 @@ import {
   createMapChainSubtaskExecutor,
   manifestFromAgentNetworkProfile,
 } from "./chain-map.js";
+import { isManifestFresh } from "./agent-adapter-manifest-inbound.js";
 import { OpenClawAdapter } from "@envoymesh/agent-adapter";
 import { requiresChainAwardApproval } from "./chain-sensitivity-gate.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
@@ -204,6 +206,13 @@ export interface ChainSideState {
   lastStatusBroadcastAt: Map<string, number>;
   /** Cached `task.chain.ready` probe results (worker peer id → ready). */
   readyProbeCache: Map<string, ChainReadyProbeCacheEntry>;
+  /**
+   * MAP — wire-received `adapter.manifest` broadcasts, keyed by the sender's
+   * agent peerId. Populated by `handleInboundCapabilityManifest`; consumed by
+   * `findAgentNetworkWorkersRanked` (preferred over card synthesis) and
+   * `resolveWorkerPool`.
+   */
+  remoteManifests: Map<string, import("@envoymesh/protocol").SignedCapabilityManifest>;
   /** Phase 59E — chainIds whose job input workspace was already GC'd. */
   inputGcDone: Set<string>;
 }
@@ -1434,6 +1443,45 @@ export async function buildChainOrchestratorDeps(
         onUpdate: () => _emitChainState(deps, state.chainId),
       });
     },
+    // Phase 41 / MAP — orchestrator-side verification loop (design §8.3).
+    // Additive: when no adapter matches the worker's runtime (or OpenClaw is
+    // not ready), the loop records nothing and never changes the deliverable
+    // flow. Escalation to a second runtime requires a distinct runtime in
+    // `listRuntimes` (today: OpenClaw, which cross-checks Pi/remote results).
+    chainVerify: {
+      audit: {
+        record: (event) => {
+          void _appendChainAudit(deps, {
+            ...event,
+            type: event.type as AuditEventType,
+          });
+        },
+      },
+      orchestratorPeerId: agentIdentity.agentPeerId,
+      signingKeyPem: agentIdentity.agentPrivateKeyPem,
+      writeVerdictEntry: (chainId, entry) => {
+        const store = getChainArbitrationStore(chainId);
+        chainArbitrationStores.set(chainId, recordVerdictEntry(store, entry));
+      },
+      resolveWorkerRuntime: (workerPeerId) =>
+        deps.getChainSideState().remoteManifests.get(workerPeerId)?.runtime,
+      listRuntimes: () => (deps.isOpenClawReady() ? (["openclaw"] as AgentRuntime[]) : []),
+      buildAdapter: (runtime, subtask) => {
+        if (runtime !== "openclaw" || !deps.isOpenClawReady()) return undefined;
+        return new OpenClawAdapter({
+          askViaRuntime: (prompt) => deps.askOpenClaw(prompt),
+          isReady: () => deps.isOpenClawReady(),
+          workerPeerId: agentIdentity.agentPeerId,
+          // Same prompt surface the worker used (constraints / role / thread /
+          // brief-report policy) so the cross run answers the same mandate.
+          buildPrompt: buildSubtaskPromptForAdapter(subtask),
+          signResult: (unsigned) => ({
+            ...unsigned,
+            signature: signCanonicalPayload(unsigned, agentIdentity.agentPrivateKeyPem),
+          }),
+        });
+      },
+    },
   };
 }
 
@@ -1696,6 +1744,16 @@ export async function findAgentNetworkWorkersRanked(
       displayName: card?.displayName,
       sameLan,
     });
+    // MAP: prefer a fresh wire-broadcast manifest over the card synthesis
+    // (the broadcast carries the owner-signed runtime/skills/reputation).
+    const wireManifest = deps.getChainSideState().remoteManifests.get(peerId);
+    const manifest = wireManifest && isManifestFresh(wireManifest)
+      ? wireManifest
+      : manifestFromAgentNetworkProfile(
+          card?.agentNetworkProfile,
+          peerId,
+          card?.ownerId ?? "",
+        );
     return {
       peerId,
       score: result.score,
@@ -1703,11 +1761,7 @@ export async function findAgentNetworkWorkersRanked(
       sameLan,
       online,
       viaRelay,
-      manifest: manifestFromAgentNetworkProfile(
-        card?.agentNetworkProfile,
-        peerId,
-        card?.ownerId ?? "",
-      ),
+      manifest,
     };
   });
   const filtered =

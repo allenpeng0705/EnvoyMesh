@@ -90,6 +90,7 @@ import {
   resultArtifactsToContentBlocks,
 } from "./chain-map.js";
 import { shouldSkipWorkerForEngineProbe } from "./chain-ready-probe.js";
+import { runChainVerificationLoop } from "./chain-verify-loop.js";
 import {
   buildJobInputFileArtifacts,
   jobInputsReadyForAward,
@@ -230,6 +231,14 @@ export interface ChainOrchestratorHandlerDeps extends ChainOrchestratorSendDeps 
     subtaskId: string,
     workerPeerId: string,
   ) => void | Promise<void>;
+  /**
+   * Phase 41 / MAP — orchestrator-side verification loop (design §8.3). When
+   * present, `handleOrchestratorPartial` records verdicts on final partials
+   * and escalates to cross-agent verification on `partial`/`disputed` rule
+   * verdicts for critical or private-and-expensive chains. Absent → the loop
+   * is inert (no verdicts, no budget, no escalation).
+   */
+  chainVerify?: import("./chain-verify-loop.js").ChainVerifyLoopDeps;
 }
 
 // ---------------------------------------------------------------------------
@@ -2306,6 +2315,26 @@ export async function handleOrchestratorPartial(
       // No backup: keep Failed final so the report can surface it; do not
       // advance dependents as if the step succeeded.
       return { ok: true };
+    }
+    // Phase 41 / MAP — orchestrator-side verification loop (design §8.3).
+    // Records verdicts into the arbitration store; escalates to a second
+    // runtime when the rule verdict is partial/disputed on a critical or
+    // private-and-expensive chain. Never throws.
+    if (deps.chainVerify) {
+      try {
+        await runChainVerificationLoop(deps.chainVerify, state, envelope, payload);
+      } catch (err) {
+        deps.audit.record({
+          type: "chain.verify_error",
+          outcome: "record",
+          intent: "task.chain.partial",
+          remotePeerId: envelope.senderPeerId,
+          correlationId: envelope.correlationId,
+          summary:
+            `subtask=${payload.partial.subtaskId} ` +
+            (err instanceof Error ? err.message : String(err)),
+        });
+      }
     }
     await advanceReadySubtasks(deps, state);
   }

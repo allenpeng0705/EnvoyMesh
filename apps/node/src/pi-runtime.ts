@@ -36,6 +36,7 @@ import type {
   PiModelOverride,
   PiPromptResult,
   PiResponse,
+  PiToolTraceCall,
 } from "@envoymesh/api"
 import type { ModelProviderConfig } from "@envoymesh/api"
 
@@ -992,6 +993,7 @@ export class PiRuntime extends EventEmitter {
   private async promptUnlocked(text: string): Promise<PiPromptResult> {
     let collected = ""
     let toolCallCount = 0
+    const toolTrace: PiToolTraceCall[] = []
     let model: string | undefined
     let cancelled = false
 
@@ -1015,7 +1017,14 @@ export class PiRuntime extends EventEmitter {
           if (!collected.trim() && typeof ame.message === "string" && ame.message.trim()) {
             collected = `⚠️ ${ame.message.trim()}`
           }
-        } else if (ame.type === "tool_use_start" || ame.type === "toolcall_start") {
+        } else if (ame.type === "tool_use_start") {
+          toolCallCount += 1
+          const args = ame.input
+          toolTrace.push({
+            tool: ame.toolName,
+            ...(args && typeof args === "object" ? { args: args as Record<string, unknown> } : {}),
+          })
+        } else if (ame.type === "toolcall_start") {
           toolCallCount += 1
         }
       } else if (event.type === "message_end") {
@@ -1115,7 +1124,7 @@ export class PiRuntime extends EventEmitter {
           "prompt finished with empty assistant text (check model output / stopReason)",
         )
       }
-      return { text: collected, model, toolCallCount, cancelled }
+      return { text: collected, model, toolCallCount, toolTrace, cancelled }
     } catch (err) {
       try {
         await this.send({ type: "abort" })

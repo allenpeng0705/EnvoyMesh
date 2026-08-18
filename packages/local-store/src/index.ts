@@ -299,6 +299,12 @@ export type AuditEventType =
   // Phase 41 — Mesh Adapter Pattern (MAP): shadow-mode comparison of the
   // adapter path vs the legacy engine path on the worker side.
   | "chain.map_shadow"
+  // Phase 41 / MAP — orchestrator-side verification loop (design §8.3):
+  // verdicts recorded on final partials + cross-agent escalation outcomes.
+  | "chain.verify_rule"
+  | "chain.verify_cross"
+  | "chain.verify_budget_denied"
+  | "chain.verify_error"
   // Phase 45 — Web Content Browsing.
   | "library.read"
   | "library.read.served"

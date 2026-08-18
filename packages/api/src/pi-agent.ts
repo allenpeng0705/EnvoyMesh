@@ -215,8 +215,23 @@ export interface PiPromptResult {
   model?: string
   /** Number of tool calls made during the turn. */
   toolCallCount: number
+  /**
+   * The tool calls made during the turn, in order. Populated from
+   * `tool_use_start` events (tool name + args). Feed this into the MAP
+   * Pi adapter's `PiRunResult.trace` so the behavioral verifier (loop /
+   * destructive-command detection) can run on live traces.
+   */
+  toolTrace?: PiToolTraceCall[]
   /** Whether the turn was cancelled before completion. */
   cancelled: boolean
+}
+
+/** One tool call recorded during a Pi turn (MAP `PiTraceCall` shape). */
+export interface PiToolTraceCall {
+  /** Tool name, e.g. "bash", "read", "write", "edit". */
+  tool: string
+  /** Tool arguments, when the event carried them. */
+  args?: Record<string, unknown>
 }
 
 /** EnvoyMesh-style modes allowed for a Pi-only model override. */

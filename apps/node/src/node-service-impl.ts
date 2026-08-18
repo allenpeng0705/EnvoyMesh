@@ -573,6 +573,12 @@ import { buildAgentAttachmentContext } from "./agent-attachment-context.js";
 import type { BridgeConfig } from "./bridge/config.js";
 import { forwardToAgent, receiveFromAgent } from "./bridge/index.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
+import { OPENCLAW_SKILLS, PI_SKILLS } from "@envoymesh/agent-adapter";
+import {
+  buildSignedCapabilityManifest,
+  startManifestBroadcaster,
+  type ManifestBroadcastMesh,
+} from "./agent-adapter-broadcast.js";
 import {
   coerceAgentNetworkWorkerEngine,
   type AgentNetworkWorkerEngine,
@@ -1099,6 +1105,7 @@ import {
   snapshotToResult,
   type ChainOrchestrationContext,
 } from "./node-service-chain-orchestration.js";
+import { handleInboundCapabilityManifest } from "./agent-adapter-manifest-inbound.js";
 
 import {
   buildAgentPassesContext,
@@ -1603,6 +1610,7 @@ class NodeServiceImpl implements NodeService {
     observedChains: new Map(),
     lastStatusBroadcastAt: new Map<string, number>(),
     readyProbeCache: new Map(),
+    remoteManifests: new Map(),
     inputGcDone: new Set<string>(),
   } as const;
 
@@ -12741,6 +12749,90 @@ class NodeServiceImpl implements NodeService {
 
   async handleInboundChainEnvelope(envelope: EnvoyEnvelope): Promise<void> {
     return handleInboundChainEnvelope(this._chainOrchestrationContext(), envelope);
+  }
+
+  /** MAP — inbound `adapter.manifest` broadcast (owner-signed capability manifest). */
+  async handleInboundCapabilityManifest(envelope: EnvoyEnvelope): Promise<boolean> {
+    const contactStore = this._identityContext().getContactOwnerKeyStore();
+    if (!contactStore) return false;
+    const result = await handleInboundCapabilityManifest({
+      envelope,
+      store: this._chainOrchestrationContext().getChainSideState().remoteManifests,
+      getOwnerPublicKey: async (ownerId) => {
+        const row = await contactStore.get(ownerId);
+        return row?.ownerPublicKeyPem;
+      },
+    });
+    if (!result.handled) {
+      console.warn(
+        `[adapter.manifest] dropped from ${envelope.senderPeerId.slice(0, 16)}…: ${result.reason}`,
+      );
+    }
+    return result.handled;
+  }
+
+  /**
+   * MAP — start the periodic owner-signed manifest broadcast to bonded peers.
+   * No-op (returns undefined) when the agent identity or profile is missing.
+   * Callers should retain the returned `{ stop }` to shut the broadcaster down.
+   */
+  async startManifestBroadcaster(
+    mesh: EnvoyMesh,
+    opts?: { intervalMs?: number },
+  ): Promise<{ stop: () => void } | undefined> {
+    const profile = this.getProfile();
+    const agentIdentity = await this._ensureAgentIdentity();
+    if (!profile || !agentIdentity) {
+      console.warn("[adapter.manifest] broadcaster skipped: agent identity/profile unavailable");
+      return undefined;
+    }
+    const skills = await this._localManifestSkills();
+    const runtime = skills === PI_SKILLS ? "pi" : "openclaw";
+    const manifest = buildSignedCapabilityManifest({
+      profile,
+      agentPeerId: agentIdentity.agentPeerId,
+      skills,
+      runtime,
+      runtimeVersion: "mesh-broadcast",
+    });
+    const identityCtx = this._identityContext();
+    return startManifestBroadcaster({
+      mesh: mesh as ManifestBroadcastMesh,
+      manifest,
+      agentPublicKeyPem: agentIdentity.agentPublicKeyPem,
+      agentPrivateKeyPem: agentIdentity.agentPrivateKeyPem,
+      bondOwnerIds: async () => {
+        const bonds = await this.getBonds();
+        return bonds
+          .map((b) => b.peerOwnerId)
+          .filter((id): id is string => Boolean(id));
+      },
+      resolveLibp2pPeer: async (ownerId) => {
+        const resolved = await identityCtx.resolveLibp2pPeerForBondOwner(ownerId);
+        if (!resolved) return undefined;
+        return { peerId: resolved.transportPeerId, listenAddrs: resolved.listenAddrs };
+      },
+      dialHintsFor: (peerId, listenAddrs) => identityCtx.dialHintsForChat(peerId, listenAddrs),
+      intervalMs: opts?.intervalMs,
+      onError: (err) =>
+        console.warn(
+          "[adapter.manifest] broadcast cycle failed:",
+          err instanceof Error ? err.message : err,
+        ),
+    });
+  }
+
+  /** Skills for the node's own manifest, from the primary MAP runtime. */
+  private async _localManifestSkills(): Promise<import("@envoymesh/protocol").SkillDescriptor[]> {
+    if (this.getAgentNetworkWorkerEngine() === "ext") {
+      try {
+        const piStatus = await this.getPiStatus();
+        if (piStatus.enabled) return PI_SKILLS;
+      } catch {
+        /* fall through to the canonical default */
+      }
+    }
+    return OPENCLAW_SKILLS;
   }
 
   /** Same-stream reply for Assigner `task.chain.ready.request` (AN engine hello). */

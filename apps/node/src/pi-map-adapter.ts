@@ -6,11 +6,10 @@
  * node's existing Pi runtime surface (`PiRuntime.prompt`, exposed via
  * `askPiViaRuntime` in `node-service-pi.ts`) into that contract.
  *
- * **Trace limitation (by design):** `PiPromptResult` exposes a tool-call
- * *count* but not tool names, so the live path produces results without a
- * tool trace. The Pi verifier then passes with `confidence: "low"` instead
- * of running loop / command-sequence checks. When the Pi runtime exposes
- * the trace (future), extend `promptTrace` to collect it.
+ * **Trace:** the Pi runtime now records `tool_use_start` events into
+ * `PiPromptResult.toolTrace`, forwarded here into `PiRunResult.trace`. The
+ * Pi verifier therefore runs its behavioral checks (loop / destructive
+ * command detection) on live traces.
  *
  * Design doc: `docs/improving-agent-network.en.md` §5.3.
  */
@@ -43,6 +42,9 @@ export function createPiAdapterFromHost(host: PiMapHost): PiAdapter {
       const run: PiRunResult = {
         summary: r.cancelled && !summary ? "(cancelled)" : summary,
       };
+      if (r.toolTrace && r.toolTrace.length > 0) {
+        run.trace = r.toolTrace;
+      }
       return run;
     },
   });

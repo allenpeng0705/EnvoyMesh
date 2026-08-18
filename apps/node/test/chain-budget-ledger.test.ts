@@ -353,3 +353,95 @@ describe("createChainBudgetLedger", () => {
     expect(ledger.snapshot().reservedUsd).toBeLessThanOrEqual(4);
   });
 });
+
+describe("createChainBudgetLedger verification budget (Phase 41 / MAP)", () => {
+  it("starts with zero verification spend", () => {
+    const ledger = createChainBudgetLedger(mandate());
+    const snap = ledger.snapshot();
+    expect(snap.verificationReservedUsd).toBe(0);
+    expect(snap.verificationCommittedUsd).toBe(0);
+    expect(snap.verificationAllocations.size).toBe(0);
+  });
+
+  it("reserveVerification succeeds within budget", async () => {
+    const ledger = createChainBudgetLedger(mandate());
+    const r = await ledger.reserveVerification("subtask_a", 2);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value).toBe(2);
+    const snap = ledger.snapshot();
+    expect(snap.verificationReservedUsd).toBe(2);
+    expect(snap.verificationAllocations.get("subtask_a")?.reservedUsd).toBe(2);
+  });
+
+  it("reserveVerification fails when it would push aggregate spend past maxChainCostUsd", async () => {
+    const ledger = createChainBudgetLedger(mandate({ maxChainCostUsd: 5 }));
+    await ledger.reserve("s1", "p1", 3);
+    // 3 committed-spend + 3 verification reserve would be 6 > 5.
+    const r = await ledger.reserveVerification("s1", 3);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/maxChainCostUsd/);
+  });
+
+  it("verification reservation shares the budget with worker awards", async () => {
+    const ledger = createChainBudgetLedger(mandate({ maxChainCostUsd: 5 }));
+    await ledger.reserveVerification("s1", 3);
+    // 3 verification reserve + 3 worker reserve = 6 > 5.
+    const r = await ledger.reserve("s2", "p1", 3);
+    expect(r.ok).toBe(false);
+  });
+
+  it("tryCommitVerification moves reserved → committed", async () => {
+    const ledger = createChainBudgetLedger(mandate());
+    await ledger.reserveVerification("subtask_a", 2);
+    const r = await ledger.tryCommitVerification("subtask_a");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value).toBe(2);
+    const snap = ledger.snapshot();
+    expect(snap.verificationReservedUsd).toBe(0);
+    expect(snap.verificationCommittedUsd).toBe(2);
+    expect(snap.verificationAllocations.get("subtask_a")?.committedUsd).toBe(2);
+  });
+
+  it("tryCommitVerification is idempotent", async () => {
+    const ledger = createChainBudgetLedger(mandate());
+    await ledger.reserveVerification("subtask_a", 2);
+    await ledger.tryCommitVerification("subtask_a");
+    const second = await ledger.tryCommitVerification("subtask_a");
+    expect(second.ok).toBe(true);
+    if (second.ok) expect(second.value).toBe(2);
+    expect(ledger.snapshot().verificationCommittedUsd).toBe(2); // not double-counted
+  });
+
+  it("tryCommitVerification without a prior reservation fails", async () => {
+    const ledger = createChainBudgetLedger(mandate());
+    const r = await ledger.tryCommitVerification("missing");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/no verification reservation/);
+  });
+
+  it("releaseVerification returns the un-committed portion to free budget", async () => {
+    const ledger = createChainBudgetLedger(mandate());
+    await ledger.reserveVerification("subtask_a", 2);
+    const r = await ledger.releaseVerification("subtask_a", "escalation skipped");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value).toBe(2);
+    const snap = ledger.snapshot();
+    expect(snap.verificationReservedUsd).toBe(0);
+    expect(snap.verificationAllocations.size).toBe(0);
+  });
+
+  it("releaseVerification on a missing slot is a no-op", async () => {
+    const ledger = createChainBudgetLedger(mandate());
+    const r = await ledger.releaseVerification("missing", "nothing to release");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value).toBe(0);
+  });
+
+  it("committed verification spend counts toward the invariant", async () => {
+    const ledger = createChainBudgetLedger(mandate({ maxChainCostUsd: 3 }));
+    await ledger.reserve("s1", "p1", 2);
+    await ledger.tryCommit("s1");
+    const r = await ledger.reserveVerification("s1", 2); // 2 committed + 2 verify = 4 > 3
+    expect(r.ok).toBe(false);
+  });
+});

@@ -42,6 +42,14 @@ export interface ChainBudgetLedgerState {
    */
   totalAcceptedUsd: number;
   workerAllocations: Map<string, ChainBudgetWorkerAllocation>;
+  /**
+   * Phase 41 / MAP — verification budget (design §8.2). `maxChainCostUsd`
+   * includes verification: a verifier spend that would exceed the ceiling is
+   * denied and the orchestrator downgrades to rule-only verification.
+   */
+  verificationReservedUsd: number;
+  verificationCommittedUsd: number;
+  verificationAllocations: Map<string, ChainVerificationAllocation>;
 }
 
 export interface ChainBudgetWorkerAllocation {
@@ -53,6 +61,13 @@ export interface ChainBudgetWorkerAllocation {
   committedUsd: number;
   /** ISO datetime the award was sent. */
   awardedAt: string;
+}
+
+/** One verifier run's budget slot (cross-agent escalation, LLM verifier, …). */
+export interface ChainVerificationAllocation {
+  subtaskId: string;
+  reservedUsd: number;
+  committedUsd: number;
 }
 
 export type LedgerOpResult<T> = { ok: true; value: T } | { ok: false; reason: string };
@@ -105,6 +120,31 @@ export interface ChainBudgetLedger {
    */
   recordSynthesisSpend(amountUsd: number): Promise<LedgerOpResult<number>>;
   /**
+   * Phase 41 / MAP — reserve `amountUsd` for a verifier run (cross-agent
+   * escalation, LLM verifier, …) against `maxChainCostUsd`. Verification is
+   * budgeted like worker awards; a denial means the orchestrator downgrades
+   * to rule-only verification (design §8.2). Fails (does NOT throw) when the
+   * reservation would push aggregate spend past the ceiling.
+   */
+  reserveVerification(
+    subtaskId: string,
+    amountUsd: number,
+  ): Promise<LedgerOpResult<number>>;
+  /**
+   * Promote a verification reservation to committed spend. Idempotent: a
+   * second call for the same subtaskId is a no-op (returns the existing
+   * committed amount).
+   */
+  tryCommitVerification(subtaskId: string): Promise<LedgerOpResult<number>>;
+  /**
+   * Release an un-committed verification reservation back to free budget.
+   * Called when the escalation is skipped or the run never happened. Idempotent.
+   */
+  releaseVerification(
+    subtaskId: string,
+    reason: string,
+  ): Promise<LedgerOpResult<number>>;
+  /**
    * Finalize the chain on `ChainReport` publish. Locks in the final
    * `totalAcceptedUsd + synthesisSpendUsd` and returns a snapshot suitable for
    * the report's `chainSummary`. Throws if the invariant is violated.
@@ -129,6 +169,9 @@ export function createChainBudgetLedger(mandate: ChainMandate): ChainBudgetLedge
     synthesisSpendUsd: 0,
     totalAcceptedUsd: 0,
     workerAllocations: new Map(),
+    verificationReservedUsd: 0,
+    verificationCommittedUsd: 0,
+    verificationAllocations: new Map(),
   };
   let finalized = false;
 
@@ -145,7 +188,7 @@ export function createChainBudgetLedger(mandate: ChainMandate): ChainBudgetLedge
   }
 
   function committedTotal(): number {
-    return state.committedUsd + state.synthesisSpendUsd;
+    return state.committedUsd + state.synthesisSpendUsd + state.verificationCommittedUsd;
   }
 
   function checkInvariant(reason: string): void {
@@ -159,7 +202,10 @@ export function createChainBudgetLedger(mandate: ChainMandate): ChainBudgetLedge
   }
 
   function headroom(): number {
-    return Math.max(0, state.maxChainCostUsd - committedTotal() - state.reservedUsd);
+    return Math.max(
+      0,
+      state.maxChainCostUsd - committedTotal() - state.reservedUsd - state.verificationReservedUsd,
+    );
   }
 
   return {
@@ -177,7 +223,8 @@ export function createChainBudgetLedger(mandate: ChainMandate): ChainBudgetLedge
         if (amountUsd < 0) {
           return { ok: false, reason: "amountUsd must be >= 0" };
         }
-        const projectedSpend = committedTotal() + state.reservedUsd + amountUsd;
+        const projectedSpend =
+          committedTotal() + state.reservedUsd + state.verificationReservedUsd + amountUsd;
         if (projectedSpend > state.maxChainCostUsd) {
           return {
             ok: false,
@@ -268,7 +315,8 @@ export function createChainBudgetLedger(mandate: ChainMandate): ChainBudgetLedge
           }
           // Projection must include reserved (un-committed) so we don't
           // over-promise the synthesis budget against in-flight awards.
-          const projected = committedTotal() + state.reservedUsd + estimatedUsd;
+          const projected =
+            committedTotal() + state.reservedUsd + state.verificationReservedUsd + estimatedUsd;
           if (projected > state.maxChainCostUsd) {
             return {
               ok: false,
@@ -311,6 +359,84 @@ export function createChainBudgetLedger(mandate: ChainMandate): ChainBudgetLedge
       });
     },
 
+    reserveVerification(subtaskId, amountUsd) {
+      return enqueueOp(() => {
+        if (finalized) {
+          return { ok: false, reason: "ledger finalized; no further verification reservations allowed" };
+        }
+        if (state.verificationAllocations.has(subtaskId)) {
+          return {
+            ok: false,
+            reason: `subtask ${subtaskId} already has a verification reservation`,
+          };
+        }
+        if (amountUsd < 0) {
+          return { ok: false, reason: "amountUsd must be >= 0" };
+        }
+        const projectedSpend = committedTotal() + state.reservedUsd + state.verificationReservedUsd + amountUsd;
+        if (projectedSpend > state.maxChainCostUsd) {
+          return {
+            ok: false,
+            reason:
+              `verification reservation of ${amountUsd} would push aggregate spend past ` +
+              `maxChainCostUsd=${state.maxChainCostUsd} (currently committed=${committedTotal()} ` +
+              `reserved=${state.reservedUsd} verificationReserved=${state.verificationReservedUsd})`,
+          };
+        }
+        state.verificationReservedUsd += amountUsd;
+        state.verificationAllocations.set(subtaskId, {
+          subtaskId,
+          reservedUsd: amountUsd,
+          committedUsd: 0,
+        });
+        return { ok: true, value: amountUsd };
+      });
+    },
+
+    tryCommitVerification(subtaskId) {
+      return enqueueOp(() => {
+        if (finalized) {
+          return { ok: false, reason: "ledger finalized" };
+        }
+        const alloc = state.verificationAllocations.get(subtaskId);
+        if (!alloc) {
+          return { ok: false, reason: `no verification reservation for subtask ${subtaskId}` };
+        }
+        if (alloc.committedUsd > 0) {
+          // Idempotent: already committed. Return the existing amount.
+          return { ok: true, value: alloc.committedUsd };
+        }
+        state.verificationReservedUsd -= alloc.reservedUsd;
+        state.verificationCommittedUsd += alloc.reservedUsd;
+        state.verificationAllocations.set(subtaskId, {
+          ...alloc,
+          committedUsd: alloc.reservedUsd,
+        });
+        checkInvariant("tryCommitVerification");
+        return { ok: true, value: alloc.reservedUsd };
+      });
+    },
+
+    releaseVerification(subtaskId, reason) {
+      return enqueueOp(() => {
+        if (finalized) {
+          return { ok: false, reason: "ledger finalized" };
+        }
+        const alloc = state.verificationAllocations.get(subtaskId);
+        if (!alloc) {
+          // Idempotent: nothing to release.
+          return { ok: true, value: 0 };
+        }
+        const uncommitted = alloc.reservedUsd - alloc.committedUsd;
+        if (uncommitted > 0) {
+          state.verificationReservedUsd -= uncommitted;
+        }
+        state.verificationAllocations.delete(subtaskId);
+        checkInvariant(`releaseVerification (${reason})`);
+        return { ok: true, value: uncommitted };
+      });
+    },
+
     finalize(report) {
       return enqueueOp(() => {
         if (finalized) {
@@ -345,6 +471,7 @@ export function createChainBudgetLedger(mandate: ChainMandate): ChainBudgetLedge
       return {
         ...state,
         workerAllocations: new Map(state.workerAllocations),
+        verificationAllocations: new Map(state.verificationAllocations),
       };
     },
 

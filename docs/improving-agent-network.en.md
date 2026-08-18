@@ -1083,7 +1083,7 @@ orchestrator.trackChain(step, result)
       └─► return to owner for human review
 ```
 |
-|> **Status 2026-08-18:** `CrossAgentDisagreementVerifier` first cut (`packages/agent-adapter/src/cross-agent-verifier.ts`) plus the node-side host seam (`apps/node/src/pi-map-adapter.ts`) are in and tested. The escalation *caller* — orchestrator branching to a second runtime when `criticality == 'high'` or a `partial` verdict — is still pending (Week 2-3).
+|> **Status 2026-08-18:** `CrossAgentDisagreementVerifier` first cut (`packages/agent-adapter/src/cross-agent-verifier.ts`) plus the node-side host seam (`apps/node/src/pi-map-adapter.ts`) are in and tested. **The escalation caller is now wired (same day):** `apps/node/src/chain-verify-loop.ts` (`runChainVerificationLoop`) runs from `handleOrchestratorPartial` on final partials — it re-packages the partial as a `SignedAgentResult`, runs the adapter's rule verifier, writes a `rule` `VerdictEntry` into the chain's `ArbitrationStore` (the authoritative reputation write), and on `partial`/`disputed` verdicts escalates to a second distinct runtime (budgeted via the ledger's `verificationReservedUsd`/`verificationCommittedUsd`; a budget miss downgrades to rule-only) and writes a `cross` `VerdictEntry`. Escalation triggers today: `partial`/`disputed` rule verdict on a `maxSensitivity: "private"` chain with `maxChainCostUsd ≥ $20`, or the owner `criticality: "high"` hint (the owner-UI wiring that sets it is the remaining Week 2-3 item).
 
 ---
 
@@ -1213,7 +1213,7 @@ Week 3-4: Shadow mode
 
 > **Status (2026-08-18):** Sprint 2 seam complete. Reputation: `chain-plan-assign.ts` blends per-skill reputation (`PlanAssignRosterEntry.reputationBySkill`, soft `+0.2×rep` addend) into `scoreFor` / `bestPeerForRole`; the 3-tuple reader (`chain-reputation-3tuple.ts`) derives scores from the widened `ArbitrationStore` (`recordVerdictEntry` / `getVerdictsFor`); the roster is enriched via `deriveRosterReputation`; `chain-sensitivity-gate.ts` gained `requiresReputationApproval`. Seam switch: `executeSubtask` now routes OpenClaw subtasks through the adapter-backed executor when `useMAP` is set (primary; shadow/legacy preserved), with the legacy prompt surface (constraints/role/thread/brief-report policy) preserved via `buildSubtaskPromptForAdapter`. Orchestrator pool: `findWorkers` gained a manifest-carrying pool (`findWorkersWithManifests` / `resolveWorkerPool`; `ChainRankedWorker.manifest` synthesized from the card profile via `manifestFromAgentNetworkProfile`). Merge unification: `synthesizeChain` consumes normalized `ContentBlock[]` — `chain-map.ts` owns the bidirectional artifact↔block map (`resultArtifactsToContentBlocks` / `contentBlocksToResultArtifacts`) and the one canonical text projection (`contentBlocksToText`), so legacy and adapter partials reach the merge step as the same typed currency; `WorkerContribution` carries `contentBlocks`, and the LLM merge adapter prefers the block projection. Roll out: `NodeConfig.useMAP` opt-in (Agent Network settings UI toggle) + live `ENVOYMESH_MAP_ROLLBACK=1` rollback flag.
 >
-> **Known gaps (by design):** (1) **Verdict write path** — no production code writes `VerdictEntry` yet; the authoritative writer is the orchestrator's verification flow (Sprint 3 cross-agent verification). Worker-side `adapter.verify` stays advisory per §7.1 (no self-reported reputation). Until then the 3-tuple readers and `requiresReputationApproval` are dormant. (2) **Manifest pool consumer** — `findWorkersWithManifests`/`resolveWorkerPool` are consumer-ready but not yet consulted by the proposal/award flow (which resolves workers from the assigner roster); they become live when wire-broadcast manifests land.
+> **Known gaps (by design):** (1) **Verdict write path** — no production code writes `VerdictEntry` yet; the authoritative writer is the orchestrator's verification flow (Sprint 3 cross-agent verification). Worker-side `adapter.verify` stays advisory per §7.1 (no self-reported reputation). Until then the 3-tuple readers and `requiresReputationApproval` are dormant. (2) ~~Manifest pool consumer~~ **resolved 2026-08-18 (first cut)** — `adapter.manifest` broadcasts land (`agent-adapter-broadcast.ts` + `handleInboundCapabilityManifest` → `ChainSideState.remoteManifests`), and `findAgentNetworkWorkersRanked` prefers a fresh wire manifest over card synthesis, so `findWorkersWithManifests`/`resolveWorkerPool` are consulted with real wire data. Hardening (owner-signature verification on first receipt, manifest TTL sweep) is follow-up.
 
 Week 1: Switch the seam
 
@@ -1239,14 +1239,15 @@ Week 1-2: Second adapter (e.g. Pi)
 
 - Add `packages/agent-adapter/src/pi-adapter.ts` — **first cut done 2026-08-18**
 - Pi-specific verifier (command sequence, loop detection) — **done 2026-08-18**
-- Node-side wiring seam `apps/node/src/pi-map-adapter.ts` (`createPiAdapterFromHost`) — **done 2026-08-18**. Live path runs with a tool-call *count* but no trace, so the Pi verifier passes with `confidence: "low"`; loop/command checks activate once the Pi runtime exposes the trace.
+- Node-side wiring seam `apps/node/src/pi-map-adapter.ts` (`createPiAdapterFromHost`) — **done 2026-08-18**. The Pi runtime now records `tool_use_start` events into `PiPromptResult.toolTrace` (forwarded into `PiRunResult.trace`), so the Pi verifier's loop / destructive-command checks run on live traces (`confidence: "medium"` on a clean trace; "low" only when Pi makes no tool calls).
 - Tests: side-by-side with Hermes/OpenClaw on the same task — package + node tests done; side-by-side harness pending
 
 Week 2-3: Cross-agent verification
 
-- `CrossAgentDisagreementVerifier`
-- Verification budget in `chain-budget-ledger.ts`
-- Owner UI: mark chain as `criticality: 'high'` in the chain proposal
+- `CrossAgentDisagreementVerifier` — **first cut done 2026-08-18**; the escalation *caller* in the orchestrator is pending
+- Verification budget in `chain-budget-ledger.ts` — pending
+- Owner UI: mark chain as `criticality: 'high'` in the chain proposal — pending
+- **Manifest broadcast (`apps/node/src/agent-adapter-broadcast.ts`) — first cut done 2026-08-18**: `adapter.manifest` intent added to the protocol (agent→agent); the node builds an owner-signed `SignedCapabilityManifest` (`buildSignedCapabilityManifest`) and pushes it to bonded peers every TTL/2 via `startManifestBroadcaster` (started at node startup). Inbound: `handleInboundCapabilityManifest` verifies the owner signature against the contact-owner key store and stores fresh manifests in `ChainSideState.remoteManifests`; `findAgentNetworkWorkersRanked` now prefers a fresh wire manifest over card synthesis — the manifest-carrying worker pool is **live**.
 
 Week 3-4: Federated scoreboard (initial)
 
@@ -1288,7 +1289,8 @@ This section is the literal "what to type" for the first sprint.
 | `packages/agent-adapter/src/verifier-rules/markdown-structure.ts` | 60 | One rule, exported |
 | `packages/agent-adapter/src/verifier-rules/owner-allowed-topics.ts` | 80 | One rule, owner-policy-aware |
 | `packages/agent-adapter/test/openclaw-adapter.test.ts` | 250 | Adapter + verifier tests |
-| `apps/node/src/agent-adapter-broadcast.ts` | 120 | Periodic manifest broadcast |
+| `apps/node/src/agent-adapter-broadcast.ts` | 120 | Periodic manifest broadcast — **done 2026-08-18** |
+| `apps/node/src/agent-adapter-manifest-inbound.ts` | 120 | Inbound `adapter.manifest` verification + store — **done 2026-08-18** |
 | `apps/node/src/chain-map.ts` | 220 | MAP interop layer — worker-side bridge: `ChainSubtask → ExecuteInput`, `SignedAgentResult → ChainSubtaskPartial`, advisory verify gate (Sprint 1) |
 | `apps/node/test/chain-map.test.ts` | 150 | Chain-map bridge + shadow-mode equivalence tests |
 | `packages/agent-adapter/src/pi-adapter.ts` | 260 | Pi runtime adapter + Pi-specific verifier (loop, command sequence) (Sprint 3) — **done 2026-08-18** |
