@@ -26,6 +26,8 @@ export interface PiMapHost {
   workerPeerId: string;
   /** Sign an unsigned `AgentResult` with the node-controlled signing key. */
   signResult: PiAdapterInput["signResult"];
+  /** Optional prompt builder — same prompt surface the worker used. */
+  buildPrompt?: PiAdapterInput["buildPrompt"];
   /** Pi version for the manifest. */
   runtimeVersion?: string | (() => string | Promise<string>);
 }
@@ -36,6 +38,7 @@ export function createPiAdapterFromHost(host: PiMapHost): PiAdapter {
     workerPeerId: host.workerPeerId,
     signResult: host.signResult,
     runtimeVersion: host.runtimeVersion,
+    buildPrompt: host.buildPrompt,
     runPi: async ({ prompt }) => {
       const r = await host.prompt(prompt);
       const summary = r.text.trim();

@@ -4,6 +4,7 @@ import type {
   BridgeStatus,
   OpenClawStatus,
   PiStatus,
+  PiPromptResult,
   PairingPayload,
   ChatMessage,
   ChatAttachment,
@@ -4891,6 +4892,16 @@ class NodeServiceImpl implements NodeService {
 
   async getPiStatus(): Promise<PiStatus> {
     return getPiStatusViaRuntime(this._piState, this._piRuntimeDeps())
+  }
+
+  /** MAP — local Pi runtime readiness for the second-doctor cross-check. */
+  isPiReady(): boolean {
+    return isPiReadyViaRuntime(this._piState)
+  }
+
+  /** MAP — ask the local Pi runtime (second-doctor / cross-check run). */
+  askPi(prompt: string): Promise<PiPromptResult> {
+    return askPiViaRuntime(this._piState, this._piRuntimeDeps(), prompt)
   }
 
   // --- Phase 54: Envoy Local ---

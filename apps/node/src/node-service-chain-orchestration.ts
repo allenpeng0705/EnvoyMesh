@@ -21,6 +21,7 @@ import type {
   ChainListReportsParams,
   NodeProfile,
   NodeServiceEvents,
+  PiPromptResult,
 } from "@envoymesh/api";
 import type { ChainReport, ChainSubtask, ChainSubtaskBid, EnvoyEnvelope, EnvoyIntent, AgentRuntime } from "@envoymesh/protocol";
 import { ChainHandoffRequestPayloadSchema, ChainSubtaskSchema } from "@envoymesh/protocol";
@@ -136,6 +137,7 @@ import {
 } from "./chain-map.js";
 import { isManifestFresh, pruneExpiredManifests } from "./agent-adapter-manifest-inbound.js";
 import { OpenClawAdapter } from "@envoymesh/agent-adapter";
+import { createPiAdapterFromHost, type PiMapHost } from "./pi-map-adapter.js";
 import { requiresChainAwardApproval } from "./chain-sensitivity-gate.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 import type { MeshToolContext } from "./tool-registry.js";
@@ -325,6 +327,10 @@ export interface ChainOrchestrationContext {
   isOpenClawReady(): boolean;
   /** Ask Built-in OpenClaw (default AN worker engine). */
   askOpenClaw(prompt: string): Promise<string>;
+  /** Local Pi runtime readiness for the MAP second-doctor cross-check. */
+  isPiReady(): boolean;
+  /** Ask the local Pi runtime (MAP cross-check / second-doctor run). */
+  askPi(prompt: string): Promise<PiPromptResult>;
   /** Node-owner AN worker engine choice (`openclaw` | `ext`). */
   getAgentNetworkWorkerEngine(): AgentNetworkWorkerEngine;
   /** Ext Agent bridge ready enough to accept Team-job work. */
@@ -375,6 +381,8 @@ export function buildChainOrchestrationContext(host: any): ChainOrchestrationCon
     emit: (event, data) => host.emit(event, data),
     isOpenClawReady: () => Boolean(host.isOpenClawReady?.()),
     askOpenClaw: (prompt) => host.askOpenClaw(prompt),
+    isPiReady: () => Boolean(host.isPiReady?.()),
+    askPi: (prompt) => host.askPi(prompt),
     getAgentNetworkWorkerEngine: () =>
       coerceAgentNetworkWorkerEngine(host.getAgentNetworkWorkerEngine?.()),
     isExtAgentBridgeReady: () => Boolean(host.isExtAgentBridgeReady?.()),
@@ -1462,10 +1470,11 @@ export async function buildChainOrchestratorDeps(
       });
     },
     // Phase 41 / MAP — orchestrator-side verification loop (design §8.3).
-    // Additive: when no adapter matches the worker's runtime (or OpenClaw is
-    // not ready), the loop records nothing and never changes the deliverable
-    // flow. Escalation to a second runtime requires a distinct runtime in
-    // `listRuntimes` (today: OpenClaw, which cross-checks Pi/remote results).
+    // Additive: when no adapter matches the worker's runtime (or a runtime
+    // is not ready), the loop records nothing and never changes the
+    // deliverable flow. Escalation to a second runtime requires a distinct
+    // runtime in `listRuntimes` (today: OpenClaw + local Pi, so either can
+    // cross-check the other).
     chainVerify: {
       audit: {
         record: (event) => {
@@ -1483,21 +1492,45 @@ export async function buildChainOrchestratorDeps(
       },
       resolveWorkerRuntime: (workerPeerId) =>
         deps.getChainSideState().remoteManifests.get(workerPeerId)?.runtime,
-      listRuntimes: () => (deps.isOpenClawReady() ? (["openclaw"] as AgentRuntime[]) : []),
+      listRuntimes: () => {
+        const runtimes: AgentRuntime[] = [];
+        if (deps.isOpenClawReady()) runtimes.push("openclaw");
+        if (deps.isPiReady()) runtimes.push("pi");
+        return runtimes;
+      },
       buildAdapter: (runtime, subtask) => {
-        if (runtime !== "openclaw" || !deps.isOpenClawReady()) return undefined;
-        return new OpenClawAdapter({
-          askViaRuntime: (prompt) => deps.askOpenClaw(prompt),
-          isReady: () => deps.isOpenClawReady(),
-          workerPeerId: agentIdentity.agentPeerId,
-          // Same prompt surface the worker used (constraints / role / thread /
-          // brief-report policy) so the cross run answers the same mandate.
-          buildPrompt: buildSubtaskPromptForAdapter(subtask),
-          signResult: (unsigned) => ({
-            ...unsigned,
-            signature: signCanonicalPayload(unsigned, agentIdentity.agentPrivateKeyPem),
-          }),
-        });
+        if (runtime === "openclaw") {
+          if (!deps.isOpenClawReady()) return undefined;
+          return new OpenClawAdapter({
+            askViaRuntime: (prompt) => deps.askOpenClaw(prompt),
+            isReady: () => deps.isOpenClawReady(),
+            workerPeerId: agentIdentity.agentPeerId,
+            // Same prompt surface the worker used (constraints / role / thread /
+            // brief-report policy) so the cross run answers the same mandate.
+            buildPrompt: buildSubtaskPromptForAdapter(subtask),
+            signResult: (unsigned) => ({
+              ...unsigned,
+              signature: signCanonicalPayload(unsigned, agentIdentity.agentPrivateKeyPem),
+            }),
+          });
+        }
+        if (runtime === "pi") {
+          if (!deps.isPiReady()) return undefined;
+          const piHost: PiMapHost = {
+            prompt: (prompt) => deps.askPi(prompt),
+            isReady: () => deps.isPiReady(),
+            workerPeerId: agentIdentity.agentPeerId,
+            // Same prompt surface the worker used so the cross run answers the
+            // same mandate (constraints / role / thread / brief-report policy).
+            buildPrompt: buildSubtaskPromptForAdapter(subtask),
+            signResult: (unsigned) => ({
+              ...unsigned,
+              signature: signCanonicalPayload(unsigned, agentIdentity.agentPrivateKeyPem),
+            }),
+          };
+          return createPiAdapterFromHost(piHost);
+        }
+        return undefined;
       },
     },
   };
