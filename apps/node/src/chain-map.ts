@@ -1,0 +1,407 @@
+/**
+ * MAP interop layer — worker side.
+ *
+ * Bridges the Mesh Adapter Pattern (`AgentAdapter` from `@envoymesh/agent-adapter`)
+ * into the existing Team-job worker contract (`ChainWorkerHandlerDeps.executeSubtask`).
+ *
+ * **Why this file exists:** the wire protocol between worker and orchestrator
+ * (`task.chain.partial` with `ChainSubtaskPartial` + named artifacts) does not
+ * change. What changes is *how* a worker produces a result: instead of the
+ * legacy `{ isReady, ask }` engine contract (`createEngineChainSubtaskExecutor`),
+ * the adapter path is `AgentAdapter.execute → SignedAgentResult` (typed
+ * `ContentBlock[]`) plus `AgentAdapter.verify` for a runtime-specific verdict.
+ *
+ * This module owns:
+ *   1. `mapChainSubtaskToExecuteInput` — pure `ChainSubtask → ExecuteInput`.
+ *   2. `contentBlocksToResultArtifacts` — pure `ContentBlock[] → ChainSubtaskPartial` artifacts.
+ *   3. `combineVerdicts` — OR-of-pass / AND-of-fail / default-disputed (design §6.2).
+ *   4. `createMapChainSubtaskExecutor` — an executor with the same shape as
+ *      `createOpenClawChainSubtaskExecutor`, ready to slot into the
+ *      `executeSubtask` wiring in `node-service-chain-orchestration.ts`.
+ *
+ * Design doc: `docs/improving-agent-network.en.md` §3.1 (MAP interop layer),
+ * §1.7 (real worker-side seam).
+ */
+
+import {
+  CHAIN_NAMED_ARTIFACTS_MAX,
+  ChainSubtaskPartialSchema,
+  TaskChainPartialPayloadSchema,
+  clipChainSubtaskPartialNote,
+  createFileArtifact,
+  createStructuredArtifact,
+  createTextArtifact,
+  type Artifact,
+  type ChainSubtask,
+  type ContentBlock,
+  type NamedArtifact,
+  type SignedAgentResult,
+  type Verdict,
+} from "@envoymesh/protocol";
+import { SignedAgentResultSchema } from "@envoymesh/protocol";
+import type { AgentAdapter, ExecuteInput } from "@envoymesh/agent-adapter";
+import { chainLog, chainWarn, shortPeerId } from "./chain-debug.js";
+import type { ChainWorkerHandlerDeps } from "./chain-worker.js";
+
+/** Text blocks longer than the protocol's TextArtifact max would fail Zod. Clip here. */
+const MAP_TEXT_ARTIFACT_MAX = 64_000;
+
+/**
+ * Default wall-clock deadline for a subtask that carries no `deadlineAt`.
+ * Mirrors the OpenClaw engine executor's ~120s response budget.
+ */
+export const MAP_DEFAULT_DEADLINE_MS = 120_000;
+
+// ---------------------------------------------------------------------------
+// Pure mappings
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a `ChainSubtask` (+ Phase 53 input artifacts) to an `AgentAdapter.ExecuteInput`.
+ *
+ * The returned `signal` fires (best-effort) at the computed deadline so
+ * cooperative adapters can abort; the executor still awaits `execute`, so a
+ * hung adapter cannot wedge the worker past what the wire-level heartbeat
+ * bounds (same trade-off as the legacy engine executor).
+ */
+export function mapChainSubtaskToExecuteInput(opts: {
+  subtask: ChainSubtask;
+  inputArtifacts?: readonly NamedArtifact[];
+  now?: () => Date;
+  defaultDeadlineMs?: number;
+}): { input: ExecuteInput; signal: AbortSignal } {
+  const now = (opts.now ?? (() => new Date()))();
+  const deadlineMs = opts.subtask.deadlineAt
+    ? Math.max(0, Date.parse(opts.subtask.deadlineAt) - now.getTime())
+    : opts.defaultDeadlineMs ?? MAP_DEFAULT_DEADLINE_MS;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), deadlineMs);
+  // Do not keep the event loop alive waiting for a deadline that never fires.
+  timer.unref?.();
+
+  return {
+    input: {
+      skillId: opts.subtask.requiredSkill,
+      objective: opts.subtask.objective,
+      inputArtifacts: opts.inputArtifacts ?? [],
+      costCeilingUsd: opts.subtask.costCeilingUsd ?? 0,
+      deadlineMs,
+      correlationId: `${opts.subtask.chainId}:${opts.subtask.subtaskId}`,
+      signal: controller.signal,
+    },
+    signal: controller.signal,
+  };
+}
+
+export interface ResultArtifacts {
+  /** First convertible block, for the legacy `artifactFragment` channel. */
+  artifactFragment?: Artifact;
+  /** Keyed outputs for Phase 53 handoff / worker finals. Capped at CHAIN_NAMED_ARTIFACTS_MAX. */
+  namedArtifacts: NamedArtifact[];
+  /** Human-readable reasons blocks were dropped (e.g. non-record structured data). */
+  skipped: string[];
+}
+
+/**
+ * Convert a `SignedAgentResult`'s typed `ContentBlock[]` into the
+ * `ChainSubtaskPartial` artifact channels. Structured blocks are converted
+ * only when their `data` is a plain record (the protocol's
+ * `StructuredArtifactSchema.data` requires `Record<string, unknown>`);
+ * otherwise the block is dropped and reported in `skipped`.
+ */
+export function contentBlocksToResultArtifacts(
+  blocks: readonly ContentBlock[],
+): ResultArtifacts {
+  const namedArtifacts: NamedArtifact[] = [];
+  const skipped: string[] = [];
+  let artifactFragment: Artifact | undefined;
+
+  for (let i = 0; i < blocks.length; i += 1) {
+    if (namedArtifacts.length >= CHAIN_NAMED_ARTIFACTS_MAX) {
+      skipped.push(`block ${i} (artifact cap ${CHAIN_NAMED_ARTIFACTS_MAX})`);
+      continue;
+    }
+    const block = blocks[i];
+    let artifact: Artifact | undefined;
+    if (block.kind === "text") {
+      artifact = createTextArtifact({
+        content: block.text.slice(0, MAP_TEXT_ARTIFACT_MAX),
+        mimeType: block.mimeType,
+      });
+    } else if (block.kind === "file") {
+      artifact = createFileArtifact({
+        vaultPath: block.vaultPath,
+        contentHash: block.contentHash,
+        displayName: block.displayName,
+        mimeType: block.mimeType,
+      });
+    } else if (block.kind === "image") {
+      artifact = createFileArtifact({
+        vaultPath: block.vaultPath,
+        contentHash: block.contentHash,
+        displayName: block.altText,
+        mimeType: block.mimeType,
+      });
+    } else if (block.kind === "structured") {
+      if (isPlainRecord(block.data)) {
+        artifact = createStructuredArtifact({
+          schemaRef: block.schemaRef,
+          data: block.data,
+        });
+      } else {
+        skipped.push(`block ${i} (structured data is not a record)`);
+      }
+    }
+    if (!artifact) continue;
+    const key = namedArtifacts.length === 0 ? "result" : `result.${namedArtifacts.length + 1}`;
+    namedArtifacts.push({ key, artifact });
+    if (!artifactFragment) artifactFragment = artifact;
+  }
+
+  return { artifactFragment, namedArtifacts, skipped };
+}
+
+/**
+ * Combine multiple verdicts on one result: OR-of-pass, AND-of-fail, default
+ * disputed (design §6.2). Empty verdicts = uncertain = `disputed`.
+ */
+export function combineVerdicts(verdicts: readonly Verdict[]): Verdict["kind"] {
+  for (const v of verdicts) if (v.kind === "pass") return "pass";
+  for (const v of verdicts) if (v.kind === "fail") return "fail";
+  return "disputed";
+}
+
+// ---------------------------------------------------------------------------
+// Adapter-backed executor
+// ---------------------------------------------------------------------------
+
+export interface MapChainSubtaskExecutorInput {
+  /** The node's agent peerId (same as `createOpenClawChainSubtaskExecutor`). */
+  workerPeerId: string;
+  now?: () => Date;
+  /** Human label for logs / fail notes, e.g. `"OpenClaw (MAP)"`. */
+  engineLabel: string;
+  /** Short code returned as `finalNote` when the runtime is not ready. */
+  unavailableCode: string;
+  /** Whether the wrapped runtime is ready. Mirrors `isOpenClawReady()`. */
+  isReady: () => boolean;
+  /** The MAP adapter that executes + verifies this node's runtime. */
+  adapter: AgentAdapter;
+  /**
+   * Run `adapter.verify` before finalizing. A `fail` verdict fails the
+   * subtask (worker-side advisory gate; the orchestrator still re-verifies
+   * and issues the authoritative verdict for reputation in Sprint 2).
+   */
+  runVerify?: boolean;
+  /**
+   * Shadow-mode / audit hook. Called once per subtask with the outcome.
+   * Never throws into the executor.
+   */
+  onShadowRecord?: (record: {
+    subtaskId: string;
+    ok: boolean;
+    finalNote?: string;
+    verdicts: Verdict[];
+    overall: Verdict["kind"] | null;
+  }) => void;
+  defaultDeadlineMs?: number;
+}
+
+/**
+ * Build a `ChainWorkerHandlerDeps["executeSubtask"]` that runs through the
+ * MAP adapter instead of the legacy `{ isReady, ask }` engine. Emits the
+ * same `task.chain.partial` stream (progress + final with named artifacts),
+ * so the orchestrator's wire protocol is unchanged.
+ */
+export function createMapChainSubtaskExecutor(
+  input: MapChainSubtaskExecutorInput,
+): NonNullable<ChainWorkerHandlerDeps["executeSubtask"]> {
+  const runVerify = input.runVerify !== false;
+
+  return async (subtask, onPartial, opts) => {
+    let seq = 0;
+    const emit = async (
+      note: string | undefined,
+      isFinal: boolean,
+      confidence?: number,
+      artifacts?: { artifactFragment?: Artifact; namedArtifacts: NamedArtifact[] },
+    ) => {
+      seq += 1;
+      await onPartial(
+        TaskChainPartialPayloadSchema.parse({
+          partial: ChainSubtaskPartialSchema.parse({
+            version: "0.1",
+            subtaskId: subtask.subtaskId,
+            chainId: subtask.chainId,
+            workerPeerId: input.workerPeerId,
+            seq,
+            isFinal,
+            note: clipChainSubtaskPartialNote(note),
+            confidence,
+            ...(isFinal && artifacts
+              ? {
+                  artifactFragment: artifacts.artifactFragment,
+                  namedArtifacts: artifacts.namedArtifacts,
+                }
+              : {}),
+            createdAt: (input.now ?? (() => new Date()))().toISOString(),
+          }),
+        }),
+      );
+    };
+
+    const record = (
+      ok: boolean,
+      finalNote: string,
+      verdicts: Verdict[],
+      overall: Verdict["kind"] | null,
+    ) => {
+      try {
+        input.onShadowRecord?.({ subtaskId: subtask.subtaskId, ok, finalNote, verdicts, overall });
+      } catch (err) {
+        // An observer must never break the worker.
+        chainWarn("exec", "[map] shadow record failed", {
+          subtaskId: subtask.subtaskId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    };
+
+    chainLog("exec", `[map] ${input.engineLabel} subtask start`, {
+      chainId: subtask.chainId,
+      subtaskId: subtask.subtaskId,
+      skill: subtask.requiredSkill,
+      worker: shortPeerId(input.workerPeerId),
+      ready: input.isReady(),
+      inputArtifacts: opts?.inputArtifacts?.length ?? 0,
+      runtime: input.adapter.runtime,
+    });
+
+    if (!input.isReady()) {
+      await emit(`AN_ENGINE_FAIL: ${input.engineLabel} is not ready on this node`, true, 0.1);
+      chainWarn("exec", `[map] ${input.engineLabel} unavailable`, {
+        subtaskId: subtask.subtaskId,
+      });
+      record(false, input.unavailableCode, [], null);
+      return { ok: false, finalNote: input.unavailableCode };
+    }
+
+    await emit(`Working on: ${subtask.objective}`, false, 0.3);
+
+    const startedAt = (input.now ?? (() => new Date()))();
+    try {
+      const { input: executeInput, signal } = mapChainSubtaskToExecuteInput({
+        subtask,
+        inputArtifacts: opts?.inputArtifacts,
+        now: input.now,
+        defaultDeadlineMs: input.defaultDeadlineMs,
+      });
+      if (signal.aborted) {
+        await emit(`AN_ENGINE_FAIL: ${input.engineLabel} deadline already expired`, true, 0.1);
+        record(false, "map_deadline_expired", [], null);
+        return { ok: false, finalNote: "map_deadline_expired" };
+      }
+
+      // Validate shape (defense-in-depth; the adapter signs, the orchestrator
+      // re-verifies the signature on the wire in Sprint 2 — chain-map cannot
+      // verify locally because SignedAgentResult carries no public key).
+      const result = SignedAgentResultSchema.parse(await input.adapter.execute(executeInput));
+
+      const verdicts = runVerify ? await input.adapter.verify({ result, objective: subtask.objective }) : [];
+      const overall = verdicts.length > 0 ? combineVerdicts(verdicts) : null;
+
+      if (overall === "fail") {
+        const firstFail = verdicts.find((v): v is Extract<Verdict, { kind: "fail" }> => v.kind === "fail");
+        const reason = firstFail?.reason ?? "no reason";
+        await emit(`AN_ENGINE_FAIL: MAP verify failed: ${reason}`, true, 0.1);
+        chainWarn("exec", `[map] verify fail`, { subtaskId: subtask.subtaskId, reason });
+        record(false, "map_verify_fail", verdicts, overall);
+        return { ok: false, finalNote: "map_verify_fail" };
+      }
+
+      const artifacts = contentBlocksToResultArtifacts(result.content);
+      if (artifacts.namedArtifacts.length === 0) {
+        await emit(`AN_ENGINE_FAIL: ${input.engineLabel} returned no usable content`, true, 0.1);
+        chainWarn("exec", `[map] empty result`, {
+          subtaskId: subtask.subtaskId,
+          skipped: artifacts.skipped,
+        });
+        record(false, "map_empty_result", verdicts, overall);
+        return { ok: false, finalNote: "map_empty_result" };
+      }
+
+      const durationMs = (input.now ?? (() => new Date()))().getTime() - startedAt.getTime();
+      const finalNote = primaryText(result.content) ?? summarizeArtifacts(artifacts);
+      const confidence = overall === "pass" ? bestPassScore(verdicts) : 0.85;
+      const clipped = clipChainSubtaskPartialNote(finalNote) ?? finalNote;
+      await emit(clipped, true, confidence, {
+        artifactFragment: artifacts.artifactFragment,
+        namedArtifacts: artifacts.namedArtifacts,
+      });
+
+      chainLog("exec", `[map] ${input.engineLabel} subtask done`, {
+        subtaskId: subtask.subtaskId,
+        blocks: result.content.length,
+        artifacts: artifacts.namedArtifacts.length,
+        verdicts: verdicts.length,
+        overall: overall ?? undefined,
+        durationMs,
+        costUsd: result.metrics.costUsd,
+        runtime: result.runtime,
+        worker: shortPeerId(result.peerId),
+      });
+      record(true, clipped, verdicts, overall);
+      return { ok: true, finalNote: clipped };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await emit(`AN_ENGINE_FAIL: ${msg}`, true, 0.1);
+      chainWarn("exec", `[map] ${input.engineLabel} error`, {
+        subtaskId: subtask.subtaskId,
+        error: msg,
+      });
+      record(false, msg, [], null);
+      return { ok: false, finalNote: msg };
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function primaryText(content: readonly ContentBlock[]): string | undefined {
+  const block = content.find((b) => b.kind === "text");
+  if (!block || block.kind !== "text") return undefined;
+  const trimmed = block.text.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function summarizeArtifacts(artifacts: ResultArtifacts): string {
+  const kinds = artifacts.namedArtifacts.map((n) => artifactKindOf(n.artifact));
+  const skipNote = artifacts.skipped.length > 0 ? `; skipped ${artifacts.skipped.join(", ")}` : "";
+  return `MAP result: ${kinds.length} block(s) [${kinds.join(", ")}]${skipNote}`;
+}
+
+/**
+ * `NamedArtifact.artifact` is inferred as `unknown` (the schema-sync copy of
+ * `ArtifactSchema` in `agent-network.ts` is a `z.ZodTypeAny` union). Narrow
+ * the `kind` discriminator for human-readable summaries.
+ */
+function artifactKindOf(artifact: unknown): string {
+  if (typeof artifact !== "object" || artifact === null || !("kind" in artifact)) {
+    return "unknown";
+  }
+  const kind = (artifact as { kind?: unknown }).kind;
+  return typeof kind === "string" ? kind : "unknown";
+}
+
+function bestPassScore(verdicts: readonly Verdict[]): number {
+  let score = 0.85;
+  for (const v of verdicts) if (v.kind === "pass") score = Math.max(score, v.score);
+  return score;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

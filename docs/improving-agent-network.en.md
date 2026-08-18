@@ -78,14 +78,52 @@ The local OpenClaw runtime is at `packages/openclaw-runtime/src/index.ts`. It ex
 
 ### 1.7 The "heterogeneity tax" — where the gap is
 
-The seam between orchestrator and worker is `findProviders / executeStep` (from `agent-chain-orchestrator.ts:48-55`). The current shape:
+> **Grounded (2026-08-18):** this section previously described the seam as
+> `findProviders / executeStep` from `agent-chain-orchestrator.ts:48-55`.
+> That module is **Phase 24B legacy and now dead code** — nothing imports
+> `runAgentChain` in production (the only reference is a Phase 23-25 legacy
+> test). The production seams are different and live on **two sides**:
+
+**Worker side** — `ChainWorkerHandlerDeps.executeSubtask` in `chain-worker.ts:107-111`:
 
 ```ts
-findProviders: (capabilityTag: string) => Promise<ChainProvider[]>
-executeStep: (provider, step, input, correlationId) => Promise<string | null>
+executeSubtask?: (
+  subtask: ChainSubtask,
+  onPartial: (partial: TaskChainPartialPayload) => Promise<void>,
+  opts?: { inputArtifacts?: NamedArtifact[] },
+) => Promise<{ ok: boolean; finalNote?: string }>
 ```
 
-`ChainProvider` has `capabilities: string[]`. `executeStep` returns a `string | null`. **The orchestrator's merge step has to handle whatever string the worker returned.** This is the heterogeneity tax: the orchestrator is forced to be runtime-aware in its merge logic, because the seam is untyped.
+The two production implementations are `createOpenClawChainSubtaskExecutor`
+and `createExtAgentChainSubtaskExecutor` in `chain-worker-executor.ts:139-178`,
+both built on the shared `createEngineChainSubtaskExecutor` (`chain-worker-executor.ts:180-271`)
+whose contract is `{ isReady, ask }`. They emit `task.chain.partial` events
+during execution (streaming `ChainSubtaskPartial` with `note`, `confidence`,
+and Phase 53 named artifacts) and are wired in
+`node-service-chain-orchestration.ts:942-957` based on the node's
+`agentNetworkWorkerEngine` config.
+
+**Orchestrator side** — `ChainOrchestratorSendDeps.findWorkers(capability) → Promise<string[]>` plus
+wire negotiation (`task.chain.propose` → `task.chain.bid` → `task.chain.accept` → heartbeat →
+`task.chain.partial`). Work is dispatched **over the wire**; the orchestrator never runs the
+worker's agent in-process.
+
+`ChainProvider` (with `capabilities: string[]`) and the `string | null` `executeStep`
+survive only in the dead `agent-chain-orchestrator.ts`. **The real heterogeneity tax** is:
+
+- The worker's result channel is `ChainSubtaskPartial` (`note` + `artifactFragment` +
+  `namedArtifacts`). Today every engine produces a **text** artifact. A runtime that wants
+  to return structured data or file refs must be squeezed through the same text-shaped
+  pipeline (`chain-worker-executor.ts:123-133` clips everything to `{ kind: "text" }`).
+- Readiness is a boolean (`isOpenClawReady` / `isExtAgentBridgeReady`); there is no
+  per-skill capability advertisement that says *what* the engine is good at.
+- The worker reports `confidence` self-reported in the partial; there is no verified verdict.
+
+The MAP adapter replaces the `{ isReady, ask }` contract on the worker side with
+`AgentAdapter.execute` → `SignedAgentResult` (typed `ContentBlock[]`) and adds
+`AgentAdapter.verify` for the orchestrator's verdict. `chain-map.ts` is the bridge
+that maps `ChainSubtask ↔ ExecuteInput` and `SignedAgentResult → ChainSubtaskPartial`
+so the orchestrator's wire protocol does not change.
 
 ---
 
@@ -162,13 +200,13 @@ In priority order (each is a guard against a specific failure mode):
 | **AgentAdapter interface** | `packages/agent-adapter/src/agent-adapter.ts` (new) | Common surface: `getCapabilities`, `execute`, `verify` |
 | **Per-runtime adapters** | `packages/agent-adapter/src/{openclaw,pi,hermes,codex}-adapter.ts` (new) | Runtime-specific I/O, runtime-specific verifier |
 | **Adapter registry** | `packages/agent-adapter/src/adapter-registry.ts` (new) | Pick one adapter per node based on `settings.json` |
-| **MAP interop layer** | `apps/node/src/chain-map.ts` (new) | Normalize before feeding orchestrator |
+| **MAP interop layer** | `apps/node/src/chain-map.ts` (new) | Worker-side bridge: `ChainSubtask → ExecuteInput`, `SignedAgentResult → ChainSubtaskPartial`, advisory `adapter.verify` gate. Shadow mode compares adapter path vs legacy engine path |
 | **Adapter broadcast** | `apps/node/src/agent-adapter-broadcast.ts` (new) | Periodic signed manifest broadcast |
 | **3-tuple reputation** | `apps/node/src/chain-reputation-3tuple.ts` (new) | Reads from `ArbitrationStore`, exposes `getScore(peer, runtime, skill)` |
 | **Cross-agent verifier** | `packages/agent-adapter/src/cross-agent-verifier.ts` (new) | Two-runtime comparison |
 | **Per-agent scoreboard** | `apps/node/src/verifier-scoreboard.ts` (new) | Local append-only, 5-step self-evolution per runtime |
 | **Federated scoreboard** | `apps/node/src/mesh-scoreboard.ts` (new) | Public, opt-in pull of rules across peers running the same runtime |
-| **Modified orchestrator seam** | `apps/node/src/chain-orchestrator.ts` (lines around `findProviders` / `executeStep`) | Type changes; state machine unchanged |
+| **Modified worker executor** | `apps/node/src/chain-worker-executor.ts` (the `createEngineChainSubtaskExecutor` `{ isReady, ask }` contract) | Gains an adapter-backed variant dispatching through `chain-map.ts`; state machine unchanged |
 
 ### 3.2 The non-negotiables
 
@@ -538,8 +576,20 @@ export class OpenClawAdapter implements AgentAdapter {
   readonly runtime = 'openclaw' as const
 
   constructor(
-    private readonly runtime_: OpenClawRuntime,
-    private readonly modelConfig: OpenClawModelConfig | null,
+    // Grounded (2026-08-18): the adapter wraps the production OpenClaw
+    // path, not the raw `OpenClawRuntime` child-process class:
+    //   - askViaRuntime_  — `askOpenClawViaRuntime` (policy prompt + RAG +
+    //                       webhook bridge + per-ask lock)
+    //   - isReady_        — `isOpenClawReady()` (matches the existing
+    //                       createOpenClawChainSubtaskExecutor contract)
+    //   - workerPeerId_   — the node's agent peerId
+    private readonly askViaRuntime_: (
+      prompt: string,
+      ctx?: { ownerApproved?: boolean },
+    ) => Promise<string>,
+    private readonly isReady_: () => boolean,
+    private readonly workerPeerId_: string,
+    private readonly runtimeVersion_: () => Promise<string>,
   ) {}
 
   describeSkills(): SkillDescriptor[] {
@@ -553,7 +603,11 @@ export class OpenClawAdapter implements AgentAdapter {
   }): Promise<CapabilityManifest> {
     const unsigned = {
       runtime: this.runtime,
-      runtimeVersion: await this.runtime_.version(),
+      // NOTE: the real `OpenClawRuntime` has no `version()` method. The
+      // runtime version is a config string the adapter reads from
+      // `settings.json` (`openclawConfig.runtimeVersion`) or defaults to
+      // `"unknown"` — see chain-map.ts first cut.
+      runtimeVersion: await this.runtimeVersion_(),
       peerId: input.peerId,
       ownerId: input.ownerId,
       skills: this.describeSkills(),
@@ -575,26 +629,36 @@ export class OpenClawAdapter implements AgentAdapter {
   }): Promise<SignedAgentResult> {
     const prompt = this.buildPrompt(input)
 
-    // Drive OpenClaw via its existing runtime. This is the only place
-    // that knows about OpenClaw's specific protocol.
-    const text = await this.runtime_.prompt(prompt, {
-      timeoutMs: input.deadlineMs,
-      signal: input.signal,
-      modelConfig: this.modelConfig,
+    // Grounded (2026-08-18): the real `OpenClawRuntime` has no `prompt()`
+    // method. Production execution goes through `askOpenClawViaRuntime`
+    // (apps/node/src/node-service-openclaw-runtime.ts:1733), which:
+    //   - ensures the runtime is ready (`ensureOpenClawReadyViaRuntime`),
+    //   - builds EnvoyMesh policy prompts + RAG context,
+    //   - routes through the webhook bridge under a per-ask lock.
+    // The adapter wraps THAT function (plus `isOpenClawReady()`), not the
+    // raw child-process runtime. `buildOpenClawSubtaskPrompt` (already in
+    // chain-worker-executor.ts) formats constraints/role/thread/artifacts.
+    const text = await this.askViaRuntime_(prompt, {
+      ownerApproved: true,
+      // deadlineMs/signal propagate if the host bridges them; otherwise the
+      // adapter falls back to the runtime's responseTimeoutMs.
     })
 
     const content: ContentBlock[] = [{ kind: 'text', text, mimeType: 'text/markdown' }]
     const unsigned: AgentResult = {
       skillId: input.skillId,
       runtime: this.runtime,
-      peerId: this.runtime_.peerId,
+      // NOTE: `OpenClawRuntime` has no `peerId` — the adapter takes the
+      // node's agent peerId as a constructor input (same as the existing
+      // createOpenClawChainSubtaskExecutor({ workerPeerId })).
+      peerId: this.workerPeerId_,
       correlationId: input.correlationId,
       content,
       citations: [],
-      metrics: { durationMs: /* ... */, costUsd: /* ... */ },
+      metrics: { durationMs: /* now - startedAt */, costUsd: /* runtime-reported or 0 */ },
       completedAt: new Date().toISOString(),
     }
-    return signCanonicalPayload(unsigned, /* owner private key */)
+    return signCanonicalPayload(unsigned, /* node-provisioned signing key */)
   }
 
   async verify(input: {
@@ -627,6 +691,14 @@ export class OpenClawAdapter implements AgentAdapter {
 ```
 
 **This is the only place that knows about OpenClaw.** The orchestrator sees `AgentResult`; the verifier sees the same.
+
+> **Grounding note (2026-08-18):** the sketch above deliberately keeps the
+> OpenClaw-specific **prompt building** in the adapter, but the production
+> prompt builder already exists in `chain-worker-executor.ts`:
+> `buildOpenClawSubtaskPrompt` formats constraints / role / thread / Phase 53
+> input artifacts, and `formatInputArtifactsForPrompt` renders named artifacts.
+> The first-cut adapter (`chain-map.ts` + `openclaw-adapter.ts`) reuses those
+> rather than duplicating them.
 
 ### 5.3 Sketches of other adapters
 
@@ -1124,12 +1196,12 @@ Week 1-2: New package
 Week 2-3: Wiring
 
 - `agent-adapter-broadcast.ts`: periodic signed manifest broadcast (every TTL/2, default 2.5 min)
-- `chain-map.ts`: MAP interop layer; today it just *also* runs the old `chain-llm.ts` path and logs the difference
+- `chain-map.ts`: MAP interop layer; today it just *also* runs the old engine path (`createOpenClawChainSubtaskExecutor` in `chain-worker-executor.ts`) and logs the difference
 - Settings: `agentRuntime` field in `~/.envoymesh/settings.json`
 
 Week 3-4: Shadow mode
 
-- In shadow mode, `chain-map.ts` runs both paths (old `chain-llm.ts` and new `OpenClawAdapter.execute`) and compares the results.
+- In shadow mode, `chain-map.ts` runs both paths (old engine path `chain-worker-executor.ts` and new `OpenClawAdapter.execute`) and compares the results.
 - Owners see a "MAP shadow" log entry but no behavior change.
 - **Success criterion**: after 1-2 weeks of shadow, results are identical for ≥95% of tasks. (If not, the adapter is mis-modeling; iterate.)
 
@@ -1137,9 +1209,9 @@ Week 3-4: Shadow mode
 
 Week 1: Switch the seam
 
-- `chain-orchestrator.ts`'s `findProviders` returns `CapabilityManifest[]` instead of `ChainProvider[]`
-- `executeStep` returns `SignedAgentResult` instead of `string | null`
-- `synthesizeChain` consumes `ContentBlock[]` instead of strings
+- Worker side: the `executeSubtask` wiring in `node-service-chain-orchestration.ts` routes through `chain-map.ts` (adapter-backed executor); `chain-worker-executor.ts` stays as the legacy path (Sprint 1 shadow mode compares them)
+- Orchestrator side: `findWorkers` expands from `Promise<string[]>` (capability-tag pool) to a worker pool carrying manifests (Sprint 2)
+- `synthesizeChain` consumes normalized `ContentBlock[]` / named artifacts (Sprint 2)
 - The orchestrator's state machine does not change
 
 Week 2: 3-tuple reputation
@@ -1208,8 +1280,8 @@ This section is the literal "what to type" for the first sprint.
 | `packages/agent-adapter/src/verifier-rules/owner-allowed-topics.ts` | 80 | One rule, owner-policy-aware |
 | `packages/agent-adapter/test/openclaw-adapter.test.ts` | 250 | Adapter + verifier tests |
 | `apps/node/src/agent-adapter-broadcast.ts` | 120 | Periodic manifest broadcast |
-| `apps/node/src/chain-map.ts` | 150 | MAP interop layer (shadow mode in Sprint 1) |
-| `apps/node/test/chain-map.test.ts` | 100 | Shadow-mode equivalence tests |
+| `apps/node/src/chain-map.ts` | 220 | MAP interop layer — worker-side bridge: `ChainSubtask → ExecuteInput`, `SignedAgentResult → ChainSubtaskPartial`, advisory verify gate (Sprint 1) |
+| `apps/node/test/chain-map.test.ts` | 150 | Chain-map bridge + shadow-mode equivalence tests |
 
 **Sprint 1 total: ~1700 lines, mostly tests.**
 
@@ -1219,12 +1291,19 @@ This section is the literal "what to type" for the first sprint.
 |---|---|
 | `packages/protocol/src/index.ts` | Export new schemas from `agent-adapter.ts` |
 | `packages/api/src/agent-network-settings.ts` (if exists) | Add `agentRuntime: AgentRuntime` field |
-| `apps/node/src/chain-orchestrator.ts` (line ~20, the `findProviders` type) | `Promise<ChainProvider[]>` → `Promise<CapabilityManifest[]>` (in Sprint 2, not Sprint 1) |
-| `apps/node/src/chain-orchestrator.ts` (line ~50, the `executeStep` return type) | `Promise<string \| null>` → `Promise<SignedAgentResult \| null>` (Sprint 2) |
+| `apps/node/src/node-service-chain-orchestration.ts` (line ~942, the `executeSubtask` wiring) | Dispatch the worker-side executor through `chain-map.ts` (adapter-backed variant) when the node runs a MAP runtime (Sprint 1 shadow / Sprint 2 switch) |
+| `apps/node/src/chain-worker-executor.ts` (the `createEngineChainSubtaskExecutor` contract) | Optionally share prompt/artifact formatting with the adapter; add an adapter-backed executor variant (Sprint 1) |
 | `apps/node/src/chain-arbitration.ts` (the `ChainArbitrationEntry` union) | Add `VerdictEntry` as a member (Sprint 2) |
 | `apps/node/src/chain-sensitivity-gate.ts` | Add `requiresReputationApproval` (Sprint 2) |
 | `apps/node/src/chain-budget-ledger.ts` | Add `verificationReservedUsd` / `verificationCommittedUsd` (Sprint 3) |
-| `apps/node/src/agent-chain-orchestrator.ts` (line 21, `ChainProvider` interface) | The `capabilities: string[]` field gets deprecated; the new manifest is preferred (Sprint 2) |
+| `apps/node/src/chain-plan-assign.ts` (`scoreFor` / `bestPeerForRole`) | Blend 3-tuple reputation into role/skill scoring (Sprint 2) |
+| `apps/node/src/agent-chain-orchestrator.ts` (line 21, `ChainProvider` interface) | **Dead code** (Phase 24B legacy; nothing imports `runAgentChain` in production). The manifest is preferred over `ChainProvider`; the legacy file is deprecated for deletion, not modification (Sprint 2) |
+
+> **Grounded (2026-08-18):** `chain-orchestrator.ts`'s `findProviders` /
+> `executeStep` are **not** the seam to change — that seam is the dead
+> `agent-chain-orchestrator.ts`. The orchestrator-side change is
+> `findWorkers` (capability string → manifest pool) and the worker-side
+> change is the executor wiring above.
 
 ### Existing files explicitly NOT modified
 
@@ -1250,7 +1329,7 @@ For each adapter, write a test suite with three categories:
 
 In `apps/node/test/`:
 
-- **MAP shadow mode equivalence**: run the same chain 100 times under both the old `chain-llm.ts` path and the new `OpenClawAdapter.execute` path. Assert ≥95% content equivalence (semantic similarity ≥0.9 on text blocks).
+- **MAP shadow mode equivalence**: run the same chain 100 times under both the legacy engine path (`createOpenClawChainSubtaskExecutor` / `chain-worker-executor.ts`) and the new adapter path (`chain-map.ts` + `OpenClawAdapter.execute`). Assert ≥95% content equivalence (semantic similarity ≥0.9 on text blocks).
 - **Reputation 3-tuple independence**: simulate 50 verdicts for `(peerA, openclaw, translate)` with pass rate 0.9, and 50 for `(peerA, hermes, translate)` with pass rate 0.4. Assert the two scores are tracked separately.
 - **Sensitivity gate extension**: a peer with reputation 0.5 on a `private`-sensitivity mandate should be blocked. A peer with reputation 0.9 on the same mandate should pass.
 

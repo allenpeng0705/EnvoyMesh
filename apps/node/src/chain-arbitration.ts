@@ -37,7 +37,7 @@ import { isLocalEntryWinning } from "./chain-handoff.js";
  * **Future migration (Phase 41, MAP):** the design says
  * `VerdictEntrySchema` from `@envoymesh/protocol/agent-adapter`
  * ("MAP") is "designed to slot into the existing `ArbitrationStore`"
- * (see `docs/improving-agent-network.md` §4.3). The migration is
+ * (see `docs/improving-agent-network.en.md` §4.3). The migration is
  * forward-looking:
  *
  * - Today, the store holds `ChainArbitrationEntry` (Phase 40E, the

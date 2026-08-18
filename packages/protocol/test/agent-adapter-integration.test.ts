@@ -17,7 +17,7 @@
  *
  * This test does NOT exercise runtime migration; it only proves the
  * types can coexist. The actual `ArbitrationStore` migration is a
- * Phase 41 work item tracked in `docs/improving-agent-network.md` §4.3.
+ * Phase 41 work item tracked in `docs/improving-agent-network.en.md` §4.3.
  */
 
 import { describe, expect, it } from "vitest";

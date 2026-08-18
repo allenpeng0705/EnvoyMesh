@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@envoymesh/api": "0.2.2",
+    "@envoymesh/agent-adapter": "0.2.2",
     "@envoymesh/bonds": "0.2.2",
     "@envoymesh/identity": "0.2.2",
     "@envoymesh/ipfs-helia": "0.2.2",

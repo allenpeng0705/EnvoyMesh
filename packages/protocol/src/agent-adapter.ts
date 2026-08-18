@@ -17,15 +17,15 @@
  * file is the contract they implement against; both sides depend on the
  * same Zod schemas.
  *
- * **Design doc:** `docs/improving-agent-network.md` §4 (the three schemas)
+ * **Design doc:** `docs/improving-agent-network.en.md` §4 (the three schemas)
  * and §5.1 (the adapter interface). The schemas here implement §4 verbatim.
  *
  * **Schema invariants (enforced at parse time, see agent-adapter.test.ts):**
  * - `SkillIdSchema` matches `^[a-z][a-z0-9_-]{1,63}$` — lowercase start, 2-64 chars.
  * - `CapabilityManifest.skills` is `.min(1)` — every node advertises at least one skill.
  * - `CapabilityManifest.reputationBySkill` is in `[0, 1]`.
- * - `AgentResult.content` is a non-empty array of `ContentBlock`s.
- *   The legacy `Promise<string | null>` shape is *replaced*, not aliased.
+ * - `AgentResult.content` is an array of `ContentBlock`s (may be empty; the
+ *   design doc §4.2 specifies `.min(0)` — an adapter can return no blocks).
  * - `VerdictEntry.signature` is mandatory — every verdict is signed.
  * - `VerdictEntry.verifierModel` is required iff `source === 'llm'`.
  * - `VerdictEntry.verifierOwnerId` is required iff `source === 'human'`.
@@ -48,10 +48,13 @@ import { z } from "zod";
  * sketched. The other values are pre-existing runtimes; new runtimes are
  * added by extending this enum and bumping `SCHEMA_VERSION`.
  *
- * The mesh treats unknown runtime values as opaque (capability advertisement
- * only) — it won't refuse to relay a manifest with a runtime it doesn't
- * recognize, but the orchestrator will not assign tasks to a runtime it
- * can't verify.
+ * The enum is **closed by design**: an unknown runtime value fails parse at
+ * the inbound guard, so a node running an older protocol version will reject
+ * a manifest advertising a newer runtime until it upgrades. This is
+ * deliberate — the runtime value is used as a registry key and shown in UX,
+ * so arbitrary strings are not allowed through. Adapters for unregistered
+ * runtimes are simply absent from `AdapterRegistry`; the mesh will not
+ * assign tasks to a runtime it cannot verify.
  */
 export const AgentRuntimeSchema = z.enum([
   "envoy-harness",

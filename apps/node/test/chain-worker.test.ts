@@ -201,13 +201,30 @@ describe("handleWorkerPropose", () => {
   });
 
   it("declines when Agent Network engine (OpenClaw) is not ready", async () => {
-    const deps = makeHandlerDeps({ isAgentNetworkEngineReady: () => false });
+    // Mirror the production wiring in node-service-chain-orchestration.ts:938:
+    // the deny reason is engine-specific, supplied by the host (not the fallback).
+    const deps = makeHandlerDeps({
+      isAgentNetworkEngineReady: () => false,
+      agentNetworkEngineDenyReason: () => "openclaw_unavailable",
+    });
     const r = await handleWorkerPropose(deps, orchestratorEnvelope(), proposePayload(subtask()));
     expect(r.ok).toBe(false);
     expect(deps.sendDeps.sentEnvelopes.length).toBe(0);
     expect(
       deps.auditEvents.some(
         (e) => e.type === "chain.bid_declined" && e.summary === "openclaw_unavailable",
+      ),
+    ).toBe(true);
+  });
+
+  it("falls back to an_engine_unavailable when no engine-specific deny reason is supplied", async () => {
+    const deps = makeHandlerDeps({ isAgentNetworkEngineReady: () => false });
+    const r = await handleWorkerPropose(deps, orchestratorEnvelope(), proposePayload(subtask()));
+    expect(r.ok).toBe(false);
+    expect(deps.sendDeps.sentEnvelopes.length).toBe(0);
+    expect(
+      deps.auditEvents.some(
+        (e) => e.type === "chain.bid_declined" && e.summary === "an_engine_unavailable",
       ),
     ).toBe(true);
   });

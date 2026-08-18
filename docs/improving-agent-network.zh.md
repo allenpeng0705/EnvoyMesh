@@ -78,14 +78,47 @@ planChain → launchChain → evaluateBids → trackChain (heartbeat)
 
 ### 1.7 异构性税 —— 缺口在哪
 
-Orchestrator 和 worker 之间的接缝是 `findProviders / executeStep`(从 `agent-chain-orchestrator.ts:48-55`)。当前形状:
+> **已核对(2026-08-18):** 本节之前把接缝描述为 `agent-chain-orchestrator.ts:48-55`
+> 的 `findProviders / executeStep`。该模块是 **Phase 24B 遗留代码,现在已是死代码**
+> —— 生产代码没有任何地方 import `runAgentChain`(唯一引用是一个 Phase 23-25 遗留测试)。
+> 真正的接缝在 **两端**:
+
+**Worker 侧** —— `chain-worker.ts:107-111` 的 `ChainWorkerHandlerDeps.executeSubtask`:
 
 ```ts
-findProviders: (capabilityTag: string) => Promise<ChainProvider[]>
-executeStep: (provider, step, input, correlationId) => Promise<string | null>
+executeSubtask?: (
+  subtask: ChainSubtask,
+  onPartial: (partial: TaskChainPartialPayload) => Promise<void>,
+  opts?: { inputArtifacts?: NamedArtifact[] },
+) => Promise<{ ok: boolean; finalNote?: string }>
 ```
 
-`ChainProvider` 有 `capabilities: string[]`。`executeStep` 返回 `string | null`。**Orchestrator 的 merge step 必须能处理 worker 返回的任何字符串。** 这就是异构性税:orchestrator 被迫在 merge 逻辑里 runtime-aware,因为 seam 没有类型。
+两个生产实现是 `chain-worker-executor.ts:139-178` 的
+`createOpenClawChainSubtaskExecutor` 和 `createExtAgentChainSubtaskExecutor`,
+它们都建立在 `createEngineChainSubtaskExecutor`(`chain-worker-executor.ts:180-271`)
+的 `{ isReady, ask }` 契约上。执行期间通过 `task.chain.partial` 事件流式上报
+`ChainSubtaskPartial`(`note` + `confidence` + Phase 53 named artifacts),
+并在 `node-service-chain-orchestration.ts:942-957` 根据节点的
+`agentNetworkWorkerEngine` 配置接线。
+
+**Orchestrator 侧** —— `ChainOrchestratorSendDeps.findWorkers(capability) → Promise<string[]>` 加
+线上协商(`task.chain.propose` → `task.chain.bid` → `task.chain.accept` → heartbeat →
+`task.chain.partial`)。任务通过 **线协议** 分发;orchestrator 从不进程内运行 worker 的 agent。
+
+`ChainProvider`(`capabilities: string[]`)和 `string | null` 的 `executeStep`
+只存在于已死的 `agent-chain-orchestrator.ts`。**真正的异构性税** 是:
+
+- worker 的结果通道是 `ChainSubtaskPartial`(`note` + `artifactFragment` + `namedArtifacts`)。
+  今天每个引擎产出的都是 **text** artifact。想返回结构化数据或文件引用的运行时,
+  只能硬挤进同一个 text 形状的管道(`chain-worker-executor.ts:123-133` 把一切裁成 `{ kind: "text" }`)。
+- 就绪状态是布尔值(`isOpenClawReady` / `isExtAgentBridgeReady`);没有按 skill 的能力声明,
+  说不出引擎*擅长什么*。
+- worker 在 partial 里自报 `confidence`;没有经过验证的 verdict。
+
+MAP adapter 用 `AgentAdapter.execute → SignedAgentResult`(typed `ContentBlock[]`)
+替换 worker 侧的 `{ isReady, ask }` 契约,并新增 `AgentAdapter.verify` 供 orchestrator 出 verdict。
+`chain-map.ts` 是桥梁,把 `ChainSubtask ↔ ExecuteInput` 和
+`SignedAgentResult → ChainSubtaskPartial` 映射好,orchestrator 的线协议不变。
 
 ---
 
@@ -162,13 +195,13 @@ executeStep: (provider, step, input, correlationId) => Promise<string | null>
 | **AgentAdapter interface** | `packages/agent-adapter/src/agent-adapter.ts`(新)| 通用 surface:`getCapabilities`、`execute`、`verify` |
 | **Per-runtime adapters** | `packages/agent-adapter/src/{openclaw,pi,hermes,codex}-adapter.ts`(新)| Runtime 特有 I/O,runtime 特有 verifier |
 | **Adapter registry** | `packages/agent-adapter/src/adapter-registry.ts`(新)| 根据 `settings.json` 选一个 adapter |
-| **MAP interop layer** | `apps/node/src/chain-map.ts`(新)| 喂给 orchestrator 之前先归一化 |
+| **MAP interop layer** | `apps/node/src/chain-map.ts`(新)| Worker 侧桥梁:`ChainSubtask → ExecuteInput`、`SignedAgentResult → ChainSubtaskPartial`、advisory `adapter.verify` 闸门。影子模式对比 adapter 路径 vs 遗留引擎路径 |
 | **Adapter broadcast** | `apps/node/src/agent-adapter-broadcast.ts`(新)| 周期签名 manifest 广播 |
 | **3-tuple reputation** | `apps/node/src/chain-reputation-3tuple.ts`(新)| 从 `ArbitrationStore` 读,暴露 `getScore(peer, runtime, skill)` |
 | **Cross-agent verifier** | `packages/agent-adapter/src/cross-agent-verifier.ts`(新)| 两个 runtime 对比 |
 | **Per-agent scoreboard** | `apps/node/src/verifier-scoreboard.ts`(新)| 本地 append-only,runtime 级别 5 步自进化 |
 | **Mesh-federated scoreboard** | `apps/node/src/mesh-scoreboard.ts`(新)| 公开、opt-in 拉取同 runtime peer 的规则 |
-| **Modified orchestrator seam** | `apps/node/src/chain-orchestrator.ts`(`findProviders` / `executeStep` 周围那几行)| 类型变更;状态机不变 |
+| **Modified worker executor** | `apps/node/src/chain-worker-executor.ts`(`createEngineChainSubtaskExecutor` 的 `{ isReady, ask }` 契约)| 增加走 `chain-map.ts` 的 adapter 变体;状态机不变 |
 
 ### 3.2 硬性要求
 
@@ -551,7 +584,10 @@ export class OpenClawAdapter implements AgentAdapter {
   }): Promise<CapabilityManifest> {
     const unsigned = {
       runtime: this.runtime,
-      runtimeVersion: await this.runtime_.version(),
+      // NOTE: 真实 `OpenClawRuntime` 没有 `version()` 方法。runtime 版本是
+      // adapter 从 `settings.json`(`openclawConfig.runtimeVersion`)读取的配置字符串,
+      // 缺省 `"unknown"` —— 见 chain-map.ts 第一版。
+      runtimeVersion: await this.runtimeVersion_(),
       peerId: input.peerId,
       ownerId: input.ownerId,
       skills: this.describeSkills(),
@@ -573,23 +609,30 @@ export class OpenClawAdapter implements AgentAdapter {
   }): Promise<SignedAgentResult> {
     const prompt = this.buildPrompt(input)
 
-    // 通过现有 runtime 驱动 OpenClaw。**这是唯一知道 OpenClaw
-    // 特有协议的地方。**
-    const text = await this.runtime_.prompt(prompt, {
-      timeoutMs: input.deadlineMs,
-      signal: input.signal,
-      modelConfig: this.modelConfig,
+    // 已核对(2026-08-18):真实 `OpenClawRuntime` 没有 `prompt()` 方法。
+    // 生产执行走 `askOpenClawViaRuntime`(apps/node/src/node-service-openclaw-runtime.ts:1733):
+    //   - 先确保 runtime 就绪(`ensureOpenClawReadyViaRuntime`),
+    //   - 组装 EnvoyMesh 策略 prompt + RAG context,
+    //   - 在 per-ask 锁下走 webhook bridge。
+    // adapter 包装的是这个函数(外加 `isOpenClawReady()`),不是裸的
+    // child-process runtime。`buildOpenClawSubtaskPrompt`(已在
+    // chain-worker-executor.ts)负责格式化 constraints/role/thread/artifacts。
+    const text = await this.askViaRuntime_(prompt, {
+      ownerApproved: true,
+      // deadlineMs/signal 若 host 支持则透传;否则回退 runtime 的 responseTimeoutMs。
     })
 
     const content: ContentBlock[] = [{ kind: 'text', text, mimeType: 'text/markdown' }]
     const unsigned: AgentResult = {
       skillId: input.skillId,
       runtime: this.runtime,
-      peerId: this.runtime_.peerId,
+      // NOTE: `OpenClawRuntime` 没有 `peerId` —— adapter 把节点 agent peerId
+      // 作为构造参数传入(同现有 createOpenClawChainSubtaskExecutor({ workerPeerId }))。
+      peerId: this.workerPeerId_,
       correlationId: input.correlationId,
       content,
       citations: [],
-      metrics: { durationMs: /* ... */, costUsd: /* ... */ },
+      metrics: { durationMs: /* now - startedAt */, costUsd: /* runtime-reported or 0 */ },
       completedAt: new Date().toISOString(),
     }
     return signCanonicalPayload(unsigned, /* owner private key */)
@@ -1119,12 +1162,12 @@ const FederatedEntrySchema = z.object({
 第 2-3 周:接线
 
 - `agent-adapter-broadcast.ts`:周期签名 manifest 广播(每 TTL/2,默认 2.5 分钟)
-- `chain-map.ts`:MAP interop 层;今天它 *也* 跑旧 `chain-llm.ts` 路径,记录差异
+- `chain-map.ts`:MAP interop 层;今天它 *也* 跑旧引擎路径(`createOpenClawChainSubtaskExecutor`),记录差异
 - Settings:`settings.json` 里的 `agentRuntime` 字段
 
 第 3-4 周:影子模式
 
-- 影子模式,`chain-map.ts` 同时跑两条路径(旧 `chain-llm.ts` 和新 `OpenClawAdapter.execute`),比较结果
+- 影子模式,`chain-map.ts` 同时跑两条路径(旧引擎路径 `chain-worker-executor.ts` 和新 `OpenClawAdapter.execute`),比较结果
 - Owner 看到"MAP shadow"日志条目但行为不变
 - **成功标准**:1-2 周影子后,≥95% 任务结果相同。(如果不是,adapter 把 runtime 建模错了;迭代。)
 
@@ -1132,9 +1175,9 @@ const FederatedEntrySchema = z.object({
 
 第 1 周:切换 seam
 
-- `chain-orchestrator.ts` 的 `findProviders` 返回 `CapabilityManifest[]` 而不是 `ChainProvider[]`
-- `executeStep` 返回 `SignedAgentResult` 而不是 `string | null`
-- `synthesizeChain` 消费 `ContentBlock[]` 而不是字符串
+- Worker 侧:`node-service-chain-orchestration.ts` 的 `executeSubtask` 接线改走 `chain-map.ts`(adapter-backed executor);`chain-worker-executor.ts` 保留为 legacy 路径(Sprint 1 影子模式对比)
+- Orchestrator 侧:`findWorkers` 从 `Promise<string[]>`(capability 标签池)扩展为携带 manifest 的 worker 池(Sprint 2)
+- `synthesizeChain` 消费归一化的 `ContentBlock[]`/named artifacts(Sprint 2)
 - Orchestrator 状态机不变
 
 第 2 周:三元组 reputation
@@ -1203,8 +1246,8 @@ const FederatedEntrySchema = z.object({
 | `packages/agent-adapter/src/verifier-rules/owner-allowed-topics.ts` | 80 | 一条规则,owner-policy-aware |
 | `packages/agent-adapter/test/openclaw-adapter.test.ts` | 250 | Adapter + verifier 测试 |
 | `apps/node/src/agent-adapter-broadcast.ts` | 120 | 周期 manifest 广播 |
-| `apps/node/src/chain-map.ts` | 150 | MAP interop 层(Sprint 1 影子模式)|
-| `apps/node/test/chain-map.test.ts` | 100 | 影子模式等价性测试 |
+| `apps/node/src/chain-map.ts` | 220 | MAP interop 层 —— worker 侧桥梁:`ChainSubtask → ExecuteInput`、`SignedAgentResult → ChainSubtaskPartial`、advisory verify 闸门(Sprint 1)|
+| `apps/node/test/chain-map.test.ts` | 150 | chain-map 桥梁 + 影子模式等价性测试 |
 
 **Sprint 1 总计:~1700 行,主要是测试。**
 
@@ -1214,12 +1257,17 @@ const FederatedEntrySchema = z.object({
 |---|---|
 | `packages/protocol/src/index.ts` | 从 `agent-adapter.ts` export 新 schema |
 | `packages/api/src/agent-network-settings.ts`(如果存在)| 加 `agentRuntime: AgentRuntime` 字段 |
-| `apps/node/src/chain-orchestrator.ts`(line ~20,`findProviders` 类型)| `Promise<ChainProvider[]>` → `Promise<CapabilityManifest[]>`(Sprint 2,不是 Sprint 1)|
-| `apps/node/src/chain-orchestrator.ts`(line ~50,`executeStep` 返回类型)| `Promise<string \| null>` → `Promise<SignedAgentResult \| null>`(Sprint 2)|
+| `apps/node/src/node-service-chain-orchestration.ts`(line ~942,`executeSubtask` 接线)| 节点跑 MAP runtime 时,worker 侧执行器走 `chain-map.ts`(adapter 变体)(Sprint 1 影子 / Sprint 2 切换)|
+| `apps/node/src/chain-worker-executor.ts`(`createEngineChainSubtaskExecutor` 契约)| 与 adapter 共享 prompt/artifact 格式化;增加 adapter 执行器变体(Sprint 1)|
 | `apps/node/src/chain-arbitration.ts`(`ChainArbitrationEntry` 联合)| 加 `VerdictEntry` 作为成员(Sprint 2)|
 | `apps/node/src/chain-sensitivity-gate.ts` | 加 `requiresReputationApproval`(Sprint 2)|
 | `apps/node/src/chain-budget-ledger.ts` | 加 `verificationReservedUsd` / `verificationCommittedUsd`(Sprint 3)|
-| `apps/node/src/agent-chain-orchestrator.ts`(line 21,`ChainProvider` interface)| `capabilities: string[]` 字段 deprecate;新 manifest 优先(Sprint 2)|
+| `apps/node/src/chain-plan-assign.ts`(`scoreFor` / `bestPeerForRole`)| 把 3-tuple reputation 融入 role/skill 打分(Sprint 2)|
+| `apps/node/src/agent-chain-orchestrator.ts`(line 21,`ChainProvider` interface)| **死代码**(Phase 24B 遗留;生产没有任何地方 import `runAgentChain`)。新 manifest 优先于 `ChainProvider`;该遗留文件标记删除,不改(Sprint 2)|
+
+> **已核对(2026-08-18):** `chain-orchestrator.ts` 的 `findProviders` / `executeStep`
+> **不是**要改的接缝 —— 那个接缝在已死的 `agent-chain-orchestrator.ts`。Orchestrator
+> 侧的改动是 `findWorkers`(capability 字符串 → manifest 池),worker 侧改动是上面的执行器接线。
 
 ### 明确不改的文件
 
@@ -1245,7 +1293,7 @@ const FederatedEntrySchema = z.object({
 
 在 `apps/node/test/`:
 
-- **MAP 影子模式等价性**:同一条 chain 在旧 `chain-llm.ts` 路径和新 `OpenClawAdapter.execute` 路径下各跑 100 次。断言 ≥95% content 等价(文本块语义相似度 ≥0.9)。
+- **MAP 影子模式等价性**:同一条 chain 在旧引擎路径(`createOpenClawChainSubtaskExecutor` / `chain-worker-executor.ts`)和新 adapter 路径(`chain-map.ts` + `OpenClawAdapter.execute`)下各跑 100 次。断言 ≥95% content 等价(文本块语义相似度 ≥0.9)。
 - **Reputation 3-tuple 独立性**:模拟 50 个 verdicts 给 `(peerA, openclaw, translate)` 通过率 0.9,50 个给 `(peerA, hermes, translate)` 通过率 0.4。断言两个分数分开跟踪。
 - **Sensitivity gate 扩展**:一个 reputation 0.5 的 peer 在 `private`-sensitivity mandate 上被拦;reputation 0.9 通过。
 

@@ -20,6 +20,7 @@ export default defineConfig({
       "@envoymesh/api": resolve(rootDir, "packages/api/src/index.ts"),
       "@envoymesh/social": resolve(rootDir, "apps/social/src"),
       "@envoymesh/protocol": resolve(rootDir, "packages/protocol/src/index.ts"),
+      "@envoymesh/agent-adapter": resolve(rootDir, "packages/agent-adapter/src/index.ts"),
       "@envoymesh/identity": resolve(rootDir, "packages/identity/src/index.ts"),
       "@envoymesh/bonds": resolve(rootDir, "packages/bonds/src/index.ts"),
       "#network/data-framing": resolve(rootDir, "packages/network/src/data-framing.ts"),

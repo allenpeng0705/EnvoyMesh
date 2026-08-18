@@ -8,6 +8,7 @@
   "include": ["src/**/*.ts"],
   "references": [
     { "path": "../../packages/protocol" },
+    { "path": "../../packages/agent-adapter" },
     { "path": "../../packages/identity" },
     { "path": "../../packages/bonds" },
     { "path": "../../packages/network" },

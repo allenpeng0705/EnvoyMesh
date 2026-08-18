@@ -4,7 +4,7 @@
  * interface; the concrete adapter class is never imported by the
  * orchestrator.
  *
- * **Design doc:** `docs/improving-agent-network.md` §5.1.
+ * **Design doc:** `docs/improving-agent-network.en.md` §5.1.
  *
  * **Three contracts:**
  *
@@ -109,7 +109,7 @@ export interface VerifyInput {
  * `runtime-registry.getAdapter(runtime)`.
  *
  * **Implementing this interface is the contract for joining the mesh.**
- * See `docs/improving-agent-network.md` §5.2 for a worked example
+ * See `docs/improving-agent-network.en.md` §5.2 for a worked example
  * (OpenClawAdapter), and `envoy-harness/docs/design.md` §11 for the
  * envoy-harness adapter (Package 3, `envoy-harness-adapter`).
  */
@@ -156,9 +156,14 @@ export interface AgentAdapter {
    * `chain-budget-ledger` is the authoritative gate, but the adapter
    * is the first line of defense.
    *
-   * **Return value:** the result is signed by the owner's key (the
-   * adapter holds the owner's signing key for this node). The
-   * signature is over the canonical JSON of the unsigned result.
+   * **Return value:** a `SignedAgentResult`. The node provisions the
+   * adapter with a signing key that the *node* controls (the adapter
+   * does not invent one). The signature is over the canonical JSON
+   * of the unsigned result. Contrast with `buildManifest`, where the
+   * **orchestrator** signs: manifests advertise the owner's capabilities
+   * and must not be forgeable by a compromised adapter, while results
+   * are produced by the adapter and carry the node's key as a
+   * tamper-evident marker for the verifier.
    */
   execute(input: ExecuteInput): Promise<SignedAgentResult>;
 
