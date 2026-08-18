@@ -134,7 +134,7 @@ import {
   createMapChainSubtaskExecutor,
   manifestFromAgentNetworkProfile,
 } from "./chain-map.js";
-import { isManifestFresh } from "./agent-adapter-manifest-inbound.js";
+import { isManifestFresh, pruneExpiredManifests } from "./agent-adapter-manifest-inbound.js";
 import { OpenClawAdapter } from "@envoymesh/agent-adapter";
 import { requiresChainAwardApproval } from "./chain-sensitivity-gate.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
@@ -1721,6 +1721,14 @@ export async function findAgentNetworkWorkersRanked(
     }
   } catch {
     /* store unavailable — leave all offline */
+  }
+
+  // MAP hardening — drop expired wire manifests so the store stays bounded
+  // and stale capability claims never influence ranking.
+  try {
+    pruneExpiredManifests(deps.getChainSideState().remoteManifests);
+  } catch {
+    /* store unavailable — leave stale entries; per-read freshness still guards */
   }
 
   const scored: ChainRankedWorker[] = peerList.map((peerId) => {

@@ -32,6 +32,26 @@ export function isManifestFresh(
   return now.getTime() - issuedAt < manifest.ttlSeconds * 1000;
 }
 
+/**
+ * Remove expired manifests from the store. Returns the number of entries
+ * purged. The worker-pool read path (`findAgentNetworkWorkersRanked`) already
+ * checks freshness per read, but the store would otherwise grow without bound;
+ * this keeps it to live manifests only.
+ */
+export function pruneExpiredManifests(
+  store: Map<string, SignedCapabilityManifest>,
+  now: Date = new Date(),
+): number {
+  let removed = 0;
+  for (const [peerId, manifest] of store) {
+    if (!isManifestFresh(manifest, now)) {
+      store.delete(peerId);
+      removed += 1;
+    }
+  }
+  return removed;
+}
+
 export interface HandleInboundCapabilityManifestInput {
   envelope: EnvoyEnvelope;
   /** Manifest store keyed by the sender's agent peerId. */
@@ -78,5 +98,7 @@ export async function handleInboundCapabilityManifest(
   }
 
   input.store.set(manifest.peerId, manifest);
+  // Keep the store bounded — purge stale manifests whenever a fresh one lands.
+  pruneExpiredManifests(input.store, (input.now ?? (() => new Date()))());
   return { handled: true };
 }

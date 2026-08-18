@@ -1177,7 +1177,7 @@ const FederatedEntrySchema = z.object({
 
 > **状态(2026-08-18):Sprint 2 seam 完成。** Reputation:`chain-plan-assign.ts` 把 per-skill reputation(`PlanAssignRosterEntry.reputationBySkill`,软加项 `+0.2×rep`)融入 `scoreFor` / `bestPeerForRole`;三元组读取器(`chain-reputation-3tuple.ts`)从拓宽后的 `ArbitrationStore`(`recordVerdictEntry` / `getVerdictsFor`)派生分数;roster 通过 `deriveRosterReputation` 补全;`chain-sensitivity-gate.ts` 新增 `requiresReputationApproval`。Seam 切换:`executeSubtask` 现在在 `useMAP` 开启时把 OpenClaw 子任务路由到 adapter 执行器(primary;shadow/legacy 保留),并通过 `buildSubtaskPromptForAdapter` 保留 legacy prompt 面(constraints/role/thread/brief-report 策略)。Orchestrator 池:`findWorkers` 新增携带 manifest 的 worker 池(`findWorkersWithManifests` / `resolveWorkerPool`;`ChainRankedWorker.manifest` 通过 `manifestFromAgentNetworkProfile` 从卡片 profile 合成)。Merge 统一:`synthesizeChain` 消费归一化 `ContentBlock[]` — `chain-map.ts` 拥有 artifact↔block 双向映射(`resultArtifactsToContentBlocks` / `contentBlocksToResultArtifacts`)与唯一文本投影(`contentBlocksToText`),legacy 与 adapter partial 以同一类型化货币进入 merge 步骤;`WorkerContribution` 携带 `contentBlocks`,LLM merge adapter 优先使用 block 投影。Roll out:`NodeConfig.useMAP` opt-in(Agent Network 设置 UI 开关)+ 实时 `ENVOYMESH_MAP_ROLLBACK=1` 回滚开关。
 >
-> **已知缺口(有意为之):**(1) **Verdict 写入路径** — 尚无生产代码写 `VerdictEntry`;权威写入方是 orchestrator 的验证流程(Sprint 3 跨 agent 验证)。worker 侧 `adapter.verify` 保持 advisory(§7.1 拒绝自报 reputation)。在此之前 3-tuple 读取器与 `requiresReputationApproval` 处于休眠状态。(2) ~~Manifest 池消费者~~ **2026-08-18 已落地(first cut)** — `adapter.manifest` 广播已上线(`agent-adapter-broadcast.ts` + `handleInboundCapabilityManifest` → `ChainSideState.remoteManifests`),`findAgentNetworkWorkersRanked` 优先使用新鲜的 wire manifest 而非卡片合成,`findWorkersWithManifests` / `resolveWorkerPool` 已基于真实 wire 数据生效。加固项(首次接收时 owner 签名校验、manifest TTL 清理)留作后续。
+> **已知缺口(有意为之):**(1) **Verdict 写入路径** — 尚无生产代码写 `VerdictEntry`;权威写入方是 orchestrator 的验证流程(Sprint 3 跨 agent 验证)。worker 侧 `adapter.verify` 保持 advisory(§7.1 拒绝自报 reputation)。在此之前 3-tuple 读取器与 `requiresReputationApproval` 处于休眠状态。(2) ~~Manifest 池消费者~~ **2026-08-18 已落地(first cut)** — `adapter.manifest` 广播已上线(`agent-adapter-broadcast.ts` + `handleInboundCapabilityManifest` → `ChainSideState.remoteManifests`),`findAgentNetworkWorkersRanked` 优先使用新鲜的 wire manifest 而非卡片合成,`findWorkersWithManifests` / `resolveWorkerPool` 已基于真实 wire 数据生效。加固项(首次接收时 owner 签名校验、manifest TTL 清理)也 **2026-08-18 完成**(`pruneExpiredManifests`,入站 + 读取路径均生效)。
 
 第 1 周:切换 seam
 
@@ -1212,13 +1212,13 @@ const FederatedEntrySchema = z.object({
 - **验证循环接线(`apps/node/src/chain-verify-loop.ts`)— 首版完成 2026-08-18**:`runChainVerificationLoop` 从 `handleOrchestratorPartial` 调用;写 `rule`/`cross` `VerdictEntry` 到 `ArbitrationStore`;按需升级到第二个 runtime。
 - **verification budget(`chain-budget-ledger.ts` 的 `verificationReservedUsd` / `verificationCommittedUsd`)— 完成 2026-08-18**(`reserveVerification` / `tryCommitVerification` / `releaseVerification` + 快照;`committedTotal` / `headroom` / `projectedSpend` 均计入验证成本)。
 - Owner UI:在 chain proposal 里标记 `criticality: 'high'` — **完成 2026-08-18**:`ChainStartFromGoalParams` 增加 `criticality?: "normal" | "high"`,随 owner 签名的 `ChainMandate`(及整任务 handoff payload)流转,`runChainVerificationLoop` 从 `state.chainMandate.criticality` 读取。Social `ChainStartDialog` 的 Job settings 里新增 "High-criticality job" 开关。
-- **Manifest 广播(`apps/node/src/agent-adapter-broadcast.ts`)— 首版完成 2026-08-18**:协议新增 `adapter.manifest` intent(agent→agent);节点用 `buildSignedCapabilityManifest` 构建 owner 签名的 `SignedCapabilityManifest`,通过 `startManifestBroadcaster`(node 启动时拉起)每 TTL/2 推送给 bonded peers。入站:`handleInboundCapabilityManifest` 用 contact-owner key store 校验 owner 签名、新鲜度后存入 `ChainSideState.remoteManifests`;`findAgentNetworkWorkersRanked` 现在优先用新鲜的 wire manifest 而非卡片合成 — manifest-carrying worker 池**已生效**。
+- **Manifest 广播(`apps/node/src/agent-adapter-broadcast.ts`)— 首版完成 2026-08-18**:协议新增 `adapter.manifest` intent(agent→agent);节点用 `buildSignedCapabilityManifest` 构建 owner 签名的 `SignedCapabilityManifest`,通过 `startManifestBroadcaster`(node 启动时拉起)每 TTL/2 推送给 bonded peers。入站:`handleInboundCapabilityManifest` 用 contact-owner key store 校验 owner 签名、新鲜度后存入 `ChainSideState.remoteManifests`;`findAgentNetworkWorkersRanked` 现在优先用新鲜的 wire manifest 而非卡片合成 — manifest-carrying worker 池**已生效**。**加固完成(同日):** owner 签名校验在*每次*接收都执行(未知 key ⇒ 丢弃,绝不无验证信任),并用 `pruneExpiredManifests` 保持 store 有界(入站 + worker-pool 读取路径都跑),过期 TTL 被清扫、过期 capability 声明永远不可能影响排序。
 
 第 3-4 周:联邦 scoreboard(初始)
 
-- `verifier-scoreboard.ts`(本地,per-runtime)
-- `mesh-scoreboard.ts`(联邦,opt-in)
-- 一个 peer-to-peer pull 在更广发布前手动测试
+- `verifier-scoreboard.ts`(本地,per-runtime)— **2026-08-18 完成(初始)**:append-only、owner 签名、per-runtime 单调版本化的 JSONL 账本;5 步协议的 SNAPSHOT/COMMIT/REVERT 行的持久存储(LLM 驱动的 EVALUATE "重跑 50 个任务" 一步仍延后)。
+- `mesh-scoreboard.ts`(联邦,opt-in)— **2026-08-18 完成(初始)**:`FederatedRuleSchema`、owner 签名发布、采用前 fail-closed 的本地验证闸门 —— 候选规则必须能对一个*已知* contact owner key 验签、目标 runtime 是本节点在跑的、通过联邦证据下限、并且严格高于本节点自身 verdict 历史的 pass rate(本地证据不足 ⇒ `pending`,绝不盲目采用)。
+- 一个 peer-to-peer pull 在更广发布前手动测试 — **2026-08-18 完成**模块级(`apps/node/test/mesh-scoreboard.test.ts` 模拟发布方 + 拉取方);libp2p 线上往返仍为后续。
 
 **总计:11 周,2 个工程师,约 3000 行新代码,不重写现有 orchestrator。**
 
@@ -1320,8 +1320,8 @@ const FederatedEntrySchema = z.object({
 
 在 `apps/node/test/e2e/`:
 
-- **Two-doctor cross-agent**:一条 `criticality: 'high'` 的 chain 跑同一任务,两个不同 runtime,断言 `CrossAgentDisagreementVerifier` 在结果一致时返回 `pass`,不一致时 `disputed`。
-- **联邦 scoreboard pull**:peer A 发一条规则,peer B(跑同一 runtime)opt-in 拉,断言规则在采用前先过本地验证。
+- **Two-doctor cross-agent**:一条 `criticality: 'high'` 的 chain 跑同一任务,两个不同 runtime,断言 `CrossAgentDisagreementVerifier` 在结果一致时返回 `pass`,不一致时 `disputed`。— **2026-08-18 完成**于两层:adapter-seam(`apps/node/test/side-by-side-harness.test.ts`)与 orchestrator 级(`apps/node/test/chain-verify-orchestrator.test.ts`),后者用生产形状的 verify deps 驱动 `handleOrchestratorPartial`(真实 `ArbitrationStore` 写入、runtime 从 wire manifest 解析、升级到另一个 runtime、verification budget 提交)。
+- **联邦 scoreboard pull**:peer A 发一条规则,peer B(跑同一 runtime)opt-in 拉,断言规则在采用前先过本地验证。— **2026-08-18 完成**模块级(`apps/node/test/mesh-scoreboard.test.ts`:owner 签名发布、本地验证闸门 —— 验签、证据下限、严格优于本地 incumbent 才采用;本地证据不足时 `pending`)。
 - **影子模式 parity**:一条 chain 在影子模式下跑 2 周;断言 orchestrator 行为跟非影子模式完全一致。
 
 ### 12.4 测试数据

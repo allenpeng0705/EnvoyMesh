@@ -8,6 +8,7 @@ import type { EnvoyEnvelope, SignedCapabilityManifest } from "@envoymesh/protoco
 import {
   handleInboundCapabilityManifest,
   isManifestFresh,
+  pruneExpiredManifests,
 } from "../src/agent-adapter-manifest-inbound.js";
 
 function makeOwner() {
@@ -67,6 +68,61 @@ describe("isManifestFresh", () => {
     expect(isManifestFresh(fresh, now)).toBe(true);
     expect(isManifestFresh(fresh, new Date(now.getTime() + 300_000))).toBe(false);
     expect(isManifestFresh(fresh, new Date(now.getTime() + 299_000))).toBe(true);
+  });
+});
+
+describe("pruneExpiredManifests", () => {
+  it("removes only expired manifests and returns the purge count", () => {
+    const owner = makeOwner();
+    const now = new Date("2026-08-18T00:00:00Z");
+    const fresh = makeManifest(owner, { issuedAt: now.toISOString() });
+    const stale = makeManifest(owner, {
+      peerId: "envoy_agent_stale",
+      issuedAt: new Date(now.getTime() - 301_000).toISOString(),
+    });
+    const store = new Map<string, SignedCapabilityManifest>([
+      ["envoy_agent_peer", fresh],
+      ["envoy_agent_stale", stale],
+    ]);
+
+    const removed = pruneExpiredManifests(store, now);
+
+    expect(removed).toBe(1);
+    expect(store.has("envoy_agent_peer")).toBe(true);
+    expect(store.has("envoy_agent_stale")).toBe(false);
+  });
+
+  it("keeps a store of only fresh manifests intact", () => {
+    const owner = makeOwner();
+    const now = new Date();
+    const store = new Map<string, SignedCapabilityManifest>([
+      ["envoy_agent_a", makeManifest(owner, { peerId: "envoy_agent_a" })],
+      ["envoy_agent_b", makeManifest(owner, { peerId: "envoy_agent_b" })],
+    ]);
+
+    expect(pruneExpiredManifests(store, now)).toBe(0);
+    expect(store.size).toBe(2);
+  });
+
+  it("purges expired manifests when a fresh one is stored (bounded store)", async () => {
+    const owner = makeOwner();
+    const stale = makeManifest(owner, {
+      peerId: "envoy_agent_stale",
+      issuedAt: new Date("2020-01-01T00:00:00Z").toISOString(),
+    });
+    const now = new Date("2026-08-18T00:00:00Z");
+    const store = new Map<string, SignedCapabilityManifest>([["envoy_agent_stale", stale]]);
+
+    const result = await handleInboundCapabilityManifest({
+      envelope: makeEnvelope(makeManifest(owner, { peerId: "envoy_agent_fresh" }), "envoy_agent_fresh"),
+      store,
+      getOwnerPublicKey: async () => owner.publicKeyPem,
+      now: () => now,
+    });
+
+    expect(result.handled).toBe(true);
+    expect(store.has("envoy_agent_stale")).toBe(false);
+    expect(store.has("envoy_agent_fresh")).toBe(true);
   });
 });
 
