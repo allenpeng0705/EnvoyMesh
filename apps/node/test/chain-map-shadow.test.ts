@@ -1,9 +1,13 @@
 /**
- * MAP shadow-mode wiring tests (Sprint 1).
+ * MAP worker-path wiring tests (Sprint 1 + Sprint 2).
  *
- * Verifies `isMapShadowEnabled` (env gate) and `runOpenClawMapShadow`
- * (legacy path delivers the real result; the MAP adapter path runs silently
- * and audits a `chain.map_shadow` event).
+ * Verifies:
+ * - `isMapShadowEnabled` (env gate)
+ * - `resolveMapWorkerMode` (rollback env > shadow env > useMAP setting > off)
+ * - `runOpenClawMapShadow` (legacy delivers; adapter path runs silently and
+ *   audits a `chain.map_shadow` event)
+ * - `runOpenClawMapPrimary` (adapter path is authoritative; emits the same
+ *   partial stream; no legacy executor involved)
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { generateKeyPairSync } from "node:crypto";
@@ -11,6 +15,8 @@ import { OpenClawAdapter } from "@envoymesh/agent-adapter";
 import type { ChainSubtask, TaskChainPartialPayload } from "@envoymesh/protocol";
 import {
   isMapShadowEnabled,
+  resolveMapWorkerMode,
+  runOpenClawMapPrimary,
   runOpenClawMapShadow,
   type ChainOrchestrationContext,
 } from "../src/node-service-chain-orchestration.js";
@@ -50,11 +56,13 @@ function sampleSubtask(): ChainSubtask {
 function makeContext(overrides?: {
   askOpenClaw?: (prompt: string) => Promise<string>;
   isOpenClawReady?: () => boolean;
+  getNodeConfig?: () => Promise<unknown>;
 }): ChainOrchestrationContext {
   const auditEvents: Array<Record<string, unknown>> = [];
   const ctx = {
     isOpenClawReady: overrides?.isOpenClawReady ?? (() => true),
     askOpenClaw: overrides?.askOpenClaw ?? (async () => "shadow summary"),
+    getNodeConfig: overrides?.getNodeConfig ?? (async () => ({ useMAP: false })),
     getTaskStore: () => ({
       appendAuditEvent: (event: unknown) => {
         auditEvents.push(event as Record<string, unknown>);
@@ -137,6 +145,107 @@ describe("runOpenClawMapShadow", () => {
     const shadow = events.find((e) => e.type === "chain.map_shadow");
     expect(String(shadow?.summary)).toContain("subtaskId=subtask_1");
     expect(String(shadow?.summary)).toContain("overall=pass");
+  });
+});
+
+describe("resolveMapWorkerMode", () => {
+  it("rollback env wins over the useMAP setting", async () => {
+    process.env.ENVOYMESH_MAP_ROLLBACK = "1";
+    process.env.ENVOYMESH_MAP_SHADOW = "1";
+    const ctx = makeContext({ getNodeConfig: async () => ({ useMAP: true }) });
+    expect(await resolveMapWorkerMode(ctx)).toBe("off");
+  });
+
+  it("shadow env selects shadow mode", async () => {
+    process.env.ENVOYMESH_MAP_SHADOW = "1";
+    const ctx = makeContext({ getNodeConfig: async () => ({ useMAP: true }) });
+    expect(await resolveMapWorkerMode(ctx)).toBe("shadow");
+  });
+
+  it("useMAP=true selects primary", async () => {
+    delete process.env.ENVOYMESH_MAP_ROLLBACK;
+    delete process.env.ENVOYMESH_MAP_SHADOW;
+    const ctx = makeContext({ getNodeConfig: async () => ({ useMAP: true }) });
+    expect(await resolveMapWorkerMode(ctx)).toBe("primary");
+  });
+
+  it("defaults to off when useMAP is absent or false", async () => {
+    delete process.env.ENVOYMESH_MAP_ROLLBACK;
+    delete process.env.ENVOYMESH_MAP_SHADOW;
+    expect(await resolveMapWorkerMode(makeContext({ getNodeConfig: async () => ({}) }))).toBe("off");
+    expect(
+      await resolveMapWorkerMode(makeContext({ getNodeConfig: async () => ({ useMAP: false }) })),
+    ).toBe("off");
+  });
+
+  it("degrades to off when getNodeConfig throws", async () => {
+    delete process.env.ENVOYMESH_MAP_ROLLBACK;
+    delete process.env.ENVOYMESH_MAP_SHADOW;
+    const ctx = makeContext({
+      getNodeConfig: async () => {
+        throw new Error("config unavailable");
+      },
+    });
+    expect(await resolveMapWorkerMode(ctx)).toBe("off");
+  });
+});
+
+describe("runOpenClawMapPrimary", () => {
+  it("runs the subtask through the adapter path and emits the partial stream", async () => {
+    const askOpenClaw = vi.fn(async () => "primary summary");
+    const ctx = makeContext({ askOpenClaw });
+    const partials: TaskChainPartialPayload[] = [];
+
+    const result = await runOpenClawMapPrimary({
+      deps: ctx,
+      agentIdentity,
+      subtask: sampleSubtask(),
+      onPartial: async (p) => {
+        partials.push(p);
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.finalNote).toBe("primary summary");
+    // Progress + final partials (same wire shape as the legacy path).
+    expect(partials.length).toBeGreaterThanOrEqual(2);
+    expect(partials.at(-1)!.partial.isFinal).toBe(true);
+    expect(partials.at(-1)!.partial.note).toBe("primary summary");
+    expect(partials.at(-1)!.partial.namedArtifacts).toBeDefined();
+    // The adapter is the only executor — exactly one ask.
+    expect(askOpenClaw).toHaveBeenCalledTimes(1);
+  });
+
+  it("audits mode=primary chain.map_shadow events", async () => {
+    const ctx = makeContext({ askOpenClaw: async () => "primary summary" });
+    await runOpenClawMapPrimary({
+      deps: ctx,
+      agentIdentity,
+      subtask: sampleSubtask(),
+      onPartial: async () => undefined,
+    });
+
+    const events = (ctx as unknown as { __auditEvents: Array<Record<string, unknown>> })
+      .__auditEvents;
+    const primary = events.find((e) => e.type === "chain.map_shadow");
+    expect(primary).toBeDefined();
+    expect(String(primary?.summary)).toContain("mode=primary");
+    expect(String(primary?.summary)).toContain("ok=true");
+  });
+
+  it("fails cleanly when the engine is not ready", async () => {
+    const ctx = makeContext({
+      isOpenClawReady: () => false,
+      askOpenClaw: async () => "should not be asked",
+    });
+    const result = await runOpenClawMapPrimary({
+      deps: ctx,
+      agentIdentity,
+      subtask: sampleSubtask(),
+      onPartial: async () => undefined,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.finalNote).toBe("openclaw_unavailable");
   });
 });
 

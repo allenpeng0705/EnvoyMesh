@@ -39,6 +39,7 @@ import {
   retryStaleProposals,
   retryStaleAccepts,
   resolveProposeTargets,
+  resolveWorkerPool,
   buildChainStatusPayload,
   buildChainLiveSteps,
   sendChainAccept,
@@ -1612,5 +1613,36 @@ describe("sendChainAccept / sendChainPropose", () => {
     const ok = await sendChainAccept(deps, "12D3KooW-w1", award);
     expect(ok).toBe(true);
     expect(deps.sentEnvelopes[0].envelope.intent).toBe("task.chain.accept");
+  });
+});
+
+describe("resolveWorkerPool (Phase 41 manifest pool)", () => {
+  it("prefers findWorkersWithManifests when provided", async () => {
+    const manifest = {
+      runtime: "openclaw",
+      runtimeVersion: "mesh-profile",
+      peerId: "envoy_agent_w1",
+      ownerId: "envoy:owner:w1",
+      skills: [{ skillId: "research", description: "research skill", maxSensitivity: "public", tags: [] }],
+      reputationBySkill: {},
+      issuedAt: NOW.toISOString(),
+      ttlSeconds: 300,
+    };
+    const pool = await resolveWorkerPool(
+      {
+        findWorkers: async () => ["envoy_agent_w0"],
+        findWorkersWithManifests: async () => [{ peerId: "envoy_agent_w1", manifest }],
+      },
+      "research",
+    );
+    expect(pool).toEqual([{ peerId: "envoy_agent_w1", manifest }]);
+  });
+
+  it("falls back to mapping findWorkers peer ids when no manifest seam", async () => {
+    const pool = await resolveWorkerPool(
+      { findWorkers: async () => ["envoy_agent_w1", "envoy_agent_w2"] },
+      "research",
+    );
+    expect(pool).toEqual([{ peerId: "envoy_agent_w1" }, { peerId: "envoy_agent_w2" }]);
   });
 });

@@ -194,6 +194,9 @@ export class ChainStore {
  * A ranked agent-network worker for a subtask. `online` / `viaRelay` come from
  * the live mesh connection snapshot so the team-job dialog can make offline
  * contacts non-selectable and the system pick can prefer reachable workers.
+ * `manifest` (Phase 41 / MAP) is the worker's capability manifest when one is
+ * available — synthesized from the card's owner-attested profile until wire
+ * broadcast lands.
  */
 export interface ChainRankedWorker {
   peerId: string;
@@ -202,6 +205,7 @@ export interface ChainRankedWorker {
   sameLan: boolean;
   online: boolean;
   viaRelay: boolean;
+  manifest?: import("@envoymesh/protocol").CapabilityManifest;
 }
 
 export interface ChainContext {

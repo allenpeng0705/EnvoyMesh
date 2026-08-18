@@ -1211,7 +1211,7 @@ Week 3-4: Shadow mode
 
 ### Sprint 2: Switch to adapter path; per-(peer, runtime, skill) reputation (3 weeks)
 
-> **Status (2026-08-18):** reputation seam landed. `chain-plan-assign.ts` blends per-skill reputation (`PlanAssignRosterEntry.reputationBySkill`, soft `+0.2×rep` addend) into `scoreFor` / `bestPeerForRole` and surfaces it in the Assigner prompt. The 3-tuple reader (`chain-reputation-3tuple.ts` — `ReputationBook3Tuple`, `scoreFromVerdicts` with recency + defensive bias) now reads verdicts from the widened `ArbitrationStore` (`recordVerdictEntry` / `getVerdictsFor`), and the Assigner roster is enriched via `deriveRosterReputation` in `node-service-chain-orchestration.ts`. `chain-sensitivity-gate.ts` gained `requiresReputationApproval` (public never gates; friends ≥0.6; private ≥0.85 + ≥10 verdicts). The adapter-path switch itself (Sprint 2 Week 1) is still pending.
+> **Status (2026-08-18):** Sprint 2 seam complete. Reputation: `chain-plan-assign.ts` blends per-skill reputation (`PlanAssignRosterEntry.reputationBySkill`, soft `+0.2×rep` addend) into `scoreFor` / `bestPeerForRole`; the 3-tuple reader (`chain-reputation-3tuple.ts`) derives scores from the widened `ArbitrationStore` (`recordVerdictEntry` / `getVerdictsFor`); the roster is enriched via `deriveRosterReputation`; `chain-sensitivity-gate.ts` gained `requiresReputationApproval`. Seam switch: `executeSubtask` now routes OpenClaw subtasks through the adapter-backed executor when `useMAP` is set (primary; shadow/legacy preserved), and the orchestrator's `findWorkers` gained a manifest-carrying pool (`findWorkersWithManifests` / `resolveWorkerPool`; `ChainRankedWorker.manifest` synthesized from the card profile via `manifestFromAgentNetworkProfile`). Roll out: `NodeConfig.useMAP` opt-in + live `ENVOYMESH_MAP_ROLLBACK=1` rollback flag.
 
 Week 1: Switch the seam
 
@@ -1297,13 +1297,15 @@ This section is the literal "what to type" for the first sprint.
 |---|---|
 | `packages/protocol/src/index.ts` | Export new schemas from `agent-adapter.ts` |
 | `packages/api/src/agent-network-settings.ts` (if exists) | Add `agentRuntime: AgentRuntime` field |
-| `apps/node/src/node-service-chain-orchestration.ts` (line ~942, the `executeSubtask` wiring) | Dispatch the worker-side executor through `chain-map.ts` (adapter-backed variant) when the node runs a MAP runtime (Sprint 1 shadow / Sprint 2 switch) |
+| `apps/node/src/node-service-chain-orchestration.ts` (line ~942, the `executeSubtask` wiring) | Dispatch the worker-side executor through `chain-map.ts` (adapter-backed variant) when the node runs a MAP runtime (Sprint 1 shadow / Sprint 2 switch) — **shadow + primary + `resolveMapWorkerMode` done 2026-08-18** |
 | `apps/node/src/chain-worker-executor.ts` (the `createEngineChainSubtaskExecutor` contract) | Optionally share prompt/artifact formatting with the adapter; add an adapter-backed executor variant (Sprint 1) |
 | `apps/node/src/chain-arbitration.ts` (the `ChainArbitrationEntry` union) | Widened to `ChainArbitrationEntry | VerdictEntry`; added `recordVerdictEntry` / `getVerdictsFor` + narrowing guards (Sprint 2) — **done 2026-08-18** |
 | `apps/node/src/chain-reputation-3tuple.ts` (new) | `ReputationBook3Tuple`, `scoreFromVerdicts` (recency + defensive bias), `deriveReputationBySkillForPeer` (Sprint 2) — **done 2026-08-18** |
 | `apps/node/src/chain-sensitivity-gate.ts` | Add `requiresReputationApproval` (Sprint 2) — **done 2026-08-18** |
 | `apps/node/src/chain-budget-ledger.ts` | Add `verificationReservedUsd` / `verificationCommittedUsd` (Sprint 3) |
-| `apps/node/src/chain-plan-assign.ts` (`scoreFor` / `bestPeerForRole`) | Blend 3-tuple reputation into role/skill scoring (Sprint 2) |
+| `apps/node/src/chain-plan-assign.ts` (`scoreFor` / `bestPeerForRole`) | Blend 3-tuple reputation into role/skill scoring (Sprint 2) — **done 2026-08-18** |
+| `apps/node/src/chain-orchestrator.ts` (`findWorkers` seam) | Manifest-carrying worker pool: `ChainWorkerManifestEntry`, `findWorkersWithManifests?`, `resolveWorkerPool` (Sprint 2) — **done 2026-08-18** |
+| `packages/api/src/ws-protocol.ts` (`NodeConfig`) | Add `useMAP?: boolean` opt-in (Sprint 2 Week 3) — **done 2026-08-18**; live rollback via `ENVOYMESH_MAP_ROLLBACK=1` |
 | `apps/node/src/agent-chain-orchestrator.ts` (line 21, `ChainProvider` interface) | **Dead code** (Phase 24B legacy; nothing imports `runAgentChain` in production). The manifest is preferred over `ChainProvider`; the legacy file is deprecated for deletion, not modification (Sprint 2) |
 
 > **Grounded (2026-08-18):** `chain-orchestrator.ts`'s `findProviders` /

@@ -63,6 +63,14 @@ function makeDeps(
       options?.selfAgentPeerId
         ? { agentPeerId: options.selfAgentPeerId }
         : null,
+    getChainSideState: () => ({
+      readyProbeCache: new Map(),
+      pendingBidExpirations: new Map(),
+      trackAbort: new Map(),
+      observedChains: new Map(),
+    }),
+    getAgentNetworkWorkerEngine: () => "openclaw",
+    isExtAgentBridgeReady: () => false,
     getPeerDirectoryStore: () => ({
       getPeerByOwnerId: async (ownerId: string) => {
         const listenAddrs = listenAddrsByOwnerId[ownerId];
@@ -338,6 +346,50 @@ describe("Agent Network worker discovery gate", () => {
     // Research specialist outranks weak local generalist when both online.
     expect(ranked[0]?.peerId).toBe("envoy_agent_remote");
     expect(ranked[0]!.score).toBeGreaterThan(self!.score);
+  });
+
+  it("attaches a capability manifest to ranked workers that advertise skills", async () => {
+    const deps = makeDeps(
+      [
+        {
+          ownerId: "envoy:owner:remote",
+          displayName: "Remote",
+          membership: ["task.execute", "agent-network-worker"],
+          cachedAt: "2026-07-22T00:00:00.000Z",
+          sourceAgentPeerId: "envoy_agent_remote",
+          agentNetworkProfile: {
+            modelFreshness: 9,
+            spendPosture: "subscription",
+            contextWindow: "1M+",
+            skills: ["research"],
+          },
+        },
+        {
+          ownerId: "envoy:owner:plain",
+          displayName: "Plain",
+          membership: ["task.execute", "agent-network-worker"],
+          cachedAt: "2026-07-22T00:00:00.000Z",
+          sourceAgentPeerId: "envoy_agent_plain",
+        },
+      ],
+      {
+        selfAgentPeerId: "envoy_agent_self",
+        connectedLibp2pByOwnerId: {
+          "envoy:owner:remote": "12D3KooWRemotePeerxxxxxxx",
+          "envoy:owner:plain": "12D3KooWPlainPeerxxxxxxxx",
+        },
+      },
+    );
+    const ranked = await findAgentNetworkWorkersRanked(deps, "research");
+    const remote = ranked.find((r) => r.peerId === "envoy_agent_remote");
+    const plain = ranked.find((r) => r.peerId === "envoy_agent_plain");
+    // Manifest-carrying entry: skills mapped from the owner-attested profile.
+    expect(remote?.manifest).toBeDefined();
+    expect(remote!.manifest!.peerId).toBe("envoy_agent_remote");
+    expect(remote!.manifest!.ownerId).toBe("envoy:owner:remote");
+    expect(remote!.manifest!.skills.map((s) => s.skillId)).toEqual(["research"]);
+    // Peers with no advertised skills get no manifest.
+    expect(plain?.manifest).toBeUndefined();
   });
 
   it("omits local agent when Join is off (no local worker card)", async () => {

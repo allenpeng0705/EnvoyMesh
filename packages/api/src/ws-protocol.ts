@@ -774,6 +774,15 @@ export interface NodeConfig {
   capabilityProviderEnabled?: boolean;
   capabilityProviderMandateId?: string;
   /**
+   * Phase 41 / MAP — opt-in to the Mesh Adapter Pattern worker path
+   * (Sprint 2, design docs/improving-agent-network.en.md §11).
+   * When true, the node's OpenClaw worker subtasks run through the
+   * adapter-backed executor (`chain-map.ts` + `OpenClawAdapter`) instead of
+   * the legacy `{ isReady, ask }` engine path. Default: false. A live
+   * rollback is available via `ENVOYMESH_MAP_ROLLBACK=1` (no restart needed).
+   */
+  useMAP?: boolean;
+  /**
    * Owner-attested Agent Network worker profile. Advertised on the agent card
    * when {@link capabilityProviderEnabled} is true. Used by peers to score
    * this node when selecting workers.

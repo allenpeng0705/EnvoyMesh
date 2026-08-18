@@ -21,6 +21,7 @@ import {
   combineVerdicts,
   contentBlocksToResultArtifacts,
   createMapChainSubtaskExecutor,
+  manifestFromAgentNetworkProfile,
   mapChainSubtaskToExecuteInput,
 } from "../src/chain-map.js";
 
@@ -413,5 +414,48 @@ describe("createMapChainSubtaskExecutor", () => {
     const result = await executor(sampleSubtask(), async () => undefined);
     expect(result.ok).toBe(true);
     expect(result.finalNote).toMatch(/MAP result: 1 block\(s\) \[structured\]/);
+  });
+});
+
+describe("manifestFromAgentNetworkProfile", () => {
+  const now = () => new Date("2026-08-18T00:00:00.000Z");
+
+  it("maps advertised skills into manifest skill descriptors", () => {
+    const manifest = manifestFromAgentNetworkProfile(
+      {
+        modelFreshness: 9,
+        spendPosture: "subscription",
+        contextWindow: "1M+",
+        skills: [{ id: "research", kind: "domain", source: "owner" }],
+        roles: [],
+      },
+      "envoy_agent_remote",
+      "envoy:owner:remote",
+      now,
+    );
+    expect(manifest).toBeDefined();
+    expect(manifest!.runtime).toBe("openclaw");
+    expect(manifest!.peerId).toBe("envoy_agent_remote");
+    expect(manifest!.ownerId).toBe("envoy:owner:remote");
+    expect(manifest!.skills).toHaveLength(1);
+    expect(manifest!.skills[0]!.skillId).toBe("research");
+    expect(manifest!.skills[0]!.description).toContain("envoy:owner:remote");
+    expect(manifest!.reputationBySkill).toEqual({});
+    expect(manifest!.issuedAt).toBe("2026-08-18T00:00:00.000Z");
+    expect(manifest!.ttlSeconds).toBeGreaterThan(0);
+  });
+
+  it("returns undefined for peers without advertised skills", () => {
+    const manifest = manifestFromAgentNetworkProfile(
+      { modelFreshness: 3, spendPosture: "unknown", contextWindow: "128k", skills: [], roles: [] },
+      "envoy_agent_plain",
+      "envoy:owner:plain",
+      now,
+    );
+    expect(manifest).toBeUndefined();
+  });
+
+  it("returns undefined without a profile", () => {
+    expect(manifestFromAgentNetworkProfile(undefined, "envoy_agent_plain", "envoy:owner:plain")).toBeUndefined();
   });
 });

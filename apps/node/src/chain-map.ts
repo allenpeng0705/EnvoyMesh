@@ -31,11 +31,14 @@ import {
   createFileArtifact,
   createStructuredArtifact,
   createTextArtifact,
+  type AgentNetworkProfile,
+  type CapabilityManifest,
   type Artifact,
   type ChainSubtask,
   type ContentBlock,
   type NamedArtifact,
   type SignedAgentResult,
+  type SkillDescriptor,
   type Verdict,
 } from "@envoymesh/protocol";
 import { SignedAgentResultSchema } from "@envoymesh/protocol";
@@ -55,6 +58,52 @@ export const MAP_DEFAULT_DEADLINE_MS = 120_000;
 // ---------------------------------------------------------------------------
 // Pure mappings
 // ---------------------------------------------------------------------------
+
+/**
+ * Build a `CapabilityManifest` from a worker's owner-attested Agent Network
+ * profile. This is the Sprint 2 bridge between the legacy card surface and the
+ * MAP manifest pool: until per-runtime manifests are broadcast on the wire
+ * (a later MAP step), the orchestrator synthesizes manifests from the skills
+ * the card already advertises.
+ *
+ * `runtime` is fixed to `"openclaw"` (the only runtime with a MAP adapter
+ * today); `reputationBySkill` is deliberately empty here — the 3-tuple book
+ * (`chain-reputation-3tuple.ts`) fills it on the live path.
+ *
+ * Returns `undefined` when the profile advertises no skills (a peer with no
+ * skills is not eligible for the manifest pool).
+ */
+export function manifestFromAgentNetworkProfile(
+  profile: AgentNetworkProfile | undefined,
+  peerId: string,
+  ownerId: string,
+  now?: () => Date,
+): CapabilityManifest | undefined {
+  if (!profile || profile.skills.length === 0) return undefined;
+  const skills: SkillDescriptor[] = [];
+  for (const raw of profile.skills) {
+    // Defensive: some card sources still advertise legacy plain-string skills.
+    const id = typeof raw === "string" ? raw : raw?.id;
+    if (!id) continue;
+    skills.push({
+      skillId: id,
+      description: `skill attested by ${ownerId}`,
+      maxSensitivity: "public",
+      tags: [],
+    });
+  }
+  if (skills.length === 0) return undefined;
+  return {
+    runtime: "openclaw",
+    runtimeVersion: "mesh-profile",
+    peerId,
+    ownerId,
+    skills,
+    reputationBySkill: {},
+    issuedAt: (now ?? (() => new Date()))().toISOString(),
+    ttlSeconds: 300,
+  };
+}
 
 /**
  * Map a `ChainSubtask` (+ Phase 53 input artifacts) to an `AgentAdapter.ExecuteInput`.

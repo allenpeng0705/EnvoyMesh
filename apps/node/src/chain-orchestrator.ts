@@ -53,6 +53,7 @@ import {
   type ChainSubtaskBid,
   type NamedArtifact,
   type EnvoyEnvelope,
+  type CapabilityManifest,
   type TaskChainAcceptPayload,
   type TaskChainBidPayload,
   type TaskChainCancelPayload,
@@ -106,6 +107,15 @@ export interface ChainOrchestratorSendDeps {
   ) => Promise<boolean>;
   /** Resolve a capability tag to a list of worker peer ids. */
   findWorkers: (capability: string) => Promise<string[]>;
+  /**
+   * Phase 41 / MAP (Sprint 2) — manifest-carrying worker pool. Optional;
+   * when absent, `resolveWorkerPool` falls back to mapping `findWorkers`
+   * results to entries without manifests. Preferred over `findWorkers` when
+   * both are provided.
+   */
+  findWorkersWithManifests?: (
+    capability: string,
+  ) => Promise<ChainWorkerManifestEntry[]>;
   /** Fetch the worker-claimed cost (in USD) for a single bid (already validated). */
   fetchWorkerCostHint?: (workerPeerId: string, capability: string) => number;
   /** Current "now" — overridable in tests. */
@@ -123,6 +133,37 @@ export interface ChainOrchestratorSendDeps {
    * `envoy_agent_*` envelopes (without it, inbound guard rejects as invalid signature).
    */
   agentCredential?: EnvoyEnvelope["agentCredential"];
+}
+
+// ---------------------------------------------------------------------------
+// Manifest-carrying worker pool (Phase 41 / MAP — Sprint 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * One entry in the orchestrator's worker pool. `manifest` is the worker's
+ * capability manifest when one is available (synthesized from the card's
+ * owner-attested profile today; wire broadcast later). Consumers may prefer
+ * workers whose manifest advertises the required skill.
+ */
+export interface ChainWorkerManifestEntry {
+  peerId: string;
+  manifest?: CapabilityManifest;
+}
+
+/**
+ * Resolve the worker pool for a capability, preferring the manifest-carrying
+ * seam when provided. Additive fallback: a pool without manifests maps the
+ * legacy `findWorkers` peer ids to entries with `manifest: undefined`.
+ */
+export async function resolveWorkerPool(
+  deps: Pick<ChainOrchestratorSendDeps, "findWorkers" | "findWorkersWithManifests">,
+  capability: string,
+): Promise<ChainWorkerManifestEntry[]> {
+  if (deps.findWorkersWithManifests) {
+    return deps.findWorkersWithManifests(capability);
+  }
+  const peerIds = await deps.findWorkers(capability);
+  return peerIds.map((peerId) => ({ peerId }));
 }
 
 // ---------------------------------------------------------------------------

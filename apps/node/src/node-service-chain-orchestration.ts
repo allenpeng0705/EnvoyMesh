@@ -128,7 +128,7 @@ import {
   createOpenClawChainSubtaskExecutor,
   executeAcceptedSubtask,
 } from "./chain-worker-executor.js";
-import { createMapChainSubtaskExecutor } from "./chain-map.js";
+import { createMapChainSubtaskExecutor, manifestFromAgentNetworkProfile } from "./chain-map.js";
 import { OpenClawAdapter } from "@envoymesh/agent-adapter";
 import { requiresChainAwardApproval } from "./chain-sensitivity-gate.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
@@ -975,10 +975,14 @@ export async function buildChainWorkerDeps(deps: ChainOrchestrationContext): Pro
               isOpenClawReady: () => deps.isOpenClawReady(),
               askOpenClaw: (prompt) => deps.askOpenClaw(prompt),
             });
-      // Sprint 1 MAP shadow mode (off by default). The legacy path still
-      // delivers the real result; the adapter path runs silently in parallel
-      // and records the diff as `chain.map_shadow` audit events.
-      if (engine === "openclaw" && isMapShadowEnabled()) {
+      // The MAP adapter path only covers the OpenClaw engine today.
+      if (engine !== "openclaw") {
+        return legacyExec(subtask, onPartial, opts);
+      }
+      const mapMode = await resolveMapWorkerMode(deps);
+      if (mapMode === "shadow") {
+        // Sprint 1 shadow: legacy delivers the result, the adapter path runs
+        // silently in parallel and audits the diff as `chain.map_shadow`.
         return runOpenClawMapShadow({
           deps,
           agentIdentity,
@@ -987,6 +991,10 @@ export async function buildChainWorkerDeps(deps: ChainOrchestrationContext): Pro
           onPartial,
           opts,
         });
+      }
+      if (mapMode === "primary") {
+        // Sprint 2 primary: the adapter path is authoritative.
+        return runOpenClawMapPrimary({ deps, agentIdentity, subtask, onPartial, opts });
       }
       return legacyExec(subtask, onPartial, opts);
     },
@@ -1030,6 +1038,80 @@ export async function buildChainWorkerDeps(deps: ChainOrchestrationContext): Pro
  */
 export function isMapShadowEnabled(): boolean {
   return process.env.ENVOYMESH_MAP_SHADOW === "1";
+}
+
+export type MapWorkerMode = "off" | "shadow" | "primary";
+
+/**
+ * Resolve which worker-execution path to use for OpenClaw subtasks.
+ *
+ * Precedence (highest first):
+ * 1. `ENVOYMESH_MAP_ROLLBACK=1` → `"off"` — live rollback, no restart needed.
+ * 2. `ENVOYMESH_MAP_SHADOW=1` → `"shadow"` — Sprint 1 comparison mode.
+ * 3. `settings.json` `useMAP === true` → `"primary"` — adapter path is
+ *    authoritative (Sprint 2 opt-in).
+ * 4. otherwise → `"off"`.
+ */
+export async function resolveMapWorkerMode(
+  deps: ChainOrchestrationContext,
+): Promise<MapWorkerMode> {
+  if (process.env.ENVOYMESH_MAP_ROLLBACK === "1") return "off";
+  if (isMapShadowEnabled()) return "shadow";
+  try {
+    const cfg = (await deps.getNodeConfig()) as { useMAP?: unknown } | null;
+    return cfg?.useMAP === true ? "primary" : "off";
+  } catch {
+    return "off";
+  }
+}
+
+/**
+ * Sprint 2 primary path: run the subtask through the adapter-backed MAP
+ * executor (which emits the same `task.chain.partial` stream). This is
+ * authoritative — the legacy `{ isReady, ask }` engine is not consulted.
+ * The `useMAP` setting (or its absence) is the rollback mechanism.
+ */
+export async function runOpenClawMapPrimary(input: {
+  deps: ChainOrchestrationContext;
+  agentIdentity: BridgeIdentity;
+  subtask: import("@envoymesh/protocol").ChainSubtask;
+  onPartial: (partial: import("@envoymesh/protocol").TaskChainPartialPayload) => Promise<void>;
+  opts?: { inputArtifacts?: import("@envoymesh/protocol").NamedArtifact[] };
+}): Promise<{ ok: boolean; finalNote?: string }> {
+  const { deps, agentIdentity, subtask, onPartial, opts } = input;
+  const adapter = new OpenClawAdapter({
+    askViaRuntime: (prompt) => deps.askOpenClaw(prompt),
+    isReady: () => deps.isOpenClawReady(),
+    workerPeerId: agentIdentity.agentPeerId,
+    signResult: (unsigned) => ({
+      ...unsigned,
+      signature: signCanonicalPayload(unsigned, agentIdentity.agentPrivateKeyPem),
+    }),
+  });
+  const mapExec = createMapChainSubtaskExecutor({
+    workerPeerId: agentIdentity.agentPeerId,
+    engineLabel: "OpenClaw (MAP)",
+    unavailableCode: "openclaw_unavailable",
+    isReady: () => deps.isOpenClawReady(),
+    adapter,
+    onShadowRecord: (rec) => {
+      void _appendChainAudit(deps, {
+        type: "chain.map_shadow",
+        outcome: "record",
+        intent: "task.chain.partial",
+        correlationId: `${subtask.chainId}:${subtask.subtaskId}`,
+        summary:
+          `chainId=${subtask.chainId} subtaskId=${subtask.subtaskId} ` +
+          `mode=primary ok=${rec.ok} overall=${rec.overall ?? "none"}`,
+      });
+    },
+  });
+  const result = await mapExec(subtask, onPartial, opts);
+  chainLog("map.primary", `subtask=${subtask.subtaskId} ok=${result.ok}`, {
+    chainId: subtask.chainId,
+    finalNote: result.finalNote?.slice(0, 80),
+  });
+  return result;
 }
 
 /**
@@ -1234,6 +1316,11 @@ export async function buildChainOrchestratorDeps(
       return sendChainEnvelopeOverMesh(transport, recipientPeerId, envelope);
     },
     findWorkers: async (capability) => findAgentNetworkWorkers(deps, capability),
+    findWorkersWithManifests: async (capability) =>
+      (await findAgentNetworkWorkersRanked(deps, capability)).map((w) => ({
+        peerId: w.peerId,
+        manifest: w.manifest,
+      })),
     now: () => new Date(),
     signingKeyPem: agentIdentity.agentPrivateKeyPem,
     publicKeyPem: agentIdentity.agentPublicKeyPem,
@@ -1599,7 +1686,19 @@ export async function findAgentNetworkWorkersRanked(
       displayName: card?.displayName,
       sameLan,
     });
-    return { peerId, score: result.score, summary: result.summary, sameLan, online, viaRelay };
+    return {
+      peerId,
+      score: result.score,
+      summary: result.summary,
+      sameLan,
+      online,
+      viaRelay,
+      manifest: manifestFromAgentNetworkProfile(
+        card?.agentNetworkProfile,
+        peerId,
+        card?.ownerId ?? "",
+      ),
+    };
   });
   const filtered =
     preferredWorkerPeerIds && preferredWorkerPeerIds.length > 0
