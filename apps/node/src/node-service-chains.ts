@@ -354,6 +354,8 @@ export interface ChainContext {
   }>;
   /** Phase 59D — input delivery scope for this job. */
   inputDeliveryScope?: "referenced" | "all";
+  /** Owner-flagged criticality hint (design §8.1 #1). Absent = `"normal"`. */
+  criticality?: "normal" | "high";
 }): Promise<
   | {
       ok: true;
@@ -1094,6 +1096,7 @@ export async function chainStartFromGoalViaRuntime(
       plannedSubtasks: reused,
       planWarnings: preview.planWarnings,
       inputDeliveryScope: params.inputDeliveryScope,
+      criticality: params.criticality,
     });
     if (!result.ok) {
       return {
@@ -1138,6 +1141,7 @@ export async function chainStartFromGoalViaRuntime(
     plannedSubtasks,
     planWarnings: params.planWarnings,
     inputDeliveryScope: params.inputDeliveryScope,
+    criticality: params.criticality,
   });
   if (!result.ok) {
     return { ok: false, error: result.error };

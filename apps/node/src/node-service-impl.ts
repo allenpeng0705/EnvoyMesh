@@ -12951,6 +12951,7 @@ class NodeServiceImpl implements NodeService {
     costCeilingUsd?: number;
     allowLlm?: boolean;
     assignerPeerId?: string;
+    criticality?: "normal" | "high";
     preferredWorkerPeerIds?: string[];
     plannedSubtasks?: Array<{
       subtaskId: string;

@@ -170,6 +170,14 @@ export const UnsignedChainMandateSchema = z.object({
    * Default 5.0.
    */
   autoRebalanceIncrementUsd: z.number().nonnegative().default(5),
+  /**
+   * Owner-flagged criticality hint (design §8.1 #1 — "chain proposal
+   * metadata: { criticality: 'high' }"). High-criticality chains escalate
+   * `partial`/`disputed` worker verdicts to cross-agent verification
+   * regardless of sensitivity/cost. Optional for backward compatibility;
+   * absent = `"normal"`.
+   */
+  criticality: z.enum(["normal", "high"]).optional(),
 });
 
 export const ChainMandateSignedSchema = UnsignedChainMandateSchema.extend({

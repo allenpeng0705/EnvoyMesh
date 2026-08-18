@@ -119,8 +119,10 @@ export interface ChainVerifyLoopDeps {
   /** Injectable for tests; defaults to a fresh `CrossAgentDisagreementVerifier`. */
   crossVerifier?: CrossAgentVerifierLike;
   /**
-   * Owner-flagged criticality hint (design §8.1 #1). The owner-UI wiring is a
-   * later task; until then it defaults to `"normal"`.
+   * Owner-flagged criticality hint (design §8.1 #1). Production value now
+   * rides on the signed mandate (`state.chainMandate.criticality`); this
+   * field remains the injectable fallback for tests / callers without a
+   * mandate. Absent = `"normal"`.
    */
   criticality?: "normal" | "high";
   now?: () => Date;
@@ -254,9 +256,12 @@ export async function runChainVerificationLoop(
   const resultOutcome: ChainVerifyLoopResult = { verdict: combined, verdictEntry: ruleEntry };
 
   // 2) Cross-agent escalation — second, distinct runtime runs the same step.
+  // The owner-flagged `criticality` rides on the signed mandate (design §8.1 #1);
+  // `deps.criticality` stays as the injectable fallback for tests.
+  const criticality = state.chainMandate.criticality ?? deps.criticality;
   if (!shouldEscalateToCrossAgent(combined, {
     mandate: state.chainMandate,
-    criticality: deps.criticality,
+    criticality,
   })) {
     return resultOutcome;
   }

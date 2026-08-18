@@ -2453,6 +2453,12 @@ export interface ChainStartFromGoalParams {
    * default) vs every job attachment to every awarded worker (`all`).
    */
   inputDeliveryScope?: "referenced" | "all";
+  /**
+   * Owner-flagged criticality hint (design §8.1 #1). `"high"` escalates
+   * `partial`/`disputed` worker verdicts to cross-agent verification.
+   * Absent/`"normal"` = default behavior.
+   */
+  criticality?: "normal" | "high";
 }
 
 export interface ChainResolveIterationParams {

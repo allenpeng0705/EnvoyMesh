@@ -129,6 +129,8 @@ export const ChainHandoffRequestPayloadSchema = z
      * Empty/absent = use all discovered workers. Forward-compatible.
      */
     preferredWorkerPeerIds: z.array(z.string().min(1)).max(64).optional(),
+    /** Owner-flagged criticality hint (design §8.1 #1). Absent = `"normal"`. */
+    criticality: z.enum(["normal", "high"]).optional(),
   })
   .refine((d) => d.subtaskIds.length >= 1 || (typeof d.goal === "string" && d.goal.trim().length > 0), {
     message: "handoff requires subtaskIds or goal",
@@ -152,6 +154,8 @@ export interface ChainHandoffRequest {
   extendMaxStepsPerRound?: number;
   iterationState?: ChainIterationWire;
   preferredWorkerPeerIds?: string[];
+  /** Owner-flagged criticality hint (design §8.1 #1). Absent = `"normal"`. */
+  criticality?: "normal" | "high";
 }
 
 // ---------------------------------------------------------------------------

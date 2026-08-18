@@ -1049,7 +1049,7 @@ orchestrator.trackChain(step, result)
       └─► 返回给 owner 人类评审
 ```
 |
-|> **状态 2026-08-18:** `CrossAgentDisagreementVerifier` 首版(`packages/agent-adapter/src/cross-agent-verifier.ts`)与节点侧 host seam(`apps/node/src/pi-map-adapter.ts`)已落地并通过测试。**升级调用方已接线(同日):** `apps/node/src/chain-verify-loop.ts`(`runChainVerificationLoop`)在 `handleOrchestratorPartial` 收到最终 partial 时运行 —— 把 partial 重打包为 `SignedAgentResult`,跑 adapter 的 rule verifier,向链的 `ArbitrationStore` 写入 `rule` `VerdictEntry`(权威 reputation 写入),在 `partial`/`disputed` 时升级到第二个不同 runtime(由 ledger 的 `verificationReservedUsd`/`verificationCommittedUsd` 预算;预算不足则降级为仅 rule)并写入 `cross` `VerdictEntry`。今天的升级触发条件:`maxSensitivity: "private"` 且 `maxChainCostUsd ≥ $20` 的链上出现 `partial`/`disputed` rule verdict,或 owner `criticality: "high"` 提示(设置它的 owner-UI 接线是剩下的第 2-3 周事项)。
+|> **状态 2026-08-18:** `CrossAgentDisagreementVerifier` 首版(`packages/agent-adapter/src/cross-agent-verifier.ts`)与节点侧 host seam(`apps/node/src/pi-map-adapter.ts`)已落地并通过测试。**升级调用方已接线(同日):** `apps/node/src/chain-verify-loop.ts`(`runChainVerificationLoop`)在 `handleOrchestratorPartial` 收到最终 partial 时运行 —— 把 partial 重打包为 `SignedAgentResult`,跑 adapter 的 rule verifier,向链的 `ArbitrationStore` 写入 `rule` `VerdictEntry`(权威 reputation 写入),在 `partial`/`disputed` 时升级到第二个不同 runtime(由 ledger 的 `verificationReservedUsd`/`verificationCommittedUsd` 预算;预算不足则降级为仅 rule)并写入 `cross` `VerdictEntry`。今天的升级触发条件:`maxSensitivity: "private"` 且 `maxChainCostUsd ≥ $20` 的链上出现 `partial`/`disputed` rule verdict,或 owner `criticality: "high"` 提示 —— 随签名的 `ChainMandate` 流转,可在 Social `ChainStartDialog` 的 Job settings 里开启。
 
 ---
 
@@ -1211,7 +1211,7 @@ const FederatedEntrySchema = z.object({
 - `CrossAgentDisagreementVerifier` — **首版完成 2026-08-18**
 - **验证循环接线(`apps/node/src/chain-verify-loop.ts`)— 首版完成 2026-08-18**:`runChainVerificationLoop` 从 `handleOrchestratorPartial` 调用;写 `rule`/`cross` `VerdictEntry` 到 `ArbitrationStore`;按需升级到第二个 runtime。
 - **verification budget(`chain-budget-ledger.ts` 的 `verificationReservedUsd` / `verificationCommittedUsd`)— 完成 2026-08-18**(`reserveVerification` / `tryCommitVerification` / `releaseVerification` + 快照;`committedTotal` / `headroom` / `projectedSpend` 均计入验证成本)。
-- Owner UI:在 chain proposal 里标记 `criticality: 'high'` — 待做
+- Owner UI:在 chain proposal 里标记 `criticality: 'high'` — **完成 2026-08-18**:`ChainStartFromGoalParams` 增加 `criticality?: "normal" | "high"`,随 owner 签名的 `ChainMandate`(及整任务 handoff payload)流转,`runChainVerificationLoop` 从 `state.chainMandate.criticality` 读取。Social `ChainStartDialog` 的 Job settings 里新增 "High-criticality job" 开关。
 - **Manifest 广播(`apps/node/src/agent-adapter-broadcast.ts`)— 首版完成 2026-08-18**:协议新增 `adapter.manifest` intent(agent→agent);节点用 `buildSignedCapabilityManifest` 构建 owner 签名的 `SignedCapabilityManifest`,通过 `startManifestBroadcaster`(node 启动时拉起)每 TTL/2 推送给 bonded peers。入站:`handleInboundCapabilityManifest` 用 contact-owner key store 校验 owner 签名、新鲜度后存入 `ChainSideState.remoteManifests`;`findAgentNetworkWorkersRanked` 现在优先用新鲜的 wire manifest 而非卡片合成 — manifest-carrying worker 池**已生效**。
 
 第 3-4 周:联邦 scoreboard(初始)
@@ -1281,6 +1281,7 @@ const FederatedEntrySchema = z.object({
 | `apps/node/src/chain-plan-assign.ts`(`scoreFor` / `bestPeerForRole`)| 把 3-tuple reputation 融入 role/skill 打分(Sprint 2)— **2026-08-18 完成** |
 | `apps/node/src/chain-orchestrator.ts`(`findWorkers` seam)| 携带 manifest 的 worker 池:`ChainWorkerManifestEntry`、`findWorkersWithManifests?`、`resolveWorkerPool`(Sprint 2)— **2026-08-18 完成** |
 | `packages/api/src/ws-protocol.ts`(`NodeConfig`)| 加 `useMAP?: boolean` opt-in(Sprint 2 第 3 周)— **2026-08-18 完成**;实时回滚用 `ENVOYMESH_MAP_ROLLBACK=1` |
+| `packages/api/src/ws-protocol.ts`(`ChainStartFromGoalParams`)| 加 `criticality?: "normal" \| "high"` owner 标记(Sprint 3,§8.1 #1)— **2026-08-18 完成**;随签名的 `ChainMandate`(`UnsignedChainMandateSchema.criticality`,`packages/protocol/src/agent-network.ts`)及整任务 handoff payload(`ChainHandoffRequestPayloadSchema`)流转 |
 | `apps/node/src/agent-chain-orchestrator.ts`(line 21,`ChainProvider` interface)| **死代码**(Phase 24B 遗留;生产没有任何地方 import `runAgentChain`)。新 manifest 优先于 `ChainProvider`;该遗留文件标记删除,不改(Sprint 2)|
 
 > **已核对(2026-08-18):** `chain-orchestrator.ts` 的 `findProviders` / `executeStep`

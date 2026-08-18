@@ -280,6 +280,29 @@ describe("runChainVerificationLoop", () => {
     expect(written.map((w) => w.source)).toEqual(["rule", "cross"]);
   });
 
+  it("escalates when criticality rides on the signed mandate (deps left unset)", async () => {
+    const written: VerdictEntry[] = [];
+    const deps = makeDeps({
+      buildAdapter: (runtime) =>
+        stubAdapter(runtime, runtime === "openclaw" ? [{ kind: "disputed", needsHuman: true, signals: ["rule uncertain"] }] : []),
+      listRuntimes: () => ["openclaw", "pi"],
+      resolveWorkerRuntime: () => "openclaw",
+      crossVerifier: {
+        verify: async () => ({ kind: "pass", score: 0.9, confidence: "high", notes: "two runtimes agreed" }),
+      },
+      written,
+    });
+    // Production wiring: the owner flag lives on the signed mandate; deps has no
+    // criticality. Public sensitivity + small budget → only the mandate hint escalates.
+    const { state } = makeState({ mandate: mandate({ criticality: "high" }) });
+
+    const result = await runChainVerificationLoop(deps, state, envelope(), finalPartial());
+
+    expect(result!.escalated).toBeDefined();
+    expect(result!.escalated!.secondRuntime).toBe("pi");
+    expect(written.map((w) => w.source)).toEqual(["rule", "cross"]);
+  });
+
   it("skips escalation when no second runtime is available", async () => {
     const written: VerdictEntry[] = [];
     const deps = makeDeps({

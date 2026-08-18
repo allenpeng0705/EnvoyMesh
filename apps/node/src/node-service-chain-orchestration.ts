@@ -866,6 +866,7 @@ export async function buildChainInboundDeps(deps: ChainOrchestrationContext): Pr
           extendMaxStepsPerRound: payload.extendMaxStepsPerRound,
           iterationWire: payload.iterationState,
           preferredWorkerPeerIds: payload.preferredWorkerPeerIds,
+          criticality: payload.criticality,
         }).then((result) => {
           void orchDeps.audit.record({
             type: result.ok ? "chain.launched" : "chain.mandate_broadcast",
@@ -2481,6 +2482,8 @@ export async function _runChainGoal(
     planWarnings?: ChainPlanMeta["warnings"];
     /** Phase 59D — input delivery scope for this job. */
     inputDeliveryScope?: "referenced" | "all";
+    /** Owner-flagged criticality hint (design §8.1 #1). Absent = `"normal"`. */
+    criticality?: "normal" | "high";
   },
 ): Promise<{
   ok: boolean;
@@ -2514,6 +2517,7 @@ export async function _runChainGoal(
         extendMaxStepsPerRound: input.extendMaxStepsPerRound,
         iterationWire: input.iterationWire,
         preferredWorkerPeerIds: input.preferredWorkerPeerIds,
+        criticality: input.criticality,
       });
     }
   }
@@ -2553,6 +2557,7 @@ export async function _runChainGoal(
       rebalancePolicy: awardMode === "direct" ? "never" : (nodeDefaults.rebalancePolicy ?? "never"),
       maxAutoRebalances: nodeDefaults.maxAutoRebalances ?? 2,
       autoRebalanceIncrementUsd: nodeDefaults.autoRebalanceIncrementUsd ?? 5,
+      criticality: input.criticality,
     },
     ownerPrivateKeyPem,
   );
@@ -2983,6 +2988,8 @@ export async function _handoffChainGoalToAssigner(
     iterationWire?: import("./chain-iteration.js").IterationWireBlob;
     /** Restrict worker discovery to these agent peer IDs. Empty/absent = use all. */
     preferredWorkerPeerIds?: string[];
+    /** Owner-flagged criticality hint (design §8.1 #1). Absent = `"normal"`. */
+    criticality?: "normal" | "high";
   },
 ): Promise<{
   ok: boolean;
@@ -3060,6 +3067,7 @@ export async function _handoffChainGoalToAssigner(
     extendMaxStepsPerRound,
     iterationState: input.iterationWire,
     preferredWorkerPeerIds: input.preferredWorkerPeerIds,
+    criticality: input.criticality,
   });
 
   const orchDeps = await buildChainOrchestratorDeps(deps);

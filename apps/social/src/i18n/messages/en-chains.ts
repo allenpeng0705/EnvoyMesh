@@ -335,6 +335,9 @@ export const chainsMessages = {
     showCostUi: "Show cost estimate before starting",
     showCostUiHint:
       "Displays the estimated cost range in the plan preview. Competitive mode always shows this.",
+    criticality: "High-criticality job",
+    criticalityHint:
+      "Marks this chain critical so partial or disputed worker results escalate to cross-agent verification (a second runtime re-checks the same step).",
     jobSettingsTitle: "Job settings",
     assignerLabel: "Orchestrate on",
     assignerThisNode: "This node",

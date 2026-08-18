@@ -183,6 +183,7 @@ export function parseHandoffRequest(input: unknown): ChainHandoffRequest {
     out.extendMaxStepsPerRound = payload.extendMaxStepsPerRound;
   }
   if (payload.iterationState !== undefined) out.iterationState = payload.iterationState;
+  if (payload.criticality !== undefined) out.criticality = payload.criticality;
   return out;
 }
 

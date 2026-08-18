@@ -110,6 +110,11 @@ export function ChainStartDialog({
   const [inputDeliveryScope, setInputDeliveryScope] = useState<"referenced" | "all">(
     "referenced",
   );
+  /**
+   * MAP §8.1 — owner-flagged criticality. `"high"` escalates `partial` /
+   * `disputed` worker verdicts to cross-agent verification.
+   */
+  const [criticality, setCriticality] = useState<"normal" | "high">("normal");
   /** Wait for defaults so the first preview uses the node default mode. */
   const [defaultsReady, setDefaultsReady] = useState(assignmentModeProp != null);
   const iterationTouchedRef = useRef(false);
@@ -391,6 +396,7 @@ export function ChainStartDialog({
               }))
             : undefined,
         planWarnings: preview?.ok ? preview.planWarnings : undefined,
+        criticality,
       });
       if (!result.ok) {
         const err =
@@ -413,7 +419,7 @@ export function ChainStartDialog({
     } finally {
       setStarting(false);
     }
-  }, [assignmentMode, assignerPeerId, engineReady, goal, hasWorkers, inputDeliveryScope, iterationMaxRounds, iterationJudgeMode, extendMaxStepsPerRound, localJoinEnabled, nodeService, onClose, onStarted, preview, selectedPeerIds, showToast, t]);
+  }, [assignmentMode, assignerPeerId, criticality, engineReady, goal, hasWorkers, inputDeliveryScope, iterationMaxRounds, iterationJudgeMode, extendMaxStepsPerRound, localJoinEnabled, nodeService, onClose, onStarted, preview, selectedPeerIds, showToast, t]);
 
   const handleSaveRecipe = useCallback(async () => {
     setSavingRecipe(true);
@@ -836,6 +842,21 @@ export function ChainStartDialog({
                     />
                     <small className="chain-start-hint">
                       {t("chains.start.showCostUiHint")}
+                    </small>
+                  </label>
+                  <label className="chain-start-iteration-label chain-start-iteration-label--toggle">
+                    <span>{t("chains.start.criticality")}</span>
+                    <input
+                      type="checkbox"
+                      checked={criticality === "high"}
+                      onChange={(e) => {
+                        setCriticality(e.target.checked ? "high" : "normal");
+                      }}
+                      disabled={starting || savingRecipe}
+                      data-testid="chain-start-criticality"
+                    />
+                    <small className="chain-start-hint">
+                      {t("chains.start.criticalityHint")}
                     </small>
                   </label>
                 </div>

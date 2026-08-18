@@ -234,6 +234,49 @@ describe("ChainStartDialog", () => {
     });
   });
 
+  it("passes criticality: high when the owner marks the job critical", async () => {
+    const { ChainStartDialog } = await import("../../src/components/ChainStartDialog.js");
+    mocks.chainPreviewGoal.mockResolvedValue({
+      ok: true,
+      subtasks: [
+        {
+          subtaskId: "st1",
+          depth: 1,
+          requiredSkill: "task.execute",
+          objective: "Do the thing",
+          workerCount: 1,
+        },
+      ],
+    });
+    mocks.chainStartFromGoal.mockResolvedValue({ ok: true, chainId: "chain_3" });
+    renderDialog(
+      <ChainStartDialog
+        goal="Research local LLMs"
+        onClose={() => undefined}
+        onStarted={() => undefined}
+        localJoinEnabled={true}
+        engineReady={true}
+        bondedPeerCount={1}
+      />,
+    );
+    await waitFor(() => {
+      expect((screen.getByTestId("chain-start-confirm") as HTMLButtonElement).disabled).toBe(false);
+    });
+    fireEvent.click(screen.getByText(/Job settings/i));
+    fireEvent.click(screen.getByTestId("chain-start-criticality"));
+    await waitFor(() => {
+      expect(
+        (screen.getByTestId("chain-start-criticality") as HTMLInputElement).checked,
+      ).toBe(true);
+    });
+    fireEvent.click(screen.getByTestId("chain-start-confirm"));
+    await waitFor(() => {
+      expect(mocks.chainStartFromGoal).toHaveBeenCalledWith(
+        expect.objectContaining({ criticality: "high" }),
+      );
+    });
+  });
+
   it("disables Start when local Join is on but the engine is down", async () => {
     const { ChainStartDialog } = await import("../../src/components/ChainStartDialog.js");
     mocks.chainPreviewGoal.mockResolvedValue({
