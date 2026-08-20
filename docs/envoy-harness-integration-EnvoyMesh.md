@@ -637,3 +637,50 @@ git push --tags
   still forces `ready: false` (the Step 1 escape hatch).
   See `docs/agent-harness-integration-b2-b3.md` §3 for
   the full b3 spec.
+- **2026-08-20 (Phase 8 Step 2 / b2 — IN PROGRESS):** the
+  OpenClaw → envoy-harness bridge skill. Lives in
+  `apps/node/src/agent-runtime-envoy/bridge-to-envoy-harness-skill.ts`
+  (revised from the original `packages/openclaw-runtime/`
+  plan — keeps the bridge as the single seam; matches
+  the existing skill pattern of `setupSponsorFriend`).
+  **v0 cost policy: `costCeilingUsd: 0` (no cap)** per
+  user feedback ("at the beginning, we may ignore it")
+  — the harness's `AgentOptions.maxCostUsd: 0` is the
+  well-defined "no cap" sentinel. A DI seam
+  (`CreateBridgeToEnvoyHarnessSkillOptions.costCeilingUsd?: number`)
+  keeps the door open for Step 5+ to inject a per-node
+  ceiling from `settings.json`. The deadline keeps a
+  5-min safety net default (also DI-overridable). The
+  wiring into OpenClaw's actual ask path is a Step 5
+  concern (signal-based opt-in); b2 v0 exposes the
+  skill but doesn't auto-wire it. 4-5 new tests cover
+  the translation + result flow. See
+  `docs/agent-harness-integration-b2-b3.md` §2 for the
+  full b2 spec.
+- **2026-08-20 (Phase 8 Step 2 / b3.live — IN PROGRESS):**
+  two follow-ups to b3. **b3.live.1 (model inheritance):**
+  `loadEnvoyHarnessRuntimeConfig` accepts a `hostModel`
+  parameter; the host (EnvoyMesh's `node-service-impl.ts`)
+  reads its `ModelProviderConfig` and passes the
+  `<provider>:<model>` string. Default precedence:
+  `ENVOY_HARNESS_MODEL` env var > `hostModel` DI >
+  `"deepseek:deepseek-chat"`. Matches the OpenClaw
+  pattern (host configures its LLM once; both runtimes
+  use it as the default; each can override). New
+  helper `resolveEnvoyHarnessHostModel(modelProviders)`
+  in `model.ts` maps host modes: `openai` /
+  `anthropic` / `ollama` → direct; `litellm` → reuses
+  the `openai` adapter with the host's endpoint;
+  `mock` / `disabled` → `undefined` (not supported,
+  `ready: false`). **b3.live.2 (live test):**
+  `apps/node/test/agent-runtime-envoy-runtime.live.test.ts`
+  exercises the real `EnvoyHarnessAdapter` with a
+  real `createProviderAdapter` + a real model. Opt-in
+  via `ENVOY_HARNESS_LIVE_TESTS=1`; self-skips when
+  `DEEPSEEK_API_KEY` is missing (matches the
+  `ENVOY_PHASE18_LIVE_TESTS=1` pattern in
+  `apps/node/test/phase18-minimax-config.ts`). 4 new
+  unit tests cover model inheritance (env override /
+  host model / default / `litellm` → openai). See
+  `docs/agent-harness-integration-b2-b3.md` §4 for
+  the full b3.live spec.

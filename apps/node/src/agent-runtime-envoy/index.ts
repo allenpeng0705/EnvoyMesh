@@ -34,6 +34,7 @@ export {
 
 export {
   resolveEnvoyHarnessProvider,
+  resolveEnvoyHarnessHostModel,
   type EnvoyHarnessProviderId,
 } from "./model.js";
 
@@ -62,3 +63,17 @@ export {
   type RealEnvoyHarnessAskOptions,
   type RealEnvoyHarnessRuntime,
 } from "./runtime.js";
+
+// Phase 8 Step 2 / b2 — the OpenClaw → envoy-harness
+// bridge skill. The host's AN engine dispatch (or a
+// future Step 5 signal-based router) can swap
+// `askOpenClaw` with this skill when the OpenClaw side
+// decides to delegate to envoy-harness. v0 exposes the
+// seam; the wiring into OpenClaw's actual ask path
+// lands in Step 5.
+export {
+  createBridgeToEnvoyHarnessSkill,
+  type BridgeToEnvoyHarnessSkillAskOptions,
+  type CreateBridgeToEnvoyHarnessSkillOptions,
+  type OpenClawToEnvoyHarnessBridge,
+} from "./bridge-to-envoy-harness-skill.js";

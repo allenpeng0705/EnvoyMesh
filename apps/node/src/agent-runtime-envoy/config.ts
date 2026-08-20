@@ -84,20 +84,66 @@ function apiKeyEnvVarForProvider(provider: string): string | null {
 }
 
 /**
- * Load the envoy-harness runtime config from the process environment.
+ * Load the envoy-harness runtime config from the process
+ * environment + the host's injected model.
+ *
+ * **Model precedence (b3.live — model inheritance):**
+ * ```
+ * ENVOY_HARNESS_MODEL (env var)  >  hostModel (DI from NodeServiceImpl)  >  "deepseek:deepseek-chat" (default)
+ * ```
+ * The host (EnvoyMesh's `NodeServiceImpl`) reads its
+ * `ModelProviderConfig` and passes the mapped
+ * `<provider>:<model>` string as `hostModel`. This
+ * matches the OpenClaw pattern: the host configures
+ * its LLM once; both runtimes use it as the default;
+ * each can override with its own env var.
+ *
+ * **Why `hostModel` is a parameter, not a `getNodeConfig()`
+ * call inside the function:** keeps the function
+ * pure (no coupling to the host's state). The host
+ * injects the value; the function is a pure
+ * read-of-process-env + parameter. Tests can call
+ * the function with any `hostModel`; no need to
+ * stub the host's state.
  *
  * **Stub escape hatch:** `ENVOY_HARNESS_STUB_PHASE_8_STEP_1=1`
- * forces `ready: false` regardless of API key presence. The host
- * sets this for tests that want to verify the stub path; the
- * default Step 1 behavior was "always false" — this preserves it.
+ * forces `ready: false` regardless of API key presence.
+ * The host sets this for tests that want to verify
+ * the stub path; the default Step 1 behavior was
+ * "always false" — this preserves it.
  */
-export function loadEnvoyHarnessRuntimeConfig(): EnvoyHarnessRuntimeConfig {
-  // b3 — read the model + cwd from the env, parse the
-  // provider from the model string. The provider id is
-  // the bit before the first `:` (lower-cased). A
-  // missing `:` defaults to `deepseek` (matches the
-  // envoy-harness QUICKSTART.md recommendation).
-  const model = process.env.ENVOY_HARNESS_MODEL ?? "deepseek:deepseek-chat";
+export function loadEnvoyHarnessRuntimeConfig(opts?: {
+  /**
+   * The host's configured LLM model (e.g.
+   * `"deepseek:deepseek-chat"`, `"openai:gpt-4o-mini"`).
+   * Used as the default when `ENVOY_HARNESS_MODEL`
+   * is unset. The host injects this from its
+   * `ModelProviderConfig` via
+   * `resolveEnvoyHarnessHostModel` (see `model.ts`).
+   */
+  hostModel?: string;
+}): EnvoyHarnessRuntimeConfig {
+  // b3 — read the model + cwd from the env (or
+  // host's model), parse the provider from the model
+  // string. The provider id is the bit before the
+  // first `:` (lower-cased). A missing `:` defaults
+  // to `deepseek` (matches the envoy-harness
+  // QUICKSTART.md recommendation).
+  //
+  // **Why `||` not `??`:** the env var may be set to
+  // an empty string (e.g. `vi.stubEnv` for tests, or
+  // a user accidentally setting `ENVOY_HARNESS_MODEL=`).
+  // `??` only falls through on `null`/`undefined`,
+  // not on empty strings — that would mean an empty
+  // `ENVOY_HARNESS_MODEL` overrides the host model.
+  // `||` correctly falls through on empty strings.
+  const envModel = process.env.ENVOY_HARNESS_MODEL;
+  const model =
+    (envModel && envModel.length > 0 ? envModel : undefined) ??
+    (opts?.hostModel && opts.hostModel.length > 0
+      ? opts.hostModel
+      : undefined) ??
+    "deepseek:deepseek-chat";
   const cwd = process.env.ENVOY_HARNESS_CWD ?? process.cwd();
   const provider = (model.split(":", 1)[0] ?? "deepseek").toLowerCase();
 

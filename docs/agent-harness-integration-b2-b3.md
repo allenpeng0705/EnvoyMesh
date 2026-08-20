@@ -96,35 +96,52 @@ OpenClaw's response shape.
 ### Open question — where the skill lives
 
 OpenClaw's plugin surface in EnvoyMesh is in
-`packages/openclaw-runtime/` (the OpenClaw BFF +
-subprocess wrapper). Two options for the skill:
+`apps/node/src/` (peer of `node-service-impl.ts` —
+see `node-service-setup-sponsor-friend.ts` for the
+canonical pattern of a "cross-package skill"). The
+OpenClaw runtime package itself is a thin subprocess
+wrapper (`packages/openclaw-runtime/`), not the
+skill surface. Two options for the skill:
 
 - **(a) In OpenClaw-runtime:** add a new
   `bridge-to-envoy-harness.ts` skill module there.
-  Mirrors how the `setupSponsorFriend` and other
-  cross-package skills are wired.
-- **(b) In the openclaw plugin on the envoy-harness
-  side:** envoy-harness has an `openclaw-adapter.ts`
-  in the bridge. The skill could live there
-  (so envoy-harness "knows" how to be called from
-  OpenClaw). But this is the wrong direction —
-  OpenClaw is the caller; the skill should live
-  in OpenClaw's side.
+  Would require adding `@envoymesh/envoy-harness-adapter`
+  as a dep (the bridge exports the `LocalRuntimeBridge`
+  type the skill needs).
+- **(b) In envoy-harness side (EnvoyMesh):** add the
+  skill in `apps/node/src/agent-runtime-envoy/`
+  (peer of `runtime.ts`, which already imports the
+  bridge). Matches the existing skill pattern
+  (`setupSponsorFriend` + other cross-package skills
+  in `apps/node/src/`).
 
-**Recommendation: (a) — skill lives in
-`packages/openclaw-runtime/`.** Same direction as
-the (B) plan's "OpenClaw → envoy-harness" skill
-delegation B. The registry is the seam; the skill
-is the caller. Skill lives with the caller.
+**Recommendation (revised after b1 review, 2026-08-20):
+(b) — skill lives in
+`apps/node/src/agent-runtime-envoy/`.** The bridge
+is already a dep of `apps/node` (Step 0+). The skill
+module becomes a thin translation layer that:
+1. Takes an OpenClaw ask (text prompt) +
+   the host's `LocalRuntimeRegistry`.
+2. Returns a `(prompt) => Promise<string>` closure
+   that calls `bridge.submitToEnvoyHarness` +
+   extracts the first text block.
+3. Exports an `OpenClawToEnvoyHarnessBridge`
+   interface for the type seam.
+
+The wiring into OpenClaw's actual ask path
+(when does the host call this skill instead of
+the real `askOpenClaw`?) is a Step 5 concern
+(signal-based opt-in). For b2 v0, the skill is
+exposed but not auto-wired.
 
 ### Sub-chunks
 
 | # | Action | Files | Commit |
 |---|---|---|---|
-| 1 | Add a `bridge-to-envoy-harness.ts` skill module | `packages/openclaw-runtime/src/bridge-to-envoy-harness.ts` | (squash w/ 2-4) |
+| 1 | Add a `bridge-to-envoy-harness-skill.ts` module | `apps/node/src/agent-runtime-envoy/bridge-to-envoy-harness-skill.ts` | (squash w/ 2-4) |
 | 2 | Add a typed `OpenClawToEnvoyHarnessBridge` interface (the ask → SubagentInput translation) | same file | (squash w/ 1) |
-| 3 | Wire the skill into the openclaw ask path (`AskOpenClawHost`?) | `packages/openclaw-runtime/src/` | (squash w/ 1) |
-| 4 | Add unit tests (mock LocalRuntimeRegistry; verify translation + result flow) | `packages/openclaw-runtime/test/bridge-to-envoy-harness.test.ts` | (squash w/ 1) |
+| 3 | Re-export the skill from `apps/node/src/agent-runtime-envoy/index.ts` | `apps/node/src/agent-runtime-envoy/index.ts` | (squash w/ 1) |
+| 4 | Add unit tests (mock LocalRuntimeRegistry; verify translation + result flow) | `apps/node/test/agent-runtime-envoy-bridge-skill.test.ts` | (squash w/ 1) |
 
 **Tests** (b2 acceptance):
 
@@ -273,7 +290,155 @@ the `buildSubagent` factory (closed over the
   `isEnvoyHarnessReady() === false` as the default
   (Step 1 behavior). Step 5 changes that.
 
-## 4. Order
+## 4. b3.live — model inheritance + live test (~1 day)
+
+### Goal
+
+Two small follow-ups to b3 (kept together because
+they're closely related and share the same test
+harness):
+
+1. **Model inheritance from EnvoyMesh:** the
+   `loadEnvoyHarnessRuntimeConfig` should default to
+   EnvoyMesh's configured model (per
+   `ModelProviderConfig` in `node-config.json`) when
+   the user hasn't set `ENVOY_HARNESS_MODEL`. This
+   matches the OpenClaw pattern: the host configures
+   its LLM once; both runtimes (OpenClaw +
+   envoy-harness) use it as the default; each can
+   override with its own env var.
+
+2. **Live test for b3:** end-to-end test that
+   exercises the real `EnvoyHarnessAdapter` with a
+   real `createProviderAdapter` + a real model.
+   Self-skips when the API key env var is missing
+   (per the `apps/node/test/phase18-minimax-config.ts`
+   pattern).
+
+### Why these are together
+
+The live test needs a real model. The model
+inheritance change makes the live test more
+realistic (the host's actual model is what the
+test uses, not just the hard-coded
+`deepseek:deepseek-chat` default). They share the
+"envoy-harness talks to a real model" theme.
+
+### 4.1 Model inheritance
+
+**Current behavior:** `loadEnvoyHarnessRuntimeConfig`
+reads `ENVOY_HARNESS_MODEL` env var, defaulting to
+`deepseek:deepseek-chat`. The host (EnvoyMesh's
+`node-service-impl.ts`) passes no context.
+
+**Target behavior:** the host passes its configured
+model (from `ModelProviderConfig`) as a parameter.
+The config function's precedence:
+
+```
+ENVOY_HARNESS_MODEL (env var)  >  hostModel (DI)  >  "deepseek:deepseek-chat" (default)
+```
+
+**Implementation:**
+
+- `loadEnvoyHarnessRuntimeConfig({ hostModel?: string })` —
+  new optional parameter. The function stays a pure
+  read of `process.env` + the injected `hostModel`.
+  No `getNodeConfig()` inside (the host injects).
+- A small helper
+  `resolveEnvoyHarnessHostModel(modelProviders: ModelProviderConfig): string | undefined`
+  lives in `model.ts` (peer of `resolveEnvoyHarnessProvider`).
+  Maps the host's `ModelProviderConfig` to
+  `<provider>:<model>`. Returns `undefined` for
+  unsupported modes (e.g. `mock`, `litellm` —
+  envoy-harness doesn't have a `litellm` adapter
+  today; use the `openai` adapter with the same
+  endpoint for v0, or fall back to the default).
+- `node-service-impl.ts` reads `getNodeConfig()` →
+  `modelProviders` → `resolveEnvoyHarnessHostModel`
+  → passes to `loadEnvoyHarnessRuntimeConfig`.
+
+**Provider mapping (host → envoy-harness):**
+
+| Host `mode` | envoy-harness provider | Notes |
+|---|---|---|
+| `"openai"` | `openai:<modelName>` | Direct |
+| `"anthropic"` | `anthropic:<modelName>` | Direct |
+| `"ollama"` | `ollama:<modelName>` | Direct (keyless) |
+| `"litellm"` | `openai:<modelName>` with custom endpoint | Reuse the `openai` adapter; the endpoint is passed via `OpenAIAdapter.baseUrl` |
+| `"mock"` | `undefined` (not supported) | `ready: false` |
+| `"disabled"` | `undefined` (not supported) | `ready: false` |
+
+**Why `litellm` → `openai`:** envoy-harness has
+`openai` and `anthropic` adapters. `litellm` is
+OpenAI-compatible; we can use the `openai` adapter
+with a custom `baseUrl` (already supported by
+`OpenAIAdapter`). For v0, the host's `litellm`
+config is used with the `openai` provider; future:
+add a `litellm` adapter if needed.
+
+### 4.2 Live test
+
+**File:** `apps/node/test/agent-runtime-envoy-runtime.live.test.ts`
+
+**Self-skip condition:** `ENVOY_HARNESS_LIVE_TESTS=1`
+opt-in + `DEEPSEEK_API_KEY` (or `ENVOY_HARNESS_API_KEY`)
+env var present. Otherwise the test prints a skip
+message and returns (no `describe` failure).
+
+**What it tests:**
+
+1. Construct `createRealEnvoyHarnessRuntime` with
+   the real `createProviderAdapter` (no test
+   `modelFactory`).
+2. Call `runtime.ask("Say hello in 5 words")` with
+   a real `signal` + `deadlineMs` (e.g. 30s).
+3. Verify the result is non-empty text.
+4. Verify `result.workerRuntime === "envoy-harness"`
+   (stamped by the bridge's `localToWireResult`).
+5. (Optional) Verify the cost was reported (`> 0`
+   or `0` for free models).
+
+**Why `agent-runtime-envoy-runtime.live.test.ts`
+and not `*.test.ts`:** the test file naming pattern
+in `apps/node/test/` is `<feature>.live.test.ts`
+for live tests. The vitest config (or the user's
+test runner) may run these separately. The
+`<name>.live.test.ts` suffix is the canonical
+"this needs a real API key" marker.
+
+**Why opt-in via `ENVOY_HARNESS_LIVE_TESTS=1`:**
+the test makes real network calls. Running
+unconditionally would burn quota in CI. The opt-in
+mirrors `ENVOY_PHASE18_LIVE_TESTS=1` (the existing
+Phase 18 live test pattern).
+
+### 4.3 Sub-chunks
+
+| # | Action | Files | Commit |
+|---|---|---|---|
+| 1 | Add `hostModel` parameter to `loadEnvoyHarnessRuntimeConfig` | `apps/node/src/agent-runtime-envoy/config.ts` | (squash w/ 2-4) |
+| 2 | Add `resolveEnvoyHarnessHostModel` helper to `model.ts` | `apps/node/src/agent-runtime-envoy/model.ts` | (squash w/ 1) |
+| 3 | Wire `hostModel` from `node-service-impl.ts` (read `getNodeConfig().modelProviders` → helper → config) | `apps/node/src/node-service-impl.ts` | (squash w/ 1) |
+| 4 | Add unit tests for model inheritance (3 cases: env override / host model / default) | `apps/node/test/agent-runtime-envoy-config.test.ts` (new) | (squash w/ 1) |
+| 5 | Add live test (self-skip when no API key) | `apps/node/test/agent-runtime-envoy-runtime.live.test.ts` (new) | (squash w/ 1) |
+
+### 4.4 What b3.live does NOT cover
+
+- **The litellm adapter (Step 6+ if needed):** for
+  v0, `litellm` mode reuses the `openai` adapter
+  with a custom `baseUrl`. If the host needs a
+  dedicated `litellm` adapter (e.g. for streaming
+  differences), that's a future chunk.
+- **The model UI in the Tauri settings:** Step 5.
+  b3.live only changes the readiness probe; the
+  UI wiring is independent.
+- **Per-node model override via `settings.json`:**
+  Step 5. b3.live reads the host's model via the
+  same `getNodeConfig()` path; the user's ability
+  to override it from the UI is Step 5.
+
+## 6. Order
 
 **Recommended order: b3 first, then b2.**
 
@@ -303,7 +468,7 @@ the factory + chain-worker wiring. If a smaller
 commit cadence is preferred, do b2 first to keep
 the diff small. Either order works.
 
-## 5. Open questions
+## 7. Open questions
 
 1. **What `capabilityTag` does b2 use?** The
    `SubagentInput.capabilityTag` is a free-form
@@ -322,10 +487,18 @@ the diff small. Either order works.
    - Configurable per skill instance
    - Pass through from the OpenClaw ask (if it
      has metadata)
-   **Recommendation: fixed default of $0.50.**
-   Same as `defaultBuildSubagentFactory` defaults
-   (no ceiling unless the input sets one).
-   Configurable later if needed.
+   **Recommendation (revised after user feedback, 2026-08-20):
+   hard-code `costCeilingUsd: 0` for v0 (= "no cap" per the
+   harness's `AgentOptions.maxCostUsd` contract).** v0 is
+   early adoption — we don't want a $0.50 arbitrary limit
+   to block the first users. The DI seam stays open:
+   `CreateBridgeToEnvoyHarnessSkillOptions.costCeilingUsd?: number`
+   with default `0`. Step 5+ (Tauri settings UI) can
+   inject a per-node or per-skill ceiling from
+   `settings.json`; the skill's behavior is unchanged.
+   The deadline (separate concern) keeps a safety net
+   default of `5 * 60_000` (5 min) so a hanging sub-agent
+   doesn't tie up the OpenClaw ask path forever.
 
 3. **What `permissionMode` does the sub-agent get?**
    The sub-agent's permission is its own
@@ -344,7 +517,7 @@ the diff small. Either order works.
    installable. Future: add a permission
    gate if a user can disable the skill.
 
-## 6. References
+## 8. References
 
 - Design doc: `docs/agent-harness-integration.md`
   §Step 2 (page 8), Q1-Q5 (page 14+),
@@ -365,7 +538,7 @@ the diff small. Either order works.
 - `LocalRuntimeBridge`: same file, the bridge
   interface.
 
-## 7. Change log
+## 9. Change log
 
 - **2026-08-20 (initial draft):** b2 + b3 plan
   written. b3 recommended first; b2 follows once
@@ -373,3 +546,24 @@ the diff small. Either order works.
   to talk to. Open questions §5 documented
   (capabilityTag, cost ceiling, permission,
   openclaw permission).
+- **2026-08-20 (b1, b2, b3 DONE):** §1 documents
+  b1 status (LocalRuntimeRegistry.submitToEnvoyHarness
+  is real, e2e B test at the registry seam). §2
+  revised: skill location = `apps/node/src/`
+  (matches the `setupSponsorFriend` pattern), cost
+  ceiling = `0` for v0 (per user feedback "at the
+  beginning, we may ignore it") with a DI seam
+  for Step 5+ config. §3 documents the b3 done
+  state (real `askEnvoyHarness`, 38/38 Phase 8
+  EnvoyMesh + 105/105 bridge tests pass).
+- **2026-08-20 (b3.live — IN PROGRESS):** §4 added.
+  Two follow-ups to b3: (a) model inheritance from
+  EnvoyMesh's `ModelProviderConfig` (envoy-harness
+  defaults to the host's model, like OpenClaw does;
+  `ENVOY_HARNESS_MODEL` env var is the explicit
+  override; `litellm` reuses the `openai` adapter);
+  (b) live test for b3 (`agent-runtime-envoy-runtime.live.test.ts`,
+  opt-in via `ENVOY_HARNESS_LIVE_TESTS=1`, self-skips
+  without a real `DEEPSEEK_API_KEY`). Provider
+  mapping table documents the host → envoy-harness
+  translation.

@@ -4779,6 +4779,15 @@ class NodeServiceImpl implements NodeService {
    *    `ANTHROPIC_API_KEY`) is set, OR `ENVOY_HARNESS_API_KEY`
    *    is set (the universal override).
    *
+   * **Phase 8 / b3.live (model inheritance):** the config
+   * also considers the host's `ModelProviderConfig`. The
+   * `_envoyHarnessHostModel` cache is populated by
+   * `_refreshEnvoyHarnessHostModel()` (fire-and-forget
+   * on every call; the first call returns the default,
+   * subsequent calls return the host's model). The
+   * host's model takes effect via the `hostModel`
+   * parameter to `loadEnvoyHarnessRuntimeConfig`.
+   *
    * **Why env-var presence, not a model call:** the model
    * call (`createProviderAdapter(...)`) is the real check
    * for whether the API key is valid. We do that check lazily
@@ -4794,7 +4803,15 @@ class NodeServiceImpl implements NodeService {
    * clean failure, not a stack trace.
    */
   isEnvoyHarnessReady(): boolean {
-    return loadEnvoyHarnessRuntimeConfig().ready;
+    // Fire-and-forget refresh of the host model cache.
+    // The current cache value is used for the readiness
+    // check (the first call uses the default; subsequent
+    // calls reflect the most recent refresh). The full
+    // async check happens in `askEnvoyHarness`.
+    void this._refreshEnvoyHarnessHostModel();
+    return loadEnvoyHarnessRuntimeConfig({
+      hostModel: this._envoyHarnessHostModel,
+    }).ready;
   }
 
   /**
@@ -4875,6 +4892,87 @@ class NodeServiceImpl implements NodeService {
    */
   private _envoyHarnessRuntimeCache: RealEnvoyHarnessRuntime | undefined;
 
+  /**
+   * Phase 8 / b3.live — host's envoy-harness model cache.
+   *
+   * The host's `ModelProviderConfig` (from `getNodeConfig()`)
+   * is async to read; `isEnvoyHarnessReady` is sync. We
+   * cache the resolved `<provider>:<model>` string in
+   * this field, refreshed by `_refreshEnvoyHarnessHostModel()`
+   * (fire-and-forget on every readiness check).
+   *
+   * **Why a cache, not async-everything:** the chain
+   * dispatch's `isAgentNetworkEngineReady` callback is
+   * sync (see `node-service-chain-orchestration.ts:1012`).
+   * Making `isEnvoyHarnessReady` async would ripple
+   * through 3 call sites. The cache pattern keeps the
+   * sync interface; the first call returns the default
+   * (env-only check), the async refresh populates the
+   * cache for subsequent calls. The full check happens
+   * in `askEnvoyHarness` (which is async).
+   *
+   * **Test escape hatch:** `setEnvoyHarnessHostModel(model)`
+   * is a public setter for tests to pre-populate the
+   * cache synchronously. The default is `undefined` (no
+   * host model; env-only check).
+   */
+  private _envoyHarnessHostModel: string | undefined = undefined;
+
+  /**
+   * Phase 8 / b3.live — public DI seam for tests.
+   * Pre-populates the host model cache. Production code
+   * never calls this; the cache is populated by
+   * `_refreshEnvoyHarnessHostModel()`.
+   */
+  setEnvoyHarnessHostModel(model: string | undefined): void {
+    this._envoyHarnessHostModel = model;
+  }
+
+  /**
+   * Phase 8 / b3.live — async refresh of the host's
+   * envoy-harness model. Reads `getNodeConfig()`,
+   * resolves the `ModelProviderConfig` via
+   * `resolveEnvoyHarnessHostModel`, updates the cache.
+   *
+   * **Why fire-and-forget on every readiness check:**
+   * the host's `modelProviders` is a hot-reloaded
+   * setting (the user can change it from the Tauri
+   * settings UI). The cache reflects the most recent
+   * refresh; staleness is bounded by the call
+   * frequency of `isEnvoyHarnessReady` + the
+   * `getNodeConfig()` latency (typically <10ms).
+   *
+   * **Why not invalidate the cache on config change:**
+   * `getNodeConfig` doesn't fire a "changed" event.
+   * Polling on every readiness check is simpler and
+   * good enough for the v0 polling frequency.
+   * Future: hook into the config-change path.
+   */
+  private async _refreshEnvoyHarnessHostModel(): Promise<string | undefined> {
+    try {
+      const config = await this.getNodeConfig();
+      const modelProviders = (config as { modelProviders?: unknown })
+        ?.modelProviders as
+        | import("@envoymesh/api").ModelProviderConfig
+        | undefined;
+      if (!modelProviders) {
+        this._envoyHarnessHostModel = undefined;
+        return undefined;
+      }
+      const { resolveEnvoyHarnessHostModel } = await import(
+        "./agent-runtime-envoy/index.js"
+      );
+      this._envoyHarnessHostModel =
+        resolveEnvoyHarnessHostModel(modelProviders);
+      return this._envoyHarnessHostModel;
+    } catch {
+      // Config read failed (e.g. node-config not
+      // yet loaded). Keep the cache as-is; the next
+      // call will retry.
+      return this._envoyHarnessHostModel;
+    }
+  }
+
   private async _getOrInitEnvoyHarnessRuntime(): Promise<RealEnvoyHarnessRuntime> {
     if (this._envoyHarnessRuntimeCache) {
       return this._envoyHarnessRuntimeCache;
@@ -4892,7 +4990,14 @@ class NodeServiceImpl implements NodeService {
           "the AN engine dispatch",
       );
     }
-    const config = loadEnvoyHarnessRuntimeConfig();
+    // Phase 8 / b3.live — refresh the host model cache
+    // (sync interface, async refresh; falls back to
+    // the current cache value if the refresh is in
+    // flight or fails).
+    await this._refreshEnvoyHarnessHostModel();
+    const config = loadEnvoyHarnessRuntimeConfig({
+      hostModel: this._envoyHarnessHostModel,
+    });
     // Re-check readiness in case the env changed between
     // the `isEnvoyHarnessReady` probe and this call
     // (defensive; the env doesn't usually change at
