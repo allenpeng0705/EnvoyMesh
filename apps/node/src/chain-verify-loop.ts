@@ -150,6 +150,31 @@ export interface ChainVerifyLoopResult {
 // Escalation decision (§8.1)
 // ---------------------------------------------------------------------------
 
+/**
+ * Phase 8 / Step 6 — the per-worker-runtime
+ * default for `verifyMode`. Q4 (a) says
+ * envoy-writes jobs default to `cross-runtime`
+ * (envoy-harness writes, OpenClaw verifies —
+ * the novel features get cross-checked by the
+ * mature runtime). OpenClaw is already mature;
+ * cross-checking an OpenClaw-writes job with
+ * envoy-harness is rare in v0.
+ *
+ * **Why a function, not a per-node config field:**
+ * the Q4 default is a design decision, not an
+ * operator preference. The owner can override
+ * per-job via `ChainMandate.verifyMode`. A
+ * per-node config field for the default is a
+ * follow-up (out of v0 scope).
+ */
+export function defaultVerifyModeForWorker(
+  workerRuntime: AgentRuntime,
+): "rule-only" | "cross-runtime" | "cross-runtime-strict" {
+  return workerRuntime === "envoy-harness"
+    ? "cross-runtime"
+    : "rule-only";
+}
+
 export function shouldEscalateToCrossAgent(
   verdict: Verdict,
   opts: {
@@ -157,6 +182,18 @@ export function shouldEscalateToCrossAgent(
     criticality?: "normal" | "high";
   },
 ): boolean {
+  // Phase 8 / Step 6 — Q4 (a) + (b): when the
+  // owner explicitly opted into cross-verify
+  // (`verifyMode: "cross-runtime"` or
+  // `"cross-runtime-strict"`), the cross runs
+  // regardless of the rule verdict. The rule
+  // pass still runs first; the cross is in
+  // addition to it.
+  const verifyMode = opts.mandate.verifyMode ?? "rule-only";
+  if (verifyMode === "cross-runtime" || verifyMode === "cross-runtime-strict") {
+    return true;
+  }
+  // `rule-only` (default) — existing logic.
   if (verdict.kind !== "partial" && verdict.kind !== "disputed") return false;
   if (opts.criticality === "high") return true;
   return (
@@ -169,9 +206,47 @@ export function shouldEscalateToCrossAgent(
 // Verdict combining (§6.2 — full verdict object, not just the kind)
 // ---------------------------------------------------------------------------
 
-export function combineToVerdict(verdicts: readonly Verdict[]): Verdict {
+/**
+ * Phase 8 / Step 6 — `verifyMode` parameter
+ * for `combineToVerdict`. When
+ * `verifyMode === "cross-runtime-strict"`, the
+ * cross verdict (passed as the last element of
+ * `verdicts` by `runChainVerificationLoop`) wins
+ * over the rule verdict. The other modes use the
+ * existing `pass > fail > partial > first`
+ * precedence.
+ *
+ * **Why "the last verdict wins" in strict mode:**
+ * `runChainVerificationLoop` concatenates the
+ * rule verdicts first, then the cross verdicts:
+ *
+ * ```ts
+ * verdicts = [...ruleVerdicts, ...crossVerdicts];
+ * combineToVerdict(verdicts, verifyMode);
+ * ```
+ *
+ * The last verdict is therefore the most recent
+ * cross verdict. In strict mode, the cross is
+ * the authority; the rule is the supporting
+ * evidence. The two-step precedence
+ * (existing `pass > fail > partial > first`)
+ * also handles the agreement case correctly
+ * — when both rule and cross pass, the result
+ * is `pass` (because `pass` is in the list).
+ */
+export function combineToVerdict(
+  verdicts: readonly Verdict[],
+  verifyMode: ChainMandate["verifyMode"] = "rule-only",
+): Verdict {
   if (verdicts.length === 0) {
     return { kind: "disputed", needsHuman: true, signals: ["verifier produced no verdicts"] };
+  }
+  if (verifyMode === "cross-runtime-strict") {
+    // Cross verdict (last) wins. The other
+    // verdicts are still in the store for
+    // audit; the orchestrator's combined
+    // verdict is the cross's.
+    return verdicts[verdicts.length - 1];
   }
   const pass = verdicts.find((v) => v.kind === "pass");
   if (pass) return pass;
@@ -234,6 +309,12 @@ export async function runChainVerificationLoop(
     });
     return null;
   }
+  // Phase 8 / Step 6 — the rule VerdictEntry's
+  // verdict is based on the rule verdicts alone
+  // (precedence). The `verifyMode` only matters
+  // when the cross is also in the picture; the
+  // final combined verdict is computed in the
+  // escalation branch below.
   const combined = combineToVerdict(verdicts);
   const ruleEntry = writeVerdict(deps, state, subtask, {
     workerPeerId,
@@ -331,7 +412,24 @@ export async function runChainVerificationLoop(
       kind: crossVerdict.kind,
       score: "score" in crossVerdict ? crossVerdict.score : undefined,
     });
-    return { verdict: crossVerdict, verdictEntry: ruleEntry, escalated: { secondRuntime, crossVerdict, crossVerdictEntry: crossEntry } };
+    // Phase 8 / Step 6 — final combined verdict.
+    // The rule's `combined` is stored as
+    // `verdictEntry` (the rule's view); the
+    // combined rule + cross is the orchestrator's
+    // view. `cross-runtime-strict` mode returns
+    // the cross verdict (last wins); `cross-runtime`
+    // and `rule-only` use the precedence (pass
+    // wins; in `cross-runtime` with both rule and
+    // cross in the list, a pass from either wins).
+    const finalVerdict = combineToVerdict(
+      [...verdicts, crossVerdict],
+      state.chainMandate.verifyMode,
+    );
+    return {
+      verdict: finalVerdict,
+      verdictEntry: ruleEntry,
+      escalated: { secondRuntime, crossVerdict, crossVerdictEntry: crossEntry },
+    };
   } catch (err) {
     const summary = err instanceof Error ? err.message : String(err);
     await state.ledger.releaseVerification(subtask.subtaskId, "escalation failed");

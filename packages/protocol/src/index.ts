@@ -4242,6 +4242,7 @@ export {
 export type {
   UnsignedChainMandate,
   ChainMandate,
+  VerifyMode,
   ChainSubtask,
   ChainSubtaskExpect,
   NamedArtifact,

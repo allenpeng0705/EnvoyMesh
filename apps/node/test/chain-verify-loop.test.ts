@@ -28,6 +28,8 @@ import type { AgentAdapter, ExecuteInput } from "@envoymesh/agent-adapter";
 import {
   runChainVerificationLoop,
   shouldEscalateToCrossAgent,
+  combineToVerdict,
+  defaultVerifyModeForWorker,
   type ChainVerifyLoopDeps,
   type ChainVerifyLoopState,
 } from "../src/chain-verify-loop.js";
@@ -402,6 +404,95 @@ describe("runChainVerificationLoop", () => {
     expect(types).toContain("chain.verify_rule");
     expect(types).toContain("chain.verify_cross");
   });
+
+  // Phase 8 / Step 6 — verifyMode forces the cross
+  // even when the rule verdict is a pass. This
+  // is Q4 (a): envoy-writes jobs always get
+  // cross-verified by OpenClaw (the OTHER
+  // runtime), regardless of the rule verdict.
+  it("escalates a passing rule verdict when verifyMode is cross-runtime (Q4 a)", async () => {
+    const written: VerdictEntry[] = [];
+    const deps = makeDeps({
+      buildAdapter: (runtime) =>
+        // Worker (openclaw) passes; cross adapter
+        // is pi. Without verifyMode, this would
+        // NOT escalate (pass + public + cheap).
+        stubAdapter(runtime, [{ kind: "pass", score: 0.9, confidence: "high" }]),
+      listRuntimes: () => ["openclaw", "pi"],
+      resolveWorkerRuntime: () => "openclaw",
+      crossVerifier: {
+        verify: async () => ({ kind: "pass", score: 0.92, confidence: "high" }),
+      },
+      written,
+    });
+    // verifyMode: "cross-runtime" forces the
+    // escalation. Public + cheap would NOT
+    // trigger the existing logic.
+    const { state } = makeState({
+      mandate: mandate({ maxSensitivity: "public", maxChainCostUsd: 5, verifyMode: "cross-runtime" }),
+    });
+
+    const result = await runChainVerificationLoop(deps, state, envelope(), finalPartial());
+
+    expect(result!.escalated).toBeDefined();
+    expect(result!.escalated!.secondRuntime).toBe("pi");
+    expect(result!.verdict.kind).toBe("pass");
+    expect(written.map((w) => w.source)).toEqual(["rule", "cross"]);
+  });
+
+  it("cross-runtime-strict: cross fail overrides rule pass in the final verdict", async () => {
+    const written: VerdictEntry[] = [];
+    const deps = makeDeps({
+      buildAdapter: (runtime) =>
+        stubAdapter(runtime, [{ kind: "pass", score: 0.9, confidence: "high" }]),
+      listRuntimes: () => ["openclaw", "pi"],
+      resolveWorkerRuntime: () => "openclaw",
+      crossVerifier: {
+        // Cross says fail — strict mode makes
+        // the cross the authority.
+        verify: async () => ({ kind: "fail", signals: ["cross disagrees"] }),
+      },
+      written,
+    });
+    const { state } = makeState({
+      mandate: mandate({ maxSensitivity: "public", maxChainCostUsd: 5, verifyMode: "cross-runtime-strict" }),
+    });
+
+    const result = await runChainVerificationLoop(deps, state, envelope(), finalPartial());
+
+    expect(result!.escalated).toBeDefined();
+    // Strict: cross wins → result is fail.
+    expect(result!.verdict.kind).toBe("fail");
+    // Both verdicts still in the store for
+    // audit.
+    expect(written.map((w) => w.source)).toEqual(["rule", "cross"]);
+  });
+
+  it("cross-runtime (non-strict): pass wins over fail (precedence)", async () => {
+    const written: VerdictEntry[] = [];
+    const deps = makeDeps({
+      buildAdapter: (runtime) =>
+        stubAdapter(runtime, [{ kind: "fail", signals: ["rule fail"] }]),
+      listRuntimes: () => ["openclaw", "pi"],
+      resolveWorkerRuntime: () => "openclaw",
+      crossVerifier: {
+        // Cross says pass — non-strict mode uses
+        // pass-precedence, so the cross's pass
+        // rescues the result.
+        verify: async () => ({ kind: "pass", score: 0.95, confidence: "high" }),
+      },
+      written,
+    });
+    const { state } = makeState({
+      mandate: mandate({ maxSensitivity: "public", maxChainCostUsd: 5, verifyMode: "cross-runtime" }),
+    });
+
+    const result = await runChainVerificationLoop(deps, state, envelope(), finalPartial());
+
+    expect(result!.escalated).toBeDefined();
+    // Non-strict: pass wins → result is pass.
+    expect(result!.verdict.kind).toBe("pass");
+  });
 });
 
 describe("shouldEscalateToCrossAgent", () => {
@@ -436,6 +527,145 @@ describe("shouldEscalateToCrossAgent", () => {
         criticality: "high",
       }),
     ).toBe(true);
+  });
+
+  // Phase 8 / Step 6 — Q4 (a) + (b). When the
+  // owner explicitly opts into cross-verify via
+  // `verifyMode`, the cross runs regardless of
+  // the rule verdict. Without this, a passing
+  // rule verdict on a public chain would never
+  // escalate — but Q4 (a) says envoy-writes
+  // jobs default to cross-verify, so passing
+  // rule verdicts must escalate.
+  it("escalates a passing verdict when verifyMode is cross-runtime (Q4 a)", () => {
+    expect(
+      shouldEscalateToCrossAgent({ kind: "pass", score: 0.9, confidence: "high" }, {
+        mandate: mandate({ maxSensitivity: "public", maxChainCostUsd: 5, verifyMode: "cross-runtime" }),
+      }),
+    ).toBe(true);
+  });
+
+  it("escalates a passing verdict when verifyMode is cross-runtime-strict (Q4 b)", () => {
+    expect(
+      shouldEscalateToCrossAgent({ kind: "pass", score: 0.9, confidence: "high" }, {
+        mandate: mandate({ maxSensitivity: "public", maxChainCostUsd: 5, verifyMode: "cross-runtime-strict" }),
+      }),
+    ).toBe(true);
+  });
+
+  it("does not escalate when verifyMode is rule-only (default for OpenClaw-writes jobs)", () => {
+    expect(
+      shouldEscalateToCrossAgent({ kind: "disputed", needsHuman: true, signals: ["x"] }, {
+        mandate: mandate({ maxSensitivity: "public", maxChainCostUsd: 5, verifyMode: "rule-only" }),
+      }),
+    ).toBe(false);
+  });
+
+  it("verifyMode absent behaves as rule-only (backward compatibility)", () => {
+    expect(
+      shouldEscalateToCrossAgent({ kind: "disputed", needsHuman: true, signals: ["x"] }, {
+        mandate: mandate({ maxSensitivity: "public", maxChainCostUsd: 5 }),
+      }),
+    ).toBe(false);
+  });
+
+  it("verifyMode: cross-runtime overrides criticality hint (always escalates)", () => {
+    expect(
+      shouldEscalateToCrossAgent({ kind: "pass", score: 0.9, confidence: "high" }, {
+        mandate: mandate({ maxSensitivity: "public", maxChainCostUsd: 5, verifyMode: "cross-runtime" }),
+        criticality: "normal",
+      }),
+    ).toBe(true);
+  });
+});
+
+// Phase 8 / Step 6 — combineToVerdict honors verifyMode.
+describe("combineToVerdict", () => {
+  it("rule-only: pass wins over fail/partial/disputed (existing precedence)", () => {
+    expect(
+      combineToVerdict(
+        [
+          { kind: "fail", signals: ["rule fail"] },
+          { kind: "pass", score: 0.9, confidence: "high" },
+          { kind: "partial", score: 0.5, reason: "uncertain" },
+        ],
+        "rule-only",
+      ),
+    ).toMatchObject({ kind: "pass" });
+  });
+
+  it("rule-only: empty list returns disputed", () => {
+    expect(combineToVerdict([], "rule-only")).toMatchObject({
+      kind: "disputed",
+      needsHuman: true,
+    });
+  });
+
+  it("cross-runtime-strict: last verdict (the cross) wins", () => {
+    // rule is pass; cross is fail. Strict mode
+    // says cross wins → result is fail.
+    expect(
+      combineToVerdict(
+        [
+          { kind: "pass", score: 0.9, confidence: "high" },
+          { kind: "fail", signals: ["cross fail"] },
+        ],
+        "cross-runtime-strict",
+      ),
+    ).toMatchObject({ kind: "fail" });
+  });
+
+  it("cross-runtime-strict: cross pass overrides rule fail", () => {
+    expect(
+      combineToVerdict(
+        [
+          { kind: "fail", signals: ["rule fail"] },
+          { kind: "pass", score: 0.9, confidence: "high" },
+        ],
+        "cross-runtime-strict",
+      ),
+    ).toMatchObject({ kind: "pass" });
+  });
+
+  it("cross-runtime: pass wins (either rule or cross)", () => {
+    // rule is fail; cross is pass. Precedence
+    // says pass wins → result is pass (the
+    // cross rescued the result).
+    expect(
+      combineToVerdict(
+        [
+          { kind: "fail", signals: ["rule fail"] },
+          { kind: "pass", score: 0.9, confidence: "high" },
+        ],
+        "cross-runtime",
+      ),
+    ).toMatchObject({ kind: "pass" });
+  });
+
+  it("verifyMode absent defaults to rule-only behavior", () => {
+    expect(
+      combineToVerdict([
+        { kind: "fail", signals: ["x"] },
+        { kind: "pass", score: 0.9, confidence: "high" },
+      ]),
+    ).toMatchObject({ kind: "pass" });
+  });
+});
+
+// Phase 8 / Step 6 — defaultVerifyModeForWorker.
+describe("defaultVerifyModeForWorker", () => {
+  it("returns cross-runtime for envoy-harness (Q4 a default)", () => {
+    expect(defaultVerifyModeForWorker("envoy-harness")).toBe("cross-runtime");
+  });
+
+  it("returns rule-only for openclaw (no cross needed; OpenClaw is mature)", () => {
+    expect(defaultVerifyModeForWorker("openclaw")).toBe("rule-only");
+  });
+
+  it("returns rule-only for ext and other runtimes", () => {
+    expect(defaultVerifyModeForWorker("ext")).toBe("rule-only");
+    // Other runtime: defaults to rule-only.
+    expect(defaultVerifyModeForWorker("pi" as AgentRuntime)).toBe("rule-only");
   });
 });
 

@@ -178,6 +178,26 @@ export const UnsignedChainMandateSchema = z.object({
    * absent = `"normal"`.
    */
   criticality: z.enum(["normal", "high"]).optional(),
+  /**
+   * Phase 8 / Step 6 — cross-verify mode (Q4 A).
+   * Controls whether the orchestrator runs the
+   * cross-runtime verifier (re-runs the same task
+   * on the OTHER runtime) in addition to the
+   * worker's own rule pass.
+   *  - `"rule-only"` (default for OpenClaw-only
+   *    jobs; per-node opt-out for envoy-writes
+   *    jobs): rule pass only. No cross run.
+   *  - `"cross-runtime"` (Q4 (a) default for
+   *    envoy-writes jobs): always run cross;
+   *    combine verdicts (pass wins over
+   *    partial/fail/disputed).
+   *  - `"cross-runtime-strict"` (Q4 (b) override
+   *    for security/cost-sensitive jobs): always
+   *    run cross; cross verdict takes priority
+   *    over the rule verdict.
+   * Absent = `"rule-only"`.
+   */
+  verifyMode: z.enum(["rule-only", "cross-runtime", "cross-runtime-strict"]).optional(),
 });
 
 export const ChainMandateSignedSchema = UnsignedChainMandateSchema.extend({
@@ -186,6 +206,22 @@ export const ChainMandateSignedSchema = UnsignedChainMandateSchema.extend({
 
 export type UnsignedChainMandate = z.infer<typeof UnsignedChainMandateSchema>;
 export type ChainMandate = z.infer<typeof ChainMandateSignedSchema>;
+
+/**
+ * Phase 8 / Step 6 — cross-verify mode (Q4 A).
+ * Extracted as a named type so the orchestrator
+ * (chain-verify-loop.ts) and the bridge
+ * (envoy-harness-adapter) can reference it
+ * without re-declaring the literal union.
+ *
+ * See the schema field JSDoc for the per-mode
+ * semantics. The orchestrator honors the mode
+ * in `shouldEscalateToCrossAgent` +
+ * `combineToVerdict`; the per-node default is
+ * `defaultVerifyModeForWorker(runtime)` in
+ * `chain-verify-loop.ts`.
+ */
+export type VerifyMode = "rule-only" | "cross-runtime" | "cross-runtime-strict";
 
 /**
  * Soft expect for a parent artifact key (Phase 53). Not enforced at launch —
