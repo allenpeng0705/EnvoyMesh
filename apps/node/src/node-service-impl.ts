@@ -309,6 +309,7 @@ import {
   type UnsignedEnvoyEnvelope,
   type DevicePairRequestPayload,
   type AgentRuntime,
+  type SkillDescriptor,
 } from "@envoymesh/protocol";
 import {
   createDeviceCertificate,
@@ -436,9 +437,14 @@ import { bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 // EnvoyHarnessAdapter) that backs `askEnvoyHarness`.
 import {
   createRealEnvoyHarnessRuntime,
+  ENVOY_HARNESS_RUNTIME_SKILLS,
   loadEnvoyHarnessRuntimeConfig,
   type RealEnvoyHarnessRuntime,
 } from "./agent-runtime-envoy/index.js";
+import {
+  aggregateNodeManifest,
+  type NodeManifest,
+} from "./agent-adapter-manifest-aggregate.js";
 import {
   createChatRoomImpl,
   dismissChatRoomImpl,
@@ -586,7 +592,7 @@ import { buildAgentAttachmentContext } from "./agent-attachment-context.js";
 import type { BridgeConfig } from "./bridge/config.js";
 import { forwardToAgent, receiveFromAgent } from "./bridge/index.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
-import { OPENCLAW_SKILLS, PI_SKILLS } from "@envoymesh/agent-adapter";
+import { OPENCLAW_SKILLS, PI_SKILLS, type AgentAdapter } from "@envoymesh/agent-adapter";
 import {
   buildSignedCapabilityManifest,
   startManifestBroadcaster,
@@ -5067,6 +5073,141 @@ class NodeServiceImpl implements NodeService {
     });
     this._envoyHarnessRuntimeCache = runtime;
     return runtime;
+  }
+
+  /**
+   * Phase 8 / Step 4 — the local merged manifest for
+   * this node.
+   *
+   * **What this returns:** a `NodeManifest` that
+   * aggregates `describeSkills()` from every adapter
+   * registered on this node (envoy-harness + OpenClaw),
+   * tagged with the runtime that owns each skill. The
+   * orchestrator's manifest picker reads this; the
+   * per-adapter broadcast flow
+   * (`agent-adapter-broadcast.ts`) stays unchanged.
+   *
+   * **Why a local view, not a wire format:** the wire
+   * `CapabilityManifest` is per-runtime (one
+   * `runtime: AgentRuntime` per manifest, broadcast on
+   * the wire). The merged manifest is the host's
+   * **local aggregate** of what those N manifests
+   * would say, for the orchestrator to query without
+   * iterating per-adapter.
+   *
+   * **Why sync:** v0 only calls `describeSkills()`
+   * (sync). The orchestrator's routing decisions are
+   * local lookups; sync keeps the call shape simple.
+   * Future: async variant when `runtimeVersion` is
+   * read from `buildManifest()` (which is async).
+   *
+   * **Why stubs (not real adapters):** the merged
+   * manifest is for the **capability view**; we only
+   * need `describeSkills()` + the runtime tag. The
+   * real adapters carry runtime state (`askOpenClaw`
+   * closure, `agentPeerId`, `apiKey`, etc.) that
+   * the merged manifest doesn't need. Stubs throw on
+   * `execute()` / `buildManifest()` to make accidental
+   * side effects impossible.
+   *
+   * **SkillId collision policy:** the aggregator
+   * throws `SkillIdCollisionError` if two runtimes
+   * expose the same `skillId`. This is a bug in one of
+   * the runtimes; we fail loud at the orchestrator's
+   * read path, not silently.
+   *
+   * **Why the mesh peerId for the manifest's `peerId`:
+   * the wire `CapabilityManifest.peerId` is the agent
+   * peerId (the worker). For the local NodeManifest,
+   * the orchestrator already knows which node it's
+   * running on; the peerId is for self-description.
+   * We use the mesh peerId (sync-available) as a
+   * close-enough identifier. Future: read the real
+   * agent peerId via async `_ensureAgentIdentity()`
+   * when the aggregator becomes async.
+   */
+  getNodeManifest(): NodeManifest {
+    const peerId = this._mesh?.peerId ?? "local-node";
+    return aggregateNodeManifest({
+      peerId,
+      adapters: this._getNodeManifestStubs(),
+    });
+  }
+
+  /**
+   * Phase 8 / Step 4 — the adapter list passed to
+   * `aggregateNodeManifest`. Production code returns
+   * the default list (envoy-harness + OpenClaw stubs).
+   * Tests inject via `setManifestStubsForTests()`.
+   */
+  private _manifestStubsForTests: AgentAdapter[] | undefined;
+
+  /**
+   * Phase 8 / Step 4 — public test seam. Production
+   * never calls this; the default adapter list is
+   * always the live catalog. Tests inject a custom
+   * list to verify routing decisions without setting
+   * up a real `NodeServiceImpl` runtime.
+   */
+  setManifestStubsForTests(stubs: AgentAdapter[] | undefined): void {
+    this._manifestStubsForTests = stubs;
+  }
+
+  /**
+   * Phase 8 / Step 4 — build the default adapter list
+   * for the merged manifest. Stubs only; the real
+   * adapters (with `askOpenClaw` / `apiKey` / `peerId`
+   * state) are constructed on-demand at the
+   * orchestrator's call site, not here.
+   */
+  private _getNodeManifestStubs(): AgentAdapter[] {
+    if (this._manifestStubsForTests) {
+      return this._manifestStubsForTests;
+    }
+    return [
+      // Copy the readonly catalog to a mutable array
+      // (matches what `EnvoyHarnessAdapter.describeSkills()`
+      // and `OpenClawAdapter.describeSkills()` do). The
+      // `AgentAdapter` interface requires `SkillDescriptor[]`
+      // (mutable); the catalogs are `ReadonlyArray`.
+      this._makeStubAdapter("envoy-harness", () => [...ENVOY_HARNESS_RUNTIME_SKILLS]),
+      this._makeStubAdapter("openclaw", () => [...OPENCLAW_SKILLS]),
+    ];
+  }
+
+  /**
+   * Phase 8 / Step 4 — build a stateless `AgentAdapter`
+   * stub. The aggregator only reads `runtime` and calls
+   * `describeSkills()`. All other methods throw with a
+   * clear error message so accidental side effects are
+   * impossible to ignore.
+   */
+  private _makeStubAdapter(
+    runtime: AgentRuntime,
+    describeSkillsFn: () => SkillDescriptor[],
+  ): AgentAdapter {
+    return {
+      runtime,
+      describeSkills: describeSkillsFn,
+      buildManifest: () => {
+        throw new Error(
+          `getNodeManifest: stub ${runtime} adapter's ` +
+            `buildManifest() must not be called`,
+        );
+      },
+      execute: () => {
+        throw new Error(
+          `getNodeManifest: stub ${runtime} adapter's ` +
+            `execute() must not be called`,
+        );
+      },
+      verify: () => {
+        throw new Error(
+          `getNodeManifest: stub ${runtime} adapter's ` +
+            `verify() must not be called`,
+        );
+      },
+    };
   }
 
   /** Node-owner choice: which engine runs Team-job steps on this node. */
