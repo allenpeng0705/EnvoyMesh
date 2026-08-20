@@ -278,24 +278,47 @@ OpenClaw; accessed via Step 2's cross-runtime transport when needed).
 
 ### Step 4 — Merged manifest at node level (~1 week)
 
+**Status:** ✅ **DONE** (2026-08-20). 4 commits on the
+`envoy_harness_integration` branch (`5ac5f627` +
+`0947bd55` + `59f2abc0` + doc). 14 new tests (9 unit +
+5 host). See `docs/agent-harness-integration-step3-4.md`
++ `docs/agent-harness-integration-step4.md` for the
+detailed plan + sub-plan.
+
 **Goal:** the orchestrator sees one manifest per node, with skills
 tagged by runtime.
 
-- New: `apps/node/src/agent-network-skills-aggregate.ts` — node-level
-  manifest aggregation. Pulls `envoy-harness-adapter.listSkills()` and
-  `OpenClawAdapter.listSkills()`, returns the union with
-  `runtime: "envoy-harness" | "openclaw"` tag.
-- Update: orchestrator's manifest picker reads the merged manifest
-  (single source of truth for the Assigner)
-- Update: existing `agent-adapter-broadcast.ts` (the per-adapter
-  broadcast) stays; the merged manifest is an additional aggregation
-  pass
+- ✅ New: `apps/node/src/agent-adapter-manifest-aggregate.ts`
+  — node-level manifest aggregator. Pure function
+  `aggregateNodeManifest({ peerId, adapters })` returns
+  a `NodeManifest` with `runtimes[]` + `skills[]` (each
+  skill tagged with its runtime). **Filename chosen
+  to avoid collision with the existing
+  `agent-network-skills-aggregate.ts`** (which aggregates
+  owner profile skills, a different concern).
+- ✅ New: `NodeServiceImpl.getNodeManifest(): NodeManifest`
+  — the host-side integration. Sync, stateless stub
+  adapters (throw on `execute()` / `buildManifest()`).
+  Test seam: `setManifestStubsForTests(stubs)`.
+- Update (future): orchestrator's manifest picker reads
+  `getNodeManifest()` (single source of truth for the
+  Assigner). The wire-level `agent-adapter-broadcast.ts`
+  (per-adapter broadcast) stays unchanged — the merged
+  manifest is a **local view**, not a wire format.
 
-**Tests:** e2e test that the merged manifest is consistent (no skill
-ID collision); unit test that the runtime tag is preserved through
-the aggregation.
+**Tests:** ✅ 9 unit tests in
+`agent-adapter-manifest-aggregate.test.ts` (covers
+empty / single / both / collision / `runtimeVersion` /
+tags + `costCeilingUsd` / `maxSensitivity` / order
+preservation). ✅ 5 host wiring tests in
+`agent-adapter-manifest-aggregate-host.test.ts`
+(covers default 9 skills, mesh-less peerId fallback,
+test seam injection, test seam reset, skillId
+collision). All 14 tests pass.
 
 **Out of scope:** per-skill fan-out (whole-job routing only v0).
+This still applies — Step 4 doesn't change the routing
+decision; it just makes the manifest available.
 
 ### Step 5 — Signal-based auto opt-in (~1 week)
 
@@ -409,3 +432,13 @@ fan-out within a job (whole-job only).
 - **2026-08-20 (initial draft):** §1-8 written. Cooperation model
   (A+B+E) + Q1-Q5 design decisions + 6 injection steps + open
   questions. Awaiting team sign-off.
+- **2026-08-20 (Step 4 — DONE):** §5 Step 4 marked ✅ done. 4 commits
+  on `envoy_harness_integration` branch (`5ac5f627` +
+  `0947bd55` + `59f2abc0` + doc). 14 new tests (9 unit +
+  5 host). Detailed plan: `docs/agent-harness-integration-step3-4.md`
+  + `docs/agent-harness-integration-step4.md`. New:
+  `apps/node/src/agent-adapter-manifest-aggregate.ts` (pure
+  function), `NodeServiceImpl.getNodeManifest()` (sync host
+  wiring with stateless stub adapters). The merged manifest
+  is a **local view**, not a wire format — the per-adapter
+  broadcast flow (`agent-adapter-broadcast.ts`) is unchanged.

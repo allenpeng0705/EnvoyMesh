@@ -54,11 +54,130 @@ Rules:
    `envoy_harness_unavailable` for any real call until Step 2 wires the
    model adapter.
 
+### 2.1 Phase 8 / Step 4 — merged manifest at node level
+
+**Owner-facing summary:** the orchestrator now sees **one
+local manifest per node** for the Agent Network, with
+every skill tagged by the runtime that owns it. A node
+with `envoy-harness` + `openclaw` runs the orchestrator's
+manifest picker as "9 skills across 2 runtimes" instead
+of "iterate each adapter separately".
+
+**The local view (not the wire format):** the wire
+`CapabilityManifest` (in `@envoymesh/protocol/agent-adapter.ts`)
+is **per-runtime** — one `runtime: AgentRuntime` per
+manifest, broadcast over the mesh. The merged manifest
+is the host's **local aggregate** of what those N
+per-runtime manifests would say. The wire format is
+unchanged; the merged manifest is for the orchestrator's
+local routing decisions.
+
+**What `getNodeManifest()` returns:**
+
+```ts
+interface NodeManifest {
+  peerId: string;                                       // the node's mesh peerId
+  runtimes: ReadonlyArray<{
+    runtime: "envoy-harness" | "openclaw" | "pi" | ...;
+    runtimeVersion: string;                             // v0: always "unknown"
+  }>;
+  skills: ReadonlyArray<{
+    skillId: string;
+    description: string;
+    costCeilingUsd?: number;
+    maxSensitivity: "public" | "friends" | "private";
+    tags: ReadonlyArray<string>;
+    runtime: AgentRuntime;                              // the runtime that owns this skill
+  }>;
+}
+```
+
+**How to use it:**
+
+- The orchestrator's manifest picker reads
+  `nodeService.getNodeManifest()` once at startup
+  (or on adapter config change).
+- Routing decisions become a local lookup: "which
+  runtime owns `code-review`?" → return
+  `runtime: "envoy-harness"`.
+- The per-adapter broadcast flow
+  (`agent-adapter-broadcast.ts`) is unchanged. A
+  node with 2 runtimes still broadcasts **2 separate
+  wire manifests** (one per runtime).
+
+**Where the merged manifest lives:**
+
+- Aggregator:
+  `apps/node/src/agent-adapter-manifest-aggregate.ts`
+  (pure function, no I/O)
+- Host wiring:
+  `NodeServiceImpl.getNodeManifest()`
+  (sync, uses stateless stub adapters that throw on
+  `execute()` / `buildManifest()`)
+- Unit tests:
+  `apps/node/test/agent-adapter-manifest-aggregate.test.ts`
+  (9 tests: empty / single / both / collision /
+  `runtimeVersion` / tags + `costCeilingUsd` /
+  `maxSensitivity` / order preservation)
+- Host wiring tests:
+  `apps/node/test/agent-adapter-manifest-aggregate-host.test.ts`
+  (5 tests: default 9 skills, mesh-less peerId
+  fallback, test seam injection, test seam reset,
+  skillId collision)
+
+**Why this matters (Q5 routing):** the orchestrator's
+"per-node primary + best-fit skill fallback" decision
+needs to know "what skills does this node have, and
+which runtime owns each". The merged manifest answers
+that in one read. Without it, the orchestrator would
+have to instantiate each adapter, call
+`describeSkills()`, union the results, and tag each
+with the adapter's runtime — every routing decision.
+
+**SkillId collision policy:** the aggregator throws
+`SkillIdCollisionError` when two runtimes expose the
+same `skillId`. This is a bug in one of the runtimes
+— the model would see two skills with the same name
+in its tool list. We fail loud at aggregation time,
+not silently.
+
+**Why `runtimeVersion: "unknown"` v0:** the
+`AgentAdapter` interface doesn't expose
+`runtimeVersion` directly. v0 hard-codes `"unknown"`.
+Future: read from `buildManifest()` (requires async
+aggregator).
+
+**What Step 4 does NOT cover:**
+
+- **Per-skill fan-out (whole-job routing v0).** A
+  job with `requiredSkill: ["code-review",
+  "peer-list"]` routes to one runtime, not multiple.
+- **Signal-based opt-in routing (Step 5).** Step 4
+  is a passive merge; the orchestrator still uses
+  the existing engine picker to choose the primary.
+- **B-class skills (Step 3).** Step 4 ships with
+  the current 5 + 4 = 9 skills. Step 3 adds 3
+  B-class skills to the merged manifest (6 entries
+  — one per runtime, since both runtimes can invoke
+  them).
+
 ```text
 Owner config (this node)          Assigner (Team job)
 ─────────────────────────         ───────────────────
 AN engine: OpenClaw | Ext    →    pick peer by membership + skills
        ↓                          assign step → that peer
+  execute subtask locally
+```
+
+**Phase 8 / Step 4 adds** the local merged manifest
+between the owner's config and the Assigner's
+routing decision:
+
+```text
+  NodeServiceImpl.getNodeManifest()       ←  Phase 8 / Step 4
+       ↓ (one read, 9 skills, 2 runtimes)
+  Assigner (Team job) — pick runtime by skill match
+       ↓
   execute subtask locally
 ```
 

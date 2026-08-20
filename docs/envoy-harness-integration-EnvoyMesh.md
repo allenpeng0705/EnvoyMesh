@@ -696,3 +696,31 @@ git push --tags
   mapping, and the DI seam. See
   `docs/agent-harness-integration-b2-b3.md` §4 for
   the full b3.live spec.
+- **2026-08-20 (Phase 8 / Step 4 — DONE):** the
+  orchestrator now sees one merged manifest per node
+  for the Agent Network. New
+  `apps/node/src/agent-adapter-manifest-aggregate.ts`
+  — pure-function aggregator
+  `aggregateNodeManifest({ peerId, adapters })` that
+  unions every adapter's `describeSkills()` and tags
+  each entry with the runtime that owns it.
+  `NodeServiceImpl.getNodeManifest(): NodeManifest`
+  exposes the aggregate to the orchestrator. The
+  per-adapter broadcast flow
+  (`agent-adapter-broadcast.ts`) is unchanged — the
+  merged manifest is a **local view**, not a wire
+  format. 4 commits (`5ac5f627` aggregator + 9 unit
+  tests, `0947bd55` host wiring, `59f2abc0` 5 host
+  tests, doc). 14 new tests (9 unit + 5 host). The
+  host wiring uses **stateless stub adapters** that
+  throw on `execute()` / `buildManifest()` (so
+  accidental side effects are impossible). Test
+  seam: `setManifestStubsForTests(stubs)`. SkillId
+  collision policy: `SkillIdCollisionError` thrown
+  at aggregation time (fail loud, not silent).
+  `runtimeVersion` is hard-coded to `"unknown"` v0
+  (the `AgentAdapter` interface doesn't expose it
+  directly; future: read from `buildManifest()`).
+  See `docs/agent-harness-integration-step3-4.md` + 
+  `docs/agent-harness-integration-step4.md` for the
+  full Step 4 spec.

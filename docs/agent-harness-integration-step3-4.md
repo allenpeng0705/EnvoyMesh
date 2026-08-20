@@ -1,6 +1,7 @@
 # envoy-harness integration — Step 3 + Step 4 plan
 
-> **Status:** Draft (2026-08-20). Companion to
+> **Status:** Step 4 ✅ DONE (2026-08-20). Step 3
+> pending. Companion to
 > [`agent-harness-integration.md`](./agent-harness-integration.md) (the
 > design) and [`envoy-harness-integration-EnvoyMesh.md`](./envoy-harness-integration-EnvoyMesh.md)
 > (the implementation guide). **This doc covers the two
@@ -600,3 +601,20 @@ Step 3 first.
      all 3 impls** (overrides my per-skill
      recommendation). Step 3 = 3 commits total
      (impls + manifest + e2e). §4.6 revised.
+- **2026-08-20 (Step 4 ✅ DONE):** 4 commits shipped
+  on `envoy_harness_integration` branch:
+  - `5ac5f627 step 4-1` (aggregator + 9 unit tests)
+  - `0947bd55 Update node-service-impl.ts`
+    (host wiring)
+  - `59f2abc0 Create agent-adapter-manifest-aggregate-host.test.ts`
+    (5 host tests)
+  - Doc update (operator-facing + design + impl
+    guide changelogs + this sub-plan §8 + status
+    banner)
+  
+  **14 new tests, all pass. Type-check clean.**
+  Detailed plan in
+  `docs/agent-harness-integration-step4.md`. Step 3
+  (B-class skills) is the next chunk; the merged
+  manifest will auto-pick up the 3 new B-class
+  skills when Step 3 lands.

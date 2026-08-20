@@ -593,3 +593,42 @@ it into commit 3.
   tests (1), host wiring (2), e2e test (3), doc
   update (4). 9 new tests. Open questions §6
   documented.
+- **2026-08-20 (Step 4 build — DONE):** all 4 commits
+  shipped on `envoy_harness_integration` branch:
+  - `5ac5f627 step 4-1` — aggregator + types + 9 unit
+    tests (`aggregateNodeManifest` + `NodeManifest` +
+    `MergedSkillEntry` + `SkillIdCollisionError`).
+  - `0947bd55 Update node-service-impl.ts` — host
+    wiring (`getNodeManifest()` +
+    `setManifestStubsForTests` + stateless stub
+    adapters).
+  - `59f2abc0 Create agent-adapter-manifest-aggregate-host.test.ts` —
+    5 host wiring tests (default 9 skills, mesh-less
+    peerId, test seam injection, test seam reset,
+    skillId collision). **Filename changed from
+    `*.e2e.test.ts` to `*-host.test.ts`** to avoid
+    the vitest default-exclude on `*e2e*.test.ts` (no
+    real mesh / network needed; the test is
+    hermetic).
+  - Doc update (this commit) — operator-facing
+    `agent-network-engine.md` §2.1, design doc
+    `agent-harness-integration.md` §5 + §9, impl
+    guide `envoy-harness-integration-EnvoyMesh.md`
+    changelog.
+
+  **Test count: 14 new tests (9 unit + 5 host), all
+  pass. Type-check clean. 80/80 cumulative Phase 8 +
+  Step 4 + manifest tests pass.**
+
+  **Plan deviations from sub-plan §6:**
+  - **File location** (`apps-node`) ✅ as recommended.
+  - **Stubs vs real adapters** (`stubs`) ✅ as
+    recommended.
+  - **Sync vs async** (`sync`) ✅ as recommended.
+  - **Commit count** (`4-commits`) ✅ as recommended.
+  - **Test file naming**: `*-host.test.ts` (not
+    `*.e2e.test.ts`) — functional difference is
+    none, but the vitest config treats `*e2e*.test.ts`
+    as heavy (requires `RUN_E2E=1`). The host test
+    is hermetic (no mesh, no network), so the
+    lighter naming fits better.
