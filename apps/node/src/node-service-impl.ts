@@ -428,6 +428,17 @@ import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-g
 import { backfillBundledSponsorPeerAddresses, loadBundledSponsorFriendParsed, selectBundledSponsorBackfillAddrs } from "./bundled-sponsor-friend-loader.js";
 import { buildModelProviders, routeModelRequest } from "@envoymesh/models";
 import { bindDeviceAuthorizationStore } from "./chat-device-auth.js";
+// Phase 8 / b3 — the real `askEnvoyHarness` runtime. The
+// `loadEnvoyHarnessRuntimeConfig` is the env-var-driven
+// readiness check; `createRealEnvoyHarnessRuntime` +
+// `RealEnvoyHarnessRuntime` are the lazy-constructed
+// stack (ModelAdapter + LocalCrossRuntimeSubmitter +
+// EnvoyHarnessAdapter) that backs `askEnvoyHarness`.
+import {
+  createRealEnvoyHarnessRuntime,
+  loadEnvoyHarnessRuntimeConfig,
+  type RealEnvoyHarnessRuntime,
+} from "./agent-runtime-envoy/index.js";
 import {
   createChatRoomImpl,
   dismissChatRoomImpl,
@@ -4758,30 +4769,147 @@ class NodeServiceImpl implements NodeService {
   }
 
   /**
-   * Phase 8 — envoy-harness readiness probe (AN engine Step 1+).
+   * Phase 8 / b3 — envoy-harness readiness probe (AN engine).
    *
-   * **Step 1 stub:** always returns `false`. The factory + model adapter
-   * are not wired yet (see `apps/node/src/agent-runtime-envoy/factory.ts`).
-   * When the operator selects `envoy-harness` as the worker engine, the
+   * Returns `true` when:
+   * 1. `ENVOY_HARNESS_STUB_PHASE_8_STEP_1=1` is NOT set (the
+   *    test escape hatch).
+   * 2. The provider-specific API key env var
+   *    (`DEEPSEEK_API_KEY` / `OPENAI_API_KEY` /
+   *    `ANTHROPIC_API_KEY`) is set, OR `ENVOY_HARNESS_API_KEY`
+   *    is set (the universal override).
+   *
+   * **Why env-var presence, not a model call:** the model
+   * call (`createProviderAdapter(...)`) is the real check
+   * for whether the API key is valid. We do that check lazily
+   * on the first `askEnvoyHarness` call. The env-var presence
+   * check is the readiness probe — it tells the orchestrator
+   * "this engine is worth invoking" without burning a model
+   * call.
+   *
+   * **What the chain worker does on `ready === false`:** the
    * dispatch in `node-service-chain-orchestration.ts` returns
-   * `envoy_harness_unavailable` for any real call. Step 2 flips this to
-   * a real readiness probe (model adapter reachable + API key present).
+   * `envoy_harness_unavailable` and the orchestrator retries
+   * on a different node (or escalates). The operator sees a
+   * clean failure, not a stack trace.
    */
   isEnvoyHarnessReady(): boolean {
-    return false;
+    return loadEnvoyHarnessRuntimeConfig().ready;
   }
 
   /**
-   * Phase 8 — sync ask via envoy-harness (AN engine Step 1+).
+   * Phase 8 / b3 — sync ask via envoy-harness (AN engine).
    *
-   * **Step 1 stub:** throws `envoy_harness_stub_phase_8_step_1` when
-   * called. The dispatch in `node-service-chain-orchestration.ts`
-   * short-circuits via `isEnvoyHarnessReady() === false` BEFORE this
-   * method is reached, so a correctly-configured operator never hits
-   * this throw — it's a safety net for misuse.
+   * Replaces the Step 1 stub. Lazily constructs the
+   * `RealEnvoyHarnessRuntime` on the first call (the model
+   * adapter + cross-runtime submitter + adapter are built
+   * once per process). Subsequent calls reuse the cached
+   * runtime.
+   *
+   * **Error behavior:**
+   * - `ready === false` (no API key): throws
+   *   `envoy_harness_stub_phase_8_step_1` (matches the Step 1
+   *   stub message — backwards-compatible error code for the
+   *   orchestrator + tests).
+   * - `ready === true` but model adapter construction fails
+   *   (e.g. unknown provider): throws the original error from
+   *   `createProviderAdapter`.
+   * - The LLM call returns no text: throws
+   *   `envoy_harness_empty: no text in result` (clean failure,
+   *   matches the openclaw / ext engine behavior).
+   *
+   * **Cancellation:** the host's `abortSignal` is forwarded
+   * to the agent (the `ask()` call's `signal` option is set
+   * by the chain worker in `chain-worker-executor.ts`).
    */
-  async askEnvoyHarness(_prompt: string): Promise<string> {
-    throw new Error("envoy_harness_stub_phase_8_step_1");
+  async askEnvoyHarness(prompt: string): Promise<string> {
+    const config = loadEnvoyHarnessRuntimeConfig();
+    if (!config.ready) {
+      // Matches the Step 1 stub error message — the
+      // orchestrator's `agentNetworkEngineDenyReason` +
+      // tests rely on this code path. v0 doesn't expose
+      // a more specific reason here; the `reason` field
+      // on the config is internal.
+      throw new Error("envoy_harness_stub_phase_8_step_1");
+    }
+    const runtime = await this._getOrInitEnvoyHarnessRuntime();
+    return runtime.ask(prompt);
+  }
+
+  /**
+   * Phase 8 / b3 — lazy-init the real envoy-harness runtime.
+   *
+   * **Why lazy:** the runtime is per-process. The chain
+   * worker is the only consumer (via the AN engine
+   * dispatch). Constructing it eagerly at node bootstrap
+   * would couple the bootstrap path to envoy-harness
+   * readiness (we'd need to fail bootstrap if the API key
+   * is missing). Lazy defers the construction to the first
+   * `askEnvoyHarness` call, AFTER `isEnvoyHarnessReady()`
+   * returns true.
+   *
+   * **The `agentIdentity`:** the runtime needs the node's
+   * `agentPeerId` (for the worker's peerId stamp) and
+   * `agentPrivateKeyPem` (for `defaultSignResult`). Both
+   * come from `ensureAgentIdentity` — a method that
+   * bootstraps the identity on first call and caches it.
+   *
+   * **The `askOpenClaw` closure:** the runtime's
+   * `LocalRuntimeRegistry` needs the host's OpenClaw ask
+   * path (for cross-runtime sub-agents on openclaw). We
+   * close over `this.askOpenClaw` (the same method the
+   * chain worker uses for the openclaw engine).
+   *
+   * **The `isOpenClawReady` closure:** the registry's
+   * early-bail optimization (clean "openclaw_unavailable"
+   * verdict instead of letting `askOpenClaw` throw). We
+   * close over `this.isOpenClawReady` (the same method
+   * the chain worker uses for the openclaw engine).
+   *
+   * **Why not `this._openClawState` directly:** the
+   * runtime is a testable seam — the closure shape
+   * `(prompt) => Promise<string>` matches the
+   * `LocalRuntimeRegistry`'s DI contract. The
+   * `askOpenClawViaRuntime` helper already wraps the
+   * state, so the closure is the same shape.
+   */
+  private _envoyHarnessRuntimeCache: RealEnvoyHarnessRuntime | undefined;
+
+  private async _getOrInitEnvoyHarnessRuntime(): Promise<RealEnvoyHarnessRuntime> {
+    if (this._envoyHarnessRuntimeCache) {
+      return this._envoyHarnessRuntimeCache;
+    }
+    const agentIdentity = await this._ensureAgentIdentity();
+    if (!agentIdentity?.agentPeerId || !agentIdentity.agentPrivateKeyPem) {
+      // The bootstrap hasn't completed; the chain worker
+      // is being invoked before the identity is ready.
+      // This shouldn't happen in production (the chain
+      // worker is built AFTER identity is ready), but the
+      // safety net is a clean error.
+      throw new Error(
+        "agent identity unavailable for envoy-harness ask — " +
+          "ensure the node has bootstrapped before invoking " +
+          "the AN engine dispatch",
+      );
+    }
+    const config = loadEnvoyHarnessRuntimeConfig();
+    // Re-check readiness in case the env changed between
+    // the `isEnvoyHarnessReady` probe and this call
+    // (defensive; the env doesn't usually change at
+    // runtime).
+    if (!config.ready) {
+      throw new Error("envoy_harness_stub_phase_8_step_1");
+    }
+    const runtime = createRealEnvoyHarnessRuntime({
+      workerPeerId: agentIdentity.agentPeerId,
+      agentPrivateKeyPem: agentIdentity.agentPrivateKeyPem,
+      config,
+      cwd: config.cwd,
+      askOpenClaw: (p) => this.askOpenClaw(p),
+      isOpenClawReady: () => this.isOpenClawReady(),
+    });
+    this._envoyHarnessRuntimeCache = runtime;
+    return runtime;
   }
 
   /** Node-owner choice: which engine runs Team-job steps on this node. */

@@ -609,3 +609,31 @@ git push --tags
   runtime, and (b3) the full `Agent` e2e with a real
   `defaultBuildSubagentFactory` + `ModelAdapter`. See the
   follow-up plan doc.
+- **2026-08-20 (Phase 8 Step 2 / b3 — DONE):** the
+  chain-worker executor's `askEnvoyHarness` is now real
+  (text-in/text-out closure backed by `EnvoyHarnessAdapter`
+  + `LocalCrossRuntimeSubmitter` + `LocalRuntimeRegistry`).
+  Two natural commit units land in this PR: the
+  envoy-harness side (bridge: `defaultBuildAgentFactory`
+  accepts a `meshSubmitter` option + pre-existing
+  `local-cross-runtime-submitter.test.ts` exactOptional
+  fix) and the EnvoyMesh side (new
+  `agent-runtime-envoy/runtime.ts` with
+  `createRealEnvoyHarnessRuntime`; the host's
+  `isEnvoyHarnessReady()` + `askEnvoyHarness(prompt)`
+  flip from stubs to a real closure; the config is now
+  env-var-driven with `ready: true` when
+  `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` /
+  `ANTHROPIC_API_KEY` is set or the universal
+  `ENVOY_HARNESS_API_KEY` override). 12 new tests
+  cover the runtime (lazy init, model construction,
+  cross-runtime submitter wiring, host `askOpenClaw`
+  injection, empty-result handling, `workerPeerId`
+  stamping, log events) + a `FakeModel` e2e that drives
+  the chain worker end-to-end. 38/38 Phase 8 EnvoyMesh
+  tests pass; 105/105 envoy-harness-adapter tests pass.
+  Live test (needs `DEEPSEEK_API_KEY`) is a follow-up.
+  Backward compatibility: `ENVOY_HARNESS_STUB_PHASE_8_STEP_1=1`
+  still forces `ready: false` (the Step 1 escape hatch).
+  See `docs/agent-harness-integration-b2-b3.md` §3 for
+  the full b3 spec.

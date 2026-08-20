@@ -48,3 +48,17 @@ export {
   LocalRuntimeRegistry,
   type CreateLocalRuntimeRegistryOptions,
 } from "./local-runtime-registry.js";
+
+// Phase 8 Step 2 / b3 — the real `askEnvoyHarness`
+// runtime. Constructs the full envoy-harness stack
+// (ModelAdapter + LocalMeshSubmitter + LocalRuntimeRegistry
+// + LocalCrossRuntimeSubmitter + EnvoyHarnessAdapter) and
+// returns a text-in/text-out `ask` closure. The host's
+// `NodeServiceImpl.askEnvoyHarness` uses this in place of
+// the Step 1 stub that threw `envoy_harness_stub_phase_8_step_1`.
+export {
+  createRealEnvoyHarnessRuntime,
+  type CreateRealEnvoyHarnessRuntimeOptions,
+  type RealEnvoyHarnessAskOptions,
+  type RealEnvoyHarnessRuntime,
+} from "./runtime.js";
