@@ -1,5 +1,5 @@
 /**
- * Phase 8 Step 2 — `LocalRuntimeRegistry` (the host-side
+ * Phase 8 Step 2 / b1 — `LocalRuntimeRegistry` (the host-side
  * `LocalRuntimeBridge` implementation).
  *
  * **What this is:** the only EnvoyMesh-side class that knows
@@ -32,34 +32,47 @@
  *   SubagentResult:
  *     status:     "completed" if non-empty else "failed"
  *     content:    [{ type: "text", text: resultText }]
- *     workerRuntime: "openclaw" (set by the submitter
- *                   after the bridge returns; the bridge
- *                   may also set it — both are fine)
+ *     workerRuntime: "openclaw" (rewritten by the
+ *                   submitter; the bridge may also set
+ *                   it — both are fine)
  *     verdict:    "pass" if non-empty + non-aborted
  *
- * **Why the bridge DOESN'T set `workerPeerId`:** the
- * submitter rewrites it to the configured peer (the same
- * node, since cross-runtime sub-agents are local). The
- * bridge returning `workerPeerId: ""` is fine.
+ * **Phase 8 b1 — the symmetric direction is now real:**
+ * `submitToEnvoyHarness` delegates to a host-injected
+ * `LocalMeshSubmitter` (from `@envoymesh/envoy-harness`).
+ * The factory (`buildSubagent: (input) => Agent`) is host-
+ * injected, mirroring the `askOpenClaw` DI shape on the
+ * other side. The registry is the one place that knows
+ * how to construct a sub-agent on either runtime.
  *
- * **Step 2 scope:** only the envoy-harness → openclaw
- * direction is implemented (the "A" direction in the (B)
- * plan's e2e). The reverse direction (openclaw →
- * envoy-harness, the "B" direction) is wired through
- * `submitToEnvoyHarness` — the registry's interface seam.
- * The e2e for "B" requires OpenClaw's `BridgeToEnvoyHarness`
- * skill (Step 4+); for now, `submitToEnvoyHarness` is a
- * stub that throws "not yet implemented". This is a
- * "testability wins on tie" choice — the seam exists, the
- * second direction is one PR away.
+ * **Why a `LocalMeshSubmitter` instance per registry, not
+ * per call:** the submitter is stateful (it owns a
+ * `SubagentRecord[]` for the `/agents` command). One
+ * instance per `NodeServiceImpl` matches the per-process
+ * registry lifetime; constructing per call would lose
+ * the record between `submit()` calls.
+ *
+ * **Why the bridge DOESN'T set `workerPeerId` for
+ * openclaw:** the submitter rewrites it to the configured
+ * peer (the same node, since cross-runtime sub-agents are
+ * local). The bridge returning `workerPeerId: ""` is fine.
+ * The LocalMeshSubmitter stamps its own `workerPeerId`
+ * for the envoy-harness direction.
  *
  * **Stability:** the public surface is
  * `LocalRuntimeRegistry` (class) +
  * `CreateLocalRuntimeRegistryOptions` (constructor opts).
  * Additive; new methods on the registry are backward-
- * compatible.
+ * compatible. New required options are major version
+ * (the b1 change adds 2 required options: `buildSubagent`
+ * and `workerPeerId`).
  */
 
+import {
+  type Agent,
+  LocalMeshSubmitter,
+  type LocalMeshSubmitterOptions,
+} from "@envoymesh/envoy-harness";
 import {
   type LocalRuntimeBridge,
   type SubagentInput,
@@ -91,6 +104,35 @@ export interface CreateLocalRuntimeRegistryOptions {
   isOpenClawReady?: () => boolean;
 
   /**
+   * Phase 8 b1 — factory: build a fresh `Agent` for an
+   * envoy-harness sub-agent. The factory's responsibility
+   * is to construct a NEW session (id, AGENTS.md, hooks)
+   * per call. The host decides the sub-agent's model,
+   * tools, permission, system prompt.
+   *
+   * **Symmetric to `askOpenClaw`:** the host injects both
+   * seams. The registry doesn't know about model adapters
+   * or `defaultBuildSubagentFactory`; the chain-worker-
+   * executor (or a future step) wires them up.
+   *
+   * **Required because:** `submitToEnvoyHarness` calls
+   * `this.envoyHarnessSubmitter.submit()`, which calls
+   * the factory. A test that only exercises
+   * `submitToOpenClaw` can pass a stub factory (it will
+   * never be called).
+   */
+  buildSubagent: (input: SubagentInput) => Agent;
+
+  /**
+   * Phase 8 b1 — this node's peerId. Stamped into every
+   * `SubagentResult.workerPeerId` produced by the
+   * `LocalMeshSubmitter` so the parent (and any downstream
+   * verifier) can tell where the sub-agent ran. Mirrors
+   * `LocalMeshSubmitterOptions.workerPeerId`.
+   */
+  workerPeerId: string;
+
+  /**
    * Optional: a logger hook for debugging cross-runtime
    * dispatch. v0: optional. The registry's behavior is
    * identical with or without it; the logger is purely
@@ -104,8 +146,10 @@ export interface CreateLocalRuntimeRegistryOptions {
  * Single class per process; one per `NodeServiceImpl`.
  *
  * **Why a single class:** the registry is per-process
- * (singleton). The internal state is just the injected
- * closures + an optional logger. The host creates one
+ * (singleton). The internal state is the injected
+ * closures + an optional logger + the inner
+ * `LocalMeshSubmitter` (stateful — owns the
+ * `SubagentRecord[]` for `/agents`). The host creates one
  * instance and passes it to the `LocalCrossRuntimeSubmitter`
  * (via `EnvoyHarnessAdapter`'s `meshSubmitter` option, or
  * via the new `createLocalCrossRuntimeSubmitter` helper).
@@ -120,11 +164,31 @@ export class LocalRuntimeRegistry implements LocalRuntimeBridge {
   private readonly log:
     | ((event: string, fields?: Record<string, unknown>) => void)
     | undefined;
+  /**
+   * Phase 8 b1 — the inner `LocalMeshSubmitter` for
+   * envoy-harness sub-agents. Constructed once in the
+   * constructor (not per call) so the `SubagentRecord[]`
+   * registry persists across `submitToEnvoyHarness`
+   * calls. The `LocalMeshSubmitter` is from
+   * `@envoymesh/envoy-harness` (Package 1) — this is the
+   * one place the registry imports the harness runtime.
+   */
+  private readonly envoyHarnessSubmitter: LocalMeshSubmitter;
 
   constructor(options: CreateLocalRuntimeRegistryOptions) {
     this.askOpenClaw = options.askOpenClaw;
     this.isOpenClawReady = options.isOpenClawReady;
     this.log = options.log;
+    // Phase 8 b1 — wire the inner submitter. We construct
+    // it once so the sub-agent record list is process-
+    // lifetime (matches the registry's lifetime). The
+    // factory is host-injected; this is the seam that
+    // keeps the registry ignorant of model adapters.
+    const submitterOptions: LocalMeshSubmitterOptions = {
+      buildSubagent: options.buildSubagent,
+      workerPeerId: options.workerPeerId,
+    };
+    this.envoyHarnessSubmitter = new LocalMeshSubmitter(submitterOptions);
   }
 
   /**
@@ -278,30 +342,57 @@ export class LocalRuntimeRegistry implements LocalRuntimeBridge {
   }
 
   /**
-   * Phase 8 Step 2 — the symmetric direction.
-   * "OpenClaw → envoy-harness" is the (B) plan's
-   * acceptance criterion #2. v0: a stub that throws
-   * "not yet implemented" so the seam exists without a
-   * half-built impl. The real impl lands when Step 4+
-   * wires OpenClaw's `BridgeToEnvoyHarness` skill through
-   * the same registry.
+   * Phase 8 b1 — the symmetric direction is now real.
    *
-   * **Why a stub, not a default impl:** the symmetric
-   * direction requires OpenClaw to invoke the registry
-   * (i.e. an OpenClaw skill that constructs a
-   * `SubagentInput` and calls `submitToEnvoyHarness`).
-   * That requires extending the OpenClaw plugin surface,
-   * which is out of scope for Step 2's "1-2 weeks" budget.
-   * The seam here is the API surface; the wiring is Step 4+.
+   * **What this does:** delegates to the host-injected
+   * `LocalMeshSubmitter` (constructed in this registry's
+   * constructor). The submitter:
+   *
+   * 1. Calls `buildSubagent(input)` to construct a fresh
+   *    `Agent` (new session, BUILTIN tools, the host's
+   *    model).
+   * 2. Wires the parent's `signal` to the agent's
+   *    `abort()` so a parent cancel propagates.
+   * 3. Calls `agent.run(input.objective)`.
+   * 4. Synthesizes a `SubagentResult` from the
+   *    `AgentResult` (`stopReason`-based verdict; v0
+   *    simple synthesis).
+   * 5. Returns the result with `workerPeerId` +
+   *    `workerRuntime: "envoy-harness"` stamped.
+   *
+   * **Why no translation:** the `MeshSubmitter` interface
+   * IS the contract. The parent's `task` tool sees a
+   * `SubagentResult` with the same shape regardless of
+   * which runtime produced it. The `LocalCrossRuntimeSubmitter`
+   * (in the bridge) routes to either this method or
+   * `submitToOpenClaw` based on `input.preferredRuntime`,
+   * then normalizes the result (rewrites `workerRuntime` +
+   * `workerPeerId`).
+   *
+   * **Abort:** forwarded unchanged to the
+   * `LocalMeshSubmitter`. The submitter wires it to the
+   * sub-agent's abort and enforces the deadline via a
+   * `Promise.race` (the harness's own deadline-safety
+   * pattern).
+   *
+   * **Error handling:** the `LocalMeshSubmitter` catches
+   * `agent.run` errors and converts them to a failed
+   * `SubagentResult` (does NOT propagate throws). The
+   * registry passes the result through unchanged.
    */
   async submitToEnvoyHarness(
-    _input: SubagentInput,
-    _signal: AbortSignal,
+    input: SubagentInput,
+    signal: AbortSignal,
   ): Promise<SubagentResult> {
-    throw new Error(
-      "LocalRuntimeRegistry.submitToEnvoyHarness: not yet implemented " +
-        "(Phase 8 Step 4+ — symmetric direction lands when OpenClaw's " +
-        "BridgeToEnvoyHarness skill is wired through this registry)",
-    );
+    this.log?.("envoy_harness.cross_runtime.envoy_harness.start", {
+      capabilityTag: input.capabilityTag,
+      objective: input.objective.slice(0, 80),
+    });
+    const result = await this.envoyHarnessSubmitter.submit(input, signal);
+    this.log?.("envoy_harness.cross_runtime.envoy_harness.done", {
+      status: result.status,
+      durationMs: result.durationMs,
+    });
+    return result;
   }
 }

@@ -587,3 +587,25 @@ git push --tags
   the cross-monorepo link problem, §5.2 Tauri config update
   specifics, §6.4 new-developer onboarding, §6.5 release
   checklist, and the commit-message column in the §6 tables.
+- **2026-08-20 (Phase 8 Step 2 / b1.2):** `LocalRuntimeRegistry`
+  rewrite. The `submitToEnvoyHarness` method is no longer a
+  stub — it now constructs a `LocalMeshSubmitter` (from
+  `@envoymesh/envoy-harness`) once in the constructor from
+  the host-injected `buildSubagent: (input) => Agent` +
+  `workerPeerId: string` (DI symmetric to `askOpenClaw` on
+  the openclaw side). The e2e B test at the registry seam
+  is real (mock Agent + canned `run()` result). The real
+  `Agent` + `defaultBuildSubagentFactory` + `ModelAdapter`
+  wiring (with a model from the host's config) lands in
+  b3 when Step 2+'s `buildAgent` becomes real. The
+  `LocalRuntimeRegistry` constructor's required options
+  grew by 2 (`buildSubagent`, `workerPeerId`); no other
+  consumers in `apps/node/src/` or `packages/` are affected
+  (the registry is still only used by tests + future
+  chain-worker wiring).
+- **2026-08-20 (Phase 8 Step 2 / b1.5 — planned):** follow-up
+  plan covers (b2) the OpenClaw `BridgeToEnvoyHarness` skill
+  trigger that calls `submitToEnvoyHarness` from OpenClaw's
+  runtime, and (b3) the full `Agent` e2e with a real
+  `defaultBuildSubagentFactory` + `ModelAdapter`. See the
+  follow-up plan doc.
