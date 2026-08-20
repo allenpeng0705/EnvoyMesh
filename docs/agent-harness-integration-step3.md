@@ -1,8 +1,18 @@
 # envoy-harness integration — Step 3 sub-plan (B-class critical EnvoyMesh skills in bridge)
 
-> **Status:** Commits 1 + 2 ✅ DONE (2026-08-20).
-> Commit 3 ⏳ pending. Detailed sub-plan for Step 3.
-> Companion to
+> **Status:** ✅ **DONE** (2026-08-20). All 3 commits
+> landed: (1) bridge impls + 3 B-class bridge tests +
+> 3 `apps/node/src/` wrappers, (2) manifest updates
+> (3 B-class skills in `ENVOY_HARNESS_SKILLS`), (3)
+> e2e test (`sponsor-friend.e2e.test.ts` with
+> `RUN_B_CLASS_E2E=1` opt-in) + design doc closeout.
+> 35 new bridge unit tests + 1 e2e test + 32-test
+> sponsor-friend snapshot (regression-clean). The
+> merged manifest grew from 9 to 12 skills (8
+> envoy-harness + 4 openclaw; the 3 B-class skills
+> are envoy-harness only in v0 per the fail-loud
+> collision policy). Detailed plan + plan
+> deviations in §8 below. Companion to
 > [`agent-harness-integration.md`](./agent-harness-integration.md) (the
 > design) and
 > [`agent-harness-integration-step3-4.md`](./agent-harness-integration-step3-4.md)
@@ -908,3 +918,116 @@ removed (1001-line file → 50-line wrapper).**
   - Net: ~80 lines added (the 3 skill entries
     + 1 doc-comment block) + ~10 lines removed
     (the test length updates).
+
+- **2026-08-20 (commit 3 ✅ done):** the e2e test
+  + design doc closeout landed. Summary:
+
+  **Bridge-side (envoy-harness, uncommitted at
+  write-time — user commits when ready):**
+  - 1 new file: `packages/envoy-harness-adapter/
+    test/b-class-skills/sponsor-friend.e2e.test.ts`
+    (~290 lines) — 2 e2e tests:
+    1. **Full sponsor-friend flow without
+       OpenClaw.** Composes a full
+       `BClassSponsorFriendDeps` (mesh / profile
+       / config / audit), runs the bridge's full
+       algorithm, asserts the success path:
+       - bridge returns `{ ok: true, ownerId,
+         attempts: 1 }`
+       - trace log has 5 steps (1=search, 2=apply,
+         3=sendHello, 4=waitForBond, 5=complete)
+       - the final trace is the public-contract
+         "auto-bond COMPLETE" message
+       - `sendHello` called once with the right
+         target + message + `proofOfContext` +
+         `preferredOwnerId` hint
+       - persisted state has
+         `setupSponsorFriendCompletedAt` stamped
+         (and `setupSponsorFriendCooldownUntil` /
+         `setupSponsorFriendLastError` cleared).
+    2. **`sponsor_friend` BUILTIN tool wraps
+       the bridge correctly.** Calls the tool
+       with `{ force: false }` (the default the
+       model would use) and asserts the result
+       contains the JSON-serialized bridge
+       result.
+
+    **Opt-in:** `RUN_B_CLASS_E2E=1` env var. The
+    test is hermetic (no real network, no real
+    LLM, no API key needed) so the opt-in is
+    purely a "skip in CI" gate. CI doesn't set
+    `RUN_B_CLASS_E2E`; developers run
+    `RUN_B_CLASS_E2E=1 pnpm test` to exercise
+    the full flow locally. Default `pnpm test`
+    shows the test as "skipped" (explicit, not
+    silent) — matches the existing
+    `liveDescribe` convention in
+    `packages/envoy-harness/test/live/helpers.ts`.
+
+  **Host-side (EnvoyMesh, uncommitted — user commits
+  when ready):**
+  - 2 modified: `docs/agent-harness-integration.md`
+    (status banner + Step 3 section ✅ DONE) +
+    `docs/agent-harness-integration-step3.md`
+    (status banner + commit 3 changelog entry) +
+    `docs/agent-harness-integration-step3-4.md`
+    (status banner + commit 3 changelog entry).
+
+  **Test counts (post-commit 3):**
+  - envoy-harness-adapter: 140/140 + 2 e2e
+    (opt-in via `RUN_B_CLASS_E2E=1`).
+    `pnpm test` (no opt-in): 140 pass + 2 skip.
+    `RUN_B_CLASS_E2E=1 pnpm test`: 142 pass.
+  - envoy-harness core: 1007/1007 (no regression).
+  - EnvoyMesh Phase 8: 105/106 (1 live test
+    skipped — needs API key).
+
+  **Files added/modified (summary):**
+  - Bridge: 1 new test file
+    (sponsor-friend.e2e.test.ts).
+  - Host: 0 added + 3 modified (the 3 docs).
+  - Net: ~290 lines added (the e2e test) +
+    ~30 lines added to the 3 docs.
+
+  **Step 3 is complete.** The merged manifest
+  now advertises 12 skills (8 envoy-harness +
+  4 openclaw). The 3 B-class skills
+  (`setup-sponsor-friend` / `peer-list` /
+  `relay-status`) are envoy-harness only in v0.
+  The orchestrator's primary-runtime picker
+  (Step 5+) will route these skills to
+  envoy-harness.
+
+  **Follow-ups (out of Step 3 scope):**
+  1. **OpenClaw skill handler** for the 3
+     B-class skills (Step 3 plan §3.6). When
+     the handler lands, the 3 skills either
+     (a) move to OpenClaw with envoy-harness
+     losing them or (b) namespace under
+     OpenClaw. The choice depends on Q5
+     routing (per-runtime primary + best-fit
+     skill fallback).
+  2. **Orchestrator integration (Step 5+).**
+     The merged manifest is exposed via
+     `NodeServiceImpl.getNodeManifest()`; no
+     orchestrator reads it yet. The Assigner
+     (Step 5) will use the manifest to route
+     jobs to the primary runtime.
+  3. **Q5 fallback.** If the primary runtime
+     doesn't have a B-class skill, delegate
+     via `LocalCrossRuntimeSubmitter`. The
+     cross-runtime delegation infrastructure
+     exists (Step 2); the routing logic is
+     a Step 5+ concern.
+  4. **Cleanup low-priority items** in the
+     Step 3 commit 1 host code:
+     - `apps/node/src/developer-cli.ts`: unused
+       `maxIsoDate` + `formatCounts` helpers
+       (no callers after refactor).
+     - `apps/node/src/developer-cli.ts`:
+       lazy `require("@envoymesh/local-store")`
+       in `showRelayStatus` (could be
+       top-level import; the lazy form was a
+       defensive workaround for a possible
+       circular dep that doesn't actually
+       exist).

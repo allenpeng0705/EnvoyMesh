@@ -1,11 +1,9 @@
 # envoy-harness integration into EnvoyMesh (Phase 8)
 
-> **Status:** Draft (2026-08-20). Awaiting team sign-off on the cooperation
-> model (§3-4) + the 6 injection steps (§5). Once signed, this doc is the
-> single source of truth for Phase 8 scope; the implementation plan in
-> envoy-harness's `implementation-plan.md §3.7` (T3.9, T3.10, T3.11, T3.12,
-> T3.13) and EnvoyMesh's `implementation-plan.md#phase-8` will reference
-> back to this.
+> **Status:** Step 3 ✅ **DONE** (2026-08-20). Step 4
+> ✅ DONE (2026-08-20). Steps 0 / 0+ / 1 / 2 (b1 / b2 / b3
+> / b3.live) DONE (2026-08-20). Awaiting team sign-off on
+> Step 5+ (signal-based opt-in).
 >
 > **Audience:** EnvoyMesh team, envoy-harness team, Tauri UI team.
 >
@@ -250,31 +248,63 @@ same for both.
 
 ### Step 3 — B-class critical EnvoyMesh skills in envoy-harness-adapter (~1-2 weeks)
 
+**Status:** ✅ **DONE** (2026-08-20). 3 commits
+(impls + tests + wrappers → manifest updates → e2e
+test + design doc) on the `envoy_harness_integration`
+branch in EnvoyMesh + `main` in envoy-harness. 35
+new bridge tests (10 sponsor-friend + 11 peer-list
++ 14 relay-status) + 1 e2e test (`RUN_B_CLASS_E2E=1`
+opt-in) + the existing 32-test sponsor-friend
+snapshot (no regression). Merged manifest grew
+from 9 skills (5 + 4) to 12 skills (8 + 4) — the
+3 B-class skills (`setup-sponsor-friend` /
+`peer-list` / `relay-status`) live on envoy-harness
+only in v0 (the merged manifest's fail-loud
+`SkillIdCollisionError` policy treats duplicate
+skillIds as a hard error; the OpenClaw handler
+is a future chunk per §3.6). See
+`docs/agent-harness-integration-step3.md` (the
+detailed sub-plan + plan deviations) +
+`docs/agent-harness-integration-step3-4.md`
+(high-level plan + change log).
+
 **Goal:** the bridge exposes critical mesh-touching capabilities as
 built-in tools, so envoy-harness can run them without depending on
 OpenClaw.
 
-- New: `envoy-harness-adapter/src/b-class-skills/sponsor-friend.ts` —
+- ✅ New: `envoy-harness-adapter/src/b-class-skills/sponsor-friend.ts` —
   the canonical `setup-sponsor-friend` flow (port from OpenClaw
   semantics; keep the same `bond.request` / `bond.established` protocol
   contract)
-- New: `envoy-harness-adapter/src/b-class-skills/peer-list.ts` —
+- ✅ New: `envoy-harness-adapter/src/b-class-skills/peer-list.ts` —
   canonical `peer-list` (queries libp2p peerstore via the mesh
   service)
-- New: `envoy-harness-adapter/src/b-class-skills/relay-status.ts` —
+- ✅ New: `envoy-harness-adapter/src/b-class-skills/relay-status.ts` —
   canonical `relay-status`
-- Update: envoy-harness's `BUILTIN_TOOLS` (via the adapter) exposes
-  the three new tools
-- Update: OpenClawAdapter (in EnvoyMesh) — OpenClaw can still call its
-  own implementations; we provide a migration path that the bridge
-  version is canonical, OpenClaw's local is a thin wrapper
+- ✅ Update: envoy-harness's `BUILTIN_TOOLS` (via the adapter) exposes
+  the three new tools (`bClassTools?` option on
+  `defaultBuildAgentFactory` + 3 entries in `getToolsForSkill` +
+  `EnvoyHarnessToolName` literal union)
+- 🟡 Update: OpenClawAdapter (in EnvoyMesh) — `OPENCLAW_SKILLS` stays
+  at 4 in v0. The 3 B-class skills are envoy-harness only (per
+  the fail-loud collision policy + canonical-in-the-bridge rule).
+  When the OpenClaw skill handler lands (future chunk per
+  §3.6), the 3 skills will move to OpenClaw (envoy-harness
+  loses them) or namespace under OpenClaw — depending on Q5
+  routing.
 
-**Tests:** per-skill unit test (sponsor-friend flow on a fresh node
-with no OpenClaw installed); e2e that envoy-harness can run a bond
-flow end-to-end without OpenClaw.
+**Tests:** ✅ per-skill unit test (10 + 11 + 14 = 35 in
+the bridge; 32 sponsor-friend snapshot in EnvoyMesh
+regression-clean); ✅ e2e (`sponsor-friend.e2e.test.ts`,
+`RUN_B_CLASS_E2E=1` opt-in) that envoy-harness's
+bridge runs the full bond flow end-to-end without
+OpenClaw.
 
 **Out of scope:** the rest of OpenClaw's community skill set (stays in
 OpenClaw; accessed via Step 2's cross-runtime transport when needed).
+**Also out of scope for v0:** the OpenClaw skill handler for the 3
+B-class skills (per §3.6 "add to OPENCLAW_SKILLS only; no skill
+handler (follow-up chunk)").
 
 ### Step 4 — Merged manifest at node level (~1 week)
 

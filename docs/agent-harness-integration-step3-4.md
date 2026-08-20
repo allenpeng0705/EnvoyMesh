@@ -1,8 +1,9 @@
 # envoy-harness integration — Step 3 + Step 4 plan
 
 > **Status:** Step 4 ✅ DONE (2026-08-20). Step 3
-> commits 1 + 2 ✅ DONE (2026-08-20); commit 3
-> pending. Companion to
+> ✅ DONE (2026-08-20; all 3 commits — impls +
+> tests + wrappers, manifest updates, e2e test +
+> design doc closeout — landed). Companion to
 > [`agent-harness-integration.md`](./agent-harness-integration.md) (the
 > design) and [`envoy-harness-integration-EnvoyMesh.md`](./envoy-harness-integration-EnvoyMesh.md)
 > (the implementation guide). **This doc covers the two
@@ -671,3 +672,28 @@ Step 3 first.
   the OpenClaw skill handler lands (future
   chunk), the 3 skills will move to OpenClaw or
   namespace under OpenClaw.
+- **2026-08-20 (Step 3 commit 3 ✅ DONE,
+  uncommitted at write-time — user commits when
+  ready):** the e2e test + design doc closeout.
+  Summary:
+  - New: `packages/envoy-harness-adapter/test/
+    b-class-skills/sponsor-friend.e2e.test.ts`
+    (~290 lines, 2 e2e tests, opt-in via
+    `RUN_B_CLASS_E2E=1` env var). The first
+    test exercises the full bond flow without
+    OpenClaw; the second verifies the BUILTIN
+    `sponsor_friend` tool wraps the bridge
+    correctly. The e2e is hermetic (no real
+    network, no real LLM, no API key) so the
+    opt-in is purely a "skip in CI" gate.
+  - Updated: `docs/agent-harness-integration.md`
+    (status banner + §5 Step 3 section now
+    ✅ DONE) + `docs/agent-harness-integration-
+    step3.md` (status banner ✅ DONE + commit 3
+    changelog entry) + this doc.
+  - **Step 3 is complete.** Follow-ups are
+    tracked in `step3.md` §8: OpenClaw skill
+    handler (out of v0 per §3.6), orchestrator
+    integration (Step 5+), Q5 fallback routing
+    (Step 5+), and a few low-priority cleanup
+    items in the host code.
