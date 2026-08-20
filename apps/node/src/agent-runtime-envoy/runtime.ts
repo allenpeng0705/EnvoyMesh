@@ -89,6 +89,7 @@ import {
   LocalMeshSubmitter,
   type ModelAdapter,
   type MeshSubmitter,
+  type Tool,
 } from "@envoymesh/envoy-harness";
 import {
   defaultBuildAgentFactory,
@@ -156,6 +157,24 @@ export interface CreateRealEnvoyHarnessRuntimeOptions {
    */
   defaultCostCeilingUsd?: number;
   defaultDeadlineMs?: number;
+
+  /**
+   * Optional: pre-built B-class tools (sponsor_friend /
+   * list_peers / relay_status). The host's `NodeServiceImpl`
+   * builds these via `createBClassSponsorFriendDeps` /
+   * `createBClassPeerListDeps` / `createBClassRelayStatusDeps`
+   * (in `b-class-deps.ts`) and passes them in. The runtime
+   * forwards them to `defaultBuildAgentFactory` as
+   * `bClassTools` so the per-skill tool registry picks up
+   * the right B-class tool based on `getToolsForSkill`.
+   *
+   * v0: production always passes this (per the Step 3
+   * "always opt-in" policy). v0 also keeps the existing
+   * 5 `envoy-harness` skills (code-edit / code-review /
+   * doc-search / bash-run / plan) — the 3 B-class skills
+   * are additive.
+   */
+  bClassTools?: ReadonlyArray<Tool>;
 
   /** Optional: cross-runtime logger. */
   log?: (event: string, fields?: Record<string, unknown>) => void;
@@ -364,11 +383,22 @@ export function createRealEnvoyHarnessRuntime(
       // submitter. So when the model emits a `task` call,
       // it goes through the same seam as a direct
       // cross-runtime sub-agent.
+      //
+      // **Phase 8 / Step 3 — bClassTools:** when the host
+      // provides pre-built B-class tools (sponsor_friend
+      // / list_peers / relay_status), the factory registers
+      // them in the agent's ToolRegistry. The per-skill
+      // tool set is filtered by `getToolsForSkill` (e.g.
+      // `setup-sponsor-friend` skill gets only
+      // `sponsor_friend`; `code-review` gets `read_file`).
+      // v0: the host's `NodeServiceImpl` always passes
+      // `bClassTools` (Step 3 "always opt-in" policy).
       const adapter = new EnvoyHarnessAdapter({
         buildAgent: defaultBuildAgentFactory({
           model,
           cwd: opts.cwd,
           meshSubmitter: submitter,
+          ...(opts.bClassTools ? { bClassTools: opts.bClassTools } : {}),
         }),
         signResult: defaultSignResult(opts.agentPrivateKeyPem),
         workerPeerId: opts.workerPeerId,

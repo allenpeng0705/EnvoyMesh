@@ -1,6 +1,7 @@
 # envoy-harness integration — Step 3 + Step 4 plan
 
 > **Status:** Step 4 ✅ DONE (2026-08-20). Step 3
+> commits 1 + 2 ✅ DONE (2026-08-20); commit 3
 > pending. Companion to
 > [`agent-harness-integration.md`](./agent-harness-integration.md) (the
 > design) and [`envoy-harness-integration-EnvoyMesh.md`](./envoy-harness-integration-EnvoyMesh.md)
@@ -618,3 +619,55 @@ Step 3 first.
   (B-class skills) is the next chunk; the merged
   manifest will auto-pick up the 3 new B-class
   skills when Step 3 lands.
+- **2026-08-20 (Step 3 commit 1 ✅ DONE, uncommitted
+  at write-time — user commits when ready):** the
+  atomic commit landed the 3 canonical impls +
+  3 B-class bridge tests + 3 `apps/node/src/`
+  wrappers. Summary:
+  - Bridge (envoy-harness): 4 new files (impl) +
+    3 new test files + 3 modified (skills /
+    adapter / index). 35 new tests, 140/140 pass.
+  - Host (EnvoyMesh): 1 new file
+    (`b-class-deps.ts`) + 3 modified (node-service-
+    setup-sponsor-friend / developer-cli / runtime
+    / node-service-impl). 32 setup-sponsor-friend
+    tests still pass; developer-cli peer-list +
+    relay-status output matches pre-Step-3 line-
+    for-line.
+  - **4 self-review issues caught + fixed** in the
+    bridge: (1) missing `await` on
+    `resolveEffectiveConfig`; (2) strict empty-
+    `searchPeers` throw; (3) missing
+    `preferredOwnerId` fallback; (4) comprehensive
+    `classifySponsorError` regex + auto-exhausted
+    cooldown sentinel. The bridge's test mocks
+    didn't cover these (sync vs. async;
+    `searchPeers` returning `[]`; `lastErrorKind`
+    specific values). Details in
+    `docs/agent-harness-integration-step3.md` §8.
+  - Detailed plan: `docs/agent-harness-integration-
+    step3.md`. The 3-B-class-skills now flow
+    through the bridge's `ENVOY_HARNESS_SKILLS`
+    (8 skills total) and the merged manifest
+    (Step 4's `getNodeManifest`) — no Step 4
+    changes needed.
+- **2026-08-20 (Step 3 commit 2 ✅ DONE,
+  uncommitted at write-time — user commits when
+  ready):** the 3 B-class skills (setup-sponsor-
+  friend / peer-list / relay-status) added to
+  `ENVOY_HARNESS_SKILLS` (now 8 total). The merged
+  manifest's expected skill count updated from 9
+  (5+4) to 12 (8+4). 4 bridge test files updated
+  to expect 8 skills. **Plan deviation:** the
+  3 B-class skills are NOT added to
+  `OPENCLAW_SKILLS` (the originally planned
+  "invoking-runtime tag"). Rationale: the merged
+  manifest's fail-loud `SkillIdCollisionError`
+  policy treats duplicate skillIds as a hard
+  error; the Step 3 plan §3.1 declares
+  envoy-harness the canonical impl, so v0
+  exposes the 3 skills on envoy-harness only
+  (no OpenClaw handler in v0 per §3.6). When
+  the OpenClaw skill handler lands (future
+  chunk), the 3 skills will move to OpenClaw or
+  namespace under OpenClaw.

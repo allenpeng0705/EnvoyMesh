@@ -63,6 +63,20 @@ export const OPENCLAW_SKILLS: SkillDescriptor[] = [
     maxSensitivity: "private",
     tags: ["text", "writing"],
   },
+  // Phase 8 / Step 3 commit 2 — B-class skills are
+  // NOT in OPENCLAW_SKILLS in v0. The bridge owns
+  // the canonical impl (per Step 3 plan §3.1); the
+  // merged manifest's fail-loud policy
+  // (`SkillIdCollisionError`) treats duplicate
+  // skillIds across runtimes as a hard error. v0
+  // exposes the 3 B-class skills on envoy-harness
+  // only (8 skills total in `ENVOY_HARNESS_SKILLS`).
+  // When the OpenClaw skill handler lands (a future
+  // chunk per Step 3 plan §3.6), the 3 B-class
+  // skills will move to OpenClaw (envoy-harness loses
+  // them) or namespace them under OpenClaw (e.g.
+  // `openclaw.setup-sponsor-friend`). The choice
+  // depends on Q5 routing — out of Step 3 scope.
 ];
 
 export interface OpenClawAdapterInput {

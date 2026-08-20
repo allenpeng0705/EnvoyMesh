@@ -441,6 +441,23 @@ import {
   loadEnvoyHarnessRuntimeConfig,
   type RealEnvoyHarnessRuntime,
 } from "./agent-runtime-envoy/index.js";
+// Phase 8 / Step 3 — the B-class tool factories
+// (sponsor_friend / list_peers / relay_status) and the
+// deps builders (`createBClass*`) for the host. The
+// factory closures capture `this` (NodeServiceImpl) via
+// the deps and read the mesh + profile + audit state
+// on each call. v0: production always passes bClassTools
+// (Step 3 "always opt-in" policy).
+import {
+  buildRelayStatusTool,
+  listPeersTool,
+  sponsorFriendTool,
+} from "@envoymesh/envoy-harness-adapter";
+import {
+  createBClassPeerListDeps,
+  createBClassRelayStatusDeps,
+  createBClassSponsorFriendDeps,
+} from "./agent-runtime-envoy/b-class-deps.js";
 import {
   aggregateNodeManifest,
   type NodeManifest,
@@ -5070,6 +5087,21 @@ class NodeServiceImpl implements NodeService {
       cwd: config.cwd,
       askOpenClaw: (p) => this.askOpenClaw(p),
       isOpenClawReady: () => this.isOpenClawReady(),
+      // Phase 8 / Step 3 — the 3 B-class tools
+      // (sponsor_friend / list_peers / relay_status).
+      // Built per-runtime (the deps are closures over
+      // `this`, so each runtime gets fresh deps; the
+      // runtime is cached in `_envoyHarnessRuntimeCache`
+      // and rebuilt only on `isEnvoyHarnessReady` flip).
+      // v0: always opt-in (production always passes
+      // bClassTools). The factory's per-skill filter
+      // (`getToolsForSkill`) decides which tool the
+      // model sees.
+      bClassTools: [
+        sponsorFriendTool(createBClassSponsorFriendDeps(this)),
+        listPeersTool(createBClassPeerListDeps(this)),
+        buildRelayStatusTool(createBClassRelayStatusDeps(this)),
+      ] as unknown as ReadonlyArray<import("@envoymesh/envoy-harness").Tool>,
     });
     this._envoyHarnessRuntimeCache = runtime;
     return runtime;

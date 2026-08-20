@@ -110,7 +110,19 @@ afterEach(() => {
 
 describe("NodeServiceImpl.getNodeManifest (Phase 8 / Step 4 — host wiring)", () => {
   describe("default path (no test seam)", () => {
-    it("returns 9 skills from the default envoy-harness + openclaw catalogs, each tagged with its runtime", () => {
+    it("returns 12 skills from the default envoy-harness + openclaw catalogs, each tagged with its runtime", () => {
+      // Phase 8 / Step 3 commit 2 — envoy-harness grew
+      // from 5 to 8 (added 3 B-class: setup-sponsor-friend
+      // / peer-list / relay-status). OpenClaw stays at 4
+      // (the 3 B-class skills are NOT duplicated in
+      // OPENCLAW_SKILLS — the merged manifest's fail-loud
+      // `SkillIdCollisionError` policy treats duplicate
+      // skillIds as a hard error, and the Step 3 plan §3.1
+      // declares envoy-harness the canonical impl. When
+      // the OpenClaw skill handler lands (a future chunk
+      // per §3.6), the 3 skills will move to OpenClaw
+      // (envoy-harness loses them) or namespace under
+      // OpenClaw. v0 is envoy-harness-only for B-class.
       const service = makeTestService();
       services.push(service);
 
@@ -124,32 +136,44 @@ describe("NodeServiceImpl.getNodeManifest (Phase 8 / Step 4 — host wiring)", (
         { runtime: "openclaw", runtimeVersion: "unknown" },
       ]);
 
-      // 5 envoy-harness skills: code-edit, code-review,
-      // doc-search, bash-run, plan
+      // 8 envoy-harness skills: 5 original
+      // (code-edit / code-review / doc-search / bash-run
+      // / plan) + 3 B-class (Step 3 commit 2).
       const envoySkills = manifest.skills.filter(
         (s) => s.runtime === "envoy-harness",
       );
-      expect(envoySkills.length).toBe(5);
+      expect(envoySkills.length).toBe(8);
       const envoySkillIds = envoySkills.map((s) => s.skillId).sort();
-      expect(envoySkillIds).toEqual(
-        ["bash-run", "code-edit", "code-review", "doc-search", "plan"],
-      );
+      expect(envoySkillIds).toEqual([
+        "bash-run",
+        "code-edit",
+        "code-review",
+        "doc-search",
+        "peer-list",
+        "plan",
+        "relay-status",
+        "setup-sponsor-friend",
+      ]);
 
-      // 4 openclaw skills: research, summarize, translate, draft
+      // 4 openclaw skills (unchanged from Step 4; the
+      // 3 B-class skills are envoy-harness only in v0).
       const openClawSkills = manifest.skills.filter(
         (s) => s.runtime === "openclaw",
       );
       expect(openClawSkills.length).toBe(4);
       const openClawSkillIds = openClawSkills.map((s) => s.skillId).sort();
-      expect(openClawSkillIds).toEqual(
-        ["draft", "research", "summarize", "translate"],
-      );
+      expect(openClawSkillIds).toEqual([
+        "draft",
+        "research",
+        "summarize",
+        "translate",
+      ]);
 
-      // All 9 skillIds are unique (the aggregator
+      // All 12 skillIds are unique (the aggregator
       // fails loud on collision; this verifies it
       // doesn't trip for the production catalogs).
       const allIds = manifest.skills.map((s) => s.skillId);
-      expect(new Set(allIds).size).toBe(9);
+      expect(new Set(allIds).size).toBe(12);
     });
 
     it("uses the mesh peerId when a mesh is provided (sync; no async setup needed)", () => {
@@ -223,10 +247,13 @@ describe("NodeServiceImpl.getNodeManifest (Phase 8 / Step 4 — host wiring)", (
       expect(withCustom.skills[0].skillId).toBe("custom-1");
 
       // Reset the test seam → back to the default
-      // 5 + 4 = 9 skills.
+      // 8 + 4 = 12 skills (Phase 8 / Step 3 commit 2:
+      // envoy-harness grew from 5 to 8; OpenClaw
+      // stays at 4 since the 3 B-class skills are
+      // envoy-harness only in v0).
       service.setManifestStubsForTests(undefined);
       const withDefault = service.getNodeManifest();
-      expect(withDefault.skills.length).toBe(9);
+      expect(withDefault.skills.length).toBe(12);
     });
 
     it("throws SkillIdCollisionError when two test adapters expose the same skillId", () => {
