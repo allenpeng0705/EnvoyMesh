@@ -1,12 +1,15 @@
 # envoy-harness integration — Step 3 + Step 4 plan
 
-> **Status:** Step 5 ✅ DONE (2026-08-20). Step 4
-> ✅ DONE (2026-08-20). Step 3 ✅ DONE (2026-08-20;
-> all 3 commits — impls + tests + wrappers, manifest
-> updates, e2e test + design doc closeout — landed).
-> See [`agent-harness-integration-step5.md`](./agent-harness-integration-step5.md)
+> **Status:** Step 6 ✅ DONE (2026-08-20). Step 5
+> ✅ DONE (2026-08-20). Step 4 ✅ DONE (2026-08-20).
+> Step 3 ✅ DONE (2026-08-20; all 3 commits — impls +
+> tests + wrappers, manifest updates, e2e test +
+> design doc closeout — landed). See
+> [`agent-harness-integration-step5.md`](./agent-harness-integration-step5.md)
 > for the Step 5 sub-plan + locked decisions + plan
-> deviations. Companion to
+> deviations + [`agent-harness-integration-step6.md`](./agent-harness-integration-step6.md)
+> for Step 6 (cross-verify Q4 A). **Phase 8 complete.**
+> Companion to
 > [`agent-harness-integration.md`](./agent-harness-integration.md) (the
 > design) and [`envoy-harness-integration-EnvoyMesh.md`](./envoy-harness-integration-EnvoyMesh.md)
 > (the implementation guide). **This doc covers the two

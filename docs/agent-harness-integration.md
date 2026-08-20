@@ -1,10 +1,10 @@
 # envoy-harness integration into EnvoyMesh (Phase 8)
 
-> **Status:** Step 5 ✅ **DONE** (2026-08-20). Step 4
-> ✅ DONE (2026-08-20). Step 3 ✅ DONE (2026-08-20).
+> **Status:** Step 6 ✅ **DONE** (2026-08-20).
+> Step 5 ✅ DONE (2026-08-20). Step 4 ✅ DONE
+> (2026-08-20). Step 3 ✅ DONE (2026-08-20).
 > Steps 0 / 0+ / 1 / 2 (b1 / b2 / b3 / b3.live) DONE
-> (2026-08-20). Awaiting team sign-off on Step 6+
-> (cross-verify).
+> (2026-08-20). **Phase 8 complete.**
 >
 > **Audience:** EnvoyMesh team, envoy-harness team, Tauri UI team.
 >
@@ -399,22 +399,58 @@ is v0 starter).
 
 ### Step 6 — Cross-verify (Q4 A) (~1 week)
 
+**Status:** ✅ **DONE** (2026-08-20). 2 commits on
+`envoy_harness_integration` branch (6.1 + 6.2;
+6.3 is doc closeout). 17 new tests
+(14 unit + 3 e2e) for the `verifyMode` flow +
+2 new tests for the `defaultCrossVerify` factory.
+142 envoy-harness-adapter tests regression-clean
+(F9.5 cross-verify primitives); 184 apps/node
+tests regression-clean (Step 5 + earlier steps).
+Detailed plan + locked decisions:
+`docs/agent-harness-integration-step6.md`.
+
 **Goal:** the default cross-verify direction is (a)
 envoy-writes + OpenClaw-verifies; per-job override to (b).
 
-- New: `envoy-harness-adapter` exposes `verify(input)` that uses the
-  LocalCrossRuntimeSubmitter (Step 2) to dispatch the verify call to
-  the configured verifier runtime
-- New: `team.toml` schema adds `[verify] mode = ...`; the agent runner
-  reads it and threads it through
-- Update: the cross-verify path is the LAST thing the agent loop
-  does before returning — verify result is appended to the
-  transcript
+- ✅ New: `envoy-harness-adapter` exposes
+  `buildEnvoyHarnessAdapterWithCrossVerify` (the
+  factory wires `defaultCrossVerify(openClawAdapter)`
+  on the adapter so `adapter.verify()` re-runs the
+  same skill on OpenClaw and returns the local
+  verifier's verdicts for the new result)
+- ✅ New: `ChainMandate.verifyMode` field (3 values:
+  `"rule-only"` | `"cross-runtime"` | `"cross-runtime-strict"`)
+  in `packages/protocol/src/agent-network.ts`; the
+  orchestrator's `chain-verify-loop` honors it in
+  `shouldEscalateToCrossAgent` (forces the cross
+  when the mode is set) + `combineToVerdict` (strict
+  mode makes the cross verdict the authority)
+- ✅ Update: the host's `createEnvoyHarnessAdapter`
+  in `apps/node/src/agent-runtime-envoy/factory.ts`
+  accepts an optional `openClawAdapter`; when
+  provided, the factory uses the bridge's
+  cross-verify factory
+- ✅ Update: the cross-verify path is the LAST
+  thing the agent loop does before returning —
+  the rule + cross `VerdictEntry` lands in the
+  `ArbitrationStore` (existing write paths, no
+  changes needed)
+**Tests:** ✅ 14 unit tests for `shouldEscalateToCrossAgent`
++ `combineToVerdict` + `defaultVerifyModeForWorker`
+in `apps/node/test/chain-verify-loop.test.ts`;
+✅ 3 e2e tests for `runChainVerificationLoop`
+with `verifyMode: "cross-runtime"` +
+`"cross-runtime-strict"`; ✅ 4 e2e tests for
+`createEnvoyHarnessAdapter` cross-verify wiring
+in `apps/node/test/agent-runtime-envoy-cross-verify.test.ts`;
+✅ 2 new tests for `buildEnvoyHarnessAdapterWithCrossVerify`
+in the bridge's `cross-verify-adapter.test.ts`.
+All hermetic (no API key, no network) — always-on
+in `pnpm test`.
 
-**Tests:** e2e that a Team job with `[verify] mode =
-"openclaw-writes-envoy-verifies"` actually runs in (b) order; e2e
-that the default (a) is in effect when no override is set; e2e that
-the verdict lands in the scoreboard.
+**Out of scope:** capability-tag-based signal detection (v1; keyword
+is v0 starter).
 
 **Out of scope:** 2-doctor pool (we picked A over C); per-skill
 fan-out within a job (whole-job only).
@@ -512,3 +548,20 @@ fan-out within a job (whole-job only).
   `ENVOY_HARNESS_SIGNAL_OPT_IN=disabled` env var. The
   default routing table for the new `envoy-harness`
   engine is in `docs/agent-network-engine.md` §2.2.
+- **2026-08-20 (Step 6 — DONE):** §5 Step 6 marked ✅
+  done. 3 commits on `envoy_harness_integration`
+  branch (6.1 verifyMode API + chain-verify-loop
+  honors it, 6.2 envoy-harness cross-verify factory
+  + host wiring, 6.3 doc closeout). 19 new tests
+  (14 unit + 3 e2e + 2 bridge) + 14 pre-existing
+  chain-verify-loop tests regression-clean.
+  Detailed plan: `docs/agent-harness-integration-step6.md`
+  (sub-plan with 8 locked design questions).
+  New: `ChainMandate.verifyMode` (3-value enum:
+  `rule-only` / `cross-runtime` / `cross-runtime-strict`)
+  + `defaultVerifyModeForWorker(runtime)` helper;
+  `buildEnvoyHarnessAdapterWithCrossVerify` factory
+  (the bridge's Q4 cross-verify primitive, wires
+  `defaultCrossVerify(openClawAdapter)`); host
+  `createEnvoyHarnessAdapter` accepts the
+  `openClawAdapter?` option. **Phase 8 complete.**

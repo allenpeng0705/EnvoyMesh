@@ -464,7 +464,12 @@ router integration. 5.3 is now doc-only.
 ---
 
 **Status:** 9 design questions locked (2026-08-20, all
-defaults accepted). Starting sub-chunk 5.1.
+defaults accepted). Step 5 ✅ DONE (2026-08-20;
+3 commits — 5.1 router + tests, 5.2 host wiring +
+e2e tests, 5.3 doc closeout). See commit log
+at the bottom of this doc + the
+[`agent-harness-integration.md`](../agent-harness-integration.md)
+§9 change log entry.
 
 ### Locked decisions (2026-08-20)
 

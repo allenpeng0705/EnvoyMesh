@@ -282,6 +282,90 @@ routing decision:
   execute subtask locally
 ```
 
+### 2.3 Phase 8 / Step 6 — cross-verify policy (Q4 A)
+
+**Owner-facing summary:** the orchestrator's verify
+loop (Phase 41 / MAP) re-runs the same Team-job
+subtask on a SECOND runtime when the rule verdict
+is `partial` / `disputed` AND the job is
+high-criticality or private-and-expensive. Step 6
+adds an explicit `verifyMode` to `ChainMandate` so
+the owner can force the cross regardless of the
+rule verdict (the Q4 (a) default for envoy-writes
+jobs) or make the cross verdict the authority (Q4
+(b) override for security-sensitive jobs).
+
+**The modes** (per the Step 6 sub-plan's locked
+decisions):
+
+| `verifyMode` | Writer | Verifier | When |
+|---|---|---|---|
+| `"rule-only"` (default for OpenClaw-writes) | worker | worker (rule pass only) | OpenClaw is mature; no cross needed |
+| `"cross-runtime"` (Q4 (a) default for envoy-writes) | worker | the OTHER runtime | Envoy-harness novel features get cross-checked by the mature runtime |
+| `"cross-runtime-strict"` (Q4 (b) override) | worker | the OTHER runtime | Cross verdict wins (overrides rule pass on disagreement) |
+
+**The per-worker-runtime default:**
+`defaultVerifyModeForWorker(runtime)` in
+`apps/node/src/chain-verify-loop.ts` returns
+`"cross-runtime"` for `envoy-harness` and
+`"rule-only"` for `openclaw` / `ext`. The owner
+can override per-job by setting `ChainMandate.verifyMode`
+explicitly.
+
+**How the cross runs:**
+
+The orchestrator's `chain-verify-loop` already
+has the cross-agent infrastructure (Phase 41):
+- `pickSecondRuntime(deps, workerRuntime)` picks
+  the OTHER runtime (e.g. if worker is envoy-harness,
+  second is OpenClaw)
+- `secondAdapter.execute(input)` re-runs the same
+  task on the second runtime
+- `crossVerifier.verify({objective, resultA, resultB})`
+  compares the two results
+- Both rule + cross `VerdictEntry` land in the
+  `ArbitrationStore` (the scoreboard / transcript)
+
+Step 6's `verifyMode` adds:
+- `shouldEscalateToCrossAgent` honors `verifyMode`
+  (forces the cross when the mode is `cross-runtime`
+  or `cross-runtime-strict`)
+- `combineToVerdict(verdicts, verifyMode)` honors
+  the strict mode (cross verdict wins)
+
+**The bridge's adapter-level cross-verify**
+(parallel primitive for non-orchestrator callers):
+
+`buildEnvoyHarnessAdapterWithCrossVerify` (in
+`@envoymesh/envoy-harness-adapter`) wires
+`defaultCrossVerify(openClawAdapter)` on the
+adapter so `adapter.verify(input)` re-runs the
+same skill on OpenClaw and returns the local
+verifier's verdicts for the new result. The
+host's `createEnvoyHarnessAdapter` accepts an
+optional `openClawAdapter?`; when provided, the
+factory uses the cross-verify factory. v0
+production always passes `openClawAdapter`
+(OpenClaw is always available as the default AI
+engine).
+
+**What Step 6 does NOT cover (deferred):**
+
+- Per-node config field for `verifyModeDefault` —
+  the function `defaultVerifyModeForWorker(runtime)`
+  is the v0 default. Per-node override is a
+  follow-up (Tauri settings UI field + persisted
+  config migration).
+- Cross verifier with a different model on the
+  SAME runtime (F9.5 use case, not Q4) — that's
+  `defaultCrossVerify(anotherAdapterOnSameRuntime)`,
+  used for cross-model verification. v0
+  cross-verify is cross-runtime only.
+- Scoreboard formula adjustment — the existing
+  `aggregateReputation` reads the ArbitrationStore.
+  v0 leaves the formula as-is; the cross verdict
+  is one more `VerdictEntry` in the store.
+
 ## 3. Phasing
 
 ### Step 1 — OpenClaw (now)

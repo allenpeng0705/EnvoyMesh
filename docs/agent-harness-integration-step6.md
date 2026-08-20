@@ -569,7 +569,12 @@ default AI engine).
 ---
 
 **Status:** 8 design questions locked (2026-08-20, all
-defaults accepted). Starting sub-chunk 6.1.
+defaults accepted). Step 6 ✅ DONE (2026-08-20;
+3 commits — 6.1 verifyMode API + chain-verify-loop
+honors it, 6.2 envoy-harness cross-verify factory
++ host wiring, 6.3 doc closeout). 19 new tests
+(14 unit + 3 e2e + 2 bridge) + 14 pre-existing
+chain-verify-loop tests regression-clean.
 
 ### Locked decisions (2026-08-20)
 
