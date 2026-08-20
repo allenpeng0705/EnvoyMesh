@@ -56,6 +56,27 @@ export interface EnvoyHarnessRuntimeConfig {
    *  `createRealEnvoyHarnessRuntime`'s `modelFactory` (when
    *  it needs to know which provider to construct). */
   provider: string;
+  /**
+   * Phase 8 / b3.live — the API key to use for the model
+   * adapter. Resolved from the precedence below. The
+   * runtime (`runtime.ts`) uses this to build the `env`
+   * for `createProviderAdapter` (which reads the key
+   * from the env, not from `process.env`).
+   *
+   * **Why an explicit field, not just `process.env`:** the
+   * host's `ModelProviderConfig.apiKey` is the source of
+   * truth (the user enters it in the Tauri settings UI).
+   * EnvoyMesh may not have written it to `process.env`;
+   * we need to flow it through DI so the runtime uses
+   * the same key the user configured.
+   *
+   * `undefined` when no key is set (and the provider
+   * requires one). The readiness check (below) treats
+   * this as `ready: false` for key-required providers
+   * (e.g. `deepseek` / `openai` / `anthropic`). Keyless
+   * providers (`ollama`) don't need a key.
+   */
+  apiKey: string | undefined;
   /** Why `ready` is false — surfaces in `agentNetworkEngineDenyReason`.
    *  `null` when `ready: true`. */
   reason: string | null;
@@ -85,26 +106,33 @@ function apiKeyEnvVarForProvider(provider: string): string | null {
 
 /**
  * Load the envoy-harness runtime config from the process
- * environment + the host's injected model.
+ * environment + the host's injected model + API key.
  *
  * **Model precedence (b3.live — model inheritance):**
  * ```
  * ENVOY_HARNESS_MODEL (env var)  >  hostModel (DI from NodeServiceImpl)  >  "deepseek:deepseek-chat" (default)
  * ```
- * The host (EnvoyMesh's `NodeServiceImpl`) reads its
- * `ModelProviderConfig` and passes the mapped
- * `<provider>:<model>` string as `hostModel`. This
- * matches the OpenClaw pattern: the host configures
- * its LLM once; both runtimes use it as the default;
- * each can override with its own env var.
  *
- * **Why `hostModel` is a parameter, not a `getNodeConfig()`
- * call inside the function:** keeps the function
- * pure (no coupling to the host's state). The host
- * injects the value; the function is a pure
- * read-of-process-env + parameter. Tests can call
- * the function with any `hostModel`; no need to
- * stub the host's state.
+ * **API key precedence (b3.live — API key from host model config):**
+ * ```
+ * ENVOY_HARNESS_API_KEY (env var)  >  hostApiKey (DI from NodeServiceImpl)  >  provider-specific env var (DEEPSEEK_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY)  >  undefined (for keyless providers like ollama)
+ * ```
+ *
+ * The host (EnvoyMesh's `NodeServiceImpl`) reads its
+ * `ModelProviderConfig` and passes both the model
+ * (`<provider>:<model>`) and the API key as DI
+ * parameters. This matches the OpenClaw pattern: the
+ * host configures its LLM once (in the Tauri settings
+ * UI); both runtimes use it as the default; each can
+ * override with its own env var.
+ *
+ * **Why DI is the right shape:** the host's
+ * `ModelProviderConfig` may not be written to
+ * `process.env` (the user enters the key in the Tauri
+ * settings UI; we don't have to mirror it to the env).
+ * The DI seam lets the runtime use the same key the
+ * user configured without forcing a `process.env`
+ * mirror.
  *
  * **Stub escape hatch:** `ENVOY_HARNESS_STUB_PHASE_8_STEP_1=1`
  * forces `ready: false` regardless of API key presence.
@@ -122,21 +150,32 @@ export function loadEnvoyHarnessRuntimeConfig(opts?: {
    * `resolveEnvoyHarnessHostModel` (see `model.ts`).
    */
   hostModel?: string;
+  /**
+   * Phase 8 / b3.live — the host's configured API key
+   * (from `ModelProviderConfig.apiKey`). The host
+   * injects this so the runtime uses the same key
+   * the user configured. Used as a fallback when
+   * `ENVOY_HARNESS_API_KEY` is unset; the
+   * provider-specific env var (`DEEPSEEK_API_KEY` etc.)
+   * is the lowest-priority fallback.
+   */
+  hostApiKey?: string;
 }): EnvoyHarnessRuntimeConfig {
-  // b3 — read the model + cwd from the env (or
-  // host's model), parse the provider from the model
-  // string. The provider id is the bit before the
+  // Read the model + cwd from the env (or host's
+  // model). The provider id is the bit before the
   // first `:` (lower-cased). A missing `:` defaults
   // to `deepseek` (matches the envoy-harness
   // QUICKSTART.md recommendation).
   //
-  // **Why `||` not `??`:** the env var may be set to
-  // an empty string (e.g. `vi.stubEnv` for tests, or
-  // a user accidentally setting `ENVOY_HARNESS_MODEL=`).
-  // `??` only falls through on `null`/`undefined`,
-  // not on empty strings — that would mean an empty
-  // `ENVOY_HARNESS_MODEL` overrides the host model.
-  // `||` correctly falls through on empty strings.
+  // **Why explicit `length > 0` check:** the env var
+  // may be set to an empty string (e.g. `vi.stubEnv`
+  // for tests, or a user accidentally setting
+  // `ENVOY_HARNESS_MODEL=`). `??` only falls through
+  // on `null`/`undefined`, not on empty strings —
+  // that would mean an empty `ENVOY_HARNESS_MODEL`
+  // overrides the host model. The explicit
+  // `length > 0` check correctly falls through on
+  // empty strings.
   const envModel = process.env.ENVOY_HARNESS_MODEL;
   const model =
     (envModel && envModel.length > 0 ? envModel : undefined) ??
@@ -147,37 +186,56 @@ export function loadEnvoyHarnessRuntimeConfig(opts?: {
   const cwd = process.env.ENVOY_HARNESS_CWD ?? process.cwd();
   const provider = (model.split(":", 1)[0] ?? "deepseek").toLowerCase();
 
-  // b3 — stub escape hatch (matches Step 1 behavior).
+  // Stub escape hatch (matches Step 1 behavior).
   if (process.env.ENVOY_HARNESS_STUB_PHASE_8_STEP_1 === "1") {
     return {
       ready: false,
       model,
       cwd,
       provider,
+      apiKey: undefined,
       reason: "envoy_harness_stub_phase_8_step_1",
     };
   }
 
-  // b3 — check the API key env var. `ENVOY_HARNESS_API_KEY`
-  // overrides the provider-specific key (test escape hatch
-  // + single-config convenience for Tauri users).
-  const overrideKey = process.env.ENVOY_HARNESS_API_KEY;
+  // Resolve the API key. Precedence:
+  // 1. `ENVOY_HARNESS_API_KEY` (env var) — universal override
+  //    (the test escape hatch + single-config convenience for
+  //    Tauri users who want a uniform key).
+  // 2. `hostApiKey` (DI from NodeServiceImpl) — the host's
+  //    `ModelProviderConfig.apiKey`. This is the production
+  //    path: the user enters the key in the Tauri settings UI.
+  // 3. Provider-specific env var (`DEEPSEEK_API_KEY` etc.) —
+  //    the lowest-priority fallback. Useful for tests +
+  //    legacy setups that put the key in the env directly.
+  // 4. `undefined` — no key set. For key-required providers
+  //    (deepseek / openai / anthropic), this means
+  //    `ready: false`. For keyless providers (ollama),
+  //    the runtime uses a placeholder key.
+  const envKey = process.env.ENVOY_HARNESS_API_KEY;
   const providerKeyEnv = apiKeyEnvVarForProvider(provider);
-  const hasKey =
-    (overrideKey !== undefined && overrideKey.length > 0) ||
-    (providerKeyEnv !== null &&
-      (process.env[providerKeyEnv]?.length ?? 0) > 0);
-  if (!hasKey && providerKeyEnv !== null) {
+  const providerKey = providerKeyEnv
+    ? process.env[providerKeyEnv]
+    : undefined;
+  const apiKey =
+    (envKey && envKey.length > 0 ? envKey : undefined) ??
+    (opts?.hostApiKey && opts.hostApiKey.length > 0
+      ? opts.hostApiKey
+      : undefined) ??
+    (providerKey && providerKey.length > 0 ? providerKey : undefined);
+
+  if (!apiKey && providerKeyEnv !== null) {
     return {
       ready: false,
       model,
       cwd,
       provider,
-      reason: `envoy_harness_api_key_missing: set ${providerKeyEnv} (or ENVOY_HARNESS_API_KEY)`,
+      apiKey: undefined,
+      reason: `envoy_harness_api_key_missing: set ${providerKeyEnv} (or ENVOY_HARNESS_API_KEY, or pass hostApiKey from ModelProviderConfig)`,
     };
   }
 
-  // b3 — ready. The model adapter is built lazily on the
+  // Ready. The model adapter is built lazily on the
   // first `ask` call (so transient API errors surface as
   // failed `ask` results, not config errors).
   return {
@@ -185,6 +243,7 @@ export function loadEnvoyHarnessRuntimeConfig(opts?: {
     model,
     cwd,
     provider,
+    apiKey,
     reason: null,
   };
 }

@@ -672,15 +672,27 @@ git push --tags
   `anthropic` / `ollama` → direct; `litellm` → reuses
   the `openai` adapter with the host's endpoint;
   `mock` / `disabled` → `undefined` (not supported,
-  `ready: false`). **b3.live.2 (live test):**
+  `ready: false`). **b3.live.2 (live test + API key
+  inheritance):** the live test in
   `apps/node/test/agent-runtime-envoy-runtime.live.test.ts`
   exercises the real `EnvoyHarnessAdapter` with a
   real `createProviderAdapter` + a real model. Opt-in
   via `ENVOY_HARNESS_LIVE_TESTS=1`; self-skips when
-  `DEEPSEEK_API_KEY` is missing (matches the
-  `ENVOY_PHASE18_LIVE_TESTS=1` pattern in
-  `apps/node/test/phase18-minimax-config.ts`). 4 new
-  unit tests cover model inheritance (env override /
-  host model / default / `litellm` → openai). See
+  no API key is present. The user pointed out that
+  `DEEPSEEK_API_KEY` is NOT the source of truth — the
+  host's `ModelProviderConfig.apiKey` is. The live
+  test's self-skip now uses `ENVOY_HARNESS_API_KEY`
+  (universal override) or `ENVOY_HARNESS_HOST_API_KEY`
+  (host-DI simulation) — the `DEEPSEEK_API_KEY`
+  fallback is gone. The `loadEnvoyHarnessRuntimeConfig`
+  function now also accepts a `hostApiKey` parameter;
+  the runtime's `modelFactory` reads
+  `opts.config.apiKey` and builds a custom `env` for
+  `createProviderAdapter` (no `process.env` mutation).
+  New `resolveEnvoyHarnessHostConfig(modelProviders)`
+  helper returns `{ model, apiKey }`. 17 new unit
+  tests cover model + API key precedence
+  (env > host > provider-specific), the host config
+  mapping, and the DI seam. See
   `docs/agent-harness-integration-b2-b3.md` §4 for
   the full b3.live spec.

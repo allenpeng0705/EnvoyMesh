@@ -35,6 +35,8 @@ export {
 export {
   resolveEnvoyHarnessProvider,
   resolveEnvoyHarnessHostModel,
+  resolveEnvoyHarnessHostConfig,
+  type EnvoyHarnessHostConfig,
   type EnvoyHarnessProviderId,
 } from "./model.js";
 

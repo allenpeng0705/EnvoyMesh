@@ -258,13 +258,61 @@ export function createRealEnvoyHarnessRuntime(
   // default wraps `createProviderAdapter` (which takes
   // a `ProviderConfig` object) so the seam shape is the
   // simpler `(provider, modelName) => ModelAdapter`.
+  //
+  // **API key plumbing (b3.live):** the default
+  // `createProviderAdapter` reads the key from the
+  // `env` field (defaults to `process.env`). We pass a
+  // custom `env` so the host's `ModelProviderConfig.apiKey`
+  // (resolved by `loadEnvoyHarnessRuntimeConfig`) flows
+  // through without needing to mirror it to
+  // `process.env`. The provider-specific env var name
+  // (`DEEPSEEK_API_KEY` / `OPENAI_API_KEY` /
+  // `ANTHROPIC_API_KEY`) is matched in
+  // `config.ts:apiKeyEnvVarForProvider` — we re-derive
+  // it here from the `opts.config.provider` so the
+  // mapping stays in one place (could be a shared
+  // helper, but the duplication is 4 lines and the
+  // alternative is a cross-module import for a
+  // constant).
   const modelFactory: (provider: string, modelName: string | undefined) => ModelAdapter =
     opts.modelFactory ??
-    ((provider, modelName) =>
-      createProviderAdapter({
+    ((provider, modelName) => {
+      const env: NodeJS.ProcessEnv = {};
+      if (opts.config.apiKey) {
+        switch (provider) {
+          case "deepseek":
+            env.DEEPSEEK_API_KEY = opts.config.apiKey;
+            break;
+          case "openai":
+            env.OPENAI_API_KEY = opts.config.apiKey;
+            break;
+          case "anthropic":
+          case "claude":
+            env.ANTHROPIC_API_KEY = opts.config.apiKey;
+            break;
+          // `ollama` is keyless — `createProviderAdapter`
+          // passes a placeholder key internally. No
+          // env var needed.
+          // `litellm` reuses the `openai` provider
+          // (per the b1.5 follow-up plan §4.1). The
+          // host's endpoint is a Step 4+ concern (would
+          // be passed via `OpenAIAdapter.baseUrl`).
+          default:
+            // Unknown provider: pass the key under
+            // the universal `ENVOY_HARNESS_API_KEY`
+            // name as a courtesy (future providers
+            // can read from it). Doesn't help the
+            // harness's current adapters but is
+            // a no-op safe fallback.
+            env.ENVOY_HARNESS_API_KEY = opts.config.apiKey;
+        }
+      }
+      return createProviderAdapter({
         provider,
         ...(modelName !== undefined ? { model: modelName } : {}),
-      }));
+        env,
+      });
+    });
 
   /**
    * Lazy construction. Throws when the model factory

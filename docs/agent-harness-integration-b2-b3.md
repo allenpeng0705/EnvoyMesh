@@ -341,22 +341,36 @@ ENVOY_HARNESS_MODEL (env var)  >  hostModel (DI)  >  "deepseek:deepseek-chat" (d
 
 **Implementation:**
 
-- `loadEnvoyHarnessRuntimeConfig({ hostModel?: string })` —
-  new optional parameter. The function stays a pure
-  read of `process.env` + the injected `hostModel`.
-  No `getNodeConfig()` inside (the host injects).
+- `loadEnvoyHarnessRuntimeConfig({ hostModel?: string, hostApiKey?: string })` —
+  new optional parameters. The function stays a pure
+  read of `process.env` + the injected `hostModel` +
+  `hostApiKey`. No `getNodeConfig()` inside (the host
+  injects).
 - A small helper
-  `resolveEnvoyHarnessHostModel(modelProviders: ModelProviderConfig): string | undefined`
+  `resolveEnvoyHarnessHostConfig(modelProviders: ModelProviderConfig): { model, apiKey } | undefined`
   lives in `model.ts` (peer of `resolveEnvoyHarnessProvider`).
   Maps the host's `ModelProviderConfig` to
-  `<provider>:<model>`. Returns `undefined` for
-  unsupported modes (e.g. `mock`, `litellm` —
-  envoy-harness doesn't have a `litellm` adapter
-  today; use the `openai` adapter with the same
-  endpoint for v0, or fall back to the default).
+  `{ model: <provider>:<modelName>, apiKey: <trimmed apiKey> }`.
+  Returns `undefined` for unsupported modes (e.g.
+  `mock`, `disabled`) or empty `modelName` — the
+  caller treats `undefined` as "not ready".
 - `node-service-impl.ts` reads `getNodeConfig()` →
-  `modelProviders` → `resolveEnvoyHarnessHostModel`
-  → passes to `loadEnvoyHarnessRuntimeConfig`.
+  `modelProviders` → `resolveEnvoyHarnessHostConfig`
+  → passes to `loadEnvoyHarnessRuntimeConfig`. The
+  cache (`_envoyHarnessHostModel` +
+  `_envoyHarnessHostApiKey`) is refreshed
+  fire-and-forget on every readiness check (sync
+  interface + async refresh; falls back to the
+  current cache value if the refresh is in flight
+  or fails).
+- `runtime.ts` reads `opts.config.apiKey` and builds
+  a custom `env` for `createProviderAdapter` (so
+  the host's `ModelProviderConfig.apiKey` flows
+  through without `process.env` mirroring). The
+  provider-specific env var name
+  (`DEEPSEEK_API_KEY` / `OPENAI_API_KEY` /
+  `ANTHROPIC_API_KEY`) is matched in
+  `config.ts:apiKeyEnvVarForProvider`.
 
 **Provider mapping (host → envoy-harness):**
 
@@ -377,14 +391,58 @@ with a custom `baseUrl` (already supported by
 config is used with the `openai` provider; future:
 add a `litellm` adapter if needed.
 
+### 4.1.1 API key inheritance (b3.live.2)
+
+The host's `ModelProviderConfig.apiKey` is the
+**source of truth** (entered in the Tauri settings
+UI; not mirrored to `process.env`). The DI seam
+flows it through to the runtime's model adapter
+without `process.env` pollution.
+
+**API key precedence:**
+
+```
+ENVOY_HARNESS_API_KEY (env var)  >  hostApiKey (DI)  >  provider-specific env var (DEEPSEEK_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY)  >  undefined (for keyless providers like ollama)
+```
+
+**Why env vars at all (rather than DI-only):**
+- `ENVOY_HARNESS_API_KEY` is the universal override
+  — useful for tests (single-config convenience)
+  + Tauri users who want a uniform key.
+- The provider-specific env vars
+  (`DEEPSEEK_API_KEY` etc.) are the lowest-priority
+  fallback — useful for legacy setups that put the
+  key in the env directly.
+
+**Why DI is the production path:** the host may
+not have mirrored the key to `process.env`. The DI
+seam lets the runtime use the same key the user
+configured without forcing a `process.env` mirror.
+
+**User feedback (2026-08-20):** the user pointed out
+that `DEEPSEEK_API_KEY` is NOT the source of truth —
+the host's `ModelProviderConfig.apiKey` is. The
+b3.live.2 work moves the API key from the
+provider-specific env var to the DI path. The
+live test's self-skip no longer falls back to
+`DEEPSEEK_API_KEY`; it uses either
+`ENVOY_HARNESS_API_KEY` (universal override) or
+`ENVOY_HARNESS_HOST_API_KEY` (DI for
+`ModelProviderConfig.apiKey` simulation).
+
 ### 4.2 Live test
 
 **File:** `apps/node/test/agent-runtime-envoy-runtime.live.test.ts`
 
-**Self-skip condition:** `ENVOY_HARNESS_LIVE_TESTS=1`
-opt-in + `DEEPSEEK_API_KEY` (or `ENVOY_HARNESS_API_KEY`)
-env var present. Otherwise the test prints a skip
-message and returns (no `describe` failure).
+**Self-skip condition (revised in b3.live.2):**
+`ENVOY_HARNESS_LIVE_TESTS=1` opt-in + one of:
+- `ENVOY_HARNESS_API_KEY` (universal override), or
+- `ENVOY_HARNESS_HOST_API_KEY` (DI for
+  `ModelProviderConfig.apiKey` simulation).
+
+The previous `DEEPSEEK_API_KEY` fallback is **gone**
+— the user pointed out that `DEEPSEEK_API_KEY` is
+not the source of truth.
 
 **What it tests:**
 
@@ -398,6 +456,16 @@ message and returns (no `describe` failure).
    (stamped by the bridge's `localToWireResult`).
 5. (Optional) Verify the cost was reported (`> 0`
    or `0` for free models).
+
+**Additional tests in b3.live.2 (always run, no
+network):**
+
+- `loadEnvoyHarnessRuntimeConfig({ hostModel, hostApiKey })`
+  returns `config.apiKey === hostApiKey` (the DI
+  seam flows the host's key through).
+- The host-DI key flows to the runtime's
+  `modelFactory` (the `env` passed to
+  `createProviderAdapter`).
 
 **Why `agent-runtime-envoy-runtime.live.test.ts`
 and not `*.test.ts`:** the test file naming pattern
@@ -422,6 +490,12 @@ Phase 18 live test pattern).
 | 3 | Wire `hostModel` from `node-service-impl.ts` (read `getNodeConfig().modelProviders` → helper → config) | `apps/node/src/node-service-impl.ts` | (squash w/ 1) |
 | 4 | Add unit tests for model inheritance (3 cases: env override / host model / default) | `apps/node/test/agent-runtime-envoy-config.test.ts` (new) | (squash w/ 1) |
 | 5 | Add live test (self-skip when no API key) | `apps/node/test/agent-runtime-envoy-runtime.live.test.ts` (new) | (squash w/ 1) |
+| 6 (b3.live.2) | Add `hostApiKey` parameter to `loadEnvoyHarnessRuntimeConfig`; resolve API key precedence; return `apiKey` in config | `apps/node/src/agent-runtime-envoy/config.ts` | (squash w/ 7-9) |
+| 7 (b3.live.2) | Add `resolveEnvoyHarnessHostConfig` helper (returns `{ model, apiKey }`); add `apiKey` field to `EnvoyHarnessHostConfig` | `apps/node/src/agent-runtime-envoy/model.ts` | (squash w/ 6) |
+| 8 (b3.live.2) | Update `runtime.ts` to build a custom `env` for `createProviderAdapter` from `opts.config.apiKey` (no `process.env` mutation) | `apps/node/src/agent-runtime-envoy/runtime.ts` | (squash w/ 6) |
+| 9 (b3.live.2) | Wire `hostApiKey` from `node-service-impl.ts` (add `_envoyHarnessHostApiKey` cache, `setEnvoyHarnessHostApiKey` test setter, rename refresh to `_refreshEnvoyHarnessHostConfig`, pass `hostApiKey` to config) | `apps/node/src/node-service-impl.ts` | (squash w/ 6) |
+| 10 (b3.live.2) | Add unit tests for `hostApiKey` precedence (universal env > hostApiKey > provider-specific env) + `resolveEnvoyHarnessHostConfig` (model + apiKey mapping) | `apps/node/test/agent-runtime-envoy-config.test.ts` (extend) | (squash w/ 6) |
+| 11 (b3.live.2) | Drop `DEEPSEEK_API_KEY` fallback in live test; add `ENVOY_HARNESS_HOST_API_KEY` (host-DI simulation) + always-run tests for the DI seam | `apps/node/test/agent-runtime-envoy-runtime.live.test.ts` (revise) | (squash w/ 6) |
 
 ### 4.4 What b3.live does NOT cover
 
@@ -437,6 +511,13 @@ Phase 18 live test pattern).
   Step 5. b3.live reads the host's model via the
   same `getNodeConfig()` path; the user's ability
   to override it from the UI is Step 5.
+- **The provider-specific endpoint (litellm
+  `baseUrl`):** b3.live maps `litellm` to the
+  `openai` adapter without a custom endpoint. Step
+  4+ would pass the host's `litellm.endpoint` via
+  `OpenAIAdapter.baseUrl` (the
+  `createProviderAdapter` API doesn't read the
+  endpoint from the model string).
 
 ## 6. Order
 
@@ -567,3 +648,22 @@ the diff small. Either order works.
   without a real `DEEPSEEK_API_KEY`). Provider
   mapping table documents the host → envoy-harness
   translation.
+- **2026-08-20 (b3.live.2 — DONE):** §4.1.1 added.
+  API key inheritance from EnvoyMesh's
+  `ModelProviderConfig.apiKey` (envoy-harness
+  defaults to the host's API key, like the model
+  inheritance pattern). The user pointed out that
+  `DEEPSEEK_API_KEY` is NOT the source of truth —
+  the host's `ModelProviderConfig.apiKey` is. The
+  `runtime.ts` builds a custom `env` for
+  `createProviderAdapter` (no `process.env`
+  mutation). API key precedence: universal
+  `ENVOY_HARNESS_API_KEY` env > `hostApiKey` DI >
+  provider-specific env var > `undefined`.
+  `resolveEnvoyHarnessHostConfig` helper maps the
+  host's `ModelProviderConfig` to
+  `{ model, apiKey }`. Live test's self-skip now
+  uses `ENVOY_HARNESS_API_KEY` (universal) or
+  `ENVOY_HARNESS_HOST_API_KEY` (host-DI
+  simulation) — the `DEEPSEEK_API_KEY` fallback is
+  gone.

@@ -4774,27 +4774,32 @@ class NodeServiceImpl implements NodeService {
    * Returns `true` when:
    * 1. `ENVOY_HARNESS_STUB_PHASE_8_STEP_1=1` is NOT set (the
    *    test escape hatch).
-   * 2. The provider-specific API key env var
-   *    (`DEEPSEEK_API_KEY` / `OPENAI_API_KEY` /
-   *    `ANTHROPIC_API_KEY`) is set, OR `ENVOY_HARNESS_API_KEY`
-   *    is set (the universal override).
+   * 2. The API key is available — from any of:
+   *    - `ENVOY_HARNESS_API_KEY` (universal override)
+   *    - The host's `ModelProviderConfig.apiKey` (DI from
+   *      `_envoyHarnessHostApiKey` cache — see
+   *      `_refreshEnvoyHarnessHostConfig()`)
+   *    - The provider-specific env var
+   *      (`DEEPSEEK_API_KEY` / `OPENAI_API_KEY` /
+   *      `ANTHROPIC_API_KEY`)
    *
-   * **Phase 8 / b3.live (model inheritance):** the config
-   * also considers the host's `ModelProviderConfig`. The
-   * `_envoyHarnessHostModel` cache is populated by
-   * `_refreshEnvoyHarnessHostModel()` (fire-and-forget
-   * on every call; the first call returns the default,
-   * subsequent calls return the host's model). The
-   * host's model takes effect via the `hostModel`
-   * parameter to `loadEnvoyHarnessRuntimeConfig`.
+   * **Phase 8 / b3.live (model + API key inheritance):** the
+   * config also considers the host's `ModelProviderConfig`.
+   * The `_envoyHarnessHostModel` + `_envoyHarnessHostApiKey`
+   * caches are populated by `_refreshEnvoyHarnessHostConfig()`
+   * (fire-and-forget on every call; the first call returns
+   * the default, subsequent calls reflect the host's config).
+   * The host's model + API key take effect via the
+   * `hostModel` + `hostApiKey` parameters to
+   * `loadEnvoyHarnessRuntimeConfig`.
    *
    * **Why env-var presence, not a model call:** the model
    * call (`createProviderAdapter(...)`) is the real check
    * for whether the API key is valid. We do that check lazily
-   * on the first `askEnvoyHarness` call. The env-var presence
-   * check is the readiness probe — it tells the orchestrator
-   * "this engine is worth invoking" without burning a model
-   * call.
+   * on the first `askEnvoyHarness` call. The env-var +
+   * cache check is the readiness probe — it tells the
+   * orchestrator "this engine is worth invoking" without
+   * burning a model call.
    *
    * **What the chain worker does on `ready === false`:** the
    * dispatch in `node-service-chain-orchestration.ts` returns
@@ -4803,14 +4808,15 @@ class NodeServiceImpl implements NodeService {
    * clean failure, not a stack trace.
    */
   isEnvoyHarnessReady(): boolean {
-    // Fire-and-forget refresh of the host model cache.
-    // The current cache value is used for the readiness
-    // check (the first call uses the default; subsequent
-    // calls reflect the most recent refresh). The full
-    // async check happens in `askEnvoyHarness`.
-    void this._refreshEnvoyHarnessHostModel();
+    // Fire-and-forget refresh of the host model + API key
+    // cache. The current cache values are used for the
+    // readiness check (the first call uses the default;
+    // subsequent calls reflect the most recent refresh).
+    // The full async check happens in `askEnvoyHarness`.
+    void this._refreshEnvoyHarnessHostConfig();
     return loadEnvoyHarnessRuntimeConfig({
       hostModel: this._envoyHarnessHostModel,
+      hostApiKey: this._envoyHarnessHostApiKey,
     }).ready;
   }
 
@@ -4893,13 +4899,14 @@ class NodeServiceImpl implements NodeService {
   private _envoyHarnessRuntimeCache: RealEnvoyHarnessRuntime | undefined;
 
   /**
-   * Phase 8 / b3.live — host's envoy-harness model cache.
+   * Phase 8 / b3.live — host's envoy-harness model + API key cache.
    *
    * The host's `ModelProviderConfig` (from `getNodeConfig()`)
    * is async to read; `isEnvoyHarnessReady` is sync. We
-   * cache the resolved `<provider>:<model>` string in
-   * this field, refreshed by `_refreshEnvoyHarnessHostModel()`
-   * (fire-and-forget on every readiness check).
+   * cache the resolved `<provider>:<model>` string + API
+   * key in these fields, refreshed by
+   * `_refreshEnvoyHarnessHostConfig()` (fire-and-forget
+   * on every readiness check).
    *
    * **Why a cache, not async-everything:** the chain
    * dispatch's `isAgentNetworkEngineReady` callback is
@@ -4911,28 +4918,48 @@ class NodeServiceImpl implements NodeService {
    * cache for subsequent calls. The full check happens
    * in `askEnvoyHarness` (which is async).
    *
-   * **Test escape hatch:** `setEnvoyHarnessHostModel(model)`
-   * is a public setter for tests to pre-populate the
-   * cache synchronously. The default is `undefined` (no
-   * host model; env-only check).
+   * **Why two fields, not a single `{ model, apiKey }`
+   * object:** the `hostApiKey` may be sensitive (it's
+   * the user's Tauri-configured secret); keeping it
+   * in a separate field makes the data flow obvious
+   * (no struct hidden in a single cache slot).
+   *
+   * **Test escape hatch:** `setEnvoyHarnessHostModel(...)`
+   * + `setEnvoyHarnessHostApiKey(...)` are public
+   * setters for tests to pre-populate the cache
+   * synchronously. The defaults are `undefined`
+   * (no host model + no host API key; env-only check).
    */
   private _envoyHarnessHostModel: string | undefined = undefined;
+  private _envoyHarnessHostApiKey: string | undefined = undefined;
 
   /**
    * Phase 8 / b3.live — public DI seam for tests.
    * Pre-populates the host model cache. Production code
    * never calls this; the cache is populated by
-   * `_refreshEnvoyHarnessHostModel()`.
+   * `_refreshEnvoyHarnessHostConfig()`.
    */
   setEnvoyHarnessHostModel(model: string | undefined): void {
     this._envoyHarnessHostModel = model;
   }
 
   /**
+   * Phase 8 / b3.live — public DI seam for tests.
+   * Pre-populates the host API key cache. Production
+   * code never calls this; the cache is populated by
+   * `_refreshEnvoyHarnessHostConfig()`. Used by the
+   * live test to inject a `ModelProviderConfig.apiKey`
+   * without needing a real `getNodeConfig()`.
+   */
+  setEnvoyHarnessHostApiKey(apiKey: string | undefined): void {
+    this._envoyHarnessHostApiKey = apiKey;
+  }
+
+  /**
    * Phase 8 / b3.live — async refresh of the host's
-   * envoy-harness model. Reads `getNodeConfig()`,
+   * envoy-harness model + API key. Reads `getNodeConfig()`,
    * resolves the `ModelProviderConfig` via
-   * `resolveEnvoyHarnessHostModel`, updates the cache.
+   * `resolveEnvoyHarnessHostConfig`, updates both caches.
    *
    * **Why fire-and-forget on every readiness check:**
    * the host's `modelProviders` is a hot-reloaded
@@ -4947,8 +4974,18 @@ class NodeServiceImpl implements NodeService {
    * Polling on every readiness check is simpler and
    * good enough for the v0 polling frequency.
    * Future: hook into the config-change path.
+   *
+   * **API key source of truth:** the host's
+   * `ModelProviderConfig.apiKey` is the source of
+   * truth (the user enters it in the Tauri settings
+   * UI). It is NOT mirrored to `process.env`; the
+   * DI seam flows it through to the runtime. This
+   * means the runtime uses the same key the user
+   * configured, without env-var pollution.
    */
-  private async _refreshEnvoyHarnessHostModel(): Promise<string | undefined> {
+  private async _refreshEnvoyHarnessHostConfig(): Promise<
+    { model: string | undefined; apiKey: string | undefined }
+  > {
     try {
       const config = await this.getNodeConfig();
       const modelProviders = (config as { modelProviders?: unknown })
@@ -4957,19 +4994,33 @@ class NodeServiceImpl implements NodeService {
         | undefined;
       if (!modelProviders) {
         this._envoyHarnessHostModel = undefined;
-        return undefined;
+        this._envoyHarnessHostApiKey = undefined;
+        return { model: undefined, apiKey: undefined };
       }
-      const { resolveEnvoyHarnessHostModel } = await import(
+      const { resolveEnvoyHarnessHostConfig } = await import(
         "./agent-runtime-envoy/index.js"
       );
-      this._envoyHarnessHostModel =
-        resolveEnvoyHarnessHostModel(modelProviders);
-      return this._envoyHarnessHostModel;
+      const resolved = resolveEnvoyHarnessHostConfig(modelProviders);
+      // `undefined` from the helper means "not ready"
+      // (unsupported mode / empty model name). In that
+      // case we keep the API key empty (no point
+      // caching a key for a model the runtime can't
+      // use). The full readiness check happens in
+      // `loadEnvoyHarnessRuntimeConfig`.
+      this._envoyHarnessHostModel = resolved?.model;
+      this._envoyHarnessHostApiKey = resolved?.apiKey;
+      return {
+        model: this._envoyHarnessHostModel,
+        apiKey: this._envoyHarnessHostApiKey,
+      };
     } catch {
       // Config read failed (e.g. node-config not
       // yet loaded). Keep the cache as-is; the next
       // call will retry.
-      return this._envoyHarnessHostModel;
+      return {
+        model: this._envoyHarnessHostModel,
+        apiKey: this._envoyHarnessHostApiKey,
+      };
     }
   }
 
@@ -4990,13 +5041,14 @@ class NodeServiceImpl implements NodeService {
           "the AN engine dispatch",
       );
     }
-    // Phase 8 / b3.live — refresh the host model cache
-    // (sync interface, async refresh; falls back to
-    // the current cache value if the refresh is in
-    // flight or fails).
-    await this._refreshEnvoyHarnessHostModel();
+    // Phase 8 / b3.live — refresh the host model + API
+    // key cache (sync interface, async refresh; falls
+    // back to the current cache value if the refresh
+    // is in flight or fails).
+    await this._refreshEnvoyHarnessHostConfig();
     const config = loadEnvoyHarnessRuntimeConfig({
       hostModel: this._envoyHarnessHostModel,
+      hostApiKey: this._envoyHarnessHostApiKey,
     });
     // Re-check readiness in case the env changed between
     // the `isEnvoyHarnessReady` probe and this call

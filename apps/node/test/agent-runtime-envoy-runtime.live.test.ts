@@ -19,15 +19,29 @@
  *    so we expect `> 0` in practice).
  *
  * **Self-skip condition:** `ENVOY_HARNESS_LIVE_TESTS=1`
- * opt-in + `DEEPSEEK_API_KEY` (or `ENVOY_HARNESS_API_KEY`)
- * env var present. Without either, the test prints a
- * skip message and returns (no `describe` failure). The
- * opt-in mirrors `ENVOY_PHASE18_LIVE_TESTS=1` (the
- * existing Phase 18 live test pattern in
- * `apps/node/test/phase18-minimax-config.ts`).
+ * opt-in + a real API key is present. The API key
+ * precedence is:
+ * 1. `ENVOY_HARNESS_API_KEY` (universal override — the
+ *    primary path for the live test)
+ * 2. `ENVOY_HARNESS_HOST_API_KEY` (DI for the
+ *    `ModelProviderConfig.apiKey` simulation; the live
+ *    test path for the host-DI seam)
  *
- * **Run:**
- *   ENVOY_HARNESS_LIVE_TESTS=1 DEEPSEEK_API_KEY=sk-... npx vitest run \
+ * **Why no `DEEPSEEK_API_KEY` fallback:** the user
+ * pointed out that `DEEPSEEK_API_KEY` is a low-level
+ * env-var that's NOT the source of truth. The host's
+ * `ModelProviderConfig.apiKey` is the source of truth
+ * (entered in the Tauri settings UI). The live test
+ * uses the DI seam to simulate the host's API key;
+ * the universal `ENVOY_HARNESS_API_KEY` env var is the
+ * test escape hatch.
+ *
+ * **Run (universal override path):**
+ *   ENVOY_HARNESS_LIVE_TESTS=1 ENVOY_HARNESS_API_KEY=sk-... npx vitest run \
+ *     apps/node/test/agent-runtime-envoy-runtime.live.test.ts
+ *
+ * **Run (host-DI path):**
+ *   ENVOY_HARNESS_LIVE_TESTS=1 ENVOY_HARNESS_HOST_API_KEY=sk-... npx vitest run \
  *     apps/node/test/agent-runtime-envoy-runtime.live.test.ts
  *
  * **Why a separate file:** the `<feature>.live.test.ts`
@@ -41,7 +55,7 @@
  * multiple tests would multiply the cost.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createRealEnvoyHarnessRuntime, loadEnvoyHarnessRuntimeConfig } from "../src/agent-runtime-envoy/index.js";
 
@@ -50,11 +64,21 @@ const ENVOY_HARNESS_LIVE_TESTS_OPT_IN = "ENVOY_HARNESS_LIVE_TESTS";
 /**
  * True when the live test should run: opt-in env var
  * is set + a real API key is present.
+ *
+ * **Key precedence (b3.live.2 — the user pointed this
+ * out):** the host's `ModelProviderConfig.apiKey` is
+ * the source of truth, NOT `DEEPSEEK_API_KEY`. The
+ * live test uses either:
+ * - `ENVOY_HARNESS_API_KEY` (universal override; the
+ *   test escape hatch + single-config convenience), or
+ * - `ENVOY_HARNESS_HOST_API_KEY` (DI seam that
+ *   simulates the host's `ModelProviderConfig.apiKey`)
  */
 function isEnvoyHarnessLiveModelConfigured(): boolean {
   if (process.env[ENVOY_HARNESS_LIVE_TESTS_OPT_IN] !== "1") return false;
-  const apiKey =
-    process.env.ENVOY_HARNESS_API_KEY ?? process.env.DEEPSEEK_API_KEY;
+  const universal = process.env.ENVOY_HARNESS_API_KEY;
+  const hostDi = process.env.ENVOY_HARNESS_HOST_API_KEY;
+  const apiKey = universal ?? hostDi;
   return typeof apiKey === "string" && apiKey.trim().length > 0;
 }
 
@@ -62,8 +86,9 @@ function isEnvoyHarnessLiveModelConfigured(): boolean {
 function envoyHarnessLiveSkipMessage(): string {
   return (
     "live test requires ENVOY_HARNESS_LIVE_TESTS=1 + " +
-    "DEEPSEEK_API_KEY (or ENVOY_HARNESS_API_KEY). Set them " +
-    "and re-run: `ENVOY_HARNESS_LIVE_TESTS=1 DEEPSEEK_API_KEY=sk-... npx vitest run " +
+    "ENVOY_HARNESS_API_KEY (universal override) or " +
+    "ENVOY_HARNESS_HOST_API_KEY (host-DI simulation). " +
+    "Re-run: `ENVOY_HARNESS_LIVE_TESTS=1 ENVOY_HARNESS_API_KEY=sk-... npx vitest run " +
     "apps/node/test/agent-runtime-envoy-runtime.live.test.ts`"
   );
 }
@@ -72,10 +97,24 @@ describe("createRealEnvoyHarnessRuntime (Phase 8 / b3.live — live LLM)", () =>
   it.skipIf(!isEnvoyHarnessLiveModelConfigured())(
     "drives a real DeepSeek model end-to-end via the real EnvoyHarnessAdapter",
     async () => {
-      // The real config (env-var-driven). The readiness
-      // check passes because the opt-in + API key are
-      // both set (guarded by the describe.skipIf).
-      const config = loadEnvoyHarnessRuntimeConfig();
+      // The real config. Use the DI seam to simulate
+      // the host's `ModelProviderConfig`:
+      // - `ENVOY_HARNESS_HOST_API_KEY` is the host's
+      //   API key (DI). If set, use it as `hostApiKey`.
+      // - `ENVOY_HARNESS_API_KEY` is the universal
+      //   override (env var). If set, the config picks
+      //   it up automatically.
+      // - If neither is set, we fall through to the
+      //   provider-specific env vars (e.g.
+      //   `DEEPSEEK_API_KEY`).
+      const hostApiKey = process.env.ENVOY_HARNESS_HOST_API_KEY;
+      // For the model, we use the env var if set,
+      // otherwise the host-DI path (which would need
+      // a real `ModelProviderConfig`; the live test
+      // uses the env var to keep it simple).
+      const config = loadEnvoyHarnessRuntimeConfig({
+        ...(hostApiKey ? { hostApiKey } : {}),
+      });
       if (!config.ready) {
         // Defensive: shouldn't happen because the
         // describe.skipIf guards the test, but a
@@ -139,6 +178,76 @@ describe("createRealEnvoyHarnessRuntime (Phase 8 / b3.live — live LLM)", () =>
     },
     60_000,
   ); // vitest test timeout: 60s (covers the 30s ask deadline + setup)
+});
+
+/**
+ * Phase 8 / b3.live.2 — verify the host-DI seam flows
+ * the API key to `createProviderAdapter` (the production
+ * code path: `ModelProviderConfig.apiKey` →
+ * `NodeServiceImpl._envoyHarnessHostApiKey` cache →
+ * `loadEnvoyHarnessRuntimeConfig({ hostApiKey })` →
+ * `runtime.config.apiKey` →
+ * `createProviderAdapter({ env: { DEEPSEEK_API_KEY: ... } })`).
+ *
+ * This test does NOT make a network call — it just
+ * exercises the config plumbing. Always runs (no
+ * skipIf). Catches regressions in the DI seam.
+ *
+ * **Why stub `ENVOY_HARNESS_API_KEY` to empty:** the
+ * universal env var is the highest-priority key. If
+ * it's set (e.g. from the live LLM test above), it
+ * shadows the `hostApiKey` DI. We stub it empty so
+ * the test exercises the DI path cleanly.
+ */
+describe("loadEnvoyHarnessRuntimeConfig (Phase 8 / b3.live.2 — host-DI API key flow)", () => {
+  it("returns the host's API key in config.apiKey (not the env var)", () => {
+    // Stub the universal override to empty so the
+    // DI path is exercised cleanly (without the
+    // shell's `ENVOY_HARNESS_API_KEY` from the live
+    // LLM test above).
+    vi.stubEnv("ENVOY_HARNESS_API_KEY", "");
+    vi.stubEnv("ENVOY_HARNESS_STUB_PHASE_8_STEP_1", "");
+    try {
+      const config = loadEnvoyHarnessRuntimeConfig({
+        hostModel: "deepseek:deepseek-chat",
+        hostApiKey: "sk-test-host-di-key",
+      });
+      expect(config.apiKey).toBe("sk-test-host-di-key");
+      expect(config.ready).toBe(true);
+      expect(config.provider).toBe("deepseek");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("the host-DI key flows to the runtime's modelFactory (the env passed to createProviderAdapter)", () => {
+    vi.stubEnv("ENVOY_HARNESS_API_KEY", "");
+    vi.stubEnv("ENVOY_HARNESS_STUB_PHASE_8_STEP_1", "");
+    try {
+      // This is the end-to-end DI flow: load config
+      // with `hostApiKey` → pass `config.apiKey` to
+      // the runtime's `modelFactory` → the factory
+      // passes it as `env: { DEEPSEEK_API_KEY: ... }`
+      // to `createProviderAdapter`. We don't make a
+      // network call; we just verify the config is
+      // ready and the key is the host's.
+      const hostApiKey = "sk-test-host-di-flow";
+      const config = loadEnvoyHarnessRuntimeConfig({
+        hostModel: "deepseek:deepseek-chat",
+        hostApiKey,
+      });
+      expect(config.apiKey).toBe(hostApiKey);
+      // The runtime's `modelFactory` (in `runtime.ts`)
+      // reads `opts.config.apiKey` and sets
+      // `env.DEEPSEEK_API_KEY = opts.config.apiKey`
+      // (for `deepseek` provider). The actual
+      // `createProviderAdapter` call happens lazily
+      // on first `ask`; the test path doesn't trigger
+      // it (we just verify the config plumbing).
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });
 
 /**

@@ -162,3 +162,63 @@ export function resolveEnvoyHarnessHostModel(
       return `deepseek:${modelName}`;
   }
 }
+
+/**
+ * Phase 8 / b3.live — map EnvoyMesh's
+ * `ModelProviderConfig` to the host-injected
+ * `hostModel` + `hostApiKey` pair consumed by
+ * `loadEnvoyHarnessRuntimeConfig`.
+ *
+ * **What this returns:** `{ model, apiKey }` when
+ * the host's config is usable (production provider
+ * + non-empty model name). `undefined` when the
+ * config is unsupported (`mock` / `disabled` / empty
+ * mode / empty modelName) — the caller should treat
+ * `undefined` as "not ready" (the host has no real
+ * model to use).
+ *
+ * **Why a separate helper, not inline in the host:**
+ * keeps the mapping logic in one place. The host's
+ * `NodeServiceImpl` reads `getNodeConfig()` +
+ * calls this helper + passes the result to
+ * `loadEnvoyHarnessRuntimeConfig({ hostModel,
+ * hostApiKey })`. Tests can call this helper
+ * directly with a fixture `ModelProviderConfig`
+ * (no I/O).
+ *
+ * **The model string:** uses the same provider
+ * mapping as `resolveEnvoyHarnessHostModel` above
+ * (openai / anthropic / ollama / litellm / deepseek).
+ *
+ * **The API key:** trimmed `ModelProviderConfig.apiKey`.
+ * The host may not have written it to `process.env`
+ * (Tauri users enter it in the settings UI; we don't
+ * mirror it). The DI seam flows the key through to
+ * the runtime's model adapter.
+ *
+ * **Pure function:** no I/O, no `process.env`, no
+ * `getNodeConfig()`. The caller injects the
+ * `ModelProviderConfig`.
+ */
+export interface EnvoyHarnessHostConfig {
+  /** `<provider>:<model>` string for `loadEnvoyHarnessRuntimeConfig`. */
+  model: string;
+  /** The host's API key (trimmed). May be `undefined` for keyless providers. */
+  apiKey: string | undefined;
+}
+
+export function resolveEnvoyHarnessHostConfig(
+  modelProviders: ModelProviderConfig,
+): EnvoyHarnessHostConfig | undefined {
+  const model = resolveEnvoyHarnessHostModel(modelProviders);
+  if (!model) return undefined;
+  // The API key is the user's input from the Tauri
+  // settings UI. We trim + check non-empty so the
+  // runtime can rely on `apiKey.length > 0` for
+  // key-required providers.
+  const rawKey = modelProviders.apiKey?.trim() ?? "";
+  return {
+    model,
+    apiKey: rawKey.length > 0 ? rawKey : undefined,
+  };
+}

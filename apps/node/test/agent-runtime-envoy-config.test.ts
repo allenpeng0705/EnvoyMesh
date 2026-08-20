@@ -32,6 +32,7 @@ import type { ModelProviderConfig } from "@envoymesh/api";
 import {
   loadEnvoyHarnessRuntimeConfig,
   resolveEnvoyHarnessHostModel,
+  resolveEnvoyHarnessHostConfig,
 } from "../src/agent-runtime-envoy/index.js";
 
 // ---------------------------------------------------------------------------
@@ -278,6 +279,297 @@ describe("resolveEnvoyHarnessHostModel (Phase 8 / b3.live — provider mapping)"
         modelName: "some-model",
       } as ModelProviderConfig);
       expect(result).toBe("deepseek:some-model");
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 8 / b3.live — API key inheritance tests
+//
+// **Acceptance:**
+// 1. `loadEnvoyHarnessRuntimeConfig({ hostApiKey })` honors
+//    the `ENVOY_HARNESS_API_KEY` env var first (universal
+//    override).
+// 2. Falls back to the injected `hostApiKey` when the
+//    universal env var is unset.
+// 3. Falls back to the provider-specific env var
+//    (`DEEPSEEK_API_KEY` / `OPENAI_API_KEY` /
+//    `ANTHROPIC_API_KEY`) when neither is set.
+// 4. Returns `apiKey: undefined` when none of the above
+//    are set (the host's `ModelProviderConfig.apiKey`
+//    may be `undefined` for keyless providers like
+//    `ollama`).
+// 5. `resolveEnvoyHarnessHostConfig(modelProviders)` maps
+//    the host's `ModelProviderConfig` to the
+//    `{ model, apiKey }` pair consumed by
+//    `loadEnvoyHarnessRuntimeConfig`.
+// ---------------------------------------------------------------------------
+
+describe("loadEnvoyHarnessRuntimeConfig (Phase 8 / b3.live — API key inheritance)", () => {
+  describe("API key precedence (universal env > hostApiKey > provider-specific env)", () => {
+    it("ENVOY_HARNESS_API_KEY wins over hostApiKey (universal override)", () => {
+      vi.stubEnv("ENVOY_HARNESS_MODEL", "openai:gpt-4o-mini");
+      vi.stubEnv("ENVOY_HARNESS_API_KEY", "sk-test-universal");
+      vi.stubEnv("DEEPSEEK_API_KEY", "");
+      vi.stubEnv("OPENAI_API_KEY", "");
+      vi.stubEnv("ANTHROPIC_API_KEY", "");
+      vi.stubEnv("ENVOY_HARNESS_STUB_PHASE_8_STEP_1", "");
+      try {
+        const cfg = loadEnvoyHarnessRuntimeConfig({
+          hostApiKey: "sk-test-host",
+        });
+        expect(cfg.ready).toBe(true);
+        expect(cfg.apiKey).toBe("sk-test-universal");
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it("hostApiKey wins over the provider-specific env var (DI is the production path)", () => {
+      // This is the key path the user pointed at: the
+      // host's `ModelProviderConfig.apiKey` is the
+      // source of truth, NOT the env var. The user
+      // enters the key in the Tauri settings UI; the
+      // host may not have mirrored it to
+      // `process.env`.
+      vi.stubEnv("ENVOY_HARNESS_MODEL", "openai:gpt-4o-mini");
+      vi.stubEnv("ENVOY_HARNESS_API_KEY", "");
+      vi.stubEnv("DEEPSEEK_API_KEY", "");
+      vi.stubEnv("OPENAI_API_KEY", "sk-test-env-openai");
+      vi.stubEnv("ANTHROPIC_API_KEY", "");
+      vi.stubEnv("ENVOY_HARNESS_STUB_PHASE_8_STEP_1", "");
+      try {
+        const cfg = loadEnvoyHarnessRuntimeConfig({
+          hostApiKey: "sk-test-host",
+        });
+        expect(cfg.ready).toBe(true);
+        expect(cfg.apiKey).toBe("sk-test-host");
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it("falls back to the provider-specific env var when neither env var nor hostApiKey is set", () => {
+      vi.stubEnv("ENVOY_HARNESS_MODEL", "openai:gpt-4o-mini");
+      vi.stubEnv("ENVOY_HARNESS_API_KEY", "");
+      vi.stubEnv("DEEPSEEK_API_KEY", "");
+      vi.stubEnv("OPENAI_API_KEY", "sk-test-env-openai");
+      vi.stubEnv("ANTHROPIC_API_KEY", "");
+      vi.stubEnv("ENVOY_HARNESS_STUB_PHASE_8_STEP_1", "");
+      try {
+        const cfg = loadEnvoyHarnessRuntimeConfig({});
+        expect(cfg.ready).toBe(true);
+        expect(cfg.apiKey).toBe("sk-test-env-openai");
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it("ready=false with envoy_harness_api_key_missing when no key is set anywhere", () => {
+      vi.stubEnv("ENVOY_HARNESS_MODEL", "openai:gpt-4o-mini");
+      vi.stubEnv("ENVOY_HARNESS_API_KEY", "");
+      vi.stubEnv("DEEPSEEK_API_KEY", "");
+      vi.stubEnv("OPENAI_API_KEY", "");
+      vi.stubEnv("ANTHROPIC_API_KEY", "");
+      vi.stubEnv("ENVOY_HARNESS_STUB_PHASE_8_STEP_1", "");
+      try {
+        const cfg = loadEnvoyHarnessRuntimeConfig({});
+        expect(cfg.ready).toBe(false);
+        expect(cfg.apiKey).toBeUndefined();
+        expect(cfg.reason).toMatch(/envoy_harness_api_key_missing/);
+        expect(cfg.reason).toContain("OPENAI_API_KEY");
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it("ready=true for ollama (keyless) without any API key", () => {
+      // ollama is keyless — `createProviderAdapter`
+      // passes a placeholder key internally. The
+      // readiness check should NOT block on missing
+      // API key for ollama.
+      vi.stubEnv("ENVOY_HARNESS_MODEL", "ollama:llama3.1");
+      vi.stubEnv("ENVOY_HARNESS_API_KEY", "");
+      vi.stubEnv("DEEPSEEK_API_KEY", "");
+      vi.stubEnv("OPENAI_API_KEY", "");
+      vi.stubEnv("ANTHROPIC_API_KEY", "");
+      vi.stubEnv("ENVOY_HARNESS_STUB_PHASE_8_STEP_1", "");
+      try {
+        const cfg = loadEnvoyHarnessRuntimeConfig({});
+        expect(cfg.ready).toBe(true);
+        expect(cfg.provider).toBe("ollama");
+        // The key may be `undefined` or any value; the
+        // runtime doesn't pass it to the adapter.
+        expect(cfg.apiKey).toBeUndefined();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it("empty string env var falls through (does not override hostApiKey)", () => {
+      // The `vi.stubEnv` + explicit `length > 0` check
+      // means an empty string env var does NOT
+      // override a non-empty `hostApiKey`. (The
+      // `??` operator alone would treat empty string
+      // as a real value and short-circuit the DI.)
+      vi.stubEnv("ENVOY_HARNESS_MODEL", "openai:gpt-4o-mini");
+      vi.stubEnv("ENVOY_HARNESS_API_KEY", "");
+      vi.stubEnv("DEEPSEEK_API_KEY", "");
+      vi.stubEnv("OPENAI_API_KEY", "");
+      vi.stubEnv("ANTHROPIC_API_KEY", "");
+      vi.stubEnv("ENVOY_HARNESS_STUB_PHASE_8_STEP_1", "");
+      try {
+        const cfg = loadEnvoyHarnessRuntimeConfig({
+          hostApiKey: "sk-test-host",
+        });
+        expect(cfg.ready).toBe(true);
+        expect(cfg.apiKey).toBe("sk-test-host");
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it("hostApiKey with empty string falls through to the provider-specific env var", () => {
+      vi.stubEnv("ENVOY_HARNESS_MODEL", "openai:gpt-4o-mini");
+      vi.stubEnv("ENVOY_HARNESS_API_KEY", "");
+      vi.stubEnv("DEEPSEEK_API_KEY", "");
+      vi.stubEnv("OPENAI_API_KEY", "sk-test-env-openai");
+      vi.stubEnv("ANTHROPIC_API_KEY", "");
+      vi.stubEnv("ENVOY_HARNESS_STUB_PHASE_8_STEP_1", "");
+      try {
+        const cfg = loadEnvoyHarnessRuntimeConfig({
+          hostApiKey: "",
+        });
+        expect(cfg.ready).toBe(true);
+        expect(cfg.apiKey).toBe("sk-test-env-openai");
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+  });
+
+  describe("stub escape hatch (backward compat)", () => {
+    it("ENVOY_HARNESS_STUB_PHASE_8_STEP_1=1 forces ready=false even with hostApiKey set", () => {
+      vi.stubEnv("ENVOY_HARNESS_MODEL", "openai:gpt-4o-mini");
+      vi.stubEnv("ENVOY_HARNESS_API_KEY", "");
+      vi.stubEnv("DEEPSEEK_API_KEY", "");
+      vi.stubEnv("OPENAI_API_KEY", "");
+      vi.stubEnv("ANTHROPIC_API_KEY", "");
+      vi.stubEnv("ENVOY_HARNESS_STUB_PHASE_8_STEP_1", "1");
+      try {
+        const cfg = loadEnvoyHarnessRuntimeConfig({
+          hostApiKey: "sk-test-host",
+        });
+        expect(cfg.ready).toBe(false);
+        expect(cfg.reason).toBe("envoy_harness_stub_phase_8_step_1");
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+  });
+});
+
+describe("resolveEnvoyHarnessHostConfig (Phase 8 / b3.live — host config mapping)", () => {
+  describe("production providers with API key", () => {
+    it("maps openai mode + apiKey to { model, apiKey }", () => {
+      const result = resolveEnvoyHarnessHostConfig({
+        mode: "openai",
+        modelName: "gpt-4o-mini",
+        apiKey: "sk-test-openai",
+      } as ModelProviderConfig);
+      expect(result).toEqual({
+        model: "openai:gpt-4o-mini",
+        apiKey: "sk-test-openai",
+      });
+    });
+
+    it("maps anthropic mode + apiKey to { model, apiKey }", () => {
+      const result = resolveEnvoyHarnessHostConfig({
+        mode: "anthropic",
+        modelName: "claude-3-5-sonnet",
+        apiKey: "sk-test-anthropic",
+      } as ModelProviderConfig);
+      expect(result).toEqual({
+        model: "anthropic:claude-3-5-sonnet",
+        apiKey: "sk-test-anthropic",
+      });
+    });
+
+    it("maps ollama mode (no apiKey required) to { model, apiKey: undefined }", () => {
+      const result = resolveEnvoyHarnessHostConfig({
+        mode: "ollama",
+        modelName: "llama3.1",
+      } as ModelProviderConfig);
+      expect(result).toEqual({
+        model: "ollama:llama3.1",
+        apiKey: undefined,
+      });
+    });
+
+    it("trims whitespace from the API key", () => {
+      const result = resolveEnvoyHarnessHostConfig({
+        mode: "openai",
+        modelName: "gpt-4o-mini",
+        apiKey: "  sk-test-openai  ",
+      } as ModelProviderConfig);
+      expect(result?.apiKey).toBe("sk-test-openai");
+    });
+  });
+
+  describe("unsupported modes (return undefined → not ready)", () => {
+    it("returns undefined for mode='mock' (no real model)", () => {
+      const result = resolveEnvoyHarnessHostConfig({
+        mode: "mock",
+        modelName: "mock-model",
+        apiKey: "sk-test-mock",
+      } as ModelProviderConfig);
+      expect(result).toBeUndefined();
+    });
+
+    it("returns undefined for mode='disabled'", () => {
+      const result = resolveEnvoyHarnessHostConfig({
+        mode: "disabled",
+        modelName: "any-model",
+        apiKey: "sk-test-disabled",
+      } as ModelProviderConfig);
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe("empty API key (return apiKey: undefined)", () => {
+    it("returns { model, apiKey: undefined } when apiKey is empty (ollama, or user hasn't entered a key yet)", () => {
+      const result = resolveEnvoyHarnessHostConfig({
+        mode: "openai",
+        modelName: "gpt-4o-mini",
+        apiKey: "",
+      } as ModelProviderConfig);
+      expect(result).toEqual({
+        model: "openai:gpt-4o-mini",
+        apiKey: undefined,
+      });
+    });
+
+    it("returns { model, apiKey: undefined } when apiKey is whitespace-only", () => {
+      const result = resolveEnvoyHarnessHostConfig({
+        mode: "openai",
+        modelName: "gpt-4o-mini",
+        apiKey: "   ",
+      } as ModelProviderConfig);
+      expect(result).toEqual({
+        model: "openai:gpt-4o-mini",
+        apiKey: undefined,
+      });
+    });
+
+    it("returns { model, apiKey: undefined } when apiKey is undefined (e.g. older config without the field)", () => {
+      const result = resolveEnvoyHarnessHostConfig({
+        mode: "openai",
+        modelName: "gpt-4o-mini",
+      } as ModelProviderConfig);
+      expect(result).toEqual({
+        model: "openai:gpt-4o-mini",
+        apiKey: undefined,
+      });
     });
   });
 });
