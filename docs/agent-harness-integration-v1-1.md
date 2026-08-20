@@ -12,6 +12,13 @@
 > [`agent-harness-integration-step5.md`](./agent-harness-integration-step5.md)
 > (the Step 5 sub-plan + v0 signal router).
 >
+> **v1.2 (2026-08-21) supersedes v1.1's runtime-level
+> routing with per-skill routing** — see
+> [`agent-harness-integration-v1-2.md`](./agent-harness-integration-v1-2.md)
+> for the v1.2 follow-up. v1.1's dynamic vocabulary
+> is unchanged (the v0 `MESH_KEYWORDS` constant is
+> still the private backward-compat fallback).
+>
 > **What this doc covers:** v1.1 in **concrete
 > detail** — every file path, every type, every
 > test, every commit boundary, and the design

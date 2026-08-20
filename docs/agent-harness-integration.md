@@ -609,3 +609,49 @@ fan-out within a job (whole-job only).
     note (v0 vocabulary now serves as private
     fallback) + `agent-harness-integration-v1-1.md`
     DONE stamp + commit log.
+- **2026-08-21 (v1.2 — per-skill tag matching
+  — DONE):** the v1.1 runtime-level routing
+  (route signal-bearing prompts to the
+  envoy-harness runtime) is extended to
+  per-skill routing (route to a specific
+  envoy-harness skill by tag-count score).
+  1 commit on `envoy_harness_integration`
+  branch (the user delegated commit; bundled
+  v1.2.1 + v1.2.2 + v1.2.3 into a single commit
+  at the end of v1.2). 18 new tests (9 router
+  unit + 9 formatter unit) + 4 new e2e tests
+  (host dispatch) + 110 pre-existing tests
+  regression-clean. Detailed plan:
+  `docs/agent-harness-integration-v1-2.md`
+  (sub-plan with 8 locked design questions).
+  - **v1.2.1 — router API + skill matching.**
+    `RouteUserPromptInput.envoyHarnessSkills`
+    (projected shape: `{ skillId, tags }[]`).
+    `RouteUserPromptDecision.targetSkill?` +
+    `reason: "signal-skill"`. New `pickTargetSkill`
+    + `scoreSkill` helpers (Q1 — uniquely-held
+    threshold; tie → fall through to v1.1 free-
+    form LLM ask).
+  - **v1.2.2 — host wiring + formatter.**
+    New `apps/node/src/skill-result-formatter.ts`
+    (`formatSkillResult` + `StructuredResultError`;
+    Q2 — B-class `structured` first block
+    falls through to v1.1 free-form LLM ask).
+    New `extractEnvoyHarnessSkills(manifest)`
+    helper. `RunOwnerAgentTurnContext.askEnvoyHarnessSkill`
+    field added. `NodeServiceImpl.askEnvoyHarnessSkill(message, skillId)`
+    method (lazy runtime + `runtime.askSkill`
+    + `formatSkillResult`; Q4 = 60s deadline,
+    Q5 = descriptor `costCeilingUsd` with 1.0
+    fallback). New `runtime.askSkill(prompt, opts)`
+    method on `RealEnvoyHarnessRuntime` (returns
+    raw `SignedAgentResult`; the host formats).
+    `OwnerAgentTurnResult.targetSkill?` field +
+    `routingReason: "signal-skill"` exposed.
+  - **v1.2.3 — doc closeout.** This entry +
+    `agent-network-engine.md` §2.2 routing table
+    note + new §2.2.2 per-skill routing sub-section
+    + `agent-harness-integration-step5.md` status
+    note + `agent-harness-integration-v1-1.md`
+    status note + `agent-harness-integration-v1-2.md`
+    DONE stamp + commit log.

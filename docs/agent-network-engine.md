@@ -54,6 +54,7 @@ chat.
 | **Mesh keyword** (v1.1: dynamic from merged manifest's envoy-harness skill tags; v0 fallback: `mesh`, `federated`, `cross-node`) | envoy-harness | Word-boundary regex (single-word tags) or exact substring (hyphenated tags) — see [§2.2.1 v1.1 dynamic vocabulary](#221-v11-dynamic-vocabulary-capability-tag-based) below |
 | **Tool name**: `RemoteMeshSubmitter`, `FanOutSpec`, `lsp_*` | envoy-harness | Case-insensitive substring (lsp_ uses word-boundary regex) |
 | **Explicit hint**: `!eh` or `/eh` at the start | envoy-harness | User explicitly forces routing; prefix is stripped before dispatch |
+| **Per-skill match** (v1.2: a unique envoy-harness skill matches the prompt's tags) | envoy-harness skill | Q1 uniquely-held threshold — the top-scoring skill's tag count is strictly greater than the second-best skill's. Tie → fall through to free-form LLM ask. See [§2.2.2 v1.2 per-skill routing](#222-v12-per-skill-routing) below |
 | Signal matched + envoy-harness not ready | **OpenClaw** (fallback) | `routingReason: "envoy-harness-unready"`; signals still populated in result |
 | Owner disabled signal routing | **OpenClaw** (regardless of signals) | `ENVOY_HARNESS_SIGNAL_OPT_IN=disabled` env var |
 
@@ -190,6 +191,122 @@ skills, 12 unique tags):
   `apps/node/src/manifest-envoy-harness-tags.ts`
 - Plan: `docs/agent-harness-integration-v1-1.md`
   (4 locked design questions + Q1/Q3 reconciliation)
+
+#### 2.2.2 v1.2 per-skill routing (route to a specific skill)
+
+**Phase 8 v1.2 (2026-08-21) — the v1.1 router picks a
+runtime (envoy-harness). v1.2 picks a *specific* skill
+(e.g. `setup-sponsor-friend`) and dispatches to that
+skill's `execute()` instead of the runtime's free-form
+LLM ask.**
+
+**Why this matters:** the v1.1 router is half a
+feature. Today, a prompt like "set up a mesh
+sub-agent for this task" routes to envoy-harness
+→ free-form LLM ask → "Here's how to set up a
+mesh sub-agent..." (a text answer). With v1.2,
+the same prompt scores `setup-sponsor-friend`
+uniquely (high tag overlap: `mesh` + `sponsor`)
+→ dispatches to the skill's `execute()` → the
+sponsor-friend bridge actually runs the bond
+flow (search → join → hello → wait). Same prompt,
+different action: text answer vs. real side
+effect.
+
+**Per-skill matching algorithm (Q1 of the v1.2
+sub-plan):**
+
+1. For each envoy-harness skill in the manifest,
+   count how many of its tags appear in the
+   prompt (word-boundary for single-word tags;
+   exact substring for hyphenated tags).
+2. The skill with the highest count wins.
+3. **Uniquely-held threshold:** the top score
+   must be **strictly greater** than the
+   second-best skill's score. If 2+ skills tie
+   for the top score, fall through to the v1.1
+   free-form LLM ask (no skill is force-routed).
+4. If the top score is 0 (no tags matched), fall
+   through.
+
+**Why uniquely-held (Q1) instead of first-match:**
+ambiguous prompts (e.g. "set up a mesh
+sub-agent" matches `setup-sponsor-friend`,
+`peer-list`, AND `relay-status` with score 1
+each) should NOT be force-routed to the wrong
+skill. Ties fall through; the prompt goes to
+the free-form LLM ask, which is the safe default.
+
+**The dispatch (Q4-Q7):**
+
+- The host's `askEnvoyHarnessSkill(message,
+  skillId)` method (new in v1.2) calls the
+  runtime's `askSkill(prompt, { skillId, ... })`
+  and formats the result via
+  `formatSkillResult`.
+- The runtime's `askSkill` returns the raw
+  `SignedAgentResult` (so the host can format).
+  The chain path's `ask` throws
+  `envoy_harness_empty` on non-text first blocks;
+  the v1.2 chat path needs to distinguish
+  "empty content" from "structured first block"
+  (B-class).
+- `costCeilingUsd` = the skill's descriptor
+  default (Q5; falls back to `1.0` when the
+  descriptor is `undefined`).
+- `deadlineMs` = 60_000 (Q4; generous headroom
+  for code skills).
+- **B-class `structured` first block** (Q2):
+  `formatSkillResult` throws
+  `StructuredResultError`; the dispatch catches
+  + falls through to v1.1 free-form LLM ask.
+- **Skill throws any other error** (Q7): the
+  dispatch catches + falls through to v1.1
+  free-form LLM ask; the result keeps the
+  router's `targetSkill` + `routingReason:
+  "signal-skill"` (the original decision) but
+  the actual dispatch is the LLM fallback. A
+  warning is logged with the skill name + error
+  message.
+
+**Files:**
+
+- Pure router extension:
+  `apps/node/src/user-prompt-router.ts` (new
+  `pickTargetSkill` + `scoreSkill` helpers; new
+  `envoyHarnessSkills` input field; new
+  `targetSkill?` output field;
+  `routingReason: "signal-skill"`). 59 unit
+  tests in
+  `apps/node/test/user-prompt-router.test.ts`
+  (41 v0 + 9 v1.1 + 9 v1.2).
+- Skill result formatter:
+  `apps/node/src/skill-result-formatter.ts`
+  (NEW; `formatSkillResult` + `StructuredResultError`).
+  9 unit tests in
+  `apps/node/test/skill-result-formatter.test.ts`.
+- Host wiring:
+  `apps/node/src/node-service-handlers-run-owner-agent-turn.ts`
+  (new `askEnvoyHarnessSkill` context field;
+  dual-path dispatch: per-skill or free-form).
+  `apps/node/src/manifest-envoy-harness-tags.ts`
+  (new `extractEnvoyHarnessSkills(manifest)`
+  helper).
+- Runtime extension:
+  `apps/node/src/agent-runtime-envoy/runtime.ts`
+  (new `askSkill` method on
+  `RealEnvoyHarnessRuntime`; returns raw
+  `SignedAgentResult`).
+- `NodeServiceImpl.askEnvoyHarnessSkill(message, skillId)`
+  method (lazy runtime + `askSkill` + format).
+- `OwnerAgentTurnResult.targetSkill?` field
+  (exposed per Q6).
+- E2E tests:
+  `apps/node/test/run-owner-agent-turn-routing.test.ts`
+  (28 tests: 23 v0 + 5 v1.1, plus 2 v1.1 tests
+  updated to expect `signal-skill`).
+- Plan: `docs/agent-harness-integration-v1-2.md`
+  (8 locked design questions).
 
 **Why opt-in (default = OpenClaw) vs swap-the-default:**
 

@@ -32,6 +32,7 @@
  */
 
 import type { NodeManifest } from "./agent-adapter-manifest-aggregate.js";
+import type { EnvoyHarnessSkillEntry } from "./user-prompt-router.js";
 
 /**
  * Extract the union of `tags[]` across all
@@ -75,4 +76,50 @@ export function extractEnvoyHarnessTags(
     }
   }
   return [...tags];
+}
+
+/**
+ * Phase 8 / v1.2 — extract the structured skill
+ * list from the merged manifest's envoy-harness
+ * skills. Returns `{ skillId, tags }[]` for each
+ * envoy-harness skill — the projected shape the
+ * v1.2 router's per-skill matching expects.
+ *
+ * **Why a separate helper (not in
+ * `agent-adapter-manifest-aggregate.ts`):** the
+ * aggregator is runtime-agnostic. The
+ * envoy-harness-specific filter is a v1.2 routing
+ * concern. Keeping the projection here lets the
+ * host stay close to the router's input type.
+ *
+ * **Why a projected shape (vs full
+ * `MergedSkillEntry`):** the router is
+ * manifest-independent (Q8 of the v1.2 sub-plan).
+ * The host does the projection here.
+ *
+ * **Order:** insertion order matches
+ * `manifest.skills` (which is adapter-insertion
+ * order per the aggregator's order-preservation
+ * contract). The router's per-skill matching uses
+ * this order for the Q3 insertion-order tiebreak
+ * (moot given Q1's uniquely-held threshold but
+ * kept as insurance).
+ *
+ * @param manifest The merged node manifest.
+ * @returns The structured skill list, ready to
+ *   pass to `routeUserPrompt` as
+ *   `envoyHarnessSkills`.
+ */
+export function extractEnvoyHarnessSkills(
+  manifest: NodeManifest,
+): ReadonlyArray<EnvoyHarnessSkillEntry> {
+  const skills: EnvoyHarnessSkillEntry[] = [];
+  for (const skill of manifest.skills) {
+    if (skill.runtime !== "envoy-harness") continue;
+    skills.push({
+      skillId: skill.skillId,
+      tags: skill.tags,
+    });
+  }
+  return skills;
 }

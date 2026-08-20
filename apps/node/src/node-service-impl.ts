@@ -423,6 +423,7 @@ import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-seed-store.js";
 import { isMeshReadyForSponsorBond } from "./mesh-readiness.js";
 import { bondTrace } from "./bond-trace.js";
+import { formatSkillResult } from "./skill-result-formatter.js";
 import { seedAddrsForDiscoveryProfile, peerDiscoverySourceFromMultiaddrs, shouldPersistPeerDiscoverySeeds } from "./peer-discovery-telemetry.js";
 import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver.js";
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
@@ -4880,6 +4881,73 @@ class NodeServiceImpl implements NodeService {
     }
     const runtime = await this._getOrInitEnvoyHarnessRuntime();
     return runtime.ask(prompt);
+  }
+
+  /**
+   * Phase 8 / v1.2 — ask the envoy-harness runtime
+   * to run a specific skill. Returns the result
+   * formatted as a chat-reply string.
+   *
+   * **Algorithm (Q5 + Q4 of the v1.2 sub-plan):**
+   * 1. Check the runtime is ready (same path as
+   *    `askEnvoyHarness`).
+   * 2. Look up the skill in the manifest for the
+   *    cost ceiling (`costCeilingUsd`). Default
+   *    to `1.0` when the descriptor's cap is
+   *    `undefined`.
+   * 3. Lazy-construct the runtime (same path as
+   *    `askEnvoyHarness`).
+   * 4. Call `runtime.askSkill(message, { skillId,
+   *    costCeilingUsd, deadlineMs: 60_000, ... })`
+   *    to get the raw `SignedAgentResult`.
+   * 5. Format the result via `formatSkillResult`
+   *    (handles `text` / `file` / `image`; throws
+   *    `StructuredResultError` for `structured`
+   *    first blocks — Q2 + Q7 fall-through).
+   *
+   * **Throws:**
+   * - `envoy_harness_stub_phase_8_step_1` when the
+   *   runtime isn't ready (caller should fall
+   *   through to v1.1 free-form LLM ask per Q7).
+   * - `unknown envoy-harness skill: <id>` when the
+   *   manifest doesn't have the skill (defensive;
+   *   the router's `targetSkill` should be a real
+   *   skill from the same manifest).
+   * - `StructuredResultError` (re-thrown from the
+   *   formatter) when the skill returns a
+   *   `structured` first block (B-class; Q2).
+   * - Network / timeout / model errors from
+   *   `runtime.askSkill` (Q7).
+   */
+  async askEnvoyHarnessSkill(
+    message: string,
+    skillId: string,
+  ): Promise<string> {
+    const config = loadEnvoyHarnessRuntimeConfig();
+    if (!config.ready) {
+      throw new Error("envoy_harness_stub_phase_8_step_1");
+    }
+    // Look up the skill in the manifest for the
+    // cost ceiling (Q5). Defensive: the router's
+    // `targetSkill` came from the same manifest
+    // projection, so this should always find a
+    // match — but the runtime is async + the
+    // manifest could change between read and use.
+    const manifest = this.getNodeManifest();
+    const skill = manifest.skills.find(
+      (s) => s.runtime === "envoy-harness" && s.skillId === skillId,
+    );
+    if (!skill) {
+      throw new Error(`unknown envoy-harness skill: ${skillId}`);
+    }
+    const runtime = await this._getOrInitEnvoyHarnessRuntime();
+    const costCeilingUsd = skill.costCeilingUsd ?? 1.0;
+    const result = await runtime.askSkill(message, {
+      skillId,
+      costCeilingUsd,
+      deadlineMs: 60_000, // Q4 — generous headroom for code skills
+    });
+    return formatSkillResult(result);
   }
 
   /**

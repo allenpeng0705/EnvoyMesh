@@ -675,3 +675,191 @@ describe("readSignalOptInEnv", () => {
     expect(readSignalOptInEnv()).toBe("disabled");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 8 / v1.2 — per-skill tag matching
+// ---------------------------------------------------------------------------
+
+/**
+ * The v1.2 router picks a specific envoy-harness
+ * skill when the prompt's tags uniquely match
+ * one skill (Q1 — uniquely-held threshold; tie
+ * → fall through to v1.1 free-form LLM ask).
+ *
+ * Tests in this section mirror the 8 envoy-harness
+ * skills (see `envoy-harness/packages/envoy-harness-adapter/src/skills.ts:61`).
+ */
+describe("routeUserPrompt — v1.2 per-skill targetSkill", () => {
+  // The 8 envoy-harness skills' tags. Mirrors
+  // ENVOY_HARNESS_SKILLS so the tests document
+  // the actual catalog.
+  const ENVOY_HARNESS_SKILLS = [
+    { skillId: "code-edit", tags: ["code", "edit"] },
+    { skillId: "code-review", tags: ["code", "review"] },
+    { skillId: "doc-search", tags: ["doc", "search"] },
+    { skillId: "bash-run", tags: ["bash", "shell"] },
+    { skillId: "plan", tags: ["plan"] },
+    { skillId: "setup-sponsor-friend", tags: ["mesh", "bond", "sponsor"] },
+    { skillId: "peer-list", tags: ["mesh", "observability"] },
+    { skillId: "relay-status", tags: ["mesh", "observability"] },
+  ] as const;
+
+  it("picks a skill with the unique-best tag count (setup-sponsor-friend over mesh+bond)", () => {
+    // The prompt "set up a mesh sponsor bond" has
+    // `mesh` + `sponsor` (2 matches for
+    // setup-sponsor-friend); `mesh` only (1 match)
+    // for peer-list + relay-status. setup-sponsor-
+    // friend is the unique best (Q1).
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "set up a mesh sponsor bond",
+        envoyHarnessSkills: ENVOY_HARNESS_SKILLS,
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("signal-skill");
+    expect(decision.targetSkill).toBe("setup-sponsor-friend");
+    expect(decision.runtime).toBe("envoy-harness");
+  });
+
+  it("falls through to free-form LLM ask on tied top score (mesh shared by 3 skills)", () => {
+    // "set up a mesh sub-agent" matches `mesh`
+    // for setup-sponsor-friend, peer-list, AND
+    // relay-status (score 1 each). The top score
+    // is shared → fall through (Q1).
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "set up a mesh sub-agent",
+        envoyHarnessSkills: ENVOY_HARNESS_SKILLS,
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("signal");
+    expect(decision.targetSkill).toBeUndefined();
+    expect(decision.runtime).toBe("envoy-harness");
+  });
+
+  it("picks the skill with 2 tags (code-review over code-edit when only `code` + `review` match)", () => {
+    // "review this code" has `code` (2 skills) +
+    // `review` (1 skill). code-review scores 2;
+    // code-edit scores 1. code-review is unique
+    // best.
+    //
+    // We also pass `envoyHarnessTags` so the
+    // v1.1 signal scan matches the prompt
+    // (otherwise it'd be a `default` branch
+    // and `targetSkill` would never be picked).
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "review this code for me",
+        envoyHarnessTags: ["code", "review"],
+        envoyHarnessSkills: ENVOY_HARNESS_SKILLS,
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("signal-skill");
+    expect(decision.targetSkill).toBe("code-review");
+  });
+
+  it("falls through when no skill scores (prompt has no manifest tags)", () => {
+    // "hello" doesn't match any skill's tags.
+    // But "hello" also has no v1.1 signal —
+    // so the v1.1 default branch fires first.
+    // This test is here to document that
+    // targetSkill stays undefined when the
+    // signal scan is empty.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "hello",
+        envoyHarnessSkills: ENVOY_HARNESS_SKILLS,
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("default");
+    expect(decision.targetSkill).toBeUndefined();
+  });
+
+  it("falls through when envoyHarnessSkills is undefined (v1.1 behavior preserved)", () => {
+    // No `envoyHarnessSkills` → v1.1 free-form
+    // LLM ask path. The v1.1 signal scan still
+    // matches `mesh`, so the decision is EH +
+    // reason "signal" (not "signal-skill").
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "set up a mesh sponsor bond",
+        // envoyHarnessSkills omitted → v1.1 path
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("signal");
+    expect(decision.targetSkill).toBeUndefined();
+  });
+
+  it("falls through when envoyHarnessSkills is empty array", () => {
+    // Empty skills list → no per-skill match
+    // → v1.1 free-form LLM ask path. v1.1
+    // signal scan still matches `mesh`.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "set up a mesh sponsor bond",
+        envoyHarnessSkills: [],
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("signal");
+    expect(decision.targetSkill).toBeUndefined();
+  });
+
+  it("matches hyphenated tag (cross-node) in the per-skill scan", () => {
+    // Add a skill with a hyphenated tag.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "spawn a cross-node verifier rule",
+        envoyHarnessSkills: [
+          { skillId: "cross-node-verifier", tags: ["cross-node", "verifier"] },
+          { skillId: "lone-mesh", tags: ["mesh"] },
+        ],
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("signal-skill");
+    expect(decision.targetSkill).toBe("cross-node-verifier");
+  });
+
+  it("returns env-harness-unready with targetSkill undefined when EH not ready", () => {
+    // v1.2 — when EH is not ready, the per-skill
+    // match is moot (we'd fall through to OpenClaw
+    // anyway). The targetSkill field stays
+    // undefined (the UI doesn't claim a skill
+    // routing when EH didn't run).
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "set up a mesh sponsor bond",
+        envoyHarnessSkills: ENVOY_HARNESS_SKILLS,
+        isEnvoyHarnessReady: false, // ← EH unready
+      }),
+    );
+    expect(decision.reason).toBe("envoy-harness-unready");
+    expect(decision.targetSkill).toBeUndefined();
+    expect(decision.runtime).toBe("openclaw");
+  });
+
+  it("rejects substring false positives (does NOT pick `code` for `codes`)", () => {
+    // v1.2 inherits v1.1's word-boundary for
+    // single-word tags. "the codes are wrong"
+    // does NOT match the `code` tag (word-boundary
+    // is `\b`).
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "the codes are wrong",
+        envoyHarnessSkills: ENVOY_HARNESS_SKILLS,
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    // "codes" doesn't match `code` (v1.1 word-
+    // boundary tightening). The v1.1 signal
+    // scan also finds no match → default.
+    expect(decision.reason).toBe("default");
+    expect(decision.targetSkill).toBeUndefined();
+  });
+});

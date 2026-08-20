@@ -209,6 +209,53 @@ export interface RouteUserPromptInput {
    * works.
    */
   envoyHarnessTags?: ReadonlyArray<string>;
+  /**
+   * Phase 8 v1.2 — structured skill list from the
+   * merged manifest's envoy-harness skills. The
+   * host projects the manifest's `MergedSkillEntry`
+   * list (filtered by `runtime === "envoy-harness"`)
+   * to `{ skillId, tags }[]` and passes the
+   * projection here. The router picks the
+   * best-match skill and sets `decision.targetSkill`
+   * to its `skillId`.
+   *
+   * **Why a projected shape, not the full
+   * `MergedSkillEntry`:** the router is a pure
+   * function; it shouldn't depend on the manifest
+   * type. The host does the projection (Q8 of the
+   * v1.2 sub-plan).
+   *
+   * **When `undefined` or `[]`:** v1.1 behavior
+   * (no per-skill routing). The v1.1
+   * `envoyHarnessTags` field is independent — it
+   * drives the signal scan; `envoyHarnessSkills`
+   * drives the per-skill target. Both are
+   * additive.
+   */
+  envoyHarnessSkills?: ReadonlyArray<EnvoyHarnessSkillEntry>;
+}
+
+/**
+ * Phase 8 v1.2 — the projected shape of an
+ * envoy-harness skill entry, for the router's
+ * per-skill matching.
+ *
+ * **Why a separate type:** the router is
+ * manifest-independent (Q8). The host projects
+ * the manifest's `MergedSkillEntry` to this
+ * shape. Future runtimes (Ext, Pi) can use the
+ * same shape; the router doesn't care.
+ */
+export interface EnvoyHarnessSkillEntry {
+  /** The skill's manifest ID. */
+  skillId: string;
+  /**
+   * The skill's tags. Matched with the same
+   * algorithm as v1.1's `envoyHarnessTags`
+   * (word-boundary regex for single-word tags,
+   * exact substring for hyphenated tags).
+   */
+  tags: ReadonlyArray<string>;
 }
 
 /** The output of `routeUserPrompt`. */
@@ -224,6 +271,7 @@ export interface RouteUserPromptDecision {
     | "default"
     | "opt-in-disabled"
     | "signal"
+    | "signal-skill"
     | "envoy-harness-unready";
   /**
    * The matched signals. Empty when no signal
@@ -248,6 +296,28 @@ export interface RouteUserPromptDecision {
    * `prompt.trimStart().slice(hintPrefixLength).trimStart()`.
    */
   hintPrefixLength: number | undefined;
+  /**
+   * Phase 8 v1.2 — when the router picked a
+   * specific envoy-harness skill (vs the v1.1
+   * free-form LLM ask), this is the matched
+   * `skillId`. The host dispatches to
+   * `askEnvoyHarnessSkill(message, skillId)`
+   * instead of `askEnvoyHarness(message)`.
+   *
+   * **Set when:** the top-scoring skill's
+   * match count is ≥ 1 AND strictly greater
+   * than the second-best skill's match count
+   * (Q1 — uniquely-held threshold). Tie →
+   * fall through; `targetSkill` is `undefined`
+   * and the dispatch uses the v1.1 free-form
+   * LLM ask path.
+   *
+   * **Combined with `reason: "signal-skill"`:**
+   * the Social UI can render
+   * "routed to skill `setup-sponsor-friend`"
+   * badge.
+   */
+  targetSkill?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -263,9 +333,20 @@ export interface RouteUserPromptDecision {
  * 2. **`default`** — no signals matched. Return
  *    OpenClaw.
  * 3. **`signal`** — signals matched and
- *    `isEnvoyHarnessReady === true`. Return
- *    envoy-harness.
- * 4. **`envoy-harness-unready`** — signals matched
+ *    `isEnvoyHarnessReady === true`, but the v1.2
+ *    per-skill matching either didn't pick a unique
+ *    skill (tie) or the skills list is empty.
+ *    Return envoy-harness runtime's free-form LLM
+ *    ask (v1.1 path).
+ * 4. **`signal-skill`** — signals matched, EH
+ *    ready, AND a unique envoy-harness skill
+ *    matched (Q1 — uniquely-held threshold). The
+ *    host dispatches to `askEnvoyHarnessSkill(
+ *    message, targetSkill)` instead of
+ *    `askEnvoyHarness(message)`. The
+ *    `targetSkill` field carries the picked
+ *    `skillId`.
+ * 5. **`envoy-harness-unready`** — signals matched
  *    but `isEnvoyHarnessReady === false`. Return
  *    OpenClaw (with `signals` populated so the
  *    caller / UI can surface the misfire).
@@ -277,6 +358,14 @@ export interface RouteUserPromptDecision {
  * the UI which signal fired, so the user sees
  * "routed to OpenClaw because envoy-harness was
  * unavailable" — not a silent degradation.
+ *
+ * **Why unique-skill (Q1) instead of first-match:**
+ * ambiguous prompts (e.g. "set up a mesh
+ * sub-agent" matches `setup-sponsor-friend`,
+ * `peer-list`, AND `relay-status` with score 1
+ * each) should NOT be force-routed to the wrong
+ * skill. Ties fall through to the v1.1 free-form
+ * LLM ask, which is the safe default.
  *
  * **Pure function:** no I/O, no `process.env`
  * reads, no clock. Tests assert on the return
@@ -295,6 +384,7 @@ export function routeUserPrompt(
       reason: "opt-in-disabled",
       signals: [],
       hintPrefixLength: undefined,
+      targetSkill: undefined,
     };
   }
 
@@ -314,12 +404,38 @@ export function routeUserPrompt(
       reason: "default",
       signals: [],
       hintPrefixLength: undefined,
+      targetSkill: undefined,
     };
   }
 
-  // 4. Signals matched. Decide based on
+  // 4. v1.2 — per-skill matching. When the
+  //    envoy-harness skills list is provided,
+  //    pick the best-match skill by tag count
+  //    (Q1 — uniquely-held threshold; tie → fall
+  //    through to v1.1 free-form LLM ask).
+  const targetSkill =
+    input.envoyHarnessSkills && input.envoyHarnessSkills.length > 0
+      ? pickTargetSkill(input.prompt, input.envoyHarnessSkills)
+      : undefined;
+
+  // 5. Signals matched. Decide based on
   //    envoy-harness readiness.
   if (input.isEnvoyHarnessReady) {
+    // 5a. v1.2 — per-skill dispatch when a
+    //     unique skill matched.
+    if (targetSkill !== undefined) {
+      return {
+        runtime: "envoy-harness",
+        reason: "signal-skill",
+        signals,
+        hintPrefixLength: signals[0]?.category === "explicit-hint"
+          ? signals[0].token.length
+          : undefined,
+        targetSkill,
+      };
+    }
+    // 5b. v1.1 — free-form LLM ask (also v1.2's
+    //     tie-fall-through path).
     return {
       runtime: "envoy-harness",
       reason: "signal",
@@ -327,6 +443,7 @@ export function routeUserPrompt(
       hintPrefixLength: signals[0]?.category === "explicit-hint"
         ? signals[0].token.length
         : undefined,
+      targetSkill: undefined,
     };
   }
 
@@ -337,6 +454,7 @@ export function routeUserPrompt(
     hintPrefixLength: signals[0]?.category === "explicit-hint"
       ? signals[0].token.length
       : undefined,
+    targetSkill: undefined,
   };
 }
 
@@ -511,6 +629,107 @@ function findTagInPrompt(lower: string, tag: string): number {
  */
 function escapeRegex(literal: string): string {
   return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8 / v1.2 — per-skill matching
+// ---------------------------------------------------------------------------
+
+/**
+ * Pick the best-match envoy-harness skill for the
+ * prompt, using a tag-count score.
+ *
+ * **Algorithm (Q1 of the v1.2 sub-plan):**
+ * 1. Score each skill by the number of its tags
+ *    that appear in the prompt (word-boundary for
+ *    single-word tags, exact substring for
+ *    hyphenated tags — same `findTagInPrompt`
+ *    helper used by the v1.1 tag scan).
+ * 2. The skill with the highest score wins.
+ * 3. **Uniquely-held threshold:** the top score
+ *    must be **strictly greater** than the
+ *    second-best skill's score. If 2+ skills tie
+ *    for the top score, return `undefined` (the
+ *    caller falls through to the v1.1 free-form
+ *    LLM ask).
+ * 4. If the top score is 0 (no tags matched),
+ *    return `undefined`.
+ * 5. If the skills list is empty, return
+ *    `undefined`.
+ *
+ * **Tiebreak (Q3):** the algorithm tracks
+ * `secondBestScore` as it iterates. Ties
+ * naturally fall through (top === second).
+ * Insertion order is the iteration order, but
+ * the unique-threshold makes it moot. Kept as a
+ * 3-line insurance policy for v1.3+ (when the
+ * threshold could be loosened).
+ *
+ * **Why not the v1.1 `MESH_KEYWORDS` fallback:**
+ * the per-skill matching is independent of the
+ * v1.1 signal scan. The v1.1 fallback only
+ * applies to the signal scan; if the manifest
+ * is unavailable, the v1.2 caller should pass
+ * `envoyHarnessSkills: undefined` (and the router
+ * skips the per-skill step entirely).
+ *
+ * @param prompt The raw prompt (lowercased
+ *   internally; original case is preserved for
+ *   the `signals` field).
+ * @param skills The structured skill list
+ *   (from `input.envoyHarnessSkills`).
+ * @returns The `skillId` of the unique best
+ *   match, or `undefined` on tie / no match.
+ */
+export function pickTargetSkill(
+  prompt: string,
+  skills: ReadonlyArray<EnvoyHarnessSkillEntry>,
+): string | undefined {
+  if (skills.length === 0) return undefined;
+  const lower = prompt.toLowerCase();
+  let best: { skillId: string; score: number } | undefined;
+  let secondBestScore = 0;
+  for (const skill of skills) {
+    const score = scoreSkill(lower, skill.tags);
+    if (score === 0) continue;
+    if (best === undefined || score > best.score) {
+      // New best. The old best becomes the new
+      // second-best (preserves Q3 insertion-order
+      // tiebreak if Q1 is ever loosened).
+      secondBestScore = best?.score ?? 0;
+      best = { skillId: skill.skillId, score };
+    } else if (score > secondBestScore) {
+      secondBestScore = score;
+    }
+  }
+  if (best === undefined) return undefined;
+  // Q1 — uniquely-held. Tie → fall through.
+  if (best.score === secondBestScore) return undefined;
+  return best.skillId;
+}
+
+/**
+ * Score a skill by the number of its tags that
+ * appear in the lowercased prompt. Pure function;
+ * no side effects.
+ *
+ * **Matching algorithm:** same as v1.1's
+ * `findTagInPrompt` (word-boundary regex for
+ * single-word tags; exact substring for
+ * hyphenated tags). A tag that doesn't match
+ * contributes 0; a tag that matches contributes
+ * 1 (we count tags, not occurrences).
+ *
+ * @param lower The lowercased prompt.
+ * @param tags The skill's tags.
+ * @returns The count of matched tags (0..N).
+ */
+function scoreSkill(lower: string, tags: ReadonlyArray<string>): number {
+  let score = 0;
+  for (const tag of tags) {
+    if (findTagInPrompt(lower, tag) >= 0) score++;
+  }
+  return score;
 }
 
 // ---------------------------------------------------------------------------

@@ -99,6 +99,7 @@ import {
   LocalCrossRuntimeSubmitter,
 } from "@envoymesh/envoy-harness-adapter";
 import type { AgentAdapter } from "@envoymesh/agent-adapter";
+import type { SignedAgentResult } from "@envoymesh/protocol";
 
 import { LocalRuntimeRegistry } from "./local-runtime-registry.js";
 import type { EnvoyHarnessRuntimeConfig } from "./config.js";
@@ -231,6 +232,25 @@ export interface RealEnvoyHarnessAskOptions {
   correlationId?: string;
 }
 
+/** Options accepted by `askSkill`. `skillId` is required
+ *  (the whole point is per-skill dispatch). */
+export interface RealEnvoyHarnessAskSkillOptions {
+  /** Skill id (required). Matches a `skillId` in the
+   *  envoy-harness skills catalog. */
+  skillId: string;
+  /** Abort signal — forwarded to the adapter + agent. */
+  signal?: AbortSignal;
+  /** Cost ceiling in USD. Default: `1.0` (Q5 of the
+   *  v1.2 sub-plan; the host's `askEnvoyHarnessSkill`
+   *  overrides this with the skill's descriptor cap). */
+  costCeilingUsd?: number;
+  /** Wall-clock deadline in ms from now. Default:
+   *  `60_000` (Q4 of the v1.2 sub-plan). */
+  deadlineMs?: number;
+  /** Correlation id. Default: a fresh UUID. */
+  correlationId?: string;
+}
+
 /** The runtime object returned by `createRealEnvoyHarnessRuntime`. */
 export interface RealEnvoyHarnessRuntime {
   /**
@@ -242,6 +262,35 @@ export interface RealEnvoyHarnessRuntime {
    * engine's behavior).
    */
   ask: (prompt: string, opts?: RealEnvoyHarnessAskOptions) => Promise<string>;
+
+  /**
+   * Phase 8 / v1.2 — per-skill dispatch. Returns the
+   * raw `SignedAgentResult` so the host can format
+   * the content blocks as needed (the chat path uses
+   * `formatSkillResult`; the chain path may use a
+   * different formatter).
+   *
+   * **Why a separate method (not just `ask` with
+   * `skillId`):** the chain path's `ask` throws
+   * `envoy_harness_empty` on non-text first blocks.
+   * v1.2's chat path needs to distinguish "empty
+   * content" (true failure) from "structured first
+   * block" (B-class orchestration; the host
+   * catches + falls through to the v1.1 free-form
+   * LLM ask). A new method lets the chat path see
+   * the raw result without conflating the two cases.
+   *
+   * **Returns the raw `SignedAgentResult`:** the
+   * caller decides how to format. The chat path uses
+   * `formatSkillResult` (handles `text` / `file` /
+   * `image`; throws `StructuredResultError` for
+   * `structured`). Future surfaces can use different
+   * formatters.
+   */
+  askSkill: (
+    prompt: string,
+    opts: RealEnvoyHarnessAskSkillOptions,
+  ) => Promise<SignedAgentResult>;
 
   /**
    * For tests / introspection. The internals are exposed
@@ -524,6 +573,49 @@ export function createRealEnvoyHarnessRuntime(
     return firstText.text;
   };
 
+  // Phase 8 / v1.2 — per-skill dispatch. Mirrors
+  // `ask` but returns the raw `SignedAgentResult`
+  // so the host can decide how to format the
+  // content blocks. The chain path's `ask` throws
+  // `envoy_harness_empty` on non-text first blocks;
+  // the v1.2 chat path needs to distinguish
+  // "empty content" from "structured first block"
+  // (B-class), so we expose the raw result.
+  const askSkill = async (
+    prompt: string,
+    askOpts: RealEnvoyHarnessAskSkillOptions,
+  ): Promise<SignedAgentResult> => {
+    const startedAt = Date.now();
+    opts.log?.("envoy_harness.askSkill.start", {
+      skillId: askOpts.skillId,
+      promptChars: prompt.length,
+    });
+    const local = await ensureInitialized();
+    const deadlineMs = askOpts.deadlineMs ?? 60_000;
+    const result = await local.adapter.execute({
+      skillId: askOpts.skillId,
+      objective: prompt,
+      inputArtifacts: [],
+      costCeilingUsd: askOpts.costCeilingUsd ?? 1.0,
+      deadlineMs,
+      correlationId: askOpts.correlationId ?? randomUUID(),
+      signal:
+        askOpts.signal ??
+        // The runtime's `ask` uses an inert
+        // `AbortController().signal` (no timeout
+        // signal — the deadline is enforced
+        // internally). v1.2 uses `AbortSignal.timeout`
+        // to match the chat path's behavior (the
+        // caller can also pass its own signal).
+        AbortSignal.timeout(deadlineMs),
+    });
+    opts.log?.("envoy_harness.askSkill.done", {
+      skillId: askOpts.skillId,
+      durationMs: Date.now() - startedAt,
+    });
+    return result;
+  };
+
   // Build the proxy object on first `ask` call. The
   // exposed `adapter` / `model` / `registry` / `submitter`
   // accessors throw until the runtime is initialized.
@@ -543,6 +635,7 @@ export function createRealEnvoyHarnessRuntime(
     };
     return {
       ask,
+      askSkill,
       get adapter() {
         return accessor("adapter");
       },

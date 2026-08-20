@@ -69,6 +69,12 @@ export interface OwnerAgentTurnResult {
    *  - `"default"` — no signals matched; OpenClaw by default.
    *  - `"signal"` — signals matched, envoy-harness was ready,
    *    routed to envoy-harness.
+   *  - `"signal-skill"` — Phase 8 / v1.2: signals matched AND a
+   *    unique envoy-harness skill was selected (Q1 of the v1.2
+   *    sub-plan — uniquely-held threshold). The dispatch goes
+   *    to `askEnvoyHarnessSkill(message, targetSkill)`, not the
+   *    free-form LLM ask. The `targetSkill` field carries the
+   *    picked `skillId`.
    *  - `"envoy-harness-unready"` — signals matched but
    *    envoy-harness wasn't ready; fell back to OpenClaw. The
    *    `routingSignals` field still carries the matched tokens
@@ -84,8 +90,25 @@ export interface OwnerAgentTurnResult {
   routingReason?:
     | "default"
     | "signal"
+    | "signal-skill"
     | "envoy-harness-unready"
     | "opt-in-disabled";
+  /**
+   * Phase 8 / v1.2 — when the router picked a specific
+   * envoy-harness skill (vs the v1.1 free-form LLM ask),
+   * this is the matched `skillId`. The dispatch invokes
+   * `askEnvoyHarnessSkill(message, targetSkill)`.
+   *
+   * **Set when:** `routingReason === "signal-skill"`. The
+   * Social UI can render a "routed to skill
+   * `setup-sponsor-friend`" badge.
+   *
+   * **Undefined when:** `routingReason` is anything else
+   * (default / signal / envoy-harness-unready /
+   * opt-in-disabled). v1.1 callers ignore this field
+   * (additive).
+   */
+  targetSkill?: string;
 }
 
 export interface OwnerAgentTurnDeps {

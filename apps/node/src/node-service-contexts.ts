@@ -384,6 +384,14 @@ export interface RunOwnerAgentTurnContextDeps {
    */
   askEnvoyHarness: RunOwnerAgentTurnContext["askEnvoyHarness"];
   /**
+   * Phase 8 / v1.2 — ask the envoy-harness runtime
+   * to run a specific skill. The dispatch catches
+   * `StructuredResultError` (B-class fall-through per
+   * Q2) + transient errors (Q7) and falls back to
+   * the v1.1 free-form LLM ask.
+   */
+  askEnvoyHarnessSkill: RunOwnerAgentTurnContext["askEnvoyHarnessSkill"];
+  /**
    * Phase 8 / Step 5 — per-node opt-in flag. The host
    * reads this from `process.env.ENVOY_HARNESS_SIGNAL_OPT_IN`
    * (or a future persisted config field) and threads
@@ -1101,6 +1109,12 @@ export function buildRunOwnerAgentTurnContext(deps: RunOwnerAgentTurnContextDeps
     // var doesn't change at runtime.
     isEnvoyHarnessReady: () => deps.isEnvoyHarnessReady(),
     askEnvoyHarness: (msg) => deps.askEnvoyHarness(msg),
+    // Phase 8 / v1.2 — per-skill dispatch. The
+    // host wires this to
+    // `NodeServiceImpl.askEnvoyHarnessSkill(message,
+    // skillId)`, which lazy-constructs the adapter
+    // + calls `execute()` + formats the result.
+    askEnvoyHarnessSkill: (msg, skillId) => deps.askEnvoyHarnessSkill(msg, skillId),
     signalOptIn: deps.signalOptIn,
     // Phase 8 / v1.1 — manifest read for the
     // signal router's dynamic vocabulary. The

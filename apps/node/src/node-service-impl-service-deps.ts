@@ -553,6 +553,17 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             // build is the right shape).
             isEnvoyHarnessReady: () => host.isEnvoyHarnessReady(),
             askEnvoyHarness: (msg) => host.askEnvoyHarness(msg),
+            // Phase 8 / v1.2 — per-skill dispatch.
+            // The host's `askEnvoyHarnessSkill(msg,
+            // skillId)` lazy-constructs the EH adapter
+            // (same path as `askEnvoyHarness`) and
+            // calls `execute()` with the skill
+            // descriptor's costCeilingUsd. The
+            // adapter is shared with `askEnvoyHarness`
+            // so the lazy construction is a 1-time
+            // cost per node.
+            askEnvoyHarnessSkill: (msg, skillId) =>
+              host.askEnvoyHarnessSkill(msg, skillId),
             signalOptIn: readSignalOptInEnv(),
             // Phase 8 / v1.1 — manifest read for the
             // signal router's dynamic vocabulary. The

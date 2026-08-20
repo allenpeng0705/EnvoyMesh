@@ -33,7 +33,10 @@ import {
   routeUserPrompt,
   type RouteUserPromptDecision,
 } from "./user-prompt-router.js";
-import { extractEnvoyHarnessTags } from "./manifest-envoy-harness-tags.js";
+import {
+  extractEnvoyHarnessTags,
+  extractEnvoyHarnessSkills,
+} from "./manifest-envoy-harness-tags.js";
 import type { NodeManifest } from "./agent-adapter-manifest-aggregate.js";
 
 export interface RunOwnerAgentTurnContext {
@@ -71,6 +74,25 @@ export interface RunOwnerAgentTurnContext {
    * dispatch catches + falls back to OpenClaw.
    */
   askEnvoyHarness(message: string): Promise<string>;
+  /**
+   * Phase 8 / v1.2 — ask the envoy-harness runtime
+   * to run a specific skill. The host wires this to
+   * `NodeServiceImpl.askEnvoyHarnessSkill`, which
+   * lazy-constructs the adapter, calls
+   * `adapter.execute({ skillId, objective, ... })`,
+   * and formats the result as text.
+   *
+   * **Throws:**
+   * - `StructuredResultError` (re-thrown from the
+   *   formatter) when the skill returns a `structured`
+   *   first block (B-class). The dispatch catches +
+   *   falls through to `askEnvoyHarness` (Q2 + Q7).
+   * - Network / timeout / model errors — the dispatch
+   *   catches + falls through to `askEnvoyHarness`.
+   * - `unknown envoy-harness skill` — the dispatch
+   *   catches + falls through to `askEnvoyHarness`.
+   */
+  askEnvoyHarnessSkill(message: string, skillId: string): Promise<string>;
   /**
    * Phase 8 / Step 5 — per-node opt-in flag for the
    * signal router. When `"disabled"`, the router never
@@ -169,13 +191,24 @@ export async function runOwnerAgentTurnViaRuntime(
   // the dynamic tag list; the v0 `MESH_KEYWORDS`
   // constant is the fallback when the manifest is
   // unavailable (Q6 — fall back, don't fail loud).
-  const envoyHarnessTags = readEnvoyHarnessTags(ctx);
+  //
+  // Phase 8 / v1.2 — also read the structured
+  // skill list. The router picks a specific
+  // `skillId` when the prompt's tags uniquely
+  // match one skill (Q1 — uniquely-held
+  // threshold; tie → fall through to v1.1 free-
+  // form LLM ask). The host's dispatch uses the
+  // `targetSkill` field to call
+  // `askEnvoyHarnessSkill(message, skillId)`
+  // instead of `askEnvoyHarness(message)`.
+  const manifestView = readManifestView(ctx);
   const decision = routeUserPrompt({
     prompt: agentMessage,
     isEnvoyHarnessReady: ctx.isEnvoyHarnessReady(),
     envoyHarnessUnreadyReason: undefined, // host-side logging seam (future)
     signalOptIn: ctx.signalOptIn,
-    envoyHarnessTags,
+    envoyHarnessTags: manifestView.tags,
+    envoyHarnessSkills: manifestView.skills,
   });
 
   // Strip the hint prefix (e.g. `!eh translate this` →
@@ -200,10 +233,60 @@ export async function runOwnerAgentTurnViaRuntime(
     ...overrides,
     routingReason: decision.reason,
     routingSignals: decision.signals.map((s) => s.token),
+    // Phase 8 / v1.2 — the v1.2 EH per-skill
+    // dispatch explicitly sets `targetSkill` and
+    // `routingReason: "signal-skill"`. The v1.1
+    // paths leave `targetSkill` undefined (the
+    // v1.1 callers don't set it).
+    targetSkill: decision.targetSkill,
   });
 
   // --- envoy-harness dispatch (signal-bearing prompt + EH ready) ---
   if (decision.runtime === "envoy-harness") {
+    // Phase 8 / v1.2 — per-skill dispatch when a
+    // unique skill matched. Falls through to the
+    // v1.1 free-form LLM ask on failure (Q7) or
+    // when the skill returns a `structured` first
+    // block (Q2 — B-class). The result keeps
+    // `routingReason: "signal-skill"` if the skill
+    // path succeeded; the LLM-fall-through case
+    // uses the original `routingReason` from the
+    // decision (typically `"signal"`).
+    if (decision.targetSkill !== undefined) {
+      try {
+        const skillAnswer = await ctx.askEnvoyHarnessSkill(
+          effectiveMessage,
+          decision.targetSkill,
+        );
+        const answer = stripModelThinking(skillAnswer);
+        const result = buildRoutedResult({
+          answer,
+          modelUsed: "envoy-harness",
+          targetSkill: decision.targetSkill,
+          routingReason: "signal-skill",
+        });
+        await ctx.persistEnvoyAiChatExchange(message, result, humanMsgId);
+        ctx.maybeIngestTerminalAssistantReply(terminalSessionId, answer);
+        return result;
+      } catch (err) {
+        // Q7 — fall through to free-form LLM
+        // ask. The skill might not handle this
+        // prompt (B-class returning structured;
+        // network error; unknown skill). Log the
+        // failure so the owner can debug.
+        const skillId = decision.targetSkill;
+        const reason = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[envoy-harness] skill ${skillId} failed, ` +
+            `falling back to free-form LLM ask:`,
+          reason,
+        );
+        // Fall through to the v1.1 path below.
+        // The result keeps `routingReason: "signal"`
+        // (not "signal-skill") because the actual
+        // dispatch is the free-form LLM ask.
+      }
+    }
     try {
       const answer = stripModelThinking(await ctx.askEnvoyHarness(effectiveMessage));
       const result = buildRoutedResult({
@@ -310,8 +393,8 @@ export function defaultSignalOptIn(): "enabled" | "disabled" {
 }
 
 /**
- * Phase 8 / v1.1 — read the manifest + extract
- * envoy-harness skill tags for the router.
+ * Phase 8 / v1.2 — read the manifest once and
+ * project it to the v1.1 + v1.2 router inputs.
  *
  * **Why a helper:** the read can throw (the host's
  * `getNodeManifest` may not exist on older versions;
@@ -329,13 +412,22 @@ export function defaultSignalOptIn(): "enabled" | "disabled" {
  * cases are semantically different; the router
  * honors both.
  *
+ * **Why tags + skills in one struct:** the host
+ * reads the manifest once per turn (the v1.1
+ * `getNodeManifest()` is sync but not free). We
+ * project both views in a single helper.
+ *
  * @param ctx The runtime context.
- * @returns The tag array (possibly empty), or
- *   `undefined` on read failure.
+ * @returns The manifest view (tags + skills); both
+ *   fields are `undefined` on read failure so the
+ *   router falls back to the v0 vocabulary.
  */
-function readEnvoyHarnessTags(
+function readManifestView(
   ctx: RunOwnerAgentTurnContext,
-): ReadonlyArray<string> | undefined {
+): {
+  tags: ReadonlyArray<string> | undefined;
+  skills: ReadonlyArray<import("./user-prompt-router.js").EnvoyHarnessSkillEntry> | undefined;
+} {
   let manifest: NodeManifest | undefined;
   try {
     manifest = ctx.getNodeManifest();
@@ -349,12 +441,15 @@ function readEnvoyHarnessTags(
       "[envoy-harness] getNodeManifest() failed, falling back to v0 vocabulary:",
       err instanceof Error ? err.message : String(err),
     );
-    return undefined;
+    return { tags: undefined, skills: undefined };
   }
   if (manifest === undefined) {
     // Older host without manifest support, or
     // early init. Router falls back to v0.
-    return undefined;
+    return { tags: undefined, skills: undefined };
   }
-  return extractEnvoyHarnessTags(manifest);
+  return {
+    tags: extractEnvoyHarnessTags(manifest),
+    skills: extractEnvoyHarnessSkills(manifest),
+  };
 }

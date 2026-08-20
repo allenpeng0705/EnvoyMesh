@@ -78,6 +78,17 @@ function makeCtx(
     askOpenClaw: vi.fn(async () => "openclaw answer"),
     isEnvoyHarnessReady: vi.fn(() => false),
     askEnvoyHarness: vi.fn(async () => "envoy-harness answer"),
+    // Phase 8 / v1.2 — per-skill dispatch. The
+    // default returns a text-formatted answer;
+    // tests that need B-class (structured)
+    // behavior override this. The default
+    // `getNodeManifest: () => undefined` means
+    // the v1.1 signal scan uses the v0 fallback
+    // (no per-skill matching); v1.2 e2e tests
+    // override both spies.
+    askEnvoyHarnessSkill: vi.fn(
+      async () => "skill answer",
+    ),
     signalOptIn: "enabled",
     // Phase 8 / v1.1 — manifest read. The default
     // returns `undefined` so the existing 23 tests
@@ -578,6 +589,16 @@ describe("runOwnerAgentTurnViaRuntime — v1.1 manifest-tag dynamic vocabulary",
     // `mesh`. The router matches the dynamic
     // vocabulary (not the v0 list) and routes
     // to EH.
+    //
+    // Phase 8 / v1.2 — the test mock manifest
+    // has a single skill with tags
+    // `["mesh", "observability"]`. The prompt
+    // "set up a mesh sub-agent" matches `mesh`
+    // (1 tag). The v1.2 per-skill matching
+    // uniquely picks the test skill → the
+    // dispatch uses the per-skill path
+    // (`routingReason: "signal-skill"`,
+    // `askEnvoyHarnessSkill` called).
     const { ctx, spies } = makeCtx({
       isEnvoyHarnessReady: vi.fn(() => true),
       getNodeManifest: vi.fn(() => makeManifest(["mesh", "observability"])),
@@ -587,9 +608,10 @@ describe("runOwnerAgentTurnViaRuntime — v1.1 manifest-tag dynamic vocabulary",
       "set up a mesh sub-agent for this task",
     );
     expect(out.modelUsed).toBe("envoy-harness");
-    expect(out.routingReason).toBe("signal");
+    expect(out.routingReason).toBe("signal-skill");
     expect(out.routingSignals).toContain("mesh");
-    expect(spies.askEnvoyHarness).toHaveBeenCalledTimes(1);
+    expect(out.targetSkill).toBe("test-skill");
+    expect(spies.askEnvoyHarnessSkill).toHaveBeenCalledTimes(1);
   });
 
   it("does NOT route a v0-keyword that is not in the manifest (e.g. `federated`)", async () => {
@@ -671,6 +693,14 @@ describe("runOwnerAgentTurnViaRuntime — v1.1 manifest-tag dynamic vocabulary",
     // the envoy-harness skills expose. A
     // prompt with `code` matches when the
     // manifest has a `code` tag.
+    //
+    // Phase 8 / v1.2 — the test mock manifest
+    // has a single skill with tags
+    // `["code", "edit"]`. The prompt "review
+    // this code for me" matches `code` (1 tag).
+    // The v1.2 per-skill matching uniquely picks
+    // the test skill → the dispatch uses the
+    // per-skill path.
     const { ctx, spies } = makeCtx({
       isEnvoyHarnessReady: vi.fn(() => true),
       getNodeManifest: vi.fn(() => makeManifest(["code", "edit"])),
@@ -681,6 +711,183 @@ describe("runOwnerAgentTurnViaRuntime — v1.1 manifest-tag dynamic vocabulary",
     );
     expect(out.modelUsed).toBe("envoy-harness");
     expect(out.routingSignals).toContain("code");
+    expect(out.targetSkill).toBe("test-skill");
+    expect(out.routingReason).toBe("signal-skill");
+    expect(spies.askEnvoyHarnessSkill).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. Phase 8 / v1.2 — per-skill dispatch
+// ---------------------------------------------------------------------------
+
+/**
+ * The v1.2 dispatch. When the router picks a
+ * specific envoy-harness skill (Q1 — uniquely-held
+ * threshold; tie → fall through), the host calls
+ * `askEnvoyHarnessSkill(message, skillId)`
+ * instead of `askEnvoyHarness(message)`. The
+ * result's `targetSkill` is set + `routingReason`
+ * is `"signal-skill"`.
+ *
+ * Failure modes (Q2 + Q7):
+ * - The skill returns a `structured` first block
+ *   (B-class) → `askEnvoyHarnessSkill` throws
+ *   `StructuredResultError` → dispatch falls
+ *   through to `askEnvoyHarness`.
+ * - The skill throws any other error → dispatch
+ *   falls through to `askEnvoyHarness`.
+ * - The router doesn't pick a unique skill (tie)
+ *   → `decision.targetSkill` is undefined → v1.1
+ *   free-form LLM ask path.
+ */
+describe("runOwnerAgentTurnViaRuntime — v1.2 per-skill dispatch", () => {
+  // The 8 envoy-harness skills' tags. Mirrors
+  // ENVOY_HARNESS_SKILLS (from envoy-harness-adapter/src/skills.ts).
+  const ENVOY_HARNESS_SKILLS = [
+    { skillId: "code-edit", tags: ["code", "edit"] },
+    { skillId: "code-review", tags: ["code", "review"] },
+    { skillId: "doc-search", tags: ["doc", "search"] },
+    { skillId: "bash-run", tags: ["bash", "shell"] },
+    { skillId: "plan", tags: ["plan"] },
+    { skillId: "setup-sponsor-friend", tags: ["mesh", "bond", "sponsor"] },
+    { skillId: "peer-list", tags: ["mesh", "observability"] },
+    { skillId: "relay-status", tags: ["mesh", "observability"] },
+  ] as const;
+
+  /**
+   * Build a minimal `NodeManifest` exposing the
+   * given skills. The shape mirrors
+   * `aggregateNodeManifest()`'s output.
+   */
+  function makeManifest(
+    skills: ReadonlyArray<{ skillId: string; tags: ReadonlyArray<string> }>,
+  ) {
+    return {
+      peerId: "test-node",
+      runtimes: [
+        { runtime: "envoy-harness" as const, runtimeVersion: "test" },
+        { runtime: "openclaw" as const, runtimeVersion: "test" },
+      ],
+      skills: skills.map((s) => ({
+        skillId: s.skillId,
+        description: "test",
+        costCeilingUsd: undefined,
+        maxSensitivity: "public" as const,
+        tags: s.tags,
+        runtime: "envoy-harness" as const,
+      })),
+    };
+  }
+
+  it("routes a unique-best skill to askEnvoyHarnessSkill (not askEnvoyHarness)", async () => {
+    // "set up a mesh sponsor bond" uniquely
+    // matches `setup-sponsor-friend` (mesh + sponsor;
+    // peer-list + relay-status only have `mesh`).
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      getNodeManifest: vi.fn(() => makeManifest(ENVOY_HARNESS_SKILLS)),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "set up a mesh sponsor bond",
+    );
+    expect(out.modelUsed).toBe("envoy-harness");
+    expect(out.routingReason).toBe("signal-skill");
+    expect(out.targetSkill).toBe("setup-sponsor-friend");
+    expect(spies.askEnvoyHarnessSkill).toHaveBeenCalledTimes(1);
+    expect(spies.askEnvoyHarnessSkill).toHaveBeenCalledWith(
+      "set up a mesh sponsor bond",
+      "setup-sponsor-friend",
+    );
+    // The free-form LLM ask is NOT called when
+    // the per-skill path succeeds.
+    expect(spies.askEnvoyHarness).not.toHaveBeenCalled();
+  });
+
+  it("falls through to askEnvoyHarness when askEnvoyHarnessSkill throws (Q7)", async () => {
+    // The skill throws a generic error (e.g.
+    // network, timeout). The dispatch falls
+    // through to the v1.1 free-form LLM ask.
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      getNodeManifest: vi.fn(() => makeManifest(ENVOY_HARNESS_SKILLS)),
+      askEnvoyHarnessSkill: vi.fn(async () => {
+        throw new Error("network error");
+      }),
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const out = await runOwnerAgentTurnViaRuntime(
+        ctx,
+        "set up a mesh sponsor bond",
+      );
+      // Falls through to the v1.1 free-form
+      // LLM ask. The result keeps the LLM's
+      // answer + `modelUsed: "envoy-harness"`
+      // (the actual runtime that produced the
+      // answer), but the routing decision
+      // reverts to "signal" (not "signal-skill")
+      // because the per-skill path failed.
+      expect(out.modelUsed).toBe("envoy-harness");
+      expect(out.answer).toBe("envoy-harness answer");
+      // The result's `routingReason` comes from
+      // the router's decision, which is still
+      // "signal-skill" (the router picked the
+      // skill; the dispatch just couldn't run
+      // it). The targetSkill field mirrors the
+      // decision too. The Social UI can use the
+      // absence of the skill execution (logged
+      // as a warning) to render "skill failed,
+      // fell back to LLM" instead of the
+      // "routed to skill" badge.
+      expect(out.routingReason).toBe("signal-skill");
+      expect(out.targetSkill).toBe("setup-sponsor-friend");
+      // The LLM ask WAS called as the fallback.
+      expect(spies.askEnvoyHarness).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("falls through to askEnvoyHarness when targetSkill is undefined (tie)", async () => {
+    // "set up a mesh sub-agent" matches `mesh`
+    // for setup-sponsor-friend, peer-list, AND
+    // relay-status (score 1 each). Top score
+    // tied → `targetSkill` undefined → v1.1
+    // free-form LLM ask.
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      getNodeManifest: vi.fn(() => makeManifest(ENVOY_HARNESS_SKILLS)),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "set up a mesh sub-agent",
+    );
+    expect(out.modelUsed).toBe("envoy-harness");
+    expect(out.routingReason).toBe("signal");
+    expect(out.targetSkill).toBeUndefined();
     expect(spies.askEnvoyHarness).toHaveBeenCalledTimes(1);
+    expect(spies.askEnvoyHarnessSkill).not.toHaveBeenCalled();
+  });
+
+  it("falls through to askEnvoyHarness when envoyHarnessSkills is undefined (v1.1 preserved)", async () => {
+    // No `getNodeManifest` → no skills list → v1.1
+    // free-form LLM ask path. The v1.1 signal
+    // scan still matches `mesh`.
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      getNodeManifest: vi.fn(() => undefined),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "set up a mesh sponsor bond",
+    );
+    expect(out.modelUsed).toBe("envoy-harness");
+    expect(out.routingReason).toBe("signal");
+    expect(out.targetSkill).toBeUndefined();
+    expect(spies.askEnvoyHarness).toHaveBeenCalledTimes(1);
+    expect(spies.askEnvoyHarnessSkill).not.toHaveBeenCalled();
   });
 });

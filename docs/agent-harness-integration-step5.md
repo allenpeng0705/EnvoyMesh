@@ -5,9 +5,17 @@
 > constant with a dynamic vocabulary extracted from
 > the merged manifest's envoy-harness skill tags.**
 > The v0 list now serves as a private backward-compat
-> fallback only (Q1 + Q3 of the v1.1 sub-plan). See
+> fallback only (Q1 + Q3 of the v1.1 sub-plan). **v1.2
+> (2026-08-21) takes the v1.1 dynamic vocabulary and
+> extends it to per-skill routing** — the router now
+> picks a specific envoy-harness skill (e.g.
+> `setup-sponsor-friend`) by tag-count score and the
+> host dispatches to that skill's `execute()` instead
+> of the runtime's free-form LLM ask. See
 > [`agent-harness-integration-v1-1.md`](./agent-harness-integration-v1-1.md)
-> for the v1.1 details. Companion to
+> and
+> [`agent-harness-integration-v1-2.md`](./agent-harness-integration-v1-2.md)
+> for the v1.1 + v1.2 details. Companion to
 > [`agent-harness-integration.md`](./agent-harness-integration.md) (the
 > design) and
 > [`agent-harness-integration-step3-4.md`](./agent-harness-integration-step3-4.md)
