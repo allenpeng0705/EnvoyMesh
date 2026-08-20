@@ -92,11 +92,13 @@ import {
   type Tool,
 } from "@envoymesh/envoy-harness";
 import {
+  buildEnvoyHarnessAdapterWithCrossVerify,
   defaultBuildAgentFactory,
   defaultSignResult,
   EnvoyHarnessAdapter,
   LocalCrossRuntimeSubmitter,
 } from "@envoymesh/envoy-harness-adapter";
+import type { AgentAdapter } from "@envoymesh/agent-adapter";
 
 import { LocalRuntimeRegistry } from "./local-runtime-registry.js";
 import type { EnvoyHarnessRuntimeConfig } from "./config.js";
@@ -175,6 +177,38 @@ export interface CreateRealEnvoyHarnessRuntimeOptions {
    * are additive.
    */
   bClassTools?: ReadonlyArray<Tool>;
+
+  /**
+   * Phase 8 / Step 6 — optional OpenClaw adapter
+   * (or any other `AgentAdapter`) for cross-verify
+   * on the direct `ask` path. When provided, the
+   * runtime uses
+   * `buildEnvoyHarnessAdapterWithCrossVerify` so
+   * `adapter.verify(input)` re-runs the same skill
+   * on the cross adapter and returns the local
+   * verifier's verdicts for the new result. This
+   * is the parallel of the factory path's
+   * `openClawAdapter?` option.
+   *
+   * **v0 production wiring:** the host's
+   * `NodeServiceImpl` does NOT pass this (the
+   * orchestrator's `chain-verify-loop` already
+   * handles cross-verify for Team jobs via the
+   * factory path). The option exists for callers
+   * that want the direct `ask` path to also
+   * cross-verify (e.g. test seams, future
+   * features that route the user prompt through
+   * the `ask` path with cross-validation).
+   *
+   * **Why the option is optional:** without it,
+   * the runtime uses the plain `new
+   * EnvoyHarnessAdapter(...)` (backward
+   * compatible with Step 1-5 callers). With it,
+   * the runtime wires `defaultCrossVerify` for
+   * the same Q4 (a) / (b) semantics as the
+   * factory path.
+   */
+  openClawAdapter?: AgentAdapter;
 
   /** Optional: cross-runtime logger. */
   log?: (event: string, fields?: Record<string, unknown>) => void;
@@ -393,20 +427,47 @@ export function createRealEnvoyHarnessRuntime(
       // `sponsor_friend`; `code-review` gets `read_file`).
       // v0: the host's `NodeServiceImpl` always passes
       // `bClassTools` (Step 3 "always opt-in" policy).
-      const adapter = new EnvoyHarnessAdapter({
-        buildAgent: defaultBuildAgentFactory({
-          model,
-          cwd: opts.cwd,
-          meshSubmitter: submitter,
-          ...(opts.bClassTools ? { bClassTools: opts.bClassTools } : {}),
-        }),
-        signResult: defaultSignResult(opts.agentPrivateKeyPem),
-        workerPeerId: opts.workerPeerId,
-        // Passthrough: the chain worker already built the
-        // prompt. Re-wrapping would duplicate the skill
-        // hint + tool list + cost ceiling.
-        buildPrompt: (input) => input.objective,
-      });
+      //
+      // **Phase 8 / Step 6 — cross-verify:** when the
+      // host passes `openClawAdapter`, use the bridge's
+      // `buildEnvoyHarnessAdapterWithCrossVerify` so
+      // `adapter.verify(input)` re-runs the same
+      // skill on OpenClaw and returns the local
+      // verifier's verdicts for the new result. Without
+      // `openClawAdapter`, fall back to the plain `new
+      // EnvoyHarnessAdapter(...)` (backward compatible
+      // with Step 1-5 callers that don't pass a cross
+      // adapter).
+      const adapter = opts.openClawAdapter
+        ? buildEnvoyHarnessAdapterWithCrossVerify({
+            buildAgent: defaultBuildAgentFactory({
+              model,
+              cwd: opts.cwd,
+              meshSubmitter: submitter,
+              ...(opts.bClassTools ? { bClassTools: opts.bClassTools } : {}),
+            }),
+            signResult: defaultSignResult(opts.agentPrivateKeyPem),
+            workerPeerId: opts.workerPeerId,
+            openClawAdapter: opts.openClawAdapter,
+            // Passthrough: the chain worker already built
+            // the prompt. Re-wrapping would duplicate the
+            // skill hint + tool list + cost ceiling.
+            buildPrompt: (input) => input.objective,
+          })
+        : new EnvoyHarnessAdapter({
+            buildAgent: defaultBuildAgentFactory({
+              model,
+              cwd: opts.cwd,
+              meshSubmitter: submitter,
+              ...(opts.bClassTools ? { bClassTools: opts.bClassTools } : {}),
+            }),
+            signResult: defaultSignResult(opts.agentPrivateKeyPem),
+            workerPeerId: opts.workerPeerId,
+            // Passthrough: the chain worker already built the
+            // prompt. Re-wrapping would duplicate the skill
+            // hint + tool list + cost ceiling.
+            buildPrompt: (input) => input.objective,
+          });
       internals = { model, submitter, registry, adapter };
       return internals;
     })();
