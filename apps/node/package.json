@@ -28,6 +28,7 @@
     "@envoymesh/api": "0.2.2",
     "@envoymesh/agent-adapter": "0.2.2",
     "@envoymesh/bonds": "0.2.2",
+    "@envoymesh/envoy-harness": "link:../envoy-harness/packages/envoy-harness",
     "@envoymesh/envoy-harness-adapter": "file:../../../envoy-harness/packages/envoy-harness-adapter",
     "@envoymesh/identity": "0.2.2",
     "@envoymesh/ipfs-helia": "0.2.2",

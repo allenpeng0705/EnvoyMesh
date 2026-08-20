@@ -65,6 +65,9 @@ importers:
       '@envoymesh/bonds':
         specifier: 0.2.2
         version: link:../../packages/bonds
+      '@envoymesh/envoy-harness':
+        specifier: link:../../../envoy-harness/packages/envoy-harness
+        version: link:../../../envoy-harness/packages/envoy-harness
       '@envoymesh/envoy-harness-adapter':
         specifier: file:../../../envoy-harness/packages/envoy-harness-adapter
         version: file:../envoy-harness/packages/envoy-harness-adapter

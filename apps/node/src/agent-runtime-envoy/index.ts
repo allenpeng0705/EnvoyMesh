@@ -38,3 +38,13 @@ export {
 } from "./model.js";
 
 export { ENVOY_HARNESS_RUNTIME_SKILLS } from "./manifest.js";
+
+// Phase 8 Step 2 — the host-side `LocalRuntimeBridge`
+// implementation. The envoy-harness adapter's
+// `LocalCrossRuntimeSubmitter` calls back through this
+// when a sub-agent targets a different local runtime
+// (Built-in OpenClaw today; future runtimes slot in).
+export {
+  LocalRuntimeRegistry,
+  type CreateLocalRuntimeRegistryOptions,
+} from "./local-runtime-registry.js";
