@@ -14,6 +14,7 @@ import {
   loadBridgeConfigSkillApiKeys,
   loadBridgeConfigWebSearchEnabled,
 } from "./node-service-clawhub.js";
+import { readSignalOptInEnv } from "./user-prompt-router.js";
 import { loadBridgeConfigFromProfile } from "./bridge/bridge-config-store.js";
 import { bridgeConfigToStatusFields } from "./bridge/config.js";
 import {
@@ -542,6 +543,17 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             getOpenClawRuntimeDeps: () => host._openClawRuntimeDeps(),
             recordOwnerActivity: () => host.recordOwnerActivity(),
             askOpenClaw: (msg, ctx) => host.askOpenClaw(msg, ctx as never),
+            // Phase 8 / Step 5 — signal-based auto opt-in wires.
+            // The host's `isEnvoyHarnessReady()` reads the resolved
+            // envoy-harness config without constructing the model
+            // adapter (sync, cheap). `askEnvoyHarness` lazily
+            // constructs the model adapter on first call. `signalOptIn`
+            // is read once from `ENVOY_HARNESS_SIGNAL_OPT_IN` (the env
+            // var doesn't change at runtime; reading it at context
+            // build is the right shape).
+            isEnvoyHarnessReady: () => host.isEnvoyHarnessReady(),
+            askEnvoyHarness: (msg) => host.askEnvoyHarness(msg),
+            signalOptIn: readSignalOptInEnv(),
             persistEnvoyAiChatExchange: (raw, turn, humanMsgId) =>
               persistEnvoyAiChatExchangeViaRuntime(host._openClawRuntimeDeps(), raw, turn, humanMsgId),
             recordEnvoyAiHumanOutgoing: (msg, humanMsgId) =>

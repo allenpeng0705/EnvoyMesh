@@ -1,0 +1,523 @@
+/**
+ * Phase 8 / Step 5 — e2e tests for the
+ * `runOwnerAgentTurnViaRuntime` routing integration.
+ *
+ * **What this covers:** the host-side wiring of the
+ * signal router. The router's algorithm in isolation
+ * is tested in `user-prompt-router.test.ts` (41 unit
+ * tests). This file verifies that the dispatch:
+ * 1. Calls `askEnvoyHarness` when the prompt
+ *    contains a signal + EH is ready.
+ * 2. Strips the hint prefix before any LLM call
+ *    (so the LLM doesn't see `!eh` / `/eh`).
+ * 3. Falls back to OpenClaw when the prompt
+ *    contains a signal but EH is unready.
+ * 4. Defaults to OpenClaw when the prompt has
+ *    no signal.
+ * 5. Respects `signalOptIn: "disabled"`.
+ *
+ * **Hermetic:** all tests use a fake
+ * `askOpenClaw` + `askEnvoyHarness` on the
+ * context. No real LLM, no real network.
+ *
+ * **Why these tests are e2e not unit:** the
+ * `runOwnerAgentTurnViaRuntime` is the
+ * integration point where the router's
+ * decision becomes a real dispatch.
+ * Verifying the dispatch behavior in
+ * isolation requires the same context
+ * builder the production uses — that's
+ * what this file does.
+ */
+
+import { describe, expect, it, vi } from "vitest";
+
+import {
+  runOwnerAgentTurnViaRuntime,
+  type RunOwnerAgentTurnContext,
+} from "../src/node-service-handlers-run-owner-agent-turn.js";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a minimal `RunOwnerAgentTurnContext`
+ * with spies. Defaults:
+ *  - `ensureOpenClawReady: true` (OpenClaw is
+ *    the default fallback; available unless
+ *    the test overrides)
+ *  - `signalOptIn: "enabled"` (router can
+ *    pick EH when signals match; tests that
+ *    want to disable override)
+ *  - `isEnvoyHarnessReady: false` (EH not
+ *    ready; tests that want EH dispatch
+ *    override)
+ *  - `askOpenClaw` returns "openclaw answer"
+ *  - `askEnvoyHarness` returns
+ *    "envoy-harness answer"
+ *  - `runDocumentAgentTurnCore` returns
+ *    `{ answer: "native answer" }` (deep
+ *    fallback; usually not called)
+ *  - `getScriptedTutorState` returns
+ *    `null` (no scripted tutor; deep fallback
+ *    falls to native planner)
+ */
+function makeCtx(
+  overrides: Partial<RunOwnerAgentTurnContext> = {},
+): {
+  ctx: RunOwnerAgentTurnContext;
+  spies: Record<string, ReturnType<typeof vi.fn>>;
+} {
+  const spies: Record<string, ReturnType<typeof vi.fn>> = {
+    recordOwnerActivity: vi.fn(),
+    ensureOpenClawReady: vi.fn(async () => true),
+    beginOpenClawToolTracking: vi.fn(),
+    endOpenClawToolTracking: vi.fn(() => []),
+    buildOpenClawTurnContext: vi.fn(async () => ({})),
+    askOpenClaw: vi.fn(async () => "openclaw answer"),
+    isEnvoyHarnessReady: vi.fn(() => false),
+    askEnvoyHarness: vi.fn(async () => "envoy-harness answer"),
+    signalOptIn: "enabled",
+    persistEnvoyAiChatExchange: vi.fn(async () => undefined),
+    recordEnvoyAiHumanOutgoing: vi.fn(async () => undefined),
+    maybeIngestTerminalAssistantReply: vi.fn(),
+    getRagService: vi.fn(() => ({})),
+    getTaskStore: vi.fn(() => ({})),
+    runDocumentAgentTurnCore: vi.fn(async () => ({
+      answer: "native answer",
+      domain: "knowledge",
+    })),
+    getApprovalQueue: vi.fn(() => ({})),
+    getScriptedTutorState: vi.fn(async () => null),
+  };
+  const ctx: RunOwnerAgentTurnContext = {
+    ...spies,
+    ...overrides,
+  } as never;
+  // **Self-review fix:** when a test overrides a
+  // method (e.g. `isEnvoyHarnessReady: vi.fn(()
+  // => true)`), the `ctx` now points at the
+  // overridden function, but `spies` still has
+  // the original default. Sync the spies from
+  // ctx so the test asserts on the function
+  // actually called. This is a common vitest
+  // gotcha — the pattern `const ctx = {
+  // ...spies, ...overrides }` puts overrides
+  // in ctx but the spy object keeps the
+  // original refs.
+  for (const key of Object.keys(spies)) {
+    const override = (overrides as Record<string, unknown>)[key];
+    if (override !== undefined) {
+      (spies as Record<string, unknown>)[key] = override;
+    }
+  }
+  return { ctx, spies };
+}
+
+// ---------------------------------------------------------------------------
+// 1. Default branch — no signal, OpenClaw
+// ---------------------------------------------------------------------------
+
+describe("runOwnerAgentTurnViaRuntime — default branch", () => {
+  it("routes an ordinary prompt to OpenClaw", async () => {
+    const { ctx, spies } = makeCtx();
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "translate this article to French",
+    );
+    expect(out.modelUsed).toBe("openclaw");
+    expect(out.answer).toBe("openclaw answer");
+    expect(out.routingReason).toBe("default");
+    expect(out.routingSignals).toEqual([]);
+    expect(spies.askEnvoyHarness).not.toHaveBeenCalled();
+    expect(spies.askOpenClaw).toHaveBeenCalledTimes(1);
+    // Default branch: the LLM sees the
+    // original prompt (no hint to strip).
+    expect(spies.askOpenClaw).toHaveBeenCalledWith(
+      "translate this article to French",
+      expect.anything(),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2. Signal branch — mesh keyword, EH ready
+// ---------------------------------------------------------------------------
+
+describe("runOwnerAgentTurnViaRuntime — signal branch (EH ready)", () => {
+  it("routes a `mesh` keyword prompt to envoy-harness", async () => {
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "set up a mesh sub-agent for this task",
+    );
+    expect(out.modelUsed).toBe("envoy-harness");
+    expect(out.answer).toBe("envoy-harness answer");
+    expect(out.routingReason).toBe("signal");
+    expect(out.routingSignals).toEqual(["mesh"]);
+    expect(spies.askEnvoyHarness).toHaveBeenCalledTimes(1);
+    expect(spies.askOpenClaw).not.toHaveBeenCalled();
+  });
+
+  it("routes a `federated` keyword prompt to envoy-harness", async () => {
+    const { ctx } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "federated scoreboard query for peer X",
+    );
+    expect(out.modelUsed).toBe("envoy-harness");
+    expect(out.routingSignals).toEqual(["federated"]);
+  });
+
+  it("routes a `cross-node` keyword prompt to envoy-harness", async () => {
+    const { ctx } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "spawn a cross-node verifier rule",
+    );
+    expect(out.modelUsed).toBe("envoy-harness");
+    expect(out.routingSignals).toEqual(["cross-node"]);
+  });
+
+  it("routes a `RemoteMeshSubmitter` tool name to envoy-harness", async () => {
+    const { ctx } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "spawn via RemoteMeshSubmitter please",
+    );
+    expect(out.modelUsed).toBe("envoy-harness");
+    // v0 substring matching accepts the `Mesh`
+    // substring inside `RemoteMeshSubmitter` as
+    // a mesh-keyword signal too. The router
+    // returns BOTH signals sorted by offset;
+    // the test documents the v0 substring
+    // behavior (Q6: accept FP in v0; tighten
+    // to word boundary in v1).
+    expect(out.routingSignals).toContain("RemoteMeshSubmitter");
+    expect(out.routingSignals).toContain("Mesh");
+  });
+
+  it("routes a `lsp_goto_definition` tool name to envoy-harness", async () => {
+    const { ctx } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "use lsp_goto_definition on this file",
+    );
+    expect(out.modelUsed).toBe("envoy-harness");
+    expect(out.routingSignals).toEqual(["lsp_goto_definition"]);
+  });
+
+  it("captures multiple signals in the result (mesh + tool)", async () => {
+    const { ctx } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "set up a mesh sub-agent and call lsp_goto_definition",
+    );
+    expect(out.modelUsed).toBe("envoy-harness");
+    expect(out.routingSignals).toContain("mesh");
+    expect(out.routingSignals).toContain("lsp_goto_definition");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 3. EH-unready branch — signal matched but EH not ready
+// ---------------------------------------------------------------------------
+
+describe("runOwnerAgentTurnViaRuntime — envoy-harness-unready branch", () => {
+  it("falls back to OpenClaw when signal matched but EH unready", async () => {
+    // Default `isEnvoyHarnessReady: () => false`.
+    const { ctx, spies } = makeCtx();
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "set up a mesh sub-agent",
+    );
+    expect(out.modelUsed).toBe("openclaw");
+    expect(out.answer).toBe("openclaw answer");
+    expect(out.routingReason).toBe("envoy-harness-unready");
+    // Signals still populated so the UI can surface.
+    expect(out.routingSignals).toEqual(["mesh"]);
+    expect(spies.askEnvoyHarness).not.toHaveBeenCalled();
+    expect(spies.askOpenClaw).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4. EH-error branch — ready but call failed
+// ---------------------------------------------------------------------------
+
+describe("runOwnerAgentTurnViaRuntime — envoy-harness-error branch", () => {
+  it("falls back to OpenClaw when EH ready but askEnvoyHarness throws", async () => {
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      askEnvoyHarness: vi.fn(async () => {
+        throw new Error("envoy-harness API down");
+      }),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "set up a mesh sub-agent",
+    );
+    // Falls back to OpenClaw (the next-best AI engine).
+    expect(out.modelUsed).toBe("openclaw");
+    expect(out.answer).toBe("openclaw answer");
+    // The router's original decision is preserved
+    // in `routingReason` (the call failed AFTER
+    // the router chose EH).
+    expect(out.routingReason).toBe("signal");
+    expect(out.routingSignals).toEqual(["mesh"]);
+    expect(spies.askEnvoyHarness).toHaveBeenCalledTimes(1);
+    expect(spies.askOpenClaw).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5. opt-in-disabled branch
+// ---------------------------------------------------------------------------
+
+describe("runOwnerAgentTurnViaRuntime — opt-in-disabled branch", () => {
+  it("forces OpenClaw when opt-in is disabled (even with signals)", async () => {
+    const { ctx, spies } = makeCtx({
+      signalOptIn: "disabled",
+      isEnvoyHarnessReady: vi.fn(() => true),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "set up a mesh sub-agent for federated tasks",
+    );
+    expect(out.modelUsed).toBe("openclaw");
+    expect(out.answer).toBe("openclaw answer");
+    expect(out.routingReason).toBe("opt-in-disabled");
+    // Signals are empty when opt-in is disabled
+    // (the owner turned off signal routing, so
+    // reporting which signals WOULD have fired
+    // is noise).
+    expect(out.routingSignals).toEqual([]);
+    expect(spies.askEnvoyHarness).not.toHaveBeenCalled();
+    expect(spies.askOpenClaw).toHaveBeenCalledTimes(1);
+  });
+
+  it("forces OpenClaw when opt-in is disabled (no signal, no change)", async () => {
+    const { ctx } = makeCtx({ signalOptIn: "disabled" });
+    const out = await runOwnerAgentTurnViaRuntime(ctx, "hi");
+    expect(out.modelUsed).toBe("openclaw");
+    expect(out.routingReason).toBe("opt-in-disabled");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. Hint prefix stripping
+// ---------------------------------------------------------------------------
+
+describe("runOwnerAgentTurnViaRuntime — hint prefix stripping", () => {
+  it("strips `!eh` hint before calling envoy-harness", async () => {
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "!eh translate this to French",
+    );
+    expect(out.modelUsed).toBe("envoy-harness");
+    expect(spies.askEnvoyHarness).toHaveBeenCalledWith(
+      "translate this to French",
+    );
+    // The LLM never saw the `!eh` prefix.
+  });
+
+  it("strips `/eh` hint before calling envoy-harness", async () => {
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "/eh translate this to French",
+    );
+    expect(out.modelUsed).toBe("envoy-harness");
+    expect(spies.askEnvoyHarness).toHaveBeenCalledWith(
+      "translate this to French",
+    );
+  });
+
+  it("strips `!eh` hint even when OpenClaw is the chosen runtime (no signal beyond the hint)", async () => {
+    // `!eh translate this` — hint is the only signal.
+    // With EH ready, routes to EH. But if we test
+    // the case where EH is unready + hint: the
+    // OpenClaw fallback also gets the stripped
+    // prompt.
+    const { ctx, spies } = makeCtx({
+      // Default `isEnvoyHarnessReady: false`.
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "!eh translate this to French",
+    );
+    expect(out.modelUsed).toBe("openclaw");
+    expect(out.routingReason).toBe("envoy-harness-unready");
+    expect(spies.askOpenClaw).toHaveBeenCalledWith(
+      "translate this to French",
+      expect.anything(),
+    );
+  });
+
+  it("strips hint after leading whitespace", async () => {
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "   !eh do the thing",
+    );
+    expect(out.modelUsed).toBe("envoy-harness");
+    expect(spies.askEnvoyHarness).toHaveBeenCalledWith("do the thing");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7. Fallback chain preservation
+// ---------------------------------------------------------------------------
+
+describe("runOwnerAgentTurnViaRuntime — fallback chain preserved", () => {
+  it("falls back to native planner when both EH and OpenClaw fail", async () => {
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      askEnvoyHarness: vi.fn(async () => {
+        throw new Error("EH down");
+      }),
+      askOpenClaw: vi.fn(async () => {
+        throw new Error("OpenClaw down");
+      }),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "set up a mesh sub-agent",
+    );
+    // Deep fallback to native planner.
+    expect(out.modelUsed).toBe("native");
+    expect(out.answer).toBe("native answer");
+    // The router's decision is preserved even
+    // in the deep fallback.
+    expect(out.routingReason).toBe("signal");
+    expect(out.routingSignals).toEqual(["mesh"]);
+    expect(spies.askEnvoyHarness).toHaveBeenCalledTimes(1);
+    expect(spies.askOpenClaw).toHaveBeenCalledTimes(1);
+    expect(spies.runDocumentAgentTurnCore).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back through the deep-fallback chain when all AI engines fail", async () => {
+    // The full chain: EH (ready + throws) →
+    // OpenClaw (throws) → scripted-tutor (no
+    // match for this prompt) → native planner.
+    // The exact `modelUsed` depends on whether
+    // the scripted tutor matches the prompt;
+    // we don't assert on that here. The point
+    // is: the routing fields are preserved
+    // through the deep fallback.
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      askEnvoyHarness: vi.fn(async () => {
+        throw new Error("EH down");
+      }),
+      askOpenClaw: vi.fn(async () => {
+        throw new Error("OpenClaw down");
+      }),
+      getScriptedTutorState: vi.fn(async () => null),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "set up a mesh sub-agent",
+    );
+    // Both AI engines were tried.
+    expect(spies.askEnvoyHarness).toHaveBeenCalledTimes(1);
+    expect(spies.askOpenClaw).toHaveBeenCalledTimes(1);
+    // The deep fallback hit the native planner.
+    expect(out.modelUsed).toBe("native");
+    // The router's original decision is preserved
+    // in `routingReason` — the user typed a
+    // signal-bearing prompt; the engine chain
+    // just couldn't service it.
+    expect(out.routingReason).toBe("signal");
+    expect(out.routingSignals).toEqual(["mesh"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 8. Result shape — routing fields always present
+// ---------------------------------------------------------------------------
+
+describe("runOwnerAgentTurnViaRuntime — result shape", () => {
+  it("result includes routingReason and routingSignals on OpenClaw path", async () => {
+    const { ctx } = makeCtx();
+    const out = await runOwnerAgentTurnViaRuntime(ctx, "hello");
+    expect(out).toHaveProperty("routingReason");
+    expect(out).toHaveProperty("routingSignals");
+    expect(out.routingReason).toBe("default");
+    expect(out.routingSignals).toEqual([]);
+  });
+
+  it("result includes routingReason and routingSignals on envoy-harness path", async () => {
+    const { ctx } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "spawn a mesh sub-agent",
+    );
+    expect(out.routingReason).toBe("signal");
+    expect(out.routingSignals).toEqual(["mesh"]);
+  });
+
+  it("result includes routingReason and routingSignals on the deep-fallback path", async () => {
+    // Force the deep fallback to native planner.
+    const { ctx } = makeCtx({
+      ensureOpenClawReady: vi.fn(async () => false),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(ctx, "hi");
+    // Deep fallback to native. The router still
+    // ran (no signals → `default`), so the
+    // result carries the routing fields.
+    expect(out.modelUsed).toBe("native");
+    expect(out.routingReason).toBe("default");
+    expect(out.routingSignals).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 9. Persistence — every dispatch path persists the exchange
+// ---------------------------------------------------------------------------
+
+describe("runOwnerAgentTurnViaRuntime — persistence invariant", () => {
+  it("persists the exchange on the OpenClaw path", async () => {
+    const { ctx, spies } = makeCtx();
+    await runOwnerAgentTurnViaRuntime(ctx, "hi");
+    expect(spies.persistEnvoyAiChatExchange).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists the exchange on the envoy-harness path", async () => {
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+    });
+    await runOwnerAgentTurnViaRuntime(ctx, "set up a mesh sub-agent");
+    expect(spies.persistEnvoyAiChatExchange).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists the exchange on the deep-fallback path (native)", async () => {
+    const { ctx, spies } = makeCtx({
+      ensureOpenClawReady: vi.fn(async () => false),
+    });
+    await runOwnerAgentTurnViaRuntime(ctx, "hi");
+    expect(spies.persistEnvoyAiChatExchange).toHaveBeenCalledTimes(1);
+  });
+});

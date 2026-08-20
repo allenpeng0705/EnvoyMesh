@@ -369,6 +369,27 @@ export interface RunOwnerAgentTurnContextDeps {
   getOpenClawRuntimeDeps: () => OpenClawRuntimeDeps;
   recordOwnerActivity: RunOwnerAgentTurnContext["recordOwnerActivity"];
   askOpenClaw: RunOwnerAgentTurnContext["askOpenClaw"];
+  /**
+   * Phase 8 / Step 5 — sync probe. When `true`, the
+   * `askEnvoyHarness` call is expected to succeed
+   * (the runtime is configured + has a model adapter).
+   */
+  isEnvoyHarnessReady: RunOwnerAgentTurnContext["isEnvoyHarnessReady"];
+  /**
+   * Phase 8 / Step 5 — ask the envoy-harness runtime
+   * for a reply. The runtime may throw on a transient
+   * API error; the dispatch catches + falls back to
+   * OpenClaw.
+   */
+  askEnvoyHarness: RunOwnerAgentTurnContext["askEnvoyHarness"];
+  /**
+   * Phase 8 / Step 5 — per-node opt-in flag. The host
+   * reads this from `process.env.ENVOY_HARNESS_SIGNAL_OPT_IN`
+   * (or a future persisted config field) and threads
+   * the value through. When `"disabled"`, the router
+   * never picks envoy-harness regardless of signals.
+   */
+  signalOptIn: RunOwnerAgentTurnContext["signalOptIn"];
   persistEnvoyAiChatExchange: RunOwnerAgentTurnContext["persistEnvoyAiChatExchange"];
   recordEnvoyAiHumanOutgoing: RunOwnerAgentTurnContext["recordEnvoyAiHumanOutgoing"];
   maybeIngestTerminalAssistantReply: RunOwnerAgentTurnContext["maybeIngestTerminalAssistantReply"];
@@ -1059,6 +1080,17 @@ export function buildRunOwnerAgentTurnContext(deps: RunOwnerAgentTurnContextDeps
     endOpenClawToolTracking: () => endOpenClawToolTracking(deps.openClawState),
     buildOpenClawTurnContext: () => buildOpenClawTurnContextViaRuntime(deps.getOpenClawRuntimeDeps()),
     askOpenClaw: (msg, ctx) => deps.askOpenClaw(msg, ctx as never),
+    // Phase 8 / Step 5 — signal-based auto opt-in
+    // wires. The host reads `isEnvoyHarnessReady` from
+    // the resolved envoy-harness config (no model call)
+    // and `askEnvoyHarness` from the real runtime (lazy
+    // model construction on first call). `signalOptIn`
+    // is read once at context build from
+    // `process.env.ENVOY_HARNESS_SIGNAL_OPT_IN`; the env
+    // var doesn't change at runtime.
+    isEnvoyHarnessReady: () => deps.isEnvoyHarnessReady(),
+    askEnvoyHarness: (msg) => deps.askEnvoyHarness(msg),
+    signalOptIn: deps.signalOptIn,
     persistEnvoyAiChatExchange: (raw, turn, humanMsgId) =>
       deps.persistEnvoyAiChatExchange(raw, turn, humanMsgId),
     recordEnvoyAiHumanOutgoing: (msg, humanMsgId) =>

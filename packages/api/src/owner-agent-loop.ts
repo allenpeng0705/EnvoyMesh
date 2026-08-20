@@ -45,8 +45,47 @@ export interface OwnerAgentTurnResult {
    * instead of Markdown.
    */
   blocks?: StructuredBlock[];
-  /** "openclaw" if answered by bundled agent, "native" if fallback model, "scripted-tutor" for no-model onboarding, absent if unknown. */
-  modelUsed?: "openclaw" | "native" | "scripted-tutor";
+  /**
+   * Which runtime produced `answer`.
+   *  - `"openclaw"` — Built-in OpenClaw (default for ordinary chat).
+   *  - `"envoy-harness"` — Phase 8 / Step 5: signal-bearing prompts
+   *    that auto opt-in to the sibling-monorepo `envoy-harness`
+   *    runtime. See `apps/node/src/user-prompt-router.ts`.
+   *  - `"native"` — fallback when no AI engine is available.
+   *  - `"scripted-tutor"` — no-model onboarding helper.
+   *  - absent when the caller doesn't know.
+   */
+  modelUsed?: "openclaw" | "envoy-harness" | "native" | "scripted-tutor";
+  /**
+   * Phase 8 / Step 5 — the signals (mesh-keyword / tool-name /
+   * explicit-hint tokens) that the prompt router matched. Empty
+   * when the router picked the default (OpenClaw because no
+   * signals matched). The Social UI can render this as a
+   * "routed by <token>" badge.
+   */
+  routingSignals?: ReadonlyArray<string>;
+  /**
+   * Phase 8 / Step 5 — why the prompt router made its choice.
+   *  - `"default"` — no signals matched; OpenClaw by default.
+   *  - `"signal"` — signals matched, envoy-harness was ready,
+   *    routed to envoy-harness.
+   *  - `"envoy-harness-unready"` — signals matched but
+   *    envoy-harness wasn't ready; fell back to OpenClaw. The
+   *    `routingSignals` field still carries the matched tokens
+   *    so the UI can surface the misfire.
+   *  - `"opt-in-disabled"` — the per-node opt-in is disabled
+   *    (`ENVOY_HARNESS_SIGNAL_OPT_IN=disabled`); OpenClaw
+   *    regardless of signals. The `routingSignals` is empty
+   *    because the owner explicitly turned off signal routing.
+   *  - `undefined` for results from the legacy chain
+   *    (scripted-tutor / native fallback) where the router
+   *    never ran.
+   */
+  routingReason?:
+    | "default"
+    | "signal"
+    | "envoy-harness-unready"
+    | "opt-in-disabled";
 }
 
 export interface OwnerAgentTurnDeps {

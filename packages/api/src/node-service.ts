@@ -397,7 +397,13 @@ export interface ChatMessage {
       correlationId?: string;
       pendingApproval?: boolean;
       routeId?: string;
-      modelUsed?: "openclaw" | "native" | "scripted-tutor";
+      /**
+       * Phase 8 / Step 5 — added `"envoy-harness"` for
+       * signal-bearing prompts that auto opt-in to the
+       * sibling-monorepo runtime. See
+       * `apps/node/src/user-prompt-router.ts`.
+       */
+      modelUsed?: "openclaw" | "envoy-harness" | "native" | "scripted-tutor";
       format?: string;
       blocks?: import("./owner-agent-types.js").StructuredBlock[];
     };
