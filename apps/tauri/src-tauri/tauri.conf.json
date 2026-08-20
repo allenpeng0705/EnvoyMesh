@@ -46,7 +46,9 @@
       "resources/node-runtime/**/*",
       "resources/openclaw/",
       "resources/openclaw-envoymesh/",
-      "resources/pi/**/*"
+      "resources/pi/**/*",
+      "resources/envoy-harness/**/*",
+      "resources/envoy-harness-adapter/**/*"
     ]
   },
   "plugins": {

@@ -15,6 +15,12 @@ apps/tauri/src-tauri/resources/openclaw-envoymesh/*
 !apps/tauri/src-tauri/resources/openclaw-envoymesh/.keep
 apps/tauri/src-tauri/resources/pi/*
 !apps/tauri/src-tauri/resources/pi/.keep
+# Phase 8 — vendored by scripts/stage-tauri-envoy-harness-bundle.{sh,ps1}
+# from the sibling envoy-harness monorepo. Do NOT commit.
+apps/tauri/src-tauri/resources/envoy-harness/*
+!apps/tauri/src-tauri/resources/envoy-harness/.keep
+apps/tauri/src-tauri/resources/envoy-harness-adapter/*
+!apps/tauri/src-tauri/resources/envoy-harness-adapter/.keep
 .bundled-skills-staging/
 *.tsbuildinfo
 .env

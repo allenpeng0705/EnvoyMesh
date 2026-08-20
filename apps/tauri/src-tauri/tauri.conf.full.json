@@ -59,6 +59,8 @@
       "resources/openclaw/dist-runtime/**/*",
       "resources/openclaw/extensions/envoymesh/",
       "resources/openclaw-envoymesh/",
+      "resources/envoy-harness/**/*",
+      "resources/envoy-harness-adapter/**/*",
       "resources/openclaw/extensions/duckduckgo/**/*",
       "resources/openclaw/extensions/brave/**/*",
       "resources/openclaw/extensions/exa/**/*",

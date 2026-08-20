@@ -55,6 +55,25 @@
 #   Default -OpenClawExtensions default matches macOS OPENCLAW_EXTENSIONS=default.
 #   Use -OpenClawExtensions all only when you intentionally want the full tree.
 #
+# envoy-harness staging (Phase 8 — aligned with scripts/build-desktop.sh):
+#   $env:STAGE_ENVOY_HARNESS = "0"   Skip envoy-harness staging entirely
+#                                   (debug only — bundle will lack
+#                                   envoy-harness at runtime).
+#                                   Default: stage.
+#   $env:STAGE_ENVOY_HARNESS = "1"   Force a clean rebuild + overwrite. Runs
+#                                   `pnpm -F <pkg> clean` (best-effort) then
+#                                   `pnpm -F <pkg> build` in the sibling repo.
+#                                   The clean step clears .tsbuildinfo + dist/.
+#                                   Use after switching sibling-repo branches
+#                                   or when you want to be sure the staged
+#                                   tree is from-scratch. (Default unset:
+#                                   incremental rebuild — pnpm's tsc skips
+#                                   unchanged sources.)
+#   $env:ENVOY_HARNESS_DIR  = "..."  Override the sibling monorepo path.
+#                                   Default: $Root\..\envoy-harness.
+#   $env:SMOKE_ENVOY_HARNESS = "0"  Skip the post-stage smoke (default 1).
+#                                   See scripts\stage-tauri-envoy-harness-bundle.ps1.
+#
 # Slim / Full / default presets (Phase 49 — Pi optional on Windows):
 #   default       Uses tauri.conf.json           — includes Pi + OpenClaw
 #                 (no Kubo; Helia / system ipfs for IPFS).
@@ -1602,6 +1621,25 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Ok "EnvoyMesh OpenClaw extension staged"
 
+# envoy-harness (Phase 8): vendor from the sibling envoy-harness monorepo
+# into resources\envoy-harness*\ so the Tauri bundle is self-contained.
+# Honours $env:STAGE_ENVOY_HARNESS=0 to skip (debug only) and
+# $env:ENVOY_HARNESS_DIR to override the sibling repo path. See
+# scripts\stage-tauri-envoy-harness-bundle.ps1 for the cross-monorepo
+# build + copy details.
+Write-Info "Staging envoy-harness (Phase 8 — vendor from sibling monorepo)..."
+$stageEnvoyHarnessBundle = Join-Path $PSScriptRoot "stage-tauri-envoy-harness-bundle.ps1"
+if (-not (Test-Path $stageEnvoyHarnessBundle)) {
+    Write-Fail "missing $stageEnvoyHarnessBundle"
+    exit 1
+}
+& $stageEnvoyHarnessBundle
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "stage-tauri-envoy-harness-bundle.ps1 failed — envoy-harness will not be available at runtime. Set `$env:STAGE_ENVOY_HARNESS=`"0`" to skip for debug builds."
+    exit 1
+}
+Write-Ok "envoy-harness staged"
+
 # Persist source fingerprint AFTER stage/heal so it matches post-build
 # dist/entry.js (a pre-stage stamp would thrash re-stage every run).
 if ((Test-Path $openclawStampScript) -and (Test-Path (Join-Path $openclawDest "openclaw.mjs"))) {
@@ -2057,6 +2095,26 @@ if (-not (Test-Path $openclawNm) -or -not (Get-ChildItem $openclawNm -ErrorActio
     $verifyOk = $false
 } else {
     Write-Ok "OpenClaw node_modules"
+}
+# envoy-harness (Phase 8) — verify the vendored trees are present, unless
+# the user explicitly skipped staging (STAGE_ENVOY_HARNESS=0).
+if ($env:STAGE_ENVOY_HARNESS -ne "0") {
+    $envoyHarnessDir = Join-Path $TauriResources "envoy-harness"
+    $envoyHarnessAdapterDir = Join-Path $TauriResources "envoy-harness-adapter"
+    if (-not (Test-Path (Join-Path $envoyHarnessDir "index.js"))) {
+        Write-Fail "envoy-harness staged tree is missing index.js at $envoyHarnessDir — Phase 8 verification failed"
+        $verifyOk = $false
+    } else {
+        Write-Ok "envoy-harness vendored at $envoyHarnessDir"
+    }
+    if (-not (Test-Path (Join-Path $envoyHarnessAdapterDir "index.js"))) {
+        Write-Fail "envoy-harness-adapter staged tree is missing index.js at $envoyHarnessAdapterDir — Phase 8 verification failed"
+        $verifyOk = $false
+    } else {
+        Write-Ok "envoy-harness-adapter vendored at $envoyHarnessAdapterDir"
+    }
+} else {
+    Write-Info "Skipping envoy-harness verification (STAGE_ENVOY_HARNESS=0)"
 }
 $selfRef = Join-Path $TauriResources "openclaw/node_modules/openclaw/package.json"
 if (-not (Test-Path $selfRef)) {
