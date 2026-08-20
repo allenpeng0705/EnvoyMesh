@@ -29,7 +29,10 @@
  * if needed.
  */
 
-import { EnvoyHarnessAdapter } from "@envoymesh/envoy-harness-adapter";
+import {
+  EnvoyHarnessAdapter,
+  buildEnvoyHarnessAdapterWithCrossVerify,
+} from "@envoymesh/envoy-harness-adapter";
 import type { AgentAdapter } from "@envoymesh/agent-adapter";
 
 import { resolveEnvoyHarnessProvider } from "./model.js";
@@ -40,6 +43,26 @@ export interface CreateEnvoyHarnessAdapterInput {
   workerPeerId: string;
   /** Runtime config from `loadEnvoyHarnessRuntimeConfig()`. */
   config: EnvoyHarnessRuntimeConfig;
+  /**
+   * Phase 8 / Step 6 — optional OpenClaw adapter
+   * (or any other `AgentAdapter`) for cross-verify.
+   * When provided, the factory uses
+   * `buildEnvoyHarnessAdapterWithCrossVerify` so
+   * `adapter.verify()` re-runs the same skill on
+   * the cross adapter and returns the local
+   * verifier's verdicts for the new result. This
+   * is the Q4 (a) / (b) cross-verify primitive
+   * wired at the adapter level (the
+   * orchestrator's chain-verify-loop has the
+   * orchestrator-level path; this is the
+   * adapter-level path for direct callers like
+   * the test seam in `node-service-impl`).
+   *
+   * v0 production wiring always passes this
+   * (OpenClaw is always available as the
+   * default AI engine).
+   */
+  openClawAdapter?: AgentAdapter;
 }
 
 /**
@@ -63,6 +86,15 @@ export interface CreateEnvoyHarnessAdapterInput {
  *
  * Until then, `buildAgent` is a no-op that returns a stub Agent so
  * the constructor's required-field check is satisfied.
+ *
+ * **Phase 8 / Step 6 — cross-verify:** when
+ * `input.openClawAdapter` is provided, the factory
+ * uses `buildEnvoyHarnessAdapterWithCrossVerify`
+ * (the bridge's Q4 factory) to wire
+ * `defaultCrossVerify(openClawAdapter)`. The
+ * `verify()` method then re-runs the same skill
+ * on OpenClaw and returns the local verifier's
+ * verdicts for the new result.
  */
 export function createEnvoyHarnessAdapter(
   input: CreateEnvoyHarnessAdapterInput,
@@ -84,6 +116,21 @@ export function createEnvoyHarnessAdapter(
     ...unsigned,
     signature: "",
   });
+
+  // Phase 8 / Step 6 — when `openClawAdapter` is
+  // provided, use the bridge's cross-verify
+  // factory. Otherwise, fall back to the plain
+  // `new EnvoyHarnessAdapter(...)` (backward
+  // compatible with Step 1-5 callers that don't
+  // pass a cross adapter).
+  if (input.openClawAdapter) {
+    return buildEnvoyHarnessAdapterWithCrossVerify({
+      buildAgent,
+      signResult: signResult as never,
+      workerPeerId: input.workerPeerId,
+      openClawAdapter: input.openClawAdapter,
+    });
+  }
 
   const adapter = new EnvoyHarnessAdapter({
     buildAgent,
