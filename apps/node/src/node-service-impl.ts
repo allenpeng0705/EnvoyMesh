@@ -4757,6 +4757,33 @@ class NodeServiceImpl implements NodeService {
     return isOpenClawReadyViaRuntime(this._openClawState);
   }
 
+  /**
+   * Phase 8 — envoy-harness readiness probe (AN engine Step 1+).
+   *
+   * **Step 1 stub:** always returns `false`. The factory + model adapter
+   * are not wired yet (see `apps/node/src/agent-runtime-envoy/factory.ts`).
+   * When the operator selects `envoy-harness` as the worker engine, the
+   * dispatch in `node-service-chain-orchestration.ts` returns
+   * `envoy_harness_unavailable` for any real call. Step 2 flips this to
+   * a real readiness probe (model adapter reachable + API key present).
+   */
+  isEnvoyHarnessReady(): boolean {
+    return false;
+  }
+
+  /**
+   * Phase 8 — sync ask via envoy-harness (AN engine Step 1+).
+   *
+   * **Step 1 stub:** throws `envoy_harness_stub_phase_8_step_1` when
+   * called. The dispatch in `node-service-chain-orchestration.ts`
+   * short-circuits via `isEnvoyHarnessReady() === false` BEFORE this
+   * method is reached, so a correctly-configured operator never hits
+   * this throw — it's a safety net for misuse.
+   */
+  async askEnvoyHarness(_prompt: string): Promise<string> {
+    throw new Error("envoy_harness_stub_phase_8_step_1");
+  }
+
   /** Node-owner choice: which engine runs Team-job steps on this node. */
   getAgentNetworkWorkerEngine(): AgentNetworkWorkerEngine {
     return this._agentNetworkWorkerEngine;

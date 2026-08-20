@@ -26,8 +26,9 @@ covers **Agent Network worker execution** only.
 |------|--------------------------------------------------|
 | **Default (step 1)** | **Built-in OpenClaw** (EnvoyAI) |
 | **Step 2** | **Ext Agent** — owner selects on **their** node (`agentNetworkWorkerEngine`) |
+| **Phase 8 Step 1+** | **envoy-harness** — the home-team agent harness from the sibling monorepo, via `@envoymesh/envoy-harness-adapter` |
 
-Config field: `PersistedNodeConfig.agentNetworkWorkerEngine`: `"openclaw"` \| `"ext"` (default `"openclaw"`).
+Config field: `PersistedNodeConfig.agentNetworkWorkerEngine`: `"openclaw"` \| `"ext"` \| `"envoy-harness"` (default `"openclaw"`). Phase 8 widens the literal set; the persisted schema is unchanged.
 
 Which Ext product (Pi / HomeClaw / Hermes / …, later Codex / Claude Code) remains **Settings → AI → Ext Agent** (`activeExtAgent` in bridge-config). AN only chooses OpenClaw vs that active Ext agent.
 
@@ -45,6 +46,13 @@ Rules:
 4. **Skills (v1):** ranking still uses owner domains (+ OpenClaw skill scan when
    engine is OpenClaw). Ext product names are **not** skills. Ext skill
    advertisement is deferred (see vocabulary).
+5. **Phase 8 envoy-harness skill catalog** lives in the sibling monorepo's
+   `@envoymesh/envoy-harness-adapter` (`ENVOY_HARNESS_SKILLS`). The
+   `apps/node/src/agent-runtime-envoy/manifest.ts` re-export is the seam —
+   adding a new skill in the bridge flows through automatically. In Step 1+
+   `agentNetworkWorkerEngine = "envoy-harness"` returns
+   `envoy_harness_unavailable` for any real call until Step 2 wires the
+   model adapter.
 
 ```text
 Owner config (this node)          Assigner (Team job)

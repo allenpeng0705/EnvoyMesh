@@ -126,6 +126,7 @@ import {
   type AgentNetworkWorkerEngine,
 } from "./agent-network-worker-engine.js";
 import {
+  createEnvoyHarnessChainSubtaskExecutor,
   createExtAgentChainSubtaskExecutor,
   createOpenClawChainSubtaskExecutor,
   executeAcceptedSubtask,
@@ -331,12 +332,26 @@ export interface ChainOrchestrationContext {
   isPiReady(): boolean;
   /** Ask the local Pi runtime (MAP cross-check / second-doctor run). */
   askPi(prompt: string): Promise<PiPromptResult>;
-  /** Node-owner AN worker engine choice (`openclaw` | `ext`). */
+  /** Node-owner AN worker engine choice (`openclaw` | `ext` | `envoy-harness`). */
   getAgentNetworkWorkerEngine(): AgentNetworkWorkerEngine;
   /** Ext Agent bridge ready enough to accept Team-job work. */
   isExtAgentBridgeReady(): boolean;
   /** Sync ask via active Ext Agent (Team jobs — empty/async reply = error). */
   askExtAgent(prompt: string): Promise<string>;
+  /**
+   * Phase 8 — envoy-harness readiness for AN worker execution.
+   * Returns false in Step 1 (the factory + model adapter are not wired
+   * until Step 2). When the operator selects `envoy-harness` as their
+   * worker engine, the dispatch returns `envoy_harness_unavailable` for
+   * any real call until Step 2 lands.
+   */
+  isEnvoyHarnessReady(): boolean;
+  /**
+   * Phase 8 — sync ask via envoy-harness (Step 1 stub). Step 2 wires
+   * the model adapter + BuildAgentFn; until then this throws
+   * `envoy_harness_stub_phase_8_step_1`.
+   */
+  askEnvoyHarness(prompt: string): Promise<string>;
   /** Live Ext Agent reachability hello (HTTP/sidecar) for AN ready probes. */
   probeExtAgent(): Promise<{ reachable: boolean }>;
   /** Local vault root for job input byte delivery (Phase 59B). */
@@ -387,6 +402,8 @@ export function buildChainOrchestrationContext(host: any): ChainOrchestrationCon
       coerceAgentNetworkWorkerEngine(host.getAgentNetworkWorkerEngine?.()),
     isExtAgentBridgeReady: () => Boolean(host.isExtAgentBridgeReady?.()),
     askExtAgent: (prompt) => host.askExtAgent(prompt),
+    isEnvoyHarnessReady: () => Boolean(host.isEnvoyHarnessReady?.()),
+    askEnvoyHarness: (prompt) => host.askEnvoyHarness(prompt),
     probeExtAgent: async () => {
       if (typeof host.probeExtAgent !== "function") {
         return { reachable: Boolean(host.isExtAgentBridgeReady?.()) };
@@ -994,14 +1011,32 @@ export async function buildChainWorkerDeps(deps: ChainOrchestrationContext): Pro
     // Node-owner AN engine (docs/agent-network-engine.md) — not chosen by Assigner.
     isAgentNetworkEngineReady: () => {
       const engine = deps.getAgentNetworkWorkerEngine();
-      return engine === "ext" ? deps.isExtAgentBridgeReady() : deps.isOpenClawReady();
+      if (engine === "ext") return deps.isExtAgentBridgeReady();
+      if (engine === "envoy-harness") return deps.isEnvoyHarnessReady();
+      return deps.isOpenClawReady();
     },
-    agentNetworkEngineDenyReason: () =>
-      deps.getAgentNetworkWorkerEngine() === "ext"
-        ? "ext_agent_unavailable"
-        : "openclaw_unavailable",
+    agentNetworkEngineDenyReason: () => {
+      const engine = deps.getAgentNetworkWorkerEngine();
+      if (engine === "ext") return "ext_agent_unavailable";
+      if (engine === "envoy-harness") return "envoy_harness_unavailable";
+      return "openclaw_unavailable";
+    },
     executeSubtask: async (subtask, onPartial, opts) => {
       const engine = deps.getAgentNetworkWorkerEngine();
+      // Phase 8 — envoy-harness dispatch. Step 1 stub: the factory
+      // exists (`agent-runtime-envoy/factory.ts`) but the model adapter
+      // is not wired yet, so `isEnvoyHarnessReady()` is always false
+      // (the host method returns false by default). Step 2 flips that
+      // + plumbs `createEnvoyHarnessAdapter` into a real executor.
+      // Today: the legacy path returns `envoy_harness_unavailable` for
+      // any real call when this engine is selected.
+      if (engine === "envoy-harness") {
+        return createEnvoyHarnessChainSubtaskExecutor({
+          workerPeerId: agentIdentity.agentPeerId,
+          isEnvoyHarnessReady: () => deps.isEnvoyHarnessReady(),
+          askEnvoyHarness: (prompt) => deps.askEnvoyHarness(prompt),
+        })(subtask, onPartial, opts);
+      }
       const legacyExec =
         engine === "ext"
           ? createExtAgentChainSubtaskExecutor({

@@ -674,7 +674,12 @@ export const TaskChainReadyRequestPayloadSchema = z.object({
 export const TaskChainReadyResponsePayloadSchema = z.object({
   probeId: z.string().min(1).max(128),
   ready: z.boolean(),
-  engine: z.enum(["openclaw", "ext"]),
+  // Phase 8 — added "envoy-harness" to the engine tag. The literal
+  // matches `AGENT_NETWORK_WORKER_ENGINES` in
+  // `apps/node/src/agent-network-worker-engine.ts`. Older peers
+  // ignore unknown enum values; the on-the-wire schema version
+  // (`task-chain-ready-response/v1`) is unchanged.
+  engine: z.enum(["openclaw", "ext", "envoy-harness"]),
   reason: z.string().min(1).max(200).optional(),
   checkedAt: z.string().datetime(),
 });
@@ -756,7 +761,8 @@ export function createTaskChainReadyRequestPayload(input?: {
 export function createTaskChainReadyResponsePayload(input: {
   probeId: string;
   ready: boolean;
-  engine: "openclaw" | "ext";
+  // Phase 8 — widens the engine tag to include "envoy-harness".
+  engine: "openclaw" | "ext" | "envoy-harness";
   reason?: string;
   checkedAt?: string;
 }): TaskChainReadyResponsePayload {

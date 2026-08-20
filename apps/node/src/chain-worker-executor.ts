@@ -177,6 +177,41 @@ export function createExtAgentChainSubtaskExecutor(input: {
   });
 }
 
+/**
+ * Phase 8 — envoy-harness executor (AN engine Step 1+).
+ *
+ * **Step 1 stub:** mirrors the OpenClaw / Ext pattern, but the runtime
+ * is not actually wired (the host's `isEnvoyHarnessReady()` returns
+ * false by default until Step 2 lands). When the operator selects
+ * `envoy-harness` as the worker engine:
+ *   - the call returns `envoy_harness_unavailable` (clean fail;
+ *     the orchestrator retries on a different node or escalates)
+ *   - no model adapter or LLM key is required for the call path
+ *
+ * **Step 2 (next):** replace `input.askEnvoyHarness` with a
+ * `createEnvoyHarnessAdapter`-driven path. The result text goes
+ * through the same `textResultArtifacts` shape as the OpenClaw path.
+ * The `buildAgent` + `signResult` wiring is documented in
+ * `apps/node/src/agent-runtime-envoy/factory.ts`.
+ */
+export function createEnvoyHarnessChainSubtaskExecutor(input: {
+  workerPeerId: string;
+  now?: () => Date;
+  isEnvoyHarnessReady: () => boolean;
+  askEnvoyHarness: (prompt: string) => Promise<string>;
+}): NonNullable<ChainWorkerHandlerDeps["executeSubtask"]> {
+  return createEngineChainSubtaskExecutor({
+    workerPeerId: input.workerPeerId,
+    now: input.now,
+    engineLabel: "envoy-harness",
+    logTag: "EnvoyHarness",
+    unavailableCode: "envoy_harness_unavailable",
+    emptyCode: "envoy_harness_empty",
+    isReady: input.isEnvoyHarnessReady,
+    ask: input.askEnvoyHarness,
+  });
+}
+
 function createEngineChainSubtaskExecutor(input: {
   workerPeerId: string;
   now?: () => Date;
