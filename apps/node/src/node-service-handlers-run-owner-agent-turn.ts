@@ -33,6 +33,8 @@ import {
   routeUserPrompt,
   type RouteUserPromptDecision,
 } from "./user-prompt-router.js";
+import { extractEnvoyHarnessTags } from "./manifest-envoy-harness-tags.js";
+import type { NodeManifest } from "./agent-adapter-manifest-aggregate.js";
 
 export interface RunOwnerAgentTurnContext {
   /** Record owner activity. */
@@ -78,6 +80,27 @@ export interface RunOwnerAgentTurnContext {
    * field, future).
    */
   signalOptIn: "enabled" | "disabled";
+  /**
+   * Phase 8 / v1.1 — read the merged node manifest.
+   * Sync (the host caches it after init). The
+   * runtime extracts envoy-harness skill tags from
+   * this and passes them to the signal router as
+   * the primary vocabulary (Q5 of the v1.1 sub-plan).
+   *
+   * **Returns `undefined` when:**
+   * - The host hasn't finished init (rare;
+   *   `getNodeManifest` reads from `_mesh?.peerId`
+   *   and falls back to `"local-node"`).
+   * - The host doesn't support the manifest
+   *   (older `NodeServiceImpl` versions; future
+   *   upgrade path).
+   *
+   * **Failure handling:** the runtime wraps this
+   * call in a `try/catch` and logs a warning on
+   * failure (Q6 of the v1.1 sub-plan — fall back
+   * to v0 vocabulary, don't fail loud).
+   */
+  getNodeManifest(): NodeManifest | undefined;
   /** Persist the exchange to the chat log. */
   persistEnvoyAiChatExchange(
     rawMessage: string,
@@ -139,11 +162,20 @@ export async function runOwnerAgentTurnViaRuntime(
   // we try either. The router's decision shapes
   // the dispatch below; OpenClaw is the default,
   // envoy-harness is the signal-driven opt-in.
+  //
+  // Phase 8 / v1.1 — read the merged manifest's
+  // envoy-harness skill tags (Q1 / Q5 of the v1.1
+  // sub-plan). The router's primary vocabulary is
+  // the dynamic tag list; the v0 `MESH_KEYWORDS`
+  // constant is the fallback when the manifest is
+  // unavailable (Q6 — fall back, don't fail loud).
+  const envoyHarnessTags = readEnvoyHarnessTags(ctx);
   const decision = routeUserPrompt({
     prompt: agentMessage,
     isEnvoyHarnessReady: ctx.isEnvoyHarnessReady(),
     envoyHarnessUnreadyReason: undefined, // host-side logging seam (future)
     signalOptIn: ctx.signalOptIn,
+    envoyHarnessTags,
   });
 
   // Strip the hint prefix (e.g. `!eh translate this` →
@@ -275,4 +307,54 @@ export async function runOwnerAgentTurnViaRuntime(
  */
 export function defaultSignalOptIn(): "enabled" | "disabled" {
   return readSignalOptInEnv();
+}
+
+/**
+ * Phase 8 / v1.1 — read the manifest + extract
+ * envoy-harness skill tags for the router.
+ *
+ * **Why a helper:** the read can throw (the host's
+ * `getNodeManifest` may not exist on older versions;
+ * future async migrations). Wrapping the call here
+ * centralizes the Q6 fallback policy (log a warning,
+ * fall back to `undefined` so the router uses the v0
+ * vocabulary) without polluting the main dispatch
+ * loop.
+ *
+ * **Why `undefined` (not `[]`) on failure:** `[]`
+ * means "manifest has no envoy-harness skills"
+ * (Q8 — distinct intent: "I read the manifest, it
+ * was empty"). `undefined` means "I couldn't read
+ * the manifest" (Q6 — fall back to v0). The two
+ * cases are semantically different; the router
+ * honors both.
+ *
+ * @param ctx The runtime context.
+ * @returns The tag array (possibly empty), or
+ *   `undefined` on read failure.
+ */
+function readEnvoyHarnessTags(
+  ctx: RunOwnerAgentTurnContext,
+): ReadonlyArray<string> | undefined {
+  let manifest: NodeManifest | undefined;
+  try {
+    manifest = ctx.getNodeManifest();
+  } catch (err) {
+    // Q6 — fall back to v0 vocabulary (the
+    // router's `envoyHarnessTags === undefined`
+    // path). Log a warning so the owner can
+    // debug (e.g. the host's manifest store
+    // crashed mid-read).
+    console.warn(
+      "[envoy-harness] getNodeManifest() failed, falling back to v0 vocabulary:",
+      err instanceof Error ? err.message : String(err),
+    );
+    return undefined;
+  }
+  if (manifest === undefined) {
+    // Older host without manifest support, or
+    // early init. Router falls back to v0.
+    return undefined;
+  }
+  return extractEnvoyHarnessTags(manifest);
 }

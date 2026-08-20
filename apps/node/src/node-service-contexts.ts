@@ -25,6 +25,7 @@ import type { PairDeviceContext } from "./node-service-handlers-pair-device.js";
 import type { PairSharedIdentityContext } from "./node-service-handlers-pair-shared-identity.js";
 import type { GetPairingPayloadContext } from "./node-service-handlers-pairing-payload.js";
 import type { RunOwnerAgentTurnContext } from "./node-service-handlers-run-owner-agent-turn.js";
+import type { NodeManifest } from "./agent-adapter-manifest-aggregate.js";
 import type { ScriptedTutorState } from "./scripted-tutor.js";
 import type { RunDocumentAgentTurnContext } from "./node-service-handlers-run-document-agent-turn.js";
 import type {
@@ -390,6 +391,16 @@ export interface RunOwnerAgentTurnContextDeps {
    * never picks envoy-harness regardless of signals.
    */
   signalOptIn: RunOwnerAgentTurnContext["signalOptIn"];
+  /**
+   * Phase 8 / v1.1 — read the merged node manifest.
+   * The runtime extracts envoy-harness skill tags
+   * from this and passes them to the signal router
+   * (the v1.1 dynamic vocabulary). When the call
+   * throws or returns `undefined`, the runtime
+   * falls back to the v0 `MESH_KEYWORDS` constant
+   * (Q6 of the v1.1 sub-plan).
+   */
+  getNodeManifest: () => NodeManifest | undefined;
   persistEnvoyAiChatExchange: RunOwnerAgentTurnContext["persistEnvoyAiChatExchange"];
   recordEnvoyAiHumanOutgoing: RunOwnerAgentTurnContext["recordEnvoyAiHumanOutgoing"];
   maybeIngestTerminalAssistantReply: RunOwnerAgentTurnContext["maybeIngestTerminalAssistantReply"];
@@ -1091,6 +1102,12 @@ export function buildRunOwnerAgentTurnContext(deps: RunOwnerAgentTurnContextDeps
     isEnvoyHarnessReady: () => deps.isEnvoyHarnessReady(),
     askEnvoyHarness: (msg) => deps.askEnvoyHarness(msg),
     signalOptIn: deps.signalOptIn,
+    // Phase 8 / v1.1 — manifest read for the
+    // signal router's dynamic vocabulary. The
+    // host wires this to `NodeServiceImpl.getNodeManifest()`,
+    // which is sync (the manifest is cached after
+    // init) and returns `NodeManifest | undefined`.
+    getNodeManifest: () => deps.getNodeManifest(),
     persistEnvoyAiChatExchange: (raw, turn, humanMsgId) =>
       deps.persistEnvoyAiChatExchange(raw, turn, humanMsgId),
     recordEnvoyAiHumanOutgoing: (msg, humanMsgId) =>

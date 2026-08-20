@@ -79,6 +79,14 @@ function makeCtx(
     isEnvoyHarnessReady: vi.fn(() => false),
     askEnvoyHarness: vi.fn(async () => "envoy-harness answer"),
     signalOptIn: "enabled",
+    // Phase 8 / v1.1 — manifest read. The default
+    // returns `undefined` so the existing 23 tests
+    // continue to use the v0 `MESH_KEYWORDS` fallback
+    // (the router's `envoyHarnessTags === undefined`
+    // path). The v1.1 dynamic-vocabulary tests
+    // (below) override this to inject a manifest
+    // with specific tags.
+    getNodeManifest: vi.fn(() => undefined),
     persistEnvoyAiChatExchange: vi.fn(async () => undefined),
     recordEnvoyAiHumanOutgoing: vi.fn(async () => undefined),
     maybeIngestTerminalAssistantReply: vi.fn(),
@@ -195,15 +203,11 @@ describe("runOwnerAgentTurnViaRuntime — signal branch (EH ready)", () => {
       "spawn via RemoteMeshSubmitter please",
     );
     expect(out.modelUsed).toBe("envoy-harness");
-    // v0 substring matching accepts the `Mesh`
-    // substring inside `RemoteMeshSubmitter` as
-    // a mesh-keyword signal too. The router
-    // returns BOTH signals sorted by offset;
-    // the test documents the v0 substring
-    // behavior (Q6: accept FP in v0; tighten
-    // to word boundary in v1).
+    // v1.1: only the tool-name signal matches.
+    // The v0 substring FP (`Mesh` inside
+    // `RemoteMeshSubmitter`) is gone with the
+    // word-boundary algorithm (Q6 follow-up).
     expect(out.routingSignals).toContain("RemoteMeshSubmitter");
-    expect(out.routingSignals).toContain("Mesh");
   });
 
   it("routes a `lsp_goto_definition` tool name to envoy-harness", async () => {
@@ -519,5 +523,164 @@ describe("runOwnerAgentTurnViaRuntime — persistence invariant", () => {
     });
     await runOwnerAgentTurnViaRuntime(ctx, "hi");
     expect(spies.persistEnvoyAiChatExchange).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5. Phase 8 / v1.1 — manifest-tag dynamic vocabulary
+// ---------------------------------------------------------------------------
+
+/**
+ * The v1.1 host wiring. The runtime reads the
+ * merged manifest via `ctx.getNodeManifest()`,
+ * extracts envoy-harness skill tags, and passes
+ * them to `routeUserPrompt` as the primary
+ * vocabulary. The v0 `MESH_KEYWORDS` constant
+ * is the fallback when the manifest is
+ * unavailable (Q6 of the v1.1 sub-plan).
+ *
+ * The default `makeCtx` returns `undefined` from
+ * `getNodeManifest()` (preserves the v0 fallback
+ * for the 23 tests above). The tests in this
+ * section override with a custom manifest.
+ */
+describe("runOwnerAgentTurnViaRuntime — v1.1 manifest-tag dynamic vocabulary", () => {
+  /**
+   * Build a minimal `NodeManifest` exposing one
+   * envoy-harness skill with the given tags. The
+   * shape mirrors `aggregateNodeManifest()`'s
+   * output (see
+   * `agent-adapter-manifest-aggregate.ts:67-107`).
+   */
+  function makeManifest(envoyHarnessTags: ReadonlyArray<string>) {
+    return {
+      peerId: "test-node",
+      runtimes: [
+        { runtime: "envoy-harness" as const, runtimeVersion: "test" },
+        { runtime: "openclaw" as const, runtimeVersion: "test" },
+      ],
+      skills: [
+        {
+          skillId: "test-skill",
+          description: "test",
+          costCeilingUsd: undefined,
+          maxSensitivity: "public" as const,
+          tags: envoyHarnessTags,
+          runtime: "envoy-harness" as const,
+        },
+      ],
+    };
+  }
+
+  it("routes a manifest-tag keyword to envoy-harness", async () => {
+    // The manifest exposes `mesh` (from a
+    // envoy-harness skill). The prompt contains
+    // `mesh`. The router matches the dynamic
+    // vocabulary (not the v0 list) and routes
+    // to EH.
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      getNodeManifest: vi.fn(() => makeManifest(["mesh", "observability"])),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "set up a mesh sub-agent for this task",
+    );
+    expect(out.modelUsed).toBe("envoy-harness");
+    expect(out.routingReason).toBe("signal");
+    expect(out.routingSignals).toContain("mesh");
+    expect(spies.askEnvoyHarness).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT route a v0-keyword that is not in the manifest (e.g. `federated`)", async () => {
+    // The v0 `MESH_KEYWORDS` constant includes
+    // `federated` + `cross-node`, but the
+    // default envoy-harness manifest doesn't
+    // expose either. With the v1.1 dynamic
+    // vocabulary, a prompt with `federated`
+    // does NOT route to EH (the v0 fallback
+    // is bypassed when the manifest is
+    // available).
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      getNodeManifest: vi.fn(() => makeManifest(["mesh", "observability"])),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "federated scoreboard query for peer X",
+    );
+    expect(out.modelUsed).toBe("openclaw");
+    expect(out.routingReason).toBe("default");
+    expect(out.routingSignals).toEqual([]);
+    expect(spies.askEnvoyHarness).not.toHaveBeenCalled();
+  });
+
+  it("falls back to v0 MESH_KEYWORDS when the manifest is undefined", async () => {
+    // When `getNodeManifest` returns `undefined`
+    // (older host, early init, or read failure),
+    // the router uses the v0 `MESH_KEYWORDS`
+    // constant as the fallback. The v0 list
+    // includes `federated`; a prompt with
+    // `federated` does route to EH.
+    const { ctx } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      getNodeManifest: vi.fn(() => undefined),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "federated scoreboard query for peer X",
+    );
+    expect(out.modelUsed).toBe("envoy-harness");
+    expect(out.routingSignals).toContain("federated");
+  });
+
+  it("falls back to v0 MESH_KEYWORDS when getNodeManifest throws", async () => {
+    // Q6 of the v1.1 sub-plan — the runtime
+    // wraps the manifest read in a `try/catch`
+    // and logs a warning. The router gets
+    // `undefined` tags and uses the v0 fallback.
+    // The user's prompt still works.
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      getNodeManifest: vi.fn(() => {
+        throw new Error("manifest store crashed");
+      }),
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const out = await runOwnerAgentTurnViaRuntime(
+        ctx,
+        "set up a mesh sub-agent",
+      );
+      expect(out.modelUsed).toBe("envoy-harness");
+      expect(out.routingSignals).toContain("mesh");
+      // Q6 — warning logged with the failure
+      // reason so the owner can debug.
+      expect(warnSpy).toHaveBeenCalled();
+      const firstCall = warnSpy.mock.calls[0];
+      expect(String(firstCall?.[0] ?? "")).toContain("getNodeManifest");
+    } finally {
+      warnSpy.mockRestore();
+      void spies;
+    }
+  });
+
+  it("routes a manifest tag that v0 MESH_KEYWORDS didn't have (e.g. `code`)", async () => {
+    // The v0 constant didn't have `code`; the
+    // v1.1 dynamic vocabulary is whatever tags
+    // the envoy-harness skills expose. A
+    // prompt with `code` matches when the
+    // manifest has a `code` tag.
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      getNodeManifest: vi.fn(() => makeManifest(["code", "edit"])),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "review this code for me",
+    );
+    expect(out.modelUsed).toBe("envoy-harness");
+    expect(out.routingSignals).toContain("code");
+    expect(spies.askEnvoyHarness).toHaveBeenCalledTimes(1);
   });
 });

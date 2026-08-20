@@ -51,7 +51,7 @@ chat.
 | Prompt category | Routed to | Trigger |
 |---|---|---|
 | Ordinary local chat | **OpenClaw** (default) | No signal matched |
-| **Mesh keyword**: `mesh`, `federated`, `cross-node` | envoy-harness | Case-insensitive substring in the prompt |
+| **Mesh keyword** (v1.1: dynamic from merged manifest's envoy-harness skill tags; v0 fallback: `mesh`, `federated`, `cross-node`) | envoy-harness | Word-boundary regex (single-word tags) or exact substring (hyphenated tags) — see [§2.2.1 v1.1 dynamic vocabulary](#221-v11-dynamic-vocabulary-capability-tag-based) below |
 | **Tool name**: `RemoteMeshSubmitter`, `FanOutSpec`, `lsp_*` | envoy-harness | Case-insensitive substring (lsp_ uses word-boundary regex) |
 | **Explicit hint**: `!eh` or `/eh` at the start | envoy-harness | User explicitly forces routing; prefix is stripped before dispatch |
 | Signal matched + envoy-harness not ready | **OpenClaw** (fallback) | `routingReason: "envoy-harness-unready"`; signals still populated in result |
@@ -104,11 +104,92 @@ env-var surface; the UI rewrite is a separate work item.
 - Cost cap (requires a UI affordance the chat path
   doesn't have today)
 - Multi-provider (same reason)
-- Capability-tag-based detection (when the merged
-  manifest exposes structured capability tags in v1)
-- Word-boundary tightening (v0 accepts substring false
-  positives like `"meshes"` matches `mesh`; v1 will
-  tighten to a word-boundary regex)
+- ~~Capability-tag-based detection~~ → **shipped in
+  v1.1** (see §2.2.1 below)
+- ~~Word-boundary tightening~~ → **shipped in v1.1**
+  (see §2.2.1 below)
+
+#### 2.2.1 v1.1 dynamic vocabulary (capability-tag-based)
+
+**Phase 8 v1.1 (2026-08-21) — the v0 hardcoded
+`MESH_KEYWORDS = ["mesh", "federated", "cross-node"]`
+is replaced by a dynamic vocabulary extracted from
+the merged manifest's envoy-harness skill tags.**
+
+**Why this matters:** the v0 router was fragile — it
+relied on a hand-curated keyword list that drifted
+out of sync as envoy-harness skills were added. v1.1
+makes the router **manifest-aware**: the vocabulary
+IS the union of envoy-harness skill tags, updated
+every time the merged manifest changes. Adding a new
+envoy-harness skill with a new tag automatically
+extends the router's vocabulary.
+
+**How the dynamic vocabulary works:**
+
+1. The host reads the merged manifest once per turn
+   via `NodeServiceImpl.getNodeManifest()` (sync;
+   cached after init — Q5 of the v1.1 sub-plan).
+2. `extractEnvoyHarnessTags(manifest)` filters skills
+   by `runtime === "envoy-harness"` and unions their
+   `tags[]` arrays. The result is the dynamic
+   vocabulary.
+3. The router receives the tags as a new
+   `envoyHarnessTags` field on its input. The
+   primary scan path uses the dynamic vocabulary
+   instead of the v0 constant.
+4. The v0 `MESH_KEYWORDS` constant stays as a
+   **private backward-compat fallback** when the
+   manifest is unavailable (Q1 + Q3 of the v1.1
+   sub-plan; the constant is no longer the
+   primary scan source but it remains for callers
+   that haven't been updated).
+
+**Tag matching algorithm (Q2):**
+
+- **Single-word tags** (e.g. `mesh`, `code`,
+  `bond`): **word-boundary regex**. This cleans
+  up the v0 substring FPs — `meshes` no longer
+  matches `mesh`; `codes` no longer matches `code`.
+- **Hyphenated tags** (e.g. `cross-node`,
+  `lsp-goto`): **exact substring**. Word
+  boundary doesn't make sense for hyphenated
+  tokens (the `-` is part of the tag).
+
+**Fallback policy (Q6):** when the manifest read
+throws or returns `undefined` (older host, early
+init, or read failure), the router uses the v0
+`MESH_KEYWORDS` constant. A warning is logged so
+the owner can debug.
+
+**The current envoy-harness skill tag union** (8
+skills, 12 unique tags):
+
+| Skill | Tags |
+|---|---|
+| `setup-sponsor-friend` | `mesh`, `bond`, `sponsor` |
+| `peer-list` | `mesh`, `observability` |
+| `relay-status` | `mesh`, `observability` |
+| `code-edit` | `code`, `edit` |
+| `code-review` | `code`, `review` |
+| `doc-search` | `doc`, `search` |
+| `bash-run` | `bash`, `shell` |
+| `plan` | `plan` |
+
+**Files:**
+
+- Pure router: `apps/node/src/user-prompt-router.ts`
+  (50 unit tests in
+  `apps/node/test/user-prompt-router.test.ts` —
+  41 v0 + 9 v1.1)
+- Host wiring: `apps/node/src/node-service-handlers-run-owner-agent-turn.ts`
+  (28 e2e tests in
+  `apps/node/test/run-owner-agent-turn-routing.test.ts`
+  — 23 v0 + 5 v1.1)
+- Tag extractor helper:
+  `apps/node/src/manifest-envoy-harness-tags.ts`
+- Plan: `docs/agent-harness-integration-v1-1.md`
+  (4 locked design questions + Q1/Q3 reconciliation)
 
 **Why opt-in (default = OpenClaw) vs swap-the-default:**
 

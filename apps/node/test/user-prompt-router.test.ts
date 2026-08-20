@@ -140,14 +140,19 @@ describe("routeUserPrompt — mesh keyword branch", () => {
     expect(decision.signals[0]?.token).toBe("Mesh");
   });
 
-  it("accepts substring false positives in v0 (e.g. `meshes`)", () => {
-    // v0 ships with substring matching per Q6; the
-    // test documents the FP and ensures we don't
-    // tighten in v0 by accident. v1 will tighten to
-    // word boundary.
+  it("rejects substring false positives in v0 fallback (e.g. `meshes` does NOT match `mesh`)", () => {
+    // Phase 8 v1.1 — the v0 fallback (`MESH_KEYWORDS`)
+    // is matched with the v1.1 algorithm
+    // (word-boundary regex for single-word tags).
+    // This cleans up the v0 substring FP (Q6
+    // follow-up) — `meshes` no longer matches `mesh`,
+    // `codes` no longer matches `code`. The v0
+    // LIST stays the same; the ALGORITHM is the
+    // v1.1 word-boundary one.
     const decision = routeUserPrompt(makeInput({ prompt: "the meshes overlap" }));
-    expect(decision.runtime).toBe("envoy-harness");
-    expect(decision.signals[0]?.token).toBe("mesh");
+    expect(decision.runtime).toBe("openclaw");
+    expect(decision.reason).toBe("default");
+    expect(decision.signals).toEqual([]);
   });
 
   it("captures multiple mesh keywords in one prompt", () => {
@@ -222,6 +227,166 @@ describe("routeUserPrompt — tool name branch", () => {
     const decision = routeUserPrompt(makeInput({ prompt: "the mylsp_foo helper" }));
     expect(decision.runtime).toBe("openclaw");
     expect(decision.reason).toBe("default");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 8 v1.1 — capability-tag-based signal detection
+// ---------------------------------------------------------------------------
+
+describe("routeUserPrompt — v1.1 manifest-tag detection", () => {
+  it("matches a single-word manifest tag with word-boundary regex", () => {
+    // The manifest exposes `mesh` as a tag (from
+    // `setup-sponsor-friend`, `peer-list`,
+    // `relay-status`). The prompt's word `mesh`
+    // matches with the v1.1 word-boundary algorithm.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "set up a mesh sub-agent for this task",
+        envoyHarnessTags: ["mesh"],
+      }),
+    );
+    expect(decision.runtime).toBe("envoy-harness");
+    expect(decision.reason).toBe("signal");
+    expect(decision.signals[0]).toMatchObject({
+      token: "mesh",
+      category: "mesh-keyword",
+    });
+  });
+
+  it("rejects substring false positives (`meshes` does NOT match `mesh`)", () => {
+    // v1.1 cleans up the v0 substring FP (Q6
+    // follow-up). The `mesh` tag uses word-boundary
+    // regex, so `meshes` no longer matches.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "the meshes overlap in the graph",
+        envoyHarnessTags: ["mesh"],
+      }),
+    );
+    expect(decision.runtime).toBe("openclaw");
+    expect(decision.reason).toBe("default");
+    expect(decision.signals).toEqual([]);
+  });
+
+  it("does NOT match a tag that is not in the manifest (e.g. `federated`)", () => {
+    // v0 had `federated` in MESH_KEYWORDS. v1.1's
+    // dynamic vocabulary is the manifest's tags;
+    // `federated` is not in any envoy-harness skill's
+    // tags. So a prompt with `federated` does NOT
+    // trigger envoy-harness (the v0 `federated` is
+    // gone).
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "federated scoreboard query for peer X",
+        envoyHarnessTags: ["mesh", "observability"],
+      }),
+    );
+    expect(decision.runtime).toBe("openclaw");
+    expect(decision.reason).toBe("default");
+    expect(decision.signals).toEqual([]);
+  });
+
+  it("matches a hyphenated manifest tag as exact substring", () => {
+    // Hyphenated tags use exact substring match
+    // (per Q2). `cross-node` matches `cross-node`
+    // in the prompt; the `\b` would have failed
+    // because `-` is a non-word char.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "spawn a cross-node verifier rule",
+        envoyHarnessTags: ["cross-node"],
+      }),
+    );
+    expect(decision.runtime).toBe("envoy-harness");
+    expect(decision.signals[0]).toMatchObject({
+      token: "cross-node",
+      category: "mesh-keyword",
+    });
+  });
+
+  it("matches multiple manifest tags in one prompt", () => {
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "show me the mesh and observability dashboards",
+        envoyHarnessTags: ["mesh", "observability", "code"],
+      }),
+    );
+    expect(decision.runtime).toBe("envoy-harness");
+    expect(decision.signals).toHaveLength(2);
+    const tokens = decision.signals.map((s) => s.token);
+    expect(tokens).toContain("mesh");
+    expect(tokens).toContain("observability");
+  });
+
+  it("falls back to v0 MESH_KEYWORDS when envoyHarnessTags is undefined (backward compat)", () => {
+    // No `envoyHarnessTags` → router uses the v0
+    // MESH_KEYWORDS list (`mesh`, `federated`,
+    // `cross-node`) with the v1.1 algorithm
+    // (word-boundary regex).
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "set up a mesh sub-agent",
+        // envoyHarnessTags omitted → undefined → v0 fallback
+      }),
+    );
+    expect(decision.runtime).toBe("envoy-harness");
+    expect(decision.signals[0]).toMatchObject({ token: "mesh" });
+  });
+
+  it("returns no tag-based signals when envoyHarnessTags is an empty array", () => {
+    // Empty array → no tag vocabulary. The v0
+    // tool names / lsp / hint still work.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "set up a mesh sub-agent",
+        envoyHarnessTags: [],
+      }),
+    );
+    // No manifest tag for `mesh` → no signal → default OpenClaw.
+    expect(decision.runtime).toBe("openclaw");
+    expect(decision.reason).toBe("default");
+  });
+
+  it("combines manifest-tag signals with v0 vocabulary (tool names / lsp / hint)", () => {
+    // The prompt has BOTH a manifest tag (`mesh`)
+    // and a tool name (`lsp_goto_definition`). The
+    // router unions both signal sources.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "use lsp_goto_definition on the mesh sub-agent",
+        envoyHarnessTags: ["mesh"],
+      }),
+    );
+    expect(decision.runtime).toBe("envoy-harness");
+    expect(decision.signals).toHaveLength(2);
+    const categories = decision.signals.map((s) => s.category);
+    expect(categories).toContain("mesh-keyword");
+    expect(categories).toContain("tool-name");
+  });
+
+  it("rejects hyphenated substring that is part of a longer word (e.g. `across-node` matches `cross-node`)", () => {
+    // The hyphenated tag uses exact substring
+    // match. `across-node` contains `cross-node`
+    // as a substring (the `a` is just before
+    // `cross`). This is a v1.1 limitation: the
+    // exact-substring approach accepts FPs for
+    // hyphenated tags. v1.2 could tighten to a
+    // smarter boundary.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "the across-node failure caused a retry",
+        envoyHarnessTags: ["cross-node"],
+      }),
+    );
+    // v1.1 accepts this FP (substring match for
+    // hyphenated tags). Documented behavior; future
+    // v1.2 could tighten.
+    expect(decision.runtime).toBe("envoy-harness");
+    expect(decision.signals[0]).toMatchObject({
+      token: "cross-node",
+      category: "mesh-keyword",
+    });
   });
 });
 

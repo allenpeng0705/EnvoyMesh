@@ -554,6 +554,15 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             isEnvoyHarnessReady: () => host.isEnvoyHarnessReady(),
             askEnvoyHarness: (msg) => host.askEnvoyHarness(msg),
             signalOptIn: readSignalOptInEnv(),
+            // Phase 8 / v1.1 — manifest read for the
+            // signal router's dynamic vocabulary. The
+            // host's `getNodeManifest()` is sync (the
+            // manifest is cached after init) and
+            // returns `NodeManifest | undefined`. When
+            // undefined or on read failure, the runtime
+            // falls back to the v0 `MESH_KEYWORDS`
+            // constant (Q6 of the v1.1 sub-plan).
+            getNodeManifest: () => host.getNodeManifest(),
             persistEnvoyAiChatExchange: (raw, turn, humanMsgId) =>
               persistEnvoyAiChatExchangeViaRuntime(host._openClawRuntimeDeps(), raw, turn, humanMsgId),
             recordEnvoyAiHumanOutgoing: (msg, humanMsgId) =>

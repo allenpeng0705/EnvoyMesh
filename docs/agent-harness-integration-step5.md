@@ -1,7 +1,13 @@
 # envoy-harness integration — Step 5 sub-plan (signal-based auto opt-in)
 
-> **Status:** Draft (2026-08-20). Detailed sub-plan for
-> Step 5. Companion to
+> **Status:** Step 5 ✅ DONE (2026-08-20). **v1.1
+> (2026-08-21) replaces the v0 `MESH_KEYWORDS`
+> constant with a dynamic vocabulary extracted from
+> the merged manifest's envoy-harness skill tags.**
+> The v0 list now serves as a private backward-compat
+> fallback only (Q1 + Q3 of the v1.1 sub-plan). See
+> [`agent-harness-integration-v1-1.md`](./agent-harness-integration-v1-1.md)
+> for the v1.1 details. Companion to
 > [`agent-harness-integration.md`](./agent-harness-integration.md) (the
 > design) and
 > [`agent-harness-integration-step3-4.md`](./agent-harness-integration-step3-4.md)

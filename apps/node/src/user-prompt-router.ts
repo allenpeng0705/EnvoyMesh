@@ -38,12 +38,25 @@
  *    (the LLM doesn't see `!eh translate this`; it sees
  *    `translate this`).
  *
- * **v0 deferred:**
+ * **v1.1 signal set (Phase 8 v1):**
+ * The v0 `MESH_KEYWORDS` is replaced by a dynamic
+ * vocabulary extracted from the merged manifest's
+ * envoy-harness skills' `tags[]` (passed as
+ * `input.envoyHarnessTags`). The dynamic vocabulary:
+ * - Is **word-boundary regex** for single-word tags
+ *   (e.g. `mesh` doesn't match `meshes`).
+ * - Is **exact substring** for hyphenated tags
+ *   (e.g. `cross-node` matches `cross-node`).
+ * - Falls back to the v0 `MESH_KEYWORDS` constant
+ *   when `envoyHarnessTags` is `undefined` (backward
+ *   compat for callers that haven't been updated to
+ *   read the manifest).
+ *
+ * **v0 deferred (still):**
  * - Cost cap (requires UI affordance `/cost:0.5`)
  * - Multi-provider (requires UI affordance `/provider:openai`)
- * - Capability-tag-based detection (v1 — once the merged
- *   manifest exposes structured capability tags)
- * - Word-boundary tightening (v1)
+ * - OpenClaw tags as negative signals (v1.1 only
+ *   uses envoy-harness tags as positive)
  *
  * **Stability:** the public surface is `routeUserPrompt`
  * + the input/decision/matcher types. The signal set is
@@ -170,6 +183,32 @@ export interface RouteUserPromptInput {
    * `readSignalOptInEnv()`.
    */
   signalOptIn: "enabled" | "disabled";
+  /**
+   * Phase 8 v1.1 — dynamic tag vocabulary
+   * extracted from the merged manifest's
+   * envoy-harness skills' `tags[]`. The host
+   * reads the manifest once (via
+   * `getNodeManifest()`) and passes the union of
+   * all `envoy-harness` skills' tags here.
+   *
+   * **Primary path:** when provided, the router
+   * matches the prompt against these tags (word-
+   * boundary regex for single-word tags; exact
+   * substring for hyphenated tags).
+   *
+   * **Fallback:** when `undefined`, the router
+   * uses the v0 `MESH_KEYWORDS` constant as a
+   * backward-compat fallback. Callers that
+   * haven't been updated to read the manifest
+   * still work.
+   *
+   * **Empty array:** when `[]` (manifest has no
+   * envoy-harness skills), the router has no
+   * tag-based signals. The v0 vocabulary
+   * (tool names / lsp / hint prefix) still
+   * works.
+   */
+  envoyHarnessTags?: ReadonlyArray<string>;
 }
 
 /** The output of `routeUserPrompt`. */
@@ -260,7 +299,13 @@ export function routeUserPrompt(
   }
 
   // 2. Scan the prompt for signals.
-  const signals = scanSignals(input.prompt);
+  //    v1.1 — pass the dynamic `envoyHarnessTags`
+  //    from the merged manifest (per Q2 / Q7 of
+  //    the v1.1 sub-plan). The scanner uses the
+  //    dynamic vocabulary when provided; falls
+  //    back to the v0 `MESH_KEYWORDS` when
+  //    undefined.
+  const signals = scanSignals(input.prompt, input.envoyHarnessTags);
 
   // 3. No signals → default OpenClaw.
   if (signals.length === 0) {
@@ -313,11 +358,26 @@ export function routeUserPrompt(
  * word-boundary matching would miss legitimate
  * cases like `"Mesh-based federated scoreboard"`
  * (where `Mesh` is capitalized, plural, or
- * hyphenated). v1 will tighten to a smarter
- * matcher that uses the merged manifest's
- * capability tags.
+ * hyphenated). v1.1 replaces the v0 substring
+ * mesh vocabulary with a word-boundary regex
+ * against the merged manifest's envoy-harness
+ * skill tags (the v1.1 primary path); the v0
+ * substring mesh vocabulary remains as a
+ * private fallback for callers that haven't
+ * been updated to read the manifest.
+ *
+ * **v1.1 dynamic tag scan (4):** when
+ * `envoyHarnessTags` is provided, scan the
+ * prompt for any manifest tag using a word-
+ * boundary regex (single-word tags) or exact
+ * substring (hyphenated tags). The first
+ * occurrence wins per tag. The reported `token`
+ * is the original-case substring of the prompt.
  */
-function scanSignals(prompt: string): ReadonlyArray<SignalMatch> {
+function scanSignals(
+  prompt: string,
+  envoyHarnessTags: ReadonlyArray<string> | undefined,
+): ReadonlyArray<SignalMatch> {
   const signals: SignalMatch[] = [];
   const lower = prompt.toLowerCase();
 
@@ -382,14 +442,18 @@ function scanSignals(prompt: string): ReadonlyArray<SignalMatch> {
     });
   }
 
-  // 2d. Mesh keywords. Case-insensitive substring.
-  //     First occurrence wins per keyword. Same
-  //     original-case token rule.
-  for (const keyword of MESH_KEYWORDS) {
-    const offset = lower.indexOf(keyword);
+  // 2d. v1.1 dynamic tag scan (per Q2 + Q7 of the
+  //     v1.1 sub-plan). When `envoyHarnessTags`
+  //     is provided, scan the prompt for any
+  //     manifest tag. When `undefined`, fall
+  //     back to the v0 `MESH_KEYWORDS` constant
+  //     for backward compat (per Q1).
+  const meshVocabulary = envoyHarnessTags ?? MESH_KEYWORDS;
+  for (const tag of meshVocabulary) {
+    const offset = findTagInPrompt(lower, tag);
     if (offset >= 0) {
       signals.push({
-        token: prompt.slice(offset, offset + keyword.length),
+        token: prompt.slice(offset, offset + tag.length),
         category: "mesh-keyword",
         offset,
       });
@@ -400,6 +464,53 @@ function scanSignals(prompt: string): ReadonlyArray<SignalMatch> {
   // assert the order; UI badges expect a
   // deterministic sequence.
   return [...signals].sort((a, b) => a.offset - b.offset);
+}
+
+/**
+ * Find the first occurrence of a tag in the
+ * lowercased prompt.
+ *
+ * **Algorithm (per Q2 of the v1.1 sub-plan):**
+ * - Hyphenated tags (e.g. `cross-node`,
+ *   `lsp-goto`): exact substring match. Word
+ *   boundary doesn't make sense for hyphenated
+ *   tokens (the `-` is part of the tag).
+ * - Single-word tags (e.g. `mesh`, `code`,
+ *   `bond`): word-boundary regex. This cleans
+ *   up the v0 substring FP (Q6 follow-up) —
+ *   `meshes` no longer matches `mesh`, `codes`
+ *   no longer matches `code`.
+ *
+ * **Why not always word-boundary:** word
+ * boundary requires the tag to be surrounded by
+ * non-word characters. For hyphenated tags,
+ * `-` is a non-word character, so `\bmesh\b`
+ * would only match `mesh` followed by `-` (e.g.
+ * `mesh-based`), not `mesh` followed by a
+ * letter. For hyphenated tags, exact substring
+ * is the cleaner contract.
+ *
+ * **Returns:** the byte offset of the first
+ * match in the lowercased prompt, or `-1` if
+ * no match.
+ */
+function findTagInPrompt(lower: string, tag: string): number {
+  if (tag.includes("-")) {
+    const idx = lower.indexOf(tag.toLowerCase());
+    return idx;
+  }
+  const re = new RegExp(`\\b${escapeRegex(tag)}\\b`, "i");
+  const m = lower.match(re);
+  return m?.index ?? -1;
+}
+
+/**
+ * Escape regex metacharacters in a literal
+ * string. Used to make tag values safe to
+ * inline into a `RegExp` constructor.
+ */
+function escapeRegex(literal: string): string {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 // ---------------------------------------------------------------------------

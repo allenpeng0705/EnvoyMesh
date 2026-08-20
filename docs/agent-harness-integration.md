@@ -565,3 +565,47 @@ fan-out within a job (whole-job only).
   `defaultCrossVerify(openClawAdapter)`); host
   `createEnvoyHarnessAdapter` accepts the
   `openClawAdapter?` option. **Phase 8 complete.**
+- **2026-08-21 (v1.1 — capability-tag-based signal
+  detection — DONE):** the v0 hardcoded
+  `MESH_KEYWORDS` is replaced by a dynamic
+  vocabulary extracted from the merged manifest's
+  envoy-harness skill tags. 1 commit on
+  `envoy_harness_integration` branch (the user
+  delegated commit; bundled v1.1.1 + v1.1.2 +
+  v1.1.3 into a single commit at the end of v1.1).
+  14 new tests (9 unit v1.1 + 5 e2e v1.1.2) + 73
+  pre-existing tests regression-clean. Detailed
+  plan: `docs/agent-harness-integration-v1-1.md`
+  (sub-plan with 4 locked design questions + Q1/Q3
+  reconciliation note).
+  - **v1.1.1 — `envoyHarnessTags` API on the
+    router input** (`apps/node/src/user-prompt-router.ts`).
+    New `findTagInPrompt(lower, tag)` helper:
+    word-boundary regex for single-word tags
+    (`mesh` doesn't match `meshes` — Q6 follow-up
+    cleanup); exact substring for hyphenated tags
+    (`cross-node` matches `cross-node`). v0
+    `MESH_KEYWORDS` constant kept as a private
+    backward-compat fallback for callers that pass
+    `envoyHarnessTags === undefined`.
+  - **v1.1.2 — host wiring.** New
+    `extractEnvoyHarnessTags(manifest)` helper
+    (`apps/node/src/manifest-envoy-harness-tags.ts`).
+    `RunOwnerAgentTurnContext.getNodeManifest()`
+    field added; `RunOwnerAgentTurnContextDeps`
+    wires `host.getNodeManifest()`; the handler
+    reads the manifest once, extracts tags, and
+    passes them to `routeUserPrompt`. Q6
+    fallback: when the read throws or returns
+    `undefined`, the router uses the v0
+    `MESH_KEYWORDS` constant + a warning is
+    logged. The default `makeCtx` test helper
+    returns `undefined` so the 23 existing e2e
+    tests continue to use the v0 fallback.
+  - **v1.1.3 — doc closeout.** This entry +
+    `agent-network-engine.md` §2.2 (note v1.1
+    dynamic vocabulary replaces v0 keywords) +
+    `agent-harness-integration-step5.md` status
+    note (v0 vocabulary now serves as private
+    fallback) + `agent-harness-integration-v1-1.md`
+    DONE stamp + commit log.
