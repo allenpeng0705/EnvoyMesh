@@ -1,9 +1,10 @@
 # envoy-harness integration into EnvoyMesh (Phase 8)
 
-> **Status:** Step 3 ✅ **DONE** (2026-08-20). Step 4
-> ✅ DONE (2026-08-20). Steps 0 / 0+ / 1 / 2 (b1 / b2 / b3
-> / b3.live) DONE (2026-08-20). Awaiting team sign-off on
-> Step 5+ (signal-based opt-in).
+> **Status:** Step 5 ✅ **DONE** (2026-08-20). Step 4
+> ✅ DONE (2026-08-20). Step 3 ✅ DONE (2026-08-20).
+> Steps 0 / 0+ / 1 / 2 (b1 / b2 / b3 / b3.live) DONE
+> (2026-08-20). Awaiting team sign-off on Step 6+
+> (cross-verify).
 >
 > **Audience:** EnvoyMesh team, envoy-harness team, Tauri UI team.
 >
@@ -352,23 +353,46 @@ decision; it just makes the manifest available.
 
 ### Step 5 — Signal-based auto opt-in (~1 week)
 
+**Status:** ✅ **DONE** (2026-08-20). 3 commits on
+`envoy_harness_integration` branch (5.1 + 5.2 + 5.3
+sub-chunks; see `docs/agent-harness-integration-step5.md`
+for the sub-plan + locked decisions + plan deviations).
+41 unit tests for the pure router +
+23 e2e tests for the host wiring + 4 pre-existing
+tests regression-clean. The default routing
+table is in `docs/agent-network-engine.md` §2.2.
+
 **Goal:** Tauri user prompts route to OpenClaw by default; signal-bearing
 prompts auto opt-in to envoy-harness.
 
-- New: `apps/node/src/agent-network-router.ts` — the signal → runtime
-  decision
-- New: `signal-detect.ts` — keyword-based v0 (mesh / federated /
-  lsp_* / cost cap / multi-provider). Capability-tag-based is v1.
-- Update: Tauri UI sends the prompt to the router; router returns the
-  chosen runtime. The chosen runtime's adapter handles the prompt.
-- Update: per-node config adds `signal-based-opt-in: enabled | disabled`
-  (default enabled)
-- Update: docs (`agent-network-engine.md` §2) — the default routing
-  table for the new `envoy-harness` engine
+- ✅ New: `apps/node/src/user-prompt-router.ts` — the pure
+  `routeUserPrompt(input) → decision` function (renamed
+  from the design doc's `agent-network-router.ts` per
+  Q1 — the name collides with the Team-job
+  `agent-network-*` namespace; see the Step 5 sub-plan
+  for rationale)
+- ✅ New: keyword-based v0 (mesh / federated / lsp_* /
+  `RemoteMeshSubmitter` / `FanOutSpec` / `!eh` or `/eh`
+  hint). Cost cap + multi-provider deferred to v1 with
+  UI affordance (per Q3); capability-tag-based v1.
+- ✅ Update: Tauri UI path through
+  `runOwnerAgentTurnViaRuntime` → `routeUserPrompt` →
+  dispatch. The chosen runtime's adapter handles the
+  prompt; the hint prefix is stripped before any LLM
+  call.
+- ✅ Update: per-node opt-in env var
+  `ENVOY_HARNESS_SIGNAL_OPT_IN=disabled` (default enabled;
+  per Q5)
+- ✅ Update: docs (`agent-network-engine.md` §2.2) — the
+  default routing table for the new `envoy-harness`
+  engine
 
-**Tests:** unit test for signal detection; e2e that a signal-bearing
-prompt routes to envoy-harness; e2e that a no-signal prompt routes to
-OpenClaw.
+**Tests:** ✅ 41 unit tests for signal detection (every
+category + every fallback + every edge case); ✅ 23
+e2e tests for the host wiring (every branch + hint
+stripping + deep-fallback chain + persistence
+invariant). Hermetic (no API key, no network) —
+always-on in `pnpm test`.
 
 **Out of scope:** capability-tag-based signal detection (v1; keyword
 is v0 starter).
@@ -472,3 +496,19 @@ fan-out within a job (whole-job only).
   wiring with stateless stub adapters). The merged manifest
   is a **local view**, not a wire format — the per-adapter
   broadcast flow (`agent-adapter-broadcast.ts`) is unchanged.
+- **2026-08-20 (Step 5 — DONE):** §5 Step 5 marked ✅ done.
+  3 commits on `envoy_harness_integration` branch (5.1
+  router + tests, 5.2 host wiring + e2e tests, 5.3 doc
+  closeout). 64 new tests (41 unit + 23 e2e) + 4
+  pre-existing tests regression-clean. Detailed plan:
+  `docs/agent-harness-integration-step5.md` (sub-plan
+  with 9 locked design questions + plan deviations).
+  New: `apps/node/src/user-prompt-router.ts` (pure
+  function), `OwnerAgentTurnResult.{routingSignals,
+  routingReason, modelUsed: "envoy-harness"}` (API
+  surface), host wiring in
+  `runOwnerAgentTurnViaRuntime` (router + dispatch +
+  hint stripping). Per-node opt-out:
+  `ENVOY_HARNESS_SIGNAL_OPT_IN=disabled` env var. The
+  default routing table for the new `envoy-harness`
+  engine is in `docs/agent-network-engine.md` §2.2.

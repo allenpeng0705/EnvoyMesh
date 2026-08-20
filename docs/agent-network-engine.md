@@ -28,6 +28,107 @@ covers **Agent Network worker execution** only.
 | **Step 2** | **Ext Agent** — owner selects on **their** node (`agentNetworkWorkerEngine`) |
 | **Phase 8 Step 1+** | **envoy-harness** — the home-team agent harness from the sibling monorepo, via `@envoymesh/envoy-harness-adapter` |
 
+### 2.2 Phase 8 / Step 5 — Tauri user-prompt signal-based opt-in
+
+**Owner-facing summary:** the Tauri EnvoyAI chat routes
+ordinary prompts to Built-in OpenClaw (default).
+**Signal-bearing prompts auto opt-in to envoy-harness.**
+The owner can disable signal routing per node with an
+env var. This is the Q3 D design decision from the
+Phase 8 design doc.
+
+**Why this matters:** OpenClaw is mature. envoy-harness
+has novel features (mesh-native sub-agents, federated
+scoreboard, `lsp_*` tools, multi-provider LLM, cost cap,
+3-tuple reputation, `JsonLinesTracer`, persisted sessions)
+that OpenClaw does not have and will not add. The signal
+router lets envoy-harness **earn** its place on the tasks
+where its features matter, without disrupting ordinary
+chat.
+
+**The default routing table:**
+
+| Prompt category | Routed to | Trigger |
+|---|---|---|
+| Ordinary local chat | **OpenClaw** (default) | No signal matched |
+| **Mesh keyword**: `mesh`, `federated`, `cross-node` | envoy-harness | Case-insensitive substring in the prompt |
+| **Tool name**: `RemoteMeshSubmitter`, `FanOutSpec`, `lsp_*` | envoy-harness | Case-insensitive substring (lsp_ uses word-boundary regex) |
+| **Explicit hint**: `!eh` or `/eh` at the start | envoy-harness | User explicitly forces routing; prefix is stripped before dispatch |
+| Signal matched + envoy-harness not ready | **OpenClaw** (fallback) | `routingReason: "envoy-harness-unready"`; signals still populated in result |
+| Owner disabled signal routing | **OpenClaw** (regardless of signals) | `ENVOY_HARNESS_SIGNAL_OPT_IN=disabled` env var |
+
+**Where the router lives:**
+
+- Pure function: `apps/node/src/user-prompt-router.ts`
+  (41 unit tests in `apps/node/test/user-prompt-router.test.ts`)
+- Host wiring: `apps/node/src/node-service-handlers-run-owner-agent-turn.ts`
+  (23 e2e tests in
+  `apps/node/test/run-owner-agent-turn-routing.test.ts`)
+
+**How the dispatch flows:**
+
+```text
+Tauri user prompt
+   ↓
+runOwnerAgentTurnViaRuntime(ctx, message)
+   ↓
+routeUserPrompt({ prompt, isEnvoyHarnessReady, signalOptIn })
+   ↓
+   ├─ signalOptIn === "disabled"   →  { runtime: "openclaw", reason: "opt-in-disabled" }
+   ├─ no signal matched            →  { runtime: "openclaw", reason: "default" }
+   ├─ signal matched & EH ready    →  { runtime: "envoy-harness", reason: "signal" }
+   └─ signal matched & EH unready  →  { runtime: "openclaw", reason: "envoy-harness-unready", signals: [...] }
+   ↓
+dispatch(ctx, message, decision)  ← strips hint prefix from prompt before any LLM call
+   ↓
+OwnerAgentTurnResult {
+  modelUsed: "openclaw" | "envoy-harness" | "scripted-tutor" | "native",
+  routingReason,
+  routingSignals: ReadonlyArray<string>
+}
+```
+
+**Per-node opt-out:**
+
+```sh
+# Default: signal routing is enabled.
+ENVOY_HARNESS_SIGNAL_OPT_IN=disabled  # disable signal-based opt-in
+```
+
+The Tauri settings UI field for opt-in is a follow-up
+task (out of scope for Step 5 v0). v0 ships with the
+env-var surface; the UI rewrite is a separate work item.
+
+**v0 signal set scope (deferred to v1):**
+
+- Cost cap (requires a UI affordance the chat path
+  doesn't have today)
+- Multi-provider (same reason)
+- Capability-tag-based detection (when the merged
+  manifest exposes structured capability tags in v1)
+- Word-boundary tightening (v0 accepts substring false
+  positives like `"meshes"` matches `mesh`; v1 will
+  tighten to a word-boundary regex)
+
+**Why opt-in (default = OpenClaw) vs swap-the-default:**
+
+Switching the default to envoy-harness would surface
+every envoy-harness rough edge in every chat. The
+signal router lets envoy-harness prove itself on
+relevant tasks first; the v1 follow-up can revisit
+the default policy when envoy-harness is mature
+enough.
+
+**What Step 5 does NOT cover (deferred):**
+
+- Per-prompt opt-out (e.g. `!openclaw` hint) — v0 is
+  per-node only.
+- Social UI "routed by <token>" badge — the
+  `routingReason` + `routingSignals` fields land in
+  Step 5; rendering the badge is a Social-team task.
+- Per-skill fan-out (per-skill routing within one
+  job) — whole-job / whole-prompt routing only in v0.
+
 Config field: `PersistedNodeConfig.agentNetworkWorkerEngine`: `"openclaw"` \| `"ext"` \| `"envoy-harness"` (default `"openclaw"`). Phase 8 widens the literal set; the persisted schema is unchanged.
 
 Which Ext product (Pi / HomeClaw / Hermes / …, later Codex / Claude Code) remains **Settings → AI → Ext Agent** (`activeExtAgent` in bridge-config). AN only chooses OpenClaw vs that active Ext agent.
