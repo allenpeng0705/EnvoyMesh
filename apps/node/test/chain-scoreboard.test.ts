@@ -38,6 +38,7 @@ import type { Verdict, VerdictEntry, VerifierSource } from "@envoymesh/protocol"
 
 import {
   categorizeReputation,
+  getReputationFromGraph,
   getReputationBySkillForPeer,
   getWorkerReputation,
   isNoHistoryReputation,
@@ -45,6 +46,7 @@ import {
   SCOREBOARD_SOURCE_WEIGHTS,
   SCOREBOARD_TRUST_THRESHOLDS,
 } from "../src/chain-scoreboard.js";
+import { LocalAgentGraphStore } from "../src/chain-graph/local.js";
 import {
   createArbitrationStore,
   recordVerdictEntry,
@@ -729,5 +731,109 @@ describe("getReputationBySkillForPeer", () => {
     );
     const result = getReputationBySkillForPeer([store], "peer-1");
     expect(result).toBeUndefined();
+  });
+
+  it("aggregates ALL verdicts of a (runtime, skill) tuple (dedupe keeps the aggregation)", () => {
+    // F-fix: the per-tuple dedupe must not skip aggregation —
+    // getWorkerReputation reads every verdict of the tuple via
+    // getVerdictsFor. Two pass verdicts (1.0 + 0.5) aggregate to
+    // a mean score of 0.75 → mapped to (0.75 + 1) / 2 = 0.875.
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        workerPeerId: "peer-1",
+        skillId: "research",
+        subtaskId: "subtask_a",
+      }),
+    );
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 0.5, confidence: "medium" },
+        workerPeerId: "peer-1",
+        skillId: "research",
+        subtaskId: "subtask_b",
+      }),
+    );
+    const result = getReputationBySkillForPeer([store], "peer-1");
+    expect(result).toEqual({ research: 0.875 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getReputationFromGraph — v2.0 derived view over closed edges
+// ---------------------------------------------------------------------------
+
+describe("getReputationFromGraph", () => {
+  function openAndClose(
+    graph: LocalAgentGraphStore,
+    opts: {
+      childPeerId?: string;
+      workerRuntime?: string;
+      skillId?: string;
+      verdict?: VerdictEntry["verdict"];
+      source?: VerifierSource;
+      signature?: string;
+    } = {},
+  ) {
+    graph.openEdge({
+      parentPeerId: "orch-1",
+      childPeerId: opts.childPeerId ?? "peer-1",
+      subtaskId: "subtask_a",
+      workerRuntime: (opts.workerRuntime ?? "openclaw") as never,
+      skillId: opts.skillId ?? "research",
+    });
+    graph.closeEdge(
+      "orch-1",
+      "subtask_a",
+      makeVerdict({
+        workerPeerId: opts.childPeerId ?? "peer-1",
+        workerRuntime: (opts.workerRuntime ?? "openclaw") as never,
+        skillId: opts.skillId ?? "research",
+        verdict: opts.verdict ?? { kind: "pass", score: 1, confidence: "high" },
+        source: opts.source ?? "rule",
+        signature: opts.signature ?? "sig",
+      }),
+      200,
+    );
+  }
+
+  it("returns undefined for a worker with no closed verdicts", () => {
+    const graph = new LocalAgentGraphStore();
+    expect(
+      getReputationFromGraph(graph, {
+        childPeerId: "peer-1",
+        workerRuntime: "openclaw",
+        skillId: "research",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("derives reputation from the closed edge's verdict", () => {
+    const graph = new LocalAgentGraphStore();
+    openAndClose(graph);
+    expect(
+      getReputationFromGraph(graph, {
+        childPeerId: "peer-1",
+        workerRuntime: "openclaw",
+        skillId: "research",
+      }),
+    ).toBe(1);
+  });
+
+  it("filters by runtime + skill (the 3-tuple)", () => {
+    const graph = new LocalAgentGraphStore();
+    openAndClose(graph, { workerRuntime: "openclaw", skillId: "research" });
+    expect(
+      getReputationFromGraph(graph, {
+        childPeerId: "peer-1",
+        workerRuntime: "envoy-harness",
+        skillId: "research",
+      }),
+    ).toBeUndefined();
   });
 });

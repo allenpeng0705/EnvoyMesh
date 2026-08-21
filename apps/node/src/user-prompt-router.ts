@@ -760,6 +760,16 @@ export function routeUserPrompt(
   //    only fires when no EH signal matched
   //    (the prompt mentions a non-EH runtime
   //    but not an EH skill).
+  // v1.14 — the 5 future runtimes, in tie-break
+  // order. When multiple runtimes match at the
+  // same precedence level, the FIRST runtime in
+  // this array wins (the v1.14 sub-plan §3.3 Q3
+  // locked decision: "the tie is broken by the
+  // runtime order"; a v1.14+ chunk may add a
+  // smarter tie-break, e.g. the v1.13 reputation
+  // score or a user preference order). The
+  // existing test `the first match in runtime
+  // order wins` pins this contract.
   const OTHER_RUNTIMES: AgentRuntime[] = [
     "pi",
     "hermes",
@@ -795,7 +805,15 @@ export function routeUserPrompt(
           reason: "signal-runtime",
           signals: [
             {
-              token: matchedTag,
+              // Original-case token (the same
+              // contract as every other signal
+              // branch — the UI badge shows what
+              // the user actually typed, e.g.
+              // "Codex" not "codex").
+              token: input.prompt.slice(
+                matchedOffset,
+                matchedOffset + matchedTag.length,
+              ),
               category: "mesh-keyword",
               offset: matchedOffset,
             },

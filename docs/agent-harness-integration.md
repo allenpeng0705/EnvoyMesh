@@ -1602,3 +1602,26 @@ fan-out within a job (whole-job only).
   `docs/agent-harness-integration-v1-16.md`
   (sub-plan with 7 locked design
   questions).
+
+### Review fix (2026-08-21)
+
+Deepseek review pass on v1.10+; three fixes:
+
+1. **v1.14 original-case token** — the
+   `signal-runtime` branch reported the lowercase
+   canonical tag (`codex`); it now slices the
+   original-case substring from the prompt
+   (`Codex`), matching the `SignalMatch` contract
+   used by every other branch. Regression test
+   added.
+2. **v1.14 tie-break documented in code** — the
+   fixed `OTHER_RUNTIMES` order is the locked Q3
+   tie-break; the code comment now points at the
+   sub-plan decision + the pinning test.
+3. **`getReputationBySkillForPeer` dedupe** — the
+   per-`(runtime, skill)` tuple reputation is now
+   computed once per store (not once per verdict
+   entry), preserving the aggregation semantics
+   (regression test: two pass verdicts in one
+   tuple still aggregate). `SUPPORTED_RUNTIMES`
+   moved to module level (cosmetic).

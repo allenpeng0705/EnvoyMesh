@@ -62,6 +62,7 @@ import {
 } from "./chain-map.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
 import { readEffectiveVerifyModeDefault } from "./node-config-loader.js";
+import type { AgentGraphStore } from "./chain-graph/types.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -205,6 +206,15 @@ export interface ChainVerifyLoopDeps {
    * — the v0 behavior, preserved.
    */
   getNodeConfig?: () => PersistedNodeConfig | undefined;
+  /**
+   * Phase 8 / v2.0 — optional agent-graph store. When set, the
+   * loop opens a parent/child edge at verification start and
+   * closes it on each verdict write (the last verdict for the
+   * subtask wins, mirroring `recordVerdictEntry`'s
+   * re-verification semantics). Absent store = today's behavior
+   * (no graph recording).
+   */
+  graphStore?: AgentGraphStore;
 }
 
 /** Structural stand-in for the cross-verifier so tests can stub it. */
@@ -408,6 +418,20 @@ export async function runChainVerificationLoop(
   if (!deps.buildAdapter || !deps.listRuntimes) return null;
   const adapter = deps.buildAdapter(workerRuntime, subtask);
   if (!adapter) return null;
+
+  // Phase 8 / v2.0 — open the parent/child edge for this
+  // subtask when verification starts (the parent is the
+  // orchestrator). The edge closes on each verdict write.
+  if (deps.graphStore) {
+    deps.graphStore.openEdge({
+      parentPeerId: deps.orchestratorPeerId,
+      childPeerId: workerPeerId,
+      subtaskId: subtask.subtaskId,
+      workerRuntime,
+      skillId: normalizeSkillId(subtask.requiredSkill),
+      openedAt: now.getTime(),
+    });
+  }
 
   const result = signedResultFromPartial({
     partial,
@@ -702,6 +726,16 @@ function writeVerdict(
     : "unsigned";
   const entry = { ...unsigned, signature };
   deps.writeVerdictEntry(state.chainId, entry);
+  // Phase 8 / v2.0 — close the edge (or update the closed
+  // edge's verdict on re-verification) with the written entry.
+  if (deps.graphStore) {
+    deps.graphStore.closeEdge(
+      deps.orchestratorPeerId,
+      subtask.subtaskId,
+      entry,
+      input.now.getTime(),
+    );
+  }
   return entry;
 }
 

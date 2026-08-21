@@ -336,6 +336,7 @@ run against the live relay, with each test re-deciding via `itRelayed`.
 - **Path aliases**: `@envoymesh/*` only for cross-package imports; in-package imports use relative paths
 - **Formatting**: Consistent with the existing code — trailing commas in multiline, no semicolons, 2-space indentation
 - **Naming**: camelCase for functions/variables, PascalCase for types/interfaces, kebab-case for files
+- **Module size (Codex LOC rule)**: target modules under **500** lines; if a file exceeds roughly **800** lines, add new functionality in a **new module** instead of extending the file (unless there is a strong documented reason). Existing v1.x oversized modules are allowlisted in `scripts/module-size-allowlist.json`; CI (`scripts/check-module-size.mjs`) fails on new growth above 800. Removing an allowlist entry is a good sign.
 
 ### Package conventions
 

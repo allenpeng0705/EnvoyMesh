@@ -41,6 +41,25 @@ import {
 import type { NodeManifest } from "./agent-adapter-manifest-aggregate.js";
 import type { AgentRuntime } from "@envoymesh/protocol";
 
+/**
+ * Phase 8 / v1.14 — the runtimes this node has
+ * adapters for. The home node today supports
+ * envoy-harness + openclaw only; the other 5
+ * runtimes (pi / hermes / codex / codex-cli /
+ * openhuman) are future runtime support. The
+ * router can recommend them, but the dispatch
+ * falls back to OpenClaw with a `chain.warn`
+ * log (Q4 of the v1.14 sub-plan).
+ *
+ * **Module-level (not per-call):** the list is
+ * fixed for the lifetime of the node; building
+ * it per dispatch call was pure ceremony.
+ */
+const SUPPORTED_RUNTIMES: AgentRuntime[] = [
+  "envoy-harness",
+  "openclaw",
+];
+
 export interface RunOwnerAgentTurnContext {
   /** Record owner activity. */
   recordOwnerActivity(): void;
@@ -286,19 +305,6 @@ export async function runOwnerAgentTurnViaRuntime(
     // v1.1 callers don't set it).
     targetSkill: decision.targetSkill,
   });
-
-  // Phase 8 / v1.14 — the supported runtimes on
-  // this node. The home node today has adapters
-  // for envoy-harness + openclaw only. The other
-  // 5 runtimes (pi / hermes / codex / codex-cli /
-  // openhuman) are future runtime support; the
-  // router can recommend them, but the dispatch
-  // falls back to OpenClaw with a `chain.warn`
-  // log (Q4 of the v1.14 sub-plan).
-  const SUPPORTED_RUNTIMES: AgentRuntime[] = [
-    "envoy-harness",
-    "openclaw",
-  ];
 
   // --- v1.14 — unsupported-runtime fallback ---
   //      When the router recommends a runtime that

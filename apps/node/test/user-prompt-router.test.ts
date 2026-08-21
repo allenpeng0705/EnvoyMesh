@@ -1658,6 +1658,22 @@ describe("v1.14 — per-runtime routing extension", () => {
     expect(decision.reason).toBe("signal-runtime");
   });
 
+  it("reports the original-case token for the matched runtime tag (SignalMatch contract)", () => {
+    // F-fix: every other signal branch slices the original-case
+    // substring from the prompt; the v1.14 branch used to report
+    // the lowercase canonical tag. The UI badge should show what
+    // the user actually typed.
+    const decision = routeUserPrompt({
+      prompt: "translate this using Codex-Runtime-Tag please",
+      signalOptIn: "enabled",
+      isEnvoyHarnessReady: true,
+      runtimeTags: { codex: ["codex-runtime-tag"] },
+    });
+    expect(decision.runtime).toBe("codex");
+    expect(decision.reason).toBe("signal-runtime");
+    expect(decision.signals[0]?.token).toBe("Codex-Runtime-Tag");
+  });
+
   it("OpenClaw veto preserved: prompt with EH + OpenClaw tag routes to OpenClaw", () => {
     const decision = routeUserPrompt({
       prompt: "do envoy-harness-research with openclaw-bond-fix",

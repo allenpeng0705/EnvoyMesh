@@ -52,6 +52,7 @@ import {
   isVerdictEntry,
   type ArbitrationStore,
 } from "./chain-arbitration.js";
+import type { AgentGraphStore } from "./chain-graph/types.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -401,6 +402,50 @@ export function getWorkerReputation(
   },
 ): number | undefined {
   const verdicts = getVerdictsFor(store, criteria);
+  return reputationFromVerdictEntries(verdicts);
+}
+
+/**
+ * Phase 8 / v2.0 — the scoreboard as a derived view over the
+ * agent graph. Filters the worker's CLOSED edge verdicts by
+ * (runtime, skill) and runs the same reputation formula. The
+ * graph store's closed edges carry the final verdict per
+ * subtask (re-verification replaces), so this is the
+ * graph-equivalent of `getWorkerReputation`.
+ *
+ * @param graph The `AgentGraphStore` (chunk-1 default:
+ *   `LocalAgentGraphStore`).
+ * @param criteria The 3-tuple to query (`childPeerId` =
+ *   `workerPeerId`).
+ * @returns The reputation in `[0, 1]`, or `undefined` when
+ *   there's no usable signal (empty / all-disputed).
+ */
+export function getReputationFromGraph(
+  graph: AgentGraphStore,
+  criteria: {
+    childPeerId: string;
+    workerRuntime: AgentRuntime;
+    skillId: string;
+  },
+): number | undefined {
+  const verdicts = graph
+    .closedVerdictsFor(criteria.childPeerId)
+    .filter(
+      (v) =>
+        v.workerRuntime === criteria.workerRuntime &&
+        v.skillId === criteria.skillId,
+    );
+  return reputationFromVerdictEntries(verdicts);
+}
+
+/**
+ * Shared core for `getWorkerReputation` + `getReputationFromGraph`:
+ * maps a list of verdicts to `[0, 1]`, returning `undefined` when
+ * there's no usable signal (empty input or all-disputed).
+ */
+function reputationFromVerdictEntries(
+  verdicts: readonly VerdictEntry[],
+): number | undefined {
   if (verdicts.length === 0) return undefined; // no history
   // Check whether any verdict has a usable
   // signal (not disputed). If all are
@@ -489,9 +534,20 @@ export function getReputationBySkillForPeer(
 ): Record<string, number> | undefined {
   const bySkill = new Map<string, number>();
   for (const store of stores) {
+    // Dedupe by (workerRuntime, skillId) within a store:
+    // `getWorkerReputation` aggregates ALL verdicts for the
+    // 3-tuple, so computing it once per tuple (instead of once
+    // per matching verdict entry) is O(tuples × store-size)
+    // rather than O(entries × store-size). The result is
+    // identical — MAX over the same tuple value repeated is
+    // idempotent.
+    const seenTuples = new Set<string>();
     for (const entry of store.values()) {
       if (!isVerdictEntry(entry)) continue;
       if (entry.workerPeerId !== peerId) continue;
+      const tupleKey = `${entry.workerRuntime}\u0000${entry.skillId}`;
+      if (seenTuples.has(tupleKey)) continue;
+      seenTuples.add(tupleKey);
       const rep = getWorkerReputation(store, {
         workerPeerId: entry.workerPeerId,
         workerRuntime: entry.workerRuntime,

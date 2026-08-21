@@ -36,6 +36,7 @@ import {
 } from "../src/chain-verify-loop.js";
 import { createChainBudgetLedger, type ChainBudgetLedger } from "../src/chain-budget-ledger.js";
 import type { ChainAuditSink } from "../src/chain-inbound-types.js";
+import { LocalAgentGraphStore } from "../src/chain-graph/local.js";
 
 const NOW = new Date("2026-06-18T00:00:00.000Z");
 const NOW_ISO = NOW.toISOString();
@@ -140,6 +141,7 @@ function makeDeps(opts: {
   criticality?: "normal" | "high";
   written?: VerdictEntry[];
   auditEvents?: unknown[];
+  graphStore?: ChainVerifyLoopDeps["graphStore"];
 }): ChainVerifyLoopDeps {
   const written = opts.written ?? [];
   const auditEvents = opts.auditEvents ?? [];
@@ -161,6 +163,7 @@ function makeDeps(opts: {
     crossVerifier: opts.crossVerifier,
     criticality: opts.criticality,
     now: () => NOW,
+    ...(opts.graphStore ? { graphStore: opts.graphStore } : {}),
   };
 }
 
@@ -192,6 +195,28 @@ describe("runChainVerificationLoop", () => {
     const result = await runChainVerificationLoop(deps, state, envelope(), finalPartial());
     expect(result).toBeNull();
     expect(written).toHaveLength(0);
+  });
+
+  it("opens + closes an agent-graph edge with the verdict (v2.0)", async () => {
+    const graph = new LocalAgentGraphStore();
+    const written: VerdictEntry[] = [];
+    const deps = makeDeps({
+      buildAdapter: () => stubAdapter("openclaw"),
+      listRuntimes: () => ["openclaw"],
+      written,
+      graphStore: graph,
+    });
+    const { state } = makeState();
+    const result = await runChainVerificationLoop(deps, state, envelope(), finalPartial());
+    expect(result).not.toBeNull();
+    expect(written).toHaveLength(1);
+    const edges = graph.allEdges();
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.parentPeerId).toBe("orch-1");
+    expect(edges[0]?.childPeerId).toBe("worker-1");
+    expect(edges[0]?.subtaskId).toBe("subtask_a");
+    expect(edges[0]?.status).toBe("closed");
+    expect(edges[0]?.verdict?.subtaskId).toBe("subtask_a");
   });
 
   it("writes a rule VerdictEntry for a passing final partial", async () => {
