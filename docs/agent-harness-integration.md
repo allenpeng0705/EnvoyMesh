@@ -578,6 +578,21 @@ fan-out within a job (whole-job only).
   plan: `docs/agent-harness-integration-v1-1.md`
   (sub-plan with 4 locked design questions + Q1/Q3
   reconciliation note).
+  - **v1.18 (2026-08-21) — v0 `MESH_KEYWORDS` deprecation.**
+    The v0 `MESH_KEYWORDS` fallback was REMOVED from
+    `user-prompt-router.ts` (the Q1 "fall back"
+    decision was honored at the time, but the Q3
+    "remove from primary path" side won out as the
+    codebase matured — the post-v1.17 host always
+    provides the manifest, so the v0 fallback was
+    dead code masking missing tag configuration).
+    When `envoyHarnessTags` is `undefined` (no
+    manifest), the router has no positive mesh-keyword
+    vocabulary and defaults to OpenClaw. The v0 tool
+    names + `lsp_*` regex + `!eh`/`/eh` hint prefixes
+    still work (caller-independent). See the v1.18
+    self-review commit for the test fallout + this
+    change-log entry.
   - **v1.1.1 — `envoyHarnessTags` API on the
     router input** (`apps/node/src/user-prompt-router.ts`).
     New `findTagInPrompt(lower, tag)` helper:

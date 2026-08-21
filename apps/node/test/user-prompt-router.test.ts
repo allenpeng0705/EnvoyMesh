@@ -43,6 +43,17 @@ function makeInput(
     isEnvoyHarnessReady: true,
     envoyHarnessUnreadyReason: undefined,
     signalOptIn: "enabled",
+    // Default: provide a manifest-like vocabulary so
+    // the v1.1 algorithm is exercised (mirrors the
+    // pre-v1.18 MESH_KEYWORDS fallback, which used
+    // the same list with the same word-boundary
+    // algorithm). Tests that need a different
+    // vocabulary override `envoyHarnessTags` (or
+    // pass `envoyHarnessTags: undefined` to test
+    // the "no manifest" case — see
+    // "defaults to OpenClaw when envoyHarnessTags
+    // is undefined" below).
+    envoyHarnessTags: ["mesh", "federated", "cross-node"],
     ...overrides,
   };
 }
@@ -140,15 +151,13 @@ describe("routeUserPrompt — mesh keyword branch", () => {
     expect(decision.signals[0]?.token).toBe("Mesh");
   });
 
-  it("rejects substring false positives in v0 fallback (e.g. `meshes` does NOT match `mesh`)", () => {
-    // Phase 8 v1.1 — the v0 fallback (`MESH_KEYWORDS`)
-    // is matched with the v1.1 algorithm
-    // (word-boundary regex for single-word tags).
-    // This cleans up the v0 substring FP (Q6
-    // follow-up) — `meshes` no longer matches `mesh`,
-    // `codes` no longer matches `code`. The v0
-    // LIST stays the same; the ALGORITHM is the
-    // v1.1 word-boundary one.
+  it("rejects substring false positives (e.g. `meshes` does NOT match `mesh`)", () => {
+    // Phase 8 v1.1 — the v1.1 word-boundary algorithm
+    // rejects substring false positives. `meshes`
+    // no longer matches `mesh`, `codes` no longer
+    // matches `code`. The `envoyHarnessTags` default
+    // (the v0 list: `mesh`, `federated`, `cross-node`)
+    // is matched with this algorithm.
     const decision = routeUserPrompt(makeInput({ prompt: "the meshes overlap" }));
     expect(decision.runtime).toBe("openclaw");
     expect(decision.reason).toBe("default");
@@ -319,19 +328,25 @@ describe("routeUserPrompt — v1.1 manifest-tag detection", () => {
     expect(tokens).toContain("observability");
   });
 
-  it("falls back to v0 MESH_KEYWORDS when envoyHarnessTags is undefined (backward compat)", () => {
-    // No `envoyHarnessTags` → router uses the v0
-    // MESH_KEYWORDS list (`mesh`, `federated`,
-    // `cross-node`) with the v1.1 algorithm
-    // (word-boundary regex).
+  it("defaults to OpenClaw when envoyHarnessTags is undefined (no v0 fallback)", () => {
+    // v1.18 — the v0 `MESH_KEYWORDS` fallback was
+    // removed. When the host doesn't provide a
+    // manifest (envoyHarnessTags is undefined), the
+    // router has no positive mesh-keyword vocabulary
+    // and defaults to OpenClaw. The user can still
+    // force EH with `!eh` or `/eh` hint prefixes.
+    // The v1.x tool names (`RemoteMeshSubmitter`,
+    // `FanOutSpec`) + `lsp_*` regex still match —
+    // they're caller-independent vocabulary.
     const decision = routeUserPrompt(
       makeInput({
         prompt: "set up a mesh sub-agent",
-        // envoyHarnessTags omitted → undefined → v0 fallback
+        envoyHarnessTags: undefined,
       }),
     );
-    expect(decision.runtime).toBe("envoy-harness");
-    expect(decision.signals[0]).toMatchObject({ token: "mesh" });
+    expect(decision.runtime).toBe("openclaw");
+    expect(decision.reason).toBe("default");
+    expect(decision.signals).toEqual([]);
   });
 
   it("returns no tag-based signals when envoyHarnessTags is an empty array", () => {

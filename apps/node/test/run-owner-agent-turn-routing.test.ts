@@ -90,14 +90,33 @@ function makeCtx(
       async () => "skill answer",
     ),
     signalOptIn: "enabled",
-    // Phase 8 / v1.1 — manifest read. The default
-    // returns `undefined` so the existing 23 tests
-    // continue to use the v0 `MESH_KEYWORDS` fallback
-    // (the router's `envoyHarnessTags === undefined`
-    // path). The v1.1 dynamic-vocabulary tests
-    // (below) override this to inject a manifest
-    // with specific tags.
-    getNodeManifest: vi.fn(() => undefined),
+    // Phase 8 / v1.1 + v1.18 — manifest read. The
+    // default returns a manifest with the v0 mesh
+    // keywords (`mesh`, `federated`, `cross-node`)
+    // as envoy-harness skill tags, so tests that
+    // expect the v1.1 algorithm (word-boundary) to
+    // match these keywords continue to work. The
+    // v0 `MESH_KEYWORDS` fallback was REMOVED in
+    // v1.18 — callers that need the "no manifest"
+    // behavior override `getNodeManifest` to return
+    // `undefined` (or throw).
+    getNodeManifest: vi.fn(() => ({
+      peerId: "test-node",
+      runtimes: [
+        { runtime: "envoy-harness" as const, runtimeVersion: "test" },
+        { runtime: "openclaw" as const, runtimeVersion: "test" },
+      ],
+      skills: [
+        {
+          skillId: "mesh-skill",
+          description: "test",
+          costCeilingUsd: undefined,
+          maxSensitivity: "public" as const,
+          tags: ["mesh", "federated", "cross-node"],
+          runtime: "envoy-harness" as const,
+        },
+      ],
+    })),
     persistEnvoyAiChatExchange: vi.fn(async () => undefined),
     recordEnvoyAiHumanOutgoing: vi.fn(async () => undefined),
     maybeIngestTerminalAssistantReply: vi.fn(),
@@ -166,6 +185,12 @@ describe("runOwnerAgentTurnViaRuntime — default branch", () => {
 
 describe("runOwnerAgentTurnViaRuntime — signal branch (EH ready)", () => {
   it("routes a `mesh` keyword prompt to envoy-harness", async () => {
+    // v1.18 — the default manifest has a `mesh-skill`
+    // with `mesh` as a tag, so the v1.2 per-skill
+    // matching picks the skill (v1.2 wins over the
+    // v1.1 free-form path). The answer comes from
+    // `askEnvoyHarnessSkill` (returns "skill answer"
+    // per the default spy), not from `askEnvoyHarness`.
     const { ctx, spies } = makeCtx({
       isEnvoyHarnessReady: vi.fn(() => true),
     });
@@ -174,10 +199,12 @@ describe("runOwnerAgentTurnViaRuntime — signal branch (EH ready)", () => {
       "set up a mesh sub-agent for this task",
     );
     expect(out.modelUsed).toBe("envoy-harness");
-    expect(out.answer).toBe("envoy-harness answer");
-    expect(out.routingReason).toBe("signal");
+    expect(out.answer).toBe("skill answer");
+    expect(out.routingReason).toBe("signal-skill");
+    expect(out.targetSkill).toBe("mesh-skill");
     expect(out.routingSignals).toEqual(["mesh"]);
-    expect(spies.askEnvoyHarness).toHaveBeenCalledTimes(1);
+    expect(spies.askEnvoyHarnessSkill).toHaveBeenCalledTimes(1);
+    expect(spies.askEnvoyHarness).not.toHaveBeenCalled();
     expect(spies.askOpenClaw).not.toHaveBeenCalled();
   });
 
@@ -274,11 +301,20 @@ describe("runOwnerAgentTurnViaRuntime — envoy-harness-unready branch", () => {
 // ---------------------------------------------------------------------------
 
 describe("runOwnerAgentTurnViaRuntime — envoy-harness-error branch", () => {
-  it("falls back to OpenClaw when EH ready but askEnvoyHarness throws", async () => {
+  it("falls back to OpenClaw when EH ready but askEnvoyHarnessSkill throws", async () => {
+    // v1.18 — the default manifest has a `mesh-skill`
+    // (v1.2 per-skill matching), so the v1.2 path
+    // calls `askEnvoyHarnessSkill` first. The v1.1
+    // path is the fall-through when the v1.2 call
+    // throws. Mock the v1.2 method to throw so the
+    // fallback chain runs end-to-end.
     const { ctx, spies } = makeCtx({
       isEnvoyHarnessReady: vi.fn(() => true),
+      askEnvoyHarnessSkill: vi.fn(async () => {
+        throw new Error("envoy-harness skill API down");
+      }),
       askEnvoyHarness: vi.fn(async () => {
-        throw new Error("envoy-harness API down");
+        throw new Error("envoy-harness free-form API down");
       }),
     });
     const out = await runOwnerAgentTurnViaRuntime(
@@ -291,8 +327,9 @@ describe("runOwnerAgentTurnViaRuntime — envoy-harness-error branch", () => {
     // The router's original decision is preserved
     // in `routingReason` (the call failed AFTER
     // the router chose EH).
-    expect(out.routingReason).toBe("signal");
+    expect(out.routingReason).toBe("signal-skill");
     expect(out.routingSignals).toEqual(["mesh"]);
+    expect(spies.askEnvoyHarnessSkill).toHaveBeenCalledTimes(1);
     expect(spies.askEnvoyHarness).toHaveBeenCalledTimes(1);
     expect(spies.askOpenClaw).toHaveBeenCalledTimes(1);
   });
@@ -416,8 +453,16 @@ describe("runOwnerAgentTurnViaRuntime — hint prefix stripping", () => {
 
 describe("runOwnerAgentTurnViaRuntime — fallback chain preserved", () => {
   it("falls back to native planner when both EH and OpenClaw fail", async () => {
+    // v1.18 — the v1.2 path calls `askEnvoyHarnessSkill`
+    // first; the v1.1 path is the fall-through. Both
+    // throw here so OpenClaw is the next engine; it
+    // also throws so the deep fallback to the native
+    // planner fires.
     const { ctx, spies } = makeCtx({
       isEnvoyHarnessReady: vi.fn(() => true),
+      askEnvoyHarnessSkill: vi.fn(async () => {
+        throw new Error("EH skill down");
+      }),
       askEnvoyHarness: vi.fn(async () => {
         throw new Error("EH down");
       }),
@@ -434,24 +479,27 @@ describe("runOwnerAgentTurnViaRuntime — fallback chain preserved", () => {
     expect(out.answer).toBe("native answer");
     // The router's decision is preserved even
     // in the deep fallback.
-    expect(out.routingReason).toBe("signal");
+    expect(out.routingReason).toBe("signal-skill");
     expect(out.routingSignals).toEqual(["mesh"]);
+    expect(spies.askEnvoyHarnessSkill).toHaveBeenCalledTimes(1);
     expect(spies.askEnvoyHarness).toHaveBeenCalledTimes(1);
     expect(spies.askOpenClaw).toHaveBeenCalledTimes(1);
     expect(spies.runDocumentAgentTurnCore).toHaveBeenCalledTimes(1);
   });
 
   it("falls back through the deep-fallback chain when all AI engines fail", async () => {
-    // The full chain: EH (ready + throws) →
-    // OpenClaw (throws) → scripted-tutor (no
-    // match for this prompt) → native planner.
-    // The exact `modelUsed` depends on whether
-    // the scripted tutor matches the prompt;
-    // we don't assert on that here. The point
-    // is: the routing fields are preserved
+    // The full chain: EH skill (throws) → EH free-form
+    // (throws) → OpenClaw (throws) → scripted-tutor
+    // (no match) → native planner. The exact `modelUsed`
+    // depends on whether the scripted tutor matches
+    // the prompt; we don't assert on that here. The
+    // point is: the routing fields are preserved
     // through the deep fallback.
     const { ctx, spies } = makeCtx({
       isEnvoyHarnessReady: vi.fn(() => true),
+      askEnvoyHarnessSkill: vi.fn(async () => {
+        throw new Error("EH skill down");
+      }),
       askEnvoyHarness: vi.fn(async () => {
         throw new Error("EH down");
       }),
@@ -464,7 +512,8 @@ describe("runOwnerAgentTurnViaRuntime — fallback chain preserved", () => {
       ctx,
       "set up a mesh sub-agent",
     );
-    // Both AI engines were tried.
+    // All three AI engines were tried.
+    expect(spies.askEnvoyHarnessSkill).toHaveBeenCalledTimes(1);
     expect(spies.askEnvoyHarness).toHaveBeenCalledTimes(1);
     expect(spies.askOpenClaw).toHaveBeenCalledTimes(1);
     // The deep fallback hit the native planner.
@@ -473,7 +522,7 @@ describe("runOwnerAgentTurnViaRuntime — fallback chain preserved", () => {
     // in `routingReason` — the user typed a
     // signal-bearing prompt; the engine chain
     // just couldn't service it.
-    expect(out.routingReason).toBe("signal");
+    expect(out.routingReason).toBe("signal-skill");
     expect(out.routingSignals).toEqual(["mesh"]);
   });
 });
@@ -493,6 +542,9 @@ describe("runOwnerAgentTurnViaRuntime — result shape", () => {
   });
 
   it("result includes routingReason and routingSignals on envoy-harness path", async () => {
+    // v1.18 — the default manifest has a `mesh-skill`
+    // (v1.2 per-skill matching), so the v1.2 path
+    // returns `routingReason: "signal-skill"`.
     const { ctx } = makeCtx({
       isEnvoyHarnessReady: vi.fn(() => true),
     });
@@ -500,7 +552,7 @@ describe("runOwnerAgentTurnViaRuntime — result shape", () => {
       ctx,
       "spawn a mesh sub-agent",
     );
-    expect(out.routingReason).toBe("signal");
+    expect(out.routingReason).toBe("signal-skill");
     expect(out.routingSignals).toEqual(["mesh"]);
   });
 
@@ -647,14 +699,17 @@ describe("runOwnerAgentTurnViaRuntime — v1.1 manifest-tag dynamic vocabulary",
     expect(spies.askEnvoyHarness).not.toHaveBeenCalled();
   });
 
-  it("falls back to v0 MESH_KEYWORDS when the manifest is undefined", async () => {
-    // When `getNodeManifest` returns `undefined`
-    // (older host, early init, or read failure),
-    // the router uses the v0 `MESH_KEYWORDS`
-    // constant as the fallback. The v0 list
-    // includes `federated`; a prompt with
-    // `federated` does route to EH.
-    const { ctx } = makeCtx({
+  it("defaults to OpenClaw when the manifest is undefined (no v0 fallback)", async () => {
+    // v1.18 — the v0 `MESH_KEYWORDS` fallback was
+    // removed. When `getNodeManifest` returns
+    // `undefined` (older host, early init, or read
+    // failure), the router has no positive
+    // mesh-keyword vocabulary. A prompt that would
+    // have matched a v0 keyword (`federated`,
+    // `mesh`, `cross-node`) now defaults to
+    // OpenClaw. The user can still force EH with
+    // `!eh` or `/eh` hint prefixes.
+    const { ctx, spies } = makeCtx({
       isEnvoyHarnessReady: vi.fn(() => true),
       getNodeManifest: vi.fn(() => undefined),
     });
@@ -662,16 +717,20 @@ describe("runOwnerAgentTurnViaRuntime — v1.1 manifest-tag dynamic vocabulary",
       ctx,
       "federated scoreboard query for peer X",
     );
-    expect(out.modelUsed).toBe("envoy-harness");
-    expect(out.routingSignals).toContain("federated");
+    expect(out.modelUsed).toBe("openclaw");
+    expect(out.routingReason).toBe("default");
+    expect(out.routingSignals).toEqual([]);
+    expect(spies.askEnvoyHarness).not.toHaveBeenCalled();
   });
 
-  it("falls back to v0 MESH_KEYWORDS when getNodeManifest throws", async () => {
-    // Q6 of the v1.1 sub-plan — the runtime
-    // wraps the manifest read in a `try/catch`
-    // and logs a warning. The router gets
-    // `undefined` tags and uses the v0 fallback.
-    // The user's prompt still works.
+  it("defaults to OpenClaw when getNodeManifest throws (no v0 fallback)", async () => {
+    // v1.18 — the v0 `MESH_KEYWORDS` fallback was
+    // removed. The host wraps the manifest read in
+    // a `try/catch` and logs a warning (the
+    // operator can debug), but the router now
+    // defaults to OpenClaw for prompts that would
+    // have matched a v0 keyword. The `!eh` hint
+    // prefix is the safe escape hatch.
     const { ctx, spies } = makeCtx({
       isEnvoyHarnessReady: vi.fn(() => true),
       getNodeManifest: vi.fn(() => {
@@ -684,16 +743,17 @@ describe("runOwnerAgentTurnViaRuntime — v1.1 manifest-tag dynamic vocabulary",
         ctx,
         "set up a mesh sub-agent",
       );
-      expect(out.modelUsed).toBe("envoy-harness");
-      expect(out.routingSignals).toContain("mesh");
-      // Q6 — warning logged with the failure
+      expect(out.modelUsed).toBe("openclaw");
+      expect(out.routingReason).toBe("default");
+      expect(out.routingSignals).toEqual([]);
+      expect(spies.askEnvoyHarness).not.toHaveBeenCalled();
+      // Q6 — warning still logged with the failure
       // reason so the owner can debug.
       expect(warnSpy).toHaveBeenCalled();
       const firstCall = warnSpy.mock.calls[0];
       expect(String(firstCall?.[0] ?? "")).toContain("getNodeManifest");
     } finally {
       warnSpy.mockRestore();
-      void spies;
     }
   });
 
@@ -883,22 +943,50 @@ describe("runOwnerAgentTurnViaRuntime — v1.2 per-skill dispatch", () => {
     expect(spies.askEnvoyHarnessSkill).not.toHaveBeenCalled();
   });
 
-  it("falls through to askEnvoyHarness when envoyHarnessSkills is undefined (v1.1 preserved)", async () => {
-    // No `getNodeManifest` → no skills list → v1.1
-    // free-form LLM ask path. The v1.1 signal
-    // scan still matches `mesh`.
+  it("falls through to askEnvoyHarness when envoyHarnessSkills is empty (v1.1 preserved)", async () => {
+    // v1.18 — the manifest's skills list is empty
+    // (a skill with no `tags` would extract to `[]`).
+    // The v1.2 per-skill matching skips (no skills);
+    // the v1.1 signal scan still matches `mesh`
+    // via the manifest's tags. The router picks
+    // the v1.1 free-form LLM ask path.
     const { ctx, spies } = makeCtx({
       isEnvoyHarnessReady: vi.fn(() => true),
-      getNodeManifest: vi.fn(() => undefined),
+      getNodeManifest: vi.fn(() => ({
+        peerId: "test-node",
+        runtimes: [
+          { runtime: "envoy-harness" as const, runtimeVersion: "test" },
+          { runtime: "openclaw" as const, runtimeVersion: "test" },
+        ],
+        skills: [
+          {
+            // A skill with no `tags` → extractTagsByRuntime
+            // returns `[]` for envoy-harness, so
+            // envoyHarnessTags is empty. Per-skill
+            // matching skips (no skills). The v1.1
+            // path also has no tags to match.
+            // → default OpenClaw.
+            skillId: "untagged",
+            description: "test",
+            costCeilingUsd: undefined,
+            maxSensitivity: "public" as const,
+            tags: [],
+            runtime: "envoy-harness" as const,
+          },
+        ],
+      })),
     });
     const out = await runOwnerAgentTurnViaRuntime(
       ctx,
       "set up a mesh sponsor bond",
     );
-    expect(out.modelUsed).toBe("envoy-harness");
-    expect(out.routingReason).toBe("signal");
-    expect(out.targetSkill).toBeUndefined();
-    expect(spies.askEnvoyHarness).toHaveBeenCalledTimes(1);
+    // No tags + no v0 fallback → no positive signal →
+    // default OpenClaw. (The v1.1 path matches
+    // ONLY when the manifest exposes tags.)
+    expect(out.modelUsed).toBe("openclaw");
+    expect(out.routingReason).toBe("default");
+    expect(out.routingSignals).toEqual([]);
+    expect(spies.askEnvoyHarness).not.toHaveBeenCalled();
     expect(spies.askEnvoyHarnessSkill).not.toHaveBeenCalled();
   });
 

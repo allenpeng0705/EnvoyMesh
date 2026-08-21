@@ -56,18 +56,29 @@ import type { AgentRuntime } from "@envoymesh/protocol";
  *    `translate this`).
  *
  * **v1.1 signal set (Phase 8 v1):**
- * The v0 `MESH_KEYWORDS` is replaced by a dynamic
- * vocabulary extracted from the merged manifest's
+ * The positive signal vocabulary is the dynamic
+ * list extracted from the merged manifest's
  * envoy-harness skills' `tags[]` (passed as
- * `input.envoyHarnessTags`). The dynamic vocabulary:
+ * `input.envoyHarnessTags` or the v1.9 per-runtime
+ * `input.runtimeTags["envoy-harness"]`). The dynamic
+ * vocabulary:
  * - Is **word-boundary regex** for single-word tags
  *   (e.g. `mesh` doesn't match `meshes`).
  * - Is **exact substring** for hyphenated tags
  *   (e.g. `cross-node` matches `cross-node`).
- * - Falls back to the v0 `MESH_KEYWORDS` constant
- *   when `envoyHarnessTags` is `undefined` (backward
- *   compat for callers that haven't been updated to
- *   read the manifest).
+ * - When `envoyHarnessTags` is `undefined` AND the
+ *   v1.9 map is empty, the vocabulary is `[]` (no
+ *   positive mesh-keyword signals). The v0
+ *   `MESH_KEYWORDS` constant (with the substring
+ *   false positives `"meshes"`, `"federations"`)
+ *   was REMOVED in v1.18 — the post-v1.17 host
+ *   always provides the manifest, so the v0
+ *   fallback was dead code that masked missing
+ *   tag configuration. Without a manifest the
+ *   router matches only `lsp_*` tool names +
+ *   `!eh`/`/eh` hint prefixes (the safe positive
+ *   set that doesn't depend on caller-provided
+ *   vocabulary).
  *
  * **v0 → v1.x history:**
  * - **v1.5:** inline `/cost:N` + `/provider:NAME`
@@ -94,18 +105,6 @@ import type { AgentRuntime } from "@envoymesh/protocol";
 // ---------------------------------------------------------------------------
 // Constants — the v0 signal vocabulary.
 // ---------------------------------------------------------------------------
-
-/**
- * The mesh-keyword vocabulary. Substring match
- * (case-insensitive). v0 accepts false positives
- * like `"meshes"`; v1 will tighten to word
- * boundary.
- */
-const MESH_KEYWORDS: ReadonlyArray<string> = [
-  "mesh",
-  "federated",
-  "cross-node",
-];
 
 /**
  * The envoy-harness tool-name vocabulary.
@@ -290,9 +289,20 @@ export interface RouteUserPromptInput {
    * substring for hyphenated tags).
    *
    * **Fallback:** when `undefined`, the router
-   * uses the v0 `MESH_KEYWORDS` constant as a
-   * backward-compat fallback. Callers that
-   * haven't been updated to read the manifest
+   * has no positive mesh-keyword vocabulary —
+   * the v0 `MESH_KEYWORDS` fallback was removed
+   * in v1.18 (the post-v1.17 host always provides
+   * the manifest, so the v0 fallback was dead
+   * code that masked missing tag configuration).
+   * Without a manifest the router matches only
+   * `lsp_*` tool names + `!eh`/`/eh` hint
+   * prefixes. Callers that haven't been updated
+   * to read the manifest will get OpenClaw
+   * default for prompts that would have matched
+   * a mesh keyword — by design, since the v0
+   * substring algorithm was full of false
+   * positives (`"meshes"` matched `"mesh"`,
+   * `"federations"` matched `"federated"`).
    * still work.
    *
    * **Empty array:** when `[]` (manifest has no
@@ -602,9 +612,10 @@ export function routeUserPrompt(
   //     v1.1 — pass the dynamic `envoyHarnessTags`
   //     from the merged manifest (per Q2 / Q7 of
   //     the v1.1 sub-plan). The scanner uses the
-  //     dynamic vocabulary when provided; falls
-  //     back to the v0 `MESH_KEYWORDS` when
-  //     undefined.
+  //     dynamic vocabulary when provided. When
+  //     the manifest is unavailable, the
+  //     vocabulary is `[]` (the v0 `MESH_KEYWORDS`
+  //     fallback was removed in v1.18).
   //
   //     v1.9 — the v1.1 + v1.7 callers migrate to
   //     read from `runtimeTags["envoy-harness"]`
@@ -1002,10 +1013,12 @@ function scanSignals(
   // 2d. v1.1 dynamic tag scan (per Q2 + Q7 of the
   //     v1.1 sub-plan). When `envoyHarnessTags`
   //     is provided, scan the prompt for any
-  //     manifest tag. When `undefined`, fall
-  //     back to the v0 `MESH_KEYWORDS` constant
+  //     manifest tag. When `undefined` (no
+  //     manifest), the vocabulary is `[]` (the v0
+  //     `MESH_KEYWORDS` fallback was removed in
+  //     v1.18 — see the file header).
   //     for backward compat (per Q1).
-  const meshVocabulary = envoyHarnessTags ?? MESH_KEYWORDS;
+  const meshVocabulary = envoyHarnessTags ?? [];
   for (const tag of meshVocabulary) {
     const offset = findTagInPrompt(lower, tag);
     if (offset >= 0) {
@@ -1301,13 +1314,12 @@ export function extractPromptHints(prompt: string): {
  * 3-line insurance policy for v1.3+ (when the
  * threshold could be loosened).
  *
- * **Why not the v1.1 `MESH_KEYWORDS` fallback:**
- * the per-skill matching is independent of the
- * v1.1 signal scan. The v1.1 fallback only
- * applies to the signal scan; if the manifest
- * is unavailable, the v1.2 caller should pass
- * `envoyHarnessSkills: undefined` (and the router
- * skips the per-skill step entirely).
+ * **Why no v0 fallback:** the per-skill matching
+ * is independent of the v1.1 signal scan. The v0
+ * `MESH_KEYWORDS` fallback was removed in v1.18.
+ * If the manifest is unavailable, the v1.2 caller
+ * passes `envoyHarnessSkills: undefined` (and the
+ * router skips the per-skill step entirely).
  *
  * @param prompt The raw prompt (lowercased
  *   internally; original case is preserved for

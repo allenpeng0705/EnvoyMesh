@@ -24,6 +24,21 @@
 > [`agent-harness-integration-step5.md`](./agent-harness-integration-step5.md)
 > (the Step 5 sub-plan + v0 signal router).
 >
+> **v1.18 (2026-08-21) — Q1/Q3 reconciliation REMOVED:**
+> the v0 `MESH_KEYWORDS` fallback was deleted from
+> `user-prompt-router.ts` (the Q1 "fall back" decision
+> was honored at the time, but the Q3 "remove from
+> primary path" side won out as the codebase matured
+> — the post-v1.17 host always provides the manifest,
+> so the v0 fallback was dead code masking missing
+> tag configuration). When `envoyHarnessTags` is
+> `undefined`, the router has no positive mesh-keyword
+> vocabulary and defaults to OpenClaw (the v0 tool
+> names + `lsp_*` regex + hint prefixes still work —
+> those are caller-independent). See the v1.18
+> self-review commit for the test fallout + doc
+> update.
+>
 > **v1.2 (2026-08-21) supersedes v1.1's runtime-level
 > routing with per-skill routing** — see
 > [`agent-harness-integration-v1-2.md`](./agent-harness-integration-v1-2.md)
@@ -470,22 +485,29 @@ commit).
 
 | # | Question | Locked answer |
 |---|---|---|
-| **Q1** | `envoyHarnessTags` undefined fallback | Fall back to v0 `MESH_KEYWORDS` (backward compat) |
+| **Q1** | `envoyHarnessTags` undefined fallback | ~~Fall back to v0 `MESH_KEYWORDS` (backward compat)~~ → **REMOVED in v1.18.** When the host doesn't provide a manifest, the router defaults to OpenClaw. The v0 tool names + `lsp_*` regex + `!eh`/`/eh` hint prefixes still work (caller-independent). |
 | **Q2** | Tag matching algorithm | Word-boundary regex for single-word tags, exact substring for hyphenated tags |
-| **Q3** | v0 `MESH_KEYWORDS` constant | **Remove from primary path; keep as private legacy fallback** (reconciles Q1 + Q3 — Q1 says fall back, Q3 says remove; both honored by removing the constant from the primary scan while keeping the list as the `undefined` fallback) |
-| **Q4** | OpenClaw tags as negative signals | No — only envoy-harness tags as positive (v1.1 is additive) |
+| **Q3** | v0 `MESH_KEYWORDS` constant | ~~Remove from primary path; keep as private legacy fallback~~ → **REMOVED in v1.18.** Q3's "remove" side won out as the codebase matured. See Q1 for the new behavior. |
+| **Q4** | OpenClaw tags as negative signals | No — only envoy-harness tags as positive (v1.1 is additive). [Superseded by v1.7: OpenClaw tags are now negative signals (veto).] |
 | **Q5** | Manifest staleness | Read on every `runOwnerAgentTurnViaRuntime` call (sync; cached after init) |
-| **Q6** | Manifest read failure | Fall back to v0 vocabulary (log a warning) |
+| **Q6** | Manifest read failure | ~~Fall back to v0 vocabulary (log a warning)~~ → **REMOVED in v1.18.** The host logs a warning (so the owner can debug the manifest store crash), but the router defaults to OpenClaw. |
 | **Q7** | Tag-based signal category | Reuse `"mesh-keyword"` (the v0 category — the tag IS a keyword) |
 | **Q8** | Empty `envoyHarnessTags: []` | No tag-based signals (only v0 tool names / lsp / hint) |
 
-**Q1/Q3 reconciliation note (2026-08-21):** Q1 and Q3
-were initially framed as alternatives but the team
-chose to honor both: the `MESH_KEYWORDS` constant stays
-in the file (Q1 wins on data — backward-compat fallback)
-but it is no longer the *primary* scan vocabulary (Q3
-wins on positioning — the merged manifest's envoy-harness
-skill tags are primary). Callers that pass
-`envoyHarnessTags` use the dynamic vocabulary; callers
-that don't (or whose manifest is broken — Q6) fall back
-to `MESH_KEYWORDS`.
+**Q1/Q3/Q6 deprecation note (v1.18, 2026-08-21):**
+the v0 `MESH_KEYWORDS` constant + the `envoyHarnessTags
+=== undefined → MESH_KEYWORDS` fallback was REMOVED.
+The post-v1.17 host always provides the manifest, so
+the v0 fallback was dead code that masked missing tag
+configuration. The router now has no positive
+mesh-keyword vocabulary when the manifest is
+unavailable — it defaults to OpenClaw. The v0 tool
+names (`RemoteMeshSubmitter`, `FanOutSpec`) + `lsp_*`
+regex + `!eh`/`/eh` hint prefixes still work (those
+are caller-independent — they don't depend on the
+manifest). The change matches the project's "no
+compatibility shims" stance in
+[`AGENTS.md`](../CLAUDE.md) ("With no external
+consumers, prefer the correct foundation over
+compatibility shims: rename or repackage freely and
+update every reference together").
