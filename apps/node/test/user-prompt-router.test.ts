@@ -1044,7 +1044,7 @@ describe("routeUserPrompt — v1.5 inline hint integration", () => {
     expect(decision.cleanPrompt).toBe("explain the mesh");
   });
 
-  it("hints are extracted even on opt-in-disabled (the router still returns the clean prompt)", () => {
+  it("hints are NOT extracted on opt-in-disabled (the router short-circuits before extraction; cleanPrompt is the original)", () => {
     // The opt-in check is the FIRST branch;
     // it short-circuits before hint extraction.
     // The cleanPrompt is the original (no
