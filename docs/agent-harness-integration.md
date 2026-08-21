@@ -655,3 +655,59 @@ fan-out within a job (whole-job only).
     note + `agent-harness-integration-v1-1.md`
     status note + `agent-harness-integration-v1-2.md`
     DONE stamp + commit log.
+- **2026-08-21 (v1.3 — B-class per-skill result
+  formatter — DONE):** the v1.2 dispatch's B-class
+  fall-through (Q2 of v1.2) is replaced by per-skill
+  formatters. B-class skills (setup-sponsor-friend /
+  peer-list / relay-status) are now chat-reachable —
+  a prompt like "set up a mesh sponsor bond" runs the
+  actual bond flow + returns a user-readable summary
+  ("Couldn't set up the sponsor bond. Your relay is
+  unreachable. What to do: Check your relay is online,
+  then click Retry in the bond panel."). 1 commit on
+  `envoy_harness_integration` branch (the user
+  delegated commit; bundled v1.3.1 + v1.3.2 +
+  v1.3.3 into a single commit at the end of v1.3).
+  50 new tests (30 b-class-formatters + 20
+  skill-result-formatter) + 2 new e2e tests
+  (B-class end-to-end + Q6 fall-through) + 143
+  pre-existing tests regression-clean. Detailed plan:
+  `docs/agent-harness-integration-v1-3.md` (sub-plan
+  with 8 locked design questions). The **end-user-
+  first** principle (AGENTS.md) drove Q2's
+  failure format: user-readable headline + cause +
+  next-step + a `[debug details:]` block at the
+  bottom (verbose for power users + audit log).
+  - **v1.3.1 — per-skill formatters (B-class).**
+    New `apps/node/src/b-class-result-formatters.ts`
+    (`formatSponsorFriendResult` +
+    `formatPeerListResult` +
+    `formatRelayStatusResult` +
+    `B_CLASS_FORMATTERS` map +
+    `getBClassFormatter` lookup). 16-char peerId
+    truncation. 1-line success / multi-line
+    failure with the user-friendly ordering. 30
+    unit tests.
+  - **v1.3.2 — update skill-result-formatter to
+    dispatch per-skill formatters.** New
+    `formatStructuredContent` path. Q5 narrow:
+    format tool-call blocks ONLY when the result's
+    first block is a B-class `tool-result`
+    (LLM-ask skills keep v1.2 behavior). Q6
+    silent + `console.debug` log: unknown
+    `structured` blocks return `undefined` →
+    the host's `askEnvoyHarnessSkill` throws
+    `StructuredResultError` → the dispatch
+    catches + falls through to v1.1 free-form
+    LLM ask. `NodeServiceImpl.askEnvoyHarnessSkill`
+    updated to handle the `string | undefined`
+    return type. 20 unit tests + 2 new e2e
+    tests.
+  - **v1.3.3 — doc closeout.** This entry +
+    `agent-network-engine.md` §2.2.2 update
+    (note v1.3's B-class formatter) +
+    `agent-harness-integration-v1-2.md` status
+    note (v1.2's B-class fall-through is now
+    handled by v1.3) +
+    `agent-harness-integration-v1-3.md` DONE
+    stamp + commit log.

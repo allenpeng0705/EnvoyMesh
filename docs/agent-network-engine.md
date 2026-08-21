@@ -213,6 +213,42 @@ flow (search → join → hello → wait). Same prompt,
 different action: text answer vs. real side
 effect.
 
+**v1.3 — the B-class per-skill result formatter.**
+The v1.2 dispatch's B-class fall-through (Q2 of
+v1.2) is replaced by per-skill formatters
+(`formatSponsorFriendResult` /
+`formatPeerListResult` /
+`formatRelayStatusResult` — see
+`apps/node/src/b-class-result-formatters.ts`).
+The B-class skills now return a user-readable
+chat summary. End-user-first ordering (per
+`AGENTS.md`):
+- Success → 1-line: "Bonded with sponsor (12D3KooWSX7iGZC9...) after 1 attempt"
+- Failure → user-readable headline + cause +
+  next-step + a `[debug details:]` block at the
+  bottom (verbose for power users + audit log).
+  Example:
+  ```
+  Couldn't set up the sponsor bond.
+  Your relay is unreachable. The network kept dropping.
+  What to do: Check your relay is online, then click Retry in the bond panel.
+
+  [debug details:]
+    reason: auto-exhausted
+    lastErrorKind: network-unreachable
+    attempts: 5
+    ownerId: 12D3KooWSX7iGZC9...
+    cooldownUntil: 9999-12-31 00:00 UTC
+    finalNote: exhausted 5 attempts; last error: dial tcp 1.2.3.4:0
+  ```
+- Skipped → "Sponsor bond: cooldown (until 2026-08-22 15:00 UTC) / What to do: wait for the cooldown to end, or click Retry in the bond panel."
+
+The tool-call block is also formatted (Q5
+narrow — only when the result's first block is
+a B-class `tool-result`): "Sponsor: called `sponsor_friend` (force=true)". The
+B-class chat reply is 2 paragraphs: tool-call
+summary + tool-result summary.
+
 **Per-skill matching algorithm (Q1 of the v1.2
 sub-plan):**
 

@@ -890,4 +890,81 @@ describe("runOwnerAgentTurnViaRuntime — v1.2 per-skill dispatch", () => {
     expect(spies.askEnvoyHarness).toHaveBeenCalledTimes(1);
     expect(spies.askEnvoyHarnessSkill).not.toHaveBeenCalled();
   });
+
+  it("returns the B-class formatted summary as the chat answer (v1.3 NEW)", async () => {
+    // v1.3 — when the skill returns a B-class
+    // `tool-result` block, `formatSkillResult`
+    // dispatches to the per-skill formatter. The
+    // formatted string is what the chat user
+    // sees. The result keeps the v1.2 routing
+    // fields (`routingReason: "signal-skill"`,
+    // `targetSkill`, `modelUsed: "envoy-harness"`)
+    // — only the `answer` field changes (it's
+    // the per-skill formatted summary, not the
+    // raw skill output).
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      getNodeManifest: vi.fn(() => makeManifest(ENVOY_HARNESS_SKILLS)),
+      // The askEnvoyHarnessSkill mock returns the
+      // B-class-formatted summary (as if the
+      // formatter ran on the bridge's tool-result).
+      // v1.2 returned the raw skill output; v1.3
+      // returns the per-skill formatted string.
+      askEnvoyHarnessSkill: vi.fn(
+        async () => "Bonded with sponsor (12D3Koo) after 1 attempt",
+      ),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "set up a mesh sponsor bond",
+    );
+    expect(out.modelUsed).toBe("envoy-harness");
+    expect(out.routingReason).toBe("signal-skill");
+    expect(out.targetSkill).toBe("setup-sponsor-friend");
+    expect(out.answer).toBe(
+      "Bonded with sponsor (12D3Koo) after 1 attempt",
+    );
+    expect(spies.askEnvoyHarness).not.toHaveBeenCalled();
+  });
+
+  it("falls through to askEnvoyHarness when the B-class formatter returns undefined (Q6)", async () => {
+    // v1.3 (Q6) — the formatter returns `undefined`
+    // for unknown schemaRef / non-B-class skillId.
+    // The host's `askEnvoyHarnessSkill` throws
+    // `StructuredResultError` on `undefined`. The
+    // dispatch catches + falls through to the
+    // v1.1 free-form LLM ask. The result keeps
+    // the v1.2 routing fields (targetSkill +
+    // signal-skill — the original decision) but
+    // the actual dispatch is the LLM fallback.
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      getNodeManifest: vi.fn(() => makeManifest(ENVOY_HARNESS_SKILLS)),
+      askEnvoyHarnessSkill: vi.fn(async () => {
+        // Simulate the v1.3 host wrapper: when
+        // `formatSkillResult` returns undefined,
+        // the wrapper throws StructuredResultError
+        // so the dispatch catches + falls through.
+        throw new Error("structured: B-class formatter not found");
+      }),
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const out = await runOwnerAgentTurnViaRuntime(
+        ctx,
+        "set up a mesh sponsor bond",
+      );
+      // Falls through to askEnvoyHarness.
+      expect(out.answer).toBe("envoy-harness answer");
+      expect(out.modelUsed).toBe("envoy-harness");
+      // The result keeps the v1.2 routing fields
+      // (the original decision was a per-skill
+      // match; the dispatch just couldn't run it).
+      expect(out.routingReason).toBe("signal-skill");
+      expect(out.targetSkill).toBe("setup-sponsor-friend");
+      expect(spies.askEnvoyHarness).toHaveBeenCalledTimes(1);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
 });

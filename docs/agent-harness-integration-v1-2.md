@@ -7,6 +7,11 @@
 > 22 new tests (9 router unit v1.2 + 9 formatter
 > unit + 4 e2e v1.2.2) + 110 pre-existing tests
 > regression-clean. Detailed sub-plan for v1.2.
+> **v1.3 (2026-08-21) replaces the B-class fall-
+> through (Q2 of v1.2) with per-skill formatters.**
+> B-class skills (setup-sponsor-friend / peer-list
+> / relay-status) are now chat-reachable — see
+> [`agent-harness-integration-v1-3.md`](./agent-harness-integration-v1-3.md).
 > Companion to
 > [`agent-harness-integration.md`](./agent-harness-integration.md) (the
 > design),

@@ -423,7 +423,7 @@ import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-seed-store.js";
 import { isMeshReadyForSponsorBond } from "./mesh-readiness.js";
 import { bondTrace } from "./bond-trace.js";
-import { formatSkillResult } from "./skill-result-formatter.js";
+import { formatSkillResult, StructuredResultError } from "./skill-result-formatter.js";
 import { seedAddrsForDiscoveryProfile, peerDiscoverySourceFromMultiaddrs, shouldPersistPeerDiscoverySeeds } from "./peer-discovery-telemetry.js";
 import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver.js";
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
@@ -4947,7 +4947,23 @@ class NodeServiceImpl implements NodeService {
       costCeilingUsd,
       deadlineMs: 60_000, // Q4 — generous headroom for code skills
     });
-    return formatSkillResult(result);
+    const formatted = formatSkillResult(result);
+    // v1.3 (Q6) — silent fall-through: the formatter
+    // returns `undefined` when there's no per-skill
+    // formatter for the skillId (e.g. a non-B-class
+    // structured block, or an unknown schemaRef). The
+    // dispatch catches + falls back to v1.1 free-form
+    // LLM ask. We throw `StructuredResultError` so
+    // the existing dispatch `try/catch` handles it.
+    if (formatted === undefined) {
+      const first = result.content[0];
+      const schemaRef =
+        first !== undefined && first.kind === "structured"
+          ? first.schemaRef
+          : "(unknown)";
+      throw new StructuredResultError(result.skillId, schemaRef);
+    }
+    return formatted;
   }
 
   /**
