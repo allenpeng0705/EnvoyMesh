@@ -38,11 +38,17 @@ import type { Verdict, VerdictEntry, VerifierSource } from "@envoymesh/protocol"
 
 import {
   categorizeReputation,
+  getReputationBySkillForPeer,
+  getWorkerReputation,
   isNoHistoryReputation,
   reputationFromVerdicts,
   SCOREBOARD_SOURCE_WEIGHTS,
   SCOREBOARD_TRUST_THRESHOLDS,
 } from "../src/chain-scoreboard.js";
+import {
+  createArbitrationStore,
+  recordVerdictEntry,
+} from "../src/chain-arbitration.js";
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -62,12 +68,13 @@ function makeVerdict(input: {
   workerPeerId?: string;
   workerRuntime?: VerdictEntry["workerRuntime"];
   skillId?: string;
+  subtaskId?: string;
   verifierModel?: string;
   verifierOwnerId?: string;
 }): VerdictEntry {
   return {
     chainId: "chain_test",
-    subtaskId: "subtask_a",
+    subtaskId: input.subtaskId ?? "subtask_a",
     workerPeerId: input.workerPeerId ?? "peer-1",
     workerRuntime: input.workerRuntime ?? "openclaw",
     skillId: input.skillId ?? "research",
@@ -354,5 +361,373 @@ describe("SCOREBOARD_TRUST_THRESHOLDS", () => {
     expect(SCOREBOARD_TRUST_THRESHOLDS.trusted).toBeGreaterThan(
       SCOREBOARD_TRUST_THRESHOLDS.untrusted,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getWorkerReputation — v1.11 wiring helper
+// ---------------------------------------------------------------------------
+
+describe("getWorkerReputation", () => {
+  it("returns undefined when the store has no verdicts for the 3-tuple (Q3 — no history)", () => {
+    let store = createArbitrationStore();
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBeUndefined();
+  });
+
+  it("returns 1.0 for all `pass` (rule) at score 1.0 (mapped from raw 1.0)", () => {
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+      }),
+    );
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBe(1);
+  });
+
+  it("returns 0.0 for all `fail` (rule) (mapped from raw -1.0)", () => {
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "fail", reason: "x", rollback: true },
+      }),
+    );
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBe(0);
+  });
+
+  it("maps raw 0.5 to 0.75 (a `pass` (rule) at score 0.5)", () => {
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 0.5, confidence: "medium" },
+      }),
+    );
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBeCloseTo(0.75, 10);
+  });
+
+  it("returns undefined when all verdicts are `disputed` (Q4 — no usable signal)", () => {
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "disputed", needsHuman: true, signals: ["unclear"] },
+        subtaskId: "subtask_x",
+      }),
+    );
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "disputed", needsHuman: true, signals: ["ambiguous"] },
+        subtaskId: "subtask_y",
+      }),
+    );
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBeUndefined();
+  });
+
+  it("excludes verdicts for OTHER (peer, runtime, skill) — the 3-tuple filter is honored", () => {
+    let store = createArbitrationStore();
+    // Two verdicts for the queried 3-tuple (peer-1, openclaw, research).
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        workerPeerId: "peer-1",
+        workerRuntime: "openclaw",
+        skillId: "research",
+        subtaskId: "subtask_x",
+      }),
+    );
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        workerPeerId: "peer-1",
+        workerRuntime: "openclaw",
+        skillId: "research",
+        subtaskId: "subtask_y",
+      }),
+    );
+    // One verdict for a different peer — must be excluded.
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "fail", reason: "x", rollback: true },
+        workerPeerId: "peer-2",
+        workerRuntime: "openclaw",
+        skillId: "research",
+        subtaskId: "subtask_z",
+      }),
+    );
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBe(1);
+  });
+
+  it("the mapping is symmetric: raw 0 → 0.5; raw 1 → 1; raw -1 → 0", () => {
+    // For raw 0, the pass + fail must cancel out. Use pass(1.0) +
+    // fail so sum = 1.0 + (-1.0) = 0; weight = 2; 0/2 = 0.
+    // Use distinct subtaskIds so both verdicts persist in the store.
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        subtaskId: "subtask_x",
+      }),
+    );
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "fail", reason: "x", rollback: true },
+        subtaskId: "subtask_y",
+      }),
+    );
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBeCloseTo(0.5, 10);
+  });
+
+  it("combines mixed sources correctly (human pass + rule fail + cross partial)", () => {
+    // raw = 1.375 / 4.5 ≈ 0.3056; mapped = (0.3056 + 1) / 2 ≈ 0.6528
+    // Use distinct subtaskIds so all three verdicts persist in the store.
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "human",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        verifierOwnerId: "owner-1",
+        subtaskId: "subtask_x",
+      }),
+    );
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "fail", reason: "x", rollback: true },
+        subtaskId: "subtask_y",
+      }),
+    );
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "cross",
+        verdict: { kind: "partial", score: 0.5, reason: "half-usable" },
+        verifierModel: "claude",
+        subtaskId: "subtask_z",
+      }),
+    );
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBeCloseTo((1.375 / 4.5 + 1) / 2, 10);
+  });
+
+  it("returns a number in [0, 1] for any non-empty input (clamp invariant)", () => {
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+      }),
+    );
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBeGreaterThanOrEqual(0);
+    expect(result).toBeLessThanOrEqual(1);
+  });
+
+  it("the function uses getVerdictsFor correctly (verifies the 3-tuple filter via store)", () => {
+    // This test pins the contract: getWorkerReputation delegates
+    // the 3-tuple filter to getVerdictsFor. We test by populating
+    // verdicts for (peer-1, openclaw, research) + a verdict for
+    // (peer-1, openclaw, "different-skill") and verifying that
+    // the different-skill verdict is excluded.
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        skillId: "research",
+        subtaskId: "subtask_x",
+      }),
+    );
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "fail", reason: "x", rollback: true },
+        skillId: "different-skill",
+        subtaskId: "subtask_y",
+      }),
+    );
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getReputationBySkillForPeer — v1.13 per-peer projection
+// ---------------------------------------------------------------------------
+
+describe("getReputationBySkillForPeer", () => {
+  it("returns undefined when no stores are provided (Q3 — no history)", () => {
+    const result = getReputationBySkillForPeer([], "peer-1");
+    expect(result).toBeUndefined();
+  });
+
+  it("returns undefined when the stores have no verdicts for the peer", () => {
+    const store = createArbitrationStore();
+    const result = getReputationBySkillForPeer([store], "peer-1");
+    expect(result).toBeUndefined();
+  });
+
+  it("returns a per-skill map for a single (runtime, skill) 3-tuple", () => {
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        workerPeerId: "peer-1",
+        skillId: "research",
+      }),
+    );
+    const result = getReputationBySkillForPeer([store], "peer-1");
+    expect(result).toEqual({ research: 1 });
+  });
+
+  it("takes the MAX across runtimes per skill (Q2 — best foot forward)", () => {
+    let storeA = createArbitrationStore();
+    storeA = recordVerdictEntry(
+      storeA,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        workerPeerId: "peer-1",
+        workerRuntime: "openclaw",
+        skillId: "research",
+      }),
+    );
+    let storeB = createArbitrationStore();
+    storeB = recordVerdictEntry(
+      storeB,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "fail", reason: "x", rollback: true },
+        workerPeerId: "peer-1",
+        workerRuntime: "envoy-harness",
+        skillId: "research",
+      }),
+    );
+    // peer-1 has a high rep on openclaw (1.0) and a low rep on envoy-harness (0.0).
+    // The MAX-across-runtimes semantic takes the high rep.
+    const result = getReputationBySkillForPeer([storeA, storeB], "peer-1");
+    expect(result).toEqual({ research: 1 });
+  });
+
+  it("returns multiple skills when the peer has verdicts for different skills", () => {
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        workerPeerId: "peer-1",
+        skillId: "research",
+      }),
+    );
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 0.8, confidence: "high" },
+        workerPeerId: "peer-1",
+        skillId: "translate",
+        subtaskId: "subtask_b",
+      }),
+    );
+    const result = getReputationBySkillForPeer([store], "peer-1");
+    expect(result).toEqual({ research: 1, translate: 0.9 });
+  });
+
+  it("excludes skills with no usable signal (Q4 — all-disputed verdicts are skipped)", () => {
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "disputed", needsHuman: true, signals: ["unclear"] },
+        workerPeerId: "peer-1",
+        skillId: "research",
+        subtaskId: "subtask_x",
+      }),
+    );
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "disputed", needsHuman: true, signals: ["ambiguous"] },
+        workerPeerId: "peer-1",
+        skillId: "research",
+        subtaskId: "subtask_y",
+      }),
+    );
+    const result = getReputationBySkillForPeer([store], "peer-1");
+    expect(result).toBeUndefined();
   });
 });

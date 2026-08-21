@@ -28,6 +28,7 @@ import {
 import { stripModelThinking } from "@envoymesh/api";
 import type { OwnerAgentTurnResult } from "@envoymesh/api";
 import { getScriptedTutorReply, type ScriptedTutorState } from "./scripted-tutor.js";
+import { chainWarn } from "./chain-debug.js";
 import {
   readSignalOptInEnv,
   routeUserPrompt,
@@ -285,6 +286,43 @@ export async function runOwnerAgentTurnViaRuntime(
     // v1.1 callers don't set it).
     targetSkill: decision.targetSkill,
   });
+
+  // Phase 8 / v1.14 — the supported runtimes on
+  // this node. The home node today has adapters
+  // for envoy-harness + openclaw only. The other
+  // 5 runtimes (pi / hermes / codex / codex-cli /
+  // openhuman) are future runtime support; the
+  // router can recommend them, but the dispatch
+  // falls back to OpenClaw with a `chain.warn`
+  // log (Q4 of the v1.14 sub-plan).
+  const SUPPORTED_RUNTIMES: AgentRuntime[] = [
+    "envoy-harness",
+    "openclaw",
+  ];
+
+  // --- v1.14 — unsupported-runtime fallback ---
+  //      When the router recommends a runtime that
+  //      this node doesn't support, fall back to
+  //      OpenClaw with a `chain.warn` log. The
+  //      `routingReason` is preserved (the operator
+  //      sees "the router wanted X, but X isn't
+  //      supported here, fell back to OpenClaw").
+  if (
+    decision.reason === "signal-runtime" &&
+    !SUPPORTED_RUNTIMES.includes(decision.runtime)
+  ) {
+    chainWarn(
+      "routing",
+      `runtime ${decision.runtime} not supported on this node; falling back to openclaw`,
+      {
+        recommendedRuntime: decision.runtime,
+        matchedTag: decision.signals[0]?.token,
+      },
+    );
+    // The rest of the dispatch falls through to
+    // the OpenClaw path (the existing
+    // `runOwnerAgentTurnViaRuntime` flow).
+  }
 
   // --- envoy-harness dispatch (signal-bearing prompt + EH ready) ---
   if (decision.runtime === "envoy-harness") {

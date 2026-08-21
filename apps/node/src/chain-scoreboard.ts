@@ -45,7 +45,13 @@
  *   on the v1.9 foundation)
  */
 
-import type { VerdictEntry, VerifierSource } from "@envoymesh/protocol";
+import type { AgentRuntime, VerdictEntry, VerifierSource } from "@envoymesh/protocol";
+
+import {
+  getVerdictsFor,
+  isVerdictEntry,
+  type ArbitrationStore,
+} from "./chain-arbitration.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -298,4 +304,207 @@ export function categorizeReputation(score: number): ReputationCategory {
  */
 export function isNoHistoryReputation(verdictCount: number): boolean {
   return verdictCount === 0;
+}
+
+// ---------------------------------------------------------------------------
+// 3-tuple reputation wiring (v1.11 — consumer-side)
+// ---------------------------------------------------------------------------
+
+/**
+ * Phase 8 / v1.11 — the 3-tuple reputation
+ * wiring helper. Reads the worker's verdicts
+ * from the `ArbitrationStore` for the given
+ * `(peer, runtime, skill)` 3-tuple + calls
+ * `reputationFromVerdicts` (the v1.10
+ * producer) + maps the result to the
+ * consumer's expected scale.
+ *
+ * **Why a separate function (not inlined in
+ * the caller):** the 3-tuple reputation
+ * lookup is the canonical way to read a
+ * worker's reputation. Centralizing the
+ * store-read + formula-call + scale-mapping
+ * keeps the consumer-side code (v1.13's
+ * worker picker integration) clean. The
+ * helper also encapsulates the "empty /
+ * disputed → no signal" decision
+ * (the function returns `undefined` when
+ * there's no usable signal; the consumer
+ * treats `undefined` as "no reputation" per
+ * the existing `chain-plan-assign.ts`
+ * convention).
+ *
+ * **Scale mapping:** the v1.10 producer
+ * returns `[-1, 1]` (the natural range for a
+ * weighted-average formula with `fail =
+ * -weight`). The consumers
+ * (`chain-plan-assign.ts:78-79` `clamp01` +
+ * `chain-sensitivity-gate.ts:27-31`
+ * `MIN_REP_FOR_SENSITIVITY`) expect `[0, 1]`.
+ * The helper maps via `(raw + 1) / 2`:
+ * - `raw = -1.0` → `0.0` (worst)
+ * - `raw =  0.0` → `0.5` (neutral)
+ * - `raw = +1.0` → `1.0` (best)
+ *
+ * **Why map at the wiring point (not in
+ * the formula):** the formula is the
+ * mathematical spec — `[-1, 1]` is the
+ * natural range for a weighted average
+ * with negative contributions. Changing
+ * the formula to return `[0, 1]` would
+ * either lose the `fail` direction (no
+ * way to distinguish "neutral" from
+ * "worst") or require a different
+ * formula structure. Mapping at the wiring
+ * point keeps the formula pure +
+ * reusable (e.g. for the future Tauri UI,
+ * which might want to show a -100 to +100
+ * bar; the formula's `[-1, 1]` is the
+ * right shape for that).
+ *
+ * **Empty input (Q3 of the v1.11 design
+ * questions):** returns `undefined`
+ * (the consumer treats `undefined` as
+ * "no reputation" — preserves the
+ * existing `chain-plan-assign.ts:skillReputation`
+ * convention). The caller doesn't need
+ * to distinguish "no history" from
+ * "neutral"; the existing convention
+ * handles both.
+ *
+ * **All-disputed input (Q4):** returns
+ * `undefined` (the verifier couldn't
+ * decide for any of the verdicts; no
+ * usable signal; same as empty input).
+ * The formula's `disputed = 0`
+ * semantics (Q3 of v1.10) is preserved —
+ * the disputed verdicts are skipped,
+ * not counted.
+ *
+ * @param store The chain's
+ *   `ArbitrationStore` (the authoritative
+ *   verdict ledger).
+ * @param criteria The 3-tuple to query:
+ *   - `workerPeerId` — the worker's peer id
+ *   - `workerRuntime` — the worker's runtime
+ *   - `skillId` — the skill being judged
+ * @returns The worker's reputation in
+ *   `[0, 1]`, or `undefined` when there's
+ *   no usable signal (empty / all-disputed).
+ */
+export function getWorkerReputation(
+  store: ArbitrationStore,
+  criteria: {
+    workerPeerId: string;
+    workerRuntime: AgentRuntime;
+    skillId: string;
+  },
+): number | undefined {
+  const verdicts = getVerdictsFor(store, criteria);
+  if (verdicts.length === 0) return undefined; // no history
+  // Check whether any verdict has a usable
+  // signal (not disputed). If all are
+  // disputed, return `undefined` (no usable
+  // signal).
+  const hasUsableSignal = verdicts.some(
+    (v: VerdictEntry) => v.verdict.kind !== "disputed",
+  );
+  if (!hasUsableSignal) return undefined;
+  const raw = reputationFromVerdicts(verdicts); // [-1, 1]
+  // Map [-1, 1] to [0, 1].
+  return (raw + 1) / 2;
+}
+
+// ---------------------------------------------------------------------------
+// Per-peer projection (v1.13 — consumer-side integration)
+// ---------------------------------------------------------------------------
+
+/**
+ * Phase 8 / v1.13 — the per-peer reputation
+ * projection helper. Iterates over the
+ * chain stores for a given peerId + calls
+ * `getWorkerReputation` (the v1.11
+ * per-3-tuple wiring) for each
+ * `(runtime, skill)` combination + builds
+ * a per-skill reputation map (MAX across
+ * runtimes per skill).
+ *
+ * **Why a separate function (not inline in
+ * the orchestrator):** the per-peer
+ * projection is the canonical way to feed
+ * the worker picker's `reputationBySkill`
+ * field. Centralizing the projection
+ * keeps the orchestrator's call site
+ * clean + lets us test the projection
+ * directly.
+ *
+ * **Flatten-across-runtimes semantic:**
+ * the worker picker doesn't know a
+ * worker's runtime ahead of assignment,
+ * so the per-skill map mixes verdicts
+ * across runtimes. For each skill, we
+ * take the MAX reputation across all
+ * `(runtime, skill)` tuples (the worker's
+ * best historical performance on the
+ * skill, regardless of runtime). The MAX
+ * is the right "best foot forward"
+ * semantic for tiebreaking — a worker
+ * who excelled on OpenClaw is a better
+ * pick than a worker who only ran the
+ * skill badly.
+ *
+ * **Why MAX (not MEAN or LATEST):**
+ * - MEAN: dilutes the strong signal; a
+ *   worker with one good run + one bad
+ *   run looks "average" — wrong for
+ *   tiebreaking.
+ * - LATEST: rewards recency; a worker
+ *   with a recent bad run after a long
+ *   history of good runs is unfairly
+ *   penalized.
+ * - MAX: rewards the best performance;
+ *   the worker's history of bad runs
+ *   doesn't override the good ones for
+ *   tiebreaking purposes.
+ *
+ * **Empty input (Q3):** returns
+ * `undefined` (the picker treats
+ * `undefined` as "no reputation" per the
+ * existing `chain-plan-assign.ts:skillReputation`
+ * convention).
+ *
+ * @param stores The chain stores to
+ *   search (the orchestrator passes all
+ *   `chainArbitrationStores.values()`).
+ *   The function does NOT own the store
+ *   list — the caller passes them in.
+ * @param peerId The peer's id.
+ * @returns The per-skill reputation map
+ *   in `[0, 1]`, or `undefined` when
+ *   the peer has no usable signal.
+ */
+export function getReputationBySkillForPeer(
+  stores: Iterable<ArbitrationStore>,
+  peerId: string,
+): Record<string, number> | undefined {
+  const bySkill = new Map<string, number>();
+  for (const store of stores) {
+    for (const entry of store.values()) {
+      if (!isVerdictEntry(entry)) continue;
+      if (entry.workerPeerId !== peerId) continue;
+      const rep = getWorkerReputation(store, {
+        workerPeerId: entry.workerPeerId,
+        workerRuntime: entry.workerRuntime,
+        skillId: entry.skillId,
+      });
+      if (rep === undefined) continue;
+      const key = entry.skillId;
+      const current = bySkill.get(key);
+      if (current === undefined || rep > current) {
+        bySkill.set(key, rep);
+      }
+    }
+  }
+  if (bySkill.size === 0) return undefined;
+  return Object.fromEntries(bySkill);
 }

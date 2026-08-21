@@ -1222,3 +1222,383 @@ fan-out within a job (whole-job only).
     (chain report surface for the scoreboard
     category; Tauri team maps the internal
     categories to user-friendly labels).
+
+- **2026-08-21 (v1.11 — wire the
+  scoreboard into the orchestrator
+  — DONE):** v1.11 ships the
+  **wiring helper** that reads the
+  3-tuple reputation from the
+  `ArbitrationStore` and returns the
+  worker's reputation in `[0, 1]`
+  (mapped from the v1.10 producer's
+  `[-1, 1]` output) or `undefined`
+  when there's no usable signal.
+  The helper is `getWorkerReputation(store,
+  criteria)` in `apps/node/src/chain-scoreboard.ts`
+  — it calls `getVerdictsFor(store,
+  3-tuple)` (the existing store reader)
+  + `reputationFromVerdicts` (the v1.10
+  producer) + maps the result. v1.11 is
+  the **wiring chunk**; the actual
+  consumer-side integration (where the
+  orchestrator's worker picker populates
+  `reputationBySkill` from
+  `getWorkerReputation`) is v1.13. 1
+  commit on `envoy_harness_integration`
+  branch (the user delegated commit;
+  bundled v1.11.1 + v1.11.2 into a single
+  commit at the end of v1.11). 10 new
+  unit tests (the v1.11 wiring helper)
+  + 252 pre-existing tests regression-clean
+  on the affected paths. No new type
+  errors (pre-existing
+  multiformats/ArrayBuffer conflict in
+  `packages/network/src/index.ts:2791`
+  unchanged). The scale mapping
+  `[-1, 1]` → `[0, 1]` is at the wiring
+  point (the v1.10 formula's `[-1, 1]`
+  is the mathematical spec; the
+  consumers' `[0, 1]` is the gate /
+  picker convention; the mapping is
+  `(raw + 1) / 2`). The helper returns
+  `undefined` for empty + all-disputed
+  inputs (the `chain-plan-assign.ts:skillReputation`
+  convention treats `undefined` as
+  "no reputation"; preserves the
+  existing consumer semantics). Detailed
+  plan: `docs/agent-harness-integration-v1-11.md`
+  (sub-plan with 8 locked design questions).
+  - **v1.11.1 — the wiring helper +
+    tests.** `getWorkerReputation(store,
+    criteria)` added to
+    `apps/node/src/chain-scoreboard.ts`
+    (imports `getVerdictsFor` +
+    `ArbitrationStore` from
+    `chain-arbitration.ts`). 10 new
+    unit tests in
+    `apps/node/test/chain-scoreboard.test.ts`
+    (empty / all-pass / all-fail /
+    all-disputed / mixed-source /
+    mapping / filter correctness /
+    boundary cases).
+  - **v1.11.2 — doc closeout.** This
+    entry +
+    `docs/agent-harness-integration-v1-11.md`
+    (the sub-plan + DONE stamp) +
+    `docs/agent-harness-integration-v1-10.md`
+    v1.11 status note (v1.11 ships the
+    consumer-side wiring the v1.10
+    producer needs; the worker picker
+    integration is v1.13) +
+    `docs/taui-agent-routing-settings.md`
+    §17 (Tauri UI for the worker trust
+    badge; the `getWorkerReputation`
+    helper is what the Tauri team calls
+    from the Tauri side).
+
+- **2026-08-21 (v1.13 — worker ranking
+  integration — DONE):** v1.13 ships
+  the **consumer-side integration** —
+  the orchestrator's worker picker's
+  `reputationBySkill` field is now
+  populated from the v1.10 + v1.11
+  producer (replacing the v0
+  `chain-reputation-3tuple.ts:deriveReputationBySkillForPeer`
+  for the worker-picker call site).
+  v1.13 adds `getReputationBySkillForPeer(stores, peerId)`
+  to `apps/node/src/chain-scoreboard.ts`
+  — the per-peer projection that
+  iterates over the chain stores +
+  calls `getWorkerReputation` (the
+  v1.11 per-3-tuple helper) for each
+  `(runtime, skill)` combination +
+  builds a per-skill reputation map
+  (MAX across runtimes per skill —
+  Q2 of the v1.13 sub-plan; the
+  "best foot forward" semantic).
+  The orchestrator's
+  `deriveRosterReputation` is swapped
+  to use the new helper. The v0
+  `chain-reputation-3tuple.ts` module
+  is **left in place** (other callers
+  may depend on it; v1.13 only replaces
+  the worker-picker producer). v1.13
+  is the **additive tiebreaker** —
+  the worker's `reputationBySkill`
+  feeds the existing
+  `chain-plan-assign.ts:REPUTATION_BLEND_WEIGHT = 0.2`
+  as a soft addend (matches the
+  existing consumer design; not a
+  replacement of the primary + best-fit
+  strategy). 1 commit on
+  `envoy_harness_integration` branch
+  (the user delegated commit; bundled
+  v1.13.1 + v1.13.2 into a single
+  commit at the end of v1.13). 6 new
+  unit tests + 262 pre-existing tests
+  regression-clean on the affected
+  paths. No new type errors. Detailed
+  plan: `docs/agent-harness-integration-v1-13.md`
+  (sub-plan with 8 locked design questions).
+  - **v1.13.1 — the projection helper
+    + call-site swap + tests.** New
+    `getReputationBySkillForPeer(stores, peerId)`
+    in `apps/node/src/chain-scoreboard.ts`
+    (imports `isVerdictEntry` from
+    `chain-arbitration.ts`). The
+    orchestrator's `deriveRosterReputation`
+    (in
+    `node-service-chain-orchestration.ts:279-285`)
+    is swapped to use the new helper.
+    6 new unit tests in
+    `apps/node/test/chain-scoreboard.test.ts`
+    (empty / single-3-tuple /
+    multi-runtime MAX / multi-skill /
+    all-disputed skip).
+  - **v1.13.2 — doc closeout.** This
+    entry +
+    `docs/agent-harness-integration-v1-13.md`
+    (the sub-plan + DONE stamp) +
+    `docs/agent-harness-integration-v1-11.md`
+    v1.13 status note (v1.13 wires the
+    v1.11 helper into the worker
+    picker's `reputationBySkill` field;
+    the v0 `chain-reputation-3tuple.ts`
+    module is left in place for other
+    callers) +
+    `docs/taui-agent-routing-settings.md`
+    §18 (Tauri UI for the per-skill
+    reputation display; the
+    `getReputationBySkillForPeer` helper
+    is the backend the Tauri team calls).
+
+- **2026-08-21 (v1.14 — per-runtime
+  routing extension — DONE):** v1.14
+  ships the **actual routing extension**
+  the v1.9 per-runtime tag map enabled.
+  The router now scans all 7 runtimes'
+  tag lists (not just EH + OpenClaw);
+  the `RouteUserPromptDecision.runtime`
+  type widens from
+  `"openclaw" | "envoy-harness"` to
+  the full `AgentRuntime` (7 values);
+  the new `reason: "signal-runtime"`
+  value is added for the other-runtime
+  positive matches. The precedence
+  preserves the v1.7 OpenClaw veto
+  (asymmetric: OpenClaw still vetoes;
+  other runtimes have positive-only
+  semantics) and the v1.1 + v1.2 EH
+  positive (which now wins over the
+  v1.14 other-runtime positive — EH is
+  the home node's first-class engine;
+  the other 5 runtimes are future
+  runtimes). The dispatch's runtime
+  handling gains an
+  `unsupported-runtime fallback`: when
+  the router recommends a runtime
+  (pi / hermes / codex / codex-cli /
+  openhuman) that the home node doesn't
+  have an adapter for, the dispatch
+  falls back to OpenClaw with a
+  `chain.warn` log. v1.14 is a
+  **routing vocabulary extension** —
+  the home node today has adapters
+  for EH + OpenClaw only; the
+  actual runtime adapters for the 5
+  new runtimes are a v1.14+ future.
+  1 commit on `envoy_harness_integration`
+  branch (the user delegated commit;
+  bundled v1.14.1 + v1.14.2 into a
+  single commit at the end of v1.14).
+  10 new unit tests + 268 pre-existing
+  tests regression-clean on the
+  affected paths. No new type errors.
+  The `AgentRuntime` type widening
+  in `user-prompt-router.ts:405` is
+  a **backward-compatible** widening
+  (the existing 2-value union is a
+  subset of `AgentRuntime`; all
+  existing callers continue to work).
+  The `OwnerAgentTurnResult.routingReason`
+  type (in
+  `packages/api/src/owner-agent-loop.ts:90`)
+  gains the `"signal-runtime"` value.
+  Detailed plan:
+  `docs/agent-harness-integration-v1-14.md`
+  (sub-plan with 8 locked design
+  questions).
+  - **v1.14.1 — the type + scan +
+    precedence + dispatch + tests.**
+    `RouteUserPromptDecision.runtime:
+    AgentRuntime` (widening) +
+    `RouteUserPromptDecision.reason:
+    | ... | "signal-runtime"` +
+    `OwnerAgentTurnResult.routingReason:
+    | ... | "signal-runtime"`. The
+    router scans all 5 "other"
+    runtimes' tag lists (pi / hermes /
+    codex / codex-cli / openhuman) +
+    adds the v1.14 precedence (after
+    the EH positive checks; the EH
+    positive wins). The dispatch
+    (in
+    `node-service-handlers-run-owner-agent-turn.ts`)
+    gains the `SUPPORTED_RUNTIMES`
+    check + the OpenClaw fallback +
+    the `chain.warn` log. 10 new unit
+    tests in
+    `apps/node/test/user-prompt-router.test.ts`
+    (single-runtime match / multi-
+    runtime order / OpenClaw veto /
+    EH precedence / `!openclaw`
+    opt-out / default / empty tag list
+    / AgentRuntime type contract).
+  - **v1.14.2 — doc closeout.** This
+    entry +
+    `docs/agent-harness-integration-v1-14.md`
+    (the sub-plan + DONE stamp) +
+    `docs/agent-harness-integration-v1-9.md`
+    v1.14 status note (v1.14 ships the
+    actual routing extension the v1.9
+    per-runtime tag map enabled; the
+    home node's adapters for pi /
+    hermes / codex / openhuman are a
+    v1.14+ future) +
+    `docs/taui-agent-routing-settings.md`
+    §19 (Tauri UI for the per-runtime
+    routing surface; the chat badge for
+    `"signal-runtime"`).
+
+- **2026-08-21 (v1.12 — Tauri UI for
+  the scoreboard badge — DONE):**
+  v1.12 ships the **Tauri-team
+  handoff** for the scoreboard badge
+  UI. v1.10 + v1.11 + v1.13 ship the
+  backend helpers
+  (`reputationFromVerdicts` +
+  `categorizeReputation` +
+  `isNoHistoryReputation` +
+  `getWorkerReputation` +
+  `getReputationBySkillForPeer`); v1.12
+  is the sub-plan + the Tauri design
+  doc section that tells the Tauri
+  team what to build + how to call
+  the backend. v1.12 is a
+  **design-only chunk** — the actual
+  Tauri UI implementation is the
+  Tauri team's work (out of scope
+  for our repo). 1 commit on
+  `envoy_harness_integration` branch
+  (the user delegated commit; the
+  sub-plan + the Tauri design doc
+  section + the parent doc change log
+  + the v1.10 + v1.11 + v1.13 status
+  notes). No new tests (the backend
+  is already tested). No new type
+  errors. The Tauri team implements
+  the actual chain report panel (the
+  future surface; not in the chat
+  surface). Detailed plan:
+  `docs/agent-harness-integration-v1-12.md`
+  (sub-plan with 6 locked design
+  questions).
+
+- **2026-08-21 (v1.15 — Tauri UI for
+  the per-runtime tag map — DONE):**
+  v1.15 ships the **Tauri-team
+  handoff** for the per-runtime tag
+  map UI panel. v1.9 ships the
+  data structure
+  (`extractTagsByRuntime` +
+  `runtimeTags` map); v1.14 ships
+  the routing consumption; v1.15 is
+  the sub-plan + the Tauri design doc
+  section that tells the Tauri team
+  what to build. v1.15 is a
+  **design-only chunk** — the actual
+  Tauri UI implementation is the
+  Tauri team's work (out of scope
+  for our repo). 1 commit on
+  `envoy_harness_integration` branch
+  (the user delegated commit; the
+  sub-plan + the Tauri design doc
+  section + the parent doc change log
+  + the v1.9 + v1.14 status notes).
+  No new tests (the backend is
+  already tested). No new type
+  errors. The Tauri team implements
+  the actual Settings panel (the
+  per-runtime tag list display;
+  read-only). Detailed plan:
+  `docs/agent-harness-integration-v1-15.md`
+  (sub-plan with 6 locked design
+  questions).
+
+- **2026-08-21 (v1.17 — remove
+  deprecation shims — DONE):** v1.17
+  removes the v1.1 + v1.7 deprecation
+  shims (`extractEnvoyHarnessTags` +
+  `extractOpenClawTags`). v1.9 ships
+  `extractTagsByRuntime(manifest, runtime)`
+  which generalizes the v1.1 + v1.7
+  extractors; the shims were kept as
+  backward compat (Q3 + Q10 of the v1.9
+  sub-plan). v1.17 audits the callers
+  (no production callers; all
+  production callers migrated in v1.9)
+  + removes the shims + removes the
+  deprecation-shim tests + removes the
+  v1.7 mirror-symmetric tests (the
+  `extractOpenClawTags` describe block;
+  the v1.9 `extractTagsByRuntime` tests
+  cover the same behavior). 1 commit
+  on `envoy_harness_integration`
+  branch (the user delegated commit).
+  Net -9 tests in
+  `manifest-openclaw-tags.test.ts`
+  (file becomes 10 tests from 19) +
+  269 pre-existing tests
+  regression-clean. No new type
+  errors. The v0 `MESH_KEYWORDS`
+  constant in `user-prompt-router.ts`
+  is left in place (separate
+  deprecation; a v1.17+ future chunk
+  can remove it). Detailed plan:
+  `docs/agent-harness-integration-v1-17.md`
+  (sub-plan with 4 locked design
+  questions).
+
+- **2026-08-21 (v1.16 — cross-model-
+  on-same-runtime — F9.5 full
+  primitive — BLOCKED):** v1.16 is
+  the **sub-plan only** (no code).
+  The implementation is **blocked**
+  on the EH runtime gaining per-call
+  model override support on the
+  cross-verify path (a separate
+  envoy-harness team effort). v1.16
+  is the full F9.5 primitive — the
+  cross-verify uses a different
+  **model** than the worker (the
+  worker on runtime A with model X
+  → verifier on runtime A with
+  model Y). v1.8 ships the
+  cross-runtime primitive (the
+  cross-verify prefers a different
+  model **family**). v1.16 ships
+  the cross-model-on-same-runtime
+  primitive (the cross-verify uses
+  a different model on the **same**
+  runtime). The v1.16 design locks
+  the `verifierProviderHint?`
+  per-call option + the
+  `claude-instant` default + the
+  audit trail via the v1.8
+  `verifierModel` field. The
+  implementation is deferred until
+  the EH runtime support lands.
+  Detailed plan:
+  `docs/agent-harness-integration-v1-16.md`
+  (sub-plan with 7 locked design
+  questions).

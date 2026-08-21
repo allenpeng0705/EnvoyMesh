@@ -91,6 +91,7 @@ export interface OwnerAgentTurnResult {
     | "default"
     | "signal"
     | "signal-skill"
+    | "signal-runtime"
     | "envoy-harness-unready"
     | "opt-in-disabled"
     | "opt-out-explicit"

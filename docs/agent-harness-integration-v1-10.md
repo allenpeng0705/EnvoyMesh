@@ -74,6 +74,21 @@ whoever wires the consumer (likely Sprint 3 in
 the Phase 41 / MAP plan) can do it without
 touching the formula.
 
+## v1.12 status note (2026-08-21)
+
+v1.12 ships the **Tauri-team handoff** for
+the scoreboard badge UI. v1.10 ships
+the backend (`reputationFromVerdicts` +
+`categorizeReputation` +
+`isNoHistoryReputation`); v1.12 is the
+sub-plan + the Tauri design doc section
+that tells the Tauri team what to build +
+how to call the backend. The actual Tauri
+UI implementation is the Tauri team's
+work (out of scope for our repo).
+Detailed plan:
+[`agent-harness-integration-v1-12.md`](./agent-harness-integration-v1-12.md).
+
 ## 2. Existing pieces (what we build on)
 
 ### 2.1 `VerdictEntry` + `Verdict` schemas
@@ -671,3 +686,34 @@ pattern). On `envoy_harness_integration` branch.
 
 **Protocol:**
 - **No protocol change.** The `VerdictEntry` shape is unchanged (the existing Zod schema in `packages/protocol/src/agent-adapter.ts:347-389`). v1.10 operates on the existing `VerdictEntry[]` and returns a `number` — no schema, no wire format, no field addition.
+
+## v1.11 status note (2026-08-21)
+
+v1.11 ships the **wiring helper** that
+consumes the v1.10 producer at the
+store-read layer. The v1.10
+`reputationFromVerdicts(verdicts): number`
+takes a `VerdictEntry[]` (the
+caller-supplied list); v1.11 adds
+`getWorkerReputation(store, criteria)` in
+the same `apps/node/src/chain-scoreboard.ts`
+module that reads the verdicts from the
+chain's `ArbitrationStore` for the given
+`(workerPeerId, workerRuntime, skillId)`
+3-tuple + calls the producer + maps the
+result from `[-1, 1]` to `[0, 1]` (the
+consumer convention in
+`chain-plan-assign.ts:clamp01` +
+`chain-sensitivity-gate.ts:MIN_REP_FOR_SENSITIVITY`).
+The mapping is at the wiring point — the
+formula stays pure (v1.10's locked spec),
+the consumers get the scale they expect.
+
+**v1.11 scope:** the wiring helper +
+tests + a doc closeout. The actual
+consumer-side integration (where the
+orchestrator's worker picker populates
+`reputationBySkill` from
+`getWorkerReputation`) is **v1.13**.
+Detailed plan:
+[`agent-harness-integration-v1-11.md`](./agent-harness-integration-v1-11.md).

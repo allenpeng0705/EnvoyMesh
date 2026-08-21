@@ -110,7 +110,8 @@ import {
   recordVerdictEntry,
   type ArbitrationStore,
 } from "./chain-arbitration.js";
-import { deriveReputationBySkillForPeer, scoreFromVerdicts } from "./chain-reputation-3tuple.js";
+import { scoreFromVerdicts } from "./chain-reputation-3tuple.js";
+import { getReputationBySkillForPeer } from "./chain-scoreboard.js";
 import { signCanonicalPayload } from "@envoymesh/identity";
 import {
   handleWorkerAccept,
@@ -271,17 +272,30 @@ function getChainArbitrationStore(chainId: string): ArbitrationStore {
 }
 
 /**
- * Sprint 2 MAP: derive a peer's per-skill reputation by aggregating verdicts
- * across all chain arbitration stores. Returns `undefined` when the peer has
- * no verdict history yet — the Assigner blend treats that as "unknown" and
- * leaves the base score untouched.
+ * Phase 8 / v1.13 — derive a peer's per-skill
+ * reputation by aggregating verdicts across
+ * all chain arbitration stores. Returns
+ * `undefined` when the peer has no verdict
+ * history yet — the Assigner blend treats
+ * that as "unknown" and leaves the base
+ * score untouched.
+ *
+ * **v1.13:** the v0
+ * `deriveReputationBySkillForPeer` producer
+ * is replaced with the v1.10 + v1.11
+ * `getReputationBySkillForPeer` helper.
+ * The consumer (the worker's
+ * `reputationBySkill` field) is unchanged.
+ * The v0 `chain-reputation-3tuple.ts`
+ * module is left in place for other
+ * callers (e.g. `getLocalRuntimePassRate`
+ * still uses the v0 `scoreFromVerdicts`).
  */
 function deriveRosterReputation(peerId: string): Record<string, number> | undefined {
-  const verdicts: import("@envoymesh/protocol").VerdictEntry[] = [];
-  for (const store of chainArbitrationStores.values()) {
-    verdicts.push(...getVerdictsFor(store, { workerPeerId: peerId }));
-  }
-  return deriveReputationBySkillForPeer(verdicts, peerId);
+  return getReputationBySkillForPeer(
+    chainArbitrationStores.values(),
+    peerId,
+  );
 }
 
 /**

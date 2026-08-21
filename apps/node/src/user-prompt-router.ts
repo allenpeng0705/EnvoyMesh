@@ -406,10 +406,21 @@ export interface EnvoyHarnessSkillEntry {
   tags: ReadonlyArray<string>;
 }
 
+/** Phase 8 / v1.14 — all 7 `AgentRuntime` values
+ * are valid routing targets. The router can now
+ * recommend pi / hermes / codex / codex-cli /
+ * openhuman (in addition to envoy-harness +
+ * openclaw). The dispatch's runtime handling
+ * decides whether the home node has an adapter
+ * for the matched runtime; unsupported runtimes
+ * fall back to OpenClaw with a `chain.warn`
+ * log. */
+type RouterRuntime = AgentRuntime;
+
 /** The output of `routeUserPrompt`. */
 export interface RouteUserPromptDecision {
   /** The chosen runtime. */
-  runtime: "openclaw" | "envoy-harness";
+  runtime: RouterRuntime;
   /**
    * Why the router made its choice. See the
    * per-branch JSDoc in `routeUserPrompt` for
@@ -422,6 +433,7 @@ export interface RouteUserPromptDecision {
     | "openclaw-tag-match"
     | "signal"
     | "signal-skill"
+    | "signal-runtime"
     | "envoy-harness-unready";
   /**
    * The matched signals. Empty when no signal
@@ -732,8 +744,70 @@ export function routeUserPrompt(
     }
   }
 
-  // 3. No signals → default OpenClaw.
+  // 3. No signals → check the v1.14 other-runtime
+  //    tags first, then default to OpenClaw.
+  //
+  //    **Why the v1.14 check is here (not
+  //    before the EH positive checks):** the
+  //    precedence is OpenClaw veto (step 4a)
+  //    > EH positive (steps 5a/5b) > other-runtime
+  //    positive (v1.14) > default. EH is the
+  //    home node's first-class engine; the
+  //    other 5 runtimes are future runtimes.
+  //    When an EH signal matches, the EH path
+  //    wins (the router recommends EH; the
+  //    dispatch handles it). The v1.14 check
+  //    only fires when no EH signal matched
+  //    (the prompt mentions a non-EH runtime
+  //    but not an EH skill).
+  const OTHER_RUNTIMES: AgentRuntime[] = [
+    "pi",
+    "hermes",
+    "codex",
+    "codex-cli",
+    "openhuman",
+  ];
   if (signals.length === 0) {
+    for (const runtime of OTHER_RUNTIMES) {
+      const vocabulary = input.runtimeTags?.[runtime] ?? [];
+      if (vocabulary.length === 0) continue; // no tags for this runtime
+      const lowerPrompt = input.prompt.toLowerCase();
+      // Find the first matching tag + its offset.
+      let matchedTag: string | undefined;
+      let matchedOffset = -1;
+      for (const tag of vocabulary) {
+        const offset = findTagInPrompt(lowerPrompt, tag);
+        if (offset >= 0) {
+          matchedTag = tag;
+          matchedOffset = offset;
+          break;
+        }
+      }
+      if (matchedTag !== undefined && matchedOffset >= 0) {
+        // v1.14 — the matched runtime wins
+        // (positive signal). The dispatch's
+        // runtime handling decides whether the
+        // home node has an adapter for this
+        // runtime; if not, it falls back to
+        // OpenClaw with a `chain.warn` log.
+        return {
+          runtime,
+          reason: "signal-runtime",
+          signals: [
+            {
+              token: matchedTag,
+              category: "mesh-keyword",
+              offset: matchedOffset,
+            },
+          ],
+          hintPrefixLength: undefined,
+          targetSkill: undefined,
+          costCapUsd: hints.costCapUsd,
+          providerHint: hints.providerHint,
+          cleanPrompt,
+        };
+      }
+    }
     return {
       runtime: "openclaw",
       reason: "default",

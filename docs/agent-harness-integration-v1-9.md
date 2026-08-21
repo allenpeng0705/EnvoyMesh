@@ -547,6 +547,25 @@ pattern). On `envoy_harness_integration` branch.
   each runtime has a `modelFamily` tag).
   v1.9 doesn't change v1.8.
 
+## v1.17 status note (2026-08-21)
+
+v1.17 removes the v1.1 + v1.7 deprecation
+shims (`extractEnvoyHarnessTags` +
+`extractOpenClawTags`). v1.9 ships
+`extractTagsByRuntime(manifest, runtime)`
+which generalizes the v1.1 + v1.7
+extractors; the shims were kept as
+backward compat (Q3 + Q10 of the v1.9
+sub-plan). v1.17 audits the callers (no
+production callers; all production
+callers migrated in v1.9) + removes
+the shims + removes the deprecation-shim
+tests + removes the v1.7 mirror-symmetric
+tests (the v1.9 `extractTagsByRuntime`
+tests cover the same behavior). Detailed
+plan:
+[`agent-harness-integration-v1-17.md`](./agent-harness-integration-v1-17.md).
+
 ## 7. References
 
 - [`agent-harness-integration.md`](./agent-harness-integration.md)
@@ -617,6 +636,56 @@ pattern). On `envoy_harness_integration` branch.
 - `docs/agent-harness-integration-v1-7.md` — v1.9 status note (v1.9 generalizes the v1.7 extractor)
 - `docs/agent-harness-integration-v1-8.md` — v1.9 status note (v1.9 lays the foundation for future per-runtime routing)
 - `docs/taui-agent-routing-settings.md` — §15 (per-runtime tag map design; v1.9 is a foundation chunk)
+
+## v1.14 status note (2026-08-21)
+
+v1.14 ships the **actual routing extension**
+the v1.9 per-runtime tag map enabled. v1.14
+extends the router to scan all 7 runtimes'
+tag lists (not just EH + OpenClaw); the
+`RouteUserPromptDecision.runtime` type
+widens from
+`"openclaw" | "envoy-harness"` to the full
+`AgentRuntime` (7 values). The new
+`reason: "signal-runtime"` value is added
+for the other-runtime positive matches. The
+precedence preserves the v1.7 OpenClaw
+veto (asymmetric: OpenClaw still vetoes;
+other runtimes have positive-only semantics)
+and the v1.1 + v1.2 EH positive (which now
+wins over the v1.14 other-runtime positive —
+EH is the home node's first-class engine;
+the other 5 runtimes are future runtimes).
+The dispatch's runtime handling gains an
+`unsupported-runtime fallback`: when the
+router recommends a runtime (pi / hermes /
+codex / codex-cli / openhuman) that the
+home node doesn't have an adapter for, the
+dispatch falls back to OpenClaw with a
+`chain.warn` log.
+
+**v1.14 scope:** the routing vocabulary
+extension + the dispatch fallback + tests
++ a doc closeout. The actual runtime
+adapters for pi / hermes / codex /
+openhuman (the home-node-side support) are
+a v1.14+ future. Detailed plan:
+[`agent-harness-integration-v1-14.md`](./agent-harness-integration-v1-14.md).
+
+## v1.15 status note (2026-08-21)
+
+v1.15 ships the **Tauri-team handoff** for
+the per-runtime tag map UI panel. v1.9
+ships the data structure
+(`extractTagsByRuntime` + the
+`runtimeTags` map); v1.15 is the sub-plan
++ the Tauri design doc section that tells
+the Tauri team what to build + how to call
+the backend. The actual Tauri UI
+implementation is the Tauri team's work
+(out of scope for our repo). Detailed
+plan:
+[`agent-harness-integration-v1-15.md`](./agent-harness-integration-v1-15.md).
 
 ## v1.10 status note (2026-08-21)
 

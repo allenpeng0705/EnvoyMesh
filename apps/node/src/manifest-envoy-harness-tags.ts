@@ -108,22 +108,11 @@ export function extractTagsByRuntime(
  * the tags to build a vocabulary); tests don't
  * assert on a specific order.
  *
- * @deprecated Phase 8 / v1.9 — use
- *   `extractTagsByRuntime(manifest, "envoy-harness")`
- *   instead. This function is kept as a
- *   deprecation shim for backward compat (Q3
- *   + Q10 of the v1.9 sub-plan) and can be
- *   removed in a v1.9+ future.
  * @param manifest The merged node manifest
  *   (typically from `NodeServiceImpl.getNodeManifest()`).
  * @returns The deduplicated union of envoy-harness
  *   skill tags (read-only).
  */
-export function extractEnvoyHarnessTags(
-  manifest: NodeManifest,
-): ReadonlyArray<string> {
-  return extractTagsByRuntime(manifest, "envoy-harness");
-}
 
 /**
  * Phase 8 / v1.2 — extract the structured skill
@@ -208,19 +197,8 @@ export function extractEnvoyHarnessSkills(
  * aggregator's order-preservation contract).
  * The router doesn't depend on order.
  *
- * @deprecated Phase 8 / v1.9 — use
- *   `extractTagsByRuntime(manifest, "openclaw")`
- *   instead. This function is kept as a
- *   deprecation shim for backward compat (Q3
- *   + Q10 of the v1.9 sub-plan) and can be
- *   removed in a v1.9+ future.
  * @param manifest The merged node manifest
  *   (typically from `NodeServiceImpl.getNodeManifest()`).
  * @returns The deduplicated union of openclaw
  *   skill tags (read-only).
  */
-export function extractOpenClawTags(
-  manifest: NodeManifest,
-): ReadonlyArray<string> {
-  return extractTagsByRuntime(manifest, "openclaw");
-}

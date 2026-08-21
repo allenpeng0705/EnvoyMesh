@@ -992,6 +992,514 @@ result is the trust category.
   hardcoded global table. Per-node
   tuning is v1.10+ future.
 
+## 17. v1.11 — Worker trust badge (orchestrator-side)
+
+> **Status:** Phase 8 v1.11. v1.11 ships
+> the **orchestrator-side wiring helper**
+> (`getWorkerReputation(store, 3-tuple)`)
+> that the Tauri team calls to populate
+> the worker trust badge. v1.11 is the
+> backend; the Tauri UI is a follow-up
+> (the Tauri team picks up the actual
+> badge implementation in their
+> workstream).
+
+### 17.1 The backend helper — `getWorkerReputation`
+
+The Tauri team reads a worker's 3-tuple
+reputation via the new
+`getWorkerReputation(store, criteria)`
+function in
+`apps/node/src/chain-scoreboard.ts`. The
+helper is a thin wrapper around the v1.10
+producer + the store reader:
+
+1. Read the verdicts for the 3-tuple via
+   `getVerdictsFor(store, criteria)` (the
+   existing `chain-arbitration.ts` reader).
+2. If empty or all-disputed → return
+   `undefined` (no usable signal).
+3. Otherwise call
+   `reputationFromVerdicts(verdicts)` (the
+   v1.10 producer) → returns `[-1, 1]`.
+4. Map `(raw + 1) / 2` → `[0, 1]` (the
+   consumer convention).
+
+The Tauri team uses the helper like:
+
+```ts
+const reputation = getWorkerReputation(
+  store,
+  {
+    workerPeerId: peer.peerId,
+    workerRuntime: peer.runtime,
+    skillId: step.requiredSkill,
+  },
+);
+if (reputation === undefined) {
+  // No history yet — render "No history yet"
+} else {
+  // Render the trust category via
+  // categorizeReputation((reputation * 2) - 1)
+  // (the inverse of the v1.11 mapping).
+  // Or use the Tauri team's own category
+  // logic (the v1.10 helpers are backend
+  // primitives; the Tauri UI can render
+  // the category however it wants).
+}
+```
+
+**Note on the inverse mapping:** the
+Tauri team has the `[0, 1]` score from
+`getWorkerReputation`. To use the v1.10
+`categorizeReputation(score)` helper (which
+takes `[-1, 1]`), they need the inverse
+mapping: `raw = (mapped * 2) - 1`. The
+Tauri team can also write their own
+category logic in `[0, 1]` (e.g.
+`"trusted" ≥ 0.85` + `"untrusted" < 0.4`).
+The internal `categorizeReputation` helper
+is a backend primitive; the Tauri UI can
+choose to use it or define its own.
+
+### 17.2 The 3-tuple filter
+
+The 3-tuple `(workerPeerId, workerRuntime, skillId)`
+is the existing canonical reputation
+key. The Tauri team uses the same 3-tuple
+as the v1.10 scoreboard formula. The
+helper's `criteria` parameter is
+type-safe (`AgentRuntime` is the protocol
+type); the Tauri team doesn't need to
+construct a `VerdictEntry` themselves.
+
+### 17.3 Out of scope (v1.11+ future)
+
+- **The Tauri UI implementation** — the
+  Tauri team picks up the actual badge
+  panel in their workstream. v1.11 ships
+  the backend + a design doc (this
+  section).
+- **Worker picker integration (v1.13)** —
+  the orchestrator's worker picker is
+  the next consumer of
+  `getWorkerReputation`. v1.11 ships the
+  helper; v1.13 wires it into the
+  picker's `reputationBySkill` field.
+- **The sensitivity gate wiring** — the
+  existing
+  `chain-sensitivity-gate.ts:requiresReputationApproval`
+  is defined but uncalled. When a
+  caller is added, the helper is the
+  source. Deferred.
+
+## 18. v1.13 — Per-skill reputation display (orchestrator-side)
+
+> **Status:** Phase 8 v1.13. v1.13 ships
+> the **per-peer projection** helper
+> (`getReputationBySkillForPeer(stores, peerId)`)
+> that the Tauri team calls to display
+> the per-skill reputation badges. v1.13
+> is the **consumer-side integration** —
+> the orchestrator's worker picker's
+> `reputationBySkill` field is now
+> populated from the v1.10 + v1.11
+> producer (replacing the v0
+> `chain-reputation-3tuple.ts` producer
+> for the worker-picker call site).
+
+### 18.1 The backend helper — `getReputationBySkillForPeer`
+
+The Tauri team reads a worker's per-skill
+reputation via the new
+`getReputationBySkillForPeer(stores, peerId)`
+function in
+`apps/node/src/chain-scoreboard.ts`. The
+helper iterates over the chain stores +
+calls `getWorkerReputation` (the v1.11
+per-3-tuple wiring) for each
+`(runtime, skill)` combination +
+builds a per-skill reputation map (MAX
+across runtimes per skill — the "best
+foot forward" semantic).
+
+The Tauri team uses the helper like:
+
+```ts
+const reputationBySkill = getReputationBySkillForPeer(
+  storeRegistry.values(), // all chain stores
+  peer.peerId,
+);
+if (reputationBySkill === undefined) {
+  // No history yet — render "No history yet"
+} else {
+  // Render the per-skill reputation
+  // badges (one per skill in the map)
+  for (const [skill, score] of Object.entries(reputationBySkill)) {
+    // Render `<skill>: <score>` in the
+    // worker's trust panel
+  }
+}
+```
+
+### 18.2 The MAX-across-runtimes semantic
+
+The helper takes the MAX reputation
+across all `(runtime, skill)` tuples per
+skill. This is the "best foot forward"
+semantic for tiebreaking — a worker who
+excelled on OpenClaw is a better pick
+than a worker who only ran the skill
+badly. The Tauri UI displays the MAX
+score; the picker uses the MAX score as
+the tiebreaker input.
+
+### 18.3 The v0 module is left in place
+
+The v0 `chain-reputation-3tuple.ts`
+module is **not touched** in v1.13. The
+v0 module has its own tests + the
+`getLocalRuntimePassRate` consumer
+(federated-scoreboard pull, different
+semantics). A v1.13+ future chunk can
+remove the v0 module + migrate
+`getLocalRuntimePassRate` to the v1.10
+producer. v1.13 only replaces the
+worker-picker producer.
+
+### 18.4 Out of scope (v1.13+ future)
+
+- **Worker picker replacement** — v1.13
+  is the **additive tiebreaker** (the
+  existing
+  `chain-plan-assign.ts:REPUTATION_BLEND_WEIGHT = 0.2`
+  design). Replacing the picker's
+  primary + best-fit strategy with a
+  fully scoreboard-driven rank is a
+  v1.13+ future.
+- **v0 module deprecation / removal** —
+  the v0 `chain-reputation-3tuple.ts`
+  module is left in place; a v1.13+
+  future chunk can remove it.
+- **`getLocalRuntimePassRate` migration**
+  — the federated-scoreboard consumer
+  in
+  `node-service-chain-orchestration.ts:293-302`
+  uses the v0 `scoreFromVerdicts`. A
+  v1.13+ future chunk can migrate it to
+  the v1.10 producer.
+
+## 19. v1.14 — Per-runtime routing surface (router extension)
+
+> **Status:** Phase 8 v1.14. v1.14 ships
+> the **routing vocabulary extension** —
+> the router now scans all 7 runtimes'
+> tag lists (not just EH + OpenClaw).
+> The dispatch's runtime handling gains
+> an `unsupported-runtime fallback` for
+> the 5 new runtimes (pi / hermes /
+> codex / codex-cli / openhuman).
+
+### 19.1 The chat badge — `routingReason: "signal-runtime"`
+
+When the router recommends a non-EH +
+non-OpenClaw runtime (the v1.14 positive
+match), the chat badge shows the matched
+runtime + the matched tag. The Tauri
+team maps the internal runtime name to
+a user-friendly label:
+
+| Internal runtime | Owner-visible label (suggested) |
+|---|---|
+| `"pi"` | "Routed to Pi" |
+| `"hermes"` | "Routed to Hermes" |
+| `"codex"` | "Routed to Codex" |
+| `"codex-cli"` | "Routed to Codex" |
+| `"openhuman"` | "Routed to OpenHuman" |
+
+The exact copy is the Tauri team's
+call. The internal runtime names are
+stable identifiers; the owner-visible
+labels are translated to user-readable
+strings.
+
+### 19.2 The dispatch fallback — operator-visible
+
+When the home node doesn't have an
+adapter for the matched runtime, the
+dispatch falls back to OpenClaw with a
+`chain.warn` log. The chat badge
+displays the matched runtime + a note
+that the home node fell back to
+OpenClaw (e.g. "Routed to Pi — not
+supported on this node, fell back to
+OpenClaw"). The Tauri team surfaces
+this fallback in the chain report for
+operator visibility.
+
+### 19.3 The precedence (end-user-first)
+
+The v1.14 precedence preserves the
+v1.1 + v1.2 + v1.6 + v1.7 design:
+1. `!openclaw` opt-out → OpenClaw
+   (Q1 of v1.6; the safety net)
+2. `!eh` / `/eh` opt-in → EH
+3. OpenClaw tag match → OpenClaw
+   (Q2 of v1.7; the veto)
+4. EH tag match → EH (Q1 of v1.1)
+5. **NEW v1.14:** other-runtime tag
+   match → that runtime (positive-only;
+   the home node's dispatch falls back
+   to OpenClaw if the runtime isn't
+   supported)
+6. No match → OpenClaw (v0 default)
+
+The end-user-visible precedence: the
+explicit prefix wins over the implicit
+tag; the OpenClaw veto wins over the
+positive (because OpenClaw is the
+mature default); the EH positive wins
+over the v1.14 other-runtime positive
+(because EH is the home node's
+first-class engine); the other-runtime
+positive wins over the default (because
+the prompt explicitly mentions the
+runtime).
+
+### 19.4 Out of scope (v1.14+ future)
+
+- **Runtime adapters for pi / hermes /
+  codex / openhuman (v1.14+ future)** —
+  the home node today has adapters for
+  EH + OpenClaw only. v1.14 ships the
+  routing vocabulary + the dispatch
+  fallback; the actual adapters are a
+  separate effort.
+- **More sophisticated tie-breaking
+  (v1.14+ future)** — v1.14 uses
+  runtime order (pi, hermes, codex,
+  codex-cli, openhuman); a more
+  sophisticated strategy (e.g. the
+  v1.13 reputation score, or a
+  user-configured preference order) is
+  a v1.14+ future.
+
+## 20. v1.12 — Tauri-team handoff (scoreboard UI)
+
+> **Status:** Phase 8 v1.12. v1.12
+> ships the **Tauri-team handoff** for
+> the scoreboard badge UI. v1.10 +
+> v1.11 + v1.13 ship the backend
+> helpers; v1.12 is the sub-plan + the
+> Tauri design doc section that tells
+> the Tauri team what to build + how
+> to call the backend. The actual
+> Tauri UI implementation is the
+> Tauri team's work (out of scope for
+> our repo).
+
+### 20.1 What the Tauri team builds
+
+The Tauri team builds the **chain
+report surface** (a future Tauri
+panel; not in the chat surface). The
+chain report shows:
+
+- The worker's trust category (per
+  the v1.10 `categorizeReputation`)
+- The per-skill reputation (per the
+  v1.13 `getReputationBySkillForPeer`)
+- The "no history" state (per the v1.10
+  `isNoHistoryReputation`)
+
+The chain report is a future Tauri
+panel. The Tauri team is responsible
+for:
+
+- The actual panel UI (TSX in the
+  Tauri monorepo)
+- The data refresh (when the
+  `ArbitrationStore` updates, the
+  Tauri panel re-fetches)
+- The user-friendly labels (per the
+  v1.10 §16 + v1.11 §17 + v1.13 §18
+  + v1.14 §19 design docs)
+
+### 20.2 The backend exposure pattern
+
+The Tauri team calls the v1.10 + v1.11
++ v1.13 backend helpers via the
+existing orchestrator's introspection
+API (the `ArbitrationStore` is exposed
+to the Tauri side via the chain
+introspection). The Tauri team uses
+the helpers like:
+
+```ts
+// Per-3-tuple reputation (v1.11)
+const reputation = getWorkerReputation(
+  store,
+  {
+    workerPeerId: peer.peerId,
+    workerRuntime: peer.runtime,
+    skillId: step.requiredSkill,
+  },
+);
+
+// Per-peer projection (v1.13)
+const reputationBySkill = getReputationBySkillForPeer(
+  storeRegistry.values(),
+  peer.peerId,
+);
+
+// Trust category (v1.10)
+const category = reputation === undefined
+  ? "no-history"
+  : categorizeReputation(reputation * 2 - 1); // inverse mapping
+```
+
+### 20.3 The inverse mapping (note for the Tauri team)
+
+The v1.11 `getWorkerReputation` returns
+`[0, 1]` (the consumer convention). The
+v1.10 `categorizeReputation` takes
+`[-1, 1]` (the formula convention). The
+Tauri team uses the inverse mapping
+`raw = (mapped * 2) - 1` to convert
+between the two scales.
+
+Alternatively, the Tauri team can
+write their own category logic in
+`[0, 1]` (e.g. `"trusted" ≥ 0.85` +
+`"untrusted" < 0.4`). The internal
+`categorizeReputation` helper is a
+backend primitive; the Tauri UI can
+choose to use it or define its own.
+
+### 20.4 The data refresh
+
+When the `ArbitrationStore` updates
+(when a new `VerdictEntry` is recorded
+via `recordVerdictEntry`), the Tauri
+panel re-fetches the data. v1.12
+doesn't ship a notification
+mechanism; the Tauri team picks up
+the refresh logic in their workstream
+(standard pattern for Tauri monorepo
+panels).
+
+### 20.5 Out of scope (v1.12+ future)
+
+- **Tauri UI implementation** — the
+  Tauri team picks up the actual UI
+  implementation. v1.12 ships the
+  design + the backend exposure
+  pattern.
+- **Notification mechanism** — when
+  the `ArbitrationStore` updates, the
+  Tauri panel re-fetches. The Tauri
+  team picks up the refresh logic in
+  their workstream.
+- **Tauri-side tests** — the Tauri
+  team adds the Tauri-side tests in
+  their workstream.
+
+## 21. v1.15 — Per-runtime tag map panel (Tauri-team handoff)
+
+> **Status:** Phase 8 v1.15. v1.15
+> ships the **Tauri-team handoff** for
+> the per-runtime tag map UI panel.
+> v1.9 ships the data structure
+> (`extractTagsByRuntime` +
+> `runtimeTags` map); v1.14 ships the
+> routing consumption; v1.15 is the
+> sub-plan + the Tauri design doc
+> section that tells the Tauri team
+> what to build + how to call the
+> backend. The actual Tauri UI
+> implementation is the Tauri team's
+> work (out of scope for our repo).
+
+### 21.1 What the Tauri team builds
+
+The Tauri team builds the **per-runtime
+tag map panel** (a future Tauri panel
+in the Settings UI). The panel shows:
+
+- For each of the 7 runtimes
+  (envoy-harness / openclaw / pi /
+  hermes / codex / codex-cli /
+  openhuman), the list of tags
+  (extracted from the merged manifest)
+- A note when a runtime has no tags
+  (e.g. "no envoy-harness skills
+  installed")
+- A read-only display (the owner
+  can't edit the manifest from this
+  panel; the panel is informational)
+
+The panel is the Tauri team's work;
+v1.15 ships the design + the backend
+exposure pattern.
+
+### 21.2 The backend exposure pattern
+
+The Tauri team reads the per-runtime
+tag map via the dispatch's
+`readManifestView` (already exposed
+in v1.9). The Tauri team calls
+`extractTagsByRuntime(manifest, runtime)`
+for each of the 7 runtimes + builds
+the per-runtime tag list display.
+
+```ts
+const runtimes: AgentRuntime[] = [
+  "envoy-harness",
+  "openclaw",
+  "pi",
+  "hermes",
+  "codex",
+  "codex-cli",
+  "openhuman",
+];
+const tagsByRuntime: Record<AgentRuntime, ReadonlyArray<string>> = {} as Record<AgentRuntime, ReadonlyArray<string>>;
+for (const runtime of runtimes) {
+  tagsByRuntime[runtime] = extractTagsByRuntime(manifest, runtime);
+}
+```
+
+The Tauri team is responsible for:
+- The actual panel UI (TSX in the
+  Tauri monorepo)
+- The data refresh (when the manifest
+  changes, the panel re-fetches)
+- The user-friendly labels (per the
+  v1.15 Tauri design section)
+
+### 21.3 The data refresh
+
+When the merged manifest changes (when
+a new skill is installed / uninstalled),
+the Tauri panel re-fetches the data.
+v1.15 doesn't ship a notification
+mechanism; the Tauri team picks up the
+refresh logic in their workstream
+(standard pattern for Tauri monorepo
+panels).
+
+### 21.4 Out of scope (v1.15+ future)
+
+- **Tauri UI implementation** — the
+  Tauri team picks up the actual UI
+  implementation. v1.15 ships the
+  design + the backend exposure
+  pattern.
+- **Manifest editor** — the owner
+  can't edit the manifest from this
+  panel. A future Tauri panel could
+  add a manifest editor; out of scope
+  for v1.15.
+
 ## 17. References
 
 - [`agent-harness-integration-v1-4.md`](./agent-harness-integration-v1-4.md)
@@ -1013,6 +1521,16 @@ result is the trust category.
   verdicts by runtime)
 - [`agent-harness-integration-v1-10.md`](./agent-harness-integration-v1-10.md)
   (the v1.10 sub-plan + DONE stamp)
+- [`agent-harness-integration-v1-11.md`](./agent-harness-integration-v1-11.md)
+  (the v1.11 sub-plan + DONE stamp)
+- [`agent-harness-integration-v1-13.md`](./agent-harness-integration-v1-13.md)
+  (the v1.13 sub-plan + DONE stamp)
+- [`agent-harness-integration-v1-14.md`](./agent-harness-integration-v1-14.md)
+  (the v1.14 sub-plan + DONE stamp)
+- [`agent-harness-integration-v1-12.md`](./agent-harness-integration-v1-12.md)
+  (the v1.12 sub-plan + DONE stamp)
+- [`agent-harness-integration-v1-15.md`](./agent-harness-integration-v1-15.md)
+  (the v1.15 sub-plan + DONE stamp)
 - [`user-prompt-router.ts`](../apps/node/src/user-prompt-router.ts)
   (the v0 + v1.1 + v1.2 + v1.5 + v1.6 + v1.7
   router; v1.7 adds the negative-signal scan)

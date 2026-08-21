@@ -543,6 +543,38 @@ pattern). On `envoy_harness_integration` branch.
 - `docs/agent-harness-integration-v1-7.md` — v1.8 status note (v1.8 builds on v1.7's routing layer)
 - `docs/taui-agent-routing-settings.md` — §14 (chain report surface for the verifier model family; end-user-first copy mapping the internal `verifierModel` to the user-friendly label)
 
+## v1.16 status note (2026-08-21)
+
+v1.16 is the **sub-plan only** (no code).
+The implementation is **blocked** on
+the EH runtime gaining per-call model
+override support on the cross-verify
+path (a separate envoy-harness team
+effort). v1.16 is the full F9.5
+primitive — the cross-verify uses a
+different **model** than the worker
+(the worker on runtime A with model X
+→ verifier on runtime A with model Y).
+v1.8 ships the cross-runtime primitive
+(the cross-verify prefers a different
+model **family**). v1.16 ships the
+cross-model-on-same-runtime primitive
+(the cross-verify uses a different
+model on the **same** runtime).
+
+**v1.16 design:** the v1.16 design
+locks the `verifierProviderHint?`
+per-call option (the host sets it
+based on a config) + the
+`claude-instant` default (a faster,
+cheaper model than the worker's
+`claude`) + the audit trail via the
+v1.8 `verifierModel` field. The
+implementation is deferred until the
+EH runtime support lands. Detailed
+plan:
+[`agent-harness-integration-v1-16.md`](./agent-harness-integration-v1-16.md).
+
 **Protocol:**
 - **No protocol change.** The `verifierModel` field was already in the Zod schema (`packages/protocol/src/agent-adapter.ts:347-389` — `verifierModel: z.string().optional()`, required iff `source === 'llm'`, optional for `"rule"` / `"cross"` / `"human"`). v1.8 just populates the field for cross verdicts.
 
