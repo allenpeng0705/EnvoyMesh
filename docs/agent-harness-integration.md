@@ -711,3 +711,94 @@ fan-out within a job (whole-job only).
     handled by v1.3) +
     `agent-harness-integration-v1-3.md` DONE
     stamp + commit log.
+- **2026-08-21 (v1.4 — Tauri UI for opt-in toggle +
+  signal-routed badge + verifyMode — DONE):**
+  owners get **durable, UI-controllable
+  affordances** for the routing decisions
+  v1.1 + v1.2 + v1.3 made. The v0 env-var
+  opt-in (`ENVOY_HARNESS_SIGNAL_OPT_IN`)
+  + the per-runtime
+  `defaultVerifyModeForWorker(runtime)`
+  policy are both superseded by
+  per-node persisted fields, with the
+  v0 mechanisms as fallbacks (Q2 + Q3
+  + Q6). The Tauri UI gains an
+  "Auto-route mesh queries" toggle
+  (end-user label for `signalOptIn`) +
+  a "Verification mode" dropdown
+  ("Light" / "Standard" / "Strict" — the
+  end-user labels for the 3
+  `VerifyMode` values) + a
+  "Routed to `<skill>`" chat badge
+  using the existing v1.2
+  `routingReason` + `targetSkill`
+  fields (no new result fields). 1
+  commit on `envoy_harness_integration`
+  branch (the user delegated commit;
+  bundled v1.4.1 + v1.4.2 + v1.4.3
+  into a single commit at the end of
+  v1.4). 88 new tests (16
+  node-config-loader + 12
+  node-config-store-v1-4 + 11
+  chain-verify-loop additions + 4
+  run-loop e2e + 15 node-service-v1-4
+  settings API + 30 misc regression
+  checks) + 277 pre-existing tests
+  regression-clean on the affected
+  paths. Detailed plan:
+  `docs/agent-harness-integration-v1-4.md`
+  (sub-plan with 6 locked design
+  questions). The Tauri team picks up
+  the actual UI work in their own
+  workstream; the design doc for them
+  is `docs/taui-agent-routing-settings.md`
+  (NEW). The **end-user-first**
+  principle (AGENTS.md) drove the
+  Settings panel's label copy:
+  "Auto-route mesh queries" (not
+  "signalOptIn=enabled") + "Light" /
+  "Standard" / "Strict" (not the raw
+  `VerifyMode` enum values). Internal
+  values stay in the audit log + the
+  `getNodeConfig()` payload.
+  - **v1.4.1 — persisted config +
+    helpers.** New
+    `PersistedNodeConfig.signalOptIn`
+    + `verifyModeDefault` fields +
+    new `node-config-loader.ts`
+    (`readEffectiveSignalOptIn` +
+    `readEffectiveVerifyModeDefault`)
+    + the `chain-verify-loop` reads
+    the per-node default via a new
+    `getNodeConfig` dep. The
+    `NodeConfigStore` gains a
+    sync `peek()` accessor backed by
+    the in-memory snapshot (no disk
+    I/O at the routing layer). 39
+    unit tests.
+  - **v1.4.2 — Tauri settings API.**
+    New `NodeService` methods
+    `getSignalOptIn` / `setSignalOptIn`
+    / `getVerifyModeDefault` /
+    `setVerifyModeDefault` + the
+    `NodeConfig` + `UpdateNodeConfigParams`
+    types gain the two new optional
+    fields. `setVerifyModeDefault(undefined)`
+    clears the override (the loop
+    falls back to the per-runtime
+    default). 15 unit tests.
+  - **v1.4.3 — Tauri UI design doc
+    + closeout.** NEW
+    `docs/taui-agent-routing-settings.md`
+    (the Tauri team's contract —
+    Settings panel + chat badge +
+    status indicator; end-user-first
+    copy throughout) + this entry +
+    `agent-network-engine.md` §2.2.2
+    update (note v1.4's Tauri UI
+    affordances) +
+    `agent-harness-integration-v1-3.md`
+    status note (v1.3's chat reply
+    fields power the new chat badge) +
+    `agent-harness-integration-v1-4.md`
+    DONE stamp.

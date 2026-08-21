@@ -1,8 +1,10 @@
 import type {
   AgentCard,
+  AgentRuntime,
   DeviceCertificate,
   HumanProfilePayload,
   CapabilityUnion,
+  VerifyMode,
 } from "@envoymesh/protocol";
 import type {
   DeviceIdentity,
@@ -2645,6 +2647,72 @@ export interface NodeService {
    * Update node configuration
    */
   updateNodeConfig(config: Partial<NodeConfig>): Promise<void>;
+
+  /**
+   * Phase 8 / v1.4 — get the effective signal
+   * opt-in flag (resolved from persisted config
+   * + env var). The Tauri UI calls this in
+   * the Settings panel to display the current
+   * state of the toggle. The returned value
+   * is the same value the signal router will
+   * use on the next user prompt — the Tauri
+   * UI shows what's actually effective, not
+   * just the persisted field.
+   */
+  getSignalOptIn(): Promise<"enabled" | "disabled">;
+
+  /**
+   * Phase 8 / v1.4 — set the persisted signal
+   * opt-in flag. The Tauri UI calls this
+   * when the owner toggles the switch in the
+   * Settings panel. The host writes the
+   * value to the persisted config and
+   * returns the new effective state (which
+   * may still be the env-var default if the
+   * write failed and the env var is the
+   * fallback — see Q2 of the v1.4 sub-plan).
+   *
+   * **Owner-only:** the host enforces
+   * `requireOwnerProfile("change node settings")`
+   * (same as `updateNodeConfig`).
+   */
+  setSignalOptIn(value: "enabled" | "disabled"): Promise<"enabled" | "disabled">;
+
+  /**
+   * Phase 8 / v1.4 — get the effective
+   * verify-mode default for a given worker
+   * runtime (resolved from persisted config
+   * + per-runtime default). The Tauri UI
+   * calls this to display the current
+   * setting in the Settings panel's
+   * "Verification mode" dropdown.
+   */
+  getVerifyModeDefault(runtime: AgentRuntime): Promise<VerifyMode>;
+
+  /**
+   * Phase 8 / v1.4 — set the persisted
+   * verify-mode default. When the owner
+   * picks a value in the Settings panel's
+   * dropdown, the Tauri UI calls this. Pass
+   * `undefined` to clear the override (the
+   * loop falls back to the per-runtime
+   * default). The host writes the value
+   * and returns the new effective state.
+   *
+   * **Owner-only:** the host enforces
+   * `requireOwnerProfile("change node settings")`
+   * (same as `updateNodeConfig`).
+   *
+   * **Per-mandate wins over per-node:** the
+   * persisted field is a node-wide default.
+   * `ChainMandate.verifyMode` (set per-job
+   * by the Team-job author) still overrides
+   * the per-node default — see Q3 of the
+   * v1.4 sub-plan.
+   */
+  setVerifyModeDefault(
+    value: VerifyMode | undefined,
+  ): Promise<VerifyMode | undefined>;
 
   /** Resolved bundled + persisted setup sponsor friend config (read-only). */
   getSetupSponsorFriendConfig(): Promise<import("./setup-sponsor-friend.js").ResolvedSetupSponsorFriend>;

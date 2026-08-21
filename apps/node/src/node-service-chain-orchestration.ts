@@ -323,6 +323,21 @@ export interface ChainOrchestrationContext {
   getBonds(): Promise<BondRecord[]>;
   getNodeConfig(): Promise<unknown>;
   updateNodeConfig(cfg: unknown): Promise<void>;
+  /**
+   * Phase 8 / v1.4 — sync accessor for the
+   * persisted node config. Used by
+   * `runChainVerificationLoop` to resolve the
+   * effective `verifyMode` default via
+   * `readEffectiveVerifyModeDefault`. The
+   * underlying store keeps an in-memory
+   * snapshot that's always up-to-date after the
+   * first `load()` or `save()` (see
+   * `NodeConfigStore.peek()`), so the read is
+   * sync with no disk I/O. Returns `undefined`
+   * on cold start (no I/O yet) and the loop
+   * falls back to the per-runtime default.
+   */
+  getPersistedNodeConfigSync?(): import("./node-config-store.js").PersistedNodeConfig | undefined;
   emit<K extends keyof NodeServiceEvents>(event: K, data: NodeServiceEvents[K]): void;
   /** Built-in OpenClaw readiness for Agent Network worker execution. */
   isOpenClawReady(): boolean;
@@ -393,6 +408,13 @@ export function buildChainOrchestrationContext(host: any): ChainOrchestrationCon
     getBonds: () => host.getBonds(),
     getNodeConfig: () => host.getNodeConfig(),
     updateNodeConfig: (cfg) => host.updateNodeConfig(cfg),
+    // Phase 8 / v1.4 — sync accessor for the
+    // persisted config. Used by the chain-verify
+    // loop to resolve the effective `verifyMode`
+    // default (per-node override or per-runtime
+    // default). Reads from the in-memory snapshot
+    // — no disk I/O.
+    getPersistedNodeConfigSync: () => host._configStore?.peek(),
     emit: (event, data) => host.emit(event, data),
     isOpenClawReady: () => Boolean(host.isOpenClawReady?.()),
     askOpenClaw: (prompt) => host.askOpenClaw(prompt),
@@ -1521,6 +1543,15 @@ export async function buildChainOrchestratorDeps(
       },
       orchestratorPeerId: agentIdentity.agentPeerId,
       signingKeyPem: agentIdentity.agentPrivateKeyPem,
+      // Phase 8 / v1.4 — sync accessor for the
+      // persisted config. The loop uses this
+      // (via `readEffectiveVerifyModeDefault`)
+      // to resolve the per-node
+      // `verifyModeDefault` override. When
+      // unset, the loop falls back to
+      // `defaultVerifyModeForWorker(workerRuntime)`
+      // (Q3 of the v1.4 sub-plan).
+      getNodeConfig: () => deps.getPersistedNodeConfigSync?.(),
       writeVerdictEntry: (chainId, entry) => {
         const store = getChainArbitrationStore(chainId);
         chainArbitrationStores.set(chainId, recordVerdictEntry(store, entry));

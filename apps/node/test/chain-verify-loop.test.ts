@@ -577,6 +577,61 @@ describe("shouldEscalateToCrossAgent", () => {
       }),
     ).toBe(true);
   });
+
+  // Phase 8 / v1.4 — `effectiveVerifyMode` opt
+  // (per-node config override from the Tauri
+  // UI). Wins over the per-mandate value when
+  // the loop provided it. Backward compatible
+  // — older callers omit it.
+  it("v1.4 — effectiveVerifyMode wins over mandate.verifyMode (Tauri UI override)", () => {
+    // Mandate says rule-only (no cross). Tauri
+    // UI override says cross-runtime. The loop
+    // passes the effective value; the effective
+    // wins → escalate.
+    expect(
+      shouldEscalateToCrossAgent({ kind: "pass", score: 0.9, confidence: "high" }, {
+        mandate: mandate({ verifyMode: "rule-only" }),
+        effectiveVerifyMode: "cross-runtime",
+      }),
+    ).toBe(true);
+  });
+
+  it("v1.4 — effectiveVerifyMode: 'cross-runtime-strict' wins over mandate: 'rule-only'", () => {
+    expect(
+      shouldEscalateToCrossAgent({ kind: "pass", score: 0.9, confidence: "high" }, {
+        mandate: mandate({ verifyMode: "rule-only" }),
+        effectiveVerifyMode: "cross-runtime-strict",
+      }),
+    ).toBe(true);
+  });
+
+  it("v1.4 — effectiveVerifyMode: 'rule-only' downgrades a mandate: 'cross-runtime'", () => {
+    // The Tauri UI owner wants cheaper
+    // verification. The mandate was
+    // cross-runtime (per-job), but the
+    // effective (per-node override) is
+    // rule-only. The loop passes the
+    // effective → no cross.
+    expect(
+      shouldEscalateToCrossAgent({ kind: "pass", score: 0.9, confidence: "high" }, {
+        mandate: mandate({ verifyMode: "cross-runtime" }),
+        effectiveVerifyMode: "rule-only",
+      }),
+    ).toBe(false);
+  });
+
+  it("v1.4 — effectiveVerifyMode: rule-only still escalates on criticality: high", () => {
+    // Sanity check: the criticality hint still
+    // works when the effective verifyMode is
+    // rule-only.
+    expect(
+      shouldEscalateToCrossAgent({ kind: "partial", score: 0.5, reason: "x" }, {
+        mandate: mandate({ verifyMode: "rule-only" }),
+        effectiveVerifyMode: "rule-only",
+        criticality: "high",
+      }),
+    ).toBe(true);
+  });
 });
 
 // Phase 8 / Step 6 — combineToVerdict honors verifyMode.
@@ -666,6 +721,232 @@ describe("defaultVerifyModeForWorker", () => {
     expect(defaultVerifyModeForWorker("ext")).toBe("rule-only");
     // Other runtime: defaults to rule-only.
     expect(defaultVerifyModeForWorker("pi" as AgentRuntime)).toBe("rule-only");
+  });
+});
+
+// Phase 8 / v1.4 — getNodeConfig dep on
+// `runChainVerificationLoop`. The persisted
+// config's `verifyModeDefault` overrides the
+// per-runtime default when the mandate didn't
+// set `verifyMode` explicitly. Tested via
+// e2e runs of the loop with a `getNodeConfig`
+// that returns either a v1.4 config or
+// `undefined` (the v0 path).
+describe("runChainVerificationLoop — v1.4 effective verifyMode (getNodeConfig)", () => {
+  function persistedConfig(
+    verifyModeDefault:
+      | "rule-only"
+      | "cross-runtime"
+      | "cross-runtime-strict"
+      | undefined,
+  ): import("../src/node-config-store.js").PersistedNodeConfig {
+    return {
+      version: "0.1",
+      profileDir: "/tmp/test",
+      discoveryProfile: "lan-fast",
+      relayEnabled: true,
+      relayServerEnabled: false,
+      advertiseAddrs: [],
+      bootstrapPeers: [],
+      bootstrapPresets: [],
+      configuredRelays: [],
+      modelProviders: { mode: "disabled" },
+      chatAssistEnabled: false,
+      contactAiPreferences: [],
+      updatedAt: "2026-06-18T00:00:00.000Z",
+      ...(verifyModeDefault !== undefined
+        ? { verifyModeDefault }
+        : {}),
+    };
+  }
+
+  it("uses the per-node verifyModeDefault to escalate (no mandate.verifyMode)", async () => {
+    const written: VerdictEntry[] = [];
+    const deps = makeDeps({
+      buildAdapter: (runtime) =>
+        stubAdapter(runtime, [{ kind: "pass", score: 0.9, confidence: "high" }]),
+      listRuntimes: () => ["openclaw", "pi"],
+      resolveWorkerRuntime: () => "openclaw",
+      crossVerifier: {
+        verify: async () => ({
+          kind: "pass",
+          score: 0.92,
+          confidence: "high",
+        }),
+      },
+      written,
+    });
+    // v1.4 — pass the persisted config with
+    // verifyModeDefault: "cross-runtime". The
+    // mandate has no `verifyMode`. The loop
+    // must escalate to the second runtime.
+    deps.getNodeConfig = () => persistedConfig("cross-runtime");
+    const { state } = makeState({
+      mandate: mandate({ maxSensitivity: "public", maxChainCostUsd: 5 }),
+      award: {
+        version: "0.1",
+        subtaskId: "subtask_a",
+        chainId: "chain_test-1",
+        workerPeerId: "worker-1",
+        negotiationRound: 1,
+        acceptedCostUsd: 2,
+        deadlineAt: "2026-06-18T01:00:00.000Z",
+        createdAt: NOW_ISO,
+      },
+    });
+    const result = await runChainVerificationLoop(
+      deps,
+      state,
+      envelope(),
+      finalPartial(),
+    );
+    expect(result).not.toBeNull();
+    expect(result!.escalated).toBeDefined();
+    expect(result!.escalated!.secondRuntime).toBe("pi");
+    // Two entries: rule + cross.
+    expect(written).toHaveLength(2);
+    expect(written[0]!.source).toBe("rule");
+    expect(written[1]!.source).toBe("cross");
+  });
+
+  it("uses the per-node verifyModeDefault: 'rule-only' to suppress escalation", async () => {
+    const written: VerdictEntry[] = [];
+    const deps = makeDeps({
+      buildAdapter: (runtime) =>
+        stubAdapter(runtime, [{ kind: "pass", score: 0.9, confidence: "high" }]),
+      listRuntimes: () => ["openclaw", "pi"],
+      resolveWorkerRuntime: () => "openclaw",
+      written,
+    });
+    // Worker is openclaw (per-runtime default
+    // is rule-only), but the Tauri UI owner
+    // explicitly set "rule-only" via the
+    // persisted field. The loop should NOT
+    // escalate regardless.
+    deps.getNodeConfig = () => persistedConfig("rule-only");
+    const { state } = makeState({
+      mandate: mandate({ maxSensitivity: "private", maxChainCostUsd: 50 }),
+      award: {
+        version: "0.1",
+        subtaskId: "subtask_a",
+        chainId: "chain_test-1",
+        workerPeerId: "worker-1",
+        negotiationRound: 1,
+        acceptedCostUsd: 2,
+        deadlineAt: "2026-06-18T01:00:00.000Z",
+        createdAt: NOW_ISO,
+      },
+    });
+    const result = await runChainVerificationLoop(
+      deps,
+      state,
+      envelope(),
+      finalPartial(),
+    );
+    expect(result).not.toBeNull();
+    // private+expensive would normally
+    // trigger escalation; rule-only from
+    // per-node override suppresses it.
+    expect(result!.escalated).toBeUndefined();
+    expect(written).toHaveLength(1);
+  });
+
+  it("per-mandate verifyMode wins over per-node verifyModeDefault", async () => {
+    const written: VerdictEntry[] = [];
+    const deps = makeDeps({
+      buildAdapter: (runtime) =>
+        stubAdapter(runtime, [{ kind: "pass", score: 0.9, confidence: "high" }]),
+      listRuntimes: () => ["openclaw", "pi"],
+      resolveWorkerRuntime: () => "openclaw",
+      crossVerifier: {
+        verify: async () => ({
+          kind: "pass",
+          score: 0.92,
+          confidence: "high",
+        }),
+      },
+      written,
+    });
+    // Per-node says rule-only (cheaper).
+    // Per-mandate says cross-runtime
+    // (Team-job author explicit). The
+    // mandate wins (Q3 of the v1.4 sub-plan).
+    deps.getNodeConfig = () => persistedConfig("rule-only");
+    const { state } = makeState({
+      mandate: mandate({
+        maxSensitivity: "public",
+        maxChainCostUsd: 5,
+        verifyMode: "cross-runtime",
+      }),
+      award: {
+        version: "0.1",
+        subtaskId: "subtask_a",
+        chainId: "chain_test-1",
+        workerPeerId: "worker-1",
+        negotiationRound: 1,
+        acceptedCostUsd: 2,
+        deadlineAt: "2026-06-18T01:00:00.000Z",
+        createdAt: NOW_ISO,
+      },
+    });
+    const result = await runChainVerificationLoop(
+      deps,
+      state,
+      envelope(),
+      finalPartial(),
+    );
+    expect(result).not.toBeNull();
+    expect(result!.escalated).toBeDefined();
+  });
+
+  it("falls back to per-runtime default when getNodeConfig returns undefined (cold start)", async () => {
+    const written: VerdictEntry[] = [];
+    const deps = makeDeps({
+      buildAdapter: (runtime) =>
+        stubAdapter(runtime, [{ kind: "pass", score: 0.9, confidence: "high" }]),
+      listRuntimes: () => ["openclaw", "pi"],
+      resolveWorkerRuntime: () => "openclaw",
+      crossVerifier: {
+        verify: async () => ({
+          kind: "pass",
+          score: 0.92,
+          confidence: "high",
+        }),
+      },
+      written,
+    });
+    // getNodeConfig returns undefined (cold
+    // start, no I/O yet). The loop falls back
+    // to the per-runtime default — envoy-
+    // harness is "cross-runtime" but the
+    // worker here is openclaw → rule-only
+    // (no escalation).
+    deps.getNodeConfig = () => undefined;
+    const { state } = makeState({
+      mandate: mandate({ maxSensitivity: "private", maxChainCostUsd: 50 }),
+      award: {
+        version: "0.1",
+        subtaskId: "subtask_a",
+        chainId: "chain_test-1",
+        workerPeerId: "worker-1",
+        negotiationRound: 1,
+        acceptedCostUsd: 2,
+        deadlineAt: "2026-06-18T01:00:00.000Z",
+        createdAt: NOW_ISO,
+      },
+    });
+    const result = await runChainVerificationLoop(
+      deps,
+      state,
+      envelope(),
+      finalPartial(),
+    );
+    expect(result).not.toBeNull();
+    // Per-runtime default for openclaw is
+    // rule-only. The mandate has no
+    // verifyMode. The loop doesn't
+    // escalate.
+    expect(result!.escalated).toBeUndefined();
   });
 });
 

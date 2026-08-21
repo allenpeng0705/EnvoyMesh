@@ -310,6 +310,7 @@ import {
   type DevicePairRequestPayload,
   type AgentRuntime,
   type SkillDescriptor,
+  type VerifyMode,
 } from "@envoymesh/protocol";
 import {
   createDeviceCertificate,
@@ -418,6 +419,10 @@ import {
   maskBridgeEnabledForExtAgentAccess,
 } from "@envoymesh/api";
 import { createNodeConfigStore, createStubNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
+import {
+  readEffectiveSignalOptIn,
+  readEffectiveVerifyModeDefault,
+} from "./node-config-loader.js";
 import { startPairingKioskServer, type PairingKioskServerHandle } from "./pairing-kiosk-server.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-seed-store.js";
@@ -9843,6 +9848,111 @@ class NodeServiceImpl implements NodeService {
     } catch (err) {
       console.warn("[node-service] config update emit failed:", err);
     }
+  }
+
+  /**
+   * Phase 8 / v1.4 — get the effective
+   * signal opt-in flag (resolved from
+   * persisted config + env var). The
+   * Tauri UI calls this in the Settings
+   * panel to show the current state of
+   * the toggle.
+   *
+   * The read is sync (the in-memory
+   * snapshot) but the method is async
+   * because the Tauri UI's RPC layer is
+   * uniformly async. The helper
+   * (`readEffectiveSignalOptIn`) is the
+   * source of truth for the resolution
+   * order — the same function the signal
+   * router uses (Q2 — persisted wins,
+   * env var as fallback).
+   */
+  async getSignalOptIn(): Promise<"enabled" | "disabled"> {
+    return readEffectiveSignalOptIn(this._configStore.peek());
+  }
+
+  /**
+   * Phase 8 / v1.4 — set the persisted
+   * signal opt-in flag. The Tauri UI
+   * calls this when the owner toggles
+   * the switch in the Settings panel.
+   *
+   * **Owner-only:** delegates to
+   * `updateNodeConfig` which enforces
+   * `requireOwnerProfile("change node
+   * settings")`. A non-owner RPC caller
+   * gets the same error.
+   *
+   * Returns the new effective state. The
+   * returned value matches what the
+   * signal router will use on the next
+   * user prompt — the Tauri UI shows
+   * what's actually effective.
+   */
+  async setSignalOptIn(
+    value: "enabled" | "disabled",
+  ): Promise<"enabled" | "disabled"> {
+    await this.updateNodeConfig({ signalOptIn: value });
+    return readEffectiveSignalOptIn(this._configStore.peek());
+  }
+
+  /**
+   * Phase 8 / v1.4 — get the effective
+   * verify-mode default for a given
+   * worker runtime. The Tauri UI calls
+   * this to populate the "Verification
+   * mode" dropdown in the Settings
+   * panel.
+   */
+  async getVerifyModeDefault(
+    runtime: AgentRuntime,
+  ): Promise<VerifyMode> {
+    return readEffectiveVerifyModeDefault(
+      this._configStore.peek(),
+      runtime,
+    );
+  }
+
+  /**
+   * Phase 8 / v1.4 — set the persisted
+   * verify-mode default. The Tauri UI
+   * calls this when the owner picks a
+   * value in the dropdown. Pass
+   * `undefined` to clear the override
+   * (the loop falls back to the
+   * per-runtime default).
+   *
+   * **Owner-only:** delegates to
+   * `updateNodeConfig` (same auth as the
+   * other node-config writers).
+   *
+   * **Clear semantics:** the patch
+   * `{ verifyModeDefault: undefined }` is
+   * spread over the base config in
+   * `updateNodeConfigViaRuntime`, which
+   * overwrites the field to `undefined`.
+   * `JSON.stringify` then omits the key,
+   * so the on-disk file no longer has the
+   * field. On reload, the helper falls
+   * back to the per-runtime default — the
+   * v0 behavior, restored.
+   *
+   * Returns the new effective state. The
+   * Tauri UI can pass any runtime — the
+   * per-node field is the same for all
+   * runtimes (Q3 of the v1.4 sub-plan).
+   * We return `value` directly because
+   * for the set case the effective IS
+   * `value` (persisted wins), and for the
+   * clear case the effective is per-runtime
+   * (signaled by `undefined`).
+   */
+  async setVerifyModeDefault(
+    value: VerifyMode | undefined,
+  ): Promise<VerifyMode | undefined> {
+    await this.updateNodeConfig({ verifyModeDefault: value });
+    return value;
   }
 
   async getSetupSponsorFriendConfig(): Promise<

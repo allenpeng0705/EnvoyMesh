@@ -528,3 +528,54 @@ of v1.3; user delegated commit).
 | **Q6** | Unknown `structured` blocks | Silent fall-through to v1.1 LLM ask + `console.debug` line so owners can diagnose misconfigured skills (the debug log is silent in production; visible in dev/staging with verbose logging) |
 | **Q7** | Test fixtures | Real bridge imports (`BClassSponsorFriendResult` / `PeerListResult` / `BClassRelayStatusResult`) — couples tests to the bridge's types; cleaner end-to-end typed tests |
 | **Q8** | `peerId` truncation in chat | First 16 chars + `...` (matches the existing bond-trace chat UX pattern) |
+
+## v1.4 status note (2026-08-21)
+
+v1.4 (Tauri UI for opt-in toggle + signal-routed
+badge + verifyMode) is the natural follow-up
+to v1.3. The chat badge uses the **existing
+v1.2 + v1.3 fields** (`routingReason` +
+`targetSkill` + `routingSignals` + `modelUsed` +
+the v1.3 formatter's chat reply) — **no new
+result fields are needed for the badge**.
+
+v1.4 changes:
+- `PersistedNodeConfig` gains `signalOptIn?` +
+  `verifyModeDefault?` (Q1 + Q3 of v1.4 sub-plan).
+- `NodeConfigStore` gains a sync `peek()`
+  accessor for the in-memory snapshot.
+- New `node-config-loader.ts` (host) with
+  `readEffectiveSignalOptIn` +
+  `readEffectiveVerifyModeDefault` (Q2 + Q3
+  precedence: persisted wins; env var +
+  per-runtime default are the fallbacks).
+- `chain-verify-loop` reads the per-node
+  default via a new `getNodeConfig` dep.
+- New Tauri settings API: `getSignalOptIn` /
+  `setSignalOptIn` / `getVerifyModeDefault` /
+  `setVerifyModeDefault` on `NodeService`.
+
+The actual Tauri UI (Settings panel + chat
+badge + status indicator) lives in the Tauri
+monorepo; v1.4 ships the backend + design doc
+(`docs/taui-agent-routing-settings.md`). The
+Tauri team picks up the implementation in their
+own workstream. Detailed plan:
+`docs/agent-harness-integration-v1-4.md`.
+
+**Why this matters for v1.3:** the B-class
+chat replies v1.3 produces are exactly what
+the v1.4 chat badge surfaces. A prompt like
+"set up a mesh sponsor bond" with v1.3 + v1.4:
+- v1.2 router picks the skill (signal-skill).
+- v1.3 formatter returns a user-readable
+  summary (headline + cause + next-step).
+- v1.4 chat badge shows "Routed to
+  `setup-sponsor-friend`" above the reply.
+
+The v1.3 B-class formatter's
+`formatSponsorFriendResult` is the source of
+truth for what the chat user sees for the
+sponsor-friend skill. v1.4 just adds the
+visible "this is how the reply was routed"
+context above it.

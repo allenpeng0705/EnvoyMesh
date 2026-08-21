@@ -14,7 +14,7 @@ import {
   loadBridgeConfigSkillApiKeys,
   loadBridgeConfigWebSearchEnabled,
 } from "./node-service-clawhub.js";
-import { readSignalOptInEnv } from "./user-prompt-router.js";
+import { readEffectiveSignalOptIn } from "./node-config-loader.js";
 import { loadBridgeConfigFromProfile } from "./bridge/bridge-config-store.js";
 import { bridgeConfigToStatusFields } from "./bridge/config.js";
 import {
@@ -547,10 +547,18 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             // The host's `isEnvoyHarnessReady()` reads the resolved
             // envoy-harness config without constructing the model
             // adapter (sync, cheap). `askEnvoyHarness` lazily
-            // constructs the model adapter on first call. `signalOptIn`
-            // is read once from `ENVOY_HARNESS_SIGNAL_OPT_IN` (the env
-            // var doesn't change at runtime; reading it at context
-            // build is the right shape).
+            // constructs the model adapter on first call.
+            //
+            // Phase 8 / v1.4 — `signalOptIn` is now resolved
+            // from the persisted config + env var via
+            // `readEffectiveSignalOptIn`. The persisted
+            // config wins (Tauri UI override), the env var
+            // is the v0 fallback (headless / dev / CI). The
+            // `peek()` call is sync — it reads the in-memory
+            // snapshot of the last `load()` or `save()`.
+            // On cold start (no I/O yet) `peek()` returns
+            // `undefined` and the helper falls back to the
+            // env var — the v0 behavior, preserved.
             isEnvoyHarnessReady: () => host.isEnvoyHarnessReady(),
             askEnvoyHarness: (msg) => host.askEnvoyHarness(msg),
             // Phase 8 / v1.2 — per-skill dispatch.
@@ -564,7 +572,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             // cost per node.
             askEnvoyHarnessSkill: (msg, skillId) =>
               host.askEnvoyHarnessSkill(msg, skillId),
-            signalOptIn: readSignalOptInEnv(),
+            signalOptIn: readEffectiveSignalOptIn(host._configStore.peek()),
             // Phase 8 / v1.1 — manifest read for the
             // signal router's dynamic vocabulary. The
             // host's `getNodeManifest()` is sync (the

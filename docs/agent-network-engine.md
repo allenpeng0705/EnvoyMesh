@@ -249,6 +249,64 @@ a B-class `tool-result`): "Sponsor: called `sponsor_friend` (force=true)". The
 B-class chat reply is 2 paragraphs: tool-call
 summary + tool-result summary.
 
+**v1.4 — Tauri UI for opt-in toggle + signal-routed
+badge + verifyMode.** The routing decisions v1.1
++ v1.2 + v1.3 make are now **owner-visible +
+owner-controllable**:
+- **"Auto-route mesh queries" toggle** in
+  Settings (end-user label for the v0
+  `ENVOY_HARNESS_SIGNAL_OPT_IN` env var +
+  the new `PersistedNodeConfig.signalOptIn`
+  field — Q2: persisted wins, env var as
+  fallback). The Tauri UI calls the new
+  `getSignalOptIn` / `setSignalOptIn`
+  methods on `NodeService`.
+- **"Verification mode" dropdown** (Light /
+  Standard / Strict — end-user labels for
+  `rule-only` / `cross-runtime` /
+  `cross-runtime-strict`) in Settings
+  (Q3 — single value, applies to all
+  runtimes). The Tauri UI calls the new
+  `getVerifyModeDefault` /
+  `setVerifyModeDefault` methods.
+  `setVerifyModeDefault(undefined)` clears
+  the override (the chain-verify loop
+  falls back to the per-runtime default).
+- **"Routed to `<skill>`" chat badge**
+  using the existing v1.2
+  `routingReason` + `targetSkill` +
+  `routingSignals` + `modelUsed` fields
+  (no new result fields — Q4 of the v1.4
+  sub-plan). When `routingReason ===
+  "signal-skill"`, the badge shows the
+  skill id (e.g. "Routed to
+  `setup-sponsor-friend`"). When
+  `routingReason === "signal"`, the
+  badge shows the first routing signal
+  (e.g. "Routed by `mesh`"). When
+  `routingReason === "opt-in-disabled"`,
+  the badge shows "Signal routing off".
+  When `routingReason === "default"`, no
+  badge (the user expected the default).
+- **Status indicator** in the chat header
+  showing mesh state + envoy-harness
+  readiness + opt-in state + verifyMode
+  posture. The data is read from
+  `getConnectionStatus` +
+  `isEnvoyHarnessReady` + the new
+  `getSignalOptIn` +
+  `getVerifyModeDefault` methods.
+
+**v1.4 ships the backend + design doc
+(`docs/taui-agent-routing-settings.md`).** The
+actual Tauri UI (Settings panel + chat badge +
+status indicator) lives in the Tauri monorepo;
+the Tauri team picks up the implementation in
+their own workstream. The end-user-first copy
+(e.g. "Auto-route mesh queries" instead of
+"signalOptIn=enabled") is documented in the
+Tauri design doc.
+
 **Per-skill matching algorithm (Q1 of the v1.2
 sub-plan):**
 

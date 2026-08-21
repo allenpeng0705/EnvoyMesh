@@ -60,6 +60,8 @@ import {
   normalizeSkillId,
   resultArtifactsToContentBlocks,
 } from "./chain-map.js";
+import type { PersistedNodeConfig } from "./node-config-store.js";
+import { readEffectiveVerifyModeDefault } from "./node-config-loader.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -126,6 +128,22 @@ export interface ChainVerifyLoopDeps {
    */
   criticality?: "normal" | "high";
   now?: () => Date;
+  /**
+   * Phase 8 / v1.4 — sync accessor for the persisted
+   * node config. Used to resolve the effective
+   * `verifyMode` default via
+   * `readEffectiveVerifyModeDefault`. Sync because
+   * the loop is invoked from sync code paths
+   * (orchestrator handlers); the persisted config
+   * is read via the store's in-memory `peek()`
+   * (no disk I/O at this layer).
+   *
+   * **When absent (tests / older callers):** the
+   * loop falls back to the per-runtime default
+   * (`defaultVerifyModeForWorker(workerRuntime)`)
+   * — the v0 behavior, preserved.
+   */
+  getNodeConfig?: () => PersistedNodeConfig | undefined;
 }
 
 /** Structural stand-in for the cross-verifier so tests can stub it. */
@@ -160,12 +178,23 @@ export interface ChainVerifyLoopResult {
  * cross-checking an OpenClaw-writes job with
  * envoy-harness is rare in v0.
  *
- * **Why a function, not a per-node config field:**
- * the Q4 default is a design decision, not an
- * operator preference. The owner can override
- * per-job via `ChainMandate.verifyMode`. A
- * per-node config field for the default is a
- * follow-up (out of v0 scope).
+ * **v1.4 — operator override:** the
+ * `PersistedNodeConfig.verifyModeDefault` field
+ * (Q3 of the v1.4 sub-plan) overrides this
+ * per-runtime default. The Tauri UI writes the
+ * field; the loop reads the effective value via
+ * `readEffectiveVerifyModeDefault(getNodeConfig(),
+ * workerRuntime)`. When the field is unset, this
+ * function is the final fallback. Per-job
+ * `ChainMandate.verifyMode` still wins over
+ * both — Team-job authors keep the per-mandate
+ * override.
+ *
+ * **Re-exported from `node-config-loader.ts`**
+ * so the settings API can call it without
+ * pulling in the heavier chain-verify-loop
+ * module. The function itself lives here
+ * (where the per-runtime policy is defined).
  */
 export function defaultVerifyModeForWorker(
   workerRuntime: AgentRuntime,
@@ -180,6 +209,16 @@ export function shouldEscalateToCrossAgent(
   opts: {
     mandate: ChainMandate;
     criticality?: "normal" | "high";
+    /**
+     * Phase 8 / v1.4 — the loop-resolved effective
+     * verifyMode. Wins over `mandate.verifyMode`
+     * when set. Typically passed in by
+     * `runChainVerificationLoop` after reading
+     * the per-node config + per-runtime default.
+     * Tests + older callers omit it (v0 behavior
+     * preserved: `mandate.verifyMode ?? "rule-only"`).
+     */
+    effectiveVerifyMode?: "rule-only" | "cross-runtime" | "cross-runtime-strict";
   },
 ): boolean {
   // Phase 8 / Step 6 — Q4 (a) + (b): when the
@@ -189,7 +228,16 @@ export function shouldEscalateToCrossAgent(
   // regardless of the rule verdict. The rule
   // pass still runs first; the cross is in
   // addition to it.
-  const verifyMode = opts.mandate.verifyMode ?? "rule-only";
+  //
+  // Phase 8 / v1.4 — the effective verifyMode
+  // (per-node config + per-runtime default) wins
+  // over the per-mandate value when the loop
+  // provided it. The per-mandate value is still
+  // the v0 default when the loop didn't.
+  const verifyMode =
+    opts.effectiveVerifyMode ??
+    opts.mandate.verifyMode ??
+    "rule-only";
   if (verifyMode === "cross-runtime" || verifyMode === "cross-runtime-strict") {
     return true;
   }
@@ -276,6 +324,23 @@ export async function runChainVerificationLoop(
   const award = state.awards.get(partial.subtaskId);
   const workerPeerId = award?.workerPeerId ?? partial.workerPeerId;
   const workerRuntime = resolveWorkerRuntime(deps, workerPeerId);
+  // Phase 8 / v1.4 — resolve the effective
+  // verifyMode for this subtask. Precedence
+  // (Q3 of the v1.4 sub-plan):
+  // 1. `state.chainMandate.verifyMode` (per-job,
+  //    set by the Team-job author — wins).
+  // 2. `PersistedNodeConfig.verifyModeDefault`
+  //    (per-node, set by the Tauri UI owner).
+  // 3. The per-runtime default
+  //    (`defaultVerifyModeForWorker(workerRuntime)`).
+  //
+  // The `getNodeConfig?.()` is sync (in-memory
+  // peek). When absent (tests / older callers),
+  // step 2 is skipped and the loop falls back
+  // to the per-runtime default — v0 behavior.
+  const effectiveVerifyMode =
+    state.chainMandate.verifyMode ??
+    readEffectiveVerifyModeDefault(deps.getNodeConfig?.(), workerRuntime);
   const now = (deps.now ?? (() => new Date()))();
   const correlationId = envelope.correlationId ?? `${subtask.chainId}:${subtask.subtaskId}`;
 
@@ -343,6 +408,12 @@ export async function runChainVerificationLoop(
   if (!shouldEscalateToCrossAgent(combined, {
     mandate: state.chainMandate,
     criticality,
+    // Phase 8 / v1.4 — pass the loop-resolved
+    // effective verifyMode so the per-node
+    // override (Tauri UI) wins over the
+    // per-mandate value when the mandate didn't
+    // set it.
+    effectiveVerifyMode,
   })) {
     return resultOutcome;
   }
@@ -421,9 +492,17 @@ export async function runChainVerificationLoop(
     // and `rule-only` use the precedence (pass
     // wins; in `cross-runtime` with both rule and
     // cross in the list, a pass from either wins).
+    //
+    // Phase 8 / v1.4 — pass the loop-resolved
+    // effective verifyMode so the per-node
+    // override (Tauri UI) is honored by
+    // `combineToVerdict` too. When the loop
+    // didn't compute it (tests / older
+    // callers), `state.chainMandate.verifyMode`
+    // is the v0 fallback.
     const finalVerdict = combineToVerdict(
       [...verdicts, crossVerdict],
-      state.chainMandate.verifyMode,
+      effectiveVerifyMode,
     );
     return {
       verdict: finalVerdict,

@@ -828,6 +828,41 @@ export interface NodeConfig {
    */
   /** Phase 38 — WebRTC ICE servers (STUN/TURN) for voice/video calls. */
   iceServers?: { urls: string; username?: string; credential?: string }[];
+  /**
+   * Phase 8 / v1.4 — per-node opt-in flag for
+   * the signal-based router (v1.1 + v1.2).
+   * When `"disabled"`, the router never picks
+   * envoy-harness regardless of mesh keywords,
+   * tool names, or hint prefixes — the Tauri
+   * user prompt always goes to OpenClaw.
+   *
+   * **Resolution order** (see
+   * `readEffectiveSignalOptIn` in the Node
+   * host): persisted → env var → default
+   * (`"enabled"`).
+   *
+   * **Default (when undefined):** the env
+   * var + implicit default. Existing nodes
+   * without the field keep v0 behavior.
+   */
+  signalOptIn?: "enabled" | "disabled";
+  /**
+   * Phase 8 / v1.4 — per-node default for the
+   * chain-verify mode. Overrides the per-runtime
+   * `defaultVerifyModeForWorker(runtime)`
+   * default in `chain-verify-loop.ts`. Applies
+   * to all Team jobs on the node — unless the
+   * job author set `ChainMandate.verifyMode`
+   * explicitly (per-mandate wins over per-node).
+   *
+   * **Default (when undefined):** the
+   * per-runtime default (envoy-harness →
+   * `cross-runtime`, others → `rule-only`).
+   */
+  verifyModeDefault?:
+    | "rule-only"
+    | "cross-runtime"
+    | "cross-runtime-strict";
 }
 
 /**
@@ -1739,6 +1774,30 @@ export interface UpdateNodeConfigParams {
   setupSponsorFriendProofOfContext?: string;
   setupSponsorFriendMaxAttempts?: number;
   setupSponsorFriendRetryDelayMs?: number;
+  /**
+   * Phase 8 / v1.4 — per-node opt-in flag for
+   * the signal-based router (v1.1 + v1.2).
+   * When `"disabled"`, the router never picks
+   * envoy-harness regardless of mesh keywords
+   * or tool names. When undefined, the
+   * `ENVOY_HARNESS_SIGNAL_OPT_IN` env var is
+   * the fallback. The Tauri UI writes this
+   * field to give owners a durable switch.
+   */
+  signalOptIn?: "enabled" | "disabled";
+  /**
+   * Phase 8 / v1.4 — per-node default for the
+   * chain-verify mode. Overrides the per-runtime
+   * default when the Team-job author didn't
+   * set `ChainMandate.verifyMode` explicitly.
+   * Pass `undefined` to clear the override
+   * (the loop falls back to the per-runtime
+   * default).
+   */
+  verifyModeDefault?:
+    | "rule-only"
+    | "cross-runtime"
+    | "cross-runtime-strict";
 }
 
 export interface RunCapabilityDiscoveryParams {
