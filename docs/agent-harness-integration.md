@@ -802,3 +802,73 @@ fan-out within a job (whole-job only).
     fields power the new chat badge) +
     `agent-harness-integration-v1-4.md`
     DONE stamp.
+
+- **2026-08-21 (v1.5 — cost cap + multi-provider
+  signal hints — DONE):** the routing
+  decisions v1.1 + v1.2 + v1.3 + v1.4 make now
+  carry two new inline hints: `/provider:NAME`
+  (the primary v1.5 feature — always on) and
+  `/cost:N` (a dormant cost cap, gated by
+  `ENVOY_HARNESS_COST_CAP_ENABLED=1`, default
+  off). The Tauri UI is the **primary UX**
+  (friendly Model dropdown + Spending limit
+  slider in the chat input + owner-wide
+  defaults in Settings); the prompt hints are
+  the **power-user escape hatch** (developer-
+  style syntax; the regular user never sees
+  them). 1 commit on `envoy_harness_integration`
+  branch (the user delegated commit; bundled
+  v1.5.1 + v1.5.2 + v1.5.3 into a single commit
+  at the end of v1.5). 19 new tests (12
+  `extractPromptHints` + 4 `routeUserPrompt`
+  integration + 5 dispatch e2e) + 277
+  pre-existing tests regression-clean on the
+  affected paths. Detailed plan:
+  `docs/agent-harness-integration-v1-5.md`
+  (sub-plan with 10 locked design questions).
+  The Tauri team picks up the actual UI work
+  in their own workstream; the design doc
+  update is in `docs/taui-agent-routing-
+  settings.md` §10 (per-message Model
+  dropdown + Spending limit slider + owner-
+  wide defaults in Settings). The **end-
+  user-first** principle (AGENTS.md) drove
+  the v1.5 framing: friendly Tauri UI for
+  the regular user, developer-style prompt
+  hints for the power user. **Keep it
+  simple** (per the user): the cost feature
+  is a single env var (no persisted field,
+  no settings API, no helper file). The
+  cost infrastructure is in place
+  (parsing + recording); the runtime
+  enforcement is a future chunk.
+  - **v1.5.1 — hint extraction + router
+    integration.** New
+    `extractPromptHints` helper in
+    `user-prompt-router.ts` + new
+    `INLINE_HINT_REGEX` +
+    `COST_CAP_ENABLED_ENV_VAR` + new fields
+    on `RouteUserPromptDecision`
+    (`costCapUsd?` + `providerHint?` +
+    `cleanPrompt`). 16 new unit tests.
+  - **v1.5.2 — dispatch integration.** EH
+    runtime's `ask` + `askSkill` accept
+    `providerHint?` (logged in audit trail;
+    dormant — adapter doesn't switch
+    providers yet). `NodeServiceImpl.askEnvoyHarness`
+    + `askEnvoyHarnessSkill` accept `opts?` for
+    hints. `readEffectiveCostCapUsd` helper
+    (env-var gated) computes the effective
+    cost cap. The dispatch in
+    `runOwnerAgentTurnViaRuntime` threads the
+    hints + uses `decision.cleanPrompt`. 5
+    new e2e tests.
+  - **v1.5.3 — Tauri UI design doc + closeout.**
+    `docs/taui-agent-routing-settings.md` §10
+    (per-message Model dropdown + Spending
+    limit slider + owner-wide defaults in
+    Settings; end-user-first copy) + this
+    entry + `agent-network-engine.md` §2.2.2
+    update + `agent-harness-integration-v1-4.md`
+    status note + `agent-harness-integration-v1-5.md`
+    DONE stamp.

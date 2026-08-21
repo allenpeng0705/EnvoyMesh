@@ -307,6 +307,74 @@ their own workstream. The end-user-first copy
 "signalOptIn=enabled") is documented in the
 Tauri design doc.
 
+**v1.5 — Model provider + spending limit
+(dormant cost).** The Tauri UI is the
+**primary UX** (friendly dropdowns + sliders);
+the prompt hints are the **power-user
+escape hatch** (developer-style syntax). The
+two coexist — the regular user never sees the
+hint syntax; the power user can use it for
+per-message control.
+
+- **`/provider:NAME` hint** (the **primary
+  v1.5 feature**, always on). Parsed
+  anywhere in the prompt (Q2). The dispatch
+  threads the hint to the EH runtime, which
+  logs it in the audit trail. The adapter
+  doesn't switch providers yet (dormant —
+  the EH runtime's per-call provider override
+  is a future chunk in `envoy-harness`).
+  Resolution order (Q5): `/provider:foo`
+  falls back to the node's default; the
+  hint is recorded on the decision for the
+  audit log.
+- **`/cost:N` hint** (the **dormant cost
+  feature**, gated by
+  `ENVOY_HARNESS_COST_CAP_ENABLED=1`,
+  default off). Parsed anywhere in the
+  prompt (Q2). The dispatch computes the
+  effective cost cap (per-prompt > per-skill
+  > v0 default) via the
+  `readEffectiveCostCapUsd` helper. **When
+  the flag is off** (default), the cap is
+  parsed + recorded on the decision but
+  the runtime uses the per-skill default —
+  v0 behavior, preserved. **When the flag
+  is on**, the per-prompt cap wins. The
+  EH runtime's actual cost tracking is
+  not mature enough to enforce a per-call
+  cap reliably yet; the env var is the
+  simplest flag until a future chunk
+  graduates it to a persisted field.
+- **Tauri UI affordances** (per-message +
+  owner-wide). The chat input area has a
+  **Model dropdown** ("Default" / "OpenAI" /
+  "Ollama (local)" / "Anthropic") + a
+  **Spending limit slider** ("$0.10 (cheap)"
+  / "$0.50 (balanced)" / "$1.00 (deep)" /
+  "Unlimited"). The Settings panel has
+  owner-wide defaults (the Tauri UI sets
+  them via new `NodeService` methods).
+  **The Tauri UI is the primary surface**;
+  the prompt hints are the escape hatch.
+- **Hint discovery.** A tooltip on the
+  Model dropdown + a link to the docs is
+  enough to surface the hint syntax to
+  power users. The Tauri team shouldn't
+  put the hint syntax in the primary UI.
+
+**v1.5 ships the backend + design doc
+update.** The Tauri UI work lives in
+`docs/taui-agent-routing-settings.md` §10
++ the Tauri monorepo. The **end-user-first**
+principle (AGENTS.md) drove the framing:
+**Tauri UI = primary UX**; **prompt hints
+= power-user escape hatch**; **cost is
+dormant by default**. **Keep it simple**
+(per the user): the cost feature is a single
+env var (no persisted field, no helper
+file).
+
 **Per-skill matching algorithm (Q1 of the v1.2
 sub-plan):**
 

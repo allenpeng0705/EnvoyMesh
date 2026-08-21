@@ -110,6 +110,59 @@ const LSP_REGEX = /\blsp_\w+/i;
 const HINT_PREFIXES: ReadonlyArray<string> = ["!eh", "/eh"];
 
 /**
+ * Phase 8 / v1.5 — the inline hint regex.
+ *
+ * Matches `/cost:N` and `/provider:NAME`
+ * anywhere in the prompt (case-insensitive).
+ * The value is alphanumeric + dash + dot
+ * (cost decimals like `0.5` are valid;
+ * future provider names like `openai-4`
+ * are valid).
+ *
+ * **Why slash-prefixed inline** (Q1 of the
+ * v1.5 sub-plan): the slash is the "command
+ * marker" — consistent with the v0 `/eh`
+ * prefix. The hints are modifiers (cap
+ * cost, force provider), not commands
+ * (route to envoy-harness), so they appear
+ * inline anywhere in the prompt (Q2).
+ *
+ * **Why case-insensitive:** `/COST:0.5`
+ * should work the same as `/cost:0.5`.
+ *
+ * **Why alphanumeric + dash + dot for the
+ * value:** cost values are decimal numbers
+ * (`0.5`, `1.0`); future provider names
+ * like `openai-4` or `ollama-local` are
+ * valid. The dispatch validates the
+ * parsed value (Q4 of the v1.5 sub-plan)
+ * — `Number.parseFloat("0.5")` is 0.5;
+ * `Number.parseFloat("abc")` is NaN.
+ */
+const INLINE_HINT_REGEX = /\/(cost|provider):([\w.-]+)/gi;
+
+/**
+ * Phase 8 / v1.5 — the env-var name the
+ * host uses to opt into the per-prompt
+ * cost cap. Default: disabled (the
+ * `/cost:N` hint is parsed + recorded on
+ * the decision but the dispatch uses the
+ * per-skill default — v0 behavior).
+ *
+ * **Why a separate env var (Q9 of the v1.5
+ * sub-plan):** the cost feature is
+ * deliberately dormant in v1.5. The EH
+ * runtime's cost tracking isn't mature
+ * enough to enforce a per-call cap
+ * reliably yet. A single env var (not a
+ * persisted field) is the simplest flag —
+ * when a future chunk lands real cost
+ * tracking, the flag can graduate to a
+ * persisted field. **Keep it simple.**
+ */
+export const COST_CAP_ENABLED_ENV_VAR = "ENVOY_HARNESS_COST_CAP_ENABLED";
+
+/**
  * The env-var name the host uses to disable
  * signal-based opt-in. Default: enabled.
  */
@@ -318,6 +371,37 @@ export interface RouteUserPromptDecision {
    * badge.
    */
   targetSkill?: string;
+  /**
+   * Phase 8 / v1.5 — the per-call cost cap
+   * parsed from `/cost:N` in the prompt
+   * (Q1 + Q2 of the v1.5 sub-plan). The
+   * dispatch uses this only when
+   * `ENVOY_HARNESS_COST_CAP_ENABLED=1` is
+   * set; otherwise the per-skill default
+   * wins (Q9 + Q10 — keep the cost feature
+   * dormant by default).
+   */
+  costCapUsd?: number;
+  /**
+   * Phase 8 / v1.5 — the provider name
+   * parsed from `/provider:NAME` in the
+   * prompt (Q1 + Q2). The dispatch uses
+   * this to override the node's default
+   * configured provider (Q8). No flag —
+   * the provider hint is the v1.5
+   * actively-used feature.
+   */
+  providerHint?: string;
+  /**
+   * Phase 8 / v1.5 — the prompt text with
+   * the inline hints stripped. The LLM
+   * sees the clean prompt; the user never
+   * sees the hints in the chat reply.
+   *
+   * **When no hints were parsed:** equal
+   * to the original prompt (no-op).
+   */
+  cleanPrompt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -385,16 +469,33 @@ export function routeUserPrompt(
       signals: [],
       hintPrefixLength: undefined,
       targetSkill: undefined,
+      // v1.5 — no hints when opt-in is
+      // disabled (the router short-circuits).
+      costCapUsd: undefined,
+      providerHint: undefined,
+      cleanPrompt: input.prompt,
     };
   }
 
-  // 2. Scan the prompt for signals.
-  //    v1.1 — pass the dynamic `envoyHarnessTags`
-  //    from the merged manifest (per Q2 / Q7 of
-  //    the v1.1 sub-plan). The scanner uses the
-  //    dynamic vocabulary when provided; falls
-  //    back to the v0 `MESH_KEYWORDS` when
-  //    undefined.
+  // 2. v1.5 — extract inline hints
+  //    (`/cost:N`, `/provider:NAME`) from the
+  //    prompt. The hints are stripped from the
+  //    cleanPrompt (the LLM doesn't see them);
+  //    the parsed values are returned on the
+  //    decision for the dispatch. The original
+  //    `input.prompt` is preserved (the signal
+  //    scan uses the original — a signal after
+  //    the hint still fires).
+  const { cleanPrompt, hints } = extractPromptHints(input.prompt);
+
+  // 2a. Scan the **original** prompt for signals
+  //     (so a signal after the hint still fires).
+  //     v1.1 — pass the dynamic `envoyHarnessTags`
+  //     from the merged manifest (per Q2 / Q7 of
+  //     the v1.1 sub-plan). The scanner uses the
+  //     dynamic vocabulary when provided; falls
+  //     back to the v0 `MESH_KEYWORDS` when
+  //     undefined.
   const signals = scanSignals(input.prompt, input.envoyHarnessTags);
 
   // 3. No signals → default OpenClaw.
@@ -405,6 +506,9 @@ export function routeUserPrompt(
       signals: [],
       hintPrefixLength: undefined,
       targetSkill: undefined,
+      costCapUsd: hints.costCapUsd,
+      providerHint: hints.providerHint,
+      cleanPrompt,
     };
   }
 
@@ -432,6 +536,9 @@ export function routeUserPrompt(
           ? signals[0].token.length
           : undefined,
         targetSkill,
+        costCapUsd: hints.costCapUsd,
+        providerHint: hints.providerHint,
+        cleanPrompt,
       };
     }
     // 5b. v1.1 — free-form LLM ask (also v1.2's
@@ -444,6 +551,9 @@ export function routeUserPrompt(
         ? signals[0].token.length
         : undefined,
       targetSkill: undefined,
+      costCapUsd: hints.costCapUsd,
+      providerHint: hints.providerHint,
+      cleanPrompt,
     };
   }
 
@@ -455,6 +565,9 @@ export function routeUserPrompt(
       ? signals[0].token.length
       : undefined,
     targetSkill: undefined,
+    costCapUsd: hints.costCapUsd,
+    providerHint: hints.providerHint,
+    cleanPrompt,
   };
 }
 
@@ -629,6 +742,118 @@ function findTagInPrompt(lower: string, tag: string): number {
  */
 function escapeRegex(literal: string): string {
   return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8 / v1.5 — inline hint extraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Phase 8 / v1.5 — the parsed inline hints
+ * from the user's prompt. The router extracts
+ * these from the prompt text + strips them
+ * before the LLM sees the prompt.
+ *
+ * **Both fields are optional** — a prompt
+ * without hints is valid (the v0 behavior).
+ * The dispatch uses `costCapUsd` only when
+ * `ENVOY_HARNESS_COST_CAP_ENABLED=1` is set
+ * (Q9 + Q10 of the v1.5 sub-plan); the
+ * provider hint always works (no flag).
+ */
+export interface ParsedPromptHints {
+  /**
+   * Per-call cost cap (USD). Parsed from
+   * `/cost:N` in the prompt. When `NaN`/
+   * invalid (e.g. `/cost:abc`), the dispatch
+   * falls back to the per-skill default
+   * (Q4 of the v1.5 sub-plan).
+   */
+  costCapUsd?: number;
+  /**
+   * Provider name (e.g. `"openai"`,
+   * `"ollama"`). Parsed from `/provider:NAME`
+   * in the prompt. When unknown (e.g.
+   * `/provider:foo`), the dispatch falls back
+   * to the node's default (Q5 of the v1.5
+   * sub-plan).
+   */
+  providerHint?: string;
+}
+
+/**
+ * Phase 8 / v1.5 — extract inline hints
+ * (`/cost:N`, `/provider:NAME`) from the
+ * prompt.
+ *
+ * **Pure function:** no side effects.
+ *
+ * **Hunt-and-strip:** the function finds
+ * all matching tokens (anywhere in the
+ * prompt, case-insensitive) and returns:
+ * 1. The clean prompt (with the hints
+ *    stripped + trimmed + whitespace
+ *    collapsed). The LLM sees the clean
+ *    prompt; the user never sees the hints
+ *    in the chat reply.
+ * 2. The parsed hints (deduplicated; first
+ *    occurrence wins on ties).
+ *
+ * **What it doesn't do:** it doesn't
+ * validate the hint values. A `/cost:abc`
+ * would set `costCapUsd: NaN`; the
+ * dispatch (caller) checks `Number.isFinite`
+ * + falls back to the per-skill default for
+ * invalid values.
+ *
+ * **Why the slash is required:** the
+ * plain `cost:0.5` (no slash) is too
+ * ambiguous — it would match legitimate
+ * English text. The slash is the "command
+ * marker" (consistent with the v0 `/eh`
+ * prefix and the inline `lsp_*` family).
+ *
+ * @example
+ * extractPromptHints("explain mesh /cost:0.5 /provider:openai")
+ * // → {
+ * //     cleanPrompt: "explain mesh",
+ * //     hints: { costCapUsd: 0.5, providerHint: "openai" },
+ * //   }
+ *
+ * @param prompt The raw prompt text.
+ * @returns The clean prompt + the parsed hints.
+ */
+export function extractPromptHints(prompt: string): {
+  cleanPrompt: string;
+  hints: ParsedPromptHints;
+} {
+  const hints: ParsedPromptHints = {};
+  // Replace each match with an empty string.
+  // The regex is global + case-insensitive,
+  // so we iterate over all matches.
+  const cleanPrompt = prompt.replace(INLINE_HINT_REGEX, (match, kind, value) => {
+    const lowerKind = (kind as string).toLowerCase();
+    const val = (value as string).toLowerCase();
+    if (lowerKind === "cost" && hints.costCapUsd === undefined) {
+      const parsed = Number.parseFloat(val);
+      // NaN → undefined; the dispatch
+      // handles invalid values (Q4 of the
+      // v1.5 sub-plan). We record `undefined`
+      // here so the field is absent.
+      if (Number.isFinite(parsed)) {
+        hints.costCapUsd = parsed;
+      }
+    } else if (lowerKind === "provider" && hints.providerHint === undefined) {
+      hints.providerHint = val;
+    }
+    return ""; // Strip the hint.
+  });
+  // Collapse multiple spaces + trim. The
+  // LLM doesn't care about extra whitespace
+  // (mostly); the trim removes leading/
+  // trailing space from the strip.
+  const collapsed = cleanPrompt.replace(/\s+/g, " ").trim();
+  return { cleanPrompt: collapsed, hints };
 }
 
 // ---------------------------------------------------------------------------

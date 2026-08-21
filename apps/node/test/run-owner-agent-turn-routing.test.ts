@@ -346,8 +346,14 @@ describe("runOwnerAgentTurnViaRuntime — hint prefix stripping", () => {
       "!eh translate this to French",
     );
     expect(out.modelUsed).toBe("envoy-harness");
+    // v1.5 — the ask method now accepts the
+    // v1.5 prompt hints (providerHint +
+    // costCapUsd). The dispatch passes them
+    // as the 2nd arg. The test prompt has no
+    // hints, so both fields are undefined.
     expect(spies.askEnvoyHarness).toHaveBeenCalledWith(
       "translate this to French",
+      { providerHint: undefined, costCapUsd: undefined },
     );
     // The LLM never saw the `!eh` prefix.
   });
@@ -363,6 +369,7 @@ describe("runOwnerAgentTurnViaRuntime — hint prefix stripping", () => {
     expect(out.modelUsed).toBe("envoy-harness");
     expect(spies.askEnvoyHarness).toHaveBeenCalledWith(
       "translate this to French",
+      { providerHint: undefined, costCapUsd: undefined },
     );
   });
 
@@ -396,7 +403,10 @@ describe("runOwnerAgentTurnViaRuntime — hint prefix stripping", () => {
       "   !eh do the thing",
     );
     expect(out.modelUsed).toBe("envoy-harness");
-    expect(spies.askEnvoyHarness).toHaveBeenCalledWith("do the thing");
+    expect(spies.askEnvoyHarness).toHaveBeenCalledWith("do the thing", {
+      providerHint: undefined,
+      costCapUsd: undefined,
+    });
   });
 });
 
@@ -799,6 +809,7 @@ describe("runOwnerAgentTurnViaRuntime — v1.2 per-skill dispatch", () => {
     expect(spies.askEnvoyHarnessSkill).toHaveBeenCalledWith(
       "set up a mesh sponsor bond",
       "setup-sponsor-friend",
+      { providerHint: undefined, costCapUsd: undefined },
     );
     // The free-form LLM ask is NOT called when
     // the per-skill path succeeds.
@@ -966,5 +977,175 @@ describe("runOwnerAgentTurnViaRuntime — v1.2 per-skill dispatch", () => {
     } finally {
       warnSpy.mockRestore();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 8 / v1.5 — prompt hint dispatch integration
+// ---------------------------------------------------------------------------
+
+describe("runOwnerAgentTurnViaRuntime — v1.5 prompt hints", () => {
+  it("threads the provider hint to askEnvoyHarnessSkill (v1.2 per-skill path)", async () => {
+    const ENVOY_HARNESS_SKILLS = [
+      { skillId: "setup-sponsor-friend", tags: ["mesh", "bond", "sponsor"] },
+    ] as const;
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      getNodeManifest: () => ({
+        peerId: "local",
+        skills: [
+          {
+            runtime: "envoy-harness",
+            skillId: "setup-sponsor-friend",
+            tags: ["mesh", "bond", "sponsor"],
+            costCeilingUsd: 0.5,
+            description: "Setup sponsor friend",
+            inputSchema: { type: "object" },
+          },
+        ],
+      }),
+      envoyHarnessSkills: ENVOY_HARNESS_SKILLS,
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "set up a mesh sponsor bond /provider:openai",
+    );
+    expect(out.routingReason).toBe("signal-skill");
+    // v1.5 — the dispatch passes the provider
+    // hint to the ask method.
+    expect(spies.askEnvoyHarnessSkill).toHaveBeenCalledWith(
+      "set up a mesh sponsor bond",
+      "setup-sponsor-friend",
+      { providerHint: "openai", costCapUsd: undefined },
+    );
+  });
+
+  it("threads the cost cap to askEnvoyHarnessSkill (Q7 precedence)", async () => {
+    const ENVOY_HARNESS_SKILLS = [
+      { skillId: "code-edit", tags: ["code", "edit"] },
+    ] as const;
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      getNodeManifest: () => ({
+        peerId: "local",
+        skills: [
+          {
+            runtime: "envoy-harness",
+            skillId: "code-edit",
+            tags: ["code", "edit"],
+            costCeilingUsd: 0.5, // per-skill default
+            description: "Code edit",
+            inputSchema: { type: "object" },
+          },
+        ],
+      }),
+      envoyHarnessSkills: ENVOY_HARNESS_SKILLS,
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "/cost:1.0 /provider:openai edit this code",
+    );
+    expect(out.routingReason).toBe("signal-skill");
+    // v1.5 — the dispatch passes the per-prompt
+    // cost cap to the ask method. The host
+    // applies the env-var flag (Q9 + Q10); the
+    // flag is off in tests, so the per-prompt
+    // cap is recorded on the decision but the
+    // host uses the per-skill default at
+    // runtime.
+    expect(spies.askEnvoyHarnessSkill).toHaveBeenCalledWith(
+      "edit this code", // cleanPrompt (v1.5 hints stripped)
+      "code-edit",
+      { providerHint: "openai", costCapUsd: 1.0 },
+    );
+  });
+
+  it("threads the hints to the v1.1 free-form LLM ask path", async () => {
+    // The prompt has "mesh" (a tag on the
+    // manifest's skill). The skill's tags
+    // match, but the v1.2 pickTargetSkill
+    // returns the skill (mesh matches
+    // mesh-based-skill with 1 hit, no other
+    // skill has "mesh"). Wait, that would
+    // actually pick a skill... Let me use
+    // a tie instead: 2 skills both have
+    // "mesh" in their tags → tie → fall
+    // through to free-form LLM ask.
+    const ENVOY_HARNESS_SKILLS = [
+      { skillId: "setup-sponsor-friend", tags: ["mesh", "bond", "sponsor"] },
+      { skillId: "peer-list", tags: ["mesh", "observability"] },
+    ] as const;
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      getNodeManifest: () => ({
+        peerId: "local",
+        skills: [
+          {
+            runtime: "envoy-harness",
+            skillId: "setup-sponsor-friend",
+            tags: ["mesh", "bond", "sponsor"],
+            description: "Setup sponsor friend",
+            inputSchema: { type: "object" },
+          },
+          {
+            runtime: "envoy-harness",
+            skillId: "peer-list",
+            tags: ["mesh", "observability"],
+            description: "Peer list",
+            inputSchema: { type: "object" },
+          },
+        ],
+      }),
+      envoyHarnessSkills: ENVOY_HARNESS_SKILLS,
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "explain the mesh /provider:ollama /cost:0.25",
+    );
+    // v1.2 — both skills have 1 mesh match
+    // (tie) → fall through to v1.1 free-form
+    // LLM ask (Q1 of the v1.2 sub-plan).
+    expect(out.routingReason).toBe("signal");
+    expect(out.targetSkill).toBeUndefined();
+    // v1.5 — the hints are threaded to the
+    // free-form ask method.
+    expect(spies.askEnvoyHarness).toHaveBeenCalledWith(
+      "explain the mesh",
+      { providerHint: "ollama", costCapUsd: 0.25 },
+    );
+  });
+
+  it("strips both the v1.5 inline hints AND the v0 prefix from the cleanPrompt", async () => {
+    // The user typed both `!eh` (v0 prefix) AND
+    // `/provider:openai /cost:0.5` (v1.5 inline).
+    // The LLM sees neither.
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "!eh translate this /provider:openai /cost:0.5",
+    );
+    expect(out.modelUsed).toBe("envoy-harness");
+    // The LLM sees only the message text.
+    expect(spies.askEnvoyHarness).toHaveBeenCalledWith(
+      "translate this",
+      { providerHint: "openai", costCapUsd: 0.5 },
+    );
+  });
+
+  it("cleanPrompt equals the original prompt when no v1.5 hints are present", async () => {
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+    });
+    await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "!eh translate this to French",
+    );
+    // No v1.5 hints → opts is `{ providerHint: undefined, costCapUsd: undefined }`.
+    expect(spies.askEnvoyHarness).toHaveBeenCalledWith(
+      "translate this to French",
+      { providerHint: undefined, costCapUsd: undefined },
+    );
   });
 });

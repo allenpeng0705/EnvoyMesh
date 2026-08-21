@@ -1439,6 +1439,67 @@ import { createRagService, type RagService } from "./rag-service.js";
 const MAX_FRIEND_MATCHING_PREFS_CHARS = 4096;
 
 /**
+ * Phase 8 / v1.5 — the env-var that gates the
+ * per-prompt cost cap. When set to `"1"`, the
+ * `/cost:N` hint is honored (the per-prompt
+ * cap wins over the per-skill default).
+ * When unset (the default), the cost cap is
+ * parsed + recorded on the decision but the
+ * runtime uses the per-skill default — the
+ * v0 behavior, preserved.
+ *
+ * **Why a single env var (Q9 of the v1.5
+ * sub-plan, "keep it simple"):** the cost
+ * feature is dormant in v1.5. The EH
+ * runtime's cost tracking isn't mature
+ * enough to enforce a per-call cap
+ * reliably yet. The env var is the
+ * simplest flag; a future chunk can
+ * graduate to a persisted field when the
+ * runtime has real cost tracking.
+ */
+const COST_CAP_ENABLED_ENV_VAR = "ENVOY_HARNESS_COST_CAP_ENABLED";
+
+/**
+ * Phase 8 / v1.5 — resolve the effective cost
+ * cap for a single ask call.
+ *
+ * **Precedence** (Q7 of the v1.5 sub-plan):
+ * 1. `perPromptCap` (parsed from `/cost:N`)
+ *    when `COST_CAP_ENABLED_ENV_VAR === "1"`.
+ * 2. `defaultCap` (the per-skill
+ *    `costCeilingUsd` for `askEnvoyHarnessSkill`;
+ *    the v0 default `1.0` for `askEnvoyHarness`).
+ *
+ * **Why a small helper (vs. inline in both
+ * ask methods):** the precedence rule is
+ * duplicated in 2 places (the free-form
+ * ask + the per-skill ask). The helper
+ * is 3 lines; inline would be 3 lines per
+ * call site (6 total). The helper is
+ * also easy to test in isolation.
+ *
+ * @param perPromptCap The cap parsed from the
+ *   prompt (undefined when no hint).
+ * @param defaultCap The per-skill / v0
+ *   default to use when the flag is off or
+ *   no hint is present.
+ * @returns The effective cap to pass to the
+ *   runtime.
+ */
+function readEffectiveCostCapUsd(
+  perPromptCap: number | undefined,
+  defaultCap: number,
+): number {
+  const costCapEnabled =
+    process.env[COST_CAP_ENABLED_ENV_VAR] === "1";
+  if (costCapEnabled && perPromptCap !== undefined) {
+    return perPromptCap;
+  }
+  return defaultCap;
+}
+
+/**
  * Phase 42 — default `iceServers` injected into `call.invite` when the
  * caller did not provide a list and the home's `node-config.json` has none.
  * Three public STUN endpoints; TURN is user-configured (Phase 42H).
@@ -4874,7 +4935,10 @@ class NodeServiceImpl implements NodeService {
    * to the agent (the `ask()` call's `signal` option is set
    * by the chain worker in `chain-worker-executor.ts`).
    */
-  async askEnvoyHarness(prompt: string): Promise<string> {
+  async askEnvoyHarness(
+    prompt: string,
+    opts?: { providerHint?: string; costCapUsd?: number },
+  ): Promise<string> {
     const config = loadEnvoyHarnessRuntimeConfig();
     if (!config.ready) {
       // Matches the Step 1 stub error message — the
@@ -4885,7 +4949,18 @@ class NodeServiceImpl implements NodeService {
       throw new Error("envoy_harness_stub_phase_8_step_1");
     }
     const runtime = await this._getOrInitEnvoyHarnessRuntime();
-    return runtime.ask(prompt);
+    return runtime.ask(prompt, {
+      // v1.5 — thread the provider hint to the
+      // runtime's audit log (dormant: the
+      // adapter doesn't switch providers yet).
+      providerHint: opts?.providerHint,
+      // v1.5 — the cost cap is gated by
+      // ENVOY_HARNESS_COST_CAP_ENABLED. When
+      // off (default), we ignore the per-prompt
+      // cap and use the v0 default (1.0). When
+      // on, the per-prompt cap wins.
+      costCeilingUsd: readEffectiveCostCapUsd(opts?.costCapUsd, 1.0),
+    });
   }
 
   /**
@@ -4927,6 +5002,7 @@ class NodeServiceImpl implements NodeService {
   async askEnvoyHarnessSkill(
     message: string,
     skillId: string,
+    opts?: { providerHint?: string; costCapUsd?: number },
   ): Promise<string> {
     const config = loadEnvoyHarnessRuntimeConfig();
     if (!config.ready) {
@@ -4946,11 +5022,23 @@ class NodeServiceImpl implements NodeService {
       throw new Error(`unknown envoy-harness skill: ${skillId}`);
     }
     const runtime = await this._getOrInitEnvoyHarnessRuntime();
-    const costCeilingUsd = skill.costCeilingUsd ?? 1.0;
+    // v1.5 — Q7 (cost) precedence:
+    // per-prompt `/cost:N` (gated by the
+    // env-var flag) > per-skill `costCeilingUsd`
+    // > v0 default (1.0). The helper checks the
+    // env-var flag + returns the effective value.
+    const costCeilingUsd = readEffectiveCostCapUsd(
+      opts?.costCapUsd,
+      skill.costCeilingUsd ?? 1.0,
+    );
     const result = await runtime.askSkill(message, {
       skillId,
       costCeilingUsd,
       deadlineMs: 60_000, // Q4 — generous headroom for code skills
+      // v1.5 — thread the provider hint to the
+      // runtime's audit log (dormant: the
+      // adapter doesn't switch providers yet).
+      providerHint: opts?.providerHint,
     });
     const formatted = formatSkillResult(result);
     // v1.3 (Q6) — silent fall-through: the formatter

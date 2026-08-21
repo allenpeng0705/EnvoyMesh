@@ -1108,13 +1108,26 @@ export function buildRunOwnerAgentTurnContext(deps: RunOwnerAgentTurnContextDeps
     // `process.env.ENVOY_HARNESS_SIGNAL_OPT_IN`; the env
     // var doesn't change at runtime.
     isEnvoyHarnessReady: () => deps.isEnvoyHarnessReady(),
-    askEnvoyHarness: (msg) => deps.askEnvoyHarness(msg),
+    // Phase 8 / v1.5 — the v1.5 prompt hints
+    // (`/provider:NAME`, `/cost:N`) are passed
+    // to the ask methods as the `opts` arg.
+    // The host's `askEnvoyHarness` reads the
+    // env-var flag to decide whether to honor
+    // the per-prompt cost cap (dormant by
+    // default; Q9 + Q10 of the v1.5 sub-plan).
+    // The provider hint is logged for the
+    // audit trail (the adapter doesn't switch
+    // providers yet — also dormant).
+    askEnvoyHarness: (msg, opts) => deps.askEnvoyHarness(msg, opts),
     // Phase 8 / v1.2 — per-skill dispatch. The
     // host wires this to
     // `NodeServiceImpl.askEnvoyHarnessSkill(message,
-    // skillId)`, which lazy-constructs the adapter
-    // + calls `execute()` + formats the result.
-    askEnvoyHarnessSkill: (msg, skillId) => deps.askEnvoyHarnessSkill(msg, skillId),
+    // skillId, opts?)`, which lazy-constructs the
+    // adapter + calls `execute()` + formats the
+    // result. v1.5 added the `opts?` for the
+    // prompt hints.
+    askEnvoyHarnessSkill: (msg, skillId, opts) =>
+      deps.askEnvoyHarnessSkill(msg, skillId, opts),
     signalOptIn: deps.signalOptIn,
     // Phase 8 / v1.1 — manifest read for the
     // signal router's dynamic vocabulary. The

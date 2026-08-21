@@ -230,6 +230,20 @@ export interface RealEnvoyHarnessAskOptions {
   skillId?: string;
   /** Correlation id. Default: a fresh UUID. */
   correlationId?: string;
+  /**
+   * Phase 8 / v1.5 — provider hint from
+   * `/provider:NAME` in the prompt. The
+   * runtime logs the hint (so the audit
+   * trail shows what the user requested)
+   * but does NOT yet switch the model
+   * provider — the EH adapter doesn't
+   * support per-call provider overrides
+   * yet. A future chunk in `envoy-harness`
+   * wires the adapter to honor the hint.
+   * **Dormant by design** (Q9 + Q10 of
+   * the v1.5 sub-plan).
+   */
+  providerHint?: string;
 }
 
 /** Options accepted by `askSkill`. `skillId` is required
@@ -249,6 +263,15 @@ export interface RealEnvoyHarnessAskSkillOptions {
   deadlineMs?: number;
   /** Correlation id. Default: a fresh UUID. */
   correlationId?: string;
+  /**
+   * Phase 8 / v1.5 — provider hint from
+   * `/provider:NAME` in the prompt. See
+   * `RealEnvoyHarnessAskOptions.providerHint`
+   * for the dormant-feature note. The
+   * runtime logs the hint; the adapter
+   * doesn't switch providers yet.
+   */
+  providerHint?: string;
 }
 
 /** The runtime object returned by `createRealEnvoyHarnessRuntime`. */
@@ -531,6 +554,11 @@ export function createRealEnvoyHarnessRuntime(
     opts.log?.("envoy_harness.ask.start", {
       skillId: askOpts?.skillId ?? opts.defaultSkillId ?? "code-review",
       promptChars: prompt.length,
+      // v1.5 — log the provider hint for the
+      // audit trail. The adapter doesn't
+      // switch providers yet (dormant by
+      // design).
+      providerHint: askOpts?.providerHint,
     });
     const local = await ensureInitialized();
     const result = await local.adapter.execute({
@@ -589,6 +617,11 @@ export function createRealEnvoyHarnessRuntime(
     opts.log?.("envoy_harness.askSkill.start", {
       skillId: askOpts.skillId,
       promptChars: prompt.length,
+      // v1.5 — log the provider hint for the
+      // audit trail. The adapter doesn't
+      // switch providers yet (dormant by
+      // design).
+      providerHint: askOpts.providerHint,
     });
     const local = await ensureInitialized();
     const deadlineMs = askOpts.deadlineMs ?? 60_000;

@@ -392,3 +392,176 @@ persisted field (default case):**
   (the `PersistedNodeConfig` type + `signalOptIn?` + `verifyModeDefault?` + `peek()`)
 - [`owner-agent-loop.ts`](../packages/api/src/owner-agent-loop.ts)
   (the `OwnerAgentTurnResult` — `routingReason` + `targetSkill` + `modelUsed` for the chat badge)
+
+## 10. v1.5 — Model provider + spending limit (dormant cost)
+
+> **Status:** Phase 8 v1.5. The Tauri team
+> picks up the implementation in their
+> workstream. v1.5 ships the backend
+> (`extractPromptHints` + the dispatch
+> integration); the actual Tauri UI lives
+> in the Tauri monorepo.
+>
+> **End-user-first principle (the v1.5
+> framing):** the Tauri UI is the **primary
+> UX** (friendly dropdowns + sliders). The
+> prompt hints (`/provider:NAME`,
+> `/cost:N`) are the **power-user escape
+> hatch** (developer-style syntax). The
+> regular user never sees the hint syntax;
+> the power user can use it for per-message
+> control. **The cost feature is dormant**
+> (off by default) — the Tauri UI may
+> show a "Spending limit" slider, but the
+> runtime uses the per-skill default until
+> `ENVOY_HARNESS_COST_CAP_ENABLED=1` is set.
+
+### 10.1 The chat input area — Model dropdown
+
+```
+┌────────────────────────────────────────────┐
+│ Type a message…                             │
+│                                            │
+│ [Model: Default ▾]  ←  a small dropdown     │
+│                                            │
+│ [ Send ]                                   │
+└────────────────────────────────────────────┘
+```
+
+**Owner-visible labels** (end-user-first, plain language):
+
+| DB value | Owner-visible label |
+|---|---|
+| `undefined` (no hint) | **Default** (the node's default model) |
+| `"openai"` | **OpenAI** |
+| `"ollama"` | **Ollama (local)** |
+| `"anthropic"` | **Anthropic** |
+
+**Per-message vs owner-wide:**
+- The chat input dropdown is **per-message** (the user's choice for this one message).
+- The Settings panel has a separate **owner-wide default** that the Tauri UI sets via a new `NodeService` method (similar to the v1.4 `setSignalOptIn`).
+
+**Discovery:** the dropdown shows a tooltip on hover: "**Tip:** you can also type `/provider:openai` in your message to override the model for one message." This is the bridge between the friendly Tauri UI and the developer-style prompt hint.
+
+### 10.2 The chat input area — Spending limit slider (dormant)
+
+> **Dormant by design** (Q9 + Q10 of the
+> v1.5 sub-plan). The Tauri UI shows the
+> control, but the runtime uses the
+> per-skill default until the EH runtime
+> has real cost tracking. The
+> `ENVOY_HARNESS_COST_CAP_ENABLED=1` env
+> var flips on the runtime enforcement.
+
+```
+┌────────────────────────────────────────────┐
+│ Spending limit for this message            │
+│                                            │
+│  $0.10   $0.50   $1.00   Unlimited          │
+│   ●                                  ○     │
+│                                            │
+│ What this does:                             │
+│ When ON, the built-in AI caps spending at   │
+│ the chosen amount and falls back to the     │
+│ free built-in assistant if the cap is hit.  │
+│ This is a power-user feature.               │
+└────────────────────────────────────────────┘
+```
+
+**Owner-visible labels:**
+
+| DB value | Owner-visible label |
+|---|---|
+| `0.10` | "$0.10 (cheap — quick reply)" |
+| `0.50` | "$0.50 (balanced — recommended)" |
+| `1.00` | "$1.00 (deep — long answer)" |
+| `undefined` | "Unlimited" |
+
+**Per-message vs owner-wide:**
+- The chat input slider is **per-message** (the user's choice for this one message).
+- The Settings panel has a separate **owner-wide default** ("Default spending limit for mesh queries") that the Tauri UI sets via a new `NodeService` method.
+
+### 10.3 Settings panel additions
+
+```
+┌────────────────────────────────────────────┐
+│ Model (default for mesh queries)            │
+│ ◯ Default                                  │
+│ ● OpenAI                                   │
+│ ◯ Ollama (local)                            │
+│ ◯ Anthropic                                 │
+│                                            │
+│ Default spending limit                       │
+│ ● $0.50 (balanced)                          │
+│ ◯ $0.10 (cheap)                              │
+│ ◯ $1.00 (deep)                              │
+│ ◯ Unlimited                                 │
+└────────────────────────────────────────────┘
+```
+
+These Settings panel controls map to new
+`NodeService` methods (added in v1.5.3):
+
+- `getDefaultProvider(): Promise<"default" | "openai" | "ollama" | "anthropic">`
+- `setDefaultProvider(value: ...): Promise<...>`
+- `getDefaultSpendingLimit(): Promise<number | undefined>`
+- `setDefaultSpendingLimit(value: number | undefined): Promise<number | undefined>`
+
+(Or similar — the exact method names are
+a v1.5.3 implementation detail.)
+
+### 10.4 The power-user escape hatch
+
+The Tauri UI is for the regular user. The
+prompt hints are for the power user. The
+two surfaces coexist:
+
+- **Regular user** (90%+ of owners): uses the Tauri UI dropdowns + sliders. Doesn't need to know the hint syntax.
+- **Power user** (developers, advanced owners): types `/provider:openai /cost:0.50` in the prompt for one-message control.
+
+**The hint syntax is not user-friendly.**
+The Tauri team shouldn't surface the hint
+syntax in the primary UI. A tooltip on
+the dropdown + a link to the docs is
+enough.
+
+### 10.5 Out of scope (v1.5+ future)
+
+- **Per-prompt provider override via Tauri UI** (the dropdown is a v1.5.3 design; the implementation is a future chunk).
+- **Spending limit history** ("you've spent $X this month") — a future chunk.
+- **Per-runtime provider override** (different providers for envoy-harness vs openclaw vs ext) — a future chunk.
+
+## 11. v1.5 — Out of scope (deferred to v1.6+)
+
+> The v1.5 backend ships the
+> `extractPromptHints` helper + the
+> dispatch integration (provider hint is
+> logged for the audit trail; cost cap is
+> gated by `ENVOY_HARNESS_COST_CAP_ENABLED`).
+> The Tauri UI work lives in the Tauri
+> monorepo.
+>
+> **Out of scope for v1.5** (deferred to
+> v1.6+): per-prompt opt-out `!openclaw`
+> hint, OpenClaw tags as negative signals,
+> cross verifier with different model,
+> per-runtime tags, scoreboard formula.
+
+## 12. References
+
+- [`agent-harness-integration-v1-5.md`](./agent-harness-integration-v1-5.md)
+  (the v1.5 sub-plan + DONE stamp)
+- [`user-prompt-router.ts`](../apps/node/src/user-prompt-router.ts)
+  (the v1.5 `extractPromptHints` helper +
+  `INLINE_HINT_REGEX` + `COST_CAP_ENABLED_ENV_VAR`)
+- [`node-service-impl.ts`](../apps/node/src/node-service-impl.ts)
+  (the v1.5 `readEffectiveCostCapUsd` helper +
+  `askEnvoyHarness` / `askEnvoyHarnessSkill`
+  accept the new `opts?` for hints)
+- [`node-service-handlers-run-owner-agent-turn.ts`](../apps/node/src/node-service-handlers-run-owner-agent-turn.ts)
+  (the v1.5 dispatch — passes the hints
+  to the ask methods)
+- [`agent-runtime-envoy/runtime.ts`](../apps/node/src/agent-runtime-envoy/runtime.ts)
+  (the v1.5 EH runtime — `providerHint?`
+  on the options; logs the hint in the
+  audit trail)

@@ -863,3 +863,204 @@ describe("routeUserPrompt — v1.2 per-skill targetSkill", () => {
     expect(decision.targetSkill).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 8 / v1.5 — extractPromptHints + routeUserPrompt integration
+// ---------------------------------------------------------------------------
+
+import {
+  extractPromptHints,
+  type ParsedPromptHints,
+} from "../src/user-prompt-router.js";
+
+describe("extractPromptHints", () => {
+  it("returns an empty hints object + unchanged prompt when no hints are present", () => {
+    const result = extractPromptHints("explain the mesh");
+    expect(result.cleanPrompt).toBe("explain the mesh");
+    expect(result.hints).toEqual({});
+  });
+
+  it("parses /cost:0.5 anywhere in the prompt and strips it", () => {
+    const result = extractPromptHints("explain the mesh /cost:0.5");
+    expect(result.cleanPrompt).toBe("explain the mesh");
+    expect(result.hints.costCapUsd).toBe(0.5);
+    expect(result.hints.providerHint).toBeUndefined();
+  });
+
+  it("parses /provider:openai and strips it", () => {
+    const result = extractPromptHints("/provider:openai explain the mesh");
+    expect(result.cleanPrompt).toBe("explain the mesh");
+    expect(result.hints.providerHint).toBe("openai");
+    expect(result.hints.costCapUsd).toBeUndefined();
+  });
+
+  it("parses both /cost + /provider in the same prompt", () => {
+    const result = extractPromptHints(
+      "/cost:0.5 /provider:openai explain the mesh",
+    );
+    expect(result.cleanPrompt).toBe("explain the mesh");
+    expect(result.hints.costCapUsd).toBe(0.5);
+    expect(result.hints.providerHint).toBe("openai");
+  });
+
+  it("is case-insensitive for both the kind and the value", () => {
+    const result = extractPromptHints(
+      "explain the mesh /COST:1.0 /PROVIDER:OpenAI",
+    );
+    expect(result.cleanPrompt).toBe("explain the mesh");
+    expect(result.hints.costCapUsd).toBe(1.0);
+    expect(result.hints.providerHint).toBe("openai");
+  });
+
+  it("accepts hyphenated provider names (Q1 — for future 'openai-4')", () => {
+    const result = extractPromptHints("explain mesh /provider:openai-4");
+    expect(result.cleanPrompt).toBe("explain mesh");
+    expect(result.hints.providerHint).toBe("openai-4");
+  });
+
+  it("falls back to no-cost-cap when the value is invalid (Q4)", () => {
+    // /cost:abc → Number.parseFloat("abc") = NaN → undefined
+    // The dispatch sees costCapUsd=undefined and uses the
+    // per-skill default (Q4 of the v1.5 sub-plan).
+    const result = extractPromptHints("explain mesh /cost:abc");
+    expect(result.cleanPrompt).toBe("explain mesh");
+    expect(result.hints.costCapUsd).toBeUndefined();
+  });
+
+  it("first occurrence wins on duplicate cost hints", () => {
+    const result = extractPromptHints(
+      "/cost:0.5 /cost:1.0 explain mesh",
+    );
+    expect(result.hints.costCapUsd).toBe(0.5);
+  });
+
+  it("first occurrence wins on duplicate provider hints", () => {
+    const result = extractPromptHints(
+      "/provider:openai /provider:ollama explain mesh",
+    );
+    expect(result.hints.providerHint).toBe("openai");
+  });
+
+  it("collapses multiple whitespace from the strip", () => {
+    // The strip leaves a double-space; the
+    // collapse + trim cleans it up.
+    const result = extractPromptHints(
+      "explain mesh /cost:0.5  please",
+    );
+    expect(result.cleanPrompt).toBe("explain mesh please");
+  });
+
+  it("does NOT match plain 'cost:0.5' (Q1 — slash is required)", () => {
+    // Plain `cost:0.5` (no slash) is too
+    // ambiguous — would match legitimate
+    // English text. The slash is the
+    // "command marker".
+    const result = extractPromptHints("cost:0.5 explain mesh");
+    expect(result.hints.costCapUsd).toBeUndefined();
+    expect(result.cleanPrompt).toBe("cost:0.5 explain mesh");
+  });
+
+  it("preserves the original prompt's signal-bearing tokens (Q2 — signal after hint)", () => {
+    // The signal scan uses the ORIGINAL
+    // prompt (not the cleanPrompt). A
+    // signal after the hint should still
+    // fire.
+    const result = extractPromptHints("/cost:0.5 explain the mesh");
+    expect(result.cleanPrompt).toBe("explain the mesh");
+    // The cost cap is recorded on the hints.
+    expect(result.hints.costCapUsd).toBe(0.5);
+    // The signal scan (caller's job) still
+    // sees "mesh" in the original prompt —
+    // this is just a unit test of the
+    // extraction, not the signal scan.
+  });
+});
+
+describe("routeUserPrompt — v1.5 inline hint integration", () => {
+  it("threads the parsed cost cap through to the decision", () => {
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "explain the mesh /cost:0.5",
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("signal");
+    expect(decision.costCapUsd).toBe(0.5);
+    expect(decision.providerHint).toBeUndefined();
+    expect(decision.cleanPrompt).toBe("explain the mesh");
+  });
+
+  it("threads the parsed provider hint through to the decision", () => {
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "/provider:ollama explain the mesh",
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("signal");
+    expect(decision.providerHint).toBe("ollama");
+    expect(decision.costCapUsd).toBeUndefined();
+    expect(decision.cleanPrompt).toBe("explain the mesh");
+  });
+
+  it("threads both hints through + strips the cleanPrompt", () => {
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "/cost:1.0 /provider:anthropic explain the mesh",
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.costCapUsd).toBe(1.0);
+    expect(decision.providerHint).toBe("anthropic");
+    expect(decision.cleanPrompt).toBe("explain the mesh");
+  });
+
+  it("cleanPrompt equals the original prompt when no hints are present", () => {
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "what is the weather today",
+        isEnvoyHarnessReady: false,
+      }),
+    );
+    expect(decision.reason).toBe("default");
+    expect(decision.cleanPrompt).toBe("what is the weather today");
+    expect(decision.costCapUsd).toBeUndefined();
+    expect(decision.providerHint).toBeUndefined();
+  });
+
+  it("signals after a hint still fire (the signal scan uses the original prompt)", () => {
+    // Q2 — the hint is inline anywhere; the
+    // signal scan uses the original prompt
+    // (with the hint) so a signal after the
+    // hint still fires.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "/cost:0.5 explain the mesh",
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("signal");
+    expect(decision.costCapUsd).toBe(0.5);
+    expect(decision.cleanPrompt).toBe("explain the mesh");
+  });
+
+  it("hints are extracted even on opt-in-disabled (the router still returns the clean prompt)", () => {
+    // The opt-in check is the FIRST branch;
+    // it short-circuits before hint extraction.
+    // The cleanPrompt is the original (no
+    // extraction happened). This is a
+    // conscious design — when opt-in is off,
+    // we don't care about the hints.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "/cost:0.5 explain the mesh",
+        signalOptIn: "disabled",
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("opt-in-disabled");
+    expect(decision.costCapUsd).toBeUndefined();
+    expect(decision.providerHint).toBeUndefined();
+    expect(decision.cleanPrompt).toBe("/cost:0.5 explain the mesh");
+  });
+});

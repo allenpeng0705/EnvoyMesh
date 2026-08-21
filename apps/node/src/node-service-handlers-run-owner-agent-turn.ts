@@ -73,7 +73,10 @@ export interface RunOwnerAgentTurnContext {
    * runtime may throw on a transient API error; the
    * dispatch catches + falls back to OpenClaw.
    */
-  askEnvoyHarness(message: string): Promise<string>;
+  askEnvoyHarness(
+    message: string,
+    opts?: { providerHint?: string; costCapUsd?: number },
+  ): Promise<string>;
   /**
    * Phase 8 / v1.2 — ask the envoy-harness runtime
    * to run a specific skill. The host wires this to
@@ -81,6 +84,11 @@ export interface RunOwnerAgentTurnContext {
    * lazy-constructs the adapter, calls
    * `adapter.execute({ skillId, objective, ... })`,
    * and formats the result as text.
+   *
+   * **v1.5 — `opts?`** carries the v1.5 prompt
+   * hints: `providerHint` (always parsed; the
+   * adapter is dormant) + `costCapUsd` (gated
+   * by `ENVOY_HARNESS_COST_CAP_ENABLED=1`).
    *
    * **Throws:**
    * - `StructuredResultError` (re-thrown from the
@@ -92,7 +100,11 @@ export interface RunOwnerAgentTurnContext {
    * - `unknown envoy-harness skill` — the dispatch
    *   catches + falls through to `askEnvoyHarness`.
    */
-  askEnvoyHarnessSkill(message: string, skillId: string): Promise<string>;
+  askEnvoyHarnessSkill(
+    message: string,
+    skillId: string,
+    opts?: { providerHint?: string; costCapUsd?: number },
+  ): Promise<string>;
   /**
    * Phase 8 / Step 5 — per-node opt-in flag for the
    * signal router. When `"disabled"`, the router never
@@ -214,7 +226,20 @@ export async function runOwnerAgentTurnViaRuntime(
   // Strip the hint prefix (e.g. `!eh translate this` →
   // `translate this`) for BOTH the EH and OpenClaw
   // dispatch paths. The LLM never sees the hint.
-  const effectiveMessage = stripHintPrefix(agentMessage, decision);
+  //
+  // v1.5 — the v1.5 inline hints (`/cost:N`,
+  // `/provider:NAME`) are ALSO stripped by the
+  // router. The `cleanPrompt` field on the
+  // decision is the post-strip prompt (the
+  // LLM doesn't see the hints). We use
+  // `cleanPrompt` for the EH/OpenClaw dispatches
+  // (the LLM never sees the hints) but keep
+  // `effectiveMessage` (= post-prefix-strip)
+  // for backward compat — the two are the same
+  // when no v1.5 hints are present.
+  const effectiveMessage = decision.cleanPrompt
+    ? stripHintPrefix(decision.cleanPrompt, decision)
+    : stripHintPrefix(agentMessage, decision);
 
   // Build a result skeleton with the routing
   // fields populated. All branches below use this
@@ -257,6 +282,16 @@ export async function runOwnerAgentTurnViaRuntime(
         const skillAnswer = await ctx.askEnvoyHarnessSkill(
           effectiveMessage,
           decision.targetSkill,
+          // v1.5 — thread the prompt hints to
+          // the host's ask method. The host
+          // applies the env-var flag for the
+          // cost cap and logs the provider
+          // hint (dormant; Q9 + Q10 of the
+          // v1.5 sub-plan).
+          {
+            providerHint: decision.providerHint,
+            costCapUsd: decision.costCapUsd,
+          },
         );
         const answer = stripModelThinking(skillAnswer);
         const result = buildRoutedResult({
@@ -288,7 +323,14 @@ export async function runOwnerAgentTurnViaRuntime(
       }
     }
     try {
-      const answer = stripModelThinking(await ctx.askEnvoyHarness(effectiveMessage));
+      const answer = stripModelThinking(
+        await ctx.askEnvoyHarness(effectiveMessage, {
+          // v1.5 — same hint threading as the
+          // skill path above.
+          providerHint: decision.providerHint,
+          costCapUsd: decision.costCapUsd,
+        }),
+      );
       const result = buildRoutedResult({
         answer,
         modelUsed: "envoy-harness",
