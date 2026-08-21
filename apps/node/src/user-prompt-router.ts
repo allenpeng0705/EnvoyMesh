@@ -1,5 +1,22 @@
+// Phase 8 / v1.9 — import the `AgentRuntime` type
+// from the protocol so the router's `runtimeTags`
+// field can use it as a key. (The router doesn't
+// otherwise depend on the protocol package
+// directly — the v1.1 + v1.7 + v1.8 designs all
+// consumed only the `EnvoyHarnessSkillEntry`
+// projection.)
+import type { AgentRuntime } from "@envoymesh/protocol";
+
 /**
  * Phase 8 / Step 5 — Tauri user-prompt signal router.
+ *
+ * Phase 8 / v1.9 — imports the `AgentRuntime`
+ * type from the protocol so the router's
+ * `runtimeTags` field can use it as a key.
+ * (The router doesn't otherwise depend on the
+ * protocol package directly — the v1.1 +
+ * v1.7 + v1.8 designs all consumed only the
+ * `EnvoyHarnessSkillEntry` projection.)
  *
  * **What this is:** a pure function that decides which AI
  * Engine (Built-in OpenClaw vs envoy-harness) handles a
@@ -174,8 +191,9 @@ const INLINE_HINT_REGEX = /\/(cost|provider):([\w.-]+)/gi;
  * persisted field. **Keep it simple.**
  */
 export const COST_CAP_ENABLED_ENV_VAR = "ENVOY_HARNESS_COST_CAP_ENABLED";
-
-import type { AgentRuntime } from "@envoymesh/protocol";
+// (the `AgentRuntime` type is imported at the top
+// of the file — see the v1.9 note above the file
+// header.)
 
 /**
  * The env-var name the host uses to disable
