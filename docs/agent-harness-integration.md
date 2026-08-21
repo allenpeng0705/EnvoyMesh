@@ -1079,3 +1079,69 @@ fan-out within a job (whole-job only).
     `agent-harness-integration-v1-7.md`
     status note + `agent-harness-integration-v1-8.md`
     DONE stamp.
+
+- **2026-08-21 (v1.9 — per-runtime tags
+  — DONE):** v1.9 generalizes the v1.1
+  `extractEnvoyHarnessTags` + the v1.7
+  `extractOpenClawTags` into a single
+  `extractTagsByRuntime(manifest, runtime)`
+  function. The dispatch extracts tags for
+  ALL runtimes and passes them to the router
+  as a `Partial<Record<AgentRuntime, ReadonlyArray<string>>>`
+  map. The router consumes only the EH +
+  OpenClaw tag lists (v1.x routing path); the
+  other runtimes' tag lists (pi, hermes,
+  codex, codex-cli, openhuman) are available
+  for future consumers (v1.9+ per-runtime
+  routing extension). The v1.1 + v1.7 wrapper
+  functions are kept as **deprecation shims**
+  (one-liner wrappers around
+  `extractTagsByRuntime`) for backward compat.
+  v1.9 is a **foundation chunk** — it ships
+  the data structure; the actual per-runtime
+  routing (when v1.x starts routing to pi /
+  hermes / codex / openhuman) is a v1.9+
+  future. 1 commit on `envoy_harness_integration`
+  branch (the user delegated commit; bundled
+  v1.9.1 + v1.9.2 + v1.9.3 into a single
+  commit at the end of v1.9). 18 new tests
+  (12 `extractTagsByRuntime` unit + 6
+  `runtimeTags` router unit) + 246
+  pre-existing tests regression-clean on the
+  affected paths. No new type errors.
+  Detailed plan:
+  `docs/agent-harness-integration-v1-9.md`
+  (sub-plan with 10 locked design questions).
+  - **v1.9.1 — generic extractor +
+    per-runtime tag map.** New
+    `extractTagsByRuntime(manifest, runtime)`
+    function in `manifest-envoy-harness-tags.ts`.
+    The v1.1 `extractEnvoyHarnessTags` + v1.7
+    `extractOpenClawTags` wrappers are kept
+    as deprecation shims (one-liner
+    wrappers around the new generic helper).
+    12 new unit tests for
+    `extractTagsByRuntime` (each runtime +
+    edge cases + deprecation shim tests).
+  - **v1.9.2 — router integration.**
+    `RouteUserPromptInput` gains a
+    `runtimeTags?: Partial<Record<AgentRuntime, ReadonlyArray<string>>>`
+    field. The v1.1 + v1.7 callers read from
+    `runtimeTags["envoy-harness"]` +
+    `runtimeTags["openclaw"]` (with fallback
+    to the old `envoyHarnessTags` +
+    `openClawTags` fields for backward
+    compat). The dispatch's `readManifestView`
+    function returns the per-runtime tag
+    map. 6 new router unit tests for the
+    `runtimeTags` consumption + fallback.
+  - **v1.9.3 — Tauri UI design doc +
+    closeout.** `docs/taui-agent-routing-
+    settings.md` §15 (per-runtime tag map
+    design; v1.9 is a foundation chunk) +
+    this entry + status notes on
+    `agent-harness-integration-v1-1.md` +
+    `agent-harness-integration-v1-7.md` +
+    `agent-harness-integration-v1-8.md` +
+    `agent-harness-integration-v1-9.md`
+    DONE stamp.

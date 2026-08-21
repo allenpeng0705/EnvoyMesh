@@ -34,11 +34,11 @@ import {
   type RouteUserPromptDecision,
 } from "./user-prompt-router.js";
 import {
-  extractEnvoyHarnessTags,
   extractEnvoyHarnessSkills,
-  extractOpenClawTags,
+  extractTagsByRuntime,
 } from "./manifest-envoy-harness-tags.js";
 import type { NodeManifest } from "./agent-adapter-manifest-aggregate.js";
+import type { AgentRuntime } from "@envoymesh/protocol";
 
 export interface RunOwnerAgentTurnContext {
   /** Record owner activity. */
@@ -229,6 +229,16 @@ export async function runOwnerAgentTurnViaRuntime(
     // negative rule; Q1 + Q2 of the v1.7
     // sub-plan).
     openClawTags: manifestView.openClawTags,
+    // Phase 8 / v1.9 — thread the per-runtime
+    // tag map. The router uses
+    // `runtimeTags["envoy-harness"]` for the
+    // v1.1 positive rule +
+    // `runtimeTags["openclaw"]` for the v1.7
+    // negative rule. The other runtimes'
+    // tag lists are available for future
+    // consumers (v1.9+ per-runtime routing
+    // extension).
+    runtimeTags: manifestView.runtimeTags,
   });
 
   // Strip the hint prefix (e.g. `!eh translate this` →
@@ -486,6 +496,19 @@ function readManifestView(
    * an OpenClaw skill tag.
    */
   openClawTags: ReadonlyArray<string> | undefined;
+  /**
+   * Phase 8 / v1.9 — per-runtime tag map. The
+   * router consumes `runtimeTags["envoy-harness"]`
+   * for the v1.1 positive rule + `runtimeTags["openclaw"]`
+   * for the v1.7 negative rule (with fallback to
+   * the old `envoyHarnessTags` + `openClawTags`
+   * fields for backward compat). The other
+   * runtimes' tag lists (pi, hermes, codex,
+   * codex-cli, openhuman) are available for future
+   * consumers (v1.9+ per-runtime routing
+   * extension).
+   */
+  runtimeTags: Partial<Record<AgentRuntime, ReadonlyArray<string>>>;
 } {
   let manifest: NodeManifest | undefined;
   try {
@@ -500,16 +523,40 @@ function readManifestView(
       "[envoy-harness] getNodeManifest() failed, falling back to v0 vocabulary:",
       err instanceof Error ? err.message : String(err),
     );
-    return { tags: undefined, skills: undefined, openClawTags: undefined };
+    return {
+      tags: undefined,
+      skills: undefined,
+      openClawTags: undefined,
+      runtimeTags: {},
+    };
   }
   if (manifest === undefined) {
     // Older host without manifest support, or
     // early init. Router falls back to v0.
-    return { tags: undefined, skills: undefined, openClawTags: undefined };
+    return {
+      tags: undefined,
+      skills: undefined,
+      openClawTags: undefined,
+      runtimeTags: {},
+    };
   }
+  // v1.9 — extract tags for ALL runtimes. The
+  // v1.1 + v1.7 callers read from the
+  // per-runtime map; the other runtimes' tag
+  // lists are available for future consumers.
+  const runtimeTags: Partial<Record<AgentRuntime, ReadonlyArray<string>>> = {
+    "envoy-harness": extractTagsByRuntime(manifest, "envoy-harness"),
+    "openclaw": extractTagsByRuntime(manifest, "openclaw"),
+    "pi": extractTagsByRuntime(manifest, "pi"),
+    "hermes": extractTagsByRuntime(manifest, "hermes"),
+    "codex": extractTagsByRuntime(manifest, "codex"),
+    "codex-cli": extractTagsByRuntime(manifest, "codex-cli"),
+    "openhuman": extractTagsByRuntime(manifest, "openhuman"),
+  };
   return {
-    tags: extractEnvoyHarnessTags(manifest),
+    tags: runtimeTags["envoy-harness"],
     skills: extractEnvoyHarnessSkills(manifest),
-    openClawTags: extractOpenClawTags(manifest),
+    openClawTags: runtimeTags["openclaw"],
+    runtimeTags,
   };
 }

@@ -13,6 +13,19 @@
 > `packages/network/src/index.ts:2791`
 > unchanged).
 >
+> **v1.9 (2026-08-21) status note:** v1.9
+> generalizes the per-runtime tag extraction
+> (the v1.1 + v1.7 extractors) into a single
+> `extractTagsByRuntime` function. v1.9
+> doesn't change the chain-verify loop (the
+> v1.8 `MODEL_FAMILY` table is independent).
+> v1.9 ships the data structure for future
+> per-runtime routing (when v1.x starts
+> routing to pi / hermes / codex /
+> openhuman). See
+> [`agent-harness-integration-v1-9.md`](./agent-harness-integration-v1-9.md)
+> for the v1.9 sub-plan + DONE stamp.
+>
 > **What this doc covers:** v1.8 in **concrete
 > detail** — every file path, every type, every
 > test, every commit boundary, and the design

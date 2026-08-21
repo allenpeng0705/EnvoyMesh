@@ -33,6 +33,54 @@
 
 import type { NodeManifest } from "./agent-adapter-manifest-aggregate.js";
 import type { EnvoyHarnessSkillEntry } from "./user-prompt-router.js";
+import type { AgentRuntime } from "@envoymesh/protocol";
+
+/**
+ * Phase 8 / v1.9 — extract the union of
+ * `tags[]` across all skills of a given
+ * `AgentRuntime` in the merged manifest.
+ * Generalizes the v1.1 `extractEnvoyHarnessTags`
+ * + the v1.7 `extractOpenClawTags` into a
+ * single function.
+ *
+ * **Why a single function (not per-runtime
+ * extractors):** the algorithm is identical
+ * across runtimes; the only difference is the
+ * `runtime` filter. A single function with a
+ * parameter is DRY and easier to test.
+ *
+ * **Empty result handling:** when the
+ * manifest has no skills of the given runtime,
+ * the returned array is empty. The router
+ * treats `[]` as "no tag-based signals" (Q8 of
+ * the v1.1 sub-plan; the v1.9 equivalent).
+ *
+ * **Order:** insertion order is the order in
+ * which tags are first seen in `manifest.skills`.
+ * The router doesn't depend on order.
+ *
+ * @param manifest The merged node manifest
+ *   (typically from `NodeServiceImpl.getNodeManifest()`).
+ * @param runtime The runtime to filter by
+ *   (`AgentRuntime` — one of "envoy-harness",
+ *   "openclaw", "pi", "hermes", "codex",
+ *   "codex-cli", "openhuman").
+ * @returns The deduplicated union of skills'
+ *   tags for the given runtime (read-only).
+ */
+export function extractTagsByRuntime(
+  manifest: NodeManifest,
+  runtime: AgentRuntime,
+): ReadonlyArray<string> {
+  const tags = new Set<string>();
+  for (const skill of manifest.skills) {
+    if (skill.runtime !== runtime) continue;
+    for (const tag of skill.tags) {
+      tags.add(tag);
+    }
+  }
+  return [...tags];
+}
 
 /**
  * Extract the union of `tags[]` across all
@@ -60,6 +108,12 @@ import type { EnvoyHarnessSkillEntry } from "./user-prompt-router.js";
  * the tags to build a vocabulary); tests don't
  * assert on a specific order.
  *
+ * @deprecated Phase 8 / v1.9 — use
+ *   `extractTagsByRuntime(manifest, "envoy-harness")`
+ *   instead. This function is kept as a
+ *   deprecation shim for backward compat (Q3
+ *   + Q10 of the v1.9 sub-plan) and can be
+ *   removed in a v1.9+ future.
  * @param manifest The merged node manifest
  *   (typically from `NodeServiceImpl.getNodeManifest()`).
  * @returns The deduplicated union of envoy-harness
@@ -68,14 +122,7 @@ import type { EnvoyHarnessSkillEntry } from "./user-prompt-router.js";
 export function extractEnvoyHarnessTags(
   manifest: NodeManifest,
 ): ReadonlyArray<string> {
-  const tags = new Set<string>();
-  for (const skill of manifest.skills) {
-    if (skill.runtime !== "envoy-harness") continue;
-    for (const tag of skill.tags) {
-      tags.add(tag);
-    }
-  }
-  return [...tags];
+  return extractTagsByRuntime(manifest, "envoy-harness");
 }
 
 /**
@@ -161,6 +208,12 @@ export function extractEnvoyHarnessSkills(
  * aggregator's order-preservation contract).
  * The router doesn't depend on order.
  *
+ * @deprecated Phase 8 / v1.9 — use
+ *   `extractTagsByRuntime(manifest, "openclaw")`
+ *   instead. This function is kept as a
+ *   deprecation shim for backward compat (Q3
+ *   + Q10 of the v1.9 sub-plan) and can be
+ *   removed in a v1.9+ future.
  * @param manifest The merged node manifest
  *   (typically from `NodeServiceImpl.getNodeManifest()`).
  * @returns The deduplicated union of openclaw
@@ -169,12 +222,5 @@ export function extractEnvoyHarnessSkills(
 export function extractOpenClawTags(
   manifest: NodeManifest,
 ): ReadonlyArray<string> {
-  const tags = new Set<string>();
-  for (const skill of manifest.skills) {
-    if (skill.runtime !== "openclaw") continue;
-    for (const tag of skill.tags) {
-      tags.add(tag);
-    }
-  }
-  return [...tags];
+  return extractTagsByRuntime(manifest, "openclaw");
 }

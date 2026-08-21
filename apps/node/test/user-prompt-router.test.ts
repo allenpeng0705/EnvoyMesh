@@ -1453,3 +1453,134 @@ describe("routeUserPrompt — v1.7 OpenClaw tags as negative signals", () => {
     expect(decision.providerHint).toBe("openai");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 8 / v1.9 — `runtimeTags` per-runtime map
+// ---------------------------------------------------------------------------
+
+describe("routeUserPrompt — v1.9 `runtimeTags` per-runtime map", () => {
+  it("uses `runtimeTags[\"envoy-harness\"]` for the v1.1 positive rule (Q2 + Q5)", () => {
+    // The v1.1 positive rule scans the prompt
+    // for envoy-harness tags. With v1.9, the
+    // router uses `runtimeTags["envoy-harness"]`
+    // (the per-runtime map) instead of the old
+    // `envoyHarnessTags` field.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "explain the mesh",
+        // The old `envoyHarnessTags` field is
+        // NOT set. The v1.1 positive rule uses
+        // `runtimeTags["envoy-harness"]`.
+        runtimeTags: {
+          "envoy-harness": ["mesh", "observability"],
+        },
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("signal");
+    expect(decision.runtime).toBe("envoy-harness");
+  });
+
+  it("uses `runtimeTags[\"openclaw\"]` for the v1.7 negative rule (Q2 + Q5)", () => {
+    // The v1.7 negative rule scans the prompt
+    // for OpenClaw tags. With v1.9, the router
+    // uses `runtimeTags["openclaw"]` (the
+    // per-runtime map) instead of the old
+    // `openClawTags` field.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "write a creative story for me",
+        // The old `openClawTags` field is NOT
+        // set. The v1.7 negative rule uses
+        // `runtimeTags["openclaw"]`.
+        runtimeTags: {
+          "openclaw": ["creative", "writing"],
+        },
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("openclaw-tag-match");
+    expect(decision.runtime).toBe("openclaw");
+  });
+
+  it("falls back to the old `envoyHarnessTags` field when `runtimeTags` is undefined (Q5 — backward compat)", () => {
+    // When `runtimeTags` is NOT provided, the
+    // router uses the old `envoyHarnessTags`
+    // field (the v1.8 behavior, preserved).
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "explain the mesh",
+        // runtimeTags: undefined (omitted)
+        envoyHarnessTags: ["mesh", "observability"],
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("signal");
+    expect(decision.runtime).toBe("envoy-harness");
+  });
+
+  it("falls back to the old `openClawTags` field when `runtimeTags` is undefined (Q5 — backward compat)", () => {
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "write a creative story for me",
+        // runtimeTags: undefined (omitted)
+        openClawTags: ["creative", "writing"],
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("openclaw-tag-match");
+    expect(decision.runtime).toBe("openclaw");
+  });
+
+  it("`runtimeTags` for other runtimes (pi, hermes, codex, openhuman) is extracted but doesn't change routing in v1.x", () => {
+    // The v1.x router only routes to
+    // envoy-harness or openclaw. The other
+    // runtimes' tag lists are available for
+    // future consumers (v1.9+ per-runtime
+    // routing extension) but don't change
+    // the current routing behavior.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "explain the mesh",
+        runtimeTags: {
+          "envoy-harness": ["mesh", "observability"],
+          "pi": ["reasoning", "math"], // v1.9+ future
+          "hermes": ["translation"], // v1.9+ future
+          "codex": ["code-gen"], // v1.9+ future
+        },
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    // The EH tag still wins (the v1.1
+    // positive rule); the other runtimes'
+    // tag lists don't change the routing.
+    expect(decision.reason).toBe("signal");
+    expect(decision.runtime).toBe("envoy-harness");
+  });
+
+  it("`runtimeTags` shared tag (envoy-harness + openclaw) — EH wins (Q4 v1.7 — shared tag precedence)", () => {
+    // The v1.7 shared-tag precedence: when a
+    // tag is in BOTH the EH list and the
+    // OpenClaw list, the positive rule wins
+    // (the EH tag wins). The v1.9 router
+    // reads the tag lists from `runtimeTags`
+    // (the per-runtime map); the shared-tag
+    // precedence is preserved.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "explain the mesh",
+        runtimeTags: {
+          "envoy-harness": ["mesh"],
+          "openclaw": ["mesh", "creative"],
+        },
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    // "mesh" is a shared tag; the EH tag
+    // wins (the v1.7 positive rule takes
+    // precedence over the negative rule
+    // for shared tags).
+    expect(decision.reason).toBe("signal");
+    expect(decision.runtime).toBe("envoy-harness");
+  });
+});

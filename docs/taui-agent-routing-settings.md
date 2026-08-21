@@ -798,7 +798,54 @@ shows the fallback decision.
   v1.8 just records the model; the weighting
   is v1.10.
 
-## 15. References
+## 15. v1.9 — Per-runtime tags (Pi, Hermes, Codex, OpenHuman)
+
+> **Status:** Phase 8 v1.9. v1.9 is a
+> **foundation chunk** — it ships the data
+> structure for future per-runtime routing
+> (when v1.x starts routing to pi / hermes /
+> codex / openhuman). v1.9 doesn't change the
+> v1.x routing behavior (only envoy-harness +
+> openclaw are in the routing path today).
+
+### 15.1 The data structure — per-runtime tag map
+
+v1.9 generalizes the v1.1 `extractEnvoyHarnessTags`
++ the v1.7 `extractOpenClawTags` into a
+single `extractTagsByRuntime(manifest,
+runtime)` function. The dispatch extracts
+tags for ALL runtimes and passes them to the
+router as a `Partial<Record<AgentRuntime, ReadonlyArray<string>>>`
+map. The router consumes only the EH +
+OpenClaw tag lists (v1.x routing path); the
+other runtimes' tag lists are available for
+future consumers.
+
+### 15.2 The deprecation shims
+
+The v1.1 + v1.7 wrapper functions
+(`extractEnvoyHarnessTags` +
+`extractOpenClawTags`) are kept as
+**deprecation shims** (one-liner wrappers
+around `extractTagsByRuntime`) for backward
+compat. They can be removed in a v1.9+ future
+when all external callers have migrated.
+
+### 15.3 Out of scope (v1.9+ future)
+
+- **Per-runtime routing extension** (when v1.x
+  starts routing to pi / hermes / codex /
+  openhuman) — v1.9+ future. v1.9 ships the
+  data structure; the actual per-runtime
+  routing requires extending the router +
+  the dispatch + the per-runtime adapter
+  construction (significant design change).
+- **Removal of the v1.1 + v1.7 wrapper
+  functions** — the deprecation shims can be
+  removed when all callers have migrated.
+  v1.9+ future.
+
+## 16. References
 
 - [`agent-harness-integration-v1-4.md`](./agent-harness-integration-v1-4.md)
   (the v1.4 sub-plan + DONE stamp)

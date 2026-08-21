@@ -32,7 +32,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { NodeManifest } from "../src/agent-adapter-manifest-aggregate.js";
-import { extractOpenClawTags } from "../src/manifest-envoy-harness-tags.js";
+import {
+  extractEnvoyHarnessTags,
+  extractOpenClawTags,
+  extractTagsByRuntime,
+} from "../src/manifest-envoy-harness-tags.js";
+import type { AgentRuntime } from "@envoymesh/protocol";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -40,7 +45,7 @@ import { extractOpenClawTags } from "../src/manifest-envoy-harness-tags.js";
 
 function makeManifest(
   skills: ReadonlyArray<{
-    runtime: "openclaw" | "envoy-harness" | "ext" | "pi" | "openhuman";
+    runtime: AgentRuntime;
     skillId: string;
     tags: ReadonlyArray<string>;
   }>,
@@ -185,5 +190,191 @@ describe("extractOpenClawTags", () => {
     const openClawResult = extractOpenClawTags(manifest);
     expect(openClawResult).toEqual(["openclaw-only-tag"]);
     expect(openClawResult).not.toContain("eh-only-tag");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 8 / v1.9 — generic `extractTagsByRuntime`
+// ---------------------------------------------------------------------------
+
+describe("extractTagsByRuntime (v1.9 generic extractor)", () => {
+  it("returns the union of tags for envoy-harness skills (mirrors `extractEnvoyHarnessTags`)", () => {
+    const manifest = makeManifest([
+      {
+        runtime: "envoy-harness",
+        skillId: "eh-skill",
+        tags: ["mesh", "observability"],
+      },
+    ]);
+    expect(extractTagsByRuntime(manifest, "envoy-harness")).toEqual([
+      "mesh",
+      "observability",
+    ]);
+  });
+
+  it("returns the union of tags for openclaw skills (mirrors `extractOpenClawTags`)", () => {
+    const manifest = makeManifest([
+      {
+        runtime: "openclaw",
+        skillId: "openclaw-skill",
+        tags: ["creative", "writing"],
+      },
+    ]);
+    expect(extractTagsByRuntime(manifest, "openclaw")).toEqual([
+      "creative",
+      "writing",
+    ]);
+  });
+
+  it("returns the union of tags for pi skills (v1.9 — new runtime)", () => {
+    const manifest = makeManifest([
+      {
+        runtime: "pi",
+        skillId: "pi-skill",
+        tags: ["reasoning", "math"],
+      },
+    ]);
+    expect(extractTagsByRuntime(manifest, "pi")).toEqual([
+      "reasoning",
+      "math",
+    ]);
+  });
+
+  it("returns the union of tags for hermes skills (v1.9 — new runtime)", () => {
+    const manifest = makeManifest([
+      {
+        runtime: "hermes",
+        skillId: "hermes-skill",
+        tags: ["translation", "language"],
+      },
+    ]);
+    expect(extractTagsByRuntime(manifest, "hermes")).toEqual([
+      "translation",
+      "language",
+    ]);
+  });
+
+  it("returns the union of tags for codex + codex-cli skills (v1.9 — new runtimes)", () => {
+    const manifest = makeManifest([
+      {
+        runtime: "codex",
+        skillId: "codex-skill",
+        tags: ["code-gen", "python"],
+      },
+      {
+        runtime: "codex-cli",
+        skillId: "codex-cli-skill",
+        tags: ["shell", "bash"],
+      },
+    ]);
+    expect(extractTagsByRuntime(manifest, "codex")).toEqual([
+      "code-gen",
+      "python",
+    ]);
+    expect(extractTagsByRuntime(manifest, "codex-cli")).toEqual([
+      "shell",
+      "bash",
+    ]);
+  });
+
+  it("returns the union of tags for openhuman skills (v1.9 — new runtime)", () => {
+    const manifest = makeManifest([
+      {
+        runtime: "openhuman",
+        skillId: "openhuman-skill",
+        tags: ["review", "approval"],
+      },
+    ]);
+    expect(extractTagsByRuntime(manifest, "openhuman")).toEqual([
+      "review",
+      "approval",
+    ]);
+  });
+
+  it("excludes skills of other runtimes (the runtime filter is exact)", () => {
+    const manifest = makeManifest([
+      {
+        runtime: "envoy-harness",
+        skillId: "eh-skill",
+        tags: ["eh-tag"],
+      },
+      {
+        runtime: "pi",
+        skillId: "pi-skill",
+        tags: ["pi-tag"],
+      },
+    ]);
+    // The pi extractor only returns the pi tags,
+    // not the eh tags.
+    const piResult = extractTagsByRuntime(manifest, "pi");
+    expect(piResult).toEqual(["pi-tag"]);
+    expect(piResult).not.toContain("eh-tag");
+  });
+
+  it("deduplicates tags across multiple skills of the same runtime", () => {
+    const manifest = makeManifest([
+      {
+        runtime: "pi",
+        skillId: "pi-skill-1",
+        tags: ["reasoning", "math"],
+      },
+      {
+        runtime: "pi",
+        skillId: "pi-skill-2",
+        tags: ["reasoning", "logic"],
+      },
+    ]);
+    // "reasoning" appears in both skills; it's
+    // deduplicated.
+    const result = extractTagsByRuntime(manifest, "pi");
+    expect(result).toContain("reasoning");
+    expect(result.filter((t) => t === "reasoning")).toHaveLength(1);
+    expect(result).toContain("math");
+    expect(result).toContain("logic");
+  });
+
+  it("returns `[]` when the manifest has no skills of the given runtime", () => {
+    const manifest = makeManifest([
+      {
+        runtime: "envoy-harness",
+        skillId: "eh-skill",
+        tags: ["eh-tag"],
+      },
+    ]);
+    expect(extractTagsByRuntime(manifest, "pi")).toEqual([]);
+  });
+
+  it("returns `[]` when the manifest is empty", () => {
+    const manifest = makeManifest([]);
+    expect(extractTagsByRuntime(manifest, "pi")).toEqual([]);
+    expect(extractTagsByRuntime(manifest, "openclaw")).toEqual([]);
+    expect(extractTagsByRuntime(manifest, "envoy-harness")).toEqual([]);
+  });
+});
+
+describe("v1.9 deprecation shims (Q3 + Q10)", () => {
+  it("`extractEnvoyHarnessTags` still returns the v1.1 result (deprecation shim)", () => {
+    const manifest = makeManifest([
+      {
+        runtime: "envoy-harness",
+        skillId: "eh-skill",
+        tags: ["mesh", "observability"],
+      },
+    ]);
+    expect(extractEnvoyHarnessTags(manifest)).toEqual([
+      "mesh",
+      "observability",
+    ]);
+  });
+
+  it("`extractOpenClawTags` still returns the v1.7 result (deprecation shim)", () => {
+    const manifest = makeManifest([
+      {
+        runtime: "openclaw",
+        skillId: "openclaw-skill",
+        tags: ["creative", "writing"],
+      },
+    ]);
+    expect(extractOpenClawTags(manifest)).toEqual(["creative", "writing"]);
   });
 });

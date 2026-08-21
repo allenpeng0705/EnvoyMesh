@@ -175,6 +175,8 @@ const INLINE_HINT_REGEX = /\/(cost|provider):([\w.-]+)/gi;
  */
 export const COST_CAP_ENABLED_ENV_VAR = "ENVOY_HARNESS_COST_CAP_ENABLED";
 
+import type { AgentRuntime } from "@envoymesh/protocol";
+
 /**
  * The env-var name the host uses to disable
  * signal-based opt-in. Default: enabled.
@@ -325,6 +327,35 @@ export interface RouteUserPromptInput {
    * scan (backward compat with v1.6 callers).
    */
   openClawTags?: ReadonlyArray<string>;
+  /**
+   * Phase 8 v1.9 — per-runtime tag map (the
+   * `Record<AgentRuntime, ReadonlyArray<string>>`
+   * for all runtimes in the merged manifest).
+   * The router uses `runtimeTags["envoy-harness"]`
+   * for the v1.1 positive rule +
+   * `runtimeTags["openclaw"]` for the v1.7
+   * negative rule (Q2 + Q5 of the v1.9
+   * sub-plan). The other runtimes' tag lists
+   * (pi, hermes, codex, codex-cli, openhuman)
+   * are available for future consumers (v1.9+
+   * per-runtime routing extension).
+   *
+   * **Why a `Partial<Record>`:** the router
+   * only consumes the runtimes it routes to
+   * (EH + OpenClaw for v1.x). The per-runtime
+   * map is optional — callers can pass only
+   * the runtimes they care about. The other
+   * runtimes' tag lists are still extracted
+   * (for future use) but not consumed by the
+   * router.
+   *
+   * **Fallback when `undefined`:** the router
+   * uses `envoyHarnessTags` + `openClawTags`
+   * independently (the v1.8 behavior, preserved
+   * for backward compat — Q5 of the v1.9
+   * sub-plan).
+   */
+  runtimeTags?: Partial<Record<AgentRuntime, ReadonlyArray<string>>>;
 }
 
 /**
@@ -537,7 +568,19 @@ export function routeUserPrompt(
   //     dynamic vocabulary when provided; falls
   //     back to the v0 `MESH_KEYWORDS` when
   //     undefined.
-  const originalSignals = scanSignals(input.prompt, input.envoyHarnessTags);
+  //
+  //     v1.9 — the v1.1 + v1.7 callers migrate to
+  //     read from `runtimeTags["envoy-harness"]`
+  //     (the per-runtime tag map). The old
+  //     `envoyHarnessTags` field is the fallback
+  //     when `runtimeTags` is undefined (Q5 of the
+  //     v1.9 sub-plan — backward compat).
+  const envoyHarnessVocabulary =
+    input.runtimeTags?.["envoy-harness"] ?? input.envoyHarnessTags;
+  const originalSignals = scanSignals(
+    input.prompt,
+    envoyHarnessVocabulary,
+  );
 
   // 2b. v1.6 — re-scan the **cleanPrompt** for v0
   //     prefixes. Fixes the v0 corner case where a
@@ -560,7 +603,7 @@ export function routeUserPrompt(
   //     "true" prefix.
   const cleanPromptSignals = scanSignals(
     cleanPrompt,
-    input.envoyHarnessTags,
+    envoyHarnessVocabulary,
   );
   const originalHasExplicitHint = originalSignals.some(
     (s) => s.category === "explicit-hint",
@@ -629,9 +672,16 @@ export function routeUserPrompt(
   const hasExplicitEhPrefix =
     explicitHintKind === "!eh" || explicitHintKind === "/eh";
   if (!hasExplicitEhPrefix) {
+    // v1.9 — the v1.7 negative-signal scan
+    // uses `runtimeTags["openclaw"]` (the
+    // per-runtime map) with fallback to
+    // `input.openClawTags` (the old v1.7
+    // field, preserved for backward compat).
+    const openClawVocabulary =
+      input.runtimeTags?.["openclaw"] ?? input.openClawTags;
     const openClawSignals = scanOpenClawSignals(
       input.prompt,
-      input.openClawTags,
+      openClawVocabulary,
       signals,
     );
     if (openClawSignals.length > 0) {
