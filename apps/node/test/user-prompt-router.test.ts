@@ -950,6 +950,51 @@ describe("extractPromptHints", () => {
     expect(result.cleanPrompt).toBe("explain mesh please");
   });
 
+  it("preserves newlines in a multi-line prompt with no hints (regression)", () => {
+    // Pre-self-review bug: `cleanPrompt.replace(/\s+/g, " ")` flattened every
+    // prompt — including ones with no hint to strip — into a single line,
+    // silently degrading pasted code blocks, diffs, and markdown. The fix
+    // collapses only runs of `[ \t]+` and leaves `\n` alone. A multi-line
+    // prompt with no hints must round-trip unchanged.
+    const prompt = [
+      "explain this code:",
+      "```",
+      "const x = 1;",
+      "const y = 2;",
+      "```",
+      "and the tests",
+    ].join("\n");
+    const result = extractPromptHints(prompt);
+    expect(result.cleanPrompt).toBe(prompt);
+    expect(result.hints).toEqual({});
+  });
+
+  it("preserves newlines when a hint is stripped mid-prompt (regression)", () => {
+    // The strip removes the `/cost:0.5` token; the surrounding newlines
+    // (and the double-newline left by the strip) must survive into the
+    // clean prompt. The collapse only touches runs of spaces/tabs, so
+    // a doubled blank line stays a doubled blank line.
+    const result = extractPromptHints(
+      "explain this:\n/cost:0.5\nconst x = 1;\nplease",
+    );
+    expect(result.cleanPrompt).toBe(
+      "explain this:\n\nconst x = 1;\nplease",
+    );
+    expect(result.hints.costCapUsd).toBe(0.5);
+  });
+
+  it("preserves a code-block prompt intact when a provider hint is at the end (regression)", () => {
+    // The user pastes a code block and the hint is the last token on
+    // its own line. The strip + collapse must not eat the newlines.
+    const result = extractPromptHints(
+      "refactor:\n```\nconst x = 1;\n```\n/provider:openai",
+    );
+    expect(result.cleanPrompt).toBe(
+      "refactor:\n```\nconst x = 1;\n```",
+    );
+    expect(result.hints.providerHint).toBe("openai");
+  });
+
   it("does NOT match plain 'cost:0.5' (Q1 — slash is required)", () => {
     // Plain `cost:0.5` (no slash) is too
     // ambiguous — would match legitimate
@@ -1582,5 +1627,143 @@ describe("routeUserPrompt — v1.9 `runtimeTags` per-runtime map", () => {
     // for shared tags).
     expect(decision.reason).toBe("signal");
     expect(decision.runtime).toBe("envoy-harness");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v1.14 — per-runtime routing extension
+// ---------------------------------------------------------------------------
+
+describe("v1.14 — per-runtime routing extension", () => {
+  it("routes to pi when the prompt matches a pi tag from the runtimeTags map", () => {
+    const decision = routeUserPrompt({
+      prompt: "translate this to french using pi-runtime-tag",
+      signalOptIn: "enabled",
+      isEnvoyHarnessReady: true,
+      runtimeTags: { pi: ["pi-runtime-tag"] },
+    });
+    expect(decision.runtime).toBe("pi");
+    expect(decision.reason).toBe("signal-runtime");
+    expect(decision.signals.map((s) => s.token)).toContain("pi-runtime-tag");
+  });
+
+  it("routes to hermes when the prompt matches a hermes tag", () => {
+    const decision = routeUserPrompt({
+      prompt: "do hermes-research on this",
+      signalOptIn: "enabled",
+      isEnvoyHarnessReady: true,
+      runtimeTags: { hermes: ["hermes-research"] },
+    });
+    expect(decision.runtime).toBe("hermes");
+    expect(decision.reason).toBe("signal-runtime");
+  });
+
+  it("OpenClaw veto preserved: prompt with EH + OpenClaw tag routes to OpenClaw", () => {
+    const decision = routeUserPrompt({
+      prompt: "do envoy-harness-research with openclaw-bond-fix",
+      signalOptIn: "enabled",
+      isEnvoyHarnessReady: true,
+      runtimeTags: {
+        "envoy-harness": ["envoy-harness-research"],
+        openclaw: ["openclaw-bond-fix"],
+      },
+    });
+    // v1.7 veto: OpenClaw tag wins over EH tag.
+    expect(decision.runtime).toBe("openclaw");
+    expect(decision.reason).toBe("openclaw-tag-match");
+  });
+
+  it("EH positive wins over other-runtime positive (precedence)", () => {
+    const decision = routeUserPrompt({
+      prompt: "envoy-harness-research with pi-runtime-tag",
+      signalOptIn: "enabled",
+      isEnvoyHarnessReady: true,
+      runtimeTags: {
+        "envoy-harness": ["envoy-harness-research"],
+        pi: ["pi-runtime-tag"],
+      },
+    });
+    // v1.14 precedence: OpenClaw veto > EH positive > other-runtime positive.
+    // The EH positive (steps 5a/5b) wins over the other-runtime positive.
+    expect(decision.runtime).toBe("envoy-harness");
+  });
+
+  it("the first match in runtime order wins (pi, hermes, codex, codex-cli, openhuman)", () => {
+    const decision = routeUserPrompt({
+      prompt: "do pi-tag with hermes-tag",
+      signalOptIn: "enabled",
+      isEnvoyHarnessReady: true,
+      runtimeTags: {
+        pi: ["pi-tag"],
+        hermes: ["hermes-tag"],
+      },
+    });
+    // pi is first in the OTHER_RUNTIMES order; pi wins.
+    expect(decision.runtime).toBe("pi");
+  });
+
+  it("`!openclaw` opt-out wins over the other-runtime positive (v1.6 precedence)", () => {
+    const decision = routeUserPrompt({
+      prompt: "!openclaw do pi-tag",
+      signalOptIn: "enabled",
+      isEnvoyHarnessReady: true,
+      runtimeTags: { pi: ["pi-tag"] },
+    });
+    expect(decision.runtime).toBe("openclaw");
+    expect(decision.reason).toBe("opt-out-explicit");
+  });
+
+  it("default: a prompt with no tag routes to OpenClaw (v0 default)", () => {
+    const decision = routeUserPrompt({
+      prompt: "no signals here",
+      signalOptIn: "enabled",
+      isEnvoyHarnessReady: true,
+      runtimeTags: { pi: ["pi-tag"] },
+    });
+    expect(decision.runtime).toBe("openclaw");
+    expect(decision.reason).toBe("default");
+  });
+
+  it("the 5 new runtimes' tag lists are scanned (verified by mocking runtimeTags)", () => {
+    const decision = routeUserPrompt({
+      prompt: "use openhuman-help here",
+      signalOptIn: "enabled",
+      isEnvoyHarnessReady: true,
+      runtimeTags: { openhuman: ["openhuman-help"] },
+    });
+    expect(decision.runtime).toBe("openhuman");
+    expect(decision.reason).toBe("signal-runtime");
+  });
+
+  it("an empty runtime tag list for the new runtimes doesn't fire a signal", () => {
+    const decision = routeUserPrompt({
+      prompt: "use openhuman-help here",
+      signalOptIn: "enabled",
+      isEnvoyHarnessReady: true,
+      runtimeTags: { openhuman: [] },
+    });
+    expect(decision.runtime).toBe("openclaw");
+    expect(decision.reason).toBe("default");
+  });
+
+  it("the decision's `runtime` is the full AgentRuntime type (not just openclaw | envoy-harness)", () => {
+    // The v1.14 type widening: `runtime` is now `AgentRuntime` (all 7 values).
+    // This test pins the type contract.
+    const decision = routeUserPrompt({
+      prompt: "translate via pi-tag",
+      signalOptIn: "enabled",
+      isEnvoyHarnessReady: true,
+      runtimeTags: { pi: ["pi-tag"] },
+    });
+    // The runtime value is one of the AgentRuntime values.
+    expect([
+      "envoy-harness",
+      "openclaw",
+      "pi",
+      "hermes",
+      "codex",
+      "codex-cli",
+      "openhuman",
+    ]).toContain(decision.runtime);
   });
 });

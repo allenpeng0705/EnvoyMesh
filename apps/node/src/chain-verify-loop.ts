@@ -85,22 +85,32 @@ export const DEFAULT_VERIFY_WITH_CROSS = false;
  *
  * **Why a hardcoded table (not the node
  * config):** the model FAMILY is a per-runtime
- * attribute (not a per-node config). Different
- * nodes might use different models, but the
- * FAMILY is fixed — envoy-harness is always
- * Claude-based, OpenClaw is always
- * native-LLM-planner-based, etc.
+ * default, not a per-node config. Different
+ * nodes may run the same runtime on different
+ * models (e.g. envoy-harness can be configured
+ * with OpenAI / Anthropic / DeepSeek / Ollama
+ * via `--provider`), so the FAMILY label here
+ * is a **canonical default** used for the
+ * "different family" preference and the
+ * `verifierModel` audit field — it's the
+ * runtime's *name-brand* family, not a
+ * guarantee about the model the node is
+ * actually running.
  *
  * **Why per-runtime families:** the v1.x
  * assumption is that each runtime has a
- * distinct default model family. Cross-verify
+ * distinct canonical family. Cross-verify
  * with a different family is the v1.x proxy
  * for "cross-verify with a different model"
  * (the actual F9.5 primitive — cross-verify
  * with a different model on the SAME runtime
- * — is a v1.8+ future when the EH runtime
+ * — is a v1.16 future when the EH runtime
  * supports per-call model overrides on the
- * cross-verify path).
+ * cross-verify path). The "true model" audit
+ * trail — recording the actual model the node
+ * is running, not the canonical family — is a
+ * v1.18 follow-up (the runtime needs to
+ * surface its model).
  *
  * **End-user-first copy:** the model family
  * is an internal value (developer jargon). The

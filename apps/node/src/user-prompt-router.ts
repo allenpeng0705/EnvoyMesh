@@ -69,11 +69,18 @@ import type { AgentRuntime } from "@envoymesh/protocol";
  *   compat for callers that haven't been updated to
  *   read the manifest).
  *
- * **v0 deferred (still):**
- * - Cost cap (requires UI affordance `/cost:0.5`)
- * - Multi-provider (requires UI affordance `/provider:openai`)
- * - OpenClaw tags as negative signals (v1.1 only
- *   uses envoy-harness tags as positive)
+ * **v0 → v1.x history:**
+ * - **v1.5:** inline `/cost:N` + `/provider:NAME`
+ *   hints (cost is dormant — the single env-var
+ *   flag in the v1.5 sub-plan; provider is
+ *   recorded on the decision).
+ * - **v1.6:** `!openclaw` per-prompt opt-out
+ *   (case-insensitive; first in `HINT_PREFIXES`
+ *   so the opt-out is the safety net).
+ * - **v1.7:** OpenClaw tags as negative signals
+ *   (with the shared-tag exclusion — when an EH
+ *   skill and an OpenClaw skill share a tag, EH
+ *   wins).
  *
  * **Stability:** the public surface is `routeUserPrompt`
  * + the input/decision/matcher types. The signal set is
@@ -1095,8 +1102,11 @@ export interface ParsedPromptHints {
  * all matching tokens (anywhere in the
  * prompt, case-insensitive) and returns:
  * 1. The clean prompt (with the hints
- *    stripped + trimmed + whitespace
- *    collapsed). The LLM sees the clean
+ *    stripped + trimmed + runs of spaces/
+ *    tabs collapsed; **newlines are
+ *    preserved** so multi-line prompts
+ *    reach the LLM with their structure
+ *    intact). The LLM sees the clean
  *    prompt; the user never sees the hints
  *    in the chat reply.
  * 2. The parsed hints (deduplicated; first
@@ -1151,11 +1161,17 @@ export function extractPromptHints(prompt: string): {
     }
     return ""; // Strip the hint.
   });
-  // Collapse multiple spaces + trim. The
-  // LLM doesn't care about extra whitespace
-  // (mostly); the trim removes leading/
-  // trailing space from the strip.
-  const collapsed = cleanPrompt.replace(/\s+/g, " ").trim();
+  // Collapse runs of spaces/tabs + trim. We
+  // deliberately preserve `\n` so multi-line
+  // prompts (code blocks, diffs, markdown)
+  // keep their structure when they reach the
+  // LLM — flattening every prompt, including
+  // ones with no hint to strip, would silently
+  // degrade pasted code/diff/markdown content.
+  // The strip may leave a double-space (when
+  // a hint was removed); `[ \t]+` cleans that
+  // up while leaving newlines alone.
+  const collapsed = cleanPrompt.replace(/[ \t]+/g, " ").trim();
   return { cleanPrompt: collapsed, hints };
 }
 
