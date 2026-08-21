@@ -21,8 +21,14 @@
 
 import type { AgentRuntime, VerdictEntry } from "@envoymesh/protocol";
 
-/** Edge lifecycle. `open` → `closed` is the only transition. */
-export type AgentGraphEdgeStatus = "open" | "closed";
+/** Edge lifecycle. The two normal transitions are
+ * `open` → `closed` (verifier wrote a verdict) and
+ * `open` → `failed` (verifier crashed before writing
+ * a verdict — no `verdict` payload). `closed` is the
+ * success path; `failed` is the safety net so the
+ * graph never holds a leaked `open` edge after a
+ * crash. */
+export type AgentGraphEdgeStatus = "open" | "closed" | "failed";
 
 /** One parent/child edge in the agent graph. */
 export interface AgentGraphEdge {
@@ -69,6 +75,21 @@ export interface AgentGraphStore {
     parentPeerId: string,
     subtaskId: string,
     verdict: VerdictEntry,
+    closedAt: number,
+  ): void;
+  /**
+   * Mark the open edge as `failed` (the verifier crashed
+   * before writing a verdict). Distinct from `closeEdge`
+   * because a failed edge has NO `verdict` payload — the
+   * scoreboard's `closedVerdictsFor` only returns edges
+   * with `status: "closed"`, so a failed edge never
+   * contaminates the reputation formula. No-op when no
+   * open edge matches (the edge was already closed by
+   * a successful verdict write, or never opened).
+   */
+  failEdge(
+    parentPeerId: string,
+    subtaskId: string,
     closedAt: number,
   ): void;
   /** All edges matching the criteria (both open and closed). */

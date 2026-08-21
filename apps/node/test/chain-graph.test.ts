@@ -90,6 +90,40 @@ describe("LocalAgentGraphStore", () => {
     expect(graph.allEdges()).toHaveLength(0);
   });
 
+  it("failEdge marks the open edge as 'failed' (no verdict payload)", () => {
+    // The verify-loop calls failEdge when the rule
+    // verify throws — a verdict can't be written
+    // (the verify crashed) but the open edge must
+    // not leak. The failed status is distinct from
+    // 'closed' (no verdict), and `closedVerdictsFor`
+    // filters it out (the scoreboard never sees it).
+    const graph = new LocalAgentGraphStore();
+    graph.openEdge({
+      parentPeerId: "orch-1",
+      childPeerId: "worker-1",
+      subtaskId: "subtask_a",
+      workerRuntime: "openclaw",
+      skillId: "research",
+      openedAt: 100,
+    });
+    graph.failEdge("orch-1", "subtask_a", 200);
+    const edges = graph.allEdges();
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.status).toBe("failed");
+    expect(edges[0]?.closedAt).toBe(200);
+    expect(edges[0]?.verdict).toBeUndefined();
+    // The scoreboard view filters by status === "closed" —
+    // a failed edge is invisible to closedVerdictsFor so
+    // the reputation formula never sees a fake entry.
+    expect(graph.closedVerdictsFor("worker-1")).toHaveLength(0);
+  });
+
+  it("failEdge without an open edge is a no-op (no leaked row)", () => {
+    const graph = new LocalAgentGraphStore();
+    graph.failEdge("orch-1", "subtask_ghost", 1);
+    expect(graph.allEdges()).toHaveLength(0);
+  });
+
   it("findEdges filters by criteria; closedVerdictsFor is per worker", () => {
     const graph = new LocalAgentGraphStore();
     for (const [child, skill] of [

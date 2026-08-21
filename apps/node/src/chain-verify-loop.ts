@@ -457,6 +457,17 @@ export async function runChainVerificationLoop(
       correlationId,
       summary: `subtask=${subtask.subtaskId} stage=rule ${summary}`,
     });
+    // v2.0 — close the open edge as `failed` (no verdict
+    // payload) so the graph doesn't leak an open edge
+    // when the rule verify crashes. The next openEdge for
+    // the same (parent, subtask) would also self-heal, but
+    // marking as `failed` preserves the operator-visible
+    // "the verify crashed" signal until the next attempt.
+    deps.graphStore?.failEdge(
+      deps.orchestratorPeerId,
+      subtask.subtaskId,
+      now.getTime(),
+    );
     return null;
   }
   // Phase 8 / Step 6 — the rule VerdictEntry's

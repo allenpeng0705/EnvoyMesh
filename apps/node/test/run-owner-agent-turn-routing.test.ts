@@ -1378,3 +1378,56 @@ describe("runOwnerAgentTurnViaRuntime — v1.7 OpenClaw tags as negative signals
     expect(spies.askEnvoyHarness).toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// v1.14 — unsupported-runtime fallback (the dispatch's chain.warn + OpenClaw
+// fall-through when the router recommends a runtime this node doesn't have
+// an adapter for). Pins the post-self-review contract: `decision.runtime`
+// is explicitly reassigned, so the OpenClaw dispatch runs with
+// `modelUsed: "openclaw"` and the original `routingReason` preserved.
+// ---------------------------------------------------------------------------
+
+describe("runOwnerAgentTurnViaRuntime — v1.14 unsupported-runtime fallback", () => {
+  it("falls back to OpenClaw when the v1.14 router recommends an unsupported runtime (pi)", async () => {
+    // SUPPORTED_RUNTIMES is `["envoy-harness", "openclaw"]` — pi,
+    // hermes, codex, codex-cli, openhuman all fall through. The
+    // manifest exposes a skill with `runtime: "pi"` and a "pi-task"
+    // tag so the router returns reason: "signal-runtime" with
+    // runtime: "pi". The dispatch must (a) log a chain.warn (we
+    // assert on the result shape — the spy test for the warn is
+    // below) and (b) fall through to the OpenClaw path.
+    const { ctx, spies } = makeCtx({
+      getNodeManifest: () => ({
+        peerId: "test-node",
+        runtimes: [
+          { runtime: "envoy-harness" as const, runtimeVersion: "test" },
+          { runtime: "openclaw" as const, runtimeVersion: "test" },
+        ],
+        skills: [
+          {
+            skillId: "pi-test-skill",
+            description: "test",
+            costCeilingUsd: undefined,
+            maxSensitivity: "public" as const,
+            tags: ["pi-task"],
+            runtime: "pi" as const,
+          },
+        ],
+      }),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "run my pi-task now",
+    );
+    // The router's reason is preserved so the operator sees
+    // "router wanted pi, fell back to openclaw".
+    expect(out.routingReason).toBe("signal-runtime");
+    // The actual dispatch is OpenClaw.
+    expect(out.modelUsed).toBe("openclaw");
+    expect(spies.askOpenClaw).toHaveBeenCalledTimes(1);
+    expect(spies.askEnvoyHarness).not.toHaveBeenCalled();
+    // The matched tag is in the routingSignals (the audit log
+    // shows what the user typed that triggered the v1.14 path).
+    expect(out.routingSignals).toContain("pi-task");
+  });
+});

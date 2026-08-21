@@ -219,6 +219,63 @@ describe("runChainVerificationLoop", () => {
     expect(edges[0]?.verdict?.subtaskId).toBe("subtask_a");
   });
 
+  it("marks the agent-graph edge as 'failed' when adapter.verify throws (v2.0 regression)", async () => {
+    // Pre-fix bug: the rule-verify catch returned `null` without
+    // closing the open edge, leaking an `open` edge in the graph.
+    // The fix: call `failEdge` so the edge carries the `failed`
+    // status (no verdict payload) and the scoreboard's
+    // `closedVerdictsFor` correctly filters it out.
+    const graph = new LocalAgentGraphStore();
+    const written: VerdictEntry[] = [];
+    const auditEvents: unknown[] = [];
+    const throwingAdapter: AgentAdapter = {
+      runtime: "openclaw",
+      describeSkills: () => [],
+      buildManifest: async () => {
+        throw new Error("not used in verify loop");
+      },
+      execute: async () => {
+        throw new Error("execute not called in this path");
+      },
+      verify: async () => {
+        throw new Error("model crashed");
+      },
+    };
+    const deps = makeDeps({
+      buildAdapter: () => throwingAdapter,
+      listRuntimes: () => ["openclaw"],
+      written,
+      auditEvents,
+      graphStore: graph,
+    });
+    const { state } = makeState();
+    const result = await runChainVerificationLoop(
+      deps,
+      state,
+      envelope(),
+      finalPartial(),
+    );
+    // The verify crashed → no verdict is written, function
+    // returns null, the graph carries the failed edge.
+    expect(result).toBeNull();
+    expect(written).toHaveLength(0);
+    const edges = graph.allEdges();
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.status).toBe("failed");
+    expect(edges[0]?.closedAt).toBe(NOW.getTime());
+    expect(edges[0]?.verdict).toBeUndefined();
+    // The scoreboard view filters by status === "closed" — a
+    // failed edge is invisible to closedVerdictsFor, so the
+    // reputation formula never sees a fake entry.
+    expect(graph.closedVerdictsFor("worker-1")).toHaveLength(0);
+    // The audit log records the verify_error so the operator
+    // can correlate the failed edge with a cause.
+    const verifyError = auditEvents.find(
+      (e) => (e as { type?: string }).type === "chain.verify_error",
+    );
+    expect(verifyError).toBeDefined();
+  });
+
   it("writes a rule VerdictEntry for a passing final partial", async () => {
     const written: VerdictEntry[] = [];
     const deps = makeDeps({

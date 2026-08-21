@@ -235,7 +235,12 @@ export async function runOwnerAgentTurnViaRuntime(
   // `askEnvoyHarnessSkill(message, skillId)`
   // instead of `askEnvoyHarness(message)`.
   const manifestView = readManifestView(ctx);
-  const decision = routeUserPrompt({
+  // `let` (not `const`) because the v1.14
+  // unsupported-runtime fallback below
+  // reassigns `decision.runtime` to point
+  // the dispatch at OpenClaw (see the
+  // chain.warn branch for the rationale).
+  let decision = routeUserPrompt({
     prompt: agentMessage,
     isEnvoyHarnessReady: ctx.isEnvoyHarnessReady(),
     envoyHarnessUnreadyReason: undefined, // host-side logging seam (future)
@@ -325,9 +330,21 @@ export async function runOwnerAgentTurnViaRuntime(
         matchedTag: decision.signals[0]?.token,
       },
     );
-    // The rest of the dispatch falls through to
-    // the OpenClaw path (the existing
-    // `runOwnerAgentTurnViaRuntime` flow).
+    // Explicit reassignment: the rest of the
+    // dispatch branches on `decision.runtime`.
+    // The fall-through to the OpenClaw path used
+    // to be implicit (the EH branch was skipped
+    // because `decision.runtime !== "envoy-harness"`),
+    // but that's fragile — a future refactor that
+    // adds a non-EH branch between this check and
+    // the OpenClaw dispatch would silently break
+    // the fallback. Reassigning here makes the
+    // intent explicit + load-bearing.
+    // `decision.reason` is preserved so the result's
+    // `routingReason` still shows the original router
+    // decision (the operator can see "router wanted
+    // pi, fell back to openclaw").
+    decision = { ...decision, runtime: "openclaw" };
   }
 
   // --- envoy-harness dispatch (signal-bearing prompt + EH ready) ---

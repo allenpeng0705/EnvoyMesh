@@ -85,6 +85,35 @@ export class LocalAgentGraphStore implements AgentGraphStore {
     this.edges = [...this.edges.slice(0, idx), closed, ...this.edges.slice(idx + 1)];
   }
 
+  failEdge(
+    parentPeerId: string,
+    subtaskId: string,
+    closedAt: number,
+  ): void {
+    // Mark the open edge as `failed` (no verdict payload).
+    // No-op when no open edge matches — the edge may have
+    // been already closed by a successful verdict write, or
+    // never opened. The openEdge's replace-on-reopen logic
+    // means a leaked open edge from a prior crash would
+    // have been replaced by the next openEdge call, so by
+    // the time failEdge runs we either find the new open
+    // edge (and fail it) or find nothing (no-op).
+    const idx = this.edges.findIndex(
+      (e) =>
+        e.parentPeerId === parentPeerId &&
+        e.subtaskId === subtaskId &&
+        e.status === "open",
+    );
+    if (idx === -1) return;
+    const edge = this.edges[idx]!;
+    const failed: AgentGraphEdge = {
+      ...edge,
+      status: "failed",
+      closedAt,
+    };
+    this.edges = [...this.edges.slice(0, idx), failed, ...this.edges.slice(idx + 1)];
+  }
+
   findEdges(criteria: AgentGraphCriteria): ReadonlyArray<AgentGraphEdge> {
     return this.edges.filter((e) => {
       if (criteria.parentPeerId !== undefined && e.parentPeerId !== criteria.parentPeerId) return false;
