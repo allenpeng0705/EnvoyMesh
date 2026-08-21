@@ -231,15 +231,17 @@ export async function runOwnerAgentTurnViaRuntime(
   // `/provider:NAME`) are ALSO stripped by the
   // router. The `cleanPrompt` field on the
   // decision is the post-strip prompt (the
-  // LLM doesn't see the hints). We use
-  // `cleanPrompt` for the EH/OpenClaw dispatches
-  // (the LLM never sees the hints) but keep
-  // `effectiveMessage` (= post-prefix-strip)
-  // for backward compat — the two are the same
-  // when no v1.5 hints are present.
-  const effectiveMessage = decision.cleanPrompt
-    ? stripHintPrefix(decision.cleanPrompt, decision)
-    : stripHintPrefix(agentMessage, decision);
+  // LLM doesn't see the hints). We use it
+  // directly here so the LLM never sees the
+  // hints, even when the strip leaves an empty
+  // string (e.g. a prompt that was just
+  // `/cost:0.5 /provider:openai` with no
+  // actual content). The empty-prompt case is
+  // rare + the router already routed to
+  // "default" (OpenClaw) when no signals
+  // matched, so the OpenClaw runtime gets the
+  // empty input + can respond accordingly.
+  const effectiveMessage = stripHintPrefix(decision.cleanPrompt, decision);
 
   // Build a result skeleton with the routing
   // fields populated. All branches below use this
