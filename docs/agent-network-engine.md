@@ -810,6 +810,19 @@ engine).
   `defaultCrossVerify(anotherAdapterOnSameRuntime)`,
   used for cross-model verification. v0
   cross-verify is cross-runtime only.
+  **v1.8 (2026-08-21) ships the cross-runtime
+  part of F9.5** — the cross-verify loop now
+  prefers a verifier with a different
+  `MODEL_FAMILY` than the worker (Q1 + Q3 of
+  the v1.8 sub-plan). The cross `VerdictEntry`
+  records the verifier's model family via the
+  existing `verifierModel` Zod field. The
+  cross-model-on-same-runtime primitive is a
+  v1.8+ future (the EH runtime doesn't yet
+  support per-call model overrides on the
+  cross-verify path). See
+  `docs/agent-harness-integration-v1-8.md`
+  for the v1.8 sub-plan + DONE stamp.
 - Scoreboard formula adjustment — the existing
   `aggregateReputation` reads the ArbitrationStore.
   v0 leaves the formula as-is; the cross verdict

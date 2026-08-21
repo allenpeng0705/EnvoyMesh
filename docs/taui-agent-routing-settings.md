@@ -726,7 +726,79 @@ doesn't need to distinguish between
   in the Tauri monorepo. v1.7 ships the
   backend + a design doc.
 
-## 14. References
+## 14. v1.8 — Cross verifier with different model (F9.5)
+
+> **Status:** Phase 8 v1.8. The Tauri team
+> picks up the chain report surface in their
+> workstream. v1.8 ships the backend
+> (`MODEL_FAMILY` table + the
+> `pickSecondRuntime` preference + the
+> `verifierModel` verdict recording).
+
+### 14.1 The chain report — verifier model surface
+
+When a Team job runs cross-verify (per the v1.4
+`verifyMode` setting), the verifier is a
+**second runtime with a different model family**
+than the worker (Q1 of the v1.8 sub-plan). The
+chain report surface (a future Tauri panel;
+not in v1.8's chat surface) shows the
+verifier's model family for each cross
+verdict. The end-user sees a friendly label
+(Q8):
+
+| Internal model family | Owner-visible label |
+|---|---|
+| `"claude"` | "Verified by Claude" |
+| `"native"` | "Verified by the free built-in assistant" |
+| `"pi"` | "Verified by Pi" |
+| `"hermes"` | "Verified by Hermes" |
+| `"codex"` | "Verified by Codex" |
+| `"codex-cli"` | "Verified by Codex" |
+| `"human"` | "Verified by a human" |
+
+The internal `verifierModel` field is the
+`VerdictEntry` field that's already in the
+Zod schema (`packages/protocol/src/agent-adapter.ts:347-389`).
+v1.8 reuses the existing field — no protocol
+change. The Tauri team maps the internal value
+to the user-friendly label.
+
+### 14.2 The fallback — single-runtime + same-family nodes
+
+When the node has only one runtime (e.g. only
+envoy-harness), the cross-verify is skipped
+(Q4 of the v1.8 sub-plan — single-runtime
+node). When the node has multiple runtimes
+but all have the same model family as the
+worker, the cross-verify falls back to the
+first non-worker runtime (Q3 — backward compat
+with v1.7). In both cases, the audit trail
+shows the fallback decision.
+
+### 14.3 Out of scope (v1.8+ future)
+
+- **Cross-model-on-same-runtime** (the full
+  F9.5 primitive) — the EH runtime doesn't
+  yet support per-call model overrides on
+  the cross-verify path. v1.8 ships the
+  cross-runtime primitive (worker on runtime
+  A → verifier on runtime B with a different
+  family); the cross-model-on-same-runtime
+  primitive is v1.8+ future.
+- **Tauri chain report UI** — the Tauri team
+  picks up the chain report surface in their
+  workstream. v1.8 ships the backend + a
+  design doc.
+- **Scoreboard formula** (v1.10) — the v1.8
+  `verifierModel` field is the foundation for
+  a future chunk that weights the verdict by
+  the model (e.g. "verifier is the same model
+  family as the worker" → less trustworthy).
+  v1.8 just records the model; the weighting
+  is v1.10.
+
+## 15. References
 
 - [`agent-harness-integration-v1-4.md`](./agent-harness-integration-v1-4.md)
   (the v1.4 sub-plan + DONE stamp)

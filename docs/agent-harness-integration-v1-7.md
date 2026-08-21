@@ -13,6 +13,16 @@
 > conflict in `packages/network/src/index.ts:2791`
 > unchanged).
 >
+> **v1.8 (2026-08-21) status note:** v1.8 builds
+> on v1.7. v1.7 added the negative-signal scan
+> (OpenClaw tags as implicit opt-out); v1.8
+> adds the F9.5 cross-verify primitive (the
+> verifier prefers a different model family).
+> v1.8 doesn't change v1.7's routing layer —
+> it only changes the chain-verify loop. See
+> [`agent-harness-integration-v1-8.md`](./agent-harness-integration-v1-8.md)
+> for the v1.8 sub-plan + DONE stamp.
+>
 > **What this doc covers:** v1.7 in **concrete
 > detail** — every file path, every type, every
 > test, every commit boundary, and the design

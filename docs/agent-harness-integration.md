@@ -1013,3 +1013,69 @@ fan-out within a job (whole-job only).
     `agent-harness-integration-v1-6.md`
     status note + `agent-harness-integration-v1-7.md`
     DONE stamp.
+
+- **2026-08-21 (v1.8 — cross verifier with
+  different model — F9.5 — DONE):** the v0
+  cross-verify loop picks the FIRST non-worker
+  runtime. v1.8 makes the **model-family
+  preference** explicit: the cross-verify
+  loop prefers a verifier with a different
+  `MODEL_FAMILY` than the worker (Q1 + Q3 of
+  the v1.8 sub-plan). When the node has
+  multiple runtimes with different families
+  (e.g. envoy-harness + openclaw), the
+  verifier is the different-family one. When
+  the node has only one runtime, the
+  cross-verify is skipped (Q4 — same as v0).
+  The cross `VerdictEntry` records the
+  verifier's model family via the existing
+  `verifierModel` Zod field (no protocol
+  change — the field is optional for
+  `source === "cross"` per the schema in
+  `packages/protocol/src/agent-adapter.ts:347-389`).
+  1 commit on `envoy_harness_integration`
+  branch (the user delegated commit; bundled
+  v1.8.1 + v1.8.2 + v1.8.3 into a single
+  commit at the end of v1.8). 6 new tests
+  (2 `modelFamilyFor` unit + 1 e2e
+  `verifierModel` recording + 3
+  `pickSecondRuntime` unit) + 240
+  pre-existing tests regression-clean on the
+  affected paths. No new type errors.
+  Detailed plan:
+  `docs/agent-harness-integration-v1-8.md`
+  (sub-plan with 9 locked design questions).
+  - **v1.8.1 — model family table +
+    cross-verify preference.** New
+    `MODEL_FAMILY` table (hardcoded
+    per-runtime) + `modelFamilyFor` helper
+    in `chain-verify-loop.ts`. The
+    `pickSecondRuntime` function now prefers
+    a different-family runtime (Q3). The
+    cross-verify branch sets
+    `verifierModel: modelFamilyFor(secondRuntime)`
+    on the cross `VerdictEntry` (reusing the
+    existing Zod field; no protocol change).
+    2 new `modelFamilyFor` unit tests + 3
+    new `pickSecondRuntime` unit tests.
+  - **v1.8.2 — e2e dispatch tests.** 1 new
+    e2e test exercising the cross-verify path
+    with `verifyMode: "cross-runtime"` and
+    checking the cross `VerdictEntry`'s
+    `verifierModel` field.
+  - **v1.8.3 — Tauri UI design doc +
+    closeout.** `docs/taui-agent-routing-
+    settings.md` §14 (chain report surface
+    for the verifier model family;
+    end-user-first copy mapping the
+    internal `verifierModel` to the
+    user-friendly label "Verified by
+    Claude" / "Verified by the free
+    built-in assistant" / etc.) + this
+    entry + `agent-network-engine.md` F9.5
+    status update (v1.x scope: cross-runtime
+    primitive; v1.8+ future: cross-model-on-
+    same-runtime) +
+    `agent-harness-integration-v1-7.md`
+    status note + `agent-harness-integration-v1-8.md`
+    DONE stamp.

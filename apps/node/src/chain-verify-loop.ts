@@ -77,6 +77,57 @@ export const CROSS_AGENT_COST_THRESHOLD_USD = 20;
 /** §8.1 — cross-agent verification is opt-in; default off. */
 export const DEFAULT_VERIFY_WITH_CROSS = false;
 
+/**
+ * Phase 8 / v1.8 — the model family for each
+ * AgentRuntime. The cross-verify loop uses this
+ * to prefer a verifier with a different family
+ * than the worker (Q1 of the v1.8 sub-plan).
+ *
+ * **Why a hardcoded table (not the node
+ * config):** the model FAMILY is a per-runtime
+ * attribute (not a per-node config). Different
+ * nodes might use different models, but the
+ * FAMILY is fixed — envoy-harness is always
+ * Claude-based, OpenClaw is always
+ * native-LLM-planner-based, etc.
+ *
+ * **Why per-runtime families:** the v1.x
+ * assumption is that each runtime has a
+ * distinct default model family. Cross-verify
+ * with a different family is the v1.x proxy
+ * for "cross-verify with a different model"
+ * (the actual F9.5 primitive — cross-verify
+ * with a different model on the SAME runtime
+ * — is a v1.8+ future when the EH runtime
+ * supports per-call model overrides on the
+ * cross-verify path).
+ *
+ * **End-user-first copy:** the model family
+ * is an internal value (developer jargon). The
+ * Tauri UI maps it to a user-friendly label
+ * (e.g. "Claude" for envoy-harness, "Built-in
+ * assistant" for OpenClaw).
+ */
+const MODEL_FAMILY: Record<AgentRuntime, string> = {
+  "envoy-harness": "claude",
+  "openclaw": "native",
+  "pi": "pi",
+  "hermes": "hermes",
+  "codex": "codex",
+  "codex-cli": "codex",
+  "openhuman": "human",
+};
+
+/**
+ * Phase 8 / v1.8 — the model family for a given
+ * AgentRuntime. Exported so the Tauri team can
+ * map the internal family to a user-friendly
+ * label (e.g. "Claude" / "Built-in assistant").
+ */
+export function modelFamilyFor(runtime: AgentRuntime): string {
+  return MODEL_FAMILY[runtime];
+}
+
 // ---------------------------------------------------------------------------
 // Deps + result shapes
 // ---------------------------------------------------------------------------
@@ -466,6 +517,13 @@ export async function runChainVerificationLoop(
       workerRuntime,
       verdict: crossVerdict,
       source: "cross",
+      // v1.8 — record the verifier's model
+      // family for the audit trail. The
+      // existing `verifierModel` Zod field
+      // is reused (it's optional for
+      // `source === "cross"` per the schema
+      // in `packages/protocol/src/agent-adapter.ts:347-389`).
+      verifierModel: modelFamilyFor(secondRuntime),
       now,
     });
     deps.audit.record({
@@ -536,14 +594,48 @@ function resolveWorkerRuntime(
   return deps.resolveWorkerRuntime?.(workerPeerId) ?? "openclaw";
 }
 
+/**
+ * Phase 8 / v1.8 — pick a verifier runtime.
+ *
+ * **Precedence** (Q3 of the v1.8 sub-plan):
+ * 1. A runtime with a different model family
+ *    than the worker (the F9.5 proxy for
+ *    "different model"). The first such
+ *    runtime in `listRuntimes()` wins.
+ * 2. The first non-worker runtime (v1.7
+ *    fallback — used when all non-worker
+ *    runtimes have the same model family as
+ *    the worker).
+ * 3. `undefined` when no second runtime is
+ *    available (single-runtime node; the
+ *    cross-verify is skipped per Q4 of the
+ *    v1.8 sub-plan).
+ *
+ * **Why prefer different family:** the
+ * F9.5 design intent is "cross-verify with a
+ * different model" (catches model-specific
+ * biases). In v1.x, "different model" is
+ * approximated by "different model family"
+ * (each runtime has a hardcoded family in the
+ * `MODEL_FAMILY` table). When the node has
+ * multiple runtimes with different families,
+ * we prefer the cross-family one.
+ */
 function pickSecondRuntime(
   deps: ChainVerifyLoopDeps,
   workerRuntime: AgentRuntime,
 ): AgentRuntime | undefined {
-  for (const runtime of deps.listRuntimes?.() ?? []) {
-    if (runtime !== workerRuntime) return runtime;
-  }
-  return undefined;
+  const runtimes = deps.listRuntimes?.() ?? [];
+  const workerFamily = MODEL_FAMILY[workerRuntime];
+  // Prefer a different-family runtime.
+  const differentFamily = runtimes.find(
+    (r) =>
+      r !== workerRuntime &&
+      MODEL_FAMILY[r] !== workerFamily,
+  );
+  if (differentFamily) return differentFamily;
+  // Fallback: any non-worker runtime.
+  return runtimes.find((r) => r !== workerRuntime);
 }
 
 function writeVerdict(
@@ -555,6 +647,23 @@ function writeVerdict(
     workerRuntime: AgentRuntime;
     verdict: Verdict;
     source: VerifierSource;
+    /**
+     * Phase 8 / v1.8 — the model that produced
+     * this verdict. Populated for cross
+     * verdicts (the verifier's model family
+     * from the `MODEL_FAMILY` table). The
+     * existing `VerdictEntrySchema` field
+     * (`verifierModel: z.string().optional()`)
+     * is reused; no protocol change needed.
+     *
+     * **When undefined:** the verdict is
+     * either rule (the adapter's own logic;
+     * not model-different) or another source
+     * that doesn't track the model. The
+     * Zod schema is optional for non-`"llm"`
+     * sources, so undefined is valid.
+     */
+    verifierModel?: string;
     now: Date;
   },
 ): VerdictEntry {
@@ -566,6 +675,15 @@ function writeVerdict(
     skillId: normalizeSkillId(subtask.requiredSkill),
     verdict: input.verdict,
     source: input.source,
+    // v1.8 — only include `verifierModel`
+    // when set, so the JSON serialization
+    // omits the field for rule verdicts
+    // (consistent with the v1.7 audit trail
+    // shape). The Zod schema accepts both
+    // shapes (the field is `optional()`).
+    ...(input.verifierModel !== undefined && {
+      verifierModel: input.verifierModel,
+    }),
     issuedBy: deps.orchestratorPeerId,
     issuedAt: input.now.toISOString(),
   };
