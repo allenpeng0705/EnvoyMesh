@@ -96,25 +96,44 @@ fi
 require_file "$SOCIAL_DIST" "built Social UI (apps/social/src/dist)"
 
 # envoy-harness (Phase 8). Optional on debug builds — set STAGE_ENVOY_HARNESS=0
-# to skip staging. The runtime disables the envoy-harness engine when the
-# staged tree is absent.
+# *and* ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1. The node statically imports the
+# adapter, so a skip without wiring into node_modules crashes on first launch.
 ENVOY_HARNESS_DIR="$RES/envoy-harness"
 ENVOY_HARNESS_ADAPTER_DIR="$RES/envoy-harness-adapter"
+ENVOY_HARNESS_NODE_MOD="$RES/node/node_modules/@envoymesh/envoy-harness"
+ENVOY_HARNESS_ADAPTER_NODE_MOD="$RES/node/node_modules/@envoymesh/envoy-harness-adapter"
 if [ -d "$ENVOY_HARNESS_DIR" ]; then
   require_file "$ENVOY_HARNESS_DIR/index.js" "envoy-harness main entry"
   require_file "$ENVOY_HARNESS_DIR/index.d.ts" "envoy-harness type definitions"
+  require_file "$ENVOY_HARNESS_DIR/package.json" "envoy-harness package.json (flattened resource tree)"
   require_dir_nonempty "$ENVOY_HARNESS_DIR" "envoy-harness staged tree"
   require_file "$ENVOY_HARNESS_ADAPTER_DIR/index.js" "envoy-harness-adapter main entry"
   require_file "$ENVOY_HARNESS_ADAPTER_DIR/index.d.ts" "envoy-harness-adapter type definitions"
+  require_file "$ENVOY_HARNESS_ADAPTER_DIR/package.json" "envoy-harness-adapter package.json (flattened resource tree)"
   require_dir_nonempty "$ENVOY_HARNESS_ADAPTER_DIR" "envoy-harness-adapter staged tree"
 else
   if [ "${STAGE_ENVOY_HARNESS:-}" = "0" ]; then
-    warn "envoy-harness not bundled (STAGE_ENVOY_HARNESS=0) — envoy-harness engine will be unavailable at runtime"
+    warn "envoy-harness resources not bundled (STAGE_ENVOY_HARNESS=0)"
   else
-    fail "envoy-harness staged tree missing at $ENVOY_HARNESS_DIR — run scripts/stage-tauri-envoy-harness-bundle.sh (or set STAGE_ENVOY_HARNESS=0 to skip)"
+    fail "envoy-harness staged tree missing at $ENVOY_HARNESS_DIR — run scripts/stage-tauri-envoy-harness-bundle.sh (or set STAGE_ENVOY_HARNESS=0 + ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1)"
   fi
 fi
 
+# Critical: Node resolves bare imports from resources/node/node_modules, not
+# from the sibling resources/envoy-harness* trees. Without these, first launch
+# crashes with ERR_MODULE_NOT_FOUND for @envoymesh/envoy-harness-adapter.
+if [ "${STAGE_ENVOY_HARNESS:-}" != "0" ] || [ "${ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP:-}" != "1" ]; then
+  require_file "$ENVOY_HARNESS_NODE_MOD/package.json" "envoy-harness in node_modules (runtime resolve)"
+  require_file "$ENVOY_HARNESS_NODE_MOD/dist/index.js" "envoy-harness dist entry in node_modules"
+  require_file "$ENVOY_HARNESS_ADAPTER_NODE_MOD/package.json" "envoy-harness-adapter in node_modules"
+  require_file "$ENVOY_HARNESS_ADAPTER_NODE_MOD/dist/index.js" "envoy-harness-adapter dist entry in node_modules"
+  if [ ! -d "$RES/node/node_modules/smol-toml" ]; then
+    fail "smol-toml missing from resources/node/node_modules — envoy-harness config loader will fail at runtime"
+  fi
+  if [ ! -d "$RES/node/node_modules/@envoymesh/agent-adapter" ]; then
+    fail "@envoymesh/agent-adapter missing from resources/node/node_modules — required by envoy-harness-adapter"
+  fi
+fi
 node_mb="$(du -sm "$RES/node" 2>/dev/null | awk '{print $1}')"
 openclaw_mb="$(du -sm "$RES/openclaw" 2>/dev/null | awk '{print $1}')"
 runtime_mb="$(du -sm "$RES/node-runtime" 2>/dev/null | awk '{print $1}')"

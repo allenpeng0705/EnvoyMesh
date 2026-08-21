@@ -67,8 +67,9 @@ function Write-Warn([string]$m) { Write-Host "  WARN $m" -ForegroundColor Yellow
 
 # ---- Skip gate ------------------------------------------------------------
 if ($StageMode -eq "0") {
-    Write-Host "[stage-tauri-envoy-harness-bundle] STAGE_ENVOY_HARNESS=0 — skipping envoy-harness staging."
-    Write-Info "(debug escape hatch — bundle will lack envoy-harness at runtime)"
+    Write-Host "[stage-tauri-envoy-harness-bundle] STAGE_ENVOY_HARNESS=0 — skipping envoy-harness resources staging."
+    Write-Info "NOTE: apps/node still statically imports @envoymesh/envoy-harness-adapter."
+    Write-Info "stage-bundle-node-runtime.ps1 will refuse STAGE_ENVOY_HARNESS=0 unless ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1 (non-runnable debug bundle)."
     exit 0
 }
 
@@ -139,6 +140,26 @@ function Stage-Dist([string]$SrcPkg, [string]$DestName) {
     if (Test-Path $destDir) { Remove-Item -Recurse -Force $destDir }
     New-Item -ItemType Directory -Force -Path $destDir | Out-Null
     Copy-Item -Recurse -Force (Join-Path $srcDist "*") $destDir
+    # Flattened dist/ needs a package.json whose main/exports point at
+    # ./index.js (not ./dist/index.js). Mirrors the bash twin.
+    $srcPkgJson = Join-Path $envHarnessDir "packages\$SrcPkg\package.json"
+    if (Test-Path $srcPkgJson) {
+        $src = Get-Content $srcPkgJson -Raw | ConvertFrom-Json
+        $out = [ordered]@{
+            name = $src.name
+            version = if ($src.version) { $src.version } else { "0.0.0" }
+            type = "module"
+            main = "./index.js"
+            types = "./index.d.ts"
+            exports = [ordered]@{
+                "." = [ordered]@{
+                    types = "./index.d.ts"
+                    import = "./index.js"
+                }
+            }
+        }
+        ($out | ConvertTo-Json -Depth 5) + "`n" | Set-Content -Path (Join-Path $destDir "package.json") -Encoding UTF8 -NoNewline
+    }
     # Restore the .keep sentinel so the working tree stays clean after staging.
     # Empty content is fine; .keep only exists to keep the empty dir tracked.
     New-Item -ItemType File -Force -Path (Join-Path $destDir ".keep") | Out-Null
@@ -178,8 +199,10 @@ if ($SmokeEnabled) {
     foreach ($f in @(
         (Join-Path $harnessDest "index.js"),
         (Join-Path $harnessDest "index.d.ts"),
+        (Join-Path $harnessDest "package.json"),
         (Join-Path $adapterDest "index.js"),
-        (Join-Path $adapterDest "index.d.ts")
+        (Join-Path $adapterDest "index.d.ts"),
+        (Join-Path $adapterDest "package.json")
     )) {
         if (-not (Test-Path $f)) { Write-Fail "smoke FAIL: $f missing" }
         if ((Get-Item $f).Length -eq 0) { Write-Fail "smoke FAIL: $f is 0 bytes (build may be broken)" }
@@ -189,4 +212,5 @@ if ($SmokeEnabled) {
 }
 
 Write-Host "[stage-tauri-envoy-harness-bundle] Done."
-Write-Info "Tauri will pick up resources\envoy-harness\ and resources\envoy-harness-adapter\ via the globs in apps\tauri\src-tauri\tauri.conf.json (added in this commit)."
+Write-Info "Tauri will pick up resources\envoy-harness\ and resources\envoy-harness-adapter\ via the globs in apps\tauri\src-tauri\tauri.conf.json."
+Write-Info "Runtime resolve goes through resources\node\node_modules\@envoymesh\ (wired by stage-bundle-node-runtime.ps1 — required for first launch)."

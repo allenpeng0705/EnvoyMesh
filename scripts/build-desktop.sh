@@ -46,8 +46,11 @@
 #
 # envoy-harness staging (Phase 8):
 #   STAGE_ENVOY_HARNESS=0
-#               Skip envoy-harness staging entirely (debug only — bundle
-#               will lack envoy-harness at runtime). Default: stage.
+#               Skip envoy-harness *resources* staging. The node still has
+#               static imports of @envoymesh/envoy-harness-adapter, so
+#               stage-bundle-node-runtime.sh refuses this unless
+#               ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1 (non-runnable debug
+#               bundle). Default: stage.
 #   STAGE_ENVOY_HARNESS=1
 #               Force a clean rebuild + overwrite. Runs
 #               `pnpm -F <pkg> clean` (best-effort) then
@@ -62,6 +65,9 @@
 #               Default: $ROOT/../envoy-harness. The script builds Package 1
 #               (envoy-harness) + Package 3 (envoy-harness-adapter) and
 #               copies their dist/ into apps/tauri/src-tauri/resources/.
+#               stage-bundle-node-runtime.sh also wires them into
+#               resources/node/node_modules/@envoymesh/ (required for
+#               first-launch module resolution).
 #               See scripts/stage-tauri-envoy-harness-bundle.sh.
 #   SMOKE_ENVOY_HARNESS=0
 #               Skip the post-stage smoke (asserts entry files exist in

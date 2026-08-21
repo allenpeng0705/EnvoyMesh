@@ -49,8 +49,10 @@ die() { echo "[stage-tauri-envoy-harness-bundle] error: $*" >&2; exit 1; }
 
 # ---- Skip gate ------------------------------------------------------------
 if [ "$STAGE_MODE" = "0" ]; then
-  echo "[stage-tauri-envoy-harness-bundle] STAGE_ENVOY_HARNESS=0 — skipping envoy-harness staging."
-  echo "  (debug escape hatch — bundle will lack envoy-harness at runtime)"
+  echo "[stage-tauri-envoy-harness-bundle] STAGE_ENVOY_HARNESS=0 — skipping envoy-harness resources staging."
+  echo "  NOTE: apps/node still statically imports @envoymesh/envoy-harness-adapter."
+  echo "  stage-bundle-node-runtime.sh will refuse STAGE_ENVOY_HARNESS=0 unless"
+  echo "  ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1 (non-runnable debug bundle)."
   exit 0
 fi
 
@@ -100,6 +102,7 @@ build_pkg() {
 
 build_pkg "@envoymesh/envoy-harness" "Package 1 (envoy-harness)"
 build_pkg "@envoymesh/envoy-harness-adapter" "Package 3 (envoy-harness-adapter)"
+build_pkg "@envoymesh/envoy-harness-client" "Package client (ACP client)"
 
 # ---- Stage dist/ → resources/ -------------------------------------------
 # Idempotency: rm -rf before copy. Re-runs do not accumulate stale files.
@@ -120,6 +123,29 @@ stage_dist() {
   rm -rf "$dest_dir"
   mkdir -p "$dest_dir"
   cp -R "$src_dist"/. "$dest_dir/"
+  # Flattened dist/ needs a package.json whose main/exports point at
+  # ./index.js (not ./dist/index.js). Without this, any future NODE_PATH /
+  # resolve against resources/envoy-harness would fail. The node_modules
+  # wiring in stage-bundle-node-runtime.sh uses the source package.json +
+  # dist/ layout instead; this file keeps the resource tree self-describing.
+  local src_pkg_json="$ENVOY_HARNESS_DIR/packages/$src_pkg/package.json"
+  if [ -f "$src_pkg_json" ]; then
+    node -e '
+      const fs = require("fs");
+      const src = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const out = {
+        name: src.name,
+        version: src.version || "0.0.0",
+        type: "module",
+        main: "./index.js",
+        types: "./index.d.ts",
+        exports: {
+          ".": { types: "./index.d.ts", import: "./index.js" },
+        },
+      };
+      fs.writeFileSync(process.argv[2], JSON.stringify(out, null, 2) + "\n");
+    ' "$src_pkg_json" "$dest_dir/package.json"
+  fi
   # Restore the .keep sentinel so the working tree stays clean after staging.
   # Empty content is fine; .keep only exists to keep the empty dir tracked.
   touch "$dest_dir/.keep"
@@ -131,6 +157,7 @@ stage_dist() {
 
 stage_dist "envoy-harness" "envoy-harness"
 stage_dist "envoy-harness-adapter" "envoy-harness-adapter"
+stage_dist "envoy-harness-client" "envoy-harness-client"
 
 # ---- Post-stage smoke -----------------------------------------------------
 # Asserts the staged tree has both packages, each with a non-trivial file
@@ -146,31 +173,45 @@ if [ "${SMOKE_ENVOY_HARNESS:-1}" = "1" ]; then
 
   HARNESS_DEST="$DEST_BASE/envoy-harness"
   ADAPTER_DEST="$DEST_BASE/envoy-harness-adapter"
+  CLIENT_DEST="$DEST_BASE/envoy-harness-client"
 
-  # 1. Both staged trees have a non-trivial number of files.
+  # 1. Staged trees have a non-trivial number of files.
   harness_count=$(find "$HARNESS_DEST" -type f 2>/dev/null | wc -l | tr -d ' ')
   adapter_count=$(find "$ADAPTER_DEST" -type f 2>/dev/null | wc -l | tr -d ' ')
+  client_count=$(find "$CLIENT_DEST" -type f 2>/dev/null | wc -l | tr -d ' ')
   [ "$harness_count" -gt 50 ]  || die "smoke FAIL: envoy-harness staged tree has only $harness_count files (expected 100+)"
   [ "$adapter_count" -gt 5 ]   || die "smoke FAIL: envoy-harness-adapter staged tree has only $adapter_count files (expected 10+)"
+  [ "$client_count" -gt 2 ]    || die "smoke FAIL: envoy-harness-client staged tree has only $client_count files (expected 3+)"
 
-  # 2. Both staged trees have the main entry file. The source package.json
-  #    says main: "./dist/index.js", and the stage script copies dist/ to
-  #    the root of the dest dir, so the main entry is at index.js.
+  # 2. Main entry files present. Source package.json says main: "./dist/index.js";
+  #    stage copies dist/ to dest root, so the main entry is index.js.
   [ -f "$HARNESS_DEST/index.js" ]  || die "smoke FAIL: $HARNESS_DEST/index.js missing"
   [ -f "$HARNESS_DEST/index.d.ts" ] || die "smoke FAIL: $HARNESS_DEST/index.d.ts missing"
+  [ -f "$HARNESS_DEST/package.json" ] || die "smoke FAIL: $HARNESS_DEST/package.json missing"
+  [ -f "$HARNESS_DEST/cli/acp-stdio.js" ] || die "smoke FAIL: $HARNESS_DEST/cli/acp-stdio.js missing (12b ACP entry)"
   [ -f "$ADAPTER_DEST/index.js" ]  || die "smoke FAIL: $ADAPTER_DEST/index.js missing"
   [ -f "$ADAPTER_DEST/index.d.ts" ] || die "smoke FAIL: $ADAPTER_DEST/index.d.ts missing"
+  [ -f "$ADAPTER_DEST/package.json" ] || die "smoke FAIL: $ADAPTER_DEST/package.json missing"
+  [ -f "$CLIENT_DEST/index.js" ]  || die "smoke FAIL: $CLIENT_DEST/index.js missing"
+  [ -f "$CLIENT_DEST/index.d.ts" ] || die "smoke FAIL: $CLIENT_DEST/index.d.ts missing"
+  [ -f "$CLIENT_DEST/package.json" ] || die "smoke FAIL: $CLIENT_DEST/package.json missing"
 
-  # 3. Both entry files are non-empty (a 0-byte file would suggest a
-  #    broken build, not a missing file).
+  # 3. Entry files are non-empty (0-byte suggests a broken build).
   for f in "$HARNESS_DEST/index.js" "$HARNESS_DEST/index.d.ts" \
-           "$ADAPTER_DEST/index.js" "$ADAPTER_DEST/index.d.ts"; do
+           "$HARNESS_DEST/package.json" "$HARNESS_DEST/cli/acp-stdio.js" \
+           "$ADAPTER_DEST/index.js" "$ADAPTER_DEST/index.d.ts" \
+           "$ADAPTER_DEST/package.json" \
+           "$CLIENT_DEST/index.js" "$CLIENT_DEST/index.d.ts" \
+           "$CLIENT_DEST/package.json"; do
     [ -s "$f" ] || die "smoke FAIL: $f is 0 bytes (build may be broken)"
   done
 
-  echo "  ✓ Post-stage smoke passed ($harness_count + $adapter_count files, all entry points present and non-empty)"
+  echo "  ✓ Post-stage smoke passed ($harness_count + $adapter_count + $client_count files, all entry points present and non-empty)"
 fi
 
 echo "[stage-tauri-envoy-harness-bundle] Done."
-echo "  Tauri will pick up resources/envoy-harness/ and resources/envoy-harness-adapter/ via"
-echo "  the globs in apps/tauri/src-tauri/tauri.conf.json (added in this commit)."
+echo "  Tauri will pick up resources/envoy-harness{,-adapter,-client}/ via"
+echo "  the globs in apps/tauri/src-tauri/tauri.conf.json."
+echo "  ACP stdio entry: resources/envoy-harness/cli/acp-stdio.js (12b)."
+echo "  Runtime resolve goes through resources/node/node_modules/@envoymesh/"
+echo "  (wired by scripts/stage-bundle-node-runtime.sh — required for first launch)."

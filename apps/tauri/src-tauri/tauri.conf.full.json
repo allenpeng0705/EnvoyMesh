@@ -61,6 +61,7 @@
       "resources/openclaw-envoymesh/",
       "resources/envoy-harness/**/*",
       "resources/envoy-harness-adapter/**/*",
+      "resources/envoy-harness-client/**/*",
       "resources/openclaw/extensions/duckduckgo/**/*",
       "resources/openclaw/extensions/brave/**/*",
       "resources/openclaw/extensions/exa/**/*",

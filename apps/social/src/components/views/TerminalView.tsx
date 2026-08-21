@@ -19,6 +19,7 @@ import {
 import { HomeFolderPicker } from "../HomeFolderPicker.js";
 import { TerminalPanel } from "../terminals/TerminalPanel.js";
 import { TerminalSidebar } from "../terminals/TerminalSidebar.js";
+import { PiChatPanel } from "./PiChatPanel.js";
 
 export interface TerminalViewProps {
   onOpenAssistant?: () => void;
@@ -43,6 +44,10 @@ export function TerminalView({
   const [piProjectDraft, setPiProjectDraft] = useState("");
   const [piProjectForceRestart, setPiProjectForceRestart] = useState(false);
   const [piRestartSessionId, setPiRestartSessionId] = useState<string | null>(null);
+  /** Phase G / 12b — reuse Pi chat panel vs Pi TUI (no new nav). */
+  const [agentPane, setAgentPane] = useState<"tui" | "chat">(() =>
+    nodeConfig?.piSettings?.codingBackend === "envoy-harness" ? "chat" : "tui",
+  );
   const preferPiSessionRef = useRef(false);
   const preferPiSessionIdRef = useRef<string | null>(null);
 
@@ -57,6 +62,12 @@ export function TerminalView({
     () => terminalSessions.find((s) => s.sessionId === selectedTerminalId) ?? null,
     [selectedTerminalId, terminalSessions],
   );
+
+  useEffect(() => {
+    if (nodeConfig?.piSettings?.codingBackend === "envoy-harness") {
+      setAgentPane("chat");
+    }
+  }, [nodeConfig?.piSettings?.codingBackend]);
 
   const applyPiSession = async (session: TerminalSessionSummary) => {
     preferPiSessionIdRef.current = session.sessionId;
@@ -254,20 +265,31 @@ export function TerminalView({
         <div className="chat-view-terminals-body">
           <TerminalSidebar
             selectedSessionId={selectedTerminalId}
-            onSelectSession={(id) => setSelectedTerminalId(id || null)}
+            onSelectSession={(id) => {
+              setAgentPane("tui");
+              setSelectedTerminalId(id || null);
+            }}
             onSessionsChange={setTerminalSessions}
             disabled={!terminalsAvailable}
             onOpenAssistant={onOpenAssistant}
-            onStartPi={() => void openPiTerminal({ startNew: true })}
+            onStartPi={() => {
+              setAgentPane("tui");
+              void openPiTerminal({ startNew: true });
+            }}
             onChangePiProject={(sessionId) =>
               void openPiTerminal({ changeProject: true, sessionId })
             }
+            onOpenPiChat={() => setAgentPane("chat")}
           />
-          <TerminalPanel
-            session={selectedTerminal}
-            onOpenAssistant={onOpenAssistant}
-            active={active}
-          />
+          {agentPane === "chat" ? (
+            <PiChatPanel />
+          ) : (
+            <TerminalPanel
+              session={selectedTerminal}
+              onOpenAssistant={onOpenAssistant}
+              active={active}
+            />
+          )}
         </div>
       </div>
 

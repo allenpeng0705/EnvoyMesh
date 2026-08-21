@@ -1756,12 +1756,11 @@ function ModelProviderSettings({
   }, [nodeService, nodeConfig?.modelProviders, nodeConfig?.envoyLocal?.enabled]);
 
   const cloudOrOllamaConfigured = hasUsableNonEnvoyLocalModelProvider(savedMp);
-  const cloudOrOllamaInUse = cloudOrOllamaConfigured && !localRunning;
+  // Cloud/Ollama wins whenever configured — Local is offline fallback only.
+  const cloudOrOllamaInUse = cloudOrOllamaConfigured;
   const providerUsageLabel = cloudOrOllamaInUse
     ? t("settings.ai.model.statusInUse")
-    : localRunning
-      ? t("settings.ai.model.statusStandbyLocal")
-      : t("settings.ai.model.statusNotInUse");
+    : t("settings.ai.model.statusNotInUse");
 
   const updateNodeConfig = async (partial: Partial<import("@envoymesh/api").NodeConfig>) => {
     await nodeService.updateNodeConfig(partial);
@@ -1788,9 +1787,9 @@ function ModelProviderSettings({
           ? t("settings.ai.model.sectionDescCloud")
           : t("settings.ai.model.sectionDescDefault")}
       </p>
-      {localRunning ? (
+      {localRunning && cloudOrOllamaConfigured ? (
         <p className="settings-hint model-provider-status-hint">
-          {t("settings.ai.model.statusStandbyLocalHint")}
+          {t("settings.ai.model.statusLocalFallbackHint")}
         </p>
       ) : null}
       <dl className="settings-list">
@@ -2601,9 +2600,10 @@ function EnvoyLocalSettings({
   const installedIds = useMemo(() => new Set(installed.map((m) => m.id)), [installed]);
 
   const savedMp = nodeConfig?.modelProviders;
-  const localProviderInUse = Boolean(status?.enabled && status?.running);
   const cloudConfigured = hasUsableNonEnvoyLocalModelProvider(savedMp);
   const cloudPreset = cloudConfigured ? inferModelProviderPreset(savedMp) : null;
+  // Local is "in use" only when it is actually driving inference (no cloud).
+  const localProviderInUse = Boolean(status?.enabled && status?.running) && !cloudConfigured;
 
   const summaryLine = !status
     ? t("settings.ai.envoyLocal.summaryOff")
@@ -2611,6 +2611,10 @@ function EnvoyLocalSettings({
       ? t("settings.ai.envoyLocal.summaryReady", {
           model: status.activeModelId ?? "—",
         })
+      : status.enabled && status.running && cloudConfigured
+        ? t("settings.ai.envoyLocal.summaryFallback", {
+            model: status.activeModelId ?? "—",
+          })
       : inFlight || status.enabled
         ? t("settings.ai.envoyLocal.summaryBusy", { status: statusLabel })
         : t("settings.ai.envoyLocal.summaryOff");
@@ -2673,9 +2677,10 @@ function EnvoyLocalSettings({
       <p className="section-desc">{t("settings.ai.envoyLocal.desc")}</p>
       {status && cloudPreset ? (
         <p className="settings-hint model-provider-status-hint">
-          {localProviderInUse
-            ? t("settings.ai.envoyLocal.cloudStandbyHint", {
+          {status.enabled && status.running
+            ? t("settings.ai.envoyLocal.localAsFallbackHint", {
                 provider: cloudPreset.label,
+                model: status.activeModelId ?? "—",
               })
             : t("settings.ai.envoyLocal.cloudFallbackHint", {
                 provider: cloudPreset.label,
@@ -4043,6 +4048,18 @@ export function SettingsAITab() {
     }
   }, [nodeService, updateNodeConfigPartial, nodeConfig?.piSettings]);
 
+  /** Phase G / 12b — switch sendToPi between Pi sidecar and envoy-harness ACP. */
+  const handleChangePiCodingBackend = useCallback(async (backend: "pi" | "envoy-harness") => {
+    try {
+      await updateNodeConfigPartial({
+        piSettings: { ...(nodeConfig?.piSettings ?? {}), codingBackend: backend },
+      });
+      void refreshPiStatus();
+    } catch (e) {
+      console.warn("[SettingsAITab] failed to update Pi coding backend", e);
+    }
+  }, [updateNodeConfigPartial, nodeConfig?.piSettings, refreshPiStatus]);
+
   // ---- AI Character Bots ----
   const [botDraft, setBotDraft] = useState({ name: "", systemPrompt: "", description: "", avatarColor: "#6366f1" });
   const [botSaving, setBotSaving] = useState(false);
@@ -4334,6 +4351,34 @@ export function SettingsAITab() {
                 />
                 <span>{t("settings.ai.aiEngine.enablePi")}</span>
               </label>
+            </div>
+
+            <div className="agent-field">
+              <label className="agent-field-label">
+                {t("settings.ai.aiEngine.piCodingBackend", "Coding backend")}
+              </label>
+              <select
+                className="agent-field-input"
+                value={nodeConfig?.piSettings?.codingBackend ?? "pi"}
+                disabled={restartingPi || !(nodeConfig?.piEnabled ?? true)}
+                onChange={(e) => {
+                  const v = e.target.value === "envoy-harness" ? "envoy-harness" : "pi";
+                  void handleChangePiCodingBackend(v);
+                }}
+              >
+                <option value="pi">
+                  {t("settings.ai.aiEngine.piCodingBackendPi", "Pi (sidecar)")}
+                </option>
+                <option value="envoy-harness">
+                  {t("settings.ai.aiEngine.piCodingBackendEh", "envoy-harness (ACP)")}
+                </option>
+              </select>
+              <p className="agent-field-hint">
+                {t(
+                  "settings.ai.aiEngine.piCodingBackendHint",
+                  "Routes sendToPi / approvals through the same Pi UI. Switch here or in EnvoyGo → Pi Agent. Pi TUI terminal stays Pi-only.",
+                )}
+              </p>
             </div>
 
             <div className="agent-field">

@@ -85,6 +85,105 @@ for pkg_dir in "$ROOT/packages"/*/; do
   fi
 done
 
+# ---------------------------------------------------------------------------
+# Phase 8 — wire sibling envoy-harness packages into the node's module graph.
+#
+# apps/node statically imports `@envoymesh/envoy-harness` and
+# `@envoymesh/envoy-harness-adapter`. Those live in the sibling monorepo
+# (not under EnvoyMesh/packages/), so the workspace loop above never sees
+# them. Without this step the packaged node crashes on first launch with
+# ERR_MODULE_NOT_FOUND even when resources/envoy-harness*/ was staged —
+# Node resolves bare imports from resources/node/node_modules, not from
+# sibling resource trees.
+#
+# Layout matches other @envoymesh/* packages: package.json + dist/.
+# STAGE_ENVOY_HARNESS=0 skips (debug only). Because the node still has
+# static imports, a skip produces a bundle that cannot start — we refuse
+# unless ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1.
+# ---------------------------------------------------------------------------
+ENVOY_HARNESS_DIR="${ENVOY_HARNESS_DIR:-$ROOT/../envoy-harness}"
+STAGE_ENVOY_HARNESS_INTO_NODE=1
+if [ "${STAGE_ENVOY_HARNESS:-}" = "0" ]; then
+  if [ "${ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP:-}" = "1" ]; then
+    echo "  WARN: STAGE_ENVOY_HARNESS=0 + ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1 — skipping envoy-harness in node_modules."
+    echo "        The packaged node has static imports of @envoymesh/envoy-harness-adapter and WILL crash on startup."
+    STAGE_ENVOY_HARNESS_INTO_NODE=0
+  else
+    echo "error: STAGE_ENVOY_HARNESS=0 is incompatible with the node's static imports of" >&2
+    echo "  @envoymesh/envoy-harness / @envoymesh/envoy-harness-adapter (first launch would crash)." >&2
+    echo "  Unset STAGE_ENVOY_HARNESS (default: stage), or set ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1" >&2
+    echo "  to force a non-runnable debug bundle." >&2
+    exit 1
+  fi
+fi
+
+copy_envoy_harness_pkg() {
+  local pkg="$1"
+  local src_pkg="$ENVOY_HARNESS_DIR/packages/$pkg"
+  local dest_pkg="$DEST/node_modules/@envoymesh/$pkg"
+  if [ ! -d "$src_pkg/dist" ]; then
+    echo "error: missing dist for @envoymesh/$pkg at $src_pkg/dist — build the sibling monorepo first" >&2
+    echo "  (cd $ENVOY_HARNESS_DIR && pnpm -F @envoymesh/$pkg build)" >&2
+    exit 1
+  fi
+  if [ ! -f "$src_pkg/package.json" ]; then
+    echo "error: missing package.json for @envoymesh/$pkg at $src_pkg" >&2
+    exit 1
+  fi
+  mkdir -p "$dest_pkg"
+  # Fresh copy — never leave a half-staged tree from a previous run.
+  rm -rf "$dest_pkg"
+  mkdir -p "$dest_pkg"
+  cp "$src_pkg/package.json" "$dest_pkg/"
+  cp -R "$src_pkg/dist" "$dest_pkg/"
+}
+
+if [ "$STAGE_ENVOY_HARNESS_INTO_NODE" = "1" ]; then
+  echo "  Staging @envoymesh/envoy-harness (+ adapter) from sibling monorepo..."
+  if [ ! -d "$ENVOY_HARNESS_DIR/packages/envoy-harness" ] || \
+     [ ! -d "$ENVOY_HARNESS_DIR/packages/envoy-harness-adapter" ]; then
+    echo "error: ENVOY_HARNESS_DIR=$ENVOY_HARNESS_DIR is missing packages/envoy-harness{,-adapter}." >&2
+    echo "  Place the sibling monorepo at $ROOT/../envoy-harness, or set ENVOY_HARNESS_DIR." >&2
+    echo "  (Run scripts/stage-tauri-envoy-harness-bundle.sh first, or build with STAGE_ENVOY_HARNESS unset.)" >&2
+    exit 1
+  fi
+  copy_envoy_harness_pkg "envoy-harness"
+  copy_envoy_harness_pkg "envoy-harness-adapter"
+  echo "  ✓ @envoymesh/envoy-harness + @envoymesh/envoy-harness-adapter in node_modules"
+
+  # Explicitly stage smol-toml (unique harness dep). The safety-net below
+  # also picks it up, but an early abort in the npm-ls loop used to leave
+  # it missing — fail closed here when we can find it.
+  if [ ! -d "$DEST/node_modules/smol-toml" ]; then
+    smol_src=""
+    for cand in \
+      "$ENVOY_HARNESS_DIR/packages/envoy-harness/node_modules/smol-toml" \
+      "$ENVOY_HARNESS_DIR/node_modules/smol-toml"
+    do
+      if [ -e "$cand" ]; then
+        if [ -L "$cand" ]; then
+          if command -v realpath >/dev/null 2>&1; then
+            smol_src="$(realpath "$cand")"
+          else
+            smol_src="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$cand")"
+          fi
+        else
+          smol_src="$cand"
+        fi
+        break
+      fi
+    done
+    if [ -z "$smol_src" ] && [ -d "$ENVOY_HARNESS_DIR/node_modules/.pnpm" ]; then
+      smol_src="$(find "$ENVOY_HARNESS_DIR/node_modules/.pnpm" -type d -name 'smol-toml' 2>/dev/null | head -n 1 || true)"
+    fi
+    if [ -n "$smol_src" ] && [ -d "$smol_src" ]; then
+      mkdir -p "$DEST/node_modules"
+      cp -R "$smol_src" "$DEST/node_modules/smol-toml"
+      echo "  ✓ smol-toml staged from sibling monorepo"
+    fi
+  fi
+fi
+
 echo "  Staging production npm dependencies..."
 while IFS= read -r mod_path; do
   [ -n "$mod_path" ] || continue
@@ -112,6 +211,27 @@ while IFS= read -r mod_path; do
     continue
   fi
   mkdir -p "$(dirname "$dest_mod")"
+  # Prefer the hoisted copy under $ROOT/node_modules when present. Nested
+  # npm-ls paths can otherwise pin an older major (e.g. uint8arrays@5
+  # missing withArrayBuffer while @libp2p needs 6.x).
+  hoisted="$ROOT/node_modules/$pkg_name"
+  if [ -e "$hoisted" ]; then
+    mod_path="$hoisted"
+  fi
+  # Resolve pnpm/npm symlinks to real directories before copy. A relative
+  # symlink (e.g. magicast → ../../magicast@…/node_modules/magicast) breaks
+  # when copied into the staged tree and aborts the whole stage under set -e.
+  if [ -L "$mod_path" ]; then
+    if command -v realpath >/dev/null 2>&1; then
+      mod_path="$(realpath "$mod_path")"
+    else
+      mod_path="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$mod_path")"
+    fi
+  fi
+  if [ ! -d "$mod_path" ]; then
+    echo "  Skipping broken/non-dir dep path for $pkg_name: $mod_path"
+    continue
+  fi
   cp -R "$mod_path" "$dest_mod"
 done < <(npm ls --omit=dev -w @envoymesh/node --all --parseable 2>/dev/null || true)
 
@@ -143,6 +263,29 @@ dep_search_roots=(
   "$ROOT/apps/node/node_modules"
   "$ROOT/packages/openclaw/node_modules"
 )
+# Phase 8: envoy-harness's unique runtime deps (e.g. smol-toml) live only
+# in the sibling monorepo's node_modules. Extend the search roots so the
+# safety-net fixpoint can hoist them into the staged tree.
+if [ "$STAGE_ENVOY_HARNESS_INTO_NODE" = "1" ]; then
+  for eh_nm in \
+    "$ENVOY_HARNESS_DIR/node_modules" \
+    "$ENVOY_HARNESS_DIR/packages/envoy-harness/node_modules" \
+    "$ENVOY_HARNESS_DIR/packages/envoy-harness-adapter/node_modules"
+  do
+    if [ -d "$eh_nm" ]; then
+      dep_search_roots+=("$eh_nm")
+    fi
+  done
+  # pnpm nests deps under .pnpm/<pkg>@ver/node_modules/<pkg>. Walk one level
+  # of those virtual stores so smol-toml resolves even when not hoisted.
+  if [ -d "$ENVOY_HARNESS_DIR/node_modules/.pnpm" ]; then
+    while IFS= read -r smol_dir; do
+      [ -n "$smol_dir" ] || continue
+      # Parent of smol-toml is the node_modules dir to search.
+      dep_search_roots+=("$(dirname "$smol_dir")")
+    done < <(find "$ENVOY_HARNESS_DIR/node_modules/.pnpm" -type d -name 'smol-toml' 2>/dev/null | head -n 5 || true)
+  fi
+fi
 seed_pkgs=()
 [ -f "$ROOT/apps/node/package.json" ] && seed_pkgs+=("$ROOT/apps/node/package.json")
 [ -f "$ROOT/packages/openclaw/package.json" ] && seed_pkgs+=("$ROOT/packages/openclaw/package.json")
@@ -198,6 +341,19 @@ while [ "$iter" -lt "$max_iterations" ]; do
         continue
       fi
       mkdir -p "$(dirname "$dest_dep")"
+      # Resolve symlinks (pnpm nests under .pnpm/…). Copying a relative
+      # symlink into the staged tree leaves a dangling link.
+      if [ -L "$src_dep" ]; then
+        if command -v realpath >/dev/null 2>&1; then
+          src_dep="$(realpath "$src_dep")"
+        else
+          src_dep="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$src_dep")"
+        fi
+      fi
+      if [ ! -d "$src_dep" ]; then
+        echo "  Skipping broken/non-dir safety-net path for $dep_name: $src_dep"
+        continue
+      fi
       cp -R "$src_dep" "$dest_dep"
       copied_this_iter=$((copied_this_iter + 1))
     done <<< "$dep_names"
@@ -256,6 +412,19 @@ for dep in zod ws yaml sharp main-event "@libp2p/interface" "@envoymesh/kb-obsid
     missing="$missing $dep"
   fi
 done
+# Phase 8 — when harness is wired in, its unique runtime dep must be present.
+if [ "$STAGE_ENVOY_HARNESS_INTO_NODE" = "1" ]; then
+  for dep in \
+    "@envoymesh/envoy-harness" \
+    "@envoymesh/envoy-harness-adapter" \
+    "@envoymesh/agent-adapter" \
+    smol-toml
+  do
+    if [ ! -d "$DEST/node_modules/$dep" ]; then
+      missing="$missing $dep"
+    fi
+  done
+fi
 if [ -n "$missing" ]; then
   echo "" >&2
   echo "  CRITICAL: missing runtime deps:$missing" >&2
@@ -267,11 +436,17 @@ if [ -n "$missing" ]; then
   echo "    2. The dep is nested deeper than the search roots (rare)" >&2
   echo "    3. The dep was pruned by 'npm prune --production' but is needed at runtime" >&2
   echo "    4. sharp platform optionalDeps omitted — run: npm install --os=$SHARP_OS --cpu=$SHARP_CPU sharp" >&2
+  if [ "$STAGE_ENVOY_HARNESS_INTO_NODE" = "1" ]; then
+    echo "    5. envoy-harness sibling deps missing — run: (cd $ENVOY_HARNESS_DIR && pnpm install && pnpm -r build)" >&2
+  fi
   echo "" >&2
   echo "  Diagnostic: npm ls <dep> to find where it actually lives" >&2
   exit 1
 fi
 echo "  + sharp platform packages present (${SHARP_PLATFORM_DEPS[*]})"
+if [ "$STAGE_ENVOY_HARNESS_INTO_NODE" = "1" ]; then
+  echo "  + envoy-harness packages + smol-toml present"
+fi
 
 # End-to-end import check: actually run Node's module resolver against
 # every module the runtime entry imports. This catches missing modules
@@ -282,7 +457,17 @@ echo "  + sharp platform packages present (${SHARP_PLATFORM_DEPS[*]})"
 # clear list of what's missing.
 echo "  End-to-end import check..."
 NODE_BIN="${ENVOYMESH_NODE_EXE:-node}"
-cat > "$DEST/__import_probe.mjs" <<'PROBE'
+# Build the probe script. When envoy-harness is wired in, include it in the
+# critical import list so a missing package fails the build instead of the
+# user's first launch.
+HARNESS_PROBE_MODS=""
+if [ "$STAGE_ENVOY_HARNESS_INTO_NODE" = "1" ]; then
+  HARNESS_PROBE_MODS='
+  // Phase 8 — sibling monorepo packages (static imports in node-service-impl)
+  "@envoymesh/envoy-harness", "@envoymesh/envoy-harness-adapter",
+  "@envoymesh/agent-adapter", "smol-toml",'
+fi
+cat > "$DEST/__import_probe.mjs" <<PROBE
 const mods = [
   // Direct npm deps
   "zod", "ws", "yaml", "psl", "nat-upnp", "sharp",
@@ -293,7 +478,7 @@ const mods = [
   "@envoymesh/bonds", "@envoymesh/network", "@envoymesh/vault",
   "@envoymesh/local-store", "@envoymesh/models", "@envoymesh/rag",
   "@envoymesh/ipfs-helia", "@envoymesh/openclaw-runtime",
-  "@envoymesh/kb-obsidian"
+  "@envoymesh/kb-obsidian",${HARNESS_PROBE_MODS}
 ];
 let failed = 0;
 for (const m of mods) {
@@ -302,12 +487,12 @@ for (const m of mods) {
   } catch (e) {
     // Fail on ANY import error — sharp throws a plain Error (not
     // ERR_MODULE_NOT_FOUND) when the platform binary is missing.
-    console.error("FAIL: " + m + " — " + (e && e.message ? e.message.split("\n")[0] : e));
+    console.error("FAIL: " + m + " — " + (e && e.message ? e.message.split("\\n")[0] : e));
     failed++;
   }
 }
 if (failed > 0) {
-  console.error("\n" + failed + " module(s) failed to resolve. The bundle will crash at startup.");
+  console.error("\\n" + failed + " module(s) failed to resolve. The bundle will crash at startup.");
   process.exit(1);
 }
 console.error("All " + mods.length + " critical imports resolved.");

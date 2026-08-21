@@ -7,7 +7,7 @@ import { useChatStickToBottom } from "../../hooks/useChatStickToBottom.js";
 import { ChainReportInlineCard } from "../ChainReportInlineCard.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import { openLocalFile } from "../../lib/library-file-actions.js";
-import { hasUsableModelProvider, stripModelThinking } from "@envoymesh/api";
+import { hasUsableModelProvider, hasUsableNonEnvoyLocalModelProvider, stripModelThinking } from "@envoymesh/api";
 import type { AgentActivityRecord, AnswerFormat, ChainReportReceivedEvent, ChatMessage, OwnerAgentApprovalSummary, OwnerAgentDomain, OwnerAgentTurnResult, StructuredBlock } from "@envoymesh/api";
 import type { ChainReport } from "@envoymesh/protocol";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
@@ -264,6 +264,7 @@ export function AIChatPanel({
   const assistantReady = nodeStatus === "running";
   const [localInUse, setLocalInUse] = useState(false);
   const [localModelName, setLocalModelName] = useState<string | null>(null);
+  const cloudConfigured = hasUsableNonEnvoyLocalModelProvider(nodeConfig?.modelProviders);
   useEffect(() => {
     let cancelled = false;
     const refresh = () => {
@@ -271,9 +272,10 @@ export function AIChatPanel({
         .getEnvoyLocalStatus()
         .then((st) => {
           if (cancelled) return;
-          const active = Boolean(st.enabled && st.running);
-          setLocalInUse(active);
-          setLocalModelName(active ? (st.activeModelId?.trim() || null) : null);
+          // Local drives the chat header only when no cloud/Ollama is configured.
+          const driving = Boolean(st.enabled && st.running) && !cloudConfigured;
+          setLocalInUse(driving);
+          setLocalModelName(driving ? (st.activeModelId?.trim() || null) : null);
         })
         .catch(() => {
           if (cancelled) return;
@@ -287,9 +289,8 @@ export function AIChatPanel({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [nodeService, nodeConfig?.envoyLocal?.enabled]);
-  const cloudConfigured = hasUsableModelProvider(nodeConfig?.modelProviders);
-  const modelConfigured = cloudConfigured || localInUse;
+  }, [nodeService, nodeConfig?.envoyLocal?.enabled, cloudConfigured]);
+  const modelConfigured = cloudConfigured || localInUse || hasUsableModelProvider(nodeConfig?.modelProviders);
   const configureAiCtaShownRef = useRef(false);
   const assistantBlockedHint =
     nodeStatus === "starting"

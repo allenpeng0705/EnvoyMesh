@@ -11,6 +11,8 @@ export const zhAiSettingsMessages = {
     statusStandbyLocal: "未使用",
     statusStandbyLocalHint:
       "Envoy Local 正在运行。上方的云端/Ollama 设置会保留；停止 Local 后将继续使用它们。",
+    statusLocalFallbackHint:
+      "Envoy Local 作为离线后备运行中。对话使用上方的云端/Ollama 提供商。",
     providerLabel: "提供商",
     presetHint: "预设会填充端点与模型建议。OpenClaw、聊天草稿，以及未单独覆盖时的 Pi，都使用此设置。",
     modeMock: "Mock（仅测试）",
@@ -320,7 +322,7 @@ export const zhAiSettingsMessages = {
     stop: "停止 Envoy Local",
     stopping: "正在停止…",
     stopOk: "Envoy Local 已停止 — 已切回云端/Ollama 设置",
-    stopHint: "停止不会改动云端/Ollama 配置，推理会自动切回它们。",
+    stopHint: "停止不会改动云端/Ollama 配置。已配置云端时对话优先用云端；仅在未配置云端时才使用 Local。",
     disable: "禁用 Envoy Local",
     restart: "重启引擎",
     cancel: "取消下载",
@@ -349,12 +351,15 @@ export const zhAiSettingsMessages = {
     closeManage: "关闭",
     summaryOff: "关闭 — 打开「管理」以启用本地 llama-server。",
     summaryReady: "就绪 · {model}",
+    summaryFallback: "待机 · {model}（云端/Ollama 生效中）",
     summaryBusy: "{status}",
     usageStatus: "AI 提供商",
     statusInUse: "使用中",
     statusNotInUse: "未使用",
     cloudFallbackHint: "云端/Ollama 正在使用（{provider}）。",
     cloudStandbyHint: "云端/Ollama 仍保留：{provider}（停止 Local 后使用）。",
+    localAsFallbackHint:
+      "对话使用 {provider}。Envoy Local（{model}）仅在未配置云端时作为离线后备。",
     modelsHeading: "模型",
     modelsDesc:
       "聊天 GGUF 放在 models 目录；知识库嵌入 GGUF 放在 embed-models。可自行放入文件后点刷新，再选择要用的模型。",

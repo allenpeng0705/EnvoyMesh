@@ -87,6 +87,7 @@ import {
   createProviderAdapter,
   defaultBuildSubagentFactory,
   LocalMeshSubmitter,
+  type AskHandler,
   type ModelAdapter,
   type MeshSubmitter,
   type Tool,
@@ -244,6 +245,17 @@ export interface RealEnvoyHarnessAskOptions {
    * the v1.5 sub-plan).
    */
   providerHint?: string;
+  /**
+   * Phase G / 12b — optional per-tool approval bridge
+   * (ACP → `pi:proposal`). When set, PreToolUse asks
+   * and the handler decides allow/deny.
+   */
+  askHandler?: AskHandler;
+  /**
+   * When `askHandler` is set, only tools where this
+   * returns true trigger a host prompt. Default: all tools.
+   */
+  shouldAskTool?: (toolName: string) => boolean;
 }
 
 /** Options accepted by `askSkill`. `skillId` is required
@@ -379,6 +391,17 @@ export function createRealEnvoyHarnessRuntime(
     | undefined;
   let initPromise: Promise<NonNullable<typeof internals>> | undefined;
 
+  // Phase G / 12b — live AskHandler for the current ask().
+  // Agents are built per execute(); the factory reads these
+  // boxes at construction time.
+  const askBridge: {
+    handler: AskHandler | undefined;
+    shouldAskTool: ((toolName: string) => boolean) | undefined;
+  } = {
+    handler: undefined,
+    shouldAskTool: undefined,
+  };
+
   // The DI seam: tests inject `opts.modelFactory`. The
   // default wraps `createProviderAdapter` (which takes
   // a `ProviderConfig` object) so the seam shape is the
@@ -484,6 +507,15 @@ export function createRealEnvoyHarnessRuntime(
         inner: innerSubmitter,
         workerPeerId: opts.workerPeerId,
       });
+      const buildAgent = defaultBuildAgentFactory({
+        model,
+        cwd: opts.cwd,
+        meshSubmitter: submitter,
+        ...(opts.bClassTools ? { bClassTools: opts.bClassTools } : {}),
+        getAskHandler: () => askBridge.handler,
+        shouldAskTool: (toolName) =>
+          askBridge.shouldAskTool?.(toolName) ?? true,
+      });
       // The top-level agent (built by `defaultBuildAgentFactory`)
       // has its `task` tool wired to the cross-runtime
       // submitter. So when the model emits a `task` call,
@@ -512,12 +544,7 @@ export function createRealEnvoyHarnessRuntime(
       // adapter).
       const adapter = opts.openClawAdapter
         ? buildEnvoyHarnessAdapterWithCrossVerify({
-            buildAgent: defaultBuildAgentFactory({
-              model,
-              cwd: opts.cwd,
-              meshSubmitter: submitter,
-              ...(opts.bClassTools ? { bClassTools: opts.bClassTools } : {}),
-            }),
+            buildAgent,
             signResult: defaultSignResult(opts.agentPrivateKeyPem),
             workerPeerId: opts.workerPeerId,
             openClawAdapter: opts.openClawAdapter,
@@ -527,12 +554,7 @@ export function createRealEnvoyHarnessRuntime(
             buildPrompt: (input) => input.objective,
           })
         : new EnvoyHarnessAdapter({
-            buildAgent: defaultBuildAgentFactory({
-              model,
-              cwd: opts.cwd,
-              meshSubmitter: submitter,
-              ...(opts.bClassTools ? { bClassTools: opts.bClassTools } : {}),
-            }),
+            buildAgent,
             signResult: defaultSignResult(opts.agentPrivateKeyPem),
             workerPeerId: opts.workerPeerId,
             // Passthrough: the chain worker already built the
@@ -560,45 +582,52 @@ export function createRealEnvoyHarnessRuntime(
       // design).
       providerHint: askOpts?.providerHint,
     });
-    const local = await ensureInitialized();
-    const result = await local.adapter.execute({
-      skillId: askOpts?.skillId ?? opts.defaultSkillId ?? "code-review",
-      objective: prompt,
-      inputArtifacts: [],
-      costCeilingUsd:
-        askOpts?.costCeilingUsd ?? opts.defaultCostCeilingUsd ?? 1,
-      deadlineMs: askOpts?.deadlineMs ?? opts.defaultDeadlineMs ?? 60_000,
-      correlationId: askOpts?.correlationId ?? randomUUID(),
-      signal: askOpts?.signal ?? new AbortController().signal,
-    });
-    // Extract the first text block. `result.content` is
-    // the wire `ContentBlock[]` (kind: "text" | "structured"
-    // | "image" | "file" — see `@envoymesh/protocol`). The
-    // adapter's `localToWireResult` translates the local
-    // `ContentBlock` (type: "text") to the wire shape
-    // (kind: "text"). The chain worker only needs the
-    // first text block (it renders it as the
-    // `result.namedArtifacts[0].artifact.content`).
-    const firstText = result.content.find(
-      (b): b is { kind: "text"; text: string; mimeType?: string } =>
-        b.kind === "text",
-    );
-    if (!firstText || firstText.text.length === 0) {
-      opts.log?.("envoy_harness.ask.empty", {
+    askBridge.handler = askOpts?.askHandler;
+    askBridge.shouldAskTool = askOpts?.shouldAskTool;
+    try {
+      const local = await ensureInitialized();
+      const result = await local.adapter.execute({
+        skillId: askOpts?.skillId ?? opts.defaultSkillId ?? "code-review",
+        objective: prompt,
+        inputArtifacts: [],
+        costCeilingUsd:
+          askOpts?.costCeilingUsd ?? opts.defaultCostCeilingUsd ?? 1,
+        deadlineMs: askOpts?.deadlineMs ?? opts.defaultDeadlineMs ?? 60_000,
+        correlationId: askOpts?.correlationId ?? randomUUID(),
+        signal: askOpts?.signal ?? new AbortController().signal,
+      });
+      // Extract the first text block. `result.content` is
+      // the wire `ContentBlock[]` (kind: "text" | "structured"
+      // | "image" | "file" — see `@envoymesh/protocol`). The
+      // adapter's `localToWireResult` translates the local
+      // `ContentBlock` (type: "text") to the wire shape
+      // (kind: "text"). The chain worker only needs the
+      // first text block (it renders it as the
+      // `result.namedArtifacts[0].artifact.content`).
+      const firstText = result.content.find(
+        (b): b is { kind: "text"; text: string; mimeType?: string } =>
+          b.kind === "text",
+      );
+      if (!firstText || firstText.text.length === 0) {
+        opts.log?.("envoy_harness.ask.empty", {
+          durationMs: Date.now() - startedAt,
+        });
+        // Match the openclaw / ext engine's behavior: a
+        // clean failure with a clear reason, not a throw.
+        // The chain executor maps this to
+        // `envoy_harness_empty` and emits an
+        // `AN_ENGINE_FAIL` partial.
+        throw new Error("envoy_harness_empty: no text in result");
+      }
+      opts.log?.("envoy_harness.ask.done", {
+        chars: firstText.text.length,
         durationMs: Date.now() - startedAt,
       });
-      // Match the openclaw / ext engine's behavior: a
-      // clean failure with a clear reason, not a throw.
-      // The chain executor maps this to
-      // `envoy_harness_empty` and emits an
-      // `AN_ENGINE_FAIL` partial.
-      throw new Error("envoy_harness_empty: no text in result");
+      return firstText.text;
+    } finally {
+      askBridge.handler = undefined;
+      askBridge.shouldAskTool = undefined;
     }
-    opts.log?.("envoy_harness.ask.done", {
-      chars: firstText.text.length,
-      durationMs: Date.now() - startedAt,
-    });
-    return firstText.text;
   };
 
   // Phase 8 / v1.2 — per-skill dispatch. Mirrors

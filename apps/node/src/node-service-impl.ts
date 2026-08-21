@@ -442,9 +442,11 @@ import { bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 // stack (ModelAdapter + LocalCrossRuntimeSubmitter +
 // EnvoyHarnessAdapter) that backs `askEnvoyHarness`.
 import {
+  createEnvoyHarnessAcpHost,
   createRealEnvoyHarnessRuntime,
   ENVOY_HARNESS_RUNTIME_SKILLS,
   loadEnvoyHarnessRuntimeConfig,
+  shouldAskAcpTool,
   type RealEnvoyHarnessRuntime,
 } from "./agent-runtime-envoy/index.js";
 // Phase 8 / Step 3 — the B-class tool factories
@@ -1280,6 +1282,8 @@ import {
   type PiRuntimeStateMutable,
   type PiRuntimeDeps,
 } from "./node-service-pi.js";
+import { AcpPermissionBridge } from "./node-service-acp-ui.js";
+import { resolvePiCodingBackend } from "./pi-coding-backend.js";
 import { ensurePiTerminalSession } from "./pi-terminal-session.js";
 import {
   cancelEnvoyLocalDownloadViaRuntime,
@@ -4731,6 +4735,24 @@ class NodeServiceImpl implements NodeService {
   // Phase 49 — Pi Runtime (local coding agent; local-only, no mesh.* tools)
   private readonly _piState = createPiRuntimeState();
 
+  /**
+   * Phase G / 12b — ACP permission waiter. Mapped onto existing
+   * `pi:proposal` / `piRespondToProposal` so EnvoyGo needs no changes.
+   */
+  private readonly _acpPermissionBridge = new AcpPermissionBridge(
+    (_event, payload) => {
+      this.emit("pi:proposal", {
+        proposal: {
+          uiRequestId: payload.requestId,
+          title: payload.toolName,
+          message: payload.description,
+          timeoutMs: payload.timeoutMs,
+          receivedAt: new Date().toISOString(),
+        },
+      });
+    },
+  );
+
   // Phase 54 — Envoy Local (downloadable llama-server)
   private readonly _envoyLocalState: EnvoyLocalRuntimeState = createEnvoyLocalRuntimeState();
   private readonly _envoyLocalEmbedState: EnvoyLocalEmbedRuntimeState =
@@ -4949,7 +4971,7 @@ class NodeServiceImpl implements NodeService {
       throw new Error("envoy_harness_stub_phase_8_step_1");
     }
     const runtime = await this._getOrInitEnvoyHarnessRuntime();
-    return runtime.ask(prompt, {
+    const askOpts = {
       // v1.5 — thread the provider hint to the
       // runtime's audit log (dormant: the
       // adapter doesn't switch providers yet).
@@ -4960,7 +4982,86 @@ class NodeServiceImpl implements NodeService {
       // cap and use the v0 default (1.0). When
       // on, the per-prompt cap wins.
       costCeilingUsd: readEffectiveCostCapUsd(opts?.costCapUsd, 1.0),
+    };
+
+    // Phase G / 12b — ACP when env says so OR Pi codingBackend is
+    // envoy-harness (same Pi RPCs; permissions via pi:proposal).
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const useAcp =
+      process.env.ENVOY_HARNESS_TRANSPORT === "acp" ||
+      resolvePiCodingBackend(cfg?.piSettings) === "envoy-harness";
+    if (useAcp) {
+      return this._askEnvoyHarnessViaAcp(runtime, prompt, askOpts);
+    }
+
+    return runtime.ask(prompt, askOpts);
+  }
+
+  /**
+   * Phase G / 12b — drive `runtime.ask` through an in-process
+   * ACP host so permission + transcript hooks share the TUI
+   * contract. Used when `ENVOY_HARNESS_TRANSPORT=acp`.
+   */
+  private async _askEnvoyHarnessViaAcp(
+    runtime: RealEnvoyHarnessRuntime,
+    prompt: string,
+    askOpts: { providerHint?: string; costCeilingUsd?: number },
+  ): Promise<string> {
+    let seq = 0;
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const autoRun = cfg?.piSettings?.autoRunPolicy ?? "always-confirm";
+    const host = createEnvoyHarnessAcpHost({
+      transport: "in-process",
+      backend: {
+        async createSession() {
+          return { sessionId: `sess-acp-${++seq}` };
+        },
+        async prompt(params) {
+          // Per-tool approvals: Agent askHandler → session/request_permission
+          // → pi:proposal. autoRunPolicy gates which tools ask.
+          const answer = await runtime.ask(params.text, {
+            ...askOpts,
+            shouldAskTool: (toolName) => shouldAskAcpTool(toolName, autoRun),
+            askHandler: async (req) => {
+              if (!shouldAskAcpTool(req.tool, autoRun)) {
+                return { kind: "allow" };
+              }
+              const decision = await params.requestPermission({
+                sessionId: params.sessionId,
+                toolName: req.tool,
+                description: req.question,
+                args: req.args,
+              });
+              if (decision === "allow") return { kind: "allow" };
+              return { kind: "deny", reason: "host denied" };
+            },
+          });
+          const assistant = {
+            role: "assistant" as const,
+            text: answer,
+          };
+          params.onUpdate?.(assistant);
+          return {
+            stopReason: "end_turn",
+            messages: [
+              { role: "user" as const, text: params.text },
+              assistant,
+            ],
+          };
+        },
+        cancel(_sessionId: string) {
+          /* runtime.ask has no cancel seam yet */
+        },
+      },
+      onPermission: async (req) => this._acpPermissionBridge.request(req),
     });
+    try {
+      await host.start();
+      const result = await host.prompt(prompt);
+      return result.assistantText;
+    } finally {
+      host.close();
+    }
   }
 
   /**
@@ -5548,12 +5649,49 @@ class NodeServiceImpl implements NodeService {
   }
 
   async restartPi(): Promise<PiStatus> {
-    await restartPiViaRuntime(this._piState, this._piRuntimeDeps())
-    return this.getPiStatus()
+    const cfg = await this._configStore.load().catch(() => undefined);
+    if (resolvePiCodingBackend(cfg?.piSettings) === "envoy-harness") {
+      // No Pi child to restart; refresh EH readiness.
+      return this.getPiStatus();
+    }
+    await restartPiViaRuntime(this._piState, this._piRuntimeDeps());
+    return this.getPiStatus();
   }
 
   async getPiStatus(): Promise<PiStatus> {
-    return getPiStatusViaRuntime(this._piState, this._piRuntimeDeps())
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const codingBackend = resolvePiCodingBackend(cfg?.piSettings);
+    if (codingBackend === "envoy-harness") {
+      const enabled = cfg?.piEnabled !== false;
+      if (!enabled) {
+        return {
+          enabled: false,
+          state: "disabled",
+          modelInherited: true,
+          codingBackend,
+        };
+      }
+      await this._refreshEnvoyHarnessHostConfig();
+      const eh = loadEnvoyHarnessRuntimeConfig({
+        hostModel: this._envoyHarnessHostModel,
+        hostApiKey: this._envoyHarnessHostApiKey,
+      });
+      return {
+        enabled: true,
+        state: eh.ready ? "ready" : "error",
+        modelSpec: eh.model,
+        modelInherited: true,
+        error: eh.ready
+          ? undefined
+          : (eh.reason ?? "envoy-harness not ready"),
+        codingBackend,
+      };
+    }
+    const status = await getPiStatusViaRuntime(
+      this._piState,
+      this._piRuntimeDeps(),
+    );
+    return { ...status, codingBackend: "pi" };
   }
 
   /** MAP — local Pi runtime readiness for the second-doctor cross-check. */
@@ -5584,8 +5722,9 @@ class NodeServiceImpl implements NodeService {
       },
       wireModelProviders: async (_endpoint, _modelName) => {
         // Envoy Local no longer overwrites Settings → AI modelProviders.
-        // Cloud/Ollama stay persisted; inference prefers Local via
-        // resolveEffectiveModelProviders when the sidecar is running.
+        // Cloud/Ollama stay persisted and win at inference time; Local is
+        // only selected via resolveEffectiveModelProviders when no usable
+        // cloud/Ollama provider is configured.
       },
       reloadOpenClaw: async () => {
         await this.reloadOpenClawConfig();
@@ -5622,8 +5761,9 @@ class NodeServiceImpl implements NodeService {
   }
 
   /**
-   * Cloud/Ollama from Settings, or Envoy Local when the sidecar is enabled
-   * and ready — without mutating persisted modelProviders.
+   * Cloud/Ollama from Settings when configured; otherwise Envoy Local when
+   * the sidecar is enabled and ready — without mutating persisted
+   * modelProviders. Cloud always wins over Local.
    */
   async getEffectiveModelProviders(): Promise<
     import("@envoymesh/api").ModelProviderConfig
@@ -6012,6 +6152,36 @@ class NodeServiceImpl implements NodeService {
     text: string,
     opts: { emitPushHint: boolean },
   ): Promise<string> {
+    const cfg = await this._configStore.load().catch(() => undefined);
+    if (resolvePiCodingBackend(cfg?.piSettings) === "envoy-harness") {
+      const answer = await this.askEnvoyHarness(text);
+      if (opts.emitPushHint && answer) {
+        const bridgePeer = this._bridgeStatus?.agentPeerId?.trim();
+        const bridgeName = this._bridgeStatus?.agentName?.trim();
+        this.emit("push:message", {
+          messageId: `pi-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          sender: {
+            nodeId: bridgePeer || "pi",
+            displayName: bridgeName || "Pi",
+            ownerId: bridgePeer || "envoy:pi",
+            actorRole: "agent" as const,
+          },
+          recipient: {
+            nodeId: this._mesh?.peerId ?? "",
+            ownerId: this._profile?.owner?.ownerId ?? "",
+          },
+          content: { text: answer },
+          metadata: {
+            timestamp: new Date().toISOString(),
+            deliveryReceipt: "delivered" as const,
+            deliveryChannel: "agent" as const,
+            deliverySource: "bridge" as const,
+          },
+        } as ChatMessage);
+      }
+      return answer;
+    }
+
     const result = await askPiViaRuntime(this._piState, this._piRuntimeDeps(), text)
     // Direct sendToPi RPC only: wake backgrounded devices. Ext Agent replies
     // are notified via the normal bridge `chat:message` → push listener.
@@ -6443,6 +6613,14 @@ class NodeServiceImpl implements NodeService {
     uiRequestId: string
     confirmed: boolean
   }): Promise<{ uiRequestId: string; delivered: boolean }> {
+    // Phase G / 12b — ACP permissions share this RPC (EnvoyGo unchanged).
+    const acp = this._acpPermissionBridge.respond(
+      params.uiRequestId,
+      params.confirmed ? "allow" : "deny",
+    );
+    if (acp.delivered) {
+      return { uiRequestId: params.uiRequestId, delivered: true };
+    }
     const result = await respondToUiRequestViaRuntime(
       this._piState,
       this._piRuntimeDeps(),
@@ -9879,8 +10057,8 @@ class NodeServiceImpl implements NodeService {
         );
       }
     }
-    // Cloud / Ollama / disabled AI takes over: stop Envoy Local sidecar unless
-    // the patch itself is usable envoy-local (enable/wire path).
+    // Cloud / Ollama take priority at inference; Local may keep running as
+    // offline fallback (maybeDisable is a no-op coexistence helper).
     if (Object.prototype.hasOwnProperty.call(nodePatch, "modelProviders")) {
       try {
         await maybeDisableEnvoyLocalForExternalProvider(
@@ -9894,6 +10072,14 @@ class NodeServiceImpl implements NodeService {
           err instanceof Error ? err.message : err,
         );
       }
+      // Rewrite OpenClaw gateway model section so a newly saved cloud
+      // provider wins immediately (even if Envoy Local is still running).
+      void this.reloadOpenClawConfig().catch((err) => {
+        console.warn(
+          "[openclaw] reload after modelProviders save failed:",
+          err instanceof Error ? err.message : err,
+        );
+      });
     }
     if (
       Object.prototype.hasOwnProperty.call(nodePatch, "modelProviders") ||

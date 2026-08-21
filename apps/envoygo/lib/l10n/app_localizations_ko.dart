@@ -1796,6 +1796,22 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsPiEnabled => 'Pi 사용';
 
   @override
+  String get settingsPiCodingBackend => 'Coding backend';
+
+  @override
+  String get settingsPiCodingBackendPi => 'Pi (sidecar)';
+
+  @override
+  String get settingsPiCodingBackendEh => 'envoy-harness (ACP)';
+
+  @override
+  String get settingsPiCodingBackendHint =>
+      'Same setting as Social. Routes sendToPi and approvals through the same Pi UI. Older EnvoyGo builds without this control still work when switched from Social.';
+
+  @override
+  String get settingsPiCodingBackendSaved => 'Coding backend updated';
+
+  @override
   String get settingsPiOverrideHint => '모델 재정의(선택). 지우면 AI 모델 설정을 상속합니다.';
 
   @override

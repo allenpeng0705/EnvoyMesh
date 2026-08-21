@@ -1783,6 +1783,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsPiEnabled => 'Pi 已启用';
 
   @override
+  String get settingsPiCodingBackend => '编程后端';
+
+  @override
+  String get settingsPiCodingBackendPi => 'Pi（侧车）';
+
+  @override
+  String get settingsPiCodingBackendEh => 'envoy-harness（ACP）';
+
+  @override
+  String get settingsPiCodingBackendHint =>
+      '与 Social 相同的设置。sendToPi 与审批仍走同一套 Pi UI。未升级的旧版 EnvoyGo 没有此开关时，仍可在 Social 中切换。';
+
+  @override
+  String get settingsPiCodingBackendSaved => '编程后端已更新';
+
+  @override
   String get settingsPiOverrideHint => '模型覆盖（可选）。清除以继承 AI 模型设置。';
 
   @override

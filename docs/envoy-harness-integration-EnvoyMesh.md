@@ -265,12 +265,17 @@ Standard EnvoyMesh dev loop.
 ## 5. Release flow (Option A: vendor at build time)
 
 The release flow vendors the envoy-harness `dist/` into
-`apps/tauri/src-tauri/resources/`. Tauri bundles every file under
+`apps/tauri/src-tauri/resources/` **and** wires the same packages into
+`resources/node/node_modules/@envoymesh/` (via
+`scripts/stage-bundle-node-runtime.sh`). Tauri bundles every file under
 `resources/` (Tauri's `cargo:rerun-if-changed` is auto-derived from
-the resource globs in `tauri.conf.json`). The vendored
-`resources/envoy-harness*/` packages are imported by `apps/node` at
-runtime — the `file:` symlink from dev becomes a real import in
-release.
+the resource globs in `tauri.conf.json`).
+
+**Critical:** `apps/node` statically imports `@envoymesh/envoy-harness`
+and `@envoymesh/envoy-harness-adapter`. Node resolves those bare imports
+from `resources/node/node_modules/`, **not** from the sibling
+`resources/envoy-harness*/` trees. Without the node_modules wiring,
+first launch crashes with `ERR_MODULE_NOT_FOUND`.
 
 ### 5.1 The new vendor script
 
@@ -278,8 +283,10 @@ release.
 twin `scripts/stage-tauri-envoy-harness-bundle.ps1`) does the
 cross-monorepo build + copy:
 
-1. **Skip gate** — `STAGE_ENVOY_HARNESS=0` exits early (debug
-   escape hatch, parallels `STAGE_OPENCLAW_BUNDLE=0`).
+1. **Skip gate** — `STAGE_ENVOY_HARNESS=0` skips the *resources*
+   trees. Because the node has static imports, `stage-bundle-node-runtime`
+   refuses that skip unless `ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1`
+   (non-runnable debug bundle).
 2. **Build** the sibling envoy-harness monorepo. Default (unset) =
    `pnpm -F <pkg> build` (incremental — tsc skips unchanged sources
    via `.tsbuildinfo`). `STAGE_ENVOY_HARNESS=1` runs
@@ -289,13 +296,18 @@ cross-monorepo build + copy:
    - `pnpm -F @envoymesh/envoy-harness build`
    - `pnpm -F @envoymesh/envoy-harness-adapter build`
 3. **Copy** `dist/` artifacts (re-touching the `.keep` sentinel so
-   the working tree stays clean after `rm -rf`):
+   the working tree stays clean after `rm -rf`), plus a flattened
+   `package.json` (`main`/`exports` → `./index.js`):
    - `envoy-harness/packages/envoy-harness/dist/` →
      `EnvoyMesh/apps/tauri/src-tauri/resources/envoy-harness/`
    - `envoy-harness/packages/envoy-harness-adapter/dist/` →
      `EnvoyMesh/apps/tauri/src-tauri/resources/envoy-harness-adapter/`
 4. **Idempotent** — `rm -rf` the destination before copy. Re-runs
    overwrite; no stale files accumulate.
+
+`scripts/stage-bundle-node-runtime.sh` then copies `package.json` +
+`dist/` into `resources/node/node_modules/@envoymesh/envoy-harness{,-adapter}/`,
+stages `smol-toml`, and includes both packages in the import probe.
 
 **Why this approach:**
 
@@ -307,7 +319,8 @@ cross-monorepo build + copy:
 - The vendor step is **idempotent**: re-running overwrites. The
   script `rm -rf`s the destination before copy.
 - The script honors `STAGE_ENVOY_HARNESS=0` for debug-only
-  no-op (parallels `STAGE_OPENCLAW_BUNDLE=0`).
+  resource skip (requires `ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1`
+  for a non-runnable node stage).
 - `ENVOY_HARNESS_DIR` env var overrides the default
   `$ROOT/../envoy-harness` location. Useful for CI when the
   sibling monorepo is checked out at a different path.
@@ -378,25 +391,32 @@ After the vendor step, the Tauri `resources/` looks like:
 
 ```
 apps/tauri/src-tauri/resources/
-├── envoy-harness/             # vendored from envoy-harness/packages/envoy-harness/dist
+├── envoy-harness/             # vendored flat dist/ (+ package.json → ./index.js)
+│   ├── package.json
 │   ├── index.js
 │   ├── index.d.ts
 │   └── ...
-├── envoy-harness-adapter/     # vendored from envoy-harness/packages/envoy-harness-adapter/dist
+├── envoy-harness-adapter/
+│   ├── package.json
 │   ├── index.js
 │   ├── index.d.ts
 │   └── ...
+├── node/
+│   └── node_modules/@envoymesh/
+│       ├── envoy-harness/          # ← runtime resolve (package.json + dist/)
+│       ├── envoy-harness-adapter/
+│       └── agent-adapter/
 ├── openclaw/                  # existing — staged by stage-tauri-openclaw-bundle.sh
 ├── envoymesh/                 # existing — OpenClaw channel, staged by stage-openclaw-envoymesh-extension.sh
-├── node/                      # existing — staged by fetch-node-sidecar.sh
 ├── pi/                        # existing — optional, staged by stage-tauri-pi-bundle.sh
 └── kubo/                      # existing — optional, staged by fetch-kubo-sidecar.sh
 ```
 
-The `resources/envoy-harness*/` packages are imported by
-`apps/node` at runtime (the `file:` symlink in dev becomes a real
-import in release).
-
+`apps/node` resolves `@envoymesh/envoy-harness*` from
+`resources/node/node_modules/` (wired by `stage-bundle-node-runtime`).
+The sibling `resources/envoy-harness*/` trees are also bundled for
+verify / future NODE_PATH use; they are not what Node's bare-import
+resolver uses at first launch.
 ---
 
 ## 6. Step-by-step procedure

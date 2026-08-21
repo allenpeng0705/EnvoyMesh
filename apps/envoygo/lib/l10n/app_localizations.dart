@@ -3486,6 +3486,36 @@ abstract class AppLocalizations {
   /// **'Pi enabled'**
   String get settingsPiEnabled;
 
+  /// No description provided for @settingsPiCodingBackend.
+  ///
+  /// In en, this message translates to:
+  /// **'Coding backend'**
+  String get settingsPiCodingBackend;
+
+  /// No description provided for @settingsPiCodingBackendPi.
+  ///
+  /// In en, this message translates to:
+  /// **'Pi (sidecar)'**
+  String get settingsPiCodingBackendPi;
+
+  /// No description provided for @settingsPiCodingBackendEh.
+  ///
+  /// In en, this message translates to:
+  /// **'envoy-harness (ACP)'**
+  String get settingsPiCodingBackendEh;
+
+  /// No description provided for @settingsPiCodingBackendHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Same setting as Social. Routes sendToPi and approvals through the same Pi UI. Older EnvoyGo builds without this control still work when switched from Social.'**
+  String get settingsPiCodingBackendHint;
+
+  /// No description provided for @settingsPiCodingBackendSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Coding backend updated'**
+  String get settingsPiCodingBackendSaved;
+
   /// No description provided for @settingsPiOverrideHint.
   ///
   /// In en, this message translates to:

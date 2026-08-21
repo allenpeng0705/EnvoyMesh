@@ -1798,6 +1798,22 @@ class AppLocalizationsJa extends AppLocalizations {
   String get settingsPiEnabled => 'Pi 有効';
 
   @override
+  String get settingsPiCodingBackend => 'Coding backend';
+
+  @override
+  String get settingsPiCodingBackendPi => 'Pi (sidecar)';
+
+  @override
+  String get settingsPiCodingBackendEh => 'envoy-harness (ACP)';
+
+  @override
+  String get settingsPiCodingBackendHint =>
+      'Same setting as Social. Routes sendToPi and approvals through the same Pi UI. Older EnvoyGo builds without this control still work when switched from Social.';
+
+  @override
+  String get settingsPiCodingBackendSaved => 'Coding backend updated';
+
+  @override
   String get settingsPiOverrideHint => 'モデル上書き（任意）。クリアすると AI モデル設定を継承します。';
 
   @override

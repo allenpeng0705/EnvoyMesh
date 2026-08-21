@@ -48,7 +48,8 @@
       "resources/openclaw-envoymesh/",
       "resources/pi/**/*",
       "resources/envoy-harness/**/*",
-      "resources/envoy-harness-adapter/**/*"
+      "resources/envoy-harness-adapter/**/*",
+      "resources/envoy-harness-client/**/*"
     ]
   },
   "plugins": {

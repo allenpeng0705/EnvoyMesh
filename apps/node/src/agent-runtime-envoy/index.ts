@@ -66,6 +66,13 @@ export {
   type RealEnvoyHarnessRuntime,
 } from "./runtime.js";
 
+export {
+  ACP_SAFE_TOOLS,
+  isAcpSafeTool,
+  shouldAskAcpTool,
+  type PiAutoRunPolicy,
+} from "./acp-policy.js";
+
 // Phase 8 Step 2 / b2 — the OpenClaw → envoy-harness
 // bridge skill. The host's AN engine dispatch (or a
 // future Step 5 signal-based router) can swap
@@ -79,3 +86,14 @@ export {
   type CreateBridgeToEnvoyHarnessSkillOptions,
   type OpenClawToEnvoyHarnessBridge,
 } from "./bridge-to-envoy-harness-skill.js";
+
+// Phase G / 12b — ACP host for Tauri + interactive sessions
+export {
+  createEnvoyHarnessAcpHost,
+  resolveEnvoyHarnessAcpCommand,
+  type AcpPermissionDecision,
+  type AcpPermissionRequest,
+  type AcpTranscriptUpdate,
+  type EnvoyHarnessAcpHost,
+  type EnvoyHarnessAcpHostOptions,
+} from "./acp-host.js";

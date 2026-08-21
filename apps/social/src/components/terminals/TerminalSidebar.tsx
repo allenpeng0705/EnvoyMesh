@@ -15,6 +15,8 @@ interface TerminalSidebarProps {
   onOpenAssistant?: () => void;
   /** Start another Pi coding TUI (always pick a project folder). */
   onStartPi?: () => void;
+  /** Open the Pi / envoy-harness RPC chat panel (reuse PiChatPanel). */
+  onOpenPiChat?: () => void;
   /** Change project folder for a specific Pi TUI session. */
   onChangePiProject?: (sessionId: string) => void;
 }
@@ -26,6 +28,7 @@ export function TerminalSidebar({
   disabled = false,
   onOpenAssistant,
   onStartPi,
+  onOpenPiChat,
   onChangePiProject,
 }: TerminalSidebarProps) {
   const nodeService = useNodeService();
@@ -134,6 +137,17 @@ export function TerminalSidebar({
               title={t("pi.startPiTitle", "Start a Pi coding terminal (choose project folder)")}
             >
               {t("pi.startPi", "π Pi")}
+            </button>
+          ) : null}
+          {onOpenPiChat ? (
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || disabled}
+              onClick={() => onOpenPiChat()}
+              title={t("pi.openChatTitle", "Open Pi / envoy-harness chat (approvals)")}
+            >
+              {t("pi.openChat", "Chat")}
             </button>
           ) : null}
           <button type="button" className="primary" disabled={busy || disabled} onClick={() => void handleNew()}>
