@@ -1145,3 +1145,82 @@ fan-out within a job (whole-job only).
     `agent-harness-integration-v1-8.md` +
     `agent-harness-integration-v1-9.md`
     DONE stamp.
+
+- **2026-08-21 (v1.10 — scoreboard
+  formula — DONE):** v1.10 ships the
+  **3-tuple reputation producer** for the
+  federated scoreboard. The formula is a
+  weighted average of `verdict.score` by
+  `verdict.source` weight
+  (`SCOREBOARD_SOURCE_WEIGHTS`: `rule=1.0`,
+  `llm=1.0`, `cross=1.5`, `human=2.0`),
+  with kind contributions (`pass: score *
+  weight; partial: score * weight * 0.5;
+  fail: -weight; disputed: 0`) and a final
+  `sum(contribution) / sum(weight)` normalized
+  to `[-1, 1]`. v1.10 also ships the Tauri UI
+  helpers `categorizeReputation(score)` (maps
+  to `"trusted" | "mixed" | "untrusted" |
+  "no-history"`) + `isNoHistoryReputation(verdictCount)`
+  (the empty-input case). v1.10 is a
+  **foundation chunk** — the formula is
+  shipped + tested + documented, but **not**
+  wired into `chain-sensitivity-gate.requiresReputationApproval`
+  (that's v1.10+ future). 1 commit on
+  `envoy_harness_integration` branch (the user
+  delegated commit; bundled v1.10.1 + v1.10.2
+  into a single commit at the end of v1.10).
+  30 new tests (14 `reputationFromVerdicts` +
+  8 `categorizeReputation` + 3
+  `isNoHistoryReputation` + 3
+  `SCOREBOARD_SOURCE_WEIGHTS` + 2
+  `SCOREBOARD_TRUST_THRESHOLDS`)
+  + 222 pre-existing tests regression-clean
+  on the affected paths. No new type errors
+  (pre-existing multiformats/ArrayBuffer
+  conflict in
+  `packages/network/src/index.ts:2791`
+  unchanged). The function name
+  `reputationFromVerdicts` is distinct from
+  the Phase 24C `aggregateReputation` in
+  `reputation-router.ts:48` (different domain
+  — verifier verdicts, not capability-provider
+  feedback). The `cross=1.5x` source weight
+  encodes the v1.8 F9.5 intent
+  ("cross-verify with a different model is a
+  stronger signal") at the
+  reputation-aggregation layer. Detailed plan:
+  `docs/agent-harness-integration-v1-10.md`
+  (sub-plan with 10 locked design questions).
+  - **v1.10.1 — the formula + tests.**
+    New `apps/node/src/chain-scoreboard.ts`
+    (`reputationFromVerdicts` +
+    `categorizeReputation` +
+    `isNoHistoryReputation` +
+    `SCOREBOARD_SOURCE_WEIGHTS` +
+    `SCOREBOARD_TRUST_THRESHOLDS`). Pure
+    functions, no I/O. New
+    `apps/node/test/chain-scoreboard.test.ts`
+    (30 unit tests — empty input /
+    all-pass / all-fail / all-disputed /
+    mixed-source / partial-factor /
+    cross-weighting / human-weighting /
+    floating-point safety / categorize
+    boundaries / constants spec pinning).
+  - **v1.10.2 — doc closeout.** This entry
+    + `docs/agent-harness-integration-v1-10.md`
+    (the sub-plan + DONE stamp) +
+    `docs/agent-harness-integration-v1-8.md`
+    v1.10 status note (v1.10 ships the
+    weighting the v1.8 `verifierModel` field
+    enabled; F9.5 intent encoded as the
+    `cross=1.5` source weight) +
+    `docs/agent-harness-integration-v1-9.md`
+    v1.10 status note (v1.10 builds on the
+    v1.9 per-runtime tag map; the runtimes
+    that produce verdicts are the same
+    runtimes whose tag lists v1.9 extracted) +
+    `docs/taui-agent-routing-settings.md` §16
+    (chain report surface for the scoreboard
+    category; Tauri team maps the internal
+    categories to user-friendly labels).
