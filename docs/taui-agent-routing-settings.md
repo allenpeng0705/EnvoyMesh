@@ -652,21 +652,101 @@ v1.6+ future.
   v1.5 hint is at the start. A future chunk
   could scan the whole prompt.
 
-## 13. References
+## 13. v1.7 — OpenClaw tags as negative signals
 
+> **Status:** Phase 8 v1.7. The Tauri team
+> picks up the chat badge mapping in their
+> workstream. v1.7 ships the backend
+> (`extractOpenClawTags` + the negative-signal
+> scan in `routeUserPrompt`).
+
+### 13.1 The routing layer — the inverse rule
+
+v1.7 implements the **inverse** of the v1.1
+positive rule: when a prompt matches a tag
+from an **OpenClaw** skill in the merged
+manifest, the router routes to OpenClaw
+regardless of any positive (envoy-harness)
+signals. The two rules compose:
+
+- **v1.1 positive rule:** EH tag in prompt →
+  route to EH (when EH is ready).
+- **v1.7 negative rule:** OpenClaw tag in
+  prompt → route to OpenClaw (regardless of
+  positive signals).
+
+The negative rule **vetoes** the positive rule
+(Q2 of the v1.7 sub-plan). The user can use
+`!eh` to force EH when there's an OpenClaw
+tag conflict (the explicit prefix overrides
+the implicit tag).
+
+**Shared tags:** when a tag is in BOTH the EH
+list and the OpenClaw list (e.g. "mesh" if
+both adapters define it), the positive rule
+wins (Q4 of the v1.7 sub-plan). The user can
+use `!openclaw` to force OpenClaw for the
+shared tag.
+
+### 13.2 The chat badge — `routingReason: "openclaw-tag-match"`
+
+The dispatch exposes a new `routingReason`
+value when the negative rule fires. The Tauri
+team maps the internal value to a user-
+friendly label — the same label as
+`"opt-out-explicit"` ("Used the free built-in
+assistant for this one"). The chat user
+doesn't need to distinguish between
+`"opt-out-explicit"` and `"openclaw-tag-match"`
+— both are "OpenClaw was the right call."
+
+### 13.3 Precedence summary
+
+| Signal | Result |
+|---|---|
+| Opt-in disabled | `opt-in-disabled` → OpenClaw (first branch) |
+| `!openclaw` prefix | `opt-out-explicit` → OpenClaw (explicit) |
+| `!eh` / `/eh` prefix | `signal` → EH (explicit; overrides OpenClaw tag) |
+| OpenClaw tag in prompt | `openclaw-tag-match` → OpenClaw (veto) |
+| EH tag in prompt | `signal` / `signal-skill` → EH (positive) |
+| No signals | `default` → OpenClaw (v0 default) |
+
+### 13.4 Out of scope (v1.7+ future)
+
+- **Per-runtime negative signals** (e.g. `ext`
+  skill tags as negative signals for EH) —
+  v1.7 is OpenClaw-only. Per-runtime negative
+  signals are a v1.7+ future.
+- **A scoreboard formula** (weighting positive
+  vs. negative signals) — v1.10 (per the v1
+  backlog). v1.7 uses simple veto (any
+  negative signal wins).
+- **The Tauri UI implementation** — the actual
+  chat badge for `"openclaw-tag-match"` lives
+  in the Tauri monorepo. v1.7 ships the
+  backend + a design doc.
+
+## 14. References
+
+- [`agent-harness-integration-v1-4.md`](./agent-harness-integration-v1-4.md)
+  (the v1.4 sub-plan + DONE stamp)
 - [`agent-harness-integration-v1-5.md`](./agent-harness-integration-v1-5.md)
   (the v1.5 sub-plan + DONE stamp)
+- [`agent-harness-integration-v1-6.md`](./agent-harness-integration-v1-6.md)
+  (the v1.6 sub-plan + DONE stamp)
+- [`agent-harness-integration-v1-7.md`](./agent-harness-integration-v1-7.md)
+  (the v1.7 sub-plan + DONE stamp)
 - [`user-prompt-router.ts`](../apps/node/src/user-prompt-router.ts)
-  (the v1.5 `extractPromptHints` helper +
-  `INLINE_HINT_REGEX` + `COST_CAP_ENABLED_ENV_VAR`)
-- [`node-service-impl.ts`](../apps/node/src/node-service-impl.ts)
-  (the v1.5 `readEffectiveCostCapUsd` helper +
-  `askEnvoyHarness` / `askEnvoyHarnessSkill`
-  accept the new `opts?` for hints)
+  (the v0 + v1.1 + v1.2 + v1.5 + v1.6 + v1.7
+  router; v1.7 adds the negative-signal scan)
+- [`manifest-envoy-harness-tags.ts`](../apps/node/src/manifest-envoy-harness-tags.ts)
+  (the v1.1 `extractEnvoyHarnessTags` +
+  v1.7 `extractOpenClawTags` extractors)
 - [`node-service-handlers-run-owner-agent-turn.ts`](../apps/node/src/node-service-handlers-run-owner-agent-turn.ts)
-  (the v1.5 dispatch — passes the hints
-  to the ask methods)
+  (the dispatch; v1.4 + v1.5 + v1.6 + v1.7
+  all extend the `readManifestView` +
+  `routeUserPrompt` call)
 - [`agent-runtime-envoy/runtime.ts`](../apps/node/src/agent-runtime-envoy/runtime.ts)
-  (the v1.5 EH runtime — `providerHint?`
+  (the EH runtime — v1.5 added `providerHint?`
   on the options; logs the hint in the
   audit trail)

@@ -1290,3 +1290,166 @@ describe("routeUserPrompt — v1.6 v0 corner-case fix (re-scan cleanPrompt for v
     expect(decision.hintPrefixLength).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 8 / v1.7 — OpenClaw tags as negative signals
+// ---------------------------------------------------------------------------
+
+describe("routeUserPrompt — v1.7 OpenClaw tags as negative signals", () => {
+  it("routes to OpenClaw when the prompt matches an OpenClaw tag (the negative rule)", () => {
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "write a creative story for me",
+        openClawTags: ["creative", "writing", "story"],
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    // The OpenClaw tag "creative" matches the
+    // prompt; the negative rule routes to
+    // OpenClaw regardless of EH readiness.
+    expect(decision.reason).toBe("openclaw-tag-match");
+    expect(decision.runtime).toBe("openclaw");
+    // The matched OpenClaw tag is in the
+    // signals list (for the audit log).
+    expect(
+      decision.signals.some((s) => s.token === "creative"),
+    ).toBe(true);
+  });
+
+  it("OpenClaw tag vetoes EH signal (Q2 — veto semantics)", () => {
+    // The prompt has BOTH an OpenClaw tag
+    // ("creative") AND an EH tag (via the
+    // MESH_KEYWORDS fallback — "mesh"). The
+    // negative rule wins (veto).
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "write a creative story about the mesh",
+        openClawTags: ["creative", "writing"],
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("openclaw-tag-match");
+    expect(decision.runtime).toBe("openclaw");
+    // Both signals are in the list (for
+    // the audit log).
+    expect(
+      decision.signals.some((s) => s.token === "creative"),
+    ).toBe(true);
+    expect(
+      decision.signals.some((s) => s.token === "mesh"),
+    ).toBe(true);
+  });
+
+  it("`!eh` prefix overrides the OpenClaw tag (Q3 — explicit prefix wins)", () => {
+    // The user types `!eh write a creative
+    // story` — the !eh prefix is an explicit
+    // EH route. The OpenClaw tag matches, but
+    // the !eh prefix wins.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "!eh write a creative story for me",
+        openClawTags: ["creative", "writing"],
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("signal");
+    expect(decision.runtime).toBe("envoy-harness");
+    expect(decision.hintPrefixLength).toBe(3);
+  });
+
+  it("OpenClaw tag that is also an EH tag — EH wins (Q4 — shared tag precedence)", () => {
+    // The prompt has "mesh", which is BOTH
+    // an EH tag (MESH_KEYWORDS fallback) AND
+    // an OpenClaw tag. The positive rule wins.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "explain the mesh",
+        openClawTags: ["mesh", "creative"],
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("signal");
+    expect(decision.runtime).toBe("envoy-harness");
+  });
+
+  it("OpenClaw tag with opt-in-disabled — opt-in-disabled wins (Q7)", () => {
+    // Opt-in-disabled is the first branch;
+    // the OpenClaw tag scan never runs.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "write a creative story for me",
+        openClawTags: ["creative", "writing"],
+        signalOptIn: "disabled",
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("opt-in-disabled");
+    expect(decision.runtime).toBe("openclaw");
+  });
+
+  it("`openClawTags: undefined` → no negative signal scan (Q10 — backward compat)", () => {
+    // When `openClawTags` is undefined, the
+    // v1.6 behavior is preserved (no negative
+    // signal scan).
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "write a creative story for me",
+        // openClawTags: undefined (omitted)
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    // No OpenClaw tag scan, no signals
+    // match (no EH tags either), default
+    // OpenClaw.
+    expect(decision.reason).toBe("default");
+    expect(decision.runtime).toBe("openclaw");
+  });
+
+  it("`openClawTags: []` → no negative signal scan (Q9 — empty array)", () => {
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "write a creative story for me",
+        openClawTags: [],
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("default");
+    expect(decision.runtime).toBe("openclaw");
+  });
+
+  it("hyphenated OpenClaw tag matches exactly (Q5 — same as v1.1)", () => {
+    // Hyphenated tags use exact substring
+    // (not word-boundary). "creative-writing"
+    // matches "creative-writing" but NOT
+    // "creative" + "writing" separately.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "do some creative-writing for me",
+        openClawTags: ["creative-writing"],
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("openclaw-tag-match");
+    expect(decision.runtime).toBe("openclaw");
+  });
+
+  it("OpenClaw tag with v1.5 inline hints — hints are stripped, OpenClaw tag still routes", () => {
+    // The v1.5 hints are stripped from the
+    // cleanPrompt; the OpenClaw tag scan
+    // uses the original prompt (consistent
+    // with v1.1 + v1.2 + v1.6).
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "write a creative story /cost:0.5 /provider:openai",
+        openClawTags: ["creative", "writing"],
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("openclaw-tag-match");
+    expect(decision.runtime).toBe("openclaw");
+    // The v1.5 hints are still on the
+    // decision (for the audit log).
+    expect(decision.costCapUsd).toBe(0.5);
+    expect(decision.providerHint).toBe("openai");
+  });
+});

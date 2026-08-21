@@ -123,3 +123,58 @@ export function extractEnvoyHarnessSkills(
   }
   return skills;
 }
+
+/**
+ * Phase 8 / v1.7 — extract the union of `tags[]`
+ * across all openclaw skills in the merged
+ * manifest. The result is the **negative-signal
+ * vocabulary** the user-prompt router uses to
+ * veto EH routing (Q1 + Q2 of the v1.7
+ * sub-plan).
+ *
+ * **Mirror of `extractEnvoyHarnessTags`:** the
+ * same algorithm, filtered by
+ * `runtime === "openclaw"` instead of
+ * `runtime === "envoy-harness"`. Both
+ * extractors share the manifest staleness +
+ * empty-array semantics.
+ *
+ * **Why a separate function (not merging the
+ * two):** the two vocabularies have different
+ * semantics (positive vs. negative signals).
+ * Keeping them apart makes the v1.7 intent
+ * explicit and lets the router apply the
+ * negative rule separately from the positive
+ * rule.
+ *
+ * **Empty result handling:** when the manifest
+ * has no openclaw skills (e.g. openclaw isn't
+ * installed, or the manifest is empty), the
+ * returned array is empty. The router treats
+ * `[]` as "no negative signal scan" (Q9 of the
+ * v1.7 sub-plan) — the v1.6 positive-signal
+ * behavior is preserved.
+ *
+ * **Order:** insertion order is the order in
+ * which tags are first seen in `manifest.skills`
+ * (which is adapter-insertion order per the
+ * aggregator's order-preservation contract).
+ * The router doesn't depend on order.
+ *
+ * @param manifest The merged node manifest
+ *   (typically from `NodeServiceImpl.getNodeManifest()`).
+ * @returns The deduplicated union of openclaw
+ *   skill tags (read-only).
+ */
+export function extractOpenClawTags(
+  manifest: NodeManifest,
+): ReadonlyArray<string> {
+  const tags = new Set<string>();
+  for (const skill of manifest.skills) {
+    if (skill.runtime !== "openclaw") continue;
+    for (const tag of skill.tags) {
+      tags.add(tag);
+    }
+  }
+  return [...tags];
+}

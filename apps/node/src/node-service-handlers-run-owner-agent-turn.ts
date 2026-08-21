@@ -36,6 +36,7 @@ import {
 import {
   extractEnvoyHarnessTags,
   extractEnvoyHarnessSkills,
+  extractOpenClawTags,
 } from "./manifest-envoy-harness-tags.js";
 import type { NodeManifest } from "./agent-adapter-manifest-aggregate.js";
 
@@ -221,6 +222,13 @@ export async function runOwnerAgentTurnViaRuntime(
     signalOptIn: ctx.signalOptIn,
     envoyHarnessTags: manifestView.tags,
     envoyHarnessSkills: manifestView.skills,
+    // Phase 8 / v1.7 — thread the OpenClaw
+    // tag list to the router. When the
+    // prompt matches an OpenClaw tag, the
+    // router routes to OpenClaw (the
+    // negative rule; Q1 + Q2 of the v1.7
+    // sub-plan).
+    openClawTags: manifestView.openClawTags,
   });
 
   // Strip the hint prefix (e.g. `!eh translate this` →
@@ -471,6 +479,13 @@ function readManifestView(
 ): {
   tags: ReadonlyArray<string> | undefined;
   skills: ReadonlyArray<import("./user-prompt-router.js").EnvoyHarnessSkillEntry> | undefined;
+  /**
+   * Phase 8 / v1.7 — OpenClaw tag list (the
+   * negative-signal vocabulary). The router uses
+   * it to veto EH routing when a prompt matches
+   * an OpenClaw skill tag.
+   */
+  openClawTags: ReadonlyArray<string> | undefined;
 } {
   let manifest: NodeManifest | undefined;
   try {
@@ -485,15 +500,16 @@ function readManifestView(
       "[envoy-harness] getNodeManifest() failed, falling back to v0 vocabulary:",
       err instanceof Error ? err.message : String(err),
     );
-    return { tags: undefined, skills: undefined };
+    return { tags: undefined, skills: undefined, openClawTags: undefined };
   }
   if (manifest === undefined) {
     // Older host without manifest support, or
     // early init. Router falls back to v0.
-    return { tags: undefined, skills: undefined };
+    return { tags: undefined, skills: undefined, openClawTags: undefined };
   }
   return {
     tags: extractEnvoyHarnessTags(manifest),
     skills: extractEnvoyHarnessSkills(manifest),
+    openClawTags: extractOpenClawTags(manifest),
   };
 }

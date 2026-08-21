@@ -943,3 +943,73 @@ fan-out within a job (whole-job only).
     + `agent-harness-integration-v1-5.md`
     status note + `agent-harness-integration-v1-6.md`
     DONE stamp.
+
+- **2026-08-21 (v1.7 — OpenClaw tags as
+  negative signals — DONE):** the v1.1
+  positive-signal rule gets an **inverse
+  rule**. When a prompt matches a tag from
+  an **OpenClaw** skill in the merged
+  manifest, the router routes to OpenClaw
+  regardless of any positive (envoy-harness)
+  signals (Q2 of the v1.7 sub-plan — veto
+  semantics). The `!eh` / `/eh` prefix can
+  override the negative rule (Q3 — explicit
+  prefix wins over implicit tag). When a tag
+  is in BOTH the EH list and the OpenClaw
+  list, the positive rule wins (Q4 — shared
+  tag precedence). The opt-in-disabled check
+  still wins over the negative rule (Q7).
+  1 commit on `envoy_harness_integration`
+  branch (the user delegated commit; bundled
+  v1.7.1 + v1.7.2 + v1.7.3 into a single
+  commit at the end of v1.7). 19 new tests
+  (9 v1.7 `routeUserPrompt` integration +
+  7 v1.7 `extractOpenClawTags` unit + 3
+  v1.7 dispatch e2e) + 240 pre-existing
+  tests regression-clean on the affected
+  paths. No new type errors. The Tauri
+  team's chat badge for `routingReason:
+  "openclaw-tag-match"` uses the same label
+  as `opt-out-explicit` ("Used the free
+  built-in assistant for this one") — the
+  chat user doesn't need to distinguish why
+  OpenClaw was chosen (Q8 of the v1.7
+  sub-plan). Detailed plan:
+  `docs/agent-harness-integration-v1-7.md`
+  (sub-plan with 12 locked design
+  questions).
+  - **v1.7.1 — OpenClaw tag extraction +
+    negative-signal scan.** New
+    `extractOpenClawTags(manifest)` in
+    `manifest-envoy-harness-tags.ts` (parallel
+    to the v1.1 `extractEnvoyHarnessTags`).
+    New `openClawTags?` field on
+    `RouteUserPromptInput`. New
+    `scanOpenClawSignals` helper in
+    `user-prompt-router.ts`. New
+    `reason: "openclaw-tag-match"` in
+    `RouteUserPromptDecision.reason` +
+    `OwnerAgentTurnResult.routingReason`. 9
+    new unit tests for the negative-signal
+    scan + 7 new unit tests for the
+    extractor.
+  - **v1.7.2 — dispatch integration.** The
+    `readManifestView` function in
+    `node-service-handlers-run-owner-agent-turn.ts`
+    gains the `openClawTags` field (extracted
+    from the manifest). The
+    `routeUserPrompt` call threads the
+    field. 3 new e2e tests for the OpenClaw
+    tag dispatch.
+  - **v1.7.3 — Tauri UI design doc +
+    closeout.** `docs/taui-agent-routing-
+    settings.md` §13 (chat badge for
+    `"openclaw-tag-match"`; same label as
+    `opt-out-explicit` per Q8) + this
+    entry + `agent-network-engine.md` §2.2.2
+    update + `agent-harness-integration-v1-1.md`
+    status note (v1.7 implements Q4 of the
+    v1.1 sub-plan, deferred to v1.7) +
+    `agent-harness-integration-v1-6.md`
+    status note + `agent-harness-integration-v1-7.md`
+    DONE stamp.

@@ -1,5 +1,17 @@
 # envoy-harness integration — v1.6 sub-plan (per-prompt opt-out `!openclaw` + v0 corner-case fix)
 
+> **v1.7 (2026-08-21) status:** v1.7 builds on
+> v1.6. The v1.6 `!openclaw` opt-out is the
+> **per-prompt explicit** opt-out; v1.7's
+> OpenClaw tags are the **per-prompt implicit**
+> opt-out (a tag in the prompt that matches an
+> OpenClaw skill). Together they form the
+> v1.4–v1.7 spectrum: per-node (v1.4 toggle)
+> → per-prompt explicit (v1.6 `!openclaw`) →
+> per-prompt implicit (v1.7 OpenClaw tag).
+> See [`agent-harness-integration-v1-7.md`](./agent-harness-integration-v1-7.md)
+> for the v1.7 sub-plan + DONE stamp.
+
 > **Status:** ✅ **DONE** (2026-08-21). 1 commit on
 > `envoy_harness_integration` branch (the user
 > delegated commit; bundled v1.6.1 + v1.6.2 +

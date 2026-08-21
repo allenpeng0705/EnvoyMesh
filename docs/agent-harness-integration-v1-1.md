@@ -1,5 +1,17 @@
 # envoy-harness integration — v1.1 sub-plan (capability-tag-based signal detection)
 
+> **v1.7 (2026-08-21) status:** v1.7 implements
+> Q4 of the v1.1 sub-plan, which was deferred
+> to v1.7. v1.1's envoy-harness tags are
+> **positive** signals (Q1 + Q2); v1.7 adds
+> the **inverse rule** — OpenClaw tags are
+> **negative** signals. When a prompt matches
+> an OpenClaw tag in the merged manifest, the
+> router routes to OpenClaw regardless of any
+> positive (envoy-harness) signals. See
+> [`agent-harness-integration-v1-7.md`](./agent-harness-integration-v1-7.md)
+> for the v1.7 sub-plan + DONE stamp.
+
 > **Status:** ✅ **DONE** (2026-08-21). 1 commit on
 > `envoy_harness_integration` branch (the user
 > delegated commit; bundled v1.1.1 + v1.1.2 +

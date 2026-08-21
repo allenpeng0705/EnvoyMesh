@@ -299,6 +299,32 @@ export interface RouteUserPromptInput {
    * additive.
    */
   envoyHarnessSkills?: ReadonlyArray<EnvoyHarnessSkillEntry>;
+  /**
+   * Phase 8 v1.7 — negative-signal vocabulary
+   * (the OpenClaw tag list from the merged
+   * manifest). When the prompt matches any of
+   * these tags, the router routes to OpenClaw
+   * regardless of any positive (envoy-harness)
+   * signals (Q1 + Q2 of the v1.7 sub-plan).
+   *
+   * **Why a separate field (not merging with
+   * `envoyHarnessTags`):** the two vocabularies
+   * have different semantics (positive vs.
+   * negative signals). Keeping them apart
+   * makes the v1.7 intent explicit and lets
+   * the router apply the negative rule
+   * separately from the positive rule.
+   *
+   * **Empty array:** when `[]` (manifest has
+   * no OpenClaw skills), the router has no
+   * negative signal scan. The v1.6
+   * positive-signal behavior is preserved
+   * (Q9 of the v1.7 sub-plan).
+   *
+   * **When `undefined`:** no negative signal
+   * scan (backward compat with v1.6 callers).
+   */
+  openClawTags?: ReadonlyArray<string>;
 }
 
 /**
@@ -337,6 +363,7 @@ export interface RouteUserPromptDecision {
     | "default"
     | "opt-in-disabled"
     | "opt-out-explicit"
+    | "openclaw-tag-match"
     | "signal"
     | "signal-skill"
     | "envoy-harness-unready";
@@ -576,6 +603,58 @@ export function routeUserPrompt(
       providerHint: hints.providerHint,
       cleanPrompt,
     };
+  }
+
+  // 2d. v1.7 — negative-signal scan. When the
+  //     prompt matches any OpenClaw tag in the
+  //     manifest, the router routes to OpenClaw
+  //     (the negative rule). This VETOES the
+  //     positive (envoy-harness) signals — see
+  //     Q2 of the v1.7 sub-plan.
+  //
+  //     **Precedence with v0 prefixes (Q3):**
+  //     the explicit v0 prefix `!eh` (or `/eh`)
+  //     wins over the implicit OpenClaw tag.
+  //     The user explicitly typed `!eh` to
+  //     force EH; the OpenClaw tag is just an
+  //     incidental match. We check the
+  //     explicit-hint signal here: when the
+  //     hint is `!eh` or `/eh`, skip the
+  //     negative-signal scan (the explicit
+  //     prefix overrides the implicit tag).
+  //     When the hint is `!openclaw`, we
+  //     already returned in step 2c.
+  const explicitHintKind =
+    explicitHint?.token.toLowerCase() ?? undefined;
+  const hasExplicitEhPrefix =
+    explicitHintKind === "!eh" || explicitHintKind === "/eh";
+  if (!hasExplicitEhPrefix) {
+    const openClawSignals = scanOpenClawSignals(
+      input.prompt,
+      input.openClawTags,
+      signals,
+    );
+    if (openClawSignals.length > 0) {
+      return {
+        runtime: "openclaw",
+        reason: "openclaw-tag-match",
+        signals: [...signals, ...openClawSignals],
+        // The hint prefix is honored even when
+        // the negative signal wins (e.g. the
+        // user typed `!eh write a story` —
+        // the !eh is still a v0 prefix, just
+        // overridden by the OpenClaw tag).
+        // When the explicit-hint is !openclaw,
+        // we already returned in step 2c.
+        hintPrefixLength: signals[0]?.category === "explicit-hint"
+          ? signals[0].token.length
+          : undefined,
+        targetSkill: undefined,
+        costCapUsd: hints.costCapUsd,
+        providerHint: hints.providerHint,
+        cleanPrompt,
+      };
+    }
   }
 
   // 3. No signals → default OpenClaw.
@@ -822,6 +901,82 @@ function findTagInPrompt(lower: string, tag: string): number {
  */
 function escapeRegex(literal: string): string {
   return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8 / v1.7 — negative-signal scan
+// ---------------------------------------------------------------------------
+
+/**
+ * Phase 8 / v1.7 — scan the prompt for tags
+ * that match an OpenClaw skill (the
+ * negative-signal vocabulary). Returns the
+ * matched OpenClaw signals (token + offset).
+ *
+ * **Algorithm (per Q1 / Q4 / Q5 of the v1.7
+ * sub-plan):**
+ * 1. Iterate `openClawTags` (the manifest's
+ *    OpenClaw tag list).
+ * 2. For each tag, check if the prompt
+ *    contains the tag (word-boundary for
+ *    single-word tags; exact substring for
+ *    hyphenated tags — same as v1.1).
+ * 3. **Exclude tags that are also in the EH
+ *    tag list** (Q4): when an EH skill AND
+ *    an OpenClaw skill share a tag, the EH
+ *    tag wins (positive signal takes
+ *    precedence over the negative rule for
+ *    the same tag).
+ * 4. Return the matched OpenClaw signals.
+ *
+ * **Why exclude shared tags:** if both the
+ * EH adapter and the OpenClaw adapter
+ * define a tag (e.g. "mesh"), the user's
+ * intent is ambiguous. The v1.7 design
+ * chooses the positive rule (EH wins) — the
+ * user can use `!openclaw` to force OpenClaw
+ * for the shared tag.
+ *
+ * **When `openClawTags` is `undefined` or
+ * `[]`:** the function returns `[]` (no
+ * negative signal scan; v1.6 behavior
+ * preserved).
+ */
+function scanOpenClawSignals(
+  prompt: string,
+  openClawTags: ReadonlyArray<string> | undefined,
+  existingSignals: ReadonlyArray<SignalMatch>,
+): ReadonlyArray<SignalMatch> {
+  if (!openClawTags || openClawTags.length === 0) {
+    return [];
+  }
+  const lower = prompt.toLowerCase();
+  // Build a set of EH tags from the existing
+  // signals (so we can exclude OpenClaw tags
+  // that are also EH tags; Q4 of the v1.7
+  // sub-plan).
+  const existingMeshTags = new Set(
+    existingSignals
+      .filter((s) => s.category === "mesh-keyword")
+      .map((s) => s.token.toLowerCase()),
+  );
+  const matched: SignalMatch[] = [];
+  for (const tag of openClawTags) {
+    if (existingMeshTags.has(tag.toLowerCase())) {
+      // The tag is also an EH tag — the
+      // positive rule wins. Skip.
+      continue;
+    }
+    const offset = findTagInPrompt(lower, tag);
+    if (offset >= 0) {
+      matched.push({
+        token: prompt.slice(offset, offset + tag.length),
+        category: "mesh-keyword",
+        offset,
+      });
+    }
+  }
+  return matched;
 }
 
 // ---------------------------------------------------------------------------

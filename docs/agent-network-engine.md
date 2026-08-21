@@ -419,6 +419,51 @@ opt-in toggle** — same UX pattern: Tauri
 UI is the primary surface, prompt hint is
 the power-user escape hatch.
 
+**v1.7 — OpenClaw tags as negative signals.**
+v1.7 implements the **inverse** of the v1.1
+positive-signal rule (Q4 of the v1.1
+sub-plan, deferred to v1.7). When a prompt
+matches a tag from an **OpenClaw** skill in
+the merged manifest, the router routes to
+OpenClaw regardless of any positive
+(envoy-harness) signals (Q2 of the v1.7
+sub-plan — veto semantics). The `!eh` /
+`/eh` prefix can override the negative rule
+(Q3 — explicit prefix wins over implicit
+tag). When a tag is in BOTH the EH list and
+the OpenClaw list, the positive rule wins
+(Q4 — shared tag precedence). The
+opt-in-disabled check still wins over the
+negative rule (Q7). v1.7 adds:
+- A new `extractOpenClawTags(manifest)`
+  helper (parallel to v1.1's
+  `extractEnvoyHarnessTags`) that filters
+  the manifest by `runtime === "openclaw"`.
+- A new `openClawTags?` field on
+  `RouteUserPromptInput` (the host threads
+  the extracted list to the router).
+- A new `scanOpenClawSignals` helper in
+  `user-prompt-router.ts` that scans the
+  prompt for OpenClaw tags (with the same
+  word-boundary / substring algorithm as
+  v1.1) and excludes tags that are also EH
+  tags (Q4).
+- A new `reason: "openclaw-tag-match"` in
+  `RouteUserPromptDecision.reason` +
+  `OwnerAgentTurnResult.routingReason`.
+
+**v1.7 ships the backend + design doc update.**
+The Tauri UI work lives in
+`docs/taui-agent-routing-settings.md` §13
++ the Tauri monorepo. The chat badge for
+`routingReason: "openclaw-tag-match"` uses
+the **same label** as
+`"opt-out-explicit"` ("Used the free
+built-in assistant for this one") — the
+chat user doesn't need to distinguish why
+OpenClaw was chosen (Q8 of the v1.7
+sub-plan; end-user-first principle).
+
 **Per-skill matching algorithm (Q1 of the v1.2
 sub-plan):**
 

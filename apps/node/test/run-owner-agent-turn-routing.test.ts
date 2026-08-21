@@ -1272,3 +1272,109 @@ describe("runOwnerAgentTurnViaRuntime — v1.6 `!openclaw` opt-out", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 8 / v1.7 — OpenClaw tags as negative signals (e2e dispatch)
+// ---------------------------------------------------------------------------
+
+describe("runOwnerAgentTurnViaRuntime — v1.7 OpenClaw tags as negative signals", () => {
+  it("routes to OpenClaw when the prompt matches an OpenClaw tag (the negative rule)", async () => {
+    // The manifest exposes an OpenClaw skill
+    // with tag "creative". The prompt
+    // contains "creative". The negative rule
+    // routes to OpenClaw.
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      getNodeManifest: () => ({
+        peerId: "local",
+        skills: [
+          {
+            runtime: "openclaw",
+            skillId: "creative-writing",
+            tags: ["creative", "writing"],
+            description: "Creative writing",
+            inputSchema: { type: "object" },
+          },
+        ],
+      }),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "write a creative story for me",
+    );
+    expect(out.modelUsed).toBe("openclaw");
+    expect(out.routingReason).toBe("openclaw-tag-match");
+    expect(spies.askEnvoyHarness).not.toHaveBeenCalled();
+    // The OpenClaw tag is in the
+    // routingSignals (for the audit log).
+    expect(out.routingSignals).toContain("creative");
+  });
+
+  it("OpenClaw tag vetoes EH signal in the e2e dispatch (Q2 — veto semantics)", async () => {
+    // The manifest has BOTH an EH skill with
+    // tag "mesh" AND an OpenClaw skill with
+    // tag "creative". The prompt has both
+    // "creative" AND "mesh". The negative
+    // rule wins.
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      getNodeManifest: () => ({
+        peerId: "local",
+        skills: [
+          {
+            runtime: "envoy-harness",
+            skillId: "setup-sponsor-friend",
+            tags: ["mesh", "bond", "sponsor"],
+            description: "Setup sponsor friend",
+            inputSchema: { type: "object" },
+          },
+          {
+            runtime: "openclaw",
+            skillId: "creative-writing",
+            tags: ["creative", "writing"],
+            description: "Creative writing",
+            inputSchema: { type: "object" },
+          },
+        ],
+      }),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "write a creative story about the mesh",
+    );
+    expect(out.modelUsed).toBe("openclaw");
+    expect(out.routingReason).toBe("openclaw-tag-match");
+    expect(spies.askEnvoyHarness).not.toHaveBeenCalled();
+    // Both signals are in the routingSignals
+    // (for the audit log).
+    expect(out.routingSignals).toContain("creative");
+    expect(out.routingSignals).toContain("mesh");
+  });
+
+  it("`!eh` prefix overrides the OpenClaw tag in the e2e dispatch (Q3 — explicit prefix wins)", async () => {
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      getNodeManifest: () => ({
+        peerId: "local",
+        skills: [
+          {
+            runtime: "openclaw",
+            skillId: "creative-writing",
+            tags: ["creative", "writing"],
+            description: "Creative writing",
+            inputSchema: { type: "object" },
+          },
+        ],
+      }),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "!eh write a creative story for me",
+    );
+    // The !eh prefix overrides the OpenClaw
+    // tag; EH is called.
+    expect(out.modelUsed).toBe("envoy-harness");
+    expect(out.routingReason).toBe("signal");
+    expect(spies.askEnvoyHarness).toHaveBeenCalled();
+  });
+});
