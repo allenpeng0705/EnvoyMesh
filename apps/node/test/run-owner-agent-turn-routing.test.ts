@@ -1149,3 +1149,126 @@ describe("runOwnerAgentTurnViaRuntime — v1.5 prompt hints", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 8 / v1.6 — `!openclaw` opt-out dispatch integration
+// ---------------------------------------------------------------------------
+
+describe("runOwnerAgentTurnViaRuntime — v1.6 `!openclaw` opt-out", () => {
+  it("routes to OpenClaw when the prompt is `!openclaw translate this` (no other signals)", async () => {
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "!openclaw translate this to French",
+    );
+    // The router routes to OpenClaw
+    // unconditionally; the EH runtime is NOT
+    // called.
+    expect(out.modelUsed).toBe("openclaw");
+    expect(out.routingReason).toBe("opt-out-explicit");
+    expect(spies.askEnvoyHarness).not.toHaveBeenCalled();
+    // OpenClaw gets the cleanPrompt (with
+    // `!openclaw` stripped — the dispatch
+    // uses stripHintPrefix with the
+    // hintPrefixLength).
+    expect(spies.askOpenClaw).toHaveBeenCalledWith(
+      "translate this to French",
+      expect.anything(),
+    );
+  });
+
+  it("`!openclaw` overrides EH signals (e.g. mesh) — the opt-out is the safety net", async () => {
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+      getNodeManifest: () => ({
+        peerId: "local",
+        skills: [
+          {
+            runtime: "envoy-harness",
+            skillId: "setup-sponsor-friend",
+            tags: ["mesh", "bond", "sponsor"],
+            description: "Setup sponsor friend",
+            inputSchema: { type: "object" },
+          },
+        ],
+      }),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "!openclaw explain the mesh",
+    );
+    // The mesh signal would normally route to
+    // EH (the manifest has "mesh" as a tag,
+    // triggering v1.1 dynamic-vocabulary match),
+    // but `!openclaw` overrides.
+    expect(out.modelUsed).toBe("openclaw");
+    expect(out.routingReason).toBe("opt-out-explicit");
+    expect(spies.askEnvoyHarness).not.toHaveBeenCalled();
+    // The mesh signal is still in the
+    // routingSignals (for the audit log) but
+    // the runtime is OpenClaw.
+    expect(out.routingSignals).toContain("mesh");
+  });
+
+  it("`!openclaw` strips v1.5 inline hints from the cleanPrompt; hints are NOT threaded to OpenClaw", async () => {
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "!openclaw translate this /cost:0.5 /provider:openai",
+    );
+    expect(out.modelUsed).toBe("openclaw");
+    expect(out.routingReason).toBe("opt-out-explicit");
+    // The cleanPrompt has the v1.5 hints
+    // stripped (the dispatch uses
+    // decision.cleanPrompt) + the
+    // !openclaw prefix stripped (the
+    // dispatch uses stripHintPrefix with
+    // the hintPrefixLength).
+    expect(spies.askOpenClaw).toHaveBeenCalledWith(
+      "translate this",
+      expect.anything(),
+    );
+  });
+
+  it("`!openclaw` is case-insensitive in the e2e dispatch", async () => {
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "!OPENCLAW translate this to French",
+    );
+    expect(out.modelUsed).toBe("openclaw");
+    expect(out.routingReason).toBe("opt-out-explicit");
+    expect(spies.askEnvoyHarness).not.toHaveBeenCalled();
+  });
+
+  it("v0 corner-case fix: `/cost:0.5 !eh translate` routes to EH (the cleanPrompt re-scan finds !eh)", async () => {
+    // The v0 corner case: a v1.5 hint before
+    // a v0 prefix would mask the v0 prefix.
+    // The cleanPrompt re-scan fixes this — the
+    // cleanPrompt is `!eh translate` (v1.5
+    // stripped), the v0 prefix scan finds
+    // `!eh`, the router routes to EH, the LLM
+    // sees `translate` (the `!eh` is stripped).
+    const { ctx, spies } = makeCtx({
+      isEnvoyHarnessReady: vi.fn(() => true),
+    });
+    const out = await runOwnerAgentTurnViaRuntime(
+      ctx,
+      "/cost:0.5 !eh translate this to French",
+    );
+    expect(out.modelUsed).toBe("envoy-harness");
+    expect(out.routingReason).toBe("signal");
+    // The `!eh` is stripped — the LLM sees
+    // only the message text.
+    expect(spies.askEnvoyHarness).toHaveBeenCalledWith(
+      "translate this to French",
+      { providerHint: undefined, costCapUsd: 0.5 },
+    );
+  });
+});

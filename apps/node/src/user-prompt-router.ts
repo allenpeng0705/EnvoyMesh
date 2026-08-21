@@ -106,8 +106,21 @@ const LSP_REGEX = /\blsp_\w+/i;
  * force envoy-harness routing. Match is
  * case-insensitive, at the start of the prompt
  * (after `trimStart()`).
+ *
+ * **v1.6 — added `!openclaw`:** the per-prompt
+ * opt-out (Q1 + Q3 of the v1.6 sub-plan). When
+ * the owner types `!openclaw translate this` at
+ * the start, the router routes to OpenClaw
+ * regardless of any signals. The order in this
+ * list is the precedence order (Q5): the first
+ * prefix that matches at offset 0 wins. We put
+ * `!openclaw` FIRST so that
+ * `!openclaw !eh translate` → OpenClaw (the
+ * opt-out is the safety net) but
+ * `!eh !openclaw translate` → EH (the explicit
+ * route wins when the user types it first).
  */
-const HINT_PREFIXES: ReadonlyArray<string> = ["!eh", "/eh"];
+const HINT_PREFIXES: ReadonlyArray<string> = ["!openclaw", "!eh", "/eh"];
 
 /**
  * Phase 8 / v1.5 — the inline hint regex.
@@ -323,6 +336,7 @@ export interface RouteUserPromptDecision {
   reason:
     | "default"
     | "opt-in-disabled"
+    | "opt-out-explicit"
     | "signal"
     | "signal-skill"
     | "envoy-harness-unready";
@@ -496,7 +510,73 @@ export function routeUserPrompt(
   //     dynamic vocabulary when provided; falls
   //     back to the v0 `MESH_KEYWORDS` when
   //     undefined.
-  const signals = scanSignals(input.prompt, input.envoyHarnessTags);
+  const originalSignals = scanSignals(input.prompt, input.envoyHarnessTags);
+
+  // 2b. v1.6 — re-scan the **cleanPrompt** for v0
+  //     prefixes. Fixes the v0 corner case where a
+  //     v1.5 inline hint before a v0 prefix (e.g.
+  //     `/cost:0.5 !eh translate this`) would mask
+  //     the v0 prefix because step 2a scans the
+  //     **original** prompt (not the cleanPrompt).
+  //     The result: the LLM would see
+  //     `!eh translate this` (the `!eh` is leaked).
+  //
+  //     **Why only use the cleanPrompt's signal
+  //     when the original missed it** (Q8 of the
+  //     v1.6 sub-plan): the original is the
+  //     "explicit" prefix; the cleanPrompt's prefix
+  //     is "derived" (post v1.5 strip). When both
+  //     are present, the original wins (the user
+  //     typed the original prefix first). When the
+  //     original missed (because a v1.5 hint masked
+  //     it), the cleanPrompt's prefix is the
+  //     "true" prefix.
+  const cleanPromptSignals = scanSignals(
+    cleanPrompt,
+    input.envoyHarnessTags,
+  );
+  const originalHasExplicitHint = originalSignals.some(
+    (s) => s.category === "explicit-hint",
+  );
+  const cleanPromptHasExplicitHint = cleanPromptSignals.some(
+    (s) => s.category === "explicit-hint",
+  );
+  const signals =
+    cleanPromptHasExplicitHint && !originalHasExplicitHint
+      ? cleanPromptSignals
+      : originalSignals;
+
+  // 2c. v1.6 — opt-out: `!openclaw` at the start
+  //     of the (final) signal list routes to
+  //     OpenClaw unconditionally (Q1 + Q3 + Q4 of
+  //     the v1.6 sub-plan). The v1.5 hints are
+  //     recorded on the decision (for the audit
+  //     log) but NOT threaded to the OpenClaw
+  //     runtime (the dispatch ignores them on the
+  //     OpenClaw path — OpenClaw doesn't have a
+  //     hint concept).
+  //
+  //     **Case-insensitive compare:** the v0
+  //     prefix scan captures the **original-case**
+  //     token (e.g. `!OPENCLAW` from a typed
+  //     uppercase prompt); the opt-out check
+  //     lowercases both sides so `!OPENCLAW`,
+  //     `!Openclaw`, `!openclaw` all match.
+  const explicitHint = signals.find(
+    (s) => s.category === "explicit-hint",
+  );
+  if (explicitHint?.token.toLowerCase() === "!openclaw") {
+    return {
+      runtime: "openclaw",
+      reason: "opt-out-explicit",
+      signals,
+      hintPrefixLength: explicitHint.token.length, // 9
+      targetSkill: undefined,
+      costCapUsd: hints.costCapUsd,
+      providerHint: hints.providerHint,
+      cleanPrompt,
+    };
+  }
 
   // 3. No signals → default OpenClaw.
   if (signals.length === 0) {

@@ -92,7 +92,8 @@ export interface OwnerAgentTurnResult {
     | "signal"
     | "signal-skill"
     | "envoy-harness-unready"
-    | "opt-in-disabled";
+    | "opt-in-disabled"
+    | "opt-out-explicit";
   /**
    * Phase 8 / v1.2 — when the router picked a specific
    * envoy-harness skill (vs the v1.1 free-form LLM ask),

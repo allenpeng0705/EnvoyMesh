@@ -375,6 +375,50 @@ dormant by default**. **Keep it simple**
 env var (no persisted field, no helper
 file).
 
+**v1.6 — per-prompt opt-out `!openclaw` +
+v0 corner-case fix.** v1.6 adds the
+**per-prompt opt-out hint** (`!openclaw
+<message>` at the start of the prompt).
+The router routes to OpenClaw
+unconditionally — `!openclaw` overrides
+any v1.1 signals (mesh keywords, tool
+names, lsp_*) and any v1.2 per-skill match.
+The v1.5 inline hints (`/cost:N`,
+`/provider:NAME`) are still parsed + stripped
+from the cleanPrompt + recorded on the
+decision (for the audit log) but NOT
+threaded to the OpenClaw runtime (OpenClaw
+doesn't have a hint concept). The order in
+`HINT_PREFIXES` is `["!openclaw", "!eh",
+"/eh"]` — the opt-out is the safety net (Q5
+of the v1.6 sub-plan: `!openclaw !eh ...`
+→ OpenClaw; `!eh !openclaw ...` → EH). v1.6
+also fixes the **v0 corner case** where a
+v1.5 inline hint before a v0 prefix (e.g.
+/cost:0.5 !eh translate this) would mask
+the v0 prefix (the v0 prefix scan uses the
+original prompt, not the cleanPrompt). v1.6
+re-scans the cleanPrompt for v0 prefixes;
+the fix is partial — it works when the v1.5
+hint is at the start of the prompt, but not
+when the v1.5 hint is in the middle (the v0
+prefix scan only checks the start of the
+prompt). The full fix is a v1.6+ future
+(scanning the WHOLE prompt for v0 prefixes).
+
+**v1.6 ships the backend + design doc update.**
+The Tauri UI work lives in
+`docs/taui-agent-routing-settings.md` §12
++ the Tauri monorepo. The chat badge for
+`routingReason: "opt-out-explicit"` is
+designed there (end-user-first copy:
+"Used the free built-in assistant for this
+one"). The `!openclaw` hint is the
+**per-prompt mirror of the v1.4 per-node
+opt-in toggle** — same UX pattern: Tauri
+UI is the primary surface, prompt hint is
+the power-user escape hatch.
+
 **Per-skill matching algorithm (Q1 of the v1.2
 sub-plan):**
 

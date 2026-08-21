@@ -561,7 +561,98 @@ enough.
 > cross verifier with different model,
 > per-runtime tags, scoreboard formula.
 
-## 12. References
+## 12. v1.6 — `!openclaw` per-prompt opt-out
+
+> **Status:** Phase 8 v1.6. The Tauri team
+> picks up the chat badge mapping in their
+> workstream. v1.6 ships the backend (`!openclaw`
+> prefix + the opt-out branch in `routeUserPrompt`
+> + the v0 corner-case fix).
+
+### 12.1 The chat input — the hint is the power-user escape hatch
+
+The `!openclaw` hint is the **per-prompt mirror
+of the v1.4 per-node opt-in toggle**. The owner
+types `!openclaw translate this` at the start
+of the prompt; the router routes to OpenClaw
+unconditionally. The two compose:
+
+- **v1.4 per-node opt-in toggle** — decides
+  whether the signal router runs at all.
+- **v1.6 per-prompt `!openclaw`** — overrides
+  the signal router's choice for a single
+  message.
+
+Like the v1.5 inline hints, the Tauri UI is
+the primary UX (the regular user never sees
+the hint syntax). A tooltip on the chat input
+surfaces the hint syntax to power users:
+
+> "**Tip:** you can also type `!openclaw` at
+> the start of your message to force the free
+> built-in assistant for one message."
+
+### 12.2 The chat badge — `routingReason: "opt-out-explicit"`
+
+The dispatch exposes a new `routingReason`
+value when the opt-out fires. The Tauri team
+maps the internal value to a user-friendly
+label:
+
+| Internal value | Owner-visible label |
+|---|---|
+| `"opt-out-explicit"` | "Used the free built-in assistant for this one" |
+
+The badge is identical in style to the v1.4
+chat badge (a small tag above the reply). The
+signal token (`!openclaw`) is in the
+`routingSignals` array — the Tauri team can
+surface it for power users (developer-mode
+debug panel) but the default badge just shows
+the user-friendly label.
+
+### 12.3 The Settings panel — no change
+
+The v1.6 hint is **per-prompt only** — there
+is no per-node "always opt-out" toggle (the
+v1.4 per-node opt-in toggle is the per-node
+equivalent). The Settings panel is unchanged
+for v1.6.
+
+### 12.4 The v0 corner-case fix (background)
+
+v1.6 also fixes a v0 corner case: a v1.5
+inline hint before a v0 prefix (e.g.
+`/cost:0.5 !eh translate this`) would mask
+the v0 prefix. v1.6 re-scans the
+`cleanPrompt` (post v1.5 strip) for v0
+prefixes; if the cleanPrompt has a v0
+prefix that the original missed (because a
+v1.5 hint masked it), the cleanPrompt's
+prefix wins. The fix is **partial** — it
+works when the v1.5 hint is at the START of
+the prompt, but not when the v1.5 hint is in
+the middle (the v0 prefix scan only checks
+the start of the prompt). The full fix is a
+v1.6+ future.
+
+### 12.5 Out of scope (v1.6+ future)
+
+- **Per-prompt opt-in** (`!eh` is the v0
+  opt-in; the v1.6 per-prompt opt-out is the
+  per-message equivalent of the v1.4 per-node
+  opt-in toggle. The v0 `!eh` already exists.)
+- **Per-runtime opt-out** (`!openclaw` for
+  OpenClaw, `!ext` for ext runtime, etc.) —
+  v1.6 is OpenClaw-only. Per-runtime opt-out
+  is a v1.6+ future.
+- **Full v0 corner-case fix** — scanning the
+  WHOLE prompt for v0 prefixes (vs. just the
+  start). The v1.6 fix only works when the
+  v1.5 hint is at the start. A future chunk
+  could scan the whole prompt.
+
+## 13. References
 
 - [`agent-harness-integration-v1-5.md`](./agent-harness-integration-v1-5.md)
   (the v1.5 sub-plan + DONE stamp)

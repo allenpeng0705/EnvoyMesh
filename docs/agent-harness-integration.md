@@ -872,3 +872,74 @@ fan-out within a job (whole-job only).
     update + `agent-harness-integration-v1-4.md`
     status note + `agent-harness-integration-v1-5.md`
     DONE stamp.
+
+- **2026-08-21 (v1.6 — per-prompt opt-out
+  `!openclaw` + v0 corner-case fix — DONE):**
+  the v1.1 + v1.2 + v1.3 + v1.4 + v1.5 routing
+  layer gets a per-prompt **opt-out** (the
+  per-message mirror of the v1.4 per-node
+  opt-in toggle). The owner types
+  `!openclaw <message>` at the start of the
+  prompt; the router routes to OpenClaw
+  unconditionally. `!openclaw` overrides any
+  v1.1 signals (mesh keywords, tool names,
+  lsp_*) and any v1.2 per-skill match. The
+  v1.5 inline hints (`/cost:N`,
+  `/provider:NAME`) are still parsed + stripped
+  from the cleanPrompt + recorded on the
+  decision (for the audit log) but NOT
+  threaded to the OpenClaw runtime (OpenClaw
+  doesn't have a hint concept). The order in
+  `HINT_PREFIXES` is `["!openclaw", "!eh",
+  "/eh"]` — the opt-out is the safety net
+  (Q5). v1.6 also fixes the **v0 corner
+  case** where a v1.5 inline hint before a
+  v0 prefix (e.g. `/cost:0.5 !eh translate
+  this`) would mask the v0 prefix (the v0
+  prefix scan uses the original prompt, not
+  the cleanPrompt). v1.6 re-scans the
+  cleanPrompt for v0 prefixes; the fix is
+  partial (works when the v1.5 hint is at
+  the start; full fix is a v1.6+ future).
+  1 commit on `envoy_harness_integration`
+  branch (the user delegated commit; bundled
+  v1.6.1 + v1.6.2 + v1.6.3 into a single
+  commit at the end of v1.6). 17 new tests
+  (12 v1.6 `routeUserPrompt` integration +
+  5 v1.6 dispatch e2e) + 221 pre-existing
+  tests regression-clean on the affected
+  paths. No new type errors. The Tauri
+  team's chat badge for
+  `routingReason: "opt-out-explicit"` is
+  designed in `docs/taui-agent-routing-
+  settings.md` §12 (end-user-first copy).
+  Detailed plan:
+  `docs/agent-harness-integration-v1-6.md`
+  (sub-plan with 10 locked design questions).
+  - **v1.6.1 — opt-out hint + v0
+    corner-case fix.** `!openclaw` added to
+    `HINT_PREFIXES` (first). New opt-out
+    branch in `routeUserPrompt` with
+    `reason: "opt-out-explicit"`. New
+    `cleanPrompt` re-scan step (the v0
+    corner-case fix). `RouteUserPromptDecision.reason`
+    + `OwnerAgentTurnResult.routingReason`
+    gain `"opt-out-explicit"`. 12 new unit
+    tests for the opt-out + v0 corner-case.
+  - **v1.6.2 — dispatch integration (no
+    functional change).** The dispatch
+    already routes non-EH runtimes to
+    OpenClaw; no code change. 5 new e2e
+    tests for the opt-out dispatch
+    (`!openclaw` → OpenClaw + the v0
+    corner-case fix in the e2e flow).
+  - **v1.6.3 — Tauri UI design doc +
+    closeout.** `docs/taui-agent-routing-
+    settings.md` §12 (chat badge for
+    `"opt-out-explicit"` + power-user hint
+    tooltip + the v0 corner-case fix
+    background) + this entry +
+    `agent-network-engine.md` §2.2.2 update
+    + `agent-harness-integration-v1-5.md`
+    status note + `agent-harness-integration-v1-6.md`
+    DONE stamp.

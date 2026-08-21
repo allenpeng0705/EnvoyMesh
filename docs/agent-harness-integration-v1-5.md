@@ -1,5 +1,14 @@
 # envoy-harness integration — v1.5 sub-plan (cost cap + multi-provider signal hints)
 
+> **v1.6 (2026-08-21) status:** v1.6 builds on
+> v1.5. The v1.5 inline hint extraction
+> (`/cost:N`, `/provider:NAME`) is the foundation
+> for v1.6's `!openclaw` opt-out — the v1.5
+> `cleanPrompt` is what v1.6 re-scans for v0
+> prefixes (the v0 corner-case fix). See
+> [`agent-harness-integration-v1-6.md`](./agent-harness-integration-v1-6.md)
+> for the v1.6 sub-plan + DONE stamp.
+
 > **Status:** ✅ **DONE** (2026-08-21). 1 commit on
 > `envoy_harness_integration` branch (the user
 > delegated commit; bundled v1.5.1 + v1.5.2 +

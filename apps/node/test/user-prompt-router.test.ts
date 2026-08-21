@@ -1064,3 +1064,229 @@ describe("routeUserPrompt — v1.5 inline hint integration", () => {
     expect(decision.cleanPrompt).toBe("/cost:0.5 explain the mesh");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 8 / v1.6 — `!openclaw` opt-out + v0 corner-case fix
+// ---------------------------------------------------------------------------
+
+describe("routeUserPrompt — v1.6 `!openclaw` opt-out", () => {
+  it("routes to OpenClaw with reason: opt-out-explicit when `!openclaw` is the only prefix", () => {
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "!openclaw translate this to French",
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("opt-out-explicit");
+    expect(decision.runtime).toBe("openclaw");
+    // The `!openclaw` prefix is reported as a signal
+    // + its length (9) is the hintPrefixLength.
+    expect(decision.hintPrefixLength).toBe(9);
+    expect(decision.signals[0]?.token).toBe("!openclaw");
+    expect(decision.targetSkill).toBeUndefined();
+  });
+
+  it("`!openclaw` overrides other signals (e.g. mesh) — the opt-out is the safety net", () => {
+    // The prompt has BOTH `!openclaw` AND `mesh`
+    // (an EH signal). The opt-out wins.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "!openclaw explain the mesh",
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("opt-out-explicit");
+    expect(decision.runtime).toBe("openclaw");
+    // The `mesh` signal is still in the list
+    // (for the audit log) but the runtime is
+    // OpenClaw.
+    expect(
+      decision.signals.some((s) => s.token === "mesh"),
+    ).toBe(true);
+  });
+
+  it("`!openclaw` strips v1.5 inline hints from the cleanPrompt (Q6)", () => {
+    // The user typed both `!openclaw` AND
+    // v1.5 hints. The v1.5 hints are stripped
+    // from the cleanPrompt; they're still on
+    // the decision (for the audit log) but
+    // not threaded to OpenClaw.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "!openclaw translate this /cost:0.5 /provider:openai",
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("opt-out-explicit");
+    expect(decision.cleanPrompt).toBe("!openclaw translate this");
+    // The v1.5 hints are still on the decision
+    // (for the audit log) — but the dispatch
+    // ignores them on the OpenClaw path.
+    expect(decision.costCapUsd).toBe(0.5);
+    expect(decision.providerHint).toBe("openai");
+  });
+
+  it("`!openclaw` is case-insensitive (matches v0 `!eh` case-insensitivity)", () => {
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "!OPENCLAW translate this",
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("opt-out-explicit");
+    expect(decision.runtime).toBe("openclaw");
+  });
+
+  it("`!eh !openclaw translate` → EH (the order in HINT_PREFIXES is !openclaw first; user typed !eh first so it wins)", () => {
+    // Q5 — the order in HINT_PREFIXES is the
+    // precedence order. The first prefix at
+    // offset 0 wins. Here, `!eh` is at offset
+    // 0, so the v0 prefix scan matches `!eh`
+    // first.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "!eh !openclaw translate this",
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("signal");
+    expect(decision.runtime).toBe("envoy-harness");
+    expect(decision.hintPrefixLength).toBe(3);
+  });
+
+  it("`!openclaw !eh translate` → OpenClaw (the order in HINT_PREFIXES is !openclaw first; !openclaw is at offset 0)", () => {
+    // Q5 — `!openclaw` is first in HINT_PREFIXES;
+    // when at offset 0, it matches first.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "!openclaw !eh translate this",
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("opt-out-explicit");
+    expect(decision.runtime).toBe("openclaw");
+    expect(decision.hintPrefixLength).toBe(9);
+  });
+
+  it("`!openclaw` with opt-in-disabled still routes to OpenClaw (opt-in-disabled is the first branch; Q7)", () => {
+    // Q7 — opt-in-disabled wins over `!openclaw`.
+    // The router short-circuits before the
+    // opt-out check. The opt-in check is the
+    // first branch.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "!openclaw translate this",
+        signalOptIn: "disabled",
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("opt-in-disabled");
+    expect(decision.runtime).toBe("openclaw");
+    // The opt-in-disabled branch doesn't extract
+    // v1.5 hints + doesn't scan for v0 prefixes.
+    expect(decision.hintPrefixLength).toBeUndefined();
+    expect(decision.cleanPrompt).toBe("!openclaw translate this");
+  });
+});
+
+describe("routeUserPrompt — v1.6 v0 corner-case fix (re-scan cleanPrompt for v0 prefixes)", () => {
+  it("`/cost:0.5 !eh translate` → EH (the v0 corner case: !eh masked by v1.5 hint, cleanPrompt re-scan finds it)", () => {
+    // Q8 — the cleanPrompt re-scan fixes the v0
+    // corner case. The original prompt starts
+    // with `/cost:0.5`; the v0 prefix scan
+    // (which uses the original) doesn't find
+    // `!eh`. The cleanPrompt re-scan (which uses
+    // the v1.5-stripped prompt) starts with
+    // `!eh`; it finds the v0 prefix.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "/cost:0.5 !eh translate this",
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("signal");
+    expect(decision.runtime).toBe("envoy-harness");
+    expect(decision.hintPrefixLength).toBe(3);
+    expect(decision.cleanPrompt).toBe("!eh translate this");
+  });
+
+  it("`/cost:0.5 !openclaw translate` → OpenClaw (the v0 corner case for !openclaw, cleanPrompt re-scan finds it)", () => {
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "/cost:0.5 !openclaw translate this",
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("opt-out-explicit");
+    expect(decision.runtime).toBe("openclaw");
+    expect(decision.hintPrefixLength).toBe(9);
+    expect(decision.cleanPrompt).toBe("!openclaw translate this");
+  });
+
+  it("`!eh /cost:0.5 translate` → EH (original scan finds !eh; no re-scan needed)", () => {
+    // The original prompt starts with `!eh`; the
+    // v0 prefix scan finds it. The cleanPrompt
+    // re-scan is a no-op (the original already
+    // had a v0 prefix).
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "!eh /cost:0.5 translate this",
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("signal");
+    expect(decision.runtime).toBe("envoy-harness");
+    expect(decision.hintPrefixLength).toBe(3);
+  });
+
+  it("`mesh /cost:0.5 !eh translate` → EH (mesh signal wins; !eh is NOT detected because v0 prefix is not at start)", () => {
+    // **Known v0 corner case (not fully fixed by
+    // the cleanPrompt re-scan):** the v0 prefix
+    // scan checks the START of the prompt
+    // (trimmed). When the v1.5 hint is in the
+    // MIDDLE (after `mesh`), the cleanPrompt
+    // re-scan still doesn't find `!eh` (it's
+    // not at the start of the cleanPrompt
+    // either). The mesh signal wins, and the
+    // LLM sees `mesh !eh translate` (the `!eh`
+    // is leaked to the LLM). This is a v0
+    // design limitation; a future chunk could
+    // fix it by scanning the whole prompt for
+    // v0 prefixes.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "mesh /cost:0.5 !eh translate this",
+        isEnvoyHarnessReady: true,
+      }),
+    );
+    expect(decision.reason).toBe("signal");
+    expect(decision.runtime).toBe("envoy-harness");
+    // The `!eh` is NOT detected (not at the
+    // start of either the original or the
+    // cleanPrompt), so the hintPrefixLength
+    // is undefined. The LLM sees the original
+    // cleanPrompt (with the leaked `!eh`).
+    expect(decision.hintPrefixLength).toBeUndefined();
+    expect(decision.cleanPrompt).toBe("mesh !eh translate this");
+  });
+
+  it("`/cost:0.5 /provider:openai mesh` → OpenClaw (no v0 prefix in either scan; default OpenClaw)", () => {
+    // The v1.5 hints are stripped, the cleanPrompt
+    // is just `mesh`. The cleanPrompt re-scan
+    // finds `mesh` (a v1.1 dynamic tag, NOT an
+    // explicit-hint). No v0 prefix anywhere.
+    // The router routes to OpenClaw on `mesh` +
+    // envoy-harness-unready (or envoy-harness +
+    // free-form LLM ask, depending on readiness).
+    // Here, envoy-harness is NOT ready.
+    const decision = routeUserPrompt(
+      makeInput({
+        prompt: "/cost:0.5 /provider:openai mesh",
+        isEnvoyHarnessReady: false,
+      }),
+    );
+    expect(decision.reason).toBe("envoy-harness-unready");
+    expect(decision.runtime).toBe("openclaw");
+    expect(decision.hintPrefixLength).toBeUndefined();
+  });
+});
