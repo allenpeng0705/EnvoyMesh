@@ -845,7 +845,154 @@ when all external callers have migrated.
   removed when all callers have migrated.
   v1.9+ future.
 
-## 16. References
+## 16. v1.10 — Scoreboard formula (3-tuple reputation)
+
+> **Status:** Phase 8 v1.10. v1.10 is a
+> **foundation chunk** — it ships the
+> 3-tuple reputation producer + the Tauri
+> UI helpers, but does **not** wire the
+> formula into the orchestrator's worker
+> picker (that's v1.10+ future).
+
+### 16.1 The chain report surface — worker trust category
+
+v1.10 ships two backend helpers
+(`apps/node/src/chain-scoreboard.ts`):
+
+- `reputationFromVerdicts(verdicts): number`
+  — the formula. Returns a `[-1, 1]` score
+  computed from the `(peer, runtime, skill)`
+  verdict history. The Tauri team reads this
+  via a future orchestrator handler
+  (the v1.10+ wiring) and surfaces it in
+  the chain report.
+- `categorizeReputation(score)` +
+  `isNoHistoryReputation(verdictCount)` —
+  the Tauri UI helpers. Map the internal
+  score to a trust category.
+
+The Tauri team maps the internal
+categories to user-friendly labels
+(end-user-first copy):
+
+| Internal category | Owner-visible label (suggested) |
+|---|---|
+| `"trusted"` | "Trusted" (or "Reliable" — the Tauri team's call) |
+| `"mixed"` | "Mixed history" (or "Some hits, some misses" — the Tauri team's call) |
+| `"untrusted"` | "Low trust" (or "New or low history" — the Tauri team's call) |
+| `"no-history"` | "No history yet" (a brand-new peer; no verdicts on file) |
+
+The exact copy is the Tauri team's call.
+The internal names are stable identifiers
+(developer jargon); the owner-visible
+labels are translated to user-readable
+strings.
+
+**Why a separate `no-history` category:**
+`reputationFromVerdicts([])` returns `0`
+(neutral, per Q2 of the v1.10 design
+questions). `categorizeReputation(0)`
+returns `"untrusted"` (because `0` is just
+below the `0.3` untrusted threshold).
+The Tauri team calls
+`isNoHistoryReputation(verdicts.length)`
+to override to `"no-history"` for the
+empty-input case — a brand-new peer
+should NOT be labeled "Low trust" (that's
+hostile to the peer); it should be
+labeled "No history yet" (neutral; the
+peer hasn't had a chance to earn trust
+yet).
+
+### 16.2 The thresholds — `SCOREBOARD_TRUST_THRESHOLDS`
+
+The thresholds are exported from
+`chain-scoreboard.ts` so the Tauri team
+can verify them in their unit tests:
+
+```ts
+export const SCOREBOARD_TRUST_THRESHOLDS = {
+  trusted: 0.7,
+  untrusted: 0.3,
+} as const;
+```
+
+- `trusted ≥ 0.7` (strong positive)
+- `mixed 0.3 - 0.7` (in between)
+- `untrusted < 0.3` (strong negative)
+- `no-history` (empty input — handled
+  separately)
+
+**Why 0.7 / 0.3 (not 0.6 / 0.4 from
+`MIN_REP_FOR_SENSITIVITY`):** the UI
+thresholds are a separate decision from
+the gate thresholds. The gate thresholds
+answer "can this worker take this job?"
+(binary per-tier). The UI thresholds
+answer "should the owner see a friendly
+trust badge?" (3-way trust signal).
+0.7 / 0.3 gives a clear "trusted" /
+"untrusted" band, with a wide "mixed"
+middle for workers with mixed history.
+
+### 16.3 The cross = 1.5x weight (F9.5 intent)
+
+The `SCOREBOARD_SOURCE_WEIGHTS` table
+encodes the v1.8 F9.5 design intent
+("a verifier with a different model is
+a stronger signal"):
+
+```ts
+export const SCOREBOARD_SOURCE_WEIGHTS = {
+  rule: 1.0,
+  llm: 1.0,
+  cross: 1.5,  // F9.5: different model = 1.5x
+  human: 2.0,
+} as const;
+```
+
+The `cross=1.5x` weight is the
+v1.8 cross-verify-with-different-model
+primitive (the v1.8 `pickSecondRuntime`
+preference for a different-family
+runtime) captured at the
+reputation-aggregation layer. The Tauri
+team doesn't surface this in the UI
+directly (the owner doesn't need to know
+the source weights); the user-visible
+result is the trust category.
+
+### 16.4 Out of scope (v1.10+ future)
+
+- **Wiring into the orchestrator's worker
+  picker** — v1.10+ future. The formula
+  is available; the orchestrator doesn't
+  use it yet. v1.10+ future may add the
+  `getVerdictsFor(store, { workerPeerId, workerRuntime, skillId })` +
+  `reputationFromVerdicts` call in the
+  orchestrator's worker picker (replacing
+  the current "primary + best-fit"
+  strategy with a scoreboard-driven rank).
+- **Tauri UI for the worker trust badge**
+  — the Tauri team picks up the actual
+  UI in their workstream. v1.10 ships
+  the backend + a design doc (this
+  section).
+- **Federated scoreboard trust** — the
+  design explicitly defers this until a
+  mesh-wide identity layer exists. v1.10
+  is local-only.
+- **Per-node source weight tuning** — the
+  `SCOREBOARD_SOURCE_WEIGHTS` is a
+  hardcoded global table. Per-node
+  tuning (Tauri UI override) is v1.10+
+  future.
+- **Per-node threshold tuning** — the
+  `SCOREBOARD_TRUST_THRESHOLDS` is a
+  hardcoded global table. Per-node
+  tuning is v1.10+ future.
+
+## 17. References
 
 - [`agent-harness-integration-v1-4.md`](./agent-harness-integration-v1-4.md)
   (the v1.4 sub-plan + DONE stamp)
@@ -855,6 +1002,17 @@ when all external callers have migrated.
   (the v1.6 sub-plan + DONE stamp)
 - [`agent-harness-integration-v1-7.md`](./agent-harness-integration-v1-7.md)
   (the v1.7 sub-plan + DONE stamp)
+- [`agent-harness-integration-v1-8.md`](./agent-harness-integration-v1-8.md)
+  (the v1.8 sub-plan + DONE stamp — v1.8's
+  `verifierModel` field is the foundation for
+  v1.10's `cross=1.5` source weight)
+- [`agent-harness-integration-v1-9.md`](./agent-harness-integration-v1-9.md)
+  (the v1.9 sub-plan + DONE stamp — v1.9's
+  per-runtime tag map is the input the v1.10
+  orchestrator handler will use to filter
+  verdicts by runtime)
+- [`agent-harness-integration-v1-10.md`](./agent-harness-integration-v1-10.md)
+  (the v1.10 sub-plan + DONE stamp)
 - [`user-prompt-router.ts`](../apps/node/src/user-prompt-router.ts)
   (the v0 + v1.1 + v1.2 + v1.5 + v1.6 + v1.7
   router; v1.7 adds the negative-signal scan)
@@ -869,3 +1027,8 @@ when all external callers have migrated.
   (the EH runtime — v1.5 added `providerHint?`
   on the options; logs the hint in the
   audit trail)
+- [`chain-scoreboard.ts`](../apps/node/src/chain-scoreboard.ts)
+  (the v1.10 3-tuple reputation producer +
+  Tauri UI helpers; the scoreboard formula
+  with `SCOREBOARD_SOURCE_WEIGHTS` + the
+  `SCOREBOARD_TRUST_THRESHOLDS` constants)

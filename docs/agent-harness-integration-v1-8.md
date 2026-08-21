@@ -545,3 +545,30 @@ pattern). On `envoy_harness_integration` branch.
 
 **Protocol:**
 - **No protocol change.** The `verifierModel` field was already in the Zod schema (`packages/protocol/src/agent-adapter.ts:347-389` — `verifierModel: z.string().optional()`, required iff `source === 'llm'`, optional for `"rule"` / `"cross"` / `"human"`). v1.8 just populates the field for cross verdicts.
+
+## v1.10 status note (2026-08-21)
+
+v1.10 ships the **scoreboard formula** that consumes
+the v1.8 `verifierModel` field at the
+reputation-aggregation layer. The v1.8
+cross-verify-with-different-model primitive (F9.5
+proxy) is now encoded as a `1.5x` source weight
+for `cross` verdicts in the v1.10
+`SCOREBOARD_SOURCE_WEIGHTS` table — the F9.5
+design intent ("a verifier with a different model
+is a stronger signal") is captured in the
+reputation aggregation without any further change
+to the cross-verify loop itself. v1.10 also
+reuses the `verifierModel` field indirectly
+through the cross `VerdictEntry`'s `source ===
+"cross"` discriminator (the `verifierModel` is
+populated by the v1.8 cross-verify branch).
+
+**v1.10 scope:** foundation chunk (the
+`reputationFromVerdicts(verdicts): number`
+formula in `apps/node/src/chain-scoreboard.ts`
++ Tauri UI helper + constants + 30 new unit
+tests). v1.10 does **not** wire the formula into
+`chain-sensitivity-gate.requiresReputationApproval`
+(that's v1.10+ future). Detailed plan:
+[`agent-harness-integration-v1-10.md`](./agent-harness-integration-v1-10.md).

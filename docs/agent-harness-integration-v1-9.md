@@ -617,3 +617,33 @@ pattern). On `envoy_harness_integration` branch.
 - `docs/agent-harness-integration-v1-7.md` — v1.9 status note (v1.9 generalizes the v1.7 extractor)
 - `docs/agent-harness-integration-v1-8.md` — v1.9 status note (v1.9 lays the foundation for future per-runtime routing)
 - `docs/taui-agent-routing-settings.md` — §15 (per-runtime tag map design; v1.9 is a foundation chunk)
+
+## v1.10 status note (2026-08-21)
+
+v1.10 builds on the v1.9 per-runtime tag map:
+the runtimes that produce verdicts (the
+verifier source) are the same runtimes whose tag
+lists v1.9 extracted. v1.10's
+`SCOREBOARD_SOURCE_WEIGHTS` table
+(`apps/node/src/chain-scoreboard.ts`) is keyed by
+`VerifierSource` — and the v1.9 `runtimeTags` map
+is the input the v1.10 orchestrator handler will
+use to filter verdicts by runtime for the 3-tuple
+reputation book. v1.10 ships the formula + Tauri
+UI helper (foundation chunk); the actual wiring
+into the orchestrator's verdict-history reads is
+v1.10+ future.
+
+**Why the foundation chunk matters for v1.9:**
+v1.9 made the per-runtime tag map available; v1.10
+consumes the per-runtime tag map's "what verdicts
+exist for this runtime" answer. v1.9+ future
+(per-runtime routing) will then use the v1.9
+runtime tag list as the routing vocabulary, and
+the v1.10 score as the routing-weight input. The
+two are independent: v1.10 doesn't change v1.9;
+v1.9 doesn't change v1.10. They compose cleanly
+because the per-runtime data structure v1.9 ships
+is exactly the per-runtime data the v1.10
+formula's caller (a future orchestrator handler)
+needs.
