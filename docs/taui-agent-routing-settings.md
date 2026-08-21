@@ -499,16 +499,30 @@ persisted field (default case):**
 └────────────────────────────────────────────┘
 ```
 
-These Settings panel controls map to new
-`NodeService` methods (added in v1.5.3):
+These Settings panel controls are the **owner-
+wide defaults**. The Tauri team will add new
+`NodeService` methods to read + write them
+(similar to the v1.4 `getSignalOptIn` /
+`setSignalOptIn` pattern). The exact method
+names are a Tauri-side implementation
+detail; the rough shape is:
 
 - `getDefaultProvider(): Promise<"default" | "openai" | "ollama" | "anthropic">`
 - `setDefaultProvider(value: ...): Promise<...>`
 - `getDefaultSpendingLimit(): Promise<number | undefined>`
 - `setDefaultSpendingLimit(value: number | undefined): Promise<number | undefined>`
 
-(Or similar — the exact method names are
-a v1.5.3 implementation detail.)
+**v1.5 scope (what landed):** the v1.5
+backend ships **per-prompt** hint parsing
++ threading (`extractPromptHints` +
+the dispatch integration). The v1.5
+backend does **NOT** ship the owner-wide
+default settings — that's a future
+chunk, picked up alongside the Tauri UI
+implementation. The Tauri team has the
+doc to design against; the Node-side
+methods land in a future v1.5.x or v1.5+
+chunk.
 
 ### 10.4 The power-user escape hatch
 
