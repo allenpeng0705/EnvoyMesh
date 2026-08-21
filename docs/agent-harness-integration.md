@@ -1170,11 +1170,9 @@ fan-out within a job (whole-job only).
   `envoy_harness_integration` branch (the user
   delegated commit; bundled v1.10.1 + v1.10.2
   into a single commit at the end of v1.10).
-  30 new tests (14 `reputationFromVerdicts` +
+  30 new tests (15 `reputationFromVerdicts` +
   8 `categorizeReputation` + 3
-  `isNoHistoryReputation` + 3
-  `SCOREBOARD_SOURCE_WEIGHTS` + 2
-  `SCOREBOARD_TRUST_THRESHOLDS`)
+  `isNoHistoryReputation` + 2 + 2 constants)
   + 222 pre-existing tests regression-clean
   on the affected paths. No new type errors
   (pre-existing multiformats/ArrayBuffer

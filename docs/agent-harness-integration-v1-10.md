@@ -5,11 +5,9 @@
 > user delegated the commit; bundled v1.10.1 +
 > v1.10.2 into a single commit at the end of
 > v1.10, per the v1.4-v1.9 pattern). 30 new
-> tests (14 `reputationFromVerdicts` + 8
+> tests (15 `reputationFromVerdicts` + 8
 > `categorizeReputation` + 3
-> `isNoHistoryReputation` + 3
-> `SCOREBOARD_SOURCE_WEIGHTS` + 2
-> `SCOREBOARD_TRUST_THRESHOLDS`) +
+> `isNoHistoryReputation` + 2 + 2 constants) +
 > 222 pre-existing tests regression-clean on
 > the affected paths. No new type errors
 > (pre-existing multiformats/ArrayBuffer
@@ -662,7 +660,7 @@ pattern). On `envoy_harness_integration` branch.
 - `apps/node/src/chain-scoreboard.ts` (NEW) — `reputationFromVerdicts(verdicts): number` formula + `categorizeReputation(score)` Tauri UI helper + `isNoHistoryReputation(verdictCount)` empty-input helper + `SCOREBOARD_SOURCE_WEIGHTS` constant (the v1.8 F9.5 proxy — `cross=1.5` is the different-model weighting) + `SCOREBOARD_TRUST_THRESHOLDS` constant (0.7 / 0.3 UI thresholds)
 
 **Tests:**
-- `apps/node/test/chain-scoreboard.test.ts` (NEW) — 30 unit tests (14 `reputationFromVerdicts` covering empty input / all-pass / all-fail / all-disputed / mixed-source / partial-factor / cross-weighting / human-weighting / max positive / max negative / disputed-ignored / floating-point clamp; 8 `categorizeReputation` covering trusted / mixed / untrusted / boundary scores; 3 `isNoHistoryReputation`; 3 `SCOREBOARD_SOURCE_WEIGHTS` constants spec pinning; 2 `SCOREBOARD_TRUST_THRESHOLDS` constants spec pinning)
+- `apps/node/test/chain-scoreboard.test.ts` (NEW) — 30 unit tests (15 `reputationFromVerdicts` covering empty input / all-pass / all-fail / all-disputed / mixed-source / partial-factor / cross-weighting / human-weighting / floating-point safety / max positive / max negative / disputed-ignored / floating-point clamp; 8 `categorizeReputation` covering trusted / mixed / untrusted / boundary scores; 3 `isNoHistoryReputation`; 3 `SCOREBOARD_SOURCE_WEIGHTS` constants spec pinning; 2 `SCOREBOARD_TRUST_THRESHOLDS` constants spec pinning)
 
 **Docs:**
 - `docs/agent-harness-integration-v1-10.md` (NEW) — this sub-plan + DONE stamp
