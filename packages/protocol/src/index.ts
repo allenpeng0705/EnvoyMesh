@@ -96,6 +96,11 @@ export const EnvoyIntentSchema = z.enum([
   "task.chain.ready.request",
   /** Worker → assigner: ready yes/no for THAT node's configured AN engine (OpenClaw XOR Ext). */
   "task.chain.ready.response",
+  // v2.2 — direct MAP-over-libp2p sub-agent submit (RemoteSubmitterTransport).
+  /** Parent agent → worker agent: execute a SubagentInput (as ExecuteInput). */
+  "task.harness.submit.request",
+  /** Worker agent → parent agent: the signed AgentResult (or a wire error). */
+  "task.harness.submit.response",
   // Phase 45 — Web Content Browsing. Pull-based content serving over the mesh.
   // See docs/web-content-browsing-design.md.
   "library.read",
@@ -4223,6 +4228,8 @@ export {
   TaskChainReportPayloadSchema,
   TaskChainReadyRequestPayloadSchema,
   TaskChainReadyResponsePayloadSchema,
+  TaskHarnessSubmitRequestPayloadSchema,
+  TaskHarnessSubmitResponsePayloadSchema,
   parseChainMandate,
   parseChainSubtask,
   parseChainSubtaskBid,
@@ -4232,12 +4239,16 @@ export {
   parseCompositeArtifact,
   parseTaskChainReadyRequestPayload,
   parseTaskChainReadyResponsePayload,
+  parseTaskHarnessSubmitRequestPayload,
+  parseTaskHarnessSubmitResponsePayload,
   createChainMandateId,
   createChainId,
   createChainSubtaskId,
   createChainReadyProbeId,
   createTaskChainReadyRequestPayload,
   createTaskChainReadyResponsePayload,
+  createTaskHarnessSubmitRequestPayload,
+  createTaskHarnessSubmitResponsePayload,
 } from "./agent-network.js";
 export type {
   UnsignedChainMandate,
@@ -4266,6 +4277,8 @@ export type {
   TaskChainReportPayload,
   TaskChainReadyRequestPayload,
   TaskChainReadyResponsePayload,
+  TaskHarnessSubmitRequestPayload,
+  TaskHarnessSubmitResponsePayload,
 } from "./agent-network.js";
 
 export {

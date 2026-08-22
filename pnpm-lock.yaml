@@ -74,6 +74,9 @@ importers:
       '@envoymesh/envoy-harness-client':
         specifier: link:../../../envoy-harness/packages/envoy-harness-client
         version: link:../../../envoy-harness/packages/envoy-harness-client
+      '@envoymesh/envoy-harness-peer':
+        specifier: link:../../../envoy-harness/packages/envoy-harness-peer
+        version: link:../../../envoy-harness/packages/envoy-harness-peer
       '@envoymesh/identity':
         specifier: 0.2.2
         version: link:../../packages/identity
@@ -5308,6 +5311,7 @@ snapshots:
     dependencies:
       '@envoymesh/agent-adapter': link:../../../EnvoyMesh/packages/agent-adapter
       '@envoymesh/envoy-harness': link:../envoy-harness/packages/envoy-harness
+      '@envoymesh/envoy-harness-peer': link:../envoy-harness-peer
       '@envoymesh/identity': link:../../../EnvoyMesh/packages/identity
       '@envoymesh/protocol': link:../../../EnvoyMesh/packages/protocol
 

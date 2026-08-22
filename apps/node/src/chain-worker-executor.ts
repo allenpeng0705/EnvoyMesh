@@ -23,6 +23,7 @@ import {
   isBriefOrReportGoal,
   isSynthesizeSubtask,
 } from "./chain-deliverable-policy.js";
+import { createMapChainSubtaskExecutor } from "./chain-map.js";
 
 export interface ChainWorkerExecutorDeps {
   getToolContext: () => Promise<MeshToolContext | null>;
@@ -188,27 +189,32 @@ export function createExtAgentChainSubtaskExecutor(input: {
  *     the orchestrator retries on a different node or escalates)
  *   - no model adapter or LLM key is required for the call path
  *
- * **Step 2 (next):** replace `input.askEnvoyHarness` with a
- * `createEnvoyHarnessAdapter`-driven path. The result text goes
- * through the same `textResultArtifacts` shape as the OpenClaw path.
- * The `buildAgent` + `signResult` wiring is documented in
- * `apps/node/src/agent-runtime-envoy/factory.ts`.
+ * **D1 (2026-08-22):** the executor is now adapter-driven
+ * (`createMapChainSubtaskExecutor`) — the live runtime's
+ * `EnvoyHarnessAdapter` executes + verifies the subtask, emitting the
+ * standard `task.chain.partial` stream with named artifacts (same wire
+ * shape as the OpenClaw MAP path). The adapter is a lazy getter because
+ * the runtime constructs it on first ask; `isEnvoyHarnessReady()` gates
+ * the call.
  */
 export function createEnvoyHarnessChainSubtaskExecutor(input: {
   workerPeerId: string;
   now?: () => Date;
   isEnvoyHarnessReady: () => boolean;
-  askEnvoyHarness: (prompt: string) => Promise<string>;
+  /** The live runtime's adapter (lazy — may appear after construction). */
+  adapter: () => import("@envoymesh/agent-adapter").AgentAdapter | undefined;
+  onShadowRecord?: import("./chain-map.js").MapChainSubtaskExecutorInput["onShadowRecord"];
+  defaultDeadlineMs?: number;
 }): NonNullable<ChainWorkerHandlerDeps["executeSubtask"]> {
-  return createEngineChainSubtaskExecutor({
+  return createMapChainSubtaskExecutor({
     workerPeerId: input.workerPeerId,
     now: input.now,
     engineLabel: "envoy-harness",
-    logTag: "EnvoyHarness",
     unavailableCode: "envoy_harness_unavailable",
-    emptyCode: "envoy_harness_empty",
     isReady: input.isEnvoyHarnessReady,
-    ask: input.askEnvoyHarness,
+    adapter: input.adapter,
+    onShadowRecord: input.onShadowRecord,
+    defaultDeadlineMs: input.defaultDeadlineMs,
   });
 }
 

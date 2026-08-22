@@ -691,6 +691,19 @@ function pickSecondRuntime(
 ): AgentRuntime | undefined {
   const runtimes = deps.listRuntimes?.() ?? [];
   const workerFamily = MODEL_FAMILY[workerRuntime];
+  // v1.16 — cross-model-on-same-runtime: when a per-call verifier model
+  // override is set and the worker is on envoy-harness (the only runtime
+  // honoring per-call overrides), the worker's own runtime is the second
+  // verifier — the verifier re-runs with a DIFFERENT model. OpenClaw/
+  // Pi same-runtime cross-model is out of scope (Q3), so this is scoped
+  // to envoy-harness.
+  if (
+    deps.verifierProviderHint !== undefined &&
+    workerRuntime === "envoy-harness" &&
+    runtimes.includes("envoy-harness")
+  ) {
+    return "envoy-harness";
+  }
   // Prefer a different-family runtime.
   const differentFamily = runtimes.find(
     (r) =>

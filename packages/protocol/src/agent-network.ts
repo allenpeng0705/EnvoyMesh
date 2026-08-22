@@ -25,6 +25,7 @@
 
 import { z } from "zod";
 
+import { SignedAgentResultSchema } from "./agent-adapter.js";
 import type { Artifact, EnvoyActorRole, Sensitivity } from "./index.js";
 
 /**
@@ -817,4 +818,93 @@ export function parseTaskChainReadyRequestPayload(input: unknown): TaskChainRead
 
 export function parseTaskChainReadyResponsePayload(input: unknown): TaskChainReadyResponsePayload {
   return TaskChainReadyResponsePayloadSchema.parse(input);
+}
+
+// ---------------------------------------------------------------------------
+// v2.2 — task.harness.submit.* (direct MAP-over-libp2p sub-agent submit)
+//
+// The `RemoteSubmitterTransport` wire contract: the parent sends the
+// serializable half of `ExecuteInput` (the AbortSignal is worker-side,
+// rebuilt from `deadlineMs`), the worker replies with its signed
+// `AgentResult` — or a wire error when the adapter is unavailable or
+// execution fails. Same correlationId on both envelopes.
+// ---------------------------------------------------------------------------
+
+/**
+ * `task.harness.submit.request` — parent agent → worker agent.
+ *
+ * Mirrors `ExecuteInput` (packages/agent-adapter) minus the AbortSignal.
+ * The worker rebuilds the signal from `deadlineMs`; `verifierModel` is
+ * the v1.16 per-call model override hint.
+ */
+export const TaskHarnessSubmitRequestPayloadSchema = z.object({
+  skillId: z.string().min(1).max(128),
+  objective: z.string().min(1).max(200_000),
+  inputArtifacts: z
+    .array(NamedArtifactSchema)
+    .max(CHAIN_INPUT_ARTIFACTS_MAX)
+    .default([]),
+  costCeilingUsd: z.number().positive(),
+  deadlineMs: z.number().int().positive(),
+  correlationId: z.string().min(1).max(200),
+  verifierModel: z.string().min(1).max(200).optional(),
+});
+export type TaskHarnessSubmitRequestPayload = z.infer<
+  typeof TaskHarnessSubmitRequestPayloadSchema
+>;
+
+/**
+ * `task.harness.submit.response` — worker agent → parent agent.
+ *
+ * `ok: true` carries the worker's signed `AgentResult` (signature =
+ * the owner's key, same contract as the chain worker path). `ok: false`
+ * carries a wire error (adapter unavailable / execution failure) so the
+ * parent fails fast instead of waiting out the deadline.
+ */
+export const TaskHarnessSubmitResponsePayloadSchema = z.discriminatedUnion(
+  "ok",
+  [
+    z.object({
+      ok: z.literal(true),
+      result: SignedAgentResultSchema,
+    }),
+    z.object({
+      ok: z.literal(false),
+      error: z.string().min(1).max(500),
+    }),
+  ],
+);
+export type TaskHarnessSubmitResponsePayload = z.infer<
+  typeof TaskHarnessSubmitResponsePayloadSchema
+>;
+
+export function createTaskHarnessSubmitRequestPayload(
+  input: Omit<TaskHarnessSubmitRequestPayload, "inputArtifacts"> & {
+    inputArtifacts?: TaskHarnessSubmitRequestPayload["inputArtifacts"];
+  },
+): TaskHarnessSubmitRequestPayload {
+  return TaskHarnessSubmitRequestPayloadSchema.parse({
+    ...input,
+    inputArtifacts: input.inputArtifacts ?? [],
+  });
+}
+
+export function parseTaskHarnessSubmitRequestPayload(
+  input: unknown,
+): TaskHarnessSubmitRequestPayload {
+  return TaskHarnessSubmitRequestPayloadSchema.parse(input);
+}
+
+export function createTaskHarnessSubmitResponsePayload(
+  input:
+    | { ok: true; result: import("./agent-adapter.js").SignedAgentResult }
+    | { ok: false; error: string },
+): TaskHarnessSubmitResponsePayload {
+  return TaskHarnessSubmitResponsePayloadSchema.parse(input);
+}
+
+export function parseTaskHarnessSubmitResponsePayload(
+  input: unknown,
+): TaskHarnessSubmitResponsePayload {
+  return TaskHarnessSubmitResponsePayloadSchema.parse(input);
 }

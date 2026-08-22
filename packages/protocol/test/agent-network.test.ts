@@ -49,10 +49,14 @@ import {
   TaskChainPartialPayloadSchema,
   TaskChainProposePayloadSchema,
   TaskChainReportPayloadSchema,
+  TaskHarnessSubmitRequestPayloadSchema,
+  TaskHarnessSubmitResponsePayloadSchema,
   UnsignedChainMandateSchema,
   createChainId,
   createChainMandateId,
   createChainSubtaskId,
+  createTaskHarnessSubmitRequestPayload,
+  createTaskHarnessSubmitResponsePayload,
   parseChainMandate,
   parseChainReport,
   parseChainSubtask,
@@ -60,6 +64,8 @@ import {
   parseChainSubtaskBid,
   parseChainSubtaskPartial,
   parseCompositeArtifact,
+  parseTaskHarnessSubmitRequestPayload,
+  parseTaskHarnessSubmitResponsePayload,
   type ChainReport,
   type ChainSubtask,
   type ChainSubtaskAward,
@@ -734,5 +740,92 @@ describe("TaskChain payload wrappers", () => {
     const r = report();
     const p = TaskChainReportPayloadSchema.parse({ report: r });
     expect(p.report).toEqual(r);
+  });
+});
+
+describe("TaskHarnessSubmit payloads (v2.2 libp2p RemoteSubmitterTransport)", () => {
+  it("request payload round-trips the serializable ExecuteInput", () => {
+    const created = createTaskHarnessSubmitRequestPayload({
+      skillId: "research",
+      objective: "summarize the Q3 hiring report",
+      inputArtifacts: [
+        { key: "spec", artifact: { kind: "text", content: "from parent" } },
+      ],
+      costCeilingUsd: 1.5,
+      deadlineMs: 60_000,
+      correlationId: "corr-1",
+      verifierModel: "claude-instant",
+    });
+    expect(parseTaskHarnessSubmitRequestPayload(created)).toEqual(created);
+    expect(created.inputArtifacts).toHaveLength(1);
+  });
+
+  it("request payload defaults inputArtifacts to []", () => {
+    const created = createTaskHarnessSubmitRequestPayload({
+      skillId: "research",
+      objective: "x",
+      costCeilingUsd: 1,
+      deadlineMs: 10_000,
+      correlationId: "corr-2",
+    });
+    expect(created.inputArtifacts).toEqual([]);
+    expect(TaskHarnessSubmitRequestPayloadSchema.parse(created).inputArtifacts).toEqual([]);
+  });
+
+  it("request payload rejects missing objective / non-positive deadline", () => {
+    expect(() =>
+      TaskHarnessSubmitRequestPayloadSchema.parse({
+        skillId: "research",
+        objective: "",
+        costCeilingUsd: 1,
+        deadlineMs: 10_000,
+        correlationId: "corr-3",
+      }),
+    ).toThrow();
+    expect(() =>
+      TaskHarnessSubmitRequestPayloadSchema.parse({
+        skillId: "research",
+        objective: "x",
+        costCeilingUsd: 1,
+        deadlineMs: 0,
+        correlationId: "corr-3",
+      }),
+    ).toThrow();
+  });
+
+  it("response payload wraps a SignedAgentResult", () => {
+    const result = {
+      skillId: "research",
+      runtime: "envoy-harness",
+      peerId: "envoy_agent_worker",
+      correlationId: "corr-1",
+      content: [{ kind: "text", text: "worker result" }],
+      citations: [],
+      metrics: { durationMs: 5, costUsd: 0.01 },
+      completedAt: "2026-06-18T00:00:05.000Z",
+      signature: "sig",
+    } as const;
+    const created = createTaskHarnessSubmitResponsePayload({
+      ok: true,
+      result,
+    });
+    expect(parseTaskHarnessSubmitResponsePayload(created)).toEqual(created);
+  });
+
+  it("response payload carries wire errors and rejects unknown discriminants", () => {
+    const err = createTaskHarnessSubmitResponsePayload({
+      ok: false,
+      error: "envoy_harness_unavailable",
+    });
+    expect(parseTaskHarnessSubmitResponsePayload(err)).toEqual({
+      ok: false,
+      error: "envoy_harness_unavailable",
+    });
+    expect(() =>
+      TaskHarnessSubmitResponsePayloadSchema.parse({
+        ok: "maybe",
+        error: "x",
+      }),
+    ).toThrow();
   });
 });

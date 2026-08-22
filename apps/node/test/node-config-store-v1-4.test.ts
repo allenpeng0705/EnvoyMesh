@@ -113,7 +113,36 @@ describe("NodeConfigStore — Phase 8 v1.4 (signalOptIn + verifyModeDefault)", (
       await store.save(makeConfig({ verifyModeDefault: "rule-only" }));
       const loaded = await store.load();
       expect(loaded?.verifyModeDefault).toBe("rule-only");
+  });
+
+  it("v1.16: verifierProviderHint round-trips through the store", async () => {
+    const store = createNodeConfigStore(profileDir);
+    await store.save(makeConfig({ verifierProviderHint: "anthropic:claude-instant" }));
+    const loaded = await store.load();
+    expect(loaded?.verifierProviderHint).toBe("anthropic:claude-instant");
+  });
+
+  it("R2: envoyHarnessPeers round-trips through the store", async () => {
+    const store = createNodeConfigStore(profileDir);
+    await store.save(
+      makeConfig({
+        envoyHarnessPeers: [
+          {
+            id: "p1",
+            endpoint: "127.0.0.1:9001",
+            model: "deepseek-chat",
+            capabilities: ["research"],
+          },
+        ],
+      }),
+    );
+    const loaded = await store.load();
+    expect(loaded?.envoyHarnessPeers?.[0]).toMatchObject({
+      id: "p1",
+      endpoint: "127.0.0.1:9001",
+      model: "deepseek-chat",
     });
+  });
 
     it("persists 'cross-runtime' across save → load", async () => {
       const store = createNodeConfigStore(profileDir);

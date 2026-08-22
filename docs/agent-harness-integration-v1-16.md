@@ -1,6 +1,6 @@
 # envoy-harness integration — v1.16 sub-plan (cross-model-on-same-runtime — F9.5 full primitive)
 
-> **Status:** ✅ **DONE** (2026-08-22).
+> **Status:** ✅ **DONE** (2026-08-22) — seam + production wiring.
 > The EH runtime now supports per-call
 > model overrides; the v1.16 primitive is
 > implemented end-to-end (see "The
@@ -14,7 +14,14 @@
 > constructing a per-call `ModelAdapter`
 > via `modelFactory` (parse helper:
 > `parseProviderHint`, exported from
-> `agent-runtime-envoy`).
+> `agent-runtime-envoy`). Production wiring: `PersistedNodeConfig.
+> verifierProviderHint` (per-node config source),
+> `ChainOrchestrationContext.getEnvoyHarnessAdapter()` (the live runtime
+> adapter), the chain-verify pool includes `envoy-harness` when
+> `isEnvoyHarnessReady()`, `buildAdapter("envoy-harness")` returns the
+> live adapter, and `pickSecondRuntime` allows same-runtime verification
+> when the hint is set (envoy-harness only, per Q3). Operator opt-in:
+> set `verifierProviderHint` in the node config.
 >
 > **What this doc covers:** v1.16 in
 > **concrete detail** — every file

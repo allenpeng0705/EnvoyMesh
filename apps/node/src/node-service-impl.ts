@@ -1123,6 +1123,7 @@ import {
   cancelChainOwnerAction,
   reassignSubtaskOwnerAction,
   retryInputDeliveryOwnerAction,
+  _chainTransportResolver,
   _evaluateAwardAndAccept,
   _executeApprovedChainAward,
   _queueChainAwardApproval,
@@ -4933,6 +4934,61 @@ class NodeServiceImpl implements NodeService {
   }
 
   /**
+   * v1.16 — the live envoy-harness adapter for same-runtime
+   * cross-verify. The chain-verify loop's `buildAdapter("envoy-harness")`
+   * returns this (undefined until the runtime is constructed, i.e. until
+   * `isEnvoyHarnessReady()` has been true and `askEnvoyHarness` ran).
+   */
+  getEnvoyHarnessAdapter(): import("@envoymesh/agent-adapter").AgentAdapter | undefined {
+    return this._envoyHarnessRuntimeCache?.adapter;
+  }
+
+  /**
+   * R2 — build (once) the standalone peer execution pool from the
+   * persisted `envoyHarnessPeers` config. Fail-open: peers that can't
+   * connect are skipped; the rest still form the pool.
+   */
+  private async _ensureEnvoyHarnessPeerPool(): Promise<void> {
+    if (this._envoyHarnessPeerPool !== undefined) return;
+    const peers = this._configStore?.peek()?.envoyHarnessPeers;
+    if (peers === undefined || peers.length === 0) return;
+    const { buildEnvoyHarnessPeerPool } = await import(
+      "./agent-runtime-envoy/peer-pool.js"
+    );
+    this._envoyHarnessPeerPool = await buildEnvoyHarnessPeerPool(peers);
+    if (this._envoyHarnessPeerPool.failed.length > 0) {
+      console.warn(
+        `[node-service] envoy-harness peer pool partial: connected ` +
+          `${this._envoyHarnessPeerPool.connected.join(",")}, failed ` +
+          `${this._envoyHarnessPeerPool.failed.length}`,
+      );
+    }
+  }
+
+  /** R2 — the peer management surface: connected peers + their models. */
+  listEnvoyHarnessPeers(): ReadonlyArray<{
+    id: string;
+    model?: string;
+    capabilities?: readonly string[];
+  }> {
+    return (
+      this._envoyHarnessPeerPool?.registry
+        .list()
+        .map(({ id, model, capabilities }) => ({
+          id,
+          ...(model !== undefined ? { model } : {}),
+          ...(capabilities !== undefined ? { capabilities } : {}),
+        })) ?? []
+    );
+  }
+
+  /** R2 — close the peer pool sockets (host teardown). Idempotent. */
+  closeEnvoyHarnessPeerPool(): void {
+    this._envoyHarnessPeerPool?.closeAll();
+    this._envoyHarnessPeerPool = undefined;
+  }
+
+  /**
    * Phase 8 / b3 — sync ask via envoy-harness (AN engine).
    *
    * Replaces the Step 1 stub. Lazily constructs the
@@ -5095,6 +5151,10 @@ class NodeServiceImpl implements NodeService {
           askAbort?.abort();
           permissionBridge.clear();
         },
+        // R3 — the mesh node's connected envoy-harness peer cluster is
+        // exposed over the ACP `peers/list` surface (same contract as
+        // the standalone TUI's `/peers`).
+        listPeers: () => this.listEnvoyHarnessPeers(),
       },
       onPermission: async (req) => permissionBridge.request(req),
     });
@@ -5247,6 +5307,10 @@ class NodeServiceImpl implements NodeService {
    * state, so the closure is the same shape.
    */
   private _envoyHarnessRuntimeCache: RealEnvoyHarnessRuntime | undefined;
+  /** R2 — the cached peer execution pool (built once from config). */
+  private _envoyHarnessPeerPool:
+    | import("./agent-runtime-envoy/peer-pool.js").EnvoyHarnessPeerPool
+    | undefined;
 
   /**
    * Phase 8 / b3.live — host's envoy-harness model + API key cache.
@@ -5378,6 +5442,8 @@ class NodeServiceImpl implements NodeService {
     if (this._envoyHarnessRuntimeCache) {
       return this._envoyHarnessRuntimeCache;
     }
+    // R2 — build (once) the peer execution pool from the persisted config.
+    await this._ensureEnvoyHarnessPeerPool();
     const agentIdentity = await this._ensureAgentIdentity();
     if (!agentIdentity?.agentPeerId || !agentIdentity.agentPrivateKeyPem) {
       // The bootstrap hasn't completed; the chain worker
@@ -5414,6 +5480,10 @@ class NodeServiceImpl implements NodeService {
       cwd: config.cwd,
       askOpenClaw: (p) => this.askOpenClaw(p),
       isOpenClawReady: () => this.isOpenClawReady(),
+      // R2 — the execution pool from the persisted peer config (Pattern A).
+      ...(this._envoyHarnessPeerPool !== undefined
+        ? { innerSubmitter: this._envoyHarnessPeerPool.submitter }
+        : {}),
       // Phase 8 / Step 3 — the 3 B-class tools
       // (sponsor_friend / list_peers / relay_status).
       // Built per-runtime (the deps are closures over
@@ -13987,6 +14057,67 @@ class NodeServiceImpl implements NodeService {
     if (!result.ok) {
       console.warn(`[chain.ready] request failed: ${result.reason}`);
     }
+  }
+
+  /** v2.2 — worker half of the libp2p `RemoteSubmitterTransport`. */
+  async handleInboundHarnessSubmitRequest(
+    envelope: EnvoyEnvelope,
+    replyWithEnvelope?: (envelope: EnvoyEnvelope) => Promise<void>,
+  ): Promise<void> {
+    const agentIdentity = await this._ensureAgentIdentity();
+    if (!agentIdentity) {
+      console.warn("[harness.submit] ignored: agent identity unavailable");
+      return;
+    }
+    const { handleInboundHarnessSubmitRequest } = await import(
+      "./harness-submit-inbound.js"
+    );
+    const result = await handleInboundHarnessSubmitRequest({
+      envelope,
+      replyWithEnvelope,
+      agentPeerId: agentIdentity.agentPeerId,
+      agentPublicKeyPem: agentIdentity.agentPublicKeyPem,
+      agentPrivateKeyPem: agentIdentity.agentPrivateKeyPem,
+      agentCredential: agentIdentity.agentCredential,
+      getAdapter: () => this.getEnvoyHarnessAdapter(),
+    });
+    if (!result.ok) {
+      console.warn(`[harness.submit] request failed: ${result.reason}`);
+    }
+  }
+
+  /**
+   * v2.2 — the mesh fabric's `RemoteSubmitterTransport`: a
+   * `RemoteMeshSubmitter` targeting ANOTHER mesh node's envoy-harness
+   * worker (Pattern B), instead of a standalone peer cluster. Returns
+   * null when the mesh / agent identity is unavailable.
+   */
+  async createLibp2pRemoteSubmitterTransport(): Promise<
+    import("@envoymesh/envoy-harness-adapter").RemoteSubmitterTransport | null
+  > {
+    const resolver = await _chainTransportResolver(
+      this._chainOrchestrationContext(),
+    );
+    if (!resolver) return null;
+    const agentIdentity = await this._ensureAgentIdentity();
+    if (!agentIdentity) return null;
+    const { createLibp2pRemoteSubmitterTransport } = await import(
+      "./harness-submit-transport.js"
+    );
+    return createLibp2pRemoteSubmitterTransport({
+      resolver,
+      parentAgentPeerId: agentIdentity.agentPeerId,
+      parentAgentPublicKeyPem: agentIdentity.agentPublicKeyPem,
+      parentAgentPrivateKeyPem: agentIdentity.agentPrivateKeyPem,
+      agentCredential: agentIdentity.agentCredential,
+      executeLocally: (input) => {
+        const adapter = this.getEnvoyHarnessAdapter();
+        if (!adapter) {
+          throw new Error("envoy_harness_unavailable");
+        }
+        return adapter.execute(input);
+      },
+    });
   }
 
   async refreshAgentNetworkMembershipIndex(): Promise<void> {

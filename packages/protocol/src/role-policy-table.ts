@@ -100,6 +100,9 @@ const INTENT_ROLE_POLICIES: Record<string, readonly RolePair[]> = {
   "task.chain.arbitration": AGENT_AGENT_ONLY,
   "task.chain.ready.request": AGENT_AGENT_ONLY,
   "task.chain.ready.response": AGENT_AGENT_ONLY,
+  // v2.2 — direct MAP-over-libp2p sub-agent submit (agent→agent).
+  "task.harness.submit.request": AGENT_AGENT_ONLY,
+  "task.harness.submit.response": AGENT_AGENT_ONLY,
   // Phase 45E — bonded publish notify (human→human, same family as share metadata).
   "feed.notify": HUMAN_HUMAN_ONLY,
   "feed.engage": HUMAN_HUMAN_ONLY,

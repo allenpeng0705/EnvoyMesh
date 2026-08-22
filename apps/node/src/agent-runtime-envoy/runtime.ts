@@ -225,6 +225,15 @@ export interface CreateRealEnvoyHarnessRuntimeOptions {
    */
   verifierProviderHint?: string;
 
+  /**
+   * R2 — the sub-agent execution pool. Default: a `LocalMeshSubmitter`
+   * (same-machine). A host can inject a peer-backed `MeshSubmitter`
+   * (e.g. `RemoteMeshSubmitter` over `createPeerRemoteSubmitterTransport`)
+   * so the worker's `task` tool fans out to a standalone envoy-harness
+   * peer cluster — Pattern A of `distributed-collaboration.md`.
+   */
+  innerSubmitter?: MeshSubmitter;
+
   /** Optional: cross-runtime logger. */
   log?: (event: string, fields?: Record<string, unknown>) => void;
 }
@@ -491,13 +500,17 @@ export function createRealEnvoyHarnessRuntime(
       // the sub-agent gets all BUILTIN tools (the
       // sub-agent's tool set is more open than the
       // top-level skill's tool set).
-      const innerSubmitter = new LocalMeshSubmitter({
-        buildSubagent: defaultBuildSubagentFactory({
-          model,
-          cwd: opts.cwd,
-        }),
-        workerPeerId: opts.workerPeerId,
-      });
+      // R2 — the execution pool is injectable: default to the local
+      // sub-agent pipeline; a host can swap in a peer-backed submitter.
+      const innerSubmitter =
+        opts.innerSubmitter ??
+        new LocalMeshSubmitter({
+          buildSubagent: defaultBuildSubagentFactory({
+            model,
+            cwd: opts.cwd,
+          }),
+          workerPeerId: opts.workerPeerId,
+        });
       // Host-side cross-runtime bridge (openclaw
       // direction). The same `buildSubagent` factory —
       // both runtimes use the same model.

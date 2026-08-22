@@ -139,6 +139,7 @@ import {
 } from "./chain-map.js";
 import { isManifestFresh, pruneExpiredManifests } from "./agent-adapter-manifest-inbound.js";
 import { OpenClawAdapter } from "@envoymesh/agent-adapter";
+import type { AgentAdapter } from "@envoymesh/agent-adapter";
 import { createPiAdapterFromHost, type PiMapHost } from "./pi-map-adapter.js";
 import { requiresChainAwardApproval } from "./chain-sensitivity-gate.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
@@ -363,6 +364,9 @@ export interface ChainOrchestrationContext {
    * Optional — absent = the v1.8 cross-runtime behavior.
    */
   verifierProviderHint?: string;
+  /** Live envoy-harness adapter for the same-runtime cross-verify
+   *  (v1.16). Absent → `buildAdapter("envoy-harness")` returns undefined. */
+  getEnvoyHarnessAdapter?(): AgentAdapter | undefined;
   emit<K extends keyof NodeServiceEvents>(event: K, data: NodeServiceEvents[K]): void;
   /** Built-in OpenClaw readiness for Agent Network worker execution. */
   isOpenClawReady(): boolean;
@@ -440,6 +444,15 @@ export function buildChainOrchestrationContext(host: any): ChainOrchestrationCon
     // default). Reads from the in-memory snapshot
     // — no disk I/O.
     getPersistedNodeConfigSync: () => host._configStore?.peek(),
+    // v1.16 — per-node verifier model override from the persisted config
+    // (the host's Q1 config source).
+    ...(host._configStore?.peek()?.verifierProviderHint !== undefined
+      ? {
+          verifierProviderHint:
+            host._configStore.peek()?.verifierProviderHint,
+        }
+      : {}),
+    getEnvoyHarnessAdapter: () => host.getEnvoyHarnessAdapter?.(),
     emit: (event, data) => host.emit(event, data),
     isOpenClawReady: () => Boolean(host.isOpenClawReady?.()),
     askOpenClaw: (prompt) => host.askOpenClaw(prompt),
@@ -1081,7 +1094,9 @@ export async function buildChainWorkerDeps(deps: ChainOrchestrationContext): Pro
         return createEnvoyHarnessChainSubtaskExecutor({
           workerPeerId: agentIdentity.agentPeerId,
           isEnvoyHarnessReady: () => deps.isEnvoyHarnessReady(),
-          askEnvoyHarness: (prompt) => deps.askEnvoyHarness(prompt),
+          // D1 — the live runtime's adapter (built on first ask; the
+          // executor resolves it lazily after the readiness gate).
+          adapter: () => deps.getEnvoyHarnessAdapter?.(),
         })(subtask, onPartial, opts);
       }
       const legacyExec =
@@ -1592,9 +1607,20 @@ export async function buildChainOrchestratorDeps(
         const runtimes: AgentRuntime[] = [];
         if (deps.isOpenClawReady()) runtimes.push("openclaw");
         if (deps.isPiReady()) runtimes.push("pi");
+        // v1.16 — cross-model-on-same-runtime: when the node's own
+        // envoy-harness runtime is ready, it joins the verify pool so a
+        // worker on envoy-harness can be cross-verified by envoy-harness
+        // with a different model.
+        if (deps.isEnvoyHarnessReady()) runtimes.push("envoy-harness");
         return runtimes;
       },
       buildAdapter: (runtime, subtask) => {
+        if (runtime === "envoy-harness") {
+          if (!deps.isEnvoyHarnessReady()) return undefined;
+          // The live runtime's adapter (per-call `verifierModel` override
+          // honored by the runtime's buildAgent wrapper).
+          return deps.getEnvoyHarnessAdapter?.();
+        }
         if (runtime === "openclaw") {
           if (!deps.isOpenClawReady()) return undefined;
           return new OpenClawAdapter({

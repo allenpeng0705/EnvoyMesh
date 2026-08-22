@@ -1601,6 +1601,10 @@ fan-out within a job (whole-job only).
   `buildEnvoyHarnessAdapterWithCrossVerify`
   accepts `verifierProviderHint?` for
   the adapter-level verify path.
+  Production wiring: `PersistedNodeConfig.verifierProviderHint` config
+  source, `getEnvoyHarnessAdapter()` host seam, envoy-harness in the
+  chain-verify pool + `buildAdapter` branch, and same-runtime selection
+  in `pickSecondRuntime` (envoy-harness only).
   Detailed plan:
   `docs/agent-harness-integration-v1-16.md`
   (status flipped to DONE).

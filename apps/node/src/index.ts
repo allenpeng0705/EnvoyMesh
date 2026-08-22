@@ -1851,6 +1851,16 @@ async function handleInboundMeshMessage({
     return;
   }
 
+  // v2.2 — direct MAP-over-libp2p sub-agent submit (RemoteSubmitterTransport).
+  if (envelope.intent === "task.harness.submit.request" && nodeService instanceof NodeServiceImpl) {
+    await nodeService.handleInboundHarnessSubmitRequest(envelope, replyWithEnvelope);
+    return;
+  }
+  if (envelope.intent === "task.harness.submit.response") {
+    // Consumed by sendExpectReply on the parent; ignore unsolicited.
+    return;
+  }
+
   // MAP — periodic owner-signed capability manifest broadcast (adapter.manifest).
   if (envelope.intent === "adapter.manifest" && nodeService instanceof NodeServiceImpl) {
     const handled = await nodeService.handleInboundCapabilityManifest(envelope);

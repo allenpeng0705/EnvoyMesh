@@ -460,6 +460,24 @@ export interface PersistedNodeConfig {
     | "rule-only"
     | "cross-runtime"
     | "cross-runtime-strict";
+  /**
+   * v1.16 — per-node verifier model override for cross-model-on-same-
+   * runtime verification. When set, the chain-verify loop's cross branch
+   * re-runs the subtask on the second adapter with this
+   * `ExecuteInput.verifierModel` (e.g. `"anthropic:claude-instant"`).
+   * Optional — absent = the v1.8 cross-runtime behavior.
+   */
+  verifierProviderHint?: string;
+  /** R2 — static standalone peer endpoints for the envoy-harness execution
+   *  pool. Each entry: `{ id, endpoint: "host:port", model?, capabilities? }`.
+   *  When set, the node's envoy-harness worker routes sub-agents to the
+   *  peer cluster (Pattern A). Optional — absent = local sub-agents only. */
+  envoyHarnessPeers?: ReadonlyArray<{
+    id: string;
+    endpoint: string;
+    model?: string;
+    capabilities?: string[];
+  }>;
 }
 
 export interface NodeConfigStore {

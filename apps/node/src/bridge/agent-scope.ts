@@ -38,6 +38,9 @@ export const BRIDGE_AGENT_SCOPE = [
   "task.chain.arbitration",
   "task.chain.ready.request",
   "task.chain.ready.response",
+  // v2.2 — direct MAP-over-libp2p sub-agent submit (RemoteSubmitterTransport).
+  "task.harness.submit.request",
+  "task.harness.submit.response",
 ] as const;
 
 export type BridgeAgentScopeIntent = (typeof BRIDGE_AGENT_SCOPE)[number];

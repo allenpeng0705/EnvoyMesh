@@ -42,6 +42,15 @@ import {
   loadEnvoyHarnessRuntimeConfig,
   parseProviderHint,
 } from "../src/agent-runtime-envoy/index.js";
+import {
+  createPeerRemoteSubmitterTransport,
+  RemoteMeshSubmitter,
+} from "@envoymesh/envoy-harness-adapter";
+import {
+  createInProcessPeerPair,
+  createPeerServerHandler,
+  PeerRegistry,
+} from "@envoymesh/envoy-harness-peer";
 import { createEnvoyHarnessChainSubtaskExecutor } from "../src/chain-worker-executor.js";
 import { chainLog, chainWarn } from "../src/chain-debug.js";
 
@@ -425,14 +434,22 @@ describe("createEnvoyHarnessChainSubtaskExecutor e2e (Phase 8 Step 2 / b3)", () 
         content: [
           {
             type: "text",
+            text: "warm",
+          },
+        ],
+        stopReason: "end_turn",
+      },
+      {
+        content: [
+          {
+            type: "text",
             text: "this is the worker result",
           },
         ],
         stopReason: "end_turn",
         usage: {
-          promptTokens: 10,
-          completionTokens: 5,
-          costUsd: 0.001,
+          inputTokens: 10,
+          outputTokens: 5,
         },
       },
     ]);
@@ -444,13 +461,15 @@ describe("createEnvoyHarnessChainSubtaskExecutor e2e (Phase 8 Step 2 / b3)", () 
       askOpenClaw: makeAskOpenClaw(),
       modelFactory: () => model,
     });
+    // D1 — the executor is adapter-driven: the runtime's adapter appears
+    // after initialization (first ask), so warm it up first.
+    await runtime.ask("warm");
 
-    // The executor uses `input.askEnvoyHarness` as a
-    // text-in/text-out seam. We pass `runtime.ask`.
+    // The executor resolves the live runtime's adapter lazily.
     const executor = createEnvoyHarnessChainSubtaskExecutor({
       workerPeerId: WORKER_PEER_ID,
       isEnvoyHarnessReady: () => true,
-      askEnvoyHarness: (prompt) => runtime.ask(prompt),
+      adapter: () => runtime.adapter,
     });
 
     const partials: Array<{ note?: string; isFinal?: boolean; confidence?: number }> = [];
@@ -482,7 +501,9 @@ describe("createEnvoyHarnessChainSubtaskExecutor e2e (Phase 8 Step 2 / b3)", () 
     const finalPartial = partials.find((p) => p.isFinal);
     expect(finalPartial).toBeDefined();
     expect(finalPartial?.note).toContain("this is the worker result");
-    expect(finalPartial?.confidence).toBe(0.85);
+    // D1 — the adapter-driven executor runs the local verifier; a pass
+    // verdict carries its rule score (1.0) instead of the legacy 0.85.
+    expect(finalPartial?.confidence).toBe(1);
 
     // The result is `ok: true` with the text as the final note.
     expect(result.ok).toBe(true);
@@ -496,7 +517,9 @@ describe("createEnvoyHarnessChainSubtaskExecutor e2e (Phase 8 Step 2 / b3)", () 
     const executor = createEnvoyHarnessChainSubtaskExecutor({
       workerPeerId: WORKER_PEER_ID,
       isEnvoyHarnessReady: () => false,
-      askEnvoyHarness: () => Promise.reject(new Error("should not be called")),
+      adapter: () => {
+        throw new Error("adapter should not be resolved when not ready");
+      },
     });
 
     const result = await executor(
@@ -517,6 +540,135 @@ describe("createEnvoyHarnessChainSubtaskExecutor e2e (Phase 8 Step 2 / b3)", () 
     expect(result.finalNote).toBe("envoy_harness_unavailable");
     // The model factory was never called.
     expect(modelFactory).not.toHaveBeenCalled();
+  });
+
+  it("fails cleanly when the adapter getter is undefined despite ready", async () => {
+    const executor = createEnvoyHarnessChainSubtaskExecutor({
+      workerPeerId: WORKER_PEER_ID,
+      isEnvoyHarnessReady: () => true,
+      adapter: () => undefined,
+    });
+    const result = await executor(
+      {
+        chainId: "chain_1",
+        subtaskId: "subtask_1",
+        objective: "test",
+        requiredSkill: "research",
+        requiredRole: "worker",
+        constraints: [],
+        sensitivity: "public",
+        budgetUsd: 1,
+        deadlineAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+      async () => undefined,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.finalNote).toBe("envoy_harness_unavailable");
+  });
+});
+
+describe("R2 — peer cluster as a mesh node's execution pool", () => {
+  it("a chain worker's task tool fans out to the peer cluster", async () => {
+    // The peer cluster: an in-process peer whose adapter records executes.
+    const peerObjectives: string[] = [];
+    const pair = createInProcessPeerPair(
+      createPeerServerHandler({
+        adapter: {
+          runtime: "envoy-harness",
+          describeSkills: () => [],
+          buildManifest: async () => ({}) as never,
+          execute: async (input) => {
+            peerObjectives.push(input.objective);
+            return {
+              skillId: input.skillId,
+              runtime: "envoy-harness",
+              peerId: "p1",
+              correlationId: input.correlationId,
+              content: [{ kind: "text", text: "peer sub result" }],
+              citations: [],
+              metrics: { durationMs: 2, costUsd: 0 },
+              completedAt: new Date().toISOString(),
+              signature: "peer-sig",
+            };
+          },
+          verify: async () => [],
+        },
+        identity: { peerId: "p1", model: "claude-instant" },
+      }),
+    );
+    const registry = new PeerRegistry();
+    registry.register({ id: "p1", client: pair.client, model: "claude-instant" });
+    const pool = new RemoteMeshSubmitter({
+      transport: createPeerRemoteSubmitterTransport(registry),
+      targetPeerId: "p1",
+    });
+
+    // Model script: warm → task (sub-agent) call → final text.
+    const model = scriptedModel([
+      {
+        content: [{ type: "text", text: "warm" }],
+        stopReason: "end_turn",
+      },
+      {
+        content: [
+          {
+            type: "tool_call",
+            id: "tc1",
+            name: "task",
+            args: {
+              objective: "sub task on the cluster",
+              capability_tag: "research",
+              cost_ceiling_usd: 1,
+              deadline_ms: 10_000,
+            },
+          },
+        ],
+        stopReason: "tool_use",
+      },
+      {
+        content: [{ type: "text", text: "worker final" }],
+        stopReason: "end_turn",
+      },
+    ]);
+    const runtime = createRealEnvoyHarnessRuntime({
+      workerPeerId: WORKER_PEER_ID,
+      agentPrivateKeyPem: AGENT_PRIVATE_KEY_PEM,
+      config: READY_CONFIG,
+      cwd: process.cwd(),
+      askOpenClaw: makeAskOpenClaw(),
+      modelFactory: () => model,
+      // R2 — the execution pool is the peer cluster.
+      innerSubmitter: pool,
+    });
+    await runtime.ask("warm");
+
+    const executor = createEnvoyHarnessChainSubtaskExecutor({
+      workerPeerId: WORKER_PEER_ID,
+      isEnvoyHarnessReady: () => true,
+      adapter: () => runtime.adapter,
+    });
+    const partials: string[] = [];
+    const result = await executor(
+      {
+        chainId: "chain_1",
+        subtaskId: "subtask_1",
+        objective: "research feasibility",
+        requiredSkill: "research",
+        requiredRole: "worker",
+        constraints: [],
+        sensitivity: "public",
+        budgetUsd: 1,
+        deadlineAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+      async (payload) => {
+        partials.push(payload.partial.note ?? "");
+      },
+    );
+
+    expect(peerObjectives).toEqual(["sub task on the cluster"]);
+    expect(result.ok).toBe(true);
+    expect(partials.join(" ")).toContain("worker final");
+    pair.close();
   });
 });
 

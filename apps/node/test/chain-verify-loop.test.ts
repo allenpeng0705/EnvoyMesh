@@ -412,6 +412,42 @@ describe("runChainVerificationLoop", () => {
     expect(crossEntry?.verifierModel).toBe("anthropic:claude-instant");
   });
 
+  it("v1.16 same-runtime: envoy-harness verifies envoy-harness with a different model", async () => {
+    const written: VerdictEntry[] = [];
+    let receivedVerifierModel: string | undefined = undefined;
+    const deps = makeDeps({
+      buildAdapter: (runtime) => {
+        if (runtime !== "envoy-harness") return undefined;
+        const eh = stubAdapter("envoy-harness", []);
+        return {
+          ...eh,
+          execute: async (input) => {
+            receivedVerifierModel = input.verifierModel;
+            return eh.execute(input);
+          },
+        };
+      },
+      // The verify pool includes the node's own runtime.
+      listRuntimes: () => ["envoy-harness"],
+      resolveWorkerRuntime: () => "envoy-harness",
+      crossVerifier: {
+        verify: async () => ({ kind: "pass", score: 0.9, confidence: "high" }),
+      },
+      verifierProviderHint: "anthropic:claude-instant",
+      criticality: "high",
+      written,
+    });
+    const { state } = makeState();
+
+    const result = await runChainVerificationLoop(deps, state, envelope(), finalPartial());
+
+    expect(result!.escalated).toBeDefined();
+    expect(result!.escalated!.secondRuntime).toBe("envoy-harness");
+    expect(receivedVerifierModel).toBe("anthropic:claude-instant");
+    const crossEntry = written.find((w) => w.source === "cross");
+    expect(crossEntry?.verifierModel).toBe("anthropic:claude-instant");
+  });
+
   it("escalates when criticality rides on the signed mandate (deps left unset)", async () => {
     const written: VerdictEntry[] = [];
     const deps = makeDeps({
