@@ -125,7 +125,7 @@ export async function handleInboundHarnessSubmitRequest(
       ? { ok: true, responded: true }
       : { ok: false, reason: "reply_failed" };
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
+    const reason = (err instanceof Error ? err.message : String(err)).trim();
     await replyToSubmitRequest(input, {
       ok: false,
       error: reason.slice(0, 500) || "execute_failed",

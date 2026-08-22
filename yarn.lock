@@ -422,6 +422,43 @@
   version "0.2.2"
   resolved "file:apps/cli"
 
+"@envoymesh/envoy-harness-adapter@file:../../../envoy-harness/packages/envoy-harness-adapter":
+  version "0.0.0"
+  resolved "file:../envoy-harness/packages/envoy-harness-adapter"
+  dependencies:
+    "@envoymesh/agent-adapter" "file:../../../EnvoyMesh/packages/agent-adapter"
+    "@envoymesh/envoy-harness" "file:../envoy-harness"
+    "@envoymesh/envoy-harness-peer" "file:../envoy-harness-peer"
+    "@envoymesh/identity" "file:../../../EnvoyMesh/packages/identity"
+    "@envoymesh/protocol" "file:../../../EnvoyMesh/packages/protocol"
+
+"@envoymesh/envoy-harness-client@file:../../../envoy-harness/packages/envoy-harness-client":
+  version "0.0.0"
+  resolved "file:../envoy-harness/packages/envoy-harness-client"
+  dependencies:
+    "@envoymesh/envoy-harness" "file:../envoy-harness"
+
+"@envoymesh/envoy-harness-peer@file:../../../envoy-harness/packages/envoy-harness-peer":
+  version "0.0.0"
+  resolved "file:../envoy-harness/packages/envoy-harness-peer"
+  dependencies:
+    "@envoymesh/agent-adapter" "file:../../../EnvoyMesh/packages/agent-adapter"
+    "@envoymesh/envoy-harness" "file:../envoy-harness"
+    "@envoymesh/envoy-harness-tui" "file:../envoy-harness-tui"
+    "@envoymesh/protocol" "file:../../../EnvoyMesh/packages/protocol"
+    zod "^3.23.8"
+
+"@envoymesh/envoy-harness@file:../../../envoy-harness/packages/envoy-harness":
+  version "0.0.0"
+  resolved "file:../envoy-harness/packages/envoy-harness"
+  dependencies:
+    smol-toml "^1.8.0"
+    yaml "^2.6.0"
+    zod "^3.23.8"
+  optionalDependencies:
+    "@deepseek-ai/node-addon-landlock-run" "^0.1.1"
+    node-pty "^1.0.0"
+
 "@envoymesh/identity@0.2.2", "@envoymesh/identity@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/identity":
   version "0.2.2"
   resolved "file:packages/identity"
@@ -491,7 +528,8 @@
     "@multiformats/multiaddr" "^13.0.1"
     it-all "^3.0.0"
     libp2p "^3.0.0"
-    multiformats "^13.4.2"
+    multiformats "^14.0.0"
+    uint8arraylist "^2.4.9"
     uint8arrays "^5.1.0"
 
 "@envoymesh/node@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/node":
@@ -502,6 +540,10 @@
     "@envoymesh/agent-adapter" "0.2.2"
     "@envoymesh/api" "0.2.2"
     "@envoymesh/bonds" "0.2.2"
+    "@envoymesh/envoy-harness" "file:../../../envoy-harness/packages/envoy-harness"
+    "@envoymesh/envoy-harness-adapter" "file:../../../envoy-harness/packages/envoy-harness-adapter"
+    "@envoymesh/envoy-harness-client" "file:../../../envoy-harness/packages/envoy-harness-client"
+    "@envoymesh/envoy-harness-peer" "file:../../../envoy-harness/packages/envoy-harness-peer"
     "@envoymesh/identity" "0.2.2"
     "@envoymesh/ipfs-helia" "0.2.2"
     "@envoymesh/kb-obsidian" "0.2.2"
@@ -4363,9 +4405,9 @@ multiformats@^13.0.0, multiformats@^13.1.0, multiformats@^13.2.2, multiformats@^
   integrity sha512-eh6eHCrRi1+POZ3dA+Dq1C6jhP1GNtr9CRINMb67OKzqW9I5DUuZM/3jLPlzhgpGeiNUlEGEbkCYChXMCc/8DQ==
 
 multiformats@^14.0.0:
-  version "14.0.0"
-  resolved "https://mirrors.huaweicloud.com/repository/npm/multiformats/-/multiformats-14.0.0.tgz"
-  integrity sha512-iWK1RrAS58p2NDfeZFuSUSv3ZPewTIhsGbh/5NgeGGJwJmRljLxGtjRR3nkn+loG3zl+IrfR/W1590QnrSK+Gg==
+  version "14.0.5"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/multiformats/-/multiformats-14.0.5.tgz"
+  integrity sha512-vbIm83F2yZ1pWJGS0yl0ysracIvv56LtbrIyiIQHoLdYDJOMoLfVFsXhh9DUH4SFdkdkFhucyWniihsNzVEjkQ==
 
 nanoid@^3.3.11:
   version "3.3.11"
@@ -5618,7 +5660,7 @@ uint8-varint@^2.0.1, uint8-varint@^2.0.2, uint8-varint@^2.0.4:
     uint8arraylist "^2.0.0"
     uint8arrays "^5.0.0"
 
-uint8arraylist@^2.0.0, uint8arraylist@^2.4.3, uint8arraylist@^2.4.8:
+uint8arraylist@^2.0.0, uint8arraylist@^2.4.3, uint8arraylist@^2.4.8, uint8arraylist@^2.4.9:
   version "2.4.9"
   resolved "https://mirrors.huaweicloud.com/repository/npm/uint8arraylist/-/uint8arraylist-2.4.9.tgz"
   integrity sha512-KxWjyEFzchzik3aoQlK66oaoxIReoMo5bQRm1fcjBUZvE8xv/tyR3CTKhjh6K/faV8VaF6hd5pjr45CzbwuwkA==

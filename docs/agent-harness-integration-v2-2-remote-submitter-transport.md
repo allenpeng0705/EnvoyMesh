@@ -58,9 +58,11 @@ harness-submit-transport.ts`) — a `RemoteSubmitterTransport` that:
    `AgentResult`.
 4. **Verifies** the reply envelope's signature with the worker's public
    key (`verifyInboundEnvelope`, TOFU — the same trust contract as the
-   chain ready probe). The inner `SignedAgentResult.signature` (owner
-   key) is verified later by the verifier / arbitration path, exactly
-   like the chain-worker MAP path.
+   chain ready probe) AND that the reply's `senderPeerId` is the worker
+   it asked (a forged/relayed envelope cannot impersonate the worker).
+   The inner `SignedAgentResult.signature` (owner key) is verified later
+   by the verifier / arbitration path, exactly like the chain-worker MAP
+   path.
 5. **Honors the abort signal** — a parent abort rejects the round-trip
    with an `AbortError` immediately (the in-flight expect-reply has no
    cancel channel; the caller stops waiting).
@@ -98,6 +100,8 @@ the mesh or agent identity is unavailable.
   (the submitter rejects empty signatures).
 - The transport MUST throw (not return a fake result) when
   signature verification fails.
+- The transport MUST reject a reply whose `senderPeerId` is not the
+  requested worker peer (impersonation guard).
 - The transport MUST forward `signal` — a parent abort cancels
   the round-trip.
 - The transport owns all key material (parent private key +

@@ -51,6 +51,10 @@ export default defineConfig({
         rootDir,
         "../envoy-harness/packages/envoy-harness-adapter/src/index.ts",
       ),
+      "@envoymesh/envoy-harness-peer": resolve(
+        rootDir,
+        "../envoy-harness/packages/envoy-harness-peer/src/index.ts",
+      ),
     },
   },
   test: {

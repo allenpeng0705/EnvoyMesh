@@ -107,6 +107,7 @@ import {
   applyArbitration,
   createArbitrationStore,
   getVerdictsFor,
+  isVerdictEntry,
   recordVerdictEntry,
   type ArbitrationStore,
 } from "./chain-arbitration.js";
@@ -314,6 +315,57 @@ export function getLocalRuntimePassRate(
   }
   if (verdicts.length === 0) return null;
   return { n: verdicts.length, passRate: scoreFromVerdicts(verdicts) };
+}
+
+/**
+ * U4 — every signed verdict across every chain's arbitration store
+ * (used by the dedicated UI's `scoreboard/summary`).
+ */
+export function listAllVerdictEntries(): import("@envoymesh/protocol").VerdictEntry[] {
+  const verdicts: import("@envoymesh/protocol").VerdictEntry[] = [];
+  for (const store of chainArbitrationStores.values()) {
+    for (const entry of store.values()) {
+      if (isVerdictEntry(entry)) verdicts.push(entry);
+    }
+  }
+  return verdicts;
+}
+
+/**
+ * U4 — the local chain worker's subtasks as the dedicated UI's
+ * `team/jobs` shape (one job per chain, one agent per subtask).
+ */
+export function chainWorkerSubtasksToTeamJobs(
+  workerSubtasks: Map<
+    string,
+    {
+      subtask: import("@envoymesh/protocol").ChainSubtask;
+      orchestratorPeerId: string;
+    }
+  >,
+): import("@envoymesh/envoy-harness").ProtocolTeamJob[] {
+  const byChain = new Map<
+    string,
+    import("@envoymesh/envoy-harness").ProtocolTeamJob
+  >();
+  for (const [subtaskId, { subtask }] of workerSubtasks) {
+    let job = byChain.get(subtask.chainId);
+    if (job === undefined) {
+      job = {
+        jobId: subtask.chainId,
+        status: "running",
+        createdAt: subtask.createdAt,
+        agents: [],
+      };
+      byChain.set(subtask.chainId, job);
+    }
+    job.agents.push({
+      id: subtaskId,
+      host: "mesh-worker",
+      status: "running",
+    });
+  }
+  return [...byChain.values()];
 }
 
 export interface ChainOrchestrationContext {

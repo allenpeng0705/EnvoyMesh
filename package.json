@@ -101,7 +101,7 @@
   },
   "pnpm": {
     "overrides": {
-      "@envoymesh/envoy-harness": "link:../envoy-harness/packages/envoy-harness"
+      "@envoymesh/envoy-harness": "file:../envoy-harness/packages/envoy-harness"
     }
   }
 }

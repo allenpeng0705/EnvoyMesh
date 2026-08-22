@@ -64,7 +64,7 @@ function requestEnvelope(overrides: {
       senderPeerId: "envoy_agent_parent",
       senderPublicKey: keyPair.publicKey,
       senderRole: "agent",
-      recipientPeerId: "envoy_agent_worker",
+      recipientPeerId: WORKER_ID,
       recipientRole: "agent",
       intent: "task.harness.submit.request",
       payload,

@@ -225,7 +225,7 @@ echo ""
 
 # ---- Step 2: EnvoyMesh dependencies ----
 echo "[2/6] Installing EnvoyMesh dependencies..."
-npm install
+pnpm install
 echo ""
 
 # ---- Step 3: OpenClaw bootstrap + extension ----

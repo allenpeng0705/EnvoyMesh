@@ -462,6 +462,11 @@ import {
   sponsorFriendTool,
 } from "@envoymesh/envoy-harness-adapter";
 import {
+  createPeerPoolStatusBackend,
+  createPeersTool,
+  aggregateVerdicts,
+} from "@envoymesh/envoy-harness-peer";
+import {
   createBClassPeerListDeps,
   createBClassRelayStatusDeps,
   createBClassSponsorFriendDeps,
@@ -1138,11 +1143,13 @@ import {
   buildChainInboundDeps,
   buildChainOrchestratorDeps,
   buildChainWorkerDeps,
+  chainWorkerSubtasksToTeamJobs,
   ensureChainMandateLoaded,
   evaluateBidsAsync,
   findAgentNetworkWorkers,
   findAgentNetworkWorkersRanked,
   handleInboundChainEnvelope,
+  listAllVerdictEntries,
   listAgentCardsIncludingLocal,
   placeholderMandate,
   refreshAgentNetworkMembershipIndex,
@@ -5155,6 +5162,20 @@ class NodeServiceImpl implements NodeService {
         // exposed over the ACP `peers/list` surface (same contract as
         // the standalone TUI's `/peers`).
         listPeers: () => this.listEnvoyHarnessPeers(),
+        // U3 — the dedicated UI's cluster rail + /cluster + /route read
+        // the same peer pool through the shared status backend.
+        ...(this._envoyHarnessPeerPool !== undefined
+          ? createPeerPoolStatusBackend(this._envoyHarnessPeerPool)
+          : {}),
+        // U4 — the dedicated UI's /team + /scoreboard read the local
+        // chain worker state and the arbitration verdict ledger.
+        teamJobs: () =>
+          chainWorkerSubtasksToTeamJobs(
+            this._chainOrchestrationContext().getChainSideState()
+              .workerSubtasks,
+          ),
+        scoreboardSummary: () =>
+          aggregateVerdicts(listAllVerdictEntries()),
       },
       onPermission: async (req) => permissionBridge.request(req),
     });
@@ -5498,6 +5519,16 @@ class NodeServiceImpl implements NodeService {
         sponsorFriendTool(createBClassSponsorFriendDeps(this)),
         listPeersTool(createBClassPeerListDeps(this)),
         buildRelayStatusTool(createBClassRelayStatusDeps(this)),
+        // R3 follow-up — model-side peer-cluster discovery: when a
+        // standalone peer pool is configured (Pattern A), the model can
+        // read `peers` and route task.preferred_peer_id to a specific
+        // peer/model. The per-skill filter exposes it under the
+        // `peer-cluster` skill only.
+        ...(this._envoyHarnessPeerPool !== undefined
+          ? [
+              createPeersTool(this._envoyHarnessPeerPool.registry),
+            ]
+          : []),
       ] as unknown as ReadonlyArray<import("@envoymesh/envoy-harness").Tool>,
     });
     this._envoyHarnessRuntimeCache = runtime;

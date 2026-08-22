@@ -48,6 +48,7 @@ import {
 } from "@envoymesh/envoy-harness-adapter";
 import {
   createInProcessPeerPair,
+  createPeersTool,
   createPeerServerHandler,
   PeerRegistry,
 } from "@envoymesh/envoy-harness-peer";
@@ -668,6 +669,92 @@ describe("R2 — peer cluster as a mesh node's execution pool", () => {
     expect(peerObjectives).toEqual(["sub task on the cluster"]);
     expect(result.ok).toBe(true);
     expect(partials.join(" ")).toContain("worker final");
+    pair.close();
+  });
+
+  it("exposes the peers tool to the model under the peer-cluster skill", async () => {
+    const pair = createInProcessPeerPair(
+      createPeerServerHandler({
+        adapter: {
+          runtime: "envoy-harness",
+          describeSkills: () => [],
+          buildManifest: async () => ({}) as never,
+          execute: async (input) => ({
+            skillId: input.skillId,
+            runtime: "envoy-harness",
+            peerId: "p1",
+            correlationId: input.correlationId,
+            content: [{ kind: "text", text: "peer sub result" }],
+            citations: [],
+            metrics: { durationMs: 2, costUsd: 0 },
+            completedAt: new Date().toISOString(),
+            signature: "peer-sig",
+          }),
+          verify: async () => [],
+        },
+        identity: { peerId: "p1", model: "deepseek-chat" },
+      }),
+    );
+    const registry = new PeerRegistry();
+    registry.register({
+      id: "p1",
+      client: pair.client,
+      model: "deepseek-chat",
+      capabilities: ["research"],
+    });
+
+    // Model script: warm → peers tool call → final text.
+    const model = scriptedModel([
+      {
+        content: [{ type: "text", text: "warm" }],
+        stopReason: "end_turn",
+      },
+      {
+        content: [
+          {
+            type: "tool_call",
+            id: "tc-peers",
+            name: "peers",
+            args: {},
+          },
+        ],
+        stopReason: "tool_use",
+      },
+      {
+        content: [{ type: "text", text: "found deepseek peer" }],
+        stopReason: "end_turn",
+      },
+    ]);
+    const runtime = createRealEnvoyHarnessRuntime({
+      workerPeerId: WORKER_PEER_ID,
+      agentPrivateKeyPem: AGENT_PRIVATE_KEY_PEM,
+      config: READY_CONFIG,
+      cwd: process.cwd(),
+      askOpenClaw: makeAskOpenClaw(),
+      modelFactory: () => model,
+      // The host registers the model-facing peers tool alongside the
+      // peer cluster (this is the `peer-cluster` skill's only tool).
+      bClassTools: [createPeersTool(registry)],
+    });
+    await runtime.ask("warm");
+
+    const signed = await runtime.adapter.execute({
+      skillId: "peer-cluster",
+      objective: "which peers can run research?",
+      inputArtifacts: [],
+      costCeilingUsd: 0.1,
+      deadlineMs: 10_000,
+      correlationId: "peers-tool-test",
+      signal: new AbortController().signal,
+    });
+    expect(signed.content).toEqual([{ kind: "text", text: "found deepseek peer" }]);
+
+    // The tool result must have flowed back to the model (third call's
+    // messages) — proving the tool ran and listed the cluster.
+    const toolTurn = model.calls[2];
+    const serialized = JSON.stringify(toolTurn?.input.messages ?? []);
+    expect(serialized).toContain("p1");
+    expect(serialized).toContain("deepseek-chat");
     pair.close();
   });
 });
