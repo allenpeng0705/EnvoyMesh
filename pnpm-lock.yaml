@@ -71,6 +71,9 @@ importers:
       '@envoymesh/envoy-harness-adapter':
         specifier: file:../../../envoy-harness/packages/envoy-harness-adapter
         version: file:../envoy-harness/packages/envoy-harness-adapter
+      '@envoymesh/envoy-harness-client':
+        specifier: link:../../../envoy-harness/packages/envoy-harness-client
+        version: link:../../../envoy-harness/packages/envoy-harness-client
       '@envoymesh/identity':
         specifier: 0.2.2
         version: link:../../packages/identity

@@ -4961,7 +4961,13 @@ class NodeServiceImpl implements NodeService {
     prompt: string,
     opts?: { providerHint?: string; costCapUsd?: number },
   ): Promise<string> {
-    const config = loadEnvoyHarnessRuntimeConfig();
+    // Align readiness with getPiStatus: refresh host ModelProvider
+    // key/model before the sync config check.
+    await this._refreshEnvoyHarnessHostConfig();
+    const config = loadEnvoyHarnessRuntimeConfig({
+      hostModel: this._envoyHarnessHostModel,
+      hostApiKey: this._envoyHarnessHostApiKey,
+    });
     if (!config.ready) {
       // Matches the Step 1 stub error message — the
       // orchestrator's `agentNetworkEngineDenyReason` +
@@ -5008,6 +5014,8 @@ class NodeServiceImpl implements NodeService {
     askOpts: { providerHint?: string; costCeilingUsd?: number },
   ): Promise<string> {
     let seq = 0;
+    let askAbort: AbortController | undefined;
+    const permissionBridge = this._acpPermissionBridge;
     const cfg = await this._configStore.load().catch(() => undefined);
     const autoRun = cfg?.piSettings?.autoRunPolicy ?? "always-confirm";
     const host = createEnvoyHarnessAcpHost({
@@ -5017,49 +5025,86 @@ class NodeServiceImpl implements NodeService {
           return { sessionId: `sess-acp-${++seq}` };
         },
         async prompt(params) {
-          // Per-tool approvals: Agent askHandler → session/request_permission
-          // → pi:proposal. autoRunPolicy gates which tools ask.
-          const answer = await runtime.ask(params.text, {
-            ...askOpts,
-            shouldAskTool: (toolName) => shouldAskAcpTool(toolName, autoRun),
-            askHandler: async (req) => {
-              if (!shouldAskAcpTool(req.tool, autoRun)) {
+          askAbort = new AbortController();
+          const signal = askAbort.signal;
+          const onHostAbort = (): void => {
+            askAbort?.abort();
+            permissionBridge.clear();
+          };
+          params.signal.addEventListener("abort", onHostAbort, { once: true });
+          try {
+            // Per-tool approvals: Agent askHandler → session/request_permission
+            // → pi:proposal. autoRunPolicy gates which tools ask.
+            const answer = await runtime.ask(params.text, {
+              ...askOpts,
+              signal,
+              shouldAskTool: (toolName) => shouldAskAcpTool(toolName, autoRun),
+              askHandler: async (req) => {
+                if (signal.aborted || req.signal.aborted) {
+                  return { kind: "deny", reason: "cancelled" };
+                }
+                if (!shouldAskAcpTool(req.tool, autoRun)) {
+                  return { kind: "allow" };
+                }
+                const decision = await Promise.race([
+                  params.requestPermission({
+                    sessionId: params.sessionId,
+                    toolName: req.tool,
+                    description: req.question,
+                    args: req.args,
+                  }),
+                  new Promise<"deny">((resolve) => {
+                    if (signal.aborted) {
+                      resolve("deny");
+                      return;
+                    }
+                    signal.addEventListener(
+                      "abort",
+                      () => resolve("deny"),
+                      { once: true },
+                    );
+                  }),
+                ]);
+                if (signal.aborted || decision !== "allow") {
+                  return {
+                    kind: "deny",
+                    reason: signal.aborted ? "cancelled" : "host denied",
+                  };
+                }
                 return { kind: "allow" };
-              }
-              const decision = await params.requestPermission({
-                sessionId: params.sessionId,
-                toolName: req.tool,
-                description: req.question,
-                args: req.args,
-              });
-              if (decision === "allow") return { kind: "allow" };
-              return { kind: "deny", reason: "host denied" };
-            },
-          });
-          const assistant = {
-            role: "assistant" as const,
-            text: answer,
-          };
-          params.onUpdate?.(assistant);
-          return {
-            stopReason: "end_turn",
-            messages: [
-              { role: "user" as const, text: params.text },
-              assistant,
-            ],
-          };
+              },
+            });
+            const assistant = {
+              role: "assistant" as const,
+              text: answer,
+            };
+            params.onUpdate?.(assistant);
+            return {
+              stopReason: signal.aborted ? "cancelled" : "end_turn",
+              messages: [
+                { role: "user" as const, text: params.text },
+                assistant,
+              ],
+            };
+          } finally {
+            params.signal.removeEventListener("abort", onHostAbort);
+            askAbort = undefined;
+          }
         },
         cancel(_sessionId: string) {
-          /* runtime.ask has no cancel seam yet */
+          askAbort?.abort();
+          permissionBridge.clear();
         },
       },
-      onPermission: async (req) => this._acpPermissionBridge.request(req),
+      onPermission: async (req) => permissionBridge.request(req),
     });
     try {
       await host.start();
       const result = await host.prompt(prompt);
       return result.assistantText;
     } finally {
+      askAbort?.abort();
+      permissionBridge.clear();
       host.close();
     }
   }
@@ -5105,7 +5150,11 @@ class NodeServiceImpl implements NodeService {
     skillId: string,
     opts?: { providerHint?: string; costCapUsd?: number },
   ): Promise<string> {
-    const config = loadEnvoyHarnessRuntimeConfig();
+    await this._refreshEnvoyHarnessHostConfig();
+    const config = loadEnvoyHarnessRuntimeConfig({
+      hostModel: this._envoyHarnessHostModel,
+      hostApiKey: this._envoyHarnessHostApiKey,
+    });
     if (!config.ready) {
       throw new Error("envoy_harness_stub_phase_8_step_1");
     }

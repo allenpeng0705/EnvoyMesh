@@ -82,6 +82,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 import {
   createProviderAdapter,
@@ -391,16 +392,13 @@ export function createRealEnvoyHarnessRuntime(
     | undefined;
   let initPromise: Promise<NonNullable<typeof internals>> | undefined;
 
-  // Phase G / 12b — live AskHandler for the current ask().
-  // Agents are built per execute(); the factory reads these
-  // boxes at construction time.
-  const askBridge: {
+  // Phase G / 12b — per-ask AskHandler via ALS so overlapping
+  // ask() / askSkill() calls cannot clobber each other's bridge.
+  type AskBridgeStore = {
     handler: AskHandler | undefined;
     shouldAskTool: ((toolName: string) => boolean) | undefined;
-  } = {
-    handler: undefined,
-    shouldAskTool: undefined,
   };
+  const askBridgeAls = new AsyncLocalStorage<AskBridgeStore>();
 
   // The DI seam: tests inject `opts.modelFactory`. The
   // default wraps `createProviderAdapter` (which takes
@@ -512,9 +510,9 @@ export function createRealEnvoyHarnessRuntime(
         cwd: opts.cwd,
         meshSubmitter: submitter,
         ...(opts.bClassTools ? { bClassTools: opts.bClassTools } : {}),
-        getAskHandler: () => askBridge.handler,
+        getAskHandler: () => askBridgeAls.getStore()?.handler,
         shouldAskTool: (toolName) =>
-          askBridge.shouldAskTool?.(toolName) ?? true,
+          askBridgeAls.getStore()?.shouldAskTool?.(toolName) ?? true,
       });
       // The top-level agent (built by `defaultBuildAgentFactory`)
       // has its `task` tool wired to the cross-runtime
@@ -582,52 +580,53 @@ export function createRealEnvoyHarnessRuntime(
       // design).
       providerHint: askOpts?.providerHint,
     });
-    askBridge.handler = askOpts?.askHandler;
-    askBridge.shouldAskTool = askOpts?.shouldAskTool;
-    try {
-      const local = await ensureInitialized();
-      const result = await local.adapter.execute({
-        skillId: askOpts?.skillId ?? opts.defaultSkillId ?? "code-review",
-        objective: prompt,
-        inputArtifacts: [],
-        costCeilingUsd:
-          askOpts?.costCeilingUsd ?? opts.defaultCostCeilingUsd ?? 1,
-        deadlineMs: askOpts?.deadlineMs ?? opts.defaultDeadlineMs ?? 60_000,
-        correlationId: askOpts?.correlationId ?? randomUUID(),
-        signal: askOpts?.signal ?? new AbortController().signal,
-      });
-      // Extract the first text block. `result.content` is
-      // the wire `ContentBlock[]` (kind: "text" | "structured"
-      // | "image" | "file" — see `@envoymesh/protocol`). The
-      // adapter's `localToWireResult` translates the local
-      // `ContentBlock` (type: "text") to the wire shape
-      // (kind: "text"). The chain worker only needs the
-      // first text block (it renders it as the
-      // `result.namedArtifacts[0].artifact.content`).
-      const firstText = result.content.find(
-        (b): b is { kind: "text"; text: string; mimeType?: string } =>
-          b.kind === "text",
-      );
-      if (!firstText || firstText.text.length === 0) {
-        opts.log?.("envoy_harness.ask.empty", {
+    return askBridgeAls.run(
+      {
+        handler: askOpts?.askHandler,
+        shouldAskTool: askOpts?.shouldAskTool,
+      },
+      async () => {
+        const local = await ensureInitialized();
+        const result = await local.adapter.execute({
+          skillId: askOpts?.skillId ?? opts.defaultSkillId ?? "code-review",
+          objective: prompt,
+          inputArtifacts: [],
+          costCeilingUsd:
+            askOpts?.costCeilingUsd ?? opts.defaultCostCeilingUsd ?? 1,
+          deadlineMs: askOpts?.deadlineMs ?? opts.defaultDeadlineMs ?? 60_000,
+          correlationId: askOpts?.correlationId ?? randomUUID(),
+          signal: askOpts?.signal ?? new AbortController().signal,
+        });
+        // Extract the first text block. `result.content` is
+        // the wire `ContentBlock[]` (kind: "text" | "structured"
+        // | "image" | "file" — see `@envoymesh/protocol`). The
+        // adapter's `localToWireResult` translates the local
+        // `ContentBlock` (type: "text") to the wire shape
+        // (kind: "text"). The chain worker only needs the
+        // first text block (it renders it as the
+        // `result.namedArtifacts[0].artifact.content`).
+        const firstText = result.content.find(
+          (b): b is { kind: "text"; text: string; mimeType?: string } =>
+            b.kind === "text",
+        );
+        if (!firstText || firstText.text.length === 0) {
+          opts.log?.("envoy_harness.ask.empty", {
+            durationMs: Date.now() - startedAt,
+          });
+          // Match the openclaw / ext engine's behavior: a
+          // clean failure with a clear reason, not a throw.
+          // The chain executor maps this to
+          // `envoy_harness_empty` and emits an
+          // `AN_ENGINE_FAIL` partial.
+          throw new Error("envoy_harness_empty: no text in result");
+        }
+        opts.log?.("envoy_harness.ask.done", {
+          chars: firstText.text.length,
           durationMs: Date.now() - startedAt,
         });
-        // Match the openclaw / ext engine's behavior: a
-        // clean failure with a clear reason, not a throw.
-        // The chain executor maps this to
-        // `envoy_harness_empty` and emits an
-        // `AN_ENGINE_FAIL` partial.
-        throw new Error("envoy_harness_empty: no text in result");
-      }
-      opts.log?.("envoy_harness.ask.done", {
-        chars: firstText.text.length,
-        durationMs: Date.now() - startedAt,
-      });
-      return firstText.text;
-    } finally {
-      askBridge.handler = undefined;
-      askBridge.shouldAskTool = undefined;
-    }
+        return firstText.text;
+      },
+    );
   };
 
   // Phase 8 / v1.2 — per-skill dispatch. Mirrors
@@ -652,30 +651,37 @@ export function createRealEnvoyHarnessRuntime(
       // design).
       providerHint: askOpts.providerHint,
     });
-    const local = await ensureInitialized();
-    const deadlineMs = askOpts.deadlineMs ?? 60_000;
-    const result = await local.adapter.execute({
-      skillId: askOpts.skillId,
-      objective: prompt,
-      inputArtifacts: [],
-      costCeilingUsd: askOpts.costCeilingUsd ?? 1.0,
-      deadlineMs,
-      correlationId: askOpts.correlationId ?? randomUUID(),
-      signal:
-        askOpts.signal ??
-        // The runtime's `ask` uses an inert
-        // `AbortController().signal` (no timeout
-        // signal — the deadline is enforced
-        // internally). v1.2 uses `AbortSignal.timeout`
-        // to match the chat path's behavior (the
-        // caller can also pass its own signal).
-        AbortSignal.timeout(deadlineMs),
-    });
-    opts.log?.("envoy_harness.askSkill.done", {
-      skillId: askOpts.skillId,
-      durationMs: Date.now() - startedAt,
-    });
-    return result;
+    // Isolate from any parent ask() ALS store so skill
+    // runs do not inherit an unrelated askHandler.
+    return askBridgeAls.run(
+      { handler: undefined, shouldAskTool: undefined },
+      async () => {
+        const local = await ensureInitialized();
+        const deadlineMs = askOpts.deadlineMs ?? 60_000;
+        const result = await local.adapter.execute({
+          skillId: askOpts.skillId,
+          objective: prompt,
+          inputArtifacts: [],
+          costCeilingUsd: askOpts.costCeilingUsd ?? 1.0,
+          deadlineMs,
+          correlationId: askOpts.correlationId ?? randomUUID(),
+          signal:
+            askOpts.signal ??
+            // The runtime's `ask` uses an inert
+            // `AbortController().signal` (no timeout
+            // signal — the deadline is enforced
+            // internally). v1.2 uses `AbortSignal.timeout`
+            // to match the chat path's behavior (the
+            // caller can also pass its own signal).
+            AbortSignal.timeout(deadlineMs),
+        });
+        opts.log?.("envoy_harness.askSkill.done", {
+          skillId: askOpts.skillId,
+          durationMs: Date.now() - startedAt,
+        });
+        return result;
+      },
+    );
   };
 
   // Build the proxy object on first `ask` call. The
