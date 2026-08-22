@@ -191,6 +191,16 @@ export interface ChainVerifyLoopDeps {
   criticality?: "normal" | "high";
   now?: () => Date;
   /**
+   * v1.16 — per-call model override hint for the cross verifier
+   * (cross-model-on-same-runtime). When set, the cross branch
+   * forwards it as `ExecuteInput.verifierModel` to the second
+   * adapter AND records it as the cross `VerdictEntry.verifierModel`
+   * (replacing the v1.8 `modelFamilyFor(secondRuntime)` fallback).
+   * Format: `<provider>:<model>` (e.g. `"anthropic:claude-instant"`).
+   * Optional and additive — absent = the v1.8 cross-runtime behavior.
+   */
+  verifierProviderHint?: string;
+  /**
    * Phase 8 / v1.4 — sync accessor for the persisted
    * node config. Used to resolve the effective
    * `verifyMode` default via
@@ -543,9 +553,16 @@ export async function runChainVerificationLoop(
 
   try {
     const crossVerifier = deps.crossVerifier ?? new CrossAgentDisagreementVerifier();
+    // v1.16 — cross-model-on-same-runtime: when the host sets
+    // `verifierProviderHint`, the second adapter re-runs the subtask
+    // with a different model (forwarded via `ExecuteInput.verifierModel`).
+    // Otherwise fall back to the v1.8 behavior (a distinct runtime, whose
+    // model family is recorded for the audit trail).
+    const verifierModel = deps.verifierProviderHint ?? modelFamilyFor(secondRuntime);
     const { input } = mapChainSubtaskToExecuteInput({
       subtask,
       now: () => now,
+      ...(verifierModel !== undefined ? { verifierModel } : {}),
     });
     // The execute-input signal aborts at the subtask deadline (unref'd timer);
     // a completed run just waits it out.
@@ -568,7 +585,9 @@ export async function runChainVerificationLoop(
       // is reused (it's optional for
       // `source === "cross"` per the schema
       // in `packages/protocol/src/agent-adapter.ts:347-389`).
-      verifierModel: modelFamilyFor(secondRuntime),
+      // v1.16 — when a per-call override hint is set, record THAT
+      // (the verifier's actual model) instead of the family.
+      verifierModel,
       now,
     });
     deps.audit.record({

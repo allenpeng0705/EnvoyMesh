@@ -88,6 +88,17 @@ describe("mapChainSubtaskToExecuteInput", () => {
     expect(input.inputArtifacts).toBe(inputArtifacts);
   });
 
+  it("forwards the v1.16 verifierModel override hint when set", () => {
+    const { input } = mapChainSubtaskToExecuteInput({
+      subtask: sampleSubtask(),
+      verifierModel: "anthropic:claude-instant",
+    });
+    expect(input.verifierModel).toBe("anthropic:claude-instant");
+
+    const without = mapChainSubtaskToExecuteInput({ subtask: sampleSubtask() });
+    expect(without.input.verifierModel).toBeUndefined();
+  });
+
   it("uses the subtask deadlineAt when present, else the default budget", () => {
     const now = new Date("2026-01-01T00:00:00.000Z");
     const withDeadline = mapChainSubtaskToExecuteInput({

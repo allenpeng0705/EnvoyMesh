@@ -47,8 +47,9 @@
     "@multiformats/multiaddr": "^13.0.1",
     "it-all": "^3.0.0",
     "libp2p": "^3.0.0",
-    "multiformats": "^13.4.2",
-    "uint8arrays": "^5.1.0"
+    "multiformats": "^14.0.0",
+    "uint8arrays": "^5.1.0",
+    "uint8arraylist": "^2.4.9"
   },
   "devDependencies": {
     "@envoymesh/bonds": "0.2.2",

@@ -139,6 +139,7 @@ function makeDeps(opts: {
   resolveWorkerRuntime?: ChainVerifyLoopDeps["resolveWorkerRuntime"];
   crossVerifier?: ChainVerifyLoopDeps["crossVerifier"];
   criticality?: "normal" | "high";
+  verifierProviderHint?: ChainVerifyLoopDeps["verifierProviderHint"];
   written?: VerdictEntry[];
   auditEvents?: unknown[];
   graphStore?: ChainVerifyLoopDeps["graphStore"];
@@ -162,6 +163,9 @@ function makeDeps(opts: {
     resolveWorkerRuntime: opts.resolveWorkerRuntime,
     crossVerifier: opts.crossVerifier,
     criticality: opts.criticality,
+    ...(opts.verifierProviderHint !== undefined
+      ? { verifierProviderHint: opts.verifierProviderHint }
+      : {}),
     now: () => NOW,
     ...(opts.graphStore ? { graphStore: opts.graphStore } : {}),
   };
@@ -363,6 +367,49 @@ describe("runChainVerificationLoop", () => {
 
     expect(result!.escalated).toBeDefined();
     expect(written.map((w) => w.source)).toEqual(["rule", "cross"]);
+  });
+
+  it("forwards verifierProviderHint to the second adapter + audit (v1.16)", async () => {
+    const written: VerdictEntry[] = [];
+    let receivedVerifierModel: string | undefined = undefined;
+    const deps = makeDeps({
+      buildAdapter: (runtime) => {
+        if (runtime === "openclaw") {
+          return stubAdapter("openclaw", [
+            { kind: "disputed", needsHuman: true, signals: ["rule uncertain"] },
+          ]);
+        }
+        const pi = stubAdapter("pi", []);
+        return {
+          ...pi,
+          execute: async (input) => {
+            receivedVerifierModel = input.verifierModel;
+            return pi.execute(input);
+          },
+        };
+      },
+      listRuntimes: () => ["openclaw", "pi"],
+      resolveWorkerRuntime: () => "openclaw",
+      crossVerifier: {
+        verify: async () => ({ kind: "pass", score: 0.9, confidence: "high" }),
+      },
+      // v1.16 — cross-model-on-same-runtime hint (the second adapter
+      // re-runs with a different model).
+      verifierProviderHint: "anthropic:claude-instant",
+      // Trigger cross escalation on the (public, small-budget) mandate.
+      criticality: "high",
+      written,
+    });
+    const { state } = makeState();
+
+    const result = await runChainVerificationLoop(deps, state, envelope(), finalPartial());
+
+    expect(result!.escalated).toBeDefined();
+    // The hint flows to the second adapter's ExecuteInput.
+    expect(receivedVerifierModel).toBe("anthropic:claude-instant");
+    // The cross VerdictEntry records the hint (not the model family).
+    const crossEntry = written.find((w) => w.source === "cross");
+    expect(crossEntry?.verifierModel).toBe("anthropic:claude-instant");
   });
 
   it("escalates when criticality rides on the signed mandate (deps left unset)", async () => {

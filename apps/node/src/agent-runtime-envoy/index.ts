@@ -61,6 +61,7 @@ export {
 // the Step 1 stub that threw `envoy_harness_stub_phase_8_step_1`.
 export {
   createRealEnvoyHarnessRuntime,
+  parseProviderHint,
   type CreateRealEnvoyHarnessRuntimeOptions,
   type RealEnvoyHarnessAskOptions,
   type RealEnvoyHarnessRuntime,

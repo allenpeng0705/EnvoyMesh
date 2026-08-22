@@ -124,6 +124,12 @@ export function mapChainSubtaskToExecuteInput(opts: {
   inputArtifacts?: readonly NamedArtifact[];
   now?: () => Date;
   defaultDeadlineMs?: number;
+  /**
+   * v1.16 — cross-model-on-same-runtime hint. Forwarded as
+   * `ExecuteInput.verifierModel` so the second adapter can re-run
+   * the subtask with a different model on the same runtime.
+   */
+  verifierModel?: string;
 }): { input: ExecuteInput; signal: AbortSignal } {
   const now = (opts.now ?? (() => new Date()))();
   const deadlineMs = opts.subtask.deadlineAt
@@ -144,6 +150,9 @@ export function mapChainSubtaskToExecuteInput(opts: {
       deadlineMs,
       correlationId: `${opts.subtask.chainId}:${opts.subtask.subtaskId}`,
       signal: controller.signal,
+      ...(opts.verifierModel !== undefined
+        ? { verifierModel: opts.verifierModel }
+        : {}),
     },
     signal: controller.signal,
   };

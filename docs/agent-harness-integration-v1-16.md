@@ -1,18 +1,20 @@
 # envoy-harness integration — v1.16 sub-plan (cross-model-on-same-runtime — F9.5 full primitive)
 
-> **Status:** ⛔ **BLOCKED** (2026-08-21).
-> Sub-plan written; **implementation
-> blocked** on the EH runtime gaining
-> per-call model overrides on the
-> cross-verify path. The EH runtime
-> today uses a fixed model for the
-> cross-verify path; the v1.16
-> implementation requires the runtime
-> to honor a per-call `providerHint?`
-> on the cross-verify path. Defer
-> implementation until the EH
-> runtime support lands (a separate
-> envoy-harness team effort).
+> **Status:** ✅ **DONE** (2026-08-22).
+> The EH runtime now supports per-call
+> model overrides; the v1.16 primitive is
+> implemented end-to-end (see "The
+> implementation" below). The former
+> blocker is closed: `ExecuteInput`
+> gained an optional `verifierModel`
+> field, `EnvoyHarnessAdapter.execute`
+> forwards it to `buildAgent` as
+> `providerHint`, and the EH runtime's
+> buildAgent factory honors it by
+> constructing a per-call `ModelAdapter`
+> via `modelFactory` (parse helper:
+> `parseProviderHint`, exported from
+> `agent-runtime-envoy`).
 >
 > **What this doc covers:** v1.16 in
 > **concrete detail** — every file

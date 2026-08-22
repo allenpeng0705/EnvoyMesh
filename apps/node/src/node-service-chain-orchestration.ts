@@ -352,6 +352,17 @@ export interface ChainOrchestrationContext {
    * falls back to the per-runtime default.
    */
   getPersistedNodeConfigSync?(): import("./node-config-store.js").PersistedNodeConfig | undefined;
+
+  /**
+   * v1.16 — optional per-call model override hint for the
+   * orchestrator-level cross-verify (cross-model-on-same-runtime).
+   * Forwarded into `chainVerify.verifierProviderHint` so the loop's
+   * cross branch re-runs the subtask on the second adapter with a
+   * different model (`ExecuteInput.verifierModel`). Format:
+   * `<provider>:<model>` (e.g. `"anthropic:claude-instant"`).
+   * Optional — absent = the v1.8 cross-runtime behavior.
+   */
+  verifierProviderHint?: string;
   emit<K extends keyof NodeServiceEvents>(event: K, data: NodeServiceEvents[K]): void;
   /** Built-in OpenClaw readiness for Agent Network worker execution. */
   isOpenClawReady(): boolean;
@@ -1566,6 +1577,11 @@ export async function buildChainOrchestratorDeps(
       // `defaultVerifyModeForWorker(workerRuntime)`
       // (Q3 of the v1.4 sub-plan).
       getNodeConfig: () => deps.getPersistedNodeConfigSync?.(),
+      // v1.16 — cross-model-on-same-runtime hint (optional; absent
+      // keeps the v1.8 cross-runtime behavior).
+      ...(deps.verifierProviderHint !== undefined
+        ? { verifierProviderHint: deps.verifierProviderHint }
+        : {}),
       writeVerdictEntry: (chainId, entry) => {
         const store = getChainArbitrationStore(chainId);
         chainArbitrationStores.set(chainId, recordVerdictEntry(store, entry));

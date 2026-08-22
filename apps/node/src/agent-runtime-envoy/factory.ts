@@ -63,6 +63,16 @@ export interface CreateEnvoyHarnessAdapterInput {
    * default AI engine).
    */
   openClawAdapter?: AgentAdapter;
+
+  /**
+   * v1.16 — optional per-call model override hint for the
+   * adapter-level cross-verify (cross-model-on-same-runtime).
+   * Forwarded to `buildEnvoyHarnessAdapterWithCrossVerify` →
+   * `defaultCrossVerify` → the cross adapter's
+   * `ExecuteInput.verifierModel`. Format: `<provider>:<model>`
+   * (e.g. `"anthropic:claude-instant"`). Optional and additive.
+   */
+  verifierProviderHint?: string;
 }
 
 /**

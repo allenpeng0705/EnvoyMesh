@@ -95,6 +95,7 @@ import {
 } from "@envoymesh/envoy-harness";
 import {
   buildEnvoyHarnessAdapterWithCrossVerify,
+  type BuildAgentFn,
   defaultBuildAgentFactory,
   defaultSignResult,
   EnvoyHarnessAdapter,
@@ -212,6 +213,17 @@ export interface CreateRealEnvoyHarnessRuntimeOptions {
    * factory path.
    */
   openClawAdapter?: AgentAdapter;
+
+  /**
+   * v1.16 — optional per-call model override hint for the
+   * adapter-level cross-verify (cross-model-on-same-runtime).
+   * Forwarded to `buildEnvoyHarnessAdapterWithCrossVerify` →
+   * `defaultCrossVerify` → the cross adapter's
+   * `ExecuteInput.verifierModel`. Format: `<provider>:<model>`
+   * (e.g. `"anthropic:claude-instant"`). Optional and additive —
+   * absent = the v1.8 cross-runtime behavior.
+   */
+  verifierProviderHint?: string;
 
   /** Optional: cross-runtime logger. */
   log?: (event: string, fields?: Record<string, unknown>) => void;
@@ -505,7 +517,13 @@ export function createRealEnvoyHarnessRuntime(
         inner: innerSubmitter,
         workerPeerId: opts.workerPeerId,
       });
-      const buildAgent = defaultBuildAgentFactory({
+      // v1.16 — per-call model override (cross-model-on-same-runtime).
+      // `defaultBuildAgentFactory` closes over ONE model; the host
+      // wrapper here re-builds the factory with a per-call model when
+      // the wire `ExecuteInput.verifierModel` hint is present. The hint
+      // format is `<provider>:<model>` (e.g. "anthropic:claude-instant");
+      // a bare model name uses the runtime's configured provider.
+      const baseBuildAgent = defaultBuildAgentFactory({
         model,
         cwd: opts.cwd,
         meshSubmitter: submitter,
@@ -514,6 +532,23 @@ export function createRealEnvoyHarnessRuntime(
         shouldAskTool: (toolName) =>
           askBridgeAls.getStore()?.shouldAskTool?.(toolName) ?? true,
       });
+      const buildAgent: BuildAgentFn = (args) => {
+        if (args.providerHint === undefined) return baseBuildAgent(args);
+        const { provider, modelName } = parseProviderHint(
+          args.providerHint,
+          opts.config.model,
+        );
+        const overrideModel = modelFactory(provider, modelName);
+        return defaultBuildAgentFactory({
+          model: overrideModel,
+          cwd: opts.cwd,
+          meshSubmitter: submitter,
+          ...(opts.bClassTools ? { bClassTools: opts.bClassTools } : {}),
+          getAskHandler: () => askBridgeAls.getStore()?.handler,
+          shouldAskTool: (toolName) =>
+            askBridgeAls.getStore()?.shouldAskTool?.(toolName) ?? true,
+        })(args);
+      };
       // The top-level agent (built by `defaultBuildAgentFactory`)
       // has its `task` tool wired to the cross-runtime
       // submitter. So when the model emits a `task` call,
@@ -546,6 +581,9 @@ export function createRealEnvoyHarnessRuntime(
             signResult: defaultSignResult(opts.agentPrivateKeyPem),
             workerPeerId: opts.workerPeerId,
             openClawAdapter: opts.openClawAdapter,
+            ...(opts.verifierProviderHint !== undefined
+              ? { verifierProviderHint: opts.verifierProviderHint }
+              : {}),
             // Passthrough: the chain worker already built
             // the prompt. Re-wrapping would duplicate the
             // skill hint + tool list + cost ceiling.
@@ -721,4 +759,41 @@ export function createRealEnvoyHarnessRuntime(
   };
 
   return buildProxy();
+}
+
+/**
+ * v1.16 — parse a per-call model override hint.
+ *
+ * Format: `<provider>:<model>` (e.g. `"anthropic:claude-instant"`).
+ * A bare hint (`"claude-instant"`) uses the runtime's configured
+ * default provider (from `configModel`, the `ENVOY_HARNESS_MODEL`
+ * string). Split on the FIRST colon so model names containing
+ * colons survive (`"provider:model:with:colon"`).
+ *
+ * @param hint the wire `ExecuteInput.verifierModel` value.
+ * @param configModel the runtime's configured `"<provider>:<model>"`
+ *   string (used for the default provider when the hint is bare).
+ */
+export function parseProviderHint(
+  hint: string,
+  configModel: string,
+): { provider: string; modelName: string | undefined } {
+  const trimmed = hint.trim();
+  if (trimmed === "") {
+    return { provider: "deepseek", modelName: undefined };
+  }
+  const colon = trimmed.indexOf(":");
+  if (colon === -1) {
+    const [defaultProvider = "deepseek"] = configModel.split(":", 1);
+    return {
+      provider: defaultProvider.trim() || "deepseek",
+      modelName: trimmed,
+    };
+  }
+  const provider = trimmed.slice(0, colon).trim();
+  const modelName = trimmed.slice(colon + 1).trim();
+  return {
+    provider: provider || "deepseek",
+    modelName: modelName === "" ? undefined : modelName,
+  };
 }

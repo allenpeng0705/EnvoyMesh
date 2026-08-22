@@ -396,8 +396,11 @@ importers:
         specifier: ^3.0.0
         version: 3.3.8
       multiformats:
-        specifier: ^13.4.2
-        version: 13.4.2
+        specifier: ^14.0.0
+        version: 14.0.5
+      uint8arraylist:
+        specifier: ^2.4.9
+        version: 2.4.9
       uint8arrays:
         specifier: ^5.1.0
         version: 5.1.1

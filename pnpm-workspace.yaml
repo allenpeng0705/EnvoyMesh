@@ -28,3 +28,10 @@ packages:
   - 'packages/protocol'
   - 'packages/rag'
   - 'packages/vault'
+
+# Native addons whose postinstall builds pnpm must run (pnpm 10 blocks
+# build scripts by default; without these, node-pty and hnswlib-node
+# load with "Could not locate the bindings file").
+onlyBuiltDependencies:
+  - hnswlib-node
+  - node-pty

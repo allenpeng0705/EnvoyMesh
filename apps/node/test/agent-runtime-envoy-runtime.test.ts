@@ -37,7 +37,11 @@ import type {
 } from "@envoymesh/envoy-harness";
 import { createProviderAdapter } from "@envoymesh/envoy-harness";
 
-import { createRealEnvoyHarnessRuntime, loadEnvoyHarnessRuntimeConfig } from "../src/agent-runtime-envoy/index.js";
+import {
+  createRealEnvoyHarnessRuntime,
+  loadEnvoyHarnessRuntimeConfig,
+  parseProviderHint,
+} from "../src/agent-runtime-envoy/index.js";
 import { createEnvoyHarnessChainSubtaskExecutor } from "../src/chain-worker-executor.js";
 import { chainLog, chainWarn } from "../src/chain-debug.js";
 
@@ -104,6 +108,49 @@ const WORKER_PEER_ID = "12D3KooWTest";
 // ---------------------------------------------------------------------------
 
 describe("createRealEnvoyHarnessRuntime (Phase 8 Step 2 / b3)", () => {
+  it("honors a per-call verifierModel override via buildAgent (v1.16)", async () => {
+    const baseModel = scriptedModel([
+      { content: [{ type: "text", text: "base" }], stopReason: "end_turn" },
+    ]);
+    const overrideModel = scriptedModel([
+      {
+        content: [{ type: "text", text: "verifier output" }],
+        stopReason: "end_turn",
+      },
+    ]);
+    const factoryCalls: string[] = [];
+    const runtime = createRealEnvoyHarnessRuntime({
+      workerPeerId: WORKER_PEER_ID,
+      agentPrivateKeyPem: AGENT_PRIVATE_KEY_PEM,
+      config: READY_CONFIG,
+      cwd: process.cwd(),
+      askOpenClaw: makeAskOpenClaw(),
+      modelFactory: (provider, modelName) => {
+        factoryCalls.push(`${provider}:${modelName ?? ""}`);
+        return provider === "anthropic" ? overrideModel : baseModel;
+      },
+    });
+
+    // Warm up: the cached internals use the base model.
+    expect(await runtime.ask("warm")).toBe("base");
+
+    // v1.16 — the adapter's execute forwards input.verifierModel to
+    // buildAgent as providerHint; the runtime builds a per-call agent
+    // with the overridden model.
+    const signed = await runtime.adapter.execute({
+      skillId: "code-review",
+      objective: "verify this",
+      inputArtifacts: [],
+      costCeilingUsd: 0,
+      deadlineMs: 10_000,
+      correlationId: "v116-test",
+      signal: new AbortController().signal,
+      verifierModel: "anthropic:claude-instant",
+    });
+    expect(factoryCalls).toContain("anthropic:claude-instant");
+    expect(signed.content).toEqual([{ kind: "text", text: "verifier output" }]);
+  });
+
   it("constructs all internals on first ask() (lazy initialization)", async () => {
     const model = scriptedModel([
       {
@@ -333,6 +380,36 @@ describe("createRealEnvoyHarnessRuntime (Phase 8 Step 2 / b3)", () => {
     const eventNames = events.map((e) => e.event);
     expect(eventNames).toContain("envoy_harness.ask.start");
     expect(eventNames).toContain("envoy_harness.ask.done");
+  });
+});
+
+describe("parseProviderHint (v1.16)", () => {
+  it("parses provider:model hints", () => {
+    expect(parseProviderHint("anthropic:claude-instant", "deepseek:deepseek-chat")).toEqual({
+      provider: "anthropic",
+      modelName: "claude-instant",
+    });
+  });
+
+  it("keeps colons inside the model name", () => {
+    expect(parseProviderHint("openai:gpt-4o:2024-08-06", "deepseek:deepseek-chat")).toEqual({
+      provider: "openai",
+      modelName: "gpt-4o:2024-08-06",
+    });
+  });
+
+  it("uses the configured default provider for a bare model hint", () => {
+    expect(parseProviderHint("claude-instant", "anthropic:claude-3-5-sonnet")).toEqual({
+      provider: "anthropic",
+      modelName: "claude-instant",
+    });
+  });
+
+  it("defaults to deepseek when the hint and config are empty", () => {
+    expect(parseProviderHint("", "")).toEqual({
+      provider: "deepseek",
+      modelName: undefined,
+    });
   });
 });
 

@@ -1584,39 +1584,26 @@ fan-out within a job (whole-job only).
   (sub-plan with 4 locked design
   questions).
 
-- **2026-08-21 (v1.16 — cross-model-
+- **2026-08-22 (v1.16 — cross-model-
   on-same-runtime — F9.5 full
-  primitive — BLOCKED):** v1.16 is
-  the **sub-plan only** (no code).
-  The implementation is **blocked**
-  on the EH runtime gaining per-call
-  model override support on the
-  cross-verify path (a separate
-  envoy-harness team effort). v1.16
-  is the full F9.5 primitive — the
-  cross-verify uses a different
-  **model** than the worker (the
-  worker on runtime A with model X
-  → verifier on runtime A with
-  model Y). v1.8 ships the
-  cross-runtime primitive (the
-  cross-verify prefers a different
-  model **family**). v1.16 ships
-  the cross-model-on-same-runtime
-  primitive (the cross-verify uses
-  a different model on the **same**
-  runtime). The v1.16 design locks
-  the `verifierProviderHint?`
-  per-call option + the
-  `claude-instant` default + the
-  audit trail via the v1.8
-  `verifierModel` field. The
-  implementation is deferred until
-  the EH runtime support lands.
+  primitive — DONE):** the former
+  blocker (EH runtime per-call model
+  override) is closed. `ExecuteInput`
+  gained an optional `verifierModel`;
+  `EnvoyHarnessAdapter.execute` forwards
+  it to `buildAgent` as `providerHint`;
+  the EH runtime's buildAgent honors it
+  via `modelFactory` (`parseProviderHint`
+  helper); the chain-verify-loop's
+  `verifierProviderHint` dep flows to
+  the second adapter + the cross
+  `VerdictEntry.verifierModel` audit;
+  `buildEnvoyHarnessAdapterWithCrossVerify`
+  accepts `verifierProviderHint?` for
+  the adapter-level verify path.
   Detailed plan:
   `docs/agent-harness-integration-v1-16.md`
-  (sub-plan with 7 locked design
-  questions).
+  (status flipped to DONE).
 
 ### Review fix (2026-08-21)
 
