@@ -34,9 +34,11 @@ vi.mock("../src/chat-outbound-deliver.js", async (importOriginal) => {
 
 let PARENT_ID: string;
 let WORKER_ID: string;
+let IMPOSTOR_ID: string;
 
 let parentKey: { privateKey: string; publicKey: string };
 let workerKey: { privateKey: string; publicKey: string };
+let impostorKey: { privateKey: string; publicKey: string };
 
 beforeAll(() => {
   const parent = generateKeyPairSync("ed25519");
@@ -49,8 +51,14 @@ beforeAll(() => {
     privateKey: worker.privateKey.export({ format: "pem", type: "pkcs8" }).toString(),
     publicKey: worker.publicKey.export({ format: "pem", type: "spki" }).toString(),
   };
+  const impostor = generateKeyPairSync("ed25519");
+  impostorKey = {
+    privateKey: impostor.privateKey.export({ format: "pem", type: "pkcs8" }).toString(),
+    publicKey: impostor.publicKey.export({ format: "pem", type: "spki" }).toString(),
+  };
   PARENT_ID = derivePeerId(parentKey.publicKey);
   WORKER_ID = derivePeerId(workerKey.publicKey);
+  IMPOSTOR_ID = derivePeerId(impostorKey.publicKey);
 });
 
 function signedResult(correlationId: string): SignedAgentResult {
@@ -72,8 +80,14 @@ function replyEnvelope(input: {
   intent?: string;
   correlationId?: string;
   signed?: boolean;
+  sender?: { peerId: string; publicKey: string; privateKey: string };
 } = {}): EnvoyEnvelope {
   const correlationId = input.correlationId ?? "corr";
+  const sender = input.sender ?? {
+    peerId: WORKER_ID,
+    publicKey: workerKey.publicKey,
+    privateKey: workerKey.privateKey,
+  };
   const payload =
     input.payload ??
     createTaskHarnessSubmitResponsePayload({
@@ -81,8 +95,8 @@ function replyEnvelope(input: {
       result: signedResult(correlationId),
     });
   const unsigned = createUnsignedEnvelope({
-    senderPeerId: WORKER_ID,
-    senderPublicKey: workerKey.publicKey,
+    senderPeerId: sender.peerId,
+    senderPublicKey: sender.publicKey,
     senderRole: "agent",
     recipientPeerId: PARENT_ID,
     recipientRole: "agent",
@@ -92,7 +106,7 @@ function replyEnvelope(input: {
   });
   return input.signed === false
     ? (unsigned as EnvoyEnvelope)
-    : signUnsignedEnvelope(unsigned, workerKey.privateKey);
+    : signUnsignedEnvelope(unsigned, sender.privateKey);
 }
 
 function makeResolver(overrides: Partial<ChainTransportResolver> = {}): ChainTransportResolver {
@@ -230,6 +244,38 @@ describe("createLibp2pRemoteSubmitterTransport", () => {
     await expect(
       transport.send(baseInput, WORKER_ID, new AbortController().signal),
     ).rejects.toThrow(/bad reply signature/);
+  });
+
+  it("rejects a reply from a different sender (impersonation)", async () => {
+    const transport = createLibp2pRemoteSubmitterTransport({
+      resolver: makeResolver(),
+      parentAgentPeerId: PARENT_ID,
+      parentAgentPublicKeyPem: parentKey.publicKey,
+      parentAgentPrivateKeyPem: parentKey.privateKey,
+    });
+    mockReply({
+      sender: {
+        peerId: IMPOSTOR_ID,
+        publicKey: impostorKey.publicKey,
+        privateKey: impostorKey.privateKey,
+      },
+    });
+    await expect(
+      transport.send(baseInput, WORKER_ID, new AbortController().signal),
+    ).rejects.toThrow(/sender mismatch/);
+  });
+
+  it("rejects a malformed reply payload", async () => {
+    const transport = createLibp2pRemoteSubmitterTransport({
+      resolver: makeResolver(),
+      parentAgentPeerId: PARENT_ID,
+      parentAgentPublicKeyPem: parentKey.publicKey,
+      parentAgentPrivateKeyPem: parentKey.privateKey,
+    });
+    mockReply({ payload: { not: "a response" } });
+    await expect(
+      transport.send(baseInput, WORKER_ID, new AbortController().signal),
+    ).rejects.toThrow(/malformed reply payload/);
   });
 
   it("honors a pre-aborted signal with AbortError", async () => {

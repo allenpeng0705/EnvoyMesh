@@ -4,7 +4,11 @@
 
 import { beforeAll, describe, expect, it } from "vitest";
 import { generateKeyPairSync } from "node:crypto";
-import { signUnsignedEnvelope } from "@envoymesh/identity";
+import {
+  derivePeerId,
+  signUnsignedEnvelope,
+  verifyInboundEnvelope,
+} from "@envoymesh/identity";
 import {
   createTaskHarnessSubmitRequestPayload,
   createUnsignedEnvelope,
@@ -16,6 +20,7 @@ import type { AgentAdapter } from "@envoymesh/agent-adapter";
 import { handleInboundHarnessSubmitRequest } from "../src/harness-submit-inbound.js";
 
 let keyPair: { privateKey: string; publicKey: string };
+let WORKER_ID: string;
 
 beforeAll(() => {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
@@ -23,6 +28,7 @@ beforeAll(() => {
     privateKey: privateKey.export({ format: "pem", type: "pkcs8" }).toString(),
     publicKey: publicKey.export({ format: "pem", type: "spki" }).toString(),
   };
+  WORKER_ID = derivePeerId(keyPair.publicKey);
 });
 
 function signedResult(correlationId: string): SignedAgentResult {
@@ -88,7 +94,7 @@ describe("handleInboundHarnessSubmitRequest", () => {
       replyWithEnvelope: async (e) => {
         reply = e;
       },
-      agentPeerId: "envoy_agent_worker",
+      agentPeerId: WORKER_ID,
       agentPublicKeyPem: keyPair.publicKey,
       agentPrivateKeyPem: keyPair.privateKey,
       getAdapter: () =>
@@ -105,6 +111,9 @@ describe("handleInboundHarnessSubmitRequest", () => {
     expect(received?.signal).toBeInstanceOf(AbortSignal);
     expect(reply?.intent).toBe("task.harness.submit.response");
     expect(reply?.correlationId).toBe("corr-submit-1");
+    // The parent's transport verifies the reply envelope before trusting
+    // it — assert the handler's reply actually passes that check.
+    expect(reply === undefined ? false : verifyInboundEnvelope(reply)).toBe(true);
     const payload = reply?.payload as { ok: true; result: SignedAgentResult };
     expect(payload.ok).toBe(true);
     expect(payload.result.correlationId).toBe("corr-submit-1");
@@ -117,7 +126,7 @@ describe("handleInboundHarnessSubmitRequest", () => {
       replyWithEnvelope: async (e) => {
         reply = e;
       },
-      agentPeerId: "envoy_agent_worker",
+      agentPeerId: WORKER_ID,
       agentPublicKeyPem: keyPair.publicKey,
       agentPrivateKeyPem: keyPair.privateKey,
       getAdapter: () => undefined,
@@ -136,7 +145,7 @@ describe("handleInboundHarnessSubmitRequest", () => {
       replyWithEnvelope: async (e) => {
         reply = e;
       },
-      agentPeerId: "envoy_agent_worker",
+      agentPeerId: WORKER_ID,
       agentPublicKeyPem: keyPair.publicKey,
       agentPrivateKeyPem: keyPair.privateKey,
       getAdapter: () =>
@@ -159,7 +168,7 @@ describe("handleInboundHarnessSubmitRequest", () => {
       replyWithEnvelope: async (e) => {
         reply = e;
       },
-      agentPeerId: "envoy_agent_worker",
+      agentPeerId: WORKER_ID,
       agentPublicKeyPem: keyPair.publicKey,
       agentPrivateKeyPem: keyPair.privateKey,
       getAdapter: () => stubAdapter(),
@@ -174,7 +183,7 @@ describe("handleInboundHarnessSubmitRequest", () => {
     const wrong = { ...envelope, intent: "task.harness.submit.response" };
     const result = await handleInboundHarnessSubmitRequest({
       envelope: wrong,
-      agentPeerId: "envoy_agent_worker",
+      agentPeerId: WORKER_ID,
       agentPublicKeyPem: keyPair.publicKey,
       agentPrivateKeyPem: keyPair.privateKey,
       getAdapter: () =>
@@ -193,7 +202,7 @@ describe("handleInboundHarnessSubmitRequest", () => {
     let executed = false;
     const result = await handleInboundHarnessSubmitRequest({
       envelope: requestEnvelope(),
-      agentPeerId: "envoy_agent_worker",
+      agentPeerId: WORKER_ID,
       agentPublicKeyPem: keyPair.publicKey,
       agentPrivateKeyPem: keyPair.privateKey,
       getAdapter: () =>

@@ -294,6 +294,22 @@ describe("schema / role-policy sync", () => {
       expectDenied(intent, "agent", "agent");
     }
   });
+
+  it("every task.harness.* intent is policy-protected as agent↔agent", () => {
+    // v2.2 — direct MAP-over-libp2p sub-agent submit. Both intents must
+    // stay agent→agent only (a harness submit must never be forged by a
+    // human/system role).
+    const harnessIntents = EnvoyIntentSchema.options.filter((i) =>
+      i.startsWith("task.harness."),
+    );
+    expect(harnessIntents.length).toBe(2);
+    for (const intent of harnessIntents) {
+      expectAllowed(intent, "agent", "agent");
+      expectDenied(intent, "human", "human");
+      expectDenied(intent, "agent", "human");
+      expectDenied(intent, "human", "agent");
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

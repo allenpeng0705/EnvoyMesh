@@ -153,17 +153,24 @@ export function createLibp2pRemoteSubmitterTransport(
         throw new Error(`${label}: no transport peer for "${targetPeerId}"`);
       }
 
-      const requestPayload = createTaskHarnessSubmitRequestPayload({
-        skillId: executeInput.skillId,
-        objective: executeInput.objective,
-        inputArtifacts: [...executeInput.inputArtifacts],
-        costCeilingUsd: executeInput.costCeilingUsd,
-        deadlineMs: executeInput.deadlineMs,
-        correlationId: executeInput.correlationId,
-        ...(executeInput.verifierModel !== undefined
-          ? { verifierModel: executeInput.verifierModel }
-          : {}),
-      });
+      let requestPayload;
+      try {
+        requestPayload = createTaskHarnessSubmitRequestPayload({
+          skillId: executeInput.skillId,
+          objective: executeInput.objective,
+          inputArtifacts: [...executeInput.inputArtifacts],
+          costCeilingUsd: executeInput.costCeilingUsd,
+          deadlineMs: executeInput.deadlineMs,
+          correlationId: executeInput.correlationId,
+          ...(executeInput.verifierModel !== undefined
+            ? { verifierModel: executeInput.verifierModel }
+            : {}),
+        });
+      } catch {
+        throw new Error(
+          `${label}: request payload invalid (objective too large or missing fields)`,
+        );
+      }
       const envelope = signUnsignedEnvelope(
         createUnsignedEnvelope({
           senderPeerId: options.parentAgentPeerId,
@@ -227,13 +234,23 @@ export function createLibp2pRemoteSubmitterTransport(
           `${label}: unexpected reply intent "${reply.intent}"`,
         );
       }
+      // Verify the signature BEFORE trusting any reply content: the
+      // envelope must be signed by the peer we dialed (same TOFU
+      // contract as the chain ready probe), and the sender must be the
+      // worker we asked — otherwise a forged/relayed envelope could
+      // impersonate the worker.
+      if (!verifyInboundEnvelope(reply)) {
+        throw new Error(`${label}: bad reply signature`);
+      }
+      if (reply.senderPeerId !== targetPeerId) {
+        throw new Error(
+          `${label}: reply sender mismatch (got "${reply.senderPeerId}")`,
+        );
+      }
       if (reply.correlationId !== executeInput.correlationId) {
         throw new Error(
           `${label}: correlationId mismatch (got "${reply.correlationId}")`,
         );
-      }
-      if (!verifyInboundEnvelope(reply)) {
-        throw new Error(`${label}: bad reply signature`);
       }
 
       let payload;
