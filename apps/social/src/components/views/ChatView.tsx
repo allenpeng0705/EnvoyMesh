@@ -15,6 +15,9 @@ import {
   threadVisibleTo,
   ENVOY_AI_THREAD_KEY,
   ENVOY_HARNESS_THREAD_KEY,
+  isEnvoyHarnessThreadKey,
+  parseEnvoyHarnessChatId,
+  envoyHarnessThreadKey,
 } from "@envoymesh/api";
 import { useEffect, useState } from "react";
 import { useNodeService } from "../../hooks/useNodeService.js";
@@ -73,10 +76,24 @@ export function ChatView({
     openTerminal({ startPi: true });
   };
 
-  const openEnvoyHarnessChat = () => {
+  const openEnvoyHarnessChat = async () => {
     onOpenEnvoyHarnessProp?.();
-    onSelectedContactChange(ENVOY_HARNESS_THREAD_KEY);
+    try {
+      const chats = await nodeService.listEnvoyHarnessChats();
+      if (chats.length > 0) {
+        onSelectedContactChange(envoyHarnessThreadKey(chats[0].id));
+      } else {
+        onSelectedContactChange(ENVOY_HARNESS_THREAD_KEY);
+      }
+    } catch {
+      onSelectedContactChange(ENVOY_HARNESS_THREAD_KEY);
+    }
   };
+
+  const selectedEhChatId = isEnvoyHarnessThreadKey(selectedContact ?? "")
+    ? parseEnvoyHarnessChatId(selectedContact ?? "")
+    : null;
+  const showEnvoyHarnessPanel = isEnvoyHarnessThreadKey(selectedContact ?? "");
 
   const selectedFamilyRoom = isChatRoomThreadKey(selectedContact ?? "")
     ? familyRooms.find((r) => r.roomId === parseChatRoomThreadKey(selectedContact!))
@@ -186,16 +203,19 @@ export function ChatView({
               </div>
             </div>
           )}
-          {selectedContact === ENVOY_HARNESS_THREAD_KEY && (
+          {showEnvoyHarnessPanel && (
             <div className="assistant-chat-wrapper">
               <div className="assistant-chat-panel">
-                <EnvoyHarnessPanel onBackToChats={() => onSelectedContactChange(null)} />
+                <EnvoyHarnessPanel
+                  chatId={selectedEhChatId}
+                  onBackToChats={() => onSelectedContactChange(null)}
+                />
               </div>
             </div>
           )}
           {selectedContact &&
           selectedContact !== ENVOY_AI_THREAD_KEY &&
-          selectedContact !== ENVOY_HARNESS_THREAD_KEY ? (
+          !isEnvoyHarnessThreadKey(selectedContact) ? (
             isChatRoomThreadKey(selectedContact) && selectedFamilyRoom ? (
               <FamilyGroupChatPanel
                 threadKey={selectedContact}
@@ -233,7 +253,7 @@ export function ChatView({
               />
             )
           ) : selectedContact === ENVOY_AI_THREAD_KEY ||
-            selectedContact === ENVOY_HARNESS_THREAD_KEY ||
+            showEnvoyHarnessPanel ||
             envoyAiInflight ? null : (
             <div className="no-chat-selected">
               <div className="no-chat-selected-icon">

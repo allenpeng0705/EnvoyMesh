@@ -63,6 +63,7 @@ describe("useEhTurnQueue", () => {
     expect(onAssistantTurn).toHaveBeenCalledWith(
       "echo: hello",
       assistantTurnId("turn-1"),
+      expect.objectContaining({ turnId: "turn-1", ok: true }),
     )
   })
 
@@ -102,6 +103,7 @@ describe("useEhTurnQueue", () => {
     expect(onAssistantTurn).toHaveBeenCalledWith(
       "stable delivery",
       assistantTurnId("turn-stable"),
+      expect.objectContaining({ turnId: "turn-stable", ok: true }),
     )
   })
 
@@ -264,6 +266,7 @@ describe("useEhTurnQueue", () => {
       expect(onAssistantTurn).toHaveBeenCalledWith(
         "queued: second message",
         assistantTurnId("turn-q-2"),
+        expect.objectContaining({ turnId: "turn-q-2", ok: true }),
       ),
     )
     expect(result.current.queue).toHaveLength(0)
@@ -322,6 +325,7 @@ describe("useEhTurnQueue", () => {
       expect(onAssistantTurn).toHaveBeenCalledWith(
         "injected: urgent",
         assistantTurnId("turn-inj-2"),
+        expect.objectContaining({ turnId: "turn-inj-2", ok: true }),
       ),
     )
     await waitFor(() => expect(result.current.busy).toBe(false))
@@ -368,6 +372,7 @@ describe("useEhTurnQueue", () => {
       expect(onAssistantTurn).toHaveBeenCalledWith(
         "full reply",
         assistantTurnId("turn-reconn"),
+        expect.objectContaining({ turnId: "turn-reconn", ok: true }),
       ),
     )
     expect(startTurn).not.toHaveBeenCalled()

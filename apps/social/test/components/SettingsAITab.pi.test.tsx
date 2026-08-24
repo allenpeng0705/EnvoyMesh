@@ -58,6 +58,11 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
       runtimeInstalled: false,
       serverParams: {},
     }),
+    getEnvoyLocalEmbedStatus: vi.fn().mockResolvedValue({
+      enabled: false,
+      running: false,
+      activeModelId: undefined,
+    }),
     listEnvoyLocalInstalledModels: vi.fn().mockResolvedValue([]),
     searchEnvoyLocalModels: vi.fn().mockResolvedValue({ models: [] }),
     checkEnvoyLocalEngineUpdate: vi.fn().mockResolvedValue({
@@ -173,9 +178,12 @@ describe("SettingsAITab — Pi block (Phase 49F)", () => {
     renderWithI18n(<SettingsAITab />)
     const piBlock = await findPiBlock()
 
-    // The select lives inside the Pi block. Lookup by tagname since the
-    // <label> isn't htmlFor-linked (matches the existing Ext Agent pattern).
-    const select = piBlock.querySelector("select") as HTMLSelectElement
+    // The Pi block now has two selects: the coding-backend select (value
+    // "pi") and the auto-run policy select (default "always-confirm").
+    // Pick the policy select by its current value.
+    const select = [...piBlock.querySelectorAll("select")].find(
+      (s) => (s as HTMLSelectElement).value === "always-confirm",
+    ) as HTMLSelectElement | undefined
     expect(select).toBeDefined()
     expect(select.value).toBe("always-confirm")
 

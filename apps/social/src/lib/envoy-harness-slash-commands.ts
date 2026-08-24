@@ -81,6 +81,27 @@ const STATIC_COMMANDS: StaticCmd[] = [
     summary: "List configured peer cluster members",
     intercept: "envoy",
   },
+  {
+    slash: "/cluster",
+    summary: "Peer cluster health + routing preview",
+    intercept: "envoy",
+  },
+  {
+    slash: "/team",
+    summary: "Running / finished team jobs",
+    intercept: "envoy",
+  },
+  {
+    slash: "/trace",
+    summary: "Recent peer discovery events",
+    intercept: "envoy",
+  },
+  {
+    slash: "/search",
+    summary: "Search this conversation",
+    argsHint: "<term>",
+    intercept: "envoy",
+  },
   fwd("/list-agents", "Alias for /peers"),
   {
     slash: "/model",
@@ -131,6 +152,9 @@ const STATIC_COMMANDS: StaticCmd[] = [
   fwd("/goal", "Set or clear a multi-turn goal", "[condition|clear]"),
   fwd("/side", "Ask a side question without polluting main context", "[question]"),
   fwd("/btw", "Alias for /side"),
+  fwd("/redo", "Retry the last request"),
+  fwd("/rewind", "Roll the conversation back to an earlier message", "[count]"),
+  fwd("/config", "Show the harness configuration (model, provider, project)"),
 ]
 
 export const ENVOY_HARNESS_SLASH_COMMANDS: ExtAgentCommandDescriptor[] =
@@ -219,6 +243,8 @@ export function isEnvoyHarnessLocalSlashCommand(text: string): boolean {
   if (name === "cancel") return true
   if (name === "status") return true
   if (name === "peers" || name === "list-agents") return true
+  if (name === "cluster" || name === "team" || name === "trace") return true
+  if (name === "search") return true
   if (parseEnvoyHarnessModelCommand(text)) return true
   if (parseEnvoyHarnessCdCommand(text)) return true
   return false

@@ -898,6 +898,30 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getEnvoyHarnessTurnStatus();
   }
 
+  async getEnvoyHarnessChatHistory(chatId?: string) {
+    return this._ns.getEnvoyHarnessChatHistory(chatId);
+  }
+
+  async listEnvoyHarnessChats() {
+    return this._ns.listEnvoyHarnessChats();
+  }
+
+  async createEnvoyHarnessChat(opts: { cwd: string; title?: string }) {
+    return this._ns.createEnvoyHarnessChat(opts);
+  }
+
+  async openEnvoyHarnessChat(chatId: string) {
+    return this._ns.openEnvoyHarnessChat(chatId);
+  }
+
+  async removeEnvoyHarnessChat(chatId: string) {
+    return this._ns.removeEnvoyHarnessChat(chatId);
+  }
+
+  async resetEnvoyHarnessChat(chatId?: string) {
+    return this._ns.resetEnvoyHarnessChat(chatId);
+  }
+
   async ehRespondToPermission(params: { requestId: string; allowed: boolean }) {
     return this._ns.ehRespondToPermission(params);
   }

@@ -10,6 +10,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     isConnected: true,
     listChatRooms: vi.fn().mockResolvedValue([]),
     listFamilyRooms: vi.fn().mockResolvedValue({ rooms: [] }),
+    listEnvoyHarnessChats: vi.fn().mockResolvedValue([]),
     on: vi.fn(() => () => {}),
   }),
 }));

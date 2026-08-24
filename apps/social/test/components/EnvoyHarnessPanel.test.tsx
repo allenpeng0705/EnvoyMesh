@@ -15,6 +15,9 @@ const getEnvoyHarnessStatus = vi.fn()
 const startEnvoyHarnessTurn = vi.fn()
 const getEnvoyHarnessTurnStatus = vi.fn()
 const cancelEnvoyHarnessTurn = vi.fn()
+const getEnvoyHarnessChatHistory = vi.fn()
+const openEnvoyHarnessChat = vi.fn()
+const resetEnvoyHarnessChat = vi.fn()
 const ehRespondToPermission = vi.fn()
 const listEnvoyHarnessPeers = vi.fn()
 const setEnvoyHarnessProjectPath = vi.fn()
@@ -50,6 +53,9 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     startEnvoyHarnessTurn,
     getEnvoyHarnessTurnStatus,
     cancelEnvoyHarnessTurn,
+    getEnvoyHarnessChatHistory,
+    openEnvoyHarnessChat,
+    resetEnvoyHarnessChat,
     ehRespondToPermission,
     listEnvoyHarnessPeers,
     setEnvoyHarnessProjectPath,
@@ -94,12 +100,30 @@ beforeEach(() => {
   startEnvoyHarnessTurn.mockReset()
   getEnvoyHarnessTurnStatus.mockReset()
   cancelEnvoyHarnessTurn.mockReset()
+  getEnvoyHarnessChatHistory.mockReset()
+  openEnvoyHarnessChat.mockReset()
+  resetEnvoyHarnessChat.mockReset()
   ehRespondToPermission.mockReset()
   listEnvoyHarnessPeers.mockReset()
   setEnvoyHarnessProjectPath.mockReset()
   invokeEnvoyHarnessEhui.mockReset()
   getEnvoyHarnessStatus.mockResolvedValue(status())
   getEnvoyHarnessTurnStatus.mockResolvedValue({ busy: false })
+  openEnvoyHarnessChat.mockResolvedValue({
+    sessionId: "sess-test",
+    cwd: "/projects/app",
+    turns: [],
+  })
+  getEnvoyHarnessChatHistory.mockResolvedValue({
+    sessionId: "sess-test",
+    cwd: "/projects/app",
+    turns: [],
+  })
+  resetEnvoyHarnessChat.mockResolvedValue({
+    sessionId: "sess-new",
+    cwd: "/projects/app",
+    turns: [],
+  })
   listEnvoyHarnessPeers.mockResolvedValue([
     { id: "p1", model: "deepseek-chat", capabilities: ["research"] },
   ])
@@ -203,6 +227,25 @@ describe("EnvoyHarnessPanel", () => {
     expect(await screen.findByRole("listbox")).toBeDefined()
     expect(screen.getByText("/help")).toBeDefined()
     expect(screen.getByText("/review")).toBeDefined()
+  })
+
+  it("loads persisted chat history on mount", async () => {
+    getEnvoyHarnessStatus.mockResolvedValue(
+      status({ cwd: "/projects/app" }),
+    )
+    getEnvoyHarnessChatHistory.mockResolvedValue({
+      sessionId: "sess-hist",
+      cwd: "/projects/app",
+      turns: [
+        { id: "u1", role: "user", text: "previous hello" },
+        { id: "a1", role: "assistant", text: "previous reply" },
+      ],
+    })
+
+    renderWithI18n(<EnvoyHarnessPanel />)
+    await waitFor(() => expect(getEnvoyHarnessChatHistory).toHaveBeenCalled())
+    expect(await screen.findByText("previous hello")).toBeDefined()
+    expect(await screen.findByText("previous reply")).toBeDefined()
   })
 
   it("runs /help locally without calling the runtime", async () => {

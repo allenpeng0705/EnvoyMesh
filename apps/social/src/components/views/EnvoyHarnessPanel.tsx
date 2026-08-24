@@ -25,6 +25,7 @@ import type {
   EhTurnHintsEvent,
   EhActivityEvent,
   EhPermissionEvent,
+  EhChatTurn,
 } from "@envoymesh/api"
 import { stripModelThinking } from "@envoymesh/api"
 import { ProjectFolderLink } from "../ProjectFolderLink.js"
@@ -34,6 +35,11 @@ import { EhChatComposer } from "../ehui/EhChatComposer.js"
 import { EhComposerDockStack } from "../ehui/EhComposerDockStack.js"
 import { AgentAttachmentComposerLeading } from "../AgentAttachmentComposerLeading.js"
 import { EhuiPanelModal } from "@envoymesh/envoy-harness-ehui"
+import {
+  formatCluster,
+  formatDiscoveryEvent,
+  formatTeamJobs,
+} from "@envoymesh/envoy-harness-ehui"
 import { createRemoteEhuiDataSource } from "../../lib/envoy-harness-ehui-data-source.js"
 import {
   ENVOY_HARNESS_SLASH_COMMANDS,
@@ -54,6 +60,8 @@ interface EnvoyHarnessTurn {
 }
 
 export interface EnvoyHarnessPanelProps {
+  /** Sidebar chat thread id (`__envoy_harness__:<id>`); null = active/legacy chat. */
+  chatId?: string | null
   /** Navigate back to the chat thread list (mobile / swipe-back). */
   onBackToChats?: () => void
 }
@@ -108,11 +116,21 @@ function displayModelName(model: string | undefined): string | undefined {
   return colon >= 0 ? trimmed.slice(colon + 1) : trimmed
 }
 
-export function EnvoyHarnessPanel({ onBackToChats }: EnvoyHarnessPanelProps) {
+function historyTurnsToPanelTurns(history: EhChatTurn[]): EnvoyHarnessTurn[] {
+  return history.map((turn, index) => ({
+    id: turn.id || `eh-hist-${index}`,
+    kind: turn.role,
+    text: turn.text,
+    createdAt: turn.createdAt ? Date.parse(turn.createdAt) : index,
+  }))
+}
+
+export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelProps) {
   const t = useT()
   const toast = useToast()
   const nodeService = useNodeService()
   const threadRef = useRef<HTMLDivElement | null>(null)
+  const loadedHistoryKeyRef = useRef<string | undefined>(undefined)
 
   const [draft, setDraft] = useState("")
   const [turns, setTurns] = useState<EnvoyHarnessTurn[]>([])
@@ -151,6 +169,28 @@ export function EnvoyHarnessPanel({ onBackToChats }: EnvoyHarnessPanelProps) {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  useEffect(() => {
+    if (status?.state !== "ready") return undefined
+    const historyKey = chatId ?? status.cwd ?? ""
+    if (!historyKey) return undefined
+    if (loadedHistoryKeyRef.current === historyKey) return undefined
+    setTurns([])
+    let cancelled = false
+    const loadHistory = chatId
+      ? nodeService.openEnvoyHarnessChat(chatId)
+      : nodeService.getEnvoyHarnessChatHistory()
+    void loadHistory.then((history) => {
+      if (cancelled) return
+      loadedHistoryKeyRef.current = historyKey
+      setTurns(historyTurnsToPanelTurns(history.turns))
+    }).catch(() => {
+      if (!cancelled) loadedHistoryKeyRef.current = historyKey
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [chatId, nodeService, status?.cwd, status?.state])
 
   useEffect(() => {
     return nodeService.on("eh:user_question", (event) => {
@@ -247,6 +287,7 @@ export function EnvoyHarnessPanel({ onBackToChats }: EnvoyHarnessPanelProps) {
 
   const {
     busy,
+    busyRef,
     queue,
     submit: submitToQueue,
     removeFromQueue,
@@ -263,12 +304,29 @@ export function EnvoyHarnessPanel({ onBackToChats }: EnvoyHarnessPanelProps) {
     cancelTurn: () => nodeService.cancelEnvoyHarnessTurn(),
     onUserTurn: (text) => appendTurn({ kind: "user", text }),
     onAssistantStreaming: (text, turnId) => upsertAssistantTurn(turnId, text),
-    onAssistantTurn: (response, turnId) => {
+    onAssistantTurn: (response, turnId, event) => {
       const visible = stripModelThinking(response)
       if (visible) {
         upsertAssistantTurn(turnId, visible)
       } else {
         setSystem(t("eh.emptyResponse", "envoy-harness returned an empty response."), "info")
+      }
+      // Claude/Codex-style completion footer: tool stats + changed files.
+      const files = event?.changedFiles ?? []
+      const stats = turnContext.lastTurnSummaryRef.current
+        ?.replace(/^done\s*[—:-]\s*/i, "")
+        .trim()
+      const parts: string[] = []
+      if (stats) parts.push(stats)
+      if (files.length > 0) {
+        parts.push(
+          t("eh.filesChangedShort", "{count} file(s) changed", {
+            count: files.length,
+          }),
+        )
+      }
+      if (parts.length > 0) {
+        setSystem(`✓ ${parts.join(" · ")}`, "success")
       }
     },
     onSystem: (text, tone) => {
@@ -297,9 +355,24 @@ export function EnvoyHarnessPanel({ onBackToChats }: EnvoyHarnessPanelProps) {
 
       const slash = envoyHarnessSlashName(trimmed)
       if (slash === "clear" || slash === "new" || slash === "reset") {
-        setTurns([])
-        clearQueue()
         setDraft("")
+        if (busy) {
+          setSystem(t("eh.slashWhileBusy", "Finish or /cancel the current turn first."), "info")
+          return
+        }
+        try {
+          await nodeService.resetEnvoyHarnessChat(chatId ?? undefined)
+          setTurns([])
+          clearQueue()
+          loadedHistoryKeyRef.current = chatId ?? status?.cwd
+          setSystem(
+            t("eh.chatReset", "Started a new chat for this project."),
+            "success",
+          )
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err)
+          setSystem(msg, "error")
+        }
         return
       }
       if (slash === "cancel") {
@@ -330,6 +403,106 @@ export function EnvoyHarnessPanel({ onBackToChats }: EnvoyHarnessPanelProps) {
             list.map((p) => `${p.id}${p.model ? ` (${p.model})` : ""}`).join("\n"),
             "info",
           )
+        }
+        setDraft("")
+        return
+      }
+      if (slash === "cluster") {
+        try {
+          const cluster = (await nodeService.invokeEnvoyHarnessEhui({
+            op: "clusterStatus",
+          })) as Parameters<typeof formatCluster>[0]
+          setSystem(formatCluster(cluster), "info")
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err)
+          setSystem(
+            t("eh.clusterFailed", "Failed to read cluster status: {error}", {
+              error: msg,
+            }),
+            "error",
+          )
+        }
+        setDraft("")
+        return
+      }
+      if (slash === "team") {
+        try {
+          const jobs = (await nodeService.invokeEnvoyHarnessEhui({
+            op: "teamJobs",
+          })) as Parameters<typeof formatTeamJobs>[0]
+          setSystem(formatTeamJobs(jobs), "info")
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err)
+          setSystem(
+            t("eh.teamFailed", "Failed to read team jobs: {error}", {
+              error: msg,
+            }),
+            "error",
+          )
+        }
+        setDraft("")
+        return
+      }
+      if (slash === "trace") {
+        try {
+          const events = (await nodeService.invokeEnvoyHarnessEhui({
+            op: "discoverySnapshot",
+          })) as Parameters<typeof formatDiscoveryEvent>[0][]
+          if (events.length === 0) {
+            setSystem(t("eh.traceEmpty", "No peer discovery events yet."), "info")
+          } else {
+            const lines = events.slice(-10).map((e) => formatDiscoveryEvent(e))
+            setSystem(
+              t("eh.traceHeading", "Recent peer events ({count}):\n{events}", {
+                count: events.length,
+                events: lines.join("\n"),
+              }),
+              "info",
+            )
+          }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err)
+          setSystem(
+            t("eh.traceFailed", "Failed to read peer trace: {error}", {
+              error: msg,
+            }),
+            "error",
+          )
+        }
+        setDraft("")
+        return
+      }
+      if (slash === "search") {
+        const term = trimmed.slice(slash.length + 1).trim()
+        if (!term) {
+          setSystem(
+            t("eh.searchUsage", "Usage: /search <term> — search this conversation."),
+            "info",
+          )
+        } else {
+          const needle = term.toLowerCase()
+          const matches = turns
+            .map((turn, index) => ({ turn, index }))
+            .filter(({ turn }) => turn.text.toLowerCase().includes(needle))
+          if (matches.length === 0) {
+            setSystem(
+              t("eh.searchNoMatches", "No matches for “{term}”.", { term }),
+              "info",
+            )
+          } else {
+            setSystem(
+              matches
+                .map(
+                  ({ turn, index }) =>
+                    `[${index + 1}] (${turn.kind}) ${turn.text
+                      .replace(/\s+/g, " ")
+                      .trim()
+                      .slice(0, 180)}`,
+                )
+                .join("\n\n"),
+              "info",
+            )
+          }
         }
         setDraft("")
         return
@@ -393,7 +566,7 @@ export function EnvoyHarnessPanel({ onBackToChats }: EnvoyHarnessPanelProps) {
         }
       }
     },
-    [busy, cancelActiveTurn, clearQueue, nodeService, refresh, setSystem, status, t],
+    [busy, cancelActiveTurn, clearQueue, nodeService, refresh, setSystem, status, t, turns],
   )
 
   const submitDraft = useCallback(
@@ -586,6 +759,7 @@ export function EnvoyHarnessPanel({ onBackToChats }: EnvoyHarnessPanelProps) {
             active={busy}
             waitingForUser={pendingQuestion !== null}
             activitySummary={activitySummary}
+            activityLog={turnContext.activityLog}
             onCancel={() => {
               void cancelActiveTurn().then(() => {
                 setActivitySummary(undefined)
@@ -639,7 +813,7 @@ export function EnvoyHarnessPanel({ onBackToChats }: EnvoyHarnessPanelProps) {
             className="pi-chat-composer eh-composer"
             onSubmit={(e) => {
               e.preventDefault()
-              submitDraft(busy ? "queue" : "send")
+              submitDraft(busyRef.current ? "queue" : "send")
             }}
           >
             <EhChatComposer

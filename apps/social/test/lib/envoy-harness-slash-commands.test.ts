@@ -26,6 +26,41 @@ describe("envoy-harness-slash-commands", () => {
     expect(isEnvoyHarnessLocalSlashCommand("/help")).toBe(true)
     expect(isEnvoyHarnessLocalSlashCommand("/cd /tmp")).toBe(true)
     expect(isEnvoyHarnessLocalSlashCommand("/review")).toBe(false)
+    expect(isEnvoyHarnessLocalSlashCommand("/cluster")).toBe(true)
+    expect(isEnvoyHarnessLocalSlashCommand("/team")).toBe(true)
+    expect(isEnvoyHarnessLocalSlashCommand("/trace")).toBe(true)
+    expect(isEnvoyHarnessLocalSlashCommand("/search auth")).toBe(true)
+  })
+
+  it("covers the mesh-native + Claude/Codex command surface", () => {
+    const names = new Set(ENVOY_HARNESS_SLASH_COMMANDS.map((c) => c.slash))
+    for (const cmd of [
+      "/help",
+      "/clear",
+      "/cancel",
+      "/status",
+      "/peers",
+      "/cluster",
+      "/team",
+      "/trace",
+      "/search",
+      "/model",
+      "/cd",
+      "/review",
+      "/compact",
+      "/context",
+      "/diff",
+      "/init",
+      "/plan",
+      "/memory",
+      "/doctor",
+      "/redo",
+      "/rewind",
+      "/config",
+      "/usage",
+    ]) {
+      expect(names.has(cmd)).toBe(true)
+    }
   })
 
   it("parses cd commands", () => {

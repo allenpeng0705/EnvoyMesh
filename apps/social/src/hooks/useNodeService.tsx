@@ -462,6 +462,23 @@ export interface NodeServiceClient {
     attachments?: import("@envoymesh/api").AgentAttachmentRef[],
   ): Promise<{ turnId: string }>;
   getEnvoyHarnessTurnStatus(): Promise<import("@envoymesh/api").EhTurnStatus>;
+  getEnvoyHarnessChatHistory(
+    chatId?: string,
+  ): Promise<import("@envoymesh/api").EhChatHistory>;
+  listEnvoyHarnessChats(): Promise<
+    import("@envoymesh/api").EhChatWorkspaceSummary[]
+  >;
+  createEnvoyHarnessChat(opts: {
+    cwd: string;
+    title?: string;
+  }): Promise<import("@envoymesh/api").EhChatWorkspaceSummary>;
+  openEnvoyHarnessChat(
+    chatId: string,
+  ): Promise<import("@envoymesh/api").EhChatHistory>;
+  removeEnvoyHarnessChat(chatId: string): Promise<{ removed: boolean }>;
+  resetEnvoyHarnessChat(
+    chatId?: string,
+  ): Promise<import("@envoymesh/api").EhChatHistory>;
   ehRespondToPermission(params: {
     requestId: string;
     allowed: boolean;
@@ -1754,6 +1771,40 @@ function createWsNodeServiceClient(
       return wsClient.rpc("getEnvoyHarnessTurnStatus", {}, { timeoutMs: 10_000 }) as Promise<
         import("@envoymesh/api").EhTurnStatus
       >;
+    },
+    async getEnvoyHarnessChatHistory(chatId?: string) {
+      return wsClient.rpc(
+        "getEnvoyHarnessChatHistory",
+        chatId ? { chatId } : {},
+        { timeoutMs: 30_000 },
+      ) as Promise<import("@envoymesh/api").EhChatHistory>;
+    },
+    async listEnvoyHarnessChats() {
+      return wsClient.rpc("listEnvoyHarnessChats", {}, { timeoutMs: 15_000 }) as Promise<
+        import("@envoymesh/api").EhChatWorkspaceSummary[]
+      >;
+    },
+    async createEnvoyHarnessChat(opts: { cwd: string; title?: string }) {
+      return wsClient.rpc("createEnvoyHarnessChat", opts, { timeoutMs: 30_000 }) as Promise<
+        import("@envoymesh/api").EhChatWorkspaceSummary
+      >;
+    },
+    async openEnvoyHarnessChat(chatId: string) {
+      return wsClient.rpc("openEnvoyHarnessChat", { chatId }, { timeoutMs: 30_000 }) as Promise<
+        import("@envoymesh/api").EhChatHistory
+      >;
+    },
+    async removeEnvoyHarnessChat(chatId: string) {
+      return wsClient.rpc("removeEnvoyHarnessChat", { chatId }, { timeoutMs: 15_000 }) as Promise<{
+        removed: boolean;
+      }>;
+    },
+    async resetEnvoyHarnessChat(chatId?: string) {
+      return wsClient.rpc(
+        "resetEnvoyHarnessChat",
+        chatId ? { chatId } : {},
+        { timeoutMs: 30_000 },
+      ) as Promise<import("@envoymesh/api").EhChatHistory>;
     },
     async ehRespondToPermission(params: { requestId: string; allowed: boolean }) {
       return wsClient.rpc("ehRespondToPermission", params) as Promise<{

@@ -225,6 +225,10 @@ export interface EnvoyHarnessStatus {
   error?: string
   /** The runtime's working directory (project folder). */
   cwd?: string
+  /** Active persisted harness session id for `cwd` (when known). */
+  sessionId?: string
+  /** Number of messages in the persisted session transcript. */
+  messageCount?: number
   /** The configured standalone peer cluster (Pattern A execution pool). */
   peers: { connected: number; failed: number }
 }

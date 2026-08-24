@@ -11,6 +11,8 @@ export interface EhTurnStartedEvent {
   turnId: string;
   userPrompt: string;
   startedAt: string;
+  /** Sidebar chat thread that owns this turn (when multi-project). */
+  chatId?: string;
 }
 
 export interface EhTurnTokenEvent {
@@ -18,11 +20,13 @@ export interface EhTurnTokenEvent {
   delta: string;
   /** Accumulated assistant text (reconnect-friendly). */
   streamingText: string;
+  chatId?: string;
 }
 
 export interface EhTurnCompleteEvent {
   turnId: string;
   ok: boolean;
+  chatId?: string;
   text?: string;
   stopReason?: string;
   turnHints?: EhTurnHintsEvent;
@@ -44,6 +48,7 @@ export interface EhTurnStatus {
   userPrompt?: string;
   streamingText?: string;
   startedAt?: string;
+  chatId?: string;
 }
 
 export interface StartEnvoyHarnessTurnResult {

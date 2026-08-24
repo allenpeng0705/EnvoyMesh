@@ -1279,6 +1279,25 @@ export async function routeRpcMethod(
       });
     case "getEnvoyHarnessTurnStatus":
       return ns.getEnvoyHarnessTurnStatus();
+    case "getEnvoyHarnessChatHistory":
+      return ns.getEnvoyHarnessChatHistory(
+        typeof params.chatId === "string" ? params.chatId : undefined,
+      );
+    case "listEnvoyHarnessChats":
+      return ns.listEnvoyHarnessChats();
+    case "createEnvoyHarnessChat":
+      return ns.createEnvoyHarnessChat({
+        cwd: String(params.cwd ?? ""),
+        title: typeof params.title === "string" ? params.title : undefined,
+      });
+    case "openEnvoyHarnessChat":
+      return ns.openEnvoyHarnessChat(String(params.chatId ?? ""));
+    case "removeEnvoyHarnessChat":
+      return ns.removeEnvoyHarnessChat(String(params.chatId ?? ""));
+    case "resetEnvoyHarnessChat":
+      return ns.resetEnvoyHarnessChat(
+        typeof params.chatId === "string" ? params.chatId : undefined,
+      );
     case "listEnvoyHarnessPeers":
       return ns.listEnvoyHarnessPeers();
     case "setEnvoyHarnessProjectPath":

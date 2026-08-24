@@ -10,21 +10,58 @@ import { renderWithI18n } from "../helpers/render-with-i18n.js";
 const listAgentActivity = vi.fn().mockResolvedValue([]);
 const listPendingApprovals = vi.fn().mockResolvedValue([]);
 const sendSyncStateUpdate = vi.fn().mockResolvedValue({ ok: true, recipients: 0 });
+const getEnvoyLocalStatus = vi.fn().mockResolvedValue({
+  enabled: false,
+  running: false,
+  activeModelId: undefined,
+});
+const getOpenClawStatus = vi.fn().mockResolvedValue({
+  enabled: true,
+  running: true,
+  url: "http://127.0.0.1:18789",
+});
+const listChatHistory = vi.fn().mockResolvedValue([]);
+const getEnvoyAiCommandCatalog = vi.fn().mockResolvedValue({
+  agentId: "envoyai",
+  agentName: "EnvoyAI",
+  commands: [
+    { slash: "/help", summary: "help", intercept: "envoy", source: "static" },
+  ],
+  catalogVersion: "1",
+  fetchedAt: new Date().toISOString(),
+});
+const getNodeConfig = vi.fn().mockResolvedValue({});
+const generateMeshIntelligenceReport = vi.fn();
+const saveWebSearchEnabled = vi.fn();
 const on = vi.fn(() => () => {});
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => ({
     listAgentActivity,
     listPendingApprovals,
+    listChatHistory,
     runDocumentAgentTurn: vi.fn(),
     sendSyncStateUpdate,
+    getEnvoyLocalStatus,
+    getOpenClawStatus,
+    getEnvoyAiCommandCatalog,
+    getNodeConfig,
+    generateMeshIntelligenceReport,
+    saveWebSearchEnabled,
     on,
   }),
 }));
 
 vi.mock("../../src/context/NodeStateContext.js", () => ({
   useNodeState: () => ({
-    nodeConfig: { modelProviders: { mode: "mock", modelName: "test" } },
+    nodeConfig: {
+      modelProviders: {
+        mode: "openai",
+        presetId: "openai",
+        modelName: "gpt-4o-mini",
+        apiKey: "test-key",
+      },
+    },
   }),
 }));
 

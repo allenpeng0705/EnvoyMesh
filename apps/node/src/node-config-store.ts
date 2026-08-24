@@ -481,6 +481,16 @@ export interface PersistedNodeConfig {
   /** U4+ — persisted project folder for the envoy-harness runtime
    *  (overrides `ENVOY_HARNESS_CWD`; default `process.cwd()`). */
   envoyHarnessCwd?: string;
+  /**
+   * Per-project harness session ids (normalized absolute cwd → session UUID).
+   * Each project folder gets one persisted JSONL transcript; switching
+   * project in the Envoy chat panel loads the matching session.
+   */
+  envoyHarnessSessionByCwd?: Record<string, string>;
+  /** Envoy sidebar chat threads (one per project folder, like Terminal sessions). */
+  envoyHarnessChats?: import("@envoymesh/api").EhChatWorkspace[];
+  /** Active chat id for legacy bare thread key and default open. */
+  activeEnvoyHarnessChatId?: string;
 }
 
 export interface NodeConfigStore {

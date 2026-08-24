@@ -24,7 +24,7 @@ export interface UseEhTurnQueueOptions {
   getTurnStatus?: () => Promise<EhTurnStatus>
   cancelTurn: () => Promise<{ cancelled: boolean }>
   onUserTurn?: (text: string) => void
-  onAssistantTurn?: (text: string, turnId: string) => void
+  onAssistantTurn?: (text: string, turnId: string, event: EhTurnCompleteEvent) => void
   onAssistantStreaming?: (text: string, turnId: string) => void
   onSystem?: (text: string, tone: "info" | "success" | "error") => void
   onTurnStart?: () => void
@@ -66,6 +66,7 @@ export function useEhTurnQueue(options: UseEhTurnQueueOptions) {
         optionsRef.current.onAssistantTurn?.(
           event.text,
           assistantTurnId(event.turnId),
+          event,
         )
       } else if (event.cancelled !== true && event.error) {
         optionsRef.current.onSystem?.(event.error, "error")
@@ -228,6 +229,7 @@ export function useEhTurnQueue(options: UseEhTurnQueueOptions) {
           optionsRef.current.onAssistantTurn?.(
             result.text,
             assistantTurnId(turnId),
+            result,
           )
         }
       } catch (err: unknown) {
@@ -336,6 +338,7 @@ export function useEhTurnQueue(options: UseEhTurnQueueOptions) {
 
   return {
     busy,
+    busyRef,
     queue,
     submit,
     enqueue,

@@ -104,6 +104,8 @@ export * from "./eh-prompt-busy.js";
 export * from "./eh-activity.js";
 export * from "./eh-timeouts.js";
 export * from "./eh-turn.js";
+export * from "./eh-chat-history.js";
+export * from "./eh-chat-workspace.js";
 export * from "./eh-permission.js";
 export * from "./eh-files-changed.js";
 export * from "./ai-bot.js";

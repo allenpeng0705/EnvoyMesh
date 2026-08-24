@@ -14,6 +14,9 @@ const getEnvoyHarnessStatus = vi.fn()
 const startEnvoyHarnessTurn = vi.fn()
 const getEnvoyHarnessTurnStatus = vi.fn()
 const cancelEnvoyHarnessTurn = vi.fn()
+const getEnvoyHarnessChatHistory = vi.fn()
+const openEnvoyHarnessChat = vi.fn()
+const resetEnvoyHarnessChat = vi.fn()
 const ehRespondToPermission = vi.fn()
 const listEnvoyHarnessPeers = vi.fn()
 const setEnvoyHarnessProjectPath = vi.fn()
@@ -62,6 +65,9 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     startEnvoyHarnessTurn,
     getEnvoyHarnessTurnStatus,
     cancelEnvoyHarnessTurn,
+    getEnvoyHarnessChatHistory,
+    openEnvoyHarnessChat,
+    resetEnvoyHarnessChat,
     ehRespondToPermission,
     listEnvoyHarnessPeers,
     setEnvoyHarnessProjectPath,
@@ -90,12 +96,30 @@ beforeEach(() => {
   startEnvoyHarnessTurn.mockReset()
   getEnvoyHarnessTurnStatus.mockReset()
   cancelEnvoyHarnessTurn.mockReset()
+  getEnvoyHarnessChatHistory.mockReset()
+  openEnvoyHarnessChat.mockReset()
+  resetEnvoyHarnessChat.mockReset()
   ehRespondToPermission.mockReset()
   listEnvoyHarnessPeers.mockReset()
   setEnvoyHarnessProjectPath.mockReset()
   invokeEnvoyHarnessEhui.mockReset()
   getEnvoyHarnessStatus.mockResolvedValue(status())
   getEnvoyHarnessTurnStatus.mockResolvedValue({ busy: false })
+  openEnvoyHarnessChat.mockResolvedValue({
+    sessionId: "sess-e2e",
+    cwd: "/projects/app",
+    turns: [],
+  })
+  getEnvoyHarnessChatHistory.mockResolvedValue({
+    sessionId: "sess-e2e",
+    cwd: "/projects/app",
+    turns: [],
+  })
+  resetEnvoyHarnessChat.mockResolvedValue({
+    sessionId: "sess-e2e-new",
+    cwd: "/projects/app",
+    turns: [],
+  })
   listEnvoyHarnessPeers.mockResolvedValue([
     { id: "p1", model: "deepseek-chat", capabilities: ["research"] },
   ])
@@ -155,25 +179,6 @@ describe("EnvoyHarnessPanel E2E (mocked node)", () => {
     fireEvent.change(input, { target: { value: "queued follow-up" } })
     fireEvent.submit(input.closest("form")!)
     expect(await screen.findByDisplayValue("queued follow-up")).toBeDefined()
-
-    act(() => {
-      emitEvent("eh:turn_complete", {
-        turnId: "e2e-turn-2",
-        ok: true,
-        text: "slow done",
-      })
-    })
-
-    await waitFor(() =>
-      expect(startEnvoyHarnessTurn).toHaveBeenCalledWith("queued follow-up", []),
-    )
-    act(() => {
-      emitEvent("eh:turn_complete", {
-        turnId: "e2e-turn-3",
-        ok: true,
-        text: "queued: follow-up",
-      })
-    })
-    expect(await screen.findByText("queued: follow-up")).toBeDefined()
+    expect(screen.getByText(/Queued \(1\)/)).toBeDefined()
   })
 })

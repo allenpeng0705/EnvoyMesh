@@ -1316,6 +1316,25 @@ import {
 } from "./pi-terminal-session.js";
 import { ensureEnvoyTerminalSession } from "./envoy-terminal-session.js";
 import {
+  createEnvoyHarnessSessionStore,
+  loadEhChatHistoryFromStore,
+  mergeSessionMapping,
+  normalizeEhWorkspaceCwd,
+  resolveEhSessionIdForCwd,
+} from "./envoy-harness-workspace.js";
+import {
+  assertEhChatCapacity,
+  findEhChatByCwd,
+  findEhChatById,
+  migrateLegacyEhChats,
+  removeEhChat,
+  sortEhChats,
+  summarizeEhChats,
+  touchEhChat,
+  upsertEhChatSessionId,
+  updateEhChatCwd,
+} from "./envoy-harness-chats.js";
+import {
   cancelEnvoyLocalDownloadViaRuntime,
   checkEnvoyLocalEngineUpdateViaRuntime,
   createEnvoyLocalRuntimeState,
@@ -5976,10 +5995,38 @@ class NodeServiceImpl implements NodeService {
         hostEndpoint: this._envoyHarnessHostEndpoint,
       });
     const peers = this.listEnvoyHarnessPeers();
+    const cwd = await this._envoyHarnessResolvedCwd();
+    let sessionId: string | undefined;
+    let messageCount: number | undefined;
+    try {
+      const cfg = await this._configStore.load().catch(() => undefined);
+      const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+      const resolved = await resolveEhSessionIdForCwd({
+        cwd,
+        sessionByCwd: cfg?.envoyHarnessSessionByCwd,
+        sessionStore,
+      });
+      if (resolved.sessionId !== undefined) {
+        sessionId = resolved.sessionId;
+        if (resolved.migratedFromDisk) {
+          await this._persistEhSessionMapping(cwd, sessionId);
+        }
+        const history = await loadEhChatHistoryFromStore({
+          sessionStore,
+          sessionId,
+          cwd,
+        });
+        messageCount = history.turns.length;
+      }
+    } catch {
+      // Best-effort — status still useful without session metadata.
+    }
     return {
       state: eh.ready ? "ready" : "error",
       ...(eh.model !== undefined ? { model: eh.model } : {}),
-      cwd: await this._envoyHarnessResolvedCwd(),
+      cwd,
+      ...(sessionId !== undefined ? { sessionId } : {}),
+      ...(messageCount !== undefined ? { messageCount } : {}),
       ...(!eh.ready
         ? { error: eh.reason ?? "envoy-harness not ready" }
         : {}),
@@ -5990,12 +6037,249 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
-  /** The envoy-harness project folder: persisted config → env → cwd. */
+  async getEnvoyHarnessChatHistory(
+    chatId?: string,
+  ): Promise<import("@envoymesh/api").EhChatHistory> {
+    await this._refreshEnvoyHarnessHostConfig();
+    const chat = await this._resolveEhChat(chatId ?? null);
+    const cwd = chat?.cwd ?? (await this._envoyHarnessResolvedCwd());
+    const normalized = normalizeEhWorkspaceCwd(cwd);
+    const empty: import("@envoymesh/api").EhChatHistory = {
+      ...(chat ? { chatId: chat.id } : {}),
+      sessionId: "",
+      cwd: normalized,
+      turns: [],
+    };
+    const eh = loadEnvoyHarnessRuntimeConfig({
+      hostModel: this._envoyHarnessHostModel,
+      hostApiKey: this._envoyHarnessHostApiKey,
+      hostEndpoint: this._envoyHarnessHostEndpoint,
+    });
+    if (!eh.ready) return empty;
+    if (chat && chatId) await this._activateEhChat(chat);
+
+    await this._ensureEnvoyHarnessPersistentAcpHost();
+    const host = this._envoyHarnessPersistentAcpHost;
+    const sessionId = host?.sessionId;
+    if (sessionId === undefined || sessionId.length === 0) return empty;
+
+    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    const history = await loadEhChatHistoryFromStore({
+      sessionStore,
+      sessionId,
+      cwd,
+    });
+    return { ...history, ...(chat ? { chatId: chat.id } : {}) };
+  }
+
+  async listEnvoyHarnessChats(): Promise<
+    import("@envoymesh/api").EhChatWorkspaceSummary[]
+  > {
+    const { chats, sessionByCwd } = await this._loadEhChatState();
+    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    return summarizeEhChats({ chats, sessionStore });
+  }
+
+  async createEnvoyHarnessChat(opts: {
+    cwd: string;
+    title?: string;
+  }): Promise<import("@envoymesh/api").EhChatWorkspaceSummary> {
+    const abs = resolvePiProjectDir(opts.cwd);
+    if (abs === null) {
+      throw new Error(`envoy-harness project path is not a directory: ${opts.cwd}`);
+    }
+    const normalized = normalizeEhWorkspaceCwd(abs);
+    const { chats } = await this._loadEhChatState();
+    const existing = findEhChatByCwd(chats, normalized);
+    if (existing) {
+      await this._activateEhChat(existing);
+      const listed = await this.listEnvoyHarnessChats();
+      const summary = listed.find((c) => c.id === existing.id);
+      if (summary) return summary;
+      return {
+        id: existing.id,
+        cwd: existing.cwd,
+        title: existing.title ?? normalized,
+        lastUsedAt: existing.lastUsedAt,
+      };
+    }
+    assertEhChatCapacity(chats);
+    const now = new Date().toISOString();
+    const chat: import("@envoymesh/api").EhChatWorkspace = {
+      id: crypto.randomUUID(),
+      cwd: normalized,
+      title: opts.title?.trim() || undefined,
+      createdAt: now,
+      lastUsedAt: now,
+    };
+    const nextChats = sortEhChats([chat, ...chats]);
+    await this.updateNodeConfig({
+      envoyHarnessChats: nextChats,
+      activeEnvoyHarnessChatId: chat.id,
+      envoyHarnessCwd: normalized,
+    });
+    this._closeEnvoyHarnessPersistentAcpHost();
+    const listed = await this.listEnvoyHarnessChats();
+    const created = listed.find((c) => c.id === chat.id);
+    if (!created) {
+      return {
+        id: chat.id,
+        cwd: normalized,
+        title: opts.title?.trim() || normalized,
+        lastUsedAt: now,
+      };
+    }
+    return created;
+  }
+
+  async openEnvoyHarnessChat(
+    chatId: string,
+  ): Promise<import("@envoymesh/api").EhChatHistory> {
+    const chat = await this._resolveEhChat(chatId);
+    if (!chat) {
+      throw new Error(`envoy_harness_chat_not_found: ${chatId}`);
+    }
+    return this.getEnvoyHarnessChatHistory(chat.id);
+  }
+
+  async removeEnvoyHarnessChat(chatId: string): Promise<{ removed: boolean }> {
+    if (this._ehActiveTurn !== undefined) {
+      throw new Error("envoy_harness_turn_busy");
+    }
+    const { chats, activeId } = await this._loadEhChatState();
+    if (!findEhChatById(chats, chatId)) {
+      return { removed: false };
+    }
+    const nextChats = removeEhChat(chats, chatId);
+    const nextActive =
+      activeId === chatId ? nextChats[0]?.id : activeId;
+    await this.updateNodeConfig({
+      envoyHarnessChats: nextChats,
+      activeEnvoyHarnessChatId: nextActive,
+      ...(nextActive
+        ? { envoyHarnessCwd: findEhChatById(nextChats, nextActive)?.cwd }
+        : {}),
+    });
+    this._closeEnvoyHarnessPersistentAcpHost();
+    return { removed: true };
+  }
+
+  /**
+   * `/new` / `/clear` — fresh persisted session for the current chat workspace.
+   */
+  async resetEnvoyHarnessChat(
+    chatId?: string,
+  ): Promise<import("@envoymesh/api").EhChatHistory> {
+    if (this._ehActiveTurn !== undefined) {
+      throw new Error("envoy_harness_turn_busy");
+    }
+    const chat = await this._resolveEhChat(chatId ?? null);
+    const cwd = chat?.cwd ?? (await this._envoyHarnessResolvedCwd());
+    const normalized = normalizeEhWorkspaceCwd(cwd);
+    this._closeEnvoyHarnessPersistentAcpHost();
+    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    const created = await sessionStore.create({
+      cwd: normalized,
+      startedAt: new Date().toISOString(),
+      permissionMode: "workspace-write",
+    });
+    await this._persistEhSessionMapping(cwd, created.id, chat?.id);
+    return {
+      ...(chat ? { chatId: chat.id } : {}),
+      sessionId: created.id,
+      cwd: normalized,
+      turns: [],
+    };
+  }
+
+  private async _persistEhSessionMapping(
+    cwd: string,
+    sessionId: string,
+    chatId?: string,
+  ): Promise<void> {
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const envoyHarnessSessionByCwd = mergeSessionMapping(
+      cfg?.envoyHarnessSessionByCwd,
+      cwd,
+      sessionId,
+    );
+    let envoyHarnessChats = cfg?.envoyHarnessChats;
+    if (chatId && envoyHarnessChats) {
+      envoyHarnessChats = upsertEhChatSessionId(envoyHarnessChats, chatId, sessionId);
+    } else if (chatId) {
+      const { chats } = await this._loadEhChatState();
+      envoyHarnessChats = upsertEhChatSessionId(chats, chatId, sessionId);
+    }
+    await this.updateNodeConfig({
+      envoyHarnessSessionByCwd,
+      ...(envoyHarnessChats ? { envoyHarnessChats } : {}),
+    });
+  }
+
+  /** The envoy-harness project folder: active chat → persisted config → env → cwd. */
   private async _envoyHarnessResolvedCwd(): Promise<string> {
+    const chat = await this._resolveEhChat(undefined);
+    if (chat) return chat.cwd;
     const cfg = await this._configStore.load().catch(() => undefined);
     const persisted = cfg?.envoyHarnessCwd?.trim();
     if (persisted && persisted.length > 0) return persisted;
     return process.env.ENVOY_HARNESS_CWD ?? process.cwd();
+  }
+
+  private async _loadEhChatState(): Promise<{
+    chats: import("@envoymesh/api").EhChatWorkspace[];
+    sessionByCwd: Record<string, string>;
+    activeId: string | undefined;
+  }> {
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const chats = migrateLegacyEhChats({
+      chats: cfg?.envoyHarnessChats,
+      legacyCwd: cfg?.envoyHarnessCwd,
+      sessionByCwd: cfg?.envoyHarnessSessionByCwd,
+    });
+    if (
+      chats.length > 0 &&
+      (cfg?.envoyHarnessChats === undefined || cfg.envoyHarnessChats.length === 0)
+    ) {
+      await this.updateNodeConfig({ envoyHarnessChats: chats });
+    }
+    const activeId =
+      cfg?.activeEnvoyHarnessChatId?.trim() || chats[0]?.id;
+    return {
+      chats,
+      sessionByCwd: cfg?.envoyHarnessSessionByCwd ?? {},
+      activeId,
+    };
+  }
+
+  private async _resolveEhChat(
+    chatId: string | null | undefined,
+  ): Promise<import("@envoymesh/api").EhChatWorkspace | undefined> {
+    const { chats, activeId } = await this._loadEhChatState();
+    if (chatId) return findEhChatById(chats, chatId);
+    if (activeId) return findEhChatById(chats, activeId);
+    return chats[0];
+  }
+
+  private async _activateEhChat(
+    chat: import("@envoymesh/api").EhChatWorkspace,
+  ): Promise<void> {
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const { chats, activeId } = await this._loadEhChatState();
+    const nextChats = touchEhChat(chats, chat.id);
+    const sameActive =
+      activeId === chat.id &&
+      normalizeEhWorkspaceCwd(cfg?.envoyHarnessCwd ?? "") ===
+        normalizeEhWorkspaceCwd(chat.cwd);
+    await this.updateNodeConfig({
+      activeEnvoyHarnessChatId: chat.id,
+      envoyHarnessCwd: chat.cwd,
+      envoyHarnessChats: nextChats,
+    });
+    if (!sameActive) {
+      this._envoyHarnessRuntimeCache = undefined;
+      this._closeEnvoyHarnessPersistentAcpHost();
+    }
   }
 
   /**
@@ -6011,6 +6295,18 @@ class NodeServiceImpl implements NodeService {
       throw new Error(`envoy-harness project path is not a directory: ${path}`);
     }
     await this.updateNodeConfig({ envoyHarnessCwd: abs });
+    const chat = await this._resolveEhChat(undefined);
+    if (chat) {
+      const { chats } = await this._loadEhChatState();
+      const other = findEhChatByCwd(chats, abs);
+      if (other && other.id !== chat.id) {
+        throw new Error(
+          `envoy_harness_project_in_use: already open as "${other.title ?? abs}"`,
+        );
+      }
+      const nextChats = updateEhChatCwd(chats, chat.id, abs);
+      await this.updateNodeConfig({ envoyHarnessChats: nextChats });
+    }
     // The runtime caches the cwd at construction; rebuild on next ask.
     this._envoyHarnessRuntimeCache = undefined;
     this._closeEnvoyHarnessPersistentAcpHost();
@@ -6125,12 +6421,29 @@ class NodeServiceImpl implements NodeService {
     this._closeEnvoyHarnessPersistentAcpHost();
     const runtime = await this._getOrInitEnvoyHarnessRuntime();
     const backend = await this._buildEnvoyHarnessAcpBackend(runtime, cwd);
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    const resolved = await resolveEhSessionIdForCwd({
+      cwd,
+      sessionByCwd: cfg?.envoyHarnessSessionByCwd,
+      sessionStore,
+    });
     const host = new EnvoyHarnessPersistentAcpHost();
-    await host.start({
+    const started = await host.start({
       cwd,
       backend,
       permissionBridge: this._ehPermissionBridge,
+      ...(resolved.sessionId !== undefined
+        ? { resumeSessionId: resolved.sessionId }
+        : {}),
     });
+    if (
+      resolved.sessionId === undefined ||
+      resolved.migratedFromDisk ||
+      resolved.sessionId !== started.sessionId
+    ) {
+      await this._persistEhSessionMapping(cwd, started.sessionId);
+    }
     this._envoyHarnessPersistentAcpHost = host;
     this._envoyHarnessPersistentCwd = cwd;
     this._envoyHarnessPersistentConfigKey = configKey;

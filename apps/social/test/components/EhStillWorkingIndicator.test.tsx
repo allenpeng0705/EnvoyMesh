@@ -3,7 +3,7 @@
  */
 import React from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { cleanup, fireEvent, screen } from "@testing-library/react"
+import { cleanup, fireEvent, screen, act } from "@testing-library/react"
 
 import { EhStillWorkingIndicator } from "../../src/components/ehui/EhStillWorkingIndicator.js"
 import { renderWithI18n } from "../helpers/render-with-i18n.js"
@@ -23,11 +23,13 @@ describe("EhStillWorkingIndicator", () => {
     expect(onCancel).toHaveBeenCalledTimes(1)
   })
 
-  it("upgrades to still-working label after delay", async () => {
+  it("upgrades to still-working label after delay", () => {
     vi.useFakeTimers()
     renderWithI18n(<EhStillWorkingIndicator active={true} />)
     expect(screen.getByText(/envoy-harness is thinking/i)).toBeDefined()
-    await vi.advanceTimersByTimeAsync(8_000)
+    act(() => {
+      vi.advanceTimersByTime(8_000)
+    })
     expect(screen.getByText(/Still working/)).toBeDefined()
   })
 

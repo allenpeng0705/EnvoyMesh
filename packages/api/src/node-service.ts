@@ -3073,6 +3073,38 @@ export interface NodeService {
   /** Reconnect snapshot of the in-flight turn (if any). */
   getEnvoyHarnessTurnStatus(): Promise<import("./eh-turn.js").EhTurnStatus>;
 
+  /** Load persisted chat transcript for a workspace (defaults to active chat). */
+  getEnvoyHarnessChatHistory(
+    chatId?: string,
+  ): Promise<import("./eh-chat-history.js").EhChatHistory>;
+
+  /** List open Envoy chat threads (sidebar). */
+  listEnvoyHarnessChats(): Promise<
+    import("./eh-chat-workspace.js").EhChatWorkspaceSummary[]
+  >;
+
+  /** Open or reuse a chat for a project folder. */
+  createEnvoyHarnessChat(opts: {
+    cwd: string;
+    title?: string;
+  }): Promise<import("./eh-chat-workspace.js").EhChatWorkspaceSummary>;
+
+  /** Activate a chat thread and load its transcript. */
+  openEnvoyHarnessChat(
+    chatId: string,
+  ): Promise<import("./eh-chat-history.js").EhChatHistory>;
+
+  /** Close a chat thread (does not delete persisted JSONL). */
+  removeEnvoyHarnessChat(chatId: string): Promise<{ removed: boolean }>;
+
+  /**
+   * Start a fresh harness session for the current project ( `/new` in chat ).
+   * Clears the cwd → session mapping and closes the in-process ACP host.
+   */
+  resetEnvoyHarnessChat(
+    chatId?: string,
+  ): Promise<import("./eh-chat-history.js").EhChatHistory>;
+
   /** Allow/deny an in-flight EH tool permission (`eh:permission`). */
   ehRespondToPermission(
     params: import("./eh-permission.js").EhRespondToPermissionParams,

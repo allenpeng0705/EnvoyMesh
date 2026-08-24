@@ -710,6 +710,7 @@ export function App() {
                     setSocialTab("discover");
                   },
                   onOpenPi: () => setCurrentView("terminal"),
+                  onOpenEnvoyHarness: () => setSocialTab("chats"),
                   onOpenActivity: () => {
                     setSettingsTab("app");
                     navigateTo("settings");

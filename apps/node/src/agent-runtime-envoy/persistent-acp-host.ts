@@ -61,9 +61,15 @@ export class EnvoyHarnessPersistentAcpHost {
     cwd: string;
     backend: ProtocolSessionBackend;
     permissionBridge: AcpPermissionBridge;
-  }): Promise<void> {
-    if (this.#sessionId !== undefined && this.#cwd === opts.cwd) {
-      return;
+    /** When set, resume this persisted session instead of session/new. */
+    resumeSessionId?: string;
+  }): Promise<{ sessionId: string; resumed: boolean }> {
+    if (
+      this.#sessionId !== undefined &&
+      this.#cwd === opts.cwd &&
+      (opts.resumeSessionId === undefined || this.#sessionId === opts.resumeSessionId)
+    ) {
+      return { sessionId: this.#sessionId, resumed: true };
     }
     this.close();
     const c2s = new PassThrough();
@@ -83,9 +89,17 @@ export class EnvoyHarnessPersistentAcpHost {
     });
     this.#client = client;
     await client.initialize();
-    const created = await client.acpNewSession({ cwd: opts.cwd });
-    this.#sessionId = created.sessionId;
+    let resumed = false;
+    if (opts.resumeSessionId !== undefined && opts.resumeSessionId.length > 0) {
+      const loaded = await client.loadSession(opts.resumeSessionId, opts.cwd);
+      this.#sessionId = loaded.sessionId;
+      resumed = true;
+    } else {
+      const created = await client.acpNewSession({ cwd: opts.cwd });
+      this.#sessionId = created.sessionId;
+    }
     this.#cwd = opts.cwd;
+    return { sessionId: this.#sessionId, resumed };
   }
 
   async prompt(

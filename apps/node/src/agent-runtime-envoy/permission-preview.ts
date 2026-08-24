@@ -2,13 +2,31 @@
  * Diff previews for EH permission prompts (mirrors envoy-harness-tui).
  */
 
-import { readFile } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import * as path from "node:path";
+
+/** Read at most this many bytes of a file for the before/after diff
+ *  preview. A permission prompt must never read a huge file into memory
+ *  just to show the first lines (a multi-GB log would block the node
+ *  process and blow the heap). 64 KiB covers ~1000 diff lines. */
+const MAX_PREVIEW_READ_BYTES = 64 * 1024;
 
 function truncateLines(text: string, maxLines: number): string {
   const lines = text.split("\n");
   if (lines.length <= maxLines) return text;
   return `${lines.slice(0, maxLines).join("\n")}\n… (${lines.length - maxLines} more lines)`;
+}
+
+/** Bounded read: the first MAX_PREVIEW_READ_BYTES of a file as UTF-8. */
+async function readFileHead(filePath: string): Promise<string> {
+  const handle = await open(filePath, "r");
+  try {
+    const buf = Buffer.alloc(MAX_PREVIEW_READ_BYTES);
+    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+    return buf.subarray(0, bytesRead).toString("utf-8");
+  } finally {
+    await handle.close();
+  }
 }
 
 function formatEditDiffPreview(
@@ -78,8 +96,9 @@ export async function buildEhPermissionPreview(
       const resolved = path.isAbsolute(args.path)
         ? args.path
         : path.resolve(cwd, args.path);
-      const existing = await readFile(resolved, "utf-8");
-      return formatWriteDiffPreview(args.path, existing, args.content);
+      const existing = await readFileHead(resolved);
+      const head = truncateLines(existing, 80);
+      return formatWriteDiffPreview(args.path, head, args.content);
     } catch {
       return formatNewFilePreview(args.path, args.content);
     }
