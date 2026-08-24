@@ -14,6 +14,7 @@ import {
   OWNER_FAMILY_PROFILE_ID,
   threadVisibleTo,
   ENVOY_AI_THREAD_KEY,
+  ENVOY_HARNESS_THREAD_KEY,
 } from "@envoymesh/api";
 import { useEffect, useState } from "react";
 import { useNodeService } from "../../hooks/useNodeService.js";
@@ -21,6 +22,7 @@ import type { ChatRoom, FamilyRoom } from "@envoymesh/api";
 import { OpenClawOfflineBanner } from "./OpenClawOfflineBanner.js";
 import { BotChatPanel } from "./BotChatPanel.js";
 import { AIChatPanel } from "./AIChatPanel.js";
+import { EnvoyHarnessPanel } from "./EnvoyHarnessPanel.js";
 import { getEnvoyAiInflight, subscribeEnvoyAiInflight } from "../../lib/envoy-ai-inflight.js";
 import { openTerminal } from "../../lib/open-terminal-nav.js";
 
@@ -35,6 +37,8 @@ export interface ChatViewProps {
   onOpenDiscover?: () => void;
   /** Open top-level Terminal and start/show Pi. */
   onOpenPi?: () => void;
+  /** Open the dedicated envoy-harness chat panel in the thread list. */
+  onOpenEnvoyHarness?: () => void;
   onOpenActivity?: () => void;
   onOpenChains?: () => void;
   onOpenSettingsAi?: () => void;
@@ -47,6 +51,7 @@ export function ChatView({
   onOpenAssistant,
   onOpenDiscover,
   onOpenPi: onOpenPiProp,
+  onOpenEnvoyHarness: onOpenEnvoyHarnessProp,
   onOpenActivity,
   onOpenChains,
   onOpenSettingsAi,
@@ -66,6 +71,11 @@ export function ChatView({
   const openPiTerminal = () => {
     onOpenPiProp?.();
     openTerminal({ startPi: true });
+  };
+
+  const openEnvoyHarnessChat = () => {
+    onOpenEnvoyHarnessProp?.();
+    onSelectedContactChange(ENVOY_HARNESS_THREAD_KEY);
   };
 
   const selectedFamilyRoom = isChatRoomThreadKey(selectedContact ?? "")
@@ -157,6 +167,7 @@ export function ChatView({
           onOpenAssistant={onOpenAssistant}
           onOpenDiscover={onOpenDiscover}
           onOpenPi={() => openPiTerminal()}
+          onOpenEnvoyHarness={() => openEnvoyHarnessChat()}
         />
         <section className="chat-area">
           {(selectedContact === ENVOY_AI_THREAD_KEY || envoyAiInflight) && (
@@ -175,7 +186,16 @@ export function ChatView({
               </div>
             </div>
           )}
-          {selectedContact && selectedContact !== ENVOY_AI_THREAD_KEY ? (
+          {selectedContact === ENVOY_HARNESS_THREAD_KEY && (
+            <div className="assistant-chat-wrapper">
+              <div className="assistant-chat-panel">
+                <EnvoyHarnessPanel onBackToChats={() => onSelectedContactChange(null)} />
+              </div>
+            </div>
+          )}
+          {selectedContact &&
+          selectedContact !== ENVOY_AI_THREAD_KEY &&
+          selectedContact !== ENVOY_HARNESS_THREAD_KEY ? (
             isChatRoomThreadKey(selectedContact) && selectedFamilyRoom ? (
               <FamilyGroupChatPanel
                 threadKey={selectedContact}
@@ -212,7 +232,9 @@ export function ChatView({
                 onSelectContact={onSelectedContactChange}
               />
             )
-          ) : selectedContact === ENVOY_AI_THREAD_KEY || envoyAiInflight ? null : (
+          ) : selectedContact === ENVOY_AI_THREAD_KEY ||
+            selectedContact === ENVOY_HARNESS_THREAD_KEY ||
+            envoyAiInflight ? null : (
             <div className="no-chat-selected">
               <div className="no-chat-selected-icon">
                 <ChatIcon size={48} />

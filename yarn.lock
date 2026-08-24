@@ -438,6 +438,12 @@
   dependencies:
     "@envoymesh/envoy-harness" "file:../envoy-harness"
 
+"@envoymesh/envoy-harness-ehui@file:../../../envoy-harness/packages/envoy-harness-ehui":
+  version "0.0.0"
+  resolved "file:../envoy-harness/packages/envoy-harness-ehui"
+  dependencies:
+    "@envoymesh/envoy-harness-client" "file:../envoy-harness-client"
+
 "@envoymesh/envoy-harness-peer@file:../../../envoy-harness/packages/envoy-harness-peer":
   version "0.0.0"
   resolved "file:../envoy-harness/packages/envoy-harness-peer"

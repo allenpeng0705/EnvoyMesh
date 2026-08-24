@@ -478,6 +478,9 @@ export interface PersistedNodeConfig {
     model?: string;
     capabilities?: string[];
   }>;
+  /** U4+ — persisted project folder for the envoy-harness runtime
+   *  (overrides `ENVOY_HARNESS_CWD`; default `process.cwd()`). */
+  envoyHarnessCwd?: string;
 }
 
 export interface NodeConfigStore {

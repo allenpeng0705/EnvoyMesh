@@ -48,6 +48,22 @@ describe("envoy-uploads", () => {
     expect(readFileSync(result.path!).toString("utf8")).toBe("hello attach");
   });
 
+  it("saveEnvoyUpload writes under project .envoy-attachments when targetDir set", () => {
+    const profileDir = mkdtempSync(join(tmpdir(), "envoy-uploads-"));
+    const projectDir = mkdtempSync(join(tmpdir(), "envoy-project-"));
+    dirs.push(profileDir, projectDir);
+    const content = Buffer.from("project scoped");
+    const result = saveEnvoyUpload(profileDir, {
+      filename: "src/main.ts",
+      mimeType: "text/plain",
+      contentBase64: content.toString("base64"),
+      targetDir: projectDir,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.path!.startsWith(join(projectDir, ".envoy-attachments"))).toBe(true);
+    expect(readFileSync(result.path!).toString("utf8")).toBe("project scoped");
+  });
+
   it("rejects empty and oversize uploads", () => {
     const profileDir = mkdtempSync(join(tmpdir(), "envoy-uploads-"));
     dirs.push(profileDir);

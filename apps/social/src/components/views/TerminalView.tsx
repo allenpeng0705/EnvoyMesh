@@ -19,7 +19,6 @@ import {
 import { HomeFolderPicker } from "../HomeFolderPicker.js";
 import { TerminalPanel } from "../terminals/TerminalPanel.js";
 import { TerminalSidebar } from "../terminals/TerminalSidebar.js";
-import { PiChatPanel } from "./PiChatPanel.js";
 
 export interface TerminalViewProps {
   onOpenAssistant?: () => void;
@@ -44,15 +43,15 @@ export function TerminalView({
   const [piProjectDraft, setPiProjectDraft] = useState("");
   const [piProjectForceRestart, setPiProjectForceRestart] = useState(false);
   const [piRestartSessionId, setPiRestartSessionId] = useState<string | null>(null);
-  /** Phase G / 12b — reuse Pi chat panel vs Pi TUI (no new nav). */
-  const [agentPane, setAgentPane] = useState<"tui" | "chat">(() =>
-    nodeConfig?.piSettings?.codingBackend === "envoy-harness" ? "chat" : "tui",
-  );
+  /** Which coding TUI the project modal is serving (title/labels). */
+  const [terminalMode, setTerminalMode] = useState<"pi" | "envoy">("pi");
   const preferPiSessionRef = useRef(false);
   const preferPiSessionIdRef = useRef<string | null>(null);
 
   const savedPiProjects = nodeConfig?.piSettings?.allowedPaths ?? [];
   const savedPiProject = savedPiProjects[0]?.trim() ?? "";
+  /** U4+ — the Envoy TUI is the terminal surface when the backend is envoy-harness. */
+  const savedEnvoyProject = nodeConfig?.envoyHarnessCwd?.trim() ?? "";
 
   const homeRemote = connectionStatus?.homeRemote;
   const terminalsAvailable =
@@ -62,12 +61,6 @@ export function TerminalView({
     () => terminalSessions.find((s) => s.sessionId === selectedTerminalId) ?? null,
     [selectedTerminalId, terminalSessions],
   );
-
-  useEffect(() => {
-    if (nodeConfig?.piSettings?.codingBackend === "envoy-harness") {
-      setAgentPane("chat");
-    }
-  }, [nodeConfig?.piSettings?.codingBackend]);
 
   const applyPiSession = async (session: TerminalSessionSummary) => {
     preferPiSessionIdRef.current = session.sessionId;
@@ -94,11 +87,17 @@ export function TerminalView({
     setPiEnsureError(null);
     setPiEnsureBusy(true);
     try {
-      const result = await nodeService.ensurePiTerminalSession({
-        projectPath,
-        forceRestart: opts.forceRestart,
-        sessionId: opts.sessionId ?? undefined,
-      });
+      const result = terminalMode === "envoy"
+        ? await nodeService.ensureEnvoyTerminalSession({
+            projectPath,
+            forceRestart: opts.forceRestart,
+            sessionId: opts.sessionId ?? undefined,
+          })
+        : await nodeService.ensurePiTerminalSession({
+            projectPath,
+            forceRestart: opts.forceRestart,
+            sessionId: opts.sessionId ?? undefined,
+          });
       if (result.ok) {
         setPiProjectModalOpen(false);
         setPiRestartSessionId(null);
@@ -114,11 +113,17 @@ export function TerminalView({
     }
   };
 
-  const openPiTerminal = async (opts?: {
+  const openTerminal = async (
+    mode: "pi" | "envoy",
+    opts?: {
     changeProject?: boolean;
     sessionId?: string;
     startNew?: boolean;
-  }) => {
+    },
+  ) => {
+    setTerminalMode(mode);
+    const role = mode === "envoy" ? "envoy-harness" : "pi";
+    const savedProject = mode === "envoy" ? savedEnvoyProject : savedPiProject;
     preferPiSessionRef.current = true;
     setPiEnsureError(null);
 
@@ -133,23 +138,39 @@ export function TerminalView({
     if (opts?.changeProject) {
       const target =
         (opts.sessionId
-          ? sessions.find((s) => s.sessionId === opts.sessionId && s.role === "pi")
+          ? sessions.find(
+              (s) => s.sessionId === opts.sessionId && s.role === role,
+            )
           : undefined) ??
-        sessions.find((s) => s.sessionId === selectedTerminalId && s.role === "pi") ??
-        sessions.find((s) => s.role === "pi" && s.state === "running");
+        sessions.find(
+          (s) => s.sessionId === selectedTerminalId && s.role === role,
+        ) ??
+        sessions.find((s) => s.role === role && s.state === "running");
       if (!target) {
-        setPiEnsureError(t("pi.noPiToChange", "Start a Pi session first, then change its project."));
+        setPiEnsureError(
+          mode === "envoy"
+            ? t(
+                "eh.noSessionToChange",
+                "Start an Envoy session first, then change its project.",
+              )
+            : t(
+                "pi.noPiToChange",
+                "Start a Pi session first, then change its project.",
+              ),
+        );
         return;
       }
       setPiProjectForceRestart(true);
       setPiRestartSessionId(target.sessionId);
-      setPiProjectDraft(target.cwd || savedPiProject);
+      setPiProjectDraft(target.cwd || savedProject);
       setPiProjectModalOpen(true);
       return;
     }
 
     if (!opts?.startNew) {
-      const firstPi = sessions.find((s) => s.role === "pi" && s.state === "running");
+      const firstPi = sessions.find(
+        (s) => s.role === role && s.state === "running",
+      );
       if (firstPi) {
         preferPiSessionIdRef.current = firstPi.sessionId;
         setSelectedTerminalId(firstPi.sessionId);
@@ -159,9 +180,21 @@ export function TerminalView({
 
     setPiProjectForceRestart(false);
     setPiRestartSessionId(null);
-    setPiProjectDraft(savedPiProject);
+    setPiProjectDraft(savedProject);
     setPiProjectModalOpen(true);
   };
+
+  const openPiTerminal = (opts?: {
+    changeProject?: boolean;
+    sessionId?: string;
+    startNew?: boolean;
+  }) => void openTerminal("pi", opts);
+
+  const openEnvoyTerminal = (opts?: {
+    changeProject?: boolean;
+    sessionId?: string;
+    startNew?: boolean;
+  }) => void openTerminal("envoy", opts);
 
   const submitPiProject = () => {
     const path = piProjectDraft.trim();
@@ -247,16 +280,26 @@ export function TerminalView({
             role="status"
           >
             {piEnsureBusy ? (
-              <p>{t("pi.ensuringTerminal", "Starting Pi coding terminal…")}</p>
+              <p>
+                {terminalMode === "envoy"
+                  ? t("eh.ensuringTerminal", "Starting Envoy TUI…")
+                  : t("pi.ensuringTerminal", "Starting Pi coding terminal…")}
+              </p>
             ) : (
               <>
                 <p>{piEnsureError}</p>
                 <button
                   type="button"
                   className="secondary"
-                  onClick={() => void openPiTerminal()}
+                  onClick={() =>
+                    terminalMode === "envoy"
+                      ? void openEnvoyTerminal()
+                      : void openPiTerminal()
+                  }
                 >
-                  {t("pi.retryStart", "Retry Start Pi")}
+                  {terminalMode === "envoy"
+                    ? t("eh.retryStart", "Retry Start Envoy")
+                    : t("pi.retryStart", "Retry Start Pi")}
                 </button>
               </>
             )}
@@ -266,30 +309,25 @@ export function TerminalView({
           <TerminalSidebar
             selectedSessionId={selectedTerminalId}
             onSelectSession={(id) => {
-              setAgentPane("tui");
               setSelectedTerminalId(id || null);
             }}
             onSessionsChange={setTerminalSessions}
             disabled={!terminalsAvailable}
             onOpenAssistant={onOpenAssistant}
-            onStartPi={() => {
-              setAgentPane("tui");
-              void openPiTerminal({ startNew: true });
-            }}
+            onStartEnvoy={() => void openEnvoyTerminal({ startNew: true })}
+            onStartPi={() => void openPiTerminal({ startNew: true })}
             onChangePiProject={(sessionId) =>
               void openPiTerminal({ changeProject: true, sessionId })
             }
-            onOpenPiChat={() => setAgentPane("chat")}
+            onChangeEnvoyProject={(sessionId) =>
+              void openEnvoyTerminal({ changeProject: true, sessionId })
+            }
           />
-          {agentPane === "chat" ? (
-            <PiChatPanel />
-          ) : (
-            <TerminalPanel
-              session={selectedTerminal}
-              onOpenAssistant={onOpenAssistant}
-              active={active}
-            />
-          )}
+          <TerminalPanel
+            session={selectedTerminal}
+            onOpenAssistant={onOpenAssistant}
+            active={active}
+          />
         </div>
       </div>
 
@@ -310,14 +348,23 @@ export function TerminalView({
           >
             <h2 id="pi-project-modal-title">
               {piProjectForceRestart
-                ? t("pi.changeProjectTitle", "Change Pi project folder")
-                : t("pi.chooseProjectTitle", "Choose Pi project folder")}
+                ? terminalMode === "envoy"
+                  ? t("eh.changeProjectTitle", "Change Envoy project folder")
+                  : t("pi.changeProjectTitle", "Change Pi project folder")
+                : terminalMode === "envoy"
+                  ? t("eh.chooseProjectTitle", "Choose Envoy project folder")
+                  : t("pi.chooseProjectTitle", "Choose Pi project folder")}
             </h2>
             <p className="modal-desc">
-              {t(
-                "pi.chooseProjectDescBrowse",
-                "Pi runs in this folder (reads AGENTS.md, edits files, runs shell). Use Browse to pick a folder. You can run up to 5 Pi terminals on different projects.",
-              )}
+              {terminalMode === "envoy"
+                ? t(
+                    "eh.chooseProjectDescBrowse",
+                    "Envoy runs in this folder (reads AGENTS.md, edits files, runs shell). Use Browse to pick a folder.",
+                  )
+                : t(
+                    "pi.chooseProjectDescBrowse",
+                    "Pi runs in this folder (reads AGENTS.md, edits files, runs shell). Use Browse to pick a folder. You can run up to 5 Pi terminals on different projects.",
+                  )}
             </p>
             <div className="modal-field">
               <span>{t("pi.projectPathLabel", "Project folder")}</span>
@@ -329,8 +376,12 @@ export function TerminalView({
                 }}
                 title={
                   piProjectForceRestart
-                    ? t("pi.changeProjectTitle", "Change Pi project folder")
-                    : t("pi.chooseProjectTitle", "Choose Pi project folder")
+                    ? terminalMode === "envoy"
+                      ? t("eh.changeProjectTitle", "Change Envoy project folder")
+                      : t("pi.changeProjectTitle", "Change Pi project folder")
+                    : terminalMode === "envoy"
+                      ? t("eh.chooseProjectTitle", "Choose Envoy project folder")
+                      : t("pi.chooseProjectTitle", "Choose Pi project folder")
                 }
                 disabled={piEnsureBusy}
               />
@@ -352,10 +403,16 @@ export function TerminalView({
                 onClick={submitPiProject}
               >
                 {piEnsureBusy
-                  ? t("pi.ensuringTerminal", "Starting Pi coding terminal…")
+                  ? terminalMode === "envoy"
+                    ? t("eh.ensuringTerminal", "Starting Envoy TUI…")
+                    : t("pi.ensuringTerminal", "Starting Pi coding terminal…")
                   : piProjectForceRestart
-                    ? t("pi.restartWithProject", "Restart Pi here")
-                    : t("pi.startWithProject", "Start Pi")}
+                    ? terminalMode === "envoy"
+                      ? t("eh.restartWithProject", "Restart Envoy here")
+                      : t("pi.restartWithProject", "Restart Pi here")
+                    : terminalMode === "envoy"
+                      ? t("eh.startWithProject", "Start")
+                      : t("pi.startWithProject", "Start Pi")}
               </button>
             </div>
           </div>

@@ -442,13 +442,14 @@ import { bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 // stack (ModelAdapter + LocalCrossRuntimeSubmitter +
 // EnvoyHarnessAdapter) that backs `askEnvoyHarness`.
 import {
-  createEnvoyHarnessAcpHost,
   createRealEnvoyHarnessRuntime,
   ENVOY_HARNESS_RUNTIME_SKILLS,
   loadEnvoyHarnessRuntimeConfig,
   shouldAskAcpTool,
   type RealEnvoyHarnessRuntime,
 } from "./agent-runtime-envoy/index.js";
+import { EnvoyHarnessPersistentAcpHost } from "./agent-runtime-envoy/persistent-acp-host.js";
+import { parseEhuiInvokeRequest } from "./agent-runtime-envoy/ehui-invoke.js";
 // Phase 8 / Step 3 — the B-class tool factories
 // (sponsor_friend / list_peers / relay_status) and the
 // deps builders (`createBClass*`) for the host. The
@@ -466,6 +467,20 @@ import {
   createPeersTool,
   aggregateVerdicts,
 } from "@envoymesh/envoy-harness-peer";
+import {
+  createAgentSessionBackend,
+  LocalMemoryStore,
+  SessionStore,
+  buildAgentSystemPrompt,
+  createFilesystemSkillProvider,
+  createSkillRegistry,
+  createUserQuestionService,
+  loadConfigStack,
+  resolveAgentRuntimeConfig,
+  systemPromptOptionsFromConfig,
+  type ConfigLayer,
+  type ProtocolSessionBackend,
+} from "@envoymesh/envoy-harness";
 import {
   createBClassPeerListDeps,
   createBClassRelayStatusDeps,
@@ -1291,8 +1306,15 @@ import {
   type PiRuntimeDeps,
 } from "./node-service-pi.js";
 import { AcpPermissionBridge } from "./node-service-acp-ui.js";
+import { AcpUserQuestionBridge } from "./node-service-eh-user-question.js";
+import { EhPermissionBridge } from "./node-service-eh-permission.js";
+import { buildEhPromptPayload, pathFromEhActivity } from "./agent-runtime-envoy/eh-prompt-attachments.js";
 import { resolvePiCodingBackend } from "./pi-coding-backend.js";
-import { ensurePiTerminalSession } from "./pi-terminal-session.js";
+import {
+  ensurePiTerminalSession,
+  resolvePiProjectDir,
+} from "./pi-terminal-session.js";
+import { ensureEnvoyTerminalSession } from "./envoy-terminal-session.js";
 import {
   cancelEnvoyLocalDownloadViaRuntime,
   checkEnvoyLocalEngineUpdateViaRuntime,
@@ -4761,6 +4783,23 @@ class NodeServiceImpl implements NodeService {
     },
   );
 
+  /** Envoy Harness ask_user / plan-review / mode-switch waiter. */
+  private readonly _ehUserQuestionBridge = new AcpUserQuestionBridge(
+    (_event, payload) => {
+      this.emit("eh:user_question", payload);
+    },
+  );
+
+  /** EH tool permissions (`session/request_permission`) — not Pi `pi:proposal`. */
+  private readonly _ehPermissionBridge = new EhPermissionBridge(
+    (_event, payload) => {
+      this.emit("eh:permission", payload);
+    },
+    {
+      getCwd: () => this._envoyHarnessResolvedCwd(),
+    },
+  );
+
   // Phase 54 — Envoy Local (downloadable llama-server)
   private readonly _envoyLocalState: EnvoyLocalRuntimeState = createEnvoyLocalRuntimeState();
   private readonly _envoyLocalEmbedState: EnvoyLocalEmbedRuntimeState =
@@ -4937,6 +4976,7 @@ class NodeServiceImpl implements NodeService {
     return loadEnvoyHarnessRuntimeConfig({
       hostModel: this._envoyHarnessHostModel,
       hostApiKey: this._envoyHarnessHostApiKey,
+      hostEndpoint: this._envoyHarnessHostEndpoint,
     }).ready;
   }
 
@@ -5024,169 +5064,218 @@ class NodeServiceImpl implements NodeService {
     prompt: string,
     opts?: { providerHint?: string; costCapUsd?: number },
   ): Promise<string> {
-    // Align readiness with getPiStatus: refresh host ModelProvider
-    // key/model before the sync config check.
+    const { turnId } = await this.startEnvoyHarnessTurn(prompt, opts);
+    const active = this._ehActiveTurn;
+    if (active === undefined || active.turnId !== turnId) {
+      throw new Error("envoy_harness_turn_lost");
+    }
+    const result = await active.resultPromise;
+    if (!result.ok) {
+      if (result.cancelled === true) {
+        throw new Error("envoy_harness_cancelled");
+      }
+      throw new Error(result.error ?? "envoy_harness_turn_failed");
+    }
+    return stripModelThinking(result.text ?? "");
+  }
+
+  async startEnvoyHarnessTurn(
+    prompt: string,
+    opts?: {
+      providerHint?: string;
+      costCapUsd?: number;
+      attachments?: import("@envoymesh/api").AgentAttachmentRef[];
+    },
+  ): Promise<{ turnId: string }> {
     await this._refreshEnvoyHarnessHostConfig();
     const config = loadEnvoyHarnessRuntimeConfig({
       hostModel: this._envoyHarnessHostModel,
       hostApiKey: this._envoyHarnessHostApiKey,
+      hostEndpoint: this._envoyHarnessHostEndpoint,
     });
     if (!config.ready) {
-      // Matches the Step 1 stub error message — the
-      // orchestrator's `agentNetworkEngineDenyReason` +
-      // tests rely on this code path. v0 doesn't expose
-      // a more specific reason here; the `reason` field
-      // on the config is internal.
       throw new Error("envoy_harness_stub_phase_8_step_1");
     }
-    const runtime = await this._getOrInitEnvoyHarnessRuntime();
+    if (this._ehActiveTurn !== undefined) {
+      throw new Error("envoy_harness_turn_busy");
+    }
+
+    const trimmed = prompt.trim();
+    if (trimmed.length === 0) {
+      throw new Error("envoy_harness_empty_prompt");
+    }
+
+    await this._getOrInitEnvoyHarnessRuntime();
     const askOpts = {
-      // v1.5 — thread the provider hint to the
-      // runtime's audit log (dormant: the
-      // adapter doesn't switch providers yet).
       providerHint: opts?.providerHint,
-      // v1.5 — the cost cap is gated by
-      // ENVOY_HARNESS_COST_CAP_ENABLED. When
-      // off (default), we ignore the per-prompt
-      // cap and use the v0 default (1.0). When
-      // on, the per-prompt cap wins.
       costCeilingUsd: readEffectiveCostCapUsd(opts?.costCapUsd, 1.0),
     };
 
-    // Phase G / 12b — ACP when env says so OR Pi codingBackend is
-    // envoy-harness (same Pi RPCs; permissions via pi:proposal).
-    const cfg = await this._configStore.load().catch(() => undefined);
-    const useAcp =
-      process.env.ENVOY_HARNESS_TRANSPORT === "acp" ||
-      resolvePiCodingBackend(cfg?.piSettings) === "envoy-harness";
-    if (useAcp) {
-      return this._askEnvoyHarnessViaAcp(runtime, prompt, askOpts);
-    }
+    const cwd = await this._envoyHarnessResolvedCwd();
+    const payload = await buildEhPromptPayload(
+      trimmed,
+      opts?.attachments,
+      cwd,
+    );
 
-    return runtime.ask(prompt, askOpts);
+    const turnId = crypto.randomUUID();
+    const startedAt = new Date().toISOString();
+    this.emit("eh:turn_started", { turnId, userPrompt: trimmed, startedAt });
+    this.emit("eh:prompt_busy", { busy: true });
+
+    const resultPromise = this._executeEhTurn(turnId, payload.text, askOpts);
+    this._ehActiveTurn = {
+      turnId,
+      userPrompt: trimmed,
+      startedAt,
+      streamingText: "",
+      changedFiles: [],
+      resultPromise,
+    };
+
+    void resultPromise.finally(() => {
+      if (this._ehActiveTurn?.turnId === turnId) {
+        this._ehActiveTurn = undefined;
+        this.emit("eh:prompt_busy", { busy: false });
+        this._ehPermissionBridge.clear();
+      }
+    });
+
+    return { turnId };
+  }
+
+  async getEnvoyHarnessTurnStatus(): Promise<
+    import("@envoymesh/api").EhTurnStatus
+  > {
+    const active = this._ehActiveTurn;
+    if (active === undefined) {
+      return { busy: false };
+    }
+    return {
+      busy: true,
+      turnId: active.turnId,
+      userPrompt: active.userPrompt,
+      streamingText: active.streamingText,
+      startedAt: active.startedAt,
+    };
   }
 
   /**
-   * Phase G / 12b — drive `runtime.ask` through an in-process
-   * ACP host so permission + transcript hooks share the TUI
-   * contract. Used when `ENVOY_HARNESS_TRANSPORT=acp`.
+   * U6 — drive asks through the persistent ACP session so plan / memory /
+   * transcript state is shared with the EHUI rails.
    */
-  private async _askEnvoyHarnessViaAcp(
-    runtime: RealEnvoyHarnessRuntime,
+  private async _executeEhTurn(
+    turnId: string,
     prompt: string,
-    askOpts: { providerHint?: string; costCeilingUsd?: number },
-  ): Promise<string> {
-    let seq = 0;
-    let askAbort: AbortController | undefined;
-    const permissionBridge = this._acpPermissionBridge;
-    const cfg = await this._configStore.load().catch(() => undefined);
-    const autoRun = cfg?.piSettings?.autoRunPolicy ?? "always-confirm";
-    const host = createEnvoyHarnessAcpHost({
-      transport: "in-process",
-      backend: {
-        async createSession() {
-          return { sessionId: `sess-acp-${++seq}` };
-        },
-        async prompt(params) {
-          askAbort = new AbortController();
-          const signal = askAbort.signal;
-          const onHostAbort = (): void => {
-            askAbort?.abort();
-            permissionBridge.clear();
-          };
-          params.signal.addEventListener("abort", onHostAbort, { once: true });
-          try {
-            // Per-tool approvals: Agent askHandler → session/request_permission
-            // → pi:proposal. autoRunPolicy gates which tools ask.
-            const answer = await runtime.ask(params.text, {
-              ...askOpts,
-              signal,
-              shouldAskTool: (toolName) => shouldAskAcpTool(toolName, autoRun),
-              askHandler: async (req) => {
-                if (signal.aborted || req.signal.aborted) {
-                  return { kind: "deny", reason: "cancelled" };
-                }
-                if (!shouldAskAcpTool(req.tool, autoRun)) {
-                  return { kind: "allow" };
-                }
-                const decision = await Promise.race([
-                  params.requestPermission({
-                    sessionId: params.sessionId,
-                    toolName: req.tool,
-                    description: req.question,
-                    args: req.args,
-                  }),
-                  new Promise<"deny">((resolve) => {
-                    if (signal.aborted) {
-                      resolve("deny");
-                      return;
-                    }
-                    signal.addEventListener(
-                      "abort",
-                      () => resolve("deny"),
-                      { once: true },
-                    );
-                  }),
-                ]);
-                if (signal.aborted || decision !== "allow") {
-                  return {
-                    kind: "deny",
-                    reason: signal.aborted ? "cancelled" : "host denied",
-                  };
-                }
-                return { kind: "allow" };
-              },
-            });
-            const assistant = {
-              role: "assistant" as const,
-              text: answer,
-            };
-            params.onUpdate?.(assistant);
-            return {
-              stopReason: signal.aborted ? "cancelled" : "end_turn",
-              messages: [
-                { role: "user" as const, text: params.text },
-                assistant,
-              ],
-            };
-          } finally {
-            params.signal.removeEventListener("abort", onHostAbort);
-            askAbort = undefined;
-          }
-        },
-        cancel(_sessionId: string) {
-          askAbort?.abort();
-          permissionBridge.clear();
-        },
-        // R3 — the mesh node's connected envoy-harness peer cluster is
-        // exposed over the ACP `peers/list` surface (same contract as
-        // the standalone TUI's `/peers`).
-        listPeers: () => this.listEnvoyHarnessPeers(),
-        // U3 — the dedicated UI's cluster rail + /cluster + /route read
-        // the same peer pool through the shared status backend.
-        ...(this._envoyHarnessPeerPool !== undefined
-          ? createPeerPoolStatusBackend(this._envoyHarnessPeerPool)
-          : {}),
-        // U4 — the dedicated UI's /team + /scoreboard read the local
-        // chain worker state and the arbitration verdict ledger.
-        teamJobs: () =>
-          chainWorkerSubtasksToTeamJobs(
-            this._chainOrchestrationContext().getChainSideState()
-              .workerSubtasks,
-          ),
-        scoreboardSummary: () =>
-          aggregateVerdicts(listAllVerdictEntries()),
-      },
-      onPermission: async (req) => permissionBridge.request(req),
-    });
+    _askOpts: { providerHint?: string; costCeilingUsd?: number; signal?: AbortSignal },
+  ): Promise<import("@envoymesh/api").EhTurnCompleteEvent> {
     try {
-      await host.start();
-      const result = await host.prompt(prompt);
-      return result.assistantText;
-    } finally {
-      askAbort?.abort();
-      permissionBridge.clear();
-      host.close();
+      await this._ensureEnvoyHarnessPersistentAcpHost();
+      const host = this._envoyHarnessPersistentAcpHost;
+      if (host === undefined) {
+        throw new Error("envoy-harness persistent ACP host failed to start");
+      }
+      let streamingText = "";
+      const text = await host.prompt(prompt, {
+        ...(_askOpts.signal !== undefined ? { signal: _askOpts.signal } : {}),
+        onActivity: (activity) => {
+          const filePath = pathFromEhActivity(activity);
+          if (
+            filePath !== undefined &&
+            this._ehActiveTurn?.turnId === turnId &&
+            !this._ehActiveTurn.changedFiles.includes(filePath)
+          ) {
+            this._ehActiveTurn.changedFiles.push(filePath);
+          }
+          this.emit("eh:activity", {
+            kind: activity.kind,
+            summary: activity.summary,
+            ...(activity.toolName !== undefined
+              ? { toolName: activity.toolName }
+              : {}),
+            ...(activity.ts !== undefined ? { ts: activity.ts } : {}),
+          });
+        },
+        onToken: (token) => {
+          if (token.role !== "assistant" || token.delta.length === 0) return;
+          streamingText += token.delta;
+          if (this._ehActiveTurn?.turnId === turnId) {
+            this._ehActiveTurn.streamingText = streamingText;
+          }
+          this.emit("eh:turn_token", {
+            turnId,
+            delta: token.delta,
+            streamingText,
+          });
+        },
+      });
+      const changedFiles =
+        this._ehActiveTurn?.turnId === turnId
+          ? [...this._ehActiveTurn.changedFiles]
+          : [];
+
+      const finishComplete = (
+        complete: import("@envoymesh/api").EhTurnCompleteEvent,
+      ): import("@envoymesh/api").EhTurnCompleteEvent => {
+        const withFiles =
+          changedFiles.length > 0
+            ? { ...complete, changedFiles }
+            : complete;
+        this.emit("eh:turn_complete", withFiles);
+        if (changedFiles.length > 0) {
+          this.emit("eh:files_changed", { turnId, files: changedFiles });
+        }
+        return withFiles;
+      };
+
+      if (text.stopReason === "cancelled") {
+        return finishComplete({
+          turnId,
+          ok: false,
+          cancelled: true,
+          error: "envoy_harness_cancelled",
+          stopReason: "cancelled",
+        });
+      }
+      if (text.turnHints !== undefined) {
+        this.emit("eh:turn_hints", text.turnHints);
+      }
+      const assistantText = text.text;
+      if (!assistantText || assistantText.trim().length === 0) {
+        return finishComplete({
+          turnId,
+          ok: false,
+          error: "envoy_harness_empty: no text in result",
+        });
+      }
+      return finishComplete({
+        turnId,
+        ok: true,
+        text: assistantText,
+        stopReason: text.stopReason,
+        ...(text.turnHints !== undefined ? { turnHints: text.turnHints } : {}),
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const cancelled =
+        msg === "envoy_harness_cancelled" ||
+        msg.toLowerCase().includes("cancel");
+      const changedFiles =
+        this._ehActiveTurn?.turnId === turnId
+          ? [...this._ehActiveTurn.changedFiles]
+          : [];
+      const complete: import("@envoymesh/api").EhTurnCompleteEvent = {
+        turnId,
+        ok: false,
+        error: msg,
+        ...(cancelled ? { cancelled: true } : {}),
+        ...(changedFiles.length > 0 ? { changedFiles } : {}),
+      };
+      this.emit("eh:turn_complete", complete);
+      if (changedFiles.length > 0) {
+        this.emit("eh:files_changed", { turnId, files: changedFiles });
+      }
+      return complete;
     }
   }
 
@@ -5235,6 +5324,7 @@ class NodeServiceImpl implements NodeService {
     const config = loadEnvoyHarnessRuntimeConfig({
       hostModel: this._envoyHarnessHostModel,
       hostApiKey: this._envoyHarnessHostApiKey,
+      hostEndpoint: this._envoyHarnessHostEndpoint,
     });
     if (!config.ready) {
       throw new Error("envoy_harness_stub_phase_8_step_1");
@@ -5287,7 +5377,7 @@ class NodeServiceImpl implements NodeService {
           : "(unknown)";
       throw new StructuredResultError(result.skillId, schemaRef);
     }
-    return formatted;
+    return stripModelThinking(formatted);
   }
 
   /**
@@ -5332,6 +5422,21 @@ class NodeServiceImpl implements NodeService {
   private _envoyHarnessPeerPool:
     | import("./agent-runtime-envoy/peer-pool.js").EnvoyHarnessPeerPool
     | undefined;
+  /** U6 — persistent in-process ACP (chat + EHUI share one session). */
+  private _envoyHarnessPersistentAcpHost: EnvoyHarnessPersistentAcpHost | undefined;
+  /** Codex-shaped non-blocking turn (survives WS disconnect on the node). */
+  private _ehActiveTurn:
+    | {
+        turnId: string;
+        userPrompt: string;
+        startedAt: string;
+        streamingText: string;
+        changedFiles: string[];
+        resultPromise: Promise<import("@envoymesh/api").EhTurnCompleteEvent>;
+      }
+    | undefined;
+  private _envoyHarnessPersistentCwd: string | undefined;
+  private _envoyHarnessPersistentConfigKey: string | undefined;
 
   /**
    * Phase 8 / b3.live — host's envoy-harness model + API key cache.
@@ -5367,6 +5472,8 @@ class NodeServiceImpl implements NodeService {
    */
   private _envoyHarnessHostModel: string | undefined = undefined;
   private _envoyHarnessHostApiKey: string | undefined = undefined;
+  /** U4+ — the host's OpenAI/Anthropic-compatible endpoint (base URL). */
+  private _envoyHarnessHostEndpoint: string | undefined = undefined;
 
   /**
    * Phase 8 / b3.live — public DI seam for tests.
@@ -5419,7 +5526,11 @@ class NodeServiceImpl implements NodeService {
    * configured, without env-var pollution.
    */
   private async _refreshEnvoyHarnessHostConfig(): Promise<
-    { model: string | undefined; apiKey: string | undefined }
+    {
+      model: string | undefined;
+      apiKey: string | undefined;
+      endpoint: string | undefined;
+    }
   > {
     try {
       const config = await this.getNodeConfig();
@@ -5430,7 +5541,8 @@ class NodeServiceImpl implements NodeService {
       if (!modelProviders) {
         this._envoyHarnessHostModel = undefined;
         this._envoyHarnessHostApiKey = undefined;
-        return { model: undefined, apiKey: undefined };
+        this._envoyHarnessHostEndpoint = undefined;
+        return { model: undefined, apiKey: undefined, endpoint: undefined };
       }
       const { resolveEnvoyHarnessHostConfig } = await import(
         "./agent-runtime-envoy/index.js"
@@ -5444,9 +5556,11 @@ class NodeServiceImpl implements NodeService {
       // `loadEnvoyHarnessRuntimeConfig`.
       this._envoyHarnessHostModel = resolved?.model;
       this._envoyHarnessHostApiKey = resolved?.apiKey;
+      this._envoyHarnessHostEndpoint = resolved?.endpoint;
       return {
         model: this._envoyHarnessHostModel,
         apiKey: this._envoyHarnessHostApiKey,
+        endpoint: this._envoyHarnessHostEndpoint,
       };
     } catch {
       // Config read failed (e.g. node-config not
@@ -5455,6 +5569,7 @@ class NodeServiceImpl implements NodeService {
       return {
         model: this._envoyHarnessHostModel,
         apiKey: this._envoyHarnessHostApiKey,
+        endpoint: this._envoyHarnessHostEndpoint,
       };
     }
   }
@@ -5486,6 +5601,7 @@ class NodeServiceImpl implements NodeService {
     const config = loadEnvoyHarnessRuntimeConfig({
       hostModel: this._envoyHarnessHostModel,
       hostApiKey: this._envoyHarnessHostApiKey,
+      hostEndpoint: this._envoyHarnessHostEndpoint,
     });
     // Re-check readiness in case the env changed between
     // the `isEnvoyHarnessReady` probe and this call
@@ -5498,7 +5614,8 @@ class NodeServiceImpl implements NodeService {
       workerPeerId: agentIdentity.agentPeerId,
       agentPrivateKeyPem: agentIdentity.agentPrivateKeyPem,
       config,
-      cwd: config.cwd,
+      // U4+ — the persisted project folder wins over the env default.
+      cwd: await this._envoyHarnessResolvedCwd(),
       askOpenClaw: (p) => this.askOpenClaw(p),
       isOpenClawReady: () => this.isOpenClawReady(),
       // R2 — the execution pool from the persisted peer config (Pattern A).
@@ -5825,6 +5942,7 @@ class NodeServiceImpl implements NodeService {
       const eh = loadEnvoyHarnessRuntimeConfig({
         hostModel: this._envoyHarnessHostModel,
         hostApiKey: this._envoyHarnessHostApiKey,
+        hostEndpoint: this._envoyHarnessHostEndpoint,
       });
       return {
         enabled: true,
@@ -5842,6 +5960,283 @@ class NodeServiceImpl implements NodeService {
       this._piRuntimeDeps(),
     );
     return { ...status, codingBackend: "pi" };
+  }
+
+  /**
+   * U4 — dedicated envoy-harness status for the Envoy Harness UI panel:
+   * runtime readiness + model + the configured peer cluster counts.
+   */
+  async getEnvoyHarnessStatus(): Promise<
+    import("@envoymesh/api").EnvoyHarnessStatus
+  > {
+    await this._refreshEnvoyHarnessHostConfig();
+      const eh = loadEnvoyHarnessRuntimeConfig({
+        hostModel: this._envoyHarnessHostModel,
+        hostApiKey: this._envoyHarnessHostApiKey,
+        hostEndpoint: this._envoyHarnessHostEndpoint,
+      });
+    const peers = this.listEnvoyHarnessPeers();
+    return {
+      state: eh.ready ? "ready" : "error",
+      ...(eh.model !== undefined ? { model: eh.model } : {}),
+      cwd: await this._envoyHarnessResolvedCwd(),
+      ...(!eh.ready
+        ? { error: eh.reason ?? "envoy-harness not ready" }
+        : {}),
+      peers: {
+        connected: peers.length,
+        failed: this._envoyHarnessPeerPool?.failed.length ?? 0,
+      },
+    };
+  }
+
+  /** The envoy-harness project folder: persisted config → env → cwd. */
+  private async _envoyHarnessResolvedCwd(): Promise<string> {
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const persisted = cfg?.envoyHarnessCwd?.trim();
+    if (persisted && persisted.length > 0) return persisted;
+    return process.env.ENVOY_HARNESS_CWD ?? process.cwd();
+  }
+
+  /**
+   * U4+ — persist the envoy-harness project folder. Validates the path
+   * is a directory, saves it to node config, resets the runtime cache so
+   * the next ask runs in the new folder, and returns the new status.
+   */
+  async setEnvoyHarnessProjectPath(
+    path: string,
+  ): Promise<import("@envoymesh/api").EnvoyHarnessStatus> {
+    const abs = resolvePiProjectDir(path);
+    if (abs === null) {
+      throw new Error(`envoy-harness project path is not a directory: ${path}`);
+    }
+    await this.updateNodeConfig({ envoyHarnessCwd: abs });
+    // The runtime caches the cwd at construction; rebuild on next ask.
+    this._envoyHarnessRuntimeCache = undefined;
+    this._closeEnvoyHarnessPersistentAcpHost();
+    return this.getEnvoyHarnessStatus();
+  }
+
+  private _closeEnvoyHarnessPersistentAcpHost(): void {
+    this._envoyHarnessPersistentAcpHost?.close();
+    this._envoyHarnessPersistentAcpHost = undefined;
+    this._envoyHarnessPersistentCwd = undefined;
+    this._envoyHarnessPersistentConfigKey = undefined;
+  }
+
+  private async _buildEnvoyHarnessAcpBackend(
+    runtime: RealEnvoyHarnessRuntime,
+    cwd: string,
+  ): Promise<ProtocolSessionBackend> {
+    await runtime.ensureInternals();
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const autoRun = cfg?.piSettings?.autoRunPolicy ?? "always-confirm";
+    const eh = loadEnvoyHarnessRuntimeConfig({
+      hostModel: this._envoyHarnessHostModel,
+      hostApiKey: this._envoyHarnessHostApiKey,
+      hostEndpoint: this._envoyHarnessHostEndpoint,
+    });
+    const memoryStore = new LocalMemoryStore({
+      memoryRoot: join(cwd, "memories"),
+    });
+    const sessionStore = new SessionStore({
+      dir: join(this._profileDir, "envoy-harness", "sessions"),
+    });
+    let configLayer: ConfigLayer = {};
+    try {
+      configLayer = (await loadConfigStack({ cwd })).layer;
+    } catch {
+      configLayer = {};
+    }
+    const runtimeCfg = resolveAgentRuntimeConfig(cwd, configLayer);
+    const skills = createSkillRegistry();
+    skills.registerProvider(createFilesystemSkillProvider());
+    const userQuestions = createUserQuestionService();
+    userQuestions.registerProvider({
+      name: "envoymesh-ui",
+      ask: (req) => this._ehUserQuestionBridge.ask(req),
+    });
+    // Codex/Claude/DeepSeek parity: inject cwd + AGENTS.md + config
+    // into the system prompt so chat asks treat the selected folder
+    // as the project.
+    const systemPrompt = await buildAgentSystemPrompt({
+      cwd,
+      ...systemPromptOptionsFromConfig(configLayer),
+      permissionMode: runtimeCfg.permissionMode,
+      askForApproval: runtimeCfg.askForApproval,
+    });
+    return createAgentSessionBackend({
+      defaultCwd: cwd,
+      memoryStore,
+      sessionStore,
+      shouldAskTool: (toolName) => shouldAskAcpTool(toolName, autoRun),
+      getConfig: () => ({
+        version: "0.0.0",
+        ...(eh.model !== undefined ? { model: eh.model } : {}),
+        ...(eh.provider !== undefined ? { provider: eh.provider } : {}),
+      }),
+      createAgent: ({ sessionId, cwd: agentCwd, askHandler, session }) =>
+        runtime.buildAgentForAcpSession({
+          sessionId,
+          cwd: agentCwd ?? cwd,
+          askHandler,
+          systemPrompt,
+          permissionMode: runtimeCfg.permissionMode,
+          approval: runtimeCfg.askForApproval,
+          sandboxPolicy: runtimeCfg.sandboxPolicy,
+          memoryStore,
+          skills,
+          userQuestions,
+          ...(configLayer.shellEnvironmentPolicy !== undefined
+            ? {
+                shellEnvironmentPolicy: configLayer.shellEnvironmentPolicy,
+              }
+            : {}),
+          ...(session !== undefined ? { session } : {}),
+          shouldAskTool: (toolName) => shouldAskAcpTool(toolName, autoRun),
+        }),
+      listPeers: () => this.listEnvoyHarnessPeers(),
+      ...(this._envoyHarnessPeerPool !== undefined
+        ? createPeerPoolStatusBackend(this._envoyHarnessPeerPool)
+        : {}),
+      teamJobs: () =>
+        chainWorkerSubtasksToTeamJobs(
+          this._chainOrchestrationContext().getChainSideState().workerSubtasks,
+        ),
+      scoreboardSummary: () => aggregateVerdicts(listAllVerdictEntries()),
+    });
+  }
+
+  private async _ensureEnvoyHarnessPersistentAcpHost(): Promise<void> {
+    const cwd = await this._envoyHarnessResolvedCwd();
+    const eh = loadEnvoyHarnessRuntimeConfig({
+      hostModel: this._envoyHarnessHostModel,
+      hostApiKey: this._envoyHarnessHostApiKey,
+      hostEndpoint: this._envoyHarnessHostEndpoint,
+    });
+    const configKey = `${eh.model ?? ""}:${eh.apiKey ?? ""}:${eh.endpoint ?? ""}`;
+    if (
+      this._envoyHarnessPersistentAcpHost !== undefined &&
+      this._envoyHarnessPersistentCwd === cwd &&
+      this._envoyHarnessPersistentConfigKey === configKey
+    ) {
+      return;
+    }
+    this._closeEnvoyHarnessPersistentAcpHost();
+    const runtime = await this._getOrInitEnvoyHarnessRuntime();
+    const backend = await this._buildEnvoyHarnessAcpBackend(runtime, cwd);
+    const host = new EnvoyHarnessPersistentAcpHost();
+    await host.start({
+      cwd,
+      backend,
+      permissionBridge: this._ehPermissionBridge,
+    });
+    this._envoyHarnessPersistentAcpHost = host;
+    this._envoyHarnessPersistentCwd = cwd;
+    this._envoyHarnessPersistentConfigKey = configKey;
+  }
+
+  /**
+   * U6 — EHUI panel data for Envoy Harness chat + terminal rails.
+   * Mesh-native ops (cluster / peers / team / scoreboard) use node state;
+   * session ops (plan / memory / git / sessions) use a persistent ACP child.
+   */
+  async invokeEnvoyHarnessEhui(
+    request: import("@envoymesh/api").EhuiInvokeRequest,
+  ): Promise<unknown> {
+    await this._refreshEnvoyHarnessHostConfig();
+    const eh = loadEnvoyHarnessRuntimeConfig({
+      hostModel: this._envoyHarnessHostModel,
+      hostApiKey: this._envoyHarnessHostApiKey,
+      hostEndpoint: this._envoyHarnessHostEndpoint,
+    });
+    if (!eh.ready) {
+      throw new Error(eh.reason ?? "envoy-harness not ready");
+    }
+
+    switch (request.op) {
+      case "discoverySnapshot":
+        return await this._envoyHarnessPeerTraceSnapshot();
+      case "clusterStatus":
+      case "listPeers":
+      case "teamJobs":
+      case "scoreboardSummary":
+      case "plan":
+      case "memory":
+      case "gitDiff":
+      case "gitStatus":
+      case "listSessions":
+        await this._ensureEnvoyHarnessPersistentAcpHost();
+        const host = this._envoyHarnessPersistentAcpHost;
+        if (host === undefined) {
+          throw new Error("envoy-harness persistent ACP host failed to start");
+        }
+        const ds = host.getDataSource();
+        if (request.op === "clusterStatus") {
+          return await ds.clusterStatus();
+        }
+        if (request.op === "listPeers") {
+          const cluster = await ds.clusterStatus();
+          return cluster.peers.map((p) => ({
+            id: p.id,
+            ...(p.model !== undefined ? { model: p.model } : {}),
+            ...(p.capabilities !== undefined
+              ? { capabilities: p.capabilities }
+              : {}),
+            health: p.health,
+          }));
+        }
+        if (request.op === "teamJobs") {
+          return await ds.teamJobs();
+        }
+        if (request.op === "scoreboardSummary") {
+          return await ds.scoreboardSummary();
+        }
+        if (request.op === "plan") {
+          return await ds.plan(request.action, {
+            ...(request.text !== undefined ? { text: request.text } : {}),
+            ...(request.reason !== undefined ? { reason: request.reason } : {}),
+          });
+        }
+        if (request.op === "memory") {
+          return await ds.memory(request.memoryOp, {
+            ...(request.name !== undefined ? { name: request.name } : {}),
+            ...(request.body !== undefined ? { body: request.body } : {}),
+          });
+        }
+        if (request.op === "gitDiff") {
+          return await ds.gitDiff({
+            ...(request.staged !== undefined ? { staged: request.staged } : {}),
+            ...(request.stat !== undefined ? { stat: request.stat } : {}),
+          });
+        }
+        if (request.op === "gitStatus") {
+          return await ds.gitStatus();
+        }
+        return await ds.listSessions();
+      default:
+        throw new Error(`invalid EhuiInvokeRequest: unknown op ${(request as { op: string }).op}`);
+    }
+  }
+
+  /** Peer-pool health rows for the EHUI Trace panel. */
+  private async _envoyHarnessPeerTraceSnapshot(): Promise<
+    import("@envoymesh/envoy-harness-client").ClientDiscoveryEvent[]
+  > {
+    await this._ensureEnvoyHarnessPeerPool();
+    if (this._envoyHarnessPeerPool === undefined) {
+      return [];
+    }
+    const backend = createPeerPoolStatusBackend(this._envoyHarnessPeerPool);
+    const status = await backend.clusterStatus!();
+    return status.peers.map((p) => ({
+      type: p.health.ok ? ("peer.health" as const) : ("peer.failed" as const),
+      peerId: p.id,
+      ...(p.model !== undefined ? { model: p.model } : {}),
+      ...(p.health.rttMs !== undefined ? { rttMs: p.health.rttMs } : {}),
+      ...(p.health.error !== undefined ? { error: p.health.error } : {}),
+      at: p.health.lastPingAt ?? new Date().toISOString(),
+    }));
   }
 
   /** MAP — local Pi runtime readiness for the second-doctor cross-check. */
@@ -6755,6 +7150,52 @@ class NodeServiceImpl implements NodeService {
   }
 
   /**
+   * U4+ — the Envoy TUI terminal session (like Pi's). Spawns the
+   * standalone `envoy-harness-tui` in a PTY for a chosen project folder.
+   */
+  async ensureEnvoyTerminalSession(
+    params?: import("@envoymesh/api").EnsureEnvoyTerminalParams,
+  ): Promise<import("@envoymesh/api").EnsureEnvoyTerminalResult> {
+    const manager = this._terminalManager;
+    if (!manager) {
+      return {
+        ok: false,
+        code: "no_manager",
+        reason: "Terminals are not available on this node.",
+      };
+    }
+    return ensureEnvoyTerminalSession(
+      manager,
+      {
+        loadConfig: async () => {
+          const cfg = await this._configStore.load();
+          return cfg ?? null;
+        },
+        saveProjectPath: async (absolutePath: string) => {
+          // Keep the panel's project folder in sync (no runtime reset —
+          // the TUI session owns its own cwd).
+          await this.updateNodeConfig({ envoyHarnessCwd: absolutePath });
+        },
+        resolveRuntimeConfig: async () => {
+          await this._refreshEnvoyHarnessHostConfig();
+          const eh = loadEnvoyHarnessRuntimeConfig({
+            hostModel: this._envoyHarnessHostModel,
+            hostApiKey: this._envoyHarnessHostApiKey,
+            hostEndpoint: this._envoyHarnessHostEndpoint,
+          });
+          return {
+            provider: eh.provider,
+            model: eh.model,
+            ...(eh.apiKey !== undefined ? { apiKey: eh.apiKey } : {}),
+            ...(eh.endpoint !== undefined ? { endpoint: eh.endpoint } : {}),
+          };
+        },
+      },
+      params ?? {},
+    );
+  }
+
+  /**
    * Phase 49D — deliver the user's confirm/deny decision on a Pi tool-action
    * request back to the Pi child process. Emits the matching pi.tool.*
    * audit event. Used by the piRespondToProposal JSON-RPC method.
@@ -6778,6 +7219,44 @@ class NodeServiceImpl implements NodeService {
       params.confirmed,
     )
     return { uiRequestId: params.uiRequestId, delivered: result.delivered }
+  }
+
+  async ehRespondToUserQuestion(params: {
+    requestId: string
+    value: string
+    optionIndex?: number
+    cancelled?: boolean
+  }): Promise<{ requestId: string; delivered: boolean }> {
+    const result = this._ehUserQuestionBridge.respond(params.requestId, {
+      value: params.value,
+      ...(params.optionIndex !== undefined
+        ? { optionIndex: params.optionIndex }
+        : {}),
+      ...(params.cancelled === true ? { cancelled: true } : {}),
+    })
+    return { requestId: params.requestId, delivered: result.delivered }
+  }
+
+  async ehRespondToPermission(params: {
+    requestId: string
+    allowed: boolean
+  }): Promise<{ requestId: string; delivered: boolean }> {
+    const result = this._ehPermissionBridge.respond(
+      params.requestId,
+      params.allowed ? "allow" : "deny",
+    )
+    return { requestId: params.requestId, delivered: result.delivered }
+  }
+
+  async cancelEnvoyHarnessTurn(): Promise<{ cancelled: boolean }> {
+    const host = this._envoyHarnessPersistentAcpHost;
+    if (host === undefined) {
+      return { cancelled: false };
+    }
+    await host.cancelActiveTurn();
+    this._ehUserQuestionBridge.clear();
+    this._ehPermissionBridge.clear();
+    return { cancelled: true };
   }
 
   private _resolveOpenClawWorkspaceDir(): string {

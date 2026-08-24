@@ -58,19 +58,12 @@ import {
 } from "../../lib/ext-agent-slash-commands.js";
 import type { ExtAgentCommandCatalog, RunMmxMediaCommandResult } from "@envoymesh/api";
 import { extAgentUsesProjectPath } from "@envoymesh/api";
-import { HomeFolderPicker } from "../HomeFolderPicker.js";
+import { ProjectFolderLink } from "../ProjectFolderLink.js";
 import { MmxMediaResultBlock } from "../MmxMediaResultBlock.js";
 import { AgentAttachmentChips } from "../AgentAttachmentChips.js";
-import {
-  assertAttachableFileSize,
-  attachmentBasename,
-  fileToBase64 as fileToBase64Agent,
-  guessMimeFromName,
-  mergeAgentPromptWithAttachments,
-  toAgentAttachmentRefs,
-  type AgentDraftAttachment,
-} from "../../lib/agent-attachments.js";
-import { isTauriShell, pickTauriFiles } from "../../lib/tauri-shell.js";
+import { mergeAgentPromptWithAttachments, toAgentAttachmentRefs, attachmentBasename } from "../../lib/agent-attachments.js";
+import { useAgentDraftAttachments } from "../../hooks/useAgentDraftAttachments.js";
+import { AgentAttachmentComposerLeading } from "../AgentAttachmentComposerLeading.js";
 
 interface ContactChatPanelProps {
   selectedContact: string;
@@ -167,9 +160,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     Array<{ messageId: string; timestamp: string; result: RunMmxMediaCommandResult }>
   >([]);
   const [mmxBusy, setMmxBusy] = useState(false);
-  const [agentAttachments, setAgentAttachments] = useState<AgentDraftAttachment[]>([]);
-  const [agentAttachBusy, setAgentAttachBusy] = useState(false);
-  const agentFileInputRef = useRef<HTMLInputElement | null>(null);
   const [confirm, setConfirm] = useState<{ title: string; message?: ReactNode; variant?: "default" | "destructive"; confirmLabel?: string; cancelLabel?: string; onConfirm: () => void } | null>(null);
   const draftRef = useRef<ReturnType<typeof createContactComposeDraftCrdt> | null>(null);
   const draftSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -255,18 +245,23 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   useEffect(() => {
     voiceRecorder.cancel();
     setMmxLocalResults([]);
-    setAgentAttachments((prev) => {
-      for (const a of prev) {
-        if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
-      }
-      return [];
-    });
+    agentDraft.clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset when switching threads
   }, [selectedContact]);
 
   const nodeMeshOnline = connectionStatus?.online === true;
   const isExtAgentContact =
     Boolean(bridgeStatus?.agentPeerId) && selectedContact === bridgeStatus?.agentPeerId;
+  const agentDraft = useAgentDraftAttachments({
+    projectCwd:
+      isExtAgentContact &&
+      extAgentUsesProjectPath(bridgeStatus?.activeExtAgentId?.trim() || "pi")
+        ? extAgentProjectPath
+        : undefined,
+    pickTitle: "Attach files for Ext Agent",
+    onError: (message) => showToast(message, "error"),
+    uploadEnvoyAttachment: (params) => nodeService.uploadEnvoyAttachment(params),
+  });
   /** Ext Agent local slash (mmx/help/model) only needs home WS, not libp2p mesh. */
   const homeRpcOnline = wsTransportOpen;
   const composerOnline = nodeMeshOnline || (isExtAgentContact && homeRpcOnline);
@@ -460,8 +455,8 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
 
   const handleSendMessage = () => {
     const text = chatInput.trim();
-    const draftAtts = isExtAgentContact ? agentAttachments : [];
-    if ((!text && draftAtts.length === 0) || mmxBusy || agentAttachBusy) return;
+    const draftAtts = isExtAgentContact ? agentDraft.attachments : [];
+    if ((!text && draftAtts.length === 0) || mmxBusy || agentDraft.busy) return;
 
     pinToBottom();
 
@@ -680,7 +675,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     setPendingOutbound((prev) => [...prev, pendingMsg]);
     setChatInput("");
     draftRef.current?.setPlainText("", { skipWireSync: true });
-    setAgentAttachments([]);
+    agentDraft.clear();
     setSendError(null);
 
     void (async () => {
@@ -717,7 +712,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
         const msg = error instanceof Error ? error.message : t("contactChat.sendFailed");
         console.error("[ContactChatPanel] sendChat failed:", error);
         setPendingOutbound((prev) => prev.filter((m) => m.messageId !== tempId));
-        setAgentAttachments(attsToSend);
+        agentDraft.replaceAttachments(attsToSend);
         setChatInput(text);
         draftRef.current?.setPlainText(text, { skipWireSync: true });
         setSendError(msg);
@@ -762,93 +757,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   };
 
   const voiceNoteExtension = (mimeType: string) => (mimeType.includes("mp4") ? "m4a" : "webm");
-
-  const removeAgentAttachment = useCallback((id: string) => {
-    setAgentAttachments((prev) => {
-      const hit = prev.find((a) => a.id === id);
-      if (hit?.previewUrl) URL.revokeObjectURL(hit.previewUrl);
-      return prev.filter((a) => a.id !== id);
-    });
-  }, []);
-
-  const addHomePathAttachments = useCallback((paths: string[]) => {
-    setAgentAttachments((prev) => {
-      const next = [...prev];
-      for (const path of paths) {
-        const trimmedPath = path.trim();
-        if (!trimmedPath) continue;
-        if (next.some((a) => a.path === trimmedPath)) continue;
-        const name = attachmentBasename(trimmedPath);
-        next.push({
-          id: crypto.randomUUID(),
-          path: trimmedPath,
-          name,
-          mimeType: guessMimeFromName(name),
-        });
-      }
-      return next;
-    });
-  }, []);
-
-  const uploadAgentBrowserFiles = useCallback(
-    async (files: FileList | File[]) => {
-      const list = Array.from(files);
-      if (list.length === 0) return;
-      setAgentAttachBusy(true);
-      try {
-        for (const file of list) {
-          const sizeErr = assertAttachableFileSize(file.size);
-          if (sizeErr) {
-            showToast(`${file.name}: ${sizeErr}`, "error");
-            continue;
-          }
-          const contentBase64 = await fileToBase64Agent(file);
-          const result = await nodeService.uploadEnvoyAttachment({
-            filename: file.name,
-            mimeType: file.type || guessMimeFromName(file.name),
-            contentBase64,
-          });
-          if (!result.ok || !result.path) {
-            showToast(result.error ?? `Upload failed: ${file.name}`, "error");
-            continue;
-          }
-          const previewUrl = file.type.startsWith("image/")
-            ? URL.createObjectURL(file)
-            : undefined;
-          setAgentAttachments((prev) => [
-            ...prev,
-            {
-              id: crypto.randomUUID(),
-              path: result.path!,
-              name: result.name ?? file.name,
-              mimeType: result.mimeType ?? file.type,
-              previewUrl,
-            },
-          ]);
-        }
-      } catch (e) {
-        showToast(e instanceof Error ? e.message : String(e), "error");
-      } finally {
-        setAgentAttachBusy(false);
-      }
-    },
-    [nodeService, showToast],
-  );
-
-  const handleAgentAttachClick = useCallback(() => {
-    if (isTauriShell()) {
-      void (async () => {
-        const picked = await pickTauriFiles({ title: "Attach files for Ext Agent" });
-        if (!picked.ok) {
-          showToast(picked.error, "error");
-          return;
-        }
-        if (picked.paths?.length) addHomePathAttachments(picked.paths);
-      })();
-      return;
-    }
-    agentFileInputRef.current?.click();
-  }, [addHomePathAttachments, showToast]);
 
   const handleSendVoiceNote = useCallback(async () => {
     if (voiceRecorder.phase === "sending") {
@@ -1303,15 +1211,36 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
         </div>
         <div className="chat-header-secondary">
           {showExtAgentProjectFolder ? (
-            <div className="chat-header-project-folder" data-testid="ext-agent-project-folder">
-              <span className="chat-header-project-folder-label">
-                {t("settings.ai.aiEngine.projectFolder", "Project folder")}
-              </span>
-              <HomeFolderPicker
-                className="home-folder-picker home-folder-picker--compact"
-                value={extAgentProjectPath}
-                onChange={(path) => void handleExtAgentProjectPathChange(path)}
-                title={t("settings.ai.aiEngine.projectFolderTitle", "Choose project folder")}
+            <div className="chat-header-web-links" data-testid="ext-agent-project-folder">
+              <ProjectFolderLink
+                path={extAgentProjectPath}
+                onSave={async (path) => {
+                  await handleExtAgentProjectPathChange(path);
+                }}
+                onClear={async () => {
+                  await handleExtAgentProjectPathChange(undefined);
+                }}
+                emptyLabel={t(
+                  "settings.ai.aiEngine.projectFolderPlaceholder",
+                  "No folder selected",
+                )}
+                chooseTitle={t(
+                  "settings.ai.aiEngine.projectFolderTitle",
+                  "Choose project folder",
+                )}
+                changeTitle={t(
+                  "settings.ai.aiEngine.projectFolderTitle",
+                  "Choose project folder",
+                )}
+                description={t(
+                  "settings.ai.aiEngine.projectFolderHint",
+                  "Working folder on this home node for coding agents (cwd). On desktop, use Browse; in the browser, enter an absolute path.",
+                )}
+                ariaLabel={t(
+                  "settings.ai.aiEngine.projectFolder",
+                  "Project folder",
+                )}
+                confirmLabel={t("settings.ai.aiEngine.applyFolder", "Set")}
               />
             </div>
           ) : threadKind !== "agent" && threadKind !== "ai" ? (
@@ -1528,29 +1457,14 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
             onSend={() => void handleSendVoiceNote()}
           />
         ) : (
-          <>
-            <input
-              ref={agentFileInputRef}
-              type="file"
-              multiple
-              className="chat-file-input-hidden"
-              accept="*/*"
-              aria-hidden
-              tabIndex={-1}
-              onChange={(e) => {
-                const files = e.target.files;
-                if (files?.length) void uploadAgentBrowserFiles(files);
-                e.target.value = "";
-              }}
-            />
           <ChatComposer
             value={chatInput}
             onChange={(next) => draftRef.current?.setPlainText(next)}
             onSend={handleSendMessage}
             placeholder={chatInputPlaceholder}
             sendLabel={t("contactChat.send")}
-            disabled={!composerOnline || mmxBusy || agentAttachBusy}
-            allowEmptySend={isExtAgentContact && agentAttachments.length > 0}
+            disabled={!composerOnline || mmxBusy || agentDraft.busy}
+            allowEmptySend={isExtAgentContact && agentDraft.attachments.length > 0}
             slashCommands={
               isHomeBridgeThread ? (extAgentSlashCatalog?.commands ?? []) : undefined
             }
@@ -1572,49 +1486,45 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                   </button>
                 ) : null}
                 {isExtAgentContact ? (
-                  <AgentAttachmentChips
-                    attachments={agentAttachments}
-                    onRemove={removeAgentAttachment}
-                    onClearAll={() => {
-                      setAgentAttachments((prev) => {
-                        for (const a of prev) {
-                          if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
-                        }
-                        return [];
-                      });
-                    }}
+                  <AgentAttachmentComposerLeading
+                    attachments={agentDraft.attachments}
+                    busy={agentDraft.busy}
+                    disabled={!homeRpcOnline || mmxBusy}
+                    pickTitle={t("contactChat.attachFileTitle")}
+                    attachAriaLabel={t("contactChat.attachFileAria")}
+                    fileInputRef={agentDraft.fileInputRef}
+                    onFileInputChange={agentDraft.handleFileInputChange}
+                    onOpenPicker={agentDraft.openPicker}
+                    onRemove={agentDraft.remove}
+                    onClearAll={agentDraft.clear}
                   />
-                ) : null}
-                <button
-                  type="button"
-                  className="secondary chat-attach-file-btn"
-                  title={t("contactChat.attachFileTitle")}
-                  aria-label={t("contactChat.attachFileAria")}
-                  disabled={
-                    isExtAgentContact
-                      ? !homeRpcOnline || agentAttachBusy || mmxBusy
-                      : !nodeMeshOnline || attachBusy || mmxBusy
-                  }
-                  onClick={() =>
-                    isExtAgentContact
-                      ? handleAgentAttachClick()
-                      : fileInputRef.current?.click()
-                  }
-                >
-                  <AttachIcon size={18} />
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="chat-file-input-hidden"
-                  accept="*/*"
-                  aria-hidden
-                  tabIndex={-1}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) void handleAttachFile(file);
-                  }}
-                />
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="secondary chat-attach-file-btn"
+                      title={t("contactChat.attachFileTitle")}
+                      aria-label={t("contactChat.attachFileAria")}
+                      disabled={!nodeMeshOnline || attachBusy || mmxBusy}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <AttachIcon size={18} />
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="chat-file-input-hidden"
+                      accept="*/*"
+                      aria-hidden
+                      tabIndex={-1}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void handleAttachFile(file);
+                        e.target.value = "";
+                      }}
+                    />
+                  </>
+                )}
                 {!isExtAgentContact ? (
                   <button
                     type="button"
@@ -1629,7 +1539,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
               </>
             }
           />
-          </>
         )}
       </footer>
       </div>

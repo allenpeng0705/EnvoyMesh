@@ -17,6 +17,7 @@ import {
   familyThreadKey,
   OWNER_FAMILY_PROFILE_ID,
   ENVOY_AI_THREAD_KEY,
+  ENVOY_HARNESS_THREAD_KEY,
 } from "@envoymesh/api";
 import { resolveContactAiAccessLevel } from "@envoymesh/api";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
@@ -71,11 +72,13 @@ interface ChatSidebarProps {
   onSelectContact: (id: string | null) => void;
   onOpenAssistant?: () => void;
   onOpenDiscover?: () => void;
-  /** Phase 49 — open the Pi chat panel. */
+  /** Phase 49 — open the Pi terminal (top-level tab). */
   onOpenPi?: () => void;
+  /** U4 — open the envoy-harness chat panel in the thread list. */
+  onOpenEnvoyHarness?: () => void;
 }
 
-export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant, onOpenDiscover, onOpenPi }: ChatSidebarProps) {
+export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant, onOpenDiscover, onOpenPi, onOpenEnvoyHarness }: ChatSidebarProps) {
   const t = useT();
   const nodeService = useNodeService();
   const {
@@ -304,7 +307,7 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
   );
 
   const showAiSection =
-    Boolean(onOpenAssistant || onOpenPi) ||
+    Boolean(onOpenAssistant || onOpenPi || onOpenEnvoyHarness) ||
     Boolean(bridgeStatus?.enabled) ||
     enabledAiBots.length > 0;
 
@@ -431,6 +434,24 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
                   <span className="thread-title">{t("pi.title", "Pi")}</span>
                 </span>
                 <span className="thread-subtitle">{t("pi.subtitle", "Coding Agent")}</span>
+              </span>
+            </button>
+          ) : null}
+
+          {onOpenEnvoyHarness ? (
+            <button
+              type="button"
+              className={`thread-row thread-row--ai thread-row--envoy-harness${selectedContact === ENVOY_HARNESS_THREAD_KEY ? " active" : ""}`}
+              onClick={onOpenEnvoyHarness}
+            >
+              <span className="thread-avatar thread-avatar--pi" aria-hidden>EH</span>
+              <span className="thread-meta">
+                <span className="thread-title-row">
+                  <span className="thread-title">{t("eh.title", "Envoy")}</span>
+                </span>
+                <span className="thread-subtitle">
+                  {t("eh.subtitle", "Coding Agent (ACP)")}
+                </span>
               </span>
             </button>
           ) : null}

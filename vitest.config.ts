@@ -43,6 +43,10 @@ export default defineConfig({
         rootDir,
         "../envoy-harness/packages/envoy-harness/src/index.ts",
       ),
+      "@envoymesh/envoy-harness-client/ehui": resolve(
+        rootDir,
+        "../envoy-harness/packages/envoy-harness-client/src/ehui.ts",
+      ),
       "@envoymesh/envoy-harness-client": resolve(
         rootDir,
         "../envoy-harness/packages/envoy-harness-client/src/index.ts",
@@ -54,6 +58,10 @@ export default defineConfig({
       "@envoymesh/envoy-harness-peer": resolve(
         rootDir,
         "../envoy-harness/packages/envoy-harness-peer/src/index.ts",
+      ),
+      "@envoymesh/envoy-harness-ehui": resolve(
+        rootDir,
+        "../envoy-harness/packages/envoy-harness-ehui/src/index.ts",
       ),
     },
   },

@@ -138,8 +138,14 @@ export function resolveEnvoyHarnessHostModel(
   // Production provider mapping.
   switch (mode) {
     case "openai":
+    case "openai-compatible":
+      // `openai-compatible` (MiniMax, LiteLLM, Envoy Local's local
+      // llama-server, …) is OpenAI-compatible — reuse the `openai`
+      // adapter. The host's `endpoint` is passed separately (it cannot
+      // live in the model string).
       return `openai:${modelName}`;
     case "anthropic":
+    case "anthropic-compatible":
       return `anthropic:${modelName}`;
     case "ollama":
       return `ollama:${modelName}`;
@@ -205,6 +211,8 @@ export interface EnvoyHarnessHostConfig {
   model: string;
   /** The host's API key (trimmed). May be `undefined` for keyless providers. */
   apiKey: string | undefined;
+  /** The host's OpenAI/Anthropic-compatible endpoint (base URL). */
+  endpoint: string | undefined;
 }
 
 export function resolveEnvoyHarnessHostConfig(
@@ -220,5 +228,6 @@ export function resolveEnvoyHarnessHostConfig(
   return {
     model,
     apiKey: rawKey.length > 0 ? rawKey : undefined,
+    endpoint: modelProviders.endpoint?.trim() || undefined,
   };
 }

@@ -144,6 +144,13 @@ describe("NodeConfigStore — Phase 8 v1.4 (signalOptIn + verifyModeDefault)", (
     });
   });
 
+  it("U4+: envoyHarnessCwd round-trips through the store", async () => {
+    const store = createNodeConfigStore(profileDir);
+    await store.save(makeConfig({ envoyHarnessCwd: "/projects/app" }));
+    const loaded = await store.load();
+    expect(loaded?.envoyHarnessCwd).toBe("/projects/app");
+  });
+
     it("persists 'cross-runtime' across save → load", async () => {
       const store = createNodeConfigStore(profileDir);
       await store.save(makeConfig({ verifyModeDefault: "cross-runtime" }));

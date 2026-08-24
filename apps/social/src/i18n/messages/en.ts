@@ -40,7 +40,7 @@ import {
 } from "./en-misc.js";
 import { agentNetworkSettingsMessages } from "./en-agent-network.js";
 import { chainsMessages } from "./en-chains.js";
-import { piMessages } from "./en-pi.js";
+import { ehMessages, piMessages } from "./en-pi.js";
 
 export const en = {
   nav: {
@@ -701,6 +701,7 @@ export const en = {
     saveFailed: "Save failed",
   },
   ...piMessages,
+  ...ehMessages,
 } as const;
 
 export type Messages = typeof en;

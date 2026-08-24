@@ -86,3 +86,60 @@ export const piMessages = {
     errorHint: "Pi is not ready.",
   },
 } as const
+
+/**
+ * U4+ — envoy-harness panel + sidebar strings (English).
+ *
+ * The dedicated Envoy Harness surface (chat panel in the Terminal view,
+ * sidebar + chat-list branding). Other locales may provide their own
+ * `eh` block; missing keys fall back to English via the i18n translator.
+ */
+export const ehMessages = {
+  eh: {
+    title: "Envoy",
+    subtitle: "Coding Agent (ACP)",
+    openChat: "Envoy Harness",
+    openChatTitle: "Open the Envoy Harness panel",
+    startEnvoy: "Envoy",
+    startEnvoyTitle: "Start the Envoy TUI (choose project folder)",
+    noSessionToChange: "Start an Envoy session first, then change its project.",
+    changeProjectTitle: "Change Envoy project folder",
+    chooseProjectTitle: "Choose Envoy project folder",
+    changeProjectShort: "Path",
+    chooseProjectDescBrowse:
+      "Envoy runs in this folder (reads AGENTS.md, edits files, runs shell). Use Browse to pick a folder.",
+    startWithProject: "Start",
+    restartWithProject: "Restart Envoy here",
+    ensuringTerminal: "Starting Envoy TUI…",
+    retryStart: "Retry Start Envoy",
+    stateReady: "Ready",
+    stateStarting: "Starting…",
+    stateDisabled: "Disabled",
+    stateError: "Error",
+    disabledHint:
+      "envoy-harness is disabled. Configure a model in Settings → AI.",
+    errorHint: "envoy-harness is not ready: {error}",
+    startingHint: "envoy-harness is starting — try again in a moment.",
+    emptyResponse: "envoy-harness returned an empty response.",
+    sendFailed: "Failed to reach envoy-harness: {error}",
+    thinking: "envoy-harness is thinking…",
+    promptPlaceholder: "Ask envoy-harness to code, refactor, or explain…",
+    promptAriaLabel: "Prompt envoy-harness",
+    send: "Send",
+    emptyTitle: "envoy-harness — your coding agent",
+    emptyBody:
+      "Ask envoy-harness to write code, refactor, explain, or run tools. Sub-agent work can fan out to the configured peer cluster (different machines / models).",
+    peers: "cluster {connected}/{total}",
+    peersTitle: "Configured peer cluster",
+    peersHeading: "Peer cluster:",
+    statusRefreshed: "Status refreshed.",
+    noPeers: "No peer cluster configured.",
+    projectPlaceholder: "Project folder path…",
+    projectAriaLabel: "Envoy harness project folder",
+    projectSetBtn: "Set project folder",
+    projectSet: "Project folder → {path}",
+    projectSetUnknown: "Project folder updated.",
+    projectSetFailed: "Failed to set project folder: {error}",
+    slash: "Commands",
+  },
+} as const

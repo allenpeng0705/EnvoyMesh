@@ -1909,6 +1909,17 @@ export interface NodeServiceEvents {
   /** Phase 49D — Pi wants to perform an action and is waiting for user confirmation. */
   "pi:proposal": import("./pi-agent.js").PiProposalEvent;
 
+  /** Envoy Harness ask_user / plan-review / mode-switch cards. */
+  "eh:user_question": import("./eh-user-question.js").EhUserQuestionEvent;
+  "eh:turn_hints": import("./eh-turn-hints.js").EhTurnHintsEvent;
+  "eh:prompt_busy": import("./eh-prompt-busy.js").EhPromptBusyEvent;
+  "eh:activity": import("./eh-activity.js").EhActivityEvent;
+  "eh:turn_started": import("./eh-turn.js").EhTurnStartedEvent;
+  "eh:turn_token": import("./eh-turn.js").EhTurnTokenEvent;
+  "eh:turn_complete": import("./eh-turn.js").EhTurnCompleteEvent;
+  "eh:permission": import("./eh-permission.js").EhPermissionEvent;
+  "eh:files_changed": import("./eh-files-changed.js").EhFilesChangedEvent;
+
   /** Home terminal PTY tunnel bytes (Phase 30E — mobile HomeRemote). */
   "homeTerminalWs:rx": import("./home-remote.js").HomeTerminalWsRxEvent;
   "homeTerminalWs:closed": import("./home-remote.js").HomeTerminalWsClosedEvent;
@@ -2932,6 +2943,30 @@ export interface NodeService {
   /** Stop + start the Pi child process. Returns the new status. */
   restartPi(): Promise<PiStatus>;
 
+  // --- U4: dedicated Envoy Harness surface ---
+  /** envoy-harness runtime status (ready/model/error + peer cluster counts). */
+  getEnvoyHarnessStatus(): Promise<import("./pi-agent.js").EnvoyHarnessStatus>;
+  /** One-shot prompt to the envoy-harness runtime. Returns the text. */
+  askEnvoyHarness(text: string): Promise<string>;
+  /** The configured envoy-harness peer cluster (id/model/capabilities). */
+  listEnvoyHarnessPeers(): ReadonlyArray<{
+    id: string;
+    model?: string;
+    capabilities?: readonly string[];
+  }>;
+  /** Persist the envoy-harness project folder (validated, resets the runtime). */
+  setEnvoyHarnessProjectPath(
+    path: string,
+  ): Promise<import("./pi-agent.js").EnvoyHarnessStatus>;
+  /** EHUI panel invoke (plan / memory / git / mesh / team / scoreboard / sessions). */
+  invokeEnvoyHarnessEhui(
+    request: import("./pi-agent.js").EhuiInvokeRequest,
+  ): Promise<unknown>;
+  /** Ensure the Envoy TUI terminal for a project folder (like Pi's). */
+  ensureEnvoyTerminalSession(
+    params?: import("./pi-agent.js").EnsureEnvoyTerminalParams,
+  ): Promise<import("./pi-agent.js").EnsureEnvoyTerminalResult>;
+
   // --- Phase 54: Envoy Local (downloadable llama-server; never packaged) ---
   getEnvoyLocalStatus(): Promise<import("./envoy-local.js").EnvoyLocalStatus>;
   enableEnvoyLocal(
@@ -3016,6 +3051,32 @@ export interface NodeService {
     uiRequestId: string
     confirmed: boolean
   }): Promise<{ uiRequestId: string; delivered: boolean }>;
+
+  /** Answer Envoy Harness ask_user / plan-review / mode-switch (`eh:user_question`). */
+  ehRespondToUserQuestion(
+    params: import("./eh-user-question.js").EhRespondToUserQuestionParams,
+  ): Promise<import("./eh-user-question.js").EhRespondToUserQuestionResult>;
+
+  /** Cancel the in-flight Envoy Harness chat turn (`session/cancel`). */
+  cancelEnvoyHarnessTurn(): Promise<{ cancelled: boolean }>;
+
+  /** Start a turn without blocking — progress via `eh:turn_*` events. */
+  startEnvoyHarnessTurn(
+    text: string,
+    opts?: {
+      attachments?: import("./ext-agent.js").AgentAttachmentRef[];
+      providerHint?: string;
+      costCapUsd?: number;
+    },
+  ): Promise<import("./eh-turn.js").StartEnvoyHarnessTurnResult>;
+
+  /** Reconnect snapshot of the in-flight turn (if any). */
+  getEnvoyHarnessTurnStatus(): Promise<import("./eh-turn.js").EhTurnStatus>;
+
+  /** Allow/deny an in-flight EH tool permission (`eh:permission`). */
+  ehRespondToPermission(
+    params: import("./eh-permission.js").EhRespondToPermissionParams,
+  ): Promise<import("./eh-permission.js").EhRespondToPermissionResult>;
 
   // ClawHub skill marketplace
   getOpenClawPlugins(): Promise<string[]>;

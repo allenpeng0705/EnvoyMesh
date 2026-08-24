@@ -40,6 +40,40 @@ import {
 // ---------------------------------------------------------------------------
 
 describe("loadEnvoyHarnessRuntimeConfig (Phase 8 / b3.live — model inheritance)", () => {
+  it("carries the host endpoint into the runtime config", () => {
+    const result = loadEnvoyHarnessRuntimeConfig({
+      hostModel: "openai:MiniMax-M3",
+      hostApiKey: "sk-123",
+      hostEndpoint: "https://api.minimaxi.com/v1",
+    });
+    expect(result.ready).toBe(true);
+    expect(result.endpoint).toBe("https://api.minimaxi.com/v1");
+    expect(result.provider).toBe("openai");
+  });
+
+  it("allows a keyless local endpoint (Envoy Local) with a placeholder key", () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    const result = loadEnvoyHarnessRuntimeConfig({
+      hostModel: "openai:qwen2.5-coder-7b",
+      hostEndpoint: "http://127.0.0.1:18790/v1",
+    });
+    vi.unstubAllEnvs();
+    expect(result.ready).toBe(true);
+    expect(result.apiKey).toBe("local");
+    expect(result.endpoint).toBe("http://127.0.0.1:18790/v1");
+  });
+
+  it("still requires a key for non-local endpoints", () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    const result = loadEnvoyHarnessRuntimeConfig({
+      hostModel: "openai:gpt-4o",
+      hostEndpoint: "https://api.openai.com/v1",
+    });
+    vi.unstubAllEnvs();
+    expect(result.ready).toBe(false);
+    expect(result.reason).toMatch(/api_key_missing/);
+  });
+
   describe("model precedence (env var > hostModel > default)", () => {
     it("ENVOY_HARNESS_MODEL wins over hostModel (explicit override)", () => {
       vi.stubEnv("ENVOY_HARNESS_MODEL", "anthropic:claude-3-5-sonnet");
@@ -218,6 +252,37 @@ describe("resolveEnvoyHarnessHostModel (Phase 8 / b3.live — provider mapping)"
         modelName: "deepseek-chat",
       } as unknown as ModelProviderConfig);
       expect(result).toBe("deepseek:deepseek-chat");
+    });
+
+    it("maps openai-compatible mode (MiniMax / Envoy Local) to openai:<modelName>", () => {
+      const result = resolveEnvoyHarnessHostModel({
+        mode: "openai-compatible",
+        modelName: "MiniMax-M3",
+        endpoint: "https://api.minimaxi.com/v1",
+      } as unknown as ModelProviderConfig);
+      expect(result).toBe("openai:MiniMax-M3");
+    });
+
+    it("maps anthropic-compatible mode to anthropic:<modelName>", () => {
+      const result = resolveEnvoyHarnessHostModel({
+        mode: "anthropic-compatible",
+        modelName: "claude-3-5-sonnet",
+      } as unknown as ModelProviderConfig);
+      expect(result).toBe("anthropic:claude-3-5-sonnet");
+    });
+
+    it("carries the host endpoint through resolveEnvoyHarnessHostConfig", () => {
+      const result = resolveEnvoyHarnessHostConfig({
+        mode: "openai-compatible",
+        modelName: "MiniMax-M3",
+        endpoint: "https://api.minimaxi.com/v1",
+        apiKey: "sk-123",
+      } as unknown as ModelProviderConfig);
+      expect(result).toEqual({
+        model: "openai:MiniMax-M3",
+        apiKey: "sk-123",
+        endpoint: "https://api.minimaxi.com/v1",
+      });
     });
   });
 

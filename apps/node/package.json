@@ -29,6 +29,7 @@
     "@envoymesh/agent-adapter": "0.2.2",
     "@envoymesh/bonds": "0.2.2",
     "@envoymesh/envoy-harness": "file:../../../envoy-harness/packages/envoy-harness",
+    "@envoymesh/envoy-harness-client": "file:../../../envoy-harness/packages/envoy-harness-client",
     "@envoymesh/envoy-harness-adapter": "file:../../../envoy-harness/packages/envoy-harness-adapter",
     "@envoymesh/envoy-harness-peer": "file:../../../envoy-harness/packages/envoy-harness-peer",
     "@envoymesh/identity": "0.2.2",

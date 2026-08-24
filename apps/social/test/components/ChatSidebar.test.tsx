@@ -164,6 +164,21 @@ describe("ChatSidebar — remove bonded contact", () => {
   });
 });
 
+describe("ChatSidebar — Envoy entry", () => {
+  it("shows an Envoy row that opens the envoy-harness chat thread", () => {
+    const onOpenEnvoyHarness = vi.fn();
+    renderWithI18n(
+      <ChatSidebar
+        selectedContact={null}
+        onSelectContact={vi.fn()}
+        onOpenEnvoyHarness={onOpenEnvoyHarness}
+      />,
+    );
+    fireEvent.click(screen.getByText("Envoy"));
+    expect(onOpenEnvoyHarness).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("ChatSidebar — Family section", () => {
   it("lists Mom and Dad under Family when familyProfiles are present", () => {
     const familyProfiles: FamilyProfile[] = [

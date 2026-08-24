@@ -15,10 +15,16 @@ interface TerminalSidebarProps {
   onOpenAssistant?: () => void;
   /** Start another Pi coding TUI (always pick a project folder). */
   onStartPi?: () => void;
+  /** U4+ — start the Envoy TUI (used when the coding backend is envoy-harness). */
+  onStartEnvoy?: () => void;
   /** Open the Pi / envoy-harness RPC chat panel (reuse PiChatPanel). */
   onOpenPiChat?: () => void;
+  /** U4+ — brand the buttons when the coding backend is envoy-harness. */
+  codingBackend?: "pi" | "envoy-harness";
   /** Change project folder for a specific Pi TUI session. */
   onChangePiProject?: (sessionId: string) => void;
+  /** U4+ — change project folder for a specific Envoy TUI session. */
+  onChangeEnvoyProject?: (sessionId: string) => void;
 }
 
 export function TerminalSidebar({
@@ -28,8 +34,11 @@ export function TerminalSidebar({
   disabled = false,
   onOpenAssistant,
   onStartPi,
+  onStartEnvoy,
   onOpenPiChat,
+  codingBackend = "pi",
   onChangePiProject,
+  onChangeEnvoyProject,
 }: TerminalSidebarProps) {
   const nodeService = useNodeService();
   const t = useT();
@@ -139,15 +148,15 @@ export function TerminalSidebar({
               {t("pi.startPi", "π Pi")}
             </button>
           ) : null}
-          {onOpenPiChat ? (
+          {onStartEnvoy ? (
             <button
               type="button"
-              className="secondary"
+              className="primary"
               disabled={busy || disabled}
-              onClick={() => onOpenPiChat()}
-              title={t("pi.openChatTitle", "Open Pi / envoy-harness chat (approvals)")}
+              onClick={() => onStartEnvoy()}
+              title={t("eh.startEnvoyTitle", "Start the Envoy TUI (choose project folder)")}
             >
-              {t("pi.openChat", "Chat")}
+              {t("eh.startEnvoy", "Envoy")}
             </button>
           ) : null}
           <button type="button" className="primary" disabled={busy || disabled} onClick={() => void handleNew()}>
@@ -186,7 +195,9 @@ export function TerminalSidebar({
               <li key={session.sessionId}>
                 <div
                   className={`terminal-session-main${selected ? " active" : ""}${
-                    session.role === "pi" ? " terminal-session-main--pi" : ""
+                    session.role === "pi" || session.role === "envoy-harness"
+                      ? " terminal-session-main--pi"
+                      : ""
                   }`}
                 >
                   <button
@@ -195,9 +206,14 @@ export function TerminalSidebar({
                     onClick={() => onSelectSession(session.sessionId)}
                   >
                     <span className="terminal-session-title">
-                      {session.role === "pi" ? `π ${session.title}` : session.title}
+                      {session.role === "pi"
+                        ? `π ${session.title}`
+                        : session.role === "envoy-harness"
+                          ? `EH ${session.title}`
+                          : session.title}
                     </span>
-                    {session.role === "pi" && folderLabel ? (
+                    {(session.role === "pi" || session.role === "envoy-harness") &&
+                    folderLabel ? (
                       <span className="terminal-session-cwd" title={session.cwd}>
                         {folderLabel}
                       </span>
@@ -213,6 +229,21 @@ export function TerminalSidebar({
                       onClick={() => onChangePiProject(session.sessionId)}
                     >
                       {t("pi.changeProjectShort", "Path")}
+                    </button>
+                  ) : null}
+                  {session.role === "envoy-harness" && onChangeEnvoyProject ? (
+                    <button
+                      type="button"
+                      className="terminal-session-project"
+                      aria-label={t("eh.changeProjectTitle", "Change Envoy project folder")}
+                      title={
+                        session.cwd ||
+                        t("eh.changeProjectTitle", "Change Envoy project folder")
+                      }
+                      disabled={busy}
+                      onClick={() => onChangeEnvoyProject(session.sessionId)}
+                    >
+                      {t("eh.changeProjectShort", "Path")}
                     </button>
                   ) : null}
                 </div>

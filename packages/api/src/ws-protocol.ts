@@ -317,8 +317,19 @@ export type RpcMethods =
     | "saveWebSearchEnabled"
     | "sendToOpenClaw"
     | "sendToPi"
+    | "getEnvoyHarnessStatus"
+    | "askEnvoyHarness"
+    | "startEnvoyHarnessTurn"
+    | "getEnvoyHarnessTurnStatus"
+    | "listEnvoyHarnessPeers"
+    | "setEnvoyHarnessProjectPath"
+    | "invokeEnvoyHarnessEhui"
+    | "ensureEnvoyTerminalSession"
     | "sendToAiBot"
     | "piRespondToProposal"
+    | "ehRespondToUserQuestion"
+    | "ehRespondToPermission"
+    | "cancelEnvoyHarnessTurn"
     | "sendToBridge"
     | "getPairedDiagnostics"
     | "saveSkillApiKeys"
@@ -553,6 +564,8 @@ export interface NodeConfig {
   terminalXtermSlashIntercept?: boolean;
   /** Enable LLM-assisted chat drafts. Default: false (disabled). */
   chatAssistEnabled: boolean;
+  /** U4+ — persisted project folder for the envoy-harness runtime. */
+  envoyHarnessCwd?: string;
   /**
    * Anonymous discovery mode — controls how the node responds to unknown/public peers.
    * Default: "off" (anonymous discovery disabled).

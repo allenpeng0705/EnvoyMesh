@@ -113,7 +113,7 @@ import type {
   ChainDeleteRecipeParams,
   ChainDeleteRecipeResult,
 } from "@envoymesh/api";
-import { isFamilyThreadKey, OWNER_FAMILY_PROFILE_ID, TERMINAL_ASSIST_RPC_TIMEOUT_MS } from "@envoymesh/api";
+import { isFamilyThreadKey, OWNER_FAMILY_PROFILE_ID, TERMINAL_ASSIST_RPC_TIMEOUT_MS, EH_ASK_WS_TIMEOUT_MS } from "@envoymesh/api";
 import { mergeGroupDeliveryAck } from "@envoymesh/api/group-chat-delivery";
 import {
   mergeMessagesIntoThread,
@@ -451,6 +451,42 @@ export interface NodeServiceClient {
   updateEnvoyLocalEngine(): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
   /** One-shot prompt — collects streamed text into a single response. */
   sendToPi(text: string): Promise<string>;
+  // U4 — dedicated Envoy Harness UI surface.
+  /** envoy-harness runtime status (ready/model/error + peer cluster counts). */
+  getEnvoyHarnessStatus(): Promise<import("@envoymesh/api").EnvoyHarnessStatus>;
+  /** One-shot prompt — blocks until turn completes (legacy / orchestration). */
+  askEnvoyHarness(text: string): Promise<string>;
+  /** Non-blocking turn start — progress via `eh:turn_*` events. */
+  startEnvoyHarnessTurn(
+    text: string,
+    attachments?: import("@envoymesh/api").AgentAttachmentRef[],
+  ): Promise<{ turnId: string }>;
+  getEnvoyHarnessTurnStatus(): Promise<import("@envoymesh/api").EhTurnStatus>;
+  ehRespondToPermission(params: {
+    requestId: string;
+    allowed: boolean;
+  }): Promise<{ requestId: string; delivered: boolean }>;
+  cancelEnvoyHarnessTurn(): Promise<{ cancelled: boolean }>;
+  /** The configured envoy-harness peer cluster (id/model/capabilities). */
+  listEnvoyHarnessPeers(): Promise<
+    ReadonlyArray<{
+      id: string;
+      model?: string;
+      capabilities?: readonly string[];
+    }>
+  >;
+  /** Persist the envoy-harness project folder (validated, resets runtime). */
+  setEnvoyHarnessProjectPath(
+    path: string,
+  ): Promise<import("@envoymesh/api").EnvoyHarnessStatus>;
+  /** EHUI panel invoke for Envoy Harness rails. */
+  invokeEnvoyHarnessEhui(
+    request: import("@envoymesh/api").EhuiInvokeRequest,
+  ): Promise<unknown>;
+  /** Ensure the Envoy TUI terminal for a project folder (like Pi's). */
+  ensureEnvoyTerminalSession(
+    params?: import("@envoymesh/api").EnsureEnvoyTerminalParams,
+  ): Promise<import("@envoymesh/api").EnsureEnvoyTerminalResult>;
   /** Ensure Pi interactive TUI for a project folder (lazy; may return needs_project). */
   ensurePiTerminalSession(
     params?: import("@envoymesh/api").EnsurePiTerminalParams,
@@ -460,6 +496,9 @@ export interface NodeServiceClient {
     uiRequestId: string
     confirmed: boolean
   }): Promise<{ uiRequestId: string; delivered: boolean }>;
+  ehRespondToUserQuestion(
+    params: import("@envoymesh/api").EhRespondToUserQuestionParams,
+  ): Promise<import("@envoymesh/api").EhRespondToUserQuestionResult>;
   getPairingPayload(): Promise<PairingPayload>;
   createWanJoinInvite(
     params?: import("@envoymesh/api").CreateWanJoinInviteParams,
@@ -1685,6 +1724,82 @@ function createWsNodeServiceClient(
       // assist budget (120s) since a coding task can be long-running.
       return wsClient.rpc("sendToPi", { text }, { timeoutMs: 120_000 }) as Promise<string>;
     },
+    async getEnvoyHarnessStatus() {
+      return wsClient.rpc("getEnvoyHarnessStatus") as Promise<
+        import("@envoymesh/api").EnvoyHarnessStatus
+      >;
+    },
+    async askEnvoyHarness(text: string) {
+      // Legacy blocking path — orchestration callers. Chat uses startEnvoyHarnessTurn.
+      return wsClient.rpc(
+        "askEnvoyHarness",
+        { text },
+        { timeoutMs: EH_ASK_WS_TIMEOUT_MS },
+      ) as Promise<string>;
+    },
+    async startEnvoyHarnessTurn(
+      text: string,
+      attachments?: import("@envoymesh/api").AgentAttachmentRef[],
+    ) {
+      return wsClient.rpc(
+        "startEnvoyHarnessTurn",
+        {
+          text,
+          ...(attachments !== undefined && attachments.length > 0 ? { attachments } : {}),
+        },
+        { timeoutMs: 30_000 },
+      ) as Promise<{ turnId: string }>;
+    },
+    async getEnvoyHarnessTurnStatus() {
+      return wsClient.rpc("getEnvoyHarnessTurnStatus", {}, { timeoutMs: 10_000 }) as Promise<
+        import("@envoymesh/api").EhTurnStatus
+      >;
+    },
+    async ehRespondToPermission(params: { requestId: string; allowed: boolean }) {
+      return wsClient.rpc("ehRespondToPermission", params) as Promise<{
+        requestId: string;
+        delivered: boolean;
+      }>;
+    },
+    async cancelEnvoyHarnessTurn() {
+      return wsClient.rpc("cancelEnvoyHarnessTurn", {}) as Promise<{
+        cancelled: boolean;
+      }>;
+    },
+    async listEnvoyHarnessPeers() {
+      return wsClient.rpc("listEnvoyHarnessPeers") as Promise<
+        ReadonlyArray<{
+          id: string;
+          model?: string;
+          capabilities?: readonly string[];
+        }>
+      >;
+    },
+    async setEnvoyHarnessProjectPath(path: string) {
+      return wsClient.rpc(
+        "setEnvoyHarnessProjectPath",
+        { path },
+        { timeoutMs: 30_000 },
+      ) as Promise<import("@envoymesh/api").EnvoyHarnessStatus>;
+    },
+    async invokeEnvoyHarnessEhui(
+      request: import("@envoymesh/api").EhuiInvokeRequest,
+    ) {
+      return wsClient.rpc(
+        "invokeEnvoyHarnessEhui",
+        { request },
+        { timeoutMs: 30_000 },
+      ) as Promise<unknown>;
+    },
+    async ensureEnvoyTerminalSession(
+      params?: import("@envoymesh/api").EnsureEnvoyTerminalParams,
+    ) {
+      return wsClient.rpc(
+        "ensureEnvoyTerminalSession",
+        { ...(params ?? {}) },
+        { timeoutMs: 30_000 },
+      ) as Promise<import("@envoymesh/api").EnsureEnvoyTerminalResult>;
+    },
     async ensurePiTerminalSession(
       params?: import("@envoymesh/api").EnsurePiTerminalParams,
     ) {
@@ -1699,6 +1814,14 @@ function createWsNodeServiceClient(
         uiRequestId: string;
         delivered: boolean;
       }>;
+    },
+    async ehRespondToUserQuestion(
+      params: import("@envoymesh/api").EhRespondToUserQuestionParams,
+    ) {
+      return wsClient.rpc(
+        "ehRespondToUserQuestion",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").EhRespondToUserQuestionResult>;
     },
     async getPairingPayload() { return wsClient.rpc("getPairingPayload"); },
     async createWanJoinInvite(params?: import("@envoymesh/api").CreateWanJoinInviteParams) {

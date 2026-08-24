@@ -4376,7 +4376,7 @@ export function SettingsAITab() {
               <p className="agent-field-hint">
                 {t(
                   "settings.ai.aiEngine.piCodingBackendHint",
-                  "Routes sendToPi / approvals through the same Pi UI. Switch here or in EnvoyGo → Pi Agent. Pi TUI terminal stays Pi-only.",
+                  "Routes sendToPi to envoy-harness. Envoy appears on the Chat list (web harness: status, project folder, peer cluster, / commands) and in the Terminal view. Switch here or in EnvoyGo → Pi Agent.",
                 )}
               </p>
             </div>

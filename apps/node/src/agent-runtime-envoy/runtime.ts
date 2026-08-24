@@ -88,10 +88,24 @@ import {
   createProviderAdapter,
   defaultBuildSubagentFactory,
   LocalMeshSubmitter,
+  Agent,
+  BUILTIN_TOOLS,
+  HookRegistry,
+  InMemorySession,
+  ToolRegistry,
+  installToolPermissionAskHook,
   type AskHandler,
+  type AskForApproval,
   type ModelAdapter,
   type MeshSubmitter,
+  type MemoryStore,
+  type PermissionMode,
+  type SandboxPolicy,
+  type Session,
+  type ShellEnvironmentPolicy,
+  type SkillRegistry,
   type Tool,
+  type UserQuestionService,
 } from "@envoymesh/envoy-harness";
 import {
   buildEnvoyHarnessAdapterWithCrossVerify,
@@ -100,6 +114,7 @@ import {
   defaultSignResult,
   EnvoyHarnessAdapter,
   LocalCrossRuntimeSubmitter,
+  getToolsForSkill,
 } from "@envoymesh/envoy-harness-adapter";
 import type { AgentAdapter } from "@envoymesh/agent-adapter";
 import type { SignedAgentResult } from "@envoymesh/protocol";
@@ -366,6 +381,29 @@ export interface RealEnvoyHarnessRuntime {
    *  to pick up config changes. Future: hot-reload via
    *  the Tauri settings UI (Step 5+). */
   isReady: () => boolean;
+
+  /** Warm model + mesh internals (for persistent ACP host). */
+  ensureInternals: () => Promise<void>;
+
+  /**
+   * Build an Agent for `createAgentSessionBackend` (sync after `ensureInternals`).
+   */
+  buildAgentForAcpSession: (params: {
+    sessionId: string;
+    cwd: string | undefined;
+    askHandler: AskHandler;
+    session?: Session;
+    shouldAskTool?: (toolName: string) => boolean;
+    /** Prebuilt system prompt (AGENTS.md + environment_context). */
+    systemPrompt?: string;
+    permissionMode?: PermissionMode;
+    approval?: AskForApproval;
+    sandboxPolicy?: SandboxPolicy;
+    memoryStore?: MemoryStore;
+    skills?: SkillRegistry;
+    shellEnvironmentPolicy?: ShellEnvironmentPolicy;
+    userQuestions?: UserQuestionService;
+  }) => Agent;
 }
 
 /**
@@ -449,13 +487,22 @@ export function createRealEnvoyHarnessRuntime(
         switch (provider) {
           case "deepseek":
             env.DEEPSEEK_API_KEY = opts.config.apiKey;
+            if (opts.config.endpoint) {
+              env.DEEPSEEK_BASE_URL = opts.config.endpoint;
+            }
             break;
           case "openai":
             env.OPENAI_API_KEY = opts.config.apiKey;
+            if (opts.config.endpoint) {
+              env.OPENAI_BASE_URL = opts.config.endpoint;
+            }
             break;
           case "anthropic":
           case "claude":
             env.ANTHROPIC_API_KEY = opts.config.apiKey;
+            if (opts.config.endpoint) {
+              env.ANTHROPIC_BASE_URL = opts.config.endpoint;
+            }
             break;
           // `ollama` is keyless — `createProviderAdapter`
           // passes a placeholder key internally. No
@@ -768,9 +815,84 @@ export function createRealEnvoyHarnessRuntime(
         return accessor("submitter");
       },
       isReady: () => opts.config.ready,
+      ensureInternals: async () => {
+        await ensureInitialized();
+      },
+      buildAgentForAcpSession: (params) => {
+        if (!internals) {
+          throw new Error(
+            "RealEnvoyHarnessRuntime: call ensureInternals() before buildAgentForAcpSession",
+          );
+        }
+        const sessionCwd = params.cwd ?? opts.cwd;
+        const skillId = "code-edit";
+        const toolNames = new Set(getToolsForSkill(skillId));
+        const tools = new ToolRegistry();
+        for (const t of BUILTIN_TOOLS) {
+          if (toolNames.has(t.name as "read_file" | "bash")) {
+            tools.register(t);
+          }
+        }
+        if (opts.bClassTools) {
+          for (const t of opts.bClassTools) {
+            if (
+              toolNames.has(
+                t.name as
+                  | "read_file"
+                  | "bash"
+                  | "sponsor_friend"
+                  | "list_peers"
+                  | "relay_status"
+                  | "peers",
+              )
+            ) {
+              tools.register(t);
+            }
+          }
+        }
+        const hooks = new HookRegistry();
+        installToolPermissionAskHook(hooks, {
+          ...(params.shouldAskTool !== undefined
+            ? { shouldAsk: params.shouldAskTool }
+            : {}),
+        });
+        return new Agent({
+          model: internals.model,
+          tools,
+          hooks,
+          session:
+            params.session ??
+            new InMemorySession(params.sessionId, {
+              cwd: sessionCwd,
+              permissionMode: params.permissionMode ?? "workspace-write",
+              startedAt: new Date().toISOString(),
+            }),
+          cwd: sessionCwd,
+          askHandler: params.askHandler,
+          meshSubmitter: internals.submitter,
+          ...(params.systemPrompt !== undefined
+            ? { systemPrompt: params.systemPrompt }
+            : {}),
+          ...(params.approval !== undefined
+            ? { approval: params.approval }
+            : {}),
+          ...(params.sandboxPolicy !== undefined
+            ? { sandboxPolicy: params.sandboxPolicy }
+            : {}),
+          ...(params.memoryStore !== undefined
+            ? { memoryStore: params.memoryStore }
+            : {}),
+          ...(params.skills !== undefined ? { skills: params.skills } : {}),
+          ...(params.shellEnvironmentPolicy !== undefined
+            ? { shellEnvironmentPolicy: params.shellEnvironmentPolicy }
+            : {}),
+          ...(params.userQuestions !== undefined
+            ? { userQuestions: params.userQuestions }
+            : {}),
+        });
+      },
     };
   };
-
   return buildProxy();
 }
 

@@ -876,6 +876,56 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.sendToPi(text);
   }
 
+  async getEnvoyHarnessStatus() {
+    return this._ns.getEnvoyHarnessStatus();
+  }
+
+  async askEnvoyHarness(text: string) {
+    return this._ns.askEnvoyHarness(text);
+  }
+
+  async startEnvoyHarnessTurn(
+    text: string,
+    attachments?: import("@envoymesh/api").AgentAttachmentRef[],
+  ) {
+    return this._ns.startEnvoyHarnessTurn(
+      text,
+      attachments && attachments.length > 0 ? { attachments } : undefined,
+    );
+  }
+
+  async getEnvoyHarnessTurnStatus() {
+    return this._ns.getEnvoyHarnessTurnStatus();
+  }
+
+  async ehRespondToPermission(params: { requestId: string; allowed: boolean }) {
+    return this._ns.ehRespondToPermission(params);
+  }
+
+  async cancelEnvoyHarnessTurn() {
+    return this._ns.cancelEnvoyHarnessTurn();
+  }
+
+  async listEnvoyHarnessPeers() {
+    return this._ns.listEnvoyHarnessPeers();
+  }
+
+  async setEnvoyHarnessProjectPath(path: string) {
+    return this._ns.setEnvoyHarnessProjectPath(path);
+  }
+
+  async invokeEnvoyHarnessEhui(
+    request: import("@envoymesh/api").EhuiInvokeRequest,
+  ) {
+    return this._ns.invokeEnvoyHarnessEhui(request);
+  }
+
+  async ensureEnvoyTerminalSession(
+    params?: import("@envoymesh/api").EnsureEnvoyTerminalParams,
+  ) {
+    return this._ns.ensureEnvoyTerminalSession(params);
+  }
+
   async ensurePiTerminalSession(
     params?: import("@envoymesh/api").EnsurePiTerminalParams,
   ) {
@@ -884,6 +934,12 @@ export class DirectCallClient implements NodeServiceClient {
 
   async piRespondToProposal(params: { uiRequestId: string; confirmed: boolean }) {
     return this._ns.piRespondToProposal(params);
+  }
+
+  async ehRespondToUserQuestion(
+    params: import("@envoymesh/api").EhRespondToUserQuestionParams,
+  ) {
+    return this._ns.ehRespondToUserQuestion(params);
   }
 
   async getOpenClawPlugins() { return this._ns.getOpenClawPlugins(); }

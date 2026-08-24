@@ -65,6 +65,15 @@ describe("isOwnerOnlyRpcMethod", () => {
     }
   })
 
+  it("gates the dedicated Envoy Harness RPCs for family", () => {
+    expect(isOwnerOnlyRpcMethod("getEnvoyHarnessStatus")).toBe(true)
+    expect(isOwnerOnlyRpcMethod("askEnvoyHarness")).toBe(true)
+    expect(isOwnerOnlyRpcMethod("listEnvoyHarnessPeers")).toBe(true)
+    expect(isOwnerOnlyRpcMethod("setEnvoyHarnessProjectPath")).toBe(true)
+    expect(isOwnerOnlyRpcMethod("invokeEnvoyHarnessEhui")).toBe(true)
+    expect(isOwnerOnlyRpcMethod("ensureEnvoyTerminalSession")).toBe(true)
+  })
+
   it("allows family chat RPCs", () => {
     expect(isOwnerOnlyRpcMethod("sendFamilyMessage")).toBe(false)
     expect(isOwnerOnlyRpcMethod("listFamilyRooms")).toBe(false)

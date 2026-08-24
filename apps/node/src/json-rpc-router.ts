@@ -33,6 +33,7 @@ import type {
   ChainProbeReachabilityParams,
 } from "@envoymesh/api";
 import { requireOwnerProfile } from "./rpc-caller-context.js";
+import { parseEhuiInvokeRequest } from "./agent-runtime-envoy/ehui-invoke.js";
 
 /**
  * Phase 51 — RPCs restricted to the owner family profile.
@@ -71,7 +72,18 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "restartPi",
   "ensurePiTerminalSession",
   "sendToPi",
+  "getEnvoyHarnessStatus",
+  "askEnvoyHarness",
+  "startEnvoyHarnessTurn",
+  "getEnvoyHarnessTurnStatus",
+  "listEnvoyHarnessPeers",
+  "setEnvoyHarnessProjectPath",
+  "invokeEnvoyHarnessEhui",
+  "ensureEnvoyTerminalSession",
   "piRespondToProposal",
+  "ehRespondToUserQuestion",
+  "ehRespondToPermission",
+  "cancelEnvoyHarnessTurn",
   "restartOpenClaw",
   "enableEnvoyLocal",
   "declineEnvoyLocalAutoProvision",
@@ -861,6 +873,7 @@ export async function routeRpcMethod(
         filename: String(params.filename ?? ""),
         mimeType: typeof params.mimeType === "string" ? params.mimeType : undefined,
         contentBase64: String(params.contentBase64 ?? ""),
+        targetDir: typeof params.targetDir === "string" ? params.targetDir : undefined,
       });
     case "buildAgentAttachmentContext":
       return ns.buildAgentAttachmentContext({
@@ -1246,6 +1259,34 @@ export async function routeRpcMethod(
       return ns.sendToOpenClaw(String(params.text ?? ""));
     case "sendToPi":
       return ns.sendToPi(String(params.text ?? ""));
+    case "getEnvoyHarnessStatus":
+      return ns.getEnvoyHarnessStatus();
+    case "askEnvoyHarness":
+      return ns.askEnvoyHarness(String(params.text ?? ""));
+    case "startEnvoyHarnessTurn":
+      return ns.startEnvoyHarnessTurn(String(params.text ?? ""), {
+        ...(typeof params.providerHint === "string"
+          ? { providerHint: params.providerHint }
+          : {}),
+        ...(typeof params.costCapUsd === "number"
+          ? { costCapUsd: params.costCapUsd }
+          : {}),
+        ...(Array.isArray(params.attachments)
+          ? {
+              attachments: params.attachments as import("@envoymesh/api").AgentAttachmentRef[],
+            }
+          : {}),
+      });
+    case "getEnvoyHarnessTurnStatus":
+      return ns.getEnvoyHarnessTurnStatus();
+    case "listEnvoyHarnessPeers":
+      return ns.listEnvoyHarnessPeers();
+    case "setEnvoyHarnessProjectPath":
+      return ns.setEnvoyHarnessProjectPath(String(params.path ?? ""));
+    case "invokeEnvoyHarnessEhui":
+      return ns.invokeEnvoyHarnessEhui(
+        parseEhuiInvokeRequest(params.request),
+      );
     case "sendToAiBot":
       return ns.sendToAiBot(
         String(params.botId ?? ""),
@@ -1258,11 +1299,36 @@ export async function routeRpcMethod(
         sessionId: typeof params.sessionId === "string" ? params.sessionId : undefined,
         forceRestart: Boolean(params.forceRestart),
       });
+    case "ensureEnvoyTerminalSession":
+      return ns.ensureEnvoyTerminalSession({
+        projectPath:
+          typeof params.projectPath === "string" ? params.projectPath : undefined,
+        sessionId: typeof params.sessionId === "string" ? params.sessionId : undefined,
+        forceRestart: Boolean(params.forceRestart),
+      });
     case "piRespondToProposal":
       return ns.piRespondToProposal({
         uiRequestId: String(params.uiRequestId ?? ""),
         confirmed: Boolean(params.confirmed),
       });
+    case "ehRespondToUserQuestion":
+      return ns.ehRespondToUserQuestion({
+        requestId: String(params.requestId ?? ""),
+        value: String(params.value ?? ""),
+        ...(params.optionIndex !== undefined
+          ? { optionIndex: Number(params.optionIndex) }
+          : {}),
+        ...(params.cancelled !== undefined
+          ? { cancelled: Boolean(params.cancelled) }
+          : {}),
+      });
+    case "ehRespondToPermission":
+      return ns.ehRespondToPermission({
+        requestId: String(params.requestId ?? ""),
+        allowed: Boolean(params.allowed),
+      });
+    case "cancelEnvoyHarnessTurn":
+      return ns.cancelEnvoyHarnessTurn();
     case "sendToBridge":
       return ns.sendToBridge(String(params.text ?? ""));
     case "getPairedDiagnostics":

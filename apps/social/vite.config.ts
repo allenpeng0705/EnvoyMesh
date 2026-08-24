@@ -270,6 +270,10 @@ export default defineConfig({
       // resolver subpath instead.
       "@envoymesh/rag/embedding-resolver": resolve(repoRoot, "packages/rag/src/embedding-resolver.ts"),
       "@envoymesh/rag": resolve(repoRoot, "packages/rag/src/index.ts"),
+      "@envoymesh/envoy-harness-client/ehui": resolve(
+        repoRoot,
+        "../envoy-harness/packages/envoy-harness-client/src/ehui.ts",
+      ),
     },
   },
 });

@@ -77,6 +77,14 @@ export interface EnvoyHarnessRuntimeConfig {
    * providers (`ollama`) don't need a key.
    */
   apiKey: string | undefined;
+  /**
+   * Phase 8 / b3.live — the host's OpenAI/Anthropic-compatible
+   * endpoint (base URL) for `openai-compatible` / `anthropic-compatible`
+   * modes (MiniMax, LiteLLM, Envoy Local, …). Passed to the adapter as
+   * `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` / `DEEPSEEK_BASE_URL`.
+   * `undefined` = provider default endpoint.
+   */
+  endpoint: string | undefined;
   /** Why `ready` is false — surfaces in `agentNetworkEngineDenyReason`.
    *  `null` when `ready: true`. */
   reason: string | null;
@@ -160,6 +168,8 @@ export function loadEnvoyHarnessRuntimeConfig(opts?: {
    * is the lowest-priority fallback.
    */
   hostApiKey?: string;
+  /** The host's OpenAI/Anthropic-compatible endpoint (base URL). */
+  hostEndpoint?: string;
 }): EnvoyHarnessRuntimeConfig {
   // Read the model + cwd from the env (or host's
   // model). The provider id is the bit before the
@@ -184,6 +194,12 @@ export function loadEnvoyHarnessRuntimeConfig(opts?: {
       : undefined) ??
     "deepseek:deepseek-chat";
   const cwd = process.env.ENVOY_HARNESS_CWD ?? process.cwd();
+  const envEndpoint = process.env.ENVOY_HARNESS_ENDPOINT;
+  const endpoint =
+    (envEndpoint && envEndpoint.length > 0 ? envEndpoint : undefined) ??
+    (opts?.hostEndpoint && opts.hostEndpoint.length > 0
+      ? opts.hostEndpoint
+      : undefined);
   const provider = (model.split(":", 1)[0] ?? "deepseek").toLowerCase();
 
   // Stub escape hatch (matches Step 1 behavior).
@@ -194,6 +210,7 @@ export function loadEnvoyHarnessRuntimeConfig(opts?: {
       cwd,
       provider,
       apiKey: undefined,
+      endpoint,
       reason: "envoy_harness_stub_phase_8_step_1",
     };
   }
@@ -224,13 +241,22 @@ export function loadEnvoyHarnessRuntimeConfig(opts?: {
       : undefined) ??
     (providerKey && providerKey.length > 0 ? providerKey : undefined);
 
-  if (!apiKey && providerKeyEnv !== null) {
+  // Keyless local endpoints (Envoy Local's llama-server, a local
+  // OpenAI-compatible server) don't need a real key — the adapter still
+  // wants a non-empty value, so use a placeholder like `ollama` does.
+  const localEndpoint =
+    endpoint !== undefined &&
+    /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])/.test(endpoint);
+  const effectiveApiKey = apiKey ?? (localEndpoint ? "local" : undefined);
+
+  if (!effectiveApiKey && providerKeyEnv !== null) {
     return {
       ready: false,
       model,
       cwd,
       provider,
       apiKey: undefined,
+      endpoint,
       reason: `envoy_harness_api_key_missing: set ${providerKeyEnv} (or ENVOY_HARNESS_API_KEY, or pass hostApiKey from ModelProviderConfig)`,
     };
   }
@@ -243,7 +269,8 @@ export function loadEnvoyHarnessRuntimeConfig(opts?: {
     model,
     cwd,
     provider,
-    apiKey,
+    apiKey: effectiveApiKey,
+    endpoint,
     reason: null,
   };
 }

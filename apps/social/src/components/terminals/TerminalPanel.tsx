@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 
-import type { TerminalSessionSummary, TerminalWatchReadyEvent } from "@envoymesh/api";
+import type { TerminalSessionSummary, TerminalWatchReadyEvent, EhUserQuestionEvent, EhTurnHintsEvent, EhActivityEvent, EhPermissionEvent } from "@envoymesh/api";
 
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
+import { useEhTurnContext } from "../../hooks/useEhTurnContext.js";
 import { useT } from "../../context/I18nContext.js";
 import {
   HomeRemoteTerminalClient,
@@ -21,6 +22,11 @@ import {
   dismissNestedMultiplexerTip,
   shouldShowNestedMultiplexerTip,
 } from "../../lib/terminal-nested-multiplexer-tip.js";
+import { EnvoyHarnessEhuiRail } from "../ehui/EnvoyHarnessEhuiRail.js";
+import { EhComposerDockStack } from "../ehui/EhComposerDockStack.js";
+import { EhStillWorkingIndicator } from "../ehui/EhStillWorkingIndicator.js";
+import { EhuiPanelModal } from "@envoymesh/envoy-harness-ehui";
+import { createRemoteEhuiDataSource } from "../../lib/envoy-harness-ehui-data-source.js";
 
 interface TerminalPanelProps {
   session: TerminalSessionSummary | null;
@@ -73,6 +79,21 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
   const [showNestedMultiplexerTip, setShowNestedMultiplexerTip] = useState(false);
   const [pinnedContextSessionId, setPinnedContextSessionId] = useState<string | null>(null);
   const [pinPreviewScrollback, setPinPreviewScrollback] = useState("");
+  const [pendingEhQuestion, setPendingEhQuestion] = useState<EhUserQuestionEvent | null>(
+    null,
+  );
+  const [pendingEhPermission, setPendingEhPermission] = useState<EhPermissionEvent | null>(
+    null,
+  );
+  const [ehTurnHints, setEhTurnHints] = useState<EhTurnHintsEvent | null>(null);
+  const [ehPromptBusy, setEhPromptBusy] = useState(false);
+  const [ehActivitySummary, setEhActivitySummary] = useState<string | undefined>(
+    undefined,
+  );
+  const [ehProjectCwd, setEhProjectCwd] = useState<string | undefined>(undefined);
+  const [showGitDiffReview, setShowGitDiffReview] = useState(false);
+  const [dismissedChanges, setDismissedChanges] = useState(false);
+  const [ehuiRefreshKey, setEhuiRefreshKey] = useState(0);
   const useHomeRemote = connectionStatus?.homeRemote?.paired === true;
   const homeOffline = useHomeRemote && connectionStatus?.homeRemote?.homeOnline === false;
   const modeRef = useRef(mode);
@@ -85,6 +106,76 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
   const [xtermReady, setXtermReady] = useState(false);
   const sessionReady = Boolean(session && session.state === "running" && !homeOffline);
   const isPiSession = session?.role === "pi";
+  const isEnvoyHarnessSession = session?.role === "envoy-harness";
+
+  const turnContext = useEhTurnContext({
+    projectCwd: ehProjectCwd,
+    subscribeActivity: (handler) => nodeService.on("eh:activity", handler),
+    subscribeFilesChanged: (handler) => nodeService.on("eh:files_changed", handler),
+  });
+  const resetTurnContext = turnContext.resetTurnContext;
+
+  const ehuiDataSource = useMemo(
+    () => createRemoteEhuiDataSource(nodeService),
+    [nodeService],
+  );
+
+  useEffect(() => {
+    if (!isEnvoyHarnessSession) {
+      setEhProjectCwd(undefined);
+      return;
+    }
+    void nodeService.getEnvoyHarnessStatus().then((s) => {
+      setEhProjectCwd(s.cwd);
+    });
+  }, [isEnvoyHarnessSession, nodeService]);
+
+  useEffect(() => {
+    if (!isEnvoyHarnessSession) {
+      setPendingEhQuestion(null);
+      setPendingEhPermission(null);
+      setEhTurnHints(null);
+      setEhPromptBusy(false);
+      setDismissedChanges(false);
+      resetTurnContext();
+      return;
+    }
+    const unsubQuestion = nodeService.on("eh:user_question", (event) => {
+      setPendingEhQuestion(event);
+    });
+    const unsubPermission = nodeService.on("eh:permission", (event) => {
+      setPendingEhPermission(event);
+    });
+    const unsubHints = nodeService.on("eh:turn_hints", (event) => {
+      setEhTurnHints(event);
+    });
+    const unsubBusy = nodeService.on("eh:prompt_busy", (event) => {
+      setEhPromptBusy(event.busy);
+      if (!event.busy) {
+        setEhActivitySummary(undefined);
+        setPendingEhQuestion(null);
+        setPendingEhPermission(null);
+        setEhuiRefreshKey((k) => k + 1);
+      }
+    });
+    const unsubTurnStart = nodeService.on("eh:turn_started", () => {
+      setDismissedChanges(false);
+      resetTurnContext();
+    });
+    const unsubActivity = nodeService.on("eh:activity", (event: EhActivityEvent) => {
+      if (event.summary.trim().length > 0) {
+        setEhActivitySummary(event.summary);
+      }
+    });
+    return () => {
+      unsubQuestion();
+      unsubPermission();
+      unsubHints();
+      unsubBusy();
+      unsubTurnStart();
+      unsubActivity();
+    };
+  }, [nodeService, isEnvoyHarnessSession, resetTurnContext]);
 
   useEffect(() => {
     if (isPiSession && mode !== "manual") setMode("manual");
@@ -690,9 +781,15 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
 
   return (
     <div className="terminal-panel">
+      <div className="terminal-panel-main">
+      {isEnvoyHarnessSession && sessionReady ? (
+        <EnvoyHarnessEhuiRail
+          className="eh-ehui-command-bar terminal-ehui-command-bar contact-web-content__actions contact-web-content__actions--links"
+        />
+      ) : null}
       <div className="terminal-panel-toolbar">
         <span className="terminal-panel-title">{session?.title ?? t("terminals.selectSession")}</span>
-        {sessionReady && !isPiSession ? (
+        {sessionReady && !isPiSession && !isEnvoyHarnessSession ? (
           <div className="terminal-mode-toggle" role="tablist" aria-label={t("terminals.agent.modeLabel")}>
             <button
               type="button"
@@ -738,6 +835,41 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
           <pre className="terminal-pin-preview-body">{pinPreviewScrollback}</pre>
         </div>
       ) : null}
+      {isEnvoyHarnessSession && sessionReady && (ehPromptBusy || pendingEhQuestion) ? (
+        <EhStillWorkingIndicator
+          active={ehPromptBusy || pendingEhQuestion !== null}
+          waitingForUser={pendingEhQuestion !== null}
+          activitySummary={ehActivitySummary}
+          onCancel={() => {
+            void nodeService.cancelEnvoyHarnessTurn();
+          }}
+          className="terminal-eh-still-working"
+        />
+      ) : null}
+      {isEnvoyHarnessSession && sessionReady ? (
+        <div className="terminal-eh-dock-stack">
+        <EhComposerDockStack
+          permission={pendingEhPermission}
+          onPermissionDismiss={() => setPendingEhPermission(null)}
+          question={pendingEhQuestion}
+          onQuestionDismiss={() => setPendingEhQuestion(null)}
+          turnHints={ehTurnHints}
+          onTurnHintsDismiss={() => setEhTurnHints(null)}
+          onSelectFollowUp={(text) => {
+            transportRef.current?.sendInput(`${text}\n`);
+            setEhTurnHints(null);
+          }}
+          queue={[]}
+          onQueueUpdate={() => {}}
+          onQueueRemove={() => {}}
+          projectCwd={ehProjectCwd}
+          contextFiles={turnContext.touchedFiles}
+          changedFiles={dismissedChanges ? [] : turnContext.touchedFiles}
+          onReviewChanges={() => setShowGitDiffReview(true)}
+          onDismissChanges={() => setDismissedChanges(true)}
+        />
+        </div>
+      ) : null}
       <div className="terminal-panel-xterm-wrap">
         <div className="terminal-panel-xterm" ref={containerCallbackRef} />
         {emptyMessage ? (
@@ -747,7 +879,7 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
           </div>
         ) : null}
       </div>
-      {sessionReady && !isPiSession ? (
+      {sessionReady && !isPiSession && !isEnvoyHarnessSession ? (
         <TerminalAgentBar
           ref={agentBarRef}
           sessionId={session!.sessionId}
@@ -774,6 +906,21 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
           <span className="terminal-suggest-tab">{t("terminals.agent.suggestTab")}</span>
         </div>
       ) : null}
+      {showGitDiffReview ? (
+        <EhuiPanelModal
+          panel="git-diff"
+          dataSource={ehuiDataSource}
+          refreshKey={ehuiRefreshKey}
+          onClose={() => setShowGitDiffReview(false)}
+          overlayClassName="modal-overlay"
+          panelClassName="modal-panel eh-ehui-modal-panel"
+          closeButtonClassName="modal-close"
+          actionButtonClassName="pi-chat-restart-btn"
+          primaryActionButtonClassName="pi-chat-send"
+          inputClassName="pi-chat-input eh-ehui-field"
+        />
+      ) : null}
+      </div>
     </div>
   );
 }

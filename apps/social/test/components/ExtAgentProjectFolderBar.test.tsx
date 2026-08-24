@@ -5,12 +5,28 @@ import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
-import { HomeFolderPicker } from "../../src/components/HomeFolderPicker.js";
+import { ProjectFolderLink } from "../../src/components/ProjectFolderLink.js";
 import { extAgentUsesProjectPath } from "@envoymesh/api";
 
 vi.mock("../../src/lib/tauri-shell.js", () => ({
   isTauriShell: () => false,
   pickTauriDirectory: vi.fn(),
+}));
+
+vi.mock("../../src/components/HomeFolderPicker.js", () => ({
+  HomeFolderPicker: ({
+    value,
+    onChange,
+  }: {
+    value?: string;
+    onChange: (path: string | undefined) => void;
+  }) => (
+    <input
+      data-testid="home-folder-picker-mock"
+      value={value ?? ""}
+      onChange={(e) => onChange(e.target.value || undefined)}
+    />
+  ),
 }));
 
 afterEach(() => cleanup());
@@ -24,23 +40,25 @@ describe("Ext Agent project folder chat chrome", () => {
     expect(extAgentUsesProjectPath("pi")).toBe(false);
   });
 
-  it("browser Social uses Browse → home folder modal (same as Tauri, read-only path)", () => {
-    const onChange = vi.fn();
+  it("shows No folder selected when unset and opens modal on click", () => {
+    const onSave = vi.fn();
     renderWithI18n(
       <div data-testid="ext-agent-project-folder">
-        <HomeFolderPicker
-          className="home-folder-picker home-folder-picker--compact"
-          value="/tmp/project"
-          onChange={onChange}
-        />
+        <ProjectFolderLink path={undefined} onSave={onSave} />
       </div>,
     );
     expect(screen.getByTestId("ext-agent-project-folder")).toBeTruthy();
-    const input = screen.getByDisplayValue("/tmp/project") as HTMLInputElement;
-    expect(input.readOnly).toBe(true);
-    expect(screen.getByRole("button", { name: /Browse/i })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /^Set$/i })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /^Clear$/i }));
-    expect(onChange).toHaveBeenCalledWith(undefined);
+    expect(screen.getByText("No folder selected")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /project folder/i }));
+    expect(screen.getByTestId("home-folder-picker-mock")).toBeTruthy();
+  });
+
+  it("shows the path as a link when set", () => {
+    renderWithI18n(
+      <ProjectFolderLink path="/tmp/project" onSave={vi.fn()} />,
+    );
+    expect(screen.getByRole("button", { name: /project folder/i }).textContent).toBe(
+      "/tmp/project",
+    );
   });
 });
