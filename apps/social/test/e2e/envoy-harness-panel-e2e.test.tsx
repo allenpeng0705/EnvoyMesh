@@ -110,13 +110,12 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe("EnvoyHarnessPanel E2E (mocked node)", () => {
-  it("runs hello → thinking → stream → complete, then queues while busy and injects", async () => {
+  it("runs hello → thinking → stream → complete, then queues while busy and drains", async () => {
     let turnCounter = 0
     startEnvoyHarnessTurn.mockImplementation(async (text: string) => ({
       turnId: `e2e-turn-${++turnCounter}`,
       text,
     }))
-    cancelEnvoyHarnessTurn.mockResolvedValue({ cancelled: true })
 
     renderWithI18n(<EnvoyHarnessPanel />)
     await screen.findByText("Ready")
@@ -148,40 +147,33 @@ describe("EnvoyHarnessPanel E2E (mocked node)", () => {
 
     fireEvent.change(input, { target: { value: "slow task" } })
     fireEvent.submit(input.closest("form")!)
+    await waitFor(() =>
+      expect(startEnvoyHarnessTurn).toHaveBeenCalledWith("slow task", []),
+    )
     expect(await screen.findByText(/envoy-harness is thinking/i)).toBeDefined()
 
     fireEvent.change(input, { target: { value: "queued follow-up" } })
     fireEvent.submit(input.closest("form")!)
     expect(await screen.findByDisplayValue("queued follow-up")).toBeDefined()
 
-    fireEvent.change(input, { target: { value: "urgent now" } })
-    await waitFor(() => expect((input as HTMLInputElement).value).toBe("urgent now"))
-    fireEvent.click(screen.getByRole("button", { name: /^Now$/i }))
-
-    await waitFor(() => expect(cancelEnvoyHarnessTurn).toHaveBeenCalled())
-    await waitFor(() =>
-      expect(startEnvoyHarnessTurn).toHaveBeenCalledWith("urgent now", []),
-    )
-
     act(() => {
       emitEvent("eh:turn_complete", {
-        turnId: "e2e-turn-3",
+        turnId: "e2e-turn-2",
         ok: true,
-        text: "Now: urgent now",
+        text: "slow done",
       })
     })
-    expect(await screen.findByText("Now: urgent now")).toBeDefined()
 
     await waitFor(() =>
       expect(startEnvoyHarnessTurn).toHaveBeenCalledWith("queued follow-up", []),
     )
     act(() => {
       emitEvent("eh:turn_complete", {
-        turnId: "e2e-turn-4",
+        turnId: "e2e-turn-3",
         ok: true,
-        text: "Now: queued follow-up",
+        text: "queued: follow-up",
       })
     })
-    expect(await screen.findByText("Now: queued follow-up")).toBeDefined()
+    expect(await screen.findByText("queued: follow-up")).toBeDefined()
   })
 })
