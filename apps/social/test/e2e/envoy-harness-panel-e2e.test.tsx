@@ -133,6 +133,16 @@ beforeEach(() => {
 
 afterEach(() => cleanup())
 
+async function waitForChatReady() {
+  // History hydration lifts the submit guard; wait for the panel's
+  // readiness attribute rather than just the RPC call.
+  await waitFor(() => {
+    expect(
+      document.querySelector('[data-chat-ready="true"]'),
+    ).not.toBeNull()
+  })
+}
+
 describe("EnvoyHarnessPanel E2E (mocked node)", () => {
   it("runs hello → thinking → stream → complete, then queues while busy and drains", async () => {
     let turnCounter = 0
@@ -143,6 +153,7 @@ describe("EnvoyHarnessPanel E2E (mocked node)", () => {
 
     renderWithI18n(<EnvoyHarnessPanel />)
     await screen.findByText("Ready")
+    await waitForChatReady()
 
     const input = screen.getByPlaceholderText(/Ask envoy-harness/)
     fireEvent.change(input, { target: { value: "hello" } })

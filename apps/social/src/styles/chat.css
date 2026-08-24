@@ -5964,6 +5964,61 @@
   max-height: min(85vh, 720px);
 }
 
+.coding-project-modal-overlay {
+  align-items: flex-start;
+  padding-top: calc(var(--space-6) + var(--safe-top));
+}
+
+.coding-project-modal {
+  width: min(520px, 100%);
+  max-height: min(88vh, 640px);
+  padding: var(--space-4) var(--space-5) var(--space-5);
+}
+
+.coding-project-modal .modal-header {
+  margin-bottom: var(--space-2);
+}
+
+.coding-project-modal__desc {
+  margin-bottom: var(--space-4);
+}
+
+.coding-project-modal__picker-wrap {
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+  margin-bottom: var(--space-3);
+}
+
+.coding-project-modal__field {
+  margin-bottom: 0;
+}
+
+.coding-project-modal__field .home-folder-picker,
+.coding-project-modal__field .home-folder-picker-row {
+  margin-top: var(--space-2);
+}
+
+.coding-project-modal__path-hint {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.coding-project-modal__error {
+  margin-bottom: var(--space-3);
+}
+
+.coding-project-modal__actions {
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
 .eh-ehui-modal-panel .ehui-panel-content {
   display: flex;
   flex-direction: column;

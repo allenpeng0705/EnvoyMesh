@@ -76,6 +76,12 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "askEnvoyHarness",
   "startEnvoyHarnessTurn",
   "getEnvoyHarnessTurnStatus",
+  "getEnvoyHarnessChatHistory",
+  "listEnvoyHarnessChats",
+  "createEnvoyHarnessChat",
+  "openEnvoyHarnessChat",
+  "removeEnvoyHarnessChat",
+  "resetEnvoyHarnessChat",
   "listEnvoyHarnessPeers",
   "setEnvoyHarnessProjectPath",
   "invokeEnvoyHarnessEhui",
@@ -1276,9 +1282,12 @@ export async function routeRpcMethod(
               attachments: params.attachments as import("@envoymesh/api").AgentAttachmentRef[],
             }
           : {}),
+        ...(typeof params.chatId === "string" ? { chatId: params.chatId } : {}),
       });
     case "getEnvoyHarnessTurnStatus":
-      return ns.getEnvoyHarnessTurnStatus();
+      return ns.getEnvoyHarnessTurnStatus(
+        typeof params.chatId === "string" ? params.chatId : undefined,
+      );
     case "getEnvoyHarnessChatHistory":
       return ns.getEnvoyHarnessChatHistory(
         typeof params.chatId === "string" ? params.chatId : undefined,
@@ -1347,7 +1356,9 @@ export async function routeRpcMethod(
         allowed: Boolean(params.allowed),
       });
     case "cancelEnvoyHarnessTurn":
-      return ns.cancelEnvoyHarnessTurn();
+      return ns.cancelEnvoyHarnessTurn(
+        typeof params.chatId === "string" ? params.chatId : undefined,
+      );
     case "sendToBridge":
       return ns.sendToBridge(String(params.text ?? ""));
     case "getPairedDiagnostics":

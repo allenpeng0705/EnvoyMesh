@@ -5,4 +5,5 @@ export interface EhActivityEvent {
   summary: string;
   toolName?: string;
   ts?: string;
+  chatId?: string;
 }

@@ -2,4 +2,6 @@
 
 export interface EhPromptBusyEvent {
   busy: boolean;
+  /** When set, busy state applies to this chat thread only. */
+  chatId?: string;
 }

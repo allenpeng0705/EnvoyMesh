@@ -29,6 +29,7 @@ export interface AcpUserQuestionBridgeEmit {
 interface Pending {
   resolve: (answer: UserQuestionAnswer) => void;
   timer: ReturnType<typeof setTimeout>;
+  chatId?: string;
 }
 
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -47,7 +48,7 @@ export class AcpUserQuestionBridge {
   }
 
   /** Block until Social answers or timeout → cancelled. */
-  ask(req: UserQuestionRequest): Promise<UserQuestionAnswer> {
+  ask(req: UserQuestionRequest, chatId?: string): Promise<UserQuestionAnswer> {
     const requestId = randomUUID();
     const kind = inferKind(req);
     return new Promise<UserQuestionAnswer>((resolve) => {
@@ -60,7 +61,7 @@ export class AcpUserQuestionBridge {
         });
       }, this.#timeoutMs);
 
-      this.#pending.set(requestId, { resolve, timer });
+      this.#pending.set(requestId, { resolve, timer, chatId });
       this.#emit("eh:user_question", {
         requestId,
         prompt: req.prompt,
@@ -71,6 +72,7 @@ export class AcpUserQuestionBridge {
         ...(req.multiline !== undefined ? { multiline: req.multiline } : {}),
         timeoutMs: this.#timeoutMs,
         ...(kind !== undefined ? { kind } : {}),
+        ...(chatId ? { chatId } : {}),
       });
     });
   }
@@ -106,6 +108,19 @@ export class AcpUserQuestionBridge {
           },
     );
     return { delivered: true };
+  }
+
+  clearForChat(chatId: string): void {
+    for (const [id, entry] of this.#pending) {
+      if (entry.chatId !== chatId) continue;
+      clearTimeout(entry.timer);
+      entry.resolve({
+        value: "",
+        cancelled: true,
+        cancelledReason: "aborted",
+      });
+      this.#pending.delete(id);
+    }
   }
 
   clear(): void {

@@ -17,6 +17,9 @@ export interface UseEhTurnContextOptions {
   subscribeActivity: (handler: (event: EhActivityEvent) => void) => () => void
   subscribeFilesChanged: (handler: (event: EhFilesChangedEvent) => void) => () => void
   projectCwd?: string
+  /** Sidebar chat thread this context serves (parallel per-chat turns).
+   *  Activity/files events from other chats are ignored. */
+  chatId?: string | null
 }
 
 export function useEhTurnContext(options: UseEhTurnContextOptions) {
@@ -35,6 +38,16 @@ export function useEhTurnContext(options: UseEhTurnContextOptions) {
    */
   const optionsRef = useRef(options)
   optionsRef.current = options
+  const chatIdRef = useRef<string | null>(options.chatId ?? null)
+  chatIdRef.current = options.chatId ?? null
+
+  const eventMatchesChat = useCallback(
+    (eventChatId: string | undefined): boolean => {
+      if (eventChatId === undefined) return true
+      return chatIdRef.current === eventChatId
+    },
+    [],
+  )
 
   const appendActivity = useCallback((summary: string) => {
     const next = [...activityLogRef.current, summary]
@@ -45,6 +58,7 @@ export function useEhTurnContext(options: UseEhTurnContextOptions) {
 
   useEffect(() => {
     const unsubActivity = optionsRef.current.subscribeActivity((event) => {
+      if (!eventMatchesChat(event.chatId)) return
       const summary = event.summary?.trim()
       if (summary && summary.length > 0) {
         appendActivity(summary)
@@ -58,6 +72,7 @@ export function useEhTurnContext(options: UseEhTurnContextOptions) {
       setTouchedFiles((prev) => (prev.includes(path) ? prev : [...prev, path]))
     })
     const unsubFiles = optionsRef.current.subscribeFilesChanged((event) => {
+      if (!eventMatchesChat(event.chatId)) return
       if (event.files.length === 0) return
       setTouchedFiles((prev) => {
         const next = [...prev]

@@ -33,6 +33,7 @@ import { EhChatMessageText } from "../ehui/EhChatMessageText.js"
 import { EhStillWorkingIndicator } from "../ehui/EhStillWorkingIndicator.js"
 import { EhChatComposer } from "../ehui/EhChatComposer.js"
 import { EhComposerDockStack } from "../ehui/EhComposerDockStack.js"
+import { EnvoyHarnessEhuiRail } from "../ehui/EnvoyHarnessEhuiRail.js"
 import { AgentAttachmentComposerLeading } from "../AgentAttachmentComposerLeading.js"
 import { EhuiPanelModal } from "@envoymesh/envoy-harness-ehui"
 import {
@@ -49,7 +50,7 @@ import {
   parseEnvoyHarnessCdCommand,
   parseEnvoyHarnessModelCommand,
 } from "../../lib/envoy-harness-slash-commands.js"
-import { EnvoyHarnessEhuiRail } from "../ehui/EnvoyHarnessEhuiRail.js"
+import { ehEventMatchesChat } from "../../lib/eh-chat-event-scope.js"
 
 interface EnvoyHarnessTurn {
   id: string
@@ -131,6 +132,13 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
   const nodeService = useNodeService()
   const threadRef = useRef<HTMLDivElement | null>(null)
   const loadedHistoryKeyRef = useRef<string | undefined>(undefined)
+  // Hosts (and test mocks) may hand the panel a nodeService whose
+  // identity changes every render. Keep the latest in refs so the
+  // history effect can depend only on the stable chat/cwd keys — an
+  // unstable dep would re-run the effect every render and spin a
+  // chatReady(false → true) render loop.
+  const nodeServiceRef = useRef(nodeService)
+  nodeServiceRef.current = nodeService
 
   const [draft, setDraft] = useState("")
   const [turns, setTurns] = useState<EnvoyHarnessTurn[]>([])
@@ -152,6 +160,42 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
   const [activitySummary, setActivitySummary] = useState<string | undefined>(
     undefined,
   )
+  const [chatReady, setChatReady] = useState(false)
+  /** For the legacy bare thread key: the active chat that owns this cwd. */
+  const [resolvedChatId, setResolvedChatId] = useState<string | null>(null)
+  const effectiveChatId = chatId ?? resolvedChatId
+
+  // The legacy `__envoy_harness__` panel has no chatId prop; resolve the
+  // active chat for its project folder so per-chat events/turns are
+  // attributed correctly (the node now runs parallel per-chat turns).
+  useEffect(() => {
+    if (chatId) {
+      setResolvedChatId(chatId)
+      return undefined
+    }
+    if (!status?.cwd) return undefined
+    if (typeof nodeService.listEnvoyHarnessChats !== "function") {
+      setResolvedChatId(null)
+      return undefined
+    }
+    let cancelled = false
+    const normalize = (p: string) => p.replace(/[/\\]+$/, "")
+    void nodeService
+      .listEnvoyHarnessChats()
+      .then((chats) => {
+        if (cancelled) return
+        const match = chats.find(
+          (c) => normalize(c.cwd) === normalize(status.cwd ?? ""),
+        )
+        setResolvedChatId(match?.id ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) setResolvedChatId(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [chatId, nodeService, status?.cwd])
 
   const refresh = useCallback(async () => {
     try {
@@ -165,74 +209,97 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
       // Transient — keep last-known state.
     }
   }, [nodeService])
+  const refreshRef = useRef(refresh)
+  refreshRef.current = refresh
 
   useEffect(() => {
     void refresh()
   }, [refresh])
 
   useEffect(() => {
-    if (status?.state !== "ready") return undefined
-    const historyKey = chatId ?? status.cwd ?? ""
-    if (!historyKey) return undefined
+    // Legacy/active chat has no chatId: key on the resolved cwd, falling
+    // back to "active" while status is still loading so the history load
+    // starts immediately.
+    const historyKey = chatId ?? status?.cwd ?? "active"
     if (loadedHistoryKeyRef.current === historyKey) return undefined
-    setTurns([])
+    // Claim the key SYNCHRONOUSLY so a re-run (status.cwd settles after
+    // refresh, or a key change) doesn't start a duplicate load.
+    loadedHistoryKeyRef.current = historyKey
+    setChatReady(false)
+    setTurns((prev) => (prev.length === 0 ? prev : []))
     let cancelled = false
-    const loadHistory = chatId
-      ? nodeService.openEnvoyHarnessChat(chatId)
-      : nodeService.getEnvoyHarnessChatHistory()
-    void loadHistory.then((history) => {
-      if (cancelled) return
-      loadedHistoryKeyRef.current = historyKey
-      setTurns(historyTurnsToPanelTurns(history.turns))
-    }).catch(() => {
-      if (!cancelled) loadedHistoryKeyRef.current = historyKey
-    })
+    const loadHistory = historyKey === chatId && chatId
+      ? nodeServiceRef.current.openEnvoyHarnessChat(chatId)
+      : nodeServiceRef.current.getEnvoyHarnessChatHistory()
+    void loadHistory
+      .then((history) => {
+        if (cancelled) return
+        // Re-key to the resolved session cwd so a later refresh carrying
+        // the same cwd doesn't reload the transcript.
+        loadedHistoryKeyRef.current = chatId ?? history.cwd
+        setTurns(historyTurnsToPanelTurns(history.turns))
+        refreshRef.current()
+      })
+      .catch(() => {
+        // Load failure (missing session, disk error): keep the key
+        // claimed so we don't retry on every render. The user can /new
+        // to start a fresh session for this project.
+      })
+      .finally(() => {
+        if (!cancelled) setChatReady(true)
+      })
     return () => {
       cancelled = true
     }
-  }, [chatId, nodeService, status?.cwd, status?.state])
+  }, [chatId, status?.cwd])
 
   useEffect(() => {
     return nodeService.on("eh:user_question", (event) => {
+      if (!ehEventMatchesChat(event, effectiveChatId)) return
       setPendingQuestion(event)
     })
-  }, [nodeService])
+  }, [effectiveChatId, nodeService])
 
   useEffect(() => {
     return nodeService.on("eh:permission", (event) => {
+      if (!ehEventMatchesChat(event, effectiveChatId)) return
       setPendingPermission(event)
     })
-  }, [nodeService])
+  }, [effectiveChatId, nodeService])
 
   useEffect(() => {
     return nodeService.on("eh:turn_hints", (event) => {
+      if (!ehEventMatchesChat(event, effectiveChatId)) return
       setTurnHints(event)
     })
-  }, [nodeService])
+  }, [effectiveChatId, nodeService])
 
   useEffect(() => {
     return nodeService.on("eh:activity", (event: EhActivityEvent) => {
+      if (!ehEventMatchesChat(event, effectiveChatId)) return
       if (event.summary.trim().length > 0) {
         setActivitySummary(event.summary)
       }
     })
-  }, [nodeService])
+  }, [effectiveChatId, nodeService])
 
   useEffect(() => {
     return nodeService.on("eh:prompt_busy", (event) => {
+      if (!ehEventMatchesChat(event, effectiveChatId)) return
       if (!event.busy) {
         setActivitySummary(undefined)
         setPendingQuestion(null)
         setPendingPermission(null)
       }
     })
-  }, [nodeService])
+  }, [effectiveChatId, nodeService])
 
   const ehAttachments = useEhAttachments(status?.cwd, (message) =>
     toast.showToast(message, "error"),
   )
   const turnContext = useEhTurnContext({
     projectCwd: status?.cwd,
+    chatId: effectiveChatId,
     subscribeActivity: (handler) => nodeService.on("eh:activity", handler),
     subscribeFilesChanged: (handler) => nodeService.on("eh:files_changed", handler),
   })
@@ -295,13 +362,18 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
     clearQueue,
     cancelActiveTurn,
   } = useEhTurnQueue({
+    chatId: effectiveChatId,
     startTurn: (text, attachments) =>
-      nodeService.startEnvoyHarnessTurn(text, attachments),
+      effectiveChatId
+        ? nodeService.startEnvoyHarnessTurn(text, attachments, effectiveChatId)
+        : nodeService.startEnvoyHarnessTurn(text, attachments),
     subscribeTurnComplete: (handler) => nodeService.on("eh:turn_complete", handler),
     subscribeTurnToken: (handler) => nodeService.on("eh:turn_token", handler),
     subscribePromptBusy: (handler) => nodeService.on("eh:prompt_busy", handler),
-    getTurnStatus: () => nodeService.getEnvoyHarnessTurnStatus(),
-    cancelTurn: () => nodeService.cancelEnvoyHarnessTurn(),
+    getTurnStatus: () =>
+      nodeService.getEnvoyHarnessTurnStatus(effectiveChatId ?? undefined),
+    cancelTurn: () =>
+      nodeService.cancelEnvoyHarnessTurn(effectiveChatId ?? undefined),
     onUserTurn: (text) => appendTurn({ kind: "user", text }),
     onAssistantStreaming: (text, turnId) => upsertAssistantTurn(turnId, text),
     onAssistantTurn: (response, turnId, event) => {
@@ -566,7 +638,18 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
         }
       }
     },
-    [busy, cancelActiveTurn, clearQueue, nodeService, refresh, setSystem, status, t, turns],
+    [
+      busy,
+      cancelActiveTurn,
+      chatId,
+      clearQueue,
+      nodeService,
+      refresh,
+      setSystem,
+      status,
+      t,
+      turns,
+    ],
   )
 
   const submitDraft = useCallback(
@@ -596,11 +679,19 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
         return
       }
 
+      if (!chatReady) {
+        setSystem(
+          t("eh.chatLoading", "Loading this project's chat…"),
+          "info",
+        )
+        return
+      }
+
       submitToQueue(trimmed, mode, ehAttachments.toRefs())
       setDraft("")
       ehAttachments.clear()
     },
-    [draft, ehAttachments, handleSlashCommand, setSystem, status, submitToQueue, t],
+    [draft, ehAttachments, chatReady, handleSlashCommand, setSystem, status, submitToQueue, t],
   )
 
   useEffect(() => {
@@ -620,7 +711,11 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
     peers.length > 0 || (status != null && status.peers.failed > 0)
 
   return (
-    <section className="pi-chat-panel chat-area eh-panel" aria-label={t("eh.title", "envoy-harness")}>
+    <section
+      className="pi-chat-panel chat-area eh-panel"
+      aria-label={t("eh.title", "envoy-harness")}
+      data-chat-ready={chatReady ? "true" : "false"}
+    >
       <header className="pi-chat-header eh-chat-header">
         <div className="pi-chat-title-row">
           {onBackToChats ? (

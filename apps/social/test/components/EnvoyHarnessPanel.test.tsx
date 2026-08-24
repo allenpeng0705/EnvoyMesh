@@ -18,6 +18,7 @@ const cancelEnvoyHarnessTurn = vi.fn()
 const getEnvoyHarnessChatHistory = vi.fn()
 const openEnvoyHarnessChat = vi.fn()
 const resetEnvoyHarnessChat = vi.fn()
+const listEnvoyHarnessChats = vi.fn()
 const ehRespondToPermission = vi.fn()
 const listEnvoyHarnessPeers = vi.fn()
 const setEnvoyHarnessProjectPath = vi.fn()
@@ -56,6 +57,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     getEnvoyHarnessChatHistory,
     openEnvoyHarnessChat,
     resetEnvoyHarnessChat,
+    listEnvoyHarnessChats,
     ehRespondToPermission,
     listEnvoyHarnessPeers,
     setEnvoyHarnessProjectPath,
@@ -94,6 +96,19 @@ function status(overrides: Partial<EnvoyHarnessStatus> = {}): EnvoyHarnessStatus
   }
 }
 
+/**
+ * History hydration sets `chatReady`; wait before submitting prompts.
+ * Waits for the panel's `data-chat-ready="true"` so the submit guard
+ * (which blocks until the transcript is hydrated) has actually lifted.
+ */
+async function waitForChatReady() {
+  await waitFor(() => {
+    expect(
+      document.querySelector('[data-chat-ready="true"]'),
+    ).not.toBeNull()
+  })
+}
+
 beforeEach(() => {
   eventHandlers.clear()
   getEnvoyHarnessStatus.mockReset()
@@ -103,6 +118,7 @@ beforeEach(() => {
   getEnvoyHarnessChatHistory.mockReset()
   openEnvoyHarnessChat.mockReset()
   resetEnvoyHarnessChat.mockReset()
+  listEnvoyHarnessChats.mockReset()
   ehRespondToPermission.mockReset()
   listEnvoyHarnessPeers.mockReset()
   setEnvoyHarnessProjectPath.mockReset()
@@ -124,6 +140,7 @@ beforeEach(() => {
     cwd: "/projects/app",
     turns: [],
   })
+  listEnvoyHarnessChats.mockResolvedValue([])
   listEnvoyHarnessPeers.mockResolvedValue([
     { id: "p1", model: "deepseek-chat", capabilities: ["research"] },
   ])
@@ -171,6 +188,7 @@ describe("EnvoyHarnessPanel", () => {
   it("submits a prompt and renders the response", async () => {
     renderWithI18n(<EnvoyHarnessPanel />)
     await screen.findByText("Ready")
+    await waitForChatReady()
     const input = screen.getByPlaceholderText(/Ask envoy-harness/)
     fireEvent.change(input, {
       target: { value: "refactor this" },
@@ -211,6 +229,7 @@ describe("EnvoyHarnessPanel", () => {
     })
     renderWithI18n(<EnvoyHarnessPanel />)
     await screen.findByText("Ready")
+    await waitForChatReady()
     const input = screen.getByPlaceholderText(/Ask envoy-harness/)
     fireEvent.change(input, {
       target: { value: "boom" },
@@ -222,6 +241,7 @@ describe("EnvoyHarnessPanel", () => {
   it("shows a slash autocomplete menu with coding-agent commands", async () => {
     renderWithI18n(<EnvoyHarnessPanel />)
     await screen.findByText("Ready")
+    await waitForChatReady()
     const input = screen.getByPlaceholderText(/Ask envoy-harness/)
     fireEvent.change(input, { target: { value: "/" } })
     expect(await screen.findByRole("listbox")).toBeDefined()
@@ -251,6 +271,7 @@ describe("EnvoyHarnessPanel", () => {
   it("runs /help locally without calling the runtime", async () => {
     renderWithI18n(<EnvoyHarnessPanel />)
     await screen.findByText("Ready")
+    await waitForChatReady()
     const input = screen.getByPlaceholderText(/Ask envoy-harness/)
     fireEvent.change(input, { target: { value: "/help" } })
     fireEvent.submit(input.closest("form")!)
@@ -261,6 +282,7 @@ describe("EnvoyHarnessPanel", () => {
   it("strips model thinking tags from assistant replies", async () => {
     renderWithI18n(<EnvoyHarnessPanel />)
     await screen.findByText("Ready")
+    await waitForChatReady()
     const input = screen.getByPlaceholderText(/Ask envoy-harness/)
     fireEvent.change(input, { target: { value: "explain this" } })
     fireEvent.submit(input.closest("form")!)
@@ -273,6 +295,7 @@ describe("EnvoyHarnessPanel", () => {
 
     renderWithI18n(<EnvoyHarnessPanel />)
     await screen.findByText("Ready")
+    await waitForChatReady()
     const input = screen.getByPlaceholderText(/Ask envoy-harness/)
     fireEvent.change(input, { target: { value: "hello" } })
     fireEvent.submit(input.closest("form")!)
@@ -296,6 +319,7 @@ describe("EnvoyHarnessPanel", () => {
 
     renderWithI18n(<EnvoyHarnessPanel />)
     await screen.findByText("Ready")
+    await waitForChatReady()
     const input = screen.getByPlaceholderText(/Ask envoy-harness/)
     fireEvent.change(input, { target: { value: "hello" } })
     fireEvent.submit(input.closest("form")!)
@@ -311,6 +335,7 @@ describe("EnvoyHarnessPanel", () => {
 
     renderWithI18n(<EnvoyHarnessPanel />)
     await screen.findByText("Ready")
+    await waitForChatReady()
     const input = screen.getByPlaceholderText(/Ask envoy-harness/)
     fireEvent.change(input, { target: { value: "hello" } })
     fireEvent.submit(input.closest("form")!)
@@ -351,6 +376,7 @@ describe("EnvoyHarnessPanel", () => {
 
     renderWithI18n(<EnvoyHarnessPanel />)
     await screen.findByText("Ready")
+    await waitForChatReady()
     const input = screen.getByPlaceholderText(/Ask envoy-harness/)
     fireEvent.change(input, { target: { value: "hello" } })
     fireEvent.submit(input.closest("form")!)
@@ -370,6 +396,7 @@ describe("EnvoyHarnessPanel", () => {
 
     renderWithI18n(<EnvoyHarnessPanel />)
     await screen.findByText("Ready")
+    await waitForChatReady()
     const input = screen.getByPlaceholderText(/Ask envoy-harness/)
     fireEvent.change(input, { target: { value: "run tests" } })
     fireEvent.submit(input.closest("form")!)
@@ -415,6 +442,34 @@ describe("EnvoyHarnessPanel", () => {
         allowed: true,
       }),
     )
+  })
+
+  it("ignores permission events from other chats (parallel turns)", async () => {
+    renderWithI18n(<EnvoyHarnessPanel chatId="chat-a" />)
+    await screen.findByText("Ready")
+    emitEvent("eh:permission", {
+      requestId: "perm-other",
+      sessionId: "sess-other",
+      toolName: "bash",
+      description: "Run other-chat test",
+      args: { command: "npm test" },
+      preview: "$ npm test",
+      timeoutMs: 300_000,
+      chatId: "chat-b",
+    })
+    expect(screen.queryByText("Run other-chat test")).toBeNull()
+
+    emitEvent("eh:permission", {
+      requestId: "perm-mine",
+      sessionId: "sess-a",
+      toolName: "bash",
+      description: "Run my test",
+      args: { command: "npm test" },
+      preview: "$ npm test",
+      timeoutMs: 300_000,
+      chatId: "chat-a",
+    })
+    expect(await screen.findByText("Run my test")).toBeDefined()
   })
 
   it("sets the project folder via the folder link modal", async () => {

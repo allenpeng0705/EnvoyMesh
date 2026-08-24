@@ -3058,7 +3058,7 @@ export interface NodeService {
   ): Promise<import("./eh-user-question.js").EhRespondToUserQuestionResult>;
 
   /** Cancel the in-flight Envoy Harness chat turn (`session/cancel`). */
-  cancelEnvoyHarnessTurn(): Promise<{ cancelled: boolean }>;
+  cancelEnvoyHarnessTurn(chatId?: string): Promise<{ cancelled: boolean }>;
 
   /** Start a turn without blocking — progress via `eh:turn_*` events. */
   startEnvoyHarnessTurn(
@@ -3067,11 +3067,14 @@ export interface NodeService {
       attachments?: import("./ext-agent.js").AgentAttachmentRef[];
       providerHint?: string;
       costCapUsd?: number;
+      chatId?: string;
     },
   ): Promise<import("./eh-turn.js").StartEnvoyHarnessTurnResult>;
 
   /** Reconnect snapshot of the in-flight turn (if any). */
-  getEnvoyHarnessTurnStatus(): Promise<import("./eh-turn.js").EhTurnStatus>;
+  getEnvoyHarnessTurnStatus(
+    chatId?: string,
+  ): Promise<import("./eh-turn.js").EhTurnStatus>;
 
   /** Load persisted chat transcript for a workspace (defaults to active chat). */
   getEnvoyHarnessChatHistory(

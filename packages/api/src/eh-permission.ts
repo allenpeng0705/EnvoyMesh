@@ -11,6 +11,8 @@ export interface EhPermissionEvent {
   /** Unified diff-style preview for edit/write when available. */
   preview?: string;
   timeoutMs: number;
+  /** Sidebar chat thread that owns this permission prompt. */
+  chatId?: string;
 }
 
 export interface EhRespondToPermissionParams {

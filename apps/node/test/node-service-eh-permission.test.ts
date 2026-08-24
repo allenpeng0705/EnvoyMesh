@@ -61,4 +61,55 @@ describe("EhPermissionBridge", () => {
     const bridge = new EhPermissionBridge(() => {});
     expect(bridge.respond("missing", "allow")).toEqual({ delivered: false });
   });
+
+  it("attributes the prompt to the chat owning the session", async () => {
+    const emitted: Array<{ sessionId: string; chatId?: string }> = [];
+    const bridge = new EhPermissionBridge(
+      (event, payload) => {
+        emitted.push({ sessionId: payload.sessionId, chatId: payload.chatId });
+      },
+      {
+        getChatIdForSession: (sessionId) =>
+          sessionId === "sess-active" ? "chat-1" : undefined,
+      },
+    );
+    bridge.request({
+      sessionId: "sess-active",
+      toolName: "bash",
+      description: "run",
+      args: {},
+    });
+    bridge.request({
+      sessionId: "sess-other",
+      toolName: "bash",
+      description: "run",
+      args: {},
+    });
+    await vi.waitFor(() => expect(emitted).toHaveLength(2));
+    expect(emitted.find((e) => e.sessionId === "sess-active")?.chatId).toBe(
+      "chat-1",
+    );
+    expect(emitted.find((e) => e.sessionId === "sess-other")?.chatId).toBeUndefined();
+  });
+
+  it("clearForSession denies only that session's pending request", async () => {
+    const bridge = new EhPermissionBridge(() => {}, { timeoutMs: 5000 });
+    const a = bridge.request({
+      sessionId: "sess-a",
+      toolName: "bash",
+      description: "a",
+      args: {},
+    });
+    const b = bridge.request({
+      sessionId: "sess-b",
+      toolName: "bash",
+      description: "b",
+      args: {},
+    });
+    bridge.clearForSession("sess-a");
+    await expect(a).resolves.toBe("deny");
+    expect(bridge.size).toBe(1);
+    bridge.clear();
+    await expect(b).resolves.toBe("deny");
+  });
 });

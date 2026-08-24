@@ -59,20 +59,26 @@ describe("envoy-harness-workspace", () => {
 
   it("falls back to most recent session on disk for cwd", async () => {
     const store = new SessionStore({ dir: tmpDir });
-    const created = await store.create({
+    const older = await store.create({
       cwd: "/projects/other",
       startedAt: new Date().toISOString(),
       permissionMode: "workspace-write",
     });
-    await created.appendMessage("user", [{ type: "text", text: "hello" }]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const newer = await store.create({
+      cwd: "/projects/other",
+      startedAt: new Date().toISOString(),
+      permissionMode: "workspace-write",
+    });
 
     const resolved = await resolveEhSessionIdForCwd({
       cwd: "/projects/other",
       sessionByCwd: {},
       sessionStore: store,
     });
-    expect(resolved.sessionId).toBe(created.id);
+    expect(resolved.sessionId).toBe(newer.id);
     expect(resolved.migratedFromDisk).toBe(true);
+    expect(older.id).not.toBe(newer.id);
   });
 
   it("converts harness messages to chat turns", async () => {

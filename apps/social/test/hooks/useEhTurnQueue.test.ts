@@ -188,6 +188,83 @@ describe("useEhTurnQueue", () => {
     await waitFor(() => expect(result.current.busy).toBe(false))
   })
 
+  it("ignores turn_token events from other chats (parallel turns)", async () => {
+    const bus = createEventBus()
+    const startTurn = vi.fn(async () => ({ turnId: "turn-a" }))
+    const onAssistantStreaming = vi.fn()
+    const { result } = renderHook(() =>
+      useEhTurnQueue({
+        chatId: "chat-a",
+        startTurn,
+        subscribeTurnComplete: (h) => bus.on("eh:turn_complete", h),
+        subscribeTurnToken: (h) => bus.on("eh:turn_token", h),
+        cancelTurn: async () => ({ cancelled: true }),
+        onAssistantStreaming,
+      }),
+    )
+
+    act(() => {
+      result.current.submit("hello", "send")
+    })
+    await waitFor(() => expect(result.current.busy).toBe(true))
+
+    act(() => {
+      bus.emit("eh:turn_token", {
+        turnId: "turn-b",
+        delta: "other",
+        streamingText: "other",
+        chatId: "chat-b",
+      })
+    })
+    expect(onAssistantStreaming).not.toHaveBeenCalled()
+
+    act(() => {
+      bus.emit("eh:turn_token", {
+        turnId: "turn-a",
+        delta: "mine",
+        streamingText: "mine",
+        chatId: "chat-a",
+      })
+    })
+    expect(onAssistantStreaming).toHaveBeenCalledWith(
+      "mine",
+      assistantTurnId("turn-a"),
+    )
+  })
+
+  it("ignores prompt_busy false from other chats (parallel turns)", async () => {
+    const bus = createEventBus()
+    const startTurn = vi.fn(async () => ({ turnId: "turn-a" }))
+    const onTurnEnd = vi.fn()
+    const { result } = renderHook(() =>
+      useEhTurnQueue({
+        chatId: "chat-a",
+        startTurn,
+        subscribeTurnComplete: (h) => bus.on("eh:turn_complete", h),
+        subscribePromptBusy: (h) => bus.on("eh:prompt_busy", h),
+        cancelTurn: async () => ({ cancelled: true }),
+        onTurnEnd,
+      }),
+    )
+
+    act(() => {
+      result.current.submit("hello", "send")
+    })
+    await waitFor(() => expect(result.current.busy).toBe(true))
+
+    act(() => {
+      bus.emit("eh:prompt_busy", { busy: false, chatId: "chat-b" })
+    })
+    expect(result.current.busy).toBe(true)
+    expect(onTurnEnd).not.toHaveBeenCalled()
+
+    act(() => {
+      bus.emit("eh:prompt_busy", { busy: false, chatId: "chat-a" })
+    })
+    expect(result.current.busy).toBe(false)
+    expect(onTurnEnd).toHaveBeenCalled()
+  })
+
   it("clears busy when eh:prompt_busy goes false (server-side backup)", async () => {
     const bus = createEventBus()
     const startTurn = vi.fn(async () => ({ turnId: "turn-busy" }))

@@ -573,6 +573,15 @@ export interface NodeConfig {
   /** U4+ — persisted project folder for the envoy-harness runtime. */
   envoyHarnessCwd?: string;
   /**
+   * Per-project harness session ids (normalized absolute cwd → session UUID).
+   * Each project folder gets one persisted JSONL transcript.
+   */
+  envoyHarnessSessionByCwd?: Record<string, string>;
+  /** Envoy sidebar chat threads (one per project folder, like Terminal sessions). */
+  envoyHarnessChats?: import("./eh-chat-workspace.js").EhChatWorkspace[];
+  /** Active chat id for the legacy bare thread key and default open. */
+  activeEnvoyHarnessChatId?: string;
+  /**
    * Anonymous discovery mode — controls how the node responds to unknown/public peers.
    * Default: "off" (anonymous discovery disabled).
    */

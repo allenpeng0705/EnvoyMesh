@@ -68,6 +68,12 @@ describe("isOwnerOnlyRpcMethod", () => {
   it("gates the dedicated Envoy Harness RPCs for family", () => {
     expect(isOwnerOnlyRpcMethod("getEnvoyHarnessStatus")).toBe(true)
     expect(isOwnerOnlyRpcMethod("askEnvoyHarness")).toBe(true)
+    expect(isOwnerOnlyRpcMethod("getEnvoyHarnessChatHistory")).toBe(true)
+    expect(isOwnerOnlyRpcMethod("listEnvoyHarnessChats")).toBe(true)
+    expect(isOwnerOnlyRpcMethod("createEnvoyHarnessChat")).toBe(true)
+    expect(isOwnerOnlyRpcMethod("openEnvoyHarnessChat")).toBe(true)
+    expect(isOwnerOnlyRpcMethod("removeEnvoyHarnessChat")).toBe(true)
+    expect(isOwnerOnlyRpcMethod("resetEnvoyHarnessChat")).toBe(true)
     expect(isOwnerOnlyRpcMethod("listEnvoyHarnessPeers")).toBe(true)
     expect(isOwnerOnlyRpcMethod("setEnvoyHarnessProjectPath")).toBe(true)
     expect(isOwnerOnlyRpcMethod("invokeEnvoyHarnessEhui")).toBe(true)

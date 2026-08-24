@@ -96,8 +96,24 @@ export const piMessages = {
  */
 export const ehMessages = {
   eh: {
+    codingSection: "Coding",
     title: "Envoy",
     subtitle: "Coding Agent (ACP)",
+    newChatAria: "New coding chat",
+    newChatTitle: "New coding chat",
+    removeChatAria: "Remove coding chat",
+    removeChat: "Remove",
+    removeChatTitle: "Remove coding chat?",
+    removeChatMessage:
+      "Remove “{title}”? The transcript stays on disk; only this sidebar thread is removed.",
+    removingChat: "Removing…",
+    chatLimit: "At most {{count}} coding chats — remove one first.",
+    startChat: "Choose a project to start",
+    messageCount: "{{count}} messages",
+    chooseProjectDesc:
+      "Each coding chat is tied to one project folder, like Pi and Envoy Terminal sessions.",
+    projectPathRequired: "Choose a project folder.",
+    openingChat: "Opening…",
     openChat: "Envoy Harness",
     openChatTitle: "Open the Envoy Harness panel",
     startEnvoy: "Envoy",

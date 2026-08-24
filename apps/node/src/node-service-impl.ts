@@ -1322,6 +1322,7 @@ import {
   normalizeEhWorkspaceCwd,
   resolveEhSessionIdForCwd,
 } from "./envoy-harness-workspace.js";
+import { EhChatRuntime } from "./eh-chat-runtime.js";
 import {
   assertEhChatCapacity,
   findEhChatByCwd,
@@ -4802,6 +4803,9 @@ class NodeServiceImpl implements NodeService {
     },
   );
 
+  /** Per-chat ACP hosts + parallel in-flight turns. */
+  private readonly _ehChatRuntime = new EhChatRuntime();
+
   /** Envoy Harness ask_user / plan-review / mode-switch waiter. */
   private readonly _ehUserQuestionBridge = new AcpUserQuestionBridge(
     (_event, payload) => {
@@ -4816,6 +4820,12 @@ class NodeServiceImpl implements NodeService {
     },
     {
       getCwd: () => this._envoyHarnessResolvedCwd(),
+      // Attribute the permission prompt to the sidebar chat that owns the
+      // in-flight turn (the ACP session id of the persistent host ↔ the
+      // active turn's chatId). Multi-thread UI can then ignore prompts
+      // from other chats.
+      getChatIdForSession: (sessionId) =>
+        this._ehChatRuntime.chatIdForSession(sessionId),
     },
   );
 
@@ -5084,8 +5094,8 @@ class NodeServiceImpl implements NodeService {
     opts?: { providerHint?: string; costCapUsd?: number },
   ): Promise<string> {
     const { turnId } = await this.startEnvoyHarnessTurn(prompt, opts);
-    const active = this._ehActiveTurn;
-    if (active === undefined || active.turnId !== turnId) {
+    const active = this._ehChatRuntime.getTurn(turnId);
+    if (active === undefined) {
       throw new Error("envoy_harness_turn_lost");
     }
     const result = await active.resultPromise;
@@ -5104,6 +5114,7 @@ class NodeServiceImpl implements NodeService {
       providerHint?: string;
       costCapUsd?: number;
       attachments?: import("@envoymesh/api").AgentAttachmentRef[];
+      chatId?: string;
     },
   ): Promise<{ turnId: string }> {
     await this._refreshEnvoyHarnessHostConfig();
@@ -5115,13 +5126,18 @@ class NodeServiceImpl implements NodeService {
     if (!config.ready) {
       throw new Error("envoy_harness_stub_phase_8_step_1");
     }
-    if (this._ehActiveTurn !== undefined) {
-      throw new Error("envoy_harness_turn_busy");
-    }
 
     const trimmed = prompt.trim();
     if (trimmed.length === 0) {
       throw new Error("envoy_harness_empty_prompt");
+    }
+
+    const chat = await this._resolveEhChat(opts?.chatId ?? null);
+    if (opts?.chatId?.trim() && !chat) {
+      throw new Error(`envoy_harness_chat_not_found: ${opts.chatId}`);
+    }
+    if (chat && this._ehChatRuntime.hasTurnForChat(chat.id)) {
+      throw new Error("envoy_harness_turn_busy");
     }
 
     await this._getOrInitEnvoyHarnessRuntime();
@@ -5130,7 +5146,7 @@ class NodeServiceImpl implements NodeService {
       costCeilingUsd: readEffectiveCostCapUsd(opts?.costCapUsd, 1.0),
     };
 
-    const cwd = await this._envoyHarnessResolvedCwd();
+    const cwd = chat?.cwd ?? (await this._envoyHarnessResolvedCwd());
     const payload = await buildEhPromptPayload(
       trimmed,
       opts?.attachments,
@@ -5139,34 +5155,53 @@ class NodeServiceImpl implements NodeService {
 
     const turnId = crypto.randomUUID();
     const startedAt = new Date().toISOString();
-    this.emit("eh:turn_started", { turnId, userPrompt: trimmed, startedAt });
-    this.emit("eh:prompt_busy", { busy: true });
-
-    const resultPromise = this._executeEhTurn(turnId, payload.text, askOpts);
-    this._ehActiveTurn = {
+    this.emit("eh:turn_started", {
       turnId,
+      userPrompt: trimmed,
+      startedAt,
+      ...(chat ? { chatId: chat.id } : {}),
+    });
+    this.emit("eh:prompt_busy", {
+      busy: true,
+      ...(chat ? { chatId: chat.id } : {}),
+    });
+
+    const resultPromise = this._executeEhTurn(turnId, payload.text, askOpts, chat?.id, cwd);
+    this._ehChatRuntime.registerTurn({
+      turnId,
+      chatId: chat?.id,
+      cwd,
       userPrompt: trimmed,
       startedAt,
       streamingText: "",
       changedFiles: [],
       resultPromise,
-    };
+    });
 
     void resultPromise.finally(() => {
-      if (this._ehActiveTurn?.turnId === turnId) {
-        this._ehActiveTurn = undefined;
-        this.emit("eh:prompt_busy", { busy: false });
-        this._ehPermissionBridge.clear();
+      const removed = this._ehChatRuntime.removeTurn(turnId);
+      if (!removed) return;
+      this.emit("eh:prompt_busy", {
+        busy: false,
+        ...(removed.chatId ? { chatId: removed.chatId } : {}),
+      });
+      if (removed.sessionId) {
+        this._ehPermissionBridge.clearForSession(removed.sessionId);
+      }
+      if (removed.chatId) {
+        this._ehUserQuestionBridge.clearForChat(removed.chatId);
       }
     });
 
     return { turnId };
   }
 
-  async getEnvoyHarnessTurnStatus(): Promise<
-    import("@envoymesh/api").EhTurnStatus
-  > {
-    const active = this._ehActiveTurn;
+  async getEnvoyHarnessTurnStatus(
+    chatId?: string,
+  ): Promise<import("@envoymesh/api").EhTurnStatus> {
+    const active = chatId
+      ? this._ehChatRuntime.getTurnForChat(chatId)
+      : this._ehChatRuntime.listActiveTurns()[0];
     if (active === undefined) {
       return { busy: false };
     }
@@ -5176,6 +5211,7 @@ class NodeServiceImpl implements NodeService {
       userPrompt: active.userPrompt,
       streamingText: active.streamingText,
       startedAt: active.startedAt,
+      ...(active.chatId ? { chatId: active.chatId } : {}),
     };
   }
 
@@ -5187,24 +5223,42 @@ class NodeServiceImpl implements NodeService {
     turnId: string,
     prompt: string,
     _askOpts: { providerHint?: string; costCeilingUsd?: number; signal?: AbortSignal },
+    chatId?: string,
+    cwdOverride?: string,
   ): Promise<import("@envoymesh/api").EhTurnCompleteEvent> {
+    const turnRecord = () => this._ehChatRuntime.getTurn(turnId);
     try {
-      await this._ensureEnvoyHarnessPersistentAcpHost();
-      const host = this._envoyHarnessPersistentAcpHost;
-      if (host === undefined) {
-        throw new Error("envoy-harness persistent ACP host failed to start");
+      let host: EnvoyHarnessPersistentAcpHost;
+      if (chatId) {
+        const cwd = cwdOverride ?? (await this._resolveEhChat(chatId))?.cwd;
+        if (!cwd) {
+          throw new Error(`envoy_harness_chat_not_found: ${chatId}`);
+        }
+        const ensured = await this._ensureEhChatHost(chatId, cwd);
+        host = ensured.host;
+        const turn = turnRecord();
+        if (turn) turn.sessionId = ensured.sessionId;
+      } else {
+        await this._ensureEnvoyHarnessPersistentAcpHost();
+        host = this._envoyHarnessPersistentAcpHost!;
+        if (!host) {
+          throw new Error("envoy-harness persistent ACP host failed to start");
+        }
+        const turn = turnRecord();
+        if (turn && host.sessionId) turn.sessionId = host.sessionId;
       }
       let streamingText = "";
       const text = await host.prompt(prompt, {
         ...(_askOpts.signal !== undefined ? { signal: _askOpts.signal } : {}),
         onActivity: (activity) => {
           const filePath = pathFromEhActivity(activity);
+          const active = turnRecord();
           if (
             filePath !== undefined &&
-            this._ehActiveTurn?.turnId === turnId &&
-            !this._ehActiveTurn.changedFiles.includes(filePath)
+            active &&
+            !active.changedFiles.includes(filePath)
           ) {
-            this._ehActiveTurn.changedFiles.push(filePath);
+            active.changedFiles.push(filePath);
           }
           this.emit("eh:activity", {
             kind: activity.kind,
@@ -5213,25 +5267,27 @@ class NodeServiceImpl implements NodeService {
               ? { toolName: activity.toolName }
               : {}),
             ...(activity.ts !== undefined ? { ts: activity.ts } : {}),
+            ...(active?.chatId ? { chatId: active.chatId } : {}),
           });
         },
         onToken: (token) => {
           if (token.role !== "assistant" || token.delta.length === 0) return;
           streamingText += token.delta;
-          if (this._ehActiveTurn?.turnId === turnId) {
-            this._ehActiveTurn.streamingText = streamingText;
-          }
+          const active = turnRecord();
+          if (active) active.streamingText = streamingText;
           this.emit("eh:turn_token", {
             turnId,
             delta: token.delta,
             streamingText,
+            ...(active?.chatId ? { chatId: active.chatId } : {}),
           });
         },
       });
-      const changedFiles =
-        this._ehActiveTurn?.turnId === turnId
-          ? [...this._ehActiveTurn.changedFiles]
-          : [];
+      const active = turnRecord();
+      const changedFiles = active ? [...active.changedFiles] : [];
+      const eventChatId = active?.chatId;
+      const withChatId = <T extends object>(event: T): T =>
+        eventChatId ? ({ ...event, chatId: eventChatId } as T) : event;
 
       const finishComplete = (
         complete: import("@envoymesh/api").EhTurnCompleteEvent,
@@ -5240,9 +5296,13 @@ class NodeServiceImpl implements NodeService {
           changedFiles.length > 0
             ? { ...complete, changedFiles }
             : complete;
-        this.emit("eh:turn_complete", withFiles);
+        this.emit("eh:turn_complete", withChatId(withFiles));
         if (changedFiles.length > 0) {
-          this.emit("eh:files_changed", { turnId, files: changedFiles });
+          this.emit("eh:files_changed", {
+            turnId,
+            files: changedFiles,
+            ...(eventChatId ? { chatId: eventChatId } : {}),
+          });
         }
         return withFiles;
       };
@@ -5257,7 +5317,10 @@ class NodeServiceImpl implements NodeService {
         });
       }
       if (text.turnHints !== undefined) {
-        this.emit("eh:turn_hints", text.turnHints);
+        this.emit("eh:turn_hints", {
+          ...text.turnHints,
+          ...(eventChatId ? { chatId: eventChatId } : {}),
+        });
       }
       const assistantText = text.text;
       if (!assistantText || assistantText.trim().length === 0) {
@@ -5279,20 +5342,23 @@ class NodeServiceImpl implements NodeService {
       const cancelled =
         msg === "envoy_harness_cancelled" ||
         msg.toLowerCase().includes("cancel");
-      const changedFiles =
-        this._ehActiveTurn?.turnId === turnId
-          ? [...this._ehActiveTurn.changedFiles]
-          : [];
+      const active = turnRecord();
+      const changedFiles = active ? [...active.changedFiles] : [];
       const complete: import("@envoymesh/api").EhTurnCompleteEvent = {
         turnId,
         ok: false,
         error: msg,
         ...(cancelled ? { cancelled: true } : {}),
         ...(changedFiles.length > 0 ? { changedFiles } : {}),
+        ...(active?.chatId ? { chatId: active.chatId } : {}),
       };
       this.emit("eh:turn_complete", complete);
       if (changedFiles.length > 0) {
-        this.emit("eh:files_changed", { turnId, files: changedFiles });
+        this.emit("eh:files_changed", {
+          turnId,
+          files: changedFiles,
+          ...(active?.chatId ? { chatId: active.chatId } : {}),
+        });
       }
       return complete;
     }
@@ -5441,19 +5507,8 @@ class NodeServiceImpl implements NodeService {
   private _envoyHarnessPeerPool:
     | import("./agent-runtime-envoy/peer-pool.js").EnvoyHarnessPeerPool
     | undefined;
-  /** U6 — persistent in-process ACP (chat + EHUI share one session). */
+  /** U6 — focused chat's ACP host (EHUI + legacy single-chat paths). */
   private _envoyHarnessPersistentAcpHost: EnvoyHarnessPersistentAcpHost | undefined;
-  /** Codex-shaped non-blocking turn (survives WS disconnect on the node). */
-  private _ehActiveTurn:
-    | {
-        turnId: string;
-        userPrompt: string;
-        startedAt: string;
-        streamingText: string;
-        changedFiles: string[];
-        resultPromise: Promise<import("@envoymesh/api").EhTurnCompleteEvent>;
-      }
-    | undefined;
   private _envoyHarnessPersistentCwd: string | undefined;
   private _envoyHarnessPersistentConfigKey: string | undefined;
 
@@ -6056,17 +6111,28 @@ class NodeServiceImpl implements NodeService {
       hostEndpoint: this._envoyHarnessHostEndpoint,
     });
     if (!eh.ready) return empty;
-    if (chat && chatId) await this._activateEhChat(chat);
 
-    await this._ensureEnvoyHarnessPersistentAcpHost();
-    const host = this._envoyHarnessPersistentAcpHost;
-    const sessionId = host?.sessionId;
-    if (sessionId === undefined || sessionId.length === 0) return empty;
+    if (chat && chatId) {
+      await this._activateEhChat(chat);
+    }
 
+    const cfg = await this._configStore.load().catch(() => undefined);
     const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    const resolved = await resolveEhSessionIdForCwd({
+      cwd,
+      sessionByCwd: cfg?.envoyHarnessSessionByCwd,
+      sessionStore,
+    });
+    if (resolved.sessionId === undefined || resolved.sessionId.length === 0) {
+      return empty;
+    }
+    if (resolved.migratedFromDisk) {
+      await this._persistEhSessionMapping(cwd, resolved.sessionId, chat?.id);
+    }
+
     const history = await loadEhChatHistoryFromStore({
       sessionStore,
-      sessionId,
+      sessionId: resolved.sessionId,
       cwd,
     });
     return { ...history, ...(chat ? { chatId: chat.id } : {}) };
@@ -6077,7 +6143,7 @@ class NodeServiceImpl implements NodeService {
   > {
     const { chats, sessionByCwd } = await this._loadEhChatState();
     const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
-    return summarizeEhChats({ chats, sessionStore });
+    return summarizeEhChats({ chats, sessionStore, sessionByCwd });
   }
 
   async createEnvoyHarnessChat(opts: {
@@ -6118,7 +6184,7 @@ class NodeServiceImpl implements NodeService {
       activeEnvoyHarnessChatId: chat.id,
       envoyHarnessCwd: normalized,
     });
-    this._closeEnvoyHarnessPersistentAcpHost();
+    this._syncActiveEhHostAlias(undefined);
     const listed = await this.listEnvoyHarnessChats();
     const created = listed.find((c) => c.id === chat.id);
     if (!created) {
@@ -6135,15 +6201,19 @@ class NodeServiceImpl implements NodeService {
   async openEnvoyHarnessChat(
     chatId: string,
   ): Promise<import("@envoymesh/api").EhChatHistory> {
-    const chat = await this._resolveEhChat(chatId);
+    const id = chatId.trim();
+    if (!id) {
+      throw new Error("envoy_harness_chat_id_required");
+    }
+    const chat = await this._resolveEhChat(id);
     if (!chat) {
-      throw new Error(`envoy_harness_chat_not_found: ${chatId}`);
+      throw new Error(`envoy_harness_chat_not_found: ${id}`);
     }
     return this.getEnvoyHarnessChatHistory(chat.id);
   }
 
   async removeEnvoyHarnessChat(chatId: string): Promise<{ removed: boolean }> {
-    if (this._ehActiveTurn !== undefined) {
+    if (this._ehChatRuntime.hasTurnForChat(chatId)) {
       throw new Error("envoy_harness_turn_busy");
     }
     const { chats, activeId } = await this._loadEhChatState();
@@ -6152,7 +6222,7 @@ class NodeServiceImpl implements NodeService {
     }
     const nextChats = removeEhChat(chats, chatId);
     const nextActive =
-      activeId === chatId ? nextChats[0]?.id : activeId;
+      activeId === chatId ? sortEhChats(nextChats)[0]?.id : activeId;
     await this.updateNodeConfig({
       envoyHarnessChats: nextChats,
       activeEnvoyHarnessChatId: nextActive,
@@ -6160,7 +6230,14 @@ class NodeServiceImpl implements NodeService {
         ? { envoyHarnessCwd: findEhChatById(nextChats, nextActive)?.cwd }
         : {}),
     });
-    this._closeEnvoyHarnessPersistentAcpHost();
+    this._ehChatRuntime.removeHost(chatId);
+    if (nextActive) {
+      const nextChat = findEhChatById(nextChats, nextActive);
+      if (nextChat) await this._activateEhChat(nextChat);
+      else this._syncActiveEhHostAlias(undefined);
+    } else {
+      this._syncActiveEhHostAlias(undefined);
+    }
     return { removed: true };
   }
 
@@ -6170,13 +6247,18 @@ class NodeServiceImpl implements NodeService {
   async resetEnvoyHarnessChat(
     chatId?: string,
   ): Promise<import("@envoymesh/api").EhChatHistory> {
-    if (this._ehActiveTurn !== undefined) {
+    const chat = await this._resolveEhChat(chatId ?? null);
+    if (chat && this._ehChatRuntime.hasTurnForChat(chat.id)) {
       throw new Error("envoy_harness_turn_busy");
     }
-    const chat = await this._resolveEhChat(chatId ?? null);
     const cwd = chat?.cwd ?? (await this._envoyHarnessResolvedCwd());
     const normalized = normalizeEhWorkspaceCwd(cwd);
-    this._closeEnvoyHarnessPersistentAcpHost();
+    if (chat) {
+      await this._activateEhChat(chat);
+      this._ehChatRuntime.removeHost(chat.id);
+    } else {
+      this._closeEnvoyHarnessPersistentAcpHost();
+    }
     const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
     const created = await sessionStore.create({
       cwd: normalized,
@@ -6203,12 +6285,22 @@ class NodeServiceImpl implements NodeService {
       cwd,
       sessionId,
     );
+    let resolvedChatId = chatId;
     let envoyHarnessChats = cfg?.envoyHarnessChats;
-    if (chatId && envoyHarnessChats) {
-      envoyHarnessChats = upsertEhChatSessionId(envoyHarnessChats, chatId, sessionId);
-    } else if (chatId) {
+    if (!resolvedChatId) {
       const { chats } = await this._loadEhChatState();
-      envoyHarnessChats = upsertEhChatSessionId(chats, chatId, sessionId);
+      resolvedChatId = findEhChatByCwd(chats, cwd)?.id;
+      if (!envoyHarnessChats) envoyHarnessChats = chats;
+    }
+    if (resolvedChatId && envoyHarnessChats) {
+      envoyHarnessChats = upsertEhChatSessionId(
+        envoyHarnessChats,
+        resolvedChatId,
+        sessionId,
+      );
+    } else if (resolvedChatId) {
+      const { chats } = await this._loadEhChatState();
+      envoyHarnessChats = upsertEhChatSessionId(chats, resolvedChatId, sessionId);
     }
     await this.updateNodeConfig({
       envoyHarnessSessionByCwd,
@@ -6241,10 +6333,28 @@ class NodeServiceImpl implements NodeService {
       chats.length > 0 &&
       (cfg?.envoyHarnessChats === undefined || cfg.envoyHarnessChats.length === 0)
     ) {
-      await this.updateNodeConfig({ envoyHarnessChats: chats });
+      const migrated = sortEhChats(chats)[0];
+      await this.updateNodeConfig({
+        envoyHarnessChats: chats,
+        activeEnvoyHarnessChatId: migrated?.id,
+        ...(migrated ? { envoyHarnessCwd: migrated.cwd } : {}),
+      });
     }
-    const activeId =
-      cfg?.activeEnvoyHarnessChatId?.trim() || chats[0]?.id;
+
+    let activeId = cfg?.activeEnvoyHarnessChatId?.trim();
+    if (activeId && !findEhChatById(chats, activeId)) {
+      activeId = sortEhChats(chats)[0]?.id;
+      if (activeId) {
+        const repaired = findEhChatById(chats, activeId);
+        await this.updateNodeConfig({
+          activeEnvoyHarnessChatId: activeId,
+          ...(repaired ? { envoyHarnessCwd: repaired.cwd } : {}),
+        });
+      }
+    } else if (!activeId && chats[0]) {
+      activeId = chats[0].id;
+    }
+
     return {
       chats,
       sessionByCwd: cfg?.envoyHarnessSessionByCwd ?? {},
@@ -6257,29 +6367,45 @@ class NodeServiceImpl implements NodeService {
   ): Promise<import("@envoymesh/api").EhChatWorkspace | undefined> {
     const { chats, activeId } = await this._loadEhChatState();
     if (chatId) return findEhChatById(chats, chatId);
-    if (activeId) return findEhChatById(chats, activeId);
-    return chats[0];
+    if (activeId) {
+      const active = findEhChatById(chats, activeId);
+      if (active) return active;
+    }
+    return sortEhChats(chats)[0];
+  }
+
+  private _syncActiveEhHostAlias(
+    chatId: string | undefined,
+  ): void {
+    if (!chatId) {
+      this._envoyHarnessPersistentAcpHost = undefined;
+      this._envoyHarnessPersistentCwd = undefined;
+      this._envoyHarnessPersistentConfigKey = undefined;
+      return;
+    }
+    const existing = this._ehChatRuntime.getHost(chatId);
+    if (!existing) {
+      this._envoyHarnessPersistentAcpHost = undefined;
+      this._envoyHarnessPersistentCwd = undefined;
+      this._envoyHarnessPersistentConfigKey = undefined;
+      return;
+    }
+    this._envoyHarnessPersistentAcpHost = existing.host;
+    this._envoyHarnessPersistentCwd = existing.cwd;
+    this._envoyHarnessPersistentConfigKey = existing.configKey;
   }
 
   private async _activateEhChat(
     chat: import("@envoymesh/api").EhChatWorkspace,
   ): Promise<void> {
-    const cfg = await this._configStore.load().catch(() => undefined);
-    const { chats, activeId } = await this._loadEhChatState();
+    const { chats } = await this._loadEhChatState();
     const nextChats = touchEhChat(chats, chat.id);
-    const sameActive =
-      activeId === chat.id &&
-      normalizeEhWorkspaceCwd(cfg?.envoyHarnessCwd ?? "") ===
-        normalizeEhWorkspaceCwd(chat.cwd);
     await this.updateNodeConfig({
       activeEnvoyHarnessChatId: chat.id,
       envoyHarnessCwd: chat.cwd,
       envoyHarnessChats: nextChats,
     });
-    if (!sameActive) {
-      this._envoyHarnessRuntimeCache = undefined;
-      this._closeEnvoyHarnessPersistentAcpHost();
-    }
+    this._syncActiveEhHostAlias(chat.id);
   }
 
   /**
@@ -6294,7 +6420,6 @@ class NodeServiceImpl implements NodeService {
     if (abs === null) {
       throw new Error(`envoy-harness project path is not a directory: ${path}`);
     }
-    await this.updateNodeConfig({ envoyHarnessCwd: abs });
     const chat = await this._resolveEhChat(undefined);
     if (chat) {
       const { chats } = await this._loadEhChatState();
@@ -6305,7 +6430,12 @@ class NodeServiceImpl implements NodeService {
         );
       }
       const nextChats = updateEhChatCwd(chats, chat.id, abs);
-      await this.updateNodeConfig({ envoyHarnessChats: nextChats });
+      await this.updateNodeConfig({
+        envoyHarnessCwd: abs,
+        envoyHarnessChats: nextChats,
+      });
+    } else {
+      await this.updateNodeConfig({ envoyHarnessCwd: abs });
     }
     // The runtime caches the cwd at construction; rebuild on next ask.
     this._envoyHarnessRuntimeCache = undefined;
@@ -6323,6 +6453,7 @@ class NodeServiceImpl implements NodeService {
   private async _buildEnvoyHarnessAcpBackend(
     runtime: RealEnvoyHarnessRuntime,
     cwd: string,
+    chatId?: string,
   ): Promise<ProtocolSessionBackend> {
     await runtime.ensureInternals();
     const cfg = await this._configStore.load().catch(() => undefined);
@@ -6350,7 +6481,7 @@ class NodeServiceImpl implements NodeService {
     const userQuestions = createUserQuestionService();
     userQuestions.registerProvider({
       name: "envoymesh-ui",
-      ask: (req) => this._ehUserQuestionBridge.ask(req),
+      ask: (req) => this._ehUserQuestionBridge.ask(req, chatId),
     });
     // Codex/Claude/DeepSeek parity: inject cwd + AGENTS.md + config
     // into the system prompt so chat asks treat the selected folder
@@ -6403,8 +6534,92 @@ class NodeServiceImpl implements NodeService {
     });
   }
 
+  private async _ensureEhChatHost(
+    chatId: string,
+    cwd: string,
+  ): Promise<{ host: EnvoyHarnessPersistentAcpHost; sessionId: string }> {
+    const eh = loadEnvoyHarnessRuntimeConfig({
+      hostModel: this._envoyHarnessHostModel,
+      hostApiKey: this._envoyHarnessHostApiKey,
+      hostEndpoint: this._envoyHarnessHostEndpoint,
+    });
+    const configKey = `${eh.model ?? ""}:${eh.apiKey ?? ""}:${eh.endpoint ?? ""}`;
+    const normalized = normalizeEhWorkspaceCwd(cwd);
+    const existing = this._ehChatRuntime.getHost(chatId);
+    if (
+      existing &&
+      existing.cwd === normalized &&
+      existing.configKey === configKey
+    ) {
+      return { host: existing.host, sessionId: existing.sessionId };
+    }
+    if (existing && this._ehChatRuntime.hasTurnForChat(chatId)) {
+      throw new Error("envoy_harness_turn_busy");
+    }
+    if (existing) {
+      this._ehChatRuntime.removeHost(chatId);
+    }
+
+    const runtime = await this._getOrInitEnvoyHarnessRuntime();
+    const backend = await this._buildEnvoyHarnessAcpBackend(
+      runtime,
+      normalized,
+      chatId,
+    );
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    const resolved = await resolveEhSessionIdForCwd({
+      cwd: normalized,
+      sessionByCwd: cfg?.envoyHarnessSessionByCwd,
+      sessionStore,
+    });
+    const host = new EnvoyHarnessPersistentAcpHost();
+    let started: { sessionId: string; resumed: boolean };
+    try {
+      started = await host.start({
+        cwd: normalized,
+        backend,
+        permissionBridge: this._ehPermissionBridge,
+        ...(resolved.sessionId !== undefined
+          ? { resumeSessionId: resolved.sessionId }
+          : {}),
+      });
+    } catch (err) {
+      if (resolved.sessionId === undefined) throw err;
+      await host.start({
+        cwd: normalized,
+        backend,
+        permissionBridge: this._ehPermissionBridge,
+      });
+      started = { sessionId: host.sessionId!, resumed: false };
+    }
+    if (
+      resolved.sessionId === undefined ||
+      resolved.migratedFromDisk ||
+      resolved.sessionId !== started.sessionId
+    ) {
+      await this._persistEhSessionMapping(normalized, started.sessionId, chatId);
+    }
+    this._ehChatRuntime.setHost(chatId, {
+      host,
+      cwd: normalized,
+      configKey,
+      sessionId: started.sessionId,
+    });
+    const active = await this._resolveEhChat(undefined);
+    if (active?.id === chatId) {
+      this._syncActiveEhHostAlias(chatId);
+    }
+    return { host, sessionId: started.sessionId };
+  }
+
   private async _ensureEnvoyHarnessPersistentAcpHost(): Promise<void> {
-    const cwd = await this._envoyHarnessResolvedCwd();
+    const activeChat = await this._resolveEhChat(undefined);
+    const cwd = activeChat?.cwd ?? (await this._envoyHarnessResolvedCwd());
+    if (activeChat) {
+      await this._ensureEhChatHost(activeChat.id, cwd);
+      return;
+    }
     const eh = loadEnvoyHarnessRuntimeConfig({
       hostModel: this._envoyHarnessHostModel,
       hostApiKey: this._envoyHarnessHostApiKey,
@@ -6429,14 +6644,28 @@ class NodeServiceImpl implements NodeService {
       sessionStore,
     });
     const host = new EnvoyHarnessPersistentAcpHost();
-    const started = await host.start({
-      cwd,
-      backend,
-      permissionBridge: this._ehPermissionBridge,
-      ...(resolved.sessionId !== undefined
-        ? { resumeSessionId: resolved.sessionId }
-        : {}),
-    });
+    let started: { sessionId: string; resumed: boolean };
+    try {
+      started = await host.start({
+        cwd,
+        backend,
+        permissionBridge: this._ehPermissionBridge,
+        ...(resolved.sessionId !== undefined
+          ? { resumeSessionId: resolved.sessionId }
+          : {}),
+      });
+    } catch (err) {
+      // A stale resume id (session JSONL deleted between the disk scan
+      // and the load, or a corrupted file) must not brick the chat:
+      // fall back to a fresh persisted session for the same project.
+      if (resolved.sessionId === undefined) throw err;
+      await host.start({
+        cwd,
+        backend,
+        permissionBridge: this._ehPermissionBridge,
+      });
+      started = { sessionId: host.sessionId!, resumed: false };
+    }
     if (
       resolved.sessionId === undefined ||
       resolved.migratedFromDisk ||
@@ -7561,14 +7790,24 @@ class NodeServiceImpl implements NodeService {
     return { requestId: params.requestId, delivered: result.delivered }
   }
 
-  async cancelEnvoyHarnessTurn(): Promise<{ cancelled: boolean }> {
-    const host = this._envoyHarnessPersistentAcpHost;
-    if (host === undefined) {
-      return { cancelled: false };
-    }
+  async cancelEnvoyHarnessTurn(
+    chatId?: string,
+  ): Promise<{ cancelled: boolean }> {
+    const turn = chatId
+      ? this._ehChatRuntime.getTurnForChat(chatId)
+      : this._ehChatRuntime.listActiveTurns()[0];
+    if (!turn) return { cancelled: false };
+    const host = turn.chatId
+      ? this._ehChatRuntime.getHost(turn.chatId)?.host
+      : this._envoyHarnessPersistentAcpHost;
+    if (!host) return { cancelled: false };
     await host.cancelActiveTurn();
-    this._ehUserQuestionBridge.clear();
-    this._ehPermissionBridge.clear();
+    if (turn.sessionId) {
+      this._ehPermissionBridge.clearForSession(turn.sessionId);
+    }
+    if (turn.chatId) {
+      this._ehUserQuestionBridge.clearForChat(turn.chatId);
+    }
     return { cancelled: true };
   }
 

@@ -460,8 +460,11 @@ export interface NodeServiceClient {
   startEnvoyHarnessTurn(
     text: string,
     attachments?: import("@envoymesh/api").AgentAttachmentRef[],
+    chatId?: string,
   ): Promise<{ turnId: string }>;
-  getEnvoyHarnessTurnStatus(): Promise<import("@envoymesh/api").EhTurnStatus>;
+  getEnvoyHarnessTurnStatus(
+    chatId?: string,
+  ): Promise<import("@envoymesh/api").EhTurnStatus>;
   getEnvoyHarnessChatHistory(
     chatId?: string,
   ): Promise<import("@envoymesh/api").EhChatHistory>;
@@ -483,7 +486,7 @@ export interface NodeServiceClient {
     requestId: string;
     allowed: boolean;
   }): Promise<{ requestId: string; delivered: boolean }>;
-  cancelEnvoyHarnessTurn(): Promise<{ cancelled: boolean }>;
+  cancelEnvoyHarnessTurn(chatId?: string): Promise<{ cancelled: boolean }>;
   /** The configured envoy-harness peer cluster (id/model/capabilities). */
   listEnvoyHarnessPeers(): Promise<
     ReadonlyArray<{
@@ -1757,20 +1760,24 @@ function createWsNodeServiceClient(
     async startEnvoyHarnessTurn(
       text: string,
       attachments?: import("@envoymesh/api").AgentAttachmentRef[],
+      chatId?: string,
     ) {
       return wsClient.rpc(
         "startEnvoyHarnessTurn",
         {
           text,
           ...(attachments !== undefined && attachments.length > 0 ? { attachments } : {}),
+          ...(chatId ? { chatId } : {}),
         },
         { timeoutMs: 30_000 },
       ) as Promise<{ turnId: string }>;
     },
-    async getEnvoyHarnessTurnStatus() {
-      return wsClient.rpc("getEnvoyHarnessTurnStatus", {}, { timeoutMs: 10_000 }) as Promise<
-        import("@envoymesh/api").EhTurnStatus
-      >;
+    async getEnvoyHarnessTurnStatus(chatId?: string) {
+      return wsClient.rpc(
+        "getEnvoyHarnessTurnStatus",
+        chatId ? { chatId } : {},
+        { timeoutMs: 10_000 },
+      ) as Promise<import("@envoymesh/api").EhTurnStatus>;
     },
     async getEnvoyHarnessChatHistory(chatId?: string) {
       return wsClient.rpc(
@@ -1812,8 +1819,11 @@ function createWsNodeServiceClient(
         delivered: boolean;
       }>;
     },
-    async cancelEnvoyHarnessTurn() {
-      return wsClient.rpc("cancelEnvoyHarnessTurn", {}) as Promise<{
+    async cancelEnvoyHarnessTurn(chatId?: string) {
+      return wsClient.rpc(
+        "cancelEnvoyHarnessTurn",
+        chatId ? { chatId } : {},
+      ) as Promise<{
         cancelled: boolean;
       }>;
     },

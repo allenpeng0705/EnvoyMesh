@@ -4,7 +4,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 
-import type { EhTurnCompleteEvent, EhTurnStatus, EhTurnTokenEvent } from "@envoymesh/api"
+import type {
+  EhPromptBusyEvent,
+  EhTurnCompleteEvent,
+  EhTurnStatus,
+  EhTurnTokenEvent,
+} from "@envoymesh/api"
 
 export interface EhQueuedInput {
   id: string
@@ -14,13 +19,17 @@ export interface EhQueuedInput {
 export type EhSubmitMode = "send" | "queue" | "inject"
 
 export interface UseEhTurnQueueOptions {
+  /** Sidebar chat thread this queue serves. Events from other chats are
+   *  ignored (the node now runs parallel per-chat turns). `null`/undefined
+   *  = legacy active chat (accepts events without a chatId). */
+  chatId?: string | null
   startTurn: (
     text: string,
     attachments?: import("@envoymesh/api").AgentAttachmentRef[],
   ) => Promise<{ turnId: string }>
   subscribeTurnComplete: (handler: (event: EhTurnCompleteEvent) => void) => () => void
   subscribeTurnToken?: (handler: (event: EhTurnTokenEvent) => void) => () => void
-  subscribePromptBusy?: (handler: (event: { busy: boolean }) => void) => () => void
+  subscribePromptBusy?: (handler: (event: EhPromptBusyEvent) => void) => () => void
   getTurnStatus?: () => Promise<EhTurnStatus>
   cancelTurn: () => Promise<{ cancelled: boolean }>
   onUserTurn?: (text: string) => void
@@ -51,6 +60,17 @@ export function useEhTurnQueue(options: UseEhTurnQueueOptions) {
   const activeTurnIdRef = useRef<string | undefined>(undefined)
   const optionsRef = useRef(options)
   optionsRef.current = options
+  const chatIdRef = useRef<string | null>(options.chatId ?? null)
+  chatIdRef.current = options.chatId ?? null
+
+  /** True when an event belongs to this queue's chat (or is legacy/unscoped). */
+  const eventMatchesChat = useCallback(
+    (eventChatId: string | undefined): boolean => {
+      if (eventChatId === undefined) return true
+      return chatIdRef.current === eventChatId
+    },
+    [],
+  )
 
   const setBusySafe = useCallback((next: boolean) => {
     busyRef.current = next
@@ -87,6 +107,7 @@ export function useEhTurnQueue(options: UseEhTurnQueueOptions) {
   // re-subscribing every render can drop eh:turn_* events mid-flight.
   useEffect(() => {
     const unsubComplete = optionsRef.current.subscribeTurnComplete((event) => {
+      if (!eventMatchesChat(event.chatId)) return
       const waiter = turnWaitersRef.current.get(event.turnId)
       if (waiter === undefined) return
       turnWaitersRef.current.delete(event.turnId)
@@ -102,12 +123,14 @@ export function useEhTurnQueue(options: UseEhTurnQueueOptions) {
       }
     })
     const unsubToken = optionsRef.current.subscribeTurnToken?.((event) => {
+      if (!eventMatchesChat(event.chatId)) return
       optionsRef.current.onAssistantStreaming?.(
         event.streamingText,
         assistantTurnId(event.turnId),
       )
     })
     const unsubBusy = optionsRef.current.subscribePromptBusy?.((event) => {
+      if (!eventMatchesChat(event.chatId)) return
       if (!event.busy && busyRef.current) {
         if (turnWaitersRef.current.size > 0) {
           for (const [, waiter] of turnWaitersRef.current) {
@@ -125,13 +148,18 @@ export function useEhTurnQueue(options: UseEhTurnQueueOptions) {
       unsubToken?.()
       unsubBusy?.()
     }
-  }, [setBusySafe])
+  }, [eventMatchesChat, setBusySafe])
 
   useEffect(() => {
     if (optionsRef.current.getTurnStatus === undefined) return
     let cancelled = false
     void optionsRef.current.getTurnStatus!().then((status) => {
       if (cancelled || !status.busy || status.turnId === undefined) return
+      // Another chat's in-flight turn must not hijack this panel's
+      // reconnect (parallel per-chat turns).
+      if (status.chatId !== undefined && !eventMatchesChat(status.chatId)) {
+        return
+      }
       activeTurnIdRef.current = status.turnId
       busyRef.current = true
       setBusy(true)

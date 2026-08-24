@@ -94,6 +94,8 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
   const [showGitDiffReview, setShowGitDiffReview] = useState(false);
   const [dismissedChanges, setDismissedChanges] = useState(false);
   const [ehuiRefreshKey, setEhuiRefreshKey] = useState(0);
+  /** The Envoy chat thread that owns this project (parallel per-chat turns). */
+  const [terminalChatId, setTerminalChatId] = useState<string | null>(null);
   const useHomeRemote = connectionStatus?.homeRemote?.paired === true;
   const homeOffline = useHomeRemote && connectionStatus?.homeRemote?.homeOnline === false;
   const modeRef = useRef(mode);
@@ -110,6 +112,7 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
 
   const turnContext = useEhTurnContext({
     projectCwd: ehProjectCwd,
+    chatId: terminalChatId,
     subscribeActivity: (handler) => nodeService.on("eh:activity", handler),
     subscribeFilesChanged: (handler) => nodeService.on("eh:files_changed", handler),
   });
@@ -123,12 +126,47 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
   useEffect(() => {
     if (!isEnvoyHarnessSession) {
       setEhProjectCwd(undefined);
+      setTerminalChatId(null);
       return;
     }
     void nodeService.getEnvoyHarnessStatus().then((s) => {
       setEhProjectCwd(s.cwd);
     });
   }, [isEnvoyHarnessSession, nodeService]);
+
+  // Resolve the chat thread for this terminal's project folder so the
+  // progress rail only shows this project's turns (other chats may run
+  // in parallel).
+  useEffect(() => {
+    if (!isEnvoyHarnessSession || !ehProjectCwd) {
+      setTerminalChatId(null);
+      return;
+    }
+    if (typeof nodeService.listEnvoyHarnessChats !== "function") {
+      setTerminalChatId(null);
+      return;
+    }
+    let cancelled = false;
+    const normalize = (p: string) => p.replace(/[/\\]+$/, "");
+    void nodeService
+      .listEnvoyHarnessChats()
+      .then((chats) => {
+        if (cancelled) return;
+        const match = chats.find(
+          (c) => normalize(c.cwd) === normalize(ehProjectCwd ?? ""),
+        );
+        setTerminalChatId(match?.id ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setTerminalChatId(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ehProjectCwd, isEnvoyHarnessSession, nodeService]);
+
+  const matchesTerminalChat = (eventChatId: string | undefined): boolean =>
+    eventChatId === undefined || eventChatId === terminalChatId;
 
   useEffect(() => {
     if (!isEnvoyHarnessSession) {
@@ -141,15 +179,19 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
       return;
     }
     const unsubQuestion = nodeService.on("eh:user_question", (event) => {
+      if (!matchesTerminalChat(event.chatId)) return;
       setPendingEhQuestion(event);
     });
     const unsubPermission = nodeService.on("eh:permission", (event) => {
+      if (!matchesTerminalChat(event.chatId)) return;
       setPendingEhPermission(event);
     });
     const unsubHints = nodeService.on("eh:turn_hints", (event) => {
+      if (!matchesTerminalChat(event.chatId)) return;
       setEhTurnHints(event);
     });
     const unsubBusy = nodeService.on("eh:prompt_busy", (event) => {
+      if (!matchesTerminalChat(event.chatId)) return;
       setEhPromptBusy(event.busy);
       if (!event.busy) {
         setEhActivitySummary(undefined);
@@ -158,11 +200,13 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
         setEhuiRefreshKey((k) => k + 1);
       }
     });
-    const unsubTurnStart = nodeService.on("eh:turn_started", () => {
+    const unsubTurnStart = nodeService.on("eh:turn_started", (event) => {
+      if (!matchesTerminalChat(event.chatId)) return;
       setDismissedChanges(false);
       resetTurnContext();
     });
     const unsubActivity = nodeService.on("eh:activity", (event: EhActivityEvent) => {
+      if (!matchesTerminalChat(event.chatId)) return;
       if (event.summary.trim().length > 0) {
         setEhActivitySummary(event.summary);
       }
@@ -175,7 +219,7 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
       unsubTurnStart();
       unsubActivity();
     };
-  }, [nodeService, isEnvoyHarnessSession, resetTurnContext]);
+  }, [nodeService, isEnvoyHarnessSession, resetTurnContext, terminalChatId]);
 
   useEffect(() => {
     if (isPiSession && mode !== "manual") setMode("manual");

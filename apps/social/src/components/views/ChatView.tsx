@@ -14,10 +14,8 @@ import {
   OWNER_FAMILY_PROFILE_ID,
   threadVisibleTo,
   ENVOY_AI_THREAD_KEY,
-  ENVOY_HARNESS_THREAD_KEY,
   isEnvoyHarnessThreadKey,
   parseEnvoyHarnessChatId,
-  envoyHarnessThreadKey,
 } from "@envoymesh/api";
 import { useEffect, useState } from "react";
 import { useNodeService } from "../../hooks/useNodeService.js";
@@ -76,18 +74,8 @@ export function ChatView({
     openTerminal({ startPi: true });
   };
 
-  const openEnvoyHarnessChat = async () => {
+  const openEnvoyHarnessChat = () => {
     onOpenEnvoyHarnessProp?.();
-    try {
-      const chats = await nodeService.listEnvoyHarnessChats();
-      if (chats.length > 0) {
-        onSelectedContactChange(envoyHarnessThreadKey(chats[0].id));
-      } else {
-        onSelectedContactChange(ENVOY_HARNESS_THREAD_KEY);
-      }
-    } catch {
-      onSelectedContactChange(ENVOY_HARNESS_THREAD_KEY);
-    }
   };
 
   const selectedEhChatId = isEnvoyHarnessThreadKey(selectedContact ?? "")
@@ -207,6 +195,7 @@ export function ChatView({
             <div className="assistant-chat-wrapper">
               <div className="assistant-chat-panel">
                 <EnvoyHarnessPanel
+                  key={selectedContact ?? "envoy-harness"}
                   chatId={selectedEhChatId}
                   onBackToChats={() => onSelectedContactChange(null)}
                 />

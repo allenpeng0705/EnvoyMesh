@@ -10,6 +10,8 @@ export interface EhUserQuestionEvent {
   multiline?: boolean;
   timeoutMs: number;
   kind?: "ask" | "plan-review" | "mode-switch";
+  /** Sidebar chat thread that owns this question. */
+  chatId?: string;
 }
 
 export interface EhRespondToUserQuestionParams {

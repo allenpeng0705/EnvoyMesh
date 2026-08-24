@@ -10,4 +10,5 @@ export interface EhDeferredTask {
 export interface EhTurnHintsEvent {
   followUps?: string[];
   deferred?: EhDeferredTask[];
+  chatId?: string;
 }

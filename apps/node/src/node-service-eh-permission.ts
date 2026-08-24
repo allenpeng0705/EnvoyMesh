@@ -26,6 +26,7 @@ export interface EhPermissionBridgeEmit {
 interface Pending {
   resolve: (decision: EhPermissionDecision) => void;
   timer: ReturnType<typeof setTimeout>;
+  sessionId: string;
 }
 
 const DEFAULT_TIMEOUT_MS = 300_000;
@@ -36,16 +37,22 @@ export class EhPermissionBridge {
   readonly #timeoutMs: number;
   readonly #getCwd: (() => Promise<string | undefined>) | undefined;
 
+  readonly #getChatIdForSession:
+    | ((sessionId: string) => string | undefined)
+    | undefined;
+
   constructor(
     emit: EhPermissionBridgeEmit,
     opts?: {
       timeoutMs?: number;
       getCwd?: () => Promise<string | undefined>;
+      getChatIdForSession?: (sessionId: string) => string | undefined;
     },
   ) {
     this.#emit = emit;
     this.#timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.#getCwd = opts?.getCwd;
+    this.#getChatIdForSession = opts?.getChatIdForSession;
   }
 
   request(req: EhPermissionRequest): Promise<EhPermissionDecision> {
@@ -56,7 +63,7 @@ export class EhPermissionBridge {
         resolve("deny");
       }, this.#timeoutMs);
 
-      this.#pending.set(requestId, { resolve, timer });
+      this.#pending.set(requestId, { resolve, timer, sessionId: req.sessionId });
 
       void (async () => {
         const cwd = this.#getCwd !== undefined ? await this.#getCwd() : undefined;
@@ -64,6 +71,7 @@ export class EhPermissionBridge {
           { toolName: req.toolName, args: req.args },
           cwd,
         );
+        const chatId = this.#getChatIdForSession?.(req.sessionId);
         this.#emit("eh:permission", {
           requestId,
           sessionId: req.sessionId,
@@ -72,6 +80,7 @@ export class EhPermissionBridge {
           args: req.args,
           timeoutMs: this.#timeoutMs,
           ...(preview !== undefined ? { preview } : {}),
+          ...(chatId ? { chatId } : {}),
         });
       })();
     });
@@ -87,6 +96,15 @@ export class EhPermissionBridge {
     this.#pending.delete(requestId);
     entry.resolve(decision);
     return { delivered: true };
+  }
+
+  clearForSession(sessionId: string): void {
+    for (const [id, entry] of this.#pending) {
+      if (entry.sessionId !== sessionId) continue;
+      clearTimeout(entry.timer);
+      entry.resolve("deny");
+      this.#pending.delete(id);
+    }
   }
 
   clear(): void {

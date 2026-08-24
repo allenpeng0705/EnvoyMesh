@@ -887,15 +887,19 @@ export class DirectCallClient implements NodeServiceClient {
   async startEnvoyHarnessTurn(
     text: string,
     attachments?: import("@envoymesh/api").AgentAttachmentRef[],
+    chatId?: string,
   ) {
     return this._ns.startEnvoyHarnessTurn(
       text,
-      attachments && attachments.length > 0 ? { attachments } : undefined,
+      {
+        ...(attachments && attachments.length > 0 ? { attachments } : {}),
+        ...(chatId ? { chatId } : {}),
+      },
     );
   }
 
-  async getEnvoyHarnessTurnStatus() {
-    return this._ns.getEnvoyHarnessTurnStatus();
+  async getEnvoyHarnessTurnStatus(chatId?: string) {
+    return this._ns.getEnvoyHarnessTurnStatus(chatId);
   }
 
   async getEnvoyHarnessChatHistory(chatId?: string) {
@@ -926,8 +930,8 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.ehRespondToPermission(params);
   }
 
-  async cancelEnvoyHarnessTurn() {
-    return this._ns.cancelEnvoyHarnessTurn();
+  async cancelEnvoyHarnessTurn(chatId?: string) {
+    return this._ns.cancelEnvoyHarnessTurn(chatId);
   }
 
   async listEnvoyHarnessPeers() {
