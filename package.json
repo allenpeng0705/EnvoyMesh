@@ -34,7 +34,7 @@
     "install:openclaw:win": "powershell -ExecutionPolicy Bypass -File scripts/install-openclaw.ps1",
     "postinstall": "node scripts/fix-node-pty-perms.js",
     "cli": "tsx apps/cli/src/index.ts",
-    "build:envoy-harness": "cd ../envoy-harness && pnpm -r run build",
+    "build:envoy-harness": "cd ../envoy-harness && pnpm --filter @envoymesh/envoy-harness-client run build && pnpm -r run build",
     "node:dev": "tsc -b packages/api packages/local-store && npm run build:envoy-harness && cd apps/node && tsx src/index.ts",
     "node:dev:alt": "node scripts/run-with-env.mjs ENVOYMESH_PORT_OFFSET=100 -- npm run node:dev --",
     "node:dev:4030": "node scripts/run-with-env.mjs ENVOYMESH_SOCIAL_WS_PORT=4030 ENVOYMESH_BRIDGE_PORT=4031 ENVOYMESH_TERMINAL_WS_PORT=4032 ENVOYMESH_GATEWAY_PORT=19889 -- npm run node:dev --",

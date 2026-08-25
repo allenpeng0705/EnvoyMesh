@@ -1318,6 +1318,7 @@ import {
 import { ensureEnvoyTerminalSession } from "./envoy-terminal-session.js";
 import {
   createEnvoyHarnessSessionStore,
+  deleteEhChatTurnFromStore,
   loadEhChatHistoryFromStore,
   mergeSessionMapping,
   normalizeEhWorkspaceCwd,
@@ -6291,6 +6292,62 @@ class NodeServiceImpl implements NodeService {
       this._syncActiveEhHostAlias(undefined);
     }
     return { removed: true };
+  }
+
+  /**
+   * Delete one UI turn (`eh-msg-N`) from the persisted harness session.
+   * Drops the in-process ACP host so the next turn reloads from disk.
+   */
+  async deleteEnvoyHarnessChatTurn(opts: {
+    turnId: string;
+    chatId?: string;
+  }): Promise<import("@envoymesh/api").EhChatHistory & { deleted: boolean }> {
+    const turnId = opts.turnId.trim();
+    if (!turnId) {
+      throw new Error("envoy_harness_turn_id_required");
+    }
+    const chat = await this._resolveEhChat(opts.chatId ?? null);
+    if (chat) {
+      if (this._ehChatRuntime.hasTurnForChat(chat.id)) {
+        throw new Error("envoy_harness_turn_busy");
+      }
+    } else if (this._ehChatRuntime.activeTurnCount() > 0) {
+      throw new Error("envoy_harness_turn_busy");
+    }
+    const cwd = chat?.cwd ?? (await this._envoyHarnessResolvedCwd());
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    const resolved = await resolveEhSessionIdForCwd({
+      cwd,
+      sessionByCwd: cfg?.envoyHarnessSessionByCwd,
+      sessionStore,
+    });
+    if (resolved.sessionId === undefined || resolved.sessionId.length === 0) {
+      return {
+        ...(chat ? { chatId: chat.id } : {}),
+        sessionId: "",
+        cwd: normalizeEhWorkspaceCwd(cwd),
+        turns: [],
+        deleted: false,
+      };
+    }
+    const result = await deleteEhChatTurnFromStore({
+      sessionStore,
+      sessionId: resolved.sessionId,
+      cwd,
+      turnId,
+    });
+    // Drop live host so the next turn reloads the rewritten transcript.
+    if (chat) {
+      this._ehChatRuntime.removeHost(chat.id);
+    } else {
+      this._closeEnvoyHarnessPersistentAcpHost();
+    }
+    return {
+      ...result.history,
+      ...(chat ? { chatId: chat.id } : {}),
+      deleted: result.deleted,
+    };
   }
 
   /**
