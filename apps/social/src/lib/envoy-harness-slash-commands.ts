@@ -102,6 +102,12 @@ const STATIC_COMMANDS: StaticCmd[] = [
     argsHint: "<term>",
     intercept: "envoy",
   },
+  {
+    slash: "/permissions",
+    summary: "Permission policy: show or set (always-confirm | safe-only | off | never)",
+    argsHint: "[mode]",
+    intercept: "envoy",
+  },
   fwd("/list-agents", "Alias for /peers"),
   {
     slash: "/model",
@@ -140,7 +146,6 @@ const STATIC_COMMANDS: StaticCmd[] = [
   fwd("/resume", "Resume a saved session", "[id]"),
   fwd("/copy", "Copy the latest assistant response"),
   fwd("/stop", "Stop background work"),
-  fwd("/permissions", "Adjust what the agent may do without asking"),
   fwd("/hooks", "View lifecycle hook configuration"),
   fwd("/memory", "Edit project memory files"),
   fwd("/usage", "Show token usage or session cost"),
@@ -245,6 +250,7 @@ export function isEnvoyHarnessLocalSlashCommand(text: string): boolean {
   if (name === "peers" || name === "list-agents") return true
   if (name === "cluster" || name === "team" || name === "trace") return true
   if (name === "search") return true
+  if (name === "permissions") return true
   if (parseEnvoyHarnessModelCommand(text)) return true
   if (parseEnvoyHarnessCdCommand(text)) return true
   return false

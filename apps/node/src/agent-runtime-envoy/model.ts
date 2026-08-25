@@ -32,6 +32,7 @@
  */
 
 import type { ModelProviderConfig } from "@envoymesh/api";
+import { inferModelProviderPreset } from "@envoymesh/api";
 
 export type EnvoyHarnessProviderId = "deepseek" | "openai" | "anthropic" | "stub";
 
@@ -225,9 +226,16 @@ export function resolveEnvoyHarnessHostConfig(
   // runtime can rely on `apiKey.length > 0` for
   // key-required providers.
   const rawKey = modelProviders.apiKey?.trim() ?? "";
+  // Fall back to the preset's default endpoint when the user didn't set
+  // a custom one (MiniMax / GLM / Qwen / DeepSeek all have distinct
+  // base URLs; without this the OpenAI-compatible adapter would hit
+  // api.openai.com).
+  const preset = inferModelProviderPreset(modelProviders);
+  const endpoint =
+    modelProviders.endpoint?.trim() || preset.defaultEndpoint || undefined;
   return {
     model,
     apiKey: rawKey.length > 0 ? rawKey : undefined,
-    endpoint: modelProviders.endpoint?.trim() || undefined,
+    endpoint,
   };
 }

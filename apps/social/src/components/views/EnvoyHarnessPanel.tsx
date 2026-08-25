@@ -28,6 +28,7 @@ import type {
   EhChatTurn,
 } from "@envoymesh/api"
 import { stripModelThinking } from "@envoymesh/api"
+import { RemoveIcon } from "../../icons.js"
 import { ProjectFolderLink } from "../ProjectFolderLink.js"
 import { EhChatMessageText } from "../ehui/EhChatMessageText.js"
 import { EhStillWorkingIndicator } from "../ehui/EhStillWorkingIndicator.js"
@@ -161,9 +162,20 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
     undefined,
   )
   const [chatReady, setChatReady] = useState(false)
+  const [confirmReset, setConfirmReset] = useState(false)
+  const [contextHintDismissed, setContextHintDismissed] = useState(false)
   /** For the legacy bare thread key: the active chat that owns this cwd. */
   const [resolvedChatId, setResolvedChatId] = useState<string | null>(null)
   const effectiveChatId = chatId ?? resolvedChatId
+  /** True while this panel is mounted (chat switch / unmount). */
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   // The legacy `__envoy_harness__` panel has no chatId prop; resolve the
   // active chat for its project folder so per-chat events/turns are
@@ -246,7 +258,13 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
         // to start a fresh session for this project.
       })
       .finally(() => {
-        if (!cancelled) setChatReady(true)
+        // Lift the submit guard whenever the load settles — even when
+        // this run was superseded by a re-run (e.g. `status.cwd` landed
+        // while the RPC was in flight). The `cancelled` flag only means
+        // "superseded", not "unmounted"; a superseded run still loaded
+        // the transcript, so the guard must not stay down forever.
+        // Only skip when the panel actually unmounted (chat switch).
+        if (mountedRef.current) setChatReady(true)
       })
     return () => {
       cancelled = true
@@ -420,6 +438,68 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
     },
   })
 
+  /** Start a fresh persisted session for this chat (same as /new). */
+  const resetChat = useCallback(async () => {
+    try {
+      await nodeService.resetEnvoyHarnessChat(chatId ?? undefined)
+      setTurns([])
+      clearQueue()
+      loadedHistoryKeyRef.current = chatId ?? status?.cwd
+      setSystem(
+        t("eh.chatReset", "Started a new chat for this project."),
+        "success",
+      )
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setSystem(msg, "error")
+    }
+  }, [chatId, clearQueue, nodeService, setSystem, status?.cwd])
+
+  /** Persist a new permission policy (always-confirm | safe-only | off | never). */
+  const applyPolicy = useCallback(
+    async (policy: string) => {
+      try {
+        const s = await nodeService.setEnvoyHarnessAutoRunPolicy(policy)
+        setStatus(s)
+        const mode = s.autoRunPolicy ?? policy
+        if (mode === "off" || mode === "never") {
+          setSystem(
+            t(
+              "eh.permissionsNeverSet",
+              "Permission policy → Always approve: every tool auto-runs with no prompts — including write/edit/bash. Only use this in workspaces you fully trust. {when}",
+              { when: busy ? t("eh.permissionsNextTurn", "Applies from the next turn.") : "" },
+            ),
+            "info",
+          )
+        } else {
+          setSystem(
+            t(
+              "eh.permissionsSet",
+              "Permission policy → {mode}.{when}",
+              {
+                mode: mode === "safe-only" ? "Default (safe auto-run)" : "Always ask",
+                when: busy
+                  ? " " +
+                    t("eh.permissionsNextTurn", "Applies from the next turn.")
+                  : "",
+              },
+            ),
+            "success",
+          )
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        setSystem(
+          t("eh.permissionsFailed", "Failed to set permission policy: {error}", {
+            error: msg,
+          }),
+          "error",
+        )
+      }
+    },
+    [busy, nodeService, setStatus, setSystem, t],
+  )
+
   const handleSlashCommand = useCallback(
     async (text: string) => {
       const trimmed = text.trim()
@@ -432,19 +512,7 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
           setSystem(t("eh.slashWhileBusy", "Finish or /cancel the current turn first."), "info")
           return
         }
-        try {
-          await nodeService.resetEnvoyHarnessChat(chatId ?? undefined)
-          setTurns([])
-          clearQueue()
-          loadedHistoryKeyRef.current = chatId ?? status?.cwd
-          setSystem(
-            t("eh.chatReset", "Started a new chat for this project."),
-            "success",
-          )
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err)
-          setSystem(msg, "error")
-        }
+        await resetChat()
         return
       }
       if (slash === "cancel") {
@@ -463,6 +531,48 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
       if (slash === "status") {
         await refresh()
         setSystem(t("eh.statusRefreshed", "Status refreshed."), "info")
+        setDraft("")
+        return
+      }
+      if (slash === "permissions") {
+        const mode = trimmed.slice("/permissions".length).trim().toLowerCase()
+        if (!mode) {
+          const current = status?.autoRunPolicy ?? "safe-only"
+          const label =
+            current === "off" || current === "never"
+              ? "Always approve"
+              : current === "always-confirm"
+                ? "Always ask"
+                : "Default (safe auto-run)"
+          setSystem(
+            t(
+              "eh.permissionsCurrent",
+              "Permission policy: {mode}. Use /permissions always-confirm | safe-only | off | never.",
+              { mode: label },
+            ),
+            "info",
+          )
+          setDraft("")
+          return
+        }
+        try {
+          const s = await nodeService.setEnvoyHarnessAutoRunPolicy(mode)
+          setStatus(s)
+          setSystem(
+            t("eh.permissionsSet", "Permission policy → {mode}.", {
+              mode: s.autoRunPolicy ?? mode,
+            }),
+            "success",
+          )
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err)
+          setSystem(
+            t("eh.permissionsFailed", "Failed to set permission policy: {error}", {
+              error: msg,
+            }),
+            "error",
+          )
+        }
         setDraft("")
         return
       }
@@ -644,6 +754,7 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
       chatId,
       clearQueue,
       nodeService,
+      resetChat,
       refresh,
       setSystem,
       status,
@@ -790,6 +901,71 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
             ariaLabel={t("eh.projectAriaLabel", "Envoy harness project folder")}
             confirmLabel={t("eh.projectSetBtn", "Set project folder")}
           />
+          <div className="eh-header-actions">
+            <label className="eh-permission-control">
+              <span className="eh-permission-label">
+                {t("eh.permissionsShort", "Perms")}
+              </span>
+              <select
+                className="eh-permission-select"
+                value={status?.autoRunPolicy ?? "safe-only"}
+                aria-label={t("eh.permissionsAria", "Permission policy")}
+                title={t(
+                  "eh.permissionsTitle",
+                  "Permission policy: Default auto-runs read-only tools + safe bash, Always ask confirms every tool, Always approve never prompts. Changes apply from the next turn.",
+                )}
+                onChange={(e) => void applyPolicy(e.target.value)}
+              >
+                <option value="safe-only">
+                  {t("eh.permsSafe", "Default · auto-run safe")}
+                </option>
+                <option value="always-confirm">
+                  {t("eh.permsAsk", "Always ask")}
+                </option>
+                <option value="off">
+                  {t("eh.permsNever", "Always approve")}
+                </option>
+              </select>
+            </label>
+            <button
+              type="button"
+              className={`eh-trash-btn${confirmReset ? " eh-trash-btn--confirm" : ""}`}
+              aria-label={
+                confirmReset
+                  ? t("eh.confirmResetAria", "Confirm new chat")
+                  : t("eh.newChatAria", "New chat")
+              }
+              title={
+                confirmReset
+                  ? t(
+                      "eh.confirmResetTitle",
+                      "Click again to start a new chat",
+                    )
+                  : t(
+                      "eh.newChatTitle",
+                      "Start a new chat (clears the context)",
+                    )
+              }
+              onClick={() => {
+                if (busy) {
+                  setSystem(
+                    t("eh.slashWhileBusy", "Finish or /cancel the current turn first."),
+                    "info",
+                  )
+                  return
+                }
+                if (!confirmReset) {
+                  setConfirmReset(true)
+                  window.setTimeout(() => setConfirmReset(false), 4000)
+                  return
+                }
+                setConfirmReset(false)
+                void resetChat()
+              }}
+            >
+              <RemoveIcon size={16} />
+            </button>
+          </div>
         </div>
         <EnvoyHarnessEhuiRail refreshKey={ehuiRefreshKey} />
       </header>
@@ -866,6 +1042,24 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
         ) : null}
       </div>
 
+      {turns.length >= 60 && !contextHintDismissed ? (
+        <div className="eh-context-reminder" role="status">
+          <span>
+            {t(
+              "eh.contextReminder",
+              "Context is getting large — start a new chat (/new or the trash button) to clean it.",
+            )}
+          </span>
+          <button
+            type="button"
+            className="eh-context-reminder-dismiss"
+            aria-label={t("eh.dismiss", "Dismiss")}
+            onClick={() => setContextHintDismissed(true)}
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
 
       <EhComposerDockStack
         permission={pendingPermission}
@@ -893,7 +1087,6 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
         onQueueUpdate={updateQueued}
         onQueueRemove={removeFromQueue}
         onQueueClear={clearQueue}
-        projectCwd={status?.cwd}
         contextFiles={[...new Set([...ehAttachments.pathList, ...turnContext.touchedFiles])]}
         attachedPaths={ehAttachments.pathList}
         onRemoveAttached={(path) => {

@@ -65,31 +65,11 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "discoverPublishedLibrary",
   "publishWebContentEntry",
   "createTerminalSession",
-  "closeTerminalSession",
   "renameTerminalSession",
   "listTerminalSessions",
   "terminalExec",
-  "restartPi",
-  "ensurePiTerminalSession",
-  "sendToPi",
-  "getEnvoyHarnessStatus",
-  "askEnvoyHarness",
-  "startEnvoyHarnessTurn",
-  "getEnvoyHarnessTurnStatus",
-  "getEnvoyHarnessChatHistory",
-  "listEnvoyHarnessChats",
-  "createEnvoyHarnessChat",
-  "openEnvoyHarnessChat",
-  "removeEnvoyHarnessChat",
-  "resetEnvoyHarnessChat",
-  "listEnvoyHarnessPeers",
-  "setEnvoyHarnessProjectPath",
-  "invokeEnvoyHarnessEhui",
-  "ensureEnvoyTerminalSession",
-  "piRespondToProposal",
-  "ehRespondToUserQuestion",
-  "ehRespondToPermission",
-  "cancelEnvoyHarnessTurn",
+  // Pi / Envoy Harness / closeTerminalSession: gated by CODING_GATED_RPC
+  // so family profiles with codingEnabled can use Coding assistants.
   "restartOpenClaw",
   "enableEnvoyLocal",
   "declineEnvoyLocalAutoProvision",
@@ -147,8 +127,47 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "convertLibraryItemToMarkdown",
 ]);
 
+const CODING_DENIED_MSG =
+  "Coding assistants are disabled for this family profile. Ask the home-node owner to enable them in Settings → Family."
+
+/** RPCs gated by per-profile `codingEnabled` (owner opt-in for family). */
+const CODING_GATED_RPC = new Set<string>([
+  "askEnvoyHarness",
+  "startEnvoyHarnessTurn",
+  "getEnvoyHarnessTurnStatus",
+  "getEnvoyHarnessChatHistory",
+  // listEnvoyHarnessChats: soft-deny in impl (returns []) — not hard-gated.
+  "createEnvoyHarnessChat",
+  "openEnvoyHarnessChat",
+  "removeEnvoyHarnessChat",
+  "resetEnvoyHarnessChat",
+  "getEnvoyHarnessStatus",
+  "setEnvoyHarnessProjectPath",
+  "listEnvoyHarnessPeers",
+  "invokeEnvoyHarnessEhui",
+  "cancelEnvoyHarnessTurn",
+  "ensurePiTerminalSession",
+  "ensureEnvoyTerminalSession",
+  "sendToPi",
+  "getPiStatus",
+  "restartPi",
+  "piRespondToProposal",
+  "ehRespondToUserQuestion",
+  "ehRespondToPermission",
+  // Stop Pi/Envoy TUI sessions started via coding surfaces.
+  "closeTerminalSession",
+  // Project folder picker for Coding (Pi / EH) on family clients.
+  "getHomeFsInfo",
+  "listHomeFsEntries",
+])
+
 /** True when a thin-client family session must not call this RPC. */
 export function isOwnerOnlyRpcMethod(method: string): boolean {
+  // Coding-gated RPCs (Pi / EH / project picker / close coding TUI) are
+  // intentionally NOT owner-only — mayCallerUseCoding() enforces access.
+  if (CODING_GATED_RPC.has(method)) return false
+  // Soft-deny list is open to all callers (returns [] when coding denied).
+  if (method === "listEnvoyHarnessChats") return false
   if (OWNER_ONLY_RPC_METHODS.has(method)) return true
   // All terminal* assist / session surfaces (many methods; keep prefix).
   if (method.startsWith("terminal")) return true
@@ -168,6 +187,11 @@ export async function routeRpcMethod(
 ): Promise<unknown> {
   if (isOwnerOnlyRpcMethod(method)) {
     requireOwnerProfile(`call ${method}`);
+  }
+  if (CODING_GATED_RPC.has(method)) {
+    if (!(await ns.mayCallerUseCoding())) {
+      throw new Error(CODING_DENIED_MSG);
+    }
   }
   switch (method as RpcMethods) {
     case "getProfile":
@@ -1014,6 +1038,8 @@ export async function routeRpcMethod(
         avatarColor: params.avatarColor as string | undefined,
         active: params.active as boolean | undefined,
         aiBots: params.aiBots as import("@envoymesh/api").AiBotDefinition[] | undefined,
+        extAgentEnabled: params.extAgentEnabled as boolean | undefined,
+        codingEnabled: params.codingEnabled as boolean | undefined,
       });
     case "deleteFamilyProfile":
       return ns.deleteFamilyProfile(String(params.id ?? ""));
@@ -1287,6 +1313,10 @@ export async function routeRpcMethod(
     case "getEnvoyHarnessTurnStatus":
       return ns.getEnvoyHarnessTurnStatus(
         typeof params.chatId === "string" ? params.chatId : undefined,
+      );
+    case "setEnvoyHarnessAutoRunPolicy":
+      return ns.setEnvoyHarnessAutoRunPolicy(
+        String(params.policy ?? ""),
       );
     case "getEnvoyHarnessChatHistory":
       return ns.getEnvoyHarnessChatHistory(

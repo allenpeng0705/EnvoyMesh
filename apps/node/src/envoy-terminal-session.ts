@@ -36,6 +36,7 @@ export interface EnvoyTerminalSessionDeps {
     piEnabled?: boolean;
     piSettings?: PiSettings;
     modelProviders?: ModelProviderConfig;
+    envoyHarnessAutoRunPolicy?: string;
   } | null>;
   /** Persist the project folder into envoyHarnessCwd (MRU). */
   saveProjectPath: (absolutePath: string) => Promise<void>;
@@ -164,6 +165,19 @@ export async function ensureEnvoyTerminalSession(
     "--model",
     modelName,
   ];
+  // Pass the node's permission policy so the spawned TUI starts with the
+  // same mode as the Envoy chat (default = safe auto-run).
+  const policy =
+    cfg?.envoyHarnessAutoRunPolicy ??
+    "safe-only";
+  args.push(
+    "--permissions",
+    policy === "off" || policy === "never"
+      ? "approve"
+      : policy === "always-confirm"
+        ? "ask"
+        : "default",
+  );
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) env[key] = value;

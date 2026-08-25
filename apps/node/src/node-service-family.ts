@@ -38,6 +38,9 @@ export function toFamilyProfile(record: FamilyProfileRecord): FamilyProfile {
     ...(typeof record.extAgentEnabled === "boolean"
       ? { extAgentEnabled: record.extAgentEnabled }
       : {}),
+    ...(typeof record.codingEnabled === "boolean"
+      ? { codingEnabled: record.codingEnabled }
+      : {}),
     aiBots: Array.isArray(record.aiBots)
       ? (record.aiBots as AiBotDefinition[])
       : undefined,
@@ -90,6 +93,9 @@ export async function updateFamilyProfileViaRuntime(
     if (params.extAgentEnabled !== undefined) {
       throw new Error("Only the node owner can change Ext Agent access for family profiles")
     }
+    if (params.codingEnabled !== undefined) {
+      throw new Error("Only the node owner can change Coding access for family profiles")
+    }
   }
 
   const profile = await store.update({
@@ -98,6 +104,7 @@ export async function updateFamilyProfileViaRuntime(
     avatarColor: params.avatarColor,
     active: isOwner ? params.active : undefined,
     extAgentEnabled: isOwner ? params.extAgentEnabled : undefined,
+    codingEnabled: isOwner ? params.codingEnabled : undefined,
     aiBots: params.aiBots,
   })
   return { profile: toFamilyProfile(profile) }

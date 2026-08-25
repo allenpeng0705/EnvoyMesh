@@ -137,4 +137,6 @@ enum ChatThreadType {
   family,
   /// Phase 51D — local family group (`room:<roomId>` with memberProfileIds).
   familyGroup,
+  /// Envoy Harness coding chat (`eh:<chatId>`).
+  envoyHarness,
 }

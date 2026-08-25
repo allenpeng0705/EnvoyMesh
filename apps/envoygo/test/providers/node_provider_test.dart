@@ -109,5 +109,40 @@ void main() {
       final updated = initial.copyWith(homeNodeErrorCode: 'unauthorized');
       expect(updated.homeNodeErrorCode, 'unauthorized');
     });
+
+    test('mayUseCoding is owner-only unless codingEnabled on family profile', () {
+      const owner = NodeState(isOwnerProfile: true);
+      expect(owner.mayUseCoding, isTrue);
+
+      const denied = NodeState(
+        isOwnerProfile: false,
+        familyProfileId: 'kid',
+        pairedFamilyProfileId: 'kid',
+        familyProfiles: [
+          {'id': 'kid', 'codingEnabled': false},
+        ],
+      );
+      expect(denied.mayUseCoding, isFalse);
+
+      const allowed = NodeState(
+        isOwnerProfile: false,
+        familyProfileId: 'kid',
+        pairedFamilyProfileId: 'kid',
+        familyProfiles: [
+          {'id': 'kid', 'codingEnabled': true},
+        ],
+      );
+      expect(allowed.mayUseCoding, isTrue);
+
+      const corruptedOwnerId = NodeState(
+        familyProfileId: 'owner',
+        pairedFamilyProfileId: 'kid',
+        isOwnerProfile: false,
+        familyProfiles: [
+          {'id': 'kid', 'codingEnabled': true},
+        ],
+      );
+      expect(corruptedOwnerId.mayUseCoding, isTrue);
+    });
   });
 }

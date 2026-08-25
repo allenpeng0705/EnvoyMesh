@@ -284,6 +284,47 @@ describe("resolveEnvoyHarnessHostModel (Phase 8 / b3.live — provider mapping)"
         endpoint: "https://api.minimaxi.com/v1",
       });
     });
+
+    it("falls back to the preset default endpoint for MiniMax / GLM / Qwen", () => {
+      // No custom endpoint: the preset's defaultEndpoint must be used,
+      // otherwise the OpenAI-compatible adapter would hit api.openai.com.
+      const minimax = resolveEnvoyHarnessHostConfig({
+        mode: "openai-compatible",
+        presetId: "minimax",
+        modelName: "MiniMax-M3",
+        apiKey: "mm-key",
+      } as unknown as ModelProviderConfig);
+      expect(minimax?.endpoint).toBe("https://api.minimax.io/v1");
+
+      const glm = resolveEnvoyHarnessHostConfig({
+        mode: "openai-compatible",
+        presetId: "glm",
+        modelName: "glm-4-flash",
+        apiKey: "glm-key",
+      } as unknown as ModelProviderConfig);
+      expect(glm?.endpoint).toBe("https://open.bigmodel.cn/api/paas/v4");
+
+      const qwen = resolveEnvoyHarnessHostConfig({
+        mode: "openai-compatible",
+        presetId: "qwen",
+        modelName: "qwen-plus",
+        apiKey: "qw-key",
+      } as unknown as ModelProviderConfig);
+      expect(qwen?.endpoint).toBe(
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      );
+    });
+
+    it("a custom endpoint wins over the preset default", () => {
+      const result = resolveEnvoyHarnessHostConfig({
+        mode: "openai-compatible",
+        presetId: "minimax",
+        modelName: "MiniMax-M3",
+        endpoint: "https://gateway.example.com/v1",
+        apiKey: "k",
+      } as unknown as ModelProviderConfig);
+      expect(result?.endpoint).toBe("https://gateway.example.com/v1");
+    });
   });
 
   describe("unsupported modes (return undefined → not ready)", () => {
@@ -536,7 +577,7 @@ describe("loadEnvoyHarnessRuntimeConfig (Phase 8 / b3.live — API key inheritan
 
 describe("resolveEnvoyHarnessHostConfig (Phase 8 / b3.live — host config mapping)", () => {
   describe("production providers with API key", () => {
-    it("maps openai mode + apiKey to { model, apiKey }", () => {
+    it("maps openai mode + apiKey to { model, apiKey, endpoint }", () => {
       const result = resolveEnvoyHarnessHostConfig({
         mode: "openai",
         modelName: "gpt-4o-mini",
@@ -545,10 +586,11 @@ describe("resolveEnvoyHarnessHostConfig (Phase 8 / b3.live — host config mappi
       expect(result).toEqual({
         model: "openai:gpt-4o-mini",
         apiKey: "sk-test-openai",
+        endpoint: "https://api.openai.com/v1",
       });
     });
 
-    it("maps anthropic mode + apiKey to { model, apiKey }", () => {
+    it("maps anthropic mode + apiKey to { model, apiKey, endpoint }", () => {
       const result = resolveEnvoyHarnessHostConfig({
         mode: "anthropic",
         modelName: "claude-3-5-sonnet",
@@ -557,10 +599,11 @@ describe("resolveEnvoyHarnessHostConfig (Phase 8 / b3.live — host config mappi
       expect(result).toEqual({
         model: "anthropic:claude-3-5-sonnet",
         apiKey: "sk-test-anthropic",
+        endpoint: "https://api.anthropic.com",
       });
     });
 
-    it("maps ollama mode (no apiKey required) to { model, apiKey: undefined }", () => {
+    it("maps ollama mode (no apiKey required) to { model, apiKey: undefined, endpoint }", () => {
       const result = resolveEnvoyHarnessHostConfig({
         mode: "ollama",
         modelName: "llama3.1",
@@ -568,6 +611,7 @@ describe("resolveEnvoyHarnessHostConfig (Phase 8 / b3.live — host config mappi
       expect(result).toEqual({
         model: "ollama:llama3.1",
         apiKey: undefined,
+        endpoint: "http://127.0.0.1:11434/v1",
       });
     });
 
@@ -611,6 +655,7 @@ describe("resolveEnvoyHarnessHostConfig (Phase 8 / b3.live — host config mappi
       expect(result).toEqual({
         model: "openai:gpt-4o-mini",
         apiKey: undefined,
+        endpoint: "https://api.openai.com/v1",
       });
     });
 
@@ -623,6 +668,7 @@ describe("resolveEnvoyHarnessHostConfig (Phase 8 / b3.live — host config mappi
       expect(result).toEqual({
         model: "openai:gpt-4o-mini",
         apiKey: undefined,
+        endpoint: "https://api.openai.com/v1",
       });
     });
 
@@ -634,6 +680,7 @@ describe("resolveEnvoyHarnessHostConfig (Phase 8 / b3.live — host config mappi
       expect(result).toEqual({
         model: "openai:gpt-4o-mini",
         apiKey: undefined,
+        endpoint: "https://api.openai.com/v1",
       });
     });
   });

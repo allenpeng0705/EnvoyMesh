@@ -321,6 +321,7 @@ export type RpcMethods =
     | "askEnvoyHarness"
     | "startEnvoyHarnessTurn"
     | "getEnvoyHarnessTurnStatus"
+    | "setEnvoyHarnessAutoRunPolicy"
     | "getEnvoyHarnessChatHistory"
     | "listEnvoyHarnessChats"
     | "createEnvoyHarnessChat"
@@ -581,6 +582,11 @@ export interface NodeConfig {
   envoyHarnessChats?: import("./eh-chat-workspace.js").EhChatWorkspace[];
   /** Active chat id for the legacy bare thread key and default open. */
   activeEnvoyHarnessChatId?: string;
+  /**
+   * Permission policy for Envoy Harness chat + terminal tool calls
+   * (`always-confirm` | `safe-only` | `off` | `never`).
+   */
+  envoyHarnessAutoRunPolicy?: string;
   /**
    * Anonymous discovery mode — controls how the node responds to unknown/public peers.
    * Default: "off" (anonymous discovery disabled).

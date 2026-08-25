@@ -117,6 +117,19 @@ class NodeState {
     return 'owner';
   }
 
+  /// Owner-controlled Coding assistants gate (Pi + Envoy Harness chat).
+  bool get mayUseCoding {
+    if (isOwnerProfile) return true;
+    final pid = effectiveFamilyProfileId.trim();
+    if (pid.isEmpty || pid == 'owner') return false;
+    for (final p in familyProfiles) {
+      if (p['id']?.toString() == pid) {
+        return p['codingEnabled'] == true;
+      }
+    }
+    return false;
+  }
+
   NodeState copyWith({
     StoredNode? activeNode,
     bool clearActiveNode = false,
@@ -856,6 +869,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       final configMap = Map<String, dynamic>.from(config as Map);
       _applyFamilyConfig(configMap);
       _syncAiBotsFromConfig(configMap, chatNotifier);
+      unawaited(chatNotifier.syncEhChats());
     }).catchError((e) {
       _log('getNodeConfig for aiBots failed: $e');
     });
@@ -1414,6 +1428,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       // Always sync — family gets [] (or their own bots); clearing removes
       // owner bots that previously leaked onto Mom/Dad devices.
       _syncAiBotsFromConfig(configMap, chatNotifier);
+      unawaited(chatNotifier.syncEhChats());
     });
   }
 

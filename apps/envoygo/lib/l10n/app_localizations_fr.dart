@@ -972,6 +972,38 @@ class AppLocalizationsFr extends AppLocalizations {
   String get chatsSectionAi => 'IA';
 
   @override
+  String get chatsSectionCoding => 'Coding';
+
+  @override
+  String get chatsCodingPi => 'Pi';
+
+  @override
+  String get chatsCodingPiHint => 'Coding Agent (terminal)';
+
+  @override
+  String get chatsCodingEh => 'Envoy';
+
+  @override
+  String get chatsCodingEhHint => 'Coding Agent (chat)';
+
+  @override
+  String get chatsEhNew => 'New coding chat';
+
+  @override
+  String get chatsEhRemoveTitle => 'Remove coding chat?';
+
+  @override
+  String chatsEhRemoveBody(String name) {
+    return 'Remove “$name” from your Coding list? The chat history on the home node will be deleted.';
+  }
+
+  @override
+  String get chatsEhThinking => 'Envoy is thinking…';
+
+  @override
+  String get chatsEhPromptHint => 'Ask Envoy to code, refactor, or explain…';
+
+  @override
   String get chatsSectionFamily => 'Famille';
 
   @override
@@ -997,6 +1029,112 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get chatsNewPiHint => 'Démarrer un terminal Pi';
+
+  @override
+  String get chatsNewEnvoy => 'New Envoy';
+
+  @override
+  String get chatsNewEnvoyHint => 'Start Envoy Harness TUI';
+
+  @override
+  String get ehChooseProjectTitle => 'Choose Envoy project folder';
+
+  @override
+  String get ehChangeProjectTitle => 'Change Envoy project folder';
+
+  @override
+  String get ehChooseProjectDesc =>
+      'Envoy runs in this folder (reads AGENTS.md, edits files, runs shell).';
+
+  @override
+  String get ehStartWithProject => 'Start';
+
+  @override
+  String get ehRestartWithProject => 'Restart Envoy here';
+
+  @override
+  String get ehEnsuringTerminal => 'Starting Envoy TUI…';
+
+  @override
+  String get ehPermissionTitle => 'Tool permission';
+
+  @override
+  String get ehPermissionAllow => 'Allow';
+
+  @override
+  String get ehPermissionDeny => 'Deny';
+
+  @override
+  String get ehQuestionTitle => 'Envoy needs your input';
+
+  @override
+  String get ehRecommended => 'Recommended';
+
+  @override
+  String get ehSlashWhileBusy => 'Finish or /cancel the current turn first.';
+
+  @override
+  String get ehChatReset => 'Started a new chat for this project.';
+
+  @override
+  String get ehTurnCancelled => 'Turn cancelled.';
+
+  @override
+  String get ehStatusRefreshed => 'Status refreshed.';
+
+  @override
+  String get ehNoPeers => 'No peer cluster configured.';
+
+  @override
+  String get ehSearchUsage =>
+      'Usage: /search <term> — search this conversation.';
+
+  @override
+  String ehSearchNoMatches(String term) {
+    return 'No matches for “$term”.';
+  }
+
+  @override
+  String ehModelShow(String model) {
+    return 'Active model: $model';
+  }
+
+  @override
+  String get ehModelUnknown =>
+      'No model configured — set one in Settings → AI.';
+
+  @override
+  String ehProjectCurrent(String path) {
+    return 'Project folder: $path';
+  }
+
+  @override
+  String get ehProjectUnset => 'No project folder set — use /cd <path>.';
+
+  @override
+  String ehProjectSet(String path) {
+    return 'Project folder → $path';
+  }
+
+  @override
+  String get ehProjectSetUnknown => 'Project folder updated.';
+
+  @override
+  String ehProjectSetFailed(String error) {
+    return 'Failed to set project folder: $error';
+  }
+
+  @override
+  String get ehConfigureModel => 'Configure a model in Settings → AI.';
+
+  @override
+  String get ehNotReady => 'envoy-harness is not ready.';
+
+  @override
+  String get termQuickHelp => '/help';
+
+  @override
+  String get termQuickCancel => '/cancel';
 
   @override
   String get chatsNewTerminal => 'Nouveau terminal';

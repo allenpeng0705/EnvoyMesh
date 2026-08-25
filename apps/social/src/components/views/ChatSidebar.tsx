@@ -20,6 +20,7 @@ import {
   envoyHarnessThreadKey,
   isEnvoyHarnessThreadKey,
   MAX_ENVOY_HARNESS_CHATS,
+  familyProfileMayUseCoding,
   type EhChatWorkspaceSummary,
 } from "@envoymesh/api";
 import { resolveContactAiAccessLevel } from "@envoymesh/api";
@@ -406,12 +407,20 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
     [enabledAiBots, threadPreviews],
   );
 
+  const mayUseCoding = useMemo(() => {
+    if (nodeConfig?.callerIsOwnerProfile) return true;
+    const pid = nodeConfig?.callerFamilyProfileId;
+    const profile = nodeConfig?.familyProfiles?.find((p) => p.id === pid);
+    return familyProfileMayUseCoding(profile ?? null);
+  }, [nodeConfig]);
+
   const showAiSection =
     Boolean(onOpenAssistant) ||
     Boolean(bridgeStatus?.enabled) ||
     enabledAiBots.length > 0;
 
-  const showCodingSection = Boolean(onOpenPi || onOpenEnvoyHarness);
+  const showCodingSection =
+    mayUseCoding && Boolean(onOpenPi || onOpenEnvoyHarness);
 
   useEffect(() => {
     if (!nodeService.isConnected) return;

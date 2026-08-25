@@ -491,6 +491,13 @@ export interface PersistedNodeConfig {
   envoyHarnessChats?: import("@envoymesh/api").EhChatWorkspace[];
   /** Active chat id for legacy bare thread key and default open. */
   activeEnvoyHarnessChatId?: string;
+  /**
+   * Permission policy for Envoy Harness chat + terminal tool calls:
+   * - `always-confirm` — ask for every tool (default)
+   * - `safe-only` — auto-allow read-only tools + safe bash, ask for the rest
+   * - `off` / `never` — never ask (auto-allow everything)
+   */
+  envoyHarnessAutoRunPolicy?: "always-confirm" | "safe-only" | "off" | "never";
 }
 
 export interface NodeConfigStore {

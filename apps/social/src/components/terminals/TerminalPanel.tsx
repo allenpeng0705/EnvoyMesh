@@ -907,7 +907,6 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
           queue={[]}
           onQueueUpdate={() => {}}
           onQueueRemove={() => {}}
-          projectCwd={ehProjectCwd}
           contextFiles={turnContext.touchedFiles}
           changedFiles={dismissedChanges ? [] : turnContext.touchedFiles}
           onReviewChanges={() => setShowGitDiffReview(true)}

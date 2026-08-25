@@ -465,6 +465,9 @@ export interface NodeServiceClient {
   getEnvoyHarnessTurnStatus(
     chatId?: string,
   ): Promise<import("@envoymesh/api").EhTurnStatus>;
+  setEnvoyHarnessAutoRunPolicy(
+    policy: string,
+  ): Promise<import("@envoymesh/api").EnvoyHarnessStatus>;
   getEnvoyHarnessChatHistory(
     chatId?: string,
   ): Promise<import("@envoymesh/api").EhChatHistory>;
@@ -1778,6 +1781,13 @@ function createWsNodeServiceClient(
         chatId ? { chatId } : {},
         { timeoutMs: 10_000 },
       ) as Promise<import("@envoymesh/api").EhTurnStatus>;
+    },
+    async setEnvoyHarnessAutoRunPolicy(policy: string) {
+      return wsClient.rpc(
+        "setEnvoyHarnessAutoRunPolicy",
+        { policy },
+        { timeoutMs: 30_000 },
+      ) as Promise<import("@envoymesh/api").EnvoyHarnessStatus>;
     },
     async getEnvoyHarnessChatHistory(chatId?: string) {
       return wsClient.rpc(

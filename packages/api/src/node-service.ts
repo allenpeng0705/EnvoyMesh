@@ -2798,6 +2798,9 @@ export interface NodeService {
 
   // ----- Agent Bridge -----
 
+  /** Profile-scoped Coding assistants gate (Pi TUI + EH chat threads). */
+  mayCallerUseCoding(): Promise<boolean>;
+
   /**
    * Get agent bridge status (external agent like HomeClaw/OpenClaw).
    * Returns default disabled status when bridge is not configured.
@@ -3075,6 +3078,11 @@ export interface NodeService {
   getEnvoyHarnessTurnStatus(
     chatId?: string,
   ): Promise<import("./eh-turn.js").EhTurnStatus>;
+
+  /** Change the Envoy Harness permission policy (always-confirm | safe-only | off | never). */
+  setEnvoyHarnessAutoRunPolicy(
+    policy: string,
+  ): Promise<import("./pi-agent.js").EnvoyHarnessStatus>;
 
   /** Load persisted chat transcript for a workspace (defaults to active chat). */
   getEnvoyHarnessChatHistory(

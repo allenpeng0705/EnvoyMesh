@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/chat_thread.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/terminal_provider.dart';
 import '../../utils/localized_labels.dart';
 import '../../widgets/connection_indicator.dart';
 import '../../widgets/thread_tile.dart';
@@ -43,6 +44,7 @@ class TerminalHomeScreen extends ConsumerWidget {
       body: threads.isEmpty
           ? _EmptyTerminals(
               onNewPi: () => showCreatePiDialog(context, ref),
+              onNewEnvoy: () => showCreateEnvoyDialog(context, ref),
               onNewTerminal: () => showCreateTerminalDialog(context, ref),
             )
           : ListView.builder(
@@ -54,11 +56,23 @@ class TerminalHomeScreen extends ConsumerWidget {
                   onTap: () {
                     final parts = thread.id.split(':term:');
                     final sessionId = parts.length > 1 ? parts[1] : '';
+                    final session = ref
+                        .read(terminalProvider)
+                        .sessions
+                        .where((s) => s.id == sessionId)
+                        .firstOrNull;
+                    final role = session?.role ??
+                        (thread.displayName.startsWith('EH ')
+                            ? 'envoy-harness'
+                            : thread.displayName.startsWith('π')
+                                ? 'pi'
+                                : null);
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => TerminalDetailScreen(
                           sessionId: sessionId,
                           sessionName: _sessionTitle(thread.displayName),
+                          sessionRole: role,
                         ),
                       ),
                     );
@@ -106,6 +120,15 @@ class TerminalHomeScreen extends ConsumerWidget {
                 },
               ),
               ListTile(
+                leading: const Icon(Icons.integration_instructions_outlined),
+                title: Text(l10n.chatsNewEnvoy),
+                subtitle: Text(l10n.chatsNewEnvoyHint),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  showCreateEnvoyDialog(context, ref);
+                },
+              ),
+              ListTile(
                 leading: const Icon(Icons.terminal),
                 title: Text(l10n.chatsNewTerminal),
                 subtitle: Text(l10n.chatsNewTerminalHint),
@@ -126,10 +149,12 @@ class TerminalHomeScreen extends ConsumerWidget {
 class _EmptyTerminals extends StatelessWidget {
   const _EmptyTerminals({
     required this.onNewPi,
+    required this.onNewEnvoy,
     required this.onNewTerminal,
   });
 
   final VoidCallback onNewPi;
+  final VoidCallback onNewEnvoy;
   final VoidCallback onNewTerminal;
 
   @override
@@ -165,6 +190,11 @@ class _EmptyTerminals extends StatelessWidget {
               runSpacing: 12,
               alignment: WrapAlignment.center,
               children: [
+                FilledButton.tonalIcon(
+                  onPressed: onNewEnvoy,
+                  icon: const Icon(Icons.integration_instructions_outlined),
+                  label: Text(l10n.chatsNewEnvoy),
+                ),
                 FilledButton.tonalIcon(
                   onPressed: onNewPi,
                   icon: const Text('π', style: TextStyle(fontWeight: FontWeight.w700)),

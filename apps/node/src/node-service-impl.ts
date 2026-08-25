@@ -416,6 +416,7 @@ import {
   threadVisibleTo,
   isFamilyThreadKey,
   familyProfileMayUseExtAgent,
+  familyProfileMayUseCoding,
   maskBridgeEnabledForExtAgentAccess,
 } from "@envoymesh/api";
 import { createNodeConfigStore, createStubNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
@@ -6053,8 +6054,17 @@ class NodeServiceImpl implements NodeService {
     const cwd = await this._envoyHarnessResolvedCwd();
     let sessionId: string | undefined;
     let messageCount: number | undefined;
+    let autoRunPolicy:
+      | "always-confirm"
+      | "safe-only"
+      | "off"
+      | "never"
+      | undefined;
     try {
       const cfg = await this._configStore.load().catch(() => undefined);
+      autoRunPolicy =
+        cfg?.envoyHarnessAutoRunPolicy ??
+        "safe-only";
       const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
       const resolved = await resolveEhSessionIdForCwd({
         cwd,
@@ -6082,6 +6092,7 @@ class NodeServiceImpl implements NodeService {
       cwd,
       ...(sessionId !== undefined ? { sessionId } : {}),
       ...(messageCount !== undefined ? { messageCount } : {}),
+      ...(autoRunPolicy !== undefined ? { autoRunPolicy } : {}),
       ...(!eh.ready
         ? { error: eh.reason ?? "envoy-harness not ready" }
         : {}),
@@ -6090,6 +6101,46 @@ class NodeServiceImpl implements NodeService {
         failed: this._envoyHarnessPeerPool?.failed.length ?? 0,
       },
     };
+  }
+
+  /**
+   * Change the Envoy Harness permission policy (Codex/Claude-style modes).
+   * Rebuilds per-chat hosts on the next turn so the new policy applies.
+   */
+  async setEnvoyHarnessAutoRunPolicy(
+    policy: string,
+  ): Promise<import("@envoymesh/api").EnvoyHarnessStatus> {
+    const normalized = policy.trim().toLowerCase();
+    if (
+      normalized !== "always-confirm" &&
+      normalized !== "safe-only" &&
+      normalized !== "off" &&
+      normalized !== "never"
+    ) {
+      throw new Error(
+        `invalid envoy-harness permission policy: ${policy} (use always-confirm | safe-only | off | never)`,
+      );
+    }
+    await this.updateNodeConfig({
+      envoyHarnessAutoRunPolicy: normalized,
+    });
+    // The change takes effect from the NEXT turn: idle per-chat hosts are
+    // closed so they rebuild with the new policy, while hosts with an
+    // in-flight turn are left running (the current turn keeps the policy
+    // it started with). Nothing ongoing is interrupted. The runtime
+    // itself does not depend on the policy — only the per-host
+    // `shouldAskTool` closure does — so we never reset it here.
+    this._ehChatRuntime.closeAll();
+    return this.getEnvoyHarnessStatus();
+  }
+
+  /** The effective Envoy permission policy, for host staleness checks. */
+  private async _envoyHarnessAutoRunPolicyKey(): Promise<string> {
+    const cfg = await this._configStore.load().catch(() => undefined);
+    return (
+      cfg?.envoyHarnessAutoRunPolicy ??
+      "safe-only"
+    );
   }
 
   async getEnvoyHarnessChatHistory(
@@ -6141,6 +6192,7 @@ class NodeServiceImpl implements NodeService {
   async listEnvoyHarnessChats(): Promise<
     import("@envoymesh/api").EhChatWorkspaceSummary[]
   > {
+    if (!(await this._callerMayUseCoding())) return [];
     const { chats, sessionByCwd } = await this._loadEhChatState();
     const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
     return summarizeEhChats({ chats, sessionStore, sessionByCwd });
@@ -6457,7 +6509,12 @@ class NodeServiceImpl implements NodeService {
   ): Promise<ProtocolSessionBackend> {
     await runtime.ensureInternals();
     const cfg = await this._configStore.load().catch(() => undefined);
-    const autoRun = cfg?.piSettings?.autoRunPolicy ?? "always-confirm";
+    // Envoy chat/terminal permission policy (Codex/Claude-style modes).
+    // Default `safe-only`: read-only tools + safe bash auto-run, the
+    // rest ask. `off`/`never` auto-allows everything.
+    const autoRun =
+      cfg?.envoyHarnessAutoRunPolicy ??
+      "safe-only";
     const eh = loadEnvoyHarnessRuntimeConfig({
       hostModel: this._envoyHarnessHostModel,
       hostApiKey: this._envoyHarnessHostApiKey,
@@ -6496,7 +6553,8 @@ class NodeServiceImpl implements NodeService {
       defaultCwd: cwd,
       memoryStore,
       sessionStore,
-      shouldAskTool: (toolName) => shouldAskAcpTool(toolName, autoRun),
+      shouldAskTool: (toolName, args) =>
+        shouldAskAcpTool(toolName, autoRun, args),
       getConfig: () => ({
         version: "0.0.0",
         ...(eh.model !== undefined ? { model: eh.model } : {}),
@@ -6520,7 +6578,8 @@ class NodeServiceImpl implements NodeService {
               }
             : {}),
           ...(session !== undefined ? { session } : {}),
-          shouldAskTool: (toolName) => shouldAskAcpTool(toolName, autoRun),
+          shouldAskTool: (toolName, args) =>
+            shouldAskAcpTool(toolName, autoRun, args),
         }),
       listPeers: () => this.listEnvoyHarnessPeers(),
       ...(this._envoyHarnessPeerPool !== undefined
@@ -6543,7 +6602,8 @@ class NodeServiceImpl implements NodeService {
       hostApiKey: this._envoyHarnessHostApiKey,
       hostEndpoint: this._envoyHarnessHostEndpoint,
     });
-    const configKey = `${eh.model ?? ""}:${eh.apiKey ?? ""}:${eh.endpoint ?? ""}`;
+    const policyKey = await this._envoyHarnessAutoRunPolicyKey();
+    const configKey = `${eh.model ?? ""}:${eh.apiKey ?? ""}:${eh.endpoint ?? ""}:${policyKey}`;
     const normalized = normalizeEhWorkspaceCwd(cwd);
     const existing = this._ehChatRuntime.getHost(chatId);
     if (
@@ -6625,7 +6685,8 @@ class NodeServiceImpl implements NodeService {
       hostApiKey: this._envoyHarnessHostApiKey,
       hostEndpoint: this._envoyHarnessHostEndpoint,
     });
-    const configKey = `${eh.model ?? ""}:${eh.apiKey ?? ""}:${eh.endpoint ?? ""}`;
+    const policyKey = await this._envoyHarnessAutoRunPolicyKey();
+    const configKey = `${eh.model ?? ""}:${eh.apiKey ?? ""}:${eh.endpoint ?? ""}:${policyKey}`;
     if (
       this._envoyHarnessPersistentAcpHost !== undefined &&
       this._envoyHarnessPersistentCwd === cwd &&
@@ -7341,6 +7402,43 @@ class NodeServiceImpl implements NodeService {
     const record = await this._familyProfileStore.get(profileId);
     return familyProfileMayUseExtAgent(
       record ? toFamilyProfile(record) : { id: profileId, isOwner: false },
+    );
+  }
+
+  /**
+   * Owner-controlled Coding assistants gate (Pi + Envoy Harness chat).
+   * Owner always allowed; non-owner profiles require explicit
+   * `codingEnabled: true` (default / omitted = off).
+   */
+  async mayCallerUseCoding(): Promise<boolean> {
+    return this._callerMayUseCoding();
+  }
+
+  private async _callerMayUseCoding(): Promise<boolean> {
+    const caller = getRpcCaller();
+    if (caller?.isOwnerProfile) return true;
+    const profileId = this._callerFamilyProfileId();
+    return this.mayFamilyProfileUseCoding(
+      profileId,
+      profileId === OWNER_FAMILY_PROFILE_ID,
+    );
+  }
+
+  async mayFamilyProfileUseCoding(
+    profileId: string,
+    isOwnerProfile: boolean,
+  ): Promise<boolean> {
+    if (isOwnerProfile || profileId === OWNER_FAMILY_PROFILE_ID) return true;
+    if (!this._familyProfileStore) return false;
+    const record = await this._familyProfileStore.get(profileId);
+    return familyProfileMayUseCoding(
+      record ? toFamilyProfile(record) : { id: profileId, isOwner: false },
+    );
+  }
+
+  private _codingDeniedError(): Error {
+    return new Error(
+      "Coding assistants are disabled for this family profile. Ask the home-node owner to enable them in Settings → Family.",
     );
   }
 

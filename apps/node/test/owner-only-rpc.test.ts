@@ -27,8 +27,6 @@ describe("isOwnerOnlyRpcMethod", () => {
 
   it("gates home folder browse + Ext Agent project path for family", () => {
     for (const method of [
-      "getHomeFsInfo",
-      "listHomeFsEntries",
       "discoverObsidianVaults",
       "openDesktopApp",
       "getExtAgentProjectPath",
@@ -41,6 +39,12 @@ describe("isOwnerOnlyRpcMethod", () => {
     ]) {
       expect(isOwnerOnlyRpcMethod(method), method).toBe(true)
     }
+  })
+
+  it("does not owner-gate coding project-folder browse (codingEnabled gate)", () => {
+    expect(isOwnerOnlyRpcMethod("getHomeFsInfo")).toBe(false)
+    expect(isOwnerOnlyRpcMethod("listHomeFsEntries")).toBe(false)
+    expect(isOwnerOnlyRpcMethod("closeTerminalSession")).toBe(false)
   })
 
   it("gates chat draft RPCs for family (Agent Mode / Assist drafts)", () => {
@@ -65,19 +69,29 @@ describe("isOwnerOnlyRpcMethod", () => {
     }
   })
 
-  it("gates the dedicated Envoy Harness RPCs for family", () => {
-    expect(isOwnerOnlyRpcMethod("getEnvoyHarnessStatus")).toBe(true)
-    expect(isOwnerOnlyRpcMethod("askEnvoyHarness")).toBe(true)
-    expect(isOwnerOnlyRpcMethod("getEnvoyHarnessChatHistory")).toBe(true)
-    expect(isOwnerOnlyRpcMethod("listEnvoyHarnessChats")).toBe(true)
-    expect(isOwnerOnlyRpcMethod("createEnvoyHarnessChat")).toBe(true)
-    expect(isOwnerOnlyRpcMethod("openEnvoyHarnessChat")).toBe(true)
-    expect(isOwnerOnlyRpcMethod("removeEnvoyHarnessChat")).toBe(true)
-    expect(isOwnerOnlyRpcMethod("resetEnvoyHarnessChat")).toBe(true)
-    expect(isOwnerOnlyRpcMethod("listEnvoyHarnessPeers")).toBe(true)
-    expect(isOwnerOnlyRpcMethod("setEnvoyHarnessProjectPath")).toBe(true)
-    expect(isOwnerOnlyRpcMethod("invokeEnvoyHarnessEhui")).toBe(true)
-    expect(isOwnerOnlyRpcMethod("ensureEnvoyTerminalSession")).toBe(true)
+  it("does not owner-gate Envoy Harness / Pi RPCs (codingEnabled gate)", () => {
+    for (const method of [
+      "getEnvoyHarnessStatus",
+      "askEnvoyHarness",
+      "getEnvoyHarnessChatHistory",
+      "listEnvoyHarnessChats",
+      "createEnvoyHarnessChat",
+      "openEnvoyHarnessChat",
+      "removeEnvoyHarnessChat",
+      "resetEnvoyHarnessChat",
+      "setEnvoyHarnessAutoRunPolicy",
+      "listEnvoyHarnessPeers",
+      "setEnvoyHarnessProjectPath",
+      "invokeEnvoyHarnessEhui",
+      "ensureEnvoyTerminalSession",
+      "ensurePiTerminalSession",
+      "startEnvoyHarnessTurn",
+      "cancelEnvoyHarnessTurn",
+      "ehRespondToPermission",
+      "ehRespondToUserQuestion",
+    ]) {
+      expect(isOwnerOnlyRpcMethod(method), method).toBe(false)
+    }
   })
 
   it("allows family chat RPCs", () => {

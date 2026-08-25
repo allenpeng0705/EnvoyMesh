@@ -29,6 +29,8 @@ class TerminalSession {
 
   bool get isPi => role == 'pi';
 
+  bool get isEnvoyHarness => role == 'envoy-harness';
+
   factory TerminalSession.fromJson(Map<String, dynamic> json) {
     // Home node returns 'sessionId' and 'title'; we also accept 'id' and
     // 'name' for local DB cache compatibility.

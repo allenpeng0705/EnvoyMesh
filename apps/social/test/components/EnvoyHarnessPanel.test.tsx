@@ -15,6 +15,7 @@ const getEnvoyHarnessStatus = vi.fn()
 const startEnvoyHarnessTurn = vi.fn()
 const getEnvoyHarnessTurnStatus = vi.fn()
 const cancelEnvoyHarnessTurn = vi.fn()
+const setEnvoyHarnessAutoRunPolicy = vi.fn()
 const getEnvoyHarnessChatHistory = vi.fn()
 const openEnvoyHarnessChat = vi.fn()
 const resetEnvoyHarnessChat = vi.fn()
@@ -54,6 +55,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     startEnvoyHarnessTurn,
     getEnvoyHarnessTurnStatus,
     cancelEnvoyHarnessTurn,
+    setEnvoyHarnessAutoRunPolicy,
     getEnvoyHarnessChatHistory,
     openEnvoyHarnessChat,
     resetEnvoyHarnessChat,
@@ -115,6 +117,7 @@ beforeEach(() => {
   startEnvoyHarnessTurn.mockReset()
   getEnvoyHarnessTurnStatus.mockReset()
   cancelEnvoyHarnessTurn.mockReset()
+  setEnvoyHarnessAutoRunPolicy.mockReset()
   getEnvoyHarnessChatHistory.mockReset()
   openEnvoyHarnessChat.mockReset()
   resetEnvoyHarnessChat.mockReset()
@@ -125,6 +128,9 @@ beforeEach(() => {
   invokeEnvoyHarnessEhui.mockReset()
   getEnvoyHarnessStatus.mockResolvedValue(status())
   getEnvoyHarnessTurnStatus.mockResolvedValue({ busy: false })
+  setEnvoyHarnessAutoRunPolicy.mockImplementation(async (policy: string) =>
+    status({ autoRunPolicy: policy }),
+  )
   openEnvoyHarnessChat.mockResolvedValue({
     sessionId: "sess-test",
     cwd: "/projects/app",
@@ -266,6 +272,48 @@ describe("EnvoyHarnessPanel", () => {
     await waitFor(() => expect(getEnvoyHarnessChatHistory).toHaveBeenCalled())
     expect(await screen.findByText("previous hello")).toBeDefined()
     expect(await screen.findByText("previous reply")).toBeDefined()
+  })
+
+  it("lifts the submit guard when status lands while history is loading (race)", async () => {
+    let resolveStatus!: (s: unknown) => void
+    const statusPromise = new Promise((resolve) => {
+      resolveStatus = resolve
+    })
+    let resolveHistory!: (h: unknown) => void
+    const historyPromise = new Promise((resolve) => {
+      resolveHistory = resolve
+    })
+    getEnvoyHarnessStatus.mockReturnValue(statusPromise)
+    openEnvoyHarnessChat.mockReturnValue(historyPromise)
+
+    renderWithI18n(<EnvoyHarnessPanel chatId="chat-a" />)
+    await waitFor(() =>
+      expect(openEnvoyHarnessChat).toHaveBeenCalledWith("chat-a"),
+    )
+
+    // The status refresh lands while the history RPC is still in flight.
+    // This changes `status.cwd`, re-runs the history effect, and cancels
+    // the in-flight load (the re-run early-returns because the key is the
+    // same chatId). The superseded load must still lift the submit guard.
+    act(() => {
+      resolveStatus(status({ cwd: "/projects/app" }))
+    })
+
+    await act(async () => {
+      resolveHistory({
+        chatId: "chat-a",
+        sessionId: "sess-race",
+        cwd: "/projects/app",
+        turns: [{ id: "u1", role: "user", text: "prior turn" }],
+      })
+    })
+
+    await waitFor(() => {
+      expect(
+        document.querySelector('[data-chat-ready="true"]'),
+      ).not.toBeNull()
+    })
+    expect(screen.getByText("prior turn")).toBeDefined()
   })
 
   it("runs /help locally without calling the runtime", async () => {
@@ -470,6 +518,63 @@ describe("EnvoyHarnessPanel", () => {
       chatId: "chat-a",
     })
     expect(await screen.findByText("Run my test")).toBeDefined()
+  })
+
+  it("changes the permission policy from the header select", async () => {
+    renderWithI18n(<EnvoyHarnessPanel chatId="chat-a" />)
+    await screen.findByText("Ready")
+    const select = screen.getByLabelText(/Permission policy/i) as HTMLSelectElement
+    fireEvent.change(select, { target: { value: "off" } })
+    await waitFor(() =>
+      expect(setEnvoyHarnessAutoRunPolicy).toHaveBeenCalledWith("off"),
+    )
+  })
+
+  it("changes the permission policy via the /permissions slash command", async () => {
+    renderWithI18n(<EnvoyHarnessPanel chatId="chat-a" />)
+    await screen.findByText("Ready")
+    const input = screen.getByPlaceholderText(/Ask envoy-harness/)
+    fireEvent.change(input, { target: { value: "/permissions off" } })
+    fireEvent.submit(input.closest("form")!)
+    await waitFor(() =>
+      expect(setEnvoyHarnessAutoRunPolicy).toHaveBeenCalledWith("off"),
+    )
+    expect(await screen.findByText(/Permission policy → off/)).toBeDefined()
+  })
+
+  it("new-chat trash button resets the chat after a two-step confirm", async () => {
+    renderWithI18n(<EnvoyHarnessPanel chatId="chat-a" />)
+    await screen.findByText("Ready")
+    // The i18n catalog maps `eh.newChatAria` to "New coding chat".
+    const trash = screen.getByRole("button", { name: /New coding chat/i })
+    fireEvent.click(trash)
+    // First click arms the confirm; second click resets.
+    fireEvent.click(screen.getByRole("button", { name: /Confirm new chat/i }))
+    await waitFor(() =>
+      expect(resetEnvoyHarnessChat).toHaveBeenCalledWith("chat-a"),
+    )
+  })
+
+  it("shows a context-size reminder when the transcript is large and dismisses", async () => {
+    getEnvoyHarnessChatHistory.mockResolvedValue({
+      sessionId: "sess-big",
+      cwd: "/projects/app",
+      turns: Array.from({ length: 60 }, (_, i) => ({
+        id: `t${i}`,
+        role: (i % 2 === 0 ? "user" : "assistant") as "user" | "assistant",
+        text: `message ${i}`,
+      })),
+    })
+    // Legacy panel (no chatId) hydrates via getEnvoyHarnessChatHistory.
+    renderWithI18n(<EnvoyHarnessPanel />)
+    await waitForChatReady()
+    expect(
+      screen.getByText(/Context is getting large/i),
+    ).toBeDefined()
+    fireEvent.click(screen.getByRole("button", { name: /Dismiss/i }))
+    await waitFor(() => {
+      expect(screen.queryByText(/Context is getting large/i)).toBeNull()
+    })
   })
 
   it("sets the project folder via the folder link modal", async () => {

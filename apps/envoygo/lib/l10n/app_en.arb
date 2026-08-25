@@ -387,6 +387,23 @@
   "connTooltipOffline": "Not connected",
   "connTooltipError": "Connection error",
   "chatsSectionAi": "AI",
+  "chatsSectionCoding": "Coding",
+  "chatsCodingPi": "Pi",
+  "chatsCodingPiHint": "Coding Agent (terminal)",
+  "chatsCodingEh": "Envoy",
+  "chatsCodingEhHint": "Coding Agent (chat)",
+  "chatsEhNew": "New coding chat",
+  "chatsEhRemoveTitle": "Remove coding chat?",
+  "chatsEhRemoveBody": "Remove “{name}” from your Coding list? The chat history on the home node will be deleted.",
+  "@chatsEhRemoveBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatsEhThinking": "Envoy is thinking…",
+  "chatsEhPromptHint": "Ask Envoy to code, refactor, or explain…",
   "chatsSectionFamily": "Family",
   "chatsSectionContacts": "Contacts",
   "chatsSectionGroups": "Groups",
@@ -396,6 +413,72 @@
   "chatsCreateBotHint": "AI character on your home node",
   "chatsNewPi": "New Pi",
   "chatsNewPiHint": "Start a Pi coding terminal",
+  "chatsNewEnvoy": "New Envoy",
+  "chatsNewEnvoyHint": "Start Envoy Harness TUI",
+  "ehChooseProjectTitle": "Choose Envoy project folder",
+  "ehChangeProjectTitle": "Change Envoy project folder",
+  "ehChooseProjectDesc": "Envoy runs in this folder (reads AGENTS.md, edits files, runs shell).",
+  "ehStartWithProject": "Start",
+  "ehRestartWithProject": "Restart Envoy here",
+  "ehEnsuringTerminal": "Starting Envoy TUI…",
+  "ehPermissionTitle": "Tool permission",
+  "ehPermissionAllow": "Allow",
+  "ehPermissionDeny": "Deny",
+  "ehQuestionTitle": "Envoy needs your input",
+  "ehRecommended": "Recommended",
+  "ehSlashWhileBusy": "Finish or /cancel the current turn first.",
+  "ehChatReset": "Started a new chat for this project.",
+  "ehTurnCancelled": "Turn cancelled.",
+  "ehStatusRefreshed": "Status refreshed.",
+  "ehNoPeers": "No peer cluster configured.",
+  "ehSearchUsage": "Usage: /search <term> — search this conversation.",
+  "ehSearchNoMatches": "No matches for “{term}”.",
+  "@ehSearchNoMatches": {
+    "placeholders": {
+      "term": {
+        "type": "String"
+      }
+    }
+  },
+  "ehModelShow": "Active model: {model}",
+  "@ehModelShow": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "ehModelUnknown": "No model configured — set one in Settings → AI.",
+  "ehProjectCurrent": "Project folder: {path}",
+  "@ehProjectCurrent": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehProjectUnset": "No project folder set — use /cd <path>.",
+  "ehProjectSet": "Project folder → {path}",
+  "@ehProjectSet": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehProjectSetUnknown": "Project folder updated.",
+  "ehProjectSetFailed": "Failed to set project folder: {error}",
+  "@ehProjectSetFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "ehConfigureModel": "Configure a model in Settings → AI.",
+  "ehNotReady": "envoy-harness is not ready.",
+  "termQuickHelp": "/help",
+  "termQuickCancel": "/cancel",
   "chatsNewTerminal": "New Terminal",
   "chatsNewTerminalHint": "Open a shell on the home node",
   "chatsNewGroup": "New Group Chat",

@@ -292,7 +292,7 @@ export interface RealEnvoyHarnessAskOptions {
    * When `askHandler` is set, only tools where this
    * returns true trigger a host prompt. Default: all tools.
    */
-  shouldAskTool?: (toolName: string) => boolean;
+  shouldAskTool?: (toolName: string, args?: unknown) => boolean;
 }
 
 /** Options accepted by `askSkill`. `skillId` is required
@@ -393,7 +393,7 @@ export interface RealEnvoyHarnessRuntime {
     cwd: string | undefined;
     askHandler: AskHandler;
     session?: Session;
-    shouldAskTool?: (toolName: string) => boolean;
+    shouldAskTool?: (toolName: string, args?: unknown) => boolean;
     /** Prebuilt system prompt (AGENTS.md + environment_context). */
     systemPrompt?: string;
     permissionMode?: PermissionMode;
@@ -455,7 +455,7 @@ export function createRealEnvoyHarnessRuntime(
   // ask() / askSkill() calls cannot clobber each other's bridge.
   type AskBridgeStore = {
     handler: AskHandler | undefined;
-    shouldAskTool: ((toolName: string) => boolean) | undefined;
+    shouldAskTool: ((toolName: string, args?: unknown) => boolean) | undefined;
   };
   const askBridgeAls = new AsyncLocalStorage<AskBridgeStore>();
 
@@ -589,8 +589,8 @@ export function createRealEnvoyHarnessRuntime(
         meshSubmitter: submitter,
         ...(opts.bClassTools ? { bClassTools: opts.bClassTools } : {}),
         getAskHandler: () => askBridgeAls.getStore()?.handler,
-        shouldAskTool: (toolName) =>
-          askBridgeAls.getStore()?.shouldAskTool?.(toolName) ?? true,
+        shouldAskTool: (toolName, args) =>
+          askBridgeAls.getStore()?.shouldAskTool?.(toolName, args) ?? true,
       });
       const buildAgent: BuildAgentFn = (args) => {
         if (args.providerHint === undefined) return baseBuildAgent(args);
@@ -605,8 +605,8 @@ export function createRealEnvoyHarnessRuntime(
           meshSubmitter: submitter,
           ...(opts.bClassTools ? { bClassTools: opts.bClassTools } : {}),
           getAskHandler: () => askBridgeAls.getStore()?.handler,
-          shouldAskTool: (toolName) =>
-            askBridgeAls.getStore()?.shouldAskTool?.(toolName) ?? true,
+          shouldAskTool: (toolName, args) =>
+            askBridgeAls.getStore()?.shouldAskTool?.(toolName, args) ?? true,
         })(args);
       };
       // The top-level agent (built by `defaultBuildAgentFactory`)

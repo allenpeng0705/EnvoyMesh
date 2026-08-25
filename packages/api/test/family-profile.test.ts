@@ -7,6 +7,7 @@ import {
   OWNER_FAMILY_PROFILE_ID,
   slugifyFamilyProfileId,
   familyProfileMayUseExtAgent,
+  familyProfileMayUseCoding,
   maskBridgeEnabledForExtAgentAccess,
 } from "../src/family-profile.js"
 
@@ -92,6 +93,35 @@ describe("familyProfileMayUseExtAgent", () => {
   it("denies missing profile (fail closed)", () => {
     expect(familyProfileMayUseExtAgent(null)).toBe(false)
     expect(familyProfileMayUseExtAgent(undefined)).toBe(false)
+  })
+})
+
+describe("familyProfileMayUseCoding", () => {
+  it("allows owner always", () => {
+    expect(
+      familyProfileMayUseCoding({
+        id: OWNER_FAMILY_PROFILE_ID,
+        isOwner: true,
+        codingEnabled: false,
+      }),
+    ).toBe(true)
+  })
+
+  it("allows non-owner only when codingEnabled is true", () => {
+    expect(
+      familyProfileMayUseCoding({
+        id: "mom",
+        isOwner: false,
+        codingEnabled: true,
+      }),
+    ).toBe(true)
+    expect(
+      familyProfileMayUseCoding({
+        id: "mom",
+        isOwner: false,
+        codingEnabled: false,
+      }),
+    ).toBe(false)
   })
 })
 

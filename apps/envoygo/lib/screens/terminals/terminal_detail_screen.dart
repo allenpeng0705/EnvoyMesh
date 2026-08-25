@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +10,9 @@ import '../../l10n/app_localizations.dart';
 import '../../providers/node_provider.dart';
 import '../../services/node_service_client.dart';
 import '../../services/terminal_service.dart';
+import '../../widgets/eh/envoy_harness_terminal_chrome.dart';
+import '../../widgets/terminal/terminal_accessory_bar.dart';
+import '../../widgets/terminal/terminal_agent_bar.dart';
 
 /// Terminal detail screen — hosts an xterm.js WebView for full terminal
 /// emulation.  PTY output from the home node is forwarded to xterm.js
@@ -19,12 +21,20 @@ import '../../services/terminal_service.dart';
 class TerminalDetailScreen extends ConsumerStatefulWidget {
   final String sessionId;
   final String sessionName;
+  final String? sessionRole;
 
   const TerminalDetailScreen({
     super.key,
     required this.sessionId,
     required this.sessionName,
+    this.sessionRole,
   });
+
+  bool get isEnvoyHarnessSession => sessionRole == 'envoy-harness';
+
+  /// Shell Terminal Agent slash bar (not Pi / Envoy Harness TUI sessions).
+  bool get isShellAgentSession =>
+      sessionRole != 'envoy-harness' && sessionRole != 'pi';
 
   @override
   ConsumerState<TerminalDetailScreen> createState() =>
@@ -39,7 +49,6 @@ class _TerminalDetailScreenState
   bool _tunnelUp = true;
 
   void Function()? _unsubRx;
-  void Function()? _unsubClosed;
 
   late final PullToRefreshController _pullToRefreshController;
 
@@ -82,7 +91,7 @@ class _TerminalDetailScreenState
 
     // Subscribe to PTY output from home node push events.
     _unsubRx = client.on('homeTerminalWs:rx', _onTerminalOutput);
-    _unsubClosed = client.on('homeTerminalWs:closed', (_) {
+    client.on('homeTerminalWs:closed', (_) {
       if (mounted) setState(() => _tunnelUp = false);
     });
 
@@ -147,6 +156,13 @@ class _TerminalDetailScreenState
 
   void _onResizeFromWeb(int cols, int rows) {
     _terminalService?.sendResize(cols, rows);
+  }
+
+  void _sendToTerminal(String text) {
+    _terminalService?.sendKey(text);
+    if (!text.endsWith('\n')) {
+      _terminalService?.sendKey('\n');
+    }
   }
 
   // -- Copy All --
@@ -222,6 +238,10 @@ class _TerminalDetailScreenState
       body: SafeArea(
         child: Column(
           children: [
+            if (widget.isEnvoyHarnessSession)
+              EnvoyHarnessTerminalChrome(
+                onSendToTerminal: _sendToTerminal,
+              ),
             Expanded(
               child: Container(
                 color: Colors.black,
@@ -283,84 +303,38 @@ class _TerminalDetailScreenState
                     },
                   ),
                 ),
-                // Special keys bar below the terminal.
-                _buildSpecialKeysBar(),
+                TerminalAccessoryBar(
+                  mode: _accessoryMode,
+                  enabled: _attached && _tunnelUp,
+                  onKey: (bytes) => _terminalService?.sendKey(bytes),
+                  onPaste: _onPaste,
+                ),
               ],
             ),
           ),
-          ),
-        ],
         ),
-      ),
+            if (widget.isShellAgentSession)
+              TerminalAgentBar(
+                sessionId: widget.sessionId,
+                onEditInTerminal: _sendToTerminal,
+              ),
+      ],
+    ),
+  ),
     );
   }
 
-  // -- Special keys bar --
-
-  Widget _buildSpecialKeysBar() {
-    return Container(
-      color: Colors.grey[900],
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            _keyBtn('Esc', '\x1B'),
-            _keyBtn('Tab', '\x09'),
-            _keyBtn('↑', '\x1B[A'),
-            _keyBtn('↓', '\x1B[B'),
-            _keyBtn('←', '\x1B[D'),
-            _keyBtn('→', '\x1B[C'),
-            const SizedBox(width: 8),
-            _keyBtn('Ctrl', '', ctrl: true),
-            _keyBtn('C', 'c', ctrl: true),
-            _keyBtn('D', 'd', ctrl: true),
-            _keyBtn('V', '', ctrl: true, onTap: _onPaste),
-            const SizedBox(width: 8),
-            const SizedBox(width: 8),
-            _keyBtn('⌨', '', onTap: () {
-              _webController?.evaluateJavascript(
-                source: 'term.focus();',
-              );
-            }),
-            const SizedBox(width: 8),
-            _keyBtn('/', '/'),
-          ],
-        ),
-      ),
-    );
+  TerminalAccessoryMode get _accessoryMode {
+    if (widget.isEnvoyHarnessSession) {
+      return TerminalAccessoryMode.envoyHarness;
+    }
+    if (widget.sessionRole == 'pi') {
+      return TerminalAccessoryMode.pi;
+    }
+    return TerminalAccessoryMode.shell;
   }
 
-  Widget _keyBtn(String label, String bytes, {
-    bool ctrl = false,
-    VoidCallback? onTap,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: TextButton(
-        style: TextButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          minimumSize: Size.zero,
-          backgroundColor: Colors.grey[800],
-          foregroundColor: ctrl ? Colors.orange : Colors.white70,
-          textStyle: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
-        ),
-        onPressed: onTap ?? () {
-          if (ctrl) {
-            // Send Ctrl+key: ASCII 0x01-0x1A for Ctrl+A through Ctrl+Z.
-            final code = bytes.isNotEmpty ? bytes.codeUnitAt(0) : 0;
-            if (code >= 0x61 && code <= 0x7A) {
-              _terminalService?.sendRaw(Uint8List.fromList([code - 0x60]));
-            }
-          } else {
-            _terminalService?.sendRaw(utf8.encode(bytes));
-          }
-        },
-        child: Text(label),
-      ),
-    );
-  }
-
+  // -- Legacy special keys (removed — use TerminalAccessoryBar) --
   /// Inlined HTML that loads xterm.js from CDN.
   /// Using [InAppWebViewInitialData] so we don't need the assets/ file
   /// at runtime (it's still kept as a reference).

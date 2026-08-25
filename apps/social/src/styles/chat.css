@@ -5765,7 +5765,11 @@
   border-color: var(--color-primary, #07c160);
   box-shadow: 0 0 0 2px var(--color-primary-subtle, #e8f8ef);
 }
-.eh-composer-row > button:not(.eh-composer-inject) {
+/* The send button gets the green square chrome. Exclude the attach
+   button: it renders as a direct child of `.eh-composer-row` (via the
+   composer's `leading` fragment) and must keep the `.secondary`
+   outline style shared with EnvoyAI / Ext Agent. */
+.eh-composer-row > button:not(.eh-composer-inject):not(.chat-attach-file-btn) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -6358,6 +6362,80 @@
   margin: 0 0.75rem 0.5rem;
 }
 
+/* Envoy chat header: permission policy select + new-chat trash button. */
+.eh-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.eh-permission-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #64748b);
+}
+
+.eh-permission-select {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 0.4rem;
+  background: var(--color-surface, #ffffff);
+  color: var(--color-text, #0f172a);
+}
+
+.eh-trash-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 0.4rem;
+  background: var(--color-surface, #ffffff);
+  color: var(--color-text-muted, #64748b);
+  cursor: pointer;
+  transition: all var(--transition-fast, 0.15s ease);
+}
+
+.eh-trash-btn:hover {
+  color: var(--color-danger, #ef4444);
+  border-color: var(--color-danger, #ef4444);
+}
+
+.eh-trash-btn--confirm {
+  color: var(--color-danger, #ef4444);
+  border-color: var(--color-danger, #ef4444);
+  background: var(--color-danger-subtle, #fef2f2);
+}
+
+/* Context-size reminder above the composer. */
+.eh-context-reminder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0.35rem 1rem 0;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--color-warning-subtle, #fffbeb);
+  border-radius: 0.5rem;
+  background: var(--color-warning-subtle, #fffbeb);
+  color: var(--color-on-accent-subtle, #b45309);
+  font-size: 0.75rem;
+}
+
+.eh-context-reminder-dismiss {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0.1rem 0.3rem;
+}
+
 .eh-permission-dock {
   margin: 0;
 }
@@ -6501,4 +6579,3 @@
   background: rgba(0, 0, 0, 0.25);
   color: var(--color-text, #f1f5f9);
 }
-

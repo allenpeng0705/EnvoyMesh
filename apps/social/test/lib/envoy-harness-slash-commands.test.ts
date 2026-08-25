@@ -30,6 +30,7 @@ describe("envoy-harness-slash-commands", () => {
     expect(isEnvoyHarnessLocalSlashCommand("/team")).toBe(true)
     expect(isEnvoyHarnessLocalSlashCommand("/trace")).toBe(true)
     expect(isEnvoyHarnessLocalSlashCommand("/search auth")).toBe(true)
+    expect(isEnvoyHarnessLocalSlashCommand("/permissions safe-only")).toBe(true)
   })
 
   it("covers the mesh-native + Claude/Codex command surface", () => {
@@ -58,6 +59,7 @@ describe("envoy-harness-slash-commands", () => {
       "/rewind",
       "/config",
       "/usage",
+      "/permissions",
     ]) {
       expect(names.has(cmd)).toBe(true)
     }

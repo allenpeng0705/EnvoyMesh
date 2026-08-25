@@ -49,6 +49,18 @@ export class EhChatRuntime {
     this.#hosts.delete(chatId);
   }
 
+  /**
+   * Close every idle per-chat host (e.g. after a permission-policy
+   * change). Hosts with an in-flight turn stay alive so the current
+   * turn is not killed; the new policy applies on the next turn.
+   */
+  closeAll(): void {
+    for (const chatId of [...this.#hosts.keys()]) {
+      if (this.#turnIdByChatId.has(chatId)) continue;
+      this.removeHost(chatId);
+    }
+  }
+
   chatIdForSession(sessionId: string): string | undefined {
     return this.#sessionToChatId.get(sessionId);
   }

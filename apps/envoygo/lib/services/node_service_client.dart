@@ -159,6 +159,8 @@ class NodeServiceClient {
     String? avatarColor,
     bool? active,
     List<Map<String, dynamic>>? aiBots,
+    bool? extAgentEnabled,
+    bool? codingEnabled,
   }) async {
     return await _client.call('updateFamilyProfile', {
       'id': id,
@@ -166,6 +168,8 @@ class NodeServiceClient {
       if (avatarColor != null) 'avatarColor': avatarColor,
       if (active != null) 'active': active,
       if (aiBots != null) 'aiBots': aiBots,
+      if (extAgentEnabled != null) 'extAgentEnabled': extAgentEnabled,
+      if (codingEnabled != null) 'codingEnabled': codingEnabled,
     }) as Map<String, dynamic>;
   }
 
@@ -834,6 +838,152 @@ class NodeServiceClient {
     }) as Map<String, dynamic>;
   }
 
+  // -- Envoy Harness (coding chat) --
+
+  Future<List<Map<String, dynamic>>> listEnvoyHarnessChats() async {
+    final result = await _client.call('listEnvoyHarnessChats');
+    return (result as List<dynamic>)
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> createEnvoyHarnessChat({
+    required String cwd,
+    String? title,
+  }) async {
+    return await _client.call('createEnvoyHarnessChat', {
+      'cwd': cwd,
+      if (title != null) 'title': title,
+    }, const Duration(seconds: 30)) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> openEnvoyHarnessChat(String chatId) async {
+    return await _client.call(
+      'openEnvoyHarnessChat',
+      {'chatId': chatId},
+      const Duration(seconds: 30),
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> removeEnvoyHarnessChat(String chatId) async {
+    return await _client.call(
+      'removeEnvoyHarnessChat',
+      {'chatId': chatId},
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> startEnvoyHarnessTurn(
+    String text, {
+    String? chatId,
+  }) async {
+    return await _client.call(
+      'startEnvoyHarnessTurn',
+      {
+        'text': text,
+        if (chatId != null) 'chatId': chatId,
+      },
+      const Duration(seconds: 120),
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> getEnvoyHarnessChatHistory({
+    String? chatId,
+  }) async {
+    return await _client.call(
+      'getEnvoyHarnessChatHistory',
+      chatId != null ? {'chatId': chatId} : {},
+      const Duration(seconds: 30),
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> cancelEnvoyHarnessTurn({String? chatId}) async {
+    return await _client.call(
+      'cancelEnvoyHarnessTurn',
+      chatId != null ? {'chatId': chatId} : {},
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> getEnvoyHarnessStatus() async {
+    return await _client.call('getEnvoyHarnessStatus')
+        as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> setEnvoyHarnessAutoRunPolicy(
+    String policy,
+  ) async {
+    return await _client.call('setEnvoyHarnessAutoRunPolicy', {
+      'policy': policy,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> ehRespondToPermission({
+    required String requestId,
+    required bool allowed,
+  }) async {
+    return await _client.call('ehRespondToPermission', {
+      'requestId': requestId,
+      'allowed': allowed,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> ehRespondToUserQuestion({
+    required String requestId,
+    required String value,
+    int? optionIndex,
+    bool? cancelled,
+  }) async {
+    return await _client.call('ehRespondToUserQuestion', {
+      'requestId': requestId,
+      'value': value,
+      if (optionIndex != null) 'optionIndex': optionIndex,
+      if (cancelled != null) 'cancelled': cancelled,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<dynamic> invokeEnvoyHarnessEhui(Map<String, dynamic> request) async {
+    return await _client.call('invokeEnvoyHarnessEhui', {'request': request});
+  }
+
+  Future<Map<String, dynamic>> getEnvoyHarnessTurnStatus({String? chatId}) async {
+    return await _client.call(
+      'getEnvoyHarnessTurnStatus',
+      chatId != null ? {'chatId': chatId} : {},
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> setEnvoyHarnessProjectPath(String path) async {
+    return await _client.call(
+      'setEnvoyHarnessProjectPath',
+      {'path': path},
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> ensureEnvoyTerminalSession({
+    required String projectPath,
+    String? sessionId,
+    bool forceRestart = false,
+  }) async {
+    return await _client.call('ensureEnvoyTerminalSession', {
+      'projectPath': projectPath,
+      if (sessionId != null) 'sessionId': sessionId,
+      'forceRestart': forceRestart,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> resetEnvoyHarnessChat({String? chatId}) async {
+    return await _client.call(
+      'resetEnvoyHarnessChat',
+      chatId != null ? {'chatId': chatId} : {},
+    ) as Map<String, dynamic>;
+  }
+
+  Future<List<Map<String, dynamic>>> listEnvoyHarnessPeers() async {
+    final result = await _client.call('listEnvoyHarnessPeers');
+    return (result as List<dynamic>)
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+  }
+
   // -- Terminals --
 
   Future<List<TerminalSession>> listTerminalSessions() async {
@@ -923,6 +1073,225 @@ class NodeServiceClient {
       if (cols != null) 'cols': cols,
       if (rows != null) 'rows': rows,
     }) as Map<String, dynamic>;
+  }
+
+  // -- Terminal Agent assist (shell sessions; Social TerminalAgentBar parity) --
+
+  Future<Map<String, dynamic>> terminalGetAssistState(String sessionId) async {
+    return await _client.call('terminalGetAssistState', {
+      'sessionId': sessionId,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalRunFromNaturalLanguage({
+    required String sessionId,
+    required String prompt,
+  }) async {
+    return await _client.call(
+      'terminalRunFromNaturalLanguage',
+      {'sessionId': sessionId, 'prompt': prompt},
+      const Duration(seconds: 120),
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalExecuteProposal({
+    required String sessionId,
+    required String proposalId,
+    bool? confirmed,
+  }) async {
+    return await _client.call('terminalExecuteProposal', {
+      'sessionId': sessionId,
+      'proposalId': proposalId,
+      if (confirmed != null) 'confirmed': confirmed,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalSetAssistModelOverride({
+    required String sessionId,
+    required String modelName,
+  }) async {
+    return await _client.call('terminalSetAssistModelOverride', {
+      'sessionId': sessionId,
+      'modelName': modelName,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalExplainScrollback({
+    required String sessionId,
+    String? topic,
+  }) async {
+    return await _client.call(
+      'terminalExplainScrollback',
+      {
+        'sessionId': sessionId,
+        if (topic != null) 'topic': topic,
+      },
+      const Duration(seconds: 120),
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalSetInlineSuggestEnabled({
+    required String sessionId,
+    required bool enabled,
+  }) async {
+    return await _client.call('terminalSetInlineSuggestEnabled', {
+      'sessionId': sessionId,
+      'enabled': enabled,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalObserveStep({
+    required String sessionId,
+    required String goal,
+  }) async {
+    return await _client.call(
+      'terminalObserveStep',
+      {'sessionId': sessionId, 'goal': goal},
+      const Duration(seconds: 180),
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalOpenClawPlan({
+    required String sessionId,
+    required String prompt,
+  }) async {
+    return await _client.call(
+      'terminalOpenClawPlan',
+      {'sessionId': sessionId, 'prompt': prompt},
+      const Duration(seconds: 180),
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalRunPlanStep({
+    required String sessionId,
+    required String planId,
+    required int stepIndex,
+  }) async {
+    return await _client.call(
+      'terminalRunPlanStep',
+      {
+        'sessionId': sessionId,
+        'planId': planId,
+        'stepIndex': stepIndex,
+      },
+      const Duration(seconds: 120),
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalEnablePrepareMode({
+    required String sessionId,
+    required bool enabled,
+  }) async {
+    return await _client.call('terminalEnablePrepareMode', {
+      'sessionId': sessionId,
+      'enabled': enabled,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalWatchStep({
+    required String sessionId,
+    required String goal,
+  }) async {
+    return await _client.call(
+      'terminalWatchStep',
+      {'sessionId': sessionId, 'goal': goal},
+      const Duration(seconds: 120),
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalPinContextSession({
+    required String sessionId,
+    String? contextSessionId,
+  }) async {
+    return await _client.call('terminalPinContextSession', {
+      'sessionId': sessionId,
+      if (contextSessionId != null) 'contextSessionId': contextSessionId,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalStartGoalLoop({
+    required String sessionId,
+    required String goal,
+  }) async {
+    return await _client.call(
+      'terminalStartGoalLoop',
+      {'sessionId': sessionId, 'goal': goal},
+      const Duration(seconds: 180),
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalAdvanceGoalLoop({
+    required String sessionId,
+  }) async {
+    return await _client.call(
+      'terminalAdvanceGoalLoop',
+      {'sessionId': sessionId},
+      const Duration(seconds: 180),
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalCancelGoalLoop({
+    required String sessionId,
+  }) async {
+    return await _client.call('terminalCancelGoalLoop', {
+      'sessionId': sessionId,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalClearResumeGoal(String sessionId) async {
+    return await _client.call('terminalClearResumeGoal', {
+      'sessionId': sessionId,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalEnableExecPane({
+    required String sessionId,
+    required bool enabled,
+  }) async {
+    return await _client.call('terminalEnableExecPane', {
+      'sessionId': sessionId,
+      'enabled': enabled,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalSetBackgroundWatch({
+    required String sessionId,
+    required String goal,
+  }) async {
+    return await _client.call('terminalSetBackgroundWatch', {
+      'sessionId': sessionId,
+      'goal': goal,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalClearBackgroundWatch({
+    required String sessionId,
+  }) async {
+    return await _client.call('terminalClearBackgroundWatch', {
+      'sessionId': sessionId,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalUpdatePlanProgress({
+    required String sessionId,
+    required String planId,
+    int? skippedStepIndex,
+  }) async {
+    return await _client.call('terminalUpdatePlanProgress', {
+      'sessionId': sessionId,
+      'planId': planId,
+      if (skippedStepIndex != null) 'skippedStepIndex': skippedStepIndex,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> terminalSuggestFixFromFailure({
+    required String sessionId,
+  }) async {
+    return await _client.call(
+      'terminalSuggestFixFromFailure',
+      {'sessionId': sessionId},
+      const Duration(seconds: 120),
+    ) as Map<String, dynamic>;
   }
 
   /// Open a PTY WebSocket sub-channel using the path from terminalAttach.

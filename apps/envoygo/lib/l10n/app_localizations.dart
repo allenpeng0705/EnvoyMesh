@@ -1854,6 +1854,66 @@ abstract class AppLocalizations {
   /// **'AI'**
   String get chatsSectionAi;
 
+  /// No description provided for @chatsSectionCoding.
+  ///
+  /// In en, this message translates to:
+  /// **'Coding'**
+  String get chatsSectionCoding;
+
+  /// No description provided for @chatsCodingPi.
+  ///
+  /// In en, this message translates to:
+  /// **'Pi'**
+  String get chatsCodingPi;
+
+  /// No description provided for @chatsCodingPiHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Coding Agent (terminal)'**
+  String get chatsCodingPiHint;
+
+  /// No description provided for @chatsCodingEh.
+  ///
+  /// In en, this message translates to:
+  /// **'Envoy'**
+  String get chatsCodingEh;
+
+  /// No description provided for @chatsCodingEhHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Coding Agent (chat)'**
+  String get chatsCodingEhHint;
+
+  /// No description provided for @chatsEhNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New coding chat'**
+  String get chatsEhNew;
+
+  /// No description provided for @chatsEhRemoveTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove coding chat?'**
+  String get chatsEhRemoveTitle;
+
+  /// No description provided for @chatsEhRemoveBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove “{name}” from your Coding list? The chat history on the home node will be deleted.'**
+  String chatsEhRemoveBody(String name);
+
+  /// No description provided for @chatsEhThinking.
+  ///
+  /// In en, this message translates to:
+  /// **'Envoy is thinking…'**
+  String get chatsEhThinking;
+
+  /// No description provided for @chatsEhPromptHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask Envoy to code, refactor, or explain…'**
+  String get chatsEhPromptHint;
+
   /// No description provided for @chatsSectionFamily.
   ///
   /// In en, this message translates to:
@@ -1907,6 +1967,192 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Start a Pi coding terminal'**
   String get chatsNewPiHint;
+
+  /// No description provided for @chatsNewEnvoy.
+  ///
+  /// In en, this message translates to:
+  /// **'New Envoy'**
+  String get chatsNewEnvoy;
+
+  /// No description provided for @chatsNewEnvoyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Start Envoy Harness TUI'**
+  String get chatsNewEnvoyHint;
+
+  /// No description provided for @ehChooseProjectTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose Envoy project folder'**
+  String get ehChooseProjectTitle;
+
+  /// No description provided for @ehChangeProjectTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Change Envoy project folder'**
+  String get ehChangeProjectTitle;
+
+  /// No description provided for @ehChooseProjectDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Envoy runs in this folder (reads AGENTS.md, edits files, runs shell).'**
+  String get ehChooseProjectDesc;
+
+  /// No description provided for @ehStartWithProject.
+  ///
+  /// In en, this message translates to:
+  /// **'Start'**
+  String get ehStartWithProject;
+
+  /// No description provided for @ehRestartWithProject.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart Envoy here'**
+  String get ehRestartWithProject;
+
+  /// No description provided for @ehEnsuringTerminal.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting Envoy TUI…'**
+  String get ehEnsuringTerminal;
+
+  /// No description provided for @ehPermissionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool permission'**
+  String get ehPermissionTitle;
+
+  /// No description provided for @ehPermissionAllow.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow'**
+  String get ehPermissionAllow;
+
+  /// No description provided for @ehPermissionDeny.
+  ///
+  /// In en, this message translates to:
+  /// **'Deny'**
+  String get ehPermissionDeny;
+
+  /// No description provided for @ehQuestionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Envoy needs your input'**
+  String get ehQuestionTitle;
+
+  /// No description provided for @ehRecommended.
+  ///
+  /// In en, this message translates to:
+  /// **'Recommended'**
+  String get ehRecommended;
+
+  /// No description provided for @ehSlashWhileBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish or /cancel the current turn first.'**
+  String get ehSlashWhileBusy;
+
+  /// No description provided for @ehChatReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Started a new chat for this project.'**
+  String get ehChatReset;
+
+  /// No description provided for @ehTurnCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn cancelled.'**
+  String get ehTurnCancelled;
+
+  /// No description provided for @ehStatusRefreshed.
+  ///
+  /// In en, this message translates to:
+  /// **'Status refreshed.'**
+  String get ehStatusRefreshed;
+
+  /// No description provided for @ehNoPeers.
+  ///
+  /// In en, this message translates to:
+  /// **'No peer cluster configured.'**
+  String get ehNoPeers;
+
+  /// No description provided for @ehSearchUsage.
+  ///
+  /// In en, this message translates to:
+  /// **'Usage: /search <term> — search this conversation.'**
+  String get ehSearchUsage;
+
+  /// No description provided for @ehSearchNoMatches.
+  ///
+  /// In en, this message translates to:
+  /// **'No matches for “{term}”.'**
+  String ehSearchNoMatches(String term);
+
+  /// No description provided for @ehModelShow.
+  ///
+  /// In en, this message translates to:
+  /// **'Active model: {model}'**
+  String ehModelShow(String model);
+
+  /// No description provided for @ehModelUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'No model configured — set one in Settings → AI.'**
+  String get ehModelUnknown;
+
+  /// No description provided for @ehProjectCurrent.
+  ///
+  /// In en, this message translates to:
+  /// **'Project folder: {path}'**
+  String ehProjectCurrent(String path);
+
+  /// No description provided for @ehProjectUnset.
+  ///
+  /// In en, this message translates to:
+  /// **'No project folder set — use /cd <path>.'**
+  String get ehProjectUnset;
+
+  /// No description provided for @ehProjectSet.
+  ///
+  /// In en, this message translates to:
+  /// **'Project folder → {path}'**
+  String ehProjectSet(String path);
+
+  /// No description provided for @ehProjectSetUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Project folder updated.'**
+  String get ehProjectSetUnknown;
+
+  /// No description provided for @ehProjectSetFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to set project folder: {error}'**
+  String ehProjectSetFailed(String error);
+
+  /// No description provided for @ehConfigureModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure a model in Settings → AI.'**
+  String get ehConfigureModel;
+
+  /// No description provided for @ehNotReady.
+  ///
+  /// In en, this message translates to:
+  /// **'envoy-harness is not ready.'**
+  String get ehNotReady;
+
+  /// No description provided for @termQuickHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'/help'**
+  String get termQuickHelp;
+
+  /// No description provided for @termQuickCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'/cancel'**
+  String get termQuickCancel;
 
   /// No description provided for @chatsNewTerminal.
   ///

@@ -134,6 +134,24 @@ export function SettingsFamilyTab() {
     }
   };
 
+  const handleToggleCoding = async (profile: FamilyProfile) => {
+    if (profile.isOwner || profile.id === OWNER_FAMILY_PROFILE_ID) return;
+    setBusyId(profile.id);
+    setError(null);
+    try {
+      const next = profile.codingEnabled !== true;
+      await nodeService.updateFamilyProfile({
+        id: profile.id,
+        codingEnabled: next,
+      });
+      await afterMutation();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const handleToggleActive = async (profile: FamilyProfile) => {
     if (profile.isOwner) return;
     setBusyId(profile.id);
@@ -352,20 +370,36 @@ export function SettingsFamilyTab() {
                               )}
                         </span>
                         {!isOwner ? (
-                          <label className="settings-family-ext-agent">
-                            <input
-                              type="checkbox"
-                              checked={profile.extAgentEnabled === true}
-                              disabled={busyId === profile.id || inactive}
-                              onChange={() => void handleToggleExtAgent(profile)}
-                            />
-                            <span>
-                              {t(
-                                "settings.family.extAgentEnabled",
-                                "Allow Ext Agent chat",
-                              )}
-                            </span>
-                          </label>
+                          <>
+                            <label className="settings-family-ext-agent">
+                              <input
+                                type="checkbox"
+                                checked={profile.extAgentEnabled === true}
+                                disabled={busyId === profile.id || inactive}
+                                onChange={() => void handleToggleExtAgent(profile)}
+                              />
+                              <span>
+                                {t(
+                                  "settings.family.extAgentEnabled",
+                                  "Allow Ext Agent chat",
+                                )}
+                              </span>
+                            </label>
+                            <label className="settings-family-ext-agent">
+                              <input
+                                type="checkbox"
+                                checked={profile.codingEnabled === true}
+                                disabled={busyId === profile.id || inactive}
+                                onChange={() => void handleToggleCoding(profile)}
+                              />
+                              <span>
+                                {t(
+                                  "settings.family.codingEnabled",
+                                  "Allow Coding assistants",
+                                )}
+                              </span>
+                            </label>
+                          </>
                         ) : null}
                       </>
                     )}

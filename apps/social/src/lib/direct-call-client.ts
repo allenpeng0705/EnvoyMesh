@@ -902,6 +902,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getEnvoyHarnessTurnStatus(chatId);
   }
 
+  async setEnvoyHarnessAutoRunPolicy(policy: string) {
+    return this._ns.setEnvoyHarnessAutoRunPolicy(policy);
+  }
+
   async getEnvoyHarnessChatHistory(chatId?: string) {
     return this._ns.getEnvoyHarnessChatHistory(chatId);
   }

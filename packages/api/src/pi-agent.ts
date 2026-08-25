@@ -229,6 +229,8 @@ export interface EnvoyHarnessStatus {
   sessionId?: string
   /** Number of messages in the persisted session transcript. */
   messageCount?: number
+  /** Permission policy for chat/terminal tool calls (`always-confirm` | `safe-only` | `off` | `never`). */
+  autoRunPolicy?: string
   /** The configured standalone peer cluster (Pattern A execution pool). */
   peers: { connected: number; failed: number }
 }

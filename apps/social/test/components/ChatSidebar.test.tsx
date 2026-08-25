@@ -177,6 +177,14 @@ describe("ChatSidebar — remove bonded contact", () => {
 });
 
 describe("ChatSidebar — Envoy entry", () => {
+  beforeEach(() => {
+    // The Coding section is gated on the caller being allowed to use
+    // coding assistants (owner profile, or a family profile with
+    // codingEnabled). Default the mock to the owner so the section
+    // renders; individual tests can override.
+    mockNodeConfig = { contactAiPreferences: [], callerIsOwnerProfile: true };
+  });
+
   it("shows Coding section with project picker when empty", async () => {
     const onOpenEnvoyHarness = vi.fn();
     renderWithI18n(

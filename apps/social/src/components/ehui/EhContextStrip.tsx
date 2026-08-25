@@ -1,11 +1,15 @@
 /**
- * Active context chips above the EH composer (project + touched / attached files).
+ * Active context chips above the EH composer (touched / attached files).
+ *
+ * The project folder is already shown in the chat header (ProjectFolderLink)
+ * and the terminal session title — repeating it here is redundant and eats
+ * vertical space, so this strip only surfaces the files the agent is
+ * working on / has in context.
  */
 
 import { useT } from "../../context/I18nContext.js"
 
 export interface EhContextStripProps {
-  projectCwd?: string
   files: readonly string[]
   /** Paths that may show a remove control (composer attachments). */
   attachedPaths?: readonly string[]
@@ -19,22 +23,16 @@ function basename(path: string): string {
 }
 
 export function EhContextStrip({
-  projectCwd,
   files,
   attachedPaths,
   onRemoveAttached,
 }: EhContextStripProps) {
   const t = useT()
 
-  if (!projectCwd && files.length === 0) return null
+  if (files.length === 0) return null
 
   return (
     <div className="eh-context-strip" role="region" aria-label={t("eh.contextStrip", "Context")}>
-      {projectCwd ? (
-        <span className="eh-context-chip eh-context-chip--project" title={projectCwd}>
-          {t("eh.contextProject", "Project")}: {basename(projectCwd) || projectCwd}
-        </span>
-      ) : null}
       {files.map((file) => (
         <span key={file} className="eh-context-chip" title={file}>
           {basename(file)}

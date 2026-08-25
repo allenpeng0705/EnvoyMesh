@@ -27,7 +27,6 @@ export interface EhComposerDockStackProps {
   onQueueUpdate: (id: string, text: string) => void
   onQueueRemove: (id: string) => void
   onQueueClear?: () => void
-  projectCwd?: string
   contextFiles: readonly string[]
   attachedPaths?: readonly string[]
   onRemoveAttached?: (path: string) => void
@@ -51,7 +50,6 @@ export function EhComposerDockStack({
   onQueueUpdate,
   onQueueRemove,
   onQueueClear,
-  projectCwd,
   contextFiles,
   attachedPaths,
   onRemoveAttached,
@@ -77,7 +75,6 @@ export function EhComposerDockStack({
         />
       ) : null}
       <EhContextStrip
-        projectCwd={projectCwd}
         files={contextFiles}
         attachedPaths={attachedPaths}
         onRemoveAttached={onRemoveAttached}
