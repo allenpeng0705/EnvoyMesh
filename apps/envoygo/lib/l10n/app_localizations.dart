@@ -5645,6 +5645,216 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Advanced server parameters (context size, GPU layers) remain on the home-node Social UI.'**
   String get settingsEnvoyLocalPhoneNote;
+
+  /// No description provided for @ehReviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Review this turn'**
+  String get ehReviewTitle;
+
+  /// No description provided for @ehReviewUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'A saved review is unavailable for this older turn.'**
+  String get ehReviewUnavailable;
+
+  /// No description provided for @ehReviewFile.
+  ///
+  /// In en, this message translates to:
+  /// **'File'**
+  String get ehReviewFile;
+
+  /// No description provided for @ehReviewOpenFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Open file'**
+  String get ehReviewOpenFile;
+
+  /// No description provided for @ehReviewDiffUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'A textual diff is unavailable for this file.'**
+  String get ehReviewDiffUnavailable;
+
+  /// No description provided for @ehReviewOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Workspace-detected · review only'**
+  String get ehReviewOnly;
+
+  /// No description provided for @ehRevertTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Revert this turn?'**
+  String get ehRevertTitle;
+
+  /// No description provided for @ehRevertBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Files will be restored to their pre-turn contents. Later edits are protected and will stop the revert.'**
+  String get ehRevertBody;
+
+  /// No description provided for @ehRevertAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Revert'**
+  String get ehRevertAction;
+
+  /// No description provided for @ehRevertComplete.
+  ///
+  /// In en, this message translates to:
+  /// **'This turn’s file changes were reverted.'**
+  String get ehRevertComplete;
+
+  /// No description provided for @ehRevertUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This turn can no longer be reverted safely.'**
+  String get ehRevertUnavailable;
+
+  /// No description provided for @ehRevertConflict.
+  ///
+  /// In en, this message translates to:
+  /// **'Revert stopped because these files changed afterward: {files}'**
+  String ehRevertConflict(String files);
+
+  /// No description provided for @ehSearchTranscript.
+  ///
+  /// In en, this message translates to:
+  /// **'Search transcript'**
+  String get ehSearchTranscript;
+
+  /// No description provided for @ehSearchClose.
+  ///
+  /// In en, this message translates to:
+  /// **'Close search'**
+  String get ehSearchClose;
+
+  /// No description provided for @ehNoMatches.
+  ///
+  /// In en, this message translates to:
+  /// **'No matching turns'**
+  String get ehNoMatches;
+
+  /// No description provided for @ehCopyTurn.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy turn'**
+  String get ehCopyTurn;
+
+  /// No description provided for @ehShareTurn.
+  ///
+  /// In en, this message translates to:
+  /// **'Share turn'**
+  String get ehShareTurn;
+
+  /// No description provided for @ehReviewDiff.
+  ///
+  /// In en, this message translates to:
+  /// **'Review diff'**
+  String get ehReviewDiff;
+
+  /// No description provided for @ehRevertThisTurn.
+  ///
+  /// In en, this message translates to:
+  /// **'Revert this turn'**
+  String get ehRevertThisTurn;
+
+  /// No description provided for @ehWorking.
+  ///
+  /// In en, this message translates to:
+  /// **'Working'**
+  String get ehWorking;
+
+  /// No description provided for @ehCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get ehCompleted;
+
+  /// No description provided for @ehUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'Update'**
+  String get ehUpdate;
+
+  /// No description provided for @ehToolLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool: {name}'**
+  String ehToolLabel(String name);
+
+  /// No description provided for @ehMatchCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 match} other{{count} matches}}'**
+  String ehMatchCount(int count);
+
+  /// No description provided for @termMore.
+  ///
+  /// In en, this message translates to:
+  /// **'More…'**
+  String get termMore;
+
+  /// No description provided for @termCompactContext.
+  ///
+  /// In en, this message translates to:
+  /// **'Compact context'**
+  String get termCompactContext;
+
+  /// No description provided for @termUpdatePlan.
+  ///
+  /// In en, this message translates to:
+  /// **'Show or update plan'**
+  String get termUpdatePlan;
+
+  /// No description provided for @termHarnessStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Harness status'**
+  String get termHarnessStatus;
+
+  /// No description provided for @termPiActions.
+  ///
+  /// In en, this message translates to:
+  /// **'Pi actions'**
+  String get termPiActions;
+
+  /// No description provided for @termHarnessActions.
+  ///
+  /// In en, this message translates to:
+  /// **'envoy-harness actions'**
+  String get termHarnessActions;
+
+  /// No description provided for @termPreviousCommand.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous command'**
+  String get termPreviousCommand;
+
+  /// No description provided for @termNextCommand.
+  ///
+  /// In en, this message translates to:
+  /// **'Next command'**
+  String get termNextCommand;
+
+  /// No description provided for @termCursorLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'Move cursor left'**
+  String get termCursorLeft;
+
+  /// No description provided for @termCursorRight.
+  ///
+  /// In en, this message translates to:
+  /// **'Move cursor right'**
+  String get termCursorRight;
+
+  /// No description provided for @termEnterKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter key'**
+  String get termEnterKey;
 }
 
 class _AppLocalizationsDelegate

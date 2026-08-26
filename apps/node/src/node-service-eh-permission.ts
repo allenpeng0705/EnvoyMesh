@@ -27,6 +27,7 @@ interface Pending {
   resolve: (decision: EhPermissionDecision) => void;
   timer: ReturnType<typeof setTimeout>;
   sessionId: string;
+  chatId?: string;
 }
 
 const DEFAULT_TIMEOUT_MS = 300_000;
@@ -36,6 +37,7 @@ export class EhPermissionBridge {
   readonly #emit: EhPermissionBridgeEmit;
   readonly #timeoutMs: number;
   readonly #getCwd: (() => Promise<string | undefined>) | undefined;
+  readonly #onResolved: ((requestId: string, status: "allowed" | "denied" | "expired", chatId?: string) => void) | undefined;
 
   readonly #getChatIdForSession:
     | ((sessionId: string) => string | undefined)
@@ -47,23 +49,28 @@ export class EhPermissionBridge {
       timeoutMs?: number;
       getCwd?: () => Promise<string | undefined>;
       getChatIdForSession?: (sessionId: string) => string | undefined;
+      onResolved?: (requestId: string, status: "allowed" | "denied" | "expired", chatId?: string) => void;
     },
   ) {
     this.#emit = emit;
     this.#timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.#getCwd = opts?.getCwd;
     this.#getChatIdForSession = opts?.getChatIdForSession;
+    this.#onResolved = opts?.onResolved;
   }
 
   request(req: EhPermissionRequest): Promise<EhPermissionDecision> {
     const requestId = randomUUID();
     return new Promise<EhPermissionDecision>((resolve) => {
       const timer = setTimeout(() => {
+        const entry = this.#pending.get(requestId);
         this.#pending.delete(requestId);
+        this.#onResolved?.(requestId, "expired", entry?.chatId);
         resolve("deny");
       }, this.#timeoutMs);
 
-      this.#pending.set(requestId, { resolve, timer, sessionId: req.sessionId });
+      const chatId = this.#getChatIdForSession?.(req.sessionId);
+      this.#pending.set(requestId, { resolve, timer, sessionId: req.sessionId, ...(chatId ? { chatId } : {}) });
 
       void (async () => {
         const cwd = this.#getCwd !== undefined ? await this.#getCwd() : undefined;
@@ -71,7 +78,6 @@ export class EhPermissionBridge {
           { toolName: req.toolName, args: req.args },
           cwd,
         );
-        const chatId = this.#getChatIdForSession?.(req.sessionId);
         this.#emit("eh:permission", {
           requestId,
           sessionId: req.sessionId,
@@ -95,6 +101,7 @@ export class EhPermissionBridge {
     clearTimeout(entry.timer);
     this.#pending.delete(requestId);
     entry.resolve(decision);
+    this.#onResolved?.(requestId, decision === "allow" ? "allowed" : "denied", entry.chatId);
     return { delivered: true };
   }
 
@@ -104,13 +111,15 @@ export class EhPermissionBridge {
       clearTimeout(entry.timer);
       entry.resolve("deny");
       this.#pending.delete(id);
+      this.#onResolved?.(id, "denied", entry.chatId);
     }
   }
 
   clear(): void {
-    for (const [, entry] of this.#pending) {
+    for (const [id, entry] of this.#pending) {
       clearTimeout(entry.timer);
       entry.resolve("deny");
+      this.#onResolved?.(id, "denied", entry.chatId);
     }
     this.#pending.clear();
   }

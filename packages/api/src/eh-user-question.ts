@@ -12,6 +12,7 @@ export interface EhUserQuestionEvent {
   kind?: "ask" | "plan-review" | "mode-switch";
   /** Sidebar chat thread that owns this question. */
   chatId?: string;
+  turnId?: string;
 }
 
 export interface EhRespondToUserQuestionParams {

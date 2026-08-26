@@ -523,9 +523,9 @@ import {
 } from "./terminal-assistant-command.js";
 import { predictIntent } from "./intent-predictor.js";
 import { buildVaultIndex, assertPathInsideVault } from "@envoymesh/vault";
-import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile, realpath } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import {
   ENVOY_MESSAGE_PROTOCOL,
   EnvoyMesh,
@@ -1316,6 +1316,23 @@ import {
   resolvePiProjectDir,
 } from "./pi-terminal-session.js";
 import { ensureEnvoyTerminalSession } from "./envoy-terminal-session.js";
+import {
+  completeEhTurnCheckpoint,
+  createEhTurnCheckpoint,
+  deletePersistedEhTurnCheckpoint,
+  loadEhTurnCheckpoint,
+  listEhTurnCheckpoints,
+  persistEhTurnCheckpoint,
+  revertEhTurnCheckpoint,
+  type EhCompletedCheckpoint,
+  type EhPendingCheckpoint,
+} from "./eh-turn-checkpoint.js";
+import {
+  LEGACY_EH_CHAT_ID,
+  legacyEhEventToTimelineItems,
+  type EhAgentStateName,
+  type EhLegacyTimelineEvent,
+} from "@envoymesh/api";
 import {
   createEnvoyHarnessSessionStore,
   deleteEhChatTurnFromStore,
@@ -4807,18 +4824,91 @@ class NodeServiceImpl implements NodeService {
 
   /** Per-chat ACP hosts + parallel in-flight turns. */
   private readonly _ehChatRuntime = new EhChatRuntime();
+  private readonly _ehPendingCheckpoints = new Map<string, EhPendingCheckpoint>();
+  private readonly _ehCompletedCheckpoints = new Map<string, EhCompletedCheckpoint>();
+  private readonly _ehPendingTimelineInteractions = new Map<string, import("@envoymesh/api").EhApprovalItem | import("@envoymesh/api").EhQuestionItem>();
+
+  private _emitEhTimelineEvent(event: EhLegacyTimelineEvent): void {
+    const receivedAt = new Date().toISOString();
+    for (const item of legacyEhEventToTimelineItems(event, receivedAt)) {
+      if (item.type === "approval" || item.type === "question") {
+        this._ehPendingTimelineInteractions.set(item.requestId, item);
+      }
+      this.emit("eh:timeline", { type: "upsert", item });
+    }
+    if (event.name === "eh:turn_complete") {
+      const payload = event.payload;
+      const chatId = payload.chatId ?? LEGACY_EH_CHAT_ID;
+      const liveId = payload.turnId
+        ? `turn:${payload.turnId}:activity-live`
+        : `activity:${chatId}:live`;
+      this.emit("eh:timeline", { type: "remove", chatId, id: liveId });
+    }
+  }
+
+  private _resolveEhTimelineInteraction(
+    requestId: string,
+    status: "allowed" | "denied" | "expired" | "answered" | "cancelled",
+    answer?: string,
+  ): void {
+    const pending = this._ehPendingTimelineInteractions.get(requestId);
+    if (!pending) return;
+    this._ehPendingTimelineInteractions.delete(requestId);
+    const updatedAt = new Date().toISOString();
+    const item = pending.type === "question"
+      ? { ...pending, status: status as import("@envoymesh/api").EhQuestionItem["status"], ...(answer !== undefined ? { answer } : {}), updatedAt }
+      : { ...pending, status: status as import("@envoymesh/api").EhApprovalItem["status"], updatedAt };
+    this.emit("eh:timeline", { type: "upsert", item });
+  }
+
+  private _emitEhAgentState(
+    state: EhAgentStateName,
+    label: string,
+    chatId?: string,
+    turnId?: string,
+    activitySummary?: string,
+  ): void {
+    this.emit("eh:timeline", {
+      type: "state",
+      state: {
+        state,
+        chatId: chatId ?? LEGACY_EH_CHAT_ID,
+        ...(turnId ? { turnId } : {}),
+        label,
+        ...(activitySummary ? { activitySummary } : {}),
+        updatedAt: new Date().toISOString(),
+        execution: { location: "local" },
+      },
+    });
+  }
 
   /** Envoy Harness ask_user / plan-review / mode-switch waiter. */
   private readonly _ehUserQuestionBridge = new AcpUserQuestionBridge(
     (_event, payload) => {
-      this.emit("eh:user_question", payload);
+      const turnId = payload.chatId
+        ? this._ehChatRuntime.getTurnForChat(payload.chatId)?.turnId
+        : undefined;
+      const enriched = { ...payload, ...(turnId ? { turnId } : {}) };
+      this.emit("eh:user_question", enriched);
+      this._emitEhTimelineEvent({ name: "eh:user_question", payload: enriched });
+      this._emitEhAgentState("waiting_for_answer", "Waiting for your answer", payload.chatId, turnId, payload.prompt);
+    },
+    {
+      onResolved: (requestId, status, answer) =>
+        this._resolveEhTimelineInteraction(requestId, status, answer),
     },
   );
 
   /** EH tool permissions (`session/request_permission`) — not Pi `pi:proposal`. */
   private readonly _ehPermissionBridge = new EhPermissionBridge(
     (_event, payload) => {
-      this.emit("eh:permission", payload);
+      const turnId = payload.chatId
+        ? this._ehChatRuntime.getTurnForChat(payload.chatId)?.turnId
+        : undefined;
+      const enriched = { ...payload, ...(turnId ? { turnId } : {}) };
+      this.emit("eh:permission", enriched);
+      this._emitEhTimelineEvent({ name: "eh:permission", payload: enriched });
+      this._emitEhAgentState("waiting_for_approval", "Waiting for approval", payload.chatId, turnId, payload.description);
     },
     {
       getCwd: () => this._envoyHarnessResolvedCwd(),
@@ -4828,6 +4918,8 @@ class NodeServiceImpl implements NodeService {
       // from other chats.
       getChatIdForSession: (sessionId) =>
         this._ehChatRuntime.chatIdForSession(sessionId),
+      onResolved: (requestId, status) =>
+        this._resolveEhTimelineInteraction(requestId, status),
     },
   );
 
@@ -5157,12 +5249,17 @@ class NodeServiceImpl implements NodeService {
 
     const turnId = crypto.randomUUID();
     const startedAt = new Date().toISOString();
-    this.emit("eh:turn_started", {
+    const checkpoint = await createEhTurnCheckpoint(cwd, turnId, chat?.id);
+    if (checkpoint) this._ehPendingCheckpoints.set(turnId, checkpoint);
+    const startedEvent = {
       turnId,
       userPrompt: trimmed,
       startedAt,
       ...(chat ? { chatId: chat.id } : {}),
-    });
+    };
+    this.emit("eh:turn_started", startedEvent);
+    this._emitEhTimelineEvent({ name: "eh:turn_started", payload: startedEvent });
+    this._emitEhAgentState("thinking", "Thinking", chat?.id, turnId);
     this.emit("eh:prompt_busy", {
       busy: true,
       ...(chat ? { chatId: chat.id } : {}),
@@ -5262,7 +5359,8 @@ class NodeServiceImpl implements NodeService {
           ) {
             active.changedFiles.push(filePath);
           }
-          this.emit("eh:activity", {
+          const activityEvent = {
+            turnId,
             kind: activity.kind,
             summary: activity.summary,
             ...(activity.toolName !== undefined
@@ -5270,19 +5368,24 @@ class NodeServiceImpl implements NodeService {
               : {}),
             ...(activity.ts !== undefined ? { ts: activity.ts } : {}),
             ...(active?.chatId ? { chatId: active.chatId } : {}),
-          });
+          };
+          this.emit("eh:activity", activityEvent);
+          this._emitEhTimelineEvent({ name: "eh:activity", payload: activityEvent });
+          this._emitEhAgentState("running_tool", activity.toolName ? `Running ${activity.toolName}` : "Working", active?.chatId, turnId, activity.summary);
         },
         onToken: (token) => {
           if (token.role !== "assistant" || token.delta.length === 0) return;
           streamingText += token.delta;
           const active = turnRecord();
           if (active) active.streamingText = streamingText;
-          this.emit("eh:turn_token", {
+          const tokenEvent = {
             turnId,
             delta: token.delta,
             streamingText,
             ...(active?.chatId ? { chatId: active.chatId } : {}),
-          });
+          };
+          this.emit("eh:turn_token", tokenEvent);
+          this._emitEhTimelineEvent({ name: "eh:turn_token", payload: tokenEvent });
         },
       });
       const active = turnRecord();
@@ -5291,20 +5394,32 @@ class NodeServiceImpl implements NodeService {
       const withChatId = <T extends object>(event: T): T =>
         eventChatId ? ({ ...event, chatId: eventChatId } as T) : event;
 
-      const finishComplete = (
+      const finishComplete = async (
         complete: import("@envoymesh/api").EhTurnCompleteEvent,
-      ): import("@envoymesh/api").EhTurnCompleteEvent => {
+      ): Promise<import("@envoymesh/api").EhTurnCompleteEvent> => {
+        const effectiveChangedFiles = await this._finalizeEhTurnCheckpoint(turnId, changedFiles);
         const withFiles =
-          changedFiles.length > 0
-            ? { ...complete, changedFiles }
+          effectiveChangedFiles.length > 0
+            ? { ...complete, changedFiles: effectiveChangedFiles }
             : complete;
-        this.emit("eh:turn_complete", withChatId(withFiles));
-        if (changedFiles.length > 0) {
-          this.emit("eh:files_changed", {
+        const completeEvent = withChatId(withFiles);
+        this.emit("eh:turn_complete", completeEvent);
+        this._emitEhTimelineEvent({ name: "eh:turn_complete", payload: completeEvent });
+        this._emitEhAgentState(
+          completeEvent.cancelled ? "cancelled" : completeEvent.ok ? "completed" : "failed",
+          completeEvent.cancelled ? "Cancelled" : completeEvent.ok ? "Completed" : "Failed",
+          eventChatId,
+          turnId,
+          completeEvent.error,
+        );
+        if (effectiveChangedFiles.length > 0) {
+          const filesEvent = {
             turnId,
-            files: changedFiles,
+            files: effectiveChangedFiles,
             ...(eventChatId ? { chatId: eventChatId } : {}),
-          });
+          };
+          this.emit("eh:files_changed", filesEvent);
+          this._emitEhTimelineEvent({ name: "eh:files_changed", payload: filesEvent });
         }
         return withFiles;
       };
@@ -5324,14 +5439,15 @@ class NodeServiceImpl implements NodeService {
           ...(eventChatId ? { chatId: eventChatId } : {}),
         });
       }
-      const assistantText = text.text;
-      if (!assistantText || assistantText.trim().length === 0) {
-        return finishComplete({
-          turnId,
-          ok: false,
-          error: "envoy_harness_empty: no text in result",
-        });
-      }
+      // Models often end_turn inside thinking tags with no user-facing
+      // answer. After strip that looks "empty"; treat it as a soft
+      // success with an explicit fallback so hosts keep the human
+      // bubble and show something other than a blank Completed state.
+      const EMPTY_REPLY_FALLBACK =
+        "(No visible reply was produced. Please try again or rephrase.)";
+      const stripped = stripModelThinking(text.text ?? "").trim();
+      const assistantText =
+        stripped.length > 0 ? stripped : EMPTY_REPLY_FALLBACK;
       return finishComplete({
         turnId,
         ok: true,
@@ -5346,24 +5462,142 @@ class NodeServiceImpl implements NodeService {
         msg.toLowerCase().includes("cancel");
       const active = turnRecord();
       const changedFiles = active ? [...active.changedFiles] : [];
+      const effectiveChangedFiles = await this._finalizeEhTurnCheckpoint(turnId, changedFiles);
       const complete: import("@envoymesh/api").EhTurnCompleteEvent = {
         turnId,
         ok: false,
         error: msg,
         ...(cancelled ? { cancelled: true } : {}),
-        ...(changedFiles.length > 0 ? { changedFiles } : {}),
+        ...(effectiveChangedFiles.length > 0 ? { changedFiles: effectiveChangedFiles } : {}),
         ...(active?.chatId ? { chatId: active.chatId } : {}),
       };
       this.emit("eh:turn_complete", complete);
-      if (changedFiles.length > 0) {
-        this.emit("eh:files_changed", {
+      this._emitEhTimelineEvent({ name: "eh:turn_complete", payload: complete });
+      this._emitEhAgentState(
+        cancelled ? "cancelled" : "failed",
+        cancelled ? "Cancelled" : "Failed",
+        active?.chatId,
+        turnId,
+        msg,
+      );
+      if (effectiveChangedFiles.length > 0) {
+        const filesEvent = {
           turnId,
-          files: changedFiles,
+          files: effectiveChangedFiles,
           ...(active?.chatId ? { chatId: active.chatId } : {}),
-        });
+        };
+        this.emit("eh:files_changed", filesEvent);
+        this._emitEhTimelineEvent({ name: "eh:files_changed", payload: filesEvent });
       }
       return complete;
     }
+  }
+
+  private async _finalizeEhTurnCheckpoint(
+    turnId: string,
+    changedFiles: readonly string[],
+  ): Promise<string[]> {
+    const pending = this._ehPendingCheckpoints.get(turnId);
+    if (!pending) return [...changedFiles];
+    this._ehPendingCheckpoints.delete(turnId);
+    try {
+      const completed = await completeEhTurnCheckpoint(pending, changedFiles);
+      const effectiveChangedFiles = completed.review.files.map((file) => file.path);
+      if (effectiveChangedFiles.length === 0) return [];
+      this._ehCompletedCheckpoints.set(turnId, completed);
+      while (this._ehCompletedCheckpoints.size > 50) {
+        const oldestTurnId = this._ehCompletedCheckpoints.keys().next().value as string | undefined;
+        if (!oldestTurnId) break;
+        this._ehCompletedCheckpoints.delete(oldestTurnId);
+      }
+      await persistEhTurnCheckpoint(this._profileDir, completed).catch(() => undefined);
+      return effectiveChangedFiles;
+    } catch {
+      return [...changedFiles];
+    }
+  }
+
+  async getEnvoyHarnessTurnReview(
+    turnId: string,
+  ): Promise<import("@envoymesh/api").EhTurnReview | null> {
+    const checkpoint = this._ehCompletedCheckpoints.get(turnId)
+      ?? await loadEhTurnCheckpoint(this._profileDir, turnId);
+    if (checkpoint) this._ehCompletedCheckpoints.set(turnId, checkpoint);
+    return checkpoint?.review ?? null;
+  }
+
+  async revertEnvoyHarnessTurn(
+    turnId: string,
+  ): Promise<import("@envoymesh/api").EhRevertTurnResult> {
+    const checkpoint = this._ehCompletedCheckpoints.get(turnId)
+      ?? await loadEhTurnCheckpoint(this._profileDir, turnId);
+    if (!checkpoint) return { reverted: false, files: [], reason: "checkpoint_not_found" };
+    const result = await revertEhTurnCheckpoint(checkpoint);
+    if (result.reverted) {
+      this._ehCompletedCheckpoints.delete(turnId);
+      await deletePersistedEhTurnCheckpoint(this._profileDir, turnId);
+      this.emit("eh:files_changed", {
+        turnId,
+        files: result.files,
+        ...(checkpoint.chatId ? { chatId: checkpoint.chatId } : {}),
+      });
+    }
+    return result;
+  }
+
+  async openEnvoyHarnessFile(params: { path: string; chatId?: string }): Promise<void> {
+    const chat = await this._resolveEhChat(params.chatId ?? null);
+    const cwd = await realpath(chat?.cwd ?? await this._envoyHarnessResolvedCwd());
+    const absolute = await realpath(resolve(cwd, params.path));
+    const rel = relative(cwd, absolute);
+    if (
+      !rel ||
+      rel === ".." ||
+      rel.startsWith("../") ||
+      rel.startsWith("..\\") ||
+      resolve(cwd, rel) !== absolute
+    ) {
+      throw new Error("envoy_harness_file_outside_project");
+    }
+    await openPathWithDefaultApp(absolute);
+  }
+
+  async getEnvoyHarnessCommandCatalog(): Promise<ExtAgentCommandCatalog> {
+    const commands = [
+      ["/help", "List supported commands"],
+      ["/cancel", "Cancel the active turn"],
+      ["/status", "Show runtime status"],
+      ["/compact", "Compact conversation context"],
+      ["/diff", "Show workspace changes"],
+      ["/plan", "Show or update the plan"],
+      ["/review", "Review workspace changes"],
+    ] as const;
+    return {
+      agentId: "envoy-harness",
+      agentName: "envoy-harness",
+      commands: commands.map(([slash, summary]) => ({
+        slash,
+        summary,
+        intercept: "forward" as const,
+        source: "dynamic" as const,
+      })),
+      catalogVersion: "tui-v1",
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  async recordEnvoyHarnessUxEvent(event: import("@envoymesh/api").EhUxTelemetryEvent): Promise<void> {
+    const allowed = new Set(["review_opened", "revert_attempted", "revert_completed", "revert_conflicted", "search_used", "command_rail_used"]);
+    if (!allowed.has(event.action)) throw new Error("envoy_harness_invalid_ux_event");
+    const sanitized = {
+      action: event.action,
+      surface: event.surface,
+      ...(event.outcome ? { outcome: event.outcome } : {}),
+      ...(event.command && /^\/[a-z0-9-]{1,32}$/.test(event.command) ? { command: event.command } : {}),
+      ...(Number.isSafeInteger(event.resultCount) && event.resultCount! >= 0 ? { resultCount: event.resultCount } : {}),
+      occurredAt: event.occurredAt,
+    };
+    this.emit("eh:ux_telemetry", sanitized);
   }
 
   /**
@@ -6187,7 +6421,21 @@ class NodeServiceImpl implements NodeService {
       sessionId: resolved.sessionId,
       cwd,
     });
-    return { ...history, ...(chat ? { chatId: chat.id } : {}) };
+    const scoped = { ...history, ...(chat ? { chatId: chat.id } : {}) };
+    const checkpoints = await listEhTurnCheckpoints(this._profileDir, {
+      ...(chat ? { chatId: chat.id } : {}),
+      cwd: normalized,
+    });
+    const reviewItems = checkpoints.flatMap((checkpoint) => checkpoint.review.files.length > 0 ? [{
+      id: `turn:${checkpoint.turnId}:changes`,
+      type: "changes" as const,
+      chatId: chat?.id ?? "__envoy_harness__",
+      turnId: checkpoint.turnId,
+      checkpointId: checkpoint.checkpointId,
+      files: checkpoint.review.files.map((file) => file.path),
+      createdAt: new Date(0).toISOString(),
+    }] : []);
+    return { ...scoped, timeline: [...(scoped.timeline ?? []), ...reviewItems] };
   }
 
   async listEnvoyHarnessChats(): Promise<

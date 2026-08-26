@@ -884,7 +884,6 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
           active={ehPromptBusy || pendingEhQuestion !== null}
           waitingForUser={pendingEhQuestion !== null}
           activitySummary={ehActivitySummary}
-          activityLog={turnContext.activityLog}
           onCancel={() => {
             void nodeService.cancelEnvoyHarnessTurn();
           }}

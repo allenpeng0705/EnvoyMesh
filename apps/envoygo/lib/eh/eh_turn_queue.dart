@@ -127,10 +127,10 @@ class EhTurnQueue extends ChangeNotifier {
     final turnId = event['turnId']?.toString() ?? '';
     if (event['ok'] == true) {
       final text = event['text']?.toString() ?? '';
-      if (text.trim().isNotEmpty) {
-        onAssistantTurn?.call(text.trim(), '$turnId::assistant');
-      }
+      // Always notify — empty clears a thinking-only stream bubble.
+      onAssistantTurn?.call(text.trim(), '$turnId::assistant');
     } else if (event['cancelled'] != true) {
+      onAssistantTurn?.call('', '$turnId::assistant');
       final err = event['error']?.toString();
       if (err != null && err.isNotEmpty) {
         onSystem?.call(err, error: true);
@@ -253,8 +253,13 @@ class EhTurnQueue extends ChangeNotifier {
       if (generation != _generation) return;
       if (result['ok'] == true) {
         final reply = result['text']?.toString() ?? '';
-        if (reply.trim().isNotEmpty) {
-          onAssistantTurn?.call(reply.trim(), '$turnId::assistant');
+        // Always notify — empty string clears a thinking-only stream bubble.
+        onAssistantTurn?.call(reply.trim(), '$turnId::assistant');
+      } else if (result['cancelled'] != true) {
+        onAssistantTurn?.call('', '$turnId::assistant');
+        final err = result['error']?.toString();
+        if (err != null && err.isNotEmpty) {
+          onSystem?.call(err, error: true);
         }
       }
     } catch (e) {

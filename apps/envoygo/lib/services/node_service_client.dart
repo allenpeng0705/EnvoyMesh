@@ -99,25 +99,25 @@ class NodeServiceClient {
     String? profileAvatarColor,
   }) async {
     return await _client.call('pairThinClient', {
-      'pairingToken': pairingToken,
-      'deviceName': deviceName,
-      'platform': platform,
-      if (deviceId != null && deviceId.isNotEmpty) 'deviceId': deviceId,
-      if (profileId != null && profileId.isNotEmpty) 'profileId': profileId,
-      if (profileName != null && profileName.isNotEmpty)
-          'profileName': profileName,
-      if (profileAvatarColor != null && profileAvatarColor.isNotEmpty)
-          'profileAvatarColor': profileAvatarColor,
-    }) as Map<String, dynamic>;
+          'pairingToken': pairingToken,
+          'deviceName': deviceName,
+          'platform': platform,
+          if (deviceId != null && deviceId.isNotEmpty) 'deviceId': deviceId,
+          if (profileId != null && profileId.isNotEmpty) 'profileId': profileId,
+          if (profileName != null && profileName.isNotEmpty)
+            'profileName': profileName,
+          if (profileAvatarColor != null && profileAvatarColor.isNotEmpty)
+            'profileAvatarColor': profileAvatarColor,
+        })
+        as Map<String, dynamic>;
   }
 
   /// Re-bind session to a family profile when home thought we were owner.
   Future<Map<String, dynamic>> repairSessionProfile({
     required String profileId,
   }) async {
-    return await _client.call('repairSessionProfile', {
-      'profileId': profileId,
-    }) as Map<String, dynamic>;
+    return await _client.call('repairSessionProfile', {'profileId': profileId})
+        as Map<String, dynamic>;
   }
 
   /// Phase 51 — list selectable profiles for a family invite (pre-auth).
@@ -125,10 +125,12 @@ class NodeServiceClient {
     required String pairingToken,
     String? deviceId,
   }) async {
-    final result = await _client.call('previewFamilyInvite', {
-      'pairingToken': pairingToken,
-      if (deviceId != null && deviceId.isNotEmpty) 'deviceId': deviceId,
-    }) as Map<String, dynamic>;
+    final result =
+        await _client.call('previewFamilyInvite', {
+              'pairingToken': pairingToken,
+              if (deviceId != null && deviceId.isNotEmpty) 'deviceId': deviceId,
+            })
+            as Map<String, dynamic>;
     final raw = result['profiles'];
     if (raw is! List) return const [];
     return raw
@@ -148,9 +150,10 @@ class NodeServiceClient {
     String? avatarColor,
   }) async {
     return await _client.call('createFamilyProfile', {
-      'name': name,
-      if (avatarColor != null) 'avatarColor': avatarColor,
-    }) as Map<String, dynamic>;
+          'name': name,
+          if (avatarColor != null) 'avatarColor': avatarColor,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> updateFamilyProfile({
@@ -163,14 +166,15 @@ class NodeServiceClient {
     bool? codingEnabled,
   }) async {
     return await _client.call('updateFamilyProfile', {
-      'id': id,
-      if (name != null) 'name': name,
-      if (avatarColor != null) 'avatarColor': avatarColor,
-      if (active != null) 'active': active,
-      if (aiBots != null) 'aiBots': aiBots,
-      if (extAgentEnabled != null) 'extAgentEnabled': extAgentEnabled,
-      if (codingEnabled != null) 'codingEnabled': codingEnabled,
-    }) as Map<String, dynamic>;
+          'id': id,
+          if (name != null) 'name': name,
+          if (avatarColor != null) 'avatarColor': avatarColor,
+          if (active != null) 'active': active,
+          if (aiBots != null) 'aiBots': aiBots,
+          if (extAgentEnabled != null) 'extAgentEnabled': extAgentEnabled,
+          if (codingEnabled != null) 'codingEnabled': codingEnabled,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> deleteFamilyProfile(String id) async {
@@ -183,9 +187,10 @@ class NodeServiceClient {
     String? note,
   }) async {
     return await _client.call('generateFamilyInviteToken', {
-      if (expiresInHours != null) 'expiresInHours': expiresInHours,
-      if (note != null) 'note': note,
-    }) as Map<String, dynamic>;
+          if (expiresInHours != null) 'expiresInHours': expiresInHours,
+          if (note != null) 'note': note,
+        })
+        as Map<String, dynamic>;
   }
 
   /// Phase 51C — local family DM (never leaves the home node).
@@ -194,9 +199,10 @@ class NodeServiceClient {
     required String text,
   }) async {
     return await _client.call('sendFamilyMessage', {
-      'toProfileId': toProfileId,
-      'text': text,
-    }) as Map<String, dynamic>;
+          'toProfileId': toProfileId,
+          'text': text,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> listFamilyRooms() async {
@@ -208,9 +214,10 @@ class NodeServiceClient {
     required List<String> memberProfileIds,
   }) async {
     return await _client.call('createFamilyRoom', {
-      'title': title,
-      'memberProfileIds': memberProfileIds,
-    }) as Map<String, dynamic>;
+          'title': title,
+          'memberProfileIds': memberProfileIds,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> sendFamilyRoomMessage({
@@ -218,14 +225,14 @@ class NodeServiceClient {
     required String text,
   }) async {
     return await _client.call('sendFamilyRoomMessage', {
-      'roomId': roomId,
-      'text': text,
-    }) as Map<String, dynamic>;
+          'roomId': roomId,
+          'text': text,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> getConnectionStatus() async {
-    return await _client.call('getConnectionStatus')
-        as Map<String, dynamic>;
+    return await _client.call('getConnectionStatus') as Map<String, dynamic>;
   }
 
   /// Phase 42 — fetch the home's node config. Used to read the
@@ -243,11 +250,8 @@ class NodeServiceClient {
   ///
   /// Returns `true` on success. Throws on transport / RPC error.
   /// Note: `updateNodeConfig` returns void — do not expect `{ok:true}`.
-  Future<bool> updateModelProviders(
-      Map<String, dynamic> modelProviders) async {
-    await _client.call('updateNodeConfig', {
-      'modelProviders': modelProviders,
-    });
+  Future<bool> updateModelProviders(Map<String, dynamic> modelProviders) async {
+    await _client.call('updateNodeConfig', {'modelProviders': modelProviders});
     return true;
   }
 
@@ -295,13 +299,17 @@ class NodeServiceClient {
   /// Share the mobile's reachable listen addresses (from UPnP) with the home node.
   /// This allows home to dial the mobile directly instead of requiring relay.
   Future<bool> updateMyListenAddrs(
-      String peerId, List<String> listenAddrs,
-      {String? ownerId}) async {
-    final result = await _client.call('updateMyListenAddrs', {
-      'peerId': peerId,
-      'listenAddrs': listenAddrs,
-      if (ownerId != null) 'ownerId': ownerId,
-    }) as Map<String, dynamic>;
+    String peerId,
+    List<String> listenAddrs, {
+    String? ownerId,
+  }) async {
+    final result =
+        await _client.call('updateMyListenAddrs', {
+              'peerId': peerId,
+              'listenAddrs': listenAddrs,
+              if (ownerId != null) 'ownerId': ownerId,
+            })
+            as Map<String, dynamic>;
     return result['ok'] == true;
   }
 
@@ -323,16 +331,17 @@ class NodeServiceClient {
   // -- Chat — direct messages --
 
   Future<Map<String, dynamic>> sendChat(
-      String targetOwnerId, String text,
-      {List<Map<String, dynamic>>? attachments}) async {
+    String targetOwnerId,
+    String text, {
+    List<Map<String, dynamic>>? attachments,
+  }) async {
     final params = <String, dynamic>{
       'targetOwnerId': targetOwnerId,
       'text': text,
       if (attachments != null && attachments.isNotEmpty)
         'attachments': attachments,
     };
-    return await _client.call('sendChat', params)
-        as Map<String, dynamic>;
+    return await _client.call('sendChat', params) as Map<String, dynamic>;
   }
 
   /// Read vault file bytes for inline previews (images/audio in chat). (Phase 37)
@@ -346,10 +355,11 @@ class NodeServiceClient {
     int? offset,
   }) async {
     return await _client.call('readLibraryItemContent', {
-      'relativePath': relativePath,
-      if (maxBytes != null) 'maxBytes': maxBytes,
-      if (offset != null) 'offset': offset,
-    }) as Map<String, dynamic>;
+          'relativePath': relativePath,
+          if (maxBytes != null) 'maxBytes': maxBytes,
+          if (offset != null) 'offset': offset,
+        })
+        as Map<String, dynamic>;
   }
 
   /// Phase 45C — browse mesh web content via home `libraryRead`.
@@ -453,11 +463,14 @@ class NodeServiceClient {
   }
 
   Future<Map<String, dynamic>> sendChatRoomMessage(
-      String roomId, String text) async {
+    String roomId,
+    String text,
+  ) async {
     return await _client.call('sendChatRoomMessage', {
-      'roomId': roomId,
-      'text': text,
-    }) as Map<String, dynamic>;
+          'roomId': roomId,
+          'text': text,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> createChatRoom(
@@ -465,17 +478,21 @@ class NodeServiceClient {
     List<String> memberOwnerIds = const [],
   }) async {
     return await _client.call('createChatRoom', {
-      'title': name,
-      'memberOwnerIds': memberOwnerIds,
-    }) as Map<String, dynamic>;
+          'title': name,
+          'memberOwnerIds': memberOwnerIds,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> inviteToChatRoom(
-      String roomId, String ownerId) async {
+    String roomId,
+    String ownerId,
+  ) async {
     return await _client.call('inviteToChatRoom', {
-      'roomId': roomId,
-      'memberOwnerIds': [ownerId],
-    }) as Map<String, dynamic>;
+          'roomId': roomId,
+          'memberOwnerIds': [ownerId],
+        })
+        as Map<String, dynamic>;
   }
 
   Future<void> leaveChatRoom(String roomId) async {
@@ -483,10 +500,7 @@ class NodeServiceClient {
   }
 
   Future<void> renameChatRoom(String roomId, String name) async {
-    await _client.call('renameChatRoom', {
-      'roomId': roomId,
-      'title': name,
-    });
+    await _client.call('renameChatRoom', {'roomId': roomId, 'title': name});
   }
 
   // -- AI chat --
@@ -495,11 +509,9 @@ class NodeServiceClient {
   /// Timeout: home waits up to 180s for the OpenClaw reply, then persists —
   /// use 210s so mobile does not time out while the home is still finishing.
   Future<void> sendToOpenClaw(String text) async {
-    await _client.call(
-      'sendToOpenClaw',
-      {'text': text},
-      const Duration(seconds: 210),
-    );
+    await _client.call('sendToOpenClaw', {
+      'text': text,
+    }, const Duration(seconds: 210));
   }
 
   /// Dynamic AI bot — send a message to a character bot.
@@ -509,23 +521,19 @@ class NodeServiceClient {
 
   /// Home node `sendToBridge` returns void (`result: null`). Do not cast to Map.
   Future<void> sendToBridge(String text) async {
-    await _client.call(
-      'sendToBridge',
-      {'text': text},
-      const Duration(seconds: 210),
-    );
+    await _client.call('sendToBridge', {
+      'text': text,
+    }, const Duration(seconds: 210));
   }
 
   Future<Map<String, dynamic>> getBridgeStatus() async {
-    return await _client.call('getBridgeStatus')
-        as Map<String, dynamic>;
+    return await _client.call('getBridgeStatus') as Map<String, dynamic>;
   }
 
   /// Phase 32 — live status of the built-in OpenClaw agent (EnvoyAI) on the
   /// home node. Returns a map with `enabled`, `running`, and `url` keys.
   Future<Map<String, dynamic>> getOpenClawStatus() async {
-    return await _client.call('getOpenClawStatus')
-        as Map<String, dynamic>;
+    return await _client.call('getOpenClawStatus') as Map<String, dynamic>;
   }
 
   /// Update AI Engine settings on the home node. Syncs with the Social UI
@@ -553,20 +561,27 @@ class NodeServiceClient {
   /// Soft probe of Ext Agent reachability (does not block switching).
   Future<Map<String, dynamic>> probeExtAgent({String? agentId}) async {
     return await _client.call('probeExtAgent', {
-      if (agentId != null && agentId.trim().isNotEmpty) 'agentId': agentId.trim(),
-    }) as Map<String, dynamic>;
+          if (agentId != null && agentId.trim().isNotEmpty)
+            'agentId': agentId.trim(),
+        })
+        as Map<String, dynamic>;
   }
 
   /// Slash-command catalog for Ext Agent chat autocomplete.
-  Future<Map<String, dynamic>> getExtAgentCommandCatalog({String? agentId}) async {
+  Future<Map<String, dynamic>> getExtAgentCommandCatalog({
+    String? agentId,
+  }) async {
     return await _client.call('getExtAgentCommandCatalog', {
-      if (agentId != null && agentId.trim().isNotEmpty) 'agentId': agentId.trim(),
-    }) as Map<String, dynamic>;
+          if (agentId != null && agentId.trim().isNotEmpty)
+            'agentId': agentId.trim(),
+        })
+        as Map<String, dynamic>;
   }
 
   /// EnvoyAI (OpenClaw) slash-command catalog.
   Future<Map<String, dynamic>> getEnvoyAiCommandCatalog() async {
-    return await _client.call('getEnvoyAiCommandCatalog') as Map<String, dynamic>;
+    return await _client.call('getEnvoyAiCommandCatalog')
+        as Map<String, dynamic>;
   }
 
   /// Set or clear Ext Agent session model (`/model`).
@@ -575,9 +590,11 @@ class NodeServiceClient {
     String? model,
   }) async {
     return await _client.call('setExtAgentSessionModel', {
-      if (agentId != null && agentId.trim().isNotEmpty) 'agentId': agentId.trim(),
-      'model': model,
-    }) as Map<String, dynamic>;
+          if (agentId != null && agentId.trim().isNotEmpty)
+            'agentId': agentId.trim(),
+          'model': model,
+        })
+        as Map<String, dynamic>;
   }
 
   /// Home-node filesystem info for folder browsing (owner only).
@@ -591,15 +608,18 @@ class NodeServiceClient {
     bool? dirsOnly,
   }) async {
     return await _client.call('listHomeFsEntries', {
-      if (path != null && path.trim().isNotEmpty) 'path': path.trim(),
-      if (dirsOnly != null) 'dirsOnly': dirsOnly,
-    }) as Map<String, dynamic>;
+          if (path != null && path.trim().isNotEmpty) 'path': path.trim(),
+          if (dirsOnly != null) 'dirsOnly': dirsOnly,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> getExtAgentProjectPath({String? agentId}) async {
     return await _client.call('getExtAgentProjectPath', {
-      if (agentId != null && agentId.trim().isNotEmpty) 'agentId': agentId.trim(),
-    }) as Map<String, dynamic>;
+          if (agentId != null && agentId.trim().isNotEmpty)
+            'agentId': agentId.trim(),
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> setExtAgentProjectPath({
@@ -607,16 +627,17 @@ class NodeServiceClient {
     String? projectPath,
   }) async {
     return await _client.call('setExtAgentProjectPath', {
-      if (agentId != null && agentId.trim().isNotEmpty) 'agentId': agentId.trim(),
-      'projectPath': projectPath,
-    }) as Map<String, dynamic>;
+          if (agentId != null && agentId.trim().isNotEmpty)
+            'agentId': agentId.trim(),
+          'projectPath': projectPath,
+        })
+        as Map<String, dynamic>;
   }
 
   /// Preview a home-node file for the Home files viewer (owner only).
   Future<Map<String, dynamic>> previewHomeFsFile(String path) async {
-    return await _client.call('previewHomeFsFile', {
-      'path': path.trim(),
-    }) as Map<String, dynamic>;
+    return await _client.call('previewHomeFsFile', {'path': path.trim()})
+        as Map<String, dynamic>;
   }
 
   /// MiniMax MMX-CLI media / status on the home node (owner only).
@@ -625,15 +646,12 @@ class NodeServiceClient {
     String? prompt,
     String? target,
   }) async {
-    return await _client.call(
-      'runMmxMediaCommand',
-      {
-        'kind': kind,
-        if (prompt != null) 'prompt': prompt,
-        if (target != null) 'target': target,
-      },
-      const Duration(seconds: 920),
-    ) as Map<String, dynamic>;
+    return await _client.call('runMmxMediaCommand', {
+          'kind': kind,
+          if (prompt != null) 'prompt': prompt,
+          if (target != null) 'target': target,
+        }, const Duration(seconds: 920))
+        as Map<String, dynamic>;
   }
 
   /// Upload a phone/browser blob into home `{profileDir}/envoy-uploads/`.
@@ -642,26 +660,22 @@ class NodeServiceClient {
     required String contentBase64,
     String? mimeType,
   }) async {
-    return await _client.call(
-      'uploadEnvoyAttachment',
-      {
-        'filename': filename,
-        'contentBase64': contentBase64,
-        if (mimeType != null) 'mimeType': mimeType,
-      },
-      const Duration(seconds: 120),
-    ) as Map<String, dynamic>;
+    return await _client.call('uploadEnvoyAttachment', {
+          'filename': filename,
+          'contentBase64': contentBase64,
+          if (mimeType != null) 'mimeType': mimeType,
+        }, const Duration(seconds: 120))
+        as Map<String, dynamic>;
   }
 
   /// Build agent prompt appendix from home absolute paths.
   Future<Map<String, dynamic>> buildAgentAttachmentContext(
     List<Map<String, String>> attachments,
   ) async {
-    return await _client.call(
-      'buildAgentAttachmentContext',
-      {'attachments': attachments},
-      const Duration(seconds: 60),
-    ) as Map<String, dynamic>;
+    return await _client.call('buildAgentAttachmentContext', {
+          'attachments': attachments,
+        }, const Duration(seconds: 60))
+        as Map<String, dynamic>;
   }
 
   /// Switch the active Ext Agent id only (existing agent URLs preserved).
@@ -681,35 +695,37 @@ class NodeServiceClient {
   Future<Map<String, dynamic>> enableEnvoyLocal({
     bool skipModelDownload = false,
   }) async {
-    return await _client.call(
-      'enableEnvoyLocal',
-      {'skipModelDownload': skipModelDownload},
-      const Duration(seconds: 60),
-    ) as Map<String, dynamic>;
+    return await _client.call('enableEnvoyLocal', {
+          'skipModelDownload': skipModelDownload,
+        }, const Duration(seconds: 60))
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> startEnvoyLocal() async {
     return await _client.call(
-      'startEnvoyLocal',
-      const {},
-      const Duration(seconds: 60),
-    ) as Map<String, dynamic>;
+          'startEnvoyLocal',
+          const {},
+          const Duration(seconds: 60),
+        )
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> stopEnvoyLocal() async {
     return await _client.call(
-      'stopEnvoyLocal',
-      const {},
-      const Duration(seconds: 30),
-    ) as Map<String, dynamic>;
+          'stopEnvoyLocal',
+          const {},
+          const Duration(seconds: 30),
+        )
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> restartEnvoyLocal() async {
     return await _client.call(
-      'restartEnvoyLocal',
-      const {},
-      const Duration(seconds: 90),
-    ) as Map<String, dynamic>;
+          'restartEnvoyLocal',
+          const {},
+          const Duration(seconds: 90),
+        )
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> cancelEnvoyLocalDownload() async {
@@ -727,20 +743,18 @@ class NodeServiceClient {
   }
 
   Future<Map<String, dynamic>> searchEnvoyLocalModels({String? query}) async {
-    return await _client.call(
-      'searchEnvoyLocalModels',
-      {if (query != null && query.trim().isNotEmpty) 'query': query.trim()},
-      const Duration(seconds: 45),
-    ) as Map<String, dynamic>;
+    return await _client.call('searchEnvoyLocalModels', {
+          if (query != null && query.trim().isNotEmpty) 'query': query.trim(),
+        }, const Duration(seconds: 45))
+        as Map<String, dynamic>;
   }
 
   Future<List<Map<String, dynamic>>> downloadEnvoyLocalModel(
-      String modelId) async {
-    final result = await _client.call(
-      'downloadEnvoyLocalModel',
-      {'modelId': modelId},
-      const Duration(seconds: 60),
-    );
+    String modelId,
+  ) async {
+    final result = await _client.call('downloadEnvoyLocalModel', {
+      'modelId': modelId,
+    }, const Duration(seconds: 60));
     final list = result as List<dynamic>? ?? const [];
     return list
         .whereType<Map>()
@@ -748,19 +762,21 @@ class NodeServiceClient {
         .toList();
   }
 
-  Future<Map<String, dynamic>> setEnvoyLocalDownloadRegion(String region) async {
-    return await _client.call('setEnvoyLocalDownloadRegion', {
-      'region': region,
-    }) as Map<String, dynamic>;
+  Future<Map<String, dynamic>> setEnvoyLocalDownloadRegion(
+    String region,
+  ) async {
+    return await _client.call('setEnvoyLocalDownloadRegion', {'region': region})
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> setEnvoyLocalActiveModel(String modelId) async {
     return await _client.call(
-      'setEnvoyLocalActiveModel',
-      {'modelId': modelId},
-      // Match Social (120s); large GGUFs can take a while to become ready.
-      const Duration(seconds: 120),
-    ) as Map<String, dynamic>;
+          'setEnvoyLocalActiveModel',
+          {'modelId': modelId},
+          // Match Social (120s); large GGUFs can take a while to become ready.
+          const Duration(seconds: 120),
+        )
+        as Map<String, dynamic>;
   }
 
   // -- Envoy Local embed (home-node embedding sidecar; downloads on home) --
@@ -774,14 +790,12 @@ class NodeServiceClient {
     bool skipModelDownload = false,
     String? modelId,
   }) async {
-    return await _client.call(
-      'enableEnvoyLocalEmbed',
-      {
-        'skipModelDownload': skipModelDownload,
-        if (modelId != null && modelId.trim().isNotEmpty) 'modelId': modelId.trim(),
-      },
-      const Duration(seconds: 60),
-    ) as Map<String, dynamic>;
+    return await _client.call('enableEnvoyLocalEmbed', {
+          'skipModelDownload': skipModelDownload,
+          if (modelId != null && modelId.trim().isNotEmpty)
+            'modelId': modelId.trim(),
+        }, const Duration(seconds: 60))
+        as Map<String, dynamic>;
   }
 
   // -- Pi (built-in coding agent) --
@@ -796,11 +810,9 @@ class NodeServiceClient {
 
   /// One-shot Pi prompt. May take up to ~2 minutes for long tool turns.
   Future<String> sendToPi(String text) async {
-    final result = await _client.call(
-      'sendToPi',
-      {'text': text},
-      const Duration(seconds: 120),
-    );
+    final result = await _client.call('sendToPi', {
+      'text': text,
+    }, const Duration(seconds: 120));
     if (result is String) return result;
     if (result is Map && result['text'] is String) {
       return result['text'] as String;
@@ -832,10 +844,11 @@ class NodeServiceClient {
     bool forceRestart = false,
   }) async {
     return await _client.call('ensurePiTerminalSession', {
-      'projectPath': projectPath,
-      if (sessionId != null) 'sessionId': sessionId,
-      'forceRestart': forceRestart,
-    }) as Map<String, dynamic>;
+          'projectPath': projectPath,
+          if (sessionId != null) 'sessionId': sessionId,
+          'forceRestart': forceRestart,
+        })
+        as Map<String, dynamic>;
   }
 
   // -- Envoy Harness (coding chat) --
@@ -852,68 +865,106 @@ class NodeServiceClient {
     String? title,
   }) async {
     return await _client.call('createEnvoyHarnessChat', {
-      'cwd': cwd,
-      if (title != null) 'title': title,
-    }, const Duration(seconds: 30)) as Map<String, dynamic>;
+          'cwd': cwd,
+          if (title != null) 'title': title,
+        }, const Duration(seconds: 30))
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> openEnvoyHarnessChat(String chatId) async {
-    return await _client.call(
-      'openEnvoyHarnessChat',
-      {'chatId': chatId},
-      const Duration(seconds: 30),
-    ) as Map<String, dynamic>;
+    return await _client.call('openEnvoyHarnessChat', {
+          'chatId': chatId,
+        }, const Duration(seconds: 30))
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> removeEnvoyHarnessChat(String chatId) async {
-    return await _client.call(
-      'removeEnvoyHarnessChat',
-      {'chatId': chatId},
-    ) as Map<String, dynamic>;
+    return await _client.call('removeEnvoyHarnessChat', {'chatId': chatId})
+        as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> deleteEnvoyHarnessChatTurn({
+    required String turnId,
+    String? chatId,
+  }) async {
+    return await _client.call('deleteEnvoyHarnessChatTurn', {
+          'turnId': turnId,
+          if (chatId != null) 'chatId': chatId,
+        }, const Duration(seconds: 30))
+        as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>?> getEnvoyHarnessTurnReview(String turnId) async {
+    final result = await _client.call('getEnvoyHarnessTurnReview', {
+      'turnId': turnId,
+    }, const Duration(seconds: 30));
+    return result is Map ? Map<String, dynamic>.from(result) : null;
+  }
+
+  Future<Map<String, dynamic>> revertEnvoyHarnessTurn(String turnId) async {
+    return await _client.call('revertEnvoyHarnessTurn', {
+          'turnId': turnId,
+        }, const Duration(seconds: 30))
+        as Map<String, dynamic>;
+  }
+
+  Future<void> openEnvoyHarnessFile(String path, {String? chatId}) async {
+    await _client.call('openEnvoyHarnessFile', {
+      'path': path,
+      if (chatId != null) 'chatId': chatId,
+    }, const Duration(seconds: 30));
+  }
+
+  Future<Map<String, dynamic>> getEnvoyHarnessCommandCatalog() async {
+    return await _client.call('getEnvoyHarnessCommandCatalog')
+        as Map<String, dynamic>;
+  }
+
+  Future<void> recordEnvoyHarnessUxEvent(Map<String, dynamic> event) async {
+    await _client.call('recordEnvoyHarnessUxEvent', event);
   }
 
   Future<Map<String, dynamic>> startEnvoyHarnessTurn(
     String text, {
     String? chatId,
   }) async {
-    return await _client.call(
-      'startEnvoyHarnessTurn',
-      {
-        'text': text,
-        if (chatId != null) 'chatId': chatId,
-      },
-      const Duration(seconds: 120),
-    ) as Map<String, dynamic>;
+    return await _client.call('startEnvoyHarnessTurn', {
+          'text': text,
+          if (chatId != null) 'chatId': chatId,
+        }, const Duration(seconds: 120))
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> getEnvoyHarnessChatHistory({
     String? chatId,
   }) async {
     return await _client.call(
-      'getEnvoyHarnessChatHistory',
-      chatId != null ? {'chatId': chatId} : {},
-      const Duration(seconds: 30),
-    ) as Map<String, dynamic>;
+          'getEnvoyHarnessChatHistory',
+          chatId != null ? {'chatId': chatId} : {},
+          const Duration(seconds: 30),
+        )
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> cancelEnvoyHarnessTurn({String? chatId}) async {
     return await _client.call(
-      'cancelEnvoyHarnessTurn',
-      chatId != null ? {'chatId': chatId} : {},
-    ) as Map<String, dynamic>;
+          'cancelEnvoyHarnessTurn',
+          chatId != null ? {'chatId': chatId} : {},
+        )
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> getEnvoyHarnessStatus() async {
-    return await _client.call('getEnvoyHarnessStatus')
-        as Map<String, dynamic>;
+    return await _client.call('getEnvoyHarnessStatus') as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> setEnvoyHarnessAutoRunPolicy(
     String policy,
   ) async {
     return await _client.call('setEnvoyHarnessAutoRunPolicy', {
-      'policy': policy,
-    }) as Map<String, dynamic>;
+          'policy': policy,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> ehRespondToPermission({
@@ -921,9 +972,10 @@ class NodeServiceClient {
     required bool allowed,
   }) async {
     return await _client.call('ehRespondToPermission', {
-      'requestId': requestId,
-      'allowed': allowed,
-    }) as Map<String, dynamic>;
+          'requestId': requestId,
+          'allowed': allowed,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> ehRespondToUserQuestion({
@@ -933,29 +985,31 @@ class NodeServiceClient {
     bool? cancelled,
   }) async {
     return await _client.call('ehRespondToUserQuestion', {
-      'requestId': requestId,
-      'value': value,
-      if (optionIndex != null) 'optionIndex': optionIndex,
-      if (cancelled != null) 'cancelled': cancelled,
-    }) as Map<String, dynamic>;
+          'requestId': requestId,
+          'value': value,
+          if (optionIndex != null) 'optionIndex': optionIndex,
+          if (cancelled != null) 'cancelled': cancelled,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<dynamic> invokeEnvoyHarnessEhui(Map<String, dynamic> request) async {
     return await _client.call('invokeEnvoyHarnessEhui', {'request': request});
   }
 
-  Future<Map<String, dynamic>> getEnvoyHarnessTurnStatus({String? chatId}) async {
+  Future<Map<String, dynamic>> getEnvoyHarnessTurnStatus({
+    String? chatId,
+  }) async {
     return await _client.call(
-      'getEnvoyHarnessTurnStatus',
-      chatId != null ? {'chatId': chatId} : {},
-    ) as Map<String, dynamic>;
+          'getEnvoyHarnessTurnStatus',
+          chatId != null ? {'chatId': chatId} : {},
+        )
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> setEnvoyHarnessProjectPath(String path) async {
-    return await _client.call(
-      'setEnvoyHarnessProjectPath',
-      {'path': path},
-    ) as Map<String, dynamic>;
+    return await _client.call('setEnvoyHarnessProjectPath', {'path': path})
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> ensureEnvoyTerminalSession({
@@ -964,17 +1018,19 @@ class NodeServiceClient {
     bool forceRestart = false,
   }) async {
     return await _client.call('ensureEnvoyTerminalSession', {
-      'projectPath': projectPath,
-      if (sessionId != null) 'sessionId': sessionId,
-      'forceRestart': forceRestart,
-    }) as Map<String, dynamic>;
+          'projectPath': projectPath,
+          if (sessionId != null) 'sessionId': sessionId,
+          'forceRestart': forceRestart,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> resetEnvoyHarnessChat({String? chatId}) async {
     return await _client.call(
-      'resetEnvoyHarnessChat',
-      chatId != null ? {'chatId': chatId} : {},
-    ) as Map<String, dynamic>;
+          'resetEnvoyHarnessChat',
+          chatId != null ? {'chatId': chatId} : {},
+        )
+        as Map<String, dynamic>;
   }
 
   Future<List<Map<String, dynamic>>> listEnvoyHarnessPeers() async {
@@ -990,30 +1046,29 @@ class NodeServiceClient {
     final result = await _client.call('listTerminalSessions');
     final list = result as List<dynamic>;
     return list
-        .map((e) =>
-            TerminalSession.fromJson(e as Map<String, dynamic>))
+        .map((e) => TerminalSession.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 
-  Future<Map<String, dynamic>> createTerminalSession(
-      {String? cwd, String? command}) async {
+  Future<Map<String, dynamic>> createTerminalSession({
+    String? cwd,
+    String? command,
+  }) async {
     return await _client.call('createTerminalSession', {
-      if (cwd != null) 'cwd': cwd,
-      if (command != null) 'title': command,
-    }) as Map<String, dynamic>;
+          if (cwd != null) 'cwd': cwd,
+          if (command != null) 'title': command,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<void> closeTerminalSession(String sessionId) async {
-    await _client
-        .call('closeTerminalSession', {'sessionId': sessionId});
+    await _client.call('closeTerminalSession', {'sessionId': sessionId});
   }
 
   // -- Inbox / Intro proposals --
 
-  Future<List<Map<String, dynamic>>>
-      listPendingSocialIntroProposals() async {
-    final result =
-        await _client.call('listPendingSocialIntroProposals');
+  Future<List<Map<String, dynamic>>> listPendingSocialIntroProposals() async {
+    final result = await _client.call('listPendingSocialIntroProposals');
     return (result as List<dynamic>)
         .map((e) => e as Map<String, dynamic>)
         .toList();
@@ -1037,16 +1092,23 @@ class NodeServiceClient {
   }
 
   /// Unread stars/comments on the owner's Feed/Blog (Content badges).
-  Future<List<ContentEngageNotification>> listContentEngageNotifications() async {
+  Future<List<ContentEngageNotification>>
+  listContentEngageNotifications() async {
     final result = await _client.call('listContentEngageNotifications');
     return (result as List<dynamic>)
-        .map((e) => ContentEngageNotification.fromJson(e as Map<String, dynamic>))
+        .map(
+          (e) => ContentEngageNotification.fromJson(e as Map<String, dynamic>),
+        )
         .toList();
   }
 
   /// Clear Content engagement badges for a surface or all.
-  Future<void> dismissContentEngageNotifications({String surface = 'all'}) async {
-    await _client.call('dismissContentEngageNotifications', {'surface': surface});
+  Future<void> dismissContentEngageNotifications({
+    String surface = 'all',
+  }) async {
+    await _client.call('dismissContentEngageNotifications', {
+      'surface': surface,
+    });
   }
 
   // -- Terminal PTY I/O --
@@ -1057,41 +1119,49 @@ class NodeServiceClient {
   /// the 500 ms wait inside the node is ample; for longer commands
   /// call this again later to poll.
   Future<Map<String, dynamic>> terminalExec(
-      String sessionId, String command) async {
+    String sessionId,
+    String command,
+  ) async {
     return await _client.call('terminalExec', {
-      'sessionId': sessionId,
-      'command': command,
-    }) as Map<String, dynamic>;
+          'sessionId': sessionId,
+          'command': command,
+        })
+        as Map<String, dynamic>;
   }
 
   /// Request a terminal attach URL from the home node.
   /// Returns `{ sessionId, token, wsUrl, cols, rows }`.
-  Future<Map<String, dynamic>> terminalAttach(String sessionId,
-      {int? cols, int? rows}) async {
+  Future<Map<String, dynamic>> terminalAttach(
+    String sessionId, {
+    int? cols,
+    int? rows,
+  }) async {
     return await _client.call('terminalAttach', {
-      'sessionId': sessionId,
-      if (cols != null) 'cols': cols,
-      if (rows != null) 'rows': rows,
-    }) as Map<String, dynamic>;
+          'sessionId': sessionId,
+          if (cols != null) 'cols': cols,
+          if (rows != null) 'rows': rows,
+        })
+        as Map<String, dynamic>;
   }
 
   // -- Terminal Agent assist (shell sessions; Social TerminalAgentBar parity) --
 
   Future<Map<String, dynamic>> terminalGetAssistState(String sessionId) async {
     return await _client.call('terminalGetAssistState', {
-      'sessionId': sessionId,
-    }) as Map<String, dynamic>;
+          'sessionId': sessionId,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalRunFromNaturalLanguage({
     required String sessionId,
     required String prompt,
   }) async {
-    return await _client.call(
-      'terminalRunFromNaturalLanguage',
-      {'sessionId': sessionId, 'prompt': prompt},
-      const Duration(seconds: 120),
-    ) as Map<String, dynamic>;
+    return await _client.call('terminalRunFromNaturalLanguage', {
+          'sessionId': sessionId,
+          'prompt': prompt,
+        }, const Duration(seconds: 120))
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalExecuteProposal({
@@ -1100,10 +1170,11 @@ class NodeServiceClient {
     bool? confirmed,
   }) async {
     return await _client.call('terminalExecuteProposal', {
-      'sessionId': sessionId,
-      'proposalId': proposalId,
-      if (confirmed != null) 'confirmed': confirmed,
-    }) as Map<String, dynamic>;
+          'sessionId': sessionId,
+          'proposalId': proposalId,
+          if (confirmed != null) 'confirmed': confirmed,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalSetAssistModelOverride({
@@ -1111,23 +1182,21 @@ class NodeServiceClient {
     required String modelName,
   }) async {
     return await _client.call('terminalSetAssistModelOverride', {
-      'sessionId': sessionId,
-      'modelName': modelName,
-    }) as Map<String, dynamic>;
+          'sessionId': sessionId,
+          'modelName': modelName,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalExplainScrollback({
     required String sessionId,
     String? topic,
   }) async {
-    return await _client.call(
-      'terminalExplainScrollback',
-      {
-        'sessionId': sessionId,
-        if (topic != null) 'topic': topic,
-      },
-      const Duration(seconds: 120),
-    ) as Map<String, dynamic>;
+    return await _client.call('terminalExplainScrollback', {
+          'sessionId': sessionId,
+          if (topic != null) 'topic': topic,
+        }, const Duration(seconds: 120))
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalSetInlineSuggestEnabled({
@@ -1135,31 +1204,32 @@ class NodeServiceClient {
     required bool enabled,
   }) async {
     return await _client.call('terminalSetInlineSuggestEnabled', {
-      'sessionId': sessionId,
-      'enabled': enabled,
-    }) as Map<String, dynamic>;
+          'sessionId': sessionId,
+          'enabled': enabled,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalObserveStep({
     required String sessionId,
     required String goal,
   }) async {
-    return await _client.call(
-      'terminalObserveStep',
-      {'sessionId': sessionId, 'goal': goal},
-      const Duration(seconds: 180),
-    ) as Map<String, dynamic>;
+    return await _client.call('terminalObserveStep', {
+          'sessionId': sessionId,
+          'goal': goal,
+        }, const Duration(seconds: 180))
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalOpenClawPlan({
     required String sessionId,
     required String prompt,
   }) async {
-    return await _client.call(
-      'terminalOpenClawPlan',
-      {'sessionId': sessionId, 'prompt': prompt},
-      const Duration(seconds: 180),
-    ) as Map<String, dynamic>;
+    return await _client.call('terminalOpenClawPlan', {
+          'sessionId': sessionId,
+          'prompt': prompt,
+        }, const Duration(seconds: 180))
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalRunPlanStep({
@@ -1167,15 +1237,12 @@ class NodeServiceClient {
     required String planId,
     required int stepIndex,
   }) async {
-    return await _client.call(
-      'terminalRunPlanStep',
-      {
-        'sessionId': sessionId,
-        'planId': planId,
-        'stepIndex': stepIndex,
-      },
-      const Duration(seconds: 120),
-    ) as Map<String, dynamic>;
+    return await _client.call('terminalRunPlanStep', {
+          'sessionId': sessionId,
+          'planId': planId,
+          'stepIndex': stepIndex,
+        }, const Duration(seconds: 120))
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalEnablePrepareMode({
@@ -1183,20 +1250,21 @@ class NodeServiceClient {
     required bool enabled,
   }) async {
     return await _client.call('terminalEnablePrepareMode', {
-      'sessionId': sessionId,
-      'enabled': enabled,
-    }) as Map<String, dynamic>;
+          'sessionId': sessionId,
+          'enabled': enabled,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalWatchStep({
     required String sessionId,
     required String goal,
   }) async {
-    return await _client.call(
-      'terminalWatchStep',
-      {'sessionId': sessionId, 'goal': goal},
-      const Duration(seconds: 120),
-    ) as Map<String, dynamic>;
+    return await _client.call('terminalWatchStep', {
+          'sessionId': sessionId,
+          'goal': goal,
+        }, const Duration(seconds: 120))
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalPinContextSession({
@@ -1204,44 +1272,46 @@ class NodeServiceClient {
     String? contextSessionId,
   }) async {
     return await _client.call('terminalPinContextSession', {
-      'sessionId': sessionId,
-      if (contextSessionId != null) 'contextSessionId': contextSessionId,
-    }) as Map<String, dynamic>;
+          'sessionId': sessionId,
+          if (contextSessionId != null) 'contextSessionId': contextSessionId,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalStartGoalLoop({
     required String sessionId,
     required String goal,
   }) async {
-    return await _client.call(
-      'terminalStartGoalLoop',
-      {'sessionId': sessionId, 'goal': goal},
-      const Duration(seconds: 180),
-    ) as Map<String, dynamic>;
+    return await _client.call('terminalStartGoalLoop', {
+          'sessionId': sessionId,
+          'goal': goal,
+        }, const Duration(seconds: 180))
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalAdvanceGoalLoop({
     required String sessionId,
   }) async {
-    return await _client.call(
-      'terminalAdvanceGoalLoop',
-      {'sessionId': sessionId},
-      const Duration(seconds: 180),
-    ) as Map<String, dynamic>;
+    return await _client.call('terminalAdvanceGoalLoop', {
+          'sessionId': sessionId,
+        }, const Duration(seconds: 180))
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalCancelGoalLoop({
     required String sessionId,
   }) async {
     return await _client.call('terminalCancelGoalLoop', {
-      'sessionId': sessionId,
-    }) as Map<String, dynamic>;
+          'sessionId': sessionId,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalClearResumeGoal(String sessionId) async {
     return await _client.call('terminalClearResumeGoal', {
-      'sessionId': sessionId,
-    }) as Map<String, dynamic>;
+          'sessionId': sessionId,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalEnableExecPane({
@@ -1249,9 +1319,10 @@ class NodeServiceClient {
     required bool enabled,
   }) async {
     return await _client.call('terminalEnableExecPane', {
-      'sessionId': sessionId,
-      'enabled': enabled,
-    }) as Map<String, dynamic>;
+          'sessionId': sessionId,
+          'enabled': enabled,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalSetBackgroundWatch({
@@ -1259,17 +1330,19 @@ class NodeServiceClient {
     required String goal,
   }) async {
     return await _client.call('terminalSetBackgroundWatch', {
-      'sessionId': sessionId,
-      'goal': goal,
-    }) as Map<String, dynamic>;
+          'sessionId': sessionId,
+          'goal': goal,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalClearBackgroundWatch({
     required String sessionId,
   }) async {
     return await _client.call('terminalClearBackgroundWatch', {
-      'sessionId': sessionId,
-    }) as Map<String, dynamic>;
+          'sessionId': sessionId,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalUpdatePlanProgress({
@@ -1278,25 +1351,24 @@ class NodeServiceClient {
     int? skippedStepIndex,
   }) async {
     return await _client.call('terminalUpdatePlanProgress', {
-      'sessionId': sessionId,
-      'planId': planId,
-      if (skippedStepIndex != null) 'skippedStepIndex': skippedStepIndex,
-    }) as Map<String, dynamic>;
+          'sessionId': sessionId,
+          'planId': planId,
+          if (skippedStepIndex != null) 'skippedStepIndex': skippedStepIndex,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> terminalSuggestFixFromFailure({
     required String sessionId,
   }) async {
-    return await _client.call(
-      'terminalSuggestFixFromFailure',
-      {'sessionId': sessionId},
-      const Duration(seconds: 120),
-    ) as Map<String, dynamic>;
+    return await _client.call('terminalSuggestFixFromFailure', {
+          'sessionId': sessionId,
+        }, const Duration(seconds: 120))
+        as Map<String, dynamic>;
   }
 
   /// Open a PTY WebSocket sub-channel using the path from terminalAttach.
-  Future<Map<String, dynamic>> homeTerminalWsOpen(
-      String sessionId) async {
+  Future<Map<String, dynamic>> homeTerminalWsOpen(String sessionId) async {
     // terminalAttach returns a full URL like:
     // ws://127.0.0.1:3032/ws/terminal/<id>?token=<t>
     // homeTerminalWsOpen expects just the path+query portion.
@@ -1308,8 +1380,9 @@ class NodeServiceClient {
     final uri = Uri.parse(wsUrl);
     final pathWithQuery = '${uri.path}${uri.hasQuery ? '?${uri.query}' : ''}';
     return await _client.call('homeTerminalWsOpen', {
-      'pathWithQuery': pathWithQuery,
-    }) as Map<String, dynamic>;
+          'pathWithQuery': pathWithQuery,
+        })
+        as Map<String, dynamic>;
   }
 
   /// Send keystrokes (base64-encoded) through the PTY WebSocket.
@@ -1320,9 +1393,10 @@ class NodeServiceClient {
     String? sessionId,
   }) async {
     return await _client.call('homeTerminalWsSend', {
-      'dataBase64': dataBase64,
-      if (sessionId != null) 'sessionId': sessionId,
-    }) as Map<String, dynamic>;
+          'dataBase64': dataBase64,
+          if (sessionId != null) 'sessionId': sessionId,
+        })
+        as Map<String, dynamic>;
   }
 
   /// Close the PTY WebSocket sub-channel.  If [sessionId] is given,
@@ -1337,12 +1411,12 @@ class NodeServiceClient {
   // -- Profile --
 
   Future<Map<String, dynamic>> getHumanProfile() async {
-    return await _client.call('getHumanProfile')
-        as Map<String, dynamic>;
+    return await _client.call('getHumanProfile') as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> updateHumanProfile(
-      Map<String, dynamic> patch) async {
+    Map<String, dynamic> patch,
+  ) async {
     return await _client.call('updateHumanProfile', patch)
         as Map<String, dynamic>;
   }
@@ -1352,9 +1426,10 @@ class NodeServiceClient {
     required String mimeType,
   }) async {
     return await _client.call('setPublicProfileThumbnail', {
-      'contentBase64': contentBase64,
-      'mimeType': mimeType,
-    }) as Map<String, dynamic>;
+          'contentBase64': contentBase64,
+          'mimeType': mimeType,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> upsertProfileGalleryPhoto({
@@ -1365,20 +1440,22 @@ class NodeServiceClient {
     String? photoId,
   }) async {
     return await _client.call('upsertProfileGalleryPhoto', {
-      'contentBase64': contentBase64,
-      'mimeType': mimeType,
-      'visibility': visibility,
-      if (label != null) 'label': label,
-      if (photoId != null) 'photoId': photoId,
-    }) as Map<String, dynamic>;
+          'contentBase64': contentBase64,
+          'mimeType': mimeType,
+          'visibility': visibility,
+          if (label != null) 'label': label,
+          if (photoId != null) 'photoId': photoId,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> removeProfileGalleryPhoto({
     required String vaultRelativePath,
   }) async {
     return await _client.call('removeProfileGalleryPhoto', {
-      'vaultRelativePath': vaultRelativePath,
-    }) as Map<String, dynamic>;
+          'vaultRelativePath': vaultRelativePath,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> updateProfileGalleryPhotoVisibility({
@@ -1386,9 +1463,10 @@ class NodeServiceClient {
     required String visibility,
   }) async {
     return await _client.call('updateProfileGalleryPhotoVisibility', {
-      'vaultRelativePath': vaultRelativePath,
-      'visibility': visibility,
-    }) as Map<String, dynamic>;
+          'vaultRelativePath': vaultRelativePath,
+          'visibility': visibility,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<void> syncProfileToBonds() async {
@@ -1429,10 +1507,11 @@ class NodeServiceClient {
     required String message,
   }) async {
     return await _client.call('sendHello', {
-      'targetOwnerId': targetOwnerId,
-      'profile': profile,
-      'message': message,
-    }) as Map<String, dynamic>;
+          'targetOwnerId': targetOwnerId,
+          'profile': profile,
+          'message': message,
+        })
+        as Map<String, dynamic>;
   }
 
   // -- Web content (Phase 45 Content tab) --
@@ -1447,8 +1526,9 @@ class NodeServiceClient {
     final result = await _client.call('listWebContentSections');
     final list = result as List<dynamic>;
     return list
-        .map((e) =>
-            WebContentSectionSummary.fromJson(e as Map<String, dynamic>))
+        .map(
+          (e) => WebContentSectionSummary.fromJson(e as Map<String, dynamic>),
+        )
         .toList();
   }
 
@@ -1471,16 +1551,18 @@ class NodeServiceClient {
   Future<ContentEngagementSummary> getContentEngagement({
     required String url,
   }) async {
-    final result = await _client.call('getContentEngagement', {'url': url})
-        as Map<String, dynamic>;
+    final result =
+        await _client.call('getContentEngagement', {'url': url})
+            as Map<String, dynamic>;
     return ContentEngagementSummary.fromJson(result);
   }
 
   Future<ContentEngagementSummary> toggleContentStar({
     required String url,
   }) async {
-    final result = await _client.call('toggleContentStar', {'url': url})
-        as Map<String, dynamic>;
+    final result =
+        await _client.call('toggleContentStar', {'url': url})
+            as Map<String, dynamic>;
     return ContentEngagementSummary.fromJson(result);
   }
 
@@ -1488,10 +1570,9 @@ class NodeServiceClient {
     required String url,
     required String text,
   }) async {
-    final result = await _client.call('addContentComment', {
-      'url': url,
-      'text': text,
-    }) as Map<String, dynamic>;
+    final result =
+        await _client.call('addContentComment', {'url': url, 'text': text})
+            as Map<String, dynamic>;
     return ContentEngagementSummary.fromJson(result);
   }
 
@@ -1499,10 +1580,12 @@ class NodeServiceClient {
     required String url,
     required String commentId,
   }) async {
-    final result = await _client.call('removeContentComment', {
-      'url': url,
-      'commentId': commentId,
-    }) as Map<String, dynamic>;
+    final result =
+        await _client.call('removeContentComment', {
+              'url': url,
+              'commentId': commentId,
+            })
+            as Map<String, dynamic>;
     return ContentEngagementSummary.fromJson(result);
   }
 
@@ -1510,10 +1593,12 @@ class NodeServiceClient {
     required String path,
     String? ownerId,
   }) async {
-    final result = await _client.call('deleteWebContentEntry', {
-      'path': path,
-      if (ownerId != null) 'ownerId': ownerId,
-    }) as Map<String, dynamic>;
+    final result =
+        await _client.call('deleteWebContentEntry', {
+              'path': path,
+              if (ownerId != null) 'ownerId': ownerId,
+            })
+            as Map<String, dynamic>;
     return result;
   }
 
@@ -1530,16 +1615,17 @@ class NodeServiceClient {
     Map<String, dynamic>? profileContext,
   }) async {
     return await _client.call('draftAuthorContent', {
-      'surface': surface,
-      'mode': mode,
-      'tone': tone,
-      if (hint != null && hint.isNotEmpty) 'hint': hint,
-      if (title != null && title.isNotEmpty) 'title': title,
-      if (existingText != null && existingText.isNotEmpty)
-        'existingText': existingText,
-      if (locale != null && locale.isNotEmpty) 'locale': locale,
-      if (profileContext != null) 'profileContext': profileContext,
-    }) as Map<String, dynamic>;
+          'surface': surface,
+          'mode': mode,
+          'tone': tone,
+          if (hint != null && hint.isNotEmpty) 'hint': hint,
+          if (title != null && title.isNotEmpty) 'title': title,
+          if (existingText != null && existingText.isNotEmpty)
+            'existingText': existingText,
+          if (locale != null && locale.isNotEmpty) 'locale': locale,
+          if (profileContext != null) 'profileContext': profileContext,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<PublishWebContentResult> publishWebContentEntry({
@@ -1558,31 +1644,35 @@ class NodeServiceClient {
     bool? advertiseTopic,
     List<Map<String, String>>? images,
   }) async {
-    final result = await _client.call('publishWebContentEntry', {
-      'template': template,
-      'title': title,
-      'visibility': visibility,
-      if (body != null) 'body': body,
-      if (contactIds != null) 'contactIds': contactIds,
-      if (tags != null) 'tags': tags,
-      if (contentBase64 != null) 'contentBase64': contentBase64,
-      if (mimeType != null) 'mimeType': mimeType,
-      if (fileName != null) 'fileName': fileName,
-      if (gallery != null) 'gallery': gallery,
-      if (stablePath != null) 'stablePath': stablePath,
-      if (sectionSlug != null) 'sectionSlug': sectionSlug,
-      if (advertiseTopic != null) 'advertiseTopic': advertiseTopic,
-      if (images != null) 'images': images,
-    }) as Map<String, dynamic>;
+    final result =
+        await _client.call('publishWebContentEntry', {
+              'template': template,
+              'title': title,
+              'visibility': visibility,
+              if (body != null) 'body': body,
+              if (contactIds != null) 'contactIds': contactIds,
+              if (tags != null) 'tags': tags,
+              if (contentBase64 != null) 'contentBase64': contentBase64,
+              if (mimeType != null) 'mimeType': mimeType,
+              if (fileName != null) 'fileName': fileName,
+              if (gallery != null) 'gallery': gallery,
+              if (stablePath != null) 'stablePath': stablePath,
+              if (sectionSlug != null) 'sectionSlug': sectionSlug,
+              if (advertiseTopic != null) 'advertiseTopic': advertiseTopic,
+              if (images != null) 'images': images,
+            })
+            as Map<String, dynamic>;
     return PublishWebContentResult.fromJson(result);
   }
 
   // -- My Files / Knowledge (home vault via thin client) --
 
   Future<ListAllLocalFilesResult> listAllLocalFiles({String? query}) async {
-    final result = await _client.call('listAllLocalFiles', {
-      if (query != null && query.isNotEmpty) 'query': query,
-    }) as Map<String, dynamic>;
+    final result =
+        await _client.call('listAllLocalFiles', {
+              if (query != null && query.isNotEmpty) 'query': query,
+            })
+            as Map<String, dynamic>;
     return ListAllLocalFilesResult.fromJson(result);
   }
 
@@ -1594,12 +1684,13 @@ class NodeServiceClient {
     int? offset,
   }) async {
     return await _client.call('readLocalFileContent', {
-      'source': source,
-      'relativePath': relativePath,
-      if (documentId != null) 'documentId': documentId,
-      if (maxBytes != null) 'maxBytes': maxBytes,
-      if (offset != null) 'offset': offset,
-    }) as Map<String, dynamic>;
+          'source': source,
+          'relativePath': relativePath,
+          if (documentId != null) 'documentId': documentId,
+          if (maxBytes != null) 'maxBytes': maxBytes,
+          if (offset != null) 'offset': offset,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> importLinkedObsidianNotes({
@@ -1607,9 +1698,10 @@ class NodeServiceClient {
     bool all = false,
   }) async {
     return await _client.call('importLinkedObsidianNotes', {
-      if (paths != null) 'paths': paths,
-      if (all) 'all': true,
-    }) as Map<String, dynamic>;
+          if (paths != null) 'paths': paths,
+          if (all) 'all': true,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> importExternalMcpKnowledge({
@@ -1619,11 +1711,12 @@ class NodeServiceClient {
     String? title,
   }) async {
     return await _client.call('importExternalMcpKnowledge', {
-      if (paths != null) 'paths': paths,
-      if (externalIds != null) 'externalIds': externalIds,
-      if (query != null) 'query': query,
-      if (title != null) 'title': title,
-    }) as Map<String, dynamic>;
+          if (paths != null) 'paths': paths,
+          if (externalIds != null) 'externalIds': externalIds,
+          if (query != null) 'query': query,
+          if (title != null) 'title': title,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> exportNotesToLinkedObsidian({
@@ -1631,24 +1724,24 @@ class NodeServiceClient {
     String? targetRootLabel,
   }) async {
     return await _client.call('exportNotesToLinkedObsidian', {
-      'relativePaths': relativePaths,
-      if (targetRootLabel != null) 'targetRootLabel': targetRootLabel,
-    }) as Map<String, dynamic>;
+          'relativePaths': relativePaths,
+          if (targetRootLabel != null) 'targetRootLabel': targetRootLabel,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> exportNotesToMcp({
     required List<String> relativePaths,
   }) async {
     return await _client.call('exportNotesToMcp', {
-      'relativePaths': relativePaths,
-    }) as Map<String, dynamic>;
+          'relativePaths': relativePaths,
+        })
+        as Map<String, dynamic>;
   }
 
   /// Owner vault knowledge.query — returns answer text.
   Future<String> knowledgeQuery(String question) async {
-    final result = await _client.call('knowledgeQuery', {
-      'question': question,
-    });
+    final result = await _client.call('knowledgeQuery', {'question': question});
     if (result is String) return result;
     if (result is Map && result['answer'] is String) {
       return result['answer'] as String;
@@ -1664,13 +1757,11 @@ class NodeServiceClient {
 
   Future<Map<String, dynamic>> reindexRagKnowledge({bool force = false}) async {
     // Large vaults reindex for a long time on Envoy Local CPU embed.
-    final result = await _client.call(
-      'reindexRagKnowledge',
-      {
-        if (force) 'force': true,
-      },
-      const Duration(minutes: 45),
-    ) as Map<String, dynamic>;
+    final result =
+        await _client.call('reindexRagKnowledge', {
+              if (force) 'force': true,
+            }, const Duration(minutes: 45))
+            as Map<String, dynamic>;
     return result;
   }
 
@@ -1707,7 +1798,8 @@ class NodeServiceClient {
   /// Discover Obsidian vault folders on the home node (owner-only).
   Future<List<String>> discoverObsidianVaults() async {
     final result =
-        await _client.call('discoverObsidianVaults', {}) as Map<String, dynamic>;
+        await _client.call('discoverObsidianVaults', {})
+            as Map<String, dynamic>;
     final paths = result['paths'];
     if (paths is! List) return const [];
     return paths
@@ -1718,27 +1810,27 @@ class NodeServiceClient {
 
   /// Open Obsidian or Notion on the home computer (owner-only allowlist).
   Future<Map<String, dynamic>> openDesktopApp({required String app}) async {
-    final result = await _client.call('openDesktopApp', {
-      'app': app,
-    }) as Map<String, dynamic>;
+    final result =
+        await _client.call('openDesktopApp', {'app': app})
+            as Map<String, dynamic>;
     return result;
   }
 
   Future<Map<String, dynamic>> activateKbPlugin({
     required String pluginId,
   }) async {
-    final result = await _client.call('activateKbPlugin', {
-      'pluginId': pluginId,
-    }) as Map<String, dynamic>;
+    final result =
+        await _client.call('activateKbPlugin', {'pluginId': pluginId})
+            as Map<String, dynamic>;
     return result;
   }
 
   Future<Map<String, dynamic>> deactivateKbPlugin({
     required String pluginId,
   }) async {
-    final result = await _client.call('deactivateKbPlugin', {
-      'pluginId': pluginId,
-    }) as Map<String, dynamic>;
+    final result =
+        await _client.call('deactivateKbPlugin', {'pluginId': pluginId})
+            as Map<String, dynamic>;
     return result;
   }
 
@@ -1770,18 +1862,17 @@ class NodeServiceClient {
     bool alsoPublishAsBlog = false,
   }) async {
     return await _client.call('createNote', {
-      'filename': filename,
-      'content': content,
-      if (subfolder != null && subfolder.isNotEmpty) 'subfolder': subfolder,
-      'sensitivity': sensitivity,
-      if (alsoPublishAsBlog) 'alsoPublishAsBlog': true,
-    }) as Map<String, dynamic>;
+          'filename': filename,
+          'content': content,
+          if (subfolder != null && subfolder.isNotEmpty) 'subfolder': subfolder,
+          'sensitivity': sensitivity,
+          if (alsoPublishAsBlog) 'alsoPublishAsBlog': true,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<void> deleteVaultItem({required String relativePath}) async {
-    await _client.call('deleteVaultItem', {
-      'relativePath': relativePath,
-    });
+    await _client.call('deleteVaultItem', {'relativePath': relativePath});
   }
 
   Future<Map<String, dynamic>> convertLibraryItemToMarkdown({
@@ -1789,9 +1880,10 @@ class NodeServiceClient {
     String? relativePath,
   }) async {
     return await _client.call('convertLibraryItemToMarkdown', {
-      if (documentId != null) 'documentId': documentId,
-      if (relativePath != null) 'relativePath': relativePath,
-    }) as Map<String, dynamic>;
+          if (documentId != null) 'documentId': documentId,
+          if (relativePath != null) 'relativePath': relativePath,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> importToLibrary({
@@ -1800,10 +1892,11 @@ class NodeServiceClient {
     String? mimeType,
   }) async {
     return await _client.call('importToLibrary', {
-      'relativePath': relativePath,
-      'contentBase64': contentBase64,
-      if (mimeType != null) 'mimeType': mimeType,
-    }) as Map<String, dynamic>;
+          'relativePath': relativePath,
+          'contentBase64': contentBase64,
+          if (mimeType != null) 'mimeType': mimeType,
+        })
+        as Map<String, dynamic>;
   }
 
   Future<void> shareFile({
@@ -1837,10 +1930,12 @@ class NodeServiceClient {
     int? limit,
     bool? pinnedOnly,
   }) async {
-    final result = await _client.call('chainListReports', {
-      if (limit != null) 'limit': limit,
-      if (pinnedOnly != null) 'pinnedOnly': pinnedOnly,
-    }) as Map<String, dynamic>;
+    final result =
+        await _client.call('chainListReports', {
+              if (limit != null) 'limit': limit,
+              if (pinnedOnly != null) 'pinnedOnly': pinnedOnly,
+            })
+            as Map<String, dynamic>;
     final list = (result['reports'] as List<dynamic>?) ?? const [];
     return list
         .map((e) => ChainReportSummary.fromJson(e as Map<String, dynamic>))
@@ -1851,9 +1946,9 @@ class NodeServiceClient {
   /// has no record of [chainId] (e.g. the report was GC'd after 90 days
   /// and the owner hadn't pinned it).
   Future<ChainReport?> getChainReport(String chainId) async {
-    final result = await _client.call('chainGetReport', {
-      'chainId': chainId,
-    }) as Map<String, dynamic>;
+    final result =
+        await _client.call('chainGetReport', {'chainId': chainId})
+            as Map<String, dynamic>;
     final report = result['report'];
     if (report == null) return null;
     return ChainReport.fromJson(report as Map<String, dynamic>);
@@ -1861,7 +1956,8 @@ class NodeServiceClient {
 
   /// List in-progress chains from the home node runtime.
   Future<List<ChainActiveSummary>> listActiveChains() async {
-    final result = await _client.call('chainListActive', {}) as Map<String, dynamic>;
+    final result =
+        await _client.call('chainListActive', {}) as Map<String, dynamic>;
     final list = (result['chains'] as List<dynamic>?) ?? const [];
     return list
         .map((e) => ChainActiveSummary.fromJson(e as Map<String, dynamic>))
@@ -1870,9 +1966,9 @@ class NodeServiceClient {
 
   /// Fetch a single chain's live state snapshot.
   Future<ChainActiveSummary?> getChainState(String chainId) async {
-    final result = await _client.call('chainGetState', {
-      'chainId': chainId,
-    }) as Map<String, dynamic>;
+    final result =
+        await _client.call('chainGetState', {'chainId': chainId})
+            as Map<String, dynamic>;
     if (result['chainId'] == null) return null;
     return ChainActiveSummary.fromJson(result);
   }
@@ -1881,9 +1977,11 @@ class NodeServiceClient {
   Future<List<ChainObservedSummary>> listObservedChains({
     bool includeTerminal = false,
   }) async {
-    final result = await _client.call('chainListObserved', {
-      'includeTerminal': includeTerminal,
-    }) as Map<String, dynamic>;
+    final result =
+        await _client.call('chainListObserved', {
+              'includeTerminal': includeTerminal,
+            })
+            as Map<String, dynamic>;
     final list = (result['chains'] as List<dynamic>?) ?? const [];
     return list
         .whereType<Map>()
@@ -1897,9 +1995,10 @@ class NodeServiceClient {
     required String decision,
   }) async {
     return await _client.call('chainResolveIteration', {
-      'chainId': chainId,
-      'decision': decision,
-    }) as Map<String, dynamic>;
+          'chainId': chainId,
+          'decision': decision,
+        })
+        as Map<String, dynamic>;
   }
 
   /// Node defaults for new team jobs (assignment mode, iteration, …).
@@ -1920,18 +2019,16 @@ class NodeServiceClient {
     bool allowLlm = true,
     List<String>? preferredWorkerPeerIds,
   }) async {
-    return await _client.call(
-      'chainPreviewGoal',
-      {
-        'goal': goal,
-        'allowLlm': allowLlm,
-        if (assignmentMode != null && assignmentMode.isNotEmpty)
-          'assignmentMode': assignmentMode,
-        if (preferredWorkerPeerIds != null && preferredWorkerPeerIds.isNotEmpty)
-          'preferredWorkerPeerIds': preferredWorkerPeerIds,
-      },
-      const Duration(seconds: 120),
-    ) as Map<String, dynamic>;
+    return await _client.call('chainPreviewGoal', {
+          'goal': goal,
+          'allowLlm': allowLlm,
+          if (assignmentMode != null && assignmentMode.isNotEmpty)
+            'assignmentMode': assignmentMode,
+          if (preferredWorkerPeerIds != null &&
+              preferredWorkerPeerIds.isNotEmpty)
+            'preferredWorkerPeerIds': preferredWorkerPeerIds,
+        }, const Duration(seconds: 120))
+        as Map<String, dynamic>;
   }
 
   /// Launch a team job from [goal], optionally reusing a preview plan.
@@ -1947,27 +2044,26 @@ class NodeServiceClient {
     int? extendMaxStepsPerRound,
     String? inputDeliveryScope,
   }) async {
-    return await _client.call(
-      'chainStartFromGoal',
-      {
-        'goal': goal,
-        'allowLlm': allowLlm,
-        if (assignmentMode != null && assignmentMode.isNotEmpty)
-          'assignmentMode': assignmentMode,
-        if (plannedSubtasks != null) 'plannedSubtasks': plannedSubtasks,
-        if (planWarnings != null) 'planWarnings': planWarnings,
-        if (preferredWorkerPeerIds != null && preferredWorkerPeerIds.isNotEmpty)
-          'preferredWorkerPeerIds': preferredWorkerPeerIds,
-        if (iterationMaxRounds != null) 'iterationMaxRounds': iterationMaxRounds,
-        if (iterationJudgeMode != null)
-          'iterationJudgeMode': iterationJudgeMode,
-        if (extendMaxStepsPerRound != null)
-          'extendMaxStepsPerRound': extendMaxStepsPerRound,
-        if (inputDeliveryScope != null && inputDeliveryScope.isNotEmpty)
-          'inputDeliveryScope': inputDeliveryScope,
-      },
-      const Duration(seconds: 120),
-    ) as Map<String, dynamic>;
+    return await _client.call('chainStartFromGoal', {
+          'goal': goal,
+          'allowLlm': allowLlm,
+          if (assignmentMode != null && assignmentMode.isNotEmpty)
+            'assignmentMode': assignmentMode,
+          if (plannedSubtasks != null) 'plannedSubtasks': plannedSubtasks,
+          if (planWarnings != null) 'planWarnings': planWarnings,
+          if (preferredWorkerPeerIds != null &&
+              preferredWorkerPeerIds.isNotEmpty)
+            'preferredWorkerPeerIds': preferredWorkerPeerIds,
+          if (iterationMaxRounds != null)
+            'iterationMaxRounds': iterationMaxRounds,
+          if (iterationJudgeMode != null)
+            'iterationJudgeMode': iterationJudgeMode,
+          if (extendMaxStepsPerRound != null)
+            'extendMaxStepsPerRound': extendMaxStepsPerRound,
+          if (inputDeliveryScope != null && inputDeliveryScope.isNotEmpty)
+            'inputDeliveryScope': inputDeliveryScope,
+        }, const Duration(seconds: 120))
+        as Map<String, dynamic>;
   }
 
   /// Cancel an active team job (or one subtask when [subtaskId] is set).
@@ -1979,16 +2075,13 @@ class NodeServiceClient {
     String cancelledBy = 'owner',
     String? subtaskId,
   }) async {
-    return await _client.call(
-      'chainCancel',
-      {
-        'chainId': chainId,
-        'reason': reason,
-        'cancelledBy': cancelledBy,
-        if (subtaskId != null && subtaskId.isNotEmpty) 'subtaskId': subtaskId,
-      },
-      const Duration(seconds: 60),
-    ) as Map<String, dynamic>;
+    return await _client.call('chainCancel', {
+          'chainId': chainId,
+          'reason': reason,
+          'cancelledBy': cancelledBy,
+          if (subtaskId != null && subtaskId.isNotEmpty) 'subtaskId': subtaskId,
+        }, const Duration(seconds: 60))
+        as Map<String, dynamic>;
   }
 
   /// Phase 58C — reassign a stalled/failed step to the next worker.
@@ -1996,14 +2089,11 @@ class NodeServiceClient {
     required String chainId,
     required String subtaskId,
   }) async {
-    return await _client.call(
-      'chainReassignSubtask',
-      {
-        'chainId': chainId,
-        'subtaskId': subtaskId,
-      },
-      const Duration(seconds: 60),
-    ) as Map<String, dynamic>;
+    return await _client.call('chainReassignSubtask', {
+          'chainId': chainId,
+          'subtaskId': subtaskId,
+        }, const Duration(seconds: 60))
+        as Map<String, dynamic>;
   }
 
   /// Phase 59D — retry failed/stuck job input deliveries.
@@ -2012,17 +2102,14 @@ class NodeServiceClient {
     String? workerPeerId,
     String? sourceRelativePath,
   }) async {
-    return await _client.call(
-      'chainRetryInputDelivery',
-      {
-        'chainId': chainId,
-        if (workerPeerId != null && workerPeerId.isNotEmpty)
-          'workerPeerId': workerPeerId,
-        if (sourceRelativePath != null && sourceRelativePath.isNotEmpty)
-          'sourceRelativePath': sourceRelativePath,
-      },
-      const Duration(seconds: 120),
-    ) as Map<String, dynamic>;
+    return await _client.call('chainRetryInputDelivery', {
+          'chainId': chainId,
+          if (workerPeerId != null && workerPeerId.isNotEmpty)
+            'workerPeerId': workerPeerId,
+          if (sourceRelativePath != null && sourceRelativePath.isNotEmpty)
+            'sourceRelativePath': sourceRelativePath,
+        }, const Duration(seconds: 120))
+        as Map<String, dynamic>;
   }
 
   /// Pin/unpin a finished report (exempt from 90-day GC when pinned).
@@ -2031,9 +2118,10 @@ class NodeServiceClient {
     required bool pinned,
   }) async {
     return await _client.call('chainPinReport', {
-      'chainId': chainId,
-      'pinned': pinned,
-    }) as Map<String, dynamic>;
+          'chainId': chainId,
+          'pinned': pinned,
+        })
+        as Map<String, dynamic>;
   }
 
   /// Raise budget and re-evaluate un-awarded subtasks.
@@ -2041,14 +2129,11 @@ class NodeServiceClient {
     required String chainId,
     required double additionalBudgetUsd,
   }) async {
-    return await _client.call(
-      'chainRebalance',
-      {
-        'chainId': chainId,
-        'additionalBudgetUsd': additionalBudgetUsd,
-      },
-      const Duration(seconds: 60),
-    ) as Map<String, dynamic>;
+    return await _client.call('chainRebalance', {
+          'chainId': chainId,
+          'additionalBudgetUsd': additionalBudgetUsd,
+        }, const Duration(seconds: 60))
+        as Map<String, dynamic>;
   }
 
   // -- Voice / video calls (Phase 42C) --
@@ -2065,13 +2150,13 @@ class NodeServiceClient {
   /// A no-op client used by [CallProvider.noop] when the device is
   /// disconnected from the home node.
   factory NodeServiceClient.noop() => NodeServiceClient(
-        HomeRemoteClient(
-          HomeRemoteClientOptions(
-            resolveCandidates: () async => const [],
-            createTransport: (_) => throw UnimplementedError(),
-          ),
-        ),
-      );
+    HomeRemoteClient(
+      HomeRemoteClientOptions(
+        resolveCandidates: () async => const [],
+        createTransport: (_) => throw UnimplementedError(),
+      ),
+    ),
+  );
 
   /// Send a call invite to [targetOwnerId]. Returns the call id on
   /// success, or null if the home node refused.

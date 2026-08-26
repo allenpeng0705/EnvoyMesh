@@ -13,6 +13,7 @@ export interface EhPermissionEvent {
   timeoutMs: number;
   /** Sidebar chat thread that owns this permission prompt. */
   chatId?: string;
+  turnId?: string;
 }
 
 export interface EhRespondToPermissionParams {

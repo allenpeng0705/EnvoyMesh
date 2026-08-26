@@ -14,10 +14,12 @@ describe("EhChangesDock", () => {
   it("summarizes changed files and wires review and dismiss", () => {
     const onReview = vi.fn()
     const onDismiss = vi.fn()
+    const onRevert = vi.fn()
     renderWithI18n(
       <EhChangesDock
         files={["a.ts", "b.ts", "c.ts", "d.ts"]}
         onReview={onReview}
+        onRevert={onRevert}
         onDismiss={onDismiss}
       />,
     )
@@ -28,6 +30,9 @@ describe("EhChangesDock", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Review diff/i }))
     expect(onReview).toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: /Revert this turn/i }))
+    expect(onRevert).toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole("button", { name: /Dismiss/i }))
     expect(onDismiss).toHaveBeenCalled()

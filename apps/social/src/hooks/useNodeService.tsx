@@ -482,6 +482,19 @@ export interface NodeServiceClient {
     chatId: string,
   ): Promise<import("@envoymesh/api").EhChatHistory>;
   removeEnvoyHarnessChat(chatId: string): Promise<{ removed: boolean }>;
+  deleteEnvoyHarnessChatTurn(opts: {
+    turnId: string;
+    chatId?: string;
+  }): Promise<import("@envoymesh/api").EhChatHistory & { deleted: boolean }>;
+  getEnvoyHarnessTurnReview(
+    turnId: string,
+  ): Promise<import("@envoymesh/api").EhTurnReview | null>;
+  revertEnvoyHarnessTurn(
+    turnId: string,
+  ): Promise<import("@envoymesh/api").EhRevertTurnResult>;
+  openEnvoyHarnessFile(params: { path: string; chatId?: string }): Promise<void>;
+  getEnvoyHarnessCommandCatalog(): Promise<import("@envoymesh/api").ExtAgentCommandCatalog>;
+  recordEnvoyHarnessUxEvent(event: import("@envoymesh/api").EhUxTelemetryEvent): Promise<void>;
   resetEnvoyHarnessChat(
     chatId?: string,
   ): Promise<import("@envoymesh/api").EhChatHistory>;
@@ -1815,6 +1828,32 @@ function createWsNodeServiceClient(
       return wsClient.rpc("removeEnvoyHarnessChat", { chatId }, { timeoutMs: 15_000 }) as Promise<{
         removed: boolean;
       }>;
+    },
+    async deleteEnvoyHarnessChatTurn(opts: { turnId: string; chatId?: string }) {
+      return wsClient.rpc("deleteEnvoyHarnessChatTurn", opts, { timeoutMs: 30_000 }) as Promise<
+        import("@envoymesh/api").EhChatHistory & { deleted: boolean }
+      >;
+    },
+    async getEnvoyHarnessTurnReview(turnId: string) {
+      return wsClient.rpc("getEnvoyHarnessTurnReview", { turnId }, { timeoutMs: 30_000 }) as Promise<
+        import("@envoymesh/api").EhTurnReview | null
+      >;
+    },
+    async revertEnvoyHarnessTurn(turnId: string) {
+      return wsClient.rpc("revertEnvoyHarnessTurn", { turnId }, { timeoutMs: 30_000 }) as Promise<
+        import("@envoymesh/api").EhRevertTurnResult
+      >;
+    },
+    async openEnvoyHarnessFile(params: { path: string; chatId?: string }) {
+      await wsClient.rpc("openEnvoyHarnessFile", params, { timeoutMs: 30_000 });
+    },
+    async getEnvoyHarnessCommandCatalog() {
+      return wsClient.rpc("getEnvoyHarnessCommandCatalog", {}, { timeoutMs: 5_000 }) as Promise<
+        import("@envoymesh/api").ExtAgentCommandCatalog
+      >;
+    },
+    async recordEnvoyHarnessUxEvent(event) {
+      await wsClient.rpc("recordEnvoyHarnessUxEvent", { ...event }, { timeoutMs: 5_000 });
     },
     async resetEnvoyHarnessChat(chatId?: string) {
       return wsClient.rpc(

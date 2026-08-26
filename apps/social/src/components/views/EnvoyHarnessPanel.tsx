@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useT } from "../../context/I18nContext.js"
 import { useNodeService } from "../../hooks/useNodeService.js"
 import { useEhTurnQueue, type EhSubmitMode } from "../../hooks/useEhTurnQueue.js"
+import { useEhTimeline } from "../../hooks/useEhTimeline.js"
 import { useEhTurnContext } from "../../hooks/useEhTurnContext.js"
 import { useEhAttachments } from "../../hooks/useEhAttachments.js"
 import { useToast } from "../../hooks/useToast.js"
@@ -26,12 +27,16 @@ import type {
   EhActivityEvent,
   EhPermissionEvent,
   EhChatTurn,
+  EhTurnReview,
+  ExtAgentCommandDescriptor,
 } from "@envoymesh/api"
 import { stripModelThinking } from "@envoymesh/api"
-import { RemoveIcon } from "../../icons.js"
+import { CopyIcon, RemoveIcon, SearchIcon } from "../../icons.js"
 import { ProjectFolderLink } from "../ProjectFolderLink.js"
 import { EhChatMessageText } from "../ehui/EhChatMessageText.js"
 import { EhStillWorkingIndicator } from "../ehui/EhStillWorkingIndicator.js"
+import { EhTimelineFeed } from "../ehui/EhTimelineFeed.js"
+import { EhTurnReviewModal } from "../ehui/EhTurnReviewModal.js"
 import { EhChatComposer } from "../ehui/EhChatComposer.js"
 import { EhComposerDockStack } from "../ehui/EhComposerDockStack.js"
 import { EnvoyHarnessEhuiRail } from "../ehui/EnvoyHarnessEhuiRail.js"
@@ -44,14 +49,13 @@ import {
 } from "@envoymesh/envoy-harness-ehui"
 import { createRemoteEhuiDataSource } from "../../lib/envoy-harness-ehui-data-source.js"
 import {
-  ENVOY_HARNESS_SLASH_COMMANDS,
   envoyHarnessSlashName,
   formatEnvoyHarnessSlashHelp,
   isEnvoyHarnessLocalSlashCommand,
   parseEnvoyHarnessCdCommand,
   parseEnvoyHarnessModelCommand,
 } from "../../lib/envoy-harness-slash-commands.js"
-import { ehEventMatchesChat } from "../../lib/eh-chat-event-scope.js"
+import { SearchHighlightedText } from "../../lib/eh-transcript-search-highlight.js"
 
 interface EnvoyHarnessTurn {
   id: string
@@ -118,6 +122,10 @@ function displayModelName(model: string | undefined): string | undefined {
   return colon >= 0 ? trimmed.slice(colon + 1) : trimmed
 }
 
+function scrollTranscriptTurnIntoView(el: HTMLDivElement): void {
+  el.scrollIntoView?.({ block: "center", behavior: "smooth" })
+}
+
 function historyTurnsToPanelTurns(history: EhChatTurn[]): EnvoyHarnessTurn[] {
   return history.map((turn, index) => ({
     id: turn.id || `eh-hist-${index}`,
@@ -125,6 +133,30 @@ function historyTurnsToPanelTurns(history: EhChatTurn[]): EnvoyHarnessTurn[] {
     text: turn.text,
     createdAt: turn.createdAt ? Date.parse(turn.createdAt) : index,
   }))
+}
+
+/**
+ * Keep optimistic local turns (esp. the in-flight user message) when a
+ * late history RPC would otherwise wipe them. Match by role+text so
+ * `eh-msg-N` ids from disk and local UUIDs still dedupe.
+ */
+function mergeHistoryWithLocalTurns(
+  incoming: EnvoyHarnessTurn[],
+  local: EnvoyHarnessTurn[],
+): EnvoyHarnessTurn[] {
+  if (local.length === 0) return incoming
+  if (incoming.length === 0) return local
+  const covered = new Set(
+    incoming.map((turn) => `${turn.kind}\0${turn.text}`),
+  )
+  const extras: EnvoyHarnessTurn[] = []
+  for (let i = local.length - 1; i >= 0; i -= 1) {
+    const turn = local[i]!
+    const key = `${turn.kind}\0${turn.text}`
+    if (covered.has(key)) break
+    extras.unshift(turn)
+  }
+  return extras.length === 0 ? incoming : [...incoming, ...extras]
 }
 
 export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelProps) {
@@ -142,6 +174,12 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
   nodeServiceRef.current = nodeService
 
   const [draft, setDraft] = useState("")
+  const [transcriptSearchOpen, setTranscriptSearchOpen] = useState(false)
+  const [transcriptQuery, setTranscriptQuery] = useState("")
+  const [transcriptMatch, setTranscriptMatch] = useState(0)
+  const transcriptSearchRef = useRef<HTMLInputElement>(null)
+  const transcriptTurnRefs = useRef(new Map<string, HTMLDivElement>())
+  const searchTelemetryActiveRef = useRef(false)
   const [turns, setTurns] = useState<EnvoyHarnessTurn[]>([])
   const [status, setStatus] = useState<EnvoyHarnessStatus | null>(null)
   const [savingProject, setSavingProject] = useState(false)
@@ -157,16 +195,141 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
   )
   const [turnHints, setTurnHints] = useState<EhTurnHintsEvent | null>(null)
   const [showGitDiffReview, setShowGitDiffReview] = useState(false)
+  const [turnReview, setTurnReview] = useState<EhTurnReview | null>(null)
   const [dismissedChanges, setDismissedChanges] = useState(false)
+  const [lastReviewTurnId, setLastReviewTurnId] = useState<string | null>(null)
   const [activitySummary, setActivitySummary] = useState<string | undefined>(
     undefined,
   )
   const [chatReady, setChatReady] = useState(false)
+  const [slashCommands, setSlashCommands] = useState<ExtAgentCommandDescriptor[]>([])
   const [confirmReset, setConfirmReset] = useState(false)
   const [contextHintDismissed, setContextHintDismissed] = useState(false)
   /** For the legacy bare thread key: the active chat that owns this cwd. */
   const [resolvedChatId, setResolvedChatId] = useState<string | null>(null)
   const effectiveChatId = chatId ?? resolvedChatId
+  const timeline = useEhTimeline(nodeService, effectiveChatId)
+  const visibleTurns = useMemo(() => {
+    const query = transcriptQuery.trim().toLocaleLowerCase()
+    return query ? turns.filter((turn) => turn.text.toLocaleLowerCase().includes(query)) : turns
+  }, [transcriptQuery, turns])
+  const focusTranscriptMatch = useCallback((next: number) => {
+    if (visibleTurns.length === 0) return
+    const index = (next + visibleTurns.length) % visibleTurns.length
+    setTranscriptMatch(index)
+    window.requestAnimationFrame(() => {
+      const el = transcriptTurnRefs.current.get(visibleTurns[index]!.id)
+      if (!el) return
+      el.scrollIntoView({ block: "center", behavior: "smooth" })
+      el.focus({ preventScroll: true })
+    })
+  }, [visibleTurns])
+  const closeTranscriptSearch = useCallback(() => {
+    setTranscriptSearchOpen(false)
+    setTranscriptQuery("")
+    setTranscriptMatch(0)
+  }, [])
+  const openTranscriptSearch = useCallback(() => {
+    setTranscriptSearchOpen(true)
+    window.requestAnimationFrame(() => transcriptSearchRef.current?.focus())
+  }, [])
+  const toggleTranscriptSearch = useCallback(() => {
+    if (transcriptSearchOpen) closeTranscriptSearch()
+    else openTranscriptSearch()
+  }, [closeTranscriptSearch, openTranscriptSearch, transcriptSearchOpen])
+  const copyTurnText = useCallback(async (text: string, successMessage: string) => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("clipboard_unavailable")
+      await navigator.clipboard.writeText(text)
+      toast.showToast(successMessage, "success")
+    } catch {
+      toast.showToast(t("eh.copyFailed", "Copy is unavailable on this device."), "error")
+    }
+  }, [t, toast])
+
+  const deleteTurn = useCallback(
+    async (turn: EnvoyHarnessTurn) => {
+      if (turn.kind === "system") return
+      if (
+        !window.confirm(
+          t("eh.deleteTurnConfirm", "Delete this message from the chat history?"),
+        )
+      ) {
+        return
+      }
+      try {
+        let turnId = turn.id
+        if (!turnId.startsWith("eh-msg-")) {
+          const history = chatId
+            ? await nodeService.openEnvoyHarnessChat(chatId)
+            : await nodeService.getEnvoyHarnessChatHistory()
+          const matches = history.turns.filter(
+            (item) => item.role === turn.kind && item.text === turn.text,
+          )
+          const match = matches[matches.length - 1]
+          if (!match) {
+            setTurns((prev) => prev.filter((item) => item.id !== turn.id))
+            return
+          }
+          turnId = match.id
+        }
+        const result = await nodeService.deleteEnvoyHarnessChatTurn({
+          turnId,
+          ...(chatId ? { chatId } : {}),
+        })
+        setTurns(historyTurnsToPanelTurns(result.turns))
+        toast.showToast(t("eh.turnDeleted", "Message deleted"), "success")
+      } catch (err) {
+        toast.showToast(
+          err instanceof Error ? err.message : String(err),
+          "error",
+        )
+      }
+    },
+    [chatId, nodeService, t, toast],
+  )
+
+  const recordUx = useCallback((event: Omit<import("@envoymesh/api").EhUxTelemetryEvent, "surface" | "occurredAt">) => {
+    if (typeof nodeService.recordEnvoyHarnessUxEvent !== "function") return
+    void nodeService.recordEnvoyHarnessUxEvent({
+      ...event,
+      surface: "social",
+      occurredAt: new Date().toISOString(),
+    }).catch(() => undefined)
+  }, [nodeService])
+
+  useEffect(() => {
+    const active = transcriptQuery.trim().length > 0
+    if (active && !searchTelemetryActiveRef.current) {
+      recordUx({ action: "search_used", resultCount: visibleTurns.length })
+    }
+    searchTelemetryActiveRef.current = active
+  }, [recordUx, transcriptQuery, visibleTurns.length])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+        if (turns.length === 0) return
+        event.preventDefault()
+        openTranscriptSearch()
+      } else if (event.key === "Escape" && transcriptSearchOpen) {
+        event.preventDefault()
+        closeTranscriptSearch()
+        transcriptSearchRef.current?.blur()
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [closeTranscriptSearch, openTranscriptSearch, transcriptSearchOpen, turns.length])
+
+  useEffect(() => {
+    if (!transcriptSearchOpen || !transcriptQuery.trim()) return
+    const turn = visibleTurns[transcriptMatch]
+    if (!turn) return
+    const el = transcriptTurnRefs.current.get(turn.id)
+    if (!el) return
+    scrollTranscriptTurnIntoView(el)
+  }, [transcriptSearchOpen, transcriptQuery, transcriptMatch, visibleTurns])
   /** True while this panel is mounted (chat switch / unmount). */
   const mountedRef = useRef(true)
 
@@ -229,47 +392,59 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
   }, [refresh])
 
   useEffect(() => {
-    // Legacy/active chat has no chatId: key on the resolved cwd, falling
-    // back to "active" while status is still loading so the history load
-    // starts immediately.
-    const historyKey = chatId ?? status?.cwd ?? "active"
+    let cancelled = false
+    if (typeof nodeService.getEnvoyHarnessCommandCatalog !== "function") return undefined
+    void nodeService.getEnvoyHarnessCommandCatalog()
+      .then((catalog) => { if (!cancelled) setSlashCommands(catalog.commands) })
+      .catch(() => { if (!cancelled) setSlashCommands([]) })
+    return () => { cancelled = true }
+  }, [nodeService])
+
+  // Keep replace in a ref so history load does not re-run when
+  // effectiveChatId / timeline.replace identity changes mid-turn.
+  const timelineReplaceRef = useRef(timeline.replace)
+  timelineReplaceRef.current = timeline.replace
+
+  useEffect(() => {
+    // Prefer stable chatId. Do NOT key history on status.cwd — cwd can land
+    // mid-turn (after refresh on error) and would wipe the optimistic
+    // transcript (including the user's message) before disk catches up.
+    const historyKey = chatId ?? "active"
     if (loadedHistoryKeyRef.current === historyKey) return undefined
-    // Claim the key SYNCHRONOUSLY so a re-run (status.cwd settles after
-    // refresh, or a key change) doesn't start a duplicate load.
     loadedHistoryKeyRef.current = historyKey
     setChatReady(false)
-    setTurns((prev) => (prev.length === 0 ? prev : []))
+    // Do not blank turns here — a failed/superseded load must not erase
+    // the in-flight user message the queue already appended.
     let cancelled = false
-    const loadHistory = historyKey === chatId && chatId
+    const loadHistory = chatId
       ? nodeServiceRef.current.openEnvoyHarnessChat(chatId)
       : nodeServiceRef.current.getEnvoyHarnessChatHistory()
     void loadHistory
       .then((history) => {
         if (cancelled) return
-        // Re-key to the resolved session cwd so a later refresh carrying
-        // the same cwd doesn't reload the transcript.
-        loadedHistoryKeyRef.current = chatId ?? history.cwd
-        setTurns(historyTurnsToPanelTurns(history.turns))
+        // Keep the same key we claimed — never rewrite to cwd (that made
+        // the next effect pass think history was unloaded and reload,
+        // clobbering the optimistic human bubble mid-turn).
+        loadedHistoryKeyRef.current = historyKey
+        const incoming = historyTurnsToPanelTurns(history.turns)
+        // Merge, don't clobber: an in-flight user message can land in
+        // `turns` before this RPC returns. Replacing wholesale made the
+        // human bubble vanish when the turn later finished empty.
+        setTurns((prev) => mergeHistoryWithLocalTurns(incoming, prev))
+        timelineReplaceRef.current(history.timeline ?? [])
         refreshRef.current()
       })
       .catch(() => {
-        // Load failure (missing session, disk error): keep the key
-        // claimed so we don't retry on every render. The user can /new
-        // to start a fresh session for this project.
+        // Keep the key claimed so we don't retry-spin; leave any local
+        // turns (optimistic user message) intact.
       })
       .finally(() => {
-        // Lift the submit guard whenever the load settles — even when
-        // this run was superseded by a re-run (e.g. `status.cwd` landed
-        // while the RPC was in flight). The `cancelled` flag only means
-        // "superseded", not "unmounted"; a superseded run still loaded
-        // the transcript, so the guard must not stay down forever.
-        // Only skip when the panel actually unmounted (chat switch).
         if (mountedRef.current) setChatReady(true)
       })
     return () => {
       cancelled = true
     }
-  }, [chatId, status?.cwd])
+  }, [chatId])
 
   useEffect(() => {
     return nodeService.on("eh:user_question", (event) => {
@@ -392,14 +567,43 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
       nodeService.getEnvoyHarnessTurnStatus(effectiveChatId ?? undefined),
     cancelTurn: () =>
       nodeService.cancelEnvoyHarnessTurn(effectiveChatId ?? undefined),
-    onUserTurn: (text) => appendTurn({ kind: "user", text }),
+    onUserTurn: (text) => {
+      // Reconnect can re-deliver the in-flight prompt after an optimistic
+      // append (or after history already restored it) — don't double-paint.
+      setTurns((prev) => {
+        const last = prev[prev.length - 1]
+        if (last?.kind === "user" && last.text === text) return prev
+        if (prev.some((turn) => turn.kind === "user" && turn.text === text)) {
+          return prev
+        }
+        return [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            kind: "user",
+            text,
+            createdAt: Date.now(),
+          },
+        ]
+      })
+    },
     onAssistantStreaming: (text, turnId) => upsertAssistantTurn(turnId, text),
     onAssistantTurn: (response, turnId, event) => {
+      setLastReviewTurnId(event?.changedFiles?.length ? turnId : null)
       const visible = stripModelThinking(response)
       if (visible) {
         upsertAssistantTurn(turnId, visible)
       } else {
-        setSystem(t("eh.emptyResponse", "envoy-harness returned an empty response."), "info")
+        // Drop an empty/thinking-only streaming bubble — never leave a
+        // blank assistant row, and never touch the user turn above it.
+        setTurns((prev) => prev.filter((turn) => turn.id !== turnId || turn.kind !== "assistant"))
+        setSystem(
+          t(
+            "eh.emptyResponse",
+            "envoy-harness finished without a visible reply. Your message is still here — try again or rephrase.",
+          ),
+          "info",
+        )
       }
       // Claude/Codex-style completion footer: tool stats + changed files.
       const files = event?.changedFiles ?? []
@@ -424,7 +628,8 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
         t("eh.sendFailed", "Failed to reach envoy-harness: {error}", { error: text }),
         tone,
       )
-      void refresh()
+      // Do not refresh status here — status.cwd settling used to remount
+      // history and wipe the optimistic user message mid-failure.
     },
     onTurnStart: () => {
       setTurnHints(null)
@@ -444,7 +649,7 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
       await nodeService.resetEnvoyHarnessChat(chatId ?? undefined)
       setTurns([])
       clearQueue()
-      loadedHistoryKeyRef.current = chatId ?? status?.cwd
+      loadedHistoryKeyRef.current = chatId ?? "active"
       setSystem(
         t("eh.chatReset", "Started a new chat for this project."),
         "success",
@@ -927,6 +1132,26 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
                 </option>
               </select>
             </label>
+            {turns.length > 0 ? (
+              <button
+                type="button"
+                className={`eh-search-btn${transcriptSearchOpen ? " eh-search-btn--active" : ""}`}
+                aria-label={
+                  transcriptSearchOpen
+                    ? t("eh.searchClose", "Close search")
+                    : t("eh.searchTranscript", "Search transcript")
+                }
+                title={
+                  transcriptSearchOpen
+                    ? t("eh.searchClose", "Close search")
+                    : t("eh.searchTranscript", "Search transcript")
+                }
+                aria-pressed={transcriptSearchOpen}
+                onClick={toggleTranscriptSearch}
+              >
+                <SearchIcon size={16} />
+              </button>
+            ) : null}
             <button
               type="button"
               className={`eh-trash-btn${confirmReset ? " eh-trash-btn--confirm" : ""}`}
@@ -971,6 +1196,30 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
       </header>
 
       <div className="pi-chat-thread" ref={threadRef}>
+        {transcriptSearchOpen && turns.length > 0 ? (
+          <div className="eh-transcript-search" role="search">
+            <input
+              ref={transcriptSearchRef}
+              type="search"
+              value={transcriptQuery}
+              onChange={(event) => { setTranscriptQuery(event.target.value); setTranscriptMatch(0) }}
+              placeholder={t("eh.searchTranscript", "Search transcript")}
+              aria-label={t("eh.searchTranscript", "Search transcript")}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault()
+                  focusTranscriptMatch(transcriptMatch + (event.shiftKey ? -1 : 1))
+                }
+              }}
+            />
+            <span>{transcriptQuery ? t("eh.searchMatches", "{count} match(es)", { count: visibleTurns.length }) : t("eh.turnCount", "{count} turn(s)", { count: turns.length })}</span>
+            {transcriptQuery && visibleTurns.length > 0 ? <>
+              <button type="button" aria-label={t("eh.previousMatch", "Previous match")} onClick={() => focusTranscriptMatch(transcriptMatch - 1)}>↑</button>
+              <button type="button" aria-label={t("eh.nextMatch", "Next match")} onClick={() => focusTranscriptMatch(transcriptMatch + 1)}>↓</button>
+            </> : null}
+            <span className="sr-only" aria-live="polite">{transcriptQuery ? `${visibleTurns.length} matches. Match ${visibleTurns.length ? transcriptMatch + 1 : 0} selected.` : ""}</span>
+          </div>
+        ) : null}
         {turns.length === 0 ? (
           <div className="pi-chat-empty">
             <p className="pi-chat-empty-title">
@@ -1007,30 +1256,109 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
           </div>
         ) : null}
 
-        {turns.map((turn) => (
+        {visibleTurns.map((turn) => {
+          const isActiveMatch =
+            transcriptQuery.trim().length > 0 &&
+            visibleTurns[transcriptMatch]?.id === turn.id
+          const highlightQuery = transcriptQuery.trim()
+          return (
           <div
             key={turn.id}
+            ref={(element) => { if (element) transcriptTurnRefs.current.set(turn.id, element); else transcriptTurnRefs.current.delete(turn.id) }}
+            tabIndex={-1}
+            aria-label={`${turn.kind} turn`}
+            aria-current={isActiveMatch ? "true" : undefined}
             className={`pi-chat-turn pi-chat-turn--${turn.kind}${
               turn.tone ? ` pi-chat-turn--${turn.tone}` : ""
-            }`}
+            }${isActiveMatch ? " eh-transcript-turn--active" : ""}`}
           >
             {turn.kind === "assistant" ? (
               <EhChatMessageText
                 text={turn.text}
                 className="pi-chat-turn-text eh-chat-turn-markdown"
+                highlightQuery={highlightQuery || undefined}
+                highlightActive={isActiveMatch}
               />
             ) : (
-              <div className="pi-chat-turn-text">{turn.text}</div>
+              <div className="pi-chat-turn-text">
+                {highlightQuery ? (
+                  <SearchHighlightedText
+                    text={turn.text}
+                    query={highlightQuery}
+                    active={isActiveMatch}
+                  />
+                ) : (
+                  turn.text
+                )}
+              </div>
             )}
+            <div className="eh-turn-actions">
+              <button
+                type="button"
+                className="message-copy-btn"
+                aria-label={t("eh.copyTurn", "Copy")}
+                title={t("eh.copyTurn", "Copy")}
+                onClick={() => void copyTurnText(turn.text, t("eh.copied", "Copied"))}
+              >
+                <CopyIcon size={14} />
+              </button>
+              {turn.kind !== "system" ? (
+                <button
+                  type="button"
+                  className="message-delete-btn"
+                  aria-label={t("eh.deleteTurn", "Delete")}
+                  title={t("eh.deleteTurn", "Delete")}
+                  onClick={() => void deleteTurn(turn)}
+                >
+                  <RemoveIcon size={14} />
+                </button>
+              ) : null}
+            </div>
           </div>
-        ))}
+          )
+        })}
+        {transcriptQuery && visibleTurns.length === 0 ? <p className="eh-transcript-empty">{t("eh.noTranscriptMatches", "No matching turns")}</p> : null}
+
+        {timeline.state.state ? (
+          <div className={`eh-agent-state eh-agent-state--${timeline.state.state.state}`}>
+            <span>{timeline.state.state.label}</span>
+            {timeline.state.state.activitySummary ? (
+              <small>{timeline.state.state.activitySummary}</small>
+            ) : null}
+          </div>
+        ) : null}
+
+        <EhTimelineFeed
+          items={timeline.nonMessageItems.filter((item) => item.type !== "activity")}
+          onReviewTurn={(turnId) => {
+            recordUx({ action: "review_opened" })
+            setLastReviewTurnId(turnId)
+            void nodeService.getEnvoyHarnessTurnReview(turnId).then((review) => {
+              if (review) setTurnReview(review)
+              else setShowGitDiffReview(true)
+            }).catch(() => setShowGitDiffReview(true))
+          }}
+          onRevertTurn={(turnId) => {
+            if (!window.confirm(t("eh.revertConfirm", "Restore the files to how they were before this turn? Later edits will never be overwritten."))) return
+            recordUx({ action: "revert_attempted" })
+            void nodeService.revertEnvoyHarnessTurn(turnId).then((result) => {
+              if (result.reverted) {
+                recordUx({ action: "revert_completed", outcome: "success" })
+                setSystem(t("eh.revertComplete", "This turn's file changes were reverted."), "success")
+                timeline.remove(`turn:${turnId}:changes`)
+              } else {
+                recordUx({ action: result.conflicts?.length ? "revert_conflicted" : "revert_completed", outcome: result.conflicts?.length ? "conflict" : "unavailable" })
+                setSystem(result.conflicts?.length ? t("eh.revertConflict", "Revert stopped because these files changed afterward: {files}", { files: result.conflicts.join(", ") }) : t("eh.revertUnavailable", "This turn can no longer be reverted safely."), "error")
+              }
+            }).catch((error: unknown) => setSystem(String(error), "error"))
+          }}
+        />
 
         {busy ? (
           <EhStillWorkingIndicator
             active={busy}
             waitingForUser={pendingQuestion !== null}
             activitySummary={activitySummary}
-            activityLog={turnContext.activityLog}
             onCancel={() => {
               void cancelActiveTurn().then(() => {
                 setActivitySummary(undefined)
@@ -1094,7 +1422,30 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
           if (att) ehAttachments.remove(att.id)
         }}
         changedFiles={dismissedChanges ? [] : turnContext.touchedFiles}
-        onReviewChanges={() => setShowGitDiffReview(true)}
+        onReviewChanges={() => {
+          if (!lastReviewTurnId) {
+            setShowGitDiffReview(true)
+            return
+          }
+          void nodeService.getEnvoyHarnessTurnReview(lastReviewTurnId).then((review) => {
+            if (review) setTurnReview(review)
+            else setShowGitDiffReview(true)
+          }).catch(() => setShowGitDiffReview(true))
+        }}
+        onRevertChanges={lastReviewTurnId ? () => {
+          if (!window.confirm(t("eh.revertConfirm", "Restore the files to how they were before this turn? Later edits will never be overwritten."))) return
+          void nodeService.revertEnvoyHarnessTurn(lastReviewTurnId).then((result) => {
+            if (result.reverted) {
+              setDismissedChanges(true)
+              setLastReviewTurnId(null)
+              setSystem(t("eh.revertComplete", "This turn's file changes were reverted."), "success")
+            } else if (result.conflicts?.length) {
+              setSystem(t("eh.revertConflict", "Revert stopped because these files changed afterward: {files}", { files: result.conflicts.join(", ") }), "error")
+            } else {
+              setSystem(t("eh.revertUnavailable", "This turn can no longer be reverted safely."), "error")
+            }
+          }).catch((error: unknown) => setSystem(String(error), "error"))
+        } : undefined}
         onDismissChanges={() => setDismissedChanges(true)}
         composer={
           <form
@@ -1113,7 +1464,7 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
               }}
               placeholder={placeholder}
               autoFocus
-              slashCommands={ENVOY_HARNESS_SLASH_COMMANDS}
+              slashCommands={slashCommands}
               hasAttachments={ehAttachments.attachments.length > 0}
               attachLeading={
                 <AgentAttachmentComposerLeading
@@ -1146,6 +1497,26 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
           actionButtonClassName="pi-chat-restart-btn"
           primaryActionButtonClassName="pi-chat-send"
           inputClassName="pi-chat-input eh-ehui-field"
+        />
+      ) : null}
+      {turnReview ? (
+        <EhTurnReviewModal
+          review={turnReview}
+          onClose={() => setTurnReview(null)}
+          onOpenFile={(path) => void nodeService.openEnvoyHarnessFile({ path, ...(effectiveChatId ? { chatId: effectiveChatId } : {}) }).catch((error: unknown) => setSystem(String(error), "error"))}
+          onRevert={() => {
+            setTurnReview(null)
+            if (!lastReviewTurnId || !window.confirm(t("eh.revertConfirm", "Restore the files to how they were before this turn? Later edits will never be overwritten."))) return
+            void nodeService.revertEnvoyHarnessTurn(lastReviewTurnId).then((result) => {
+              if (result.reverted) {
+                setDismissedChanges(true)
+                setLastReviewTurnId(null)
+                setSystem(t("eh.revertComplete", "This turn's file changes were reverted."), "success")
+              } else {
+                setSystem(result.conflicts?.length ? t("eh.revertConflict", "Revert stopped because these files changed afterward: {files}", { files: result.conflicts.join(", ") }) : t("eh.revertUnavailable", "This turn can no longer be reverted safely."), "error")
+              }
+            }).catch((error: unknown) => setSystem(String(error), "error"))
+          }}
         />
       ) : null}
     </section>

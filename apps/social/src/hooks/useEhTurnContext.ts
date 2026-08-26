@@ -50,24 +50,33 @@ export function useEhTurnContext(options: UseEhTurnContextOptions) {
   )
 
   const appendActivity = useCallback((summary: string) => {
-    const next = [...activityLogRef.current, summary]
-    if (next.length > 100) next.splice(0, next.length - 100)
-    activityLogRef.current = next
-    setActivityLog(next)
-  }, [])
+    // One live line per turn — replace, don't accumulate a noisy list.
+    activityLogRef.current = [summary];
+    setActivityLog([summary]);
+  }, []);
 
   useEffect(() => {
     const unsubActivity = optionsRef.current.subscribeActivity((event) => {
       if (!eventMatchesChat(event.chatId)) return
       const summary = event.summary?.trim()
-      if (summary && summary.length > 0) {
-        appendActivity(summary)
-        if (event.kind === "agent_end") {
-          lastTurnSummaryRef.current = summary
-        }
+      if (!summary) return
+      // Quiet the live log: only surface what the agent is doing (tool
+      // calls), failures, and the final "done" line — not model thinking
+      // dumps or tool stdout echoes.
+      const kind = event.kind
+      if (
+        kind === "model_response" ||
+        kind === "agent_start" ||
+        (kind === "tool_result" && !/error|fail/i.test(summary))
+      ) {
+        return
       }
-      if (event.kind !== "tool_call") return
-      const path = pathFromActivitySummary(event.summary)
+      appendActivity(summary)
+      if (kind === "agent_end") {
+        lastTurnSummaryRef.current = summary
+      }
+      if (kind !== "tool_call") return
+      const path = pathFromActivitySummary(summary)
       if (!path) return
       setTouchedFiles((prev) => (prev.includes(path) ? prev : [...prev, path]))
     })

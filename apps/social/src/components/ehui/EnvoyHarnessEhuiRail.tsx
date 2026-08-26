@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { EnvoyHarnessStatus } from "@envoymesh/api";
 import type { EhuiPanelId } from "@envoymesh/envoy-harness-client/ehui";
 import {
-  EhuiCommandLinks,
+  EhuiCommandRail,
   EhuiPanelModal,
 } from "@envoymesh/envoy-harness-ehui";
 
@@ -48,7 +48,7 @@ export function EnvoyHarnessEhuiRail({
 
   return (
     <>
-      <EhuiCommandLinks
+      <EhuiCommandRail
         className={className ?? "eh-ehui-command-bar contact-web-content__actions contact-web-content__actions--links"}
         linkClassName="contact-web-content__link"
         showSeparators
@@ -63,8 +63,6 @@ export function EnvoyHarnessEhuiRail({
           overlayClassName="modal-overlay"
           panelClassName="modal-panel eh-ehui-modal-panel"
           closeButtonClassName="modal-close"
-          actionButtonClassName="pi-chat-restart-btn"
-          primaryActionButtonClassName="pi-chat-send"
           inputClassName="pi-chat-input eh-ehui-field"
         />
       ) : null}

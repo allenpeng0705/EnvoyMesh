@@ -7,10 +7,11 @@ import { useT } from "../../context/I18nContext.js"
 export interface EhChangesDockProps {
   files: readonly string[]
   onReview?: () => void
+  onRevert?: () => void
   onDismiss?: () => void
 }
 
-export function EhChangesDock({ files, onReview, onDismiss }: EhChangesDockProps) {
+export function EhChangesDock({ files, onReview, onRevert, onDismiss }: EhChangesDockProps) {
   const t = useT()
 
   if (files.length === 0) return null
@@ -28,6 +29,11 @@ export function EhChangesDock({ files, onReview, onDismiss }: EhChangesDockProps
         {onReview ? (
           <button type="button" className="secondary" onClick={onReview}>
             {t("eh.changesReview", "Review diff")}
+          </button>
+        ) : null}
+        {onRevert ? (
+          <button type="button" className="secondary eh-changes-revert" onClick={onRevert}>
+            {t("eh.changesRevert", "Revert this turn")}
           </button>
         ) : null}
         {onDismiss ? (

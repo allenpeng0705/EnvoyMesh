@@ -577,6 +577,33 @@ describe("EnvoyHarnessPanel", () => {
     })
   })
 
+  it("shows transcript search only after clicking the header search icon", async () => {
+    getEnvoyHarnessChatHistory.mockResolvedValue({
+      sessionId: "sess-search",
+      cwd: "/projects/app",
+      turns: [
+        { id: "u1", role: "user", text: "hello world" },
+        { id: "a1", role: "assistant", text: "hi there" },
+      ],
+    })
+    renderWithI18n(<EnvoyHarnessPanel />)
+    await waitForChatReady()
+    expect(screen.queryByPlaceholderText(/Search transcript/i)).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: /Search transcript/i }))
+    const search = await screen.findByPlaceholderText(/Search transcript/i)
+    expect(search).toBeDefined()
+    fireEvent.change(search, { target: { value: "hello" } })
+    expect(screen.getByLabelText("user turn").textContent).toContain("hello world")
+    expect(screen.queryByLabelText("assistant turn")).toBeNull()
+    const marks = document.querySelectorAll(".eh-transcript-highlight")
+    expect(marks.length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole("button", { name: /Close search/i }))
+    await waitFor(() => {
+      expect(screen.queryByPlaceholderText(/Search transcript/i)).toBeNull()
+    })
+    expect(screen.getByText("hi there")).toBeDefined()
+  })
+
   it("sets the project folder via the folder link modal", async () => {
     renderWithI18n(<EnvoyHarnessPanel />)
     await screen.findByText("Ready")

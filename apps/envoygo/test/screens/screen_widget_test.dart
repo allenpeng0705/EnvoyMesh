@@ -34,18 +34,19 @@ Widget _app(Widget home, {List<Override> overrides = const []}) {
 }
 
 StoredNode _testNode() => StoredNode(
-      id: 'node1',
-      name: 'My Mac',
-      ownerId: 'envoy:owner:test',
-      homePeerId: '12D3KooW',
-      pairedAt: DateTime.now(),
-      lastConnectedAt: DateTime.now(),
-    );
+  id: 'node1',
+  name: 'My Mac',
+  ownerId: 'envoy:owner:test',
+  homePeerId: '12D3KooW',
+  pairedAt: DateTime.now(),
+  lastConnectedAt: DateTime.now(),
+);
 
 void main() {
   group('HomeScreen tabs', () {
-    testWidgets('owner nav labels are Social Terminal Knowledge Me',
-        (tester) async {
+    testWidgets('owner nav labels are Social Terminal Knowledge Me', (
+      tester,
+    ) async {
       // Full HomeScreen pulls CallProvider.noop → HomeRemoteClient ping timer;
       // assert the owner IA labels via the same l10n keys HomeScreen uses.
       await tester.pumpWidget(
@@ -122,7 +123,9 @@ void main() {
             },
           ),
           overrides: [
-            chatProvider.overrideWith((ref) => _SelectableChatNotifier(selectedTab: 1)),
+            chatProvider.overrideWith(
+              (ref) => _SelectableChatNotifier(selectedTab: 1),
+            ),
             contentEngageProvider.overrideWith((ref) {
               return _SeededEngageNotifier(ref, [
                 ContentEngageNotification(
@@ -150,11 +153,12 @@ void main() {
   });
 
   group('ChatListScreen', () {
-    testWidgets('shows empty state when no threads', (tester) async {
-      await tester.pumpWidget(_app(const ChatListScreen()));
+    testWidgets('shows coding entry when no saved threads', (tester) async {
+      await tester.pumpWidget(_app(const Scaffold(body: ChatListScreen())));
       await tester.pump();
 
-      expect(find.text('No conversations yet'), findsOneWidget);
+      expect(find.text('Coding'), findsOneWidget);
+      expect(find.text('Pi'), findsOneWidget);
       expect(find.byType(FloatingActionButton), findsOneWidget);
     });
 
@@ -186,9 +190,7 @@ void main() {
 
   group('ContactsScreen', () {
     testWidgets('shows empty state when no contacts', (tester) async {
-      await tester.pumpWidget(
-        _app(const Scaffold(body: ContactsScreen())),
-      );
+      await tester.pumpWidget(_app(const Scaffold(body: ContactsScreen())));
       await tester.pump();
 
       expect(find.text('No contacts yet'), findsOneWidget);
@@ -243,16 +245,14 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Not connected'), findsOneWidget);
-      expect(
-        find.text('Pair with a home node to get started'),
-        findsOneWidget,
-      );
+      expect(find.text('Pair with a home node to get started'), findsOneWidget);
       expect(find.text('Pair'), findsOneWidget);
       expect(find.textContaining('EnvoyGo'), findsWidgets);
     });
 
-    testWidgets('shows connected node info and Public Access section',
-        (tester) async {
+    testWidgets('shows connected node info and Public Access section', (
+      tester,
+    ) async {
       final node = _testNode();
 
       await tester.pumpWidget(
@@ -301,8 +301,11 @@ class _SelectableChatNotifier extends ChatNotifier {
   @override
   void onBridgeStatus(Map<String, dynamic> data) {}
   @override
-  Future<void> sendMessage(String targetOwnerId, String text,
-      {List<Map<String, dynamic>>? attachments}) async {}
+  Future<void> sendMessage(
+    String targetOwnerId,
+    String text, {
+    List<Map<String, dynamic>>? attachments,
+  }) async {}
   @override
   Future<void> sendAgentMessage(
     String text, {
@@ -317,11 +320,13 @@ class _SelectableChatNotifier extends ChatNotifier {
   @override
   Future<void> syncTerminals() async {}
   @override
-  Future<void> loadHistory(String threadId,
-      {String? contactOwnerId, String? chatRoomId}) async {}
+  Future<void> loadHistory(
+    String threadId, {
+    String? contactOwnerId,
+    String? chatRoomId,
+  }) async {}
   @override
-  Future<void> markRead(String threadId,
-      {String? contactOwnerId}) async {}
+  Future<void> markRead(String threadId, {String? contactOwnerId}) async {}
   @override
   Future<void> createRoom(String name) async {}
   @override
@@ -337,7 +342,7 @@ class _SelectableChatNotifier extends ChatNotifier {
 
 class _SeededEngageNotifier extends ContentEngageNotifier {
   _SeededEngageNotifier(Ref ref, List<ContentEngageNotification> items)
-      : super(ref) {
+    : super(ref) {
     state = ContentEngageState(items: items);
   }
 }
@@ -357,8 +362,11 @@ class _FakeChatNotifier extends ChatNotifier {
   @override
   void onBridgeStatus(Map<String, dynamic> data) {}
   @override
-  Future<void> sendMessage(String targetOwnerId, String text,
-      {List<Map<String, dynamic>>? attachments}) async {}
+  Future<void> sendMessage(
+    String targetOwnerId,
+    String text, {
+    List<Map<String, dynamic>>? attachments,
+  }) async {}
   @override
   Future<void> sendAgentMessage(
     String text, {
@@ -373,11 +381,13 @@ class _FakeChatNotifier extends ChatNotifier {
   @override
   Future<void> syncTerminals() async {}
   @override
-  Future<void> loadHistory(String threadId,
-      {String? contactOwnerId, String? chatRoomId}) async {}
+  Future<void> loadHistory(
+    String threadId, {
+    String? contactOwnerId,
+    String? chatRoomId,
+  }) async {}
   @override
-  Future<void> markRead(String threadId,
-      {String? contactOwnerId}) async {}
+  Future<void> markRead(String threadId, {String? contactOwnerId}) async {}
   @override
   Future<void> createRoom(String name) async {}
   @override
@@ -406,11 +416,11 @@ class _FakeContactNotifier extends ContactNotifier {
 
 class _FakeNodeNotifier extends NodeNotifier {
   _FakeNodeNotifier(StoredNode node)
-      : super(
-          ref: _FakeRef(),
-          secureStorage: _newTestSecureStorage(),
-          localDb: _newTestLocalDatabase(),
-        ) {
+    : super(
+        ref: _FakeRef(),
+        secureStorage: _newTestSecureStorage(),
+        localDb: _newTestLocalDatabase(),
+      ) {
     state = NodeState(
       activeNode: node,
       pairedNodes: [node],
@@ -433,9 +443,11 @@ class _FakeNodeNotifier extends NodeNotifier {
     String? profileName,
     String? profileAvatarColor,
     String? profileId,
+    void Function(HomeRemoteCandidate)? onConnectingCandidate,
   }) async {
     throw UnimplementedError();
   }
+
   @override
   Future<void> connectToNode(StoredNode node) async {}
   @override
@@ -445,8 +457,7 @@ class _FakeNodeNotifier extends NodeNotifier {
   @override
   Future<void> unpairNode(String nodeId) async {}
   @override
-  Future<void> updatePublicAccess(
-      String nodeId, String host, int port) async {}
+  Future<void> updatePublicAccess(String nodeId, String host, int port) async {}
 }
 
 class _FakeRef implements Ref {

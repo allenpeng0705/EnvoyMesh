@@ -13,6 +13,7 @@ describe("json-rpc — envoy harness chats", () => {
       lastUsedAt: "2026-08-25T00:00:00.000Z",
     };
     const ns = {
+      mayCallerUseCoding: vi.fn().mockResolvedValue(true),
       createEnvoyHarnessChat: vi.fn().mockResolvedValue(summary),
     } as unknown as NodeService;
 
@@ -29,6 +30,7 @@ describe("json-rpc — envoy harness chats", () => {
 
   it("routes removeEnvoyHarnessChat", async () => {
     const ns = {
+      mayCallerUseCoding: vi.fn().mockResolvedValue(true),
       removeEnvoyHarnessChat: vi.fn().mockResolvedValue({ removed: true }),
     } as unknown as NodeService;
 
@@ -38,5 +40,24 @@ describe("json-rpc — envoy harness chats", () => {
 
     expect(ns.removeEnvoyHarnessChat).toHaveBeenCalledWith("chat-1");
     expect(result).toEqual({ removed: true });
+  });
+
+  it("routes deleteEnvoyHarnessChatTurn through the coding gate", async () => {
+    const history = { sessionId: "s1", cwd: "/projects/app", turns: [], deleted: true };
+    const ns = {
+      mayCallerUseCoding: vi.fn().mockResolvedValue(true),
+      deleteEnvoyHarnessChatTurn: vi.fn().mockResolvedValue(history),
+    } as unknown as NodeService;
+    const result = await runWithRpcCaller(localOwnerCaller(""), () =>
+      routeRpcMethod(ns, "deleteEnvoyHarnessChatTurn", {
+        chatId: "chat-1",
+        turnId: "eh-msg-0",
+      }),
+    );
+    expect(ns.deleteEnvoyHarnessChatTurn).toHaveBeenCalledWith({
+      chatId: "chat-1",
+      turnId: "eh-msg-0",
+    });
+    expect(result).toEqual(history);
   });
 });

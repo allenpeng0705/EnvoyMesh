@@ -7,10 +7,11 @@
 
 import { resolve } from "node:path";
 
-import { stripModelThinking } from "@envoymesh/api";
+import { ehHistoryToTimelineItems, stripModelThinking } from "@envoymesh/api";
 import type { EhChatHistory, EhChatTurn } from "@envoymesh/api";
 import {
   SessionStore,
+  isEphemeralUserMessage,
   type Message,
 } from "@envoymesh/envoy-harness";
 
@@ -57,6 +58,7 @@ export function ehMessagesToChatTurns(messages: readonly Message[]): EhChatTurn[
   const turns: EhChatTurn[] = [];
   let index = 0;
   for (const msg of messages) {
+    if (msg.role === "user" && isEphemeralUserMessage(msg)) continue;
     const raw = messageDisplayText(msg);
     if (raw.trim().length === 0) continue;
     if (msg.role !== "user" && msg.role !== "assistant" && msg.role !== "system") {
@@ -81,12 +83,16 @@ export async function loadEhChatHistoryFromStore(opts: {
   cwd: string;
 }): Promise<EhChatHistory> {
   const persisted = await opts.sessionStore.load(opts.sessionId);
-  return {
+  return withEhTimeline({
     sessionId: persisted.id,
     cwd: normalizeEhWorkspaceCwd(opts.cwd),
     title: persisted.metadata.title,
     turns: ehMessagesToChatTurns(persisted.messages),
-  };
+  });
+}
+
+export function withEhTimeline(history: EhChatHistory): EhChatHistory {
+  return { ...history, timeline: ehHistoryToTimelineItems(history) };
 }
 
 /**
@@ -105,6 +111,7 @@ export function findEhDisplayMessageIndex(
   let display = 0;
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i]!;
+    if (msg.role === "user" && isEphemeralUserMessage(msg)) continue;
     const raw = messageDisplayText(msg);
     if (raw.trim().length === 0) continue;
     if (msg.role !== "user" && msg.role !== "assistant" && msg.role !== "system") {
@@ -134,16 +141,41 @@ export async function deleteEhChatTurnFromStore(opts: {
   if (msgIndex === undefined) {
     return {
       deleted: false,
-      history: {
+      history: withEhTimeline({
         sessionId: persisted.id,
         cwd: normalizeEhWorkspaceCwd(opts.cwd),
         title: persisted.metadata.title,
         turns: ehMessagesToChatTurns(persisted.messages),
-      },
+      }),
     };
   }
 
-  const remaining = persisted.messages.filter((_, i) => i !== msgIndex);
+  const selected = persisted.messages[msgIndex]!;
+  let deleteEnd = msgIndex + 1;
+  if (selected.role === "user") {
+    // A user prompt owns the assistant/tool exchange that follows it. Keeping
+    // that tail after deleting the prompt produces misleading context and can
+    // leave provider-invalid tool messages behind.
+    while (
+      deleteEnd < persisted.messages.length &&
+      persisted.messages[deleteEnd]!.role !== "user" &&
+      persisted.messages[deleteEnd]!.role !== "system"
+    ) {
+      deleteEnd += 1;
+    }
+  } else if (selected.role === "assistant") {
+    // Tool results immediately following an assistant tool call belong to the
+    // assistant message and must be removed with it.
+    while (
+      deleteEnd < persisted.messages.length &&
+      persisted.messages[deleteEnd]!.role === "tool"
+    ) {
+      deleteEnd += 1;
+    }
+  }
+  const remaining = persisted.messages.filter(
+    (_, i) => i < msgIndex || i >= deleteEnd,
+  );
   persisted.clear();
   for (const msg of remaining) {
     persisted.appendMessage(msg.role, msg.content);
@@ -152,12 +184,12 @@ export async function deleteEhChatTurnFromStore(opts: {
 
   return {
     deleted: true,
-    history: {
+    history: withEhTimeline({
       sessionId: persisted.id,
       cwd: normalizeEhWorkspaceCwd(opts.cwd),
       title: persisted.metadata.title,
       turns: ehMessagesToChatTurns(persisted.messages),
-    },
+    }),
   };
 }
 

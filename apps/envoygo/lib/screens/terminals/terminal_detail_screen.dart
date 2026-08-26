@@ -41,12 +41,13 @@ class TerminalDetailScreen extends ConsumerStatefulWidget {
       _TerminalDetailScreenState();
 }
 
-class _TerminalDetailScreenState
-    extends ConsumerState<TerminalDetailScreen> with WidgetsBindingObserver {
+class _TerminalDetailScreenState extends ConsumerState<TerminalDetailScreen>
+    with WidgetsBindingObserver {
   InAppWebViewController? _webController;
   TerminalService? _terminalService;
   bool _attached = false;
   bool _tunnelUp = true;
+  Set<String> _terminalCommands = const {};
 
   void Function()? _unsubRx;
 
@@ -96,6 +97,17 @@ class _TerminalDetailScreenState
     });
 
     try {
+      if (widget.isEnvoyHarnessSession || widget.sessionRole == 'pi') {
+        final catalog = widget.isEnvoyHarnessSession
+            ? await nodeService.getEnvoyHarnessCommandCatalog()
+            : await nodeService.getExtAgentCommandCatalog();
+        final commands = (catalog['commands'] as List<dynamic>? ?? const [])
+            .whereType<Map>()
+            .map((entry) => entry['slash']?.toString())
+            .whereType<String>()
+            .toSet();
+        if (mounted) setState(() => _terminalCommands = commands);
+      }
       await _terminalService!.attach(widget.sessionId);
       if (mounted) setState(() => _attached = true);
     } catch (e) {
@@ -106,9 +118,7 @@ class _TerminalDetailScreenState
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              AppLocalizations.of(context).termAttachFailed('$e'),
-            ),
+            content: Text(AppLocalizations.of(context).termAttachFailed('$e')),
           ),
         );
       }
@@ -143,9 +153,7 @@ class _TerminalDetailScreenState
   }
 
   void _writeToXterm(String base64) {
-    _webController?.evaluateJavascript(
-      source: 'writeToTerminal("$base64")',
-    );
+    _webController?.evaluateJavascript(source: 'writeToTerminal("$base64")');
   }
 
   // -- xterm.js keystrokes → Flutter → home node --
@@ -206,15 +214,15 @@ class _TerminalDetailScreenState
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Chip(
-                label: Text(l10n.termReconnecting, style: const TextStyle(fontSize: 12)),
+                label: Text(
+                  l10n.termReconnecting,
+                  style: const TextStyle(fontSize: 12),
+                ),
                 backgroundColor: Colors.orange,
               ),
             ),
           if (!_attached)
-            TextButton(
-              onPressed: _attach,
-              child: Text(l10n.commonReconnect),
-            ),
+            TextButton(onPressed: _attach, child: Text(l10n.commonReconnect)),
           IconButton(
             tooltip: l10n.termCopyAll,
             icon: const Icon(Icons.copy_all),
@@ -241,6 +249,7 @@ class _TerminalDetailScreenState
             if (widget.isEnvoyHarnessSession)
               EnvoyHarnessTerminalChrome(
                 onSendToTerminal: _sendToTerminal,
+                showCommandRails: false,
               ),
             Expanded(
               child: Container(
@@ -249,78 +258,96 @@ class _TerminalDetailScreenState
                   children: [
                     Expanded(
                       child: InAppWebView(
-                  pullToRefreshController: _pullToRefreshController,
-                  initialData: InAppWebViewInitialData(
-                    data: _terminalHtml,
-                    mimeType: 'text/html',
-                    encoding: 'utf-8',
-                  ),
-                  initialSettings: InAppWebViewSettings(
-                    javaScriptEnabled: true,
-                    transparentBackground: true,
-                    disableHorizontalScroll: true,
-                    disableVerticalScroll: false, // let xterm.js handle its own viewport
-                    supportZoom: false,
-                    useWideViewPort: false,
-                  ),
-                  onWebViewCreated: (controller) {
-                    _webController = controller;
-                    // Register JS → Flutter handlers.
-                    controller.addJavaScriptHandler(
-                      handlerName: 'termKey',
-                      callback: (args) {
-                        if (args.isNotEmpty) {
-                          _onKeyFromWeb(args[0].toString());
-                        }
-                      },
-                    );
-                    controller.addJavaScriptHandler(
-                      handlerName: 'termResize',
-                      callback: (args) {
-                        if (args.isNotEmpty) {
-                          try {
-                            final decoded =
-                                jsonDecode(args[0].toString())
-                                    as Map<String, dynamic>;
-                            _onResizeFromWeb(
-                              decoded['cols'] as int,
-                              decoded['rows'] as int,
+                        pullToRefreshController: _pullToRefreshController,
+                        initialData: InAppWebViewInitialData(
+                          data: _terminalHtml,
+                          mimeType: 'text/html',
+                          encoding: 'utf-8',
+                        ),
+                        initialSettings: InAppWebViewSettings(
+                          javaScriptEnabled: true,
+                          transparentBackground: true,
+                          disableHorizontalScroll: true,
+                          disableVerticalScroll:
+                              false, // let xterm.js handle its own viewport
+                          supportZoom: false,
+                          useWideViewPort: false,
+                        ),
+                        onWebViewCreated: (controller) {
+                          _webController = controller;
+                          // Register JS → Flutter handlers.
+                          controller.addJavaScriptHandler(
+                            handlerName: 'termKey',
+                            callback: (List<dynamic> args) {
+                              if (args.isNotEmpty) {
+                                _onKeyFromWeb(args[0].toString());
+                              }
+                            },
+                          );
+                          controller.addJavaScriptHandler(
+                            handlerName: 'termResize',
+                            callback: (List<dynamic> args) {
+                              if (args.isNotEmpty) {
+                                try {
+                                  final decoded =
+                                      jsonDecode(args[0].toString())
+                                          as Map<String, dynamic>;
+                                  _onResizeFromWeb(
+                                    decoded['cols'] as int,
+                                    decoded['rows'] as int,
+                                  );
+                                } catch (_) {}
+                              }
+                            },
+                          );
+                          // Focus xterm after a short delay.
+                          Future.delayed(const Duration(milliseconds: 500), () {
+                            controller.evaluateJavascript(
+                              source: 'term.focus(); fitAddon.fit();',
                             );
-                          } catch (_) {}
-                        }
+                          });
+                        },
+                        onConsoleMessage: (_, msg) {
+                          // Debug: log JS console messages in Flutter debug mode.
+                          debugPrint('[xterm] ${msg.message}');
+                        },
+                      ),
+                    ),
+                    TerminalAccessoryBar(
+                      mode: _accessoryMode,
+                      enabled: _attached && _tunnelUp,
+                      onKey: (bytes) => _terminalService?.sendKey(bytes),
+                      onPaste: _onPaste,
+                      supportedCommands: _terminalCommands,
+                      onCommand: (command) {
+                        final client = ref.read(nodeProvider.notifier).client;
+                        if (client == null) return;
+                        unawaited(
+                          NodeServiceClient(client)
+                              .recordEnvoyHarnessUxEvent({
+                                'action': 'command_rail_used',
+                                'surface': 'terminal',
+                                'command': command,
+                                'occurredAt': DateTime.now()
+                                    .toUtc()
+                                    .toIso8601String(),
+                              })
+                              .catchError((_) {}),
+                        );
                       },
-                    );
-                    // Focus xterm after a short delay.
-                    Future.delayed(const Duration(milliseconds: 500), () {
-                      controller.evaluateJavascript(
-                        source: 'term.focus(); fitAddon.fit();',
-                      );
-                    });
-                  },
-                  onConsoleMessage: (_, msg) {
-                    // Debug: log JS console messages in Flutter debug mode.
-                    debugPrint('[xterm] ${msg.message}');
-                    },
-                  ),
+                    ),
+                  ],
                 ),
-                TerminalAccessoryBar(
-                  mode: _accessoryMode,
-                  enabled: _attached && _tunnelUp,
-                  onKey: (bytes) => _terminalService?.sendKey(bytes),
-                  onPaste: _onPaste,
-                ),
-              ],
+              ),
             ),
-          ),
-        ),
             if (widget.isShellAgentSession)
               TerminalAgentBar(
                 sessionId: widget.sessionId,
                 onEditInTerminal: _sendToTerminal,
               ),
-      ],
-    ),
-  ),
+          ],
+        ),
+      ),
     );
   }
 

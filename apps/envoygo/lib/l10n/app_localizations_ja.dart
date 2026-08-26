@@ -3022,4 +3022,125 @@ class AppLocalizationsJa extends AppLocalizations {
   @override
   String get settingsEnvoyLocalPhoneNote =>
       '詳細なサーバー パラメータ（コンテキスト サイズ、GPU レイヤー）はホームノードのソーシャル画面にあります。';
+
+  @override
+  String get ehReviewTitle => 'Review this turn';
+
+  @override
+  String get ehReviewUnavailable =>
+      'A saved review is unavailable for this older turn.';
+
+  @override
+  String get ehReviewFile => 'File';
+
+  @override
+  String get ehReviewOpenFile => 'Open file';
+
+  @override
+  String get ehReviewDiffUnavailable =>
+      'A textual diff is unavailable for this file.';
+
+  @override
+  String get ehReviewOnly => 'Workspace-detected · review only';
+
+  @override
+  String get ehRevertTitle => 'Revert this turn?';
+
+  @override
+  String get ehRevertBody =>
+      'Files will be restored to their pre-turn contents. Later edits are protected and will stop the revert.';
+
+  @override
+  String get ehRevertAction => 'Revert';
+
+  @override
+  String get ehRevertComplete => 'This turn’s file changes were reverted.';
+
+  @override
+  String get ehRevertUnavailable =>
+      'This turn can no longer be reverted safely.';
+
+  @override
+  String ehRevertConflict(String files) {
+    return 'Revert stopped because these files changed afterward: $files';
+  }
+
+  @override
+  String get ehSearchTranscript => 'Search transcript';
+
+  @override
+  String get ehSearchClose => 'Close search';
+
+  @override
+  String get ehNoMatches => 'No matching turns';
+
+  @override
+  String get ehCopyTurn => 'Copy turn';
+
+  @override
+  String get ehShareTurn => 'Share turn';
+
+  @override
+  String get ehReviewDiff => 'Review diff';
+
+  @override
+  String get ehRevertThisTurn => 'Revert this turn';
+
+  @override
+  String get ehWorking => 'Working';
+
+  @override
+  String get ehCompleted => 'Completed';
+
+  @override
+  String get ehUpdate => 'Update';
+
+  @override
+  String ehToolLabel(String name) {
+    return 'Tool: $name';
+  }
+
+  @override
+  String ehMatchCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count matches',
+      one: '1 match',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get termMore => 'More…';
+
+  @override
+  String get termCompactContext => 'Compact context';
+
+  @override
+  String get termUpdatePlan => 'Show or update plan';
+
+  @override
+  String get termHarnessStatus => 'Harness status';
+
+  @override
+  String get termPiActions => 'Pi actions';
+
+  @override
+  String get termHarnessActions => 'envoy-harness actions';
+
+  @override
+  String get termPreviousCommand => 'Previous command';
+
+  @override
+  String get termNextCommand => 'Next command';
+
+  @override
+  String get termCursorLeft => 'Move cursor left';
+
+  @override
+  String get termCursorRight => 'Move cursor right';
+
+  @override
+  String get termEnterKey => 'Enter key';
 }

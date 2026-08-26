@@ -1,13 +1,18 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../eh/eh_timeline.dart';
 import '../../eh/eh_turn_queue.dart';
+import '../../eh/envoy_harness_history.dart';
 import '../../ext_agent/envoy_harness_slash_commands.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../widgets/chat/slash_command_suggest.dart';
+import '../../widgets/eh/envoy_harness_terminal_chrome.dart';
 
 /// Envoy Harness coding chat — multi-turn agent thread per project folder.
 class EnvoyHarnessChatScreen extends ConsumerStatefulWidget {
@@ -28,15 +33,23 @@ class EnvoyHarnessChatScreen extends ConsumerStatefulWidget {
 }
 
 class _EhMessage {
-  _EhMessage({required this.role, required this.text, this.streaming = false});
+  _EhMessage({
+    required this.id,
+    required this.role,
+    required this.text,
+    this.streaming = false,
+  });
+  final String id;
   final String role;
   String text;
   bool streaming;
 }
 
-class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen> {
+class _EnvoyHarnessChatScreenState
+    extends ConsumerState<EnvoyHarnessChatScreen> {
   final List<_EhMessage> _messages = [];
   final TextEditingController _controller = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _loading = true;
   String? _error;
@@ -46,18 +59,64 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
   Map<String, dynamic>? _status;
   EhTurnQueue? _queue;
   final List<void Function()> _unsubs = [];
+  late EhTimelineState _timeline;
+  Timer? _draftSaveTimer;
+  bool _searching = false;
+  bool _searchTelemetryActive = false;
 
   bool get _busy => _queue?.busy ?? false;
+  List<Map<String, dynamic>> get _nonMessageTimeline => _timeline.items
+      .where(
+        (item) =>
+            item['type'] != 'message' && item['type'] != 'activity',
+      )
+      .toList(growable: false);
 
   @override
   void initState() {
     super.initState();
-    _controller.addListener(() => setState(() {}));
+    _timeline = EhTimelineState(chatId: widget.chatId ?? '__envoy_harness__');
+    _controller.addListener(_onDraftChanged);
+    _searchController.addListener(_onSearchChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _wireQueue();
+      unawaited(_restoreComposerState());
       unawaited(_loadHistory());
       unawaited(_refreshStatus());
     });
+  }
+
+  void _onSearchChanged() {
+    if (!mounted) return;
+    final active = _searchController.text.trim().isNotEmpty;
+    setState(() {});
+    if (active && !_searchTelemetryActive) {
+      final count = _messages
+          .where(
+            (message) => message.text.toLowerCase().contains(
+              _searchController.text.trim().toLowerCase(),
+            ),
+          )
+          .length;
+      _recordUx('search_used', resultCount: count);
+    }
+    _searchTelemetryActive = active;
+  }
+
+  void _recordUx(String action, {String? outcome, int? resultCount}) {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    unawaited(
+      client
+          .recordEnvoyHarnessUxEvent({
+            'action': action,
+            'surface': 'envoygo',
+            if (outcome != null) 'outcome': outcome,
+            if (resultCount != null) 'resultCount': resultCount,
+            'occurredAt': DateTime.now().toUtc().toIso8601String(),
+          })
+          .catchError((_) {}),
+    );
   }
 
   void _wireQueue() {
@@ -81,7 +140,13 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
       },
       onUserTurn: (text) {
         setState(() {
-          _messages.add(_EhMessage(role: 'user', text: text));
+          _messages.add(
+            _EhMessage(
+              id: 'local-user-${DateTime.now().microsecondsSinceEpoch}',
+              role: 'user',
+              text: text,
+            ),
+          );
           _error = null;
           _systemMessage = null;
         });
@@ -90,30 +155,58 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
       onAssistantTurn: (text, turnId) {
         setState(() {
           final streaming = _findStreaming();
-          if (streaming != null) {
+          final trimmed = _stripThinking(text).trim();
+          if (trimmed.isEmpty) {
+            // Thinking-only / empty completion: never leave a blank
+            // assistant row, and never touch the user bubble above it.
+            if (streaming != null) _messages.remove(streaming);
+            _systemMessage =
+                'envoy-harness finished without a visible reply. Your message is still here — try again or rephrase.';
+            _systemIsError = false;
+          } else if (streaming != null) {
             streaming
-              ..text = text
+              ..text = trimmed
               ..streaming = false;
           } else {
-            _messages.add(_EhMessage(role: 'assistant', text: text));
+            _messages.add(
+              _EhMessage(id: turnId, role: 'assistant', text: trimmed),
+            );
           }
         });
         _scrollToEnd();
       },
       onAssistantStreaming: (text, turnId) {
+        // Don't paint thinking-only tokens as the reply bubble.
+        final visible = _stripThinking(text);
+        if (visible.isEmpty) return;
         setState(() {
           final streaming = _findStreaming();
           if (streaming != null) {
-            streaming.text = text;
+            streaming.text = visible;
           } else {
             _messages.add(
-              _EhMessage(role: 'assistant', text: text, streaming: true),
+              _EhMessage(
+                id: turnId,
+                role: 'assistant',
+                text: visible,
+                streaming: true,
+              ),
             );
           }
         });
         _scrollToEnd();
       },
       onSystem: (text, {bool error = false}) {
+        // On failure, drop any empty/thinking streaming bubble so the
+        // transcript doesn't look like the reply vanished into a blank row.
+        setState(() {
+          final streaming = _findStreaming();
+          if (streaming != null &&
+              (streaming.text.trim().isEmpty ||
+                  _stripThinking(streaming.text).isEmpty)) {
+            _messages.remove(streaming);
+          }
+        });
         _setSystem(text, error: error);
       },
       onTurnStart: () {
@@ -125,18 +218,75 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
     );
     queue.addListener(() {
       if (mounted) setState(() {});
+      unawaited(_persistQueue());
     });
     _queue = queue;
-    _unsubs.add(client.on('eh:turn_complete', (data) {
-      if (data is Map) queue.handleTurnComplete(data);
-    }));
-    _unsubs.add(client.on('eh:turn_token', (data) {
-      if (data is Map) queue.handleTurnToken(data);
-    }));
-    _unsubs.add(client.on('eh:prompt_busy', (data) {
-      if (data is Map) queue.handlePromptBusy(data);
-    }));
+    _unsubs.add(
+      client.on('eh:turn_complete', (data) {
+        if (data is Map) queue.handleTurnComplete(data);
+      }),
+    );
+    _unsubs.add(
+      client.on('eh:turn_token', (data) {
+        if (data is Map) queue.handleTurnToken(data);
+      }),
+    );
+    _unsubs.add(
+      client.on('eh:prompt_busy', (data) {
+        if (data is Map) queue.handlePromptBusy(data);
+      }),
+    );
+    _unsubs.add(
+      client.on('eh:timeline', (data) {
+        if (data is! Map) return;
+        final next = reduceEhTimeline(
+          _timeline,
+          Map<String, dynamic>.from(data),
+        );
+        if (!identical(next, _timeline) && mounted) {
+          setState(() => _timeline = next);
+          _scrollToEnd();
+        }
+      }),
+    );
     unawaited(_recoverTurnStatus());
+  }
+
+  String get _composerStorageKey =>
+      'envoy_harness_composer_${widget.chatId ?? widget.threadId}';
+
+  void _onDraftChanged() {
+    if (mounted) setState(() {});
+    _draftSaveTimer?.cancel();
+    _draftSaveTimer = Timer(const Duration(milliseconds: 250), () async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('${_composerStorageKey}_draft', _controller.text);
+    });
+  }
+
+  Future<void> _persistQueue() async {
+    final queue = _queue;
+    if (queue == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      '${_composerStorageKey}_queue',
+      queue.queue.map((item) => item.text).toList(),
+    );
+  }
+
+  Future<void> _restoreComposerState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final draft = prefs.getString('${_composerStorageKey}_draft');
+    final queued =
+        prefs.getStringList('${_composerStorageKey}_queue') ?? const [];
+    if (!mounted) return;
+    if (draft != null && _controller.text.isEmpty) _controller.text = draft;
+    final queue = _queue;
+    if (queue != null && queue.queue.isEmpty) {
+      for (final text in queued) {
+        queue.enqueue(text);
+      }
+    }
   }
 
   _EhMessage? _findStreaming() {
@@ -144,6 +294,47 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
       if (_messages[i].streaming) return _messages[i];
     }
     return null;
+  }
+
+  /// Strip `<think>` / `<thinking>` wrappers so stream tokens don't become
+  /// a blank-looking final bubble after the host strips them.
+  static final RegExp _thinkingBlock = RegExp(
+    r'<(?:redacted_thinking|thinking|think)>[\s\S]*?</(?:redacted_thinking|thinking|think)>',
+    caseSensitive: false,
+  );
+  static final RegExp _thinkingUnclosed = RegExp(
+    r'<(?:redacted_thinking|thinking|think)>[\s\S]*$',
+    caseSensitive: false,
+  );
+
+  String _stripThinking(String text) {
+    return text
+        .replaceAll(_thinkingBlock, '')
+        .replaceAll(_thinkingUnclosed, '')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
+  }
+
+  /// Keep optimistic local messages (esp. the in-flight user turn) when a
+  /// late history RPC would otherwise wipe them.
+  List<_EhMessage> _mergeHistoryWithLocal(
+    List<_EhMessage> incoming,
+    List<_EhMessage> local,
+  ) {
+    if (local.isEmpty) return incoming;
+    if (incoming.isEmpty) return local;
+    final covered = {
+      for (final m in incoming) '${m.role}\0${m.text}',
+    };
+    final extras = <_EhMessage>[];
+    for (var i = local.length - 1; i >= 0; i--) {
+      final m = local[i];
+      final key = '${m.role}\0${m.text}';
+      if (covered.contains(key)) break;
+      extras.insert(0, m);
+    }
+    if (extras.isEmpty) return incoming;
+    return [...incoming, ...extras];
   }
 
   void _scrollToEnd() {
@@ -162,8 +353,13 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
     for (final u in _unsubs) {
       u();
     }
+    _draftSaveTimer?.cancel();
+    _controller.removeListener(_onDraftChanged);
     _queue?.dispose();
     _controller.dispose();
+    _searchController
+      ..removeListener(_onSearchChanged)
+      ..dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -206,9 +402,7 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
       if (mounted) {
         setState(() => _status = s);
         final mode = s['autoRunPolicy']?.toString() ?? policy;
-        final when = _busy
-            ? ' Applies from the next turn.'
-            : '';
+        final when = _busy ? ' Applies from the next turn.' : '';
         if (mode == 'off' || mode == 'never') {
           _setSystem(
             'Permission policy → Always approve: every tool auto-runs with no '
@@ -216,9 +410,7 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
             'you fully trust.$when',
           );
         } else {
-          _setSystem(
-            'Permission policy → ${_policyLabel(mode)}.$when',
-          );
+          _setSystem('Permission policy → ${_policyLabel(mode)}.$when');
         }
       }
     } catch (e) {
@@ -239,6 +431,82 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
     } catch (_) {}
   }
 
+  Future<void> _copyMessage(_EhMessage msg) async {
+    await Clipboard.setData(ClipboardData(text: msg.text));
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(l10n.commonCopied)),
+    );
+  }
+
+  Future<void> _deleteMessage(_EhMessage msg) async {
+    if (msg.streaming) return;
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.chatDeleteMessageTitle),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.commonCancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(l10n.commonDelete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+
+    // Optimistic remove; restore from history if the RPC fails.
+    final snapshot = List<_EhMessage>.from(_messages);
+    setState(() => _messages.removeWhere((m) => m.id == msg.id));
+
+    try {
+      var turnId = msg.id;
+      if (!turnId.startsWith('eh-msg-')) {
+        // Local/temp ids: resolve the persisted turn by role + text.
+        final history = widget.chatId != null
+            ? await client.openEnvoyHarnessChat(widget.chatId!)
+            : await client.getEnvoyHarnessChatHistory();
+        final matches = parseEnvoyHarnessHistory(history['turns'])
+            .where((t) => t.role == msg.role && t.text == msg.text)
+            .toList();
+        if (matches.isEmpty) return;
+        turnId = matches.last.id;
+      }
+      final result = await client.deleteEnvoyHarnessChatTurn(
+        turnId: turnId,
+        chatId: widget.chatId,
+      );
+      if (!mounted) return;
+      final loaded = parseEnvoyHarnessHistory(result['turns'])
+          .map(
+            (m) => _EhMessage(id: m.id, role: m.role, text: m.text),
+          )
+          .toList();
+      setState(() {
+        _messages
+          ..clear()
+          ..addAll(loaded);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _messages
+          ..clear()
+          ..addAll(snapshot);
+      });
+      _setSystem(e.toString(), error: true);
+    }
+  }
+
   Future<void> _loadHistory() async {
     final client = ref.read(nodeServiceProvider);
     if (client == null) return;
@@ -250,24 +518,31 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
       final history = widget.chatId != null
           ? await client.openEnvoyHarnessChat(widget.chatId!)
           : await client.getEnvoyHarnessChatHistory();
-      final turns = history['turns'] as List<dynamic>? ?? [];
-      final loaded = <_EhMessage>[];
-      for (final raw in turns) {
-        if (raw is! Map) continue;
-        final user = raw['user']?.toString().trim() ?? '';
-        final assistant = raw['assistant']?.toString().trim() ?? '';
-        if (user.isNotEmpty) {
-          loaded.add(_EhMessage(role: 'user', text: user));
-        }
-        if (assistant.isNotEmpty) {
-          loaded.add(_EhMessage(role: 'assistant', text: assistant));
-        }
-      }
+      final loaded = parseEnvoyHarnessHistory(history['turns'])
+          .map(
+            (message) => _EhMessage(
+              id: message.id,
+              role: message.role,
+              text: message.text,
+            ),
+          )
+          .toList();
+      // Snapshot BEFORE mutating — cascade `..clear()..addAll(merge(..., List.of(_messages)))`
+      // would merge against an already-empty list and drop the in-flight human bubble.
+      final localSnapshot = List<_EhMessage>.from(_messages);
+      final merged = _mergeHistoryWithLocal(loaded, localSnapshot);
       setState(() {
         _messages
           ..clear()
-          ..addAll(loaded);
+          ..addAll(merged);
         _loading = false;
+        _timeline = EhTimelineState(
+          chatId:
+              history['chatId']?.toString() ??
+              widget.chatId ??
+              '__envoy_harness__',
+          items: dedupeEhTimelineItems(history['timeline']),
+        );
       });
       _scrollToEnd();
     } catch (e) {
@@ -275,6 +550,145 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
         _loading = false;
         _error = e.toString();
       });
+    }
+  }
+
+  Future<void> _revertTurn(String turnId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(AppLocalizations.of(context).ehRevertTitle),
+        content: Text(AppLocalizations.of(context).ehRevertBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(AppLocalizations.of(context).commonCancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(AppLocalizations.of(context).ehRevertAction),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    _recordUx('revert_attempted');
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      final result = await client.revertEnvoyHarnessTurn(turnId);
+      if (!mounted) return;
+      if (result['reverted'] == true) {
+        _recordUx('revert_completed', outcome: 'success');
+        _setSystem(AppLocalizations.of(context).ehRevertComplete);
+        await _loadHistory();
+      } else {
+        final conflicts = (result['conflicts'] as List?)?.join(', ');
+        _recordUx(
+          conflicts == null || conflicts.isEmpty
+              ? 'revert_completed'
+              : 'revert_conflicted',
+          outcome: conflicts == null || conflicts.isEmpty
+              ? 'unavailable'
+              : 'conflict',
+        );
+        _setSystem(
+          conflicts == null || conflicts.isEmpty
+              ? AppLocalizations.of(context).ehRevertUnavailable
+              : AppLocalizations.of(context).ehRevertConflict(conflicts),
+          error: true,
+        );
+      }
+    } catch (error) {
+      _setSystem(error.toString(), error: true);
+    }
+  }
+
+  Future<void> _reviewTurn(String turnId) async {
+    _recordUx('review_opened');
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      final review = await client.getEnvoyHarnessTurnReview(turnId);
+      if (!mounted) return;
+      if (review == null) {
+        _setSystem(
+          AppLocalizations.of(context).ehReviewUnavailable,
+          error: true,
+        );
+        return;
+      }
+      final files =
+          (review['files'] as List?)?.whereType<Map>().toList() ?? const [];
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (context) => DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.85,
+          builder: (context, controller) => ListView(
+            controller: controller,
+            padding: const EdgeInsets.all(16),
+            children: [
+              Text(
+                AppLocalizations.of(context).ehReviewTitle,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 12),
+              for (final raw in files)
+                Card(
+                  child: ExpansionTile(
+                    initiallyExpanded: true,
+                    title: Text(
+                      raw['path']?.toString() ??
+                          AppLocalizations.of(context).ehReviewFile,
+                    ),
+                    subtitle: Text(
+                      raw['attribution']?.toString() == 'workspace'
+                          ? '${raw['status']?.toString() ?? 'modified'} · ${AppLocalizations.of(context).ehReviewOnly}'
+                          : raw['status']?.toString() ?? 'modified',
+                    ),
+                    trailing: raw['status']?.toString() == 'deleted'
+                        ? null
+                        : IconButton(
+                            tooltip: AppLocalizations.of(
+                              context,
+                            ).ehReviewOpenFile,
+                            icon: const Icon(Icons.open_in_new),
+                            onPressed: () => unawaited(() async {
+                              try {
+                                await client.openEnvoyHarnessFile(
+                                  raw['path'].toString(),
+                                  chatId: widget.chatId,
+                                );
+                              } catch (error) {
+                                if (mounted) {
+                                  _setSystem(error.toString(), error: true);
+                                }
+                              }
+                            }()),
+                          ),
+                    childrenPadding: const EdgeInsets.all(12),
+                    children: [
+                      SelectableText(
+                        raw['diff']?.toString() ??
+                            AppLocalizations.of(
+                              context,
+                            ).ehReviewDiffUnavailable,
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    } catch (error) {
+      _setSystem(error.toString(), error: true);
     }
   }
 
@@ -356,8 +770,9 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
 
     if (slash == 'cluster') {
       try {
-        final cluster =
-            await client.invokeEnvoyHarnessEhui({'op': 'clusterStatus'});
+        final cluster = await client.invokeEnvoyHarnessEhui({
+          'op': 'clusterStatus',
+        });
         _setSystem(formatEhClusterStatus(cluster));
       } catch (e) {
         _setSystem(e.toString(), error: true);
@@ -379,8 +794,9 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
 
     if (slash == 'trace') {
       try {
-        final events =
-            await client.invokeEnvoyHarnessEhui({'op': 'discoverySnapshot'});
+        final events = await client.invokeEnvoyHarnessEhui({
+          'op': 'discoverySnapshot',
+        });
         _setSystem(formatEhDiscoveryEvents(events));
       } catch (e) {
         _setSystem(e.toString(), error: true);
@@ -401,8 +817,9 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
           final m = _messages[i];
           if (m.text.toLowerCase().contains(needle)) {
             final preview = m.text.replaceAll(RegExp(r'\s+'), ' ').trim();
-            final short =
-                preview.length > 180 ? '${preview.substring(0, 180)}…' : preview;
+            final short = preview.length > 180
+                ? '${preview.substring(0, 180)}…'
+                : preview;
             matches.add('[${i + 1}] (${m.role}) $short');
           }
         }
@@ -491,8 +908,9 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
     }
 
     // While busy, default send becomes queue (Social composer behavior).
-    final effective =
-        queue.busy && mode == EhSubmitMode.send ? EhSubmitMode.queue : mode;
+    final effective = queue.busy && mode == EhSubmitMode.send
+        ? EhSubmitMode.queue
+        : mode;
     _controller.clear();
     await queue.submit(text, effective);
   }
@@ -502,19 +920,19 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
     if (!isEnvoyHarnessSlashSuggestInput(value)) {
       return const SizedBox.shrink();
     }
-    final hits =
-        filterEnvoyHarnessSlashCommands(envoyHarnessSlashCommands, value);
+    final hits = filterEnvoyHarnessSlashCommands(
+      envoyHarnessSlashCommands,
+      value,
+    );
     if (hits.isEmpty) return const SizedBox.shrink();
-    final items = hits
-        .map((c) {
-          final slash = c['slash']?.toString() ?? '';
-          final args = (c['argsHint'] as String?)?.trim();
-          return (
-            primary: args == null || args.isEmpty ? slash : '$slash $args',
-            summary: c['summary']?.toString() ?? '',
-          );
-        })
-        .toList();
+    final items = hits.map((c) {
+      final slash = c['slash']?.toString() ?? '';
+      final args = (c['argsHint'] as String?)?.trim();
+      return (
+        primary: args == null || args.isEmpty ? slash : '$slash $args',
+        summary: c['summary']?.toString() ?? '',
+      );
+    }).toList();
     return SlashCommandSuggest(
       items: items,
       highlightIndex: _slashHighlight,
@@ -554,12 +972,17 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
             ),
             ...queue.queue.map((item) {
               final preview = item.text.replaceAll(RegExp(r'\s+'), ' ').trim();
-              final short =
-                  preview.length > 80 ? '${preview.substring(0, 80)}…' : preview;
+              final short = preview.length > 80
+                  ? '${preview.substring(0, 80)}…'
+                  : preview;
               return ListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                title: Text(short, maxLines: 2, overflow: TextOverflow.ellipsis),
+                title: Text(
+                  short,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 trailing: IconButton(
                   icon: const Icon(Icons.close, size: 18),
                   onPressed: () => queue.removeFromQueue(item.id),
@@ -576,10 +999,36 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
+    final transcriptQuery = _searchController.text.trim().toLowerCase();
+    final transcriptMatches = transcriptQuery.isEmpty
+        ? _messages
+        : _messages
+              .where(
+                (message) =>
+                    message.text.toLowerCase().contains(transcriptQuery),
+              )
+              .toList();
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.displayName),
+        title: _searching
+            ? TextField(
+                controller: _searchController,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: l10n.ehSearchTranscript,
+                  border: InputBorder.none,
+                ),
+              )
+            : Text(widget.displayName),
         actions: [
+          IconButton(
+            tooltip: _searching ? l10n.ehSearchClose : l10n.ehSearchTranscript,
+            icon: Icon(_searching ? Icons.close : Icons.search),
+            onPressed: () => setState(() {
+              _searching = !_searching;
+              if (!_searching) _searchController.clear();
+            }),
+          ),
           PopupMenuButton<String>(
             tooltip: 'Permission policy',
             onSelected: (value) => unawaited(_changePolicy(value)),
@@ -592,10 +1041,7 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
                 value: 'always-confirm',
                 child: Text('Always ask'),
               ),
-              const PopupMenuItem(
-                value: 'off',
-                child: Text('Always approve'),
-              ),
+              const PopupMenuItem(value: 'off', child: Text('Always approve')),
             ],
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -622,9 +1068,52 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
               ),
             ),
         ],
+        bottom: _searching
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(28),
+                child: Semantics(
+                  liveRegion: true,
+                  label: l10n.ehMatchCount(transcriptMatches.length),
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      l10n.ehMatchCount(transcriptMatches.length),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ),
+              )
+            : null,
       ),
       body: Column(
         children: [
+          if (_timeline.agentState != null)
+            Container(
+              width: double.infinity,
+              color: scheme.surfaceContainerHighest,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+              child: Row(
+                children: [
+                  Icon(Icons.circle, size: 8, color: scheme.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    _timeline.agentState!['label']?.toString() ?? 'Working',
+                    style: Theme.of(context).textTheme.labelMedium,
+                  ),
+                  if (_timeline.agentState!['activitySummary'] != null) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _timeline.agentState!['activitySummary'].toString(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           if (_error != null)
             Material(
               color: scheme.errorContainer,
@@ -654,39 +1143,106 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
                 ),
               ),
             ),
+          EnvoyHarnessTerminalChrome(
+            chatId: widget.chatId,
+            showCommandRails: false,
+            onSendToTerminal: (text) {
+              final value = text.trim();
+              if (value.isEmpty) return;
+              _controller.text = value;
+              unawaited(_send());
+            },
+          ),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(12),
-                    itemCount: _messages.length,
-                    itemBuilder: (context, index) {
-                      final msg = _messages[index];
-                      final isUser = msg.role == 'user';
-                      return Align(
-                        alignment: isUser
-                            ? Alignment.centerRight
-                            : Alignment.centerLeft,
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          constraints: BoxConstraints(
-                            maxWidth: MediaQuery.sizeOf(context).width * 0.85,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isUser
-                                ? scheme.primaryContainer
-                                : scheme.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: SelectableText(
-                            msg.streaming ? '${msg.text}▍' : msg.text,
-                          ),
-                        ),
+                : Builder(
+                    builder: (context) {
+                      final query = transcriptQuery;
+                      final visibleMessages = transcriptMatches;
+                      if (query.isNotEmpty && visibleMessages.isEmpty) {
+                        return Center(child: Text(l10n.ehNoMatches));
+                      }
+                      return ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.all(12),
+                        itemCount:
+                            visibleMessages.length +
+                            (query.isEmpty ? _nonMessageTimeline.length : 0),
+                        itemBuilder: (context, index) {
+                          if (index >= visibleMessages.length) {
+                            return _MobileTimelineCard(
+                              item:
+                                  _nonMessageTimeline[index -
+                                      visibleMessages.length],
+                              onReview: (turnId) =>
+                                  unawaited(_reviewTurn(turnId)),
+                              onRevert: (turnId) =>
+                                  unawaited(_revertTurn(turnId)),
+                            );
+                          }
+                          final msg = visibleMessages[index];
+                          final isUser = msg.role == 'user';
+                          return Align(
+                            alignment: isUser
+                                ? Alignment.centerRight
+                                : Alignment.centerLeft,
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth:
+                                    MediaQuery.sizeOf(context).width * 0.85,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: isUser
+                                    ? CrossAxisAlignment.end
+                                    : CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    margin: const EdgeInsets.only(bottom: 2),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: isUser
+                                          ? scheme.primaryContainer
+                                          : scheme.surfaceContainerHighest,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: _CodingMessageBody(
+                                      text: msg.streaming
+                                          ? '${msg.text}▍'
+                                          : msg.text,
+                                      assistant: !isUser,
+                                    ),
+                                  ),
+                                  if (!msg.streaming)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 2),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          _EhBubbleIconButton(
+                                            icon: Icons.content_copy,
+                                            tooltip: l10n.ehCopyTurn,
+                                            onPressed: () =>
+                                                unawaited(_copyMessage(msg)),
+                                          ),
+                                          _EhBubbleIconButton(
+                                            icon: Icons.delete_outline,
+                                            tooltip: l10n.commonDelete,
+                                            onPressed: () =>
+                                                unawaited(_deleteMessage(msg)),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  const SizedBox(height: 6),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
                       );
                     },
                   ),
@@ -705,8 +1261,8 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
                   Text(
                     'Send queues next',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
@@ -733,9 +1289,8 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
                         suffixIcon: IconButton(
                           icon: const Icon(Icons.help_outline),
                           tooltip: l10n.termQuickHelp,
-                          onPressed: () => unawaited(
-                            _handleSlashCommand('/help'),
-                          ),
+                          onPressed: () =>
+                              unawaited(_handleSlashCommand('/help')),
                         ),
                       ),
                       onSubmitted: (_) => unawaited(_send()),
@@ -755,6 +1310,202 @@ class _EnvoyHarnessChatScreenState extends ConsumerState<EnvoyHarnessChatScreen>
                   ),
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileTimelineCard extends StatelessWidget {
+  const _MobileTimelineCard({required this.item, this.onReview, this.onRevert});
+
+  final Map<String, dynamic> item;
+  final ValueChanged<String>? onReview;
+  final ValueChanged<String>? onRevert;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final type = item['type']?.toString();
+    final status = item['status']?.toString();
+    final scheme = Theme.of(context).colorScheme;
+    final icon = status == 'failed'
+        ? Icons.error_outline
+        : status == 'running'
+        ? Icons.sync
+        : type == 'changes'
+        ? Icons.difference_outlined
+        : Icons.check_circle_outline;
+    final title = switch (type) {
+      'activity' => item['summary']?.toString() ?? l10n.ehWorking,
+      'changes' => '${(item['files'] as List?)?.length ?? 0} file(s) changed',
+      'completion' => item['summary']?.toString() ?? l10n.ehCompleted,
+      _ => item['message']?.toString() ?? type ?? l10n.ehUpdate,
+    };
+    final files =
+        (item['files'] as List?)?.map((value) => '$value').toList() ??
+        const <String>[];
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      color: status == 'failed'
+          ? scheme.errorContainer
+          : scheme.surfaceContainerLow,
+      child: ExpansionTile(
+        leading: Icon(icon, size: 20),
+        title: Text(title, style: Theme.of(context).textTheme.bodyMedium),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        children: [
+          if (item['toolName'] != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(l10n.ehToolLabel(item['toolName'].toString())),
+            ),
+          for (final file in files)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                file,
+                style: const TextStyle(fontFamily: 'monospace'),
+              ),
+            ),
+          if (type == 'changes' && item['turnId'] != null && onRevert != null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Wrap(
+                children: [
+                  if (onReview != null)
+                    TextButton.icon(
+                      onPressed: () => onReview!(item['turnId'].toString()),
+                      icon: const Icon(Icons.rate_review_outlined),
+                      label: Text(l10n.ehReviewDiff),
+                    ),
+                  TextButton.icon(
+                    onPressed: () => onRevert!(item['turnId'].toString()),
+                    icon: const Icon(Icons.undo),
+                    label: Text(l10n.ehRevertThisTurn),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Compact icon-only action (matches Social chat bubble copy/delete).
+class _EhBubbleIconButton extends StatelessWidget {
+  const _EhBubbleIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: Icon(
+              icon,
+              size: 16,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Lightweight coding-agent renderer: prose remains selectable while fenced
+/// code and diffs get a distinct monospace surface and copy affordance.
+class _CodingMessageBody extends StatelessWidget {
+  const _CodingMessageBody({required this.text, required this.assistant});
+
+  final String text;
+  final bool assistant;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!assistant || !text.contains('```')) return SelectableText(text);
+    final chunks = text.split('```');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < chunks.length; i++)
+          if (chunks[i].trim().isNotEmpty)
+            i.isEven
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: SelectableText(chunks[i].trim()),
+                  )
+                : _CodeBlock(raw: chunks[i]),
+      ],
+    );
+  }
+}
+
+class _CodeBlock extends StatelessWidget {
+  const _CodeBlock({required this.raw});
+
+  final String raw;
+
+  @override
+  Widget build(BuildContext context) {
+    final firstBreak = raw.indexOf('\n');
+    final language = firstBreak < 0 ? '' : raw.substring(0, firstBreak).trim();
+    final code = (firstBreak < 0 ? raw : raw.substring(firstBreak + 1))
+        .trimRight();
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 5),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              if (language.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(left: 10),
+                  child: Text(
+                    language,
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
+                ),
+              const Spacer(),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Copy code',
+                icon: const Icon(Icons.copy, size: 17),
+                onPressed: () => Clipboard.setData(ClipboardData(text: code)),
+              ),
+            ],
+          ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+            child: SelectableText(
+              code,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
             ),
           ),
         ],

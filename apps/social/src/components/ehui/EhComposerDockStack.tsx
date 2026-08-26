@@ -32,6 +32,7 @@ export interface EhComposerDockStackProps {
   onRemoveAttached?: (path: string) => void
   changedFiles: readonly string[]
   onReviewChanges?: () => void
+  onRevertChanges?: () => void
   onDismissChanges?: () => void
   composer?: ReactNode
 }
@@ -55,6 +56,7 @@ export function EhComposerDockStack({
   onRemoveAttached,
   changedFiles,
   onReviewChanges,
+  onRevertChanges,
   onDismissChanges,
   composer,
 }: EhComposerDockStackProps) {
@@ -82,6 +84,7 @@ export function EhComposerDockStack({
       <EhChangesDock
         files={changedFiles}
         onReview={onReviewChanges}
+        onRevert={onRevertChanges}
         onDismiss={onDismissChanges}
       />
       {turnHints ? (

@@ -1919,6 +1919,9 @@ export interface NodeServiceEvents {
   "eh:turn_complete": import("./eh-turn.js").EhTurnCompleteEvent;
   "eh:permission": import("./eh-permission.js").EhPermissionEvent;
   "eh:files_changed": import("./eh-files-changed.js").EhFilesChangedEvent;
+  /** Shared semantic timeline update (parallel to legacy events during migration). */
+  "eh:timeline": import("./eh-timeline.js").EhTimelineUpdate;
+  "eh:ux_telemetry": import("./eh-ux-telemetry.js").EhUxTelemetryEvent;
 
   /** Home terminal PTY tunnel bytes (Phase 30E — mobile HomeRemote). */
   "homeTerminalWs:rx": import("./home-remote.js").HomeTerminalWsRxEvent;
@@ -3107,6 +3110,30 @@ export interface NodeService {
 
   /** Close a chat thread (does not delete persisted JSONL). */
   removeEnvoyHarnessChat(chatId: string): Promise<{ removed: boolean }>;
+
+  /** Delete a persisted display turn and any dependent tool exchange. */
+  deleteEnvoyHarnessChatTurn(opts: {
+    turnId: string;
+    chatId?: string;
+  }): Promise<import("./eh-chat-history.js").EhChatHistory & { deleted: boolean }>;
+
+  /** Load the file review captured for a completed turn. */
+  getEnvoyHarnessTurnReview(
+    turnId: string,
+  ): Promise<import("./eh-turn-review.js").EhTurnReview | null>;
+
+  /** Restore files to their pre-turn contents, refusing later-edit conflicts. */
+  revertEnvoyHarnessTurn(
+    turnId: string,
+  ): Promise<import("./eh-turn-review.js").EhRevertTurnResult>;
+
+  /** Open a changed file inside the selected Envoy Harness project. */
+  openEnvoyHarnessFile(params: { path: string; chatId?: string }): Promise<void>;
+
+  /** Commands supported by the running Envoy Harness terminal/runtime surface. */
+  getEnvoyHarnessCommandCatalog(): Promise<ExtAgentCommandCatalog>;
+  /** Record content-free UX metrics. Prompts, paths, and diffs are rejected by type. */
+  recordEnvoyHarnessUxEvent(event: import("./eh-ux-telemetry.js").EhUxTelemetryEvent): Promise<void>;
 
   /**
    * Start a fresh harness session for the current project ( `/new` in chat ).

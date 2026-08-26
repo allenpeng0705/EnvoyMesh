@@ -298,6 +298,7 @@ export class WsServer {
         "eh:files_changed",
         "eh:permission",
         "eh:user_question",
+        "eh:timeline",
       ] as const) {
         nodeServiceImpl.on(name, (data: unknown) => this.emitEvent(name, data));
       }
@@ -633,6 +634,7 @@ export class WsServer {
       "eh:files_changed",
       "eh:permission",
       "eh:user_question",
+      "eh:timeline",
       // Phase 38 — voice/video call events
       "call:incoming",
       "call:reinvite",

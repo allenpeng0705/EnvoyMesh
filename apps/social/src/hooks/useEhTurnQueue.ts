@@ -82,14 +82,25 @@ export function useEhTurnQueue(options: UseEhTurnQueueOptions) {
   const finishTurnFromReconnect = useCallback(
     async (event: EhTurnCompleteEvent) => {
       const generation = runGenerationRef.current
-      if (event.ok && event.text) {
+      if (event.cancelled === true) {
+        // Cancelled: do not paint an assistant bubble.
+      } else if (event.ok) {
+        // Always notify — empty text lets the panel drop a thinking-only
+        // stream bubble while keeping the human message above it.
         optionsRef.current.onAssistantTurn?.(
-          event.text,
+          event.text ?? "",
           assistantTurnId(event.turnId),
           event,
         )
-      } else if (event.cancelled !== true && event.error) {
-        optionsRef.current.onSystem?.(event.error, "error")
+      } else {
+        optionsRef.current.onAssistantTurn?.(
+          "",
+          assistantTurnId(event.turnId),
+          event,
+        )
+        if (event.error) {
+          optionsRef.current.onSystem?.(event.error, "error")
+        }
       }
       if (generation !== runGenerationRef.current) return
       setBusySafe(false)
@@ -163,6 +174,10 @@ export function useEhTurnQueue(options: UseEhTurnQueueOptions) {
       activeTurnIdRef.current = status.turnId
       busyRef.current = true
       setBusy(true)
+      // Restore the in-flight human bubble after a remount/history wipe.
+      if (status.userPrompt && status.userPrompt.trim().length > 0) {
+        optionsRef.current.onUserTurn?.(status.userPrompt)
+      }
       if (status.streamingText && status.streamingText.length > 0) {
         optionsRef.current.onAssistantStreaming?.(
           status.streamingText,
@@ -253,9 +268,11 @@ export function useEhTurnQueue(options: UseEhTurnQueueOptions) {
       try {
         const result = await waitForTurn(turnId)
         if (generation !== runGenerationRef.current) return
-        if (result.ok && result.text) {
+        // Always notify on success — including empty text — so the panel
+        // can clear a thinking-only stream without dropping the user turn.
+        if (result.ok) {
           optionsRef.current.onAssistantTurn?.(
-            result.text,
+            result.text ?? "",
             assistantTurnId(turnId),
             result,
           )
@@ -267,6 +284,16 @@ export function useEhTurnQueue(options: UseEhTurnQueueOptions) {
           msg !== "envoy_harness_cancelled" &&
           !msg.toLowerCase().includes("cancel")
         ) {
+          // Clear any thinking-only stream bubble on failure too.
+          optionsRef.current.onAssistantTurn?.(
+            "",
+            assistantTurnId(turnId),
+            {
+              turnId,
+              ok: false,
+              error: msg,
+            },
+          )
           optionsRef.current.onSystem?.(msg, "error")
         }
       } finally {

@@ -13,9 +13,13 @@ class EnvoyHarnessTerminalChrome extends ConsumerStatefulWidget {
   const EnvoyHarnessTerminalChrome({
     super.key,
     required this.onSendToTerminal,
+    this.chatId,
+    this.showCommandRails = true,
   });
 
   final void Function(String text) onSendToTerminal;
+  final String? chatId;
+  final bool showCommandRails;
 
   @override
   ConsumerState<EnvoyHarnessTerminalChrome> createState() =>
@@ -53,55 +57,69 @@ class _EnvoyHarnessTerminalChromeState
   bool _matchesChat(dynamic data) {
     if (data is! Map) return true;
     final eventChatId = data['chatId']?.toString();
-    if (_terminalChatId == null || eventChatId == null) return true;
-    return eventChatId == _terminalChatId;
+    final expected = widget.chatId ?? _terminalChatId;
+    if (expected != null) return eventChatId == expected;
+    // Before a terminal has resolved its workspace chat, only accept legacy
+    // unscoped events. This prevents another open chat's approval from being
+    // answered in the wrong terminal.
+    return eventChatId == null;
   }
 
   void _wireEvents() {
     final client = ref.read(nodeServiceProvider);
     if (client == null) return;
 
-    _unsubs.add(client.on('eh:user_question', (data) {
-      if (!_matchesChat(data)) return;
-      if (data is Map) {
-        setState(() => _question = Map<String, dynamic>.from(data));
-      }
-    }));
-    _unsubs.add(client.on('eh:permission', (data) {
-      if (!_matchesChat(data)) return;
-      if (data is Map) {
-        setState(() => _permission = Map<String, dynamic>.from(data));
-      }
-    }));
-    _unsubs.add(client.on('eh:turn_hints', (data) {
-      if (!_matchesChat(data)) return;
-      if (data is Map) {
-        setState(() => _turnHints = Map<String, dynamic>.from(data));
-      }
-    }));
-    _unsubs.add(client.on('eh:prompt_busy', (data) {
-      if (!_matchesChat(data)) return;
-      if (data is Map) {
-        final busy = data['busy'] == true;
-        setState(() {
-          _promptBusy = busy;
-          if (!busy) {
-            _activitySummary = null;
-            _question = null;
-            _permission = null;
-          }
-        });
-      }
-    }));
-    _unsubs.add(client.on('eh:activity', (data) {
-      if (!_matchesChat(data)) return;
-      if (data is Map) {
-        final summary = data['summary']?.toString().trim() ?? '';
-        if (summary.isNotEmpty) {
-          setState(() => _activitySummary = summary);
+    _unsubs.add(
+      client.on('eh:user_question', (data) {
+        if (!_matchesChat(data)) return;
+        if (data is Map) {
+          setState(() => _question = Map<String, dynamic>.from(data));
         }
-      }
-    }));
+      }),
+    );
+    _unsubs.add(
+      client.on('eh:permission', (data) {
+        if (!_matchesChat(data)) return;
+        if (data is Map) {
+          setState(() => _permission = Map<String, dynamic>.from(data));
+        }
+      }),
+    );
+    _unsubs.add(
+      client.on('eh:turn_hints', (data) {
+        if (!_matchesChat(data)) return;
+        if (data is Map) {
+          setState(() => _turnHints = Map<String, dynamic>.from(data));
+        }
+      }),
+    );
+    _unsubs.add(
+      client.on('eh:prompt_busy', (data) {
+        if (!_matchesChat(data)) return;
+        if (data is Map) {
+          final busy = data['busy'] == true;
+          setState(() {
+            _promptBusy = busy;
+            if (!busy) {
+              _activitySummary = null;
+              _question = null;
+              _permission = null;
+            }
+          });
+        }
+      }),
+    );
+    _unsubs.add(
+      client.on('eh:activity', (data) {
+        if (!_matchesChat(data)) return;
+        if (data is Map) {
+          final summary = data['summary']?.toString().trim() ?? '';
+          if (summary.isNotEmpty) {
+            setState(() => _activitySummary = summary);
+          }
+        }
+      }),
+    );
   }
 
   Future<void> _loadStatus() async {
@@ -112,9 +130,10 @@ class _EnvoyHarnessTerminalChromeState
       final cwd = status['cwd']?.toString().trim();
       setState(() {
         _projectCwd = cwd?.isNotEmpty == true ? cwd : null;
+        _terminalChatId = widget.chatId;
         _statusHint = _statusMessage(status);
       });
-      if (cwd != null && cwd.isNotEmpty) {
+      if (widget.chatId == null && cwd != null && cwd.isNotEmpty) {
         unawaited(_resolveChatId(client, cwd));
       }
     } catch (_) {}
@@ -134,7 +153,10 @@ class _EnvoyHarnessTerminalChromeState
       final chats = await client.listEnvoyHarnessChats();
       final normalized = cwd.replaceAll(RegExp(r'[/\\]+$'), '');
       for (final raw in chats) {
-        final chatCwd = raw['cwd']?.toString().replaceAll(RegExp(r'[/\\]+$'), '');
+        final chatCwd = raw['cwd']?.toString().replaceAll(
+          RegExp(r'[/\\]+$'),
+          '',
+        );
         if (chatCwd == normalized) {
           setState(() => _terminalChatId = raw['id']?.toString());
           break;
@@ -227,9 +249,9 @@ class _EnvoyHarnessTerminalChromeState
       );
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
@@ -258,19 +280,22 @@ class _EnvoyHarnessTerminalChromeState
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
               child: Text(
                 _statusHint!,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
               ),
             ),
-          if (_statusHint == null)
+          if (_statusHint == null && widget.showCommandRails)
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
                   child: Row(
                     children: [
                       for (final panel in _ehuiPanels)
@@ -295,7 +320,10 @@ class _EnvoyHarnessTerminalChromeState
                         Padding(
                           padding: const EdgeInsets.only(right: 6),
                           child: ActionChip(
-                            label: Text(cmd, style: const TextStyle(fontSize: 12)),
+                            label: Text(
+                              cmd,
+                              style: const TextStyle(fontSize: 12),
+                            ),
                             onPressed: () => widget.onSendToTerminal('$cmd\n'),
                           ),
                         ),
@@ -315,45 +343,53 @@ class _EnvoyHarnessTerminalChromeState
               ),
             ),
           if (_promptBusy || _question != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              child: Row(
-                children: [
-                  const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _question != null
-                          ? l10n.ehQuestionTitle
-                          : (_activitySummary ?? l10n.chatsEhThinking),
-                      style: Theme.of(context).textTheme.bodySmall,
+            Semantics(
+              liveRegion: true,
+              label: _question != null
+                  ? l10n.ehQuestionTitle
+                  : (_activitySummary ?? l10n.chatsEhThinking),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
+                child: Row(
+                  children: [
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
                     ),
-                  ),
-                  TextButton(
-                    onPressed: () => unawaited(_cancelTurn()),
-                    child: Text(l10n.commonCancel),
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _question != null
+                            ? l10n.ehQuestionTitle
+                            : (_activitySummary ?? l10n.chatsEhThinking),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => unawaited(_cancelTurn()),
+                      child: Text(l10n.commonCancel),
+                    ),
+                  ],
+                ),
               ),
             ),
-          if (_permission != null) _PermissionCard(
-            permission: _permission!,
-            onAllow: () => unawaited(_respondPermission(true)),
-            onDeny: () => unawaited(_respondPermission(false)),
-          ),
+          if (_permission != null)
+            _PermissionCard(
+              permission: _permission!,
+              onAllow: () => unawaited(_respondPermission(true)),
+              onDeny: () => unawaited(_respondPermission(false)),
+            ),
           if (_question != null)
             _UserQuestionCard(
               question: _question!,
-              onOption: (label, index) => unawaited(
-                _respondQuestion(value: label, optionIndex: index),
-              ),
-              onDismiss: () => unawaited(
-                _respondQuestion(value: '', cancelled: true),
-              ),
+              onOption: (label, index) =>
+                  unawaited(_respondQuestion(value: label, optionIndex: index)),
+              onDismiss: () =>
+                  unawaited(_respondQuestion(value: '', cancelled: true)),
             ),
           if (_turnHints != null)
             _TurnHintsChips(
@@ -387,17 +423,15 @@ class _EnvoyHarnessTerminalChromeState
 }
 
 class _TurnHintsChips extends StatelessWidget {
-  const _TurnHintsChips({
-    required this.hints,
-    required this.onSelect,
-  });
+  const _TurnHintsChips({required this.hints, required this.onSelect});
 
   final Map<String, dynamic> hints;
   final void Function(String text) onSelect;
 
   @override
   Widget build(BuildContext context) {
-    final followUps = (hints['followUps'] as List<dynamic>?)
+    final followUps =
+        (hints['followUps'] as List<dynamic>?)
             ?.map((e) => e.toString())
             .where((s) => s.trim().isNotEmpty)
             .toList() ??
@@ -438,44 +472,55 @@ class _PermissionCard extends StatelessWidget {
     final desc = permission['description']?.toString() ?? '';
     final preview = permission['preview']?.toString();
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(l10n.ehPermissionTitle, style: Theme.of(context).textTheme.titleSmall),
-            Text('$tool — $desc'),
-            if (preview != null && preview.trim().isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: SingleChildScrollView(
-                  child: Text(
-                    preview,
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                  ),
-                ),
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      label: '${l10n.ehPermissionTitle}. $tool. $desc',
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                l10n.ehPermissionTitle,
+                style: Theme.of(context).textTheme.titleSmall,
               ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: onDeny,
-                    child: Text(l10n.ehPermissionDeny),
+              Text('$tool — $desc'),
+              if (preview != null && preview.trim().isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: SingleChildScrollView(
+                    child: Text(
+                      preview,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: onAllow,
-                    child: Text(l10n.ehPermissionAllow),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: onDeny,
+                      child: Text(l10n.ehPermissionDeny),
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: onAllow,
+                      child: Text(l10n.ehPermissionAllow),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -497,7 +542,8 @@ class _UserQuestionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final prompt = question['prompt']?.toString() ?? '';
-    final options = (question['options'] as List<dynamic>?)
+    final options =
+        (question['options'] as List<dynamic>?)
             ?.map((e) => e.toString())
             .toList() ??
         [];
@@ -510,7 +556,10 @@ class _UserQuestionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(l10n.ehQuestionTitle, style: Theme.of(context).textTheme.titleSmall),
+            Text(
+              l10n.ehQuestionTitle,
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
             if (prompt.isNotEmpty) Text(prompt),
             if (options.isNotEmpty)
               ...options.asMap().entries.map((e) {
@@ -528,7 +577,10 @@ class _UserQuestionCard extends StatelessWidget {
             else
               Align(
                 alignment: Alignment.centerRight,
-                child: TextButton(onPressed: onDismiss, child: Text(l10n.commonCancel)),
+                child: TextButton(
+                  onPressed: onDismiss,
+                  child: Text(l10n.commonCancel),
+                ),
               ),
           ],
         ),

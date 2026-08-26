@@ -140,6 +140,12 @@ const CODING_GATED_RPC = new Set<string>([
   "createEnvoyHarnessChat",
   "openEnvoyHarnessChat",
   "removeEnvoyHarnessChat",
+  "deleteEnvoyHarnessChatTurn",
+  "getEnvoyHarnessTurnReview",
+  "revertEnvoyHarnessTurn",
+  "openEnvoyHarnessFile",
+  "getEnvoyHarnessCommandCatalog",
+  "recordEnvoyHarnessUxEvent",
   "resetEnvoyHarnessChat",
   "getEnvoyHarnessStatus",
   "setEnvoyHarnessProjectPath",
@@ -1333,6 +1339,24 @@ export async function routeRpcMethod(
       return ns.openEnvoyHarnessChat(String(params.chatId ?? ""));
     case "removeEnvoyHarnessChat":
       return ns.removeEnvoyHarnessChat(String(params.chatId ?? ""));
+    case "deleteEnvoyHarnessChatTurn":
+      return ns.deleteEnvoyHarnessChatTurn({
+        turnId: String(params.turnId ?? ""),
+        ...(typeof params.chatId === "string" ? { chatId: params.chatId } : {}),
+      });
+    case "getEnvoyHarnessTurnReview":
+      return ns.getEnvoyHarnessTurnReview(String(params.turnId ?? ""));
+    case "revertEnvoyHarnessTurn":
+      return ns.revertEnvoyHarnessTurn(String(params.turnId ?? ""));
+    case "openEnvoyHarnessFile":
+      return ns.openEnvoyHarnessFile({
+        path: String(params.path ?? ""),
+        ...(typeof params.chatId === "string" ? { chatId: params.chatId } : {}),
+      });
+    case "getEnvoyHarnessCommandCatalog":
+      return ns.getEnvoyHarnessCommandCatalog();
+    case "recordEnvoyHarnessUxEvent":
+      return ns.recordEnvoyHarnessUxEvent(params as unknown as import("@envoymesh/api").EhUxTelemetryEvent);
     case "resetEnvoyHarnessChat":
       return ns.resetEnvoyHarnessChat(
         typeof params.chatId === "string" ? params.chatId : undefined,

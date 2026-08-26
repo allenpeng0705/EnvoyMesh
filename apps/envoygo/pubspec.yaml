@@ -20,6 +20,7 @@ dependencies:
   # Storage — ^10 uses flutter_secure_storage_darwin (SwiftPM-ready).
   flutter_secure_storage: ^10.3.1
   shared_preferences: ^2.3.3
+  share_plus: ^10.1.4
   sqflite: ^2.4.2
   path: ^1.9.1
   # QR scanning (mobile only) — v7+ uses Apple Vision (arm64 simulator OK).

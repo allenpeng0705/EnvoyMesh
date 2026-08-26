@@ -926,6 +926,30 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.removeEnvoyHarnessChat(chatId);
   }
 
+  async deleteEnvoyHarnessChatTurn(opts: { turnId: string; chatId?: string }) {
+    return this._ns.deleteEnvoyHarnessChatTurn(opts);
+  }
+
+  async getEnvoyHarnessTurnReview(turnId: string) {
+    return this._ns.getEnvoyHarnessTurnReview(turnId);
+  }
+
+  async revertEnvoyHarnessTurn(turnId: string) {
+    return this._ns.revertEnvoyHarnessTurn(turnId);
+  }
+
+  async openEnvoyHarnessFile(params: { path: string; chatId?: string }) {
+    return this._ns.openEnvoyHarnessFile(params);
+  }
+
+  async getEnvoyHarnessCommandCatalog() {
+    return this._ns.getEnvoyHarnessCommandCatalog();
+  }
+
+  async recordEnvoyHarnessUxEvent(event: import("@envoymesh/api").EhUxTelemetryEvent) {
+    return this._ns.recordEnvoyHarnessUxEvent(event);
+  }
+
   async resetEnvoyHarnessChat(chatId?: string) {
     return this._ns.resetEnvoyHarnessChat(chatId);
   }

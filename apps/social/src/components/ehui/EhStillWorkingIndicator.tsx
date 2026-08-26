@@ -12,7 +12,7 @@ export interface EhStillWorkingIndicatorProps {
   waitingForUser?: boolean
   /** Latest `session/activity` summary (tool name, progress). */
   activitySummary?: string
-  /** Full activity log for this turn (sub-agents, tool calls, peers). */
+  /** @deprecated Unused — activity is a single replaceable line via activitySummary. */
   activityLog?: readonly string[]
   /** Optional cancel for long-running turns. */
   onCancel?: () => void
@@ -23,16 +23,11 @@ export function EhStillWorkingIndicator({
   active,
   waitingForUser = false,
   activitySummary,
-  activityLog,
   onCancel,
   className,
 }: EhStillWorkingIndicatorProps) {
   const t = useT()
   const showStillWorking = useStillWorking(active)
-  const log = activityLog ?? []
-  // Show the most recent lines (newest last); the live summary is the
-  // last entry, so render up to 6 behind it.
-  const tail = log.slice(-7)
 
   if (!active) return null
 
@@ -68,15 +63,6 @@ export function EhStillWorkingIndicator({
         <div className="eh-still-working-activity" title={activitySummary}>
           {activitySummary}
         </div>
-      ) : null}
-      {tail.length > 1 ? (
-        <ol className="eh-still-working-log" aria-label={t("eh.activityLog", "Activity")}>
-          {tail.slice(0, -1).map((line, i) => (
-            <li key={`${i}-${line}`} className="eh-still-working-log-line" title={line}>
-              {line}
-            </li>
-          ))}
-        </ol>
       ) : null}
       {onCancel ? (
         <div className="eh-still-working-actions">

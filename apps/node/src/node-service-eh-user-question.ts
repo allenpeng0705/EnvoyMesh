@@ -20,6 +20,8 @@ export interface EhUserQuestionEvent {
   timeoutMs: number;
   /** Discriminator for plan review vs generic ask. */
   kind?: "ask" | "plan-review" | "mode-switch";
+  chatId?: string;
+  turnId?: string;
 }
 
 export interface AcpUserQuestionBridgeEmit {
@@ -38,13 +40,18 @@ export class AcpUserQuestionBridge {
   readonly #pending = new Map<string, Pending>();
   readonly #emit: AcpUserQuestionBridgeEmit;
   readonly #timeoutMs: number;
+  readonly #onResolved: ((requestId: string, status: "answered" | "cancelled" | "expired", answer: string | undefined, chatId?: string) => void) | undefined;
 
   constructor(
     emit: AcpUserQuestionBridgeEmit,
-    opts?: { timeoutMs?: number },
+    opts?: {
+      timeoutMs?: number;
+      onResolved?: (requestId: string, status: "answered" | "cancelled" | "expired", answer: string | undefined, chatId?: string) => void;
+    },
   ) {
     this.#emit = emit;
     this.#timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.#onResolved = opts?.onResolved;
   }
 
   /** Block until Social answers or timeout → cancelled. */
@@ -53,7 +60,9 @@ export class AcpUserQuestionBridge {
     const kind = inferKind(req);
     return new Promise<UserQuestionAnswer>((resolve) => {
       const timer = setTimeout(() => {
+        const entry = this.#pending.get(requestId);
         this.#pending.delete(requestId);
+        this.#onResolved?.(requestId, "expired", undefined, entry?.chatId);
         resolve({
           value: "",
           cancelled: true,
@@ -107,6 +116,12 @@ export class AcpUserQuestionBridge {
               : {}),
           },
     );
+    this.#onResolved?.(
+      requestId,
+      answer.cancelled === true ? "cancelled" : "answered",
+      answer.cancelled === true ? undefined : answer.value,
+      entry.chatId,
+    );
     return { delivered: true };
   }
 
@@ -120,6 +135,7 @@ export class AcpUserQuestionBridge {
         cancelledReason: "aborted",
       });
       this.#pending.delete(id);
+      this.#onResolved?.(id, "cancelled", undefined, entry.chatId);
     }
   }
 
@@ -132,6 +148,7 @@ export class AcpUserQuestionBridge {
         cancelledReason: "aborted",
       });
       this.#pending.delete(id);
+      this.#onResolved?.(id, "cancelled", undefined, entry.chatId);
     }
   }
 

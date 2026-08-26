@@ -10,6 +10,7 @@ import { SessionStore } from "@envoymesh/envoy-harness";
 
 import {
   createEnvoyHarnessSessionStore,
+  deleteEhChatTurnFromStore,
   ehMessagesToChatTurns,
   loadEhChatHistoryFromStore,
   mergeSessionMapping,
@@ -103,5 +104,31 @@ describe("envoy-harness-workspace", () => {
 
     const direct = ehMessagesToChatTurns(created.messages);
     expect(direct).toHaveLength(2);
+  });
+
+  it("deletes a user turn together with its assistant/tool exchange", async () => {
+    const store = createEnvoyHarnessSessionStore(tmpDir);
+    const created = await store.create({
+      cwd: "/tmp",
+      startedAt: new Date().toISOString(),
+      permissionMode: "workspace-write",
+    });
+    created.appendMessage("user", [{ type: "text", text: "first" }]);
+    created.appendMessage("assistant", [{ type: "text", text: "working" }]);
+    created.appendMessage("tool", [{ type: "text", text: "tool result" }]);
+    created.appendMessage("user", [{ type: "text", text: "second" }]);
+    created.appendMessage("assistant", [{ type: "text", text: "kept" }]);
+    await created.flush();
+
+    const result = await deleteEhChatTurnFromStore({
+      sessionStore: store,
+      sessionId: created.id,
+      cwd: "/tmp",
+      turnId: "eh-msg-0",
+    });
+    expect(result.deleted).toBe(true);
+    expect(result.history.turns.map((turn) => turn.text)).toEqual(["second", "kept"]);
+    const reopened = await store.load(created.id);
+    expect(reopened.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
   });
 });

@@ -24,4 +24,6 @@ export interface EhChatHistory {
   turns: EhChatTurn[]
   /** Optional session title from harness metadata. */
   title?: string
+  /** Shared semantic timeline; legacy `turns` remains during migration. */
+  timeline?: import("./eh-timeline.js").EhTimelineItem[]
 }
