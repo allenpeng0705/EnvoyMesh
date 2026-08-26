@@ -6663,6 +6663,121 @@
   flex-shrink: 0;
 }
 
+.eh-changes-dismiss,
+.eh-changes-keep {
+  opacity: 0.95;
+}
+
+.eh-changes-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.eh-changes-toggle {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--color-primary, #6366f1);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.eh-changes-file-list {
+  margin: 0.35rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.2rem;
+  max-height: 8rem;
+  overflow: auto;
+}
+
+.eh-changes-file-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  max-width: 100%;
+}
+
+.eh-changes-file-btn code {
+  font-size: 0.72rem;
+}
+
+.eh-changes-file-btn:hover code,
+.eh-changes-file-btn:focus-visible code {
+  color: var(--color-primary, #6366f1);
+  text-decoration: underline;
+}
+
+.eh-changes-auto-setting {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--color-text-muted, #64748b);
+}
+
+.eh-changes-auto-setting select {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.25rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-surface, #ffffff);
+}
+
+.eh-split-diff {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  border-top: 1px solid var(--color-border, var(--border-color));
+}
+
+.eh-split-diff__col {
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  max-height: 240px;
+  font-size: 12px;
+  line-height: 1.45;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.eh-split-diff__col--old {
+  background: color-mix(in srgb, #ef4444 8%, transparent);
+  border-right: 1px solid var(--color-border, var(--border-color));
+}
+
+.eh-split-diff__col--new {
+  background: color-mix(in srgb, #22c55e 8%, transparent);
+}
+
+.eh-turn-review-file--focused {
+  outline: 2px solid var(--color-primary, #6366f1);
+  outline-offset: 2px;
+}
+
+.eh-turn-review-actions-primary {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.eh-turn-review-empty-diff {
+  margin: 0;
+  padding: 12px;
+  border-top: 1px solid var(--color-border, var(--border-color));
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
 .eh-changes-dismiss {
   opacity: 0.85;
 }

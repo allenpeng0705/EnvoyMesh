@@ -32,8 +32,11 @@ export interface EhComposerDockStackProps {
   onRemoveAttached?: (path: string) => void
   changedFiles: readonly string[]
   onReviewChanges?: () => void
+  onReviewFile?: (path: string) => void
+  onKeepAllChanges?: () => void
   onRevertChanges?: () => void
-  onDismissChanges?: () => void
+  reviewMinFiles?: number
+  onReviewMinFilesChange?: (value: number) => void
   composer?: ReactNode
 }
 
@@ -56,8 +59,11 @@ export function EhComposerDockStack({
   onRemoveAttached,
   changedFiles,
   onReviewChanges,
+  onReviewFile,
+  onKeepAllChanges,
   onRevertChanges,
-  onDismissChanges,
+  reviewMinFiles,
+  onReviewMinFilesChange,
   composer,
 }: EhComposerDockStackProps) {
   return (
@@ -84,8 +90,11 @@ export function EhComposerDockStack({
       <EhChangesDock
         files={changedFiles}
         onReview={onReviewChanges}
+        onReviewFile={onReviewFile}
+        onKeepAll={onKeepAllChanges}
         onRevert={onRevertChanges}
-        onDismiss={onDismissChanges}
+        reviewMinFiles={reviewMinFiles}
+        onReviewMinFilesChange={onReviewMinFilesChange}
       />
       {turnHints ? (
         <EhTurnHintsDock

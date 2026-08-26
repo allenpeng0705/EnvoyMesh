@@ -22,3 +22,9 @@ export interface EhRevertTurnResult {
   conflicts?: string[];
   reason?: string;
 }
+
+export interface EhAcceptTurnReviewResult {
+  accepted: boolean;
+  remainingFiles: number;
+  cleared?: boolean;
+}

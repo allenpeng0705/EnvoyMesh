@@ -938,6 +938,14 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.revertEnvoyHarnessTurn(turnId);
   }
 
+  async acceptEnvoyHarnessTurnReview(turnId: string, paths?: readonly string[]) {
+    return this._ns.acceptEnvoyHarnessTurnReview(turnId, paths);
+  }
+
+  async revertEnvoyHarnessTurnFiles(turnId: string, paths: readonly string[]) {
+    return this._ns.revertEnvoyHarnessTurnFiles(turnId, paths);
+  }
+
   async openEnvoyHarnessFile(params: { path: string; chatId?: string }) {
     return this._ns.openEnvoyHarnessFile(params);
   }

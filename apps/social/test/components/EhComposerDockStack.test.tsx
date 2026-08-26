@@ -44,13 +44,12 @@ describe("EhComposerDockStack", () => {
         queue={[{ id: "q1", text: "queued prompt" }]}
         onQueueUpdate={() => {}}
         onQueueRemove={onQueueRemove}
-        projectCwd="/projects/app"
         contextFiles={["src/index.ts"]}
         attachedPaths={["notes.md"]}
         onRemoveAttached={() => {}}
         changedFiles={["src/index.ts", "src/util.ts"]}
         onReviewChanges={() => {}}
-        onDismissChanges={() => {}}
+        onKeepAllChanges={() => {}}
         composer={<div data-testid="composer-slot">composer</div>}
       />,
     )

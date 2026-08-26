@@ -143,6 +143,8 @@ const CODING_GATED_RPC = new Set<string>([
   "deleteEnvoyHarnessChatTurn",
   "getEnvoyHarnessTurnReview",
   "revertEnvoyHarnessTurn",
+  "acceptEnvoyHarnessTurnReview",
+  "revertEnvoyHarnessTurnFiles",
   "openEnvoyHarnessFile",
   "getEnvoyHarnessCommandCatalog",
   "recordEnvoyHarnessUxEvent",
@@ -1348,6 +1350,20 @@ export async function routeRpcMethod(
       return ns.getEnvoyHarnessTurnReview(String(params.turnId ?? ""));
     case "revertEnvoyHarnessTurn":
       return ns.revertEnvoyHarnessTurn(String(params.turnId ?? ""));
+    case "acceptEnvoyHarnessTurnReview":
+      return ns.acceptEnvoyHarnessTurnReview(
+        String(params.turnId ?? ""),
+        Array.isArray(params.paths)
+          ? params.paths.map((path) => String(path))
+          : undefined,
+      );
+    case "revertEnvoyHarnessTurnFiles":
+      return ns.revertEnvoyHarnessTurnFiles(
+        String(params.turnId ?? ""),
+        Array.isArray(params.paths)
+          ? params.paths.map((path) => String(path))
+          : [],
+      );
     case "openEnvoyHarnessFile":
       return ns.openEnvoyHarnessFile({
         path: String(params.path ?? ""),

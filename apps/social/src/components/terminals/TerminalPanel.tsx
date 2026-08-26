@@ -25,8 +25,10 @@ import {
 import { EnvoyHarnessEhuiRail } from "../ehui/EnvoyHarnessEhuiRail.js";
 import { EhComposerDockStack } from "../ehui/EhComposerDockStack.js";
 import { EhStillWorkingIndicator } from "../ehui/EhStillWorkingIndicator.js";
+import { EhTurnReviewModal } from "../ehui/EhTurnReviewModal.js";
 import { EhuiPanelModal } from "@envoymesh/envoy-harness-ehui";
 import { createRemoteEhuiDataSource } from "../../lib/envoy-harness-ehui-data-source.js";
+import { useEhTurnReview } from "../../hooks/useEhTurnReview.js";
 
 interface TerminalPanelProps {
   session: TerminalSessionSummary | null;
@@ -91,8 +93,6 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
     undefined,
   );
   const [ehProjectCwd, setEhProjectCwd] = useState<string | undefined>(undefined);
-  const [showGitDiffReview, setShowGitDiffReview] = useState(false);
-  const [dismissedChanges, setDismissedChanges] = useState(false);
   const [ehuiRefreshKey, setEhuiRefreshKey] = useState(0);
   /** The Envoy chat thread that owns this project (parallel per-chat turns). */
   const [terminalChatId, setTerminalChatId] = useState<string | null>(null);
@@ -117,6 +117,11 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
     subscribeFilesChanged: (handler) => nodeService.on("eh:files_changed", handler),
   });
   const resetTurnContext = turnContext.resetTurnContext;
+
+  const ehReview = useEhTurnReview({
+    chatId: terminalChatId,
+    onNotify: (text) => setWatchToast(text),
+  });
 
   const ehuiDataSource = useMemo(
     () => createRemoteEhuiDataSource(nodeService),
@@ -174,7 +179,7 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
       setPendingEhPermission(null);
       setEhTurnHints(null);
       setEhPromptBusy(false);
-      setDismissedChanges(false);
+      ehReview.clearReviewState();
       resetTurnContext();
       return;
     }
@@ -202,8 +207,15 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
     });
     const unsubTurnStart = nodeService.on("eh:turn_started", (event) => {
       if (!matchesTerminalChat(event.chatId)) return;
-      setDismissedChanges(false);
+      ehReview.onTurnStart();
       resetTurnContext();
+    });
+    const unsubTurnComplete = nodeService.on("eh:turn_complete", (event) => {
+      if (!matchesTerminalChat(event.chatId)) return;
+      const files = event.changedFiles ?? [];
+      if (files.length > 0) {
+        ehReview.onTurnComplete(event.turnId, files.length);
+      }
     });
     const unsubActivity = nodeService.on("eh:activity", (event: EhActivityEvent) => {
       if (!matchesTerminalChat(event.chatId)) return;
@@ -217,9 +229,10 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
       unsubHints();
       unsubBusy();
       unsubTurnStart();
+      unsubTurnComplete();
       unsubActivity();
     };
-  }, [nodeService, isEnvoyHarnessSession, resetTurnContext, terminalChatId]);
+  }, [ehReview, nodeService, isEnvoyHarnessSession, resetTurnContext, terminalChatId]);
 
   useEffect(() => {
     if (isPiSession && mode !== "manual") setMode("manual");
@@ -907,9 +920,19 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
           onQueueUpdate={() => {}}
           onQueueRemove={() => {}}
           contextFiles={turnContext.touchedFiles}
-          changedFiles={dismissedChanges ? [] : turnContext.touchedFiles}
-          onReviewChanges={() => setShowGitDiffReview(true)}
-          onDismissChanges={() => setDismissedChanges(true)}
+          changedFiles={ehReview.dismissedChanges ? [] : turnContext.touchedFiles}
+          onReviewChanges={() => {
+            if (ehReview.lastReviewTurnId) ehReview.openTurnReview(ehReview.lastReviewTurnId)
+            else ehReview.setShowGitDiffReview(true)
+          }}
+          onReviewFile={(path) => {
+            if (ehReview.lastReviewTurnId) ehReview.openTurnReview(ehReview.lastReviewTurnId, path)
+            else ehReview.setShowGitDiffReview(true)
+          }}
+          onKeepAllChanges={ehReview.handleKeepAllChanges}
+          onRevertChanges={ehReview.lastReviewTurnId ? ehReview.handleRevertAllChanges : undefined}
+          reviewMinFiles={ehReview.reviewMinFiles}
+          onReviewMinFilesChange={ehReview.setReviewMinFiles}
         />
         </div>
       ) : null}
@@ -949,18 +972,30 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
           <span className="terminal-suggest-tab">{t("terminals.agent.suggestTab")}</span>
         </div>
       ) : null}
-      {showGitDiffReview ? (
+      {ehReview.showGitDiffReview ? (
         <EhuiPanelModal
           panel="git-diff"
           dataSource={ehuiDataSource}
           refreshKey={ehuiRefreshKey}
-          onClose={() => setShowGitDiffReview(false)}
+          onClose={() => ehReview.setShowGitDiffReview(false)}
           overlayClassName="modal-overlay"
           panelClassName="modal-panel eh-ehui-modal-panel"
           closeButtonClassName="modal-close"
-          actionButtonClassName="pi-chat-restart-btn"
-          primaryActionButtonClassName="pi-chat-send"
           inputClassName="pi-chat-input eh-ehui-field"
+        />
+      ) : null}
+      {ehReview.turnReview ? (
+        <EhTurnReviewModal
+          review={ehReview.turnReview}
+          focusPath={ehReview.reviewFocusPath}
+          onClose={() => ehReview.setTurnReview(null)}
+          onOpenFile={ehReview.openChangedFile}
+          onKeepAll={ehReview.handleKeepAllChanges}
+          onKeepFile={ehReview.handleKeepFile}
+          onRevertFile={ehReview.handleRevertFile}
+          onRevertAll={
+            ehReview.turnReview.canRevert ? ehReview.handleRevertAllChanges : undefined
+          }
         />
       ) : null}
       </div>

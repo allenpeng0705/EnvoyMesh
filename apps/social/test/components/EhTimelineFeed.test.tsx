@@ -19,8 +19,8 @@ describe("EhTimelineFeed turn actions", () => {
       files: ["src/app.ts"],
       createdAt: "2026-08-25T00:00:00.000Z",
     }]} onReviewTurn={onReviewTurn} onRevertTurn={onRevertTurn} />)
-    fireEvent.click(screen.getByRole("button", { name: /Review diff/i }))
-    fireEvent.click(screen.getByRole("button", { name: /Revert this turn/i }))
+    fireEvent.click(screen.getByRole("button", { name: /Review changes/i }))
+    fireEvent.click(screen.getByRole("button", { name: /Revert all/i }))
     expect(onReviewTurn).toHaveBeenCalledWith("turn-7")
     expect(onRevertTurn).toHaveBeenCalledWith("turn-7")
   })

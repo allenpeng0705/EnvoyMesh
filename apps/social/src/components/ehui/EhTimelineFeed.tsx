@@ -83,8 +83,8 @@ function ChangesCard({ item, onReviewTurn, onRevertTurn }: {
       <summary>✓ {item.files.length} file(s) changed</summary>
       <ul>{item.files.map((file) => <li key={file}><code>{file}</code></li>)}</ul>
       {item.turnId ? <div className="eh-timeline-card-actions">
-        {onReviewTurn ? <button type="button" className="secondary" onClick={() => onReviewTurn(item.turnId!)}>Review diff</button> : null}
-        {onRevertTurn ? <button type="button" className="secondary" onClick={() => onRevertTurn(item.turnId!)}>Revert this turn</button> : null}
+        {onReviewTurn ? <button type="button" className="secondary" onClick={() => onReviewTurn(item.turnId!)}>Review changes</button> : null}
+        {onRevertTurn ? <button type="button" className="secondary" onClick={() => onRevertTurn(item.turnId!)}>Revert all</button> : null}
       </div> : null}
     </details>
   )

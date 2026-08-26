@@ -3127,6 +3127,18 @@ export interface NodeService {
     turnId: string,
   ): Promise<import("./eh-turn-review.js").EhRevertTurnResult>;
 
+  /** Keep reviewed files (remove from pending review without disk changes). */
+  acceptEnvoyHarnessTurnReview(
+    turnId: string,
+    paths?: readonly string[],
+  ): Promise<import("./eh-turn-review.js").EhAcceptTurnReviewResult>;
+
+  /** Revert a subset of runtime-attributed files from a turn checkpoint. */
+  revertEnvoyHarnessTurnFiles(
+    turnId: string,
+    paths: readonly string[],
+  ): Promise<import("./eh-turn-review.js").EhRevertTurnResult>;
+
   /** Open a changed file inside the selected Envoy Harness project. */
   openEnvoyHarnessFile(params: { path: string; chatId?: string }): Promise<void>;
 

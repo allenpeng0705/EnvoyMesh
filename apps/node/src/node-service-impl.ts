@@ -1317,6 +1317,7 @@ import {
 } from "./pi-terminal-session.js";
 import { ensureEnvoyTerminalSession } from "./envoy-terminal-session.js";
 import {
+  acceptEhTurnFiles,
   completeEhTurnCheckpoint,
   createEhTurnCheckpoint,
   deletePersistedEhTurnCheckpoint,
@@ -1324,6 +1325,7 @@ import {
   listEhTurnCheckpoints,
   persistEhTurnCheckpoint,
   revertEhTurnCheckpoint,
+  revertEhTurnFiles,
   type EhCompletedCheckpoint,
   type EhPendingCheckpoint,
 } from "./eh-turn-checkpoint.js";
@@ -5536,6 +5538,58 @@ class NodeServiceImpl implements NodeService {
     if (result.reverted) {
       this._ehCompletedCheckpoints.delete(turnId);
       await deletePersistedEhTurnCheckpoint(this._profileDir, turnId);
+      this.emit("eh:files_changed", {
+        turnId,
+        files: result.files,
+        ...(checkpoint.chatId ? { chatId: checkpoint.chatId } : {}),
+      });
+    }
+    return result;
+  }
+
+  async acceptEnvoyHarnessTurnReview(
+    turnId: string,
+    paths?: readonly string[],
+  ): Promise<import("@envoymesh/api").EhAcceptTurnReviewResult> {
+    const checkpoint = this._ehCompletedCheckpoints.get(turnId)
+      ?? await loadEhTurnCheckpoint(this._profileDir, turnId);
+    if (!checkpoint) return { accepted: false, remainingFiles: 0 };
+    const toAccept = paths ?? checkpoint.review.files.map((file) => file.path);
+    acceptEhTurnFiles(checkpoint, toAccept);
+    this._ehCompletedCheckpoints.set(turnId, checkpoint);
+    const cleared =
+      checkpoint.review.files.length === 0 && checkpoint.completedHashes.size === 0;
+    if (cleared) {
+      this._ehCompletedCheckpoints.delete(turnId);
+      await deletePersistedEhTurnCheckpoint(this._profileDir, turnId);
+    } else {
+      await persistEhTurnCheckpoint(this._profileDir, checkpoint).catch(() => undefined);
+    }
+    return {
+      accepted: true,
+      remainingFiles: checkpoint.review.files.length,
+      cleared,
+    };
+  }
+
+  async revertEnvoyHarnessTurnFiles(
+    turnId: string,
+    paths: readonly string[],
+  ): Promise<import("@envoymesh/api").EhRevertTurnResult> {
+    const checkpoint = this._ehCompletedCheckpoints.get(turnId)
+      ?? await loadEhTurnCheckpoint(this._profileDir, turnId);
+    if (!checkpoint) return { reverted: false, files: [], reason: "checkpoint_not_found" };
+    const result = await revertEhTurnFiles(checkpoint, paths);
+    if (result.reverted) {
+      this._ehCompletedCheckpoints.set(turnId, checkpoint);
+      const cleared =
+        checkpoint.review.files.length === 0 && checkpoint.completedHashes.size === 0;
+      if (cleared) {
+        this._ehCompletedCheckpoints.delete(turnId);
+        await deletePersistedEhTurnCheckpoint(this._profileDir, turnId);
+      } else {
+        await persistEhTurnCheckpoint(this._profileDir, checkpoint).catch(() => undefined);
+      }
       this.emit("eh:files_changed", {
         turnId,
         files: result.files,

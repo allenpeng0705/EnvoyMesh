@@ -330,6 +330,8 @@ export type RpcMethods =
     | "deleteEnvoyHarnessChatTurn"
     | "getEnvoyHarnessTurnReview"
     | "revertEnvoyHarnessTurn"
+    | "acceptEnvoyHarnessTurnReview"
+    | "revertEnvoyHarnessTurnFiles"
     | "openEnvoyHarnessFile"
     | "getEnvoyHarnessCommandCatalog"
     | "recordEnvoyHarnessUxEvent"

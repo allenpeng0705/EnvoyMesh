@@ -7,11 +7,13 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import {
+  acceptEhTurnFiles,
   completeEhTurnCheckpoint,
   createEhTurnCheckpoint,
   loadEhTurnCheckpoint,
   persistEhTurnCheckpoint,
   revertEhTurnCheckpoint,
+  revertEhTurnFiles,
 } from "../src/eh-turn-checkpoint.js";
 
 const run = promisify(execFile);
@@ -93,6 +95,23 @@ describe("EH turn checkpoints", () => {
     const result = await revertEhTurnCheckpoint(complete);
     expect(result.reverted).toBe(true);
     expect(await readFile(join(cwd, "renamed.txt"), "utf8")).toBe("committed\n");
+  });
+
+  it("reverts and accepts individual files", async () => {
+    const cwd = await repo();
+    await writeFile(join(cwd, "tracked.txt"), "user draft\n");
+    const pending = await createEhTurnCheckpoint(cwd, "turn-partial");
+    await writeFile(join(cwd, "tracked.txt"), "agent edit\n");
+    await writeFile(join(cwd, "new.txt"), "created\n");
+    const complete = await completeEhTurnCheckpoint(pending!, ["tracked.txt", "new.txt"]);
+    const partial = await revertEhTurnFiles(complete, ["tracked.txt"]);
+    expect(partial.reverted).toBe(true);
+    expect(await readFile(join(cwd, "tracked.txt"), "utf8")).toBe("user draft\n");
+    expect(await readFile(join(cwd, "new.txt"), "utf8")).toBe("created\n");
+    expect(complete.review.files.map((file) => file.path)).toEqual(["new.txt"]);
+    acceptEhTurnFiles(complete, ["new.txt"]);
+    expect(complete.review.files).toEqual([]);
+    expect(complete.completedHashes.size).toBe(0);
   });
 
   it("survives a node restart without storing unrelated dirty files", async () => {

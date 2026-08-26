@@ -9,29 +9,38 @@ import { renderWithI18n } from "../helpers/render-with-i18n.js"
 afterEach(() => cleanup())
 
 describe("EhTurnReviewModal", () => {
-  it("renders the exact turn diff and exposes safe actions", () => {
-    const onClose = vi.fn()
-    const onRevert = vi.fn()
-    const onOpenFile = vi.fn()
+  it("renders split diff and per-file actions", () => {
+    const onKeepFile = vi.fn()
+    const onRevertFile = vi.fn()
+    const onKeepAll = vi.fn()
     renderWithI18n(
       <EhTurnReviewModal
         review={{
           turnId: "turn-1",
           checkpointId: "checkpoint-1",
           canRevert: true,
-          files: [{ path: "src/app.ts", status: "modified", diff: "-old\n+new" }],
+          files: [{
+            path: "src/app.ts",
+            status: "modified",
+            diff: "--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1 +1 @@\n-old\n+new",
+            revertible: true,
+          }],
         }}
-        onClose={onClose}
-        onRevert={onRevert}
-        onOpenFile={onOpenFile}
+        onClose={() => undefined}
+        onKeepAll={onKeepAll}
+        onKeepFile={onKeepFile}
+        onRevertFile={onRevertFile}
+        onRevertAll={() => undefined}
       />,
     )
-    expect(screen.getByRole("dialog", { name: /Review this turn/i })).toBeDefined()
+    expect(screen.getByRole("dialog", { name: /Review changes/i })).toBeDefined()
     expect(screen.getByText("src/app.ts")).toBeDefined()
-    expect(screen.getByText(/-old/)).toBeDefined()
-    fireEvent.click(screen.getByRole("button", { name: /Open file/i }))
-    expect(onOpenFile).toHaveBeenCalledWith("src/app.ts")
-    fireEvent.click(screen.getByRole("button", { name: /Revert this turn/i }))
-    expect(onRevert).toHaveBeenCalledOnce()
+    expect(document.querySelector(".eh-split-diff")).not.toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: /^Keep$/i }))
+    expect(onKeepFile).toHaveBeenCalledWith("src/app.ts")
+    fireEvent.click(screen.getByRole("button", { name: /^Revert$/i }))
+    expect(onRevertFile).toHaveBeenCalledWith("src/app.ts")
+    fireEvent.click(screen.getByRole("button", { name: /Keep all/i }))
+    expect(onKeepAll).toHaveBeenCalled()
   })
 })

@@ -252,6 +252,70 @@ export async function revertEhTurnCheckpoint(
   return { reverted: true, files: reverted };
 }
 
+/** Remove files from the pending review without changing disk. */
+export function acceptEhTurnFiles(
+  checkpoint: EhCompletedCheckpoint,
+  paths: readonly string[],
+): EhCompletedCheckpoint {
+  const pathSet = new Set(paths);
+  for (const path of paths) {
+    checkpoint.completedHashes.delete(path);
+    checkpoint.dirty.delete(path);
+  }
+  checkpoint.review = {
+    ...checkpoint.review,
+    files: checkpoint.review.files.filter((file) => !pathSet.has(file.path)),
+    canRevert: checkpoint.completedHashes.size > 0,
+    ...(checkpoint.completedHashes.size === 0
+      ? { revertBlockedReason: undefined }
+      : {}),
+  };
+  return checkpoint;
+}
+
+export async function revertEhTurnFiles(
+  checkpoint: EhCompletedCheckpoint,
+  paths: readonly string[],
+): Promise<EhRevertTurnResult> {
+  const targets = paths.filter((path) => checkpoint.completedHashes.has(path));
+  if (targets.length === 0) {
+    return { reverted: false, files: [], reason: "no_revertible_files" };
+  }
+  const conflicts: string[] = [];
+  for (const path of targets) {
+    const expected = checkpoint.completedHashes.get(path)!;
+    const current = await bytesOrMissing(await safePath(checkpoint.cwd, path));
+    if (hash(current) !== expected) conflicts.push(path);
+  }
+  if (conflicts.length > 0) {
+    return { reverted: false, files: [], conflicts, reason: "files_changed_after_turn" };
+  }
+  const reverted: string[] = [];
+  for (const path of targets) {
+    const baseline = checkpoint.dirty.get(path)!;
+    const absolute = await safePath(checkpoint.cwd, path);
+    if (baseline.exists && baseline.bytes) await writeFile(absolute, baseline.bytes);
+    else {
+      try { await unlink(absolute); } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    reverted.push(path);
+    checkpoint.completedHashes.delete(path);
+    checkpoint.dirty.delete(path);
+  }
+  const revertedSet = new Set(reverted);
+  checkpoint.review = {
+    ...checkpoint.review,
+    files: checkpoint.review.files.filter((file) => !revertedSet.has(file.path)),
+    canRevert: checkpoint.completedHashes.size > 0,
+    ...(checkpoint.completedHashes.size === 0
+      ? { revertBlockedReason: undefined }
+      : {}),
+  };
+  return { reverted: true, files: reverted };
+}
+
 export async function persistEhTurnCheckpoint(
   profileDir: string,
   checkpoint: EhCompletedCheckpoint,

@@ -11,30 +11,41 @@ import { renderWithI18n } from "../helpers/render-with-i18n.js"
 afterEach(() => cleanup())
 
 describe("EhChangesDock", () => {
-  it("summarizes changed files and wires review and dismiss", () => {
+  it("summarizes changed files and wires review, keep all, and revert", () => {
     const onReview = vi.fn()
-    const onDismiss = vi.fn()
+    const onKeepAll = vi.fn()
     const onRevert = vi.fn()
     renderWithI18n(
       <EhChangesDock
         files={["a.ts", "b.ts", "c.ts", "d.ts"]}
         onReview={onReview}
         onRevert={onRevert}
-        onDismiss={onDismiss}
+        onKeepAll={onKeepAll}
       />,
     )
 
     expect(screen.getByRole("region", { name: /File changes/i })).toBeDefined()
     expect(screen.getByText(/4 file\(s\) changed/)).toBeDefined()
-    expect(screen.getByText(/\+1/)).toBeDefined()
 
-    fireEvent.click(screen.getByRole("button", { name: /Review diff/i }))
+    fireEvent.click(screen.getByRole("button", { name: /Review changes/i }))
     expect(onReview).toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole("button", { name: /Revert this turn/i }))
+    fireEvent.click(screen.getByRole("button", { name: /Revert all/i }))
     expect(onRevert).toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole("button", { name: /Dismiss/i }))
-    expect(onDismiss).toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: /Keep all/i }))
+    expect(onKeepAll).toHaveBeenCalled()
+  })
+
+  it("opens review for a specific file from the list", () => {
+    const onReviewFile = vi.fn()
+    renderWithI18n(
+      <EhChangesDock
+        files={["src/a.ts", "src/b.ts"]}
+        onReviewFile={onReviewFile}
+      />,
+    )
+    fireEvent.click(screen.getByRole("button", { name: /src\/a\.ts/i }))
+    expect(onReviewFile).toHaveBeenCalledWith("src/a.ts")
   })
 })

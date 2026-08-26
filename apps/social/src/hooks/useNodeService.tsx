@@ -492,6 +492,14 @@ export interface NodeServiceClient {
   revertEnvoyHarnessTurn(
     turnId: string,
   ): Promise<import("@envoymesh/api").EhRevertTurnResult>;
+  acceptEnvoyHarnessTurnReview(
+    turnId: string,
+    paths?: readonly string[],
+  ): Promise<import("@envoymesh/api").EhAcceptTurnReviewResult>;
+  revertEnvoyHarnessTurnFiles(
+    turnId: string,
+    paths: readonly string[],
+  ): Promise<import("@envoymesh/api").EhRevertTurnResult>;
   openEnvoyHarnessFile(params: { path: string; chatId?: string }): Promise<void>;
   getEnvoyHarnessCommandCatalog(): Promise<import("@envoymesh/api").ExtAgentCommandCatalog>;
   recordEnvoyHarnessUxEvent(event: import("@envoymesh/api").EhUxTelemetryEvent): Promise<void>;
@@ -1843,6 +1851,20 @@ function createWsNodeServiceClient(
       return wsClient.rpc("revertEnvoyHarnessTurn", { turnId }, { timeoutMs: 30_000 }) as Promise<
         import("@envoymesh/api").EhRevertTurnResult
       >;
+    },
+    async acceptEnvoyHarnessTurnReview(turnId: string, paths?: readonly string[]) {
+      return wsClient.rpc(
+        "acceptEnvoyHarnessTurnReview",
+        { turnId, ...(paths ? { paths } : {}) },
+        { timeoutMs: 30_000 },
+      ) as Promise<import("@envoymesh/api").EhAcceptTurnReviewResult>;
+    },
+    async revertEnvoyHarnessTurnFiles(turnId: string, paths: readonly string[]) {
+      return wsClient.rpc(
+        "revertEnvoyHarnessTurnFiles",
+        { turnId, paths },
+        { timeoutMs: 30_000 },
+      ) as Promise<import("@envoymesh/api").EhRevertTurnResult>;
     },
     async openEnvoyHarnessFile(params: { path: string; chatId?: string }) {
       await wsClient.rpc("openEnvoyHarnessFile", params, { timeoutMs: 30_000 });
