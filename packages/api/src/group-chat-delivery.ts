@@ -7,7 +7,8 @@ export function mergeGroupDeliveryAck(
   const delivered = new Set(metadata.deliveredToOwnerIds ?? []);
   delivered.add(recipientOwnerId);
   const pending = (metadata.pendingRecipientOwnerIds ?? []).filter((id) => !delivered.has(id));
-  const allDelivered = pending.length === 0 && delivered.size > 0;
+  const hadPending = (metadata.pendingRecipientOwnerIds ?? []).length > 0;
+  const allDelivered = hadPending && pending.length === 0;
   return {
     ...metadata,
     deliveredToOwnerIds: [...delivered],

@@ -10,7 +10,7 @@ import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../providers/node_provider.dart';
 import '../../screens/chat/chat_detail_screen.dart';
 import '../../widgets/connection_indicator.dart';
-import 'content_files_tab.dart';
+import 'knowledge_library_screen.dart';
 
 /// Knowledge hub — Content → Knowledge (Browse+Ask | Plugins | Setup).
 /// Mirrors Social [KnowledgeView]. Browse does not require embed; Ask does.
@@ -531,19 +531,41 @@ class _KnowledgeEmbedGatePanel extends StatelessWidget {
   }
 }
 
-/// Browse files + Ask vault (combined; mirrors Social Knowledge Browse panel).
+/// Browse hub: Ask vault + link into full-screen Your files.
 /// File browse does not require embed; Ask does.
-class _KnowledgeBrowsePanel extends StatelessWidget {
+class _KnowledgeBrowsePanel extends StatefulWidget {
   const _KnowledgeBrowsePanel({required this.embedBlocked});
 
   final bool embedBlocked;
 
   @override
+  State<_KnowledgeBrowsePanel> createState() => _KnowledgeBrowsePanelState();
+}
+
+class _KnowledgeBrowsePanelState extends State<_KnowledgeBrowsePanel> {
+  final _librarySearch = TextEditingController();
+
+  @override
+  void dispose() {
+    _librarySearch.dispose();
+    super.dispose();
+  }
+
+  void _openLibrary({String? query}) {
+    final q = (query ?? _librarySearch.text).trim();
+    KnowledgeLibraryScreen.open(
+      context,
+      initialQuery: q.isEmpty ? null : q,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    final scheme = theme.colorScheme;
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
@@ -560,36 +582,54 @@ class _KnowledgeBrowsePanel extends StatelessWidget {
               Text(
                 l10n.knowledgeAskHint,
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+                  color: scheme.onSurfaceVariant,
                 ),
               ),
             ],
           ),
         ),
-        _KnowledgeAskPanel(compact: true, embedBlocked: embedBlocked),
-        const Divider(height: 24),
+        _KnowledgeAskPanel(compact: true, embedBlocked: widget.embedBlocked),
+        const SizedBox(height: 8),
+        const Divider(height: 1),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Text(
+            l10n.knowledgeLibraryHeading,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                l10n.knowledgeLibraryHeading,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                l10n.knowledgeLibraryCaption,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
+          child: TextField(
+            controller: _librarySearch,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: l10n.filesSearchHint,
+              isDense: true,
+              prefixIcon: const Icon(Icons.search),
+              border: const OutlineInputBorder(),
+            ),
+            onSubmitted: (v) => _openLibrary(query: v),
           ),
         ),
-        const Expanded(child: ContentFilesTab(knowledgeBrowse: true)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Material(
+            color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+            borderRadius: BorderRadius.circular(12),
+            child: ListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              leading: Icon(Icons.folder_outlined, color: scheme.primary),
+              title: Text(l10n.knowledgeLibraryHeading),
+              subtitle: Text(l10n.knowledgeLibraryCaption),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _openLibrary(),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -1055,6 +1095,13 @@ class _KnowledgeSetupPanelState extends ConsumerState<_KnowledgeSetupPanel> {
         ],
         Text(
           l10n.knowledgeSetupHint,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          l10n.knowledgeSetupEmbeddingHint,
           style: theme.textTheme.bodySmall?.copyWith(
             color: scheme.onSurfaceVariant,
           ),

@@ -111,37 +111,52 @@ void main() {
     });
 
     test('mayUseCoding is owner-only unless codingEnabled on family profile', () {
-      const owner = NodeState(isOwnerProfile: true);
+      final home = StoredNode(
+        id: 'n1',
+        name: 'Home',
+        ownerId: 'envoy:owner:x',
+        homePeerId: 'peer',
+        pairedAt: DateTime.utc(2026, 1, 1),
+      );
+      final owner = NodeState(isOwnerProfile: true, activeNode: home);
       expect(owner.mayUseCoding, isTrue);
 
-      const denied = NodeState(
+      // Unpaired / no active home — Coding (Pi) must stay hidden.
+      const unpaired = NodeState(isOwnerProfile: true);
+      expect(unpaired.mayUseCoding, isFalse);
+
+      final denied = NodeState(
         isOwnerProfile: false,
+        activeNode: home,
         familyProfileId: 'kid',
         pairedFamilyProfileId: 'kid',
-        familyProfiles: [
+        familyProfiles: const [
           {'id': 'kid', 'codingEnabled': false},
         ],
       );
       expect(denied.mayUseCoding, isFalse);
 
-      const allowed = NodeState(
+      final allowed = NodeState(
         isOwnerProfile: false,
+        activeNode: home,
         familyProfileId: 'kid',
         pairedFamilyProfileId: 'kid',
-        familyProfiles: [
+        familyProfiles: const [
           {'id': 'kid', 'codingEnabled': true},
         ],
       );
       expect(allowed.mayUseCoding, isTrue);
 
-      const corruptedOwnerId = NodeState(
+      final corruptedOwnerId = NodeState(
+        activeNode: home,
         familyProfileId: 'owner',
         pairedFamilyProfileId: 'kid',
         isOwnerProfile: false,
-        familyProfiles: [
+        familyProfiles: const [
           {'id': 'kid', 'codingEnabled': true},
         ],
       );
+      // Pairing intent (kid) wins over corrupted session id "owner".
       expect(corruptedOwnerId.mayUseCoding, isTrue);
     });
   });

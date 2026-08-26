@@ -155,6 +155,7 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     bonds,
     peerId,
     selfOwnerId: humanProfile?.ownerId,
+    familyProfileId: nodeConfig?.callerFamilyProfileId,
     locale: appSettings.locale,
   });
 

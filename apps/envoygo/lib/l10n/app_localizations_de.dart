@@ -613,6 +613,10 @@ class AppLocalizationsDe extends AppLocalizations {
       'Indexstatus und Abruf. Chat-Modelle bleiben in Ich → KI-Modell.';
 
   @override
+  String get knowledgeSetupEmbeddingHint =>
+      'Embeddings use Envoy Local on this device. For OpenAI or Ollama, open Settings → AI on your home computer.';
+
+  @override
   String get knowledgeSetupEnabled => 'Vault-Wissen aktivieren';
 
   @override
@@ -712,6 +716,24 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get knowledgeFileMakePrivate => 'Privat stellen';
+
+  @override
+  String get knowledgeBrowseImportAndPublish => 'Import and publish';
+
+  @override
+  String get knowledgeBrowsePublishImportOnly =>
+      'Import this note into the vault first, then you can publish it.';
+
+  @override
+  String get knowledgeBrowsePublishImportNoDoc =>
+      'Imported, but could not publish yet — try Publish again from the imported note.';
+
+  @override
+  String get knowledgeBrowseImportedAndPublished => 'Imported and published';
+
+  @override
+  String get knowledgeBrowsePublishImportHint =>
+      'Import into vault and publish for mesh discovery';
 
   @override
   String get knowledgeFileMore => 'Weitere Aktionen';
@@ -1349,6 +1371,21 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get chatVoiceSendFailed => 'Sprachnotiz konnte nicht gesendet werden';
+
+  @override
+  String get chatSentFile => 'Sent a file';
+
+  @override
+  String get chatSentVoice => 'Sent a voice message';
+
+  @override
+  String get chatDeliverySent => 'Sent';
+
+  @override
+  String get chatDeliveryDelivered => 'Delivered';
+
+  @override
+  String get chatDeliveryFailed => 'Not delivered';
 
   @override
   String get chatMicDenied => 'Mikrofonberechtigung verweigert';

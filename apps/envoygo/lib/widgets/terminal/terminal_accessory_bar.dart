@@ -203,17 +203,38 @@ class _TerminalAccessoryBarState extends State<TerminalAccessoryBar> {
   Widget _chip(String label, VoidCallback onTap, {IconData? icon}) {
     return Padding(
       padding: const EdgeInsets.only(right: 6),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 44),
-        child: ActionChip(
-          avatar: icon == null
-              ? null
-              : Icon(icon, size: 18, color: Colors.white70),
-          label: Text(label, style: const TextStyle(fontSize: 12)),
-          onPressed: widget.enabled ? onTap : null,
-          backgroundColor: Colors.grey[800],
-          labelStyle: const TextStyle(color: Colors.white70),
+      child: Material(
+        color: Colors.grey[800],
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
           side: BorderSide(color: Colors.grey[700]!),
+        ),
+        child: InkWell(
+          onTap: widget.enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(16),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 44),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (icon != null) ...[
+                    Icon(icon, size: 18, color: Colors.white70),
+                    const SizedBox(width: 4),
+                  ],
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

@@ -10,6 +10,7 @@ enum KnowledgeBrowseFilter {
   notes,
   obsidian,
   notion,
+  blog,
   documents,
   published,
 }
@@ -118,6 +119,8 @@ bool matchesKnowledgeBrowseFilter({
       return source == 'linked-obsidian' || isKnowledgeObsidianPath(relativePath);
     case KnowledgeBrowseFilter.notion:
       return source == 'mcp-remote' || isKnowledgeNotionPath(relativePath);
+    case KnowledgeBrowseFilter.blog:
+      return isKnowledgeBlogPath(relativePath);
     case KnowledgeBrowseFilter.documents:
       return isKnowledgeDocumentsPath(relativePath) &&
           source != 'linked-obsidian' &&

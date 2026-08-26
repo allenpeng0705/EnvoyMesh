@@ -55,11 +55,30 @@ export function envoySessionTitle(projectPath: string): string {
   return `Envoy · ${name}`;
 }
 
-/** Resolve the standalone envoy-harness TUI binary (env → monorepo → PATH). */
+/** Resolve the standalone envoy-harness TUI binary (env → bundle → monorepo). */
 export function resolveEnvoyHarnessTuiBin(): string | null {
   if (process.env.ENVOY_HARNESS_TUI_BIN?.trim()) {
     return process.env.ENVOY_HARNESS_TUI_BIN;
   }
+
+  // Packaged: prefer node_modules so `@envoymesh/*` imports resolve from
+  // resources/node/node_modules when spawning `node …/dist/bin.js`.
+  const bundleDir = process.env.ENVOYMESH_NODE_BUNDLE_DIR?.trim();
+  if (bundleDir) {
+    const fromNm = resolve(
+      bundleDir,
+      "node_modules/@envoymesh/envoy-harness-tui/dist/bin.js",
+    );
+    if (existsSync(fromNm)) return fromNm;
+  }
+
+  // Flattened Tauri resource tree (resources/envoy-harness-tui/bin.js).
+  const resources = process.env.ENVOY_HARNESS_RESOURCES?.trim();
+  if (resources) {
+    const staged = resolve(resources, "envoy-harness-tui/bin.js");
+    if (existsSync(staged)) return staged;
+  }
+
   const here = dirname(fileURLToPath(import.meta.url)); // apps/node/src
   const sibling = resolve(
     here,

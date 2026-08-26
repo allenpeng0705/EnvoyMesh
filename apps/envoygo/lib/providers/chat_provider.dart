@@ -8,10 +8,14 @@ import '../models/chat_room.dart';
 import '../models/chat_thread.dart';
 import '../services/node_service_client.dart';
 import '../storage/local_database.dart';
+import '../utils/group_delivery.dart';
 import '../utils/localized_labels.dart';
 import 'contact_provider.dart';
 import 'node_provider.dart';
 import 'terminal_provider.dart';
+
+/// Max Envoy Harness coding chats per home node (matches `@envoymesh/api`).
+const kMaxEnvoyHarnessChats = 5;
 
 /// State for the chat subsystem.
 class ChatState {
@@ -226,6 +230,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   final Ref _ref;
   final LocalDatabase _localDb = LocalDatabase();
   final _seenMessageIds = <String>{};
+  Future<void>? _syncTerminalsInFlight;
 
   ChatNotifier(this._ref) : super(const ChatState());
 
@@ -250,6 +255,24 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final client = _ref.read(nodeProvider.notifier).client;
     if (client == null) return null;
     return NodeServiceClient(client);
+  }
+
+  ChatMessage _copyMessage(ChatMessage msg, {GroupDeliveryMetadata? delivery, String? id}) {
+    return ChatMessage(
+      id: id ?? msg.id,
+      threadId: msg.threadId,
+      senderOwnerId: msg.senderOwnerId,
+      senderDisplayName: msg.senderDisplayName,
+      text: msg.text,
+      createdAt: msg.createdAt,
+      isOutbound: msg.isOutbound,
+      delivery: delivery ?? msg.delivery,
+      attachments: msg.attachments,
+    );
+  }
+
+  void _persistMessage(ChatMessage msg) {
+    unawaited(_localDb.insertMessage(msg.toJson()));
   }
 
   /// Load cached threads from local storage. Self-threads (the
@@ -1512,14 +1535,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     final threadId = '${nodeState.activeNode!.id}:room:$roomId';
     final now = DateTime.now().toUtc().toIso8601String();
+    final tempId = 'temp_${DateTime.now().microsecondsSinceEpoch}';
     final tempMsg = ChatMessage(
-      id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
+      id: tempId,
       threadId: threadId,
       text: trimmed,
       createdAt: now,
       isOutbound: true,
+      delivery: const GroupDeliveryMetadata(deliveryReceipt: 'pending'),
     );
 
+    _persistMessage(tempMsg);
     state = state.copyWith(
       messages: {
         ...state.messages,
@@ -1534,13 +1560,42 @@ class ChatNotifier extends StateNotifier<ChatState> {
       threadId: threadId,
       nodeId: nodeState.activeNode!.id,
       type: ChatThreadType.group,
-      displayName: 'Room', // Fallback; existing thread data overrides.
+      displayName: 'Room',
       chatRoomId: roomId,
       lastMessageText: trimmed,
       lastMessageAt: DateTime.now(),
     );
 
-    await nodeService.sendChatRoomMessage(roomId, trimmed);
+    try {
+      final result = await nodeService.sendChatRoomMessage(roomId, trimmed);
+      final serverId = result['messageId']?.toString();
+      if (serverId == null || serverId.isEmpty) return;
+      final delivery = deliveryFromRpcMap(result);
+      final list = state.messages[threadId] ?? [];
+      final idx = list.indexWhere((m) => m.id == tempId);
+      if (idx < 0) return;
+      final promoted = _copyMessage(list[idx], id: serverId, delivery: delivery);
+      final next = [...list];
+      next[idx] = promoted;
+      state = state.copyWith(
+        messages: {...state.messages, threadId: next},
+      );
+      unawaited(_localDb.replaceMessage(tempId, promoted.toJson()));
+    } catch (_) {
+      final list = state.messages[threadId] ?? [];
+      final idx = list.indexWhere((m) => m.id == tempId);
+      if (idx < 0) return;
+      final failed = _copyMessage(
+        list[idx],
+        delivery: const GroupDeliveryMetadata(deliveryReceipt: 'failed'),
+      );
+      final next = [...list];
+      next[idx] = failed;
+      state = state.copyWith(
+        messages: {...state.messages, threadId: next},
+      );
+      _persistMessage(failed);
+    }
   }
 
   /// Handle a chat:room-message push event.
@@ -1573,8 +1628,20 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     if (roomId == null || roomId.isEmpty) return;
 
-    // Skip messages with no text — they would render as empty bubbles.
-    if (text == null || text.isEmpty) return;
+    final attachmentsRaw = inner['attachments'] as List<dynamic>? ??
+        content?['attachments'] as List<dynamic>?;
+    final hasAudio = attachmentsRaw?.any((a) {
+      final mime = (a is Map) ? (a['mimeType'] ?? a['mime_type']) as String? : null;
+      return mime != null && mime.startsWith('audio/');
+    }) ?? false;
+    final hasFile = attachmentsRaw?.isNotEmpty == true;
+
+    // Skip messages with no displayable body.
+    if ((text == null || text.isEmpty) && !hasAudio && !hasFile) return;
+
+    final displayText = (text != null && text.isNotEmpty)
+        ? text
+        : (hasAudio ? MessageBodySentinels.sentVoice : MessageBodySentinels.sentFile);
 
     final threadId = '${nodeState.activeNode!.id}:room:$roomId';
     final existingThread = state.threads.where((t) => t.id == threadId).firstOrNull;
@@ -1594,9 +1661,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
       threadId: threadId,
       senderOwnerId: senderOwnerId,
       senderDisplayName: showAsMine ? 'You' : senderDisplayName,
-      text: text,
+      text: displayText,
       createdAt: createdAt,
       isOutbound: showAsMine,
+      delivery: parseDeliveryMetadata(metadata),
     );
 
     // Dedup room messages by messageId; reconcile optimistic temp_* echoes.
@@ -1639,6 +1707,76 @@ class ChatNotifier extends StateNotifier<ChatState> {
         threadId: next,
       },
     );
+  }
+
+  /// Handle delivery acks for outbound 1:1 and group messages.
+  void onChatDelivered(Map<String, dynamic> data) {
+    final messageId = data['messageId'] as String?;
+    final recipientOwnerId = data['recipientOwnerId'] as String?;
+    if (messageId == null || messageId.isEmpty) return;
+
+    var changed = false;
+    final nextMessages = <String, List<ChatMessage>>{};
+    for (final entry in state.messages.entries) {
+      final list = entry.value;
+      final idx = list.indexWhere((m) => m.id == messageId);
+      if (idx < 0) {
+        nextMessages[entry.key] = list;
+        continue;
+      }
+      final msg = list[idx];
+      if (!msg.isOutbound) {
+        nextMessages[entry.key] = list;
+        continue;
+      }
+      final prior = msg.delivery ?? const GroupDeliveryMetadata();
+      final merged = recipientOwnerId != null && recipientOwnerId.isNotEmpty
+          ? prior.mergeAck(recipientOwnerId)
+          : const GroupDeliveryMetadata(deliveryReceipt: 'delivered');
+      final updated = _copyMessage(msg, delivery: merged);
+      final updatedList = [...list];
+      updatedList[idx] = updated;
+      nextMessages[entry.key] = updatedList;
+      changed = true;
+      _persistMessage(updated);
+    }
+    if (changed) {
+      state = state.copyWith(messages: nextMessages);
+    }
+  }
+
+  /// Mark an outbound message as failed for one recipient (mesh group give-up).
+  void onChatDeliveryFailed(Map<String, dynamic> data) {
+    final messageId = data['messageId'] as String?;
+    if (messageId == null || messageId.isEmpty) return;
+
+    var changed = false;
+    final nextMessages = <String, List<ChatMessage>>{};
+    for (final entry in state.messages.entries) {
+      final list = entry.value;
+      final idx = list.indexWhere((m) => m.id == messageId);
+      if (idx < 0) {
+        nextMessages[entry.key] = list;
+        continue;
+      }
+      final msg = list[idx];
+      if (!msg.isOutbound) {
+        nextMessages[entry.key] = list;
+        continue;
+      }
+      final failed = _copyMessage(
+        msg,
+        delivery: (msg.delivery ?? const GroupDeliveryMetadata()).markFailed(),
+      );
+      final updatedList = [...list];
+      updatedList[idx] = failed;
+      nextMessages[entry.key] = updatedList;
+      changed = true;
+      _persistMessage(failed);
+    }
+    if (changed) {
+      state = state.copyWith(messages: nextMessages);
+    }
   }
 
   /// Handle a chat:room-updated push (invite / rename / membership).
@@ -1715,6 +1853,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       final roomsRaw = result['rooms'];
       if (roomsRaw is! List) return;
       final nodeId = nodeState.activeNode!.id;
+      final seen = <String>{};
       for (final raw in roomsRaw) {
         if (raw is! Map) continue;
         final room = ChatRoom.fromJson({
@@ -1723,6 +1862,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
           'kind': 'family',
         });
         if (room.id.isEmpty) continue;
+        seen.add(room.id);
         final threadId = '$nodeId:room:${room.id}';
         _upsertThread(
           threadId: threadId,
@@ -1733,6 +1873,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
               : ThreadTitleSentinels.familyGroup,
           chatRoomId: room.id,
         );
+      }
+      final stale = state.threads.where((t) {
+        if (t.nodeId != nodeId || t.type != ChatThreadType.familyGroup) {
+          return false;
+        }
+        final parts = t.id.split(':room:');
+        if (parts.length < 2) return true;
+        return !seen.contains(parts[1].trim());
+      }).toList();
+      for (final t in stale) {
+        unawaited(deleteThread(t.id));
       }
     } catch (e) {
       debugPrint('syncFamilyRooms failed: $e');
@@ -1758,6 +1909,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       isOutbound: true,
       senderDisplayName: 'You',
       senderOwnerId: myProfileId,
+      delivery: const GroupDeliveryMetadata(deliveryReceipt: 'delivered'),
     );
     _localDb.insertMessage(tempMsg.toJson());
     state = state.copyWith(
@@ -1766,6 +1918,19 @@ class ChatNotifier extends StateNotifier<ChatState> {
         threadId: [tempMsg, ...?state.messages[threadId]],
       },
     );
+
+    final existingThread =
+        state.threads.where((t) => t.id == threadId).firstOrNull;
+    _upsertThread(
+      threadId: threadId,
+      nodeId: nodeState.activeNode!.id,
+      type: ChatThreadType.familyGroup,
+      displayName: existingThread?.displayName ?? ThreadTitleSentinels.familyGroup,
+      chatRoomId: roomId,
+      lastMessageText: trimmed,
+      lastMessageAt: DateTime.now(),
+    );
+
     await nodeService.sendFamilyRoomMessage(roomId: roomId, text: trimmed);
   }
 
@@ -2259,6 +2424,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   bool get mayUseCoding => _mayUseCoding(_ref.read(nodeProvider));
 
   bool _mayUseCoding(NodeState nodeState) {
+    if (nodeState.activeNode == null) return false;
     if (nodeState.isOwnerProfile) return true;
     return !_isDeniedCodingFamily(nodeState);
   }
@@ -2354,6 +2520,18 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   /// Sync terminal sessions from the home node as threads.
   Future<void> syncTerminals() async {
+    if (_syncTerminalsInFlight != null) {
+      return _syncTerminalsInFlight!;
+    }
+    _syncTerminalsInFlight = _syncTerminalsImpl();
+    try {
+      await _syncTerminalsInFlight;
+    } finally {
+      _syncTerminalsInFlight = null;
+    }
+  }
+
+  Future<void> _syncTerminalsImpl() async {
     final termNotifier = _ref.read(terminalProvider.notifier);
     await termNotifier.loadSessions();
 
@@ -2361,9 +2539,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final nodeState = _ref.read(nodeProvider);
     if (nodeState.activeNode == null) return;
 
+    final nodeId = nodeState.activeNode!.id;
+    final seen = <String>{};
     for (final session in termState.sessions) {
-      final threadId =
-          '${nodeState.activeNode!.id}:term:${session.id}';
+      final threadId = '$nodeId:term:${session.id}';
+      seen.add(session.id);
       final String displayName;
       if (session.isEnvoyHarness) {
         displayName = session.name.startsWith('EH ')
@@ -2378,12 +2558,23 @@ class ChatNotifier extends StateNotifier<ChatState> {
       }
       _upsertThread(
         threadId: threadId,
-        nodeId: nodeState.activeNode!.id,
+        nodeId: nodeId,
         type: ChatThreadType.terminal,
         displayName: displayName,
         lastMessageText:
             '${session.runningProcess ?? (session.isEnvoyHarness ? 'envoy' : session.isPi ? 'pi' : 'shell')} — ${session.cwd ?? '~'}',
       );
+    }
+    final stale = state.threads.where((t) {
+      if (t.nodeId != nodeId || t.type != ChatThreadType.terminal) {
+        return false;
+      }
+      final parts = t.id.split(':term:');
+      if (parts.length < 2) return true;
+      return !seen.contains(parts[1].trim());
+    }).toList();
+    for (final t in stale) {
+      unawaited(deleteThread(t.id));
     }
   }
 
@@ -2408,6 +2599,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
       displayName: '${ThreadTitleSentinels.terminalPrefix}$name',
       lastMessageAt: DateTime.now(),
     );
+
+    await syncTerminals();
   }
 
   /// Start a Pi coding TUI on the home node (same as Social “π Pi”).

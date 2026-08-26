@@ -1005,11 +1005,27 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
         return
       }
 
-      submitToQueue(trimmed, mode, ehAttachments.toRefs())
+      let effective: EhSubmitMode = mode
+      // Attachments cannot ride the text-only queue — inject after cancel.
+      if (busyRef.current && mode === "queue" && refs.length > 0) {
+        effective = "inject"
+      }
+
+      submitToQueue(trimmed, effective, refs)
       setDraft("")
       ehAttachments.clear()
     },
-    [draft, ehAttachments, chatReady, handleSlashCommand, setSystem, status, submitToQueue, t],
+    [
+      busyRef,
+      draft,
+      ehAttachments,
+      chatReady,
+      handleSlashCommand,
+      setSystem,
+      status,
+      submitToQueue,
+      t,
+    ],
   )
 
   useEffect(() => {

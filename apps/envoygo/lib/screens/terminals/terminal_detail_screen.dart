@@ -7,6 +7,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../providers/chat_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../services/node_service_client.dart';
 import '../../services/terminal_service.dart';
@@ -51,6 +52,7 @@ class _TerminalDetailScreenState extends ConsumerState<TerminalDetailScreen>
   Set<String> _terminalCommands = const {};
 
   void Function()? _unsubRx;
+  void Function()? _unsubClosed;
 
   late final PullToRefreshController _pullToRefreshController;
 
@@ -93,7 +95,7 @@ class _TerminalDetailScreenState extends ConsumerState<TerminalDetailScreen>
 
     // Subscribe to PTY output from home node push events.
     _unsubRx = client.on('homeTerminalWs:rx', _onTerminalOutput);
-    client.on('homeTerminalWs:closed', (_) {
+    _unsubClosed = client.on('homeTerminalWs:closed', (_) {
       if (mounted) setState(() => _tunnelUp = false);
     });
 
@@ -136,6 +138,8 @@ class _TerminalDetailScreenState extends ConsumerState<TerminalDetailScreen>
   void _detach() {
     _unsubRx?.call();
     _unsubRx = null;
+    _unsubClosed?.call();
+    _unsubClosed = null;
     _terminalService?.detach();
     _terminalService = null;
     _attached = false;
@@ -237,9 +241,10 @@ class _TerminalDetailScreenState extends ConsumerState<TerminalDetailScreen>
           IconButton(
             tooltip: l10n.termCloseSession,
             icon: const Icon(Icons.close),
-            onPressed: () {
-              _terminalService?.closeSession(widget.sessionId);
-              Navigator.of(context).pop();
+            onPressed: () async {
+              await _terminalService?.closeSession(widget.sessionId);
+              await ref.read(chatProvider.notifier).syncTerminals();
+              if (context.mounted) Navigator.of(context).pop();
             },
           ),
         ],

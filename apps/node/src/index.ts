@@ -3407,9 +3407,6 @@ const terminalManager = new TerminalManager({
     if (nodeService instanceof NodeServiceImpl) {
       nodeService.emitTerminalSessionsUpdated();
     }
-    wsServerForEvents?.emitEvent("terminal:session-updated", {
-      sessions: terminalManager.listSessionSummaries(),
-    });
   },
   onSessionActivity: (sessionId) => {
     void terminalAgentAssist.onSessionActivity(sessionId).then((events) => {

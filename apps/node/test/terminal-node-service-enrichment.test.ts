@@ -134,4 +134,23 @@ describe("NodeServiceImpl terminal session enrichment", () => {
       "terminal.sessionNotFound",
     );
   });
+
+  it("emitTerminalSessionsUpdated emits enriched sessions once (not raw summaries)", async () => {
+    const created = await node.createTerminalSession({ title: "Push me" });
+    emitPtyOutput("$ npm test\n");
+
+    const events: Array<{ sessions: Array<{ sessionId: string; activityBadge?: string }> }> = [];
+    node.on("terminal:session-updated", (data) => {
+      events.push(data as { sessions: Array<{ sessionId: string; activityBadge?: string }> });
+    });
+
+    node.emitTerminalSessionsUpdated();
+    await vi.waitFor(() => {
+      expect(events.length).toBeGreaterThan(0);
+    });
+
+    expect(events).toHaveLength(1);
+    const row = events[0]?.sessions.find((s) => s.sessionId === created.sessionId);
+    expect(row?.activityBadge).toBe("blocked");
+  });
 });

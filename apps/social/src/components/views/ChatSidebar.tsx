@@ -143,9 +143,16 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
   useEffect(() => {
     if (!nodeService.isConnected) return;
     void refreshEhChats();
-    return nodeService.on("eh:turn_complete", () => {
+    const unsubTurn = nodeService.on("eh:turn_complete", () => {
       void refreshEhChats();
     });
+    const unsubConfig = nodeService.on("home:config-updated", () => {
+      void refreshEhChats();
+    });
+    return () => {
+      unsubTurn();
+      unsubConfig();
+    };
   }, [nodeService, nodeService.isConnected]);
 
   const openEhChatProjectModal = () => {
@@ -594,21 +601,6 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
               </button>
             ) : null}
           </div>
-          {onOpenPi ? (
-            <button
-              type="button"
-              className="thread-row thread-row--ai thread-row--pi"
-              onClick={onOpenPi}
-            >
-              <span className="thread-avatar thread-avatar--pi" aria-hidden>π</span>
-              <span className="thread-meta">
-                <span className="thread-title-row">
-                  <span className="thread-title">{t("pi.title", "Pi")}</span>
-                </span>
-                <span className="thread-subtitle">{t("pi.subtitle", "Coding Agent")}</span>
-              </span>
-            </button>
-          ) : null}
           {onOpenEnvoyHarness ? (
             <>
               {ehChats.map((chat) => {
@@ -662,6 +654,21 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
                 </button>
               ) : null}
             </>
+          ) : null}
+          {onOpenPi ? (
+            <button
+              type="button"
+              className="thread-row thread-row--ai thread-row--pi"
+              onClick={onOpenPi}
+            >
+              <span className="thread-avatar thread-avatar--pi" aria-hidden>π</span>
+              <span className="thread-meta">
+                <span className="thread-title-row">
+                  <span className="thread-title">{t("pi.title", "Pi")}</span>
+                </span>
+                <span className="thread-subtitle">{t("pi.subtitle", "Coding Agent")}</span>
+              </span>
+            </button>
           ) : null}
         </>
       ) : null}

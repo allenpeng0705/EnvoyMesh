@@ -159,4 +159,30 @@ describe("envoySessionTitle + TUI bin resolution", () => {
   it("honors ENVOY_HARNESS_TUI_BIN", () => {
     expect(resolveEnvoyHarnessTuiBin()).toBe("/fake/envoy-harness-tui.js");
   });
+
+  it("resolves TUI from ENVOYMESH_NODE_BUNDLE_DIR node_modules", async () => {
+    const prev = process.env.ENVOY_HARNESS_TUI_BIN;
+    const prevBundle = process.env.ENVOYMESH_NODE_BUNDLE_DIR;
+    delete process.env.ENVOY_HARNESS_TUI_BIN;
+    const bundle = await mkdtemp(join(tmpdir(), "envoy-tui-bundle-"));
+    const bin = join(
+      bundle,
+      "node_modules/@envoymesh/envoy-harness-tui/dist/bin.js",
+    );
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    await mkdir(join(bundle, "node_modules/@envoymesh/envoy-harness-tui/dist"), {
+      recursive: true,
+    });
+    await writeFile(bin, "// fake tui\n");
+    process.env.ENVOYMESH_NODE_BUNDLE_DIR = bundle;
+    try {
+      expect(resolveEnvoyHarnessTuiBin()).toBe(bin);
+    } finally {
+      if (prev !== undefined) process.env.ENVOY_HARNESS_TUI_BIN = prev;
+      else delete process.env.ENVOY_HARNESS_TUI_BIN;
+      if (prevBundle !== undefined) process.env.ENVOYMESH_NODE_BUNDLE_DIR = prevBundle;
+      else delete process.env.ENVOYMESH_NODE_BUNDLE_DIR;
+      await rm(bundle, { recursive: true, force: true });
+    }
+  });
 });

@@ -587,7 +587,7 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
       tokenRefreshTimerRef.current = null;
     }
 
-    if (!sessionReady || !xtermReady) {
+    if (!sessionReady || !xtermReady || !active) {
       return;
     }
 
@@ -707,7 +707,7 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
       transportRef.current?.close();
       transportRef.current = null;
     };
-  }, [fitTerminal, homeOffline, nodeService, session?.sessionId, sessionReady, t, useHomeRemote, xtermReady]);
+  }, [active, fitTerminal, homeOffline, nodeService, session?.sessionId, sessionReady, t, useHomeRemote, xtermReady]);
 
   useEffect(() => {
     if (!xtermReady || !sessionReady) return;

@@ -62,12 +62,13 @@
 #               sources.)
 #   ENVOY_HARNESS_DIR=<path>
 #               Override the sibling envoy-harness monorepo location.
-#               Default: $ROOT/../envoy-harness. The script builds Package 1
-#               (envoy-harness) + Package 3 (envoy-harness-adapter) and
-#               copies their dist/ into apps/tauri/src-tauri/resources/.
+#               Default: $ROOT/../envoy-harness. The script builds
+#               envoy-harness, envoy-harness-client, envoy-harness-adapter,
+#               envoy-harness-peer, and envoy-harness-tui and copies their
+#               dist/ into apps/tauri/src-tauri/resources/.
 #               stage-bundle-node-runtime.sh also wires them into
 #               resources/node/node_modules/@envoymesh/ (required for
-#               first-launch module resolution).
+#               first-launch module resolution + Terminal → Envoy).
 #               See scripts/stage-tauri-envoy-harness-bundle.sh.
 #   SMOKE_ENVOY_HARNESS=0
 #               Skip the post-stage smoke (asserts entry files exist in

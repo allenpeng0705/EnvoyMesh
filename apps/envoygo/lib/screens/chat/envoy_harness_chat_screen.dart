@@ -10,13 +10,16 @@ import '../../eh/eh_review_prefs.dart';
 import '../../eh/eh_timeline.dart';
 import '../../eh/eh_turn_queue.dart';
 import '../../eh/envoy_harness_history.dart';
+import '../../ext_agent/agent_attachments.dart';
 import '../../ext_agent/envoy_harness_slash_commands.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
+import '../../widgets/agent_attachment_bar.dart';
 import '../../widgets/chat/slash_command_suggest.dart';
 import '../../widgets/eh/eh_changes_banner.dart';
 import '../../widgets/eh/eh_turn_review_sheet.dart';
 import '../../widgets/eh/envoy_harness_terminal_chrome.dart';
+import '../files/home_file_pick_screen.dart';
 
 /// Envoy Harness coding chat — multi-turn agent thread per project folder.
 class EnvoyHarnessChatScreen extends ConsumerStatefulWidget {
@@ -72,6 +75,8 @@ class _EnvoyHarnessChatScreenState
   String? _lastReviewTurnId;
   int _reviewMinFiles = 1;
   bool _reviewSheetOpen = false;
+  final List<AgentDraftAttachment> _attachments = [];
+  List<AgentDraftAttachment>? _pendingDisplayAttachments;
 
   bool get _busy => _queue?.busy ?? false;
   List<Map<String, dynamic>> get _nonMessageTimeline => _timeline.items
@@ -134,10 +139,11 @@ class _EnvoyHarnessChatScreenState
     if (client == null) return;
     final queue = EhTurnQueue(
       chatId: widget.chatId,
-      startTurn: (text) async {
+      startTurn: (text, {attachments}) async {
         final result = await client.startEnvoyHarnessTurn(
           text,
           chatId: widget.chatId,
+          attachments: attachments,
         );
         final turnId = result['turnId']?.toString() ?? '';
         if (turnId.isEmpty) {
@@ -149,12 +155,21 @@ class _EnvoyHarnessChatScreenState
         await client.cancelEnvoyHarnessTurn(chatId: widget.chatId);
       },
       onUserTurn: (text) {
+        final pending = _pendingDisplayAttachments;
+        _pendingDisplayAttachments = null;
+        var display = text;
+        if (pending != null && pending.isNotEmpty) {
+          final names = pending
+              .map((a) => a.name ?? attachmentBasename(a.path))
+              .join(', ');
+          display = text.isEmpty ? '📎 $names' : '$text\n📎 $names';
+        }
         setState(() {
           _messages.add(
             _EhMessage(
               id: 'local-user-${DateTime.now().microsecondsSinceEpoch}',
               role: 'user',
-              text: text,
+              text: display,
             ),
           );
           _error = null;
@@ -972,11 +987,34 @@ class _EnvoyHarnessChatScreenState
     }
   }
 
+  Future<void> _pickHomeAttachment() async {
+    final cwd = _status?['cwd']?.toString();
+    final path = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => HomeFilePickScreen(
+          initialPath: (cwd != null && cwd.trim().isNotEmpty) ? cwd : null,
+        ),
+      ),
+    );
+    if (!mounted || path == null || path.isEmpty) return;
+    setState(() {
+      _attachments.add(
+        AgentDraftAttachment(
+          id: 'att_${DateTime.now().microsecondsSinceEpoch}',
+          path: path,
+          name: attachmentBasename(path),
+          mimeType: guessMimeFromName(path),
+        ),
+      );
+    });
+  }
+
   Future<void> _send({EhSubmitMode mode = EhSubmitMode.send}) async {
     final queue = _queue;
     if (queue == null) return;
     final text = _controller.text.trim();
-    if (text.isEmpty) return;
+    final refs = _attachments.map((a) => a.toRpc()).toList();
+    if (text.isEmpty && refs.isEmpty) return;
 
     if (isEnvoyHarnessLocalSlashCommand(text)) {
       _controller.clear();
@@ -997,11 +1035,29 @@ class _EnvoyHarnessChatScreenState
     }
 
     // While busy, default send becomes queue (Social composer behavior).
-    final effective = queue.busy && mode == EhSubmitMode.send
+    // Attachments cannot be queued — inject so files ride the next turn.
+    var effective = queue.busy && mode == EhSubmitMode.send
         ? EhSubmitMode.queue
         : mode;
+    if (queue.busy &&
+        refs.isNotEmpty &&
+        effective == EhSubmitMode.queue) {
+      effective = EhSubmitMode.inject;
+    }
     _controller.clear();
-    await queue.submit(text, effective);
+    if (effective == EhSubmitMode.queue) {
+      // Queued follow-ups are text-only (same as Social).
+      setState(() => _attachments.clear());
+      await queue.submit(text, effective);
+      return;
+    }
+    _pendingDisplayAttachments = List.of(_attachments);
+    setState(() => _attachments.clear());
+    await queue.submit(
+      text,
+      effective,
+      attachments: refs.isEmpty ? null : refs,
+    );
   }
 
   Widget _buildSlashSuggest() {
@@ -1390,7 +1446,24 @@ class _EnvoyHarnessChatScreenState
             child: Padding(
               padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  if (_attachments.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6, right: 2),
+                      child: AgentAttachmentBar(
+                        attachments: _attachments,
+                        onRemove: (id) => setState(() {
+                          _attachments.removeWhere((a) => a.id == id);
+                        }),
+                        onClearAll: () => setState(() => _attachments.clear()),
+                      ),
+                    ),
+                  IconButton(
+                    tooltip: 'Attach home file',
+                    onPressed: () => unawaited(_pickHomeAttachment()),
+                    icon: const Icon(Icons.attach_file),
+                  ),
                   Expanded(
                     child: TextField(
                       controller: _controller,
