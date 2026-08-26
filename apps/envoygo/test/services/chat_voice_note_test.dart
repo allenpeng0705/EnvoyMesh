@@ -55,6 +55,20 @@ void main() {
       ),
       isTrue,
     );
+    expect(
+      matchesKnowledgeBrowseFilter(
+        relativePath: 'notes/imports/blog/hello.md',
+        filter: KnowledgeBrowseFilter.blog,
+      ),
+      isTrue,
+    );
+    expect(
+      matchesKnowledgeBrowseFilter(
+        relativePath: 'notes/hello.md',
+        filter: KnowledgeBrowseFilter.blog,
+      ),
+      isFalse,
+    );
     expect(isVaultShareableSource('vault'), isTrue);
     expect(isVaultShareableSource('linked-obsidian'), isFalse);
   });

@@ -26,7 +26,7 @@ void main() {
     expect(find.text('/review'), findsOneWidget);
     expect(find.text('/diff'), findsOneWidget);
     expect(find.text('More…'), findsOneWidget);
-    await tester.tap(find.byType(ActionChip).first);
+    await tester.tap(find.text('/help').first);
     expect(sent, ['/help\n']);
   });
 

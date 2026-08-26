@@ -3,12 +3,16 @@ import {
   OWNER_FAMILY_PROFILE_ID,
   type BondRecord,
   type ChatMessage,
+  type ChatRoomMessageEvent,
 } from "@envoymesh/api";
 import type { NodeServiceClient } from "./useNodeService.js";
 import { MESSAGES } from "../i18n/messages/index.js";
 import { translate, type TranslateParams } from "../i18n/translate.js";
 import { normalizeLocale, type LocaleId } from "../i18n/types.js";
-import { isChatMessageVisibleToProfile } from "../lib/chat-visibility.js";
+import {
+  isChatMessageVisibleToProfile,
+  messageIsOutgoing,
+} from "../lib/chat-visibility.js";
 
 /**
  * Localized chat message preview for the desktop / browser notification
@@ -48,23 +52,35 @@ export function useChatNotifications(opts: {
   peerId: string;
   /** Mesh owner id — improves thread routing for visibility checks. */
   selfOwnerId?: string;
+  /** Family profile for this session (mom/dad/owner). Defaults to owner desktop. */
+  familyProfileId?: string;
   /** App locale (from NodeStateProvider appSettings — do not use useNodeState here). */
   locale?: string;
 }) {
   const { enabled, nodeService, wsOpen, bonds, peerId, selfOwnerId } = opts;
   const localeKey: LocaleId = normalizeLocale(opts.locale);
+  const familyProfileId =
+    opts.familyProfileId?.trim() || OWNER_FAMILY_PROFILE_ID;
 
   useEffect(() => {
     if (!enabled || !wsOpen) return;
 
-    const unsub = nodeService.on("chat:message", (data) => {
-      const msg = data as ChatMessage;
+    const maybeNotify = (msg: ChatMessage) => {
       if (msg.metadata?.deliveryReceipt === "sent") return;
-      if (peerId && msg.sender.nodeId === peerId) return;
+      if (
+        messageIsOutgoing(
+          msg,
+          selfOwnerId ?? "",
+          peerId,
+          familyProfileId,
+        )
+      ) {
+        return;
+      }
       // Never notify for other family profiles' threads (Dad↔Mom, etc.).
       if (
         !isChatMessageVisibleToProfile(msg, {
-          familyProfileId: OWNER_FAMILY_PROFILE_ID,
+          familyProfileId,
           selfOwnerId,
           selfPeerId: peerId,
         })
@@ -91,8 +107,18 @@ export function useChatNotifications(opts: {
       } catch {
         /* ignore — e.g. insecure context */
       }
+    };
+
+    const unsub = nodeService.on("chat:message", (data) => {
+      maybeNotify(data as ChatMessage);
+    });
+    const unsubRoom = nodeService.on("chat:room-message", (data) => {
+      maybeNotify((data as ChatRoomMessageEvent).message);
     });
 
-    return unsub;
-  }, [enabled, wsOpen, nodeService, bonds, peerId, selfOwnerId, localeKey]);
+    return () => {
+      unsub();
+      unsubRoom();
+    };
+  }, [enabled, wsOpen, nodeService, bonds, peerId, selfOwnerId, localeKey, familyProfileId]);
 }

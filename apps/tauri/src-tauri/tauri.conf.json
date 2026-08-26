@@ -49,7 +49,9 @@
       "resources/pi/**/*",
       "resources/envoy-harness/**/*",
       "resources/envoy-harness-adapter/**/*",
-      "resources/envoy-harness-client/**/*"
+      "resources/envoy-harness-client/**/*",
+      "resources/envoy-harness-peer/**/*",
+      "resources/envoy-harness-tui/**/*"
     ]
   },
   "plugins": {

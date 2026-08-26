@@ -113,7 +113,7 @@ import type {
   ChainDeleteRecipeParams,
   ChainDeleteRecipeResult,
 } from "@envoymesh/api";
-import { isFamilyThreadKey, OWNER_FAMILY_PROFILE_ID, TERMINAL_ASSIST_RPC_TIMEOUT_MS, EH_ASK_WS_TIMEOUT_MS } from "@envoymesh/api";
+import { OWNER_FAMILY_PROFILE_ID, TERMINAL_ASSIST_RPC_TIMEOUT_MS, EH_ASK_WS_TIMEOUT_MS } from "@envoymesh/api";
 import { mergeGroupDeliveryAck } from "@envoymesh/api/group-chat-delivery";
 import {
   mergeMessagesIntoThread,
@@ -123,6 +123,7 @@ import {
 import {
   isChatMessageVisibleToProfile,
   isThreadVisibleToProfile,
+  messageIsOutgoing,
   pruneThreadsForProfile,
   resolveChatThreadKey,
 } from "../lib/chat-visibility.js";
@@ -863,6 +864,13 @@ export interface NodeServiceClient {
 }
 
 const NodeServiceContext = createContext<NodeServiceClient | null>(null);
+
+type TerminalSessionsContextValue = {
+  sessions: import("@envoymesh/api").TerminalSessionSummary[];
+  refresh: () => Promise<void>;
+};
+
+const TerminalSessionsContext = createContext<TerminalSessionsContextValue | null>(null);
 
 /** True when WebSocket/mobile transport is up (daemon may still be stopped). Separate from mesh "online". */
 const TransportWsContext = createContext(false);
@@ -2816,12 +2824,79 @@ export function NodeServiceProvider({
       <TransportWsContext.Provider value={connected}>
         <ModelProviderUiScopeContext.Provider value={modelProviderUiScope}>
           <NodeServiceContext.Provider value={ctx}>
-            {children}
+            <TerminalSessionsProvider>{children}</TerminalSessionsProvider>
           </NodeServiceContext.Provider>
         </ModelProviderUiScopeContext.Provider>
       </TransportWsContext.Provider>
     </DesktopConnectionPrefsContext.Provider>
   );
+}
+
+function TerminalSessionsProvider({ children }: { children: ReactNode }) {
+  const client = useNodeService();
+  const wsOpen = useTransportWsOpen();
+  const [sessions, setSessions] = useState<import("@envoymesh/api").TerminalSessionSummary[]>([]);
+  const cleanedStaleRef = useRef(false);
+
+  const refresh = useCallback(async () => {
+    if (!wsOpen || !client.isConnected) return;
+    try {
+      const list = await client.listTerminalSessions();
+      setSessions(list);
+      if (!cleanedStaleRef.current) {
+        cleanedStaleRef.current = true;
+        const stale = list.filter((s) => s.state !== "running");
+        if (stale.length > 0) {
+          for (const row of stale) {
+            try {
+              await client.closeTerminalSession({ sessionId: row.sessionId });
+            } catch {
+              /* session may already be gone */
+            }
+          }
+          const next = await client.listTerminalSessions();
+          setSessions(next);
+        }
+      }
+    } catch {
+      // Owner-only / terminals unavailable — keep last snapshot.
+    }
+  }, [client, wsOpen]);
+
+  useEffect(() => {
+    if (!wsOpen || !client.isConnected) {
+      setSessions([]);
+      cleanedStaleRef.current = false;
+      return;
+    }
+    void refresh();
+    const unsub = client.on("terminal:session-updated", (data) => {
+      const payload = data as { sessions?: import("@envoymesh/api").TerminalSessionSummary[] };
+      if (Array.isArray(payload?.sessions)) {
+        setSessions(payload.sessions);
+        return;
+      }
+      void refresh();
+    });
+    return unsub;
+  }, [client, wsOpen, refresh]);
+
+  const value = useMemo(
+    () => ({ sessions, refresh }),
+    [sessions, refresh],
+  );
+
+  return (
+    <TerminalSessionsContext.Provider value={value}>{children}</TerminalSessionsContext.Provider>
+  );
+}
+
+export function useTerminalSessions(): TerminalSessionsContextValue {
+  const ctx = useContext(TerminalSessionsContext);
+  if (!ctx) {
+    throw new Error("useTerminalSessions must be used within NodeServiceProvider");
+  }
+  return ctx;
 }
 
 export function useNodeService(): NodeServiceClient {
@@ -3186,25 +3261,6 @@ function partnerOwnerIdForChat(
   selfPeerId: string,
 ): string | null {
   return resolveChatThreadKey(msg, selfOwnerId, selfPeerId);
-}
-
-function messageIsOutgoing(
-  msg: ChatMessage,
-  selfOwnerId: string,
-  selfPeerId: string,
-  selfFamilyProfileId?: string,
-): boolean {
-  const selfO = selfOwnerId.trim();
-  const selfP = selfPeerId.trim();
-  const sndO = msg.sender.ownerId?.trim();
-  const sndN = msg.sender.nodeId?.trim();
-  const rcvO = msg.recipient.ownerId?.trim();
-  // Family DMs use profile ids (e.g. "owner" / "mom"), not mesh envoy:owner:….
-  if (rcvO && isFamilyThreadKey(rcvO)) {
-    const familySelf = (selfFamilyProfileId ?? OWNER_FAMILY_PROFILE_ID).trim();
-    return !!sndO && sndO === familySelf;
-  }
-  return (sndO !== undefined && sndO === selfO) || (!!selfP && sndN === selfP);
 }
 
 function appendChatToThreads(

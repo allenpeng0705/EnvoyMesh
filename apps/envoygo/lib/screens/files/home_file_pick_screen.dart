@@ -7,7 +7,10 @@ import '../../providers/contact_provider.dart' show nodeServiceProvider;
 
 /// Pick a file on the home node; pops with absolute path [String] or null.
 class HomeFilePickScreen extends ConsumerStatefulWidget {
-  const HomeFilePickScreen({super.key});
+  const HomeFilePickScreen({super.key, this.initialPath});
+
+  /// Optional start directory (e.g. envoy-harness project cwd).
+  final String? initialPath;
 
   @override
   ConsumerState<HomeFilePickScreen> createState() => _HomeFilePickScreenState();
@@ -51,7 +54,10 @@ class _HomeFilePickScreenState extends ConsumerState<HomeFilePickScreen> {
         _platform = platform;
         _roots = roots;
       });
-      await _loadPath(homeDir);
+      final start = widget.initialPath?.trim().isNotEmpty == true
+          ? widget.initialPath!.trim()
+          : homeDir;
+      await _loadPath(start);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -83,9 +89,17 @@ class _HomeFilePickScreenState extends ConsumerState<HomeFilePickScreen> {
         return;
       }
       final result = await client.listHomeFsEntries(path: path);
+      // Hide .dot directories when browsing (same as project-folder picker).
       final entries = (result['entries'] as List<dynamic>? ?? const [])
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
+          .where((e) {
+            final name = e['name']?.toString() ?? '';
+            if (e['kind']?.toString() == 'dir' && name.startsWith('.')) {
+              return false;
+            }
+            return true;
+          })
           .toList();
       if (!mounted) return;
       setState(() {

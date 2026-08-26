@@ -581,6 +581,10 @@ class AppLocalizationsKo extends AppLocalizations {
       '인덱스 상태 및 검색. 채팅 모델은 \'내 정보 → AI 모델\'에 있습니다.';
 
   @override
+  String get knowledgeSetupEmbeddingHint =>
+      'Embeddings use Envoy Local on this device. For OpenAI or Ollama, open Settings → AI on your home computer.';
+
+  @override
   String get knowledgeSetupEnabled => '볼트 지식 활성화';
 
   @override
@@ -678,6 +682,24 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get knowledgeFileMakePrivate => '비공개로 설정';
+
+  @override
+  String get knowledgeBrowseImportAndPublish => 'Import and publish';
+
+  @override
+  String get knowledgeBrowsePublishImportOnly =>
+      'Import this note into the vault first, then you can publish it.';
+
+  @override
+  String get knowledgeBrowsePublishImportNoDoc =>
+      'Imported, but could not publish yet — try Publish again from the imported note.';
+
+  @override
+  String get knowledgeBrowseImportedAndPublished => 'Imported and published';
+
+  @override
+  String get knowledgeBrowsePublishImportHint =>
+      'Import into vault and publish for mesh discovery';
 
   @override
   String get knowledgeFileMore => '더보기';
@@ -1300,6 +1322,21 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get chatVoiceSendFailed => '음성 메모 전송 실패';
+
+  @override
+  String get chatSentFile => 'Sent a file';
+
+  @override
+  String get chatSentVoice => 'Sent a voice message';
+
+  @override
+  String get chatDeliverySent => 'Sent';
+
+  @override
+  String get chatDeliveryDelivered => 'Delivered';
+
+  @override
+  String get chatDeliveryFailed => 'Not delivered';
 
   @override
   String get chatMicDenied => '마이크 권한이 거부됨';

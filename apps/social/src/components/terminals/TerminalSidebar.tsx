@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { TerminalSessionSummary } from "@envoymesh/api";
 
-import { useNodeService, usePendingApprovals } from "../../hooks/useNodeService.js";
+import {
+  useNodeService,
+  usePendingApprovals,
+  useTerminalSessions,
+} from "../../hooks/useNodeService.js";
 import { saveAssistantLinkedTerminalSessionId } from "../../lib/storage.js";
 import { useT } from "../../context/I18nContext.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
@@ -43,53 +47,26 @@ export function TerminalSidebar({
   const nodeService = useNodeService();
   const t = useT();
   const { items: pendingApprovals } = usePendingApprovals();
-  const [sessions, setSessions] = useState<TerminalSessionSummary[]>([]);
+  const { sessions, refresh: refreshTerminalSessions } = useTerminalSessions();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingClose, setPendingClose] = useState<TerminalSessionSummary | null>(null);
-  const cleanedStaleRef = useRef(false);
 
   const runningSessions = sessions.filter((s) => s.state === "running");
 
   const refresh = useCallback(async () => {
     if (disabled) return;
     try {
-      const list = await nodeService.listTerminalSessions();
-      setSessions(list);
-      onSessionsChange(list);
+      await refreshTerminalSessions();
       setError(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [disabled, nodeService, onSessionsChange]);
+  }, [disabled, refreshTerminalSessions]);
 
   useEffect(() => {
-    if (disabled) return;
-    void refresh();
-    const unsub = nodeService.on("terminal:session-updated", (payload) => {
-      setSessions(payload.sessions);
-      onSessionsChange(payload.sessions);
-    });
-    return unsub;
-  }, [disabled, nodeService, onSessionsChange, refresh]);
-
-  useEffect(() => {
-    if (disabled || cleanedStaleRef.current) return;
-    cleanedStaleRef.current = true;
-    void (async () => {
-      try {
-        const list = await nodeService.listTerminalSessions();
-        const stale = list.filter((s) => s.state !== "running");
-        if (stale.length === 0) return;
-        for (const row of stale) {
-          await nodeService.closeTerminalSession({ sessionId: row.sessionId });
-        }
-        await refresh();
-      } catch {
-        //
-      }
-    })();
-  }, [disabled, nodeService, refresh]);
+    onSessionsChange(sessions);
+  }, [onSessionsChange, sessions]);
 
   useEffect(() => {
     if (disabled) return;
@@ -137,17 +114,6 @@ export function TerminalSidebar({
       <div className="terminal-sidebar-header">
         <h3>{t("terminals.sessions")}</h3>
         <div className="terminal-sidebar-header-actions">
-          {onStartPi ? (
-            <button
-              type="button"
-              className="primary"
-              disabled={busy || disabled}
-              onClick={() => onStartPi()}
-              title={t("pi.startPiTitle", "Start a Pi coding terminal (choose project folder)")}
-            >
-              {t("pi.startPi", "π Pi")}
-            </button>
-          ) : null}
           {onStartEnvoy ? (
             <button
               type="button"
@@ -157,6 +123,17 @@ export function TerminalSidebar({
               title={t("eh.startEnvoyTitle", "Start the Envoy TUI (choose project folder)")}
             >
               {t("eh.startEnvoy", "Envoy")}
+            </button>
+          ) : null}
+          {onStartPi ? (
+            <button
+              type="button"
+              className="primary"
+              disabled={busy || disabled}
+              onClick={() => onStartPi()}
+              title={t("pi.startPiTitle", "Start a Pi coding terminal (choose project folder)")}
+            >
+              {t("pi.startPi", "π Pi")}
             </button>
           ) : null}
           <button type="button" className="primary" disabled={busy || disabled} onClick={() => void handleNew()}>

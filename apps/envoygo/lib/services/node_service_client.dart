@@ -955,10 +955,13 @@ class NodeServiceClient {
   Future<Map<String, dynamic>> startEnvoyHarnessTurn(
     String text, {
     String? chatId,
+    List<Map<String, String>>? attachments,
   }) async {
     return await _client.call('startEnvoyHarnessTurn', {
           'text': text,
           if (chatId != null) 'chatId': chatId,
+          if (attachments != null && attachments.isNotEmpty)
+            'attachments': attachments,
         }, const Duration(seconds: 120))
         as Map<String, dynamic>;
   }

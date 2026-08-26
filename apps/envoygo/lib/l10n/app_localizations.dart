@@ -1176,6 +1176,12 @@ abstract class AppLocalizations {
   /// **'Index status and retrieval. Chat models stay in Me → AI Model.'**
   String get knowledgeSetupHint;
 
+  /// No description provided for @knowledgeSetupEmbeddingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Embeddings use Envoy Local on this device. For OpenAI or Ollama, open Settings → AI on your home computer.'**
+  String get knowledgeSetupEmbeddingHint;
+
   /// No description provided for @knowledgeSetupEnabled.
   ///
   /// In en, this message translates to:
@@ -1361,6 +1367,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Make private'**
   String get knowledgeFileMakePrivate;
+
+  /// No description provided for @knowledgeBrowseImportAndPublish.
+  ///
+  /// In en, this message translates to:
+  /// **'Import and publish'**
+  String get knowledgeBrowseImportAndPublish;
+
+  /// No description provided for @knowledgeBrowsePublishImportOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Import this note into the vault first, then you can publish it.'**
+  String get knowledgeBrowsePublishImportOnly;
+
+  /// No description provided for @knowledgeBrowsePublishImportNoDoc.
+  ///
+  /// In en, this message translates to:
+  /// **'Imported, but could not publish yet — try Publish again from the imported note.'**
+  String get knowledgeBrowsePublishImportNoDoc;
+
+  /// No description provided for @knowledgeBrowseImportedAndPublished.
+  ///
+  /// In en, this message translates to:
+  /// **'Imported and published'**
+  String get knowledgeBrowseImportedAndPublished;
+
+  /// No description provided for @knowledgeBrowsePublishImportHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Import into vault and publish for mesh discovery'**
+  String get knowledgeBrowsePublishImportHint;
 
   /// No description provided for @knowledgeFileMore.
   ///
@@ -2549,6 +2585,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Failed to send voice note'**
   String get chatVoiceSendFailed;
+
+  /// No description provided for @chatSentFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent a file'**
+  String get chatSentFile;
+
+  /// No description provided for @chatSentVoice.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent a voice message'**
+  String get chatSentVoice;
+
+  /// No description provided for @chatDeliverySent.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent'**
+  String get chatDeliverySent;
+
+  /// No description provided for @chatDeliveryDelivered.
+  ///
+  /// In en, this message translates to:
+  /// **'Delivered'**
+  String get chatDeliveryDelivered;
+
+  /// No description provided for @chatDeliveryFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Not delivered'**
+  String get chatDeliveryFailed;
 
   /// No description provided for @chatMicDenied.
   ///

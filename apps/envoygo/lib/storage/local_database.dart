@@ -31,7 +31,7 @@ class LocalDatabase {
     final dbPath = p.join(await getDatabasesPath(), 'envoygo.db');
     _db = await openDatabase(
       dbPath,
-      version: 6,
+      version: 7,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute('ALTER TABLE nodes ADD COLUMN public_host TEXT');
@@ -49,6 +49,9 @@ class LocalDatabase {
         }
         if (oldVersion < 6) {
           await db.execute('ALTER TABLE messages ADD COLUMN attachments TEXT');
+        }
+        if (oldVersion < 7) {
+          await db.execute('ALTER TABLE messages ADD COLUMN delivery TEXT');
         }
       },
       onCreate: (db, version) async {
@@ -105,7 +108,8 @@ class LocalDatabase {
             text TEXT,
             created_at TEXT,
             is_outbound INTEGER DEFAULT 0,
-            attachments TEXT
+            attachments TEXT,
+            delivery TEXT
           )
         ''');
         await db.execute('''
@@ -304,6 +308,7 @@ class LocalDatabase {
     'created_at',
     'is_outbound',
     'attachments',
+    'delivery',
   };
 
   Map<String, dynamic> _messageRow(Map<String, dynamic> message) {

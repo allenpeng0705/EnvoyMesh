@@ -68,8 +68,8 @@ Write-Host "  Staged $stagedWorkspacePkgs @envoymesh workspace packages"
 # ---------------------------------------------------------------------------
 # Phase 8 — wire sibling envoy-harness packages into the node's module graph.
 # Mirrors scripts/stage-bundle-node-runtime.sh. apps/node statically imports
-# @envoymesh/envoy-harness(+-adapter); without this step the packaged node
-# crashes on first launch with ERR_MODULE_NOT_FOUND.
+# @envoymesh/envoy-harness{,-adapter,-client,-peer}; without this step the
+# packaged node crashes on first launch with ERR_MODULE_NOT_FOUND.
 # ---------------------------------------------------------------------------
 $envoyHarnessDir = $env:ENVOY_HARNESS_DIR
 if (-not $envoyHarnessDir) {
@@ -84,7 +84,7 @@ if ($env:STAGE_ENVOY_HARNESS -eq "0") {
     } else {
         Write-Error @"
 STAGE_ENVOY_HARNESS=0 is incompatible with the node's static imports of
-  @envoymesh/envoy-harness / @envoymesh/envoy-harness-adapter (first launch would crash).
+  @envoymesh/envoy-harness{,-adapter,-client,-peer} (first launch would crash).
   Unset STAGE_ENVOY_HARNESS (default: stage), or set ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1
   to force a non-runnable debug bundle.
 "@
@@ -109,15 +109,25 @@ function Copy-EnvoyHarnessPkg([string]$Pkg) {
 }
 
 if ($stageEnvoyHarnessIntoNode) {
-    Write-Host "  Staging @envoymesh/envoy-harness (+ adapter) from sibling monorepo..."
-    $pkg1 = Join-Path $envoyHarnessDir "packages\envoy-harness"
-    $pkg3 = Join-Path $envoyHarnessDir "packages\envoy-harness-adapter"
-    if (-not (Test-Path $pkg1) -or -not (Test-Path $pkg3)) {
-        Write-Error "ENVOY_HARNESS_DIR=$envoyHarnessDir is missing packages/envoy-harness{,-adapter}. Place the sibling monorepo at $envoyHarnessDir, or set ENVOY_HARNESS_DIR."
+    Write-Host "  Staging @envoymesh/envoy-harness (+ adapter/client/peer/tui) from sibling monorepo..."
+    foreach ($pkg in @(
+        "envoy-harness",
+        "envoy-harness-adapter",
+        "envoy-harness-client",
+        "envoy-harness-peer",
+        "envoy-harness-tui"
+    )) {
+        $pkgPath = Join-Path $envoyHarnessDir "packages\$pkg"
+        if (-not (Test-Path $pkgPath)) {
+            Write-Error "ENVOY_HARNESS_DIR=$envoyHarnessDir is missing packages/$pkg. Place the sibling monorepo at $envoyHarnessDir, or set ENVOY_HARNESS_DIR."
+        }
     }
     Copy-EnvoyHarnessPkg "envoy-harness"
     Copy-EnvoyHarnessPkg "envoy-harness-adapter"
-    Write-Host "  OK @envoymesh/envoy-harness + @envoymesh/envoy-harness-adapter in node_modules"
+    Copy-EnvoyHarnessPkg "envoy-harness-client"
+    Copy-EnvoyHarnessPkg "envoy-harness-peer"
+    Copy-EnvoyHarnessPkg "envoy-harness-tui"
+    Write-Host "  OK @envoymesh/envoy-harness{,-adapter,-client,-peer,-tui} in node_modules"
 
     # Explicitly stage smol-toml (unique harness dep).
     $smolDest = Join-Path $Dest "node_modules\smol-toml"
@@ -422,6 +432,9 @@ if ($stageEnvoyHarnessIntoNode) {
     $criticalDeps += @(
         "@envoymesh/envoy-harness",
         "@envoymesh/envoy-harness-adapter",
+        "@envoymesh/envoy-harness-client",
+        "@envoymesh/envoy-harness-peer",
+        "@envoymesh/envoy-harness-tui",
         "@envoymesh/agent-adapter",
         "smol-toml"
     )
@@ -475,6 +488,7 @@ if ($stageEnvoyHarnessIntoNode) {
 
   // Phase 8 — sibling monorepo packages (static imports in node-service-impl)
   "@envoymesh/envoy-harness", "@envoymesh/envoy-harness-adapter",
+  "@envoymesh/envoy-harness-client", "@envoymesh/envoy-harness-peer",
   "@envoymesh/agent-adapter", "smol-toml",
 "@
 }

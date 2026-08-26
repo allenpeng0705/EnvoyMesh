@@ -82,8 +82,9 @@ export interface EnvoyHarnessAcpHost {
  * Order:
  * 1. `ENVOY_HARNESS_ACP_CMD` (full executable)
  * 2. `ENVOY_HARNESS_RESOURCES` + `cli/acp-stdio.js` (Tauri staged tree)
- * 3. Sibling monorepo `packages/envoy-harness/dist/cli/acp-stdio.js`
- * 4. `envoy-harness` on PATH with `--acp`
+ * 3. `ENVOYMESH_NODE_BUNDLE_DIR/../envoy-harness/cli/acp-stdio.js`
+ * 4. Sibling monorepo `packages/envoy-harness/dist/cli/acp-stdio.js`
+ * 5. `envoy-harness` on PATH with `--acp`
  */
 export function resolveEnvoyHarnessAcpCommand(): {
   command: string;
@@ -98,6 +99,32 @@ export function resolveEnvoyHarnessAcpCommand(): {
     const staged = path.join(resources, "envoy-harness", "cli", "acp-stdio.js");
     if (existsSync(staged)) {
       return { command: process.execPath, args: [staged] };
+    }
+  }
+
+  const bundleDir = process.env.ENVOYMESH_NODE_BUNDLE_DIR?.trim();
+  if (bundleDir) {
+    const fromBundle = path.resolve(
+      bundleDir,
+      "..",
+      "envoy-harness",
+      "cli",
+      "acp-stdio.js",
+    );
+    if (existsSync(fromBundle)) {
+      return { command: process.execPath, args: [fromBundle] };
+    }
+    const fromNm = path.join(
+      bundleDir,
+      "node_modules",
+      "@envoymesh",
+      "envoy-harness",
+      "dist",
+      "cli",
+      "acp-stdio.js",
+    );
+    if (existsSync(fromNm)) {
+      return { command: process.execPath, args: [fromNm] };
     }
   }
 

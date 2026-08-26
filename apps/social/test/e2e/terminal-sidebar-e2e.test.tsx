@@ -29,6 +29,12 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     approve: vi.fn(),
     reject: vi.fn(),
   }),
+  useTerminalSessions: () => ({
+    sessions,
+    refresh: async () => {
+      await listTerminalSessions();
+    },
+  }),
 }));
 
 function renderSidebar() {
@@ -54,7 +60,7 @@ beforeEach(() => {
 });
 
 describe("E2E Terminal sidebar", () => {
-  it("renders activity badges on session rows", async () => {
+  it("renders session rows from the shared terminal session list", async () => {
     sessions = [
       {
         sessionId: "s-working",
@@ -69,8 +75,8 @@ describe("E2E Terminal sidebar", () => {
       },
     ];
     renderSidebar();
-    expect(await screen.findByText("Working")).toBeDefined();
-    expect(screen.getByText("Build")).toBeDefined();
+    expect(await screen.findByText("Build")).toBeDefined();
+    expect(screen.getByText("1 / 8 running")).toBeDefined();
   });
 
   it("shows Focus EnvoyAI when approvals are pending", async () => {

@@ -15,6 +15,7 @@ import {
   sessionCallerFromToken,
   type RpcCallerContext,
 } from "./rpc-caller-context.js";
+import { wireClientProxyPushEvents } from "./client-proxy-push.js";
 
 /**
  * Creates a libp2p protocol handler for the client-proxy relay bridge.
@@ -37,6 +38,8 @@ export function createClientProxyHandler(
     const emitEvent = async (event: string, data: unknown): Promise<void> => {
       await streamIo.write(encoder.encode(JSON.stringify({ event, data })));
     };
+
+    let unwirePush: () => void = () => {};
 
     try {
       const handshakeBytes = await streamIo.read();
@@ -92,6 +95,10 @@ export function createClientProxyHandler(
       ]);
 
       await streamIo.write(encoder.encode(JSON.stringify({ type: "proxy-accept" })));
+
+      unwirePush = wireClientProxyPushEvents(nodeService, rpcCaller, (event, data) => {
+        void emitEvent(event, data);
+      });
 
       while (true) {
         const bytes = await streamIo.read();
@@ -183,6 +190,7 @@ export function createClientProxyHandler(
         }
       }
     } finally {
+      unwirePush();
       closeHomeTerminalWsForCompanion(companion);
       try {
         await stream.close();

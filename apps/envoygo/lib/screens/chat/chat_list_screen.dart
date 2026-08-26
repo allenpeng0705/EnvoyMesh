@@ -150,6 +150,7 @@ class ChatListScreen extends ConsumerWidget {
           l10n.chatsSectionCoding,
           ehChats,
           showPiRow: true,
+          showEhEmptyRow: ehChats.isEmpty,
           onAddEh: () => _showNewEhChat(context, ref),
         ),
       );
@@ -181,7 +182,11 @@ class ChatListScreen extends ConsumerWidget {
                 itemCount: sections.fold<int>(
                   0,
                   (sum, s) =>
-                      sum + 1 + (s.showPiRow ? 1 : 0) + s.threads.length,
+                      sum +
+                      1 +
+                      (s.showEhEmptyRow ? 1 : 0) +
+                      (s.showPiRow ? 1 : 0) +
+                      s.threads.length,
                 ),
                 itemBuilder: (context, index) {
                   var offset = 0;
@@ -213,29 +218,10 @@ class ChatListScreen extends ConsumerWidget {
                       );
                     }
                     offset++;
-                    if (section.showPiRow) {
-                      if (index == offset) {
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor:
-                                Theme.of(context).colorScheme.primaryContainer,
-                            child: Text(
-                              'π',
-                              style: TextStyle(
-                                color:
-                                    Theme.of(context).colorScheme.onPrimaryContainer,
-                              ),
-                            ),
-                          ),
-                          title: Text(l10n.chatsCodingPi),
-                          subtitle: Text(l10n.chatsCodingPiHint),
-                          onTap: () => showCreatePiDialog(context, ref),
-                        );
-                      }
-                      offset++;
-                    }
+                    // Envoy harness threads first, then the Pi create row.
                     final threadIndex = index - offset;
-                    if (threadIndex >= 0 && threadIndex < section.threads.length) {
+                    if (threadIndex >= 0 &&
+                        threadIndex < section.threads.length) {
                       final thread = section.threads[threadIndex];
                       return Dismissible(
                         key: Key(thread.id),
@@ -309,6 +295,51 @@ class ChatListScreen extends ConsumerWidget {
                       );
                     }
                     offset += section.threads.length;
+                    if (section.showEhEmptyRow) {
+                      if (index == offset) {
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor:
+                                Theme.of(context).colorScheme.primaryContainer,
+                            child: Text(
+                              'EH',
+                              style: TextStyle(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onPrimaryContainer,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          title: Text(l10n.chatsCodingEh),
+                          subtitle: Text(l10n.ehChooseProjectDesc),
+                          onTap: section.onAddEh,
+                        );
+                      }
+                      offset++;
+                    }
+                    if (section.showPiRow) {
+                      if (index == offset) {
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor:
+                                Theme.of(context).colorScheme.primaryContainer,
+                            child: Text(
+                              'π',
+                              style: TextStyle(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onPrimaryContainer,
+                              ),
+                            ),
+                          ),
+                          title: Text(l10n.chatsCodingPi),
+                          subtitle: Text(l10n.chatsCodingPiHint),
+                          onTap: () => showCreatePiDialog(context, ref),
+                        );
+                      }
+                      offset++;
+                    }
                   }
                   return const SizedBox.shrink();
                 },
@@ -828,6 +859,22 @@ class ChatListScreen extends ConsumerWidget {
   /// Start a Pi coding TUI on the home node (project folder required).
 
   Future<void> _showNewEhChat(BuildContext context, WidgetRef ref) async {
+    final ehCount = ref
+        .read(chatProvider)
+        .threads
+        .where((t) => t.type == ChatThreadType.envoyHarness)
+        .length;
+    if (ehCount >= kMaxEnvoyHarnessChats) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'At most $kMaxEnvoyHarnessChats coding chats — remove one first.',
+          ),
+        ),
+      );
+      return;
+    }
+
     final pathController = TextEditingController();
     var creating = false;
 
@@ -836,12 +883,20 @@ class ChatListScreen extends ConsumerWidget {
       if (client == null) return;
       try {
         final cfg = await client.getNodeConfig();
-        final settings = (cfg['piSettings'] as Map?)?.cast<String, dynamic>();
-        final paths = settings?['allowedPaths'];
-        if (paths is List && paths.isNotEmpty) {
-          final first = paths.first?.toString().trim() ?? '';
-          if (first.isNotEmpty && pathController.text.isEmpty) {
-            pathController.text = first;
+        final envoyCwd = cfg['envoyHarnessCwd']?.toString().trim();
+        if (envoyCwd != null &&
+            envoyCwd.isNotEmpty &&
+            pathController.text.isEmpty) {
+          pathController.text = envoyCwd;
+        }
+        if (pathController.text.isEmpty) {
+          final settings = (cfg['piSettings'] as Map?)?.cast<String, dynamic>();
+          final paths = settings?['allowedPaths'];
+          if (paths is List && paths.isNotEmpty) {
+            final first = paths.first?.toString().trim() ?? '';
+            if (first.isNotEmpty) {
+              pathController.text = first;
+            }
           }
         }
       } catch (_) {}
@@ -1133,12 +1188,14 @@ class _ThreadSection {
   final String title;
   final List<ChatThread> threads;
   final bool showPiRow;
+  final bool showEhEmptyRow;
   final VoidCallback? onAddEh;
 
   const _ThreadSection(
     this.title,
     this.threads, {
     this.showPiRow = false,
+    this.showEhEmptyRow = false,
     this.onAddEh,
   });
 }

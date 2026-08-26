@@ -11,7 +11,10 @@ class EhQueuedInput {
 
 enum EhSubmitMode { send, queue, inject }
 
-typedef EhStartTurn = Future<String> Function(String text);
+typedef EhStartTurn = Future<String> Function(
+  String text, {
+  List<Map<String, String>>? attachments,
+});
 typedef EhCancelTurn = Future<void> Function();
 
 class EhTurnQueue extends ChangeNotifier {
@@ -43,6 +46,7 @@ class EhTurnQueue extends ChangeNotifier {
   int _generation = 0;
   String? _activeTurnId;
   String? _injectAfterCancel;
+  List<Map<String, String>>? _injectAfterCancelAttachments;
   Completer<Map<String, dynamic>>? _waiter;
   String? _waiterTurnId;
 
@@ -153,13 +157,20 @@ class EhTurnQueue extends ChangeNotifier {
     }
   }
 
-  Future<void> submit(String text, EhSubmitMode mode) async {
+  Future<void> submit(
+    String text,
+    EhSubmitMode mode, {
+    List<Map<String, String>>? attachments,
+  }) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty) return;
+    if (trimmed.isEmpty &&
+        (attachments == null || attachments.isEmpty)) {
+      return;
+    }
 
     if (!busy || mode == EhSubmitMode.send) {
       final gen = ++_generation;
-      await _runTurn(trimmed, gen);
+      await _runTurn(trimmed, gen, attachments: attachments);
       return;
     }
 
@@ -169,6 +180,7 @@ class EhTurnQueue extends ChangeNotifier {
     }
 
     _injectAfterCancel = trimmed;
+    _injectAfterCancelAttachments = attachments;
     _failWaiter(StateError('envoy_harness_cancelled'));
     try {
       await cancelTurn();
@@ -210,6 +222,7 @@ class EhTurnQueue extends ChangeNotifier {
 
   Future<void> cancelActiveTurn() async {
     _injectAfterCancel = null;
+    _injectAfterCancelAttachments = null;
     _generation++;
     _failWaiter(StateError('envoy_harness_cancelled'));
     _activeTurnId = null;
@@ -221,9 +234,16 @@ class EhTurnQueue extends ChangeNotifier {
     } catch (_) {}
   }
 
-  Future<void> _runTurn(String text, int generation) async {
+  Future<void> _runTurn(
+    String text,
+    int generation, {
+    List<Map<String, String>>? attachments,
+  }) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty) return;
+    if (trimmed.isEmpty &&
+        (attachments == null || attachments.isEmpty)) {
+      return;
+    }
 
     busy = true;
     onTurnStart?.call();
@@ -232,7 +252,7 @@ class EhTurnQueue extends ChangeNotifier {
 
     late final String turnId;
     try {
-      turnId = await startTurn(trimmed);
+      turnId = await startTurn(trimmed, attachments: attachments);
       _activeTurnId = turnId;
     } catch (e) {
       if (generation != _generation) return;
@@ -284,9 +304,11 @@ class EhTurnQueue extends ChangeNotifier {
   void _drainAfterTurn(int generation) {
     final inject = _injectAfterCancel;
     if (inject != null) {
+      final injectAtt = _injectAfterCancelAttachments;
       _injectAfterCancel = null;
+      _injectAfterCancelAttachments = null;
       final nextGen = ++_generation;
-      unawaited(_runTurn(inject, nextGen));
+      unawaited(_runTurn(inject, nextGen, attachments: injectAtt));
       return;
     }
 

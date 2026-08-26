@@ -572,6 +572,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get knowledgeSetupHint => '索引状态与检索。聊天模型在「我 → AI 模型」。';
 
   @override
+  String get knowledgeSetupEmbeddingHint =>
+      '本设备使用 Envoy Local 嵌入。如需 OpenAI 或 Ollama，请在 home 电脑上打开「设置 → AI」。';
+
+  @override
   String get knowledgeSetupEnabled => '启用资料库知识';
 
   @override
@@ -669,6 +673,22 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get knowledgeFileMakePrivate => '改为私密';
+
+  @override
+  String get knowledgeBrowseImportAndPublish => '导入并发布';
+
+  @override
+  String get knowledgeBrowsePublishImportOnly => '请先将此笔记导入保险库，然后再发布。';
+
+  @override
+  String get knowledgeBrowsePublishImportNoDoc =>
+      '已导入，但暂时无法发布 — 请从导入后的笔记再次点发布。';
+
+  @override
+  String get knowledgeBrowseImportedAndPublished => '已导入并发布';
+
+  @override
+  String get knowledgeBrowsePublishImportHint => '导入到保险库并发布，供网格发现';
 
   @override
   String get knowledgeFileMore => '更多操作';
@@ -1291,6 +1311,21 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chatVoiceSendFailed => '发送语音失败';
+
+  @override
+  String get chatSentFile => 'Sent a file';
+
+  @override
+  String get chatSentVoice => 'Sent a voice message';
+
+  @override
+  String get chatDeliverySent => 'Sent';
+
+  @override
+  String get chatDeliveryDelivered => 'Delivered';
+
+  @override
+  String get chatDeliveryFailed => 'Not delivered';
 
   @override
   String get chatMicDenied => '麦克风权限被拒绝';

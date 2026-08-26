@@ -54,7 +54,10 @@ export function useEhTurnQueue(options: UseEhTurnQueueOptions) {
   const [queue, setQueue] = useState<EhQueuedInput[]>([])
   const busyRef = useRef(false)
   const queueRef = useRef<EhQueuedInput[]>([])
-  const injectAfterCancelRef = useRef<string | null>(null)
+  const injectAfterCancelRef = useRef<{
+    text: string
+    attachments?: import("@envoymesh/api").AgentAttachmentRef[]
+  } | null>(null)
   const runGenerationRef = useRef(0)
   const turnWaitersRef = useRef(new Map<string, TurnWaiter>())
   const activeTurnIdRef = useRef<string | undefined>(undefined)
@@ -209,16 +212,20 @@ export function useEhTurnQueue(options: UseEhTurnQueueOptions) {
     })
   }, [])
 
-  const runTurnRef = useRef<(text: string, generation: number) => Promise<void>>(
-    async () => {},
-  )
+  const runTurnRef = useRef<
+    (
+      text: string,
+      generation: number,
+      attachments?: import("@envoymesh/api").AgentAttachmentRef[],
+    ) => Promise<void>
+  >(async () => {})
 
   const drainAfterTurn = useCallback((generation: number) => {
-    const injectText = injectAfterCancelRef.current
-    if (injectText !== null) {
+    const inject = injectAfterCancelRef.current
+    if (inject !== null) {
       injectAfterCancelRef.current = null
       const nextGen = ++runGenerationRef.current
-      void runTurnRef.current(injectText, nextGen)
+      void runTurnRef.current(inject.text, nextGen, inject.attachments)
       return
     }
 
@@ -379,7 +386,7 @@ export function useEhTurnQueue(options: UseEhTurnQueueOptions) {
         return
       }
 
-      injectAfterCancelRef.current = trimmed
+      injectAfterCancelRef.current = { text: trimmed, attachments }
       if (turnWaitersRef.current.size > 0) {
         for (const [, waiter] of turnWaitersRef.current) {
           waiter.reject(new Error("envoy_harness_cancelled"))
