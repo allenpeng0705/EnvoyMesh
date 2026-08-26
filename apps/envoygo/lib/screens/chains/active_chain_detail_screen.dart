@@ -303,11 +303,23 @@ class _ActiveChainDetailScreenState
       _actionError = null;
     });
     try {
-      await client.chainCancel(
+      final result = await client.chainCancel(
         chainId: widget.chainId,
         reason: l10n.chainsCancelReason,
       );
       if (!mounted) return;
+      final cancelled = result['cancelled'];
+      final ok = cancelled is List
+          ? cancelled.isNotEmpty || result['ok'] == true
+          : result['ok'] != false;
+      if (!ok && result['ok'] == false) {
+        setState(() {
+          _actionError = (result['reason'] as String?)?.isNotEmpty == true
+              ? result['reason'] as String
+              : l10n.chainsCancelFailed;
+        });
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.chainsCancelDone)),
       );
@@ -505,13 +517,13 @@ class _ActiveChainDetailScreenState
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            st.statusLabel,
+                            st.statusLabel(l10n),
                             style: theme.textTheme.titleMedium,
                           ),
                           const SizedBox(height: 8),
                           Text(
                             l10n.chainsAwardedSummary(
-                              st.statusLabel,
+                              st.statusLabel(l10n),
                               st.awardedCount,
                               st.subtaskCount,
                             ),

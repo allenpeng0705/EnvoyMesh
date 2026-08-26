@@ -170,7 +170,12 @@ class _EnvoyHarnessTerminalChromeState
     if (client == null) return;
     try {
       await client.cancelEnvoyHarnessTurn(chatId: _terminalChatId);
-    } catch (_) {}
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
   }
 
   Future<void> _respondPermission(bool allowed) async {
@@ -185,7 +190,12 @@ class _EnvoyHarnessTerminalChromeState
         requestId: requestId,
         allowed: allowed,
       );
-    } catch (_) {}
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
   }
 
   Future<void> _respondQuestion({
@@ -206,7 +216,12 @@ class _EnvoyHarnessTerminalChromeState
         optionIndex: optionIndex,
         cancelled: cancelled ? true : null,
       );
-    } catch (_) {}
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
   }
 
   Future<void> _openEhuiPanel(

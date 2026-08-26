@@ -89,6 +89,8 @@ export function useEhTurnReview(options: UseEhTurnReviewOptions = {}) {
       if (result.accepted) {
         clearReviewState()
         notify(t("eh.reviewKeptAll", "Changes kept."), "success")
+      } else {
+        notify(t("eh.reviewKeepFailed", "Could not keep changes."), "error")
       }
     }).catch((error: unknown) => notify(String(error), "error"))
   }, [clearReviewState, lastReviewTurnId, nodeService, notify, t])
@@ -97,7 +99,10 @@ export function useEhTurnReview(options: UseEhTurnReviewOptions = {}) {
     (path: string) => {
       if (!lastReviewTurnId) return
       void nodeService.acceptEnvoyHarnessTurnReview(lastReviewTurnId, [path]).then((result) => {
-        if (!result.accepted) return
+        if (!result.accepted) {
+          notify(t("eh.reviewKeepFailed", "Could not keep changes."), "error")
+          return
+        }
         if (result.cleared || result.remainingFiles === 0) {
           clearReviewState()
           notify(t("eh.reviewKeptAll", "Changes kept."), "success")
@@ -109,16 +114,19 @@ export function useEhTurnReview(options: UseEhTurnReviewOptions = {}) {
     [clearReviewState, lastReviewTurnId, nodeService, notify, refreshTurnReview, t],
   )
 
-  const handleRevertAllChanges = useCallback(() => {
-    if (!lastReviewTurnId) return
-    if (!window.confirm(t("eh.revertConfirm", "Restore the files to how they were before this turn? Later edits will never be overwritten."))) return
-    recordUx({ action: "revert_attempted" })
-    void nodeService.revertEnvoyHarnessTurn(lastReviewTurnId).then((result) => {
-      if (result.reverted) {
-        recordUx({ action: "revert_completed", outcome: "success" })
-        clearReviewState()
-        notify(t("eh.revertComplete", "This turn's file changes were reverted."), "success")
-      } else {
+  const revertTurn = useCallback(
+    (turnId: string): Promise<boolean> => {
+      if (!window.confirm(t("eh.revertConfirm", "Restore the files to how they were before this turn? Later edits will never be overwritten."))) {
+        return Promise.resolve(false)
+      }
+      recordUx({ action: "revert_attempted" })
+      return nodeService.revertEnvoyHarnessTurn(turnId).then((result) => {
+        if (result.reverted) {
+          recordUx({ action: "revert_completed", outcome: "success" })
+          if (turnId === lastReviewTurnId) clearReviewState()
+          notify(t("eh.revertComplete", "This turn's file changes were reverted."), "success")
+          return true
+        }
         recordUx({
           action: result.conflicts?.length ? "revert_conflicted" : "revert_completed",
           outcome: result.conflicts?.length ? "conflict" : "unavailable",
@@ -129,9 +137,19 @@ export function useEhTurnReview(options: UseEhTurnReviewOptions = {}) {
             : t("eh.revertUnavailable", "This turn can no longer be reverted safely."),
           "error",
         )
-      }
-    }).catch((error: unknown) => notify(String(error), "error"))
-  }, [clearReviewState, lastReviewTurnId, nodeService, notify, recordUx, t])
+        return false
+      }).catch((error: unknown) => {
+        notify(String(error), "error")
+        return false
+      })
+    },
+    [clearReviewState, lastReviewTurnId, nodeService, notify, recordUx, t],
+  )
+
+  const handleRevertAllChanges = useCallback(() => {
+    if (!lastReviewTurnId) return
+    void revertTurn(lastReviewTurnId)
+  }, [lastReviewTurnId, revertTurn])
 
   const handleRevertFile = useCallback(
     (path: string) => {
@@ -165,12 +183,14 @@ export function useEhTurnReview(options: UseEhTurnReviewOptions = {}) {
 
   const onTurnComplete = useCallback(
     (turnId: string, changedFileCount: number) => {
-      if (changedFileCount > 0) {
-        setLastReviewTurnId(turnId)
-        setDismissedChanges(false)
-        if (changedFileCount >= reviewMinFiles) {
-          openTurnReview(turnId)
-        }
+      if (changedFileCount <= 0) {
+        setLastReviewTurnId(null)
+        return
+      }
+      setLastReviewTurnId(turnId)
+      setDismissedChanges(false)
+      if (changedFileCount >= reviewMinFiles) {
+        openTurnReview(turnId)
       }
     },
     [openTurnReview, reviewMinFiles],
@@ -207,6 +227,7 @@ export function useEhTurnReview(options: UseEhTurnReviewOptions = {}) {
     handleKeepFile,
     handleRevertAllChanges,
     handleRevertFile,
+    revertTurn,
     onTurnStart,
     onTurnComplete,
     openChangedFile,

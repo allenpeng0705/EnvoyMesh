@@ -3,6 +3,8 @@
 // Mirrors `chainListActive` / `chainGetState` from the home node JSON-RPC
 // surface. Mobile shows in-progress chains; authoring stays on the home UI.
 
+import '../l10n/app_localizations.dart';
+
 class ChainLiveStep {
   final String subtaskId;
   final String objective;
@@ -333,22 +335,25 @@ class ChainActiveSummary {
               .toList(),
       };
 
-  String get statusLabel {
-    if (chainCancelled) return 'Cancelled';
-    if (published) return 'Published';
+  String statusLabel(AppLocalizations l10n) {
+    if (chainCancelled) return l10n.chainsStatusCancelled;
+    if (published) return l10n.chainsStatusPublished;
     if (awardedCount > 0 && partialCount >= subtaskCount && subtaskCount > 0) {
-      return 'Synthesizing';
+      return l10n.chainsStatusSynthesizing;
     }
-    if (awardedCount > 0 && partialCount < subtaskCount) return 'Running';
+    if (awardedCount > 0 && partialCount < subtaskCount) {
+      return l10n.chainsStatusRunning;
+    }
     if (awardedCount == 0 && bidCount == 0 && subtaskCount > 0) {
-      return 'Waiting for workers';
+      return l10n.chainsStatusWaitingWorkers;
     }
     // Worker ACK uses task.chain.bid on the wire even in direct mode — do not
     // surface that as "Bidding" unless competitive award mode is on.
-    if (awardMode == 'competitive' && (bidCount > 0 || awardedCount < subtaskCount)) {
-      return 'Bidding';
+    if (awardMode == 'competitive' &&
+        (bidCount > 0 || awardedCount < subtaskCount)) {
+      return l10n.chainsStatusBidding;
     }
-    if (awardedCount < subtaskCount) return 'Assigning';
-    return 'Planning';
+    if (awardedCount < subtaskCount) return l10n.chainsStatusAssigning;
+    return l10n.chainsStatusPlanning;
   }
 }

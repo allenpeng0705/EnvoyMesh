@@ -487,7 +487,7 @@
   "chainsSubtasks": "Unteraufgaben",
   "chainsSynthesis": "Synthese",
   "chainsDuration": "Dauer",
-  "chainsManageOnSocial": "Verwalten Sie Chains in der Social-UI des Heimknotens.",
+  "chainsManageOnSocial": "Flotten-Setup, Gebote und Rezepte bleiben in der Social-UI des Heimknotens. Abbrechen, Rebalance und Anheften gehen auch hier.",
   "chainsPublished": "Veröffentlicht {date}",
   "chainsChainId": "Kette {id}",
   "termEmptyHint": "Starten Sie eine Pi-Coding-Sitzung oder ein Shell-Terminal auf Ihrem Heimknoten.",
@@ -509,19 +509,25 @@
   "pairingInProgressSubtitle": "Verbindung mit {owner} wird aufgebaut",
   "@pairingInProgressSubtitle": {
     "placeholders": {
-      "owner": {"type": "String"}
+      "owner": {
+        "type": "String"
+      }
     }
   },
   "pairingElapsed": "Verstrichen: {time}",
   "@pairingElapsed": {
     "placeholders": {
-      "time": {"type": "String"}
+      "time": {
+        "type": "String"
+      }
     }
   },
   "pairingHomeNodeLabel": "Heimknoten: {peer}",
   "@pairingHomeNodeLabel": {
     "placeholders": {
-      "peer": {"type": "String"}
+      "peer": {
+        "type": "String"
+      }
     }
   },
   "pairingStageInitial": "Wird vorbereitet",
@@ -925,5 +931,232 @@
   "chainsStepCancelled": "Schritt abgebrochen",
   "chainsStepReassigned": "Schritt neu zugewiesen",
   "chainsReassignFailed": "Schritt konnte nicht neu zugewiesen werden",
-  "chainsCancelStepReason": "Schritt von EnvoyGo abgebrochen"
+  "chainsCancelStepReason": "Schritt von EnvoyGo abgebrochen",
+  "chatsSectionCoding": "Coding",
+  "chatsCodingPi": "Pi",
+  "chatsCodingPiHint": "Coding-Agent (Terminal)",
+  "chatsCodingEh": "Envoy",
+  "chatsCodingEhHint": "Coding-Agent (Chat)",
+  "chatsEhNew": "Neuer Coding-Chat",
+  "chatsEhRemoveTitle": "Coding-Chat entfernen?",
+  "chatsEhRemoveBody": "„{name}“ aus der Coding-Liste entfernen? Der Chatverlauf auf dem Home-Knoten wird gelöscht.",
+  "@chatsEhRemoveBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatsEhThinking": "Envoy denkt nach…",
+  "chatsEhPromptHint": "Envoy bitten zu coden, zu refaktorieren oder zu erklären…",
+  "chatsNewEnvoy": "Neues Envoy",
+  "chatsNewEnvoyHint": "Envoy-Harness-TUI starten",
+  "ehChooseProjectTitle": "Envoy-Projektordner wählen",
+  "ehChangeProjectTitle": "Envoy-Projektordner ändern",
+  "ehChooseProjectDesc": "Envoy läuft in diesem Ordner (liest AGENTS.md, bearbeitet Dateien, führt Shell aus).",
+  "ehStartWithProject": "Starten",
+  "ehRestartWithProject": "Envoy hier neu starten",
+  "ehEnsuringTerminal": "Envoy-TUI wird gestartet…",
+  "ehPermissionTitle": "Tool-Berechtigung",
+  "ehPermissionAllow": "Zulassen",
+  "ehPermissionDeny": "Ablehnen",
+  "ehQuestionTitle": "Envoy braucht deine Eingabe",
+  "ehRecommended": "Empfohlen",
+  "ehSlashWhileBusy": "Beende oder /cancel den aktuellen Turn zuerst.",
+  "ehChatReset": "Neuer Chat für dieses Projekt gestartet.",
+  "ehTurnCancelled": "Turn abgebrochen.",
+  "ehStatusRefreshed": "Status aktualisiert.",
+  "ehNoPeers": "Kein Peer-Cluster konfiguriert.",
+  "ehSearchUsage": "Nutzung: /search <Begriff> — diese Unterhaltung durchsuchen.",
+  "ehSearchNoMatches": "Keine Treffer für „{term}“.",
+  "@ehSearchNoMatches": {
+    "placeholders": {
+      "term": {
+        "type": "String"
+      }
+    }
+  },
+  "ehModelShow": "Aktives Modell: {model}",
+  "@ehModelShow": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "ehModelUnknown": "Kein Modell konfiguriert — unter Einstellungen → KI festlegen.",
+  "ehProjectCurrent": "Projektordner: {path}",
+  "@ehProjectCurrent": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehProjectUnset": "Kein Projektordner gesetzt — /cd <Pfad> verwenden.",
+  "ehProjectSet": "Projektordner → {path}",
+  "@ehProjectSet": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehProjectSetUnknown": "Projektordner aktualisiert.",
+  "ehProjectSetFailed": "Projektordner konnte nicht gesetzt werden: {error}",
+  "@ehProjectSetFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "ehConfigureModel": "Modell in Einstellungen → KI konfigurieren.",
+  "ehNotReady": "envoy-harness ist nicht bereit.",
+  "termQuickHelp": "/help",
+  "termQuickCancel": "/cancel",
+  "settingsPiCodingBackend": "Coding-Backend",
+  "settingsPiCodingBackendPi": "Pi (Sidecar)",
+  "settingsPiCodingBackendEh": "envoy-harness (ACP)",
+  "settingsPiCodingBackendHint": "Gleiche Einstellung wie Social. Leitet sendToPi und Freigaben über dieselbe Pi-UI. Ältere EnvoyGo-Builds ignorieren dies und bleiben bei Pi.",
+  "settingsPiCodingBackendSaved": "Coding-Backend aktualisiert",
+  "ehReviewTitle": "Diesen Turn prüfen",
+  "ehReviewUnavailable": "Für diesen älteren Turn ist keine gespeicherte Prüfung verfügbar.",
+  "ehReviewFile": "Datei",
+  "ehReviewOpenFile": "Datei öffnen",
+  "ehReviewDiffUnavailable": "Für diese Datei ist kein textueller Diff verfügbar.",
+  "ehReviewOnly": "Workspace erkannt · nur Prüfung",
+  "ehRevertTitle": "Diesen Turn zurücksetzen?",
+  "ehRevertBody": "Dateien werden auf den Stand vor dem Turn zurückgesetzt. Spätere Änderungen sind geschützt und stoppen den Revert.",
+  "ehRevertAction": "Zurücksetzen",
+  "ehRevertComplete": "Die Dateiänderungen dieses Turns wurden zurückgesetzt.",
+  "ehRevertUnavailable": "Dieser Turn kann nicht mehr sicher zurückgesetzt werden.",
+  "ehRevertConflict": "Revert gestoppt, weil diese Dateien danach geändert wurden: {files}",
+  "@ehRevertConflict": {
+    "placeholders": {
+      "files": {
+        "type": "String"
+      }
+    }
+  },
+  "ehSearchTranscript": "Transkript durchsuchen",
+  "ehSearchClose": "Suche schließen",
+  "ehNoMatches": "Keine passenden Turns",
+  "ehCopyTurn": "Turn kopieren",
+  "ehShareTurn": "Turn teilen",
+  "ehReviewDiff": "Diff prüfen",
+  "ehRevertThisTurn": "Diesen Turn zurücksetzen",
+  "ehReviewChanges": "Änderungen prüfen",
+  "ehRevertAll": "Alles zurücksetzen",
+  "ehChangesCount": "{count, plural, =1{1 Datei in diesem Turn geändert} other{{count} Dateien in diesem Turn geändert}}",
+  "@ehChangesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehChangesKeepAll": "Alles behalten",
+  "ehChangesRevert": "Alles zurücksetzen",
+  "ehChangesHideList": "Liste ausblenden",
+  "ehChangesShowList": "Liste anzeigen",
+  "ehReviewKeepFile": "Behalten",
+  "ehReviewRevertFile": "Zurücksetzen",
+  "ehReviewKeptAll": "Änderungen behalten.",
+  "ehReviewRevertedFile": "{path} zurückgesetzt",
+  "@ehReviewRevertedFile": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehReviewAutoLabel": "Auto-Prüfung ab ≥",
+  "ehReviewAutoAlways": "Immer",
+  "ehWorking": "Arbeitet",
+  "ehCompleted": "Abgeschlossen",
+  "ehUpdate": "Update",
+  "ehToolLabel": "Tool: {name}",
+  "@ehToolLabel": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "ehMatchCount": "{count, plural, =1{1 Treffer} other{{count} Treffer}}",
+  "@ehMatchCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "termMore": "Mehr…",
+  "termCompactContext": "Kontext kompaktieren",
+  "termUpdatePlan": "Plan anzeigen oder aktualisieren",
+  "termHarnessStatus": "Harness-Status",
+  "termPiActions": "Pi-Aktionen",
+  "termHarnessActions": "envoy-harness-Aktionen",
+  "termPreviousCommand": "Vorheriger Befehl",
+  "termNextCommand": "Nächster Befehl",
+  "termCursorLeft": "Cursor nach links",
+  "termCursorRight": "Cursor nach rechts",
+  "termEnterKey": "Eingabetaste",
+  "ehQueueTitle": "Warteschlange ({count})",
+  "@ehQueueTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehQueueClear": "Leeren",
+  "ehQueueBusyHint": "Senden reiht als Nächstes ein",
+  "ehQueueFollowUpHint": "Follow-up einreihen…",
+  "ehInjectTooltip": "Einschieben (abbrechen + senden)",
+  "ehFilesChangedCount": "{count, plural, =1{1 Datei geändert} other{{count} Dateien geändert}}",
+  "@ehFilesChangedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehEmptyReply": "envoy-harness hat keine sichtbare Antwort geliefert. Deine Nachricht ist noch da — erneut versuchen oder umformulieren.",
+  "ehConfigureModelHint": "Modell unter Einstellungen → KI konfigurieren.",
+  "ehReviewKeepFailed": "Änderungen konnten nicht behalten werden.",
+  "ehReviewOpenGitDiff": "Git-Diff öffnen",
+  "ehDiffBefore": "Vorher",
+  "ehDiffAfter": "Nachher",
+  "chainsStatusCancelled": "Abgebrochen",
+  "chainsStatusPublished": "Veröffentlicht",
+  "chainsStatusSynthesizing": "Synthese",
+  "chainsStatusRunning": "Läuft",
+  "chainsStatusWaitingWorkers": "Warte auf Worker",
+  "chainsStatusBidding": "Gebote",
+  "chainsStatusAssigning": "Zuweisen",
+  "chainsStatusPlanning": "Planung",
+  "chainsCancelFailed": "Team-Job konnte nicht abgebrochen werden.",
+  "ehPermsTooltip": "Berechtigungsrichtlinie",
+  "ehPermsSafe": "Standard (sichere Auto-Ausführung)",
+  "ehPermsAsk": "Immer fragen",
+  "ehPermsApprove": "Immer genehmigen",
+  "ehPermsSet": "Berechtigungsrichtlinie → {mode}.",
+  "@ehPermsSet": {
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "ehPermsNextTurn": " Gilt ab dem nächsten Turn.",
+  "ehPermsFailed": "Berechtigungsrichtlinie konnte nicht gesetzt werden: {error}",
+  "@ehPermsFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  }
 }

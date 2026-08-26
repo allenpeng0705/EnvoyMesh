@@ -1,119 +1,24 @@
-/**
- * Phase 49 — Pi chat panel strings (English).
- *
- * Pi is the built-in local coding agent. These strings cover the chat
- * panel surface: header, status badges, empty state, prompts, errors.
- *
- * Wired into en.ts via `...piMessages`. Other locales provide their
- * own `<locale>-pi.ts` and follow the same shape.
- */
-export const piMessages = {
-  pi: {
-    /** Sidebar + panel title. */
-    title: "Pi",
-    /** Sidebar + header subtitle. */
-    subtitle: "Coding Agent",
-    restartHint: "Close & restart Pi",
-    stopHint: "Stop Pi (does not auto-restart)",
-    closeConfirmTitle: "Stop Pi?",
-    closeConfirmMessage:
-      "This stops the Pi coding terminal for this project. It will not auto-restart.",
-    closeConfirmAction: "Stop Pi",
-    ensuringTerminal: "Starting Pi coding terminal…",
-    retryStart: "Retry Start Pi",
-    startPi: "π Pi",
-    startPiTitle: "Start a Pi coding terminal (choose project folder)",
-    startPiCta: "Start Pi coding terminal",
-    changeProject: "Project…",
-    changeProjectShort: "Path",
-    changeProjectTitle: "Change Pi project folder",
-    chooseProjectTitle: "Choose Pi project folder",
-    chooseProjectDesc:
-      "Pi runs in this folder (reads AGENTS.md, edits files, runs shell). Use an absolute path. You can run up to 5 Pi terminals on different projects.",
-    chooseProjectDescBrowse:
-      "Pi runs in this folder (reads AGENTS.md, edits files, runs shell). Use Browse to pick a folder.",
-    projectPathLabel: "Project folder",
-    projectPathPlaceholder: "/path/to/your/repo",
-    projectPathBrowsePlaceholder: "No folder selected yet",
-    projectPathRequired: "Enter a project folder path.",
-    browseFolder: "Browse…",
-    noPiToChange: "Start a Pi session first, then change its project.",
-    startWithProject: "Start Pi",
-    restartWithProject: "Restart Pi here",
-
-    // Runtime status badges (rendered in the header chip).
-    stateReady: "Ready",
-    stateStarting: "Starting…",
-    stateStopped: "Stopped",
-    stateDisabled: "Disabled",
-    stateNotInstalled: "Not installed",
-    stateError: "Error",
-
-    // Empty state (no turns yet).
-    emptyTitle: "Pi — your local coding agent",
-    emptyBody:
-      "Ask Pi to write code, refactor a file, explain an error, or run a shell command. Pi runs locally on this machine — it does not access your mesh contacts or knowledge.",
-    disabledHint: "Pi is disabled. Enable it in Settings → AI.",
-    notInstalledHint: "Pi sidecar not bundled (slim build).",
-
-    // Composer.
-    promptPlaceholder: "Ask Pi to code, refactor, or explain…",
-    promptAriaLabel: "Prompt Pi",
-    send: "Send",
-    thinking: "Pi is thinking…",
-
-    // Submit outcomes.
-    emptyResponse: "Pi returned an empty response.",
-    sendFailed: "Failed to reach Pi.",
-
-    // Restart flow.
-    restart: "Restart",
-    restarting: "Restarting…",
-    restartReady: "Pi is ready.",
-    restartFailed: "Restart failed.",
-
-    // Phase 49D — tool-action confirm dialog.
-    proposalTitle: "Pi wants to:",
-    allow: "Allow",
-    deny: "Deny",
-    proposalAllowed: "Allowed",
-    proposalDenied: "Denied",
-    proposalRespondFailed: "Failed to deliver response",
-    proposalTimedOut: "Tool request timed out (Pi skipped it).",
-
-    // Submit-blocked hints (when the runtime isn't ready).
-    startingHint: "Pi is starting — try again in a moment.",
-    errorHint: "Pi is not ready.",
-  },
-} as const
-
-/**
- * U4+ — envoy-harness panel + sidebar strings (English).
- *
- * The dedicated Envoy Harness surface (chat panel in the Terminal view,
- * sidebar + chat-list branding). Other locales may provide their own
- * `eh` block; missing keys fall back to English via the i18n translator.
- */
-export const ehMessages = {
+/** Envoy Harness (eh.*) UI strings — fr. */
+export const frEhMessages = {
   eh: {
     attachProjectFile: "Attach project file",
     cancelTurn: "Cancel",
     changeProjectShort: "Path",
     changeProjectTitle: "Change Envoy project folder",
-    changesCount: "{count} file(s) changed this turn",
-    changesHideList: "Hide list",
-    changesKeepAll: "Keep all",
-    changesRevert: "Revert all",
-    changesReview: "Review changes",
-    changesShowList: "Show list",
-    changesTitle: "File changes",
+    changesCount: "{count} fichier(s) modifié(s) ce tour",
+    changesHideList: "Masquer la liste",
+    changesKeepAll: "Tout conserver",
+    changesRevert: "Tout annuler",
+    changesReview: "Examiner les changements",
+    changesShowList: "Afficher la liste",
+    changesTitle: "Modifications de fichiers",
     chatLimit: "At most {{count}} coding chats — remove one first.",
     chatLoading: "Loading this project's chat…",
-    chatReset: "Started a new chat for this project.",
+    chatReset: "Nouveau chat démarré pour ce projet.",
     chooseProjectDesc: "Each coding chat is tied to one project folder, like Pi and Envoy Terminal sessions.",
     chooseProjectDescBrowse: "Envoy runs in this folder (reads AGENTS.md, edits files, runs shell). Use Browse to pick a folder.",
     chooseProjectTitle: "Choose Envoy project folder",
-    close: "Close",
+    close: "Fermer",
     clusterFailed: "Failed to read cluster status: {error}",
     codingSection: "Coding",
     composerHintBusy: "Enter queues · {inject} sends now (interrupts current turn)",
@@ -130,7 +35,7 @@ export const ehMessages = {
     deferredLabel: "Deferred",
     deleteTurn: "Delete",
     deleteTurnConfirm: "Delete this message from the chat history?",
-    diffUnavailable: "A textual diff is unavailable for this file.",
+    diffUnavailable: "Aucun diff textuel disponible pour ce fichier.",
     disabledHint: "envoy-harness is disabled. Configure a model in Settings → AI.",
     dismiss: "Dismiss",
     emptyBody: "Ask envoy-harness to write code, refactor, explain, or run tools. Sub-agent work can fan out to the configured peer cluster (different machines / models).",
@@ -138,7 +43,7 @@ export const ehMessages = {
     emptyTitle: "envoy-harness — your coding agent",
     ensuringTerminal: "Starting Envoy TUI…",
     errorHint: "envoy-harness is not ready: {error}",
-    filesChangedShort: "{count} file(s) changed",
+    filesChangedShort: "{count} fichier(s) modifié(s)",
     followUpsLabel: "Follow-ups",
     inputQueue: "Queued messages",
     inputQueueClear: "Clear all",
@@ -154,17 +59,17 @@ export const ehMessages = {
     nextMatch: "Next match",
     noPeers: "No peer cluster configured.",
     noSessionToChange: "Start an Envoy session first, then change its project.",
-    noTranscriptMatches: "No matching turns",
+    noTranscriptMatches: "Aucun tour correspondant",
     openChat: "Open chat",
     openChatTitle: "Open the Envoy Harness panel",
     openingChat: "Opening…",
     peers: "cluster {connected}/{total}",
     peersHeading: "Peer cluster:",
     peersTitle: "Configured peer cluster",
-    permissionAllow: "Allow",
+    permissionAllow: "Autoriser",
     permissionAllowed: "Tool allowed.",
     permissionDenied: "Tool denied.",
-    permissionDeny: "Deny",
+    permissionDeny: "Refuser",
     permissionTitle: "Tool permission",
     permissionsAria: "Permission policy",
     permissionsCurrent: "Permission policy: {mode}. Use /permissions always-confirm | safe-only | off | never.",
@@ -189,7 +94,7 @@ export const ehMessages = {
     projectSetUnknown: "Project folder updated.",
     projectUnset: "No project folder set — use /cd <path> or click the folder link above.",
     promptAriaLabel: "Prompt envoy-harness",
-    promptPlaceholder: "Ask envoy-harness to code, refactor, or explain…",
+    promptPlaceholder: "Demandez à envoy-harness de coder, refactoriser ou expliquer…",
     promptQueueMore: "Add to queue or ⌘↵ to send now…",
     promptWhileBusy: "Queue a follow-up (Enter) or send now (⌘↵)…",
     questionCancelled: "Question cancelled.",
@@ -203,25 +108,25 @@ export const ehMessages = {
     removingChat: "Removing…",
     restartWithProject: "Restart Envoy here",
     retryStart: "Retry Start Envoy",
-    revertComplete: "This turn's file changes were reverted.",
-    revertConfirm: "Restore the files to how they were before this turn? Later edits will never be overwritten.",
-    revertConflict: "Revert stopped because these files changed afterward: {files}",
-    revertUnavailable: "This turn can no longer be reverted safely.",
-    reviewAutoAlways: "Always",
-    reviewAutoLabel: "Auto-review when ≥",
-    reviewKeepFile: "Keep",
-    reviewKeepFailed: "Could not keep changes.",
-    reviewKeptAll: "Changes kept.",
-    reviewOnly: "Workspace-detected · review only",
-    reviewOpenFile: "Open file",
-    reviewRevertFile: "Revert",
-    reviewRevertedFile: "Reverted {path}",
+    revertComplete: "Les modifications de fichiers de ce tour ont été annulées.",
+    revertConfirm: "Restaurer les fichiers à leur état d’avant ce tour ? Les éditions ultérieures ne seront pas écrasées.",
+    revertConflict: "Revert arrêté car ces fichiers ont changé ensuite : {files}",
+    revertUnavailable: "Ce tour ne peut plus être annulé en toute sécurité.",
+    reviewAutoAlways: "Toujours",
+    reviewAutoLabel: "Revue auto si ≥",
+    reviewKeepFile: "Conserver",
+    reviewKeepFailed: "Impossible de conserver les modifications.",
+    reviewKeptAll: "Modifications conservées.",
+    reviewOnly: "Détecté dans le workspace · revue seule",
+    reviewOpenFile: "Ouvrir le fichier",
+    reviewRevertFile: "Annuler",
+    reviewRevertedFile: "{path} annulé",
     searchClose: "Close search",
     searchMatches: "{count} match(es)",
     searchNoMatches: "No matches for “{term}”.",
-    searchTranscript: "Search transcript",
+    searchTranscript: "Rechercher dans la transcription",
     searchUsage: "Usage: /search <term> — search this conversation.",
-    send: "Send",
+    send: "Envoyer",
     sendFailed: "Failed to reach envoy-harness: {error}",
     slash: "Commands",
     slashWhileBusy: "Finish or /cancel the current turn first.",
@@ -237,19 +142,19 @@ export const ehMessages = {
     statusRefreshed: "Status refreshed.",
     stillWorking: "Still working… tools and the model can take a minute.",
     stillWorkingWaitingForYou: "Still working — pick an option above when you're ready.",
-    subtitle: "Coding Agent (ACP)",
+    subtitle: "Agent de code (ACP)",
     teamFailed: "Failed to read team jobs: {error}",
-    thinking: "Thinking…",
+    thinking: "envoy-harness réfléchit…",
     title: "Envoy",
     traceEmpty: "No peer discovery events yet.",
     traceFailed: "Failed to read peer trace: {error}",
     traceHeading: "Recent peer events ({count}):\\n{events}",
-    turnCancelled: "Turn cancelled.",
+    turnCancelled: "Tour annulé.",
     turnCount: "{count} turn(s)",
     turnDeleted: "Message deleted",
     turnHintsTitle: "Suggested next steps",
-    turnReview: "Review changes",
-    turnReviewCount: "{count} file(s) changed",
+    turnReview: "Examiner les changements",
+    turnReviewCount: "{count} fichier(s) modifié(s)",
     waitingForYouShort: "Waiting for your answer…",
     youSelected: "You chose: {label}",
   },

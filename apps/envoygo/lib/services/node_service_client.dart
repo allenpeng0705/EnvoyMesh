@@ -908,6 +908,34 @@ class NodeServiceClient {
         as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> acceptEnvoyHarnessTurnReview(
+    String turnId, {
+    List<String>? paths,
+  }) async {
+    return await _client.call(
+      'acceptEnvoyHarnessTurnReview',
+      {
+        'turnId': turnId,
+        if (paths != null) 'paths': paths,
+      },
+      const Duration(seconds: 30),
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> revertEnvoyHarnessTurnFiles(
+    String turnId,
+    List<String> paths,
+  ) async {
+    return await _client.call(
+      'revertEnvoyHarnessTurnFiles',
+      {
+        'turnId': turnId,
+        'paths': paths,
+      },
+      const Duration(seconds: 30),
+    ) as Map<String, dynamic>;
+  }
+
   Future<void> openEnvoyHarnessFile(String path, {String? chatId}) async {
     await _client.call('openEnvoyHarnessFile', {
       'path': path,

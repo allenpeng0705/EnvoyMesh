@@ -2237,7 +2237,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chainsManageOnSocial =>
-      'Advanced chain controls (cancel, rebalance, pin) are on the home-node Social UI.';
+      'Fleet setup, bidding, and recipes stay on the home-node Social UI. Cancel, rebalance, and pin work here too.';
 
   @override
   String get chainsStartTitle => 'Start team job';
@@ -3159,6 +3159,151 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ehRevertThisTurn => 'Revert this turn';
 
   @override
+  String get ehReviewChanges => 'Review changes';
+
+  @override
+  String get ehRevertAll => 'Revert all';
+
+  @override
+  String ehChangesCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count files changed this turn',
+      one: '1 file changed this turn',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get ehChangesKeepAll => 'Keep all';
+
+  @override
+  String get ehChangesRevert => 'Revert all';
+
+  @override
+  String get ehChangesHideList => 'Hide list';
+
+  @override
+  String get ehChangesShowList => 'Show list';
+
+  @override
+  String get ehReviewKeepFile => 'Keep';
+
+  @override
+  String get ehReviewRevertFile => 'Revert';
+
+  @override
+  String get ehReviewKeptAll => 'Changes kept.';
+
+  @override
+  String ehReviewRevertedFile(String path) {
+    return 'Reverted $path';
+  }
+
+  @override
+  String get ehReviewAutoLabel => 'Auto-review when ≥';
+
+  @override
+  String get ehReviewAutoAlways => 'Always';
+
+  @override
+  String ehQueueTitle(int count) {
+    return 'Queued ($count)';
+  }
+
+  @override
+  String get ehQueueClear => 'Clear';
+
+  @override
+  String get ehQueueBusyHint => 'Send queues next';
+
+  @override
+  String get ehQueueFollowUpHint => 'Queue a follow-up…';
+
+  @override
+  String get ehInjectTooltip => 'Inject (cancel + send)';
+
+  @override
+  String ehFilesChangedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count files changed',
+      one: '1 file changed',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get ehEmptyReply =>
+      'envoy-harness finished without a visible reply. Your message is still here — try again or rephrase.';
+
+  @override
+  String get ehConfigureModelHint => 'Configure a model in Settings → AI.';
+
+  @override
+  String get ehReviewKeepFailed => 'Could not keep changes.';
+
+  @override
+  String get ehReviewOpenGitDiff => 'Open git diff';
+
+  @override
+  String get ehDiffBefore => 'Before';
+
+  @override
+  String get ehDiffAfter => 'After';
+
+  @override
+  String get ehPermsTooltip => 'Permission policy';
+
+  @override
+  String get ehPermsSafe => 'Default (safe auto-run)';
+
+  @override
+  String get ehPermsAsk => 'Always ask';
+
+  @override
+  String get ehPermsApprove => 'Always approve';
+
+  @override
+  String ehPermsSet(String mode) {
+    return 'Permission policy → $mode.';
+  }
+
+  @override
+  String get ehPermsNextTurn => ' Applies from the next turn.';
+
+  @override
+  String ehPermsFailed(String error) {
+    return 'Failed to set permission policy: $error';
+  }
+
+  @override
+  String get chainsStatusCancelled => 'Cancelled';
+
+  @override
+  String get chainsStatusPublished => 'Published';
+
+  @override
+  String get chainsStatusSynthesizing => 'Synthesizing';
+
+  @override
+  String get chainsStatusRunning => 'Running';
+
+  @override
+  String get chainsStatusWaitingWorkers => 'Waiting for workers';
+
+  @override
+  String get chainsStatusBidding => 'Bidding';
+
+  @override
+  String get chainsStatusAssigning => 'Assigning';
+
+  @override
+  String get chainsStatusPlanning => 'Planning';
+
+  @override
   String get ehWorking => 'Working';
 
   @override
@@ -3215,4 +3360,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get termEnterKey => 'Enter key';
+
+  @override
+  String get chainsCancelFailed => 'Could not cancel this team job.';
 }

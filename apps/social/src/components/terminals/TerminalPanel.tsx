@@ -122,6 +122,11 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
     chatId: terminalChatId,
     onNotify: (text) => setWatchToast(text),
   });
+  const {
+    clearReviewState,
+    onTurnStart: onEhReviewTurnStart,
+    onTurnComplete: onEhReviewTurnComplete,
+  } = ehReview;
 
   const ehuiDataSource = useMemo(
     () => createRemoteEhuiDataSource(nodeService),
@@ -179,7 +184,7 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
       setPendingEhPermission(null);
       setEhTurnHints(null);
       setEhPromptBusy(false);
-      ehReview.clearReviewState();
+      clearReviewState();
       resetTurnContext();
       return;
     }
@@ -207,15 +212,12 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
     });
     const unsubTurnStart = nodeService.on("eh:turn_started", (event) => {
       if (!matchesTerminalChat(event.chatId)) return;
-      ehReview.onTurnStart();
+      onEhReviewTurnStart();
       resetTurnContext();
     });
     const unsubTurnComplete = nodeService.on("eh:turn_complete", (event) => {
       if (!matchesTerminalChat(event.chatId)) return;
-      const files = event.changedFiles ?? [];
-      if (files.length > 0) {
-        ehReview.onTurnComplete(event.turnId, files.length);
-      }
+      onEhReviewTurnComplete(event.turnId, event.changedFiles?.length ?? 0);
     });
     const unsubActivity = nodeService.on("eh:activity", (event: EhActivityEvent) => {
       if (!matchesTerminalChat(event.chatId)) return;
@@ -232,7 +234,15 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
       unsubTurnComplete();
       unsubActivity();
     };
-  }, [ehReview, nodeService, isEnvoyHarnessSession, resetTurnContext, terminalChatId]);
+  }, [
+    clearReviewState,
+    onEhReviewTurnComplete,
+    onEhReviewTurnStart,
+    nodeService,
+    isEnvoyHarnessSession,
+    resetTurnContext,
+    terminalChatId,
+  ]);
 
   useEffect(() => {
     if (isPiSession && mode !== "manual") setMode("manual");

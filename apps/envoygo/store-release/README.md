@@ -20,7 +20,7 @@ store-release/
 | Field | Value |
 |-------|--------|
 | App name | **EnvoyGo** |
-| Version (current) | `1.0.0+3` (`pubspec.yaml`) |
+| Version (current) | `1.2.2+36` (`pubspec.yaml`) |
 | iOS bundle ID | `com.envoymesh.envoygo` |
 | Android application ID | `com.envoymesh.envoygo` |
 | Category (suggested) | Productivity / Social Networking |

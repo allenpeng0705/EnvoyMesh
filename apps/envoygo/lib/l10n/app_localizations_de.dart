@@ -977,30 +977,31 @@ class AppLocalizationsDe extends AppLocalizations {
   String get chatsCodingPi => 'Pi';
 
   @override
-  String get chatsCodingPiHint => 'Coding Agent (terminal)';
+  String get chatsCodingPiHint => 'Coding-Agent (Terminal)';
 
   @override
   String get chatsCodingEh => 'Envoy';
 
   @override
-  String get chatsCodingEhHint => 'Coding Agent (chat)';
+  String get chatsCodingEhHint => 'Coding-Agent (Chat)';
 
   @override
-  String get chatsEhNew => 'New coding chat';
+  String get chatsEhNew => 'Neuer Coding-Chat';
 
   @override
-  String get chatsEhRemoveTitle => 'Remove coding chat?';
+  String get chatsEhRemoveTitle => 'Coding-Chat entfernen?';
 
   @override
   String chatsEhRemoveBody(String name) {
-    return 'Remove “$name” from your Coding list? The chat history on the home node will be deleted.';
+    return '„$name“ aus der Coding-Liste entfernen? Der Chatverlauf auf dem Home-Knoten wird gelöscht.';
   }
 
   @override
-  String get chatsEhThinking => 'Envoy is thinking…';
+  String get chatsEhThinking => 'Envoy denkt nach…';
 
   @override
-  String get chatsEhPromptHint => 'Ask Envoy to code, refactor, or explain…';
+  String get chatsEhPromptHint =>
+      'Envoy bitten zu coden, zu refaktorieren oder zu erklären…';
 
   @override
   String get chatsSectionFamily => 'Familie';
@@ -1030,104 +1031,106 @@ class AppLocalizationsDe extends AppLocalizations {
   String get chatsNewPiHint => 'Pi-Coding-Terminal starten';
 
   @override
-  String get chatsNewEnvoy => 'New Envoy';
+  String get chatsNewEnvoy => 'Neues Envoy';
 
   @override
-  String get chatsNewEnvoyHint => 'Start Envoy Harness TUI';
+  String get chatsNewEnvoyHint => 'Envoy-Harness-TUI starten';
 
   @override
-  String get ehChooseProjectTitle => 'Choose Envoy project folder';
+  String get ehChooseProjectTitle => 'Envoy-Projektordner wählen';
 
   @override
-  String get ehChangeProjectTitle => 'Change Envoy project folder';
+  String get ehChangeProjectTitle => 'Envoy-Projektordner ändern';
 
   @override
   String get ehChooseProjectDesc =>
-      'Envoy runs in this folder (reads AGENTS.md, edits files, runs shell).';
+      'Envoy läuft in diesem Ordner (liest AGENTS.md, bearbeitet Dateien, führt Shell aus).';
 
   @override
-  String get ehStartWithProject => 'Start';
+  String get ehStartWithProject => 'Starten';
 
   @override
-  String get ehRestartWithProject => 'Restart Envoy here';
+  String get ehRestartWithProject => 'Envoy hier neu starten';
 
   @override
-  String get ehEnsuringTerminal => 'Starting Envoy TUI…';
+  String get ehEnsuringTerminal => 'Envoy-TUI wird gestartet…';
 
   @override
-  String get ehPermissionTitle => 'Tool permission';
+  String get ehPermissionTitle => 'Tool-Berechtigung';
 
   @override
-  String get ehPermissionAllow => 'Allow';
+  String get ehPermissionAllow => 'Zulassen';
 
   @override
-  String get ehPermissionDeny => 'Deny';
+  String get ehPermissionDeny => 'Ablehnen';
 
   @override
-  String get ehQuestionTitle => 'Envoy needs your input';
+  String get ehQuestionTitle => 'Envoy braucht deine Eingabe';
 
   @override
-  String get ehRecommended => 'Recommended';
+  String get ehRecommended => 'Empfohlen';
 
   @override
-  String get ehSlashWhileBusy => 'Finish or /cancel the current turn first.';
+  String get ehSlashWhileBusy =>
+      'Beende oder /cancel den aktuellen Turn zuerst.';
 
   @override
-  String get ehChatReset => 'Started a new chat for this project.';
+  String get ehChatReset => 'Neuer Chat für dieses Projekt gestartet.';
 
   @override
-  String get ehTurnCancelled => 'Turn cancelled.';
+  String get ehTurnCancelled => 'Turn abgebrochen.';
 
   @override
-  String get ehStatusRefreshed => 'Status refreshed.';
+  String get ehStatusRefreshed => 'Status aktualisiert.';
 
   @override
-  String get ehNoPeers => 'No peer cluster configured.';
+  String get ehNoPeers => 'Kein Peer-Cluster konfiguriert.';
 
   @override
   String get ehSearchUsage =>
-      'Usage: /search <term> — search this conversation.';
+      'Nutzung: /search <Begriff> — diese Unterhaltung durchsuchen.';
 
   @override
   String ehSearchNoMatches(String term) {
-    return 'No matches for “$term”.';
+    return 'Keine Treffer für „$term“.';
   }
 
   @override
   String ehModelShow(String model) {
-    return 'Active model: $model';
+    return 'Aktives Modell: $model';
   }
 
   @override
   String get ehModelUnknown =>
-      'No model configured — set one in Settings → AI.';
+      'Kein Modell konfiguriert — unter Einstellungen → KI festlegen.';
 
   @override
   String ehProjectCurrent(String path) {
-    return 'Project folder: $path';
+    return 'Projektordner: $path';
   }
 
   @override
-  String get ehProjectUnset => 'No project folder set — use /cd <path>.';
+  String get ehProjectUnset =>
+      'Kein Projektordner gesetzt — /cd <Pfad> verwenden.';
 
   @override
   String ehProjectSet(String path) {
-    return 'Project folder → $path';
+    return 'Projektordner → $path';
   }
 
   @override
-  String get ehProjectSetUnknown => 'Project folder updated.';
+  String get ehProjectSetUnknown => 'Projektordner aktualisiert.';
 
   @override
   String ehProjectSetFailed(String error) {
-    return 'Failed to set project folder: $error';
+    return 'Projektordner konnte nicht gesetzt werden: $error';
   }
 
   @override
-  String get ehConfigureModel => 'Configure a model in Settings → AI.';
+  String get ehConfigureModel => 'Modell in Einstellungen → KI konfigurieren.';
 
   @override
-  String get ehNotReady => 'envoy-harness is not ready.';
+  String get ehNotReady => 'envoy-harness ist nicht bereit.';
 
   @override
   String get termQuickHelp => '/help';
@@ -2009,20 +2012,20 @@ class AppLocalizationsDe extends AppLocalizations {
   String get settingsPiEnabled => 'Pi aktiviert';
 
   @override
-  String get settingsPiCodingBackend => 'Coding backend';
+  String get settingsPiCodingBackend => 'Coding-Backend';
 
   @override
-  String get settingsPiCodingBackendPi => 'Pi (sidecar)';
+  String get settingsPiCodingBackendPi => 'Pi (Sidecar)';
 
   @override
   String get settingsPiCodingBackendEh => 'envoy-harness (ACP)';
 
   @override
   String get settingsPiCodingBackendHint =>
-      'Same setting as Social. Routes sendToPi and approvals through the same Pi UI. Older EnvoyGo builds without this control still work when switched from Social.';
+      'Gleiche Einstellung wie Social. Leitet sendToPi und Freigaben über dieselbe Pi-UI. Ältere EnvoyGo-Builds ignorieren dies und bleiben bei Pi.';
 
   @override
-  String get settingsPiCodingBackendSaved => 'Coding backend updated';
+  String get settingsPiCodingBackendSaved => 'Coding-Backend aktualisiert';
 
   @override
   String get settingsPiOverrideHint =>
@@ -2262,7 +2265,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get chainsManageOnSocial =>
-      'Verwalten Sie Chains in der Social-UI des Heimknotens.';
+      'Flotten-Setup, Gebote und Rezepte bleiben in der Social-UI des Heimknotens. Abbrechen, Rebalance und Anheften gehen auch hier.';
 
   @override
   String get chainsStartTitle => 'Team-Job starten';
@@ -3132,73 +3135,220 @@ class AppLocalizationsDe extends AppLocalizations {
       'Erweiterte Server-Parameter (Kontextgröße, GPU-Schichten) bleiben in der Social-UI des Heimknotens.';
 
   @override
-  String get ehReviewTitle => 'Review this turn';
+  String get ehReviewTitle => 'Diesen Turn prüfen';
 
   @override
   String get ehReviewUnavailable =>
-      'A saved review is unavailable for this older turn.';
+      'Für diesen älteren Turn ist keine gespeicherte Prüfung verfügbar.';
 
   @override
-  String get ehReviewFile => 'File';
+  String get ehReviewFile => 'Datei';
 
   @override
-  String get ehReviewOpenFile => 'Open file';
+  String get ehReviewOpenFile => 'Datei öffnen';
 
   @override
   String get ehReviewDiffUnavailable =>
-      'A textual diff is unavailable for this file.';
+      'Für diese Datei ist kein textueller Diff verfügbar.';
 
   @override
-  String get ehReviewOnly => 'Workspace-detected · review only';
+  String get ehReviewOnly => 'Workspace erkannt · nur Prüfung';
 
   @override
-  String get ehRevertTitle => 'Revert this turn?';
+  String get ehRevertTitle => 'Diesen Turn zurücksetzen?';
 
   @override
   String get ehRevertBody =>
-      'Files will be restored to their pre-turn contents. Later edits are protected and will stop the revert.';
+      'Dateien werden auf den Stand vor dem Turn zurückgesetzt. Spätere Änderungen sind geschützt und stoppen den Revert.';
 
   @override
-  String get ehRevertAction => 'Revert';
+  String get ehRevertAction => 'Zurücksetzen';
 
   @override
-  String get ehRevertComplete => 'This turn’s file changes were reverted.';
+  String get ehRevertComplete =>
+      'Die Dateiänderungen dieses Turns wurden zurückgesetzt.';
 
   @override
   String get ehRevertUnavailable =>
-      'This turn can no longer be reverted safely.';
+      'Dieser Turn kann nicht mehr sicher zurückgesetzt werden.';
 
   @override
   String ehRevertConflict(String files) {
-    return 'Revert stopped because these files changed afterward: $files';
+    return 'Revert gestoppt, weil diese Dateien danach geändert wurden: $files';
   }
 
   @override
-  String get ehSearchTranscript => 'Search transcript';
+  String get ehSearchTranscript => 'Transkript durchsuchen';
 
   @override
-  String get ehSearchClose => 'Close search';
+  String get ehSearchClose => 'Suche schließen';
 
   @override
-  String get ehNoMatches => 'No matching turns';
+  String get ehNoMatches => 'Keine passenden Turns';
 
   @override
-  String get ehCopyTurn => 'Copy turn';
+  String get ehCopyTurn => 'Turn kopieren';
 
   @override
-  String get ehShareTurn => 'Share turn';
+  String get ehShareTurn => 'Turn teilen';
 
   @override
-  String get ehReviewDiff => 'Review diff';
+  String get ehReviewDiff => 'Diff prüfen';
 
   @override
-  String get ehRevertThisTurn => 'Revert this turn';
+  String get ehRevertThisTurn => 'Diesen Turn zurücksetzen';
 
   @override
-  String get ehWorking => 'Working';
+  String get ehReviewChanges => 'Änderungen prüfen';
 
   @override
-  String get ehCompleted => 'Completed';
+  String get ehRevertAll => 'Alles zurücksetzen';
+
+  @override
+  String ehChangesCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count Dateien in diesem Turn geändert',
+      one: '1 Datei in diesem Turn geändert',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get ehChangesKeepAll => 'Alles behalten';
+
+  @override
+  String get ehChangesRevert => 'Alles zurücksetzen';
+
+  @override
+  String get ehChangesHideList => 'Liste ausblenden';
+
+  @override
+  String get ehChangesShowList => 'Liste anzeigen';
+
+  @override
+  String get ehReviewKeepFile => 'Behalten';
+
+  @override
+  String get ehReviewRevertFile => 'Zurücksetzen';
+
+  @override
+  String get ehReviewKeptAll => 'Änderungen behalten.';
+
+  @override
+  String ehReviewRevertedFile(String path) {
+    return '$path zurückgesetzt';
+  }
+
+  @override
+  String get ehReviewAutoLabel => 'Auto-Prüfung ab ≥';
+
+  @override
+  String get ehReviewAutoAlways => 'Immer';
+
+  @override
+  String ehQueueTitle(int count) {
+    return 'Warteschlange ($count)';
+  }
+
+  @override
+  String get ehQueueClear => 'Leeren';
+
+  @override
+  String get ehQueueBusyHint => 'Senden reiht als Nächstes ein';
+
+  @override
+  String get ehQueueFollowUpHint => 'Follow-up einreihen…';
+
+  @override
+  String get ehInjectTooltip => 'Einschieben (abbrechen + senden)';
+
+  @override
+  String ehFilesChangedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count Dateien geändert',
+      one: '1 Datei geändert',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get ehEmptyReply =>
+      'envoy-harness hat keine sichtbare Antwort geliefert. Deine Nachricht ist noch da — erneut versuchen oder umformulieren.';
+
+  @override
+  String get ehConfigureModelHint =>
+      'Modell unter Einstellungen → KI konfigurieren.';
+
+  @override
+  String get ehReviewKeepFailed => 'Änderungen konnten nicht behalten werden.';
+
+  @override
+  String get ehReviewOpenGitDiff => 'Git-Diff öffnen';
+
+  @override
+  String get ehDiffBefore => 'Vorher';
+
+  @override
+  String get ehDiffAfter => 'Nachher';
+
+  @override
+  String get ehPermsTooltip => 'Berechtigungsrichtlinie';
+
+  @override
+  String get ehPermsSafe => 'Standard (sichere Auto-Ausführung)';
+
+  @override
+  String get ehPermsAsk => 'Immer fragen';
+
+  @override
+  String get ehPermsApprove => 'Immer genehmigen';
+
+  @override
+  String ehPermsSet(String mode) {
+    return 'Berechtigungsrichtlinie → $mode.';
+  }
+
+  @override
+  String get ehPermsNextTurn => ' Gilt ab dem nächsten Turn.';
+
+  @override
+  String ehPermsFailed(String error) {
+    return 'Berechtigungsrichtlinie konnte nicht gesetzt werden: $error';
+  }
+
+  @override
+  String get chainsStatusCancelled => 'Abgebrochen';
+
+  @override
+  String get chainsStatusPublished => 'Veröffentlicht';
+
+  @override
+  String get chainsStatusSynthesizing => 'Synthese';
+
+  @override
+  String get chainsStatusRunning => 'Läuft';
+
+  @override
+  String get chainsStatusWaitingWorkers => 'Warte auf Worker';
+
+  @override
+  String get chainsStatusBidding => 'Gebote';
+
+  @override
+  String get chainsStatusAssigning => 'Zuweisen';
+
+  @override
+  String get chainsStatusPlanning => 'Planung';
+
+  @override
+  String get ehWorking => 'Arbeitet';
+
+  @override
+  String get ehCompleted => 'Abgeschlossen';
 
   @override
   String get ehUpdate => 'Update';
@@ -3213,42 +3363,45 @@ class AppLocalizationsDe extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count matches',
-      one: '1 match',
+      other: '$count Treffer',
+      one: '1 Treffer',
     );
     return '$_temp0';
   }
 
   @override
-  String get termMore => 'More…';
+  String get termMore => 'Mehr…';
 
   @override
-  String get termCompactContext => 'Compact context';
+  String get termCompactContext => 'Kontext kompaktieren';
 
   @override
-  String get termUpdatePlan => 'Show or update plan';
+  String get termUpdatePlan => 'Plan anzeigen oder aktualisieren';
 
   @override
-  String get termHarnessStatus => 'Harness status';
+  String get termHarnessStatus => 'Harness-Status';
 
   @override
-  String get termPiActions => 'Pi actions';
+  String get termPiActions => 'Pi-Aktionen';
 
   @override
-  String get termHarnessActions => 'envoy-harness actions';
+  String get termHarnessActions => 'envoy-harness-Aktionen';
 
   @override
-  String get termPreviousCommand => 'Previous command';
+  String get termPreviousCommand => 'Vorheriger Befehl';
 
   @override
-  String get termNextCommand => 'Next command';
+  String get termNextCommand => 'Nächster Befehl';
 
   @override
-  String get termCursorLeft => 'Move cursor left';
+  String get termCursorLeft => 'Cursor nach links';
 
   @override
-  String get termCursorRight => 'Move cursor right';
+  String get termCursorRight => 'Cursor nach rechts';
 
   @override
-  String get termEnterKey => 'Enter key';
+  String get termEnterKey => 'Eingabetaste';
+
+  @override
+  String get chainsCancelFailed => 'Team-Job konnte nicht abgebrochen werden.';
 }

@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../eh/eh_review_prefs.dart';
 import '../../eh/eh_timeline.dart';
 import '../../eh/eh_turn_queue.dart';
 import '../../eh/envoy_harness_history.dart';
@@ -12,6 +14,8 @@ import '../../ext_agent/envoy_harness_slash_commands.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../widgets/chat/slash_command_suggest.dart';
+import '../../widgets/eh/eh_changes_banner.dart';
+import '../../widgets/eh/eh_turn_review_sheet.dart';
 import '../../widgets/eh/envoy_harness_terminal_chrome.dart';
 
 /// Envoy Harness coding chat — multi-turn agent thread per project folder.
@@ -63,6 +67,11 @@ class _EnvoyHarnessChatScreenState
   Timer? _draftSaveTimer;
   bool _searching = false;
   bool _searchTelemetryActive = false;
+  List<String> _changedFiles = [];
+  bool _dismissedChanges = false;
+  String? _lastReviewTurnId;
+  int _reviewMinFiles = 1;
+  bool _reviewSheetOpen = false;
 
   bool get _busy => _queue?.busy ?? false;
   List<Map<String, dynamic>> get _nonMessageTimeline => _timeline.items
@@ -81,6 +90,7 @@ class _EnvoyHarnessChatScreenState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _wireQueue();
       unawaited(_restoreComposerState());
+      unawaited(_restoreReviewPrefs());
       unawaited(_loadHistory());
       unawaited(_refreshStatus());
     });
@@ -161,7 +171,7 @@ class _EnvoyHarnessChatScreenState
             // assistant row, and never touch the user bubble above it.
             if (streaming != null) _messages.remove(streaming);
             _systemMessage =
-                'envoy-harness finished without a visible reply. Your message is still here — try again or rephrase.';
+                AppLocalizations.of(context).ehEmptyReply;
             _systemIsError = false;
           } else if (streaming != null) {
             streaming
@@ -210,7 +220,12 @@ class _EnvoyHarnessChatScreenState
         _setSystem(text, error: error);
       },
       onTurnStart: () {
-        if (mounted) setState(() {});
+        if (mounted) {
+          setState(() {
+            _changedFiles = [];
+            _dismissedChanges = false;
+          });
+        }
       },
       onTurnEnd: () {
         if (mounted) setState(() {});
@@ -223,7 +238,28 @@ class _EnvoyHarnessChatScreenState
     _queue = queue;
     _unsubs.add(
       client.on('eh:turn_complete', (data) {
-        if (data is Map) queue.handleTurnComplete(data);
+        if (data is Map) {
+          queue.handleTurnComplete(data);
+          _handleTurnCompleteForReview(Map<String, dynamic>.from(data));
+        }
+      }),
+    );
+    _unsubs.add(
+      client.on('eh:files_changed', (data) {
+        if (data is! Map) return;
+        if (!_eventMatchesChat(data['chatId']?.toString())) return;
+        final files =
+            (data['files'] as List?)?.map((value) => value.toString()).toList() ??
+            const <String>[];
+        if (files.isEmpty || !mounted) return;
+        setState(() {
+          _changedFiles = files;
+          _dismissedChanges = false;
+          final turnId = data['turnId']?.toString();
+          if (turnId != null && turnId.isNotEmpty) {
+            _lastReviewTurnId = turnId;
+          }
+        });
       }),
     );
     _unsubs.add(
@@ -250,6 +286,71 @@ class _EnvoyHarnessChatScreenState
       }),
     );
     unawaited(_recoverTurnStatus());
+  }
+
+  bool _eventMatchesChat(String? eventChatId) {
+    if (eventChatId == null || widget.chatId == null) return true;
+    return widget.chatId == eventChatId;
+  }
+
+  Future<void> _restoreReviewPrefs() async {
+    final minFiles = await getEhReviewMinFiles();
+    if (!mounted) return;
+    setState(() => _reviewMinFiles = minFiles);
+  }
+
+  void _clearReviewState() {
+    setState(() {
+      _changedFiles = [];
+      _dismissedChanges = true;
+      _lastReviewTurnId = null;
+    });
+  }
+
+  void _handleTurnCompleteForReview(Map<String, dynamic> data) {
+    if (!_eventMatchesChat(data['chatId']?.toString())) return;
+    if (data['ok'] != true || data['cancelled'] == true) return;
+    final turnId = data['turnId']?.toString();
+    if (turnId == null || turnId.isEmpty) return;
+    final files =
+        (data['changedFiles'] as List?)?.map((value) => value.toString()).toList() ??
+        const <String>[];
+    if (files.isEmpty || !mounted) return;
+    setState(() {
+      _lastReviewTurnId = turnId;
+      _changedFiles = files;
+      _dismissedChanges = false;
+    });
+    if (files.length >= _reviewMinFiles && !_reviewSheetOpen) {
+      unawaited(_reviewTurn(turnId));
+    }
+  }
+
+  Future<void> _handleKeepAllChanges() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    if (_lastReviewTurnId == null) {
+      setState(() => _dismissedChanges = true);
+      return;
+    }
+    try {
+      final result = await client.acceptEnvoyHarnessTurnReview(
+        _lastReviewTurnId!,
+      );
+      if (!mounted) return;
+      if (result['accepted'] == true) {
+        _recordUx('review_kept_all');
+        _clearReviewState();
+        _setSystem(AppLocalizations.of(context).ehReviewKeptAll);
+      } else {
+        _setSystem(
+          AppLocalizations.of(context).ehReviewKeepFailed,
+          error: true,
+        );
+      }
+    } catch (error) {
+      _setSystem(error.toString(), error: true);
+    }
   }
 
   String get _composerStorageKey =>
@@ -381,40 +482,33 @@ class _EnvoyHarnessChatScreenState
   }
 
   /// Friendly label for the permission policy value.
-  String _policyLabel(String? policy) {
+  String _policyLabel(AppLocalizations l10n, String? policy) {
     switch (policy) {
       case 'always-confirm':
-        return 'Always ask';
+        return l10n.ehPermsAsk;
       case 'off':
       case 'never':
-        return 'Always approve';
+        return l10n.ehPermsApprove;
       case 'safe-only':
       default:
-        return 'Default (safe auto-run)';
+        return l10n.ehPermsSafe;
     }
   }
 
   Future<void> _changePolicy(String policy) async {
     final client = ref.read(nodeServiceProvider);
     if (client == null) return;
+    final l10n = AppLocalizations.of(context);
     try {
       final s = await client.setEnvoyHarnessAutoRunPolicy(policy);
       if (mounted) {
         setState(() => _status = s);
         final mode = s['autoRunPolicy']?.toString() ?? policy;
-        final when = _busy ? ' Applies from the next turn.' : '';
-        if (mode == 'off' || mode == 'never') {
-          _setSystem(
-            'Permission policy → Always approve: every tool auto-runs with no '
-            'prompts — including write/edit/bash. Only use this in workspaces '
-            'you fully trust.$when',
-          );
-        } else {
-          _setSystem('Permission policy → ${_policyLabel(mode)}.$when');
-        }
+        final when = _busy ? l10n.ehPermsNextTurn : '';
+        _setSystem('${l10n.ehPermsSet(_policyLabel(l10n, mode))}$when');
       }
     } catch (e) {
-      _setSystem('Failed to set permission policy: $e', error: true);
+      _setSystem(l10n.ehPermsFailed('$e'), error: true);
     }
   }
 
@@ -580,6 +674,7 @@ class _EnvoyHarnessChatScreenState
       if (!mounted) return;
       if (result['reverted'] == true) {
         _recordUx('revert_completed', outcome: 'success');
+        _clearReviewState();
         _setSystem(AppLocalizations.of(context).ehRevertComplete);
         await _loadHistory();
       } else {
@@ -604,91 +699,85 @@ class _EnvoyHarnessChatScreenState
     }
   }
 
-  Future<void> _reviewTurn(String turnId) async {
-    _recordUx('review_opened');
+  Future<void> _reviewTurn(String turnId, {String? focusPath}) async {
+    if (_reviewSheetOpen || !mounted) return;
     final client = ref.read(nodeServiceProvider);
     if (client == null) return;
+    _recordUx('review_opened');
+    setState(() {
+      _lastReviewTurnId = turnId;
+      _reviewSheetOpen = true;
+    });
     try {
-      final review = await client.getEnvoyHarnessTurnReview(turnId);
-      if (!mounted) return;
-      if (review == null) {
-        _setSystem(
-          AppLocalizations.of(context).ehReviewUnavailable,
-          error: true,
-        );
-        return;
-      }
-      final files =
-          (review['files'] as List?)?.whereType<Map>().toList() ?? const [];
       await showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
         builder: (context) => DraggableScrollableSheet(
           expand: false,
-          initialChildSize: 0.85,
-          builder: (context, controller) => ListView(
-            controller: controller,
-            padding: const EdgeInsets.all(16),
-            children: [
-              Text(
-                AppLocalizations.of(context).ehReviewTitle,
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 12),
-              for (final raw in files)
-                Card(
-                  child: ExpansionTile(
-                    initiallyExpanded: true,
-                    title: Text(
-                      raw['path']?.toString() ??
-                          AppLocalizations.of(context).ehReviewFile,
-                    ),
-                    subtitle: Text(
-                      raw['attribution']?.toString() == 'workspace'
-                          ? '${raw['status']?.toString() ?? 'modified'} · ${AppLocalizations.of(context).ehReviewOnly}'
-                          : raw['status']?.toString() ?? 'modified',
-                    ),
-                    trailing: raw['status']?.toString() == 'deleted'
-                        ? null
-                        : IconButton(
-                            tooltip: AppLocalizations.of(
-                              context,
-                            ).ehReviewOpenFile,
-                            icon: const Icon(Icons.open_in_new),
-                            onPressed: () => unawaited(() async {
-                              try {
-                                await client.openEnvoyHarnessFile(
-                                  raw['path'].toString(),
-                                  chatId: widget.chatId,
-                                );
-                              } catch (error) {
-                                if (mounted) {
-                                  _setSystem(error.toString(), error: true);
-                                }
-                              }
-                            }()),
-                          ),
-                    childrenPadding: const EdgeInsets.all(12),
-                    children: [
-                      SelectableText(
-                        raw['diff']?.toString() ??
-                            AppLocalizations.of(
-                              context,
-                            ).ehReviewDiffUnavailable,
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
+          initialChildSize: 0.9,
+          builder: (context, controller) => EhTurnReviewSheet(
+            client: client,
+            turnId: turnId,
+            chatId: widget.chatId,
+            focusPath: focusPath,
+            onNotify: (text, {bool error = false}) =>
+                _setSystem(text, error: error),
+            onDismissed: _clearReviewState,
+            onUx: (action, {String? outcome}) =>
+                _recordUx(action, outcome: outcome),
+            onOpenGitDiffFallback: () => unawaited(_openGitDiffFallback()),
           ),
         ),
       );
-    } catch (error) {
-      _setSystem(error.toString(), error: true);
+    } finally {
+      if (mounted) {
+        setState(() => _reviewSheetOpen = false);
+      } else {
+        _reviewSheetOpen = false;
+      }
+    }
+  }
+
+  Future<void> _openGitDiffFallback() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null || !mounted) return;
+    final l10n = AppLocalizations.of(context);
+    try {
+      final result = await client.invokeEnvoyHarnessEhui({'op': 'gitDiff'});
+      if (!mounted) return;
+      final text = result is String
+          ? result
+          : const JsonEncoder.withIndent('  ').convert(result);
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (ctx) => DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.7,
+          builder: (_, scrollController) => Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  l10n.ehReviewOpenGitDiff,
+                  style: Theme.of(ctx).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: SingleChildScrollView(
+                    controller: scrollController,
+                    child: SelectableText(text),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      _setSystem(e.toString(), error: true);
     }
   }
 
@@ -960,13 +1049,13 @@ class _EnvoyHarnessChatScreenState
             Row(
               children: [
                 Text(
-                  'Queued (${queue.queue.length})',
+                  l10n.ehQueueTitle(queue.queue.length),
                   style: Theme.of(context).textTheme.labelMedium,
                 ),
                 const Spacer(),
                 TextButton(
                   onPressed: () => queue.clearQueue(),
-                  child: const Text('Clear'),
+                  child: Text(l10n.ehQueueClear),
                 ),
               ],
             ),
@@ -1030,23 +1119,26 @@ class _EnvoyHarnessChatScreenState
             }),
           ),
           PopupMenuButton<String>(
-            tooltip: 'Permission policy',
+            tooltip: l10n.ehPermsTooltip,
             onSelected: (value) => unawaited(_changePolicy(value)),
             itemBuilder: (context) => [
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'safe-only',
-                child: Text('Default (safe auto-run)'),
+                child: Text(l10n.ehPermsSafe),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'always-confirm',
-                child: Text('Always ask'),
+                child: Text(l10n.ehPermsAsk),
               ),
-              const PopupMenuItem(value: 'off', child: Text('Always approve')),
+              PopupMenuItem(
+                value: 'off',
+                child: Text(l10n.ehPermsApprove),
+              ),
             ],
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               child: Text(
-                _policyLabel(_status?['autoRunPolicy']?.toString()),
+                _policyLabel(l10n, _status?['autoRunPolicy']?.toString()),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
@@ -1097,7 +1189,7 @@ class _EnvoyHarnessChatScreenState
                   Icon(Icons.circle, size: 8, color: scheme.primary),
                   const SizedBox(width: 8),
                   Text(
-                    _timeline.agentState!['label']?.toString() ?? 'Working',
+                    _timeline.agentState!['label']?.toString() ?? l10n.ehWorking,
                     style: Theme.of(context).textTheme.labelMedium,
                   ),
                   if (_timeline.agentState!['activitySummary'] != null) ...[
@@ -1248,6 +1340,29 @@ class _EnvoyHarnessChatScreenState
                   ),
           ),
           _buildQueueBar(l10n),
+          if (!_dismissedChanges && _changedFiles.isNotEmpty)
+            EhChangesBanner(
+              files: _changedFiles,
+              onReview: () => unawaited(
+                _lastReviewTurnId != null
+                    ? _reviewTurn(_lastReviewTurnId!)
+                    : _openGitDiffFallback(),
+              ),
+              onReviewFile: _lastReviewTurnId != null
+                  ? (path) => unawaited(
+                      _reviewTurn(_lastReviewTurnId!, focusPath: path),
+                    )
+                  : null,
+              onKeepAll: () => unawaited(_handleKeepAllChanges()),
+              onRevertAll: _lastReviewTurnId != null
+                  ? () => unawaited(_revertTurn(_lastReviewTurnId!))
+                  : null,
+              reviewMinFiles: _reviewMinFiles,
+              onReviewMinFilesChange: (value) {
+                setState(() => _reviewMinFiles = value);
+                unawaited(setEhReviewMinFiles(value));
+              },
+            ),
           if (_busy)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -1259,7 +1374,7 @@ class _EnvoyHarnessChatScreenState
                   ),
                   const Spacer(),
                   Text(
-                    'Send queues next',
+                    l10n.ehQueueBusyHint,
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
@@ -1283,7 +1398,7 @@ class _EnvoyHarnessChatScreenState
                       maxLines: 4,
                       decoration: InputDecoration(
                         hintText: _busy
-                            ? 'Queue a follow-up…'
+                            ? l10n.ehQueueFollowUpHint
                             : l10n.chatsEhPromptHint,
                         border: const OutlineInputBorder(),
                         suffixIcon: IconButton(
@@ -1299,7 +1414,7 @@ class _EnvoyHarnessChatScreenState
                   const SizedBox(width: 8),
                   if (_busy)
                     IconButton(
-                      tooltip: 'Inject (cancel + send)',
+                      tooltip: l10n.ehInjectTooltip,
                       onPressed: () =>
                           unawaited(_send(mode: EhSubmitMode.inject)),
                       icon: const Icon(Icons.fast_forward),
@@ -1340,7 +1455,9 @@ class _MobileTimelineCard extends StatelessWidget {
         : Icons.check_circle_outline;
     final title = switch (type) {
       'activity' => item['summary']?.toString() ?? l10n.ehWorking,
-      'changes' => '${(item['files'] as List?)?.length ?? 0} file(s) changed',
+      'changes' => l10n.ehFilesChangedCount(
+        (item['files'] as List?)?.length ?? 0,
+      ),
       'completion' => item['summary']?.toString() ?? l10n.ehCompleted,
       _ => item['message']?.toString() ?? type ?? l10n.ehUpdate,
     };
@@ -1379,12 +1496,12 @@ class _MobileTimelineCard extends StatelessWidget {
                     TextButton.icon(
                       onPressed: () => onReview!(item['turnId'].toString()),
                       icon: const Icon(Icons.rate_review_outlined),
-                      label: Text(l10n.ehReviewDiff),
+                      label: Text(l10n.ehReviewChanges),
                     ),
                   TextButton.icon(
                     onPressed: () => onRevert!(item['turnId'].toString()),
                     icon: const Icon(Icons.undo),
-                    label: Text(l10n.ehRevertThisTurn),
+                    label: Text(l10n.ehRevertAll),
                   ),
                 ],
               ),
@@ -1466,6 +1583,7 @@ class _CodeBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final firstBreak = raw.indexOf('\n');
     final language = firstBreak < 0 ? '' : raw.substring(0, firstBreak).trim();
     final code = (firstBreak < 0 ? raw : raw.substring(firstBreak + 1))
@@ -1494,7 +1612,7 @@ class _CodeBlock extends StatelessWidget {
               const Spacer(),
               IconButton(
                 visualDensity: VisualDensity.compact,
-                tooltip: 'Copy code',
+                tooltip: l10n.ehCopyTurn,
                 icon: const Icon(Icons.copy, size: 17),
                 onPressed: () => Clipboard.setData(ClipboardData(text: code)),
               ),

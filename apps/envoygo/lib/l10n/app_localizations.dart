@@ -4179,7 +4179,7 @@ abstract class AppLocalizations {
   /// No description provided for @chainsManageOnSocial.
   ///
   /// In en, this message translates to:
-  /// **'Advanced chain controls (cancel, rebalance, pin) are on the home-node Social UI.'**
+  /// **'Fleet setup, bidding, and recipes stay on the home-node Social UI. Cancel, rebalance, and pin work here too.'**
   String get chainsManageOnSocial;
 
   /// No description provided for @chainsStartTitle.
@@ -5760,6 +5760,246 @@ abstract class AppLocalizations {
   /// **'Revert this turn'**
   String get ehRevertThisTurn;
 
+  /// No description provided for @ehReviewChanges.
+  ///
+  /// In en, this message translates to:
+  /// **'Review changes'**
+  String get ehReviewChanges;
+
+  /// No description provided for @ehRevertAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Revert all'**
+  String get ehRevertAll;
+
+  /// No description provided for @ehChangesCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 file changed this turn} other{{count} files changed this turn}}'**
+  String ehChangesCount(int count);
+
+  /// No description provided for @ehChangesKeepAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep all'**
+  String get ehChangesKeepAll;
+
+  /// No description provided for @ehChangesRevert.
+  ///
+  /// In en, this message translates to:
+  /// **'Revert all'**
+  String get ehChangesRevert;
+
+  /// No description provided for @ehChangesHideList.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide list'**
+  String get ehChangesHideList;
+
+  /// No description provided for @ehChangesShowList.
+  ///
+  /// In en, this message translates to:
+  /// **'Show list'**
+  String get ehChangesShowList;
+
+  /// No description provided for @ehReviewKeepFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep'**
+  String get ehReviewKeepFile;
+
+  /// No description provided for @ehReviewRevertFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Revert'**
+  String get ehReviewRevertFile;
+
+  /// No description provided for @ehReviewKeptAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Changes kept.'**
+  String get ehReviewKeptAll;
+
+  /// No description provided for @ehReviewRevertedFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Reverted {path}'**
+  String ehReviewRevertedFile(String path);
+
+  /// No description provided for @ehReviewAutoLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-review when ≥'**
+  String get ehReviewAutoLabel;
+
+  /// No description provided for @ehReviewAutoAlways.
+  ///
+  /// In en, this message translates to:
+  /// **'Always'**
+  String get ehReviewAutoAlways;
+
+  /// No description provided for @ehQueueTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Queued ({count})'**
+  String ehQueueTitle(int count);
+
+  /// No description provided for @ehQueueClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get ehQueueClear;
+
+  /// No description provided for @ehQueueBusyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Send queues next'**
+  String get ehQueueBusyHint;
+
+  /// No description provided for @ehQueueFollowUpHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Queue a follow-up…'**
+  String get ehQueueFollowUpHint;
+
+  /// No description provided for @ehInjectTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Inject (cancel + send)'**
+  String get ehInjectTooltip;
+
+  /// No description provided for @ehFilesChangedCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 file changed} other{{count} files changed}}'**
+  String ehFilesChangedCount(int count);
+
+  /// No description provided for @ehEmptyReply.
+  ///
+  /// In en, this message translates to:
+  /// **'envoy-harness finished without a visible reply. Your message is still here — try again or rephrase.'**
+  String get ehEmptyReply;
+
+  /// No description provided for @ehConfigureModelHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure a model in Settings → AI.'**
+  String get ehConfigureModelHint;
+
+  /// No description provided for @ehReviewKeepFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not keep changes.'**
+  String get ehReviewKeepFailed;
+
+  /// No description provided for @ehReviewOpenGitDiff.
+  ///
+  /// In en, this message translates to:
+  /// **'Open git diff'**
+  String get ehReviewOpenGitDiff;
+
+  /// No description provided for @ehDiffBefore.
+  ///
+  /// In en, this message translates to:
+  /// **'Before'**
+  String get ehDiffBefore;
+
+  /// No description provided for @ehDiffAfter.
+  ///
+  /// In en, this message translates to:
+  /// **'After'**
+  String get ehDiffAfter;
+
+  /// No description provided for @ehPermsTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Permission policy'**
+  String get ehPermsTooltip;
+
+  /// No description provided for @ehPermsSafe.
+  ///
+  /// In en, this message translates to:
+  /// **'Default (safe auto-run)'**
+  String get ehPermsSafe;
+
+  /// No description provided for @ehPermsAsk.
+  ///
+  /// In en, this message translates to:
+  /// **'Always ask'**
+  String get ehPermsAsk;
+
+  /// No description provided for @ehPermsApprove.
+  ///
+  /// In en, this message translates to:
+  /// **'Always approve'**
+  String get ehPermsApprove;
+
+  /// No description provided for @ehPermsSet.
+  ///
+  /// In en, this message translates to:
+  /// **'Permission policy → {mode}.'**
+  String ehPermsSet(String mode);
+
+  /// No description provided for @ehPermsNextTurn.
+  ///
+  /// In en, this message translates to:
+  /// **' Applies from the next turn.'**
+  String get ehPermsNextTurn;
+
+  /// No description provided for @ehPermsFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to set permission policy: {error}'**
+  String ehPermsFailed(String error);
+
+  /// No description provided for @chainsStatusCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get chainsStatusCancelled;
+
+  /// No description provided for @chainsStatusPublished.
+  ///
+  /// In en, this message translates to:
+  /// **'Published'**
+  String get chainsStatusPublished;
+
+  /// No description provided for @chainsStatusSynthesizing.
+  ///
+  /// In en, this message translates to:
+  /// **'Synthesizing'**
+  String get chainsStatusSynthesizing;
+
+  /// No description provided for @chainsStatusRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Running'**
+  String get chainsStatusRunning;
+
+  /// No description provided for @chainsStatusWaitingWorkers.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for workers'**
+  String get chainsStatusWaitingWorkers;
+
+  /// No description provided for @chainsStatusBidding.
+  ///
+  /// In en, this message translates to:
+  /// **'Bidding'**
+  String get chainsStatusBidding;
+
+  /// No description provided for @chainsStatusAssigning.
+  ///
+  /// In en, this message translates to:
+  /// **'Assigning'**
+  String get chainsStatusAssigning;
+
+  /// No description provided for @chainsStatusPlanning.
+  ///
+  /// In en, this message translates to:
+  /// **'Planning'**
+  String get chainsStatusPlanning;
+
   /// No description provided for @ehWorking.
   ///
   /// In en, this message translates to:
@@ -5855,6 +6095,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Enter key'**
   String get termEnterKey;
+
+  /// No description provided for @chainsCancelFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not cancel this team job.'**
+  String get chainsCancelFailed;
 }
 
 class _AppLocalizationsDelegate

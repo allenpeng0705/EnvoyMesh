@@ -826,4 +826,52 @@ void main() {
       expect(result['ok'], isTrue);
     });
   });
+
+  group('NodeServiceClient EH turn-review RPCs', () {
+    test('acceptEnvoyHarnessTurnReview sends turnId and optional paths', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.acceptEnvoyHarnessTurnReview(
+        'turn_1',
+        paths: ['a.ts'],
+      );
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'acceptEnvoyHarnessTurnReview');
+      expect(sent['params'], {
+        'turnId': 'turn_1',
+        'paths': ['a.ts'],
+      });
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {'accepted': true, 'remainingFiles': 0, 'cleared': true},
+      });
+      final result = await callFuture;
+      expect(result['accepted'], isTrue);
+      expect(result['cleared'], isTrue);
+    });
+
+    test('revertEnvoyHarnessTurnFiles sends turnId and paths', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.revertEnvoyHarnessTurnFiles('turn_2', ['b.ts']);
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'revertEnvoyHarnessTurnFiles');
+      expect(sent['params'], {
+        'turnId': 'turn_2',
+        'paths': ['b.ts'],
+      });
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {'reverted': true, 'files': ['b.ts']},
+      });
+      final result = await callFuture;
+      expect(result['reverted'], isTrue);
+    });
+  });
 }

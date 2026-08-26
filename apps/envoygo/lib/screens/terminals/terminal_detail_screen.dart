@@ -10,6 +10,7 @@ import '../../l10n/app_localizations.dart';
 import '../../providers/node_provider.dart';
 import '../../services/node_service_client.dart';
 import '../../services/terminal_service.dart';
+import '../../widgets/eh/eh_turn_review_dock.dart';
 import '../../widgets/eh/envoy_harness_terminal_chrome.dart';
 import '../../widgets/terminal/terminal_accessory_bar.dart';
 import '../../widgets/terminal/terminal_agent_bar.dart';
@@ -246,11 +247,25 @@ class _TerminalDetailScreenState extends ConsumerState<TerminalDetailScreen>
       body: SafeArea(
         child: Column(
           children: [
-            if (widget.isEnvoyHarnessSession)
+            if (widget.isEnvoyHarnessSession) ...[
               EnvoyHarnessTerminalChrome(
                 onSendToTerminal: _sendToTerminal,
                 showCommandRails: false,
               ),
+              EhTurnReviewDock(
+                onSystemMessage: (text, {bool error = false}) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(text),
+                      backgroundColor: error
+                          ? Theme.of(context).colorScheme.errorContainer
+                          : null,
+                    ),
+                  );
+                },
+              ),
+            ],
             Expanded(
               child: Container(
                 color: Colors.black,

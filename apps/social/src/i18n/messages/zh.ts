@@ -16,7 +16,7 @@ import {
 } from "./zh-chats.js";
 import { zhTerminalMessages } from "./zh-terminals.js";
 import { zhChainsMessages } from "./zh-chains.js";
-import { zhPiMessages } from "./zh-pi.js";
+import { zhPiMessages, zhEhMessages } from "./zh-pi.js";
 import {
   zhErrorBoundaryMessages,
   zhProfileMessages,
@@ -642,4 +642,5 @@ export const zh = mergeMessages(en, {
     saveFailed: "保存失败",
   },
   ...zhPiMessages,
+  ...zhEhMessages,
 });

@@ -738,7 +738,7 @@
   "chainsSubtasks": "子任务",
   "chainsSynthesis": "汇总",
   "chainsDuration": "耗时",
-  "chainsManageOnSocial": "高级协作控制（取消、再平衡、置顶）请在家庭节点的社交界面中操作。",
+  "chainsManageOnSocial": "机群设置、竞标与配方仍在家庭节点的社交界面。取消、再平衡与置顶也可在此操作。",
   "chainsStartTitle": "启动团队任务",
   "chainsStartFab": "新建团队任务",
   "chainsStartIntro": "描述目标。家庭节点会规划子任务，并分配已绑定的 Agent Network 工作代理。",
@@ -861,19 +861,25 @@
   "pairingInProgressSubtitle": "正在连接 {owner}",
   "@pairingInProgressSubtitle": {
     "placeholders": {
-      "owner": {"type": "String"}
+      "owner": {
+        "type": "String"
+      }
     }
   },
   "pairingElapsed": "已用时：{time}",
   "@pairingElapsed": {
     "placeholders": {
-      "time": {"type": "String"}
+      "time": {
+        "type": "String"
+      }
     }
   },
   "pairingHomeNodeLabel": "家庭节点：{peer}",
   "@pairingHomeNodeLabel": {
     "placeholders": {
-      "peer": {"type": "String"}
+      "peer": {
+        "type": "String"
+      }
     }
   },
   "pairingStageInitial": "正在初始化",
@@ -1013,5 +1019,227 @@
   "chatAgentModeConfirmEnable": "エージェントモードを有効化",
   "chatSuggestedReply": "提案された返信",
   "chatSuggestedReplyUse": "使用",
-  "chatSuggestedReplyDismiss": "却下"
+  "chatSuggestedReplyDismiss": "却下",
+  "chatsSectionCoding": "编程",
+  "chatsCodingPi": "Pi",
+  "chatsCodingPiHint": "编程助手（终端）",
+  "chatsCodingEh": "Envoy",
+  "chatsCodingEhHint": "编程助手（聊天）",
+  "chatsEhNew": "新建编程对话",
+  "chatsEhRemoveTitle": "移除编程对话？",
+  "chatsEhRemoveBody": "从编程列表中移除“{name}”？家庭节点上的对话记录将被删除。",
+  "@chatsEhRemoveBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatsEhThinking": "Envoy 正在思考…",
+  "chatsEhPromptHint": "让 Envoy 写代码、重构或解释…",
+  "chatsNewEnvoy": "新建 Envoy",
+  "chatsNewEnvoyHint": "启动 Envoy Harness TUI",
+  "ehChooseProjectTitle": "选择 Envoy 项目文件夹",
+  "ehChangeProjectTitle": "更改 Envoy 项目文件夹",
+  "ehChooseProjectDesc": "Envoy 在此文件夹中运行（读取 AGENTS.md、编辑文件、执行 shell）。",
+  "ehStartWithProject": "开始",
+  "ehRestartWithProject": "在此重启 Envoy",
+  "ehEnsuringTerminal": "正在启动 Envoy TUI…",
+  "ehPermissionTitle": "工具权限",
+  "ehPermissionAllow": "允许",
+  "ehPermissionDeny": "拒绝",
+  "ehQuestionTitle": "Envoy 需要你的输入",
+  "ehRecommended": "推荐",
+  "ehSlashWhileBusy": "请先结束当前回合或使用 /cancel。",
+  "ehChatReset": "已为此项目开始新对话。",
+  "ehTurnCancelled": "回合已取消。",
+  "ehStatusRefreshed": "状态已刷新。",
+  "ehNoPeers": "未配置对等集群。",
+  "ehSearchUsage": "用法：/search <关键词> — 搜索本对话。",
+  "ehSearchNoMatches": "没有与“{term}”匹配的结果。",
+  "@ehSearchNoMatches": {
+    "placeholders": {
+      "term": {
+        "type": "String"
+      }
+    }
+  },
+  "ehModelShow": "当前模型：{model}",
+  "@ehModelShow": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "ehModelUnknown": "未配置模型 — 请在 设置 → AI 中设置。",
+  "ehProjectCurrent": "项目文件夹：{path}",
+  "@ehProjectCurrent": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehProjectUnset": "未设置项目文件夹 — 请使用 /cd <路径>。",
+  "ehProjectSet": "项目文件夹 → {path}",
+  "@ehProjectSet": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehProjectSetUnknown": "项目文件夹已更新。",
+  "ehProjectSetFailed": "设置项目文件夹失败：{error}",
+  "@ehProjectSetFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "ehConfigureModel": "请在 设置 → AI 中配置模型。",
+  "ehNotReady": "envoy-harness 尚未就绪。",
+  "termQuickHelp": "/help",
+  "termQuickCancel": "/cancel",
+  "ehReviewTitle": "审查此回合",
+  "ehReviewUnavailable": "此较早回合没有可用的已保存审查。",
+  "ehReviewFile": "文件",
+  "ehReviewOpenFile": "打开文件",
+  "ehReviewDiffUnavailable": "此文件没有可用的文本差异。",
+  "ehReviewOnly": "工作区检测到 · 仅可审查",
+  "ehRevertTitle": "还原此回合？",
+  "ehRevertBody": "文件将恢复为此回合之前的内容。之后的编辑受保护，会阻止还原。",
+  "ehRevertAction": "还原",
+  "ehRevertComplete": "此回合的文件更改已还原。",
+  "ehRevertUnavailable": "此回合已无法安全还原。",
+  "ehRevertConflict": "还原已停止，因为这些文件之后又被修改：{files}",
+  "@ehRevertConflict": {
+    "placeholders": {
+      "files": {
+        "type": "String"
+      }
+    }
+  },
+  "ehSearchTranscript": "搜索对话记录",
+  "ehSearchClose": "关闭搜索",
+  "ehNoMatches": "没有匹配的回合",
+  "ehCopyTurn": "复制回合",
+  "ehShareTurn": "分享回合",
+  "ehReviewDiff": "查看差异",
+  "ehRevertThisTurn": "还原此回合",
+  "ehReviewChanges": "审查更改",
+  "ehRevertAll": "全部还原",
+  "ehChangesCount": "{count, plural, =1{本回合更改了 1 个文件} other{本回合更改了 {count} 个文件}}",
+  "@ehChangesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehChangesKeepAll": "全部保留",
+  "ehChangesRevert": "全部还原",
+  "ehChangesHideList": "隐藏列表",
+  "ehChangesShowList": "显示列表",
+  "ehReviewKeepFile": "保留",
+  "ehReviewRevertFile": "还原",
+  "ehReviewKeptAll": "已保留更改。",
+  "ehReviewRevertedFile": "已还原 {path}",
+  "@ehReviewRevertedFile": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehReviewAutoLabel": "自动审查当 ≥",
+  "ehReviewAutoAlways": "始终",
+  "ehWorking": "进行中",
+  "ehCompleted": "已完成",
+  "ehUpdate": "更新",
+  "ehToolLabel": "工具：{name}",
+  "@ehToolLabel": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "ehMatchCount": "{count, plural, =1{1 处匹配} other{{count} 处匹配}}",
+  "@ehMatchCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "termMore": "更多…",
+  "termCompactContext": "压缩上下文",
+  "termUpdatePlan": "显示或更新计划",
+  "termHarnessStatus": "Harness 状态",
+  "termPiActions": "Pi 操作",
+  "termHarnessActions": "envoy-harness 操作",
+  "termPreviousCommand": "上一条命令",
+  "termNextCommand": "下一条命令",
+  "termCursorLeft": "光标左移",
+  "termCursorRight": "光标右移",
+  "termEnterKey": "回车键",
+  "ehQueueTitle": "已排队 ({count})",
+  "@ehQueueTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehQueueClear": "清空",
+  "ehQueueBusyHint": "发送将排入下一则",
+  "ehQueueFollowUpHint": "排队后续消息…",
+  "ehInjectTooltip": "插入（取消并发送）",
+  "ehFilesChangedCount": "{count, plural, =1{更改了 1 个文件} other{更改了 {count} 个文件}}",
+  "@ehFilesChangedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehEmptyReply": "envoy-harness 没有给出可见回复。你的消息仍在 — 请重试或换个说法。",
+  "ehConfigureModelHint": "请在 设置 → AI 中配置模型。",
+  "ehReviewKeepFailed": "无法保留更改。",
+  "ehReviewOpenGitDiff": "打开 Git 差异",
+  "ehDiffBefore": "更改前",
+  "ehDiffAfter": "更改后",
+  "chainsStatusCancelled": "已取消",
+  "chainsStatusPublished": "已发布",
+  "chainsStatusSynthesizing": "汇总中",
+  "chainsStatusRunning": "运行中",
+  "chainsStatusWaitingWorkers": "等待工作节点",
+  "chainsStatusBidding": "竞标中",
+  "chainsStatusAssigning": "分配中",
+  "chainsStatusPlanning": "规划中",
+  "chainsCancelFailed": "无法取消此团队任务。",
+  "ehPermsTooltip": "权限策略",
+  "ehPermsSafe": "默认（安全自动运行）",
+  "ehPermsAsk": "始终询问",
+  "ehPermsApprove": "始终批准",
+  "ehPermsSet": "权限策略 → {mode}。",
+  "@ehPermsSet": {
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "ehPermsNextTurn": " 从下一轮起生效。",
+  "ehPermsFailed": "无法设置权限策略：{error}",
+  "@ehPermsFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  }
 }

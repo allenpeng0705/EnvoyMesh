@@ -16,7 +16,7 @@ import {
 } from "./ko-chats.js";
 import { koTerminalMessages } from "./ko-terminals.js";
 import { koChainsMessages } from "./ko-chains.js";
-import { koPiMessages } from "./ko-pi.js";
+import { koPiMessages, koEhMessages } from "./ko-pi.js";
 import {
   koErrorBoundaryMessages,
   koProfileMessages,
@@ -681,4 +681,5 @@ knowledge: koKnowledgeViewMessages,
   },
   ...{ gazetteer: koGazetteerLocale.gazetteer },
   ...koPiMessages,
+  ...koEhMessages,
 });

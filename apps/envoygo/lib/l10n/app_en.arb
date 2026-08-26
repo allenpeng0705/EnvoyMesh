@@ -207,7 +207,9 @@
   "knowledgePluginsLinkedVaultAutoMany": "Linked {count} Obsidian vaults found on this computer.",
   "@knowledgePluginsLinkedVaultAutoMany": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "knowledgeHubImportObsidianAll": "Import all linked",
@@ -216,19 +218,35 @@
   "knowledgeHubExportToNotion": "Export to Notion/MCP",
   "knowledgeHubImportObsidianOk": "Imported {count} Obsidian note(s)",
   "@knowledgeHubImportObsidianOk": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "knowledgeHubImportNotionOk": "Imported {count} Notion/MCP note(s)",
   "@knowledgeHubImportNotionOk": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "knowledgeHubExportObsidianOk": "Exported {count} note(s) to Obsidian",
   "@knowledgeHubExportObsidianOk": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "knowledgeHubExportNotionOk": "Exported {count} note(s) via MCP",
   "@knowledgeHubExportNotionOk": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "knowledgeHubImportFailed": "Import failed",
   "knowledgeHubExportFailed": "Export failed",
@@ -237,7 +255,11 @@
   "knowledgeHubShareVaultOnly": "Share works for vault files only — import first",
   "knowledgeHubMcpListError": "MCP list: {error}",
   "@knowledgeHubMcpListError": {
-    "placeholders": { "error": { "type": "String" } }
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
   },
   "knowledgeSetupHint": "Index status and retrieval. Chat models stay in Me → AI Model.",
   "knowledgeSetupEnabled": "Enable vault knowledge",
@@ -250,14 +272,20 @@
   "knowledgeSetupTestEmbeddingOk": "Embedding OK — {dimensions} dims in {latencyMs} ms",
   "@knowledgeSetupTestEmbeddingOk": {
     "placeholders": {
-      "dimensions": { "type": "int" },
-      "latencyMs": { "type": "int" }
+      "dimensions": {
+        "type": "int"
+      },
+      "latencyMs": {
+        "type": "int"
+      }
     }
   },
   "knowledgeSetupTestEmbeddingFail": "Embedding failed: {error}",
   "@knowledgeSetupTestEmbeddingFail": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "knowledgeSetupRagMode": "Retrieval mode",
@@ -268,8 +296,12 @@
   "knowledgeBrowseIndexIndexingProgress": "Indexing {processed}/{total}…",
   "@knowledgeBrowseIndexIndexingProgress": {
     "placeholders": {
-      "processed": { "type": "int" },
-      "total": { "type": "int" }
+      "processed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
     }
   },
   "knowledgeHubOpenPlugins": "Open Plugins",
@@ -292,13 +324,21 @@
   "knowledgeFileConvert": "Convert to Markdown note",
   "knowledgeFileConvertOk": "Saved Markdown note {path}",
   "@knowledgeFileConvertOk": {
-    "placeholders": { "path": { "type": "String" } }
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
   },
   "knowledgeFileConvertFailed": "Could not convert to Markdown",
   "knowledgeFileDeleteTitle": "Delete file?",
   "knowledgeFileDeleteBody": "Delete “{title}” from the home vault?",
   "@knowledgeFileDeleteBody": {
-    "placeholders": { "title": { "type": "String" } }
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
   },
   "knowledgeFileDeleteConfirm": "Delete",
   "meKnowledge": "Knowledge setup",
@@ -316,14 +356,20 @@
   "knowledgeBrowseIndexReady": "{count} indexed",
   "@knowledgeBrowseIndexReady": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "knowledgeBrowseIndexReadyLinked": "{count} indexed · {linked} linked Obsidian",
   "@knowledgeBrowseIndexReadyLinked": {
     "placeholders": {
-      "count": { "type": "int" },
-      "linked": { "type": "int" }
+      "count": {
+        "type": "int"
+      },
+      "linked": {
+        "type": "int"
+      }
     }
   },
   "knowledgeBrowseIndexIndexing": "Indexing…",
@@ -813,14 +859,20 @@
   "settingsAiModelTestChatOk": "Chat model OK — {modelName} in {latencyMs} ms",
   "@settingsAiModelTestChatOk": {
     "placeholders": {
-      "modelName": { "type": "String" },
-      "latencyMs": { "type": "int" }
+      "modelName": {
+        "type": "String"
+      },
+      "latencyMs": {
+        "type": "int"
+      }
     }
   },
   "settingsAiModelTestChatFail": "Chat model failed: {error}",
   "@settingsAiModelTestChatFail": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "settingsSaveFailed": "Save failed: {error}",
@@ -1012,7 +1064,7 @@
   "chainsSubtasks": "Subtasks",
   "chainsSynthesis": "Synthesis",
   "chainsDuration": "Duration",
-  "chainsManageOnSocial": "Advanced chain controls (cancel, rebalance, pin) are on the home-node Social UI.",
+  "chainsManageOnSocial": "Fleet setup, bidding, and recipes stay on the home-node Social UI. Cancel, rebalance, and pin work here too.",
   "chainsStartTitle": "Start team job",
   "chainsStartFab": "New team job",
   "chainsStartIntro": "Describe a goal. The home node plans subtasks and assigns bonded Agent Network workers.",
@@ -1578,7 +1630,13 @@
   "ehRevertComplete": "This turn’s file changes were reverted.",
   "ehRevertUnavailable": "This turn can no longer be reverted safely.",
   "ehRevertConflict": "Revert stopped because these files changed afterward: {files}",
-  "@ehRevertConflict": {"placeholders": {"files": {"type": "String"}}},
+  "@ehRevertConflict": {
+    "placeholders": {
+      "files": {
+        "type": "String"
+      }
+    }
+  },
   "ehSearchTranscript": "Search transcript",
   "ehSearchClose": "Close search",
   "ehNoMatches": "No matching turns",
@@ -1586,13 +1644,107 @@
   "ehShareTurn": "Share turn",
   "ehReviewDiff": "Review diff",
   "ehRevertThisTurn": "Revert this turn",
+  "ehReviewChanges": "Review changes",
+  "ehRevertAll": "Revert all",
+  "ehChangesCount": "{count, plural, =1{1 file changed this turn} other{{count} files changed this turn}}",
+  "@ehChangesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehChangesKeepAll": "Keep all",
+  "ehChangesRevert": "Revert all",
+  "ehChangesHideList": "Hide list",
+  "ehChangesShowList": "Show list",
+  "ehReviewKeepFile": "Keep",
+  "ehReviewRevertFile": "Revert",
+  "ehReviewKeptAll": "Changes kept.",
+  "ehReviewRevertedFile": "Reverted {path}",
+  "@ehReviewRevertedFile": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehReviewAutoLabel": "Auto-review when ≥",
+  "ehReviewAutoAlways": "Always",
+  "ehQueueTitle": "Queued ({count})",
+  "@ehQueueTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehQueueClear": "Clear",
+  "ehQueueBusyHint": "Send queues next",
+  "ehQueueFollowUpHint": "Queue a follow-up…",
+  "ehInjectTooltip": "Inject (cancel + send)",
+  "ehFilesChangedCount": "{count, plural, =1{1 file changed} other{{count} files changed}}",
+  "@ehFilesChangedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehEmptyReply": "envoy-harness finished without a visible reply. Your message is still here — try again or rephrase.",
+  "ehConfigureModelHint": "Configure a model in Settings → AI.",
+  "ehReviewKeepFailed": "Could not keep changes.",
+  "ehReviewOpenGitDiff": "Open git diff",
+  "ehDiffBefore": "Before",
+  "ehDiffAfter": "After",
+  "ehPermsTooltip": "Permission policy",
+  "ehPermsSafe": "Default (safe auto-run)",
+  "ehPermsAsk": "Always ask",
+  "ehPermsApprove": "Always approve",
+  "ehPermsSet": "Permission policy → {mode}.",
+  "@ehPermsSet": {
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "ehPermsNextTurn": " Applies from the next turn.",
+  "ehPermsFailed": "Failed to set permission policy: {error}",
+  "@ehPermsFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "chainsStatusCancelled": "Cancelled",
+  "chainsStatusPublished": "Published",
+  "chainsStatusSynthesizing": "Synthesizing",
+  "chainsStatusRunning": "Running",
+  "chainsStatusWaitingWorkers": "Waiting for workers",
+  "chainsStatusBidding": "Bidding",
+  "chainsStatusAssigning": "Assigning",
+  "chainsStatusPlanning": "Planning",
   "ehWorking": "Working",
   "ehCompleted": "Completed",
   "ehUpdate": "Update",
   "ehToolLabel": "Tool: {name}",
-  "@ehToolLabel": {"placeholders": {"name": {"type": "String"}}},
+  "@ehToolLabel": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "ehMatchCount": "{count, plural, =1{1 match} other{{count} matches}}",
-  "@ehMatchCount": {"placeholders": {"count": {"type": "int"}}},
+  "@ehMatchCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "termMore": "More…",
   "termCompactContext": "Compact context",
   "termUpdatePlan": "Show or update plan",
@@ -1604,5 +1756,5 @@
   "termCursorLeft": "Move cursor left",
   "termCursorRight": "Move cursor right",
   "termEnterKey": "Enter key",
-  "termPaste": "Paste"
+  "chainsCancelFailed": "Could not cancel this team job."
 }

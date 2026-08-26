@@ -18,6 +18,7 @@ import { useNodeService } from "../../hooks/useNodeService.js"
 import { useEhTurnQueue, type EhSubmitMode } from "../../hooks/useEhTurnQueue.js"
 import { useEhTimeline } from "../../hooks/useEhTimeline.js"
 import { useEhTurnContext } from "../../hooks/useEhTurnContext.js"
+import { useEhTurnReview } from "../../hooks/useEhTurnReview.js"
 import { useEhAttachments } from "../../hooks/useEhAttachments.js"
 import { useToast } from "../../hooks/useToast.js"
 import type {
@@ -27,7 +28,6 @@ import type {
   EhActivityEvent,
   EhPermissionEvent,
   EhChatTurn,
-  EhTurnReview,
   ExtAgentCommandDescriptor,
 } from "@envoymesh/api"
 import { stripModelThinking } from "@envoymesh/api"
@@ -56,7 +56,6 @@ import {
   parseEnvoyHarnessModelCommand,
 } from "../../lib/envoy-harness-slash-commands.js"
 import { ehEventMatchesChat } from "../../lib/eh-chat-event-scope.js"
-import { getEhReviewMinFiles, setEhReviewMinFiles } from "../../lib/eh-review-prefs.js"
 import { SearchHighlightedText } from "../../lib/eh-transcript-search-highlight.js"
 
 interface EnvoyHarnessTurn {
@@ -196,12 +195,6 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
     null,
   )
   const [turnHints, setTurnHints] = useState<EhTurnHintsEvent | null>(null)
-  const [showGitDiffReview, setShowGitDiffReview] = useState(false)
-  const [turnReview, setTurnReview] = useState<EhTurnReview | null>(null)
-  const [dismissedChanges, setDismissedChanges] = useState(false)
-  const [lastReviewTurnId, setLastReviewTurnId] = useState<string | null>(null)
-  const [reviewFocusPath, setReviewFocusPath] = useState<string | null>(null)
-  const [reviewMinFiles, setReviewMinFiles] = useState(() => getEhReviewMinFiles())
   const [activitySummary, setActivitySummary] = useState<string | undefined>(
     undefined,
   )
@@ -531,109 +524,10 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
     [appendTurn],
   )
 
-  const clearReviewState = useCallback(() => {
-    setTurnReview(null)
-    setReviewFocusPath(null)
-    setDismissedChanges(true)
-    setLastReviewTurnId(null)
-  }, [])
-
-  const refreshTurnReview = useCallback(async (turnId: string) => {
-    const review = await nodeService.getEnvoyHarnessTurnReview(turnId)
-    if (review && review.files.length > 0) {
-      setTurnReview(review)
-      return review
-    }
-    clearReviewState()
-    return null
-  }, [clearReviewState, nodeService])
-
-  const openTurnReview = useCallback((turnId: string, focusPath?: string) => {
-    recordUx({ action: "review_opened" })
-    setReviewFocusPath(focusPath ?? null)
-    void nodeService.getEnvoyHarnessTurnReview(turnId).then((review) => {
-      if (review && review.files.length > 0) {
-        setTurnReview(review)
-        setLastReviewTurnId(turnId)
-        setDismissedChanges(false)
-      } else {
-        setShowGitDiffReview(true)
-      }
-    }).catch(() => setShowGitDiffReview(true))
-  }, [nodeService, recordUx])
-
-  const handleKeepAllChanges = useCallback(() => {
-    if (!lastReviewTurnId) {
-      setDismissedChanges(true)
-      return
-    }
-    void nodeService.acceptEnvoyHarnessTurnReview(lastReviewTurnId).then((result) => {
-      if (result.accepted) {
-        clearReviewState()
-        setSystem(t("eh.reviewKeptAll", "Changes kept."), "success")
-      }
-    }).catch((error: unknown) => setSystem(String(error), "error"))
-  }, [clearReviewState, lastReviewTurnId, nodeService, setSystem, t])
-
-  const handleKeepFile = useCallback((path: string) => {
-    if (!lastReviewTurnId) return
-    void nodeService.acceptEnvoyHarnessTurnReview(lastReviewTurnId, [path]).then((result) => {
-      if (!result.accepted) return
-      if (result.cleared || result.remainingFiles === 0) {
-        clearReviewState()
-        setSystem(t("eh.reviewKeptAll", "Changes kept."), "success")
-        return
-      }
-      void refreshTurnReview(lastReviewTurnId)
-    }).catch((error: unknown) => setSystem(String(error), "error"))
-  }, [clearReviewState, lastReviewTurnId, nodeService, refreshTurnReview, setSystem, t])
-
-  const handleRevertAllChanges = useCallback(() => {
-    if (!lastReviewTurnId) return
-    if (!window.confirm(t("eh.revertConfirm", "Restore the files to how they were before this turn? Later edits will never be overwritten."))) return
-    recordUx({ action: "revert_attempted" })
-    void nodeService.revertEnvoyHarnessTurn(lastReviewTurnId).then((result) => {
-      if (result.reverted) {
-        recordUx({ action: "revert_completed", outcome: "success" })
-        clearReviewState()
-        setSystem(t("eh.revertComplete", "This turn's file changes were reverted."), "success")
-      } else {
-        recordUx({
-          action: result.conflicts?.length ? "revert_conflicted" : "revert_completed",
-          outcome: result.conflicts?.length ? "conflict" : "unavailable",
-        })
-        setSystem(
-          result.conflicts?.length
-            ? t("eh.revertConflict", "Revert stopped because these files changed afterward: {files}", { files: result.conflicts.join(", ") })
-            : t("eh.revertUnavailable", "This turn can no longer be reverted safely."),
-          "error",
-        )
-      }
-    }).catch((error: unknown) => setSystem(String(error), "error"))
-  }, [clearReviewState, lastReviewTurnId, nodeService, recordUx, setSystem, t])
-
-  const handleRevertFile = useCallback((path: string) => {
-    if (!lastReviewTurnId) return
-    recordUx({ action: "revert_attempted" })
-    void nodeService.revertEnvoyHarnessTurnFiles(lastReviewTurnId, [path]).then((result) => {
-      if (result.reverted) {
-        recordUx({ action: "revert_completed", outcome: "success" })
-        setSystem(t("eh.reviewRevertedFile", "Reverted {path}", { path }), "success")
-        void refreshTurnReview(lastReviewTurnId)
-        return
-      }
-      recordUx({
-        action: result.conflicts?.length ? "revert_conflicted" : "revert_completed",
-        outcome: result.conflicts?.length ? "conflict" : "unavailable",
-      })
-      setSystem(
-        result.conflicts?.length
-          ? t("eh.revertConflict", "Revert stopped because these files changed afterward: {files}", { files: result.conflicts.join(", ") })
-          : t("eh.revertUnavailable", "This turn can no longer be reverted safely."),
-        "error",
-      )
-    }).catch((error: unknown) => setSystem(String(error), "error"))
-  }, [lastReviewTurnId, nodeService, recordUx, refreshTurnReview, setSystem, t])
+  const ehReview = useEhTurnReview({
+    chatId: effectiveChatId,
+    onNotify: setSystem,
+  })
 
   const upsertAssistantTurn = useCallback((turnId: string, text: string) => {
     const visible = stripModelThinking(text)
@@ -697,7 +591,8 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
     },
     onAssistantStreaming: (text, turnId) => upsertAssistantTurn(turnId, text),
     onAssistantTurn: (response, turnId, event) => {
-      setLastReviewTurnId(event?.changedFiles?.length ? turnId : null)
+      const files = event?.changedFiles ?? []
+      ehReview.onTurnComplete(turnId, files.length)
       const visible = stripModelThinking(response)
       if (visible) {
         upsertAssistantTurn(turnId, visible)
@@ -714,7 +609,6 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
         )
       }
       // Claude/Codex-style completion footer: tool stats + changed files.
-      const files = event?.changedFiles ?? []
       const stats = turnContext.lastTurnSummaryRef.current
         ?.replace(/^done\s*[—:-]\s*/i, "")
         .trim()
@@ -730,9 +624,6 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
       if (parts.length > 0) {
         setSystem(`✓ ${parts.join(" · ")}`, "success")
       }
-      if (files.length > 0 && files.length >= reviewMinFiles) {
-        openTurnReview(turnId)
-      }
     },
     onSystem: (text, tone) => {
       setSystem(
@@ -745,7 +636,7 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
     onTurnStart: () => {
       setTurnHints(null)
       setActivitySummary(undefined)
-      setDismissedChanges(false)
+      ehReview.onTurnStart()
       turnContext.resetTurnContext()
     },
     onTurnEnd: () => {
@@ -1441,20 +1332,11 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
 
         <EhTimelineFeed
           items={timeline.nonMessageItems.filter((item) => item.type !== "activity")}
-          onReviewTurn={(turnId) => openTurnReview(turnId)}
+          onReviewTurn={(turnId) => ehReview.openTurnReview(turnId)}
           onRevertTurn={(turnId) => {
-            if (!window.confirm(t("eh.revertConfirm", "Restore the files to how they were before this turn? Later edits will never be overwritten."))) return
-            recordUx({ action: "revert_attempted" })
-            void nodeService.revertEnvoyHarnessTurn(turnId).then((result) => {
-              if (result.reverted) {
-                recordUx({ action: "revert_completed", outcome: "success" })
-                setSystem(t("eh.revertComplete", "This turn's file changes were reverted."), "success")
-                timeline.remove(`turn:${turnId}:changes`)
-              } else {
-                recordUx({ action: result.conflicts?.length ? "revert_conflicted" : "revert_completed", outcome: result.conflicts?.length ? "conflict" : "unavailable" })
-                setSystem(result.conflicts?.length ? t("eh.revertConflict", "Revert stopped because these files changed afterward: {files}", { files: result.conflicts.join(", ") }) : t("eh.revertUnavailable", "This turn can no longer be reverted safely."), "error")
-              }
-            }).catch((error: unknown) => setSystem(String(error), "error"))
+            void ehReview.revertTurn(turnId).then((reverted) => {
+              if (reverted) timeline.remove(`turn:${turnId}:changes`)
+            })
           }}
         />
 
@@ -1525,22 +1407,19 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
           const att = ehAttachments.attachments.find((a) => a.path === path)
           if (att) ehAttachments.remove(att.id)
         }}
-        changedFiles={dismissedChanges ? [] : turnContext.touchedFiles}
+        changedFiles={ehReview.dismissedChanges ? [] : turnContext.touchedFiles}
         onReviewChanges={() => {
-          if (lastReviewTurnId) openTurnReview(lastReviewTurnId)
-          else setShowGitDiffReview(true)
+          if (ehReview.lastReviewTurnId) ehReview.openTurnReview(ehReview.lastReviewTurnId)
+          else ehReview.setShowGitDiffReview(true)
         }}
         onReviewFile={(path) => {
-          if (lastReviewTurnId) openTurnReview(lastReviewTurnId, path)
-          else setShowGitDiffReview(true)
+          if (ehReview.lastReviewTurnId) ehReview.openTurnReview(ehReview.lastReviewTurnId, path)
+          else ehReview.setShowGitDiffReview(true)
         }}
-        onKeepAllChanges={handleKeepAllChanges}
-        onRevertChanges={lastReviewTurnId ? handleRevertAllChanges : undefined}
-        reviewMinFiles={reviewMinFiles}
-        onReviewMinFilesChange={(value) => {
-          setReviewMinFiles(value)
-          setEhReviewMinFiles(value)
-        }}
+        onKeepAllChanges={ehReview.handleKeepAllChanges}
+        onRevertChanges={ehReview.lastReviewTurnId ? ehReview.handleRevertAllChanges : undefined}
+        reviewMinFiles={ehReview.reviewMinFiles}
+        onReviewMinFilesChange={ehReview.setReviewMinFiles}
         composer={
           <form
             className="pi-chat-composer eh-composer"
@@ -1579,28 +1458,30 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
         }
       />
 
-      {showGitDiffReview ? (
+      {ehReview.showGitDiffReview ? (
         <EhuiPanelModal
           panel="git-diff"
           dataSource={ehuiDataSource}
           refreshKey={ehuiRefreshKey}
-          onClose={() => setShowGitDiffReview(false)}
+          onClose={() => ehReview.setShowGitDiffReview(false)}
           overlayClassName="modal-overlay"
           panelClassName="modal-panel eh-ehui-modal-panel"
           closeButtonClassName="modal-close"
           inputClassName="pi-chat-input eh-ehui-field"
         />
       ) : null}
-      {turnReview ? (
+      {ehReview.turnReview ? (
         <EhTurnReviewModal
-          review={turnReview}
-          focusPath={reviewFocusPath}
-          onClose={() => setTurnReview(null)}
-          onOpenFile={(path) => void nodeService.openEnvoyHarnessFile({ path, ...(effectiveChatId ? { chatId: effectiveChatId } : {}) }).catch((error: unknown) => setSystem(String(error), "error"))}
-          onKeepAll={handleKeepAllChanges}
-          onKeepFile={handleKeepFile}
-          onRevertFile={handleRevertFile}
-          onRevertAll={turnReview.canRevert ? handleRevertAllChanges : undefined}
+          review={ehReview.turnReview}
+          focusPath={ehReview.reviewFocusPath}
+          onClose={() => ehReview.setTurnReview(null)}
+          onOpenFile={ehReview.openChangedFile}
+          onKeepAll={ehReview.handleKeepAllChanges}
+          onKeepFile={ehReview.handleKeepFile}
+          onRevertFile={ehReview.handleRevertFile}
+          onRevertAll={
+            ehReview.turnReview.canRevert ? ehReview.handleRevertAllChanges : undefined
+          }
         />
       ) : null}
     </section>

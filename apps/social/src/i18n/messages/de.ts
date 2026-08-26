@@ -16,6 +16,7 @@ import {
 } from "./de-chats.js";
 import { deTerminalMessages } from "./de-terminals.js";
 import { deChainsMessages } from "./de-chains.js";
+import { deEhMessages } from "./de-eh.js";
 import {
   deErrorBoundaryMessages,
   deProfileMessages,
@@ -676,4 +677,5 @@ knowledge: deKnowledgeViewMessages,
     },
   },
   ...{ gazetteer: deGazetteerLocale.gazetteer },
+  ...deEhMessages,
 });

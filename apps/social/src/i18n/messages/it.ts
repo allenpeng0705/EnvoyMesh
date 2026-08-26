@@ -16,6 +16,7 @@ import {
 } from "./it-chats.js";
 import { itTerminalMessages } from "./it-terminals.js";
 import { itChainsMessages } from "./it-chains.js";
+import { itEhMessages } from "./it-eh.js";
 import {
   itErrorBoundaryMessages,
   itProfileMessages,
@@ -635,4 +636,5 @@ export const it = mergeMessages(en, {
     },
   },
   ...{ gazetteer: itGazetteerLocale.gazetteer },
+  ...itEhMessages,
 });
