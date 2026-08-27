@@ -559,9 +559,45 @@ describe("resolveEmbeddingConfig — independent of chat", () => {
     expect(config.mode).toBe("envoy-local");
     expect(config.endpoint).toContain(":18791");
     expect(config.modelName).toContain("qwen3-embedding");
-    // Cap at sidecar ctx (not the model card 8k), then leave headroom for
-    // llama tokenizer vs soft estimate (0.8 × ctx = 20% headroom).
-    expect(config.maxInputTokens).toBe(Math.floor(2048 * 0.8));
+    // Cap at sidecar ctx (not the model card 8k), then leave soft headroom for
+    // llama tokenizer vs soft estimate (SOFT_TOKEN_RATIO × ctx).
+    expect(config.maxInputTokens).toBe(Math.floor(2048 * 0.5));
+  });
+
+  it("retries Envoy Local embed on exceed_context_size_error with smaller input", async () => {
+    let calls = 0;
+    const fetchImplementation = vi.fn(async (_url: string, init?: RequestInit) => {
+      calls += 1;
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string };
+      const input = typeof body.input === "string" ? body.input : "";
+      if (calls === 1) {
+        return new Response(
+          JSON.stringify({
+            error: {
+              code: 400,
+              message: `request (${input.length * 2} tokens) exceeds the available context size (2048 tokens)`,
+              type: "exceed_context_size_error",
+              n_prompt_tokens: Math.max(3023, input.length * 2),
+              n_ctx: 2048,
+            },
+          }),
+          { status: 400, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          data: [{ embedding: [0.1, 0.2, 0.3], index: 0 }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    const provider = createEmbeddingProvider({
+      embedding: { mode: "envoy-local" },
+      fetchImplementation: fetchImplementation as unknown as typeof fetch,
+    });
+    const vector = await provider.embed("x".repeat(8000));
+    expect(vector).toEqual([0.1, 0.2, 0.3]);
+    expect(calls).toBeGreaterThanOrEqual(2);
   });
 
   it("embeds envoy-local batches one input at a time", async () => {
@@ -636,6 +672,31 @@ describe("resolveEmbeddingConfig — independent of chat", () => {
       fetchImplementation: fetchImplementation as unknown as typeof fetch,
     });
     await expect(provider.embed("hello")).rejects.toThrow(/unreachable|:18791/i);
+    // Transport heal: pause + one retry even without an explicit recover hook.
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries once after Envoy Local 503 when onEnvoyLocalEmbedRecover heals", async () => {
+    let calls = 0;
+    const fetchImplementation = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response("busy", { status: 503 });
+      }
+      return new Response(
+        JSON.stringify({ data: [{ embedding: [0.4, 0.5, 0.6] }] }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    const heal = vi.fn(async () => undefined);
+    const provider = createEmbeddingProvider({
+      embedding: { mode: "envoy-local" },
+      fetchImplementation: fetchImplementation as unknown as typeof fetch,
+      onEnvoyLocalEmbedRecover: heal,
+    });
+    await expect(provider.embed("hello")).resolves.toEqual([0.4, 0.5, 0.6]);
+    expect(heal).toHaveBeenCalledTimes(1);
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
   });
 
   it("ignores chat modelProviders when resolving", () => {

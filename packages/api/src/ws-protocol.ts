@@ -499,6 +499,10 @@ export type RpcMethods =
   | "chainSaveRecipe"
   | "chainDeleteRecipe"
   | "chainProbeReachability"
+  // Phase 60F — Agent Network diagnostics (no-spend)
+  | "agentNetworkDiagnosticsSnapshot"
+  | "agentNetworkSimulate"
+  | "agentNetworkExportDiagnostics"
   // Phase 44C — Knowledge Base Plugins
   | "listKbPlugins"
   | "activateKbPlugin"
@@ -2572,6 +2576,8 @@ export interface ChainPreviewSuggestedWorker {
     | "peer_runtime"
     | "runtime_skill"
     | "prior";
+  /** Phase 60C — short assignment reason codes for the worker picker. */
+  assignmentReasons?: import("./chain-team-strategy.js").ChainAssignmentReasonCode[];
 }
 
 export interface ChainPreviewGoalResult {

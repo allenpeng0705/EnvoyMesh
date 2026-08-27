@@ -10,6 +10,14 @@ export interface EmbeddingLimitSettings {
  */
 export const ENVOY_LOCAL_EMBED_CTX_SIZE = 2048;
 
+/**
+ * Soft fraction of {@link ENVOY_LOCAL_EMBED_CTX_SIZE} used as the client-side
+ * truncate budget before calling llama-server. Must stay well below 1.0 because
+ * our char→token estimate is approximate and Qwen BPE often counts higher than
+ * the soft model (especially Markdown / code / mixed scripts).
+ */
+export const ENVOY_LOCAL_EMBED_SOFT_TOKEN_RATIO = 0.5;
+
 /** Provider-documented input limits (tokens). Override via embedding.maxInputTokens in node-config. */
 export const KNOWN_EMBEDDING_MAX_INPUT_TOKENS: Readonly<Record<string, number>> = {
   "embo-01": 4096,
@@ -52,8 +60,11 @@ export function recommendedVaultChunkCharsForEmbedding(
 ): number | undefined {
   const tokens = resolveEffectiveEmbeddingMaxInputTokens(embedding, resolvedModelName);
   if (tokens == null) return undefined;
+  const budget = isEnvoyLocalEmbeddingMode(embedding?.mode)
+    ? Math.max(200, Math.floor(tokens * ENVOY_LOCAL_EMBED_SOFT_TOKEN_RATIO))
+    : tokens;
   // Leave a little headroom for special tokens / template wrappers.
-  return Math.max(200, Math.floor(maxVaultChunkCharsForEmbeddingTokens(tokens) * 0.9));
+  return Math.max(200, Math.floor(maxVaultChunkCharsForEmbeddingTokens(budget) * 0.9));
 }
 
 export function resolveEmbeddingMaxInputTokens(
@@ -77,7 +88,10 @@ export function resolveEmbeddingMaxInputTokens(
 
 /**
  * Conservative token estimate for embedding payload limits.
- * CJK-heavy text is treated as ~1 token per character; mostly-ASCII as ~4 chars/token.
+ *
+ * Tuned against llama.cpp / Qwen BPE failures where soft estimates under-counted
+ * English Markdown (~2–3 chars/token) and mixed CJK/ASCII notes. Prefer
+ * over-estimating — truncate early rather than trip exceed_context_size_error.
  */
 export function estimateEmbeddingTokenCount(text: string): number {
   const chars = [...text].length;
@@ -85,9 +99,11 @@ export function estimateEmbeddingTokenCount(text: string): number {
   const han = (text.match(/\p{Script=Han}/gu) ?? []).length;
   const hanRatio = han / chars;
   if (hanRatio >= 0.15) {
-    return Math.ceil(chars * Math.min(1, 0.65 + hanRatio * 0.35));
+    // CJK-heavy: treat as nearly 1 token/char (slightly under for pure Han runs).
+    return Math.ceil(chars * Math.min(1, 0.75 + hanRatio * 0.25));
   }
-  return Math.ceil(chars / 4);
+  // Latin / code / Markdown: ~2 chars/token (was /4 — chronically too optimistic).
+  return Math.ceil(chars / 2);
 }
 
 export function truncateTextForEmbedding(text: string, maxInputTokens: number): string {
@@ -122,4 +138,35 @@ export function maxVaultChunkCharsForEmbeddingTokens(maxInputTokens: number): nu
     }
   }
   return lo;
+}
+
+/** Detect llama.cpp / OpenAI-style context overflow from embed error text. */
+export function isEmbeddingContextOverflowError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes("exceed_context_size") ||
+    m.includes("exceeds the available context size") ||
+    m.includes("n_ctx") && m.includes("n_prompt_tokens") ||
+    (m.includes("context size") && m.includes("token"))
+  );
+}
+
+/**
+ * Parse `n_prompt_tokens` / `n_ctx` from a llama.cpp exceed_context_size body when present.
+ */
+export function parseEmbeddingContextOverflowSizes(message: string): {
+  promptTokens?: number;
+  ctxTokens?: number;
+} {
+  const prompt = message.match(/n_prompt_tokens["\s:]+(\d+)/i);
+  const ctx = message.match(/n_ctx["\s:]+(\d+)/i);
+  const promptAlt = message.match(/\((\d+)\s*tokens?\)\s*exceeds/i);
+  return {
+    promptTokens: prompt
+      ? Number(prompt[1])
+      : promptAlt
+        ? Number(promptAlt[1])
+        : undefined,
+    ctxTokens: ctx ? Number(ctx[1]) : undefined,
+  };
 }

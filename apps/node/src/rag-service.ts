@@ -519,6 +519,8 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
       let indexed = 0;
       let skipped = 0;
       let removed = 0;
+      let failed = 0;
+      let lastDocError: string | undefined;
 
       try {
         const publicStats = await indexVaultTier({
@@ -540,6 +542,8 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
         indexed += publicStats.indexed;
         skipped += publicStats.skipped;
         removed += publicStats.removed;
+        failed += publicStats.failed;
+        if (publicStats.lastError) lastDocError = publicStats.lastError;
 
         const privateStats = await indexVaultTier({
           embedder: activeEmbedder,
@@ -560,12 +564,32 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
         indexed += privateStats.indexed;
         skipped += privateStats.skipped;
         removed += privateStats.removed;
+        failed += privateStats.failed;
+        if (privateStats.lastError) lastDocError = privateStats.lastError;
 
         reportProgress({ phase: "flush", processed: 0, total: 0, indexed, skipped, removed });
         void flushSoon();
         await activeStore.flush();
         await saveRagVaultManifest(input.profileDir, manifest);
         await syncTrackedDocuments();
+
+        if (failed > 0) {
+          const message =
+            lastDocError ??
+            `${failed} document(s) could not be embedded; others indexed. Retry reindex later.`;
+          noteEmbedError(new Error(message));
+          reportProgress({
+            phase: "done",
+            processed: indexed + skipped + failed,
+            total: indexed + skipped + failed,
+            indexed,
+            skipped,
+            removed,
+            message: `Indexed ${indexed}, skipped ${skipped}, failed ${failed}, removed ${removed}`,
+          });
+          return;
+        }
+
         reportProgress({
           phase: "done",
           processed: indexed + skipped,
@@ -577,11 +601,21 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
         });
         clearEmbedError();
       } catch (error) {
+        // Persist whatever succeeded so the next reindex continues from there.
+        try {
+          await activeStore.flush();
+          await saveRagVaultManifest(input.profileDir, manifest);
+          await syncTrackedDocuments();
+        } catch (persistError) {
+          console.warn(
+            `[rag] failed to persist partial reindex: ${persistError instanceof Error ? persistError.message : String(persistError)}`,
+          );
+        }
         noteEmbedError(error);
         reportProgress({
           phase: "error",
-          processed: 0,
-          total: 0,
+          processed: indexed + skipped + failed,
+          total: indexed + skipped + failed,
           indexed,
           skipped,
           removed,
@@ -795,7 +829,7 @@ async function indexVaultTier(input: {
   skipOfficeSources?: ReadonlySet<string>;
   onProgress: (partial: Pick<RagIndexProgress, "processed" | "total">) => void;
   onEmbedActivity?: () => void;
-}): Promise<{ indexed: number; skipped: number; removed: number }> {
+}): Promise<{ indexed: number; skipped: number; removed: number; failed: number; lastError?: string }> {
   const {
     embedder,
     store,
@@ -832,6 +866,8 @@ async function indexVaultTier(input: {
 
   let indexed = 0;
   let skipped = 0;
+  let failed = 0;
+  let lastError: string | undefined;
   const total = documents.length;
   const batchSize = 16;
 
@@ -866,29 +902,65 @@ async function indexVaultTier(input: {
     }
 
     if (chunks.length > 0) {
-      for (let offset = 0; offset < chunks.length; offset += batchSize) {
-        const batch = chunks.slice(offset, offset + batchSize);
-        const texts = batch.map((chunk) => chunk.text);
-        const vectors = await embedder.embedBatch(texts);
-        onEmbedActivity?.();
-        const records = batch.map((chunk, index) => ({
-          id: `${collection}:${doc.documentId}:${chunk.index}`,
-          collection,
-          sourceKey: `${doc.documentId}:${chunk.index}`,
-          textPreview: chunk.text.slice(0, 500),
-          vector: vectors[index] ?? [],
-          metadata: {
-            relativePath: doc.relativePath,
-            title: doc.title,
-            tier,
-            sensitivity: resolveDocumentSensitivityById(
-              doc.documentId,
-              doc.relativePath,
-              sensitivityOverrides,
-            ),
-          },
-        }));
-        await store.upsert(records);
+      let docFailed = false;
+      try {
+        for (let offset = 0; offset < chunks.length; offset += batchSize) {
+          const batch = chunks.slice(offset, offset + batchSize);
+          const texts = batch.map((chunk) => chunk.text);
+          let vectors: number[][];
+          try {
+            vectors = await embedder.embedBatch(texts);
+          } catch (batchError) {
+            // Provider already healed/overflow-retried; fall back to per-chunk
+            // so one poison chunk does not abort the whole vault reindex.
+            vectors = [];
+            for (const text of texts) {
+              try {
+                vectors.push(await embedder.embed(text));
+              } catch (chunkError) {
+                docFailed = true;
+                lastError =
+                  chunkError instanceof Error ? chunkError.message : String(chunkError);
+                console.warn(
+                  `[rag] embed skipped chunk in ${doc.relativePath}: ${lastError}`,
+                );
+                vectors.push([]);
+              }
+            }
+          }
+          if (docFailed) break;
+          onEmbedActivity?.();
+          const records = batch.map((chunk, index) => ({
+            id: `${collection}:${doc.documentId}:${chunk.index}`,
+            collection,
+            sourceKey: `${doc.documentId}:${chunk.index}`,
+            textPreview: chunk.text.slice(0, 500),
+            vector: vectors[index] ?? [],
+            metadata: {
+              relativePath: doc.relativePath,
+              title: doc.title,
+              tier,
+              sensitivity: resolveDocumentSensitivityById(
+                doc.documentId,
+                doc.relativePath,
+                sensitivityOverrides,
+              ),
+            },
+          }));
+          await store.upsert(records);
+        }
+      } catch (error) {
+        docFailed = true;
+        lastError = error instanceof Error ? error.message : String(error);
+        console.warn(`[rag] embed failed for ${doc.relativePath}: ${lastError}`);
+      }
+
+      if (docFailed) {
+        // Drop partial vectors so the next reindex retries this document.
+        await store.deleteByDocumentId(collection, doc.documentId);
+        delete manifest.documents[manifestKey];
+        failed += 1;
+        continue;
       }
     }
 
@@ -912,7 +984,7 @@ async function indexVaultTier(input: {
     indexed += 1;
   }
 
-  return { indexed, skipped, removed };
+  return { indexed, skipped, removed, failed, lastError };
 }
 
 function vaultDocumentsForPaths(vaultIndex: VaultIndex, paths: string[]): VaultDocumentMetadata[] {

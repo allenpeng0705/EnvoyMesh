@@ -22,6 +22,7 @@ import {
   envoyLocalEmbedPort,
   ENVOY_LOCAL_CHAT_PORT_BASE,
   ENVOY_LOCAL_EMBED_PORT_BASE,
+  ENVOY_LOCAL_EMBED_SOFT_TOKEN_RATIO,
   parseLoopbackServicePort,
   resolveEffectiveEmbeddingMaxInputTokens,
 } from "@envoymesh/api";
@@ -211,10 +212,13 @@ export function resolveEmbeddingConfig(input: ResolveEmbeddingConfigInput): Reso
     { ...embedding, mode },
     modelName,
   );
-  // llama.cpp token counts can exceed our soft estimate — keep headroom so
-  // a "2048-token" payload does not still trip exceed_context_size_error.
+  // llama.cpp token counts can exceed our soft estimate — keep large headroom so
+  // a soft-budget payload does not still trip exceed_context_size_error.
   if (mode === "envoy-local" && maxInputTokens != null) {
-    maxInputTokens = Math.max(256, Math.floor(maxInputTokens * 0.8));
+    maxInputTokens = Math.max(
+      256,
+      Math.floor(maxInputTokens * ENVOY_LOCAL_EMBED_SOFT_TOKEN_RATIO),
+    );
   }
 
   let responseShape: EmbeddingResponseShape;

@@ -160,8 +160,8 @@ export interface AiKnowledgeBaseSettings {
 }
 
 export const DEFAULT_AI_KNOWLEDGE_BASE_MAX_FILE_BYTES = 25 * 1024 * 1024;
-export const DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_SIZE_CHARS = 800;
-export const DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_OVERLAP_CHARS = 120;
+export const DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_SIZE_CHARS = 500;
+export const DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_OVERLAP_CHARS = 80;
 
 export const DEFAULT_AI_KNOWLEDGE_BASE: Required<
   Pick<
@@ -261,7 +261,9 @@ export function resolveAiKnowledgeBaseSettings(
     DEFAULT_AI_KNOWLEDGE_BASE.chunkSizeChars,
   );
   const chunkCap = recommendedVaultChunkCharsForEmbedding(embedding);
-  if (chunkCap != null && isEnvoyLocalEmbeddingMode(embedding.mode)) {
+  // Always apply when we have a budget (Envoy Local inherit/null, or explicit
+  // maxInputTokens). Oversized saved chunk sizes are the #1 cause of embed 400s.
+  if (chunkCap != null && (isEnvoyLocalEmbeddingMode(embedding.mode) || embedding.maxInputTokens)) {
     chunkSizeChars = Math.min(chunkSizeChars, chunkCap);
   }
   let chunkOverlapChars = clampInt(

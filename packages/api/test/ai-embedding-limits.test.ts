@@ -1,8 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   ENVOY_LOCAL_EMBED_CTX_SIZE,
+  ENVOY_LOCAL_EMBED_SOFT_TOKEN_RATIO,
   estimateEmbeddingTokenCount,
+  isEmbeddingContextOverflowError,
   maxVaultChunkCharsForEmbeddingTokens,
+  parseEmbeddingContextOverflowSizes,
   recommendedVaultChunkCharsForEmbedding,
   resolveEffectiveEmbeddingMaxInputTokens,
   resolveEmbeddingMaxInputTokens,
@@ -33,13 +36,22 @@ describe("ai-embedding-limits", () => {
     ).toBe(ENVOY_LOCAL_EMBED_CTX_SIZE);
   });
 
-  it("recommends vault chunk size under Envoy Local budget", () => {
+  it("recommends vault chunk size under Envoy Local soft budget", () => {
     const cap = recommendedVaultChunkCharsForEmbedding({ mode: "envoy-local" });
     expect(cap).toBeDefined();
-    expect(cap!).toBeLessThanOrEqual(ENVOY_LOCAL_EMBED_CTX_SIZE);
+    expect(cap!).toBeLessThanOrEqual(
+      Math.floor(ENVOY_LOCAL_EMBED_CTX_SIZE * ENVOY_LOCAL_EMBED_SOFT_TOKEN_RATIO),
+    );
     expect(estimateEmbeddingTokenCount("文".repeat(cap!))).toBeLessThanOrEqual(
       ENVOY_LOCAL_EMBED_CTX_SIZE,
     );
+  });
+
+  it("estimates ASCII more conservatively than 4 chars/token", () => {
+    const ascii = "a".repeat(2000);
+    // Old soft model was chars/4 (=500). Real Qwen BPE is closer to /2.
+    expect(estimateEmbeddingTokenCount(ascii)).toBeGreaterThanOrEqual(1000);
+    expect(estimateEmbeddingTokenCount(ascii)).toBe(1000);
   });
 
   it("caps vault chunk chars for 4096 token limit under CJK worst case", () => {
@@ -55,6 +67,16 @@ describe("ai-embedding-limits", () => {
     const trimmed = truncateTextForEmbedding(long, 4096);
     expect(trimmed.length).toBeLessThan(long.length);
     expect(estimateEmbeddingTokenCount(trimmed)).toBeLessThanOrEqual(4096);
+  });
+
+  it("detects llama.cpp exceed_context_size errors", () => {
+    const body =
+      'embeddings failed (400): {"error":{"code":400,"message":"request (3023 tokens) exceeds the available context size (2048 tokens)","type":"exceed_context_size_error","n_prompt_tokens":3023,"n_ctx":2048}}';
+    expect(isEmbeddingContextOverflowError(body)).toBe(true);
+    expect(parseEmbeddingContextOverflowSizes(body)).toEqual({
+      promptTokens: 3023,
+      ctxTokens: 2048,
+    });
   });
 });
 

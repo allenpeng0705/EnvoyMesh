@@ -707,72 +707,97 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
     final linked =
         (_indexStatus?['linkedObsidianNoteCount'] as num?)?.toInt() ?? 0;
     final indexing = _indexStatus?['isIndexing'] == true;
-    String indexLabel;
+    // Keep the status line short so it never competes with filter chips.
+    final String indexLabel;
     if (indexing) {
       indexLabel = l10n.knowledgeBrowseIndexIndexing;
     } else if (tracked > 0) {
-      indexLabel = linked > 0
-          ? l10n.knowledgeBrowseIndexReadyLinked(tracked, linked)
-          : l10n.knowledgeBrowseIndexReady(tracked);
+      indexLabel = l10n.knowledgeBrowseIndexReady(tracked);
     } else {
       indexLabel = l10n.knowledgeBrowseIndexEmpty;
     }
+    final String? indexDetail = (!indexing &&
+            tracked > 0 &&
+            linked > 0 &&
+            _browseFilter == KnowledgeBrowseFilter.obsidian)
+        ? l10n.knowledgeBrowseIndexReadyLinked(tracked, linked)
+        : null;
 
     return Column(
       children: [
         if (widget.knowledgeBrowse)
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        for (final f in KnowledgeBrowseFilter.values)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: FilterChip(
-                              label: Text(_filterLabel(l10n, f)),
-                              selected: _browseFilter == f,
-                              showCheckmark: false,
-                              visualDensity: VisualDensity.compact,
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                              onSelected: (_) =>
-                                  setState(() => _browseFilter = f),
-                            ),
-                          ),
-                      ],
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final f in KnowledgeBrowseFilter.values)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: FilterChip(
+                        label: Text(_filterLabel(l10n, f)),
+                        selected: _browseFilter == f,
+                        showCheckmark: false,
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        onSelected: (_) => setState(() => _browseFilter = f),
+                      ),
                     ),
-                  ),
-                ),
-                ActionChip(
-                  label: Text(indexLabel),
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () {
-                    // Leave full-screen library so Setup is visible.
-                    final nav = Navigator.of(context);
-                    if (nav.canPop()) nav.pop();
-                    openContentKnowledge(
-                      ref,
-                      panel: KnowledgeHubPanel.setup,
-                    );
-                    _refreshIndex();
-                  },
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         if (widget.knowledgeBrowse)
-          KnowledgeHubActionsBar(
-            filter: _browseFilter,
-            visibleItems: items,
-            onChanged: () {
-              _reload();
-              _refreshIndex();
-            },
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 8, 0),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () {
+                final nav = Navigator.of(context);
+                if (nav.canPop()) nav.pop();
+                openContentKnowledge(
+                  ref,
+                  panel: KnowledgeHubPanel.setup,
+                );
+                _refreshIndex();
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Icon(
+                      indexing
+                          ? Icons.hourglass_top_outlined
+                          : Icons.dataset_linked_outlined,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        indexDetail ?? indexLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                      ),
+                    ),
+                    Tooltip(
+                      message: l10n.knowledgeBrowseIndexChipHint,
+                      child: Icon(
+                        Icons.chevron_right,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         if (widget.knowledgeBrowse &&
             (_result?.mcpRemoteError?.isNotEmpty ?? false) &&
@@ -822,6 +847,15 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
                   tooltip: l10n.knowledgeNoteNewTitle,
                   onPressed: () => _openNoteEditor(mode: 'create'),
                   icon: const Icon(Icons.note_add_outlined),
+                ),
+              if (widget.knowledgeBrowse)
+                KnowledgeHubOverflowButton(
+                  filter: _browseFilter,
+                  visibleItems: items,
+                  onChanged: () {
+                    _reload();
+                    _refreshIndex();
+                  },
                 ),
             ],
           ),

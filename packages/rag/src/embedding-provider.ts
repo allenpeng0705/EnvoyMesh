@@ -3,7 +3,13 @@ import type {
   EmbeddingResponseShape,
   ModelProviderConfig,
 } from "@envoymesh/api";
-import { truncateTextForEmbedding } from "@envoymesh/api";
+import {
+  ENVOY_LOCAL_EMBED_CTX_SIZE,
+  ENVOY_LOCAL_EMBED_SOFT_TOKEN_RATIO,
+  isEmbeddingContextOverflowError,
+  parseEmbeddingContextOverflowSizes,
+  truncateTextForEmbedding,
+} from "@envoymesh/api";
 import { createHash } from "node:crypto";
 import {
   KNOWN_EMBEDDING_PROVIDERS,
@@ -42,8 +48,14 @@ export interface CreateEmbeddingProviderInput extends ResolveEmbeddingConfigInpu
   /**
    * Envoy Local only: after a timed-out /embeddings call, await this (e.g. restart
    * the sidecar) before a single retry. Without it, we still retry once after a short pause.
+   * Also invoked before retrying connection / 5xx failures.
    */
   onEnvoyLocalEmbedTimeout?: () => void | Promise<void>;
+  /**
+   * Optional heal hook for non-timeout recoveries (connection refused, 5xx).
+   * Defaults to {@link onEnvoyLocalEmbedTimeout} when unset.
+   */
+  onEnvoyLocalEmbedRecover?: () => void | Promise<void>;
 }
 
 const DEFAULT_MOCK_DIMENSIONS = 384;
@@ -53,15 +65,40 @@ export function resolveEmbeddingConfig(input: CreateEmbeddingProviderInput): Res
   return resolveEmbeddingConfigCore(input);
 }
 
+function isEmbedTransportError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    isEmbedTimeoutError(err) ||
+    /timed out|wedged|unreachable|fetch failed|econnrefused|econnreset|socket hang up|network/i.test(
+      msg,
+    )
+  );
+}
+
+function isEmbedServerErrorStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
 export function createEmbeddingProvider(input: CreateEmbeddingProviderInput = {}): EmbeddingProvider {
   const config = resolveEmbeddingConfig(input);
   const fetchImplementation = input.fetchImplementation ?? fetch;
   const mockDimensions = input.mockDimensions ?? DEFAULT_MOCK_DIMENSIONS;
-  const onEnvoyLocalEmbedTimeout = input.onEnvoyLocalEmbedTimeout;
+  const onEnvoyLocalEmbedRecover =
+    input.onEnvoyLocalEmbedRecover ?? input.onEnvoyLocalEmbedTimeout;
 
   const prepareTexts = (texts: string[]): string[] => {
-    if (config.maxInputTokens == null) return texts;
-    return texts.map((text) => truncateTextForEmbedding(text, config.maxInputTokens!));
+    let budget = config.maxInputTokens;
+    if (
+      budget == null &&
+      (config.mode === "envoy-local" || isEnvoyLocalEmbedEndpoint(config.endpoint))
+    ) {
+      budget = Math.max(
+        256,
+        Math.floor(ENVOY_LOCAL_EMBED_CTX_SIZE * ENVOY_LOCAL_EMBED_SOFT_TOKEN_RATIO),
+      );
+    }
+    if (budget == null) return texts;
+    return texts.map((text) => truncateTextForEmbedding(text, budget!));
   };
 
   if (config.mode === "mock") {
@@ -103,7 +140,7 @@ export function createEmbeddingProvider(input: CreateEmbeddingProviderInput = {}
           config,
           prepareTexts([text]),
           fetchImplementation,
-          onEnvoyLocalEmbedTimeout,
+          onEnvoyLocalEmbedRecover,
         );
         return vectors[0] ?? [];
       },
@@ -115,7 +152,7 @@ export function createEmbeddingProvider(input: CreateEmbeddingProviderInput = {}
             config,
             [text],
             fetchImplementation,
-            onEnvoyLocalEmbedTimeout,
+            onEnvoyLocalEmbedRecover,
           );
           vectors.push(batch[0] ?? []);
         }
@@ -131,7 +168,7 @@ export function createEmbeddingProvider(input: CreateEmbeddingProviderInput = {}
         config,
         prepareTexts([text]),
         fetchImplementation,
-        onEnvoyLocalEmbedTimeout,
+        onEnvoyLocalEmbedRecover,
       );
       return vectors[0] ?? [];
     },
@@ -140,7 +177,7 @@ export function createEmbeddingProvider(input: CreateEmbeddingProviderInput = {}
         config,
         prepareTexts(texts),
         fetchImplementation,
-        onEnvoyLocalEmbedTimeout,
+        onEnvoyLocalEmbedRecover,
       );
     },
   };
@@ -184,12 +221,29 @@ async function embedOpenAiCompatible(
   config: ResolvedEmbeddingConfig,
   texts: string[],
   fetchImplementation: typeof fetch,
-  onEnvoyLocalEmbedTimeout?: () => void | Promise<void>,
+  onEnvoyLocalEmbedRecover?: () => void | Promise<void>,
 ): Promise<number[][]> {
   const localEmbed = isEnvoyLocalEmbedEndpoint(config.endpoint);
   const url = `${config.endpoint.replace(/\/$/, "")}/embeddings`;
+  let working = texts;
+  let healedOnce = false;
 
-  const attempt = async (): Promise<Response> => {
+  const healOnce = async (reason: string): Promise<void> => {
+    if (!localEmbed || healedOnce) return;
+    healedOnce = true;
+    console.warn(`[rag] embed recover (${reason}) — healing Envoy Local sidecar`);
+    try {
+      if (onEnvoyLocalEmbedRecover) {
+        await onEnvoyLocalEmbedRecover();
+      } else {
+        await new Promise((r) => setTimeout(r, 1_500));
+      }
+    } catch {
+      /* heal best-effort */
+    }
+  };
+
+  const postOnce = async (inputs: string[]): Promise<Response> => {
     try {
       return await fetchImplementation(url, {
         method: "POST",
@@ -199,7 +253,7 @@ async function embedOpenAiCompatible(
         },
         body: JSON.stringify({
           model: config.modelName,
-          input: texts.length === 1 ? texts[0] : texts,
+          input: inputs.length === 1 ? inputs[0] : inputs,
         }),
         ...(localEmbed
           ? { signal: AbortSignal.timeout(ENVOY_LOCAL_EMBED_FETCH_TIMEOUT_MS) }
@@ -213,7 +267,7 @@ async function embedOpenAiCompatible(
             `(${config.endpoint}) — llama-server may be wedged; check Knowledge → Setup or restart embed`,
         );
       }
-      if (localEmbed && /fetch failed/i.test(msg)) {
+      if (localEmbed && /fetch failed|econnrefused|econnreset|unreachable/i.test(msg)) {
         throw new Error(
           `Envoy Local embed unreachable (${config.endpoint}): ${msg} — ` +
             `is the embed sidecar running on :18791?`,
@@ -223,27 +277,88 @@ async function embedOpenAiCompatible(
     }
   };
 
-  let response: Response;
-  try {
-    response = await attempt();
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (!localEmbed || !/timed out|wedged/i.test(msg)) throw err;
-    // One heal + retry: cold start / transient wedge should not fail the whole reindex.
+  const attemptWithHeal = async (inputs: string[]): Promise<Response> => {
     try {
-      if (onEnvoyLocalEmbedTimeout) {
-        await onEnvoyLocalEmbedTimeout();
-      } else {
-        await new Promise((r) => setTimeout(r, 1_500));
-      }
-    } catch {
-      /* heal best-effort */
+      return await postOnce(inputs);
+    } catch (err) {
+      if (!localEmbed || !isEmbedTransportError(err)) throw err;
+      await healOnce(err instanceof Error ? err.message : String(err));
+      return await postOnce(inputs);
     }
-    response = await attempt();
+  };
+
+  // Up to 4 shrink retries on context overflow — never leave reindex stuck on
+  // a single oversized chunk when soft estimates under-counted tokens.
+  const maxOverflowRetries = localEmbed || config.mode === "envoy-local" ? 4 : 0;
+  let response: Response | undefined;
+  let lastOverflowBody = "";
+  for (let overflowTry = 0; overflowTry <= maxOverflowRetries; overflowTry++) {
+    response = await attemptWithHeal(working);
+    if (response.ok) break;
+
+    // Transient server errors: heal sidecar once and retry same payload.
+    if (localEmbed && isEmbedServerErrorStatus(response.status)) {
+      const body = await response.text().catch(() => "");
+      lastOverflowBody = body;
+      if (!healedOnce) {
+        await healOnce(`HTTP ${response.status}`);
+        response = await attemptWithHeal(working);
+        if (response.ok) break;
+        lastOverflowBody = (await response.text().catch(() => "")) || lastOverflowBody;
+      }
+      if (response.ok) break;
+      if (!isEmbeddingContextOverflowError(lastOverflowBody)) {
+        throw new Error(
+          `embeddings failed (${response.status})${lastOverflowBody ? `: ${lastOverflowBody.slice(0, 200)}` : ""}`,
+        );
+      }
+    }
+
+    const body = lastOverflowBody || (await response.text().catch(() => ""));
+    lastOverflowBody = body;
+    const errText = `embeddings failed (${response.status})${body ? `: ${body.slice(0, 400)}` : ""}`;
+    if (
+      overflowTry >= maxOverflowRetries ||
+      response.status !== 400 ||
+      !isEmbeddingContextOverflowError(errText)
+    ) {
+      throw new Error(errText.slice(0, 280));
+    }
+    const { promptTokens, ctxTokens } = parseEmbeddingContextOverflowSizes(errText);
+    const hardCtx = ctxTokens ?? ENVOY_LOCAL_EMBED_CTX_SIZE;
+    // Scale by actual overflow when known; otherwise halve soft budget each try.
+    let nextBudget: number;
+    if (promptTokens != null && promptTokens > 0 && working.length === 1) {
+      const ratio = (hardCtx * 0.85) / promptTokens;
+      const approxChars = Math.max(
+        64,
+        Math.floor((working[0]?.length ?? 0) * Math.min(0.85, Math.max(0.25, ratio))),
+      );
+      working = [working[0]!.slice(0, approxChars).trimEnd()];
+      nextBudget = Math.max(64, Math.floor(hardCtx * 0.7));
+    } else {
+      nextBudget = Math.max(
+        64,
+        Math.floor(
+          (config.maxInputTokens ?? hardCtx) * Math.pow(0.55, overflowTry + 1),
+        ),
+      );
+      working = working.map((t) => truncateTextForEmbedding(t, nextBudget));
+    }
+    // If already tiny, still force a hard char cut so we make progress.
+    if (working.every((t) => t.length <= 64)) {
+      working = working.map((t) => t.slice(0, Math.max(32, Math.floor(t.length * 0.5))));
+    }
+    lastOverflowBody = "";
+    console.warn(
+      `[rag] embed context overflow — retry ${overflowTry + 1}/${maxOverflowRetries} ` +
+        `(budget≈${nextBudget}, chars=${working.map((t) => t.length).join(",")})`,
+    );
   }
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`embeddings failed (${response.status})${body ? `: ${body.slice(0, 200)}` : ""}`);
+  if (!response?.ok) {
+    throw new Error(
+      `embeddings failed (${response?.status ?? "?"})${lastOverflowBody ? `: ${lastOverflowBody.slice(0, 200)}` : ""}`,
+    );
   }
   const payload = (await response.json()) as unknown;
 
@@ -254,14 +369,14 @@ async function embedOpenAiCompatible(
     const cacheKey = parserCacheKey(config.endpoint);
     const cached = embeddingParserCache.get(cacheKey);
     if (cached) {
-      return parseEmbeddingsResponse(payload, texts.length, cached);
+      return parseEmbeddingsResponse(payload, working.length, cached);
     }
     // First time touching this endpoint — try the common shape first
     // (covers OpenAI / Zhipu / Qwen / MiniMax international / etc.), fall
     // back to legacy MiniMax flat envelope, cache whichever succeeds.
     // Only throws after both fail (with both error messages attached).
     try {
-      const vectors = parseOpenAiEmbeddings(payload, texts.length);
+      const vectors = parseOpenAiEmbeddings(payload, working.length);
       embeddingParserCache.set(cacheKey, "openai");
       // Surface the binding so operators can see which envelope won when
       // diagnosing embedding failures — silent cache hits are otherwise
@@ -270,7 +385,7 @@ async function embedOpenAiCompatible(
       return vectors;
     } catch (openAiErr) {
       try {
-        const vectors = parseMiniMaxEmbeddings(payload, texts.length);
+        const vectors = parseMiniMaxEmbeddings(payload, working.length);
         embeddingParserCache.set(cacheKey, "minimax");
         console.info(`[rag] embeddings parser cached: minimax for ${cacheKey}`);
         return vectors;
@@ -284,7 +399,7 @@ async function embedOpenAiCompatible(
     }
   }
 
-  return parseEmbeddingsResponse(payload, texts.length, explicitShape);
+  return parseEmbeddingsResponse(payload, working.length, explicitShape);
 }
 
 /**

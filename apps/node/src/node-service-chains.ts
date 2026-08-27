@@ -525,6 +525,20 @@ export interface ChainContext {
         message: string;
       }>
     >;
+    /** Phase 60C — resolved Team strategy snapshot per chain. */
+    teamStrategies: Map<string, import("@envoymesh/api").ResolvedChainTeamStrategy>;
+    /** Phase 60D — restart reconciliation state per chain. */
+    recovery: Map<
+      string,
+      {
+        phase: "recovering" | "running" | "awaiting_owner" | "complete";
+        orchestratorEpoch: string;
+        startedAt: string;
+        graceDeadlineAt: string;
+        peers: Record<string, { status: string; workerEpoch?: string; reconciledAt?: string; attemptIds: string[] }>;
+        conflicts: Array<{ attemptId: string; subtaskId: string; reason: string }>;
+      }
+    >;
   };
   /** Where to persist chain reports (class field). */
   hasTaskStore(): boolean;
