@@ -3,10 +3,10 @@
 # For Linux and macOS
 # Usage: ./run-relay.sh [--profile DIR] [--port PORT] [--advertise IP] [--http-port PORT] [--public-mode]
 #
-# Always rebuilds apps/relay and its workspace deps before launching.
-# tsc -b is incremental (1-3 s on no-op), and stale binaries are the #1
-# source of "why isn't my fix live" relay bugs. If you really need to
-# skip a build, comment out the build block below.
+# Always rebuilds apps/relay via `tsc -b apps/relay` (full project-reference
+# graph: protocol, identity, bonds, network, api, relay) before launching.
+# Stale hand-picked builds used to miss identity → TS6305 on fresh hosts.
+# If you really need to skip a build, use --no-rebuild.
 #
 # Admin Web UI: defaults to user admin / password envoymesh123456.
 # Override before exposing publicly:
@@ -105,20 +105,13 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Always rebuild protocol + api + network + relay before launch.
-# The relay's prebuild hook runs `tsc -p ../../packages/network/tsconfig.json`,
-# so `npm run relay:build` covers network. We also build protocol and api
-# explicitly so their dist/ is current for the relay to import.
+# Always rebuild the relay and its TypeScript project-reference graph before
+# launch. Hand-picking packages (protocol → api → …) missed identity and caused
+# TS6305 on fresh hosts. `tsc -b apps/relay` builds protocol, identity, bonds,
+# network, api, and relay in dependency order (incremental / fast when clean).
 if [ "${SKIP_REBUILD:-0}" != "1" ]; then
-    echo "Building relay server (incremental)..."
-    echo "  protocol"
-    (cd "$PROJECT_ROOT/packages/protocol" && npx tsc -p tsconfig.json)
-    echo "  api"
-    (cd "$PROJECT_ROOT/packages/api" && npx tsc -p tsconfig.json)
-    echo "  network (tsc -b pulls @envoymesh/identity in transitively)"
-    (cd "$PROJECT_ROOT" && npm run build -w @envoymesh/network)
-    echo "  relay"
-    (cd "$PROJECT_ROOT" && npm run relay:build)
+    echo "Building relay server (tsc -b apps/relay — full project graph)..."
+    (cd "$PROJECT_ROOT" && npx tsc -b apps/relay)
     echo "Build done."
 else
     echo "Skipping build (--no-rebuild)."

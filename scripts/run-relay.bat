@@ -109,27 +109,16 @@ echo   ENVOYMESH_RELAY_PUBLIC_MODE  Set to 1 to enable public mode (default: 0)
 exit /b 0
 
 :run_relay
-:: Always rebuild protocol + api + network + relay before launch.
-:: The relay's prebuild hook runs `tsc -p ../../packages/network/tsconfig.json`,
-:: so `npm run relay:build` covers network. We also build protocol and api
-:: explicitly so their dist/ is current for the relay to import.
+:: Always rebuild relay + full TS project-reference graph (avoids TS6305 from
+:: stale identity/api/network dist on fresh hosts). Same as run-relay.sh.
 if "%SKIP_REBUILD%"=="0" (
-    echo Building relay server ^(incremental^)...
-    echo   protocol
-    pushd "%RELAY_DIR%\packages\protocol"
-    call npx tsc -p tsconfig.json
-    popd
-    echo   api
-    pushd "%RELAY_DIR%\packages\api"
-    call npx tsc -p tsconfig.json
-    popd
-    echo   network ^(tsc -b pulls @envoymesh/identity in transitively^)
+    echo Building relay server ^(tsc -b apps/relay — full project graph^)...
     pushd "%RELAY_DIR%"
-    call npm run build -w @envoymesh/network
-    popd
-    echo   relay
-    pushd "%RELAY_DIR%"
-    call npm run relay:build
+    call npx tsc -b apps/relay
+    if errorlevel 1 (
+        popd
+        exit /b 1
+    )
     popd
     echo Build done.
 ) else (

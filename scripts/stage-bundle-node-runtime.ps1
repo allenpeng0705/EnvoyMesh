@@ -727,4 +727,37 @@ try {
     Remove-Item $filterProbe -ErrorAction SilentlyContinue
 }
 
+Write-Host "  Scrubbing build/test tooling from staged node_modules (notarization)..."
+$scrubNames = @(
+    'esbuild', '@esbuild', 'tsx', 'vite', 'vite-node',
+    'vitest', '@vitest', 'typescript', '@typescript',
+    'playwright', 'playwright-core', 'jsdom',
+    'tree-sitter', 'tree-sitter-bash',
+    'webpack', 'rollup', '@rollup',
+    'rolldown', '@rolldown', 'rolldown-plugin-dts',
+    'lightningcss', 'oxfmt', '@oxfmt', 'tsdown', '@babel'
+)
+$scrubbed = 0
+$nmRoot = Join-Path $Dest "node_modules"
+if (Test-Path $nmRoot) {
+    Get-ChildItem -Path $nmRoot -Recurse -Directory -ErrorAction SilentlyContinue |
+        Where-Object {
+            $n = $_.Name
+            if ($scrubNames -contains $n) { return $true }
+            if ($n -like 'lightningcss-*') { return $true }
+            return $false
+        } |
+        Sort-Object { $_.FullName.Length } -Descending |
+        ForEach-Object {
+            Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue
+            $script:scrubbed++
+        }
+}
+$mammothTest = Join-Path $Dest "node_modules\mammoth\test"
+if (Test-Path $mammothTest) {
+    Remove-Item -Recurse -Force $mammothTest -ErrorAction SilentlyContinue
+    $scrubbed++
+}
+Write-Host "  ✓ Scrubbed $scrubbed build/test path(s) from staged node_modules"
+
 Write-Host "  ✓ Node runtime staged at $Dest"

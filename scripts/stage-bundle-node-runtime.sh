@@ -675,4 +675,35 @@ console.log("  ✓ wan-join-invite bootstrap filter OK");
   exit 1
 fi
 
+# Scrub build/test tooling that may leak into resources/node via monorepo
+# hoisting (tsx→esbuild, vite, vitest, playwright, …). These are not needed
+# at runtime (the sidecar runs compiled dist/) but Apple notarization fails
+# if Mach-O binaries like @esbuild/darwin-arm64/bin/esbuild lack hardened
+# runtime. Aligns with stage-tauri-openclaw-bundle.sh scrub list.
+echo "  Scrubbing build/test tooling from staged node_modules (notarization)..."
+_scrubbed=0
+while IFS= read -r -d '' path; do
+  rm -rf "$path"
+  _scrubbed=$((_scrubbed + 1))
+done < <(
+  find "$DEST/node_modules" \( \
+    -type d \( \
+      -name esbuild -o -name '@esbuild' -o -name tsx -o -name vite -o -name 'vite-node' \
+      -o -name vitest -o -name '@vitest' -o -name typescript -o -name '@typescript' \
+      -o -name playwright -o -name 'playwright-core' -o -name jsdom \
+      -o -name 'tree-sitter' -o -name 'tree-sitter-bash' \
+      -o -name webpack -o -name rollup -o -name '@rollup' \
+      -o -name rolldown -o -name '@rolldown' -o -name 'rolldown-plugin-dts' \
+      -o -name lightningcss -o -name 'lightningcss-*' \
+      -o -name oxfmt -o -name '@oxfmt' -o -name tsdown -o -name '@babel' \
+    \) -path '*/node_modules/*' \
+  \) -print0 2>/dev/null || true
+)
+# mammoth ships test zips Apple cannot unpack during notarization (warning → avoid).
+if [ -d "$DEST/node_modules/mammoth/test" ]; then
+  rm -rf "$DEST/node_modules/mammoth/test"
+  _scrubbed=$((_scrubbed + 1))
+fi
+echo "  ✓ Scrubbed ${_scrubbed} build/test path(s) from staged node_modules"
+
 echo "  ✓ Node runtime staged at $DEST"

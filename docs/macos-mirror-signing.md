@@ -222,11 +222,28 @@ Smoke-test on a clean Mac (download from the public URL, not a local copy): open
 | Symptom | Likely cause |
 |---------|----------------|
 | `Apple signing: skipped` | Placeholders or missing `scripts/sign-macos-release.env` |
-| Notarization fails | Wrong app-specific password, or Apple ID not on the Developer team |
+| Notarization: **hardened runtime** on `…/node_modules/@esbuild/…/esbuild` | Build tooling leaked into `resources/node` — not a rustup/Xcode issue. `stage-bundle-node-runtime.sh` scrubs esbuild/vite/vitest/etc. before `tauri build`. Re-run the full `./scripts/build-desktop.sh macos` (or delete staged `resources/node` and re-stage). |
+| Notarization warning: `mammoth/test/…/empty.zip` | Harmless if still present; staging also removes `mammoth/test`. |
+| Notarization fails (auth) | Wrong app-specific password, or Apple ID not on the Developer team |
 | Build fails on push | Missing `.p8` / FCM JSON → `REQUIRE_PUSH_CREDENTIALS=0` or add secrets |
 | Build fails on harness | Missing `../envoy-harness` or set `ENVOY_HARNESS_DIR` |
 | Friend sees “damaged” | Unsigned DMG still on mirror, or upload missed the stable file |
 | “M1 works, M2 doesn’t” (or reverse) | Usually **not** CPU gen — unsigned vs signed, Intel vs Apple Silicon, or stale mirror file. Script prefers `universal-apple-darwin`, then `aarch64-apple-darwin` |
+
+### Immediate workaround (if a staged tree already has esbuild)
+
+```bash
+rm -rf apps/tauri/src-tauri/resources/node/node_modules/esbuild \
+       apps/tauri/src-tauri/resources/node/node_modules/@esbuild \
+       apps/tauri/src-tauri/resources/node/node_modules/vite \
+       apps/tauri/src-tauri/resources/node/node_modules/vitest \
+       apps/tauri/src-tauri/resources/node/node_modules/playwright-core \
+       apps/tauri/src-tauri/resources/node/node_modules/mammoth/test
+# Prefer a full rebuild so staging scrub runs:
+./scripts/build-desktop.sh macos
+```
+
+`rustup target add aarch64-apple-darwin x86_64-apple-darwin` is still useful for universal builds, but it does **not** fix notarization hardened-runtime errors.
 
 ---
 
