@@ -1,0 +1,1 @@
+{"version":3,"file":"null-tracer.d.ts","sourceRoot":"","sources":["../../src/trace/null-tracer.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;;GAcG;AAEH,OAAO,KAAK,EAAE,MAAM,EAAE,MAAM,YAAY,CAAC;AAEzC;8CAC8C;AAC9C,qBAAa,UAAW,YAAW,MAAM;IACvC,IAAI,CAAC,MAAM,EAAE,OAAO,YAAY,EAAE,UAAU,GAAG,IAAI;CAGpD"}

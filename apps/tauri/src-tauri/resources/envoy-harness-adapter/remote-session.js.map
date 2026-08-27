@@ -1,0 +1,1 @@
+{"version":3,"file":"remote-session.js","sourceRoot":"","sources":["../src/remote-session.ts"],"names":[],"mappings":"AAAA;;;;;;GAMG;AAuBH;;;;GAIG;AACH,MAAM,CAAC,KAAK,UAAU,iBAAiB,CACrC,SAAiC,EACjC,GAAqB,EACrB,IAA+B;IAE/B,MAAM,MAAM,GAAG,IAAI,EAAE,MAAM,IAAI,IAAI,eAAe,EAAE,CAAC,MAAM,CAAC;IAC5D,OAAO,SAAS,CAAC,KAAK,CAAC,GAAG,EAAE,EAAE,MAAM,EAAE,CAAC,CAAC;AAC1C,CAAC"}
