@@ -26,6 +26,10 @@ apps/tauri/src-tauri/resources/envoy-harness-adapter/*
 .env
 .env.*
 !.env.example
+scripts/sign-macos-release.env
+scripts/sign-macos-appstore.env
+apps/tauri/src-tauri/Entitlements.appstore.plist
+apps/tauri/src-tauri/EnvoyMesh_AppStore.provisionprofile
 # Local runtime data (profiles, keys, RAG DB). Exception: committed template only.
 data/
 !apps/node/data/

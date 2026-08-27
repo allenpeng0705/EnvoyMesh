@@ -74,6 +74,8 @@ Upload to `gpt4people.online/EnvoyMesh/` when binaries exist.
 
 Build scripts also write versioned archives under `release/envoymesh-desktop-{version}-…` for GitHub Releases. Copy the **stable** filenames above to the mirror (or upload both).
 
+**macOS signed DMG for the mirror:** [docs/macos-mirror-signing.md](../docs/macos-mirror-signing.md) (Developer ID + notarization; not Mac App Store).
+
 Other optional uploads:
 
 - `envoygo-0.3.0-android.apk.zip` (or store-only if no sideload)

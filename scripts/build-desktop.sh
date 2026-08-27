@@ -87,6 +87,19 @@
 #   Do NOT use for normal releases. Windows builds do not support this —
 #   use build-desktop.ps1 without APPLE_REVIEW.
 #
+# Apple Developer ID signing + notarization (macOS DMG — direct download, not App Store):
+#   Fill the exports in apply_apple_signing_env() below, or copy
+#   scripts/sign-macos-release.env.example → scripts/sign-macos-release.env
+#   (gitignored). Tauri signs + notarizes during `tauri build` when set.
+#   Full operator guide: docs/macos-mirror-signing.md
+#
+# Mac App Store (experimental — separate pipeline, not the website DMG):
+#   MAC_APP_STORE=1 ./scripts/build-desktop.sh macos
+#   Uses tauri.conf.appstore.json (App Sandbox, .app bundle, signed .pkg).
+#   Fill scripts/sign-macos-appstore.env (see .example). Upload .pkg via Transporter
+#   or altool. No in-app OTA updater (App Store handles updates). May fail review
+#   due to bundled Node/OpenClaw home-node — acceptable for a trial build.
+#
 # OpenClaw extensions (macOS/Linux):
 #   Default OPENCLAW_EXTENSIONS=default — EnvoyMesh agent allowlist only
 #   (envoymesh + search/agent utils). Omits OpenClaw Diff UI and all
@@ -241,6 +254,116 @@ recompress_dmg() {
   echo "  ✓ DMG ${fmt}: $dmg ($(du -h "$dmg" | awk '{print $1}'))"
 }
 
+# Developer ID + notarization for macOS DMG (direct download — not Mac App Store).
+# Fill the four exports below, or use scripts/sign-macos-release.env (gitignored).
+apply_apple_signing_env() {
+  local sign_env="${SCRIPT_DIR}/sign-macos-release.env"
+  if [ -f "$sign_env" ]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "$sign_env"
+    set +a
+  fi
+
+  export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:-Developer ID Application: …}"
+  export APPLE_ID="${APPLE_ID:-…}"
+  export APPLE_PASSWORD="${APPLE_PASSWORD:-…}"
+  export APPLE_TEAM_ID="${APPLE_TEAM_ID:-…}"
+
+  if [ "$APPLE_SIGNING_IDENTITY" = "Developer ID Application: …" ] || \
+     [ "$APPLE_ID" = "…" ] || [ "$APPLE_PASSWORD" = "…" ] || [ "$APPLE_TEAM_ID" = "…" ]; then
+    unset APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+    echo "  Apple signing: skipped (unsigned DMG — fill exports in build-desktop.sh or sign-macos-release.env)"
+    return 0
+  fi
+
+  echo "  Apple signing: Developer ID + notarization enabled"
+}
+
+# Mac App Store: Apple Distribution + sandbox entitlements + .pkg (not Developer ID DMG).
+prepare_appstore_bundle_files() {
+  local tauri_src="${PROJECT_DIR}/apps/tauri/src-tauri"
+  local team_id="${APPLE_TEAM_ID:-}"
+  local template="${tauri_src}/Entitlements.appstore.plist.template"
+  local entitlements="${tauri_src}/Entitlements.appstore.plist"
+
+  if [ -z "$team_id" ] || [ "$team_id" = "…" ]; then
+    echo "error: MAC_APP_STORE=1 requires APPLE_TEAM_ID (scripts/sign-macos-appstore.env)" >&2
+    exit 1
+  fi
+  if [ ! -f "$template" ]; then
+    echo "error: missing ${template}" >&2
+    exit 1
+  fi
+  sed "s/__APPLE_TEAM_ID__/${team_id}/g" "$template" > "$entitlements"
+  echo "  ✓ Generated Entitlements.appstore.plist (team ${team_id})"
+
+  local profile_src="${MAC_APPSTORE_PROVISION_PROFILE:-}"
+  local profile_dest="${tauri_src}/EnvoyMesh_AppStore.provisionprofile"
+  if [ -n "$profile_src" ] && [ "$profile_src" != "…" ] && [ -f "$profile_src" ]; then
+    cp -f "$profile_src" "$profile_dest"
+    echo "  ✓ Staged Mac App Store provisioning profile"
+  elif [ ! -f "$profile_dest" ]; then
+    echo "  ⚠ No provisioning profile — place EnvoyMesh_AppStore.provisionprofile in src-tauri/" >&2
+    echo "    or set MAC_APPSTORE_PROVISION_PROFILE in sign-macos-appstore.env" >&2
+  fi
+}
+
+apply_apple_appstore_signing_env() {
+  local sign_env="${SCRIPT_DIR}/sign-macos-appstore.env"
+  if [ -f "$sign_env" ]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "$sign_env"
+    set +a
+  fi
+
+  export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:-Apple Distribution: …}"
+  export MAC_APPSTORE_PKG_SIGNING_IDENTITY="${MAC_APPSTORE_PKG_SIGNING_IDENTITY:-3rd Party Mac Developer Installer: …}"
+  export APPLE_TEAM_ID="${APPLE_TEAM_ID:-…}"
+  export MAC_APPSTORE_PROVISION_PROFILE="${MAC_APPSTORE_PROVISION_PROFILE:-…}"
+
+  if [ "$APPLE_SIGNING_IDENTITY" = "Apple Distribution: …" ] || \
+     [ "$MAC_APPSTORE_PKG_SIGNING_IDENTITY" = "3rd Party Mac Developer Installer: …" ] || \
+     [ "$APPLE_TEAM_ID" = "…" ]; then
+    echo "  ⚠ Mac App Store signing incomplete — fill scripts/sign-macos-appstore.env"
+    echo "    (build may produce an unsigned .app; .pkg packaging will be skipped)"
+    unset APPLE_SIGNING_IDENTITY
+    return 0
+  fi
+
+  prepare_appstore_bundle_files
+  echo "  Mac App Store signing: Apple Distribution enabled"
+}
+
+# Wrap productbuild around the newest EnvoyMesh.app (Mac App Store upload artifact).
+package_mac_appstore_pkg() {
+  local app pkg_out pkg_sign
+  app="$(newest_dir '*/release/bundle/macos/EnvoyMesh.app')"
+  if [ -z "$app" ]; then
+    echo "  ⚠ No EnvoyMesh.app found — cannot create .pkg" >&2
+    return 1
+  fi
+
+  pkg_out="${PROJECT_DIR}/${OUT_DIR}/envoymesh-desktop-appstore-${VERSION}.pkg"
+  mkdir -p "${PROJECT_DIR}/${OUT_DIR}"
+  pkg_sign="${MAC_APPSTORE_PKG_SIGNING_IDENTITY:-}"
+
+  if [ -z "$pkg_sign" ] || [ "$pkg_sign" = "3rd Party Mac Developer Installer: …" ]; then
+    echo "  ⚠ Skipping signed .pkg — set MAC_APPSTORE_PKG_SIGNING_IDENTITY in sign-macos-appstore.env"
+    echo "  App bundle ready at: $app"
+    echo "$app"
+    return 0
+  fi
+
+  echo "  Packaging Mac App Store .pkg (productbuild)..."
+  rm -f "$pkg_out"
+  xcrun productbuild --sign "$pkg_sign" --component "$app" /Applications "$pkg_out"
+  echo "  ✓ ${OUT_DIR}/envoymesh-desktop-appstore-${VERSION}.pkg ($(du -h "$pkg_out" | awk '{print $1}'))"
+  echo "  Upload with Transporter or: xcrun altool --upload-app --type macos --file \"$pkg_out\" ..."
+  echo "$pkg_out"
+}
+
 # Copy the newest Tauri bundle artifacts (one per pattern) into ${PROJECT_DIR}/${OUT_DIR}/.
 publish_desktop_release() {
   local platform="$1"
@@ -383,6 +506,11 @@ bash scripts/stage-tauri-node-bundle.sh
 # Default: fail the build if push-config.json exists but secrets are missing.
 export REQUIRE_PUSH_CREDENTIALS="${REQUIRE_PUSH_CREDENTIALS:-1}"
 bash scripts/stage-tauri-push-credentials.sh
+# Apple review vs Mac App Store are mutually exclusive packaging modes.
+if [ "${APPLE_REVIEW:-0}" = "1" ] && [ "${MAC_APP_STORE:-0}" = "1" ]; then
+  echo "error: APPLE_REVIEW=1 and MAC_APP_STORE=1 are mutually exclusive" >&2
+  exit 1
+fi
 # Apple review build (opt-in: APPLE_REVIEW=1 only — not the default release).
 # macOS/Linux via build-desktop.sh; not supported on Windows.
 if [ "${APPLE_REVIEW:-0}" = "1" ]; then
@@ -465,6 +593,26 @@ run_tauri_build() {
       npm install -w @envoymesh/tauri
     fi
     cd "${PROJECT_DIR}/apps/tauri"
+
+    local tauri_inv
+    if command -v cargo-tauri &> /dev/null; then
+      tauri_inv=(cargo tauri build)
+    else
+      tauri_inv=(npx tauri build)
+    fi
+
+    # Mac App Store: sandbox + .app only (overrides slim/full/DMG).
+    if [ "${MAC_APP_STORE:-0}" = "1" ]; then
+      local appstore_conf="src-tauri/tauri.conf.appstore.json"
+      if [ ! -f "${appstore_conf}" ]; then
+        echo "error: app store config missing at apps/tauri/${appstore_conf}" >&2
+        exit 1
+      fi
+      echo "  Using Mac App Store config: ${appstore_conf} (--bundles app, sandbox)"
+      "${tauri_inv[@]}" --config "${appstore_conf}" --bundles app "$@"
+      return $?
+    fi
+
     # Config selection (mirrors build-desktop.ps1 -SkipPi / -Full):
     #   SKIP_PI=1     → tauri.conf.slim.json
     #   USE_FULL=1    → tauri.conf.full.json (Kubo + Pi)
@@ -476,11 +624,7 @@ run_tauri_build() {
         exit 1
       fi
       echo "  Using slim config: ${slim_conf} (Pi omitted)"
-      if command -v cargo-tauri &> /dev/null; then
-        cargo tauri build --config "${slim_conf}" "$@"
-      else
-        npx tauri build --config "${slim_conf}" "$@"
-      fi
+      "${tauri_inv[@]}" --config "${slim_conf}" "$@"
     elif [ "${USE_FULL:-0}" = "1" ]; then
       local full_conf="src-tauri/tauri.conf.full.json"
       if [ ! -f "${full_conf}" ]; then
@@ -488,18 +632,10 @@ run_tauri_build() {
         exit 1
       fi
       echo "  Using full config: ${full_conf} (Pi + Kubo)"
-      if command -v cargo-tauri &> /dev/null; then
-        cargo tauri build --config "${full_conf}" "$@"
-      else
-        npx tauri build --config "${full_conf}" "$@"
-      fi
+      "${tauri_inv[@]}" --config "${full_conf}" "$@"
     else
       echo "  Using default config: tauri.conf.json (Pi + OpenClaw; no Kubo)"
-      if command -v cargo-tauri &> /dev/null; then
-        cargo tauri build "$@"
-      else
-        npx tauri build "$@"
-      fi
+      "${tauri_inv[@]}" "$@"
     fi
 }
 
@@ -521,25 +657,43 @@ fi
 
 case "${TARGET}" in
     macos)
-        echo "  Building for macOS..."
-        install_tauri_cli
-        if run_tauri_build --target universal-apple-darwin 2>&1; then
-            :
-        elif run_tauri_build --target aarch64-apple-darwin 2>&1; then
-            :
-        elif run_tauri_build --target x86_64-apple-darwin 2>&1; then
-            :
+        if [ "${MAC_APP_STORE:-0}" = "1" ]; then
+          echo "  Building for Mac App Store (experimental)..."
+          apply_apple_appstore_signing_env
+          install_tauri_cli
+          if run_tauri_build --target universal-apple-darwin 2>&1; then
+              :
+          elif run_tauri_build --target aarch64-apple-darwin 2>&1; then
+              :
+          else
+              echo "error: Mac App Store Tauri build failed" >&2
+              exit 1
+          fi
+          echo ""
+          echo "[4.5/6] Packaging Mac App Store .pkg..."
+          PUBLISHED="$(package_mac_appstore_pkg)" || true
         else
-            echo "error: Tauri macOS build failed. Install Xcode CLT: xcode-select --install" >&2
-            echo "  Also ensure rustup targets: rustup target add aarch64-apple-darwin x86_64-apple-darwin" >&2
-            exit 1
+          echo "  Building for macOS (direct download DMG)..."
+          apply_apple_signing_env
+          install_tauri_cli
+          if run_tauri_build --target universal-apple-darwin 2>&1; then
+              :
+          elif run_tauri_build --target aarch64-apple-darwin 2>&1; then
+              :
+          elif run_tauri_build --target x86_64-apple-darwin 2>&1; then
+              :
+          else
+              echo "error: Tauri macOS build failed. Install Xcode CLT: xcode-select --install" >&2
+              echo "  Also ensure rustup targets: rustup target add aarch64-apple-darwin x86_64-apple-darwin" >&2
+              exit 1
+          fi
+          echo ""
+          echo "[4.5/6] Recompressing DMG (default UDBZ — smaller download)..."
+          recompress_dmg || true
+          echo ""
+          echo "[5/6] Publishing macOS artifacts to ${OUT_DIR}/..."
+          PUBLISHED="$(publish_desktop_release macos '*/release/bundle/dmg/*.dmg')" || true
         fi
-        echo ""
-        echo "[4.5/6] Recompressing DMG (default UDBZ — smaller download)..."
-        recompress_dmg || true
-        echo ""
-        echo "[5/6] Publishing macOS artifacts to ${OUT_DIR}/..."
-        PUBLISHED="$(publish_desktop_release macos '*/release/bundle/dmg/*.dmg')" || true
         ;;
     linux)
         echo "  Building for Linux..."
@@ -570,6 +724,8 @@ echo ""
 if [ -n "$PUBLISHED" ]; then
   echo "  Folder:  $PUBLISHED"
   ls -lh "${PROJECT_DIR}/${OUT_DIR}"/envoymesh-desktop-"${VERSION}"-* 2>/dev/null || true
+  ls -lh "${PROJECT_DIR}/${OUT_DIR}"/envoymesh-desktop-appstore-"${VERSION}".pkg 2>/dev/null || true
+  ls -lh "${PROJECT_DIR}/${OUT_DIR}"/envoymesh-desktop.dmg 2>/dev/null || true
 else
   echo "  (no artifacts published — check Tauri build logs above)"
 fi

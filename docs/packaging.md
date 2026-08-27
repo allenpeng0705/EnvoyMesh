@@ -40,6 +40,8 @@ npm run tauri:dev          # Development (native window)
 STAGE_PI_BUNDLE=0 ./scripts/build-desktop.sh macos
 ```
 
+**Signed mirror DMG (Gatekeeper / gpt4people.online):** fill `scripts/sign-macos-release.env`, then the same `./scripts/build-desktop.sh macos` — see [macos-mirror-signing.md](./macos-mirror-signing.md). Do not use `MAC_APP_STORE=1` for the website download.
+
 Or step-by-step without the orchestrator:
 ```bash
 npm run social:build

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.application-identifier</key>
+	<string>__APPLE_TEAM_ID__.dev.envoymesh.desktop</string>
+	<key>com.apple.developer.team-identifier</key>
+	<string>__APPLE_TEAM_ID__</string>
+	<!-- Tauri WebView -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<!-- Mesh / home node (may need review justification) -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<key>com.apple.security.network.server</key>
+	<true/>
+	<!-- Pi folder picker -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<!-- Spawn bundled Node sidecar -->
+	<key>com.apple.security.inherit</key>
+	<true/>
+</dict>
+</plist>
