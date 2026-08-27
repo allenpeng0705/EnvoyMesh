@@ -3175,6 +3175,10 @@ export async function _runChainGoal(
     criticality?: "normal" | "high";
     /** Phase 60C — Team strategy for this job. */
     teamStrategyId?: import("@envoymesh/api").ChainTeamStrategyId;
+    /** Phase 63 — speculation overrides for this job. */
+    speculationEnabled?: boolean;
+    speculationOnDisagreement?: "auto" | "block";
+    maxParallelAttemptsPerStep?: number;
   },
 ): Promise<{
   ok: boolean;
@@ -3273,6 +3277,20 @@ export async function _runChainGoal(
       autoRebalanceIncrementUsd: nodeDefaults.autoRebalanceIncrementUsd ?? 5,
       criticality: input.criticality,
       teamStrategyId,
+      ...(input.speculationEnabled === true ||
+      nodeDefaults.speculationEnabled === true
+        ? {
+            speculationEnabled: true,
+            speculationOnDisagreement:
+              input.speculationOnDisagreement ??
+              nodeDefaults.speculationOnDisagreement ??
+              "auto",
+            maxParallelAttemptsPerStep:
+              input.maxParallelAttemptsPerStep ??
+              nodeDefaults.maxParallelAttemptsPerStep ??
+              2,
+          }
+        : {}),
     },
     ownerPrivateKeyPem,
   );

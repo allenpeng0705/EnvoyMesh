@@ -2054,6 +2054,16 @@ class NodeServiceClient {
     return const {};
   }
 
+  /// Persist node defaults for new team jobs (mirrors Social ChainDefaultsPanel).
+  Future<Map<String, dynamic>> chainSetDefaults(
+    Map<String, dynamic> defaults,
+  ) async {
+    return await _client.call('chainSetDefaults', {
+          'defaults': defaults,
+        })
+        as Map<String, dynamic>;
+  }
+
   /// Preview a plan for [goal] without launching (LLM may take a while).
   Future<Map<String, dynamic>> chainPreviewGoal({
     required String goal,
@@ -2085,6 +2095,10 @@ class NodeServiceClient {
     String? assignmentMode,
     String? teamStrategyId,
     String? assignerSelection,
+    String? assignerPeerId,
+    bool? speculationEnabled,
+    String? speculationOnDisagreement,
+    int? maxParallelAttemptsPerStep,
     bool allowLlm = true,
     List<Map<String, dynamic>>? plannedSubtasks,
     List<Map<String, dynamic>>? planWarnings,
@@ -2103,6 +2117,14 @@ class NodeServiceClient {
             'teamStrategyId': teamStrategyId,
           if (assignerSelection != null && assignerSelection.isNotEmpty)
             'assignerSelection': assignerSelection,
+          if (assignerPeerId != null && assignerPeerId.isNotEmpty)
+            'assignerPeerId': assignerPeerId,
+          if (speculationEnabled == true) 'speculationEnabled': true,
+          if (speculationOnDisagreement != null &&
+              speculationOnDisagreement.isNotEmpty)
+            'speculationOnDisagreement': speculationOnDisagreement,
+          if (maxParallelAttemptsPerStep != null)
+            'maxParallelAttemptsPerStep': maxParallelAttemptsPerStep,
           if (plannedSubtasks != null) 'plannedSubtasks': plannedSubtasks,
           if (planWarnings != null) 'planWarnings': planWarnings,
           if (preferredWorkerPeerIds != null &&

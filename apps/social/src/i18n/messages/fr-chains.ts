@@ -84,6 +84,18 @@ export const frChainsMessages = {
     loadFailed: "Impossible de charger l'état de la chaîne.",
     finalized: "Cette chaîne est terminée — voir le rapport.",
     cancelled: "Cette chaîne a été annulée.",
+    recovering: "Récupération après redémarrage — confirmation de la progression des travailleurs avant de continuer",
+    recoveringHonesty:
+      "Les travailleurs ne sont pas réattribués pendant la récupération. Les finals tardifs sont conservés ; les doublons sont ignorés.",
+    speculationReviewTitle: "Les résultats ne correspondent pas",
+    speculationReviewDisagree:
+      "Deux membres de l'équipe ont terminé cette étape avec des résultats différents. Choisissez-en un pour continuer, ou réassignez l'étape.",
+    speculationReviewNonePass:
+      "Aucun résultat n'a passé la vérification pour cette étape. Choisissez la meilleure tentative ou réassignez.",
+    speculationReviewPick: "Utiliser ce résultat",
+    speculationReviewReassign: "Réassigner l'étape",
+    speculationReviewResolved: "Sélection enregistrée — la mission continue.",
+    speculationReviewFailed: "Impossible de résoudre cette étape",
     directAssignHint:
       "L'attribution directe est active — les travailleurs reçoivent l'étape dès qu'ils confirment être prêts (pas d'enchère de coût). Activez les enchères compétitives dans les valeurs par défaut uniquement si vous voulez un classement par coût.",
     observedHint:
@@ -211,6 +223,20 @@ export const frChainsMessages = {
       engineerBriefGoal:
         "Rédiger un brief court (≤600 mots) pour des ingénieurs logiciels sur {topic}. Commencer par un TL;DR en 5 puces. Au plus 3 métaphores ; pour chacune : Analogie / Où ça casse / Quand s'arrêter. Préférer protocole, consensus, aléas partagés ou capacités — pas CQRS/OAuth/IAM. Aucune affirmation FTL ou de signalisation. Conclure quand les métaphores aident vs quand les maths doivent prendre le relais.",
     },
+    jobSettingsTitle: "Paramètres de la mission",
+    assignerLabel: "Orchestrer sur",
+    assignerThisNode: "Ce nœud",
+    assignerHint:
+      "Par défaut : ce nœud. Choisissez un pair lié ayant rejoint le réseau d'agents pour y exécuter l'assignateur (Avancé).",
+    assignerAutoLabel: "Choisir l'assignateur le plus capable",
+    assignerAutoHint:
+      "Si activé, le pair lié éligible le plus capable orchestre la planification, l'attribution et la fusion finale (désactivé par défaut). Vous pouvez toujours choisir manuellement ci-dessous.",
+    suggestedAssigner: "Assignateur suggéré",
+    iterationPreviewHint: "Note multi-tours",
+    iterationPreviewOwner:
+      "Mission multi-tours : on peut vous demander de continuer ou d'arrêter après chaque brouillon.",
+    iterationPreviewAuto:
+      "Mission multi-tours : l'assignateur peut affiner le rapport sur plusieurs tours.",
   },
   recipes: {
     save: "Enregistrer comme recette",

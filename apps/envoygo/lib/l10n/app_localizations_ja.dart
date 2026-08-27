@@ -2396,28 +2396,104 @@ class AppLocalizationsJa extends AppLocalizations {
   String get chainsTestNetworkFailed => 'Could not run diagnostics';
 
   @override
-  String get chainsSpeculationReviewTitle => 'スペキュレーションの確認が必要';
+  String get chainsSpeculationReviewTitle => '結果が一致しません';
 
   @override
   String get chainsSpeculationReviewBody =>
-      '2 つのワーカーが 1 ステップで異なる結果を返しました。ジョブを進めるために勝者を選ぶか、オーケストレーターに自動選択させることができます。';
+      '2 人のチームメンバーがこのステップで異なる結果を出しました。下で結果を選ぶか、ステップを再割当するか、自動で続けてください。';
 
   @override
   String get chainsSpeculationReviewNonePass =>
-      '両方のワーカーが検証に失敗しました — オーケストレーターがこのステップを再割り当てします。';
+      'どちらの結果も確認に通りませんでした。最良の試行を選ぶか、ステップを再割当するか、自動で続けてください。';
 
   @override
   String get chainsSpeculationReviewDisagree =>
-      '2 つのワーカーが一致しません。オーケストレーターがより低コストの検証済みを選ぶか、ユーザーが選ぶか再割り当てできます。';
+      '2 つの結果が一致しません。結果を選ぶか、ステップを再割当するか、自動で続けてください。';
 
   @override
-  String get chainsSpeculationReviewAutoResolve => '自動的に解決';
+  String get chainsSpeculationReviewPick => 'この結果を使う';
 
   @override
-  String get chainsSpeculationReviewResolved => 'オーケストレーターが解決しました';
+  String get chainsSpeculationReviewReassign => 'ステップを再割当';
 
   @override
-  String get chainsSpeculationReviewFailed => '自動解決に失敗しました';
+  String get chainsSpeculationReviewAutoResolve => '自動で続ける';
+
+  @override
+  String get chainsSpeculationReviewResolved => '選択を保存しました — ジョブを続けます。';
+
+  @override
+  String get chainsSpeculationReviewFailed => 'このステップを解決できませんでした';
+
+  @override
+  String get chainsSpeculationRolePrimary => 'プライマリ';
+
+  @override
+  String get chainsSpeculationRoleSpeculative => 'バックアップ実行';
+
+  @override
+  String get chainsSpeculationRoleReplacement => '差し替え';
+
+  @override
+  String get chainsStepStatePending => '保留';
+
+  @override
+  String get chainsStepStateOffered => 'オファー済み';
+
+  @override
+  String get chainsStepStateAwarded => '割当済み';
+
+  @override
+  String get chainsStepStateRunning => '実行中';
+
+  @override
+  String get chainsStepStateDone => '完了';
+
+  @override
+  String get chainsStepStateFailed => '失敗';
+
+  @override
+  String get chainsStepStateCancelled => 'キャンセル';
+
+  @override
+  String get chainsWorkerEngineFailed =>
+      'ワーカーの AI エンジンがこのステップを完了できませんでした。しばらくしてから再試行してください。';
+
+  @override
+  String get chainsReassignUnavailable => 'このホームノードでは再割当できません';
+
+  @override
+  String get chainsAssignerAutoLabel => '最も能力の高い Assigner を選ぶ';
+
+  @override
+  String get chainsAssignerAutoHint =>
+      'オンにすると、ホームノードが最も強いボンド済みピアを選び、このジョブを計画・管理します。';
+
+  @override
+  String get chainsSuggestedAssigner => '推奨 Assigner';
+
+  @override
+  String get chainsAssignerPeerLabel => 'Assigner';
+
+  @override
+  String get chainsAssignerPeerThisNode => 'このホーム（既定）';
+
+  @override
+  String get chainsAssignerPeerHint =>
+      '任意 — このホームではなく、ボンド済みピアで Assigner を実行します。';
+
+  @override
+  String get chainsIterationPreviewOwner => '複数ラウンド — 公開前に各ドラフトを確認します。';
+
+  @override
+  String get chainsIterationPreviewAuto => '複数ラウンド — Assigner が停止タイミングを決めます。';
+
+  @override
+  String get chainsSpeculationDualWorkersLabel => '重要ステップで 2 ワーカー実行';
+
+  @override
+  String get chainsSpeculationDualWorkersHint =>
+      '2 ワーカーの結果が異なる場合、ホームが自動選択するか、先にあなたに確認します（ホームの既定設定を参照）。';
 
   @override
   String get chainsStartReadinessTitle => 'ワーカーを準備する';

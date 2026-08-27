@@ -407,6 +407,11 @@ export const ko = mergeMessages(en, {
     saving: "저장 중…",
     saved: "저장됨",
     saveFailed: "저장 실패",
+    assignerSelection: "배정자 선택",
+    assignerSelectionLocal: "이 노드(기본)",
+    assignerSelectionBestCapable: "가장 유능한 피어",
+    assignerSelectionHint:
+      "생성자가 작업을 시작하고, 배정자가 계획·배정·병합을 수행합니다. 더 강한 모델이 있는 연결된 피어가 없다면 「이 노드」를 유지하세요.",
   },
   discover: {
     title: "사람 찾기",

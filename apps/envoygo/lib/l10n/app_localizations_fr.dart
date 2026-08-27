@@ -2492,29 +2492,112 @@ class AppLocalizationsFr extends AppLocalizations {
   String get chainsTestNetworkFailed => 'Could not run diagnostics';
 
   @override
-  String get chainsSpeculationReviewTitle => 'Spéculation à examiner';
+  String get chainsSpeculationReviewTitle =>
+      'Les résultats ne correspondent pas';
 
   @override
   String get chainsSpeculationReviewBody =>
-      'Deux workers ont renvoyé des résultats différents pour une étape. Choisissez un gagnant pour faire avancer le job, ou laissez l’orchestrateur choisir automatiquement.';
+      'Deux membres de l\'équipe ont terminé cette étape avec des résultats différents. Choisissez un résultat ci-dessous, réassignez l\'étape ou continuez automatiquement.';
 
   @override
   String get chainsSpeculationReviewNonePass =>
-      'Les deux workers ont échoué à la vérification — l’orchestrateur va réassigner cette étape.';
+      'Aucun résultat n\'a passé les contrôles. Choisissez la meilleure tentative, réassignez l\'étape ou continuez automatiquement.';
 
   @override
   String get chainsSpeculationReviewDisagree =>
-      'Les deux workers ne sont pas d’accord. L’orchestrateur peut choisir le moins cher validé, ou vous pouvez choisir ou réassigner.';
+      'Les deux résultats ne correspondent pas. Choisissez un résultat, réassignez l\'étape ou continuez automatiquement.';
 
   @override
-  String get chainsSpeculationReviewAutoResolve => 'Résoudre automatiquement';
+  String get chainsSpeculationReviewPick => 'Utiliser ce résultat';
 
   @override
-  String get chainsSpeculationReviewResolved => 'Résolu par l’orchestrateur';
+  String get chainsSpeculationReviewReassign => 'Réassigner l\'étape';
+
+  @override
+  String get chainsSpeculationReviewAutoResolve => 'Continuer automatiquement';
+
+  @override
+  String get chainsSpeculationReviewResolved =>
+      'Sélection enregistrée — la mission continue.';
 
   @override
   String get chainsSpeculationReviewFailed =>
-      'Résolution automatique impossible';
+      'Impossible de résoudre cette étape';
+
+  @override
+  String get chainsSpeculationRolePrimary => 'Principal';
+
+  @override
+  String get chainsSpeculationRoleSpeculative => 'Exécution de secours';
+
+  @override
+  String get chainsSpeculationRoleReplacement => 'Remplacement';
+
+  @override
+  String get chainsStepStatePending => 'En attente';
+
+  @override
+  String get chainsStepStateOffered => 'Proposé';
+
+  @override
+  String get chainsStepStateAwarded => 'Assigné';
+
+  @override
+  String get chainsStepStateRunning => 'En cours';
+
+  @override
+  String get chainsStepStateDone => 'Terminé';
+
+  @override
+  String get chainsStepStateFailed => 'Échec';
+
+  @override
+  String get chainsStepStateCancelled => 'Annulé';
+
+  @override
+  String get chainsWorkerEngineFailed =>
+      'Le moteur IA d\'un worker n\'a pas pu terminer cette étape. Réessayez bientôt.';
+
+  @override
+  String get chainsReassignUnavailable =>
+      'La réassignation n\'est pas disponible sur ce nœud domicile';
+
+  @override
+  String get chainsAssignerAutoLabel =>
+      'Choisir l\'assignateur le plus capable';
+
+  @override
+  String get chainsAssignerAutoHint =>
+      'Si activé, le nœud domicile choisit le pair lié le plus fort pour planifier et gérer ce job.';
+
+  @override
+  String get chainsSuggestedAssigner => 'Assignateur suggéré';
+
+  @override
+  String get chainsAssignerPeerLabel => 'Assignateur';
+
+  @override
+  String get chainsAssignerPeerThisNode => 'Ce nœud domicile (par défaut)';
+
+  @override
+  String get chainsAssignerPeerHint =>
+      'Optionnel — exécuter l\'assignateur sur un pair lié plutôt que sur ce nœud domicile.';
+
+  @override
+  String get chainsIterationPreviewOwner =>
+      'Plusieurs tours — vous relisez chaque brouillon avant publication.';
+
+  @override
+  String get chainsIterationPreviewAuto =>
+      'Plusieurs tours — l\'assignateur décide quand s\'arrêter.';
+
+  @override
+  String get chainsSpeculationDualWorkersLabel =>
+      'Deux workers sur les étapes critiques';
+
+  @override
+  String get chainsSpeculationDualWorkersHint =>
+      'Si les deux workers divergent, le nœud domicile peut choisir automatiquement ou vous demander d\'abord (voir les défauts du domicile).';
 
   @override
   String get chainsStartReadinessTitle => 'Préparer les workers';

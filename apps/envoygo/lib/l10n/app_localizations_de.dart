@@ -2489,29 +2489,110 @@ class AppLocalizationsDe extends AppLocalizations {
   String get chainsTestNetworkFailed => 'Could not run diagnostics';
 
   @override
-  String get chainsSpeculationReviewTitle => 'Spekulation erfordert Prüfung';
+  String get chainsSpeculationReviewTitle => 'Ergebnisse stimmen nicht überein';
 
   @override
   String get chainsSpeculationReviewBody =>
-      'Zwei Worker haben für einen Schritt unterschiedliche Ergebnisse geliefert. Wähle einen Gewinner, um den Job weiterzuführen, oder lass den Orchestrator automatisch wählen.';
+      'Zwei Teammitglieder haben diesen Schritt mit unterschiedlichen Ergebnissen beendet. Wählen Sie unten ein Ergebnis, weisen Sie den Schritt neu zu oder fahren Sie automatisch fort.';
 
   @override
   String get chainsSpeculationReviewNonePass =>
-      'Beide Worker haben die Prüfung nicht bestanden — der Orchestrator weist diesen Schritt neu zu.';
+      'Kein Ergebnis hat die Prüfung bestanden. Wählen Sie den besten Versuch, weisen Sie den Schritt neu zu oder fahren Sie automatisch fort.';
 
   @override
   String get chainsSpeculationReviewDisagree =>
-      'Die beiden Worker sind sich nicht einig. Der Orchestrator kann den günstigeren geprüften auswählen, oder du kannst wählen oder neu zuweisen.';
+      'Die beiden Ergebnisse passen nicht zusammen. Wählen Sie ein Ergebnis, weisen Sie den Schritt neu zu oder fahren Sie automatisch fort.';
 
   @override
-  String get chainsSpeculationReviewAutoResolve => 'Automatisch auflösen';
+  String get chainsSpeculationReviewPick => 'Dieses Ergebnis verwenden';
 
   @override
-  String get chainsSpeculationReviewResolved => 'Vom Orchestrator aufgelöst';
+  String get chainsSpeculationReviewReassign => 'Schritt neu zuweisen';
+
+  @override
+  String get chainsSpeculationReviewAutoResolve => 'Automatisch fortfahren';
+
+  @override
+  String get chainsSpeculationReviewResolved =>
+      'Auswahl gespeichert — die Aufgabe läuft weiter.';
 
   @override
   String get chainsSpeculationReviewFailed =>
-      'Automatische Auflösung fehlgeschlagen';
+      'Dieser Schritt konnte nicht gelöst werden';
+
+  @override
+  String get chainsSpeculationRolePrimary => 'Primär';
+
+  @override
+  String get chainsSpeculationRoleSpeculative => 'Ersatzlauf';
+
+  @override
+  String get chainsSpeculationRoleReplacement => 'Ersatz';
+
+  @override
+  String get chainsStepStatePending => 'Ausstehend';
+
+  @override
+  String get chainsStepStateOffered => 'Angeboten';
+
+  @override
+  String get chainsStepStateAwarded => 'Zugewiesen';
+
+  @override
+  String get chainsStepStateRunning => 'Läuft';
+
+  @override
+  String get chainsStepStateDone => 'Fertig';
+
+  @override
+  String get chainsStepStateFailed => 'Fehlgeschlagen';
+
+  @override
+  String get chainsStepStateCancelled => 'Abgebrochen';
+
+  @override
+  String get chainsWorkerEngineFailed =>
+      'Die KI-Engine eines Workers konnte diesen Schritt nicht abschließen. Bitte später erneut versuchen.';
+
+  @override
+  String get chainsReassignUnavailable =>
+      'Neu zuweisen ist auf diesem Heimknoten nicht verfügbar';
+
+  @override
+  String get chainsAssignerAutoLabel => 'Leistungsstärksten Assigner wählen';
+
+  @override
+  String get chainsAssignerAutoHint =>
+      'Wenn aktiv, wählt der Heimknoten den stärksten verbundenen Partner zum Planen und Steuern dieser Aufgabe.';
+
+  @override
+  String get chainsSuggestedAssigner => 'Vorgeschlagener Assigner';
+
+  @override
+  String get chainsAssignerPeerLabel => 'Assigner';
+
+  @override
+  String get chainsAssignerPeerThisNode => 'Dieser Heimknoten (Standard)';
+
+  @override
+  String get chainsAssignerPeerHint =>
+      'Optional — Assigner auf einem verbundenen Partner statt auf diesem Heimknoten ausführen.';
+
+  @override
+  String get chainsIterationPreviewOwner =>
+      'Mehrere Runden — Sie prüfen jeden Entwurf vor der Veröffentlichung.';
+
+  @override
+  String get chainsIterationPreviewAuto =>
+      'Mehrere Runden — der Assigner entscheidet, wann gestoppt wird.';
+
+  @override
+  String get chainsSpeculationDualWorkersLabel =>
+      'Zwei Worker auf kritischen Schritten';
+
+  @override
+  String get chainsSpeculationDualWorkersHint =>
+      'Bei unterschiedlichen Ergebnissen kann der Heimknoten automatisch wählen oder Sie zuerst fragen (siehe Heim-Standardeinstellungen).';
 
   @override
   String get chainsStartReadinessTitle => 'Worker bereitmachen';

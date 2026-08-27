@@ -2489,29 +2489,110 @@ class AppLocalizationsIt extends AppLocalizations {
   String get chainsTestNetworkFailed => 'Could not run diagnostics';
 
   @override
-  String get chainsSpeculationReviewTitle => 'Speculazione da esaminare';
+  String get chainsSpeculationReviewTitle => 'I risultati non coincidono';
 
   @override
   String get chainsSpeculationReviewBody =>
-      'Due worker hanno restituito risultati diversi per un passaggio. Scegli un vincitore per far avanzare il job, o lascia scegliere automaticamente all’orchestratore.';
+      'Due membri del team hanno completato questo passaggio con risultati diversi. Scegli un risultato qui sotto, riassegna il passaggio o continua automaticamente.';
 
   @override
   String get chainsSpeculationReviewNonePass =>
-      'Entrambi i worker hanno fallito la verifica — l’orchestratore riassegnerà questo passaggio.';
+      'Nessun risultato ha superato i controlli. Scegli il tentativo migliore, riassegna il passaggio o continua automaticamente.';
 
   @override
   String get chainsSpeculationReviewDisagree =>
-      'I due worker non sono d’accordo. L’orchestratore può scegliere quello verificato più economico, oppure puoi scegliere o riassegnare.';
+      'I due risultati non corrispondono. Scegli un risultato, riassegna il passaggio o continua automaticamente.';
 
   @override
-  String get chainsSpeculationReviewAutoResolve => 'Risolvi automaticamente';
+  String get chainsSpeculationReviewPick => 'Usa questo risultato';
 
   @override
-  String get chainsSpeculationReviewResolved => 'Risolto dall’orchestratore';
+  String get chainsSpeculationReviewReassign => 'Riassegna passaggio';
+
+  @override
+  String get chainsSpeculationReviewAutoResolve => 'Continua automaticamente';
+
+  @override
+  String get chainsSpeculationReviewResolved =>
+      'Scelta salvata — il lavoro continua.';
 
   @override
   String get chainsSpeculationReviewFailed =>
-      'Risoluzione automatica non riuscita';
+      'Impossibile risolvere questo passaggio';
+
+  @override
+  String get chainsSpeculationRolePrimary => 'Primario';
+
+  @override
+  String get chainsSpeculationRoleSpeculative => 'Esecuzione di backup';
+
+  @override
+  String get chainsSpeculationRoleReplacement => 'Sostituto';
+
+  @override
+  String get chainsStepStatePending => 'In attesa';
+
+  @override
+  String get chainsStepStateOffered => 'Offerto';
+
+  @override
+  String get chainsStepStateAwarded => 'Assegnato';
+
+  @override
+  String get chainsStepStateRunning => 'In esecuzione';
+
+  @override
+  String get chainsStepStateDone => 'Completato';
+
+  @override
+  String get chainsStepStateFailed => 'Non riuscito';
+
+  @override
+  String get chainsStepStateCancelled => 'Annullato';
+
+  @override
+  String get chainsWorkerEngineFailed =>
+      'Il motore IA di un worker non ha completato questo passaggio. Riprova tra poco.';
+
+  @override
+  String get chainsReassignUnavailable =>
+      'La riassegnazione non è disponibile su questo nodo di casa';
+
+  @override
+  String get chainsAssignerAutoLabel => 'Scegli l\'assigner più capace';
+
+  @override
+  String get chainsAssignerAutoHint =>
+      'Se attivo, il nodo di casa sceglie il peer collegato più forte per pianificare e gestire questo lavoro.';
+
+  @override
+  String get chainsSuggestedAssigner => 'Assigner suggerito';
+
+  @override
+  String get chainsAssignerPeerLabel => 'Assigner';
+
+  @override
+  String get chainsAssignerPeerThisNode => 'Questo nodo di casa (predefinito)';
+
+  @override
+  String get chainsAssignerPeerHint =>
+      'Opzionale — esegui l\'assigner su un peer collegato invece che su questo nodo di casa.';
+
+  @override
+  String get chainsIterationPreviewOwner =>
+      'Più round — rivedi ogni bozza prima della pubblicazione.';
+
+  @override
+  String get chainsIterationPreviewAuto =>
+      'Più round — l\'assigner decide quando fermarsi.';
+
+  @override
+  String get chainsSpeculationDualWorkersLabel =>
+      'Due worker sui passaggi critici';
+
+  @override
+  String get chainsSpeculationDualWorkersHint =>
+      'Se i due worker non concordano, il nodo di casa può scegliere automaticamente o chiedere prima a te (vedi impostazioni predefinite del nodo).';
 
   @override
   String get chainsStartReadinessTitle => 'Prepara i worker';

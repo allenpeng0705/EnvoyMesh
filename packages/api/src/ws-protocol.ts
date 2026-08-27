@@ -1352,6 +1352,12 @@ export interface ChainDefaultsConfig {
    * Explicit `assignerPeerId` on start always wins over this default.
    */
   assignerSelection?: import("./chain-assigner-capability.js").AssignerSelectionMode;
+  /** Phase 63 — run a speculative sibling worker on eligible critical steps. */
+  speculationEnabled?: boolean;
+  /** Phase 63 — `auto` resolves disagreements on the wire; `block` waits for owner. */
+  speculationOnDisagreement?: "auto" | "block";
+  /** Phase 63 — cap parallel finals per step (1 or 2). */
+  maxParallelAttemptsPerStep?: number;
 }
 
 export type DiscoveryProfile = "lan-fast" | "wan-default" | "relay-only" | "contacts-only";
@@ -2700,6 +2706,12 @@ export interface ChainStartFromGoalParams {
   criticality?: "normal" | "high";
   /** Phase 60C — Team strategy for this job (defaults to node/balanced). */
   teamStrategyId?: import("./chain-team-strategy.js").ChainTeamStrategyId;
+  /** Phase 63 — enable speculative dual-award for this job. */
+  speculationEnabled?: boolean;
+  /** Phase 63 — override disagreement policy for this job. */
+  speculationOnDisagreement?: "auto" | "block";
+  /** Phase 63 — override parallel finals cap (1 or 2). */
+  maxParallelAttemptsPerStep?: number;
 }
 
 export interface ChainResolveIterationParams {

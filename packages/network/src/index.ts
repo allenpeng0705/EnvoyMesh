@@ -1073,12 +1073,7 @@ export class EnvoyMesh {
     // noise (e.g. relay-disabled tests, browser mode).
     const relayEnabled =
       this.options.enableRelay ||
-      this.options.enableRelayServer ||
-      // browserMode defaults to true when listen addrs is empty; we
-      // can't read it here directly, but the absence of `node` is a
-      // safe proxy. The presence of relay:reservation handlers is the
-      // real signal.
-      this.relayLoggingHandlers !== undefined;
+      this.options.enableRelayServer;
     if (relayEnabled && !this.relayEverReserved) {
       console.warn(
         `[p2p] stop(): node NEVER reserved a relay slot during this run. ` +

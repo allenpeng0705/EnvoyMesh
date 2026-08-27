@@ -4575,44 +4575,188 @@ abstract class AppLocalizations {
   /// No description provided for @chainsSpeculationReviewTitle.
   ///
   /// In en, this message translates to:
-  /// **'Speculation needs review'**
+  /// **'Results disagree'**
   String get chainsSpeculationReviewTitle;
 
   /// No description provided for @chainsSpeculationReviewBody.
   ///
   /// In en, this message translates to:
-  /// **'Two workers returned different results for one step. Pick a winner to keep the job moving, or let the orchestrator pick automatically.'**
+  /// **'Two team members finished this step with different results. Pick one result below, reassign the step, or continue automatically.'**
   String get chainsSpeculationReviewBody;
 
   /// No description provided for @chainsSpeculationReviewNonePass.
   ///
   /// In en, this message translates to:
-  /// **'Both workers failed verification — the orchestrator will reassign this step.'**
+  /// **'Neither result passed checks. Pick the best attempt, reassign the step, or continue automatically.'**
   String get chainsSpeculationReviewNonePass;
 
   /// No description provided for @chainsSpeculationReviewDisagree.
   ///
   /// In en, this message translates to:
-  /// **'The two workers disagree. The orchestrator can pick the cheaper verified one, or you can pick or reassign.'**
+  /// **'The two results do not match. Pick one result, reassign the step, or continue automatically.'**
   String get chainsSpeculationReviewDisagree;
+
+  /// No description provided for @chainsSpeculationReviewPick.
+  ///
+  /// In en, this message translates to:
+  /// **'Use this result'**
+  String get chainsSpeculationReviewPick;
+
+  /// No description provided for @chainsSpeculationReviewReassign.
+  ///
+  /// In en, this message translates to:
+  /// **'Reassign step'**
+  String get chainsSpeculationReviewReassign;
 
   /// No description provided for @chainsSpeculationReviewAutoResolve.
   ///
   /// In en, this message translates to:
-  /// **'Resolve automatically'**
+  /// **'Continue automatically'**
   String get chainsSpeculationReviewAutoResolve;
 
   /// No description provided for @chainsSpeculationReviewResolved.
   ///
   /// In en, this message translates to:
-  /// **'Resolved by the orchestrator'**
+  /// **'Selection saved — the job continues.'**
   String get chainsSpeculationReviewResolved;
 
   /// No description provided for @chainsSpeculationReviewFailed.
   ///
   /// In en, this message translates to:
-  /// **'Could not resolve automatically'**
+  /// **'Could not resolve this step'**
   String get chainsSpeculationReviewFailed;
+
+  /// No description provided for @chainsSpeculationRolePrimary.
+  ///
+  /// In en, this message translates to:
+  /// **'Primary'**
+  String get chainsSpeculationRolePrimary;
+
+  /// No description provided for @chainsSpeculationRoleSpeculative.
+  ///
+  /// In en, this message translates to:
+  /// **'Backup run'**
+  String get chainsSpeculationRoleSpeculative;
+
+  /// No description provided for @chainsSpeculationRoleReplacement.
+  ///
+  /// In en, this message translates to:
+  /// **'Replacement'**
+  String get chainsSpeculationRoleReplacement;
+
+  /// No description provided for @chainsStepStatePending.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending'**
+  String get chainsStepStatePending;
+
+  /// No description provided for @chainsStepStateOffered.
+  ///
+  /// In en, this message translates to:
+  /// **'Offered'**
+  String get chainsStepStateOffered;
+
+  /// No description provided for @chainsStepStateAwarded.
+  ///
+  /// In en, this message translates to:
+  /// **'Assigned'**
+  String get chainsStepStateAwarded;
+
+  /// No description provided for @chainsStepStateRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Running'**
+  String get chainsStepStateRunning;
+
+  /// No description provided for @chainsStepStateDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get chainsStepStateDone;
+
+  /// No description provided for @chainsStepStateFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get chainsStepStateFailed;
+
+  /// No description provided for @chainsStepStateCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get chainsStepStateCancelled;
+
+  /// No description provided for @chainsWorkerEngineFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'A worker’s AI engine could not finish this step. Try again shortly.'**
+  String get chainsWorkerEngineFailed;
+
+  /// No description provided for @chainsReassignUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Reassign is not available on this home node'**
+  String get chainsReassignUnavailable;
+
+  /// No description provided for @chainsAssignerAutoLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick best-capable Assigner'**
+  String get chainsAssignerAutoLabel;
+
+  /// No description provided for @chainsAssignerAutoHint.
+  ///
+  /// In en, this message translates to:
+  /// **'When on, the home chooses the strongest bonded peer to plan and manage this job.'**
+  String get chainsAssignerAutoHint;
+
+  /// No description provided for @chainsSuggestedAssigner.
+  ///
+  /// In en, this message translates to:
+  /// **'Suggested Assigner'**
+  String get chainsSuggestedAssigner;
+
+  /// No description provided for @chainsAssignerPeerLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Assigner'**
+  String get chainsAssignerPeerLabel;
+
+  /// No description provided for @chainsAssignerPeerThisNode.
+  ///
+  /// In en, this message translates to:
+  /// **'This home (default)'**
+  String get chainsAssignerPeerThisNode;
+
+  /// No description provided for @chainsAssignerPeerHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional — run Assigner on a bonded peer instead of this home.'**
+  String get chainsAssignerPeerHint;
+
+  /// No description provided for @chainsIterationPreviewOwner.
+  ///
+  /// In en, this message translates to:
+  /// **'Multi-round refinement — you will review each draft before publish.'**
+  String get chainsIterationPreviewOwner;
+
+  /// No description provided for @chainsIterationPreviewAuto.
+  ///
+  /// In en, this message translates to:
+  /// **'Multi-round refinement — the Assigner decides when to stop.'**
+  String get chainsIterationPreviewAuto;
+
+  /// No description provided for @chainsSpeculationDualWorkersLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Run two workers on critical steps'**
+  String get chainsSpeculationDualWorkersLabel;
+
+  /// No description provided for @chainsSpeculationDualWorkersHint.
+  ///
+  /// In en, this message translates to:
+  /// **'When two workers finish with different results, this home can pick automatically or ask you first (see home defaults).'**
+  String get chainsSpeculationDualWorkersHint;
 
   /// No description provided for @chainsStartReadinessTitle.
   ///

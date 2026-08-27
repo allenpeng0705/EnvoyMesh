@@ -84,6 +84,18 @@ export const koChainsMessages = {
     loadFailed: "체인 상태를 로드할 수 없습니다.",
     finalized: "이 체인은 완료되었습니다 — 보고서를 확인하세요.",
     cancelled: "이 체인은 취소되었습니다.",
+    recovering: "재시작 후 복구 중 — 계속하기 전에 워커 진행 상황을 확인합니다",
+    recoveringHonesty:
+      "복구 중에는 워커를 다시 배정하지 않습니다. 늦은 최종 결과는 유지하고 중복은 버립니다.",
+    speculationReviewTitle: "작업 결과가 일치하지 않음",
+    speculationReviewDisagree:
+      "두 팀원이 이 단계를 서로 다른 결과로 마쳤습니다. 계속하려면 하나를 고르거나 단계를 다시 배정하세요.",
+    speculationReviewNonePass:
+      "이 단계에서 검증을 통과한 결과가 없습니다. 최선의 시도를 고르거나 다시 배정하세요.",
+    speculationReviewPick: "이 결과 사용",
+    speculationReviewReassign: "단계 다시 배정",
+    speculationReviewResolved: "선택이 저장되었습니다 — 작업을 계속합니다.",
+    speculationReviewFailed: "이 단계를 처리할 수 없습니다",
     directAssignHint:
       "직접 할당이 켜져 있습니다 — 워커가 준비됨을 확인하면 바로 단계가 배정됩니다(비용 경매 없음). 비용 순위가 필요할 때만 팀 작업 기본값에서 경쟁 입찰을 켜세요.",
     observedHint:
@@ -211,6 +223,20 @@ export const koChainsMessages = {
       engineerBriefGoal:
         "소프트웨어 엔지니어를 위한 {topic} 짧은 브리프(≤600단어). 5개 TL;DR로 시작. 비유는 최대 3개; 각각 Analogy / Where it breaks / When to stop. CQRS/OAuth/IAM을 주 비유로 쓰지 말고 프로토콜·합의·공유 RNG·capability 언어를 선호. FTL/시그널링 주장 금지. 비유가 도움이 될 때와 수학이 필요할 때를 구분해 마무리.",
     },
+    jobSettingsTitle: "작업 설정",
+    assignerLabel: "오케스트레이션 위치",
+    assignerThisNode: "이 노드",
+    assignerHint:
+      "기본값은 이 노드입니다. Agent Network에 참여한 연결된 피어를 선택해 그곳에서 배정자를 실행할 수 있습니다(고급).",
+    assignerAutoLabel: "가장 유능한 배정자 선택",
+    assignerAutoHint:
+      "켜면 적합한 연결된 피어 중 가장 강한 모델이 계획·배정·최종 병합을 담당합니다(기본 꺼짐). 아래에서 수동으로도 지정할 수 있습니다.",
+    suggestedAssigner: "제안된 배정자",
+    iterationPreviewHint: "다중 라운드 안내",
+    iterationPreviewOwner:
+      "다중 라운드 작업: 각 초안 후 계속 또는 중지를 물어볼 수 있습니다.",
+    iterationPreviewAuto:
+      "다중 라운드 작업: 배정자가 여러 라운드에 걸쳐 보고서를 다듬을 수 있습니다.",
   },
   recipes: {
     save: "레시피로 저장",

@@ -635,6 +635,11 @@ knowledge: jaKnowledgeViewMessages,
     saving: "保存中…",
     saved: "保存しました",
     saveFailed: "保存に失敗しました",
+    assignerSelection: "アサイナー選択",
+    assignerSelectionLocal: "このノード（既定）",
+    assignerSelectionBestCapable: "最も能力の高いピア",
+    assignerSelectionHint:
+      "作成者がジョブを開始し、アサイナーが計画・割当・統合を行います。より強いモデルを持つボンディング済みピアがいない限り「このノード」のままにしてください。",
   },
   browser: {
     authorAi: {

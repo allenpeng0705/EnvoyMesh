@@ -2460,28 +2460,109 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chainsTestNetworkFailed => 'Could not run diagnostics';
 
   @override
-  String get chainsSpeculationReviewTitle => 'Speculation needs review';
+  String get chainsSpeculationReviewTitle => 'Results disagree';
 
   @override
   String get chainsSpeculationReviewBody =>
-      'Two workers returned different results for one step. Pick a winner to keep the job moving, or let the orchestrator pick automatically.';
+      'Two team members finished this step with different results. Pick one result below, reassign the step, or continue automatically.';
 
   @override
   String get chainsSpeculationReviewNonePass =>
-      'Both workers failed verification — the orchestrator will reassign this step.';
+      'Neither result passed checks. Pick the best attempt, reassign the step, or continue automatically.';
 
   @override
   String get chainsSpeculationReviewDisagree =>
-      'The two workers disagree. The orchestrator can pick the cheaper verified one, or you can pick or reassign.';
+      'The two results do not match. Pick one result, reassign the step, or continue automatically.';
 
   @override
-  String get chainsSpeculationReviewAutoResolve => 'Resolve automatically';
+  String get chainsSpeculationReviewPick => 'Use this result';
 
   @override
-  String get chainsSpeculationReviewResolved => 'Resolved by the orchestrator';
+  String get chainsSpeculationReviewReassign => 'Reassign step';
 
   @override
-  String get chainsSpeculationReviewFailed => 'Could not resolve automatically';
+  String get chainsSpeculationReviewAutoResolve => 'Continue automatically';
+
+  @override
+  String get chainsSpeculationReviewResolved =>
+      'Selection saved — the job continues.';
+
+  @override
+  String get chainsSpeculationReviewFailed => 'Could not resolve this step';
+
+  @override
+  String get chainsSpeculationRolePrimary => 'Primary';
+
+  @override
+  String get chainsSpeculationRoleSpeculative => 'Backup run';
+
+  @override
+  String get chainsSpeculationRoleReplacement => 'Replacement';
+
+  @override
+  String get chainsStepStatePending => 'Pending';
+
+  @override
+  String get chainsStepStateOffered => 'Offered';
+
+  @override
+  String get chainsStepStateAwarded => 'Assigned';
+
+  @override
+  String get chainsStepStateRunning => 'Running';
+
+  @override
+  String get chainsStepStateDone => 'Done';
+
+  @override
+  String get chainsStepStateFailed => 'Failed';
+
+  @override
+  String get chainsStepStateCancelled => 'Cancelled';
+
+  @override
+  String get chainsWorkerEngineFailed =>
+      'A worker’s AI engine could not finish this step. Try again shortly.';
+
+  @override
+  String get chainsReassignUnavailable =>
+      'Reassign is not available on this home node';
+
+  @override
+  String get chainsAssignerAutoLabel => 'Pick best-capable Assigner';
+
+  @override
+  String get chainsAssignerAutoHint =>
+      'When on, the home chooses the strongest bonded peer to plan and manage this job.';
+
+  @override
+  String get chainsSuggestedAssigner => 'Suggested Assigner';
+
+  @override
+  String get chainsAssignerPeerLabel => 'Assigner';
+
+  @override
+  String get chainsAssignerPeerThisNode => 'This home (default)';
+
+  @override
+  String get chainsAssignerPeerHint =>
+      'Optional — run Assigner on a bonded peer instead of this home.';
+
+  @override
+  String get chainsIterationPreviewOwner =>
+      'Multi-round refinement — you will review each draft before publish.';
+
+  @override
+  String get chainsIterationPreviewAuto =>
+      'Multi-round refinement — the Assigner decides when to stop.';
+
+  @override
+  String get chainsSpeculationDualWorkersLabel =>
+      'Run two workers on critical steps';
+
+  @override
+  String get chainsSpeculationDualWorkersHint =>
+      'When two workers finish with different results, this home can pick automatically or ask you first (see home defaults).';
 
   @override
   String get chainsStartReadinessTitle => 'Get workers ready';

@@ -84,6 +84,18 @@ export const deChainsMessages = {
     loadFailed: "Kettenstatus konnte nicht geladen werden.",
     finalized: "Diese Kette ist abgeschlossen — siehe Bericht.",
     cancelled: "Diese Kette wurde abgebrochen.",
+    recovering: "Wiederherstellung nach Neustart — Worker-Fortschritt wird bestätigt, bevor es weitergeht",
+    recoveringHonesty:
+      "Während der Wiederherstellung werden Worker nicht neu vergeben. Späte Finals bleiben erhalten; Duplikate werden verworfen.",
+    speculationReviewTitle: "Arbeitsergebnisse stimmen nicht überein",
+    speculationReviewDisagree:
+      "Zwei Teammitglieder haben diesen Schritt mit unterschiedlichen Ergebnissen beendet. Wählen Sie eines, um fortzufahren, oder weisen Sie den Schritt neu zu.",
+    speculationReviewNonePass:
+      "Kein Ergebnis hat die Prüfung für diesen Schritt bestanden. Wählen Sie den besten Versuch oder weisen Sie neu zu.",
+    speculationReviewPick: "Dieses Ergebnis verwenden",
+    speculationReviewReassign: "Schritt neu zuweisen",
+    speculationReviewResolved: "Auswahl gespeichert — die Aufgabe läuft weiter.",
+    speculationReviewFailed: "Dieser Schritt konnte nicht gelöst werden",
     directAssignHint:
       "Direktzuweisung ist aktiv — Worker erhalten den Schritt, sobald sie bereit bestätigen (keine Kostenauktion). Wettbewerbsgebote nur in den Team-Job-Standards aktivieren, wenn Kostenranking gewünscht ist.",
     observedHint:
@@ -211,6 +223,20 @@ export const deChainsMessages = {
       engineerBriefGoal:
         "Erstelle einen kurzen Brief (≤600 Wörter) für Software-Ingenieure zu {topic}. Mit 5 TL;DR-Punkten öffnen. Höchstens 3 Metaphern; je Analogy / Where it breaks / When to stop. Bevorzuge Protokoll-/Konsens-/Shared-RNG-/Capability-Sprache — nicht CQRS/OAuth/IAM. Keine FTL- oder Signalling-Claims. Schließe mit Wann Metaphern helfen vs. wann Mathematik übernehmen muss.",
     },
+    jobSettingsTitle: "Job-Einstellungen",
+    assignerLabel: "Orchestrierung auf",
+    assignerThisNode: "Dieser Knoten",
+    assignerHint:
+      "Standard ist dieser Knoten. Wählen Sie einen verbundenen Partner, der dem Agentennetzwerk beigetreten ist, um den Auftraggeber dort auszuführen (Erweitert).",
+    assignerAutoLabel: "Leistungsstärksten Auftraggeber wählen",
+    assignerAutoHint:
+      "Wenn aktiv, orchestriert der stärkste geeignete verbundene Partner Planung, Vergabe und den finalen Merge (standardmäßig aus). Sie können unten weiterhin manuell wählen.",
+    suggestedAssigner: "Vorgeschlagener Auftraggeber",
+    iterationPreviewHint: "Hinweis zu mehreren Runden",
+    iterationPreviewOwner:
+      "Mehrrunden-Job: Nach jedem Entwurf können Sie aufgefordert werden, fortzufahren oder zu stoppen.",
+    iterationPreviewAuto:
+      "Mehrrunden-Job: Der Auftraggeber kann den Bericht über mehrere Runden verfeinern.",
   },
   recipes: {
     save: "Als Rezept speichern",

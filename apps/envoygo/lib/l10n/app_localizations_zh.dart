@@ -2374,28 +2374,101 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chainsTestNetworkFailed => '无法运行诊断';
 
   @override
-  String get chainsSpeculationReviewTitle => '需要确认推测结果';
+  String get chainsSpeculationReviewTitle => '工作节点结果不一致';
 
   @override
   String get chainsSpeculationReviewBody =>
-      '两个 worker 在同一步返回了不同的结果。请挑选一个让任务继续，或者让协调器自动挑选。';
+      '两个工作节点完成了此步骤但结果不同。请在下方选择一个结果、重新分配该步骤，或自动继续。';
 
   @override
   String get chainsSpeculationReviewNonePass =>
-      '两个 worker 都没通过验证 — 协调器会重新分派这一步。';
+      '此步骤没有通过核验的结果。请选择最佳尝试、重新分配该步骤，或自动继续。';
 
   @override
   String get chainsSpeculationReviewDisagree =>
-      '两个 worker 答案不一致。协调器可以挑选更便宜的已验证答案，或你可以手动挑选 / 重新分派。';
+      '两个结果不一致。请选择一个结果、重新分配该步骤，或自动继续。';
 
   @override
-  String get chainsSpeculationReviewAutoResolve => '自动解决';
+  String get chainsSpeculationReviewPick => '使用此结果';
 
   @override
-  String get chainsSpeculationReviewResolved => '已由协调器解决';
+  String get chainsSpeculationReviewReassign => '重新分配步骤';
 
   @override
-  String get chainsSpeculationReviewFailed => '自动解决失败';
+  String get chainsSpeculationReviewAutoResolve => '自动继续';
+
+  @override
+  String get chainsSpeculationReviewResolved => '已保存选择 — 任务继续。';
+
+  @override
+  String get chainsSpeculationReviewFailed => '无法处理此步骤';
+
+  @override
+  String get chainsSpeculationRolePrimary => '主运行';
+
+  @override
+  String get chainsSpeculationRoleSpeculative => '备用运行';
+
+  @override
+  String get chainsSpeculationRoleReplacement => '替换运行';
+
+  @override
+  String get chainsStepStatePending => '等待中';
+
+  @override
+  String get chainsStepStateOffered => '已发出';
+
+  @override
+  String get chainsStepStateAwarded => '已分配';
+
+  @override
+  String get chainsStepStateRunning => '运行中';
+
+  @override
+  String get chainsStepStateDone => '完成';
+
+  @override
+  String get chainsStepStateFailed => '失败';
+
+  @override
+  String get chainsStepStateCancelled => '已取消';
+
+  @override
+  String get chainsWorkerEngineFailed => '工作节点的 AI 引擎未能完成此步骤。请稍后再试。';
+
+  @override
+  String get chainsReassignUnavailable => '此家庭节点不支持重新分配';
+
+  @override
+  String get chainsAssignerAutoLabel => '选择最强发起方';
+
+  @override
+  String get chainsAssignerAutoHint => '开启后，家庭节点会选择最强的已绑定节点来规划并管理此任务。';
+
+  @override
+  String get chainsSuggestedAssigner => '建议发起方';
+
+  @override
+  String get chainsAssignerPeerLabel => '发起方';
+
+  @override
+  String get chainsAssignerPeerThisNode => '本家庭节点（默认）';
+
+  @override
+  String get chainsAssignerPeerHint => '可选 — 在已绑定的节点上运行发起方，而不是本家庭节点。';
+
+  @override
+  String get chainsIterationPreviewOwner => '多轮 refinement — 发布前您将审阅每份草稿。';
+
+  @override
+  String get chainsIterationPreviewAuto => '多轮 refinement — 发起方决定何时停止。';
+
+  @override
+  String get chainsSpeculationDualWorkersLabel => '关键步骤运行两个工作节点';
+
+  @override
+  String get chainsSpeculationDualWorkersHint =>
+      '当两个工作节点结果不一致时，家庭节点可自动选择，或先询问您（见家庭节点默认设置）。';
 
   @override
   String get chainsStartReadinessTitle => '先准备好工作节点';

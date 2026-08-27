@@ -649,6 +649,10 @@ export interface ChainContext {
   criticality?: "normal" | "high";
   /** Phase 60C — Team strategy for this job. */
   teamStrategyId?: import("@envoymesh/api").ChainTeamStrategyId;
+  /** Phase 63 — speculation overrides for this job. */
+  speculationEnabled?: boolean;
+  speculationOnDisagreement?: "auto" | "block";
+  maxParallelAttemptsPerStep?: number;
 }): Promise<
   | {
       ok: true;
@@ -1098,7 +1102,12 @@ export async function chainSetDefaultsViaRuntime(
     (d.assignmentMode !== undefined && d.assignmentMode !== "skill" && d.assignmentMode !== "role") ||
     (d.assignerSelection !== undefined &&
       d.assignerSelection !== "local" &&
-      d.assignerSelection !== "best_capable")
+      d.assignerSelection !== "best_capable") ||
+    (d.speculationOnDisagreement !== undefined &&
+      d.speculationOnDisagreement !== "auto" &&
+      d.speculationOnDisagreement !== "block") ||
+    (d.maxParallelAttemptsPerStep !== undefined &&
+      (d.maxParallelAttemptsPerStep < 1 || d.maxParallelAttemptsPerStep > 2))
   ) {
     return { ok: false, defaults: d as never, reason: "validation_failed" };
   }
@@ -1619,6 +1628,10 @@ export async function chainStartFromGoalViaRuntime(
       criticality: params.criticality,
       teamStrategyId: params.teamStrategyId ?? preview.teamStrategyId,
       assignerSelection: params.assignerSelection,
+      assignerPeerId: params.assignerPeerId?.trim() || undefined,
+      speculationEnabled: params.speculationEnabled,
+      speculationOnDisagreement: params.speculationOnDisagreement,
+      maxParallelAttemptsPerStep: params.maxParallelAttemptsPerStep,
     });
     if (!result.ok) {
       return {
@@ -1668,6 +1681,9 @@ export async function chainStartFromGoalViaRuntime(
     criticality: params.criticality,
     teamStrategyId: params.teamStrategyId,
     assignerSelection: params.assignerSelection,
+    speculationEnabled: params.speculationEnabled,
+    speculationOnDisagreement: params.speculationOnDisagreement,
+    maxParallelAttemptsPerStep: params.maxParallelAttemptsPerStep,
   });
   if (!result.ok) {
     return { ok: false, error: result.error };

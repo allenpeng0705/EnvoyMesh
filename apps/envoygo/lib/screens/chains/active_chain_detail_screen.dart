@@ -10,6 +10,7 @@ import '../../l10n/app_localizations.dart';
 import '../../models/chain_active.dart';
 import '../../providers/node_provider.dart';
 import '../../services/node_service_client.dart';
+import '../../utils/chain_localization.dart';
 
 class ActiveChainDetailScreen extends ConsumerStatefulWidget {
   final String chainId;
@@ -35,10 +36,8 @@ class _ActiveChainDetailScreenState
   String? _loadError;
   /// Cancel / rebalance / step-control errors — polls must not wipe these.
   String? _actionError;
-  /// Phase 63 — true while a chainResolveSpeculation({action: "auto"})
-  /// RPC is in flight, so the button shows a spinner and is disabled
-  /// to prevent double-tap.
-  bool _resolvingSpeculation = false;
+  /// Phase 63 — subtask id while pick / reassign / auto speculation RPC runs.
+  String? _speculationBusySubtaskId;
   Timer? _poll;
   final _rebalanceCtl = TextEditingController(text: '1.00');
   int _refreshGen = 0;
@@ -94,9 +93,10 @@ class _ActiveChainDetailScreenState
       if (!mounted) return;
       if (result['ok'] != true) {
         setState(() {
-          _actionError = (result['error'] as String?)?.isNotEmpty == true
-              ? result['error'] as String
-              : l10n.chainsDeliveryRetryFailed;
+          _actionError = chainRpcErrorLabel(
+            l10n,
+            (result['error'] as String?) ?? (result['reason'] as String?),
+          );
         });
         return;
       }
@@ -105,7 +105,9 @@ class _ActiveChainDetailScreenState
       );
       await _refresh();
     } catch (e) {
-      if (mounted) setState(() => _actionError = e.toString());
+      if (mounted) {
+        setState(() => _actionError = chainCaughtErrorLabel(l10n, e));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -173,7 +175,7 @@ class _ActiveChainDetailScreenState
       }
       setState(() {
         _loading = false;
-        _loadError = e.toString();
+        _loadError = chainCaughtErrorLabel(AppLocalizations.of(context), e);
       });
     }
     _finishRefresh(gen);
@@ -235,7 +237,9 @@ class _ActiveChainDetailScreenState
       );
       await _refresh();
     } catch (e) {
-      if (mounted) setState(() => _actionError = e.toString());
+      if (mounted) {
+        setState(() => _actionError = chainCaughtErrorLabel(l10n, e));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -260,9 +264,10 @@ class _ActiveChainDetailScreenState
       if (!mounted) return;
       if (result['ok'] != true) {
         setState(() {
-          _actionError = (result['error'] as String?)?.isNotEmpty == true
-              ? result['error'] as String
-              : l10n.chainsReassignFailed;
+          _actionError = chainRpcErrorLabel(
+            l10n,
+            (result['error'] as String?) ?? (result['reason'] as String?),
+          );
         });
         return;
       }
@@ -271,7 +276,9 @@ class _ActiveChainDetailScreenState
       );
       await _refresh();
     } catch (e) {
-      if (mounted) setState(() => _actionError = e.toString());
+      if (mounted) {
+        setState(() => _actionError = chainCaughtErrorLabel(l10n, e));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -329,7 +336,9 @@ class _ActiveChainDetailScreenState
       );
       await _refresh();
     } catch (e) {
-      if (mounted) setState(() => _actionError = e.toString());
+      if (mounted) {
+        setState(() => _actionError = chainCaughtErrorLabel(l10n, e));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -370,7 +379,9 @@ class _ActiveChainDetailScreenState
       );
       await _refresh();
     } catch (e) {
-      if (mounted) setState(() => _actionError = e.toString());
+      if (mounted) {
+        setState(() => _actionError = chainCaughtErrorLabel(l10n, e));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -412,17 +423,99 @@ class _ActiveChainDetailScreenState
       );
       await _refresh();
     } catch (e) {
-      if (mounted) setState(() => _actionError = e.toString());
+      if (mounted) {
+        setState(() => _actionError = chainCaughtErrorLabel(l10n, e));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  /// Phase 63 — auto-resolve the first pending speculation disagreement.
-  /// Loops over all reviews in `state.speculationReview` until one
-  /// succeeds; on success, refreshes the chain state. The orchestrator
-  /// picks the cheaper verified attempt (deterministic, no LLM) on
-  /// disagreement and reassigns the step on `none_pass`.
+  Future<void> _resolveSpeculationPick(
+    ChainSpeculationReview review,
+    ChainSpeculationAttempt attempt,
+  ) async {
+    final l10n = AppLocalizations.of(context);
+    final client = _clientOrNull();
+    if (client == null) {
+      setState(() => _actionError = l10n.commonNotConnectedHome);
+      return;
+    }
+    setState(() {
+      _speculationBusySubtaskId = review.subtaskId;
+      _actionError = null;
+    });
+    try {
+      final result = await client.chainResolveSpeculation(
+        chainId: widget.chainId,
+        subtaskId: review.subtaskId,
+        action: 'pick',
+        attemptId: attempt.attemptId,
+      );
+      if (!mounted) return;
+      if (result['ok'] != true) {
+        setState(() {
+          _actionError = chainSpeculationResolveReasonLabel(
+            l10n,
+            result['reason'] as String?,
+          );
+        });
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.chainsSpeculationReviewResolved)),
+      );
+      await _refresh();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _actionError = chainCaughtErrorLabel(l10n, e));
+      }
+    } finally {
+      if (mounted) setState(() => _speculationBusySubtaskId = null);
+    }
+  }
+
+  Future<void> _resolveSpeculationReassign(ChainSpeculationReview review) async {
+    final l10n = AppLocalizations.of(context);
+    final client = _clientOrNull();
+    if (client == null) {
+      setState(() => _actionError = l10n.commonNotConnectedHome);
+      return;
+    }
+    setState(() {
+      _speculationBusySubtaskId = review.subtaskId;
+      _actionError = null;
+    });
+    try {
+      final result = await client.chainResolveSpeculation(
+        chainId: widget.chainId,
+        subtaskId: review.subtaskId,
+        action: 'reassign',
+      );
+      if (!mounted) return;
+      if (result['ok'] != true) {
+        setState(() {
+          _actionError = chainSpeculationResolveReasonLabel(
+            l10n,
+            result['reason'] as String?,
+          );
+        });
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.chainsStepReassigned)),
+      );
+      await _refresh();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _actionError = chainCaughtErrorLabel(l10n, e));
+      }
+    } finally {
+      if (mounted) setState(() => _speculationBusySubtaskId = null);
+    }
+  }
+
+  /// Owner override — defer to the orchestrator's deterministic auto-resolver.
   Future<void> _resolveSpeculationAuto() async {
     final l10n = AppLocalizations.of(context);
     final client = _clientOrNull();
@@ -433,11 +526,12 @@ class _ActiveChainDetailScreenState
     final reviews = _state?.speculationReview;
     if (reviews == null || reviews.isEmpty) return;
     setState(() {
-      _resolvingSpeculation = true;
+      _speculationBusySubtaskId = reviews.first.subtaskId;
       _actionError = null;
     });
     try {
       for (final review in reviews) {
+        setState(() => _speculationBusySubtaskId = review.subtaskId);
         final result = await client.chainResolveSpeculation(
           chainId: widget.chainId,
           subtaskId: review.subtaskId,
@@ -455,10 +549,17 @@ class _ActiveChainDetailScreenState
       if (!mounted) return;
       setState(() => _actionError = l10n.chainsSpeculationReviewFailed);
     } catch (e) {
-      if (mounted) setState(() => _actionError = e.toString());
+      if (mounted) {
+        setState(() => _actionError = chainCaughtErrorLabel(l10n, e));
+      }
     } finally {
-      if (mounted) setState(() => _resolvingSpeculation = false);
+      if (mounted) setState(() => _speculationBusySubtaskId = null);
     }
+  }
+
+  String _shortPeerId(String peerId) {
+    if (peerId.length <= 16) return peerId;
+    return '${peerId.substring(0, 14)}…';
   }
 
   bool get _showRebalance {
@@ -631,15 +732,71 @@ class _ActiveChainDetailScreenState
                                     : l10n.chainsSpeculationReviewDisagree,
                                 style: theme.textTheme.bodySmall,
                               ),
+                              for (final attempt in review.attempts) ...[
+                                const SizedBox(height: 8),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            _shortPeerId(attempt.workerPeerId),
+                                            style: theme.textTheme.bodyMedium,
+                                          ),
+                                          if (chainSpeculationRoleLabel(
+                                                l10n,
+                                                attempt.role,
+                                              ) !=
+                                              null)
+                                            Text(
+                                              chainSpeculationRoleLabel(
+                                                l10n,
+                                                attempt.role,
+                                              )!,
+                                              style: theme.textTheme.bodySmall,
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                    FilledButton.tonal(
+                                      onPressed:
+                                          _speculationBusySubtaskId != null
+                                              ? null
+                                              : () => _resolveSpeculationPick(
+                                                    review,
+                                                    attempt,
+                                                  ),
+                                      child: Text(
+                                        l10n.chainsSpeculationReviewPick,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton(
+                                  onPressed: _speculationBusySubtaskId != null
+                                      ? null
+                                      : () =>
+                                          _resolveSpeculationReassign(review),
+                                  child: Text(
+                                    l10n.chainsSpeculationReviewReassign,
+                                  ),
+                                ),
+                              ),
                             ],
                             const SizedBox(height: 12),
                             SizedBox(
                               width: double.infinity,
-                              child: FilledButton.icon(
-                                onPressed: _resolvingSpeculation
+                              child: OutlinedButton.icon(
+                                onPressed: _speculationBusySubtaskId != null
                                     ? null
                                     : _resolveSpeculationAuto,
-                                icon: _resolvingSpeculation
+                                icon: _speculationBusySubtaskId != null
                                     ? const SizedBox(
                                         width: 16,
                                         height: 16,
@@ -808,7 +965,7 @@ class _ActiveChainDetailScreenState
                             Text(obj, style: theme.textTheme.bodyMedium),
                             Text(
                               [
-                                step.state,
+                                chainStepStateLabel(l10n, step.state),
                                 if (step.requiredRole != null) step.requiredRole!,
                                 if (attemptCount > 0)
                                   l10n.chainsAttemptCount(attemptCount),
@@ -1015,7 +1172,7 @@ class _ChainStepProvenanceSheetState extends State<_ChainStepProvenanceSheet> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _loadError = e.toString();
+        _loadError = chainCaughtErrorLabel(AppLocalizations.of(context), e);
       });
     }
   }

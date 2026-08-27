@@ -634,6 +634,11 @@ knowledge: deKnowledgeViewMessages,
     saving: "Speichern…",
     saved: "Gespeichert",
     saveFailed: "Speichern fehlgeschlagen",
+    assignerSelection: "Auftraggeber-Auswahl",
+    assignerSelectionLocal: "Dieser Knoten (Standard)",
+    assignerSelectionBestCapable: "Leistungsstärkster Partner",
+    assignerSelectionHint:
+      "Der Ersteller startet die Aufgabe; der Auftraggeber plant, vergibt und führt zusammen. Belassen Sie „Dieser Knoten“, sofern kein verbundener Partner ein stärkeres Modell hat.",
   },
   browser: {
     authorAi: {

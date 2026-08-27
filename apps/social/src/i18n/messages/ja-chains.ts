@@ -84,6 +84,18 @@ export const jaChainsMessages = {
     loadFailed: "チェーン状態を読み込めません。",
     finalized: "このチェーンは完了しています — レポートを確認してください。",
     cancelled: "このチェーンはキャンセルされました。",
+    recovering: "再起動後の復旧中 — 続行前にワーカーの進捗を確認しています",
+    recoveringHonesty:
+      "復旧中はワーカーを再割当しません。遅い最終結果は保持し、重複は破棄します。",
+    speculationReviewTitle: "作業結果が一致しません",
+    speculationReviewDisagree:
+      "2 つのチームメンバーがこのステップで異なる結果を出しました。続行するには一方を選ぶか、ステップを再割当してください。",
+    speculationReviewNonePass:
+      "このステップで検証に合格した結果がありません。最良の試行を選ぶか再割当してください。",
+    speculationReviewPick: "この結果を使う",
+    speculationReviewReassign: "ステップを再割当",
+    speculationReviewResolved: "選択を保存しました — ジョブを続けます。",
+    speculationReviewFailed: "このステップを解決できませんでした",
     directAssignHint:
       "直接割当が有効です — ワーカーが準備完了を確認するとすぐにステップが割り当てられます（費用オークションなし）。費用ランキングが必要な場合のみ、チームジョブ既定値で競争入札を有効にしてください。",
     observedHint:
@@ -211,6 +223,20 @@ export const jaChainsMessages = {
       engineerBriefGoal:
         "ソフトウェアエンジニア向けに {topic} の短いブリーフ（≤600語）を作成。5点の TL;DR で始める。比喩は最大3つ。各比喩は Analogy / Where it breaks / When to stop。CQRS/OAuth/IAM を主比喩にしない。超光速・シグナリング主張は禁止。最後に比喩が有用な時と数学が必要な時を区別する。",
     },
+    jobSettingsTitle: "ジョブ設定",
+    assignerLabel: "オーケストレーション先",
+    assignerThisNode: "このノード",
+    assignerHint:
+      "既定はこのノードです。Agent Network に参加済みのボンディング済みピアを選び、そこでアサイナーを実行できます（詳細）。",
+    assignerAutoLabel: "最も能力の高いアサイナーを選ぶ",
+    assignerAutoHint:
+      "有効にすると、適格なボンディング済みピアのうち最も強いモデルが計画・割当・最終統合を担います（既定はオフ）。下で手動指定もできます。",
+    suggestedAssigner: "推奨アサイナー",
+    iterationPreviewHint: "複数ラウンドの注意",
+    iterationPreviewOwner:
+      "複数ラウンドのジョブ：各草稿の後に続行または停止を求められることがあります。",
+    iterationPreviewAuto:
+      "複数ラウンドのジョブ：アサイナーが複数ラウンドにわたってレポートを洗練することがあります。",
   },
   recipes: {
     save: "レシピとして保存",

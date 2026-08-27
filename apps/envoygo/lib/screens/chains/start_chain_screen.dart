@@ -16,6 +16,7 @@ import '../../ext_agent/agent_attachments.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/node_provider.dart';
 import '../../services/node_service_client.dart';
+import '../../utils/chain_localization.dart';
 
 class _ComposerAttachment {
   _ComposerAttachment({required this.id, required this.fileName})
@@ -63,6 +64,8 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
   String _teamStrategyId = 'balanced';
   /// Phase 62C — seeded from home node defaults (observe/approve on mobile).
   String _assignerSelection = 'local';
+  String _assignerPeerId = '';
+  bool _speculationEnabled = false;
   bool _loadingDefaults = true;
   bool _previewing = false;
   bool _starting = false;
@@ -171,6 +174,7 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
             defaults['assignerSelection'] == 'best_capable'
                 ? 'best_capable'
                 : 'local';
+        _speculationEnabled = defaults['speculationEnabled'] == true;
         _iterationMaxRounds = defaults['iterationMaxRounds'] as int?;
         _iterationJudgeMode = defaults['iterationJudgeMode'] as String?;
         _extendMaxStepsPerRound = defaults['extendMaxStepsPerRound'] as int?;
@@ -182,7 +186,7 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
       if (!mounted) return;
       setState(() {
         _loadingDefaults = false;
-        _error = e.toString();
+        _error = chainCaughtErrorLabel(AppLocalizations.of(context), e);
       });
     }
   }
@@ -235,6 +239,18 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
       };
     }
     return byId.values.toList();
+  }
+
+  String _shortPeerId(String peerId) {
+    if (peerId.length <= 20) return peerId;
+    return '${peerId.substring(0, 16)}…';
+  }
+
+  String _workerRowLabel(Map<String, dynamic> row) {
+    final summary = (row['summary'] as String?)?.trim();
+    if (summary != null && summary.isNotEmpty) return summary;
+    final peerId = (row['peerId'] as String?) ?? '';
+    return peerId.isEmpty ? '' : _shortPeerId(peerId);
   }
 
   bool get _previewOk => _preview?['ok'] == true && _subtasks.isNotEmpty;
@@ -484,8 +500,10 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
           _previewing = false;
           _preview = result;
           _selectedWorkerPeerIds.clear();
-          _error = (result['reason'] as String?)?.isNotEmpty == true
-              ? result['reason'] as String
+          final code =
+              (result['reason'] as String?) ?? (result['error'] as String?);
+          _error = code?.isNotEmpty == true
+              ? chainRpcErrorLabel(l10n, code)
               : l10n.chainsStartPreviewFailed;
         });
         return;
@@ -499,7 +517,7 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
       if (!mounted) return;
       setState(() {
         _previewing = false;
-        _error = e.toString();
+        _error = chainCaughtErrorLabel(l10n, e);
       });
     }
   }
@@ -550,7 +568,11 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
         goal: _effectiveGoal,
         assignmentMode: _assignmentMode,
         teamStrategyId: _teamStrategyId,
-        assignerSelection: _assignerSelection,
+        assignerSelection:
+            _assignerPeerId.trim().isNotEmpty ? null : _assignerSelection,
+        assignerPeerId:
+            _assignerPeerId.trim().isEmpty ? null : _assignerPeerId.trim(),
+        speculationEnabled: _speculationEnabled ? true : null,
         inputDeliveryScope: _inputDeliveryScope,
         plannedSubtasks: planned,
         planWarnings: _warnings.isEmpty ? null : _warnings,
@@ -568,7 +590,7 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
           _starting = false;
           _error = err == 'no_workers'
               ? l10n.chainsStartNoWorkers
-              : (err?.isNotEmpty == true ? err! : l10n.chainsStartFailed);
+              : chainRpcErrorLabel(l10n, err);
         });
         return;
       }
@@ -580,7 +602,7 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
       if (!mounted) return;
       setState(() {
         _starting = false;
-        _error = e.toString();
+        _error = chainCaughtErrorLabel(l10n, e);
       });
     }
   }
@@ -815,6 +837,70 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
+                const SizedBox(height: 16),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(l10n.chainsAssignerAutoLabel),
+                  subtitle: Text(l10n.chainsAssignerAutoHint),
+                  value: _assignerSelection == 'best_capable',
+                  onChanged: busy || _assignerPeerId.trim().isNotEmpty
+                      ? null
+                      : (on) {
+                          setState(() {
+                            _assignerSelection =
+                                on ? 'best_capable' : 'local';
+                            _clearPreview();
+                          });
+                        },
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: _assignerPeerId,
+                  decoration: InputDecoration(
+                    labelText: l10n.chainsAssignerPeerLabel,
+                    border: const OutlineInputBorder(),
+                  ),
+                  items: [
+                    DropdownMenuItem(
+                      value: '',
+                      child: Text(l10n.chainsAssignerPeerThisNode),
+                    ),
+                    for (final row in workerRows)
+                      if ((row['peerId'] as String?)?.isNotEmpty == true)
+                        DropdownMenuItem(
+                          value: row['peerId'] as String,
+                          child: Text(_workerRowLabel(row)),
+                        ),
+                  ],
+                  onChanged: busy
+                      ? null
+                      : (value) {
+                          setState(() {
+                            _assignerPeerId = value ?? '';
+                            if (_assignerPeerId.isNotEmpty) {
+                              _assignerSelection = 'local';
+                            }
+                            _clearPreview();
+                          });
+                        },
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  l10n.chainsAssignerPeerHint,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(l10n.chainsSpeculationDualWorkersLabel),
+                  subtitle: Text(l10n.chainsSpeculationDualWorkersHint),
+                  value: _speculationEnabled,
+                  onChanged: busy
+                      ? null
+                      : (on) => setState(() => _speculationEnabled = on),
+                ),
                 const SizedBox(height: 12),
                 Text(
                   l10n.chainsInputDeliveryScope,
@@ -936,21 +1022,22 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
                   ],
                   if (((_preview?['suggestedAssignerReason'] as String?) ?? '')
                       .trim()
-                      .isNotEmpty) ...[
+                      .isNotEmpty &&
+                      _assignerSelection == 'best_capable') ...[
                     const SizedBox(height: 8),
                     Text(
-                      (_preview!['suggestedAssignerReason'] as String).trim(),
+                      '${l10n.chainsSuggestedAssigner}: ${(_preview!['suggestedAssignerReason'] as String).trim()}',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.primary,
                       ),
                     ),
                   ],
-                  if (((_preview?['iterationPreviewHint'] as String?) ?? '')
-                      .trim()
-                      .isNotEmpty) ...[
+                  if ((_iterationMaxRounds ?? 1) > 1) ...[
                     const SizedBox(height: 8),
                     Text(
-                      (_preview!['iterationPreviewHint'] as String).trim(),
+                      _iterationJudgeMode == 'owner'
+                          ? l10n.chainsIterationPreviewOwner
+                          : l10n.chainsIterationPreviewAuto,
                       style: theme.textTheme.bodySmall,
                     ),
                   ],

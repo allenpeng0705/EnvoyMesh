@@ -84,6 +84,18 @@ export const itChainsMessages = {
     loadFailed: "Impossibile caricare lo stato della catena.",
     finalized: "Questa catena è terminata — vedi il report.",
     cancelled: "Questa catena è stata annullata.",
+    recovering: "Ripristino dopo il riavvio — conferma dei progressi dei worker prima di continuare",
+    recoveringHonesty:
+      "Durante il ripristino i worker non vengono riassegnati. I finali in ritardo vengono conservati; i duplicati vengono scartati.",
+    speculationReviewTitle: "I risultati non coincidono",
+    speculationReviewDisagree:
+      "Due membri del team hanno completato questo passaggio con risultati diversi. Scegline uno per continuare, oppure riassegna il passaggio.",
+    speculationReviewNonePass:
+      "Nessun risultato ha superato la verifica per questo passaggio. Scegli il tentativo migliore o riassegna.",
+    speculationReviewPick: "Usa questo risultato",
+    speculationReviewReassign: "Riassegna passaggio",
+    speculationReviewResolved: "Scelta salvata — il lavoro continua.",
+    speculationReviewFailed: "Impossibile risolvere questo passaggio",
     directAssignHint:
       "L'assegnazione diretta è attiva — i worker ricevono il passo non appena confermano di essere pronti (nessuna asta sui costi). Attiva le offerte competitive nelle impostazioni solo se vuoi la classifica per costo.",
     observedHint:
@@ -211,6 +223,20 @@ export const itChainsMessages = {
       engineerBriefGoal:
         "Produci un brief breve (≤600 parole) per software engineer su {topic}. Apri con TL;DR a 5 punti. Al massimo 3 metafore; ciascuna con Analogy / Where it breaks / When to stop. Preferisci linguaggio di protocollo/consensus/RNG condiviso/capability — non CQRS/OAuth/IAM. Niente claim FTL o di signalling. Chiudi con quando le metafore aiutano vs quando serve la matematica.",
     },
+    jobSettingsTitle: "Impostazioni lavoro",
+    assignerLabel: "Orchestra su",
+    assignerThisNode: "Questo nodo",
+    assignerHint:
+      "Il predefinito è questo nodo. Scegli un peer collegato che ha aderito alla rete agenti per eseguire lì l'assegnatore (Avanzate).",
+    assignerAutoLabel: "Scegli l'assegnatore più capace",
+    assignerAutoHint:
+      "Se abilitato, il peer collegato idoneo più capace orchestra pianificazione, assegnazione e fusione finale (disattivato di default). Puoi comunque scegliere manualmente sotto.",
+    suggestedAssigner: "Assegnatore suggerito",
+    iterationPreviewHint: "Nota multi-round",
+    iterationPreviewOwner:
+      "Lavoro multi-round: dopo ogni bozza potrebbe esserti chiesto di continuare o fermarti.",
+    iterationPreviewAuto:
+      "Lavoro multi-round: l'assegnatore può raffinare il report su più round.",
   },
   recipes: {
     save: "Salva come ricetta",

@@ -104,11 +104,11 @@ export const chainsMessages = {
     recovering: "Recovering after restart — confirming worker progress before continuing",
     recoveringHonesty:
       "Workers are not re-awarded during recovery. Late finals are kept; duplicates are dropped.",
-    speculationReviewTitle: "Worker results disagree",
+    speculationReviewTitle: "Results disagree",
     speculationReviewDisagree:
-      "Two workers finished this step with different results. Pick one to continue, or reassign to a new worker.",
+      "Two team members finished this step with different results. Pick one to continue, or reassign the step.",
     speculationReviewNonePass:
-      "No worker result passed verification on this step. Pick the best attempt or reassign.",
+      "No result passed checks on this step. Pick the best attempt or reassign.",
     speculationReviewPick: "Use this result",
     speculationReviewReassign: "Reassign step",
     speculationReviewResolved: "Selection saved — continuing the job.",

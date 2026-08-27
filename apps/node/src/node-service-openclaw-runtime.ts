@@ -57,6 +57,51 @@ export const OPEN_CLAW_STARTUP_PROBE_ATTEMPTS = 90; // 90 × 1s = 90 seconds for
 export const OPEN_CLAW_WATCHDOG_INTERVAL_MS = 60_000; // 1 minute between watchdog checks
 export const OPEN_CLAW_MAX_RESTART_ATTEMPTS = 5; // stop watchdog after 5 consecutive failures
 export const OPEN_CLAW_RESTART_BACKOFF_BASE_MS = 10_000; // 10s after 1st failure, 20s after 2nd, … cap 60s
+export const OPEN_CLAW_WEBHOOK_RATE_LIMIT_MAX_ATTEMPTS = 4;
+const OPEN_CLAW_WEBHOOK_RATE_LIMIT_BASE_MS = 1_000;
+
+function parseRetryAfterMs(retryAfter: string | null): number | undefined {
+  if (!retryAfter?.trim()) return undefined;
+  const seconds = Number(retryAfter.trim());
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.round(seconds * 1000);
+  }
+  const dateMs = Date.parse(retryAfter.trim());
+  if (Number.isFinite(dateMs)) return Math.max(0, dateMs - Date.now());
+  return undefined;
+}
+
+async function sleepMs(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** POST the OpenClaw webhook with bounded retry on 429 / 503 (+ Retry-After). */
+export async function postOpenClawWebhook(
+  url: string,
+  init: RequestInit & { timeoutMs?: number },
+): Promise<Response> {
+  const timeoutMs = init.timeoutMs ?? OPEN_CLAW_REPLY_TIMEOUT_MS;
+  let lastResp: Response | undefined;
+  for (let attempt = 0; attempt < OPEN_CLAW_WEBHOOK_RATE_LIMIT_MAX_ATTEMPTS; attempt++) {
+    const resp = await fetch(url, {
+      ...init,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (resp.status !== 429 && resp.status !== 503) {
+      return resp;
+    }
+    lastResp = resp;
+    if (attempt + 1 >= OPEN_CLAW_WEBHOOK_RATE_LIMIT_MAX_ATTEMPTS) break;
+    const retryAfterMs =
+      parseRetryAfterMs(resp.headers.get("retry-after")) ??
+      OPEN_CLAW_WEBHOOK_RATE_LIMIT_BASE_MS * 2 ** attempt;
+    console.warn(
+      `[openclaw] webhook ${resp.status} — retry ${attempt + 1}/${OPEN_CLAW_WEBHOOK_RATE_LIMIT_MAX_ATTEMPTS - 1} in ${retryAfterMs}ms`,
+    );
+    await sleepMs(retryAfterMs);
+  }
+  return lastResp!;
+}
 
 export type OpenClawPendingReply = {
   resolve: (text: string) => void;
@@ -1236,11 +1281,11 @@ async function askOpenClawViaWebhook(
     const [text] = await Promise.all([
       replyPromise,
       (async () => {
-        const resp = await fetch(state.assistantAgentUrl, {
+        const resp = await postOpenClawWebhook(state.assistantAgentUrl, {
           method: "POST",
           headers,
           body,
-          signal: AbortSignal.timeout(OPEN_CLAW_REPLY_TIMEOUT_MS),
+          timeoutMs: OPEN_CLAW_REPLY_TIMEOUT_MS,
         });
 
         if (!resp.ok) {
@@ -1838,11 +1883,11 @@ export async function sendToOpenClawViaRuntime(
   const [answer] = await Promise.all([
     replyPromise,
     (async () => {
-      const resp = await fetch(state.assistantAgentUrl, {
+      const resp = await postOpenClawWebhook(state.assistantAgentUrl, {
         method: "POST",
         headers,
         body,
-        signal: AbortSignal.timeout(300_000),
+        timeoutMs: 300_000,
       });
       if (!resp.ok) {
         const detail = await resp.text().catch(() => "");

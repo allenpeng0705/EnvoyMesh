@@ -106,7 +106,7 @@ export const zhChainsMessages = {
     recoveringHonesty: "恢复期间不会重新分配工作节点。迟到的最终结果会保留；重复结果会被丢弃。",
     speculationReviewTitle: "工作节点结果不一致",
     speculationReviewDisagree:
-      "两个工作节点完成了此步骤但结果不同。请选择其一以继续，或重新分配给其他工作节点。",
+      "两个工作节点完成了此步骤但结果不同。请选择其一以继续，或重新分配该步骤。",
     speculationReviewNonePass: "此步骤没有通过核验的结果。请选择最佳尝试或重新分配。",
     speculationReviewPick: "使用此结果",
     speculationReviewReassign: "重新分配步骤",

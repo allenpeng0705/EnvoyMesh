@@ -634,6 +634,11 @@ knowledge: frKnowledgeViewMessages,
     saving: "Enregistrement…",
     saved: "Enregistré",
     saveFailed: "Échec de l'enregistrement",
+    assignerSelection: "Choix de l'assignateur",
+    assignerSelectionLocal: "Ce nœud (par défaut)",
+    assignerSelectionBestCapable: "Pair le plus capable",
+    assignerSelectionHint:
+      "Le créateur démarre la mission ; l'assignateur planifie, attribue et fusionne. Gardez « Ce nœud » sauf si un pair lié a un modèle plus puissant.",
   },
   browser: {
     authorAi: {

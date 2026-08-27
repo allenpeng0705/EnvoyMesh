@@ -2394,28 +2394,103 @@ class AppLocalizationsKo extends AppLocalizations {
   String get chainsTestNetworkFailed => 'Could not run diagnostics';
 
   @override
-  String get chainsSpeculationReviewTitle => '추측 실행 검토 필요';
+  String get chainsSpeculationReviewTitle => '결과가 일치하지 않음';
 
   @override
   String get chainsSpeculationReviewBody =>
-      '두 워커가 한 단계에서 서로 다른 결과를 반환했습니다. 작업을 진행할 승자를 선택하거나 오케스트레이터가 자동으로 선택하도록 할 수 있습니다.';
+      '두 팀원이 이 단계를 서로 다른 결과로 마쳤습니다. 아래에서 결과를 선택하거나 단계를 다시 배정하거나 자동으로 계속하세요.';
 
   @override
   String get chainsSpeculationReviewNonePass =>
-      '두 워커 모두 검증을 통과하지 못했습니다 — 오케스트레이터가 이 단계를 재할당합니다.';
+      '어떤 결과도 검사를 통과하지 못했습니다. 최선의 시도를 선택하거나 단계를 다시 배정하거나 자동으로 계속하세요.';
 
   @override
   String get chainsSpeculationReviewDisagree =>
-      '두 워커가 일치하지 않습니다. 오케스트레이터가 더 저렴한 검증된 항목을 선택하거나, 사용자가 선택하거나 재할당할 수 있습니다.';
+      '두 결과가 일치하지 않습니다. 결과를 선택하거나 단계를 다시 배정하거나 자동으로 계속하세요.';
 
   @override
-  String get chainsSpeculationReviewAutoResolve => '자동 해결';
+  String get chainsSpeculationReviewPick => '이 결과 사용';
 
   @override
-  String get chainsSpeculationReviewResolved => '오케스트레이터가 해결함';
+  String get chainsSpeculationReviewReassign => '단계 다시 배정';
 
   @override
-  String get chainsSpeculationReviewFailed => '자동 해결 실패';
+  String get chainsSpeculationReviewAutoResolve => '자동으로 계속';
+
+  @override
+  String get chainsSpeculationReviewResolved => '선택이 저장되었습니다 — 작업을 계속합니다.';
+
+  @override
+  String get chainsSpeculationReviewFailed => '이 단계를 처리할 수 없습니다';
+
+  @override
+  String get chainsSpeculationRolePrimary => '기본';
+
+  @override
+  String get chainsSpeculationRoleSpeculative => '백업 실행';
+
+  @override
+  String get chainsSpeculationRoleReplacement => '대체';
+
+  @override
+  String get chainsStepStatePending => '대기';
+
+  @override
+  String get chainsStepStateOffered => '제안됨';
+
+  @override
+  String get chainsStepStateAwarded => '배정됨';
+
+  @override
+  String get chainsStepStateRunning => '실행 중';
+
+  @override
+  String get chainsStepStateDone => '완료';
+
+  @override
+  String get chainsStepStateFailed => '실패';
+
+  @override
+  String get chainsStepStateCancelled => '취소됨';
+
+  @override
+  String get chainsWorkerEngineFailed =>
+      '워커의 AI 엔진이 이 단계를 완료하지 못했습니다. 잠시 후 다시 시도하세요.';
+
+  @override
+  String get chainsReassignUnavailable => '이 홈 노드에서는 다시 배정할 수 없습니다';
+
+  @override
+  String get chainsAssignerAutoLabel => '가장 유능한 배정자 선택';
+
+  @override
+  String get chainsAssignerAutoHint =>
+      '켜면 홈 노드가 이 작업을 계획하고 관리할 가장 강한 본드 피어를 선택합니다.';
+
+  @override
+  String get chainsSuggestedAssigner => '추천 배정자';
+
+  @override
+  String get chainsAssignerPeerLabel => '배정자';
+
+  @override
+  String get chainsAssignerPeerThisNode => '이 홈(기본)';
+
+  @override
+  String get chainsAssignerPeerHint => '선택 사항 — 이 홈 대신 본드된 피어에서 배정자를 실행합니다.';
+
+  @override
+  String get chainsIterationPreviewOwner => '여러 라운드 — 게시 전에 각 초안을 검토합니다.';
+
+  @override
+  String get chainsIterationPreviewAuto => '여러 라운드 — 배정자가 중단 시점을 결정합니다.';
+
+  @override
+  String get chainsSpeculationDualWorkersLabel => '중요 단계에서 두 워커 실행';
+
+  @override
+  String get chainsSpeculationDualWorkersHint =>
+      '두 워커 결과가 다르면 홈이 자동으로 선택하거나 먼저 물어봅니다(홈 기본값 참조).';
 
   @override
   String get chainsStartReadinessTitle => '워커 준비하기';

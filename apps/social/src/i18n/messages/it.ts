@@ -593,6 +593,11 @@ export const it = mergeMessages(en, {
     saving: "Salvataggio…",
     saved: "Salvato",
     saveFailed: "Salvataggio non riuscito",
+    assignerSelection: "Scelta dell'assegnatore",
+    assignerSelectionLocal: "Questo nodo (predefinito)",
+    assignerSelectionBestCapable: "Peer più capace",
+    assignerSelectionHint:
+      "Il creatore avvia il lavoro; l'assegnatore pianifica, assegna e unisce i risultati. Lascia « Questo nodo » a meno che un peer collegato non abbia un modello più forte.",
   },
   browser: {
     authorAi: {
