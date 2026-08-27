@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>EnvoyMesh Network</title>
-  <meta name="description" content="A decentralized, peer-to-peer mesh for autonomous AI agents. Your identity is cryptographic, your AI agent works for you, and security is by design.">
+  <meta name="description" content="Decentralized P2P mesh for autonomous AI agents — Envoy Harness coding agent, Team jobs across bonded agents, local-first knowledge with self-healing RAG, and EnvoyGo mobile access. Cryptographic identity and security by design.">
 
   <style>
     * {
@@ -175,6 +175,16 @@
       color: var(--primary-light);
     }
 
+    .mobile-nav-label {
+      padding: 18px 12px 6px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      border-bottom: none;
+    }
+
     .mobile-nav-overlay .mobile-nav-actions {
       margin-top: 24px;
       display: flex;
@@ -189,14 +199,21 @@
 
     .nav-links {
       display: flex;
-      gap: 24px;
+      gap: 20px;
       list-style: none;
+      align-items: center;
+      margin: 0;
+      padding: 0;
+    }
+
+    .nav-links > li {
+      position: relative;
     }
 
     .nav-links a {
       color: var(--text-secondary);
       text-decoration: none;
-      font-size: 0.9rem;
+      font-size: 0.875rem;
       font-weight: 400;
       transition: color 0.2s ease;
     }
@@ -205,10 +222,114 @@
       color: var(--text-primary);
     }
 
+    .nav-dropdown-trigger {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font: inherit;
+      font-size: 0.875rem;
+      font-weight: 400;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 0;
+      transition: color 0.2s ease;
+    }
+
+    .nav-dropdown-trigger:hover,
+    .nav-dropdown:focus-within .nav-dropdown-trigger,
+    .nav-dropdown.open .nav-dropdown-trigger {
+      color: var(--text-primary);
+    }
+
+    .nav-dropdown-chevron {
+      width: 0;
+      height: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-top: 5px solid currentColor;
+      opacity: 0.65;
+      transition: transform 0.2s ease;
+    }
+
+    .nav-dropdown:focus-within .nav-dropdown-chevron,
+    .nav-dropdown.open .nav-dropdown-chevron {
+      transform: rotate(180deg);
+    }
+
+    .nav-dropdown-menu {
+      position: absolute;
+      top: calc(100% + 14px);
+      left: 50%;
+      transform: translateX(-50%) translateY(-6px);
+      min-width: 210px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 6px;
+      list-style: none;
+      margin: 0;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+      z-index: 110;
+    }
+
+    .nav-dropdown:hover .nav-dropdown-menu,
+    .nav-dropdown:focus-within .nav-dropdown-menu,
+    .nav-dropdown.open .nav-dropdown-menu {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .nav-dropdown-menu a {
+      display: block;
+      padding: 9px 12px;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+
+    .nav-dropdown-menu a:hover {
+      background: rgba(99, 102, 241, 0.12);
+      color: var(--text-primary);
+    }
+
     .nav-actions {
       display: flex;
-      gap: 16px;
+      gap: 8px;
       align-items: center;
+      flex-shrink: 0;
+    }
+
+    .nav-util {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.875rem;
+      padding: 6px 10px;
+      border-radius: 6px;
+      transition: color 0.2s ease, background-color 0.2s ease;
+    }
+
+    .nav-util:hover {
+      color: var(--text-primary);
+      background-color: var(--bg-card);
+    }
+
+    .nav-github {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 8px;
+    }
+
+    .btn-nav-cta {
+      padding: 8px 16px;
+      font-size: 0.875rem;
     }
 
     .btn {
@@ -957,6 +1078,56 @@
       border-color: rgba(239, 68, 68, 0.3);
     }
 
+    /* Envoy Harness highlight section */
+    .harness-section {
+      padding: 80px 0;
+      background: linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, rgba(99, 102, 241, 0.08) 100%);
+      border-top: 1px solid var(--border-color);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .harness-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.1fr;
+      gap: 48px;
+      align-items: center;
+    }
+
+    .harness-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background-color: rgba(6, 182, 212, 0.15);
+      color: #22d3ee;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    .harness-features {
+      list-style: none;
+      padding: 0;
+      margin: 24px 0 0;
+    }
+
+    .harness-features li {
+      position: relative;
+      padding-left: 28px;
+      margin-bottom: 14px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    .harness-features li::before {
+      content: "✓";
+      position: absolute;
+      left: 0;
+      color: #22d3ee;
+      font-weight: 700;
+    }
+
     /* Family Network highlight section */
     .family-network {
       padding: 80px 0;
@@ -1145,6 +1316,7 @@
     .download-link.primary {
       background-color: var(--primary-color);
       color: white;
+      white-space: nowrap;
     }
 
     .download-link.primary:hover {
@@ -1198,6 +1370,61 @@
       margin: 0 auto;
     }
 
+    .download-card-mobile-wide {
+      grid-column: 1 / -1;
+      padding: 32px 28px;
+    }
+
+    .download-mobile-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 32px;
+    }
+
+    .download-mobile-col + .download-mobile-col {
+      border-left: 1px solid var(--border-color);
+      padding-left: 32px;
+    }
+
+    .download-mobile-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      height: 100%;
+    }
+
+    .download-mobile-body {
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+      justify-content: center;
+      width: 100%;
+      max-width: 440px;
+      margin-top: 4px;
+    }
+
+    .download-mobile-col .download-links {
+      flex: 1;
+      min-width: 0;
+      max-width: 200px;
+    }
+
+    .download-link-note {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      border: 1px dashed var(--border-color);
+      background-color: rgba(15, 23, 42, 0.35);
+      line-height: 1.35;
+    }
+
     .download-qr {
       flex-shrink: 0;
       text-align: center;
@@ -1212,6 +1439,7 @@
       height: 160px;
       display: block;
       border-radius: 6px;
+      object-fit: contain;
     }
 
     .download-qr-label {
@@ -1419,6 +1647,15 @@
 
     /* Responsive */
     @media (max-width: 1024px) {
+      .nav-links,
+      .nav-actions {
+        display: none;
+      }
+
+      .mobile-menu-btn {
+        display: block;
+      }
+
       .features-grid {
         grid-template-columns: repeat(2, 1fr);
         --show-count: 4;
@@ -1437,18 +1674,6 @@
 
       nav {
         height: 56px;
-      }
-
-      .nav-links {
-        display: none;
-      }
-
-      .nav-actions {
-        display: none;
-      }
-
-      .mobile-menu-btn {
-        display: block;
       }
 
       .mobile-nav-overlay {
@@ -1552,6 +1777,15 @@
         gap: 32px;
       }
 
+      .harness-section {
+        padding: 48px 0;
+      }
+
+      .harness-grid {
+        grid-template-columns: 1fr;
+        gap: 32px;
+      }
+
       .family-grid h2 {
         font-size: 1.5rem;
       }
@@ -1580,9 +1814,23 @@
         padding: 24px 20px;
       }
 
-      .download-layout {
+      .download-layout,
+      .download-mobile-body {
         flex-direction: column;
         gap: 20px;
+        align-items: center;
+      }
+
+      .download-mobile-grid {
+        grid-template-columns: 1fr;
+        gap: 28px;
+      }
+
+      .download-mobile-col + .download-mobile-col {
+        border-left: none;
+        padding-left: 0;
+        padding-top: 28px;
+        border-top: 1px solid var(--border-color);
       }
 
       .download-qr {
@@ -1646,18 +1894,28 @@
       </a>
       <ul class="nav-links">
         <li><a href="#features">Features</a></li>
-        <li><a href="#envoygo">EnvoyGo</a></li>
-        <li><a href="#knowledge">Knowledge</a></li>
-        <li><a href="#family">Family</a></li>
-        <li><a href="#agents">Agents</a></li>
+        <li class="nav-dropdown">
+          <button type="button" class="nav-dropdown-trigger" aria-expanded="false" aria-haspopup="true">
+            Product <span class="nav-dropdown-chevron" aria-hidden="true"></span>
+          </button>
+          <ul class="nav-dropdown-menu">
+            <li><a href="#envoygo">EnvoyGo</a></li>
+            <li><a href="#knowledge">Knowledge</a></li>
+            <li><a href="#family">Family Network</a></li>
+            <li><a href="#agents">Agent Network</a></li>
+            <li><a href="#harness">Envoy Harness</a></li>
+          </ul>
+        </li>
         <li><a href="#architecture">Architecture</a></li>
         <li><a href="#security">Security</a></li>
         <li><a href="#downloads">Download</a></li>
       </ul>
       <div class="nav-actions">
-        <a href="index-zh.html" class="btn btn-secondary">中文</a>
-        <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" class="btn btn-secondary">GitHub</a>
-        <a href="#downloads" class="btn btn-primary">Install Now</a>
+        <a href="index-zh.html" class="nav-util">中文</a>
+        <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" rel="noopener noreferrer" class="nav-util nav-github" aria-label="GitHub">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+        </a>
+        <a href="#downloads" class="btn btn-primary btn-nav-cta">Install</a>
       </div>
       <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Toggle menu">
         <span></span>
@@ -1670,16 +1928,18 @@
   <!-- Mobile Navigation Overlay -->
   <div class="mobile-nav-overlay" id="mobileNavOverlay">
     <a href="#features">Features</a>
+    <div class="mobile-nav-label">Product</div>
     <a href="#envoygo">EnvoyGo Mobile</a>
     <a href="#knowledge">Knowledge Base</a>
     <a href="#family">Family Network</a>
     <a href="#agents">Agent Network</a>
+    <a href="#harness">Envoy Harness</a>
     <a href="#architecture">Architecture</a>
     <a href="#security">Security</a>
     <a href="#downloads">Download</a>
     <div class="mobile-nav-actions">
       <a href="index-zh.html" class="btn btn-secondary">中文</a>
-      <a href="EnvoyMesh_GuideBook_0.2.2.html" class="btn btn-secondary">Read Guidebook</a>
+      <a href="EnvoyMesh_GuideBook_0.3.0.html" class="btn btn-secondary">Read Guidebook</a>
       <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" class="btn btn-primary">View on GitHub</a>
     </div>
   </div>
@@ -1689,7 +1949,7 @@
     <div class="container hero-content">
       <img src="logo-180.png" alt="EnvoyMesh Logo" class="hero-logo">
       <h1>Decentralized P2P Agentic Mesh</h1>
-      <p>A distributed social network, agent network, and knowledge sharing system. Chat peer-to-peer, run AI agents locally with OpenClaw, connect external agents, and turn your home computer into a private family network — accessible from anywhere via EnvoyGo.</p>
+      <p>A distributed social network, agent network, and knowledge sharing system. Chat peer-to-peer, run Envoy Harness for coding tasks, run AI agents locally with OpenClaw, connect external agents, delegate Team jobs across bonded contacts, and turn your home computer into a private family network — accessible from anywhere via EnvoyGo.</p>
       <div class="nav-actions" style="justify-content: center;">
         <a href="#downloads" class="btn btn-primary">Download</a>
         <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" class="btn btn-secondary">View on GitHub</a>
@@ -1996,7 +2256,17 @@
           <div class="feature-body">
             <div class="feature-icon orange">🌐</div>
             <h3>Agent Network</h3>
-            <p>Set up multi-agent collaboration on LAN or WAN. Delegate complex tasks across your agent fleet — create jobs, assign them to agents, and track progress as they work together to complete them across your private network.</p>
+            <p>Run <strong>Team jobs</strong> across opted-in agents on bonded contacts. Your home agent plans multi-step work, workers execute on their own nodes, and you review the plan, budget, and final report — with optional parallel speculation when enabled.</p>
+          </div>
+        </div>
+        <div class="feature-card with-shot">
+          <div class="shot-frame desktop" data-caption="Envoy Harness — coding agent timeline">
+            <img src="screens/desktop/english/envoy_harness.png" alt="Envoy Harness in Social" loading="lazy">
+          </div>
+          <div class="feature-body">
+            <div class="feature-icon cyan">🛠️</div>
+            <h3>Envoy Harness</h3>
+            <p>Coding agent on your home node — see tool activity, approve risky steps, review diffs, and recover after disconnects. Same semantic timeline in Chat and Terminal. <span style="color:#22d3ee;font-size:0.85rem;">Beta</span></p>
           </div>
         </div>
         <div class="feature-card with-shot">
@@ -2243,7 +2513,7 @@
     <div class="container">
       <div class="section-header">
         <h2>Agent Network</h2>
-        <p>Multi-agent collaboration on LAN or WAN — delegate tasks across your fleet and track progress to completion.</p>
+        <p>Team jobs — multi-agent collaboration on LAN or WAN among bonded contacts who opt in. Plan, delegate, track, and collect attributed reports.</p>
       </div>
       <div style="max-width: 830px; margin: 0 auto 40px;">
         <svg viewBox="0 0 830 400" style="width: 100%; height: auto;" role="img" aria-label="Agent network topology">
@@ -2261,7 +2531,7 @@
           <g transform="translate(40, 80)">
             <rect x="0" y="0" width="240" height="280" rx="12" fill="#1e293b" stroke="#6366f1" stroke-width="2" filter="url(#agGlow)"/>
             <text x="120" y="30" text-anchor="middle" font-size="14" font-weight="600" fill="#6366f1">🏠 Home Node</text>
-            <text x="120" y="48" text-anchor="middle" font-size="10" fill="#94a3b8">Job Board · Task Delegation</text>
+            <text x="120" y="48" text-anchor="middle" font-size="10" fill="#94a3b8">Team Jobs · Orchestrator</text>
             <line x1="20" y1="58" x2="220" y2="58" stroke="#334155" stroke-width="1"/>
             <rect x="20" y="72" width="200" height="44" rx="6" fill="rgba(34,197,94,0.15)" stroke="#22c55e" stroke-width="1"/>
             <text x="32" y="90" font-size="10" font-weight="600" fill="#4ade80">▶ Job A</text>
@@ -2312,10 +2582,32 @@
             <text x="55" y="66" text-anchor="middle" font-size="8" fill="#64748b">WAN</text>
           </g>
         </svg>
-        <p style="text-align: center; color: var(--text-muted); font-size: 0.85rem; margin-top: 12px;">Create jobs · assign to agents across LAN/WAN · track progress · collect results</p>
+        <p style="text-align: center; color: var(--text-muted); font-size: 0.85rem; margin-top: 12px;">Plan · delegate to bonded workers · track · collect report</p>
       </div>
       <div style="max-width: 760px; margin: 0 auto; text-align: center;">
-        <p style="color: var(--text-secondary); font-size: 1rem; line-height: 1.8;">Turn your home node into an <strong style="color: var(--text-primary);">agent fleet commander</strong>. Create jobs, assign them to EnvoyAI or external agents (HomeClaw, Hermes, OpenHuman), and watch progress stream back in real time. Agents collaborate across LAN or WAN — no central server, no public IP required.</p>
+        <p style="color: var(--text-secondary); font-size: 1rem; line-height: 1.8;"><strong style="color: var(--text-primary);">Team jobs</strong> let your home agent plan multi-step work and delegate to <strong style="color: var(--text-primary);">opted-in agents on bonded contacts</strong> — EnvoyAI, HomeClaw, Hermes, or OpenHuman. You review the plan, budget, and final report. Workers run on their own nodes; results stream back with attribution. Optional <strong style="color: var(--text-primary);">speculation</strong> can try parallel approaches on a step when enabled in chain defaults.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Envoy Harness Section -->
+  <section class="harness-section" id="harness">
+    <div class="container">
+      <div class="harness-grid">
+        <div>
+          <span class="harness-badge">Beta · Desktop Social + Terminal</span>
+          <h2>Envoy Harness</h2>
+          <p style="color: var(--text-secondary); font-size: 1.05rem; line-height: 1.8; margin-bottom: 8px;">Coding agent on your home node — see what the agent is doing, approve risky steps, review diffs, and recover from disconnects. One semantic timeline in Chat and Terminal.</p>
+          <ul class="harness-features">
+            <li>Conversation-first timeline: messages, tool activity, approvals, file changes, completion</li>
+            <li>Safe by default: permission dock shows scope and risk before tools run</li>
+            <li>Runs on your hardware: local-first; optional peer execution with attribution</li>
+            <li>EnvoyGo: monitor, approve, and redirect from your phone — not a full IDE</li>
+          </ul>
+        </div>
+        <div class="family-shot">
+          <img src="screens/desktop/english/envoy_harness.png" alt="Envoy Harness coding agent in Social" loading="lazy">
+        </div>
       </div>
     </div>
   </section>
@@ -2435,6 +2727,8 @@
           <ul class="kb-features">
             <li>Import any file type — Markdown, PDF, Word, images, and more</li>
             <li>RAG indexing with vector + lexical + hybrid search modes</li>
+            <li><strong>Envoy Local embeddings</strong> on your home node — default Qwen sidecar, no cloud API key required</li>
+            <li>Self-healing reindex: recovers from oversized chunks and embed sidecar wedges automatically</li>
             <li>Per-item sensitivity labels: public, friends, or private</li>
             <li>Public items are queryable by all EnvoyMesh peers via <code>knowledge.query</code></li>
             <li>Agent context: vault snippets automatically injected into LLM prompts</li>
@@ -2638,7 +2932,7 @@
             <a href="https://github.com/allenpeng0705/EnvoyMesh/releases" class="download-link primary" target="_blank">
               Download DMG <span class="tag">GitHub</span>
             </a>
-            <a href="https://gpt4people.online/EnvoyMesh/envoymesh-desktop-compressed-0.2.2-macos-arm64.dmg" class="download-link alt" target="_blank">
+            <a href="https://gpt4people.online/EnvoyMesh/envoymesh-desktop.dmg" class="download-link alt" target="_blank">
               Download DMG <span class="tag">Mirror</span>
             </a>
           </div>
@@ -2651,49 +2945,56 @@
             <a href="https://github.com/allenpeng0705/EnvoyMesh/releases" class="download-link primary" target="_blank">
               Download EXE <span class="tag">GitHub</span>
             </a>
-            <a href="https://gpt4people.online/EnvoyMesh/envoymesh-desktop-0.2.2-windows-x64.exe" class="download-link alt" target="_blank">
+            <a href="https://gpt4people.online/EnvoyMesh/envoymesh-desktop.exe" class="download-link alt" target="_blank">
               Download EXE <span class="tag">Mirror</span>
             </a>
           </div>
         </div>
-        <div class="download-card">
-          <div class="download-layout">
-            <div class="download-buttons">
+        <div class="download-card download-card-mobile-wide">
+          <div class="download-mobile-grid">
+            <div class="download-mobile-col">
               <div class="download-icon android"><svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M17.6 9.48l1.84-3.18c.16-.31.04-.69-.26-.85-.29-.15-.65-.06-.83.22l-1.88 3.24a11.43 11.43 0 0 0-8.94 0L5.65 5.67c-.18-.28-.54-.37-.83-.22-.3.16-.42.54-.26.85L6.4 9.48A10.81 10.81 0 0 0 1 18h22a10.81 10.81 0 0 0-5.4-8.52zM7 15.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5zm10 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5z"/></svg></div>
               <h3>EnvoyGo for Android</h3>
-              <div class="platform-sub">Mobile thin client</div>
-              <div class="download-links">
-                <a href="https://play.google.com/store/apps/details?id=com.envoymesh.envoygo" class="download-link primary" target="_blank">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3.609 1.814L13.792 12 3.61 22.186a.996.996 0 0 1-.61-.92V2.734c0-.384.219-.72.609-.92zm10.89 10.893l2.302 2.302-10.937 6.333 8.635-8.635zm3.199-3.199l2.302 2.302a1 1 0 0 1 0 1.38l-2.302 2.302L15.396 12l2.302-2.492zM5.864 2.658L16.8 8.99l-2.302 2.302L5.864 2.657z"/></svg>
-                  Get on Google Play <span class="tag">Official</span>
-                </a>
-                <a href="https://github.com/allenpeng0705/EnvoyMesh/releases" class="download-link alt" target="_blank">
-                  Download APK <span class="tag">GitHub</span>
-                </a>
-                <a href="https://gpt4people.online/EnvoyMesh/envoygo-0.2.2-android.apk.zip" class="download-link alt" target="_blank">
-                  Download APK <span class="tag">Mirror</span>
-                </a>
+              <div class="platform-sub">Mobile thin client · Google Play &amp; APK</div>
+              <div class="download-mobile-body">
+                <div class="download-links">
+                  <a href="https://play.google.com/store/apps/details?id=com.envoymesh.envoygo" class="download-link primary" target="_blank" rel="noopener noreferrer">
+                    Google Play <span class="tag">Official</span>
+                  </a>
+                  <a href="https://github.com/allenpeng0705/EnvoyMesh/releases" class="download-link alt" target="_blank" rel="noopener noreferrer">
+                    Download APK <span class="tag">GitHub</span>
+                  </a>
+                  <a href="https://gpt4people.online/EnvoyMesh/envoygo-0.3.0-android.apk.zip" class="download-link alt" target="_blank" rel="noopener noreferrer">
+                    Download APK <span class="tag">Mirror</span>
+                  </a>
+                </div>
+                <div class="download-qr">
+                  <img src="screens/google-play-qr.png" alt="Scan QR code to download EnvoyGo on Google Play" width="160" height="160">
+                  <div class="download-qr-label">Scan · Google Play</div>
+                </div>
               </div>
             </div>
-            <div class="download-qr">
-              <img src="screens/google-play-qr.png" alt="Scan QR code to download EnvoyGo on Google Play" width="160" height="160">
-              <div class="download-qr-label">Scan for Google Play</div>
+            <div class="download-mobile-col">
+              <div class="download-icon ios"><svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg></div>
+              <h3>EnvoyGo for iOS</h3>
+              <div class="platform-sub">Mobile thin client · App Store</div>
+              <div class="download-mobile-body">
+                <div class="download-links">
+                  <a href="https://apps.apple.com/app/id6795717774" class="download-link primary" target="_blank" rel="noopener noreferrer">
+                    App Store <span class="tag">Official</span>
+                  </a>
+                  <div class="download-link-note">iOS 18.6+ · home node required</div>
+                </div>
+                <div class="download-qr">
+                  <img src="screens/app-store-qr.png" alt="Scan QR code to download EnvoyGo on the App Store" width="160" height="160">
+                  <div class="download-qr-label">Scan · App Store</div>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-        <div class="download-card disabled">
-          <div class="download-icon ios"><svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg></div>
-          <h3>EnvoyGo for iOS</h3>
-          <div class="platform-sub">Coming soon on the App Store</div>
-          <div class="download-links">
-            <!-- TODO: replace PLACEHOLDER_APP_STORE with the App Store URL -->
-            <span class="download-link alt" style="opacity: 0.6;">
-              App Store <span class="tag">Soon</span>
-            </span>
           </div>
         </div>
       </div>
-      <p class="download-note">EnvoyGo for Android is available on Google Play — scan the QR code or tap the button below. EnvoyGo for iOS is coming soon. Linux users can build from source. GitHub links open the releases page — pick your platform's asset. Can't download from GitHub? Use the Mirror link as a fallback.</p>
+      <p class="download-note">EnvoyGo is on Google Play and the App Store — scan a QR code or tap a button below. Linux users can build from source. GitHub links open the releases page — pick your platform's asset. Can't download from GitHub? Use the Mirror link as a fallback.</p>
     </div>
   </section>
 
@@ -2707,7 +3008,7 @@
       </div>
       <div class="nav-actions" style="justify-content: center;">
         <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" class="btn btn-primary">View on GitHub</a>
-        <a href="EnvoyMesh_GuideBook_0.2.2.html" class="btn btn-secondary">Read Guidebook</a>
+        <a href="EnvoyMesh_GuideBook_0.3.0.html" class="btn btn-secondary">Read Guidebook</a>
       </div>
     </div>
   </section>
@@ -2721,7 +3022,7 @@
       </div>
       <ul class="footer-links">
         <li><a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank">GitHub</a></li>
-        <li><a href="EnvoyMesh_GuideBook_0.2.2.html">Guidebook</a></li>
+        <li><a href="EnvoyMesh_GuideBook_0.3.0.html">Guidebook</a></li>
         <li><a href="security.html">Security</a></li>
         <li><a href="privacy.html">Privacy</a></li>
         <li><a href="high-level-design.html">Design</a></li>
@@ -2773,8 +3074,34 @@
       });
     }
 
+    document.querySelectorAll('.nav-dropdown').forEach((dropdown) => {
+      const trigger = dropdown.querySelector('.nav-dropdown-trigger');
+      if (!trigger) return;
+      trigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = dropdown.classList.contains('open');
+        document.querySelectorAll('.nav-dropdown.open').forEach((d) => {
+          d.classList.remove('open');
+          const t = d.querySelector('.nav-dropdown-trigger');
+          if (t) t.setAttribute('aria-expanded', 'false');
+        });
+        if (!isOpen) {
+          dropdown.classList.add('open');
+          trigger.setAttribute('aria-expanded', 'true');
+        }
+      });
+    });
+
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.nav-dropdown.open').forEach((dropdown) => {
+        dropdown.classList.remove('open');
+        const trigger = dropdown.querySelector('.nav-dropdown-trigger');
+        if (trigger) trigger.setAttribute('aria-expanded', 'false');
+      });
+    });
+
     window.addEventListener('resize', () => {
-      if (window.innerWidth > 768 && mobileNavOverlay.classList.contains('active')) {
+      if (window.innerWidth > 1024 && mobileNavOverlay.classList.contains('active')) {
         mobileMenuBtn.classList.remove('active');
         mobileNavOverlay.classList.remove('active');
         document.body.style.overflow = '';

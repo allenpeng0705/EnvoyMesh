@@ -21,10 +21,15 @@
 # out of scope for this project.
 #
 # Output (copied from Cargo target dir into the repo):
-#   release/envoymesh-desktop-{version}-macos-{arch}.dmg
+#   release/envoymesh-desktop-{version}-macos-{arch}.dmg   (versioned archive)
+#   release/envoymesh-desktop.dmg                          (stable mirror URL)
 #   release/envoymesh-desktop-{version}-linux-{arch}.deb
 #   release/envoymesh-desktop-{version}-linux-{arch}.AppImage
 #   release/envoymesh-desktop-{version}-{platform}-{arch}/   (folder with all of the above)
+#
+# Stable mirror filenames (envoymesh-desktop.dmg / .exe on Windows) are overwritten
+# on each publish. Sites link to https://gpt4people.online/EnvoyMesh/ with those
+# fixed names so download URLs never change when VERSION bumps.
 #
 # Slim / Full / default presets (Phase 49 — Pi optional on Windows):
 #   default     Uses tauri.conf.json           — includes Pi + OpenClaw
@@ -74,17 +79,13 @@
 #               Skip the post-stage smoke (asserts entry files exist in
 #               both staged trees). Default: smoke.
 #
-# Apple review build (APPLE_REVIEW=1) — special home node for iOS/Android
-# store review. One flag controls it; normal builds are unaffected:
-#   APPLE_REVIEW=1 ./scripts/build-desktop.sh
-#   Stages a family-only review node-config.json into the node bundle:
-#     reviewPairingEnabled=true, reviewPairingFamilyOnly=true,
-#     reviewPairingTtlDays=30, stable reviewPairingToken (auto-generated, or
-#     set APPLE_REVIEW_TOKEN=<secret> to reuse one across rebuilds).
-#   Result: every QR — including the EnvoyGo pairing QR — binds the scanner as
-#   a family member (never the home owner) for 30 days. See
-#   apps/node/src/review-pairing.ts for the runtime semantics. Run this build
-#   on a fresh profile and NEVER ship it to normal users.
+# Apple review build (opt-in, macOS/Linux only — NOT the default package):
+#   APPLE_REVIEW=1 ./scripts/build-desktop.sh macos
+#   One-off family-only review home for iOS/Android store submission. Stages
+#   scripts/stage-apple-review-node-config.mjs into the node bundle. Set
+#   APPLE_REVIEW_TOKEN=<secret> to reuse a token across rebuilds.
+#   Do NOT use for normal releases. Windows builds do not support this —
+#   use build-desktop.ps1 without APPLE_REVIEW.
 #
 # OpenClaw extensions (macOS/Linux):
 #   Default OPENCLAW_EXTENSIONS=default — EnvoyMesh agent allowlist only
@@ -120,18 +121,20 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 OUT_DIR="${OUT_DIR:-release}"
 TAURI_TARGET_ROOT="${PROJECT_DIR}/apps/tauri/src-tauri/target"
+
+# Keep @envoymesh/* dependency pins in lockstep with VERSION. Stale pins
+# make npm fetch the public registry and 404 on private workspace packages.
+# Read VERSION *after* sync — package.json may have been stale vs the VERSION file.
+echo "Syncing workspace package versions..."
+node "${PROJECT_DIR}/scripts/sync-version.mjs"
+echo ""
+
 VERSION="$(node -p "require('${PROJECT_DIR}/package.json').version" 2>/dev/null || echo dev)"
 
 echo "============================================"
 echo "  EnvoyMesh Desktop Builder (Tauri)"
 echo "  Version: ${VERSION}"
 echo "============================================"
-echo ""
-
-# Keep @envoymesh/* dependency pins in lockstep with VERSION. Stale pins
-# make npm fetch the public registry and 404 on private workspace packages.
-echo "Syncing workspace package versions..."
-node "${PROJECT_DIR}/scripts/sync-version.mjs"
 echo ""
 
 file_mtime() {
@@ -289,6 +292,11 @@ publish_desktop_release() {
         cp -R "$app" "$dest/EnvoyMesh.app"
         echo "  ✓ ${OUT_DIR}/${base}/EnvoyMesh.app ($(du -sh "$dest/EnvoyMesh.app" | awk '{print $1}'))"
       fi
+      local versioned_dmg="${PROJECT_DIR}/${OUT_DIR}/${base}.dmg"
+      if [ -f "$versioned_dmg" ]; then
+        cp -f "$versioned_dmg" "${PROJECT_DIR}/${OUT_DIR}/envoymesh-desktop.dmg"
+        echo "  ✓ ${OUT_DIR}/envoymesh-desktop.dmg (stable mirror — gpt4people.online/EnvoyMesh/)"
+      fi
       ;;
   esac
 
@@ -375,51 +383,17 @@ bash scripts/stage-tauri-node-bundle.sh
 # Default: fail the build if push-config.json exists but secrets are missing.
 export REQUIRE_PUSH_CREDENTIALS="${REQUIRE_PUSH_CREDENTIALS:-1}"
 bash scripts/stage-tauri-push-credentials.sh
-# Apple review build (APPLE_REVIEW=1) — family-only, 30-day review home.
-# One flag controls it; every QR (incl. EnvoyGo) binds as a family member so
-# store reviewers can never become the home owner. See runtime semantics in
-# apps/node/src/review-pairing.ts (familyOnly mode).
+# Apple review build (opt-in: APPLE_REVIEW=1 only — not the default release).
+# macOS/Linux via build-desktop.sh; not supported on Windows.
 if [ "${APPLE_REVIEW:-0}" = "1" ]; then
   echo ""
   echo "  ⚠ APPLE_REVIEW=1 — building a FAMILY-ONLY review home:"
   echo "    • All QRs (incl. EnvoyGo) bind as family members, never the owner."
   echo "    • EnvoyGo QR is valid 30 days."
   echo "    • Do NOT ship this build to normal users."
-  APPLE_REVIEW_TOKEN="${APPLE_REVIEW_TOKEN:-$(node -e "process.stdout.write(require('node:crypto').randomBytes(24).toString('hex'))")}"
   NODE_BUNDLE_DIR="${PROJECT_DIR}/apps/tauri/src-tauri/resources/node"
-  node - "$PROJECT_DIR/node-config.json" "$NODE_BUNDLE_DIR" "$APPLE_REVIEW_TOKEN" <<'EOF'
-const fs = require("node:fs")
-const path = require("node:path")
-const [src, destDir, token] = process.argv.slice(2)
-let cfg = {}
-try {
-  cfg = JSON.parse(fs.readFileSync(src, "utf8"))
-} catch (err) {
-  console.warn(`  ⚠ Could not read ${src} (${err.message}) — using minimal review config.`)
-  cfg = {
-    version: "0.1",
-    profileDir: "data/default",
-    discoveryProfile: "wan-default",
-    relayEnabled: true,
-    relayServerEnabled: false,
-    advertiseAddrs: [],
-    bootstrapPeers: [],
-    bootstrapPresets: ["public-libp2p", "public-libp2p-am6", "public-libp2p-am7", "cn-relay"],
-    configuredRelays: [],
-    modelProviders: { mode: "disabled" },
-    chatAssistEnabled: false,
-  }
-}
-cfg.reviewPairingEnabled = true
-cfg.reviewPairingToken = token
-cfg.reviewPairingFamilyOnly = true
-cfg.reviewPairingTtlDays = 30
-const out = path.join(destDir, "node-config.json")
-fs.mkdirSync(destDir, { recursive: true })
-fs.writeFileSync(out, JSON.stringify(cfg, null, 2) + "\n")
-console.log(`  ✓ Staged family-only review node-config.json → ${out}`)
-console.log(`  ✓ Review pairing token (matches the QR): ${token}`)
-EOF
+  node "${PROJECT_DIR}/scripts/stage-apple-review-node-config.mjs" \
+    "${PROJECT_DIR}/node-config.json" "${NODE_BUNDLE_DIR}"
   echo ""
 fi
 echo ""

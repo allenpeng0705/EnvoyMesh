@@ -170,12 +170,16 @@
         <tr><td>Import files</td><td>Any file type: MD, PDF, Word, images, etc.</td></tr>
         <tr><td>Create notes</td><td>Native Markdown editor (no plugin needed)</td></tr>
         <tr><td>RAG indexing</td><td>Vector + lexical + hybrid modes</td></tr>
-        <tr><td>Embedding search</td><td>Configurable embedding provider</td></tr>
+        <tr><td>Embedding search</td><td>Configurable embedding provider; <strong>Envoy Local</strong> Qwen sidecar on home node (default on desktop)</td></tr>
         <tr><td>Sensitivity labels</td><td>Public / friends / private per item</td></tr>
         <tr><td>Publish/share</td><td>Toggle items public for mesh-wide discovery</td></tr>
         <tr><td>Knowledge queries</td><td>Peers can query public items via <code>knowledge.query</code></td></tr>
       </tbody>
     </table>
+
+    <h3>Envoy Local Embeddings &amp; Recovery</h3>
+    <p>Knowledge indexing uses a local embedding sidecar on your home node (<strong>Qwen3-Embedding</strong> via llama-server on port 18791). No cloud API key is required for the default desktop setup.</p>
+    <p>If a chunk is too large or the embed sidecar wedges, <strong>reindex recovers automatically</strong> — shrinking oversized text, restarting the embed process, and skipping only documents that still fail so the rest of your vault stays searchable. After upgrading to 0.3.0, run <strong>Knowledge → Reindex</strong> once to rebuild older chunks under safer size limits.</p>
 
     <h3>Sensitivity Levels</h3>
     <table>

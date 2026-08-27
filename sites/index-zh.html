@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>EnvoyMesh Network</title>
-  <meta name="description" content="一个去中心化、点对点的自主AI智能体网络。你的身份是加密的，你的AI智能体为你工作，安全是设计的核心。">
+  <meta name="description" content="去中心化 P2P 自主 AI 智能体网络 — Envoy Harness 编程智能体、绑定联系人间的团队任务（Team jobs）、本地优先且可自愈的知识库 RAG，以及 EnvoyGo 移动端。加密身份，安全设计。">
 
   <style>
     * {
@@ -175,6 +175,16 @@
       color: var(--primary-light);
     }
 
+    .mobile-nav-label {
+      padding: 18px 12px 6px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      border-bottom: none;
+    }
+
     .mobile-nav-overlay .mobile-nav-actions {
       margin-top: 24px;
       display: flex;
@@ -189,14 +199,21 @@
 
     .nav-links {
       display: flex;
-      gap: 24px;
+      gap: 20px;
       list-style: none;
+      align-items: center;
+      margin: 0;
+      padding: 0;
+    }
+
+    .nav-links > li {
+      position: relative;
     }
 
     .nav-links a {
       color: var(--text-secondary);
       text-decoration: none;
-      font-size: 0.9rem;
+      font-size: 0.875rem;
       font-weight: 400;
       transition: color 0.2s ease;
     }
@@ -205,10 +222,114 @@
       color: var(--text-primary);
     }
 
+    .nav-dropdown-trigger {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font: inherit;
+      font-size: 0.875rem;
+      font-weight: 400;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 0;
+      transition: color 0.2s ease;
+    }
+
+    .nav-dropdown-trigger:hover,
+    .nav-dropdown:focus-within .nav-dropdown-trigger,
+    .nav-dropdown.open .nav-dropdown-trigger {
+      color: var(--text-primary);
+    }
+
+    .nav-dropdown-chevron {
+      width: 0;
+      height: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-top: 5px solid currentColor;
+      opacity: 0.65;
+      transition: transform 0.2s ease;
+    }
+
+    .nav-dropdown:focus-within .nav-dropdown-chevron,
+    .nav-dropdown.open .nav-dropdown-chevron {
+      transform: rotate(180deg);
+    }
+
+    .nav-dropdown-menu {
+      position: absolute;
+      top: calc(100% + 14px);
+      left: 50%;
+      transform: translateX(-50%) translateY(-6px);
+      min-width: 210px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 6px;
+      list-style: none;
+      margin: 0;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+      z-index: 110;
+    }
+
+    .nav-dropdown:hover .nav-dropdown-menu,
+    .nav-dropdown:focus-within .nav-dropdown-menu,
+    .nav-dropdown.open .nav-dropdown-menu {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .nav-dropdown-menu a {
+      display: block;
+      padding: 9px 12px;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+
+    .nav-dropdown-menu a:hover {
+      background: rgba(99, 102, 241, 0.12);
+      color: var(--text-primary);
+    }
+
     .nav-actions {
       display: flex;
-      gap: 16px;
+      gap: 8px;
       align-items: center;
+      flex-shrink: 0;
+    }
+
+    .nav-util {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.875rem;
+      padding: 6px 10px;
+      border-radius: 6px;
+      transition: color 0.2s ease, background-color 0.2s ease;
+    }
+
+    .nav-util:hover {
+      color: var(--text-primary);
+      background-color: var(--bg-card);
+    }
+
+    .nav-github {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 8px;
+    }
+
+    .btn-nav-cta {
+      padding: 8px 16px;
+      font-size: 0.875rem;
     }
 
     .btn {
@@ -957,6 +1078,56 @@
       border-color: rgba(239, 68, 68, 0.3);
     }
 
+    /* Envoy Harness highlight section */
+    .harness-section {
+      padding: 80px 0;
+      background: linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, rgba(99, 102, 241, 0.08) 100%);
+      border-top: 1px solid var(--border-color);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .harness-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.1fr;
+      gap: 48px;
+      align-items: center;
+    }
+
+    .harness-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background-color: rgba(6, 182, 212, 0.15);
+      color: #22d3ee;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    .harness-features {
+      list-style: none;
+      padding: 0;
+      margin: 24px 0 0;
+    }
+
+    .harness-features li {
+      position: relative;
+      padding-left: 28px;
+      margin-bottom: 14px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    .harness-features li::before {
+      content: "✓";
+      position: absolute;
+      left: 0;
+      color: #22d3ee;
+      font-weight: 700;
+    }
+
     /* Family Network highlight section */
     .family-network {
       padding: 80px 0;
@@ -1145,6 +1316,7 @@
     .download-link.primary {
       background-color: var(--primary-color);
       color: white;
+      white-space: nowrap;
     }
 
     .download-link.primary:hover {
@@ -1198,6 +1370,61 @@
       margin: 0 auto;
     }
 
+    .download-card-mobile-wide {
+      grid-column: 1 / -1;
+      padding: 32px 28px;
+    }
+
+    .download-mobile-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 32px;
+    }
+
+    .download-mobile-col + .download-mobile-col {
+      border-left: 1px solid var(--border-color);
+      padding-left: 32px;
+    }
+
+    .download-mobile-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      height: 100%;
+    }
+
+    .download-mobile-body {
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+      justify-content: center;
+      width: 100%;
+      max-width: 440px;
+      margin-top: 4px;
+    }
+
+    .download-mobile-col .download-links {
+      flex: 1;
+      min-width: 0;
+      max-width: 200px;
+    }
+
+    .download-link-note {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      border: 1px dashed var(--border-color);
+      background-color: rgba(15, 23, 42, 0.35);
+      line-height: 1.35;
+    }
+
     .download-qr {
       flex-shrink: 0;
       text-align: center;
@@ -1212,6 +1439,7 @@
       height: 160px;
       display: block;
       border-radius: 6px;
+      object-fit: contain;
     }
 
     .download-qr-label {
@@ -1419,6 +1647,15 @@
 
     /* Responsive */
     @media (max-width: 1024px) {
+      .nav-links,
+      .nav-actions {
+        display: none;
+      }
+
+      .mobile-menu-btn {
+        display: block;
+      }
+
       .features-grid {
         grid-template-columns: repeat(2, 1fr);
         --show-count: 4;
@@ -1437,18 +1674,6 @@
 
       nav {
         height: 56px;
-      }
-
-      .nav-links {
-        display: none;
-      }
-
-      .nav-actions {
-        display: none;
-      }
-
-      .mobile-menu-btn {
-        display: block;
       }
 
       .mobile-nav-overlay {
@@ -1552,6 +1777,15 @@
         gap: 32px;
       }
 
+      .harness-section {
+        padding: 48px 0;
+      }
+
+      .harness-grid {
+        grid-template-columns: 1fr;
+        gap: 32px;
+      }
+
       .family-grid h2 {
         font-size: 1.5rem;
       }
@@ -1580,9 +1814,23 @@
         padding: 24px 20px;
       }
 
-      .download-layout {
+      .download-layout,
+      .download-mobile-body {
         flex-direction: column;
         gap: 20px;
+        align-items: center;
+      }
+
+      .download-mobile-grid {
+        grid-template-columns: 1fr;
+        gap: 28px;
+      }
+
+      .download-mobile-col + .download-mobile-col {
+        border-left: none;
+        padding-left: 0;
+        padding-top: 28px;
+        border-top: 1px solid var(--border-color);
       }
 
       .download-qr {
@@ -1646,18 +1894,28 @@
       </a>
       <ul class="nav-links">
         <li><a href="#features">特性</a></li>
-        <li><a href="#envoygo">EnvoyGo</a></li>
-        <li><a href="#knowledge">知识库</a></li>
-        <li><a href="#family">家庭网络</a></li>
-        <li><a href="#agents">智能体</a></li>
+        <li class="nav-dropdown">
+          <button type="button" class="nav-dropdown-trigger" aria-expanded="false" aria-haspopup="true">
+            产品 <span class="nav-dropdown-chevron" aria-hidden="true"></span>
+          </button>
+          <ul class="nav-dropdown-menu">
+            <li><a href="#envoygo">EnvoyGo</a></li>
+            <li><a href="#knowledge">知识库</a></li>
+            <li><a href="#family">家庭网络</a></li>
+            <li><a href="#agents">智能体网络</a></li>
+            <li><a href="#harness">Envoy Harness</a></li>
+          </ul>
+        </li>
         <li><a href="#architecture">架构</a></li>
         <li><a href="#security">安全</a></li>
         <li><a href="#downloads">下载</a></li>
       </ul>
       <div class="nav-actions">
-        <a href="index.html" class="btn btn-secondary">English</a>
-        <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" class="btn btn-secondary">GitHub</a>
-        <a href="#downloads" class="btn btn-primary">立即安装</a>
+        <a href="index.html" class="nav-util">English</a>
+        <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" rel="noopener noreferrer" class="nav-util nav-github" aria-label="GitHub">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+        </a>
+        <a href="#downloads" class="btn btn-primary btn-nav-cta">安装</a>
       </div>
       <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="切换菜单">
         <span></span>
@@ -1670,16 +1928,18 @@
   <!-- 移动端导航覆盖层 -->
   <div class="mobile-nav-overlay" id="mobileNavOverlay">
     <a href="#features">特性</a>
+    <div class="mobile-nav-label">产品</div>
     <a href="#envoygo">EnvoyGo 移动端</a>
     <a href="#knowledge">知识库</a>
     <a href="#family">家庭网络</a>
     <a href="#agents">智能体网络</a>
+    <a href="#harness">Envoy Harness</a>
     <a href="#architecture">架构</a>
     <a href="#security">安全</a>
     <a href="#downloads">下载</a>
     <div class="mobile-nav-actions">
       <a href="index.html" class="btn btn-secondary">English</a>
-      <a href="EnvoyMesh_GuideBook_0.2.2.zh-CN.html" class="btn btn-secondary">阅读使用指南</a>
+      <a href="EnvoyMesh_GuideBook_0.3.0.zh-CN.html" class="btn btn-secondary">阅读使用指南</a>
       <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" class="btn btn-primary">在 GitHub 上查看</a>
     </div>
   </div>
@@ -1689,7 +1949,7 @@
     <div class="container hero-content">
       <img src="logo-180.png" alt="EnvoyMesh Logo" class="hero-logo">
       <h1>去中心化 P2P 智能体网络</h1>
-      <p>一个分布式社交网络、智能体网络和知识共享系统。点对点聊天，本地运行 OpenClaw AI 智能体，连接外部智能体，并将你的家用电脑变成私人家庭网络——通过 EnvoyGo 随时随地访问。</p>
+      <p>一个分布式社交网络、智能体网络和知识共享系统。点对点聊天，在主节点运行 Envoy Harness 处理编程任务，本地运行 OpenClaw AI 智能体，连接外部智能体，向已绑定的联系人委派团队任务（Team jobs），并将你的家用电脑变成私人家庭网络——通过 EnvoyGo 随时随地访问。</p>
       <div class="nav-actions" style="justify-content: center;">
         <a href="#downloads" class="btn btn-primary">下载</a>
         <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" class="btn btn-secondary">在 GitHub 上查看</a>
@@ -1973,7 +2233,17 @@
           <div class="feature-body">
             <div class="feature-icon orange">🌐</div>
             <h3>智能体网络</h3>
-            <p>在局域网或广域网上设置多智能体协作。跨智能体集群委派复杂任务——创建任务、分配给智能体，并跟踪进度，让它们在你的私有网络中协作完成工作。</p>
+            <p>在<strong>已加入智能体网络且已绑定的联系人</strong>之间运行<strong>团队任务（Team jobs）</strong>。主节点智能体规划多步工作，工作者在各自节点执行，您审查计划、预算与最终报告——启用时可选并行推测执行。</p>
+          </div>
+        </div>
+        <div class="feature-card with-shot">
+          <div class="shot-frame desktop" data-caption="Envoy Harness — 编程智能体时间线">
+            <img src="screens/desktop/chinese/envoy_harness.png" alt="Social 中的 Envoy Harness" loading="lazy">
+          </div>
+          <div class="feature-body">
+            <div class="feature-icon cyan">🛠️</div>
+            <h3>Envoy Harness</h3>
+            <p>主节点上的编程智能体——查看工具活动、批准敏感操作、审查 diff、断线后恢复。Chat 与 Terminal 共用同一时间线。<span style="color:#22d3ee;font-size:0.85rem;">Beta</span></p>
           </div>
         </div>
         <div class="feature-card with-shot">
@@ -2220,7 +2490,7 @@
     <div class="container">
       <div class="section-header">
         <h2>智能体网络</h2>
-        <p>局域网或广域网上的多智能体协作——跨智能体集群委派任务，并实时跟踪进度直至完成。</p>
+        <p>团队任务（Team jobs）——已选择加入的绑定联系人之间在局域网或广域网上的多智能体协作。规划、委派、跟踪并汇总带来源的报告。</p>
       </div>
       <div style="max-width: 830px; margin: 0 auto 40px;">
         <svg viewBox="0 0 830 400" style="width: 100%; height: auto;" role="img" aria-label="智能体网络拓扑图">
@@ -2238,7 +2508,7 @@
           <g transform="translate(40, 80)">
             <rect x="0" y="0" width="240" height="280" rx="12" fill="#1e293b" stroke="#6366f1" stroke-width="2" filter="url(#agGlowZh)"/>
             <text x="120" y="30" text-anchor="middle" font-size="14" font-weight="600" fill="#6366f1">🏠 主节点</text>
-            <text x="120" y="48" text-anchor="middle" font-size="10" fill="#94a3b8">任务看板 · 任务委派</text>
+            <text x="120" y="48" text-anchor="middle" font-size="10" fill="#94a3b8">团队任务 · 编排器</text>
             <line x1="20" y1="58" x2="220" y2="58" stroke="#334155" stroke-width="1"/>
             <rect x="20" y="72" width="200" height="44" rx="6" fill="rgba(34,197,94,0.15)" stroke="#22c55e" stroke-width="1"/>
             <text x="32" y="90" font-size="10" font-weight="600" fill="#4ade80">▶ 任务 A</text>
@@ -2289,10 +2559,32 @@
             <text x="55" y="66" text-anchor="middle" font-size="8" fill="#64748b">广域网</text>
           </g>
         </svg>
-        <p style="text-align: center; color: var(--text-muted); font-size: 0.85rem; margin-top: 12px;">创建任务 · 跨局域网/广域网委派智能体 · 跟踪进度 · 汇总结果</p>
+        <p style="text-align: center; color: var(--text-muted); font-size: 0.85rem; margin-top: 12px;">规划 · 委派给绑定工作者 · 跟踪 · 汇总报告</p>
       </div>
       <div style="max-width: 760px; margin: 0 auto; text-align: center;">
-        <p style="color: var(--text-secondary); font-size: 1rem; line-height: 1.8;">把你的主节点变成<strong style="color: var(--text-primary);">智能体集群指挥官</strong>。创建任务，委派给 EnvoyAI 或外部智能体（HomeClaw、Hermes、OpenHuman），实时查看进度回传。智能体在局域网或广域网中协作——无需中心服务器，无需公网 IP。</p>
+        <p style="color: var(--text-secondary); font-size: 1rem; line-height: 1.8;"><strong style="color: var(--text-primary;">团队任务（Team jobs）</strong> 让您的主节点智能体规划多步工作，并委派给<strong style="color: var(--text-primary);">已加入智能体网络且已绑定的联系人智能体</strong> — EnvoyAI、HomeClaw、Hermes 或 OpenHuman。您审查计划、预算与最终报告。工作者在各自节点上运行；结果带来源 attribution 回传。在链默认设置中启用时，可选<strong style="color: var(--text-primary;">推测执行</strong>对单步并行尝试多种方案。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Envoy Harness Section -->
+  <section class="harness-section" id="harness">
+    <div class="container">
+      <div class="harness-grid">
+        <div>
+          <span class="harness-badge">Beta · 桌面 Social + Terminal</span>
+          <h2>Envoy Harness</h2>
+          <p style="color: var(--text-secondary); font-size: 1.05rem; line-height: 1.8; margin-bottom: 8px;">在您的主节点上运行的编程智能体——清楚看到智能体在做什么、批准敏感操作、审查 diff、断线后恢复。Chat 与 Terminal 共用同一时间线。</p>
+          <ul class="harness-features">
+            <li>对话优先的时间线：消息、工具活动、审批、文件变更、完成状态</li>
+            <li>默认安全：权限面板在工具运行前展示范围与风险</li>
+            <li>在您的硬件上运行：本地优先；可选对等执行并带来源 attribution</li>
+            <li>EnvoyGo：在手机上监控、批准与转向——非完整 IDE</li>
+          </ul>
+        </div>
+        <div class="family-shot">
+          <img src="screens/desktop/chinese/envoy_harness.png" alt="Social 中的 Envoy Harness 编程智能体" loading="lazy">
+        </div>
       </div>
     </div>
   </section>
@@ -2412,6 +2704,8 @@
           <ul class="kb-features">
             <li>导入任意文件类型——Markdown、PDF、Word、图片等</li>
             <li>RAG 索引，支持向量 + 词法 + 混合搜索模式</li>
+            <li><strong>Envoy Local 嵌入</strong>在主节点运行——默认 Qwen sidecar，无需云端 API 密钥</li>
+            <li>自愈式重新索引：自动从超大块与 embed sidecar 卡住中恢复</li>
             <li>逐项敏感度标签：公开、好友、私有</li>
             <li>公开项可被所有 EnvoyMesh 节点通过 <code>knowledge.query</code> 查询</li>
             <li>智能体上下文：保险箱片段自动注入 LLM 提示词</li>
@@ -2615,7 +2909,7 @@
             <a href="https://github.com/allenpeng0705/EnvoyMesh/releases" class="download-link primary" target="_blank">
               下载 DMG <span class="tag">GitHub</span>
             </a>
-            <a href="https://gpt4people.online/EnvoyMesh/envoymesh-desktop-compressed-0.2.2-macos-arm64.dmg" class="download-link alt" target="_blank">
+            <a href="https://gpt4people.online/EnvoyMesh/envoymesh-desktop.dmg" class="download-link alt" target="_blank">
               下载 DMG <span class="tag">镜像</span>
             </a>
           </div>
@@ -2628,49 +2922,56 @@
             <a href="https://github.com/allenpeng0705/EnvoyMesh/releases" class="download-link primary" target="_blank">
               下载 EXE <span class="tag">GitHub</span>
             </a>
-            <a href="https://gpt4people.online/EnvoyMesh/envoymesh-desktop-0.2.2-windows-x64.exe" class="download-link alt" target="_blank">
+            <a href="https://gpt4people.online/EnvoyMesh/envoymesh-desktop.exe" class="download-link alt" target="_blank">
               下载 EXE <span class="tag">镜像</span>
             </a>
           </div>
         </div>
-        <div class="download-card">
-          <div class="download-layout">
-            <div class="download-buttons">
+        <div class="download-card download-card-mobile-wide">
+          <div class="download-mobile-grid">
+            <div class="download-mobile-col">
               <div class="download-icon android"><svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M17.6 9.48l1.84-3.18c.16-.31.04-.69-.26-.85-.29-.15-.65-.06-.83.22l-1.88 3.24a11.43 11.43 0 0 0-8.94 0L5.65 5.67c-.18-.28-.54-.37-.83-.22-.3.16-.42.54-.26.85L6.4 9.48A10.81 10.81 0 0 0 1 18h22a10.81 10.81 0 0 0-5.4-8.52zM7 15.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5zm10 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5z"/></svg></div>
               <h3>EnvoyGo Android 版</h3>
-              <div class="platform-sub">移动瘦客户端</div>
-              <div class="download-links">
-                <a href="https://play.google.com/store/apps/details?id=com.envoymesh.envoygo" class="download-link primary" target="_blank">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3.609 1.814L13.792 12 3.61 22.186a.996.996 0 0 1-.61-.92V2.734c0-.384.219-.72.609-.92zm10.89 10.893l2.302 2.302-10.937 6.333 8.635-8.635zm3.199-3.199l2.302 2.302a1 1 0 0 1 0 1.38l-2.302 2.302L15.396 12l2.302-2.492zM5.864 2.658L16.8 8.99l-2.302 2.302L5.864 2.657z"/></svg>
-                  在 Google Play 获取 <span class="tag">官方</span>
-                </a>
-                <a href="https://github.com/allenpeng0705/EnvoyMesh/releases" class="download-link alt" target="_blank">
-                  下载 APK <span class="tag">GitHub</span>
-                </a>
-                <a href="https://gpt4people.online/EnvoyMesh/envoygo-0.2.2-android.apk.zip" class="download-link alt" target="_blank">
-                  下载 APK <span class="tag">镜像</span>
-                </a>
+              <div class="platform-sub">移动瘦客户端 · Google Play 与 APK</div>
+              <div class="download-mobile-body">
+                <div class="download-links">
+                  <a href="https://play.google.com/store/apps/details?id=com.envoymesh.envoygo" class="download-link primary" target="_blank" rel="noopener noreferrer">
+                    Google Play <span class="tag">官方</span>
+                  </a>
+                  <a href="https://github.com/allenpeng0705/EnvoyMesh/releases" class="download-link alt" target="_blank" rel="noopener noreferrer">
+                    下载 APK <span class="tag">GitHub</span>
+                  </a>
+                  <a href="https://gpt4people.online/EnvoyMesh/envoygo-0.3.0-android.apk.zip" class="download-link alt" target="_blank" rel="noopener noreferrer">
+                    下载 APK <span class="tag">镜像</span>
+                  </a>
+                </div>
+                <div class="download-qr">
+                  <img src="screens/google-play-qr.png" alt="扫描二维码在 Google Play 下载 EnvoyGo" width="160" height="160">
+                  <div class="download-qr-label">扫码 · Google Play</div>
+                </div>
               </div>
             </div>
-            <div class="download-qr">
-              <img src="screens/google-play-qr.png" alt="扫描二维码在 Google Play 下载 EnvoyGo" width="160" height="160">
-              <div class="download-qr-label">扫码前往 Google Play</div>
+            <div class="download-mobile-col">
+              <div class="download-icon ios"><svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg></div>
+              <h3>EnvoyGo iOS 版</h3>
+              <div class="platform-sub">移动瘦客户端 · App Store</div>
+              <div class="download-mobile-body">
+                <div class="download-links">
+                  <a href="https://apps.apple.com/cn/app/envoygo/id6795717774" class="download-link primary" target="_blank" rel="noopener noreferrer">
+                    App Store <span class="tag">官方</span>
+                  </a>
+                  <div class="download-link-note">需 iOS 18.6+ 与主节点</div>
+                </div>
+                <div class="download-qr">
+                  <img src="screens/app-store-qr.png" alt="扫描二维码在 App Store 下载 EnvoyGo" width="160" height="160">
+                  <div class="download-qr-label">扫码 · App Store</div>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-        <div class="download-card disabled">
-          <div class="download-icon ios"><svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg></div>
-          <h3>EnvoyGo iOS 版</h3>
-          <div class="platform-sub">即将登陆 App Store</div>
-          <div class="download-links">
-            <!-- TODO: replace PLACEHOLDER_APP_STORE with the App Store URL -->
-            <span class="download-link alt" style="opacity: 0.6;">
-              App Store <span class="tag">即将推出</span>
-            </span>
           </div>
         </div>
       </div>
-      <p class="download-note">EnvoyGo Android 版已登陆 Google Play——扫描二维码或点击下方按钮即可下载。EnvoyGo iOS 版即将推出。Linux 用户可从源码构建。GitHub 链接将打开发布页面——选择对应平台的安装包即可。GitHub 无法下载？可使用镜像链接作为备用。</p>
+      <p class="download-note">EnvoyGo 已登陆 Google Play 与 App Store——扫描二维码或点击下方按钮即可下载。Linux 用户可从源码构建。GitHub 链接将打开发布页面——选择对应平台的安装包即可。GitHub 无法下载？可使用镜像链接作为备用。</p>
     </div>
   </section>
 
@@ -2684,7 +2985,7 @@
       </div>
       <div class="nav-actions" style="justify-content: center;">
         <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" class="btn btn-primary">在 GitHub 上查看</a>
-        <a href="EnvoyMesh_GuideBook_0.2.2.zh-CN.html" class="btn btn-secondary">阅读使用指南</a>
+        <a href="EnvoyMesh_GuideBook_0.3.0.zh-CN.html" class="btn btn-secondary">阅读使用指南</a>
       </div>
     </div>
   </section>
@@ -2698,7 +2999,7 @@
       </div>
       <ul class="footer-links">
         <li><a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank">GitHub</a></li>
-        <li><a href="EnvoyMesh_GuideBook_0.2.2.zh-CN.html">使用指南</a></li>
+        <li><a href="EnvoyMesh_GuideBook_0.3.0.zh-CN.html">使用指南</a></li>
         <li><a href="security-zh.html">安全</a></li>
         <li><a href="privacy.html">隐私政策</a></li>
         <li><a href="high-level-design-zh.html">设计</a></li>
@@ -2750,8 +3051,34 @@
       });
     }
 
+    document.querySelectorAll('.nav-dropdown').forEach((dropdown) => {
+      const trigger = dropdown.querySelector('.nav-dropdown-trigger');
+      if (!trigger) return;
+      trigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = dropdown.classList.contains('open');
+        document.querySelectorAll('.nav-dropdown.open').forEach((d) => {
+          d.classList.remove('open');
+          const t = d.querySelector('.nav-dropdown-trigger');
+          if (t) t.setAttribute('aria-expanded', 'false');
+        });
+        if (!isOpen) {
+          dropdown.classList.add('open');
+          trigger.setAttribute('aria-expanded', 'true');
+        }
+      });
+    });
+
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.nav-dropdown.open').forEach((dropdown) => {
+        dropdown.classList.remove('open');
+        const trigger = dropdown.querySelector('.nav-dropdown-trigger');
+        if (trigger) trigger.setAttribute('aria-expanded', 'false');
+      });
+    });
+
     window.addEventListener('resize', () => {
-      if (window.innerWidth > 768 && mobileNavOverlay.classList.contains('active')) {
+      if (window.innerWidth > 1024 && mobileNavOverlay.classList.contains('active')) {
         mobileMenuBtn.classList.remove('active');
         mobileNavOverlay.classList.remove('active');
         document.body.style.overflow = '';

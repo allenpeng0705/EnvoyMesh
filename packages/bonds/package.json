@@ -1,6 +1,6 @@
 {
   "name": "@envoymesh/bonds",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "type": "module",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
@@ -11,6 +11,6 @@
     }
   },
   "dependencies": {
-    "@envoymesh/protocol": "0.2.2"
+    "@envoymesh/protocol": "0.3.0"
   }
 }

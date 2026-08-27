@@ -170,12 +170,16 @@
         <tr><td>导入文件</td><td>任何文件类型：MD、PDF、Word、图片等</td></tr>
         <tr><td>创建笔记</td><td>原生 Markdown 编辑器（无需插件）</td></tr>
         <tr><td>RAG 索引</td><td>向量 + 词法 + 混合模式</td></tr>
-        <tr><td>嵌入搜索</td><td>可配置的嵌入提供商</td></tr>
+        <tr><td>嵌入搜索</td><td>可配置的嵌入提供商；桌面默认在主节点运行 <strong>Envoy Local</strong> Qwen sidecar</td></tr>
         <tr><td>敏感度标签</td><td>公开/朋友/私有，逐项设置</td></tr>
         <tr><td>发布/分享</td><td>切换项目为公开以进行全网发现</td></tr>
         <tr><td>知识查询</td><td>对等方可通过 <code>knowledge.query</code> 查询公开项目</td></tr>
       </tbody>
     </table>
+
+    <h3>Envoy Local 嵌入与恢复</h3>
+    <p>知识库索引使用主节点上的本地嵌入 sidecar（端口 18791 的 llama-server 运行 <strong>Qwen3-Embedding</strong>）。桌面默认设置无需云端 API 密钥。</p>
+    <p>若块过大或 embed sidecar 卡住，<strong>重新索引会自动恢复</strong> — 缩小超长文本、重启嵌入进程，并仅跳过仍失败的文档，其余保险库保持可检索。升级到 0.3.0 后，请在<strong>知识库 → 重新索引</strong>运行一次，以在安全块大小下重建旧块。</p>
 
     <h3>敏感度级别</h3>
     <table>

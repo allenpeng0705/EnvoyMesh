@@ -25,7 +25,9 @@
 #
 # Flags:
 #   -Out <dir>               Output directory (default: release\)
-#   -Version <ver>            Override bundle version (default: from package.json)
+#   -Version <ver>            Deprecated — ignored. Version comes from VERSION /
+#                             package.json via sync-version.mjs (kept for scripts
+#                             that still pass -Version).
 #   -ForceOpenClaw            Force re-stage OpenClaw (normally automatic when
 #                             packages\openclaw source stamp changes)
 #   -ForceNodeSidecar         Re-download the Node.js sidecar even if it is already
@@ -47,9 +49,13 @@
 #   -?                        Print this message and exit
 #
 # Output (copied from Cargo target dir into the repo):
-#   release\envoymesh-desktop-{version}-windows-x64.exe   NSIS installer
+#   release\envoymesh-desktop-{version}-windows-x64.exe   NSIS installer (versioned)
+#   release\envoymesh-desktop.exe                         stable mirror URL
 #   release\envoymesh-desktop-{version}-windows-x64.msi   WiX MSI (only if -SkipMsi:$false)
 #   release\envoymesh-desktop-{version}-windows-x64\       Folder with both
+#
+# Stable mirror envoymesh-desktop.exe is overwritten each publish. Sites link to
+# https://gpt4people.online/EnvoyMesh/envoymesh-desktop.exe (fixed URL across versions).
 #
 # OpenClaw extensions (aligned with scripts/build-desktop.sh):
 #   Default -OpenClawExtensions default matches macOS OPENCLAW_EXTENSIONS=default.
@@ -80,6 +86,8 @@
 #                                   Terminal → Envoy).
 #   $env:SMOKE_ENVOY_HARNESS = "0"  Skip the post-stage smoke (default 1).
 #                                   See scripts\stage-tauri-envoy-harness-bundle.ps1.
+#
+# Apple review build (opt-in only — see build-desktop.sh; not supported on Windows).
 #
 # Slim / Full / default presets (Phase 49 — Pi optional on Windows):
 #   default       Uses tauri.conf.json           — includes Pi + OpenClaw
@@ -121,7 +129,7 @@ param(
     # Output directory (default: release\)
     [string]$Out = "release",
 
-    # Override bundle version (default: from package.json)
+    # Deprecated — version always comes from sync-version.mjs (VERSION / package.json).
     [string]$Version = "",
 
     # Re-stage OpenClaw even if already populated
@@ -522,6 +530,8 @@ if (-not $PSScriptRoot) {
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $RepoRoot
 
+$VersionOverrideRequested = $PSBoundParameters.ContainsKey('Version')
+
 # Keep @envoymesh/* dependency pins in lockstep with VERSION. Stale pins
 # (e.g. "0.1.0" while packages are 0.2.1) make npm fetch the public registry
 # and fail with E404 on private workspace packages.
@@ -538,13 +548,14 @@ $TauriResources = Join-Path $TauriSrcDir "resources"
 $TauriTarget = Join-Path $TauriSrcDir "target"
 $SocialDist = Join-Path $RepoRoot "apps/social/src/dist/index.html"
 
-if (-not $Version) {
-    try {
-        $Version = (node -p "require('./package.json').version" 2>$null)
-        if (-not $Version) { $Version = "dev" }
-    } catch {
-        $Version = "dev"
-    }
+try {
+    $Version = (node -p "require('./package.json').version" 2>$null)
+    if (-not $Version) { $Version = "dev" }
+} catch {
+    $Version = "dev"
+}
+if ($VersionOverrideRequested -and $PSBoundParameters['Version'] -and $PSBoundParameters['Version'] -ne $Version) {
+    Write-Warn "-Version $($PSBoundParameters['Version']) ignored — using synced version $Version from package.json."
 }
 
 Write-Host "============================================"
@@ -680,6 +691,23 @@ if ($ForceNodeSidecar -or -not (Test-Path $nodeExe)) {
     $existingVersion = (& $nodeExe --version 2>$null) -replace '^v', ''
     Write-Info "Reusing staged sidecar: $nodeExe ($existingVersion). Use -ForceNodeSidecar to redownload."
 }
+
+# 1a2. envoy-harness (Phase 8) — BEFORE node bundle (matches build-desktop.sh).
+# Builds the sibling monorepo and copies dist/ into resources\envoy-harness*\.
+# stage-bundle-node-runtime.ps1 then wires the same built packages into
+# resources\node\node_modules\@envoymesh\ for first-launch module resolution.
+Write-Info "Staging envoy-harness (Phase 8 — vendor from sibling monorepo)..."
+$stageEnvoyHarnessBundle = Join-Path $PSScriptRoot "stage-tauri-envoy-harness-bundle.ps1"
+if (-not (Test-Path $stageEnvoyHarnessBundle)) {
+    Write-Fail "missing $stageEnvoyHarnessBundle"
+    exit 1
+}
+& $stageEnvoyHarnessBundle
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "stage-tauri-envoy-harness-bundle.ps1 failed — envoy-harness will not be available at runtime. Set `$env:STAGE_ENVOY_HARNESS=`"0`" to skip for debug builds."
+    exit 1
+}
+Write-Ok "envoy-harness staged"
 
 # 1b. EnvoyMesh node (compiled JS + production npm deps).
 Write-Info "Staging EnvoyMesh node runtime..."
@@ -1628,25 +1656,6 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Ok "EnvoyMesh OpenClaw extension staged"
 
-# envoy-harness (Phase 8): vendor from the sibling envoy-harness monorepo
-# into resources\envoy-harness*\ so the Tauri bundle is self-contained.
-# Honours $env:STAGE_ENVOY_HARNESS=0 to skip (debug only) and
-# $env:ENVOY_HARNESS_DIR to override the sibling repo path. See
-# scripts\stage-tauri-envoy-harness-bundle.ps1 for the cross-monorepo
-# build + copy details.
-Write-Info "Staging envoy-harness (Phase 8 — vendor from sibling monorepo)..."
-$stageEnvoyHarnessBundle = Join-Path $PSScriptRoot "stage-tauri-envoy-harness-bundle.ps1"
-if (-not (Test-Path $stageEnvoyHarnessBundle)) {
-    Write-Fail "missing $stageEnvoyHarnessBundle"
-    exit 1
-}
-& $stageEnvoyHarnessBundle
-if ($LASTEXITCODE -ne 0) {
-    Write-Fail "stage-tauri-envoy-harness-bundle.ps1 failed — envoy-harness will not be available at runtime. Set `$env:STAGE_ENVOY_HARNESS=`"0`" to skip for debug builds."
-    exit 1
-}
-Write-Ok "envoy-harness staged"
-
 # Persist source fingerprint AFTER stage/heal so it matches post-build
 # dist/entry.js (a pre-stage stamp would thrash re-stage every run).
 if ((Test-Path $openclawStampScript) -and (Test-Path (Join-Path $openclawDest "openclaw.mjs"))) {
@@ -2065,217 +2074,22 @@ if (-not (Test-Path $SocialDist)) {
 Write-Ok "Social UI built at apps\social\src\dist"
 Write-Host ""
 
-# Full verify after Social (mirrors scripts/verify-tauri-resources.sh).
+# Full verify after Social (shared with build-desktop.sh — scripts/verify-tauri-resources.sh).
 Write-Info "Verifying Tauri bundle resources (post-Social)..."
-$verifyOk = $true
-$reqFiles = @(
-    @{ Path = $nodeExe; Label = "Node.js sidecar (node.exe)" },
-    @{ Path = (Join-Path $TauriResources "node/dist/src/index.js"); Label = "compiled EnvoyMesh node" },
-    @{ Path = (Join-Path $TauriResources "openclaw/openclaw.mjs"); Label = "OpenClaw gateway entry" },
-    @{ Path = (Join-Path $TauriResources "openclaw/dist/entry.js"); Label = "OpenClaw compiled entry.js" },
-    @{ Path = (Join-Path $TauriResources "openclaw/extensions/envoymesh/index.js"); Label = "EnvoyMesh channel extension (compiled)" },
-    @{ Path = (Join-Path $TauriResources "openclaw/dist/extensions/envoymesh/index.js"); Label = "EnvoyMesh channel extension (dist/extensions)" },
-    @{ Path = (Join-Path $TauriResources "openclaw-envoymesh/index.js"); Label = "EnvoyMesh extension seed (runtime heal)" },
-    @{ Path = $SocialDist; Label = "built Social UI" }
-)
-if (-not $SkipPi) {
-    $reqFiles += @(
-        @{ Path = (Join-Path $TauriResources "pi/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"); Label = "Pi CLI entry" },
-        @{ Path = (Join-Path $TauriResources "pi/node_modules/@earendil-works/pi-coding-agent/dist/index.js"); Label = "Pi SDK entry" },
-        @{ Path = (Join-Path $TauriResources "pi/node_modules/@earendil-works/pi-coding-agent/package.json"); Label = "Pi package.json" },
-        # fd/rg — without these, GUI Pi TUI hangs on GitHub auto-download (PATH stripped).
-        @{ Path = (Join-Path $TauriResources "pi\bin\fd.exe"); Label = "Pi tool fd.exe" },
-        @{ Path = (Join-Path $TauriResources "pi\bin\rg.exe"); Label = "Pi tool rg.exe" }
-    )
-}
-foreach ($r in $reqFiles) {
-    if (Test-Path $r.Path) {
-        Write-Ok $r.Label
-    } else {
-        Write-Fail "missing $($r.Label) at $($r.Path)"
-        $verifyOk = $false
-    }
-}
-$openclawNm = Join-Path $TauriResources "openclaw/node_modules"
-if (-not (Test-Path $openclawNm) -or -not (Get-ChildItem $openclawNm -ErrorAction SilentlyContinue)) {
-    Write-Fail "OpenClaw node_modules is missing or empty at $openclawNm"
-    $verifyOk = $false
-} else {
-    Write-Ok "OpenClaw node_modules"
-}
-# envoy-harness (Phase 8) — verify the vendored trees AND the node_modules
-# wiring (required for first launch). STAGE_ENVOY_HARNESS=0 alone is not
-# enough to skip — the node has static imports; use
-# ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1 for a non-runnable debug bundle.
-if ($env:STAGE_ENVOY_HARNESS -ne "0" -or $env:ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP -ne "1") {
-    $envoyHarnessDir = Join-Path $TauriResources "envoy-harness"
-    $envoyHarnessAdapterDir = Join-Path $TauriResources "envoy-harness-adapter"
-    $envoyHarnessClientDir = Join-Path $TauriResources "envoy-harness-client"
-    $envoyHarnessPeerDir = Join-Path $TauriResources "envoy-harness-peer"
-    $envoyHarnessTuiDir = Join-Path $TauriResources "envoy-harness-tui"
-    if (-not (Test-Path (Join-Path $envoyHarnessDir "index.js"))) {
-        Write-Fail "envoy-harness staged tree is missing index.js at $envoyHarnessDir — Phase 8 verification failed"
-        $verifyOk = $false
-    } elseif (-not (Test-Path (Join-Path $envoyHarnessDir "package.json"))) {
-        Write-Fail "envoy-harness staged tree is missing package.json at $envoyHarnessDir"
-        $verifyOk = $false
-    } elseif (-not (Test-Path (Join-Path $envoyHarnessDir "cli\acp-stdio.js"))) {
-        Write-Fail "envoy-harness staged tree is missing cli\acp-stdio.js at $envoyHarnessDir"
-        $verifyOk = $false
-    } else {
-        Write-Ok "envoy-harness vendored at $envoyHarnessDir"
-    }
-    if (-not (Test-Path (Join-Path $envoyHarnessAdapterDir "index.js"))) {
-        Write-Fail "envoy-harness-adapter staged tree is missing index.js at $envoyHarnessAdapterDir — Phase 8 verification failed"
-        $verifyOk = $false
-    } elseif (-not (Test-Path (Join-Path $envoyHarnessAdapterDir "package.json"))) {
-        Write-Fail "envoy-harness-adapter staged tree is missing package.json at $envoyHarnessAdapterDir"
-        $verifyOk = $false
-    } else {
-        Write-Ok "envoy-harness-adapter vendored at $envoyHarnessAdapterDir"
-    }
-    if (-not (Test-Path (Join-Path $envoyHarnessClientDir "index.js"))) {
-        Write-Fail "envoy-harness-client staged tree is missing index.js at $envoyHarnessClientDir"
-        $verifyOk = $false
-    } else {
-        Write-Ok "envoy-harness-client vendored at $envoyHarnessClientDir"
-    }
-    if (-not (Test-Path (Join-Path $envoyHarnessPeerDir "index.js"))) {
-        Write-Fail "envoy-harness-peer staged tree is missing index.js at $envoyHarnessPeerDir"
-        $verifyOk = $false
-    } else {
-        Write-Ok "envoy-harness-peer vendored at $envoyHarnessPeerDir"
-    }
-    if (-not (Test-Path (Join-Path $envoyHarnessTuiDir "bin.js"))) {
-        Write-Fail "envoy-harness-tui staged tree is missing bin.js at $envoyHarnessTuiDir — Terminal → Envoy will fail"
-        $verifyOk = $false
-    } else {
-        Write-Ok "envoy-harness-tui vendored at $envoyHarnessTuiDir"
-    }
-    $ehNodeMod = Join-Path $TauriResources "node\node_modules\@envoymesh\envoy-harness"
-    $ehAdapterNodeMod = Join-Path $TauriResources "node\node_modules\@envoymesh\envoy-harness-adapter"
-    $ehClientNodeMod = Join-Path $TauriResources "node\node_modules\@envoymesh\envoy-harness-client"
-    $ehPeerNodeMod = Join-Path $TauriResources "node\node_modules\@envoymesh\envoy-harness-peer"
-    $ehTuiNodeMod = Join-Path $TauriResources "node\node_modules\@envoymesh\envoy-harness-tui"
-    if (-not (Test-Path (Join-Path $ehNodeMod "dist\index.js"))) {
-        Write-Fail "envoy-harness missing from node_modules at $ehNodeMod — first launch will crash (stage-bundle-node-runtime.ps1 must wire it)"
-        $verifyOk = $false
-    } else {
-        Write-Ok "envoy-harness in node_modules (runtime resolve)"
-    }
-    if (-not (Test-Path (Join-Path $ehAdapterNodeMod "dist\index.js"))) {
-        Write-Fail "envoy-harness-adapter missing from node_modules at $ehAdapterNodeMod — first launch will crash"
-        $verifyOk = $false
-    } else {
-        Write-Ok "envoy-harness-adapter in node_modules (runtime resolve)"
-    }
-    if (-not (Test-Path (Join-Path $ehClientNodeMod "dist\index.js"))) {
-        Write-Fail "envoy-harness-client missing from node_modules at $ehClientNodeMod — first launch will crash"
-        $verifyOk = $false
-    } else {
-        Write-Ok "envoy-harness-client in node_modules (runtime resolve)"
-    }
-    if (-not (Test-Path (Join-Path $ehPeerNodeMod "dist\index.js"))) {
-        Write-Fail "envoy-harness-peer missing from node_modules at $ehPeerNodeMod — first launch will crash"
-        $verifyOk = $false
-    } else {
-        Write-Ok "envoy-harness-peer in node_modules (runtime resolve)"
-    }
-    if (-not (Test-Path (Join-Path $ehTuiNodeMod "dist\bin.js"))) {
-        Write-Fail "envoy-harness-tui missing from node_modules at $ehTuiNodeMod — Terminal → Envoy will fail"
-        $verifyOk = $false
-    } else {
-        Write-Ok "envoy-harness-tui in node_modules (runtime resolve)"
-    }
-    if (-not (Test-Path (Join-Path $TauriResources "node\node_modules\smol-toml"))) {
-        Write-Fail "smol-toml missing from node_modules — envoy-harness config loader will fail"
-        $verifyOk = $false
-    } else {
-        Write-Ok "smol-toml in node_modules"
-    }
-    if (-not (Test-Path (Join-Path $TauriResources "node\node_modules\@envoymesh\agent-adapter"))) {
-        Write-Fail "@envoymesh/agent-adapter missing from node_modules — required by envoy-harness-adapter"
-        $verifyOk = $false
-    } else {
-        Write-Ok "agent-adapter in node_modules"
-    }
-} else {
-    Write-Info "Skipping envoy-harness verification (STAGE_ENVOY_HARNESS=0 + ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1 — non-runnable debug bundle)"
-}
-$selfRef = Join-Path $TauriResources "openclaw/node_modules/openclaw/package.json"
-if (-not (Test-Path $selfRef)) {
-    Write-Fail "OpenClaw node_modules\openclaw\package.json is missing — gateway will refuse to start"
-    Write-Info "  Re-run with -ForceOpenClaw to regenerate, or check that the heal above ran."
-    $verifyOk = $false
-} else {
-    Write-Ok "OpenClaw node_modules\openclaw\ self-reference"
-}
-$stagedEntryJs = Join-Path $TauriResources "openclaw/dist/entry.js"
-if (Test-Path $stagedEntryJs) {
-    $entryContent = Get-Content $stagedEntryJs -Raw -ErrorAction SilentlyContinue
-    if ($entryContent -and ($entryContent -match "EnvoyMesh bootstrap" -or $entryContent -match "from.*src/cli/run-main")) {
-        Write-Fail "OpenClaw dist/entry.js is a runtime stub — rebuild OpenClaw or use -ForceOpenClaw"
-        $verifyOk = $false
-    }
-} else {
-    Write-Fail "OpenClaw dist/entry.js missing"
-    $verifyOk = $false
-}
-if (-not $verifyOk) {
-    Write-Fail "Tauri resources incomplete — see failures above."
+$verifyScript = Join-Path $PSScriptRoot "verify-tauri-resources.sh"
+if (-not (Test-Path $verifyScript)) {
+    Write-Fail "verify-tauri-resources.sh missing at $verifyScript"
     exit 1
 }
-Write-Ok "Tauri resources look complete"
-
-# Pi folder picker is a custom Tauri command — must be in capabilities ACL
-# or Social shows "Command pick_directory not allowed by ACL".
-if (-not $SkipPi) {
-    $capFile = Join-Path $TauriSrcDir "capabilities\default.json"
-    if (-not (Test-Path $capFile)) {
-        Write-Fail "missing Tauri capabilities at $capFile"
-        exit 1
-    }
-    $capRaw = Get-Content -Raw -Path $capFile
-    if ($capRaw -notmatch 'allow-pick-directory') {
-        Write-Fail "capabilities\default.json missing allow-pick-directory — Pi Browse… will fail with ACL error"
-        exit 1
-    }
-    Write-Ok "Pi folder picker ACL (allow-pick-directory)"
+$bash = Get-Command bash -ErrorAction SilentlyContinue
+if (-not $bash) {
+    Write-Fail "bash not found — install Git for Windows to run scripts/verify-tauri-resources.sh"
+    exit 1
 }
-
-# Push credentials — if repo-root push-config.json exists, it must be in the bundle.
-# Enables iOS APNs + Android FCM from this home node to EnvoyGo clients.
-$rootPushCfg = Join-Path $RepoRoot "push-config.json"
-$pushCfg = Join-Path $TauriResources "node\push-config.json"
-if (Test-Path $rootPushCfg) {
-    if (-not (Test-Path $pushCfg)) {
-        Write-Fail "repo-root push-config.json exists but was not staged into resources\node\ — re-run node staging / stage-tauri-push-credentials.ps1"
-        exit 1
-    }
-    Write-Ok "push-config.json bundled in resources\node\"
-    try {
-        $pc = Get-Content -Raw $pushCfg | ConvertFrom-Json
-        $keyBase = if ($pc.apns -and $pc.apns.keyPath) { [System.IO.Path]::GetFileName([string]$pc.apns.keyPath) } else { "AuthKey_LKPCR48WHW.p8" }
-        $saBase = if ($pc.fcm -and $pc.fcm.serviceAccountJsonPath) { [System.IO.Path]::GetFileName([string]$pc.fcm.serviceAccountJsonPath) } else { "serviceAccountKey.json" }
-        if (Test-Path (Join-Path $TauriResources "node\$keyBase")) {
-            Write-Ok "APNs key: $keyBase"
-        } else {
-            Write-Fail "push-config.json bundled but missing $keyBase in resources\node\ (required for EnvoyGo iOS push)"
-            exit 1
-        }
-        if (Test-Path (Join-Path $TauriResources "node\$saBase")) {
-            Write-Ok "FCM account: $saBase"
-        } else {
-            Write-Fail "push-config.json bundled but missing $saBase in resources\node\ (required for EnvoyGo Android push)"
-            exit 1
-        }
-    } catch {
-        Write-Warn "Could not parse staged push-config.json: $($_.Exception.Message)"
-    }
-} elseif (Test-Path $pushCfg) {
-    Write-Ok "push-config.json present in resources\node\"
-} else {
-    Write-Warn "No push-config.json in resources\node\ — desktop push will need env vars or a profile-dir config"
+& bash $verifyScript
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "verify-tauri-resources.sh failed (exit $LASTEXITCODE)"
+    exit 1
 }
 Write-Host ""
 
@@ -2483,6 +2297,12 @@ foreach ($bundle in @($nsisExe, $msiMsi)) {
 if ($copied -eq 0) {
     Write-Fail "No artifacts copied"
     exit 1
+}
+if ($nsisExe) {
+    $stableExe = Join-Path $publishRoot "envoymesh-desktop.exe"
+    Copy-Item -Force $nsisExe.FullName $stableExe
+    $stableMb = [math]::Round($nsisExe.Length / 1MB, 1)
+    Write-Ok "${Out}\envoymesh-desktop.exe ($stableMb MB — stable mirror, gpt4people.online/EnvoyMesh/)"
 }
 $Published = $destDir
 Write-Host ""

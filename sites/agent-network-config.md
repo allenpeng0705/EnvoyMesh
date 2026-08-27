@@ -1,5 +1,7 @@
 # Phase 32 — AI Engine Membership (Built-in OpenClaw + Ext Agent)
 
+> **Do not publish on main nav.** This page is **operator / design documentation** for **AI Engine** selection (Settings → AI → AI Engine), not **Agent Network** membership (Settings → Agent Network → Join Agent Network). For bonded worker opt-in and Team jobs, see [`agent-network-guide.md`](./agent-network-guide.md).
+
 > **Naming note:** This document’s historical title was “Agent Network
 > Membership.” In the product UI today, **Agent Network** means the Settings
 > tab for **Join Agent Network** (worker opt-in) and fleet onboarding — see

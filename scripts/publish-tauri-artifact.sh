@@ -12,6 +12,7 @@
 # of which build command you use, the output in release/ is always consistent:
 #   release/envoymesh-desktop-0.1.0-macos-arm64.dmg
 #   release/envoymesh-desktop-0.1.0-windows-x64.exe
+#   release/envoymesh-desktop.dmg / release/envoymesh-desktop.exe  (stable mirrors)
 set -euo pipefail
 
 PLATFORM="${1:?usage: publish-tauri-artifact.sh <macos|windows|linux>}"
@@ -71,3 +72,14 @@ DEST="$OUT_DIR/${BASE}.${EXT}"
 
 cp -f "$ARTIFACT" "$DEST"
 echo "✓ Published $DEST ($(du -h "$DEST" | awk '{print $1}'))"
+
+case "$PLATFORM" in
+  macos)
+    cp -f "$DEST" "$OUT_DIR/envoymesh-desktop.dmg"
+    echo "✓ Stable mirror $OUT_DIR/envoymesh-desktop.dmg (gpt4people.online/EnvoyMesh/)"
+    ;;
+  windows)
+    cp -f "$DEST" "$OUT_DIR/envoymesh-desktop.exe"
+    echo "✓ Stable mirror $OUT_DIR/envoymesh-desktop.exe (gpt4people.online/EnvoyMesh/)"
+    ;;
+esac

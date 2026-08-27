@@ -25,6 +25,7 @@
  * dependency on `@openai/codex` — the binary itself is the daemon.
  */
 
+import { ENVOYMESH_VERSION } from "@envoymesh/api";
 import {
   DaemonSupervisor,
 } from "./daemon-supervisor.js";
@@ -98,7 +99,7 @@ const CODEX_DEFAULTS = {
   /** `clientInfo` sent in the `initialize` handshake. */
   clientName: "envoymesh",
   clientTitle: "EnvoyMesh Ext Agent",
-  clientVersion: "0.2.2",
+  clientVersion: ENVOYMESH_VERSION,
 } as const;
 
 export interface CodexBackendOptions {

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Verify Tauri desktop resources are staged before `tauri build`.
+# Shared by build-desktop.sh (macOS/Linux) and build-desktop.ps1 (Windows via Git Bash).
 # A healthy macOS .app is typically hundreds of MB once node + OpenClaw are bundled.
 set -euo pipefail
 
@@ -37,7 +38,11 @@ require_dir_nonempty() {
 
 echo "Verifying Tauri bundle resources..."
 
-require_file "$RES/node-runtime/node" "Node.js sidecar (macOS/Linux)"
+NODE_SIDECAR="$RES/node-runtime/node"
+if [ ! -f "$NODE_SIDECAR" ] && [ -f "$RES/node-runtime/node.exe" ]; then
+  NODE_SIDECAR="$RES/node-runtime/node.exe"
+fi
+require_file "$NODE_SIDECAR" "Node.js sidecar"
 require_file "$RES/node/dist/src/index.js" "compiled EnvoyMesh node"
 require_file "$RES/openclaw/openclaw.mjs" "OpenClaw gateway entry"
 require_file "$RES/openclaw/dist/entry.js" "OpenClaw compiled entry.js"
@@ -61,6 +66,12 @@ fi
 if grep -qE "EnvoyMesh bootstrap|from.*src/cli/run-main" "$RES/openclaw/dist/entry.js" 2>/dev/null; then
   fail "openclaw dist/entry.js is a runtime stub — rebuild OpenClaw or set STAGE_OPENCLAW_BUNDLE=1"
 fi
+
+SELF_REF="$RES/openclaw/node_modules/openclaw/package.json"
+if [ ! -f "$SELF_REF" ]; then
+  fail "OpenClaw node_modules/openclaw/package.json is missing — gateway will refuse to start"
+fi
+echo "  OpenClaw node_modules/openclaw/ self-reference OK"
 
 # Pi agent sidecar (Phase 49). Optional on slim builds — tauri.conf.slim.json
 # omits resources/pi/**/* and the build is invoked with STAGE_PI_BUNDLE=0 or
@@ -88,6 +99,16 @@ if [ -d "$PI_DIR" ]; then
   if [ -f "$pi_version_file" ]; then
     echo "  Pi version:    $(cat "$pi_version_file")"
   fi
+  # Pi folder picker is a custom Tauri command — must be in capabilities ACL
+  # or Social shows "Command pick_directory not allowed by ACL".
+  CAP_FILE="$ROOT/apps/tauri/src-tauri/capabilities/default.json"
+  if [ ! -f "$CAP_FILE" ]; then
+    fail "missing Tauri capabilities at $CAP_FILE"
+  fi
+  if ! grep -q 'allow-pick-directory' "$CAP_FILE"; then
+    fail "capabilities/default.json missing allow-pick-directory — Pi Browse… will fail with ACL error"
+  fi
+  echo "  Pi folder picker ACL (allow-pick-directory)"
 else
   # Slim build (no Pi bundled) — acceptable. The runtime disables the Pi panel.
   warn "Pi sidecar not bundled (slim build) — Pi chat panel will be disabled at runtime"

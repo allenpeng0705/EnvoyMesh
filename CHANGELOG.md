@@ -5,6 +5,23 @@ All notable changes to EnvoyMesh are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-08-27
+
+### Added
+
+**Envoy Harness (Beta)**
+- Coding-agent experience in Social desktop: semantic timeline, approvals, diff review, and recovery after disconnects
+- Bundled harness TUI/peer resources in Tauri desktop build; integrates with home-node ACP host
+
+**Agent Network**
+- Team jobs UX refinements: worker discovery, chain reports, speculation / parallel attempts on steps (when enabled), stronger orchestration recovery
+
+**Knowledge**
+- Envoy Local embedding sidecar stability: conservative chunk sizing, automatic shrink/retry on context overflow, sidecar heal on wedge, partial reindex progress when individual documents fail
+
+### Changed
+- Public site and guidebook refreshed to **0.3.0** (Harness section, Team jobs copy, knowledge recovery, security page, guidebook subsections)
+
 ## [0.2.2] - 2026-08-05
 
 ### Added
