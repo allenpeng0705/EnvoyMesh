@@ -49,6 +49,11 @@ describe("chain plan warning handoff + getState", () => {
     const ctx = {
       store: {
         getRuntime: (id: string) => (id === chainId ? { state } : undefined),
+        // chainGetStateViaRuntime calls store.getJournalProjection to
+        // build provenanceSummary; the mock has no journal so return
+        // undefined. Without this the call throws `TypeError: ctx.store
+        // .getJournalProjection is not a function`.
+        getJournalProjection: () => undefined,
       },
       snapshotToResult: (snap: Record<string, unknown>) => ({ ...snap }),
       bidsBySubtask: () => [],
@@ -59,6 +64,11 @@ describe("chain plan warning handoff + getState", () => {
       getChainSideState: () => ({
         assignmentModes,
         planWarnings,
+        // chainGetStateViaRuntime reads these on later lines; the mock
+        // has no data for them so empty maps suffice. Without these
+        // it throws `Cannot read properties of undefined (reading 'get')`.
+        teamStrategies: new Map(),
+        recovery: new Map(),
       }),
     } as unknown as ChainContext;
 
