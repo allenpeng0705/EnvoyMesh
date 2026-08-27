@@ -89,9 +89,10 @@ describe("AgentNetworkMembershipIndex — 41B", () => {
   });
 
   it("sorts workers by lastSeenAt (most recent first)", () => {
-    index.indexWorker(worker("peer_x", ["rank"], { lastSeenAt: "2026-01-01T00:00:00.000Z" }));
-    index.indexWorker(worker("peer_y", ["rank"], { lastSeenAt: "2026-06-15T00:00:00.000Z" }));
-    index.indexWorker(worker("peer_z", ["rank"], { lastSeenAt: "2026-03-01T00:00:00.000Z" }));
+    const now = Date.now();
+    index.indexWorker(worker("peer_x", ["rank"], { lastSeenAt: new Date(now - 3_000).toISOString() }));
+    index.indexWorker(worker("peer_y", ["rank"], { lastSeenAt: new Date(now - 1_000).toISOString() }));
+    index.indexWorker(worker("peer_z", ["rank"], { lastSeenAt: new Date(now - 2_000).toISOString() }));
 
     const ranked = index.findWorkers("rank");
     expect(ranked[0]).toBe("peer_y"); // most recent
@@ -172,5 +173,13 @@ describe("AgentNetworkMembershipIndex — 41B", () => {
     expect(entry?.membership).toEqual(["review"]);
     expect(index.findWorkers("search")).not.toContain("peer_merge");
     expect(index.findWorkers("review")).toContain("peer_merge");
+  });
+
+  it("prunes expired persisted membership claims", () => {
+    index.indexWorker(worker("peer_stale", ["task.execute"], {
+      lastSeenAt: "2020-01-01T00:00:00.000Z",
+    }));
+    expect(index.pruneStaleWorkers()).toContain("peer_stale");
+    expect(index.getWorker("peer_stale")).toBeUndefined();
   });
 });

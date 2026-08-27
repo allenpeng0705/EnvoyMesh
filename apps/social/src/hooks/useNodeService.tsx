@@ -297,6 +297,9 @@ export interface NodeServiceClient {
   chainPlan(params: ChainPlanParams): Promise<ChainPlanResult>;
   chainLaunch(params: ChainLaunchParams): Promise<ChainLaunchResult>;
   chainGetState(params: ChainGetStateParams): Promise<ChainGetStateResult>;
+  chainGetStepProvenance(
+    params: import("@envoymesh/api").ChainGetStepProvenanceParams,
+  ): Promise<import("@envoymesh/api").ChainGetStepProvenanceResult>;
   chainListActive(params?: ChainListActiveParams): Promise<ChainListActiveResult>;
   chainListObserved?(
     params?: import("@envoymesh/api").ChainListObservedParams,
@@ -320,9 +323,19 @@ export interface NodeServiceClient {
   chainGetDefaults(params: ChainGetDefaultsParams): Promise<ChainGetDefaultsResult>;
   chainSetDefaults(params: ChainSetDefaultsParams): Promise<ChainSetDefaultsResult>;
   chainPreviewGoal(params: ChainPreviewGoalParams): Promise<ChainPreviewGoalResult>;
+  agentNetworkDiagnosticsSnapshot(): Promise<
+    import("@envoymesh/api").AgentNetworkDiagnosticsSnapshot
+  >;
+  agentNetworkSimulate(
+    params: import("@envoymesh/api").AgentNetworkSimulationParams,
+  ): Promise<import("@envoymesh/api").AgentNetworkSimulationResult>;
+  agentNetworkExportDiagnostics(params: {
+    simulationId?: string;
+  }): Promise<{ json: string }>;
   chainStartFromGoal(params: ChainStartFromGoalParams): Promise<ChainStartFromGoalResult>;
   chainProbeReachability(params: ChainProbeReachabilityParams): Promise<ChainProbeReachabilityResult>;
   chainResolveIteration(params: import("@envoymesh/api").ChainResolveIterationParams): Promise<import("@envoymesh/api").ChainResolveIterationResult>;
+  chainResolveSpeculation(params: import("@envoymesh/api").ChainResolveSpeculationParams): Promise<import("@envoymesh/api").ChainResolveSpeculationResult>;
   chainExportCosts(params: ChainExportCostsParams): Promise<ChainExportCostsResult>;
   chainListRecipes(params?: ChainListRecipesParams): Promise<ChainListRecipesResult>;
   chainSaveRecipe(params: ChainSaveRecipeParams): Promise<ChainSaveRecipeResult>;
@@ -1282,6 +1295,12 @@ function createWsNodeServiceClient(
     async chainGetState(params: ChainGetStateParams) {
       return wsClient.rpc("chainGetState", params as unknown as Record<string, unknown>) as unknown as Promise<ChainGetStateResult>;
     },
+    async chainGetStepProvenance(params: import("@envoymesh/api").ChainGetStepProvenanceParams) {
+      return wsClient.rpc(
+        "chainGetStepProvenance",
+        params as unknown as Record<string, unknown>,
+      ) as unknown as Promise<import("@envoymesh/api").ChainGetStepProvenanceResult>;
+    },
     async chainListActive(params?: ChainListActiveParams) {
       return wsClient.rpc("chainListActive", (params ?? {}) as unknown as Record<string, unknown>) as unknown as Promise<ChainListActiveResult>;
     },
@@ -1343,6 +1362,22 @@ function createWsNodeServiceClient(
         timeoutMs: 120_000,
       }) as unknown as Promise<ChainPreviewGoalResult>;
     },
+    async agentNetworkDiagnosticsSnapshot() {
+      return wsClient.rpc("agentNetworkDiagnosticsSnapshot", {}) as Promise<
+        import("@envoymesh/api").AgentNetworkDiagnosticsSnapshot
+      >;
+    },
+    async agentNetworkSimulate(params: import("@envoymesh/api").AgentNetworkSimulationParams) {
+      return wsClient.rpc("agentNetworkSimulate", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").AgentNetworkSimulationResult
+      >;
+    },
+    async agentNetworkExportDiagnostics(params: { simulationId?: string }) {
+      return wsClient.rpc(
+        "agentNetworkExportDiagnostics",
+        (params ?? {}) as unknown as Record<string, unknown>,
+      ) as Promise<{ json: string }>;
+    },
     async chainStartFromGoal(params: ChainStartFromGoalParams) {
       return wsClient.rpc("chainStartFromGoal", params as unknown as Record<string, unknown>, {
         timeoutMs: 180_000,
@@ -1354,6 +1389,11 @@ function createWsNodeServiceClient(
     async chainResolveIteration(params: import("@envoymesh/api").ChainResolveIterationParams) {
       return wsClient.rpc("chainResolveIteration", params as unknown as Record<string, unknown>) as unknown as Promise<
         import("@envoymesh/api").ChainResolveIterationResult
+      >;
+    },
+    async chainResolveSpeculation(params: import("@envoymesh/api").ChainResolveSpeculationParams) {
+      return wsClient.rpc("chainResolveSpeculation", params as unknown as Record<string, unknown>) as unknown as Promise<
+        import("@envoymesh/api").ChainResolveSpeculationResult
       >;
     },
     async chainExportCosts(params: ChainExportCostsParams) {

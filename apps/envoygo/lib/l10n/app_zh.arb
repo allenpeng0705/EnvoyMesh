@@ -753,6 +753,40 @@
   "chainsStartModeRole": "按角色",
   "chainsStartModeSkillHint": "按匹配技能为工作代理排序。",
   "chainsStartModeRoleHint": "每个步骤优先匹配协作角色（产品经理、程序员等）。",
+  "chainsStartTeamStrategy": "团队策略",
+  "chainsStartTeamStrategyHint": "本任务如何为工作节点排序。对冲 / 仅核验是策略标签 — 链路上仅在即时双派门控通过时才会启动第二名工作节点。",
+  "chainsStrategyBalanced": "均衡",
+  "chainsStrategyFastest": "最快",
+  "chainsStrategyCheapest": "最省",
+  "chainsStrategyHighestConfidence": "最高置信度",
+  "chainsStrategyPrivacyLocal": "隐私（本地）",
+  "chainsStrategyDiverseModel": "多样模型",
+  "chainsStartAvailLease": "租约",
+  "chainsStartAvailLegacy": "旧版",
+  "chainsStartReliabilityPct": "可信度 {pct}%",
+  "@chainsStartReliabilityPct": {
+    "placeholders": {
+      "pct": {
+        "type": "int"
+      }
+    }
+  },
+  "chainsStartReliabilitySparse": "{level} · {samples} 次样本",
+  "@chainsStartReliabilitySparse": {
+    "placeholders": {
+      "level": {
+        "type": "String"
+      },
+      "samples": {
+        "type": "int"
+      }
+    }
+  },
+  "chainsStartReliabilityFallbackExact": "该工作节点历史",
+  "chainsStartReliabilityFallbackPeerRuntimeSkill": "该工作节点类似任务",
+  "chainsStartReliabilityFallbackPeerRuntime": "该工作节点运行时",
+  "chainsStartReliabilityFallbackRuntimeSkill": "具备此技能的工作节点",
+  "chainsStartReliabilityFallbackPrior": "通用先验（尚无历史）",
   "chainsStartGoalLabel": "目标",
   "chainsStartGoalHint": "团队应完成什么？",
   "chainsStartGoalTooShort": "目标至少需要 {min} 个字符",
@@ -777,6 +811,18 @@
   "chainsStartStarted": "团队任务已启动",
   "chainsStartFailed": "无法启动团队任务",
   "chainsStartNoWorkers": "没有可到达的 Agent Network 工作代理。请先在家庭节点上绑定带智能体的联系人。",
+  "chainsSpeculationReviewTitle": "需要确认推测结果",
+  "chainsSpeculationReviewBody": "两个 worker 在同一步返回了不同的结果。请挑选一个让任务继续，或者让协调器自动挑选。",
+  "chainsSpeculationReviewNonePass": "两个 worker 都没通过验证 — 协调器会重新分派这一步。",
+  "chainsSpeculationReviewDisagree": "两个 worker 答案不一致。协调器可以挑选更便宜的已验证答案，或你可以手动挑选 / 重新分派。",
+  "chainsSpeculationReviewAutoResolve": "自动解决",
+  "chainsSpeculationReviewResolved": "已由协调器解决",
+  "chainsSpeculationReviewFailed": "自动解决失败",
+  "chainsTestNetworkTitle": "测试智能体网络",
+  "chainsTestNetworkHint": "模拟 — 不发送任务、不调用模型、不改声誉。干跑规划会真实排序；故障转移与恢复仅为标签预览。",
+  "chainsTestNetworkRun": "检查就绪",
+  "chainsTestNetworkRunning": "检查中…",
+  "chainsTestNetworkFailed": "无法运行诊断",
   "chainsStartReadinessTitle": "先准备好工作节点",
   "chainsStartReadinessJoinOff": "在家庭电脑上：团队任务 → 管理工作节点 → 开启加入智能体网络。",
   "chainsStartReadinessBond": "在发现中绑定联系人，并请对方开启加入智能体网络。",
@@ -835,6 +881,41 @@
   "chainsCancelStepReason": "已从 EnvoyGo 取消步骤",
   "chainsDetailCancelled": "此任务已取消。",
   "chainsDetailPublished": "此任务已完成并发布报告。",
+  "chainsDetailRecovering": "重启后恢复中 — 正在确认工作节点进度",
+  "chainsAttemptCount": "{count} 次尝试",
+  "@chainsAttemptCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chainsExecutionDetails": "执行详情",
+  "chainsProvenanceSummaryLine": "{attempts} 次尝试 · {worker} · {state}",
+  "@chainsProvenanceSummaryLine": {
+    "placeholders": {
+      "attempts": {
+        "type": "int"
+      },
+      "worker": {
+        "type": "String"
+      },
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "chainsLastReason": "最近原因：{reason}",
+  "@chainsLastReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "chainsTechnicalDetails": "技术细节",
+  "chainsProvenanceEmpty": "此步骤尚无日志事件。",
+  "chainsProvenanceFailed": "无法加载执行历史。",
   "chainsRebalanceHeading": "追加预算",
   "chainsRebalanceHint": "提高成本上限并重试尚未分配的步骤。",
   "chainsRebalanceAmount": "追加金额（美元）",
@@ -1220,6 +1301,7 @@
   "ehDiffAfter": "更改后",
   "chainsStatusCancelled": "已取消",
   "chainsStatusPublished": "已发布",
+  "chainsStatusRecovering": "恢复中",
   "chainsStatusSynthesizing": "汇总中",
   "chainsStatusRunning": "运行中",
   "chainsStatusWaitingWorkers": "等待工作节点",

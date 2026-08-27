@@ -271,7 +271,7 @@ describe("schema / role-policy sync", () => {
     // documents the invariant.
     const allIntents = EnvoyIntentSchema.options;
     const chainIntents = allIntents.filter((i) => i.startsWith("task.chain."));
-    expect(chainIntents.length).toBe(16); // 9 from 40A + status + 4 from 40E + ready req/res
+    expect(chainIntents.length).toBe(18); // 9 from 40A + status + 4 from 40E + ready + reconcile req/res
     for (const intent of chainIntents) {
       // Probing human→human should be denied for every chain intent
       // (none of them are human↔human; the only human-targeting one is
@@ -292,6 +292,18 @@ describe("schema / role-policy sync", () => {
     for (const intent of callIntents) {
       expectAllowed(intent, "human", "human");
       expectDenied(intent, "agent", "agent");
+    }
+  });
+
+  it("every agent.worker.lease* intent is policy-protected as agent↔agent", () => {
+    const leaseIntents = EnvoyIntentSchema.options.filter((i) =>
+      i.startsWith("agent.worker.lease"),
+    );
+    expect(leaseIntents.length).toBe(3);
+    for (const intent of leaseIntents) {
+      expectAllowed(intent, "agent", "agent");
+      expectDenied(intent, "human", "agent");
+      expectDenied(intent, "agent", "human");
     }
   });
 

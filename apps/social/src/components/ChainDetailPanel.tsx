@@ -305,6 +305,22 @@ export function ChainDetailPanel({
                   : t("chains.detail.assignmentModeSkill")}
               </span>
             ) : null}
+            {state.teamStrategy?.id ? (
+              <span
+                className="chain-detail-panel__team-strategy"
+                data-testid="chain-detail-team-strategy"
+              >
+                {t(`chains.strategy.${state.teamStrategy.id}` as "chains.strategy.balanced")}
+              </span>
+            ) : null}
+            {state.recovery?.phase === "recovering" ? (
+              <span
+                className="chain-detail-panel__recovery"
+                data-testid="chain-detail-recovery"
+              >
+                {t("chains.detail.recovering")}
+              </span>
+            ) : null}
             <span>
               {t("chains.active.progress", {
                 partial: state.partialCount,
@@ -334,6 +350,8 @@ export function ChainDetailPanel({
           {(state.steps ?? []).length > 0 ? (
             <ChainLiveSteps
               steps={state.steps!}
+              chainId={chainId}
+              provenanceSummary={state.provenanceSummary}
               goal={state.goal ?? goal}
               inputAttachments={state.inputAttachments}
               inputDeliveries={state.inputDeliveries}
@@ -363,6 +381,100 @@ export function ChainDetailPanel({
               </ul>
             </section>
           ) : null}
+
+          {state.recovery?.phase === "recovering" ? (
+            <p className="chain-detail-panel__honesty" data-testid="chain-detail-recovery-honesty">
+              {t("chains.detail.recoveringHonesty")}
+            </p>
+          ) : null}
+
+          {(state.speculationReview ?? []).map((review) => (
+            <section
+              key={review.subtaskId}
+              className="chain-detail-panel__section chain-speculation-review"
+              data-testid="chain-speculation-review"
+            >
+              <h4>{t("chains.detail.speculationReviewTitle")}</h4>
+              <p>
+                {review.reason === "none_pass"
+                  ? t("chains.detail.speculationReviewNonePass")
+                  : t("chains.detail.speculationReviewDisagree")}
+              </p>
+              <ul className="chain-speculation-review__attempts">
+                {review.attempts.map((attempt) => (
+                  <li key={attempt.attemptId}>
+                    <code>{attempt.workerPeerId.slice(0, 14)}…</code>
+                    {attempt.role ? (
+                      <span className="chain-speculation-review__role">{attempt.role}</span>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="secondary btn-sm"
+                      disabled={busySubtaskId === review.subtaskId}
+                      data-testid={`chain-speculation-pick-${attempt.attemptId}`}
+                      onClick={() => {
+                        void (async () => {
+                          setBusySubtaskId(review.subtaskId);
+                          try {
+                            const r = await nodeService.chainResolveSpeculation({
+                              chainId,
+                              subtaskId: review.subtaskId,
+                              action: "pick",
+                              attemptId: attempt.attemptId,
+                            });
+                            if (!r.ok) {
+                              showToast(r.reason ?? t("chains.detail.speculationReviewFailed"), "error");
+                              return;
+                            }
+                            showToast(t("chains.detail.speculationReviewResolved"), "success");
+                            await load();
+                            onChanged?.();
+                          } catch (err) {
+                            showToast(err instanceof Error ? err.message : String(err), "error");
+                          } finally {
+                            setBusySubtaskId(null);
+                          }
+                        })();
+                      }}
+                    >
+                      {t("chains.detail.speculationReviewPick")}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                className="link-btn"
+                disabled={busySubtaskId === review.subtaskId}
+                data-testid={`chain-speculation-reassign-${review.subtaskId}`}
+                onClick={() => {
+                  void (async () => {
+                    setBusySubtaskId(review.subtaskId);
+                    try {
+                      const r = await nodeService.chainResolveSpeculation({
+                        chainId,
+                        subtaskId: review.subtaskId,
+                        action: "reassign",
+                      });
+                      if (!r.ok) {
+                        showToast(r.reason ?? t("chains.detail.speculationReviewFailed"), "error");
+                        return;
+                      }
+                      showToast(t("chains.detail.stepReassigned"), "success");
+                      await load();
+                      onChanged?.();
+                    } catch (err) {
+                      showToast(err instanceof Error ? err.message : String(err), "error");
+                    } finally {
+                      setBusySubtaskId(null);
+                    }
+                  })();
+                }}
+              >
+                {t("chains.detail.speculationReviewReassign")}
+              </button>
+            </section>
+          ))}
 
           {state.iteration?.waitingForOwner ? (
             <section className="chain-detail-panel__section chain-iteration-owner" data-testid="chain-iteration-owner">

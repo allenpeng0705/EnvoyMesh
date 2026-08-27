@@ -97,6 +97,9 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 58 — Team jobs UX (fleet readiness, live story, multi-node)](#phase-58--team-jobs-ux-fleet-readiness-live-story-multi-node)
 
 - [Phase 59 — Team job input delivery (bytes to workers, not vault sync)](#phase-59--team-job-input-delivery-bytes-to-workers-not-vault-sync)
+- [Phase 60 — Agent Network deterministic execution, provenance & recovery](#phase-60--agent-network-deterministic-execution-provenance--recovery)
+- [Phase 61 — Agent Network depth (hedged wire, recovery chaos, reliability UX) **`[x]` shipped (61A–61D)**](#phase-61--agent-network-depth-hedged-wire-recovery-chaos-reliability-ux)
+- [Phase 62 — Assigner intelligence & capability-based orchestrator selection](#phase-62--assigner-intelligence--capability-based-orchestrator-selection)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -1164,9 +1167,9 @@ Tasks:
 
 Milestone: **Phases 0–48 shipped for interop bridges** — Core protocol through Phase 47 Team job iteration + Phase 48 A2A/MCP bridges (48A–48D.5). Older banner detail (Phases 0–42 Voice/Agent Network stack) still applies as foundation. See [a2a-mcp-interop-design.md](./a2a-mcp-interop-design.md), [agent-network-iteration.md](./agent-network-iteration.md), [satellite-app-adr.md](./satellite-app-adr.md), and [agent_network.md](./agent_network.md).
 
-**Last shipped:** **Phase 48 — A2A + MCP Interop Bridges (48A–48D).** MCP tool consumer (`mesh.mcp.*`), MCP server adapter (`npx envoymesh mcp-server`), A2A Agent Card on relay `/.well-known/agent-card.json`, and A2A Task Bridge JSON-RPC (`message/send` / `tasks/get` / `tasks/cancel`) with auth + state/artifact maps + relay proxy. **~191 dedicated unit tests green.** Design: [a2a-mcp-interop-design.md](./a2a-mcp-interop-design.md). Earlier recent ship: Phase 47 Team job multi-round iteration (47A–47D).
+**Last shipped:** **Phase 61 — Agent Network depth (61A–61D).** Hedged speculation wire (`fastest` p75×1.25 tick), verify-only advance gate on critical steps, libp2p recovery chaos E2E (assigner restart → report via `flushRecoveryAdvancePending`), and `reliabilityFallbackLevel` sparse-data UX (Social + EnvoyGo). Tests: `chain-speculation-wire`, `chain-verify-only-wire`, `agent-network-recovery-chaos-smoke` (`RUN_E2E=1`). Earlier: Phase 60.1 stabilize + Phase 60 (60A–60F).
 
-**Active:** Next planning pulls below. Phase 59 Team job input delivery **complete** (59A–59E). Also tracked: Phase 54 Envoy Local; ICE media-transport ([voice-video-call-support.md](./voice-video-call-support.md)).
+**Active:** **Phase 62 complete** — optional capability-based Assigner selection (`assignerSelection: best_capable`, off by default). Release follow-ups from Phase 60.1 exit criteria (per-OS manual smoke, a11y/threat sign-off) remain parallel.
 
 
 ### Next planning pulls
@@ -1188,6 +1191,9 @@ Milestone: **Phases 0–48 shipped for interop bridges** — Core protocol throu
 15. **Phase 57 — Knowledge Base production hardening (Markdown-first + anydoc)** — `[x]` 57A–57E + item-4 shipped. Design: [knowledge-base-and-rag.md](./knowledge-base-and-rag.md) · checklist below.
 16. **Phase 58 — Team jobs UX (fleet readiness, live story, multi-node)** — designed; **58A first**. Chat→team-job recruitment explicitly parked. Design: [agent-network-ux-team-jobs.md](./agent-network-ux-team-jobs.md) · checklist below.
 17. **Phase 59 — Team job input delivery** — `[x]` **59A–59E complete**. One-shot bytes to worker job workspace (not vault sync); GC on terminal. Design: [agent-network-job-input-delivery.md](./agent-network-job-input-delivery.md) · checklist below.
+18. **Phase 60 — Agent Network deterministic execution, provenance & recovery** — `[x]` **60A–60F complete** (2026-08-26). Phase **60.1 stabilize** `[~]` — release checklist / manual sign-off open. Design: [agent-network-next-generation-design.md](./agent-network-next-generation-design.md) · [agent-network-release-checklist.md](./agent-network-release-checklist.md).
+19. **Phase 61 — Agent Network depth** — `[x]` **61A–61D complete** (2026-08-27). Hedged wire, verify-only gate, recovery chaos E2E, reliability fallback UX. Optional: hedged lab-matrix scenario, packaged recovery-chaos script.
+20. **Phase 62 — Assigner intelligence & capability-based orchestrator selection** — `[x]` **complete**. Capability scorer + `assignerSelection` (`local` \| `best_capable`, default local); handoff via existing `task.chain.handoff`; Social/EnvoyGo UX; E2E `best_capable` smoke.
 
 ### Phase 9 Architecture Overview
 
@@ -7533,11 +7539,382 @@ Primary code touchpoints:
 
 ---
 
+## Phase 60 — Agent Network deterministic execution, provenance & recovery
+
+> **Status: `[x]` implementation complete 2026-08-26** (60A–60F landed). Open
+> release follow-ups: human a11y/threat sign-off, and per-OS packaged smoke via
+> `scripts/agent-network-three-process-smoke.sh`. Normative design:
+> [agent-network-next-generation-design.md](./agent-network-next-generation-design.md).
+> Canonical Agent Network overview:
+> [agent_network.md §15](./agent_network.md#15-next-generation-agent-network-phase-60).
+
+**Goal:** make Team Jobs deterministic, explainable, restart-safe, and
+measurably reliable across Envoy Harness, OpenClaw, and Ext Agent workers.
+
+### 60A — Attempt model, orchestration journal, and provenance foundation `[x]`
+
+- `[x]` Add stable `attemptId` and attempt-aware state while retaining current
+  `awards` / `partials` compatibility projections.
+- `[x]` Replace snapshot-only active recovery with append-only per-chain JSONL
+  events plus atomic checkpoints and journal-tail replay. Checkpoint + journal
+  tail are authoritative; `active-team-jobs.json` remains a compatibility mirror.
+- `[x]` Record semantic assignment, transport, partial, verification,
+  reassignment, artifact, recovery, synthesis lineage, and publish events.
+- `[x]` Add lazy `chainGetStepProvenance` RPC and compact provenance summaries
+  to active state/reports (Node, DirectCall, Social, EnvoyGo).
+- `[x]` Add Social execution-details panel and EnvoyGo summary bottom sheet.
+- `[x]` Migrate existing `active-team-jobs.json` once without losing active
+  chains or duplicating ledger reservations.
+
+### 60B — Signed worker leases `[x]`
+
+- `[x]` Add `agent.worker.lease`, `.revoke`, and `.request` protocol intents,
+  role policies, parsers, and schema/security tests.
+- `[x]` Publish 30-second signed leases every 10 seconds with runtime, skills,
+  capacity, and connectivity classes.
+- `[x]` Add bounded lease store with sequence/replay/TTL/clock-skew checks.
+- `[x]` Select new awards from leases; retain penalized legacy ready-probe
+  fallback for mixed-version peers.
+- `[x]` Stop interpreting Agent Card `lastSeenAt` as runtime availability.
+
+### 60C — Deterministic strategies and calibrated reliability `[x]`
+
+- `[x]` Add balanced, fastest, cheapest, highest-confidence, privacy-local,
+  and diverse-model presets with versioned resolved snapshots.
+- `[x]` Persist deterministic score components and stable exclusion reasons.
+- `[x]` Record quality, completion, latency, delivery, and connectivity
+  observations keyed by worker/runtime/model-family/skill/path.
+- `[x]` Add Beta-posterior confidence bounds, sample sizes, latency estimates,
+  and hierarchical sparse-data fallback.
+- `[x]` Keep current 3-tuple reputation as the compatibility projection.
+- `[x]` Preview/runtime badges and confidence/sample-size UX (Social + EnvoyGo).
+
+### 60D — Protocol-aware restart reconciliation `[x]`
+
+- `[x]` Add signed `task.chain.reconcile.request/response` intents.
+- `[x]` Add bounded worker attempt-receipt store.
+- `[x]` Restore into `RECOVERING`; pause watchdog/reassignment timers until
+  peer reconciliation or grace expiry.
+- `[x]` Deduplicate recovered finals and preserve budget reservations without
+  re-awarding or charging twice.
+- `[x]` Surface recovery state and conflicts in provenance UX.
+
+### 60E — Bounded speculative execution `[x]`
+
+- `[x]` Add immediate-dual mode on the award wire path (policy helpers also
+  define hedged / verify-only; those modes are policy-gated only until a
+  dedicated wire path lands).
+- `[x]` Require criticality/policy, disclosure permission, independent
+  workers, idempotency, and worst-case budget preflight.
+- `[x]` Select via deterministic rules plus independent verification or owner
+  review; never use first-response-wins for critical disagreement
+  (`disagree_needs_verify` / `none_pass` block dependent advance).
+- `[x]` Cancel losing attempts (including stall-reassign cleanup of
+  speculative siblings), sibling wait timeout, account committed cost
+  honestly, and retain late finals without silently replacing the selected
+  artifact (dual-award wire path + per-attempt partials + cancel losers).
+
+### 60F — Deterministic three-node lab and diagnostics simulation `[x]`
+
+- `[x]` Create the lab foundation: virtual clock and deterministic
+  fault-injecting transport, bonds, runtime, fixtures, and event predicates
+  (`apps/node/test/support/agent-network-lab/`).
+- `[x]` Lab event predicates + shared fixtures (`lab-events`, `lab-fixtures`).
+- `[x]` `agent-network-lab-matrix.test.ts` covers design §10.3 scenarios 1–14
+  in-process. Several scenarios are focused unit slices (ranking / reconcile /
+  journal) on the shared lab clock+bonds rather than full three-process
+  meshes; the filename avoids default `*e2e*`/`*three-node*` unit excludes.
+- `[x]` Packaged three-process smoke entry:
+  `scripts/agent-network-three-process-smoke.sh` →
+  `apps/node/test/agent-network-three-process-smoke.test.ts` (libp2p three
+  homes: lease wire + lease-backed preview + assigner award). Operator guide:
+  `docs/agent-network-three-process-smoke.md`. Does **not** replace the lab
+  matrix (PR unit gate). Full execute→report remains Phase 43
+  `npm run test:e2e:chain-three-home` when worker engines are available.
+- `[x]` No-spend readiness/dry-plan/failover/verification/recovery simulation
+  APIs (`agentNetworkDiagnosticsSnapshot` / `Simulate` / `ExportDiagnostics`).
+  Dry-plan uses live strategy ranking (`findAgentNetworkWorkersRanked`).
+- `[x]` Social “Test Agent Network,” EnvoyGo diagnostic card, and redacted
+  JSON export.
+
+### Phase 60 release gates
+
+- `[x]` Protocol schema, role policy, focused Node/API lab + speculation +
+  diagnostics tests pass in the unit suite. Full typecheck / Social production
+  build / EnvoyGo analyzer remain the standard `test:dev` / release checklist
+  (run before tag).
+- `[x]` Fourteen deterministic three-node lab scenarios pass without internet,
+  paid models, arbitrary protocol sleeps, or reputation mutations
+  (`agent-network-lab-matrix.test.ts`).
+- `[x]` Chaos / recovery paths covered by lab scenarios 5–7 and 14 (reconcile
+  dedup, late-final retention, corrupt journal tail) — no duplicate selected
+  artifact or re-ingest of recovered finals.
+- `[x]` Security/privacy unit coverage for lease spoof/replay/TTL, privacy-local
+  hard gate, speculative late-final retention, and diagnostics redaction.
+  Formal threat-model sign-off remains a human release review step.
+- `[x]` Social and EnvoyGo localization strings for Test Agent Network /
+  diagnostics landed (en/zh + Flutter gen-l10n fallbacks). Accessibility /
+  high-contrast / reduced-motion remain design-system defaults — spot-check
+  in UI before release (`docs/agent-network-release-checklist.md`).
+
+---
+
+## Phase 60.1 — Stabilize (Now)
+
+> **Status: `[~]` in progress** — UX honesty, disagree owner path, engine-backed
+> three-process smoke, release checklist. Normative design unchanged.
+
+**Goal:** tighten owner-facing copy so Agent Network capabilities are not
+over-promised; close the execute→report gap in packaged smoke; give owners a
+minimal path when speculative results disagree.
+
+### Release gates (stabilize)
+
+- `[x]` Lab matrix remains PR unit gate (`agent-network-lab-matrix.test.ts`).
+- `[x]` Three-process smoke asserts leases + award + **report** when workers use
+  mock Team-job engines (assigner not in worker pool).
+- `[x]` Human checklist: `docs/agent-network-release-checklist.md` (per-OS smoke,
+  a11y spot-check, threat sign-off placeholders).
+
+### Polish strategy / provenance / recovery copy
+
+- `[x]` Social + EnvoyGo: strategy hints — hedged / verify-only are policy-only;
+  wire dual-award only when immediate-dual gates pass.
+- `[x]` Test Agent Network mode hints — dry-plan uses live ranking; failover /
+  recovery are light label simulations.
+- `[x]` Worker pick cards: assignment reason codes + calibrated reliability hint.
+
+### Disagree UX
+
+- `[x]` `chainGetState.speculationReview` when `disagree_needs_verify` /
+  `none_pass` blocks dependents.
+- `[x]` `chainResolveSpeculation` — owner **pick** one final or **reassign** step.
+- `[x]` Social chain detail banner + actions.
+
+### Exit criteria
+
+- `[ ]` Per-OS manual smoke signed off (see release checklist).
+- `[ ]` Human a11y + threat spot-check recorded for the tag.
+
+---
+
+## Phase 61 — Agent Network depth (hedged wire, recovery chaos, reliability UX)
+
+> **Status: `[x]` complete 2026-08-27** (61A–61D landed). Optional follow-ups:
+> hedged lab-matrix scenario, packaged recovery-chaos script (mirror three-process
+> smoke). Release tags still use Phase 60.1 manual checklist. Builds on Phase 60
+> (speculation policy, reconcile, reliability store). Normative design:
+> [agent-network-next-generation-design.md](./agent-network-next-generation-design.md).
+
+**Goal:** wire the remaining speculation modes, prove restart recovery on real
+processes (not just in-process lab matrix), and surface sparse-data honesty in
+Team job preview/start.
+
+### 61A — Hedged wire (`fastest`) `[x]`
+
+- `[x]` After primary accept, schedule hedge when `decideSpeculationForSubtask`
+  returns `mode: hedged` (p75×1.25 delay, default 30s when no history).
+- `[x]` `trackChain` tick launches speculative sibling when hedge deadline elapses
+  (unless primary partial already arrived).
+- `[x]` Unit test: hedge fires after delay, not at award time.
+- `[ ]` Lab matrix scenario for hedged path (optional follow-up).
+
+### 61B — Verify-only path (`balanced` + high criticality) `[x]`
+
+- `[x]` Policy already returns `verify_only` (no dual execution at award).
+- `[x]` Explicit gate: block advance until verify loop completes on critical steps
+  (`requiresVerifyOnlyForSubtask`, `verifyOnlyBlockedSubtasks`, unit test).
+
+### 61C — Recovery chaos (real processes) `[x]`
+
+- `[x]` `restartPhase13NodeService` harness helper (same profileDir + mesh; no `stopNode`).
+- `[x]` `agent-network-recovery-chaos-smoke.test.ts`: award → restart assigner mid-run →
+  assert `recovery.phase === recovering` → grace → running.
+- `[x]` Post-restart execute→report in same test (`flushRecoveryAdvancePending` +
+  tracking completion tick; disable iteration extend in smoke).
+- `[ ]` Optional packaged script (mirror three-process smoke).
+
+### 61D — Reliability → ranking feedback UX `[x]`
+
+- `[x]` `reliabilityFallbackLevel` on ranked workers + preview suggestedWorkers.
+- `[x]` Social start dialog: sparse-data hint when fallback ≠ exact or samples low.
+- `[x]` EnvoyGo start screen sparse-data chip + l10n.
+
+### Phase 61 release gates
+
+- `[x]` Hedged unit test (`chain-speculation-wire.test.ts`) passes in unit suite.
+- `[x]` Verify-only wire unit test (`chain-verify-only-wire.test.ts`) passes.
+- `[x]` Recovery chaos E2E passes under `RUN_E2E=1`
+  (`agent-network-recovery-chaos-smoke.test.ts`: award → assigner restart →
+  RECOVERING → reconcile → execute→report).
+- `[x]` Preview/start surfaces `reliabilityFallbackLevel` when reliability store
+  is sparse (Social start dialog + EnvoyGo start screen).
+- `[ ]` Phase 60.1 manual checklist still applies for release tags (per-OS smoke,
+  a11y/threat sign-off — see [agent-network-release-checklist.md](./agent-network-release-checklist.md)).
+
+---
+
+## Phase 62 — Assigner intelligence & capability-based orchestrator selection
+
+> **Status: `[x]` complete (2026-08-27)** — enhances the **existing** Team job orchestrator
+> (plan → award → gather partials → synthesize → report), not a replacement.
+> Assign / gather / finalize are LLM-heavy; when enabled, the **Assigner** may
+> be a bonded peer with stronger model capability than the job creator. **Off by
+> default** (`assignerSelection: "local"`). Normative handoff wire already
+> shipped (Phase 40E / [agent-network-plan-assign.md](./agent-network-plan-assign.md)).
+
+**Goal:** make one-shot Team jobs reliably produce a good report from natural
+language, and optionally route orchestration (plan+assign, iteration judge,
+merge/synthesis) to the best-capable eligible home in the fleet.
+
+**Design principle:** the **creator** starts the job and owns the mandate; the
+**Assigner** runs the LLM loops. Today they are the same node unless the owner
+manually picks a remote Assigner in Advanced settings (`assignerPeerId`). Phase
+62 adds deterministic **capability scoring** + an opt-in default.
+
+```text
+Owner (creator home)                Remote Assigner (optional)
+        │                                    │
+        │  chainStartFromGoal                │
+        │  assignerSelection: best_capable   │
+        ├──────── task.chain.handoff ───────►│ plan+assign (LLM)
+        │  (same chainId)                    │ award workers (A2A)
+        │                                    │ gather partials
+        │◄─────── chain:state / report ──────│ synthesize + publish
+        │  observes progress                 │
+```
+
+### 62A — Assigner intelligence (plan + completion) `[x]`
+
+**Assign (planning layer):**
+
+- `[x]` Default to LLM **plan+assign** when the Assigner has a usable model
+  (`allowLlmDecompose` + live providers); keyword single-step remains fallback.
+- `[x]` Preview/start surfaces plan warnings and step count before launch.
+- `[x]` Completion **invariants:** tracking loop + recovery flush must publish
+  when all open-round subtasks have finals (extend/iteration cannot strand jobs
+  — harden 61C lesson: explicit extend knobs + “all steps awarded?” guard).
+
+**Gather (coordination layer):**
+
+- `[x]` Document and test extend vs one-shot defaults (`extendMaxStepsPerRound: 0`
+  for smoke; product default unchanged until UX review).
+- `[x]` Disagree / verify-only owner unblock paths tested in multi-step smokes
+  (Phase 61 coverage; not re-tested in Phase 62).
+
+### 62B — Synthesis & final report quality `[x]`
+
+- `[x]` When Assigner has `llmMerge`, synthesize prefers `merge_structured`
+  (report-style goals get clearer provenance); concatenate fallback unchanged.
+- `[x]` Owner-visible synthesis line in report (“Merged by Assigner …”).
+- `[x]` Iteration judge uses Assigner model (already handoff-carried); Social start
+  dialog surfaces continue/stop hint from **job** `iterationMaxRounds` (not only
+  node defaults).
+
+### 62C — Capability-based Assigner selection (optional, off by default) `[x]`
+
+**Config (default off):**
+
+- `[x]` `chainDefaults.assignerSelection?: "local" | "best_capable"` — default
+  **`"local"`** (creator’s agent is Assigner; today’s behavior).
+- `[x]` Per-job override on `ChainStartFromGoalParams` (+ preview params).
+- `[x]` Explicit `assignerPeerId` still wins (Advanced picker unchanged).
+
+**Scoring (deterministic, auditable):**
+
+- `[x]` Candidate pool = bonded peers eligible as Assigner today
+  (`task.execute` + Join Agent Network + fresh agent card); exclude creator-only
+  when a strictly better remote exists only if policy allows.
+- `[x]` `scoreAssignerCapability(peer)` using signals already on the mesh:
+  - Assigner-side **modelProviders** tier (cloud preset > local/ollama > mock/disabled)
+  - `agentNetworkProfile.modelFreshness`, `contextWindow`, `spendPosture`
+  - Engine readiness: local = OpenClaw/Harness/Ext check; remote =
+    lease-ready or card has `chain.orchestrate` (online/same-LAN required to hand off)
+  - Reachability: mesh online or same-LAN dialable; legacy probe penalized in score
+- `[x]` Stable tie-break: same-LAN peer → higher freshness → lexicographic peer id.
+- `[x]` If `best_capable` and top scorer ≠ local agent →
+  `_handoffChainGoalToAssigner` (existing Phase 40E path); else local `_runChainGoal`.
+- `[x]` Audit + journal: `chain.assigner_selected` with
+  `{ mode, selectedPeerId, creatorPeerId, score, reasonCodes[] }`.
+- `[x]` Preview RPC returns `suggestedAssignerPeerId` + human reason when mode ≠ local.
+
+**UX (honest, opt-in):**
+
+- `[x]` Social: Chain defaults — “Best capable peer” (off by default); Start dialog
+  toggle + suggested Assigner hint. EnvoyGo: reads home `assignerSelection`
+  defaults (no separate mobile defaults editor); shows suggested Assigner reason.
+- `[x]` Start dialog: when mode is `best_capable`, show suggested Assigner before
+  Start; Advanced “Orchestrate on” override still wins.
+- `[x]` Mobile remains observe/approve-first; Assigner suggestion visible when
+  home defaults enable `best_capable`.
+
+**Security / policy:**
+
+- `[x]` Only **direct**-bond Assigner candidates (same as worker recruitment).
+- `[x]` Mandate budget + sensitivity stay on creator-signed chain mandate; remote
+  Assigner cannot raise limits without owner RPC on creator home.
+- `[x]` No Assigner selection across owners without existing bond + Join gate.
+
+### 62D — Engine matrix & handoff E2E `[x]`
+
+- `[x]` `chain-assigner-handoff-e2e.test.ts` extended: weak-local creator +
+  strong-remote Assigner → plan+assign+report on remote.
+- `[x]` `chain-assigner-capability-select.test.ts` — unit tests for scorer +
+  tie-breaks (mock/disabled vs cloud preset profiles).
+- `[x]` Three-process smoke variant: creator starts with `best_capable`, worker
+  pool on third home, Assigner on second.
+- `[~]` Recovery chaos smoke: Assigner restart when **remote** Assigner owns journal
+  (local assigner restart covered by Phase 61C; remote handoff + restart deferred).
+
+### Phase 62 release gates
+
+- `[x]` Default unchanged: `assignerSelection: "local"` — no behavior change until
+  owner enables `best_capable` in defaults or per job.
+- `[x]` With `best_capable` on, libp2p two-home handoff smoke reaches report.
+- `[x]` Completion invariant tests pass (extend disabled + enabled matrix).
+- `[x]` Preview shows suggested Assigner + reason when capability mode on.
+- `[ ]` Phase 60.1 manual checklist still applies for release tags.
+
+### Exit criteria
+
+- `[x]` Owner on a weak-local home can opt in and get a cloud-capable Assigner
+  without manually picking peer ids.
+- `[x]` Assign / gather / finalize loops run on the selected Assigner’s model,
+  not the creator’s, for plan+assign + merge + iteration judge.
+- `[x]` Creator home still receives `chain:state` + final report for the same
+  `chainId`.
+
+### Cross-references
+
+- [agent-network-plan-assign.md](./agent-network-plan-assign.md) — plan+assign + handoff
+- [agent-network-iteration.md](./agent-network-iteration.md) — judge / extend on Assigner
+- `_handoffChainGoalToAssigner` — `apps/node/src/node-service-chain-orchestration.ts`
+- Phase 58E — Advanced Assigner picker (manual); Phase 62 automates when opted in
+- Phase 60A journal — Assigner restart recovery when remote owns chain
+
+---
+
 ## Changelog (this document)
 
 
 | Date | Change |
 |------|--------|
+| 2026-08-27 | **Phase 62 review fixes.** Social `assignerSelection` stale-closure; remote engineReady requires lease or online+`chain.orchestrate`; orchestrate weight + dampened remote freshness; defaults validation; honest audit intent; Assigner-labeled provenance; EnvoyGo passes home `assignerSelection`; plan checkbox honesty. |
+| 2026-08-27 | **Phase 62 complete.** Capability-based Assigner selection (`assignerSelection: local \| best_capable`, default local); `scoreAssignerCapability` + handoff integration; completion invariant (`hasUnawardedActiveSubtasks`); synthesis provenance section; Social/EnvoyGo UX; unit + E2E tests. |
+| 2026-08-27 | **Phase 62 planned.** Assigner intelligence (plan+assign, completion invariants, synthesis quality) + optional capability-based Assigner selection (`assignerSelection: local \| best_capable`, off by default) via existing `task.chain.handoff`. |
+| 2026-08-27 | **Phase 61 depth complete.** Hedged speculation tick; verify-only advance gate; recovery chaos E2E (assigner restart → report via `flushRecoveryAdvancePending`); `reliabilityFallbackLevel` in Social + EnvoyGo. |
+| 2026-08-27 | **Phase 61 depth started.** Hedged speculation wire + `trackChain` tick; recovery chaos E2E (assigner restart on libp2p homes); `reliabilityFallbackLevel` in preview + Social sparse-data hint. |
+| 2026-08-27 | **Phase 60.1 stabilize.** UX honesty (strategy / Test AN / reliability copy); `chainResolveSpeculation` + Social disagree banner; three-process smoke execute→report via `wireMockTeamJobEngine`; `docs/agent-network-release-checklist.md`. |
+| 2026-08-26 | **Phase 60 three-process smoke.** Dedicated libp2p smoke (`agent-network-three-process-smoke.test.ts`) for lease wire + lease-backed preview + chain report; script + `docs/agent-network-three-process-smoke.md`; lab matrix remains the PR unit gate. |
+| 2026-08-26 | **Phase 60 review fixes.** 60E: speculative sibling wait timeout, stall-reassign clears speculative sibling, disagree/none_pass blocks dependents; 60A: journal recover default + selection on `selected` only; restore prefers runtimeSnapshot; 60C: lease modelFamily + diversity + legacy-probe penalty + reliability keys use worker family; 60D: RECOVERING partial gate, unknown grace, cancel receipts; advertise `chain-attempt-v1`; dry-plan uses real ranking; docs honesty on hedged/verify-only and smoke wrapper. |
+| 2026-08-26 | **Dropped mixed-version release gate** — pre-release; no need for new/old assigner↔worker skew fixtures. |
+| 2026-08-26 | **Phase 60F complete + release gates updated.** §10.3 scenarios 1–14 in `agent-network-lab-matrix.test.ts`; packaged smoke script; EnvoyGo Test Agent Network card + diagnostics RPCs; Social Test UI already present. |
+| 2026-08-26 | **Phase 60E dual-award wire + 60F lab/diagnostics.** Speculative `immediate_dual` accept path, per-attempt partials, cancel losers, late-final retention; `agent-network-three-node-e2e` lab scenarios; `agentNetworkDiagnostics*` RPCs + Social Test Agent Network. Next: remaining 14-scenario matrix, packaged three-process smoke, EnvoyGo diagnostic cards. |
+| 2026-08-26 | **Phase 60C UX + 60D + 60E core + 60F lab predicates.** Strategy/reliability/lease badges in Social; Agent Card `features` ads (`worker-lease-v1`, `chain-reconcile-v1`, `chain-provenance-v1`). 60D: reconcile intents, receipt store, RECOVERING gate, recovery UX, attemptId on awards. 60E: speculation policy gates + deterministic final selection helpers. 60F: `lab-events` / `lab-fixtures`. Next: dual-award wire path, three-node E2E, diagnostics simulation. |
+| 2026-08-26 | **Phase 60B review fixes + 60C core.** 60B: reject stale post-revoke resurrection, credential owner binding, lease short-circuit in award probe, no sequence bump on empty runtimes. 60C: versioned team strategy presets + hard gates + golden fixtures; `WorkerReliabilityStore` Beta posterior with hierarchical fallback; ranking uses strategy components; verdicts feed reliability observations. Next: strategy/reliability UX badges, then 60D reconcile. |
+| 2026-08-26 | **Phase 60B runtime leases landed.** `WorkerLeaseStore` (TTL/sequence/replay/skew), inbound `agent.worker.lease*` handlers, periodic publisher (30s TTL / ~10s jittered refresh), selection prefers lease-ready workers and falls back to legacy ready-probe. Ranking no longer treats Agent Card `lastSeenAt` as engine availability. Next: lease UI/diagnostics snapshot + feature advertisement polish. |
+| 2026-08-26 | **Phase 60A complete; 60B schemas started.** Closed journal/migration exit gates (checkpoint-primary restore, one-shot legacy import, no duplicate ledger). Journaled `artifact.selected` + `synthesis.lineage` on report publish; Social Execution details + EnvoyGo provenance bottom sheet with lazy RPC. Protocol: `agent.worker.lease` / `.revoke` / `.request` intents, role policies, Zod parsers, and schema tests. Next: lease publisher, verifier/store, selection. |
+| 2026-08-26 | **Phase 60A implementation continued.** Added a pure attempt-projection journal reducer, atomic per-chain materialized checkpoints, and restart recovery that replays only the valid journal tail after `checkpoint.lastSeq`. Added owner-only lazy `chainGetStepProvenance`, wired through Node, DirectCall, Social, and EnvoyGo clients, plus semantic planning, transport, partial/artifact, verification, attempt-state, and report-publish events. The legacy active snapshot remains authoritative for non-attempt chain fields until the full-chain reducer lands. Focused provenance/recovery gate: 72 tests pass; typecheck clean. Earlier cross-repo Envoy Harness + Node build also passed. Next: authoritative full-chain projection/migration, compact provenance UI, then 60B signed leases. |
 | 2026-08-14 | **Phase 59E shipped — GC + two-home E2E.** `gcChainInputWorkspace` / `chainInputJobWorkspaceDir`; terminal hooks on Assigner + worker; `chain-input-delivery-two-home-e2e.test.ts`. Phase 59 closed. |
 | 2026-08-14 | **Phase 59D shipped — Social + EnvoyGo delivery UX.** Honesty copy update; delivery chips + `chainRetryInputDelivery`; Advanced/start scope `referenced`/`all`; EnvoyGo status + retry + i18n. Next: **59E**. |
 | 2026-08-14 | **Phase 59C shipped — Executor local-path wiring.** Deliver-before-accept; `inputArtifacts` merge worker-local file refs; stall award on pending/failed delivery; OpenClaw prompt labels Team job workspace paths. Next: **59D**. |
@@ -7780,4 +8157,3 @@ Primary code touchpoints:
 | 2026-05-17 | **Phase 11 complete:** Capacitor mobile app with in-process Social UI + mobile node runtime. Created 5 new packages (`mobile-identity` with `@noble/curves` Ed25519, `mobile-storage` SQLite-backed persistence, `mobile-vault` filesystem-backed vault, `mobile-node` relay-only NodeService, `apps/social/src/lib/direct-call-client.ts` in-process client). Multi-device shared identity: `importOwnerIdentity()` on MobileNode reuses home node's ownerId for shared contacts/bonds. PEM encode/decode in pure JS (SPKI/PKCS8 DER prefixes). `NodeServiceProvider.clientFactory` accepts pluggable client — desktop uses WsClient, mobile uses DirectCallClient. Fixed critical `derivePeerId`/`deriveOwnerId`/`deriveDeviceId` bug where `hashCanonicalPayload` wrapped PEM strings in JSON quotes — correct behavior is direct SHA-256 of raw PEM bytes matching `node:crypto`. `vitest.config.ts` maps all `@envoymesh/mobile-*` aliases. 151 unit tests (39 mobile-identity + 41 mobile-storage + 32 mobile-vault + 28 mobile-node + 11 direct-call-client) with golden fixture cross-verification against identity package. No desktop code regressions. |
 | 2026-05-19 | **Bug fixes: reconnect UI, health tests, bridge tests:** (1) `ws-server.ts` now wires `node:online`/`node:offline` events from `nodeServiceImpl` so WebSocket clients receive real-time status updates — fixes "stuck on Connecting..." after node restart. (2) `node-health.ts` and `relay-health.ts` in both `apps/node` and `apps/relay` gained `maxRssBytesOverride?: number` on their input interfaces so tests can override the RSS threshold without relying on env vars (which are evaluated at module scope). (3) `bridge/index.ts` now throws `"Bridge requires a shared secret when enabled"` explicitly rather than silently ignoring the secret check. |
 | 2026-05-19 | **Test suite: all 8 previously failing tests fixed.** `bridge-index.test.ts`: fixed HTTP server timing race by waiting for port availability before calling `/bridge/send`; proper fetch stub routing (native for bridge server, mock for agent endpoint). `bridge-gateway-integration.test.ts`: rewrote "logs P2P reply actions" to call `receiveFromAgent` directly with a constructed deps object (HTTP endpoint uses node:http and bypasses fetch stubs). All health tests (`node-health.test.ts`, both `relay-health.test.ts` files) now use `maxRssBytesOverride: 1` to set threshold to 1 byte so test RSS values trigger the critical path. Added `vi.waitFor` for all fire-and-forget async assertions in bridge tests. Test suite: **1517+ passing, 7 skipped, 1 known-flaky** (agent-e2e collect-N, intermittent ECONNRESET). Commits `4a2c40c` + `479c3f2`. |
-

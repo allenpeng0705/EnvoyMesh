@@ -473,6 +473,7 @@ export type RpcMethods =
   | "chainPlan"
   | "chainLaunch"
   | "chainGetState"
+  | "chainGetStepProvenance"
   | "chainListActive"
   | "chainListObserved"
   | "chainCancel"
@@ -492,6 +493,7 @@ export type RpcMethods =
   | "chainPreviewGoal"
   | "chainStartFromGoal"
   | "chainResolveIteration"
+  | "chainResolveSpeculation"
   | "chainExportCosts"
   | "chainListRecipes"
   | "chainSaveRecipe"
@@ -835,7 +837,7 @@ export interface NodeConfig {
    * `"openclaw"` (default) or `"ext"` (active Ext Agent from bridge settings).
    * Node-owner only — not chosen by the Team job creator.
    */
-  agentNetworkWorkerEngine?: "openclaw" | "ext";
+  agentNetworkWorkerEngine?: "openclaw" | "ext" | "envoy-harness";
   /** Phase 19 — agent-driven inbound bond auto-accept. Default false. */
   bondAutonomyEnabled?: boolean;
   bondAutonomyMandateId?: string;
@@ -1338,6 +1340,18 @@ export interface ChainDefaultsConfig {
   extendMaxDepth?: number;
   /** Phase 47B — require at least one final partial in-round before extend. Default true. */
   extendOnlyAfterPartial?: boolean;
+  /**
+   * Phase 60C — default Team strategy for new jobs.
+   * Per-job override: `chainStartFromGoal.teamStrategyId`.
+   */
+  teamStrategyId?: import("./chain-team-strategy.js").ChainTeamStrategyId;
+  /**
+   * Phase 62C — who runs Assigner LLM loops (plan+assign, judge, merge).
+   * - `"local"` (default): creator's agent is Assigner.
+   * - `"best_capable"`: auto-pick strongest eligible bonded peer.
+   * Explicit `assignerPeerId` on start always wins over this default.
+   */
+  assignerSelection?: import("./chain-assigner-capability.js").AssignerSelectionMode;
 }
 
 export type DiscoveryProfile = "lan-fast" | "wan-default" | "relay-only" | "contacts-only";
@@ -2003,6 +2017,43 @@ export interface ChainGetStateParams {
   chainId: string;
 }
 
+/** Phase 60A — lazy, owner-visible execution history for one step. */
+export interface ChainGetStepProvenanceParams {
+  chainId: string;
+  subtaskId: string;
+}
+
+export interface ChainStepProvenanceEvent {
+  eventId: string;
+  seq: number;
+  at: string;
+  type: string;
+  attemptId?: string;
+  workerPeerId?: string;
+  runtime?: string;
+  model?: string;
+  transportPath?: string;
+  verifierRuntime?: string;
+  verifierModel?: string;
+  reason?: string;
+  artifactIds?: string[];
+  parentArtifactIds?: string[];
+}
+
+export interface ChainGetStepProvenanceResult {
+  chainId: string;
+  subtaskId: string;
+  selectedAttemptId?: string;
+  /** Compact owner-facing summary so UI need not re-derive from events. */
+  summary?: {
+    attemptCount: number;
+    workerPeerId?: string;
+    state?: "awarded" | "running" | "final_received" | "selected" | "rejected" | "cancelled" | "lost";
+    lastReason?: string;
+  };
+  events: ChainStepProvenanceEvent[];
+}
+
 export interface ChainGetStateResult {
   chainId: string;
   chainMandateId: string;
@@ -2109,6 +2160,10 @@ export interface ChainGetStateResult {
       label?: string;
     }>;
     produced?: Array<{ key: string; kind: string; label?: string }>;
+    /** Phase 60A — attempt count for this subtask. */
+    attemptCount?: number;
+    /** Phase 60A — selected / primary attempt id when known. */
+    selectedAttemptId?: string;
   }>;
   /**
    * Phase 59 — composer / job input attachments on the Assigner home
@@ -2124,6 +2179,58 @@ export interface ChainGetStateResult {
    * Phase 59D — job input delivery policy (scope / auto / gc).
    */
   inputDeliveryPolicy?: import("./chain-input-delivery.js").ChainInputDeliveryPolicy;
+  /** Phase 60A — compact summary; full event history is lazy-loaded per step. */
+  provenanceSummary?: Array<{
+    subtaskId: string;
+    selectedAttemptId?: string;
+    workerPeerId?: string;
+    attemptCount: number;
+    state?: "awarded" | "running" | "final_received" | "selected" | "rejected" | "cancelled" | "lost";
+    lastReason?: string;
+  }>;
+  /** Phase 60C — resolved Team strategy snapshot for this chain. */
+  teamStrategy?: import("./chain-team-strategy.js").ResolvedChainTeamStrategy;
+  /** Phase 60D — restart reconciliation status (omit when not recovering). */
+  recovery?: {
+    phase: "recovering" | "running" | "awaiting_owner" | "complete";
+    orchestratorEpoch: string;
+    startedAt: string;
+    graceDeadlineAt: string;
+    pendingPeers: number;
+    conflictCount: number;
+  };
+  /** Phase 60.1 — owner review when speculative finals disagree (blocks dependents). */
+  speculationReview?: Array<{
+    subtaskId: string;
+    reason: "disagree_needs_verify" | "none_pass";
+    attempts: Array<{
+      attemptId: string;
+      workerPeerId: string;
+      role?: "primary" | "speculative" | "replacement";
+    }>;
+  }>;
+}
+
+export interface ChainResolveSpeculationParams {
+  chainId: string;
+  subtaskId: string;
+  /**
+   * - `pick` — owner selects a specific final (requires `attemptId`)
+   * - `reassign` — owner rejects both finals, reassign the step
+   * - `auto` — owner (or mobile app) defers to the orchestrator's
+   *   deterministic auto-resolver (cheaper verified pick on
+   *   disagreement, reassign on `none_pass`). Phase 63 default when
+   *   `chainMandate.speculationOnDisagreement === "auto"`.
+   */
+  action: "pick" | "reassign" | "auto";
+  /** Required when action is pick. */
+  attemptId?: string;
+}
+
+export interface ChainResolveSpeculationResult {
+  ok: boolean;
+  reason?: string;
+  nextWorkerPeerId?: string;
 }
 
 /** Read-only snapshot of a team job where this node is a worker (not assigner). */
@@ -2419,6 +2526,10 @@ export interface ChainPreviewGoalParams {
    * (`card.sourceAgentPeerId`). Empty/absent = use all discovered workers.
    */
   preferredWorkerPeerIds?: string[];
+  /** Phase 60C — Team strategy for ranking this preview. */
+  teamStrategyId?: import("./chain-team-strategy.js").ChainTeamStrategyId;
+  /** Phase 62C — override node default Assigner selection for this preview. */
+  assignerSelection?: import("./chain-assigner-capability.js").AssignerSelectionMode;
 }
 
 /**
@@ -2437,7 +2548,24 @@ export interface ChainPreviewSuggestedWorker {
   online?: boolean;
   /** Connection is via circuit relay (not direct). */
   viaRelay?: boolean;
+  /** Runtime the worker advertised for this capability. */
+  runtime?: import("@envoymesh/protocol").AgentRuntime;
   matchedSubtaskIds: string[];
+  /** Phase 60B — how readiness was decided. */
+  availabilitySource?: "lease" | "legacy_probe" | "local" | "unknown";
+  /** Phase 60C — deterministic score components (0..1). */
+  scoreComponents?: import("./chain-team-strategy.js").ChainWorkerScoreComponents;
+  /** Phase 60C — reliability lower confidence bound when known. */
+  reliabilityLowerBound?: number;
+  /** Phase 60C — observation sample count behind the reliability estimate. */
+  reliabilitySampleCount?: number;
+  /** Phase 61D — hierarchy level for the reliability estimate (sparse-data honesty). */
+  reliabilityFallbackLevel?:
+    | "exact"
+    | "peer_runtime_skill"
+    | "peer_runtime"
+    | "runtime_skill"
+    | "prior";
 }
 
 export interface ChainPreviewGoalResult {
@@ -2466,6 +2594,14 @@ export interface ChainPreviewGoalResult {
   suggestedWorkers?: ChainPreviewSuggestedWorker[];
   diagnostics?: string[];
   reason?: string;
+  /** Phase 60C — strategy used for this preview ranking. */
+  teamStrategyId?: import("./chain-team-strategy.js").ChainTeamStrategyId;
+  /** Phase 62C — auto-selected Assigner when mode is `best_capable`. */
+  suggestedAssignerPeerId?: string;
+  /** Phase 62C — plain-language reason for the suggested Assigner. */
+  suggestedAssignerReason?: string;
+  /** Phase 62B — hint when multi-round iteration may pause for owner input. */
+  iterationPreviewHint?: string;
 }
 
 /**
@@ -2509,6 +2645,8 @@ export interface ChainStartFromGoalParams {
   assignmentMode?: "skill" | "role";
   /** Optional remote Assigner peer id (default = local agent). */
   assignerPeerId?: string;
+  /** Phase 62C — override node default Assigner selection for this job. */
+  assignerSelection?: import("./chain-assigner-capability.js").AssignerSelectionMode;
   /** Phase 47 — override node default `iterationMaxRounds` for this job. */
   iterationMaxRounds?: number;
   /** Phase 47 — override node default judge mode for this job. */
@@ -2560,6 +2698,8 @@ export interface ChainStartFromGoalParams {
    * Absent/`"normal"` = default behavior.
    */
   criticality?: "normal" | "high";
+  /** Phase 60C — Team strategy for this job (defaults to node/balanced). */
+  teamStrategyId?: import("./chain-team-strategy.js").ChainTeamStrategyId;
 }
 
 export interface ChainResolveIterationParams {

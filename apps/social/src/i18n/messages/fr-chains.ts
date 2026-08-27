@@ -189,6 +189,17 @@ export const frChainsMessages = {
     composerLabel: "Que voulez-vous que vos agents accomplissent ?",
     composerPlaceholder: "Ex : Rechercher les dernières avancées des LLM locaux et résumer les 3 principales",
     preview: "Aperçu du plan",
+    reliabilityBadge: "Confiance {pct}% · {samples} échantillons",
+    reliabilityHint:
+      "Borne basse de confiance issue des résultats passés sur ce nœud (estimation bêta). Plus de vrais jobs améliorent la précision — les nouveaux workers ont moins d’échantillons.",
+    reliabilitySparse: "Estimation à partir de {level} — seulement {samples} échantillons pour l’instant",
+    reliabilityFallback: {
+      exact: "historique de ce worker",
+      peer_runtime_skill: "travail similaire sur ce worker",
+      peer_runtime: "runtime de ce worker",
+      runtime_skill: "workers avec cette compétence",
+      prior: "a priori général (aucun historique pour l’instant)",
+    },
     template: {
       research: "Rechercher un sujet",
       researchGoal: "Rechercher les dernières avancées sur {topic} et résumer les principales conclusions",

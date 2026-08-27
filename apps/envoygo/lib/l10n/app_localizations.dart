@@ -4296,6 +4296,108 @@ abstract class AppLocalizations {
   /// **'Each step prefers a collaboration role (PM, programmer, …).'**
   String get chainsStartModeRoleHint;
 
+  /// No description provided for @chainsStartTeamStrategy.
+  ///
+  /// In en, this message translates to:
+  /// **'Team strategy'**
+  String get chainsStartTeamStrategy;
+
+  /// No description provided for @chainsStartTeamStrategyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'How workers are ranked. Hedged / verify-only are policy labels — a second worker runs on the wire only when immediate-dual gates pass (critical step, budget, independent workers).'**
+  String get chainsStartTeamStrategyHint;
+
+  /// No description provided for @chainsStrategyBalanced.
+  ///
+  /// In en, this message translates to:
+  /// **'Balanced'**
+  String get chainsStrategyBalanced;
+
+  /// No description provided for @chainsStrategyFastest.
+  ///
+  /// In en, this message translates to:
+  /// **'Fastest'**
+  String get chainsStrategyFastest;
+
+  /// No description provided for @chainsStrategyCheapest.
+  ///
+  /// In en, this message translates to:
+  /// **'Cheapest'**
+  String get chainsStrategyCheapest;
+
+  /// No description provided for @chainsStrategyHighestConfidence.
+  ///
+  /// In en, this message translates to:
+  /// **'Highest confidence'**
+  String get chainsStrategyHighestConfidence;
+
+  /// No description provided for @chainsStrategyPrivacyLocal.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy (local)'**
+  String get chainsStrategyPrivacyLocal;
+
+  /// No description provided for @chainsStrategyDiverseModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Diverse models'**
+  String get chainsStrategyDiverseModel;
+
+  /// No description provided for @chainsStartAvailLease.
+  ///
+  /// In en, this message translates to:
+  /// **'Lease'**
+  String get chainsStartAvailLease;
+
+  /// No description provided for @chainsStartAvailLegacy.
+  ///
+  /// In en, this message translates to:
+  /// **'Legacy'**
+  String get chainsStartAvailLegacy;
+
+  /// No description provided for @chainsStartReliabilityPct.
+  ///
+  /// In en, this message translates to:
+  /// **'Trust {pct}%'**
+  String chainsStartReliabilityPct(int pct);
+
+  /// No description provided for @chainsStartReliabilitySparse.
+  ///
+  /// In en, this message translates to:
+  /// **'{level} · {samples} samples'**
+  String chainsStartReliabilitySparse(String level, int samples);
+
+  /// No description provided for @chainsStartReliabilityFallbackExact.
+  ///
+  /// In en, this message translates to:
+  /// **'this worker\'s history'**
+  String get chainsStartReliabilityFallbackExact;
+
+  /// No description provided for @chainsStartReliabilityFallbackPeerRuntimeSkill.
+  ///
+  /// In en, this message translates to:
+  /// **'similar work on this worker'**
+  String get chainsStartReliabilityFallbackPeerRuntimeSkill;
+
+  /// No description provided for @chainsStartReliabilityFallbackPeerRuntime.
+  ///
+  /// In en, this message translates to:
+  /// **'this worker\'s runtime'**
+  String get chainsStartReliabilityFallbackPeerRuntime;
+
+  /// No description provided for @chainsStartReliabilityFallbackRuntimeSkill.
+  ///
+  /// In en, this message translates to:
+  /// **'workers with this skill'**
+  String get chainsStartReliabilityFallbackRuntimeSkill;
+
+  /// No description provided for @chainsStartReliabilityFallbackPrior.
+  ///
+  /// In en, this message translates to:
+  /// **'general prior (no history yet)'**
+  String get chainsStartReliabilityFallbackPrior;
+
   /// No description provided for @chainsStartGoalLabel.
   ///
   /// In en, this message translates to:
@@ -4439,6 +4541,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No reachable Agent Network workers. Bond contacts with agents on the home node first.'**
   String get chainsStartNoWorkers;
+
+  /// No description provided for @chainsTestNetworkTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Test Agent Network'**
+  String get chainsTestNetworkTitle;
+
+  /// No description provided for @chainsTestNetworkHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Simulation — no work sent, no model spend, no reputation changes. Dry-plan ranks for real; failover and recovery are label-only previews.'**
+  String get chainsTestNetworkHint;
+
+  /// No description provided for @chainsTestNetworkRun.
+  ///
+  /// In en, this message translates to:
+  /// **'Check readiness'**
+  String get chainsTestNetworkRun;
+
+  /// No description provided for @chainsTestNetworkRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking…'**
+  String get chainsTestNetworkRunning;
+
+  /// No description provided for @chainsTestNetworkFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not run diagnostics'**
+  String get chainsTestNetworkFailed;
+
+  /// No description provided for @chainsSpeculationReviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Speculation needs review'**
+  String get chainsSpeculationReviewTitle;
+
+  /// No description provided for @chainsSpeculationReviewBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Two workers returned different results for one step. Pick a winner to keep the job moving, or let the orchestrator pick automatically.'**
+  String get chainsSpeculationReviewBody;
+
+  /// No description provided for @chainsSpeculationReviewNonePass.
+  ///
+  /// In en, this message translates to:
+  /// **'Both workers failed verification — the orchestrator will reassign this step.'**
+  String get chainsSpeculationReviewNonePass;
+
+  /// No description provided for @chainsSpeculationReviewDisagree.
+  ///
+  /// In en, this message translates to:
+  /// **'The two workers disagree. The orchestrator can pick the cheaper verified one, or you can pick or reassign.'**
+  String get chainsSpeculationReviewDisagree;
+
+  /// No description provided for @chainsSpeculationReviewAutoResolve.
+  ///
+  /// In en, this message translates to:
+  /// **'Resolve automatically'**
+  String get chainsSpeculationReviewAutoResolve;
+
+  /// No description provided for @chainsSpeculationReviewResolved.
+  ///
+  /// In en, this message translates to:
+  /// **'Resolved by the orchestrator'**
+  String get chainsSpeculationReviewResolved;
+
+  /// No description provided for @chainsSpeculationReviewFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not resolve automatically'**
+  String get chainsSpeculationReviewFailed;
 
   /// No description provided for @chainsStartReadinessTitle.
   ///
@@ -4787,6 +4961,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This job finished and published a report.'**
   String get chainsDetailPublished;
+
+  /// No description provided for @chainsDetailRecovering.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovering after restart — confirming worker progress'**
+  String get chainsDetailRecovering;
+
+  /// No description provided for @chainsAttemptCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} attempt(s)'**
+  String chainsAttemptCount(int count);
+
+  /// No description provided for @chainsExecutionDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Execution details'**
+  String get chainsExecutionDetails;
+
+  /// No description provided for @chainsProvenanceSummaryLine.
+  ///
+  /// In en, this message translates to:
+  /// **'{attempts} attempt(s) · {worker} · {state}'**
+  String chainsProvenanceSummaryLine(int attempts, String worker, String state);
+
+  /// No description provided for @chainsLastReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Last reason: {reason}'**
+  String chainsLastReason(String reason);
+
+  /// No description provided for @chainsTechnicalDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Technical details'**
+  String get chainsTechnicalDetails;
+
+  /// No description provided for @chainsProvenanceEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No journal events for this step yet.'**
+  String get chainsProvenanceEmpty;
+
+  /// No description provided for @chainsProvenanceFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load execution history.'**
+  String get chainsProvenanceFailed;
 
   /// No description provided for @chainsRebalanceHeading.
   ///
@@ -6029,6 +6251,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Published'**
   String get chainsStatusPublished;
+
+  /// No description provided for @chainsStatusRecovering.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovering'**
+  String get chainsStatusRecovering;
 
   /// No description provided for @chainsStatusSynthesizing.
   ///

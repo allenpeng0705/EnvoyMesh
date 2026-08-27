@@ -640,6 +640,13 @@
   "chainsStartStarted": "チームジョブを開始しました",
   "chainsStartFailed": "チームジョブを開始できませんでした",
   "chainsStartNoWorkers": "到達可能な Agent Network ワーカーがありません。先にホームノードのエージェントと連絡先をボンドしてください。",
+  "chainsSpeculationReviewTitle": "スペキュレーションの確認が必要",
+  "chainsSpeculationReviewBody": "2 つのワーカーが 1 ステップで異なる結果を返しました。ジョブを進めるために勝者を選ぶか、オーケストレーターに自動選択させることができます。",
+  "chainsSpeculationReviewNonePass": "両方のワーカーが検証に失敗しました — オーケストレーターがこのステップを再割り当てします。",
+  "chainsSpeculationReviewDisagree": "2 つのワーカーが一致しません。オーケストレーターがより低コストの検証済みを選ぶか、ユーザーが選ぶか再割り当てできます。",
+  "chainsSpeculationReviewAutoResolve": "自動的に解決",
+  "chainsSpeculationReviewResolved": "オーケストレーターが解決しました",
+  "chainsSpeculationReviewFailed": "自動解決に失敗しました",
   "chainsStartNeedWorkers": "オンライン ワーカーを少なくとも 1 人選択するか、推奨プールを復元するために再度プレビューしてください。",
   "chainsStartWorkersHint": "プランからのオンライン ワーカー。必要のないワーカーのチェックを外してください。すべて外すと開始できません — 再度プレビューして推奨プールをリセットしてください。",
   "chainsStartWorkersHeading": "ワーカー",
@@ -1158,5 +1165,12 @@
         "type": "String"
       }
     }
-  }
+  },
+  "chainsStartReliabilityPct": "信頼度 {pct}%",
+  "chainsStartReliabilitySparse": "{level} · {samples} 件のサンプル",
+  "chainsStartReliabilityFallbackExact": "このワーカーの履歴",
+  "chainsStartReliabilityFallbackPeerRuntimeSkill": "このワーカーの類似タスク",
+  "chainsStartReliabilityFallbackPeerRuntime": "このワーのランタイム",
+  "chainsStartReliabilityFallbackRuntimeSkill": "このスキルを持つワーカー",
+  "chainsStartReliabilityFallbackPrior": "汎用事前分布（履歴なし）"
 }

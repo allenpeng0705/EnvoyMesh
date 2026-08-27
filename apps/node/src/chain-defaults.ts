@@ -22,6 +22,8 @@ export const DEFAULT_CHAIN_DEFAULTS: ChainDefaultsConfig = {
   extendMaxStepsPerRound: 2,
   extendMaxDepth: 3,
   extendOnlyAfterPartial: true,
+  teamStrategyId: "balanced",
+  assignerSelection: "local",
 };
 
 /** Auto-evaluate bids after this delay when competitive mode (43C). */
@@ -164,4 +166,11 @@ export function resolveAssignmentModeDefault(
   defaults?: ChainDefaultsConfig | null,
 ): "skill" | "role" {
   return defaults?.assignmentMode === "role" ? "role" : "skill";
+}
+
+/** Phase 62C — resolve effective Assigner selection mode (defaults to local). */
+export function resolveAssignerSelectionDefault(
+  defaults?: ChainDefaultsConfig | null,
+): "local" | "best_capable" {
+  return defaults?.assignerSelection === "best_capable" ? "best_capable" : "local";
 }

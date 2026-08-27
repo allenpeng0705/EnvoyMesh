@@ -640,6 +640,11 @@ export const zh = mergeMessages(en, {
     saving: "保存中…",
     saved: "已保存",
     saveFailed: "保存失败",
+    assignerSelection: "发起方选择",
+    assignerSelectionLocal: "本节点（默认）",
+    assignerSelectionBestCapable: "最强可用节点",
+    assignerSelectionHint:
+      "创建方启动任务；发起方负责分解、分配与合并。除非建联节点有更强模型，否则保持“本节点”。",
   },
   ...zhPiMessages,
   ...zhEhMessages,

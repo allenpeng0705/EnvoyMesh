@@ -1,7 +1,7 @@
 /**
  * Node-local Agent Network worker engine (docs/agent-network-engine.md Step 2).
  *
- * The home-node owner chooses Built-in OpenClaw vs Ext Agent for Team-job
+ * The home-node owner chooses OpenClaw, Ext Agent, or Envoy Harness for Team-job
  * execution on THIS node. The Team job creator / Assigner never picks engines.
  *
  * Phase 8 — `envoy-harness` joins the picker. The runtime lives in a
@@ -9,9 +9,8 @@
  * (see `apps/node/src/agent-runtime-envoy/`). Q3 D: the Tauri user-prompt
  * default is still OpenClaw; the home-node owner has to opt into
  * envoy-harness explicitly via this picker (Step 5 — signal-based
- * opt-in — comes later). The picker accepts the literal today so the
- * persisted config can be round-tripped; the factory returns a stub
- * adapter that throws on `execute()` until Step 2+.
+ * opt-in — comes later). The live adapter executes through the same MAP
+ * result and verification contracts as the other runtimes.
  */
 
 export const AGENT_NETWORK_WORKER_ENGINES = [

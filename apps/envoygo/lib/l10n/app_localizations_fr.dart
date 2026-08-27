@@ -2335,6 +2335,66 @@ class AppLocalizationsFr extends AppLocalizations {
       'Chaque étape privilégie un rôle (PM, développeur, …).';
 
   @override
+  String get chainsStartTeamStrategy => 'Team strategy';
+
+  @override
+  String get chainsStartTeamStrategyHint =>
+      'How workers are ranked. Hedged / verify-only are policy labels — a second worker runs on the wire only when immediate-dual gates pass (critical step, budget, independent workers).';
+
+  @override
+  String get chainsStrategyBalanced => 'Balanced';
+
+  @override
+  String get chainsStrategyFastest => 'Fastest';
+
+  @override
+  String get chainsStrategyCheapest => 'Cheapest';
+
+  @override
+  String get chainsStrategyHighestConfidence => 'Highest confidence';
+
+  @override
+  String get chainsStrategyPrivacyLocal => 'Privacy (local)';
+
+  @override
+  String get chainsStrategyDiverseModel => 'Diverse models';
+
+  @override
+  String get chainsStartAvailLease => 'Lease';
+
+  @override
+  String get chainsStartAvailLegacy => 'Legacy';
+
+  @override
+  String chainsStartReliabilityPct(int pct) {
+    return 'Confiance $pct%';
+  }
+
+  @override
+  String chainsStartReliabilitySparse(String level, int samples) {
+    return '$level · $samples échantillons';
+  }
+
+  @override
+  String get chainsStartReliabilityFallbackExact => 'historique de ce worker';
+
+  @override
+  String get chainsStartReliabilityFallbackPeerRuntimeSkill =>
+      'travail similaire sur ce worker';
+
+  @override
+  String get chainsStartReliabilityFallbackPeerRuntime =>
+      'runtime de ce worker';
+
+  @override
+  String get chainsStartReliabilityFallbackRuntimeSkill =>
+      'workers avec cette compétence';
+
+  @override
+  String get chainsStartReliabilityFallbackPrior =>
+      'a priori général (aucun historique pour l’instant)';
+
+  @override
   String get chainsStartGoalLabel => 'Objectif';
 
   @override
@@ -2414,6 +2474,47 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get chainsStartNoWorkers =>
       'Aucun worker Agent Network joignable. Liez d\'abord des contacts avec des agents sur le nœud domicile.';
+
+  @override
+  String get chainsTestNetworkTitle => 'Test Agent Network';
+
+  @override
+  String get chainsTestNetworkHint =>
+      'Simulation — no work sent, no model spend, no reputation changes. Dry-plan ranks for real; failover and recovery are label-only previews.';
+
+  @override
+  String get chainsTestNetworkRun => 'Check readiness';
+
+  @override
+  String get chainsTestNetworkRunning => 'Checking…';
+
+  @override
+  String get chainsTestNetworkFailed => 'Could not run diagnostics';
+
+  @override
+  String get chainsSpeculationReviewTitle => 'Spéculation à examiner';
+
+  @override
+  String get chainsSpeculationReviewBody =>
+      'Deux workers ont renvoyé des résultats différents pour une étape. Choisissez un gagnant pour faire avancer le job, ou laissez l’orchestrateur choisir automatiquement.';
+
+  @override
+  String get chainsSpeculationReviewNonePass =>
+      'Les deux workers ont échoué à la vérification — l’orchestrateur va réassigner cette étape.';
+
+  @override
+  String get chainsSpeculationReviewDisagree =>
+      'Les deux workers ne sont pas d’accord. L’orchestrateur peut choisir le moins cher validé, ou vous pouvez choisir ou réassigner.';
+
+  @override
+  String get chainsSpeculationReviewAutoResolve => 'Résoudre automatiquement';
+
+  @override
+  String get chainsSpeculationReviewResolved => 'Résolu par l’orchestrateur';
+
+  @override
+  String get chainsSpeculationReviewFailed =>
+      'Résolution automatique impossible';
 
   @override
   String get chainsStartReadinessTitle => 'Préparer les workers';
@@ -2612,6 +2713,41 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get chainsDetailPublished =>
       'Ce job est terminé et a publié un rapport.';
+
+  @override
+  String get chainsDetailRecovering =>
+      'Recovering after restart — confirming worker progress';
+
+  @override
+  String chainsAttemptCount(int count) {
+    return '$count attempt(s)';
+  }
+
+  @override
+  String get chainsExecutionDetails => 'Execution details';
+
+  @override
+  String chainsProvenanceSummaryLine(
+    int attempts,
+    String worker,
+    String state,
+  ) {
+    return '$attempts attempt(s) · $worker · $state';
+  }
+
+  @override
+  String chainsLastReason(String reason) {
+    return 'Last reason: $reason';
+  }
+
+  @override
+  String get chainsTechnicalDetails => 'Technical details';
+
+  @override
+  String get chainsProvenanceEmpty => 'No journal events for this step yet.';
+
+  @override
+  String get chainsProvenanceFailed => 'Could not load execution history.';
 
   @override
   String get chainsRebalanceHeading => 'Ajouter du budget';
@@ -3365,6 +3501,9 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get chainsStatusPublished => 'Publié';
+
+  @override
+  String get chainsStatusRecovering => 'Recovering';
 
   @override
   String get chainsStatusSynthesizing => 'Synthèse';

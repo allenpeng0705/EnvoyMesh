@@ -103,6 +103,20 @@ export interface ChainWorkerHandlerDeps extends ChainWorkerSendDeps {
    * Phase 59E — whole-chain cancel (no subtaskId): GC local job input workspace.
    */
   onWholeChainCancelled?: (chainId: string) => void;
+  /**
+   * Phase 60D — persist attempt receipts for restart reconciliation.
+   */
+  recordAttemptReceipt?: (input: {
+    chainId: string;
+    attemptId: string;
+    subtaskId: string;
+    state: "accepted" | "running" | "final" | "cancelled" | "unknown";
+    lastPartialSeq?: number;
+    finalPartial?: TaskChainPartialPayload;
+    mandateExpiresAt?: string;
+  }) => void;
+  /** Phase 60D — map subtaskId → attemptId from the last accept. */
+  attemptIdBySubtask?: Map<string, string>;
   /** Optional executor — runs the task body and emits partials. */
   executeSubtask?: (
     subtask: ChainSubtask,
@@ -282,6 +296,16 @@ export async function handleWorkerAccept(
     correlationId: envelope.correlationId,
     summary: `subtask=${subtaskId} costUsd=${payload.award.acceptedCostUsd}`,
   });
+  const attemptId =
+    payload.award.attemptId ?? `attempt_${payload.award.chainId}_${subtaskId}`;
+  deps.attemptIdBySubtask?.set(subtaskId, attemptId);
+  deps.recordAttemptReceipt?.({
+    chainId: payload.award.chainId,
+    attemptId,
+    subtaskId,
+    state: "accepted",
+    mandateExpiresAt: payload.subtask?.deadlineAt ?? payload.award.deadlineAt,
+  });
   return { ok: true };
 }
 
@@ -357,6 +381,17 @@ export async function handleWorkerCancel(
     correlationId: envelope.correlationId,
     summary: payload.reason,
   });
+  if (payload.subtaskId && deps.recordAttemptReceipt) {
+    const attemptId =
+      deps.attemptIdBySubtask?.get(payload.subtaskId) ??
+      `attempt_${payload.chainId}_${payload.subtaskId}`;
+    deps.recordAttemptReceipt({
+      chainId: payload.chainId,
+      attemptId,
+      subtaskId: payload.subtaskId,
+      state: "cancelled",
+    });
+  }
   if (!payload.subtaskId) {
     try {
       deps.onWholeChainCancelled?.(payload.chainId);
@@ -411,6 +446,22 @@ export async function deliverChainPartial(
   // defense-in-depth (zero-cost when the input is already valid).
   const payload = TaskChainPartialPayloadSchema.parse(partial);
   const now = (deps.now ?? (() => new Date()))();
+  if ("recordAttemptReceipt" in deps && typeof (deps as ChainWorkerHandlerDeps).recordAttemptReceipt === "function") {
+    // Prefer attemptId stamped on accept receipt cache (subtask → attempt).
+    const cached = (deps as ChainWorkerHandlerDeps & {
+      attemptIdBySubtask?: Map<string, string>;
+    }).attemptIdBySubtask?.get(payload.partial.subtaskId);
+    const attemptId =
+      cached ?? `attempt_${payload.partial.chainId}_${payload.partial.subtaskId}`;
+    (deps as ChainWorkerHandlerDeps).recordAttemptReceipt!({
+      chainId: payload.partial.chainId,
+      attemptId,
+      subtaskId: payload.partial.subtaskId,
+      state: payload.partial.isFinal ? "final" : "running",
+      lastPartialSeq: payload.partial.seq,
+      ...(payload.partial.isFinal ? { finalPartial: payload } : {}),
+    });
+  }
   const envelope = buildChainEnvelope({
     intent: "task.chain.partial",
     senderPeerId: deps.workerPeerId,

@@ -675,6 +675,16 @@ describe("launchChain", () => {
       subtask_a: ["12D3KooW-w1", "12D3KooW-w2"],
     });
     expect(state.awards.get("subtask_a")?.workerPeerId).toBe("12D3KooW-w1");
+    expect(state.attempts.size).toBe(1);
+    const attempt = [...state.attempts.values()][0]!;
+    expect(attempt).toMatchObject({
+      subtaskId: "subtask_a",
+      workerPeerId: "12D3KooW-w1",
+      role: "primary",
+      state: "awarded",
+      attemptNumber: 1,
+    });
+    expect(state.selectedAttemptBySubtask.get("subtask_a")).toBe(attempt.attemptId);
     const accepts = deps.sentEnvelopes.filter((e) => e.envelope.intent === "task.chain.accept");
     expect(accepts).toHaveLength(1);
     expect(accepts[0]!.recipientPeerId).toBe("12D3KooW-w1");

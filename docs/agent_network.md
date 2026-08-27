@@ -1222,3 +1222,44 @@ Chain event → ChainAuditSink.record({ type: "chain.*", outcome, summary, ... }
 - `packages/api/src/capability-intent-routing.ts` — existing capability routes
 - `packages/local-store/src/task-results-store.ts` — existing per-task result store
 - `packages/local-store/src/journal.ts` — existing JSONL audit
+
+---
+
+## 15. Next-generation Agent Network (Phase 60)
+
+> **Status:** `[~]` implementation started 2026-08-26. The normative detailed
+> design is [agent-network-next-generation-design.md](./agent-network-next-generation-design.md).
+
+Phase 60 evolves Team Jobs from a functioning chain orchestrator into a
+deterministic, explainable, restart-safe multi-runtime team system. It adds:
+
+1. attempt-aware execution and an append-only orchestration journal;
+2. signed short-lived worker leases, separate from Agent Card freshness;
+3. per-step execution provenance and artifact lineage;
+4. deterministic team strategies and calibrated reliability;
+5. bounded speculative execution for critical, side-effect-free steps;
+6. protocol-aware restart reconciliation;
+7. a deterministic three-node Envoy Harness + OpenClaw/Ext integration lab;
+8. no-spend Agent Network diagnostics and simulation UX.
+
+### 15.1 Dependency order
+
+The required order is journal/attempts → provenance → leases → reliability and
+strategies → reconciliation → speculation → simulation UX. Speculation must not
+ship before attempt-aware persistence and reconciliation, because an assigner
+restart could otherwise duplicate parallel work and budget commitments.
+
+### 15.2 Canonical boundaries
+
+- Agent Cards describe identity and membership; signed leases describe current
+  runtime availability.
+- The assigner owns assignment, budget, provenance, reliability observations,
+  and final artifact selection.
+- Workers never self-award reputation.
+- Strategies change ranking only after trust, mandate, sensitivity, lease,
+  input-delivery, and budget gates pass.
+- Diagnostics reuse production decision functions with network/model/write
+  effects disabled.
+
+Implementation status and release gates are tracked in
+[implementation-plan.md Phase 60](./implementation-plan.md#phase-60--agent-network-deterministic-execution-provenance--recovery).

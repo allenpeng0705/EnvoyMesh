@@ -77,6 +77,7 @@
     "test:e2e:call-two-home": "npx vitest run apps/node/test/call-two-home-e2e.test.ts",
     "test:e2e:call-signaling": "npx vitest run apps/node/test/call-signaling-*-e2e.test.ts",
     "test:e2e:chain-three-home": "npx vitest run apps/node/test/chain-three-home-smoke.test.ts",
+    "test:e2e:agent-network-three-process": "RUN_E2E=1 npx vitest run apps/node/test/agent-network-three-process-smoke.test.ts",
     "test:e2e:webrtc": "npx vitest run apps/node/test/call-signaling-*-e2e.test.ts apps/node/test/call-two-home-e2e.test.ts apps/node/test/webrtc-call-e2e.test.ts apps/social/test/hooks/useCallSession.test.ts apps/social/test/hooks/useCallSession-media.integration.test.ts apps/social/test/lib/webrtc-call-transport.test.ts apps/social/test/lib/call-ice-servers.test.ts apps/social/test/components/ActiveCallPanel.test.tsx",
     "test:e2e:relay": "npx vitest run apps/node/test/relay-chat-e2e.test.ts apps/node/test/relay-broadcast-e2e.test.ts apps/node/test/wan-relay-signoff-e2e.test.ts apps/node/test/multi-relay-fleet-e2e.test.ts apps/node/test/multi-relay-fleet-process-e2e.test.ts apps/node/test/multi-relay-fleet-live-e2e.test.ts apps/node/test/discovery-relay-robustness-e2e.test.ts",
     "test:e2e:relay:process": "RUN_E2E=1 npx vitest run apps/node/test/multi-relay-fleet-process-e2e.test.ts",

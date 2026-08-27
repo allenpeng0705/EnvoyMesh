@@ -125,6 +125,8 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "exportNotesToLinkedObsidian",
   "exportNotesToMcp",
   "convertLibraryItemToMarkdown",
+  // Phase 60 provenance can expose worker/model/transport and artifact lineage.
+  "chainGetStepProvenance",
 ]);
 
 const CODING_DENIED_MSG =
@@ -341,6 +343,10 @@ export async function routeRpcMethod(
       return ns.chainLaunch(params as unknown as ChainLaunchParams);
     case "chainGetState":
       return ns.chainGetState(params as unknown as ChainGetStateParams);
+    case "chainGetStepProvenance":
+      return ns.chainGetStepProvenance(
+        params as unknown as import("@envoymesh/api").ChainGetStepProvenanceParams,
+      );
     case "chainListActive":
       return ns.chainListActive((params as unknown as ChainListActiveParams | undefined) ?? {});
     case "chainListObserved":
@@ -393,11 +399,25 @@ export async function routeRpcMethod(
       return ns.chainSetDefaults(params as unknown as ChainSetDefaultsParams);
     case "chainPreviewGoal":
       return ns.chainPreviewGoal(params as unknown as ChainPreviewGoalParams);
+    case "agentNetworkDiagnosticsSnapshot":
+      return ns.agentNetworkDiagnosticsSnapshot();
+    case "agentNetworkSimulate":
+      return ns.agentNetworkSimulate(
+        params as unknown as import("@envoymesh/api").AgentNetworkSimulationParams,
+      );
+    case "agentNetworkExportDiagnostics":
+      return ns.agentNetworkExportDiagnostics(
+        (params as { simulationId?: string } | undefined) ?? {},
+      );
     case "chainStartFromGoal":
       return ns.chainStartFromGoal(params as unknown as ChainStartFromGoalParams);
     case "chainResolveIteration":
       return ns.chainResolveIteration(
         params as unknown as import("@envoymesh/api").ChainResolveIterationParams,
+      );
+    case "chainResolveSpeculation":
+      return ns.chainResolveSpeculation(
+        params as unknown as import("@envoymesh/api").ChainResolveSpeculationParams,
       );
     case "chainExportCosts":
       return ns.chainExportCosts(params as unknown as ChainExportCostsParams);

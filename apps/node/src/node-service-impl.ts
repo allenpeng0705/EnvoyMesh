@@ -751,6 +751,7 @@ import {
   chainGetDefaultsViaRuntime,
   chainGetReportViaRuntime,
   chainGetStateViaRuntime,
+  chainGetStepProvenanceViaRuntime,
   chainLaunchViaRuntime,
   chainListActiveViaRuntime,
   chainListObservedViaRuntime,
@@ -767,6 +768,11 @@ import {
   chainStartFromGoalViaRuntime,
   type ChainContext,
 } from "./node-service-chains.js";
+import {
+  agentNetworkDiagnosticsSnapshotViaRuntime,
+  agentNetworkExportDiagnosticsViaRuntime,
+  agentNetworkSimulateViaRuntime,
+} from "./agent-network-diagnostics.js";
 import {
   acceptCallInviteViaRuntime,
   declineCallInviteViaRuntime,
@@ -1143,6 +1149,7 @@ import {
   _emitChainState,
   cancelChainOwnerAction,
   reassignSubtaskOwnerAction,
+  resolveSpeculationOwnerAction,
   retryInputDeliveryOwnerAction,
   _chainTransportResolver,
   _evaluateAwardAndAccept,
@@ -1164,6 +1171,7 @@ import {
   evaluateBidsAsync,
   findAgentNetworkWorkers,
   findAgentNetworkWorkersRanked,
+  flushRecoveryAdvancePending,
   handleInboundChainEnvelope,
   listAllVerdictEntries,
   listAgentCardsIncludingLocal,
@@ -1174,6 +1182,31 @@ import {
   type ChainOrchestrationContext,
 } from "./node-service-chain-orchestration.js";
 import { handleInboundCapabilityManifest } from "./agent-adapter-manifest-inbound.js";
+import { handleInboundWorkerLease } from "./agent-worker-lease-inbound.js";
+import {
+  buildLocalLeaseRuntime,
+  startWorkerLeaseBroadcaster,
+  type WorkerLeaseBroadcastMesh,
+} from "./agent-worker-lease-broadcast.js";
+import { WorkerLeaseStore } from "./worker-lease-store.js";
+import { WorkerReliabilityStore } from "./worker-reliability-store.js";
+import { WorkerAttemptReceiptStore } from "./worker-attempt-receipt-store.js";
+import {
+  beginChainRecovery,
+  createOrchestratorEpoch,
+  createWorkerEpoch,
+  isChainRecovering,
+  tickChainRecovery,
+  applyReconcileReports,
+  buildReconcileRequest,
+  type ChainRecoveryState,
+} from "./chain-reconcile-recovery.js";
+import { handleInboundChainReconcileRequest } from "./chain-reconcile-inbound.js";
+import {
+  createTaskChainReconcileRequestPayload,
+  parseTaskChainReconcileResponsePayload,
+} from "@envoymesh/protocol";
+import { localAgentNetworkEngineReady } from "./chain-ready-probe.js";
 import { getLocalRuntimePassRate } from "./node-service-chain-orchestration.js";
 import { handleInboundScoreboardRule } from "./scoreboard-rule-inbound.js";
 import {
@@ -1610,6 +1643,7 @@ function summarizeAgentCard(row: {
       /** Legacy field — pre-skills rename on disk. */
       strengths?: string[];
     };
+    features?: CachedAgentCardSummary["features"];
   };
   cachedAt: string;
   sourceAgentPeerId?: string;
@@ -1639,6 +1673,9 @@ function summarizeAgentCard(row: {
       ...raw,
       skills: raw.skills ?? raw.strengths ?? [],
     });
+  }
+  if (row.card.features && row.card.features.length > 0) {
+    summary.features = row.card.features;
   }
   return summary;
 }
@@ -1798,6 +1835,15 @@ class NodeServiceImpl implements NodeService {
     lastStatusBroadcastAt: new Map<string, number>(),
     readyProbeCache: new Map(),
     remoteManifests: new Map(),
+    workerLeases: new WorkerLeaseStore(),
+    workerReliability: new WorkerReliabilityStore(),
+    teamStrategies: new Map(),
+    recovery: new Map(),
+    orchestratorEpoch: createOrchestratorEpoch(),
+    workerEpoch: createWorkerEpoch(),
+    attemptReceipts: new WorkerAttemptReceiptStore(),
+    recoveredPartialKeys: new Set<string>(),
+    recoveryAdvancePending: new Set<string>(),
     inputGcDone: new Set<string>(),
   } as const;
 
@@ -2365,6 +2411,11 @@ class NodeServiceImpl implements NodeService {
     if (profileDir && profileDir !== "/tmp/unknown") {
       this._discoverySeedStore = createDiscoverySeedStore(profileDir);
       this._capabilityIndexReady = this._capabilityIndex.init(profileDir);
+      void this._chainStore.init(profileDir).then(() => {
+        void this._beginRecoveryForRestoredChains();
+      }).catch((err: unknown) => {
+        console.warn("[team-jobs] active-state recovery failed:", err);
+      });
       // Also init push here so Tauri/embedded NodeServiceImpl paths work
       // even when index.ts bootstrap is not used.
       void pushNotificationService.init(profileDir).catch((err: unknown) => {
@@ -4054,6 +4105,7 @@ class NodeServiceImpl implements NodeService {
     if (card.publicTopics) summary.publicTopics = card.publicTopics;
     if (card.webContentRoot) summary.webContentRoot = card.webContentRoot;
     if (card.agentNetworkProfile) summary.agentNetworkProfile = card.agentNetworkProfile;
+    if (card.features && card.features.length > 0) summary.features = card.features;
     return summary;
   }
 
@@ -15259,6 +15311,12 @@ class NodeServiceImpl implements NodeService {
     return chainGetStateViaRuntime(this._chainContext(), params);
   }
 
+  async chainGetStepProvenance(
+    params: import("@envoymesh/api").ChainGetStepProvenanceParams,
+  ): Promise<import("@envoymesh/api").ChainGetStepProvenanceResult> {
+    return chainGetStepProvenanceViaRuntime(this._chainContext(), params);
+  }
+
   async chainListActive(_params?: ChainListActiveParams): Promise<ChainListActiveResult> {
     return chainListActiveViaRuntime(this._chainContext());
   }
@@ -15277,6 +15335,12 @@ class NodeServiceImpl implements NodeService {
     params: import("@envoymesh/api").ChainReassignSubtaskParams,
   ): Promise<import("@envoymesh/api").ChainReassignSubtaskResult> {
     return reassignSubtaskOwnerAction(this._chainOrchestrationContext(), params);
+  }
+
+  async chainResolveSpeculation(
+    params: import("@envoymesh/api").ChainResolveSpeculationParams,
+  ): Promise<import("@envoymesh/api").ChainResolveSpeculationResult> {
+    return resolveSpeculationOwnerAction(this._chainOrchestrationContext(), params);
   }
 
   async chainRetryInputDelivery(
@@ -15383,6 +15447,300 @@ class NodeServiceImpl implements NodeService {
     return result.handled;
   }
 
+  /** Phase 60B — inbound `agent.worker.lease` / `.revoke` / `.request`. */
+  async handleInboundWorkerLease(envelope: EnvoyEnvelope): Promise<boolean> {
+    const bonds = await this.getBonds();
+    const bondedOwners = new Set(
+      bonds.map((b) => b.peerOwnerId).filter((id): id is string => Boolean(id)),
+    );
+    const result = await handleInboundWorkerLease({
+      envelope,
+      store: this._chainOrchestrationContext().getChainSideState().workerLeases,
+      maxWorkers: Math.max(32, bondedOwners.size * 2),
+      isBondedOwner: (ownerId) => bondedOwners.has(ownerId),
+      onLeaseRequest: async () => {
+        // Best-effort immediate republish (broadcaster may not be running in tests).
+        await this._leaseBroadcaster?.publishNow();
+      },
+    });
+    if (!result.handled) {
+      console.warn(
+        `[agent.worker.lease] dropped from ${envelope.senderPeerId.slice(0, 16)}…: ${result.reason}`,
+      );
+    }
+    return result.handled;
+  }
+
+  /**
+   * Phase 60D — after checkpoint restore, enter RECOVERING and reconcile
+   * in-flight attempts before watchdog/reassignment resumes.
+   */
+  private async _beginRecoveryForRestoredChains(): Promise<void> {
+    const side = this._chainOrchestrationContext().getChainSideState();
+    // Fresh process epoch each restore pass.
+    (side as { orchestratorEpoch: string }).orchestratorEpoch = createOrchestratorEpoch();
+    (side as { workerEpoch: string }).workerEpoch = createWorkerEpoch();
+
+    for (const chainId of this._chainStore.listIds()) {
+      const entry = this._chainStore.getRuntime(chainId);
+      if (!entry || entry.state.published || entry.state.chainCancelled) {
+        this._startChainTracking(chainId);
+        continue;
+      }
+      const recovery = beginChainRecovery({
+        state: entry.state,
+        orchestratorEpoch: side.orchestratorEpoch,
+      });
+      side.recovery.set(chainId, recovery);
+      entry.state.journalEvent?.("recovery.started", {
+        orchestratorEpoch: recovery.orchestratorEpoch,
+        peerCount: Object.keys(recovery.peers).length,
+        graceDeadlineAt: recovery.graceDeadlineAt,
+      });
+      if (!isChainRecovering(recovery)) {
+        this._startChainTracking(chainId);
+        continue;
+      }
+      // Start tracking loop (gated while recovering) + kick reconcile.
+      this._startChainTracking(chainId);
+      void this._runChainReconcile(chainId).catch((err: unknown) => {
+        console.warn(`[team-jobs] reconcile failed for ${chainId}:`, err);
+      });
+    }
+  }
+
+  /** Phase 60D — send reconcile requests and apply responses / grace timeout. */
+  private async _runChainReconcile(chainId: string): Promise<void> {
+    const ctx = this._chainOrchestrationContext();
+    const side = ctx.getChainSideState();
+    const recovery = side.recovery.get(chainId);
+    const entry = this._chainStore.getRuntime(chainId);
+    if (!recovery || !entry || !isChainRecovering(recovery)) return;
+
+    const agentIdentity = await this._ensureAgentIdentity();
+    const mesh = this._mesh;
+    if (!agentIdentity || !mesh) {
+      // No mesh yet — wait for grace then resume.
+      await new Promise((r) => setTimeout(r, 50));
+      const tick = tickChainRecovery({ recovery });
+      if (tick.done) this._emitChainState(chainId);
+      return;
+    }
+
+    for (const [workerPeerId, peer] of Object.entries(recovery.peers)) {
+      if (peer.status !== "pending") continue;
+      // Legacy peers without chain-reconcile-v1: mark unsupported and wait grace.
+      const cards = await this.listAgentCards();
+      const card = cards.find((c) => c.sourceAgentPeerId === workerPeerId);
+      const supports =
+        card?.features?.includes("chain-reconcile-v1") === true ||
+        // Self / missing card: still try; worker may answer from receipt store.
+        workerPeerId === agentIdentity.agentPeerId;
+      if (card && !supports) {
+        peer.status = "unsupported";
+        continue;
+      }
+      try {
+        const request = createTaskChainReconcileRequestPayload(
+          buildReconcileRequest({
+            state: entry.state,
+            orchestratorEpoch: recovery.orchestratorEpoch,
+            workerPeerId,
+          }),
+        );
+        const unsigned = createUnsignedEnvelope({
+          senderPeerId: agentIdentity.agentPeerId,
+          senderPublicKey: agentIdentity.agentPublicKeyPem,
+          senderRole: "agent",
+          recipientPeerId: workerPeerId,
+          recipientRole: "agent",
+          intent: "task.chain.reconcile.request",
+          payload: request,
+        });
+        const envelope = signUnsignedEnvelope(unsigned, agentIdentity.agentPrivateKeyPem);
+        // Best-effort send; response arrives via inbound handler.
+        const { sendEnvelopeWithRetry } = await import("./chat-outbound-deliver.js");
+        await sendEnvelopeWithRetry({
+          mesh: mesh as import("./chat-outbound-deliver.js").OutboundDeliverMesh,
+          transportPeerId: workerPeerId,
+          envelope,
+          dialHints: [],
+        }).catch(() => undefined);
+      } catch {
+        /* continue other peers */
+      }
+    }
+
+    // Grace wait then force-complete pending peers.
+    const graceMs = Math.max(
+      0,
+      Date.parse(recovery.graceDeadlineAt) - Date.now(),
+    );
+    await new Promise((r) => setTimeout(r, Math.min(graceMs, 15_000)));
+    const tick = tickChainRecovery({ recovery });
+    if (tick.done || tick.timedOutPeers.length > 0) {
+      entry.state.journalEvent?.("recovery.peer_reconciled", {
+        timedOutPeers: tick.timedOutPeers,
+        phase: recovery.phase,
+      });
+      this._emitChainState(chainId);
+      if (tick.done) {
+        await flushRecoveryAdvancePending(this._chainOrchestrationContext(), chainId);
+      }
+    }
+  }
+
+  /** Phase 60D — inbound reconcile request (worker) or response (assigner). */
+  async handleInboundChainReconcile(envelope: EnvoyEnvelope): Promise<boolean> {
+    if (envelope.intent === "task.chain.reconcile.request") {
+      const side = this._chainOrchestrationContext().getChainSideState();
+      const result = handleInboundChainReconcileRequest({
+        envelope,
+        store: side.attemptReceipts,
+        workerEpoch: side.workerEpoch,
+      });
+      if (!result.handled) {
+        console.warn(
+          `[task.chain.reconcile] request dropped: ${result.reason}`,
+        );
+        return false;
+      }
+      const agentIdentity = await this._ensureAgentIdentity();
+      if (!agentIdentity || !this._mesh) return false;
+      const unsigned = createUnsignedEnvelope({
+        senderPeerId: agentIdentity.agentPeerId,
+        senderPublicKey: agentIdentity.agentPublicKeyPem,
+        senderRole: "agent",
+        recipientPeerId: envelope.senderPeerId,
+        recipientRole: "agent",
+        intent: "task.chain.reconcile.response",
+        payload: result.response,
+        correlationId: envelope.correlationId ?? envelope.messageId,
+      });
+      const responseEnv = signUnsignedEnvelope(unsigned, agentIdentity.agentPrivateKeyPem);
+      const { sendEnvelopeWithRetry } = await import("./chat-outbound-deliver.js");
+      await sendEnvelopeWithRetry({
+        mesh: this._mesh as import("./chat-outbound-deliver.js").OutboundDeliverMesh,
+        transportPeerId: envelope.senderPeerId,
+        envelope: responseEnv,
+        dialHints: [],
+      }).catch(() => undefined);
+      return true;
+    }
+
+    if (envelope.intent === "task.chain.reconcile.response") {
+      let response;
+      try {
+        response = parseTaskChainReconcileResponsePayload(envelope.payload);
+      } catch {
+        return false;
+      }
+      const side = this._chainOrchestrationContext().getChainSideState();
+      const recovery = side.recovery.get(response.chainId);
+      const entry = this._chainStore.getRuntime(response.chainId);
+      if (!recovery || !entry || !isChainRecovering(recovery)) return true;
+      const applied = applyReconcileReports({
+        state: entry.state,
+        recovery,
+        workerPeerId: envelope.senderPeerId,
+        workerEpoch: response.workerEpoch,
+        reports: response.attempts,
+        seenPartialKeys: side.recoveredPartialKeys,
+      });
+      entry.state.journalEvent?.("recovery.peer_reconciled", {
+        workerPeerId: envelope.senderPeerId,
+        ingestedFinals: applied.ingestedFinals,
+        resumedRunning: applied.resumedRunning,
+        unknowns: applied.unknowns,
+        conflicts: applied.conflicts,
+      });
+      const tick = tickChainRecovery({ recovery });
+      this._emitChainState(response.chainId);
+      if (tick.done) {
+        await flushRecoveryAdvancePending(this._chainOrchestrationContext(), response.chainId);
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  private _leaseBroadcaster: { stop: () => void; publishNow: () => Promise<void> } | undefined;
+
+  /**
+   * Phase 60B — start periodic signed worker-lease broadcast to bonded peers.
+   */
+  async startWorkerLeaseBroadcaster(
+    mesh: EnvoyMesh,
+    opts?: { intervalMs?: number; ttlMs?: number },
+  ): Promise<{ stop: () => void; publishNow: () => Promise<void> } | undefined> {
+    const profile = this.getProfile();
+    const agentIdentity = await this._ensureAgentIdentity();
+    if (!profile || !agentIdentity) {
+      console.warn("[agent.worker.lease] broadcaster skipped: agent identity/profile unavailable");
+      return undefined;
+    }
+    this._leaseBroadcaster?.stop();
+    const identityCtx = this._identityContext();
+    const broadcaster = startWorkerLeaseBroadcaster({
+      mesh: mesh as WorkerLeaseBroadcastMesh,
+      agentPublicKeyPem: agentIdentity.agentPublicKeyPem,
+      agentPrivateKeyPem: agentIdentity.agentPrivateKeyPem,
+      agentCredential: agentIdentity.agentCredential,
+      workerPeerId: agentIdentity.agentPeerId,
+      ownerId: profile.owner.ownerId,
+      buildRuntimes: async () => {
+        const { skills, runtime } = await this._localManifestDescriptor();
+        const localReady = await localAgentNetworkEngineReady({
+          engine: this.getAgentNetworkWorkerEngine(),
+          isOpenClawReady: () => this.isOpenClawReady(),
+          isExtAgentBridgeReady: () => this.isExtAgentBridgeReady(),
+          isEnvoyHarnessReady: () => this.isEnvoyHarnessReady(),
+          probeExtAgent: async () => {
+            const reach = await this.probeExtAgent();
+            return { reachable: reach.reachable === true };
+          },
+        });
+        return [
+          buildLocalLeaseRuntime({
+            runtime,
+            ready: localReady.ready,
+            skillIds: skills.map((s) => s.skillId),
+            runtimeVersion: "mesh-lease",
+          }),
+        ];
+      },
+      connectivity: async () => {
+        const meshStats = mesh.getConnectionStats?.();
+        return {
+          direct: (meshStats?.connectedPeerIds?.length ?? 0) > 0,
+          relay: (meshStats?.circuitPeerIds?.length ?? 0) > 0,
+        };
+      },
+      bondOwnerIds: async () => {
+        const bonds = await this.getBonds();
+        return bonds
+          .map((b) => b.peerOwnerId)
+          .filter((id): id is string => Boolean(id));
+      },
+      resolveLibp2pPeer: async (ownerId) => {
+        const resolved = await identityCtx.resolveLibp2pPeerForBondOwner(ownerId);
+        if (!resolved) return undefined;
+        return { peerId: resolved.transportPeerId, listenAddrs: resolved.listenAddrs };
+      },
+      dialHintsFor: (peerId, listenAddrs) => identityCtx.dialHintsForChat(peerId, listenAddrs),
+      intervalMs: opts?.intervalMs,
+      ttlMs: opts?.ttlMs,
+      onError: (err) =>
+        console.warn(
+          "[agent.worker.lease] broadcast cycle failed:",
+          err instanceof Error ? err.message : err,
+        ),
+    });
+    this._leaseBroadcaster = broadcaster;
+    return broadcaster;
+  }
+
   /**
    * MAP — start the periodic owner-signed manifest broadcast to bonded peers.
    * No-op (returns undefined) when the agent identity or profile is missing.
@@ -15398,8 +15756,7 @@ class NodeServiceImpl implements NodeService {
       console.warn("[adapter.manifest] broadcaster skipped: agent identity/profile unavailable");
       return undefined;
     }
-    const skills = await this._localManifestSkills();
-    const runtime = skills === PI_SKILLS ? "pi" : "openclaw";
+    const { skills, runtime } = await this._localManifestDescriptor();
     const manifest = buildSignedCapabilityManifest({
       profile,
       agentPeerId: agentIdentity.agentPeerId,
@@ -15533,17 +15890,32 @@ class NodeServiceImpl implements NodeService {
     return this._verifierScoreboard;
   }
 
-  /** Skills for the node's own manifest, from the primary MAP runtime. */
-  private async _localManifestSkills(): Promise<import("@envoymesh/protocol").SkillDescriptor[]> {
-    if (this.getAgentNetworkWorkerEngine() === "ext") {
+  /** Runtime and skills for the node's configured Team-job worker engine. */
+  private async _localManifestDescriptor(): Promise<{
+    runtime: AgentRuntime;
+    skills: import("@envoymesh/protocol").SkillDescriptor[];
+  }> {
+    const engine = this.getAgentNetworkWorkerEngine();
+    if (engine === "envoy-harness") {
+      return { runtime: "envoy-harness", skills: [...ENVOY_HARNESS_RUNTIME_SKILLS] };
+    }
+    if (engine === "ext") {
+      const active = this._bridgeStatus?.activeExtAgentId?.trim().toLowerCase();
+      const runtime: AgentRuntime =
+        active === "codex" || active === "codex-cli"
+          ? active
+          : active === "hermes" || active === "openhuman"
+            ? active
+            : "pi";
       try {
         const piStatus = await this.getPiStatus();
-        if (piStatus.enabled) return PI_SKILLS;
+        if (piStatus.enabled) return { runtime, skills: [...PI_SKILLS] };
       } catch {
         /* fall through to the canonical default */
       }
+      return { runtime, skills: [...PI_SKILLS] };
     }
-    return OPENCLAW_SKILLS;
+    return { runtime: "openclaw", skills: [...OPENCLAW_SKILLS] };
   }
 
   /** Same-stream reply for Assigner `task.chain.ready.request` (AN engine hello). */
@@ -15564,7 +15936,7 @@ class NodeServiceImpl implements NodeService {
       agentPublicKeyPem: agentIdentity.agentPublicKeyPem,
       agentPrivateKeyPem: agentIdentity.agentPrivateKeyPem,
       agentCredential: agentIdentity.agentCredential,
-      // Answer for THIS node's configured AN engine only (OpenClaw XOR Ext).
+      // Answer for this node's configured AN engine only.
       engine: this.getAgentNetworkWorkerEngine(),
       isOpenClawReady: () => this.isOpenClawReady(),
       isExtAgentBridgeReady: () => this.isExtAgentBridgeReady(),
@@ -15572,6 +15944,7 @@ class NodeServiceImpl implements NodeService {
         const reach = await this.probeExtAgent();
         return { reachable: reach.reachable === true };
       },
+      isEnvoyHarnessReady: () => this.isEnvoyHarnessReady(),
     });
     if (!result.ok) {
       console.warn(`[chain.ready] request failed: ${result.reason}`);
@@ -15771,6 +16144,20 @@ class NodeServiceImpl implements NodeService {
 
   async chainPreviewGoal(params: ChainPreviewGoalParams): Promise<ChainPreviewGoalResult> {
     return chainPreviewGoalViaRuntime(this._chainContext(), params);
+  }
+
+  async agentNetworkDiagnosticsSnapshot() {
+    return agentNetworkDiagnosticsSnapshotViaRuntime(this._chainOrchestrationContext());
+  }
+
+  async agentNetworkSimulate(
+    params: import("@envoymesh/api").AgentNetworkSimulationParams,
+  ) {
+    return agentNetworkSimulateViaRuntime(this._chainOrchestrationContext(), params);
+  }
+
+  async agentNetworkExportDiagnostics(params: { simulationId?: string }) {
+    return agentNetworkExportDiagnosticsViaRuntime(params);
   }
 
   async chainStartFromGoal(params: ChainStartFromGoalParams): Promise<ChainStartFromGoalResult> {

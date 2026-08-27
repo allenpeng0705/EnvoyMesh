@@ -225,6 +225,17 @@ export interface ChainVerifyLoopDeps {
    * (no graph recording).
    */
   graphStore?: AgentGraphStore;
+  /** Phase 61B — read back verdicts for verify-only advance gate. */
+  getLatestVerdictForSubtask?: (
+    chainId: string,
+    subtaskId: string,
+  ) => Verdict | undefined;
+  /** Phase 63 — per-worker verdict for speculative dual-award selection. */
+  getVerdictForWorker?: (
+    chainId: string,
+    subtaskId: string,
+    workerPeerId: string,
+  ) => Verdict | undefined;
 }
 
 /** Structural stand-in for the cross-verifier so tests can stub it. */

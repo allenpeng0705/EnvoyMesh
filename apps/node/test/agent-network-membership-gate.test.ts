@@ -11,6 +11,8 @@ import {
   refreshAgentNetworkMembershipIndex,
   type ChainOrchestrationContext,
 } from "../src/node-service-chain-orchestration.js";
+import { WorkerLeaseStore } from "../src/worker-lease-store.js";
+import { WorkerReliabilityStore } from "../src/worker-reliability-store.js";
 
 function makeDeps(
   cards: Array<{
@@ -71,6 +73,32 @@ function makeDeps(
       trackAbort: new Map(),
       observedChains: new Map(),
       remoteManifests: options?.remoteManifests ?? new Map(),
+      workerLeases: new WorkerLeaseStore(),
+      workerReliability: new WorkerReliabilityStore(),
+      teamStrategies: new Map(),
+      recovery: new Map(),
+      orchestratorEpoch: "orch_test",
+      workerEpoch: "worker_test",
+      attemptReceipts: {
+        upsert() {},
+        buildReports() {
+          return [];
+        },
+        listForChain() {
+          return [];
+        },
+        get() {
+          return undefined;
+        },
+        prune() {
+          return 0;
+        },
+        size() {
+          return 0;
+        },
+        clear() {},
+      },
+      recoveredPartialKeys: new Set(),
     }),
     getAgentNetworkWorkerEngine: () => "openclaw",
     isExtAgentBridgeReady: () => false,
@@ -101,14 +129,14 @@ describe("Agent Network worker discovery gate", () => {
         ownerId: "envoy:owner:private",
         displayName: "Private",
         membership: ["task.execute", "research.web"],
-        cachedAt: "2026-07-22T00:00:00.000Z",
+        cachedAt: "2026-08-26T00:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_private",
       },
       {
         ownerId: "envoy:owner:worker",
         displayName: "Worker",
         membership: ["task.execute", AGENT_NETWORK_WORKER_MEMBERSHIP],
-        cachedAt: "2026-07-22T00:00:00.000Z",
+        cachedAt: "2026-08-26T00:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_worker",
       },
     ]);
@@ -124,7 +152,7 @@ describe("Agent Network worker discovery gate", () => {
         ownerId: "envoy:owner:solo",
         displayName: "Solo",
         membership: ["task.execute"],
-        cachedAt: "2026-07-22T00:00:00.000Z",
+        cachedAt: "2026-08-26T00:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_solo",
       },
     ]);
@@ -138,7 +166,7 @@ describe("Agent Network worker discovery gate", () => {
         ownerId: "envoy:owner:worker",
         displayName: "Worker",
         membership: ["task.execute", "agent-network-worker"],
-        cachedAt: "2026-07-22T00:00:00.000Z",
+        cachedAt: "2026-08-26T00:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_worker",
       },
     ]);
@@ -152,7 +180,7 @@ describe("Agent Network worker discovery gate", () => {
         ownerId: "envoy:owner:weak",
         displayName: "Weak",
         membership: ["task.execute", "agent-network-worker"],
-        cachedAt: "2026-07-22T00:00:00.000Z",
+        cachedAt: "2026-08-26T00:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_weak",
         agentNetworkProfile: {
           modelFreshness: 2,
@@ -165,7 +193,7 @@ describe("Agent Network worker discovery gate", () => {
         ownerId: "envoy:owner:strong",
         displayName: "Strong",
         membership: ["task.execute", "agent-network-worker"],
-        cachedAt: "2026-07-22T00:00:00.000Z",
+        cachedAt: "2026-08-26T00:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_strong",
         agentNetworkProfile: {
           modelFreshness: 9,
@@ -186,7 +214,7 @@ describe("Agent Network worker discovery gate", () => {
         ownerId: "envoy:owner:coder",
         displayName: "Coder",
         membership: ["task.execute", "agent-network-worker"],
-        cachedAt: "2026-07-22T00:00:00.000Z",
+        cachedAt: "2026-08-26T00:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_coder",
         agentNetworkProfile: {
           modelFreshness: 7,
@@ -200,7 +228,7 @@ describe("Agent Network worker discovery gate", () => {
         displayName: "General",
         // Specialty tag on mesh caps must NOT create a specialist ranking.
         membership: ["task.execute", "coding", "agent-network-worker"],
-        cachedAt: "2026-07-22T00:00:00.000Z",
+        cachedAt: "2026-08-26T00:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_general",
         agentNetworkProfile: {
           modelFreshness: 7,
@@ -223,7 +251,7 @@ describe("Agent Network worker discovery gate", () => {
         ownerId: "envoy:owner:worker",
         displayName: "Worker",
         membership: ["task.execute", "agent-network-worker"],
-        cachedAt: "2026-07-22T00:00:00.000Z",
+        cachedAt: "2026-08-26T00:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_worker",
       },
     ]);
@@ -235,7 +263,7 @@ describe("Agent Network worker discovery gate", () => {
         ownerId: "envoy:owner:worker",
         displayName: "Worker",
         membership: ["task.execute"],
-        cachedAt: "2026-07-22T01:00:00.000Z",
+        cachedAt: "2026-08-26T01:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_worker",
       },
     ];
@@ -271,7 +299,7 @@ describe("Agent Network worker discovery gate", () => {
           ownerId: "envoy:owner:wan",
           displayName: "WanTwin",
           membership: ["task.execute", "agent-network-worker"],
-          cachedAt: "2026-07-22T00:00:00.000Z",
+          cachedAt: "2026-08-26T00:00:00.000Z",
           sourceAgentPeerId: "envoy_agent_wan",
           agentNetworkProfile: identicalProfile,
         },
@@ -279,7 +307,7 @@ describe("Agent Network worker discovery gate", () => {
           ownerId: "envoy:owner:lan",
           displayName: "LanTwin",
           membership: ["task.execute", "agent-network-worker"],
-          cachedAt: "2026-07-22T00:00:00.000Z",
+          cachedAt: "2026-08-26T00:00:00.000Z",
           sourceAgentPeerId: "envoy_agent_lan",
           agentNetworkProfile: identicalProfile,
         },
@@ -307,7 +335,7 @@ describe("Agent Network worker discovery gate", () => {
           ownerId: "envoy:owner:remote",
           displayName: "Remote",
           membership: ["task.execute", "agent-network-worker"],
-          cachedAt: "2026-07-22T00:00:00.000Z",
+          cachedAt: "2026-08-26T00:00:00.000Z",
           sourceAgentPeerId: "envoy_agent_remote",
           agentNetworkProfile: {
             modelFreshness: 9,
@@ -326,7 +354,7 @@ describe("Agent Network worker discovery gate", () => {
           ownerId: "envoy:owner:self",
           displayName: "Me",
           membership: ["task.execute", "agent-network-worker"],
-          cachedAt: "2026-07-22T00:00:00.000Z",
+          cachedAt: "2026-08-26T00:00:00.000Z",
           sourceAgentPeerId: "envoy_agent_self",
           agentNetworkProfile: {
             modelFreshness: 3,
@@ -358,7 +386,7 @@ describe("Agent Network worker discovery gate", () => {
           ownerId: "envoy:owner:remote",
           displayName: "Remote",
           membership: ["task.execute", "agent-network-worker"],
-          cachedAt: "2026-07-22T00:00:00.000Z",
+          cachedAt: "2026-08-26T00:00:00.000Z",
           sourceAgentPeerId: "envoy_agent_remote",
           agentNetworkProfile: {
             modelFreshness: 9,
@@ -371,7 +399,7 @@ describe("Agent Network worker discovery gate", () => {
           ownerId: "envoy:owner:plain",
           displayName: "Plain",
           membership: ["task.execute", "agent-network-worker"],
-          cachedAt: "2026-07-22T00:00:00.000Z",
+          cachedAt: "2026-08-26T00:00:00.000Z",
           sourceAgentPeerId: "envoy_agent_plain",
         },
       ],
@@ -402,7 +430,7 @@ describe("Agent Network worker discovery gate", () => {
           ownerId: "envoy:owner:remote",
           displayName: "Remote",
           membership: ["task.execute", "agent-network-worker"],
-          cachedAt: "2026-07-22T00:00:00.000Z",
+          cachedAt: "2026-08-26T00:00:00.000Z",
           sourceAgentPeerId: "envoy_agent_remote",
         },
       ],
@@ -423,7 +451,7 @@ describe("Agent Network worker discovery gate", () => {
         ownerId: "envoy:owner:self",
         displayName: "Me",
         membership: ["task.execute", "agent-network-worker"],
-        cachedAt: "2026-07-22T00:00:00.000Z",
+        cachedAt: "2026-08-26T00:00:00.000Z",
         sourceAgentPeerId: "envoy_agent_self",
       },
     });
@@ -460,7 +488,7 @@ describe("Agent Network worker discovery gate", () => {
           ownerId: "envoy:owner:remote",
           displayName: "Remote",
           membership: ["task.execute", "agent-network-worker"],
-          cachedAt: "2026-07-22T00:00:00.000Z",
+          cachedAt: "2026-08-26T00:00:00.000Z",
           sourceAgentPeerId: "envoy_agent_remote",
           agentNetworkProfile: {
             modelFreshness: 1,

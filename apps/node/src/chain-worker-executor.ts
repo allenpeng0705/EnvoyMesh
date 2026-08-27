@@ -181,15 +181,7 @@ export function createExtAgentChainSubtaskExecutor(input: {
 /**
  * Phase 8 — envoy-harness executor (AN engine Step 1+).
  *
- * **Step 1 stub:** mirrors the OpenClaw / Ext pattern, but the runtime
- * is not actually wired (the host's `isEnvoyHarnessReady()` returns
- * false by default until Step 2 lands). When the operator selects
- * `envoy-harness` as the worker engine:
- *   - the call returns `envoy_harness_unavailable` (clean fail;
- *     the orchestrator retries on a different node or escalates)
- *   - no model adapter or LLM key is required for the call path
- *
- * **D1 (2026-08-22):** the executor is now adapter-driven
+ * The executor is adapter-driven
  * (`createMapChainSubtaskExecutor`) — the live runtime's
  * `EnvoyHarnessAdapter` executes + verifies the subtask, emitting the
  * standard `task.chain.partial` stream with named artifacts (same wire

@@ -640,6 +640,13 @@
   "chainsStartStarted": "Job d'équipe démarré",
   "chainsStartFailed": "Impossible de démarrer le job d'équipe",
   "chainsStartNoWorkers": "Aucun worker Agent Network joignable. Liez d'abord des contacts avec des agents sur le nœud domicile.",
+  "chainsSpeculationReviewTitle": "Spéculation à examiner",
+  "chainsSpeculationReviewBody": "Deux workers ont renvoyé des résultats différents pour une étape. Choisissez un gagnant pour faire avancer le job, ou laissez l’orchestrateur choisir automatiquement.",
+  "chainsSpeculationReviewNonePass": "Les deux workers ont échoué à la vérification — l’orchestrateur va réassigner cette étape.",
+  "chainsSpeculationReviewDisagree": "Les deux workers ne sont pas d’accord. L’orchestrateur peut choisir le moins cher validé, ou vous pouvez choisir ou réassigner.",
+  "chainsSpeculationReviewAutoResolve": "Résoudre automatiquement",
+  "chainsSpeculationReviewResolved": "Résolu par l’orchestrateur",
+  "chainsSpeculationReviewFailed": "Résolution automatique impossible",
   "chainsStartNeedWorkers": "Sélectionnez au moins un worker en ligne, ou prévisualisez à nouveau pour restaurer le pool recommandé.",
   "chainsStartWorkersHint": "Workers en ligne du plan. Décochez ceux que vous ne souhaitez pas. Tout décocher bloque le démarrage — prévisualisez à nouveau pour réinitialiser le pool recommandé.",
   "chainsStartWorkersHeading": "Workers",
@@ -1158,5 +1165,12 @@
         "type": "String"
       }
     }
-  }
+  },
+  "chainsStartReliabilityPct": "Confiance {pct}%",
+  "chainsStartReliabilitySparse": "{level} · {samples} échantillons",
+  "chainsStartReliabilityFallbackExact": "historique de ce worker",
+  "chainsStartReliabilityFallbackPeerRuntimeSkill": "travail similaire sur ce worker",
+  "chainsStartReliabilityFallbackPeerRuntime": "runtime de ce worker",
+  "chainsStartReliabilityFallbackRuntimeSkill": "workers avec cette compétence",
+  "chainsStartReliabilityFallbackPrior": "a priori général (aucun historique pour l’instant)"
 }

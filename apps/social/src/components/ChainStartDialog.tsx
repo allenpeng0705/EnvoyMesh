@@ -4,7 +4,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { ChainPreviewGoalResult, ChainPreviewSuggestedWorker, ChainStartFromGoalResult, BondRecord, CachedAgentCardSummary } from "@envoymesh/api";
+import type { ChainPreviewGoalResult, ChainPreviewSuggestedWorker, ChainStartFromGoalResult, BondRecord, CachedAgentCardSummary, ChainTeamStrategyId } from "@envoymesh/api";
+import { listChainTeamStrategyPresets } from "@envoymesh/api";
 
 import { useT } from "../context/I18nContext.js";
 import { useNodeService } from "../hooks/useNodeService.js";
@@ -103,9 +104,11 @@ export function ChainStartDialog({
   const [showJobSettings, setShowJobSettings] = useState(false);
   /** Phase 58E — empty = this node; else bonded ready peer agent id. */
   const [assignerPeerId, setAssignerPeerId] = useState("");
+  const [assignerSelection, setAssignerSelection] = useState<"local" | "best_capable">("local");
   const [assignmentMode, setAssignmentMode] = useState<"skill" | "role">(
     assignmentModeProp === "role" ? "role" : "skill",
   );
+  const [teamStrategyId, setTeamStrategyId] = useState<ChainTeamStrategyId>("balanced");
   /** Phase 59D — referenced (default) vs all attachments. */
   const [inputDeliveryScope, setInputDeliveryScope] = useState<"referenced" | "all">(
     "referenced",
@@ -119,6 +122,10 @@ export function ChainStartDialog({
   const [defaultsReady, setDefaultsReady] = useState(assignmentModeProp != null);
   const iterationTouchedRef = useRef(false);
   const assignmentModeTouchedRef = useRef(assignmentModeProp != null);
+  const teamStrategyTouchedRef = useRef(false);
+  const assignerSelectionTouchedRef = useRef(false);
+
+  const strategyPresets = useMemo(() => listChainTeamStrategyPresets(), []);
 
   // Team member selection — track by agent peer ID (card.sourceAgentPeerId)
   const [selectedPeerIds, setSelectedPeerIds] = useState<Set<string>>(new Set());
@@ -270,6 +277,24 @@ export function ChainStartDialog({
       if (!assignmentModeTouchedRef.current) {
         setAssignmentMode(r.defaults?.assignmentMode === "role" ? "role" : "skill");
       }
+      if (!teamStrategyTouchedRef.current) {
+        const sid = r.defaults?.teamStrategyId;
+        if (
+          sid === "balanced" ||
+          sid === "fastest" ||
+          sid === "cheapest" ||
+          sid === "highest-confidence" ||
+          sid === "privacy-local" ||
+          sid === "diverse-model"
+        ) {
+          setTeamStrategyId(sid);
+        }
+      }
+      if (!assignerSelectionTouchedRef.current) {
+        setAssignerSelection(
+          r.defaults?.assignerSelection === "best_capable" ? "best_capable" : "local",
+        );
+      }
       setDefaultsReady(true);
     }).catch(() => {
       if (!cancelled) setDefaultsReady(true);
@@ -289,7 +314,13 @@ export function ChainStartDialog({
     let cancelled = false;
     setLoading(true);
     void nodeService
-      .chainPreviewGoal({ goal, allowLlm: true, assignmentMode })
+      .chainPreviewGoal({
+        goal,
+        allowLlm: true,
+        assignmentMode,
+        teamStrategyId,
+        assignerSelection: assignerPeerId.trim() ? "local" : assignerSelection,
+      })
       .then((result) => {
         if (!cancelled) setPreview(result);
       })
@@ -304,7 +335,7 @@ export function ChainStartDialog({
     return () => {
       cancelled = true;
     };
-  }, [goal, nodeService, assignmentMode, defaultsReady, readiness.skipPreview]);
+  }, [goal, nodeService, assignmentMode, teamStrategyId, assignerSelection, assignerPeerId, defaultsReady, readiness.skipPreview]);
 
   const hasWorkers = useMemo(
     () => Boolean(preview?.ok && preview.subtasks.some((s) => s.workerCount > 0)),
@@ -371,11 +402,13 @@ export function ChainStartDialog({
         goal,
         allowLlm: true,
         assignmentMode,
+        teamStrategyId,
         inputDeliveryScope,
         iterationMaxRounds,
         iterationJudgeMode,
         extendMaxStepsPerRound,
         assignerPeerId: assignerPeerId.trim() || undefined,
+        assignerSelection: assignerPeerId.trim() ? undefined : assignerSelection,
         preferredWorkerPeerIds:
           selectedPeerIds.size > 0 ? [...selectedPeerIds] : undefined,
         plannedSubtasks:
@@ -419,7 +452,7 @@ export function ChainStartDialog({
     } finally {
       setStarting(false);
     }
-  }, [assignmentMode, assignerPeerId, criticality, engineReady, goal, hasWorkers, inputDeliveryScope, iterationMaxRounds, iterationJudgeMode, extendMaxStepsPerRound, localJoinEnabled, nodeService, onClose, onStarted, preview, selectedPeerIds, showToast, t]);
+  }, [assignmentMode, assignerPeerId, assignerSelection, criticality, engineReady, goal, hasWorkers, inputDeliveryScope, iterationMaxRounds, iterationJudgeMode, extendMaxStepsPerRound, localJoinEnabled, nodeService, onClose, onStarted, preview, selectedPeerIds, showToast, t, teamStrategyId]);
 
   const handleSaveRecipe = useCallback(async () => {
     setSavingRecipe(true);
@@ -597,6 +630,71 @@ export function ChainStartDialog({
                                 {t("chains.start.systemPick")}
                               </span>
                             ) : null}
+                            {suggested?.availabilitySource === "lease" ? (
+                              <span
+                                className="chain-worker-card__avail chain-worker-card__avail--lease"
+                                title={t("chains.start.availLeaseHint")}
+                                data-testid="chain-worker-avail-lease"
+                              >
+                                {t("chains.start.availLease")}
+                              </span>
+                            ) : suggested?.availabilitySource === "legacy_probe" ? (
+                              <span
+                                className="chain-worker-card__avail chain-worker-card__avail--legacy"
+                                title={t("chains.start.availLegacyHint")}
+                                data-testid="chain-worker-avail-legacy"
+                              >
+                                {t("chains.start.availLegacy")}
+                              </span>
+                            ) : null}
+                            {typeof suggested?.reliabilityLowerBound === "number" ? (
+                              <span
+                                className="chain-worker-card__reliability"
+                                title={t("chains.start.reliabilityHint")}
+                                data-testid="chain-worker-reliability"
+                              >
+                                {t("chains.start.reliabilityBadge", {
+                                  pct: Math.round(suggested.reliabilityLowerBound * 100),
+                                  samples: suggested.reliabilitySampleCount ?? 0,
+                                })}
+                              </span>
+                            ) : null}
+                            {typeof suggested?.reliabilityLowerBound === "number" &&
+                            suggested.reliabilityFallbackLevel &&
+                            suggested.reliabilityFallbackLevel !== "exact" ? (
+                              <span
+                                className="chain-worker-card__reliability chain-worker-card__reliability--sparse"
+                                title={t("chains.start.reliabilityHint")}
+                                data-testid="chain-worker-reliability-fallback"
+                              >
+                                {t("chains.start.reliabilitySparse", {
+                                  level: t(
+                                    `chains.start.reliabilityFallback.${suggested.reliabilityFallbackLevel}` as "chains.start.reliabilityFallback.prior",
+                                  ),
+                                  samples: suggested.reliabilitySampleCount ?? 0,
+                                })}
+                              </span>
+                            ) : null}
+                            {(suggested?.assignmentReasons ?? []).length > 0 ? (
+                              <span
+                                className="chain-worker-card__reasons"
+                                title={t("chains.start.whyThisWorker")}
+                                data-testid="chain-worker-assignment-reasons"
+                              >
+                                {(suggested?.assignmentReasons ?? []).map((code) => (
+                                  <span key={code} className="chain-worker-card__reason">
+                                    {t(
+                                      `chains.start.assignmentReason.${code}` as "chains.start.assignmentReason.skill_exact",
+                                    )}
+                                  </span>
+                                ))}
+                              </span>
+                            ) : null}
+                            {suggested?.runtime ? (
+                              <span className="chain-worker-card__tier">
+                                {suggested.runtime}
+                              </span>
+                            ) : null}
                             <span className={`chain-worker-card__tier chain-worker-card__tier--${isSelf ? "self" : bond.level}`}>
                               {isSelf ? t("chains.start.youTier") : bond.level}
                             </span>
@@ -709,6 +807,35 @@ export function ChainStartDialog({
               </button>
               {showJobSettings ? (
                 <div className="chain-start-job-settings__body">
+                  <label className="chain-start-iteration-label chain-start-row--toggle">
+                    <span>{t("chains.start.assignerAutoLabel")}</span>
+                    <input
+                      type="checkbox"
+                      checked={assignerSelection === "best_capable"}
+                      onChange={(e) => {
+                        assignerSelectionTouchedRef.current = true;
+                        setAssignerSelection(e.target.checked ? "best_capable" : "local");
+                      }}
+                      disabled={starting || savingRecipe || Boolean(assignerPeerId.trim())}
+                      data-testid="chain-start-assigner-auto"
+                    />
+                    <small className="chain-start-hint">
+                      {t("chains.start.assignerAutoHint")}
+                    </small>
+                  </label>
+                  {preview?.suggestedAssignerReason && assignerSelection === "best_capable" ? (
+                    <p className="chain-start-assigner-suggestion" data-testid="chain-start-assigner-suggestion">
+                      <strong>{t("chains.start.suggestedAssigner")}:</strong>{" "}
+                      {preview.suggestedAssignerReason}
+                    </p>
+                  ) : null}
+                  {(iterationMaxRounds ?? 1) > 1 ? (
+                    <p className="chain-start-iteration-hint" data-testid="chain-start-iteration-hint">
+                      {iterationJudgeMode === "owner"
+                        ? t("chains.start.iterationPreviewOwner")
+                        : t("chains.start.iterationPreviewAuto")}
+                    </p>
+                  ) : null}
                   <label className="chain-start-iteration-label">
                     <span>{t("chains.start.assignerLabel")}</span>
                     <select
@@ -751,6 +878,34 @@ export function ChainStartDialog({
                     </select>
                     <small className="chain-start-hint">
                       {t("chains.start.assignmentModeHint")}
+                    </small>
+                  </label>
+                  <label className="chain-start-iteration-label">
+                    <span>{t("chains.start.teamStrategy")}</span>
+                    <select
+                      value={teamStrategyId}
+                      onChange={(e) => {
+                        teamStrategyTouchedRef.current = true;
+                        setTeamStrategyId(e.target.value as ChainTeamStrategyId);
+                      }}
+                      disabled={starting || savingRecipe}
+                      data-testid="chain-start-team-strategy"
+                    >
+                      {strategyPresets.map((p) => (
+                        <option
+                          key={p.id}
+                          value={p.id}
+                          title={t(`chains.strategy.hint.${p.id}` as "chains.strategy.hint.balanced")}
+                        >
+                          {t(`chains.strategy.${p.id}` as "chains.strategy.balanced")}
+                        </option>
+                      ))}
+                    </select>
+                    <small className="chain-start-hint">
+                      {t("chains.start.teamStrategyHint")}
+                    </small>
+                    <small className="chain-start-hint chain-start-hint--muted">
+                      {t("chains.start.teamStrategyWireHonesty")}
                     </small>
                   </label>
                   <label className="chain-start-iteration-label">

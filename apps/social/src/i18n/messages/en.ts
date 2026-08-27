@@ -666,6 +666,9 @@ export const en = {
     assignmentModeRole: "Role based",
     assignmentModeHint:
       "Role based: Assigner prefers collaboration roles on worker profiles. Skill based: match specialties as today.",
+    teamStrategy: "Default team strategy",
+    teamStrategyHint:
+      "Default ranking for new team jobs. Hedged / verify-only are policy labels — dual-worker wire runs only when immediate-dual gates pass. Override per job in Job settings.",
     showCostUiLabel: "Show cost & bid prices in UI",
     showCostUiHint: "Optional. Leave off unless you are using competitive bidding.",
     stallPolicy: "When a worker stalls (no response)",
@@ -699,6 +702,11 @@ export const en = {
     saving: "Saving…",
     saved: "Saved",
     saveFailed: "Save failed",
+    assignerSelection: "Assigner selection",
+    assignerSelectionLocal: "This node (default)",
+    assignerSelectionBestCapable: "Best capable peer",
+    assignerSelectionHint:
+      "The creator starts the job; the Assigner runs plan+assign and merges results. Leave on “This node” unless a bonded peer has a stronger model.",
   },
   ...piMessages,
   ...ehMessages,

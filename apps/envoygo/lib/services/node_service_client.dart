@@ -2004,6 +2004,17 @@ class NodeServiceClient {
     return ChainActiveSummary.fromJson(result);
   }
 
+  /// Phase 60A — lazily fetch execution provenance for one Team-job step.
+  Future<Map<String, dynamic>> getChainStepProvenance(
+    String chainId,
+    String subtaskId,
+  ) async {
+    return await _client.call('chainGetStepProvenance', {
+          'chainId': chainId,
+          'subtaskId': subtaskId,
+        }) as Map<String, dynamic>;
+  }
+
   /// Phase 58D — jobs where this home is a worker (read-only).
   Future<List<ChainObservedSummary>> listObservedChains({
     bool includeTerminal = false,
@@ -2047,6 +2058,8 @@ class NodeServiceClient {
   Future<Map<String, dynamic>> chainPreviewGoal({
     required String goal,
     String? assignmentMode,
+    String? teamStrategyId,
+    String? assignerSelection,
     bool allowLlm = true,
     List<String>? preferredWorkerPeerIds,
   }) async {
@@ -2055,6 +2068,10 @@ class NodeServiceClient {
           'allowLlm': allowLlm,
           if (assignmentMode != null && assignmentMode.isNotEmpty)
             'assignmentMode': assignmentMode,
+          if (teamStrategyId != null && teamStrategyId.isNotEmpty)
+            'teamStrategyId': teamStrategyId,
+          if (assignerSelection != null && assignerSelection.isNotEmpty)
+            'assignerSelection': assignerSelection,
           if (preferredWorkerPeerIds != null &&
               preferredWorkerPeerIds.isNotEmpty)
             'preferredWorkerPeerIds': preferredWorkerPeerIds,
@@ -2066,6 +2083,8 @@ class NodeServiceClient {
   Future<Map<String, dynamic>> chainStartFromGoal({
     required String goal,
     String? assignmentMode,
+    String? teamStrategyId,
+    String? assignerSelection,
     bool allowLlm = true,
     List<Map<String, dynamic>>? plannedSubtasks,
     List<Map<String, dynamic>>? planWarnings,
@@ -2080,6 +2099,10 @@ class NodeServiceClient {
           'allowLlm': allowLlm,
           if (assignmentMode != null && assignmentMode.isNotEmpty)
             'assignmentMode': assignmentMode,
+          if (teamStrategyId != null && teamStrategyId.isNotEmpty)
+            'teamStrategyId': teamStrategyId,
+          if (assignerSelection != null && assignerSelection.isNotEmpty)
+            'assignerSelection': assignerSelection,
           if (plannedSubtasks != null) 'plannedSubtasks': plannedSubtasks,
           if (planWarnings != null) 'planWarnings': planWarnings,
           if (preferredWorkerPeerIds != null &&
@@ -2095,6 +2118,37 @@ class NodeServiceClient {
             'inputDeliveryScope': inputDeliveryScope,
         }, const Duration(seconds: 120))
         as Map<String, dynamic>;
+  }
+
+  /// Phase 60F — no-spend Agent Network diagnostics snapshot.
+  Future<Map<String, dynamic>> agentNetworkDiagnosticsSnapshot() async {
+    return await _client.call('agentNetworkDiagnosticsSnapshot', {})
+        as Map<String, dynamic>;
+  }
+
+  /// Phase 60F — no-spend simulation (readiness / dry-plan / failover / …).
+  Future<Map<String, dynamic>> agentNetworkSimulate({
+    required String mode,
+    String? goal,
+    String? injectFault,
+  }) async {
+    return await _client.call('agentNetworkSimulate', {
+          'mode': mode,
+          if (goal != null && goal.isNotEmpty) 'goal': goal,
+          if (injectFault != null && injectFault.isNotEmpty)
+            'injectFault': injectFault,
+        })
+        as Map<String, dynamic>;
+  }
+
+  /// Phase 60F — redacted diagnostics JSON export.
+  Future<String> agentNetworkExportDiagnostics({String? simulationId}) async {
+    final result = await _client.call('agentNetworkExportDiagnostics', {
+          if (simulationId != null && simulationId.isNotEmpty)
+            'simulationId': simulationId,
+        })
+        as Map<String, dynamic>;
+    return result['json']?.toString() ?? '';
   }
 
   /// Cancel an active team job (or one subtask when [subtaskId] is set).
@@ -2123,6 +2177,25 @@ class NodeServiceClient {
     return await _client.call('chainReassignSubtask', {
           'chainId': chainId,
           'subtaskId': subtaskId,
+        }, const Duration(seconds: 60))
+        as Map<String, dynamic>;
+  }
+
+  /// Phase 63 — owner resolves a speculation disagreement.
+  /// [action] is `pick` (requires [attemptId]), `reassign`, or `auto`
+  /// (defer to the orchestrator's deterministic auto-resolver — the
+  /// default when `chainMandate.speculationOnDisagreement === "auto"`).
+  Future<Map<String, dynamic>> chainResolveSpeculation({
+    required String chainId,
+    required String subtaskId,
+    required String action,
+    String? attemptId,
+  }) async {
+    return await _client.call('chainResolveSpeculation', {
+          'chainId': chainId,
+          'subtaskId': subtaskId,
+          'action': action,
+          if (attemptId != null && attemptId.isNotEmpty) 'attemptId': attemptId,
         }, const Duration(seconds: 60))
         as Map<String, dynamic>;
   }

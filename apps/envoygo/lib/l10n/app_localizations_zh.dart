@@ -2222,6 +2222,62 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chainsStartModeRoleHint => '每个步骤优先匹配协作角色（产品经理、程序员等）。';
 
   @override
+  String get chainsStartTeamStrategy => '团队策略';
+
+  @override
+  String get chainsStartTeamStrategyHint =>
+      '本任务如何为工作节点排序。对冲 / 仅核验是策略标签 — 链路上仅在即时双派门控通过时才会启动第二名工作节点。';
+
+  @override
+  String get chainsStrategyBalanced => '均衡';
+
+  @override
+  String get chainsStrategyFastest => '最快';
+
+  @override
+  String get chainsStrategyCheapest => '最省';
+
+  @override
+  String get chainsStrategyHighestConfidence => '最高置信度';
+
+  @override
+  String get chainsStrategyPrivacyLocal => '隐私（本地）';
+
+  @override
+  String get chainsStrategyDiverseModel => '多样模型';
+
+  @override
+  String get chainsStartAvailLease => '租约';
+
+  @override
+  String get chainsStartAvailLegacy => '旧版';
+
+  @override
+  String chainsStartReliabilityPct(int pct) {
+    return '可信度 $pct%';
+  }
+
+  @override
+  String chainsStartReliabilitySparse(String level, int samples) {
+    return '$level · $samples 次样本';
+  }
+
+  @override
+  String get chainsStartReliabilityFallbackExact => '该工作节点历史';
+
+  @override
+  String get chainsStartReliabilityFallbackPeerRuntimeSkill => '该工作节点类似任务';
+
+  @override
+  String get chainsStartReliabilityFallbackPeerRuntime => '该工作节点运行时';
+
+  @override
+  String get chainsStartReliabilityFallbackRuntimeSkill => '具备此技能的工作节点';
+
+  @override
+  String get chainsStartReliabilityFallbackPrior => '通用先验（尚无历史）';
+
+  @override
   String get chainsStartGoalLabel => '目标';
 
   @override
@@ -2300,6 +2356,46 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get chainsStartNoWorkers =>
       '没有可到达的 Agent Network 工作代理。请先在家庭节点上绑定带智能体的联系人。';
+
+  @override
+  String get chainsTestNetworkTitle => '测试智能体网络';
+
+  @override
+  String get chainsTestNetworkHint =>
+      '模拟 — 不发送任务、不调用模型、不改声誉。干跑规划会真实排序；故障转移与恢复仅为标签预览。';
+
+  @override
+  String get chainsTestNetworkRun => '检查就绪';
+
+  @override
+  String get chainsTestNetworkRunning => '检查中…';
+
+  @override
+  String get chainsTestNetworkFailed => '无法运行诊断';
+
+  @override
+  String get chainsSpeculationReviewTitle => '需要确认推测结果';
+
+  @override
+  String get chainsSpeculationReviewBody =>
+      '两个 worker 在同一步返回了不同的结果。请挑选一个让任务继续，或者让协调器自动挑选。';
+
+  @override
+  String get chainsSpeculationReviewNonePass =>
+      '两个 worker 都没通过验证 — 协调器会重新分派这一步。';
+
+  @override
+  String get chainsSpeculationReviewDisagree =>
+      '两个 worker 答案不一致。协调器可以挑选更便宜的已验证答案，或你可以手动挑选 / 重新分派。';
+
+  @override
+  String get chainsSpeculationReviewAutoResolve => '自动解决';
+
+  @override
+  String get chainsSpeculationReviewResolved => '已由协调器解决';
+
+  @override
+  String get chainsSpeculationReviewFailed => '自动解决失败';
 
   @override
   String get chainsStartReadinessTitle => '先准备好工作节点';
@@ -2484,6 +2580,40 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chainsDetailPublished => '此任务已完成并发布报告。';
+
+  @override
+  String get chainsDetailRecovering => '重启后恢复中 — 正在确认工作节点进度';
+
+  @override
+  String chainsAttemptCount(int count) {
+    return '$count 次尝试';
+  }
+
+  @override
+  String get chainsExecutionDetails => '执行详情';
+
+  @override
+  String chainsProvenanceSummaryLine(
+    int attempts,
+    String worker,
+    String state,
+  ) {
+    return '$attempts 次尝试 · $worker · $state';
+  }
+
+  @override
+  String chainsLastReason(String reason) {
+    return '最近原因：$reason';
+  }
+
+  @override
+  String get chainsTechnicalDetails => '技术细节';
+
+  @override
+  String get chainsProvenanceEmpty => '此步骤尚无日志事件。';
+
+  @override
+  String get chainsProvenanceFailed => '无法加载执行历史。';
 
   @override
   String get chainsRebalanceHeading => '追加预算';
@@ -3209,6 +3339,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chainsStatusPublished => '已发布';
+
+  @override
+  String get chainsStatusRecovering => '恢复中';
 
   @override
   String get chainsStatusSynthesizing => '汇总中';

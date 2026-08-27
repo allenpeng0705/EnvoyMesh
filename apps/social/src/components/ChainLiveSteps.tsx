@@ -1,16 +1,23 @@
 /**
  * Phase 58B/58C — Live job story + per-step cancel/reassign (assigner only).
+ * Phase 60A — expandable Execution details with lazy provenance.
  */
 
-import { useState } from "react";
-import type { ChainGetStateResult } from "@envoymesh/api";
+import { useCallback, useState } from "react";
+import type {
+  ChainGetStateResult,
+  ChainGetStepProvenanceResult,
+} from "@envoymesh/api";
 import { useT } from "../context/I18nContext.js";
+import { useNodeService } from "../hooks/useNodeService.js";
 import { orderLiveSteps, parseGoalInputRefs } from "../lib/chain-live-steps.js";
 import { ChainInputDeliveries } from "./ChainInputDeliveries.js";
 
 export interface ChainLiveStepsProps {
   steps: NonNullable<ChainGetStateResult["steps"]>;
   goal?: string;
+  chainId?: string;
+  provenanceSummary?: ChainGetStateResult["provenanceSummary"];
   inputAttachments?: ChainGetStateResult["inputAttachments"];
   inputDeliveries?: ChainGetStateResult["inputDeliveries"];
   /** When false/omitted, hide owner control buttons (observed / finalized). */
@@ -41,6 +48,8 @@ function canReassignStep(state: string): boolean {
 export function ChainLiveSteps({
   steps,
   goal,
+  chainId,
+  provenanceSummary,
   inputAttachments,
   inputDeliveries,
   allowStepControl = false,
@@ -51,19 +60,56 @@ export function ChainLiveSteps({
   onRetryInputDelivery,
 }: ChainLiveStepsProps) {
   const t = useT();
+  const nodeService = useNodeService();
   const ordered = orderLiveSteps(steps);
   const inputs = parseGoalInputRefs(goal);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [detailsOpen, setDetailsOpen] = useState<Set<string>>(() => new Set());
+  const [provenanceByStep, setProvenanceByStep] = useState<
+    Record<string, ChainGetStepProvenanceResult | "loading" | "error">
+  >({});
+
+  const loadProvenance = useCallback(
+    async (subtaskId: string) => {
+      if (!chainId) return;
+      setProvenanceByStep((prev) => ({ ...prev, [subtaskId]: "loading" }));
+      try {
+        const result = await nodeService.chainGetStepProvenance({ chainId, subtaskId });
+        setProvenanceByStep((prev) => ({ ...prev, [subtaskId]: result }));
+      } catch {
+        setProvenanceByStep((prev) => ({ ...prev, [subtaskId]: "error" }));
+      }
+    },
+    [chainId, nodeService],
+  );
 
   if (ordered.length === 0) return null;
 
   const idToIndex = new Map(ordered.map((s) => [s.subtaskId, s.index]));
+  const summaryById = new Map(
+    (provenanceSummary ?? []).map((row) => [row.subtaskId, row]),
+  );
 
   const toggle = (id: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleDetails = (subtaskId: string) => {
+    setDetailsOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(subtaskId)) {
+        next.delete(subtaskId);
+        return next;
+      }
+      next.add(subtaskId);
+      if (!provenanceByStep[subtaskId] && chainId) {
+        void loadProvenance(subtaskId);
+      }
       return next;
     });
   };
@@ -112,6 +158,10 @@ export function ChainLiveSteps({
           const showCancel = allowStepControl && canCancelStep(step.state) && onCancelStep;
           const showReassign = allowStepControl && canReassignStep(step.state) && onReassignStep;
           const busy = busySubtaskId === step.subtaskId;
+          const summary = summaryById.get(step.subtaskId);
+          const attemptCount = step.attemptCount ?? summary?.attemptCount ?? 0;
+          const detailsShown = detailsOpen.has(step.subtaskId);
+          const provenance = provenanceByStep[step.subtaskId];
           return (
             <li
               key={step.subtaskId}
@@ -134,9 +184,17 @@ export function ChainLiveSteps({
                 ) : null}
               </div>
               <div className="chain-live-steps__line2">
-                <span>{shortPeer(step.workerPeerId)}</span>
+                <span>{shortPeer(step.workerPeerId ?? summary?.workerPeerId)}</span>
                 <span aria-hidden="true"> · </span>
                 <span>{stateLabel}</span>
+                {attemptCount > 0 ? (
+                  <>
+                    <span aria-hidden="true"> · </span>
+                    <span data-testid={`chain-step-attempt-count-${step.subtaskId}`}>
+                      {t("chains.detail.attemptCount", { count: attemptCount })}
+                    </span>
+                  </>
+                ) : null}
                 {step.requiredRole ? (
                   <>
                     <span aria-hidden="true"> · </span>
@@ -165,6 +223,75 @@ export function ChainLiveSteps({
                   {step.produced
                     .map((p) => `${p.label ?? p.key} (${p.kind})`)
                     .join("; ")}
+                </div>
+              ) : null}
+              {chainId ? (
+                <div className="chain-live-steps__provenance">
+                  <button
+                    type="button"
+                    className="link-btn"
+                    data-testid={`chain-step-execution-details-${step.subtaskId}`}
+                    aria-expanded={detailsShown}
+                    onClick={() => toggleDetails(step.subtaskId)}
+                  >
+                    {detailsShown
+                      ? t("chains.detail.hideExecutionDetails")
+                      : t("chains.detail.executionDetails")}
+                  </button>
+                  {detailsShown ? (
+                    <div
+                      className="chain-live-steps__execution-details"
+                      data-testid={`chain-step-provenance-${step.subtaskId}`}
+                    >
+                      {provenance === "loading" ? (
+                        <p>{t("chains.detail.provenanceLoading")}</p>
+                      ) : provenance === "error" ? (
+                        <p role="alert">{t("chains.detail.provenanceFailed")}</p>
+                      ) : provenance ? (
+                        <>
+                          <p className="chain-live-steps__provenance-summary">
+                            {t("chains.detail.provenanceSummaryLine", {
+                              attempts: provenance.summary?.attemptCount ?? attemptCount,
+                              worker: shortPeer(
+                                provenance.summary?.workerPeerId ??
+                                  step.workerPeerId ??
+                                  summary?.workerPeerId,
+                              ),
+                              state:
+                                provenance.summary?.state ??
+                                summary?.state ??
+                                step.state,
+                            })}
+                          </p>
+                          {provenance.summary?.lastReason ? (
+                            <p>{t("chains.detail.lastReason", { reason: provenance.summary.lastReason })}</p>
+                          ) : null}
+                          <details className="chain-live-steps__technical">
+                            <summary>{t("chains.detail.technicalDetails")}</summary>
+                            <ul data-testid={`chain-step-provenance-events-${step.subtaskId}`}>
+                              {provenance.events.length === 0 ? (
+                                <li>{t("chains.detail.provenanceEmpty")}</li>
+                              ) : (
+                                provenance.events.map((event) => (
+                                  <li key={event.eventId}>
+                                    <code>
+                                      #{event.seq} {event.type}
+                                      {event.attemptId ? ` · ${event.attemptId}` : ""}
+                                      {event.workerPeerId
+                                        ? ` · ${shortPeer(event.workerPeerId)}`
+                                        : ""}
+                                      {event.transportPath ? ` · ${event.transportPath}` : ""}
+                                      {event.reason ? ` · ${event.reason}` : ""}
+                                    </code>
+                                  </li>
+                                ))
+                              )}
+                            </ul>
+                          </details>
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               {showCancel || showReassign ? (

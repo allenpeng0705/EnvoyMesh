@@ -160,8 +160,15 @@ export interface ChainBudgetLedger {
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createChainBudgetLedger(mandate: ChainMandate): ChainBudgetLedger {
-  const state: ChainBudgetLedgerState = {
+export function createChainBudgetLedger(
+  mandate: ChainMandate,
+  restored?: ChainBudgetLedgerState,
+): ChainBudgetLedger {
+  const state: ChainBudgetLedgerState = restored ? {
+    ...restored,
+    workerAllocations: new Map(restored.workerAllocations),
+    verificationAllocations: new Map(restored.verificationAllocations),
+  } : {
     chainId: mandate.chainId,
     maxChainCostUsd: mandate.maxChainCostUsd,
     reservedUsd: 0,

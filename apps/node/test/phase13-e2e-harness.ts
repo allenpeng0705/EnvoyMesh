@@ -256,6 +256,127 @@ export function wireChainInboundHandler(node: Phase13TestNode): void {
   });
 }
 
+/**
+ * Phase 60.1 — stub OpenClaw ready + sync replies so libp2p smokes can reach
+ * execute→report without a real gateway (mock modelProviders should already be set).
+ */
+export function wireMockTeamJobEngine(node: Phase13TestNode, mockText?: string): void {
+  const text =
+    mockText?.trim() ||
+    "E2E mock team job result for Agent Network smoke.";
+  node.service.isOpenClawReady = () => true;
+  node.service.askOpenClaw = async () => text;
+}
+
+/**
+ * Phase 61C — mock engine that blocks until `release()` (assigner restart mid-run).
+ */
+export function wireGatedMockTeamJobEngine(
+  node: Phase13TestNode,
+  mockText?: string,
+): { release: () => void } {
+  let released = false;
+  const waiters: Array<() => void> = [];
+  const text =
+    mockText?.trim() ||
+    "E2E mock team job result for Agent Network recovery chaos.";
+  node.service.isOpenClawReady = () => true;
+  node.service.askOpenClaw = async () => {
+    if (released) return text;
+    await new Promise<void>((resolve) => {
+      waiters.push(resolve);
+    });
+    return text;
+  };
+  return {
+    release: () => {
+      released = true;
+      for (const resolve of waiters.splice(0)) resolve();
+    },
+  };
+}
+
+/**
+ * Phase 61C — stop NodeServiceImpl and recreate from persisted profileDir.
+ * Mesh + inbound handlers stay on the same `Phase13TestNode` (handlers read
+ * `node.service` dynamically).
+ */
+export async function restartPhase13NodeService(
+  node: Phase13TestNode,
+  opts?: { chainId?: string },
+): Promise<void> {
+  const oldService = node.service as NodeServiceImpl & {
+    _chainStore?: { persistNow?: () => Promise<void>; close?: () => void; listIds?: () => string[] };
+    _stopChainTracking?: (chainId: string) => void;
+  };
+  const chainIds = oldService._chainStore?.listIds?.() ?? [];
+  for (const chainId of chainIds) {
+    oldService._stopChainTracking?.(chainId);
+  }
+  await oldService._chainStore?.persistNow?.().catch(() => undefined);
+  oldService._chainStore?.close?.();
+
+  const newService = new NodeServiceImpl(
+    node.mesh,
+    node.trustStore,
+    node.peerDirectory,
+    node.human,
+    node.profileDir,
+    node.profile,
+    node.vaultDir,
+  );
+  newService.bindCliTaskStore(node.taskStore);
+  newService.bindExternalMesh(node.mesh);
+  node.service = newService;
+  wireNodeServiceInboundHandlers(node);
+
+  // Detach mesh refs on the swapped-out service (libp2p stays up on node.mesh).
+  const swapped = oldService as NodeServiceImpl & { _externalMesh?: EnvoyMesh; _mesh?: EnvoyMesh };
+  swapped._externalMesh = undefined;
+  swapped._mesh = undefined;
+
+  await waitForPhase13(async () => {
+    const internal = newService as unknown as {
+      _chainStore?: { listIds: () => string[] };
+    };
+    try {
+      internal._chainStore?.listIds();
+      return true;
+    } catch {
+      return false;
+    }
+  }, 15_000);
+
+  if (opts?.chainId) {
+    await waitForPhase13(async () => {
+      try {
+        const state = await newService.chainGetState({ chainId: opts.chainId! });
+        return state.chainId === opts.chainId && state.awardedCount > 0;
+      } catch {
+        return false;
+      }
+    }, 20_000);
+  }
+}
+
+/**
+ * Phase 60B — route inbound worker-lease envelopes through NodeService
+ * (parity with the daemon path in `apps/node/src/index.ts`).
+ */
+export function wireWorkerLeaseInboundHandler(node: Phase13TestNode): void {
+  node.mesh.onMessage(async ({ envelope }) => {
+    if (
+      envelope.intent !== "agent.worker.lease" &&
+      envelope.intent !== "agent.worker.lease.revoke" &&
+      envelope.intent !== "agent.worker.lease.request"
+    ) {
+      return;
+    }
+    if (!verifyInboundEnvelope(envelope)) return;
+    await node.service.handleInboundWorkerLease(envelope);
+  });
+}
+
 /** Route inbound `call.*` envelopes through CallManager (production parity with index.ts). */
 export function wireCallInboundHandler(node: Phase13TestNode): void {
   node.mesh.onMessage(async ({ envelope, remotePeerId }) => {

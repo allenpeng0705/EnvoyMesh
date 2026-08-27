@@ -2242,6 +2242,62 @@ class AppLocalizationsKo extends AppLocalizations {
   String get chainsStartModeRoleHint => '각 단계는 역할(PM, 프로그래머 등)을 우선합니다.';
 
   @override
+  String get chainsStartTeamStrategy => 'Team strategy';
+
+  @override
+  String get chainsStartTeamStrategyHint =>
+      'How workers are ranked. Hedged / verify-only are policy labels — a second worker runs on the wire only when immediate-dual gates pass (critical step, budget, independent workers).';
+
+  @override
+  String get chainsStrategyBalanced => 'Balanced';
+
+  @override
+  String get chainsStrategyFastest => 'Fastest';
+
+  @override
+  String get chainsStrategyCheapest => 'Cheapest';
+
+  @override
+  String get chainsStrategyHighestConfidence => 'Highest confidence';
+
+  @override
+  String get chainsStrategyPrivacyLocal => 'Privacy (local)';
+
+  @override
+  String get chainsStrategyDiverseModel => 'Diverse models';
+
+  @override
+  String get chainsStartAvailLease => 'Lease';
+
+  @override
+  String get chainsStartAvailLegacy => 'Legacy';
+
+  @override
+  String chainsStartReliabilityPct(int pct) {
+    return '신뢰도 $pct%';
+  }
+
+  @override
+  String chainsStartReliabilitySparse(String level, int samples) {
+    return '$level · $samples개 샘플';
+  }
+
+  @override
+  String get chainsStartReliabilityFallbackExact => '이 워커의 기록';
+
+  @override
+  String get chainsStartReliabilityFallbackPeerRuntimeSkill => '이 워커의 유사 작업';
+
+  @override
+  String get chainsStartReliabilityFallbackPeerRuntime => '이 워커의 런타임';
+
+  @override
+  String get chainsStartReliabilityFallbackRuntimeSkill => '이 스킬이 있는 워커';
+
+  @override
+  String get chainsStartReliabilityFallbackPrior => '일반 사전 (아직 기록 없음)';
+
+  @override
   String get chainsStartGoalLabel => '목표';
 
   @override
@@ -2320,6 +2376,46 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get chainsStartNoWorkers =>
       '도달 가능한 Agent Network 워커가 없습니다. 먼저 홈 노드의 에이전트와 연락처를 본드하세요.';
+
+  @override
+  String get chainsTestNetworkTitle => 'Test Agent Network';
+
+  @override
+  String get chainsTestNetworkHint =>
+      'Simulation — no work sent, no model spend, no reputation changes. Dry-plan ranks for real; failover and recovery are label-only previews.';
+
+  @override
+  String get chainsTestNetworkRun => 'Check readiness';
+
+  @override
+  String get chainsTestNetworkRunning => 'Checking…';
+
+  @override
+  String get chainsTestNetworkFailed => 'Could not run diagnostics';
+
+  @override
+  String get chainsSpeculationReviewTitle => '추측 실행 검토 필요';
+
+  @override
+  String get chainsSpeculationReviewBody =>
+      '두 워커가 한 단계에서 서로 다른 결과를 반환했습니다. 작업을 진행할 승자를 선택하거나 오케스트레이터가 자동으로 선택하도록 할 수 있습니다.';
+
+  @override
+  String get chainsSpeculationReviewNonePass =>
+      '두 워커 모두 검증을 통과하지 못했습니다 — 오케스트레이터가 이 단계를 재할당합니다.';
+
+  @override
+  String get chainsSpeculationReviewDisagree =>
+      '두 워커가 일치하지 않습니다. 오케스트레이터가 더 저렴한 검증된 항목을 선택하거나, 사용자가 선택하거나 재할당할 수 있습니다.';
+
+  @override
+  String get chainsSpeculationReviewAutoResolve => '자동 해결';
+
+  @override
+  String get chainsSpeculationReviewResolved => '오케스트레이터가 해결함';
+
+  @override
+  String get chainsSpeculationReviewFailed => '자동 해결 실패';
 
   @override
   String get chainsStartReadinessTitle => '워커 준비하기';
@@ -2509,6 +2605,41 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get chainsDetailPublished => '이 작업이 완료되어 보고서를 게시했습니다.';
+
+  @override
+  String get chainsDetailRecovering =>
+      'Recovering after restart — confirming worker progress';
+
+  @override
+  String chainsAttemptCount(int count) {
+    return '$count attempt(s)';
+  }
+
+  @override
+  String get chainsExecutionDetails => 'Execution details';
+
+  @override
+  String chainsProvenanceSummaryLine(
+    int attempts,
+    String worker,
+    String state,
+  ) {
+    return '$attempts attempt(s) · $worker · $state';
+  }
+
+  @override
+  String chainsLastReason(String reason) {
+    return 'Last reason: $reason';
+  }
+
+  @override
+  String get chainsTechnicalDetails => 'Technical details';
+
+  @override
+  String get chainsProvenanceEmpty => 'No journal events for this step yet.';
+
+  @override
+  String get chainsProvenanceFailed => 'Could not load execution history.';
 
   @override
   String get chainsRebalanceHeading => '예산 추가';
@@ -3242,6 +3373,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get chainsStatusPublished => '게시됨';
+
+  @override
+  String get chainsStatusRecovering => 'Recovering';
 
   @override
   String get chainsStatusSynthesizing => '종합 중';

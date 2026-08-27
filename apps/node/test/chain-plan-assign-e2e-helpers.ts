@@ -96,11 +96,14 @@ export async function enableAgentNetworkWorker(
   node: Phase13TestNode,
   opts: {
     displayName: string;
-    capabilities: string[];
+    /** Preferred: capability / membership tags for Join Agent Network. */
+    capabilities?: string[];
+    /** Alias used by older E2Es — same as `capabilities`. */
+    membership?: string[];
     profile?: {
       modelFreshness: number;
-      spendPosture: "subscription" | "metered" | "payg";
-      contextWindow: "128k" | "512k" | "1M+";
+      spendPosture: "subscription" | "metered" | "payg" | "unknown";
+      contextWindow: "128k" | "256k" | "512k" | "1M+";
       skills: string[];
       throughputTokensPerSec: number;
     };
@@ -108,8 +111,12 @@ export async function enableAgentNetworkWorker(
     modelProviders?: ModelProviderConfig;
   },
 ): Promise<string> {
+  const capabilities =
+    opts.capabilities ??
+    opts.membership ??
+    ["task.execute", "agent-network-worker"];
   await applyPlanAssignAi(node, opts.modelProviders ?? SHARED_PLAN_ASSIGN_AI);
-  await node.service.updateCapabilityManifest({ capabilities: opts.capabilities });
+  await node.service.updateCapabilityManifest({ capabilities });
   await node.service.updateNodeConfig({
     capabilityProviderEnabled: true,
     ...(opts.profile ? { agentNetworkProfile: opts.profile } : {}),

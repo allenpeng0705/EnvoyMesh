@@ -101,6 +101,18 @@ export const chainsMessages = {
     assignmentModeSkill: "Skill-based assignment",
     assignmentModeRole: "Role-based assignment",
     planWarningsTitle: "Assignment notes",
+    recovering: "Recovering after restart — confirming worker progress before continuing",
+    recoveringHonesty:
+      "Workers are not re-awarded during recovery. Late finals are kept; duplicates are dropped.",
+    speculationReviewTitle: "Worker results disagree",
+    speculationReviewDisagree:
+      "Two workers finished this step with different results. Pick one to continue, or reassign to a new worker.",
+    speculationReviewNonePass:
+      "No worker result passed verification on this step. Pick the best attempt or reassign.",
+    speculationReviewPick: "Use this result",
+    speculationReviewReassign: "Reassign step",
+    speculationReviewResolved: "Selection saved — continuing the job.",
+    speculationReviewFailed: "Could not resolve this step",
     loadFailed: "Could not load team job state.",
     finalized: "This team job is complete — see the report.",
     cancelled: "This team job was cancelled.",
@@ -129,6 +141,15 @@ export const chainsMessages = {
     stepMore: "More",
     stepLess: "Less",
     stepN: "Step {n}",
+    attemptCount: "{count} attempt(s)",
+    executionDetails: "Execution details",
+    hideExecutionDetails: "Hide execution details",
+    provenanceLoading: "Loading execution history…",
+    provenanceFailed: "Could not load execution history.",
+    provenanceEmpty: "No journal events for this step yet.",
+    provenanceSummaryLine: "{attempts} attempt(s) · {worker} · {state}",
+    lastReason: "Last reason: {reason}",
+    technicalDetails: "Technical details",
     stepState: {
       pending: "Pending",
       offered: "Offered",
@@ -343,11 +364,53 @@ export const chainsMessages = {
     assignerThisNode: "This node",
     assignerHint:
       "Default is this node. Pick a bonded peer who joined Agent Network to run the Assigner there (Advanced).",
+    assignerAutoLabel: "Pick best-capable Assigner",
+    assignerAutoHint:
+      "When enabled, the strongest eligible bonded peer orchestrates plan+assign and the final merge (off by default). You can still override below.",
+    suggestedAssigner: "Suggested Assigner",
+    iterationPreviewHint: "Multi-round note",
+    iterationPreviewOwner:
+      "Multi-round job: you may be asked to continue or stop after each draft.",
+    iterationPreviewAuto:
+      "Multi-round job: the Assigner may refine the report across several rounds.",
     assignmentMode: "Assignment mode",
     assignmentModeSkill: "Skill based",
     assignmentModeRole: "Role based",
     assignmentModeHint:
       "Role based prefers each worker’s collaboration role (PM / programmer / tester…). Skill based matches specialties. Missing roles fall back via the Assigner (with warnings).",
+    teamStrategy: "Team strategy",
+    teamStrategyHint:
+      "How workers are ranked for this job. Strategy labels like “hedged” or “verify-only” are planning hints only — on the wire, a second worker runs only when immediate-dual gates pass (critical step, budget, independent workers).",
+    teamStrategyWireHonesty:
+      "Dual-worker races are not started for every strategy preset. Highest confidence / diverse models may run two workers on critical steps when policy allows.",
+    assignmentReason: {
+      skill_exact: "Skill match",
+      role_match: "Role match",
+      same_lan: "Same LAN",
+      lease_ready: "Live lease",
+      lowest_eta: "Fastest ETA",
+      lowest_cost: "Lowest cost",
+      highest_reliability: "Highest trust",
+      model_diversity: "Model diversity",
+      privacy_local: "Local worker",
+      owner_selected: "You selected",
+    },
+    whyThisWorker: "Why ranked here",
+    availLease: "Live lease",
+    availLeaseHint: "Ready status comes from a fresh signed worker lease.",
+    availLegacy: "Legacy probe",
+    availLegacyHint: "Ready status comes from an older ready-probe (no lease yet).",
+    reliabilityBadge: "Trust {pct}% · {samples} samples",
+    reliabilityHint:
+      "Lower-bound trust from past outcomes on this node (Beta estimate). More real jobs improve accuracy — new workers show fewer samples.",
+    reliabilitySparse: "Estimate from {level} — only {samples} samples so far",
+    reliabilityFallback: {
+      exact: "this worker's history",
+      peer_runtime_skill: "similar work on this worker",
+      peer_runtime: "this worker's runtime",
+      runtime_skill: "workers with this skill",
+      prior: "general prior (no history yet)",
+    },
     inputDeliveryScope: "Input delivery",
     inputDeliveryScopeReferenced: "Referenced attachments only",
     inputDeliveryScopeAll: "All job attachments",
@@ -434,5 +497,21 @@ export const chainsMessages = {
   },
   workerProfile: {
     title: "Your worker profile",
+  },
+  strategy: {
+    balanced: "Balanced",
+    fastest: "Fastest",
+    cheapest: "Cheapest",
+    "highest-confidence": "Highest confidence",
+    "privacy-local": "Privacy (local)",
+    "diverse-model": "Diverse models",
+    hint: {
+      balanced: "Rank by skill, cost, trust, and transport. Verify-only is a policy label — wire dual-worker only when gates pass.",
+      fastest: "Prefer low latency. Hedged second-worker is policy-only until a hedge wire path ships.",
+      cheapest: "Prefer lower estimated cost. No speculative second worker.",
+      "highest-confidence": "Prefer trust and may run two workers on critical steps (immediate-dual when allowed).",
+      "privacy-local": "Prefer workers on this node. No cross-home dual races.",
+      "diverse-model": "Prefer different model families; may dual-award on critical steps when allowed.",
+    },
   },
 };

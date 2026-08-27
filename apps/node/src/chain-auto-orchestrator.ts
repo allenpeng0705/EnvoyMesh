@@ -56,6 +56,15 @@ export function subtasksAwaitingAward(state: ChainState): string[] {
   return pending;
 }
 
+/** Phase 62A — true when any active subtask lacks an award (extend cannot strand jobs). */
+export function hasUnawardedActiveSubtasks(state: ChainState): boolean {
+  for (const subtaskId of state.subtasks.keys()) {
+    if (state.cancelledSubtasks.has(subtaskId)) continue;
+    if (!state.awards.has(subtaskId)) return true;
+  }
+  return false;
+}
+
 export async function evaluateAndAcceptBestBid(
   deps: ChainOrchestratorHandlerDeps,
   state: ChainState,
@@ -126,6 +135,9 @@ export async function tryCompleteChainIfReady(
   }
   if (state.iteration?.waitingForOwner) {
     return { ok: true, published: false, awaitingOwner: true };
+  }
+  if (hasUnawardedActiveSubtasks(state)) {
+    return { ok: false, published: false };
   }
   if (!allActiveSubtasksHaveFinalPartials(state)) {
     return { ok: false, published: false };

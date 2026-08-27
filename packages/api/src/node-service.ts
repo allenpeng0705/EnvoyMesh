@@ -53,6 +53,8 @@ import type {
   ChainLaunchResult,
   ChainGetStateParams,
   ChainGetStateResult,
+  ChainGetStepProvenanceParams,
+  ChainGetStepProvenanceResult,
   ChainListActiveParams,
   ChainListActiveResult,
   ChainCancelParams,
@@ -87,6 +89,8 @@ import type {
   ChainProbeReachabilityResult,
   ChainResolveIterationParams,
   ChainResolveIterationResult,
+  ChainResolveSpeculationParams,
+  ChainResolveSpeculationResult,
   ChainExportCostsParams,
   ChainExportCostsResult,
   ChainListRecipesParams,
@@ -538,6 +542,8 @@ export interface CachedAgentCardSummary {
   webContentRoot?: string;
   /** Agent Network worker profile when the peer opted in and advertised it. */
   agentNetworkProfile?: import("@envoymesh/protocol").AgentNetworkProfile;
+  /** Phase 60 — protocol feature negotiation tags (leases, provenance, …). */
+  features?: import("@envoymesh/protocol").AgentCardProtocolFeature[];
 }
 
 export interface AuditEventSummary {
@@ -3738,6 +3744,11 @@ export interface NodeService {
   /** Snapshot the orchestrator's view of a chain (subtask counts, budget, etc.). */
   chainGetState(params: ChainGetStateParams): Promise<ChainGetStateResult>;
 
+  /** Lazy execution provenance for one Team-job step. */
+  chainGetStepProvenance(
+    params: ChainGetStepProvenanceParams,
+  ): Promise<ChainGetStepProvenanceResult>;
+
   /** List in-flight chains (newest first). */
   chainListActive(params?: ChainListActiveParams): Promise<ChainListActiveResult>;
   /** Read-only jobs where this node is a worker (synced via task.chain.status). */
@@ -3822,8 +3833,29 @@ export interface NodeService {
    */
   chainProbeReachability(params: ChainProbeReachabilityParams): Promise<ChainProbeReachabilityResult>;
 
+  /**
+   * Phase 60F — read-only Agent Network diagnostics (membership, lease, runtime).
+   * No envelopes sent, no model spend, no reputation writes.
+   */
+  agentNetworkDiagnosticsSnapshot(): Promise<
+    import("./agent-network-diagnostics.js").AgentNetworkDiagnosticsSnapshot
+  >;
+
+  /**
+   * Phase 60F — no-spend simulation (readiness / dry-plan / failover / verification / recovery).
+   */
+  agentNetworkSimulate(
+    params: import("./agent-network-diagnostics.js").AgentNetworkSimulationParams,
+  ): Promise<import("./agent-network-diagnostics.js").AgentNetworkSimulationResult>;
+
+  /** Phase 60F — export redacted diagnostics JSON for a snapshot or simulation. */
+  agentNetworkExportDiagnostics(params: {
+    simulationId?: string;
+  }): Promise<{ json: string }>;
+
   /** Phase 47C — owner resolves iteration ask_owner hold (stop/publish or continue). */
   chainResolveIteration(params: ChainResolveIterationParams): Promise<ChainResolveIterationResult>;
+  chainResolveSpeculation(params: ChainResolveSpeculationParams): Promise<ChainResolveSpeculationResult>;
 
   /** Phase 43H — export chain cost breakdown as CSV. */
   chainExportCosts(params: ChainExportCostsParams): Promise<ChainExportCostsResult>;

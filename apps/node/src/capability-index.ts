@@ -14,6 +14,9 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
+/** Agent-card membership must be refreshed periodically; persisted rows are hints, not leases. */
+export const AGENT_NETWORK_WORKER_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1_000;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -48,7 +51,7 @@ export class AgentNetworkMembershipIndex {
       const raw = await readFile(this.filePath, "utf-8");
       const entries: WorkerEntry[] = JSON.parse(raw);
       for (const entry of entries) {
-        this.indexWorker(entry);
+        if (this.isFresh(entry)) this.indexWorker(entry);
       }
     } catch {
       // File doesn't exist yet — normal on first boot
@@ -112,6 +115,7 @@ export class AgentNetworkMembershipIndex {
    * Returns peerIds sorted by last seen (most recent first).
    */
   findWorkers(capability: string): string[] {
+    this.pruneStaleWorkers();
     const peers = this.byCapability.get(capability);
     if (!peers || peers.length === 0) return [];
 
@@ -130,7 +134,19 @@ export class AgentNetworkMembershipIndex {
 
   /** All workers in the index. */
   listWorkers(): WorkerEntry[] {
+    this.pruneStaleWorkers();
     return [...this.workers.values()];
+  }
+
+  /** Remove membership claims whose Agent Card has not been refreshed. */
+  pruneStaleWorkers(nowMs = Date.now()): string[] {
+    const removed: string[] = [];
+    for (const worker of [...this.workers.values()]) {
+      if (this.isFresh(worker, nowMs)) continue;
+      removed.push(worker.peerId);
+      this.removeWorker(worker.peerId);
+    }
+    return removed;
   }
 
   /** Number of workers indexed. */
@@ -157,6 +173,11 @@ export class AgentNetworkMembershipIndex {
 
   private persistDebounceTimer: ReturnType<typeof setTimeout> | undefined;
   private persistPending = false;
+
+  private isFresh(entry: WorkerEntry, nowMs = Date.now()): boolean {
+    const seenMs = Date.parse(entry.lastSeenAt);
+    return Number.isFinite(seenMs) && nowMs - seenMs <= AGENT_NETWORK_WORKER_MAX_AGE_MS;
+  }
 
   private async persist(): Promise<void> {
     if (!this.filePath) return;

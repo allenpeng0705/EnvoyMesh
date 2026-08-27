@@ -101,6 +101,8 @@ export interface SynthesizeChainReportInput {
   goal?: string;
   /** Optional override for "now" (useful in tests). */
   now?: Date;
+  /** Phase 62B — owner-visible merge provenance line. */
+  synthesisProvenance?: string;
 }
 
 export type SynthesizeChainReportResult =
@@ -377,6 +379,16 @@ function buildReport(
     ),
     ...workingNotes,
   ];
+
+  if (input.synthesisProvenance?.trim()) {
+    sections.unshift(
+      ChainReportSectionSchema.parse({
+        heading: "How this report was built",
+        bodyMarkdown: input.synthesisProvenance.trim(),
+        citations: [],
+      }),
+    );
+  }
 
   const goal = input.goal?.trim();
   return ChainReportSchema.parse({

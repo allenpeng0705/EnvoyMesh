@@ -38,6 +38,13 @@ export const BRIDGE_AGENT_SCOPE = [
   "task.chain.arbitration",
   "task.chain.ready.request",
   "task.chain.ready.response",
+  // Phase 60D — restart reconciliation.
+  "task.chain.reconcile.request",
+  "task.chain.reconcile.response",
+  // Phase 60B — signed short-lived worker leases.
+  "agent.worker.lease",
+  "agent.worker.lease.revoke",
+  "agent.worker.lease.request",
   // v2.2 — direct MAP-over-libp2p sub-agent submit (RemoteSubmitterTransport).
   "task.harness.submit.request",
   "task.harness.submit.response",

@@ -1084,6 +1084,40 @@
   "chainsStartModeRole": "By role",
   "chainsStartModeSkillHint": "Workers are ranked by matching skills.",
   "chainsStartModeRoleHint": "Each step prefers a collaboration role (PM, programmer, …).",
+  "chainsStartTeamStrategy": "Team strategy",
+  "chainsStartTeamStrategyHint": "How workers are ranked. Hedged / verify-only are policy labels — a second worker runs on the wire only when immediate-dual gates pass (critical step, budget, independent workers).",
+  "chainsStrategyBalanced": "Balanced",
+  "chainsStrategyFastest": "Fastest",
+  "chainsStrategyCheapest": "Cheapest",
+  "chainsStrategyHighestConfidence": "Highest confidence",
+  "chainsStrategyPrivacyLocal": "Privacy (local)",
+  "chainsStrategyDiverseModel": "Diverse models",
+  "chainsStartAvailLease": "Lease",
+  "chainsStartAvailLegacy": "Legacy",
+  "chainsStartReliabilityPct": "Trust {pct}%",
+  "@chainsStartReliabilityPct": {
+    "placeholders": {
+      "pct": {
+        "type": "int"
+      }
+    }
+  },
+  "chainsStartReliabilitySparse": "{level} · {samples} samples",
+  "@chainsStartReliabilitySparse": {
+    "placeholders": {
+      "level": {
+        "type": "String"
+      },
+      "samples": {
+        "type": "int"
+      }
+    }
+  },
+  "chainsStartReliabilityFallbackExact": "this worker's history",
+  "chainsStartReliabilityFallbackPeerRuntimeSkill": "similar work on this worker",
+  "chainsStartReliabilityFallbackPeerRuntime": "this worker's runtime",
+  "chainsStartReliabilityFallbackRuntimeSkill": "workers with this skill",
+  "chainsStartReliabilityFallbackPrior": "general prior (no history yet)",
   "chainsStartGoalLabel": "Goal",
   "chainsStartGoalHint": "What should the team accomplish?",
   "chainsStartGoalTooShort": "Goal must be at least {min} characters",
@@ -1132,6 +1166,18 @@
   "chainsStartStarted": "Team job started",
   "chainsStartFailed": "Could not start the team job",
   "chainsStartNoWorkers": "No reachable Agent Network workers. Bond contacts with agents on the home node first.",
+  "chainsTestNetworkTitle": "Test Agent Network",
+  "chainsTestNetworkHint": "Simulation — no work sent, no model spend, no reputation changes. Dry-plan ranks for real; failover and recovery are label-only previews.",
+  "chainsTestNetworkRun": "Check readiness",
+  "chainsTestNetworkRunning": "Checking…",
+  "chainsTestNetworkFailed": "Could not run diagnostics",
+  "chainsSpeculationReviewTitle": "Speculation needs review",
+  "chainsSpeculationReviewBody": "Two workers returned different results for one step. Pick a winner to keep the job moving, or let the orchestrator pick automatically.",
+  "chainsSpeculationReviewNonePass": "Both workers failed verification — the orchestrator will reassign this step.",
+  "chainsSpeculationReviewDisagree": "The two workers disagree. The orchestrator can pick the cheaper verified one, or you can pick or reassign.",
+  "chainsSpeculationReviewAutoResolve": "Resolve automatically",
+  "chainsSpeculationReviewResolved": "Resolved by the orchestrator",
+  "chainsSpeculationReviewFailed": "Could not resolve automatically",
   "chainsStartReadinessTitle": "Get workers ready",
   "chainsStartReadinessJoinOff": "On the home computer: Team jobs → Manage workers → turn on Join Agent Network.",
   "chainsStartReadinessBond": "Bond contacts in Discover (Social or this phone), then ask them to Join Agent Network.",
@@ -1214,6 +1260,31 @@
   "chainsCancelStepReason": "Cancelled step from EnvoyGo",
   "chainsDetailCancelled": "This job was cancelled.",
   "chainsDetailPublished": "This job finished and published a report.",
+  "chainsDetailRecovering": "Recovering after restart — confirming worker progress",
+  "chainsAttemptCount": "{count} attempt(s)",
+  "@chainsAttemptCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "chainsExecutionDetails": "Execution details",
+  "chainsProvenanceSummaryLine": "{attempts} attempt(s) · {worker} · {state}",
+  "@chainsProvenanceSummaryLine": {
+    "placeholders": {
+      "attempts": { "type": "int" },
+      "worker": { "type": "String" },
+      "state": { "type": "String" }
+    }
+  },
+  "chainsLastReason": "Last reason: {reason}",
+  "@chainsLastReason": {
+    "placeholders": {
+      "reason": { "type": "String" }
+    }
+  },
+  "chainsTechnicalDetails": "Technical details",
+  "chainsProvenanceEmpty": "No journal events for this step yet.",
+  "chainsProvenanceFailed": "Could not load execution history.",
   "chainsRebalanceHeading": "Add budget",
   "chainsRebalanceHint": "Raise the cost ceiling and retry un-awarded steps.",
   "chainsRebalanceAmount": "Additional USD",
@@ -1731,6 +1802,7 @@
   },
   "chainsStatusCancelled": "Cancelled",
   "chainsStatusPublished": "Published",
+  "chainsStatusRecovering": "Recovering",
   "chainsStatusSynthesizing": "Synthesizing",
   "chainsStatusRunning": "Running",
   "chainsStatusWaitingWorkers": "Waiting for workers",

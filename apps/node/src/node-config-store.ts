@@ -198,7 +198,7 @@ export interface PersistedNodeConfig {
    * Default `openclaw`. Independent of chat AI Engine toggles — see
    * docs/agent-network-engine.md.
    */
-  agentNetworkWorkerEngine?: "openclaw" | "ext";
+  agentNetworkWorkerEngine?: "openclaw" | "ext" | "envoy-harness";
   /** Phase 19 — bond autonomy posture (agent-driven bond acceptance). */
   bondAutonomyEnabled?: boolean;
   bondAutonomyMandateId?: string;

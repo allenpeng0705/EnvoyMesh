@@ -153,6 +153,22 @@ export function getVerdictsFor(
   return out.sort((a, b) => a.issuedAt.localeCompare(b.issuedAt));
 }
 
+/** Latest verdict entry for a subtask (by `issuedAt`). */
+export function getLatestVerdictForSubtask(
+  store: ArbitrationStore,
+  subtaskId: string,
+): VerdictEntry | undefined {
+  let latest: VerdictEntry | undefined;
+  for (const entry of store.values()) {
+    if (!isVerdictEntry(entry)) continue;
+    if (entry.subtaskId !== subtaskId) continue;
+    if (!latest || entry.issuedAt.localeCompare(latest.issuedAt) > 0) {
+      latest = entry;
+    }
+  }
+  return latest;
+}
+
 // ---------------------------------------------------------------------------
 // Convergence
 // ---------------------------------------------------------------------------

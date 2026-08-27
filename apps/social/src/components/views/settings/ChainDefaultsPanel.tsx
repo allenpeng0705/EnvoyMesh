@@ -22,10 +22,12 @@ interface ChainDefaultsState {
   allowLlmDecompose: boolean;
   awardMode: NonNullable<ChainDefaultsConfig["awardMode"]>;
   assignmentMode: NonNullable<ChainDefaultsConfig["assignmentMode"]>;
+  teamStrategyId: NonNullable<ChainDefaultsConfig["teamStrategyId"]>;
   showCostUi: boolean;
   iterationMaxRounds: number;
   extendMaxStepsPerRound: number;
   iterationJudgeMode: NonNullable<ChainDefaultsConfig["iterationJudgeMode"]>;
+  assignerSelection: NonNullable<ChainDefaultsConfig["assignerSelection"]>;
 }
 
 const DEFAULTS: ChainDefaultsState = {
@@ -37,10 +39,12 @@ const DEFAULTS: ChainDefaultsState = {
   allowLlmDecompose: false,
   awardMode: "direct",
   assignmentMode: "skill",
+  teamStrategyId: "balanced",
   showCostUi: false,
   iterationMaxRounds: 1,
   extendMaxStepsPerRound: 2,
   iterationJudgeMode: "llm",
+  assignerSelection: "local",
 };
 
 export function ChainDefaultsPanel() {
@@ -66,10 +70,20 @@ export function ChainDefaultsPanel() {
             allowLlmDecompose: d.allowLlmDecompose ?? DEFAULTS.allowLlmDecompose,
             awardMode: d.awardMode ?? DEFAULTS.awardMode,
             assignmentMode: d.assignmentMode === "role" ? "role" : "skill",
+            teamStrategyId:
+              d.teamStrategyId === "fastest" ||
+              d.teamStrategyId === "cheapest" ||
+              d.teamStrategyId === "highest-confidence" ||
+              d.teamStrategyId === "privacy-local" ||
+              d.teamStrategyId === "diverse-model"
+                ? d.teamStrategyId
+                : "balanced",
             showCostUi: d.showCostUi ?? (d.awardMode === "competitive"),
             iterationMaxRounds: d.iterationMaxRounds ?? DEFAULTS.iterationMaxRounds,
             extendMaxStepsPerRound: d.extendMaxStepsPerRound ?? DEFAULTS.extendMaxStepsPerRound,
             iterationJudgeMode: d.iterationJudgeMode ?? DEFAULTS.iterationJudgeMode,
+            assignerSelection:
+              d.assignerSelection === "best_capable" ? "best_capable" : "local",
           });
         }
       } catch {
@@ -99,10 +113,12 @@ export function ChainDefaultsPanel() {
           allowLlmDecompose: defaults.allowLlmDecompose,
           awardMode: defaults.awardMode,
           assignmentMode: defaults.assignmentMode,
+          teamStrategyId: defaults.teamStrategyId,
           showCostUi: defaults.showCostUi,
           iterationMaxRounds: defaults.iterationMaxRounds,
           extendMaxStepsPerRound: defaults.extendMaxStepsPerRound,
           iterationJudgeMode: defaults.iterationJudgeMode,
+          assignerSelection: defaults.assignerSelection,
         },
       });
       setSaveState("saved");
@@ -159,6 +175,31 @@ export function ChainDefaultsPanel() {
           <option value="role">{t("chainDefaults.assignmentModeRole")}</option>
         </select>
         <small className="chain-default-hint">{t("chainDefaults.assignmentModeHint")}</small>
+      </div>
+
+      <div className="chain-default-row">
+        <label htmlFor="chain-team-strategy">
+          {t("chainDefaults.teamStrategy")}
+        </label>
+        <select
+          id="chain-team-strategy"
+          value={defaults.teamStrategyId}
+          onChange={(e) =>
+            writeField(
+              "teamStrategyId",
+              e.target.value as ChainDefaultsState["teamStrategyId"],
+            )
+          }
+          data-testid="chain-defaults-team-strategy"
+        >
+          <option value="balanced">{t("chains.strategy.balanced")}</option>
+          <option value="fastest">{t("chains.strategy.fastest")}</option>
+          <option value="cheapest">{t("chains.strategy.cheapest")}</option>
+          <option value="highest-confidence">{t("chains.strategy.highest-confidence")}</option>
+          <option value="privacy-local">{t("chains.strategy.privacy-local")}</option>
+          <option value="diverse-model">{t("chains.strategy.diverse-model")}</option>
+        </select>
+        <small className="chain-default-hint">{t("chainDefaults.teamStrategyHint")}</small>
       </div>
 
       <div className="chain-default-row chain-default-row--toggle">
@@ -337,6 +378,27 @@ export function ChainDefaultsPanel() {
           <option value="always_stop">{t("chainDefaults.iterationJudgeAlwaysStop")}</option>
         </select>
         <small className="chain-default-hint">{t("chainDefaults.iterationJudgeModeHint")}</small>
+      </div>
+
+      <div className="chain-default-row">
+        <label htmlFor="chain-assigner-selection">
+          {t("chainDefaults.assignerSelection")}
+        </label>
+        <select
+          id="chain-assigner-selection"
+          value={defaults.assignerSelection}
+          onChange={(e) =>
+            writeField(
+              "assignerSelection",
+              e.target.value === "best_capable" ? "best_capable" : "local",
+            )
+          }
+          data-testid="chain-defaults-assigner-selection"
+        >
+          <option value="local">{t("chainDefaults.assignerSelectionLocal")}</option>
+          <option value="best_capable">{t("chainDefaults.assignerSelectionBestCapable")}</option>
+        </select>
+        <small className="chain-default-hint">{t("chainDefaults.assignerSelectionHint")}</small>
       </div>
 
       <button

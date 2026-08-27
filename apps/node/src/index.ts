@@ -1884,6 +1884,61 @@ async function handleInboundMeshMessage({
     return;
   }
 
+  // Phase 60B — signed worker leases.
+  if (
+    (envelope.intent === "agent.worker.lease" ||
+      envelope.intent === "agent.worker.lease.revoke" ||
+      envelope.intent === "agent.worker.lease.request") &&
+    nodeService instanceof NodeServiceImpl
+  ) {
+    const handled = await nodeService.handleInboundWorkerLease(envelope);
+    if (handled) {
+      void taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.verified",
+          intent: envelope.intent,
+          messageId: envelope.messageId,
+          correlationId: envelope.correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "verified",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "allow",
+          summary: `Handled ${envelope.intent}.`,
+          createdAt: envelope.createdAt,
+        }),
+      );
+    }
+    return;
+  }
+
+  // Phase 60D — chain restart reconciliation.
+  if (
+    (envelope.intent === "task.chain.reconcile.request" ||
+      envelope.intent === "task.chain.reconcile.response") &&
+    nodeService instanceof NodeServiceImpl
+  ) {
+    const handled = await nodeService.handleInboundChainReconcile(envelope);
+    if (handled) {
+      void taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.verified",
+          intent: envelope.intent,
+          messageId: envelope.messageId,
+          correlationId: envelope.correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "verified",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "allow",
+          summary: `Handled ${envelope.intent}.`,
+          createdAt: envelope.createdAt,
+        }),
+      );
+    }
+    return;
+  }
+
   // MAP §9.2 — federated scoreboard rule broadcast (scoreboard.rule, opt-in pull).
   if (envelope.intent === "scoreboard.rule" && nodeService instanceof NodeServiceImpl) {
     const handled = await nodeService.handleInboundScoreboardRule(envelope);
@@ -4369,6 +4424,14 @@ if (nodeService instanceof NodeServiceImpl && mesh) {
     .catch((error) =>
       console.warn(
         "[adapter.manifest] broadcaster start failed:",
+        error instanceof Error ? error.message : error,
+      ),
+    );
+  void nodeService
+    .startWorkerLeaseBroadcaster(mesh)
+    .catch((error) =>
+      console.warn(
+        "[agent.worker.lease] broadcaster start failed:",
         error instanceof Error ? error.message : error,
       ),
     );

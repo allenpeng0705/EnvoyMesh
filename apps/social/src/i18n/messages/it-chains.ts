@@ -189,6 +189,17 @@ export const itChainsMessages = {
     composerLabel: "Cosa vuoi che i tuoi agenti realizzino?",
     composerPlaceholder: "Es: Cerca gli ultimi progressi degli LLM locali e riassumi i primi 3",
     preview: "Anteprima piano",
+    reliabilityBadge: "Fiducia {pct}% · {samples} campioni",
+    reliabilityHint:
+      "Limite inferiore di fiducia dai risultati passati su questo nodo (stima Beta). Più job reali migliorano la precisione — i nuovi worker hanno meno campioni.",
+    reliabilitySparse: "Stima da {level} — solo {samples} campioni finora",
+    reliabilityFallback: {
+      exact: "cronologia di questo worker",
+      peer_runtime_skill: "lavoro simile su questo worker",
+      peer_runtime: "runtime di questo worker",
+      runtime_skill: "worker con questa competenza",
+      prior: "a priori generale (nessuna cronologia per ora)",
+    },
     template: {
       research: "Cerca un argomento",
       researchGoal: "Cerca gli ultimi progressi su {topic} e riassumi i risultati principali",

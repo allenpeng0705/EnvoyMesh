@@ -640,6 +640,13 @@
   "chainsStartStarted": "Team-Job gestartet",
   "chainsStartFailed": "Team-Job konnte nicht gestartet werden",
   "chainsStartNoWorkers": "Keine erreichbaren Agent-Network-Worker. Bitte zuerst Kontakte mit Agenten auf dem Heimknoten verbinden.",
+  "chainsSpeculationReviewTitle": "Spekulation erfordert Prüfung",
+  "chainsSpeculationReviewBody": "Zwei Worker haben für einen Schritt unterschiedliche Ergebnisse geliefert. Wähle einen Gewinner, um den Job weiterzuführen, oder lass den Orchestrator automatisch wählen.",
+  "chainsSpeculationReviewNonePass": "Beide Worker haben die Prüfung nicht bestanden — der Orchestrator weist diesen Schritt neu zu.",
+  "chainsSpeculationReviewDisagree": "Die beiden Worker sind sich nicht einig. Der Orchestrator kann den günstigeren geprüften auswählen, oder du kannst wählen oder neu zuweisen.",
+  "chainsSpeculationReviewAutoResolve": "Automatisch auflösen",
+  "chainsSpeculationReviewResolved": "Vom Orchestrator aufgelöst",
+  "chainsSpeculationReviewFailed": "Automatische Auflösung fehlgeschlagen",
   "chainsStartNeedWorkers": "Mindestens einen Online-Worker auswählen, oder erneut Vorschau ansehen, um den empfohlenen Pool wiederherzustellen.",
   "chainsStartWorkersHint": "Online-Worker aus dem Plan. Entfernen Sie alle, die Sie nicht möchten. Wenn alle entfernt werden, ist Start blockiert — erneut Vorschau ansehen, um den empfohlenen Pool zurückzusetzen.",
   "chainsStartWorkersHeading": "Worker",
@@ -1158,5 +1165,12 @@
         "type": "String"
       }
     }
-  }
+  },
+  "chainsStartReliabilityPct": "Vertrauen {pct}%",
+  "chainsStartReliabilitySparse": "{level} · {samples} Stichproben",
+  "chainsStartReliabilityFallbackExact": "Verlauf dieses Workers",
+  "chainsStartReliabilityFallbackPeerRuntimeSkill": "ähnliche Aufgaben auf diesem Worker",
+  "chainsStartReliabilityFallbackPeerRuntime": "Laufzeit dieses Workers",
+  "chainsStartReliabilityFallbackRuntimeSkill": "Worker mit dieser Fähigkeit",
+  "chainsStartReliabilityFallbackPrior": "allgemeiner Prior (noch keine Historie)"
 }
