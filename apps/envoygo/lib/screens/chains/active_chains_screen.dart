@@ -182,7 +182,7 @@ class _ActiveChainsScreenState extends ConsumerState<ActiveChainsScreen> {
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text(
-          '${l10n.chainsAwardedSummary(chain.statusLabel, chain.awardedCount, chain.subtaskCount)} · '
+          '${l10n.chainsAwardedSummary(chain.statusLabel(l10n), chain.awardedCount, chain.subtaskCount)} · '
           '\$${chain.budgetSpentUsd.toStringAsFixed(2)}/\$${chain.budgetMaxUsd.toStringAsFixed(2)}',
         ),
         trailing: chain.budgetWarningLevel == 'warn' ||
@@ -216,7 +216,21 @@ class _ActiveChainsScreenState extends ConsumerState<ActiveChainsScreen> {
           '${l10n.chainsObservedReadOnly} · ${job.phase} · '
           '${job.partialCount}/${job.awardedCount}/${job.subtaskCount}',
         ),
-        trailing: const Icon(Icons.visibility_outlined),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () {
+          Navigator.of(context)
+              .push(
+            MaterialPageRoute(
+              builder: (_) => ActiveChainDetailScreen(
+                chainId: job.chainId,
+                initialGoal: job.goal,
+              ),
+            ),
+          )
+              .then((_) {
+            if (mounted) _refresh();
+          });
+        },
       ),
     );
   }

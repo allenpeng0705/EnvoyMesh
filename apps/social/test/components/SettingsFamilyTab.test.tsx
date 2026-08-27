@@ -132,6 +132,31 @@ describe("SettingsFamilyTab", () => {
     });
   });
 
+  it("toggles Allow Coding assistants for a member (default off → on)", async () => {
+    updateFamilyProfile.mockResolvedValue({
+      profile: {
+        id: "mom",
+        name: "Mom",
+        isOwner: false,
+        active: true,
+        codingEnabled: true,
+        createdAt: "2026-07-30T00:00:00.000Z",
+      },
+    });
+    renderWithI18n(<SettingsFamilyTab />);
+    const toggle = await screen.findByRole("checkbox", {
+      name: /Allow Coding assistants/i,
+    });
+    expect((toggle as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(toggle);
+    await waitFor(() => {
+      expect(updateFamilyProfile).toHaveBeenCalledWith({
+        id: "mom",
+        codingEnabled: true,
+      });
+    });
+  });
+
   it("Remove… offers Deactivate and Wipe; Wipe confirms then calls wipeFamilyProfile", async () => {
     wipeFamilyProfile.mockResolvedValue({
       ok: true,

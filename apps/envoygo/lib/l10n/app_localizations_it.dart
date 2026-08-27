@@ -612,6 +612,10 @@ class AppLocalizationsIt extends AppLocalizations {
       'Stato indice e recupero. I modelli di chat restano in Io → Modello IA.';
 
   @override
+  String get knowledgeSetupEmbeddingHint =>
+      'Embeddings use Envoy Local on this device. For OpenAI or Ollama, open Settings → AI on your home computer.';
+
+  @override
   String get knowledgeSetupEnabled => 'Attiva conoscenza del vault';
 
   @override
@@ -712,6 +716,24 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get knowledgeFileMakePrivate => 'Rendi privato';
+
+  @override
+  String get knowledgeBrowseImportAndPublish => 'Import and publish';
+
+  @override
+  String get knowledgeBrowsePublishImportOnly =>
+      'Import this note into the vault first, then you can publish it.';
+
+  @override
+  String get knowledgeBrowsePublishImportNoDoc =>
+      'Imported, but could not publish yet — try Publish again from the imported note.';
+
+  @override
+  String get knowledgeBrowseImportedAndPublished => 'Imported and published';
+
+  @override
+  String get knowledgeBrowsePublishImportHint =>
+      'Import into vault and publish for mesh discovery';
 
   @override
   String get knowledgeFileMore => 'Altre azioni';
@@ -970,6 +992,39 @@ class AppLocalizationsIt extends AppLocalizations {
   String get chatsSectionAi => 'IA';
 
   @override
+  String get chatsSectionCoding => 'Coding';
+
+  @override
+  String get chatsCodingPi => 'Pi';
+
+  @override
+  String get chatsCodingPiHint => 'Agente di coding (terminale)';
+
+  @override
+  String get chatsCodingEh => 'Envoy';
+
+  @override
+  String get chatsCodingEhHint => 'Agente di coding (chat)';
+
+  @override
+  String get chatsEhNew => 'Nuova chat di coding';
+
+  @override
+  String get chatsEhRemoveTitle => 'Rimuovere la chat di coding?';
+
+  @override
+  String chatsEhRemoveBody(String name) {
+    return 'Rimuovere “$name” dall’elenco Coding? La cronologia sul nodo home verrà eliminata.';
+  }
+
+  @override
+  String get chatsEhThinking => 'Envoy sta pensando…';
+
+  @override
+  String get chatsEhPromptHint =>
+      'Chiedi a Envoy di programmare, rifattorizzare o spiegare…';
+
+  @override
   String get chatsSectionFamily => 'Famiglia';
 
   @override
@@ -995,6 +1050,113 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get chatsNewPiHint => 'Avvia terminale Pi';
+
+  @override
+  String get chatsNewEnvoy => 'Nuovo Envoy';
+
+  @override
+  String get chatsNewEnvoyHint => 'Avvia Envoy Harness TUI';
+
+  @override
+  String get ehChooseProjectTitle => 'Scegli la cartella progetto Envoy';
+
+  @override
+  String get ehChangeProjectTitle => 'Cambia la cartella progetto Envoy';
+
+  @override
+  String get ehChooseProjectDesc =>
+      'Envoy lavora in questa cartella (legge AGENTS.md, modifica file, esegue shell).';
+
+  @override
+  String get ehStartWithProject => 'Avvia';
+
+  @override
+  String get ehRestartWithProject => 'Riavvia Envoy qui';
+
+  @override
+  String get ehEnsuringTerminal => 'Avvio Envoy TUI…';
+
+  @override
+  String get ehPermissionTitle => 'Autorizzazione strumento';
+
+  @override
+  String get ehPermissionAllow => 'Consenti';
+
+  @override
+  String get ehPermissionDeny => 'Nega';
+
+  @override
+  String get ehQuestionTitle => 'Envoy ha bisogno del tuo input';
+
+  @override
+  String get ehRecommended => 'Consigliato';
+
+  @override
+  String get ehSlashWhileBusy => 'Termina o /cancel il turn corrente prima.';
+
+  @override
+  String get ehChatReset => 'Avviata una nuova chat per questo progetto.';
+
+  @override
+  String get ehTurnCancelled => 'Turn annullato.';
+
+  @override
+  String get ehStatusRefreshed => 'Stato aggiornato.';
+
+  @override
+  String get ehNoPeers => 'Nessun cluster peer configurato.';
+
+  @override
+  String get ehSearchUsage =>
+      'Uso: /search <termine> — cerca in questa conversazione.';
+
+  @override
+  String ehSearchNoMatches(String term) {
+    return 'Nessuna corrispondenza per “$term”.';
+  }
+
+  @override
+  String ehModelShow(String model) {
+    return 'Modello attivo: $model';
+  }
+
+  @override
+  String get ehModelUnknown =>
+      'Nessun modello configurato — impostalo in Impostazioni → IA.';
+
+  @override
+  String ehProjectCurrent(String path) {
+    return 'Cartella progetto: $path';
+  }
+
+  @override
+  String get ehProjectUnset =>
+      'Nessuna cartella progetto — usa /cd <percorso>.';
+
+  @override
+  String ehProjectSet(String path) {
+    return 'Cartella progetto → $path';
+  }
+
+  @override
+  String get ehProjectSetUnknown => 'Cartella progetto aggiornata.';
+
+  @override
+  String ehProjectSetFailed(String error) {
+    return 'Impostazione cartella progetto non riuscita: $error';
+  }
+
+  @override
+  String get ehConfigureModel => 'Configura un modello in Impostazioni → IA.';
+
+  @override
+  String get ehNotReady => 'envoy-harness non è pronto.';
+
+  @override
+  String get termQuickHelp => '/help';
+
+  @override
+  String get termQuickCancel => '/cancel';
 
   @override
   String get chatsNewTerminal => 'Nuovo terminale';
@@ -1210,6 +1372,21 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get chatVoiceSendFailed => 'Invio nota vocale non riuscito';
+
+  @override
+  String get chatSentFile => 'Sent a file';
+
+  @override
+  String get chatSentVoice => 'Sent a voice message';
+
+  @override
+  String get chatDeliverySent => 'Sent';
+
+  @override
+  String get chatDeliveryDelivered => 'Delivered';
+
+  @override
+  String get chatDeliveryFailed => 'Not delivered';
 
   @override
   String get chatMicDenied => 'Permesso microfono negato';
@@ -1869,6 +2046,22 @@ class AppLocalizationsIt extends AppLocalizations {
   String get settingsPiEnabled => 'Pi abilitato';
 
   @override
+  String get settingsPiCodingBackend => 'Backend di coding';
+
+  @override
+  String get settingsPiCodingBackendPi => 'Pi (sidecar)';
+
+  @override
+  String get settingsPiCodingBackendEh => 'envoy-harness (ACP)';
+
+  @override
+  String get settingsPiCodingBackendHint =>
+      'Stessa impostazione di Social. Instrada sendToPi e le approvazioni nella stessa UI Pi. Le vecchie build EnvoyGo lo ignorano e restano su Pi.';
+
+  @override
+  String get settingsPiCodingBackendSaved => 'Backend di coding aggiornato';
+
+  @override
   String get settingsPiOverrideHint =>
       'Override modello (facoltativo). Cancella per ereditare le impostazioni del modello IA.';
 
@@ -2108,7 +2301,7 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get chainsManageOnSocial =>
-      'Gestisci le catene sull\'UI Social del nodo di casa.';
+      'Setup flotta, offerte e ricette restano sull’UI Social del nodo home. Annulla, ribilancia e pin funzionano anche qui.';
 
   @override
   String get chainsStartTitle => 'Avvia un job di team';
@@ -2136,6 +2329,67 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String get chainsStartModeRoleHint =>
       'Ogni passaggio preferisce un ruolo (PM, programmatore, …).';
+
+  @override
+  String get chainsStartTeamStrategy => 'Team strategy';
+
+  @override
+  String get chainsStartTeamStrategyHint =>
+      'How workers are ranked. Hedged / verify-only are policy labels — a second worker runs on the wire only when immediate-dual gates pass (critical step, budget, independent workers).';
+
+  @override
+  String get chainsStrategyBalanced => 'Balanced';
+
+  @override
+  String get chainsStrategyFastest => 'Fastest';
+
+  @override
+  String get chainsStrategyCheapest => 'Cheapest';
+
+  @override
+  String get chainsStrategyHighestConfidence => 'Highest confidence';
+
+  @override
+  String get chainsStrategyPrivacyLocal => 'Privacy (local)';
+
+  @override
+  String get chainsStrategyDiverseModel => 'Diverse models';
+
+  @override
+  String get chainsStartAvailLease => 'Lease';
+
+  @override
+  String get chainsStartAvailLegacy => 'Legacy';
+
+  @override
+  String chainsStartReliabilityPct(int pct) {
+    return 'Fiducia $pct%';
+  }
+
+  @override
+  String chainsStartReliabilitySparse(String level, int samples) {
+    return '$level · $samples campioni';
+  }
+
+  @override
+  String get chainsStartReliabilityFallbackExact =>
+      'cronologia di questo worker';
+
+  @override
+  String get chainsStartReliabilityFallbackPeerRuntimeSkill =>
+      'lavoro simile su questo worker';
+
+  @override
+  String get chainsStartReliabilityFallbackPeerRuntime =>
+      'runtime di questo worker';
+
+  @override
+  String get chainsStartReliabilityFallbackRuntimeSkill =>
+      'worker con questa competenza';
+
+  @override
+  String get chainsStartReliabilityFallbackPrior =>
+      'a priori generale (nessuna cronologia per ora)';
 
   @override
   String get chainsStartGoalLabel => 'Obiettivo';
@@ -2217,6 +2471,47 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String get chainsStartNoWorkers =>
       'Nessun worker Agent Network raggiungibile. Prima collega i contatti con gli agenti sul nodo di casa.';
+
+  @override
+  String get chainsTestNetworkTitle => 'Test Agent Network';
+
+  @override
+  String get chainsTestNetworkHint =>
+      'Simulation — no work sent, no model spend, no reputation changes. Dry-plan ranks for real; failover and recovery are label-only previews.';
+
+  @override
+  String get chainsTestNetworkRun => 'Check readiness';
+
+  @override
+  String get chainsTestNetworkRunning => 'Checking…';
+
+  @override
+  String get chainsTestNetworkFailed => 'Could not run diagnostics';
+
+  @override
+  String get chainsSpeculationReviewTitle => 'Speculazione da esaminare';
+
+  @override
+  String get chainsSpeculationReviewBody =>
+      'Due worker hanno restituito risultati diversi per un passaggio. Scegli un vincitore per far avanzare il job, o lascia scegliere automaticamente all’orchestratore.';
+
+  @override
+  String get chainsSpeculationReviewNonePass =>
+      'Entrambi i worker hanno fallito la verifica — l’orchestratore riassegnerà questo passaggio.';
+
+  @override
+  String get chainsSpeculationReviewDisagree =>
+      'I due worker non sono d’accordo. L’orchestratore può scegliere quello verificato più economico, oppure puoi scegliere o riassegnare.';
+
+  @override
+  String get chainsSpeculationReviewAutoResolve => 'Risolvi automaticamente';
+
+  @override
+  String get chainsSpeculationReviewResolved => 'Risolto dall’orchestratore';
+
+  @override
+  String get chainsSpeculationReviewFailed =>
+      'Risoluzione automatica non riuscita';
 
   @override
   String get chainsStartReadinessTitle => 'Prepara i worker';
@@ -2416,6 +2711,41 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String get chainsDetailPublished =>
       'Questo job è terminato e ha pubblicato un rapporto.';
+
+  @override
+  String get chainsDetailRecovering =>
+      'Recovering after restart — confirming worker progress';
+
+  @override
+  String chainsAttemptCount(int count) {
+    return '$count attempt(s)';
+  }
+
+  @override
+  String get chainsExecutionDetails => 'Execution details';
+
+  @override
+  String chainsProvenanceSummaryLine(
+    int attempts,
+    String worker,
+    String state,
+  ) {
+    return '$attempts attempt(s) · $worker · $state';
+  }
+
+  @override
+  String chainsLastReason(String reason) {
+    return 'Last reason: $reason';
+  }
+
+  @override
+  String get chainsTechnicalDetails => 'Technical details';
+
+  @override
+  String get chainsProvenanceEmpty => 'No journal events for this step yet.';
+
+  @override
+  String get chainsProvenanceFailed => 'Could not load execution history.';
 
   @override
   String get chainsRebalanceHeading => 'Aggiungi budget';
@@ -2976,4 +3306,278 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String get settingsEnvoyLocalPhoneNote =>
       'I parametri avanzati del server (dimensione del contesto, layer GPU) restano nell\'UI Social del nodo di casa.';
+
+  @override
+  String get ehReviewTitle => 'Rivedi questo turn';
+
+  @override
+  String get ehReviewUnavailable =>
+      'Nessuna revisione salvata per questo turn precedente.';
+
+  @override
+  String get ehReviewFile => 'File';
+
+  @override
+  String get ehReviewOpenFile => 'Apri file';
+
+  @override
+  String get ehReviewDiffUnavailable =>
+      'Nessun diff testuale disponibile per questo file.';
+
+  @override
+  String get ehReviewOnly => 'Rilevato nel workspace · solo revisione';
+
+  @override
+  String get ehRevertTitle => 'Ripristinare questo turn?';
+
+  @override
+  String get ehRevertBody =>
+      'I file torneranno allo stato precedente al turn. Modifiche successive sono protette e interrompono il ripristino.';
+
+  @override
+  String get ehRevertAction => 'Ripristina';
+
+  @override
+  String get ehRevertComplete =>
+      'Le modifiche ai file di questo turn sono state ripristinate.';
+
+  @override
+  String get ehRevertUnavailable =>
+      'Questo turn non può più essere ripristinato in sicurezza.';
+
+  @override
+  String ehRevertConflict(String files) {
+    return 'Ripristino interrotto perché questi file sono cambiati dopo: $files';
+  }
+
+  @override
+  String get ehSearchTranscript => 'Cerca nella trascrizione';
+
+  @override
+  String get ehSearchClose => 'Chiudi ricerca';
+
+  @override
+  String get ehNoMatches => 'Nessun turn corrispondente';
+
+  @override
+  String get ehCopyTurn => 'Copia turn';
+
+  @override
+  String get ehShareTurn => 'Condividi turn';
+
+  @override
+  String get ehReviewDiff => 'Rivedi diff';
+
+  @override
+  String get ehRevertThisTurn => 'Ripristina questo turn';
+
+  @override
+  String get ehReviewChanges => 'Rivedi modifiche';
+
+  @override
+  String get ehRevertAll => 'Ripristina tutto';
+
+  @override
+  String ehChangesCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count file modificati in questo turn',
+      one: '1 file modificato in questo turn',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get ehChangesKeepAll => 'Mantieni tutto';
+
+  @override
+  String get ehChangesRevert => 'Ripristina tutto';
+
+  @override
+  String get ehChangesHideList => 'Nascondi elenco';
+
+  @override
+  String get ehChangesShowList => 'Mostra elenco';
+
+  @override
+  String get ehReviewKeepFile => 'Mantieni';
+
+  @override
+  String get ehReviewRevertFile => 'Ripristina';
+
+  @override
+  String get ehReviewKeptAll => 'Modifiche mantenute.';
+
+  @override
+  String ehReviewRevertedFile(String path) {
+    return 'Ripristinato $path';
+  }
+
+  @override
+  String get ehReviewAutoLabel => 'Revisione auto se ≥';
+
+  @override
+  String get ehReviewAutoAlways => 'Sempre';
+
+  @override
+  String ehQueueTitle(int count) {
+    return 'In coda ($count)';
+  }
+
+  @override
+  String get ehQueueClear => 'Svuota';
+
+  @override
+  String get ehQueueBusyHint => 'Invia mette in coda';
+
+  @override
+  String get ehQueueFollowUpHint => 'Metti un follow-up in coda…';
+
+  @override
+  String get ehInjectTooltip => 'Inietta (annulla + invia)';
+
+  @override
+  String ehFilesChangedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count file modificati',
+      one: '1 file modificato',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get ehEmptyReply =>
+      'envoy-harness non ha prodotto una risposta visibile. Il tuo messaggio c’è ancora — riprova o riformula.';
+
+  @override
+  String get ehConfigureModelHint =>
+      'Configura un modello in Impostazioni → IA.';
+
+  @override
+  String get ehReviewKeepFailed => 'Impossibile mantenere le modifiche.';
+
+  @override
+  String get ehReviewOpenGitDiff => 'Apri diff git';
+
+  @override
+  String get ehDiffBefore => 'Prima';
+
+  @override
+  String get ehDiffAfter => 'Dopo';
+
+  @override
+  String get ehPermsTooltip => 'Criterio di autorizzazione';
+
+  @override
+  String get ehPermsSafe => 'Predefinito (auto-esecuzione sicura)';
+
+  @override
+  String get ehPermsAsk => 'Chiedi sempre';
+
+  @override
+  String get ehPermsApprove => 'Approva sempre';
+
+  @override
+  String ehPermsSet(String mode) {
+    return 'Criterio di autorizzazione → $mode.';
+  }
+
+  @override
+  String get ehPermsNextTurn => ' Vale dal prossimo turno.';
+
+  @override
+  String ehPermsFailed(String error) {
+    return 'Impossibile impostare il criterio di autorizzazione: $error';
+  }
+
+  @override
+  String get chainsStatusCancelled => 'Annullato';
+
+  @override
+  String get chainsStatusPublished => 'Pubblicato';
+
+  @override
+  String get chainsStatusRecovering => 'Recovering';
+
+  @override
+  String get chainsStatusSynthesizing => 'Sintesi';
+
+  @override
+  String get chainsStatusRunning => 'In corso';
+
+  @override
+  String get chainsStatusWaitingWorkers => 'In attesa di worker';
+
+  @override
+  String get chainsStatusBidding => 'Offerte';
+
+  @override
+  String get chainsStatusAssigning => 'Assegnazione';
+
+  @override
+  String get chainsStatusPlanning => 'Pianificazione';
+
+  @override
+  String get ehWorking => 'In corso';
+
+  @override
+  String get ehCompleted => 'Completato';
+
+  @override
+  String get ehUpdate => 'Aggiornamento';
+
+  @override
+  String ehToolLabel(String name) {
+    return 'Strumento: $name';
+  }
+
+  @override
+  String ehMatchCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count corrispondenze',
+      one: '1 corrispondenza',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get termMore => 'Altro…';
+
+  @override
+  String get termCompactContext => 'Compatta contesto';
+
+  @override
+  String get termUpdatePlan => 'Mostra o aggiorna il piano';
+
+  @override
+  String get termHarnessStatus => 'Stato harness';
+
+  @override
+  String get termPiActions => 'Azioni Pi';
+
+  @override
+  String get termHarnessActions => 'Azioni envoy-harness';
+
+  @override
+  String get termPreviousCommand => 'Comando precedente';
+
+  @override
+  String get termNextCommand => 'Comando successivo';
+
+  @override
+  String get termCursorLeft => 'Sposta cursore a sinistra';
+
+  @override
+  String get termCursorRight => 'Sposta cursore a destra';
+
+  @override
+  String get termEnterKey => 'Tasto Invio';
+
+  @override
+  String get chainsCancelFailed => 'Impossibile annullare questo team job.';
 }

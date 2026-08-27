@@ -65,6 +65,7 @@ import {
   type TaskChainProposePayload,
   type TaskChainReportPayload,
 } from "@envoymesh/protocol";
+import { randomUUID } from "node:crypto";
 
 import {
   DEFAULT_CHAIN_INPUT_DELIVERY_POLICY,
@@ -95,6 +96,16 @@ import {
   buildJobInputFileArtifacts,
   jobInputsReadyForAward,
 } from "./chain-input-delivery-runtime.js";
+import {
+  cancelHedgedSpeculation,
+  clearSpeculativeSibling,
+  ingestSpeculativePartial,
+  maybeFinalizeSpeculativeSelection,
+  maybeLaunchDueHedgedAwards,
+  maybeScheduleSpeculationAfterAward,
+  requiresVerifyOnlyForSubtask,
+  verifyOnlyAllowsAdvance,
+} from "./chain-speculation-wire.js";
 
 // ---------------------------------------------------------------------------
 // Outbound send surface — what the orchestrator needs from the runtime
@@ -239,6 +250,13 @@ export interface ChainOrchestratorHandlerDeps extends ChainOrchestratorSendDeps 
    * is inert (no verdicts, no budget, no escalation).
    */
   chainVerify?: import("./chain-verify-loop.js").ChainVerifyLoopDeps;
+  /**
+   * Phase 60D — when true, ingest partials/heartbeats but skip advance,
+   * stall reassign, and verification (RECOVERING gate).
+   */
+  isRecovering?: (chainId: string) => boolean;
+  /** Phase 61C — finals received while RECOVERING; advance after reconcile. */
+  markRecoveryFinalPending?: (chainId: string, subtaskId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -258,8 +276,25 @@ export interface ChainState {
   bids: Map<string, ChainSubtaskBid>;
   /** Worker peer id selected for each subtask. */
   awards: Map<string, ChainSubtaskAward>;
-  /** Latest partial per (subtaskId, workerPeerId) (used for synthesis). */
+  /** Selected/latest partial per subtaskId (used for synthesis + dependents). */
   partials: Map<string, TaskChainPartialPayload>;
+  /** Phase 60E — per-attempt partials (supports dual speculative finals). */
+  partialsByAttempt: Map<string, TaskChainPartialPayload>;
+  /** Phase 60E — speculative sibling award when immediate_dual is active. */
+  speculativeAwards: Map<string, ChainSubtaskAward>;
+  /** Phase 61A — hedged sibling schedule (fastest strategy). */
+  hedgeSchedule: Map<
+    string,
+    {
+      primaryAward: ChainSubtaskAward;
+      hedgeAfterMs: number;
+      scheduledAtMs: number;
+    }
+  >;
+  /** Phase 60E — subtasks whose speculative selection is final (late finals retained only). */
+  speculationLocked: Set<string>;
+  /** Phase 61B — verify-only: final received but verifier has not passed yet. */
+  verifyOnlyBlockedSubtasks: Set<string>;
   /** Set of cancelled subtask ids (cancel MUST be sent before accept). */
   cancelledSubtasks: Set<string>;
   ledger: ChainBudgetLedger;
@@ -338,6 +373,29 @@ export interface ChainState {
   inputDeliveries?: import("@envoymesh/api").ChainInputDeliveryRecord[];
   /** Phase 59 — delivery policy (defaults from 59A lock). */
   inputDeliveryPolicy?: import("@envoymesh/api").ChainInputDeliveryPolicy;
+  /** Phase 60A — each award/replacement is a distinct execution attempt. */
+  attempts: Map<string, ChainAttemptState>;
+  /** Compatibility projection: selected/current attempt for each subtask. */
+  selectedAttemptBySubtask: Map<string, string>;
+  /** Bound by ChainStore; intentionally omitted from persisted JSON. */
+  journalEvent?: (type: string, data: Record<string, unknown>) => void;
+}
+
+export interface ChainAttemptState {
+  attemptId: string;
+  chainId: string;
+  subtaskId: string;
+  workerPeerId: string;
+  role: "primary" | "speculative" | "replacement";
+  state: "awarded" | "running" | "final_received" | "selected" | "rejected" | "cancelled" | "lost";
+  attemptNumber: number;
+  acceptedCostUsd: number;
+  createdAt: string;
+  updatedAt: string;
+  /** Phase 60A/D — last observed partial seq for this attempt. */
+  lastPartialSeq?: number;
+  /** Phase 60D — last recovery / stall reason code. */
+  lastReason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -363,6 +421,11 @@ export function createChainState(
     bids: new Map(),
     awards: new Map(),
     partials: new Map(),
+    partialsByAttempt: new Map(),
+    speculativeAwards: new Map(),
+    hedgeSchedule: new Map(),
+    speculationLocked: new Set(),
+    verifyOnlyBlockedSubtasks: new Set(),
     cancelledSubtasks: new Set(),
     ledger,
     negotiationRounds: new Map(),
@@ -391,7 +454,53 @@ export function createChainState(
         ? { scope: opts.inputDeliveryScope }
         : {}),
     },
+    attempts: new Map(),
+    selectedAttemptBySubtask: new Map(),
   };
+}
+
+function createAttemptForAward(state: ChainState, award: ChainSubtaskAward): ChainAttemptState {
+  const previous = [...state.attempts.values()].filter((a) => a.subtaskId === award.subtaskId);
+  const attempt: ChainAttemptState = {
+    attemptId: `attempt_${randomUUID()}`,
+    chainId: state.chainId,
+    subtaskId: award.subtaskId,
+    workerPeerId: award.workerPeerId,
+    role: previous.length === 0 ? "primary" : "replacement",
+    state: "awarded",
+    attemptNumber: previous.length + 1,
+    acceptedCostUsd: award.acceptedCostUsd,
+    createdAt: award.createdAt,
+    updatedAt: award.createdAt,
+  };
+  state.attempts.set(attempt.attemptId, attempt);
+  state.selectedAttemptBySubtask.set(award.subtaskId, attempt.attemptId);
+  // Phase 60D — stamp attemptId onto the award so accept/receipts align.
+  (award as { attemptId?: string }).attemptId = attempt.attemptId;
+  const liveAward = state.awards.get(award.subtaskId);
+  if (liveAward) (liveAward as { attemptId?: string }).attemptId = attempt.attemptId;
+  state.journalEvent?.("attempt.awarded", { ...attempt });
+  return attempt;
+}
+
+function updateCurrentAttempt(
+  state: ChainState,
+  subtaskId: string,
+  nextState: ChainAttemptState["state"],
+  reason: string,
+  at = new Date(),
+): void {
+  const attemptId = state.selectedAttemptBySubtask.get(subtaskId);
+  const attempt = attemptId ? state.attempts.get(attemptId) : undefined;
+  if (!attempt) return;
+  attempt.state = nextState;
+  attempt.updatedAt = at.toISOString();
+  state.journalEvent?.("attempt.state_changed", {
+    attemptId,
+    subtaskId,
+    state: nextState,
+    reason,
+  });
 }
 
 /** True when every dependsOn parent has a final partial (cancelled parents block). */
@@ -400,6 +509,20 @@ export function subtaskDependenciesSatisfied(state: ChainState, subtask: ChainSu
     if (state.cancelledSubtasks.has(dep)) return false;
     const partial = state.partials.get(dep);
     if (!partial?.partial.isFinal) return false;
+    // Phase 60E — speculative race / disagree: do not unlock dependents until selection locks.
+    if (state.speculativeAwards.has(dep) && !state.speculationLocked.has(dep)) {
+      return false;
+    }
+    const openSpeculative = [...state.attempts.values()].some(
+      (a) =>
+        a.subtaskId === dep &&
+        a.role === "speculative" &&
+        (a.state === "awarded" || a.state === "running" || a.state === "final_received") &&
+        !state.speculationLocked.has(dep),
+    );
+    if (openSpeculative) return false;
+    // Phase 61B — verify-only: parent final alone does not unlock dependents.
+    if (state.verifyOnlyBlockedSubtasks.has(dep)) return false;
   }
   return true;
 }
@@ -747,6 +870,11 @@ export async function planChain(
 function registerSubtasks(state: ChainState, subtasks: ChainSubtask[]): void {
   for (const s of subtasks) {
     state.subtasks.set(s.subtaskId, s);
+    state.journalEvent?.("assignment.planned", {
+      subtaskId: s.subtaskId,
+      requiredSkill: s.requiredSkill,
+      dependsOn: s.dependsOn,
+    });
   }
 }
 
@@ -791,6 +919,11 @@ export async function launchChain(
   });
   for (const workerPeerId of mandateTargets) {
     const sent = await sendChainMandate(deps, workerPeerId, state.chainMandate);
+    state.journalEvent?.("transport.mandate_sent", {
+      workerPeerId,
+      transportPath: workerPeerId === deps.orchestratorPeerId ? "local" : "mesh",
+      ok: sent,
+    });
     if (!sent) {
       mandateBroadcastOk = false;
       mandateFails.push(workerPeerId);
@@ -1059,6 +1192,7 @@ export async function directAwardSubtask(
   }
   const inputsReady = jobInputsReadyForAward(state, subtaskId, workerPeerId);
   if (!inputsReady.ok) {
+    updateCurrentAttempt(state, subtaskId, "lost", inputsReady.reason, now);
     await state.ledger.release(subtaskId, inputsReady.reason);
     state.awards.delete(subtaskId);
     state.awardedAt.delete(subtaskId);
@@ -1086,12 +1220,21 @@ export async function directAwardSubtask(
     inputArtifacts,
   );
   if (!sent) {
+    updateCurrentAttempt(state, subtaskId, "lost", "direct_accept_send_failed", now);
     await state.ledger.release(subtaskId, "direct-assign send failed");
     state.awards.delete(subtaskId);
     state.awardedAt.delete(subtaskId);
     state.bids.delete(`${subtaskId}::${workerPeerId}`);
     return { ok: false, reason: "send_failed" };
   }
+
+  state.journalEvent?.("transport.accept_sent", {
+    subtaskId,
+    workerPeerId,
+    attemptId: state.selectedAttemptBySubtask.get(subtaskId),
+    transportPath: workerPeerId === deps.orchestratorPeerId ? "local" : "mesh",
+    ok: true,
+  });
 
   deps.audit.record({
     type: "chain.awarded",
@@ -1101,6 +1244,10 @@ export async function directAwardSubtask(
     summary:
       `direct_assign subtask=${subtaskId.slice(0, 12)}` +
       ` worker=${workerPeerId.slice(0, 14)}`,
+  });
+  // Phase 60E — optional immediate dual / hedged speculative accept (best-effort).
+  await maybeScheduleSpeculationAfterAward(deps, state, evaluated.award).catch((err) => {
+    console.warn(`[chain.speculation] speculation schedule failed for ${state.chainId}/${subtaskId}:`, err);
   });
   return { ok: true, award: evaluated.award };
 }
@@ -1456,6 +1603,9 @@ export async function reassignStalledSubtask(
   // Remember silent workers so later steps do not prefer them again.
   state.silentWorkerPeerIds.add(award.workerPeerId);
 
+  // Phase 60E — cancel speculative sibling before primary reassign.
+  await clearSpeculativeSibling(deps, state, subtaskId, "stall_reassign");
+
   const nowIso = (deps.now ?? (() => new Date()))().toISOString();
   await sendChainCancel(deps, award.workerPeerId, {
     chainId: state.chainId,
@@ -1465,6 +1615,7 @@ export async function reassignStalledSubtask(
     notifyWorkerPeerIds: [award.workerPeerId],
     createdAt: nowIso,
   });
+  updateCurrentAttempt(state, subtaskId, "cancelled", "stall_reassign", new Date(nowIso));
   if (state.awards.has(subtaskId)) {
     await state.ledger.release(subtaskId, "stall re-assign");
   }
@@ -1670,6 +1821,7 @@ export async function evaluateBids(
   };
   state.awards.set(input.subtaskId, award);
   state.awardedAt.set(input.subtaskId, award.createdAt);
+  createAttemptForAward(state, award);
 
   // Promote reservation → committed spend (the worker has now accepted the award).
   await state.ledger.tryCommit(input.subtaskId);
@@ -1974,6 +2126,21 @@ export async function trackChain(
       inFlight.add(subtaskId);
     }
 
+    // Phase 61A — launch hedged siblings whose delay has elapsed.
+    await maybeLaunchDueHedgedAwards(deps, state).catch((err) => {
+      console.warn(`[chain.speculation] hedged launch failed for ${state.chainId}:`, err);
+    });
+
+    // Phase 60E — tick speculative sibling wait / timeout while awards are tracked.
+    for (const subtaskId of new Set([
+      ...state.speculativeAwards.keys(),
+      ...[...state.attempts.values()]
+        .filter((a) => a.role === "speculative")
+        .map((a) => a.subtaskId),
+    ])) {
+      await maybeFinalizeSpeculativeSelection(deps, state, subtaskId);
+    }
+
     // Stall → one re-assign to next-best peer (independent of budget rebalance).
     // Clock starts at last worker heartbeat, else award time — never treat a
     // brand-new award with no timestamps as already stalled.
@@ -1982,6 +2149,13 @@ export async function trackChain(
       for (const [subtaskId] of state.awards.entries()) {
         if (state.cancelledSubtasks.has(subtaskId)) continue;
         if (state.partials.has(subtaskId)) continue;
+        // Open speculative race or hedged wait: do not stall-reassign yet.
+        if (
+          (state.speculativeAwards.has(subtaskId) || state.hedgeSchedule.has(subtaskId)) &&
+          !state.speculationLocked.has(subtaskId)
+        ) {
+          continue;
+        }
         if (state.iteration) {
           const sealed = Object.values(state.iteration.sealedByRound).some((ids) =>
             ids.includes(subtaskId),
@@ -2105,18 +2279,34 @@ export async function synthesizeChain(
     state.iteration?.goal?.trim() ||
     undefined;
 
+  const prefersStructuredMerge =
+    Boolean(goal) &&
+    /\b(report|summary|brief|write|draft|merge|executive|document)\b/i.test(goal ?? "");
+
   // Prefer LLM merge when wired (brief/report goals rely on the merge editor);
   // fall back to concatenate on soft failure.
   let usedKind = kind;
   if (kind === "concatenate" && deps.llmMerge) {
     usedKind = "merge_structured";
   }
+  const assignerLabel =
+    deps.orchestratorPeerId?.startsWith("envoy_agent_")
+      ? `Assigner ${deps.orchestratorPeerId.slice("envoy_agent_".length, "envoy_agent_".length + 8)}`
+      : deps.orchestratorPeerId
+        ? `Assigner ${deps.orchestratorPeerId.slice(0, 12)}`
+        : "the Assigner";
   let r = await synthesizeChainReport(state.ledger, {
     chainMandate: state.chainMandate,
     contributions,
     kind: usedKind,
     llmMerge: deps.llmMerge,
     goal,
+    synthesisProvenance:
+      usedKind === "merge_structured"
+        ? `Merged by ${assignerLabel} using structured synthesis${prefersStructuredMerge ? " (report-style goal)" : ""}.`
+        : usedKind === "concatenate"
+          ? `Combined worker results by ${assignerLabel} (simple merge).`
+          : undefined,
     now: (deps.now ?? (() => new Date()))(),
   });
   if (!r.ok && usedKind === "merge_structured" && kind === "concatenate") {
@@ -2126,6 +2316,7 @@ export async function synthesizeChain(
       kind: "concatenate",
       llmMerge: deps.llmMerge,
       goal,
+      synthesisProvenance: `Combined worker results by ${assignerLabel} (simple merge).`,
       now: (deps.now ?? (() => new Date()))(),
     });
   }
@@ -2166,6 +2357,53 @@ export async function publishChainReport(
 
   await deps.storeChainReport(finalReport);
   state.published = true;
+  const selectedArtifacts: Array<{
+    subtaskId: string;
+    attemptId?: string;
+    artifactKeys: string[];
+    parentArtifactKeys: string[];
+  }> = [];
+  for (const [subtaskId, award] of state.awards) {
+    const partial = state.partials.get(subtaskId)?.partial;
+    const artifactKeys =
+      partial?.namedArtifacts?.map((a) => a.key) ??
+      (partial?.isFinal ? ["result"] : []);
+    if (artifactKeys.length === 0) continue;
+    const parentArtifactKeys: string[] = [];
+    const sub = state.subtasks.get(subtaskId);
+    for (const depId of sub?.dependsOn ?? []) {
+      const parent = state.partials.get(depId)?.partial;
+      for (const key of parent?.namedArtifacts?.map((a) => a.key) ?? []) {
+        parentArtifactKeys.push(`${depId}:${key}`);
+      }
+      if (parentArtifactKeys.length === 0 && parent?.isFinal) {
+        parentArtifactKeys.push(`${depId}:result`);
+      }
+    }
+    const attemptId = state.selectedAttemptBySubtask.get(subtaskId);
+    selectedArtifacts.push({
+      subtaskId,
+      ...(attemptId ? { attemptId } : {}),
+      artifactKeys,
+      parentArtifactKeys,
+    });
+    state.journalEvent?.("artifact.selected", {
+      subtaskId,
+      attemptId,
+      workerPeerId: award.workerPeerId,
+      artifactIds: artifactKeys,
+      parentArtifactIds: parentArtifactKeys,
+    });
+  }
+  state.journalEvent?.("synthesis.lineage", {
+    synthesisCostUsd: report.chainSummary.synthesisCostUsd,
+    ownerPeerId,
+    selectedArtifacts,
+  });
+  state.journalEvent?.("chain.report_published", {
+    synthesisCostUsd: report.chainSummary.synthesisCostUsd,
+    ownerPeerId,
+  });
 
   const payload = TaskChainReportPayloadSchema.parse({ report: finalReport });
   const envelope = buildChainEnvelope({
@@ -2263,13 +2501,39 @@ export async function handleOrchestratorPartial(
   payload: TaskChainPartialPayload,
   state: ChainState,
 ): Promise<ChainInboundDecision> {
-  state.partials.set(payload.partial.subtaskId, payload);
+  const now = deps.now?.() ?? new Date();
+  const ingested = ingestSpeculativePartial(state, payload, now);
+  cancelHedgedSpeculation(state, payload.partial.subtaskId);
+  const attempt = ingested.attempt;
+  if (!attempt) {
+    // Legacy single-attempt path: no matching attempt row yet.
+    if (!ingested.blockedLateOverwrite) {
+      state.partials.set(payload.partial.subtaskId, payload);
+    }
+    const attemptId = state.selectedAttemptBySubtask.get(payload.partial.subtaskId);
+    const selected = attemptId ? state.attempts.get(attemptId) : undefined;
+    if (selected && !ingested.blockedLateOverwrite) {
+      selected.state = payload.partial.isFinal ? "final_received" : "running";
+      selected.updatedAt = now.toISOString();
+      selected.lastPartialSeq = payload.partial.seq;
+      state.journalEvent?.("attempt.partial_received", {
+        attemptId: selected.attemptId,
+        subtaskId: selected.subtaskId,
+        workerPeerId: payload.partial.workerPeerId,
+        seq: payload.partial.seq,
+        isFinal: payload.partial.isFinal,
+        confidence: payload.partial.confidence,
+        artifactIds: payload.partial.namedArtifacts?.map((artifact) => artifact.key) ??
+          (payload.partial.artifactFragment ? ["default"] : []),
+      });
+    }
+  }
   // Phase 40D — partials are the strongest liveness signal we have. Stamp
   // the heartbeat timestamp + record the confidence so the auto-rebalance
   // trigger can compare against `lowConfidenceThreshold`.
   state.lastHeartbeatAt.set(
     payload.partial.subtaskId,
-    (deps.now ?? (() => new Date()))().getTime(),
+    now.getTime(),
   );
   if (typeof payload.partial.confidence === "number") {
     state.lastConfidence.set(payload.partial.subtaskId, payload.partial.confidence);
@@ -2284,11 +2548,19 @@ export async function handleOrchestratorPartial(
     summary:
       `subtask=${payload.partial.subtaskId} seq=${payload.partial.seq}` +
       ` isFinal=${payload.partial.isFinal}` +
+      (ingested.blockedLateOverwrite ? " late_retained=true" : "") +
       (typeof payload.partial.confidence === "number"
         ? ` confidence=${payload.partial.confidence}`
         : "") +
       (notePreview ? ` note=${notePreview}` : ""),
   });
+  // Phase 60D — RECOVERING: retain partials but do not advance / reassign / verify.
+  if (deps.isRecovering?.(state.chainId)) {
+    if (payload.partial.isFinal) {
+      deps.markRecoveryFinalPending?.(state.chainId, payload.partial.subtaskId);
+    }
+    return { ok: true };
+  }
   if (payload.partial.isFinal) {
     if (isFailedWorkerFinalPartial(payload)) {
       // Engine/worker failure — try backup peer before treating the step as done.
@@ -2316,13 +2588,36 @@ export async function handleOrchestratorPartial(
       // advance dependents as if the step succeeded.
       return { ok: true };
     }
+    // Phase 60E — select among speculative finals / cancel losers before advance.
+    const speculation = await maybeFinalizeSpeculativeSelection(
+      deps,
+      state,
+      payload.partial.subtaskId,
+    );
+    if (speculationBlocksAdvance(speculation.reason)) {
+      return { ok: true };
+    }
     // Phase 41 / MAP — orchestrator-side verification loop (design §8.3).
     // Records verdicts into the arbitration store; escalates to a second
     // runtime when the rule verdict is partial/disputed on a critical or
     // private-and-expensive chain. Never throws.
+    const subtaskId = payload.partial.subtaskId;
+    const verifyOnlyRequired = requiresVerifyOnlyForSubtask(state, subtaskId);
+    let verificationResult: Awaited<ReturnType<typeof runChainVerificationLoop>> = null;
     if (deps.chainVerify) {
       try {
-        await runChainVerificationLoop(deps.chainVerify, state, envelope, payload);
+        verificationResult = await runChainVerificationLoop(deps.chainVerify, state, envelope, payload);
+        if (verificationResult) {
+          state.journalEvent?.("verification.completed", {
+            subtaskId,
+            attemptId: state.selectedAttemptBySubtask.get(subtaskId),
+            workerPeerId: payload.partial.workerPeerId,
+            verdict: verificationResult.verdict.kind,
+            ...(verificationResult.escalated
+              ? { verifierRuntime: verificationResult.escalated.secondRuntime }
+              : {}),
+          });
+        }
       } catch (err) {
         deps.audit.record({
           type: "chain.verify_error",
@@ -2331,14 +2626,56 @@ export async function handleOrchestratorPartial(
           remotePeerId: envelope.senderPeerId,
           correlationId: envelope.correlationId,
           summary:
-            `subtask=${payload.partial.subtaskId} ` +
+            `subtask=${subtaskId} ` +
             (err instanceof Error ? err.message : String(err)),
         });
+      }
+    }
+    // Phase 61B — verify-only wire: block dependents until verifier passes.
+    if (verifyOnlyRequired) {
+      const verdict =
+        verificationResult?.verdict ??
+        deps.chainVerify?.getLatestVerdictForSubtask?.(state.chainId, subtaskId);
+      if (!verifyOnlyAllowsAdvance(verdict)) {
+        state.verifyOnlyBlockedSubtasks.add(subtaskId);
+        state.journalEvent?.("verification.verify_only_blocked", {
+          subtaskId,
+          reason: verdict?.kind ?? "no_verifier",
+        });
+        return { ok: true };
+      }
+      state.verifyOnlyBlockedSubtasks.delete(subtaskId);
+    }
+    // Phase 63 — after per-worker verification, retry speculative selection
+    // so `none_pass` can trigger auto-reassign when both finals fail verify.
+    const speculativeFinalCount = [...state.attempts.values()].filter(
+      (attempt) =>
+        attempt.subtaskId === subtaskId &&
+        (attempt.state === "final_received" || attempt.state === "selected"),
+    ).length;
+    if (speculativeFinalCount >= 2 && !state.speculationLocked.has(subtaskId)) {
+      const speculationAfterVerify = await maybeFinalizeSpeculativeSelection(
+        deps,
+        state,
+        subtaskId,
+      );
+      if (speculationBlocksAdvance(speculationAfterVerify.reason)) {
+        return { ok: true };
       }
     }
     await advanceReadySubtasks(deps, state);
   }
   return { ok: true };
+}
+
+/** Phase 63 — block step advance while speculative selection is unresolved. */
+export function speculationBlocksAdvance(reason: string): boolean {
+  return (
+    reason === "waiting_sibling" ||
+    reason === "disagree_needs_verify" ||
+    reason === "none_pass" ||
+    reason === "auto_reassigned"
+  );
 }
 
 /**
@@ -2637,6 +2974,10 @@ export type ChainLiveStep = {
     label?: string;
   }>;
   produced?: Array<{ key: string; kind: string; label?: string }>;
+  /** Phase 60A — attempt count for this subtask (0 when none yet). */
+  attemptCount?: number;
+  /** Phase 60A — selected / primary attempt id when known. */
+  selectedAttemptId?: string;
 };
 
 function artifactKindOf(artifact: { type?: string; kind?: string } | undefined): "text" | "file" | "structured" {
@@ -2717,6 +3058,10 @@ export function buildChainLiveSteps(state: ChainState): ChainLiveStep[] {
     }
 
     const expectsKeys = (sub.expects ?? []).map((e) => e.key);
+    const attemptIds = [...state.attempts.values()]
+      .filter((attempt) => attempt.subtaskId === sub.subtaskId)
+      .map((attempt) => attempt.attemptId);
+    const selectedAttemptId = state.selectedAttemptBySubtask.get(sub.subtaskId);
 
     return {
       subtaskId: sub.subtaskId,
@@ -2730,6 +3075,8 @@ export function buildChainLiveSteps(state: ChainState): ChainLiveStep[] {
       produces: sub.produces?.length ? [...sub.produces] : undefined,
       waitingOn: waitingOn.length > 0 ? waitingOn : undefined,
       produced: produced.length > 0 ? produced : undefined,
+      attemptCount: attemptIds.length,
+      ...(selectedAttemptId ? { selectedAttemptId } : {}),
     };
   });
 }

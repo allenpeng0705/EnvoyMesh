@@ -198,7 +198,7 @@ export interface PersistedNodeConfig {
    * Default `openclaw`. Independent of chat AI Engine toggles — see
    * docs/agent-network-engine.md.
    */
-  agentNetworkWorkerEngine?: "openclaw" | "ext";
+  agentNetworkWorkerEngine?: "openclaw" | "ext" | "envoy-harness";
   /** Phase 19 — bond autonomy posture (agent-driven bond acceptance). */
   bondAutonomyEnabled?: boolean;
   bondAutonomyMandateId?: string;
@@ -396,12 +396,145 @@ export interface PersistedNodeConfig {
     /** Milliseconds to poll for an external task.result. Default 0. */
     waitForResultMs?: number;
   };
+
+  // ----- Phase 8 / v1.4 — Agent Routing UI affordances -----
+
+  /**
+   * Per-node opt-in flag for the signal-based
+   * router (v1.1 + v1.2). When `"disabled"`, the
+   * router never picks envoy-harness regardless
+   * of mesh keywords, tool names, or hint
+   * prefixes — the Tauri user prompt always goes
+   * to OpenClaw. When `"enabled"`, the router
+   * runs as designed.
+   *
+   * **Resolution order** (see
+   * `readEffectiveSignalOptIn` in
+   * `node-config-loader.ts`):
+   * 1. This field when set.
+   * 2. The env var `ENVOY_HARNESS_SIGNAL_OPT_IN`
+   *    (v0 fallback for headless / dev / CI).
+   * 3. The implicit default (`"enabled"`).
+   *
+   * **Default (when undefined):** use the env
+   * var + implicit default. Existing nodes
+   * without this field keep their current
+   * behavior — backward compatible.
+   *
+   * **Why a per-node field:** the v0 env var
+   * is process-wide and survives only as long
+   * as the launch config. The Tauri UI writes
+   * this field to give owners a durable
+   * per-node switch.
+   */
+  signalOptIn?: "enabled" | "disabled";
+
+  /**
+   * Per-node default for the chain-verify mode
+   * (Step 6). When set, overrides the per-runtime
+   * `defaultVerifyModeForWorker(runtime)` default
+   * in `chain-verify-loop.ts`. Applies to all
+   * Team jobs on the node — unless the job
+   * author set `ChainMandate.verifyMode`
+   * explicitly (per-mandate wins over per-node).
+   *
+   * **Resolution order** (see
+   * `readEffectiveVerifyModeDefault` in
+   * `node-config-loader.ts`):
+   * 1. This field when set.
+   * 2. The per-runtime default
+   *    (`defaultVerifyModeForWorker(runtime)`).
+   *
+   * **Default (when undefined):** use the
+   * per-runtime default. Existing nodes without
+   * this field keep their current behavior.
+   *
+   * **Why a per-node field:** the per-runtime
+   * default is a v0 design decision, not an
+   * operator preference. The Tauri UI writes
+   * this field to let owners apply a node-wide
+   * posture (e.g. "always strict" on a
+   * high-stakes setup).
+   */
+  verifyModeDefault?:
+    | "rule-only"
+    | "cross-runtime"
+    | "cross-runtime-strict";
+  /**
+   * v1.16 — per-node verifier model override for cross-model-on-same-
+   * runtime verification. When set, the chain-verify loop's cross branch
+   * re-runs the subtask on the second adapter with this
+   * `ExecuteInput.verifierModel` (e.g. `"anthropic:claude-instant"`).
+   * Optional — absent = the v1.8 cross-runtime behavior.
+   */
+  verifierProviderHint?: string;
+  /** R2 — static standalone peer endpoints for the envoy-harness execution
+   *  pool. Each entry: `{ id, endpoint: "host:port", model?, capabilities? }`.
+   *  When set, the node's envoy-harness worker routes sub-agents to the
+   *  peer cluster (Pattern A). Optional — absent = local sub-agents only. */
+  envoyHarnessPeers?: ReadonlyArray<{
+    id: string;
+    endpoint: string;
+    model?: string;
+    capabilities?: string[];
+  }>;
+  /** U4+ — persisted project folder for the envoy-harness runtime
+   *  (overrides `ENVOY_HARNESS_CWD`; default `process.cwd()`). */
+  envoyHarnessCwd?: string;
+  /**
+   * Per-project harness session ids (normalized absolute cwd → session UUID).
+   * Each project folder gets one persisted JSONL transcript; switching
+   * project in the Envoy chat panel loads the matching session.
+   */
+  envoyHarnessSessionByCwd?: Record<string, string>;
+  /** Envoy sidebar chat threads (one per project folder, like Terminal sessions). */
+  envoyHarnessChats?: import("@envoymesh/api").EhChatWorkspace[];
+  /** Active chat id for legacy bare thread key and default open. */
+  activeEnvoyHarnessChatId?: string;
+  /**
+   * Permission policy for Envoy Harness chat + terminal tool calls:
+   * - `always-confirm` — ask for every tool (default)
+   * - `safe-only` — auto-allow read-only tools + safe bash, ask for the rest
+   * - `off` / `never` — never ask (auto-allow everything)
+   */
+  envoyHarnessAutoRunPolicy?: "always-confirm" | "safe-only" | "off" | "never";
 }
 
 export interface NodeConfigStore {
   load(): Promise<PersistedNodeConfig | undefined>;
   save(config: PersistedNodeConfig): Promise<void>;
   exists(): Promise<boolean>;
+  /**
+   * Phase 8 / v1.4 — sync accessor for the
+   * in-memory snapshot of the last
+   * successfully loaded or saved config. Used
+   * by the signal router + chain-verify loop
+   * to resolve the effective `signalOptIn` +
+   * `verifyModeDefault` at request time without
+   * the cost of a disk read.
+   *
+   * **Returns `undefined` when:**
+   * - The store hasn't been `load()`ed or
+   *   `save()`d yet (cold start, before the
+   *   first `getNodeConfig` call).
+   * - The store is the stub
+   *   (`createStubNodeConfigStore` — used in
+   *   tests / contexts without a profile dir).
+   *
+   * **Why sync:** the consumers (the routing
+   * context builder + the chain-verify loop's
+   * `shouldEscalateToCrossAgent` / `combineToVerdict`
+   * call sites) are sync code paths. Reading
+   * the disk async would cascade the change
+   * through every caller. The in-memory cache
+   * is updated by every `load()` and `save()`
+   * call (see `cachedConfig` below), so the
+   * peek is always up-to-date after the first
+   * I/O. On cold start, the consumers fall
+   * back to the env var + per-runtime default
+   * — the v0 behavior, preserved.
+   */
+  peek(): PersistedNodeConfig | undefined;
 }
 
 export function createDefaultPersistedNodeConfig(profileDir: string): PersistedNodeConfig {
@@ -563,6 +696,19 @@ export function createNodeConfigStore(profileDir: string): NodeConfigStore {
       } catch {
         return false;
       }
+    },
+
+    /**
+     * Sync accessor for the in-memory snapshot.
+     * Returns the last successfully loaded or
+     * saved config (`cachedConfig` above). The
+     * snapshot is always up-to-date after the
+     * first `load()` or `save()` call, so the
+     * caller doesn't need to await a disk read.
+     * Cold start (no I/O yet) returns `undefined`.
+     */
+    peek(): PersistedNodeConfig | undefined {
+      return cachedConfig;
     },
   };
 }
@@ -833,6 +979,12 @@ export function createStubNodeConfigStore(): NodeConfigStore {
     },
     async exists() {
       return false;
+    },
+    peek() {
+      // Stub has no in-memory snapshot. The
+      // consumers fall back to the env var +
+      // per-runtime default — the v0 behavior.
+      return undefined;
     },
   };
 }

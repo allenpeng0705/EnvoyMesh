@@ -487,7 +487,7 @@
   "chainsSubtasks": "하위 작업",
   "chainsSynthesis": "합성",
   "chainsDuration": "소요 시간",
-  "chainsManageOnSocial": "홈 노드 소셜 화면에서 체인을 관리하세요.",
+  "chainsManageOnSocial": "플릿 설정·입찰·레시피는 홈 노드 Social UI에 있습니다. 취소·재조정·고정은 여기에서도 가능합니다.",
   "chainsPublished": "{date} 게시됨",
   "chainsChainId": "체인 {id}",
   "termEmptyHint": "홈 노드에서 Pi 코딩 세션 또는 셸 터미널을 시작하세요.",
@@ -509,19 +509,25 @@
   "pairingInProgressSubtitle": "{owner}에 연결 중",
   "@pairingInProgressSubtitle": {
     "placeholders": {
-      "owner": {"type": "String"}
+      "owner": {
+        "type": "String"
+      }
     }
   },
   "pairingElapsed": "경과 시간: {time}",
   "@pairingElapsed": {
     "placeholders": {
-      "time": {"type": "String"}
+      "time": {
+        "type": "String"
+      }
     }
   },
   "pairingHomeNodeLabel": "홈: {peer}",
   "@pairingHomeNodeLabel": {
     "placeholders": {
-      "peer": {"type": "String"}
+      "peer": {
+        "type": "String"
+      }
     }
   },
   "pairingStageInitial": "초기화 중",
@@ -634,6 +640,13 @@
   "chainsStartStarted": "팀 작업이 시작되었습니다",
   "chainsStartFailed": "팀 작업을 시작할 수 없습니다",
   "chainsStartNoWorkers": "도달 가능한 Agent Network 워커가 없습니다. 먼저 홈 노드의 에이전트와 연락처를 본드하세요.",
+  "chainsSpeculationReviewTitle": "추측 실행 검토 필요",
+  "chainsSpeculationReviewBody": "두 워커가 한 단계에서 서로 다른 결과를 반환했습니다. 작업을 진행할 승자를 선택하거나 오케스트레이터가 자동으로 선택하도록 할 수 있습니다.",
+  "chainsSpeculationReviewNonePass": "두 워커 모두 검증을 통과하지 못했습니다 — 오케스트레이터가 이 단계를 재할당합니다.",
+  "chainsSpeculationReviewDisagree": "두 워커가 일치하지 않습니다. 오케스트레이터가 더 저렴한 검증된 항목을 선택하거나, 사용자가 선택하거나 재할당할 수 있습니다.",
+  "chainsSpeculationReviewAutoResolve": "자동 해결",
+  "chainsSpeculationReviewResolved": "오케스트레이터가 해결함",
+  "chainsSpeculationReviewFailed": "자동 해결 실패",
   "chainsStartNeedWorkers": "온라인 워커를 최소 1명 선택하거나, 추천 풀을 복원하려면 다시 미리 보세요.",
   "chainsStartWorkersHint": "계획의 온라인 워커. 원하지 않는 워커의 체크를 해제하세요. 모두 해제하면 시작이 차단됩니다 — 추천 풀을 재설정하려면 다시 미리 보세요.",
   "chainsStartWorkersHeading": "워커",
@@ -925,5 +938,239 @@
   "chainsStepCancelled": "단계가 취소됨",
   "chainsStepReassigned": "단계가 재배정됨",
   "chainsReassignFailed": "이 단계를 재배정할 수 없습니다",
-  "chainsCancelStepReason": "EnvoyGo에서 단계 취소됨"
+  "chainsCancelStepReason": "EnvoyGo에서 단계 취소됨",
+  "chatsSectionCoding": "코딩",
+  "chatsCodingPi": "Pi",
+  "chatsCodingPiHint": "코딩 에이전트(터미널)",
+  "chatsCodingEh": "Envoy",
+  "chatsCodingEhHint": "코딩 에이전트(채팅)",
+  "chatsEhNew": "새 코딩 채팅",
+  "chatsEhRemoveTitle": "코딩 채팅을 제거할까요?",
+  "chatsEhRemoveBody": "코딩 목록에서 “{name}”을(를) 제거할까요? 홈 노드의 채팅 기록이 삭제됩니다.",
+  "@chatsEhRemoveBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatsEhThinking": "Envoy가 생각 중…",
+  "chatsEhPromptHint": "Envoy에게 코딩·리팩터·설명을 요청…",
+  "chatsNewEnvoy": "새 Envoy",
+  "chatsNewEnvoyHint": "Envoy Harness TUI 시작",
+  "ehChooseProjectTitle": "Envoy 프로젝트 폴더 선택",
+  "ehChangeProjectTitle": "Envoy 프로젝트 폴더 변경",
+  "ehChooseProjectDesc": "Envoy는 이 폴더에서 실행됩니다(AGENTS.md 읽기, 파일 편집, 셸 실행).",
+  "ehStartWithProject": "시작",
+  "ehRestartWithProject": "여기서 Envoy 다시 시작",
+  "ehEnsuringTerminal": "Envoy TUI 시작 중…",
+  "ehPermissionTitle": "도구 권한",
+  "ehPermissionAllow": "허용",
+  "ehPermissionDeny": "거부",
+  "ehQuestionTitle": "Envoy가 입력을 요청합니다",
+  "ehRecommended": "추천",
+  "ehSlashWhileBusy": "먼저 현재 턴을 끝내거나 /cancel 하세요.",
+  "ehChatReset": "이 프로젝트의 새 채팅을 시작했습니다.",
+  "ehTurnCancelled": "턴이 취소되었습니다.",
+  "ehStatusRefreshed": "상태를 새로고침했습니다.",
+  "ehNoPeers": "피어 클러스터가 구성되지 않았습니다.",
+  "ehSearchUsage": "사용법: /search <검색어> — 이 대화를 검색합니다.",
+  "ehSearchNoMatches": "“{term}”에 대한 결과가 없습니다.",
+  "@ehSearchNoMatches": {
+    "placeholders": {
+      "term": {
+        "type": "String"
+      }
+    }
+  },
+  "ehModelShow": "활성 모델: {model}",
+  "@ehModelShow": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "ehModelUnknown": "구성된 모델 없음 — 설정 → AI에서 설정하세요.",
+  "ehProjectCurrent": "프로젝트 폴더: {path}",
+  "@ehProjectCurrent": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehProjectUnset": "프로젝트 폴더 없음 — /cd <경로>를 사용하세요.",
+  "ehProjectSet": "프로젝트 폴더 → {path}",
+  "@ehProjectSet": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehProjectSetUnknown": "프로젝트 폴더가 업데이트되었습니다.",
+  "ehProjectSetFailed": "프로젝트 폴더 설정 실패: {error}",
+  "@ehProjectSetFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "ehConfigureModel": "설정 → AI에서 모델을 구성하세요.",
+  "ehNotReady": "envoy-harness가 준비되지 않았습니다.",
+  "termQuickHelp": "/help",
+  "termQuickCancel": "/cancel",
+  "settingsPiCodingBackend": "코딩 백엔드",
+  "settingsPiCodingBackendPi": "Pi(사이드카)",
+  "settingsPiCodingBackendEh": "envoy-harness (ACP)",
+  "settingsPiCodingBackendHint": "Social과 동일한 설정입니다. sendToPi와 승인을 같은 Pi UI로 라우팅합니다. 이전 EnvoyGo는 이를 무시하고 Pi를 유지합니다.",
+  "settingsPiCodingBackendSaved": "코딩 백엔드가 업데이트되었습니다",
+  "ehReviewTitle": "이 턴 검토",
+  "ehReviewUnavailable": "이 이전 턴에 대한 저장된 검토가 없습니다.",
+  "ehReviewFile": "파일",
+  "ehReviewOpenFile": "파일 열기",
+  "ehReviewDiffUnavailable": "이 파일의 텍스트 diff를 사용할 수 없습니다.",
+  "ehReviewOnly": "워크스페이스 감지 · 검토 전용",
+  "ehRevertTitle": "이 턴을 되돌릴까요?",
+  "ehRevertBody": "파일이 턴 이전 내용으로 복원됩니다. 이후 편집은 보호되며 되돌리기가 중단됩니다.",
+  "ehRevertAction": "되돌리기",
+  "ehRevertComplete": "이 턴의 파일 변경이 되돌려졌습니다.",
+  "ehRevertUnavailable": "이 턴은 더 이상 안전하게 되돌릴 수 없습니다.",
+  "ehRevertConflict": "이후에 변경되어 되돌리기를 중단했습니다: {files}",
+  "@ehRevertConflict": {
+    "placeholders": {
+      "files": {
+        "type": "String"
+      }
+    }
+  },
+  "ehSearchTranscript": "대화 검색",
+  "ehSearchClose": "검색 닫기",
+  "ehNoMatches": "일치하는 턴 없음",
+  "ehCopyTurn": "턴 복사",
+  "ehShareTurn": "턴 공유",
+  "ehReviewDiff": "diff 검토",
+  "ehRevertThisTurn": "이 턴 되돌리기",
+  "ehReviewChanges": "변경 사항 검토",
+  "ehRevertAll": "모두 되돌리기",
+  "ehChangesCount": "{count, plural, =1{이번 턴에서 파일 1개 변경} other{이번 턴에서 파일 {count}개 변경}}",
+  "@ehChangesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehChangesKeepAll": "모두 유지",
+  "ehChangesRevert": "모두 되돌리기",
+  "ehChangesHideList": "목록 숨기기",
+  "ehChangesShowList": "목록 표시",
+  "ehReviewKeepFile": "유지",
+  "ehReviewRevertFile": "되돌리기",
+  "ehReviewKeptAll": "변경 사항을 유지했습니다.",
+  "ehReviewRevertedFile": "{path} 되돌림",
+  "@ehReviewRevertedFile": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehReviewAutoLabel": "자동 검토 기준 ≥",
+  "ehReviewAutoAlways": "항상",
+  "ehWorking": "작업 중",
+  "ehCompleted": "완료",
+  "ehUpdate": "업데이트",
+  "ehToolLabel": "도구: {name}",
+  "@ehToolLabel": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "ehMatchCount": "{count, plural, =1{일치 1개} other{일치 {count}개}}",
+  "@ehMatchCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "termMore": "더보기…",
+  "termCompactContext": "컨텍스트 압축",
+  "termUpdatePlan": "계획 표시 또는 업데이트",
+  "termHarnessStatus": "Harness 상태",
+  "termPiActions": "Pi 작업",
+  "termHarnessActions": "envoy-harness 작업",
+  "termPreviousCommand": "이전 명령",
+  "termNextCommand": "다음 명령",
+  "termCursorLeft": "커서를 왼쪽으로",
+  "termCursorRight": "커서를 오른쪽으로",
+  "termEnterKey": "Enter 키",
+  "ehQueueTitle": "대기열 ({count})",
+  "@ehQueueTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehQueueClear": "비우기",
+  "ehQueueBusyHint": "보내면 다음에 대기",
+  "ehQueueFollowUpHint": "후속 요청 대기열에…",
+  "ehInjectTooltip": "끼워넣기(취소 후 전송)",
+  "ehFilesChangedCount": "{count, plural, =1{파일 1개 변경} other{파일 {count}개 변경}}",
+  "@ehFilesChangedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehEmptyReply": "envoy-harness가 보이는 답변을 만들지 않았습니다. 메시지는 그대로입니다 — 다시 시도하거나 바꿔 말하세요.",
+  "ehConfigureModelHint": "설정 → AI에서 모델을 구성하세요.",
+  "ehReviewKeepFailed": "변경 사항을 유지하지 못했습니다.",
+  "ehReviewOpenGitDiff": "Git diff 열기",
+  "ehDiffBefore": "이전",
+  "ehDiffAfter": "이후",
+  "chainsStatusCancelled": "취소됨",
+  "chainsStatusPublished": "게시됨",
+  "chainsStatusSynthesizing": "종합 중",
+  "chainsStatusRunning": "실행 중",
+  "chainsStatusWaitingWorkers": "워커 대기",
+  "chainsStatusBidding": "입찰 중",
+  "chainsStatusAssigning": "할당 중",
+  "chainsStatusPlanning": "계획 중",
+  "chainsCancelFailed": "팀 작업을 취소하지 못했습니다.",
+  "ehPermsTooltip": "권한 정책",
+  "ehPermsSafe": "기본(안전한 자동 실행)",
+  "ehPermsAsk": "항상 묻기",
+  "ehPermsApprove": "항상 승인",
+  "ehPermsSet": "권한 정책 → {mode}.",
+  "@ehPermsSet": {
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "ehPermsNextTurn": " 다음 턴부터 적용됩니다.",
+  "ehPermsFailed": "권한 정책을 설정하지 못했습니다: {error}",
+  "@ehPermsFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "chainsStartReliabilityPct": "신뢰도 {pct}%",
+  "chainsStartReliabilitySparse": "{level} · {samples}개 샘플",
+  "chainsStartReliabilityFallbackExact": "이 워커의 기록",
+  "chainsStartReliabilityFallbackPeerRuntimeSkill": "이 워커의 유사 작업",
+  "chainsStartReliabilityFallbackPeerRuntime": "이 워커의 런타임",
+  "chainsStartReliabilityFallbackRuntimeSkill": "이 스킬이 있는 워커",
+  "chainsStartReliabilityFallbackPrior": "일반 사전 (아직 기록 없음)"
 }

@@ -11,6 +11,20 @@ class ThreadTitleSentinels {
   static const terminalPrefix = 'Terminal: ';
 }
 
+/// Stored in SQLite / provider state; localized in [localizeMessageBody].
+class MessageBodySentinels {
+  static const sentFile = '@@sent_file@@';
+  static const sentVoice = '@@sent_voice@@';
+}
+
+/// Localize attachment-only placeholder bodies at display time.
+String localizeMessageBody(AppLocalizations l10n, String? text) {
+  final value = text ?? '';
+  if (value == MessageBodySentinels.sentFile) return l10n.chatSentFile;
+  if (value == MessageBodySentinels.sentVoice) return l10n.chatSentVoice;
+  return value;
+}
+
 /// Localize a thread title for UI (list tiles, app bars, deep links).
 String localizeThreadTitle(
   AppLocalizations l10n, {

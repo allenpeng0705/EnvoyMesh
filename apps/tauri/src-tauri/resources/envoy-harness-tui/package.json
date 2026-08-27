@@ -1,0 +1,13 @@
+{
+  "name": "@envoymesh/envoy-harness-tui",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./bin.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    }
+  }
+}

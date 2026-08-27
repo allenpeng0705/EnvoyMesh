@@ -30,6 +30,10 @@ export interface ChatComposerProps {
   slashCommands?: ExtAgentCommandDescriptor[];
   /** Model ids for `/model <id>` autocomplete. */
   slashModels?: Array<{ id: string; label?: string }>;
+  /** When false, hide the emoji picker (e.g. Pi / envoy-harness panels). */
+  showEmoji?: boolean;
+  /** Cmd/Ctrl+Enter — e.g. EH inject while busy. */
+  onModifierEnter?: () => void;
 }
 
 export function ChatComposer({
@@ -45,6 +49,8 @@ export function ChatComposer({
   leading,
   slashCommands,
   slashModels,
+  showEmoji = true,
+  onModifierEnter,
 }: ChatComposerProps) {
   const t = useT();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -213,18 +219,20 @@ export function ChatComposer({
     <>
       {leading}
       <div className="chat-composer-field" ref={fieldRef}>
-        <button
-          type="button"
-          className={`secondary chat-emoji-btn${pickerOpen ? " is-active" : ""}`}
-          title={t("contactChat.emojiPickerTitle")}
-          aria-label={t("contactChat.emojiPickerAria")}
-          aria-expanded={pickerOpen}
-          aria-controls={pickerOpen ? pickerId : undefined}
-          disabled={disabled}
-          onClick={() => setPickerOpen((open) => !open)}
-        >
-          <SmileIcon size={18} />
-        </button>
+        {showEmoji ? (
+          <button
+            type="button"
+            className={`secondary chat-emoji-btn${pickerOpen ? " is-active" : ""}`}
+            title={t("contactChat.emojiPickerTitle")}
+            aria-label={t("contactChat.emojiPickerAria")}
+            aria-expanded={pickerOpen}
+            aria-controls={pickerOpen ? pickerId : undefined}
+            disabled={disabled}
+            onClick={() => setPickerOpen((open) => !open)}
+          >
+            <SmileIcon size={18} />
+          </button>
+        ) : null}
         <textarea
           ref={textareaRef}
           className="chat-composer-textarea"
@@ -262,6 +270,11 @@ export function ChatComposer({
                 onChange("");
                 return;
               }
+            }
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              if (onModifierEnter && canSend) onModifierEnter();
+              return;
             }
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();

@@ -1,0 +1,48 @@
+name: ci-node-hermetic
+
+on:
+  pull_request:
+    paths:
+      - "apps/node/src/**"
+      - "apps/node/test/**"
+      - "packages/api/**"
+      - "packages/protocol/**"
+      - ".github/workflows/ci-node-hermetic.yml"
+  workflow_dispatch:
+
+jobs:
+  hermetic-unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Module-size lint (Codex LOC rule)
+        run: node scripts/check-module-size.mjs apps/node/src
+
+      # The hermetic lane: deterministic, no-network unit tests
+      # covering the envoy-harness integration surface. The full
+      # apps/node suite includes live/network tests and is NOT
+      # suitable for a per-PR gate; this lane is the fast signal.
+      - name: Hermetic integration unit tests
+        run: |
+          npx vitest run \
+            --testTimeout 20000 \
+            apps/node/test/user-prompt-router.test.ts \
+            apps/node/test/run-owner-agent-turn-routing.test.ts \
+            apps/node/test/chain-verify-loop.test.ts \
+            apps/node/test/chain-scoreboard.test.ts \
+            apps/node/test/chain-graph.test.ts \
+            apps/node/test/manifest-openclaw-tags.test.ts \
+            apps/node/test/skill-result-formatter.test.ts \
+            apps/node/test/b-class-result-formatters.test.ts \
+            apps/node/test/node-config-loader.test.ts \
+            apps/node/test/node-config-store-v1-4.test.ts \
+            apps/node/test/node-service-v1-4.test.ts

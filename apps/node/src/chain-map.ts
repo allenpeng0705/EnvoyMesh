@@ -124,6 +124,12 @@ export function mapChainSubtaskToExecuteInput(opts: {
   inputArtifacts?: readonly NamedArtifact[];
   now?: () => Date;
   defaultDeadlineMs?: number;
+  /**
+   * v1.16 — cross-model-on-same-runtime hint. Forwarded as
+   * `ExecuteInput.verifierModel` so the second adapter can re-run
+   * the subtask with a different model on the same runtime.
+   */
+  verifierModel?: string;
 }): { input: ExecuteInput; signal: AbortSignal } {
   const now = (opts.now ?? (() => new Date()))();
   const deadlineMs = opts.subtask.deadlineAt
@@ -144,6 +150,9 @@ export function mapChainSubtaskToExecuteInput(opts: {
       deadlineMs,
       correlationId: `${opts.subtask.chainId}:${opts.subtask.subtaskId}`,
       signal: controller.signal,
+      ...(opts.verifierModel !== undefined
+        ? { verifierModel: opts.verifierModel }
+        : {}),
     },
     signal: controller.signal,
   };
@@ -341,8 +350,14 @@ export interface MapChainSubtaskExecutorInput {
   unavailableCode: string;
   /** Whether the wrapped runtime is ready. Mirrors `isOpenClawReady()`. */
   isReady: () => boolean;
-  /** The MAP adapter that executes + verifies this node's runtime. */
-  adapter: AgentAdapter;
+  /**
+   * The MAP adapter that executes + verifies this node's runtime. May be
+   * a lazy getter (the runtime/adapter may appear after this executor is
+   * constructed — e.g. envoy-harness's runtime is built on first ask).
+   * A getter returning undefined at execute time fails the subtask with
+   * `unavailableCode` (no model call).
+   */
+  adapter: AgentAdapter | (() => AgentAdapter | undefined);
   /**
    * Run `adapter.verify` before finalizing. A `fail` verdict fails the
    * subtask (worker-side advisory gate; the orchestrator still re-verifies
@@ -430,12 +445,28 @@ export function createMapChainSubtaskExecutor(
       worker: shortPeerId(input.workerPeerId),
       ready: input.isReady(),
       inputArtifacts: opts?.inputArtifacts?.length ?? 0,
-      runtime: input.adapter.runtime,
+      runtime:
+        typeof input.adapter === "function"
+          ? "lazy"
+          : input.adapter.runtime,
     });
 
     if (!input.isReady()) {
       await emit(`AN_ENGINE_FAIL: ${input.engineLabel} is not ready on this node`, true, 0.1);
       chainWarn("exec", `[map] ${input.engineLabel} unavailable`, {
+        subtaskId: subtask.subtaskId,
+      });
+      record(false, input.unavailableCode, [], null);
+      return { ok: false, finalNote: input.unavailableCode };
+    }
+
+    // Resolve the adapter lazily: the runtime may construct it after this
+    // executor was built. Undefined despite `isReady()` → clean fail.
+    const adapter =
+      typeof input.adapter === "function" ? input.adapter() : input.adapter;
+    if (adapter === undefined) {
+      await emit(`AN_ENGINE_FAIL: ${input.engineLabel} adapter unavailable`, true, 0.1);
+      chainWarn("exec", `[map] ${input.engineLabel} adapter unavailable`, {
         subtaskId: subtask.subtaskId,
       });
       record(false, input.unavailableCode, [], null);
@@ -461,9 +492,9 @@ export function createMapChainSubtaskExecutor(
       // Validate shape (defense-in-depth; the adapter signs, the orchestrator
       // re-verifies the signature on the wire in Sprint 2 — chain-map cannot
       // verify locally because SignedAgentResult carries no public key).
-      const result = SignedAgentResultSchema.parse(await input.adapter.execute(executeInput));
+      const result = SignedAgentResultSchema.parse(await adapter.execute(executeInput));
 
-      const verdicts = runVerify ? await input.adapter.verify({ result, objective: subtask.objective }) : [];
+      const verdicts = runVerify ? await adapter.verify({ result, objective: subtask.objective }) : [];
       const overall = verdicts.length > 0 ? combineVerdicts(verdicts) : null;
 
       if (overall === "fail") {

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../ext_agent/agent_attachments.dart';
 import '../l10n/app_localizations.dart';
 import '../models/chat_message.dart';
+import '../utils/localized_labels.dart';
 import 'agent_attachment_bar.dart';
 import 'chat_audio_player.dart';
 
@@ -34,6 +35,8 @@ class ChatBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context);
+    final displayText = localizeMessageBody(l10n, message.text);
     final audioAtt = _hasAudio
         ? message.attachments!.firstWhere((a) => a.isAudio)
         : null;
@@ -114,9 +117,9 @@ class ChatBubble extends StatelessWidget {
                     fontStyle: FontStyle.italic,
                   ),
                 )
-              else if (message.text != null && message.text!.isNotEmpty)
+              else if (displayText.isNotEmpty)
                 Text(
-                  message.text!,
+                  displayText,
                   style: TextStyle(color: colorScheme.onSurface),
                 ),
               if (_hasAgentHomeAttach)
@@ -158,9 +161,32 @@ class ChatBubble extends StatelessWidget {
                   ),
                 ),
             ],
+            if (isOutbound && message.delivery != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                _deliveryLabel(l10n, message.delivery!.deliveryReceipt),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  String _deliveryLabel(AppLocalizations l10n, String receipt) {
+    switch (receipt) {
+      case 'delivered':
+        return l10n.chatDeliveryDelivered;
+      case 'failed':
+        return l10n.chatDeliveryFailed;
+      case 'pending':
+        return l10n.chatDeliverySent;
+      default:
+        return l10n.chatDeliverySent;
+    }
   }
 }

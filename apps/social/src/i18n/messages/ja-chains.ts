@@ -189,6 +189,17 @@ export const jaChainsMessages = {
     composerLabel: "エージェントに何を達成してほしいですか？",
     composerPlaceholder: "例: ローカル LLM の最新動向を調査して上位3つを要約",
     preview: "プランをプレビュー",
+    reliabilityBadge: "信頼度 {pct}% · {samples} 件のサンプル",
+    reliabilityHint:
+      "このノードでの過去の結果から推定された信頼度の下限（ベータ推定）。実際のジョブが増えると精度が向上し、新しいワーカーはサンプルが少なくなります。",
+    reliabilitySparse: "{level} からの推定 — まだ {samples} 件のサンプル",
+    reliabilityFallback: {
+      exact: "このワーカーの履歴",
+      peer_runtime_skill: "このワーカーの類似タスク",
+      peer_runtime: "このワーカーのランタイム",
+      runtime_skill: "このスキルを持つワーカー",
+      prior: "汎用事前分布（履歴なし）",
+    },
     template: {
       research: "トピックを調査",
       researchGoal: "{topic} の最新動向を調査し、主な発見を要約",

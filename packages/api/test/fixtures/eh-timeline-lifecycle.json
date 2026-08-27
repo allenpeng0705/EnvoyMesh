@@ -1,0 +1,95 @@
+{
+  "chatId": "chat-1",
+  "receivedAt": "2026-08-25T08:00:01.000Z",
+  "timelineUpdates": [
+    {
+      "type": "upsert",
+      "item": {
+        "id": "turn:turn-1:user",
+        "chatId": "chat-1",
+        "turnId": "turn-1",
+        "type": "message",
+        "role": "user",
+        "text": "Run the tests",
+        "createdAt": "2026-08-25T08:00:00.000Z"
+      }
+    },
+    {
+      "type": "upsert",
+      "item": {
+        "id": "activity-1",
+        "chatId": "chat-1",
+        "turnId": "turn-1",
+        "type": "activity",
+        "status": "running",
+        "summary": "Running npm test",
+        "toolName": "bash",
+        "createdAt": "2026-08-25T08:00:01.000Z"
+      }
+    },
+    {
+      "type": "upsert",
+      "item": {
+        "id": "turn:turn-1:completion",
+        "chatId": "chat-1",
+        "turnId": "turn-1",
+        "type": "completion",
+        "status": "completed",
+        "summary": "Completed",
+        "changedFileCount": 1,
+        "createdAt": "2026-08-25T08:00:02.000Z"
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "eh:turn_started",
+      "payload": {
+        "turnId": "turn-1",
+        "chatId": "chat-1",
+        "userPrompt": "Run the tests",
+        "startedAt": "2026-08-25T08:00:00.000Z"
+      }
+    },
+    {
+      "name": "eh:turn_token",
+      "payload": {
+        "turnId": "turn-1",
+        "chatId": "chat-1",
+        "delta": "Working",
+        "streamingText": "Working"
+      }
+    },
+    {
+      "name": "eh:activity",
+      "payload": {
+        "activityId": "activity-1",
+        "turnId": "turn-1",
+        "chatId": "chat-1",
+        "kind": "tool_call",
+        "toolName": "bash",
+        "summary": "Running npm test",
+        "status": "running",
+        "ts": "2026-08-25T08:00:01.000Z"
+      }
+    },
+    {
+      "name": "eh:files_changed",
+      "payload": {
+        "turnId": "turn-1",
+        "chatId": "chat-1",
+        "files": ["src/index.ts"]
+      }
+    },
+    {
+      "name": "eh:turn_complete",
+      "payload": {
+        "turnId": "turn-1",
+        "chatId": "chat-1",
+        "ok": true,
+        "text": "Tests pass.",
+        "changedFiles": ["src/index.ts"]
+      }
+    }
+  ]
+}

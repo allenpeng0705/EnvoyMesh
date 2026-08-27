@@ -207,7 +207,9 @@
   "knowledgePluginsLinkedVaultAutoMany": "Linked {count} Obsidian vaults found on this computer.",
   "@knowledgePluginsLinkedVaultAutoMany": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "knowledgeHubImportObsidianAll": "Import all linked",
@@ -216,19 +218,35 @@
   "knowledgeHubExportToNotion": "Export to Notion/MCP",
   "knowledgeHubImportObsidianOk": "Imported {count} Obsidian note(s)",
   "@knowledgeHubImportObsidianOk": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "knowledgeHubImportNotionOk": "Imported {count} Notion/MCP note(s)",
   "@knowledgeHubImportNotionOk": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "knowledgeHubExportObsidianOk": "Exported {count} note(s) to Obsidian",
   "@knowledgeHubExportObsidianOk": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "knowledgeHubExportNotionOk": "Exported {count} note(s) via MCP",
   "@knowledgeHubExportNotionOk": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "knowledgeHubImportFailed": "Import failed",
   "knowledgeHubExportFailed": "Export failed",
@@ -237,9 +255,14 @@
   "knowledgeHubShareVaultOnly": "Share works for vault files only — import first",
   "knowledgeHubMcpListError": "MCP list: {error}",
   "@knowledgeHubMcpListError": {
-    "placeholders": { "error": { "type": "String" } }
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
   },
   "knowledgeSetupHint": "Index status and retrieval. Chat models stay in Me → AI Model.",
+  "knowledgeSetupEmbeddingHint": "Embeddings use Envoy Local on this device. For OpenAI or Ollama, open Settings → AI on your home computer.",
   "knowledgeSetupEnabled": "Enable vault knowledge",
   "knowledgeSetupStatusHint": "Tap Rebuild to refresh the vector index.",
   "knowledgeSetupReindex": "Rebuild index",
@@ -250,14 +273,20 @@
   "knowledgeSetupTestEmbeddingOk": "Embedding OK — {dimensions} dims in {latencyMs} ms",
   "@knowledgeSetupTestEmbeddingOk": {
     "placeholders": {
-      "dimensions": { "type": "int" },
-      "latencyMs": { "type": "int" }
+      "dimensions": {
+        "type": "int"
+      },
+      "latencyMs": {
+        "type": "int"
+      }
     }
   },
   "knowledgeSetupTestEmbeddingFail": "Embedding failed: {error}",
   "@knowledgeSetupTestEmbeddingFail": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "knowledgeSetupRagMode": "Retrieval mode",
@@ -268,8 +297,12 @@
   "knowledgeBrowseIndexIndexingProgress": "Indexing {processed}/{total}…",
   "@knowledgeBrowseIndexIndexingProgress": {
     "placeholders": {
-      "processed": { "type": "int" },
-      "total": { "type": "int" }
+      "processed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
     }
   },
   "knowledgeHubOpenPlugins": "Open Plugins",
@@ -288,17 +321,30 @@
   "knowledgeFileOpenedOnHome": "Opened on the home computer",
   "knowledgeFilePublish": "Publish",
   "knowledgeFileMakePrivate": "Make private",
+  "knowledgeBrowseImportAndPublish": "Import and publish",
+  "knowledgeBrowsePublishImportOnly": "Import this note into the vault first, then you can publish it.",
+  "knowledgeBrowsePublishImportNoDoc": "Imported, but could not publish yet — try Publish again from the imported note.",
+  "knowledgeBrowseImportedAndPublished": "Imported and published",
+  "knowledgeBrowsePublishImportHint": "Import into vault and publish for mesh discovery",
   "knowledgeFileMore": "More actions",
   "knowledgeFileConvert": "Convert to Markdown note",
   "knowledgeFileConvertOk": "Saved Markdown note {path}",
   "@knowledgeFileConvertOk": {
-    "placeholders": { "path": { "type": "String" } }
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
   },
   "knowledgeFileConvertFailed": "Could not convert to Markdown",
   "knowledgeFileDeleteTitle": "Delete file?",
   "knowledgeFileDeleteBody": "Delete “{title}” from the home vault?",
   "@knowledgeFileDeleteBody": {
-    "placeholders": { "title": { "type": "String" } }
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
   },
   "knowledgeFileDeleteConfirm": "Delete",
   "meKnowledge": "Knowledge setup",
@@ -316,14 +362,20 @@
   "knowledgeBrowseIndexReady": "{count} indexed",
   "@knowledgeBrowseIndexReady": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "knowledgeBrowseIndexReadyLinked": "{count} indexed · {linked} linked Obsidian",
   "@knowledgeBrowseIndexReadyLinked": {
     "placeholders": {
-      "count": { "type": "int" },
-      "linked": { "type": "int" }
+      "count": {
+        "type": "int"
+      },
+      "linked": {
+        "type": "int"
+      }
     }
   },
   "knowledgeBrowseIndexIndexing": "Indexing…",
@@ -387,6 +439,23 @@
   "connTooltipOffline": "Not connected",
   "connTooltipError": "Connection error",
   "chatsSectionAi": "AI",
+  "chatsSectionCoding": "Coding",
+  "chatsCodingPi": "Pi",
+  "chatsCodingPiHint": "Coding Agent (terminal)",
+  "chatsCodingEh": "Envoy",
+  "chatsCodingEhHint": "Coding Agent (chat)",
+  "chatsEhNew": "New coding chat",
+  "chatsEhRemoveTitle": "Remove coding chat?",
+  "chatsEhRemoveBody": "Remove “{name}” from your Coding list? The chat history on the home node will be deleted.",
+  "@chatsEhRemoveBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatsEhThinking": "Envoy is thinking…",
+  "chatsEhPromptHint": "Ask Envoy to code, refactor, or explain…",
   "chatsSectionFamily": "Family",
   "chatsSectionContacts": "Contacts",
   "chatsSectionGroups": "Groups",
@@ -396,6 +465,72 @@
   "chatsCreateBotHint": "AI character on your home node",
   "chatsNewPi": "New Pi",
   "chatsNewPiHint": "Start a Pi coding terminal",
+  "chatsNewEnvoy": "New Envoy",
+  "chatsNewEnvoyHint": "Start Envoy Harness TUI",
+  "ehChooseProjectTitle": "Choose Envoy project folder",
+  "ehChangeProjectTitle": "Change Envoy project folder",
+  "ehChooseProjectDesc": "Envoy runs in this folder (reads AGENTS.md, edits files, runs shell).",
+  "ehStartWithProject": "Start",
+  "ehRestartWithProject": "Restart Envoy here",
+  "ehEnsuringTerminal": "Starting Envoy TUI…",
+  "ehPermissionTitle": "Tool permission",
+  "ehPermissionAllow": "Allow",
+  "ehPermissionDeny": "Deny",
+  "ehQuestionTitle": "Envoy needs your input",
+  "ehRecommended": "Recommended",
+  "ehSlashWhileBusy": "Finish or /cancel the current turn first.",
+  "ehChatReset": "Started a new chat for this project.",
+  "ehTurnCancelled": "Turn cancelled.",
+  "ehStatusRefreshed": "Status refreshed.",
+  "ehNoPeers": "No peer cluster configured.",
+  "ehSearchUsage": "Usage: /search <term> — search this conversation.",
+  "ehSearchNoMatches": "No matches for “{term}”.",
+  "@ehSearchNoMatches": {
+    "placeholders": {
+      "term": {
+        "type": "String"
+      }
+    }
+  },
+  "ehModelShow": "Active model: {model}",
+  "@ehModelShow": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "ehModelUnknown": "No model configured — set one in Settings → AI.",
+  "ehProjectCurrent": "Project folder: {path}",
+  "@ehProjectCurrent": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehProjectUnset": "No project folder set — use /cd <path>.",
+  "ehProjectSet": "Project folder → {path}",
+  "@ehProjectSet": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehProjectSetUnknown": "Project folder updated.",
+  "ehProjectSetFailed": "Failed to set project folder: {error}",
+  "@ehProjectSetFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "ehConfigureModel": "Configure a model in Settings → AI.",
+  "ehNotReady": "envoy-harness is not ready.",
+  "termQuickHelp": "/help",
+  "termQuickCancel": "/cancel",
   "chatsNewTerminal": "New Terminal",
   "chatsNewTerminalHint": "Open a shell on the home node",
   "chatsNewGroup": "New Group Chat",
@@ -476,6 +611,11 @@
   "chatVoiceSendHint": "Tap Send when done · Cancel to discard",
   "chatVoiceReadyHint": "Send failed · Tap Send to retry · Cancel to discard",
   "chatVoiceSendFailed": "Failed to send voice note",
+  "chatSentFile": "Sent a file",
+  "chatSentVoice": "Sent a voice message",
+  "chatDeliverySent": "Sent",
+  "chatDeliveryDelivered": "Delivered",
+  "chatDeliveryFailed": "Not delivered",
   "chatMicDenied": "Microphone permission denied",
   "chatRecordFailed": "Failed to start recording",
   "chatCallFailed": "Failed to start call",
@@ -730,14 +870,20 @@
   "settingsAiModelTestChatOk": "Chat model OK — {modelName} in {latencyMs} ms",
   "@settingsAiModelTestChatOk": {
     "placeholders": {
-      "modelName": { "type": "String" },
-      "latencyMs": { "type": "int" }
+      "modelName": {
+        "type": "String"
+      },
+      "latencyMs": {
+        "type": "int"
+      }
     }
   },
   "settingsAiModelTestChatFail": "Chat model failed: {error}",
   "@settingsAiModelTestChatFail": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "settingsSaveFailed": "Save failed: {error}",
@@ -792,6 +938,11 @@
   "settingsPiBuiltIn": "Built-in local coding agent",
   "settingsPiLocalOnly": "Local-only coding agent (no mesh tools).",
   "settingsPiEnabled": "Pi enabled",
+  "settingsPiCodingBackend": "Coding backend",
+  "settingsPiCodingBackendPi": "Pi (sidecar)",
+  "settingsPiCodingBackendEh": "envoy-harness (ACP)",
+  "settingsPiCodingBackendHint": "Same setting as Social. Routes sendToPi and approvals through the same Pi UI. Older EnvoyGo builds without this control still work when switched from Social.",
+  "settingsPiCodingBackendSaved": "Coding backend updated",
   "settingsPiOverrideHint": "Model override (optional). Clear to inherit AI Model settings.",
   "settingsPiModelName": "Model name",
   "settingsPiEndpoint": "Endpoint",
@@ -924,7 +1075,7 @@
   "chainsSubtasks": "Subtasks",
   "chainsSynthesis": "Synthesis",
   "chainsDuration": "Duration",
-  "chainsManageOnSocial": "Advanced chain controls (cancel, rebalance, pin) are on the home-node Social UI.",
+  "chainsManageOnSocial": "Fleet setup, bidding, and recipes stay on the home-node Social UI. Cancel, rebalance, and pin work here too.",
   "chainsStartTitle": "Start team job",
   "chainsStartFab": "New team job",
   "chainsStartIntro": "Describe a goal. The home node plans subtasks and assigns bonded Agent Network workers.",
@@ -933,6 +1084,40 @@
   "chainsStartModeRole": "By role",
   "chainsStartModeSkillHint": "Workers are ranked by matching skills.",
   "chainsStartModeRoleHint": "Each step prefers a collaboration role (PM, programmer, …).",
+  "chainsStartTeamStrategy": "Team strategy",
+  "chainsStartTeamStrategyHint": "How workers are ranked. Hedged / verify-only are policy labels — a second worker runs on the wire only when immediate-dual gates pass (critical step, budget, independent workers).",
+  "chainsStrategyBalanced": "Balanced",
+  "chainsStrategyFastest": "Fastest",
+  "chainsStrategyCheapest": "Cheapest",
+  "chainsStrategyHighestConfidence": "Highest confidence",
+  "chainsStrategyPrivacyLocal": "Privacy (local)",
+  "chainsStrategyDiverseModel": "Diverse models",
+  "chainsStartAvailLease": "Lease",
+  "chainsStartAvailLegacy": "Legacy",
+  "chainsStartReliabilityPct": "Trust {pct}%",
+  "@chainsStartReliabilityPct": {
+    "placeholders": {
+      "pct": {
+        "type": "int"
+      }
+    }
+  },
+  "chainsStartReliabilitySparse": "{level} · {samples} samples",
+  "@chainsStartReliabilitySparse": {
+    "placeholders": {
+      "level": {
+        "type": "String"
+      },
+      "samples": {
+        "type": "int"
+      }
+    }
+  },
+  "chainsStartReliabilityFallbackExact": "this worker's history",
+  "chainsStartReliabilityFallbackPeerRuntimeSkill": "similar work on this worker",
+  "chainsStartReliabilityFallbackPeerRuntime": "this worker's runtime",
+  "chainsStartReliabilityFallbackRuntimeSkill": "workers with this skill",
+  "chainsStartReliabilityFallbackPrior": "general prior (no history yet)",
   "chainsStartGoalLabel": "Goal",
   "chainsStartGoalHint": "What should the team accomplish?",
   "chainsStartGoalTooShort": "Goal must be at least {min} characters",
@@ -981,6 +1166,18 @@
   "chainsStartStarted": "Team job started",
   "chainsStartFailed": "Could not start the team job",
   "chainsStartNoWorkers": "No reachable Agent Network workers. Bond contacts with agents on the home node first.",
+  "chainsTestNetworkTitle": "Test Agent Network",
+  "chainsTestNetworkHint": "Simulation — no work sent, no model spend, no reputation changes. Dry-plan ranks for real; failover and recovery are label-only previews.",
+  "chainsTestNetworkRun": "Check readiness",
+  "chainsTestNetworkRunning": "Checking…",
+  "chainsTestNetworkFailed": "Could not run diagnostics",
+  "chainsSpeculationReviewTitle": "Speculation needs review",
+  "chainsSpeculationReviewBody": "Two workers returned different results for one step. Pick a winner to keep the job moving, or let the orchestrator pick automatically.",
+  "chainsSpeculationReviewNonePass": "Both workers failed verification — the orchestrator will reassign this step.",
+  "chainsSpeculationReviewDisagree": "The two workers disagree. The orchestrator can pick the cheaper verified one, or you can pick or reassign.",
+  "chainsSpeculationReviewAutoResolve": "Resolve automatically",
+  "chainsSpeculationReviewResolved": "Resolved by the orchestrator",
+  "chainsSpeculationReviewFailed": "Could not resolve automatically",
   "chainsStartReadinessTitle": "Get workers ready",
   "chainsStartReadinessJoinOff": "On the home computer: Team jobs → Manage workers → turn on Join Agent Network.",
   "chainsStartReadinessBond": "Bond contacts in Discover (Social or this phone), then ask them to Join Agent Network.",
@@ -1063,6 +1260,31 @@
   "chainsCancelStepReason": "Cancelled step from EnvoyGo",
   "chainsDetailCancelled": "This job was cancelled.",
   "chainsDetailPublished": "This job finished and published a report.",
+  "chainsDetailRecovering": "Recovering after restart — confirming worker progress",
+  "chainsAttemptCount": "{count} attempt(s)",
+  "@chainsAttemptCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "chainsExecutionDetails": "Execution details",
+  "chainsProvenanceSummaryLine": "{attempts} attempt(s) · {worker} · {state}",
+  "@chainsProvenanceSummaryLine": {
+    "placeholders": {
+      "attempts": { "type": "int" },
+      "worker": { "type": "String" },
+      "state": { "type": "String" }
+    }
+  },
+  "chainsLastReason": "Last reason: {reason}",
+  "@chainsLastReason": {
+    "placeholders": {
+      "reason": { "type": "String" }
+    }
+  },
+  "chainsTechnicalDetails": "Technical details",
+  "chainsProvenanceEmpty": "No journal events for this step yet.",
+  "chainsProvenanceFailed": "Could not load execution history.",
   "chainsRebalanceHeading": "Add budget",
   "chainsRebalanceHint": "Raise the cost ceiling and retry un-awarded steps.",
   "chainsRebalanceAmount": "Additional USD",
@@ -1477,5 +1699,145 @@
     }
   },
   "settingsEnvoyLocalRefresh": "Refresh",
-  "settingsEnvoyLocalPhoneNote": "Advanced server parameters (context size, GPU layers) remain on the home-node Social UI."
+  "settingsEnvoyLocalPhoneNote": "Advanced server parameters (context size, GPU layers) remain on the home-node Social UI.",
+  "ehReviewTitle": "Review this turn",
+  "ehReviewUnavailable": "A saved review is unavailable for this older turn.",
+  "ehReviewFile": "File",
+  "ehReviewOpenFile": "Open file",
+  "ehReviewDiffUnavailable": "A textual diff is unavailable for this file.",
+  "ehReviewOnly": "Workspace-detected · review only",
+  "ehRevertTitle": "Revert this turn?",
+  "ehRevertBody": "Files will be restored to their pre-turn contents. Later edits are protected and will stop the revert.",
+  "ehRevertAction": "Revert",
+  "ehRevertComplete": "This turn’s file changes were reverted.",
+  "ehRevertUnavailable": "This turn can no longer be reverted safely.",
+  "ehRevertConflict": "Revert stopped because these files changed afterward: {files}",
+  "@ehRevertConflict": {
+    "placeholders": {
+      "files": {
+        "type": "String"
+      }
+    }
+  },
+  "ehSearchTranscript": "Search transcript",
+  "ehSearchClose": "Close search",
+  "ehNoMatches": "No matching turns",
+  "ehCopyTurn": "Copy turn",
+  "ehShareTurn": "Share turn",
+  "ehReviewDiff": "Review diff",
+  "ehRevertThisTurn": "Revert this turn",
+  "ehReviewChanges": "Review changes",
+  "ehRevertAll": "Revert all",
+  "ehChangesCount": "{count, plural, =1{1 file changed this turn} other{{count} files changed this turn}}",
+  "@ehChangesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehChangesKeepAll": "Keep all",
+  "ehChangesRevert": "Revert all",
+  "ehChangesHideList": "Hide list",
+  "ehChangesShowList": "Show list",
+  "ehReviewKeepFile": "Keep",
+  "ehReviewRevertFile": "Revert",
+  "ehReviewKeptAll": "Changes kept.",
+  "ehReviewRevertedFile": "Reverted {path}",
+  "@ehReviewRevertedFile": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehReviewAutoLabel": "Auto-review when ≥",
+  "ehReviewAutoAlways": "Always",
+  "ehQueueTitle": "Queued ({count})",
+  "@ehQueueTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehQueueClear": "Clear",
+  "ehQueueBusyHint": "Send queues next",
+  "ehQueueFollowUpHint": "Queue a follow-up…",
+  "ehInjectTooltip": "Inject (cancel + send)",
+  "ehFilesChangedCount": "{count, plural, =1{1 file changed} other{{count} files changed}}",
+  "@ehFilesChangedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehEmptyReply": "envoy-harness finished without a visible reply. Your message is still here — try again or rephrase.",
+  "ehConfigureModelHint": "Configure a model in Settings → AI.",
+  "ehReviewKeepFailed": "Could not keep changes.",
+  "ehReviewOpenGitDiff": "Open git diff",
+  "ehDiffBefore": "Before",
+  "ehDiffAfter": "After",
+  "ehPermsTooltip": "Permission policy",
+  "ehPermsSafe": "Default (safe auto-run)",
+  "ehPermsAsk": "Always ask",
+  "ehPermsApprove": "Always approve",
+  "ehPermsSet": "Permission policy → {mode}.",
+  "@ehPermsSet": {
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "ehPermsNextTurn": " Applies from the next turn.",
+  "ehPermsFailed": "Failed to set permission policy: {error}",
+  "@ehPermsFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "chainsStatusCancelled": "Cancelled",
+  "chainsStatusPublished": "Published",
+  "chainsStatusRecovering": "Recovering",
+  "chainsStatusSynthesizing": "Synthesizing",
+  "chainsStatusRunning": "Running",
+  "chainsStatusWaitingWorkers": "Waiting for workers",
+  "chainsStatusBidding": "Bidding",
+  "chainsStatusAssigning": "Assigning",
+  "chainsStatusPlanning": "Planning",
+  "ehWorking": "Working",
+  "ehCompleted": "Completed",
+  "ehUpdate": "Update",
+  "ehToolLabel": "Tool: {name}",
+  "@ehToolLabel": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "ehMatchCount": "{count, plural, =1{1 match} other{{count} matches}}",
+  "@ehMatchCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "termMore": "More…",
+  "termCompactContext": "Compact context",
+  "termUpdatePlan": "Show or update plan",
+  "termHarnessStatus": "Harness status",
+  "termPiActions": "Pi actions",
+  "termHarnessActions": "envoy-harness actions",
+  "termPreviousCommand": "Previous command",
+  "termNextCommand": "Next command",
+  "termCursorLeft": "Move cursor left",
+  "termCursorRight": "Move cursor right",
+  "termEnterKey": "Enter key",
+  "chainsCancelFailed": "Could not cancel this team job."
 }

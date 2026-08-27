@@ -25,15 +25,20 @@ function Harness({
   bonds: BondRecord[];
   peerId: string;
   locale: string;
-  onMount: (ns: { fire: (msg: ChatMessage) => void }) => void;
+  onMount: (ns: {
+    fireMessage: (msg: ChatMessage) => void;
+    fireRoomMessage: (event: { roomId: string; message: ChatMessage }) => void;
+  }) => void;
 }) {
-  const handlers: Array<(data: unknown) => void> = [];
+  const handlers = new Map<string, Array<(data: unknown) => void>>();
   const fakeNodeService = {
-    on: (_event: string, cb: (data: unknown) => void) => {
-      handlers.push(cb);
+    on: (event: string, cb: (data: unknown) => void) => {
+      const list = handlers.get(event) ?? [];
+      list.push(cb);
+      handlers.set(event, list);
       return () => {
-        const i = handlers.indexOf(cb);
-        if (i >= 0) handlers.splice(i, 1);
+        const i = list.indexOf(cb);
+        if (i >= 0) list.splice(i, 1);
       };
     },
     isConnected: true,
@@ -48,8 +53,11 @@ function Harness({
     locale,
   });
   onMount({
-    fire: (msg: ChatMessage) => {
-      for (const h of handlers) h(msg);
+    fireMessage: (msg: ChatMessage) => {
+      for (const h of handlers.get("chat:message") ?? []) h(msg);
+    },
+    fireRoomMessage: (event) => {
+      for (const h of handlers.get("chat:room-message") ?? []) h(event);
     },
   });
   return null;
@@ -83,7 +91,7 @@ describe("useChatNotifications (regression: no I18nProvider / NodeStateProvider)
           peerId="self"
           locale="zh"
           onMount={(ns) => {
-            fireRef = ns.fire;
+            fireRef = ns.fireMessage;
           }}
         />,
       );
@@ -108,7 +116,7 @@ describe("useChatNotifications (regression: no I18nProvider / NodeStateProvider)
         peerId="self"
         locale="en"
         onMount={(ns) => {
-          fireRef = ns.fire;
+          fireRef = ns.fireMessage;
         }}
       />,
     );
@@ -133,7 +141,7 @@ describe("useChatNotifications (regression: no I18nProvider / NodeStateProvider)
         peerId="self"
         locale="zh"
         onMount={(ns) => {
-          fireRef = ns.fire;
+          fireRef = ns.fireMessage;
         }}
       />,
     );
@@ -158,7 +166,7 @@ describe("useChatNotifications (regression: no I18nProvider / NodeStateProvider)
         peerId="self"
         locale="ko"
         onMount={(ns) => {
-          fireRef = ns.fire;
+          fireRef = ns.fireMessage;
         }}
       />,
     );
@@ -183,7 +191,7 @@ describe("useChatNotifications (regression: no I18nProvider / NodeStateProvider)
         peerId="self"
         locale="ja"
         onMount={(ns) => {
-          fireRef = ns.fire;
+          fireRef = ns.fireMessage;
         }}
       />,
     );
@@ -195,5 +203,34 @@ describe("useChatNotifications (regression: no I18nProvider / NodeStateProvider)
       recipient: {} as any,
     } as ChatMessage);
     expect(captured()?.body).toBe("新しいチャットメッセージ");
+  });
+
+  it("notifies for inbound chat:room-message events", () => {
+    const { captured } = installNotificationRecorder();
+    let fireRoomRef: (event: { roomId: string; message: ChatMessage }) => void = () => {};
+    render(
+      <Harness
+        enabled={true}
+        wsOpen={true}
+        bonds={[]}
+        peerId="peer-self"
+        locale="en"
+        onMount={(ns) => {
+          fireRoomRef = ns.fireRoomMessage;
+        }}
+      />,
+    );
+    fireRoomRef({
+      roomId: "room:family-trip",
+      message: {
+        messageId: "rm1",
+        content: { text: "dinner?", attachments: [] } as any,
+        metadata: { timestamp: new Date().toISOString() } as any,
+        sender: { nodeId: "other", ownerId: "mom", displayName: "Mom" } as any,
+        recipient: { ownerId: "room:family-trip" } as any,
+      } as ChatMessage,
+    });
+    expect(captured()?.title).toBe("Mom");
+    expect(captured()?.body).toBe("dinner?");
   });
 });

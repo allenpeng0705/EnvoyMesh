@@ -106,28 +106,35 @@ export async function localAgentNetworkEngineReady(input: {
   isExtAgentBridgeReady: () => boolean;
   /** When engine is Ext: HTTP/sidecar hello to the active Ext Agent. */
   probeExtAgent?: () => Promise<{ reachable: boolean }>;
+  /** When engine is envoy-harness: model adapter reachability probe. */
+  isEnvoyHarnessReady?: () => boolean;
 }): Promise<LocalAgentNetworkEngineReadyResult> {
-  const engine = input.engine === "ext" ? "ext" : "openclaw";
-  if (engine === "ext") {
+  if (input.engine === "ext") {
     if (!input.isExtAgentBridgeReady()) {
-      return { ready: false, engine, reason: "ext_bridge_down" };
+      return { ready: false, engine: "ext", reason: "ext_bridge_down" };
     }
     if (input.probeExtAgent) {
       try {
         const probe = await input.probeExtAgent();
         return probe.reachable
-          ? { ready: true, engine }
-          : { ready: false, engine, reason: "ext_agent_unreachable" };
+          ? { ready: true, engine: "ext" }
+          : { ready: false, engine: "ext", reason: "ext_agent_unreachable" };
       } catch {
-        return { ready: false, engine, reason: "ext_agent_unreachable" };
+        return { ready: false, engine: "ext", reason: "ext_agent_unreachable" };
       }
     }
-    return { ready: true, engine };
+    return { ready: true, engine: "ext" };
+  }
+  if (input.engine === "envoy-harness") {
+    const ready = input.isEnvoyHarnessReady?.() ?? false;
+    return ready
+      ? { ready: true, engine: "envoy-harness" }
+      : { ready: false, engine: "envoy-harness", reason: "envoy_harness_unavailable" };
   }
   const ready = input.isOpenClawReady();
   return ready
-    ? { ready: true, engine }
-    : { ready: false, engine, reason: "openclaw_unavailable" };
+    ? { ready: true, engine: "openclaw" }
+    : { ready: false, engine: "openclaw", reason: "openclaw_unavailable" };
 }
 
 /** Same-stream reply for inbound `task.chain.ready.request`. */
@@ -142,6 +149,7 @@ export async function handleChainReadyRequestInbound(input: {
   isOpenClawReady: () => boolean;
   isExtAgentBridgeReady: () => boolean;
   probeExtAgent?: () => Promise<{ reachable: boolean }>;
+  isEnvoyHarnessReady?: () => boolean;
 }): Promise<{ ok: true; responded: boolean } | { ok: false; reason: string }> {
   if (input.envelope.intent !== "task.chain.ready.request") {
     return { ok: false, reason: "wrong_intent" };
@@ -158,6 +166,7 @@ export async function handleChainReadyRequestInbound(input: {
     isOpenClawReady: input.isOpenClawReady,
     isExtAgentBridgeReady: input.isExtAgentBridgeReady,
     probeExtAgent: input.probeExtAgent,
+    isEnvoyHarnessReady: input.isEnvoyHarnessReady,
   });
   const responsePayload = createTaskChainReadyResponsePayload({
     probeId: request.probeId,

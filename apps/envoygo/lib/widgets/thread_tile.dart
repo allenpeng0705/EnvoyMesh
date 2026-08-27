@@ -30,7 +30,7 @@ class ThreadTile extends StatelessWidget {
     );
 
     return ListTile(
-      leading: _threadLeading(thread, title),
+      leading: _threadLeading(context, thread, title),
       title: Row(
         children: [
           Expanded(
@@ -85,7 +85,11 @@ class ThreadTile extends StatelessWidget {
     );
   }
 
-  Widget _threadLeading(ChatThread thread, String localizedTitle) {
+  Widget _threadLeading(
+    BuildContext context,
+    ChatThread thread,
+    String localizedTitle,
+  ) {
     switch (thread.type) {
       case ChatThreadType.envoyai:
         return ClipOval(
@@ -144,7 +148,26 @@ class ThreadTile extends StatelessWidget {
           radius: _avatarRadius,
           child: Icon(Icons.code),
         );
+      case ChatThreadType.envoyHarness:
+        return CircleAvatar(
+          radius: _avatarRadius,
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          child: Icon(
+            Icons.integration_instructions_outlined,
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
+          ),
+        );
       case ChatThreadType.terminal:
+        if (thread.displayName.startsWith('EH ')) {
+          return CircleAvatar(
+            radius: _avatarRadius,
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            child: Icon(
+              Icons.integration_instructions_outlined,
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+            ),
+          );
+        }
         return const CircleAvatar(
           radius: _avatarRadius,
           child: Icon(Icons.terminal),

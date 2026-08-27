@@ -35,6 +35,10 @@ class _ActiveChainDetailScreenState
   String? _loadError;
   /// Cancel / rebalance / step-control errors — polls must not wipe these.
   String? _actionError;
+  /// Phase 63 — true while a chainResolveSpeculation({action: "auto"})
+  /// RPC is in flight, so the button shows a spinner and is disabled
+  /// to prevent double-tap.
+  bool _resolvingSpeculation = false;
   Timer? _poll;
   final _rebalanceCtl = TextEditingController(text: '1.00');
   int _refreshGen = 0;
@@ -303,11 +307,23 @@ class _ActiveChainDetailScreenState
       _actionError = null;
     });
     try {
-      await client.chainCancel(
+      final result = await client.chainCancel(
         chainId: widget.chainId,
         reason: l10n.chainsCancelReason,
       );
       if (!mounted) return;
+      final cancelled = result['cancelled'];
+      final ok = cancelled is List
+          ? cancelled.isNotEmpty || result['ok'] == true
+          : result['ok'] != false;
+      if (!ok && result['ok'] == false) {
+        setState(() {
+          _actionError = (result['reason'] as String?)?.isNotEmpty == true
+              ? result['reason'] as String
+              : l10n.chainsCancelFailed;
+        });
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.chainsCancelDone)),
       );
@@ -402,6 +418,49 @@ class _ActiveChainDetailScreenState
     }
   }
 
+  /// Phase 63 — auto-resolve the first pending speculation disagreement.
+  /// Loops over all reviews in `state.speculationReview` until one
+  /// succeeds; on success, refreshes the chain state. The orchestrator
+  /// picks the cheaper verified attempt (deterministic, no LLM) on
+  /// disagreement and reassigns the step on `none_pass`.
+  Future<void> _resolveSpeculationAuto() async {
+    final l10n = AppLocalizations.of(context);
+    final client = _clientOrNull();
+    if (client == null) {
+      setState(() => _actionError = l10n.commonNotConnectedHome);
+      return;
+    }
+    final reviews = _state?.speculationReview;
+    if (reviews == null || reviews.isEmpty) return;
+    setState(() {
+      _resolvingSpeculation = true;
+      _actionError = null;
+    });
+    try {
+      for (final review in reviews) {
+        final result = await client.chainResolveSpeculation(
+          chainId: widget.chainId,
+          subtaskId: review.subtaskId,
+          action: 'auto',
+        );
+        if (!mounted) return;
+        if (result['ok'] == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(l10n.chainsSpeculationReviewResolved)),
+          );
+          await _refresh();
+          return;
+        }
+      }
+      if (!mounted) return;
+      setState(() => _actionError = l10n.chainsSpeculationReviewFailed);
+    } catch (e) {
+      if (mounted) setState(() => _actionError = e.toString());
+    } finally {
+      if (mounted) setState(() => _resolvingSpeculation = false);
+    }
+  }
+
   bool get _showRebalance {
     final st = _state;
     if (st == null) return false;
@@ -409,6 +468,45 @@ class _ActiveChainDetailScreenState
     if (st.rebalancePolicy == 'never') return false;
     final level = st.budgetWarningLevel;
     return level == 'warn' || level == 'exceeded';
+  }
+
+  String _teamStrategyLabel(AppLocalizations l10n, String id) {
+    switch (id) {
+      case 'fastest':
+        return l10n.chainsStrategyFastest;
+      case 'cheapest':
+        return l10n.chainsStrategyCheapest;
+      case 'highest-confidence':
+        return l10n.chainsStrategyHighestConfidence;
+      case 'privacy-local':
+        return l10n.chainsStrategyPrivacyLocal;
+      case 'diverse-model':
+        return l10n.chainsStrategyDiverseModel;
+      case 'balanced':
+      default:
+        return l10n.chainsStrategyBalanced;
+    }
+  }
+
+  Future<void> _showStepProvenance({
+    required ChainLiveStep step,
+    ChainProvenanceSummary? summary,
+  }) async {
+    if (!mounted) return;
+    final client = _clientOrNull();
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return _ChainStepProvenanceSheet(
+          chainId: widget.chainId,
+          step: step,
+          summary: summary,
+          client: client,
+        );
+      },
+    );
   }
 
   @override
@@ -498,6 +596,69 @@ class _ActiveChainDetailScreenState
                     ),
                     const SizedBox(height: 12),
                   ],
+                  if (st.speculationReview.isNotEmpty) ...[
+                    Card(
+                      color: theme.colorScheme.tertiaryContainer,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.fork_left,
+                                  size: 20,
+                                  color:
+                                      theme.colorScheme.onTertiaryContainer,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    l10n.chainsSpeculationReviewTitle,
+                                    style: theme.textTheme.titleMedium,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(l10n.chainsSpeculationReviewBody),
+                            for (final review in st.speculationReview) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                review.reason == 'none_pass'
+                                    ? l10n.chainsSpeculationReviewNonePass
+                                    : l10n.chainsSpeculationReviewDisagree,
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: _resolvingSpeculation
+                                    ? null
+                                    : _resolveSpeculationAuto,
+                                icon: _resolvingSpeculation
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.auto_awesome, size: 18),
+                                label: Text(
+                                  l10n.chainsSpeculationReviewAutoResolve,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
@@ -505,13 +666,34 @@ class _ActiveChainDetailScreenState
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            st.statusLabel,
+                            st.statusLabel(l10n),
                             style: theme.textTheme.titleMedium,
                           ),
+                          if (st.teamStrategyId != null &&
+                              st.teamStrategyId!.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Chip(
+                              label: Text(
+                                _teamStrategyLabel(l10n, st.teamStrategyId!),
+                              ),
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          ],
+                          if (st.recoveryPhase == 'recovering') ...[
+                            const SizedBox(height: 8),
+                            Chip(
+                              label: Text(l10n.chainsDetailRecovering),
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          ],
                           const SizedBox(height: 8),
                           Text(
                             l10n.chainsAwardedSummary(
-                              st.statusLabel,
+                              st.statusLabel(l10n),
                               st.awardedCount,
                               st.subtaskCount,
                             ),
@@ -596,6 +778,14 @@ class _ActiveChainDetailScreenState
                     const SizedBox(height: 8),
                     ..._orderedSteps(st.steps).map((entry) {
                       final step = entry.step;
+                      final matches = st.provenanceSummary
+                          .where((p) => p.subtaskId == step.subtaskId);
+                      final summary =
+                          matches.isEmpty ? null : matches.first;
+                      final attemptCount =
+                          step.attemptCount > 0
+                              ? step.attemptCount
+                              : (summary?.attemptCount ?? 0);
                       final obj = step.objective.length > 100
                           ? '${step.objective.substring(0, 100)}…'
                           : step.objective;
@@ -617,11 +807,23 @@ class _ActiveChainDetailScreenState
                           children: [
                             Text(obj, style: theme.textTheme.bodyMedium),
                             Text(
-                              '${step.state}${step.requiredRole != null ? " · ${step.requiredRole}" : ""}',
+                              [
+                                step.state,
+                                if (step.requiredRole != null) step.requiredRole!,
+                                if (attemptCount > 0)
+                                  l10n.chainsAttemptCount(attemptCount),
+                              ].join(' · '),
                               style: theme.textTheme.bodySmall,
                             ),
                             if (waiting != null)
                               Text(waiting, style: theme.textTheme.bodySmall),
+                            TextButton(
+                              onPressed: () => _showStepProvenance(
+                                step: step,
+                                summary: summary,
+                              ),
+                              child: Text(l10n.chainsExecutionDetails),
+                            ),
                             if (showCancel || showReassign)
                               Padding(
                                 padding: const EdgeInsets.only(top: 4),
@@ -755,4 +957,197 @@ List<({ChainLiveStep step, int depth})> _orderedSteps(List<ChainLiveStep> steps)
 String _shortId(String id) {
   if (id.length <= 13) return id;
   return id.substring(0, 13);
+}
+
+/// Phase 60A — shows the sheet immediately, then lazy-loads provenance.
+class _ChainStepProvenanceSheet extends StatefulWidget {
+  final String chainId;
+  final ChainLiveStep step;
+  final ChainProvenanceSummary? summary;
+  final NodeServiceClient? client;
+
+  const _ChainStepProvenanceSheet({
+    required this.chainId,
+    required this.step,
+    required this.summary,
+    required this.client,
+  });
+
+  @override
+  State<_ChainStepProvenanceSheet> createState() =>
+      _ChainStepProvenanceSheetState();
+}
+
+class _ChainStepProvenanceSheetState extends State<_ChainStepProvenanceSheet> {
+  bool _loading = true;
+  String? _loadError;
+  Map<String, dynamic>? _provenance;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_load());
+    });
+  }
+
+  Future<void> _load() async {
+    final client = widget.client;
+    if (client == null) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _loadError = AppLocalizations.of(context).commonNotConnectedHome;
+      });
+      return;
+    }
+    try {
+      final provenance = await client.getChainStepProvenance(
+        widget.chainId,
+        widget.step.subtaskId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _provenance = provenance;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _loadError = e.toString();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final step = widget.step;
+    final summary = widget.summary;
+    final summaryMap = _provenance?['summary'];
+    final summaryAttempts = summaryMap is Map
+        ? (summaryMap['attemptCount'] as num?)?.toInt()
+        : null;
+    final summaryWorker =
+        summaryMap is Map ? summaryMap['workerPeerId'] as String? : null;
+    final summaryState =
+        summaryMap is Map ? summaryMap['state'] as String? : null;
+    final lastReason = summaryMap is Map
+        ? summaryMap['lastReason'] as String?
+        : summary?.lastReason;
+    final events =
+        (_provenance?['events'] as List?)?.whereType<Map>().toList() ??
+            const <Map>[];
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                l10n.chainsExecutionDetails,
+                style: theme.textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                step.objective,
+                style: theme.textTheme.bodyMedium,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                l10n.chainsProvenanceSummaryLine(
+                  summaryAttempts ??
+                      (step.attemptCount > 0
+                          ? step.attemptCount
+                          : (summary?.attemptCount ?? 0)),
+                  _shortId(
+                    summaryWorker ??
+                        step.workerPeerId ??
+                        summary?.workerPeerId ??
+                        '—',
+                  ),
+                  summaryState ?? summary?.state ?? step.state,
+                ),
+                style: theme.textTheme.bodySmall,
+              ),
+              if (lastReason != null && lastReason.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  l10n.chainsLastReason(lastReason),
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+              if (_loadError != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _loadError!,
+                  style: TextStyle(color: theme.colorScheme.error),
+                ),
+              ],
+              const SizedBox(height: 12),
+              Text(
+                l10n.chainsTechnicalDetails,
+                style: theme.textTheme.titleSmall,
+              ),
+              const SizedBox(height: 6),
+              if (_loading)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Row(
+                    children: [
+                      const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        l10n.commonLoading,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                )
+              else if (events.isEmpty)
+                Text(
+                  l10n.chainsProvenanceEmpty,
+                  style: theme.textTheme.bodySmall,
+                )
+              else
+                ...events.map((raw) {
+                  final e = Map<String, dynamic>.from(raw);
+                  final seq = e['seq'];
+                  final type = e['type']?.toString() ?? '';
+                  final attemptId = e['attemptId']?.toString();
+                  final worker = e['workerPeerId']?.toString();
+                  final transport = e['transportPath']?.toString();
+                  final reason = e['reason']?.toString();
+                  final parts = <String>[
+                    if (seq != null) '#$seq',
+                    type,
+                    if (attemptId != null && attemptId.isNotEmpty) attemptId,
+                    if (worker != null && worker.isNotEmpty) _shortId(worker),
+                    if (transport != null && transport.isNotEmpty) transport,
+                    if (reason != null && reason.isNotEmpty) reason,
+                  ];
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      parts.join(' · '),
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  );
+                }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

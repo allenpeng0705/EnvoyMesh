@@ -1,5 +1,7 @@
 /** Thread key for EnvoyAI (Human→Assistant) chat in `chat-messages.jsonl`. */
 export const ENVOY_AI_THREAD_KEY = "__envoy_ai__";
+/** U4+ — the dedicated Envoy (envoy-harness) chat thread. */
+export const ENVOY_HARNESS_THREAD_KEY = "__envoy_harness__";
 
 export function isEnvoyAiThreadKey(threadKey: string | null | undefined): boolean {
   const key = threadKey?.trim();

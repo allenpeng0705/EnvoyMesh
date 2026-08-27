@@ -113,6 +113,11 @@ export const aiSettingsMessages = {
     piStatusNotInstalled: "Not installed",
     piStatusError: "Error",
     enablePi: "Enable Pi",
+    piCodingBackend: "Coding backend",
+    piCodingBackendPi: "Pi (sidecar)",
+    piCodingBackendEh: "envoy-harness (ACP)",
+    piCodingBackendHint:
+      "Routes sendToPi / approvals through the same Pi UI. Switch here or in EnvoyGo → Pi Agent. Pi TUI terminal stays Pi-only.",
     piAutoRunPolicy: "Auto-run policy",
     piAutoRunAlwaysConfirm: "Always confirm (recommended)",
     piAutoRunAlwaysConfirmDesc: "Every tool action surfaces as a confirm dialog.",
@@ -187,7 +192,7 @@ export const aiSettingsMessages = {
     stopping: "Stopping…",
     stopOk: "Envoy Local stopped — using cloud/Ollama settings",
     stopHint:
-      "Stop leaves your cloud/Ollama provider settings unchanged and switches inference back to them.",
+      "Stop leaves your cloud/Ollama provider settings unchanged. Chat already prefers cloud when configured; Local is only used when no cloud provider is set.",
     disable: "Disable Envoy Local",
     restart: "Restart engine",
     cancel: "Cancel download",
@@ -217,12 +222,15 @@ export const aiSettingsMessages = {
     closeManage: "Close",
     summaryOff: "Off — open Manage to enable a local llama-server.",
     summaryReady: "Ready · {model}",
+    summaryFallback: "Standby · {model} (cloud/Ollama is active)",
     summaryBusy: "{status}",
     usageStatus: "AI provider",
     statusInUse: "In use",
     statusNotInUse: "Not in use",
     cloudFallbackHint: "Cloud/Ollama is active ({provider}).",
     cloudStandbyHint: "Cloud/Ollama stays configured: {provider} (used when Local is stopped).",
+    localAsFallbackHint:
+      "Chat uses {provider}. Envoy Local ({model}) stays available as an offline fallback if you clear the cloud provider.",
     modelsHeading: "Models",
     modelsDesc:
       "Chat GGUFs go in the models folder; Knowledge embedding GGUFs go in embed-models. Drop your own files, Refresh, then pick the active model.",
@@ -334,6 +342,8 @@ export const aiSettingsMessages = {
     statusStandbyLocal: "Not in use",
     statusStandbyLocalHint:
       "Envoy Local is running. Your cloud/Ollama settings here stay saved; Stop Local to use them again.",
+    statusLocalFallbackHint:
+      "Envoy Local is running as an offline fallback. Chat uses your cloud/Ollama provider above.",
     providerLabel: "Provider",
     presetHint:
       "Presets fill endpoint and model suggestions. OpenClaw, chat drafts, and Pi (when not overridden) all use this setting.",

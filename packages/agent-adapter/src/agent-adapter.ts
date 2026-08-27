@@ -89,6 +89,16 @@ export interface ExecuteInput {
    * propagate to its runtime if possible.
    */
   signal: AbortSignal;
+  /**
+   * v1.16 — per-call model override hint (cross-model-on-same-runtime).
+   * The orchestrator's cross-verify may ask the SAME runtime to re-run
+   * with a different model than the worker (e.g. worker on envoy-harness
+   * + claude → verifier on envoy-harness + claude-instant). The hint is
+   * runtime-specific ("<provider>:<model>" for envoy-harness; ignored by
+   * runtimes that don't support per-call overrides). Optional and
+   * additive — adapters that can't honor it run with their default model.
+   */
+  verifierModel?: string;
 }
 
 /**

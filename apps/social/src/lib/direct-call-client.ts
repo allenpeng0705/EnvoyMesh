@@ -264,6 +264,11 @@ export class DirectCallClient implements NodeServiceClient {
   chainGetState(params: Parameters<NodeService["chainGetState"]>[0]): ReturnType<NodeService["chainGetState"]> {
     return this._ns.chainGetState(params);
   }
+  chainGetStepProvenance(
+    params: Parameters<NodeService["chainGetStepProvenance"]>[0],
+  ): ReturnType<NodeService["chainGetStepProvenance"]> {
+    return this._ns.chainGetStepProvenance(params);
+  }
   chainListActive(params?: Parameters<NodeService["chainListActive"]>[0]): ReturnType<NodeService["chainListActive"]> {
     return this._ns.chainListActive(params ?? {});
   }
@@ -334,6 +339,19 @@ export class DirectCallClient implements NodeServiceClient {
   chainPreviewGoal(params: Parameters<NodeService["chainPreviewGoal"]>[0]): ReturnType<NodeService["chainPreviewGoal"]> {
     return this._ns.chainPreviewGoal(params);
   }
+  agentNetworkDiagnosticsSnapshot(): ReturnType<NodeService["agentNetworkDiagnosticsSnapshot"]> {
+    return this._ns.agentNetworkDiagnosticsSnapshot();
+  }
+  agentNetworkSimulate(
+    params: Parameters<NodeService["agentNetworkSimulate"]>[0],
+  ): ReturnType<NodeService["agentNetworkSimulate"]> {
+    return this._ns.agentNetworkSimulate(params);
+  }
+  agentNetworkExportDiagnostics(
+    params: Parameters<NodeService["agentNetworkExportDiagnostics"]>[0],
+  ): ReturnType<NodeService["agentNetworkExportDiagnostics"]> {
+    return this._ns.agentNetworkExportDiagnostics(params);
+  }
   chainStartFromGoal(params: Parameters<NodeService["chainStartFromGoal"]>[0]): ReturnType<NodeService["chainStartFromGoal"]> {
     return this._ns.chainStartFromGoal(params);
   }
@@ -342,6 +360,9 @@ export class DirectCallClient implements NodeServiceClient {
   }
   chainResolveIteration(params: Parameters<NodeService["chainResolveIteration"]>[0]): ReturnType<NodeService["chainResolveIteration"]> {
     return this._ns.chainResolveIteration(params);
+  }
+  chainResolveSpeculation(params: Parameters<NodeService["chainResolveSpeculation"]>[0]): ReturnType<NodeService["chainResolveSpeculation"]> {
+    return this._ns.chainResolveSpeculation(params);
   }
   chainExportCosts(params: Parameters<NodeService["chainExportCosts"]>[0]): ReturnType<NodeService["chainExportCosts"]> {
     return this._ns.chainExportCosts(params);
@@ -876,6 +897,120 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.sendToPi(text);
   }
 
+  async getEnvoyHarnessStatus() {
+    return this._ns.getEnvoyHarnessStatus();
+  }
+
+  async askEnvoyHarness(text: string) {
+    return this._ns.askEnvoyHarness(text);
+  }
+
+  async startEnvoyHarnessTurn(
+    text: string,
+    attachments?: import("@envoymesh/api").AgentAttachmentRef[],
+    chatId?: string,
+  ) {
+    return this._ns.startEnvoyHarnessTurn(
+      text,
+      {
+        ...(attachments && attachments.length > 0 ? { attachments } : {}),
+        ...(chatId ? { chatId } : {}),
+      },
+    );
+  }
+
+  async getEnvoyHarnessTurnStatus(chatId?: string) {
+    return this._ns.getEnvoyHarnessTurnStatus(chatId);
+  }
+
+  async setEnvoyHarnessAutoRunPolicy(policy: string) {
+    return this._ns.setEnvoyHarnessAutoRunPolicy(policy);
+  }
+
+  async getEnvoyHarnessChatHistory(chatId?: string) {
+    return this._ns.getEnvoyHarnessChatHistory(chatId);
+  }
+
+  async listEnvoyHarnessChats() {
+    return this._ns.listEnvoyHarnessChats();
+  }
+
+  async createEnvoyHarnessChat(opts: { cwd: string; title?: string }) {
+    return this._ns.createEnvoyHarnessChat(opts);
+  }
+
+  async openEnvoyHarnessChat(chatId: string) {
+    return this._ns.openEnvoyHarnessChat(chatId);
+  }
+
+  async removeEnvoyHarnessChat(chatId: string) {
+    return this._ns.removeEnvoyHarnessChat(chatId);
+  }
+
+  async deleteEnvoyHarnessChatTurn(opts: { turnId: string; chatId?: string }) {
+    return this._ns.deleteEnvoyHarnessChatTurn(opts);
+  }
+
+  async getEnvoyHarnessTurnReview(turnId: string) {
+    return this._ns.getEnvoyHarnessTurnReview(turnId);
+  }
+
+  async revertEnvoyHarnessTurn(turnId: string) {
+    return this._ns.revertEnvoyHarnessTurn(turnId);
+  }
+
+  async acceptEnvoyHarnessTurnReview(turnId: string, paths?: readonly string[]) {
+    return this._ns.acceptEnvoyHarnessTurnReview(turnId, paths);
+  }
+
+  async revertEnvoyHarnessTurnFiles(turnId: string, paths: readonly string[]) {
+    return this._ns.revertEnvoyHarnessTurnFiles(turnId, paths);
+  }
+
+  async openEnvoyHarnessFile(params: { path: string; chatId?: string }) {
+    return this._ns.openEnvoyHarnessFile(params);
+  }
+
+  async getEnvoyHarnessCommandCatalog() {
+    return this._ns.getEnvoyHarnessCommandCatalog();
+  }
+
+  async recordEnvoyHarnessUxEvent(event: import("@envoymesh/api").EhUxTelemetryEvent) {
+    return this._ns.recordEnvoyHarnessUxEvent(event);
+  }
+
+  async resetEnvoyHarnessChat(chatId?: string) {
+    return this._ns.resetEnvoyHarnessChat(chatId);
+  }
+
+  async ehRespondToPermission(params: { requestId: string; allowed: boolean }) {
+    return this._ns.ehRespondToPermission(params);
+  }
+
+  async cancelEnvoyHarnessTurn(chatId?: string) {
+    return this._ns.cancelEnvoyHarnessTurn(chatId);
+  }
+
+  async listEnvoyHarnessPeers() {
+    return this._ns.listEnvoyHarnessPeers();
+  }
+
+  async setEnvoyHarnessProjectPath(path: string) {
+    return this._ns.setEnvoyHarnessProjectPath(path);
+  }
+
+  async invokeEnvoyHarnessEhui(
+    request: import("@envoymesh/api").EhuiInvokeRequest,
+  ) {
+    return this._ns.invokeEnvoyHarnessEhui(request);
+  }
+
+  async ensureEnvoyTerminalSession(
+    params?: import("@envoymesh/api").EnsureEnvoyTerminalParams,
+  ) {
+    return this._ns.ensureEnvoyTerminalSession(params);
+  }
+
   async ensurePiTerminalSession(
     params?: import("@envoymesh/api").EnsurePiTerminalParams,
   ) {
@@ -884,6 +1019,12 @@ export class DirectCallClient implements NodeServiceClient {
 
   async piRespondToProposal(params: { uiRequestId: string; confirmed: boolean }) {
     return this._ns.piRespondToProposal(params);
+  }
+
+  async ehRespondToUserQuestion(
+    params: import("@envoymesh/api").EhRespondToUserQuestionParams,
+  ) {
+    return this._ns.ehRespondToUserQuestion(params);
   }
 
   async getOpenClawPlugins() { return this._ns.getOpenClawPlugins(); }

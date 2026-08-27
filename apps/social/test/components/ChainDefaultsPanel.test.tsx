@@ -42,7 +42,7 @@ describe("ChainDefaultsPanel", () => {
     await waitFor(() => {
       expect(screen.getByText("Team job defaults")).toBeDefined();
     });
-    expect(screen.getByText(/Default settings for new agent chains/)).toBeDefined();
+    expect(screen.getByText(/Default settings for new team jobs/)).toBeDefined();
   });
 
   it("loads rebalancePolicy from chainGetDefaults on mount", async () => {
@@ -84,7 +84,7 @@ describe("ChainDefaultsPanel", () => {
     await waitFor(() => {
       expect(chainSetDefaults).toHaveBeenCalledTimes(1);
       const call = chainSetDefaults.mock.calls[0][0];
-      expect(call.defaults.rebalancePolicy).toBe("auto"); // default
+      expect(call.defaults.rebalancePolicy).toBe("never"); // default
       expect(call.defaults.stallTimeoutMs).toBeDefined();
       expect(call.defaults.maxAutoRebalances).toBeDefined();
       expect(call.defaults.allowLlmDecompose).toBeDefined();

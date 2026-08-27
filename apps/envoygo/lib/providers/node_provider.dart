@@ -117,6 +117,21 @@ class NodeState {
     return 'owner';
   }
 
+  /// Owner-controlled Coding assistants gate (Pi + Envoy Harness chat).
+  /// Requires a paired home node — without one there is nothing to talk to.
+  bool get mayUseCoding {
+    if (activeNode == null) return false;
+    if (isOwnerProfile) return true;
+    final pid = effectiveFamilyProfileId.trim();
+    if (pid.isEmpty || pid == 'owner') return false;
+    for (final p in familyProfiles) {
+      if (p['id']?.toString() == pid) {
+        return p['codingEnabled'] == true;
+      }
+    }
+    return false;
+  }
+
   NodeState copyWith({
     StoredNode? activeNode,
     bool clearActiveNode = false,
@@ -812,11 +827,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
         _ref.read(chatProvider.notifier).refreshThreadDisplayNames();
       });
 
-      // Rooms and terminals sync directly using _nodeService.
+      // Rooms and terminals — same pattern as EH: one sync call with stale prune.
       _syncRoomsDirect(nodeService, chatNotifier);
-      _syncTerminalsDirect(nodeService, chatNotifier, terminalNotifier);
-      // Sync all terminal sessions (running and stopped) as chat threads.
-      chatNotifier.syncTerminals();
+      unawaited(chatNotifier.syncTerminals());
+      unawaited(chatNotifier.syncEhChats());
       _syncInboxDirect(nodeService, chatNotifier);
       // Phase 45E — pull persisted feed.notify Inbox rows from home.
       _ref.read(feedNotifyProvider.notifier).refresh();
@@ -827,6 +841,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       if (node != null) {
         unawaited(chatNotifier.loadThreads(node.id));
       }
+      unawaited(chatNotifier.syncFamilyRooms());
     }
 
     // EnvoyAI (OpenClaw) — always create, built-in.
@@ -856,6 +871,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       final configMap = Map<String, dynamic>.from(config as Map);
       _applyFamilyConfig(configMap);
       _syncAiBotsFromConfig(configMap, chatNotifier);
+      unawaited(chatNotifier.syncEhChats());
     }).catchError((e) {
       _log('getNodeConfig for aiBots failed: $e');
     });
@@ -1109,29 +1125,6 @@ class NodeNotifier extends StateNotifier<NodeState> {
     });
   }
 
-  void _syncTerminalsDirect(NodeServiceClient nodeService,
-      ChatNotifier chatNotifier, TerminalNotifier terminalNotifier) {
-    nodeService.listTerminalSessions().then((sessions) {
-      // Update terminal state with all sessions (running and stopped).
-      terminalNotifier.setSessions(sessions);
-      // Only sync running terminals to chat as messages.
-      final running = sessions
-          .where((s) => s.runningProcess != null && s.runningProcess!.isNotEmpty);
-      for (final session in running) {
-        chatNotifier.onChatMessage({
-          'senderOwnerId': 'terminal',
-          'text': '${session.runningProcess ?? 'shell'} — ${session.cwd ?? '~'}',
-          'messageId': 'term_${session.id}',
-          'createdAt': session.createdAt?.toIso8601String(),
-          'terminalId': session.id,
-          'terminalName': session.name,
-        });
-      }
-    }).catchError((e) {
-      _log('_syncTerminalsDirect failed: $e');
-    });
-  }
-
   void _syncInboxDirect(
       NodeServiceClient nodeService, ChatNotifier chatNotifier) {
     nodeService.listPendingSocialIntroProposals().then((result) {
@@ -1347,6 +1340,16 @@ class NodeNotifier extends StateNotifier<NodeState> {
         chatNotifier.onRoomMessage(data);
       }
     });
+    client.on('chat:delivered', (data) {
+      if (data is Map<String, dynamic>) {
+        chatNotifier.onChatDelivered(data);
+      }
+    });
+    client.on('chat:delivery-failed', (data) {
+      if (data is Map<String, dynamic>) {
+        chatNotifier.onChatDeliveryFailed(data);
+      }
+    });
     client.on('chat:room-updated', (data) {
       // Mesh room events are owner-only; family rooms also arrive here
       // remapped — family members still need room-updated for groups.
@@ -1389,9 +1392,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     });
     client.on('terminal:session-updated', (_) async {
       if (!state.isOwnerProfile) return;
-      // Load sessions first, then sync to ensure state is populated.
-      await terminalNotifier.loadSessions();
-      chatNotifier.syncTerminals();
+      await chatNotifier.syncTerminals();
     });
     client.on('feed:notify', (data) {
       if (!state.isOwnerProfile) return;
@@ -1414,6 +1415,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       // Always sync — family gets [] (or their own bots); clearing removes
       // owner bots that previously leaked onto Mom/Dad devices.
       _syncAiBotsFromConfig(configMap, chatNotifier);
+      unawaited(chatNotifier.syncEhChats());
     });
   }
 

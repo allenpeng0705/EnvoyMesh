@@ -47,6 +47,8 @@ import {
 } from "../src/chain-arbitration.js";
 import type { ChainVerifyLoopDeps } from "../src/chain-verify-loop.js";
 import type { ChainAuditSink } from "../src/chain-inbound-types.js";
+import { WorkerLeaseStore } from "../src/worker-lease-store.js";
+import { WorkerReliabilityStore } from "../src/worker-reliability-store.js";
 
 const NOW = new Date("2026-08-18T00:00:00.000Z");
 const NOW_ISO = NOW.toISOString();
@@ -115,7 +117,18 @@ function makeContext(opts: { openClawReady?: boolean; piReady?: boolean }): Fake
 
   const ctx = {
     getChainStore: () => undefined as never,
-    getChainSideState: () => ({ remoteManifests: new Map(), readyProbeCache: new Map() }),
+    getChainSideState: () => ({
+      remoteManifests: new Map(),
+      readyProbeCache: new Map(),
+      workerLeases: new WorkerLeaseStore(),
+      workerReliability: new WorkerReliabilityStore(),
+      teamStrategies: new Map(),
+      recovery: new Map(),
+      orchestratorEpoch: "orch_test",
+      workerEpoch: "worker_test",
+      attemptReceipts: { upsert() {}, buildReports() { return []; }, listForChain() { return []; }, get() { return undefined; }, prune() { return 0; }, size() { return 0; }, clear() {} },
+      recoveredPartialKeys: new Set(),
+    }),
     getTaskStore: () => undefined,
     getProfile: () => profile,
     getApprovalQueue: () => null,
@@ -139,6 +152,7 @@ function makeContext(opts: { openClawReady?: boolean; piReady?: boolean }): Fake
     },
     getAgentNetworkWorkerEngine: () => "openclaw" as const,
     isExtAgentBridgeReady: () => false,
+    isEnvoyHarnessReady: () => false,
     askExtAgent: async () => "",
     probeExtAgent: async () => ({ reachable: false }),
     getVaultDir: () => undefined,

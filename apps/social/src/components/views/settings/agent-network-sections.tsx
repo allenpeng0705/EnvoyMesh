@@ -495,6 +495,14 @@ export function WorkersStatusSection() {
         {t("settings.agentNetwork.workersStatus.workersVisible", {
           count: String(workerCount),
         })}
+        {joinOn ? (
+          <>
+            {" · "}
+            <span data-testid="workers-status-lease-publishing">
+              {t("settings.agentNetwork.workersStatus.leasePublishing")}
+            </span>
+          </>
+        ) : null}
       </p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <button
@@ -1759,6 +1767,103 @@ export function SetupSponsorFriendSection() {
         {saved ? <span className="settings-hint">{t("settings.agentNetwork.setupSponsorFriend.saved")}</span> : null}
         {runMsg ? <span className="settings-hint">{runMsg}</span> : null}
       </div>
+      {error ? <p className="library-view-error">{error}</p> : null}
+    </section>
+  );
+}
+
+/** Phase 60F — no-spend Agent Network simulation (readiness / dry-plan / failover). */
+export function AgentNetworkTestSection() {
+  const t = useT();
+  const nodeService = useNodeService();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [exportJson, setExportJson] = useState<string | null>(null);
+  const [mode, setMode] = useState<"readiness" | "dry-plan" | "failover" | "recovery">(
+    "readiness",
+  );
+  const [goal, setGoal] = useState("");
+
+  const testNetworkModeHintKey = {
+    readiness: "modeReadinessHint",
+    "dry-plan": "modeDryPlanHint",
+    failover: "modeFailoverHint",
+    recovery: "modeRecoveryHint",
+  } as const;
+
+  const run = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setExportJson(null);
+    try {
+      const snap = await nodeService.agentNetworkDiagnosticsSnapshot();
+      const sim = await nodeService.agentNetworkSimulate({
+        mode,
+        ...(mode === "dry-plan" && goal.trim() ? { goal: goal.trim() } : {}),
+        ...(mode === "failover" ? { injectFault: "worker_offline" as const } : {}),
+        ...(mode === "recovery" ? { injectFault: "assigner_restarted" as const } : {}),
+      });
+      setSummary(
+        `${sim.summary} · workers=${snap.workers.length} · join=${snap.joinEnabled ? "on" : "off"}`,
+      );
+      const exported = await nodeService.agentNetworkExportDiagnostics({
+        simulationId: sim.simulationId,
+      });
+      setExportJson(exported.json);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }, [goal, mode, nodeService]);
+
+  return (
+    <section className="settings-section" data-testid="agent-network-test-section">
+      <h3>{t("settings.agentNetwork.testNetwork.heading")}</h3>
+      <p className="settings-hint">{t("settings.agentNetwork.testNetwork.desc")}</p>
+      <p className="settings-hint">{t("settings.agentNetwork.testNetwork.noSpend")}</p>
+      <div className="form-group">
+        <label>{t("settings.agentNetwork.testNetwork.modeLabel")}</label>
+        <select
+          value={mode}
+          onChange={(e) => setMode(e.target.value as typeof mode)}
+          disabled={busy}
+        >
+          <option value="readiness">{t("settings.agentNetwork.testNetwork.modeReadiness")}</option>
+          <option value="dry-plan">{t("settings.agentNetwork.testNetwork.modeDryPlan")}</option>
+          <option value="failover">{t("settings.agentNetwork.testNetwork.modeFailover")}</option>
+          <option value="recovery">{t("settings.agentNetwork.testNetwork.modeRecovery")}</option>
+        </select>
+        <p className="settings-hint">
+          {t(
+            `settings.agentNetwork.testNetwork.${testNetworkModeHintKey[mode]}` as "settings.agentNetwork.testNetwork.modeReadinessHint",
+          )}
+        </p>
+      </div>
+      {mode === "dry-plan" ? (
+        <div className="form-group">
+          <label>{t("settings.agentNetwork.testNetwork.goalLabel")}</label>
+          <input
+            type="text"
+            value={goal}
+            onChange={(e) => setGoal(e.target.value)}
+            placeholder={t("settings.agentNetwork.testNetwork.goalPlaceholder")}
+            disabled={busy}
+          />
+        </div>
+      ) : null}
+      <button type="button" className="settings-button" onClick={() => { void run(); }} disabled={busy}>
+        {busy
+          ? t("settings.agentNetwork.testNetwork.running")
+          : t("settings.agentNetwork.testNetwork.run")}
+      </button>
+      {summary ? <p className="settings-hint">{summary}</p> : null}
+      {exportJson ? (
+        <pre className="settings-hint" style={{ whiteSpace: "pre-wrap", maxHeight: 240, overflow: "auto" }}>
+          {exportJson}
+        </pre>
+      ) : null}
       {error ? <p className="library-view-error">{error}</p> : null}
     </section>
   );

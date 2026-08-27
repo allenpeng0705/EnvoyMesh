@@ -95,15 +95,75 @@ fi
 
 require_file "$SOCIAL_DIST" "built Social UI (apps/social/src/dist)"
 
+# envoy-harness (Phase 8). Optional on debug builds — set STAGE_ENVOY_HARNESS=0
+# *and* ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1. The node statically imports the
+# adapter, so a skip without wiring into node_modules crashes on first launch.
+ENVOY_HARNESS_DIR="$RES/envoy-harness"
+ENVOY_HARNESS_ADAPTER_DIR="$RES/envoy-harness-adapter"
+ENVOY_HARNESS_CLIENT_DIR="$RES/envoy-harness-client"
+ENVOY_HARNESS_PEER_DIR="$RES/envoy-harness-peer"
+ENVOY_HARNESS_TUI_DIR="$RES/envoy-harness-tui"
+ENVOY_HARNESS_NODE_MOD="$RES/node/node_modules/@envoymesh/envoy-harness"
+ENVOY_HARNESS_ADAPTER_NODE_MOD="$RES/node/node_modules/@envoymesh/envoy-harness-adapter"
+ENVOY_HARNESS_CLIENT_NODE_MOD="$RES/node/node_modules/@envoymesh/envoy-harness-client"
+ENVOY_HARNESS_PEER_NODE_MOD="$RES/node/node_modules/@envoymesh/envoy-harness-peer"
+ENVOY_HARNESS_TUI_NODE_MOD="$RES/node/node_modules/@envoymesh/envoy-harness-tui"
+if [ -d "$ENVOY_HARNESS_DIR" ]; then
+  require_file "$ENVOY_HARNESS_DIR/index.js" "envoy-harness main entry"
+  require_file "$ENVOY_HARNESS_DIR/index.d.ts" "envoy-harness type definitions"
+  require_file "$ENVOY_HARNESS_DIR/package.json" "envoy-harness package.json (flattened resource tree)"
+  require_file "$ENVOY_HARNESS_DIR/cli/acp-stdio.js" "envoy-harness ACP stdio entry"
+  require_dir_nonempty "$ENVOY_HARNESS_DIR" "envoy-harness staged tree"
+  require_file "$ENVOY_HARNESS_ADAPTER_DIR/index.js" "envoy-harness-adapter main entry"
+  require_file "$ENVOY_HARNESS_ADAPTER_DIR/package.json" "envoy-harness-adapter package.json (flattened resource tree)"
+  require_dir_nonempty "$ENVOY_HARNESS_ADAPTER_DIR" "envoy-harness-adapter staged tree"
+  require_file "$ENVOY_HARNESS_CLIENT_DIR/index.js" "envoy-harness-client main entry"
+  require_file "$ENVOY_HARNESS_CLIENT_DIR/package.json" "envoy-harness-client package.json"
+  require_file "$ENVOY_HARNESS_PEER_DIR/index.js" "envoy-harness-peer main entry"
+  require_file "$ENVOY_HARNESS_PEER_DIR/package.json" "envoy-harness-peer package.json"
+  require_file "$ENVOY_HARNESS_TUI_DIR/bin.js" "envoy-harness-tui bin entry (Terminal → Envoy)"
+  require_file "$ENVOY_HARNESS_TUI_DIR/package.json" "envoy-harness-tui package.json"
+else
+  if [ "${STAGE_ENVOY_HARNESS:-}" = "0" ]; then
+    warn "envoy-harness resources not bundled (STAGE_ENVOY_HARNESS=0)"
+  else
+    fail "envoy-harness staged tree missing at $ENVOY_HARNESS_DIR — run scripts/stage-tauri-envoy-harness-bundle.sh (or set STAGE_ENVOY_HARNESS=0 + ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1)"
+  fi
+fi
+
+# Critical: Node resolves bare imports from resources/node/node_modules, not
+# from the sibling resources/envoy-harness* trees. Without these, first launch
+# crashes with ERR_MODULE_NOT_FOUND for @envoymesh/envoy-harness-adapter.
+if [ "${STAGE_ENVOY_HARNESS:-}" != "0" ] || [ "${ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP:-}" != "1" ]; then
+  require_file "$ENVOY_HARNESS_NODE_MOD/package.json" "envoy-harness in node_modules (runtime resolve)"
+  require_file "$ENVOY_HARNESS_NODE_MOD/dist/index.js" "envoy-harness dist entry in node_modules"
+  require_file "$ENVOY_HARNESS_ADAPTER_NODE_MOD/package.json" "envoy-harness-adapter in node_modules"
+  require_file "$ENVOY_HARNESS_ADAPTER_NODE_MOD/dist/index.js" "envoy-harness-adapter dist entry in node_modules"
+  require_file "$ENVOY_HARNESS_CLIENT_NODE_MOD/package.json" "envoy-harness-client in node_modules"
+  require_file "$ENVOY_HARNESS_CLIENT_NODE_MOD/dist/index.js" "envoy-harness-client dist entry in node_modules"
+  require_file "$ENVOY_HARNESS_PEER_NODE_MOD/package.json" "envoy-harness-peer in node_modules"
+  require_file "$ENVOY_HARNESS_PEER_NODE_MOD/dist/index.js" "envoy-harness-peer dist entry in node_modules"
+  require_file "$ENVOY_HARNESS_TUI_NODE_MOD/package.json" "envoy-harness-tui in node_modules"
+  require_file "$ENVOY_HARNESS_TUI_NODE_MOD/dist/bin.js" "envoy-harness-tui bin in node_modules"
+  if [ ! -d "$RES/node/node_modules/smol-toml" ]; then
+    fail "smol-toml missing from resources/node/node_modules — envoy-harness config loader will fail at runtime"
+  fi
+  if [ ! -d "$RES/node/node_modules/@envoymesh/agent-adapter" ]; then
+    fail "@envoymesh/agent-adapter missing from resources/node/node_modules — required by envoy-harness-adapter"
+  fi
+fi
 node_mb="$(du -sm "$RES/node" 2>/dev/null | awk '{print $1}')"
 openclaw_mb="$(du -sm "$RES/openclaw" 2>/dev/null | awk '{print $1}')"
 runtime_mb="$(du -sm "$RES/node-runtime" 2>/dev/null | awk '{print $1}')"
 pi_mb="$(du -sm "$RES/pi" 2>/dev/null | awk '{print $1}')"
+envoy_harness_mb="$(du -sm "$RES/envoy-harness" 2>/dev/null | awk '{print $1}')"
+envoy_harness_adapter_mb="$(du -sm "$RES/envoy-harness-adapter" 2>/dev/null | awk '{print $1}')"
 
 echo "  node-runtime:  ${runtime_mb:-?} MB"
 echo "  node:          ${node_mb:-?} MB"
 echo "  openclaw:      ${openclaw_mb:-?} MB"
 echo "  pi:            ${pi_mb:-(not bundled)} MB"
+echo "  envoy-harness: ${envoy_harness_mb:-(not bundled)} MB (incl. ${envoy_harness_adapter_mb:-0} MB adapter)"
 
 if [ "${node_mb:-0}" -lt 20 ]; then
   warn "node bundle looks too small (${node_mb} MB) — production deps may be missing"
@@ -113,6 +173,9 @@ if [ "${openclaw_mb:-0}" -lt 50 ]; then
 fi
 if [ -d "$PI_DIR" ] && [ "${pi_mb:-0}" -lt 5 ]; then
   warn "pi tree looks too small (${pi_mb} MB) — run scripts/stage-tauri-pi-bundle.sh"
+fi
+if [ -d "$ENVOY_HARNESS_DIR" ] && [ "${envoy_harness_mb:-0}" -lt 1 ]; then
+  warn "envoy-harness tree looks too small (${envoy_harness_mb} MB) — run scripts/stage-tauri-envoy-harness-bundle.sh"
 fi
 
 # Push credentials — require push-config.json in the node bundle when present

@@ -81,8 +81,8 @@ export interface EnvoyLocalRuntimeDeps {
   saveEnvoyLocalConfig: (patch: EnvoyLocalConfig) => Promise<void>;
   /**
    * Formerly wired Settings → AI to the envoy-local preset. Now a no-op:
-   * cloud/Ollama stay in modelProviders; inference prefers Local when running.
-   * Kept so call sites can still await a hook (e.g. future analytics).
+   * cloud/Ollama stay in modelProviders and win at inference; Local is
+   * offline fallback only. Kept so call sites can still await a hook.
    */
   wireModelProviders: (endpoint: string, modelName: string) => Promise<void>;
   /** Best-effort OpenClaw reload after provider / Local start-stop change. */
@@ -1230,7 +1230,8 @@ export async function disableEnvoyLocalViaRuntime(
 
 /**
  * Start llama-server when runtime + model are already on disk (no download).
- * Does not mutate cloud/Ollama Settings — inference prefers Local while running.
+ * Does not mutate cloud/Ollama Settings — cloud wins at inference when
+ * configured; Local is offline fallback when no cloud provider is set.
  */
 export async function startEnvoyLocalViaRuntime(
   state: EnvoyLocalRuntimeState,
@@ -1328,8 +1329,8 @@ export async function stopEnvoyLocalViaRuntime(
 
 /**
  * After a `modelProviders` patch: no longer disables Envoy Local.
- * Cloud/Ollama and Local are independent; Local wins at inference only
- * while the sidecar is running.
+ * Cloud/Ollama and Local may coexist; cloud wins at inference when
+ * configured, Local is offline fallback only.
  * @returns always false
  */
 export async function maybeDisableEnvoyLocalForExternalProvider(
@@ -1395,8 +1396,8 @@ export async function haltEnvoyLocalChildViaRuntime(
 
 /**
  * Boot hook: start sidecar only when already opted in (`enabled`) and assets
- * exist. Never downloads. Cloud/Ollama may coexist — Local is preferred at
- * inference time while running.
+ * exist. Never downloads. Cloud/Ollama may coexist — cloud wins at inference
+ * when configured; Local is offline fallback when no cloud provider is set.
  */
 export async function maybeStartEnvoyLocalOnBootViaRuntime(
   state: EnvoyLocalRuntimeState,

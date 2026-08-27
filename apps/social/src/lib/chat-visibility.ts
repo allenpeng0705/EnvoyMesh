@@ -120,6 +120,34 @@ export function isChatMessageVisibleToProfile(
   return isThreadVisibleToProfile(threadKey, familyProfileId);
 }
 
+/** Whether a live message was sent by this session (mesh, family DM, or room). */
+export function messageIsOutgoing(
+  msg: ChatMessage,
+  selfOwnerId: string,
+  selfPeerId: string,
+  selfFamilyProfileId?: string,
+): boolean {
+  const selfO = selfOwnerId.trim();
+  const selfP = selfPeerId.trim();
+  const sndO = msg.sender.ownerId?.trim();
+  const sndN = msg.sender.nodeId?.trim();
+  const rcvO = msg.recipient.ownerId?.trim();
+  // Family DMs use profile ids (e.g. "owner" / "mom"), not mesh envoy:owner:….
+  if (rcvO && isFamilyThreadKey(rcvO)) {
+    const familySelf = (selfFamilyProfileId ?? OWNER_FAMILY_PROFILE_ID).trim();
+    return !!sndO && sndO === familySelf;
+  }
+  // Family group rooms use profile ids; mesh group rooms use mesh owner id.
+  if (rcvO && rcvO.startsWith("room:")) {
+    const familySelf = (selfFamilyProfileId ?? OWNER_FAMILY_PROFILE_ID).trim();
+    if (familySelf !== OWNER_FAMILY_PROFILE_ID) {
+      return !!sndO && sndO === familySelf;
+    }
+    return (sndO !== undefined && sndO === selfO) || (!!selfP && sndN === selfP);
+  }
+  return (sndO !== undefined && sndO === selfO) || (!!selfP && sndN === selfP);
+}
+
 /** Drop cached threads that belong to other family profiles. */
 export function pruneThreadsForProfile<T>(
   threads: Record<string, T>,

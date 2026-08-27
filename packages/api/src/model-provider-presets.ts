@@ -379,9 +379,16 @@ export function hasUsableNonEnvoyLocalModelProvider(
 }
 
 /**
- * Inference-time provider: prefer Envoy Local when the sidecar is opted-in and
- * ready. Persisted Settings → AI `modelProviders` (cloud/Ollama) are left
- * untouched — Local is selected only here, not by overwriting config.
+ * Inference-time provider for EnvoyAI / OpenClaw / Pi-inherit.
+ *
+ * **Priority (cloud first):**
+ * 1. Usable cloud / BYO Ollama from Settings → AI (`modelProviders`)
+ * 2. Else Envoy Local when the sidecar is opted-in and ready
+ * 3. Else whatever is persisted (may be disabled / mock / leftover)
+ *
+ * Persisted `modelProviders` are never overwritten here — Local is only
+ * selected at inference time as an offline fallback when no cloud provider
+ * is configured.
  */
 export function resolveEffectiveModelProviders(
   modelProviders: ModelProviderConfig | null | undefined,
@@ -391,6 +398,10 @@ export function resolveEffectiveModelProviders(
     modelName?: string
   } | null,
 ): ModelProviderConfig | undefined {
+  // Cloud / Ollama always win when usable — Local is fallback only.
+  if (hasUsableNonEnvoyLocalModelProvider(modelProviders)) {
+    return modelProviders ?? undefined
+  }
   const endpoint = envoyLocal?.endpoint?.trim()
   const modelName = envoyLocal?.modelName?.trim()
   if (envoyLocal?.preferLocal && endpoint && modelName) {

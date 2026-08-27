@@ -44,6 +44,36 @@
 #               Fetch Kubo into src-tauri/resources/kubo and build with
 #               tauri.conf.full.json (matches CI release / -Full on Windows).
 #
+# envoy-harness staging (Phase 8):
+#   STAGE_ENVOY_HARNESS=0
+#               Skip envoy-harness *resources* staging. The node still has
+#               static imports of @envoymesh/envoy-harness-adapter, so
+#               stage-bundle-node-runtime.sh refuses this unless
+#               ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1 (non-runnable debug
+#               bundle). Default: stage.
+#   STAGE_ENVOY_HARNESS=1
+#               Force a clean rebuild + overwrite. Runs
+#               `pnpm -F <pkg> clean` (best-effort) then
+#               `pnpm -F <pkg> build` in the sibling repo. The clean
+#               step clears .tsbuildinfo + dist/. Use after switching
+#               sibling-repo branches or when you want to be sure the
+#               staged tree is from-scratch. (Default unset:
+#               incremental rebuild — pnpm's tsc skips unchanged
+#               sources.)
+#   ENVOY_HARNESS_DIR=<path>
+#               Override the sibling envoy-harness monorepo location.
+#               Default: $ROOT/../envoy-harness. The script builds
+#               envoy-harness, envoy-harness-client, envoy-harness-adapter,
+#               envoy-harness-peer, and envoy-harness-tui and copies their
+#               dist/ into apps/tauri/src-tauri/resources/.
+#               stage-bundle-node-runtime.sh also wires them into
+#               resources/node/node_modules/@envoymesh/ (required for
+#               first-launch module resolution + Terminal → Envoy).
+#               See scripts/stage-tauri-envoy-harness-bundle.sh.
+#   SMOKE_ENVOY_HARNESS=0
+#               Skip the post-stage smoke (asserts entry files exist in
+#               both staged trees). Default: smoke.
+#
 # Apple review build (APPLE_REVIEW=1) — special home node for iOS/Android
 # store review. One flag controls it; normal builds are unaffected:
 #   APPLE_REVIEW=1 ./scripts/build-desktop.sh
@@ -311,6 +341,12 @@ echo "  OpenClaw extensions filter: OPENCLAW_EXTENSIONS=${OPENCLAW_EXTENSIONS}"
 bash scripts/stage-tauri-openclaw-bundle.sh
 # Always install envoymesh channel (independent of OpenClaw cache reuse).
 bash scripts/stage-openclaw-envoymesh-extension.sh
+# envoy-harness (Phase 8): vendor from the sibling envoy-harness monorepo
+# into resources/envoy-harness*/. Honours STAGE_ENVOY_HARNESS=0 to skip
+# (debug only) and ENVOY_HARNESS_DIR to override the sibling repo path.
+# See scripts/stage-tauri-envoy-harness-bundle.sh for the cross-monorepo
+# build + copy details.
+bash scripts/stage-tauri-envoy-harness-bundle.sh
 if [ "${SKIP_PI}" = "0" ]; then
   bash scripts/stage-tauri-pi-bundle.sh
 else

@@ -25,8 +25,33 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.useRealTimers();
-  await rm(profileDir, { recursive: true, force: true });
-  await rm(vaultDir, { recursive: true, force: true });
+  // Drain pending microtasks + I/O so `updateNodeConfig`'s fire-and-forget
+  // fs writes (`void this.refreshNearbyDiscovery()`, etc.) finish before we
+  // `rm` the temp dir. Without this, on macOS the second+ test in a file
+  // can race: rm runs while a write is still in flight → ENOTEMPTY.
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  // Retry the rm up to 5 times in case the OS is still releasing file
+  // handles from the service. Each retry waits 50 ms — bounded total
+  // ~250 ms vs. the underlying tests (each <100 ms).
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      await rm(profileDir, { recursive: true, force: true });
+      break;
+    } catch (err) {
+      if (attempt === 4) throw err;
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    }
+  }
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      await rm(vaultDir, { recursive: true, force: true });
+      break;
+    } catch (err) {
+      if (attempt === 4) throw err;
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    }
+  }
 });
 
 function createService(): NodeServiceImpl {

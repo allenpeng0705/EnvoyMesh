@@ -309,6 +309,8 @@ import {
   type UnsignedEnvoyEnvelope,
   type DevicePairRequestPayload,
   type AgentRuntime,
+  type SkillDescriptor,
+  type VerifyMode,
 } from "@envoymesh/protocol";
 import {
   createDeviceCertificate,
@@ -414,20 +416,81 @@ import {
   threadVisibleTo,
   isFamilyThreadKey,
   familyProfileMayUseExtAgent,
+  familyProfileMayUseCoding,
   maskBridgeEnabledForExtAgentAccess,
 } from "@envoymesh/api";
 import { createNodeConfigStore, createStubNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
+import {
+  readEffectiveSignalOptIn,
+  readEffectiveVerifyModeDefault,
+} from "./node-config-loader.js";
 import { startPairingKioskServer, type PairingKioskServerHandle } from "./pairing-kiosk-server.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-seed-store.js";
 import { isMeshReadyForSponsorBond } from "./mesh-readiness.js";
 import { bondTrace } from "./bond-trace.js";
+import { formatSkillResult, StructuredResultError } from "./skill-result-formatter.js";
 import { seedAddrsForDiscoveryProfile, peerDiscoverySourceFromMultiaddrs, shouldPersistPeerDiscoverySeeds } from "./peer-discovery-telemetry.js";
 import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver.js";
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
 import { backfillBundledSponsorPeerAddresses, loadBundledSponsorFriendParsed, selectBundledSponsorBackfillAddrs } from "./bundled-sponsor-friend-loader.js";
 import { buildModelProviders, routeModelRequest } from "@envoymesh/models";
 import { bindDeviceAuthorizationStore } from "./chat-device-auth.js";
+// Phase 8 / b3 — the real `askEnvoyHarness` runtime. The
+// `loadEnvoyHarnessRuntimeConfig` is the env-var-driven
+// readiness check; `createRealEnvoyHarnessRuntime` +
+// `RealEnvoyHarnessRuntime` are the lazy-constructed
+// stack (ModelAdapter + LocalCrossRuntimeSubmitter +
+// EnvoyHarnessAdapter) that backs `askEnvoyHarness`.
+import {
+  createRealEnvoyHarnessRuntime,
+  ENVOY_HARNESS_RUNTIME_SKILLS,
+  loadEnvoyHarnessRuntimeConfig,
+  shouldAskAcpTool,
+  type RealEnvoyHarnessRuntime,
+} from "./agent-runtime-envoy/index.js";
+import { EnvoyHarnessPersistentAcpHost } from "./agent-runtime-envoy/persistent-acp-host.js";
+import { parseEhuiInvokeRequest } from "./agent-runtime-envoy/ehui-invoke.js";
+// Phase 8 / Step 3 — the B-class tool factories
+// (sponsor_friend / list_peers / relay_status) and the
+// deps builders (`createBClass*`) for the host. The
+// factory closures capture `this` (NodeServiceImpl) via
+// the deps and read the mesh + profile + audit state
+// on each call. v0: production always passes bClassTools
+// (Step 3 "always opt-in" policy).
+import {
+  buildRelayStatusTool,
+  listPeersTool,
+  sponsorFriendTool,
+} from "@envoymesh/envoy-harness-adapter";
+import {
+  createPeerPoolStatusBackend,
+  createPeersTool,
+  aggregateVerdicts,
+} from "@envoymesh/envoy-harness-peer";
+import {
+  createAgentSessionBackend,
+  LocalMemoryStore,
+  SessionStore,
+  buildAgentSystemPrompt,
+  createFilesystemSkillProvider,
+  createSkillRegistry,
+  createUserQuestionService,
+  loadConfigStack,
+  resolveAgentRuntimeConfig,
+  systemPromptOptionsFromConfig,
+  type ConfigLayer,
+  type ProtocolSessionBackend,
+} from "@envoymesh/envoy-harness";
+import {
+  createBClassPeerListDeps,
+  createBClassRelayStatusDeps,
+  createBClassSponsorFriendDeps,
+} from "./agent-runtime-envoy/b-class-deps.js";
+import {
+  aggregateNodeManifest,
+  type NodeManifest,
+} from "./agent-adapter-manifest-aggregate.js";
 import {
   createChatRoomImpl,
   dismissChatRoomImpl,
@@ -460,9 +523,9 @@ import {
 } from "./terminal-assistant-command.js";
 import { predictIntent } from "./intent-predictor.js";
 import { buildVaultIndex, assertPathInsideVault } from "@envoymesh/vault";
-import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile, realpath } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import {
   ENVOY_MESSAGE_PROTOCOL,
   EnvoyMesh,
@@ -575,7 +638,7 @@ import { buildAgentAttachmentContext } from "./agent-attachment-context.js";
 import type { BridgeConfig } from "./bridge/config.js";
 import { forwardToAgent, receiveFromAgent } from "./bridge/index.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
-import { OPENCLAW_SKILLS, PI_SKILLS } from "@envoymesh/agent-adapter";
+import { OPENCLAW_SKILLS, PI_SKILLS, type AgentAdapter } from "@envoymesh/agent-adapter";
 import {
   buildSignedCapabilityManifest,
   startManifestBroadcaster,
@@ -688,6 +751,7 @@ import {
   chainGetDefaultsViaRuntime,
   chainGetReportViaRuntime,
   chainGetStateViaRuntime,
+  chainGetStepProvenanceViaRuntime,
   chainLaunchViaRuntime,
   chainListActiveViaRuntime,
   chainListObservedViaRuntime,
@@ -704,6 +768,11 @@ import {
   chainStartFromGoalViaRuntime,
   type ChainContext,
 } from "./node-service-chains.js";
+import {
+  agentNetworkDiagnosticsSnapshotViaRuntime,
+  agentNetworkExportDiagnosticsViaRuntime,
+  agentNetworkSimulateViaRuntime,
+} from "./agent-network-diagnostics.js";
 import {
   acceptCallInviteViaRuntime,
   declineCallInviteViaRuntime,
@@ -1080,7 +1149,9 @@ import {
   _emitChainState,
   cancelChainOwnerAction,
   reassignSubtaskOwnerAction,
+  resolveSpeculationOwnerAction,
   retryInputDeliveryOwnerAction,
+  _chainTransportResolver,
   _evaluateAwardAndAccept,
   _executeApprovedChainAward,
   _queueChainAwardApproval,
@@ -1095,11 +1166,14 @@ import {
   buildChainInboundDeps,
   buildChainOrchestratorDeps,
   buildChainWorkerDeps,
+  chainWorkerSubtasksToTeamJobs,
   ensureChainMandateLoaded,
   evaluateBidsAsync,
   findAgentNetworkWorkers,
   findAgentNetworkWorkersRanked,
+  flushRecoveryAdvancePending,
   handleInboundChainEnvelope,
+  listAllVerdictEntries,
   listAgentCardsIncludingLocal,
   placeholderMandate,
   refreshAgentNetworkMembershipIndex,
@@ -1108,6 +1182,31 @@ import {
   type ChainOrchestrationContext,
 } from "./node-service-chain-orchestration.js";
 import { handleInboundCapabilityManifest } from "./agent-adapter-manifest-inbound.js";
+import { handleInboundWorkerLease } from "./agent-worker-lease-inbound.js";
+import {
+  buildLocalLeaseRuntime,
+  startWorkerLeaseBroadcaster,
+  type WorkerLeaseBroadcastMesh,
+} from "./agent-worker-lease-broadcast.js";
+import { WorkerLeaseStore } from "./worker-lease-store.js";
+import { WorkerReliabilityStore } from "./worker-reliability-store.js";
+import { WorkerAttemptReceiptStore } from "./worker-attempt-receipt-store.js";
+import {
+  beginChainRecovery,
+  createOrchestratorEpoch,
+  createWorkerEpoch,
+  isChainRecovering,
+  tickChainRecovery,
+  applyReconcileReports,
+  buildReconcileRequest,
+  type ChainRecoveryState,
+} from "./chain-reconcile-recovery.js";
+import { handleInboundChainReconcileRequest } from "./chain-reconcile-inbound.js";
+import {
+  createTaskChainReconcileRequestPayload,
+  parseTaskChainReconcileResponsePayload,
+} from "@envoymesh/protocol";
+import { localAgentNetworkEngineReady } from "./chain-ready-probe.js";
 import { getLocalRuntimePassRate } from "./node-service-chain-orchestration.js";
 import { handleInboundScoreboardRule } from "./scoreboard-rule-inbound.js";
 import {
@@ -1240,7 +1339,56 @@ import {
   type PiRuntimeStateMutable,
   type PiRuntimeDeps,
 } from "./node-service-pi.js";
-import { ensurePiTerminalSession } from "./pi-terminal-session.js";
+import { AcpPermissionBridge } from "./node-service-acp-ui.js";
+import { AcpUserQuestionBridge } from "./node-service-eh-user-question.js";
+import { EhPermissionBridge } from "./node-service-eh-permission.js";
+import { buildEhPromptPayload, pathFromEhActivity } from "./agent-runtime-envoy/eh-prompt-attachments.js";
+import { resolvePiCodingBackend } from "./pi-coding-backend.js";
+import {
+  ensurePiTerminalSession,
+  resolvePiProjectDir,
+} from "./pi-terminal-session.js";
+import { ensureEnvoyTerminalSession } from "./envoy-terminal-session.js";
+import {
+  acceptEhTurnFiles,
+  completeEhTurnCheckpoint,
+  createEhTurnCheckpoint,
+  deletePersistedEhTurnCheckpoint,
+  loadEhTurnCheckpoint,
+  listEhTurnCheckpoints,
+  persistEhTurnCheckpoint,
+  revertEhTurnCheckpoint,
+  revertEhTurnFiles,
+  type EhCompletedCheckpoint,
+  type EhPendingCheckpoint,
+} from "./eh-turn-checkpoint.js";
+import {
+  LEGACY_EH_CHAT_ID,
+  legacyEhEventToTimelineItems,
+  type EhAgentStateName,
+  type EhLegacyTimelineEvent,
+} from "@envoymesh/api";
+import {
+  createEnvoyHarnessSessionStore,
+  deleteEhChatTurnFromStore,
+  loadEhChatHistoryFromStore,
+  mergeSessionMapping,
+  normalizeEhWorkspaceCwd,
+  resolveEhSessionIdForCwd,
+} from "./envoy-harness-workspace.js";
+import { EhChatRuntime } from "./eh-chat-runtime.js";
+import {
+  assertEhChatCapacity,
+  findEhChatByCwd,
+  findEhChatById,
+  migrateLegacyEhChats,
+  removeEhChat,
+  sortEhChats,
+  summarizeEhChats,
+  touchEhChat,
+  upsertEhChatSessionId,
+  updateEhChatCwd,
+} from "./envoy-harness-chats.js";
 import {
   cancelEnvoyLocalDownloadViaRuntime,
   checkEnvoyLocalEngineUpdateViaRuntime,
@@ -1399,6 +1547,67 @@ import { createRagService, type RagService } from "./rag-service.js";
 const MAX_FRIEND_MATCHING_PREFS_CHARS = 4096;
 
 /**
+ * Phase 8 / v1.5 — the env-var that gates the
+ * per-prompt cost cap. When set to `"1"`, the
+ * `/cost:N` hint is honored (the per-prompt
+ * cap wins over the per-skill default).
+ * When unset (the default), the cost cap is
+ * parsed + recorded on the decision but the
+ * runtime uses the per-skill default — the
+ * v0 behavior, preserved.
+ *
+ * **Why a single env var (Q9 of the v1.5
+ * sub-plan, "keep it simple"):** the cost
+ * feature is dormant in v1.5. The EH
+ * runtime's cost tracking isn't mature
+ * enough to enforce a per-call cap
+ * reliably yet. The env var is the
+ * simplest flag; a future chunk can
+ * graduate to a persisted field when the
+ * runtime has real cost tracking.
+ */
+const COST_CAP_ENABLED_ENV_VAR = "ENVOY_HARNESS_COST_CAP_ENABLED";
+
+/**
+ * Phase 8 / v1.5 — resolve the effective cost
+ * cap for a single ask call.
+ *
+ * **Precedence** (Q7 of the v1.5 sub-plan):
+ * 1. `perPromptCap` (parsed from `/cost:N`)
+ *    when `COST_CAP_ENABLED_ENV_VAR === "1"`.
+ * 2. `defaultCap` (the per-skill
+ *    `costCeilingUsd` for `askEnvoyHarnessSkill`;
+ *    the v0 default `1.0` for `askEnvoyHarness`).
+ *
+ * **Why a small helper (vs. inline in both
+ * ask methods):** the precedence rule is
+ * duplicated in 2 places (the free-form
+ * ask + the per-skill ask). The helper
+ * is 3 lines; inline would be 3 lines per
+ * call site (6 total). The helper is
+ * also easy to test in isolation.
+ *
+ * @param perPromptCap The cap parsed from the
+ *   prompt (undefined when no hint).
+ * @param defaultCap The per-skill / v0
+ *   default to use when the flag is off or
+ *   no hint is present.
+ * @returns The effective cap to pass to the
+ *   runtime.
+ */
+function readEffectiveCostCapUsd(
+  perPromptCap: number | undefined,
+  defaultCap: number,
+): number {
+  const costCapEnabled =
+    process.env[COST_CAP_ENABLED_ENV_VAR] === "1";
+  if (costCapEnabled && perPromptCap !== undefined) {
+    return perPromptCap;
+  }
+  return defaultCap;
+}
+
+/**
  * Phase 42 — default `iceServers` injected into `call.invite` when the
  * caller did not provide a list and the home's `node-config.json` has none.
  * Three public STUN endpoints; TURN is user-configured (Phase 42H).
@@ -1434,6 +1643,7 @@ function summarizeAgentCard(row: {
       /** Legacy field — pre-skills rename on disk. */
       strengths?: string[];
     };
+    features?: CachedAgentCardSummary["features"];
   };
   cachedAt: string;
   sourceAgentPeerId?: string;
@@ -1463,6 +1673,9 @@ function summarizeAgentCard(row: {
       ...raw,
       skills: raw.skills ?? raw.strengths ?? [],
     });
+  }
+  if (row.card.features && row.card.features.length > 0) {
+    summary.features = row.card.features;
   }
   return summary;
 }
@@ -1622,6 +1835,15 @@ class NodeServiceImpl implements NodeService {
     lastStatusBroadcastAt: new Map<string, number>(),
     readyProbeCache: new Map(),
     remoteManifests: new Map(),
+    workerLeases: new WorkerLeaseStore(),
+    workerReliability: new WorkerReliabilityStore(),
+    teamStrategies: new Map(),
+    recovery: new Map(),
+    orchestratorEpoch: createOrchestratorEpoch(),
+    workerEpoch: createWorkerEpoch(),
+    attemptReceipts: new WorkerAttemptReceiptStore(),
+    recoveredPartialKeys: new Set<string>(),
+    recoveryAdvancePending: new Set<string>(),
     inputGcDone: new Set<string>(),
   } as const;
 
@@ -2189,6 +2411,11 @@ class NodeServiceImpl implements NodeService {
     if (profileDir && profileDir !== "/tmp/unknown") {
       this._discoverySeedStore = createDiscoverySeedStore(profileDir);
       this._capabilityIndexReady = this._capabilityIndex.init(profileDir);
+      void this._chainStore.init(profileDir).then(() => {
+        void this._beginRecoveryForRestoredChains();
+      }).catch((err: unknown) => {
+        console.warn("[team-jobs] active-state recovery failed:", err);
+      });
       // Also init push here so Tauri/embedded NodeServiceImpl paths work
       // even when index.ts bootstrap is not used.
       void pushNotificationService.init(profileDir).catch((err: unknown) => {
@@ -3878,6 +4105,7 @@ class NodeServiceImpl implements NodeService {
     if (card.publicTopics) summary.publicTopics = card.publicTopics;
     if (card.webContentRoot) summary.webContentRoot = card.webContentRoot;
     if (card.agentNetworkProfile) summary.agentNetworkProfile = card.agentNetworkProfile;
+    if (card.features && card.features.length > 0) summary.features = card.features;
     return summary;
   }
 
@@ -4630,6 +4858,125 @@ class NodeServiceImpl implements NodeService {
   // Phase 49 — Pi Runtime (local coding agent; local-only, no mesh.* tools)
   private readonly _piState = createPiRuntimeState();
 
+  /**
+   * Phase G / 12b — ACP permission waiter. Mapped onto existing
+   * `pi:proposal` / `piRespondToProposal` so EnvoyGo needs no changes.
+   */
+  private readonly _acpPermissionBridge = new AcpPermissionBridge(
+    (_event, payload) => {
+      this.emit("pi:proposal", {
+        proposal: {
+          uiRequestId: payload.requestId,
+          title: payload.toolName,
+          message: payload.description,
+          timeoutMs: payload.timeoutMs,
+          receivedAt: new Date().toISOString(),
+        },
+      });
+    },
+  );
+
+  /** Per-chat ACP hosts + parallel in-flight turns. */
+  private readonly _ehChatRuntime = new EhChatRuntime();
+  private readonly _ehPendingCheckpoints = new Map<string, EhPendingCheckpoint>();
+  private readonly _ehCompletedCheckpoints = new Map<string, EhCompletedCheckpoint>();
+  private readonly _ehPendingTimelineInteractions = new Map<string, import("@envoymesh/api").EhApprovalItem | import("@envoymesh/api").EhQuestionItem>();
+
+  private _emitEhTimelineEvent(event: EhLegacyTimelineEvent): void {
+    const receivedAt = new Date().toISOString();
+    for (const item of legacyEhEventToTimelineItems(event, receivedAt)) {
+      if (item.type === "approval" || item.type === "question") {
+        this._ehPendingTimelineInteractions.set(item.requestId, item);
+      }
+      this.emit("eh:timeline", { type: "upsert", item });
+    }
+    if (event.name === "eh:turn_complete") {
+      const payload = event.payload;
+      const chatId = payload.chatId ?? LEGACY_EH_CHAT_ID;
+      const liveId = payload.turnId
+        ? `turn:${payload.turnId}:activity-live`
+        : `activity:${chatId}:live`;
+      this.emit("eh:timeline", { type: "remove", chatId, id: liveId });
+    }
+  }
+
+  private _resolveEhTimelineInteraction(
+    requestId: string,
+    status: "allowed" | "denied" | "expired" | "answered" | "cancelled",
+    answer?: string,
+  ): void {
+    const pending = this._ehPendingTimelineInteractions.get(requestId);
+    if (!pending) return;
+    this._ehPendingTimelineInteractions.delete(requestId);
+    const updatedAt = new Date().toISOString();
+    const item = pending.type === "question"
+      ? { ...pending, status: status as import("@envoymesh/api").EhQuestionItem["status"], ...(answer !== undefined ? { answer } : {}), updatedAt }
+      : { ...pending, status: status as import("@envoymesh/api").EhApprovalItem["status"], updatedAt };
+    this.emit("eh:timeline", { type: "upsert", item });
+  }
+
+  private _emitEhAgentState(
+    state: EhAgentStateName,
+    label: string,
+    chatId?: string,
+    turnId?: string,
+    activitySummary?: string,
+  ): void {
+    this.emit("eh:timeline", {
+      type: "state",
+      state: {
+        state,
+        chatId: chatId ?? LEGACY_EH_CHAT_ID,
+        ...(turnId ? { turnId } : {}),
+        label,
+        ...(activitySummary ? { activitySummary } : {}),
+        updatedAt: new Date().toISOString(),
+        execution: { location: "local" },
+      },
+    });
+  }
+
+  /** Envoy Harness ask_user / plan-review / mode-switch waiter. */
+  private readonly _ehUserQuestionBridge = new AcpUserQuestionBridge(
+    (_event, payload) => {
+      const turnId = payload.chatId
+        ? this._ehChatRuntime.getTurnForChat(payload.chatId)?.turnId
+        : undefined;
+      const enriched = { ...payload, ...(turnId ? { turnId } : {}) };
+      this.emit("eh:user_question", enriched);
+      this._emitEhTimelineEvent({ name: "eh:user_question", payload: enriched });
+      this._emitEhAgentState("waiting_for_answer", "Waiting for your answer", payload.chatId, turnId, payload.prompt);
+    },
+    {
+      onResolved: (requestId, status, answer) =>
+        this._resolveEhTimelineInteraction(requestId, status, answer),
+    },
+  );
+
+  /** EH tool permissions (`session/request_permission`) — not Pi `pi:proposal`. */
+  private readonly _ehPermissionBridge = new EhPermissionBridge(
+    (_event, payload) => {
+      const turnId = payload.chatId
+        ? this._ehChatRuntime.getTurnForChat(payload.chatId)?.turnId
+        : undefined;
+      const enriched = { ...payload, ...(turnId ? { turnId } : {}) };
+      this.emit("eh:permission", enriched);
+      this._emitEhTimelineEvent({ name: "eh:permission", payload: enriched });
+      this._emitEhAgentState("waiting_for_approval", "Waiting for approval", payload.chatId, turnId, payload.description);
+    },
+    {
+      getCwd: () => this._envoyHarnessResolvedCwd(),
+      // Attribute the permission prompt to the sidebar chat that owns the
+      // in-flight turn (the ACP session id of the persistent host ↔ the
+      // active turn's chatId). Multi-thread UI can then ignore prompts
+      // from other chats.
+      getChatIdForSession: (sessionId) =>
+        this._ehChatRuntime.chatIdForSession(sessionId),
+      onResolved: (requestId, status) =>
+        this._resolveEhTimelineInteraction(requestId, status),
+    },
+  );
+
   // Phase 54 — Envoy Local (downloadable llama-server)
   private readonly _envoyLocalState: EnvoyLocalRuntimeState = createEnvoyLocalRuntimeState();
   private readonly _envoyLocalEmbedState: EnvoyLocalEmbedRuntimeState =
@@ -4755,6 +5102,1105 @@ class NodeServiceImpl implements NodeService {
   /** True when the built-in OpenClaw gateway webhook is reachable. */
   isOpenClawReady(): boolean {
     return isOpenClawReadyViaRuntime(this._openClawState);
+  }
+
+  /**
+   * Phase 8 / b3 — envoy-harness readiness probe (AN engine).
+   *
+   * Returns `true` when:
+   * 1. `ENVOY_HARNESS_STUB_PHASE_8_STEP_1=1` is NOT set (the
+   *    test escape hatch).
+   * 2. The API key is available — from any of:
+   *    - `ENVOY_HARNESS_API_KEY` (universal override)
+   *    - The host's `ModelProviderConfig.apiKey` (DI from
+   *      `_envoyHarnessHostApiKey` cache — see
+   *      `_refreshEnvoyHarnessHostConfig()`)
+   *    - The provider-specific env var
+   *      (`DEEPSEEK_API_KEY` / `OPENAI_API_KEY` /
+   *      `ANTHROPIC_API_KEY`)
+   *
+   * **Phase 8 / b3.live (model + API key inheritance):** the
+   * config also considers the host's `ModelProviderConfig`.
+   * The `_envoyHarnessHostModel` + `_envoyHarnessHostApiKey`
+   * caches are populated by `_refreshEnvoyHarnessHostConfig()`
+   * (fire-and-forget on every call; the first call returns
+   * the default, subsequent calls reflect the host's config).
+   * The host's model + API key take effect via the
+   * `hostModel` + `hostApiKey` parameters to
+   * `loadEnvoyHarnessRuntimeConfig`.
+   *
+   * **Why env-var presence, not a model call:** the model
+   * call (`createProviderAdapter(...)`) is the real check
+   * for whether the API key is valid. We do that check lazily
+   * on the first `askEnvoyHarness` call. The env-var +
+   * cache check is the readiness probe — it tells the
+   * orchestrator "this engine is worth invoking" without
+   * burning a model call.
+   *
+   * **What the chain worker does on `ready === false`:** the
+   * dispatch in `node-service-chain-orchestration.ts` returns
+   * `envoy_harness_unavailable` and the orchestrator retries
+   * on a different node (or escalates). The operator sees a
+   * clean failure, not a stack trace.
+   */
+  isEnvoyHarnessReady(): boolean {
+    // Fire-and-forget refresh of the host model + API key
+    // cache. The current cache values are used for the
+    // readiness check (the first call uses the default;
+    // subsequent calls reflect the most recent refresh).
+    // The full async check happens in `askEnvoyHarness`.
+    void this._refreshEnvoyHarnessHostConfig();
+    return loadEnvoyHarnessRuntimeConfig({
+      hostModel: this._envoyHarnessHostModel,
+      hostApiKey: this._envoyHarnessHostApiKey,
+      hostEndpoint: this._envoyHarnessHostEndpoint,
+    }).ready;
+  }
+
+  /**
+   * v1.16 — the live envoy-harness adapter for same-runtime
+   * cross-verify. The chain-verify loop's `buildAdapter("envoy-harness")`
+   * returns this (undefined until the runtime is constructed, i.e. until
+   * `isEnvoyHarnessReady()` has been true and `askEnvoyHarness` ran).
+   */
+  getEnvoyHarnessAdapter(): import("@envoymesh/agent-adapter").AgentAdapter | undefined {
+    return this._envoyHarnessRuntimeCache?.adapter;
+  }
+
+  /**
+   * R2 — build (once) the standalone peer execution pool from the
+   * persisted `envoyHarnessPeers` config. Fail-open: peers that can't
+   * connect are skipped; the rest still form the pool.
+   */
+  private async _ensureEnvoyHarnessPeerPool(): Promise<void> {
+    if (this._envoyHarnessPeerPool !== undefined) return;
+    const peers = this._configStore?.peek()?.envoyHarnessPeers;
+    if (peers === undefined || peers.length === 0) return;
+    const { buildEnvoyHarnessPeerPool } = await import(
+      "./agent-runtime-envoy/peer-pool.js"
+    );
+    this._envoyHarnessPeerPool = await buildEnvoyHarnessPeerPool(peers);
+    if (this._envoyHarnessPeerPool.failed.length > 0) {
+      console.warn(
+        `[node-service] envoy-harness peer pool partial: connected ` +
+          `${this._envoyHarnessPeerPool.connected.join(",")}, failed ` +
+          `${this._envoyHarnessPeerPool.failed.length}`,
+      );
+    }
+  }
+
+  /** R2 — the peer management surface: connected peers + their models. */
+  listEnvoyHarnessPeers(): ReadonlyArray<{
+    id: string;
+    model?: string;
+    capabilities?: readonly string[];
+  }> {
+    return (
+      this._envoyHarnessPeerPool?.registry
+        .list()
+        .map(({ id, model, capabilities }) => ({
+          id,
+          ...(model !== undefined ? { model } : {}),
+          ...(capabilities !== undefined ? { capabilities } : {}),
+        })) ?? []
+    );
+  }
+
+  /** R2 — close the peer pool sockets (host teardown). Idempotent. */
+  closeEnvoyHarnessPeerPool(): void {
+    this._envoyHarnessPeerPool?.closeAll();
+    this._envoyHarnessPeerPool = undefined;
+  }
+
+  /**
+   * Phase 8 / b3 — sync ask via envoy-harness (AN engine).
+   *
+   * Replaces the Step 1 stub. Lazily constructs the
+   * `RealEnvoyHarnessRuntime` on the first call (the model
+   * adapter + cross-runtime submitter + adapter are built
+   * once per process). Subsequent calls reuse the cached
+   * runtime.
+   *
+   * **Error behavior:**
+   * - `ready === false` (no API key): throws
+   *   `envoy_harness_stub_phase_8_step_1` (matches the Step 1
+   *   stub message — backwards-compatible error code for the
+   *   orchestrator + tests).
+   * - `ready === true` but model adapter construction fails
+   *   (e.g. unknown provider): throws the original error from
+   *   `createProviderAdapter`.
+   * - The LLM call returns no text: throws
+   *   `envoy_harness_empty: no text in result` (clean failure,
+   *   matches the openclaw / ext engine behavior).
+   *
+   * **Cancellation:** the host's `abortSignal` is forwarded
+   * to the agent (the `ask()` call's `signal` option is set
+   * by the chain worker in `chain-worker-executor.ts`).
+   */
+  async askEnvoyHarness(
+    prompt: string,
+    opts?: { providerHint?: string; costCapUsd?: number },
+  ): Promise<string> {
+    const { turnId } = await this.startEnvoyHarnessTurn(prompt, opts);
+    const active = this._ehChatRuntime.getTurn(turnId);
+    if (active === undefined) {
+      throw new Error("envoy_harness_turn_lost");
+    }
+    const result = await active.resultPromise;
+    if (!result.ok) {
+      if (result.cancelled === true) {
+        throw new Error("envoy_harness_cancelled");
+      }
+      throw new Error(result.error ?? "envoy_harness_turn_failed");
+    }
+    return stripModelThinking(result.text ?? "");
+  }
+
+  async startEnvoyHarnessTurn(
+    prompt: string,
+    opts?: {
+      providerHint?: string;
+      costCapUsd?: number;
+      attachments?: import("@envoymesh/api").AgentAttachmentRef[];
+      chatId?: string;
+    },
+  ): Promise<{ turnId: string }> {
+    await this._refreshEnvoyHarnessHostConfig();
+    const config = loadEnvoyHarnessRuntimeConfig({
+      hostModel: this._envoyHarnessHostModel,
+      hostApiKey: this._envoyHarnessHostApiKey,
+      hostEndpoint: this._envoyHarnessHostEndpoint,
+    });
+    if (!config.ready) {
+      throw new Error("envoy_harness_stub_phase_8_step_1");
+    }
+
+    const trimmed = prompt.trim();
+    if (trimmed.length === 0) {
+      throw new Error("envoy_harness_empty_prompt");
+    }
+
+    const chat = await this._resolveEhChat(opts?.chatId ?? null);
+    if (opts?.chatId?.trim() && !chat) {
+      throw new Error(`envoy_harness_chat_not_found: ${opts.chatId}`);
+    }
+    if (chat && this._ehChatRuntime.hasTurnForChat(chat.id)) {
+      throw new Error("envoy_harness_turn_busy");
+    }
+
+    await this._getOrInitEnvoyHarnessRuntime();
+    const askOpts = {
+      providerHint: opts?.providerHint,
+      costCeilingUsd: readEffectiveCostCapUsd(opts?.costCapUsd, 1.0),
+    };
+
+    const cwd = chat?.cwd ?? (await this._envoyHarnessResolvedCwd());
+    const payload = await buildEhPromptPayload(
+      trimmed,
+      opts?.attachments,
+      cwd,
+    );
+
+    const turnId = crypto.randomUUID();
+    const startedAt = new Date().toISOString();
+    const checkpoint = await createEhTurnCheckpoint(cwd, turnId, chat?.id);
+    if (checkpoint) this._ehPendingCheckpoints.set(turnId, checkpoint);
+    const startedEvent = {
+      turnId,
+      userPrompt: trimmed,
+      startedAt,
+      ...(chat ? { chatId: chat.id } : {}),
+    };
+    this.emit("eh:turn_started", startedEvent);
+    this._emitEhTimelineEvent({ name: "eh:turn_started", payload: startedEvent });
+    this._emitEhAgentState("thinking", "Thinking", chat?.id, turnId);
+    this.emit("eh:prompt_busy", {
+      busy: true,
+      ...(chat ? { chatId: chat.id } : {}),
+    });
+
+    const resultPromise = this._executeEhTurn(turnId, payload.text, askOpts, chat?.id, cwd);
+    this._ehChatRuntime.registerTurn({
+      turnId,
+      chatId: chat?.id,
+      cwd,
+      userPrompt: trimmed,
+      startedAt,
+      streamingText: "",
+      changedFiles: [],
+      resultPromise,
+    });
+
+    void resultPromise.finally(() => {
+      const removed = this._ehChatRuntime.removeTurn(turnId);
+      if (!removed) return;
+      this.emit("eh:prompt_busy", {
+        busy: false,
+        ...(removed.chatId ? { chatId: removed.chatId } : {}),
+      });
+      if (removed.sessionId) {
+        this._ehPermissionBridge.clearForSession(removed.sessionId);
+      }
+      if (removed.chatId) {
+        this._ehUserQuestionBridge.clearForChat(removed.chatId);
+      }
+    });
+
+    return { turnId };
+  }
+
+  async getEnvoyHarnessTurnStatus(
+    chatId?: string,
+  ): Promise<import("@envoymesh/api").EhTurnStatus> {
+    const active = chatId
+      ? this._ehChatRuntime.getTurnForChat(chatId)
+      : this._ehChatRuntime.listActiveTurns()[0];
+    if (active === undefined) {
+      return { busy: false };
+    }
+    return {
+      busy: true,
+      turnId: active.turnId,
+      userPrompt: active.userPrompt,
+      streamingText: active.streamingText,
+      startedAt: active.startedAt,
+      ...(active.chatId ? { chatId: active.chatId } : {}),
+    };
+  }
+
+  /**
+   * U6 — drive asks through the persistent ACP session so plan / memory /
+   * transcript state is shared with the EHUI rails.
+   */
+  private async _executeEhTurn(
+    turnId: string,
+    prompt: string,
+    _askOpts: { providerHint?: string; costCeilingUsd?: number; signal?: AbortSignal },
+    chatId?: string,
+    cwdOverride?: string,
+  ): Promise<import("@envoymesh/api").EhTurnCompleteEvent> {
+    const turnRecord = () => this._ehChatRuntime.getTurn(turnId);
+    try {
+      let host: EnvoyHarnessPersistentAcpHost;
+      if (chatId) {
+        const cwd = cwdOverride ?? (await this._resolveEhChat(chatId))?.cwd;
+        if (!cwd) {
+          throw new Error(`envoy_harness_chat_not_found: ${chatId}`);
+        }
+        const ensured = await this._ensureEhChatHost(chatId, cwd);
+        host = ensured.host;
+        const turn = turnRecord();
+        if (turn) turn.sessionId = ensured.sessionId;
+      } else {
+        await this._ensureEnvoyHarnessPersistentAcpHost();
+        host = this._envoyHarnessPersistentAcpHost!;
+        if (!host) {
+          throw new Error("envoy-harness persistent ACP host failed to start");
+        }
+        const turn = turnRecord();
+        if (turn && host.sessionId) turn.sessionId = host.sessionId;
+      }
+      let streamingText = "";
+      const text = await host.prompt(prompt, {
+        ...(_askOpts.signal !== undefined ? { signal: _askOpts.signal } : {}),
+        onActivity: (activity) => {
+          const filePath = pathFromEhActivity(activity);
+          const active = turnRecord();
+          if (
+            filePath !== undefined &&
+            active &&
+            !active.changedFiles.includes(filePath)
+          ) {
+            active.changedFiles.push(filePath);
+          }
+          const activityEvent = {
+            turnId,
+            kind: activity.kind,
+            summary: activity.summary,
+            ...(activity.toolName !== undefined
+              ? { toolName: activity.toolName }
+              : {}),
+            ...(activity.ts !== undefined ? { ts: activity.ts } : {}),
+            ...(active?.chatId ? { chatId: active.chatId } : {}),
+          };
+          this.emit("eh:activity", activityEvent);
+          this._emitEhTimelineEvent({ name: "eh:activity", payload: activityEvent });
+          this._emitEhAgentState("running_tool", activity.toolName ? `Running ${activity.toolName}` : "Working", active?.chatId, turnId, activity.summary);
+        },
+        onToken: (token) => {
+          if (token.role !== "assistant" || token.delta.length === 0) return;
+          streamingText += token.delta;
+          const active = turnRecord();
+          if (active) active.streamingText = streamingText;
+          const tokenEvent = {
+            turnId,
+            delta: token.delta,
+            streamingText,
+            ...(active?.chatId ? { chatId: active.chatId } : {}),
+          };
+          this.emit("eh:turn_token", tokenEvent);
+          this._emitEhTimelineEvent({ name: "eh:turn_token", payload: tokenEvent });
+        },
+      });
+      const active = turnRecord();
+      const changedFiles = active ? [...active.changedFiles] : [];
+      const eventChatId = active?.chatId;
+      const withChatId = <T extends object>(event: T): T =>
+        eventChatId ? ({ ...event, chatId: eventChatId } as T) : event;
+
+      const finishComplete = async (
+        complete: import("@envoymesh/api").EhTurnCompleteEvent,
+      ): Promise<import("@envoymesh/api").EhTurnCompleteEvent> => {
+        const effectiveChangedFiles = await this._finalizeEhTurnCheckpoint(turnId, changedFiles);
+        const withFiles =
+          effectiveChangedFiles.length > 0
+            ? { ...complete, changedFiles: effectiveChangedFiles }
+            : complete;
+        const completeEvent = withChatId(withFiles);
+        this.emit("eh:turn_complete", completeEvent);
+        this._emitEhTimelineEvent({ name: "eh:turn_complete", payload: completeEvent });
+        this._emitEhAgentState(
+          completeEvent.cancelled ? "cancelled" : completeEvent.ok ? "completed" : "failed",
+          completeEvent.cancelled ? "Cancelled" : completeEvent.ok ? "Completed" : "Failed",
+          eventChatId,
+          turnId,
+          completeEvent.error,
+        );
+        if (effectiveChangedFiles.length > 0) {
+          const filesEvent = {
+            turnId,
+            files: effectiveChangedFiles,
+            ...(eventChatId ? { chatId: eventChatId } : {}),
+          };
+          this.emit("eh:files_changed", filesEvent);
+          this._emitEhTimelineEvent({ name: "eh:files_changed", payload: filesEvent });
+        }
+        return withFiles;
+      };
+
+      if (text.stopReason === "cancelled") {
+        return finishComplete({
+          turnId,
+          ok: false,
+          cancelled: true,
+          error: "envoy_harness_cancelled",
+          stopReason: "cancelled",
+        });
+      }
+      if (text.turnHints !== undefined) {
+        this.emit("eh:turn_hints", {
+          ...text.turnHints,
+          ...(eventChatId ? { chatId: eventChatId } : {}),
+        });
+      }
+      // Models often end_turn inside thinking tags with no user-facing
+      // answer. After strip that looks "empty"; treat it as a soft
+      // success with an explicit fallback so hosts keep the human
+      // bubble and show something other than a blank Completed state.
+      const EMPTY_REPLY_FALLBACK =
+        "(No visible reply was produced. Please try again or rephrase.)";
+      const stripped = stripModelThinking(text.text ?? "").trim();
+      const assistantText =
+        stripped.length > 0 ? stripped : EMPTY_REPLY_FALLBACK;
+      return finishComplete({
+        turnId,
+        ok: true,
+        text: assistantText,
+        stopReason: text.stopReason,
+        ...(text.turnHints !== undefined ? { turnHints: text.turnHints } : {}),
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const cancelled =
+        msg === "envoy_harness_cancelled" ||
+        msg.toLowerCase().includes("cancel");
+      const active = turnRecord();
+      const changedFiles = active ? [...active.changedFiles] : [];
+      const effectiveChangedFiles = await this._finalizeEhTurnCheckpoint(turnId, changedFiles);
+      const complete: import("@envoymesh/api").EhTurnCompleteEvent = {
+        turnId,
+        ok: false,
+        error: msg,
+        ...(cancelled ? { cancelled: true } : {}),
+        ...(effectiveChangedFiles.length > 0 ? { changedFiles: effectiveChangedFiles } : {}),
+        ...(active?.chatId ? { chatId: active.chatId } : {}),
+      };
+      this.emit("eh:turn_complete", complete);
+      this._emitEhTimelineEvent({ name: "eh:turn_complete", payload: complete });
+      this._emitEhAgentState(
+        cancelled ? "cancelled" : "failed",
+        cancelled ? "Cancelled" : "Failed",
+        active?.chatId,
+        turnId,
+        msg,
+      );
+      if (effectiveChangedFiles.length > 0) {
+        const filesEvent = {
+          turnId,
+          files: effectiveChangedFiles,
+          ...(active?.chatId ? { chatId: active.chatId } : {}),
+        };
+        this.emit("eh:files_changed", filesEvent);
+        this._emitEhTimelineEvent({ name: "eh:files_changed", payload: filesEvent });
+      }
+      return complete;
+    }
+  }
+
+  private async _finalizeEhTurnCheckpoint(
+    turnId: string,
+    changedFiles: readonly string[],
+  ): Promise<string[]> {
+    const pending = this._ehPendingCheckpoints.get(turnId);
+    if (!pending) return [...changedFiles];
+    this._ehPendingCheckpoints.delete(turnId);
+    try {
+      const completed = await completeEhTurnCheckpoint(pending, changedFiles);
+      const effectiveChangedFiles = completed.review.files.map((file) => file.path);
+      if (effectiveChangedFiles.length === 0) return [];
+      this._ehCompletedCheckpoints.set(turnId, completed);
+      while (this._ehCompletedCheckpoints.size > 50) {
+        const oldestTurnId = this._ehCompletedCheckpoints.keys().next().value as string | undefined;
+        if (!oldestTurnId) break;
+        this._ehCompletedCheckpoints.delete(oldestTurnId);
+      }
+      await persistEhTurnCheckpoint(this._profileDir, completed).catch(() => undefined);
+      return effectiveChangedFiles;
+    } catch {
+      return [...changedFiles];
+    }
+  }
+
+  async getEnvoyHarnessTurnReview(
+    turnId: string,
+  ): Promise<import("@envoymesh/api").EhTurnReview | null> {
+    const checkpoint = this._ehCompletedCheckpoints.get(turnId)
+      ?? await loadEhTurnCheckpoint(this._profileDir, turnId);
+    if (checkpoint) this._ehCompletedCheckpoints.set(turnId, checkpoint);
+    return checkpoint?.review ?? null;
+  }
+
+  async revertEnvoyHarnessTurn(
+    turnId: string,
+  ): Promise<import("@envoymesh/api").EhRevertTurnResult> {
+    const checkpoint = this._ehCompletedCheckpoints.get(turnId)
+      ?? await loadEhTurnCheckpoint(this._profileDir, turnId);
+    if (!checkpoint) return { reverted: false, files: [], reason: "checkpoint_not_found" };
+    const result = await revertEhTurnCheckpoint(checkpoint);
+    if (result.reverted) {
+      this._ehCompletedCheckpoints.delete(turnId);
+      await deletePersistedEhTurnCheckpoint(this._profileDir, turnId);
+      this.emit("eh:files_changed", {
+        turnId,
+        files: result.files,
+        ...(checkpoint.chatId ? { chatId: checkpoint.chatId } : {}),
+      });
+    }
+    return result;
+  }
+
+  async acceptEnvoyHarnessTurnReview(
+    turnId: string,
+    paths?: readonly string[],
+  ): Promise<import("@envoymesh/api").EhAcceptTurnReviewResult> {
+    const checkpoint = this._ehCompletedCheckpoints.get(turnId)
+      ?? await loadEhTurnCheckpoint(this._profileDir, turnId);
+    if (!checkpoint) return { accepted: false, remainingFiles: 0 };
+    const toAccept = paths ?? checkpoint.review.files.map((file) => file.path);
+    acceptEhTurnFiles(checkpoint, toAccept);
+    this._ehCompletedCheckpoints.set(turnId, checkpoint);
+    const cleared =
+      checkpoint.review.files.length === 0 && checkpoint.completedHashes.size === 0;
+    if (cleared) {
+      this._ehCompletedCheckpoints.delete(turnId);
+      await deletePersistedEhTurnCheckpoint(this._profileDir, turnId);
+    } else {
+      await persistEhTurnCheckpoint(this._profileDir, checkpoint).catch(() => undefined);
+    }
+    return {
+      accepted: true,
+      remainingFiles: checkpoint.review.files.length,
+      cleared,
+    };
+  }
+
+  async revertEnvoyHarnessTurnFiles(
+    turnId: string,
+    paths: readonly string[],
+  ): Promise<import("@envoymesh/api").EhRevertTurnResult> {
+    const checkpoint = this._ehCompletedCheckpoints.get(turnId)
+      ?? await loadEhTurnCheckpoint(this._profileDir, turnId);
+    if (!checkpoint) return { reverted: false, files: [], reason: "checkpoint_not_found" };
+    const result = await revertEhTurnFiles(checkpoint, paths);
+    if (result.reverted) {
+      this._ehCompletedCheckpoints.set(turnId, checkpoint);
+      const cleared =
+        checkpoint.review.files.length === 0 && checkpoint.completedHashes.size === 0;
+      if (cleared) {
+        this._ehCompletedCheckpoints.delete(turnId);
+        await deletePersistedEhTurnCheckpoint(this._profileDir, turnId);
+      } else {
+        await persistEhTurnCheckpoint(this._profileDir, checkpoint).catch(() => undefined);
+      }
+      this.emit("eh:files_changed", {
+        turnId,
+        files: result.files,
+        ...(checkpoint.chatId ? { chatId: checkpoint.chatId } : {}),
+      });
+    }
+    return result;
+  }
+
+  async openEnvoyHarnessFile(params: { path: string; chatId?: string }): Promise<void> {
+    const chat = await this._resolveEhChat(params.chatId ?? null);
+    const cwd = await realpath(chat?.cwd ?? await this._envoyHarnessResolvedCwd());
+    const absolute = await realpath(resolve(cwd, params.path));
+    const rel = relative(cwd, absolute);
+    if (
+      !rel ||
+      rel === ".." ||
+      rel.startsWith("../") ||
+      rel.startsWith("..\\") ||
+      resolve(cwd, rel) !== absolute
+    ) {
+      throw new Error("envoy_harness_file_outside_project");
+    }
+    await openPathWithDefaultApp(absolute);
+  }
+
+  async getEnvoyHarnessCommandCatalog(): Promise<ExtAgentCommandCatalog> {
+    const commands = [
+      ["/help", "List supported commands"],
+      ["/cancel", "Cancel the active turn"],
+      ["/status", "Show runtime status"],
+      ["/compact", "Compact conversation context"],
+      ["/diff", "Show workspace changes"],
+      ["/plan", "Show or update the plan"],
+      ["/review", "Review workspace changes"],
+    ] as const;
+    return {
+      agentId: "envoy-harness",
+      agentName: "envoy-harness",
+      commands: commands.map(([slash, summary]) => ({
+        slash,
+        summary,
+        intercept: "forward" as const,
+        source: "dynamic" as const,
+      })),
+      catalogVersion: "tui-v1",
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  async recordEnvoyHarnessUxEvent(event: import("@envoymesh/api").EhUxTelemetryEvent): Promise<void> {
+    const allowed = new Set(["review_opened", "revert_attempted", "revert_completed", "revert_conflicted", "search_used", "command_rail_used"]);
+    if (!allowed.has(event.action)) throw new Error("envoy_harness_invalid_ux_event");
+    const sanitized = {
+      action: event.action,
+      surface: event.surface,
+      ...(event.outcome ? { outcome: event.outcome } : {}),
+      ...(event.command && /^\/[a-z0-9-]{1,32}$/.test(event.command) ? { command: event.command } : {}),
+      ...(Number.isSafeInteger(event.resultCount) && event.resultCount! >= 0 ? { resultCount: event.resultCount } : {}),
+      occurredAt: event.occurredAt,
+    };
+    this.emit("eh:ux_telemetry", sanitized);
+  }
+
+  /**
+   * Phase 8 / v1.2 — ask the envoy-harness runtime
+   * to run a specific skill. Returns the result
+   * formatted as a chat-reply string.
+   *
+   * **Algorithm (Q5 + Q4 of the v1.2 sub-plan):**
+   * 1. Check the runtime is ready (same path as
+   *    `askEnvoyHarness`).
+   * 2. Look up the skill in the manifest for the
+   *    cost ceiling (`costCeilingUsd`). Default
+   *    to `1.0` when the descriptor's cap is
+   *    `undefined`.
+   * 3. Lazy-construct the runtime (same path as
+   *    `askEnvoyHarness`).
+   * 4. Call `runtime.askSkill(message, { skillId,
+   *    costCeilingUsd, deadlineMs: 60_000, ... })`
+   *    to get the raw `SignedAgentResult`.
+   * 5. Format the result via `formatSkillResult`
+   *    (handles `text` / `file` / `image`; throws
+   *    `StructuredResultError` for `structured`
+   *    first blocks — Q2 + Q7 fall-through).
+   *
+   * **Throws:**
+   * - `envoy_harness_stub_phase_8_step_1` when the
+   *   runtime isn't ready (caller should fall
+   *   through to v1.1 free-form LLM ask per Q7).
+   * - `unknown envoy-harness skill: <id>` when the
+   *   manifest doesn't have the skill (defensive;
+   *   the router's `targetSkill` should be a real
+   *   skill from the same manifest).
+   * - `StructuredResultError` (re-thrown from the
+   *   formatter) when the skill returns a
+   *   `structured` first block (B-class; Q2).
+   * - Network / timeout / model errors from
+   *   `runtime.askSkill` (Q7).
+   */
+  async askEnvoyHarnessSkill(
+    message: string,
+    skillId: string,
+    opts?: { providerHint?: string; costCapUsd?: number },
+  ): Promise<string> {
+    await this._refreshEnvoyHarnessHostConfig();
+    const config = loadEnvoyHarnessRuntimeConfig({
+      hostModel: this._envoyHarnessHostModel,
+      hostApiKey: this._envoyHarnessHostApiKey,
+      hostEndpoint: this._envoyHarnessHostEndpoint,
+    });
+    if (!config.ready) {
+      throw new Error("envoy_harness_stub_phase_8_step_1");
+    }
+    // Look up the skill in the manifest for the
+    // cost ceiling (Q5). Defensive: the router's
+    // `targetSkill` came from the same manifest
+    // projection, so this should always find a
+    // match — but the runtime is async + the
+    // manifest could change between read and use.
+    const manifest = this.getNodeManifest();
+    const skill = manifest.skills.find(
+      (s) => s.runtime === "envoy-harness" && s.skillId === skillId,
+    );
+    if (!skill) {
+      throw new Error(`unknown envoy-harness skill: ${skillId}`);
+    }
+    const runtime = await this._getOrInitEnvoyHarnessRuntime();
+    // v1.5 — Q7 (cost) precedence:
+    // per-prompt `/cost:N` (gated by the
+    // env-var flag) > per-skill `costCeilingUsd`
+    // > v0 default (1.0). The helper checks the
+    // env-var flag + returns the effective value.
+    const costCeilingUsd = readEffectiveCostCapUsd(
+      opts?.costCapUsd,
+      skill.costCeilingUsd ?? 1.0,
+    );
+    const result = await runtime.askSkill(message, {
+      skillId,
+      costCeilingUsd,
+      deadlineMs: 60_000, // Q4 — generous headroom for code skills
+      // v1.5 — thread the provider hint to the
+      // runtime's audit log (dormant: the
+      // adapter doesn't switch providers yet).
+      providerHint: opts?.providerHint,
+    });
+    const formatted = formatSkillResult(result);
+    // v1.3 (Q6) — silent fall-through: the formatter
+    // returns `undefined` when there's no per-skill
+    // formatter for the skillId (e.g. a non-B-class
+    // structured block, or an unknown schemaRef). The
+    // dispatch catches + falls back to v1.1 free-form
+    // LLM ask. We throw `StructuredResultError` so
+    // the existing dispatch `try/catch` handles it.
+    if (formatted === undefined) {
+      const first = result.content[0];
+      const schemaRef =
+        first !== undefined && first.kind === "structured"
+          ? first.schemaRef
+          : "(unknown)";
+      throw new StructuredResultError(result.skillId, schemaRef);
+    }
+    return stripModelThinking(formatted);
+  }
+
+  /**
+   * Phase 8 / b3 — lazy-init the real envoy-harness runtime.
+   *
+   * **Why lazy:** the runtime is per-process. The chain
+   * worker is the only consumer (via the AN engine
+   * dispatch). Constructing it eagerly at node bootstrap
+   * would couple the bootstrap path to envoy-harness
+   * readiness (we'd need to fail bootstrap if the API key
+   * is missing). Lazy defers the construction to the first
+   * `askEnvoyHarness` call, AFTER `isEnvoyHarnessReady()`
+   * returns true.
+   *
+   * **The `agentIdentity`:** the runtime needs the node's
+   * `agentPeerId` (for the worker's peerId stamp) and
+   * `agentPrivateKeyPem` (for `defaultSignResult`). Both
+   * come from `ensureAgentIdentity` — a method that
+   * bootstraps the identity on first call and caches it.
+   *
+   * **The `askOpenClaw` closure:** the runtime's
+   * `LocalRuntimeRegistry` needs the host's OpenClaw ask
+   * path (for cross-runtime sub-agents on openclaw). We
+   * close over `this.askOpenClaw` (the same method the
+   * chain worker uses for the openclaw engine).
+   *
+   * **The `isOpenClawReady` closure:** the registry's
+   * early-bail optimization (clean "openclaw_unavailable"
+   * verdict instead of letting `askOpenClaw` throw). We
+   * close over `this.isOpenClawReady` (the same method
+   * the chain worker uses for the openclaw engine).
+   *
+   * **Why not `this._openClawState` directly:** the
+   * runtime is a testable seam — the closure shape
+   * `(prompt) => Promise<string>` matches the
+   * `LocalRuntimeRegistry`'s DI contract. The
+   * `askOpenClawViaRuntime` helper already wraps the
+   * state, so the closure is the same shape.
+   */
+  private _envoyHarnessRuntimeCache: RealEnvoyHarnessRuntime | undefined;
+  /** R2 — the cached peer execution pool (built once from config). */
+  private _envoyHarnessPeerPool:
+    | import("./agent-runtime-envoy/peer-pool.js").EnvoyHarnessPeerPool
+    | undefined;
+  /** U6 — focused chat's ACP host (EHUI + legacy single-chat paths). */
+  private _envoyHarnessPersistentAcpHost: EnvoyHarnessPersistentAcpHost | undefined;
+  private _envoyHarnessPersistentCwd: string | undefined;
+  private _envoyHarnessPersistentConfigKey: string | undefined;
+
+  /**
+   * Phase 8 / b3.live — host's envoy-harness model + API key cache.
+   *
+   * The host's `ModelProviderConfig` (from `getNodeConfig()`)
+   * is async to read; `isEnvoyHarnessReady` is sync. We
+   * cache the resolved `<provider>:<model>` string + API
+   * key in these fields, refreshed by
+   * `_refreshEnvoyHarnessHostConfig()` (fire-and-forget
+   * on every readiness check).
+   *
+   * **Why a cache, not async-everything:** the chain
+   * dispatch's `isAgentNetworkEngineReady` callback is
+   * sync (see `node-service-chain-orchestration.ts:1012`).
+   * Making `isEnvoyHarnessReady` async would ripple
+   * through 3 call sites. The cache pattern keeps the
+   * sync interface; the first call returns the default
+   * (env-only check), the async refresh populates the
+   * cache for subsequent calls. The full check happens
+   * in `askEnvoyHarness` (which is async).
+   *
+   * **Why two fields, not a single `{ model, apiKey }`
+   * object:** the `hostApiKey` may be sensitive (it's
+   * the user's Tauri-configured secret); keeping it
+   * in a separate field makes the data flow obvious
+   * (no struct hidden in a single cache slot).
+   *
+   * **Test escape hatch:** `setEnvoyHarnessHostModel(...)`
+   * + `setEnvoyHarnessHostApiKey(...)` are public
+   * setters for tests to pre-populate the cache
+   * synchronously. The defaults are `undefined`
+   * (no host model + no host API key; env-only check).
+   */
+  private _envoyHarnessHostModel: string | undefined = undefined;
+  private _envoyHarnessHostApiKey: string | undefined = undefined;
+  /** U4+ — the host's OpenAI/Anthropic-compatible endpoint (base URL). */
+  private _envoyHarnessHostEndpoint: string | undefined = undefined;
+
+  /**
+   * Phase 8 / b3.live — public DI seam for tests.
+   * Pre-populates the host model cache. Production code
+   * never calls this; the cache is populated by
+   * `_refreshEnvoyHarnessHostConfig()`.
+   */
+  setEnvoyHarnessHostModel(model: string | undefined): void {
+    this._envoyHarnessHostModel = model;
+  }
+
+  /**
+   * Phase 8 / b3.live — public DI seam for tests.
+   * Pre-populates the host API key cache. Production
+   * code never calls this; the cache is populated by
+   * `_refreshEnvoyHarnessHostConfig()`. Used by the
+   * live test to inject a `ModelProviderConfig.apiKey`
+   * without needing a real `getNodeConfig()`.
+   */
+  setEnvoyHarnessHostApiKey(apiKey: string | undefined): void {
+    this._envoyHarnessHostApiKey = apiKey;
+  }
+
+  /**
+   * Phase 8 / b3.live — async refresh of the host's
+   * envoy-harness model + API key. Reads `getNodeConfig()`,
+   * resolves the `ModelProviderConfig` via
+   * `resolveEnvoyHarnessHostConfig`, updates both caches.
+   *
+   * **Why fire-and-forget on every readiness check:**
+   * the host's `modelProviders` is a hot-reloaded
+   * setting (the user can change it from the Tauri
+   * settings UI). The cache reflects the most recent
+   * refresh; staleness is bounded by the call
+   * frequency of `isEnvoyHarnessReady` + the
+   * `getNodeConfig()` latency (typically <10ms).
+   *
+   * **Why not invalidate the cache on config change:**
+   * `getNodeConfig` doesn't fire a "changed" event.
+   * Polling on every readiness check is simpler and
+   * good enough for the v0 polling frequency.
+   * Future: hook into the config-change path.
+   *
+   * **API key source of truth:** the host's
+   * `ModelProviderConfig.apiKey` is the source of
+   * truth (the user enters it in the Tauri settings
+   * UI). It is NOT mirrored to `process.env`; the
+   * DI seam flows it through to the runtime. This
+   * means the runtime uses the same key the user
+   * configured, without env-var pollution.
+   */
+  private async _refreshEnvoyHarnessHostConfig(): Promise<
+    {
+      model: string | undefined;
+      apiKey: string | undefined;
+      endpoint: string | undefined;
+    }
+  > {
+    try {
+      const config = await this.getNodeConfig();
+      const modelProviders = (config as { modelProviders?: unknown })
+        ?.modelProviders as
+        | import("@envoymesh/api").ModelProviderConfig
+        | undefined;
+      if (!modelProviders) {
+        this._envoyHarnessHostModel = undefined;
+        this._envoyHarnessHostApiKey = undefined;
+        this._envoyHarnessHostEndpoint = undefined;
+        return { model: undefined, apiKey: undefined, endpoint: undefined };
+      }
+      const { resolveEnvoyHarnessHostConfig } = await import(
+        "./agent-runtime-envoy/index.js"
+      );
+      const resolved = resolveEnvoyHarnessHostConfig(modelProviders);
+      // `undefined` from the helper means "not ready"
+      // (unsupported mode / empty model name). In that
+      // case we keep the API key empty (no point
+      // caching a key for a model the runtime can't
+      // use). The full readiness check happens in
+      // `loadEnvoyHarnessRuntimeConfig`.
+      this._envoyHarnessHostModel = resolved?.model;
+      this._envoyHarnessHostApiKey = resolved?.apiKey;
+      this._envoyHarnessHostEndpoint = resolved?.endpoint;
+      return {
+        model: this._envoyHarnessHostModel,
+        apiKey: this._envoyHarnessHostApiKey,
+        endpoint: this._envoyHarnessHostEndpoint,
+      };
+    } catch {
+      // Config read failed (e.g. node-config not
+      // yet loaded). Keep the cache as-is; the next
+      // call will retry.
+      return {
+        model: this._envoyHarnessHostModel,
+        apiKey: this._envoyHarnessHostApiKey,
+        endpoint: this._envoyHarnessHostEndpoint,
+      };
+    }
+  }
+
+  private async _getOrInitEnvoyHarnessRuntime(): Promise<RealEnvoyHarnessRuntime> {
+    if (this._envoyHarnessRuntimeCache) {
+      return this._envoyHarnessRuntimeCache;
+    }
+    // R2 — build (once) the peer execution pool from the persisted config.
+    await this._ensureEnvoyHarnessPeerPool();
+    const agentIdentity = await this._ensureAgentIdentity();
+    if (!agentIdentity?.agentPeerId || !agentIdentity.agentPrivateKeyPem) {
+      // The bootstrap hasn't completed; the chain worker
+      // is being invoked before the identity is ready.
+      // This shouldn't happen in production (the chain
+      // worker is built AFTER identity is ready), but the
+      // safety net is a clean error.
+      throw new Error(
+        "agent identity unavailable for envoy-harness ask — " +
+          "ensure the node has bootstrapped before invoking " +
+          "the AN engine dispatch",
+      );
+    }
+    // Phase 8 / b3.live — refresh the host model + API
+    // key cache (sync interface, async refresh; falls
+    // back to the current cache value if the refresh
+    // is in flight or fails).
+    await this._refreshEnvoyHarnessHostConfig();
+    const config = loadEnvoyHarnessRuntimeConfig({
+      hostModel: this._envoyHarnessHostModel,
+      hostApiKey: this._envoyHarnessHostApiKey,
+      hostEndpoint: this._envoyHarnessHostEndpoint,
+    });
+    // Re-check readiness in case the env changed between
+    // the `isEnvoyHarnessReady` probe and this call
+    // (defensive; the env doesn't usually change at
+    // runtime).
+    if (!config.ready) {
+      throw new Error("envoy_harness_stub_phase_8_step_1");
+    }
+    const runtime = createRealEnvoyHarnessRuntime({
+      workerPeerId: agentIdentity.agentPeerId,
+      agentPrivateKeyPem: agentIdentity.agentPrivateKeyPem,
+      config,
+      // U4+ — the persisted project folder wins over the env default.
+      cwd: await this._envoyHarnessResolvedCwd(),
+      askOpenClaw: (p) => this.askOpenClaw(p),
+      isOpenClawReady: () => this.isOpenClawReady(),
+      // R2 — the execution pool from the persisted peer config (Pattern A).
+      ...(this._envoyHarnessPeerPool !== undefined
+        ? { innerSubmitter: this._envoyHarnessPeerPool.submitter }
+        : {}),
+      // Phase 8 / Step 3 — the 3 B-class tools
+      // (sponsor_friend / list_peers / relay_status).
+      // Built per-runtime (the deps are closures over
+      // `this`, so each runtime gets fresh deps; the
+      // runtime is cached in `_envoyHarnessRuntimeCache`
+      // and rebuilt only on `isEnvoyHarnessReady` flip).
+      // v0: always opt-in (production always passes
+      // bClassTools). The factory's per-skill filter
+      // (`getToolsForSkill`) decides which tool the
+      // model sees.
+      bClassTools: [
+        sponsorFriendTool(createBClassSponsorFriendDeps(this)),
+        listPeersTool(createBClassPeerListDeps(this)),
+        buildRelayStatusTool(createBClassRelayStatusDeps(this)),
+        // R3 follow-up — model-side peer-cluster discovery: when a
+        // standalone peer pool is configured (Pattern A), the model can
+        // read `peers` and route task.preferred_peer_id to a specific
+        // peer/model. The per-skill filter exposes it under the
+        // `peer-cluster` skill only.
+        ...(this._envoyHarnessPeerPool !== undefined
+          ? [
+              createPeersTool(this._envoyHarnessPeerPool.registry),
+            ]
+          : []),
+      ] as unknown as ReadonlyArray<import("@envoymesh/envoy-harness").Tool>,
+    });
+    this._envoyHarnessRuntimeCache = runtime;
+    return runtime;
+  }
+
+  /**
+   * Phase 8 / Step 4 — the local merged manifest for
+   * this node.
+   *
+   * **What this returns:** a `NodeManifest` that
+   * aggregates `describeSkills()` from every adapter
+   * registered on this node (envoy-harness + OpenClaw),
+   * tagged with the runtime that owns each skill. The
+   * orchestrator's manifest picker reads this; the
+   * per-adapter broadcast flow
+   * (`agent-adapter-broadcast.ts`) stays unchanged.
+   *
+   * **Why a local view, not a wire format:** the wire
+   * `CapabilityManifest` is per-runtime (one
+   * `runtime: AgentRuntime` per manifest, broadcast on
+   * the wire). The merged manifest is the host's
+   * **local aggregate** of what those N manifests
+   * would say, for the orchestrator to query without
+   * iterating per-adapter.
+   *
+   * **Why sync:** v0 only calls `describeSkills()`
+   * (sync). The orchestrator's routing decisions are
+   * local lookups; sync keeps the call shape simple.
+   * Future: async variant when `runtimeVersion` is
+   * read from `buildManifest()` (which is async).
+   *
+   * **Why stubs (not real adapters):** the merged
+   * manifest is for the **capability view**; we only
+   * need `describeSkills()` + the runtime tag. The
+   * real adapters carry runtime state (`askOpenClaw`
+   * closure, `agentPeerId`, `apiKey`, etc.) that
+   * the merged manifest doesn't need. Stubs throw on
+   * `execute()` / `buildManifest()` to make accidental
+   * side effects impossible.
+   *
+   * **SkillId collision policy:** the aggregator
+   * throws `SkillIdCollisionError` if two runtimes
+   * expose the same `skillId`. This is a bug in one of
+   * the runtimes; we fail loud at the orchestrator's
+   * read path, not silently.
+   *
+   * **Why the mesh peerId for the manifest's `peerId`:
+   * the wire `CapabilityManifest.peerId` is the agent
+   * peerId (the worker). For the local NodeManifest,
+   * the orchestrator already knows which node it's
+   * running on; the peerId is for self-description.
+   * We use the mesh peerId (sync-available) as a
+   * close-enough identifier. Future: read the real
+   * agent peerId via async `_ensureAgentIdentity()`
+   * when the aggregator becomes async.
+   */
+  getNodeManifest(): NodeManifest {
+    const peerId = this._mesh?.peerId ?? "local-node";
+    return aggregateNodeManifest({
+      peerId,
+      adapters: this._getNodeManifestStubs(),
+    });
+  }
+
+  /**
+   * Phase 8 / Step 4 — the adapter list passed to
+   * `aggregateNodeManifest`. Production code returns
+   * the default list (envoy-harness + OpenClaw stubs).
+   * Tests inject via `setManifestStubsForTests()`.
+   */
+  private _manifestStubsForTests: AgentAdapter[] | undefined;
+
+  /**
+   * Phase 8 / Step 4 — public test seam. Production
+   * never calls this; the default adapter list is
+   * always the live catalog. Tests inject a custom
+   * list to verify routing decisions without setting
+   * up a real `NodeServiceImpl` runtime.
+   */
+  setManifestStubsForTests(stubs: AgentAdapter[] | undefined): void {
+    this._manifestStubsForTests = stubs;
+  }
+
+  /**
+   * Phase 8 / Step 4 — build the default adapter list
+   * for the merged manifest. Stubs only; the real
+   * adapters (with `askOpenClaw` / `apiKey` / `peerId`
+   * state) are constructed on-demand at the
+   * orchestrator's call site, not here.
+   */
+  private _getNodeManifestStubs(): AgentAdapter[] {
+    if (this._manifestStubsForTests) {
+      return this._manifestStubsForTests;
+    }
+    return [
+      // Copy the readonly catalog to a mutable array
+      // (matches what `EnvoyHarnessAdapter.describeSkills()`
+      // and `OpenClawAdapter.describeSkills()` do). The
+      // `AgentAdapter` interface requires `SkillDescriptor[]`
+      // (mutable); the catalogs are `ReadonlyArray`.
+      this._makeStubAdapter("envoy-harness", () => [...ENVOY_HARNESS_RUNTIME_SKILLS]),
+      this._makeStubAdapter("openclaw", () => [...OPENCLAW_SKILLS]),
+    ];
+  }
+
+  /**
+   * Phase 8 / Step 4 — build a stateless `AgentAdapter`
+   * stub. The aggregator only reads `runtime` and calls
+   * `describeSkills()`. All other methods throw with a
+   * clear error message so accidental side effects are
+   * impossible to ignore.
+   */
+  private _makeStubAdapter(
+    runtime: AgentRuntime,
+    describeSkillsFn: () => SkillDescriptor[],
+  ): AgentAdapter {
+    return {
+      runtime,
+      describeSkills: describeSkillsFn,
+      buildManifest: () => {
+        throw new Error(
+          `getNodeManifest: stub ${runtime} adapter's ` +
+            `buildManifest() must not be called`,
+        );
+      },
+      execute: () => {
+        throw new Error(
+          `getNodeManifest: stub ${runtime} adapter's ` +
+            `execute() must not be called`,
+        );
+      },
+      verify: () => {
+        throw new Error(
+          `getNodeManifest: stub ${runtime} adapter's ` +
+            `verify() must not be called`,
+        );
+      },
+    };
   }
 
   /** Node-owner choice: which engine runs Team-job steps on this node. */
@@ -4886,12 +6332,925 @@ class NodeServiceImpl implements NodeService {
   }
 
   async restartPi(): Promise<PiStatus> {
-    await restartPiViaRuntime(this._piState, this._piRuntimeDeps())
-    return this.getPiStatus()
+    const cfg = await this._configStore.load().catch(() => undefined);
+    if (resolvePiCodingBackend(cfg?.piSettings) === "envoy-harness") {
+      // No Pi child to restart; refresh EH readiness.
+      return this.getPiStatus();
+    }
+    await restartPiViaRuntime(this._piState, this._piRuntimeDeps());
+    return this.getPiStatus();
   }
 
   async getPiStatus(): Promise<PiStatus> {
-    return getPiStatusViaRuntime(this._piState, this._piRuntimeDeps())
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const codingBackend = resolvePiCodingBackend(cfg?.piSettings);
+    if (codingBackend === "envoy-harness") {
+      const enabled = cfg?.piEnabled !== false;
+      if (!enabled) {
+        return {
+          enabled: false,
+          state: "disabled",
+          modelInherited: true,
+          codingBackend,
+        };
+      }
+      await this._refreshEnvoyHarnessHostConfig();
+      const eh = loadEnvoyHarnessRuntimeConfig({
+        hostModel: this._envoyHarnessHostModel,
+        hostApiKey: this._envoyHarnessHostApiKey,
+        hostEndpoint: this._envoyHarnessHostEndpoint,
+      });
+      return {
+        enabled: true,
+        state: eh.ready ? "ready" : "error",
+        modelSpec: eh.model,
+        modelInherited: true,
+        error: eh.ready
+          ? undefined
+          : (eh.reason ?? "envoy-harness not ready"),
+        codingBackend,
+      };
+    }
+    const status = await getPiStatusViaRuntime(
+      this._piState,
+      this._piRuntimeDeps(),
+    );
+    return { ...status, codingBackend: "pi" };
+  }
+
+  /**
+   * U4 — dedicated envoy-harness status for the Envoy Harness UI panel:
+   * runtime readiness + model + the configured peer cluster counts.
+   */
+  async getEnvoyHarnessStatus(): Promise<
+    import("@envoymesh/api").EnvoyHarnessStatus
+  > {
+    await this._refreshEnvoyHarnessHostConfig();
+      const eh = loadEnvoyHarnessRuntimeConfig({
+        hostModel: this._envoyHarnessHostModel,
+        hostApiKey: this._envoyHarnessHostApiKey,
+        hostEndpoint: this._envoyHarnessHostEndpoint,
+      });
+    const peers = this.listEnvoyHarnessPeers();
+    const cwd = await this._envoyHarnessResolvedCwd();
+    let sessionId: string | undefined;
+    let messageCount: number | undefined;
+    let autoRunPolicy:
+      | "always-confirm"
+      | "safe-only"
+      | "off"
+      | "never"
+      | undefined;
+    try {
+      const cfg = await this._configStore.load().catch(() => undefined);
+      autoRunPolicy =
+        cfg?.envoyHarnessAutoRunPolicy ??
+        "safe-only";
+      const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+      const resolved = await resolveEhSessionIdForCwd({
+        cwd,
+        sessionByCwd: cfg?.envoyHarnessSessionByCwd,
+        sessionStore,
+      });
+      if (resolved.sessionId !== undefined) {
+        sessionId = resolved.sessionId;
+        if (resolved.migratedFromDisk) {
+          await this._persistEhSessionMapping(cwd, sessionId);
+        }
+        const history = await loadEhChatHistoryFromStore({
+          sessionStore,
+          sessionId,
+          cwd,
+        });
+        messageCount = history.turns.length;
+      }
+    } catch {
+      // Best-effort — status still useful without session metadata.
+    }
+    return {
+      state: eh.ready ? "ready" : "error",
+      ...(eh.model !== undefined ? { model: eh.model } : {}),
+      cwd,
+      ...(sessionId !== undefined ? { sessionId } : {}),
+      ...(messageCount !== undefined ? { messageCount } : {}),
+      ...(autoRunPolicy !== undefined ? { autoRunPolicy } : {}),
+      ...(!eh.ready
+        ? { error: eh.reason ?? "envoy-harness not ready" }
+        : {}),
+      peers: {
+        connected: peers.length,
+        failed: this._envoyHarnessPeerPool?.failed.length ?? 0,
+      },
+    };
+  }
+
+  /**
+   * Change the Envoy Harness permission policy (Codex/Claude-style modes).
+   * Rebuilds per-chat hosts on the next turn so the new policy applies.
+   */
+  async setEnvoyHarnessAutoRunPolicy(
+    policy: string,
+  ): Promise<import("@envoymesh/api").EnvoyHarnessStatus> {
+    const normalized = policy.trim().toLowerCase();
+    if (
+      normalized !== "always-confirm" &&
+      normalized !== "safe-only" &&
+      normalized !== "off" &&
+      normalized !== "never"
+    ) {
+      throw new Error(
+        `invalid envoy-harness permission policy: ${policy} (use always-confirm | safe-only | off | never)`,
+      );
+    }
+    await this.updateNodeConfig({
+      envoyHarnessAutoRunPolicy: normalized,
+    });
+    // The change takes effect from the NEXT turn: idle per-chat hosts are
+    // closed so they rebuild with the new policy, while hosts with an
+    // in-flight turn are left running (the current turn keeps the policy
+    // it started with). Nothing ongoing is interrupted. The runtime
+    // itself does not depend on the policy — only the per-host
+    // `shouldAskTool` closure does — so we never reset it here.
+    this._ehChatRuntime.closeAll();
+    return this.getEnvoyHarnessStatus();
+  }
+
+  /** The effective Envoy permission policy, for host staleness checks. */
+  private async _envoyHarnessAutoRunPolicyKey(): Promise<string> {
+    const cfg = await this._configStore.load().catch(() => undefined);
+    return (
+      cfg?.envoyHarnessAutoRunPolicy ??
+      "safe-only"
+    );
+  }
+
+  async getEnvoyHarnessChatHistory(
+    chatId?: string,
+  ): Promise<import("@envoymesh/api").EhChatHistory> {
+    await this._refreshEnvoyHarnessHostConfig();
+    const chat = await this._resolveEhChat(chatId ?? null);
+    const cwd = chat?.cwd ?? (await this._envoyHarnessResolvedCwd());
+    const normalized = normalizeEhWorkspaceCwd(cwd);
+    const empty: import("@envoymesh/api").EhChatHistory = {
+      ...(chat ? { chatId: chat.id } : {}),
+      sessionId: "",
+      cwd: normalized,
+      turns: [],
+    };
+    const eh = loadEnvoyHarnessRuntimeConfig({
+      hostModel: this._envoyHarnessHostModel,
+      hostApiKey: this._envoyHarnessHostApiKey,
+      hostEndpoint: this._envoyHarnessHostEndpoint,
+    });
+    if (!eh.ready) return empty;
+
+    if (chat && chatId) {
+      await this._activateEhChat(chat);
+    }
+
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    const resolved = await resolveEhSessionIdForCwd({
+      cwd,
+      sessionByCwd: cfg?.envoyHarnessSessionByCwd,
+      sessionStore,
+    });
+    if (resolved.sessionId === undefined || resolved.sessionId.length === 0) {
+      return empty;
+    }
+    if (resolved.migratedFromDisk) {
+      await this._persistEhSessionMapping(cwd, resolved.sessionId, chat?.id);
+    }
+
+    const history = await loadEhChatHistoryFromStore({
+      sessionStore,
+      sessionId: resolved.sessionId,
+      cwd,
+    });
+    const scoped = { ...history, ...(chat ? { chatId: chat.id } : {}) };
+    const checkpoints = await listEhTurnCheckpoints(this._profileDir, {
+      ...(chat ? { chatId: chat.id } : {}),
+      cwd: normalized,
+    });
+    const reviewItems = checkpoints.flatMap((checkpoint) => checkpoint.review.files.length > 0 ? [{
+      id: `turn:${checkpoint.turnId}:changes`,
+      type: "changes" as const,
+      chatId: chat?.id ?? "__envoy_harness__",
+      turnId: checkpoint.turnId,
+      checkpointId: checkpoint.checkpointId,
+      files: checkpoint.review.files.map((file) => file.path),
+      createdAt: new Date(0).toISOString(),
+    }] : []);
+    return { ...scoped, timeline: [...(scoped.timeline ?? []), ...reviewItems] };
+  }
+
+  async listEnvoyHarnessChats(): Promise<
+    import("@envoymesh/api").EhChatWorkspaceSummary[]
+  > {
+    if (!(await this._callerMayUseCoding())) return [];
+    const { chats, sessionByCwd } = await this._loadEhChatState();
+    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    return summarizeEhChats({ chats, sessionStore, sessionByCwd });
+  }
+
+  async createEnvoyHarnessChat(opts: {
+    cwd: string;
+    title?: string;
+  }): Promise<import("@envoymesh/api").EhChatWorkspaceSummary> {
+    const abs = resolvePiProjectDir(opts.cwd);
+    if (abs === null) {
+      throw new Error(`envoy-harness project path is not a directory: ${opts.cwd}`);
+    }
+    const normalized = normalizeEhWorkspaceCwd(abs);
+    const { chats } = await this._loadEhChatState();
+    const existing = findEhChatByCwd(chats, normalized);
+    if (existing) {
+      await this._activateEhChat(existing);
+      const listed = await this.listEnvoyHarnessChats();
+      const summary = listed.find((c) => c.id === existing.id);
+      if (summary) return summary;
+      return {
+        id: existing.id,
+        cwd: existing.cwd,
+        title: existing.title ?? normalized,
+        lastUsedAt: existing.lastUsedAt,
+      };
+    }
+    assertEhChatCapacity(chats);
+    const now = new Date().toISOString();
+    const chat: import("@envoymesh/api").EhChatWorkspace = {
+      id: crypto.randomUUID(),
+      cwd: normalized,
+      title: opts.title?.trim() || undefined,
+      createdAt: now,
+      lastUsedAt: now,
+    };
+    const nextChats = sortEhChats([chat, ...chats]);
+    await this.updateNodeConfig({
+      envoyHarnessChats: nextChats,
+      activeEnvoyHarnessChatId: chat.id,
+      envoyHarnessCwd: normalized,
+    });
+    this._syncActiveEhHostAlias(undefined);
+    const listed = await this.listEnvoyHarnessChats();
+    const created = listed.find((c) => c.id === chat.id);
+    if (!created) {
+      return {
+        id: chat.id,
+        cwd: normalized,
+        title: opts.title?.trim() || normalized,
+        lastUsedAt: now,
+      };
+    }
+    return created;
+  }
+
+  async openEnvoyHarnessChat(
+    chatId: string,
+  ): Promise<import("@envoymesh/api").EhChatHistory> {
+    const id = chatId.trim();
+    if (!id) {
+      throw new Error("envoy_harness_chat_id_required");
+    }
+    const chat = await this._resolveEhChat(id);
+    if (!chat) {
+      throw new Error(`envoy_harness_chat_not_found: ${id}`);
+    }
+    return this.getEnvoyHarnessChatHistory(chat.id);
+  }
+
+  async removeEnvoyHarnessChat(chatId: string): Promise<{ removed: boolean }> {
+    if (this._ehChatRuntime.hasTurnForChat(chatId)) {
+      throw new Error("envoy_harness_turn_busy");
+    }
+    const { chats, activeId } = await this._loadEhChatState();
+    if (!findEhChatById(chats, chatId)) {
+      return { removed: false };
+    }
+    const nextChats = removeEhChat(chats, chatId);
+    const nextActive =
+      activeId === chatId ? sortEhChats(nextChats)[0]?.id : activeId;
+    await this.updateNodeConfig({
+      envoyHarnessChats: nextChats,
+      activeEnvoyHarnessChatId: nextActive,
+      ...(nextActive
+        ? { envoyHarnessCwd: findEhChatById(nextChats, nextActive)?.cwd }
+        : {}),
+    });
+    this._ehChatRuntime.removeHost(chatId);
+    if (nextActive) {
+      const nextChat = findEhChatById(nextChats, nextActive);
+      if (nextChat) await this._activateEhChat(nextChat);
+      else this._syncActiveEhHostAlias(undefined);
+    } else {
+      this._syncActiveEhHostAlias(undefined);
+    }
+    return { removed: true };
+  }
+
+  /**
+   * Delete one UI turn (`eh-msg-N`) from the persisted harness session.
+   * Drops the in-process ACP host so the next turn reloads from disk.
+   */
+  async deleteEnvoyHarnessChatTurn(opts: {
+    turnId: string;
+    chatId?: string;
+  }): Promise<import("@envoymesh/api").EhChatHistory & { deleted: boolean }> {
+    const turnId = opts.turnId.trim();
+    if (!turnId) {
+      throw new Error("envoy_harness_turn_id_required");
+    }
+    const chat = await this._resolveEhChat(opts.chatId ?? null);
+    if (chat) {
+      if (this._ehChatRuntime.hasTurnForChat(chat.id)) {
+        throw new Error("envoy_harness_turn_busy");
+      }
+    } else if (this._ehChatRuntime.activeTurnCount() > 0) {
+      throw new Error("envoy_harness_turn_busy");
+    }
+    const cwd = chat?.cwd ?? (await this._envoyHarnessResolvedCwd());
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    const resolved = await resolveEhSessionIdForCwd({
+      cwd,
+      sessionByCwd: cfg?.envoyHarnessSessionByCwd,
+      sessionStore,
+    });
+    if (resolved.sessionId === undefined || resolved.sessionId.length === 0) {
+      return {
+        ...(chat ? { chatId: chat.id } : {}),
+        sessionId: "",
+        cwd: normalizeEhWorkspaceCwd(cwd),
+        turns: [],
+        deleted: false,
+      };
+    }
+    const result = await deleteEhChatTurnFromStore({
+      sessionStore,
+      sessionId: resolved.sessionId,
+      cwd,
+      turnId,
+    });
+    // Drop live host so the next turn reloads the rewritten transcript.
+    if (chat) {
+      this._ehChatRuntime.removeHost(chat.id);
+    } else {
+      this._closeEnvoyHarnessPersistentAcpHost();
+    }
+    return {
+      ...result.history,
+      ...(chat ? { chatId: chat.id } : {}),
+      deleted: result.deleted,
+    };
+  }
+
+  /**
+   * `/new` / `/clear` — fresh persisted session for the current chat workspace.
+   */
+  async resetEnvoyHarnessChat(
+    chatId?: string,
+  ): Promise<import("@envoymesh/api").EhChatHistory> {
+    const chat = await this._resolveEhChat(chatId ?? null);
+    if (chat && this._ehChatRuntime.hasTurnForChat(chat.id)) {
+      throw new Error("envoy_harness_turn_busy");
+    }
+    const cwd = chat?.cwd ?? (await this._envoyHarnessResolvedCwd());
+    const normalized = normalizeEhWorkspaceCwd(cwd);
+    if (chat) {
+      await this._activateEhChat(chat);
+      this._ehChatRuntime.removeHost(chat.id);
+    } else {
+      this._closeEnvoyHarnessPersistentAcpHost();
+    }
+    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    const created = await sessionStore.create({
+      cwd: normalized,
+      startedAt: new Date().toISOString(),
+      permissionMode: "workspace-write",
+    });
+    await this._persistEhSessionMapping(cwd, created.id, chat?.id);
+    return {
+      ...(chat ? { chatId: chat.id } : {}),
+      sessionId: created.id,
+      cwd: normalized,
+      turns: [],
+    };
+  }
+
+  private async _persistEhSessionMapping(
+    cwd: string,
+    sessionId: string,
+    chatId?: string,
+  ): Promise<void> {
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const envoyHarnessSessionByCwd = mergeSessionMapping(
+      cfg?.envoyHarnessSessionByCwd,
+      cwd,
+      sessionId,
+    );
+    let resolvedChatId = chatId;
+    let envoyHarnessChats = cfg?.envoyHarnessChats;
+    if (!resolvedChatId) {
+      const { chats } = await this._loadEhChatState();
+      resolvedChatId = findEhChatByCwd(chats, cwd)?.id;
+      if (!envoyHarnessChats) envoyHarnessChats = chats;
+    }
+    if (resolvedChatId && envoyHarnessChats) {
+      envoyHarnessChats = upsertEhChatSessionId(
+        envoyHarnessChats,
+        resolvedChatId,
+        sessionId,
+      );
+    } else if (resolvedChatId) {
+      const { chats } = await this._loadEhChatState();
+      envoyHarnessChats = upsertEhChatSessionId(chats, resolvedChatId, sessionId);
+    }
+    await this.updateNodeConfig({
+      envoyHarnessSessionByCwd,
+      ...(envoyHarnessChats ? { envoyHarnessChats } : {}),
+    });
+  }
+
+  /** The envoy-harness project folder: active chat → persisted config → env → cwd. */
+  private async _envoyHarnessResolvedCwd(): Promise<string> {
+    const chat = await this._resolveEhChat(undefined);
+    if (chat) return chat.cwd;
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const persisted = cfg?.envoyHarnessCwd?.trim();
+    if (persisted && persisted.length > 0) return persisted;
+    return process.env.ENVOY_HARNESS_CWD ?? process.cwd();
+  }
+
+  private async _loadEhChatState(): Promise<{
+    chats: import("@envoymesh/api").EhChatWorkspace[];
+    sessionByCwd: Record<string, string>;
+    activeId: string | undefined;
+  }> {
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const chats = migrateLegacyEhChats({
+      chats: cfg?.envoyHarnessChats,
+      legacyCwd: cfg?.envoyHarnessCwd,
+      sessionByCwd: cfg?.envoyHarnessSessionByCwd,
+    });
+    if (
+      chats.length > 0 &&
+      (cfg?.envoyHarnessChats === undefined || cfg.envoyHarnessChats.length === 0)
+    ) {
+      const migrated = sortEhChats(chats)[0];
+      await this.updateNodeConfig({
+        envoyHarnessChats: chats,
+        activeEnvoyHarnessChatId: migrated?.id,
+        ...(migrated ? { envoyHarnessCwd: migrated.cwd } : {}),
+      });
+    }
+
+    let activeId = cfg?.activeEnvoyHarnessChatId?.trim();
+    if (activeId && !findEhChatById(chats, activeId)) {
+      activeId = sortEhChats(chats)[0]?.id;
+      if (activeId) {
+        const repaired = findEhChatById(chats, activeId);
+        await this.updateNodeConfig({
+          activeEnvoyHarnessChatId: activeId,
+          ...(repaired ? { envoyHarnessCwd: repaired.cwd } : {}),
+        });
+      }
+    } else if (!activeId && chats[0]) {
+      activeId = chats[0].id;
+    }
+
+    return {
+      chats,
+      sessionByCwd: cfg?.envoyHarnessSessionByCwd ?? {},
+      activeId,
+    };
+  }
+
+  private async _resolveEhChat(
+    chatId: string | null | undefined,
+  ): Promise<import("@envoymesh/api").EhChatWorkspace | undefined> {
+    const { chats, activeId } = await this._loadEhChatState();
+    if (chatId) return findEhChatById(chats, chatId);
+    if (activeId) {
+      const active = findEhChatById(chats, activeId);
+      if (active) return active;
+    }
+    return sortEhChats(chats)[0];
+  }
+
+  private _syncActiveEhHostAlias(
+    chatId: string | undefined,
+  ): void {
+    if (!chatId) {
+      this._envoyHarnessPersistentAcpHost = undefined;
+      this._envoyHarnessPersistentCwd = undefined;
+      this._envoyHarnessPersistentConfigKey = undefined;
+      return;
+    }
+    const existing = this._ehChatRuntime.getHost(chatId);
+    if (!existing) {
+      this._envoyHarnessPersistentAcpHost = undefined;
+      this._envoyHarnessPersistentCwd = undefined;
+      this._envoyHarnessPersistentConfigKey = undefined;
+      return;
+    }
+    this._envoyHarnessPersistentAcpHost = existing.host;
+    this._envoyHarnessPersistentCwd = existing.cwd;
+    this._envoyHarnessPersistentConfigKey = existing.configKey;
+  }
+
+  private async _activateEhChat(
+    chat: import("@envoymesh/api").EhChatWorkspace,
+  ): Promise<void> {
+    const { chats } = await this._loadEhChatState();
+    const nextChats = touchEhChat(chats, chat.id);
+    await this.updateNodeConfig({
+      activeEnvoyHarnessChatId: chat.id,
+      envoyHarnessCwd: chat.cwd,
+      envoyHarnessChats: nextChats,
+    });
+    this._syncActiveEhHostAlias(chat.id);
+  }
+
+  /**
+   * U4+ — persist the envoy-harness project folder. Validates the path
+   * is a directory, saves it to node config, resets the runtime cache so
+   * the next ask runs in the new folder, and returns the new status.
+   */
+  async setEnvoyHarnessProjectPath(
+    path: string,
+  ): Promise<import("@envoymesh/api").EnvoyHarnessStatus> {
+    const abs = resolvePiProjectDir(path);
+    if (abs === null) {
+      throw new Error(`envoy-harness project path is not a directory: ${path}`);
+    }
+    const chat = await this._resolveEhChat(undefined);
+    if (chat) {
+      const { chats } = await this._loadEhChatState();
+      const other = findEhChatByCwd(chats, abs);
+      if (other && other.id !== chat.id) {
+        throw new Error(
+          `envoy_harness_project_in_use: already open as "${other.title ?? abs}"`,
+        );
+      }
+      const nextChats = updateEhChatCwd(chats, chat.id, abs);
+      await this.updateNodeConfig({
+        envoyHarnessCwd: abs,
+        envoyHarnessChats: nextChats,
+      });
+    } else {
+      await this.updateNodeConfig({ envoyHarnessCwd: abs });
+    }
+    // The runtime caches the cwd at construction; rebuild on next ask.
+    this._envoyHarnessRuntimeCache = undefined;
+    this._closeEnvoyHarnessPersistentAcpHost();
+    return this.getEnvoyHarnessStatus();
+  }
+
+  private _closeEnvoyHarnessPersistentAcpHost(): void {
+    this._envoyHarnessPersistentAcpHost?.close();
+    this._envoyHarnessPersistentAcpHost = undefined;
+    this._envoyHarnessPersistentCwd = undefined;
+    this._envoyHarnessPersistentConfigKey = undefined;
+  }
+
+  private async _buildEnvoyHarnessAcpBackend(
+    runtime: RealEnvoyHarnessRuntime,
+    cwd: string,
+    chatId?: string,
+  ): Promise<ProtocolSessionBackend> {
+    await runtime.ensureInternals();
+    const cfg = await this._configStore.load().catch(() => undefined);
+    // Envoy chat/terminal permission policy (Codex/Claude-style modes).
+    // Default `safe-only`: read-only tools + safe bash auto-run, the
+    // rest ask. `off`/`never` auto-allows everything.
+    const autoRun =
+      cfg?.envoyHarnessAutoRunPolicy ??
+      "safe-only";
+    const eh = loadEnvoyHarnessRuntimeConfig({
+      hostModel: this._envoyHarnessHostModel,
+      hostApiKey: this._envoyHarnessHostApiKey,
+      hostEndpoint: this._envoyHarnessHostEndpoint,
+    });
+    const memoryStore = new LocalMemoryStore({
+      memoryRoot: join(cwd, "memories"),
+    });
+    const sessionStore = new SessionStore({
+      dir: join(this._profileDir, "envoy-harness", "sessions"),
+    });
+    let configLayer: ConfigLayer = {};
+    try {
+      configLayer = (await loadConfigStack({ cwd })).layer;
+    } catch {
+      configLayer = {};
+    }
+    const runtimeCfg = resolveAgentRuntimeConfig(cwd, configLayer);
+    const skills = createSkillRegistry();
+    skills.registerProvider(createFilesystemSkillProvider());
+    const userQuestions = createUserQuestionService();
+    userQuestions.registerProvider({
+      name: "envoymesh-ui",
+      ask: (req) => this._ehUserQuestionBridge.ask(req, chatId),
+    });
+    // Codex/Claude/DeepSeek parity: inject cwd + AGENTS.md + config
+    // into the system prompt so chat asks treat the selected folder
+    // as the project.
+    const systemPrompt = await buildAgentSystemPrompt({
+      cwd,
+      ...systemPromptOptionsFromConfig(configLayer),
+      permissionMode: runtimeCfg.permissionMode,
+      askForApproval: runtimeCfg.askForApproval,
+    });
+    return createAgentSessionBackend({
+      defaultCwd: cwd,
+      memoryStore,
+      sessionStore,
+      shouldAskTool: (toolName, args) =>
+        shouldAskAcpTool(toolName, autoRun, args),
+      getConfig: () => ({
+        version: "0.0.0",
+        ...(eh.model !== undefined ? { model: eh.model } : {}),
+        ...(eh.provider !== undefined ? { provider: eh.provider } : {}),
+      }),
+      createAgent: ({ sessionId, cwd: agentCwd, askHandler, session }) =>
+        runtime.buildAgentForAcpSession({
+          sessionId,
+          cwd: agentCwd ?? cwd,
+          askHandler,
+          systemPrompt,
+          permissionMode: runtimeCfg.permissionMode,
+          approval: runtimeCfg.askForApproval,
+          sandboxPolicy: runtimeCfg.sandboxPolicy,
+          memoryStore,
+          skills,
+          userQuestions,
+          ...(configLayer.shellEnvironmentPolicy !== undefined
+            ? {
+                shellEnvironmentPolicy: configLayer.shellEnvironmentPolicy,
+              }
+            : {}),
+          ...(session !== undefined ? { session } : {}),
+          shouldAskTool: (toolName, args) =>
+            shouldAskAcpTool(toolName, autoRun, args),
+        }),
+      listPeers: () => this.listEnvoyHarnessPeers(),
+      ...(this._envoyHarnessPeerPool !== undefined
+        ? createPeerPoolStatusBackend(this._envoyHarnessPeerPool)
+        : {}),
+      teamJobs: () =>
+        chainWorkerSubtasksToTeamJobs(
+          this._chainOrchestrationContext().getChainSideState().workerSubtasks,
+        ),
+      scoreboardSummary: () => aggregateVerdicts(listAllVerdictEntries()),
+    });
+  }
+
+  private async _ensureEhChatHost(
+    chatId: string,
+    cwd: string,
+  ): Promise<{ host: EnvoyHarnessPersistentAcpHost; sessionId: string }> {
+    const eh = loadEnvoyHarnessRuntimeConfig({
+      hostModel: this._envoyHarnessHostModel,
+      hostApiKey: this._envoyHarnessHostApiKey,
+      hostEndpoint: this._envoyHarnessHostEndpoint,
+    });
+    const policyKey = await this._envoyHarnessAutoRunPolicyKey();
+    const configKey = `${eh.model ?? ""}:${eh.apiKey ?? ""}:${eh.endpoint ?? ""}:${policyKey}`;
+    const normalized = normalizeEhWorkspaceCwd(cwd);
+    const existing = this._ehChatRuntime.getHost(chatId);
+    if (
+      existing &&
+      existing.cwd === normalized &&
+      existing.configKey === configKey
+    ) {
+      return { host: existing.host, sessionId: existing.sessionId };
+    }
+    if (existing && this._ehChatRuntime.hasTurnForChat(chatId)) {
+      throw new Error("envoy_harness_turn_busy");
+    }
+    if (existing) {
+      this._ehChatRuntime.removeHost(chatId);
+    }
+
+    const runtime = await this._getOrInitEnvoyHarnessRuntime();
+    const backend = await this._buildEnvoyHarnessAcpBackend(
+      runtime,
+      normalized,
+      chatId,
+    );
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    const resolved = await resolveEhSessionIdForCwd({
+      cwd: normalized,
+      sessionByCwd: cfg?.envoyHarnessSessionByCwd,
+      sessionStore,
+    });
+    const host = new EnvoyHarnessPersistentAcpHost();
+    let started: { sessionId: string; resumed: boolean };
+    try {
+      started = await host.start({
+        cwd: normalized,
+        backend,
+        permissionBridge: this._ehPermissionBridge,
+        ...(resolved.sessionId !== undefined
+          ? { resumeSessionId: resolved.sessionId }
+          : {}),
+      });
+    } catch (err) {
+      if (resolved.sessionId === undefined) throw err;
+      await host.start({
+        cwd: normalized,
+        backend,
+        permissionBridge: this._ehPermissionBridge,
+      });
+      started = { sessionId: host.sessionId!, resumed: false };
+    }
+    if (
+      resolved.sessionId === undefined ||
+      resolved.migratedFromDisk ||
+      resolved.sessionId !== started.sessionId
+    ) {
+      await this._persistEhSessionMapping(normalized, started.sessionId, chatId);
+    }
+    this._ehChatRuntime.setHost(chatId, {
+      host,
+      cwd: normalized,
+      configKey,
+      sessionId: started.sessionId,
+    });
+    const active = await this._resolveEhChat(undefined);
+    if (active?.id === chatId) {
+      this._syncActiveEhHostAlias(chatId);
+    }
+    return { host, sessionId: started.sessionId };
+  }
+
+  private async _ensureEnvoyHarnessPersistentAcpHost(): Promise<void> {
+    const activeChat = await this._resolveEhChat(undefined);
+    const cwd = activeChat?.cwd ?? (await this._envoyHarnessResolvedCwd());
+    if (activeChat) {
+      await this._ensureEhChatHost(activeChat.id, cwd);
+      return;
+    }
+    const eh = loadEnvoyHarnessRuntimeConfig({
+      hostModel: this._envoyHarnessHostModel,
+      hostApiKey: this._envoyHarnessHostApiKey,
+      hostEndpoint: this._envoyHarnessHostEndpoint,
+    });
+    const policyKey = await this._envoyHarnessAutoRunPolicyKey();
+    const configKey = `${eh.model ?? ""}:${eh.apiKey ?? ""}:${eh.endpoint ?? ""}:${policyKey}`;
+    if (
+      this._envoyHarnessPersistentAcpHost !== undefined &&
+      this._envoyHarnessPersistentCwd === cwd &&
+      this._envoyHarnessPersistentConfigKey === configKey
+    ) {
+      return;
+    }
+    this._closeEnvoyHarnessPersistentAcpHost();
+    const runtime = await this._getOrInitEnvoyHarnessRuntime();
+    const backend = await this._buildEnvoyHarnessAcpBackend(runtime, cwd);
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    const resolved = await resolveEhSessionIdForCwd({
+      cwd,
+      sessionByCwd: cfg?.envoyHarnessSessionByCwd,
+      sessionStore,
+    });
+    const host = new EnvoyHarnessPersistentAcpHost();
+    let started: { sessionId: string; resumed: boolean };
+    try {
+      started = await host.start({
+        cwd,
+        backend,
+        permissionBridge: this._ehPermissionBridge,
+        ...(resolved.sessionId !== undefined
+          ? { resumeSessionId: resolved.sessionId }
+          : {}),
+      });
+    } catch (err) {
+      // A stale resume id (session JSONL deleted between the disk scan
+      // and the load, or a corrupted file) must not brick the chat:
+      // fall back to a fresh persisted session for the same project.
+      if (resolved.sessionId === undefined) throw err;
+      await host.start({
+        cwd,
+        backend,
+        permissionBridge: this._ehPermissionBridge,
+      });
+      started = { sessionId: host.sessionId!, resumed: false };
+    }
+    if (
+      resolved.sessionId === undefined ||
+      resolved.migratedFromDisk ||
+      resolved.sessionId !== started.sessionId
+    ) {
+      await this._persistEhSessionMapping(cwd, started.sessionId);
+    }
+    this._envoyHarnessPersistentAcpHost = host;
+    this._envoyHarnessPersistentCwd = cwd;
+    this._envoyHarnessPersistentConfigKey = configKey;
+  }
+
+  /**
+   * U6 — EHUI panel data for Envoy Harness chat + terminal rails.
+   * Mesh-native ops (cluster / peers / team / scoreboard) use node state;
+   * session ops (plan / memory / git / sessions) use a persistent ACP child.
+   */
+  async invokeEnvoyHarnessEhui(
+    request: import("@envoymesh/api").EhuiInvokeRequest,
+  ): Promise<unknown> {
+    await this._refreshEnvoyHarnessHostConfig();
+    const eh = loadEnvoyHarnessRuntimeConfig({
+      hostModel: this._envoyHarnessHostModel,
+      hostApiKey: this._envoyHarnessHostApiKey,
+      hostEndpoint: this._envoyHarnessHostEndpoint,
+    });
+    if (!eh.ready) {
+      throw new Error(eh.reason ?? "envoy-harness not ready");
+    }
+
+    switch (request.op) {
+      case "discoverySnapshot":
+        return await this._envoyHarnessPeerTraceSnapshot();
+      case "clusterStatus":
+      case "listPeers":
+      case "teamJobs":
+      case "scoreboardSummary":
+      case "plan":
+      case "memory":
+      case "gitDiff":
+      case "gitStatus":
+      case "listSessions":
+        await this._ensureEnvoyHarnessPersistentAcpHost();
+        const host = this._envoyHarnessPersistentAcpHost;
+        if (host === undefined) {
+          throw new Error("envoy-harness persistent ACP host failed to start");
+        }
+        const ds = host.getDataSource();
+        if (request.op === "clusterStatus") {
+          return await ds.clusterStatus();
+        }
+        if (request.op === "listPeers") {
+          const cluster = await ds.clusterStatus();
+          return cluster.peers.map((p) => ({
+            id: p.id,
+            ...(p.model !== undefined ? { model: p.model } : {}),
+            ...(p.capabilities !== undefined
+              ? { capabilities: p.capabilities }
+              : {}),
+            health: p.health,
+          }));
+        }
+        if (request.op === "teamJobs") {
+          return await ds.teamJobs();
+        }
+        if (request.op === "scoreboardSummary") {
+          return await ds.scoreboardSummary();
+        }
+        if (request.op === "plan") {
+          return await ds.plan(request.action, {
+            ...(request.text !== undefined ? { text: request.text } : {}),
+            ...(request.reason !== undefined ? { reason: request.reason } : {}),
+          });
+        }
+        if (request.op === "memory") {
+          return await ds.memory(request.memoryOp, {
+            ...(request.name !== undefined ? { name: request.name } : {}),
+            ...(request.body !== undefined ? { body: request.body } : {}),
+          });
+        }
+        if (request.op === "gitDiff") {
+          return await ds.gitDiff({
+            ...(request.staged !== undefined ? { staged: request.staged } : {}),
+            ...(request.stat !== undefined ? { stat: request.stat } : {}),
+          });
+        }
+        if (request.op === "gitStatus") {
+          return await ds.gitStatus();
+        }
+        return await ds.listSessions();
+      default:
+        throw new Error(`invalid EhuiInvokeRequest: unknown op ${(request as { op: string }).op}`);
+    }
+  }
+
+  /** Peer-pool health rows for the EHUI Trace panel. */
+  private async _envoyHarnessPeerTraceSnapshot(): Promise<
+    import("@envoymesh/envoy-harness-client").ClientDiscoveryEvent[]
+  > {
+    await this._ensureEnvoyHarnessPeerPool();
+    if (this._envoyHarnessPeerPool === undefined) {
+      return [];
+    }
+    const backend = createPeerPoolStatusBackend(this._envoyHarnessPeerPool);
+    const status = await backend.clusterStatus!();
+    return status.peers.map((p) => ({
+      type: p.health.ok ? ("peer.health" as const) : ("peer.failed" as const),
+      peerId: p.id,
+      ...(p.model !== undefined ? { model: p.model } : {}),
+      ...(p.health.rttMs !== undefined ? { rttMs: p.health.rttMs } : {}),
+      ...(p.health.error !== undefined ? { error: p.health.error } : {}),
+      at: p.health.lastPingAt ?? new Date().toISOString(),
+    }));
   }
 
   /** MAP — local Pi runtime readiness for the second-doctor cross-check. */
@@ -4922,8 +7281,9 @@ class NodeServiceImpl implements NodeService {
       },
       wireModelProviders: async (_endpoint, _modelName) => {
         // Envoy Local no longer overwrites Settings → AI modelProviders.
-        // Cloud/Ollama stay persisted; inference prefers Local via
-        // resolveEffectiveModelProviders when the sidecar is running.
+        // Cloud/Ollama stay persisted and win at inference time; Local is
+        // only selected via resolveEffectiveModelProviders when no usable
+        // cloud/Ollama provider is configured.
       },
       reloadOpenClaw: async () => {
         await this.reloadOpenClawConfig();
@@ -4960,8 +7320,9 @@ class NodeServiceImpl implements NodeService {
   }
 
   /**
-   * Cloud/Ollama from Settings, or Envoy Local when the sidecar is enabled
-   * and ready — without mutating persisted modelProviders.
+   * Cloud/Ollama from Settings when configured; otherwise Envoy Local when
+   * the sidecar is enabled and ready — without mutating persisted
+   * modelProviders. Cloud always wins over Local.
    */
   async getEffectiveModelProviders(): Promise<
     import("@envoymesh/api").ModelProviderConfig
@@ -5350,6 +7711,36 @@ class NodeServiceImpl implements NodeService {
     text: string,
     opts: { emitPushHint: boolean },
   ): Promise<string> {
+    const cfg = await this._configStore.load().catch(() => undefined);
+    if (resolvePiCodingBackend(cfg?.piSettings) === "envoy-harness") {
+      const answer = await this.askEnvoyHarness(text);
+      if (opts.emitPushHint && answer) {
+        const bridgePeer = this._bridgeStatus?.agentPeerId?.trim();
+        const bridgeName = this._bridgeStatus?.agentName?.trim();
+        this.emit("push:message", {
+          messageId: `pi-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          sender: {
+            nodeId: bridgePeer || "pi",
+            displayName: bridgeName || "Pi",
+            ownerId: bridgePeer || "envoy:pi",
+            actorRole: "agent" as const,
+          },
+          recipient: {
+            nodeId: this._mesh?.peerId ?? "",
+            ownerId: this._profile?.owner?.ownerId ?? "",
+          },
+          content: { text: answer },
+          metadata: {
+            timestamp: new Date().toISOString(),
+            deliveryReceipt: "delivered" as const,
+            deliveryChannel: "agent" as const,
+            deliverySource: "bridge" as const,
+          },
+        } as ChatMessage);
+      }
+      return answer;
+    }
+
     const result = await askPiViaRuntime(this._piState, this._piRuntimeDeps(), text)
     // Direct sendToPi RPC only: wake backgrounded devices. Ext Agent replies
     // are notified via the normal bridge `chat:message` → push listener.
@@ -5422,6 +7813,43 @@ class NodeServiceImpl implements NodeService {
     const record = await this._familyProfileStore.get(profileId);
     return familyProfileMayUseExtAgent(
       record ? toFamilyProfile(record) : { id: profileId, isOwner: false },
+    );
+  }
+
+  /**
+   * Owner-controlled Coding assistants gate (Pi + Envoy Harness chat).
+   * Owner always allowed; non-owner profiles require explicit
+   * `codingEnabled: true` (default / omitted = off).
+   */
+  async mayCallerUseCoding(): Promise<boolean> {
+    return this._callerMayUseCoding();
+  }
+
+  private async _callerMayUseCoding(): Promise<boolean> {
+    const caller = getRpcCaller();
+    if (caller?.isOwnerProfile) return true;
+    const profileId = this._callerFamilyProfileId();
+    return this.mayFamilyProfileUseCoding(
+      profileId,
+      profileId === OWNER_FAMILY_PROFILE_ID,
+    );
+  }
+
+  async mayFamilyProfileUseCoding(
+    profileId: string,
+    isOwnerProfile: boolean,
+  ): Promise<boolean> {
+    if (isOwnerProfile || profileId === OWNER_FAMILY_PROFILE_ID) return true;
+    if (!this._familyProfileStore) return false;
+    const record = await this._familyProfileStore.get(profileId);
+    return familyProfileMayUseCoding(
+      record ? toFamilyProfile(record) : { id: profileId, isOwner: false },
+    );
+  }
+
+  private _codingDeniedError(): Error {
+    return new Error(
+      "Coding assistants are disabled for this family profile. Ask the home-node owner to enable them in Settings → Family.",
     );
   }
 
@@ -5773,6 +8201,52 @@ class NodeServiceImpl implements NodeService {
   }
 
   /**
+   * U4+ — the Envoy TUI terminal session (like Pi's). Spawns the
+   * standalone `envoy-harness-tui` in a PTY for a chosen project folder.
+   */
+  async ensureEnvoyTerminalSession(
+    params?: import("@envoymesh/api").EnsureEnvoyTerminalParams,
+  ): Promise<import("@envoymesh/api").EnsureEnvoyTerminalResult> {
+    const manager = this._terminalManager;
+    if (!manager) {
+      return {
+        ok: false,
+        code: "no_manager",
+        reason: "Terminals are not available on this node.",
+      };
+    }
+    return ensureEnvoyTerminalSession(
+      manager,
+      {
+        loadConfig: async () => {
+          const cfg = await this._configStore.load();
+          return cfg ?? null;
+        },
+        saveProjectPath: async (absolutePath: string) => {
+          // Keep the panel's project folder in sync (no runtime reset —
+          // the TUI session owns its own cwd).
+          await this.updateNodeConfig({ envoyHarnessCwd: absolutePath });
+        },
+        resolveRuntimeConfig: async () => {
+          await this._refreshEnvoyHarnessHostConfig();
+          const eh = loadEnvoyHarnessRuntimeConfig({
+            hostModel: this._envoyHarnessHostModel,
+            hostApiKey: this._envoyHarnessHostApiKey,
+            hostEndpoint: this._envoyHarnessHostEndpoint,
+          });
+          return {
+            provider: eh.provider,
+            model: eh.model,
+            ...(eh.apiKey !== undefined ? { apiKey: eh.apiKey } : {}),
+            ...(eh.endpoint !== undefined ? { endpoint: eh.endpoint } : {}),
+          };
+        },
+      },
+      params ?? {},
+    );
+  }
+
+  /**
    * Phase 49D — deliver the user's confirm/deny decision on a Pi tool-action
    * request back to the Pi child process. Emits the matching pi.tool.*
    * audit event. Used by the piRespondToProposal JSON-RPC method.
@@ -5781,6 +8255,14 @@ class NodeServiceImpl implements NodeService {
     uiRequestId: string
     confirmed: boolean
   }): Promise<{ uiRequestId: string; delivered: boolean }> {
+    // Phase G / 12b — ACP permissions share this RPC (EnvoyGo unchanged).
+    const acp = this._acpPermissionBridge.respond(
+      params.uiRequestId,
+      params.confirmed ? "allow" : "deny",
+    );
+    if (acp.delivered) {
+      return { uiRequestId: params.uiRequestId, delivered: true };
+    }
     const result = await respondToUiRequestViaRuntime(
       this._piState,
       this._piRuntimeDeps(),
@@ -5788,6 +8270,54 @@ class NodeServiceImpl implements NodeService {
       params.confirmed,
     )
     return { uiRequestId: params.uiRequestId, delivered: result.delivered }
+  }
+
+  async ehRespondToUserQuestion(params: {
+    requestId: string
+    value: string
+    optionIndex?: number
+    cancelled?: boolean
+  }): Promise<{ requestId: string; delivered: boolean }> {
+    const result = this._ehUserQuestionBridge.respond(params.requestId, {
+      value: params.value,
+      ...(params.optionIndex !== undefined
+        ? { optionIndex: params.optionIndex }
+        : {}),
+      ...(params.cancelled === true ? { cancelled: true } : {}),
+    })
+    return { requestId: params.requestId, delivered: result.delivered }
+  }
+
+  async ehRespondToPermission(params: {
+    requestId: string
+    allowed: boolean
+  }): Promise<{ requestId: string; delivered: boolean }> {
+    const result = this._ehPermissionBridge.respond(
+      params.requestId,
+      params.allowed ? "allow" : "deny",
+    )
+    return { requestId: params.requestId, delivered: result.delivered }
+  }
+
+  async cancelEnvoyHarnessTurn(
+    chatId?: string,
+  ): Promise<{ cancelled: boolean }> {
+    const turn = chatId
+      ? this._ehChatRuntime.getTurnForChat(chatId)
+      : this._ehChatRuntime.listActiveTurns()[0];
+    if (!turn) return { cancelled: false };
+    const host = turn.chatId
+      ? this._ehChatRuntime.getHost(turn.chatId)?.host
+      : this._envoyHarnessPersistentAcpHost;
+    if (!host) return { cancelled: false };
+    await host.cancelActiveTurn();
+    if (turn.sessionId) {
+      this._ehPermissionBridge.clearForSession(turn.sessionId);
+    }
+    if (turn.chatId) {
+      this._ehUserQuestionBridge.clearForChat(turn.chatId);
+    }
+    return { cancelled: true };
   }
 
   private _resolveOpenClawWorkspaceDir(): string {
@@ -9217,8 +11747,8 @@ class NodeServiceImpl implements NodeService {
         );
       }
     }
-    // Cloud / Ollama / disabled AI takes over: stop Envoy Local sidecar unless
-    // the patch itself is usable envoy-local (enable/wire path).
+    // Cloud / Ollama take priority at inference; Local may keep running as
+    // offline fallback (maybeDisable is a no-op coexistence helper).
     if (Object.prototype.hasOwnProperty.call(nodePatch, "modelProviders")) {
       try {
         await maybeDisableEnvoyLocalForExternalProvider(
@@ -9232,6 +11762,14 @@ class NodeServiceImpl implements NodeService {
           err instanceof Error ? err.message : err,
         );
       }
+      // Rewrite OpenClaw gateway model section so a newly saved cloud
+      // provider wins immediately (even if Envoy Local is still running).
+      void this.reloadOpenClawConfig().catch((err) => {
+        console.warn(
+          "[openclaw] reload after modelProviders save failed:",
+          err instanceof Error ? err.message : err,
+        );
+      });
     }
     if (
       Object.prototype.hasOwnProperty.call(nodePatch, "modelProviders") ||
@@ -9274,6 +11812,111 @@ class NodeServiceImpl implements NodeService {
     } catch (err) {
       console.warn("[node-service] config update emit failed:", err);
     }
+  }
+
+  /**
+   * Phase 8 / v1.4 — get the effective
+   * signal opt-in flag (resolved from
+   * persisted config + env var). The
+   * Tauri UI calls this in the Settings
+   * panel to show the current state of
+   * the toggle.
+   *
+   * The read is sync (the in-memory
+   * snapshot) but the method is async
+   * because the Tauri UI's RPC layer is
+   * uniformly async. The helper
+   * (`readEffectiveSignalOptIn`) is the
+   * source of truth for the resolution
+   * order — the same function the signal
+   * router uses (Q2 — persisted wins,
+   * env var as fallback).
+   */
+  async getSignalOptIn(): Promise<"enabled" | "disabled"> {
+    return readEffectiveSignalOptIn(this._configStore.peek());
+  }
+
+  /**
+   * Phase 8 / v1.4 — set the persisted
+   * signal opt-in flag. The Tauri UI
+   * calls this when the owner toggles
+   * the switch in the Settings panel.
+   *
+   * **Owner-only:** delegates to
+   * `updateNodeConfig` which enforces
+   * `requireOwnerProfile("change node
+   * settings")`. A non-owner RPC caller
+   * gets the same error.
+   *
+   * Returns the new effective state. The
+   * returned value matches what the
+   * signal router will use on the next
+   * user prompt — the Tauri UI shows
+   * what's actually effective.
+   */
+  async setSignalOptIn(
+    value: "enabled" | "disabled",
+  ): Promise<"enabled" | "disabled"> {
+    await this.updateNodeConfig({ signalOptIn: value });
+    return readEffectiveSignalOptIn(this._configStore.peek());
+  }
+
+  /**
+   * Phase 8 / v1.4 — get the effective
+   * verify-mode default for a given
+   * worker runtime. The Tauri UI calls
+   * this to populate the "Verification
+   * mode" dropdown in the Settings
+   * panel.
+   */
+  async getVerifyModeDefault(
+    runtime: AgentRuntime,
+  ): Promise<VerifyMode> {
+    return readEffectiveVerifyModeDefault(
+      this._configStore.peek(),
+      runtime,
+    );
+  }
+
+  /**
+   * Phase 8 / v1.4 — set the persisted
+   * verify-mode default. The Tauri UI
+   * calls this when the owner picks a
+   * value in the dropdown. Pass
+   * `undefined` to clear the override
+   * (the loop falls back to the
+   * per-runtime default).
+   *
+   * **Owner-only:** delegates to
+   * `updateNodeConfig` (same auth as the
+   * other node-config writers).
+   *
+   * **Clear semantics:** the patch
+   * `{ verifyModeDefault: undefined }` is
+   * spread over the base config in
+   * `updateNodeConfigViaRuntime`, which
+   * overwrites the field to `undefined`.
+   * `JSON.stringify` then omits the key,
+   * so the on-disk file no longer has the
+   * field. On reload, the helper falls
+   * back to the per-runtime default — the
+   * v0 behavior, restored.
+   *
+   * Returns the new effective state. The
+   * Tauri UI can pass any runtime — the
+   * per-node field is the same for all
+   * runtimes (Q3 of the v1.4 sub-plan).
+   * We return `value` directly because
+   * for the set case the effective IS
+   * `value` (persisted wins), and for the
+   * clear case the effective is per-runtime
+   * (signaled by `undefined`).
+   */
+  async setVerifyModeDefault(
+    value: VerifyMode | undefined,
+  ): Promise<VerifyMode | undefined> {
+    await this.updateNodeConfig({ verifyModeDefault: value });
+    return value;
   }
 
   async getSetupSponsorFriendConfig(): Promise<
@@ -12668,6 +15311,12 @@ class NodeServiceImpl implements NodeService {
     return chainGetStateViaRuntime(this._chainContext(), params);
   }
 
+  async chainGetStepProvenance(
+    params: import("@envoymesh/api").ChainGetStepProvenanceParams,
+  ): Promise<import("@envoymesh/api").ChainGetStepProvenanceResult> {
+    return chainGetStepProvenanceViaRuntime(this._chainContext(), params);
+  }
+
   async chainListActive(_params?: ChainListActiveParams): Promise<ChainListActiveResult> {
     return chainListActiveViaRuntime(this._chainContext());
   }
@@ -12686,6 +15335,12 @@ class NodeServiceImpl implements NodeService {
     params: import("@envoymesh/api").ChainReassignSubtaskParams,
   ): Promise<import("@envoymesh/api").ChainReassignSubtaskResult> {
     return reassignSubtaskOwnerAction(this._chainOrchestrationContext(), params);
+  }
+
+  async chainResolveSpeculation(
+    params: import("@envoymesh/api").ChainResolveSpeculationParams,
+  ): Promise<import("@envoymesh/api").ChainResolveSpeculationResult> {
+    return resolveSpeculationOwnerAction(this._chainOrchestrationContext(), params);
   }
 
   async chainRetryInputDelivery(
@@ -12792,6 +15447,300 @@ class NodeServiceImpl implements NodeService {
     return result.handled;
   }
 
+  /** Phase 60B — inbound `agent.worker.lease` / `.revoke` / `.request`. */
+  async handleInboundWorkerLease(envelope: EnvoyEnvelope): Promise<boolean> {
+    const bonds = await this.getBonds();
+    const bondedOwners = new Set(
+      bonds.map((b) => b.peerOwnerId).filter((id): id is string => Boolean(id)),
+    );
+    const result = await handleInboundWorkerLease({
+      envelope,
+      store: this._chainOrchestrationContext().getChainSideState().workerLeases,
+      maxWorkers: Math.max(32, bondedOwners.size * 2),
+      isBondedOwner: (ownerId) => bondedOwners.has(ownerId),
+      onLeaseRequest: async () => {
+        // Best-effort immediate republish (broadcaster may not be running in tests).
+        await this._leaseBroadcaster?.publishNow();
+      },
+    });
+    if (!result.handled) {
+      console.warn(
+        `[agent.worker.lease] dropped from ${envelope.senderPeerId.slice(0, 16)}…: ${result.reason}`,
+      );
+    }
+    return result.handled;
+  }
+
+  /**
+   * Phase 60D — after checkpoint restore, enter RECOVERING and reconcile
+   * in-flight attempts before watchdog/reassignment resumes.
+   */
+  private async _beginRecoveryForRestoredChains(): Promise<void> {
+    const side = this._chainOrchestrationContext().getChainSideState();
+    // Fresh process epoch each restore pass.
+    (side as { orchestratorEpoch: string }).orchestratorEpoch = createOrchestratorEpoch();
+    (side as { workerEpoch: string }).workerEpoch = createWorkerEpoch();
+
+    for (const chainId of this._chainStore.listIds()) {
+      const entry = this._chainStore.getRuntime(chainId);
+      if (!entry || entry.state.published || entry.state.chainCancelled) {
+        this._startChainTracking(chainId);
+        continue;
+      }
+      const recovery = beginChainRecovery({
+        state: entry.state,
+        orchestratorEpoch: side.orchestratorEpoch,
+      });
+      side.recovery.set(chainId, recovery);
+      entry.state.journalEvent?.("recovery.started", {
+        orchestratorEpoch: recovery.orchestratorEpoch,
+        peerCount: Object.keys(recovery.peers).length,
+        graceDeadlineAt: recovery.graceDeadlineAt,
+      });
+      if (!isChainRecovering(recovery)) {
+        this._startChainTracking(chainId);
+        continue;
+      }
+      // Start tracking loop (gated while recovering) + kick reconcile.
+      this._startChainTracking(chainId);
+      void this._runChainReconcile(chainId).catch((err: unknown) => {
+        console.warn(`[team-jobs] reconcile failed for ${chainId}:`, err);
+      });
+    }
+  }
+
+  /** Phase 60D — send reconcile requests and apply responses / grace timeout. */
+  private async _runChainReconcile(chainId: string): Promise<void> {
+    const ctx = this._chainOrchestrationContext();
+    const side = ctx.getChainSideState();
+    const recovery = side.recovery.get(chainId);
+    const entry = this._chainStore.getRuntime(chainId);
+    if (!recovery || !entry || !isChainRecovering(recovery)) return;
+
+    const agentIdentity = await this._ensureAgentIdentity();
+    const mesh = this._mesh;
+    if (!agentIdentity || !mesh) {
+      // No mesh yet — wait for grace then resume.
+      await new Promise((r) => setTimeout(r, 50));
+      const tick = tickChainRecovery({ recovery });
+      if (tick.done) this._emitChainState(chainId);
+      return;
+    }
+
+    for (const [workerPeerId, peer] of Object.entries(recovery.peers)) {
+      if (peer.status !== "pending") continue;
+      // Legacy peers without chain-reconcile-v1: mark unsupported and wait grace.
+      const cards = await this.listAgentCards();
+      const card = cards.find((c) => c.sourceAgentPeerId === workerPeerId);
+      const supports =
+        card?.features?.includes("chain-reconcile-v1") === true ||
+        // Self / missing card: still try; worker may answer from receipt store.
+        workerPeerId === agentIdentity.agentPeerId;
+      if (card && !supports) {
+        peer.status = "unsupported";
+        continue;
+      }
+      try {
+        const request = createTaskChainReconcileRequestPayload(
+          buildReconcileRequest({
+            state: entry.state,
+            orchestratorEpoch: recovery.orchestratorEpoch,
+            workerPeerId,
+          }),
+        );
+        const unsigned = createUnsignedEnvelope({
+          senderPeerId: agentIdentity.agentPeerId,
+          senderPublicKey: agentIdentity.agentPublicKeyPem,
+          senderRole: "agent",
+          recipientPeerId: workerPeerId,
+          recipientRole: "agent",
+          intent: "task.chain.reconcile.request",
+          payload: request,
+        });
+        const envelope = signUnsignedEnvelope(unsigned, agentIdentity.agentPrivateKeyPem);
+        // Best-effort send; response arrives via inbound handler.
+        const { sendEnvelopeWithRetry } = await import("./chat-outbound-deliver.js");
+        await sendEnvelopeWithRetry({
+          mesh: mesh as import("./chat-outbound-deliver.js").OutboundDeliverMesh,
+          transportPeerId: workerPeerId,
+          envelope,
+          dialHints: [],
+        }).catch(() => undefined);
+      } catch {
+        /* continue other peers */
+      }
+    }
+
+    // Grace wait then force-complete pending peers.
+    const graceMs = Math.max(
+      0,
+      Date.parse(recovery.graceDeadlineAt) - Date.now(),
+    );
+    await new Promise((r) => setTimeout(r, Math.min(graceMs, 15_000)));
+    const tick = tickChainRecovery({ recovery });
+    if (tick.done || tick.timedOutPeers.length > 0) {
+      entry.state.journalEvent?.("recovery.peer_reconciled", {
+        timedOutPeers: tick.timedOutPeers,
+        phase: recovery.phase,
+      });
+      this._emitChainState(chainId);
+      if (tick.done) {
+        await flushRecoveryAdvancePending(this._chainOrchestrationContext(), chainId);
+      }
+    }
+  }
+
+  /** Phase 60D — inbound reconcile request (worker) or response (assigner). */
+  async handleInboundChainReconcile(envelope: EnvoyEnvelope): Promise<boolean> {
+    if (envelope.intent === "task.chain.reconcile.request") {
+      const side = this._chainOrchestrationContext().getChainSideState();
+      const result = handleInboundChainReconcileRequest({
+        envelope,
+        store: side.attemptReceipts,
+        workerEpoch: side.workerEpoch,
+      });
+      if (!result.handled) {
+        console.warn(
+          `[task.chain.reconcile] request dropped: ${result.reason}`,
+        );
+        return false;
+      }
+      const agentIdentity = await this._ensureAgentIdentity();
+      if (!agentIdentity || !this._mesh) return false;
+      const unsigned = createUnsignedEnvelope({
+        senderPeerId: agentIdentity.agentPeerId,
+        senderPublicKey: agentIdentity.agentPublicKeyPem,
+        senderRole: "agent",
+        recipientPeerId: envelope.senderPeerId,
+        recipientRole: "agent",
+        intent: "task.chain.reconcile.response",
+        payload: result.response,
+        correlationId: envelope.correlationId ?? envelope.messageId,
+      });
+      const responseEnv = signUnsignedEnvelope(unsigned, agentIdentity.agentPrivateKeyPem);
+      const { sendEnvelopeWithRetry } = await import("./chat-outbound-deliver.js");
+      await sendEnvelopeWithRetry({
+        mesh: this._mesh as import("./chat-outbound-deliver.js").OutboundDeliverMesh,
+        transportPeerId: envelope.senderPeerId,
+        envelope: responseEnv,
+        dialHints: [],
+      }).catch(() => undefined);
+      return true;
+    }
+
+    if (envelope.intent === "task.chain.reconcile.response") {
+      let response;
+      try {
+        response = parseTaskChainReconcileResponsePayload(envelope.payload);
+      } catch {
+        return false;
+      }
+      const side = this._chainOrchestrationContext().getChainSideState();
+      const recovery = side.recovery.get(response.chainId);
+      const entry = this._chainStore.getRuntime(response.chainId);
+      if (!recovery || !entry || !isChainRecovering(recovery)) return true;
+      const applied = applyReconcileReports({
+        state: entry.state,
+        recovery,
+        workerPeerId: envelope.senderPeerId,
+        workerEpoch: response.workerEpoch,
+        reports: response.attempts,
+        seenPartialKeys: side.recoveredPartialKeys,
+      });
+      entry.state.journalEvent?.("recovery.peer_reconciled", {
+        workerPeerId: envelope.senderPeerId,
+        ingestedFinals: applied.ingestedFinals,
+        resumedRunning: applied.resumedRunning,
+        unknowns: applied.unknowns,
+        conflicts: applied.conflicts,
+      });
+      const tick = tickChainRecovery({ recovery });
+      this._emitChainState(response.chainId);
+      if (tick.done) {
+        await flushRecoveryAdvancePending(this._chainOrchestrationContext(), response.chainId);
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  private _leaseBroadcaster: { stop: () => void; publishNow: () => Promise<void> } | undefined;
+
+  /**
+   * Phase 60B — start periodic signed worker-lease broadcast to bonded peers.
+   */
+  async startWorkerLeaseBroadcaster(
+    mesh: EnvoyMesh,
+    opts?: { intervalMs?: number; ttlMs?: number },
+  ): Promise<{ stop: () => void; publishNow: () => Promise<void> } | undefined> {
+    const profile = this.getProfile();
+    const agentIdentity = await this._ensureAgentIdentity();
+    if (!profile || !agentIdentity) {
+      console.warn("[agent.worker.lease] broadcaster skipped: agent identity/profile unavailable");
+      return undefined;
+    }
+    this._leaseBroadcaster?.stop();
+    const identityCtx = this._identityContext();
+    const broadcaster = startWorkerLeaseBroadcaster({
+      mesh: mesh as WorkerLeaseBroadcastMesh,
+      agentPublicKeyPem: agentIdentity.agentPublicKeyPem,
+      agentPrivateKeyPem: agentIdentity.agentPrivateKeyPem,
+      agentCredential: agentIdentity.agentCredential,
+      workerPeerId: agentIdentity.agentPeerId,
+      ownerId: profile.owner.ownerId,
+      buildRuntimes: async () => {
+        const { skills, runtime } = await this._localManifestDescriptor();
+        const localReady = await localAgentNetworkEngineReady({
+          engine: this.getAgentNetworkWorkerEngine(),
+          isOpenClawReady: () => this.isOpenClawReady(),
+          isExtAgentBridgeReady: () => this.isExtAgentBridgeReady(),
+          isEnvoyHarnessReady: () => this.isEnvoyHarnessReady(),
+          probeExtAgent: async () => {
+            const reach = await this.probeExtAgent();
+            return { reachable: reach.reachable === true };
+          },
+        });
+        return [
+          buildLocalLeaseRuntime({
+            runtime,
+            ready: localReady.ready,
+            skillIds: skills.map((s) => s.skillId),
+            runtimeVersion: "mesh-lease",
+          }),
+        ];
+      },
+      connectivity: async () => {
+        const meshStats = mesh.getConnectionStats?.();
+        return {
+          direct: (meshStats?.connectedPeerIds?.length ?? 0) > 0,
+          relay: (meshStats?.circuitPeerIds?.length ?? 0) > 0,
+        };
+      },
+      bondOwnerIds: async () => {
+        const bonds = await this.getBonds();
+        return bonds
+          .map((b) => b.peerOwnerId)
+          .filter((id): id is string => Boolean(id));
+      },
+      resolveLibp2pPeer: async (ownerId) => {
+        const resolved = await identityCtx.resolveLibp2pPeerForBondOwner(ownerId);
+        if (!resolved) return undefined;
+        return { peerId: resolved.transportPeerId, listenAddrs: resolved.listenAddrs };
+      },
+      dialHintsFor: (peerId, listenAddrs) => identityCtx.dialHintsForChat(peerId, listenAddrs),
+      intervalMs: opts?.intervalMs,
+      ttlMs: opts?.ttlMs,
+      onError: (err) =>
+        console.warn(
+          "[agent.worker.lease] broadcast cycle failed:",
+          err instanceof Error ? err.message : err,
+        ),
+    });
+    this._leaseBroadcaster = broadcaster;
+    return broadcaster;
+  }
+
   /**
    * MAP — start the periodic owner-signed manifest broadcast to bonded peers.
    * No-op (returns undefined) when the agent identity or profile is missing.
@@ -12807,8 +15756,7 @@ class NodeServiceImpl implements NodeService {
       console.warn("[adapter.manifest] broadcaster skipped: agent identity/profile unavailable");
       return undefined;
     }
-    const skills = await this._localManifestSkills();
-    const runtime = skills === PI_SKILLS ? "pi" : "openclaw";
+    const { skills, runtime } = await this._localManifestDescriptor();
     const manifest = buildSignedCapabilityManifest({
       profile,
       agentPeerId: agentIdentity.agentPeerId,
@@ -12942,17 +15890,32 @@ class NodeServiceImpl implements NodeService {
     return this._verifierScoreboard;
   }
 
-  /** Skills for the node's own manifest, from the primary MAP runtime. */
-  private async _localManifestSkills(): Promise<import("@envoymesh/protocol").SkillDescriptor[]> {
-    if (this.getAgentNetworkWorkerEngine() === "ext") {
+  /** Runtime and skills for the node's configured Team-job worker engine. */
+  private async _localManifestDescriptor(): Promise<{
+    runtime: AgentRuntime;
+    skills: import("@envoymesh/protocol").SkillDescriptor[];
+  }> {
+    const engine = this.getAgentNetworkWorkerEngine();
+    if (engine === "envoy-harness") {
+      return { runtime: "envoy-harness", skills: [...ENVOY_HARNESS_RUNTIME_SKILLS] };
+    }
+    if (engine === "ext") {
+      const active = this._bridgeStatus?.activeExtAgentId?.trim().toLowerCase();
+      const runtime: AgentRuntime =
+        active === "codex" || active === "codex-cli"
+          ? active
+          : active === "hermes" || active === "openhuman"
+            ? active
+            : "pi";
       try {
         const piStatus = await this.getPiStatus();
-        if (piStatus.enabled) return PI_SKILLS;
+        if (piStatus.enabled) return { runtime, skills: [...PI_SKILLS] };
       } catch {
         /* fall through to the canonical default */
       }
+      return { runtime, skills: [...PI_SKILLS] };
     }
-    return OPENCLAW_SKILLS;
+    return { runtime: "openclaw", skills: [...OPENCLAW_SKILLS] };
   }
 
   /** Same-stream reply for Assigner `task.chain.ready.request` (AN engine hello). */
@@ -12973,7 +15936,7 @@ class NodeServiceImpl implements NodeService {
       agentPublicKeyPem: agentIdentity.agentPublicKeyPem,
       agentPrivateKeyPem: agentIdentity.agentPrivateKeyPem,
       agentCredential: agentIdentity.agentCredential,
-      // Answer for THIS node's configured AN engine only (OpenClaw XOR Ext).
+      // Answer for this node's configured AN engine only.
       engine: this.getAgentNetworkWorkerEngine(),
       isOpenClawReady: () => this.isOpenClawReady(),
       isExtAgentBridgeReady: () => this.isExtAgentBridgeReady(),
@@ -12981,10 +15944,72 @@ class NodeServiceImpl implements NodeService {
         const reach = await this.probeExtAgent();
         return { reachable: reach.reachable === true };
       },
+      isEnvoyHarnessReady: () => this.isEnvoyHarnessReady(),
     });
     if (!result.ok) {
       console.warn(`[chain.ready] request failed: ${result.reason}`);
     }
+  }
+
+  /** v2.2 — worker half of the libp2p `RemoteSubmitterTransport`. */
+  async handleInboundHarnessSubmitRequest(
+    envelope: EnvoyEnvelope,
+    replyWithEnvelope?: (envelope: EnvoyEnvelope) => Promise<void>,
+  ): Promise<void> {
+    const agentIdentity = await this._ensureAgentIdentity();
+    if (!agentIdentity) {
+      console.warn("[harness.submit] ignored: agent identity unavailable");
+      return;
+    }
+    const { handleInboundHarnessSubmitRequest } = await import(
+      "./harness-submit-inbound.js"
+    );
+    const result = await handleInboundHarnessSubmitRequest({
+      envelope,
+      replyWithEnvelope,
+      agentPeerId: agentIdentity.agentPeerId,
+      agentPublicKeyPem: agentIdentity.agentPublicKeyPem,
+      agentPrivateKeyPem: agentIdentity.agentPrivateKeyPem,
+      agentCredential: agentIdentity.agentCredential,
+      getAdapter: () => this.getEnvoyHarnessAdapter(),
+    });
+    if (!result.ok) {
+      console.warn(`[harness.submit] request failed: ${result.reason}`);
+    }
+  }
+
+  /**
+   * v2.2 — the mesh fabric's `RemoteSubmitterTransport`: a
+   * `RemoteMeshSubmitter` targeting ANOTHER mesh node's envoy-harness
+   * worker (Pattern B), instead of a standalone peer cluster. Returns
+   * null when the mesh / agent identity is unavailable.
+   */
+  async createLibp2pRemoteSubmitterTransport(): Promise<
+    import("@envoymesh/envoy-harness-adapter").RemoteSubmitterTransport | null
+  > {
+    const resolver = await _chainTransportResolver(
+      this._chainOrchestrationContext(),
+    );
+    if (!resolver) return null;
+    const agentIdentity = await this._ensureAgentIdentity();
+    if (!agentIdentity) return null;
+    const { createLibp2pRemoteSubmitterTransport } = await import(
+      "./harness-submit-transport.js"
+    );
+    return createLibp2pRemoteSubmitterTransport({
+      resolver,
+      parentAgentPeerId: agentIdentity.agentPeerId,
+      parentAgentPublicKeyPem: agentIdentity.agentPublicKeyPem,
+      parentAgentPrivateKeyPem: agentIdentity.agentPrivateKeyPem,
+      agentCredential: agentIdentity.agentCredential,
+      executeLocally: (input) => {
+        const adapter = this.getEnvoyHarnessAdapter();
+        if (!adapter) {
+          throw new Error("envoy_harness_unavailable");
+        }
+        return adapter.execute(input);
+      },
+    });
   }
 
   async refreshAgentNetworkMembershipIndex(): Promise<void> {
@@ -13119,6 +16144,20 @@ class NodeServiceImpl implements NodeService {
 
   async chainPreviewGoal(params: ChainPreviewGoalParams): Promise<ChainPreviewGoalResult> {
     return chainPreviewGoalViaRuntime(this._chainContext(), params);
+  }
+
+  async agentNetworkDiagnosticsSnapshot() {
+    return agentNetworkDiagnosticsSnapshotViaRuntime(this._chainOrchestrationContext());
+  }
+
+  async agentNetworkSimulate(
+    params: import("@envoymesh/api").AgentNetworkSimulationParams,
+  ) {
+    return agentNetworkSimulateViaRuntime(this._chainOrchestrationContext(), params);
+  }
+
+  async agentNetworkExportDiagnostics(params: { simulationId?: string }) {
+    return agentNetworkExportDiagnosticsViaRuntime(params);
   }
 
   async chainStartFromGoal(params: ChainStartFromGoalParams): Promise<ChainStartFromGoalResult> {

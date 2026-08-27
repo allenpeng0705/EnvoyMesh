@@ -33,6 +33,13 @@ export interface FamilyProfile {
    * Only the node owner may change this (Settings → Family).
    */
   extAgentEnabled?: boolean
+  /**
+   * Whether this profile may use Coding assistants (Pi + Envoy Harness chat).
+   * Omitted / undefined = **denied** for non-owner profiles (opt-in).
+   * Owner profile is always allowed regardless of this flag.
+   * Only the node owner may change this (Settings → Family).
+   */
+  codingEnabled?: boolean
   /** Per-profile character bots. */
   aiBots?: AiBotDefinition[]
 }
@@ -54,6 +61,8 @@ export interface UpdateFamilyProfileParams {
   active?: boolean
   /** Owner-only: allow / deny Ext Agent chat for this profile. */
   extAgentEnabled?: boolean
+  /** Owner-only: allow / deny Coding assistants for this profile. */
+  codingEnabled?: boolean
   aiBots?: AiBotDefinition[]
 }
 
@@ -307,4 +316,18 @@ export function maskBridgeEnabledForExtAgentAccess<T extends { enabled: boolean 
 ): T {
   if (!status.enabled || mayUse) return status
   return { ...status, enabled: false }
+}
+
+/**
+ * Whether a family profile may use Coding assistants (Pi TUI + EH chat).
+ * Owner is always allowed. Non-owners require explicit
+ * `codingEnabled: true` (default / omitted = off).
+ * Missing profile → denied (fail closed).
+ */
+export function familyProfileMayUseCoding(
+  profile: Pick<FamilyProfile, "isOwner" | "id" | "codingEnabled"> | null | undefined,
+): boolean {
+  if (!profile) return false
+  if (profile.isOwner || profile.id === OWNER_FAMILY_PROFILE_ID) return true
+  return profile.codingEnabled === true
 }

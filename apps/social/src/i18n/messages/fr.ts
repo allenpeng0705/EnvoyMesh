@@ -16,6 +16,7 @@ import {
 } from "./fr-chats.js";
 import { frTerminalMessages } from "./fr-terminals.js";
 import { frChainsMessages } from "./fr-chains.js";
+import { frEhMessages } from "./fr-eh.js";
 import {
   frErrorBoundaryMessages,
   frProfileMessages,
@@ -676,4 +677,5 @@ knowledge: frKnowledgeViewMessages,
     },
   },
   ...{ gazetteer: frGazetteerLocale.gazetteer },
+  ...frEhMessages,
 });

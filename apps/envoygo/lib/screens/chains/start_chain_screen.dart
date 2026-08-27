@@ -18,10 +18,8 @@ import '../../providers/node_provider.dart';
 import '../../services/node_service_client.dart';
 
 class _ComposerAttachment {
-  _ComposerAttachment({
-    required this.id,
-    required this.fileName,
-  }) : labelCtl = TextEditingController();
+  _ComposerAttachment({required this.id, required this.fileName})
+    : labelCtl = TextEditingController();
 
   final String id;
   final String fileName;
@@ -35,6 +33,21 @@ class _ComposerAttachment {
   void dispose() => labelCtl.dispose();
 }
 
+String? _reliabilityFallbackLevelLabel(AppLocalizations l10n, String? level) {
+  switch (level) {
+    case 'peer_runtime_skill':
+      return l10n.chainsStartReliabilityFallbackPeerRuntimeSkill;
+    case 'peer_runtime':
+      return l10n.chainsStartReliabilityFallbackPeerRuntime;
+    case 'runtime_skill':
+      return l10n.chainsStartReliabilityFallbackRuntimeSkill;
+    case 'prior':
+      return l10n.chainsStartReliabilityFallbackPrior;
+    default:
+      return null;
+  }
+}
+
 class StartChainScreen extends ConsumerStatefulWidget {
   const StartChainScreen({super.key});
 
@@ -46,6 +59,10 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
   final _goalCtl = TextEditingController();
   String _assignmentMode = 'skill';
   String _inputDeliveryScope = 'referenced';
+  /// Phase 60C — ranking preset; default balanced, seeded from home defaults.
+  String _teamStrategyId = 'balanced';
+  /// Phase 62C — seeded from home node defaults (observe/approve on mobile).
+  String _assignerSelection = 'local';
   bool _loadingDefaults = true;
   bool _previewing = false;
   bool _starting = false;
@@ -54,16 +71,55 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
   int? _iterationMaxRounds;
   String? _iterationJudgeMode;
   int? _extendMaxStepsPerRound;
+
   /// Selected agent peer ids for start (auto-seeded from suggested workers).
   final Set<String> _selectedWorkerPeerIds = {};
   bool _workerSelectionTouched = false;
   final List<_ComposerAttachment> _attachments = [];
   final String _composerBatchId =
       'tj_${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
+
   /// Home Join Agent Network — used for Phase 58A readiness hints.
   bool? _localJoinEnabled;
 
+  /// Phase 60F — no-spend diagnostics card.
+  bool _diagBusy = false;
+  String? _diagSummary;
+  String? _diagError;
+
   static const _minGoalLen = 8;
+
+  static const _teamStrategyIds = <String>[
+    'balanced',
+    'fastest',
+    'cheapest',
+    'highest-confidence',
+    'privacy-local',
+    'diverse-model',
+  ];
+
+  static String _normalizeTeamStrategyId(String? raw) {
+    if (raw != null && _teamStrategyIds.contains(raw)) return raw;
+    return 'balanced';
+  }
+
+  String _strategyLabel(AppLocalizations l10n, String id) {
+    switch (id) {
+      case 'fastest':
+        return l10n.chainsStrategyFastest;
+      case 'cheapest':
+        return l10n.chainsStrategyCheapest;
+      case 'highest-confidence':
+        return l10n.chainsStrategyHighestConfidence;
+      case 'privacy-local':
+        return l10n.chainsStrategyPrivacyLocal;
+      case 'diverse-model':
+        return l10n.chainsStrategyDiverseModel;
+      case 'balanced':
+      default:
+        return l10n.chainsStrategyBalanced;
+    }
+  }
 
   @override
   void initState() {
@@ -109,6 +165,12 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
       final mode = defaults['assignmentMode'] as String?;
       setState(() {
         _assignmentMode = mode == 'role' ? 'role' : 'skill';
+        _teamStrategyId =
+            _normalizeTeamStrategyId(defaults['teamStrategyId'] as String?);
+        _assignerSelection =
+            defaults['assignerSelection'] == 'best_capable'
+                ? 'best_capable'
+                : 'local';
         _iterationMaxRounds = defaults['iterationMaxRounds'] as int?;
         _iterationJudgeMode = defaults['iterationJudgeMode'] as String?;
         _extendMaxStepsPerRound = defaults['extendMaxStepsPerRound'] as int?;
@@ -235,7 +297,9 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
     if (room <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(l10n.chainsStartAttachmentsMax(chainComposerMaxAttachments)),
+          content: Text(
+            l10n.chainsStartAttachmentsMax(chainComposerMaxAttachments),
+          ),
         ),
       );
       return;
@@ -329,8 +393,9 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
         for (final a in _attachments) {
           if (a.id == id) {
             a.uploading = false;
-            a.relativePath =
-                (path != null && path.isNotEmpty) ? path : relativePath;
+            a.relativePath = (path != null && path.isNotEmpty)
+                ? path
+                : relativePath;
             a.error = null;
           }
         }
@@ -346,9 +411,45 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
           }
         }
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
+  Future<void> _runDiagnostics() async {
+    final l10n = AppLocalizations.of(context);
+    final client = _clientOrNull();
+    if (client == null) {
+      setState(() => _diagError = l10n.commonNotConnectedHome);
+      return;
+    }
+    setState(() {
+      _diagBusy = true;
+      _diagError = null;
+      _diagSummary = null;
+    });
+    try {
+      final snap = await client.agentNetworkDiagnosticsSnapshot();
+      final sim = await client.agentNetworkSimulate(mode: 'readiness');
+      final workers = snap['workers'];
+      final workerCount = workers is List ? workers.length : 0;
+      final join = snap['joinEnabled'] == true;
+      final summary = sim['summary']?.toString() ?? '';
+      if (!mounted) return;
+      setState(() {
+        _diagBusy = false;
+        _diagSummary =
+            '$summary · workers=$workerCount · join=${join ? 'on' : 'off'}';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _diagBusy = false;
+        _diagError = e.toString().isNotEmpty
+            ? e.toString()
+            : l10n.chainsTestNetworkFailed;
+      });
     }
   }
 
@@ -374,6 +475,8 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
       final result = await client.chainPreviewGoal(
         goal: _effectiveGoal,
         assignmentMode: _assignmentMode,
+        teamStrategyId: _teamStrategyId,
+        assignerSelection: _assignerSelection,
       );
       if (!mounted) return;
       if (result['ok'] != true) {
@@ -423,27 +526,31 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
     });
     try {
       final planned = _subtasks
-          .map((s) => <String, dynamic>{
-                'subtaskId': s['subtaskId'],
-                'depth': s['depth'] ?? 1,
-                'requiredSkill': s['requiredSkill'] ?? '',
-                if (s['requiredRole'] != null) 'requiredRole': s['requiredRole'],
-                'objective': s['objective'] ?? '',
-                if (s['requestedResult'] != null)
-                  'requestedResult': s['requestedResult'],
-                if (s['constraints'] != null) 'constraints': s['constraints'],
-                if (s['dependsOn'] != null) 'dependsOn': s['dependsOn'],
-                if (s['costCeilingUsd'] != null)
-                  'costCeilingUsd': s['costCeilingUsd'],
-                if (s['deadlineAt'] != null) 'deadlineAt': s['deadlineAt'],
-                if (s['preferredWorkerPeerId'] != null)
-                  'preferredWorkerPeerId': s['preferredWorkerPeerId'],
-                if (s['createdAt'] != null) 'createdAt': s['createdAt'],
-              })
+          .map(
+            (s) => <String, dynamic>{
+              'subtaskId': s['subtaskId'],
+              'depth': s['depth'] ?? 1,
+              'requiredSkill': s['requiredSkill'] ?? '',
+              if (s['requiredRole'] != null) 'requiredRole': s['requiredRole'],
+              'objective': s['objective'] ?? '',
+              if (s['requestedResult'] != null)
+                'requestedResult': s['requestedResult'],
+              if (s['constraints'] != null) 'constraints': s['constraints'],
+              if (s['dependsOn'] != null) 'dependsOn': s['dependsOn'],
+              if (s['costCeilingUsd'] != null)
+                'costCeilingUsd': s['costCeilingUsd'],
+              if (s['deadlineAt'] != null) 'deadlineAt': s['deadlineAt'],
+              if (s['preferredWorkerPeerId'] != null)
+                'preferredWorkerPeerId': s['preferredWorkerPeerId'],
+              if (s['createdAt'] != null) 'createdAt': s['createdAt'],
+            },
+          )
           .toList();
       final result = await client.chainStartFromGoal(
         goal: _effectiveGoal,
         assignmentMode: _assignmentMode,
+        teamStrategyId: _teamStrategyId,
+        assignerSelection: _assignerSelection,
         inputDeliveryScope: _inputDeliveryScope,
         plannedSubtasks: planned,
         planWarnings: _warnings.isEmpty ? null : _warnings,
@@ -465,9 +572,9 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
         });
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.chainsStartStarted)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.chainsStartStarted)));
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
@@ -491,7 +598,8 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
               ),
             ),
             TextButton.icon(
-              onPressed: (_previewing ||
+              onPressed:
+                  (_previewing ||
                       _starting ||
                       _attachments.length >= chainComposerMaxAttachments)
                   ? null
@@ -616,10 +724,7 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Text(
-                  l10n.chainsStartIntro,
-                  style: theme.textTheme.bodySmall,
-                ),
+                Text(l10n.chainsStartIntro, style: theme.textTheme.bodySmall),
                 if (_localJoinEnabled == false ||
                     (_error != null &&
                         (_error == l10n.chainsStartNoWorkers ||
@@ -631,6 +736,15 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
                     theme: theme,
                   ),
                 ],
+                const SizedBox(height: 12),
+                _AgentNetworkTestCard(
+                  busy: _diagBusy || busy,
+                  summary: _diagSummary,
+                  error: _diagError,
+                  l10n: l10n,
+                  theme: theme,
+                  onRun: _diagBusy || busy ? null : _runDiagnostics,
+                ),
                 const SizedBox(height: 16),
                 Text(
                   l10n.chainsStartAssignmentMode,
@@ -667,6 +781,39 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
                       ? l10n.chainsStartModeRoleHint
                       : l10n.chainsStartModeSkillHint,
                   style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  l10n.chainsStartTeamStrategy,
+                  style: theme.textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final id in _teamStrategyIds)
+                      ChoiceChip(
+                        label: Text(_strategyLabel(l10n, id)),
+                        selected: _teamStrategyId == id,
+                        onSelected: busy
+                            ? null
+                            : (selected) {
+                                if (!selected) return;
+                                setState(() {
+                                  _teamStrategyId = id;
+                                  _clearPreview();
+                                });
+                              },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  l10n.chainsStartTeamStrategyHint,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -787,6 +934,26 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
                       );
                     }),
                   ],
+                  if (((_preview?['suggestedAssignerReason'] as String?) ?? '')
+                      .trim()
+                      .isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      (_preview!['suggestedAssignerReason'] as String).trim(),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                  if (((_preview?['iterationPreviewHint'] as String?) ?? '')
+                      .trim()
+                      .isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      (_preview!['iterationPreviewHint'] as String).trim(),
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   if (_subtasks.isEmpty)
                     Text(
@@ -844,13 +1011,27 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
                       final summary = (w['summary'] as String?)?.trim();
                       final online = w['online'] == true;
                       final viaRelay = w['viaRelay'] == true;
+                      final runtime = (w['runtime'] as String?)?.trim();
                       final matched =
                           (w['matchedSubtaskIds'] as List?)?.length ?? 0;
                       final selected = _selectedWorkerPeerIds.contains(peerId);
+                      final availSource =
+                          (w['availabilitySource'] as String?)?.trim();
+                      final reliabilityRaw = w['reliabilityLowerBound'];
+                      final reliabilityPct = reliabilityRaw is num
+                          ? (reliabilityRaw.toDouble() * 100).round()
+                          : null;
+                      final fallbackLevel =
+                          (w['reliabilityFallbackLevel'] as String?)?.trim();
+                      final sampleRaw = w['reliabilitySampleCount'];
+                      final reliabilitySamples =
+                          sampleRaw is num ? sampleRaw.round() : 0;
+                      final fallbackLabel =
+                          _reliabilityFallbackLevelLabel(l10n, fallbackLevel);
                       final subtitle = [
                         if (summary != null && summary.isNotEmpty) summary,
-                        if (matched > 0)
-                          l10n.chainsStartWorkerMatches(matched),
+                        if (runtime != null && runtime.isNotEmpty) runtime,
+                        if (matched > 0) l10n.chainsStartWorkerMatches(matched),
                         if (online)
                           viaRelay
                               ? l10n.chainsStartWorkerRelay
@@ -858,6 +1039,59 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
                         else
                           l10n.chainsStartWorkerOffline,
                       ].join(' · ');
+                      final metaChips = <Widget>[
+                        if (availSource == 'lease')
+                          Chip(
+                            label: Text(l10n.chainsStartAvailLease),
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            padding: EdgeInsets.zero,
+                            labelPadding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                            ),
+                          ),
+                        if (availSource == 'legacy_probe')
+                          Chip(
+                            label: Text(l10n.chainsStartAvailLegacy),
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            padding: EdgeInsets.zero,
+                            labelPadding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                            ),
+                          ),
+                        if (reliabilityPct != null)
+                          Chip(
+                            label: Text(
+                              l10n.chainsStartReliabilityPct(reliabilityPct),
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            padding: EdgeInsets.zero,
+                            labelPadding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                            ),
+                          ),
+                        if (fallbackLabel != null && reliabilityPct != null)
+                          Chip(
+                            label: Text(
+                              l10n.chainsStartReliabilitySparse(
+                                fallbackLabel,
+                                reliabilitySamples,
+                              ),
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            padding: EdgeInsets.zero,
+                            labelPadding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                            ),
+                          ),
+                      ];
                       return CheckboxListTile(
                         value: selected,
                         onChanged: busy || peerId.isEmpty || !online
@@ -879,18 +1113,33 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: online
                                 ? null
-                                : theme.colorScheme.onSurface
-                                    .withValues(alpha: 0.45),
+                                : theme.colorScheme.onSurface.withValues(
+                                    alpha: 0.45,
+                                  ),
                           ),
                         ),
-                        subtitle: Text(subtitle),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(subtitle),
+                            if (metaChips.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: metaChips,
+                              ),
+                            ],
+                          ],
+                        ),
                         controlAffinity: ListTileControlAffinity.leading,
                         dense: true,
                       );
                     }),
                   const SizedBox(height: 16),
                   FilledButton.icon(
-                    onPressed: (!_previewOk ||
+                    onPressed:
+                        (!_previewOk ||
                             busy ||
                             _attachmentsUploading ||
                             startBlockedByEmptyWorkers)
@@ -956,6 +1205,67 @@ class _FleetReadinessHints extends StatelessWidget {
                     child: Text(steps[i], style: theme.textTheme.bodySmall),
                   ),
                 ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Phase 60F — no-spend Agent Network diagnostics card.
+class _AgentNetworkTestCard extends StatelessWidget {
+  const _AgentNetworkTestCard({
+    required this.busy,
+    required this.summary,
+    required this.error,
+    required this.l10n,
+    required this.theme,
+    required this.onRun,
+  });
+
+  final bool busy;
+  final String? summary;
+  final String? error;
+  final AppLocalizations l10n;
+  final ThemeData theme;
+  final VoidCallback? onRun;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              l10n.chainsTestNetworkTitle,
+              style: theme.textTheme.titleSmall,
+            ),
+            const SizedBox(height: 4),
+            Text(l10n.chainsTestNetworkHint, style: theme.textTheme.bodySmall),
+            const SizedBox(height: 8),
+            FilledButton.tonal(
+              onPressed: onRun,
+              child: Text(
+                busy
+                    ? l10n.chainsTestNetworkRunning
+                    : l10n.chainsTestNetworkRun,
+              ),
+            ),
+            if (summary != null) ...[
+              const SizedBox(height: 8),
+              Text(summary!, style: theme.textTheme.bodySmall),
+            ],
+            if (error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                error!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
               ),
             ],
           ],

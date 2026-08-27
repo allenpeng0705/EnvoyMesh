@@ -7,6 +7,10 @@
  * other class helpers) so we don't test them here.
  */
 import { beforeEach, describe, expect, it } from "vitest";
+import { mkdtemp, rm, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createChainState } from "../src/chain-orchestrator.js";
 
 import {
   chainCancelViaRuntime,
@@ -15,6 +19,7 @@ import {
   chainExportCostsViaRuntime,
   chainGetBidStrategyViaRuntime,
   chainGetStateViaRuntime,
+  chainGetStepProvenanceViaRuntime,
   chainListRecipesViaRuntime,
   chainSaveRecipeViaRuntime,
   chainSetBidStrategyViaRuntime,
@@ -54,6 +59,265 @@ function makeContext(store: ChainStore): ChainContext {
 }
 
 describe("ChainStore", () => {
+  it("returns lazy per-step provenance without unrelated journal events", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "chain-provenance-"));
+    try {
+      const store = new ChainStore();
+      await store.init(dir);
+      const state = createChainState({
+        chainId: "c-provenance",
+        chainMandateId: "m-provenance",
+        maxChainCostUsd: 10,
+        subtasks: [],
+      } as never);
+      store.setRuntime(state.chainId, {
+        state,
+        bidStrategy: { baseCostUsd: 1, capabilityLocalEtaMs: 60_000, reputationDiscount: 1, etaSlackMs: 60_000 },
+      });
+      state.journalEvent?.("transport.sent", { subtaskId: "s-1", workerPeerId: "peer-1", transportPath: "direct" });
+      state.journalEvent?.("transport.sent", { subtaskId: "s-2", workerPeerId: "peer-2", transportPath: "relay" });
+      state.journalEvent?.("artifact.selected", {
+        subtaskId: "s-1",
+        attemptId: "a-1",
+        artifactIds: ["result"],
+        parentArtifactIds: ["dep:out"],
+      });
+      state.journalEvent?.("synthesis.lineage", {
+        synthesisCostUsd: 0.2,
+        ownerPeerId: "owner-1",
+        selectedArtifacts: [
+          {
+            subtaskId: "s-1",
+            attemptId: "a-1",
+            artifactKeys: ["result"],
+            parentArtifactKeys: ["dep:out"],
+          },
+          {
+            subtaskId: "s-2",
+            attemptId: "a-2",
+            artifactKeys: ["other"],
+            parentArtifactKeys: [],
+          },
+        ],
+      });
+      const result = await chainGetStepProvenanceViaRuntime(makeContext(store), {
+        chainId: state.chainId,
+        subtaskId: "s-1",
+      });
+      expect(result.events.map((e) => e.type)).toEqual([
+        "transport.sent",
+        "artifact.selected",
+        "synthesis.lineage",
+      ]);
+      expect(result.events[0]).toMatchObject({
+        type: "transport.sent",
+        workerPeerId: "peer-1",
+        transportPath: "direct",
+      });
+      expect(result.events[1]).toMatchObject({
+        type: "artifact.selected",
+        artifactIds: ["result"],
+        parentArtifactIds: ["dep:out"],
+      });
+      expect(result.events[2]).toMatchObject({
+        type: "synthesis.lineage",
+        attemptId: "a-1",
+        artifactIds: ["result"],
+        parentArtifactIds: ["dep:out"],
+      });
+      store.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("restores unfinished Team jobs after a node restart", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "chain-store-"));
+    try {
+      const mandate = {
+        chainId: "c-recover",
+        chainMandateId: "m-recover",
+        maxChainCostUsd: 10,
+        subtasks: [],
+      } as never;
+      const first = new ChainStore();
+      await first.init(dir);
+      const state = createChainState(mandate, { goal: "Recover this job" });
+      state.subtasks.set("s-1", { subtaskId: "s-1", dependsOn: [] } as never);
+      first.setRuntime(state.chainId, {
+        state,
+        bidStrategy: { baseCostUsd: 1, capabilityLocalEtaMs: 60_000, reputationDiscount: 1, etaSlackMs: 60_000 },
+      });
+      await first.persistNow();
+
+      const second = new ChainStore();
+      await second.init(dir);
+      expect(second.getRuntime("c-recover")?.state.goal).toBe("Recover this job");
+      expect(second.getRuntime("c-recover")?.state.subtasks.has("s-1")).toBe(true);
+      expect(second.getRuntime("c-recover")?.state.attempts).toBeInstanceOf(Map);
+      first.close();
+      second.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("restores complete state from the per-chain checkpoint without the legacy snapshot", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "chain-store-authoritative-"));
+    try {
+      const first = new ChainStore();
+      await first.init(dir);
+      const state = createChainState({
+        chainId: "c-authoritative",
+        chainMandateId: "m-authoritative",
+        maxChainCostUsd: 10,
+        subtasks: [],
+      } as never, { goal: "Checkpoint owns recovery" });
+      state.subtasks.set("s-1", { subtaskId: "s-1", dependsOn: [] } as never);
+      state.lastConfidence.set("s-1", 0.82);
+      expect((await state.ledger.reserve("s-1", "peer-1", 2)).ok).toBe(true);
+      expect((await state.ledger.tryCommit("s-1")).ok).toBe(true);
+      first.setRuntime(state.chainId, {
+        state,
+        bidStrategy: { baseCostUsd: 2, capabilityLocalEtaMs: 30_000, reputationDiscount: 0.8, etaSlackMs: 5_000 },
+      });
+      await first.persistNow();
+      first.close();
+      await unlink(join(dir, "active-team-jobs.json"));
+
+      const second = new ChainStore();
+      await second.init(dir);
+      const restored = second.getRuntime("c-authoritative");
+      expect(restored?.state.goal).toBe("Checkpoint owns recovery");
+      expect(restored?.state.subtasks.has("s-1")).toBe(true);
+      expect(restored?.state.lastConfidence.get("s-1")).toBe(0.82);
+      expect(restored?.bidStrategy.baseCostUsd).toBe(2);
+      expect(restored?.state.ledger.snapshot()).toMatchObject({
+        committedUsd: 2,
+        reservedUsd: 0,
+        totalAcceptedUsd: 2,
+      });
+      second.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("replays journal events written after the last atomic checkpoint", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "chain-store-tail-"));
+    try {
+      const mandate = {
+        chainId: "c-tail",
+        chainMandateId: "m-tail",
+        maxChainCostUsd: 10,
+        subtasks: [],
+      } as never;
+      const first = new ChainStore();
+      await first.init(dir);
+      const state = createChainState(mandate, { goal: "Replay the tail" });
+      first.setRuntime(state.chainId, {
+        state,
+        bidStrategy: { baseCostUsd: 1, capabilityLocalEtaMs: 60_000, reputationDiscount: 1, etaSlackMs: 60_000 },
+      });
+      state.journalEvent?.("attempt.awarded", {
+        attemptId: "attempt_tail",
+        chainId: "c-tail",
+        subtaskId: "s-tail",
+        workerPeerId: "worker-tail",
+        role: "primary",
+        state: "awarded",
+        attemptNumber: 1,
+        acceptedCostUsd: 0,
+        createdAt: "2030-01-01T00:00:00.000Z",
+        updatedAt: "2030-01-01T00:00:00.000Z",
+      });
+      await first.flushJournal("c-tail");
+      await first.persistNow();
+      state.journalEvent?.("attempt.state_changed", {
+        attemptId: "attempt_tail",
+        state: "lost",
+        reason: "node_disconnected",
+      });
+      await first.flushJournal("c-tail");
+      first.close();
+
+      const second = new ChainStore();
+      await second.init(dir);
+      expect(second.getRuntime("c-tail")?.state.attempts.get("attempt_tail")?.state).toBe("lost");
+      expect(second.getJournalProjection("c-tail")?.attempts.attempt_tail?.lastReason).toBe(
+        "node_disconnected",
+      );
+      second.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("migrates legacy awards once without duplicating attempts or ledger commits", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "chain-store-migrate-"));
+    try {
+      const first = new ChainStore();
+      await first.init(dir);
+      const state = createChainState({
+        chainId: "c-migrate",
+        chainMandateId: "m-migrate",
+        maxChainCostUsd: 10,
+        subtasks: [],
+      } as never, { goal: "One-shot migrate" });
+      state.subtasks.set("s-1", { subtaskId: "s-1", dependsOn: [] } as never);
+      state.awards.set("s-1", {
+        subtaskId: "s-1",
+        workerPeerId: "peer-1",
+        acceptedCostUsd: 3,
+        createdAt: "2030-01-01T00:00:00.000Z",
+      } as never);
+      expect((await state.ledger.reserve("s-1", "peer-1", 3)).ok).toBe(true);
+      expect((await state.ledger.tryCommit("s-1")).ok).toBe(true);
+      // Pretend this snapshot was written before attempt maps existed.
+      state.attempts.clear();
+      state.selectedAttemptBySubtask.clear();
+      first.setRuntime(state.chainId, {
+        state,
+        bidStrategy: { baseCostUsd: 1, capabilityLocalEtaMs: 60_000, reputationDiscount: 1, etaSlackMs: 60_000 },
+      });
+      await first.persistNow();
+      first.close();
+
+      // Drop per-chain checkpoint so the next boot must import the legacy mirror once.
+      await rm(join(dir, "team-jobs"), { recursive: true, force: true });
+
+      const second = new ChainStore();
+      await second.init(dir);
+      const migrated = second.getRuntime("c-migrate");
+      expect(migrated?.state.attempts.size).toBe(1);
+      expect(migrated?.state.attempts.get("attempt_migrated_s-1")?.workerPeerId).toBe("peer-1");
+      expect(migrated?.state.ledger.snapshot()).toMatchObject({
+        committedUsd: 3,
+        reservedUsd: 0,
+        totalAcceptedUsd: 3,
+      });
+      const events = await second.readJournal("c-migrate");
+      expect(events.filter((e) => e.type === "migration.legacy_checkpoint_imported")).toHaveLength(1);
+      expect(events.filter((e) => e.type === "attempt.awarded")).toHaveLength(1);
+      second.close();
+
+      const third = new ChainStore();
+      await third.init(dir);
+      expect(third.getRuntime("c-migrate")?.state.attempts.size).toBe(1);
+      expect(third.getRuntime("c-migrate")?.state.ledger.snapshot()).toMatchObject({
+        committedUsd: 3,
+        reservedUsd: 0,
+        totalAcceptedUsd: 3,
+      });
+      const eventsAgain = await third.readJournal("c-migrate");
+      expect(eventsAgain.filter((e) => e.type === "migration.legacy_checkpoint_imported")).toHaveLength(1);
+      expect(eventsAgain.filter((e) => e.type === "attempt.awarded")).toHaveLength(1);
+      third.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("getRuntime returns undefined for unknown chain", () => {
     const store = new ChainStore();
     expect(store.getRuntime("nope")).toBeUndefined();

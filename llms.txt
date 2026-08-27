@@ -1,0 +1,33 @@
+# EnvoyMesh
+
+> Machine-readable docs index for AI agents (llms.txt).
+> EnvoyMesh is a decentralized P2P mesh for autonomous AI agents.
+> This file indexes the docs most useful to agents working in the
+> repo, especially the envoy-harness integration series.
+
+## Key docs
+
+- [README](README.md): repo overview.
+- [Implementation plan](docs/implementation-plan.md): the master "what shipped, what's next" reference.
+- [Agent network engine](docs/agent-network-engine.md): the agent-network / harness-engine design.
+- [envoy-harness integration (design)](docs/agent-harness-integration.md): the Phase 8 integration series change log + design.
+- [v1.1 — capability-tag signal detection](docs/agent-harness-integration-v1-1.md): dynamic router vocabulary.
+- [v1.2 — per-skill routing](docs/agent-harness-integration-v1-2.md)
+- [v1.3 — B-class result formatters](docs/agent-harness-integration-v1-3.md)
+- [v1.4 — Tauri UI opt-in + verifyMode](docs/agent-harness-integration-v1-4.md)
+- [v1.5 — provider/spending hints](docs/agent-harness-integration-v1-5.md)
+- [v1.6 — !openclaw opt-out](docs/agent-harness-integration-v1-6.md)
+- [v1.7 — OpenClaw negative signals](docs/agent-harness-integration-v1-7.md)
+- [v1.8 — cross verifier (different model family)](docs/agent-harness-integration-v1-8.md)
+- [v1.9 — per-runtime tags](docs/agent-harness-integration-v1-9.md)
+- [v1.10 — 3-tuple reputation scorebook](docs/agent-harness-integration-v1-10.md)
+- [v1.11–v1.17 — scoreboard wiring, Tauri UI, worker ranking, per-runtime routing, cross-model (blocked), shim removal](docs/agent-harness-integration-v1-11.md)
+- [Tauri agent routing settings](docs/taui-agent-routing-settings.md): UI design for routing/opt-in/verifyMode.
+
+## Source layout (apps/node)
+
+- [User-prompt router](apps/node/src/user-prompt-router.ts): the pure signal router.
+- [Chain verify loop](apps/node/src/chain-verify-loop.ts): orchestrator verification + cross-verify.
+- [Chain scoreboard](apps/node/src/chain-scoreboard.ts): 3-tuple reputation producer.
+- [Manifest tags](apps/node/src/manifest-envoy-harness-tags.ts): per-runtime tag extraction.
+- [Envoy-harness runtime](apps/node/src/agent-runtime-envoy/): the host-side runtime (createRealEnvoyHarnessRuntime, LocalRuntimeRegistry).

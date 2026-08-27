@@ -22,7 +22,14 @@ class ContentFilesTab extends ConsumerStatefulWidget {
   /// When true (Knowledge → Browse), show Notes/Documents/Published filters + index chip.
   final bool knowledgeBrowse;
 
-  const ContentFilesTab({super.key, this.knowledgeBrowse = false});
+  /// Optional seed for the search field (e.g. from Browse hub).
+  final String? initialQuery;
+
+  const ContentFilesTab({
+    super.key,
+    this.knowledgeBrowse = false,
+    this.initialQuery,
+  });
 
   @override
   ConsumerState<ContentFilesTab> createState() => _ContentFilesTabState();
@@ -32,14 +39,17 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
   ListAllLocalFilesResult? _result;
   bool _loading = true;
   String? _error;
-  String _query = '';
+  late String _query;
   KnowledgeBrowseFilter _browseFilter = KnowledgeBrowseFilter.all;
   Map<String, dynamic>? _indexStatus;
   void Function()? _unsubRag;
+  late final TextEditingController _searchController;
 
   @override
   void initState() {
     super.initState();
+    _query = widget.initialQuery?.trim() ?? '';
+    _searchController = TextEditingController(text: _query);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _reload();
       if (widget.knowledgeBrowse) {
@@ -52,6 +62,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
   @override
   void dispose() {
     _unsubRag?.call();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -88,9 +99,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
       _error = null;
     });
     try {
-      final result = await client.listAllLocalFiles(
-        query: _query.trim().isEmpty ? null : _query.trim(),
-      );
+      final result = await client.listAllLocalFiles();
       if (!mounted) return;
       setState(() {
         _result = result;
@@ -222,9 +231,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Import this note into the vault first, then you can publish it.',
-            ),
+            content: Text(l10n.knowledgeBrowsePublishImportOnly),
           ),
         );
         return;
@@ -242,7 +249,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                result['reason']?.toString() ?? 'Import failed',
+                result['reason']?.toString() ?? l10n.knowledgeHubImportFailed,
               ),
             ),
           );
@@ -263,7 +270,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                result['reason']?.toString() ?? 'Import failed',
+                result['reason']?.toString() ?? l10n.knowledgeHubImportFailed,
               ),
             ),
           );
@@ -280,10 +287,8 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
       if (docId == null || docId.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Imported, but could not publish yet — try Publish again from the imported note.',
-            ),
+          SnackBar(
+            content: Text(l10n.knowledgeBrowsePublishImportNoDoc),
           ),
         );
         await _reload();
@@ -293,7 +298,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
       await client.setLibraryItemPublished(documentId: docId, published: true);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Imported and published')),
+        SnackBar(content: Text(l10n.knowledgeBrowseImportedAndPublished)),
       );
       await _reload();
     } catch (e) {
@@ -436,7 +441,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
                         ? l10n.knowledgeFileMakePrivate
                         : (item.source == 'linked-obsidian' ||
                                 item.source == 'mcp-remote')
-                            ? 'Import and publish'
+                            ? l10n.knowledgeBrowseImportAndPublish
                             : l10n.knowledgeFilePublish,
                   ),
                   onTap: () {
@@ -747,6 +752,9 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
                   label: Text(indexLabel),
                   visualDensity: VisualDensity.compact,
                   onPressed: () {
+                    // Leave full-screen library so Setup is visible.
+                    final nav = Navigator.of(context);
+                    if (nav.canPop()) nav.pop();
                     openContentKnowledge(
                       ref,
                       panel: KnowledgeHubPanel.setup,
@@ -784,10 +792,13 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
             children: [
               Expanded(
                 child: TextField(
+                  controller: _searchController,
+                  textInputAction: TextInputAction.search,
                   decoration: InputDecoration(
                     hintText: l10n.filesSearchHint,
                     isDense: true,
                     prefixIcon: const Icon(Icons.search),
+                    border: const OutlineInputBorder(),
                   ),
                   onChanged: (v) => setState(() => _query = v),
                   onSubmitted: (_) => _reload(),
@@ -903,7 +914,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
                                                           'linked-obsidian' ||
                                                       item.source ==
                                                           'mcp-remote')
-                                                  ? 'Import and publish'
+                                                  ? l10n.knowledgeBrowseImportAndPublish
                                                   : l10n.knowledgeFilePublish,
                                           icon: Icon(
                                             (item.published ?? false)
@@ -939,6 +950,8 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
         return l10n.knowledgeBrowseFilterObsidian;
       case KnowledgeBrowseFilter.notion:
         return l10n.knowledgeBrowseFilterNotion;
+      case KnowledgeBrowseFilter.blog:
+        return l10n.knowledgeBrowseFilterBlog;
       case KnowledgeBrowseFilter.documents:
         return l10n.knowledgeBrowseFilterDocuments;
       case KnowledgeBrowseFilter.published:
@@ -963,6 +976,9 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
       return false;
     }
     if (_browseFilter == KnowledgeBrowseFilter.notion && source == 'notion') {
+      return false;
+    }
+    if (_browseFilter == KnowledgeBrowseFilter.blog && source == 'blog') {
       return false;
     }
     return true;

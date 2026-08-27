@@ -111,11 +111,13 @@ One shared panel (Social component; EnvoyGo mirror), reused:
 | Contact joined AN | opted-in | Plain “ask them to Join” (+ fleet invite link if already in product) |
 | Fresh agent card | card ready (not stale/missing) | Refresh cards / reopen Team jobs |
 | Online now | `chainProbeReachability` online | Retry probe / “offline — can’t join this job” |
-| Other ready peer | ≥1 selectable besides “need multi-agent” rule | Same as today: need another ready peer |
+| Ready worker | ≥1 selectable local or remote worker | Enable Join and a local engine, or bring a bonded peer online |
 
 **Rules**
 
 - Stale card ≠ offline — separate rows.
+- A local-only Team job is valid orchestration and must be labelled “Local worker”.
+  Multi-node collaboration is an enhancement, not a launch requirement.
 - Do not duplicate the full fleet wizard inside Preview; deep-link into
   existing Manage workers / Discover.
 - Close Phase 43’s open diagnostics criterion when this ships.

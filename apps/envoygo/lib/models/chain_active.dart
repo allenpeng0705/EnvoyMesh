@@ -3,6 +3,8 @@
 // Mirrors `chainListActive` / `chainGetState` from the home node JSON-RPC
 // surface. Mobile shows in-progress chains; authoring stays on the home UI.
 
+import '../l10n/app_localizations.dart';
+
 class ChainLiveStep {
   final String subtaskId;
   final String objective;
@@ -12,6 +14,8 @@ class ChainLiveStep {
   final String? requiredRole;
   final List<ChainStepHandoff> waitingOn;
   final List<ChainStepHandoff> produced;
+  final int attemptCount;
+  final String? selectedAttemptId;
 
   const ChainLiveStep({
     required this.subtaskId,
@@ -22,6 +26,8 @@ class ChainLiveStep {
     this.requiredRole,
     this.waitingOn = const [],
     this.produced = const [],
+    this.attemptCount = 0,
+    this.selectedAttemptId,
   });
 
   factory ChainLiveStep.fromJson(Map<String, dynamic> json) {
@@ -44,6 +50,38 @@ class ChainLiveStep {
       requiredRole: json['requiredRole'] as String?,
       waitingOn: parseHandoffs('waitingOn'),
       produced: parseHandoffs('produced'),
+      attemptCount: (json['attemptCount'] as num?)?.toInt() ?? 0,
+      selectedAttemptId: json['selectedAttemptId'] as String?,
+    );
+  }
+}
+
+/// Phase 60A — compact per-step provenance from `chainGetState`.
+class ChainProvenanceSummary {
+  final String subtaskId;
+  final String? selectedAttemptId;
+  final String? workerPeerId;
+  final int attemptCount;
+  final String? state;
+  final String? lastReason;
+
+  const ChainProvenanceSummary({
+    required this.subtaskId,
+    this.selectedAttemptId,
+    this.workerPeerId,
+    this.attemptCount = 0,
+    this.state,
+    this.lastReason,
+  });
+
+  factory ChainProvenanceSummary.fromJson(Map<String, dynamic> json) {
+    return ChainProvenanceSummary(
+      subtaskId: json['subtaskId'] as String? ?? '',
+      selectedAttemptId: json['selectedAttemptId'] as String?,
+      workerPeerId: json['workerPeerId'] as String?,
+      attemptCount: (json['attemptCount'] as num?)?.toInt() ?? 0,
+      state: json['state'] as String?,
+      lastReason: json['lastReason'] as String?,
     );
   }
 }
@@ -219,12 +257,22 @@ class ChainActiveSummary {
   final String awardMode;
   /// `manual` | `auto` | `never` — from live state when known.
   final String? rebalancePolicy;
+  /// Phase 60C — resolved team strategy id from `chainGetState.teamStrategy.id`.
+  final String? teamStrategyId;
+  /// Phase 60D — `chainGetState.recovery.phase` when present (`recovering`, …).
+  final String? recoveryPhase;
   /// Phase 58B — live step story (objectives / waitingOn).
   final List<ChainLiveStep> steps;
+  /// Phase 60A — compact provenance summaries (lazy details via RPC).
+  final List<ChainProvenanceSummary> provenanceSummary;
   /// Phase 58D — iteration progress / owner hold.
   final ChainIterationState? iteration;
   /// Phase 59D — job input delivery chips.
   final List<ChainInputDelivery> inputDeliveries;
+  /// Phase 63 — speculation disagreements awaiting owner resolution
+  /// (only present when `chainMandate.speculationOnDisagreement === "block"`).
+  /// The mobile UI shows a single "Resolve automatically" button per review.
+  final List<ChainSpeculationReview> speculationReview;
 
   const ChainActiveSummary({
     required this.chainId,
@@ -241,16 +289,33 @@ class ChainActiveSummary {
     this.budgetWarningLevel,
     this.awardMode = 'direct',
     this.rebalancePolicy,
+    this.teamStrategyId,
+    this.recoveryPhase,
     this.steps = const [],
+    this.provenanceSummary = const [],
     this.iteration,
     this.inputDeliveries = const [],
+    this.speculationReview = const [],
   });
 
   factory ChainActiveSummary.fromJson(Map<String, dynamic> json) {
     final stepsRaw = json['steps'] as List<dynamic>? ?? const [];
+    final provenanceRaw = json['provenanceSummary'] as List<dynamic>? ?? const [];
     final iterationRaw = json['iteration'];
     final deliveriesRaw = json['inputDeliveries'] as List<dynamic>? ?? const [];
     final attachmentsRaw = json['inputAttachments'] as List<dynamic>? ?? const [];
+    final teamStrategyRaw = json['teamStrategy'];
+    String? teamStrategyId;
+    if (teamStrategyRaw is Map) {
+      final id = teamStrategyRaw['id'] as String?;
+      if (id != null && id.isNotEmpty) teamStrategyId = id;
+    }
+    final recoveryRaw = json['recovery'];
+    String? recoveryPhase;
+    if (recoveryRaw is Map) {
+      final phase = recoveryRaw['phase'] as String?;
+      if (phase != null && phase.isNotEmpty) recoveryPhase = phase;
+    }
     final labelBySource = <String, String>{};
     for (final raw in attachmentsRaw.whereType<Map>()) {
       final m = Map<String, dynamic>.from(raw);
@@ -279,9 +344,16 @@ class ChainActiveSummary {
       budgetWarningLevel: json['budgetWarningLevel'] as String?,
       awardMode: (json['awardMode'] as String?) ?? 'direct',
       rebalancePolicy: json['rebalancePolicy'] as String?,
+      teamStrategyId: teamStrategyId,
+      recoveryPhase: recoveryPhase,
       steps: stepsRaw
           .whereType<Map>()
           .map((e) => ChainLiveStep.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+      provenanceSummary: provenanceRaw
+          .whereType<Map>()
+          .map((e) =>
+              ChainProvenanceSummary.fromJson(Map<String, dynamic>.from(e)))
           .toList(),
       iteration: iterationRaw is Map
           ? ChainIterationState.fromJson(Map<String, dynamic>.from(iterationRaw))
@@ -302,6 +374,11 @@ class ChainActiveSummary {
           updatedAt: base.updatedAt,
         );
       }).toList(),
+      speculationReview: (json['speculationReview'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((e) =>
+              ChainSpeculationReview.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
     );
   }
 
@@ -320,6 +397,8 @@ class ChainActiveSummary {
         if (budgetWarningLevel != null) 'budgetWarningLevel': budgetWarningLevel,
         'awardMode': awardMode,
         if (rebalancePolicy != null) 'rebalancePolicy': rebalancePolicy,
+        if (teamStrategyId != null) 'teamStrategy': {'id': teamStrategyId},
+        if (recoveryPhase != null) 'recovery': {'phase': recoveryPhase},
         if (steps.isNotEmpty)
           'steps': steps
               .map((s) => {
@@ -333,22 +412,74 @@ class ChainActiveSummary {
               .toList(),
       };
 
-  String get statusLabel {
-    if (chainCancelled) return 'Cancelled';
-    if (published) return 'Published';
+  String statusLabel(AppLocalizations l10n) {
+    if (chainCancelled) return l10n.chainsStatusCancelled;
+    if (published) return l10n.chainsStatusPublished;
+    if (recoveryPhase == 'recovering') return l10n.chainsStatusRecovering;
     if (awardedCount > 0 && partialCount >= subtaskCount && subtaskCount > 0) {
-      return 'Synthesizing';
+      return l10n.chainsStatusSynthesizing;
     }
-    if (awardedCount > 0 && partialCount < subtaskCount) return 'Running';
+    if (awardedCount > 0 && partialCount < subtaskCount) {
+      return l10n.chainsStatusRunning;
+    }
     if (awardedCount == 0 && bidCount == 0 && subtaskCount > 0) {
-      return 'Waiting for workers';
+      return l10n.chainsStatusWaitingWorkers;
     }
     // Worker ACK uses task.chain.bid on the wire even in direct mode — do not
     // surface that as "Bidding" unless competitive award mode is on.
-    if (awardMode == 'competitive' && (bidCount > 0 || awardedCount < subtaskCount)) {
-      return 'Bidding';
+    if (awardMode == 'competitive' &&
+        (bidCount > 0 || awardedCount < subtaskCount)) {
+      return l10n.chainsStatusBidding;
     }
-    if (awardedCount < subtaskCount) return 'Assigning';
-    return 'Planning';
+    if (awardedCount < subtaskCount) return l10n.chainsStatusAssigning;
+    return l10n.chainsStatusPlanning;
+  }
+}
+
+/// Phase 63 — one pending speculation disagreement per subtask. Mirrors the
+/// `speculationReview` field returned by `chainGetState`. Only present when
+/// the chain mandate opted in to `speculationOnDisagreement === "block"`.
+class ChainSpeculationReview {
+  final String subtaskId;
+  final String reason; // "disagree_needs_verify" | "none_pass"
+  final List<ChainSpeculationAttempt> attempts;
+
+  const ChainSpeculationReview({
+    required this.subtaskId,
+    required this.reason,
+    required this.attempts,
+  });
+
+  factory ChainSpeculationReview.fromJson(Map<String, dynamic> json) {
+    final raw = json['attempts'] as List<dynamic>? ?? const [];
+    return ChainSpeculationReview(
+      subtaskId: json['subtaskId'] as String? ?? '',
+      reason: json['reason'] as String? ?? 'disagree_needs_verify',
+      attempts: raw
+          .whereType<Map>()
+          .map((e) =>
+              ChainSpeculationAttempt.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+    );
+  }
+}
+
+class ChainSpeculationAttempt {
+  final String attemptId;
+  final String workerPeerId;
+  final String? role; // "primary" | "speculative" | "replacement"
+
+  const ChainSpeculationAttempt({
+    required this.attemptId,
+    required this.workerPeerId,
+    this.role,
+  });
+
+  factory ChainSpeculationAttempt.fromJson(Map<String, dynamic> json) {
+    return ChainSpeculationAttempt(
+      attemptId: json['attemptId'] as String? ?? '',
+      workerPeerId: json['workerPeerId'] as String? ?? '',
+      role: json['role'] as String?,
+    );
   }
 }

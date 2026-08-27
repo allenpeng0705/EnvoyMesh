@@ -113,7 +113,7 @@ import type {
   ChainDeleteRecipeParams,
   ChainDeleteRecipeResult,
 } from "@envoymesh/api";
-import { isFamilyThreadKey, OWNER_FAMILY_PROFILE_ID, TERMINAL_ASSIST_RPC_TIMEOUT_MS } from "@envoymesh/api";
+import { OWNER_FAMILY_PROFILE_ID, TERMINAL_ASSIST_RPC_TIMEOUT_MS, EH_ASK_WS_TIMEOUT_MS } from "@envoymesh/api";
 import { mergeGroupDeliveryAck } from "@envoymesh/api/group-chat-delivery";
 import {
   mergeMessagesIntoThread,
@@ -123,6 +123,7 @@ import {
 import {
   isChatMessageVisibleToProfile,
   isThreadVisibleToProfile,
+  messageIsOutgoing,
   pruneThreadsForProfile,
   resolveChatThreadKey,
 } from "../lib/chat-visibility.js";
@@ -296,6 +297,9 @@ export interface NodeServiceClient {
   chainPlan(params: ChainPlanParams): Promise<ChainPlanResult>;
   chainLaunch(params: ChainLaunchParams): Promise<ChainLaunchResult>;
   chainGetState(params: ChainGetStateParams): Promise<ChainGetStateResult>;
+  chainGetStepProvenance(
+    params: import("@envoymesh/api").ChainGetStepProvenanceParams,
+  ): Promise<import("@envoymesh/api").ChainGetStepProvenanceResult>;
   chainListActive(params?: ChainListActiveParams): Promise<ChainListActiveResult>;
   chainListObserved?(
     params?: import("@envoymesh/api").ChainListObservedParams,
@@ -319,9 +323,19 @@ export interface NodeServiceClient {
   chainGetDefaults(params: ChainGetDefaultsParams): Promise<ChainGetDefaultsResult>;
   chainSetDefaults(params: ChainSetDefaultsParams): Promise<ChainSetDefaultsResult>;
   chainPreviewGoal(params: ChainPreviewGoalParams): Promise<ChainPreviewGoalResult>;
+  agentNetworkDiagnosticsSnapshot(): Promise<
+    import("@envoymesh/api").AgentNetworkDiagnosticsSnapshot
+  >;
+  agentNetworkSimulate(
+    params: import("@envoymesh/api").AgentNetworkSimulationParams,
+  ): Promise<import("@envoymesh/api").AgentNetworkSimulationResult>;
+  agentNetworkExportDiagnostics(params: {
+    simulationId?: string;
+  }): Promise<{ json: string }>;
   chainStartFromGoal(params: ChainStartFromGoalParams): Promise<ChainStartFromGoalResult>;
   chainProbeReachability(params: ChainProbeReachabilityParams): Promise<ChainProbeReachabilityResult>;
   chainResolveIteration(params: import("@envoymesh/api").ChainResolveIterationParams): Promise<import("@envoymesh/api").ChainResolveIterationResult>;
+  chainResolveSpeculation(params: import("@envoymesh/api").ChainResolveSpeculationParams): Promise<import("@envoymesh/api").ChainResolveSpeculationResult>;
   chainExportCosts(params: ChainExportCostsParams): Promise<ChainExportCostsResult>;
   chainListRecipes(params?: ChainListRecipesParams): Promise<ChainListRecipesResult>;
   chainSaveRecipe(params: ChainSaveRecipeParams): Promise<ChainSaveRecipeResult>;
@@ -451,6 +465,86 @@ export interface NodeServiceClient {
   updateEnvoyLocalEngine(): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
   /** One-shot prompt — collects streamed text into a single response. */
   sendToPi(text: string): Promise<string>;
+  // U4 — dedicated Envoy Harness UI surface.
+  /** envoy-harness runtime status (ready/model/error + peer cluster counts). */
+  getEnvoyHarnessStatus(): Promise<import("@envoymesh/api").EnvoyHarnessStatus>;
+  /** One-shot prompt — blocks until turn completes (legacy / orchestration). */
+  askEnvoyHarness(text: string): Promise<string>;
+  /** Non-blocking turn start — progress via `eh:turn_*` events. */
+  startEnvoyHarnessTurn(
+    text: string,
+    attachments?: import("@envoymesh/api").AgentAttachmentRef[],
+    chatId?: string,
+  ): Promise<{ turnId: string }>;
+  getEnvoyHarnessTurnStatus(
+    chatId?: string,
+  ): Promise<import("@envoymesh/api").EhTurnStatus>;
+  setEnvoyHarnessAutoRunPolicy(
+    policy: string,
+  ): Promise<import("@envoymesh/api").EnvoyHarnessStatus>;
+  getEnvoyHarnessChatHistory(
+    chatId?: string,
+  ): Promise<import("@envoymesh/api").EhChatHistory>;
+  listEnvoyHarnessChats(): Promise<
+    import("@envoymesh/api").EhChatWorkspaceSummary[]
+  >;
+  createEnvoyHarnessChat(opts: {
+    cwd: string;
+    title?: string;
+  }): Promise<import("@envoymesh/api").EhChatWorkspaceSummary>;
+  openEnvoyHarnessChat(
+    chatId: string,
+  ): Promise<import("@envoymesh/api").EhChatHistory>;
+  removeEnvoyHarnessChat(chatId: string): Promise<{ removed: boolean }>;
+  deleteEnvoyHarnessChatTurn(opts: {
+    turnId: string;
+    chatId?: string;
+  }): Promise<import("@envoymesh/api").EhChatHistory & { deleted: boolean }>;
+  getEnvoyHarnessTurnReview(
+    turnId: string,
+  ): Promise<import("@envoymesh/api").EhTurnReview | null>;
+  revertEnvoyHarnessTurn(
+    turnId: string,
+  ): Promise<import("@envoymesh/api").EhRevertTurnResult>;
+  acceptEnvoyHarnessTurnReview(
+    turnId: string,
+    paths?: readonly string[],
+  ): Promise<import("@envoymesh/api").EhAcceptTurnReviewResult>;
+  revertEnvoyHarnessTurnFiles(
+    turnId: string,
+    paths: readonly string[],
+  ): Promise<import("@envoymesh/api").EhRevertTurnResult>;
+  openEnvoyHarnessFile(params: { path: string; chatId?: string }): Promise<void>;
+  getEnvoyHarnessCommandCatalog(): Promise<import("@envoymesh/api").ExtAgentCommandCatalog>;
+  recordEnvoyHarnessUxEvent(event: import("@envoymesh/api").EhUxTelemetryEvent): Promise<void>;
+  resetEnvoyHarnessChat(
+    chatId?: string,
+  ): Promise<import("@envoymesh/api").EhChatHistory>;
+  ehRespondToPermission(params: {
+    requestId: string;
+    allowed: boolean;
+  }): Promise<{ requestId: string; delivered: boolean }>;
+  cancelEnvoyHarnessTurn(chatId?: string): Promise<{ cancelled: boolean }>;
+  /** The configured envoy-harness peer cluster (id/model/capabilities). */
+  listEnvoyHarnessPeers(): Promise<
+    ReadonlyArray<{
+      id: string;
+      model?: string;
+      capabilities?: readonly string[];
+    }>
+  >;
+  /** Persist the envoy-harness project folder (validated, resets runtime). */
+  setEnvoyHarnessProjectPath(
+    path: string,
+  ): Promise<import("@envoymesh/api").EnvoyHarnessStatus>;
+  /** EHUI panel invoke for Envoy Harness rails. */
+  invokeEnvoyHarnessEhui(
+    request: import("@envoymesh/api").EhuiInvokeRequest,
+  ): Promise<unknown>;
+  /** Ensure the Envoy TUI terminal for a project folder (like Pi's). */
+  ensureEnvoyTerminalSession(
+    params?: import("@envoymesh/api").EnsureEnvoyTerminalParams,
+  ): Promise<import("@envoymesh/api").EnsureEnvoyTerminalResult>;
   /** Ensure Pi interactive TUI for a project folder (lazy; may return needs_project). */
   ensurePiTerminalSession(
     params?: import("@envoymesh/api").EnsurePiTerminalParams,
@@ -460,6 +554,9 @@ export interface NodeServiceClient {
     uiRequestId: string
     confirmed: boolean
   }): Promise<{ uiRequestId: string; delivered: boolean }>;
+  ehRespondToUserQuestion(
+    params: import("@envoymesh/api").EhRespondToUserQuestionParams,
+  ): Promise<import("@envoymesh/api").EhRespondToUserQuestionResult>;
   getPairingPayload(): Promise<PairingPayload>;
   createWanJoinInvite(
     params?: import("@envoymesh/api").CreateWanJoinInviteParams,
@@ -780,6 +877,13 @@ export interface NodeServiceClient {
 }
 
 const NodeServiceContext = createContext<NodeServiceClient | null>(null);
+
+type TerminalSessionsContextValue = {
+  sessions: import("@envoymesh/api").TerminalSessionSummary[];
+  refresh: () => Promise<void>;
+};
+
+const TerminalSessionsContext = createContext<TerminalSessionsContextValue | null>(null);
 
 /** True when WebSocket/mobile transport is up (daemon may still be stopped). Separate from mesh "online". */
 const TransportWsContext = createContext(false);
@@ -1191,6 +1295,12 @@ function createWsNodeServiceClient(
     async chainGetState(params: ChainGetStateParams) {
       return wsClient.rpc("chainGetState", params as unknown as Record<string, unknown>) as unknown as Promise<ChainGetStateResult>;
     },
+    async chainGetStepProvenance(params: import("@envoymesh/api").ChainGetStepProvenanceParams) {
+      return wsClient.rpc(
+        "chainGetStepProvenance",
+        params as unknown as Record<string, unknown>,
+      ) as unknown as Promise<import("@envoymesh/api").ChainGetStepProvenanceResult>;
+    },
     async chainListActive(params?: ChainListActiveParams) {
       return wsClient.rpc("chainListActive", (params ?? {}) as unknown as Record<string, unknown>) as unknown as Promise<ChainListActiveResult>;
     },
@@ -1252,6 +1362,22 @@ function createWsNodeServiceClient(
         timeoutMs: 120_000,
       }) as unknown as Promise<ChainPreviewGoalResult>;
     },
+    async agentNetworkDiagnosticsSnapshot() {
+      return wsClient.rpc("agentNetworkDiagnosticsSnapshot", {}) as Promise<
+        import("@envoymesh/api").AgentNetworkDiagnosticsSnapshot
+      >;
+    },
+    async agentNetworkSimulate(params: import("@envoymesh/api").AgentNetworkSimulationParams) {
+      return wsClient.rpc("agentNetworkSimulate", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").AgentNetworkSimulationResult
+      >;
+    },
+    async agentNetworkExportDiagnostics(params: { simulationId?: string }) {
+      return wsClient.rpc(
+        "agentNetworkExportDiagnostics",
+        (params ?? {}) as unknown as Record<string, unknown>,
+      ) as Promise<{ json: string }>;
+    },
     async chainStartFromGoal(params: ChainStartFromGoalParams) {
       return wsClient.rpc("chainStartFromGoal", params as unknown as Record<string, unknown>, {
         timeoutMs: 180_000,
@@ -1263,6 +1389,11 @@ function createWsNodeServiceClient(
     async chainResolveIteration(params: import("@envoymesh/api").ChainResolveIterationParams) {
       return wsClient.rpc("chainResolveIteration", params as unknown as Record<string, unknown>) as unknown as Promise<
         import("@envoymesh/api").ChainResolveIterationResult
+      >;
+    },
+    async chainResolveSpeculation(params: import("@envoymesh/api").ChainResolveSpeculationParams) {
+      return wsClient.rpc("chainResolveSpeculation", params as unknown as Record<string, unknown>) as unknown as Promise<
+        import("@envoymesh/api").ChainResolveSpeculationResult
       >;
     },
     async chainExportCosts(params: ChainExportCostsParams) {
@@ -1685,6 +1816,170 @@ function createWsNodeServiceClient(
       // assist budget (120s) since a coding task can be long-running.
       return wsClient.rpc("sendToPi", { text }, { timeoutMs: 120_000 }) as Promise<string>;
     },
+    async getEnvoyHarnessStatus() {
+      return wsClient.rpc("getEnvoyHarnessStatus") as Promise<
+        import("@envoymesh/api").EnvoyHarnessStatus
+      >;
+    },
+    async askEnvoyHarness(text: string) {
+      // Legacy blocking path — orchestration callers. Chat uses startEnvoyHarnessTurn.
+      return wsClient.rpc(
+        "askEnvoyHarness",
+        { text },
+        { timeoutMs: EH_ASK_WS_TIMEOUT_MS },
+      ) as Promise<string>;
+    },
+    async startEnvoyHarnessTurn(
+      text: string,
+      attachments?: import("@envoymesh/api").AgentAttachmentRef[],
+      chatId?: string,
+    ) {
+      return wsClient.rpc(
+        "startEnvoyHarnessTurn",
+        {
+          text,
+          ...(attachments !== undefined && attachments.length > 0 ? { attachments } : {}),
+          ...(chatId ? { chatId } : {}),
+        },
+        { timeoutMs: 30_000 },
+      ) as Promise<{ turnId: string }>;
+    },
+    async getEnvoyHarnessTurnStatus(chatId?: string) {
+      return wsClient.rpc(
+        "getEnvoyHarnessTurnStatus",
+        chatId ? { chatId } : {},
+        { timeoutMs: 10_000 },
+      ) as Promise<import("@envoymesh/api").EhTurnStatus>;
+    },
+    async setEnvoyHarnessAutoRunPolicy(policy: string) {
+      return wsClient.rpc(
+        "setEnvoyHarnessAutoRunPolicy",
+        { policy },
+        { timeoutMs: 30_000 },
+      ) as Promise<import("@envoymesh/api").EnvoyHarnessStatus>;
+    },
+    async getEnvoyHarnessChatHistory(chatId?: string) {
+      return wsClient.rpc(
+        "getEnvoyHarnessChatHistory",
+        chatId ? { chatId } : {},
+        { timeoutMs: 30_000 },
+      ) as Promise<import("@envoymesh/api").EhChatHistory>;
+    },
+    async listEnvoyHarnessChats() {
+      return wsClient.rpc("listEnvoyHarnessChats", {}, { timeoutMs: 15_000 }) as Promise<
+        import("@envoymesh/api").EhChatWorkspaceSummary[]
+      >;
+    },
+    async createEnvoyHarnessChat(opts: { cwd: string; title?: string }) {
+      return wsClient.rpc("createEnvoyHarnessChat", opts, { timeoutMs: 30_000 }) as Promise<
+        import("@envoymesh/api").EhChatWorkspaceSummary
+      >;
+    },
+    async openEnvoyHarnessChat(chatId: string) {
+      return wsClient.rpc("openEnvoyHarnessChat", { chatId }, { timeoutMs: 30_000 }) as Promise<
+        import("@envoymesh/api").EhChatHistory
+      >;
+    },
+    async removeEnvoyHarnessChat(chatId: string) {
+      return wsClient.rpc("removeEnvoyHarnessChat", { chatId }, { timeoutMs: 15_000 }) as Promise<{
+        removed: boolean;
+      }>;
+    },
+    async deleteEnvoyHarnessChatTurn(opts: { turnId: string; chatId?: string }) {
+      return wsClient.rpc("deleteEnvoyHarnessChatTurn", opts, { timeoutMs: 30_000 }) as Promise<
+        import("@envoymesh/api").EhChatHistory & { deleted: boolean }
+      >;
+    },
+    async getEnvoyHarnessTurnReview(turnId: string) {
+      return wsClient.rpc("getEnvoyHarnessTurnReview", { turnId }, { timeoutMs: 30_000 }) as Promise<
+        import("@envoymesh/api").EhTurnReview | null
+      >;
+    },
+    async revertEnvoyHarnessTurn(turnId: string) {
+      return wsClient.rpc("revertEnvoyHarnessTurn", { turnId }, { timeoutMs: 30_000 }) as Promise<
+        import("@envoymesh/api").EhRevertTurnResult
+      >;
+    },
+    async acceptEnvoyHarnessTurnReview(turnId: string, paths?: readonly string[]) {
+      return wsClient.rpc(
+        "acceptEnvoyHarnessTurnReview",
+        { turnId, ...(paths ? { paths } : {}) },
+        { timeoutMs: 30_000 },
+      ) as Promise<import("@envoymesh/api").EhAcceptTurnReviewResult>;
+    },
+    async revertEnvoyHarnessTurnFiles(turnId: string, paths: readonly string[]) {
+      return wsClient.rpc(
+        "revertEnvoyHarnessTurnFiles",
+        { turnId, paths },
+        { timeoutMs: 30_000 },
+      ) as Promise<import("@envoymesh/api").EhRevertTurnResult>;
+    },
+    async openEnvoyHarnessFile(params: { path: string; chatId?: string }) {
+      await wsClient.rpc("openEnvoyHarnessFile", params, { timeoutMs: 30_000 });
+    },
+    async getEnvoyHarnessCommandCatalog() {
+      return wsClient.rpc("getEnvoyHarnessCommandCatalog", {}, { timeoutMs: 5_000 }) as Promise<
+        import("@envoymesh/api").ExtAgentCommandCatalog
+      >;
+    },
+    async recordEnvoyHarnessUxEvent(event) {
+      await wsClient.rpc("recordEnvoyHarnessUxEvent", { ...event }, { timeoutMs: 5_000 });
+    },
+    async resetEnvoyHarnessChat(chatId?: string) {
+      return wsClient.rpc(
+        "resetEnvoyHarnessChat",
+        chatId ? { chatId } : {},
+        { timeoutMs: 30_000 },
+      ) as Promise<import("@envoymesh/api").EhChatHistory>;
+    },
+    async ehRespondToPermission(params: { requestId: string; allowed: boolean }) {
+      return wsClient.rpc("ehRespondToPermission", params) as Promise<{
+        requestId: string;
+        delivered: boolean;
+      }>;
+    },
+    async cancelEnvoyHarnessTurn(chatId?: string) {
+      return wsClient.rpc(
+        "cancelEnvoyHarnessTurn",
+        chatId ? { chatId } : {},
+      ) as Promise<{
+        cancelled: boolean;
+      }>;
+    },
+    async listEnvoyHarnessPeers() {
+      return wsClient.rpc("listEnvoyHarnessPeers") as Promise<
+        ReadonlyArray<{
+          id: string;
+          model?: string;
+          capabilities?: readonly string[];
+        }>
+      >;
+    },
+    async setEnvoyHarnessProjectPath(path: string) {
+      return wsClient.rpc(
+        "setEnvoyHarnessProjectPath",
+        { path },
+        { timeoutMs: 30_000 },
+      ) as Promise<import("@envoymesh/api").EnvoyHarnessStatus>;
+    },
+    async invokeEnvoyHarnessEhui(
+      request: import("@envoymesh/api").EhuiInvokeRequest,
+    ) {
+      return wsClient.rpc(
+        "invokeEnvoyHarnessEhui",
+        { request },
+        { timeoutMs: 30_000 },
+      ) as Promise<unknown>;
+    },
+    async ensureEnvoyTerminalSession(
+      params?: import("@envoymesh/api").EnsureEnvoyTerminalParams,
+    ) {
+      return wsClient.rpc(
+        "ensureEnvoyTerminalSession",
+        { ...(params ?? {}) },
+        { timeoutMs: 30_000 },
+      ) as Promise<import("@envoymesh/api").EnsureEnvoyTerminalResult>;
+    },
     async ensurePiTerminalSession(
       params?: import("@envoymesh/api").EnsurePiTerminalParams,
     ) {
@@ -1699,6 +1994,14 @@ function createWsNodeServiceClient(
         uiRequestId: string;
         delivered: boolean;
       }>;
+    },
+    async ehRespondToUserQuestion(
+      params: import("@envoymesh/api").EhRespondToUserQuestionParams,
+    ) {
+      return wsClient.rpc(
+        "ehRespondToUserQuestion",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").EhRespondToUserQuestionResult>;
     },
     async getPairingPayload() { return wsClient.rpc("getPairingPayload"); },
     async createWanJoinInvite(params?: import("@envoymesh/api").CreateWanJoinInviteParams) {
@@ -2561,12 +2864,79 @@ export function NodeServiceProvider({
       <TransportWsContext.Provider value={connected}>
         <ModelProviderUiScopeContext.Provider value={modelProviderUiScope}>
           <NodeServiceContext.Provider value={ctx}>
-            {children}
+            <TerminalSessionsProvider>{children}</TerminalSessionsProvider>
           </NodeServiceContext.Provider>
         </ModelProviderUiScopeContext.Provider>
       </TransportWsContext.Provider>
     </DesktopConnectionPrefsContext.Provider>
   );
+}
+
+function TerminalSessionsProvider({ children }: { children: ReactNode }) {
+  const client = useNodeService();
+  const wsOpen = useTransportWsOpen();
+  const [sessions, setSessions] = useState<import("@envoymesh/api").TerminalSessionSummary[]>([]);
+  const cleanedStaleRef = useRef(false);
+
+  const refresh = useCallback(async () => {
+    if (!wsOpen || !client.isConnected) return;
+    try {
+      const list = await client.listTerminalSessions();
+      setSessions(list);
+      if (!cleanedStaleRef.current) {
+        cleanedStaleRef.current = true;
+        const stale = list.filter((s) => s.state !== "running");
+        if (stale.length > 0) {
+          for (const row of stale) {
+            try {
+              await client.closeTerminalSession({ sessionId: row.sessionId });
+            } catch {
+              /* session may already be gone */
+            }
+          }
+          const next = await client.listTerminalSessions();
+          setSessions(next);
+        }
+      }
+    } catch {
+      // Owner-only / terminals unavailable — keep last snapshot.
+    }
+  }, [client, wsOpen]);
+
+  useEffect(() => {
+    if (!wsOpen || !client.isConnected) {
+      setSessions([]);
+      cleanedStaleRef.current = false;
+      return;
+    }
+    void refresh();
+    const unsub = client.on("terminal:session-updated", (data) => {
+      const payload = data as { sessions?: import("@envoymesh/api").TerminalSessionSummary[] };
+      if (Array.isArray(payload?.sessions)) {
+        setSessions(payload.sessions);
+        return;
+      }
+      void refresh();
+    });
+    return unsub;
+  }, [client, wsOpen, refresh]);
+
+  const value = useMemo(
+    () => ({ sessions, refresh }),
+    [sessions, refresh],
+  );
+
+  return (
+    <TerminalSessionsContext.Provider value={value}>{children}</TerminalSessionsContext.Provider>
+  );
+}
+
+export function useTerminalSessions(): TerminalSessionsContextValue {
+  const ctx = useContext(TerminalSessionsContext);
+  if (!ctx) {
+    throw new Error("useTerminalSessions must be used within NodeServiceProvider");
+  }
+  return ctx;
 }
 
 export function useNodeService(): NodeServiceClient {
@@ -2931,25 +3301,6 @@ function partnerOwnerIdForChat(
   selfPeerId: string,
 ): string | null {
   return resolveChatThreadKey(msg, selfOwnerId, selfPeerId);
-}
-
-function messageIsOutgoing(
-  msg: ChatMessage,
-  selfOwnerId: string,
-  selfPeerId: string,
-  selfFamilyProfileId?: string,
-): boolean {
-  const selfO = selfOwnerId.trim();
-  const selfP = selfPeerId.trim();
-  const sndO = msg.sender.ownerId?.trim();
-  const sndN = msg.sender.nodeId?.trim();
-  const rcvO = msg.recipient.ownerId?.trim();
-  // Family DMs use profile ids (e.g. "owner" / "mom"), not mesh envoy:owner:….
-  if (rcvO && isFamilyThreadKey(rcvO)) {
-    const familySelf = (selfFamilyProfileId ?? OWNER_FAMILY_PROFILE_ID).trim();
-    return !!sndO && sndO === familySelf;
-  }
-  return (sndO !== undefined && sndO === selfO) || (!!selfP && sndN === selfP);
 }
 
 function appendChatToThreads(

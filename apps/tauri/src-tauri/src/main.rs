@@ -1125,6 +1125,11 @@ fn spawn_node_process(config: &NodeSpawnConfig) -> Result<Child, String> {
     }
 
     command.env("ENVOYMESH_NODE_BUNDLE_DIR", &config.node_cwd);
+    // Content root next to resources/node — staged envoy-harness trees live here
+    // (envoy-harness/, envoy-harness-tui/, …). ACP spawn + TUI resolve use this.
+    if let Some(parent) = config.node_cwd.parent() {
+        command.env("ENVOY_HARNESS_RESOURCES", parent);
+    }
     // Tauri supervises the child: allow sustained event-loop lag to exit(2)
     // so the guardian can respawn a wedged home node overnight.
     command.env("ENVOYMESH_GUARDIAN_EXIT_ON_LAG", "1");

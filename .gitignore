@@ -15,6 +15,12 @@ apps/tauri/src-tauri/resources/openclaw-envoymesh/*
 !apps/tauri/src-tauri/resources/openclaw-envoymesh/.keep
 apps/tauri/src-tauri/resources/pi/*
 !apps/tauri/src-tauri/resources/pi/.keep
+# Phase 8 — vendored by scripts/stage-tauri-envoy-harness-bundle.{sh,ps1}
+# from the sibling envoy-harness monorepo. Do NOT commit.
+apps/tauri/src-tauri/resources/envoy-harness/*
+!apps/tauri/src-tauri/resources/envoy-harness/.keep
+apps/tauri/src-tauri/resources/envoy-harness-adapter/*
+!apps/tauri/src-tauri/resources/envoy-harness-adapter/.keep
 .bundled-skills-staging/
 *.tsbuildinfo
 .env
@@ -37,6 +43,7 @@ shared_vault/
 /ci-artifacts
 .zcode/plans/plan-sess_84aaf6ff-51d0-4d0e-ab96-249260c63746.md
 apps/node/test/.DS_Store
+**/.DS_Store
 /apps/tauri/src-tauri/target
 # Build failure logs emitted by scripts/build-desktop.ps1 (Invoke-ExternalQuiet)
 /scripts/build-logs/

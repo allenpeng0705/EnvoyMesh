@@ -29,7 +29,15 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
 
 vi.mock("../../src/context/NodeStateContext.js", () => ({
   useNodeState: () => ({
-    nodeConfig: { openclawEnabled: true },
+    nodeConfig: {
+      openclawEnabled: true,
+      modelProviders: {
+        mode: "openai",
+        presetId: "openai",
+        modelName: "gpt-4o-mini",
+        apiKey: "test-key",
+      },
+    },
   }),
 }));
 

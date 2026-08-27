@@ -27,6 +27,7 @@ import {
   OfficeLanPresetSection,
   PairingKioskSection,
   SetupSponsorFriendSection,
+  AgentNetworkTestSection,
 } from "./views/settings/agent-network-sections.js";
 
 interface AgentNetworkSettingsModalProps {
@@ -93,6 +94,8 @@ export function AgentNetworkSettingsModal({ onClose }: AgentNetworkSettingsModal
             <p className="an-modal__intro">{t("chains.manageWorkers.intro")}</p>
 
               <OfficeLanPresetSection />
+
+              <AgentNetworkTestSection />
 
               <AccordionGroup
                 title={t("chains.manageWorkers.advancedGroup")}

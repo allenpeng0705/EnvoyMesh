@@ -25,7 +25,7 @@ describe("model-provider-presets", () => {
     expect(ids).not.toContain("envoy-local")
   })
 
-  it("resolveEffectiveModelProviders prefers Local when running", () => {
+  it("resolveEffectiveModelProviders prefers cloud even when Local is running", () => {
     const cloud = {
       mode: "openai-compatible" as const,
       presetId: "minimax-cn",
@@ -38,8 +38,7 @@ describe("model-provider-presets", () => {
       endpoint: "http://127.0.0.1:18790/v1",
       modelName: "qwen3.5-9b",
     })
-    expect(effective?.presetId).toBe("envoy-local")
-    expect(effective?.modelName).toBe("qwen3.5-9b")
+    expect(effective).toEqual(cloud)
     expect(cloud.presetId).toBe("minimax-cn")
   })
 
@@ -58,6 +57,21 @@ describe("model-provider-presets", () => {
         modelName: "qwen3.5-9b",
       }),
     ).toEqual(cloud)
+  })
+
+  it("resolveEffectiveModelProviders falls back to Local when no cloud is configured", () => {
+    const disabled = {
+      mode: "disabled" as const,
+      presetId: "disabled",
+    }
+    const effective = resolveEffectiveModelProviders(disabled, {
+      preferLocal: true,
+      endpoint: "http://127.0.0.1:18790/v1",
+      modelName: "qwen3.5-9b",
+    })
+    expect(effective?.presetId).toBe("envoy-local")
+    expect(effective?.modelName).toBe("qwen3.5-9b")
+    expect(effective?.endpoint).toBe("http://127.0.0.1:18790/v1")
   })
 
   it("uses presetId when endpoint host is unrecognized", () => {

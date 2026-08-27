@@ -189,6 +189,17 @@ export const deChainsMessages = {
     composerLabel: "Was sollen Ihre Agenten erledigen?",
     composerPlaceholder: "z. B. Aktuelle Durchbrüche bei lokalen LLMs recherchieren und die Top 3 zusammenfassen",
     preview: "Planvorschau",
+    reliabilityBadge: "Vertrauen {pct}% · {samples} Stichproben",
+    reliabilityHint:
+      "Untere Vertrauensgrenze aus bisherigen Ergebnissen auf diesem Knoten (Beta-Schätzung). Mehr echte Jobs verbessern die Genauigkeit — neue Worker haben weniger Stichproben.",
+    reliabilitySparse: "Schätzung aus {level} — erst {samples} Stichproben bisher",
+    reliabilityFallback: {
+      exact: "Verlauf dieses Workers",
+      peer_runtime_skill: "ähnliche Aufgaben auf diesem Worker",
+      peer_runtime: "Laufzeit dieses Workers",
+      runtime_skill: "Worker mit dieser Fähigkeit",
+      prior: "allgemeiner Prior (noch keine Historie)",
+    },
     template: {
       research: "Ein Thema recherchieren",
       researchGoal: "Aktuelle Durchbrüche zu {topic} recherchieren und die wichtigsten Erkenntnisse zusammenfassen",

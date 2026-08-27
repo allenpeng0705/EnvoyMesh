@@ -23,6 +23,7 @@ import {
   isBriefOrReportGoal,
   isSynthesizeSubtask,
 } from "./chain-deliverable-policy.js";
+import { createMapChainSubtaskExecutor } from "./chain-map.js";
 
 export interface ChainWorkerExecutorDeps {
   getToolContext: () => Promise<MeshToolContext | null>;
@@ -174,6 +175,38 @@ export function createExtAgentChainSubtaskExecutor(input: {
     emptyCode: "ext_agent_empty",
     isReady: input.isExtAgentReady,
     ask: input.askExtAgent,
+  });
+}
+
+/**
+ * Phase 8 — envoy-harness executor (AN engine Step 1+).
+ *
+ * The executor is adapter-driven
+ * (`createMapChainSubtaskExecutor`) — the live runtime's
+ * `EnvoyHarnessAdapter` executes + verifies the subtask, emitting the
+ * standard `task.chain.partial` stream with named artifacts (same wire
+ * shape as the OpenClaw MAP path). The adapter is a lazy getter because
+ * the runtime constructs it on first ask; `isEnvoyHarnessReady()` gates
+ * the call.
+ */
+export function createEnvoyHarnessChainSubtaskExecutor(input: {
+  workerPeerId: string;
+  now?: () => Date;
+  isEnvoyHarnessReady: () => boolean;
+  /** The live runtime's adapter (lazy — may appear after construction). */
+  adapter: () => import("@envoymesh/agent-adapter").AgentAdapter | undefined;
+  onShadowRecord?: import("./chain-map.js").MapChainSubtaskExecutorInput["onShadowRecord"];
+  defaultDeadlineMs?: number;
+}): NonNullable<ChainWorkerHandlerDeps["executeSubtask"]> {
+  return createMapChainSubtaskExecutor({
+    workerPeerId: input.workerPeerId,
+    now: input.now,
+    engineLabel: "envoy-harness",
+    unavailableCode: "envoy_harness_unavailable",
+    isReady: input.isEnvoyHarnessReady,
+    adapter: input.adapter,
+    onShadowRecord: input.onShadowRecord,
+    defaultDeadlineMs: input.defaultDeadlineMs,
   });
 }
 

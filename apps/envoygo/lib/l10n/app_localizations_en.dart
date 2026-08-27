@@ -607,6 +607,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Index status and retrieval. Chat models stay in Me → AI Model.';
 
   @override
+  String get knowledgeSetupEmbeddingHint =>
+      'Embeddings use Envoy Local on this device. For OpenAI or Ollama, open Settings → AI on your home computer.';
+
+  @override
   String get knowledgeSetupEnabled => 'Enable vault knowledge';
 
   @override
@@ -706,6 +710,24 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get knowledgeFileMakePrivate => 'Make private';
+
+  @override
+  String get knowledgeBrowseImportAndPublish => 'Import and publish';
+
+  @override
+  String get knowledgeBrowsePublishImportOnly =>
+      'Import this note into the vault first, then you can publish it.';
+
+  @override
+  String get knowledgeBrowsePublishImportNoDoc =>
+      'Imported, but could not publish yet — try Publish again from the imported note.';
+
+  @override
+  String get knowledgeBrowseImportedAndPublished => 'Imported and published';
+
+  @override
+  String get knowledgeBrowsePublishImportHint =>
+      'Import into vault and publish for mesh discovery';
 
   @override
   String get knowledgeFileMore => 'More actions';
@@ -963,6 +985,38 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatsSectionAi => 'AI';
 
   @override
+  String get chatsSectionCoding => 'Coding';
+
+  @override
+  String get chatsCodingPi => 'Pi';
+
+  @override
+  String get chatsCodingPiHint => 'Coding Agent (terminal)';
+
+  @override
+  String get chatsCodingEh => 'Envoy';
+
+  @override
+  String get chatsCodingEhHint => 'Coding Agent (chat)';
+
+  @override
+  String get chatsEhNew => 'New coding chat';
+
+  @override
+  String get chatsEhRemoveTitle => 'Remove coding chat?';
+
+  @override
+  String chatsEhRemoveBody(String name) {
+    return 'Remove “$name” from your Coding list? The chat history on the home node will be deleted.';
+  }
+
+  @override
+  String get chatsEhThinking => 'Envoy is thinking…';
+
+  @override
+  String get chatsEhPromptHint => 'Ask Envoy to code, refactor, or explain…';
+
+  @override
   String get chatsSectionFamily => 'Family';
 
   @override
@@ -988,6 +1042,112 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chatsNewPiHint => 'Start a Pi coding terminal';
+
+  @override
+  String get chatsNewEnvoy => 'New Envoy';
+
+  @override
+  String get chatsNewEnvoyHint => 'Start Envoy Harness TUI';
+
+  @override
+  String get ehChooseProjectTitle => 'Choose Envoy project folder';
+
+  @override
+  String get ehChangeProjectTitle => 'Change Envoy project folder';
+
+  @override
+  String get ehChooseProjectDesc =>
+      'Envoy runs in this folder (reads AGENTS.md, edits files, runs shell).';
+
+  @override
+  String get ehStartWithProject => 'Start';
+
+  @override
+  String get ehRestartWithProject => 'Restart Envoy here';
+
+  @override
+  String get ehEnsuringTerminal => 'Starting Envoy TUI…';
+
+  @override
+  String get ehPermissionTitle => 'Tool permission';
+
+  @override
+  String get ehPermissionAllow => 'Allow';
+
+  @override
+  String get ehPermissionDeny => 'Deny';
+
+  @override
+  String get ehQuestionTitle => 'Envoy needs your input';
+
+  @override
+  String get ehRecommended => 'Recommended';
+
+  @override
+  String get ehSlashWhileBusy => 'Finish or /cancel the current turn first.';
+
+  @override
+  String get ehChatReset => 'Started a new chat for this project.';
+
+  @override
+  String get ehTurnCancelled => 'Turn cancelled.';
+
+  @override
+  String get ehStatusRefreshed => 'Status refreshed.';
+
+  @override
+  String get ehNoPeers => 'No peer cluster configured.';
+
+  @override
+  String get ehSearchUsage =>
+      'Usage: /search <term> — search this conversation.';
+
+  @override
+  String ehSearchNoMatches(String term) {
+    return 'No matches for “$term”.';
+  }
+
+  @override
+  String ehModelShow(String model) {
+    return 'Active model: $model';
+  }
+
+  @override
+  String get ehModelUnknown =>
+      'No model configured — set one in Settings → AI.';
+
+  @override
+  String ehProjectCurrent(String path) {
+    return 'Project folder: $path';
+  }
+
+  @override
+  String get ehProjectUnset => 'No project folder set — use /cd <path>.';
+
+  @override
+  String ehProjectSet(String path) {
+    return 'Project folder → $path';
+  }
+
+  @override
+  String get ehProjectSetUnknown => 'Project folder updated.';
+
+  @override
+  String ehProjectSetFailed(String error) {
+    return 'Failed to set project folder: $error';
+  }
+
+  @override
+  String get ehConfigureModel => 'Configure a model in Settings → AI.';
+
+  @override
+  String get ehNotReady => 'envoy-harness is not ready.';
+
+  @override
+  String get termQuickHelp => '/help';
+
+  @override
+  String get termQuickCancel => '/cancel';
 
   @override
   String get chatsNewTerminal => 'New Terminal';
@@ -1199,6 +1359,21 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chatVoiceSendFailed => 'Failed to send voice note';
+
+  @override
+  String get chatSentFile => 'Sent a file';
+
+  @override
+  String get chatSentVoice => 'Sent a voice message';
+
+  @override
+  String get chatDeliverySent => 'Sent';
+
+  @override
+  String get chatDeliveryDelivered => 'Delivered';
+
+  @override
+  String get chatDeliveryFailed => 'Not delivered';
 
   @override
   String get chatMicDenied => 'Microphone permission denied';
@@ -1848,6 +2023,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsPiEnabled => 'Pi enabled';
 
   @override
+  String get settingsPiCodingBackend => 'Coding backend';
+
+  @override
+  String get settingsPiCodingBackendPi => 'Pi (sidecar)';
+
+  @override
+  String get settingsPiCodingBackendEh => 'envoy-harness (ACP)';
+
+  @override
+  String get settingsPiCodingBackendHint =>
+      'Same setting as Social. Routes sendToPi and approvals through the same Pi UI. Older EnvoyGo builds without this control still work when switched from Social.';
+
+  @override
+  String get settingsPiCodingBackendSaved => 'Coding backend updated';
+
+  @override
   String get settingsPiOverrideHint =>
       'Model override (optional). Clear to inherit AI Model settings.';
 
@@ -2083,7 +2274,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chainsManageOnSocial =>
-      'Advanced chain controls (cancel, rebalance, pin) are on the home-node Social UI.';
+      'Fleet setup, bidding, and recipes stay on the home-node Social UI. Cancel, rebalance, and pin work here too.';
 
   @override
   String get chainsStartTitle => 'Start team job';
@@ -2111,6 +2302,66 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get chainsStartModeRoleHint =>
       'Each step prefers a collaboration role (PM, programmer, …).';
+
+  @override
+  String get chainsStartTeamStrategy => 'Team strategy';
+
+  @override
+  String get chainsStartTeamStrategyHint =>
+      'How workers are ranked. Hedged / verify-only are policy labels — a second worker runs on the wire only when immediate-dual gates pass (critical step, budget, independent workers).';
+
+  @override
+  String get chainsStrategyBalanced => 'Balanced';
+
+  @override
+  String get chainsStrategyFastest => 'Fastest';
+
+  @override
+  String get chainsStrategyCheapest => 'Cheapest';
+
+  @override
+  String get chainsStrategyHighestConfidence => 'Highest confidence';
+
+  @override
+  String get chainsStrategyPrivacyLocal => 'Privacy (local)';
+
+  @override
+  String get chainsStrategyDiverseModel => 'Diverse models';
+
+  @override
+  String get chainsStartAvailLease => 'Lease';
+
+  @override
+  String get chainsStartAvailLegacy => 'Legacy';
+
+  @override
+  String chainsStartReliabilityPct(int pct) {
+    return 'Trust $pct%';
+  }
+
+  @override
+  String chainsStartReliabilitySparse(String level, int samples) {
+    return '$level · $samples samples';
+  }
+
+  @override
+  String get chainsStartReliabilityFallbackExact => 'this worker\'s history';
+
+  @override
+  String get chainsStartReliabilityFallbackPeerRuntimeSkill =>
+      'similar work on this worker';
+
+  @override
+  String get chainsStartReliabilityFallbackPeerRuntime =>
+      'this worker\'s runtime';
+
+  @override
+  String get chainsStartReliabilityFallbackRuntimeSkill =>
+      'workers with this skill';
+
+  @override
+  String get chainsStartReliabilityFallbackPrior =>
+      'general prior (no history yet)';
 
   @override
   String get chainsStartGoalLabel => 'Goal';
@@ -2191,6 +2442,46 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get chainsStartNoWorkers =>
       'No reachable Agent Network workers. Bond contacts with agents on the home node first.';
+
+  @override
+  String get chainsTestNetworkTitle => 'Test Agent Network';
+
+  @override
+  String get chainsTestNetworkHint =>
+      'Simulation — no work sent, no model spend, no reputation changes. Dry-plan ranks for real; failover and recovery are label-only previews.';
+
+  @override
+  String get chainsTestNetworkRun => 'Check readiness';
+
+  @override
+  String get chainsTestNetworkRunning => 'Checking…';
+
+  @override
+  String get chainsTestNetworkFailed => 'Could not run diagnostics';
+
+  @override
+  String get chainsSpeculationReviewTitle => 'Speculation needs review';
+
+  @override
+  String get chainsSpeculationReviewBody =>
+      'Two workers returned different results for one step. Pick a winner to keep the job moving, or let the orchestrator pick automatically.';
+
+  @override
+  String get chainsSpeculationReviewNonePass =>
+      'Both workers failed verification — the orchestrator will reassign this step.';
+
+  @override
+  String get chainsSpeculationReviewDisagree =>
+      'The two workers disagree. The orchestrator can pick the cheaper verified one, or you can pick or reassign.';
+
+  @override
+  String get chainsSpeculationReviewAutoResolve => 'Resolve automatically';
+
+  @override
+  String get chainsSpeculationReviewResolved => 'Resolved by the orchestrator';
+
+  @override
+  String get chainsSpeculationReviewFailed => 'Could not resolve automatically';
 
   @override
   String get chainsStartReadinessTitle => 'Get workers ready';
@@ -2385,6 +2676,41 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get chainsDetailPublished =>
       'This job finished and published a report.';
+
+  @override
+  String get chainsDetailRecovering =>
+      'Recovering after restart — confirming worker progress';
+
+  @override
+  String chainsAttemptCount(int count) {
+    return '$count attempt(s)';
+  }
+
+  @override
+  String get chainsExecutionDetails => 'Execution details';
+
+  @override
+  String chainsProvenanceSummaryLine(
+    int attempts,
+    String worker,
+    String state,
+  ) {
+    return '$attempts attempt(s) · $worker · $state';
+  }
+
+  @override
+  String chainsLastReason(String reason) {
+    return 'Last reason: $reason';
+  }
+
+  @override
+  String get chainsTechnicalDetails => 'Technical details';
+
+  @override
+  String get chainsProvenanceEmpty => 'No journal events for this step yet.';
+
+  @override
+  String get chainsProvenanceFailed => 'Could not load execution history.';
 
   @override
   String get chainsRebalanceHeading => 'Add budget';
@@ -2940,4 +3266,276 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get settingsEnvoyLocalPhoneNote =>
       'Advanced server parameters (context size, GPU layers) remain on the home-node Social UI.';
+
+  @override
+  String get ehReviewTitle => 'Review this turn';
+
+  @override
+  String get ehReviewUnavailable =>
+      'A saved review is unavailable for this older turn.';
+
+  @override
+  String get ehReviewFile => 'File';
+
+  @override
+  String get ehReviewOpenFile => 'Open file';
+
+  @override
+  String get ehReviewDiffUnavailable =>
+      'A textual diff is unavailable for this file.';
+
+  @override
+  String get ehReviewOnly => 'Workspace-detected · review only';
+
+  @override
+  String get ehRevertTitle => 'Revert this turn?';
+
+  @override
+  String get ehRevertBody =>
+      'Files will be restored to their pre-turn contents. Later edits are protected and will stop the revert.';
+
+  @override
+  String get ehRevertAction => 'Revert';
+
+  @override
+  String get ehRevertComplete => 'This turn’s file changes were reverted.';
+
+  @override
+  String get ehRevertUnavailable =>
+      'This turn can no longer be reverted safely.';
+
+  @override
+  String ehRevertConflict(String files) {
+    return 'Revert stopped because these files changed afterward: $files';
+  }
+
+  @override
+  String get ehSearchTranscript => 'Search transcript';
+
+  @override
+  String get ehSearchClose => 'Close search';
+
+  @override
+  String get ehNoMatches => 'No matching turns';
+
+  @override
+  String get ehCopyTurn => 'Copy turn';
+
+  @override
+  String get ehShareTurn => 'Share turn';
+
+  @override
+  String get ehReviewDiff => 'Review diff';
+
+  @override
+  String get ehRevertThisTurn => 'Revert this turn';
+
+  @override
+  String get ehReviewChanges => 'Review changes';
+
+  @override
+  String get ehRevertAll => 'Revert all';
+
+  @override
+  String ehChangesCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count files changed this turn',
+      one: '1 file changed this turn',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get ehChangesKeepAll => 'Keep all';
+
+  @override
+  String get ehChangesRevert => 'Revert all';
+
+  @override
+  String get ehChangesHideList => 'Hide list';
+
+  @override
+  String get ehChangesShowList => 'Show list';
+
+  @override
+  String get ehReviewKeepFile => 'Keep';
+
+  @override
+  String get ehReviewRevertFile => 'Revert';
+
+  @override
+  String get ehReviewKeptAll => 'Changes kept.';
+
+  @override
+  String ehReviewRevertedFile(String path) {
+    return 'Reverted $path';
+  }
+
+  @override
+  String get ehReviewAutoLabel => 'Auto-review when ≥';
+
+  @override
+  String get ehReviewAutoAlways => 'Always';
+
+  @override
+  String ehQueueTitle(int count) {
+    return 'Queued ($count)';
+  }
+
+  @override
+  String get ehQueueClear => 'Clear';
+
+  @override
+  String get ehQueueBusyHint => 'Send queues next';
+
+  @override
+  String get ehQueueFollowUpHint => 'Queue a follow-up…';
+
+  @override
+  String get ehInjectTooltip => 'Inject (cancel + send)';
+
+  @override
+  String ehFilesChangedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count files changed',
+      one: '1 file changed',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get ehEmptyReply =>
+      'envoy-harness finished without a visible reply. Your message is still here — try again or rephrase.';
+
+  @override
+  String get ehConfigureModelHint => 'Configure a model in Settings → AI.';
+
+  @override
+  String get ehReviewKeepFailed => 'Could not keep changes.';
+
+  @override
+  String get ehReviewOpenGitDiff => 'Open git diff';
+
+  @override
+  String get ehDiffBefore => 'Before';
+
+  @override
+  String get ehDiffAfter => 'After';
+
+  @override
+  String get ehPermsTooltip => 'Permission policy';
+
+  @override
+  String get ehPermsSafe => 'Default (safe auto-run)';
+
+  @override
+  String get ehPermsAsk => 'Always ask';
+
+  @override
+  String get ehPermsApprove => 'Always approve';
+
+  @override
+  String ehPermsSet(String mode) {
+    return 'Permission policy → $mode.';
+  }
+
+  @override
+  String get ehPermsNextTurn => ' Applies from the next turn.';
+
+  @override
+  String ehPermsFailed(String error) {
+    return 'Failed to set permission policy: $error';
+  }
+
+  @override
+  String get chainsStatusCancelled => 'Cancelled';
+
+  @override
+  String get chainsStatusPublished => 'Published';
+
+  @override
+  String get chainsStatusRecovering => 'Recovering';
+
+  @override
+  String get chainsStatusSynthesizing => 'Synthesizing';
+
+  @override
+  String get chainsStatusRunning => 'Running';
+
+  @override
+  String get chainsStatusWaitingWorkers => 'Waiting for workers';
+
+  @override
+  String get chainsStatusBidding => 'Bidding';
+
+  @override
+  String get chainsStatusAssigning => 'Assigning';
+
+  @override
+  String get chainsStatusPlanning => 'Planning';
+
+  @override
+  String get ehWorking => 'Working';
+
+  @override
+  String get ehCompleted => 'Completed';
+
+  @override
+  String get ehUpdate => 'Update';
+
+  @override
+  String ehToolLabel(String name) {
+    return 'Tool: $name';
+  }
+
+  @override
+  String ehMatchCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count matches',
+      one: '1 match',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get termMore => 'More…';
+
+  @override
+  String get termCompactContext => 'Compact context';
+
+  @override
+  String get termUpdatePlan => 'Show or update plan';
+
+  @override
+  String get termHarnessStatus => 'Harness status';
+
+  @override
+  String get termPiActions => 'Pi actions';
+
+  @override
+  String get termHarnessActions => 'envoy-harness actions';
+
+  @override
+  String get termPreviousCommand => 'Previous command';
+
+  @override
+  String get termNextCommand => 'Next command';
+
+  @override
+  String get termCursorLeft => 'Move cursor left';
+
+  @override
+  String get termCursorRight => 'Move cursor right';
+
+  @override
+  String get termEnterKey => 'Enter key';
+
+  @override
+  String get chainsCancelFailed => 'Could not cancel this team job.';
 }

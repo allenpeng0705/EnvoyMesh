@@ -19,6 +19,7 @@ import {
 import { openEnvoyAi } from "../../lib/open-envoy-ai-nav.js";
 import { localizeEnvoyLocalDownloadProgress } from "../../lib/localize-envoy-local-progress.js";
 import { LibraryView } from "./LibraryView.js";
+import { FriendsFilesPanel } from "../discover/FriendsFilesPanel.js";
 import { KnowledgePluginsPanel } from "./KnowledgePluginsPanel.js";
 import { KnowledgeBaseSettings } from "./SettingsAITab.js";
 
@@ -247,6 +248,13 @@ export function KnowledgeView({ initialPanel = "browse" }: KnowledgeViewProps) {
                 <p>{t("knowledge.libraryCaption")}</p>
               </div>
               <LibraryView embedded />
+            </section>
+
+            <section
+              className="knowledge-browse__friends-files"
+              aria-labelledby="knowledge-friends-files-heading"
+            >
+              <FriendsFilesPanel />
             </section>
           </div>
         ) : null}

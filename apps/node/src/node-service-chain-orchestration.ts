@@ -19,15 +19,18 @@ import type {
   ChainEvaluateBidsParams,
   ChainGetStateResult,
   ChainListReportsParams,
+  ChainResolveSpeculationParams,
+  ChainResolveSpeculationResult,
   NodeProfile,
   NodeServiceEvents,
   PiPromptResult,
 } from "@envoymesh/api";
 import type { ChainReport, ChainSubtask, ChainSubtaskBid, EnvoyEnvelope, EnvoyIntent, AgentRuntime } from "@envoymesh/protocol";
 import { ChainHandoffRequestPayloadSchema, ChainSubtaskSchema } from "@envoymesh/protocol";
-import { createApprovalItem, isAgentNetworkMember, rankWorkersByScore, scoreAgentNetworkWorker } from "@envoymesh/api";
+import { createApprovalItem, isAgentNetworkMember, rankWorkersByScore, scoreAgentNetworkWorker, compareChainWorkerTies, evaluateChainWorkerHardGates, getChainTeamStrategyPreset, resolveChainTeamStrategy, scoreChainWorkerWithStrategy, type ChainAssignmentReasonCode, type ChainTeamStrategyId } from "@envoymesh/api";
 import { hasDirectPrivateLanDialHints, type EnvoyMesh } from "@envoymesh/network";
 import { anLog, shortId } from "./agent-network-debug.js";
+import { resolveAssignerForChainGoal, previewSuggestedAssigner } from "./chain-assigner-select.js";
 import {
   buildChainLiveSteps,
   buildInputArtifacts,
@@ -63,6 +66,19 @@ import {
   retryFailedChainInputDeliveries,
   gcChainInputWorkspace,
 } from "./chain-input-delivery-runtime.js";
+import {
+  maybeScheduleSpeculationAfterAward,
+  ownerPickSpeculativeAttempt,
+  clearSpeculativeSibling,
+  speculativeFinalsContext,
+} from "./chain-speculation-wire.js";
+import {
+  autoResolveSpeculativeDisagreement,
+  classifySpeculativeFinalSelection,
+} from "./chain-speculation.js";
+import { isChainRecovering } from "./chain-reconcile-recovery.js";
+import { LEGACY_PROBE_SCORE_PENALTY } from "./worker-lease-store.js";
+import { modelFamilyFor } from "./chain-verify-loop.js";
 import { sendVaultFileViaDataTransfer } from "./node-file-share.js";
 import {
   chainBudgetWarningLevel,
@@ -106,11 +122,14 @@ import { chainLog, chainWarn, shortPeerId } from "./chain-debug.js";
 import {
   applyArbitration,
   createArbitrationStore,
+  getLatestVerdictForSubtask,
   getVerdictsFor,
+  isVerdictEntry,
   recordVerdictEntry,
   type ArbitrationStore,
 } from "./chain-arbitration.js";
-import { deriveReputationBySkillForPeer, scoreFromVerdicts } from "./chain-reputation-3tuple.js";
+import { scoreFromVerdicts } from "./chain-reputation-3tuple.js";
+import { getReputationBySkillForPeer } from "./chain-scoreboard.js";
 import { signCanonicalPayload } from "@envoymesh/identity";
 import {
   handleWorkerAccept,
@@ -126,6 +145,7 @@ import {
   type AgentNetworkWorkerEngine,
 } from "./agent-network-worker-engine.js";
 import {
+  createEnvoyHarnessChainSubtaskExecutor,
   createExtAgentChainSubtaskExecutor,
   createOpenClawChainSubtaskExecutor,
   executeAcceptedSubtask,
@@ -137,6 +157,7 @@ import {
 } from "./chain-map.js";
 import { isManifestFresh, pruneExpiredManifests } from "./agent-adapter-manifest-inbound.js";
 import { OpenClawAdapter } from "@envoymesh/agent-adapter";
+import type { AgentAdapter } from "@envoymesh/agent-adapter";
 import { createPiAdapterFromHost, type PiMapHost } from "./pi-map-adapter.js";
 import { requiresChainAwardApproval } from "./chain-sensitivity-gate.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
@@ -215,6 +236,33 @@ export interface ChainSideState {
    * `resolveWorkerPool`.
    */
   remoteManifests: Map<string, import("@envoymesh/protocol").SignedCapabilityManifest>;
+  /**
+   * Phase 60B — live signed worker leases (availability). Separate from the
+   * capability index; Agent Card `lastSeenAt` must not drive engine readiness.
+   */
+  workerLeases: import("./worker-lease-store.js").WorkerLeaseStore;
+  /**
+   * Phase 60C — local calibrated reliability observations (Beta posterior).
+   * Compatibility 3-tuple reputation remains elsewhere.
+   */
+  workerReliability: import("./worker-reliability-store.js").WorkerReliabilityStore;
+  /** Phase 60C — resolved strategy snapshot per chain (replay-stable). */
+  teamStrategies: Map<string, import("@envoymesh/api").ResolvedChainTeamStrategy>;
+  /**
+   * Phase 60D — restart reconciliation state per chain. While `phase ===
+   * "recovering"`, watchdog / reassignment loops must not advance awards.
+   */
+  recovery: Map<string, import("./chain-reconcile-recovery.js").ChainRecoveryState>;
+  /** Phase 60D — assigner process epoch (regenerated each process start). */
+  orchestratorEpoch: string;
+  /** Phase 60D — worker process epoch for reconcile responses. */
+  workerEpoch: string;
+  /** Phase 60D — local worker attempt receipts (mandate TTL + 24h). */
+  attemptReceipts: import("./worker-attempt-receipt-store.js").WorkerAttemptReceiptStore;
+  /** Phase 60D — dedup keys for recovered/ingested finals. */
+  recoveredPartialKeys: Set<string>;
+  /** Phase 61C — finals to re-advance after RECOVERING lifts. */
+  recoveryAdvancePending: Set<string>;
   /** Phase 59E — chainIds whose job input workspace was already GC'd. */
   inputGcDone: Set<string>;
 }
@@ -270,17 +318,30 @@ function getChainArbitrationStore(chainId: string): ArbitrationStore {
 }
 
 /**
- * Sprint 2 MAP: derive a peer's per-skill reputation by aggregating verdicts
- * across all chain arbitration stores. Returns `undefined` when the peer has
- * no verdict history yet — the Assigner blend treats that as "unknown" and
- * leaves the base score untouched.
+ * Phase 8 / v1.13 — derive a peer's per-skill
+ * reputation by aggregating verdicts across
+ * all chain arbitration stores. Returns
+ * `undefined` when the peer has no verdict
+ * history yet — the Assigner blend treats
+ * that as "unknown" and leaves the base
+ * score untouched.
+ *
+ * **v1.13:** the v0
+ * `deriveReputationBySkillForPeer` producer
+ * is replaced with the v1.10 + v1.11
+ * `getReputationBySkillForPeer` helper.
+ * The consumer (the worker's
+ * `reputationBySkill` field) is unchanged.
+ * The v0 `chain-reputation-3tuple.ts`
+ * module is left in place for other
+ * callers (e.g. `getLocalRuntimePassRate`
+ * still uses the v0 `scoreFromVerdicts`).
  */
 function deriveRosterReputation(peerId: string): Record<string, number> | undefined {
-  const verdicts: import("@envoymesh/protocol").VerdictEntry[] = [];
-  for (const store of chainArbitrationStores.values()) {
-    verdicts.push(...getVerdictsFor(store, { workerPeerId: peerId }));
-  }
-  return deriveReputationBySkillForPeer(verdicts, peerId);
+  return getReputationBySkillForPeer(
+    chainArbitrationStores.values(),
+    peerId,
+  );
 }
 
 /**
@@ -298,6 +359,57 @@ export function getLocalRuntimePassRate(
   }
   if (verdicts.length === 0) return null;
   return { n: verdicts.length, passRate: scoreFromVerdicts(verdicts) };
+}
+
+/**
+ * U4 — every signed verdict across every chain's arbitration store
+ * (used by the dedicated UI's `scoreboard/summary`).
+ */
+export function listAllVerdictEntries(): import("@envoymesh/protocol").VerdictEntry[] {
+  const verdicts: import("@envoymesh/protocol").VerdictEntry[] = [];
+  for (const store of chainArbitrationStores.values()) {
+    for (const entry of store.values()) {
+      if (isVerdictEntry(entry)) verdicts.push(entry);
+    }
+  }
+  return verdicts;
+}
+
+/**
+ * U4 — the local chain worker's subtasks as the dedicated UI's
+ * `team/jobs` shape (one job per chain, one agent per subtask).
+ */
+export function chainWorkerSubtasksToTeamJobs(
+  workerSubtasks: Map<
+    string,
+    {
+      subtask: import("@envoymesh/protocol").ChainSubtask;
+      orchestratorPeerId: string;
+    }
+  >,
+): import("@envoymesh/envoy-harness").ProtocolTeamJob[] {
+  const byChain = new Map<
+    string,
+    import("@envoymesh/envoy-harness").ProtocolTeamJob
+  >();
+  for (const [subtaskId, { subtask }] of workerSubtasks) {
+    let job = byChain.get(subtask.chainId);
+    if (job === undefined) {
+      job = {
+        jobId: subtask.chainId,
+        status: "running",
+        createdAt: subtask.createdAt,
+        agents: [],
+      };
+      byChain.set(subtask.chainId, job);
+    }
+    job.agents.push({
+      id: subtaskId,
+      host: "mesh-worker",
+      status: "running",
+    });
+  }
+  return [...byChain.values()];
 }
 
 export interface ChainOrchestrationContext {
@@ -322,6 +434,35 @@ export interface ChainOrchestrationContext {
   getBonds(): Promise<BondRecord[]>;
   getNodeConfig(): Promise<unknown>;
   updateNodeConfig(cfg: unknown): Promise<void>;
+  /**
+   * Phase 8 / v1.4 — sync accessor for the
+   * persisted node config. Used by
+   * `runChainVerificationLoop` to resolve the
+   * effective `verifyMode` default via
+   * `readEffectiveVerifyModeDefault`. The
+   * underlying store keeps an in-memory
+   * snapshot that's always up-to-date after the
+   * first `load()` or `save()` (see
+   * `NodeConfigStore.peek()`), so the read is
+   * sync with no disk I/O. Returns `undefined`
+   * on cold start (no I/O yet) and the loop
+   * falls back to the per-runtime default.
+   */
+  getPersistedNodeConfigSync?(): import("./node-config-store.js").PersistedNodeConfig | undefined;
+
+  /**
+   * v1.16 — optional per-call model override hint for the
+   * orchestrator-level cross-verify (cross-model-on-same-runtime).
+   * Forwarded into `chainVerify.verifierProviderHint` so the loop's
+   * cross branch re-runs the subtask on the second adapter with a
+   * different model (`ExecuteInput.verifierModel`). Format:
+   * `<provider>:<model>` (e.g. `"anthropic:claude-instant"`).
+   * Optional — absent = the v1.8 cross-runtime behavior.
+   */
+  verifierProviderHint?: string;
+  /** Live envoy-harness adapter for the same-runtime cross-verify
+   *  (v1.16). Absent → `buildAdapter("envoy-harness")` returns undefined. */
+  getEnvoyHarnessAdapter?(): AgentAdapter | undefined;
   emit<K extends keyof NodeServiceEvents>(event: K, data: NodeServiceEvents[K]): void;
   /** Built-in OpenClaw readiness for Agent Network worker execution. */
   isOpenClawReady(): boolean;
@@ -331,12 +472,21 @@ export interface ChainOrchestrationContext {
   isPiReady(): boolean;
   /** Ask the local Pi runtime (MAP cross-check / second-doctor run). */
   askPi(prompt: string): Promise<PiPromptResult>;
-  /** Node-owner AN worker engine choice (`openclaw` | `ext`). */
+  /** Node-owner AN worker engine choice (`openclaw` | `ext` | `envoy-harness`). */
   getAgentNetworkWorkerEngine(): AgentNetworkWorkerEngine;
   /** Ext Agent bridge ready enough to accept Team-job work. */
   isExtAgentBridgeReady(): boolean;
   /** Sync ask via active Ext Agent (Team jobs — empty/async reply = error). */
   askExtAgent(prompt: string): Promise<string>;
+  /**
+   * Phase 8 — envoy-harness readiness for AN worker execution.
+   * Reads the resolved host model configuration without spending a model call.
+   */
+  isEnvoyHarnessReady(): boolean;
+  /**
+   * Sync ask via the configured envoy-harness model adapter.
+   */
+  askEnvoyHarness(prompt: string): Promise<string>;
   /** Live Ext Agent reachability hello (HTTP/sidecar) for AN ready probes. */
   probeExtAgent(): Promise<{ reachable: boolean }>;
   /** Local vault root for job input byte delivery (Phase 59B). */
@@ -378,6 +528,22 @@ export function buildChainOrchestrationContext(host: any): ChainOrchestrationCon
     getBonds: () => host.getBonds(),
     getNodeConfig: () => host.getNodeConfig(),
     updateNodeConfig: (cfg) => host.updateNodeConfig(cfg),
+    // Phase 8 / v1.4 — sync accessor for the
+    // persisted config. Used by the chain-verify
+    // loop to resolve the effective `verifyMode`
+    // default (per-node override or per-runtime
+    // default). Reads from the in-memory snapshot
+    // — no disk I/O.
+    getPersistedNodeConfigSync: () => host._configStore?.peek(),
+    // v1.16 — per-node verifier model override from the persisted config
+    // (the host's Q1 config source).
+    ...(host._configStore?.peek()?.verifierProviderHint !== undefined
+      ? {
+          verifierProviderHint:
+            host._configStore.peek()?.verifierProviderHint,
+        }
+      : {}),
+    getEnvoyHarnessAdapter: () => host.getEnvoyHarnessAdapter?.(),
     emit: (event, data) => host.emit(event, data),
     isOpenClawReady: () => Boolean(host.isOpenClawReady?.()),
     askOpenClaw: (prompt) => host.askOpenClaw(prompt),
@@ -387,6 +553,8 @@ export function buildChainOrchestrationContext(host: any): ChainOrchestrationCon
       coerceAgentNetworkWorkerEngine(host.getAgentNetworkWorkerEngine?.()),
     isExtAgentBridgeReady: () => Boolean(host.isExtAgentBridgeReady?.()),
     askExtAgent: (prompt) => host.askExtAgent(prompt),
+    isEnvoyHarnessReady: () => Boolean(host.isEnvoyHarnessReady?.()),
+    askEnvoyHarness: (prompt) => host.askEnvoyHarness(prompt),
     probeExtAgent: async () => {
       if (typeof host.probeExtAgent !== "function") {
         return { reachable: Boolean(host.isExtAgentBridgeReady?.()) };
@@ -440,11 +608,12 @@ export function buildChainContext(deps: ChainOrchestrationContext): ChainContext
     placeholderMandate: (chainId, chainMandateId) =>
       placeholderMandate(chainId, chainMandateId) as never,
     findAgentNetworkWorkers: (capability) => findAgentNetworkWorkers(deps, capability) as never,
-    findAgentNetworkWorkersRanked: (capability, preferredWorkerPeerIds) =>
-      findAgentNetworkWorkersRanked(deps, capability, preferredWorkerPeerIds) as never,
+    findAgentNetworkWorkersRanked: (capability, preferredWorkerPeerIds, opts) =>
+      findAgentNetworkWorkersRanked(deps, capability, preferredWorkerPeerIds, opts) as never,
     chainDiagnosticsForSubtasks: (subtasks, workersBySubtask, rankedBySubtask) =>
       _chainDiagnosticsForSubtasks(subtasks as never, workersBySubtask as never, rankedBySubtask) as never,
     runChainGoal: (params) => _runChainGoal(deps, params) as never,
+    previewSuggestedAssigner: (input) => previewSuggestedAssigner(deps, input) as never,
   };
 }
 
@@ -994,14 +1163,47 @@ export async function buildChainWorkerDeps(deps: ChainOrchestrationContext): Pro
     // Node-owner AN engine (docs/agent-network-engine.md) — not chosen by Assigner.
     isAgentNetworkEngineReady: () => {
       const engine = deps.getAgentNetworkWorkerEngine();
-      return engine === "ext" ? deps.isExtAgentBridgeReady() : deps.isOpenClawReady();
+      if (engine === "ext") return deps.isExtAgentBridgeReady();
+      if (engine === "envoy-harness") return deps.isEnvoyHarnessReady();
+      return deps.isOpenClawReady();
     },
-    agentNetworkEngineDenyReason: () =>
-      deps.getAgentNetworkWorkerEngine() === "ext"
-        ? "ext_agent_unavailable"
-        : "openclaw_unavailable",
+    agentNetworkEngineDenyReason: () => {
+      const engine = deps.getAgentNetworkWorkerEngine();
+      if (engine === "ext") return "ext_agent_unavailable";
+      if (engine === "envoy-harness") return "envoy_harness_unavailable";
+      return "openclaw_unavailable";
+    },
+    recordAttemptReceipt: (input) => {
+      deps.getChainSideState().attemptReceipts.upsert({
+        chainId: input.chainId,
+        attemptId: input.attemptId,
+        subtaskId: input.subtaskId,
+        state: input.state,
+        lastPartialSeq: input.lastPartialSeq,
+        finalPartial: input.finalPartial,
+        mandateExpiresAt: input.mandateExpiresAt,
+      });
+    },
+    attemptIdBySubtask: (() => {
+      const side = deps.getChainSideState() as {
+        attemptIdBySubtask?: Map<string, string>;
+      };
+      if (!side.attemptIdBySubtask) side.attemptIdBySubtask = new Map();
+      return side.attemptIdBySubtask;
+    })(),
     executeSubtask: async (subtask, onPartial, opts) => {
       const engine = deps.getAgentNetworkWorkerEngine();
+      // Envoy Harness dispatch uses the live adapter built from the host's
+      // configured model. Resolve it lazily after the readiness gate.
+      if (engine === "envoy-harness") {
+        return createEnvoyHarnessChainSubtaskExecutor({
+          workerPeerId: agentIdentity.agentPeerId,
+          isEnvoyHarnessReady: () => deps.isEnvoyHarnessReady(),
+          // D1 — the live runtime's adapter (built on first ask; the
+          // executor resolves it lazily after the readiness gate).
+          adapter: () => deps.getEnvoyHarnessAdapter?.(),
+        })(subtask, onPartial, opts);
+      }
       const legacyExec =
         engine === "ext"
           ? createExtAgentChainSubtaskExecutor({
@@ -1373,6 +1575,19 @@ export async function buildChainOrchestratorDeps(
     orchestratorOwnerId: profile.owner.ownerId,
     agentCredential: agentIdentity.agentCredential,
     probeWorkerEngineReady: async (workerPeerId) => {
+      // Phase 60B — a fresh signed lease is sufficient; skip the legacy probe.
+      const leaseAvail = deps.getChainSideState().workerLeases.getAvailability(workerPeerId);
+      if (leaseAvail.state === "ready" && leaseAvail.source === "lease") {
+        return { ready: true, reason: "lease_ready" };
+      }
+      if (
+        leaseAvail.state === "expired" ||
+        leaseAvail.state === "revoked" ||
+        leaseAvail.state === "busy" ||
+        leaseAvail.state === "engine_down"
+      ) {
+        return { ready: false, reason: `lease_${leaseAvail.state}` };
+      }
       if (!transport) return { ready: false, reason: "no_transport" };
       return probeChainWorkerReady({
         transport,
@@ -1486,9 +1701,68 @@ export async function buildChainOrchestratorDeps(
       },
       orchestratorPeerId: agentIdentity.agentPeerId,
       signingKeyPem: agentIdentity.agentPrivateKeyPem,
+      // Phase 8 / v1.4 — sync accessor for the
+      // persisted config. The loop uses this
+      // (via `readEffectiveVerifyModeDefault`)
+      // to resolve the per-node
+      // `verifyModeDefault` override. When
+      // unset, the loop falls back to
+      // `defaultVerifyModeForWorker(workerRuntime)`
+      // (Q3 of the v1.4 sub-plan).
+      getNodeConfig: () => deps.getPersistedNodeConfigSync?.(),
+      // v1.16 — cross-model-on-same-runtime hint (optional; absent
+      // keeps the v1.8 cross-runtime behavior).
+      ...(deps.verifierProviderHint !== undefined
+        ? { verifierProviderHint: deps.verifierProviderHint }
+        : {}),
+      getLatestVerdictForSubtask: (chainId, subtaskId) =>
+        getLatestVerdictForSubtask(getChainArbitrationStore(chainId), subtaskId)?.verdict,
+      getVerdictForWorker: (chainId, subtaskId, workerPeerId) => {
+        const entries = getVerdictsFor(getChainArbitrationStore(chainId), { workerPeerId }).filter(
+          (entry) => entry.subtaskId === subtaskId,
+        );
+        return entries.at(-1)?.verdict;
+      },
       writeVerdictEntry: (chainId, entry) => {
         const store = getChainArbitrationStore(chainId);
         chainArbitrationStores.set(chainId, recordVerdictEntry(store, entry));
+        // Phase 60C — local calibrated reliability observation.
+        try {
+          const quality =
+            entry.verdict.kind === "pass" ||
+            entry.verdict.kind === "partial" ||
+            entry.verdict.kind === "fail" ||
+            entry.verdict.kind === "disputed"
+              ? entry.verdict.kind
+              : "censored";
+          if (quality !== "censored") {
+            const score =
+              (entry.verdict.kind === "pass" || entry.verdict.kind === "partial") &&
+              typeof entry.verdict.score === "number"
+                ? entry.verdict.score
+                : undefined;
+            const lease = deps.getChainSideState().workerLeases.getLease(entry.workerPeerId);
+            const connectivityClass =
+              lease?.connectivity?.relay && !lease.connectivity.direct
+                ? ("relay" as const)
+                : lease?.connectivity?.direct
+                  ? ("wan_direct" as const)
+                  : ("wan_direct" as const);
+            deps.getChainSideState().workerReliability.record({
+              workerPeerId: entry.workerPeerId,
+              runtime: entry.workerRuntime,
+              // Record worker model family (not the verifier's model).
+              modelFamily: modelFamilyFor(entry.workerRuntime),
+              skillId: entry.skillId,
+              connectivityClass,
+              quality,
+              ...(score !== undefined ? { score } : {}),
+              at: entry.issuedAt,
+            });
+          }
+        } catch {
+          /* reliability is best-effort */
+        }
       },
       resolveWorkerRuntime: (workerPeerId) =>
         deps.getChainSideState().remoteManifests.get(workerPeerId)?.runtime,
@@ -1496,9 +1770,20 @@ export async function buildChainOrchestratorDeps(
         const runtimes: AgentRuntime[] = [];
         if (deps.isOpenClawReady()) runtimes.push("openclaw");
         if (deps.isPiReady()) runtimes.push("pi");
+        // v1.16 — cross-model-on-same-runtime: when the node's own
+        // envoy-harness runtime is ready, it joins the verify pool so a
+        // worker on envoy-harness can be cross-verified by envoy-harness
+        // with a different model.
+        if (deps.isEnvoyHarnessReady()) runtimes.push("envoy-harness");
         return runtimes;
       },
       buildAdapter: (runtime, subtask) => {
+        if (runtime === "envoy-harness") {
+          if (!deps.isEnvoyHarnessReady()) return undefined;
+          // The live runtime's adapter (per-call `verifierModel` override
+          // honored by the runtime's buildAgent wrapper).
+          return deps.getEnvoyHarnessAdapter?.();
+        }
         if (runtime === "openclaw") {
           if (!deps.isOpenClawReady()) return undefined;
           return new OpenClawAdapter({
@@ -1533,7 +1818,67 @@ export async function buildChainOrchestratorDeps(
         return undefined;
       },
     },
+    isRecovering: (chainId) =>
+      isChainRecovering(deps.getChainSideState().recovery?.get(chainId)),
+    markRecoveryFinalPending: (chainId, subtaskId) => {
+      deps.getChainSideState().recoveryAdvancePending.add(`${chainId}:${subtaskId}`);
+    },
   };
+}
+
+function recoveryAdvanceKey(chainId: string, subtaskId: string): string {
+  return `${chainId}:${subtaskId}`;
+}
+
+/** Phase 61C — re-run final processing for partials retained during RECOVERING. */
+export async function flushRecoveryAdvancePending(
+  ctx: ChainOrchestrationContext,
+  chainId: string,
+): Promise<void> {
+  const side = ctx.getChainSideState();
+  if (isChainRecovering(side.recovery.get(chainId))) return;
+  const runtime = ctx.getChainStore().getRuntime(chainId);
+  if (!runtime || runtime.state.published || runtime.state.chainCancelled) return;
+
+  const pending = [...side.recoveryAdvancePending].filter((k) => k.startsWith(`${chainId}:`));
+  if (pending.length === 0) return;
+
+  const orchDeps = await buildChainOrchestratorDeps(ctx);
+  let flushed = false;
+  for (const key of pending) {
+    const subtaskId = key.slice(chainId.length + 1);
+    const partial = runtime.state.partials.get(subtaskId);
+    if (!partial?.partial.isFinal) {
+      side.recoveryAdvancePending.delete(key);
+      continue;
+    }
+    side.recoveryAdvancePending.delete(key);
+    const envelope = {
+      version: "0.1",
+      messageId: `recovery-advance-${subtaskId}`,
+      correlationId: chainId,
+      createdAt: partial.partial.createdAt,
+      senderPeerId: partial.partial.workerPeerId,
+      senderPublicKey: "",
+      senderRole: "agent",
+      recipientRole: "agent",
+      intent: "task.chain.partial",
+      payload: partial,
+      signature: "recovery-advance",
+    } as import("@envoymesh/protocol").EnvoyEnvelope;
+    await handleOrchestratorPartial(orchDeps, envelope, partial, runtime.state);
+    flushed = true;
+  }
+  if (flushed) {
+    const profile = ctx.getProfile();
+    if (profile) {
+      await tryCompleteChainIfReady(orchDeps, runtime.state, profile, {
+        onContinueRound: (s) => _continueIterationRound(ctx, s),
+        onMaybeExtend: (s) => _maybeExtendIterationRound(ctx, s),
+      });
+    }
+  }
+  _emitChainState(ctx, chainId);
 }
 
 /** True when peer directory listen addrs include a direct RFC1918 TCP path. */
@@ -1626,9 +1971,16 @@ export async function selectReadyWorkersForSubtask(
   const chosen: string[] = [];
   const skipped: string[] = [];
   let probed = 0;
+  const leaseStore = deps.getChainSideState().workerLeases;
 
   for (const peerId of tryOrder) {
     if (chosen.length >= cap) break;
+    // Phase 60B — fresh lease is sufficient; skip the legacy ready probe.
+    const leaseAvail = leaseStore.getAvailability(peerId);
+    if (leaseAvail.state === "ready" && leaseAvail.source === "lease") {
+      chosen.push(peerId);
+      continue;
+    }
     if (probed >= maxProbes) break;
     probed += 1;
     if (!probeFn) {
@@ -1652,7 +2004,8 @@ export async function selectReadyWorkersForSubtask(
         remotePeerId: peerId,
         summary:
           `ready_probe_soft_allow worker=${peerId.slice(0, 14)}` +
-          ` reason=${probe.reason ?? "unknown"}`,
+          ` reason=${probe.reason ?? "unknown"}` +
+          ` availabilitySource=legacy_probe`,
       }).catch(() => {
         /* best-effort audit */
       });
@@ -1695,6 +2048,7 @@ export async function findAgentNetworkWorkersRanked(
   deps: ChainOrchestrationContext,
   capability: string,
   preferredWorkerPeerIds?: readonly string[],
+  opts?: { strategyId?: ChainTeamStrategyId },
 ): Promise<ChainRankedWorker[]> {
   const ready = deps.getAgentNetworkMembershipIndexReady();
   if (ready) {
@@ -1780,29 +2134,82 @@ export async function findAgentNetworkWorkersRanked(
   } catch {
     /* store unavailable — leave stale entries; per-read freshness still guards */
   }
+  try {
+    deps.getChainSideState().workerLeases.prune();
+  } catch {
+    /* store unavailable */
+  }
+
+  const strategyId: ChainTeamStrategyId = opts?.strategyId ?? "balanced";
+  const strategy = getChainTeamStrategyPreset(strategyId);
+  const reliability = deps.getChainSideState().workerReliability;
+
+  // Precompute model families so diversity is relative to the ranked pool.
+  const modelFamilyByPeer = new Map<string, string>();
+  for (const peerId of peerList) {
+    const leasePayload = deps.getChainSideState().workerLeases.getLease(peerId);
+    const card = byPeer.get(peerId);
+    const wireManifest = deps.getChainSideState().remoteManifests.get(peerId);
+    const manifest = wireManifest && isManifestFresh(wireManifest)
+      ? wireManifest
+      : manifestFromAgentNetworkProfile(
+          card?.agentNetworkProfile,
+          peerId,
+          card?.ownerId ?? "",
+        );
+    const runtime = (manifest?.runtime ?? "openclaw") as AgentRuntime;
+    const fromLease = leasePayload?.runtimes.find(
+      (r) => typeof r.modelFamily === "string" && r.modelFamily.length > 0,
+    )?.modelFamily;
+    modelFamilyByPeer.set(peerId, fromLease ?? modelFamilyFor(runtime));
+  }
+  const familyCounts = new Map<string, number>();
+  for (const fam of modelFamilyByPeer.values()) {
+    familyCounts.set(fam, (familyCounts.get(fam) ?? 0) + 1);
+  }
 
   const scored: ChainRankedWorker[] = peerList.map((peerId) => {
     const card = byPeer.get(peerId);
     const isSelf = selfPeerId !== undefined && peerId === selfPeerId;
     const sameLan = sameLanByPeer.get(peerId) === true || isSelf;
     const transportId = transportByAgentPeer.get(peerId);
-    // Local agent is "online" for ranking only when the configured AN engine is ready.
-    // Remotes: mesh transport, refined by recent ready-probe cache when present.
+    const leaseAvail = deps.getChainSideState().workerLeases.getAvailability(peerId);
+    const leasePayload = deps.getChainSideState().workerLeases.getLease(peerId);
     const cachedReady = deps.getChainSideState().readyProbeCache.get(peerId);
-    const online =
-      isSelf
-        ? (deps.getAgentNetworkWorkerEngine() === "ext"
+
+    let online: boolean;
+    let availabilitySource: ChainRankedWorker["availabilitySource"];
+    if (isSelf) {
+      online =
+        deps.getAgentNetworkWorkerEngine() === "ext"
           ? deps.isExtAgentBridgeReady()
-          : deps.isOpenClawReady() !== false)
-        : Boolean(transportId) && (cachedReady ? cachedReady.ready : true);
+          : deps.getAgentNetworkWorkerEngine() === "envoy-harness"
+            ? deps.isEnvoyHarnessReady()
+            : deps.isOpenClawReady() !== false;
+      availabilitySource = "local";
+    } else if (leaseAvail.state === "ready" && leaseAvail.source === "lease") {
+      online = true;
+      availabilitySource = "lease";
+    } else if (
+      leaseAvail.state === "expired" ||
+      leaseAvail.state === "revoked" ||
+      leaseAvail.state === "busy" ||
+      leaseAvail.state === "engine_down"
+    ) {
+      // A known-bad lease stops new awards; do not treat card freshness as ready.
+      online = false;
+      availabilitySource = "unknown";
+    } else if (cachedReady) {
+      online = Boolean(transportId) && cachedReady.ready;
+      availabilitySource = "legacy_probe";
+    } else {
+      // Mixed-version peers without leases: mesh reachability only (penalized).
+      // Agent Card lastSeenAt is intentionally not consulted here.
+      online = Boolean(transportId);
+      availabilitySource = "unknown";
+    }
+
     const viaRelay = !isSelf && online && transportId ? circuitIds.has(transportId) : false;
-    const result = scoreAgentNetworkWorker({
-      requiredSkill: capability,
-      membership: card?.membership ?? [],
-      profile: card?.agentNetworkProfile,
-      displayName: card?.displayName,
-      sameLan,
-    });
     // MAP: prefer a fresh wire-broadcast manifest over the card synthesis
     // (the broadcast carries the owner-signed runtime/skills/reputation).
     const wireManifest = deps.getChainSideState().remoteManifests.get(peerId);
@@ -1813,29 +2220,127 @@ export async function findAgentNetworkWorkersRanked(
           peerId,
           card?.ownerId ?? "",
         );
+
+    const gate = evaluateChainWorkerHardGates({
+      strategy,
+      isSelf,
+      sameLan,
+      viaRelay,
+      availabilitySource,
+      leaseState:
+        leaseAvail.state === "ready" ||
+        leaseAvail.state === "expired" ||
+        leaseAvail.state === "revoked" ||
+        leaseAvail.state === "busy"
+          ? leaseAvail.state
+          : "unknown",
+    });
+
+    const legacy = scoreAgentNetworkWorker({
+      requiredSkill: capability,
+      membership: card?.membership ?? [],
+      profile: card?.agentNetworkProfile,
+      displayName: card?.displayName,
+      sameLan,
+    });
+    const runtime = (manifest?.runtime ?? "openclaw") as AgentRuntime;
+    const modelFamily = modelFamilyByPeer.get(peerId) ?? "unknown";
+    const connectivityClass = isSelf
+      ? "self" as const
+      : sameLan
+        ? "lan_direct" as const
+        : viaRelay
+          ? "relay" as const
+          : "wan_direct" as const;
+    const reliabilityProj = reliability.project({
+      workerPeerId: peerId,
+      runtime,
+      modelFamily,
+      skillId: capability,
+      connectivityClass,
+    });
+    const familyCount = familyCounts.get(modelFamily) ?? 1;
+    const strategyScored = scoreChainWorkerWithStrategy({
+      strategy,
+      components: {
+        skill: Math.min(1, Math.max(0, legacy.breakdown.skill)),
+        eta: clampLatencyComponent(reliabilityProj.latencyEwmaMs, leasePayload?.runtimes[0]?.capacity.availableSlots),
+        cost: legacy.breakdown.spendPosture,
+        reliability:
+          strategyId === "highest-confidence"
+            ? reliabilityProj.lowerBound
+            : reliabilityProj.mean,
+        transport: sameLan ? 1 : viaRelay ? 0.35 : online ? 0.7 : 0.1,
+        modelDiversity: 1 / familyCount,
+      },
+    });
+    const score =
+      availabilitySource === "legacy_probe"
+        ? Math.max(0, strategyScored.score - LEGACY_PROBE_SCORE_PENALTY / 100)
+        : strategyScored.score;
+    const assignmentReasons: ChainAssignmentReasonCode[] = [];
+    if (legacy.breakdown.skill >= 0.9) assignmentReasons.push("skill_exact");
+    if (sameLan) assignmentReasons.push("same_lan");
+    if (availabilitySource === "lease") assignmentReasons.push("lease_ready");
+    if (isSelf) assignmentReasons.push("privacy_local");
+
     return {
       peerId,
-      score: result.score,
-      summary: result.summary,
+      score,
+      summary: legacy.summary,
       sameLan,
-      online,
+      online: gate.ok ? online : false,
       viaRelay,
+      availabilitySource,
+      scoreComponents: strategyScored.components,
+      reliabilityLowerBound: reliabilityProj.lowerBound,
+      reliabilitySampleCount: reliabilityProj.sampleCount,
+      reliabilityFallbackLevel: reliabilityProj.fallbackLevel,
+      ...(gate.ok ? {} : { exclusionReason: gate.reason }),
+      ...(assignmentReasons.length > 0 ? { assignmentReasons } : {}),
       manifest,
-    };
+      ...(leasePayload ? { leaseSequence: leasePayload.sequence } : {}),
+    } as ChainRankedWorker & { leaseSequence?: number };
   });
   const filtered =
     preferredWorkerPeerIds && preferredWorkerPeerIds.length > 0
       ? scored.filter((w) => preferredWorkerPeerIds.includes(w.peerId))
       : scored;
-  // Online first, then specialty score. Local/"You" is not forced to the front —
-  // ranking stays skill-honest for diagnostics, suggestedWorkers, and assign.
+  // Online first, then lease-backed readiness, then strategy score + lease sequence.
   return rankWorkersByScore(filtered).sort((a, b) => {
     const aOnline = a.online ? 1 : 0;
     const bOnline = b.online ? 1 : 0;
     if (aOnline !== bOnline) return bOnline - aOnline;
-    if (b.score !== a.score) return b.score - a.score;
-    return a.peerId.localeCompare(b.peerId);
+    const aLease = a.availabilitySource === "lease" ? 1 : 0;
+    const bLease = b.availabilitySource === "lease" ? 1 : 0;
+    if (aLease !== bLease) return bLease - aLease;
+    const aLegacy = a.availabilitySource === "legacy_probe" ? 1 : 0;
+    const bLegacy = b.availabilitySource === "legacy_probe" ? 1 : 0;
+    if (aLegacy !== bLegacy) return bLegacy - aLegacy;
+    return compareChainWorkerTies(
+      {
+        score: a.score,
+        peerId: a.peerId,
+        leaseSequence: (a as { leaseSequence?: number }).leaseSequence,
+      },
+      {
+        score: b.score,
+        peerId: b.peerId,
+        leaseSequence: (b as { leaseSequence?: number }).leaseSequence,
+      },
+    );
   });
+}
+
+function clampLatencyComponent(
+  latencyEwmaMs: number | undefined,
+  availableSlots: number | undefined,
+): number {
+  const slotBoost = typeof availableSlots === "number" && availableSlots > 0 ? 0.15 : 0;
+  if (latencyEwmaMs === undefined || !(latencyEwmaMs > 0)) return 0.5 + slotBoost;
+  // Lower latency → higher component. Soft ceiling ~120s.
+  const raw = 1 - Math.min(1, latencyEwmaMs / 120_000);
+  return Math.max(0, Math.min(1, raw + slotBoost));
 }
 
 /* ---------- tracking + state emission ---------- */
@@ -1855,8 +2360,17 @@ export function _startChainTracking(deps: ChainOrchestrationContext, chainId: st
         _stopChainTracking(deps, chainId);
         return;
       }
+      const recovery = deps.getChainSideState().recovery?.get(chainId);
+      if (recovery?.phase === "recovering") {
+        // Phase 60D — pause watchdog / reassignment until reconcile or grace.
+        const { tickChainRecovery } = await import("./chain-reconcile-recovery.js");
+        tickChainRecovery({ recovery });
+        await new Promise((r) => setTimeout(r, 2_000));
+        continue;
+      }
       try {
         const orchDeps = await buildChainOrchestratorDeps(deps);
+        await flushRecoveryAdvancePending(deps, chainId);
         // Always advance dependents + recover silent proposes/accepts.
         const advanced = await advanceReadySubtasks(orchDeps, rt.state);
         const proposed = await retryStaleProposals(orchDeps, rt.state);
@@ -1871,6 +2385,19 @@ export function _startChainTracking(deps: ChainOrchestrationContext, chainId: st
         }
         if (rt.state.awards.size > 0) {
           await trackChain(orchDeps, rt.state, { tickMs: 30_000, maxTicks: 1 });
+        }
+        const latestRt = deps.getChainStore().getRuntime(chainId);
+        const profile = deps.getProfile();
+        if (latestRt && profile && !latestRt.state.published && !latestRt.state.chainCancelled) {
+          const completed = await tryCompleteChainIfReady(orchDeps, latestRt.state, profile, {
+            onContinueRound: (s) => _continueIterationRound(deps, s),
+            onMaybeExtend: (s) => _maybeExtendIterationRound(deps, s),
+          });
+          if (completed.published) {
+            _emitChainState(deps, chainId);
+            _stopChainTracking(deps, chainId);
+            return;
+          }
         }
       } catch (err) {
         console.warn(`[chain.track] ${chainId} tick failed:`, err);
@@ -2050,6 +2577,11 @@ export async function _evaluateAwardAndAccept(
       `subtask=${subtaskId} worker=${result.bid.workerPeerId} cost=${result.bid.proposedCostUsd}` +
       (acceptOk ? "" : " accept_send_failed"),
   });
+  if (acceptOk) {
+    await maybeScheduleSpeculationAfterAward(orchDeps, runtime.state, result.award).catch((err) => {
+      console.warn(`[chain.speculation] speculation schedule failed for ${chainId}/${subtaskId}:`, err);
+    });
+  }
   return result;
 }
 
@@ -2165,6 +2697,103 @@ export async function cancelChainOwnerAction(
   }
   _emitChainState(deps, params.chainId);
   return { chainId: params.chainId, cancelled };
+}
+
+/** Phase 60.1 — owner resolves speculative disagreement (pick final or reassign). */
+export async function resolveSpeculationOwnerAction(
+  deps: ChainOrchestrationContext,
+  params: ChainResolveSpeculationParams,
+): Promise<ChainResolveSpeculationResult> {
+  const runtime = deps.getChainStore().getRuntime(params.chainId);
+  if (!runtime) {
+    return { ok: false, reason: "chain_not_found" };
+  }
+  const orchDeps = await buildChainOrchestratorDeps(deps);
+  if (params.action === "pick") {
+    if (!params.attemptId?.trim()) {
+      return { ok: false, reason: "attempt_required" };
+    }
+    const picked = await ownerPickSpeculativeAttempt(
+      orchDeps,
+      runtime.state,
+      params.subtaskId,
+      params.attemptId,
+    );
+    if (!picked.ok) {
+      return { ok: false, reason: picked.reason };
+    }
+    await advanceReadySubtasks(orchDeps, runtime.state);
+    _emitChainState(deps, params.chainId);
+    return { ok: true };
+  }
+  if (params.action === "auto") {
+    // Phase 63 — owner (or mobile) defers to orchestrator. The auto
+    // resolver is the same code the wire path uses when
+    // `chainMandate.speculationOnDisagreement === "auto"`.
+    const finalsCtx = speculativeFinalsContext(orchDeps, runtime.state, params.subtaskId);
+    const classified = classifySpeculativeFinalSelection(
+      runtime.state,
+      params.subtaskId,
+      finalsCtx,
+    );
+    if (classified.selectedAttemptId) {
+      const picked = await ownerPickSpeculativeAttempt(
+        orchDeps,
+        runtime.state,
+        params.subtaskId,
+        classified.selectedAttemptId,
+      );
+      if (!picked.ok) {
+        return { ok: false, reason: picked.reason };
+      }
+      await advanceReadySubtasks(orchDeps, runtime.state);
+      _emitChainState(deps, params.chainId);
+      return { ok: true, reason: "auto_picked" };
+    }
+    const selectionReason: "disagree_needs_verify" | "none_pass" =
+      classified.reason === "none_pass" ? "none_pass" : "disagree_needs_verify";
+    const auto = autoResolveSpeculativeDisagreement({
+      state: runtime.state,
+      subtaskId: params.subtaskId,
+      selectionReason,
+    });
+    if (auto.ok && auto.action === "auto_pick" && auto.selectedAttemptId) {
+      const picked = await ownerPickSpeculativeAttempt(
+        orchDeps,
+        runtime.state,
+        params.subtaskId,
+        auto.selectedAttemptId,
+      );
+      if (!picked.ok) {
+        return { ok: false, reason: picked.reason };
+      }
+      await advanceReadySubtasks(orchDeps, runtime.state);
+      _emitChainState(deps, params.chainId);
+      return { ok: true, reason: "auto_picked" };
+    }
+    if (auto.ok && auto.action === "auto_reassign") {
+      await clearSpeculativeSibling(orchDeps, runtime.state, params.subtaskId, "auto_reassign");
+      const reassigned = await reassignSubtaskOwnerAction(deps, {
+        chainId: params.chainId,
+        subtaskId: params.subtaskId,
+      });
+      if (!reassigned.ok) {
+        return { ok: false, reason: reassigned.error ?? "reassign_failed" };
+      }
+      _emitChainState(deps, params.chainId);
+      return { ok: true, nextWorkerPeerId: reassigned.nextWorkerPeerId, reason: "auto_reassigned" };
+    }
+    return { ok: false, reason: auto.reason };
+  }
+  await clearSpeculativeSibling(orchDeps, runtime.state, params.subtaskId, "owner_reassign");
+  const reassigned = await reassignSubtaskOwnerAction(deps, {
+    chainId: params.chainId,
+    subtaskId: params.subtaskId,
+  });
+  if (!reassigned.ok) {
+    return { ok: false, reason: reassigned.error ?? "reassign_failed" };
+  }
+  return { ok: true, nextWorkerPeerId: reassigned.nextWorkerPeerId };
 }
 
 /** Phase 58C — owner-forced stall reassign for one step. */
@@ -2507,6 +3136,8 @@ export async function _runChainGoal(
     allowLlm?: boolean;
     /** When set and not local, hand off Assigner role via `task.chain.handoff`. */
     assignerPeerId?: string;
+    /** Phase 62C — override node default Assigner auto-selection. */
+    assignerSelection?: import("@envoymesh/api").AssignerSelectionMode;
     /** Phase 47 — override node `iterationMaxRounds`. */
     iterationMaxRounds?: number;
     /** Phase 47D — handoff / override judge mode. */
@@ -2542,6 +3173,8 @@ export async function _runChainGoal(
     inputDeliveryScope?: "referenced" | "all";
     /** Owner-flagged criticality hint (design §8.1 #1). Absent = `"normal"`. */
     criticality?: "normal" | "high";
+    /** Phase 60C — Team strategy for this job. */
+    teamStrategyId?: import("@envoymesh/api").ChainTeamStrategyId;
   },
 ): Promise<{
   ok: boolean;
@@ -2559,8 +3192,33 @@ export async function _runChainGoal(
   assignerPeerId?: string;
   handedOff?: boolean;
 }> {
-  const assignerPeerId = input.assignerPeerId?.trim();
-  if (assignerPeerId) {
+  let nodeDefaults = DEFAULT_CHAIN_DEFAULTS;
+  try {
+    const cfg = await deps.getNodeConfig();
+    nodeDefaults = mergeChainDefaults((cfg as { chainDefaults?: ChainDefaultsConfig })?.chainDefaults);
+  } catch {
+    /* use production defaults */
+  }
+
+  const assignerResolution = await resolveAssignerForChainGoal(deps, {
+    explicitAssignerPeerId: input.assignerPeerId,
+    assignerSelection: input.assignerSelection,
+    nodeDefaults,
+  });
+
+  if (assignerResolution.auditSummary && assignerResolution.mode === "best_capable") {
+    await _appendChainAudit(deps, {
+      type: "chain.assigner_selected",
+      outcome: "record",
+      intent: assignerResolution.handoff ? "task.chain.handoff" : "task.chain.mandate",
+      correlationId: input.chainId,
+      remotePeerId: assignerResolution.assignerPeerId,
+      summary: assignerResolution.auditSummary,
+    });
+  }
+
+  const assignerPeerId = assignerResolution.assignerPeerId?.trim();
+  if (assignerPeerId && assignerResolution.handoff) {
     const agent = await deps.ensureAgentIdentity();
     if (agent && assignerPeerId !== agent.agentPeerId) {
       return _handoffChainGoalToAssigner(deps, {
@@ -2585,19 +3243,17 @@ export async function _runChainGoal(
   const ownerProfile = deps.getProfile();
   const orchestratorOwnerId = ownerProfile?.owner.ownerId ?? "envoy:owner:placeholder";
   const ownerPrivateKeyPem = ownerProfile?.owner.privateKeyPem;
-  let nodeDefaults = DEFAULT_CHAIN_DEFAULTS;
-  try {
-    const cfg = await deps.getNodeConfig();
-    nodeDefaults = mergeChainDefaults((cfg as { chainDefaults?: ChainDefaultsConfig })?.chainDefaults);
-  } catch {
-    /* use production defaults */
-  }
   const awardMode = resolveAwardMode(nodeDefaults);
   const showCostUi = resolveShowCostUi(nodeDefaults);
   const assignmentMode =
     input.assignmentMode === "role" || input.assignmentMode === "skill"
       ? input.assignmentMode
       : resolveAssignmentModeDefault(nodeDefaults);
+  const teamStrategyId: ChainTeamStrategyId =
+    input.teamStrategyId ??
+    (nodeDefaults as { teamStrategyId?: ChainTeamStrategyId }).teamStrategyId ??
+    "balanced";
+  const teamStrategy = resolveChainTeamStrategy(teamStrategyId);
   const mandate = signChainMandate(
     {
       version: "0.1" as const,
@@ -2616,6 +3272,7 @@ export async function _runChainGoal(
       maxAutoRebalances: nodeDefaults.maxAutoRebalances ?? 2,
       autoRebalanceIncrementUsd: nodeDefaults.autoRebalanceIncrementUsd ?? 5,
       criticality: input.criticality,
+      teamStrategyId,
     },
     ownerPrivateKeyPem,
   );
@@ -2629,6 +3286,7 @@ export async function _runChainGoal(
   chainSide.awardModes.set(chainId, awardMode);
   chainSide.showCostUi.set(chainId, showCostUi);
   chainSide.assignmentModes.set(chainId, assignmentMode);
+  chainSide.teamStrategies.set(chainId, teamStrategy);
   if (input.planWarnings?.length) {
     chainSide.planWarnings.set(chainId, input.planWarnings);
   }

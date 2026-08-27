@@ -1,5 +1,8 @@
 /** Thread / bubble styling — makes message source obvious at a glance. */
-import { ENVOY_AI_THREAD_KEY } from "@envoymesh/api";
+import {
+  ENVOY_AI_THREAD_KEY,
+  isEnvoyHarnessThreadKey,
+} from "@envoymesh/api";
 
 export type ChatThreadKind = "human" | "agent" | "ai";
 
@@ -16,6 +19,7 @@ export function resolveChatThreadKind(
   agentPeerId?: string | null,
 ): ChatThreadKind {
   if (selectedContact === ENVOY_AI_THREAD_KEY) return "ai";
+  if (isEnvoyHarnessThreadKey(selectedContact)) return "ai";
   if (selectedContact.startsWith("bot:")) return "ai";
   if (agentPeerId && selectedContact === agentPeerId) return "agent";
   return "human";

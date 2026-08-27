@@ -179,7 +179,10 @@ export async function getNodeConfigViaRuntime(
       capabilityProviderMandateId: config.capabilityProviderMandateId,
       agentNetworkProfile: config.agentNetworkProfile,
       agentNetworkWorkerEngine:
-        config.agentNetworkWorkerEngine === "ext" ? "ext" : "openclaw",
+        config.agentNetworkWorkerEngine === "ext" ||
+        config.agentNetworkWorkerEngine === "envoy-harness"
+          ? config.agentNetworkWorkerEngine
+          : "openclaw",
       lanAutoBondEnabled: config.lanAutoBondEnabled ?? false,
       lanAutoBondFleetToken: config.lanAutoBondFleetToken,
       lanAutoBondAutoJoinAgentNetwork: config.lanAutoBondAutoJoinAgentNetwork,

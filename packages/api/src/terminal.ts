@@ -15,7 +15,7 @@ export interface TerminalSessionSummary {
    * interactive (default), hidden exec pane for agent inject, or reserved
    * Pi interactive TUI session (coding surface).
    */
-  role?: "interactive" | "exec" | "pi";
+  role?: "interactive" | "exec" | "pi" | "envoy-harness";
   /** Exec pane session id (interactive sessions only). */
   execSessionId?: string;
   /** Parent interactive session (exec sessions only). */
@@ -54,7 +54,7 @@ export interface CreateTerminalSessionParams {
   cols?: number;
   rows?: number;
   /** Reserved session role (e.g. `"pi"` for the coding TUI). */
-  role?: "interactive" | "pi";
+  role?: "interactive" | "pi" | "envoy-harness";
   /** Override spawn binary (default: user shell). */
   command?: string;
   /** Argv for `command` (default: empty = interactive shell). */

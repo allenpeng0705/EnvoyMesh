@@ -25,6 +25,7 @@
 
 import { z } from "zod";
 
+import { SignedAgentResultSchema } from "./agent-adapter.js";
 import type { Artifact, EnvoyActorRole, Sensitivity } from "./index.js";
 
 /**
@@ -178,6 +179,65 @@ export const UnsignedChainMandateSchema = z.object({
    * absent = `"normal"`.
    */
   criticality: z.enum(["normal", "high"]).optional(),
+  /**
+   * Phase 60C — owner-selected Team strategy id. Resolved snapshot is kept on
+   * chain side-state for deterministic replay if presets change later.
+   */
+  teamStrategyId: z
+    .enum([
+      "balanced",
+      "fastest",
+      "cheapest",
+      "highest-confidence",
+      "privacy-local",
+      "diverse-model",
+    ])
+    .optional(),
+  /**
+   * Phase 60E — max concurrent speculative attempts per step (1 = off).
+   * Speculation also requires strategy/criticality/budget gates.
+   */
+  maxParallelAttemptsPerStep: z.number().int().min(1).max(2).optional(),
+  /**
+   * Phase 63 — owner opt-in for speculative execution. Strategy presets
+   * may still propose immediate_dual / hedged / verify_only modes, but
+   * they all collapse to `off` when this gate is `false`. Default `false`
+   * to keep Team jobs single-worker by default; owners explicitly enable
+   * in the New Team job → Advanced panel when they want dual-award.
+   */
+  speculationEnabled: z.boolean().optional(),
+  /**
+   * Phase 63 — when speculation is on and the two workers return
+   * disagreeing / failing finals, what should the orchestrator do?
+   *   - `"auto"` (default): orchestrator picks the cheaper verified
+   *     winner, or invokes the verifier to break the tie, or reassigns
+   *     the step when both fail. The chain never blocks on the owner.
+   *   - `"block"`: chain pauses, owner must pick or reassign via
+   *     `chainResolveSpeculation` RPC (Social/EnvoyGo banner + actions).
+   * "auto" is the safe default — owners who want hands-on review can
+   * explicitly opt in to "block" in Advanced.
+   */
+  speculationOnDisagreement: z.enum(["auto", "block"]).optional(),
+  /**
+   * Phase 8 / Step 6 — cross-verify mode (Q4 A).
+   * Controls whether the orchestrator runs the
+   * cross-runtime verifier (re-runs the same task
+   * on the OTHER runtime) in addition to the
+   * worker's own rule pass.
+   *  - `"rule-only"` (default for OpenClaw-only
+   *    jobs; per-node opt-out for envoy-writes
+   *    jobs): rule pass only. No cross run.
+   *  - `"cross-runtime"` (Q4 (a) default for
+   *    envoy-writes jobs): always run cross;
+   *    combine verdicts (pass wins over
+   *    partial/fail/disputed).
+   *  - `"cross-runtime-strict"` (Q4 (b) override
+   *    for security/cost-sensitive jobs): always
+   *    run cross; cross verdict takes priority
+   *    over the rule verdict.
+   * Absent = `"rule-only"`.
+   */
+  verifyMode: z.enum(["rule-only", "cross-runtime", "cross-runtime-strict"]).optional(),
 });
 
 export const ChainMandateSignedSchema = UnsignedChainMandateSchema.extend({
@@ -186,6 +246,22 @@ export const ChainMandateSignedSchema = UnsignedChainMandateSchema.extend({
 
 export type UnsignedChainMandate = z.infer<typeof UnsignedChainMandateSchema>;
 export type ChainMandate = z.infer<typeof ChainMandateSignedSchema>;
+
+/**
+ * Phase 8 / Step 6 — cross-verify mode (Q4 A).
+ * Extracted as a named type so the orchestrator
+ * (chain-verify-loop.ts) and the bridge
+ * (envoy-harness-adapter) can reference it
+ * without re-declaring the literal union.
+ *
+ * See the schema field JSDoc for the per-mode
+ * semantics. The orchestrator honors the mode
+ * in `shouldEscalateToCrossAgent` +
+ * `combineToVerdict`; the per-node default is
+ * `defaultVerifyModeForWorker(runtime)` in
+ * `chain-verify-loop.ts`.
+ */
+export type VerifyMode = "rule-only" | "cross-runtime" | "cross-runtime-strict";
 
 /**
  * Soft expect for a parent artifact key (Phase 53). Not enforced at launch —
@@ -316,6 +392,11 @@ export const ChainSubtaskAwardSchema = z.object({
   /** Per-subtask deadline reaffirmed by the orchestrator. */
   deadlineAt: z.string().datetime(),
   createdAt: z.string().datetime(),
+  /**
+   * Phase 60D — orchestration attempt id so workers can key receipt stores
+   * for restart reconciliation. Optional for mixed-version peers.
+   */
+  attemptId: z.string().min(1).max(128).optional(),
 });
 
 export type ChainSubtaskAward = z.infer<typeof ChainSubtaskAwardSchema>;
@@ -674,7 +755,12 @@ export const TaskChainReadyRequestPayloadSchema = z.object({
 export const TaskChainReadyResponsePayloadSchema = z.object({
   probeId: z.string().min(1).max(128),
   ready: z.boolean(),
-  engine: z.enum(["openclaw", "ext"]),
+  // Phase 8 — added "envoy-harness" to the engine tag. The literal
+  // matches `AGENT_NETWORK_WORKER_ENGINES` in
+  // `apps/node/src/agent-network-worker-engine.ts`. Older peers
+  // ignore unknown enum values; the on-the-wire schema version
+  // (`task-chain-ready-response/v1`) is unchanged.
+  engine: z.enum(["openclaw", "ext", "envoy-harness"]),
   reason: z.string().min(1).max(200).optional(),
   checkedAt: z.string().datetime(),
 });
@@ -756,7 +842,8 @@ export function createTaskChainReadyRequestPayload(input?: {
 export function createTaskChainReadyResponsePayload(input: {
   probeId: string;
   ready: boolean;
-  engine: "openclaw" | "ext";
+  // Phase 8 — widens the engine tag to include "envoy-harness".
+  engine: "openclaw" | "ext" | "envoy-harness";
   reason?: string;
   checkedAt?: string;
 }): TaskChainReadyResponsePayload {
@@ -775,4 +862,93 @@ export function parseTaskChainReadyRequestPayload(input: unknown): TaskChainRead
 
 export function parseTaskChainReadyResponsePayload(input: unknown): TaskChainReadyResponsePayload {
   return TaskChainReadyResponsePayloadSchema.parse(input);
+}
+
+// ---------------------------------------------------------------------------
+// v2.2 — task.harness.submit.* (direct MAP-over-libp2p sub-agent submit)
+//
+// The `RemoteSubmitterTransport` wire contract: the parent sends the
+// serializable half of `ExecuteInput` (the AbortSignal is worker-side,
+// rebuilt from `deadlineMs`), the worker replies with its signed
+// `AgentResult` — or a wire error when the adapter is unavailable or
+// execution fails. Same correlationId on both envelopes.
+// ---------------------------------------------------------------------------
+
+/**
+ * `task.harness.submit.request` — parent agent → worker agent.
+ *
+ * Mirrors `ExecuteInput` (packages/agent-adapter) minus the AbortSignal.
+ * The worker rebuilds the signal from `deadlineMs`; `verifierModel` is
+ * the v1.16 per-call model override hint.
+ */
+export const TaskHarnessSubmitRequestPayloadSchema = z.object({
+  skillId: z.string().min(1).max(128),
+  objective: z.string().min(1).max(200_000),
+  inputArtifacts: z
+    .array(NamedArtifactSchema)
+    .max(CHAIN_INPUT_ARTIFACTS_MAX)
+    .default([]),
+  costCeilingUsd: z.number().positive(),
+  deadlineMs: z.number().int().positive(),
+  correlationId: z.string().min(1).max(200),
+  verifierModel: z.string().min(1).max(200).optional(),
+});
+export type TaskHarnessSubmitRequestPayload = z.infer<
+  typeof TaskHarnessSubmitRequestPayloadSchema
+>;
+
+/**
+ * `task.harness.submit.response` — worker agent → parent agent.
+ *
+ * `ok: true` carries the worker's signed `AgentResult` (signature =
+ * the owner's key, same contract as the chain worker path). `ok: false`
+ * carries a wire error (adapter unavailable / execution failure) so the
+ * parent fails fast instead of waiting out the deadline.
+ */
+export const TaskHarnessSubmitResponsePayloadSchema = z.discriminatedUnion(
+  "ok",
+  [
+    z.object({
+      ok: z.literal(true),
+      result: SignedAgentResultSchema,
+    }),
+    z.object({
+      ok: z.literal(false),
+      error: z.string().min(1).max(500),
+    }),
+  ],
+);
+export type TaskHarnessSubmitResponsePayload = z.infer<
+  typeof TaskHarnessSubmitResponsePayloadSchema
+>;
+
+export function createTaskHarnessSubmitRequestPayload(
+  input: Omit<TaskHarnessSubmitRequestPayload, "inputArtifacts"> & {
+    inputArtifacts?: TaskHarnessSubmitRequestPayload["inputArtifacts"];
+  },
+): TaskHarnessSubmitRequestPayload {
+  return TaskHarnessSubmitRequestPayloadSchema.parse({
+    ...input,
+    inputArtifacts: input.inputArtifacts ?? [],
+  });
+}
+
+export function parseTaskHarnessSubmitRequestPayload(
+  input: unknown,
+): TaskHarnessSubmitRequestPayload {
+  return TaskHarnessSubmitRequestPayloadSchema.parse(input);
+}
+
+export function createTaskHarnessSubmitResponsePayload(
+  input:
+    | { ok: true; result: import("./agent-adapter.js").SignedAgentResult }
+    | { ok: false; error: string },
+): TaskHarnessSubmitResponsePayload {
+  return TaskHarnessSubmitResponsePayloadSchema.parse(input);
+}
+
+export function parseTaskHarnessSubmitResponsePayload(
+  input: unknown,
+): TaskHarnessSubmitResponsePayload {
+  return TaskHarnessSubmitResponsePayloadSchema.parse(input);
 }

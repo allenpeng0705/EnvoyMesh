@@ -14,6 +14,7 @@ import {
   loadBridgeConfigSkillApiKeys,
   loadBridgeConfigWebSearchEnabled,
 } from "./node-service-clawhub.js";
+import { readEffectiveSignalOptIn } from "./node-config-loader.js";
 import { loadBridgeConfigFromProfile } from "./bridge/bridge-config-store.js";
 import { bridgeConfigToStatusFields } from "./bridge/config.js";
 import {
@@ -542,6 +543,45 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             getOpenClawRuntimeDeps: () => host._openClawRuntimeDeps(),
             recordOwnerActivity: () => host.recordOwnerActivity(),
             askOpenClaw: (msg, ctx) => host.askOpenClaw(msg, ctx as never),
+            // Phase 8 / Step 5 — signal-based auto opt-in wires.
+            // The host's `isEnvoyHarnessReady()` reads the resolved
+            // envoy-harness config without constructing the model
+            // adapter (sync, cheap). `askEnvoyHarness` lazily
+            // constructs the model adapter on first call.
+            //
+            // Phase 8 / v1.4 — `signalOptIn` is now resolved
+            // from the persisted config + env var via
+            // `readEffectiveSignalOptIn`. The persisted
+            // config wins (Tauri UI override), the env var
+            // is the v0 fallback (headless / dev / CI). The
+            // `peek()` call is sync — it reads the in-memory
+            // snapshot of the last `load()` or `save()`.
+            // On cold start (no I/O yet) `peek()` returns
+            // `undefined` and the helper falls back to the
+            // env var — the v0 behavior, preserved.
+            isEnvoyHarnessReady: () => host.isEnvoyHarnessReady(),
+            askEnvoyHarness: (msg) => host.askEnvoyHarness(msg),
+            // Phase 8 / v1.2 — per-skill dispatch.
+            // The host's `askEnvoyHarnessSkill(msg,
+            // skillId)` lazy-constructs the EH adapter
+            // (same path as `askEnvoyHarness`) and
+            // calls `execute()` with the skill
+            // descriptor's costCeilingUsd. The
+            // adapter is shared with `askEnvoyHarness`
+            // so the lazy construction is a 1-time
+            // cost per node.
+            askEnvoyHarnessSkill: (msg, skillId) =>
+              host.askEnvoyHarnessSkill(msg, skillId),
+            signalOptIn: readEffectiveSignalOptIn(host._configStore.peek()),
+            // Phase 8 / v1.1 — manifest read for the
+            // signal router's dynamic vocabulary. The
+            // host's `getNodeManifest()` is sync (the
+            // manifest is cached after init) and
+            // returns `NodeManifest | undefined`. When
+            // undefined or on read failure, the runtime
+            // falls back to the v0 `MESH_KEYWORDS`
+            // constant (Q6 of the v1.1 sub-plan).
+            getNodeManifest: () => host.getNodeManifest(),
             persistEnvoyAiChatExchange: (raw, turn, humanMsgId) =>
               persistEnvoyAiChatExchangeViaRuntime(host._openClawRuntimeDeps(), raw, turn, humanMsgId),
             recordEnvoyAiHumanOutgoing: (msg, humanMsgId) =>

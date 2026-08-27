@@ -87,6 +87,8 @@ describe("knowledge browse filters", () => {
     expect(matchesKnowledgeBrowseFilter(note, "notion")).toBe(false);
     expect(matchesKnowledgeBrowseFilter(blog, "notes")).toBe(true);
     expect(matchesKnowledgeBrowseFilter(blog, "obsidian")).toBe(false);
+    expect(matchesKnowledgeBrowseFilter(blog, "blog")).toBe(true);
+    expect(matchesKnowledgeBrowseFilter(note, "blog")).toBe(false);
     expect(matchesKnowledgeBrowseFilter(linked, "obsidian")).toBe(true);
     const remote = {
       relativePath: "mcp-remote/abc-card.md",

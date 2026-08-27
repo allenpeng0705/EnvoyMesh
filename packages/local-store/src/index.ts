@@ -288,6 +288,7 @@ export type AuditEventType =
   | "chain.handoff.request_received"
   | "chain.handoff.delegate_received"
   | "chain.handoff.delegated"
+  | "chain.assigner_selected"
   | "chain.relay.received"
   | "chain.arbitration.converged"
   | "chain.iteration.round_started"

@@ -237,4 +237,82 @@ describe.sequential("E2E remote Assigner handoff (libp2p)", () => {
     expect(final.iteration?.drafts.length).toBeGreaterThanOrEqual(2);
     expect(final.iteration?.drafts[0]?.summary).toContain("MID_JOB_DRAFT_FROM_HANDOFF");
   }, 180_000);
+
+  it("best_capable auto-selects remote Assigner when creator model is weaker", async () => {
+    const trigger = await createPhase13TestNode();
+    const assigner = await createPhase13TestNode();
+    const worker = await createPhase13TestNode();
+    nodes.push(trigger, assigner, worker);
+
+    await wireHomeAsChainParticipant(trigger);
+    await wireHomeAsChainParticipant(assigner);
+    await wireHomeAsChainParticipant(worker);
+
+    await enableAgentNetworkWorker(trigger, {
+      displayName: "Weak Creator",
+      membership: ["task.execute", "chain.orchestrate", "agent-network-worker"],
+      profile: {
+        modelFreshness: 3,
+        spendPosture: "unknown",
+        contextWindow: "128k",
+        skills: ["task.execute"],
+        throughputTokensPerSec: 10,
+      },
+    });
+    const assignerPeerId = await enableAgentNetworkWorker(assigner, {
+      displayName: "Cloud Assigner",
+      membership: ["task.execute", "chain.orchestrate", "agent-network-worker"],
+      profile: {
+        modelFreshness: 9,
+        spendPosture: "subscription",
+        contextWindow: "1M+",
+        skills: ["task.execute"],
+        throughputTokensPerSec: 80,
+      },
+    });
+    await enableAgentNetworkWorker(worker, {
+      displayName: "Worker",
+      membership: ["task.execute", "coding", "research.web", "agent-network-worker"],
+      profile: {
+        modelFreshness: 7,
+        spendPosture: "metered",
+        contextWindow: "512k",
+        skills: ["coding", "research.web"],
+        throughputTokensPerSec: 60,
+      },
+    });
+
+    await bondAndExchangeCards(trigger, assigner, "Weak Creator", "Cloud Assigner");
+    await bondAndExchangeCards(assigner, worker, "Cloud Assigner", "Worker");
+    await bondAndExchangeCards(trigger, worker, "Weak Creator", "Worker");
+    await trigger.service.refreshAgentNetworkMembershipIndex();
+    await assigner.service.refreshAgentNetworkMembershipIndex();
+
+    const preview = await trigger.service.chainPreviewGoal({
+      goal: "Research then write a summary report",
+      allowLlm: true,
+      assignerSelection: "best_capable",
+    });
+    expect(preview.ok).toBe(true);
+    expect(preview.suggestedAssignerPeerId).toBe(assignerPeerId);
+
+    const started = await trigger.service.chainStartFromGoal({
+      goal: "Research then write a summary report",
+      allowLlm: true,
+      assignerSelection: "best_capable",
+      extendMaxStepsPerRound: 0,
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok || !started.chainId) return;
+    expect(started.handedOff).toBe(true);
+    expect(started.assignerPeerId).toBe(assignerPeerId);
+
+    const chainId = started.chainId;
+    // Prove remote Assigner accepted the handoff (full report is covered by the
+    // explicit-assignerPeerId cases above; 62C only requires auto-select + send).
+    await waitForPhase13(async () => {
+      const state = await assigner.service.chainGetState({ chainId });
+      return Boolean(state.chainMandateId) || state.subtaskCount >= 1 || state.published;
+    }, 45_000);
+  }, 120_000);
 });

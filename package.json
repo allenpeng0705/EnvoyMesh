@@ -34,7 +34,8 @@
     "install:openclaw:win": "powershell -ExecutionPolicy Bypass -File scripts/install-openclaw.ps1",
     "postinstall": "node scripts/fix-node-pty-perms.js",
     "cli": "tsx apps/cli/src/index.ts",
-    "node:dev": "tsc -b packages/api packages/local-store && cd apps/node && tsx src/index.ts",
+    "build:envoy-harness": "cd ../envoy-harness && pnpm --filter @envoymesh/envoy-harness-client run build && pnpm -r run build",
+    "node:dev": "tsc -b packages/api packages/local-store && npm run build:envoy-harness && cd apps/node && tsx src/index.ts",
     "node:dev:alt": "node scripts/run-with-env.mjs ENVOYMESH_PORT_OFFSET=100 -- npm run node:dev --",
     "node:dev:4030": "node scripts/run-with-env.mjs ENVOYMESH_SOCIAL_WS_PORT=4030 ENVOYMESH_BRIDGE_PORT=4031 ENVOYMESH_TERMINAL_WS_PORT=4032 ENVOYMESH_GATEWAY_PORT=19889 -- npm run node:dev --",
     "node:supervised": "HOME_NODE_NPM_SCRIPT=node:dev bash scripts/supervise-home-node.sh",
@@ -47,11 +48,11 @@
     "tauri:build:win": "tsc -b && npm run social:build && npm run node:build && npm run test:discovery && npm run build:win:full -w @envoymesh/tauri -- && bash scripts/publish-tauri-artifact.sh windows",
     "tauri:build:win:slim": "tsc -b && npm run social:build && npm run node:build && npm run test:discovery && npm run build:win:slim -w @envoymesh/tauri -- && bash scripts/publish-tauri-artifact.sh windows",
     "tauri:build:linux": "tsc -b && npm run social:build && npm run node:build && npm run test:discovery && npm run build:linux -w @envoymesh/tauri -- && bash scripts/publish-tauri-artifact.sh linux",
-    "social:dev": "node scripts/run-with-env.mjs VITE_ENVOYMESH_WS_URL=ws://127.0.0.1:3030/ws -- npm run dev -w @envoymesh/social --",
-    "social:dev:4030": "node scripts/run-with-env.mjs VITE_ENVOYMESH_WS_URL=ws://127.0.0.1:4030/ws -- npm run dev -w @envoymesh/social --",
+    "social:dev": "npm run build:envoy-harness && node scripts/run-with-env.mjs VITE_ENVOYMESH_WS_URL=ws://127.0.0.1:3030/ws -- npm run dev -w @envoymesh/social --",
+    "social:dev:4030": "npm run build:envoy-harness && node scripts/run-with-env.mjs VITE_ENVOYMESH_WS_URL=ws://127.0.0.1:4030/ws -- npm run dev -w @envoymesh/social --",
     "social:dev:with-node": "node scripts/run-with-env.mjs ENVOYMESH_AUTO_NODE=1 -- npm run dev -w @envoymesh/social --",
-    "social:build": "npm run build -w @envoymesh/social --",
-    "node:build": "tsc -b apps/node",
+    "social:build": "npm run build:envoy-harness && npm run build -w @envoymesh/social --",
+    "node:build": "npm run build:envoy-harness && tsc -b apps/node",
     "test": "vitest run",
     "test:discovery": "vitest run apps/node/test/discovery-search-roundtrip.test.ts",
     "test:local": "vitest run",
@@ -76,6 +77,7 @@
     "test:e2e:call-two-home": "npx vitest run apps/node/test/call-two-home-e2e.test.ts",
     "test:e2e:call-signaling": "npx vitest run apps/node/test/call-signaling-*-e2e.test.ts",
     "test:e2e:chain-three-home": "npx vitest run apps/node/test/chain-three-home-smoke.test.ts",
+    "test:e2e:agent-network-three-process": "RUN_E2E=1 npx vitest run apps/node/test/agent-network-three-process-smoke.test.ts",
     "test:e2e:webrtc": "npx vitest run apps/node/test/call-signaling-*-e2e.test.ts apps/node/test/call-two-home-e2e.test.ts apps/node/test/webrtc-call-e2e.test.ts apps/social/test/hooks/useCallSession.test.ts apps/social/test/hooks/useCallSession-media.integration.test.ts apps/social/test/lib/webrtc-call-transport.test.ts apps/social/test/lib/call-ice-servers.test.ts apps/social/test/components/ActiveCallPanel.test.tsx",
     "test:e2e:relay": "npx vitest run apps/node/test/relay-chat-e2e.test.ts apps/node/test/relay-broadcast-e2e.test.ts apps/node/test/wan-relay-signoff-e2e.test.ts apps/node/test/multi-relay-fleet-e2e.test.ts apps/node/test/multi-relay-fleet-process-e2e.test.ts apps/node/test/multi-relay-fleet-live-e2e.test.ts apps/node/test/discovery-relay-robustness-e2e.test.ts",
     "test:e2e:relay:process": "RUN_E2E=1 npx vitest run apps/node/test/multi-relay-fleet-process-e2e.test.ts",
@@ -98,5 +100,10 @@
     "@testing-library/dom": "^10.4.1",
     "markdown-it": "14.2.0",
     "qrcode": "^1.5.4"
+  },
+  "pnpm": {
+    "overrides": {
+      "@envoymesh/envoy-harness": "file:../envoy-harness/packages/envoy-harness"
+    }
   }
 }

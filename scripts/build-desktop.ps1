@@ -55,6 +55,32 @@
 #   Default -OpenClawExtensions default matches macOS OPENCLAW_EXTENSIONS=default.
 #   Use -OpenClawExtensions all only when you intentionally want the full tree.
 #
+# envoy-harness staging (Phase 8 — aligned with scripts/build-desktop.sh):
+#   $env:STAGE_ENVOY_HARNESS = "0"   Skip envoy-harness *resources* staging.
+#                                   The node still has static imports of
+#                                   @envoymesh/envoy-harness{,-adapter,-client,-peer},
+#                                   so stage-bundle-node-runtime.ps1 refuses
+#                                   unless ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1
+#                                   (non-runnable debug bundle). Default: stage.
+#   $env:STAGE_ENVOY_HARNESS = "1"   Force a clean rebuild + overwrite. Runs
+#                                   `pnpm -F <pkg> clean` (best-effort) then
+#                                   `pnpm -F <pkg> build` in the sibling repo.
+#                                   The clean step clears .tsbuildinfo + dist/.
+#                                   Use after switching sibling-repo branches
+#                                   or when you want to be sure the staged
+#                                   tree is from-scratch. (Default unset:
+#                                   incremental rebuild — pnpm's tsc skips
+#                                   unchanged sources.)
+#   $env:ENVOY_HARNESS_DIR  = "..."  Override the sibling monorepo path.
+#                                   Default: $Root\..\envoy-harness.
+#                                   Stages harness + client + adapter + peer +
+#                                   tui into resources\, and wires them into
+#                                   resources\node\node_modules\@envoymesh\
+#                                   (required for first-launch resolve and
+#                                   Terminal → Envoy).
+#   $env:SMOKE_ENVOY_HARNESS = "0"  Skip the post-stage smoke (default 1).
+#                                   See scripts\stage-tauri-envoy-harness-bundle.ps1.
+#
 # Slim / Full / default presets (Phase 49 — Pi optional on Windows):
 #   default       Uses tauri.conf.json           — includes Pi + OpenClaw
 #                 (no Kubo; Helia / system ipfs for IPFS).
@@ -1602,6 +1628,25 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Ok "EnvoyMesh OpenClaw extension staged"
 
+# envoy-harness (Phase 8): vendor from the sibling envoy-harness monorepo
+# into resources\envoy-harness*\ so the Tauri bundle is self-contained.
+# Honours $env:STAGE_ENVOY_HARNESS=0 to skip (debug only) and
+# $env:ENVOY_HARNESS_DIR to override the sibling repo path. See
+# scripts\stage-tauri-envoy-harness-bundle.ps1 for the cross-monorepo
+# build + copy details.
+Write-Info "Staging envoy-harness (Phase 8 — vendor from sibling monorepo)..."
+$stageEnvoyHarnessBundle = Join-Path $PSScriptRoot "stage-tauri-envoy-harness-bundle.ps1"
+if (-not (Test-Path $stageEnvoyHarnessBundle)) {
+    Write-Fail "missing $stageEnvoyHarnessBundle"
+    exit 1
+}
+& $stageEnvoyHarnessBundle
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "stage-tauri-envoy-harness-bundle.ps1 failed — envoy-harness will not be available at runtime. Set `$env:STAGE_ENVOY_HARNESS=`"0`" to skip for debug builds."
+    exit 1
+}
+Write-Ok "envoy-harness staged"
+
 # Persist source fingerprint AFTER stage/heal so it matches post-build
 # dist/entry.js (a pre-stage stamp would thrash re-stage every run).
 if ((Test-Path $openclawStampScript) -and (Test-Path (Join-Path $openclawDest "openclaw.mjs"))) {
@@ -2057,6 +2102,105 @@ if (-not (Test-Path $openclawNm) -or -not (Get-ChildItem $openclawNm -ErrorActio
     $verifyOk = $false
 } else {
     Write-Ok "OpenClaw node_modules"
+}
+# envoy-harness (Phase 8) — verify the vendored trees AND the node_modules
+# wiring (required for first launch). STAGE_ENVOY_HARNESS=0 alone is not
+# enough to skip — the node has static imports; use
+# ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1 for a non-runnable debug bundle.
+if ($env:STAGE_ENVOY_HARNESS -ne "0" -or $env:ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP -ne "1") {
+    $envoyHarnessDir = Join-Path $TauriResources "envoy-harness"
+    $envoyHarnessAdapterDir = Join-Path $TauriResources "envoy-harness-adapter"
+    $envoyHarnessClientDir = Join-Path $TauriResources "envoy-harness-client"
+    $envoyHarnessPeerDir = Join-Path $TauriResources "envoy-harness-peer"
+    $envoyHarnessTuiDir = Join-Path $TauriResources "envoy-harness-tui"
+    if (-not (Test-Path (Join-Path $envoyHarnessDir "index.js"))) {
+        Write-Fail "envoy-harness staged tree is missing index.js at $envoyHarnessDir — Phase 8 verification failed"
+        $verifyOk = $false
+    } elseif (-not (Test-Path (Join-Path $envoyHarnessDir "package.json"))) {
+        Write-Fail "envoy-harness staged tree is missing package.json at $envoyHarnessDir"
+        $verifyOk = $false
+    } elseif (-not (Test-Path (Join-Path $envoyHarnessDir "cli\acp-stdio.js"))) {
+        Write-Fail "envoy-harness staged tree is missing cli\acp-stdio.js at $envoyHarnessDir"
+        $verifyOk = $false
+    } else {
+        Write-Ok "envoy-harness vendored at $envoyHarnessDir"
+    }
+    if (-not (Test-Path (Join-Path $envoyHarnessAdapterDir "index.js"))) {
+        Write-Fail "envoy-harness-adapter staged tree is missing index.js at $envoyHarnessAdapterDir — Phase 8 verification failed"
+        $verifyOk = $false
+    } elseif (-not (Test-Path (Join-Path $envoyHarnessAdapterDir "package.json"))) {
+        Write-Fail "envoy-harness-adapter staged tree is missing package.json at $envoyHarnessAdapterDir"
+        $verifyOk = $false
+    } else {
+        Write-Ok "envoy-harness-adapter vendored at $envoyHarnessAdapterDir"
+    }
+    if (-not (Test-Path (Join-Path $envoyHarnessClientDir "index.js"))) {
+        Write-Fail "envoy-harness-client staged tree is missing index.js at $envoyHarnessClientDir"
+        $verifyOk = $false
+    } else {
+        Write-Ok "envoy-harness-client vendored at $envoyHarnessClientDir"
+    }
+    if (-not (Test-Path (Join-Path $envoyHarnessPeerDir "index.js"))) {
+        Write-Fail "envoy-harness-peer staged tree is missing index.js at $envoyHarnessPeerDir"
+        $verifyOk = $false
+    } else {
+        Write-Ok "envoy-harness-peer vendored at $envoyHarnessPeerDir"
+    }
+    if (-not (Test-Path (Join-Path $envoyHarnessTuiDir "bin.js"))) {
+        Write-Fail "envoy-harness-tui staged tree is missing bin.js at $envoyHarnessTuiDir — Terminal → Envoy will fail"
+        $verifyOk = $false
+    } else {
+        Write-Ok "envoy-harness-tui vendored at $envoyHarnessTuiDir"
+    }
+    $ehNodeMod = Join-Path $TauriResources "node\node_modules\@envoymesh\envoy-harness"
+    $ehAdapterNodeMod = Join-Path $TauriResources "node\node_modules\@envoymesh\envoy-harness-adapter"
+    $ehClientNodeMod = Join-Path $TauriResources "node\node_modules\@envoymesh\envoy-harness-client"
+    $ehPeerNodeMod = Join-Path $TauriResources "node\node_modules\@envoymesh\envoy-harness-peer"
+    $ehTuiNodeMod = Join-Path $TauriResources "node\node_modules\@envoymesh\envoy-harness-tui"
+    if (-not (Test-Path (Join-Path $ehNodeMod "dist\index.js"))) {
+        Write-Fail "envoy-harness missing from node_modules at $ehNodeMod — first launch will crash (stage-bundle-node-runtime.ps1 must wire it)"
+        $verifyOk = $false
+    } else {
+        Write-Ok "envoy-harness in node_modules (runtime resolve)"
+    }
+    if (-not (Test-Path (Join-Path $ehAdapterNodeMod "dist\index.js"))) {
+        Write-Fail "envoy-harness-adapter missing from node_modules at $ehAdapterNodeMod — first launch will crash"
+        $verifyOk = $false
+    } else {
+        Write-Ok "envoy-harness-adapter in node_modules (runtime resolve)"
+    }
+    if (-not (Test-Path (Join-Path $ehClientNodeMod "dist\index.js"))) {
+        Write-Fail "envoy-harness-client missing from node_modules at $ehClientNodeMod — first launch will crash"
+        $verifyOk = $false
+    } else {
+        Write-Ok "envoy-harness-client in node_modules (runtime resolve)"
+    }
+    if (-not (Test-Path (Join-Path $ehPeerNodeMod "dist\index.js"))) {
+        Write-Fail "envoy-harness-peer missing from node_modules at $ehPeerNodeMod — first launch will crash"
+        $verifyOk = $false
+    } else {
+        Write-Ok "envoy-harness-peer in node_modules (runtime resolve)"
+    }
+    if (-not (Test-Path (Join-Path $ehTuiNodeMod "dist\bin.js"))) {
+        Write-Fail "envoy-harness-tui missing from node_modules at $ehTuiNodeMod — Terminal → Envoy will fail"
+        $verifyOk = $false
+    } else {
+        Write-Ok "envoy-harness-tui in node_modules (runtime resolve)"
+    }
+    if (-not (Test-Path (Join-Path $TauriResources "node\node_modules\smol-toml"))) {
+        Write-Fail "smol-toml missing from node_modules — envoy-harness config loader will fail"
+        $verifyOk = $false
+    } else {
+        Write-Ok "smol-toml in node_modules"
+    }
+    if (-not (Test-Path (Join-Path $TauriResources "node\node_modules\@envoymesh\agent-adapter"))) {
+        Write-Fail "@envoymesh/agent-adapter missing from node_modules — required by envoy-harness-adapter"
+        $verifyOk = $false
+    } else {
+        Write-Ok "agent-adapter in node_modules"
+    }
+} else {
+    Write-Info "Skipping envoy-harness verification (STAGE_ENVOY_HARNESS=0 + ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1 — non-runnable debug bundle)"
 }
 $selfRef = Join-Path $TauriResources "openclaw/node_modules/openclaw/package.json"
 if (-not (Test-Path $selfRef)) {

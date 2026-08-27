@@ -33,6 +33,7 @@ import type {
   ChainProbeReachabilityParams,
 } from "@envoymesh/api";
 import { requireOwnerProfile } from "./rpc-caller-context.js";
+import { parseEhuiInvokeRequest } from "./agent-runtime-envoy/ehui-invoke.js";
 
 /**
  * Phase 51 — RPCs restricted to the owner family profile.
@@ -64,14 +65,11 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "discoverPublishedLibrary",
   "publishWebContentEntry",
   "createTerminalSession",
-  "closeTerminalSession",
   "renameTerminalSession",
   "listTerminalSessions",
   "terminalExec",
-  "restartPi",
-  "ensurePiTerminalSession",
-  "sendToPi",
-  "piRespondToProposal",
+  // Pi / Envoy Harness / closeTerminalSession: gated by CODING_GATED_RPC
+  // so family profiles with codingEnabled can use Coding assistants.
   "restartOpenClaw",
   "enableEnvoyLocal",
   "declineEnvoyLocalAutoProvision",
@@ -127,10 +125,59 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "exportNotesToLinkedObsidian",
   "exportNotesToMcp",
   "convertLibraryItemToMarkdown",
+  // Phase 60 provenance can expose worker/model/transport and artifact lineage.
+  "chainGetStepProvenance",
 ]);
+
+const CODING_DENIED_MSG =
+  "Coding assistants are disabled for this family profile. Ask the home-node owner to enable them in Settings → Family."
+
+/** RPCs gated by per-profile `codingEnabled` (owner opt-in for family). */
+const CODING_GATED_RPC = new Set<string>([
+  "askEnvoyHarness",
+  "startEnvoyHarnessTurn",
+  "getEnvoyHarnessTurnStatus",
+  "getEnvoyHarnessChatHistory",
+  // listEnvoyHarnessChats: soft-deny in impl (returns []) — not hard-gated.
+  "createEnvoyHarnessChat",
+  "openEnvoyHarnessChat",
+  "removeEnvoyHarnessChat",
+  "deleteEnvoyHarnessChatTurn",
+  "getEnvoyHarnessTurnReview",
+  "revertEnvoyHarnessTurn",
+  "acceptEnvoyHarnessTurnReview",
+  "revertEnvoyHarnessTurnFiles",
+  "openEnvoyHarnessFile",
+  "getEnvoyHarnessCommandCatalog",
+  "recordEnvoyHarnessUxEvent",
+  "resetEnvoyHarnessChat",
+  "getEnvoyHarnessStatus",
+  "setEnvoyHarnessProjectPath",
+  "listEnvoyHarnessPeers",
+  "invokeEnvoyHarnessEhui",
+  "cancelEnvoyHarnessTurn",
+  "ensurePiTerminalSession",
+  "ensureEnvoyTerminalSession",
+  "sendToPi",
+  "getPiStatus",
+  "restartPi",
+  "piRespondToProposal",
+  "ehRespondToUserQuestion",
+  "ehRespondToPermission",
+  // Stop Pi/Envoy TUI sessions started via coding surfaces.
+  "closeTerminalSession",
+  // Project folder picker for Coding (Pi / EH) on family clients.
+  "getHomeFsInfo",
+  "listHomeFsEntries",
+])
 
 /** True when a thin-client family session must not call this RPC. */
 export function isOwnerOnlyRpcMethod(method: string): boolean {
+  // Coding-gated RPCs (Pi / EH / project picker / close coding TUI) are
+  // intentionally NOT owner-only — mayCallerUseCoding() enforces access.
+  if (CODING_GATED_RPC.has(method)) return false
+  // Soft-deny list is open to all callers (returns [] when coding denied).
+  if (method === "listEnvoyHarnessChats") return false
   if (OWNER_ONLY_RPC_METHODS.has(method)) return true
   // All terminal* assist / session surfaces (many methods; keep prefix).
   if (method.startsWith("terminal")) return true
@@ -150,6 +197,11 @@ export async function routeRpcMethod(
 ): Promise<unknown> {
   if (isOwnerOnlyRpcMethod(method)) {
     requireOwnerProfile(`call ${method}`);
+  }
+  if (CODING_GATED_RPC.has(method)) {
+    if (!(await ns.mayCallerUseCoding())) {
+      throw new Error(CODING_DENIED_MSG);
+    }
   }
   switch (method as RpcMethods) {
     case "getProfile":
@@ -291,6 +343,10 @@ export async function routeRpcMethod(
       return ns.chainLaunch(params as unknown as ChainLaunchParams);
     case "chainGetState":
       return ns.chainGetState(params as unknown as ChainGetStateParams);
+    case "chainGetStepProvenance":
+      return ns.chainGetStepProvenance(
+        params as unknown as import("@envoymesh/api").ChainGetStepProvenanceParams,
+      );
     case "chainListActive":
       return ns.chainListActive((params as unknown as ChainListActiveParams | undefined) ?? {});
     case "chainListObserved":
@@ -343,11 +399,25 @@ export async function routeRpcMethod(
       return ns.chainSetDefaults(params as unknown as ChainSetDefaultsParams);
     case "chainPreviewGoal":
       return ns.chainPreviewGoal(params as unknown as ChainPreviewGoalParams);
+    case "agentNetworkDiagnosticsSnapshot":
+      return ns.agentNetworkDiagnosticsSnapshot();
+    case "agentNetworkSimulate":
+      return ns.agentNetworkSimulate(
+        params as unknown as import("@envoymesh/api").AgentNetworkSimulationParams,
+      );
+    case "agentNetworkExportDiagnostics":
+      return ns.agentNetworkExportDiagnostics(
+        (params as { simulationId?: string } | undefined) ?? {},
+      );
     case "chainStartFromGoal":
       return ns.chainStartFromGoal(params as unknown as ChainStartFromGoalParams);
     case "chainResolveIteration":
       return ns.chainResolveIteration(
         params as unknown as import("@envoymesh/api").ChainResolveIterationParams,
+      );
+    case "chainResolveSpeculation":
+      return ns.chainResolveSpeculation(
+        params as unknown as import("@envoymesh/api").ChainResolveSpeculationParams,
       );
     case "chainExportCosts":
       return ns.chainExportCosts(params as unknown as ChainExportCostsParams);
@@ -861,6 +931,7 @@ export async function routeRpcMethod(
         filename: String(params.filename ?? ""),
         mimeType: typeof params.mimeType === "string" ? params.mimeType : undefined,
         contentBase64: String(params.contentBase64 ?? ""),
+        targetDir: typeof params.targetDir === "string" ? params.targetDir : undefined,
       });
     case "buildAgentAttachmentContext":
       return ns.buildAgentAttachmentContext({
@@ -995,6 +1066,8 @@ export async function routeRpcMethod(
         avatarColor: params.avatarColor as string | undefined,
         active: params.active as boolean | undefined,
         aiBots: params.aiBots as import("@envoymesh/api").AiBotDefinition[] | undefined,
+        extAgentEnabled: params.extAgentEnabled as boolean | undefined,
+        codingEnabled: params.codingEnabled as boolean | undefined,
       });
     case "deleteFamilyProfile":
       return ns.deleteFamilyProfile(String(params.id ?? ""));
@@ -1246,6 +1319,92 @@ export async function routeRpcMethod(
       return ns.sendToOpenClaw(String(params.text ?? ""));
     case "sendToPi":
       return ns.sendToPi(String(params.text ?? ""));
+    case "getEnvoyHarnessStatus":
+      return ns.getEnvoyHarnessStatus();
+    case "askEnvoyHarness":
+      return ns.askEnvoyHarness(String(params.text ?? ""));
+    case "startEnvoyHarnessTurn":
+      return ns.startEnvoyHarnessTurn(String(params.text ?? ""), {
+        ...(typeof params.providerHint === "string"
+          ? { providerHint: params.providerHint }
+          : {}),
+        ...(typeof params.costCapUsd === "number"
+          ? { costCapUsd: params.costCapUsd }
+          : {}),
+        ...(Array.isArray(params.attachments)
+          ? {
+              attachments: params.attachments as import("@envoymesh/api").AgentAttachmentRef[],
+            }
+          : {}),
+        ...(typeof params.chatId === "string" ? { chatId: params.chatId } : {}),
+      });
+    case "getEnvoyHarnessTurnStatus":
+      return ns.getEnvoyHarnessTurnStatus(
+        typeof params.chatId === "string" ? params.chatId : undefined,
+      );
+    case "setEnvoyHarnessAutoRunPolicy":
+      return ns.setEnvoyHarnessAutoRunPolicy(
+        String(params.policy ?? ""),
+      );
+    case "getEnvoyHarnessChatHistory":
+      return ns.getEnvoyHarnessChatHistory(
+        typeof params.chatId === "string" ? params.chatId : undefined,
+      );
+    case "listEnvoyHarnessChats":
+      return ns.listEnvoyHarnessChats();
+    case "createEnvoyHarnessChat":
+      return ns.createEnvoyHarnessChat({
+        cwd: String(params.cwd ?? ""),
+        title: typeof params.title === "string" ? params.title : undefined,
+      });
+    case "openEnvoyHarnessChat":
+      return ns.openEnvoyHarnessChat(String(params.chatId ?? ""));
+    case "removeEnvoyHarnessChat":
+      return ns.removeEnvoyHarnessChat(String(params.chatId ?? ""));
+    case "deleteEnvoyHarnessChatTurn":
+      return ns.deleteEnvoyHarnessChatTurn({
+        turnId: String(params.turnId ?? ""),
+        ...(typeof params.chatId === "string" ? { chatId: params.chatId } : {}),
+      });
+    case "getEnvoyHarnessTurnReview":
+      return ns.getEnvoyHarnessTurnReview(String(params.turnId ?? ""));
+    case "revertEnvoyHarnessTurn":
+      return ns.revertEnvoyHarnessTurn(String(params.turnId ?? ""));
+    case "acceptEnvoyHarnessTurnReview":
+      return ns.acceptEnvoyHarnessTurnReview(
+        String(params.turnId ?? ""),
+        Array.isArray(params.paths)
+          ? params.paths.map((path) => String(path))
+          : undefined,
+      );
+    case "revertEnvoyHarnessTurnFiles":
+      return ns.revertEnvoyHarnessTurnFiles(
+        String(params.turnId ?? ""),
+        Array.isArray(params.paths)
+          ? params.paths.map((path) => String(path))
+          : [],
+      );
+    case "openEnvoyHarnessFile":
+      return ns.openEnvoyHarnessFile({
+        path: String(params.path ?? ""),
+        ...(typeof params.chatId === "string" ? { chatId: params.chatId } : {}),
+      });
+    case "getEnvoyHarnessCommandCatalog":
+      return ns.getEnvoyHarnessCommandCatalog();
+    case "recordEnvoyHarnessUxEvent":
+      return ns.recordEnvoyHarnessUxEvent(params as unknown as import("@envoymesh/api").EhUxTelemetryEvent);
+    case "resetEnvoyHarnessChat":
+      return ns.resetEnvoyHarnessChat(
+        typeof params.chatId === "string" ? params.chatId : undefined,
+      );
+    case "listEnvoyHarnessPeers":
+      return ns.listEnvoyHarnessPeers();
+    case "setEnvoyHarnessProjectPath":
+      return ns.setEnvoyHarnessProjectPath(String(params.path ?? ""));
+    case "invokeEnvoyHarnessEhui":
+      return ns.invokeEnvoyHarnessEhui(
+        parseEhuiInvokeRequest(params.request),
+      );
     case "sendToAiBot":
       return ns.sendToAiBot(
         String(params.botId ?? ""),
@@ -1258,11 +1417,38 @@ export async function routeRpcMethod(
         sessionId: typeof params.sessionId === "string" ? params.sessionId : undefined,
         forceRestart: Boolean(params.forceRestart),
       });
+    case "ensureEnvoyTerminalSession":
+      return ns.ensureEnvoyTerminalSession({
+        projectPath:
+          typeof params.projectPath === "string" ? params.projectPath : undefined,
+        sessionId: typeof params.sessionId === "string" ? params.sessionId : undefined,
+        forceRestart: Boolean(params.forceRestart),
+      });
     case "piRespondToProposal":
       return ns.piRespondToProposal({
         uiRequestId: String(params.uiRequestId ?? ""),
         confirmed: Boolean(params.confirmed),
       });
+    case "ehRespondToUserQuestion":
+      return ns.ehRespondToUserQuestion({
+        requestId: String(params.requestId ?? ""),
+        value: String(params.value ?? ""),
+        ...(params.optionIndex !== undefined
+          ? { optionIndex: Number(params.optionIndex) }
+          : {}),
+        ...(params.cancelled !== undefined
+          ? { cancelled: Boolean(params.cancelled) }
+          : {}),
+      });
+    case "ehRespondToPermission":
+      return ns.ehRespondToPermission({
+        requestId: String(params.requestId ?? ""),
+        allowed: Boolean(params.allowed),
+      });
+    case "cancelEnvoyHarnessTurn":
+      return ns.cancelEnvoyHarnessTurn(
+        typeof params.chatId === "string" ? params.chatId : undefined,
+      );
     case "sendToBridge":
       return ns.sendToBridge(String(params.text ?? ""));
     case "getPairedDiagnostics":

@@ -10,6 +10,7 @@ import {
 import {
   createAgentCard,
   createAgentCardResponsePayload,
+  LOCAL_AGENT_CARD_PROTOCOL_FEATURES,
   parseAgentCardRequestPayload,
   parseAgentCardResponsePayload,
   type AgentCard,
@@ -95,6 +96,9 @@ export async function buildLocalAgentCard(input: {
     publicTopics,
     webContentRoot: `envoy://${ownerId}/`,
     ...(agentNetworkProfile ? { agentNetworkProfile } : {}),
+    ...(input.capabilityProviderEnabled === true
+      ? { features: [...LOCAL_AGENT_CARD_PROTOCOL_FEATURES] }
+      : {}),
   });
 }
 

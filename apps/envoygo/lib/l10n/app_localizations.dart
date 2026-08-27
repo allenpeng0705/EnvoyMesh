@@ -1176,6 +1176,12 @@ abstract class AppLocalizations {
   /// **'Index status and retrieval. Chat models stay in Me → AI Model.'**
   String get knowledgeSetupHint;
 
+  /// No description provided for @knowledgeSetupEmbeddingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Embeddings use Envoy Local on this device. For OpenAI or Ollama, open Settings → AI on your home computer.'**
+  String get knowledgeSetupEmbeddingHint;
+
   /// No description provided for @knowledgeSetupEnabled.
   ///
   /// In en, this message translates to:
@@ -1361,6 +1367,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Make private'**
   String get knowledgeFileMakePrivate;
+
+  /// No description provided for @knowledgeBrowseImportAndPublish.
+  ///
+  /// In en, this message translates to:
+  /// **'Import and publish'**
+  String get knowledgeBrowseImportAndPublish;
+
+  /// No description provided for @knowledgeBrowsePublishImportOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Import this note into the vault first, then you can publish it.'**
+  String get knowledgeBrowsePublishImportOnly;
+
+  /// No description provided for @knowledgeBrowsePublishImportNoDoc.
+  ///
+  /// In en, this message translates to:
+  /// **'Imported, but could not publish yet — try Publish again from the imported note.'**
+  String get knowledgeBrowsePublishImportNoDoc;
+
+  /// No description provided for @knowledgeBrowseImportedAndPublished.
+  ///
+  /// In en, this message translates to:
+  /// **'Imported and published'**
+  String get knowledgeBrowseImportedAndPublished;
+
+  /// No description provided for @knowledgeBrowsePublishImportHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Import into vault and publish for mesh discovery'**
+  String get knowledgeBrowsePublishImportHint;
 
   /// No description provided for @knowledgeFileMore.
   ///
@@ -1854,6 +1890,66 @@ abstract class AppLocalizations {
   /// **'AI'**
   String get chatsSectionAi;
 
+  /// No description provided for @chatsSectionCoding.
+  ///
+  /// In en, this message translates to:
+  /// **'Coding'**
+  String get chatsSectionCoding;
+
+  /// No description provided for @chatsCodingPi.
+  ///
+  /// In en, this message translates to:
+  /// **'Pi'**
+  String get chatsCodingPi;
+
+  /// No description provided for @chatsCodingPiHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Coding Agent (terminal)'**
+  String get chatsCodingPiHint;
+
+  /// No description provided for @chatsCodingEh.
+  ///
+  /// In en, this message translates to:
+  /// **'Envoy'**
+  String get chatsCodingEh;
+
+  /// No description provided for @chatsCodingEhHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Coding Agent (chat)'**
+  String get chatsCodingEhHint;
+
+  /// No description provided for @chatsEhNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New coding chat'**
+  String get chatsEhNew;
+
+  /// No description provided for @chatsEhRemoveTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove coding chat?'**
+  String get chatsEhRemoveTitle;
+
+  /// No description provided for @chatsEhRemoveBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove “{name}” from your Coding list? The chat history on the home node will be deleted.'**
+  String chatsEhRemoveBody(String name);
+
+  /// No description provided for @chatsEhThinking.
+  ///
+  /// In en, this message translates to:
+  /// **'Envoy is thinking…'**
+  String get chatsEhThinking;
+
+  /// No description provided for @chatsEhPromptHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask Envoy to code, refactor, or explain…'**
+  String get chatsEhPromptHint;
+
   /// No description provided for @chatsSectionFamily.
   ///
   /// In en, this message translates to:
@@ -1907,6 +2003,192 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Start a Pi coding terminal'**
   String get chatsNewPiHint;
+
+  /// No description provided for @chatsNewEnvoy.
+  ///
+  /// In en, this message translates to:
+  /// **'New Envoy'**
+  String get chatsNewEnvoy;
+
+  /// No description provided for @chatsNewEnvoyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Start Envoy Harness TUI'**
+  String get chatsNewEnvoyHint;
+
+  /// No description provided for @ehChooseProjectTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose Envoy project folder'**
+  String get ehChooseProjectTitle;
+
+  /// No description provided for @ehChangeProjectTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Change Envoy project folder'**
+  String get ehChangeProjectTitle;
+
+  /// No description provided for @ehChooseProjectDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Envoy runs in this folder (reads AGENTS.md, edits files, runs shell).'**
+  String get ehChooseProjectDesc;
+
+  /// No description provided for @ehStartWithProject.
+  ///
+  /// In en, this message translates to:
+  /// **'Start'**
+  String get ehStartWithProject;
+
+  /// No description provided for @ehRestartWithProject.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart Envoy here'**
+  String get ehRestartWithProject;
+
+  /// No description provided for @ehEnsuringTerminal.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting Envoy TUI…'**
+  String get ehEnsuringTerminal;
+
+  /// No description provided for @ehPermissionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool permission'**
+  String get ehPermissionTitle;
+
+  /// No description provided for @ehPermissionAllow.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow'**
+  String get ehPermissionAllow;
+
+  /// No description provided for @ehPermissionDeny.
+  ///
+  /// In en, this message translates to:
+  /// **'Deny'**
+  String get ehPermissionDeny;
+
+  /// No description provided for @ehQuestionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Envoy needs your input'**
+  String get ehQuestionTitle;
+
+  /// No description provided for @ehRecommended.
+  ///
+  /// In en, this message translates to:
+  /// **'Recommended'**
+  String get ehRecommended;
+
+  /// No description provided for @ehSlashWhileBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish or /cancel the current turn first.'**
+  String get ehSlashWhileBusy;
+
+  /// No description provided for @ehChatReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Started a new chat for this project.'**
+  String get ehChatReset;
+
+  /// No description provided for @ehTurnCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn cancelled.'**
+  String get ehTurnCancelled;
+
+  /// No description provided for @ehStatusRefreshed.
+  ///
+  /// In en, this message translates to:
+  /// **'Status refreshed.'**
+  String get ehStatusRefreshed;
+
+  /// No description provided for @ehNoPeers.
+  ///
+  /// In en, this message translates to:
+  /// **'No peer cluster configured.'**
+  String get ehNoPeers;
+
+  /// No description provided for @ehSearchUsage.
+  ///
+  /// In en, this message translates to:
+  /// **'Usage: /search <term> — search this conversation.'**
+  String get ehSearchUsage;
+
+  /// No description provided for @ehSearchNoMatches.
+  ///
+  /// In en, this message translates to:
+  /// **'No matches for “{term}”.'**
+  String ehSearchNoMatches(String term);
+
+  /// No description provided for @ehModelShow.
+  ///
+  /// In en, this message translates to:
+  /// **'Active model: {model}'**
+  String ehModelShow(String model);
+
+  /// No description provided for @ehModelUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'No model configured — set one in Settings → AI.'**
+  String get ehModelUnknown;
+
+  /// No description provided for @ehProjectCurrent.
+  ///
+  /// In en, this message translates to:
+  /// **'Project folder: {path}'**
+  String ehProjectCurrent(String path);
+
+  /// No description provided for @ehProjectUnset.
+  ///
+  /// In en, this message translates to:
+  /// **'No project folder set — use /cd <path>.'**
+  String get ehProjectUnset;
+
+  /// No description provided for @ehProjectSet.
+  ///
+  /// In en, this message translates to:
+  /// **'Project folder → {path}'**
+  String ehProjectSet(String path);
+
+  /// No description provided for @ehProjectSetUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Project folder updated.'**
+  String get ehProjectSetUnknown;
+
+  /// No description provided for @ehProjectSetFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to set project folder: {error}'**
+  String ehProjectSetFailed(String error);
+
+  /// No description provided for @ehConfigureModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure a model in Settings → AI.'**
+  String get ehConfigureModel;
+
+  /// No description provided for @ehNotReady.
+  ///
+  /// In en, this message translates to:
+  /// **'envoy-harness is not ready.'**
+  String get ehNotReady;
+
+  /// No description provided for @termQuickHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'/help'**
+  String get termQuickHelp;
+
+  /// No description provided for @termQuickCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'/cancel'**
+  String get termQuickCancel;
 
   /// No description provided for @chatsNewTerminal.
   ///
@@ -2303,6 +2585,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Failed to send voice note'**
   String get chatVoiceSendFailed;
+
+  /// No description provided for @chatSentFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent a file'**
+  String get chatSentFile;
+
+  /// No description provided for @chatSentVoice.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent a voice message'**
+  String get chatSentVoice;
+
+  /// No description provided for @chatDeliverySent.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent'**
+  String get chatDeliverySent;
+
+  /// No description provided for @chatDeliveryDelivered.
+  ///
+  /// In en, this message translates to:
+  /// **'Delivered'**
+  String get chatDeliveryDelivered;
+
+  /// No description provided for @chatDeliveryFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Not delivered'**
+  String get chatDeliveryFailed;
 
   /// No description provided for @chatMicDenied.
   ///
@@ -3486,6 +3798,36 @@ abstract class AppLocalizations {
   /// **'Pi enabled'**
   String get settingsPiEnabled;
 
+  /// No description provided for @settingsPiCodingBackend.
+  ///
+  /// In en, this message translates to:
+  /// **'Coding backend'**
+  String get settingsPiCodingBackend;
+
+  /// No description provided for @settingsPiCodingBackendPi.
+  ///
+  /// In en, this message translates to:
+  /// **'Pi (sidecar)'**
+  String get settingsPiCodingBackendPi;
+
+  /// No description provided for @settingsPiCodingBackendEh.
+  ///
+  /// In en, this message translates to:
+  /// **'envoy-harness (ACP)'**
+  String get settingsPiCodingBackendEh;
+
+  /// No description provided for @settingsPiCodingBackendHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Same setting as Social. Routes sendToPi and approvals through the same Pi UI. Older EnvoyGo builds without this control still work when switched from Social.'**
+  String get settingsPiCodingBackendHint;
+
+  /// No description provided for @settingsPiCodingBackendSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Coding backend updated'**
+  String get settingsPiCodingBackendSaved;
+
   /// No description provided for @settingsPiOverrideHint.
   ///
   /// In en, this message translates to:
@@ -3903,7 +4245,7 @@ abstract class AppLocalizations {
   /// No description provided for @chainsManageOnSocial.
   ///
   /// In en, this message translates to:
-  /// **'Advanced chain controls (cancel, rebalance, pin) are on the home-node Social UI.'**
+  /// **'Fleet setup, bidding, and recipes stay on the home-node Social UI. Cancel, rebalance, and pin work here too.'**
   String get chainsManageOnSocial;
 
   /// No description provided for @chainsStartTitle.
@@ -3953,6 +4295,108 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Each step prefers a collaboration role (PM, programmer, …).'**
   String get chainsStartModeRoleHint;
+
+  /// No description provided for @chainsStartTeamStrategy.
+  ///
+  /// In en, this message translates to:
+  /// **'Team strategy'**
+  String get chainsStartTeamStrategy;
+
+  /// No description provided for @chainsStartTeamStrategyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'How workers are ranked. Hedged / verify-only are policy labels — a second worker runs on the wire only when immediate-dual gates pass (critical step, budget, independent workers).'**
+  String get chainsStartTeamStrategyHint;
+
+  /// No description provided for @chainsStrategyBalanced.
+  ///
+  /// In en, this message translates to:
+  /// **'Balanced'**
+  String get chainsStrategyBalanced;
+
+  /// No description provided for @chainsStrategyFastest.
+  ///
+  /// In en, this message translates to:
+  /// **'Fastest'**
+  String get chainsStrategyFastest;
+
+  /// No description provided for @chainsStrategyCheapest.
+  ///
+  /// In en, this message translates to:
+  /// **'Cheapest'**
+  String get chainsStrategyCheapest;
+
+  /// No description provided for @chainsStrategyHighestConfidence.
+  ///
+  /// In en, this message translates to:
+  /// **'Highest confidence'**
+  String get chainsStrategyHighestConfidence;
+
+  /// No description provided for @chainsStrategyPrivacyLocal.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy (local)'**
+  String get chainsStrategyPrivacyLocal;
+
+  /// No description provided for @chainsStrategyDiverseModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Diverse models'**
+  String get chainsStrategyDiverseModel;
+
+  /// No description provided for @chainsStartAvailLease.
+  ///
+  /// In en, this message translates to:
+  /// **'Lease'**
+  String get chainsStartAvailLease;
+
+  /// No description provided for @chainsStartAvailLegacy.
+  ///
+  /// In en, this message translates to:
+  /// **'Legacy'**
+  String get chainsStartAvailLegacy;
+
+  /// No description provided for @chainsStartReliabilityPct.
+  ///
+  /// In en, this message translates to:
+  /// **'Trust {pct}%'**
+  String chainsStartReliabilityPct(int pct);
+
+  /// No description provided for @chainsStartReliabilitySparse.
+  ///
+  /// In en, this message translates to:
+  /// **'{level} · {samples} samples'**
+  String chainsStartReliabilitySparse(String level, int samples);
+
+  /// No description provided for @chainsStartReliabilityFallbackExact.
+  ///
+  /// In en, this message translates to:
+  /// **'this worker\'s history'**
+  String get chainsStartReliabilityFallbackExact;
+
+  /// No description provided for @chainsStartReliabilityFallbackPeerRuntimeSkill.
+  ///
+  /// In en, this message translates to:
+  /// **'similar work on this worker'**
+  String get chainsStartReliabilityFallbackPeerRuntimeSkill;
+
+  /// No description provided for @chainsStartReliabilityFallbackPeerRuntime.
+  ///
+  /// In en, this message translates to:
+  /// **'this worker\'s runtime'**
+  String get chainsStartReliabilityFallbackPeerRuntime;
+
+  /// No description provided for @chainsStartReliabilityFallbackRuntimeSkill.
+  ///
+  /// In en, this message translates to:
+  /// **'workers with this skill'**
+  String get chainsStartReliabilityFallbackRuntimeSkill;
+
+  /// No description provided for @chainsStartReliabilityFallbackPrior.
+  ///
+  /// In en, this message translates to:
+  /// **'general prior (no history yet)'**
+  String get chainsStartReliabilityFallbackPrior;
 
   /// No description provided for @chainsStartGoalLabel.
   ///
@@ -4097,6 +4541,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No reachable Agent Network workers. Bond contacts with agents on the home node first.'**
   String get chainsStartNoWorkers;
+
+  /// No description provided for @chainsTestNetworkTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Test Agent Network'**
+  String get chainsTestNetworkTitle;
+
+  /// No description provided for @chainsTestNetworkHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Simulation — no work sent, no model spend, no reputation changes. Dry-plan ranks for real; failover and recovery are label-only previews.'**
+  String get chainsTestNetworkHint;
+
+  /// No description provided for @chainsTestNetworkRun.
+  ///
+  /// In en, this message translates to:
+  /// **'Check readiness'**
+  String get chainsTestNetworkRun;
+
+  /// No description provided for @chainsTestNetworkRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking…'**
+  String get chainsTestNetworkRunning;
+
+  /// No description provided for @chainsTestNetworkFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not run diagnostics'**
+  String get chainsTestNetworkFailed;
+
+  /// No description provided for @chainsSpeculationReviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Speculation needs review'**
+  String get chainsSpeculationReviewTitle;
+
+  /// No description provided for @chainsSpeculationReviewBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Two workers returned different results for one step. Pick a winner to keep the job moving, or let the orchestrator pick automatically.'**
+  String get chainsSpeculationReviewBody;
+
+  /// No description provided for @chainsSpeculationReviewNonePass.
+  ///
+  /// In en, this message translates to:
+  /// **'Both workers failed verification — the orchestrator will reassign this step.'**
+  String get chainsSpeculationReviewNonePass;
+
+  /// No description provided for @chainsSpeculationReviewDisagree.
+  ///
+  /// In en, this message translates to:
+  /// **'The two workers disagree. The orchestrator can pick the cheaper verified one, or you can pick or reassign.'**
+  String get chainsSpeculationReviewDisagree;
+
+  /// No description provided for @chainsSpeculationReviewAutoResolve.
+  ///
+  /// In en, this message translates to:
+  /// **'Resolve automatically'**
+  String get chainsSpeculationReviewAutoResolve;
+
+  /// No description provided for @chainsSpeculationReviewResolved.
+  ///
+  /// In en, this message translates to:
+  /// **'Resolved by the orchestrator'**
+  String get chainsSpeculationReviewResolved;
+
+  /// No description provided for @chainsSpeculationReviewFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not resolve automatically'**
+  String get chainsSpeculationReviewFailed;
 
   /// No description provided for @chainsStartReadinessTitle.
   ///
@@ -4445,6 +4961,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This job finished and published a report.'**
   String get chainsDetailPublished;
+
+  /// No description provided for @chainsDetailRecovering.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovering after restart — confirming worker progress'**
+  String get chainsDetailRecovering;
+
+  /// No description provided for @chainsAttemptCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} attempt(s)'**
+  String chainsAttemptCount(int count);
+
+  /// No description provided for @chainsExecutionDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Execution details'**
+  String get chainsExecutionDetails;
+
+  /// No description provided for @chainsProvenanceSummaryLine.
+  ///
+  /// In en, this message translates to:
+  /// **'{attempts} attempt(s) · {worker} · {state}'**
+  String chainsProvenanceSummaryLine(int attempts, String worker, String state);
+
+  /// No description provided for @chainsLastReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Last reason: {reason}'**
+  String chainsLastReason(String reason);
+
+  /// No description provided for @chainsTechnicalDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Technical details'**
+  String get chainsTechnicalDetails;
+
+  /// No description provided for @chainsProvenanceEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No journal events for this step yet.'**
+  String get chainsProvenanceEmpty;
+
+  /// No description provided for @chainsProvenanceFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load execution history.'**
+  String get chainsProvenanceFailed;
 
   /// No description provided for @chainsRebalanceHeading.
   ///
@@ -5369,6 +5933,468 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Advanced server parameters (context size, GPU layers) remain on the home-node Social UI.'**
   String get settingsEnvoyLocalPhoneNote;
+
+  /// No description provided for @ehReviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Review this turn'**
+  String get ehReviewTitle;
+
+  /// No description provided for @ehReviewUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'A saved review is unavailable for this older turn.'**
+  String get ehReviewUnavailable;
+
+  /// No description provided for @ehReviewFile.
+  ///
+  /// In en, this message translates to:
+  /// **'File'**
+  String get ehReviewFile;
+
+  /// No description provided for @ehReviewOpenFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Open file'**
+  String get ehReviewOpenFile;
+
+  /// No description provided for @ehReviewDiffUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'A textual diff is unavailable for this file.'**
+  String get ehReviewDiffUnavailable;
+
+  /// No description provided for @ehReviewOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Workspace-detected · review only'**
+  String get ehReviewOnly;
+
+  /// No description provided for @ehRevertTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Revert this turn?'**
+  String get ehRevertTitle;
+
+  /// No description provided for @ehRevertBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Files will be restored to their pre-turn contents. Later edits are protected and will stop the revert.'**
+  String get ehRevertBody;
+
+  /// No description provided for @ehRevertAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Revert'**
+  String get ehRevertAction;
+
+  /// No description provided for @ehRevertComplete.
+  ///
+  /// In en, this message translates to:
+  /// **'This turn’s file changes were reverted.'**
+  String get ehRevertComplete;
+
+  /// No description provided for @ehRevertUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This turn can no longer be reverted safely.'**
+  String get ehRevertUnavailable;
+
+  /// No description provided for @ehRevertConflict.
+  ///
+  /// In en, this message translates to:
+  /// **'Revert stopped because these files changed afterward: {files}'**
+  String ehRevertConflict(String files);
+
+  /// No description provided for @ehSearchTranscript.
+  ///
+  /// In en, this message translates to:
+  /// **'Search transcript'**
+  String get ehSearchTranscript;
+
+  /// No description provided for @ehSearchClose.
+  ///
+  /// In en, this message translates to:
+  /// **'Close search'**
+  String get ehSearchClose;
+
+  /// No description provided for @ehNoMatches.
+  ///
+  /// In en, this message translates to:
+  /// **'No matching turns'**
+  String get ehNoMatches;
+
+  /// No description provided for @ehCopyTurn.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy turn'**
+  String get ehCopyTurn;
+
+  /// No description provided for @ehShareTurn.
+  ///
+  /// In en, this message translates to:
+  /// **'Share turn'**
+  String get ehShareTurn;
+
+  /// No description provided for @ehReviewDiff.
+  ///
+  /// In en, this message translates to:
+  /// **'Review diff'**
+  String get ehReviewDiff;
+
+  /// No description provided for @ehRevertThisTurn.
+  ///
+  /// In en, this message translates to:
+  /// **'Revert this turn'**
+  String get ehRevertThisTurn;
+
+  /// No description provided for @ehReviewChanges.
+  ///
+  /// In en, this message translates to:
+  /// **'Review changes'**
+  String get ehReviewChanges;
+
+  /// No description provided for @ehRevertAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Revert all'**
+  String get ehRevertAll;
+
+  /// No description provided for @ehChangesCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 file changed this turn} other{{count} files changed this turn}}'**
+  String ehChangesCount(int count);
+
+  /// No description provided for @ehChangesKeepAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep all'**
+  String get ehChangesKeepAll;
+
+  /// No description provided for @ehChangesRevert.
+  ///
+  /// In en, this message translates to:
+  /// **'Revert all'**
+  String get ehChangesRevert;
+
+  /// No description provided for @ehChangesHideList.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide list'**
+  String get ehChangesHideList;
+
+  /// No description provided for @ehChangesShowList.
+  ///
+  /// In en, this message translates to:
+  /// **'Show list'**
+  String get ehChangesShowList;
+
+  /// No description provided for @ehReviewKeepFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep'**
+  String get ehReviewKeepFile;
+
+  /// No description provided for @ehReviewRevertFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Revert'**
+  String get ehReviewRevertFile;
+
+  /// No description provided for @ehReviewKeptAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Changes kept.'**
+  String get ehReviewKeptAll;
+
+  /// No description provided for @ehReviewRevertedFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Reverted {path}'**
+  String ehReviewRevertedFile(String path);
+
+  /// No description provided for @ehReviewAutoLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-review when ≥'**
+  String get ehReviewAutoLabel;
+
+  /// No description provided for @ehReviewAutoAlways.
+  ///
+  /// In en, this message translates to:
+  /// **'Always'**
+  String get ehReviewAutoAlways;
+
+  /// No description provided for @ehQueueTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Queued ({count})'**
+  String ehQueueTitle(int count);
+
+  /// No description provided for @ehQueueClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get ehQueueClear;
+
+  /// No description provided for @ehQueueBusyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Send queues next'**
+  String get ehQueueBusyHint;
+
+  /// No description provided for @ehQueueFollowUpHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Queue a follow-up…'**
+  String get ehQueueFollowUpHint;
+
+  /// No description provided for @ehInjectTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Inject (cancel + send)'**
+  String get ehInjectTooltip;
+
+  /// No description provided for @ehFilesChangedCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 file changed} other{{count} files changed}}'**
+  String ehFilesChangedCount(int count);
+
+  /// No description provided for @ehEmptyReply.
+  ///
+  /// In en, this message translates to:
+  /// **'envoy-harness finished without a visible reply. Your message is still here — try again or rephrase.'**
+  String get ehEmptyReply;
+
+  /// No description provided for @ehConfigureModelHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure a model in Settings → AI.'**
+  String get ehConfigureModelHint;
+
+  /// No description provided for @ehReviewKeepFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not keep changes.'**
+  String get ehReviewKeepFailed;
+
+  /// No description provided for @ehReviewOpenGitDiff.
+  ///
+  /// In en, this message translates to:
+  /// **'Open git diff'**
+  String get ehReviewOpenGitDiff;
+
+  /// No description provided for @ehDiffBefore.
+  ///
+  /// In en, this message translates to:
+  /// **'Before'**
+  String get ehDiffBefore;
+
+  /// No description provided for @ehDiffAfter.
+  ///
+  /// In en, this message translates to:
+  /// **'After'**
+  String get ehDiffAfter;
+
+  /// No description provided for @ehPermsTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Permission policy'**
+  String get ehPermsTooltip;
+
+  /// No description provided for @ehPermsSafe.
+  ///
+  /// In en, this message translates to:
+  /// **'Default (safe auto-run)'**
+  String get ehPermsSafe;
+
+  /// No description provided for @ehPermsAsk.
+  ///
+  /// In en, this message translates to:
+  /// **'Always ask'**
+  String get ehPermsAsk;
+
+  /// No description provided for @ehPermsApprove.
+  ///
+  /// In en, this message translates to:
+  /// **'Always approve'**
+  String get ehPermsApprove;
+
+  /// No description provided for @ehPermsSet.
+  ///
+  /// In en, this message translates to:
+  /// **'Permission policy → {mode}.'**
+  String ehPermsSet(String mode);
+
+  /// No description provided for @ehPermsNextTurn.
+  ///
+  /// In en, this message translates to:
+  /// **' Applies from the next turn.'**
+  String get ehPermsNextTurn;
+
+  /// No description provided for @ehPermsFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to set permission policy: {error}'**
+  String ehPermsFailed(String error);
+
+  /// No description provided for @chainsStatusCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get chainsStatusCancelled;
+
+  /// No description provided for @chainsStatusPublished.
+  ///
+  /// In en, this message translates to:
+  /// **'Published'**
+  String get chainsStatusPublished;
+
+  /// No description provided for @chainsStatusRecovering.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovering'**
+  String get chainsStatusRecovering;
+
+  /// No description provided for @chainsStatusSynthesizing.
+  ///
+  /// In en, this message translates to:
+  /// **'Synthesizing'**
+  String get chainsStatusSynthesizing;
+
+  /// No description provided for @chainsStatusRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Running'**
+  String get chainsStatusRunning;
+
+  /// No description provided for @chainsStatusWaitingWorkers.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for workers'**
+  String get chainsStatusWaitingWorkers;
+
+  /// No description provided for @chainsStatusBidding.
+  ///
+  /// In en, this message translates to:
+  /// **'Bidding'**
+  String get chainsStatusBidding;
+
+  /// No description provided for @chainsStatusAssigning.
+  ///
+  /// In en, this message translates to:
+  /// **'Assigning'**
+  String get chainsStatusAssigning;
+
+  /// No description provided for @chainsStatusPlanning.
+  ///
+  /// In en, this message translates to:
+  /// **'Planning'**
+  String get chainsStatusPlanning;
+
+  /// No description provided for @ehWorking.
+  ///
+  /// In en, this message translates to:
+  /// **'Working'**
+  String get ehWorking;
+
+  /// No description provided for @ehCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get ehCompleted;
+
+  /// No description provided for @ehUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'Update'**
+  String get ehUpdate;
+
+  /// No description provided for @ehToolLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool: {name}'**
+  String ehToolLabel(String name);
+
+  /// No description provided for @ehMatchCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 match} other{{count} matches}}'**
+  String ehMatchCount(int count);
+
+  /// No description provided for @termMore.
+  ///
+  /// In en, this message translates to:
+  /// **'More…'**
+  String get termMore;
+
+  /// No description provided for @termCompactContext.
+  ///
+  /// In en, this message translates to:
+  /// **'Compact context'**
+  String get termCompactContext;
+
+  /// No description provided for @termUpdatePlan.
+  ///
+  /// In en, this message translates to:
+  /// **'Show or update plan'**
+  String get termUpdatePlan;
+
+  /// No description provided for @termHarnessStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Harness status'**
+  String get termHarnessStatus;
+
+  /// No description provided for @termPiActions.
+  ///
+  /// In en, this message translates to:
+  /// **'Pi actions'**
+  String get termPiActions;
+
+  /// No description provided for @termHarnessActions.
+  ///
+  /// In en, this message translates to:
+  /// **'envoy-harness actions'**
+  String get termHarnessActions;
+
+  /// No description provided for @termPreviousCommand.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous command'**
+  String get termPreviousCommand;
+
+  /// No description provided for @termNextCommand.
+  ///
+  /// In en, this message translates to:
+  /// **'Next command'**
+  String get termNextCommand;
+
+  /// No description provided for @termCursorLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'Move cursor left'**
+  String get termCursorLeft;
+
+  /// No description provided for @termCursorRight.
+  ///
+  /// In en, this message translates to:
+  /// **'Move cursor right'**
+  String get termCursorRight;
+
+  /// No description provided for @termEnterKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter key'**
+  String get termEnterKey;
+
+  /// No description provided for @chainsCancelFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not cancel this team job.'**
+  String get chainsCancelFailed;
 }
 
 class _AppLocalizationsDelegate

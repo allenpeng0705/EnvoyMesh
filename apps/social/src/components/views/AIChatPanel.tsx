@@ -7,7 +7,7 @@ import { useChatStickToBottom } from "../../hooks/useChatStickToBottom.js";
 import { ChainReportInlineCard } from "../ChainReportInlineCard.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import { openLocalFile } from "../../lib/library-file-actions.js";
-import { hasUsableModelProvider, stripModelThinking } from "@envoymesh/api";
+import { hasUsableModelProvider, hasUsableNonEnvoyLocalModelProvider, stripModelThinking } from "@envoymesh/api";
 import type { AgentActivityRecord, AnswerFormat, ChainReportReceivedEvent, ChatMessage, OwnerAgentApprovalSummary, OwnerAgentDomain, OwnerAgentTurnResult, StructuredBlock } from "@envoymesh/api";
 import type { ChainReport } from "@envoymesh/protocol";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
@@ -32,12 +32,12 @@ import { takeEnvoyAiDraftHint } from "../../lib/open-envoy-ai-nav.js";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { ChatComposer } from "../ChatComposer.js";
 import { AnswerRenderer } from "../AnswerRenderer.js";
-import { ChatIcon, RemoveIcon, PluginIcon, PendingIcon, AttachIcon } from "../../icons.js";
+import { ChatIcon, RemoveIcon, PluginIcon, PendingIcon } from "../../icons.js";
 import type { TFunction } from "../../context/I18nContext.js";
 import { ConfigureAiBanner } from "./ConfigureAiBanner.js";
 import { SkillManagerModal } from "../SkillManagerModal.js";
 import type { PendingApprovalSummary } from "@envoymesh/api";
-import type { ExtAgentCommandCatalog } from "@envoymesh/api";
+import type { ExtAgentCommandCatalog, RunMmxMediaCommandResult } from "@envoymesh/api";
 import {
   formatEnvoyAiSlashHelp,
   parseEnvoyAiSlashCommand,
@@ -47,18 +47,10 @@ import {
   parseMmxMediaCommand,
 } from "../../lib/ext-agent-slash-commands.js";
 import { MmxMediaResultBlock } from "../MmxMediaResultBlock.js";
-import type { RunMmxMediaCommandResult } from "@envoymesh/api";
+import { mergeAgentPromptWithAttachments, toAgentAttachmentRefs, type AgentDraftAttachment } from "../../lib/agent-attachments.js";
+import { useAgentDraftAttachments } from "../../hooks/useAgentDraftAttachments.js";
+import { AgentAttachmentComposerLeading } from "../AgentAttachmentComposerLeading.js";
 import { AgentAttachmentChips } from "../AgentAttachmentChips.js";
-import {
-  assertAttachableFileSize,
-  attachmentBasename,
-  fileToBase64,
-  guessMimeFromName,
-  mergeAgentPromptWithAttachments,
-  toAgentAttachmentRefs,
-  type AgentDraftAttachment,
-} from "../../lib/agent-attachments.js";
-import { isTauriShell, pickTauriFiles } from "../../lib/tauri-shell.js";
 
 interface AiMessageTurnMeta extends Pick<
   OwnerAgentTurnResult,
@@ -260,10 +252,16 @@ export function AIChatPanel({
   const { locale } = useI18n();
   const nodeService = useNodeService();
   const toast = useToast();
+  const agentDraft = useAgentDraftAttachments({
+    pickTitle: "Attach files for EnvoyAI",
+    onError: (message) => toast.showToast(message, "error"),
+    uploadEnvoyAttachment: (params) => nodeService.uploadEnvoyAttachment(params),
+  });
   const { nodeConfig, humanProfile, nodeStatus } = useNodeState();
   const assistantReady = nodeStatus === "running";
   const [localInUse, setLocalInUse] = useState(false);
   const [localModelName, setLocalModelName] = useState<string | null>(null);
+  const cloudConfigured = hasUsableNonEnvoyLocalModelProvider(nodeConfig?.modelProviders);
   useEffect(() => {
     let cancelled = false;
     const refresh = () => {
@@ -271,9 +269,10 @@ export function AIChatPanel({
         .getEnvoyLocalStatus()
         .then((st) => {
           if (cancelled) return;
-          const active = Boolean(st.enabled && st.running);
-          setLocalInUse(active);
-          setLocalModelName(active ? (st.activeModelId?.trim() || null) : null);
+          // Local drives the chat header only when no cloud/Ollama is configured.
+          const driving = Boolean(st.enabled && st.running) && !cloudConfigured;
+          setLocalInUse(driving);
+          setLocalModelName(driving ? (st.activeModelId?.trim() || null) : null);
         })
         .catch(() => {
           if (cancelled) return;
@@ -287,9 +286,8 @@ export function AIChatPanel({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [nodeService, nodeConfig?.envoyLocal?.enabled]);
-  const cloudConfigured = hasUsableModelProvider(nodeConfig?.modelProviders);
-  const modelConfigured = cloudConfigured || localInUse;
+  }, [nodeService, nodeConfig?.envoyLocal?.enabled, cloudConfigured]);
+  const modelConfigured = cloudConfigured || localInUse || hasUsableModelProvider(nodeConfig?.modelProviders);
   const configureAiCtaShownRef = useRef(false);
   const assistantBlockedHint =
     nodeStatus === "starting"
@@ -312,9 +310,6 @@ export function AIChatPanel({
   const [showApprovals, setShowApprovals] = useState(false);
   const [envoyAiSlashCatalog, setEnvoyAiSlashCatalog] =
     useState<ExtAgentCommandCatalog | null>(null);
-  const [agentAttachments, setAgentAttachments] = useState<AgentDraftAttachment[]>([]);
-  const [attachBusy, setAttachBusy] = useState(false);
-  const agentFileInputRef = useRef<HTMLInputElement | null>(null);
   const draftRef = useRef<ReturnType<typeof createAssistantDraftCrdt> | null>(null);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reloadSeqRef = useRef(0);
@@ -573,13 +568,13 @@ export function AIChatPanel({
 
   const sendAiMessage = async (question: string) => {
     let text = question.trim();
-    if ((!text && agentAttachments.length === 0) || isAiLoading || attachBusy) return;
+    if ((!text && agentDraft.attachments.length === 0) || isAiLoading || agentDraft.busy) return;
 
     pinToBottom();
 
     const mmxParsed = parseMmxMediaCommand(question);
     if (mmxParsed) {
-      if (agentAttachments.length > 0) {
+      if (agentDraft.attachments.length > 0) {
         toast.showToast("Clear attachments before using MiniMax media slash commands.", "info");
         return;
       }
@@ -735,7 +730,7 @@ export function AIChatPanel({
       if (slash.type === "expand") {
         // Fall through with expanded NL prompt for OpenClaw mesh tools.
         text = slash.prompt.trim();
-        if (!text && agentAttachments.length === 0) return;
+        if (!text && agentDraft.attachments.length === 0) return;
       } else if (slash.type === "unknown_slash") {
         // Unknown /verb — still send as chat so OpenClaw can interpret if it wants.
       }
@@ -785,7 +780,7 @@ export function AIChatPanel({
       return;
     }
 
-    const draftAtts = agentAttachments;
+    const draftAtts = agentDraft.attachments;
     const userMsg: AiMessage = {
       id: crypto.randomUUID(),
       role: "user",
@@ -799,7 +794,7 @@ export function AIChatPanel({
     };
     setAiMessages((prev) => [...prev, userMsg]);
     draftRef.current?.setPlainText("");
-    setAgentAttachments([]);
+    agentDraft.clear();
     setEnvoyAiInflight(true);
     reloadSeqRef.current += 1;
 
@@ -830,7 +825,7 @@ export function AIChatPanel({
           : msg;
       // Drop optimistic bubble and restore composer + drafts so the user can retry.
       setAiMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
-      setAgentAttachments(draftAtts);
+      agentDraft.replaceAttachments(draftAtts);
       draftRef.current?.setPlainText(text);
       setAiMessages((prev) => [
         ...prev,
@@ -845,93 +840,6 @@ export function AIChatPanel({
       setEnvoyAiInflight(false);
     }
   };
-
-  const removeAgentAttachment = useCallback((id: string) => {
-    setAgentAttachments((prev) => {
-      const hit = prev.find((a) => a.id === id);
-      if (hit?.previewUrl) URL.revokeObjectURL(hit.previewUrl);
-      return prev.filter((a) => a.id !== id);
-    });
-  }, []);
-
-  const addHomePathAttachments = useCallback((paths: string[]) => {
-    setAgentAttachments((prev) => {
-      const next = [...prev];
-      for (const path of paths) {
-        const trimmedPath = path.trim();
-        if (!trimmedPath) continue;
-        if (next.some((a) => a.path === trimmedPath)) continue;
-        const name = attachmentBasename(trimmedPath);
-        next.push({
-          id: crypto.randomUUID(),
-          path: trimmedPath,
-          name,
-          mimeType: guessMimeFromName(name),
-        });
-      }
-      return next;
-    });
-  }, []);
-
-  const uploadBrowserFiles = useCallback(
-    async (files: FileList | File[]) => {
-      const list = Array.from(files);
-      if (list.length === 0) return;
-      setAttachBusy(true);
-      try {
-        for (const file of list) {
-          const sizeErr = assertAttachableFileSize(file.size);
-          if (sizeErr) {
-            toast.showToast(`${file.name}: ${sizeErr}`, "error");
-            continue;
-          }
-          const contentBase64 = await fileToBase64(file);
-          const result = await nodeService.uploadEnvoyAttachment({
-            filename: file.name,
-            mimeType: file.type || guessMimeFromName(file.name),
-            contentBase64,
-          });
-          if (!result.ok || !result.path) {
-            toast.showToast(result.error ?? `Upload failed: ${file.name}`, "error");
-            continue;
-          }
-          const previewUrl = file.type.startsWith("image/")
-            ? URL.createObjectURL(file)
-            : undefined;
-          setAgentAttachments((prev) => [
-            ...prev,
-            {
-              id: crypto.randomUUID(),
-              path: result.path!,
-              name: result.name ?? file.name,
-              mimeType: result.mimeType ?? file.type,
-              previewUrl,
-            },
-          ]);
-        }
-      } catch (e) {
-        toast.showToast(e instanceof Error ? e.message : String(e), "error");
-      } finally {
-        setAttachBusy(false);
-      }
-    },
-    [nodeService, toast],
-  );
-
-  const handleAgentAttachClick = useCallback(() => {
-    if (isTauriShell()) {
-      void (async () => {
-        const picked = await pickTauriFiles({ title: "Attach files for EnvoyAI" });
-        if (!picked.ok) {
-          toast.showToast(picked.error, "error");
-          return;
-        }
-        if (picked.paths?.length) addHomePathAttachments(picked.paths);
-      })();
-      return;
-    }
-    agentFileInputRef.current?.click();
-  }, [addHomePathAttachments, toast]);
 
   const handleDeleteAiMessage = (messageId: string) => {
     void nodeService.deleteChatMessage(ENVOY_AI_THREAD_KEY, messageId).then((result) => {
@@ -951,12 +859,7 @@ export function AIChatPanel({
         setConfirm(null);
         void nodeService.clearChatHistory(ENVOY_AI_THREAD_KEY).then(() => {
           setAiMessages([]);
-          setAgentAttachments((prev) => {
-            for (const a of prev) {
-              if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
-            }
-            return [];
-          });
+          agentDraft.clear();
         });
       },
     });
@@ -1250,56 +1153,33 @@ export function AIChatPanel({
         </div>
       ) : null}
       <footer className="chat-input">
-        <input
-          ref={agentFileInputRef}
-          type="file"
-          multiple
-          hidden
-          onChange={(e) => {
-            const files = e.target.files;
-            if (files?.length) void uploadBrowserFiles(files);
-            e.target.value = "";
-          }}
-        />
         <ChatComposer
           value={aiInput}
           onChange={(next) => draftRef.current?.setPlainText(next)}
           onSend={() => {
             const text = (draftRef.current?.getPlainText() ?? aiInput).trim();
-            if (text || agentAttachments.length > 0) void sendAiMessage(text);
+            if (text || agentDraft.attachments.length > 0) void sendAiMessage(text);
           }}
           placeholder={t("aiChat.inputPlaceholder")}
           sendLabel={t("aiChat.send")}
-          disabled={isAiLoading || !assistantReady || attachBusy}
-          sendDisabled={isAiLoading || !assistantReady || attachBusy}
-          allowEmptySend={agentAttachments.length > 0}
+          disabled={isAiLoading || !assistantReady || agentDraft.busy}
+          sendDisabled={isAiLoading || !assistantReady || agentDraft.busy}
+          allowEmptySend={agentDraft.attachments.length > 0}
           autoFocus={active}
           slashCommands={envoyAiSlashCatalog?.commands ?? []}
           leading={
-            <>
-              <AgentAttachmentChips
-                attachments={agentAttachments}
-                onRemove={removeAgentAttachment}
-                onClearAll={() => {
-                  setAgentAttachments((prev) => {
-                    for (const a of prev) {
-                      if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
-                    }
-                    return [];
-                  });
-                }}
-              />
-              <button
-                type="button"
-                className="secondary chat-attach-file-btn"
-                title="Attach files"
-                aria-label="Attach files"
-                disabled={isAiLoading || !assistantReady || attachBusy}
-                onClick={handleAgentAttachClick}
-              >
-                <AttachIcon size={18} />
-              </button>
-            </>
+            <AgentAttachmentComposerLeading
+              attachments={agentDraft.attachments}
+              busy={agentDraft.busy}
+              disabled={isAiLoading || !assistantReady}
+              pickTitle="Attach files"
+              attachAriaLabel="Attach files"
+              fileInputRef={agentDraft.fileInputRef}
+              onFileInputChange={agentDraft.handleFileInputChange}
+              onOpenPicker={agentDraft.openPicker}
+              onRemove={agentDraft.remove}
+              onClearAll={agentDraft.clear}
+            />
           }
         />
       </footer>

@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../utils/group_delivery.dart';
+
 /// Whether a chat row is outbound for the current session.
 ///
 /// Mirrors Social `messageIsOutgoing`: family DM/room threads use profile ids
@@ -62,6 +64,9 @@ class ChatMessage {
   /// Whether this message was sent by the local user.
   final bool isOutbound;
 
+  /// Delivery state for outbound mesh / group messages.
+  final GroupDeliveryMetadata? delivery;
+
   /// File / audio attachments (Phase 37).
   final List<ChatAttachment>? attachments;
 
@@ -73,6 +78,7 @@ class ChatMessage {
     this.text,
     this.createdAt,
     this.isOutbound = false,
+    this.delivery,
     this.attachments,
   });
 
@@ -104,8 +110,27 @@ class ChatMessage {
       text: json['text'] as String?,
       createdAt: json['created_at'] as String?,
       isOutbound: (json['is_outbound'] as int?) == 1,
+      delivery: _parseDeliveryJson(json['delivery']),
       attachments: attachments,
     );
+  }
+
+  static GroupDeliveryMetadata? _parseDeliveryJson(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is String && raw.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) {
+          return parseDeliveryMetadata(decoded);
+        }
+      } catch (_) {
+        return null;
+      }
+    }
+    if (raw is Map<String, dynamic>) {
+      return parseDeliveryMetadata(raw);
+    }
+    return null;
   }
 
   /// Parse a ChatMessage RPC / push payload (nested sender/content/metadata).
@@ -144,6 +169,7 @@ class ChatMessage {
       text: text,
       createdAt: createdAt,
       isOutbound: isOutbound,
+      delivery: parseDeliveryMetadata(metadata),
       attachments: attRaw
           ?.map((a) => ChatAttachment.fromJson(a as Map<String, dynamic>))
           .toList(),
@@ -158,6 +184,8 @@ class ChatMessage {
         if (text != null) 'text': text,
         if (createdAt != null) 'created_at': createdAt,
         'is_outbound': isOutbound ? 1 : 0,
+        if (delivery != null)
+          'delivery': jsonEncode(deliveryMetadataToJson(delivery!)),
         if (attachments != null) 'attachments': attachments!.map((a) => a.toJson()).toList(),
       };
 }

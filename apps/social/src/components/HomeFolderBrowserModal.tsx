@@ -56,7 +56,7 @@ export function HomeFolderBrowserModal({
       setParent(result.parent);
       setEntries(
         (result.entries ?? [])
-          .filter((e) => e.kind === "dir")
+          .filter((e) => e.kind === "dir" && !e.name.startsWith("."))
           .map((e) => ({ name: e.name, kind: e.kind, path: e.path })),
       );
     },

@@ -197,10 +197,14 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
   const [reachabilityByOwner, setReachabilityByOwner] = useState<Map<string, ChainWorkerReachability>>(new Map());
 
   // Local Join'd agent — Team job creator is also a worker (online when the
-  // node-owner AN engine — OpenClaw or Ext Agent — is ready).
+  // node-owner AN engine is ready).
   const [localWorkerCard, setLocalWorkerCard] = useState<CachedAgentCardSummary | undefined>();
   const [anEngineReady, setAnEngineReady] = useState<boolean | null>(null);
-  const anWorkerEngine = nodeConfig?.agentNetworkWorkerEngine === "ext" ? "ext" : "openclaw";
+  const anWorkerEngine =
+    nodeConfig?.agentNetworkWorkerEngine === "ext" ||
+    nodeConfig?.agentNetworkWorkerEngine === "envoy-harness"
+      ? nodeConfig.agentNetworkWorkerEngine
+      : "openclaw";
   useEffect(() => {
     if (!wsOpen || nodeConfig?.capabilityProviderEnabled !== true) {
       setLocalWorkerCard(undefined);
@@ -232,6 +236,17 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
           .catch(() => {
             // URL present — treat as ready if probe unavailable
             if (!cancelled) setAnEngineReady(true);
+          });
+        return;
+      }
+      if (anWorkerEngine === "envoy-harness") {
+        void nodeService
+          .getEnvoyHarnessStatus()
+          .then((s) => {
+            if (!cancelled) setAnEngineReady(s.state === "ready");
+          })
+          .catch(() => {
+            if (!cancelled) setAnEngineReady(false);
           });
         return;
       }

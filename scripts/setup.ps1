@@ -271,9 +271,9 @@ Write-Ok "node $(node -v), pnpm $pnpmVersion"
 
 Write-Step "2/6  Installing EnvoyMesh dependencies..."
 
-npm install
+pnpm install
 if ($LASTEXITCODE -ne 0) {
-    Write-Fail "npm install failed"
+    Write-Fail "pnpm install failed"
     exit 1
 }
 Write-Ok "EnvoyMesh dependencies installed"

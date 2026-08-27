@@ -205,6 +205,34 @@ export interface PiStatus {
   error?: string
   /** Process PID when running. */
   pid?: number
+  /**
+   * Phase G / 12b — which engine `sendToPi` is routed to.
+   * Additive; older clients (EnvoyGo) ignore unknown fields.
+   */
+  codingBackend?: "pi" | "envoy-harness"
+}
+
+/**
+ * Dedicated envoy-harness runtime status for the Envoy Harness UI panel.
+ * Mirrors the Pi panel's shape (state + model + error) plus the
+ * connected peer-cluster counts.
+ */
+export interface EnvoyHarnessStatus {
+  state: "ready" | "starting" | "disabled" | "error"
+  /** Provider/model spec currently configured, e.g. "deepseek:deepseek-chat". */
+  model?: string
+  /** Error message if state === "error". */
+  error?: string
+  /** The runtime's working directory (project folder). */
+  cwd?: string
+  /** Active persisted harness session id for `cwd` (when known). */
+  sessionId?: string
+  /** Number of messages in the persisted session transcript. */
+  messageCount?: number
+  /** Permission policy for chat/terminal tool calls (`always-confirm` | `safe-only` | `off` | `never`). */
+  autoRunPolicy?: string
+  /** The configured standalone peer cluster (Pattern A execution pool). */
+  peers: { connected: number; failed: number }
 }
 
 /** Result of a one-shot prompt (collected from streaming events). */
@@ -286,6 +314,13 @@ export interface PiSettings {
    * Default: true. Disable to keep terminal agent mode OpenClaw-only.
    */
   terminalIntegrationEnabled?: boolean
+  /**
+   * Phase G / 12b — which local coding engine backs `sendToPi` /
+   * `getPiStatus` / `pi:proposal`. Default `"pi"`.
+   * `"envoy-harness"` routes the same RPCs through ACP (EnvoyGo unchanged).
+   * Pi TUI PTY (`ensurePiTerminalSession`) stays Pi-only.
+   */
+  codingBackend?: "pi" | "envoy-harness"
 }
 
 // ---------------------------------------------------------------------------
@@ -403,3 +438,47 @@ export type EnsurePiTerminalFailureCode =
 export type EnsurePiTerminalResult =
   | { ok: true; session: import("./terminal.js").TerminalSessionSummary }
   | { ok: false; code: EnsurePiTerminalFailureCode; reason: string }
+
+/** Params for starting the Envoy (envoy-harness) TUI terminal. */
+export interface EnsureEnvoyTerminalParams {
+  /** Project directory — required (like Pi; no boot auto-start). */
+  projectPath?: string
+  /** When set with `forceRestart`, close this Envoy session first. */
+  sessionId?: string
+  /** Kill the targeted Envoy session and start fresh. Default false. */
+  forceRestart?: boolean
+}
+
+/** Result of ensuring the Envoy TUI terminal session. */
+export type EnsureEnvoyTerminalFailureCode =
+  | "no_manager"
+  | "disabled"
+  | "no_config"
+  | "no_model"
+  | "no_tui"
+  | "needs_project"
+  | "invalid_project"
+  | "envoy_limit_reached"
+  | "spawn_failed"
+
+export type EnsureEnvoyTerminalResult =
+  | { ok: true; session: import("./terminal.js").TerminalSessionSummary }
+  | { ok: false; code: EnsureEnvoyTerminalFailureCode; reason: string }
+
+/** EHUI panel invoke — routed by NodeServiceImpl.invokeEnvoyHarnessEhui. */
+export type EhuiInvokeRequest =
+  | { op: "plan"; action: string; text?: string; reason?: string }
+  | {
+      op: "memory";
+      memoryOp: "list" | "read" | "add";
+      name?: string;
+      body?: string;
+    }
+  | { op: "gitDiff"; staged?: boolean; stat?: boolean }
+  | { op: "gitStatus" }
+  | { op: "clusterStatus" }
+  | { op: "listPeers" }
+  | { op: "teamJobs" }
+  | { op: "scoreboardSummary" }
+  | { op: "listSessions" }
+  | { op: "discoverySnapshot" }

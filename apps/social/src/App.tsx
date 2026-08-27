@@ -481,6 +481,7 @@ export function App() {
   // away). Inflight keep-alive while NOT on Social — ChatView already keeps
   // AIChatPanel mounted during inflight turns when Social is visible.
   const oldAssistantVisible = currentView === "assistant";
+  const terminalVisible = currentView === "terminal" || currentView === "pi";
   const keepAssistantMounted =
     oldAssistantVisible ||
     (envoyAiInflight &&
@@ -488,6 +489,12 @@ export function App() {
       currentView !== "chat" &&
       currentView !== "discover" &&
       currentView !== "content");
+
+  const [terminalEverOpened, setTerminalEverOpened] = useState(false);
+  useEffect(() => {
+    if (terminalVisible) setTerminalEverOpened(true);
+  }, [terminalVisible]);
+  const keepTerminalMounted = terminalEverOpened;
 
   // Navigation handler. Legacy aliases map onto the new IA.
   const navigateTo = (view: ViewName) => {
@@ -710,6 +717,7 @@ export function App() {
                     setSocialTab("discover");
                   },
                   onOpenPi: () => setCurrentView("terminal"),
+                  onOpenEnvoyHarness: () => setSocialTab("chats"),
                   onOpenActivity: () => {
                     setSettingsTab("app");
                     navigateTo("settings");
@@ -750,13 +758,19 @@ export function App() {
                 </SwipeBack>
               </div>
             )}
-            {(currentView === "terminal" || currentView === "pi") && (
-              <SwipeBack onSwipeBack={() => navigateTo("social")}>
-                <TerminalView
-                  active={currentView === "terminal" || currentView === "pi"}
-                  onOpenAssistant={() => navigateTo("assistant")}
-                />
-              </SwipeBack>
+            {keepTerminalMounted && (
+              <div
+                className="main-view-slot"
+                hidden={!terminalVisible}
+                aria-hidden={!terminalVisible}
+              >
+                <SwipeBack onSwipeBack={() => navigateTo("social")}>
+                  <TerminalView
+                    active={terminalVisible}
+                    onOpenAssistant={() => navigateTo("assistant")}
+                  />
+                </SwipeBack>
+              </div>
             )}
             {currentView === "knowledge" && (
               <SwipeBack onSwipeBack={() => navigateTo("social")}>

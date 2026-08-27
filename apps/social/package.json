@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@envoymesh/api": "0.2.2",
+    "@envoymesh/envoy-harness-client": "file:../../../envoy-harness/packages/envoy-harness-client",
+    "@envoymesh/envoy-harness-ehui": "file:../../../envoy-harness/packages/envoy-harness-ehui",
     "@envoymesh/rag": "0.2.2",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",

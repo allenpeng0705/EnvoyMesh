@@ -388,6 +388,11 @@ export interface UploadEnvoyAttachmentParams {
   filename: string;
   mimeType?: string;
   contentBase64: string;
+  /**
+   * When set, write under `{targetDir}/.envoy-attachments/` (project-scoped EH
+   * picks) instead of `{profileDir}/envoy-uploads/`.
+   */
+  targetDir?: string;
 }
 
 export interface UploadEnvoyAttachmentResult {

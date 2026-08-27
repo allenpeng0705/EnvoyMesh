@@ -132,10 +132,15 @@ class _HomeFolderBrowserState extends State<HomeFolderBrowser> {
   }
 
   void _applyListing(Map<String, dynamic> result) {
+    // Match Social HomeFolderBrowserModal: dirs only, skip .dot folders.
     final entries = (result['entries'] as List<dynamic>? ?? const [])
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
-        .where((e) => e['kind']?.toString() == 'dir')
+        .where((e) {
+          if (e['kind']?.toString() != 'dir') return false;
+          final name = e['name']?.toString() ?? '';
+          return !name.startsWith('.');
+        })
         .toList();
     if (!mounted) return;
     setState(() {

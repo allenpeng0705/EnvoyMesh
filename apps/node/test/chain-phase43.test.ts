@@ -9,6 +9,7 @@ import { createChainSubtaskId } from "@envoymesh/protocol";
 import {
   allActiveSubtasksHaveFinalPartials,
   chainBudgetWarningLevel,
+  hasUnawardedActiveSubtasks,
   subtasksAwaitingAward,
 } from "../src/chain-auto-orchestrator.js";
 import { estimateChainCostRange, mergeChainDefaults } from "../src/chain-defaults.js";
@@ -94,6 +95,43 @@ describe("chain-auto-orchestrator", () => {
       },
     });
     expect(allActiveSubtasksHaveFinalPartials(state)).toBe(true);
+  });
+
+  it("hasUnawardedActiveSubtasks blocks completion when extend adds unawarded steps", () => {
+    const { state, subtaskId } = sampleState();
+    const extra = createChainSubtaskId("chain_1", 2);
+    state.subtasks.set(extra, {
+      version: "0.1",
+      subtaskId: extra,
+      chainId: "chain_1",
+      depth: 1,
+      requiredSkill: "task.execute",
+      objective: "Extra step",
+      costCeilingUsd: 3,
+      createdAt: new Date().toISOString(),
+    });
+    state.awards.set(subtaskId, {
+      version: "0.1",
+      subtaskId,
+      chainId: "chain_1",
+      workerPeerId: "worker_1",
+      acceptedCostUsd: 1,
+      acceptedAt: new Date().toISOString(),
+    });
+    state.partials.set(subtaskId, {
+      partial: {
+        version: "0.1",
+        subtaskId,
+        chainId: "chain_1",
+        workerPeerId: "worker_1",
+        seq: 1,
+        isFinal: true,
+        note: "done",
+        createdAt: new Date().toISOString(),
+      },
+    });
+    expect(hasUnawardedActiveSubtasks(state)).toBe(true);
+    expect(allActiveSubtasksHaveFinalPartials(state)).toBe(false);
   });
 
   it("chainBudgetWarningLevel warns at 80% spend", async () => {

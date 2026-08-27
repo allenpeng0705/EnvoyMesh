@@ -8,10 +8,14 @@ import '../models/chat_room.dart';
 import '../models/chat_thread.dart';
 import '../services/node_service_client.dart';
 import '../storage/local_database.dart';
+import '../utils/group_delivery.dart';
 import '../utils/localized_labels.dart';
 import 'contact_provider.dart';
 import 'node_provider.dart';
 import 'terminal_provider.dart';
+
+/// Max Envoy Harness coding chats per home node (matches `@envoymesh/api`).
+const kMaxEnvoyHarnessChats = 5;
 
 /// State for the chat subsystem.
 class ChatState {
@@ -226,6 +230,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   final Ref _ref;
   final LocalDatabase _localDb = LocalDatabase();
   final _seenMessageIds = <String>{};
+  Future<void>? _syncTerminalsInFlight;
 
   ChatNotifier(this._ref) : super(const ChatState());
 
@@ -250,6 +255,24 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final client = _ref.read(nodeProvider.notifier).client;
     if (client == null) return null;
     return NodeServiceClient(client);
+  }
+
+  ChatMessage _copyMessage(ChatMessage msg, {GroupDeliveryMetadata? delivery, String? id}) {
+    return ChatMessage(
+      id: id ?? msg.id,
+      threadId: msg.threadId,
+      senderOwnerId: msg.senderOwnerId,
+      senderDisplayName: msg.senderDisplayName,
+      text: msg.text,
+      createdAt: msg.createdAt,
+      isOutbound: msg.isOutbound,
+      delivery: delivery ?? msg.delivery,
+      attachments: msg.attachments,
+    );
+  }
+
+  void _persistMessage(ChatMessage msg) {
+    unawaited(_localDb.insertMessage(msg.toJson()));
   }
 
   /// Load cached threads from local storage. Self-threads (the
@@ -288,10 +311,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
           continue;
         }
       }
+      if (!isOwner && t.type == ChatThreadType.envoyHarness) {
+        if (_isDeniedCodingFamily(_ref.read(nodeProvider))) {
+          continue;
+        }
+      }
       if (!isOwner &&
           t.type != ChatThreadType.envoyai &&
           t.type != ChatThreadType.externalAgent &&
           t.type != ChatThreadType.aiBot &&
+          t.type != ChatThreadType.envoyHarness &&
           t.type != ChatThreadType.family &&
           t.type != ChatThreadType.familyGroup) {
         continue;
@@ -343,6 +372,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
     syncFamilyContacts(nodeState.familyProfiles, nodeState.activeNode!.id);
     await syncFamilyRooms();
+    await syncEhChats();
     state = state.copyWith(isLoading: false);
   }
 
@@ -1505,14 +1535,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     final threadId = '${nodeState.activeNode!.id}:room:$roomId';
     final now = DateTime.now().toUtc().toIso8601String();
+    final tempId = 'temp_${DateTime.now().microsecondsSinceEpoch}';
     final tempMsg = ChatMessage(
-      id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
+      id: tempId,
       threadId: threadId,
       text: trimmed,
       createdAt: now,
       isOutbound: true,
+      delivery: const GroupDeliveryMetadata(deliveryReceipt: 'pending'),
     );
 
+    _persistMessage(tempMsg);
     state = state.copyWith(
       messages: {
         ...state.messages,
@@ -1527,13 +1560,42 @@ class ChatNotifier extends StateNotifier<ChatState> {
       threadId: threadId,
       nodeId: nodeState.activeNode!.id,
       type: ChatThreadType.group,
-      displayName: 'Room', // Fallback; existing thread data overrides.
+      displayName: 'Room',
       chatRoomId: roomId,
       lastMessageText: trimmed,
       lastMessageAt: DateTime.now(),
     );
 
-    await nodeService.sendChatRoomMessage(roomId, trimmed);
+    try {
+      final result = await nodeService.sendChatRoomMessage(roomId, trimmed);
+      final serverId = result['messageId']?.toString();
+      if (serverId == null || serverId.isEmpty) return;
+      final delivery = deliveryFromRpcMap(result);
+      final list = state.messages[threadId] ?? [];
+      final idx = list.indexWhere((m) => m.id == tempId);
+      if (idx < 0) return;
+      final promoted = _copyMessage(list[idx], id: serverId, delivery: delivery);
+      final next = [...list];
+      next[idx] = promoted;
+      state = state.copyWith(
+        messages: {...state.messages, threadId: next},
+      );
+      unawaited(_localDb.replaceMessage(tempId, promoted.toJson()));
+    } catch (_) {
+      final list = state.messages[threadId] ?? [];
+      final idx = list.indexWhere((m) => m.id == tempId);
+      if (idx < 0) return;
+      final failed = _copyMessage(
+        list[idx],
+        delivery: const GroupDeliveryMetadata(deliveryReceipt: 'failed'),
+      );
+      final next = [...list];
+      next[idx] = failed;
+      state = state.copyWith(
+        messages: {...state.messages, threadId: next},
+      );
+      _persistMessage(failed);
+    }
   }
 
   /// Handle a chat:room-message push event.
@@ -1566,8 +1628,20 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     if (roomId == null || roomId.isEmpty) return;
 
-    // Skip messages with no text — they would render as empty bubbles.
-    if (text == null || text.isEmpty) return;
+    final attachmentsRaw = inner['attachments'] as List<dynamic>? ??
+        content?['attachments'] as List<dynamic>?;
+    final hasAudio = attachmentsRaw?.any((a) {
+      final mime = (a is Map) ? (a['mimeType'] ?? a['mime_type']) as String? : null;
+      return mime != null && mime.startsWith('audio/');
+    }) ?? false;
+    final hasFile = attachmentsRaw?.isNotEmpty == true;
+
+    // Skip messages with no displayable body.
+    if ((text == null || text.isEmpty) && !hasAudio && !hasFile) return;
+
+    final displayText = (text != null && text.isNotEmpty)
+        ? text
+        : (hasAudio ? MessageBodySentinels.sentVoice : MessageBodySentinels.sentFile);
 
     final threadId = '${nodeState.activeNode!.id}:room:$roomId';
     final existingThread = state.threads.where((t) => t.id == threadId).firstOrNull;
@@ -1587,9 +1661,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
       threadId: threadId,
       senderOwnerId: senderOwnerId,
       senderDisplayName: showAsMine ? 'You' : senderDisplayName,
-      text: text,
+      text: displayText,
       createdAt: createdAt,
       isOutbound: showAsMine,
+      delivery: parseDeliveryMetadata(metadata),
     );
 
     // Dedup room messages by messageId; reconcile optimistic temp_* echoes.
@@ -1632,6 +1707,76 @@ class ChatNotifier extends StateNotifier<ChatState> {
         threadId: next,
       },
     );
+  }
+
+  /// Handle delivery acks for outbound 1:1 and group messages.
+  void onChatDelivered(Map<String, dynamic> data) {
+    final messageId = data['messageId'] as String?;
+    final recipientOwnerId = data['recipientOwnerId'] as String?;
+    if (messageId == null || messageId.isEmpty) return;
+
+    var changed = false;
+    final nextMessages = <String, List<ChatMessage>>{};
+    for (final entry in state.messages.entries) {
+      final list = entry.value;
+      final idx = list.indexWhere((m) => m.id == messageId);
+      if (idx < 0) {
+        nextMessages[entry.key] = list;
+        continue;
+      }
+      final msg = list[idx];
+      if (!msg.isOutbound) {
+        nextMessages[entry.key] = list;
+        continue;
+      }
+      final prior = msg.delivery ?? const GroupDeliveryMetadata();
+      final merged = recipientOwnerId != null && recipientOwnerId.isNotEmpty
+          ? prior.mergeAck(recipientOwnerId)
+          : const GroupDeliveryMetadata(deliveryReceipt: 'delivered');
+      final updated = _copyMessage(msg, delivery: merged);
+      final updatedList = [...list];
+      updatedList[idx] = updated;
+      nextMessages[entry.key] = updatedList;
+      changed = true;
+      _persistMessage(updated);
+    }
+    if (changed) {
+      state = state.copyWith(messages: nextMessages);
+    }
+  }
+
+  /// Mark an outbound message as failed for one recipient (mesh group give-up).
+  void onChatDeliveryFailed(Map<String, dynamic> data) {
+    final messageId = data['messageId'] as String?;
+    if (messageId == null || messageId.isEmpty) return;
+
+    var changed = false;
+    final nextMessages = <String, List<ChatMessage>>{};
+    for (final entry in state.messages.entries) {
+      final list = entry.value;
+      final idx = list.indexWhere((m) => m.id == messageId);
+      if (idx < 0) {
+        nextMessages[entry.key] = list;
+        continue;
+      }
+      final msg = list[idx];
+      if (!msg.isOutbound) {
+        nextMessages[entry.key] = list;
+        continue;
+      }
+      final failed = _copyMessage(
+        msg,
+        delivery: (msg.delivery ?? const GroupDeliveryMetadata()).markFailed(),
+      );
+      final updatedList = [...list];
+      updatedList[idx] = failed;
+      nextMessages[entry.key] = updatedList;
+      changed = true;
+      _persistMessage(failed);
+    }
+    if (changed) {
+      state = state.copyWith(messages: nextMessages);
+    }
   }
 
   /// Handle a chat:room-updated push (invite / rename / membership).
@@ -1708,6 +1853,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       final roomsRaw = result['rooms'];
       if (roomsRaw is! List) return;
       final nodeId = nodeState.activeNode!.id;
+      final seen = <String>{};
       for (final raw in roomsRaw) {
         if (raw is! Map) continue;
         final room = ChatRoom.fromJson({
@@ -1716,6 +1862,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
           'kind': 'family',
         });
         if (room.id.isEmpty) continue;
+        seen.add(room.id);
         final threadId = '$nodeId:room:${room.id}';
         _upsertThread(
           threadId: threadId,
@@ -1726,6 +1873,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
               : ThreadTitleSentinels.familyGroup,
           chatRoomId: room.id,
         );
+      }
+      final stale = state.threads.where((t) {
+        if (t.nodeId != nodeId || t.type != ChatThreadType.familyGroup) {
+          return false;
+        }
+        final parts = t.id.split(':room:');
+        if (parts.length < 2) return true;
+        return !seen.contains(parts[1].trim());
+      }).toList();
+      for (final t in stale) {
+        unawaited(deleteThread(t.id));
       }
     } catch (e) {
       debugPrint('syncFamilyRooms failed: $e');
@@ -1751,6 +1909,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       isOutbound: true,
       senderDisplayName: 'You',
       senderOwnerId: myProfileId,
+      delivery: const GroupDeliveryMetadata(deliveryReceipt: 'delivered'),
     );
     _localDb.insertMessage(tempMsg.toJson());
     state = state.copyWith(
@@ -1759,6 +1918,19 @@ class ChatNotifier extends StateNotifier<ChatState> {
         threadId: [tempMsg, ...?state.messages[threadId]],
       },
     );
+
+    final existingThread =
+        state.threads.where((t) => t.id == threadId).firstOrNull;
+    _upsertThread(
+      threadId: threadId,
+      nodeId: nodeState.activeNode!.id,
+      type: ChatThreadType.familyGroup,
+      displayName: existingThread?.displayName ?? ThreadTitleSentinels.familyGroup,
+      chatRoomId: roomId,
+      lastMessageText: trimmed,
+      lastMessageAt: DateTime.now(),
+    );
+
     await nodeService.sendFamilyRoomMessage(roomId: roomId, text: trimmed);
   }
 
@@ -2248,8 +2420,118 @@ class ChatNotifier extends StateNotifier<ChatState> {
     return mine['extAgentEnabled'] != true;
   }
 
+  /// Whether this session may see/use Coding assistants (Pi + EH).
+  bool get mayUseCoding => _mayUseCoding(_ref.read(nodeProvider));
+
+  bool _mayUseCoding(NodeState nodeState) {
+    if (nodeState.activeNode == null) return false;
+    if (nodeState.isOwnerProfile) return true;
+    return !_isDeniedCodingFamily(nodeState);
+  }
+
+  bool _isDeniedCodingFamily(NodeState nodeState) {
+    if (nodeState.isOwnerProfile) return false;
+    final pid = nodeState.effectiveFamilyProfileId.trim();
+    if (pid.isEmpty || pid == 'owner') return true;
+    Map<String, dynamic>? mine;
+    for (final p in nodeState.familyProfiles) {
+      if (p['id']?.toString() == pid) {
+        mine = p;
+        break;
+      }
+    }
+    if (mine == null) return true;
+    return mine['codingEnabled'] != true;
+  }
+
+  /// Sync Envoy Harness coding-chat threads from the home node.
+  Future<void> syncEhChats() async {
+    final nodeService = _ref.read(nodeServiceProvider);
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeService == null || nodeState.activeNode == null) return;
+    if (_isDeniedCodingFamily(nodeState)) {
+      final nodeId = nodeState.activeNode!.id;
+      final next = state.threads
+          .where((t) =>
+              t.nodeId != nodeId || t.type != ChatThreadType.envoyHarness)
+          .toList();
+      if (next.length != state.threads.length) {
+        state = state.copyWith(threads: next);
+      }
+      return;
+    }
+
+    try {
+      final list = await nodeService.listEnvoyHarnessChats();
+      final nodeId = nodeState.activeNode!.id;
+      final seen = <String>{};
+      for (final raw in list) {
+        final chatId = raw['id']?.toString().trim() ?? '';
+        if (chatId.isEmpty) continue;
+        seen.add(chatId);
+        final title = raw['title']?.toString().trim() ?? chatId;
+        final threadId = '$nodeId:eh:$chatId';
+        _upsertThread(
+          threadId: threadId,
+          nodeId: nodeId,
+          type: ChatThreadType.envoyHarness,
+          displayName: title,
+          agentType: 'envoy-harness',
+          lastMessageText: raw['messageCount'] != null
+              ? '${raw['messageCount']} messages'
+              : null,
+        );
+      }
+      final stale = state.threads.where((t) {
+        if (t.nodeId != nodeId || t.type != ChatThreadType.envoyHarness) {
+          return false;
+        }
+        final parts = t.id.split(':eh:');
+        if (parts.length < 2) return true;
+        final chatId = parts[1].trim();
+        return !seen.contains(chatId);
+      }).toList();
+      for (final t in stale) {
+        unawaited(deleteThread(t.id));
+      }
+    } catch (_) {
+      // Home node may be on an older build without EH chat RPCs.
+    }
+  }
+
+  Future<String> createEhChat({required String projectPath}) async {
+    final nodeService = _ref.read(nodeServiceProvider);
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeService == null || nodeState.activeNode == null) {
+      throw StateError('Not connected to home node');
+    }
+    final path = projectPath.trim();
+    if (path.isEmpty) {
+      throw ArgumentError('Choose a project folder.');
+    }
+    final created = await nodeService.createEnvoyHarnessChat(cwd: path);
+    final chatId = created['id']?.toString().trim() ?? '';
+    if (chatId.isEmpty) {
+      throw StateError('Failed to create coding chat');
+    }
+    await syncEhChats();
+    return '${nodeState.activeNode!.id}:eh:$chatId';
+  }
+
   /// Sync terminal sessions from the home node as threads.
   Future<void> syncTerminals() async {
+    if (_syncTerminalsInFlight != null) {
+      return _syncTerminalsInFlight!;
+    }
+    _syncTerminalsInFlight = _syncTerminalsImpl();
+    try {
+      await _syncTerminalsInFlight;
+    } finally {
+      _syncTerminalsInFlight = null;
+    }
+  }
+
+  Future<void> _syncTerminalsImpl() async {
     final termNotifier = _ref.read(terminalProvider.notifier);
     await termNotifier.loadSessions();
 
@@ -2257,20 +2539,42 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final nodeState = _ref.read(nodeProvider);
     if (nodeState.activeNode == null) return;
 
+    final nodeId = nodeState.activeNode!.id;
+    final seen = <String>{};
     for (final session in termState.sessions) {
-      final threadId =
-          '${nodeState.activeNode!.id}:term:${session.id}';
-      final displayName = session.isPi
-          ? (session.name.startsWith('π') ? session.name : 'π ${session.name}')
-          : '${ThreadTitleSentinels.terminalPrefix}${session.name}';
+      final threadId = '$nodeId:term:${session.id}';
+      seen.add(session.id);
+      final String displayName;
+      if (session.isEnvoyHarness) {
+        displayName = session.name.startsWith('EH ')
+            ? session.name
+            : 'EH ${session.name}';
+      } else if (session.isPi) {
+        displayName = session.name.startsWith('π')
+            ? session.name
+            : 'π ${session.name}';
+      } else {
+        displayName = '${ThreadTitleSentinels.terminalPrefix}${session.name}';
+      }
       _upsertThread(
         threadId: threadId,
-        nodeId: nodeState.activeNode!.id,
+        nodeId: nodeId,
         type: ChatThreadType.terminal,
         displayName: displayName,
         lastMessageText:
-            '${session.runningProcess ?? (session.isPi ? 'pi' : 'shell')} — ${session.cwd ?? '~'}',
+            '${session.runningProcess ?? (session.isEnvoyHarness ? 'envoy' : session.isPi ? 'pi' : 'shell')} — ${session.cwd ?? '~'}',
       );
+    }
+    final stale = state.threads.where((t) {
+      if (t.nodeId != nodeId || t.type != ChatThreadType.terminal) {
+        return false;
+      }
+      final parts = t.id.split(':term:');
+      if (parts.length < 2) return true;
+      return !seen.contains(parts[1].trim());
+    }).toList();
+    for (final t in stale) {
+      unawaited(deleteThread(t.id));
     }
   }
 
@@ -2295,6 +2599,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
       displayName: '${ThreadTitleSentinels.terminalPrefix}$name',
       lastMessageAt: DateTime.now(),
     );
+
+    await syncTerminals();
   }
 
   /// Start a Pi coding TUI on the home node (same as Social “π Pi”).
@@ -2353,6 +2659,67 @@ class ChatNotifier extends StateNotifier<ChatState> {
     // Refresh full terminal list so role/cwd stay in sync.
     await syncTerminals();
     return sessionId;
+  }
+
+  /// Start an Envoy Harness TUI terminal on the home node (Social Terminal → Envoy).
+  Future<String> createEnvoyTerminal({
+    required String projectPath,
+    String? sessionId,
+    bool forceRestart = false,
+  }) async {
+    final nodeService = _ref.read(nodeServiceProvider);
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeService == null || nodeState.activeNode == null) {
+      throw StateError('Not connected to home node');
+    }
+
+    final path = projectPath.trim();
+    if (path.isEmpty) {
+      throw ArgumentError('Choose a project folder to open Envoy.');
+    }
+
+    final result = await nodeService.ensureEnvoyTerminalSession(
+      projectPath: path,
+      sessionId: sessionId,
+      forceRestart: forceRestart,
+    );
+    if (result['ok'] != true) {
+      throw StateError(
+        (result['reason'] as String?)?.trim().isNotEmpty == true
+            ? result['reason'] as String
+            : 'Failed to start Envoy',
+      );
+    }
+
+    final session = result['session'];
+    Map<String, dynamic>? sessionMap;
+    if (session is Map<String, dynamic>) {
+      sessionMap = session;
+    } else if (session is Map) {
+      sessionMap = session.cast<String, dynamic>();
+    }
+    final newSessionId = sessionMap?['sessionId'] as String?;
+    if (newSessionId == null || newSessionId.isEmpty) {
+      throw StateError('Envoy started but session id was missing');
+    }
+
+    final title = (sessionMap?['title'] as String?)?.trim();
+    final displayName = (title != null && title.isNotEmpty)
+        ? (title.startsWith('EH') ? title : 'EH $title')
+        : 'EH Envoy';
+
+    final threadId = '${nodeState.activeNode!.id}:term:$newSessionId';
+    _upsertThread(
+      threadId: threadId,
+      nodeId: nodeState.activeNode!.id,
+      type: ChatThreadType.terminal,
+      displayName: displayName,
+      lastMessageText: path,
+      lastMessageAt: DateTime.now(),
+    );
+
+    await syncTerminals();
+    return newSessionId;
   }
 
   /// Append a local inbound bubble (not sent to the mesh) — e.g. MiniMax media results.
@@ -2429,6 +2796,24 @@ class ChatNotifier extends StateNotifier<ChatState> {
   /// so it does not reappear on the next `syncAiBots` / config-updated.
   Future<void> deleteThread(String threadId) async {
     final existing = state.threads.where((t) => t.id == threadId).firstOrNull;
+
+    if (existing?.type == ChatThreadType.envoyHarness) {
+      final parts = threadId.split(':eh:');
+      if (parts.length > 1) {
+        final chatId = parts[1].trim();
+        final nodeService = _liveNodeService();
+        if (nodeService != null && chatId.isNotEmpty) {
+          try {
+            await nodeService.removeEnvoyHarnessChat(chatId);
+          } catch (e) {
+            debugPrint('[chat] remove EH chat failed: $e');
+            // Keep the local thread when the node refuses (e.g. turn busy)
+            // so the next syncEhChats does not resurrect a ghost delete.
+            rethrow;
+          }
+        }
+      }
+    }
 
     if (existing?.type == ChatThreadType.aiBot &&
         existing!.botId != null &&

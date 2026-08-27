@@ -24,6 +24,7 @@ export interface FamilyProfileRecord {
   active: boolean
   /** Omitted / undefined = denied for non-owners (opt-in). Owner always allowed at the API layer. */
   extAgentEnabled?: boolean
+  codingEnabled?: boolean
   /** Opaque bot defs — typed as FamilyProfile.aiBots at the api boundary. */
   aiBots?: unknown[]
 }
@@ -47,6 +48,7 @@ export interface UpdateFamilyProfileInput {
   avatarColor?: string
   active?: boolean
   extAgentEnabled?: boolean
+  codingEnabled?: boolean
   aiBots?: unknown[]
   lastSeenAt?: string
   now?: string
@@ -98,6 +100,9 @@ function normalizeProfile(raw: unknown): FamilyProfileRecord | null {
     active: row.active !== false,
     ...(typeof row.extAgentEnabled === "boolean"
       ? { extAgentEnabled: row.extAgentEnabled }
+      : {}),
+    ...(typeof row.codingEnabled === "boolean"
+      ? { codingEnabled: row.codingEnabled }
       : {}),
     aiBots: Array.isArray(row.aiBots) ? row.aiBots : undefined,
   }
@@ -241,8 +246,8 @@ export function createFamilyProfileStore(profileDir: string): FamilyProfileStore
           avatarColor: input.avatarColor,
           isOwner: wantOwner,
           active: true,
-          // Non-owner: Ext Agent off until owner opts in (Settings → Family).
-          ...(wantOwner ? {} : { extAgentEnabled: false as const }),
+          // Non-owner: Ext Agent + Coding off until owner opts in (Settings → Family).
+          ...(wantOwner ? {} : { extAgentEnabled: false as const, codingEnabled: false as const }),
           createdAt: now,
         }
         return {
@@ -267,6 +272,9 @@ export function createFamilyProfileStore(profileDir: string): FamilyProfileStore
         }
         if (input.extAgentEnabled !== undefined) {
           next.extAgentEnabled = input.extAgentEnabled
+        }
+        if (input.codingEnabled !== undefined) {
+          next.codingEnabled = input.codingEnabled
         }
         if (!next.name) throw new Error("name is required")
         const profiles = [...file.profiles]

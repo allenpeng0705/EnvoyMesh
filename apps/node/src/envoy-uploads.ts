@@ -3,13 +3,45 @@
  * Files land under `{profileDir}/envoy-uploads/`.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { MAX_CHAT_ATTACHMENT_BYTES } from "@envoymesh/api";
 
 export interface SaveEnvoyUploadParams {
   filename: string;
   mimeType?: string;
   contentBase64: string;
+  targetDir?: string;
+}
+
+const PROJECT_ATTACHMENTS_DIR = ".envoy-attachments";
+
+function resolveUploadDirectory(
+  profileDir: string,
+  targetDir?: string,
+): { ok: true; dir: string } | { ok: false; error: string } {
+  if (targetDir === undefined || targetDir.trim().length === 0) {
+    return { ok: true, dir: ensureEnvoyUploadsDir(profileDir) };
+  }
+  const root = resolve(targetDir.trim());
+  if (root.length === 0) {
+    return { ok: false, error: "invalid targetDir" };
+  }
+  const dir = join(root, PROJECT_ATTACHMENTS_DIR);
+  try {
+    mkdirSync(dir, { recursive: true });
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+  return { ok: true, dir };
+}
+
+function pathWithinDirectory(dir: string, candidate: string): boolean {
+  const base = resolve(dir);
+  const abs = resolve(candidate);
+  return abs === base || abs.startsWith(`${base}/`) || abs.startsWith(`${base}\\`);
 }
 
 export interface SaveEnvoyUploadResult {
@@ -95,9 +127,16 @@ export function saveEnvoyUpload(
       error: `File too large (max ${MAX_CHAT_ATTACHMENT_BYTES} bytes)`,
     };
   }
-  const dir = ensureEnvoyUploadsDir(profileDir);
+  const dirResult = resolveUploadDirectory(profileDir, params.targetDir);
+  if (!dirResult.ok) {
+    return { ok: false, error: dirResult.error };
+  }
+  const dir = dirResult.dir;
   const outName = `${stamp()}-${name}`;
   const outPath = join(dir, outName);
+  if (!pathWithinDirectory(dir, outPath)) {
+    return { ok: false, error: "invalid upload path" };
+  }
   try {
     writeFileSync(outPath, buf, { mode: 0o600 });
   } catch (err) {

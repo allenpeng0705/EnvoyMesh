@@ -102,4 +102,21 @@ describe("AgentNetworkProfilePanel", () => {
 
     expect(screen.queryByTestId("agent-network-map-worker-path")).toBeNull();
   });
+
+  it("preserves and saves the Envoy Harness worker engine", async () => {
+    getNodeConfig.mockResolvedValue({
+      agentNetworkProfile: undefined,
+      agentNetworkWorkerEngine: "envoy-harness",
+    });
+    renderWithI18n(<AgentNetworkProfilePanel enabled />);
+
+    const select = await screen.findByLabelText(/Team job engine/i) as HTMLSelectElement;
+    expect(select.value).toBe("envoy-harness");
+    expect(screen.queryByTestId("agent-network-map-worker-path")).toBeNull();
+
+    fireEvent.change(select, { target: { value: "openclaw" } });
+    await waitFor(() => {
+      expect(updateNodeConfig).toHaveBeenCalledWith({ agentNetworkWorkerEngine: "openclaw" });
+    });
+  });
 });

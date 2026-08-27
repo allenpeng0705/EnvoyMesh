@@ -17,6 +17,9 @@ import {
   type ChainOrchestratorHandlerDeps,
 } from "../src/chain-orchestrator.js";
 import { selectReadyWorkersForSubtask } from "../src/node-service-chain-orchestration.js";
+import { WorkerLeaseStore } from "../src/worker-lease-store.js";
+import { WorkerReliabilityStore } from "../src/worker-reliability-store.js";
+import { createAgentWorkerLeasePayload } from "@envoymesh/protocol";
 import type { ChainRankedWorker } from "../src/node-service-chains.js";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 
@@ -100,6 +103,17 @@ describe("localAgentNetworkEngineReady", () => {
       }),
     ).toEqual({ ready: true, engine: "ext" });
   });
+
+  it("reports Envoy Harness readiness independently of OpenClaw and Ext", async () => {
+    expect(
+      await localAgentNetworkEngineReady({
+        engine: "envoy-harness",
+        isOpenClawReady: () => false,
+        isExtAgentBridgeReady: () => false,
+        isEnvoyHarnessReady: () => true,
+      }),
+    ).toEqual({ ready: true, engine: "envoy-harness" });
+  });
 });
 
 describe("handleChainReadyRequestInbound", () => {
@@ -172,7 +186,17 @@ describe("selectReadyWorkersForSubtask", () => {
     ];
     // Minimal context — probe override avoids mesh/identity.
     const deps = {
-      getChainSideState: () => ({ readyProbeCache: new Map() }),
+      getChainSideState: () => ({
+        readyProbeCache: new Map(),
+        workerLeases: new WorkerLeaseStore(),
+        workerReliability: new WorkerReliabilityStore(),
+        teamStrategies: new Map(),
+      recovery: new Map(),
+      orchestratorEpoch: "orch_test",
+      workerEpoch: "worker_test",
+      attemptReceipts: { upsert() {}, buildReports() { return []; }, listForChain() { return []; }, get() { return undefined; }, prune() { return 0; }, size() { return 0; }, clear() {} },
+      recoveredPartialKeys: new Set(),
+      }),
       getTaskStore: () => undefined,
     } as never;
     const result = await selectReadyWorkersForSubtask(deps, ranked, "w1", 2, {
@@ -191,7 +215,17 @@ describe("selectReadyWorkersForSubtask", () => {
       { peerId: "w2", score: 8, summary: "b", sameLan: true, online: true, viaRelay: false },
     ];
     const deps = {
-      getChainSideState: () => ({ readyProbeCache: new Map() }),
+      getChainSideState: () => ({
+        readyProbeCache: new Map(),
+        workerLeases: new WorkerLeaseStore(),
+        workerReliability: new WorkerReliabilityStore(),
+        teamStrategies: new Map(),
+      recovery: new Map(),
+      orchestratorEpoch: "orch_test",
+      workerEpoch: "worker_test",
+      attemptReceipts: { upsert() {}, buildReports() { return []; }, listForChain() { return []; }, get() { return undefined; }, prune() { return 0; }, size() { return 0; }, clear() {} },
+      recoveredPartialKeys: new Set(),
+      }),
       getTaskStore: () => undefined,
     } as never;
     const result = await selectReadyWorkersForSubtask(deps, ranked, "w1", 2, {
@@ -202,6 +236,68 @@ describe("selectReadyWorkersForSubtask", () => {
     });
     expect(result.skipped).toEqual([]);
     expect(result.chosen).toEqual(["w1", "w2"]);
+  });
+
+  it("accepts lease-ready workers without calling the legacy ready probe", async () => {
+    const store = new WorkerLeaseStore();
+    const now = Date.parse("2030-01-01T00:00:00.000Z");
+    store.accept(
+      createAgentWorkerLeasePayload({
+        leaseId: "lease_w2",
+        workerPeerId: "w2",
+        ownerId: "envoy:owner:w2",
+        issuedAt: new Date(now).toISOString(),
+        notBefore: new Date(now).toISOString(),
+        expiresAt: new Date(now + 30_000).toISOString(),
+        sequence: 1,
+        runtimes: [
+          {
+            runtime: "envoy-harness",
+            ready: true,
+            capacity: { maxConcurrent: 1, availableSlots: 1, queueDepth: 0 },
+            skillIds: ["research"],
+          },
+        ],
+        connectivity: { direct: true, relay: false },
+        nonce: "0123456789abcdef",
+      }),
+      { now: new Date(now + 1_000) },
+    );
+    const ranked: ChainRankedWorker[] = [
+      { peerId: "w1", score: 10, summary: "a", sameLan: false, online: true, viaRelay: false },
+      {
+        peerId: "w2",
+        score: 8,
+        summary: "b",
+        sameLan: true,
+        online: true,
+        viaRelay: false,
+        availabilitySource: "lease",
+      },
+    ];
+    const probed: string[] = [];
+    const deps = {
+      getChainSideState: () => ({
+        readyProbeCache: new Map(),
+        workerLeases: store,
+        workerReliability: new WorkerReliabilityStore(),
+        teamStrategies: new Map(),
+      recovery: new Map(),
+      orchestratorEpoch: "orch_test",
+      workerEpoch: "worker_test",
+      attemptReceipts: { upsert() {}, buildReports() { return []; }, listForChain() { return []; }, get() { return undefined; }, prune() { return 0; }, size() { return 0; }, clear() {} },
+      recoveredPartialKeys: new Set(),
+      }),
+      getTaskStore: () => undefined,
+    } as never;
+    const result = await selectReadyWorkersForSubtask(deps, ranked, undefined, 2, {
+      probeWorkerEngineReady: async (peerId) => {
+        probed.push(peerId);
+        return { ready: false, reason: "openclaw_unavailable" };
+      },
+    });
+    expect(result.chosen).toContain("w2");
+    expect(probed).not.toContain("w2");
   });
 });
 

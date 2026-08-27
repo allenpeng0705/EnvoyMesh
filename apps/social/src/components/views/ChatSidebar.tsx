@@ -17,6 +17,11 @@ import {
   familyThreadKey,
   OWNER_FAMILY_PROFILE_ID,
   ENVOY_AI_THREAD_KEY,
+  envoyHarnessThreadKey,
+  isEnvoyHarnessThreadKey,
+  MAX_ENVOY_HARNESS_CHATS,
+  familyProfileMayUseCoding,
+  type EhChatWorkspaceSummary,
 } from "@envoymesh/api";
 import { resolveContactAiAccessLevel } from "@envoymesh/api";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
@@ -29,6 +34,7 @@ import { CreateGroupModal } from "./CreateGroupModal.js";
 import { CreateFamilyGroupModal } from "./CreateFamilyGroupModal.js";
 import { CreateBotModal } from "../CreateBotModal.js";
 import { AiBotRowMenu } from "../AiBotRowMenu.js";
+import { EhChatRowMenu } from "../EhChatRowMenu.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
 import { PullToRefresh } from "../PullToRefresh.js";
@@ -37,6 +43,7 @@ import type { BondRecord } from "@envoymesh/api";
 import { openBrowserAt } from "../../lib/browser-nav.js";
 import { openSocialContent } from "../../lib/social-content-nav.js";
 import { webContentUrl } from "../../lib/web-content-urls.js";
+import { CodingProjectPickerModal } from "../CodingProjectPickerModal.js";
 
 const CONTEXT_MENU_PAD = 8;
 
@@ -71,11 +78,13 @@ interface ChatSidebarProps {
   onSelectContact: (id: string | null) => void;
   onOpenAssistant?: () => void;
   onOpenDiscover?: () => void;
-  /** Phase 49 — open the Pi chat panel. */
+  /** Phase 49 — open the Pi terminal (top-level tab). */
   onOpenPi?: () => void;
+  /** U4 — open the envoy-harness chat panel in the thread list. */
+  onOpenEnvoyHarness?: () => void;
 }
 
-export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant, onOpenDiscover, onOpenPi }: ChatSidebarProps) {
+export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant, onOpenDiscover, onOpenPi, onOpenEnvoyHarness }: ChatSidebarProps) {
   const t = useT();
   const nodeService = useNodeService();
   const {
@@ -106,12 +115,114 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
   const [deletingBot, setDeletingBot] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [outboundHellos, setOutboundHellos] = useState<Set<string>>(() => loadOutboundHellos());
+  const [ehChats, setEhChats] = useState<EhChatWorkspaceSummary[]>([]);
+  const [ehChatModalOpen, setEhChatModalOpen] = useState(false);
+  const [ehChatDraft, setEhChatDraft] = useState("");
+  const [ehChatBusy, setEhChatBusy] = useState(false);
+  const [ehChatError, setEhChatError] = useState<string | null>(null);
+  const [deleteEhChatTarget, setDeleteEhChatTarget] = useState<EhChatWorkspaceSummary | null>(null);
+  const [deletingEhChat, setDeletingEhChat] = useState(false);
+
+  const refreshEhChats = async () => {
+    if (!nodeService.isConnected || !nodeService.listEnvoyHarnessChats) return;
+    try {
+      const list = await nodeService.listEnvoyHarnessChats();
+      setEhChats(list);
+      setEhChatError(null);
+    } catch (e: unknown) {
+      setEhChatError(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   // Refresh outbound hellos when the sidebar mounts (e.g. after auto-hello
   // from Discover or the sponsor friend flow).
   useEffect(() => {
     setOutboundHellos(loadOutboundHellos());
   }, []);
+
+  useEffect(() => {
+    if (!nodeService.isConnected) return;
+    void refreshEhChats();
+    const unsubTurn = nodeService.on("eh:turn_complete", () => {
+      void refreshEhChats();
+    });
+    const unsubConfig = nodeService.on("home:config-updated", () => {
+      void refreshEhChats();
+    });
+    return () => {
+      unsubTurn();
+      unsubConfig();
+    };
+  }, [nodeService, nodeService.isConnected]);
+
+  const openEhChatProjectModal = () => {
+    const saved = nodeConfig?.envoyHarnessCwd?.trim() ?? "";
+    setEhChatDraft(saved);
+    setEhChatError(null);
+    setEhChatModalOpen(true);
+  };
+
+  const submitEhChatProject = async () => {
+    const path = ehChatDraft.trim();
+    if (!path) {
+      setEhChatError(t("eh.projectPathRequired", "Choose a project folder."));
+      return;
+    }
+    if (ehChats.length >= MAX_ENVOY_HARNESS_CHATS) {
+      setEhChatError(
+        t(
+          "eh.chatLimit",
+          "At most {{count}} coding chats — remove one first.",
+          { count: MAX_ENVOY_HARNESS_CHATS },
+        ),
+      );
+      return;
+    }
+    setEhChatBusy(true);
+    setEhChatError(null);
+    try {
+      let threadKey: string;
+      try {
+        const created = await nodeService.createEnvoyHarnessChat({ cwd: path });
+        threadKey = envoyHarnessThreadKey(created.id);
+      } catch (createErr: unknown) {
+        const msg =
+          createErr instanceof Error ? createErr.message : String(createErr);
+        // Older home nodes may lack multi-chat RPCs — fall back to legacy cwd.
+        if (!msg.includes("Unknown method: createEnvoyHarnessChat")) {
+          throw createErr;
+        }
+        await nodeService.setEnvoyHarnessProjectPath(path);
+        threadKey = envoyHarnessThreadKey("");
+      }
+      setEhChatModalOpen(false);
+      await refreshEhChats();
+      onSelectContact(threadKey);
+      onOpenEnvoyHarness?.();
+    } catch (e: unknown) {
+      setEhChatError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEhChatBusy(false);
+    }
+  };
+
+  const handleRemoveEhChat = async (chat: EhChatWorkspaceSummary) => {
+    setDeletingEhChat(true);
+    try {
+      await nodeService.removeEnvoyHarnessChat(chat.id);
+      await refreshEhChats();
+      const threadKey = envoyHarnessThreadKey(chat.id);
+      if (selectedContact === threadKey) {
+        onSelectContact(null);
+      }
+      setDeleteEhChatTarget(null);
+    } catch (err) {
+      console.error("[ChatSidebar] remove eh chat failed:", err);
+      setEhChatError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeletingEhChat(false);
+    }
+  };
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -303,10 +414,20 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
     [enabledAiBots, threadPreviews],
   );
 
+  const mayUseCoding = useMemo(() => {
+    if (nodeConfig?.callerIsOwnerProfile) return true;
+    const pid = nodeConfig?.callerFamilyProfileId;
+    const profile = nodeConfig?.familyProfiles?.find((p) => p.id === pid);
+    return familyProfileMayUseCoding(profile ?? null);
+  }, [nodeConfig]);
+
   const showAiSection =
-    Boolean(onOpenAssistant || onOpenPi) ||
+    Boolean(onOpenAssistant) ||
     Boolean(bridgeStatus?.enabled) ||
     enabledAiBots.length > 0;
+
+  const showCodingSection =
+    mayUseCoding && Boolean(onOpenPi || onOpenEnvoyHarness);
 
   useEffect(() => {
     if (!nodeService.isConnected) return;
@@ -419,22 +540,6 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
             </div>
           ) : null}
 
-          {onOpenPi ? (
-            <button
-              type="button"
-              className="thread-row thread-row--ai thread-row--pi"
-              onClick={onOpenPi}
-            >
-              <span className="thread-avatar thread-avatar--pi" aria-hidden>π</span>
-              <span className="thread-meta">
-                <span className="thread-title-row">
-                  <span className="thread-title">{t("pi.title", "Pi")}</span>
-                </span>
-                <span className="thread-subtitle">{t("pi.subtitle", "Coding Agent")}</span>
-              </span>
-            </button>
-          ) : null}
-
           {sortedAiBots.map((bot) => {
             const threadKey = aiBotThreadKey(bot.id);
             const initial = (bot.name.trim().charAt(0) || "?").toUpperCase();
@@ -474,6 +579,97 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
               </div>
             );
           })}
+        </>
+      ) : null}
+
+      {showCodingSection ? (
+        <>
+          <div className="contact-list-section-header">
+            <span className="contact-list-section-label">
+              {t("eh.codingSection", "Coding")}
+            </span>
+            {onOpenEnvoyHarness ? (
+              <button
+                type="button"
+                className="contact-list-section-add-btn"
+                aria-label={t("eh.newChatAria", "New coding chat")}
+                title={t("eh.newChatAria", "New coding chat")}
+                onClick={openEhChatProjectModal}
+                disabled={ehChats.length >= MAX_ENVOY_HARNESS_CHATS}
+              >
+                <AddIcon size={18} />
+              </button>
+            ) : null}
+          </div>
+          {onOpenEnvoyHarness ? (
+            <>
+              {ehChats.map((chat) => {
+                const threadKey = envoyHarnessThreadKey(chat.id);
+                return (
+                  <div
+                    key={chat.id}
+                    className="thread-row-with-actions thread-row-with-actions--ai-bot"
+                  >
+                    <button
+                      type="button"
+                      className={`thread-row thread-row--ai thread-row--envoy-harness${selectedContact === threadKey ? " active" : ""}`}
+                      onClick={() => onSelectContact(threadKey)}
+                    >
+                      <span className="thread-avatar thread-avatar--pi" aria-hidden>EH</span>
+                      <span className="thread-meta">
+                        <span className="thread-title-row">
+                          <span className="thread-title">{chat.title}</span>
+                        </span>
+                        <span className="thread-subtitle">
+                          {chat.messageCount && chat.messageCount > 0
+                            ? t("eh.messageCount", "{{count}} messages", {
+                                count: chat.messageCount,
+                              })
+                            : t("eh.subtitle", "Coding Agent (ACP)")}
+                        </span>
+                      </span>
+                    </button>
+                    <EhChatRowMenu
+                      chat={chat}
+                      onRemove={(c) => setDeleteEhChatTarget(c)}
+                    />
+                  </div>
+                );
+              })}
+              {ehChats.length === 0 ? (
+                <button
+                  type="button"
+                  className={`thread-row thread-row--ai thread-row--envoy-harness${isEnvoyHarnessThreadKey(selectedContact) ? " active" : ""}`}
+                  onClick={openEhChatProjectModal}
+                >
+                  <span className="thread-avatar thread-avatar--pi" aria-hidden>EH</span>
+                  <span className="thread-meta">
+                    <span className="thread-title-row">
+                      <span className="thread-title">{t("eh.title", "Envoy")}</span>
+                    </span>
+                    <span className="thread-subtitle">
+                      {t("eh.startChat", "Choose a project to start")}
+                    </span>
+                  </span>
+                </button>
+              ) : null}
+            </>
+          ) : null}
+          {onOpenPi ? (
+            <button
+              type="button"
+              className="thread-row thread-row--ai thread-row--pi"
+              onClick={onOpenPi}
+            >
+              <span className="thread-avatar thread-avatar--pi" aria-hidden>π</span>
+              <span className="thread-meta">
+                <span className="thread-title-row">
+                  <span className="thread-title">{t("pi.title", "Pi")}</span>
+                </span>
+                <span className="thread-subtitle">{t("pi.subtitle", "Coding Agent")}</span>
+              </span>
+            </button>
+          ) : null}
         </>
       ) : null}
 
@@ -893,6 +1089,29 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
         />
       ) : null}
 
+      {deleteEhChatTarget ? (
+        <ConfirmDialog
+          title={t("eh.removeChatTitle", "Remove coding chat?")}
+          message={t(
+            "eh.removeChatMessage",
+            "Remove “{title}”? The transcript stays on disk; only this sidebar thread is removed.",
+            { title: deleteEhChatTarget.title },
+          )}
+          variant="destructive"
+          confirmLabel={
+            deletingEhChat
+              ? t("eh.removingChat", "Removing…")
+              : t("eh.removeChat", "Remove")
+          }
+          onCancel={() => {
+            if (!deletingEhChat) setDeleteEhChatTarget(null);
+          }}
+          onConfirm={() => {
+            if (!deletingEhChat) void handleRemoveEhChat(deleteEhChatTarget);
+          }}
+        />
+      ) : null}
+
       {deleteBotTarget ? (
         <ConfirmDialog
           title={t("chat.deleteBotTitle", "Delete bot?")}
@@ -924,6 +1143,31 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
               onSelectContact(null);
             }
           }}
+        />
+      ) : null}
+
+      {ehChatModalOpen ? (
+        <CodingProjectPickerModal
+          open={ehChatModalOpen}
+          title={t("eh.newChatTitle", "New coding chat")}
+          description={t(
+            "eh.chooseProjectDesc",
+            "Each coding chat is tied to one project folder, like Pi and Envoy Terminal sessions.",
+          )}
+          value={ehChatDraft}
+          onChange={(path) => {
+            setEhChatDraft(path);
+            if (ehChatError) setEhChatError(null);
+          }}
+          error={ehChatError}
+          busy={ehChatBusy}
+          confirmLabel={t("eh.openChat", "Open chat")}
+          busyLabel={t("eh.openingChat", "Opening…")}
+          pickerTitle={t("eh.newChatTitle", "New coding chat")}
+          onClose={() => {
+            if (!ehChatBusy) setEhChatModalOpen(false);
+          }}
+          onConfirm={() => void submitEhChatProject()}
         />
       ) : null}
     </aside>

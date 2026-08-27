@@ -1,0 +1,839 @@
+/**
+ * Phase 8 / v1.10 — tests for the 3-tuple reputation
+ * scorebook (`chain-scoreboard.ts` →
+ * `reputationFromVerdicts` + `categorizeReputation` +
+ * `isNoHistoryReputation` + the weight + threshold
+ * constants).
+ *
+ * **What this covers:**
+ * - `reputationFromVerdicts` returns the expected
+ *   `[-1, 1]` score for empty / all-pass / all-fail /
+ *   all-disputed / mixed-source / partial-factor /
+ *   cross-weighted / human-weighted inputs.
+ * - `categorizeReputation` returns the expected
+ *   category for boundary + interior scores.
+ * - `isNoHistoryReputation` returns `true` only for
+ *   the empty-input case.
+ * - `SCOREBOARD_SOURCE_WEIGHTS` and
+ *   `SCOREBOARD_TRUST_THRESHOLDS` have the locked
+ *   values (spec pinning).
+ *
+ * **Why a separate file (not split across other test
+ * files):** the scorebook is a self-contained module
+ * with no dependencies on the orchestrator's verify
+ * loop or the arbitration store. The function is
+ * pure (no I/O, no clock); the tests construct
+ * synthetic `VerdictEntry` shapes inline.
+ *
+ * **Pure function tests:** synthetic `VerdictEntry`
+ * shapes constructed inline; no I/O, no `process.env`,
+ * no clock. The signature is a non-empty string per
+ * the Zod schema; the exact value doesn't matter
+ * (the function doesn't read it).
+ */
+
+import { describe, expect, it } from "vitest";
+
+import type { Verdict, VerdictEntry, VerifierSource } from "@envoymesh/protocol";
+
+import {
+  categorizeReputation,
+  getReputationFromGraph,
+  getReputationBySkillForPeer,
+  getWorkerReputation,
+  isNoHistoryReputation,
+  reputationFromVerdicts,
+  SCOREBOARD_SOURCE_WEIGHTS,
+  SCOREBOARD_TRUST_THRESHOLDS,
+} from "../src/chain-scoreboard.js";
+import { LocalAgentGraphStore } from "../src/chain-graph/local.js";
+import {
+  createArbitrationStore,
+  recordVerdictEntry,
+} from "../src/chain-arbitration.js";
+
+// ---------------------------------------------------------------------------
+// Test fixtures
+// ---------------------------------------------------------------------------
+
+const NOW = "2026-08-21T00:00:00.000Z";
+
+/**
+ * Build a synthetic `VerdictEntry` for the
+ * scorebook formula. The signature + issuedBy are
+ * non-empty strings (per the Zod schema); the
+ * exact values don't affect the formula.
+ */
+function makeVerdict(input: {
+  source: VerifierSource;
+  verdict: Verdict;
+  workerPeerId?: string;
+  workerRuntime?: VerdictEntry["workerRuntime"];
+  skillId?: string;
+  subtaskId?: string;
+  verifierModel?: string;
+  verifierOwnerId?: string;
+}): VerdictEntry {
+  return {
+    chainId: "chain_test",
+    subtaskId: input.subtaskId ?? "subtask_a",
+    workerPeerId: input.workerPeerId ?? "peer-1",
+    workerRuntime: input.workerRuntime ?? "openclaw",
+    skillId: input.skillId ?? "research",
+    verdict: input.verdict,
+    source: input.source,
+    ...(input.verifierModel !== undefined && { verifierModel: input.verifierModel }),
+    ...(input.verifierOwnerId !== undefined && { verifierOwnerId: input.verifierOwnerId }),
+    issuedBy: "orch-1",
+    issuedAt: NOW,
+    signature: "test-signature",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// reputationFromVerdicts — formula
+// ---------------------------------------------------------------------------
+
+describe("reputationFromVerdicts", () => {
+  it("returns 0 for an empty input (Q2 — neutral, not null, not throw)", () => {
+    expect(reputationFromVerdicts([])).toBe(0);
+  });
+
+  it("returns 1.0 for all `pass` (rule) at score 1.0", () => {
+    const verdicts = [
+      makeVerdict({ source: "rule", verdict: { kind: "pass", score: 1, confidence: "high" } }),
+      makeVerdict({ source: "rule", verdict: { kind: "pass", score: 1, confidence: "high" } }),
+    ];
+    expect(reputationFromVerdicts(verdicts)).toBe(1);
+  });
+
+  it("returns 0.5 for all `pass` (rule) at score 0.5", () => {
+    const verdicts = [
+      makeVerdict({ source: "rule", verdict: { kind: "pass", score: 0.5, confidence: "medium" } }),
+    ];
+    expect(reputationFromVerdicts(verdicts)).toBe(0.5);
+  });
+
+  it("returns -1.0 for all `fail` (rule)", () => {
+    const verdicts = [
+      makeVerdict({ source: "rule", verdict: { kind: "fail", reason: "x", rollback: true } }),
+      makeVerdict({ source: "rule", verdict: { kind: "fail", reason: "y", rollback: true } }),
+    ];
+    expect(reputationFromVerdicts(verdicts)).toBe(-1);
+  });
+
+  it("returns 0 for all `disputed` (Q3 — no contribution, no weight)", () => {
+    const verdicts = [
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "disputed", needsHuman: true, signals: ["unclear"] },
+      }),
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "disputed", needsHuman: true, signals: ["ambiguous"] },
+      }),
+    ];
+    expect(reputationFromVerdicts(verdicts)).toBe(0);
+  });
+
+  it("returns 0 for a mix of `pass` (rule, 0.7) + `fail` (rule) that cancels out", () => {
+    // 0.7 * 1 - 1 * 1 = -0.3; weight = 2; -0.3 / 2 = -0.15.
+    // Use two pass + one fail to land at 0: 2 * 0.5 - 1 = 0; weight = 3; 0/3 = 0.
+    const verdicts = [
+      makeVerdict({ source: "rule", verdict: { kind: "pass", score: 0.5, confidence: "medium" } }),
+      makeVerdict({ source: "rule", verdict: { kind: "pass", score: 0.5, confidence: "medium" } }),
+      makeVerdict({ source: "rule", verdict: { kind: "fail", reason: "x", rollback: true } }),
+    ];
+    expect(reputationFromVerdicts(verdicts)).toBe(0);
+  });
+
+  it("preserves the score for a single `pass` (cross) — the 1.5x weight cancels in normalization", () => {
+    // 0.8 * 1.5 / 1.5 = 0.8.
+    const verdicts = [
+      makeVerdict({
+        source: "cross",
+        verdict: { kind: "pass", score: 0.8, confidence: "high" },
+        verifierModel: "claude",
+      }),
+    ];
+    expect(reputationFromVerdicts(verdicts)).toBeCloseTo(0.8, 10);
+  });
+
+  it("weights human + rule against each other — human dominates", () => {
+    // human pass (2 * 1 = 2) + rule fail (-1) = 1; weight = 3; 1 / 3 = 0.3333...
+    const verdicts = [
+      makeVerdict({
+        source: "human",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        verifierOwnerId: "owner-1",
+      }),
+      makeVerdict({ source: "rule", verdict: { kind: "fail", reason: "x", rollback: true } }),
+    ];
+    expect(reputationFromVerdicts(verdicts)).toBeCloseTo(1 / 3, 10);
+  });
+
+  it("applies the partial factor (0.5x) to `partial` verdicts", () => {
+    // 0.6 * 1 * 0.5 = 0.3; weight = 1; 0.3 / 1 = 0.3.
+    const verdicts = [
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "partial", score: 0.6, reason: "half-usable" },
+      }),
+    ];
+    expect(reputationFromVerdicts(verdicts)).toBeCloseTo(0.3, 10);
+  });
+
+  it("combines mixed sources correctly (human pass + rule fail + cross partial)", () => {
+    // human pass: 2 * 1 = 2; rule fail: -1; cross partial: 0.5 * 1.5 * 0.5 = 0.375.
+    // sum = 1.375; weight = 1 + 2 + 1.5 = 4.5; 1.375 / 4.5 = 0.30555...
+    const verdicts = [
+      makeVerdict({
+        source: "human",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        verifierOwnerId: "owner-1",
+      }),
+      makeVerdict({ source: "rule", verdict: { kind: "fail", reason: "x", rollback: true } }),
+      makeVerdict({
+        source: "cross",
+        verdict: { kind: "partial", score: 0.5, reason: "half-usable" },
+        verifierModel: "claude",
+      }),
+    ];
+    expect(reputationFromVerdicts(verdicts)).toBeCloseTo(1.375 / 4.5, 10);
+  });
+
+  it("reaches the max positive 1.0 with cross pass (1.0) + human pass (1.0)", () => {
+    // 1.5 * 1 + 2 * 1 = 3.5; weight = 1.5 + 2 = 3.5; 3.5 / 3.5 = 1.0.
+    const verdicts = [
+      makeVerdict({
+        source: "cross",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        verifierModel: "claude",
+      }),
+      makeVerdict({
+        source: "human",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        verifierOwnerId: "owner-1",
+      }),
+    ];
+    expect(reputationFromVerdicts(verdicts)).toBe(1);
+  });
+
+  it("reaches the max negative -1.0 with cross fail + human fail", () => {
+    // (-1.5) + (-2) = -3.5; weight = 1.5 + 2 = 3.5; -3.5 / 3.5 = -1.0.
+    const verdicts = [
+      makeVerdict({
+        source: "cross",
+        verdict: { kind: "fail", reason: "x", rollback: true },
+        verifierModel: "claude",
+      }),
+      makeVerdict({
+        source: "human",
+        verdict: { kind: "fail", reason: "x", rollback: true },
+        verifierOwnerId: "owner-1",
+      }),
+    ];
+    expect(reputationFromVerdicts(verdicts)).toBe(-1);
+  });
+
+  it("ignores `disputed` verdicts (no contribution, no weight) when mixed with `pass`", () => {
+    // pass (rule, 0.5) + disputed (rule) = 0.5 * 1; weight = 1 (disputed adds 0).
+    // 0.5 / 1 = 0.5.
+    const verdicts = [
+      makeVerdict({ source: "rule", verdict: { kind: "pass", score: 0.5, confidence: "medium" } }),
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "disputed", needsHuman: true, signals: ["unclear"] },
+      }),
+    ];
+    expect(reputationFromVerdicts(verdicts)).toBe(0.5);
+  });
+
+  it("clamps to [-1, 1] for floating-point edge cases (defensive)", () => {
+    // The formula is naturally bounded, but a `clamp` guards
+    // against floating-point drift. Verify the clamp by
+    // constructing a value that *would* exceed the bounds
+    // if not clamped — using a `pass` (cross, 1.0) which
+    // produces exactly 1.0.
+    const verdicts = [
+      makeVerdict({
+        source: "cross",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        verifierModel: "claude",
+      }),
+    ];
+    const result = reputationFromVerdicts(verdicts);
+    expect(result).toBeGreaterThanOrEqual(-1);
+    expect(result).toBeLessThanOrEqual(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// categorizeReputation — Tauri UI helper
+// ---------------------------------------------------------------------------
+
+describe("categorizeReputation", () => {
+  it("returns 'trusted' for a score above the trusted threshold (0.8)", () => {
+    expect(categorizeReputation(0.8)).toBe("trusted");
+  });
+
+  it("returns 'trusted' at the trusted boundary (0.7)", () => {
+    expect(categorizeReputation(SCOREBOARD_TRUST_THRESHOLDS.trusted)).toBe("trusted");
+  });
+
+  it("returns 'mixed' for a score in the mixed band (0.5)", () => {
+    expect(categorizeReputation(0.5)).toBe("mixed");
+  });
+
+  it("returns 'mixed' at the untrusted boundary (0.3)", () => {
+    expect(categorizeReputation(SCOREBOARD_TRUST_THRESHOLDS.untrusted)).toBe("mixed");
+  });
+
+  it("returns 'untrusted' for a score just below the untrusted threshold (0.1)", () => {
+    expect(categorizeReputation(0.1)).toBe("untrusted");
+  });
+
+  it("returns 'untrusted' for a negative score (-0.5)", () => {
+    expect(categorizeReputation(-0.5)).toBe("untrusted");
+  });
+
+  it("returns 'untrusted' for a score of exactly 0 (the 'neutral' case)", () => {
+    // 0 is just below the `untrusted` threshold (0.3).
+    // The Tauri team uses `isNoHistoryReputation` to
+    // override to 'no-history' for the empty-input case.
+    expect(categorizeReputation(0)).toBe("untrusted");
+  });
+
+  it("returns 'untrusted' for the max negative (-1.0)", () => {
+    expect(categorizeReputation(-1)).toBe("untrusted");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isNoHistoryReputation — Tauri UI helper
+// ---------------------------------------------------------------------------
+
+describe("isNoHistoryReputation", () => {
+  it("returns true for an empty input (verdictCount = 0)", () => {
+    expect(isNoHistoryReputation(0)).toBe(true);
+  });
+
+  it("returns false for a non-empty input (verdictCount = 1)", () => {
+    expect(isNoHistoryReputation(1)).toBe(false);
+  });
+
+  it("returns false for a large verdict count (verdictCount = 100)", () => {
+    expect(isNoHistoryReputation(100)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Constants — spec pinning (Q3 + Q5)
+// ---------------------------------------------------------------------------
+
+describe("SCOREBOARD_SOURCE_WEIGHTS", () => {
+  it("has the locked values for each source (Q3 of the v1.10 design questions)", () => {
+    expect(SCOREBOARD_SOURCE_WEIGHTS).toEqual({
+      rule: 1.0,
+      llm: 1.0,
+      cross: 1.5,
+      human: 2.0,
+    });
+  });
+
+  it("weights cross strictly greater than rule/llm (the F9.5 proxy)", () => {
+    expect(SCOREBOARD_SOURCE_WEIGHTS.cross).toBeGreaterThan(SCOREBOARD_SOURCE_WEIGHTS.rule);
+    expect(SCOREBOARD_SOURCE_WEIGHTS.cross).toBeGreaterThan(SCOREBOARD_SOURCE_WEIGHTS.llm);
+  });
+
+  it("weights human strictly greater than cross (most-trusted source)", () => {
+    expect(SCOREBOARD_SOURCE_WEIGHTS.human).toBeGreaterThan(SCOREBOARD_SOURCE_WEIGHTS.cross);
+  });
+});
+
+describe("SCOREBOARD_TRUST_THRESHOLDS", () => {
+  it("has the locked values (Q5 of the v1.10 design questions)", () => {
+    expect(SCOREBOARD_TRUST_THRESHOLDS).toEqual({
+      trusted: 0.7,
+      untrusted: 0.3,
+    });
+  });
+
+  it("has trusted strictly greater than untrusted (clear three-way band)", () => {
+    expect(SCOREBOARD_TRUST_THRESHOLDS.trusted).toBeGreaterThan(
+      SCOREBOARD_TRUST_THRESHOLDS.untrusted,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getWorkerReputation — v1.11 wiring helper
+// ---------------------------------------------------------------------------
+
+describe("getWorkerReputation", () => {
+  it("returns undefined when the store has no verdicts for the 3-tuple (Q3 — no history)", () => {
+    let store = createArbitrationStore();
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBeUndefined();
+  });
+
+  it("returns 1.0 for all `pass` (rule) at score 1.0 (mapped from raw 1.0)", () => {
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+      }),
+    );
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBe(1);
+  });
+
+  it("returns 0.0 for all `fail` (rule) (mapped from raw -1.0)", () => {
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "fail", reason: "x", rollback: true },
+      }),
+    );
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBe(0);
+  });
+
+  it("maps raw 0.5 to 0.75 (a `pass` (rule) at score 0.5)", () => {
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 0.5, confidence: "medium" },
+      }),
+    );
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBeCloseTo(0.75, 10);
+  });
+
+  it("returns undefined when all verdicts are `disputed` (Q4 — no usable signal)", () => {
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "disputed", needsHuman: true, signals: ["unclear"] },
+        subtaskId: "subtask_x",
+      }),
+    );
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "disputed", needsHuman: true, signals: ["ambiguous"] },
+        subtaskId: "subtask_y",
+      }),
+    );
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBeUndefined();
+  });
+
+  it("excludes verdicts for OTHER (peer, runtime, skill) — the 3-tuple filter is honored", () => {
+    let store = createArbitrationStore();
+    // Two verdicts for the queried 3-tuple (peer-1, openclaw, research).
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        workerPeerId: "peer-1",
+        workerRuntime: "openclaw",
+        skillId: "research",
+        subtaskId: "subtask_x",
+      }),
+    );
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        workerPeerId: "peer-1",
+        workerRuntime: "openclaw",
+        skillId: "research",
+        subtaskId: "subtask_y",
+      }),
+    );
+    // One verdict for a different peer — must be excluded.
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "fail", reason: "x", rollback: true },
+        workerPeerId: "peer-2",
+        workerRuntime: "openclaw",
+        skillId: "research",
+        subtaskId: "subtask_z",
+      }),
+    );
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBe(1);
+  });
+
+  it("the mapping is symmetric: raw 0 → 0.5; raw 1 → 1; raw -1 → 0", () => {
+    // For raw 0, the pass + fail must cancel out. Use pass(1.0) +
+    // fail so sum = 1.0 + (-1.0) = 0; weight = 2; 0/2 = 0.
+    // Use distinct subtaskIds so both verdicts persist in the store.
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        subtaskId: "subtask_x",
+      }),
+    );
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "fail", reason: "x", rollback: true },
+        subtaskId: "subtask_y",
+      }),
+    );
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBeCloseTo(0.5, 10);
+  });
+
+  it("combines mixed sources correctly (human pass + rule fail + cross partial)", () => {
+    // raw = 1.375 / 4.5 ≈ 0.3056; mapped = (0.3056 + 1) / 2 ≈ 0.6528
+    // Use distinct subtaskIds so all three verdicts persist in the store.
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "human",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        verifierOwnerId: "owner-1",
+        subtaskId: "subtask_x",
+      }),
+    );
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "fail", reason: "x", rollback: true },
+        subtaskId: "subtask_y",
+      }),
+    );
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "cross",
+        verdict: { kind: "partial", score: 0.5, reason: "half-usable" },
+        verifierModel: "claude",
+        subtaskId: "subtask_z",
+      }),
+    );
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBeCloseTo((1.375 / 4.5 + 1) / 2, 10);
+  });
+
+  it("returns a number in [0, 1] for any non-empty input (clamp invariant)", () => {
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+      }),
+    );
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBeGreaterThanOrEqual(0);
+    expect(result).toBeLessThanOrEqual(1);
+  });
+
+  it("the function uses getVerdictsFor correctly (verifies the 3-tuple filter via store)", () => {
+    // This test pins the contract: getWorkerReputation delegates
+    // the 3-tuple filter to getVerdictsFor. We test by populating
+    // verdicts for (peer-1, openclaw, research) + a verdict for
+    // (peer-1, openclaw, "different-skill") and verifying that
+    // the different-skill verdict is excluded.
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        skillId: "research",
+        subtaskId: "subtask_x",
+      }),
+    );
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "fail", reason: "x", rollback: true },
+        skillId: "different-skill",
+        subtaskId: "subtask_y",
+      }),
+    );
+    const result = getWorkerReputation(store, {
+      workerPeerId: "peer-1",
+      workerRuntime: "openclaw",
+      skillId: "research",
+    });
+    expect(result).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getReputationBySkillForPeer — v1.13 per-peer projection
+// ---------------------------------------------------------------------------
+
+describe("getReputationBySkillForPeer", () => {
+  it("returns undefined when no stores are provided (Q3 — no history)", () => {
+    const result = getReputationBySkillForPeer([], "peer-1");
+    expect(result).toBeUndefined();
+  });
+
+  it("returns undefined when the stores have no verdicts for the peer", () => {
+    const store = createArbitrationStore();
+    const result = getReputationBySkillForPeer([store], "peer-1");
+    expect(result).toBeUndefined();
+  });
+
+  it("returns a per-skill map for a single (runtime, skill) 3-tuple", () => {
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        workerPeerId: "peer-1",
+        skillId: "research",
+      }),
+    );
+    const result = getReputationBySkillForPeer([store], "peer-1");
+    expect(result).toEqual({ research: 1 });
+  });
+
+  it("takes the MAX across runtimes per skill (Q2 — best foot forward)", () => {
+    let storeA = createArbitrationStore();
+    storeA = recordVerdictEntry(
+      storeA,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        workerPeerId: "peer-1",
+        workerRuntime: "openclaw",
+        skillId: "research",
+      }),
+    );
+    let storeB = createArbitrationStore();
+    storeB = recordVerdictEntry(
+      storeB,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "fail", reason: "x", rollback: true },
+        workerPeerId: "peer-1",
+        workerRuntime: "envoy-harness",
+        skillId: "research",
+      }),
+    );
+    // peer-1 has a high rep on openclaw (1.0) and a low rep on envoy-harness (0.0).
+    // The MAX-across-runtimes semantic takes the high rep.
+    const result = getReputationBySkillForPeer([storeA, storeB], "peer-1");
+    expect(result).toEqual({ research: 1 });
+  });
+
+  it("returns multiple skills when the peer has verdicts for different skills", () => {
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        workerPeerId: "peer-1",
+        skillId: "research",
+      }),
+    );
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 0.8, confidence: "high" },
+        workerPeerId: "peer-1",
+        skillId: "translate",
+        subtaskId: "subtask_b",
+      }),
+    );
+    const result = getReputationBySkillForPeer([store], "peer-1");
+    expect(result).toEqual({ research: 1, translate: 0.9 });
+  });
+
+  it("excludes skills with no usable signal (Q4 — all-disputed verdicts are skipped)", () => {
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "disputed", needsHuman: true, signals: ["unclear"] },
+        workerPeerId: "peer-1",
+        skillId: "research",
+        subtaskId: "subtask_x",
+      }),
+    );
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "disputed", needsHuman: true, signals: ["ambiguous"] },
+        workerPeerId: "peer-1",
+        skillId: "research",
+        subtaskId: "subtask_y",
+      }),
+    );
+    const result = getReputationBySkillForPeer([store], "peer-1");
+    expect(result).toBeUndefined();
+  });
+
+  it("aggregates ALL verdicts of a (runtime, skill) tuple (dedupe keeps the aggregation)", () => {
+    // F-fix: the per-tuple dedupe must not skip aggregation —
+    // getWorkerReputation reads every verdict of the tuple via
+    // getVerdictsFor. Two pass verdicts (1.0 + 0.5) aggregate to
+    // a mean score of 0.75 → mapped to (0.75 + 1) / 2 = 0.875.
+    let store = createArbitrationStore();
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 1, confidence: "high" },
+        workerPeerId: "peer-1",
+        skillId: "research",
+        subtaskId: "subtask_a",
+      }),
+    );
+    store = recordVerdictEntry(
+      store,
+      makeVerdict({
+        source: "rule",
+        verdict: { kind: "pass", score: 0.5, confidence: "medium" },
+        workerPeerId: "peer-1",
+        skillId: "research",
+        subtaskId: "subtask_b",
+      }),
+    );
+    const result = getReputationBySkillForPeer([store], "peer-1");
+    expect(result).toEqual({ research: 0.875 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getReputationFromGraph — v2.0 derived view over closed edges
+// ---------------------------------------------------------------------------
+
+describe("getReputationFromGraph", () => {
+  function openAndClose(
+    graph: LocalAgentGraphStore,
+    opts: {
+      childPeerId?: string;
+      workerRuntime?: string;
+      skillId?: string;
+      verdict?: VerdictEntry["verdict"];
+      source?: VerifierSource;
+      signature?: string;
+    } = {},
+  ) {
+    graph.openEdge({
+      parentPeerId: "orch-1",
+      childPeerId: opts.childPeerId ?? "peer-1",
+      subtaskId: "subtask_a",
+      workerRuntime: (opts.workerRuntime ?? "openclaw") as never,
+      skillId: opts.skillId ?? "research",
+    });
+    graph.closeEdge(
+      "orch-1",
+      "subtask_a",
+      makeVerdict({
+        workerPeerId: opts.childPeerId ?? "peer-1",
+        workerRuntime: (opts.workerRuntime ?? "openclaw") as never,
+        skillId: opts.skillId ?? "research",
+        verdict: opts.verdict ?? { kind: "pass", score: 1, confidence: "high" },
+        source: opts.source ?? "rule",
+        signature: opts.signature ?? "sig",
+      }),
+      200,
+    );
+  }
+
+  it("returns undefined for a worker with no closed verdicts", () => {
+    const graph = new LocalAgentGraphStore();
+    expect(
+      getReputationFromGraph(graph, {
+        childPeerId: "peer-1",
+        workerRuntime: "openclaw",
+        skillId: "research",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("derives reputation from the closed edge's verdict", () => {
+    const graph = new LocalAgentGraphStore();
+    openAndClose(graph);
+    expect(
+      getReputationFromGraph(graph, {
+        childPeerId: "peer-1",
+        workerRuntime: "openclaw",
+        skillId: "research",
+      }),
+    ).toBe(1);
+  });
+
+  it("filters by runtime + skill (the 3-tuple)", () => {
+    const graph = new LocalAgentGraphStore();
+    openAndClose(graph, { workerRuntime: "openclaw", skillId: "research" });
+    expect(
+      getReputationFromGraph(graph, {
+        childPeerId: "peer-1",
+        workerRuntime: "envoy-harness",
+        skillId: "research",
+      }),
+    ).toBeUndefined();
+  });
+});

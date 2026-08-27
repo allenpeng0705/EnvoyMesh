@@ -31,7 +31,8 @@ export type KnowledgeBrowseFilter =
   | "documents"
   | "published"
   | "obsidian"
-  | "notion";
+  | "notion"
+  | "blog";
 
 export function isKnowledgeNotesPath(relativePath: string): boolean {
   const p = normalizeVaultRelativePath(relativePath).toLowerCase();
@@ -155,6 +156,7 @@ export function matchesKnowledgeBrowseFilter(
   if (filter === "notion") {
     return item.source === "mcp-remote" || isKnowledgeNotionPath(item.relativePath);
   }
+  if (filter === "blog") return isKnowledgeBlogPath(item.relativePath);
   return true;
 }
 

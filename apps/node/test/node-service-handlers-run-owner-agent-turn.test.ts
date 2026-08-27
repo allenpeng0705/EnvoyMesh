@@ -18,6 +18,20 @@ function makeCtx(
     endOpenClawToolTracking: vi.fn(() => []),
     buildOpenClawTurnContext: vi.fn(async () => ({})),
     askOpenClaw: vi.fn(async () => "answer"),
+    // Phase 8 / Step 5 — defaults for the
+    // signal-router integration. Tests that
+    // don't care about routing get
+    // `signalOptIn: "disabled"` (router picks
+    // OpenClaw regardless) + `isEnvoyHarnessReady:
+    // () => false` (EH dispatch branch is
+    // unreachable). Tests that DO exercise
+    // routing override these in the
+    // `overrides` arg.
+    isEnvoyHarnessReady: vi.fn(() => false),
+    askEnvoyHarness: vi.fn(async () => {
+      throw new Error("askEnvoyHarness should not be called when isEnvoyHarnessReady is false");
+    }),
+    signalOptIn: "disabled",
     persistEnvoyAiChatExchange: vi.fn(async () => undefined),
     recordEnvoyAiHumanOutgoing: vi.fn(async () => undefined),
     maybeIngestTerminalAssistantReply: vi.fn(),

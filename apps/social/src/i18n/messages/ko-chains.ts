@@ -189,6 +189,17 @@ export const koChainsMessages = {
     composerLabel: "에이전트가 무엇을 수행하길 원하시나요?",
     composerPlaceholder: "예: 최신 로컬 LLM 개발을 조사하고 상위 3개를 요약",
     preview: "계획 미리보기",
+    reliabilityBadge: "신뢰도 {pct}% · {samples}개 샘플",
+    reliabilityHint:
+      "이 노드의 과거 결과에서 추정한 신뢰도 하한 (베타 추정). 실제 작업이 늘수록 정확도가 향상되며, 새 워커는 샘플이 적습니다.",
+    reliabilitySparse: "{level}에서 추정한 값 — 현재 {samples}개 샘플",
+    reliabilityFallback: {
+      exact: "이 워커의 기록",
+      peer_runtime_skill: "이 워커의 유사 작업",
+      peer_runtime: "이 워커의 런타임",
+      runtime_skill: "이 스킬이 있는 워커",
+      prior: "일반 사전 (아직 기록 없음)",
+    },
     template: {
       research: "주제 조사",
       researchGoal: "{topic}의 최신 개발을 조사하고 주요 발견을 요약",

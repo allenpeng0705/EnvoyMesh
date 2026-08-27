@@ -28,6 +28,10 @@
     "@envoymesh/api": "0.2.2",
     "@envoymesh/agent-adapter": "0.2.2",
     "@envoymesh/bonds": "0.2.2",
+    "@envoymesh/envoy-harness": "file:../../../envoy-harness/packages/envoy-harness",
+    "@envoymesh/envoy-harness-client": "file:../../../envoy-harness/packages/envoy-harness-client",
+    "@envoymesh/envoy-harness-adapter": "file:../../../envoy-harness/packages/envoy-harness-adapter",
+    "@envoymesh/envoy-harness-peer": "file:../../../envoy-harness/packages/envoy-harness-peer",
     "@envoymesh/identity": "0.2.2",
     "@envoymesh/ipfs-helia": "0.2.2",
     "@envoymesh/kb-obsidian": "0.2.2",
@@ -45,7 +49,8 @@
     "node-pty": "^1.1.0",
     "sharp": "^0.35.3",
     "ws": "^8.20.0",
-    "yaml": "^2.8.1"
+    "yaml": "^2.8.1",
+    "@envoymesh/envoy-harness-client": "file:../../../envoy-harness/packages/envoy-harness-client"
   },
   "devDependencies": {
     "@types/nat-upnp": "^1.1.5",

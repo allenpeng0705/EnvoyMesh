@@ -310,6 +310,60 @@ void main() {
       expect(state, isNotNull);
       expect(state!.chainId, 'chain_live');
     });
+
+    test('agentNetworkDiagnosticsSnapshot / Simulate / Export RPCs', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final snapFuture = client.agentNetworkDiagnosticsSnapshot();
+      await Future.delayed(Duration.zero);
+      var sent = _lastSent(mock);
+      expect(sent['method'], 'agentNetworkDiagnosticsSnapshot');
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {
+          'at': '2030-01-01T00:00:00.000Z',
+          'joinEnabled': true,
+          'localFeatures': ['worker-lease-v1'],
+          'workers': [],
+          'warnings': [],
+        },
+      });
+      final snap = await snapFuture;
+      expect(snap['joinEnabled'], true);
+
+      final simFuture = client.agentNetworkSimulate(mode: 'readiness');
+      await Future.delayed(Duration.zero);
+      sent = _lastSent(mock);
+      expect(sent['method'], 'agentNetworkSimulate');
+      expect(sent['params']['mode'], 'readiness');
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {
+          'simulationId': 'an_sim_1',
+          'mode': 'readiness',
+          'at': '2030-01-01T00:00:00.000Z',
+          'noSpend': true,
+          'summary': 'ok',
+          'candidates': [],
+          'warnings': [],
+        },
+      });
+      final sim = await simFuture;
+      expect(sim['simulationId'], 'an_sim_1');
+
+      final exportFuture =
+          client.agentNetworkExportDiagnostics(simulationId: 'an_sim_1');
+      await Future.delayed(Duration.zero);
+      sent = _lastSent(mock);
+      expect(sent['method'], 'agentNetworkExportDiagnostics');
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {'json': '{"ok":true}'},
+      });
+      expect(await exportFuture, '{"ok":true}');
+    });
   });
 
   // ----------------------------------------------------------------------
@@ -824,6 +878,54 @@ void main() {
       });
       final result = await callFuture;
       expect(result['ok'], isTrue);
+    });
+  });
+
+  group('NodeServiceClient EH turn-review RPCs', () {
+    test('acceptEnvoyHarnessTurnReview sends turnId and optional paths', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.acceptEnvoyHarnessTurnReview(
+        'turn_1',
+        paths: ['a.ts'],
+      );
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'acceptEnvoyHarnessTurnReview');
+      expect(sent['params'], {
+        'turnId': 'turn_1',
+        'paths': ['a.ts'],
+      });
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {'accepted': true, 'remainingFiles': 0, 'cleared': true},
+      });
+      final result = await callFuture;
+      expect(result['accepted'], isTrue);
+      expect(result['cleared'], isTrue);
+    });
+
+    test('revertEnvoyHarnessTurnFiles sends turnId and paths', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.revertEnvoyHarnessTurnFiles('turn_2', ['b.ts']);
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'revertEnvoyHarnessTurnFiles');
+      expect(sent['params'], {
+        'turnId': 'turn_2',
+        'paths': ['b.ts'],
+      });
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {'reverted': true, 'files': ['b.ts']},
+      });
+      final result = await callFuture;
+      expect(result['reverted'], isTrue);
     });
   });
 }

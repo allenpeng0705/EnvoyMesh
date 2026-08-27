@@ -19,8 +19,13 @@ From repo root:
 # WebRTC signaling over real libp2p (two in-process homes)
 npm run test:e2e:call-two-home
 
-# Agent network: orchestrator + two worker homes
+# Agent network: orchestrator + two worker homes (Phase 43 — no Phase 60 leases)
 npm run test:e2e:chain-three-home
+
+# Phase 60 — lease wire + lease-backed preview + chain report (libp2p)
+bash scripts/agent-network-three-process-smoke.sh
+# or: npm run test:e2e:agent-network-three-process
+# Guide: docs/agent-network-three-process-smoke.md
 
 # Playwright call UI + useCallSession hook
 npm run test:e2e:webrtc

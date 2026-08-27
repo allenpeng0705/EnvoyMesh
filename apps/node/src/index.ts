@@ -1851,6 +1851,16 @@ async function handleInboundMeshMessage({
     return;
   }
 
+  // v2.2 — direct MAP-over-libp2p sub-agent submit (RemoteSubmitterTransport).
+  if (envelope.intent === "task.harness.submit.request" && nodeService instanceof NodeServiceImpl) {
+    await nodeService.handleInboundHarnessSubmitRequest(envelope, replyWithEnvelope);
+    return;
+  }
+  if (envelope.intent === "task.harness.submit.response") {
+    // Consumed by sendExpectReply on the parent; ignore unsolicited.
+    return;
+  }
+
   // MAP — periodic owner-signed capability manifest broadcast (adapter.manifest).
   if (envelope.intent === "adapter.manifest" && nodeService instanceof NodeServiceImpl) {
     const handled = await nodeService.handleInboundCapabilityManifest(envelope);
@@ -1867,6 +1877,61 @@ async function handleInboundMeshMessage({
           latencyMs: Date.now() - receivedAt,
           outcome: "allow",
           summary: "Handled adapter.manifest.",
+          createdAt: envelope.createdAt,
+        }),
+      );
+    }
+    return;
+  }
+
+  // Phase 60B — signed worker leases.
+  if (
+    (envelope.intent === "agent.worker.lease" ||
+      envelope.intent === "agent.worker.lease.revoke" ||
+      envelope.intent === "agent.worker.lease.request") &&
+    nodeService instanceof NodeServiceImpl
+  ) {
+    const handled = await nodeService.handleInboundWorkerLease(envelope);
+    if (handled) {
+      void taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.verified",
+          intent: envelope.intent,
+          messageId: envelope.messageId,
+          correlationId: envelope.correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "verified",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "allow",
+          summary: `Handled ${envelope.intent}.`,
+          createdAt: envelope.createdAt,
+        }),
+      );
+    }
+    return;
+  }
+
+  // Phase 60D — chain restart reconciliation.
+  if (
+    (envelope.intent === "task.chain.reconcile.request" ||
+      envelope.intent === "task.chain.reconcile.response") &&
+    nodeService instanceof NodeServiceImpl
+  ) {
+    const handled = await nodeService.handleInboundChainReconcile(envelope);
+    if (handled) {
+      void taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.verified",
+          intent: envelope.intent,
+          messageId: envelope.messageId,
+          correlationId: envelope.correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "verified",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "allow",
+          summary: `Handled ${envelope.intent}.`,
           createdAt: envelope.createdAt,
         }),
       );
@@ -3397,9 +3462,6 @@ const terminalManager = new TerminalManager({
     if (nodeService instanceof NodeServiceImpl) {
       nodeService.emitTerminalSessionsUpdated();
     }
-    wsServerForEvents?.emitEvent("terminal:session-updated", {
-      sessions: terminalManager.listSessionSummaries(),
-    });
   },
   onSessionActivity: (sessionId) => {
     void terminalAgentAssist.onSessionActivity(sessionId).then((events) => {
@@ -4362,6 +4424,14 @@ if (nodeService instanceof NodeServiceImpl && mesh) {
     .catch((error) =>
       console.warn(
         "[adapter.manifest] broadcaster start failed:",
+        error instanceof Error ? error.message : error,
+      ),
+    );
+  void nodeService
+    .startWorkerLeaseBroadcaster(mesh)
+    .catch((error) =>
+      console.warn(
+        "[agent.worker.lease] broadcaster start failed:",
         error instanceof Error ? error.message : error,
       ),
     );

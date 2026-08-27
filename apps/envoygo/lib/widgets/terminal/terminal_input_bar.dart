@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../l10n/app_localizations.dart';
-
 /// Soft keyboard bar shown above the device keyboard on the
 /// terminal screen. Provides the keys the device keyboard does
 /// not have (arrow keys, Tab, Esc, Ctrl modifier) plus copy /
@@ -94,28 +92,89 @@ class _TerminalInputBarState extends State<TerminalInputBar> {
     widget.onKey(bytes);
   }
 
-  void _onLetter(String letter) {
-    if (_ctrlActive && letter.length == 1) {
-      final code = letter.toUpperCase().codeUnitAt(0);
-      if (code >= 0x41 && code <= 0x5A) {
-        // A..Z
-        _sendKey(String.fromCharCode(code - 0x40)); // 0x01..0x1A
-        setState(() => _ctrlActive = false);
-        return;
-      }
-    }
-    _sendKey(letter);
-  }
-
   void _toggleCtrl() {
     if (!widget.enabled) return;
     HapticFeedback.selectionClick();
     setState(() => _ctrlActive = !_ctrlActive);
   }
 
+  void _sendControl(String letter) {
+    final code = letter.toUpperCase().codeUnitAt(0);
+    _sendKey(String.fromCharCode(code - 0x40));
+    if (_ctrlActive) setState(() => _ctrlActive = false);
+    HapticFeedback.selectionClick();
+  }
+
+  Future<void> _showMoreKeys() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Terminal shortcuts',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final shortcut in const [
+                    ('Ctrl-C', 'Interrupt', 'C'),
+                    ('Ctrl-D', 'End input', 'D'),
+                    ('Ctrl-L', 'Clear screen', 'L'),
+                    ('Ctrl-R', 'Search history', 'R'),
+                    ('Ctrl-Z', 'Suspend', 'Z'),
+                    ('Ctrl-A', 'Line start', 'A'),
+                    ('Ctrl-E', 'Line end', 'E'),
+                    ('Ctrl-U', 'Delete to start', 'U'),
+                    ('Ctrl-K', 'Delete to end', 'K'),
+                    ('Ctrl-W', 'Delete word', 'W'),
+                  ])
+                    ActionChip(
+                      avatar: Text(shortcut.$1.replaceFirst('Ctrl-', '^')),
+                      label: Text(shortcut.$2),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _sendControl(shortcut.$3);
+                      },
+                    ),
+                ],
+              ),
+              const Divider(height: 24),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final key in const [
+                    ('/', '/'),
+                    ('|', '|'),
+                    ('~', '~'),
+                    ('-', '-'),
+                  ])
+                    ActionChip(
+                      label: Text(key.$1),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _sendKey(key.$2);
+                      },
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     return Container(
       color: Colors.grey[900],
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
@@ -147,16 +206,38 @@ class _TerminalInputBarState extends State<TerminalInputBar> {
             // TextField in the screen.
             _barButton(
               icon: Icons.keyboard_outlined,
-              tooltip: l10n.termShowKeyboard,
+              tooltip: 'Show keyboard',
               onPressed: widget.onShowKeyboard,
             ),
             _barButton(
               icon: Icons.keyboard_hide_outlined,
-              tooltip: l10n.termHideKeyboard,
+              tooltip: 'Hide keyboard',
               onPressed: widget.onHideKeyboard,
             ),
             const SizedBox(width: 12),
-            // Arrow keys (left, right, up, down).
+            // The primary row is ordered by terminal frequency. Less common
+            // navigation/control keys live in the labelled More sheet.
+            _barButton(
+              icon: Icons.close,
+              tooltip: 'Esc',
+              semanticLabel: 'Escape key',
+              onPressed: () => _sendKey('\x1B'),
+            ),
+            _barButton(
+              icon: Icons.keyboard_tab,
+              tooltip: 'Tab',
+              semanticLabel: 'Tab key',
+              onPressed: () => _sendKey('\t'),
+            ),
+            _barButton(
+              label: 'Ctrl',
+              tooltip: 'Ctrl modifier (sticky)',
+              semanticLabel: _ctrlActive
+                  ? 'Control modifier active'
+                  : 'Control modifier',
+              highlight: _ctrlActive,
+              onPressed: _toggleCtrl,
+            ),
             _barButton(
               icon: Icons.keyboard_arrow_up,
               tooltip: 'Up',
@@ -177,47 +258,21 @@ class _TerminalInputBarState extends State<TerminalInputBar> {
               tooltip: 'Right',
               onPressed: () => _sendKey('\x1B[C'),
             ),
-            const SizedBox(width: 12),
-            // Tab / Esc.
-            _barButton(
-              icon: Icons.keyboard_tab,
-              tooltip: 'Tab',
-              onPressed: () => _sendKey('\t'),
-            ),
-            _barButton(
-              icon: Icons.close,
-              tooltip: 'Esc',
-              onPressed: () => _sendKey('\x1B'),
-            ),
-            // Enter.
             _barButton(
               icon: Icons.keyboard_return,
               tooltip: 'Enter',
               onPressed: () => _sendKey('\r'),
-            ),
-            const SizedBox(width: 12),
-            // Ctrl modifier toggle.
-            _barButton(
-              label: 'Ctrl',
-              tooltip: l10n.termCtrlSticky,
-              highlight: _ctrlActive,
-              onPressed: _toggleCtrl,
-            ),
-            // Ctrl + A..Z as a quick-action grid (visible only when
-            // Ctrl is active). Tapping one sends the byte.
-            if (_ctrlActive) _CtrlLetterGrid(onLetter: _onLetter),
-            // Copy / Paste.
-            _barButton(
-              icon: Icons.copy,
-              tooltip: l10n.termCopySelection,
-              onPressed: widget.hasSelection ? widget.onCopy : null,
             ),
             _barButton(
               icon: Icons.paste,
               tooltip: 'Paste',
               onPressed: widget.onPaste,
             ),
-            // / and | (shell conveniences).
+            _barButton(
+              icon: Icons.copy,
+              tooltip: 'Copy selection',
+              onPressed: widget.hasSelection ? widget.onCopy : null,
+            ),
             _barButton(
               label: '/',
               tooltip: 'Slash',
@@ -227,6 +282,12 @@ class _TerminalInputBarState extends State<TerminalInputBar> {
               label: '|',
               tooltip: 'Pipe',
               onPressed: () => _sendKey('|'),
+            ),
+            _barButton(
+              icon: Icons.more_horiz,
+              tooltip: 'More terminal shortcuts',
+              semanticLabel: 'More terminal shortcuts',
+              onPressed: _showMoreKeys,
             ),
           ],
         ),
@@ -238,87 +299,56 @@ class _TerminalInputBarState extends State<TerminalInputBar> {
     IconData? icon,
     String? label,
     String? tooltip,
+    String? semanticLabel,
     bool highlight = false,
     VoidCallback? onPressed,
   }) {
-    return Tooltip(
-      message: tooltip ?? '',
-      child: InkResponse(
-        onTap: onPressed,
-        radius: 24,
-        child: Container(
-          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: highlight
-                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.4)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Center(
-            child: icon != null
-                ? Icon(
-                    icon,
-                    size: 20,
-                    color: onPressed == null
-                        ? Colors.grey[700]
-                        : (highlight
-                            ? Theme.of(context).colorScheme.primary
-                            : Colors.white),
-                  )
-                : Text(
-                    label ?? '',
-                    style: TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 14,
+    return Semantics(
+      button: true,
+      enabled: onPressed != null,
+      selected: highlight,
+      label: semanticLabel ?? tooltip ?? label,
+      child: Tooltip(
+        message: tooltip ?? '',
+        child: InkResponse(
+          onTap: onPressed,
+          radius: 24,
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: highlight
+                  ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.4)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Center(
+              child: icon != null
+                  ? Icon(
+                      icon,
+                      size: 20,
                       color: onPressed == null
                           ? Colors.grey[700]
                           : (highlight
-                              ? Theme.of(context).colorScheme.primary
-                              : Colors.white),
-                      fontWeight: highlight ? FontWeight.bold : FontWeight.normal,
+                                ? Theme.of(context).colorScheme.primary
+                                : Colors.white),
+                    )
+                  : Text(
+                      label ?? '',
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 14,
+                        color: onPressed == null
+                            ? Colors.grey[700]
+                            : (highlight
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Colors.white),
+                        fontWeight: highlight
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
                     ),
-                  ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// When the Ctrl modifier is active, show a small letter grid
-/// (A..Z) so the user can quickly send a control byte without
-/// needing to remember the A=0x01..Z=0x1A mapping.
-class _CtrlLetterGrid extends StatelessWidget {
-  final void Function(String letter) onLetter;
-
-  const _CtrlLetterGrid({required this.onLetter});
-
-  @override
-  Widget build(BuildContext context) {
-    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    return PopupMenuButton<String>(
-      tooltip: AppLocalizations.of(context).termCtrlLetter,
-      itemBuilder: (context) {
-        return letters.split('').map((l) {
-          return PopupMenuItem(
-            value: l,
-            child: Text('Ctrl+$l'),
-          );
-        }).toList();
-      },
-      onSelected: (letter) {
-        HapticFeedback.selectionClick();
-        onLetter(letter);
-      },
-      child: const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        child: Text(
-          '⌃+A..Z',
-          style: TextStyle(
-            color: Colors.white,
-            fontFamily: 'monospace',
-            fontSize: 12,
+            ),
           ),
         ),
       ),

@@ -27,8 +27,6 @@ describe("isOwnerOnlyRpcMethod", () => {
 
   it("gates home folder browse + Ext Agent project path for family", () => {
     for (const method of [
-      "getHomeFsInfo",
-      "listHomeFsEntries",
       "discoverObsidianVaults",
       "openDesktopApp",
       "getExtAgentProjectPath",
@@ -41,6 +39,12 @@ describe("isOwnerOnlyRpcMethod", () => {
     ]) {
       expect(isOwnerOnlyRpcMethod(method), method).toBe(true)
     }
+  })
+
+  it("does not owner-gate coding project-folder browse (codingEnabled gate)", () => {
+    expect(isOwnerOnlyRpcMethod("getHomeFsInfo")).toBe(false)
+    expect(isOwnerOnlyRpcMethod("listHomeFsEntries")).toBe(false)
+    expect(isOwnerOnlyRpcMethod("closeTerminalSession")).toBe(false)
   })
 
   it("gates chat draft RPCs for family (Agent Mode / Assist drafts)", () => {
@@ -62,6 +66,31 @@ describe("isOwnerOnlyRpcMethod", () => {
       "convertLibraryItemToMarkdown",
     ]) {
       expect(isOwnerOnlyRpcMethod(method), method).toBe(true)
+    }
+  })
+
+  it("does not owner-gate Envoy Harness / Pi RPCs (codingEnabled gate)", () => {
+    for (const method of [
+      "getEnvoyHarnessStatus",
+      "askEnvoyHarness",
+      "getEnvoyHarnessChatHistory",
+      "listEnvoyHarnessChats",
+      "createEnvoyHarnessChat",
+      "openEnvoyHarnessChat",
+      "removeEnvoyHarnessChat",
+      "resetEnvoyHarnessChat",
+      "setEnvoyHarnessAutoRunPolicy",
+      "listEnvoyHarnessPeers",
+      "setEnvoyHarnessProjectPath",
+      "invokeEnvoyHarnessEhui",
+      "ensureEnvoyTerminalSession",
+      "ensurePiTerminalSession",
+      "startEnvoyHarnessTurn",
+      "cancelEnvoyHarnessTurn",
+      "ehRespondToPermission",
+      "ehRespondToUserQuestion",
+    ]) {
+      expect(isOwnerOnlyRpcMethod(method), method).toBe(false)
     }
   })
 

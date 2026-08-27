@@ -96,6 +96,18 @@ export const EnvoyIntentSchema = z.enum([
   "task.chain.ready.request",
   /** Worker → assigner: ready yes/no for THAT node's configured AN engine (OpenClaw XOR Ext). */
   "task.chain.ready.response",
+  // Phase 60D — restart reconciliation (attempt receipts).
+  "task.chain.reconcile.request",
+  "task.chain.reconcile.response",
+  // Phase 60B — signed short-lived worker leases (availability).
+  "agent.worker.lease",
+  "agent.worker.lease.revoke",
+  "agent.worker.lease.request",
+  // v2.2 — direct MAP-over-libp2p sub-agent submit (RemoteSubmitterTransport).
+  /** Parent agent → worker agent: execute a SubagentInput (as ExecuteInput). */
+  "task.harness.submit.request",
+  /** Worker agent → parent agent: the signed AgentResult (or a wire error). */
+  "task.harness.submit.response",
   // Phase 45 — Web Content Browsing. Pull-based content serving over the mesh.
   // See docs/web-content-browsing-design.md.
   "library.read",
@@ -148,6 +160,27 @@ export const EmpCapabilitySchema = z.enum([
   "agent-network-worker",
   "bond-autonomy",
 ]);
+
+/**
+ * Phase 60 — protocol feature negotiation tags on Agent Card (design §12.2).
+ * Optional so older cards remain valid; assigners treat absence as legacy.
+ */
+export const AgentCardProtocolFeatureSchema = z.enum([
+  "worker-lease-v1",
+  "chain-attempt-v1",
+  "chain-reconcile-v1",
+  "chain-provenance-v1",
+]);
+
+export type AgentCardProtocolFeature = z.infer<typeof AgentCardProtocolFeatureSchema>;
+
+/** Features this build advertises when Join Agent Network is on. */
+export const LOCAL_AGENT_CARD_PROTOCOL_FEATURES: AgentCardProtocolFeature[] = [
+  "worker-lease-v1",
+  "chain-attempt-v1",
+  "chain-reconcile-v1",
+  "chain-provenance-v1",
+];
 
 /** Agent credential scope values for posture-gated intents. */
 export const EMP_AGENT_SCOPE_SOCIAL_PROXY = "emp.social_proxy" as const;
@@ -543,6 +576,11 @@ export const AgentCardSchema = z.object({
    * has opted into Join Agent Network; used for scored worker selection.
    */
   agentNetworkProfile: AgentNetworkProfileSchema.optional(),
+  /**
+   * Phase 60 — protocol feature negotiation (leases, provenance, reconcile…).
+   * Absent on legacy cards; assigners fall back to ready-probe / grace paths.
+   */
+  features: z.array(AgentCardProtocolFeatureSchema).optional(),
 });
 
 export const AgentCardRequestPayloadSchema = z.object({
@@ -3742,6 +3780,8 @@ export interface CreateAgentCardInput {
   webContentRoot?: string;
   /** Agent Network worker profile (when opted into Join Agent Network). */
   agentNetworkProfile?: import("./agent-network-profile.js").AgentNetworkProfile;
+  /** Phase 60 — protocol feature negotiation tags. */
+  features?: AgentCardProtocolFeature[];
 }
 
 export function createAgentCard(input: CreateAgentCardInput): AgentCard {
@@ -3762,6 +3802,9 @@ export function createAgentCard(input: CreateAgentCardInput): AgentCard {
     ...(input.webContentRoot ? { webContentRoot: input.webContentRoot } : {}),
     ...(input.agentNetworkProfile
       ? { agentNetworkProfile: input.agentNetworkProfile }
+      : {}),
+    ...(input.features && input.features.length > 0
+      ? { features: input.features }
       : {}),
   });
 }
@@ -4223,6 +4266,8 @@ export {
   TaskChainReportPayloadSchema,
   TaskChainReadyRequestPayloadSchema,
   TaskChainReadyResponsePayloadSchema,
+  TaskHarnessSubmitRequestPayloadSchema,
+  TaskHarnessSubmitResponsePayloadSchema,
   parseChainMandate,
   parseChainSubtask,
   parseChainSubtaskBid,
@@ -4232,16 +4277,21 @@ export {
   parseCompositeArtifact,
   parseTaskChainReadyRequestPayload,
   parseTaskChainReadyResponsePayload,
+  parseTaskHarnessSubmitRequestPayload,
+  parseTaskHarnessSubmitResponsePayload,
   createChainMandateId,
   createChainId,
   createChainSubtaskId,
   createChainReadyProbeId,
   createTaskChainReadyRequestPayload,
   createTaskChainReadyResponsePayload,
+  createTaskHarnessSubmitRequestPayload,
+  createTaskHarnessSubmitResponsePayload,
 } from "./agent-network.js";
 export type {
   UnsignedChainMandate,
   ChainMandate,
+  VerifyMode,
   ChainSubtask,
   ChainSubtaskExpect,
   NamedArtifact,
@@ -4265,6 +4315,8 @@ export type {
   TaskChainReportPayload,
   TaskChainReadyRequestPayload,
   TaskChainReadyResponsePayload,
+  TaskHarnessSubmitRequestPayload,
+  TaskHarnessSubmitResponsePayload,
 } from "./agent-network.js";
 
 export {
@@ -4373,3 +4425,43 @@ export type {
   VerifierSource,
   VerdictEntry,
 } from "./agent-adapter.js";
+
+export {
+  AgentWorkerLeaseRuntimeSchema,
+  AgentWorkerLeasePayloadSchema,
+  AgentWorkerLeaseRevokePayloadSchema,
+  AgentWorkerLeaseRequestPayloadSchema,
+  createAgentWorkerLeasePayload,
+  parseAgentWorkerLeasePayload,
+  createAgentWorkerLeaseRevokePayload,
+  parseAgentWorkerLeaseRevokePayload,
+  createAgentWorkerLeaseRequestPayload,
+  parseAgentWorkerLeaseRequestPayload,
+} from "./agent-worker-lease.js";
+
+export type {
+  AgentWorkerLeaseRuntime,
+  AgentWorkerLeasePayload,
+  AgentWorkerLeaseRevokePayload,
+  AgentWorkerLeaseRequestPayload,
+} from "./agent-worker-lease.js";
+
+export {
+  ChainReconcileAttemptStateSchema,
+  ChainReconcileKnownAttemptSchema,
+  TaskChainReconcileRequestPayloadSchema,
+  ChainReconcileAttemptReportSchema,
+  TaskChainReconcileResponsePayloadSchema,
+  createTaskChainReconcileRequestPayload,
+  parseTaskChainReconcileRequestPayload,
+  createTaskChainReconcileResponsePayload,
+  parseTaskChainReconcileResponsePayload,
+} from "./chain-reconcile.js";
+
+export type {
+  ChainReconcileAttemptState,
+  ChainReconcileKnownAttempt,
+  TaskChainReconcileRequestPayload,
+  ChainReconcileAttemptReport,
+  TaskChainReconcileResponsePayload,
+} from "./chain-reconcile.js";

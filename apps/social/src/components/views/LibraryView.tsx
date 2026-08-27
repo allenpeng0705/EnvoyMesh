@@ -30,6 +30,7 @@ const BROWSE_FILTERS: KnowledgeBrowseFilter[] = [
   "notes",
   "obsidian",
   "notion",
+  "blog",
   "documents",
   "published",
 ];
@@ -181,6 +182,7 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
     if (browseFilter === "documents") return t("knowledge.browse.emptyDocuments");
     if (browseFilter === "obsidian") return t("knowledge.browse.emptyObsidian");
     if (browseFilter === "notion") return t("knowledge.browse.emptyNotion");
+    if (browseFilter === "blog") return t("knowledge.browse.emptyBlog");
     return t("knowledge.browse.emptyPublished");
   })();
 
@@ -190,6 +192,7 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
     if (id === "documents") return t("knowledge.browse.filterDocuments");
     if (id === "obsidian") return t("knowledge.browse.filterObsidian");
     if (id === "notion") return t("knowledge.browse.filterNotion");
+    if (id === "blog") return t("knowledge.browse.filterBlog");
     return t("knowledge.browse.filterPublished");
   };
 

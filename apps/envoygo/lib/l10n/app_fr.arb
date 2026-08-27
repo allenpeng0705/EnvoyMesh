@@ -487,7 +487,7 @@
   "chainsSubtasks": "Sous-tâches",
   "chainsSynthesis": "Synthèse",
   "chainsDuration": "Durée",
-  "chainsManageOnSocial": "Gérez les chaînes sur l'UI Social du nœud domicile.",
+  "chainsManageOnSocial": "La configuration de flotte, les enchères et les recettes restent sur l’UI Social du nœud domicile. Annuler, rééquilibrer et épingler marchent aussi ici.",
   "chainsPublished": "Publié le {date}",
   "chainsChainId": "Chaîne {id}",
   "termEmptyHint": "Démarrez une session Pi ou un terminal shell sur votre nœud domicile.",
@@ -509,19 +509,25 @@
   "pairingInProgressSubtitle": "Connexion à {owner}…",
   "@pairingInProgressSubtitle": {
     "placeholders": {
-      "owner": {"type": "String"}
+      "owner": {
+        "type": "String"
+      }
     }
   },
   "pairingElapsed": "Écoulé : {time}",
   "@pairingElapsed": {
     "placeholders": {
-      "time": {"type": "String"}
+      "time": {
+        "type": "String"
+      }
     }
   },
   "pairingHomeNodeLabel": "Domicile : {peer}",
   "@pairingHomeNodeLabel": {
     "placeholders": {
-      "peer": {"type": "String"}
+      "peer": {
+        "type": "String"
+      }
     }
   },
   "pairingStageInitial": "Initialisation",
@@ -634,6 +640,13 @@
   "chainsStartStarted": "Job d'équipe démarré",
   "chainsStartFailed": "Impossible de démarrer le job d'équipe",
   "chainsStartNoWorkers": "Aucun worker Agent Network joignable. Liez d'abord des contacts avec des agents sur le nœud domicile.",
+  "chainsSpeculationReviewTitle": "Spéculation à examiner",
+  "chainsSpeculationReviewBody": "Deux workers ont renvoyé des résultats différents pour une étape. Choisissez un gagnant pour faire avancer le job, ou laissez l’orchestrateur choisir automatiquement.",
+  "chainsSpeculationReviewNonePass": "Les deux workers ont échoué à la vérification — l’orchestrateur va réassigner cette étape.",
+  "chainsSpeculationReviewDisagree": "Les deux workers ne sont pas d’accord. L’orchestrateur peut choisir le moins cher validé, ou vous pouvez choisir ou réassigner.",
+  "chainsSpeculationReviewAutoResolve": "Résoudre automatiquement",
+  "chainsSpeculationReviewResolved": "Résolu par l’orchestrateur",
+  "chainsSpeculationReviewFailed": "Résolution automatique impossible",
   "chainsStartNeedWorkers": "Sélectionnez au moins un worker en ligne, ou prévisualisez à nouveau pour restaurer le pool recommandé.",
   "chainsStartWorkersHint": "Workers en ligne du plan. Décochez ceux que vous ne souhaitez pas. Tout décocher bloque le démarrage — prévisualisez à nouveau pour réinitialiser le pool recommandé.",
   "chainsStartWorkersHeading": "Workers",
@@ -925,5 +938,239 @@
   "chainsStepCancelled": "Étape annulée",
   "chainsStepReassigned": "Étape réassignée",
   "chainsReassignFailed": "Impossible de réassigner cette étape",
-  "chainsCancelStepReason": "Étape annulée depuis EnvoyGo"
+  "chainsCancelStepReason": "Étape annulée depuis EnvoyGo",
+  "chatsSectionCoding": "Coding",
+  "chatsCodingPi": "Pi",
+  "chatsCodingPiHint": "Agent de code (terminal)",
+  "chatsCodingEh": "Envoy",
+  "chatsCodingEhHint": "Agent de code (chat)",
+  "chatsEhNew": "Nouveau chat de code",
+  "chatsEhRemoveTitle": "Supprimer le chat de code ?",
+  "chatsEhRemoveBody": "Retirer « {name} » de la liste Coding ? L’historique sur le nœud home sera supprimé.",
+  "@chatsEhRemoveBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatsEhThinking": "Envoy réfléchit…",
+  "chatsEhPromptHint": "Demandez à Envoy de coder, refactoriser ou expliquer…",
+  "chatsNewEnvoy": "Nouvel Envoy",
+  "chatsNewEnvoyHint": "Démarrer le TUI Envoy Harness",
+  "ehChooseProjectTitle": "Choisir le dossier projet Envoy",
+  "ehChangeProjectTitle": "Changer le dossier projet Envoy",
+  "ehChooseProjectDesc": "Envoy s’exécute dans ce dossier (lit AGENTS.md, modifie des fichiers, lance le shell).",
+  "ehStartWithProject": "Démarrer",
+  "ehRestartWithProject": "Redémarrer Envoy ici",
+  "ehEnsuringTerminal": "Démarrage du TUI Envoy…",
+  "ehPermissionTitle": "Autorisation d’outil",
+  "ehPermissionAllow": "Autoriser",
+  "ehPermissionDeny": "Refuser",
+  "ehQuestionTitle": "Envoy a besoin de votre saisie",
+  "ehRecommended": "Recommandé",
+  "ehSlashWhileBusy": "Terminez ou /cancel le tour en cours d’abord.",
+  "ehChatReset": "Nouveau chat démarré pour ce projet.",
+  "ehTurnCancelled": "Tour annulé.",
+  "ehStatusRefreshed": "État actualisé.",
+  "ehNoPeers": "Aucun cluster de pairs configuré.",
+  "ehSearchUsage": "Usage : /search <terme> — rechercher dans cette conversation.",
+  "ehSearchNoMatches": "Aucune correspondance pour « {term} ».",
+  "@ehSearchNoMatches": {
+    "placeholders": {
+      "term": {
+        "type": "String"
+      }
+    }
+  },
+  "ehModelShow": "Modèle actif : {model}",
+  "@ehModelShow": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "ehModelUnknown": "Aucun modèle configuré — définissez-en un dans Réglages → IA.",
+  "ehProjectCurrent": "Dossier projet : {path}",
+  "@ehProjectCurrent": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehProjectUnset": "Aucun dossier projet — utilisez /cd <chemin>.",
+  "ehProjectSet": "Dossier projet → {path}",
+  "@ehProjectSet": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehProjectSetUnknown": "Dossier projet mis à jour.",
+  "ehProjectSetFailed": "Échec de définition du dossier projet : {error}",
+  "@ehProjectSetFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "ehConfigureModel": "Configurez un modèle dans Réglages → IA.",
+  "ehNotReady": "envoy-harness n’est pas prêt.",
+  "termQuickHelp": "/help",
+  "termQuickCancel": "/cancel",
+  "settingsPiCodingBackend": "Backend de code",
+  "settingsPiCodingBackendPi": "Pi (sidecar)",
+  "settingsPiCodingBackendEh": "envoy-harness (ACP)",
+  "settingsPiCodingBackendHint": "Même réglage que Social. Route sendToPi et les approbations via la même UI Pi. Les anciennes versions d’EnvoyGo l’ignorent et restent sur Pi.",
+  "settingsPiCodingBackendSaved": "Backend de code mis à jour",
+  "ehReviewTitle": "Examiner ce tour",
+  "ehReviewUnavailable": "Aucune revue enregistrée pour ce tour plus ancien.",
+  "ehReviewFile": "Fichier",
+  "ehReviewOpenFile": "Ouvrir le fichier",
+  "ehReviewDiffUnavailable": "Aucun diff textuel disponible pour ce fichier.",
+  "ehReviewOnly": "Détecté dans le workspace · revue seule",
+  "ehRevertTitle": "Annuler ce tour ?",
+  "ehRevertBody": "Les fichiers seront restaurés à leur contenu d’avant le tour. Les éditions ultérieures sont protégées et arrêtent le revert.",
+  "ehRevertAction": "Annuler",
+  "ehRevertComplete": "Les modifications de fichiers de ce tour ont été annulées.",
+  "ehRevertUnavailable": "Ce tour ne peut plus être annulé en toute sécurité.",
+  "ehRevertConflict": "Revert arrêté car ces fichiers ont changé ensuite : {files}",
+  "@ehRevertConflict": {
+    "placeholders": {
+      "files": {
+        "type": "String"
+      }
+    }
+  },
+  "ehSearchTranscript": "Rechercher dans la transcription",
+  "ehSearchClose": "Fermer la recherche",
+  "ehNoMatches": "Aucun tour correspondant",
+  "ehCopyTurn": "Copier le tour",
+  "ehShareTurn": "Partager le tour",
+  "ehReviewDiff": "Voir le diff",
+  "ehRevertThisTurn": "Annuler ce tour",
+  "ehReviewChanges": "Examiner les changements",
+  "ehRevertAll": "Tout annuler",
+  "ehChangesCount": "{count, plural, =1{1 fichier modifié ce tour} other{{count} fichiers modifiés ce tour}}",
+  "@ehChangesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehChangesKeepAll": "Tout conserver",
+  "ehChangesRevert": "Tout annuler",
+  "ehChangesHideList": "Masquer la liste",
+  "ehChangesShowList": "Afficher la liste",
+  "ehReviewKeepFile": "Conserver",
+  "ehReviewRevertFile": "Annuler",
+  "ehReviewKeptAll": "Modifications conservées.",
+  "ehReviewRevertedFile": "{path} annulé",
+  "@ehReviewRevertedFile": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehReviewAutoLabel": "Revue auto si ≥",
+  "ehReviewAutoAlways": "Toujours",
+  "ehWorking": "En cours",
+  "ehCompleted": "Terminé",
+  "ehUpdate": "Mise à jour",
+  "ehToolLabel": "Outil : {name}",
+  "@ehToolLabel": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "ehMatchCount": "{count, plural, =1{1 correspondance} other{{count} correspondances}}",
+  "@ehMatchCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "termMore": "Plus…",
+  "termCompactContext": "Compacter le contexte",
+  "termUpdatePlan": "Afficher ou mettre à jour le plan",
+  "termHarnessStatus": "État du harness",
+  "termPiActions": "Actions Pi",
+  "termHarnessActions": "Actions envoy-harness",
+  "termPreviousCommand": "Commande précédente",
+  "termNextCommand": "Commande suivante",
+  "termCursorLeft": "Déplacer le curseur à gauche",
+  "termCursorRight": "Déplacer le curseur à droite",
+  "termEnterKey": "Touche Entrée",
+  "ehQueueTitle": "File d’attente ({count})",
+  "@ehQueueTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehQueueClear": "Vider",
+  "ehQueueBusyHint": "Envoyer met en file",
+  "ehQueueFollowUpHint": "Mettre une suite en file…",
+  "ehInjectTooltip": "Injecter (annuler + envoyer)",
+  "ehFilesChangedCount": "{count, plural, =1{1 fichier modifié} other{{count} fichiers modifiés}}",
+  "@ehFilesChangedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehEmptyReply": "envoy-harness n’a pas produit de réponse visible. Votre message est toujours là — réessayez ou reformulez.",
+  "ehConfigureModelHint": "Configurez un modèle dans Réglages → IA.",
+  "ehReviewKeepFailed": "Impossible de conserver les modifications.",
+  "ehReviewOpenGitDiff": "Ouvrir le diff git",
+  "ehDiffBefore": "Avant",
+  "ehDiffAfter": "Après",
+  "chainsStatusCancelled": "Annulé",
+  "chainsStatusPublished": "Publié",
+  "chainsStatusSynthesizing": "Synthèse",
+  "chainsStatusRunning": "En cours",
+  "chainsStatusWaitingWorkers": "En attente de workers",
+  "chainsStatusBidding": "Enchères",
+  "chainsStatusAssigning": "Attribution",
+  "chainsStatusPlanning": "Planification",
+  "chainsCancelFailed": "Impossible d’annuler ce travail d’équipe.",
+  "ehPermsTooltip": "Politique d’autorisation",
+  "ehPermsSafe": "Par défaut (auto-exécution sûre)",
+  "ehPermsAsk": "Toujours demander",
+  "ehPermsApprove": "Toujours approuver",
+  "ehPermsSet": "Politique d’autorisation → {mode}.",
+  "@ehPermsSet": {
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "ehPermsNextTurn": " S’applique au prochain tour.",
+  "ehPermsFailed": "Impossible de définir la politique d’autorisation : {error}",
+  "@ehPermsFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "chainsStartReliabilityPct": "Confiance {pct}%",
+  "chainsStartReliabilitySparse": "{level} · {samples} échantillons",
+  "chainsStartReliabilityFallbackExact": "historique de ce worker",
+  "chainsStartReliabilityFallbackPeerRuntimeSkill": "travail similaire sur ce worker",
+  "chainsStartReliabilityFallbackPeerRuntime": "runtime de ce worker",
+  "chainsStartReliabilityFallbackRuntimeSkill": "workers avec cette compétence",
+  "chainsStartReliabilityFallbackPrior": "a priori général (aucun historique pour l’instant)"
 }

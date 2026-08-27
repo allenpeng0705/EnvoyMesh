@@ -14,6 +14,8 @@ import {
   OWNER_FAMILY_PROFILE_ID,
   threadVisibleTo,
   ENVOY_AI_THREAD_KEY,
+  isEnvoyHarnessThreadKey,
+  parseEnvoyHarnessChatId,
 } from "@envoymesh/api";
 import { useEffect, useState } from "react";
 import { useNodeService } from "../../hooks/useNodeService.js";
@@ -21,6 +23,7 @@ import type { ChatRoom, FamilyRoom } from "@envoymesh/api";
 import { OpenClawOfflineBanner } from "./OpenClawOfflineBanner.js";
 import { BotChatPanel } from "./BotChatPanel.js";
 import { AIChatPanel } from "./AIChatPanel.js";
+import { EnvoyHarnessPanel } from "./EnvoyHarnessPanel.js";
 import { getEnvoyAiInflight, subscribeEnvoyAiInflight } from "../../lib/envoy-ai-inflight.js";
 import { openTerminal } from "../../lib/open-terminal-nav.js";
 
@@ -35,6 +38,8 @@ export interface ChatViewProps {
   onOpenDiscover?: () => void;
   /** Open top-level Terminal and start/show Pi. */
   onOpenPi?: () => void;
+  /** Open the dedicated envoy-harness chat panel in the thread list. */
+  onOpenEnvoyHarness?: () => void;
   onOpenActivity?: () => void;
   onOpenChains?: () => void;
   onOpenSettingsAi?: () => void;
@@ -47,6 +52,7 @@ export function ChatView({
   onOpenAssistant,
   onOpenDiscover,
   onOpenPi: onOpenPiProp,
+  onOpenEnvoyHarness: onOpenEnvoyHarnessProp,
   onOpenActivity,
   onOpenChains,
   onOpenSettingsAi,
@@ -67,6 +73,15 @@ export function ChatView({
     onOpenPiProp?.();
     openTerminal({ startPi: true });
   };
+
+  const openEnvoyHarnessChat = () => {
+    onOpenEnvoyHarnessProp?.();
+  };
+
+  const selectedEhChatId = isEnvoyHarnessThreadKey(selectedContact ?? "")
+    ? parseEnvoyHarnessChatId(selectedContact ?? "")
+    : null;
+  const showEnvoyHarnessPanel = isEnvoyHarnessThreadKey(selectedContact ?? "");
 
   const selectedFamilyRoom = isChatRoomThreadKey(selectedContact ?? "")
     ? familyRooms.find((r) => r.roomId === parseChatRoomThreadKey(selectedContact!))
@@ -157,6 +172,7 @@ export function ChatView({
           onOpenAssistant={onOpenAssistant}
           onOpenDiscover={onOpenDiscover}
           onOpenPi={() => openPiTerminal()}
+          onOpenEnvoyHarness={() => openEnvoyHarnessChat()}
         />
         <section className="chat-area">
           {(selectedContact === ENVOY_AI_THREAD_KEY || envoyAiInflight) && (
@@ -175,7 +191,20 @@ export function ChatView({
               </div>
             </div>
           )}
-          {selectedContact && selectedContact !== ENVOY_AI_THREAD_KEY ? (
+          {showEnvoyHarnessPanel && (
+            <div className="assistant-chat-wrapper">
+              <div className="assistant-chat-panel">
+                <EnvoyHarnessPanel
+                  key={selectedContact ?? "envoy-harness"}
+                  chatId={selectedEhChatId}
+                  onBackToChats={() => onSelectedContactChange(null)}
+                />
+              </div>
+            </div>
+          )}
+          {selectedContact &&
+          selectedContact !== ENVOY_AI_THREAD_KEY &&
+          !isEnvoyHarnessThreadKey(selectedContact) ? (
             isChatRoomThreadKey(selectedContact) && selectedFamilyRoom ? (
               <FamilyGroupChatPanel
                 threadKey={selectedContact}
@@ -212,7 +241,9 @@ export function ChatView({
                 onSelectContact={onSelectedContactChange}
               />
             )
-          ) : selectedContact === ENVOY_AI_THREAD_KEY || envoyAiInflight ? null : (
+          ) : selectedContact === ENVOY_AI_THREAD_KEY ||
+            showEnvoyHarnessPanel ||
+            envoyAiInflight ? null : (
             <div className="no-chat-selected">
               <div className="no-chat-selected-icon">
                 <ChatIcon size={48} />

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,9 +7,14 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../providers/chat_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../services/node_service_client.dart';
 import '../../services/terminal_service.dart';
+import '../../widgets/eh/eh_turn_review_dock.dart';
+import '../../widgets/eh/envoy_harness_terminal_chrome.dart';
+import '../../widgets/terminal/terminal_accessory_bar.dart';
+import '../../widgets/terminal/terminal_agent_bar.dart';
 
 /// Terminal detail screen — hosts an xterm.js WebView for full terminal
 /// emulation.  PTY output from the home node is forwarded to xterm.js
@@ -19,24 +23,33 @@ import '../../services/terminal_service.dart';
 class TerminalDetailScreen extends ConsumerStatefulWidget {
   final String sessionId;
   final String sessionName;
+  final String? sessionRole;
 
   const TerminalDetailScreen({
     super.key,
     required this.sessionId,
     required this.sessionName,
+    this.sessionRole,
   });
+
+  bool get isEnvoyHarnessSession => sessionRole == 'envoy-harness';
+
+  /// Shell Terminal Agent slash bar (not Pi / Envoy Harness TUI sessions).
+  bool get isShellAgentSession =>
+      sessionRole != 'envoy-harness' && sessionRole != 'pi';
 
   @override
   ConsumerState<TerminalDetailScreen> createState() =>
       _TerminalDetailScreenState();
 }
 
-class _TerminalDetailScreenState
-    extends ConsumerState<TerminalDetailScreen> with WidgetsBindingObserver {
+class _TerminalDetailScreenState extends ConsumerState<TerminalDetailScreen>
+    with WidgetsBindingObserver {
   InAppWebViewController? _webController;
   TerminalService? _terminalService;
   bool _attached = false;
   bool _tunnelUp = true;
+  Set<String> _terminalCommands = const {};
 
   void Function()? _unsubRx;
   void Function()? _unsubClosed;
@@ -87,6 +100,17 @@ class _TerminalDetailScreenState
     });
 
     try {
+      if (widget.isEnvoyHarnessSession || widget.sessionRole == 'pi') {
+        final catalog = widget.isEnvoyHarnessSession
+            ? await nodeService.getEnvoyHarnessCommandCatalog()
+            : await nodeService.getExtAgentCommandCatalog();
+        final commands = (catalog['commands'] as List<dynamic>? ?? const [])
+            .whereType<Map>()
+            .map((entry) => entry['slash']?.toString())
+            .whereType<String>()
+            .toSet();
+        if (mounted) setState(() => _terminalCommands = commands);
+      }
       await _terminalService!.attach(widget.sessionId);
       if (mounted) setState(() => _attached = true);
     } catch (e) {
@@ -97,9 +121,7 @@ class _TerminalDetailScreenState
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              AppLocalizations.of(context).termAttachFailed('$e'),
-            ),
+            content: Text(AppLocalizations.of(context).termAttachFailed('$e')),
           ),
         );
       }
@@ -116,6 +138,8 @@ class _TerminalDetailScreenState
   void _detach() {
     _unsubRx?.call();
     _unsubRx = null;
+    _unsubClosed?.call();
+    _unsubClosed = null;
     _terminalService?.detach();
     _terminalService = null;
     _attached = false;
@@ -134,9 +158,7 @@ class _TerminalDetailScreenState
   }
 
   void _writeToXterm(String base64) {
-    _webController?.evaluateJavascript(
-      source: 'writeToTerminal("$base64")',
-    );
+    _webController?.evaluateJavascript(source: 'writeToTerminal("$base64")');
   }
 
   // -- xterm.js keystrokes → Flutter → home node --
@@ -147,6 +169,13 @@ class _TerminalDetailScreenState
 
   void _onResizeFromWeb(int cols, int rows) {
     _terminalService?.sendResize(cols, rows);
+  }
+
+  void _sendToTerminal(String text) {
+    _terminalService?.sendKey(text);
+    if (!text.endsWith('\n')) {
+      _terminalService?.sendKey('\n');
+    }
   }
 
   // -- Copy All --
@@ -190,15 +219,15 @@ class _TerminalDetailScreenState
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Chip(
-                label: Text(l10n.termReconnecting, style: const TextStyle(fontSize: 12)),
+                label: Text(
+                  l10n.termReconnecting,
+                  style: const TextStyle(fontSize: 12),
+                ),
                 backgroundColor: Colors.orange,
               ),
             ),
           if (!_attached)
-            TextButton(
-              onPressed: _attach,
-              child: Text(l10n.commonReconnect),
-            ),
+            TextButton(onPressed: _attach, child: Text(l10n.commonReconnect)),
           IconButton(
             tooltip: l10n.termCopyAll,
             icon: const Icon(Icons.copy_all),
@@ -212,9 +241,10 @@ class _TerminalDetailScreenState
           IconButton(
             tooltip: l10n.termCloseSession,
             icon: const Icon(Icons.close),
-            onPressed: () {
-              _terminalService?.closeSession(widget.sessionId);
-              Navigator.of(context).pop();
+            onPressed: () async {
+              await _terminalService?.closeSession(widget.sessionId);
+              await ref.read(chatProvider.notifier).syncTerminals();
+              if (context.mounted) Navigator.of(context).pop();
             },
           ),
         ],
@@ -222,6 +252,25 @@ class _TerminalDetailScreenState
       body: SafeArea(
         child: Column(
           children: [
+            if (widget.isEnvoyHarnessSession) ...[
+              EnvoyHarnessTerminalChrome(
+                onSendToTerminal: _sendToTerminal,
+                showCommandRails: false,
+              ),
+              EhTurnReviewDock(
+                onSystemMessage: (text, {bool error = false}) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(text),
+                      backgroundColor: error
+                          ? Theme.of(context).colorScheme.errorContainer
+                          : null,
+                    ),
+                  );
+                },
+              ),
+            ],
             Expanded(
               child: Container(
                 color: Colors.black,
@@ -229,138 +278,110 @@ class _TerminalDetailScreenState
                   children: [
                     Expanded(
                       child: InAppWebView(
-                  pullToRefreshController: _pullToRefreshController,
-                  initialData: InAppWebViewInitialData(
-                    data: _terminalHtml,
-                    mimeType: 'text/html',
-                    encoding: 'utf-8',
-                  ),
-                  initialSettings: InAppWebViewSettings(
-                    javaScriptEnabled: true,
-                    transparentBackground: true,
-                    disableHorizontalScroll: true,
-                    disableVerticalScroll: false, // let xterm.js handle its own viewport
-                    supportZoom: false,
-                    useWideViewPort: false,
-                  ),
-                  onWebViewCreated: (controller) {
-                    _webController = controller;
-                    // Register JS → Flutter handlers.
-                    controller.addJavaScriptHandler(
-                      handlerName: 'termKey',
-                      callback: (args) {
-                        if (args.isNotEmpty) {
-                          _onKeyFromWeb(args[0].toString());
-                        }
-                      },
-                    );
-                    controller.addJavaScriptHandler(
-                      handlerName: 'termResize',
-                      callback: (args) {
-                        if (args.isNotEmpty) {
-                          try {
-                            final decoded =
-                                jsonDecode(args[0].toString())
-                                    as Map<String, dynamic>;
-                            _onResizeFromWeb(
-                              decoded['cols'] as int,
-                              decoded['rows'] as int,
+                        pullToRefreshController: _pullToRefreshController,
+                        initialData: InAppWebViewInitialData(
+                          data: _terminalHtml,
+                          mimeType: 'text/html',
+                          encoding: 'utf-8',
+                        ),
+                        initialSettings: InAppWebViewSettings(
+                          javaScriptEnabled: true,
+                          transparentBackground: true,
+                          disableHorizontalScroll: true,
+                          disableVerticalScroll:
+                              false, // let xterm.js handle its own viewport
+                          supportZoom: false,
+                          useWideViewPort: false,
+                        ),
+                        onWebViewCreated: (controller) {
+                          _webController = controller;
+                          // Register JS → Flutter handlers.
+                          controller.addJavaScriptHandler(
+                            handlerName: 'termKey',
+                            callback: (List<dynamic> args) {
+                              if (args.isNotEmpty) {
+                                _onKeyFromWeb(args[0].toString());
+                              }
+                            },
+                          );
+                          controller.addJavaScriptHandler(
+                            handlerName: 'termResize',
+                            callback: (List<dynamic> args) {
+                              if (args.isNotEmpty) {
+                                try {
+                                  final decoded =
+                                      jsonDecode(args[0].toString())
+                                          as Map<String, dynamic>;
+                                  _onResizeFromWeb(
+                                    decoded['cols'] as int,
+                                    decoded['rows'] as int,
+                                  );
+                                } catch (_) {}
+                              }
+                            },
+                          );
+                          // Focus xterm after a short delay.
+                          Future.delayed(const Duration(milliseconds: 500), () {
+                            controller.evaluateJavascript(
+                              source: 'term.focus(); fitAddon.fit();',
                             );
-                          } catch (_) {}
-                        }
+                          });
+                        },
+                        onConsoleMessage: (_, msg) {
+                          // Debug: log JS console messages in Flutter debug mode.
+                          debugPrint('[xterm] ${msg.message}');
+                        },
+                      ),
+                    ),
+                    TerminalAccessoryBar(
+                      mode: _accessoryMode,
+                      enabled: _attached && _tunnelUp,
+                      onKey: (bytes) => _terminalService?.sendKey(bytes),
+                      onPaste: _onPaste,
+                      supportedCommands: _terminalCommands,
+                      onCommand: (command) {
+                        final client = ref.read(nodeProvider.notifier).client;
+                        if (client == null) return;
+                        unawaited(
+                          NodeServiceClient(client)
+                              .recordEnvoyHarnessUxEvent({
+                                'action': 'command_rail_used',
+                                'surface': 'terminal',
+                                'command': command,
+                                'occurredAt': DateTime.now()
+                                    .toUtc()
+                                    .toIso8601String(),
+                              })
+                              .catchError((_) {}),
+                        );
                       },
-                    );
-                    // Focus xterm after a short delay.
-                    Future.delayed(const Duration(milliseconds: 500), () {
-                      controller.evaluateJavascript(
-                        source: 'term.focus(); fitAddon.fit();',
-                      );
-                    });
-                  },
-                  onConsoleMessage: (_, msg) {
-                    // Debug: log JS console messages in Flutter debug mode.
-                    debugPrint('[xterm] ${msg.message}');
-                    },
-                  ),
+                    ),
+                  ],
                 ),
-                // Special keys bar below the terminal.
-                _buildSpecialKeysBar(),
-              ],
+              ),
             ),
-          ),
-          ),
-        ],
-        ),
-      ),
-    );
-  }
-
-  // -- Special keys bar --
-
-  Widget _buildSpecialKeysBar() {
-    return Container(
-      color: Colors.grey[900],
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            _keyBtn('Esc', '\x1B'),
-            _keyBtn('Tab', '\x09'),
-            _keyBtn('↑', '\x1B[A'),
-            _keyBtn('↓', '\x1B[B'),
-            _keyBtn('←', '\x1B[D'),
-            _keyBtn('→', '\x1B[C'),
-            const SizedBox(width: 8),
-            _keyBtn('Ctrl', '', ctrl: true),
-            _keyBtn('C', 'c', ctrl: true),
-            _keyBtn('D', 'd', ctrl: true),
-            _keyBtn('V', '', ctrl: true, onTap: _onPaste),
-            const SizedBox(width: 8),
-            const SizedBox(width: 8),
-            _keyBtn('⌨', '', onTap: () {
-              _webController?.evaluateJavascript(
-                source: 'term.focus();',
-              );
-            }),
-            const SizedBox(width: 8),
-            _keyBtn('/', '/'),
+            if (widget.isShellAgentSession)
+              TerminalAgentBar(
+                sessionId: widget.sessionId,
+                onEditInTerminal: _sendToTerminal,
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _keyBtn(String label, String bytes, {
-    bool ctrl = false,
-    VoidCallback? onTap,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: TextButton(
-        style: TextButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          minimumSize: Size.zero,
-          backgroundColor: Colors.grey[800],
-          foregroundColor: ctrl ? Colors.orange : Colors.white70,
-          textStyle: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
-        ),
-        onPressed: onTap ?? () {
-          if (ctrl) {
-            // Send Ctrl+key: ASCII 0x01-0x1A for Ctrl+A through Ctrl+Z.
-            final code = bytes.isNotEmpty ? bytes.codeUnitAt(0) : 0;
-            if (code >= 0x61 && code <= 0x7A) {
-              _terminalService?.sendRaw(Uint8List.fromList([code - 0x60]));
-            }
-          } else {
-            _terminalService?.sendRaw(utf8.encode(bytes));
-          }
-        },
-        child: Text(label),
-      ),
-    );
+  TerminalAccessoryMode get _accessoryMode {
+    if (widget.isEnvoyHarnessSession) {
+      return TerminalAccessoryMode.envoyHarness;
+    }
+    if (widget.sessionRole == 'pi') {
+      return TerminalAccessoryMode.pi;
+    }
+    return TerminalAccessoryMode.shell;
   }
 
+  // -- Legacy special keys (removed — use TerminalAccessoryBar) --
   /// Inlined HTML that loads xterm.js from CDN.
   /// Using [InAppWebViewInitialData] so we don't need the assets/ file
   /// at runtime (it's still kept as a reference).

@@ -115,7 +115,7 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
   const [skillDraft, setSkillDraft] = useState("");
   const [roleDraft, setRoleDraft] = useState("");
   const [roleDraftError, setRoleDraftError] = useState<string | null>(null);
-  const [workerEngine, setWorkerEngine] = useState<"openclaw" | "ext">("openclaw");
+  const [workerEngine, setWorkerEngine] = useState<"openclaw" | "ext" | "envoy-harness">("openclaw");
   const [useMap, setUseMap] = useState(false);
   const [mapSaving, setMapSaving] = useState(false);
   const [activeExtLabel, setActiveExtLabel] = useState<string>("");
@@ -129,7 +129,11 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
       if (cfg.agentNetworkProfile) {
         setProfile(createAgentNetworkProfile(cfg.agentNetworkProfile));
       }
-      setWorkerEngine(cfg.agentNetworkWorkerEngine === "ext" ? "ext" : "openclaw");
+      setWorkerEngine(
+        cfg.agentNetworkWorkerEngine === "ext" || cfg.agentNetworkWorkerEngine === "envoy-harness"
+          ? cfg.agentNetworkWorkerEngine
+          : "openclaw",
+      );
       setUseMap(cfg.useMAP === true);
       const activeId = cfg.activeExtAgentId;
       const active = cfg.extAgents?.find((a) => a.id === activeId);
@@ -141,7 +145,7 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
   }, [nodeService]);
 
   const setWorkerEngineAndPersist = useCallback(
-    (engine: "openclaw" | "ext") => {
+    (engine: "openclaw" | "ext" | "envoy-harness") => {
       setWorkerEngine(engine);
       void (async () => {
         setSaving(true);
@@ -265,15 +269,22 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
           value={workerEngine}
           disabled={saving}
           onChange={(e) =>
-            setWorkerEngineAndPersist(e.target.value === "ext" ? "ext" : "openclaw")
+            setWorkerEngineAndPersist(
+              e.target.value === "ext" || e.target.value === "envoy-harness"
+                ? e.target.value
+                : "openclaw",
+            )
           }
         >
           <option value="openclaw">{t(`${K}.workerEngineOpenClaw`)}</option>
           <option value="ext">{t(`${K}.workerEngineExt`)}</option>
+          <option value="envoy-harness">{t(`${K}.workerEngineEnvoyHarness`)}</option>
         </select>
         <small className="field-desc">
           {workerEngine === "ext"
             ? t(`${K}.workerEngineExtHint`, { name: activeExtLabel || "Ext Agent" })
+            : workerEngine === "envoy-harness"
+              ? t(`${K}.workerEngineEnvoyHarnessHint`)
             : t(`${K}.workerEngineHint`)}
         </small>
       </div>

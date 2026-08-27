@@ -1,0 +1,37 @@
+# Phase 8 — envoy-harness integration needs this file for pnpm 10+.
+# The root package.json's `workspaces` field is deprecated in pnpm 10+
+# (silently ignored, with a warning on every pnpm invocation). Without
+# a pnpm-workspace.yaml, pnpm doesn't see apps/* or packages/* as
+# workspace members — which is why the `file:` dep on the sibling
+# envoy-harness-adapter wasn't being resolved by `pnpm install`.
+#
+# Contents are identical to the deprecated `workspaces` field; once
+# this file is present, pnpm 10 picks up the same packages.
+#
+# Cleanup: when the pre-existing Phase 8 infra work lands
+# (migrating the deprecated workspaces field to this file
+# permanently), delete this comment block.
+
+packages:
+  - 'apps/*'
+  - 'packages/api'
+  - 'packages/agent-adapter'
+  - 'packages/bonds'
+  - 'packages/identity'
+  - 'packages/ipfs-helia'
+  - 'packages/kb-obsidian'
+  - 'packages/local-store'
+  - 'packages/mobile-identity'
+  - 'packages/models'
+  - 'packages/network'
+  - 'packages/openclaw-runtime'
+  - 'packages/protocol'
+  - 'packages/rag'
+  - 'packages/vault'
+
+# Native addons whose postinstall builds pnpm must run (pnpm 10 blocks
+# build scripts by default; without these, node-pty and hnswlib-node
+# load with "Could not locate the bindings file").
+onlyBuiltDependencies:
+  - hnswlib-node
+  - node-pty

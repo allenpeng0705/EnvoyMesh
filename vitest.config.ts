@@ -39,6 +39,30 @@ export default defineConfig({
       "@envoymesh/rag/embedding-resolver": resolve(rootDir, "packages/rag/src/embedding-resolver.ts"),
       "@envoymesh/rag": resolve(rootDir, "packages/rag/src/index.ts"),
       "@envoymesh/kb-obsidian": resolve(rootDir, "packages/kb-obsidian/src/index.ts"),
+      "@envoymesh/envoy-harness": resolve(
+        rootDir,
+        "../envoy-harness/packages/envoy-harness/src/index.ts",
+      ),
+      "@envoymesh/envoy-harness-client/ehui": resolve(
+        rootDir,
+        "../envoy-harness/packages/envoy-harness-client/src/ehui.ts",
+      ),
+      "@envoymesh/envoy-harness-client": resolve(
+        rootDir,
+        "../envoy-harness/packages/envoy-harness-client/src/index.ts",
+      ),
+      "@envoymesh/envoy-harness-adapter": resolve(
+        rootDir,
+        "../envoy-harness/packages/envoy-harness-adapter/src/index.ts",
+      ),
+      "@envoymesh/envoy-harness-peer": resolve(
+        rootDir,
+        "../envoy-harness/packages/envoy-harness-peer/src/index.ts",
+      ),
+      "@envoymesh/envoy-harness-ehui": resolve(
+        rootDir,
+        "../envoy-harness/packages/envoy-harness-ehui/src/index.ts",
+      ),
     },
   },
   test: {

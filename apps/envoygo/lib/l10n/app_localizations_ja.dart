@@ -580,6 +580,10 @@ class AppLocalizationsJa extends AppLocalizations {
   String get knowledgeSetupHint => 'インデックス状態と取得。チャットモデルは「マイ → AIモデル」にあります。';
 
   @override
+  String get knowledgeSetupEmbeddingHint =>
+      'Embeddings use Envoy Local on this device. For OpenAI or Ollama, open Settings → AI on your home computer.';
+
+  @override
   String get knowledgeSetupEnabled => 'ボールトナレッジを有効化';
 
   @override
@@ -677,6 +681,24 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get knowledgeFileMakePrivate => '非公開にする';
+
+  @override
+  String get knowledgeBrowseImportAndPublish => 'Import and publish';
+
+  @override
+  String get knowledgeBrowsePublishImportOnly =>
+      'Import this note into the vault first, then you can publish it.';
+
+  @override
+  String get knowledgeBrowsePublishImportNoDoc =>
+      'Imported, but could not publish yet — try Publish again from the imported note.';
+
+  @override
+  String get knowledgeBrowseImportedAndPublished => 'Imported and published';
+
+  @override
+  String get knowledgeBrowsePublishImportHint =>
+      'Import into vault and publish for mesh discovery';
 
   @override
   String get knowledgeFileMore => 'その他の操作';
@@ -934,6 +956,38 @@ class AppLocalizationsJa extends AppLocalizations {
   String get chatsSectionAi => 'AI';
 
   @override
+  String get chatsSectionCoding => 'コーディング';
+
+  @override
+  String get chatsCodingPi => 'Pi';
+
+  @override
+  String get chatsCodingPiHint => 'コーディングエージェント（ターミナル）';
+
+  @override
+  String get chatsCodingEh => 'Envoy';
+
+  @override
+  String get chatsCodingEhHint => 'コーディングエージェント（チャット）';
+
+  @override
+  String get chatsEhNew => '新しいコーディングチャット';
+
+  @override
+  String get chatsEhRemoveTitle => 'コーディングチャットを削除しますか？';
+
+  @override
+  String chatsEhRemoveBody(String name) {
+    return '「$name」をコーディング一覧から削除しますか？ホームノード上の履歴も削除されます。';
+  }
+
+  @override
+  String get chatsEhThinking => 'Envoy が考えています…';
+
+  @override
+  String get chatsEhPromptHint => 'Envoy にコーディング、リファクタ、説明を依頼…';
+
+  @override
   String get chatsSectionFamily => 'ファミリー';
 
   @override
@@ -959,6 +1013,110 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get chatsNewPiHint => 'Pi コーディングターミナルを開始';
+
+  @override
+  String get chatsNewEnvoy => '新しい Envoy';
+
+  @override
+  String get chatsNewEnvoyHint => 'Envoy Harness TUI を開始';
+
+  @override
+  String get ehChooseProjectTitle => 'Envoy プロジェクトフォルダを選択';
+
+  @override
+  String get ehChangeProjectTitle => 'Envoy プロジェクトフォルダを変更';
+
+  @override
+  String get ehChooseProjectDesc =>
+      'Envoy はこのフォルダで動作します（AGENTS.md の読み取り、ファイル編集、シェル実行）。';
+
+  @override
+  String get ehStartWithProject => '開始';
+
+  @override
+  String get ehRestartWithProject => 'ここで Envoy を再起動';
+
+  @override
+  String get ehEnsuringTerminal => 'Envoy TUI を起動中…';
+
+  @override
+  String get ehPermissionTitle => 'ツールの許可';
+
+  @override
+  String get ehPermissionAllow => '許可';
+
+  @override
+  String get ehPermissionDeny => '拒否';
+
+  @override
+  String get ehQuestionTitle => 'Envoy が入力を必要としています';
+
+  @override
+  String get ehRecommended => 'おすすめ';
+
+  @override
+  String get ehSlashWhileBusy => '先に現在のターンを終了するか /cancel してください。';
+
+  @override
+  String get ehChatReset => 'このプロジェクトの新しいチャットを開始しました。';
+
+  @override
+  String get ehTurnCancelled => 'ターンをキャンセルしました。';
+
+  @override
+  String get ehStatusRefreshed => 'ステータスを更新しました。';
+
+  @override
+  String get ehNoPeers => 'ピアクラスタが設定されていません。';
+
+  @override
+  String get ehSearchUsage => '使い方: /search <語> — この会話を検索。';
+
+  @override
+  String ehSearchNoMatches(String term) {
+    return '「$term」に一致するものはありません。';
+  }
+
+  @override
+  String ehModelShow(String model) {
+    return '使用中のモデル: $model';
+  }
+
+  @override
+  String get ehModelUnknown => 'モデル未設定 — 設定 → AI で設定してください。';
+
+  @override
+  String ehProjectCurrent(String path) {
+    return 'プロジェクトフォルダ: $path';
+  }
+
+  @override
+  String get ehProjectUnset => 'プロジェクトフォルダ未設定 — /cd <パス> を使ってください。';
+
+  @override
+  String ehProjectSet(String path) {
+    return 'プロジェクトフォルダ → $path';
+  }
+
+  @override
+  String get ehProjectSetUnknown => 'プロジェクトフォルダを更新しました。';
+
+  @override
+  String ehProjectSetFailed(String error) {
+    return 'プロジェクトフォルダの設定に失敗: $error';
+  }
+
+  @override
+  String get ehConfigureModel => '設定 → AI でモデルを構成してください。';
+
+  @override
+  String get ehNotReady => 'envoy-harness の準備ができていません。';
+
+  @override
+  String get termQuickHelp => '/help';
+
+  @override
+  String get termQuickCancel => '/cancel';
 
   @override
   String get chatsNewTerminal => '新しいターミナル';
@@ -1164,6 +1322,21 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get chatVoiceSendFailed => '音声メモの送信に失敗';
+
+  @override
+  String get chatSentFile => 'Sent a file';
+
+  @override
+  String get chatSentVoice => 'Sent a voice message';
+
+  @override
+  String get chatDeliverySent => 'Sent';
+
+  @override
+  String get chatDeliveryDelivered => 'Delivered';
+
+  @override
+  String get chatDeliveryFailed => 'Not delivered';
 
   @override
   String get chatMicDenied => 'マイクの権限が拒否されました';
@@ -1798,6 +1971,22 @@ class AppLocalizationsJa extends AppLocalizations {
   String get settingsPiEnabled => 'Pi 有効';
 
   @override
+  String get settingsPiCodingBackend => 'コーディングバックエンド';
+
+  @override
+  String get settingsPiCodingBackendPi => 'Pi（サイドカー）';
+
+  @override
+  String get settingsPiCodingBackendEh => 'envoy-harness (ACP)';
+
+  @override
+  String get settingsPiCodingBackendHint =>
+      'Social と同じ設定。sendToPi と承認を同じ Pi UI 経由にします。古い EnvoyGo は無視して Pi のままです。';
+
+  @override
+  String get settingsPiCodingBackendSaved => 'コーディングバックエンドを更新しました';
+
+  @override
   String get settingsPiOverrideHint => 'モデル上書き（任意）。クリアすると AI モデル設定を継承します。';
 
   @override
@@ -2026,7 +2215,8 @@ class AppLocalizationsJa extends AppLocalizations {
   String get chainsDuration => '所要時間';
 
   @override
-  String get chainsManageOnSocial => 'ホームノードのソーシャル画面でチェーンを管理します。';
+  String get chainsManageOnSocial =>
+      'フリート設定・入札・レシピはホームの Social UI のままです。キャンセル・再バランス・ピン留めはこちらでもできます。';
 
   @override
   String get chainsStartTitle => 'チームジョブを開始';
@@ -2052,6 +2242,62 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get chainsStartModeRoleHint => '各ステップは役割（PM、プログラマーなど）を優先します。';
+
+  @override
+  String get chainsStartTeamStrategy => 'Team strategy';
+
+  @override
+  String get chainsStartTeamStrategyHint =>
+      'How workers are ranked. Hedged / verify-only are policy labels — a second worker runs on the wire only when immediate-dual gates pass (critical step, budget, independent workers).';
+
+  @override
+  String get chainsStrategyBalanced => 'Balanced';
+
+  @override
+  String get chainsStrategyFastest => 'Fastest';
+
+  @override
+  String get chainsStrategyCheapest => 'Cheapest';
+
+  @override
+  String get chainsStrategyHighestConfidence => 'Highest confidence';
+
+  @override
+  String get chainsStrategyPrivacyLocal => 'Privacy (local)';
+
+  @override
+  String get chainsStrategyDiverseModel => 'Diverse models';
+
+  @override
+  String get chainsStartAvailLease => 'Lease';
+
+  @override
+  String get chainsStartAvailLegacy => 'Legacy';
+
+  @override
+  String chainsStartReliabilityPct(int pct) {
+    return '信頼度 $pct%';
+  }
+
+  @override
+  String chainsStartReliabilitySparse(String level, int samples) {
+    return '$level · $samples 件のサンプル';
+  }
+
+  @override
+  String get chainsStartReliabilityFallbackExact => 'このワーカーの履歴';
+
+  @override
+  String get chainsStartReliabilityFallbackPeerRuntimeSkill => 'このワーカーの類似タスク';
+
+  @override
+  String get chainsStartReliabilityFallbackPeerRuntime => 'このワーのランタイム';
+
+  @override
+  String get chainsStartReliabilityFallbackRuntimeSkill => 'このスキルを持つワーカー';
+
+  @override
+  String get chainsStartReliabilityFallbackPrior => '汎用事前分布（履歴なし）';
 
   @override
   String get chainsStartGoalLabel => '目標';
@@ -2132,6 +2378,46 @@ class AppLocalizationsJa extends AppLocalizations {
   @override
   String get chainsStartNoWorkers =>
       '到達可能な Agent Network ワーカーがありません。先にホームノードのエージェントと連絡先をボンドしてください。';
+
+  @override
+  String get chainsTestNetworkTitle => 'Test Agent Network';
+
+  @override
+  String get chainsTestNetworkHint =>
+      'Simulation — no work sent, no model spend, no reputation changes. Dry-plan ranks for real; failover and recovery are label-only previews.';
+
+  @override
+  String get chainsTestNetworkRun => 'Check readiness';
+
+  @override
+  String get chainsTestNetworkRunning => 'Checking…';
+
+  @override
+  String get chainsTestNetworkFailed => 'Could not run diagnostics';
+
+  @override
+  String get chainsSpeculationReviewTitle => 'スペキュレーションの確認が必要';
+
+  @override
+  String get chainsSpeculationReviewBody =>
+      '2 つのワーカーが 1 ステップで異なる結果を返しました。ジョブを進めるために勝者を選ぶか、オーケストレーターに自動選択させることができます。';
+
+  @override
+  String get chainsSpeculationReviewNonePass =>
+      '両方のワーカーが検証に失敗しました — オーケストレーターがこのステップを再割り当てします。';
+
+  @override
+  String get chainsSpeculationReviewDisagree =>
+      '2 つのワーカーが一致しません。オーケストレーターがより低コストの検証済みを選ぶか、ユーザーが選ぶか再割り当てできます。';
+
+  @override
+  String get chainsSpeculationReviewAutoResolve => '自動的に解決';
+
+  @override
+  String get chainsSpeculationReviewResolved => 'オーケストレーターが解決しました';
+
+  @override
+  String get chainsSpeculationReviewFailed => '自動解決に失敗しました';
 
   @override
   String get chainsStartReadinessTitle => 'ワーカーを準備する';
@@ -2321,6 +2607,41 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get chainsDetailPublished => 'このジョブは完了し、レポートを公開しました。';
+
+  @override
+  String get chainsDetailRecovering =>
+      'Recovering after restart — confirming worker progress';
+
+  @override
+  String chainsAttemptCount(int count) {
+    return '$count attempt(s)';
+  }
+
+  @override
+  String get chainsExecutionDetails => 'Execution details';
+
+  @override
+  String chainsProvenanceSummaryLine(
+    int attempts,
+    String worker,
+    String state,
+  ) {
+    return '$attempts attempt(s) · $worker · $state';
+  }
+
+  @override
+  String chainsLastReason(String reason) {
+    return 'Last reason: $reason';
+  }
+
+  @override
+  String get chainsTechnicalDetails => 'Technical details';
+
+  @override
+  String get chainsProvenanceEmpty => 'No journal events for this step yet.';
+
+  @override
+  String get chainsProvenanceFailed => 'Could not load execution history.';
 
   @override
   String get chainsRebalanceHeading => '予算を追加';
@@ -2868,4 +3189,272 @@ class AppLocalizationsJa extends AppLocalizations {
   @override
   String get settingsEnvoyLocalPhoneNote =>
       '詳細なサーバー パラメータ（コンテキスト サイズ、GPU レイヤー）はホームノードのソーシャル画面にあります。';
+
+  @override
+  String get ehReviewTitle => 'このターンを確認';
+
+  @override
+  String get ehReviewUnavailable => 'この古いターンの保存済みレビューはありません。';
+
+  @override
+  String get ehReviewFile => 'ファイル';
+
+  @override
+  String get ehReviewOpenFile => 'ファイルを開く';
+
+  @override
+  String get ehReviewDiffUnavailable => 'このファイルのテキスト差分は利用できません。';
+
+  @override
+  String get ehReviewOnly => 'ワークスペース検出 · 確認のみ';
+
+  @override
+  String get ehRevertTitle => 'このターンを元に戻しますか？';
+
+  @override
+  String get ehRevertBody => 'ファイルはターン前の内容に戻されます。その後の編集は保護され、復元が停止します。';
+
+  @override
+  String get ehRevertAction => '元に戻す';
+
+  @override
+  String get ehRevertComplete => 'このターンのファイル変更を元に戻しました。';
+
+  @override
+  String get ehRevertUnavailable => 'このターンは安全に元に戻せません。';
+
+  @override
+  String ehRevertConflict(String files) {
+    return 'その後変更されたため復元を停止しました: $files';
+  }
+
+  @override
+  String get ehSearchTranscript => 'トランスクリプトを検索';
+
+  @override
+  String get ehSearchClose => '検索を閉じる';
+
+  @override
+  String get ehNoMatches => '一致するターンがありません';
+
+  @override
+  String get ehCopyTurn => 'ターンをコピー';
+
+  @override
+  String get ehShareTurn => 'ターンを共有';
+
+  @override
+  String get ehReviewDiff => '差分を確認';
+
+  @override
+  String get ehRevertThisTurn => 'このターンを元に戻す';
+
+  @override
+  String get ehReviewChanges => '変更を確認';
+
+  @override
+  String get ehRevertAll => 'すべて元に戻す';
+
+  @override
+  String ehChangesCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'このターンで $count ファイル変更',
+      one: 'このターンで 1 ファイル変更',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get ehChangesKeepAll => 'すべて保持';
+
+  @override
+  String get ehChangesRevert => 'すべて元に戻す';
+
+  @override
+  String get ehChangesHideList => '一覧を隠す';
+
+  @override
+  String get ehChangesShowList => '一覧を表示';
+
+  @override
+  String get ehReviewKeepFile => '保持';
+
+  @override
+  String get ehReviewRevertFile => '元に戻す';
+
+  @override
+  String get ehReviewKeptAll => '変更を保持しました。';
+
+  @override
+  String ehReviewRevertedFile(String path) {
+    return '$path を元に戻しました';
+  }
+
+  @override
+  String get ehReviewAutoLabel => '自動レビュー（≥）';
+
+  @override
+  String get ehReviewAutoAlways => '常に';
+
+  @override
+  String ehQueueTitle(int count) {
+    return 'キュー ($count)';
+  }
+
+  @override
+  String get ehQueueClear => 'クリア';
+
+  @override
+  String get ehQueueBusyHint => '送信は次にキューへ';
+
+  @override
+  String get ehQueueFollowUpHint => 'フォローアップをキューへ…';
+
+  @override
+  String get ehInjectTooltip => '割り込み（キャンセルして送信）';
+
+  @override
+  String ehFilesChangedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count ファイル変更',
+      one: '1 ファイル変更',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get ehEmptyReply =>
+      'envoy-harness は見える返信を返しませんでした。メッセージは残っています — 再試行するか言い換えてください。';
+
+  @override
+  String get ehConfigureModelHint => '設定 → AI でモデルを構成してください。';
+
+  @override
+  String get ehReviewKeepFailed => '変更を保持できませんでした。';
+
+  @override
+  String get ehReviewOpenGitDiff => 'Git diff を開く';
+
+  @override
+  String get ehDiffBefore => '変更前';
+
+  @override
+  String get ehDiffAfter => '変更後';
+
+  @override
+  String get ehPermsTooltip => '権限ポリシー';
+
+  @override
+  String get ehPermsSafe => 'デフォルト（安全な自動実行）';
+
+  @override
+  String get ehPermsAsk => '常に確認';
+
+  @override
+  String get ehPermsApprove => '常に承認';
+
+  @override
+  String ehPermsSet(String mode) {
+    return '権限ポリシー → $mode。';
+  }
+
+  @override
+  String get ehPermsNextTurn => ' 次のターンから適用。';
+
+  @override
+  String ehPermsFailed(String error) {
+    return '権限ポリシーを設定できませんでした: $error';
+  }
+
+  @override
+  String get chainsStatusCancelled => 'キャンセル';
+
+  @override
+  String get chainsStatusPublished => '公開済み';
+
+  @override
+  String get chainsStatusRecovering => 'Recovering';
+
+  @override
+  String get chainsStatusSynthesizing => '統合中';
+
+  @override
+  String get chainsStatusRunning => '実行中';
+
+  @override
+  String get chainsStatusWaitingWorkers => 'ワーカー待ち';
+
+  @override
+  String get chainsStatusBidding => '入札中';
+
+  @override
+  String get chainsStatusAssigning => '割当中';
+
+  @override
+  String get chainsStatusPlanning => '計画中';
+
+  @override
+  String get ehWorking => '作業中';
+
+  @override
+  String get ehCompleted => '完了';
+
+  @override
+  String get ehUpdate => '更新';
+
+  @override
+  String ehToolLabel(String name) {
+    return 'ツール: $name';
+  }
+
+  @override
+  String ehMatchCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 件一致',
+      one: '1 件一致',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get termMore => 'その他…';
+
+  @override
+  String get termCompactContext => 'コンテキストを圧縮';
+
+  @override
+  String get termUpdatePlan => 'プランを表示または更新';
+
+  @override
+  String get termHarnessStatus => 'Harness ステータス';
+
+  @override
+  String get termPiActions => 'Pi アクション';
+
+  @override
+  String get termHarnessActions => 'envoy-harness アクション';
+
+  @override
+  String get termPreviousCommand => '前のコマンド';
+
+  @override
+  String get termNextCommand => '次のコマンド';
+
+  @override
+  String get termCursorLeft => 'カーソルを左へ';
+
+  @override
+  String get termCursorRight => 'カーソルを右へ';
+
+  @override
+  String get termEnterKey => 'Enter キー';
+
+  @override
+  String get chainsCancelFailed => 'チームジョブをキャンセルできませんでした。';
 }

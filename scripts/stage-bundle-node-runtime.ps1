@@ -65,6 +65,106 @@ foreach ($pkgDir in (Get-ChildItem -Path (Join-Path $Root "packages") -Directory
 }
 Write-Host "  Staged $stagedWorkspacePkgs @envoymesh workspace packages"
 
+# ---------------------------------------------------------------------------
+# Phase 8 — wire sibling envoy-harness packages into the node's module graph.
+# Mirrors scripts/stage-bundle-node-runtime.sh. apps/node statically imports
+# @envoymesh/envoy-harness{,-adapter,-client,-peer}; without this step the
+# packaged node crashes on first launch with ERR_MODULE_NOT_FOUND.
+# ---------------------------------------------------------------------------
+$envoyHarnessDir = $env:ENVOY_HARNESS_DIR
+if (-not $envoyHarnessDir) {
+    $envoyHarnessDir = Join-Path (Split-Path -Parent $Root) "envoy-harness"
+}
+$stageEnvoyHarnessIntoNode = $true
+if ($env:STAGE_ENVOY_HARNESS -eq "0") {
+    if ($env:ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP -eq "1") {
+        Write-Host "  WARN: STAGE_ENVOY_HARNESS=0 + ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1 — skipping envoy-harness in node_modules."
+        Write-Host "        The packaged node has static imports of @envoymesh/envoy-harness-adapter and WILL crash on startup."
+        $stageEnvoyHarnessIntoNode = $false
+    } else {
+        Write-Error @"
+STAGE_ENVOY_HARNESS=0 is incompatible with the node's static imports of
+  @envoymesh/envoy-harness{,-adapter,-client,-peer} (first launch would crash).
+  Unset STAGE_ENVOY_HARNESS (default: stage), or set ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1
+  to force a non-runnable debug bundle.
+"@
+    }
+}
+
+function Copy-EnvoyHarnessPkg([string]$Pkg) {
+    $srcPkg = Join-Path $envoyHarnessDir "packages\$Pkg"
+    $destPkg = Join-Path $Dest "node_modules\@envoymesh\$Pkg"
+    $srcDist = Join-Path $srcPkg "dist"
+    $srcJson = Join-Path $srcPkg "package.json"
+    if (-not (Test-Path $srcDist)) {
+        Write-Error "Missing dist for @envoymesh/$Pkg at $srcDist — build the sibling monorepo first (cd $envoyHarnessDir && pnpm -F @envoymesh/$Pkg build)"
+    }
+    if (-not (Test-Path $srcJson)) {
+        Write-Error "Missing package.json for @envoymesh/$Pkg at $srcPkg"
+    }
+    if (Test-Path $destPkg) { Remove-Item -Recurse -Force $destPkg }
+    New-Item -ItemType Directory -Force -Path $destPkg | Out-Null
+    Copy-Item -Force $srcJson $destPkg
+    Copy-Item -Recurse -Force $srcDist $destPkg
+}
+
+if ($stageEnvoyHarnessIntoNode) {
+    Write-Host "  Staging @envoymesh/envoy-harness (+ adapter/client/peer/tui) from sibling monorepo..."
+    foreach ($pkg in @(
+        "envoy-harness",
+        "envoy-harness-adapter",
+        "envoy-harness-client",
+        "envoy-harness-peer",
+        "envoy-harness-tui"
+    )) {
+        $pkgPath = Join-Path $envoyHarnessDir "packages\$pkg"
+        if (-not (Test-Path $pkgPath)) {
+            Write-Error "ENVOY_HARNESS_DIR=$envoyHarnessDir is missing packages/$pkg. Place the sibling monorepo at $envoyHarnessDir, or set ENVOY_HARNESS_DIR."
+        }
+    }
+    Copy-EnvoyHarnessPkg "envoy-harness"
+    Copy-EnvoyHarnessPkg "envoy-harness-adapter"
+    Copy-EnvoyHarnessPkg "envoy-harness-client"
+    Copy-EnvoyHarnessPkg "envoy-harness-peer"
+    Copy-EnvoyHarnessPkg "envoy-harness-tui"
+    Write-Host "  OK @envoymesh/envoy-harness{,-adapter,-client,-peer,-tui} in node_modules"
+
+    # Explicitly stage smol-toml (unique harness dep).
+    $smolDest = Join-Path $Dest "node_modules\smol-toml"
+    if (-not (Test-Path $smolDest)) {
+        $smolSrc = $null
+        foreach ($cand in @(
+            (Join-Path $envoyHarnessDir "packages\envoy-harness\node_modules\smol-toml"),
+            (Join-Path $envoyHarnessDir "node_modules\smol-toml")
+        )) {
+            if (Test-Path $cand) {
+                $item = Get-Item $cand -Force
+                if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                    $smolSrc = $item.Target
+                    if (-not [IO.Path]::IsPathRooted($smolSrc)) {
+                        $smolSrc = [IO.Path]::GetFullPath((Join-Path $item.DirectoryName $smolSrc))
+                    }
+                } else {
+                    $smolSrc = $cand
+                }
+                break
+            }
+        }
+        if (-not $smolSrc) {
+            $pnpmDir = Join-Path $envoyHarnessDir "node_modules\.pnpm"
+            if (Test-Path $pnpmDir) {
+                $found = Get-ChildItem -Path $pnpmDir -Recurse -Directory -Filter "smol-toml" -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($found) { $smolSrc = $found.FullName }
+            }
+        }
+        if ($smolSrc -and (Test-Path $smolSrc)) {
+            New-Item -ItemType Directory -Force -Path (Join-Path $Dest "node_modules") | Out-Null
+            Copy-Item -Recurse -Force $smolSrc $smolDest
+            Write-Host "  OK smol-toml staged from sibling monorepo"
+        }
+    }
+}
+
 Write-Host "  Staging production npm dependencies..."
 # Packages excluded from the staged bundle by default (opt-in via env).
 # Mirrors the bash twin — `@anthropic-ai/claude-agent-sdk` pulls a ~267 MB
@@ -117,7 +217,27 @@ foreach ($modPath in $npmLines) {
     $destMod = Join-Path $Dest "node_modules/$pkgName"
     if (Test-Path $destMod) { continue }
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destMod) | Out-Null
-    Copy-Item -Recurse -Force $modPath $destMod
+    # Prefer the hoisted copy under $Root/node_modules when present (avoids
+    # nested npm-ls paths pinning an older major, e.g. uint8arrays@5 vs 6).
+    $hoisted = Join-Path $Root "node_modules/$pkgName"
+    if (Test-Path $hoisted) { $modPath = $hoisted }
+    # Resolve pnpm/npm symlinks before copy (relative targets break when
+    # relocated into the staged tree).
+    $copySrc = $modPath
+    $item = Get-Item $modPath -Force -ErrorAction SilentlyContinue
+    if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        try {
+            $copySrc = (Resolve-Path -LiteralPath $modPath -ErrorAction Stop).Path
+        } catch {
+            Write-Host "  Skipping broken/non-dir dep path for $pkgName: $modPath"
+            continue
+        }
+    }
+    if (-not (Test-Path $copySrc -PathType Container)) {
+        Write-Host "  Skipping broken/non-dir dep path for $pkgName: $copySrc"
+        continue
+    }
+    Copy-Item -Recurse -Force $copySrc $destMod
 }
 
 # Safety net: scan every staged @envoymesh/* package's declared dependencies
@@ -149,6 +269,22 @@ $depSearchRoots = @(
     (Join-Path $Root "apps/node/node_modules"),
     (Join-Path $Root "packages/openclaw/node_modules")
 )
+# Phase 8: envoy-harness unique deps (smol-toml) live in the sibling monorepo.
+if ($stageEnvoyHarnessIntoNode) {
+    foreach ($ehNm in @(
+        (Join-Path $envoyHarnessDir "node_modules"),
+        (Join-Path $envoyHarnessDir "packages\envoy-harness\node_modules"),
+        (Join-Path $envoyHarnessDir "packages\envoy-harness-adapter\node_modules")
+    )) {
+        if (Test-Path $ehNm) { $depSearchRoots += $ehNm }
+    }
+    $pnpmDir = Join-Path $envoyHarnessDir "node_modules\.pnpm"
+    if (Test-Path $pnpmDir) {
+        Get-ChildItem -Path $pnpmDir -Recurse -Directory -Filter "smol-toml" -ErrorAction SilentlyContinue |
+            Select-Object -First 5 |
+            ForEach-Object { $depSearchRoots += $_.Parent.FullName }
+    }
+}
 $stagedNodeModules = Join-Path $Dest "node_modules"
 $seedPkgs = @()
 $appsNodePkg = Join-Path $Root "apps/node/package.json"
@@ -205,7 +341,21 @@ for ($iter = 1; $iter -le $maxIterations; $iter++) {
             }
             if (-not $srcDep) { continue }
             New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destDep) | Out-Null
-            Copy-Item -Recurse -Force $srcDep $destDep
+            $copySrc = $srcDep
+            $item = Get-Item $srcDep -Force -ErrorAction SilentlyContinue
+            if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                try {
+                    $copySrc = (Resolve-Path -LiteralPath $srcDep -ErrorAction Stop).Path
+                } catch {
+                    Write-Host "  Skipping broken/non-dir safety-net path for $depName: $srcDep"
+                    continue
+                }
+            }
+            if (-not (Test-Path $copySrc -PathType Container)) {
+                Write-Host "  Skipping broken/non-dir safety-net path for $depName: $copySrc"
+                continue
+            }
+            Copy-Item -Recurse -Force $copySrc $destDep
             $copiedThisIter++
         }
     }
@@ -278,6 +428,17 @@ $criticalDeps = @(
     # request/node_modules/. Proves the loop scans nested packages.
     "psl"
 ) + @($sharpPlatformDeps)
+if ($stageEnvoyHarnessIntoNode) {
+    $criticalDeps += @(
+        "@envoymesh/envoy-harness",
+        "@envoymesh/envoy-harness-adapter",
+        "@envoymesh/envoy-harness-client",
+        "@envoymesh/envoy-harness-peer",
+        "@envoymesh/envoy-harness-tui",
+        "@envoymesh/agent-adapter",
+        "smol-toml"
+    )
+}
 $missing = @()
 foreach ($dep in $criticalDeps) {
     if (-not (Test-Path (Join-Path $Dest "node_modules/$dep"))) {
@@ -295,6 +456,9 @@ if ($missing.Count -gt 0) {
     Write-Host "    2. The dep is nested deeper than the search roots (rare; check with 'npm ls <dep>')" -ForegroundColor Yellow
     Write-Host "    3. The dep was pruned by 'npm prune --production' but is actually needed at runtime" -ForegroundColor Yellow
     Write-Host "    4. sharp platform optionalDeps were omitted — run: npm install --os=$ridOs --cpu=$ridCpu sharp" -ForegroundColor Yellow
+    if ($stageEnvoyHarnessIntoNode) {
+        Write-Host "    5. envoy-harness sibling deps missing — run: (cd $envoyHarnessDir && pnpm install && pnpm -r build)" -ForegroundColor Yellow
+    }
     Write-Host ""
     Write-Host "  Diagnostic commands:" -ForegroundColor Cyan
     foreach ($dep in $missing) {
@@ -305,7 +469,9 @@ if ($missing.Count -gt 0) {
     exit 1
 }
 Write-Host "  + sharp platform packages present ($($sharpPlatformDeps -join ', '))"
-
+if ($stageEnvoyHarnessIntoNode) {
+    Write-Host "  + envoy-harness packages + smol-toml present"
+}
 # End-to-end import check: actually run Node's module resolver against
 # every module the runtime entry imports. This catches missing modules
 # that the file-existence sanity check above can't — e.g. transitive
@@ -316,7 +482,17 @@ Write-Host "  + sharp platform packages present ($($sharpPlatformDeps -join ', '
 # build-time errors with a clear list of what's missing.
 Write-Host "  End-to-end import check..."
 $nodeExe = if ($env:ENVOYMESH_NODE_EXE) { $env:ENVOYMESH_NODE_EXE } else { "node" }
-$probeScript = @'
+$harnessProbeMods = ""
+if ($stageEnvoyHarnessIntoNode) {
+    $harnessProbeMods = @"
+
+  // Phase 8 — sibling monorepo packages (static imports in node-service-impl)
+  "@envoymesh/envoy-harness", "@envoymesh/envoy-harness-adapter",
+  "@envoymesh/envoy-harness-client", "@envoymesh/envoy-harness-peer",
+  "@envoymesh/agent-adapter", "smol-toml",
+"@
+}
+$probeScript = @"
 const mods = [
   // Direct npm deps
   "zod", "ws", "yaml", "psl", "nat-upnp", "sharp",
@@ -327,7 +503,7 @@ const mods = [
   "@envoymesh/bonds", "@envoymesh/network", "@envoymesh/vault",
   "@envoymesh/local-store", "@envoymesh/models", "@envoymesh/rag",
   "@envoymesh/ipfs-helia", "@envoymesh/openclaw-runtime",
-  "@envoymesh/kb-obsidian"
+  "@envoymesh/kb-obsidian",$harnessProbeMods
 ];
 let failed = 0;
 for (const m of mods) {
@@ -345,7 +521,7 @@ if (failed > 0) {
   process.exit(1);
 }
 console.error("All " + mods.length + " critical imports resolved.");
-'@
+"@
 $probePath = Join-Path $Dest "__import_probe.mjs"
 Set-Content -Path $probePath -Value $probeScript -Encoding UTF8
 # IMPORTANT: the probe writes "All N imports resolved." to stderr by design

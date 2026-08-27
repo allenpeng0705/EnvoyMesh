@@ -1,8 +1,10 @@
 import type {
   AgentCard,
+  AgentRuntime,
   DeviceCertificate,
   HumanProfilePayload,
   CapabilityUnion,
+  VerifyMode,
 } from "@envoymesh/protocol";
 import type {
   DeviceIdentity,
@@ -51,6 +53,8 @@ import type {
   ChainLaunchResult,
   ChainGetStateParams,
   ChainGetStateResult,
+  ChainGetStepProvenanceParams,
+  ChainGetStepProvenanceResult,
   ChainListActiveParams,
   ChainListActiveResult,
   ChainCancelParams,
@@ -85,6 +89,8 @@ import type {
   ChainProbeReachabilityResult,
   ChainResolveIterationParams,
   ChainResolveIterationResult,
+  ChainResolveSpeculationParams,
+  ChainResolveSpeculationResult,
   ChainExportCostsParams,
   ChainExportCostsResult,
   ChainListRecipesParams,
@@ -397,7 +403,13 @@ export interface ChatMessage {
       correlationId?: string;
       pendingApproval?: boolean;
       routeId?: string;
-      modelUsed?: "openclaw" | "native" | "scripted-tutor";
+      /**
+       * Phase 8 / Step 5 — added `"envoy-harness"` for
+       * signal-bearing prompts that auto opt-in to the
+       * sibling-monorepo runtime. See
+       * `apps/node/src/user-prompt-router.ts`.
+       */
+      modelUsed?: "openclaw" | "envoy-harness" | "native" | "scripted-tutor";
       format?: string;
       blocks?: import("./owner-agent-types.js").StructuredBlock[];
     };
@@ -530,6 +542,8 @@ export interface CachedAgentCardSummary {
   webContentRoot?: string;
   /** Agent Network worker profile when the peer opted in and advertised it. */
   agentNetworkProfile?: import("@envoymesh/protocol").AgentNetworkProfile;
+  /** Phase 60 — protocol feature negotiation tags (leases, provenance, …). */
+  features?: import("@envoymesh/protocol").AgentCardProtocolFeature[];
 }
 
 export interface AuditEventSummary {
@@ -1901,6 +1915,20 @@ export interface NodeServiceEvents {
   /** Phase 49D — Pi wants to perform an action and is waiting for user confirmation. */
   "pi:proposal": import("./pi-agent.js").PiProposalEvent;
 
+  /** Envoy Harness ask_user / plan-review / mode-switch cards. */
+  "eh:user_question": import("./eh-user-question.js").EhUserQuestionEvent;
+  "eh:turn_hints": import("./eh-turn-hints.js").EhTurnHintsEvent;
+  "eh:prompt_busy": import("./eh-prompt-busy.js").EhPromptBusyEvent;
+  "eh:activity": import("./eh-activity.js").EhActivityEvent;
+  "eh:turn_started": import("./eh-turn.js").EhTurnStartedEvent;
+  "eh:turn_token": import("./eh-turn.js").EhTurnTokenEvent;
+  "eh:turn_complete": import("./eh-turn.js").EhTurnCompleteEvent;
+  "eh:permission": import("./eh-permission.js").EhPermissionEvent;
+  "eh:files_changed": import("./eh-files-changed.js").EhFilesChangedEvent;
+  /** Shared semantic timeline update (parallel to legacy events during migration). */
+  "eh:timeline": import("./eh-timeline.js").EhTimelineUpdate;
+  "eh:ux_telemetry": import("./eh-ux-telemetry.js").EhUxTelemetryEvent;
+
   /** Home terminal PTY tunnel bytes (Phase 30E — mobile HomeRemote). */
   "homeTerminalWs:rx": import("./home-remote.js").HomeTerminalWsRxEvent;
   "homeTerminalWs:closed": import("./home-remote.js").HomeTerminalWsClosedEvent;
@@ -2640,6 +2668,72 @@ export interface NodeService {
    */
   updateNodeConfig(config: Partial<NodeConfig>): Promise<void>;
 
+  /**
+   * Phase 8 / v1.4 — get the effective signal
+   * opt-in flag (resolved from persisted config
+   * + env var). The Tauri UI calls this in
+   * the Settings panel to display the current
+   * state of the toggle. The returned value
+   * is the same value the signal router will
+   * use on the next user prompt — the Tauri
+   * UI shows what's actually effective, not
+   * just the persisted field.
+   */
+  getSignalOptIn(): Promise<"enabled" | "disabled">;
+
+  /**
+   * Phase 8 / v1.4 — set the persisted signal
+   * opt-in flag. The Tauri UI calls this
+   * when the owner toggles the switch in the
+   * Settings panel. The host writes the
+   * value to the persisted config and
+   * returns the new effective state (which
+   * may still be the env-var default if the
+   * write failed and the env var is the
+   * fallback — see Q2 of the v1.4 sub-plan).
+   *
+   * **Owner-only:** the host enforces
+   * `requireOwnerProfile("change node settings")`
+   * (same as `updateNodeConfig`).
+   */
+  setSignalOptIn(value: "enabled" | "disabled"): Promise<"enabled" | "disabled">;
+
+  /**
+   * Phase 8 / v1.4 — get the effective
+   * verify-mode default for a given worker
+   * runtime (resolved from persisted config
+   * + per-runtime default). The Tauri UI
+   * calls this to display the current
+   * setting in the Settings panel's
+   * "Verification mode" dropdown.
+   */
+  getVerifyModeDefault(runtime: AgentRuntime): Promise<VerifyMode>;
+
+  /**
+   * Phase 8 / v1.4 — set the persisted
+   * verify-mode default. When the owner
+   * picks a value in the Settings panel's
+   * dropdown, the Tauri UI calls this. Pass
+   * `undefined` to clear the override (the
+   * loop falls back to the per-runtime
+   * default). The host writes the value
+   * and returns the new effective state.
+   *
+   * **Owner-only:** the host enforces
+   * `requireOwnerProfile("change node settings")`
+   * (same as `updateNodeConfig`).
+   *
+   * **Per-mandate wins over per-node:** the
+   * persisted field is a node-wide default.
+   * `ChainMandate.verifyMode` (set per-job
+   * by the Team-job author) still overrides
+   * the per-node default — see Q3 of the
+   * v1.4 sub-plan.
+   */
+  setVerifyModeDefault(
+    value: VerifyMode | undefined,
+  ): Promise<VerifyMode | undefined>;
+
   /** Resolved bundled + persisted setup sponsor friend config (read-only). */
   getSetupSponsorFriendConfig(): Promise<import("./setup-sponsor-friend.js").ResolvedSetupSponsorFriend>;
   /**
@@ -2712,6 +2806,9 @@ export interface NodeService {
   hasListeners(event: keyof NodeServiceEvents): boolean;
 
   // ----- Agent Bridge -----
+
+  /** Profile-scoped Coding assistants gate (Pi TUI + EH chat threads). */
+  mayCallerUseCoding(): Promise<boolean>;
 
   /**
    * Get agent bridge status (external agent like HomeClaw/OpenClaw).
@@ -2858,6 +2955,30 @@ export interface NodeService {
   /** Stop + start the Pi child process. Returns the new status. */
   restartPi(): Promise<PiStatus>;
 
+  // --- U4: dedicated Envoy Harness surface ---
+  /** envoy-harness runtime status (ready/model/error + peer cluster counts). */
+  getEnvoyHarnessStatus(): Promise<import("./pi-agent.js").EnvoyHarnessStatus>;
+  /** One-shot prompt to the envoy-harness runtime. Returns the text. */
+  askEnvoyHarness(text: string): Promise<string>;
+  /** The configured envoy-harness peer cluster (id/model/capabilities). */
+  listEnvoyHarnessPeers(): ReadonlyArray<{
+    id: string;
+    model?: string;
+    capabilities?: readonly string[];
+  }>;
+  /** Persist the envoy-harness project folder (validated, resets the runtime). */
+  setEnvoyHarnessProjectPath(
+    path: string,
+  ): Promise<import("./pi-agent.js").EnvoyHarnessStatus>;
+  /** EHUI panel invoke (plan / memory / git / mesh / team / scoreboard / sessions). */
+  invokeEnvoyHarnessEhui(
+    request: import("./pi-agent.js").EhuiInvokeRequest,
+  ): Promise<unknown>;
+  /** Ensure the Envoy TUI terminal for a project folder (like Pi's). */
+  ensureEnvoyTerminalSession(
+    params?: import("./pi-agent.js").EnsureEnvoyTerminalParams,
+  ): Promise<import("./pi-agent.js").EnsureEnvoyTerminalResult>;
+
   // --- Phase 54: Envoy Local (downloadable llama-server; never packaged) ---
   getEnvoyLocalStatus(): Promise<import("./envoy-local.js").EnvoyLocalStatus>;
   enableEnvoyLocal(
@@ -2942,6 +3063,108 @@ export interface NodeService {
     uiRequestId: string
     confirmed: boolean
   }): Promise<{ uiRequestId: string; delivered: boolean }>;
+
+  /** Answer Envoy Harness ask_user / plan-review / mode-switch (`eh:user_question`). */
+  ehRespondToUserQuestion(
+    params: import("./eh-user-question.js").EhRespondToUserQuestionParams,
+  ): Promise<import("./eh-user-question.js").EhRespondToUserQuestionResult>;
+
+  /** Cancel the in-flight Envoy Harness chat turn (`session/cancel`). */
+  cancelEnvoyHarnessTurn(chatId?: string): Promise<{ cancelled: boolean }>;
+
+  /** Start a turn without blocking — progress via `eh:turn_*` events. */
+  startEnvoyHarnessTurn(
+    text: string,
+    opts?: {
+      attachments?: import("./ext-agent.js").AgentAttachmentRef[];
+      providerHint?: string;
+      costCapUsd?: number;
+      chatId?: string;
+    },
+  ): Promise<import("./eh-turn.js").StartEnvoyHarnessTurnResult>;
+
+  /** Reconnect snapshot of the in-flight turn (if any). */
+  getEnvoyHarnessTurnStatus(
+    chatId?: string,
+  ): Promise<import("./eh-turn.js").EhTurnStatus>;
+
+  /** Change the Envoy Harness permission policy (always-confirm | safe-only | off | never). */
+  setEnvoyHarnessAutoRunPolicy(
+    policy: string,
+  ): Promise<import("./pi-agent.js").EnvoyHarnessStatus>;
+
+  /** Load persisted chat transcript for a workspace (defaults to active chat). */
+  getEnvoyHarnessChatHistory(
+    chatId?: string,
+  ): Promise<import("./eh-chat-history.js").EhChatHistory>;
+
+  /** List open Envoy chat threads (sidebar). */
+  listEnvoyHarnessChats(): Promise<
+    import("./eh-chat-workspace.js").EhChatWorkspaceSummary[]
+  >;
+
+  /** Open or reuse a chat for a project folder. */
+  createEnvoyHarnessChat(opts: {
+    cwd: string;
+    title?: string;
+  }): Promise<import("./eh-chat-workspace.js").EhChatWorkspaceSummary>;
+
+  /** Activate a chat thread and load its transcript. */
+  openEnvoyHarnessChat(
+    chatId: string,
+  ): Promise<import("./eh-chat-history.js").EhChatHistory>;
+
+  /** Close a chat thread (does not delete persisted JSONL). */
+  removeEnvoyHarnessChat(chatId: string): Promise<{ removed: boolean }>;
+
+  /** Delete a persisted display turn and any dependent tool exchange. */
+  deleteEnvoyHarnessChatTurn(opts: {
+    turnId: string;
+    chatId?: string;
+  }): Promise<import("./eh-chat-history.js").EhChatHistory & { deleted: boolean }>;
+
+  /** Load the file review captured for a completed turn. */
+  getEnvoyHarnessTurnReview(
+    turnId: string,
+  ): Promise<import("./eh-turn-review.js").EhTurnReview | null>;
+
+  /** Restore files to their pre-turn contents, refusing later-edit conflicts. */
+  revertEnvoyHarnessTurn(
+    turnId: string,
+  ): Promise<import("./eh-turn-review.js").EhRevertTurnResult>;
+
+  /** Keep reviewed files (remove from pending review without disk changes). */
+  acceptEnvoyHarnessTurnReview(
+    turnId: string,
+    paths?: readonly string[],
+  ): Promise<import("./eh-turn-review.js").EhAcceptTurnReviewResult>;
+
+  /** Revert a subset of runtime-attributed files from a turn checkpoint. */
+  revertEnvoyHarnessTurnFiles(
+    turnId: string,
+    paths: readonly string[],
+  ): Promise<import("./eh-turn-review.js").EhRevertTurnResult>;
+
+  /** Open a changed file inside the selected Envoy Harness project. */
+  openEnvoyHarnessFile(params: { path: string; chatId?: string }): Promise<void>;
+
+  /** Commands supported by the running Envoy Harness terminal/runtime surface. */
+  getEnvoyHarnessCommandCatalog(): Promise<ExtAgentCommandCatalog>;
+  /** Record content-free UX metrics. Prompts, paths, and diffs are rejected by type. */
+  recordEnvoyHarnessUxEvent(event: import("./eh-ux-telemetry.js").EhUxTelemetryEvent): Promise<void>;
+
+  /**
+   * Start a fresh harness session for the current project ( `/new` in chat ).
+   * Clears the cwd → session mapping and closes the in-process ACP host.
+   */
+  resetEnvoyHarnessChat(
+    chatId?: string,
+  ): Promise<import("./eh-chat-history.js").EhChatHistory>;
+
+  /** Allow/deny an in-flight EH tool permission (`eh:permission`). */
+  ehRespondToPermission(
+    params: import("./eh-permission.js").EhRespondToPermissionParams,
+  ): Promise<import("./eh-permission.js").EhRespondToPermissionResult>;
 
   // ClawHub skill marketplace
   getOpenClawPlugins(): Promise<string[]>;
@@ -3521,6 +3744,11 @@ export interface NodeService {
   /** Snapshot the orchestrator's view of a chain (subtask counts, budget, etc.). */
   chainGetState(params: ChainGetStateParams): Promise<ChainGetStateResult>;
 
+  /** Lazy execution provenance for one Team-job step. */
+  chainGetStepProvenance(
+    params: ChainGetStepProvenanceParams,
+  ): Promise<ChainGetStepProvenanceResult>;
+
   /** List in-flight chains (newest first). */
   chainListActive(params?: ChainListActiveParams): Promise<ChainListActiveResult>;
   /** Read-only jobs where this node is a worker (synced via task.chain.status). */
@@ -3605,8 +3833,29 @@ export interface NodeService {
    */
   chainProbeReachability(params: ChainProbeReachabilityParams): Promise<ChainProbeReachabilityResult>;
 
+  /**
+   * Phase 60F — read-only Agent Network diagnostics (membership, lease, runtime).
+   * No envelopes sent, no model spend, no reputation writes.
+   */
+  agentNetworkDiagnosticsSnapshot(): Promise<
+    import("./agent-network-diagnostics.js").AgentNetworkDiagnosticsSnapshot
+  >;
+
+  /**
+   * Phase 60F — no-spend simulation (readiness / dry-plan / failover / verification / recovery).
+   */
+  agentNetworkSimulate(
+    params: import("./agent-network-diagnostics.js").AgentNetworkSimulationParams,
+  ): Promise<import("./agent-network-diagnostics.js").AgentNetworkSimulationResult>;
+
+  /** Phase 60F — export redacted diagnostics JSON for a snapshot or simulation. */
+  agentNetworkExportDiagnostics(params: {
+    simulationId?: string;
+  }): Promise<{ json: string }>;
+
   /** Phase 47C — owner resolves iteration ask_owner hold (stop/publish or continue). */
   chainResolveIteration(params: ChainResolveIterationParams): Promise<ChainResolveIterationResult>;
+  chainResolveSpeculation(params: ChainResolveSpeculationParams): Promise<ChainResolveSpeculationResult>;
 
   /** Phase 43H — export chain cost breakdown as CSV. */
   chainExportCosts(params: ChainExportCostsParams): Promise<ChainExportCostsResult>;

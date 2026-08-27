@@ -1,7 +1,6 @@
 import {
   analyzeConnectivityStageD,
   analyzeWanConnectivityAxes,
-  buildRelayManagerSnapshot,
   buildMorningReportDigest,
   createLocalTaskStore,
   createLocalPeerDirectoryStore,
@@ -13,6 +12,13 @@ import {
   type AuditEvent,
   type TrustRecord,
 } from "@envoymesh/local-store";
+import {
+  listPeersBridge,
+  relayStatusBridge,
+  type BClassRelaySnapshot,
+  type BClassRelayStatusDeps,
+  type BClassPeerListDeps,
+} from "@envoymesh/envoy-harness-adapter";
 import {
   assertPathInsideVault,
   buildVaultIndex,
@@ -753,30 +759,24 @@ async function handleTrust(args: DeveloperCliArgs): Promise<DeveloperCliResult> 
   ]);
 }
 
+/**
+ * Phase 8 / Step 3 — `peer-list` is now canonical in the
+ * bridge (`listPeersBridge` in
+ * `@envoymesh/envoy-harness-adapter`). The CLI is a thin
+ * wrapper that builds the deps from the profile dir and
+ * delegates. The bridge's text format matches the
+ * pre-Step-3 output line-for-line (the existing test
+ * snapshot still passes).
+ */
 async function listObservedPeers(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
-  const events = filterAuditEventsForDeveloperView(args, await createLocalTaskStore(args.profileDir).readAuditEvents());
-  const byPeer = new Map<string, { count: number; lastSeenAt: string }>();
-
-  for (const event of events) {
-    if (!event.remotePeerId) {
-      continue;
-    }
-
-    const current = byPeer.get(event.remotePeerId);
-    byPeer.set(event.remotePeerId, {
-      count: (current?.count ?? 0) + 1,
-      lastSeenAt: maxIsoDate(current?.lastSeenAt, event.createdAt),
-    });
-  }
-
-  const peers = [...byPeer.entries()]
-    .sort((left, right) => right[1].lastSeenAt.localeCompare(left[1].lastSeenAt))
-    .slice(0, args.limit);
-
-  return ok([
-    `Observed peers (${byPeer.size})`,
-    ...peers.map(([peerId, summary]) => `${summary.lastSeenAt} ${peerId} messages=${summary.count}`),
-  ]);
+  const deps: BClassPeerListDeps = {
+    readAuditEvents: () =>
+      createLocalTaskStore(args.profileDir).readAuditEvents(),
+    includeP2pTraceInAudit: args.includeP2pTraceInAudit === true,
+    limit: args.limit,
+  };
+  const result = await listPeersBridge(deps);
+  return ok(result.text.split("\n"));
 }
 
 function formatPersistedDiscoveryConfigLine(config: PersistedNodeConfig | undefined): string {
@@ -907,49 +907,48 @@ async function showConnectivitySignoff(args: DeveloperCliArgs): Promise<Develope
   return ok(report.split("\n"));
 }
 
+/**
+ * Phase 8 / Step 3 — `relay-status` is now canonical in
+ * the bridge (`relayStatusBridge`). The CLI is a thin
+ * wrapper that builds the deps from the profile dir +
+ * provides a `buildSnapshot` callback that wraps the
+ * local-store's `buildRelayManagerSnapshot`. The
+ * bridge's text format matches the pre-Step-3 output
+ * line-for-line (the existing test snapshot still
+ * passes).
+ */
 async function showRelayStatus(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
-  const [profile, events] = await Promise.all([
-    loadOrCreateNodeProfile(args.profileDir),
-    createLocalTaskStore(args.profileDir).readAuditEvents(),
-  ]);
-  const snapshot = buildRelayManagerSnapshot({ profile, auditEvents: events });
+  const profileDir = args.profileDir;
+  const deps: BClassRelayStatusDeps = {
+    readAuditEvents: () => createLocalTaskStore(profileDir).readAuditEvents(),
+    loadProfile: () => loadOrCreateNodeProfile(profileDir) as unknown as Promise<unknown>,
+    buildSnapshot: ({ profile, auditEvents }) => {
+      // The host owns the snapshot format — the
+      // local-store's `buildRelayManagerSnapshot` reads
+      // the profile + audit log and returns the typed
+      // `RelayManagerSnapshot`. The bridge formats it
+      // (text + JSON). The wrapper here bridges the
+      // two: the host builds, the bridge formats.
+      // (Lazy-imported to avoid a circular dep at module
+      // top — `developer-cli.ts` already imports from
+      // `@envoymesh/local-store`, but `buildRelayManagerSnapshot`
+      // is in the same barrel and the type-cast below
+      // would be cleaner with the explicit import. The
+      // dynamic import keeps the refactor atomic.)
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { buildRelayManagerSnapshot } = require("@envoymesh/local-store") as typeof import("@envoymesh/local-store");
+      return buildRelayManagerSnapshot({
+        profile: profile as Parameters<typeof buildRelayManagerSnapshot>[0]["profile"],
+        auditEvents: auditEvents as unknown as Parameters<typeof buildRelayManagerSnapshot>[0]["auditEvents"],
+      }) as BClassRelaySnapshot | null | undefined;
+    },
+    limit: args.limit,
+  };
+  const result = await relayStatusBridge(deps);
   if (args.outputFormat === "json") {
-    return ok([JSON.stringify(snapshot, null, 2)]);
+    return ok([result.json]);
   }
-
-  return ok([
-    "Relay manager status",
-    `source=${snapshot.source} generatedAt=${snapshot.generatedAt}`,
-    ...(snapshot.source === "empty"
-      ? [
-          "hint: no relay.manager.snapshot found in this profile; start the relay with this same --profile and --relay --relay-server, then wait a few seconds.",
-        ]
-      : []),
-    `peerId=${snapshot.relay.peerId ?? "-"} relay=${snapshot.relay.enabled} relayServer=${snapshot.relay.relayServerEnabled} listenAddrs=${snapshot.relay.listenAddrs.length}`,
-    `roster total=${snapshot.roster.total} fresh=${snapshot.roster.fresh} stale=${snapshot.roster.stale}`,
-    `relayBook total=${snapshot.relayBook.total} relations=${formatCounts(snapshot.relayBook.byRelation)} states=${formatCounts(snapshot.relayBook.byState)}`,
-    `summaries total=${snapshot.summaries.total} fresh=${snapshot.summaries.fresh} stale=${snapshot.summaries.stale}`,
-    `health status=${snapshot.health.status} checks=${snapshot.health.recoveryCounters.healthChecks} degraded=${snapshot.health.recoveryCounters.degraded} unhealthy=${snapshot.health.recoveryCounters.unhealthy} critical=${snapshot.health.recoveryCounters.critical} actions=${snapshot.health.actions.join(",") || "-"}`,
-    ...(snapshot.health.reasons.length > 0 ? snapshot.health.reasons.map((reason) => `healthReason ${reason}`) : []),
-    `routing forwarded=${snapshot.routing.forwardedLookupCount} duplicates=${snapshot.routing.duplicateQueryDropCount} negativeCache=${snapshot.routing.negativeCacheSize} selectedTargets=${snapshot.routing.selectedForwardTargetCount} failedForwards=${snapshot.routing.failedForwardCount} collectedResponses=${snapshot.routing.collectedForwardResponseCount}`,
-    `topCapabilities=${snapshot.roster.topCapabilities.map((item) => `${item.capability}:${item.count}`).join(",") || "-"}`,
-    `topTopics=${snapshot.roster.topTopics.map((item) => `${item.topicHash}:${item.count}`).join(",") || "-"}`,
-    "",
-    "Relay neighbors:",
-    ...(snapshot.relayBook.neighbors.length > 0
-      ? snapshot.relayBook.neighbors
-          .slice(0, args.limit)
-          .map((entry) => `${entry.relayId} relation=${entry.relation} state=${entry.state} addrs=${entry.addrs.length} failures=${entry.failureCount}`)
-      : ["  (none yet)"]),
-    "",
-    "Recent relay traces:",
-    ...(snapshot.routing.recentTraces.length > 0
-      ? snapshot.routing.recentTraces
-          .slice(-args.limit)
-          .map((trace) => `${trace.createdAt} ${trace.protocol ?? "relay"} ${trace.remotePeerId ?? "-"} ${trace.summary}`)
-      : ["  (none yet)"]),
-    ...snapshot.warnings.map((warning) => `warning ${warning}`),
-  ]);
+  return ok(result.text.split("\n"));
 }
 
 async function showVaultIndex(args: DeveloperCliArgs): Promise<DeveloperCliResult> {

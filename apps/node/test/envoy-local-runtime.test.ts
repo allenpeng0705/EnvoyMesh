@@ -518,7 +518,7 @@ describe("envoy-local-runtime lifecycle", () => {
     expect(stopped.canStop).toBe(false);
   });
 
-  it("maybeDisableEnvoyLocalForExternalProvider is a no-op (cloud and Local coexist)", async () => {
+  it("maybeDisableEnvoyLocalForExternalProvider is a no-op (cloud and Local coexist; cloud wins at inference)", async () => {
     cfg = { enabled: true };
     const disabled = await maybeDisableEnvoyLocalForExternalProvider(state, deps, {
       mode: "openai-compatible",

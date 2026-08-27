@@ -31,7 +31,7 @@ interface PersistedTerminalRecord {
   state: "running" | "exited";
   exitCode?: number;
   lastActivityAt: string;
-  role?: "interactive" | "exec" | "pi";
+  role?: "interactive" | "exec" | "pi" | "envoy-harness";
   parentSessionId?: string;
   execSessionId?: string;
   /** Custom spawn binary (Pi TUI = node). */
@@ -218,9 +218,14 @@ export class TerminalManager {
 
   /** Running reserved Pi TUI sessions (newest activity first). */
   listPiSessions(): TerminalSessionSummary[] {
+    return this.listSessionsByRole("pi");
+  }
+
+  /** Running reserved sessions for a role (newest activity first). */
+  listSessionsByRole(role: string): TerminalSessionSummary[] {
     return [...this.sessions.values()]
       .map((s) => s.summary)
-      .filter((s) => s.role === "pi" && s.state === "running")
+      .filter((s) => s.role === role && s.state === "running")
       .map((s) => ({ ...s }))
       .sort(
         (a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime(),
@@ -234,9 +239,14 @@ export class TerminalManager {
 
   /** Running Pi TUI for this project folder (path-normalized), if any. */
   findPiSessionByCwd(cwd: string): TerminalSessionSummary | undefined {
+    return this.findSessionByCwd("pi", cwd);
+  }
+
+  /** Running reserved session for a role + project folder (path-normalized). */
+  findSessionByCwd(role: string, cwd: string): TerminalSessionSummary | undefined {
     const target = resolve(cwd.trim());
     for (const live of this.sessions.values()) {
-      if (live.summary.role !== "pi" || live.summary.state !== "running") continue;
+      if (live.summary.role !== role || live.summary.state !== "running") continue;
       if (resolve(live.summary.cwd) === target) return { ...live.summary };
     }
     return undefined;
@@ -250,7 +260,7 @@ export class TerminalManager {
     cols: number;
     rows: number;
     createdAt: string;
-    role?: "interactive" | "exec" | "pi";
+    role?: "interactive" | "exec" | "pi" | "envoy-harness";
     parentSessionId?: string;
     command?: string;
     args?: string[];

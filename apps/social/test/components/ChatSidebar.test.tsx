@@ -4,7 +4,13 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import type { BondRecord, ChatMessage, FamilyProfile, NodeConfig } from "@envoymesh/api";
+import {
+  envoyHarnessThreadKey,
+  type BondRecord,
+  type ChatMessage,
+  type FamilyProfile,
+  type NodeConfig,
+} from "@envoymesh/api";
 import { ChatSidebar } from "../../src/components/views/ChatSidebar.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
@@ -12,6 +18,8 @@ const revokeBond = vi.fn();
 const updateNodeConfig = vi.fn();
 const listChatRooms = vi.fn();
 const listFamilyRooms = vi.fn();
+const listEnvoyHarnessChats = vi.fn();
+const removeEnvoyHarnessChat = vi.fn();
 
 const bonds: BondRecord[] = [
   {
@@ -31,6 +39,8 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     updateNodeConfig,
     listChatRooms,
     listFamilyRooms,
+    listEnvoyHarnessChats,
+    removeEnvoyHarnessChat,
     isConnected: true,
     on: vi.fn(() => () => {}),
   }),
@@ -69,6 +79,8 @@ beforeEach(() => {
   updateNodeConfig.mockResolvedValue(undefined);
   listChatRooms.mockResolvedValue([]);
   listFamilyRooms.mockResolvedValue({ rooms: [] });
+  listEnvoyHarnessChats.mockResolvedValue([]);
+  removeEnvoyHarnessChat.mockResolvedValue({ removed: true });
   mockNodeConfig = { contactAiPreferences: [] };
   mockPendingMessages = [];
 });
@@ -161,6 +173,88 @@ describe("ChatSidebar — remove bonded contact", () => {
     });
 
     window.removeEventListener("envoymesh:open-social-content", onSocial as EventListener);
+  });
+});
+
+describe("ChatSidebar — Envoy entry", () => {
+  beforeEach(() => {
+    // The Coding section is gated on the caller being allowed to use
+    // coding assistants (owner profile, or a family profile with
+    // codingEnabled). Default the mock to the owner so the section
+    // renders; individual tests can override.
+    mockNodeConfig = { contactAiPreferences: [], callerIsOwnerProfile: true };
+  });
+
+  it("shows Coding section with project picker when empty", async () => {
+    const onOpenEnvoyHarness = vi.fn();
+    renderWithI18n(
+      <ChatSidebar
+        selectedContact={null}
+        onSelectContact={vi.fn()}
+        onOpenEnvoyHarness={onOpenEnvoyHarness}
+      />,
+    );
+    expect(await screen.findByText("Coding")).toBeDefined();
+    fireEvent.click(screen.getByText(/Choose a project to start/));
+    expect(
+      await screen.findByRole("heading", { name: "New coding chat" }),
+    ).toBeDefined();
+    expect(
+      await screen.findByText(/Each coding chat is tied to one project folder/),
+    ).toBeDefined();
+    expect(onOpenEnvoyHarness).not.toHaveBeenCalled();
+  });
+
+  it("selects the chat thread when an Envoy workspace row is clicked", async () => {
+    const onSelectContact = vi.fn();
+    listEnvoyHarnessChats.mockResolvedValue([
+      {
+        id: "chat-1",
+        cwd: "/projects/app",
+        title: "app",
+        lastUsedAt: new Date().toISOString(),
+        messageCount: 2,
+      },
+    ]);
+    renderWithI18n(
+      <ChatSidebar
+        selectedContact={null}
+        onSelectContact={onSelectContact}
+        onOpenEnvoyHarness={() => {}}
+      />,
+    );
+    fireEvent.click(await screen.findByText("app"));
+    expect(onSelectContact).toHaveBeenCalledWith(
+      envoyHarnessThreadKey("chat-1"),
+    );
+  });
+
+  it("removes a coding chat from the sidebar after confirm", async () => {
+    const onSelectContact = vi.fn();
+    listEnvoyHarnessChats.mockResolvedValue([
+      {
+        id: "chat-1",
+        cwd: "/projects/app",
+        title: "app",
+        lastUsedAt: new Date().toISOString(),
+        messageCount: 2,
+      },
+    ]);
+    renderWithI18n(
+      <ChatSidebar
+        selectedContact={envoyHarnessThreadKey("chat-1")}
+        onSelectContact={onSelectContact}
+        onOpenEnvoyHarness={() => {}}
+      />,
+    );
+    await screen.findByText("app");
+    fireEvent.click(screen.getByTestId("eh-chat-row-menu-btn-chat-1"));
+    fireEvent.click(screen.getByTestId("eh-chat-row-menu-remove-chat-1"));
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    await waitFor(() => {
+      expect(removeEnvoyHarnessChat).toHaveBeenCalledWith("chat-1");
+    });
+    expect(onSelectContact).toHaveBeenCalledWith(null);
   });
 });
 

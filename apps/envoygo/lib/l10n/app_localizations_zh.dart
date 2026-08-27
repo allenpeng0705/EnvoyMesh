@@ -572,6 +572,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get knowledgeSetupHint => '索引状态与检索。聊天模型在「我 → AI 模型」。';
 
   @override
+  String get knowledgeSetupEmbeddingHint =>
+      '本设备使用 Envoy Local 嵌入。如需 OpenAI 或 Ollama，请在 home 电脑上打开「设置 → AI」。';
+
+  @override
   String get knowledgeSetupEnabled => '启用资料库知识';
 
   @override
@@ -669,6 +673,22 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get knowledgeFileMakePrivate => '改为私密';
+
+  @override
+  String get knowledgeBrowseImportAndPublish => '导入并发布';
+
+  @override
+  String get knowledgeBrowsePublishImportOnly => '请先将此笔记导入保险库，然后再发布。';
+
+  @override
+  String get knowledgeBrowsePublishImportNoDoc =>
+      '已导入，但暂时无法发布 — 请从导入后的笔记再次点发布。';
+
+  @override
+  String get knowledgeBrowseImportedAndPublished => '已导入并发布';
+
+  @override
+  String get knowledgeBrowsePublishImportHint => '导入到保险库并发布，供网格发现';
 
   @override
   String get knowledgeFileMore => '更多操作';
@@ -925,6 +945,38 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatsSectionAi => 'AI';
 
   @override
+  String get chatsSectionCoding => '编程';
+
+  @override
+  String get chatsCodingPi => 'Pi';
+
+  @override
+  String get chatsCodingPiHint => '编程助手（终端）';
+
+  @override
+  String get chatsCodingEh => 'Envoy';
+
+  @override
+  String get chatsCodingEhHint => '编程助手（聊天）';
+
+  @override
+  String get chatsEhNew => '新建编程对话';
+
+  @override
+  String get chatsEhRemoveTitle => '移除编程对话？';
+
+  @override
+  String chatsEhRemoveBody(String name) {
+    return '从编程列表中移除“$name”？家庭节点上的对话记录将被删除。';
+  }
+
+  @override
+  String get chatsEhThinking => 'Envoy 正在思考…';
+
+  @override
+  String get chatsEhPromptHint => '让 Envoy 写代码、重构或解释…';
+
+  @override
   String get chatsSectionFamily => '家庭';
 
   @override
@@ -950,6 +1002,110 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chatsNewPiHint => '启动 Pi 编程终端';
+
+  @override
+  String get chatsNewEnvoy => '新建 Envoy';
+
+  @override
+  String get chatsNewEnvoyHint => '启动 Envoy Harness TUI';
+
+  @override
+  String get ehChooseProjectTitle => '选择 Envoy 项目文件夹';
+
+  @override
+  String get ehChangeProjectTitle => '更改 Envoy 项目文件夹';
+
+  @override
+  String get ehChooseProjectDesc =>
+      'Envoy 在此文件夹中运行（读取 AGENTS.md、编辑文件、执行 shell）。';
+
+  @override
+  String get ehStartWithProject => '开始';
+
+  @override
+  String get ehRestartWithProject => '在此重启 Envoy';
+
+  @override
+  String get ehEnsuringTerminal => '正在启动 Envoy TUI…';
+
+  @override
+  String get ehPermissionTitle => '工具权限';
+
+  @override
+  String get ehPermissionAllow => '允许';
+
+  @override
+  String get ehPermissionDeny => '拒绝';
+
+  @override
+  String get ehQuestionTitle => 'Envoy 需要你的输入';
+
+  @override
+  String get ehRecommended => '推荐';
+
+  @override
+  String get ehSlashWhileBusy => '请先结束当前回合或使用 /cancel。';
+
+  @override
+  String get ehChatReset => '已为此项目开始新对话。';
+
+  @override
+  String get ehTurnCancelled => '回合已取消。';
+
+  @override
+  String get ehStatusRefreshed => '状态已刷新。';
+
+  @override
+  String get ehNoPeers => '未配置对等集群。';
+
+  @override
+  String get ehSearchUsage => '用法：/search <关键词> — 搜索本对话。';
+
+  @override
+  String ehSearchNoMatches(String term) {
+    return '没有与“$term”匹配的结果。';
+  }
+
+  @override
+  String ehModelShow(String model) {
+    return '当前模型：$model';
+  }
+
+  @override
+  String get ehModelUnknown => '未配置模型 — 请在 设置 → AI 中设置。';
+
+  @override
+  String ehProjectCurrent(String path) {
+    return '项目文件夹：$path';
+  }
+
+  @override
+  String get ehProjectUnset => '未设置项目文件夹 — 请使用 /cd <路径>。';
+
+  @override
+  String ehProjectSet(String path) {
+    return '项目文件夹 → $path';
+  }
+
+  @override
+  String get ehProjectSetUnknown => '项目文件夹已更新。';
+
+  @override
+  String ehProjectSetFailed(String error) {
+    return '设置项目文件夹失败：$error';
+  }
+
+  @override
+  String get ehConfigureModel => '请在 设置 → AI 中配置模型。';
+
+  @override
+  String get ehNotReady => 'envoy-harness 尚未就绪。';
+
+  @override
+  String get termQuickHelp => '/help';
+
+  @override
+  String get termQuickCancel => '/cancel';
 
   @override
   String get chatsNewTerminal => '新建终端';
@@ -1155,6 +1311,21 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chatVoiceSendFailed => '发送语音失败';
+
+  @override
+  String get chatSentFile => 'Sent a file';
+
+  @override
+  String get chatSentVoice => 'Sent a voice message';
+
+  @override
+  String get chatDeliverySent => 'Sent';
+
+  @override
+  String get chatDeliveryDelivered => 'Delivered';
+
+  @override
+  String get chatDeliveryFailed => 'Not delivered';
 
   @override
   String get chatMicDenied => '麦克风权限被拒绝';
@@ -1783,6 +1954,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsPiEnabled => 'Pi 已启用';
 
   @override
+  String get settingsPiCodingBackend => '编程后端';
+
+  @override
+  String get settingsPiCodingBackendPi => 'Pi（侧车）';
+
+  @override
+  String get settingsPiCodingBackendEh => 'envoy-harness（ACP）';
+
+  @override
+  String get settingsPiCodingBackendHint =>
+      '与 Social 相同的设置。sendToPi 与审批仍走同一套 Pi UI。未升级的旧版 EnvoyGo 没有此开关时，仍可在 Social 中切换。';
+
+  @override
+  String get settingsPiCodingBackendSaved => '编程后端已更新';
+
+  @override
   String get settingsPiOverrideHint => '模型覆盖（可选）。清除以继承 AI 模型设置。';
 
   @override
@@ -2008,7 +2195,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chainsDuration => '耗时';
 
   @override
-  String get chainsManageOnSocial => '高级协作控制（取消、再平衡、置顶）请在家庭节点的社交界面中操作。';
+  String get chainsManageOnSocial => '机群设置、竞标与配方仍在家庭节点的社交界面。取消、再平衡与置顶也可在此操作。';
 
   @override
   String get chainsStartTitle => '启动团队任务';
@@ -2033,6 +2220,62 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chainsStartModeRoleHint => '每个步骤优先匹配协作角色（产品经理、程序员等）。';
+
+  @override
+  String get chainsStartTeamStrategy => '团队策略';
+
+  @override
+  String get chainsStartTeamStrategyHint =>
+      '本任务如何为工作节点排序。对冲 / 仅核验是策略标签 — 链路上仅在即时双派门控通过时才会启动第二名工作节点。';
+
+  @override
+  String get chainsStrategyBalanced => '均衡';
+
+  @override
+  String get chainsStrategyFastest => '最快';
+
+  @override
+  String get chainsStrategyCheapest => '最省';
+
+  @override
+  String get chainsStrategyHighestConfidence => '最高置信度';
+
+  @override
+  String get chainsStrategyPrivacyLocal => '隐私（本地）';
+
+  @override
+  String get chainsStrategyDiverseModel => '多样模型';
+
+  @override
+  String get chainsStartAvailLease => '租约';
+
+  @override
+  String get chainsStartAvailLegacy => '旧版';
+
+  @override
+  String chainsStartReliabilityPct(int pct) {
+    return '可信度 $pct%';
+  }
+
+  @override
+  String chainsStartReliabilitySparse(String level, int samples) {
+    return '$level · $samples 次样本';
+  }
+
+  @override
+  String get chainsStartReliabilityFallbackExact => '该工作节点历史';
+
+  @override
+  String get chainsStartReliabilityFallbackPeerRuntimeSkill => '该工作节点类似任务';
+
+  @override
+  String get chainsStartReliabilityFallbackPeerRuntime => '该工作节点运行时';
+
+  @override
+  String get chainsStartReliabilityFallbackRuntimeSkill => '具备此技能的工作节点';
+
+  @override
+  String get chainsStartReliabilityFallbackPrior => '通用先验（尚无历史）';
 
   @override
   String get chainsStartGoalLabel => '目标';
@@ -2113,6 +2356,46 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get chainsStartNoWorkers =>
       '没有可到达的 Agent Network 工作代理。请先在家庭节点上绑定带智能体的联系人。';
+
+  @override
+  String get chainsTestNetworkTitle => '测试智能体网络';
+
+  @override
+  String get chainsTestNetworkHint =>
+      '模拟 — 不发送任务、不调用模型、不改声誉。干跑规划会真实排序；故障转移与恢复仅为标签预览。';
+
+  @override
+  String get chainsTestNetworkRun => '检查就绪';
+
+  @override
+  String get chainsTestNetworkRunning => '检查中…';
+
+  @override
+  String get chainsTestNetworkFailed => '无法运行诊断';
+
+  @override
+  String get chainsSpeculationReviewTitle => '需要确认推测结果';
+
+  @override
+  String get chainsSpeculationReviewBody =>
+      '两个 worker 在同一步返回了不同的结果。请挑选一个让任务继续，或者让协调器自动挑选。';
+
+  @override
+  String get chainsSpeculationReviewNonePass =>
+      '两个 worker 都没通过验证 — 协调器会重新分派这一步。';
+
+  @override
+  String get chainsSpeculationReviewDisagree =>
+      '两个 worker 答案不一致。协调器可以挑选更便宜的已验证答案，或你可以手动挑选 / 重新分派。';
+
+  @override
+  String get chainsSpeculationReviewAutoResolve => '自动解决';
+
+  @override
+  String get chainsSpeculationReviewResolved => '已由协调器解决';
+
+  @override
+  String get chainsSpeculationReviewFailed => '自动解决失败';
 
   @override
   String get chainsStartReadinessTitle => '先准备好工作节点';
@@ -2297,6 +2580,40 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chainsDetailPublished => '此任务已完成并发布报告。';
+
+  @override
+  String get chainsDetailRecovering => '重启后恢复中 — 正在确认工作节点进度';
+
+  @override
+  String chainsAttemptCount(int count) {
+    return '$count 次尝试';
+  }
+
+  @override
+  String get chainsExecutionDetails => '执行详情';
+
+  @override
+  String chainsProvenanceSummaryLine(
+    int attempts,
+    String worker,
+    String state,
+  ) {
+    return '$attempts 次尝试 · $worker · $state';
+  }
+
+  @override
+  String chainsLastReason(String reason) {
+    return '最近原因：$reason';
+  }
+
+  @override
+  String get chainsTechnicalDetails => '技术细节';
+
+  @override
+  String get chainsProvenanceEmpty => '此步骤尚无日志事件。';
+
+  @override
+  String get chainsProvenanceFailed => '无法加载执行历史。';
 
   @override
   String get chainsRebalanceHeading => '追加预算';
@@ -2837,4 +3154,271 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get settingsEnvoyLocalPhoneNote =>
       '高级服务参数（上下文大小、GPU 层数等）请在家庭节点的社交界面中调整。';
+
+  @override
+  String get ehReviewTitle => '审查此回合';
+
+  @override
+  String get ehReviewUnavailable => '此较早回合没有可用的已保存审查。';
+
+  @override
+  String get ehReviewFile => '文件';
+
+  @override
+  String get ehReviewOpenFile => '打开文件';
+
+  @override
+  String get ehReviewDiffUnavailable => '此文件没有可用的文本差异。';
+
+  @override
+  String get ehReviewOnly => '工作区检测到 · 仅可审查';
+
+  @override
+  String get ehRevertTitle => '还原此回合？';
+
+  @override
+  String get ehRevertBody => '文件将恢复为此回合之前的内容。之后的编辑受保护，会阻止还原。';
+
+  @override
+  String get ehRevertAction => '还原';
+
+  @override
+  String get ehRevertComplete => '此回合的文件更改已还原。';
+
+  @override
+  String get ehRevertUnavailable => '此回合已无法安全还原。';
+
+  @override
+  String ehRevertConflict(String files) {
+    return '还原已停止，因为这些文件之后又被修改：$files';
+  }
+
+  @override
+  String get ehSearchTranscript => '搜索对话记录';
+
+  @override
+  String get ehSearchClose => '关闭搜索';
+
+  @override
+  String get ehNoMatches => '没有匹配的回合';
+
+  @override
+  String get ehCopyTurn => '复制回合';
+
+  @override
+  String get ehShareTurn => '分享回合';
+
+  @override
+  String get ehReviewDiff => '查看差异';
+
+  @override
+  String get ehRevertThisTurn => '还原此回合';
+
+  @override
+  String get ehReviewChanges => '审查更改';
+
+  @override
+  String get ehRevertAll => '全部还原';
+
+  @override
+  String ehChangesCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '本回合更改了 $count 个文件',
+      one: '本回合更改了 1 个文件',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get ehChangesKeepAll => '全部保留';
+
+  @override
+  String get ehChangesRevert => '全部还原';
+
+  @override
+  String get ehChangesHideList => '隐藏列表';
+
+  @override
+  String get ehChangesShowList => '显示列表';
+
+  @override
+  String get ehReviewKeepFile => '保留';
+
+  @override
+  String get ehReviewRevertFile => '还原';
+
+  @override
+  String get ehReviewKeptAll => '已保留更改。';
+
+  @override
+  String ehReviewRevertedFile(String path) {
+    return '已还原 $path';
+  }
+
+  @override
+  String get ehReviewAutoLabel => '自动审查当 ≥';
+
+  @override
+  String get ehReviewAutoAlways => '始终';
+
+  @override
+  String ehQueueTitle(int count) {
+    return '已排队 ($count)';
+  }
+
+  @override
+  String get ehQueueClear => '清空';
+
+  @override
+  String get ehQueueBusyHint => '发送将排入下一则';
+
+  @override
+  String get ehQueueFollowUpHint => '排队后续消息…';
+
+  @override
+  String get ehInjectTooltip => '插入（取消并发送）';
+
+  @override
+  String ehFilesChangedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '更改了 $count 个文件',
+      one: '更改了 1 个文件',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get ehEmptyReply => 'envoy-harness 没有给出可见回复。你的消息仍在 — 请重试或换个说法。';
+
+  @override
+  String get ehConfigureModelHint => '请在 设置 → AI 中配置模型。';
+
+  @override
+  String get ehReviewKeepFailed => '无法保留更改。';
+
+  @override
+  String get ehReviewOpenGitDiff => '打开 Git 差异';
+
+  @override
+  String get ehDiffBefore => '更改前';
+
+  @override
+  String get ehDiffAfter => '更改后';
+
+  @override
+  String get ehPermsTooltip => '权限策略';
+
+  @override
+  String get ehPermsSafe => '默认（安全自动运行）';
+
+  @override
+  String get ehPermsAsk => '始终询问';
+
+  @override
+  String get ehPermsApprove => '始终批准';
+
+  @override
+  String ehPermsSet(String mode) {
+    return '权限策略 → $mode。';
+  }
+
+  @override
+  String get ehPermsNextTurn => ' 从下一轮起生效。';
+
+  @override
+  String ehPermsFailed(String error) {
+    return '无法设置权限策略：$error';
+  }
+
+  @override
+  String get chainsStatusCancelled => '已取消';
+
+  @override
+  String get chainsStatusPublished => '已发布';
+
+  @override
+  String get chainsStatusRecovering => '恢复中';
+
+  @override
+  String get chainsStatusSynthesizing => '汇总中';
+
+  @override
+  String get chainsStatusRunning => '运行中';
+
+  @override
+  String get chainsStatusWaitingWorkers => '等待工作节点';
+
+  @override
+  String get chainsStatusBidding => '竞标中';
+
+  @override
+  String get chainsStatusAssigning => '分配中';
+
+  @override
+  String get chainsStatusPlanning => '规划中';
+
+  @override
+  String get ehWorking => '进行中';
+
+  @override
+  String get ehCompleted => '已完成';
+
+  @override
+  String get ehUpdate => '更新';
+
+  @override
+  String ehToolLabel(String name) {
+    return '工具：$name';
+  }
+
+  @override
+  String ehMatchCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 处匹配',
+      one: '1 处匹配',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get termMore => '更多…';
+
+  @override
+  String get termCompactContext => '压缩上下文';
+
+  @override
+  String get termUpdatePlan => '显示或更新计划';
+
+  @override
+  String get termHarnessStatus => 'Harness 状态';
+
+  @override
+  String get termPiActions => 'Pi 操作';
+
+  @override
+  String get termHarnessActions => 'envoy-harness 操作';
+
+  @override
+  String get termPreviousCommand => '上一条命令';
+
+  @override
+  String get termNextCommand => '下一条命令';
+
+  @override
+  String get termCursorLeft => '光标左移';
+
+  @override
+  String get termCursorRight => '光标右移';
+
+  @override
+  String get termEnterKey => '回车键';
+
+  @override
+  String get chainsCancelFailed => '无法取消此团队任务。';
 }

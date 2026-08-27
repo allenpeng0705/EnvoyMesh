@@ -25,6 +25,7 @@ import type { PairDeviceContext } from "./node-service-handlers-pair-device.js";
 import type { PairSharedIdentityContext } from "./node-service-handlers-pair-shared-identity.js";
 import type { GetPairingPayloadContext } from "./node-service-handlers-pairing-payload.js";
 import type { RunOwnerAgentTurnContext } from "./node-service-handlers-run-owner-agent-turn.js";
+import type { NodeManifest } from "./agent-adapter-manifest-aggregate.js";
 import type { ScriptedTutorState } from "./scripted-tutor.js";
 import type { RunDocumentAgentTurnContext } from "./node-service-handlers-run-document-agent-turn.js";
 import type {
@@ -369,6 +370,45 @@ export interface RunOwnerAgentTurnContextDeps {
   getOpenClawRuntimeDeps: () => OpenClawRuntimeDeps;
   recordOwnerActivity: RunOwnerAgentTurnContext["recordOwnerActivity"];
   askOpenClaw: RunOwnerAgentTurnContext["askOpenClaw"];
+  /**
+   * Phase 8 / Step 5 — sync probe. When `true`, the
+   * `askEnvoyHarness` call is expected to succeed
+   * (the runtime is configured + has a model adapter).
+   */
+  isEnvoyHarnessReady: RunOwnerAgentTurnContext["isEnvoyHarnessReady"];
+  /**
+   * Phase 8 / Step 5 — ask the envoy-harness runtime
+   * for a reply. The runtime may throw on a transient
+   * API error; the dispatch catches + falls back to
+   * OpenClaw.
+   */
+  askEnvoyHarness: RunOwnerAgentTurnContext["askEnvoyHarness"];
+  /**
+   * Phase 8 / v1.2 — ask the envoy-harness runtime
+   * to run a specific skill. The dispatch catches
+   * `StructuredResultError` (B-class fall-through per
+   * Q2) + transient errors (Q7) and falls back to
+   * the v1.1 free-form LLM ask.
+   */
+  askEnvoyHarnessSkill: RunOwnerAgentTurnContext["askEnvoyHarnessSkill"];
+  /**
+   * Phase 8 / Step 5 — per-node opt-in flag. The host
+   * reads this from `process.env.ENVOY_HARNESS_SIGNAL_OPT_IN`
+   * (or a future persisted config field) and threads
+   * the value through. When `"disabled"`, the router
+   * never picks envoy-harness regardless of signals.
+   */
+  signalOptIn: RunOwnerAgentTurnContext["signalOptIn"];
+  /**
+   * Phase 8 / v1.1 — read the merged node manifest.
+   * The runtime extracts envoy-harness skill tags
+   * from this and passes them to the signal router
+   * (the v1.1 dynamic vocabulary). When the call
+   * throws or returns `undefined`, the runtime
+   * falls back to the v0 `MESH_KEYWORDS` constant
+   * (Q6 of the v1.1 sub-plan).
+   */
+  getNodeManifest: () => NodeManifest | undefined;
   persistEnvoyAiChatExchange: RunOwnerAgentTurnContext["persistEnvoyAiChatExchange"];
   recordEnvoyAiHumanOutgoing: RunOwnerAgentTurnContext["recordEnvoyAiHumanOutgoing"];
   maybeIngestTerminalAssistantReply: RunOwnerAgentTurnContext["maybeIngestTerminalAssistantReply"];
@@ -1059,6 +1099,42 @@ export function buildRunOwnerAgentTurnContext(deps: RunOwnerAgentTurnContextDeps
     endOpenClawToolTracking: () => endOpenClawToolTracking(deps.openClawState),
     buildOpenClawTurnContext: () => buildOpenClawTurnContextViaRuntime(deps.getOpenClawRuntimeDeps()),
     askOpenClaw: (msg, ctx) => deps.askOpenClaw(msg, ctx as never),
+    // Phase 8 / Step 5 — signal-based auto opt-in
+    // wires. The host reads `isEnvoyHarnessReady` from
+    // the resolved envoy-harness config (no model call)
+    // and `askEnvoyHarness` from the real runtime (lazy
+    // model construction on first call). `signalOptIn`
+    // is read once at context build from
+    // `process.env.ENVOY_HARNESS_SIGNAL_OPT_IN`; the env
+    // var doesn't change at runtime.
+    isEnvoyHarnessReady: () => deps.isEnvoyHarnessReady(),
+    // Phase 8 / v1.5 — the v1.5 prompt hints
+    // (`/provider:NAME`, `/cost:N`) are passed
+    // to the ask methods as the `opts` arg.
+    // The host's `askEnvoyHarness` reads the
+    // env-var flag to decide whether to honor
+    // the per-prompt cost cap (dormant by
+    // default; Q9 + Q10 of the v1.5 sub-plan).
+    // The provider hint is logged for the
+    // audit trail (the adapter doesn't switch
+    // providers yet — also dormant).
+    askEnvoyHarness: (msg, opts) => deps.askEnvoyHarness(msg, opts),
+    // Phase 8 / v1.2 — per-skill dispatch. The
+    // host wires this to
+    // `NodeServiceImpl.askEnvoyHarnessSkill(message,
+    // skillId, opts?)`, which lazy-constructs the
+    // adapter + calls `execute()` + formats the
+    // result. v1.5 added the `opts?` for the
+    // prompt hints.
+    askEnvoyHarnessSkill: (msg, skillId, opts) =>
+      deps.askEnvoyHarnessSkill(msg, skillId, opts),
+    signalOptIn: deps.signalOptIn,
+    // Phase 8 / v1.1 — manifest read for the
+    // signal router's dynamic vocabulary. The
+    // host wires this to `NodeServiceImpl.getNodeManifest()`,
+    // which is sync (the manifest is cached after
+    // init) and returns `NodeManifest | undefined`.
+    getNodeManifest: () => deps.getNodeManifest(),
     persistEnvoyAiChatExchange: (raw, turn, humanMsgId) =>
       deps.persistEnvoyAiChatExchange(raw, turn, humanMsgId),
     recordEnvoyAiHumanOutgoing: (msg, humanMsgId) =>

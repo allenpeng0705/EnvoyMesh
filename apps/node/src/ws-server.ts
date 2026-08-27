@@ -287,6 +287,21 @@ export class WsServer {
       nodeServiceImpl.on("pi:proposal", (data: unknown) =>
         this.emitEvent("pi:proposal", data),
       );
+      // Envoy Harness turn / permission / activity (EnvoyGo + Social remote).
+      for (const name of [
+        "eh:turn_started",
+        "eh:turn_token",
+        "eh:turn_complete",
+        "eh:turn_hints",
+        "eh:prompt_busy",
+        "eh:activity",
+        "eh:files_changed",
+        "eh:permission",
+        "eh:user_question",
+        "eh:timeline",
+      ] as const) {
+        nodeServiceImpl.on(name, (data: unknown) => this.emitEvent(name, data));
+      }
       // Phase 25C — Digest ready notification
       // digest:ready not in NodeServiceEvents type — emit directly
       // Phase 38 — Voice/Video Call events
@@ -609,6 +624,17 @@ export class WsServer {
       "terminal:assistant-proposal",
       // Phase 49D — Pi tool-action confirm dialog
       "pi:proposal",
+      // Envoy Harness (coding chat / TUI docks)
+      "eh:turn_started",
+      "eh:turn_token",
+      "eh:turn_complete",
+      "eh:turn_hints",
+      "eh:prompt_busy",
+      "eh:activity",
+      "eh:files_changed",
+      "eh:permission",
+      "eh:user_question",
+      "eh:timeline",
       // Phase 38 — voice/video call events
       "call:incoming",
       "call:reinvite",

@@ -219,6 +219,7 @@
     }
   },
   "knowledgeSetupHint": "索引状态与检索。聊天模型在「我 → AI 模型」。",
+  "knowledgeSetupEmbeddingHint": "本设备使用 Envoy Local 嵌入。如需 OpenAI 或 Ollama，请在 home 电脑上打开「设置 → AI」。",
   "knowledgeSetupEnabled": "启用资料库知识",
   "knowledgeSetupStatusHint": "点「重建索引」刷新向量索引。",
   "knowledgeSetupReindex": "重建索引",
@@ -277,6 +278,11 @@
   "knowledgeFileOpenedOnHome": "已在家电脑打开",
   "knowledgeFilePublish": "发布",
   "knowledgeFileMakePrivate": "改为私密",
+  "knowledgeBrowseImportAndPublish": "导入并发布",
+  "knowledgeBrowsePublishImportOnly": "请先将此笔记导入保险库，然后再发布。",
+  "knowledgeBrowsePublishImportNoDoc": "已导入，但暂时无法发布 — 请从导入后的笔记再次点发布。",
+  "knowledgeBrowseImportedAndPublished": "已导入并发布",
+  "knowledgeBrowsePublishImportHint": "导入到保险库并发布，供网格发现",
   "knowledgeFileMore": "更多操作",
   "knowledgeFileConvert": "转为 Markdown 笔记",
   "knowledgeFileConvertOk": "已保存 Markdown 笔记 {path}",
@@ -664,6 +670,11 @@
   "settingsPiBuiltIn": "内置本地编程智能体",
   "settingsPiLocalOnly": "仅本地编程智能体（无网格工具）。",
   "settingsPiEnabled": "Pi 已启用",
+  "settingsPiCodingBackend": "编程后端",
+  "settingsPiCodingBackendPi": "Pi（侧车）",
+  "settingsPiCodingBackendEh": "envoy-harness（ACP）",
+  "settingsPiCodingBackendHint": "与 Social 相同的设置。sendToPi 与审批仍走同一套 Pi UI。未升级的旧版 EnvoyGo 没有此开关时，仍可在 Social 中切换。",
+  "settingsPiCodingBackendSaved": "编程后端已更新",
   "settingsPiOverrideHint": "模型覆盖（可选）。清除以继承 AI 模型设置。",
   "settingsPiModelName": "Model 名称",
   "settingsPiEndpoint": "Endpoint",
@@ -733,7 +744,7 @@
   "chainsSubtasks": "子任务",
   "chainsSynthesis": "汇总",
   "chainsDuration": "耗时",
-  "chainsManageOnSocial": "高级协作控制（取消、再平衡、置顶）请在家庭节点的社交界面中操作。",
+  "chainsManageOnSocial": "机群设置、竞标与配方仍在家庭节点的社交界面。取消、再平衡与置顶也可在此操作。",
   "chainsStartTitle": "启动团队任务",
   "chainsStartFab": "新建团队任务",
   "chainsStartIntro": "描述目标。家庭节点会规划子任务，并分配已绑定的 Agent Network 工作代理。",
@@ -742,6 +753,40 @@
   "chainsStartModeRole": "按角色",
   "chainsStartModeSkillHint": "按匹配技能为工作代理排序。",
   "chainsStartModeRoleHint": "每个步骤优先匹配协作角色（产品经理、程序员等）。",
+  "chainsStartTeamStrategy": "团队策略",
+  "chainsStartTeamStrategyHint": "本任务如何为工作节点排序。对冲 / 仅核验是策略标签 — 链路上仅在即时双派门控通过时才会启动第二名工作节点。",
+  "chainsStrategyBalanced": "均衡",
+  "chainsStrategyFastest": "最快",
+  "chainsStrategyCheapest": "最省",
+  "chainsStrategyHighestConfidence": "最高置信度",
+  "chainsStrategyPrivacyLocal": "隐私（本地）",
+  "chainsStrategyDiverseModel": "多样模型",
+  "chainsStartAvailLease": "租约",
+  "chainsStartAvailLegacy": "旧版",
+  "chainsStartReliabilityPct": "可信度 {pct}%",
+  "@chainsStartReliabilityPct": {
+    "placeholders": {
+      "pct": {
+        "type": "int"
+      }
+    }
+  },
+  "chainsStartReliabilitySparse": "{level} · {samples} 次样本",
+  "@chainsStartReliabilitySparse": {
+    "placeholders": {
+      "level": {
+        "type": "String"
+      },
+      "samples": {
+        "type": "int"
+      }
+    }
+  },
+  "chainsStartReliabilityFallbackExact": "该工作节点历史",
+  "chainsStartReliabilityFallbackPeerRuntimeSkill": "该工作节点类似任务",
+  "chainsStartReliabilityFallbackPeerRuntime": "该工作节点运行时",
+  "chainsStartReliabilityFallbackRuntimeSkill": "具备此技能的工作节点",
+  "chainsStartReliabilityFallbackPrior": "通用先验（尚无历史）",
   "chainsStartGoalLabel": "目标",
   "chainsStartGoalHint": "团队应完成什么？",
   "chainsStartGoalTooShort": "目标至少需要 {min} 个字符",
@@ -766,6 +811,18 @@
   "chainsStartStarted": "团队任务已启动",
   "chainsStartFailed": "无法启动团队任务",
   "chainsStartNoWorkers": "没有可到达的 Agent Network 工作代理。请先在家庭节点上绑定带智能体的联系人。",
+  "chainsSpeculationReviewTitle": "需要确认推测结果",
+  "chainsSpeculationReviewBody": "两个 worker 在同一步返回了不同的结果。请挑选一个让任务继续，或者让协调器自动挑选。",
+  "chainsSpeculationReviewNonePass": "两个 worker 都没通过验证 — 协调器会重新分派这一步。",
+  "chainsSpeculationReviewDisagree": "两个 worker 答案不一致。协调器可以挑选更便宜的已验证答案，或你可以手动挑选 / 重新分派。",
+  "chainsSpeculationReviewAutoResolve": "自动解决",
+  "chainsSpeculationReviewResolved": "已由协调器解决",
+  "chainsSpeculationReviewFailed": "自动解决失败",
+  "chainsTestNetworkTitle": "测试智能体网络",
+  "chainsTestNetworkHint": "模拟 — 不发送任务、不调用模型、不改声誉。干跑规划会真实排序；故障转移与恢复仅为标签预览。",
+  "chainsTestNetworkRun": "检查就绪",
+  "chainsTestNetworkRunning": "检查中…",
+  "chainsTestNetworkFailed": "无法运行诊断",
   "chainsStartReadinessTitle": "先准备好工作节点",
   "chainsStartReadinessJoinOff": "在家庭电脑上：团队任务 → 管理工作节点 → 开启加入智能体网络。",
   "chainsStartReadinessBond": "在发现中绑定联系人，并请对方开启加入智能体网络。",
@@ -824,6 +881,41 @@
   "chainsCancelStepReason": "已从 EnvoyGo 取消步骤",
   "chainsDetailCancelled": "此任务已取消。",
   "chainsDetailPublished": "此任务已完成并发布报告。",
+  "chainsDetailRecovering": "重启后恢复中 — 正在确认工作节点进度",
+  "chainsAttemptCount": "{count} 次尝试",
+  "@chainsAttemptCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chainsExecutionDetails": "执行详情",
+  "chainsProvenanceSummaryLine": "{attempts} 次尝试 · {worker} · {state}",
+  "@chainsProvenanceSummaryLine": {
+    "placeholders": {
+      "attempts": {
+        "type": "int"
+      },
+      "worker": {
+        "type": "String"
+      },
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "chainsLastReason": "最近原因：{reason}",
+  "@chainsLastReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "chainsTechnicalDetails": "技术细节",
+  "chainsProvenanceEmpty": "此步骤尚无日志事件。",
+  "chainsProvenanceFailed": "无法加载执行历史。",
   "chainsRebalanceHeading": "追加预算",
   "chainsRebalanceHint": "提高成本上限并重试尚未分配的步骤。",
   "chainsRebalanceAmount": "追加金额（美元）",
@@ -856,19 +948,25 @@
   "pairingInProgressSubtitle": "正在连接 {owner}",
   "@pairingInProgressSubtitle": {
     "placeholders": {
-      "owner": {"type": "String"}
+      "owner": {
+        "type": "String"
+      }
     }
   },
   "pairingElapsed": "已用时：{time}",
   "@pairingElapsed": {
     "placeholders": {
-      "time": {"type": "String"}
+      "time": {
+        "type": "String"
+      }
     }
   },
   "pairingHomeNodeLabel": "家庭节点：{peer}",
   "@pairingHomeNodeLabel": {
     "placeholders": {
-      "peer": {"type": "String"}
+      "peer": {
+        "type": "String"
+      }
     }
   },
   "pairingStageInitial": "正在初始化",
@@ -1008,5 +1106,228 @@
   "chatAgentModeConfirmEnable": "エージェントモードを有効化",
   "chatSuggestedReply": "提案された返信",
   "chatSuggestedReplyUse": "使用",
-  "chatSuggestedReplyDismiss": "却下"
+  "chatSuggestedReplyDismiss": "却下",
+  "chatsSectionCoding": "编程",
+  "chatsCodingPi": "Pi",
+  "chatsCodingPiHint": "编程助手（终端）",
+  "chatsCodingEh": "Envoy",
+  "chatsCodingEhHint": "编程助手（聊天）",
+  "chatsEhNew": "新建编程对话",
+  "chatsEhRemoveTitle": "移除编程对话？",
+  "chatsEhRemoveBody": "从编程列表中移除“{name}”？家庭节点上的对话记录将被删除。",
+  "@chatsEhRemoveBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatsEhThinking": "Envoy 正在思考…",
+  "chatsEhPromptHint": "让 Envoy 写代码、重构或解释…",
+  "chatsNewEnvoy": "新建 Envoy",
+  "chatsNewEnvoyHint": "启动 Envoy Harness TUI",
+  "ehChooseProjectTitle": "选择 Envoy 项目文件夹",
+  "ehChangeProjectTitle": "更改 Envoy 项目文件夹",
+  "ehChooseProjectDesc": "Envoy 在此文件夹中运行（读取 AGENTS.md、编辑文件、执行 shell）。",
+  "ehStartWithProject": "开始",
+  "ehRestartWithProject": "在此重启 Envoy",
+  "ehEnsuringTerminal": "正在启动 Envoy TUI…",
+  "ehPermissionTitle": "工具权限",
+  "ehPermissionAllow": "允许",
+  "ehPermissionDeny": "拒绝",
+  "ehQuestionTitle": "Envoy 需要你的输入",
+  "ehRecommended": "推荐",
+  "ehSlashWhileBusy": "请先结束当前回合或使用 /cancel。",
+  "ehChatReset": "已为此项目开始新对话。",
+  "ehTurnCancelled": "回合已取消。",
+  "ehStatusRefreshed": "状态已刷新。",
+  "ehNoPeers": "未配置对等集群。",
+  "ehSearchUsage": "用法：/search <关键词> — 搜索本对话。",
+  "ehSearchNoMatches": "没有与“{term}”匹配的结果。",
+  "@ehSearchNoMatches": {
+    "placeholders": {
+      "term": {
+        "type": "String"
+      }
+    }
+  },
+  "ehModelShow": "当前模型：{model}",
+  "@ehModelShow": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "ehModelUnknown": "未配置模型 — 请在 设置 → AI 中设置。",
+  "ehProjectCurrent": "项目文件夹：{path}",
+  "@ehProjectCurrent": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehProjectUnset": "未设置项目文件夹 — 请使用 /cd <路径>。",
+  "ehProjectSet": "项目文件夹 → {path}",
+  "@ehProjectSet": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehProjectSetUnknown": "项目文件夹已更新。",
+  "ehProjectSetFailed": "设置项目文件夹失败：{error}",
+  "@ehProjectSetFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "ehConfigureModel": "请在 设置 → AI 中配置模型。",
+  "ehNotReady": "envoy-harness 尚未就绪。",
+  "termQuickHelp": "/help",
+  "termQuickCancel": "/cancel",
+  "ehReviewTitle": "审查此回合",
+  "ehReviewUnavailable": "此较早回合没有可用的已保存审查。",
+  "ehReviewFile": "文件",
+  "ehReviewOpenFile": "打开文件",
+  "ehReviewDiffUnavailable": "此文件没有可用的文本差异。",
+  "ehReviewOnly": "工作区检测到 · 仅可审查",
+  "ehRevertTitle": "还原此回合？",
+  "ehRevertBody": "文件将恢复为此回合之前的内容。之后的编辑受保护，会阻止还原。",
+  "ehRevertAction": "还原",
+  "ehRevertComplete": "此回合的文件更改已还原。",
+  "ehRevertUnavailable": "此回合已无法安全还原。",
+  "ehRevertConflict": "还原已停止，因为这些文件之后又被修改：{files}",
+  "@ehRevertConflict": {
+    "placeholders": {
+      "files": {
+        "type": "String"
+      }
+    }
+  },
+  "ehSearchTranscript": "搜索对话记录",
+  "ehSearchClose": "关闭搜索",
+  "ehNoMatches": "没有匹配的回合",
+  "ehCopyTurn": "复制回合",
+  "ehShareTurn": "分享回合",
+  "ehReviewDiff": "查看差异",
+  "ehRevertThisTurn": "还原此回合",
+  "ehReviewChanges": "审查更改",
+  "ehRevertAll": "全部还原",
+  "ehChangesCount": "{count, plural, =1{本回合更改了 1 个文件} other{本回合更改了 {count} 个文件}}",
+  "@ehChangesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehChangesKeepAll": "全部保留",
+  "ehChangesRevert": "全部还原",
+  "ehChangesHideList": "隐藏列表",
+  "ehChangesShowList": "显示列表",
+  "ehReviewKeepFile": "保留",
+  "ehReviewRevertFile": "还原",
+  "ehReviewKeptAll": "已保留更改。",
+  "ehReviewRevertedFile": "已还原 {path}",
+  "@ehReviewRevertedFile": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehReviewAutoLabel": "自动审查当 ≥",
+  "ehReviewAutoAlways": "始终",
+  "ehWorking": "进行中",
+  "ehCompleted": "已完成",
+  "ehUpdate": "更新",
+  "ehToolLabel": "工具：{name}",
+  "@ehToolLabel": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "ehMatchCount": "{count, plural, =1{1 处匹配} other{{count} 处匹配}}",
+  "@ehMatchCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "termMore": "更多…",
+  "termCompactContext": "压缩上下文",
+  "termUpdatePlan": "显示或更新计划",
+  "termHarnessStatus": "Harness 状态",
+  "termPiActions": "Pi 操作",
+  "termHarnessActions": "envoy-harness 操作",
+  "termPreviousCommand": "上一条命令",
+  "termNextCommand": "下一条命令",
+  "termCursorLeft": "光标左移",
+  "termCursorRight": "光标右移",
+  "termEnterKey": "回车键",
+  "ehQueueTitle": "已排队 ({count})",
+  "@ehQueueTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehQueueClear": "清空",
+  "ehQueueBusyHint": "发送将排入下一则",
+  "ehQueueFollowUpHint": "排队后续消息…",
+  "ehInjectTooltip": "插入（取消并发送）",
+  "ehFilesChangedCount": "{count, plural, =1{更改了 1 个文件} other{更改了 {count} 个文件}}",
+  "@ehFilesChangedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehEmptyReply": "envoy-harness 没有给出可见回复。你的消息仍在 — 请重试或换个说法。",
+  "ehConfigureModelHint": "请在 设置 → AI 中配置模型。",
+  "ehReviewKeepFailed": "无法保留更改。",
+  "ehReviewOpenGitDiff": "打开 Git 差异",
+  "ehDiffBefore": "更改前",
+  "ehDiffAfter": "更改后",
+  "chainsStatusCancelled": "已取消",
+  "chainsStatusPublished": "已发布",
+  "chainsStatusRecovering": "恢复中",
+  "chainsStatusSynthesizing": "汇总中",
+  "chainsStatusRunning": "运行中",
+  "chainsStatusWaitingWorkers": "等待工作节点",
+  "chainsStatusBidding": "竞标中",
+  "chainsStatusAssigning": "分配中",
+  "chainsStatusPlanning": "规划中",
+  "chainsCancelFailed": "无法取消此团队任务。",
+  "ehPermsTooltip": "权限策略",
+  "ehPermsSafe": "默认（安全自动运行）",
+  "ehPermsAsk": "始终询问",
+  "ehPermsApprove": "始终批准",
+  "ehPermsSet": "权限策略 → {mode}。",
+  "@ehPermsSet": {
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "ehPermsNextTurn": " 从下一轮起生效。",
+  "ehPermsFailed": "无法设置权限策略：{error}",
+  "@ehPermsFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  }
 }

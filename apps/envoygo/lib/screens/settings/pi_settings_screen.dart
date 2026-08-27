@@ -5,7 +5,8 @@ import '../../ai/pi_native_providers.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../services/node_service_client.dart';
 
-/// Pi agent settings — enable/disable + model override (mirrors Social UI).
+/// Pi agent settings — enable/disable, coding backend, model override
+/// (mirrors Social UI).
 ///
 /// `piSettings` is shallow-replaced on the home node — always merge with the
 /// current object before save (same as SettingsAITab).
@@ -22,6 +23,8 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
   bool _restarting = false;
   String? _error;
   bool _piEnabled = true;
+  /// `"pi"` | `"envoy-harness"` — same field as Social `piSettings.codingBackend`.
+  String _codingBackend = 'pi';
   String _provider = 'minimax-cn';
   late TextEditingController _modelCtl;
   late TextEditingController _endpointCtl;
@@ -111,6 +114,13 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
       setState(() {
         _piEnabled = cfg['piEnabled'] != false;
         _existingPiSettings = Map<String, dynamic>.from(settings);
+        _codingBackend =
+            settings['codingBackend'] == 'envoy-harness' ? 'envoy-harness' : 'pi';
+        // Prefer live status when the home node reports it (additive field).
+        final statusBackend = status['codingBackend']?.toString();
+        if (statusBackend == 'envoy-harness' || statusBackend == 'pi') {
+          _codingBackend = statusBackend!;
+        }
         _provider = rawProvider;
         _modelCtl.text = (override['model'] as String?) ?? '';
         _endpointCtl.text = (override['endpoint'] as String?) ?? '';
@@ -149,6 +159,51 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
       }
     } finally {
       if (mounted) setState(() => _restarting = false);
+    }
+  }
+
+  Future<void> _changeCodingBackend(String backend) async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    final prev = _codingBackend;
+    setState(() {
+      _codingBackend = backend;
+      _saving = true;
+    });
+    try {
+      final nextSettings = <String, dynamic>{
+        ..._existingPiSettings,
+        'codingBackend': backend,
+      };
+      await client.updatePiConfig(piSettings: nextSettings);
+      // No restartPi — node reads codingBackend on each sendToPi / getPiStatus.
+      final s = await client.getPiStatus();
+      if (!mounted) return;
+      setState(() {
+        _existingPiSettings = nextSettings;
+        _status = s;
+        final statusBackend = s['codingBackend']?.toString();
+        if (statusBackend == 'envoy-harness' || statusBackend == 'pi') {
+          _codingBackend = statusBackend!;
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(context).settingsPiCodingBackendSaved,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _codingBackend = prev);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context).settingsPiFailed('$e')),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -298,9 +353,18 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
                           color: state == 'ready' ? Colors.green : Colors.grey,
                         ),
                         title: Text(l10n.settingsPiState(state)),
-                        subtitle: modelSpec != null && modelSpec.isNotEmpty
-                            ? Text(modelSpec)
-                            : Text(l10n.settingsPiBuiltIn),
+                        subtitle: Text(
+                          [
+                            if (modelSpec != null && modelSpec.isNotEmpty)
+                              modelSpec
+                            else
+                              l10n.settingsPiBuiltIn,
+                            _codingBackend == 'envoy-harness'
+                                ? l10n.settingsPiCodingBackendEh
+                                : l10n.settingsPiCodingBackendPi,
+                          ].join('\n'),
+                        ),
+                        isThreeLine: true,
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -311,6 +375,31 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
                       onChanged: _restarting ? null : _toggleEnabled,
                     ),
                     const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      value: _codingBackend,
+                      decoration: InputDecoration(
+                        labelText: l10n.settingsPiCodingBackend,
+                        helperText: l10n.settingsPiCodingBackendHint,
+                        border: const OutlineInputBorder(),
+                      ),
+                      items: [
+                        DropdownMenuItem(
+                          value: 'pi',
+                          child: Text(l10n.settingsPiCodingBackendPi),
+                        ),
+                        DropdownMenuItem(
+                          value: 'envoy-harness',
+                          child: Text(l10n.settingsPiCodingBackendEh),
+                        ),
+                      ],
+                      onChanged: (!_piEnabled || _saving || _restarting)
+                          ? null
+                          : (v) {
+                              if (v == null || v == _codingBackend) return;
+                              _changeCodingBackend(v);
+                            },
+                    ),
+                    const SizedBox(height: 16),
                     Text(
                       l10n.settingsPiOverrideHint,
                       style: Theme.of(context).textTheme.bodySmall,

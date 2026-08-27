@@ -12,6 +12,13 @@
  * helper.
  */
 import { randomUUID } from "node:crypto";
+import { readFile, rename, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { createChainBudgetLedger, type ChainBudgetLedgerState } from "./chain-budget-ledger.js";
+import {
+  ChainActiveJournal,
+  type ChainJournalProjection,
+} from "./chain-active-journal.js";
 import { chainBudgetWarningLevel } from "./chain-auto-orchestrator.js";
 import {
   buildChainLiveSteps,
@@ -31,6 +38,8 @@ import {
 } from "./chain-defaults.js";
 import { formatPlanWarningDiagnostics } from "./chain-plan-assign.js";
 import { chainCostsToCsv } from "./chain-cost-export.js";
+import { classifySpeculativeFinalSelection } from "./chain-speculation.js";
+import { isFailedWorkerFinalPartial } from "./chain-orchestrator.js";
 import type {
   ChainGetStateParams,
   ChainGetStateResult,
@@ -103,18 +112,259 @@ const DEFAULT_BID_STRATEGY: ChainBidStrategy = {
   etaSlackMs: 60_000,
 };
 
+type PersistedChainRuntime = {
+  state: Record<string, any>;
+  bidStrategy: ChainBidStrategy;
+};
+
+function serializeChainRuntime(entry: ChainRuntimeEntry): PersistedChainRuntime {
+  const { state, bidStrategy } = entry;
+  const ledger = state.ledger.snapshot();
+  return {
+    bidStrategy,
+    state: {
+      ...state,
+      journalEvent: undefined,
+      subtasks: [...state.subtasks], bids: [...state.bids], awards: [...state.awards],
+      partials: [...state.partials], partialsByAttempt: [...state.partialsByAttempt],
+      speculativeAwards: [...state.speculativeAwards], speculationLocked: [...state.speculationLocked],
+      cancelledSubtasks: [...state.cancelledSubtasks],
+      negotiationRounds: [...state.negotiationRounds], workersBySubtask: [...state.workersBySubtask],
+      proposedSubtasks: [...state.proposedSubtasks], proposedAt: [...state.proposedAt],
+      proposeRetryCount: [...state.proposeRetryCount], acceptResendCount: [...state.acceptResendCount],
+      reassignCount: [...state.reassignCount], silentWorkerPeerIds: [...state.silentWorkerPeerIds],
+      awardedAt: [...state.awardedAt], lastHeartbeatAt: [...state.lastHeartbeatAt],
+      lastConfidence: [...state.lastConfidence], attempts: [...state.attempts],
+      selectedAttemptBySubtask: [...state.selectedAttemptBySubtask],
+      ledger: {
+        ...ledger,
+        workerAllocations: [...ledger.workerAllocations],
+        verificationAllocations: [...ledger.verificationAllocations],
+      },
+    },
+  };
+}
+
+function deserializeChainRuntime(row: PersistedChainRuntime | undefined): ChainRuntimeEntry | undefined {
+  if (!row) return undefined;
+  const raw = row.state;
+  if (!raw?.chainMandate || typeof raw.chainId !== "string") return undefined;
+  const map = <T>(value: unknown) => new Map<string, T>(Array.isArray(value) ? value as Array<[string, T]> : []);
+  const set = (value: unknown) => new Set<string>(Array.isArray(value) ? value as string[] : []);
+  const state = createChainState(raw.chainMandate, { awardMode: raw.awardMode, goal: raw.goal });
+  Object.assign(state, raw);
+  state.subtasks = map(raw.subtasks);
+  state.bids = map(raw.bids);
+  state.awards = map(raw.awards);
+  state.partials = map(raw.partials);
+  state.partialsByAttempt = map(raw.partialsByAttempt);
+  state.speculativeAwards = map(raw.speculativeAwards);
+  state.speculationLocked = set(raw.speculationLocked);
+  state.cancelledSubtasks = set(raw.cancelledSubtasks);
+  state.negotiationRounds = map(raw.negotiationRounds);
+  state.workersBySubtask = map(raw.workersBySubtask);
+  state.proposedSubtasks = set(raw.proposedSubtasks);
+  state.proposedAt = map(raw.proposedAt);
+  state.proposeRetryCount = map(raw.proposeRetryCount);
+  state.acceptResendCount = map(raw.acceptResendCount);
+  state.reassignCount = map(raw.reassignCount);
+  state.silentWorkerPeerIds = set(raw.silentWorkerPeerIds);
+  state.awardedAt = map(raw.awardedAt);
+  state.lastHeartbeatAt = map(raw.lastHeartbeatAt);
+  state.lastConfidence = map(raw.lastConfidence);
+  state.attempts = map(raw.attempts);
+  state.selectedAttemptBySubtask = map(raw.selectedAttemptBySubtask);
+  state.ledger = createChainBudgetLedger(raw.chainMandate, {
+    ...raw.ledger,
+    workerAllocations: map(raw.ledger?.workerAllocations),
+    verificationAllocations: map(raw.ledger?.verificationAllocations),
+  } as ChainBudgetLedgerState);
+  return { state, bidStrategy: row.bidStrategy ?? { ...DEFAULT_BID_STRATEGY } };
+}
+
 export class ChainStore {
   private readonly runtime = new Map<string, ChainRuntimeEntry>();
   private readonly bidStrategies = new Map<string, ChainBidStrategy>();
+  private filePath?: string;
+  private persistTimer?: ReturnType<typeof setInterval>;
+  private persistInFlight: Promise<void> = Promise.resolve();
+  private journal?: ChainActiveJournal;
+  private readonly journalProjections = new Map<string, ChainJournalProjection>();
+
+  /** Restore unfinished Team jobs and keep a crash-safe periodic snapshot. */
+  async init(profileDir: string): Promise<void> {
+    this.filePath = join(profileDir, "active-team-jobs.json");
+    this.journal = new ChainActiveJournal(profileDir);
+    let legacyRows: PersistedChainRuntime[] = [];
+    try {
+      legacyRows = JSON.parse(await readFile(this.filePath, "utf8")) as PersistedChainRuntime[];
+    } catch {
+      // The per-chain checkpoint is authoritative once migration has run.
+    }
+    const legacyById = new Map(
+      legacyRows
+        .filter((row) => typeof row.state?.chainId === "string")
+        .map((row) => [row.state.chainId as string, row]),
+    );
+    const chainIds = new Set([...legacyById.keys(), ...await this.journal.listCheckpointChainIds()]);
+    for (const chainId of chainIds) {
+      await this.journal.initChain(chainId);
+      const recovered = await this.journal.recover(chainId);
+      const checkpointRuntime = recovered.checkpoint?.runtimeSnapshot as PersistedChainRuntime | undefined;
+      const legacyRow = legacyById.get(chainId);
+      // Checkpoint is authoritative once written; legacy file is a compatibility mirror only.
+      const entry = deserializeChainRuntime(checkpointRuntime ?? legacyRow);
+      if (!entry || entry.state.published || entry.state.chainCancelled) continue;
+      const { state } = entry;
+      this.journalProjections.set(chainId, recovered.projection);
+      const recoveredAttempts = Object.values(recovered.projection.attempts);
+      // Prefer runtimeSnapshot attempts/selection when present; projection fills gaps only.
+      if (recoveredAttempts.length > 0 && state.attempts.size === 0) {
+        state.attempts = new Map(recoveredAttempts.map((attempt) => [attempt.attemptId, attempt]));
+        state.selectedAttemptBySubtask = new Map(Object.entries(recovered.projection.selectedAttemptBySubtask));
+      } else if (recoveredAttempts.length > 0) {
+        for (const attempt of recoveredAttempts) {
+          if (!state.attempts.has(attempt.attemptId)) {
+            state.attempts.set(attempt.attemptId, attempt);
+          }
+        }
+      }
+      this.bindJournal(state);
+      this.runtime.set(chainId, entry);
+
+      const alreadyMigrated = recovered.events.some(
+        (event) => event.type === "migration.legacy_checkpoint_imported",
+      );
+      const needsLegacyImport = !checkpointRuntime && Boolean(legacyRow);
+      if (state.attempts.size === 0 && !alreadyMigrated) {
+        for (const award of state.awards.values()) {
+          const attemptId = `attempt_migrated_${award.subtaskId}`;
+          const attempt = {
+            attemptId,
+            chainId,
+            subtaskId: award.subtaskId,
+            workerPeerId: award.workerPeerId,
+            role: "primary" as const,
+            state: (state.partials.get(award.subtaskId)?.partial.isFinal
+              ? "final_received"
+              : "awarded") as "final_received" | "awarded",
+            attemptNumber: 1,
+            acceptedCostUsd: award.acceptedCostUsd,
+            createdAt: award.createdAt,
+            updatedAt: award.createdAt,
+          };
+          state.attempts.set(attemptId, attempt);
+          state.selectedAttemptBySubtask.set(award.subtaskId, attemptId);
+          // Journal each attempt so projection replay (not only the snapshot) owns identity.
+          await this.journal.append(chainId, "attempt.awarded", { ...attempt });
+        }
+        if (state.attempts.size > 0) {
+          await this.journal.append(chainId, "migration.attempts_imported", {
+            attemptCount: state.attempts.size,
+          });
+        }
+      } else if (state.attempts.size === 0 && alreadyMigrated) {
+        // Prior migration journaled awards; rehydrate in memory only (no duplicate appends).
+        for (const award of state.awards.values()) {
+          const attemptId = `attempt_migrated_${award.subtaskId}`;
+          state.attempts.set(attemptId, {
+            attemptId,
+            chainId,
+            subtaskId: award.subtaskId,
+            workerPeerId: award.workerPeerId,
+            role: "primary",
+            state: state.partials.get(award.subtaskId)?.partial.isFinal
+              ? "final_received"
+              : "awarded",
+            attemptNumber: 1,
+            acceptedCostUsd: award.acceptedCostUsd,
+            createdAt: award.createdAt,
+            updatedAt: award.createdAt,
+          });
+          state.selectedAttemptBySubtask.set(award.subtaskId, attemptId);
+        }
+      }
+      if (needsLegacyImport && !alreadyMigrated) {
+        await this.journal.append(chainId, "migration.legacy_checkpoint_imported", {
+          source: "active-team-jobs.json",
+        });
+      }
+      // Materialize checkpoint immediately after first legacy import so a crash
+      // before the 1s persist timer cannot re-import or re-reserve.
+      if (needsLegacyImport || !checkpointRuntime) {
+        const after = await this.journal.recover(chainId);
+        this.journalProjections.set(chainId, after.projection);
+        await this.journal.writeCheckpoint(
+          chainId,
+          after.projection,
+          after.lastSeq,
+          new Date(),
+          serializeChainRuntime(entry),
+        );
+      }
+    }
+    this.persistTimer = setInterval(() => {
+      void this.persistNow().catch(() => undefined);
+    }, 1_000);
+    this.persistTimer.unref?.();
+  }
+
+  close(): void {
+    if (this.persistTimer) clearInterval(this.persistTimer);
+    this.persistTimer = undefined;
+  }
+
+  persistNow(): Promise<void> {
+    const next = this.persistInFlight.then(() => this.writeSnapshot());
+    this.persistInFlight = next.catch(() => undefined);
+    return next;
+  }
+
+  private async writeSnapshot(): Promise<void> {
+    if (!this.filePath) return;
+    await this.journal?.flush();
+    const activeEntries = [...this.runtime.values()]
+      .filter(({ state }) => !state.published && !state.chainCancelled)
+    const rows = activeEntries.map(serializeChainRuntime);
+    const tmp = `${this.filePath}.tmp`;
+    await writeFile(tmp, JSON.stringify(rows), { mode: 0o600 });
+    await rename(tmp, this.filePath);
+    if (this.journal) {
+      for (const entry of activeEntries) {
+        const { state } = entry;
+        const recovered = await this.journal.recover(state.chainId);
+        this.journalProjections.set(state.chainId, recovered.projection);
+        await this.journal.writeCheckpoint(
+          state.chainId,
+          recovered.projection,
+          recovered.lastSeq,
+          new Date(),
+          serializeChainRuntime(entry),
+        );
+      }
+    }
+  }
 
   /** Look up a runtime entry. Returns undefined if not present. */
   getRuntime(chainId: string): ChainRuntimeEntry | undefined {
     return this.runtime.get(chainId);
   }
 
+  getJournalProjection(chainId: string): ChainJournalProjection | undefined {
+    return this.journalProjections.get(chainId);
+  }
+
   /** Overwrite the runtime entry for the given chainId. */
   setRuntime(chainId: string, entry: ChainRuntimeEntry): void {
+    this.bindJournal(entry.state);
     this.runtime.set(chainId, entry);
+    if (this.journal) {
+      void this.journal.initChain(chainId).then(() =>
+        this.journal?.append(chainId, "chain.runtime_created", {
+          chainMandateId: entry.state.chainMandate.chainMandateId,
+        }),
+      ).catch(() => undefined);
+    }
   }
 
   /** Drop a runtime entry (e.g. aborted before launch when no workers). */
@@ -147,6 +397,7 @@ export class ChainStore {
       bidStrategy: { ...DEFAULT_BID_STRATEGY },
     };
     this.runtime.set(chainId, entry);
+    this.bindJournal(entry.state);
     return entry;
   }
 
@@ -186,6 +437,21 @@ export class ChainStore {
     this.runtime.clear();
     this.bidStrategies.clear();
   }
+
+  async flushJournal(chainId?: string): Promise<void> {
+    await this.journal?.flush(chainId);
+  }
+
+  async readJournal(chainId: string) {
+    await this.journal?.flush(chainId);
+    return this.journal?.read(chainId) ?? [];
+  }
+
+  private bindJournal(state: ChainState): void {
+    state.journalEvent = (type, data) => {
+      void this.journal?.append(state.chainId, type, data).catch(() => undefined);
+    };
+  }
 }
 
 /* ---------- high-level operations ---------- */
@@ -205,6 +471,28 @@ export interface ChainRankedWorker {
   sameLan: boolean;
   online: boolean;
   viaRelay: boolean;
+  /**
+   * Phase 60B — how readiness was decided. Lease wins; legacy ready-probe is
+   * a penalized fallback for mixed-version peers.
+   */
+  availabilitySource?: "lease" | "legacy_probe" | "local" | "unknown";
+  /** Phase 60C — deterministic strategy score components (0..1 each). */
+  scoreComponents?: import("@envoymesh/api").ChainWorkerScoreComponents;
+  /** Phase 60C — reliability lower confidence bound when known. */
+  reliabilityLowerBound?: number;
+  /** Phase 60C — observation sample count behind the reliability estimate. */
+  reliabilitySampleCount?: number;
+  /** Phase 61D — which hierarchy level produced the reliability estimate. */
+  reliabilityFallbackLevel?:
+    | "exact"
+    | "peer_runtime_skill"
+    | "peer_runtime"
+    | "runtime_skill"
+    | "prior";
+  /** Phase 60C — stable exclusion reason when hard-gated out of selection. */
+  exclusionReason?: import("@envoymesh/api").ChainWorkerExclusionReason;
+  /** Phase 60C — assignment reason codes for provenance. */
+  assignmentReasons?: import("@envoymesh/api").ChainAssignmentReasonCode[];
   manifest?: import("@envoymesh/protocol").CapabilityManifest;
 }
 
@@ -282,6 +570,7 @@ export interface ChainContext {
   findAgentNetworkWorkersRanked?(
     capability: string,
     preferredWorkerPeerIds?: readonly string[],
+    opts?: { strategyId?: import("@envoymesh/api").ChainTeamStrategyId },
   ): Promise<ChainRankedWorker[]>;
   /** Compute diagnostics for a set of subtasks + candidate workers. */
   chainDiagnosticsForSubtasks(
@@ -296,6 +585,8 @@ export interface ChainContext {
     costCeilingUsd?: number;
     allowLlm?: boolean;
     assignerPeerId?: string;
+    /** Phase 62C — override node default Assigner auto-selection. */
+    assignerSelection?: import("@envoymesh/api").AssignerSelectionMode;
     iterationMaxRounds?: number;
     iterationJudgeMode?: "llm" | "always_stop" | "owner";
     extendMaxStepsPerRound?: number;
@@ -356,6 +647,8 @@ export interface ChainContext {
   inputDeliveryScope?: "referenced" | "all";
   /** Owner-flagged criticality hint (design §8.1 #1). Absent = `"normal"`. */
   criticality?: "normal" | "high";
+  /** Phase 60C — Team strategy for this job. */
+  teamStrategyId?: import("@envoymesh/api").ChainTeamStrategyId;
 }): Promise<
   | {
       ok: true;
@@ -373,6 +666,11 @@ export interface ChainContext {
     }
   | { ok: false; error: string }
 >;
+  /** Phase 62C — preview suggested Assigner when capability mode is on. */
+  previewSuggestedAssigner?(input: {
+    assignerSelection?: import("@envoymesh/api").AssignerSelectionMode;
+    nodeDefaults?: import("@envoymesh/api").ChainDefaultsConfig;
+  }): Promise<{ peerId?: string; reason?: string; mode: import("@envoymesh/api").AssignerSelectionMode }>;
   /** Recipe persistence (optional — the runtime returns the builtin list when absent).
    *  Types are intentionally loose: the class is the source of truth for the
    *  recipe row shape, and the runtime just passes rows through. */
@@ -421,9 +719,23 @@ export function chainGetStateViaRuntime(
   result.inputAttachments = entry.state.inputAttachments;
   result.inputDeliveries = entry.state.inputDeliveries;
   result.inputDeliveryPolicy = entry.state.inputDeliveryPolicy;
+  result.provenanceSummary = buildCompactProvenanceSummary(entry.state, ctx.store.getJournalProjection(params.chainId));
+  result.speculationReview = buildSpeculationReviewPending(entry.state);
   const side = ctx.getChainSideState?.();
   result.assignmentMode = side?.assignmentModes.get(params.chainId);
   result.planWarnings = side?.planWarnings.get(params.chainId) as ChainGetStateResult["planWarnings"];
+  result.teamStrategy = side?.teamStrategies.get(params.chainId);
+  const recovery = side?.recovery.get(params.chainId);
+  if (recovery) {
+    result.recovery = {
+      phase: recovery.phase,
+      orchestratorEpoch: recovery.orchestratorEpoch,
+      startedAt: recovery.startedAt,
+      graceDeadlineAt: recovery.graceDeadlineAt,
+      pendingPeers: Object.values(recovery.peers).filter((p) => p.status === "pending").length,
+      conflictCount: recovery.conflicts.length,
+    };
+  }
   result.budgetWarningLevel = chainBudgetWarningLevel(entry.state);
   const it = entry.state.iteration;
   if (it) {
@@ -445,6 +757,150 @@ export function chainGetStateViaRuntime(
   return result;
 }
 
+function buildCompactProvenanceSummary(
+  state: ChainState,
+  projection?: ChainJournalProjection,
+): NonNullable<ChainGetStateResult["provenanceSummary"]> {
+  return [...state.subtasks.keys()].map((subtaskId) => {
+    const attempts = [...state.attempts.values()].filter((attempt) => attempt.subtaskId === subtaskId);
+    const selectedAttemptId = state.selectedAttemptBySubtask.get(subtaskId);
+    const selected = selectedAttemptId ? state.attempts.get(selectedAttemptId) : undefined;
+    const projected = selectedAttemptId ? projection?.attempts[selectedAttemptId] : undefined;
+    return {
+      subtaskId,
+      ...(selectedAttemptId ? { selectedAttemptId } : {}),
+      ...(selected?.workerPeerId ? { workerPeerId: selected.workerPeerId } : {}),
+      attemptCount: attempts.length,
+      ...(selected?.state ? { state: selected.state } : {}),
+      ...(projected?.lastReason ? { lastReason: projected.lastReason } : {}),
+    };
+  });
+}
+
+function buildSpeculationReviewPending(
+  state: ChainState,
+): ChainGetStateResult["speculationReview"] {
+  // Phase 63 — owner review banner only when the mandate opted into "block".
+  if ((state.chainMandate.speculationOnDisagreement ?? "auto") !== "block") {
+    return undefined;
+  }
+  const reviews: NonNullable<ChainGetStateResult["speculationReview"]> = [];
+  for (const subtaskId of state.subtasks.keys()) {
+    if (state.speculationLocked.has(subtaskId)) continue;
+    const attempts = [...state.attempts.values()].filter((a) => a.subtaskId === subtaskId);
+    const finals = attempts.filter((a) => a.state === "final_received");
+    if (finals.length < 2) continue;
+    const decision = classifySpeculativeFinalSelection(state, subtaskId, {
+      verificationPassed: ({ partial }) => {
+        if (!partial?.partial.isFinal) return false;
+        return !isFailedWorkerFinalPartial(partial);
+      },
+    });
+    if (decision.reason !== "disagree_needs_verify" && decision.reason !== "none_pass") {
+      continue;
+    }
+    reviews.push({
+      subtaskId,
+      reason: decision.reason,
+      attempts: finals.map((a) => ({
+        attemptId: a.attemptId,
+        workerPeerId: a.workerPeerId,
+        ...(a.role ? { role: a.role } : {}),
+      })),
+    });
+  }
+  return reviews.length > 0 ? reviews : undefined;
+}
+
+export async function chainGetStepProvenanceViaRuntime(
+  ctx: ChainContext,
+  params: import("@envoymesh/api").ChainGetStepProvenanceParams,
+): Promise<import("@envoymesh/api").ChainGetStepProvenanceResult> {
+  const entry = ctx.store.getRuntime(params.chainId);
+  const selectedAttemptId = entry?.state.selectedAttemptBySubtask.get(params.subtaskId);
+  const attempts = [...(entry?.state.attempts.values() ?? [])]
+    .filter((attempt) => attempt.subtaskId === params.subtaskId);
+  const selected = selectedAttemptId ? entry?.state.attempts.get(selectedAttemptId) : undefined;
+  const projected = selectedAttemptId
+    ? ctx.store.getJournalProjection(params.chainId)?.attempts[selectedAttemptId]
+    : undefined;
+  const events = (await ctx.store.readJournal(params.chainId))
+    .filter((event) => {
+      if (event.data.subtaskId === params.subtaskId) return true;
+      if (
+        typeof event.data.attemptId === "string" &&
+        entry?.state.attempts.get(event.data.attemptId)?.subtaskId === params.subtaskId
+      ) {
+        return true;
+      }
+      // Chain-level synthesis lineage still belongs in step provenance when
+      // this subtask contributed a selected artifact.
+      if (event.type === "synthesis.lineage" && Array.isArray(event.data.selectedArtifacts)) {
+        return event.data.selectedArtifacts.some(
+          (row) =>
+            row !== null &&
+            typeof row === "object" &&
+            (row as { subtaskId?: unknown }).subtaskId === params.subtaskId,
+        );
+      }
+      return false;
+    })
+    .map((event) => {
+      const data = event.data;
+      const strings = (value: unknown): string[] | undefined =>
+        Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : undefined;
+      // Prefer this step's row inside a chain-level synthesis.lineage payload.
+      let attemptId = typeof data.attemptId === "string" ? data.attemptId : undefined;
+      let artifactIds = strings(data.artifactIds);
+      let parentArtifactIds = strings(data.parentArtifactIds);
+      if (event.type === "synthesis.lineage" && Array.isArray(data.selectedArtifacts)) {
+        const row = data.selectedArtifacts.find(
+          (item) =>
+            item !== null &&
+            typeof item === "object" &&
+            (item as { subtaskId?: unknown }).subtaskId === params.subtaskId,
+        ) as
+          | {
+              attemptId?: unknown;
+              artifactKeys?: unknown;
+              parentArtifactKeys?: unknown;
+            }
+          | undefined;
+        if (typeof row?.attemptId === "string") attemptId = row.attemptId;
+        artifactIds = strings(row?.artifactKeys) ?? artifactIds;
+        parentArtifactIds = strings(row?.parentArtifactKeys) ?? parentArtifactIds;
+      }
+      return {
+        eventId: event.eventId,
+        seq: event.seq,
+        at: event.at,
+        type: event.type,
+        ...(attemptId ? { attemptId } : {}),
+        ...(typeof data.workerPeerId === "string" ? { workerPeerId: data.workerPeerId } : {}),
+        ...(typeof data.runtime === "string" ? { runtime: data.runtime } : {}),
+        ...(typeof data.model === "string" ? { model: data.model } : {}),
+        ...(typeof data.transportPath === "string" ? { transportPath: data.transportPath } : {}),
+        ...(typeof data.verifierRuntime === "string" ? { verifierRuntime: data.verifierRuntime } : {}),
+        ...(typeof data.verifierModel === "string" ? { verifierModel: data.verifierModel } : {}),
+        ...(typeof data.reason === "string" ? { reason: data.reason } : {}),
+        ...(artifactIds ? { artifactIds } : {}),
+        ...(parentArtifactIds ? { parentArtifactIds } : {}),
+      };
+    });
+  return {
+    chainId: params.chainId,
+    subtaskId: params.subtaskId,
+    selectedAttemptId,
+    summary: {
+      attemptCount: attempts.length,
+      ...(selected?.workerPeerId ? { workerPeerId: selected.workerPeerId } : {}),
+      ...(selected?.state ? { state: selected.state } : {}),
+      ...(projected?.lastReason ? { lastReason: projected.lastReason } : {}),
+    },
+    events,
+  };
+}
+
 /* ---------- chainListActive ---------- */
 
 export function chainListActiveViaRuntime(
@@ -463,6 +919,7 @@ export function chainListActiveViaRuntime(
       snap.inputAttachments = entry.state.inputAttachments;
       snap.inputDeliveries = entry.state.inputDeliveries;
       snap.inputDeliveryPolicy = entry.state.inputDeliveryPolicy;
+      snap.provenanceSummary = buildCompactProvenanceSummary(entry.state, ctx.store.getJournalProjection(chainId));
       const side = ctx.getChainSideState?.();
       snap.assignmentMode = side?.assignmentModes.get(chainId);
       snap.planWarnings = side?.planWarnings.get(chainId) as ChainGetStateResult["planWarnings"];
@@ -638,7 +1095,10 @@ export async function chainSetDefaultsViaRuntime(
       d.rebalancePolicy !== "auto" &&
       d.rebalancePolicy !== "never") ||
     (d.awardMode !== undefined && d.awardMode !== "direct" && d.awardMode !== "competitive") ||
-    (d.assignmentMode !== undefined && d.assignmentMode !== "skill" && d.assignmentMode !== "role")
+    (d.assignmentMode !== undefined && d.assignmentMode !== "skill" && d.assignmentMode !== "role") ||
+    (d.assignerSelection !== undefined &&
+      d.assignerSelection !== "local" &&
+      d.assignerSelection !== "best_capable")
   ) {
     return { ok: false, defaults: d as never, reason: "validation_failed" };
   }
@@ -873,10 +1333,15 @@ export async function chainPreviewGoalViaRuntime(
   };
   const state = createChainState(mandate as Parameters<typeof createChainState>[0]);
   const cfg = (await ctx.getNodeConfig()) as { chainDefaults?: Parameters<typeof mergeChainDefaults>[0] } | null;
+  const mergedDefaults = mergeChainDefaults(cfg?.chainDefaults);
   const assignmentMode =
     params.assignmentMode === "role" || params.assignmentMode === "skill"
       ? params.assignmentMode
-      : resolveAssignmentModeDefault(mergeChainDefaults(cfg?.chainDefaults));
+      : resolveAssignmentModeDefault(mergedDefaults);
+  const teamStrategyId =
+    params.teamStrategyId ??
+    (mergedDefaults as { teamStrategyId?: import("@envoymesh/api").ChainTeamStrategyId }).teamStrategyId ??
+    "balanced";
   const deps = (await ctx.buildChainOrchestratorDeps()) as Parameters<typeof planChain>[0];
   const plan = await planChain(deps, state, goal, {
     allowLlm: params.allowLlm ?? true,
@@ -891,7 +1356,9 @@ export async function chainPreviewGoalViaRuntime(
   let maxWorkers = 0;
   for (const subtask of plan.subtasks) {
     const ranked = ctx.findAgentNetworkWorkersRanked
-      ? await ctx.findAgentNetworkWorkersRanked(subtask.requiredSkill, params.preferredWorkerPeerIds)
+      ? await ctx.findAgentNetworkWorkersRanked(subtask.requiredSkill, params.preferredWorkerPeerIds, {
+          strategyId: teamStrategyId,
+        })
       : (await ctx.findAgentNetworkWorkers(subtask.requiredSkill)).map((peerId) => ({
           peerId,
           score: 0,
@@ -920,22 +1387,35 @@ export async function chainPreviewGoalViaRuntime(
       sameLan: boolean;
       online: boolean;
       viaRelay: boolean;
+      runtime?: import("@envoymesh/protocol").AgentRuntime;
       matchedSubtaskIds: Set<string>;
       assigned: boolean;
+      availabilitySource?: ChainRankedWorker["availabilitySource"];
+      scoreComponents?: ChainRankedWorker["scoreComponents"];
+      reliabilityLowerBound?: number;
+      reliabilitySampleCount?: number;
+      reliabilityFallbackLevel?: ChainRankedWorker["reliabilityFallbackLevel"];
     }
   >();
   const bump = (
-    w: {
-      peerId: string;
-      score: number;
-      summary: string;
-      sameLan: boolean;
-      online: boolean;
-      viaRelay: boolean;
-    },
+    w: ChainRankedWorker,
     subtaskId: string,
     assigned: boolean,
   ) => {
+    const reliability =
+      typeof w.reliabilityLowerBound === "number"
+        ? {
+            reliabilityLowerBound: w.reliabilityLowerBound,
+            reliabilitySampleCount: w.reliabilitySampleCount,
+            reliabilityFallbackLevel: w.reliabilityFallbackLevel,
+          }
+        : typeof w.scoreComponents?.reliability === "number"
+          ? {
+              reliabilityLowerBound: w.scoreComponents.reliability,
+              reliabilitySampleCount: w.reliabilitySampleCount,
+              reliabilityFallbackLevel: w.reliabilityFallbackLevel,
+            }
+          : {};
     const existing = suggestedMap.get(w.peerId);
     if (existing) {
       if (w.score > existing.score) {
@@ -944,7 +1424,13 @@ export async function chainPreviewGoalViaRuntime(
         existing.sameLan = w.sameLan;
         existing.online = w.online;
         existing.viaRelay = w.viaRelay;
+        existing.availabilitySource = w.availabilitySource;
+        existing.scoreComponents = w.scoreComponents;
+        existing.reliabilityLowerBound = reliability.reliabilityLowerBound;
+        existing.reliabilitySampleCount = reliability.reliabilitySampleCount;
+        existing.reliabilityFallbackLevel = reliability.reliabilityFallbackLevel;
       }
+      existing.runtime = w.manifest?.runtime ?? existing.runtime;
       existing.matchedSubtaskIds.add(subtaskId);
       if (assigned) existing.assigned = true;
     } else {
@@ -953,10 +1439,14 @@ export async function chainPreviewGoalViaRuntime(
         score: w.score,
         summary: w.summary,
         sameLan: w.sameLan,
-        online: w.online,
-        viaRelay: w.viaRelay,
+        online: w.online === true,
+        viaRelay: w.viaRelay === true,
+        runtime: w.manifest?.runtime,
         matchedSubtaskIds: new Set([subtaskId]),
         assigned,
+        availabilitySource: w.availabilitySource,
+        scoreComponents: w.scoreComponents,
+        ...reliability,
       });
     }
   };
@@ -992,6 +1482,30 @@ export async function chainPreviewGoalViaRuntime(
     rankedBySubtask,
   ) as string[];
   const warningDiagnostics = formatPlanWarningDiagnostics(planWarnings ?? []);
+  const assignerMode =
+    params.assignerSelection === "best_capable" || params.assignerSelection === "local"
+      ? params.assignerSelection
+      : mergedDefaults.assignerSelection === "best_capable"
+        ? "best_capable"
+        : "local";
+  const assignerPreview = ctx.previewSuggestedAssigner
+    ? await ctx.previewSuggestedAssigner({
+        assignerSelection: assignerMode,
+        nodeDefaults: mergedDefaults,
+      })
+    : { mode: assignerMode as import("@envoymesh/api").AssignerSelectionMode };
+  const iterationMaxRounds =
+    mergedDefaults.iterationMaxRounds ?? 1;
+  const iterationPreviewHint =
+    iterationMaxRounds > 1
+      ? mergedDefaults.iterationJudgeMode === "owner"
+        ? "Multi-round job: you may be asked to continue or stop after each draft."
+        : "Multi-round job: the Assigner may refine the report across several rounds."
+      : undefined;
+  const assignerDiagnostics =
+    assignerPreview.reason && assignerMode === "best_capable"
+      ? [assignerPreview.reason]
+      : [];
   return {
     ok: true,
     chainId,
@@ -1014,7 +1528,11 @@ export async function chainPreviewGoalViaRuntime(
     })),
     estimatedCostRange,
     suggestedWorkers,
-    diagnostics: [...warningDiagnostics, ...(baseDiagnostics ?? [])],
+    teamStrategyId,
+    suggestedAssignerPeerId: assignerPreview.peerId,
+    suggestedAssignerReason: assignerPreview.reason,
+    iterationPreviewHint,
+    diagnostics: [...assignerDiagnostics, ...warningDiagnostics, ...(baseDiagnostics ?? [])],
   };
 }
 
@@ -1046,6 +1564,8 @@ export async function chainStartFromGoalViaRuntime(
       allowLlm: params.allowLlm,
       assignmentMode: params.assignmentMode,
       preferredWorkerPeerIds: params.preferredWorkerPeerIds,
+      teamStrategyId: params.teamStrategyId,
+      assignerSelection: params.assignerSelection,
     });
     if (!preview.ok || preview.subtasks.length === 0) {
       return {
@@ -1097,6 +1617,8 @@ export async function chainStartFromGoalViaRuntime(
       planWarnings: preview.planWarnings,
       inputDeliveryScope: params.inputDeliveryScope,
       criticality: params.criticality,
+      teamStrategyId: params.teamStrategyId ?? preview.teamStrategyId,
+      assignerSelection: params.assignerSelection,
     });
     if (!result.ok) {
       return {
@@ -1123,6 +1645,8 @@ export async function chainStartFromGoalViaRuntime(
       })),
       estimatedCostRange: preview.estimatedCostRange,
       diagnostics: preview.diagnostics,
+      assignerPeerId: (result as { assignerPeerId?: string }).assignerPeerId,
+      handedOff: (result as { handedOff?: boolean }).handedOff,
     };
   }
 
@@ -1142,6 +1666,8 @@ export async function chainStartFromGoalViaRuntime(
     planWarnings: params.planWarnings,
     inputDeliveryScope: params.inputDeliveryScope,
     criticality: params.criticality,
+    teamStrategyId: params.teamStrategyId,
+    assignerSelection: params.assignerSelection,
   });
   if (!result.ok) {
     return { ok: false, error: result.error };

@@ -336,6 +336,7 @@ run against the live relay, with each test re-deciding via `itRelayed`.
 - **Path aliases**: `@envoymesh/*` only for cross-package imports; in-package imports use relative paths
 - **Formatting**: Consistent with the existing code — trailing commas in multiline, no semicolons, 2-space indentation
 - **Naming**: camelCase for functions/variables, PascalCase for types/interfaces, kebab-case for files
+- **Module size (Codex LOC rule)**: target modules under **500** lines; if a file exceeds roughly **800** lines, add new functionality in a **new module** instead of extending the file (unless there is a strong documented reason). Existing v1.x oversized modules are allowlisted in `scripts/module-size-allowlist.json`; CI (`scripts/check-module-size.mjs`) fails on new growth above 800. Removing an allowlist entry is a good sign.
 
 ### Package conventions
 
@@ -407,3 +408,4 @@ This ensures deterministic serialization regardless of property insertion order.
 - **Relay protocol**: The relay subsystem has its own protocol schemas (`relay.checkin`, `relay.lookup`, `relay.join.request`, etc.) with a hierarchical relay graph (ancestor / parent / sibling / child). The relay manager runtime state is inspected via snapshots encoded as audit events.
 - **`tsx` vs `tsc`**: Use `tsx` for running TypeScript directly in development. Use `tsc -b` for production builds and typechecking.
 - **Workspace scripts**: Use `npm exec -w @envoymesh/<name> -- <command>` or `npm run <script> -w @envoymesh/<name>` to run scripts in a specific workspace.
+- **EnvoyMesh is an end-user product (not a developer tool)**: the user types into Tauri EnvoyAI; the Social UI renders the chat reply; the bond-trace panel surfaces debug info. **Every user-facing string must be end-user-readable**, not developer-jargon. The same field (e.g. `setupSponsorFriendLastErrorKind`) shown to a developer in the audit log can stay as `lastErrorKind: network-unreachable`, but the chat reply should read as plain language: "Couldn't reach the sponsor — the network kept dropping. Try again, or check your relay is online." Internal fields (`cooldownUntil`, `attempts`) belong at the bottom of a verbose failure block, not the headline. **Default = end-user first, developer second.** The developer gets the audit log + the verbose block; the chat user gets the headline + the next step.

@@ -10186,9 +10186,24 @@ button.activity-row:hover,
   margin-top: 0.35rem;
 }
 
-.chain-detail-panel__assignment-mode {
+.chain-detail-panel__assignment-mode,
+.chain-detail-panel__team-strategy {
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-muted, #64748b);
+}
+
+.chain-detail-panel__team-strategy {
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-muted, #f1f5f9);
+}
+
+.chain-detail-panel__recovery {
+  font-size: var(--text-xs, 0.75rem);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, #f59e0b 15%, transparent);
+  color: #b45309;
 }
 
 .chain-detail-plan-warnings ul {
@@ -10302,6 +10317,27 @@ button.activity-row:hover,
   flex-wrap: wrap;
   gap: 0.35rem;
   margin-top: 0.35rem;
+}
+.chain-live-steps__provenance {
+  margin-top: 0.35rem;
+}
+.chain-live-steps__execution-details {
+  margin-top: 0.4rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--radius-sm, 0.25rem);
+  background: var(--color-surface-muted, rgba(15, 23, 42, 0.04));
+  font-size: var(--text-xs, 0.75rem);
+}
+.chain-live-steps__provenance-summary {
+  margin: 0 0 0.35rem;
+}
+.chain-live-steps__technical {
+  margin-top: 0.35rem;
+}
+.chain-live-steps__technical ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1rem;
+  word-break: break-word;
 }
 .chain-observed-badge {
   font-size: var(--text-xs, 0.75rem);
@@ -13782,6 +13818,30 @@ button:disabled {
   font-weight: var(--font-semibold);
   background: var(--color-success-subtle, #ecfdf5);
   color: var(--color-success, #059669);
+  white-space: nowrap;
+}
+
+.chain-worker-card__avail {
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-medium);
+  white-space: nowrap;
+}
+
+.chain-worker-card__avail--lease {
+  background: color-mix(in srgb, var(--color-accent, #0ea5e9) 12%, transparent);
+  color: var(--color-accent, #0369a1);
+}
+
+.chain-worker-card__avail--legacy {
+  background: var(--color-surface-muted, #f1f5f9);
+  color: var(--color-text-muted, #64748b);
+}
+
+.chain-worker-card__reliability {
+  font-size: var(--text-2xs);
+  color: var(--color-text-subtle, var(--color-slate-500));
   white-space: nowrap;
 }
 
@@ -18332,7 +18392,7 @@ button:disabled {
 .assistant-chat-wrapper {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1 1 0%;
   min-height: 0;
   overflow: hidden;
 }

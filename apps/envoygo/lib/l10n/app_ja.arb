@@ -487,7 +487,7 @@
   "chainsSubtasks": "サブタスク",
   "chainsSynthesis": "合成",
   "chainsDuration": "所要時間",
-  "chainsManageOnSocial": "ホームノードのソーシャル画面でチェーンを管理します。",
+  "chainsManageOnSocial": "フリート設定・入札・レシピはホームの Social UI のままです。キャンセル・再バランス・ピン留めはこちらでもできます。",
   "chainsPublished": "{date} に公開",
   "chainsChainId": "チェーン {id}",
   "termEmptyHint": "ホームノードで Pi コーディングセッションまたはシェルターミナルを開始します。",
@@ -509,19 +509,25 @@
   "pairingInProgressSubtitle": "{owner} に接続しています",
   "@pairingInProgressSubtitle": {
     "placeholders": {
-      "owner": {"type": "String"}
+      "owner": {
+        "type": "String"
+      }
     }
   },
   "pairingElapsed": "経過時間：{time}",
   "@pairingElapsed": {
     "placeholders": {
-      "time": {"type": "String"}
+      "time": {
+        "type": "String"
+      }
     }
   },
   "pairingHomeNodeLabel": "ホーム：{peer}",
   "@pairingHomeNodeLabel": {
     "placeholders": {
-      "peer": {"type": "String"}
+      "peer": {
+        "type": "String"
+      }
     }
   },
   "pairingStageInitial": "初期化中",
@@ -634,6 +640,13 @@
   "chainsStartStarted": "チームジョブを開始しました",
   "chainsStartFailed": "チームジョブを開始できませんでした",
   "chainsStartNoWorkers": "到達可能な Agent Network ワーカーがありません。先にホームノードのエージェントと連絡先をボンドしてください。",
+  "chainsSpeculationReviewTitle": "スペキュレーションの確認が必要",
+  "chainsSpeculationReviewBody": "2 つのワーカーが 1 ステップで異なる結果を返しました。ジョブを進めるために勝者を選ぶか、オーケストレーターに自動選択させることができます。",
+  "chainsSpeculationReviewNonePass": "両方のワーカーが検証に失敗しました — オーケストレーターがこのステップを再割り当てします。",
+  "chainsSpeculationReviewDisagree": "2 つのワーカーが一致しません。オーケストレーターがより低コストの検証済みを選ぶか、ユーザーが選ぶか再割り当てできます。",
+  "chainsSpeculationReviewAutoResolve": "自動的に解決",
+  "chainsSpeculationReviewResolved": "オーケストレーターが解決しました",
+  "chainsSpeculationReviewFailed": "自動解決に失敗しました",
   "chainsStartNeedWorkers": "オンライン ワーカーを少なくとも 1 人選択するか、推奨プールを復元するために再度プレビューしてください。",
   "chainsStartWorkersHint": "プランからのオンライン ワーカー。必要のないワーカーのチェックを外してください。すべて外すと開始できません — 再度プレビューして推奨プールをリセットしてください。",
   "chainsStartWorkersHeading": "ワーカー",
@@ -925,5 +938,239 @@
   "chainsStepCancelled": "ステップをキャンセルしました",
   "chainsStepReassigned": "ステップを再割り当てしました",
   "chainsReassignFailed": "このステップを再割り当てできませんでした",
-  "chainsCancelStepReason": "EnvoyGo からステップをキャンセル"
+  "chainsCancelStepReason": "EnvoyGo からステップをキャンセル",
+  "chatsSectionCoding": "コーディング",
+  "chatsCodingPi": "Pi",
+  "chatsCodingPiHint": "コーディングエージェント（ターミナル）",
+  "chatsCodingEh": "Envoy",
+  "chatsCodingEhHint": "コーディングエージェント（チャット）",
+  "chatsEhNew": "新しいコーディングチャット",
+  "chatsEhRemoveTitle": "コーディングチャットを削除しますか？",
+  "chatsEhRemoveBody": "「{name}」をコーディング一覧から削除しますか？ホームノード上の履歴も削除されます。",
+  "@chatsEhRemoveBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatsEhThinking": "Envoy が考えています…",
+  "chatsEhPromptHint": "Envoy にコーディング、リファクタ、説明を依頼…",
+  "chatsNewEnvoy": "新しい Envoy",
+  "chatsNewEnvoyHint": "Envoy Harness TUI を開始",
+  "ehChooseProjectTitle": "Envoy プロジェクトフォルダを選択",
+  "ehChangeProjectTitle": "Envoy プロジェクトフォルダを変更",
+  "ehChooseProjectDesc": "Envoy はこのフォルダで動作します（AGENTS.md の読み取り、ファイル編集、シェル実行）。",
+  "ehStartWithProject": "開始",
+  "ehRestartWithProject": "ここで Envoy を再起動",
+  "ehEnsuringTerminal": "Envoy TUI を起動中…",
+  "ehPermissionTitle": "ツールの許可",
+  "ehPermissionAllow": "許可",
+  "ehPermissionDeny": "拒否",
+  "ehQuestionTitle": "Envoy が入力を必要としています",
+  "ehRecommended": "おすすめ",
+  "ehSlashWhileBusy": "先に現在のターンを終了するか /cancel してください。",
+  "ehChatReset": "このプロジェクトの新しいチャットを開始しました。",
+  "ehTurnCancelled": "ターンをキャンセルしました。",
+  "ehStatusRefreshed": "ステータスを更新しました。",
+  "ehNoPeers": "ピアクラスタが設定されていません。",
+  "ehSearchUsage": "使い方: /search <語> — この会話を検索。",
+  "ehSearchNoMatches": "「{term}」に一致するものはありません。",
+  "@ehSearchNoMatches": {
+    "placeholders": {
+      "term": {
+        "type": "String"
+      }
+    }
+  },
+  "ehModelShow": "使用中のモデル: {model}",
+  "@ehModelShow": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "ehModelUnknown": "モデル未設定 — 設定 → AI で設定してください。",
+  "ehProjectCurrent": "プロジェクトフォルダ: {path}",
+  "@ehProjectCurrent": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehProjectUnset": "プロジェクトフォルダ未設定 — /cd <パス> を使ってください。",
+  "ehProjectSet": "プロジェクトフォルダ → {path}",
+  "@ehProjectSet": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehProjectSetUnknown": "プロジェクトフォルダを更新しました。",
+  "ehProjectSetFailed": "プロジェクトフォルダの設定に失敗: {error}",
+  "@ehProjectSetFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "ehConfigureModel": "設定 → AI でモデルを構成してください。",
+  "ehNotReady": "envoy-harness の準備ができていません。",
+  "termQuickHelp": "/help",
+  "termQuickCancel": "/cancel",
+  "settingsPiCodingBackend": "コーディングバックエンド",
+  "settingsPiCodingBackendPi": "Pi（サイドカー）",
+  "settingsPiCodingBackendEh": "envoy-harness (ACP)",
+  "settingsPiCodingBackendHint": "Social と同じ設定。sendToPi と承認を同じ Pi UI 経由にします。古い EnvoyGo は無視して Pi のままです。",
+  "settingsPiCodingBackendSaved": "コーディングバックエンドを更新しました",
+  "ehReviewTitle": "このターンを確認",
+  "ehReviewUnavailable": "この古いターンの保存済みレビューはありません。",
+  "ehReviewFile": "ファイル",
+  "ehReviewOpenFile": "ファイルを開く",
+  "ehReviewDiffUnavailable": "このファイルのテキスト差分は利用できません。",
+  "ehReviewOnly": "ワークスペース検出 · 確認のみ",
+  "ehRevertTitle": "このターンを元に戻しますか？",
+  "ehRevertBody": "ファイルはターン前の内容に戻されます。その後の編集は保護され、復元が停止します。",
+  "ehRevertAction": "元に戻す",
+  "ehRevertComplete": "このターンのファイル変更を元に戻しました。",
+  "ehRevertUnavailable": "このターンは安全に元に戻せません。",
+  "ehRevertConflict": "その後変更されたため復元を停止しました: {files}",
+  "@ehRevertConflict": {
+    "placeholders": {
+      "files": {
+        "type": "String"
+      }
+    }
+  },
+  "ehSearchTranscript": "トランスクリプトを検索",
+  "ehSearchClose": "検索を閉じる",
+  "ehNoMatches": "一致するターンがありません",
+  "ehCopyTurn": "ターンをコピー",
+  "ehShareTurn": "ターンを共有",
+  "ehReviewDiff": "差分を確認",
+  "ehRevertThisTurn": "このターンを元に戻す",
+  "ehReviewChanges": "変更を確認",
+  "ehRevertAll": "すべて元に戻す",
+  "ehChangesCount": "{count, plural, =1{このターンで 1 ファイル変更} other{このターンで {count} ファイル変更}}",
+  "@ehChangesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehChangesKeepAll": "すべて保持",
+  "ehChangesRevert": "すべて元に戻す",
+  "ehChangesHideList": "一覧を隠す",
+  "ehChangesShowList": "一覧を表示",
+  "ehReviewKeepFile": "保持",
+  "ehReviewRevertFile": "元に戻す",
+  "ehReviewKeptAll": "変更を保持しました。",
+  "ehReviewRevertedFile": "{path} を元に戻しました",
+  "@ehReviewRevertedFile": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "ehReviewAutoLabel": "自動レビュー（≥）",
+  "ehReviewAutoAlways": "常に",
+  "ehWorking": "作業中",
+  "ehCompleted": "完了",
+  "ehUpdate": "更新",
+  "ehToolLabel": "ツール: {name}",
+  "@ehToolLabel": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "ehMatchCount": "{count, plural, =1{1 件一致} other{{count} 件一致}}",
+  "@ehMatchCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "termMore": "その他…",
+  "termCompactContext": "コンテキストを圧縮",
+  "termUpdatePlan": "プランを表示または更新",
+  "termHarnessStatus": "Harness ステータス",
+  "termPiActions": "Pi アクション",
+  "termHarnessActions": "envoy-harness アクション",
+  "termPreviousCommand": "前のコマンド",
+  "termNextCommand": "次のコマンド",
+  "termCursorLeft": "カーソルを左へ",
+  "termCursorRight": "カーソルを右へ",
+  "termEnterKey": "Enter キー",
+  "ehQueueTitle": "キュー ({count})",
+  "@ehQueueTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehQueueClear": "クリア",
+  "ehQueueBusyHint": "送信は次にキューへ",
+  "ehQueueFollowUpHint": "フォローアップをキューへ…",
+  "ehInjectTooltip": "割り込み（キャンセルして送信）",
+  "ehFilesChangedCount": "{count, plural, =1{1 ファイル変更} other{{count} ファイル変更}}",
+  "@ehFilesChangedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehEmptyReply": "envoy-harness は見える返信を返しませんでした。メッセージは残っています — 再試行するか言い換えてください。",
+  "ehConfigureModelHint": "設定 → AI でモデルを構成してください。",
+  "ehReviewKeepFailed": "変更を保持できませんでした。",
+  "ehReviewOpenGitDiff": "Git diff を開く",
+  "ehDiffBefore": "変更前",
+  "ehDiffAfter": "変更後",
+  "chainsStatusCancelled": "キャンセル",
+  "chainsStatusPublished": "公開済み",
+  "chainsStatusSynthesizing": "統合中",
+  "chainsStatusRunning": "実行中",
+  "chainsStatusWaitingWorkers": "ワーカー待ち",
+  "chainsStatusBidding": "入札中",
+  "chainsStatusAssigning": "割当中",
+  "chainsStatusPlanning": "計画中",
+  "chainsCancelFailed": "チームジョブをキャンセルできませんでした。",
+  "ehPermsTooltip": "権限ポリシー",
+  "ehPermsSafe": "デフォルト（安全な自動実行）",
+  "ehPermsAsk": "常に確認",
+  "ehPermsApprove": "常に承認",
+  "ehPermsSet": "権限ポリシー → {mode}。",
+  "@ehPermsSet": {
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "ehPermsNextTurn": " 次のターンから適用。",
+  "ehPermsFailed": "権限ポリシーを設定できませんでした: {error}",
+  "@ehPermsFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "chainsStartReliabilityPct": "信頼度 {pct}%",
+  "chainsStartReliabilitySparse": "{level} · {samples} 件のサンプル",
+  "chainsStartReliabilityFallbackExact": "このワーカーの履歴",
+  "chainsStartReliabilityFallbackPeerRuntimeSkill": "このワーカーの類似タスク",
+  "chainsStartReliabilityFallbackPeerRuntime": "このワーのランタイム",
+  "chainsStartReliabilityFallbackRuntimeSkill": "このスキルを持つワーカー",
+  "chainsStartReliabilityFallbackPrior": "汎用事前分布（履歴なし）"
 }
