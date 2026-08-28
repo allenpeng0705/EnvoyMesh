@@ -37,6 +37,7 @@ export * from "./approval-executor.js";
 export * from "./task-dispatcher.js";
 export * from "./default-bootstrap.js";
 export * from "./community-relay-join.js";
+export * from "./relay-roster.js";
 export * from "./group-chat-delivery.js";
 export * from "./node-service.js";
 /** Phase 34: re-export the typed `Artifact` discriminated union so the Social UI can render task.results. */

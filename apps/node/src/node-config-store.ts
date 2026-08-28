@@ -89,6 +89,17 @@ export interface PersistedNodeConfig {
   bootstrapPeers: string[];
   bootstrapPresets: string[];
   configuredRelays: RelayConfig[];
+  /**
+   * Phase 46E — HTTPS URL of a signed relay roster JSON (fleet of N).
+   * Homes poll, verify, and select ≤ maxActiveTargets hops without a package upgrade.
+   */
+  relayRosterUrl?: string;
+  /** PEM public keys that may sign the remote relay roster. */
+  relayRosterTrustKeys?: string[];
+  /** When false, roster poll is off even if trust keys exist. Default: on when keys+URL set. */
+  relayRosterEnabled?: boolean;
+  /** Poll interval ms (min 60s). Default ~20 min. */
+  relayRosterPollMs?: number;
   modelProviders: ModelProviderConfig;
   /** Optional model name override for terminal assist (Phase 30I). */
   terminalAssistModelName?: string;

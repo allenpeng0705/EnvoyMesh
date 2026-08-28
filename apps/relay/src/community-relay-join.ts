@@ -174,6 +174,8 @@ export function startCommunityRelayJoinRetry(input: {
   bookTtlMs: number;
   skipCommunitySiblings: boolean;
   intervalMs?: number;
+  /** Fired once when join is accepted (roster publish hook). */
+  onJoined?: () => void;
 }): () => void {
   if (input.skipCommunitySiblings || !input.joinToken) return () => {};
   if (isCommunityPresetRelayPeerId(input.mesh.peerId)) return () => {};
@@ -194,6 +196,7 @@ export function startCommunityRelayJoinRetry(input: {
         publicAddrs: input.publicAddrs(),
         bookTtlMs: input.bookTtlMs,
       });
+      if (joined) input.onJoined?.();
     } finally {
       inFlight = false;
     }

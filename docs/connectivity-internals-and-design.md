@@ -77,7 +77,7 @@ EnvoyMesh dialing them — it is libp2p's own machinery. The chain:
 
 ```
 1. bootstrap service dials the bootstrap list on startup
-   (default presets expand to ~9-10 peers: 4 public-libp2p presets + cn-relay)
+   (default presets expand to ~10-11 peers: 4 public-libp2p presets + cn-relay + us-relay)
 
 2. kad-dht, to fill its routing table, runs FIND_NODE(q=myId)
    against those bootstrap peers. Each returns the K=20 closest peers
@@ -433,13 +433,13 @@ through: relay roster (primary, cross-NAT) + mDNS (LAN) + bonded contacts.
 still dials the configured bootstrap peers** and `identify` still runs on those
 connections. To fully kill the public-libp2p swarm, `quietWan` must also narrow
 bootstrap to EnvoyMesh relays only (drop the `public-libp2p`, `public-libp2p-am6`,
-`public-libp2p-am7` presets; keep `cn-relay`).
+`public-libp2p-am7` presets; keep `cn-relay` and `us-relay`).
 
 This is already supported by existing infrastructure:
-- `DEFAULT_CONTACTS_ONLY_BOOTSTRAP_PRESETS = ["cn-relay"]`
-  (`packages/api/src/default-bootstrap.ts:24`)
-- `normalizeBootstrapPresetsForContactsOnly()` (line 44) strips public-libp2p
-  presets and ensures `cn-relay` remains
+- `DEFAULT_CONTACTS_ONLY_BOOTSTRAP_PRESETS = ["cn-relay", "us-relay"]`
+  (`packages/api/src/default-bootstrap.ts`)
+- `normalizeBootstrapPresetsForContactsOnly()` strips public-libp2p
+  presets and ensures community `cn-relay` + `us-relay` remain
 - `discoveryProfile: "contacts-only" | "relay-only"` already maps to contacts-only
   bootstrap (`defaultBootstrapPresetsForDiscoveryProfile`, line 32)
 
@@ -903,7 +903,7 @@ The relay infrastructure already handles multiple operator-configured relays:
   (`apps/node/src/node-config-store.ts:56` — `RelayConfig[]`, each
   `{ enabled, addr }`).
 - **`collectRelayControlTargets()`** (`relay-reservation-health.ts:36`) merges
-  configured relays + community cn-relay + bootstrap, dedupes, and caps at
+  configured relays + community cn-relay + us-relay + bootstrap, dedupes, and caps at
   `DEFAULT_MAX_RELAY_CONTROL_TARGETS = 4` (line 25).
 - Both the **relay-client-cycle** (`relay.checkin`/`relay.lookup`) and the
   **reservation health loop** iterate over all collected relay targets.
@@ -990,16 +990,23 @@ file-share-capable.
 
 ---
 
-## Part VIII — Single-relay failure (cn-relay down, no fallback)
+## Part VIII — Relay failure (single relay vs dual community relays)
 
 > **Concern:** under `quietWan`, the relay roster is the primary discovery path.
-> What happens if cn-relay (the only configured relay) goes down?
+> What happens when a community relay goes down?
+
+**Current product defaults (Phase 46):** fresh installs ship **both** community
+presets (`cn-relay` + `us-relay`). The sections below still apply to **legacy
+configs** that only enable one relay, and to the case where **both** community
+relays are unreachable at once.
 
 This is the most important resilience question for the design. The answer has
 two parts: **what user-facing features break** (bounded, recoverable), and
 **what the node keeps doing** (a real concern that needs a mitigation).
 
-### 1. What breaks immediately (the user-visible impact)
+### 1. What breaks immediately (the user-visible impact — single relay only)
+
+When **only one** relay is configured and it goes down:
 
 | Feature | Impact when the only relay is down | Why |
 |---|---|---|
@@ -1081,10 +1088,11 @@ their WAN peer discovery is dead until they try to bond and it fails.
 The existing `mesh-readiness` / connectivity-diagnostics code already tracks
 `lastReservationError`; it just needs to be surfaced in the UI, not only logged.
 
-#### M3 — Multi-relay as the structural fix (operational, the real answer)
+#### M3 — Multi-relay as the structural fix (shipped in defaults + operator scale-out)
 
-The structural answer to "what if cn-relay is down" is **don't have a single
-relay**. With multiple relays configured:
+The structural answer to "what if a community relay is down" is **don't rely on
+one hop**. Current defaults configure **cn-relay + us-relay**; operators can add
+org relays via `configuredRelays` (cap 4). With multiple relays:
 
 - The reservation health loop reserves on **each** relay independently
   (multi-home circuit relaying).
@@ -1103,8 +1111,10 @@ resilient to any one going down.
 
 | Scenario | Outcome |
 |---|---|
-| cn-relay down, single relay, `quietWan` | WAN cross-NAT features break; LAN + local + public-addr peers still work. Node retries every 15s (M1 fixes this to backoff). Operator should deploy more relays (M3). |
+| One community relay down, **dual-relay defaults**, `quietWan` | **Usually no user-visible impact** — the other community relay carries reservation + lookup. |
+| One relay down, **single-relay legacy config**, `quietWan` | WAN cross-NAT features break; LAN + local + public-addr peers still work. Node retries with backoff (M1). Add `us-relay` or a backup relay. |
 | cn-relay down, multiple relays, `quietWan` | **No user-visible impact** — backup relays carry reservation + lookup load. This is the intended operating mode. |
+| Both community relays down, dual-relay defaults | Same as single-relay failure — WAN cross-NAT to CGNAT peers breaks until at least one relay recovers. |
 | cn-relay down, single relay, today's `optimized` | Same WAN breakage, but masked by DHT churn (peers *might* still be discoverable via DHT if reachable). Relay-down is less visible but still breaks cross-NAT *reachability* (DHT finds the peer but you can't dial it without a circuit). |
 
 **Action items before promoting `quietWan`:**

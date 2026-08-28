@@ -118,7 +118,7 @@ export const deNetworkSettingsMessages = {
     desc: "Schnellumschaltung zwischen vollem öffentlichem libp2p und nur Kontakte. Profilauswahl oben für Relay-only-WAN verwenden.",
     toggle: "Öffentliche libp2p-Discovery",
     profileWanDefault: "Profil: wan-default ({count} Bootstrap-Preset(s))",
-    profileContactsOnly: "Profil: contacts-only (cn-relay + Ihre konfigurierten Relays)",
+    profileContactsOnly: "Profil: contacts-only (cn-relay + us-relay + Ihre konfigurierten Relays)",
     contactsOnlyHint:
       "Fremde/globale Mesh-Discovery ist reduziert. Chat mit bestehenden Kontakten funktioniert weiter über Relay. Auf Desktop App vollständig beenden und neu öffnen, wenn sich die Verbindung nach Umschaltung nicht ändert.",
   },

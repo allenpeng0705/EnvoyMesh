@@ -155,6 +155,11 @@ export interface RelayClientCycleDeps {
   activeRelayAddrs?: readonly string[];
   inboundGuard: InboundMessageGuard;
   discoverySeedStore: DiscoverySeedStore;
+  /**
+   * Phase 46E.3 — when lookup responses include sibling relayHints from a
+   * community preset hop, call this with the sender peer id + hints.
+   */
+  onPresetVouchedHints?: (sourcePeerId: string, hints: readonly import("@envoymesh/protocol").RelayHint[]) => void;
 }
 
 /** Shared target set for checkin / lookup / reserve (Phase 46A). */
@@ -383,6 +388,17 @@ export async function queryRelayLookupWithDeps(
       }
       const responsePayload = parseRelayLookupResponsePayload(guardDecision.envelope.payload);
       await applyRelayLookupResponse(guardDecision.envelope, deps);
+      const hintSource =
+        typeof guardDecision.envelope.senderPeerId === "string"
+          ? guardDecision.envelope.senderPeerId
+          : targetPeerId;
+      if (
+        hintSource &&
+        responsePayload.relayHints.length > 0 &&
+        typeof deps.onPresetVouchedHints === "function"
+      ) {
+        deps.onPresetVouchedHints(hintSource, responsePayload.relayHints);
+      }
       console.log(`[relay-client] relay.lookup ok target=${target}`);
       return responsePayload;
     } catch (err) {

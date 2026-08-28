@@ -1,0 +1,31 @@
+{
+  "v": 1,
+  "issuedAt": "2026-08-28T00:00:00.000Z",
+  "expiresAt": "2027-08-28T00:00:00.000Z",
+  "fleetId": "envoymesh-community",
+  "maxActiveTargets": 4,
+  "relays": [
+    {
+      "id": "cn-relay",
+      "peerId": "12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo",
+      "multiaddrs": [
+        "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo"
+      ],
+      "region": "asia",
+      "role": "hub",
+      "priority": 100,
+      "enabled": true
+    },
+    {
+      "id": "us-relay",
+      "peerId": "12D3KooWAWiVSpsCjpjauz83ijLugxwScRJi89N4PA1VQ1Czsncb",
+      "multiaddrs": [
+        "/ip4/47.251.91.97/tcp/4001/p2p/12D3KooWAWiVSpsCjpjauz83ijLugxwScRJi89N4PA1VQ1Czsncb"
+      ],
+      "region": "us",
+      "role": "hub",
+      "priority": 90,
+      "enabled": true
+    }
+  ]
+}

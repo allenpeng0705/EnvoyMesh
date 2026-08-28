@@ -118,7 +118,7 @@ export const zhNetworkSettingsMessages = {
     desc: "完整公共 libp2p 与仅联系人的快速切换。使用上方配置选择器选择仅中继 WAN。",
     toggle: "公共 libp2p 发现",
     profileWanDefault: "配置：wan-default（{count} 个 bootstrap 预设）",
-    profileContactsOnly: "配置：contacts-only（cn-relay + 您配置的中继）",
+    profileContactsOnly: "配置：contacts-only（cn-relay + us-relay + 您配置的中继）",
     contactsOnlyHint:
       "陌生人/全局 mesh 发现已减少。与现有联系人的聊天仍可通过中继进行。在桌面端，若切换后连接未变化，请完全退出并重新打开应用。",
   },

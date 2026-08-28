@@ -566,6 +566,14 @@ export interface NodeConfig {
   advertiseAddrs: string[];
   bootstrapPeers: string[];
   bootstrapPresets: string[];
+  /** Phase 46E — signed remote relay roster URL (optional). */
+  relayRosterUrl?: string;
+  /** PEM public keys trusted to sign the remote relay roster. */
+  relayRosterTrustKeys?: string[];
+  /** Disable remote roster poll even when keys are set. */
+  relayRosterEnabled?: boolean;
+  /** Roster poll interval in ms (min 60000). */
+  relayRosterPollMs?: number;
   /** Model provider configuration. Default: mock provider only. */
   modelProviders: ModelProviderConfig;
   /** Optional model name override for terminal assist (Phase 30I). Falls back to modelProviders.modelName. */

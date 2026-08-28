@@ -118,7 +118,7 @@ export const jaNetworkSettingsMessages = {
     desc: "フルパブリック libp2p と連絡先のみのクイック切り替え。リレーのみ WAN は上のプロファイルセレクターを使用してください。",
     toggle: "パブリック libp2p ディスカバリー",
     profileWanDefault: "プロファイル: wan-default（bootstrap プリセット {count} 件）",
-    profileContactsOnly: "プロファイル: contacts-only（cn-relay + 設定済みリレー）",
+    profileContactsOnly: "プロファイル: contacts-only（cn-relay + us-relay + 設定済みリレー）",
     contactsOnlyHint:
       "見知らぬ相手/グローバルメッシュディスカバリーは制限されます。既存の連絡先とのチャットはリレー経由で引き続き利用できます。デスクトップでは、切り替え後に接続が変わらない場合はアプリを完全に終了して再起動してください。",
   },

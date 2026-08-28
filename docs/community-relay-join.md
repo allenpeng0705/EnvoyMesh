@@ -2,7 +2,7 @@
 
 **Goal:** Only **shipped community preset relays** (`cn-relay`, `us-relay`) may admit new relays into the **verified** sibling book. Private relays, leaf checkin hints, and gossip RTT alone must **not** auto-promote unknown relays.
 
-**Related:** [operator-relay-fleet.md](./operator-relay-fleet.md) · [relay-server-design.md](./relay-server-design.md) Part B · [layered-relay-network.md](./layered-relay-network.md)
+**Related:** [operator-relay-fleet.md](./operator-relay-fleet.md) · [add-relay-runbook.md](./add-relay-runbook.md) (day-to-day steps) · [dynamic-relay-roster.md](./dynamic-relay-roster.md) (Phase 46E — homes adopt new relays without DMG) · [relay-server-design.md](./relay-server-design.md) Part B · [layered-relay-network.md](./layered-relay-network.md)
 
 ---
 
@@ -46,7 +46,7 @@ sequenceDiagram
    ```
 3. Restart preset relays (CN + US) so they accept joins.
 4. Start the new relay — it sends `relay.join.request` to CN/US on startup.
-5. **Client preset updates** (adding the new relay to `cn-relay` / app defaults) remain a **separate release step** — join governs relay-to-relay miss-forward, not end-user bootstrap lists.
+5. **Client adoption** — join updates the **relay sibling book** (miss-forward). Homes get reservation targets from the **fleet roster** (Phase 46E Path C): new relay publishes `relay-roster.json` to peers after join; homes poll any relay — [add-relay-runbook.md](./add-relay-runbook.md). No separate CDN required.
 
 ### Gatekeeper rules (cn-relay / us-relay)
 
@@ -78,13 +78,14 @@ Uses existing intents:
 | Join evaluation + outbound client | `apps/relay/src/community-relay-join.ts` |
 | Inbound handler | `apps/relay/src/standalone-relay-control.ts` |
 | Gossip (no candidate promote) | `apps/relay/src/index.ts` |
+| Fleet roster HTTP + sync | `apps/relay/src/relay-roster-http.ts`, `relay-roster-sync.ts` |
 | CLI / env | `--relay-join-token`, `ENVOYMESH_RELAY_JOIN_TOKEN` |
 
 ---
 
 ## What this does **not** do
 
-- Does not add private org relays to the **shipped client preset** automatically.
+- Does not by itself update homes unless the new relay’s **Path C roster publish** succeeds (or ops uses Settings / org YAML). Join alone = sibling book only; see [dynamic-relay-roster.md](./dynamic-relay-roster.md).
 - Does not replace mutual `--bootstrap` for org fleets (`ENVOYMESH_RELAY_SKIP_COMMUNITY_SIBLINGS=1`).
 - Does not implement full hierarchical `relay.join` level assignment (see layered design).
 

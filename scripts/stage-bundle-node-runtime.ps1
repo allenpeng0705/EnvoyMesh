@@ -596,6 +596,18 @@ if (Test-Path $nodeConfigSrc) {
     Copy-Item -Force $nodeConfigSrc (Join-Path $Dest "node-config.json")
 }
 
+# Phase 46E Path C — seed fleet roster for first boot.
+$rosterRoot = Join-Path $Root "relay-roster.json"
+$rosterExample = Join-Path $Root "docs/examples/relay-roster.example.json"
+$rosterDest = Join-Path $Dest "relay-roster.json"
+if (Test-Path $rosterRoot) {
+    Write-Host "  Staging bundled relay-roster.json (seed)..."
+    Copy-Item -Force $rosterRoot $rosterDest
+} elseif (Test-Path $rosterExample) {
+    Write-Host "  Staging bundled relay-roster.json (from example)..."
+    Copy-Item -Force $rosterExample $rosterDest
+}
+
 # Phase 50 — stage push notification credentials into the bundle.
 # These are optional secret files the operator places at the repo root
 # before building. They get bundled into the exe so the home node can

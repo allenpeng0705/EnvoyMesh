@@ -294,7 +294,7 @@ This is intentionally separate from “LAN fast path” work: WAN reliability is
 
 - `[x]` Define an **operator bootstrap + relay fleet** baseline (preset catalog, **EnvoyMesh community relay** `cn-relay`, rotation expectations, org-owned injection path) — documented in [operator-relay-fleet.md](./operator-relay-fleet.md). *(Ongoing: operate regional DNS-named relays outside the repo as your product requires.)*
 - `[x]` Ship **defaults + operator presets** as a product concern: documented preset names and runbook; code sources `DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS`, `bootstrap-resolver` `KNOWN_PRESETS`, CLI `--bootstrap-preset` / `--bootstrap-presets-file`.
-- `[~]` Ship a **default org preset** story: **supported** path via **`--bootstrap-presets-file`** + explicit `--bootstrap` — documented in [operator-relay-fleet.md](./operator-relay-fleet.md) §4. *(Not shipped: signed/governed global preset list verified by trust anchors — future hardening.)*
+- `[~]` Ship a **default org preset** story: **supported** path via **`--bootstrap-presets-file`** + explicit `--bootstrap` — documented in [operator-relay-fleet.md](./operator-relay-fleet.md) §4. *(Phase **46E** shipped: [dynamic-relay-roster.md](./dynamic-relay-roster.md) — Path C any-relay roster + fleet sync, N→K active set, hot-reload.)*
 - `[ ]` Validate **circuit relay v2** end-to-end: reservation, `/p2p-circuit` multiaddrs observed, relayed dials succeed under symmetric NAT / strict outbound-only networks.
 - `[ ]` Validate **DCUtR** upgrade path where supported (relay-coordinated punch) and document expected failure modes when punch is impossible.
 - `[ ]` Validate **AutoNAT / observed address** publishing path so peers learn externally meaningful multiaddrs (not only loopback/LAN-only).
@@ -6076,11 +6076,11 @@ See design doc §11 for the full list of 10 open questions. None block Phase 45A
 
 ## Phase 46 — Multi-Relay Fleet Coordination
 
-**Status:** `[x]` shipped (46A–46C + in-process/process E2E; live dual-relay signoff operator-gated via `TEST_RELAY_A`/`TEST_RELAY_B`)  
-**Goal:** Make **multiple standalone relays** (same region or multi-region) work together so normal nodes that check in / reserve on different relays can still **discover** each other and obtain **dialable** `/p2p-circuit/` paths — without replicating full leaf rosters.
+**Status:** `[x]` shipped (46A–46C + 46D gated join + **46E** Path C roster + fleet sync)
+**Goal:** Make **multiple standalone relays** (same region or multi-region) work together so normal nodes that check in / reserve on different relays can still **discover** each other and obtain **dialable** `/p2p-circuit/` paths — without replicating full leaf rosters. **46E** lets ops add relay #N without a new DMG/EXE/EnvoyGo (fleet of N, active set of K≈4).
 
 **Design doc (source of truth):** [relay-server-design.md](./relay-server-design.md) — Part A = shipped standalone relay; **Part B = this phase**.  
-**Related:** [operator-relay-fleet.md](./operator-relay-fleet.md) · [layered-relay-network.md](./layered-relay-network.md) (longer-term join/summary graph) · [p2p-discovery.md](./p2p-discovery.md)
+**Related:** [operator-relay-fleet.md](./operator-relay-fleet.md) · [community-relay-join.md](./community-relay-join.md) (46D) · [dynamic-relay-roster.md](./dynamic-relay-roster.md) (46E) · [layered-relay-network.md](./layered-relay-network.md) (longer-term join/summary graph) · [p2p-discovery.md](./p2p-discovery.md)
 
 **Problem:** Each `apps/relay` keeps a local checkin roster and local circuit-relay-v2 reservations. Lookup is hop-only (no live reservation ⇒ peer omitted). If Home uses Relay-CN only and Joiner uses Relay-EU only, discovery and relayed dials fail.
 
@@ -6091,8 +6091,10 @@ See design doc §11 for the full list of 10 open questions. None block Phase 45A
 | **46A** | Client multi-home | Shared `collectRelayControlTargets`; checkin + lookup + reserve on the full EnvoyMesh relay set (cap ~4); parallel/time-boxed cycles; org preset guidance (regional + hub) |
 | **46B** | One-hop miss-forward | Standalone relay forwards `relay.lookup` to verified siblings when local miss / under `maxResults`; client `maxHops: 1`; merge prefers hoppable candidates |
 | **46C** | Sibling-list gossip | Bounded relay book; periodic `relay.hints` exchange; verify before promote; leaf checkin hints = candidates only |
+| **46D** | Gated community join | Only CN/US presets admit new relays to verified sibling book via join token — [community-relay-join.md](./community-relay-join.md) |
+| **46E** | Dynamic client roster | Path C: any-relay HTTP roster + fleet PUT sync + N→K + hot-reload + hint promote — [dynamic-relay-roster.md](./dynamic-relay-roster.md) `[x]` |
 
-**Does not ship in 46:** full roster sync, `relay.summary` topic blooms, automated `relay.join` hierarchy (remain in layered design).
+**Does not ship in 46:** full leaf roster sync, `relay.summary` topic blooms, layered hierarchical join (remain in layered design).
 
 ### 46A — Client multi-home `[x]`
 
@@ -6120,6 +6122,19 @@ See design doc §11 for the full list of 10 open questions. None block Phase 45A
 - `[x]` In-process two-relay E2E (`multi-relay-fleet-e2e.test.ts`: multi-home + miss-forward)
 - `[x]` Process-spawn two-relay E2E (`multi-relay-fleet-process-e2e.test.ts`: real `apps/relay` + `/info` + control identity)
 - `[x]` Gated live dual-relay E2E (`multi-relay-fleet-live-e2e.test.ts` / `TEST_RELAY_A`+`TEST_RELAY_B`; `./scripts/multi-relay-fleet-live-signoff.sh`)
+
+### 46E — Dynamic relay roster (homes adopt #N without package upgrade) `[x]`
+
+Design + ops: [dynamic-relay-roster.md](./dynamic-relay-roster.md), [add-relay-runbook.md](./add-relay-runbook.md). Steady-state: deploy new relay → gated join → **auto roster publish** to fleet → homes poll any relay. No CDN required; no CN/US restart per add (after one-time Path C sync build + token); no DMG/EnvoyGo per add.
+
+- `[x]` **46E.1** Hot-reload active targets on `updateNodeConfig` / `addRelay` / `removeRelay` — `relay-targets-reload.ts`
+- `[x]` **46E.2** Roster poll + cache + `selectActiveRelayTargets` (fleet N → active K≈4) — `packages/api/src/relay-roster.ts`, `relay-roster-feed.ts`
+- `[x]` **46E.3** Preset-vouched `relay.hints` → candidates → active set — `relay-hint-promote.ts`
+- `[x]` **46E.4** Path C defaults: poll any known relay HTTP; DMG/EXE seed; feed on without trust keys
+- `[x]` **46E.5** Fleet sync: join-token `PUT /relay-roster.json`, publish after join, fanout, pull-adopt — `relay-roster-http.ts`, `relay-roster-sync.ts`
+- `[x]` Unit tests: select/verify/upsert, hint promote, hot-reload, roster put/publish
+
+**Optional:** `scripts/sign-relay-roster.sh` if you want signed docs + home trust keys (not required for Path C known-host fetch).
 
 ### Phase 46 exit criteria
 
@@ -7990,7 +8005,8 @@ Owner (creator home)                Remote Assigner (optional)
 | 2026-07-24 | **Phase 48 — A2A + MCP Interop Bridges designed.** Added Phase 48 section (48A–48D sub-phases, all `[ ]` future) covering four interop bridges: 48A (MCP tool consumer — agent calls external MCP servers via `mesh.mcp.call_tool`), 48B (MCP server adapter — Claude Desktop/Cursor uses EnvoyMesh tools via stdio/HTTP), 48C (A2A Agent Card bridge — external A2A clients discover EnvoyMesh via `/.well-known/agent-card.json`), 48D (A2A Task bridge — external A2A agents delegate tasks via JSON-RPC `message/send`). Design principle: bridge, don't replace — EnvoyMesh keeps libp2p + signed envelopes + Bonds + mandates internally. Full design in [a2a-mcp-interop-design.md](./a2a-mcp-interop-design.md). No code changes — design + roadmap only. |
 | 2026-07-23 | **Phase 47A shipped (outer iteration B).** `chain-iteration.ts` + `tryCompleteChainIfReady` seal→draft→judge→continue; round-scoped synthesize; single terminal publish; `iterationMaxRounds` defaults/knobs; `_continueIterationRound`; unit tests in `chain-iteration.test.ts`. 47B–47D remain open. |
 | 2026-07-23 | **Phase 47 designed (A ∩ B Team job iteration).** Design doc [agent-network-iteration.md](./agent-network-iteration.md) reviewed against orchestrator (round-scoped synthesize, no mid-loop publish/finalize, no `task.chain.merge` as outer loop, sealed IDs vs stall). Implementation-plan Phase 47 checklist: 47A outer loop → 47B extend → 47C UX → 47D handoff. Defaults `iterationMaxRounds=1`. **No code yet.** |
-| 2026-07-21 | **Phase 46 doc hygiene.** Operator fleet §8 add-Nth-relay runbook; design A7 auth + B7#3 demoted + B9 risks; multi-relay preset example; cleared stale “live smoke deferred” banners. |
+| 2026-08-28 | **Phase 46E designed.** [dynamic-relay-roster.md](./dynamic-relay-roster.md): signed remote fleet feed, N→K≈4 active set, hot-reload, preset-vouched hints; ops add relay #N without DMG/EXE/EnvoyGo after one-time capability ship. |
+| 2026-08-28 | **Phase 46E Path C + fleet sync shipped.** Homes poll any relay `GET /relay-roster.json`; new relay publishes via join-token PUT after join; DMG seed; [add-relay-runbook.md](./add-relay-runbook.md). |
 | 2026-07-21 | **Phase 46 P2/P3 tests.** Gated live `TEST_RELAY_A`/`TEST_RELAY_B` E2E + signoff script; process-spawn `apps/relay` E2E; `npm run test:e2e:relay:fleet` / `:process` / `:live`; serialize multi-relay `addRelay` (parallel RESERVE deadlocks); skip empty libp2p bootstrap list after loopback filter. |
 | 2026-07-21 | **Phase 46 test gaps closed.** In-process E2E `multi-relay-fleet-e2e` (46A multi-home + 46B miss-forward); unit coverage for merge/negative-cache/hints promote/`maxHops:1` client payload; design matrix miss-forward marked shipped. |
 | 2026-07-21 | **Phase 46 shipped (46A–46C).** Client `collectRelayControlTargets` + parallel checkin/lookup; standalone miss-forward + sibling book/`relay.hints` gossip; client `maxHops: 1`. Unit tests in `relay-reservation-health` + `relay-miss-forward`. Optional two-relay live smoke deferred. |

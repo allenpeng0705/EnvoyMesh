@@ -1,13 +1,13 @@
 # Relay Server Design
 
-**Status:** Part A shipped; **Part B (Phase 46) shipped** (46A–46C + in-process/process E2E; live dual-relay signoff is operator-gated via `TEST_RELAY_A`/`TEST_RELAY_B`)  
+**Status:** Part A shipped; **Part B (46A–46C) shipped**; **46D** gated join shipped; **46E** Path C roster + fleet sync [shipped](./dynamic-relay-roster.md)  
 **Audience:** Operators running the relay binary and engineers extending discovery / circuit-relay  
-**Related:** [Operator relay fleet](./operator-relay-fleet.md) · [Layered relay network (long-term graph)](./layered-relay-network.md) · [P2P discovery](./p2p-discovery.md) · [Implementation plan Phase 46](./implementation-plan.md#phase-46--multi-relay-fleet-coordination) · [Run relay scripts](./run-relay-scripts.md)
+**Related:** [Operator relay fleet](./operator-relay-fleet.md) · [Community relay join](./community-relay-join.md) · [Dynamic relay roster (46E)](./dynamic-relay-roster.md) · [Layered relay network (long-term graph)](./layered-relay-network.md) · [P2P discovery](./p2p-discovery.md) · [Implementation plan Phase 46](./implementation-plan.md#phase-46--multi-relay-fleet-coordination) · [Run relay scripts](./run-relay-scripts.md)
 
 This document is the **dedicated design for the standalone EnvoyMesh relay server**. It covers:
 
 - **Part A** — what `apps/relay` does today (circuit hop, roster, Admin, WebSocket surfaces)
-- **Part B** — Phase 46 multi-relay fleet coordination (multi-home clients, one-hop miss-forward, sibling-list gossip)
+- **Part B** — Phase 46 multi-relay fleet coordination (multi-home clients, one-hop miss-forward, sibling-list gossip; 46D join; 46E client roster)
 - **Part C** — how this relates to other docs and the build checklist
 
 It does **not** replace [layered-relay-network.md](./layered-relay-network.md) (longer-horizon join / summary / multi-hop graph) or [operator-relay-fleet.md](./operator-relay-fleet.md) (presets, systemd, **add-Nth-relay runbook**, verification).
@@ -383,7 +383,7 @@ Schemas: `@envoymesh/protocol` (`RelayHintSchema`, etc.).
 
 1. Exact verify probe: hints RTT only vs identify/stream open? → **hints RTT**
 2. Miss-forward when local non-empty but under `maxResults`? → **yes (union underfill)**
-3. Cap of 4 client targets vs 2–3 active reservations? → **cap 4; reserve-all-reachable**
+3. Cap of 4 client targets vs 2–3 active reservations? → **cap 4; reserve-all-reachable** (fleet size may be 10+; active set stays K — see [46E](./dynamic-relay-roster.md))
 
 ## B9. Implementation risks (shipped mitigations)
 
@@ -394,7 +394,13 @@ Schemas: `@envoymesh/protocol` (`RelayHintSchema`, etc.).
 | Parallel multi-relay `addRelay` deadlock | `@envoymesh/network` `requestRelayReservation` **serializes** RESERVE across targets |
 | Loopback `--bootstrap` + empty libp2p bootstrap list | Sibling book still seeded from CLI; libp2p Bootstrap service enabled only when filtered list is non-empty |
 | Stale sibling addrs | Book TTL (~35 min) + hints RTT verify before promote |
-| Scale beyond ~4 client targets | Cap ~4; larger fleets need layered join/summary (deferred) |
+| Scale beyond ~4 client targets | Cap ~4 active hops; larger **fleets** via [46E Path C roster](./dynamic-relay-roster.md) (N→K selection); hierarchical join/summary still deferred |
+
+## B10. Phase 46E — Dynamic client roster (shipped)
+
+Homes adopt relay #N without a package upgrade: fleet `relay-roster.json` on **every** relay (`GET` public, `PUT` join-token), homes poll any known relay, select ≤K≈4, hot-reload; new relay publishes after join so peers converge. Optional signature/CDN. **Source of truth:** [dynamic-relay-roster.md](./dynamic-relay-roster.md). Ops: [add-relay-runbook.md](./add-relay-runbook.md).
+
+Steady-state after one-time Path C sync build + join token on CN/US: deploy new relay → gated join → auto roster publish. No CN/US restart per add, no DMG/EXE/EnvoyGo change.
 
 ---
 
@@ -403,9 +409,11 @@ Schemas: `@envoymesh/protocol` (`RelayHintSchema`, etc.).
 | Doc | Role vs this design |
 |-----|---------------------|
 | [operator-relay-fleet.md](./operator-relay-fleet.md) | **How to run** — presets, systemd, **§8 add Nth relay**, verify + live miss-forward |
+| [community-relay-join.md](./community-relay-join.md) | **46D** gated join into verified sibling book |
+| [dynamic-relay-roster.md](./dynamic-relay-roster.md) | **46E** Path C any-relay roster + fleet sync + N→K + hot-reload |
 | [layered-relay-network.md](./layered-relay-network.md) | **After 46** — join, summary-guided multi-hop, root relays |
 | [p2p-discovery.md](./p2p-discovery.md) | Discovery model + dialable advertise bases |
-| [implementation-plan.md Phase 46](./implementation-plan.md#phase-46--multi-relay-fleet-coordination) | **Build checklist** for 46A–46C only |
+| [implementation-plan.md Phase 46](./implementation-plan.md#phase-46--multi-relay-fleet-coordination) | **Build checklist** for 46A–46E |
 | [run-relay-scripts.md](./run-relay-scripts.md) | Script quick start |
 
 | Layered design theme | Phase 46 stance |
@@ -413,6 +421,8 @@ Schemas: `@envoymesh/protocol` (`RelayHintSchema`, etc.).
 | Local roster | Shipped (Part A) |
 | Multi-relay client | **46A** |
 | Thin relay book + hints | **46C** (not full join) |
+| Gated community join | **46D** |
+| Dynamic client roster (N→K) | **46E** (shipped — Path C + sync) |
 | Summary-guided multi-hop | **Deferred** after 46 |
 | Search / privacy layer | Out of scope |
 
@@ -422,6 +432,7 @@ Schemas: `@envoymesh/protocol` (`RelayHintSchema`, etc.).
 
 | Date | Change |
 |------|--------|
+| 2026-08-28 | **46E Path C + fleet sync shipped** — any-relay roster HTTP, join-token PUT publish, home poll + DMG seed; see [dynamic-relay-roster.md](./dynamic-relay-roster.md). |
 | 2026-07-21 | **Doc hygiene after Phase 46 review.** Fixed stale “live smoke deferred” banners; A7 Basic Auth table; B6 paths; B7#3 demoted to manual; B9 risks (serial `addRelay`, empty bootstrap); link operator §8. |
 | 2026-07-21 | **Phase 46 implemented** (46A–46C): client multi-home, miss-forward, sibling hints gossip. |
 | 2026-07-21 | Expanded to full standalone relay design: Part A (shipped surface) + Part B (Phase 46) + Part C (doc map). |

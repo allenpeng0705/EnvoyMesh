@@ -2,7 +2,9 @@
 
 This document is the **product-facing baseline** for WAN connectivity defaults: which bootstrap **presets** ship in the node, what the **EnvoyMesh community relay** is, how **org-owned** bootstraps and relays fit, and how **key / multiaddr rotation** should be handled. Implementation sources: `packages/api/src/default-bootstrap.ts`, `apps/node/src/bootstrap-resolver.ts` (`KNOWN_PRESETS`), `apps/node/src/args.ts`.
 
-**Related:** [Relay server design](./relay-server-design.md) · [Layered relay network (long-term graph)](./layered-relay-network.md) · [P2P discovery](./p2p-discovery.md) · [Live connectivity testing](./live-connectivity-testing.md) · [Implementation plan Phase 46](./implementation-plan.md#phase-46--multi-relay-fleet-coordination) · [Implementation plan Phase 4 WAN](./implementation-plan.md#phase-4-wan-follow-on-rendezvous-relay-and-nat-traversal)
+**Adding a new relay?** Start here → **[add-relay-runbook.md](./add-relay-runbook.md)** (community gated join + Path C roster sync, or org mutual-bootstrap).
+
+**Related:** [Relay server design](./relay-server-design.md) · [Dynamic relay roster (46E)](./dynamic-relay-roster.md) · [Community relay join (46D)](./community-relay-join.md) · [Layered relay network (long-term graph)](./layered-relay-network.md) · [P2P discovery](./p2p-discovery.md) · [Live connectivity testing](./live-connectivity-testing.md) · [Implementation plan Phase 46](./implementation-plan.md#phase-46--multi-relay-fleet-coordination) · [Implementation plan Phase 4 WAN](./implementation-plan.md#phase-4-wan-follow-on-rendezvous-relay-and-nat-traversal)
 
 ---
 
@@ -87,7 +89,7 @@ Clients check in, look up, and **reserve** on a shared EnvoyMesh target set (cap
 
 Do **not** set both live vars to the same community `cn-relay` — one peer cannot prove miss-forward.
 
-**Governed signed preset list** (future hardening): operators could publish a **signed JSON** list of allowed bootstrap peer ids; the node would verify signatures against configured trust anchors — **not shipped** as of this doc; track in implementation plan if product requires it.
+**Governed relay roster** (Phase **46E**, shipped — Path C): fleet `relay-roster.json` served from **every** relay HTTP port; homes poll any known relay; new relays publish after join so the fleet converges. Fleet may be 10+; each home still activates ≤ ~4 hops. Design: [dynamic-relay-roster.md](./dynamic-relay-roster.md). Ops steps: [add-relay-runbook.md](./add-relay-runbook.md).
 
 ---
 
@@ -133,11 +135,14 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/home/admin/mygithub/EnvoyMesh/node /home/admin/mygithub/EnvoyMesh/apps/relay/dist/index.js \
-  --profile /home/admin/mygithub/EnvoyMesh/data/relay \
+WorkingDirectory=/opt/EnvoyMesh
+# Seed live roster once from the checkout; -n never overwrites after fleet sync.
+ExecStartPre=/bin/mkdir -p /var/lib/envoymesh-relay
+ExecStartPre=/bin/cp -n /opt/EnvoyMesh/relay-roster.json /var/lib/envoymesh-relay/relay-roster.json
+ExecStart=/opt/EnvoyMesh/node /opt/EnvoyMesh/apps/relay/dist/index.js \
+  --profile /var/lib/envoymesh-relay \
   --listen /ip4/0.0.0.0/tcp/4001 \
   --advertise-addr /ip4/47.93.11.212/tcp/4001 \
-  --bootstrap /ip4/<sibling-public-ip>/tcp/4001/p2p/<sibling-peer-id> \
   --http-port 15432
 Restart=always
 RestartSec=5
@@ -147,10 +152,9 @@ User=admin
 Environment=NODE_ENV=production
 Environment=ENVOYMESH_RELAY_ADMIN_USER=admin
 Environment=ENVOYMESH_RELAY_ADMIN_PASSWORD=change-me-before-public
-# Gated community join (Phase 46D): same secret on cn-relay, us-relay, and any new fleet relay.
 Environment=ENVOYMESH_RELAY_JOIN_TOKEN=your-long-random-secret
-# Optional explicit override (advertise-addr already implies public mode):
-# Environment=ENVOYMESH_RELAY_PUBLIC_MODE=1
+Environment=ENVOYMESH_RELAY_ROSTER_PATH=/var/lib/envoymesh-relay/relay-roster.json
+# Optional: Environment=ENVOYMESH_RELAY_ROSTER_SEED=/opt/EnvoyMesh/relay-roster.json
 
 [Install]
 WantedBy=multi-user.target
@@ -200,7 +204,9 @@ Exact `targetPeerId` / `targetOwnerId` lookups are answered under `visibilitySco
 
 ## 8. Adding a second (or Nth) relay
 
-Use this when expanding beyond a single community/org hop. Phase 46 miss-forward only works when relays **seed each other** (or learn via verified `relay.hints` — slower / less reliable for production cutover). Prefer **mutual `--bootstrap`**.
+**Preferred community path (join + auto roster publish, no DMG per relay):** see **[add-relay-runbook.md](./add-relay-runbook.md)**.
+
+Use the steps below for **org mutual `--bootstrap`** detail, or private fleets that skip community join. Phase 46 miss-forward only works when relays **seed each other** (or learn via verified `relay.hints` — slower / less reliable for production cutover). Prefer **mutual `--bootstrap`** for private fleets.
 
 ### Prerequisites
 
@@ -267,7 +273,7 @@ Use this when expanding beyond a single community/org hop. Phase 46 miss-forward
 
 ## 9. Gated join for community fleet expansion (Phase 46D)
 
-When adding a relay to the **community preset fleet** (not just org mutual-bootstrap), use **`relay.join.request`** so only `cn-relay` / `us-relay` gatekeepers admit verified siblings. Full design: [community-relay-join.md](./community-relay-join.md).
+When adding a relay to the **community preset fleet** (not just org mutual-bootstrap), use **`relay.join.request`** so only `cn-relay` / `us-relay` gatekeepers admit verified siblings. Full design: [community-relay-join.md](./community-relay-join.md). **End-to-end add-relay steps (join + roster):** [add-relay-runbook.md](./add-relay-runbook.md).
 
 **Quick runbook:**
 
@@ -275,9 +281,9 @@ When adding a relay to the **community preset fleet** (not just org mutual-boots
    ```bash
    export ENVOYMESH_RELAY_JOIN_TOKEN='…'   # ≥ 8 chars; same on all three hosts
    ```
-2. Restart **both** preset relays with the token set (they reject joins if unset).
+2. Restart **both** preset relays with the token set (they reject joins if unset). **Once** this is live, later relays need no CN/US config change.
 3. Start the new relay with `--advertise-addr`, public mode, and the same token — it auto-sends join on startup.
 4. Confirm logs: `join.request accepted` on a preset; `Community join accepted` on the new relay.
-5. Ship a **client preset release** if end users should dial the new relay directly (join alone does not update app defaults).
+5. **Client adoption (Phase 46E Path C):** after join, the new relay **publishes** an updated `relay-roster.json` to fleet peers (join-token PUT). Homes poll **any** relay’s `GET /relay-roster.json` and hot-reload — no CDN, no new DMG/EnvoyGo. Steps: [add-relay-runbook.md](./add-relay-runbook.md). Escape hatch: Settings → Add relay / org YAML.
 
-**Private org relays** are unchanged: use mutual `--bootstrap` and `ENVOYMESH_RELAY_SKIP_COMMUNITY_SIBLINGS=1`; they do not participate in community gated join unless their peer ids are added to the shipped preset list in a release.
+**Private org relays** are unchanged: use mutual `--bootstrap` and `ENVOYMESH_RELAY_SKIP_COMMUNITY_SIBLINGS=1`; they do not participate in community gated join unless their peer ids are added to the shipped preset list (or org signed roster) in a release / feed.

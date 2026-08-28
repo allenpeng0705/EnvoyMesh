@@ -118,7 +118,7 @@ export const itNetworkSettingsMessages = {
     desc: "Commutazione rapida tra libp2p pubblico completo e solo contatti. Usa il selettore profilo sopra per WAN solo relay.",
     toggle: "Discovery libp2p pubblica",
     profileWanDefault: "Profilo: wan-default ({count} preset bootstrap)",
-    profileContactsOnly: "Profilo: contacts-only (cn-relay + i tuoi relay configurati)",
+    profileContactsOnly: "Profilo: contacts-only (cn-relay + us-relay + i tuoi relay configurati)",
     contactsOnlyHint:
       "La discovery mesh globale/sconosciuti è ridotta. La chat con contatti esistenti funziona ancora via relay. Su desktop, chiudi completamente e riapri l'app se la connettività non cambia dopo la commutazione.",
   },

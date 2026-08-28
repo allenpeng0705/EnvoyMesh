@@ -572,6 +572,25 @@ echo "Verifying Tauri bundle resources (post-Social)..."
 bash scripts/verify-tauri-resources.sh
 echo ""
 
+# Step 3.5: Deep-sign nested Mach-O in staged resources (macOS notarization).
+# Tauri codesigns the .app shell but not node_modules natives under resources/.
+if [ "$(uname -s)" = "Darwin" ]; then
+  case "${TARGET}" in
+    all|macos)
+      if [ "${MAC_APP_STORE:-0}" = "1" ]; then
+        apply_apple_appstore_signing_env
+      else
+        apply_apple_signing_env
+      fi
+      if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+        echo "Signing nested Mach-O in Tauri resources (notarization)..."
+        bash scripts/sign-macos-staged-resources.sh
+        echo ""
+      fi
+      ;;
+  esac
+fi
+
 # Step 4: Build Tauri
 echo "[4/6] Building Tauri desktop app..."
 

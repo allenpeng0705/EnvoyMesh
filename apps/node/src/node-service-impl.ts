@@ -1064,6 +1064,9 @@ import {
   resolveRelayClientControlTargets,
   type RelayClientCycleDeps,
 } from "./relay-client-cycle.js";
+import { createRelayRosterFeed } from "./relay-roster-feed.js";
+import { reloadRelayControlTargets } from "./relay-targets-reload.js";
+import { createVouchedRelayHintStore } from "./relay-hint-promote.js";
 import { publishWebContentEntry as publishWebContentEntryAuthor, ensureDefaultWebSite as ensureDefaultWebSiteAuthor, listWebContentSections as listWebContentSectionsAuthor, listFeedPosts as listFeedPostsAuthor, listBlogPosts as listBlogPostsAuthor, deleteWebContentEntry as deleteWebContentEntryAuthor, galleryPhotoWallStablePath, removeGalleryPhotoWallMirror, updateGalleryPhotoWallVisibility, publishProfilePortal } from "./web-content-author.js";
 import { sendFeedNotifyToBonds, sendFeedNotifyToOwner, type FeedNotifyPublishMeta } from "./feed-notify-outbound.js";
 import {
@@ -3259,6 +3262,13 @@ class NodeServiceImpl implements NodeService {
   private _agentCardRefreshStartupTimeout?: ReturnType<typeof setTimeout>;
   private _stopRelayClientScheduler?: () => void;
   private _relayClientCycleDeps?: RelayClientCycleDeps;
+  /** Phase 46E — stop signed roster poller. */
+  private _stopRelayRosterFeed?: () => void;
+  /** Phase 46E — last selected addrs from signed roster (+ used on reload). */
+  private _relayRosterSelectedAddrs: string[] = [];
+  /** Phase 46E.3 — preset-vouched hint multiaddrs. */
+  private _vouchedRelayHints = createVouchedRelayHintStore();
+  private _vouchedHintReloadTimer?: ReturnType<typeof setTimeout>;
   private _capabilityDiscoveryTimer?: ReturnType<typeof setTimeout>;
   private _stopNodeStatsLogging?: () => void;
   private _nodeProcessStartedAtMs = Date.now();
@@ -11654,6 +11664,37 @@ class NodeServiceImpl implements NodeService {
         });
       }
       await updateNodeConfigViaRuntime(this._nodeConfigContext(), nodePatch as Partial<NodeConfig>);
+      const relayConfigTouched =
+        Object.prototype.hasOwnProperty.call(nodePatch, "configuredRelays") ||
+        Object.prototype.hasOwnProperty.call(nodePatch, "bootstrapPresets") ||
+        Object.prototype.hasOwnProperty.call(nodePatch, "bootstrapPeers") ||
+        Object.prototype.hasOwnProperty.call(nodePatch, "relayRosterUrl") ||
+        Object.prototype.hasOwnProperty.call(nodePatch, "relayRosterTrustKeys") ||
+        Object.prototype.hasOwnProperty.call(nodePatch, "relayRosterEnabled") ||
+        Object.prototype.hasOwnProperty.call(nodePatch, "relayRosterPollMs") ||
+        Object.prototype.hasOwnProperty.call(nodePatch, "relayEnabled") ||
+        Object.prototype.hasOwnProperty.call(nodePatch, "relayReservationEnabled");
+      if (relayConfigTouched) {
+        void this._reloadRelayControlTargets("update-node-config").catch((err) => {
+          console.warn(
+            "[relay-reload] after updateNodeConfig failed:",
+            err instanceof Error ? err.message : err,
+          );
+        });
+        if (
+          Object.prototype.hasOwnProperty.call(nodePatch, "relayRosterUrl") ||
+          Object.prototype.hasOwnProperty.call(nodePatch, "relayRosterTrustKeys") ||
+          Object.prototype.hasOwnProperty.call(nodePatch, "relayRosterEnabled") ||
+          Object.prototype.hasOwnProperty.call(nodePatch, "relayRosterPollMs")
+        ) {
+          void this._startRelayRosterFeed().catch((err) => {
+            console.warn(
+              "[relay-roster] restart feed after config failed:",
+              err instanceof Error ? err.message : err,
+            );
+          });
+        }
+      }
       try {
         const persisted = await this._configStore.load();
         if (persisted) {
@@ -12182,11 +12223,113 @@ class NodeServiceImpl implements NodeService {
   }
 
   async addRelay(addr: string, level?: number, region?: string): Promise<RelayConfig> {
-    return addRelayViaRuntime(this._manifestContext(), addr, level, region);
+    const relay = await addRelayViaRuntime(this._manifestContext(), addr, level, region);
+    await this._reloadRelayControlTargets("add-relay");
+    return relay;
   }
 
   async removeRelay(relayId: string): Promise<void> {
     await removeRelayViaRuntime(this._manifestContext(), relayId);
+    await this._reloadRelayControlTargets("remove-relay");
+  }
+
+  /**
+   * Phase 46E — re-warm reservations + restart relay-client cycle without process restart.
+   */
+  async _reloadRelayControlTargets(reason: string): Promise<void> {
+    const mesh = this._mesh ?? this._externalMesh;
+    const deps = this._relayClientCycleDeps;
+    if (!mesh || !deps) {
+      console.log(`[relay-reload] skip (${reason}): mesh/deps not ready`);
+      return;
+    }
+    const config = await this._configStore.load();
+    if (!config) return;
+
+    const pinned = (config.configuredRelays ?? [])
+      .filter((r) => r.enabled !== false && r.addr?.trim())
+      .map((r) => r.addr!.trim());
+    const activeRelayAddrs = [
+      ...this._relayRosterSelectedAddrs,
+      ...this._vouchedRelayHints.listAddrs(),
+    ];
+
+    const nextDeps: RelayClientCycleDeps = {
+      ...deps,
+      mesh: mesh as never,
+      bootstrapPeers: config.bootstrapPeers ?? deps.bootstrapPeers,
+      configuredRelays: config.configuredRelays,
+      bootstrapPresets: config.bootstrapPresets,
+      activeRelayAddrs,
+    };
+
+    const connectivity = resolveConnectivityRuntime({
+      profile: (config.discoveryProfile ?? "wan-default") as never,
+      enableMdns: config.enableMdns,
+      tuning: {
+        connectivityMode: config.connectivityMode,
+        maxConnections: config.maxConnections,
+        mdnsIntervalMs: config.mdnsIntervalMs,
+        capabilityDiscoveryIntervalMs: config.capabilityDiscoveryIntervalMs,
+        lazyCapabilityDiscovery: config.lazyCapabilityDiscovery,
+        idleTimerStretch: config.idleTimerStretch,
+      },
+    });
+
+    await reloadRelayControlTargets({
+      mesh: mesh as never,
+      deps: {
+        ...nextDeps,
+        onPresetVouchedHints: (sourcePeerId, hints) => {
+          const before = this._vouchedRelayHints.listAddrs().length;
+          const after = this._vouchedRelayHints.noteFromPreset(sourcePeerId, hints).length;
+          if (after <= before) return;
+          if (this._vouchedHintReloadTimer) clearTimeout(this._vouchedHintReloadTimer);
+          this._vouchedHintReloadTimer = setTimeout(() => {
+            this._vouchedHintReloadTimer = undefined;
+            void this._reloadRelayControlTargets("vouched-hints").catch(() => undefined);
+          }, 15_000);
+        },
+      },
+      activeRelayAddrs,
+      relayEnabled: config.relayEnabled ?? true,
+      relayReservationEnabled: config.relayReservationEnabled ?? true,
+      intervalMs: connectivity.relayCycleBaseMs,
+      stopScheduler: this._stopRelayClientScheduler,
+      setDeps: (d) => {
+        this._relayClientCycleDeps = d;
+      },
+      setStopScheduler: (fn) => {
+        this._stopRelayClientScheduler = fn;
+      },
+    });
+    console.log(`[relay-reload] done reason=${reason} pinned=${pinned.length} roster=${this._relayRosterSelectedAddrs.length}`);
+  }
+
+  async _startRelayRosterFeed(): Promise<void> {
+    this._stopRelayRosterFeed?.();
+    this._stopRelayRosterFeed = undefined;
+    const config = await this._configStore.load();
+    if (!config) return;
+    const pinned = (config.configuredRelays ?? [])
+      .filter((r) => r.enabled !== false && r.addr?.trim())
+      .map((r) => r.addr!.trim());
+    const feed = createRelayRosterFeed({
+      profileDir: config.profileDir,
+      url: config.relayRosterUrl,
+      trustPublicKeyPems: config.relayRosterTrustKeys,
+      enabled: config.relayRosterEnabled,
+      pollMs: config.relayRosterPollMs,
+      pinnedAddrs: pinned,
+      vouchedAddrs: this._vouchedRelayHints.listAddrs(),
+      knownMultiaddrs: pinned,
+      nodeBundleDir: process.env.ENVOYMESH_NODE_BUNDLE_DIR,
+      onRosterApplied: async (addrs) => {
+        this._relayRosterSelectedAddrs = addrs;
+        await this._reloadRelayControlTargets("roster-feed");
+      },
+    });
+    this._stopRelayRosterFeed = await feed.start();
   }
 
   // ============================================
@@ -12231,16 +12374,53 @@ class NodeServiceImpl implements NodeService {
         );
       });
       this.startVaultRagWatcher();
+      this._attachPresetVouchedHintHandler();
+      void this._startRelayRosterFeed().catch((err) => {
+        console.warn(
+          "[relay-roster] start feed failed:",
+          err instanceof Error ? err.message : err,
+        );
+      });
       return;
     }
     await startNodeViaRuntime(this._startNodeContext());
+    this._attachPresetVouchedHintHandler();
     this.startVaultRagWatcher();
+    void this._startRelayRosterFeed().catch((err) => {
+      console.warn(
+        "[relay-roster] start feed failed:",
+        err instanceof Error ? err.message : err,
+      );
+    });
     void this.ensureDefaultWebSite().catch((err) => {
       console.warn(
         "[web] ensureDefaultWebSite after startNode failed:",
         err instanceof Error ? err.message : err,
       );
     });
+  }
+
+  private _attachPresetVouchedHintHandler(): void {
+    const deps = this._relayClientCycleDeps;
+    if (!deps) return;
+    this._relayClientCycleDeps = {
+      ...deps,
+      onPresetVouchedHints: (sourcePeerId, hints) => {
+        const before = this._vouchedRelayHints.listAddrs().length;
+        const after = this._vouchedRelayHints.noteFromPreset(sourcePeerId, hints).length;
+        if (after <= before) return;
+        if (this._vouchedHintReloadTimer) clearTimeout(this._vouchedHintReloadTimer);
+        this._vouchedHintReloadTimer = setTimeout(() => {
+          this._vouchedHintReloadTimer = undefined;
+          void this._reloadRelayControlTargets("vouched-hints").catch((err) => {
+            console.warn(
+              "[relay-reload] vouched-hints failed:",
+              err instanceof Error ? err.message : err,
+            );
+          });
+        }, 15_000);
+      },
+    };
   }
 
   private _startNodeContext(): StartNodeContext {
@@ -12436,6 +12616,12 @@ class NodeServiceImpl implements NodeService {
   async stopNode(): Promise<void> {
     this.stopVaultRagWatcher();
     this._stopLanDiscoverySweep();
+    this._stopRelayRosterFeed?.();
+    this._stopRelayRosterFeed = undefined;
+    if (this._vouchedHintReloadTimer) {
+      clearTimeout(this._vouchedHintReloadTimer);
+      this._vouchedHintReloadTimer = undefined;
+    }
     if (this._agentNetworkIndexRefreshTimers.length > 0) {
       for (const t of this._agentNetworkIndexRefreshTimers) clearTimeout(t);
       this._agentNetworkIndexRefreshTimers = [];

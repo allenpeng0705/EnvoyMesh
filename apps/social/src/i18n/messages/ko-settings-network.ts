@@ -118,7 +118,7 @@ export const koNetworkSettingsMessages = {
     desc: "전체 공개 libp2p와 연락처 전용 간 빠른 전환. 릴레이 전용 WAN은 위 프로필 선택기를 사용하세요.",
     toggle: "공개 libp2p 디스커버리",
     profileWanDefault: "프로필: wan-default (bootstrap 프리셋 {count}개)",
-    profileContactsOnly: "프로필: contacts-only (cn-relay + 구성된 릴레이)",
+    profileContactsOnly: "프로필: contacts-only (cn-relay + us-relay + 구성된 릴레이)",
     contactsOnlyHint:
       "낯선 사람/전역 mesh 디스커버리가 줄어듭니다. 기존 연락처와의 채팅은 릴레이를 통해 계속 가능합니다. 데스크톱에서는 전환 후 연결이 바뀌지 않으면 앱을 완전히 종료한 뒤 다시 여세요.",
   },

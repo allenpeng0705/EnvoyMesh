@@ -118,7 +118,7 @@ export const frNetworkSettingsMessages = {
     desc: "Bascule rapide entre libp2p public complet et contacts uniquement. Utilisez le sélecteur de profil ci-dessus pour le WAN relais uniquement.",
     toggle: "Découverte libp2p publique",
     profileWanDefault: "Profil : wan-default ({count} preset(s) bootstrap)",
-    profileContactsOnly: "Profil : contacts-only (cn-relay + vos relais configurés)",
+    profileContactsOnly: "Profil : contacts-only (cn-relay + us-relay + vos relais configurés)",
     contactsOnlyHint:
       "La découverte mesh globale/inconnus est réduite. Le chat avec les contacts existants fonctionne toujours via relais. Sur bureau, quittez complètement et rouvrez l'app si la connectivité ne change pas après bascule.",
   },

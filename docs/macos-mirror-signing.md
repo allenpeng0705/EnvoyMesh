@@ -158,9 +158,10 @@ What the script does (high level):
 2. Discovery E2E smoke  
 3. Social UI build  
 4. Load `sign-macos-release.env`  
-5. `tauri build` — codesign + notarize (often several minutes waiting on Apple)  
-6. Recompress DMG (default UDBZ — smaller download)  
-7. Publish `release/envoymesh-desktop.dmg` (+ versioned copy)
+5. **Deep-sign nested Mach-O** in `resources/{node,openclaw,pi}/` (`scripts/sign-macos-staged-resources.sh`) — node-pty, sharp, fsevents, pi `fd`/`rg`, etc. must carry Developer ID + hardened runtime before notarization  
+6. `tauri build` — codesign + notarize (often several minutes waiting on Apple)  
+7. Recompress DMG (default UDBZ — smaller download)  
+8. Publish `release/envoymesh-desktop.dmg` (+ versioned copy)
 
 **Time:** often 15–45+ minutes depending on cold compile and notarization queue.
 
@@ -223,6 +224,7 @@ Smoke-test on a clean Mac (download from the public URL, not a local copy): open
 |---------|----------------|
 | `Apple signing: skipped` | Placeholders or missing `scripts/sign-macos-release.env` |
 | Notarization: **hardened runtime** on `…/node_modules/@esbuild/…/esbuild` | Build tooling leaked into `resources/node` — not a rustup/Xcode issue. `stage-bundle-node-runtime.sh` scrubs esbuild/vite/vitest/etc. before `tauri build`. Re-run the full `./scripts/build-desktop.sh macos` (or delete staged `resources/node` and re-stage). |
+| Notarization: unsigned `pty.node`, `fsevents.node`, `vec0.dylib`, `fd`, `rg`, … under `resources/` | Runtime native addons — expected in the bundle. `sign-macos-staged-resources.sh` runs after staging when `APPLE_SIGNING_IDENTITY` is set. Rebuild with signing enabled; do **not** delete these (unlike esbuild). |
 | Notarization warning: `mammoth/test/…/empty.zip` | Harmless if still present; staging also removes `mammoth/test`. |
 | Notarization fails (auth) | Wrong app-specific password, or Apple ID not on the Developer team |
 | Build fails on push | Missing `.p8` / FCM JSON → `REQUIRE_PUSH_CREDENTIALS=0` or add secrets |

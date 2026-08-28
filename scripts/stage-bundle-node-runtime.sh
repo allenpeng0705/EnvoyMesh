@@ -545,6 +545,15 @@ if [ -f "$ROOT/node-config.json" ]; then
   cp "$ROOT/node-config.json" "$DEST/node-config.json"
 fi
 
+# Phase 46E Path C — seed fleet roster for first boot (homes then poll ANY relay).
+if [ -f "$ROOT/relay-roster.json" ]; then
+  echo "  Staging bundled relay-roster.json (seed)..."
+  cp "$ROOT/relay-roster.json" "$DEST/relay-roster.json"
+elif [ -f "$ROOT/docs/examples/relay-roster.example.json" ]; then
+  echo "  Staging bundled relay-roster.json (from example)..."
+  cp "$ROOT/docs/examples/relay-roster.example.json" "$DEST/relay-roster.json"
+fi
+
 # Phase 50 — stage push notification credentials into the bundle.
 # These are optional secret files the operator places at the repo root
 # before building. They get bundled into the DMG/exe so the home node

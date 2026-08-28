@@ -77,6 +77,18 @@ import { createRelayLogBuffer } from "./relay-log-buffer.js";
 import { handleAdminRequest, type AdminHttpDeps } from "./admin-http.js";
 import { attachStandaloneRelayControl, ingestSiblingHints } from "./standalone-relay-control.js";
 import { startCommunityRelayJoinRetry } from "./community-relay-join.js";
+import {
+  handleRelayRosterHttpRequest,
+  resolveRelayRosterFilePath,
+  ensureRelayRosterSeeded,
+} from "./relay-roster-http.js";
+import {
+  buildSelfRosterEntry,
+  fanoutRelayRoster,
+  publishSelfOntoFleetRoster,
+  selfRosterHttpUrlsFromAddrs,
+  startRelayRosterPullSync,
+} from "./relay-roster-sync.js";
 
 // ============================================================================
 // CONSTANTS & CONFIGURATION
@@ -339,6 +351,7 @@ let eventLoopLagTimer: ReturnType<typeof setInterval> | undefined;
 let provideInterval: ReturnType<typeof setInterval> | undefined;
 let detachRelayControl: (() => void) | undefined;
 let detachCommunityJoinRetry: (() => void) | undefined;
+let detachRosterPullSync: (() => void) | undefined;
 let directWss: WebSocketServer | undefined;
 let wss: WebSocketServer | undefined;
 let homeTunnelProxy: ReturnType<typeof createHomeTunnelProxy> | undefined;
@@ -581,6 +594,10 @@ async function shutdown(): Promise<void> {
   if (detachCommunityJoinRetry) {
     detachCommunityJoinRetry();
     detachCommunityJoinRetry = undefined;
+  }
+  if (detachRosterPullSync) {
+    detachRosterPullSync();
+    detachRosterPullSync = undefined;
   }
   // M1: explicitly close the WebSocket servers and home-tunnel-proxy so active
   // connections are terminated promptly (systemd SIGTERM shouldn't hang).
@@ -956,6 +973,59 @@ try {
     },
   });
 
+  const rosterFilePath = resolveRelayRosterFilePath({
+    profileDir: args.profileDir,
+    envPath: process.env.ENVOYMESH_RELAY_ROSTER_PATH,
+  });
+  await ensureRelayRosterSeeded({
+    destPath: rosterFilePath,
+    seedPath: process.env.ENVOYMESH_RELAY_ROSTER_SEED,
+  });
+  if (args.httpPort && args.relayJoinToken && !args.skipCommunitySiblings) {
+    detachRosterPullSync = startRelayRosterPullSync({
+      localPath: rosterFilePath,
+      extraMultiaddrs: () => [
+        ...relayCircuitBases(),
+        ...relayRoster.verifiedRelayHints(16).flatMap((h) => h.multiaddrs ?? []),
+      ],
+    });
+  }
+
+  async function publishSelfRosterAfterJoin(): Promise<void> {
+    if (!args.relayJoinToken || args.skipCommunitySiblings) return;
+    if (process.env.ENVOYMESH_RELAY_ROSTER_PUBLISH === "0") {
+      console.log("[relay-roster-sync] publish skipped (ENVOYMESH_RELAY_ROSTER_PUBLISH=0)");
+      return;
+    }
+    const publicAddrs = relayCircuitBases();
+    const selfEntry = buildSelfRosterEntry({
+      peerId: mesh.peerId,
+      publicAddrs,
+      id: process.env.ENVOYMESH_RELAY_ROSTER_ID,
+      region: process.env.ENVOYMESH_RELAY_ROSTER_REGION,
+      priority: process.env.ENVOYMESH_RELAY_ROSTER_PRIORITY
+        ? Number(process.env.ENVOYMESH_RELAY_ROSTER_PRIORITY)
+        : undefined,
+    });
+    if (!selfEntry) {
+      console.warn("[relay-roster-sync] publish skipped (no public multiaddrs yet)");
+      return;
+    }
+    const skipSelf = args.httpPort
+      ? selfRosterHttpUrlsFromAddrs(publicAddrs, args.httpPort)
+      : [];
+    const result = await publishSelfOntoFleetRoster({
+      localPath: rosterFilePath,
+      joinToken: args.relayJoinToken,
+      selfEntry,
+      extraMultiaddrs: publicAddrs,
+      selfHttpUrlsToSkip: skipSelf,
+    });
+    if (!result.ok) {
+      console.warn(`[relay-roster-sync] publish failed: ${result.reason}`);
+    }
+  }
+
   if (args.relayJoinToken && !args.skipCommunitySiblings) {
     detachCommunityJoinRetry = startCommunityRelayJoinRetry({
       mesh,
@@ -965,6 +1035,9 @@ try {
       publicAddrs: relayCircuitBases,
       bookTtlMs: RELAY_BOOK_TTL_MS,
       skipCommunitySiblings: args.skipCommunitySiblings,
+      onJoined: () => {
+        void publishSelfRosterAfterJoin();
+      },
     });
   }
 
@@ -1195,6 +1268,26 @@ try {
         } else if (pathname === "/health" || pathname === "/readyz") {
           // Also reachable via the sync fast-path above; keep for completeness.
           writeRelayProbeResponse(res, pathname === "/readyz" ? "readyz" : "health");
+        } else if (await handleRelayRosterHttpRequest({
+          req,
+          res,
+          pathname,
+          profileDir: args.profileDir,
+          envPath: process.env.ENVOYMESH_RELAY_ROSTER_PATH,
+          joinToken: args.relayJoinToken,
+          onApplied: async (doc, syncDepth) => {
+            if (!args.relayJoinToken) return;
+            await fanoutRelayRoster({
+              document: doc,
+              joinToken: args.relayJoinToken,
+              syncDepth,
+              skipUrls: args.httpPort
+                ? selfRosterHttpUrlsFromAddrs(relayCircuitBases(), args.httpPort)
+                : [],
+            });
+          },
+        })) {
+          return;
         } else if (pathname === "/reservations") {
           // Live circuit-relay-v2 reservation store size. Operators rely on
           // this to see "is the store filling up?" in real time without

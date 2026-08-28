@@ -59,6 +59,7 @@ describe("admin-auth", () => {
     expect(requiresAdminAuth("/admin/api/status", null)).toBe(true);
     expect(requiresAdminAuth("/info", null)).toBe(false);
     expect(requiresAdminAuth("/health", null)).toBe(false);
+    expect(requiresAdminAuth("/relay-roster.json", null)).toBe(false);
     const creds = { user: "a", password: "b" };
     expect(requiresAdminAuth("/info", creds)).toBe(true);
     expect(requiresAdminAuth("/health", creds)).toBe(false);
