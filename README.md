@@ -145,6 +145,16 @@ Pair EnvoyGo to your home node via QR. Requires a running EnvoyMesh desktop inst
 
 ## Getting Started
 
+**End users:** download a desktop build or EnvoyGo from [Download](#download) — you do **not** need source or `envoy-harness`.
+
+**Developers:** clone EnvoyMesh and run setup. Setup clones/builds the sibling [envoy-harness](https://github.com/allenpeng0705/envoy-harness) repo next to EnvoyMesh when missing (requires **Node.js**, **npm**, and **pnpm**).
+
+```text
+parent/
+  EnvoyMesh/       ← this repo
+  envoy-harness/   ← auto-cloned by setup (coding-agent runtime)
+```
+
 **macOS / Linux:**
 
 ```bash
@@ -169,7 +179,17 @@ npm run node:dev      # Start the P2P node
 npm run social:dev    # Open http://localhost:5173
 ```
 
-`setup.sh` and `setup.ps1` are kept in sync step-for-step — if you change one, change the other in the same commit. The plain `npm install` from a fresh clone also works; the setup scripts additionally bootstrap OpenClaw, copy the envoymesh channel extension, build the OpenClaw gateway, and smoke-test the webhook.
+Optional: clone harness yourself first, or point at an existing tree:
+
+```bash
+./scripts/setup.sh --local-envoy-harness /path/to/envoy-harness
+# Windows: .\scripts\setup.ps1 -LocalEnvoyHarnessPath D:\path\to\envoy-harness
+# Or: export ENVOY_HARNESS_DIR=/path/to/envoy-harness
+```
+
+Desktop packaging (`./scripts/build-desktop.sh` / `.\scripts\build-desktop.ps1`) stages harness from that sibling into the Tauri bundle. Details: [docs/envoy-harness-integration-EnvoyMesh.md](docs/envoy-harness-integration-EnvoyMesh.md) · [QuickStart.md](QuickStart.md).
+
+`setup.sh` and `setup.ps1` are kept in sync step-for-step — if you change one, change the other in the same commit. Setup also bootstraps OpenClaw, copies the envoymesh channel extension, builds the OpenClaw gateway, and smoke-tests the webhook.
 
 **First launch.** A desktop install (DMG / `.exe` / `.AppImage`) auto-bonds to the project's author (Allen Peng) on first launch via the bundled `bundled-sponsor-friend.json`, so you start with one working contact out of the box. Remove it any time from Settings → Contacts. To opt out before launch, delete the file from the bundle (or set `bundled-sponsor-friend.json` to `{"enabled": false}` in your installer profile).
 

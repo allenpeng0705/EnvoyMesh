@@ -1,23 +1,30 @@
 #!/bin/bash
 # EnvoyMesh Unified Setup
-# One command: EnvoyMesh + built-in OpenClaw (EnvoyAI) + envoymesh channel extension.
+# One command: sibling envoy-harness + EnvoyMesh + built-in OpenClaw (EnvoyAI)
+# + envoymesh channel extension.
 #
 # PowerShell twin: scripts/setup.ps1 (Windows). The two scripts MUST stay
 # in sync step-for-step. If you change this file, update setup.ps1 in the
 # same commit and vice versa.
 #
 # Usage: ./scripts/setup.sh [--local /path/to/openclaw]
-#                          [--skip-openclaw-build] [--skip-typecheck] [-h|--help]
+#                          [--local-envoy-harness /path/to/envoy-harness]
+#                          [--skip-envoy-harness-build] [--skip-openclaw-build]
+#                          [--skip-typecheck] [-h|--help]
 #
-# Flags (see docs/setup-scripts.md for the full reference):
+# Flags (see QuickStart.md / packaging.md for the full reference):
 #   --local /path/to/openclaw   Use a local OpenClaw checkout instead of
 #                               cloning from GitHub (forwarded to
 #                               install-openclaw.sh). Only consulted when
 #                               packages/openclaw is missing.
+#   --local-envoy-harness PATH  Use an existing envoy-harness checkout
+#                               (forwarded to install-envoy-harness.sh).
+#   --skip-envoy-harness-build  Skip harness pnpm build when dist is ready
+#                               (step 2). Still clones sibling if missing.
 #   --skip-openclaw-build       Skip pnpm install + build + smoke for OpenClaw
-#                               (step 4). Useful for fast re-runs once the
+#                               (step 5). Useful for fast re-runs once the
 #                               build is already verified.
-#   --skip-typecheck            Skip the final TypeScript typecheck (step 6).
+#   --skip-typecheck            Skip the final TypeScript typecheck (step 7).
 #   -h, --help                  Print this message and exit.
 #
 # After setup:
@@ -33,6 +40,8 @@ set -o pipefail
 
 # ---- CLI flags (kept symmetric with scripts/setup.ps1) ----
 LOCAL_OPENCLAW_PATH=""
+LOCAL_ENVOY_HARNESS_PATH=""
+SKIP_ENVOY_HARNESS_BUILD=0
 SKIP_OPENCLAW_BUILD=0
 SKIP_TYPECHECK=0
 print_usage() {
@@ -40,11 +49,13 @@ print_usage() {
 Usage: ./scripts/setup.sh [options]
 
 Options:
-  --local /path/to/openclaw   Use a local OpenClaw checkout instead of cloning
-                              from GitHub (forwarded to install-openclaw.sh).
-  --skip-openclaw-build       Skip pnpm install / build / smoke for OpenClaw.
-  --skip-typecheck            Skip the final TypeScript typecheck pass.
-  -h, --help                  Show this message and exit.
+  --local /path/to/openclaw            Use a local OpenClaw checkout instead of
+                                       cloning from GitHub.
+  --local-envoy-harness /path/to/eh    Use an existing envoy-harness checkout.
+  --skip-envoy-harness-build           Skip harness build when dist is ready.
+  --skip-openclaw-build                Skip pnpm install / build / smoke for OpenClaw.
+  --skip-typecheck                     Skip the final TypeScript typecheck pass.
+  -h, --help                           Show this message and exit.
 USAGE
 }
 while [ $# -gt 0 ]; do
@@ -52,6 +63,10 @@ while [ $# -gt 0 ]; do
     --local)
       [ $# -ge 2 ] || { echo "Missing value for --local" >&2; exit 1; }
       LOCAL_OPENCLAW_PATH="$2"; shift 2 ;;
+    --local-envoy-harness)
+      [ $# -ge 2 ] || { echo "Missing value for --local-envoy-harness" >&2; exit 1; }
+      LOCAL_ENVOY_HARNESS_PATH="$2"; shift 2 ;;
+    --skip-envoy-harness-build) SKIP_ENVOY_HARNESS_BUILD=1; shift ;;
     --skip-openclaw-build) SKIP_OPENCLAW_BUILD=1; shift ;;
     --skip-typecheck)      SKIP_TYPECHECK=1; shift ;;
     -h|--help)             print_usage; exit 0 ;;
@@ -195,7 +210,7 @@ install_envoymesh_extension() {
 }
 
 # ---- Step 0: Clean stale artifacts ----
-echo "[0/6] Cleaning up stale artifacts..."
+echo "[0/7] Cleaning up stale artifacts..."
 # packages/openclaw is pnpm-managed separately (not an npm workspace).
 # Drop incomplete dist (missing config.js or stub entry) so re-runs rebuild.
 if openclaw_dist_incomplete packages/openclaw; then
@@ -206,7 +221,7 @@ rm -rf /tmp/envoymesh-gateway-* 2>/dev/null || true
 echo ""
 
 # ---- Step 1: Node.js + pnpm ----
-echo "[1/6] Checking toolchain..."
+echo "[1/7] Checking toolchain..."
 if ! command -v node &> /dev/null; then
   echo "  ✗ Node.js not found. Install Node 22+ first."
   exit 1
@@ -223,13 +238,40 @@ fi
 echo "  ✓ node $(node -v), pnpm $(cd /tmp && pnpm -v 2>/dev/null || echo '?')"
 echo ""
 
-# ---- Step 2: EnvoyMesh dependencies ----
-echo "[2/6] Installing EnvoyMesh dependencies..."
+# ---- Step 2: Sibling envoy-harness (required for file: deps + node:dev) ----
+echo "[2/7] envoy-harness sibling bootstrap..."
+HARNESS_ARGS=()
+if [ -n "$LOCAL_ENVOY_HARNESS_PATH" ]; then
+  HARNESS_ARGS+=(--local "$LOCAL_ENVOY_HARNESS_PATH")
+fi
+if [ "$SKIP_ENVOY_HARNESS_BUILD" = "1" ]; then
+  HARNESS_ARGS+=(--skip-build)
+fi
+if [ -f scripts/install-envoy-harness.sh ]; then
+  if [ "${#HARNESS_ARGS[@]}" -gt 0 ]; then
+    bash scripts/install-envoy-harness.sh "${HARNESS_ARGS[@]}" || {
+      echo "  ✗ install-envoy-harness.sh failed"
+      exit 1
+    }
+  else
+    bash scripts/install-envoy-harness.sh || {
+      echo "  ✗ install-envoy-harness.sh failed"
+      exit 1
+    }
+  fi
+else
+  echo "  ✗ scripts/install-envoy-harness.sh not found"
+  exit 1
+fi
+echo ""
+
+# ---- Step 3: EnvoyMesh dependencies ----
+echo "[3/7] Installing EnvoyMesh dependencies..."
 pnpm install
 echo ""
 
-# ---- Step 3: OpenClaw bootstrap + extension ----
-echo "[3/6] OpenClaw bootstrap..."
+# ---- Step 4: OpenClaw bootstrap + extension ----
+echo "[4/7] OpenClaw bootstrap..."
 if [ ! -f packages/openclaw/openclaw.mjs ] && [ ! -f packages/openclaw/package.json ]; then
   echo "  packages/openclaw missing — install-openclaw will clone from GitHub..."
 fi
@@ -265,9 +307,9 @@ fi
 echo "  EnvoyMesh channel extension will be compiled after OpenClaw pnpm install (needs esbuild)"
 echo ""
 
-# ---- Step 4: Build OpenClaw gateway ----
+# ---- Step 5: Build OpenClaw gateway ----
 if [ "$SKIP_OPENCLAW_BUILD" = "1" ]; then
-  echo "[4/6] Building OpenClaw gateway (SKIPPED -- --skip-openclaw-build)..."
+  echo "[5/7] Building OpenClaw gateway (SKIPPED -- --skip-openclaw-build)..."
   if ! openclaw_gateway_ready packages/openclaw; then
     echo "  ✗ OpenClaw tree incomplete after --skip-openclaw-build"
     echo "    Need dist/config/config.js + compiled extensions/envoymesh/index.js"
@@ -276,13 +318,13 @@ if [ "$SKIP_OPENCLAW_BUILD" = "1" ]; then
   fi
   echo "  ✓ OpenClaw gateway ready (packages/openclaw)"
 elif [ ! -f packages/openclaw/package.json ]; then
-  echo "[4/6] Building OpenClaw gateway..."
+  echo "[5/7] Building OpenClaw gateway..."
   echo "  ⚠ packages/openclaw not found — EnvoyAI will use native LLM fallback only"
   echo "    Fix: ./scripts/install-openclaw.sh"
   echo "    or:  ./scripts/setup.sh --local /path/to/openclaw"
   echo "    or:  git clone --depth 1 https://github.com/openclaw/openclaw.git packages/openclaw"
 else
-  echo "[4/6] Building OpenClaw gateway..."
+  echo "[5/7] Building OpenClaw gateway..."
   cd packages/openclaw
 
   if [ -d "../../.pnpm-store" ]; then
@@ -457,8 +499,8 @@ EOF
 fi
 echo ""
 
-# ---- Step 5: Bridge config template ----
-echo "[5/6] Bridge config template..."
+# ---- Step 6: Bridge config template ----
+echo "[6/7] Bridge config template..."
 EXAMPLE="apps/node/data/default/bridge-config.openclaw.example.json"
 if [ -f "$EXAMPLE" ]; then
   echo "  ✓ Example config: $EXAMPLE"
@@ -477,9 +519,9 @@ echo ""
 
 # ---- Step 6: Typecheck ----
 if [ "$SKIP_TYPECHECK" = "1" ]; then
-  echo "[6/6] TypeScript check (SKIPPED -- --skip-typecheck)..."
+  echo "[7/7] TypeScript check (SKIPPED -- --skip-typecheck)..."
 else
-  echo "[6/6] TypeScript check (packages/api + apps/node)..."
+  echo "[7/7] TypeScript check (packages/api + apps/node)..."
   # pipefail is now set, so tsc's exit code propagates through `2>/dev/null`.
   npm exec -w @envoymesh/api -- tsc -p tsconfig.json 2>&1 | tail -3 && \
     npm exec -w @envoymesh/node -- tsc -p tsconfig.json 2>&1 | tail -3 && \

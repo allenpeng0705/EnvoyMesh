@@ -6,6 +6,7 @@
 # in sync step-for-step — when you change one, change the other. Both aim to
 # produce a working:
 #
+#   * Sibling envoy-harness monorepo (coding-agent runtime)
 #   * EnvoyMesh home node (apps/node)
 #   * Built-in OpenClaw (EnvoyAI) gateway in packages/openclaw
 #   * envoymesh channel extension copied into the OpenClaw extensions tree
@@ -13,18 +14,23 @@
 #   * A typecheck pass on packages/api + apps/node
 #
 # Usage (from the repo root, in PowerShell):
-#   .\scripts\setup.ps1 [-LocalOpenClawPath <path>] [-SkipOpenClawBuild] [-SkipTypecheck] [-?]
+#   .\scripts\setup.ps1 [-LocalOpenClawPath <path>] [-LocalEnvoyHarnessPath <path>]
+#                       [-SkipEnvoyHarnessBuild] [-SkipOpenClawBuild] [-SkipTypecheck] [-?]
 #
-# Flags (see docs/setup-scripts.md for the full reference):
-#   -LocalOpenClawPath <path>   Use a local OpenClaw checkout instead of
-#                                cloning from GitHub (forwarded to
-#                                install-openclaw.ps1). Only consulted when
-#                                packages/openclaw is missing.
-#   -SkipOpenClawBuild          Skip pnpm install + build + smoke for OpenClaw
-#                                (step 4). Useful for fast re-runs once the
-#                                build is already verified.
-#   -SkipTypecheck              Skip the final TypeScript typecheck (step 6).
-#   -?                          Print this message and exit.
+# Flags (see QuickStart.md / packaging.md):
+#   -LocalOpenClawPath <path>     Use a local OpenClaw checkout instead of
+#                                  cloning from GitHub (forwarded to
+#                                  install-openclaw.ps1). Only consulted when
+#                                  packages/openclaw is missing.
+#   -LocalEnvoyHarnessPath <path> Use an existing envoy-harness checkout
+#                                  (forwarded to install-envoy-harness.ps1).
+#   -SkipEnvoyHarnessBuild        Skip harness pnpm build when dist is ready
+#                                  (step 2). Still clones sibling if missing.
+#   -SkipOpenClawBuild            Skip pnpm install + build + smoke for OpenClaw
+#                                  (step 5). Useful for fast re-runs once the
+#                                  build is already verified.
+#   -SkipTypecheck                Skip the final TypeScript typecheck (step 7).
+#   -?                            Print this message and exit.
 #
 # After setup:
 #   npm run node:dev     # starts bridge :3031 + OpenClaw gateway :18789 + EnvoyAI
@@ -40,6 +46,12 @@ param(
     # Path to a local checkout of openclaw (mirrors install-openclaw.sh --local).
     # If provided and packages/openclaw is missing, it is copied in.
     [string]$LocalOpenClawPath = "",
+
+    # Path to an existing envoy-harness monorepo (mirrors install-envoy-harness.sh --local).
+    [string]$LocalEnvoyHarnessPath = "",
+
+    # Skip harness pnpm build when dist already looks ready (still clones if missing).
+    [switch]$SkipEnvoyHarnessBuild,
 
     # Skip the long OpenClaw build (pnpm install + metadata + build + smoke).
     # Useful for quick smoke tests or when the gateway is not needed.
@@ -203,7 +215,7 @@ Write-Host ""
 # Step 0: Clean stale artifacts
 # -----------------------------------------------------------------------------
 
-Write-Step "0/6  Cleaning up stale artifacts..."
+Write-Step "0/7  Cleaning up stale artifacts..."
 
 # packages/openclaw is pnpm-managed separately (not an npm workspace). Keep node_modules
 # across setup re-runs; drop an incomplete dist (missing config.js or stub entry).
@@ -232,7 +244,7 @@ if ($ocDistIncomplete) {
 # Step 1: Node.js + pnpm
 # -----------------------------------------------------------------------------
 
-Write-Step "1/6  Checking toolchain..."
+Write-Step "1/7  Checking toolchain..."
 
 try {
     Require-Command "node"
@@ -266,10 +278,29 @@ try {
 Write-Ok "node $(node -v), pnpm $pnpmVersion"
 
 # -----------------------------------------------------------------------------
-# Step 2: EnvoyMesh dependencies
+# Step 2: Sibling envoy-harness (required for file: deps + node:dev)
 # -----------------------------------------------------------------------------
 
-Write-Step "2/6  Installing EnvoyMesh dependencies..."
+Write-Step "2/7  envoy-harness sibling bootstrap..."
+$installHarnessPs1 = Join-Path $PSScriptRoot "install-envoy-harness.ps1"
+if (-not (Test-Path $installHarnessPs1)) {
+    Write-Fail "install-envoy-harness.ps1 not found"
+    exit 1
+}
+$harnessArgs = @{}
+if ($LocalEnvoyHarnessPath) { $harnessArgs["LocalEnvoyHarnessPath"] = $LocalEnvoyHarnessPath }
+if ($SkipEnvoyHarnessBuild) { $harnessArgs["SkipBuild"] = $true }
+& $installHarnessPs1 @harnessArgs
+if (-not $?) {
+    Write-Fail "install-envoy-harness.ps1 failed"
+    exit 1
+}
+
+# -----------------------------------------------------------------------------
+# Step 3: EnvoyMesh dependencies
+# -----------------------------------------------------------------------------
+
+Write-Step "3/7  Installing EnvoyMesh dependencies..."
 
 pnpm install
 if ($LASTEXITCODE -ne 0) {
@@ -279,10 +310,10 @@ if ($LASTEXITCODE -ne 0) {
 Write-Ok "EnvoyMesh dependencies installed"
 
 # -----------------------------------------------------------------------------
-# Step 3: OpenClaw bootstrap + extension copy
+# Step 4: OpenClaw bootstrap + extension copy
 # -----------------------------------------------------------------------------
 
-Write-Step "3/6  OpenClaw bootstrap..."
+Write-Step "4/7  OpenClaw bootstrap..."
 
 # If packages/openclaw is missing, install-openclaw.ps1 clones from GitHub (no git submodule in this repo).
 if (-not (Test-Path "packages/openclaw/openclaw.mjs") -and -not (Test-Path "packages/openclaw/package.json")) {
@@ -444,7 +475,7 @@ Write-Info "EnvoyMesh channel extension will be compiled after OpenClaw pnpm ins
 # -----------------------------------------------------------------------------
 
 if ($SkipOpenClawBuild) {
-    Write-Step "4/6  Building OpenClaw gateway (SKIPPED — -SkipOpenClawBuild)"
+    Write-Step "5/7  Building OpenClaw gateway (SKIPPED — -SkipOpenClawBuild)"
     if (-not (Test-OpenClawGatewayReady $RepoRoot)) {
         Write-Fail "OpenClaw tree incomplete after -SkipOpenClawBuild"
         Write-Info "Need dist/config/config.js + compiled extensions/envoymesh/index.js"
@@ -453,12 +484,12 @@ if ($SkipOpenClawBuild) {
     }
     Write-Ok "OpenClaw gateway ready (packages/openclaw)"
 } elseif (-not (Test-Path "packages/openclaw/package.json")) {
-    Write-Step "4/6  Building OpenClaw gateway..."
+    Write-Step "5/7  Building OpenClaw gateway..."
     Write-Warn "packages/openclaw not found — EnvoyAI will use native LLM fallback only"
     Write-Info "Fix: .\scripts\install-openclaw.ps1"
     Write-Info "  or: git clone --depth 1 https://github.com/openclaw/openclaw.git packages/openclaw"
 } else {
-    Write-Step "4/6  Building OpenClaw gateway..."
+    Write-Step "5/7  Building OpenClaw gateway..."
 
     Push-Location "packages/openclaw"
 
@@ -668,7 +699,7 @@ if ($SkipOpenClawBuild) {
 # Step 5: Bridge config template
 # -----------------------------------------------------------------------------
 
-Write-Step "5/6  Bridge config template..."
+Write-Step "6/7  Bridge config template..."
 $example = "apps/node/data/default/bridge-config.openclaw.example.json"
 if (Test-Path $example) {
     Write-Ok "Example config: $example"
@@ -689,9 +720,9 @@ if (Test-Path $example) {
 # -----------------------------------------------------------------------------
 
 if ($SkipTypecheck) {
-    Write-Step "6/6  TypeScript check (SKIPPED — -SkipTypecheck)"
+    Write-Step "7/7  TypeScript check (SKIPPED — -SkipTypecheck)"
 } else {
-    Write-Step "6/6  TypeScript check (packages/api + apps/node)..."
+    Write-Step "7/7  TypeScript check (packages/api + apps/node)..."
     $apiOk = $true
     $nodeOk = $true
     try {

@@ -30,16 +30,24 @@ Requirements narrative: [docs/UserStory.md](docs/UserStory.md). Scenario backlog
 
 - macOS, Linux, or Windows with a recent terminal.
 - Node.js **22.13+** required (matches the repo's `engines.node` pin in `package.json`).
-- npm, included with Node.js.
+- npm (included with Node.js) and **pnpm** (setup installs pnpm if missing).
+- **Sibling repo [envoy-harness](https://github.com/allenpeng0705/envoy-harness)** — coding-agent runtime. `setup` clones it next to EnvoyMesh when missing.
+
+Layout after setup:
+
+```text
+parent/
+  EnvoyMesh/       ← this repo
+  envoy-harness/   ← auto-cloned by setup (or clone manually)
+```
 
 ## Install
 
 Both `scripts/setup.sh` (mac/Linux) and `scripts/setup.ps1` (Windows) do the
-same six steps in the same order. They are deliberately kept as twins — if
-you change one, change the other in the same commit. Full reference and
-design notes: [docs/setup-scripts.md](docs/setup-scripts.md).
+same steps in the same order. They are deliberately kept as twins — if
+you change one, change the other in the same commit.
 
-From the repository root:
+From the repository root (EnvoyMesh only is enough — setup fetches harness):
 
 ```bash
 # macOS / Linux
@@ -57,11 +65,13 @@ npm run setup:win
 
 ### Setup flags
 
-Both scripts accept the same three flags, with shell-native spelling:
+Both scripts accept the same flags, with shell-native spelling:
 
 | Purpose | mac/Linux | Windows PowerShell |
 | --- | --- | --- |
 | Use a local OpenClaw checkout (skip GitHub clone) | `--local /path/to/openclaw` | `-LocalOpenClawPath C:\path\to\openclaw` |
+| Use an existing envoy-harness checkout | `--local-envoy-harness /path/to/eh` | `-LocalEnvoyHarnessPath D:\path\to\eh` |
+| Skip harness build when `dist/` is already ready | `--skip-envoy-harness-build` | `-SkipEnvoyHarnessBuild` |
 | Skip the long OpenClaw build + smoke test | `--skip-openclaw-build` | `-SkipOpenClawBuild` |
 | Skip the final TypeScript typecheck | `--skip-typecheck` | `-SkipTypecheck` |
 | Show usage and exit | `-h`, `--help` | `-?`, `-h`, `-Help` (PowerShell convention) |
@@ -69,18 +79,22 @@ Both scripts accept the same three flags, with shell-native spelling:
 Examples:
 
 ```bash
-# Re-run quickly with the OpenClaw build + typecheck already verified
-./scripts/setup.sh --skip-openclaw-build --skip-typecheck
+# Re-run quickly with harness + OpenClaw + typecheck already verified
+./scripts/setup.sh --skip-envoy-harness-build --skip-openclaw-build --skip-typecheck
 
 # Bootstrap from a local OpenClaw checkout (good when the GitHub repo is
 # slow or you're developing openclaw in parallel)
 ./scripts/setup.sh --local ~/work/openclaw
+
+# Point at a harness checkout that is not named ../envoy-harness
+./scripts/setup.sh --local-envoy-harness ~/work/envoy-harness
 ```
 
 ```powershell
 # Windows equivalent
 .\scripts\setup.ps1 -LocalOpenClawPath C:\work\openclaw
-.\scripts\setup.ps1 -SkipOpenClawBuild -SkipTypecheck
+.\scripts\setup.ps1 -LocalEnvoyHarnessPath D:\work\envoy-harness
+.\scripts\setup.ps1 -SkipEnvoyHarnessBuild -SkipOpenClawBuild -SkipTypecheck
 ```
 
 ### OpenClaw bootstrap only
@@ -97,32 +111,50 @@ If you only need the OpenClaw (EnvoyAI) bootstrap without the full build:
 .\scripts\install-openclaw.ps1 -LocalOpenClawPath C:\path\to\openclaw
 ```
 
+### envoy-harness bootstrap only
+
+```bash
+./scripts/install-envoy-harness.sh
+./scripts/install-envoy-harness.sh --local /path/to/envoy-harness
+./scripts/install-envoy-harness.sh --skip-build
+```
+
+```powershell
+.\scripts\install-envoy-harness.ps1
+.\scripts\install-envoy-harness.ps1 -LocalEnvoyHarnessPath D:\path\to\envoy-harness
+.\scripts\install-envoy-harness.ps1 -SkipBuild
+```
+
+Override path without `--local`: `export ENVOY_HARNESS_DIR=/path/to/envoy-harness` (or `$env:ENVOY_HARNESS_DIR` on Windows). npm `file:` deps still expect a sibling at `../envoy-harness` — the install script creates a symlink/junction when needed.
+
 ### What the setup script does
 
-Seven steps (0–6), in order:
+Eight steps (0–7), in order:
 
 0. **Clean stale artifacts** — drop an incomplete `packages/openclaw/dist`.
 1. **Toolchain check** — verify Node 22+; install pnpm if missing.
-2. **Install EnvoyMesh dependencies** — `npm install` at the root.
-3. **OpenClaw bootstrap + extension copy** — clone (or use `--local`),
+2. **envoy-harness sibling** — clone `../envoy-harness` if missing, then `pnpm install` + build (skip with `--skip-envoy-harness-build` when `dist/` is ready).
+3. **Install EnvoyMesh dependencies** — `pnpm install` at the root (needs the sibling for `file:` packages).
+4. **OpenClaw bootstrap + extension copy** — clone (or use `--local`),
    copy `OpenClawExtension` into `packages/openclaw/extensions/envoymesh`.
-4. **Build OpenClaw gateway** — `pnpm install --no-frozen-lockfile` + metadata
+5. **Build OpenClaw gateway** — `pnpm install --no-frozen-lockfile` + metadata
    generation + `pnpm run build` + smoke-test the webhook. Skipped if you
    pass `--skip-openclaw-build` / `-SkipOpenClawBuild`.
-5. **Bridge config template** — copy
+6. **Bridge config template** — copy
    `apps/node/data/default/bridge-config.openclaw.example.json` to
    `bridge-config.json` if no file exists yet.
-6. **TypeScript typecheck** — `tsc -p tsconfig.json` for `@envoymesh/api` and
+7. **TypeScript typecheck** — `tsc -p tsconfig.json` for `@envoymesh/api` and
    `@envoymesh/node`. Skipped if you pass `--skip-typecheck` / `-SkipTypecheck`.
 
-The plain `npm install` from a fresh clone also works; the setup scripts
-are an opinionated one-shot that also bootstraps the OpenClaw submodule,
-copies the envoymesh channel extension, builds the OpenClaw gateway, and
+The plain `pnpm install` from a fresh clone also works **after** the harness
+sibling exists; the setup scripts are an opinionated one-shot that also
+bootstraps envoy-harness + OpenClaw, copies the envoymesh channel extension,
+builds the OpenClaw gateway, and
 smoke-tests the webhook.
 
 ## Build And Verify
 
-Run the TypeScript build check (also runs as setup step 6):
+Run the TypeScript build check (also runs as setup step 7):
 
 ```bash
 npm run typecheck

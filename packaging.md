@@ -2,18 +2,26 @@
 
 ## Quick Start
 
+EnvoyMesh and [envoy-harness](https://github.com/allenpeng0705/envoy-harness) are sibling repos. `setup` clones/builds harness next to EnvoyMesh when missing (needs **pnpm**).
+
 ```bash
-# Install everything (developer setup)
+# Install everything (developer setup) — clones ../envoy-harness if needed
 ./scripts/setup.sh
 
 # If you already have OpenClaw locally:
 ./scripts/install-openclaw.sh --local /path/to/openclaw
+
+# If you already have envoy-harness elsewhere:
+./scripts/setup.sh --local-envoy-harness /path/to/envoy-harness
 
 # Run
 npm run node:dev      # Start the P2P node
 npm run social:dev    # Start the Social UI (http://localhost:5173)
 ```
 
+**Windows:** `.\scripts\setup.ps1` (same steps; `-LocalEnvoyHarnessPath`, `-SkipEnvoyHarnessBuild`).
+
+Desktop packages (`./scripts/build-desktop.sh` / `.\scripts\build-desktop.ps1`) stage harness from `../envoy-harness` (or `ENVOY_HARNESS_DIR`) into the Tauri bundle — run setup first on a fresh machine.
 **What you should see when OpenClaw is found:**
 ```
 [openclaw-runtime] Starting OpenClaw from packages/openclaw-runtime/bin/openclaw
@@ -41,7 +49,7 @@ npm run social:dev    # Start the Social UI (http://localhost:5173)
 
 ```bash
 ./scripts/setup.sh
-# What you get: npm dependencies + OpenClaw auto-discovered + TypeScript compiled
+# What you get: sibling envoy-harness + npm dependencies + OpenClaw + TypeScript compiled
 # No platform packages — runs from source with hot-reload
 ```
 

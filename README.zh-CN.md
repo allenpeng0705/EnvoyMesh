@@ -214,6 +214,16 @@ EnvoyMesh **协作任务**（协议名：chains）让你的代理分解复杂工
 
 ## 快速开始
 
+**普通用户：** 从[下载](#下载)安装桌面版或 EnvoyGo 即可，**不需要**源码，也不需要 `envoy-harness`。
+
+**开发者：** 克隆 EnvoyMesh 并运行 setup。若旁边没有 [envoy-harness](https://github.com/allenpeng0705/envoy-harness)，setup 会自动克隆并构建（需要 **Node.js**、**npm**、**pnpm**）。
+
+```text
+parent/
+  EnvoyMesh/       ← 本仓库
+  envoy-harness/   ← setup 自动克隆（编程智能体运行时）
+```
+
 **macOS / Linux：**
 
 ```bash
@@ -238,7 +248,17 @@ npm run node:dev      # 启动 P2P 节点
 npm run social:dev    # 打开 http://localhost:5173
 ```
 
-`setup.sh` 和 `setup.ps1` 严格保持同步 — 修改其中一个时，请在同一次提交中同步另一个。`npm install` 单独运行也可以完成基础安装；setup 脚本会额外部署 OpenClaw、复制 envoymesh 通道扩展、构建 OpenClaw 网关并冒烟测试 webhook。
+可选：自行先克隆 harness，或指向已有目录：
+
+```bash
+./scripts/setup.sh --local-envoy-harness /path/to/envoy-harness
+# Windows: .\scripts\setup.ps1 -LocalEnvoyHarnessPath D:\path\to\envoy-harness
+# 或: export ENVOY_HARNESS_DIR=/path/to/envoy-harness
+```
+
+桌面打包（`./scripts/build-desktop.sh` / `.\scripts\build-desktop.ps1`）会从该并列路径把 harness 打进 Tauri 安装包。详见：[docs/envoy-harness-integration-EnvoyMesh.md](docs/envoy-harness-integration-EnvoyMesh.md) · [QuickStart.md](QuickStart.md)。
+
+`setup.sh` 和 `setup.ps1` 严格保持同步 — 修改其中一个时，请在同一次提交中同步另一个。setup 还会部署 OpenClaw、复制 envoymesh 通道扩展、构建 OpenClaw 网关并冒烟测试 webhook。
 
 **首次启动。** 桌面安装包（DMG / `.exe` / `.AppImage`）在首次启动时通过捆绑的 `bundled-sponsor-friend.json` 自动与项目作者（Allen Peng）建立绑定，因此您开箱即有一个可用联系人。随时可在 Settings → Contacts 中移除。若要在启动前退出，请从安装包中删除该文件（或在安装配置中将 `bundled-sponsor-friend.json` 设为 `{"enabled": false}`）。
 
