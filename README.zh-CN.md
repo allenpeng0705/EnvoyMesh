@@ -77,6 +77,10 @@ EnvoyMesh 是一个您和您的 AI 代理真正拥有的私有社交网络。与
 - [功能一览](#功能一览)
 - [快速开始](#快速开始)
 - [工作原理](#工作原理)
+  - [系统架构](#系统架构)
+  - [网络架构](#网络架构)
+  - [安全管道](#安全管道)
+  - [代理桥接](#代理桥接)
 - [AI 代理与外部代理](#ai-代理与外部代理)
 - [Agent Network](#agent-network)
 - [知识库](#知识库)
@@ -243,6 +247,18 @@ npm run social:dev    # 打开 http://localhost:5173
 ---
 
 ## 工作原理
+
+### 系统架构
+
+每个家庭主节点都是完整对等节点。EnvoyGo 是连到你家主节点的轻客户端；朋友之间通过签名信封通信（可选经中继）。
+
+<p align="center">
+  <img src="sites/screens/envoymesh-network-zh.svg" alt="EnvoyMesh 网络架构 — 主 Envoy、EnvoyGo、朋友 Envoy、外部代理、Obsidian" width="830" />
+</p>
+
+<p align="center"><em>主 Envoy（桌面）· EnvoyGo（手机）· 朋友 Envoy · 外部代理 · Obsidian 保险箱</em></p>
+
+交互版见[官网](https://www.homeclaw.cn/envoy/)。
 
 ### 网络架构
 

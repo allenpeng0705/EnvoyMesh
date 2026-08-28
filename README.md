@@ -77,6 +77,10 @@ Pair EnvoyGo to your home node via QR. Requires a running EnvoyMesh desktop inst
 - [What can I do with EnvoyMesh?](#what-can-i-do-with-envoymesh)
 - [Getting Started](#getting-started)
 - [How It Works](#how-it-works)
+  - [System architecture](#system-architecture)
+  - [Network Architecture](#network-architecture)
+  - [Security Pipeline](#security-pipeline)
+  - [Agent Bridge](#agent-bridge)
 - [AI Agent & External Agents](#ai-agent--external-agents)
 - [Agent Network](#agent-network)
 - [Knowledge Base](#knowledge-base)
@@ -174,6 +178,18 @@ For detailed setup, configuration, Docker, mobile, and packaging: **[QuickStart.
 ---
 
 ## How It Works
+
+### System architecture
+
+Every home node is a full peer. EnvoyGo is a thin client to your home; friends connect over signed mesh envelopes (optionally via relay).
+
+<p align="center">
+  <img src="sites/screens/envoymesh-network.svg" alt="EnvoyMesh Network architecture — Primary Envoy, EnvoyGo, Friend Envoy, external agents, Obsidian" width="830" />
+</p>
+
+<p align="center"><em>Primary Envoy (desktop) · EnvoyGo (phone) · Friend Envoy · External agents · Obsidian vault</em></p>
+
+Interactive version on the [website](https://www.homeclaw.cn/envoy/).
 
 ### Network Architecture
 
