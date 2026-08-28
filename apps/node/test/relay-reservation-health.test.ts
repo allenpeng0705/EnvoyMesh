@@ -5,7 +5,7 @@ import {
   waitForUsableRelayReservation,
   warmAndWatchRelayReservations,
 } from "../src/relay-reservation-health.js";
-import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
+import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR, DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
 
 describe("collectRelayControlTargets", () => {
   const RELAY_A =
@@ -64,7 +64,7 @@ describe("collectRelayControlTargets", () => {
     expect(addrs).toEqual([RELAY_A]);
   });
 
-  it("falls back to community cn-relay when filters leave no targets", () => {
+  it("falls back to community cn-relay + us-relay when filters leave no targets", () => {
     const addrs = collectRelayControlTargets({
       configuredRelays: [],
       bootstrapPeers: [
@@ -74,7 +74,10 @@ describe("collectRelayControlTargets", () => {
       ],
       bootstrapPresets: [],
     });
-    expect(addrs).toEqual([DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR]);
+    expect(addrs).toEqual([
+      DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
+      DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR,
+    ]);
   });
 
   it("is used by collectKnownRelayAddrs (reserve parity)", () => {

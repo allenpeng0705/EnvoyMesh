@@ -821,6 +821,7 @@ export function SettingsNodeTab() {
             { id: "public-libp2p-am6", label: t("settings.network.bootstrapPresets.publicLibp2pAm6"), desc: t("settings.network.bootstrapPresets.publicLibp2pAm6Desc") },
             { id: "public-libp2p-am7", label: t("settings.network.bootstrapPresets.publicLibp2pAm7"), desc: t("settings.network.bootstrapPresets.publicLibp2pAm7Desc") },
             { id: "cn-relay", label: t("settings.network.bootstrapPresets.cnRelay"), desc: t("settings.network.bootstrapPresets.cnRelayDesc") },
+            { id: "us-relay", label: t("settings.network.bootstrapPresets.usRelay"), desc: t("settings.network.bootstrapPresets.usRelayDesc") },
           ].map((preset) => (
             <label key={preset.id} className="preset-checkbox">
               <input

@@ -21,6 +21,7 @@
 import { randomUUID } from "node:crypto";
 import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
+  DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR,
   normalizeRelayWsList,
   stripRelayWsParams,
 } from "@envoymesh/api";
@@ -77,6 +78,7 @@ export interface GetPairingPayloadContext {
 /** Presets / addrs EnvoyGo already knows or that do not help pairing. */
 const QR_OMIT_PRESETS = new Set([
   "cn-relay",
+  "us-relay",
   "public-libp2p",
   "public-libp2p-am6",
   "public-libp2p-am7",
@@ -93,7 +95,9 @@ export function isBuiltinOrPublicBootstrap(entry: string): boolean {
   if (!trimmed) return true;
   if (QR_OMIT_PRESETS.has(trimmed)) return true;
   if (trimmed === DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR) return true;
+  if (trimmed === DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR) return true;
   if (trimmed.includes("47.93.11.212")) return true;
+  if (trimmed.includes("47.251.91.97")) return true;
   if (trimmed.includes("bootstrap.libp2p.io")) return true;
   return false;
 }

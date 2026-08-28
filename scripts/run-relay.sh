@@ -12,6 +12,8 @@
 # Override before exposing publicly:
 #   ENVOYMESH_RELAY_ADMIN_USER=ops
 #   ENVOYMESH_RELAY_ADMIN_PASSWORD=...
+# Community fleet join (Phase 46D): same token on cn-relay, us-relay, and new relays:
+#   ENVOYMESH_RELAY_JOIN_TOKEN=your-long-random-secret
 # Put TLS (Caddy/nginx) in front for remote access — Basic Auth over plain HTTP
 # leaks credentials. For hard restart from the UI, run under systemd/Docker with
 # Restart=always (see docs/relay-supervisor-recipes.md).
@@ -96,6 +98,8 @@ while [[ $# -gt 0 ]]; do
             echo "  ENVOYMESH_RELAY_ADMIN_USER / ENVOYMESH_RELAY_ADMIN_PASSWORD"
             echo "                             Admin UI Basic Auth (default: admin / envoymesh123456)"
             echo "                             Also locks /info, /version, /reservations"
+            echo "  ENVOYMESH_RELAY_JOIN_TOKEN  Shared secret for gated community relay join"
+            echo "                             (≥ 8 chars; same on cn-relay, us-relay, new fleet relays)"
             exit 0
             ;;
         *)

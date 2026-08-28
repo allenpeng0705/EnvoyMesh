@@ -1479,6 +1479,8 @@ export const RelayJoinRequestPayloadSchema = z.object({
   relay: RelayMetadataSchema,
   desiredLevel: z.number().int().min(0).max(8).optional(),
   knownRelays: z.array(RelayHintSchema).default([]),
+  /** Operator-shared secret; required when joining a community preset relay fleet. */
+  joinToken: z.string().min(1).optional(),
 });
 
 export const RelayJoinResponsePayloadSchema = z.object({

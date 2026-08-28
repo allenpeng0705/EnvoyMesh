@@ -1,3 +1,5 @@
+import { mergeCommunityRelaySiblingBootstraps } from "@envoymesh/api";
+
 export interface RelayArgs {
   profileDir: string;
   listen: string[];
@@ -60,6 +62,10 @@ export interface RelayArgs {
    *  in supportedInterfaces. If unset, falls back to the relay's
    *  HTTP host:port. */
   a2aBridgeGatewayUrl: string | null;
+  /** Shared secret for gated community relay join (gatekeeper + joiner). */
+  relayJoinToken: string | null;
+  /** When true, skip community fleet merge and outbound join retries. */
+  skipCommunitySiblings: boolean;
 }
 
 /**
@@ -149,6 +155,8 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
     logRetainDays: 7,
     a2aBridgeEnabled: false,
     a2aBridgeGatewayUrl: null,
+    relayJoinToken: null,
+    skipCommunitySiblings: false,
   };
 
   // Apply environment variables FIRST. CLI args override them below.
@@ -260,6 +268,8 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
         console.warn(`[relay] --a2a-gateway-url is not a valid http(s) URL: ${msg}`);
       }
       args.a2aBridgeGatewayUrl = rawUrl;
+    } else if (arg === "--relay-join-token") {
+      args.relayJoinToken = getValue(argv, ++i, arg);
     } else if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);
@@ -288,6 +298,26 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
   if (args.relayPublicMode && args.enableDht && args.dhtClientMode && !dhtModeFromCli) {
     args.dhtClientMode = false;
     console.log("[relay] DHT: auto-switched to SERVER mode (public relay)");
+  }
+
+  // Public / community relays: seed sibling book from the shipped CN+US fleet
+  // list (packages/api default-bootstrap). Self is skipped later by peer id.
+  // Opt out: ENVOYMESH_RELAY_SKIP_COMMUNITY_SIBLINGS=1 (private org fleets).
+  const skipCommunitySiblings = parseBoolean(
+    "ENVOYMESH_RELAY_SKIP_COMMUNITY_SIBLINGS",
+    process.env.ENVOYMESH_RELAY_SKIP_COMMUNITY_SIBLINGS ?? "0",
+  );
+  args.skipCommunitySiblings = skipCommunitySiblings;
+  if (args.relayPublicMode && !skipCommunitySiblings) {
+    const before = args.bootstrapPeers.length;
+    args.bootstrapPeers = mergeCommunityRelaySiblingBootstraps(args.bootstrapPeers);
+    const added = args.bootstrapPeers.length - before;
+    if (added > 0) {
+      console.log(
+        `[relay] Community sibling fleet: merged ${added} addr(s) into --bootstrap ` +
+          `(CN+US from repo; set ENVOYMESH_RELAY_SKIP_COMMUNITY_SIBLINGS=1 to disable)`,
+      );
+    }
   }
 
   return args;
@@ -408,6 +438,10 @@ function applyEnvVars(args: RelayArgs): void {
   if (envA2aGateway) {
     args.a2aBridgeGatewayUrl = envA2aGateway;
   }
+  const envJoinToken = process.env.ENVOYMESH_RELAY_JOIN_TOKEN?.trim();
+  if (envJoinToken) {
+    args.relayJoinToken = envJoinToken;
+  }
 }
 
 function getValue(argv: string[], index: number, flag: string): string {
@@ -456,6 +490,14 @@ Options:
                          If domain (e.g., relay.example.com), will query /info
                          to get full multiaddr with peer ID.
                          Env: ENVOYMESH_BOOTSTRAP_PEERS (comma-separated)
+                         Public mode also merges the shipped community fleet
+                         (CN + US) into this list for sibling miss-forward.
+                         Opt out: ENVOYMESH_RELAY_SKIP_COMMUNITY_SIBLINGS=1
+  --relay-join-token <secret>
+                         Shared secret for gated community relay join. Preset
+                         relays (cn-relay, us-relay) require this to accept
+                         relay.join.request; new relays send the same token on
+                         startup to join the fleet. Env: ENVOYMESH_RELAY_JOIN_TOKEN
   --no-dht              Disable DHT discovery.
   --dht-server          Force DHT server mode (relay stores routing records for other peers).
                          Default for public relays (auto-enabled with --advertise-addr).

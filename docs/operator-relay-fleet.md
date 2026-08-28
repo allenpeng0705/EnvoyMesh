@@ -8,14 +8,15 @@ This document is the **product-facing baseline** for WAN connectivity defaults: 
 
 ## 1. Shipped bootstrap presets (`wan-default`)
 
-When the node uses **`discoveryProfile: wan-default`** and no explicit `--bootstrap` peers are given, the CLI default expands to **four preset identifiers** (see `DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS`):
+When the node uses **`discoveryProfile: wan-default`** and no explicit `--bootstrap` peers are given, the CLI default expands to **five preset identifiers** (see `DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS`):
 
 | Preset id | Resolves to | Role |
 |-----------|-------------|------|
 | `public-libp2p` | Several **`/dnsaddr/bootstrap.libp2p.io/p2p/...`** peers | Public libp2p project bootstraps (**community**, not under EnvoyMesh control). |
 | `public-libp2p-am6` | AM6 libp2p bootstrap | Regional variant; useful when one global DNS path is flaky. |
 | `public-libp2p-am7` | AM7 libp2p bootstrap | Same intent as `am6`. |
-| `cn-relay` | **EnvoyMesh community relay** TCP multiaddr (peer id fixed in repo; IP may rotate — see §3). | First-class bootstrap + relay hop for meshes that use the shared fleet. |
+| `cn-relay` | Asia EnvoyMesh community relay (`DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR`) | First-class bootstrap + circuit hop. |
+| `us-relay` | US EnvoyMesh community relay (`DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR`) | Second community hop (Phase 46 multi-home). |
 
 **CLI:** `--bootstrap-preset <name>` (repeatable). **Invalid preset names** are rejected at parse time.
 
@@ -23,9 +24,9 @@ When the node uses **`discoveryProfile: wan-default`** and no explicit `--bootst
 
 ---
 
-## 2. EnvoyMesh community relay (`cn-relay`)
+## 2. EnvoyMesh community relays (`cn-relay` + `us-relay`)
 
-The **`cn-relay`** preset expands to `DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR` (see `default-bootstrap.ts`). It is a **full EnvoyMesh relay hop**, not discovery-only:
+Presets expand to full dialable multiaddrs in `default-bootstrap.ts`. Each is a **full EnvoyMesh relay hop**, not discovery-only:
 
 - **Dialable libp2p peer** for DHT/bootstrap alignment with other WAN-default nodes.
 - **Circuit-relay-v2 server** so NAT clients can `addRelay` / reserve a slot and dial `/p2p-circuit/` paths (auto-bond, WAN join invites).
@@ -111,7 +112,8 @@ This table mirrors **`KNOWN_PRESETS`** expansion in `bootstrap-resolver.ts` at t
 | `public-libp2p` | 4× `bootstrap.libp2p.io` dnsaddr peers |
 | `public-libp2p-am6` | AM6 dnsaddr peer |
 | `public-libp2p-am7` | AM7 dnsaddr peer |
-| `cn-relay` | One TCP multiaddr: `DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR` |
+| `cn-relay` | Asia TCP multiaddr: `DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR` |
+| `us-relay` | US TCP multiaddr: `DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR` |
 
 ---
 
@@ -145,6 +147,8 @@ User=admin
 Environment=NODE_ENV=production
 Environment=ENVOYMESH_RELAY_ADMIN_USER=admin
 Environment=ENVOYMESH_RELAY_ADMIN_PASSWORD=change-me-before-public
+# Gated community join (Phase 46D): same secret on cn-relay, us-relay, and any new fleet relay.
+Environment=ENVOYMESH_RELAY_JOIN_TOKEN=your-long-random-secret
 # Optional explicit override (advertise-addr already implies public mode):
 # Environment=ENVOYMESH_RELAY_PUBLIC_MODE=1
 
@@ -229,11 +233,11 @@ Use this when expanding beyond a single community/org hop. Phase 46 miss-forward
 3. **Read A’s multiaddr the same way** → `RELAY_A=…`.
 
 4. **Mutual seed (required for reliable miss-forward):**
-   - On **A**: add `--bootstrap $RELAY_B` (or `ENVOYMESH_BOOTSTRAP_PEERS`) and **restart** A.
-   - On **B**: add `--bootstrap $RELAY_A` and **restart** B.
+   - **Community CN + US fleet:** public-mode relays (`--advertise-addr` / `--relay-public-mode`) **auto-merge** both multiaddrs from `DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDRS` into `--bootstrap` (self skipped by peer id). After `git pull` + `npm run relay:build` + restart, look for `Community sibling fleet: merged` and `Seeded N sibling(s) into relay book from --bootstrap`. Opt out: `ENVOYMESH_RELAY_SKIP_COMMUNITY_SIBLINGS=1`.
+   - **Org / private fleets:** still add explicit `--bootstrap $RELAY_B` (or `ENVOYMESH_BOOTSTRAP_PEERS`) on each host and **restart**.
    - Startup log should include `Seeded N sibling(s) into relay book from --bootstrap`.
 
-   One-direction seed (only A→B) is enough for **A forwards to B**; bidirectional is required for **both** directions.
+   One-direction seed (only A→B) is enough for **A forwards to B**; bidirectional is required for **both** directions. The shipped community merge provides both directions once both hosts run a current public-mode build.
 
 5. **Optional gossip path:** if you seed only A→B and later add C, C can appear via periodic `relay.hints` (~90s) after verify. For production cutovers, still add explicit `--bootstrap` rather than waiting on gossip. (Learning a third relay **only** via gossip is manual/deferred — no dedicated E2E.)
 
@@ -258,3 +262,22 @@ Use this when expanding beyond a single community/org hop. Phase 46 miss-forward
 2. Mutual-bootstrap with remaining fleet members (§8 steps 2–4).
 3. Ship updated preset to clients; drain old relay (stop advertising in presets) after clients reserve on the replacement.
 4. Do not delete the old `libp2p-private.key` until bookmarks/presets no longer reference its peer id.
+
+---
+
+## 9. Gated join for community fleet expansion (Phase 46D)
+
+When adding a relay to the **community preset fleet** (not just org mutual-bootstrap), use **`relay.join.request`** so only `cn-relay` / `us-relay` gatekeepers admit verified siblings. Full design: [community-relay-join.md](./community-relay-join.md).
+
+**Quick runbook:**
+
+1. Generate a long random token shared by CN, US, and the new relay:
+   ```bash
+   export ENVOYMESH_RELAY_JOIN_TOKEN='…'   # ≥ 8 chars; same on all three hosts
+   ```
+2. Restart **both** preset relays with the token set (they reject joins if unset).
+3. Start the new relay with `--advertise-addr`, public mode, and the same token — it auto-sends join on startup.
+4. Confirm logs: `join.request accepted` on a preset; `Community join accepted` on the new relay.
+5. Ship a **client preset release** if end users should dial the new relay directly (join alone does not update app defaults).
+
+**Private org relays** are unchanged: use mutual `--bootstrap` and `ENVOYMESH_RELAY_SKIP_COMMUNITY_SIBLINGS=1`; they do not participate in community gated join unless their peer ids are added to the shipped preset list in a release.

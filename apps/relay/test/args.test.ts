@@ -14,6 +14,7 @@ const VARS = [
   "ENVOYMESH_ADVERTISE_ADDRS",
   "ENVOYMESH_WS_AUTH_TOKEN",
   "ENVOYMESH_RELAY_PUBLIC_MODE",
+  "ENVOYMESH_RELAY_SKIP_COMMUNITY_SIBLINGS",
   "ENVOYMESH_RELAY_MAX_RESERVATIONS",
   "ENVOYMESH_RELAY_RESERVATION_TTL_MS",
   "ENVOYMESH_RELAY_DEFAULT_DATA_LIMIT_BYTES",
@@ -97,6 +98,34 @@ describe("parseRelayArgs", () => {
     ]);
     expect(args.relayPublicMode).toBe(true);
     expect(args.advertiseAddrs).toEqual(["/ip4/47.93.11.212/tcp/4001"]);
+  });
+
+  it("merges community CN+US sibling fleet into bootstrap when public mode", async () => {
+    const { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR, DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR } =
+      await import("@envoymesh/api");
+    const args = parseRelayArgs([
+      "--advertise-addr",
+      "/ip4/47.251.91.97/tcp/4001",
+      "--relay-public-mode",
+    ]);
+    expect(args.bootstrapPeers).toContain(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+    expect(args.bootstrapPeers).toContain(DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR);
+  });
+
+  it("skips community sibling fleet when ENVOYMESH_RELAY_SKIP_COMMUNITY_SIBLINGS=1", () => {
+    process.env.ENVOYMESH_RELAY_SKIP_COMMUNITY_SIBLINGS = "1";
+    const args = parseRelayArgs(["--relay-public-mode"]);
+    expect(args.bootstrapPeers).toEqual([]);
+  });
+
+  it("does not merge community siblings in private mode", () => {
+    const args = parseRelayArgs([
+      "--advertise-addr",
+      "/ip4/1.2.3.4/tcp/4001",
+      "--relay-private-mode",
+    ]);
+    expect(args.relayPublicMode).toBe(false);
+    expect(args.bootstrapPeers).toEqual([]);
   });
 
   it("auto-enables public mode when ENVOYMESH_ADVERTISE_ADDRS is set", () => {

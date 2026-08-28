@@ -1,6 +1,7 @@
 import type { Sensitivity } from "@envoymesh/protocol";
 import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
+  DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR,
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
   normalizeBootstrapPresetsForContactsOnly,
   type ConnectivityTuning,
@@ -38,6 +39,8 @@ export interface NodeArgs {
   joinInviteSeedAddrs: string[];
   enableRelay: boolean;
   enableRelayServer: boolean;
+  /** Shared secret for gated community relay join when running as --relay-server gatekeeper. */
+  relayJoinToken: string | null;
   /**
    * Force a circuit-relay-v2 reservation on each configured/resolved relay at
    * startup so the local node stays inbound-reachable via `/p2p-circuit/`.
@@ -120,10 +123,14 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     enableMdns: true,
     enableDht: false,
     stunServers: [...DEFAULT_STUN_SERVERS],
-    bootstrapPeers: [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
+    bootstrapPeers: [
+      DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
+      DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR,
+    ],
     joinInviteSeedAddrs: [],
     enableRelay: false,
     enableRelayServer: false,
+    relayJoinToken: null,
     enableRelayReservation: true,
     enableAutoNat: false,
     enableDcutr: false,
@@ -350,7 +357,7 @@ Options:
   --dht-server          Enable DHT in server-capable mode.
   --bootstrap <addr>    Add a bootstrap peer multiaddr. Repeatable.
                          Env: ENVOYMESH_BOOTSTRAP_PEERS (comma-separated)
-  --bootstrap-preset <p> Add managed bootstrap set. Supported: public-libp2p, public-libp2p-am6, public-libp2p-am7, cn-relay
+  --bootstrap-preset <p> Add managed bootstrap set. Supported: public-libp2p, public-libp2p-am6, public-libp2p-am7, cn-relay, us-relay
                          Default (wan-default, no explicit bootstrap): all public-libp2p presets plus EnvoyMesh community relay multiaddr.
                          Repeatable. Env: ENVOYMESH_BOOTSTRAP_PRESETS (comma-separated)
   --bootstrap-presets-file <path> Load custom bootstrap preset definitions from YAML. Repeatable.
@@ -735,6 +742,11 @@ function applyEnvironmentArgs(args: NodeArgs): void {
     .map((entry) => entry.trim())
     .filter(Boolean);
   args.advertiseAddrs.push(...envAdvertiseAddrs);
+
+  const envRelayJoinToken = (process.env.ENVOYMESH_RELAY_JOIN_TOKEN ?? "").trim();
+  if (envRelayJoinToken) {
+    args.relayJoinToken = envRelayJoinToken;
+  }
 }
 
 function readConfigPath(argv: string[]): string | undefined {
@@ -776,6 +788,9 @@ function bootstrapPeersForPreset(preset: string, customPresetRegistry: Bootstrap
   }
   if (preset === "cn-relay") {
     return [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR];
+  }
+  if (preset === "us-relay") {
+    return [DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR];
   }
   throw new Error(`Unknown bootstrap preset: ${preset}`);
 }

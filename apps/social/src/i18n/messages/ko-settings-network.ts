@@ -134,6 +134,8 @@ export const koNetworkSettingsMessages = {
     publicLibp2pAm7Desc: "서버 1대 (AM7)",
     cnRelay: "CN Relay (47.93.11.212)",
     cnRelayDesc: "중국 릴레이 서버",
+    usRelay: "US Relay (47.251.91.97)",
+    usRelayDesc: "미국 커뮤니티 릴레이",
   },
   relays: {
     title: "구성된 릴레이",

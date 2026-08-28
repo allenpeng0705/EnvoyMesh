@@ -46,7 +46,7 @@ function buildHints(input: {
     hints.push("Relay transport is disabled in node config; cross-NAT chat needs relay enabled.");
   }
   if (input.relayControlTargets.length === 0) {
-    hints.push("No Envoy relay control targets — enable the cn-relay bootstrap preset or add a relay bootstrap addr.");
+    hints.push("No Envoy relay control targets — enable the cn-relay / us-relay bootstrap presets or add a relay bootstrap addr.");
   }
   if (!input.relaySnapshot?.checkinResults.length) {
     hints.push("No relay.checkin recorded yet — wait 30–60s after start for the relay client cycle.");

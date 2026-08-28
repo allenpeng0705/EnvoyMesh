@@ -11,11 +11,11 @@ describe("network presets", () => {
   });
 
   it("maps relay-only to friends-internet", () => {
-    expect(resolveNetworkPreset("relay-only", ["cn-relay"])).toBe("friends-internet");
+    expect(resolveNetworkPreset("relay-only", ["cn-relay", "us-relay"])).toBe("friends-internet");
   });
 
   it("maps wan-default to explore-public", () => {
-    expect(resolveNetworkPreset("wan-default", ["public-libp2p", "cn-relay"])).toBe("explore-public");
+    expect(resolveNetworkPreset("wan-default", ["public-libp2p", "cn-relay", "us-relay"])).toBe("explore-public");
   });
 
   it("defines three user-facing presets", () => {

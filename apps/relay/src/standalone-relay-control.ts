@@ -17,6 +17,7 @@ import {
   parseRelayCheckinPayload,
   parseRelayHintsRequestPayload,
   parseRelayHintsResponsePayload,
+  parseRelayJoinRequestPayload,
   parseRelayLookupPayload,
   parseRelayLookupResponsePayload,
   RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
@@ -26,10 +27,18 @@ import {
   type RelayLookupPayload,
   type RelayLookupResponsePayload,
 } from "@envoymesh/protocol";
+import { isCommunityPresetRelayPeerId, createRelayJoinRateLimiter } from "@envoymesh/api";
 import { isJunkRelayHint, type createRelayRoster } from "./relay-roster.js";
 import type { createRelayLookupRouter } from "./relay-lookup-router.js";
 import type { RelayControlIdentity } from "./relay-control-identity.js";
 import { mergeRelayLookupResponses } from "./relay-lookup-response-merge.js";
+import {
+  buildRelayJoinRejection,
+  buildRelayJoinResponseForAcceptedJoin,
+  evaluateCommunityRelayJoinRequest,
+} from "./community-relay-join.js";
+
+const relayJoinRateLimiter = createRelayJoinRateLimiter();
 
 export interface StandaloneRelayControlDeps {
   mesh: EnvoyMesh;
@@ -56,6 +65,11 @@ export interface StandaloneRelayControlDeps {
   log?: (msg: string) => void;
   /** Optional warn function (defaults to console.warn). */
   warn?: (msg: string) => void;
+  /** Community preset join gatekeeper (public cn/us relays only). */
+  communityJoin?: {
+    joinToken: string | null;
+    relayPublicMode: boolean;
+  };
 }
 
 function placeholderReply(
@@ -87,9 +101,12 @@ export function ingestSiblingHints(
   roster: ReturnType<typeof createRelayRoster>,
   mesh: EnvoyMesh,
   hints: RelayHint[],
-  opts: { verified: boolean },
+  opts: { verified: boolean; trustSourcePeerId?: string },
   bookTtlMs: number,
 ): void {
+  const trustVerified =
+    opts.verified ||
+    (opts.trustSourcePeerId != null && isCommunityPresetRelayPeerId(opts.trustSourcePeerId));
   const expiresAt = new Date(Date.now() + bookTtlMs).toISOString();
   for (const hint of hints) {
     if (isJunkRelayHint(hint, mesh.peerId)) continue;
@@ -111,7 +128,7 @@ export function ingestSiblingHints(
       relayId: hint.relayId,
       addrs: hint.multiaddrs,
       relation: "sibling",
-      state: opts.verified ? "verified" : "candidate",
+      state: trustVerified ? "verified" : "candidate",
       level: hint.level,
       region: hint.region,
       expiresAt: hint.expiresAt ?? expiresAt,
@@ -368,6 +385,62 @@ export function attachStandaloneRelayControl(deps: StandaloneRelayControlDeps): 
         log(`[relay] hints.response ingested candidates=${payload.relayHints.length}`);
       } catch (error) {
         warn(`[relay] Failed to handle relay.hints.response: ${error instanceof Error ? error.message : error}`);
+      }
+      return;
+    }
+
+    if (intent === "relay.join.request") {
+      try {
+        const payload = parseRelayJoinRequestPayload(message.envelope.payload);
+        const requesterPeerId = message.envelope.senderPeerId;
+        if (!relayJoinRateLimiter.allow(requesterPeerId)) {
+          const responsePayload = buildRelayJoinRejection("join rate limit exceeded", bookTtlMs);
+          if (message.replyWithEnvelope) {
+            await message.replyWithEnvelope(
+              placeholderReply(
+                deps.mesh,
+                requesterPeerId,
+                "relay.join.response",
+                responsePayload,
+              ),
+            );
+          }
+          warn(`[relay] join.request rate-limited relay=${payload.relay.relayId.slice(0, 12)}…`);
+          return;
+        }
+        const decision = evaluateCommunityRelayJoinRequest({
+          gatekeeperPeerId: deps.mesh.peerId,
+          relayPublicMode: deps.communityJoin?.relayPublicMode ?? false,
+          configuredJoinToken: deps.communityJoin?.joinToken ?? null,
+          request: payload,
+          requesterPeerId: message.envelope.senderPeerId,
+        });
+        const responsePayload = decision.accept
+          ? buildRelayJoinResponseForAcceptedJoin({
+              roster: deps.roster,
+              request: payload,
+              bookTtlMs,
+            })
+          : buildRelayJoinRejection(decision.reason, bookTtlMs);
+        if (message.replyWithEnvelope) {
+          await message.replyWithEnvelope(
+            placeholderReply(
+              deps.mesh,
+              message.envelope.senderPeerId,
+              "relay.join.response",
+              responsePayload,
+            ),
+          );
+        }
+        if (decision.accept) {
+          log(`[relay] join.request accepted relay=${payload.relay.relayId.slice(0, 12)}…`);
+        } else {
+          warn(
+            `[relay] join.request rejected relay=${payload.relay.relayId.slice(0, 12)}… reason=${decision.reason}`,
+          );
+        }
+      } catch (error) {
+        warn(`[relay] Failed to handle relay.join.request: ${error instanceof Error ? error.message : error}`);
       }
     }
   });

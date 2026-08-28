@@ -182,6 +182,7 @@ ExecStart=/usr/bin/env node /opt/envoymesh/apps/relay/dist/index.js \
 Restart=always
 RestartSec=10
 User=envoymesh
+Environment=ENVOYMESH_RELAY_JOIN_TOKEN=your-long-random-secret
 
 [Install]
 WantedBy=multi-user.target

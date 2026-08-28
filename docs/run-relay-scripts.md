@@ -205,6 +205,7 @@ If no advertise is set, the relay uses its detected local addresses, which work 
 | `RELAY_PORT` | Default port | `4001` |
 | `ENVOYMESH_RELAY_ADMIN_USER` | Admin UI Basic Auth username | `admin` |
 | `ENVOYMESH_RELAY_ADMIN_PASSWORD` | Admin UI Basic Auth password | `envoymesh123456` |
+| `ENVOYMESH_RELAY_JOIN_TOKEN` | Shared secret for gated community relay join (preset gatekeepers + new fleet relays) | (none) |
 
 ### Admin Web UI
 
@@ -275,6 +276,8 @@ StartLimitIntervalSec=300
 StartLimitBurst=10
 User=envoymesh
 Environment=NODE_ENV=production
+# Gated community join (Phase 46D): same secret on cn-relay, us-relay, and new fleet relays.
+Environment=ENVOYMESH_RELAY_JOIN_TOKEN=your-long-random-secret
 
 [Install]
 WantedBy=multi-user.target

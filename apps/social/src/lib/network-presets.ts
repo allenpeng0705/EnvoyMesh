@@ -25,13 +25,13 @@ const NETWORK_PRESET_CORE: readonly NetworkPresetCore[] = [
   {
     id: "friends-internet",
     discoveryProfile: "relay-only",
-    bootstrapPresets: ["cn-relay"],
+    bootstrapPresets: ["cn-relay", "us-relay"],
     enableMdns: true,
   },
   {
     id: "explore-public",
     discoveryProfile: "wan-default",
-    bootstrapPresets: ["public-libp2p", "cn-relay"],
+    bootstrapPresets: ["public-libp2p", "cn-relay", "us-relay"],
     enableMdns: true,
   },
 ];

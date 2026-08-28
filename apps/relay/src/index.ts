@@ -76,6 +76,7 @@ import {
 import { createRelayLogBuffer } from "./relay-log-buffer.js";
 import { handleAdminRequest, type AdminHttpDeps } from "./admin-http.js";
 import { attachStandaloneRelayControl, ingestSiblingHints } from "./standalone-relay-control.js";
+import { startCommunityRelayJoinRetry } from "./community-relay-join.js";
 
 // ============================================================================
 // CONSTANTS & CONFIGURATION
@@ -337,6 +338,7 @@ let eventLoopLagTimer: ReturnType<typeof setInterval> | undefined;
 // Hoisted to module scope so shutdown() can clear them (C4/M1 stability fixes).
 let provideInterval: ReturnType<typeof setInterval> | undefined;
 let detachRelayControl: (() => void) | undefined;
+let detachCommunityJoinRetry: (() => void) | undefined;
 let directWss: WebSocketServer | undefined;
 let wss: WebSocketServer | undefined;
 let homeTunnelProxy: ReturnType<typeof createHomeTunnelProxy> | undefined;
@@ -576,6 +578,10 @@ async function shutdown(): Promise<void> {
     detachRelayControl();
     detachRelayControl = undefined;
   }
+  if (detachCommunityJoinRetry) {
+    detachCommunityJoinRetry();
+    detachCommunityJoinRetry = undefined;
+  }
   // M1: explicitly close the WebSocket servers and home-tunnel-proxy so active
   // connections are terminated promptly (systemd SIGTERM shouldn't hang).
   try {
@@ -791,27 +797,9 @@ function startSiblingHintsGossip(): void {
         )
         .slice(0, 4);
 
-      // Candidate probe: on every other tick, probe up to 2 candidates
-      // to promote them to verified. Without this, candidates learned from
-      // gossip can never earn a successful RTT and the book is permanently
-      // locked to the initial --bootstrap seed set (review finding M3).
-      const probeCandidates = Math.floor(Date.now() / RELAY_HINTS_INTERVAL_MS) % 2 === 0;
-      const candidateBook = probeCandidates
-        ? relayRoster
-            .relayBook()
-            .filter(
-              (e) =>
-                e.relayId !== selfPeerId &&
-                e.expiresAt > Date.now() &&
-                e.state === "candidate" &&
-                e.addrs.length > 0,
-            )
-            .slice(0, 2)
-        : [];
-
-      // Probe in parallel so one slow/unreachable target cannot serialize
-      // the whole tick (a polluted book could otherwise block for 6×12s).
-      const targets = [...verifiedBook, ...candidateBook];
+      // Gossip only verified siblings. Candidates from leaf checkins or untrusted
+      // hints never auto-promote — admission requires relay.join from a preset gatekeeper.
+      const targets = verifiedBook;
       let gossipSucceeded = false;
       await Promise.allSettled(
         targets.map(async (entry) => {
@@ -836,13 +824,18 @@ function startSiblingHintsGossip(): void {
               return;
             }
             const response = parseRelayHintsResponsePayload(reply.payload);
-            // Successful RTT → promote this peer and ingest returned siblings as candidates.
-            // For candidates this is the ONLY path to verified status (design B2.3).
-            relayRoster.promoteRelay(entry.relayId, "verified");
-            ingestSiblingHints(relayRoster, mesh, response.relayHints, { verified: false }, RELAY_BOOK_TTL_MS);
+            // Successful RTT → refresh verified sibling + ingest vouched hints.
+            relayRoster.promoteRelay(entry.relayId, entry.state);
+            ingestSiblingHints(
+              relayRoster,
+              mesh,
+              response.relayHints,
+              { verified: false, trustSourcePeerId: entry.relayId },
+              RELAY_BOOK_TTL_MS,
+            );
             gossipSucceeded = true;
             console.log(
-              `[relay] hints gossip ok target=${entry.relayId.slice(0, 12)}… state=${entry.state}→verified got=${response.relayHints.length}`,
+              `[relay] hints gossip ok target=${entry.relayId.slice(0, 12)}… got=${response.relayHints.length}`,
             );
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -946,6 +939,10 @@ try {
     circuitBases: relayCircuitBases,
     forwardTimeoutMs: RELAY_FORWARD_LOOKUP_REPLY_MS,
     bookTtlMs: RELAY_BOOK_TTL_MS,
+    communityJoin: {
+      joinToken: args.relayJoinToken,
+      relayPublicMode: args.relayPublicMode,
+    },
     onCheckin: (info) => {
       relayMetrics.recordCheckin();
     },
@@ -958,6 +955,18 @@ try {
       });
     },
   });
+
+  if (args.relayJoinToken && !args.skipCommunitySiblings) {
+    detachCommunityJoinRetry = startCommunityRelayJoinRetry({
+      mesh,
+      identity: relayControlIdentity,
+      roster: relayRoster,
+      joinToken: args.relayJoinToken,
+      publicAddrs: relayCircuitBases,
+      bookTtlMs: RELAY_BOOK_TTL_MS,
+      skipCommunitySiblings: args.skipCommunitySiblings,
+    });
+  }
 
   if (args.enableRendezvous) {
     capabilityRegistry = new CapabilityRegistry({ verbosity: "full", logPrefix: "[registry]" });

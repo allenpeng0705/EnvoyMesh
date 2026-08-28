@@ -335,7 +335,7 @@ flowchart TD
 | `relay.lookup` / `relay.lookup.response` | Discovery; miss-forward; optional sibling piggyback |
 | `relay.hints.request` / `relay.hints.response` | Sibling-list exchange |
 | `relay.summary` | **Not required** for 46 |
-| `relay.join.*` / `relay.register` | **Not required** for 46 |
+| `relay.join.*` / `relay.register` | **Gated join (46D)** on standalone preset relays; full hierarchy deferred |
 
 Schemas: `@envoymesh/protocol` (`RelayHintSchema`, etc.).
 

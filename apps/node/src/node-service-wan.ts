@@ -18,6 +18,7 @@ import {
   mergeWanJoinInviteBootstrap,
   parseEnvoyJoinUri,
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
+  DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR,
 } from "@envoymesh/api";
 import type { EnvoyMesh } from "@envoymesh/network";
 import { allowsLoopbackDialHints, relayCircuitToPeer } from "@envoymesh/network";
@@ -225,8 +226,12 @@ export async function createWanJoinInviteViaRuntime(
     if (config.bootstrapPresets?.includes("cn-relay")) {
       relayBases.push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
     }
+    if (config.bootstrapPresets?.includes("us-relay")) {
+      relayBases.push(DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR);
+    }
     if (relayBases.length === 0) {
       relayBases.push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+      relayBases.push(DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR);
     }
     const synthetic: string[] = [];
     for (const base of relayBases) {

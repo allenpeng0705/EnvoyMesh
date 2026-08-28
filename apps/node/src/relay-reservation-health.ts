@@ -5,7 +5,10 @@
  * and starts the EnvoyMesh health loop (periodic + reconnect on disconnect).
  */
 import type { EnvoyMesh } from "@envoymesh/network";
-import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
+import {
+  DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
+  DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR,
+} from "@envoymesh/api";
 
 export interface RelayControlTargetConfig {
   configuredRelays?: readonly { enabled?: boolean; addr?: string }[];
@@ -31,7 +34,8 @@ const DEFAULT_MAX_RELAY_CONTROL_TARGETS = 4;
  *
  * When `configuredRelays` has at least one usable addr, bootstrapPeers are
  * not used as extra reservation targets (AutoRelay / DHT noise). Community
- * cn-relay is still added when the cn-relay preset / community bootstrap is set.
+ * cn-relay / us-relay are still added when those presets (or their multiaddrs)
+ * are set.
  */
 export function collectRelayControlTargets(config: RelayControlTargetConfig): string[] {
   const maxTargets = config.maxTargets ?? DEFAULT_MAX_RELAY_CONTROL_TARGETS;
@@ -61,13 +65,15 @@ export function collectRelayControlTargets(config: RelayControlTargetConfig): st
 
   const bootstrap = config.bootstrapPeers ?? [];
   const presets = config.bootstrapPresets ?? [];
-  const wantCommunity =
+  const wantCn =
     presets.includes("cn-relay") ||
     bootstrap.includes(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+  const wantUs =
+    presets.includes("us-relay") ||
+    bootstrap.includes(DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR);
 
-  if (wantCommunity) {
-    push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
-  }
+  if (wantCn) push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+  if (wantUs) push(DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR);
 
   // Only backfill bootstrap peers when no configured EnvoyMesh relays exist.
   // Otherwise polluted bootstrap lists (self peer, LAN, random DHT) steal
@@ -87,9 +93,10 @@ export function collectRelayControlTargets(config: RelayControlTargetConfig): st
   // Home nodes on CGNAT with empty / polluted bootstrap (LAN-only, circuits,
   // DHT noise) otherwise skip warmup entirely → no reservation → EnvoyGo
   // stays unreachable while the process looks "healthy". Always keep the
-  // community relay as a last-resort hop when nothing else survived filters.
+  // community relays as last-resort hops when nothing else survived filters.
   if (out.length === 0) {
     push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+    push(DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR);
   }
 
   return out.slice(0, maxTargets);

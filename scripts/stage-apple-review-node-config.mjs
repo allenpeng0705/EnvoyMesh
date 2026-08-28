@@ -38,7 +38,7 @@ try {
     relayServerEnabled: false,
     advertiseAddrs: [],
     bootstrapPeers: [],
-    bootstrapPresets: ["public-libp2p", "public-libp2p-am6", "public-libp2p-am7", "cn-relay"],
+    bootstrapPresets: ["public-libp2p", "public-libp2p-am6", "public-libp2p-am7", "cn-relay", "us-relay"],
     configuredRelays: [],
     modelProviders: { mode: "disabled" },
     chatAssistEnabled: false,

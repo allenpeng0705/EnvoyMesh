@@ -154,6 +154,7 @@ import { buildSignedChatDeliveredEnvelope } from "@envoymesh/api/chat-delivered"
 import { verifyInboundChatDevice, formatChatSenderDisplayName, bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 import { chatWireAttachmentsToContent } from "@envoymesh/api";
 import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
+import { createRelayJoinRateLimiter, evaluateCommunityRelayJoinRequest } from "@envoymesh/api";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import {
   dialableInboundRemoteAddrs,
@@ -974,6 +975,7 @@ const RELAY_LOOKUP_INTERVAL_MS = 30_000;
 const RELAY_LOOKUP_REPLY_TIMEOUT_MS = 30_000;
 const RELAY_SUMMARY_INTERVAL_MS = 60_000;
 const RELAY_CONTROL_TTL_MS = 300_000;
+const nodeRelayJoinRateLimiter = createRelayJoinRateLimiter();
 /** Child relay relay.lookup forward: read reply on same stream (per-hop). */
 const RELAY_FORWARD_LOOKUP_REPLY_MS = 12_000;
 const RELAY_MANAGER_SNAPSHOT_INTERVAL_MS = 30_000;
@@ -5766,6 +5768,60 @@ async function handleRelayControlEnvelope(input: {
 
     if (envelope.intent === "relay.join.request") {
       const payload = parseRelayJoinRequestPayload(envelope.payload);
+      const relayPublicMode = args.enableRelayServer && args.advertiseAddrs.length > 0;
+      if (!nodeRelayJoinRateLimiter.allow(remotePeerId)) {
+        const responsePayload = createRelayJoinResponsePayload({
+          accepted: false,
+          reason: "join rate limit exceeded",
+          expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
+        });
+        await sendRelayControlResponse(
+          envelope,
+          remotePeerId,
+          "relay.join.response",
+          responsePayload,
+          correlationId,
+          replyWithEnvelope,
+        );
+        await appendRelayInboundAudit(
+          envelope,
+          remotePeerId,
+          receivedAt,
+          correlationId,
+          `relay.join.request rate-limited relay=${payload.relay.relayId}`,
+        );
+        return;
+      }
+      const decision = evaluateCommunityRelayJoinRequest({
+        gatekeeperPeerId: mesh.peerId,
+        relayPublicMode,
+        configuredJoinToken: args.relayJoinToken,
+        request: payload,
+        requesterPeerId: remotePeerId,
+      });
+      if (!decision.accept) {
+        const responsePayload = createRelayJoinResponsePayload({
+          accepted: false,
+          reason: decision.reason,
+          expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
+        });
+        await sendRelayControlResponse(
+          envelope,
+          remotePeerId,
+          "relay.join.response",
+          responsePayload,
+          correlationId,
+          replyWithEnvelope,
+        );
+        await appendRelayInboundAudit(
+          envelope,
+          remotePeerId,
+          receivedAt,
+          correlationId,
+          `relay.join.request rejected relay=${payload.relay.relayId} reason=${decision.reason}`,
+        );
+        return;
+      }
       relayRoster.registerRelay({
         relayId: payload.relay.relayId,
         addrs: payload.relay.publicAddrs,

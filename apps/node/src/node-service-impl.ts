@@ -10034,6 +10034,7 @@ class NodeServiceImpl implements NodeService {
       "public-libp2p-am6",
       "public-libp2p-am7",
       "cn-relay",
+      "us-relay",
     ];
     const resolvedResults = await resolveBootstrapAddresses(presetsToResolve);
     const allPeers: string[] = [];

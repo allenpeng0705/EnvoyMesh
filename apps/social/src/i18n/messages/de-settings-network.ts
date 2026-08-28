@@ -134,6 +134,8 @@ export const deNetworkSettingsMessages = {
     publicLibp2pAm7Desc: "1 Server (AM7)",
     cnRelay: "CN Relay (47.93.11.212)",
     cnRelayDesc: "China-Relay-Server",
+    usRelay: "US Relay (47.251.91.97)",
+    usRelayDesc: "US-Community-Relay",
   },
   relays: {
     title: "Konfigurierte Relays",

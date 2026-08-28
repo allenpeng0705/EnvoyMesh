@@ -7,6 +7,7 @@
  *    now incremented — previously dead code).
  */
 import { describe, expect, it } from "vitest";
+import { DEFAULT_ENVOY_COMMUNITY_RELAY_PEER_IDS } from "@envoymesh/api";
 import { createRelayRoster, isJunkRelayHint } from "../src/relay-roster.js";
 import { ingestSiblingHints } from "../src/standalone-relay-control.js";
 
@@ -185,6 +186,30 @@ describe("relay roster — failure demotion and eviction", () => {
     expect(roster.relayBook().some((e) => e.relayId === "junk-candidate")).toBe(true);
     roster.recordRelayFailure("junk-candidate");
     expect(roster.relayBook().some((e) => e.relayId === "junk-candidate")).toBe(false);
+  });
+});
+
+describe("ingestSiblingHints — preset vouching", () => {
+  it("promotes hints from community preset source to verified", () => {
+    const roster = createRelayRoster({ selfPeerId: "12D3KooWSelfRelay000000000000000000000" });
+    const mesh = { peerId: "12D3KooWSelfRelay000000000000000000000" };
+    const cnPeer = DEFAULT_ENVOY_COMMUNITY_RELAY_PEER_IDS[0]!;
+    ingestSiblingHints(
+      roster,
+      mesh as { peerId: string },
+      [
+        {
+          relayId: "12D3KooWNewFleetRelay0000000000000000000",
+          multiaddrs: ["/ip4/203.0.113.55/tcp/4001/p2p/12D3KooWNewFleetRelay0000000000000000000"],
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+      ],
+      { verified: false, trustSourcePeerId: cnPeer },
+      35 * 60_000,
+    );
+    expect(roster.verifiedRelayHints(10).some((h) => h.relayId === "12D3KooWNewFleetRelay0000000000000000000")).toBe(
+      true,
+    );
   });
 });
 

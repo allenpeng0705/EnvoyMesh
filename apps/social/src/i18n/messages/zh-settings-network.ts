@@ -132,8 +132,10 @@ export const zhNetworkSettingsMessages = {
     publicLibp2pAm6Desc: "1 个服务器（AM6）",
     publicLibp2pAm7: "public-libp2p-am7",
     publicLibp2pAm7Desc: "1 个服务器（AM7）",
-    cnRelay: "CN Relay（47.93.11.212）",
+    cnRelay: "CN Relay (47.93.11.212)",
     cnRelayDesc: "中国中继服务器",
+    usRelay: "US Relay (47.251.91.97)",
+    usRelayDesc: "美国社区中继",
   },
   relays: {
     title: "已配置中继",

@@ -74,6 +74,7 @@ Optional Admin credentials for this shell:
 ```bash
 export ENVOYMESH_RELAY_ADMIN_USER=admin
 export ENVOYMESH_RELAY_ADMIN_PASSWORD='CHANGE_ME'
+export ENVOYMESH_RELAY_JOIN_TOKEN='your-long-random-secret'
 ./scripts/run-relay.sh --advertise 47.93.11.212 --public-mode --http-port 15432
 ```
 
@@ -197,6 +198,8 @@ Environment=NODE_OPTIONS=--experimental-global-customevent
 Environment=PATH=/home/admin/.nvm/versions/node/v24.11.1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=ENVOYMESH_RELAY_ADMIN_USER=admin
 Environment=ENVOYMESH_RELAY_ADMIN_PASSWORD=CHANGE_ME
+# Gated community join (Phase 46D): preset gatekeepers + new fleet relays share this secret.
+Environment=ENVOYMESH_RELAY_JOIN_TOKEN=your-long-random-secret
 
 [Install]
 WantedBy=multi-user.target
@@ -207,7 +210,7 @@ Notes:
 - `--advertise YOUR_PUBLIC_IP` makes the binary advertise a public multiaddr (required for WAN clients).
 - `--public-mode` / `ENVOYMESH_RELAY_PUBLIC_MODE=1` applies community-relay circuit-relay-v2 presets (redundant if both set; harmless).
 - Explicit `--http-port 15432` keeps the health URL unambiguous for the watchdog.
-- Do **not** commit real Admin passwords into git; set them only in the unit or a root-owned env file (`EnvironmentFile=-/etc/envoymesh/relay.env` with `chmod 600`).
+- Do **not** commit real Admin passwords into git; set them only in the unit or a root-owned env file (`EnvironmentFile=-/etc/envoymesh/relay.env` with `chmod 600`). Same for `ENVOYMESH_RELAY_JOIN_TOKEN`.
 
 Enable and start:
 
@@ -609,6 +612,7 @@ Set `<onfailure action="restart" delay="5 sec"/>` on both.
 ## 6. Security checklist
 
 - [ ] Change `ENVOYMESH_RELAY_ADMIN_PASSWORD` from defaults / shared secrets
+- [ ] Set `ENVOYMESH_RELAY_JOIN_TOKEN` on community preset relays (≥ 8 chars; same on CN, US, and admitted fleet relays)
 - [ ] Prefer TLS reverse proxy in front of `:15432` for remote Admin
 - [ ] Keep liveness probes on **localhost** (`127.0.0.1`) so the watchdog does not depend on public HTTP
 - [ ] Do not commit unit files with real passwords into the EnvoyMesh git repo

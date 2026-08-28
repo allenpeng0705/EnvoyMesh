@@ -131,7 +131,7 @@ export const networkSettingsMessages = {
     desc: "Quick toggle for full public libp2p vs contacts-only. Use the profile selector above for relay-only WAN.",
     toggle: "Public libp2p discovery",
     profileWanDefault: "Profile: wan-default ({count} bootstrap preset(s))",
-    profileContactsOnly: "Profile: contacts-only (cn-relay + your configured relays)",
+    profileContactsOnly: "Profile: contacts-only (cn-relay + us-relay + your configured relays)",
     contactsOnlyHint:
       "Stranger / global mesh discovery is reduced. Chat with existing contacts still works via relay. On desktop, fully quit and reopen the app if connectivity does not change after toggling.",
   },
@@ -146,7 +146,9 @@ export const networkSettingsMessages = {
     publicLibp2pAm7: "public-libp2p-am7",
     publicLibp2pAm7Desc: "1 server (AM7)",
     cnRelay: "CN Relay (47.93.11.212)",
-    cnRelayDesc: "China relay server",
+    cnRelayDesc: "Asia community relay",
+    usRelay: "US Relay (47.251.91.97)",
+    usRelayDesc: "US community relay",
   },
   relays: {
     title: "Configured Relays",
