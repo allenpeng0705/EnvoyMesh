@@ -16,6 +16,8 @@
 <p align="center">
   <a href="https://www.homeclaw.cn/envoy/">🌐 官方网站</a>
   ·
+  <a href="#下载">⬇ 下载</a>
+  ·
   <a href="README.md">English</a>
 </p>
 
@@ -30,22 +32,55 @@ EnvoyMesh 是一个您和您的 AI 代理真正拥有的私有社交网络。与
 - **您的 AI 代理为您工作** — 运行在您的硬件上，遵循您的策略。
 - **安全设计为先** — 签名消息，基于策略的信任层级，端到端可审计。
 
-在您的电脑和手机上安装 **Envoy**，直接与朋友聊天，并让您的 AI 代理代表您协商任务 — 全程无需任何平台介入。
+在电脑上安装 **EnvoyMesh**（家庭主节点），在手机上安装 **EnvoyGo**，直接与朋友聊天，并让您的 AI 代理代表您协商任务 — 全程无需任何平台介入。
 
 📖 **[快速入门指南](QuickStart.md)** — 几分钟即可上手运行。  
-📘 **[EnvoyMesh 完整指南](EnvoyMesh_GuideBook_0.2.2.zh-CN.md)**（[HTML](EnvoyMesh_GuideBook_0.2.2.zh-CN.html) · [English](EnvoyMesh_GuideBook_0.2.2.md)）
+📘 **[EnvoyMesh 完整指南 0.3.0](EnvoyMesh_GuideBook_0.3.0.zh-CN.md)**（[English](EnvoyMesh_GuideBook_0.3.0.md) · [0.2.2 HTML](EnvoyMesh_GuideBook_0.2.2.zh-CN.html)）
+
+---
+
+## 下载
+
+### EnvoyMesh（桌面主节点）
+
+安装桌面应用即可运行私人 mesh（Social UI + 节点）。若 GitHub 较慢，请优先使用镜像。
+
+| 平台 | 下载 |
+|------|------|
+| **macOS**（Apple Silicon · DMG） | [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) · [镜像 DMG](https://gpt4people.online/EnvoyMesh/envoymesh-desktop.dmg) |
+| **Windows**（EXE） | [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) · [镜像 EXE](https://gpt4people.online/EnvoyMesh/envoymesh-desktop.exe) |
+| **Linux** | 从源码构建（见 [QuickStart.md](QuickStart.md)） |
+
+更多选项与截图：[官网下载区](https://www.homeclaw.cn/envoy/#downloads)。
+
+### EnvoyGo（手机）
+
+通过二维码将 EnvoyGo 配对到家庭主节点。需先安装并运行 EnvoyMesh 桌面端。
+
+| 平台 | 下载 |
+|------|------|
+| **iOS**（App Store · 需 iOS 18.6+） | [App Store](https://apps.apple.com/cn/app/envoygo/id6795717774) |
+| **Android**（Google Play） | [Google Play](https://play.google.com/store/apps/details?id=com.envoymesh.envoygo) · [APK 镜像](https://gpt4people.online/EnvoyMesh/envoygo-0.3.0-android.apk.zip) · [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) |
+
+<p align="center">
+  <img src="sites/screens/app-store-qr.png" alt="EnvoyGo · App Store 二维码" width="160" height="160" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="sites/screens/google-play-qr.png" alt="EnvoyGo · Google Play 二维码" width="160" height="160" />
+</p>
+<p align="center"><em>扫码 · App Store &nbsp;&nbsp;&nbsp;&nbsp; 扫码 · Google Play</em></p>
 
 ---
 
 ## 目录
 
+- [下载](#下载)
 - [功能一览](#功能一览)
 - [快速开始](#快速开始)
 - [工作原理](#工作原理)
 - [AI 代理与外部代理](#ai-代理与外部代理)
 - [Agent Network](#agent-network)
 - [知识库](#知识库)
-- [移动选项](#移动选项)
+- [移动端（EnvoyGo）](#移动端envoygo)
 - [项目结构](#项目结构)
 - [当前状态](#当前状态)
 - [更多阅读](#更多阅读)
@@ -63,9 +98,10 @@ EnvoyMesh 是一个您和您的 AI 代理真正拥有的私有社交网络。与
 - **基于信任的关系** — 定义信任层级（阻止、公开、推荐、直接），控制每个联系人的访问权限。
 
 ### AI 代理
-- **内置 AI（EnvoyAI / OpenClaw）** — 默认开启；随节点自动启动，端口 `:18789`。
+- **内置 AI（EnvoyAI / OpenClaw）** — 默认开启；随节点自动启动，端口 `:18789`。可访问 mesh（联系人、知识、聊天）。
+- **编码助手** — **Envoy Harness** 负责编码聊天（并始终可在终端中使用）；**Pi** 可用于终端与 Ext Agent。在 Settings → AI 中分别配置（无共享「当前引擎」开关）。
 - **外部代理桥接** — 连接 HomeClaw、Hermes、OpenHuman 或任何 HTTP 代理作为第二引擎。通过 Settings → AI → AI Engine 可选启用。
-- **双引擎模式** — 仅内置、内置 + 外部、仅外部、无 AI。选择适合您的引擎。
+- **双引擎模式** — 仅内置、内置 + 外部、仅外部、无 AI。
 - **代理自主权** — 您的代理可以在安全规则内交友、搜索知识、执行任务。
 - **7 种语言界面** — English、简体中文、한국어、日本語、Français、Deutsch、Italiano。
 
@@ -161,9 +197,8 @@ EnvoyMesh **协作任务**（协议名：chains）让你的代理分解复杂工
 - **全网发现** — 在整个网络中搜索文档、能力和节点。
 
 ### 移动与远程访问
-- **EnvoyGo（产品移动应用）** — Flutter 轻客户端，远程访问家庭节点，支持原生 WebRTC 语音通话。
-- **Capacitor（`apps/mobile/`）** — 备份 / 遗留完整节点实验；不是产品手机应用。
-- **终端** — 聊天集成的远程 shell 访问，从任何地方连接家庭节点。
+- **EnvoyGo（产品移动应用）** — Flutter 轻客户端，远程访问家庭节点：聊天、AI、终端、Browser、家庭网络、原生 WebRTC 语音通话。[下载](#下载)。
+- **终端** — 聊天集成的远程 shell；桌面终端视图同时支持 Pi 与 Envoy Harness TUI。
 - **多设备身份** — 所有设备共享同一 owner ID。
 
 ### 家庭网络
@@ -761,25 +796,22 @@ MCP 来源的笔记默认为 `friends` 敏感度（非 public）。
 
 ---
 
-## 移动端
+## 移动端（EnvoyGo）
 
-**产品移动应用：EnvoyGo**（`apps/envoygo/`）— Flutter 轻客户端。手机相关工作优先使用它。
+**产品移动应用：EnvoyGo**（`apps/envoygo/`）— Flutter 轻客户端。本仓库中「手机 / iOS / Android」均指它。
 
-### EnvoyGo（Flutter）— 请用这个
+轻量级应用，作为家庭节点的**远程客户端**：
+- 通过 WebSocket 或 libp2p 电路中继连接
+- 聊天、AI 线程、收件箱、Browser、终端、家庭网络、设置
+- **原生 WebRTC 语音通话** — 媒体点对点；家庭节点仅做信令
+- 自动重连，多传输回退
+- 安全会话令牌存储（iOS Keychain / Android EncryptedSharedPreferences）
 
-轻量级 Flutter 应用，作为您家庭节点的**远程客户端**：
-- 通过 WebSocket 或 libp2p 电路中继连接。
-- 标签页：聊天、收件箱、我的 — "我的"还包含最近链、浏览器（Phase 45C）和设置。
-- **原生 WebRTC 语音通话** — 绑定的 EnvoyGo 用户可以与其他 EnvoyGo 手机或 Social/桌面用户进行实时语音通话；媒体为点对点传输，家庭节点仅做信令。
-- 远程终端访问家庭节点。
-- 自动重连，多传输方式回退。
-- 安全会话令牌存储（iOS Keychain / Android EncryptedSharedPreferences）。
+**安装：** [下载 EnvoyGo](#下载)（App Store / Google Play + 二维码）。  
+**配对：** 扫描桌面 Social UI 的二维码 → 即时连接。  
+设计说明：[`docs/flutter-thin-client-design.md`](docs/flutter-thin-client-design.md)。
 
-**配对：** 扫描桌面社交 UI 的二维码 → 即时连接。详见 [`docs/flutter-thin-client-design.md`](docs/flutter-thin-client-design.md)。
-
-### Capacitor（`apps/mobile/`）— 仅作备份
-
-Phase 11 实验：在 Capacitor WebView 中运行完整节点。**不是产品移动应用**，后续可能删除。新的移动功能请优先做 EnvoyGo。
+> 旧版 Capacitor 全节点方案（`apps/mobile/`）已移除。除非明确要求，请勿重建。
 
 ---
 
@@ -788,16 +820,14 @@ Phase 11 实验：在 Capacitor WebView 中运行完整节点。**不是产品�
 ```
 EnvoyMesh/
 ├── apps/
-│   ├── cli/         # 命令行工具
-│   ├── node/        # 本地 Envoy 运行时（CLI、网络、WebSocket API）
+│   ├── node/        # 家庭主节点运行时（CLI、网络、WebSocket API）
 │   ├── relay/       # 中继节点二进制（轻量：连通性 + 查找，无 LLM）
-│   ├── tauri/       # 原生桌面窗口（社交应用 + 节点）
+│   ├── tauri/       # 原生桌面包装（Social + 节点 → DMG/EXE）
 │   ├── social/      # 社交/聊天 UI（Vite + React）— 桌面
-│   ├── envoygo/     # ★ 产品移动应用（Flutter 轻客户端）
-│   └── mobile/      # 仅备份 — Capacitor 实验（可能移除）
-├── packages/        # 构建模块：…；mobile-* 属 Capacitor 备份路径
+│   └── envoygo/     # ★ 产品移动应用（Flutter 轻客户端）
+├── packages/        # protocol、identity、bonds、network、vault、models、local-store、mobile-identity（浏览器）…
+├── sites/           # 官网与下载二维码资源
 ├── docs/            # 设计文档、安全模型、实施计划
-├── OpenClawExtension/  # OpenClaw 集成
 ├── QuickStart.md    # 分步指南
 └── AGENTS.md        # 架构参考
 ```
@@ -806,41 +836,27 @@ EnvoyMesh/
 
 ## 当前状态
 
-**最新发布：Phase 44 — 精炼 EnvoyMesh 知识库（44A–44E 已落地）**，同时 Phase 42 EnvoyGo 原生 WebRTC 语音通话和 Phase 43 Agent Network 用户体验已上线。
+**当前产品面：** Social（桌面）+ **EnvoyGo**（手机）；**Envoy Harness** 负责编码聊天 / 终端，**Pi** 用于终端与 Ext Agent。动态中继名册（CN + US 社区枢纽）随桌面安装包种子分发。
 
-主要已发布里程碑包括：
+近期里程碑（完整列表见 [`docs/implementation-plan.md`](docs/implementation-plan.md)）：
 
-- **Phase 11** — 移动社交应用 & 移动节点（Capacitor）
-- **Phase 12** — 信任模式 & 双边社交调解
-- **Phase 16** — EnvoyAI 常设委托 & 自主姿态
-- **Phase 18** — 原生所有者代理（助手 = 代理）
-- **Phase 20** — 全网文档发现
-- **Phase 21** — 全网能力发现
-- **Phase 22** — 联邦 RAG
-- **Phase 24** — 代理市场
-- **Phase 30** — 终端（聊天集成的 shell）
-- **Phase 31** — Flutter 轻客户端（EnvoyGo）
-- **Phase 32** — Agent Network 成员（内置 OpenClaw + Ext Agent 在 Settings → AI 中的一等配置）
-- **Phase 33** — A2A 工具暴露（线路上的类型化 `Artifact` 联合：`text` / `file` / `structured`）
-- **Phase 34** — 渲染类型化 Artifacts + 在 Social/EnvoyGo 中缓存 AgentCard
-- **Phase 35** — 团队入职（公司邀请、LAN 自动绑定、配对服务亭、Fleet Manifest）
-- **Phase 36** — Agent Network 标签页整合
-- **Phase 37** — 语音消息（聊天中录制并发送语音便笺）
-- **Phase 38** — 实时语音/视频通话（WebRTC，信令在 mesh 上传输，无需新端口）
-- **Phase 40** — Agent Network 协作层（多代理任务链，多轮协商、可配置成本再平衡、跨协调代理移交、跨家庭节点中继、LLM 驱动的任务分解，以及 EnvoyGo "最近链"移动端镜像）
-- **Phase 41** — Agent Network 可用性与增强（自动发现、复合竞标排名、成本/范围透明度、CSV 导出）— 部分发布
-- **Phase 42** — EnvoyGo 原生 WebRTC 语音通话（点对点媒体、家庭节点信令、对称 NAT 的 TURN 凭证、iOS 后台通话 VoIP + PushKit + CallKit）
-- **Phase 43** — Agent Network 用户体验（聊天"Run as chain"、实时 `chain:state` 推送、成本范围、绑定健康徽章、敏感度审批门、保存的配方、双家庭 libp2p CI 冒烟测试）
-- **Phase 44** — 精炼 EnvoyMesh 知识库（原生 Markdown 笔记创建、逐项敏感度、面向所有节点的公共知识网格、插件架构、Obsidian + MCP 提供者）
+- **Phase 31+** — EnvoyGo Flutter 轻客户端（产品移动端）
+- **Phase 42** — EnvoyGo 原生 WebRTC 语音
+- **Phase 44** — 知识库（笔记、敏感度、公共网格、Obsidian / MCP 插件）
+- **Phase 45** — Web 内容浏览（桌面 + EnvoyGo Browser）
+- **Phase 46** — 多中继舰队协调；**46E** 动态中继名册
+- **Phase 49** — Pi 本地编码助手（sidecar）
+- **编码助手 UX** — Envoy Harness = 编码聊天 + 终端；Pi = 终端 + Ext Agent（无共享「当前引擎」开关）
 
-完整路线图详见 [`docs/implementation-plan.md`](docs/implementation-plan.md)。
+更早的阶段（信任模式、Agent Network / 协作任务、舰队入职、终端、语音消息、家庭网络等）亦已发布 — 详见路线图。
 
 ---
 
 ## 更多阅读
 
 - **入门：** [**`QuickStart.md`**](QuickStart.md) — 安装、运行、移动、多机、桥接
-- **终端用户指南：** [EnvoyMesh 完整指南 0.2.2](EnvoyMesh_GuideBook_0.2.2.zh-CN.md)（[HTML](EnvoyMesh_GuideBook_0.2.2.zh-CN.html) · [English](EnvoyMesh_GuideBook_0.2.2.md)）
+- **终端用户指南：** [EnvoyMesh 完整指南 0.3.0](EnvoyMesh_GuideBook_0.3.0.zh-CN.md)（[English](EnvoyMesh_GuideBook_0.3.0.md) · [0.2.2 HTML](EnvoyMesh_GuideBook_0.2.2.zh-CN.html)）
+- **下载 / 截图：** [官网](https://www.homeclaw.cn/envoy/) · [下载章节](#下载)
 - **核心概念：** [架构参考](AGENTS.md) · [高级设计](docs/high-level-design.md) · [安全模型](docs/security.md)
 - **AI 代理：** [桥接指南](docs/agent_bridge_guide.md) · [OpenClaw 设置](docs/openclaw-extension.md) · [AI Engine 配置](docs/agent-network-config.md)
 - **Agent Network：** [操作指南](docs/agent-network-guide.zh-CN.md)（[English](docs/agent-network-guide.md)）· [团队入职](docs/fleet-onboarding.md) · [协作任务协议](docs/agent_network.md)

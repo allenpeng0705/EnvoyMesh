@@ -16,6 +16,8 @@
 <p align="center">
   <a href="https://www.homeclaw.cn/envoy/">🌐 Website</a>
   ·
+  <a href="#download">⬇ Download</a>
+  ·
   <a href="README.zh-CN.md">简体中文</a>
 </p>
 
@@ -30,22 +32,55 @@ EnvoyMesh is a private social network that you — and your AI agent — actuall
 - **Your AI agent works for you** — runs on your hardware, follows your policies.
 - **Security by design** — signed messages, policy-based trust tiers, end-to-end auditability.
 
-Install an **Envoy** on your computer and phone, chat with friends directly, and let your AI agent negotiate tasks on your behalf — all without any platform in the middle.
+Install **EnvoyMesh** on your computer (home node) and **EnvoyGo** on your phone, chat with friends directly, and let your AI agents negotiate tasks on your behalf — all without any platform in the middle.
 
 📖 **[QuickStart.md](QuickStart.md)** — Get up and running in minutes.  
-📘 **[EnvoyMesh Guidebook](EnvoyMesh_GuideBook_0.2.2.md)** ([HTML](EnvoyMesh_GuideBook_0.2.2.html) · [中文版](EnvoyMesh_GuideBook_0.2.2.zh-CN.md))
+📘 **[EnvoyMesh Guidebook 0.3.0](EnvoyMesh_GuideBook_0.3.0.md)** ([中文版](EnvoyMesh_GuideBook_0.3.0.zh-CN.md) · [0.2.2 HTML](EnvoyMesh_GuideBook_0.2.2.html))
+
+---
+
+## Download
+
+### EnvoyMesh (desktop home node)
+
+Install the desktop app to run your private mesh (Social UI + node). Prefer the mirror if GitHub is slow.
+
+| Platform | Download |
+|----------|----------|
+| **macOS** (Apple Silicon · DMG) | [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) · [Mirror DMG](https://gpt4people.online/EnvoyMesh/envoymesh-desktop.dmg) |
+| **Windows** (EXE) | [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) · [Mirror EXE](https://gpt4people.online/EnvoyMesh/envoymesh-desktop.exe) |
+| **Linux** | Build from source (see [QuickStart.md](QuickStart.md)) |
+
+More options and screenshots: [Website downloads](https://www.homeclaw.cn/envoy/#downloads).
+
+### EnvoyGo (phone)
+
+Pair EnvoyGo to your home node via QR. Requires a running EnvoyMesh desktop install.
+
+| Platform | Download |
+|----------|----------|
+| **iOS** (App Store · iOS 18.6+) | [App Store](https://apps.apple.com/app/id6795717774) |
+| **Android** (Google Play) | [Google Play](https://play.google.com/store/apps/details?id=com.envoymesh.envoygo) · [APK mirror](https://gpt4people.online/EnvoyMesh/envoygo-0.3.0-android.apk.zip) · [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) |
+
+<p align="center">
+  <img src="sites/screens/app-store-qr.png" alt="EnvoyGo · App Store QR" width="160" height="160" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="sites/screens/google-play-qr.png" alt="EnvoyGo · Google Play QR" width="160" height="160" />
+</p>
+<p align="center"><em>Scan · App Store &nbsp;&nbsp;&nbsp;&nbsp; Scan · Google Play</em></p>
 
 ---
 
 ## Table of Contents
 
+- [Download](#download)
 - [What can I do with EnvoyMesh?](#what-can-i-do-with-envoymesh)
 - [Getting Started](#getting-started)
 - [How It Works](#how-it-works)
 - [AI Agent & External Agents](#ai-agent--external-agents)
 - [Agent Network](#agent-network)
 - [Knowledge Base](#knowledge-base)
-- [Mobile Options](#mobile-options)
+- [Mobile (EnvoyGo)](#mobile-envoygo)
 - [Project Structure](#project-structure)
 - [Current Status](#current-status)
 - [Want to Read More?](#want-to-read-more)
@@ -63,9 +98,10 @@ Install an **Envoy** on your computer and phone, chat with friends directly, and
 - **Trust-based relationships** — define trust tiers (blocked, public, referred, direct) and control what each contact can access.
 
 ### AI Agent
-- **Built-in AI (EnvoyAI / OpenClaw)** — ships on by default; auto-starts with your node on port `:18789`.
+- **Built-in AI (EnvoyAI / OpenClaw)** — ships on by default; auto-starts with your node on port `:18789`. Mesh-aware (contacts, knowledge, chat).
+- **Coding agents** — **Envoy Harness** powers coding chat (and Terminal); **Pi** is available in Terminal and for Ext Agent. Configure separately under Settings → AI (no shared “active engine” switch).
 - **External Agent Bridge** — connect HomeClaw, Hermes, OpenHuman, or any HTTP agent as a second engine. Opt-in via Settings → AI → AI Engine.
-- **Two-engine modes** — run built-in only, built-in + external, external only, or none. Pick the engine that fits your stack.
+- **Two-engine modes** — run built-in only, built-in + external, external only, or none.
 - **Agent autonomy** — your agent can make friends, search knowledge, and execute tasks within your safety rules.
 - **7-language UI** — English, 简体中文, 한국어, 日本語, Français, Deutsch, Italiano.
 
@@ -92,9 +128,8 @@ Install an **Envoy** on your computer and phone, chat with friends directly, and
 - **Network-wide discovery** — search for documents, capabilities, and peers across the mesh.
 
 ### Mobile & Remote Access
-- **EnvoyGo (product mobile app)** — Flutter thin client for remote access to your home node, with native WebRTC voice calls.
-- **Capacitor (`apps/mobile/`)** — backup / legacy full-node experiment; not the product phone app.
-- **Terminals** — chat-integrated remote shell access to your home node from anywhere.
+- **EnvoyGo (product mobile app)** — Flutter thin client for remote access to your home node: chat, AI, terminals, Browser, family network, native WebRTC voice calls. [Download](#download).
+- **Terminals** — chat-integrated remote shell; Pi and Envoy Harness TUIs on the desktop Terminal view.
 - **Multi-device identity** — same owner ID across all your devices.
 
 ### Family Network
@@ -773,25 +808,22 @@ For the full design, see [`docs/knowledge-base-and-rag.md`](docs/knowledge-base-
 
 ---
 
-## Mobile Options
+## Mobile (EnvoyGo)
 
-**Product mobile app: EnvoyGo** (`apps/envoygo/`) — Flutter thin client. Prefer this for all phone work.
+**Product mobile app: EnvoyGo** (`apps/envoygo/`) — Flutter thin client. This is what “mobile / phone / iOS / Android” means in this repo.
 
-### EnvoyGo (Flutter) — use this
-
-A lightweight Flutter app that acts as a **remote client** to your home node:
+A lightweight app that acts as a **remote client** to your home node:
 - Connects via WebSocket or libp2p circuit relay
-- Tabs: Chats, Inbox, Me — Me also surfaces Recent chains, Browser (Phase 45C), and settings
-- **Native WebRTC voice calls** — bonded EnvoyGo users can place and receive real-time voice calls to other EnvoyGo phones or Social/desktop users; media is peer-to-peer, the home node does signaling only
-- Terminal access to home node
+- Chats, AI threads, Inbox, Browser, Terminals, Family Network, Settings
+- **Native WebRTC voice calls** — peer-to-peer media; home node does signaling only
 - Automatic reconnection with multi-transport fallback
 - Secure session token storage (iOS Keychain / Android EncryptedSharedPreferences)
 
-**Pairing:** Scan a QR code from your desktop's Social UI → instant connection. See [`docs/flutter-thin-client-design.md`](docs/flutter-thin-client-design.md) for details.
+**Install:** [Download EnvoyGo](#download) (App Store / Google Play + QR codes).  
+**Pairing:** Scan a QR code from your desktop Social UI → instant connection.  
+Design: [`docs/flutter-thin-client-design.md`](docs/flutter-thin-client-design.md).
 
-### Capacitor (`apps/mobile/`) — backup only
-
-Phase 11 experiment: full node in a Capacitor WebView. **Not the product mobile app**; may be removed. Prefer EnvoyGo for all new mobile work.
+> The old Capacitor full-node stack (`apps/mobile/`) was removed. Do not recreate it unless explicitly requested.
 
 ---
 
@@ -800,16 +832,14 @@ Phase 11 experiment: full node in a Capacitor WebView. **Not the product mobile 
 ```
 EnvoyMesh/
 ├── apps/
-│   ├── cli/         # Command-line interface tools
-│   ├── node/        # The local Envoy runtime (CLI, mesh, WebSocket API)
-│   ├── relay/       # Relay node binary (lean: connectivity + lookup, no LLMs)
-│   ├── tauri/       # Native desktop window (Social + node)
+│   ├── node/        # Home node runtime (CLI, mesh, WebSocket API)
+│   ├── relay/       # Relay binary (lean: connectivity + lookup, no LLMs)
+│   ├── tauri/       # Native desktop wrapper (Social + node → DMG/EXE)
 │   ├── social/      # Social/chat UI (Vite + React) — desktop
-│   ├── envoygo/     # ★ PRODUCT mobile app (Flutter thin client)
-│   └── mobile/      # BACKUP only — Capacitor experiment (may be removed)
-├── packages/        # Building blocks: protocol, identity, bonds, network, vault, rag, models, kb-obsidian, local-store, openclaw-runtime, mobile-* (Capacitor backup)...
+│   └── envoygo/     # ★ PRODUCT mobile app (Flutter thin client)
+├── packages/        # protocol, identity, bonds, network, vault, models, local-store, mobile-identity (browser), …
+├── sites/           # Public website + download QR assets
 ├── docs/            # Design docs, security model, implementation plan
-├── OpenClawExtension/  # OpenClaw integration
 ├── QuickStart.md    # Step-by-step guide
 └── AGENTS.md        # Architecture reference
 ```
@@ -818,41 +848,27 @@ EnvoyMesh/
 
 ## Current Status
 
-**Latest shipped: Phase 44 — Refine EnvoyMesh Knowledgebase (44A–44E green)**, with Phase 42 Native WebRTC Voice Calls on EnvoyGo and Phase 43 Agent Network UX in production.
+**Active product surfaces:** Social (desktop) + **EnvoyGo** (mobile), with **Envoy Harness** for coding chat / Terminal and **Pi** for Terminal + Ext Agent. Dynamic relay roster (CN + US community hubs) ships in the desktop package seed.
 
-Major shipped milestones include:
+Recent milestones (see [`docs/implementation-plan.md`](docs/implementation-plan.md) for the full list):
 
-- **Phase 11** — Mobile Social App & Mobile Node (Capacitor)
-- **Phase 12** — Trust mode & bilateral social mediation
-- **Phase 16** — EnvoyAI standing delegation & autonomous postures
-- **Phase 18** — Native owner agent (Assistant = Agent)
-- **Phase 20** — Network-wide Document Discovery
-- **Phase 21** — Network-wide Capability Discovery
-- **Phase 22** — Federated RAG
-- **Phase 24** — Agent Marketplace
-- **Phase 30** — Terminals (Chat-integrated remote shells)
-- **Phase 31** — Flutter Thin Client (EnvoyGo)
-- **Phase 32** — Agent Network Membership (Built-in OpenClaw + Ext Agent first-class config in Settings → AI)
-- **Phase 33** — A2A Tool Exposure (typed `Artifact` union on the wire: `text` / `file` / `structured`)
-- **Phase 34** — Render typed Artifacts + cached AgentCard in Social / EnvoyGo
-- **Phase 35** — Fleet Onboarding (Company Invites, LAN auto-bond, Pairing Kiosk, Fleet Manifest)
-- **Phase 36** — Agent Network tab consolidation
-- **Phase 37** — Audio Messages (record-and-send voice notes inline in chat)
-- **Phase 38** — Real-Time Voice/Video Calls (WebRTC, signaling over the mesh, no new ports)
-- **Phase 40** — Agent Network Collaboration Layer (multi-agent task chains with multi-round negotiation, configurable cost rebalance, cross-orchestrator handoff, cross-home relay, LLM-powered decomposition, and the EnvoyGo Recent chains mobile mirror)
-- **Phase 41** — Agent Network Usability & Power (auto-discovery, composite bid ranking, cost / range transparency, CSV export) — partially shipped
-- **Phase 42** — Native WebRTC Voice Calls on EnvoyGo (peer-to-peer media, home-node signaling, TURN credentials for symmetric NAT, iOS backgrounded calling via VoIP + PushKit + CallKit)
-- **Phase 43** — Agent Network User Experience (chat "Run as chain", live `chain:state` push, cost ranges, bond health badges, sensitivity approval gate, saved recipes, two-home libp2p CI smoke)
-- **Phase 44** — Refine EnvoyMesh Knowledgebase (native Markdown note creation, per-item sensitivity, public knowledge mesh for all peers, plug-in architecture, Obsidian + MCP providers)
+- **Phase 31+** — EnvoyGo Flutter thin client (product mobile)
+- **Phase 42** — Native WebRTC voice on EnvoyGo
+- **Phase 44** — Knowledge base (notes, sensitivity, public mesh, Obsidian / MCP plugins)
+- **Phase 45** — Web content browsing (Browser on desktop + EnvoyGo)
+- **Phase 46** — Multi-relay fleet coordination; **46E** dynamic relay roster
+- **Phase 49** — Pi local coding agent (sidecar)
+- **Coding agents UX** — Envoy Harness = coding chat + Terminal; Pi = Terminal + Ext Agent (no shared active-engine switch)
 
-See [`docs/implementation-plan.md`](docs/implementation-plan.md) for the full roadmap.
+Earlier phases (trust modes, Agent Network / Team jobs, fleet onboarding, terminals, audio messages, family network, …) are also shipped — details in the roadmap.
 
 ---
 
 ## Want to Read More?
 
 - **Start here:** [**`QuickStart.md`**](QuickStart.md) — install, run, mobile, multi-machine, bridge
-- **End-user guidebook:** [EnvoyMesh Guidebook 0.2.2](EnvoyMesh_GuideBook_0.2.2.md) ([HTML](EnvoyMesh_GuideBook_0.2.2.html) · [简体中文](EnvoyMesh_GuideBook_0.2.2.zh-CN.md))
+- **End-user guidebook:** [EnvoyMesh Guidebook 0.3.0](EnvoyMesh_GuideBook_0.3.0.md) ([简体中文](EnvoyMesh_GuideBook_0.3.0.zh-CN.md) · [0.2.2 HTML](EnvoyMesh_GuideBook_0.2.2.html))
+- **Downloads / screenshots:** [Website](https://www.homeclaw.cn/envoy/) · [Download section](#download)
 - **Core concepts:** [Architecture reference](AGENTS.md) · [High-level design](docs/high-level-design.md) · [Security model](docs/security.md)
 - **AI Agent:** [Bridge guide](docs/agent_bridge_guide.md) · [OpenClaw setup](docs/openclaw-extension.md) · [AI Engine config](docs/agent-network-config.md)
 - **Agent Network:** [Operator guide](docs/agent-network-guide.md) ([中文](docs/agent-network-guide.zh-CN.md)) · [Fleet onboarding](docs/fleet-onboarding.md) · [Team jobs protocol](docs/agent_network.md)
