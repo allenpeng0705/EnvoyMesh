@@ -33,6 +33,10 @@ is_macho() {
 
 signed=0
 failed=0
+# Apple's timestamp.apple.com flakes often ("The timestamp service is not available").
+# Notarization still needs --timestamp, so retry with backoff instead of failing the build.
+MAX_ATTEMPTS="${CODESIGN_TIMESTAMP_RETRIES:-5}"
+RETRY_SLEEP_SEC="${CODESIGN_TIMESTAMP_RETRY_SLEEP:-3}"
 
 # Match likely Mach-O paths first (avoid running `file` on every staged .js file).
 candidate_paths() {
@@ -42,10 +46,35 @@ candidate_paths() {
   \) 2>/dev/null
 }
 
+sign_one() {
+  local f="$1"
+  local attempt=1
+  local err=""
+  while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
+    # Capture stderr: success still prints "replacing existing signature"
+    if err=$(codesign --force --sign "$IDENTITY" --options runtime --timestamp "$f" 2>&1); then
+      return 0
+    fi
+    case "$err" in
+      *"timestamp service is not available"*|*"timestamp server"*|*"unable to contact"*)
+        echo "  ↻ timestamp unavailable (attempt ${attempt}/${MAX_ATTEMPTS}): $(basename "$f")" >&2
+        sleep $((RETRY_SLEEP_SEC * attempt))
+        attempt=$((attempt + 1))
+        ;;
+      *)
+        printf '%s\n' "$err" >&2
+        return 1
+        ;;
+    esac
+  done
+  printf '%s\n' "$err" >&2
+  return 1
+}
+
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   is_macho "$f" || continue
-  if codesign --force --sign "$IDENTITY" --options runtime --timestamp "$f"; then
+  if sign_one "$f"; then
     signed=$((signed + 1))
   else
     echo "  ✗ codesign failed: $f" >&2
