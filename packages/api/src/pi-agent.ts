@@ -205,11 +205,6 @@ export interface PiStatus {
   error?: string
   /** Process PID when running. */
   pid?: number
-  /**
-   * Phase G / 12b — which engine `sendToPi` is routed to.
-   * Additive; older clients (EnvoyGo) ignore unknown fields.
-   */
-  codingBackend?: "pi" | "envoy-harness"
 }
 
 /**
@@ -314,13 +309,6 @@ export interface PiSettings {
    * Default: true. Disable to keep terminal agent mode OpenClaw-only.
    */
   terminalIntegrationEnabled?: boolean
-  /**
-   * Phase G / 12b — which local coding engine backs `sendToPi` /
-   * `getPiStatus` / `pi:proposal`. Default `"pi"`.
-   * `"envoy-harness"` routes the same RPCs through ACP (EnvoyGo unchanged).
-   * Pi TUI PTY (`ensurePiTerminalSession`) stays Pi-only.
-   */
-  codingBackend?: "pi" | "envoy-harness"
 }
 
 // ---------------------------------------------------------------------------

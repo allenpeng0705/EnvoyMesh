@@ -24,6 +24,22 @@ describe("collectRelayControlTargets", () => {
     expect(addrs.length).toBeLessThanOrEqual(4);
   });
 
+  it("includes US when us-relay preset is set (parity with cn-relay)", () => {
+    const addrs = collectRelayControlTargets({
+      bootstrapPresets: ["cn-relay", "us-relay"],
+    });
+    expect(addrs).toContain(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+    expect(addrs).toContain(DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR);
+  });
+
+  it("does not force US when only cn-relay preset is set", () => {
+    const addrs = collectRelayControlTargets({
+      bootstrapPresets: ["cn-relay"],
+    });
+    expect(addrs).toContain(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+    expect(addrs).not.toContain(DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR);
+  });
+
   it("caps at 4 and skips DHT bootstraps / circuits", () => {
     const addrs = collectRelayControlTargets({
       configuredRelays: [],
@@ -61,7 +77,9 @@ describe("collectRelayControlTargets", () => {
         RELAY_A,
       ],
     });
-    expect(addrs).toEqual([RELAY_A]);
+    // RELAY_A is the CN community hub multiaddr — selecting it via bootstrap
+    // also marks wantCn; US is not forced unless us-relay / US addr is present.
+    expect(addrs).toEqual([DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR]);
   });
 
   it("falls back to community cn-relay + us-relay when filters leave no targets", () => {

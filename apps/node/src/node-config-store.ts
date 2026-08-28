@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { loadBundledNodeConfig } from "./bundled-node-config-loader.js";
 import {
   defaultBootstrapPresetsForDiscoveryProfile,
+  ensureCommunityRelaySiblingPresets,
   normalizeBootstrapPresetsForContactsOnly,
   ensureDefaultAutonomousPoliciesForModel,
 } from "@envoymesh/api";
@@ -88,6 +89,11 @@ export interface PersistedNodeConfig {
   advertiseAddrs: string[];
   bootstrapPeers: string[];
   bootstrapPresets: string[];
+  /**
+   * One-shot: legacy homes that only had `cn-relay` were backfilled with `us-relay`.
+   * Once true, Settings can uncheck US without the load path re-adding it.
+   */
+  communityUsRelayBackfilled?: boolean;
   configuredRelays: RelayConfig[];
   /**
    * Phase 46E — HTTPS URL of a signed relay roster JSON (fleet of N).
@@ -609,8 +615,19 @@ export function createNodeConfigStore(profileDir: string): NodeConfigStore {
         const raw = await readFile(path, "utf8");
         const parsed = JSON.parse(stripJsonComments(raw)) as unknown;
         if (isValidNodeConfig(parsed)) {
-          const normalized = withDefaultAutonomousPolicies(parsed);
-          if (autonomousPoliciesChanged(parsed, normalized)) {
+          let normalized = withDefaultAutonomousPolicies(parsed);
+          let shouldPersist =
+            autonomousPoliciesChanged(parsed, normalized) ||
+            piSettingsChanged(parsed, normalized) ||
+            !normalized.communityUsRelayBackfilled;
+          if (!normalized.communityUsRelayBackfilled) {
+            normalized = {
+              ...normalized,
+              bootstrapPresets: ensureCommunityRelaySiblingPresets(normalized.bootstrapPresets),
+              communityUsRelayBackfilled: true,
+            };
+          }
+          if (shouldPersist) {
             await serializedWrite(normalized);
           }
           const overlaid = await overlayReview(normalized);
@@ -771,6 +788,10 @@ function tryMigrateNodeConfig(value: unknown, profileDir: string): PersistedNode
   };
   if (merged.discoveryProfile === "contacts-only" || merged.discoveryProfile === "relay-only") {
     merged.bootstrapPresets = normalizeBootstrapPresetsForContactsOnly(merged.bootstrapPresets);
+    merged.communityUsRelayBackfilled = true;
+  } else if (!merged.communityUsRelayBackfilled) {
+    merged.bootstrapPresets = ensureCommunityRelaySiblingPresets(merged.bootstrapPresets);
+    merged.communityUsRelayBackfilled = true;
   }
   merged.autonomousPolicies = ensureDefaultAutonomousPoliciesForModel(
     merged.autonomousPolicies,
@@ -787,10 +808,17 @@ function withDefaultAutonomousPolicies(config: PersistedNodeConfig): PersistedNo
     config.autonomousPolicies,
     config.modelProviders.mode,
   );
-  if (!autonomousPoliciesChanged(config, { ...config, autonomousPolicies })) {
-    return config;
+  let next: PersistedNodeConfig = config;
+  if (autonomousPoliciesChanged(config, { ...config, autonomousPolicies })) {
+    next = { ...config, autonomousPolicies };
   }
-  return { ...config, autonomousPolicies };
+  // Drop legacy piSettings.codingBackend if present (field removed from API).
+  const pi = next.piSettings as (PiSettings & { codingBackend?: unknown }) | undefined;
+  if (pi && "codingBackend" in pi) {
+    const { codingBackend: _removed, ...rest } = pi;
+    next = { ...next, piSettings: rest };
+  }
+  return next;
 }
 
 function autonomousPoliciesChanged(
@@ -798,6 +826,13 @@ function autonomousPoliciesChanged(
   after: PersistedNodeConfig,
 ): boolean {
   return JSON.stringify(before.autonomousPolicies ?? []) !== JSON.stringify(after.autonomousPolicies ?? []);
+}
+
+function piSettingsChanged(
+  before: PersistedNodeConfig,
+  after: PersistedNodeConfig,
+): boolean {
+  return JSON.stringify(before.piSettings ?? null) !== JSON.stringify(after.piSettings ?? null);
 }
 
 export function describeNodeConfigValidationFailure(value: unknown): string {

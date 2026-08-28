@@ -174,10 +174,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get meEnvoyLocalHint => '홈 노드 로컬 모델(컴퓨터에 다운로드 및 시작)';
 
   @override
-  String get mePiAgent => 'Pi 에이전트';
+  String get mePiAgent => '코딩 에이전트';
 
   @override
-  String get mePiAgentHint => '로컬 코딩 에이전트 설정';
+  String get mePiAgentHint => 'Pi 및 Envoy Harness 설정';
 
   @override
   String get meDarkMode => '다크 모드';
@@ -279,7 +279,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get meAiModelHint => '이 홈 노드 어시스턴트에 사용하는 제공자';
 
   @override
-  String get mePiAgentHintLong => '홈 노드의 내장 로컬 코딩 에이전트';
+  String get mePiAgentHintLong => '홈 노드의 로컬 코딩 에이전트(Pi 및 Envoy Harness)';
 
   @override
   String get mePushNotificationsHintLong =>
@@ -1960,16 +1960,17 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get settingsPiBuiltIn => '내장 로컬 코딩 에이전트';
+  String get settingsPiBuiltIn => '로컬 코딩 에이전트';
 
   @override
-  String get settingsPiLocalOnly => '로컬 전용 코딩 에이전트(메시 도구 없음).';
+  String get settingsPiLocalOnly =>
+      'Pi는 Terminal과 Ext Agent용입니다. Envoy Harness는 코딩 채팅을 담당하며 Terminal에서도 항상 사용할 수 있습니다.';
 
   @override
-  String get settingsPiEnabled => 'Pi 사용';
+  String get settingsPiEnabled => 'Pi 활성화';
 
   @override
-  String get settingsPiCodingBackend => '코딩 백엔드';
+  String get settingsPiCodingBackend => '활성 엔진';
 
   @override
   String get settingsPiCodingBackendPi => 'Pi(사이드카)';
@@ -1979,13 +1980,47 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsPiCodingBackendHint =>
-      'Social과 동일한 설정입니다. sendToPi와 승인을 같은 Pi UI로 라우팅합니다. 이전 EnvoyGo는 이를 무시하고 Pi를 유지합니다.';
+      '코딩 채팅과 승인을 받는 엔진입니다. 다른 엔진 설정은 지워지지 않습니다.';
 
   @override
-  String get settingsPiCodingBackendSaved => '코딩 백엔드가 업데이트되었습니다';
+  String get settingsPiCodingBackendSaved => '활성 엔진이 업데이트되었습니다';
 
   @override
-  String get settingsPiOverrideHint => '모델 재정의(선택). 지우면 AI 모델 설정을 상속합니다.';
+  String get settingsPiSectionTitle => 'Pi';
+
+  @override
+  String get settingsPiSectionHint => 'Terminal·Ext Agent용 사이드카 — 활성화 및 모델 재정의';
+
+  @override
+  String get settingsEhSectionTitle => 'Envoy Harness';
+
+  @override
+  String get settingsEhSectionHint =>
+      '코딩 채팅을 담당하며 Terminal에서도 항상 사용 가능 — 자동 실행(프로젝트 폴더는 Envoy 채팅)';
+
+  @override
+  String get settingsEhAutoRunPolicy => 'Envoy Harness 자동 실행';
+
+  @override
+  String get settingsEhAutoRunAlways => '항상 확인';
+
+  @override
+  String get settingsEhAutoRunSafe => '파괴적 작업만 확인';
+
+  @override
+  String get settingsEhAutoRunOff => '끔 — 항상 미리보기';
+
+  @override
+  String get settingsEhAutoRunNever => '묻지 않음(모두 자동 허용)';
+
+  @override
+  String get settingsEhAutoRunSaved => 'Envoy Harness 자동 실행이 업데이트되었습니다';
+
+  @override
+  String get settingsEhActiveBadge => '활성';
+
+  @override
+  String get settingsPiOverrideHint => 'Pi 모델 재정의(선택). 지우면 AI 모델 설정을 상속합니다.';
 
   @override
   String get settingsPiModelName => '모델 이름';
@@ -3530,4 +3565,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get chainsCancelFailed => '팀 작업을 취소하지 못했습니다.';
+
+  @override
+  String get settingsUseForCodingChat => '코딩 채팅에 사용';
+
+  @override
+  String get settingsUseForCodingChatHint =>
+      '사용 중단 — 코딩 채팅은 항상 Envoy Harness를 사용합니다.';
 }

@@ -441,13 +441,13 @@ abstract class AppLocalizations {
   /// No description provided for @mePiAgent.
   ///
   /// In en, this message translates to:
-  /// **'Pi Agent'**
+  /// **'Coding agents'**
   String get mePiAgent;
 
   /// No description provided for @mePiAgentHint.
   ///
   /// In en, this message translates to:
-  /// **'Local coding agent settings'**
+  /// **'Pi and Envoy Harness settings'**
   String get mePiAgentHint;
 
   /// No description provided for @meDarkMode.
@@ -627,7 +627,7 @@ abstract class AppLocalizations {
   /// No description provided for @mePiAgentHintLong.
   ///
   /// In en, this message translates to:
-  /// **'Built-in local coding agent on the home node'**
+  /// **'Local coding agents on the home node (Pi and Envoy Harness)'**
   String get mePiAgentHintLong;
 
   /// No description provided for @mePushNotificationsHintLong.
@@ -3783,25 +3783,25 @@ abstract class AppLocalizations {
   /// No description provided for @settingsPiBuiltIn.
   ///
   /// In en, this message translates to:
-  /// **'Built-in local coding agent'**
+  /// **'Local coding agents'**
   String get settingsPiBuiltIn;
 
   /// No description provided for @settingsPiLocalOnly.
   ///
   /// In en, this message translates to:
-  /// **'Local-only coding agent (no mesh tools).'**
+  /// **'Pi is for Terminal and Ext Agent. Envoy Harness powers coding chat and is always available in Terminal.'**
   String get settingsPiLocalOnly;
 
   /// No description provided for @settingsPiEnabled.
   ///
   /// In en, this message translates to:
-  /// **'Pi enabled'**
+  /// **'Enable Pi'**
   String get settingsPiEnabled;
 
   /// No description provided for @settingsPiCodingBackend.
   ///
   /// In en, this message translates to:
-  /// **'Coding backend'**
+  /// **'Active engine'**
   String get settingsPiCodingBackend;
 
   /// No description provided for @settingsPiCodingBackendPi.
@@ -3819,19 +3819,85 @@ abstract class AppLocalizations {
   /// No description provided for @settingsPiCodingBackendHint.
   ///
   /// In en, this message translates to:
-  /// **'Same setting as Social. Routes sendToPi and approvals through the same Pi UI. Older EnvoyGo builds without this control still work when switched from Social.'**
+  /// **'Which engine receives coding chat and approvals. Does not erase the other engine\'s settings.'**
   String get settingsPiCodingBackendHint;
 
   /// No description provided for @settingsPiCodingBackendSaved.
   ///
   /// In en, this message translates to:
-  /// **'Coding backend updated'**
+  /// **'Active engine updated'**
   String get settingsPiCodingBackendSaved;
+
+  /// No description provided for @settingsPiSectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pi'**
+  String get settingsPiSectionTitle;
+
+  /// No description provided for @settingsPiSectionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Sidecar coding agent for Terminal and Ext Agent — enable and model override'**
+  String get settingsPiSectionHint;
+
+  /// No description provided for @settingsEhSectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Envoy Harness'**
+  String get settingsEhSectionTitle;
+
+  /// No description provided for @settingsEhSectionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Powers coding chat and is always available in Terminal — auto-run policy (project folder is in the Envoy chat)'**
+  String get settingsEhSectionHint;
+
+  /// No description provided for @settingsEhAutoRunPolicy.
+  ///
+  /// In en, this message translates to:
+  /// **'Envoy Harness auto-run'**
+  String get settingsEhAutoRunPolicy;
+
+  /// No description provided for @settingsEhAutoRunAlways.
+  ///
+  /// In en, this message translates to:
+  /// **'Always confirm'**
+  String get settingsEhAutoRunAlways;
+
+  /// No description provided for @settingsEhAutoRunSafe.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm destructive only'**
+  String get settingsEhAutoRunSafe;
+
+  /// No description provided for @settingsEhAutoRunOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off — always show preview'**
+  String get settingsEhAutoRunOff;
+
+  /// No description provided for @settingsEhAutoRunNever.
+  ///
+  /// In en, this message translates to:
+  /// **'Never ask (auto-allow all)'**
+  String get settingsEhAutoRunNever;
+
+  /// No description provided for @settingsEhAutoRunSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Envoy Harness auto-run updated'**
+  String get settingsEhAutoRunSaved;
+
+  /// No description provided for @settingsEhActiveBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'active'**
+  String get settingsEhActiveBadge;
 
   /// No description provided for @settingsPiOverrideHint.
   ///
   /// In en, this message translates to:
-  /// **'Model override (optional). Clear to inherit AI Model settings.'**
+  /// **'Pi model override (optional). Clear to inherit AI Model settings.'**
   String get settingsPiOverrideHint;
 
   /// No description provided for @settingsPiModelName.
@@ -6539,6 +6605,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not cancel this team job.'**
   String get chainsCancelFailed;
+
+  /// No description provided for @settingsUseForCodingChat.
+  ///
+  /// In en, this message translates to:
+  /// **'Use for coding chat'**
+  String get settingsUseForCodingChat;
+
+  /// No description provided for @settingsUseForCodingChatHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Deprecated — coding chat always uses Envoy Harness.'**
+  String get settingsUseForCodingChatHint;
 }
 
 class _AppLocalizationsDelegate

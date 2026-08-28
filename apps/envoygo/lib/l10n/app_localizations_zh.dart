@@ -174,10 +174,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get meEnvoyLocalHint => '家庭节点本地模型（在电脑上下载并启动）';
 
   @override
-  String get mePiAgent => 'Pi 智能体';
+  String get mePiAgent => '编码助手';
 
   @override
-  String get mePiAgentHint => '本地编程智能体设置';
+  String get mePiAgentHint => 'Pi 与 Envoy Harness 设置';
 
   @override
   String get meDarkMode => '深色模式';
@@ -279,7 +279,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get meAiModelHint => '此家庭节点助手使用的模型提供方';
 
   @override
-  String get mePiAgentHintLong => '家庭节点上的内置本地编程智能体';
+  String get mePiAgentHintLong => '家庭节点上的本地编码助手（Pi 与 Envoy Harness）';
 
   @override
   String get mePushNotificationsHintLong => '应用在后台时接收新消息、联系人请求与审批提醒。';
@@ -1945,16 +1945,17 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get settingsPiBuiltIn => '内置本地编程智能体';
+  String get settingsPiBuiltIn => '本地编码助手';
 
   @override
-  String get settingsPiLocalOnly => '仅本地编程智能体（无网格工具）。';
+  String get settingsPiLocalOnly =>
+      'Pi 用于终端与 Ext Agent。Envoy Harness 负责编码聊天，并始终可在终端中使用。';
 
   @override
-  String get settingsPiEnabled => 'Pi 已启用';
+  String get settingsPiEnabled => '启用 Pi';
 
   @override
-  String get settingsPiCodingBackend => '编程后端';
+  String get settingsPiCodingBackend => '当前引擎';
 
   @override
   String get settingsPiCodingBackendPi => 'Pi（侧车）';
@@ -1963,14 +1964,48 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsPiCodingBackendEh => 'envoy-harness（ACP）';
 
   @override
-  String get settingsPiCodingBackendHint =>
-      '与 Social 相同的设置。sendToPi 与审批仍走同一套 Pi UI。未升级的旧版 EnvoyGo 没有此开关时，仍可在 Social 中切换。';
+  String get settingsPiCodingBackendHint => '哪个引擎接收编码聊天与审批。不会清除另一引擎的设置。';
 
   @override
-  String get settingsPiCodingBackendSaved => '编程后端已更新';
+  String get settingsPiCodingBackendSaved => '当前引擎已更新';
 
   @override
-  String get settingsPiOverrideHint => '模型覆盖（可选）。清除以继承 AI 模型设置。';
+  String get settingsPiSectionTitle => 'Pi';
+
+  @override
+  String get settingsPiSectionHint =>
+      '用于终端与 Ext Agent 的 Sidecar 编码助手 — 启用与模型覆盖';
+
+  @override
+  String get settingsEhSectionTitle => 'Envoy Harness';
+
+  @override
+  String get settingsEhSectionHint =>
+      '负责编码聊天，并始终可在终端中使用 — 自动执行策略（项目文件夹在 Envoy 聊天中）';
+
+  @override
+  String get settingsEhAutoRunPolicy => 'Envoy Harness 自动执行';
+
+  @override
+  String get settingsEhAutoRunAlways => '始终确认';
+
+  @override
+  String get settingsEhAutoRunSafe => '仅确认危险操作';
+
+  @override
+  String get settingsEhAutoRunOff => '关闭 — 始终显示预览';
+
+  @override
+  String get settingsEhAutoRunNever => '从不询问（全部自动允许）';
+
+  @override
+  String get settingsEhAutoRunSaved => 'Envoy Harness 自动执行已更新';
+
+  @override
+  String get settingsEhActiveBadge => '使用中';
+
+  @override
+  String get settingsPiOverrideHint => 'Pi 模型覆盖（可选）。清除以继承 AI 模型设置。';
 
   @override
   String get settingsPiModelName => 'Model 名称';
@@ -3494,4 +3529,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chainsCancelFailed => '无法取消此团队任务。';
+
+  @override
+  String get settingsUseForCodingChat => '用于编码聊天';
+
+  @override
+  String get settingsUseForCodingChatHint => '已弃用 — 编码聊天始终使用 Envoy Harness。';
 }

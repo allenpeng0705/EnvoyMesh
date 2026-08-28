@@ -154,7 +154,7 @@ import { buildSignedChatDeliveredEnvelope } from "@envoymesh/api/chat-delivered"
 import { verifyInboundChatDevice, formatChatSenderDisplayName, bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 import { chatWireAttachmentsToContent } from "@envoymesh/api";
 import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
-import { createRelayJoinRateLimiter, evaluateCommunityRelayJoinRequest } from "@envoymesh/api";
+import { createRelayJoinRateLimiter, evaluateCommunityRelayJoinRequest } from "@envoymesh/api/community-relay-join";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import {
   dialableInboundRemoteAddrs,

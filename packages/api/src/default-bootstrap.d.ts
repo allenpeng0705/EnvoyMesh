@@ -26,5 +26,10 @@ export declare const DEFAULT_CONTACTS_ONLY_BOOTSTRAP_PRESETS: readonly ["cn-rela
 export type DiscoveryBootstrapProfile = "lan-fast" | "wan-default" | "relay-only" | "contacts-only";
 /** Default bootstrap preset ids for a discovery profile (before explicit operator overrides). */
 export declare function defaultBootstrapPresetsForDiscoveryProfile(profile: DiscoveryBootstrapProfile): readonly string[];
+/**
+ * Legacy upgrade: homes that only persisted `cn-relay` (pre-US) pick up `us-relay`.
+ * Does not force both hubs when the operator explicitly removed one.
+ */
+export declare function ensureCommunityRelaySiblingPresets(presets: readonly string[]): string[];
 /** Strip public-libp2p swarm presets; ensure community cn-relay + us-relay remain for reachability. */
 export declare function normalizeBootstrapPresetsForContactsOnly(presets: readonly string[]): string[];

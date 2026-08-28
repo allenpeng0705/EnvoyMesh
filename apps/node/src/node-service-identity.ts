@@ -10,6 +10,7 @@
 import {
   buildOwnerDidPresentation,
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
+  DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR,
   deriveLocationDiscoveryTopics,
   isBootstrapRelayMultiaddr,
   profileCapabilityDiscoveryTopics,
@@ -1574,6 +1575,9 @@ export async function _registerWithRendezvousServers(
     for (const preset of config.bootstrapPresets) {
       if (preset === "cn-relay") {
         relayAddrs.push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+      }
+      if (preset === "us-relay") {
+        relayAddrs.push(DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR);
       }
     }
   }

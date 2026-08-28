@@ -36,7 +36,8 @@ export * from "./approval-queue.js";
 export * from "./approval-executor.js";
 export * from "./task-dispatcher.js";
 export * from "./default-bootstrap.js";
-export * from "./community-relay-join.js";
+/** Node/relay only — uses timing-safe compare; import `@envoymesh/api/community-relay-join`. */
+export type { RelayJoinDecision, RelayJoinRateLimiter } from "./community-relay-join.js";
 export * from "./relay-roster.js";
 export * from "./group-chat-delivery.js";
 export * from "./node-service.js";

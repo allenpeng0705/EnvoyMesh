@@ -250,6 +250,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "@envoymesh/api/did-import": resolve(repoRoot, "packages/api/src/did-import.ts"),
+      "@envoymesh/api/community-relay-join": resolve(
+        repoRoot,
+        "packages/api/src/community-relay-join.ts",
+      ),
       "@envoymesh/api/discovery-privacy": resolve(repoRoot, "packages/api/src/discovery-privacy.ts"),
       "@envoymesh/api/discovery-referral-attestation": resolve(
         repoRoot,

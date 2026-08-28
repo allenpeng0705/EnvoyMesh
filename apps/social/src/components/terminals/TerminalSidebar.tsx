@@ -19,15 +19,13 @@ interface TerminalSidebarProps {
   onOpenAssistant?: () => void;
   /** Start another Pi coding TUI (always pick a project folder). */
   onStartPi?: () => void;
-  /** U4+ — start the Envoy TUI (used when the coding backend is envoy-harness). */
+  /** Start the Envoy Harness TUI (always pick a project folder). */
   onStartEnvoy?: () => void;
-  /** Open the Pi / envoy-harness RPC chat panel (reuse PiChatPanel). */
+  /** Open the Pi RPC chat panel (reuse PiChatPanel). */
   onOpenPiChat?: () => void;
-  /** U4+ — brand the buttons when the coding backend is envoy-harness. */
-  codingBackend?: "pi" | "envoy-harness";
   /** Change project folder for a specific Pi TUI session. */
   onChangePiProject?: (sessionId: string) => void;
-  /** U4+ — change project folder for a specific Envoy TUI session. */
+  /** Change project folder for a specific Envoy TUI session. */
   onChangeEnvoyProject?: (sessionId: string) => void;
 }
 
@@ -40,7 +38,6 @@ export function TerminalSidebar({
   onStartPi,
   onStartEnvoy,
   onOpenPiChat,
-  codingBackend = "pi",
   onChangePiProject,
   onChangeEnvoyProject,
 }: TerminalSidebarProps) {

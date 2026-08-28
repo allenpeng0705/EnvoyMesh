@@ -13,6 +13,10 @@
       "types": "./dist/did-import.d.ts",
       "import": "./dist/did-import.js"
     },
+    "./community-relay-join": {
+      "types": "./dist/community-relay-join.d.ts",
+      "import": "./dist/community-relay-join.js"
+    },
     "./discovery-privacy": {
       "types": "./dist/discovery-privacy.d.ts",
       "import": "./dist/discovery-privacy.js"

@@ -174,10 +174,10 @@ class AppLocalizationsJa extends AppLocalizations {
   String get meEnvoyLocalHint => 'ホームノードのローカルモデル（コンピューターにダウンロードして起動）';
 
   @override
-  String get mePiAgent => 'Pi エージェント';
+  String get mePiAgent => 'コーディングエージェント';
 
   @override
-  String get mePiAgentHint => 'ローカルコーディングエージェント設定';
+  String get mePiAgentHint => 'Pi と Envoy Harness の設定';
 
   @override
   String get meDarkMode => 'ダークモード';
@@ -279,7 +279,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get meAiModelHint => 'このホームノードのアシスタントが使うプロバイダー';
 
   @override
-  String get mePiAgentHintLong => 'ホームノードの内蔵ローカルコーディングエージェント';
+  String get mePiAgentHintLong => 'ホームノードのローカルコーディングエージェント（Pi と Envoy Harness）';
 
   @override
   String get mePushNotificationsHintLong =>
@@ -1962,16 +1962,17 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
-  String get settingsPiBuiltIn => '組み込みローカルコーディングエージェント';
+  String get settingsPiBuiltIn => 'ローカルコーディングエージェント';
 
   @override
-  String get settingsPiLocalOnly => 'ローカル専用コーディングエージェント（メッシュツールなし）。';
+  String get settingsPiLocalOnly =>
+      'Pi は Terminal と Ext Agent 向け。Envoy Harness はコーディングチャットを担当し、Terminal でも常に使えます。';
 
   @override
-  String get settingsPiEnabled => 'Pi 有効';
+  String get settingsPiEnabled => 'Pi を有効化';
 
   @override
-  String get settingsPiCodingBackend => 'コーディングバックエンド';
+  String get settingsPiCodingBackend => '使用中のエンジン';
 
   @override
   String get settingsPiCodingBackendPi => 'Pi（サイドカー）';
@@ -1981,13 +1982,48 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get settingsPiCodingBackendHint =>
-      'Social と同じ設定。sendToPi と承認を同じ Pi UI 経由にします。古い EnvoyGo は無視して Pi のままです。';
+      'コーディングチャットと承認を受け取るエンジン。他方の設定は消えません。';
 
   @override
-  String get settingsPiCodingBackendSaved => 'コーディングバックエンドを更新しました';
+  String get settingsPiCodingBackendSaved => '使用中エンジンを更新しました';
 
   @override
-  String get settingsPiOverrideHint => 'モデル上書き（任意）。クリアすると AI モデル設定を継承します。';
+  String get settingsPiSectionTitle => 'Pi';
+
+  @override
+  String get settingsPiSectionHint =>
+      'Terminal と Ext Agent 向けサイドカー — 有効化とモデル上書き';
+
+  @override
+  String get settingsEhSectionTitle => 'Envoy Harness';
+
+  @override
+  String get settingsEhSectionHint =>
+      'コーディングチャットを担当し Terminal でも常に使用可 — 自動実行（プロジェクトは Envoy チャット）';
+
+  @override
+  String get settingsEhAutoRunPolicy => 'Envoy Harness 自動実行';
+
+  @override
+  String get settingsEhAutoRunAlways => '常に確認';
+
+  @override
+  String get settingsEhAutoRunSafe => '破壊的操作のみ確認';
+
+  @override
+  String get settingsEhAutoRunOff => 'オフ — 常にプレビュー';
+
+  @override
+  String get settingsEhAutoRunNever => '確認しない（すべて自動許可）';
+
+  @override
+  String get settingsEhAutoRunSaved => 'Envoy Harness 自動実行を更新しました';
+
+  @override
+  String get settingsEhActiveBadge => '使用中';
+
+  @override
+  String get settingsPiOverrideHint => 'Pi モデル上書き（任意）。クリアすると AI モデル設定を継承。';
 
   @override
   String get settingsPiModelName => 'モデル名';
@@ -3533,4 +3569,11 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get chainsCancelFailed => 'チームジョブをキャンセルできませんでした。';
+
+  @override
+  String get settingsUseForCodingChat => 'コーディングチャットに使用';
+
+  @override
+  String get settingsUseForCodingChatHint =>
+      '非推奨 — コーディングチャットは常に Envoy Harness を使用します。';
 }

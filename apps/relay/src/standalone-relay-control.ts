@@ -27,7 +27,8 @@ import {
   type RelayLookupPayload,
   type RelayLookupResponsePayload,
 } from "@envoymesh/protocol";
-import { isCommunityPresetRelayPeerId, createRelayJoinRateLimiter } from "@envoymesh/api";
+import { isCommunityPresetRelayPeerId } from "@envoymesh/api";
+import { createRelayJoinRateLimiter } from "@envoymesh/api/community-relay-join";
 import { isJunkRelayHint, type createRelayRoster } from "./relay-roster.js";
 import type { createRelayLookupRouter } from "./relay-lookup-router.js";
 import type { RelayControlIdentity } from "./relay-control-identity.js";

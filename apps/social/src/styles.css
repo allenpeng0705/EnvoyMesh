@@ -5220,6 +5220,38 @@ textarea::placeholder {
   font-style: italic;
   font-weight: 700;
 }
+.agent-block-icon--eh {
+  background: #ecfdf5;
+  color: #059669;
+  font-style: normal;
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+}
+.coding-agents-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5, 1.25rem);
+  margin-top: var(--space-3, 0.75rem);
+}
+.coding-agents-stack > .agent-block {
+  margin: 0;
+}
+.agent-block--coding-active {
+  border-color: color-mix(in srgb, #6366f1 45%, var(--color-border, #e2e8f0));
+  box-shadow:
+    var(--shadow-sm, 0 1px 3px 0 rgb(15 23 42 / 0.1)),
+    0 0 0 1px color-mix(in srgb, #6366f1 22%, transparent);
+}
+.agent-block--eh.agent-block--coding-active {
+  border-color: color-mix(in srgb, #059669 45%, var(--color-border, #e2e8f0));
+  box-shadow:
+    var(--shadow-sm, 0 1px 3px 0 rgb(15 23 42 / 0.1)),
+    0 0 0 1px color-mix(in srgb, #059669 22%, transparent);
+}
+.agent-field--radio .agent-field-label--inline {
+  gap: var(--space-2, 0.5rem);
+}
 .agent-block-titlewrap {
   display: flex;
   flex-direction: column;

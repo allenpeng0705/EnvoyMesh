@@ -6,10 +6,10 @@
 import type { EnvoyMesh } from "@envoymesh/network";
 import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDRS,
-  evaluateCommunityRelayJoinRequest,
   isCommunityPresetRelayPeerId,
   peerIdFromBootstrapMultiaddr,
 } from "@envoymesh/api";
+import { evaluateCommunityRelayJoinRequest } from "@envoymesh/api/community-relay-join";
 import {
   createRelayJoinRequestPayload,
   createRelayJoinResponsePayload,
@@ -21,7 +21,7 @@ import type { RelayControlIdentity } from "./relay-control-identity.js";
 import type { createRelayRoster } from "./relay-roster.js";
 import { isJunkRelayHint } from "./relay-roster.js";
 
-export { evaluateCommunityRelayJoinRequest } from "@envoymesh/api";
+export { evaluateCommunityRelayJoinRequest } from "@envoymesh/api/community-relay-join";
 
 export function buildRelayJoinResponseForAcceptedJoin(input: {
   roster: ReturnType<typeof createRelayRoster>;

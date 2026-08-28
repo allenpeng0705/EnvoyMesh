@@ -92,6 +92,26 @@ const PUBLIC_LIBP2P_PRESET_PREFIX = "public-libp2p"
 
 const COMMUNITY_RELAY_PRESETS = ["cn-relay", "us-relay"] as const
 
+/**
+ * Legacy upgrade: homes that only persisted `cn-relay` (pre-US) pick up `us-relay`.
+ * Does not re-add a hub the operator explicitly removed when the other is absent —
+ * if either is missing while the other remains, only fill the historical CN→US gap.
+ * (Independent opt-out of a single hub is allowed; defaults still ship both.)
+ */
+export function ensureCommunityRelaySiblingPresets(presets: readonly string[]): string[] {
+  const trimmed = presets.map((p) => p.trim()).filter(Boolean)
+  const hasCn = trimmed.includes("cn-relay")
+  const hasUs = trimmed.includes("us-relay")
+  if (!hasCn || hasUs) return trimmed
+  // Insert us-relay immediately after cn-relay when present.
+  const out: string[] = []
+  for (const p of trimmed) {
+    out.push(p)
+    if (p === "cn-relay") out.push("us-relay")
+  }
+  return out
+}
+
 /** Strip public-libp2p swarm presets; ensure community cn-relay + us-relay remain for reachability. */
 export function normalizeBootstrapPresetsForContactsOnly(presets: readonly string[]): string[] {
   const trimmed = presets.map((p) => p.trim()).filter(Boolean)

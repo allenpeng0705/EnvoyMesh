@@ -9,6 +9,10 @@ export default defineConfig({
     alias: {
       // Subpath exports must precede the package root alias (prefix match).
       "@envoymesh/api/did-import": resolve(rootDir, "packages/api/src/did-import.ts"),
+      "@envoymesh/api/community-relay-join": resolve(
+        rootDir,
+        "packages/api/src/community-relay-join.ts",
+      ),
       "@envoymesh/api/discovery-privacy": resolve(rootDir, "packages/api/src/discovery-privacy.ts"),
       "@envoymesh/api/discovery-referral-attestation": resolve(
         rootDir,

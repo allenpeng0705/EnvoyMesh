@@ -177,10 +177,10 @@ class AppLocalizationsFr extends AppLocalizations {
       'Modèle local sur le nœud domicile (télécharger et démarrer sur l\'ordinateur)';
 
   @override
-  String get mePiAgent => 'Agent Pi';
+  String get mePiAgent => 'Agents de code';
 
   @override
-  String get mePiAgentHint => 'Paramètres de l\'agent de codage local';
+  String get mePiAgentHint => 'Réglages Pi et Envoy Harness';
 
   @override
   String get meDarkMode => 'Mode sombre';
@@ -290,7 +290,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get mePiAgentHintLong =>
-      'Agent de codage local intégré sur le nœud domicile';
+      'Agents de code locaux sur le nœud domicile (Pi et Envoy Harness)';
 
   @override
   String get mePushNotificationsHintLong =>
@@ -2040,17 +2040,17 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
-  String get settingsPiBuiltIn => 'Agent de codage local intégré';
+  String get settingsPiBuiltIn => 'Agents de code locaux';
 
   @override
   String get settingsPiLocalOnly =>
-      'Agent de codage local uniquement (sans outils mesh).';
+      'Pi sert au Terminal et à Ext Agent. Envoy Harness gère le chat de code et est toujours disponible dans le Terminal.';
 
   @override
-  String get settingsPiEnabled => 'Pi activé';
+  String get settingsPiEnabled => 'Activer Pi';
 
   @override
-  String get settingsPiCodingBackend => 'Backend de code';
+  String get settingsPiCodingBackend => 'Moteur actif';
 
   @override
   String get settingsPiCodingBackendPi => 'Pi (sidecar)';
@@ -2060,14 +2060,50 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get settingsPiCodingBackendHint =>
-      'Même réglage que Social. Route sendToPi et les approbations via la même UI Pi. Les anciennes versions d’EnvoyGo l’ignorent et restent sur Pi.';
+      'Quel moteur reçoit le chat de code et les approbations. N\'efface pas l\'autre.';
 
   @override
-  String get settingsPiCodingBackendSaved => 'Backend de code mis à jour';
+  String get settingsPiCodingBackendSaved => 'Moteur actif mis à jour';
+
+  @override
+  String get settingsPiSectionTitle => 'Pi';
+
+  @override
+  String get settingsPiSectionHint =>
+      'Sidecar pour Terminal et Ext Agent — activation et modèle personnalisé';
+
+  @override
+  String get settingsEhSectionTitle => 'Envoy Harness';
+
+  @override
+  String get settingsEhSectionHint =>
+      'Gère le chat de code et toujours disponible dans le Terminal — auto-exécution (dossier projet dans le chat Envoy)';
+
+  @override
+  String get settingsEhAutoRunPolicy => 'Auto-exécution Envoy Harness';
+
+  @override
+  String get settingsEhAutoRunAlways => 'Toujours confirmer';
+
+  @override
+  String get settingsEhAutoRunSafe => 'Confirmer seulement le destructif';
+
+  @override
+  String get settingsEhAutoRunOff => 'Désactivé — toujours prévisualiser';
+
+  @override
+  String get settingsEhAutoRunNever => 'Ne jamais demander (tout autoriser)';
+
+  @override
+  String get settingsEhAutoRunSaved =>
+      'Auto-exécution Envoy Harness mise à jour';
+
+  @override
+  String get settingsEhActiveBadge => 'actif';
 
   @override
   String get settingsPiOverrideHint =>
-      'Remplacement de modèle (facultatif). Effacez pour hériter des paramètres du modèle IA.';
+      'Remplacement de modèle Pi (facultatif). Effacez pour hériter.';
 
   @override
   String get settingsPiModelName => 'Nom du modèle';
@@ -3666,4 +3702,11 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get chainsCancelFailed => 'Impossible d’annuler ce travail d’équipe.';
+
+  @override
+  String get settingsUseForCodingChat => 'Utiliser pour le chat de code';
+
+  @override
+  String get settingsUseForCodingChatHint =>
+      'Obsolète — le chat de code utilise toujours Envoy Harness.';
 }

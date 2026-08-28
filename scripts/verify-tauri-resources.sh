@@ -199,6 +199,21 @@ if [ -d "$ENVOY_HARNESS_DIR" ] && [ "${envoy_harness_mb:-0}" -lt 1 ]; then
   warn "envoy-harness tree looks too small (${envoy_harness_mb} MB) — run scripts/stage-tauri-envoy-harness-bundle.sh"
 fi
 
+# Phase 46E Path C — home seed roster (CN+US hubs) for first boot.
+ROSTER_STAGED="$RES/node/relay-roster.json"
+ROSTER_ROOT="$ROOT/relay-roster.json"
+ROSTER_EXAMPLE="$ROOT/docs/examples/relay-roster.example.json"
+if [ -f "$ROSTER_ROOT" ] || [ -f "$ROSTER_EXAMPLE" ]; then
+  if [ ! -f "$ROSTER_STAGED" ]; then
+    fail "repo has relay-roster.json (or example) but it was not staged into resources/node/ — re-run stage-bundle-node-runtime.sh / stage-tauri-node-bundle.sh"
+  fi
+  echo "  relay-roster:  bundled in resources/node/ (Path C seed)"
+elif [ -f "$ROSTER_STAGED" ]; then
+  echo "  relay-roster:  present in resources/node/"
+else
+  warn "No relay-roster.json in resources/node/ — homes will rely on live relay HTTP only"
+fi
+
 # Push credentials — require push-config.json in the node bundle when present
 # at the repo root (operator packaging with push enabled). Relative key paths
 # resolve via ENVOYMESH_NODE_BUNDLE_DIR (= resources/node) on macOS + Windows.

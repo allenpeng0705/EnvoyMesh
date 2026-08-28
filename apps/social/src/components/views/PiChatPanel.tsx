@@ -288,14 +288,10 @@ export function PiChatPanel({ onBackToChats }: PiChatPanelProps) {
           <span className="pi-chat-avatar" aria-hidden="true">π</span>
           <div className="pi-chat-titles">
             <h2 className="pi-chat-title">
-              {status?.codingBackend === "envoy-harness"
-                ? t("pi.titleEh", "envoy-harness")
-                : t("pi.title", "Pi")}
+              {t("pi.title", "Pi")}
             </h2>
             <p className="pi-chat-subtitle">
-              {status?.codingBackend === "envoy-harness"
-                ? t("pi.subtitleEh", "Coding Agent (ACP)")
-                : t("pi.subtitle", "Coding Agent")}
+              {t("pi.subtitle", "Coding Agent")}
             </p>
           </div>
           {status ? (

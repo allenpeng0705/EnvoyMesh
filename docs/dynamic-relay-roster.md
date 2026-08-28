@@ -56,9 +56,10 @@ Disable publish: `ENVOYMESH_RELAY_ROSTER_PUBLISH=0`.
 
 Optional entry labels on the new relay: `ENVOYMESH_RELAY_ROSTER_ID`, `ENVOYMESH_RELAY_ROSTER_REGION`, `ENVOYMESH_RELAY_ROSTER_PRIORITY`.
 
-**Honest one-time gate:** CN/US (and other existing relays) must run a build that serves Path C **GET + PUT + pull** once. After that, adding #N does not require restarting them or hand-copying the file.
+**Honest one-time gate:** CN/US must run Path C **GET + PUT + pull** once, with join token + live roster under e.g. `/var/lib/envoymesh-relay/relay-roster.json` (seeded from repo [`relay-roster.json`](../relay-roster.json) via systemd `ExecStartPre=+/bin/cp -n …`). After that, adding #N does not require restarting them or hand-copying the file. See [add-relay-runbook.md](./add-relay-runbook.md).
 
-Preset gatekeepers (CN/US) skip outbound join; they **receive** PUTs and pull — they do not self-publish via the join hook.
+**systemd pitfall:** with `User=admin`, `ExecStartPre=/bin/mkdir -p /var/lib/...` fails (permission). Use `ExecStartPre=+/bin/mkdir …` (and `+` on `cp` / `chown`). After a crash loop: `sudo systemctl reset-failed envoymesh-relay`.
+
 
 ---
 

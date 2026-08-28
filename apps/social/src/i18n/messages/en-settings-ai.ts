@@ -97,15 +97,16 @@ export const aiSettingsMessages = {
     iconBuiltIn: "AI",
     iconExtAgent: "EX",
     iconPi: "π",
-    // ----- Phase 49 — Pi (built-in local coding agent) -----
-    // Pi is a separate engine alongside Built-in OpenClaw. It's a local
-    // coding agent (filesystem + shell) with NO mesh access; tool actions
-    // surface as confirm dialogs. See docs/pi-integration-design.md.
-    piAgent: "Pi (Local Coding Agent)",
+    iconEh: "EH",
+    // ----- Coding agents (EH = coding chat + Terminal; Pi = Terminal + Ext Agent) -----
+    piAgent: "Coding agents",
     piAgentDesc:
-      "Built-in coding agent that runs on this machine. Ask Pi to write code, refactor files, or run shell commands. It does NOT access your mesh contacts or knowledge — that's Built-in OpenClaw's job.",
+      "Two local coding agents on this machine. Envoy Harness powers coding chat and is always available in Terminal. Pi is available in Terminal and for Ext Agent. They do NOT access mesh contacts or knowledge — that's Built-in OpenClaw's job.",
+    piSectionTitle: "Pi",
+    piSectionDesc:
+      "Sidecar coding agent for Terminal and Ext Agent. Enable, auto-run, and model override are Pi-only.",
     piAgentNotInstalled:
-      "Pi sidecar not bundled (slim build). Use a full build to enable Pi.",
+      "Pi sidecar not bundled (slim build). Coding chat still uses Envoy Harness; install a full build for Pi in Terminal.",
     piStatusReady: "Ready",
     piStatusStarting: "Starting…",
     piStatusStopped: "Stopped",
@@ -113,11 +114,9 @@ export const aiSettingsMessages = {
     piStatusNotInstalled: "Not installed",
     piStatusError: "Error",
     enablePi: "Enable Pi",
-    piCodingBackend: "Coding backend",
     piCodingBackendPi: "Pi (sidecar)",
     piCodingBackendEh: "envoy-harness (ACP)",
-    piCodingBackendHint:
-      "Routes sendToPi / approvals through the same Pi UI. Switch here or in EnvoyGo → Pi Agent. Pi TUI terminal stays Pi-only.",
+    piVersionSubtitle: "Pi v{version}",
     piAutoRunPolicy: "Auto-run policy",
     piAutoRunAlwaysConfirm: "Always confirm (recommended)",
     piAutoRunAlwaysConfirmDesc: "Every tool action surfaces as a confirm dialog.",
@@ -142,7 +141,21 @@ export const aiSettingsMessages = {
     piModelError: "Pi is not ready: {error}",
     piRestartToApply: "Restart Pi to apply changes",
     piEnableHint:
-      "Disabling Pi stops the runtime immediately. Re-enabling starts it on the next save.",
+      "Disabling Pi stops the Pi runtime immediately. Re-enabling starts it on the next save. Envoy Harness (coding chat + Terminal) is unaffected.",
+    ehSectionTitle: "Envoy Harness",
+    ehSectionDesc:
+      "Powers coding chat and is always available in Terminal. Auto-run here is harness-only; project folder, peers, and slash commands live in the Envoy chat panel.",
+    ehStatusReady: "Ready",
+    ehStatusError: "Not ready",
+    ehModelError: "Envoy Harness is not ready: {error}",
+    ehAutoRunPolicy: "Auto-run policy",
+    ehAutoRunNever: "Never ask (auto-allow all)",
+    ehAutoRunNeverDesc: "Never prompt — every tool call is allowed automatically.",
+    ehCwdLabel: "Project folder",
+    ehPeersLabel: "Peer cluster",
+    ehPeersValue: "{connected} connected · {failed} failed",
+    ehConfigHint:
+      "Change the project folder with /cd in the Envoy chat panel. Peer cluster is set on the home node under coding-agent settings.",
     // ----- Mode-summary banner (top of the AI Engine block) -----
     modeLabel: "AI engine mode",
     modeDescBoth: "Built-in OpenClaw + external agent bridge are both available.",

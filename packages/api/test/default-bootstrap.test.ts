@@ -6,6 +6,7 @@ import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_PEER_IDS,
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
   defaultBootstrapPresetsForDiscoveryProfile,
+  ensureCommunityRelaySiblingPresets,
   isCommunityPresetRelayPeerId,
   mergeCommunityRelaySiblingBootstraps,
   normalizeBootstrapPresetsForContactsOnly,
@@ -30,6 +31,17 @@ describe("default bootstrap presets", () => {
     expect(DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS).toContain("cn-relay");
     expect(DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS).toContain("us-relay");
     expect(DEFAULT_CONTACTS_ONLY_BOOTSTRAP_PRESETS).toEqual(["cn-relay", "us-relay"]);
+  });
+
+  it("ensures US when legacy presets only listed cn-relay", () => {
+    expect(ensureCommunityRelaySiblingPresets(["public-libp2p", "cn-relay"])).toEqual([
+      "public-libp2p",
+      "cn-relay",
+      "us-relay",
+    ]);
+    // Explicit US-only (or neither) is left alone — operator opt-out of CN.
+    expect(ensureCommunityRelaySiblingPresets(["us-relay"])).toEqual(["us-relay"]);
+    expect(ensureCommunityRelaySiblingPresets(["public-libp2p"])).toEqual(["public-libp2p"]);
   });
 
   it("normalizes contacts-only presets by removing public-libp2p swarm ids", () => {

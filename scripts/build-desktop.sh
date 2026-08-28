@@ -5,6 +5,10 @@
 #
 # Feature packaging notes (family network / push / EnvoyGo l10n):
 #   - Family network: ships in compiled apps/node + Social UI — no extra assets.
+#   - Relay roster seed (Phase 46E Path C): stage-bundle-node-runtime.sh copies
+#     repo-root relay-roster.json → resources/node/relay-roster.json (CN+US hubs
+#     for first boot). Homes then poll live relays. verify-tauri-resources.sh
+#     fails the build if the repo seed exists but was not staged.
 #   - Push (iOS APNs + Android FCM for EnvoyGo): stage-tauri-push-credentials.sh
 #     copies repo-root push-config.json + AuthKey_LKPCR48WHW.p8 +
 #     serviceAccountKey.json into resources/node/ after node staging.

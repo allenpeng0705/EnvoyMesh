@@ -21,6 +21,7 @@ import type {
   DocumentAutonomyPolicy,
   ModelProviderMode,
   PiStatus,
+  EnvoyHarnessStatus,
   EnvoyLocalStatus,
   EnvoyLocalEmbedStatus,
   EnvoyLocalInstalledModel,
@@ -4048,17 +4049,37 @@ export function SettingsAITab() {
     }
   }, [nodeService, updateNodeConfigPartial, nodeConfig?.piSettings]);
 
-  /** Phase G / 12b — switch sendToPi between Pi sidecar and envoy-harness ACP. */
-  const handleChangePiCodingBackend = useCallback(async (backend: "pi" | "envoy-harness") => {
+  // ---- Envoy Harness (coding chat + Terminal; separate from Pi) ----
+  const [ehStatus, setEhStatus] = useState<EnvoyHarnessStatus | null>(null);
+  const [ehPolicySaving, setEhPolicySaving] = useState(false);
+
+  const refreshEhStatus = useCallback(async () => {
     try {
-      await updateNodeConfigPartial({
-        piSettings: { ...(nodeConfig?.piSettings ?? {}), codingBackend: backend },
-      });
-      void refreshPiStatus();
+      setEhStatus(await nodeService.getEnvoyHarnessStatus());
     } catch (e) {
-      console.warn("[SettingsAITab] failed to update Pi coding backend", e);
+      console.warn("[SettingsAITab] failed to fetch Envoy Harness status", e);
     }
-  }, [updateNodeConfigPartial, nodeConfig?.piSettings, refreshPiStatus]);
+  }, [nodeService]);
+
+  useEffect(() => { void refreshEhStatus(); }, [refreshEhStatus]);
+
+  const handleChangeEhAutoRunPolicy = useCallback(async (policy: string) => {
+    setEhPolicySaving(true);
+    try {
+      const s = await nodeService.setEnvoyHarnessAutoRunPolicy(policy);
+      setEhStatus(s);
+      await refreshNodeConfig();
+    } catch (e) {
+      console.warn("[SettingsAITab] failed to update Envoy Harness auto-run policy", e);
+    } finally {
+      setEhPolicySaving(false);
+    }
+  }, [nodeService, refreshNodeConfig]);
+
+  const ehAutoRunPolicy =
+    ehStatus?.autoRunPolicy ??
+    nodeConfig?.envoyHarnessAutoRunPolicy ??
+    "safe-only";
 
   // ---- AI Character Bots ----
   const [botDraft, setBotDraft] = useState({ name: "", systemPrompt: "", description: "", avatarColor: "#6366f1" });
@@ -4296,25 +4317,127 @@ export function SettingsAITab() {
         <EnvoyLocalSettings refreshNodeConfig={refreshNodeConfig} />
       </section>
 
-      {/* Phase 49 — Pi (built-in local coding agent).
-          A separate engine alongside Built-in OpenClaw. Writable in the UI
-          (toggle + auto-run policy); restart-on-toggle applies immediately.
-          See docs/pi-integration-design.md. */}
+      {/* Envoy Harness = coding chat (+ Terminal). Pi = Terminal (+ Ext Agent). No shared active-engine switch. */}
       <section className="settings-section">
         <h4>{t("settings.ai.aiEngine.piAgent")}</h4>
         <p className="section-desc">{t("settings.ai.aiEngine.piAgentDesc")}</p>
 
-        <div className={`agent-block${piStatus?.state === "disabled" ? " agent-block--readonly" : ""}`}>
+        <div className="coding-agents-stack">
+        <div
+          className={`agent-block agent-block--eh${ehStatus?.state === "error" ? " agent-block--readonly" : ""}`}
+        >
+          <div className="agent-block-header">
+            <div className="agent-block-titlerow">
+              <span className="agent-block-icon agent-block-icon--eh">
+                {t("settings.ai.aiEngine.iconEh")}
+              </span>
+              <div className="agent-block-titlewrap">
+                <span className="agent-block-title">{t("settings.ai.aiEngine.ehSectionTitle")}</span>
+                <span className="agent-block-subtitle">
+                  {ehStatus?.model
+                    ? ehStatus.model
+                    : t("settings.ai.aiEngine.piCodingBackendEh")}
+                </span>
+              </div>
+            </div>
+            {ehStatus ? (
+              <span
+                className={`agent-block-status agent-block-status--${
+                  ehStatus.state === "ready" ? "on" : "warn"
+                }`}
+              >
+                {ehStatus.state === "ready"
+                  ? t("settings.ai.aiEngine.ehStatusReady")
+                  : t("settings.ai.aiEngine.ehStatusError")}
+              </span>
+            ) : null}
+          </div>
+
+          <p className="section-desc">{t("settings.ai.aiEngine.ehSectionDesc")}</p>
+
+          {ehStatus?.error ? (
+            <p className="settings-hint pi-error">
+              {t("settings.ai.aiEngine.ehModelError", { error: ehStatus.error })}
+            </p>
+          ) : null}
+
+          <div className="agent-block-fields">
+            <div className="agent-field">
+              <label className="agent-field-label">
+                {t("settings.ai.aiEngine.ehAutoRunPolicy")}
+              </label>
+              <select
+                className="agent-field-input"
+                value={ehAutoRunPolicy}
+                disabled={ehPolicySaving}
+                onChange={(e) => {
+                  void handleChangeEhAutoRunPolicy(e.target.value);
+                }}
+              >
+                <option value="always-confirm">
+                  {t("settings.ai.aiEngine.piAutoRunAlwaysConfirm")}
+                </option>
+                <option value="safe-only">
+                  {t("settings.ai.aiEngine.piAutoRunSafeOnly")}
+                </option>
+                <option value="off">
+                  {t("settings.ai.aiEngine.piAutoRunTrust")}
+                </option>
+                <option value="never">
+                  {t("settings.ai.aiEngine.ehAutoRunNever")}
+                </option>
+              </select>
+              <p className="agent-field-hint">
+                {ehAutoRunPolicy === "always-confirm"
+                  ? t("settings.ai.aiEngine.piAutoRunAlwaysConfirmDesc")
+                  : ehAutoRunPolicy === "safe-only"
+                    ? t("settings.ai.aiEngine.piAutoRunSafeOnlyDesc")
+                    : ehAutoRunPolicy === "never"
+                      ? t("settings.ai.aiEngine.ehAutoRunNeverDesc")
+                      : t("settings.ai.aiEngine.piAutoRunTrustDesc")}
+              </p>
+            </div>
+
+            {ehStatus?.cwd ? (
+              <div className="agent-field agent-field--readonly">
+                <span className="agent-field-label">{t("settings.ai.aiEngine.ehCwdLabel")}</span>
+                <span className="agent-field-value">{ehStatus.cwd}</span>
+              </div>
+            ) : null}
+
+            {ehStatus?.peers ? (
+              <div className="agent-field agent-field--readonly">
+                <span className="agent-field-label">{t("settings.ai.aiEngine.ehPeersLabel")}</span>
+                <span className="agent-field-value">
+                  {t("settings.ai.aiEngine.ehPeersValue", {
+                    connected: ehStatus.peers.connected,
+                    failed: ehStatus.peers.failed,
+                  })}
+                </span>
+              </div>
+            ) : null}
+
+            <p className="agent-field-hint">{t("settings.ai.aiEngine.ehConfigHint")}</p>
+          </div>
+        </div>
+
+        <div
+          className={`agent-block${piStatus?.state === "disabled" ? " agent-block--readonly" : ""}`}
+        >
           <div className="agent-block-header">
             <div className="agent-block-titlerow">
               <span className="agent-block-icon agent-block-icon--pi">
                 {t("settings.ai.aiEngine.iconPi")}
               </span>
               <div className="agent-block-titlewrap">
-                <span className="agent-block-title">{t("settings.ai.aiEngine.piAgent")}</span>
-                {piStatus?.piVersion ? (
-                  <span className="agent-block-subtitle">v{piStatus.piVersion}</span>
-                ) : null}
+                <span className="agent-block-title">{t("settings.ai.aiEngine.piSectionTitle")}</span>
+                <span className="agent-block-subtitle">
+                  {piStatus?.piVersion
+                    ? t("settings.ai.aiEngine.piVersionSubtitle", {
+                        version: piStatus.piVersion,
+                      })
+                    : t("settings.ai.aiEngine.piCodingBackendPi")}
+                </span>
               </div>
             </div>
             {piStatus ? (
@@ -4329,6 +4452,8 @@ export function SettingsAITab() {
               </span>
             ) : null}
           </div>
+
+          <p className="section-desc">{t("settings.ai.aiEngine.piSectionDesc")}</p>
 
           {piStatus?.state === "not-installed" ? (
             <p className="settings-hint">{t("settings.ai.aiEngine.piAgentNotInstalled")}</p>
@@ -4351,34 +4476,7 @@ export function SettingsAITab() {
                 />
                 <span>{t("settings.ai.aiEngine.enablePi")}</span>
               </label>
-            </div>
-
-            <div className="agent-field">
-              <label className="agent-field-label">
-                {t("settings.ai.aiEngine.piCodingBackend", "Coding backend")}
-              </label>
-              <select
-                className="agent-field-input"
-                value={nodeConfig?.piSettings?.codingBackend ?? "pi"}
-                disabled={restartingPi || !(nodeConfig?.piEnabled ?? true)}
-                onChange={(e) => {
-                  const v = e.target.value === "envoy-harness" ? "envoy-harness" : "pi";
-                  void handleChangePiCodingBackend(v);
-                }}
-              >
-                <option value="pi">
-                  {t("settings.ai.aiEngine.piCodingBackendPi", "Pi (sidecar)")}
-                </option>
-                <option value="envoy-harness">
-                  {t("settings.ai.aiEngine.piCodingBackendEh", "envoy-harness (ACP)")}
-                </option>
-              </select>
-              <p className="agent-field-hint">
-                {t(
-                  "settings.ai.aiEngine.piCodingBackendHint",
-                  "Routes sendToPi to envoy-harness. Envoy appears on the Chat list (web harness: status, project folder, peer cluster, / commands) and in the Terminal view. Switch here or in EnvoyGo → Pi Agent.",
-                )}
-              </p>
+              <p className="agent-field-hint">{t("settings.ai.aiEngine.piEnableHint")}</p>
             </div>
 
             <div className="agent-field">
@@ -4422,9 +4520,6 @@ export function SettingsAITab() {
                     piModelDirtyRef.current = true;
                     const on = e.target.checked;
                     setPiUseCustomModel(on);
-                    // First enable with empty form → seed from Settings → AI
-                    // so Pi starts from the shared model and the user only
-                    // tweaks what differs.
                     if (on && !piOverride && !piModelName.trim()) {
                       const mp = nodeConfig?.modelProviders;
                       const seededProvider = piProviderFromEnvoyMode(mp?.mode, mp?.endpoint);
@@ -4450,7 +4545,7 @@ export function SettingsAITab() {
                   <select
                     className="agent-field-input"
                     value={piProvider}
-                    disabled={restartingPi || piModelSaveStatus === "saving"}
+                    disabled={restartingPi || piModelSaveStatus === "saving" || !(nodeConfig?.piEnabled ?? true)}
                     onChange={(e) => {
                       piModelDirtyRef.current = true;
                       const next = e.target.value;
@@ -4479,7 +4574,7 @@ export function SettingsAITab() {
                           ? piModelName
                           : "__custom__"
                       }
-                      disabled={restartingPi || piModelSaveStatus === "saving"}
+                      disabled={restartingPi || piModelSaveStatus === "saving" || !(nodeConfig?.piEnabled ?? true)}
                       onChange={(e) => {
                         piModelDirtyRef.current = true;
                         if (e.target.value === "__custom__") {
@@ -4505,7 +4600,7 @@ export function SettingsAITab() {
                       style={{ marginTop: piProviderInfo?.models.length ? "6px" : undefined }}
                       value={piModelName}
                       placeholder={piProviderInfo?.models[0] ?? "model-id"}
-                      disabled={restartingPi || piModelSaveStatus === "saving"}
+                      disabled={restartingPi || piModelSaveStatus === "saving" || !(nodeConfig?.piEnabled ?? true)}
                       onChange={(e) => {
                         piModelDirtyRef.current = true;
                         setPiModelName(e.target.value);
@@ -4521,7 +4616,7 @@ export function SettingsAITab() {
                       className="agent-field-input"
                       value={piModelEndpoint}
                       placeholder={piProviderInfo.endpointPlaceholder}
-                      disabled={restartingPi || piModelSaveStatus === "saving"}
+                      disabled={restartingPi || piModelSaveStatus === "saving" || !(nodeConfig?.piEnabled ?? true)}
                       onChange={(e) => {
                         piModelDirtyRef.current = true;
                         setPiModelEndpoint(e.target.value);
@@ -4537,7 +4632,7 @@ export function SettingsAITab() {
                     value={piModelApiKey}
                     autoComplete="off"
                     placeholder={piProviderInfo?.apiKeyEnv}
-                    disabled={restartingPi || piModelSaveStatus === "saving"}
+                    disabled={restartingPi || piModelSaveStatus === "saving" || !(nodeConfig?.piEnabled ?? true)}
                     onChange={(e) => {
                       piModelDirtyRef.current = true;
                       setPiModelApiKey(e.target.value);
@@ -4550,7 +4645,7 @@ export function SettingsAITab() {
                     type="button"
                     className="settings-save-btn"
                     onClick={() => { void handleSavePiModelOverride(); }}
-                    disabled={restartingPi || piModelSaveStatus === "saving"}
+                    disabled={restartingPi || piModelSaveStatus === "saving" || !(nodeConfig?.piEnabled ?? true)}
                   >
                     {piModelSaveStatus === "saving"
                       ? t("settings.ai.aiEngine.piModelSaving")
@@ -4589,7 +4684,7 @@ export function SettingsAITab() {
                     type="button"
                     className="settings-save-btn"
                     onClick={() => { void handleSavePiModelOverride(); }}
-                    disabled={restartingPi || piModelSaveStatus === "saving"}
+                    disabled={restartingPi || piModelSaveStatus === "saving" || !(nodeConfig?.piEnabled ?? true)}
                   >
                     {piModelSaveStatus === "saving"
                       ? t("settings.ai.aiEngine.piModelSaving")
@@ -4612,7 +4707,6 @@ export function SettingsAITab() {
             ) : null}
           </div>
 
-          {/* Restart button — shown when Pi is in a state restart can fix. */}
           {piStatus && (piStatus.state === "error" || piStatus.state === "stopped" || piStatus.state === "starting") ? (
             <div className="settings-buttons">
               <button
@@ -4625,6 +4719,7 @@ export function SettingsAITab() {
               </button>
             </div>
           ) : null}
+        </div>
         </div>
       </section>
 

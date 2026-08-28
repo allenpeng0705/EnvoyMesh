@@ -3,70 +3,120 @@
 Homes learn the fleet from **any** relay (`GET http://<relay>:15432/relay-roster.json`).  
 After join, a new relay **publishes** an updated roster to the others (same join token). Existing relays **do not restart** — they apply newer `issuedAt` on PUT and also pull periodically until everyone matches.
 
-Do these steps in order. Skip the “one-time” section if you already did it.
+Do these steps in order. Skip the “one-time” section if CN/US already serve a roster and accept joins.
 
 ---
 
-## One-time setup (only once)
+## One-time setup (only once on CN and US)
 
-### 1. Deploy Path C sync build on CN and US
+### 1. Path C sync build
 
-Existing relays need a build that serves:
+Relays must serve:
 
 - `GET /relay-roster.json` (homes + peer pull)
-- `PUT /relay-roster.json` (join-token auth, write if newer)
-
-Upgrade/redeploy **cn-relay** and **us-relay** once with that build. Later adds do **not** require restarting them.
-
-### 2. Same join token on CN and US
+- `PUT /relay-roster.json` (join-token auth; write only if `issuedAt` is newer)
 
 ```bash
-ENVOYMESH_RELAY_JOIN_TOKEN=pick-a-long-secret-at-least-8-chars
-sudo systemctl restart envoymesh-relay
+cd /home/admin/mygithub/EnvoyMesh   # or your checkout path
+git pull
+npm install
+npm run relay:build
 ```
 
-Use the **same** token on every new relay later.
+### 2. systemd units (relay + liveness watchdog)
 
-### 3. Seed roster on CN and US (automatic)
+Use a **live** roster under `/var/lib/…` (not the git file). Seed once with `cp -n`.  
+If `User=` is non-root, **every** `ExecStartPre` that touches `/var/lib` needs a leading `+` (run as root). Without `+`, `mkdir` fails and the unit crash-loops.
 
-**Preferred (systemd):** keep the live file under `/var/lib/…` and seed it **once** from the checkout. `cp -n` does not overwrite after fleet sync has updated the file.
+#### `/etc/systemd/system/envoymesh-relay.service`
+
+Adjust `--advertise` IP / paths / Node PATH per host. **Do not commit real admin passwords or join tokens.**
 
 ```ini
-# In /etc/systemd/system/envoymesh-relay.service
-WorkingDirectory=/opt/EnvoyMesh
-ExecStartPre=/bin/mkdir -p /var/lib/envoymesh-relay
-ExecStartPre=/bin/cp -n /opt/EnvoyMesh/relay-roster.json /var/lib/envoymesh-relay/relay-roster.json
+[Unit]
+Description=EnvoyMesh Relay Server
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+Environment=ENVOYMESH_RELAY_PUBLIC_MODE=1
+ExecStart=/bin/bash /home/admin/mygithub/EnvoyMesh/scripts/run-relay.sh --advertise 47.251.91.97 --public-mode
+WorkingDirectory=/home/admin/mygithub/EnvoyMesh
+# "+" = root despite User=admin (required for /var/lib)
+ExecStartPre=+/bin/mkdir -p /var/lib/envoymesh-relay
+ExecStartPre=+/bin/cp -n /home/admin/mygithub/EnvoyMesh/relay-roster.json /var/lib/envoymesh-relay/relay-roster.json
+ExecStartPre=+/bin/chown -R admin:admin /var/lib/envoymesh-relay
 Environment=ENVOYMESH_RELAY_ROSTER_PATH=/var/lib/envoymesh-relay/relay-roster.json
-Environment=ENVOYMESH_RELAY_JOIN_TOKEN=your-long-random-secret
+Restart=always
+RestartSec=5
+User=admin
+Environment=NODE_OPTIONS=--experimental-global-customevent
+Environment=DEBUG=libp2p:circuit-relay*,libp2p:connection-manager,libp2p:transport*
+Environment=PATH=/home/admin/.nvm/versions/node/v24.11.1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=ENVOYMESH_RELAY_ADMIN_USER=admin
+Environment=ENVOYMESH_RELAY_ADMIN_PASSWORD=change-me-before-public
+Environment=ENVOYMESH_RELAY_JOIN_TOKEN=pick-a-long-secret-at-least-8-chars
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-Then:
+CN host: same unit with `--advertise 47.93.11.212` (or your CN public IP). Same join token on both.
+
+#### `/etc/systemd/system/envoymesh-relay-liveness.service`
+
+Sibling HTTP watchdog — kills a wedged relay MainPID when `GET /health` stops answering; systemd `Restart=always` brings it back. Use `Wants=` (not `Requires=`) so the watchdog stays up across relay restarts. Same `User=` as the relay.
+
+```ini
+[Unit]
+Description=EnvoyMesh Relay HTTP liveness watchdog
+After=envoymesh-relay.service
+Wants=envoymesh-relay.service
+
+[Service]
+Type=simple
+ExecStart=/home/admin/mygithub/EnvoyMesh/scripts/http-liveness-watch.sh --url http://127.0.0.1:15432/health --systemctl envoymesh-relay
+WorkingDirectory=/home/admin/mygithub/EnvoyMesh
+Restart=always
+RestartSec=5
+User=admin
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Repo seed file (CN + US hubs): [`relay-roster.json`](../relay-roster.json) at the checkout root.
+
+Apply on each host:
 
 ```bash
+chmod +x /home/admin/mygithub/EnvoyMesh/scripts/http-liveness-watch.sh
 sudo systemctl daemon-reload
-sudo systemctl restart envoymesh-relay
+sudo systemctl reset-failed envoymesh-relay   # if it previously crash-looped
+sudo systemctl enable --now envoymesh-relay
+sudo systemctl enable --now envoymesh-relay-liveness
+sudo systemctl status envoymesh-relay envoymesh-relay-liveness
 ```
 
-**Also automatic in the relay binary:** if the live path is missing, it copies once from `ENVOYMESH_RELAY_ROSTER_SEED` or `$WorkingDirectory/relay-roster.json` (never overwrites an existing file).
+More watchdog detail: [relay_server_deployment.md](./relay_server_deployment.md) §4.
 
-Manual one-shot (if you are not using systemd Pre):
-
-```bash
-sudo mkdir -p /var/lib/envoymesh-relay
-sudo cp -n /opt/EnvoyMesh/relay-roster.json /var/lib/envoymesh-relay/relay-roster.json
-```
-
-Check:
+### 3. Verify roster + health
 
 ```bash
 curl -sf http://127.0.0.1:15432/relay-roster.json | head
+curl -sf http://127.0.0.1:15432/health
 ```
 
-Open TCP **15432** (and **4001**) on relays homes or peers must reach.
+Open TCP **4001** and **15432** on each public IP (15432 is required for homes/peers to fetch the roster, not only for Admin).
 
-### 4. Homes
+The relay also seeds automatically if the live path is missing (`ENVOYMESH_RELAY_ROSTER_SEED` or `$WorkingDirectory/relay-roster.json`) — still never overwrites an existing live file.
 
-Ship a Path C DMG/EXE once (includes seed `resources/node/relay-roster.json` + poller). Usually nothing to configure. Opt out:
+### 4. Homes (once)
+
+Ship a Path C DMG/EXE once (bundles seed + poller). Usually nothing to configure. Opt out:
 
 ```json
 { "relayRosterEnabled": false }
@@ -78,11 +128,16 @@ Ship a Path C DMG/EXE once (includes seed `resources/node/relay-roster.json` + p
 
 ### 5. Start only the new relay
 
+Same join token as CN/US. Own profile (new peer id). Public advertise + HTTP port.
+
+**systemd** (recommended): copy the unit above, change `--advertise`, use a **new** profile if you override `--profile`, keep the same token and roster Pre lines.
+
+**Or foreground:**
+
 ```bash
 export ENVOYMESH_RELAY_JOIN_TOKEN='same-secret-as-cn-and-us'
-# optional labels for the roster entry:
-export ENVOYMESH_RELAY_ROSTER_ID='eu-relay'
-export ENVOYMESH_RELAY_ROSTER_REGION='eu'
+export ENVOYMESH_RELAY_ROSTER_ID='eu-relay'          # optional
+export ENVOYMESH_RELAY_ROSTER_REGION='eu'            # optional
 
 ./scripts/run-relay.sh \
   --profile ./data/relay-NEWNAME \
@@ -92,7 +147,7 @@ export ENVOYMESH_RELAY_ROSTER_REGION='eu'
   --public-mode
 ```
 
-Open TCP **4001** and **15432**.
+Also set `ENVOYMESH_RELAY_ROSTER_PATH` (or rely on auto-seed into the profile dir).
 
 ### 6. Confirm join + roster publish
 
@@ -103,23 +158,24 @@ Community join accepted
 [relay-roster-sync] published fleet=... pushOk=...
 ```
 
-On an **existing** relay (no restart):
+On an **existing** relay (**no** restart):
 
 ```bash
-curl -sf http://127.0.0.1:15432/relay-roster.json | grep -E 'eu-relay|YOUR_IP|12D3KooW'
+curl -sf http://127.0.0.1:15432/relay-roster.json
+# expect new id / IP / peer id; same issuedAt across fleet after sync
 ```
 
-All fleet relays should converge on the **same** newest `issuedAt`. If one was offline, it catches up on pull (~15 min) or fanout.
+If a peer was offline during publish, it catches up on pull (~15 min) or fanout.
 
 ### 7. Homes
 
-Wait for the next home poll (~20 min), or restart one home to test sooner:
+Wait for the next home poll (~20 min), or restart one home to test:
 
 ```text
 [relay-roster] applied fleet=... via=http://...:15432/relay-roster.json
 ```
 
-No new DMG. No manual copy of roster onto CN/US for each add.
+No new DMG. No manual roster copy onto CN/US for each add.
 
 ---
 
@@ -127,10 +183,9 @@ No new DMG. No manual copy of roster onto CN/US for each add.
 
 | Step | Done? |
 |------|--------|
-| 1. Path C sync build on CN + US (once) | |
-| 2. Token on CN + US (once) | |
-| 3. Seed `relay-roster.json` on CN + US (once) | |
-| 5. New relay up with same token | |
+| 1–3. Path C build + systemd (`ExecStartPre=+…`) + curl roster on CN + US | |
+| Same `ENVOYMESH_RELAY_JOIN_TOKEN` on all fleet relays | |
+| 5. New relay up with advertise + token | |
 | 6. Join + published; peers show new entry | |
 | 7. Home log: roster applied | |
 
@@ -140,16 +195,19 @@ No new DMG. No manual copy of roster onto CN/US for each add.
 
 | Problem | Fix |
 |---------|-----|
-| Join rejected | Same `ENVOYMESH_RELAY_JOIN_TOKEN` everywhere |
-| `PUT` → 401 / pushFail | Receivers missing token or not on Path C sync build |
+| `ExecStartPre=/bin/mkdir … status=1` | Add leading `+` on Pre lines; `User=` cannot mkdir under `/var/lib` |
+| `Start request repeated too quickly` | `sudo systemctl reset-failed envoymesh-relay` then start again |
+| Join rejected | Same `ENVOYMESH_RELAY_JOIN_TOKEN` (≥ 8 chars) on CN, US, and new relay |
+| `PUT` 401 / pushFail | Token missing on receivers; or old build without Path C PUT |
 | Publish skipped | Need public `--advertise` multiaddrs; unset `ENVOYMESH_RELAY_ROSTER_PUBLISH=0` |
-| Peer still old roster | Wait for pull, or confirm `:15432` reachable between relays |
+| Peer still old roster | `:15432` reachable between relays; wait for pull |
 | Home never updates | Home build predates Path C; or no reachable relay HTTP |
+| Pointed `ENVOYMESH_RELAY_ROSTER_PATH` at git tree | Don’t — use `/var/lib/…`; `git pull` can overwrite a live fleet file |
 
 Disable auto-publish only if needed:
 
 ```bash
-export ENVOYMESH_RELAY_ROSTER_PUBLISH=0
+Environment=ENVOYMESH_RELAY_ROSTER_PUBLISH=0
 ```
 
 ---
@@ -163,4 +221,4 @@ export ENVOYMESH_RELAY_ROSTER_PUBLISH=0
 
 ## Design detail
 
-See [dynamic-relay-roster.md](./dynamic-relay-roster.md).
+See [dynamic-relay-roster.md](./dynamic-relay-roster.md) · [operator-relay-fleet.md](./operator-relay-fleet.md) §7.

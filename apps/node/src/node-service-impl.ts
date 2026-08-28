@@ -239,6 +239,7 @@ import { randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
 import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
+  DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDRS,
   DEFAULT_ENVOY_COMMUNITY_RELAY_HTTP_PORT,
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
   defaultBootstrapPresetsForDiscoveryProfile,
@@ -1346,7 +1347,6 @@ import { AcpPermissionBridge } from "./node-service-acp-ui.js";
 import { AcpUserQuestionBridge } from "./node-service-eh-user-question.js";
 import { EhPermissionBridge } from "./node-service-eh-permission.js";
 import { buildEhPromptPayload, pathFromEhActivity } from "./agent-runtime-envoy/eh-prompt-attachments.js";
-import { resolvePiCodingBackend } from "./pi-coding-backend.js";
 import {
   ensurePiTerminalSession,
   resolvePiProjectDir,
@@ -6342,50 +6342,17 @@ class NodeServiceImpl implements NodeService {
   }
 
   async restartPi(): Promise<PiStatus> {
-    const cfg = await this._configStore.load().catch(() => undefined);
-    if (resolvePiCodingBackend(cfg?.piSettings) === "envoy-harness") {
-      // No Pi child to restart; refresh EH readiness.
-      return this.getPiStatus();
-    }
+    // Always restart the real Pi sidecar. Coding chat uses Envoy Harness;
+    // Terminal can use both Pi and Envoy Harness.
     await restartPiViaRuntime(this._piState, this._piRuntimeDeps());
     return this.getPiStatus();
   }
 
   async getPiStatus(): Promise<PiStatus> {
-    const cfg = await this._configStore.load().catch(() => undefined);
-    const codingBackend = resolvePiCodingBackend(cfg?.piSettings);
-    if (codingBackend === "envoy-harness") {
-      const enabled = cfg?.piEnabled !== false;
-      if (!enabled) {
-        return {
-          enabled: false,
-          state: "disabled",
-          modelInherited: true,
-          codingBackend,
-        };
-      }
-      await this._refreshEnvoyHarnessHostConfig();
-      const eh = loadEnvoyHarnessRuntimeConfig({
-        hostModel: this._envoyHarnessHostModel,
-        hostApiKey: this._envoyHarnessHostApiKey,
-        hostEndpoint: this._envoyHarnessHostEndpoint,
-      });
-      return {
-        enabled: true,
-        state: eh.ready ? "ready" : "error",
-        modelSpec: eh.model,
-        modelInherited: true,
-        error: eh.ready
-          ? undefined
-          : (eh.reason ?? "envoy-harness not ready"),
-        codingBackend,
-      };
-    }
-    const status = await getPiStatusViaRuntime(
+    return getPiStatusViaRuntime(
       this._piState,
       this._piRuntimeDeps(),
     );
-    return { ...status, codingBackend: "pi" };
   }
 
   /**
@@ -7721,36 +7688,7 @@ class NodeServiceImpl implements NodeService {
     text: string,
     opts: { emitPushHint: boolean },
   ): Promise<string> {
-    const cfg = await this._configStore.load().catch(() => undefined);
-    if (resolvePiCodingBackend(cfg?.piSettings) === "envoy-harness") {
-      const answer = await this.askEnvoyHarness(text);
-      if (opts.emitPushHint && answer) {
-        const bridgePeer = this._bridgeStatus?.agentPeerId?.trim();
-        const bridgeName = this._bridgeStatus?.agentName?.trim();
-        this.emit("push:message", {
-          messageId: `pi-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          sender: {
-            nodeId: bridgePeer || "pi",
-            displayName: bridgeName || "Pi",
-            ownerId: bridgePeer || "envoy:pi",
-            actorRole: "agent" as const,
-          },
-          recipient: {
-            nodeId: this._mesh?.peerId ?? "",
-            ownerId: this._profile?.owner?.ownerId ?? "",
-          },
-          content: { text: answer },
-          metadata: {
-            timestamp: new Date().toISOString(),
-            deliveryReceipt: "delivered" as const,
-            deliveryChannel: "agent" as const,
-            deliverySource: "bridge" as const,
-          },
-        } as ChatMessage);
-      }
-      return answer;
-    }
-
+    // Always Pi. Coding chat uses askEnvoyHarness / startEnvoyHarnessTurn.
     const result = await askPiViaRuntime(this._piState, this._piRuntimeDeps(), text)
     // Direct sendToPi RPC only: wake backgrounded devices. Ext Agent replies
     // are notified via the normal bridge `chat:message` → push listener.
@@ -14641,10 +14579,12 @@ class NodeServiceImpl implements NodeService {
       }
     } catch { /* no persisted config */ }
 
-    // 2. Fall back to known community relay — only if directly connected
-    const cnRelayPeerId = NodeServiceImpl._deriveRelayPeerId(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
-    if (cnRelayPeerId && this._hasDirectConnectionTo(cnRelayPeerId)) {
-      return NodeServiceImpl._deriveRelayWsUrl(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+    // 2. Fall back to known community relays — first directly connected hub wins
+    for (const addr of DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDRS) {
+      const peerId = NodeServiceImpl._deriveRelayPeerId(addr);
+      if (peerId && this._hasDirectConnectionTo(peerId)) {
+        return NodeServiceImpl._deriveRelayWsUrl(addr);
+      }
     }
 
     return undefined;
@@ -14668,9 +14608,11 @@ class NodeServiceImpl implements NodeService {
         }
       }
     } catch { /* no persisted config */ }
-    const cnRelayPeerId = NodeServiceImpl._deriveRelayPeerId(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
-    if (cnRelayPeerId && this._hasDirectConnectionTo(cnRelayPeerId)) {
-      return cnRelayPeerId;
+    for (const addr of DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDRS) {
+      const peerId = NodeServiceImpl._deriveRelayPeerId(addr);
+      if (peerId && this._hasDirectConnectionTo(peerId)) {
+        return peerId;
+      }
     }
     return undefined;
   }

@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import { createRelayJoinRequestPayload } from "@envoymesh/protocol";
 import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
-  createRelayJoinRateLimiter,
-  evaluateCommunityRelayJoinRequest,
   peerIdFromBootstrapMultiaddr,
 } from "@envoymesh/api";
+import {
+  createRelayJoinRateLimiter,
+  evaluateCommunityRelayJoinRequest,
+} from "@envoymesh/api/community-relay-join";
 
 const CN_PEER = peerIdFromBootstrapMultiaddr(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR)!;
 const JOINER = "12D3KooWJoinerRelayPeerIdExample000000000000000000000";

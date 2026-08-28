@@ -55,8 +55,8 @@
   "meAiModel": "AI Model",
   "meEnvoyLocal": "Envoy Local",
   "meEnvoyLocalHint": "Home-node local model (download & start on the computer)",
-  "mePiAgent": "Pi Agent",
-  "mePiAgentHint": "Local coding agent settings",
+  "mePiAgent": "Coding agents",
+  "mePiAgentHint": "Pi and Envoy Harness settings",
   "meDarkMode": "Dark mode",
   "meDarkModeHint": "Follow system setting",
   "mePushNotifications": "Push notifications",
@@ -128,7 +128,7 @@
   "meTeamJobs": "Team jobs",
   "meStartTeamJobHint": "Preview a plan and launch on the home node",
   "meAiModelHint": "Provider used for the assistant on this home node",
-  "mePiAgentHintLong": "Built-in local coding agent on the home node",
+  "mePiAgentHintLong": "Local coding agents on the home node (Pi and Envoy Harness)",
   "mePushNotificationsHintLong": "Get notified about new messages, contact requests, and approvals when the app is in the background.",
   "meRecentTeamJobsHintLong": "View job reports published on the home node",
   "meActiveTeamJobsHintLong": "Monitor in-progress team jobs on the home node",
@@ -935,15 +935,26 @@
       }
     }
   },
-  "settingsPiBuiltIn": "Built-in local coding agent",
-  "settingsPiLocalOnly": "Local-only coding agent (no mesh tools).",
-  "settingsPiEnabled": "Pi enabled",
-  "settingsPiCodingBackend": "Coding backend",
+  "settingsPiBuiltIn": "Local coding agents",
+  "settingsPiLocalOnly": "Pi is for Terminal and Ext Agent. Envoy Harness powers coding chat and is always available in Terminal.",
+  "settingsPiEnabled": "Enable Pi",
+  "settingsPiCodingBackend": "Active engine",
   "settingsPiCodingBackendPi": "Pi (sidecar)",
   "settingsPiCodingBackendEh": "envoy-harness (ACP)",
-  "settingsPiCodingBackendHint": "Same setting as Social. Routes sendToPi and approvals through the same Pi UI. Older EnvoyGo builds without this control still work when switched from Social.",
-  "settingsPiCodingBackendSaved": "Coding backend updated",
-  "settingsPiOverrideHint": "Model override (optional). Clear to inherit AI Model settings.",
+  "settingsPiCodingBackendHint": "Which engine receives coding chat and approvals. Does not erase the other engine's settings.",
+  "settingsPiCodingBackendSaved": "Active engine updated",
+  "settingsPiSectionTitle": "Pi",
+  "settingsPiSectionHint": "Sidecar coding agent for Terminal and Ext Agent — enable and model override",
+  "settingsEhSectionTitle": "Envoy Harness",
+  "settingsEhSectionHint": "Powers coding chat and is always available in Terminal — auto-run policy (project folder is in the Envoy chat)",
+  "settingsEhAutoRunPolicy": "Envoy Harness auto-run",
+  "settingsEhAutoRunAlways": "Always confirm",
+  "settingsEhAutoRunSafe": "Confirm destructive only",
+  "settingsEhAutoRunOff": "Off — always show preview",
+  "settingsEhAutoRunNever": "Never ask (auto-allow all)",
+  "settingsEhAutoRunSaved": "Envoy Harness auto-run updated",
+  "settingsEhActiveBadge": "active",
+  "settingsPiOverrideHint": "Pi model override (optional). Clear to inherit AI Model settings.",
   "settingsPiModelName": "Model name",
   "settingsPiEndpoint": "Endpoint",
   "settingsPiLeaveBlankKey": "Leave blank to keep the saved key",
@@ -1288,22 +1299,32 @@
   "chainsAttemptCount": "{count} attempt(s)",
   "@chainsAttemptCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "chainsExecutionDetails": "Execution details",
   "chainsProvenanceSummaryLine": "{attempts} attempt(s) · {worker} · {state}",
   "@chainsProvenanceSummaryLine": {
     "placeholders": {
-      "attempts": { "type": "int" },
-      "worker": { "type": "String" },
-      "state": { "type": "String" }
+      "attempts": {
+        "type": "int"
+      },
+      "worker": {
+        "type": "String"
+      },
+      "state": {
+        "type": "String"
+      }
     }
   },
   "chainsLastReason": "Last reason: {reason}",
   "@chainsLastReason": {
     "placeholders": {
-      "reason": { "type": "String" }
+      "reason": {
+        "type": "String"
+      }
     }
   },
   "chainsTechnicalDetails": "Technical details",
@@ -1863,5 +1884,7 @@
   "termCursorLeft": "Move cursor left",
   "termCursorRight": "Move cursor right",
   "termEnterKey": "Enter key",
-  "chainsCancelFailed": "Could not cancel this team job."
+  "chainsCancelFailed": "Could not cancel this team job.",
+  "settingsUseForCodingChat": "Use for coding chat",
+  "settingsUseForCodingChatHint": "Deprecated — coding chat always uses Envoy Harness."
 }

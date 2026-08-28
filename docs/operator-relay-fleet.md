@@ -125,7 +125,70 @@ Every fleet relay uses the **same** `apps/relay` binary: discovery **and** circu
 
 ### Example unit (`/etc/systemd/system/envoymesh-relay.service`)
 
-Adjust paths, public IP, and admin password for each host:
+Adjust paths, public IP, Node PATH, and admin password for each host.  
+**Important:** with `User=admin`, `ExecStartPre` lines that touch `/var/lib` must start with `+` (otherwise `mkdir` fails and the unit crash-loops).
+
+**Variant A — `run-relay.sh` (production CN/US shape):**
+
+```ini
+[Unit]
+Description=EnvoyMesh Relay Server
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+Environment=ENVOYMESH_RELAY_PUBLIC_MODE=1
+ExecStart=/bin/bash /home/admin/mygithub/EnvoyMesh/scripts/run-relay.sh --advertise 47.251.91.97 --public-mode
+WorkingDirectory=/home/admin/mygithub/EnvoyMesh
+ExecStartPre=+/bin/mkdir -p /var/lib/envoymesh-relay
+ExecStartPre=+/bin/cp -n /home/admin/mygithub/EnvoyMesh/relay-roster.json /var/lib/envoymesh-relay/relay-roster.json
+ExecStartPre=+/bin/chown -R admin:admin /var/lib/envoymesh-relay
+Environment=ENVOYMESH_RELAY_ROSTER_PATH=/var/lib/envoymesh-relay/relay-roster.json
+Restart=always
+RestartSec=5
+User=admin
+Environment=NODE_OPTIONS=--experimental-global-customevent
+Environment=DEBUG=libp2p:circuit-relay*,libp2p:connection-manager,libp2p:transport*
+Environment=PATH=/home/admin/.nvm/versions/node/v24.11.1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=ENVOYMESH_RELAY_ADMIN_USER=admin
+Environment=ENVOYMESH_RELAY_ADMIN_PASSWORD=change-me-before-public
+Environment=ENVOYMESH_RELAY_JOIN_TOKEN=your-long-random-secret
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Companion liveness watchdog (`/etc/systemd/system/envoymesh-relay-liveness.service`):
+
+```ini
+[Unit]
+Description=EnvoyMesh Relay HTTP liveness watchdog
+After=envoymesh-relay.service
+Wants=envoymesh-relay.service
+
+[Service]
+Type=simple
+ExecStart=/home/admin/mygithub/EnvoyMesh/scripts/http-liveness-watch.sh --url http://127.0.0.1:15432/health --systemctl envoymesh-relay
+WorkingDirectory=/home/admin/mygithub/EnvoyMesh
+Restart=always
+RestartSec=5
+User=admin
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+chmod +x /home/admin/mygithub/EnvoyMesh/scripts/http-liveness-watch.sh
+sudo systemctl enable --now envoymesh-relay-liveness
+```
+
+Full watchdog notes: [relay_server_deployment.md](./relay_server_deployment.md) §4.
+
+**Variant B — call `apps/relay/dist` directly:**
 
 ```ini
 [Unit]
@@ -136,9 +199,9 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/EnvoyMesh
-# Seed live roster once from the checkout; -n never overwrites after fleet sync.
-ExecStartPre=/bin/mkdir -p /var/lib/envoymesh-relay
-ExecStartPre=/bin/cp -n /opt/EnvoyMesh/relay-roster.json /var/lib/envoymesh-relay/relay-roster.json
+ExecStartPre=+/bin/mkdir -p /var/lib/envoymesh-relay
+ExecStartPre=+/bin/cp -n /opt/EnvoyMesh/relay-roster.json /var/lib/envoymesh-relay/relay-roster.json
+ExecStartPre=+/bin/chown -R admin:admin /var/lib/envoymesh-relay
 ExecStart=/opt/EnvoyMesh/node /opt/EnvoyMesh/apps/relay/dist/index.js \
   --profile /var/lib/envoymesh-relay \
   --listen /ip4/0.0.0.0/tcp/4001 \
@@ -154,22 +217,27 @@ Environment=ENVOYMESH_RELAY_ADMIN_USER=admin
 Environment=ENVOYMESH_RELAY_ADMIN_PASSWORD=change-me-before-public
 Environment=ENVOYMESH_RELAY_JOIN_TOKEN=your-long-random-secret
 Environment=ENVOYMESH_RELAY_ROSTER_PATH=/var/lib/envoymesh-relay/relay-roster.json
-# Optional: Environment=ENVOYMESH_RELAY_ROSTER_SEED=/opt/EnvoyMesh/relay-roster.json
 
 [Install]
 WantedBy=multi-user.target
 ```
 
+Live roster path must **not** be the git checkout file (fleet sync writes it; `git pull` can clobber). Day-to-day add-relay: [add-relay-runbook.md](./add-relay-runbook.md).
+
 Deploy / refresh:
 
 ```bash
-cd /home/admin/mygithub/EnvoyMesh
+cd /home/admin/mygithub/EnvoyMesh   # or /opt/EnvoyMesh
 git pull
 npm install
 npm run relay:build
 sudo systemctl daemon-reload
-sudo systemctl restart envoymesh-relay
+sudo systemctl reset-failed envoymesh-relay   # if it crash-looped
+sudo systemctl enable --now envoymesh-relay
+sudo systemctl enable --now envoymesh-relay-liveness
+sudo systemctl status envoymesh-relay envoymesh-relay-liveness
 sudo journalctl -u envoymesh-relay -n 80 --no-pager
+curl -sf http://127.0.0.1:15432/relay-roster.json | head
 ```
 
 Startup must include a line like:
@@ -182,7 +250,7 @@ If you still see “libp2p defaults (15 reservations…)”, the process is not 
 
 | Step | Expect |
 |------|--------|
-| `curl -u admin:… http://127.0.0.1:15432/health` | JSON status (not 401 for `/health`; auth unused on health) |
+| Verification | `curl -sf http://127.0.0.1:15432/health` · `curl -sf http://127.0.0.1:15432/relay-roster.json` |
 | Admin UI `http://<public-ip>:15432/admin/` | Status + peers + reservations + discovery roster / topicHashes after Basic Auth |
 | `GET /admin/api/reservations` (authed) | `count` increases when a home node with `--relay` connects |
 | `GET /admin/api/roster` (authed) | Entries include `topicHashes` and `hasHopSlot` for live circuit reservations |
@@ -192,7 +260,7 @@ If you still see “libp2p defaults (15 reservations…)”, the process is not 
 | Auto-bond / chat over WAN | Dial uses `/p2p-circuit/` via this relay’s peer id |
 | Dual-relay miss-forward (fleet) | After [§8](#8-adding-a-second-or-nth-relay): `TEST_RELAY_A=… TEST_RELAY_B=… npm run test:e2e:relay:live` green |
 
-**New region / second host:** follow [§8](#8-adding-a-second-or-nth-relay) (not only change `--advertise-addr`). Open TCP **4001** (+ **15432** only if Admin is exposed, preferably behind TLS). Ship both multiaddrs in an org bootstrap preset (see `org-fleet` in [`bootstrap-presets.example.yaml`](../bootstrap-presets.example.yaml)).
+**New region / second host:** follow [add-relay-runbook.md](./add-relay-runbook.md) (community join + roster publish) or [§8](#8-adding-a-second-or-nth-relay) for org mutual-bootstrap. Open TCP **4001** and **15432** (roster GET is public; Admin should sit behind TLS).
 
 **Security:** put Caddy/nginx TLS in front of `:15432` for remote Admin access; change the default admin password; keep `Restart=always` so Admin UI **Hard restart** comes back.
 
