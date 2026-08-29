@@ -1,1 +1,0 @@
-{"version":3,"file":"in-process.d.ts","sourceRoot":"","sources":["../../src/protocol/in-process.ts"],"names":[],"mappings":"AAAA;;GAEG;AAIH,OAAO,EAAE,iBAAiB,EAAE,MAAM,iBAAiB,CAAC;AAEpD,MAAM,WAAW,aAAa;IAC5B,MAAM,EAAE,iBAAiB,CAAC;IAC1B,MAAM,EAAE,iBAAiB,CAAC;IAC1B,KAAK,IAAI,IAAI,CAAC;CACf;AAED,wBAAgB,0BAA0B,IAAI,aAAa,CAe1D"}
