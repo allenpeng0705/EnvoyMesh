@@ -394,6 +394,61 @@ function Import-VcVarsIfNeeded {
     }
 }
 
+# Invoke a bash script from this Windows host. The scripts/*.sh in this
+# repo are committed with CRLF line endings and assume their own path
+# via `$(dirname "$0")/..` — both break when invoked from a WSL bash
+# that sees a Windows path. To make a single .sh file run on Windows
+# without changing every file, we:
+#   1. Copy the script to %TEMP% with \r stripped (LF)
+#   2. Rewrite its ROOT computation with a hardcoded WSL path so $0
+#      doesn't matter
+#   3. Invoke via `bash.exe <wsl-path>` (the default `bash` on Windows is
+#      the WSL launcher; WSL needs /mnt/<drive>/... paths, not D:\...)
+#   4. Swap $ErrorActionPreference to Continue around the call so the
+#      WSL launcher's stderr noise (e.g. "WSL in NAT mode does not
+#      support localhost proxies") doesn't terminate this script under
+#      the top-level `$ErrorActionPreference = "Stop"`.
+function Invoke-BashScript {
+    param(
+        [Parameter(Mandatory = $true)][string]$ScriptPath
+    )
+    if (-not (Test-Path $ScriptPath)) {
+        Write-Fail "bash script missing: $ScriptPath"
+        exit 1
+    }
+    $tmpBase = [System.IO.Path]::GetFileNameWithoutExtension($ScriptPath)
+    $tmpLf = Join-Path ([System.IO.Path]::GetTempPath()) ("$tmpBase-lf-$([guid]::NewGuid().ToString('N')).sh")
+    $origDir = Split-Path -Parent $ScriptPath
+    $repoRoot = Split-Path -Parent $origDir
+
+    $content = Get-Content -Path $ScriptPath -Raw
+    $content = $content -replace "`r`n", "`n"
+    $wslRepoRoot = $repoRoot -replace '^([A-Za-z]):', '/mnt/$1' -replace '\\', '/'
+    $wslRepoRoot = $wslRepoRoot.Substring(0, 5) + $wslRepoRoot.Substring(5, 1).ToLower() + $wslRepoRoot.Substring(6)
+    $content = $content.Replace('ROOT="$(cd "$(dirname "$0")/.." && pwd)"', "ROOT=`"$wslRepoRoot`"")
+    [System.IO.File]::WriteAllText($tmpLf, $content, [System.Text.UTF8Encoding]::new($false))
+
+    $wslPath = $tmpLf -replace '^([A-Za-z]):', '/mnt/$1' -replace '\\', '/'
+    $wslPath = $wslPath.Substring(0, 5) + $wslPath.Substring(5, 1).ToLower() + $wslPath.Substring(6)
+
+    # Swap EAP: the top-level script has Stop, but the WSL launcher
+    # writes a benign localhost-proxy warning to stderr on every call
+    # (regardless of whether the script succeeds) and that trips Stop
+    # here, terminating the build before we can read the script's exit
+    # code. Continue lets the warning pass and the helper return the
+    # real exit code below.
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & bash.exe $wslPath 2>&1 | Out-Null
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
+    $exit = $LASTEXITCODE
+    Remove-Item -LiteralPath $tmpLf -ErrorAction SilentlyContinue
+    return $exit
+}
+
 function Invoke-ExternalQuiet {
     param(
         [string]$Exe,
@@ -782,22 +837,71 @@ if (-not $SkipOpenClawPrune -and `
     (Test-Path (Join-Path $openclawSrc "node_modules")) -and `
     (Test-Path (Join-Path $openclawDest "node_modules"))) {
     Write-Info "Pruning devDependencies from OpenClaw source (idempotent — safe to skip with -SkipOpenClawPrune)..."
-    Push-Location $openclawSrc
-    try {
-        & pnpm prune --prod 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            # Re-copy the freshly-pruned node_modules to staged.
-            $nmSrc = Join-Path $openclawSrc "node_modules"
-            $nmDst = Join-Path $openclawDest "node_modules"
-            if (Test-Path $nmDst) { Remove-Item -Recurse -Force $nmDst }
-            Copy-Item -Recurse -Force $nmSrc $nmDst
-            Write-Ok "Re-copied pruned node_modules to staged tree"
-        } else {
-            Write-Warn "pnpm prune --prod failed in source (continuing — bundle may exceed 2 GB NSIS limit)"
+    # We used to call `pnpm prune --prod` here, but pnpm 11.x is unreliable
+    # in this build's environment:
+    #   * With a stale pnpm-lock.yaml (June) vs. current node_modules, pnpm
+    #     runs `pnpm install --prod` *instead* of actually removing devDeps
+    #     (verified: 19 devDeps were still on disk after a "successful"
+    #     pnpm prune).
+    #   * Without a TTY, pnpm aborts with ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY
+    #     and refuses to proceed (CI=true was the documented escape hatch
+    #     but doesn't change pnpm's install behaviour above).
+    #   * With a TTY it'd prompt for Y/n, which is unreachable from this
+    #     unattended build.
+    # So: do the prune ourselves. Read devDependencies from package.json,
+    # delete the top-level symlinks/junctions and the .pnpm virtual-store
+    # entries. Same effect pnpm prune --prod would have had, no version
+    # compat, no network, no prompts, runs in seconds.
+    $openclawPkg = Join-Path $openclawSrc "package.json"
+    if (Test-Path $openclawPkg) {
+        try {
+            $pkgObj = Get-Content $openclawPkg -Raw -Encoding UTF8 | ConvertFrom-Json
+            $devDeps = @($pkgObj.devDependencies.PSObject.Properties.Name)
+        } catch {
+            $devDeps = @()
         }
-    } finally {
-        Pop-Location
+    } else {
+        $devDeps = @()
     }
+    if ($devDeps.Count -gt 0) {
+        $nmSrc = Join-Path $openclawSrc "node_modules"
+        $pnpmVirtSrc = Join-Path $nmSrc ".pnpm"
+        # Build-time tools that the staging pipeline invokes via `npx ...`
+        # from the openclaw cwd. `pnpm prune --prod` historically kept them
+        # because pnpm 11.x was actually running `pnpm install --prod`
+        # (verified: my probe added 32 prod packages including esbuild) —
+        # our manual prune doesn't have that side effect, so we must
+        # preserve them explicitly.
+        $openclawKeep = @("esbuild")
+        $removed = 0
+        foreach ($dep in $devDeps) {
+            if ($openclawKeep -contains $dep) { continue }
+            $topLevel = Join-Path $nmSrc $dep
+            if (Test-Path $topLevel) {
+                Remove-Item -Recurse -Force $topLevel -ErrorAction SilentlyContinue
+                $removed++
+            }
+            # pnpm 11.x flattens deps into .pnpm/<name>@<ver>/node_modules/<name>/;
+            # the virtual-store directory is .pnpm/<name>@<ver>/. We delete
+            # the whole <name>@* dir to drop the dep + its transitive copies.
+            if (Test-Path $pnpmVirtSrc) {
+                Get-ChildItem -Path $pnpmVirtSrc -Directory -Filter ("$dep@*") -ErrorAction SilentlyContinue | ForEach-Object {
+                    Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue
+                    $removed++
+                }
+            }
+        }
+        $kept = $devDeps.Count - ($devDeps.Count - $removed)
+        Write-Ok "Pruned $removed devDep dirs from source ($($devDeps.Count) declared, $kept kept as build tools)"
+    } else {
+        Write-Info "  No devDependencies declared — nothing to prune"
+    }
+    # Re-copy the freshly-pruned node_modules to staged.
+    $nmSrc = Join-Path $openclawSrc "node_modules"
+    $nmDst = Join-Path $openclawDest "node_modules"
+    if (Test-Path $nmDst) { Remove-Item -Recurse -Force $nmDst }
+    Copy-Item -Recurse -Force $nmSrc $nmDst
+    Write-Ok "Re-copied pruned node_modules to staged tree"
 }
 $openclawStaged = (Test-Path (Join-Path $openclawDest "openclaw.mjs")) -and `
                   (Test-Path (Join-Path $openclawDest "package.json")) -and `
@@ -2025,9 +2129,12 @@ if ($Full) {
         Write-Fail "bash not found — install Git for Windows so -Full can run fetch-kubo-sidecar.sh"
         exit 1
     }
-    & bash $fetchKubo
-    if ($LASTEXITCODE -ne 0) {
-        Write-Fail "fetch-kubo-sidecar.sh failed (exit $LASTEXITCODE)"
+    # Use Invoke-BashScript (defined above) to handle CRLF + WSL path
+    # conversion in one place. Don't use `& bash $fetchKubo` directly —
+    # see Invoke-BashScript for the three Windows-on-bash quirks it covers.
+    $kuboExit = Invoke-BashScript -ScriptPath $fetchKubo
+    if ($kuboExit -ne 0) {
+        Write-Fail "fetch-kubo-sidecar.sh failed (exit $kuboExit)"
         exit 1
     }
     $kuboExe = Join-Path $TauriResources "kubo\ipfs.exe"
@@ -2089,9 +2196,12 @@ if (-not $bash) {
     Write-Fail "bash not found — install Git for Windows to run scripts/verify-tauri-resources.sh"
     exit 1
 }
-& bash $verifyScript
-if ($LASTEXITCODE -ne 0) {
-    Write-Fail "verify-tauri-resources.sh failed (exit $LASTEXITCODE)"
+# Use Invoke-BashScript (defined above) to handle CRLF + WSL path
+# conversion in one place. Don't use `& bash $verifyScript` directly —
+# see Invoke-BashScript for the three Windows-on-bash quirks it covers.
+$verifyExit = Invoke-BashScript -ScriptPath $verifyScript
+if ($verifyExit -ne 0) {
+    Write-Fail "verify-tauri-resources.sh failed (exit $verifyExit)"
     exit 1
 }
 Write-Host ""

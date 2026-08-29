@@ -217,6 +217,41 @@ if openclaw_dist_incomplete packages/openclaw; then
   echo "  Removing incomplete packages/openclaw/dist..."
   rm -rf packages/openclaw/dist
 fi
+
+# Drop a half-installed envoymesh extension (no compiled index.js or with
+# leftover .ts sources). The compiled extension lives at:
+#   packages/openclaw/extensions/envoymesh/
+#   packages/openclaw/dist/extensions/envoymesh/
+# If either exists without index.js the gateway refuses to start, so re-runs
+# must rebuild — clean both staging locations.
+oc_envoy_ext="packages/openclaw/extensions/envoymesh"
+if [ -d "$oc_envoy_ext" ]; then
+  has_index_js=0
+  [ -f "$oc_envoy_ext/index.js" ] && has_index_js=1
+  has_sources=0
+  if find "$oc_envoy_ext" -maxdepth 3 -name '*.ts' -print -quit 2>/dev/null | grep -q .; then
+    has_sources=1
+  fi
+  if [ "$has_index_js" -eq 0 ] || [ "$has_sources" -eq 1 ]; then
+    echo "  Removing half-installed $oc_envoy_ext (no index.js or has .ts sources)..."
+    rm -rf "$oc_envoy_ext"
+  fi
+fi
+oc_dist_ext="packages/openclaw/dist/extensions/envoymesh"
+if [ -d "$oc_dist_ext" ] && [ ! -f "$oc_dist_ext/index.js" ]; then
+  echo "  Removing half-installed $oc_dist_ext (no index.js)..."
+  rm -rf "$oc_dist_ext"
+fi
+
+# Tauri regenerated schemas: a stale gen/ tree from a previous tauri build
+# can conflict with the current conf. Drop it so `tauri build` regenerates
+# from current config.
+tauri_gen="apps/tauri/src-tauri/gen"
+if [ -d "$tauri_gen" ]; then
+  echo "  Removing stale $tauri_gen (tauri will regenerate)..."
+  rm -rf "$tauri_gen"
+fi
+
 rm -rf /tmp/envoymesh-gateway-* 2>/dev/null || true
 echo ""
 
@@ -325,7 +360,20 @@ elif [ ! -f packages/openclaw/package.json ]; then
   echo "    or:  git clone --depth 1 https://github.com/openclaw/openclaw.git packages/openclaw"
 else
   echo "[5/7] Building OpenClaw gateway..."
-  cd packages/openclaw
+
+  # Wrap the entire openclaw build in pushd + EXIT trap so cwd is restored
+  # on every exit path (success, error, Ctrl-C, signal). The inner
+  # `cd packages/openclaw` / `cd "$ORIG_DIR"` pairs are still needed for
+  # `install_envoymesh_extension` (which uses `pwd` as the repo root to
+  # resolve relative OpenClawRoot), but the outer pushd is the safety net.
+  pushd packages/openclaw >/dev/null
+  # Bash's set -e is already on; the trap below guarantees we popd even
+  # when a `set -e` exit path is hit mid-block (e.g. the smoke test
+  # process gets killed by a SIGPIPE during curl).
+  _oc_cleanup() {
+    popd >/dev/null 2>&1 || true
+  }
+  trap _oc_cleanup EXIT INT TERM
 
   if [ -d "../../.pnpm-store" ]; then
     echo "  Removing conflicting workspace pnpm store..."
@@ -338,7 +386,6 @@ else
     rm -rf node_modules
     CI=true pnpm install --no-frozen-lockfile 2>&1 | tail -5 || {
       echo "  ✗ pnpm install failed"
-      cd "$ORIG_DIR"
       exit 1
     }
   }
@@ -348,12 +395,14 @@ else
   fi
 
   # Compile envoymesh now that esbuild is installed under packages/openclaw.
-  cd "$ORIG_DIR"
+  # install_envoymesh_extension uses `pwd` as the repo root to resolve a
+  # relative OpenClawRoot, so we have to pop back to repo root first.
+  popd >/dev/null
   echo "  Installing EnvoyMesh channel extension (compiled index.js)..."
   install_envoymesh_extension packages/openclaw || {
     echo "  ⚠ envoymesh extension install incomplete — EnvoyAI/OpenClaw may refuse to start"
   }
-  cd packages/openclaw
+  pushd packages/openclaw >/dev/null
 
   echo "  Generating channel metadata (envoymesh)..."
   # OpenClaw's metadata generator uses `git ls-files` to enumerate bundled
@@ -361,8 +410,18 @@ else
   # untracked from OpenClaw's perspective. Stage it in a throwaway index so
   # the generator sees it WITHOUT modifying OpenClaw's git state (we don't
   # own that repo and want clean upstream upgrades).
+  _oc_tmp_idx=""
   if [ -d extensions/envoymesh ]; then
     _oc_tmp_idx=$(mktemp)
+    # The inner trap ensures the throwaway git index is removed even if
+    # `set -e` fires before the explicit `rm -f` later in the block.
+    _oc_idx_cleanup() {
+      [ -n "$_oc_tmp_idx" ] && [ -f "$_oc_tmp_idx" ] && rm -f "$_oc_tmp_idx"
+    }
+    # Replace the previous trap with a composed one that runs BOTH the
+    # index cleanup and the cwd popd. Order matters: index first (cheap),
+    # then popd (which can also fail if the stack is empty).
+    trap '_oc_idx_cleanup; _oc_cleanup' EXIT INT TERM
     if GIT_INDEX_FILE="$_oc_tmp_idx" git read-tree HEAD >/dev/null 2>&1 \
         && GIT_INDEX_FILE="$_oc_tmp_idx" git add extensions/envoymesh >/dev/null 2>&1; then
       GIT_INDEX_FILE="$_oc_tmp_idx" CI=true pnpm exec tsx scripts/generate-bundled-channel-config-metadata.ts 2>&1 | tail -3 || {
@@ -374,6 +433,7 @@ else
       }
     fi
     rm -f "$_oc_tmp_idx"
+    _oc_tmp_idx=""
   else
     CI=true pnpm exec tsx scripts/generate-bundled-channel-config-metadata.ts 2>&1 | tail -3 || {
       echo "  ⚠ Metadata generation failed — extension may still work at runtime"
@@ -385,26 +445,24 @@ else
     echo "  ✗ OpenClaw pnpm run build failed"
     echo "    A stub dist/entry.js is NOT enough — EnvoyAI needs dist/config/config.js."
     echo "    Fix the build error above, then re-run ./scripts/setup.sh"
-    cd "$ORIG_DIR"
     exit 1
   fi
 
   if [ ! -f dist/config/config.js ] || [ ! -f dist/entry.js ]; then
     echo "  ✗ OpenClaw build did not produce dist/config/config.js (+ dist/entry.js)"
     echo "    EnvoyAI will refuse to start until a full build succeeds."
-    cd "$ORIG_DIR"
     exit 1
   fi
   echo "  ✓ dist/entry.js + dist/config/config.js ready"
 
   # Re-install compiled envoymesh after OpenClaw build — `pnpm run build`
   # can wipe/refresh dist/ and leave extensions/envoymesh without index.js.
-  cd "$ORIG_DIR"
+  popd >/dev/null
   echo "  Re-staging compiled envoymesh extension after OpenClaw build..."
   install_envoymesh_extension packages/openclaw || {
     echo "  ⚠ Post-build envoymesh stage failed — check packages/openclaw/extensions/envoymesh/index.js"
   }
-  cd packages/openclaw
+  pushd packages/openclaw >/dev/null
 
   if grep -q '"envoymesh"' src/config/bundled-channel-config-metadata.generated.ts 2>/dev/null; then
     echo "  ✓ envoymesh channel in bundled metadata"
@@ -432,7 +490,12 @@ else
       rm -rf "$GW_STATE" 2>/dev/null || true
     fi
   }
-  trap cleanup_smoke EXIT INT TERM
+  # Replace the previous trap (popd-only) with a composed trap that
+  # both tears down the smoke process AND pops cwd. Order: kill
+  # gateway + remove temp state first (cheap, idempotent), then popd.
+  # Without the popd in the trap, a Ctrl-C during the smoke poll loop
+  # would leave cwd in packages/openclaw.
+  trap 'cleanup_smoke; _oc_cleanup' EXIT INT TERM
 
   SMOKE_PORT=""
   for ((_probe = 0; _probe < 25; _probe++)); do
@@ -487,15 +550,20 @@ EOF
   cleanup_smoke
   GW_PID=""
   GW_STATE_CREATED=""
-  trap - EXIT INT TERM
+  trap _oc_cleanup EXIT INT TERM
 
-  cd "$ORIG_DIR"
+  popd >/dev/null
   if ! openclaw_gateway_ready packages/openclaw; then
     echo "  ✗ OpenClaw gateway not ready — need compiled dist/config/config.js,"
     echo "    dist/entry.js (not a stub), extensions/envoymesh/index.js, tsx, openclaw.mjs"
     exit 1
   fi
   echo "  ✓ OpenClaw gateway ready (packages/openclaw)"
+
+  # All work in this block done. Clear the trap so we don't popd twice
+  # on script exit. (popd is a no-op when the stack is empty, but the
+  # double-pop prints "Directory stack empty" to stderr.)
+  trap - EXIT INT TERM
 fi
 echo ""
 
@@ -525,7 +593,7 @@ else
   # pipefail is now set, so tsc's exit code propagates through `2>/dev/null`.
   npm exec -w @envoymesh/api -- tsc -p tsconfig.json 2>&1 | tail -3 && \
     npm exec -w @envoymesh/node -- tsc -p tsconfig.json 2>&1 | tail -3 && \
-    echo "  ✓ Core packages typecheck OK" || \
+    echo "  ✓ api + node typecheck OK (subset — run npm run typecheck for full)" || \
     echo "  ⚠ Typecheck warnings — run: npm run typecheck"
 fi
 echo ""

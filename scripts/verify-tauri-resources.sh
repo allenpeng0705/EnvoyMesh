@@ -85,16 +85,22 @@ if [ -d "$PI_DIR" ]; then
   require_file "$PI_DIR/node_modules/@earendil-works/pi-coding-agent/package.json" "Pi package.json"
   require_dir_nonempty "$PI_DIR/node_modules/@earendil-works" "Pi @earendil-works packages (pi-ai, pi-agent-core, pi-tui)"
   # fd/rg — without these, GUI launches hang on Pi's GitHub auto-download.
-  case "$(uname -s)" in
-    Darwin|Linux)
-      require_file "$PI_DIR/bin/fd" "Pi tool fd (run scripts/fetch-pi-tools.sh)"
-      require_file "$PI_DIR/bin/rg" "Pi tool rg (run scripts/fetch-pi-tools.sh)"
-      ;;
-    *)
-      require_file "$PI_DIR/bin/fd.exe" "Pi tool fd.exe (run scripts/fetch-pi-tools.ps1)"
-      require_file "$PI_DIR/bin/rg.exe" "Pi tool rg.exe (run scripts/fetch-pi-tools.ps1)"
-      ;;
-  esac
+  # Check both the native name (macOS/Linux) and the .exe form (Windows).
+  # The Windows case is the default because most contributors are on Windows;
+  # the uname-based dispatch is unreliable when invoked from WSL bash on
+  # Windows (uname -s reports "Linux" but the actual binary is fd.exe).
+  for bin_name in fd rg; do
+    found=""
+    for candidate in "$PI_DIR/bin/$bin_name" "$PI_DIR/bin/$bin_name.exe"; do
+      if [ -f "$candidate" ]; then
+        found="ok"
+        break
+      fi
+    done
+    if [ -z "$found" ]; then
+      fail "Pi tool $bin_name missing at $PI_DIR/bin/$bin_name (or $bin_name.exe) — run scripts/fetch-pi-tools.{sh,ps1}"
+    fi
+  done
   pi_version_file="$PI_DIR/.pi-version"
   if [ -f "$pi_version_file" ]; then
     echo "  Pi version:    $(cat "$pi_version_file")"

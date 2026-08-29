@@ -80,7 +80,12 @@ for pkg_dir in "$ROOT/packages"/*/; do
   case "$pkg" in
     openclaw) continue ;;
   esac
-  if [ -d "$ROOT/packages/$pkg/dist" ]; then
+  # Require BOTH a built dist AND a package.json. The Capacitor backup
+  # removal left behind `packages/mobile-{node,storage,vault}/` shells
+  # containing only an empty dist/ — without the package.json guard
+  # `copy_workspace_pkg` crashes with "No such file or directory" on
+  # `cp $src_pkg/package.json`. Mirror the PS twin's check.
+  if [ -d "$ROOT/packages/$pkg/dist" ] && [ -f "$ROOT/packages/$pkg/package.json" ]; then
     copy_workspace_pkg "$pkg"
   fi
 done

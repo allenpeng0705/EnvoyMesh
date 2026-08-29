@@ -103,23 +103,26 @@ function Require-Command {
     return $cmd
 }
 
-# Run a command, capture exit code, print stderr on failure.
-# Returns $true on success, $false on failure. Does NOT throw.
-function Invoke-Step {
+# Run an external command, capture its exit code, but DO NOT swallow its
+# output. The previous `Invoke-ExternalQuiet` piped everything through
+# `Out-Null`, which meant pnpm/npm/git failures gave the user nothing to
+# diagnose with. This function lets the command's output flow through;
+# callers may add `| Out-Null` if they want silence. Returns the raw
+# $LASTEXITCODE; callers MUST check it.
+# Native-command stderr would otherwise trigger $ErrorActionPreference='Stop'
+# on Windows PowerShell 5.1, so we temporarily silence errors and restore.
+function Invoke-ExternalCheck {
     param(
-        [string]$Message,
-        [scriptblock]$Block
+        [string]$Exe,
+        [Parameter(ValueFromRemainingArguments = $true)][string[]]$ToolArgs
     )
-    Write-Info $Message
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
     try {
-        & $Block | Out-Null
-        if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) {
-            return $false
-        }
-        return $true
-    } catch {
-        Write-Warn "$Message failed: $_"
-        return $false
+        & $Exe @ToolArgs
+        return $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prevEap
     }
 }
 
@@ -164,22 +167,6 @@ function Invoke-GitQuiet {
     try {
         & git -c core.autocrlf=false -c core.safecrlf=false @GitArgs 2>$null | Out-Null
         return ($LASTEXITCODE -eq 0)
-    } finally {
-        $ErrorActionPreference = $prevEap
-    }
-}
-
-# pnpm/npm often log to stderr; suppress NativeCommandError noise on Windows PowerShell.
-function Invoke-ExternalQuiet {
-    param(
-        [string]$Exe,
-        [Parameter(ValueFromRemainingArguments = $true)][string[]]$ToolArgs
-    )
-    $prevEap = $ErrorActionPreference
-    $ErrorActionPreference = "SilentlyContinue"
-    try {
-        & $Exe @ToolArgs 2>&1 | Out-Null
-        return $LASTEXITCODE
     } finally {
         $ErrorActionPreference = $prevEap
     }
@@ -233,6 +220,39 @@ if (Test-Path "packages/openclaw/dist") {
 if ($ocDistIncomplete) {
     Write-Info "Removing incomplete packages/openclaw/dist..."
     Remove-Item -Recurse -Force "packages/openclaw/dist" -ErrorAction SilentlyContinue
+}
+
+# Drop a half-installed envoymesh extension (dist/ left behind but no compiled
+# index.js). The compiled extension lives at:
+#   packages/openclaw/extensions/envoymesh/
+#   packages/openclaw/dist/extensions/envoymesh/
+# If either exists without index.js the gateway refuses to start, so re-runs
+# must rebuild — clean both staging locations.
+$ocEnvoyExt = "packages/openclaw/extensions/envoymesh"
+if (Test-Path $ocEnvoyExt) {
+    $hasIndexJs = (Test-Path (Join-Path $ocEnvoyExt "index.js"))
+    $hasSources = (Get-ChildItem -Path $ocEnvoyExt -Filter "*.ts" -Recurse -ErrorAction SilentlyContinue | Measure-Object).Count -gt 0
+    if (-not $hasIndexJs -or $hasSources) {
+        Write-Info "Removing half-installed $ocEnvoyExt (no index.js or has .ts sources)..."
+        Remove-Item -Recurse -Force $ocEnvoyExt -ErrorAction SilentlyContinue
+    }
+}
+$ocDistExt = "packages/openclaw/dist/extensions/envoymesh"
+if (Test-Path $ocDistExt) {
+    $hasIndexJs = (Test-Path (Join-Path $ocDistExt "index.js"))
+    if (-not $hasIndexJs) {
+        Write-Info "Removing half-installed $ocDistExt (no index.js)..."
+        Remove-Item -Recurse -Force $ocDistExt -ErrorAction SilentlyContinue
+    }
+}
+
+# Tauri regenerated schemas: a stale desktop-schema.json / windows-schema.json
+# from a previous tauri build can conflict with the current conf. Drop both
+# gen/ directories so `tauri build` regenerates from current config.
+$tauriGen = "apps/tauri/src-tauri/gen"
+if (Test-Path $tauriGen) {
+    Write-Info "Removing stale $tauriGen (tauri will regenerate)..."
+    Remove-Item -Recurse -Force $tauriGen -ErrorAction SilentlyContinue
 }
 
 # /tmp equivalents on Windows: TEMP is per-user, not shared. We don't try to
@@ -291,8 +311,8 @@ $harnessArgs = @{}
 if ($LocalEnvoyHarnessPath) { $harnessArgs["LocalEnvoyHarnessPath"] = $LocalEnvoyHarnessPath }
 if ($SkipEnvoyHarnessBuild) { $harnessArgs["SkipBuild"] = $true }
 & $installHarnessPs1 @harnessArgs
-if (-not $?) {
-    Write-Fail "install-envoy-harness.ps1 failed"
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "install-envoy-harness.ps1 failed (exit $LASTEXITCODE)"
     exit 1
 }
 
@@ -410,6 +430,10 @@ function Install-EnvoyMeshOpenClawExtension {
             Write-Warn "No .ts sources in $extDir"
             return $false
         }
+        # NOTE: input filenames are passed via splatting (@inputs). If a
+        # source path ever contains a space, esbuild will misinterpret it
+        # as two separate inputs. Keep OpenClawExtension source filenames
+        # space-free (enforced by env — no current offenders).
         $flags = @(
             "--bundle=false", "--format=esm", "--platform=node",
             "--outdir=.", "--out-extension:.js=.js", "--allow-overwrite",
@@ -491,7 +515,15 @@ if ($SkipOpenClawBuild) {
 } else {
     Write-Step "5/7  Building OpenClaw gateway..."
 
+    # All operations in step 5 run from packages/openclaw. The outer
+    # try/finally guarantees cwd is restored even if an uncaught
+    # exception (PS 5.1 native command, .NET throw) escapes the inner
+    # try/finally blocks in Install-EnvoyMeshOpenClawExtension, the
+    # metadata generator, and the smoke test. Without this, the script
+    # could exit in a sub-directory and the next operator's shell would
+    # be confused.
     Push-Location "packages/openclaw"
+    try {
 
     # Mirror: remove conflicting workspace pnpm store if present.
     if (Test-Path "../../.pnpm-store") {
@@ -501,26 +533,29 @@ if ($SkipOpenClawBuild) {
 
     Write-Info "pnpm install..."
     $env:CI = "true"
-    $pnpmExit = Invoke-ExternalQuiet pnpm install --no-frozen-lockfile
+    $pnpmExit = Invoke-ExternalCheck pnpm install --no-frozen-lockfile
     if ($pnpmExit -ne 0) {
         Write-Warn "Retrying with clean node_modules..."
         if (Test-Path "node_modules") {
             Remove-Item -Recurse -Force "node_modules"
         }
-        $pnpmExit = Invoke-ExternalQuiet pnpm install --no-frozen-lockfile
+        $pnpmExit = Invoke-ExternalCheck pnpm install --no-frozen-lockfile
         if ($pnpmExit -ne 0) {
             Write-Fail "pnpm install failed"
-            Pop-Location
-            exit 1
+            return
         }
     }
 
     if (-not (Test-Path "node_modules/@pierre/diffs")) {
         Write-Info "Installing @pierre/diffs (fallback)..."
-        Invoke-ExternalQuiet npm install @pierre/diffs --save-dev | Out-Null
+        Invoke-ExternalCheck npm install @pierre/diffs --save-dev | Out-Null
     }
 
     # Compile envoymesh now that esbuild is installed under packages/openclaw.
+    # Install-EnvoyMeshOpenClawExtension uses (Get-Location).Path as the
+    # repo root for resolving relative OpenClawRoot, so we have to pop
+    # back to the repo root before calling it. The internal Push/Pop
+    # inside the function is balanced, so cwd returns here unchanged.
     Pop-Location
     Write-Info "Installing EnvoyMesh channel extension (compiled index.js)..."
     if (-not (Install-EnvoyMeshOpenClawExtension -OpenClawRoot "packages/openclaw")) {
@@ -541,7 +576,7 @@ if ($SkipOpenClawBuild) {
             if ($readTreeOk) {
                 $readTreeOk = Invoke-GitQuiet add extensions/envoymesh
             }
-            $metaExit = Invoke-ExternalQuiet pnpm exec tsx scripts/generate-bundled-channel-config-metadata.ts
+            $metaExit = Invoke-ExternalCheck pnpm exec tsx scripts/generate-bundled-channel-config-metadata.ts
             if ($metaExit -ne 0) {
                 Write-Warn "Metadata generation failed — extension may still work at runtime"
             }
@@ -550,28 +585,26 @@ if ($SkipOpenClawBuild) {
             Remove-Item -Force $tmpIdx -ErrorAction SilentlyContinue
         }
     } else {
-        $metaExit = Invoke-ExternalQuiet pnpm exec tsx scripts/generate-bundled-channel-config-metadata.ts
+        $metaExit = Invoke-ExternalCheck pnpm exec tsx scripts/generate-bundled-channel-config-metadata.ts
         if ($metaExit -ne 0) {
             Write-Warn "Metadata generation failed — extension may still work at runtime"
         }
     }
 
     Write-Info "Building..."
-    $buildExit = Invoke-ExternalQuiet pnpm run build
+    $buildExit = Invoke-ExternalCheck pnpm run build
     if ($buildExit -ne 0) {
         Write-Fail "OpenClaw pnpm run build failed"
         Write-Info "A stub dist/entry.js is NOT enough — EnvoyAI needs dist/config/config.js."
         Write-Info "Fix the build error (common on Windows: UTF-8 BOM in extensions/*/package.json),"
         Write-Info "then re-run .\scripts\setup.ps1"
-        Pop-Location
-        exit 1
+        return
     }
 
     if (-not (Test-Path "dist/config/config.js") -or -not (Test-Path "dist/entry.js")) {
         Write-Fail "OpenClaw build did not produce dist/config/config.js (+ dist/entry.js)"
         Write-Info "EnvoyAI will refuse to start until a full build succeeds."
-        Pop-Location
-        exit 1
+        return
     }
     Write-Ok "dist/entry.js + dist/config/config.js ready"
 
@@ -685,7 +718,14 @@ if ($SkipOpenClawBuild) {
         }
     }
 
-    Pop-Location
+    } finally {
+        # Pop back to repo root no matter how we leave the block. This
+        # safety net catches uncaught exceptions in any of the helpers
+        # above; the explicit Pop-Location calls inside the body are for
+        # the install_extension function (which uses (Get-Location).Path
+        # as its repo root and so must be called from the repo root).
+        Pop-Location -ErrorAction SilentlyContinue
+    }
 
     if (-not (Test-OpenClawGatewayReady $RepoRoot)) {
         Write-Fail "OpenClaw gateway not ready — need compiled dist/config/config.js,"
@@ -734,7 +774,7 @@ if ($SkipTypecheck) {
         if ($LASTEXITCODE -ne 0) { $nodeOk = $false }
     } catch { $nodeOk = $false }
     if ($apiOk -and $nodeOk) {
-        Write-Ok "Core packages typecheck OK"
+        Write-Ok "api + node typecheck OK (subset — run npm run typecheck for full)"
     } else {
         Write-Warn "Typecheck warnings — run: npm run typecheck"
     }
