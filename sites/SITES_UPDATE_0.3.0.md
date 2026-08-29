@@ -78,7 +78,7 @@ Build scripts also write versioned archives under `release/envoymesh-desktop-{ve
 
 Other optional uploads:
 
-- `envoygo-0.3.0-android.apk.zip` (or store-only if no sideload)
+- `envoygo-android.apk` (stable mirror; or store-only if no sideload)
 - `EnvoyMesh_GuideBook_0.3.0.pdf` / `.zh-CN.pdf` (optional)
 
 ---

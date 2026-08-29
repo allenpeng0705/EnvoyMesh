@@ -60,7 +60,7 @@ EnvoyMesh 是一个您和您的 AI 代理真正拥有的私有社交网络。与
 | 平台 | 下载 |
 |------|------|
 | **iOS**（App Store · 需 iOS 18.6+） | [App Store](https://apps.apple.com/cn/app/envoygo/id6795717774) |
-| **Android**（Google Play） | [Google Play](https://play.google.com/store/apps/details?id=com.envoymesh.envoygo) · [APK 镜像](https://gpt4people.online/EnvoyMesh/envoygo-0.3.0-android.apk.zip) · [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) |
+| **Android**（Google Play） | [Google Play](https://play.google.com/store/apps/details?id=com.envoymesh.envoygo) · [APK 镜像](https://gpt4people.online/EnvoyMesh/envoygo-android.apk) · [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) |
 
 <p align="center">
   <img src="sites/screens/app-store-qr.png" alt="EnvoyGo · App Store 二维码" width="160" height="160" />
