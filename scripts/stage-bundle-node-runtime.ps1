@@ -56,7 +56,12 @@ foreach ($pkgDir in (Get-ChildItem -Path (Join-Path $Root "packages") -Directory
     # tree under resources/openclaw/, not as @envoymesh/openclaw.
     if ($pkg -eq "openclaw") { continue }
     $srcPkg = $pkgDir.FullName
+    # Require BOTH a built dist AND a package.json. The Capacitor backup
+    # removal left behind `packages/mobile-{node,storage,vault}/` shells
+    # containing only an empty dist/ — without the package.json guard
+    # we crash here with "Cannot find path ... mobile-node/package.json".
     if (-not (Test-Path (Join-Path $srcPkg "dist"))) { continue }
+    if (-not (Test-Path (Join-Path $srcPkg "package.json"))) { continue }
     $destPkg = Join-Path $Dest "node_modules/@envoymesh/$pkg"
     New-Item -ItemType Directory -Force -Path $destPkg | Out-Null
     Copy-Item -Force (Join-Path $srcPkg "package.json") $destPkg
@@ -229,12 +234,12 @@ foreach ($modPath in $npmLines) {
         try {
             $copySrc = (Resolve-Path -LiteralPath $modPath -ErrorAction Stop).Path
         } catch {
-            Write-Host "  Skipping broken/non-dir dep path for $pkgName: $modPath"
+            Write-Host "  Skipping broken/non-dir dep path for ${pkgName}: $modPath"
             continue
         }
     }
     if (-not (Test-Path $copySrc -PathType Container)) {
-        Write-Host "  Skipping broken/non-dir dep path for $pkgName: $copySrc"
+        Write-Host "  Skipping broken/non-dir dep path for ${pkgName}: $copySrc"
         continue
     }
     Copy-Item -Recurse -Force $copySrc $destMod
@@ -347,12 +352,12 @@ for ($iter = 1; $iter -le $maxIterations; $iter++) {
                 try {
                     $copySrc = (Resolve-Path -LiteralPath $srcDep -ErrorAction Stop).Path
                 } catch {
-                    Write-Host "  Skipping broken/non-dir safety-net path for $depName: $srcDep"
+                    Write-Host "  Skipping broken/non-dir safety-net path for ${depName}: $srcDep"
                     continue
                 }
             }
             if (-not (Test-Path $copySrc -PathType Container)) {
-                Write-Host "  Skipping broken/non-dir safety-net path for $depName: $copySrc"
+                Write-Host "  Skipping broken/non-dir safety-net path for ${depName}: $copySrc"
                 continue
             }
             Copy-Item -Recurse -Force $copySrc $destDep
