@@ -19,6 +19,8 @@
   <a href="#下载">⬇ 下载</a>
   ·
   <a href="README.md">English</a>
+  ·
+  <strong>简体中文</strong>
 </p>
 
 # EnvoyMesh

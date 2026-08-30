@@ -1,6 +1,6 @@
 # EnvoyMesh — product promotion
 
-Social / community promotion kit: poster images + English & Chinese feed copy.
+Social / community promotion kit: share images + short feed text.
 
 **Long-form intro (users + developers, text + screenshots):** [`product_intro.md`](product_intro.md)
 
@@ -20,67 +20,92 @@ Keep this idea visible in headlines, body copy, and images — do not bury it.
 
 | File | Use |
 |------|-----|
-| [`sites/screens/envoymesh-social-promo-en.png`](sites/screens/envoymesh-social-promo-en.png) | Square poster (EN) — naming line + site URL + EnvoyGo QR |
-| [`sites/screens/envoymesh-social-promo-zh.png`](sites/screens/envoymesh-social-promo-zh.png) | Square poster (ZH) — same |
+| [`sites/screens/envoymesh-social-share-long-zh.png`](sites/screens/envoymesh-social-share-long-zh.png) | **Tall share card (ZH)** — full story + EnvoyGo QR (App Store / Google Play) |
+| [`sites/screens/envoymesh-social-share-long-en.png`](sites/screens/envoymesh-social-share-long-en.png) | **Tall share card (EN)** — same |
+| [`sites/screens/envoymesh-social-promo-zh.png`](sites/screens/envoymesh-social-promo-zh.png) | Square poster (ZH) — short naming + site URL + QR |
+| [`sites/screens/envoymesh-social-promo-en.png`](sites/screens/envoymesh-social-promo-en.png) | Square poster (EN) — same |
 
-Poster copy includes: **Envoy stands for you** · AI robot + Agent Network roadmap · EnvoyGo / no public IP / family / Team Jobs · https://www.homeclaw.cn/envoy
+**Recommended:** attach the **long** share card; use the short feed text below.
 
-QR codes: real store codes from `sites/screens/app-store-qr.png` and `sites/screens/google-play-qr.png`.
+Regenerate long cards: `python3 scripts/make-social-share-long.py`  
+QR sources: `sites/screens/app-store-qr.png`, `sites/screens/google-play-qr.png`.
 
----
+Links on the image:
 
-## English
-
-### Feed post (recommended)
-
-**EnvoyMesh — an Envoy that stands for you**
-
-**Envoy** means a representative sent to act on your behalf. That is the product’s target: an **AI robot / agent network that can stand for you** — work from your **requests and intents**. **EnvoyMesh** is the private peer-to-peer fabric those envoys live on. The **roadmap** is a fuller AI robot + Agent Network you control.
-
-**Today you can already:**
-
-- Run AI on your **home computer**, reach it with **EnvoyGo** anywhere — **no public IP**, no cloud account, no Telegram/Discord “channels” just to talk to your agent.  
-- Build a **family network** — separate profiles, shared household AI, private data.  
-- Grow an **Agent Network** and **Team Jobs** — different roles and skills across agents on machines you trust (including **Envoy Harness** for distributed coding work).
-
-**Download EnvoyMesh (desktop)** — Mac / Windows / Linux:  
-https://www.homeclaw.cn/envoy  
-
-**Download EnvoyGo (phone)** — scan the image (App Store / Google Play), or use the same page.
-
-#EnvoyMesh #Envoy #EnvoyGo #AgentNetwork #TeamJobs #AIRobot #LocalFirst #OpenSource
-
-### Short (X / WeChat Moments)
-
-**Envoy** = an AI that **represents you**. **EnvoyMesh** = your private mesh for that AI robot + **Agent Network** (roadmap). Home AI + **EnvoyGo** anywhere (no public IP) · family profiles · Team Jobs across agents.
-
-**Download desktop + EnvoyGo:** https://www.homeclaw.cn/envoy
+- Website (top, cyan pill): https://www.homeclaw.cn/envoy  
+- Mac / Windows / Android APK (download block; labels muted, URLs cyan)  
+- EnvoyGo QR (App Store / Google Play)
 
 ---
 
-## 中文
+## LinkedIn
 
-### 动态长文（推荐）
+LinkedIn image posts have **one text box**. First line = hook; then story; end with the URL.
 
-**EnvoyMesh — 代表你的 Envoy（特使）**
+**How to post:** Start a post → attach `envoymesh-social-share-long-en.png` (or ZH) → paste → Publish.
 
-**Envoy** 的本意是「特使」——被派出去**代表你**办事。产品真正的目标是：一台能替你行动的 **AI 机器人 / 智能体网络**，按你的**请求与意图**工作。**EnvoyMesh** 是这些特使栖身的私人点对点网络。**路线图**指向更完整的 AI 机器人与 Agent Network——由你掌控，而不是「聊天软件再挂个 AI」。
+### English — full paste (recommended)
 
-**今天已经可以：**
+Attach: `envoymesh-social-share-long-en.png`
 
-- AI 跑在**家里电脑**上，用 **EnvoyGo** 随时连回去——**无需公网 IP**、无需云账号，也不必再给智能体挂 Telegram / Discord 等频道。  
-- 建**家庭网络**——独立档案、共享家里的 AI、数据彼此分开。  
-- 扩展 **Agent Network** 与 **Team Jobs**——按角色与技能，在你信任的机器上让不同智能体协作（含 **Envoy Harness** 分布式编程协作）。
+```
+This is my new project: EnvoyMesh.
 
-**下载 EnvoyMesh 桌面端**（Mac / Windows / Linux）：  
-https://www.homeclaw.cn/envoy  
+I started with a simple problem — how to reach my home computer remotely, using P2P, without a public IP or a cloud middleman. Along the way the product grew: AI-powered chat and social, a local knowledge base, Terminal, Ext Agent, multi-agent Team Jobs, and a feed / content share where data stays on your machine.
 
-**下载 EnvoyGo 手机端** — 扫图中二维码（App Store / Google Play），或打开同一页面。
+The vision is for your own node to become a true Envoy — an AI that stands for you and helps get things done: meet people, share knowledge, search and fetch data — on a private peer-to-peer mesh you control.
 
-#EnvoyMesh #Envoy #EnvoyGo #智能体网络 #TeamJobs #AI机器人 #本地优先 #开源
+OpenClaw is our built-in agent (EnvoyAI). Ext Agent lets you switch across more runtimes. P2P is the backbone: on that fabric we build AI-assisted social networking, and we organize agents with different skills, roles, or models to take on tasks from simple to complex. That collaboration layer is the heart of the project.
 
-### 短文（微博 / 朋友圈）
+Terminal and coding agents are for developers — you can connect to coding agents such as Codex, Claude Code, MiniMax, and DeepSeek Harness. With the mobile app EnvoyGo, you can work from anywhere.
 
-**Envoy** = **代表你**的 AI 特使。**EnvoyMesh** = 承载 AI 机器人 + **智能体网络**的私人网格（路线图）。家里 AI + **EnvoyGo** 随处访问（无需公网 IP）· 家庭独立档案 · Team Jobs 跨智能体协作。
+This is the first version of EnvoyMesh. EnvoyGo is already out — from anywhere, pair to the Envoy on your computer and work together.
 
-**下载桌面端 + EnvoyGo：** https://www.homeclaw.cn/envoy
+https://www.homeclaw.cn/envoy
+```
+
+### 中文 — 完整粘贴（润色版）
+
+配图：`envoymesh-social-share-long-zh.png`
+
+```
+这是我的新项目：EnvoyMesh。
+
+一开始，我想用 P2P 解决一个很实际的问题——如何远程访问家里的电脑，而无需公网 IP、也不依赖云中转。做着做着，功能一点点长出来：从 AI 赋能的聊天与社交、本地知识库，到 Terminal、Ext Agent、多 Agent 协作的 Team Jobs，再到数据完全在本地的朋友圈与内容分享。
+
+远景是：让你自己的节点真正成为你的 AI 特使（Envoy）——按你的意图自动帮忙办事，比如结识朋友、分享知识、搜索并获取数据——都在你掌控的私人点对点网络上。
+
+OpenClaw 是我们内置的 Agent，产品里叫 EnvoyAI。我们还有 Ext Agent，支持多种外部 Agent，方便在它们之间切换。P2P 是信息流的基础；在这张网上，我们做 AI 介入的社交网络，并把不同技能、角色或模型的 Agent 组织在一起，完成从简单到复杂的任务。这些，才是这个项目真正的重点。
+
+Terminal 与 coding agent 面向开发者——可对接 Codex、Claude Code、MiniMax、DeepSeek Harness 等。配套手机端 EnvoyGo，让你可以在任何地方继续工作。
+
+这是 EnvoyMesh 的第一个版本。EnvoyGo 已经发布——无论你在哪里，都能接入电脑上的 Envoy，一起协作。
+
+https://www.homeclaw.cn/envoy
+```
+
+---
+
+## English — feed text (WeChat / Moments / general)
+
+Attach: `envoymesh-social-share-long-en.png`
+
+```
+EnvoyMesh — an Envoy that stands for you.
+Home AI + EnvoyGo anywhere. No public IP. Your data stays on your computer.
+
+https://www.homeclaw.cn/envoy
+```
+
+---
+
+## 中文 — 配文（朋友圈 / 微博）
+
+配图：`envoymesh-social-share-long-zh.png`
+
+```
+EnvoyMesh — 代表你的 Envoy（特使）。
+家里跑 AI，EnvoyGo 随时连回——无需公网 IP，数据留在你的电脑上。
+
+https://www.homeclaw.cn/envoy
+```
