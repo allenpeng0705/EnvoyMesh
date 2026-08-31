@@ -35,6 +35,10 @@ export function mergeMessagesIntoThread(
   for (const msg of incoming) {
     byId.set(msg.messageId, msg);
   }
-  const merged = [...byId.values()].sort((a, b) => messageTimestampMs(a) - messageTimestampMs(b));
+  const merged = [...byId.values()].sort((a, b) => {
+    const dt = messageTimestampMs(a) - messageTimestampMs(b);
+    if (dt !== 0) return dt;
+    return a.messageId.localeCompare(b.messageId);
+  });
   return { ...prev, [key]: merged };
 }

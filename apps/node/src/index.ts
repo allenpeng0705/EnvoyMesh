@@ -181,6 +181,7 @@ import { handleDaemonAgentCardInbound } from "./daemon-agent-card-inbound.js";
 import { handleDaemonTaskInbound } from "./daemon-task-inbound.js";
 import { handleInboundShareRequest, handleInboundShareAccept, resolveSenderOwnerId, isSafeVaultPath } from "./share-inbound.js";
 import { runInboundChatAssist } from "./inbound-chat-assist.js";
+import { chatLocalTimelineTimestamp } from "./chat-local-timeline.js";
 import { chatLogRowsToViews } from "./ai-context.js";
 import { createRagService, type RagService } from "./rag-service.js";
 import { ModeController, createDefaultModeConfig } from "./mode-controller.js";
@@ -2160,7 +2161,8 @@ async function handleInboundMeshMessage({
             : {}),
         },
         metadata: {
-          timestamp: envelope.createdAt,
+          // Clamp peer clock so local AI/auto replies cannot sort above this bubble.
+          timestamp: chatLocalTimelineTimestamp(envelope.createdAt, receivedAt),
           deliveryReceipt: "delivered" as const,
         },
         signature: envelope.signature,

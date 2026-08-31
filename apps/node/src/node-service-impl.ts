@@ -9183,15 +9183,16 @@ class NodeServiceImpl implements NodeService {
 
     const attachmentId = randomUUID();
     const filename = sanitizeChatFilename(params.filename);
-    const vaultRelativePath = `chat/out/${attachmentId}/${filename}`;
+    const requestedPath = `chat/out/${attachmentId}/${filename}`;
     const mimeType = params.mimeType?.trim() || mimeTypeForFilename(filename);
     const sensitivity = params.sensitivity ?? "friends";
 
-    await this.importToLibrary({
-      relativePath: vaultRelativePath,
+    const imported = await this.importToLibrary({
+      relativePath: requestedPath,
       contentBase64: params.contentBase64,
       mimeType,
     });
+    const vaultRelativePath = imported.relativePath;
 
     const wireAttachment = {
       id: attachmentId,
@@ -9244,15 +9245,16 @@ class NodeServiceImpl implements NodeService {
 
     const attachmentId = randomUUID();
     const filename = sanitizeChatFilename(params.filename);
-    const vaultRelativePath = `chat/out/${attachmentId}/${filename}`;
+    const requestedPath = `chat/out/${attachmentId}/${filename}`;
     const mimeType = params.mimeType?.trim() || mimeTypeForFilename(filename);
     const sensitivity = params.sensitivity ?? "friends";
 
-    await this.importToLibrary({
-      relativePath: vaultRelativePath,
+    const imported = await this.importToLibrary({
+      relativePath: requestedPath,
       contentBase64: params.contentBase64,
       mimeType,
     });
+    const vaultRelativePath = imported.relativePath;
 
     const caption = params.caption?.trim();
     const text = caption || `Sent ${filename}`;

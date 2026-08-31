@@ -24,6 +24,23 @@ describe("resolveImportDestinationPath", () => {
   it("keeps paths already under notes/", () => {
     expect(resolveImportDestinationPath("notes/projects/a.md")).toBe("notes/projects/a.md");
   });
+
+  it("preserves chat attachment paths (voice notes / file send)", () => {
+    expect(resolveImportDestinationPath("chat/out/att-1/voice-note.webm")).toBe(
+      "chat/out/att-1/voice-note.webm",
+    );
+    expect(resolveImportDestinationPath("chat/out/att-1/photo.jpg")).toBe(
+      "chat/out/att-1/photo.jpg",
+    );
+  });
+
+  it("preserves profile media paths", () => {
+    expect(resolveImportDestinationPath("profile/gallery/p1.jpg")).toBe("profile/gallery/p1.jpg");
+  });
+
+  it("still nests unknown folders under documents/", () => {
+    expect(resolveImportDestinationPath("scratch/a.bin")).toBe("documents/scratch/a.bin");
+  });
 });
 
 describe("notesImportsBlogPathForWebPost", () => {

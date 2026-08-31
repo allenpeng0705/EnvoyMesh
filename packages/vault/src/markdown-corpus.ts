@@ -31,6 +31,21 @@ export const VAULT_MD_COLLECT_EXCLUDE_PREFIXES = [
   ".envoy/",
 ] as const;
 
+/**
+ * Non-markdown import paths that must stay where the caller asked
+ * (chat attachments, profile media, site content). Without this,
+ * `resolveImportDestinationPath` nests them under `documents/`, and
+ * share/send still looks up the original path → "File not found in vault".
+ */
+export const VAULT_IMPORT_PRESERVE_PREFIXES = [
+  "chat/",
+  "profile/",
+  "blog/",
+  "feeds/",
+  ".obsidian/",
+  ".envoy/",
+] as const;
+
 /** Normalize to forward-slash vault-relative path without leading slash. */
 export function normalizeVaultRelativePath(relativePath: string): string {
   return relativePath
@@ -58,6 +73,7 @@ export function isMarkdownCollectCandidate(relativePath: string): boolean {
  * Prefer `documents/<file>` for binary/office imports.
  * Legacy `imports/` paths are rewritten to `documents/`.
  * Native `.md` imports land under `notes/imports/`.
+ * System prefixes (`chat/`, `profile/`, …) are left unchanged.
  */
 export function resolveImportDestinationPath(requestedRelativePath: string): string {
   const p = normalizeVaultRelativePath(requestedRelativePath);
@@ -78,6 +94,9 @@ export function resolveImportDestinationPath(requestedRelativePath: string): str
   }
   if (p.startsWith(`${VAULT_DOCUMENTS_DIR}/`) || p.startsWith(`${VAULT_NOTES_DIR}/`)) {
     return p;
+  }
+  for (const prefix of VAULT_IMPORT_PRESERVE_PREFIXES) {
+    if (p === prefix.slice(0, -1) || p.startsWith(prefix)) return p;
   }
   // Bare or other folders → keep under documents for non-md.
   return posix.join(VAULT_DOCUMENTS_DIR, p.includes("/") ? p : base);

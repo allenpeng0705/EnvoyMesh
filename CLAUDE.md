@@ -30,7 +30,7 @@ EnvoyMesh is a **decentralized, peer-to-peer mesh for autonomous AI agents**. Ag
 
 **Capacitor backup removed:** the Phase 11 `apps/mobile/` + in-process `mobile-node` / `mobile-storage` / `mobile-vault` stack was deleted (it was a backup experiment, not the product path). `packages/mobile-identity` survives as the browser-safe identity used by the Social web build — do **not** remove it.
 
-**Active roadmap:** See `docs/implementation-plan.md`. Phase 45 (web content browsing) and later work target Social (desktop) + **EnvoyGo** (mobile).
+**Active roadmap:** See [`docs/roadmap.md`](docs/roadmap.md) (index) · [`docs/implementation-plan.md`](docs/implementation-plan.md) (Phase 50+) · [`docs/implementation-plan-archived.md`](docs/implementation-plan-archived.md) (Phases 0–49). Phase 63 (Envoy Market) targets Social + **EnvoyGo**.
 
 ---
 
@@ -192,7 +192,7 @@ EnvoyGo (phone) ── JSON-RPC / events ──► Home Node (computer)
 
 The Capacitor full-node-in-WebView stack (`apps/mobile/` + `packages/mobile-node` / `mobile-storage` / `mobile-vault`) was **removed**. It was a backup / legacy experiment, not the product path. `packages/mobile-identity` remains: it provides browser-safe pure-JS Ed25519 (`@noble/curves`) that the Social web app's Vite build aliases as `@envoymesh/identity` — keep it.
 
-Historical details: Phase 11 in `docs/implementation-plan.md`.
+Historical details: Phase 11 in `docs/implementation-plan-archived.md`.
 
 ### Agentic Topology (Phase 9)
 

@@ -20,6 +20,7 @@ import { parseChatMessagePayload } from "@envoymesh/protocol";
 import { stripModelThinking } from "@envoymesh/api";
 import { dialableInboundRemoteAddrs } from "./inbound-dial-hint-learn.js";
 import { runInboundChatAssist } from "./inbound-chat-assist.js";
+import { chatLocalTimelineTimestamp } from "./chat-local-timeline.js";
 import { deriveCorrelationIdFromEnvelope } from "@envoymesh/local-store";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -109,6 +110,7 @@ export async function handleChatMessageViaRuntime(
     .catch((err: unknown) =>
       console.warn(`[peer-directory] ensurePeerFromInboundChat failed:`, err),
     );
+  const receivedAt = Date.now();
   const incomingMsg: ChatMessage = {
     messageId: envelope.messageId,
     sender: {
@@ -135,25 +137,32 @@ export async function handleChatMessageViaRuntime(
         ? { attachments: chatWireAttachmentsToContent(payload.attachments) }
         : {}),
     },
-    metadata: { timestamp: envelope.createdAt, deliveryReceipt: "delivered" },
+    // Clamp sender clock to local receive time so AI/auto replies (local clock)
+    // cannot sort above the inbound message they answer.
+    metadata: {
+      timestamp: chatLocalTimelineTimestamp(envelope.createdAt, receivedAt),
+      deliveryReceipt: "delivered",
+    },
     signature: envelope.signature,
   } as unknown as ChatMessage;
-  void (async () => {
-    if (ctx.getChatLogStore()) {
-      await ctx.getChatLogStore().append(payload.senderOwnerId, incomingMsg);
-    } else {
-      ctx.persistChatMessage(payload.senderOwnerId, incomingMsg);
-    }
-    const emitMsg = await ctx.reconcileInboundDirectChatMessage(
-      payload.senderOwnerId,
-      incomingMsg,
-    );
-    ctx.emit("chat:message", emitMsg);
-    // Phase 50 — push dispatch is handled by the UNIFIED chat:message listener
-    // on NodeServiceImpl (constructor), which catches messages from ALL
-    // sources (direct, group, EnvoyAI, Ext Agent, Pi) in one place. No
-    // per-source push call needed here.
-  })();
+
+  // Persist + emit before assist so the inbound bubble is on the timeline
+  // before any auto-send reply is written.
+  if (ctx.getChatLogStore()) {
+    await ctx.getChatLogStore().append(payload.senderOwnerId, incomingMsg);
+  } else {
+    ctx.persistChatMessage(payload.senderOwnerId, incomingMsg);
+  }
+  const emitMsg = await ctx.reconcileInboundDirectChatMessage(
+    payload.senderOwnerId,
+    incomingMsg,
+  );
+  ctx.emit("chat:message", emitMsg);
+  // Phase 50 — push dispatch is handled by the UNIFIED chat:message listener
+  // on NodeServiceImpl (constructor), which catches messages from ALL
+  // sources (direct, group, EnvoyAI, Ext Agent, Pi) in one place. No
+  // per-source push call needed here.
+
   if (senderTrust && senderTrust.level !== "blocked") {
     void ctx.tagBondedContactReachability(remotePeerId);
   }
@@ -163,7 +172,6 @@ export async function handleChatMessageViaRuntime(
     ctx.getProfile() &&
     guardDecision.action === "allow"
   ) {
-    const receivedAt = Date.now();
     const correlationId = deriveCorrelationIdFromEnvelope(envelope);
     void ctx.getConfigStore().load().then(async (config: any) => {
       if (
