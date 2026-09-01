@@ -893,7 +893,7 @@ EnvoyMesh/
 ## 更多阅读
 
 - **入门：** [**`QuickStart.md`**](QuickStart.md) — 安装、运行、移动、多机、桥接
-- **终端用户指南：** [EnvoyMesh 完整指南 0.4.0](EnvoyMesh_GuideBook_0.4.0.zh-CN.md)（[English](EnvoyMesh_GuideBook_0.4.0.md) · [0.3.0 HTML](EnvoyMesh_GuideBook_0.3.0.zh-CN.html)）
+- **终端用户指南：** [EnvoyMesh 完整指南 0.4.0](EnvoyMesh_GuideBook_0.4.0.zh-CN.md)（[English](EnvoyMesh_GuideBook_0.4.0.md) · [HTML](sites/EnvoyMesh_GuideBook_0.4.0.zh-CN.html)）
 - **下载 / 截图：** [官网](https://www.homeclaw.cn/envoy/) · [下载章节](#下载)
 - **核心概念：** [架构参考](AGENTS.md) · [高级设计](docs/high-level-design.md) · [安全模型](docs/security.md)
 - **AI 代理：** [桥接指南](docs/agent_bridge_guide.md) · [OpenClaw 设置](docs/openclaw-extension.md) · [AI Engine 配置](docs/agent-network-config.md)
