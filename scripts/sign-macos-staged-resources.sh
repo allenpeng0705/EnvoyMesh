@@ -33,10 +33,14 @@ is_macho() {
 
 signed=0
 failed=0
+no_timestamp=0
 # Apple's timestamp.apple.com flakes often ("The timestamp service is not available").
-# Notarization still needs --timestamp, so retry with backoff instead of failing the build.
+# Prefer --timestamp for notarization; after retries, fall back to --timestamp=none so
+# the build can finish (re-run signing later when the service is back, or rely on the
+# outer .app codesign during tauri build). Set CODESIGN_STRICT_TIMESTAMP=1 to fail hard.
 MAX_ATTEMPTS="${CODESIGN_TIMESTAMP_RETRIES:-5}"
 RETRY_SLEEP_SEC="${CODESIGN_TIMESTAMP_RETRY_SLEEP:-3}"
+ALLOW_NO_TIMESTAMP="${CODESIGN_ALLOW_NO_TIMESTAMP:-1}"
 
 # Match likely Mach-O paths first (avoid running `file` on every staged .js file).
 candidate_paths() {
@@ -67,6 +71,15 @@ sign_one() {
         ;;
     esac
   done
+
+  if [ "$ALLOW_NO_TIMESTAMP" = "1" ]; then
+    echo "  ⚠ timestamp still unavailable — signing without timestamp: $(basename "$f")" >&2
+    if err=$(codesign --force --sign "$IDENTITY" --options runtime --timestamp=none "$f" 2>&1); then
+      no_timestamp=$((no_timestamp + 1))
+      return 0
+    fi
+  fi
+
   printf '%s\n' "$err" >&2
   return 1
 }
@@ -83,6 +96,11 @@ while IFS= read -r f; do
 done < <(candidate_paths)
 
 echo "  ✓ Signed ${signed} nested Mach-O file(s) under resources/"
+if [ "$no_timestamp" -gt 0 ]; then
+  echo "  ⚠ ${no_timestamp} binary(ies) signed with --timestamp=none (Apple timestamp service was down)." >&2
+  echo "    Notarization may fail — retry ./scripts/build-desktop.sh macos when timestamp.apple.com is reachable," >&2
+  echo "    or run: bash scripts/sign-macos-staged-resources.sh" >&2
+fi
 if [ "$failed" -gt 0 ]; then
   echo "error: ${failed} nested binary(ies) failed to sign" >&2
   exit 1
