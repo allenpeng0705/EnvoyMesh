@@ -1,4 +1,4 @@
-// Deep-link Knowledge (Browse / Plugins / Setup) and Social → Explore.
+// Deep-link Knowledge (Browse / Plugins / Setup) and Social surfaces.
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../navigation/owner_tabs.dart';
@@ -11,7 +11,8 @@ enum KnowledgeHubPanel { browse, plugins, setup }
 final knowledgeHubPanelRequestProvider =
     StateProvider<KnowledgeHubPanel?>((ref) => null);
 
-/// Requested Social surface index (0 Chats, 1 Feeds, 2 Blog, 3 Market, 4 Explore).
+/// Requested Social surface index
+/// (0 Chats, 1 Feeds, 2 Blog, 3 Market, 4 Discover, 5 Explore).
 final contentSurfaceRequestProvider = StateProvider<int?>((ref) => null);
 
 /// Contact peer filter for Social → Feed / Blog card tabs (from Chat shortcuts).
@@ -31,6 +32,15 @@ void openSocialExplore(WidgetRef ref) {
   openSocialContent(
     ref,
     surface: SocialSurfaces.explore,
+    peerOwnerId: null,
+  );
+}
+
+/// Jump to Social → Discover (people search / Say Hello).
+void openSocialDiscover(WidgetRef ref) {
+  openSocialContent(
+    ref,
+    surface: SocialSurfaces.discover,
     peerOwnerId: null,
   );
 }

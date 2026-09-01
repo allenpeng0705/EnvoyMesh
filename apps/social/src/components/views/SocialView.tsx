@@ -1,6 +1,6 @@
 /**
- * Social shell — Chats | Feed | Blog | Discover | Market | Explore.
- * Discover = people discovery; Market = P2P shop; Explore = web content browser.
+ * Social shell — Chats | Feed | Blog | Market | Discover | Explore.
+ * Market = P2P shop; Discover = people discovery; Explore = web content browser.
  */
 import { useEffect, useRef, useState } from "react";
 import type { ContentEngageSurface } from "@envoymesh/api";
@@ -120,8 +120,8 @@ export function SocialView({
     { id: "chats", label: t("social.tabChats", "Chats") },
     { id: "feed", label: t("content.tabFeed", "Feed") },
     { id: "blog", label: t("content.tabBlog", "Blog") },
-    { id: "discover", label: t("social.tabDiscover", "Discover") },
     { id: "market", label: t("social.tabMarket", "Market") },
+    { id: "discover", label: t("social.tabDiscover", "Discover") },
     { id: "explore", label: t("social.tabExplore", "Explore") },
   ];
 

@@ -5,6 +5,25 @@ All notable changes to EnvoyMesh are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-09-01
+
+### Added
+
+**Envoy Market**
+- Per-owner **Shop** on the home node: create listings with photos, price, category, and `public` or `bonds` visibility
+- **Market** tab in Social (desktop) — Browse mesh + bonded listings, My Shop CRUD, search history, category/price filters
+- Public mesh search and stranger **listing-scoped inquire** chat (rate-limited; bond optional afterward)
+- EnvoyAI **market shortlist** using the same search APIs as the UI
+- Capture → draft listing path on desktop Social; public listing thumbnails via web mirror
+- Soft close (**reserved** / **sold**); payments/escrow deferred (ADR hook only)
+
+**Social & localization**
+- Full Market locale strings for zh/de/fr/ja/ko/it on Social; Discover tab before Explore on desktop
+- Social tab order: Chats · Feed · Blog · **Market** · Discover · Explore
+
+### Changed
+- Public site and guidebook refreshed to **0.4.0** (Market section, guidebook Part XVI, Appendix J)
+
 ## [0.3.0] - 2026-08-27
 
 ### Added

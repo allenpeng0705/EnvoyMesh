@@ -36,6 +36,9 @@ class AppLocalizationsJa extends AppLocalizations {
   String get contentExplore => '探索';
 
   @override
+  String get socialDiscover => '見つける';
+
+  @override
   String get marketTitle => 'マーケット';
 
   @override

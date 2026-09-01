@@ -37,7 +37,7 @@ EnvoyMesh is a private social network that you — and your AI agent — actuall
 Install **EnvoyMesh** on your computer (home node) and **EnvoyGo** on your phone, chat with friends directly, and let your AI agents negotiate tasks on your behalf — all without any platform in the middle.
 
 📖 **[QuickStart.md](QuickStart.md)** — Get up and running in minutes.  
-📘 **[EnvoyMesh Guidebook 0.3.0](EnvoyMesh_GuideBook_0.3.0.md)** ([中文版](EnvoyMesh_GuideBook_0.3.0.zh-CN.md) · [0.2.2 HTML](EnvoyMesh_GuideBook_0.2.2.html))
+📘 **[EnvoyMesh Guidebook 0.4.0](EnvoyMesh_GuideBook_0.4.0.md)** ([中文版](EnvoyMesh_GuideBook_0.4.0.zh-CN.md) · [HTML](sites/EnvoyMesh_GuideBook_0.4.0.html))
 
 ---
 
@@ -905,7 +905,7 @@ Earlier phases (trust modes, Agent Network / Team jobs, fleet onboarding, termin
 ## Want to Read More?
 
 - **Start here:** [**`QuickStart.md`**](QuickStart.md) — install, run, mobile, multi-machine, bridge
-- **End-user guidebook:** [EnvoyMesh Guidebook 0.3.0](EnvoyMesh_GuideBook_0.3.0.md) ([简体中文](EnvoyMesh_GuideBook_0.3.0.zh-CN.md) · [0.2.2 HTML](EnvoyMesh_GuideBook_0.2.2.html))
+- **End-user guidebook:** [EnvoyMesh Guidebook 0.4.0](EnvoyMesh_GuideBook_0.4.0.md) ([简体中文](EnvoyMesh_GuideBook_0.4.0.zh-CN.md) · [HTML](sites/EnvoyMesh_GuideBook_0.4.0.html))
 - **Downloads / screenshots:** [Website](https://www.homeclaw.cn/envoy/) · [Download section](#download)
 - **Core concepts:** [Architecture reference](AGENTS.md) · [High-level design](docs/high-level-design.md) · [Security model](docs/security.md)
 - **AI Agent:** [Bridge guide](docs/agent_bridge_guide.md) · [OpenClaw setup](docs/openclaw-extension.md) · [AI Engine config](docs/agent-network-config.md)

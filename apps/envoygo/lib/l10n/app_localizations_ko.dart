@@ -36,6 +36,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get contentExplore => '탐색';
 
   @override
+  String get socialDiscover => '찾기';
+
+  @override
   String get marketTitle => '마켓';
 
   @override

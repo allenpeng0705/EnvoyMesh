@@ -114,7 +114,7 @@ export function createCapabilityManifestStore(profileDir: string): CapabilityMan
       const manifest: CapabilityManifest = {
         version: "0.1",
         id: randomUUID(),
-        versionTag: "0.3.0",
+        versionTag: "0.4.0",
         visibility: input.visibility ?? "contacts-only",
         sensitivityCeiling: input.sensitivityCeiling ?? "friends",
         keywords: input.keywords ?? DEFAULT_KEYWORDS,

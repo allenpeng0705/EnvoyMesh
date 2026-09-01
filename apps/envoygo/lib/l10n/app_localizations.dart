@@ -162,6 +162,12 @@ abstract class AppLocalizations {
   /// **'Explore'**
   String get contentExplore;
 
+  /// No description provided for @socialDiscover.
+  ///
+  /// In en, this message translates to:
+  /// **'Discover'**
+  String get socialDiscover;
+
   /// No description provided for @marketTitle.
   ///
   /// In en, this message translates to:

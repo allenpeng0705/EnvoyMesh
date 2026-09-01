@@ -7,10 +7,12 @@ abstract final class OwnerTabs {
 }
 
 /// Social top-tab indices inside [SocialScreen].
+/// Order matches desktop Social: Chats | Feed | Blog | Market | Discover | Explore.
 abstract final class SocialSurfaces {
   static const chats = 0;
   static const feeds = 1;
   static const blog = 2;
   static const market = 3;
-  static const explore = 4;
+  static const discover = 4;
+  static const explore = 5;
 }

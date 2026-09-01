@@ -36,6 +36,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get contentExplore => '探索';
 
   @override
+  String get socialDiscover => '发现';
+
+  @override
   String get marketTitle => '市集';
 
   @override

@@ -11,11 +11,12 @@ import '../../widgets/connection_indicator.dart';
 import '../browser/browser_screen.dart';
 import '../chat/chat_list_screen.dart';
 import '../content/content_blog_tab.dart';
+import '../content/content_explore_tab.dart';
 import '../content/content_feed_tab.dart';
 import '../inbox/inbox_screen.dart';
 import '../market/market_screen.dart';
 
-/// Owner Social tab — Chats | Feed | Blog | Market | Explore (+ Inbox in AppBar).
+/// Owner Social tab — Chats | Feed | Blog | Market | Discover | Explore (+ Inbox).
 class SocialScreen extends ConsumerStatefulWidget {
   const SocialScreen({super.key});
 
@@ -30,7 +31,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 5, vsync: this);
+    _tabs = TabController(length: 6, vsync: this);
     _tabs.addListener(_onTabChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -178,6 +179,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
             tabLabel(l10n.contentFeed, feedBadge),
             tabLabel(l10n.contentBlog, blogBadge),
             Tab(text: l10n.marketTitle),
+            Tab(text: l10n.socialDiscover),
             Tab(text: l10n.contentExplore),
           ],
         ),
@@ -193,6 +195,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
             embedded: true,
             initialPane: preferShop ? MarketPane.shop : MarketPane.browse,
           ),
+          const ContentExploreTab(),
           const BrowserScreen(embedded: true),
         ],
       ),

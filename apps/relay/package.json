@@ -1,6 +1,6 @@
 {
   "name": "@envoymesh/relay",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "private": true,
   "scripts": {
@@ -10,9 +10,9 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@envoymesh/api": "0.3.0",
-    "@envoymesh/network": "0.3.0",
-    "@envoymesh/identity": "0.3.0",
+    "@envoymesh/api": "0.4.0",
+    "@envoymesh/network": "0.4.0",
+    "@envoymesh/identity": "0.4.0",
     "@libp2p/utils": "^7.0.0",
     "ws": "^8.20.0"
   },

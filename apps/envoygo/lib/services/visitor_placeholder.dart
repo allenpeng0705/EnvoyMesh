@@ -34,7 +34,7 @@ String buildVisitorPlaceholderMarkdown({
         '',
         '_$name hasn’t published a Profile page on EnvoyMesh yet._',
         '',
-        'You can still say hello from Explore → People, or check back later.',
+        'You can still say hello from Social → Discover, or check back later.',
         '',
         '- [Blog](envoy://$id/blog/)',
         '- [PhotoWall](envoy://$id/$photoPath)',

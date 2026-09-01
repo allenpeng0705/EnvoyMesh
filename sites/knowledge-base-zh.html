@@ -179,7 +179,7 @@
 
     <h3>Envoy Local 嵌入与恢复</h3>
     <p>知识库索引使用主节点上的本地嵌入 sidecar（端口 18791 的 llama-server 运行 <strong>Qwen3-Embedding</strong>）。桌面默认设置无需云端 API 密钥。</p>
-    <p>若块过大或 embed sidecar 卡住，<strong>重新索引会自动恢复</strong> — 缩小超长文本、重启嵌入进程，并仅跳过仍失败的文档，其余保险库保持可检索。升级到 0.3.0 后，请在<strong>知识库 → 重新索引</strong>运行一次，以在安全块大小下重建旧块。</p>
+    <p>若块过大或 embed sidecar 卡住，<strong>重新索引会自动恢复</strong> — 缩小超长文本、重启嵌入进程，并仅跳过仍失败的文档，其余保险库保持可检索。从旧版本升级后，请在<strong>知识库 → 重新索引</strong>运行一次，以在安全块大小下重建旧块。</p>
 
     <h3>敏感度级别</h3>
     <table>

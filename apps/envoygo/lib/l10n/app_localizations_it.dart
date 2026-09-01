@@ -36,6 +36,9 @@ class AppLocalizationsIt extends AppLocalizations {
   String get contentExplore => 'Esplora';
 
   @override
+  String get socialDiscover => 'Scopri';
+
+  @override
   String get marketTitle => 'Mercato';
 
   @override

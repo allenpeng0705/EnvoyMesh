@@ -33,7 +33,7 @@ const _suggestedTopics = [
   'coding',
 ];
 
-/// Content → People: discover non-bonded peers (topic / interest),
+/// Content → Discover: find non-bonded peers (topic / interest),
 /// or sample the mesh for public profiles & blogs. Say Hello to bond.
 class ContentExploreTab extends ConsumerStatefulWidget {
   const ContentExploreTab({super.key});
@@ -413,7 +413,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
             children: [
               Expanded(
                 child: Text(
-                  l10n.contentPeople,
+                  l10n.socialDiscover,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
