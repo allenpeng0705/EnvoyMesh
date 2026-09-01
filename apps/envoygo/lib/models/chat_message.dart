@@ -70,6 +70,9 @@ class ChatMessage {
   /// File / audio attachments (Phase 37).
   final List<ChatAttachment>? attachments;
 
+  /// Phase 63B — listing-scoped inquire (Envoy Market).
+  final String? listingId;
+
   const ChatMessage({
     required this.id,
     required this.threadId,
@@ -80,6 +83,7 @@ class ChatMessage {
     this.isOutbound = false,
     this.delivery,
     this.attachments,
+    this.listingId,
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
@@ -112,6 +116,7 @@ class ChatMessage {
       isOutbound: (json['is_outbound'] as int?) == 1,
       delivery: _parseDeliveryJson(json['delivery']),
       attachments: attachments,
+      listingId: json['listing_id'] as String? ?? json['listingId'] as String?,
     );
   }
 
@@ -173,6 +178,7 @@ class ChatMessage {
       attachments: attRaw
           ?.map((a) => ChatAttachment.fromJson(a as Map<String, dynamic>))
           .toList(),
+      listingId: content?['listingId'] as String?,
     );
   }
 
@@ -187,6 +193,7 @@ class ChatMessage {
         if (delivery != null)
           'delivery': jsonEncode(deliveryMetadataToJson(delivery!)),
         if (attachments != null) 'attachments': attachments!.map((a) => a.toJson()).toList(),
+        if (listingId != null) 'listing_id': listingId,
       };
 }
 

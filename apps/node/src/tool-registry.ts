@@ -184,6 +184,39 @@ export class ToolRegistry {
       isMeshTool: true,
     });
 
+    this.register({
+      name: "mesh.market.search",
+      description:
+        "Search Envoy Market listings (local cache + mesh). Same path as the Market Browse tab.",
+      paramSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Keyword query (books, electronics, …)" },
+          limit: { type: "number", description: "Max cards (default 10)" },
+        },
+      },
+      sensitivityCeiling: "public",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.market.shortlist",
+      description:
+        "Search the market and return 2–3 ranked listings with short reasons (for “find a few options…”).",
+      paramSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "What the user wants (e.g. book title, category)" },
+          limit: { type: "number", description: "Shortlist size (default 3, max 5)" },
+        },
+        required: ["query"],
+      },
+      sensitivityCeiling: "public",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
     // Share tools
     this.register({
       name: "share.send",
@@ -1390,6 +1423,10 @@ export interface MeshToolContext {
   }) => Promise<void>;
   /** Optional FS-D hooks — populated when the agent runtime is wired to NodeService. */
   listLibraryItems?: (query?: string) => Promise<unknown>;
+  marketSearch?: (params?: {
+    query?: string;
+    limit?: number;
+  }) => Promise<{ cards: unknown[] }>;
   readLibraryItemContent?: (params: {
     relativePath: string;
     maxBytes?: number;
@@ -1688,6 +1725,72 @@ export async function executeTool(
       return await executeMeshTool(tool, params, context, correlationId, startTime);
     } else if (toolName === "vault.search") {
       return await executeVaultSearch(params, vaultSearchFn, correlationId, startTime);
+    } else if (toolName === "mesh.market.search" || toolName === "mesh.market.shortlist") {
+      if (!context.marketSearch) {
+        return {
+          ok: false,
+          error: "marketSearch is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const query = typeof params.query === "string" ? params.query.trim() : "";
+      if (toolName === "mesh.market.shortlist" && !query) {
+        return {
+          ok: false,
+          error: "query is required",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const limitRaw = typeof params.limit === "number" ? params.limit : undefined;
+      const searchLimit =
+        toolName === "mesh.market.shortlist"
+          ? Math.max(limitRaw ?? 8, 8)
+          : limitRaw;
+      try {
+        const result = await context.marketSearch({
+          query: query || undefined,
+          limit: searchLimit,
+        });
+        const cards = Array.isArray(result.cards) ? result.cards : [];
+        if (toolName === "mesh.market.search") {
+          return {
+            ok: true,
+            result: { cards },
+            toolName,
+            correlationId,
+            latencyMs: Date.now() - startTime,
+          };
+        }
+        const { shortlistMarketCards } = await import("@envoymesh/api");
+        const shortLimit = Math.max(1, Math.min(5, limitRaw ?? 3));
+        const items = shortlistMarketCards(
+          cards as Array<{
+            updatedAt: string;
+            title: string;
+            price: { amount: string; currency: string };
+          }>,
+          shortLimit,
+        );
+        return {
+          ok: true,
+          result: { query, items },
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
     } else if (toolName === "mesh.library_list") {
       if (!context.listLibraryItems) {
         return {

@@ -138,6 +138,13 @@ export function galleryPhotoWallStablePath(photoId: string, ext: string): string
   return normalizeWebPath(`photos/wall/gallery-${id}.${cleanExt}`);
 }
 
+/** Stable public path for a Market listing thumb (Browse via libraryRead). */
+export function marketListingThumbStablePath(listingId: string, ext: string): string {
+  const id = listingId.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "listing";
+  const cleanExt = ext.replace(/^\./, "").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+  return normalizeWebPath(`photos/market/${id}.${cleanExt}`);
+}
+
 const VISIBILITY_RANK: Record<WebContentVisibility, number> = {
   private: 0,
   contacts: 1,
@@ -1309,6 +1316,35 @@ export async function removeGalleryPhotoWallMirror(
   }
   if (entries.length > 0) {
     await regeneratePhotoWall(store, webDir, ownerId, "wall", "bonded", new Date().toISOString());
+  }
+  return entries.length;
+}
+
+/** Find Market listing thumb mirrors under `photos/market/{listingId}.*`. */
+export async function findMarketListingThumbEntries(
+  profileDir: string,
+  listingId: string,
+): Promise<WebContentEntry[]> {
+  const id = listingId.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
+  if (!id) return [];
+  const prefix = `photos/market/${id}.`;
+  const store = createWebContentStore(join(profileDir, "web"));
+  await store.reload();
+  return (await store.list({ kind: "photo" })).filter((e) => e.path.startsWith(prefix));
+}
+
+/** Remove Market listing thumb mirror(s) from the public web store. */
+export async function removeMarketListingThumbMirror(
+  profileDir: string,
+  listingId: string,
+): Promise<number> {
+  const webDir = join(profileDir, "web");
+  const store = createWebContentStore(webDir);
+  await store.reload();
+  const entries = await findMarketListingThumbEntries(profileDir, listingId);
+  for (const e of entries) {
+    await store.remove(e.path);
+    await unlink(join(webDir, e.path)).catch(() => undefined);
   }
   return entries.length;
 }

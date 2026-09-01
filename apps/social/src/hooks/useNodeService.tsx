@@ -198,7 +198,12 @@ export interface NodeServiceClient {
   declineSocialIntroProposal(messageId: string): Promise<void>;
 
   // Messaging
-  sendChat(targetOwnerId: string, text: string, attachments?: SendChatParams["attachments"]): Promise<SendChatResult>;
+  sendChat(
+    targetOwnerId: string,
+    text: string,
+    attachments?: SendChatParams["attachments"],
+    listingId?: string,
+  ): Promise<SendChatResult>;
   sendAgentChat(targetOwnerId: string, text: string): Promise<SendChatResult>;
   sendChatAttachment(params: SendChatAttachmentParams): Promise<SendChatAttachmentResult>;
   readLibraryItemContent(params: ReadLibraryItemContentParams): Promise<ReadLibraryItemContentResult>;
@@ -593,6 +598,47 @@ export interface NodeServiceClient {
   sendFamilyRoomMessage(
     params: import("@envoymesh/api").SendFamilyRoomMessageParams,
   ): Promise<import("@envoymesh/api").SendFamilyRoomMessageResult>;
+  /** Phase 63A — Envoy Market local shop. */
+  shopGetProfile(): Promise<import("@envoymesh/api").ShopGetProfileResult>;
+  shopUpdateProfile(
+    params: import("@envoymesh/api").ShopUpdateProfileParams,
+  ): Promise<import("@envoymesh/api").ShopUpdateProfileResult>;
+  shopListListings(
+    params?: import("@envoymesh/api").ShopListListingsParams,
+  ): Promise<import("@envoymesh/api").ShopListListingsResult>;
+  shopUpsertListing(
+    params: import("@envoymesh/api").ShopUpsertListingParams,
+  ): Promise<import("@envoymesh/api").ShopUpsertListingResult>;
+  shopSetListingStatus(
+    params: import("@envoymesh/api").ShopSetListingStatusParams,
+  ): Promise<import("@envoymesh/api").ShopSetListingStatusResult>;
+  shopDeleteListing(
+    params: import("@envoymesh/api").ShopDeleteListingParams,
+  ): Promise<import("@envoymesh/api").ShopDeleteListingResult>;
+  shopDraftListing(
+    params?: import("@envoymesh/api").ShopDraftListingParams,
+  ): Promise<import("@envoymesh/api").ShopDraftListingResult>;
+  shopSaveListingMedia(
+    params: import("@envoymesh/api").ShopSaveListingMediaParams,
+  ): Promise<import("@envoymesh/api").ShopSaveListingMediaResult>;
+  shopGetListingMedia(
+    params: import("@envoymesh/api").ShopGetListingMediaParams,
+  ): Promise<import("@envoymesh/api").ShopGetListingMediaResult>;
+  /** Phase 63B — browse peer MarketCache. */
+  marketSearch(
+    params?: import("@envoymesh/api").MarketSearchParams,
+  ): Promise<import("@envoymesh/api").MarketSearchResult>;
+  marketBrowseSuggestions(): Promise<import("@envoymesh/api").MarketBrowseSuggestionsResult>;
+  marketClearSearchHistory(): Promise<{ ok: true }>;
+  marketReportSeller(
+    params: import("@envoymesh/api").MarketReportSellerParams,
+  ): Promise<void>;
+  marketSuggestSellerReply(
+    params: import("@envoymesh/api").MarketSuggestSellerReplyParams,
+  ): Promise<import("@envoymesh/api").MarketSuggestSellerReplyResult>;
+  marketShareListing(
+    params: import("@envoymesh/api").MarketShareListingParams,
+  ): Promise<import("@envoymesh/api").MarketShareListingResult>;
   syncPairingKioskFromConfig(): Promise<void>;
   getPairingKioskStatus(): Promise<import("@envoymesh/api").PairingKioskStatus>;
   importFleetManifest(
@@ -1041,8 +1087,22 @@ function createWsNodeServiceClient(
     async unblockPeer(peerOwnerId: string) { return wsClient.rpc("unblockPeer", { peerOwnerId }); },
     async revokeBond(peerOwnerId: string) { return wsClient.rpc("revokeBond", { peerOwnerId }); },
     async getBonds() { return wsClient.rpc("getBonds"); },
-    async sendChat(targetOwnerId: string, text: string) {
-      return wsClient.rpc("sendChat", { targetOwnerId, text }, { timeoutMs: 120_000 });
+    async sendChat(
+      targetOwnerId: string,
+      text: string,
+      attachments?: SendChatParams["attachments"],
+      listingId?: string,
+    ) {
+      return wsClient.rpc(
+        "sendChat",
+        {
+          targetOwnerId,
+          text,
+          ...(attachments ? { attachments } : {}),
+          ...(listingId ? { listingId } : {}),
+        },
+        { timeoutMs: 120_000 },
+      );
     },
     async sendAgentChat(targetOwnerId: string, text: string) {
       return wsClient.rpc("sendAgentChat", { targetOwnerId, text }, { timeoutMs: 120_000 });
@@ -2104,6 +2164,93 @@ function createWsNodeServiceClient(
         "sendFamilyRoomMessage",
         params as unknown as Record<string, unknown>,
       ) as Promise<import("@envoymesh/api").SendFamilyRoomMessageResult>;
+    },
+    async shopGetProfile() {
+      return wsClient.rpc("shopGetProfile") as Promise<
+        import("@envoymesh/api").ShopGetProfileResult
+      >;
+    },
+    async shopUpdateProfile(params: import("@envoymesh/api").ShopUpdateProfileParams) {
+      return wsClient.rpc(
+        "shopUpdateProfile",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").ShopUpdateProfileResult>;
+    },
+    async shopListListings(params?: import("@envoymesh/api").ShopListListingsParams) {
+      return wsClient.rpc(
+        "shopListListings",
+        (params ?? {}) as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").ShopListListingsResult>;
+    },
+    async shopUpsertListing(params: import("@envoymesh/api").ShopUpsertListingParams) {
+      return wsClient.rpc(
+        "shopUpsertListing",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").ShopUpsertListingResult>;
+    },
+    async shopSetListingStatus(params: import("@envoymesh/api").ShopSetListingStatusParams) {
+      return wsClient.rpc(
+        "shopSetListingStatus",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").ShopSetListingStatusResult>;
+    },
+    async shopDeleteListing(params: import("@envoymesh/api").ShopDeleteListingParams) {
+      return wsClient.rpc(
+        "shopDeleteListing",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").ShopDeleteListingResult>;
+    },
+    async shopDraftListing(params?: import("@envoymesh/api").ShopDraftListingParams) {
+      return wsClient.rpc(
+        "shopDraftListing",
+        (params ?? {}) as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").ShopDraftListingResult>;
+    },
+    async shopSaveListingMedia(params: import("@envoymesh/api").ShopSaveListingMediaParams) {
+      return wsClient.rpc(
+        "shopSaveListingMedia",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").ShopSaveListingMediaResult>;
+    },
+    async shopGetListingMedia(params: import("@envoymesh/api").ShopGetListingMediaParams) {
+      return wsClient.rpc(
+        "shopGetListingMedia",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").ShopGetListingMediaResult>;
+    },
+    async marketSearch(params?: import("@envoymesh/api").MarketSearchParams) {
+      return wsClient.rpc(
+        "marketSearch",
+        (params ?? {}) as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").MarketSearchResult>;
+    },
+    async marketBrowseSuggestions() {
+      return wsClient.rpc("marketBrowseSuggestions") as Promise<
+        import("@envoymesh/api").MarketBrowseSuggestionsResult
+      >;
+    },
+    async marketClearSearchHistory() {
+      return wsClient.rpc("marketClearSearchHistory") as Promise<{ ok: true }>;
+    },
+    async marketReportSeller(params: import("@envoymesh/api").MarketReportSellerParams) {
+      return wsClient.rpc(
+        "marketReportSeller",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<void>;
+    },
+    async marketSuggestSellerReply(
+      params: import("@envoymesh/api").MarketSuggestSellerReplyParams,
+    ) {
+      return wsClient.rpc(
+        "marketSuggestSellerReply",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").MarketSuggestSellerReplyResult>;
+    },
+    async marketShareListing(params: import("@envoymesh/api").MarketShareListingParams) {
+      return wsClient.rpc(
+        "marketShareListing",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").MarketShareListingResult>;
     },
     async syncPairingKioskFromConfig() {
       return wsClient.rpc("syncPairingKioskFromConfig") as Promise<void>;

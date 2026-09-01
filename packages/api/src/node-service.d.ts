@@ -144,6 +144,8 @@ export interface ChatMessage {
     content: {
         text: string;
         attachments?: ChatAttachment[];
+        /** Phase 63B — listing-scoped inquire (Envoy Market). */
+        listingId?: string;
     };
     metadata: {
         timestamp: string;
@@ -1122,7 +1124,7 @@ export interface NodeService {
     /**
      * Send a chat message to a bonded peer
      */
-    sendChat(targetOwnerId: string, text: string, attachments?: SendChatParams["attachments"]): Promise<SendChatResult>;
+    sendChat(targetOwnerId: string, text: string, attachments?: SendChatParams["attachments"], listingId?: string): Promise<SendChatResult>;
     /**
      * Send AI/agent chat with honest wire role (`senderRole=agent` + `agentCredential`).
      */

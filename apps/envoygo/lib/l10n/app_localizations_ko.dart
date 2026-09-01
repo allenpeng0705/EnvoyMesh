@@ -36,6 +36,204 @@ class AppLocalizationsKo extends AppLocalizations {
   String get contentExplore => '탐색';
 
   @override
+  String get marketTitle => '마켓';
+
+  @override
+  String get marketPaneBrowse => '둘러보기';
+
+  @override
+  String get marketPaneShop => '내 상점';
+
+  @override
+  String get marketBrowseEmptyTitle => '아직 다른 사람의 상품이 없습니다';
+
+  @override
+  String get marketBrowseEmptyDesc => '본드된 친구가 게시하면 여기에 표시됩니다.';
+
+  @override
+  String get marketSearchPlaceholder => '도서, 전자제품, 태그 검색…';
+
+  @override
+  String get marketSearchSubmit => '검색';
+
+  @override
+  String get marketSearchIdleHint => '키워드를 입력하거나 아래 제안을 누르세요.';
+
+  @override
+  String marketSearchNoResults(String query) {
+    return '“$query”와 일치하는 상품이 없습니다.';
+  }
+
+  @override
+  String get marketChipBooks => '도서';
+
+  @override
+  String get marketChipElectronics => '전자제품';
+
+  @override
+  String get marketChipClothing => '의류';
+
+  @override
+  String get marketChipHome => '생활';
+
+  @override
+  String get marketChipDigital => '디지털';
+
+  @override
+  String get marketClearHistory => '기록 지우기';
+
+  @override
+  String get marketHistoryCleared => '검색 기록을 지웠습니다.';
+
+  @override
+  String get marketMessageSeller => '판매자에게 메시지';
+
+  @override
+  String get marketSellerLabel => '판매자';
+
+  @override
+  String get marketShareLink => '링크 복사';
+
+  @override
+  String get marketShareCopied => '공유 링크를 복사했습니다.';
+
+  @override
+  String marketInquireDefault(String title) {
+    return '안녕하세요. “$title”에 관심이 있어요. 아직 있나요?';
+  }
+
+  @override
+  String get marketInquireSent => '메시지를 보냈습니다. 채팅을 엽니다…';
+
+  @override
+  String get marketNotConnected => '홈에 연결되지 않음 — 페어링 후 상점을 볼 수 있습니다.';
+
+  @override
+  String get marketNoListings => '아직 상품이 없습니다. 「사진에서 추가」를 누르거나 Social에서 편집하세요.';
+
+  @override
+  String get marketUntitled => '제목 없는 상품';
+
+  @override
+  String get marketVisibilityPublicShort => '공개';
+
+  @override
+  String get marketVisibilityBondsShort => '본드만';
+
+  @override
+  String get marketStatusActive => '판매 중';
+
+  @override
+  String get marketStatusReserved => '예약됨';
+
+  @override
+  String get marketStatusSold => '판매됨';
+
+  @override
+  String get marketStatusWithdrawn => '철회됨';
+
+  @override
+  String get marketTagsLabel => '태그';
+
+  @override
+  String get marketEditOnSocialHint => '상품 생성·편집은 당분간 홈 노드 Social 마켓 탭에서 하세요.';
+
+  @override
+  String get marketCaptureAddFromPhoto => '사진에서 추가';
+
+  @override
+  String get marketCaptureCamera => '사진 촬영';
+
+  @override
+  String get marketCaptureGallery => '갤러리에서 선택';
+
+  @override
+  String get marketCaptureNotesTitle => '상품 설명';
+
+  @override
+  String get marketCaptureNotesHint => '첫 줄에 제목, 이어서 세부 정보…';
+
+  @override
+  String get marketCaptureContinue => '계속';
+
+  @override
+  String get marketCaptureReviewTitle => '상품 검토';
+
+  @override
+  String get marketCaptureTitleLabel => '제목';
+
+  @override
+  String get marketCaptureDescriptionLabel => '설명';
+
+  @override
+  String get marketCapturePriceLabel => '가격';
+
+  @override
+  String get marketCaptureCurrencyLabel => '통화';
+
+  @override
+  String get marketCaptureVisibilityLabel => '누가 찾을 수 있나요';
+
+  @override
+  String get marketCapturePublish => '게시';
+
+  @override
+  String get marketCapturePublished => '홈 노드에 상품을 게시했습니다.';
+
+  @override
+  String get marketCaptureTitleRequired => '게시 전에 제목을 추가하세요.';
+
+  @override
+  String get marketSellerSuggestedReply => '상품 기반 추천 답장';
+
+  @override
+  String get marketMarkReserved => '예약으로 표시';
+
+  @override
+  String get marketMarkSold => '판매 완료로 표시';
+
+  @override
+  String get marketMarkAvailable => '판매 중으로 표시';
+
+  @override
+  String get marketRelist => '다시 올리기';
+
+  @override
+  String get marketStatusUpdated => '상품 상태가 업데이트되었습니다.';
+
+  @override
+  String get marketPaymentHint =>
+      '결제는 EnvoyMesh 밖에서 판매자와 합의하세요 — Envoy는 돈을 보관하지 않습니다.';
+
+  @override
+  String get marketBlockSeller => '차단';
+
+  @override
+  String get marketReportSeller => '신고';
+
+  @override
+  String get marketConfirmBlock => '이 판매자를 차단할까요? 상품이 둘러보기에서 숨겨집니다.';
+
+  @override
+  String get marketConfirmReport =>
+      '이 판매자를 신고하고 차단할까요? 기록은 내 노드에만 남습니다(중앙 검토는 아직 없음).';
+
+  @override
+  String get marketFilterCategory => '카테고리';
+
+  @override
+  String get marketFilterAnyCategory => '모든 카테고리';
+
+  @override
+  String get marketFilterMinPrice => '최저가';
+
+  @override
+  String get marketFilterMaxPrice => '최고가';
+
+  @override
+  String get marketFilterCurrency => '통화';
+
+  @override
   String get termEmptyHint => '홈 노드에서 Pi 코딩 세션 또는 셸 터미널을 시작하세요.';
 
   @override
@@ -136,6 +334,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get meBrowserHint => 'envoy:// 페이지 열기 — 또는 콘텐츠 탭에서 내 사이트';
+
+  @override
+  String get meMyShop => '내 상점';
+
+  @override
+  String get meMyShopHint => '홈 노드의 상품 보기 (편집은 당분간 Social)';
 
   @override
   String get meAiEngine => 'AI 엔진';
@@ -582,7 +786,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get knowledgeSetupEmbeddingHint =>
-      'Embeddings use Envoy Local on this device. For OpenAI or Ollama, open Settings → AI on your home computer.';
+      '볼트 검색용 임베딩. 모델이 없어도 키워드 검색은 사용할 수 있습니다.';
 
   @override
   String get knowledgeSetupEnabled => '볼트 지식 활성화';
@@ -684,22 +888,20 @@ class AppLocalizationsKo extends AppLocalizations {
   String get knowledgeFileMakePrivate => '비공개로 설정';
 
   @override
-  String get knowledgeBrowseImportAndPublish => 'Import and publish';
+  String get knowledgeBrowseImportAndPublish => '가져오기 및 게시';
 
   @override
-  String get knowledgeBrowsePublishImportOnly =>
-      'Import this note into the vault first, then you can publish it.';
+  String get knowledgeBrowsePublishImportOnly => '가져온 항목만 게시';
 
   @override
   String get knowledgeBrowsePublishImportNoDoc =>
-      'Imported, but could not publish yet — try Publish again from the imported note.';
+      '가져옴 — 문서 ID가 없어 게시를 건너뛰었습니다.';
 
   @override
-  String get knowledgeBrowseImportedAndPublished => 'Imported and published';
+  String get knowledgeBrowseImportedAndPublished => '가져와서 게시했습니다.';
 
   @override
-  String get knowledgeBrowsePublishImportHint =>
-      'Import into vault and publish for mesh discovery';
+  String get knowledgeBrowsePublishImportHint => '가져온 뒤 연락처에 게시할 수 있습니다.';
 
   @override
   String get knowledgeFileMore => '더보기';
@@ -1324,19 +1526,19 @@ class AppLocalizationsKo extends AppLocalizations {
   String get chatVoiceSendFailed => '음성 메모 전송 실패';
 
   @override
-  String get chatSentFile => 'Sent a file';
+  String get chatSentFile => '파일을 보냈습니다';
 
   @override
-  String get chatSentVoice => 'Sent a voice message';
+  String get chatSentVoice => '음성 메시지를 보냈습니다';
 
   @override
-  String get chatDeliverySent => 'Sent';
+  String get chatDeliverySent => '보냄';
 
   @override
-  String get chatDeliveryDelivered => 'Delivered';
+  String get chatDeliveryDelivered => '전달됨';
 
   @override
-  String get chatDeliveryFailed => 'Not delivered';
+  String get chatDeliveryFailed => '전달 실패';
 
   @override
   String get chatMicDenied => '마이크 권한이 거부됨';
@@ -2277,35 +2479,34 @@ class AppLocalizationsKo extends AppLocalizations {
   String get chainsStartModeRoleHint => '각 단계는 역할(PM, 프로그래머 등)을 우선합니다.';
 
   @override
-  String get chainsStartTeamStrategy => 'Team strategy';
+  String get chainsStartTeamStrategy => '팀 전략';
 
   @override
-  String get chainsStartTeamStrategyHint =>
-      'How workers are ranked. Hedged / verify-only are policy labels — a second worker runs on the wire only when immediate-dual gates pass (critical step, budget, independent workers).';
+  String get chainsStartTeamStrategyHint => '이 작업의 워커 선택 방식.';
 
   @override
-  String get chainsStrategyBalanced => 'Balanced';
+  String get chainsStrategyBalanced => '균형';
 
   @override
-  String get chainsStrategyFastest => 'Fastest';
+  String get chainsStrategyFastest => '가장 빠름';
 
   @override
-  String get chainsStrategyCheapest => 'Cheapest';
+  String get chainsStrategyCheapest => '가장 저렴';
 
   @override
-  String get chainsStrategyHighestConfidence => 'Highest confidence';
+  String get chainsStrategyHighestConfidence => '최고 신뢰도';
 
   @override
-  String get chainsStrategyPrivacyLocal => 'Privacy (local)';
+  String get chainsStrategyPrivacyLocal => '개인정보 보호(로컬)';
 
   @override
-  String get chainsStrategyDiverseModel => 'Diverse models';
+  String get chainsStrategyDiverseModel => '모델 다양성';
 
   @override
-  String get chainsStartAvailLease => 'Lease';
+  String get chainsStartAvailLease => '리스 준비됨';
 
   @override
-  String get chainsStartAvailLegacy => 'Legacy';
+  String get chainsStartAvailLegacy => '레거시 준비됨';
 
   @override
   String chainsStartReliabilityPct(int pct) {
@@ -2413,20 +2614,19 @@ class AppLocalizationsKo extends AppLocalizations {
       '도달 가능한 Agent Network 워커가 없습니다. 먼저 홈 노드의 에이전트와 연락처를 본드하세요.';
 
   @override
-  String get chainsTestNetworkTitle => 'Test Agent Network';
+  String get chainsTestNetworkTitle => '에이전트 네트워크 테스트';
 
   @override
-  String get chainsTestNetworkHint =>
-      'Simulation — no work sent, no model spend, no reputation changes. Dry-plan ranks for real; failover and recovery are label-only previews.';
+  String get chainsTestNetworkHint => '이 노드의 에이전트 네트워크 경로에 대한 짧은 랩 테스트.';
 
   @override
-  String get chainsTestNetworkRun => 'Check readiness';
+  String get chainsTestNetworkRun => '테스트 실행';
 
   @override
-  String get chainsTestNetworkRunning => 'Checking…';
+  String get chainsTestNetworkRunning => '테스트 실행 중…';
 
   @override
-  String get chainsTestNetworkFailed => 'Could not run diagnostics';
+  String get chainsTestNetworkFailed => '네트워크 테스트 실패.';
 
   @override
   String get chainsSpeculationReviewTitle => '결과가 일치하지 않음';
@@ -2717,16 +2917,15 @@ class AppLocalizationsKo extends AppLocalizations {
   String get chainsDetailPublished => '이 작업이 완료되어 보고서를 게시했습니다.';
 
   @override
-  String get chainsDetailRecovering =>
-      'Recovering after restart — confirming worker progress';
+  String get chainsDetailRecovering => '복구 중';
 
   @override
   String chainsAttemptCount(int count) {
-    return '$count attempt(s)';
+    return '시도: $count';
   }
 
   @override
-  String get chainsExecutionDetails => 'Execution details';
+  String get chainsExecutionDetails => '실행 세부정보';
 
   @override
   String chainsProvenanceSummaryLine(
@@ -2734,22 +2933,22 @@ class AppLocalizationsKo extends AppLocalizations {
     String worker,
     String state,
   ) {
-    return '$attempts attempt(s) · $worker · $state';
+    return '$attempts회 · $worker · $state';
   }
 
   @override
   String chainsLastReason(String reason) {
-    return 'Last reason: $reason';
+    return '최근 이유: $reason';
   }
 
   @override
-  String get chainsTechnicalDetails => 'Technical details';
+  String get chainsTechnicalDetails => '기술 세부정보';
 
   @override
-  String get chainsProvenanceEmpty => 'No journal events for this step yet.';
+  String get chainsProvenanceEmpty => '출처 데이터가 없습니다.';
 
   @override
-  String get chainsProvenanceFailed => 'Could not load execution history.';
+  String get chainsProvenanceFailed => '출처를 불러오지 못했습니다.';
 
   @override
   String get chainsRebalanceHeading => '예산 추가';
@@ -3485,7 +3684,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get chainsStatusPublished => '게시됨';
 
   @override
-  String get chainsStatusRecovering => 'Recovering';
+  String get chainsStatusRecovering => '복구 중…';
 
   @override
   String get chainsStatusSynthesizing => '종합 중';

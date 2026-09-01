@@ -13,8 +13,9 @@ import '../chat/chat_list_screen.dart';
 import '../content/content_blog_tab.dart';
 import '../content/content_feed_tab.dart';
 import '../inbox/inbox_screen.dart';
+import '../market/market_screen.dart';
 
-/// Owner Social tab — Chats | Feeds | Blog | Explore (+ Inbox in AppBar).
+/// Owner Social tab — Chats | Feed | Blog | Market | Explore (+ Inbox in AppBar).
 class SocialScreen extends ConsumerStatefulWidget {
   const SocialScreen({super.key});
 
@@ -29,7 +30,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 4, vsync: this);
+    _tabs = TabController(length: 5, vsync: this);
     _tabs.addListener(_onTabChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -86,6 +87,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
     final homeTab = ref.watch(chatProvider.select((s) => s.selectedTab));
     final viewingSocial = homeTab == OwnerTabs.social;
     final surface = _tabs.index;
+    final preferShop = ref.watch(marketPreferShopProvider);
 
     ref.listen(contentEngageProvider, (prev, next) {
       if (ref.read(chatProvider).selectedTab != OwnerTabs.social) return;
@@ -175,17 +177,23 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
             Tab(text: l10n.navChats),
             tabLabel(l10n.contentFeed, feedBadge),
             tabLabel(l10n.contentBlog, blogBadge),
+            Tab(text: l10n.marketTitle),
             Tab(text: l10n.contentExplore),
           ],
         ),
       ),
       body: TabBarView(
         controller: _tabs,
-        children: const [
-          ChatListScreen(),
-          ContentFeedTab(),
-          ContentBlogTab(),
-          BrowserScreen(embedded: true),
+        children: [
+          const ChatListScreen(),
+          const ContentFeedTab(),
+          const ContentBlogTab(),
+          MarketScreen(
+            key: ValueKey('market-${preferShop ? 'shop' : 'browse'}'),
+            embedded: true,
+            initialPane: preferShop ? MarketPane.shop : MarketPane.browse,
+          ),
+          const BrowserScreen(embedded: true),
         ],
       ),
     );

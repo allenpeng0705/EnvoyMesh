@@ -136,6 +136,7 @@ export async function handleChatMessageViaRuntime(
       ...(payload.attachments?.length
         ? { attachments: chatWireAttachmentsToContent(payload.attachments) }
         : {}),
+      ...(payload.listingId ? { listingId: payload.listingId } : {}),
     },
     // Clamp sender clock to local receive time so AI/auto replies (local clock)
     // cannot sort above the inbound message they answer.

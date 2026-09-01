@@ -40,6 +40,10 @@ import {
 } from "./lib/content-knowledge-nav.js";
 import { OPEN_ENVOY_AI_EVENT } from "./lib/open-envoy-ai-nav.js";
 import { OPEN_TERMINAL_EVENT } from "./lib/open-terminal-nav.js";
+import {
+  OPEN_CHAT_PEER_EVENT,
+  type OpenChatPeerDetail,
+} from "./lib/open-chat-nav.js";
 import { hasPendingBrowserOpen } from "./lib/browser-nav.js";
 import {
   isFirstRunSetupComplete,
@@ -546,6 +550,19 @@ export function App() {
     };
     window.addEventListener(OPEN_TERMINAL_EVENT, goTerminal);
     return () => window.removeEventListener(OPEN_TERMINAL_EVENT, goTerminal);
+  }, []);
+
+  useEffect(() => {
+    const goChatPeer = (ev: Event) => {
+      const detail = (ev as CustomEvent<OpenChatPeerDetail>).detail;
+      const ownerId = detail?.ownerId?.trim();
+      if (!ownerId) return;
+      setCurrentView("social");
+      setSocialTab("chats");
+      setChatSelectedContact(ownerId);
+    };
+    window.addEventListener(OPEN_CHAT_PEER_EVENT, goChatPeer);
+    return () => window.removeEventListener(OPEN_CHAT_PEER_EVENT, goChatPeer);
   }, []);
 
   const navigateGuide = (dest: GuideDestination) => {

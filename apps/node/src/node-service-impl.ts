@@ -346,6 +346,9 @@ import {
   createSessionTokenStore,
   createFamilyProfileStore,
   createFamilyRoomStore,
+  createShopStore,
+  createMarketCacheStore,
+  createMarketSearchHistoryStore,
   createDeviceAuthorizationStore,
   createAgentCardStore,
   createContactOwnerKeyStore,
@@ -376,6 +379,9 @@ import {
   type SessionTokenStore,
   type FamilyProfileStore,
   type FamilyRoomStore,
+  type ShopStore,
+  type MarketCacheStore,
+  type MarketSearchHistoryStore,
   type DeviceAuthorizationStore,
   buildMorningReportDigest,
   createPeerProfileCacheStore,
@@ -398,6 +404,14 @@ import {
   generateFamilyInviteTokenViaRuntime,
   toFamilyProfile,
 } from "./node-service-family.js";
+import {
+  shopGetProfileViaRuntime,
+  shopUpdateProfileViaRuntime,
+  shopListListingsViaRuntime,
+  shopUpsertListingViaRuntime,
+  shopSetListingStatusViaRuntime,
+  shopDeleteListingViaRuntime,
+} from "./node-service-shop.js";
 import {
   getRpcCaller,
   requireOwnerProfile,
@@ -1861,6 +1875,12 @@ class NodeServiceImpl implements NodeService {
   private readonly _familyProfileStore: FamilyProfileStore | null;
   /** Phase 51D — local family group rooms (never mesh-synced). */
   private readonly _familyRoomStore: FamilyRoomStore | null;
+  /** Phase 63A — local Envoy Market shop (listings on this home node). */
+  private readonly _shopStore: ShopStore | null;
+  /** Phase 63B — peer MarketCache from market.announce. */
+  private readonly _marketCacheStore: MarketCacheStore | null;
+  /** Phase 63D — Browse search history (local only). */
+  private readonly _marketSearchHistoryStore: MarketSearchHistoryStore | null;
   private _familyOwnerMigrated = false;
   /** Phase 51 — FIFO of profileIds awaiting async Ext Agent replies. */
   private _pendingBridgeReplyProfiles: string[] = [];
@@ -2388,6 +2408,14 @@ class NodeServiceImpl implements NodeService {
       profileDir && profileDir !== "/tmp/unknown" ? createFamilyProfileStore(profileDir) : null;
     this._familyRoomStore =
       profileDir && profileDir !== "/tmp/unknown" ? createFamilyRoomStore(profileDir) : null;
+    this._shopStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createShopStore(profileDir) : null;
+    this._marketCacheStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createMarketCacheStore(profileDir) : null;
+    this._marketSearchHistoryStore =
+      profileDir && profileDir !== "/tmp/unknown"
+        ? createMarketSearchHistoryStore(profileDir)
+        : null;
     this._deviceAuthorizationStore =
       profileDir && profileDir !== "/tmp/unknown" ? createDeviceAuthorizationStore(profileDir) : null;
     bindDeviceAuthorizationStore(this._deviceAuthorizationStore);
@@ -3931,8 +3959,19 @@ class NodeServiceImpl implements NodeService {
   }
 
 
-  async sendChat(targetOwnerId: string, text: string, attachments?: SendChatParams["attachments"]): Promise<SendChatResult> {
-    return sendChatViaRuntime(this._outboundMessagingContext(), targetOwnerId, text, attachments);
+  async sendChat(
+    targetOwnerId: string,
+    text: string,
+    attachments?: SendChatParams["attachments"],
+    listingId?: string,
+  ): Promise<SendChatResult> {
+    return sendChatViaRuntime(
+      this._outboundMessagingContext(),
+      targetOwnerId,
+      text,
+      attachments,
+      listingId,
+    );
   }
 
   async sendAgentChat(targetOwnerId: string, text: string): Promise<SendChatResult> {
@@ -13515,6 +13554,605 @@ class NodeServiceImpl implements NodeService {
     return listFamilyProfilesViaRuntime(this._familyProfileStore);
   }
 
+  private _shopOwnerContext(): { ownerId: string; displayNameHint?: string } {
+    const ownerId = this._profile?.owner?.ownerId?.trim() ?? "";
+    return { ownerId };
+  }
+
+  async shopGetProfile(): Promise<import("@envoymesh/api").ShopGetProfileResult> {
+    const { ownerId, displayNameHint } = this._shopOwnerContext();
+    return shopGetProfileViaRuntime(this._shopStore, ownerId, displayNameHint);
+  }
+
+  async shopUpdateProfile(
+    params: import("@envoymesh/api").ShopUpdateProfileParams,
+  ): Promise<import("@envoymesh/api").ShopUpdateProfileResult> {
+    const { ownerId, displayNameHint } = this._shopOwnerContext();
+    return shopUpdateProfileViaRuntime(this._shopStore, ownerId, params, displayNameHint);
+  }
+
+  async shopListListings(
+    params?: import("@envoymesh/api").ShopListListingsParams,
+  ): Promise<import("@envoymesh/api").ShopListListingsResult> {
+    return shopListListingsViaRuntime(this._shopStore, params);
+  }
+
+  async shopUpsertListing(
+    params: import("@envoymesh/api").ShopUpsertListingParams,
+  ): Promise<import("@envoymesh/api").ShopUpsertListingResult> {
+    const { ownerId, displayNameHint } = this._shopOwnerContext();
+    const result = await shopUpsertListingViaRuntime(
+      this._shopStore,
+      ownerId,
+      params,
+      displayNameHint,
+    );
+    let thumbnailRef: string | undefined;
+    if (
+      ownerId &&
+      this._profileDir &&
+      this._profileDir !== "/tmp/unknown" &&
+      result.listing.mediaPaths?.length
+    ) {
+      try {
+        const { mirrorShopListingThumb } = await import("./shop-listing-thumb.js");
+        const mirrored = await mirrorShopListingThumb({
+          profileDir: this._profileDir,
+          listing: result.listing,
+          publish: (p) => this.publishWebContentEntry(p),
+        });
+        thumbnailRef = mirrored?.thumbnailRef;
+      } catch (err) {
+        console.warn(
+          "[market.thumb] upsert mirror failed:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+    void this._fanOutMarketAnnounce(result.listing, "upsert", thumbnailRef).catch((err) =>
+      console.warn(
+        "[market.announce] fan-out failed:",
+        err instanceof Error ? err.message : err,
+      ),
+    );
+    this._refreshMarketShopAdvertise();
+    return result;
+  }
+
+  async shopSetListingStatus(
+    params: import("@envoymesh/api").ShopSetListingStatusParams,
+  ): Promise<import("@envoymesh/api").ShopSetListingStatusResult> {
+    const { ownerId } = this._shopOwnerContext();
+    const result = await shopSetListingStatusViaRuntime(this._shopStore, ownerId, params);
+    // MKT-F: sold fans out as upsert(status=sold) so peer caches keep Sold.
+    // Only withdrawn (and delete) use action=withdraw.
+    const action = result.listing.status === "withdrawn" ? "withdraw" : "upsert";
+    void this._fanOutMarketAnnounce(result.listing, action).catch((err) =>
+      console.warn(
+        "[market.announce] status fan-out failed:",
+        err instanceof Error ? err.message : err,
+      ),
+    );
+    if (this._taskStore) {
+      await this._taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "tool.called",
+          protocol: "shop.set_listing_status",
+          outcome: "record",
+          summary: `listing ${result.listing.listingId} → ${result.listing.status}`,
+        }),
+      );
+    }
+    this._refreshMarketShopAdvertise();
+    return result;
+  }
+
+  async shopDeleteListing(
+    params: import("@envoymesh/api").ShopDeleteListingParams,
+  ): Promise<import("@envoymesh/api").ShopDeleteListingResult> {
+    const { ownerId } = this._shopOwnerContext();
+    const existing = this._shopStore
+      ? await this._shopStore.getListing(params.listingId)
+      : null;
+    const result = await shopDeleteListingViaRuntime(this._shopStore, ownerId, params);
+    if (existing) {
+      if (this._profileDir && this._profileDir !== "/tmp/unknown") {
+        const { unmirrorShopListingThumb } = await import("./shop-listing-thumb.js");
+        await unmirrorShopListingThumb(this._profileDir, existing.listingId);
+      }
+      void this._fanOutMarketAnnounce(
+        {
+          ...existing,
+          status: "withdrawn",
+          updatedAt: new Date().toISOString(),
+        } as import("@envoymesh/api").ShopListing,
+        "withdraw",
+      ).catch((err) =>
+        console.warn(
+          "[market.announce] delete fan-out failed:",
+          err instanceof Error ? err.message : err,
+        ),
+      );
+    }
+    this._refreshMarketShopAdvertise();
+    return result;
+  }
+
+  async shopDraftListing(
+    params?: import("@envoymesh/api").ShopDraftListingParams,
+  ): Promise<import("@envoymesh/api").ShopDraftListingResult> {
+    const { ownerId } = this._shopOwnerContext();
+    if (!ownerId) return { ok: false, reason: "Owner identity is not ready" };
+    const profile = this._shopStore ? await this._shopStore.getProfile() : null;
+    const { buildShopListingDraft } = await import("./shop-draft.js");
+    const draft = buildShopListingDraft({
+      notes: params?.notes,
+      photoFileName: params?.photoFileName,
+      defaultVisibility: profile?.defaultVisibility ?? "public",
+    });
+    if (this._taskStore) {
+      await this._taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "tool.called",
+          protocol: "shop.draft_listing",
+          outcome: "record",
+          summary: `shop draft listing title=${draft.title.slice(0, 60)}`,
+        }),
+      );
+    }
+    return { ok: true, draft };
+  }
+
+  async shopSaveListingMedia(
+    params: import("@envoymesh/api").ShopSaveListingMediaParams,
+  ): Promise<import("@envoymesh/api").ShopSaveListingMediaResult> {
+    requireOwnerProfile("save shop listing media");
+    if (!this._profileDir || this._profileDir === "/tmp/unknown") {
+      throw new Error("Profile directory is not ready");
+    }
+    const { saveShopListingMedia } = await import("./shop-listing-media.js");
+    return saveShopListingMedia(this._profileDir, params);
+  }
+
+  async shopGetListingMedia(
+    params: import("@envoymesh/api").ShopGetListingMediaParams,
+  ): Promise<import("@envoymesh/api").ShopGetListingMediaResult> {
+    requireOwnerProfile("read shop listing media");
+    const listingId = params.listingId?.trim();
+    if (!listingId) return { ok: false, reason: "listingId is required" };
+    const { ownerId } = this._shopOwnerContext();
+    if (!ownerId || !this._shopStore) return { ok: false, reason: "Shop is not ready" };
+    if (!this._profileDir || this._profileDir === "/tmp/unknown") {
+      return { ok: false, reason: "Profile directory is not ready" };
+    }
+    const listing = await this._shopStore.getListing(listingId);
+    if (!listing || listing.sellerOwnerId !== ownerId) {
+      return { ok: false, reason: "Listing not found" };
+    }
+    const mediaPath = (params.mediaPath?.trim() || listing.mediaPaths[0] || "").trim();
+    if (!mediaPath) return { ok: false, reason: "No media on this listing" };
+    if (!listing.mediaPaths.includes(mediaPath)) {
+      return { ok: false, reason: "Media path not on this listing" };
+    }
+    const { readShopListingMediaFile } = await import("./shop-listing-media.js");
+    const file = await readShopListingMediaFile(this._profileDir, mediaPath);
+    if (!file) return { ok: false, reason: "Media file missing" };
+    return {
+      ok: true,
+      mediaPath,
+      contentBase64: file.contentBase64,
+      mimeType: file.mimeType,
+    };
+  }
+
+  async marketSuggestSellerReply(
+    params: import("@envoymesh/api").MarketSuggestSellerReplyParams,
+  ): Promise<import("@envoymesh/api").MarketSuggestSellerReplyResult> {
+    const listingId = params.listingId?.trim();
+    const buyerMessage = params.buyerMessage?.trim();
+    if (!listingId) return { ok: false, reason: "listingId is required" };
+    if (!buyerMessage) return { ok: false, reason: "buyerMessage is required" };
+    const { ownerId } = this._shopOwnerContext();
+    if (!ownerId || !this._shopStore) return { ok: false, reason: "Shop is not ready" };
+    const listing = await this._shopStore.getListing(listingId);
+    if (!listing || listing.sellerOwnerId !== ownerId) {
+      return { ok: false, reason: "Listing not found" };
+    }
+    const { buildSellerFaqReply } = await import("./shop-draft.js");
+    const reply = buildSellerFaqReply({
+      listingTitle: listing.title,
+      listingDescription: listing.description,
+      priceAmount: listing.price.amount,
+      priceCurrency: listing.price.currency,
+      status: listing.status,
+      buyerMessage,
+    });
+    if (this._taskStore) {
+      await this._taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "tool.called",
+          protocol: "market.suggest_seller_reply",
+          outcome: "record",
+          summary: `seller reply suggestion for listing=${listingId}`,
+        }),
+      );
+    }
+    return { ok: true, reply, listingId, title: listing.title };
+  }
+
+  async marketSearch(
+    params?: import("@envoymesh/api").MarketSearchParams,
+  ): Promise<import("@envoymesh/api").MarketSearchResult> {
+    if (!this._marketCacheStore) return { cards: [] };
+    const query = params?.query?.trim() ?? "";
+    const category = params?.category;
+    const listFilter = {
+      query: query || undefined,
+      category,
+      minPrice: params?.minPrice,
+      maxPrice: params?.maxPrice,
+      currency: params?.currency,
+      limit: params?.limit,
+    };
+    const fanout = this._fanOutMarketSearch(query, params?.limit, category).catch((err) =>
+      console.warn(
+        "[market.search] fan-out failed:",
+        err instanceof Error ? err.message : err,
+      ),
+    );
+    const cached = await this._marketCacheStore.list(listFilter);
+    // Cache hit (e.g. prior announce): return immediately; still refresh via mesh.
+    if (cached.length > 0) {
+      void fanout;
+    } else {
+      // Cold / stranger path: wait for parallel fan-out (bounded) then a short settle.
+      await Promise.race([fanout, new Promise((r) => setTimeout(r, 6_000))]);
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    const blocked = await this._blockedSellerOwnerIds();
+    let cards = await this._marketCacheStore.list({
+      ...listFilter,
+      limit: params?.limit ? params.limit + blocked.size : undefined,
+    });
+    cards = cards.filter((c) => !blocked.has(c.sellerOwnerId));
+    if (params?.limit != null) cards = cards.slice(0, params.limit);
+    if (query && cards.length > 0 && this._marketSearchHistoryStore) {
+      void this._marketSearchHistoryStore.record(query).catch(() => {});
+    }
+    const { rankMarketCards } = await import("@envoymesh/api");
+    const bondLevelByOwner = new Map<string, string>();
+    try {
+      for (const b of await this.getBonds()) {
+        bondLevelByOwner.set(b.peerOwnerId, b.level);
+      }
+    } catch {
+      /* ignore */
+    }
+    cards = rankMarketCards(cards, { bondLevelByOwner });
+    return {
+      cards: cards.map((c) => ({
+        listingId: c.listingId,
+        sellerOwnerId: c.sellerOwnerId,
+        shopDisplayName: c.shopDisplayName,
+        title: c.title,
+        description: c.description,
+        category: c.category,
+        tags: c.tags,
+        status: c.status,
+        visibility: c.visibility,
+        price: c.price,
+        geoHint: c.geoHint,
+        updatedAt: c.updatedAt,
+        shareUri: `envoy://shop?ownerId=${encodeURIComponent(c.sellerOwnerId)}&listingId=${encodeURIComponent(c.listingId)}`,
+        thumbnailRef: c.thumbnailRef,
+        thumbnailContentBase64: c.thumbnailContentBase64,
+        thumbnailMimeType: c.thumbnailMimeType,
+      })),
+    };
+  }
+
+  async marketBrowseSuggestions(): Promise<
+    import("@envoymesh/api").MarketBrowseSuggestionsResult
+  > {
+    const chips: import("@envoymesh/api").MarketBrowseSuggestionChip[] = [
+      { id: "books", query: "books", source: "builtin" },
+      { id: "electronics", query: "electronics", source: "builtin" },
+      { id: "clothing", query: "clothing", source: "builtin" },
+      { id: "home", query: "home", source: "builtin" },
+      { id: "digital", query: "digital", source: "builtin" },
+    ];
+    const seen = new Set(chips.map((c) => c.query.toLowerCase()));
+    try {
+      const hp = await this._humanProfileStore.loadHumanProfile();
+      for (const interest of [...(hp?.hobbies ?? []), ...(hp?.knowledge ?? [])]) {
+        const q = interest?.trim().toLowerCase();
+        if (!q || q.length < 2 || seen.has(q)) continue;
+        seen.add(q);
+        chips.push({ id: `interest:${q}`, query: q, source: "interest" });
+        if (chips.length >= 12) break;
+      }
+    } catch {
+      /* ignore */
+    }
+    if (this._marketSearchHistoryStore) {
+      try {
+        const history = await this._marketSearchHistoryStore.list(8);
+        for (const h of history) {
+          const q = h.query.trim().toLowerCase();
+          if (!q || seen.has(q)) continue;
+          seen.add(q);
+          chips.unshift({ id: `history:${q}`, query: h.query.trim(), source: "history" });
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    const capped = chips.slice(0, 12);
+    const historyFirst = capped.find((c) => c.source === "history");
+    const interestFirst = capped.find((c) => c.source === "interest");
+    const dayIndex = Math.floor(Date.now() / 86_400_000) % 5;
+    const rotating = ["books", "electronics", "home", "clothing", "digital"][dayIndex]!;
+    const defaultQuery =
+      historyFirst?.query ?? interestFirst?.query ?? rotating;
+    return { chips: capped, defaultQuery };
+  }
+
+  async marketClearSearchHistory(): Promise<{ ok: true }> {
+    requireOwnerProfile("clear market search history");
+    if (this._marketSearchHistoryStore) {
+      await this._marketSearchHistoryStore.clear();
+    }
+    if (this._taskStore) {
+      await this._taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "tool.called",
+          protocol: "market.clear_search_history",
+          outcome: "record",
+          summary: "cleared market browse search history",
+        }),
+      );
+    }
+    return { ok: true };
+  }
+
+  async marketReportSeller(
+    params: import("@envoymesh/api").MarketReportSellerParams,
+  ): Promise<void> {
+    const sellerOwnerId = params.sellerOwnerId?.trim();
+    if (!sellerOwnerId) throw new Error("sellerOwnerId is required");
+    if (this._taskStore) {
+      await this._taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "p2p.trace",
+          protocol: "market.report",
+          outcome: "record",
+          summary: `market report seller=${sellerOwnerId} listing=${params.listingId?.trim() || "-"} reason=${(params.reason ?? "").slice(0, 120) || "-"}`,
+          remotePeerId: sellerOwnerId,
+        }),
+      );
+    }
+    await this.blockPeer(sellerOwnerId);
+  }
+
+  async marketShareListing(
+    params: import("@envoymesh/api").MarketShareListingParams,
+  ): Promise<import("@envoymesh/api").MarketShareListingResult> {
+    const listingId = params.listingId?.trim();
+    if (!listingId) throw new Error("listingId is required");
+    const { ownerId } = this._shopOwnerContext();
+    if (!ownerId) throw new Error("Owner identity is not ready");
+    const listing = this._shopStore ? await this._shopStore.getListing(listingId) : null;
+    if (!listing || listing.sellerOwnerId !== ownerId) {
+      throw new Error(`Listing not found: ${listingId}`);
+    }
+    return {
+      listingId,
+      sellerOwnerId: ownerId,
+      shareUri: `envoy://shop?ownerId=${encodeURIComponent(ownerId)}&listingId=${encodeURIComponent(listingId)}`,
+    };
+  }
+
+  /** Used by mesh inbound for market.announce / search.result. */
+  getMarketCacheStore(): MarketCacheStore | null {
+    return this._marketCacheStore;
+  }
+
+  getShopStore(): import("@envoymesh/local-store").ShopStore | null {
+    return this._shopStore;
+  }
+
+  private async _hasPublicMarketShop(): Promise<boolean> {
+    if (!this._shopStore) return false;
+    const listings = await this._shopStore.listListings();
+    return listings.some(
+      (l) =>
+        l.visibility === "public" &&
+        (l.status === "active" || l.status === "reserved"),
+    );
+  }
+
+  private _refreshMarketShopAdvertise(): void {
+    void this.runCapabilityDiscovery({ find: false }).catch((err) =>
+      console.warn(
+        "[market:shop] advertise refresh failed:",
+        err instanceof Error ? err.message : err,
+      ),
+    );
+  }
+
+  private async _blockedSellerOwnerIds(): Promise<Set<string>> {
+    const blocked = new Set<string>();
+    try {
+      const records = await this._trustStore.listTrustRecords();
+      for (const r of records) {
+        if (r.level === "blocked") blocked.add(r.peerOwnerId);
+      }
+    } catch {
+      /* ignore */
+    }
+    return blocked;
+  }
+
+  private async _fanOutMarketSearch(
+    query: string,
+    limit?: number,
+    category?: import("@envoymesh/api").ShopListingCategory,
+  ): Promise<void> {
+    const mesh = this._reachableMesh();
+    const profile = this._profile;
+    if (!mesh || !profile) return;
+
+    const { sendMarketSearchToPeers } = await import("./market-search-outbound.js");
+    const { MARKET_SHOP_DHT_TOPIC } = await import("./capability-discovery.js");
+    const targets: Array<{ peerId: string; listenAddrs?: string[] }> = [];
+    const seen = new Set<string>();
+
+    const add = (peerId?: string, listenAddrs?: string[]) => {
+      const id = peerId?.trim();
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      targets.push({ peerId: id, listenAddrs });
+    };
+
+    for (const peerId of mesh.getConnectedPeerIds?.() ?? []) add(peerId);
+
+    const bonds = await this.getBonds();
+    for (const b of bonds) {
+      if (b.level !== "direct" && b.level !== "referred") continue;
+      const resolved = await this._resolveLibp2pPeerForBondOwner(b.peerOwnerId);
+      if (resolved) add(resolved.transportPeerId, resolved.listenAddrs);
+    }
+
+    if (this._peerDirectoryStore) {
+      const records = await this._peerDirectoryStore.listPeerRecords();
+      for (const r of records.slice(0, 40)) {
+        if (r.peerId) add(r.peerId, r.listenAddrs);
+      }
+    }
+
+    // Phase 63C — DHT / relay rendezvous for public shops.
+    try {
+      const dhtHits = await this.searchPeers({
+        topic: MARKET_SHOP_DHT_TOPIC,
+        maxResults: 16,
+      });
+      for (const hit of dhtHits) {
+        const peerId = hit.nodeId?.trim();
+        if (!peerId) continue;
+        const ownerId = hit.ownerId?.trim();
+        // Seed directory so search.result can resolve sellerOwnerId (anti-spoof).
+        if (
+          ownerId &&
+          ownerId.startsWith("envoy:owner:") &&
+          this._peerDirectoryStore
+        ) {
+          await this._peerDirectoryStore.ensurePeerFromInboundChat({
+            ownerId,
+            peerId,
+            listenAddrs: [],
+          });
+        }
+        const record = this._peerDirectoryStore
+          ? (await this._peerDirectoryStore.listPeerRecords()).find((r) => r.peerId === peerId)
+          : undefined;
+        add(peerId, record?.listenAddrs);
+      }
+    } catch (err) {
+      console.warn(
+        "[market.search] DHT market:shop lookup failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+
+    await sendMarketSearchToPeers({
+      mesh,
+      profile,
+      query,
+      category,
+      limit: limit ?? 10,
+      targets,
+      dialHintsFor: (peerId, listenAddrs) => this._dialHintsForChat(peerId, listenAddrs),
+      tagReachability: (peerId) => {
+        void this._tagBondedContactReachability(peerId);
+      },
+      maxPeers: 24,
+      concurrency: 6,
+      onResult: async (reply, remotePeerId) => {
+        if (!this._marketCacheStore) return;
+        const { handleInboundMarketSearchResult } = await import("./market-search-inbound.js");
+        await handleInboundMarketSearchResult({
+          envelope: reply,
+          marketCache: this._marketCacheStore,
+          remotePeerId,
+          trustStore: this._trustStore,
+          peerDirectoryStore: this._peerDirectoryStore,
+          taskStore: this._taskStore ?? undefined,
+          localOwnerId: this._profile?.owner?.ownerId,
+        });
+      },
+    });
+  }
+
+  private async _fanOutMarketAnnounce(
+    listing: import("@envoymesh/api").ShopListing,
+    action: "upsert" | "withdraw",
+    thumbnailRef?: string,
+  ): Promise<void> {
+    const mesh = this._reachableMesh();
+    const profile = this._profile;
+    if (!mesh || !profile || !this._shopStore) return;
+
+    // MKT-B: announce active/reserved (and withdrawals) to bonds. Public fanout to
+    // strangers is MKT-C; bonds-only listings still go to bonded peers.
+    const profileRec = await this._shopStore.getProfile();
+    const { sendMarketAnnounceToBonds } = await import("./market-announce-outbound.js");
+    const { loadInlineListingThumbnail } = await import("./shop-listing-media.js");
+    const thumb =
+      this._profileDir && this._profileDir !== "/tmp/unknown"
+        ? await loadInlineListingThumbnail(this._profileDir, listing.mediaPaths)
+        : undefined;
+    // Prefer explicit public envoy:// thumb; else deterministic path if media exists.
+    const ownerId = listing.sellerOwnerId;
+    let resolvedThumbRef = thumbnailRef?.trim() || undefined;
+    if (!resolvedThumbRef && listing.mediaPaths?.length && ownerId) {
+      const { marketListingThumbStablePath } = await import("./web-content-author.js");
+      resolvedThumbRef = `envoy://${ownerId}/${marketListingThumbStablePath(listing.listingId, "jpg")}`;
+    }
+    const bonds = await this.getBonds();
+    await sendMarketAnnounceToBonds({
+      mesh,
+      profile,
+      action,
+      card: {
+        listingId: listing.listingId,
+        sellerOwnerId: listing.sellerOwnerId,
+        shopDisplayName: profileRec?.displayName,
+        title: listing.title,
+        description: listing.description || undefined,
+        category: listing.category,
+        tags: listing.tags,
+        status: listing.status,
+        visibility: listing.visibility,
+        price: listing.price,
+        geoHint: listing.geoHint,
+        searchTokens: listing.searchTokens,
+        updatedAt: listing.updatedAt,
+        ...(resolvedThumbRef ? { thumbnailRef: resolvedThumbRef } : {}),
+        ...(thumb ?? {}),
+      },
+      bonds: bonds.map((b) => ({ peerOwnerId: b.peerOwnerId, level: b.level })),
+      resolveLibp2pPeer: async (bondOwnerId) => {
+        const resolved = await this._resolveLibp2pPeerForBondOwner(bondOwnerId);
+        if (!resolved) return undefined;
+        return { peerId: resolved.transportPeerId, listenAddrs: resolved.listenAddrs };
+      },
+      dialHintsFor: (peerId, listenAddrs) => this._dialHintsForChat(peerId, listenAddrs),
+      tagReachability: (peerId) => {
+        void this._tagBondedContactReachability(peerId);
+      },
+    });
+  }
+
   async createFamilyProfile(
     params: import("@envoymesh/api").CreateFamilyProfileParams,
   ): Promise<import("@envoymesh/api").CreateFamilyProfileResult> {
@@ -15046,6 +15684,7 @@ class NodeServiceImpl implements NodeService {
       },
       recordFriendAutopilotPass: (input) => this._recordFriendAutopilotPass(input),
       listLibraryItems: (query) => this.listLibraryItems(query ? { query } : undefined),
+      marketSearch: (params) => this.marketSearch(params),
       readLibraryItemContent: (params) => this.readLibraryItemContent(params),
       listOpenClawWorkspaceFiles: (query) => this.listOpenClawWorkspaceFiles(query ? { query } : undefined),
       readOpenClawWorkspaceFile: (params) => this.readOpenClawWorkspaceFile(params),

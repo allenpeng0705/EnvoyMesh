@@ -35,6 +35,8 @@
   "meUnpair": "ペア解除",
   "meBrowser": "ブラウザ",
   "meBrowserHint": "envoy:// ページを開く — またはコンテンツのマイサイト",
+  "meMyShop": "マイショップ",
+  "meMyShopHint": "ホームノードの出品を表示（編集は当面 Social）",
   "meAiEngine": "AI エンジン",
   "meAiEngineHint": "ブリッジ + OpenClaw。タップして設定。",
   "meRecentTeamJobs": "最近のチームジョブ",
@@ -85,6 +87,42 @@
   "contentFeed": "フィード",
   "contentBlog": "ブログ",
   "contentExplore": "探索",
+  "marketTitle": "マーケット",
+  "marketPaneBrowse": "見る",
+  "marketPaneShop": "マイショップ",
+  "marketChipDigital": "デジタル",
+  "marketInquireSent": "送信しました。チャットを開きます…",
+  "marketInquireDefault": "こんにちは。「{title}」に興味があります。まだありますか？",
+  "marketShareCopied": "共有リンクをコピーしました。",
+  "marketShareLink": "リンクをコピー",
+  "marketSellerLabel": "出品者",
+  "marketMessageSeller": "出品者にメッセージ",
+  "marketChipHome": "家庭",
+  "marketChipClothing": "衣類",
+  "marketChipElectronics": "電子機器",
+  "marketChipBooks": "本",
+  "marketSearchNoResults": "「{query}」に一致する出品はありません。",
+  "@marketSearchNoResults": {
+    "placeholders": {
+      "query": { "type": "String" }
+    }
+  },
+  "marketSearchIdleHint": "キーワードを入力するか、下の候補をタップ。",
+  "marketSearchSubmit": "検索",
+  "marketSearchPlaceholder": "本・電子機器・タグを検索…",
+  "marketBrowseEmptyTitle": "まだ他の人の出品はありません",
+  "marketBrowseEmptyDesc": "ボンドした友達が出品するとここに表示されます。",
+  "marketNotConnected": "ホーム未接続 — ペアリング後にショップを表示できます。",
+  "marketNoListings": "まだ出品がありません。「写真から追加」をタップするか、Social で編集してください。",
+  "marketUntitled": "無題の出品",
+  "marketVisibilityPublicShort": "公開",
+  "marketVisibilityBondsShort": "ボンドのみ",
+  "marketStatusActive": "販売中",
+  "marketStatusReserved": "取置中",
+  "marketStatusSold": "売却済み",
+  "marketStatusWithdrawn": "取り下げ",
+  "marketTagsLabel": "タグ",
+  "marketEditOnSocialHint": "出品の作成・編集は当面ホームノードの Social マーケットタブで行ってください。",
   "contentPeople": "ピープル",
   "contentMyFiles": "マイファイル",
   "contentNewPost": "新しい投稿",
@@ -1209,5 +1247,100 @@
   "settingsEhAutoRunSaved": "Envoy Harness 自動実行を更新しました",
   "settingsEhActiveBadge": "使用中",
   "settingsUseForCodingChat": "コーディングチャットに使用",
-  "settingsUseForCodingChatHint": "非推奨 — コーディングチャットは常に Envoy Harness を使用します。"
+  "settingsUseForCodingChatHint": "非推奨 — コーディングチャットは常に Envoy Harness を使用します。",
+  "marketClearHistory": "履歴を消去",
+  "marketHistoryCleared": "検索履歴を消去しました。",
+  "marketCaptureAddFromPhoto": "写真から追加",
+  "marketCaptureCamera": "写真を撮る",
+  "marketCaptureGallery": "ギャラリーから選ぶ",
+  "marketCaptureNotesTitle": "商品を説明する",
+  "marketCaptureNotesHint": "1行目にタイトル、続けて詳細…",
+  "marketCaptureContinue": "続ける",
+  "marketCaptureReviewTitle": "出品を確認",
+  "marketCaptureTitleLabel": "タイトル",
+  "marketCaptureDescriptionLabel": "説明",
+  "marketCapturePriceLabel": "価格",
+  "marketCaptureCurrencyLabel": "通貨",
+  "marketCaptureVisibilityLabel": "誰が見つけられるか",
+  "marketCapturePublish": "公開",
+  "marketCapturePublished": "ホームノードに出品を公開しました。",
+  "marketCaptureTitleRequired": "公開前にタイトルを入力してください。",
+  "marketSellerSuggestedReply": "出品からの返信案",
+  "marketMarkReserved": "取置にする",
+  "marketMarkSold": "売却済みにする",
+  "marketMarkAvailable": "販売中に戻す",
+  "marketRelist": "再出品",
+  "marketStatusUpdated": "出品ステータスを更新しました。",
+  "marketPaymentHint": "支払いは EnvoyMesh の外で売り手と合意してください — Envoy はお金を預かりません。",
+  "marketBlockSeller": "ブロック",
+  "marketReportSeller": "通報",
+  "marketConfirmBlock": "この売り手をブロックしますか？出品は閲覧から非表示になります。",
+  "marketConfirmReport": "この売り手を通報してブロックしますか？記録はあなたのノードにのみ残ります（中央審査はまだありません）。",
+  "marketFilterCategory": "カテゴリ",
+  "marketFilterAnyCategory": "すべてのカテゴリ",
+  "marketFilterMinPrice": "最低価格",
+  "marketFilterMaxPrice": "最高価格",
+  "marketFilterCurrency": "通貨",
+  "knowledgeSetupEmbeddingHint": "ボルト検索用の埋め込み。モデルがなくてもキーワード検索は使えます。",
+  "knowledgeBrowseImportAndPublish": "インポートして公開",
+  "knowledgeBrowsePublishImportOnly": "インポートのみ公開",
+  "knowledgeBrowsePublishImportNoDoc": "インポート済み — ドキュメント ID がないため公開をスキップしました。",
+  "knowledgeBrowseImportedAndPublished": "インポートして公開しました。",
+  "knowledgeBrowsePublishImportHint": "インポート後、連絡先向けに公開できます。",
+  "chatSentFile": "ファイルを送信しました",
+  "chatSentVoice": "音声メッセージを送信しました",
+  "chatDeliverySent": "送信済み",
+  "chatDeliveryDelivered": "配信済み",
+  "chatDeliveryFailed": "未配信",
+  "chainsStartTeamStrategy": "チーム戦略",
+  "chainsStartTeamStrategyHint": "このタスクのワーカー選定方法。",
+  "chainsStrategyBalanced": "バランス",
+  "chainsStrategyFastest": "最速",
+  "chainsStrategyCheapest": "最安",
+  "chainsStrategyHighestConfidence": "最高信頼度",
+  "chainsStrategyPrivacyLocal": "プライバシー（ローカル）",
+  "chainsStrategyDiverseModel": "モデル多様性",
+  "chainsStartAvailLease": "リース準備完了",
+  "chainsStartAvailLegacy": "レガシー準備完了",
+  "chainsTestNetworkTitle": "エージェントネットをテスト",
+  "chainsTestNetworkHint": "このノード上のエージェントネット経路の短いラボテスト。",
+  "chainsTestNetworkRun": "テスト開始",
+  "chainsTestNetworkRunning": "テスト実行中…",
+  "chainsTestNetworkFailed": "ネットワークテストに失敗しました。",
+  "chainsDetailRecovering": "復旧中",
+  "chainsAttemptCount": "試行回数: {count}",
+  "@chainsAttemptCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chainsExecutionDetails": "実行の詳細",
+  "chainsProvenanceSummaryLine": "{attempts} 回 · {worker} · {state}",
+  "@chainsProvenanceSummaryLine": {
+    "placeholders": {
+      "attempts": {
+        "type": "int"
+      },
+      "worker": {
+        "type": "String"
+      },
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "chainsLastReason": "直近の理由: {reason}",
+  "@chainsLastReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "chainsTechnicalDetails": "技術詳細",
+  "chainsProvenanceEmpty": "由来データがありません。",
+  "chainsProvenanceFailed": "由来を読み込めませんでした。",
+  "chainsStatusRecovering": "復旧中…"
 }

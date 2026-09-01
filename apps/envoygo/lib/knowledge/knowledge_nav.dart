@@ -11,7 +11,7 @@ enum KnowledgeHubPanel { browse, plugins, setup }
 final knowledgeHubPanelRequestProvider =
     StateProvider<KnowledgeHubPanel?>((ref) => null);
 
-/// Requested Social surface index (0 Chats, 1 Feeds, 2 Blog, 3 Explore).
+/// Requested Social surface index (0 Chats, 1 Feeds, 2 Blog, 3 Market, 4 Explore).
 final contentSurfaceRequestProvider = StateProvider<int?>((ref) => null);
 
 /// Contact peer filter for Social → Feed / Blog card tabs (from Chat shortcuts).
@@ -34,6 +34,21 @@ void openSocialExplore(WidgetRef ref) {
     peerOwnerId: null,
   );
 }
+
+/// Jump to Social → Market (Browse by default, or My Shop).
+void openSocialMarket(WidgetRef ref, {bool myShop = false}) {
+  openSocialContent(
+    ref,
+    surface: SocialSurfaces.market,
+    peerOwnerId: null,
+  );
+  if (myShop) {
+    ref.read(marketPreferShopProvider.notifier).state = true;
+  }
+}
+
+/// When true, next Market tab open prefers My Shop (consumed once).
+final marketPreferShopProvider = StateProvider<bool>((ref) => false);
 
 /// Jump to Social → Feed / Blog / Explore. Optional [peerOwnerId] filters card tabs.
 void openSocialContent(

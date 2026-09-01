@@ -86,6 +86,7 @@ export * from "./ipfs-pinning.js";
 export * from "./wan-join-invite.js";
 export * from "./company-invite.js";
 export * from "./family-profile.js";
+export * from "./shop.js";
 export * from "./kiosk-status.js";
 export * from "./fleet-manifest.js";
 export * from "./fleet-bootstrap.js";

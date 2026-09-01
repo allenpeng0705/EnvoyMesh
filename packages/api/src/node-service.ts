@@ -132,6 +132,33 @@ import type {
   SendFamilyRoomMessageResult,
   FamilyProfile,
 } from "./family-profile.js";
+import type {
+  ShopGetProfileResult,
+  ShopUpdateProfileParams,
+  ShopUpdateProfileResult,
+  ShopListListingsParams,
+  ShopListListingsResult,
+  ShopUpsertListingParams,
+  ShopUpsertListingResult,
+  ShopSetListingStatusParams,
+  ShopSetListingStatusResult,
+  ShopDeleteListingParams,
+  ShopDeleteListingResult,
+  MarketSearchParams,
+  MarketSearchResult,
+  MarketBrowseSuggestionsResult,
+  MarketReportSellerParams,
+  MarketShareListingParams,
+  MarketShareListingResult,
+  ShopDraftListingParams,
+  ShopDraftListingResult,
+  ShopSaveListingMediaParams,
+  ShopSaveListingMediaResult,
+  ShopGetListingMediaParams,
+  ShopGetListingMediaResult,
+  MarketSuggestSellerReplyParams,
+  MarketSuggestSellerReplyResult,
+} from "./shop.js";
 export type {
   FamilyProfile,
   CreateFamilyProfileParams,
@@ -152,6 +179,33 @@ export type {
   SendFamilyRoomMessageParams,
   SendFamilyRoomMessageResult,
 } from "./family-profile.js";
+export type {
+  ShopGetProfileResult,
+  ShopUpdateProfileParams,
+  ShopUpdateProfileResult,
+  ShopListListingsParams,
+  ShopListListingsResult,
+  ShopUpsertListingParams,
+  ShopUpsertListingResult,
+  ShopSetListingStatusParams,
+  ShopSetListingStatusResult,
+  ShopDeleteListingParams,
+  ShopDeleteListingResult,
+  MarketSearchParams,
+  MarketSearchResult,
+  MarketBrowseSuggestionsResult,
+  MarketReportSellerParams,
+  MarketShareListingParams,
+  MarketShareListingResult,
+  ShopDraftListingParams,
+  ShopDraftListingResult,
+  ShopSaveListingMediaParams,
+  ShopSaveListingMediaResult,
+  ShopGetListingMediaParams,
+  ShopGetListingMediaResult,
+  MarketSuggestSellerReplyParams,
+  MarketSuggestSellerReplyResult,
+} from "./shop.js";
 import type {
   BridgeStatus,
   OpenClawStatus,
@@ -387,6 +441,8 @@ export interface ChatMessage {
   content: {
     text: string;
     attachments?: ChatAttachment[];
+    /** Phase 63B — listing-scoped inquire (Envoy Market). */
+    listingId?: string;
   };
   metadata: {
     timestamp: string;
@@ -2110,7 +2166,12 @@ export interface NodeService {
   /**
    * Send a chat message to a bonded peer
    */
-  sendChat(targetOwnerId: string, text: string, attachments?: SendChatParams["attachments"]): Promise<SendChatResult>;
+  sendChat(
+    targetOwnerId: string,
+    text: string,
+    attachments?: SendChatParams["attachments"],
+    listingId?: string,
+  ): Promise<SendChatResult>;
 
   /**
    * Send AI/agent chat with honest wire role (`senderRole=agent` + `agentCredential`).
@@ -3300,6 +3361,53 @@ export interface NodeService {
   sendFamilyRoomMessage(
     params: SendFamilyRoomMessageParams,
   ): Promise<SendFamilyRoomMessageResult>;
+
+  /**
+   * Phase 63A — Envoy Market local shop (home node only; no mesh publish yet).
+   */
+  shopGetProfile(): Promise<ShopGetProfileResult>;
+  shopUpdateProfile(params: ShopUpdateProfileParams): Promise<ShopUpdateProfileResult>;
+  shopListListings(params?: ShopListListingsParams): Promise<ShopListListingsResult>;
+  shopUpsertListing(params: ShopUpsertListingParams): Promise<ShopUpsertListingResult>;
+  shopSetListingStatus(
+    params: ShopSetListingStatusParams,
+  ): Promise<ShopSetListingStatusResult>;
+  shopDeleteListing(params: ShopDeleteListingParams): Promise<ShopDeleteListingResult>;
+
+  /** Phase 63E — draft listing fields from notes / photo filename. */
+  shopDraftListing(params?: ShopDraftListingParams): Promise<ShopDraftListingResult>;
+
+  /** Phase 63E — save camera/gallery bytes under shop-media/. */
+  shopSaveListingMedia(
+    params: ShopSaveListingMediaParams,
+  ): Promise<ShopSaveListingMediaResult>;
+
+  /** Phase 63 polish — owner preview of listing photo under shop-media/. */
+  shopGetListingMedia(
+    params: ShopGetListingMediaParams,
+  ): Promise<ShopGetListingMediaResult>;
+
+  /**
+   * Phase 63B — search peer MarketCache (bonded announces + stranger search). Empty query = recent cards.
+   */
+  marketSearch(params?: MarketSearchParams): Promise<MarketSearchResult>;
+
+  /** Phase 63D — Browse chips + default fill (§7.6). */
+  marketBrowseSuggestions(): Promise<MarketBrowseSuggestionsResult>;
+
+  /** Clear local Market Browse search history. */
+  marketClearSearchHistory(): Promise<{ ok: true }>;
+
+  /** Phase 63C — report seller (audit + local block). */
+  marketReportSeller(params: MarketReportSellerParams): Promise<void>;
+
+  /** Phase 63E — seller FAQ-style reply suggestion for a listing-scoped chat. */
+  marketSuggestSellerReply(
+    params: MarketSuggestSellerReplyParams,
+  ): Promise<MarketSuggestSellerReplyResult>;
+
+  /** Phase 63B — share URI for a local listing (`envoy://shop?...`). */
+  marketShareListing(params: MarketShareListingParams): Promise<MarketShareListingResult>;
 
   /**
    * Phase 35D — re-sync the pairing-kiosk HTTP server with the latest

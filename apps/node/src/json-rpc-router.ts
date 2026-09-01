@@ -127,6 +127,17 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "convertLibraryItemToMarkdown",
   // Phase 60 provenance can expose worker/model/transport and artifact lineage.
   "chainGetStepProvenance",
+  "shopUpdateProfile",
+  "shopUpsertListing",
+  "shopSetListingStatus",
+  "shopDeleteListing",
+  "marketBrowseSuggestions",
+  "marketClearSearchHistory",
+  "shopDraftListing",
+  "shopSaveListingMedia",
+  "shopGetListingMedia",
+  "marketReportSeller",
+  "marketSuggestSellerReply",
 ]);
 
 const CODING_DENIED_MSG =
@@ -283,7 +294,12 @@ export async function routeRpcMethod(
     case "declineSocialIntroProposal":
       return ns.declineSocialIntroProposal(params.messageId as string);
     case "sendChat":
-      return ns.sendChat(params.targetOwnerId as string, params.text as string, params.attachments as SendChatParams["attachments"]);
+      return ns.sendChat(
+        params.targetOwnerId as string,
+        params.text as string,
+        params.attachments as SendChatParams["attachments"],
+        typeof params.listingId === "string" ? params.listingId : undefined,
+      );
     // Phase 38/42 — Voice/Video Calls
     case "sendCallInvite":
       return ns.sendCallInvite(
@@ -1053,6 +1069,99 @@ export async function routeRpcMethod(
       });
     case "listFamilyProfiles":
       return ns.listFamilyProfiles();
+    case "shopGetProfile":
+      return ns.shopGetProfile();
+    case "shopUpdateProfile":
+      return ns.shopUpdateProfile({
+        displayName: params.displayName as string | undefined,
+        bio: params.bio as string | undefined,
+        tags: Array.isArray(params.tags)
+          ? params.tags.map((t) => String(t))
+          : undefined,
+        geoHint: params.geoHint as string | null | undefined,
+        defaultVisibility: params.defaultVisibility as "public" | "bonds" | undefined,
+      });
+    case "shopListListings":
+      return ns.shopListListings({
+        status: params.status as
+          | "active"
+          | "reserved"
+          | "sold"
+          | "withdrawn"
+          | undefined,
+      });
+    case "shopUpsertListing":
+      return ns.shopUpsertListing({
+        listingId: params.listingId as string | undefined,
+        title: String(params.title ?? ""),
+        description: params.description as string | undefined,
+        category: params.category as import("@envoymesh/api").ShopListingCategory | undefined,
+        tags: Array.isArray(params.tags)
+          ? params.tags.map((t) => String(t))
+          : undefined,
+        condition: params.condition as import("@envoymesh/api").ShopListingCondition | undefined,
+        status: params.status as import("@envoymesh/api").ShopListingStatus | undefined,
+        visibility: params.visibility as "public" | "bonds" | undefined,
+        priceAmount: String(params.priceAmount ?? ""),
+        priceCurrency: params.priceCurrency as string | undefined,
+        geoHint: params.geoHint as string | null | undefined,
+        mediaPaths: Array.isArray(params.mediaPaths)
+          ? params.mediaPaths.map((p) => String(p))
+          : undefined,
+      });
+    case "shopSetListingStatus":
+      return ns.shopSetListingStatus({
+        listingId: String(params.listingId ?? ""),
+        status: params.status as import("@envoymesh/api").ShopListingStatus,
+      });
+    case "shopDeleteListing":
+      return ns.shopDeleteListing({
+        listingId: String(params.listingId ?? ""),
+      });
+    case "shopDraftListing":
+      return ns.shopDraftListing({
+        notes: params.notes as string | undefined,
+        photoFileName: params.photoFileName as string | undefined,
+      });
+    case "shopSaveListingMedia":
+      return ns.shopSaveListingMedia({
+        filename: String(params.filename ?? "photo.jpg"),
+        contentBase64: String(params.contentBase64 ?? ""),
+        mimeType: params.mimeType as string | undefined,
+      });
+    case "shopGetListingMedia":
+      return ns.shopGetListingMedia({
+        listingId: String(params.listingId ?? ""),
+        mediaPath: params.mediaPath as string | undefined,
+      });
+    case "marketSearch":
+      return ns.marketSearch({
+        query: params.query as string | undefined,
+        limit: typeof params.limit === "number" ? params.limit : undefined,
+        category: params.category as import("@envoymesh/api").ShopListingCategory | undefined,
+        minPrice: params.minPrice as string | undefined,
+        maxPrice: params.maxPrice as string | undefined,
+        currency: params.currency as string | undefined,
+      });
+    case "marketBrowseSuggestions":
+      return ns.marketBrowseSuggestions();
+    case "marketClearSearchHistory":
+      return ns.marketClearSearchHistory();
+    case "marketReportSeller":
+      return ns.marketReportSeller({
+        sellerOwnerId: String(params.sellerOwnerId ?? ""),
+        listingId: params.listingId as string | undefined,
+        reason: params.reason as string | undefined,
+      });
+    case "marketSuggestSellerReply":
+      return ns.marketSuggestSellerReply({
+        listingId: String(params.listingId ?? ""),
+        buyerMessage: String(params.buyerMessage ?? ""),
+      });
+    case "marketShareListing":
+      return ns.marketShareListing({
+        listingId: String(params.listingId ?? ""),
+      });
     case "createFamilyProfile":
       return ns.createFamilyProfile({
         name: String(params.name ?? ""),

@@ -234,6 +234,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             getProfileDir: () => host._profileDir,
             mergeAdvertisedDiscoveryTopics: (topics) =>
               host._mergeAdvertisedDiscoveryTopics(topics),
+            hasPublicMarketShop: () => host._hasPublicMarketShop(),
           },
       agentSetup: {
             saveConfig: (config) => host._configStore.save(config),

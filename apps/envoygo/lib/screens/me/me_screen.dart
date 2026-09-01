@@ -577,6 +577,16 @@ class _MeScreenState extends ConsumerState<MeScreen> {
           const SizedBox(height: 8),
           Card(
             child: ListTile(
+              leading: const Icon(Icons.storefront_outlined),
+              title: Text(l10n.meMyShop),
+              subtitle: Text(l10n.meMyShopHint),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => openSocialMarket(ref, myShop: true),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: ListTile(
               leading: const Icon(Icons.folder_open),
               title: const Text('Home files'),
               subtitle: const Text('Browse and preview files on your home computer'),

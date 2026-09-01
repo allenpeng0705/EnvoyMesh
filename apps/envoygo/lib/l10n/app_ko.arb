@@ -35,6 +35,8 @@
   "meUnpair": "페어링 해제",
   "meBrowser": "브라우저",
   "meBrowserHint": "envoy:// 페이지 열기 — 또는 콘텐츠 탭에서 내 사이트",
+  "meMyShop": "내 상점",
+  "meMyShopHint": "홈 노드의 상품 보기 (편집은 당분간 Social)",
   "meAiEngine": "AI 엔진",
   "meAiEngineHint": "브리지 + OpenClaw 설정. 탭하여 구성.",
   "meRecentTeamJobs": "최근 팀 작업",
@@ -85,6 +87,42 @@
   "contentFeed": "피드",
   "contentBlog": "블로그",
   "contentExplore": "탐색",
+  "marketTitle": "마켓",
+  "marketPaneBrowse": "둘러보기",
+  "marketPaneShop": "내 상점",
+  "marketChipDigital": "디지털",
+  "marketInquireSent": "메시지를 보냈습니다. 채팅을 엽니다…",
+  "marketInquireDefault": "안녕하세요. “{title}”에 관심이 있어요. 아직 있나요?",
+  "marketShareCopied": "공유 링크를 복사했습니다.",
+  "marketShareLink": "링크 복사",
+  "marketSellerLabel": "판매자",
+  "marketMessageSeller": "판매자에게 메시지",
+  "marketChipHome": "생활",
+  "marketChipClothing": "의류",
+  "marketChipElectronics": "전자제품",
+  "marketChipBooks": "도서",
+  "marketSearchNoResults": "“{query}”와 일치하는 상품이 없습니다.",
+  "@marketSearchNoResults": {
+    "placeholders": {
+      "query": { "type": "String" }
+    }
+  },
+  "marketSearchIdleHint": "키워드를 입력하거나 아래 제안을 누르세요.",
+  "marketSearchSubmit": "검색",
+  "marketSearchPlaceholder": "도서, 전자제품, 태그 검색…",
+  "marketBrowseEmptyTitle": "아직 다른 사람의 상품이 없습니다",
+  "marketBrowseEmptyDesc": "본드된 친구가 게시하면 여기에 표시됩니다.",
+  "marketNotConnected": "홈에 연결되지 않음 — 페어링 후 상점을 볼 수 있습니다.",
+  "marketNoListings": "아직 상품이 없습니다. 「사진에서 추가」를 누르거나 Social에서 편집하세요.",
+  "marketUntitled": "제목 없는 상품",
+  "marketVisibilityPublicShort": "공개",
+  "marketVisibilityBondsShort": "본드만",
+  "marketStatusActive": "판매 중",
+  "marketStatusReserved": "예약됨",
+  "marketStatusSold": "판매됨",
+  "marketStatusWithdrawn": "철회됨",
+  "marketTagsLabel": "태그",
+  "marketEditOnSocialHint": "상품 생성·편집은 당분간 홈 노드 Social 마켓 탭에서 하세요.",
   "contentPeople": "사람들",
   "contentMyFiles": "내 파일",
   "contentNewPost": "새 게시물",
@@ -1209,5 +1247,100 @@
   "settingsEhAutoRunSaved": "Envoy Harness 자동 실행이 업데이트되었습니다",
   "settingsEhActiveBadge": "활성",
   "settingsUseForCodingChat": "코딩 채팅에 사용",
-  "settingsUseForCodingChatHint": "사용 중단 — 코딩 채팅은 항상 Envoy Harness를 사용합니다."
+  "settingsUseForCodingChatHint": "사용 중단 — 코딩 채팅은 항상 Envoy Harness를 사용합니다.",
+  "marketClearHistory": "기록 지우기",
+  "marketHistoryCleared": "검색 기록을 지웠습니다.",
+  "marketCaptureAddFromPhoto": "사진에서 추가",
+  "marketCaptureCamera": "사진 촬영",
+  "marketCaptureGallery": "갤러리에서 선택",
+  "marketCaptureNotesTitle": "상품 설명",
+  "marketCaptureNotesHint": "첫 줄에 제목, 이어서 세부 정보…",
+  "marketCaptureContinue": "계속",
+  "marketCaptureReviewTitle": "상품 검토",
+  "marketCaptureTitleLabel": "제목",
+  "marketCaptureDescriptionLabel": "설명",
+  "marketCapturePriceLabel": "가격",
+  "marketCaptureCurrencyLabel": "통화",
+  "marketCaptureVisibilityLabel": "누가 찾을 수 있나요",
+  "marketCapturePublish": "게시",
+  "marketCapturePublished": "홈 노드에 상품을 게시했습니다.",
+  "marketCaptureTitleRequired": "게시 전에 제목을 추가하세요.",
+  "marketSellerSuggestedReply": "상품 기반 추천 답장",
+  "marketMarkReserved": "예약으로 표시",
+  "marketMarkSold": "판매 완료로 표시",
+  "marketMarkAvailable": "판매 중으로 표시",
+  "marketRelist": "다시 올리기",
+  "marketStatusUpdated": "상품 상태가 업데이트되었습니다.",
+  "marketPaymentHint": "결제는 EnvoyMesh 밖에서 판매자와 합의하세요 — Envoy는 돈을 보관하지 않습니다.",
+  "marketBlockSeller": "차단",
+  "marketReportSeller": "신고",
+  "marketConfirmBlock": "이 판매자를 차단할까요? 상품이 둘러보기에서 숨겨집니다.",
+  "marketConfirmReport": "이 판매자를 신고하고 차단할까요? 기록은 내 노드에만 남습니다(중앙 검토는 아직 없음).",
+  "marketFilterCategory": "카테고리",
+  "marketFilterAnyCategory": "모든 카테고리",
+  "marketFilterMinPrice": "최저가",
+  "marketFilterMaxPrice": "최고가",
+  "marketFilterCurrency": "통화",
+  "knowledgeSetupEmbeddingHint": "볼트 검색용 임베딩. 모델이 없어도 키워드 검색은 사용할 수 있습니다.",
+  "knowledgeBrowseImportAndPublish": "가져오기 및 게시",
+  "knowledgeBrowsePublishImportOnly": "가져온 항목만 게시",
+  "knowledgeBrowsePublishImportNoDoc": "가져옴 — 문서 ID가 없어 게시를 건너뛰었습니다.",
+  "knowledgeBrowseImportedAndPublished": "가져와서 게시했습니다.",
+  "knowledgeBrowsePublishImportHint": "가져온 뒤 연락처에 게시할 수 있습니다.",
+  "chatSentFile": "파일을 보냈습니다",
+  "chatSentVoice": "음성 메시지를 보냈습니다",
+  "chatDeliverySent": "보냄",
+  "chatDeliveryDelivered": "전달됨",
+  "chatDeliveryFailed": "전달 실패",
+  "chainsStartTeamStrategy": "팀 전략",
+  "chainsStartTeamStrategyHint": "이 작업의 워커 선택 방식.",
+  "chainsStrategyBalanced": "균형",
+  "chainsStrategyFastest": "가장 빠름",
+  "chainsStrategyCheapest": "가장 저렴",
+  "chainsStrategyHighestConfidence": "최고 신뢰도",
+  "chainsStrategyPrivacyLocal": "개인정보 보호(로컬)",
+  "chainsStrategyDiverseModel": "모델 다양성",
+  "chainsStartAvailLease": "리스 준비됨",
+  "chainsStartAvailLegacy": "레거시 준비됨",
+  "chainsTestNetworkTitle": "에이전트 네트워크 테스트",
+  "chainsTestNetworkHint": "이 노드의 에이전트 네트워크 경로에 대한 짧은 랩 테스트.",
+  "chainsTestNetworkRun": "테스트 실행",
+  "chainsTestNetworkRunning": "테스트 실행 중…",
+  "chainsTestNetworkFailed": "네트워크 테스트 실패.",
+  "chainsDetailRecovering": "복구 중",
+  "chainsAttemptCount": "시도: {count}",
+  "@chainsAttemptCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chainsExecutionDetails": "실행 세부정보",
+  "chainsProvenanceSummaryLine": "{attempts}회 · {worker} · {state}",
+  "@chainsProvenanceSummaryLine": {
+    "placeholders": {
+      "attempts": {
+        "type": "int"
+      },
+      "worker": {
+        "type": "String"
+      },
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "chainsLastReason": "최근 이유: {reason}",
+  "@chainsLastReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "chainsTechnicalDetails": "기술 세부정보",
+  "chainsProvenanceEmpty": "출처 데이터가 없습니다.",
+  "chainsProvenanceFailed": "출처를 불러오지 못했습니다.",
+  "chainsStatusRecovering": "복구 중…"
 }

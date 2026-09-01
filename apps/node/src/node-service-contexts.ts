@@ -216,6 +216,7 @@ export interface CapabilityDiscoveryContextDeps {
   loadHumanProfile: CapabilityDiscoveryContext["loadHumanProfile"];
   getProfileDir: CapabilityDiscoveryContext["getProfileDir"];
   mergeAdvertisedDiscoveryTopics?: CapabilityDiscoveryContext["mergeAdvertisedDiscoveryTopics"];
+  hasPublicMarketShop?: CapabilityDiscoveryContext["hasPublicMarketShop"];
 }
 
 export interface AgentSetupContextDeps {
@@ -810,6 +811,9 @@ export function buildCapabilityDiscoveryContext(deps: CapabilityDiscoveryContext
     getProfileDir: () => deps.getProfileDir(),
     mergeAdvertisedDiscoveryTopics: deps.mergeAdvertisedDiscoveryTopics
       ? (topics) => deps.mergeAdvertisedDiscoveryTopics!(topics)
+      : undefined,
+    hasPublicMarketShop: deps.hasPublicMarketShop
+      ? () => deps.hasPublicMarketShop!()
       : undefined,
   };
 }

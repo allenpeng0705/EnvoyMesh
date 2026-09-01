@@ -76,6 +76,17 @@ class ChatBubble extends StatelessWidget {
                   color: colorScheme.onSurfaceVariant,
                 ),
               ),
+            if (message.listingId != null && message.listingId!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '${AppLocalizations.of(context).marketTitle} · ${message.listingId}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
             if (audioAtt != null && onLoadAudio != null) ...[
               ChatAudioPlayer(
                 key: ValueKey('${message.id}:${audioAtt.id}'),

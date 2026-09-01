@@ -1,5 +1,6 @@
 import { en } from "./en.js";
-import { mergeMessages } from "../merge-messages.js";
+import { mergeMessages, type DeepPartial } from "../merge-messages.js";
+import type { Messages } from "./en.js";
 import { frAiSettingsMessages } from "./fr-settings-ai.js";
 import { frNetworkSettingsMessages } from "./fr-settings-network.js";
 import { frAgentNetworkSettingsMessages } from "./fr-agent-network.js";
@@ -17,6 +18,7 @@ import {
 import { frTerminalMessages } from "./fr-terminals.js";
 import { frChainsMessages } from "./fr-chains.js";
 import { frEhMessages } from "./fr-eh.js";
+import { frRemainingMessages } from "./fr-remaining.js";
 import {
   frErrorBoundaryMessages,
   frProfileMessages,
@@ -40,7 +42,8 @@ import {
   frEngagementMessages,
 } from "./fr-misc.js";
 
-export const fr = mergeMessages(en, {
+export const fr = mergeMessages(
+  mergeMessages(en, {
   nav: {
     social: "Social",
     socialEngageOne: "Social — {count} nouvelle interaction",
@@ -101,6 +104,7 @@ export const fr = mergeMessages(en, {
     back: "← Retour",
     save: "Enregistrer",
     cancel: "Annuler",
+    edit: "Modifier",
     reset: "Réinitialiser",
     apply: "Appliquer",
     retry: "Réessayer",
@@ -543,7 +547,119 @@ export const fr = mergeMessages(en, {
     tabs: "Social",
     tabChats: "Discussions",
     tabDiscover: "Découvrir",
+    tabMarket: "Marché",
     tabExplore: "Explorer",
+  },
+  market: {
+    title: "Marché",
+    lede: "Parcourez les annonces d’amis, ou gérez votre boutique. Enregistrer met à jour vos liens.",
+    panes: "Marché",
+    paneBrowse: "Parcourir",
+    paneShop: "Ma boutique",
+    chipDigital: "Numérique",
+    chipHome: "Maison",
+    chipClothing: "Vêtements",
+    chipElectronics: "Électronique",
+    chipBooks: "Livres",
+    chipsLabel: "Suggestions",
+    searchIdleHint: "Saisissez un mot-clé, ou touchez une suggestion.",
+    searchNoResults: "Aucune annonce pour « {query} ».",
+    searchSubmit: "Rechercher",
+    searchAria: "Rechercher sur le marché",
+    searchPlaceholder: "Chercher livres, électronique, tags…",
+    browseEmptyDesc: "Les annonces d’amis liés apparaissent ici après publication. Demandez à un contact d’en publier une, ou ouvrez Ma boutique.",
+    messageSeller: "Contacter le vendeur",
+    sellerLabel: "Vendeur",
+    shareLink: "Copier le lien",
+    shareCopied: "Lien de partage copié.",
+    inquireDefault: "Bonjour — intéressé(e) par « {title} ». Est-ce encore disponible ?",
+    inquireSent: "Message envoyé. Ouverture du chat…",
+    listingChip: "Annonce",
+    publishedHint: "Enregistré. Vos contacts liés reçoivent une mise à jour quand ils sont joignables.",
+    browseEmptyTitle: "Aucune annonce d’autres pour l’instant",
+    shopProfile: "Profil de la boutique",
+    shopName: "Nom de la boutique",
+    shopBio: "À propos",
+    defaultVisibility: "Visibilité par défaut des annonces",
+    visibilityPublic: "Public — visible par tout le mesh",
+    visibilityBonds: "Liens seulement — contacts de confiance",
+    visibilityPublicShort: "Public",
+    visibilityBondsShort: "Liens seulement",
+    saveProfile: "Enregistrer la boutique",
+    listings: "Annonces",
+    addListing: "Ajouter une annonce",
+    loading: "Chargement…",
+    editListing: "Modifier l’annonce",
+    newListing: "Nouvelle annonce",
+    fieldTitle: "Titre",
+    fieldDescription: "Description",
+    fieldPrice: "Prix",
+    fieldCurrency: "Devise",
+    fieldCategory: "Catégorie",
+    fieldCondition: "État",
+    fieldStatus: "Statut",
+    fieldVisibility: "Qui peut voir",
+    fieldTags: "Tags (séparés par des virgules)",
+    saveListing: "Enregistrer l’annonce",
+    noListings: "Aucune annonce. Ajoutez-en une pour démarrer.",
+    confirmDelete: "Supprimer cette annonce ?",
+    markSold: "Marquer comme vendu",
+    markReserved: "Marquer comme réservé",
+    markAvailable: "Marquer comme disponible",
+    relist: "Remettre en vente",
+    statusActive: "En vente",
+    statusReserved: "Réservé",
+    statusSold: "Vendu",
+    statusWithdrawn: "Retiré",
+    categoryBooks: "Livres",
+    categoryElectronics: "Électronique",
+    categoryClothing: "Vêtements",
+    categoryHome: "Maison",
+    categoryDigital: "Numérique",
+    categoryOther: "Autre",
+    conditionNew: "Neuf",
+    conditionLikeNew: "Comme neuf",
+    conditionGood: "Bon",
+    conditionFair: "Correct",
+    conditionDigital: "Numérique",
+    paymentHint:
+      "Convenez du paiement avec le vendeur en dehors d’EnvoyMesh — Envoy ne détient pas d’argent.",
+    feedTeaserPosted:
+      "Partagé dans le fil pour vos contacts liés. Ils peuvent ouvrir le lien de l’annonce.",
+    shareToFeed: "Partager dans le fil",
+    filterCategory: "Catégorie",
+    filterAnyCategory: "Toutes les catégories",
+    filterMinPrice: "Prix min.",
+    filterMaxPrice: "Prix max.",
+    filterCurrency: "Devise",
+    applyFilters: "Appliquer les filtres",
+    clearHistory: "Effacer l’historique",
+    historyCleared: "Historique de recherche effacé.",
+    captureFromPhoto: "Ajouter depuis une photo",
+    captureWorking: "Préparation du brouillon…",
+    captureDraftReady:
+      "Brouillon rempli à partir de la photo — vérifiez le prix et les détails, puis enregistrez.",
+    suggestedForYou: "Suggestions pour vous",
+    resultsFor: "Résultats pour « {query} »",
+    blockSeller: "Bloquer",
+    reportSeller: "Signaler",
+    confirmBlock:
+      "Bloquer ce vendeur ? Ses annonces disparaîtront de Parcourir.",
+    confirmReport:
+      "Signaler et bloquer ce vendeur ? Cela reste sur votre nœud (pas encore d’examen central).",
+    blockedSeller: "Vendeur bloqué.",
+    reportedSeller: "Signalé et bloqué.",
+    addBond: "Ajouter comme contact",
+    addBondPrompt: "Voulez-vous rester en contact avec ce vendeur ?",
+    addBondHello:
+      "Bonjour — nous avons parlé d’une annonce. Voulez-vous rester en contact ?",
+    addBondSent: "Demande de contact envoyée.",
+    sellerSuggestedReply: "Réponse suggérée à partir de l’annonce",
+    sellerSuggestedReplyAria: "Réponse vendeur suggérée pour cette annonce",
+    sellerSuggestedReplyUse: "Utiliser",
+    sellerSuggestedReplyDismiss: "Ignorer",
+    sellerSuggestedReplyHint: "Relisez avant d’envoyer — c’est toujours vous qui répondez.",
+    untitled: "Annonce sans titre",
   },
   library: {
     title: "Bibliothèque",
@@ -683,4 +799,6 @@ knowledge: frKnowledgeViewMessages,
   },
   ...{ gazetteer: frGazetteerLocale.gazetteer },
   ...frEhMessages,
-});
+  }),
+  frRemainingMessages as DeepPartial<Messages>,
+);

@@ -1431,6 +1431,7 @@ export async function sendChatViaRuntime(
   targetOwnerId: string,
   text: string,
   attachments?: SendChatParams["attachments"],
+  listingId?: string,
 ): Promise<SendChatResult> {
   ctx.assertOnline();
   ctx.recordOwnerActivity();
@@ -1530,6 +1531,7 @@ export async function sendChatViaRuntime(
           sensitivity: a.sensitivity,
           ...(a.vaultRelativePath ? { vaultRelativePath: a.vaultRelativePath } : {}),
         })),
+        ...(listingId ? { listingId } : {}),
         ...chatMessagePayloadDeviceFields({
           deviceCertificate: selfProfile.deviceCertificate,
           ownerPublicKeyPem: selfProfile.owner.publicKeyPem,
@@ -1568,6 +1570,7 @@ export async function sendChatViaRuntime(
             })),
           }
         : {}),
+      ...(listingId ? { listingId } : {}),
     },
     metadata: {
       timestamp: envelope.createdAt,

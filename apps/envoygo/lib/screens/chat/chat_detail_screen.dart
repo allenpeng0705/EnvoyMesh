@@ -92,6 +92,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   bool _autoSendEnabled = false;
   bool _contactAiPrefsLoaded = false;
   Map<String, dynamic>? _latestChatDraft;
+  /// Phase 63E — seller FAQ suggestion from listing-scoped inbound chat.
+  Map<String, dynamic>? _marketSellerReply;
+  String? _marketSellerReplySourceKey;
   void Function()? _chatDraftUnsub;
   void Function()? _configUpdatedUnsub;
   Future<void> _contactAiWriteChain = Future.value();
@@ -278,6 +281,123 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     _textController.text = text;
     _textController.selection = TextSelection.collapsed(offset: text.length);
     unawaited(_dismissChatDraft());
+  }
+
+  void _maybeLoadMarketSellerReply(List<ChatMessage> messages) {
+    if (_isAgent || _isRoom || _isFamily) return;
+    ChatMessage? inquiry;
+    for (final msg in messages) {
+      if (msg.isOutbound) continue;
+      final lid = msg.listingId?.trim() ?? '';
+      final text = msg.text?.trim() ?? '';
+      if (lid.isNotEmpty && text.isNotEmpty) {
+        inquiry = msg;
+        break;
+      }
+    }
+    if (inquiry == null) {
+      if (_marketSellerReply != null || _marketSellerReplySourceKey != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() {
+            _marketSellerReply = null;
+            _marketSellerReplySourceKey = null;
+          });
+        });
+      }
+      return;
+    }
+    final sourceKey = '${inquiry.id}:${inquiry.listingId}';
+    if (sourceKey == _marketSellerReplySourceKey) return;
+    _marketSellerReplySourceKey = sourceKey;
+    final listingId = inquiry.listingId!.trim();
+    final buyerMessage = inquiry.text!.trim();
+    unawaited(() async {
+      final client = ref.read(nodeServiceProvider);
+      if (client == null) return;
+      try {
+        final result = await client.marketSuggestSellerReply(
+          listingId: listingId,
+          buyerMessage: buyerMessage,
+        );
+        if (!mounted || _marketSellerReplySourceKey != sourceKey) return;
+        if (result['ok'] == true) {
+          setState(() {
+            _marketSellerReply = Map<String, dynamic>.from(result);
+          });
+        } else {
+          setState(() => _marketSellerReply = null);
+        }
+      } catch (_) {
+        if (!mounted || _marketSellerReplySourceKey != sourceKey) return;
+        setState(() => _marketSellerReply = null);
+      }
+    }());
+  }
+
+  void _useMarketSellerReply() {
+    final text = _marketSellerReply?['reply']?.toString().trim() ?? '';
+    if (text.isEmpty) return;
+    _textController.text = text;
+    _textController.selection = TextSelection.collapsed(offset: text.length);
+    setState(() => _marketSellerReply = null);
+  }
+
+  Widget _buildMarketSellerSuggestedReply(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final text = _marketSellerReply?['reply']?.toString().trim() ?? '';
+    if (text.isEmpty) return const SizedBox.shrink();
+    final title = _marketSellerReply?['title']?.toString().trim() ?? '';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: scheme.secondaryContainer.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                title.isEmpty
+                    ? l10n.marketSellerSuggestedReply
+                    : '${l10n.marketSellerSuggestedReply} · $title',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: scheme.onSecondaryContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                text,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSecondaryContainer,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => setState(() => _marketSellerReply = null),
+                    child: Text(l10n.chatSuggestedReplyDismiss),
+                  ),
+                  const SizedBox(width: 4),
+                  FilledButton(
+                    onPressed: _useMarketSellerReply,
+                    child: Text(l10n.chatSuggestedReplyUse),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _loadContactAiPreferences() async {
@@ -1062,6 +1182,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     final l10n = AppLocalizations.of(context);
     final chatState = ref.watch(chatProvider);
     final messages = chatState.messages[widget.threadId] ?? [];
+    _maybeLoadMarketSellerReply(messages);
     final isOwner = ref.watch(nodeProvider).isOwnerProfile;
     final showProjectFolder =
         _isExtAgent && isOwner && extAgentUsesProjectPath(_extAgentActiveId);
@@ -1242,6 +1363,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                       children: [
                         if (_showDraftSuggestions && _latestChatDraft != null)
                           _buildChatDraftSuggestion(context),
+                        if ((!_showDraftSuggestions || _latestChatDraft == null) &&
+                            _marketSellerReply != null)
+                          _buildMarketSellerSuggestedReply(context),
                         if (_isExtAgent)
                           _buildAgentSlashSuggest(
                             catalog: _extAgentCatalog,

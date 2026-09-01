@@ -36,6 +36,205 @@ class AppLocalizationsJa extends AppLocalizations {
   String get contentExplore => '探索';
 
   @override
+  String get marketTitle => 'マーケット';
+
+  @override
+  String get marketPaneBrowse => '見る';
+
+  @override
+  String get marketPaneShop => 'マイショップ';
+
+  @override
+  String get marketBrowseEmptyTitle => 'まだ他の人の出品はありません';
+
+  @override
+  String get marketBrowseEmptyDesc => 'ボンドした友達が出品するとここに表示されます。';
+
+  @override
+  String get marketSearchPlaceholder => '本・電子機器・タグを検索…';
+
+  @override
+  String get marketSearchSubmit => '検索';
+
+  @override
+  String get marketSearchIdleHint => 'キーワードを入力するか、下の候補をタップ。';
+
+  @override
+  String marketSearchNoResults(String query) {
+    return '「$query」に一致する出品はありません。';
+  }
+
+  @override
+  String get marketChipBooks => '本';
+
+  @override
+  String get marketChipElectronics => '電子機器';
+
+  @override
+  String get marketChipClothing => '衣類';
+
+  @override
+  String get marketChipHome => '家庭';
+
+  @override
+  String get marketChipDigital => 'デジタル';
+
+  @override
+  String get marketClearHistory => '履歴を消去';
+
+  @override
+  String get marketHistoryCleared => '検索履歴を消去しました。';
+
+  @override
+  String get marketMessageSeller => '出品者にメッセージ';
+
+  @override
+  String get marketSellerLabel => '出品者';
+
+  @override
+  String get marketShareLink => 'リンクをコピー';
+
+  @override
+  String get marketShareCopied => '共有リンクをコピーしました。';
+
+  @override
+  String marketInquireDefault(String title) {
+    return 'こんにちは。「$title」に興味があります。まだありますか？';
+  }
+
+  @override
+  String get marketInquireSent => '送信しました。チャットを開きます…';
+
+  @override
+  String get marketNotConnected => 'ホーム未接続 — ペアリング後にショップを表示できます。';
+
+  @override
+  String get marketNoListings => 'まだ出品がありません。「写真から追加」をタップするか、Social で編集してください。';
+
+  @override
+  String get marketUntitled => '無題の出品';
+
+  @override
+  String get marketVisibilityPublicShort => '公開';
+
+  @override
+  String get marketVisibilityBondsShort => 'ボンドのみ';
+
+  @override
+  String get marketStatusActive => '販売中';
+
+  @override
+  String get marketStatusReserved => '取置中';
+
+  @override
+  String get marketStatusSold => '売却済み';
+
+  @override
+  String get marketStatusWithdrawn => '取り下げ';
+
+  @override
+  String get marketTagsLabel => 'タグ';
+
+  @override
+  String get marketEditOnSocialHint =>
+      '出品の作成・編集は当面ホームノードの Social マーケットタブで行ってください。';
+
+  @override
+  String get marketCaptureAddFromPhoto => '写真から追加';
+
+  @override
+  String get marketCaptureCamera => '写真を撮る';
+
+  @override
+  String get marketCaptureGallery => 'ギャラリーから選ぶ';
+
+  @override
+  String get marketCaptureNotesTitle => '商品を説明する';
+
+  @override
+  String get marketCaptureNotesHint => '1行目にタイトル、続けて詳細…';
+
+  @override
+  String get marketCaptureContinue => '続ける';
+
+  @override
+  String get marketCaptureReviewTitle => '出品を確認';
+
+  @override
+  String get marketCaptureTitleLabel => 'タイトル';
+
+  @override
+  String get marketCaptureDescriptionLabel => '説明';
+
+  @override
+  String get marketCapturePriceLabel => '価格';
+
+  @override
+  String get marketCaptureCurrencyLabel => '通貨';
+
+  @override
+  String get marketCaptureVisibilityLabel => '誰が見つけられるか';
+
+  @override
+  String get marketCapturePublish => '公開';
+
+  @override
+  String get marketCapturePublished => 'ホームノードに出品を公開しました。';
+
+  @override
+  String get marketCaptureTitleRequired => '公開前にタイトルを入力してください。';
+
+  @override
+  String get marketSellerSuggestedReply => '出品からの返信案';
+
+  @override
+  String get marketMarkReserved => '取置にする';
+
+  @override
+  String get marketMarkSold => '売却済みにする';
+
+  @override
+  String get marketMarkAvailable => '販売中に戻す';
+
+  @override
+  String get marketRelist => '再出品';
+
+  @override
+  String get marketStatusUpdated => '出品ステータスを更新しました。';
+
+  @override
+  String get marketPaymentHint =>
+      '支払いは EnvoyMesh の外で売り手と合意してください — Envoy はお金を預かりません。';
+
+  @override
+  String get marketBlockSeller => 'ブロック';
+
+  @override
+  String get marketReportSeller => '通報';
+
+  @override
+  String get marketConfirmBlock => 'この売り手をブロックしますか？出品は閲覧から非表示になります。';
+
+  @override
+  String get marketConfirmReport =>
+      'この売り手を通報してブロックしますか？記録はあなたのノードにのみ残ります（中央審査はまだありません）。';
+
+  @override
+  String get marketFilterCategory => 'カテゴリ';
+
+  @override
+  String get marketFilterAnyCategory => 'すべてのカテゴリ';
+
+  @override
+  String get marketFilterMinPrice => '最低価格';
+
+  @override
+  String get marketFilterMaxPrice => '最高価格';
+
+  @override
+  String get marketFilterCurrency => '通貨';
+
+  @override
   String get termEmptyHint => 'ホームノードで Pi コーディングセッションまたはシェルターミナルを開始します。';
 
   @override
@@ -136,6 +335,12 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get meBrowserHint => 'envoy:// ページを開く — またはコンテンツのマイサイト';
+
+  @override
+  String get meMyShop => 'マイショップ';
+
+  @override
+  String get meMyShopHint => 'ホームノードの出品を表示（編集は当面 Social）';
 
   @override
   String get meAiEngine => 'AI エンジン';
@@ -580,8 +785,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get knowledgeSetupHint => 'インデックス状態と取得。チャットモデルは「マイ → AIモデル」にあります。';
 
   @override
-  String get knowledgeSetupEmbeddingHint =>
-      'Embeddings use Envoy Local on this device. For OpenAI or Ollama, open Settings → AI on your home computer.';
+  String get knowledgeSetupEmbeddingHint => 'ボルト検索用の埋め込み。モデルがなくてもキーワード検索は使えます。';
 
   @override
   String get knowledgeSetupEnabled => 'ボールトナレッジを有効化';
@@ -683,22 +887,20 @@ class AppLocalizationsJa extends AppLocalizations {
   String get knowledgeFileMakePrivate => '非公開にする';
 
   @override
-  String get knowledgeBrowseImportAndPublish => 'Import and publish';
+  String get knowledgeBrowseImportAndPublish => 'インポートして公開';
 
   @override
-  String get knowledgeBrowsePublishImportOnly =>
-      'Import this note into the vault first, then you can publish it.';
+  String get knowledgeBrowsePublishImportOnly => 'インポートのみ公開';
 
   @override
   String get knowledgeBrowsePublishImportNoDoc =>
-      'Imported, but could not publish yet — try Publish again from the imported note.';
+      'インポート済み — ドキュメント ID がないため公開をスキップしました。';
 
   @override
-  String get knowledgeBrowseImportedAndPublished => 'Imported and published';
+  String get knowledgeBrowseImportedAndPublished => 'インポートして公開しました。';
 
   @override
-  String get knowledgeBrowsePublishImportHint =>
-      'Import into vault and publish for mesh discovery';
+  String get knowledgeBrowsePublishImportHint => 'インポート後、連絡先向けに公開できます。';
 
   @override
   String get knowledgeFileMore => 'その他の操作';
@@ -1324,19 +1526,19 @@ class AppLocalizationsJa extends AppLocalizations {
   String get chatVoiceSendFailed => '音声メモの送信に失敗';
 
   @override
-  String get chatSentFile => 'Sent a file';
+  String get chatSentFile => 'ファイルを送信しました';
 
   @override
-  String get chatSentVoice => 'Sent a voice message';
+  String get chatSentVoice => '音声メッセージを送信しました';
 
   @override
-  String get chatDeliverySent => 'Sent';
+  String get chatDeliverySent => '送信済み';
 
   @override
-  String get chatDeliveryDelivered => 'Delivered';
+  String get chatDeliveryDelivered => '配信済み';
 
   @override
-  String get chatDeliveryFailed => 'Not delivered';
+  String get chatDeliveryFailed => '未配信';
 
   @override
   String get chatMicDenied => 'マイクの権限が拒否されました';
@@ -2280,35 +2482,34 @@ class AppLocalizationsJa extends AppLocalizations {
   String get chainsStartModeRoleHint => '各ステップは役割（PM、プログラマーなど）を優先します。';
 
   @override
-  String get chainsStartTeamStrategy => 'Team strategy';
+  String get chainsStartTeamStrategy => 'チーム戦略';
 
   @override
-  String get chainsStartTeamStrategyHint =>
-      'How workers are ranked. Hedged / verify-only are policy labels — a second worker runs on the wire only when immediate-dual gates pass (critical step, budget, independent workers).';
+  String get chainsStartTeamStrategyHint => 'このタスクのワーカー選定方法。';
 
   @override
-  String get chainsStrategyBalanced => 'Balanced';
+  String get chainsStrategyBalanced => 'バランス';
 
   @override
-  String get chainsStrategyFastest => 'Fastest';
+  String get chainsStrategyFastest => '最速';
 
   @override
-  String get chainsStrategyCheapest => 'Cheapest';
+  String get chainsStrategyCheapest => '最安';
 
   @override
-  String get chainsStrategyHighestConfidence => 'Highest confidence';
+  String get chainsStrategyHighestConfidence => '最高信頼度';
 
   @override
-  String get chainsStrategyPrivacyLocal => 'Privacy (local)';
+  String get chainsStrategyPrivacyLocal => 'プライバシー（ローカル）';
 
   @override
-  String get chainsStrategyDiverseModel => 'Diverse models';
+  String get chainsStrategyDiverseModel => 'モデル多様性';
 
   @override
-  String get chainsStartAvailLease => 'Lease';
+  String get chainsStartAvailLease => 'リース準備完了';
 
   @override
-  String get chainsStartAvailLegacy => 'Legacy';
+  String get chainsStartAvailLegacy => 'レガシー準備完了';
 
   @override
   String chainsStartReliabilityPct(int pct) {
@@ -2416,20 +2617,19 @@ class AppLocalizationsJa extends AppLocalizations {
       '到達可能な Agent Network ワーカーがありません。先にホームノードのエージェントと連絡先をボンドしてください。';
 
   @override
-  String get chainsTestNetworkTitle => 'Test Agent Network';
+  String get chainsTestNetworkTitle => 'エージェントネットをテスト';
 
   @override
-  String get chainsTestNetworkHint =>
-      'Simulation — no work sent, no model spend, no reputation changes. Dry-plan ranks for real; failover and recovery are label-only previews.';
+  String get chainsTestNetworkHint => 'このノード上のエージェントネット経路の短いラボテスト。';
 
   @override
-  String get chainsTestNetworkRun => 'Check readiness';
+  String get chainsTestNetworkRun => 'テスト開始';
 
   @override
-  String get chainsTestNetworkRunning => 'Checking…';
+  String get chainsTestNetworkRunning => 'テスト実行中…';
 
   @override
-  String get chainsTestNetworkFailed => 'Could not run diagnostics';
+  String get chainsTestNetworkFailed => 'ネットワークテストに失敗しました。';
 
   @override
   String get chainsSpeculationReviewTitle => '結果が一致しません';
@@ -2721,16 +2921,15 @@ class AppLocalizationsJa extends AppLocalizations {
   String get chainsDetailPublished => 'このジョブは完了し、レポートを公開しました。';
 
   @override
-  String get chainsDetailRecovering =>
-      'Recovering after restart — confirming worker progress';
+  String get chainsDetailRecovering => '復旧中';
 
   @override
   String chainsAttemptCount(int count) {
-    return '$count attempt(s)';
+    return '試行回数: $count';
   }
 
   @override
-  String get chainsExecutionDetails => 'Execution details';
+  String get chainsExecutionDetails => '実行の詳細';
 
   @override
   String chainsProvenanceSummaryLine(
@@ -2738,22 +2937,22 @@ class AppLocalizationsJa extends AppLocalizations {
     String worker,
     String state,
   ) {
-    return '$attempts attempt(s) · $worker · $state';
+    return '$attempts 回 · $worker · $state';
   }
 
   @override
   String chainsLastReason(String reason) {
-    return 'Last reason: $reason';
+    return '直近の理由: $reason';
   }
 
   @override
-  String get chainsTechnicalDetails => 'Technical details';
+  String get chainsTechnicalDetails => '技術詳細';
 
   @override
-  String get chainsProvenanceEmpty => 'No journal events for this step yet.';
+  String get chainsProvenanceEmpty => '由来データがありません。';
 
   @override
-  String get chainsProvenanceFailed => 'Could not load execution history.';
+  String get chainsProvenanceFailed => '由来を読み込めませんでした。';
 
   @override
   String get chainsRebalanceHeading => '予算を追加';
@@ -3489,7 +3688,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get chainsStatusPublished => '公開済み';
 
   @override
-  String get chainsStatusRecovering => 'Recovering';
+  String get chainsStatusRecovering => '復旧中…';
 
   @override
   String get chainsStatusSynthesizing => '統合中';

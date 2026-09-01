@@ -1,6 +1,6 @@
 /**
- * Social shell — Chats | Feed | Blog | Discover | Explore.
- * Discover = people discovery; Explore = web content browser (former Browse).
+ * Social shell — Chats | Feed | Blog | Discover | Market | Explore.
+ * Discover = people discovery; Market = P2P shop; Explore = web content browser.
  */
 import { useEffect, useRef, useState } from "react";
 import type { ContentEngageSurface } from "@envoymesh/api";
@@ -19,9 +19,10 @@ import { ChatView, type ChatViewProps } from "./ChatView.js";
 import { FeedView } from "./FeedView.js";
 import { BlogView } from "./BlogView.js";
 import { DiscoverView } from "./DiscoverView.js";
+import { MarketView } from "./MarketView.js";
 import { BrowserView } from "./BrowserView.js";
 
-export type SocialTab = "chats" | "feed" | "blog" | "discover" | "explore";
+export type SocialTab = "chats" | "feed" | "blog" | "discover" | "market" | "explore";
 
 function Badge({ count }: { count: number }) {
   if (count <= 0) return null;
@@ -120,6 +121,7 @@ export function SocialView({
     { id: "feed", label: t("content.tabFeed", "Feed") },
     { id: "blog", label: t("content.tabBlog", "Blog") },
     { id: "discover", label: t("social.tabDiscover", "Discover") },
+    { id: "market", label: t("social.tabMarket", "Market") },
     { id: "explore", label: t("social.tabExplore", "Explore") },
   ];
 
@@ -173,6 +175,8 @@ export function SocialView({
           />
         ) : activeTab === "discover" ? (
           <DiscoverView />
+        ) : activeTab === "market" ? (
+          <MarketView />
         ) : (
           <BrowserView initialMode="bazaar" />
         )}

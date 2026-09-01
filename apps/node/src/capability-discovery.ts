@@ -177,6 +177,10 @@ export function normalizeDiscoveryTopicQuery(raw: string): string {
   if (lower.startsWith("capability:") || lower.startsWith("geo:")) {
     return t;
   }
+  // Phase 63C — shop rendezvous (`market:shop`) and future category topics.
+  if (lower.startsWith("market:")) {
+    return lower;
+  }
   return interestTopicFor(t);
 }
 
@@ -198,7 +202,8 @@ export function expandDiscoveryTopicQueries(raw: string): string[] {
     lower.startsWith("publish:") ||
     lower.startsWith("username:") ||
     lower.startsWith("capability:") ||
-    lower.startsWith("geo:");
+    lower.startsWith("geo:") ||
+    lower.startsWith("market:");
   if (!hasKnownPrefix) {
     const slug = slugifyTopic(t);
     if (slug) {
@@ -255,6 +260,18 @@ export const WEB_CONTENT_DHT_TOPIC = "capability:envoymesh.web-content";
 export function withWebContentDiscoveryTopic(topics: readonly string[]): string[] {
   if (topics.includes(WEB_CONTENT_DHT_TOPIC)) return [...topics];
   return [...topics, WEB_CONTENT_DHT_TOPIC];
+}
+
+/**
+ * Phase 63C — DHT / relay rendezvous for nodes with ≥1 active/reserved public listing.
+ * Searchers look up `market:shop` then fan out `market.search`.
+ */
+export const MARKET_SHOP_DHT_TOPIC = "market:shop";
+
+/** Append the market shop DHT topic if not already present. */
+export function withMarketShopDiscoveryTopic(topics: readonly string[]): string[] {
+  if (topics.includes(MARKET_SHOP_DHT_TOPIC)) return [...topics];
+  return [...topics, MARKET_SHOP_DHT_TOPIC];
 }
 
 /** Append publish:<slug> topics (deduped). */

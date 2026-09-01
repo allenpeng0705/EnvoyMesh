@@ -116,6 +116,10 @@ export const EnvoyIntentSchema = z.enum([
   "feed.notify",
   // Feed/Blog star + comments (bonded human↔human).
   "feed.engage",
+  // Phase 63 — Envoy Market: bonds announce (B) + public search (C).
+  "market.announce",
+  "market.search",
+  "market.search.result",
   // MAP — periodic owner-signed capability manifest broadcast (Sprint 3).
   // Payload: SignedCapabilityManifest. agent→agent.
   "adapter.manifest",
@@ -1614,6 +1618,8 @@ export const ChatMessagePayloadSchema = z
     text: z.string().max(128000).default(""),
     /** File / audio attachments (Phase 37). Reuses the same schema as group chat attachments. */
     attachments: z.array(z.lazy(() => ChatRoomAttachmentSchema)).max(8).optional(),
+    /** Phase 63B — listing-scoped commerce thread (Envoy Market inquire). */
+    listingId: z.string().min(1).max(80).optional(),
     /** Owner-signed device certificate when sender is an authorized satellite/primary device. */
     deviceCertificate: DeviceCertificateSchema.optional(),
     /** Owner public key PEM — required when deviceCertificate is present (for cert verification). */
@@ -2565,6 +2571,11 @@ export function createUnsignedEnvelope<TPayload>(
     input.intent === "chat.message" ||
     input.intent === "chat.room.sync" ||
     input.intent === "chat.room.message" ||
+    input.intent === "feed.notify" ||
+    input.intent === "feed.engage" ||
+    input.intent === "market.announce" ||
+    input.intent === "market.search" ||
+    input.intent === "market.search.result" ||
     input.intent.startsWith("call.")
       ? { senderRole: "human" as const, recipientRole: "human" as const }
       : input.intent.startsWith("system.")
@@ -3603,6 +3614,7 @@ export interface CreateChatMessagePayloadInput {
   senderOwnerId: string;
   text?: string;
   attachments?: ChatRoomAttachment[];
+  listingId?: string;
   deviceCertificate?: DeviceCertificate;
   ownerPublicKeyPem?: string;
 }
@@ -3612,6 +3624,7 @@ export function createChatMessagePayload(input: CreateChatMessagePayloadInput): 
     senderOwnerId: input.senderOwnerId,
     text: input.text ?? "",
     attachments: input.attachments,
+    listingId: input.listingId,
     deviceCertificate: input.deviceCertificate,
     ownerPublicKeyPem: input.ownerPublicKeyPem,
   });
@@ -4467,3 +4480,31 @@ export type {
   ChainReconcileAttemptReport,
   TaskChainReconcileResponsePayload,
 } from "./chain-reconcile.js";
+
+export {
+  MarketCardSchema,
+  MarketAnnouncePayloadSchema,
+  MarketSearchPayloadSchema,
+  MarketSearchResultPayloadSchema,
+  MarketListingCategorySchema,
+  MarketListingStatusSchema,
+  MarketListingVisibilitySchema,
+  MarketPriceSchema,
+  parseMarketCard,
+  parseMarketAnnouncePayload,
+  parseMarketSearchPayload,
+  parseMarketSearchResultPayload,
+  createMarketAnnouncePayload,
+  createMarketSearchPayload,
+  createMarketSearchResultPayload,
+} from "./market.js";
+
+export type {
+  MarketCard,
+  MarketAnnouncePayload,
+  MarketSearchPayload,
+  MarketSearchResultPayload,
+  CreateMarketAnnouncePayloadInput,
+  CreateMarketSearchPayloadInput,
+  CreateMarketSearchResultPayloadInput,
+} from "./market.js";

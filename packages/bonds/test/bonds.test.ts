@@ -154,6 +154,61 @@ describe("bonds", () => {
     ).toEqual({ action: "deny", reason: "public peers cannot use this intent" });
   });
 
+  it("allows referred/direct market.announce and denies public strangers", () => {
+    expect(
+      evaluatePolicy({
+        peerId: "peer-a",
+        bondLevel: "referred",
+        intent: "market.announce",
+      }),
+    ).toEqual({ action: "allow", maxSensitivity: "public" });
+    expect(
+      evaluatePolicy({
+        peerId: "peer-a",
+        bondLevel: "direct",
+        intent: "market.announce",
+      }),
+    ).toEqual({ action: "allow", maxSensitivity: "friends" });
+    expect(
+      evaluatePolicy({
+        peerId: "peer-a",
+        bondLevel: "public",
+        intent: "market.announce",
+      }),
+    ).toEqual({ action: "deny", reason: "public peers cannot use this intent" });
+    expect(
+      evaluatePolicy({
+        peerId: "peer-a",
+        bondLevel: "blocked",
+        intent: "market.announce",
+      }),
+    ).toEqual({ action: "deny", reason: "peer is blocked" });
+  });
+
+  it("allows public market.search / result and denies blocked", () => {
+    expect(
+      evaluatePolicy({
+        peerId: "peer-a",
+        bondLevel: "public",
+        intent: "market.search",
+      }),
+    ).toEqual({ action: "allow", maxSensitivity: "public" });
+    expect(
+      evaluatePolicy({
+        peerId: "peer-a",
+        bondLevel: "public",
+        intent: "market.search.result",
+      }),
+    ).toEqual({ action: "allow", maxSensitivity: "public" });
+    expect(
+      evaluatePolicy({
+        peerId: "peer-a",
+        bondLevel: "blocked",
+        intent: "market.search",
+      }),
+    ).toEqual({ action: "deny", reason: "peer is blocked" });
+  });
+
   it("denies blocked peers", () => {
     expect(
       evaluatePolicy({

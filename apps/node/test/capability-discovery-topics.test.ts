@@ -241,6 +241,22 @@ describe("normalizeDiscoveryTopicQuery", () => {
     expect(normalizeDiscoveryTopicQuery("geo:city:US-boston")).toBe(
       "geo:city:US-boston",
     );
+    expect(normalizeDiscoveryTopicQuery("market:shop")).toBe("market:shop");
+    expect(normalizeDiscoveryTopicQuery("Market:Shop")).toBe("market:shop");
+  });
+});
+
+describe("withMarketShopDiscoveryTopic", () => {
+  it("appends market:shop once", async () => {
+    const { MARKET_SHOP_DHT_TOPIC, withMarketShopDiscoveryTopic } = await import(
+      "../src/capability-discovery.js"
+    );
+    expect(MARKET_SHOP_DHT_TOPIC).toBe("market:shop");
+    expect(withMarketShopDiscoveryTopic(["interest:music"])).toEqual([
+      "interest:music",
+      "market:shop",
+    ]);
+    expect(withMarketShopDiscoveryTopic(["market:shop"])).toEqual(["market:shop"]);
   });
 });
 
@@ -260,5 +276,6 @@ describe("expandDiscoveryTopicQueries", () => {
     expect(expandDiscoveryTopicQueries("capability:coding-help")).toEqual([
       "capability:coding-help",
     ]);
+    expect(expandDiscoveryTopicQueries("market:shop")).toEqual(["market:shop"]);
   });
 });

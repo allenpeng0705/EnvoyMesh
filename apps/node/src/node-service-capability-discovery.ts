@@ -19,6 +19,7 @@ import {
   buildProfileDiscoveryTopics,
   buildPublishTopicsFromManifest,
   runCapabilityDiscoveryCycle,
+  withMarketShopDiscoveryTopic,
   withPublishDiscoveryTopics,
   withWebContentDiscoveryTopic,
 } from "./capability-discovery.js";
@@ -57,6 +58,8 @@ export interface CapabilityDiscoveryContext {
   getProfileDir(): string | undefined;
   /** Replace capability/publish topics on relay.checkin advertisements (cross-NAT lookup). */
   mergeAdvertisedDiscoveryTopics?(topics: string[]): void;
+  /** True when local shop has ≥1 active/reserved public listing (advertise `market:shop`). */
+  hasPublicMarketShop?(): Promise<boolean>;
 }
 
 /** Subset of `HumanProfilePayload` consumed by the discovery scheduler. */
@@ -113,6 +116,14 @@ export async function runCapabilityDiscoveryCycleViaRuntime(
     } catch {
       // Non-fatal — capability discovery continues without web topics.
     }
+  }
+  // Phase 63C — advertise market:shop when the owner has public listings for sale.
+  try {
+    if (ctx.hasPublicMarketShop && (await ctx.hasPublicMarketShop())) {
+      finalTopics = withMarketShopDiscoveryTopic(finalTopics);
+    }
+  } catch {
+    // Non-fatal — shop advertise is best-effort.
   }
   await runCapabilityDiscoveryCycle({
     mesh: mesh as never,

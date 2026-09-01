@@ -1544,6 +1544,120 @@ async function handleInboundMeshMessage({
     return;
   }
 
+  if (envelope.intent === "market.announce") {
+    const cache =
+      nodeService instanceof NodeServiceImpl
+        ? nodeService.getMarketCacheStore()
+        : null;
+    if (!cache) {
+      console.warn("[market.announce] market cache unavailable");
+      return;
+    }
+    const { handleInboundMarketAnnounce } = await import("./market-announce-inbound.js");
+    const result = await handleInboundMarketAnnounce({
+      envelope,
+      marketCache: cache,
+      remotePeerId,
+      trustStore,
+      peerDirectoryStore,
+      taskStore,
+      localOwnerId: profile.owner.ownerId,
+    });
+    if (!result.ok && !result.skipped) {
+      console.warn(`[rejected market.announce] ${result.reason}`);
+    }
+    return;
+  }
+
+  if (envelope.intent === "market.search") {
+    if (!(nodeService instanceof NodeServiceImpl)) return;
+    const shopStore = nodeService.getShopStore();
+    const { handleInboundMarketSearch, buildMarketSearchResultPayload } = await import(
+      "./market-search-inbound.js"
+    );
+    const shopProfile = shopStore ? await shopStore.getProfile() : null;
+    const result = await handleInboundMarketSearch({
+      envelope,
+      shopStore,
+      remotePeerId,
+      trustStore,
+      peerDirectoryStore,
+      taskStore,
+      localOwnerId: profile.owner.ownerId,
+      shopDisplayName: shopProfile?.displayName,
+    });
+    if (!result.ok) {
+      if (!result.skipped) console.warn(`[rejected market.search] ${result.reason}`);
+      return;
+    }
+    if (result.cards.length === 0) return;
+
+    const { derivePeerId, signUnsignedEnvelope } = await import("@envoymesh/identity");
+    const { createUnsignedEnvelope } = await import("@envoymesh/protocol");
+    const responsePayload = buildMarketSearchResultPayload({
+      query: result.query,
+      cards: result.cards,
+    });
+    const responseEnvelope = signUnsignedEnvelope(
+      createUnsignedEnvelope({
+        senderPeerId: derivePeerId(profile.device.publicKeyPem),
+        senderPublicKey: profile.device.publicKeyPem,
+        senderRole: "human",
+        recipientPeerId: envelope.senderPeerId,
+        recipientRole: "human",
+        intent: "market.search.result",
+        payload: responsePayload,
+        correlationId: envelope.correlationId ?? envelope.messageId,
+      }),
+      profile.device.privateKeyPem,
+    );
+    try {
+      if (replyWithEnvelope) {
+        await replyWithEnvelope(responseEnvelope);
+      } else if (mesh) {
+        const { sendEnvelopeWithRetry } = await import("./chat-outbound-deliver.js");
+        const dialHints = await dialHintsForTransportPeer(remotePeerId);
+        await sendEnvelopeWithRetry({
+          mesh,
+          transportPeerId: remotePeerId,
+          envelope: responseEnvelope,
+          dialHints,
+        });
+      }
+    } catch (err) {
+      console.warn(
+        "[market.search] reply failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+    return;
+  }
+
+  if (envelope.intent === "market.search.result") {
+    const cache =
+      nodeService instanceof NodeServiceImpl
+        ? nodeService.getMarketCacheStore()
+        : null;
+    if (!cache) {
+      console.warn("[market.search.result] market cache unavailable");
+      return;
+    }
+    const { handleInboundMarketSearchResult } = await import("./market-search-inbound.js");
+    const result = await handleInboundMarketSearchResult({
+      envelope,
+      marketCache: cache,
+      remotePeerId,
+      trustStore,
+      peerDirectoryStore,
+      taskStore,
+      localOwnerId: profile.owner.ownerId,
+    });
+    if (!result.ok && !result.skipped) {
+      console.warn(`[rejected market.search.result] ${result.reason}`);
+    }
+    return;
+  }
+
   if (envelope.intent === "feed.engage") {
     const { handleInboundFeedEngage } = await import("./content-engage-inbound.js");
     const result = await handleInboundFeedEngage({

@@ -36,6 +36,202 @@ class AppLocalizationsZh extends AppLocalizations {
   String get contentExplore => '探索';
 
   @override
+  String get marketTitle => '市集';
+
+  @override
+  String get marketPaneBrowse => '浏览';
+
+  @override
+  String get marketPaneShop => '我的小店';
+
+  @override
+  String get marketBrowseEmptyTitle => '还没有他人的商品';
+
+  @override
+  String get marketBrowseEmptyDesc => '好友发布商品后会出现在这里。可以请联系人上架，或打开「我的小店」。';
+
+  @override
+  String get marketSearchPlaceholder => '搜索图书、电子产品、标签…';
+
+  @override
+  String get marketSearchSubmit => '搜索';
+
+  @override
+  String get marketSearchIdleHint => '输入关键词，或点下方建议。';
+
+  @override
+  String marketSearchNoResults(String query) {
+    return '没有匹配「$query」的商品。';
+  }
+
+  @override
+  String get marketChipBooks => '图书';
+
+  @override
+  String get marketChipElectronics => '电子产品';
+
+  @override
+  String get marketChipClothing => '服饰';
+
+  @override
+  String get marketChipHome => '家居';
+
+  @override
+  String get marketChipDigital => '数字商品';
+
+  @override
+  String get marketClearHistory => '清除历史';
+
+  @override
+  String get marketHistoryCleared => '搜索历史已清除。';
+
+  @override
+  String get marketMessageSeller => '联系卖家';
+
+  @override
+  String get marketSellerLabel => '卖家';
+
+  @override
+  String get marketShareLink => '复制链接';
+
+  @override
+  String get marketShareCopied => '分享链接已复制。';
+
+  @override
+  String marketInquireDefault(String title) {
+    return '你好，想了解「$title」还在吗？';
+  }
+
+  @override
+  String get marketInquireSent => '消息已发送，正在打开聊天…';
+
+  @override
+  String get marketNotConnected => '未连接家庭节点 — 配对后可查看小店。';
+
+  @override
+  String get marketNoListings => '还没有商品。点「从照片添加」创建，或在家庭节点的社交市集中编辑。';
+
+  @override
+  String get marketUntitled => '未命名商品';
+
+  @override
+  String get marketVisibilityPublicShort => '公开';
+
+  @override
+  String get marketVisibilityBondsShort => '仅好友';
+
+  @override
+  String get marketStatusActive => '在售';
+
+  @override
+  String get marketStatusReserved => '已预留';
+
+  @override
+  String get marketStatusSold => '已售出';
+
+  @override
+  String get marketStatusWithdrawn => '已下架';
+
+  @override
+  String get marketTagsLabel => '标签';
+
+  @override
+  String get marketEditOnSocialHint => '目前请在家庭节点的社交市集标签页创建和编辑商品。';
+
+  @override
+  String get marketCaptureAddFromPhoto => '从照片添加';
+
+  @override
+  String get marketCaptureCamera => '拍照';
+
+  @override
+  String get marketCaptureGallery => '从相册选择';
+
+  @override
+  String get marketCaptureNotesTitle => '描述商品';
+
+  @override
+  String get marketCaptureNotesHint => '第一行写标题，然后写详情…';
+
+  @override
+  String get marketCaptureContinue => '继续';
+
+  @override
+  String get marketCaptureReviewTitle => '核对商品';
+
+  @override
+  String get marketCaptureTitleLabel => '标题';
+
+  @override
+  String get marketCaptureDescriptionLabel => '描述';
+
+  @override
+  String get marketCapturePriceLabel => '价格';
+
+  @override
+  String get marketCaptureCurrencyLabel => '货币';
+
+  @override
+  String get marketCaptureVisibilityLabel => '谁可以看到';
+
+  @override
+  String get marketCapturePublish => '发布';
+
+  @override
+  String get marketCapturePublished => '商品已发布到家庭节点。';
+
+  @override
+  String get marketCaptureTitleRequired => '发布前请填写标题。';
+
+  @override
+  String get marketSellerSuggestedReply => '根据商品生成的建议回复';
+
+  @override
+  String get marketMarkReserved => '标记预留';
+
+  @override
+  String get marketMarkSold => '标记已售';
+
+  @override
+  String get marketMarkAvailable => '标记可售';
+
+  @override
+  String get marketRelist => '重新上架';
+
+  @override
+  String get marketStatusUpdated => '商品状态已更新。';
+
+  @override
+  String get marketPaymentHint => '请与卖家在 EnvoyMesh 外自行约定付款 — Envoy 不经手资金。';
+
+  @override
+  String get marketBlockSeller => '屏蔽';
+
+  @override
+  String get marketReportSeller => '举报';
+
+  @override
+  String get marketConfirmBlock => '屏蔽此卖家？其商品将从浏览中隐藏。';
+
+  @override
+  String get marketConfirmReport => '举报并屏蔽此卖家？记录仅保存在你的节点（尚无中央审核）。';
+
+  @override
+  String get marketFilterCategory => '分类';
+
+  @override
+  String get marketFilterAnyCategory => '全部分类';
+
+  @override
+  String get marketFilterMinPrice => '最低价';
+
+  @override
+  String get marketFilterMaxPrice => '最高价';
+
+  @override
+  String get marketFilterCurrency => '货币';
+
+  @override
   String get termEmptyHint => '在家庭节点上启动 Pi 编程会话或 Shell 终端。';
 
   @override
@@ -136,6 +332,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get meBrowserHint => '打开 envoy:// 页面 — 或在内容页查看我的站点';
+
+  @override
+  String get meMyShop => '我的小店';
+
+  @override
+  String get meMyShopHint => '查看家庭节点上的商品（编辑暂在社交市集）';
 
   @override
   String get meAiEngine => 'AI 引擎';
@@ -1313,19 +1515,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatVoiceSendFailed => '发送语音失败';
 
   @override
-  String get chatSentFile => 'Sent a file';
+  String get chatSentFile => '发送了一个文件';
 
   @override
-  String get chatSentVoice => 'Sent a voice message';
+  String get chatSentVoice => '发送了一条语音';
 
   @override
-  String get chatDeliverySent => 'Sent';
+  String get chatDeliverySent => '已发送';
 
   @override
-  String get chatDeliveryDelivered => 'Delivered';
+  String get chatDeliveryDelivered => '已送达';
 
   @override
-  String get chatDeliveryFailed => 'Not delivered';
+  String get chatDeliveryFailed => '未送达';
 
   @override
   String get chatMicDenied => '麦克风权限被拒绝';

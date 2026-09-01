@@ -145,6 +145,162 @@ class NodeServiceClient {
     return await _client.call('listFamilyProfiles') as Map<String, dynamic>;
   }
 
+  // -- Phase 63A Envoy Market (local shop on home) --
+
+  Future<Map<String, dynamic>> shopGetProfile() async {
+    return await _client.call('shopGetProfile') as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> shopListListings({String? status}) async {
+    return await _client.call('shopListListings', {
+          if (status != null && status.isNotEmpty) 'status': status,
+        })
+        as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> shopUpsertListing({
+    String? listingId,
+    required String title,
+    String? description,
+    String? category,
+    List<String>? tags,
+    String? condition,
+    String? status,
+    String? visibility,
+    required String priceAmount,
+    String? priceCurrency,
+    List<String>? mediaPaths,
+  }) async {
+    return await _client.call('shopUpsertListing', {
+          if (listingId != null && listingId.isNotEmpty) 'listingId': listingId,
+          'title': title,
+          if (description != null) 'description': description,
+          if (category != null) 'category': category,
+          if (tags != null) 'tags': tags,
+          if (condition != null) 'condition': condition,
+          if (status != null) 'status': status,
+          if (visibility != null) 'visibility': visibility,
+          'priceAmount': priceAmount,
+          if (priceCurrency != null) 'priceCurrency': priceCurrency,
+          if (mediaPaths != null) 'mediaPaths': mediaPaths,
+        })
+        as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> shopSetListingStatus({
+    required String listingId,
+    required String status,
+  }) async {
+    return await _client.call('shopSetListingStatus', {
+          'listingId': listingId,
+          'status': status,
+        })
+        as Map<String, dynamic>;
+  }
+
+  /// Phase 63E — draft listing fields from notes / photo filename.
+  Future<Map<String, dynamic>> shopDraftListing({
+    String? notes,
+    String? photoFileName,
+  }) async {
+    return await _client.call('shopDraftListing', {
+          if (notes != null && notes.isNotEmpty) 'notes': notes,
+          if (photoFileName != null && photoFileName.isNotEmpty)
+            'photoFileName': photoFileName,
+        })
+        as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> shopSaveListingMedia({
+    required String filename,
+    required String contentBase64,
+    String? mimeType,
+  }) async {
+    return await _client.call('shopSaveListingMedia', {
+          'filename': filename,
+          'contentBase64': contentBase64,
+          if (mimeType != null && mimeType.isNotEmpty) 'mimeType': mimeType,
+        })
+        as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> shopGetListingMedia({
+    required String listingId,
+    String? mediaPath,
+  }) async {
+    return await _client.call('shopGetListingMedia', {
+          'listingId': listingId,
+          if (mediaPath != null && mediaPath.isNotEmpty) 'mediaPath': mediaPath,
+        })
+        as Map<String, dynamic>;
+  }
+
+  /// Phase 63B — browse peer MarketCache on home (bonded announces).
+  Future<Map<String, dynamic>> marketSearch({
+    String? query,
+    int? limit,
+    String? category,
+    String? minPrice,
+    String? maxPrice,
+    String? currency,
+  }) async {
+    return await _client.call('marketSearch', {
+          if (query != null && query.isNotEmpty) 'query': query,
+          if (limit != null) 'limit': limit,
+          if (category != null && category.isNotEmpty) 'category': category,
+          if (minPrice != null && minPrice.isNotEmpty) 'minPrice': minPrice,
+          if (maxPrice != null && maxPrice.isNotEmpty) 'maxPrice': maxPrice,
+          if (currency != null && currency.isNotEmpty) 'currency': currency,
+        })
+        as Map<String, dynamic>;
+  }
+
+  /// Phase 63D — Browse chips + default fill.
+  Future<Map<String, dynamic>> marketBrowseSuggestions() async {
+    return await _client.call('marketBrowseSuggestions') as Map<String, dynamic>;
+  }
+
+  /// Phase 63D — clear Browse search-history suggestion chips.
+  Future<Map<String, dynamic>> marketClearSearchHistory() async {
+    return await _client.call('marketClearSearchHistory') as Map<String, dynamic>;
+  }
+
+  /// Phase 63C — report seller (audit + local block).
+  Future<void> marketReportSeller({
+    required String sellerOwnerId,
+    String? listingId,
+    String? reason,
+  }) async {
+    await _client.call('marketReportSeller', {
+      'sellerOwnerId': sellerOwnerId,
+      if (listingId != null && listingId.isNotEmpty) 'listingId': listingId,
+      if (reason != null && reason.isNotEmpty) 'reason': reason,
+    });
+  }
+
+  Future<void> blockPeer(String peerOwnerId) async {
+    await _client.call('blockPeer', {'peerOwnerId': peerOwnerId});
+  }
+
+  Future<Map<String, dynamic>> marketShareListing(String listingId) async {
+    return await _client.call('marketShareListing', {
+          'listingId': listingId,
+        })
+        as Map<String, dynamic>;
+  }
+
+  /// Phase 63E — seller FAQ reply from listing text (propose / approve).
+  Future<Map<String, dynamic>> marketSuggestSellerReply({
+    required String listingId,
+    required String buyerMessage,
+  }) async {
+    return await _client.call('marketSuggestSellerReply', {
+          'listingId': listingId,
+          'buyerMessage': buyerMessage,
+        })
+        as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> createFamilyProfile({
     required String name,
     String? avatarColor,
@@ -334,12 +490,14 @@ class NodeServiceClient {
     String targetOwnerId,
     String text, {
     List<Map<String, dynamic>>? attachments,
+    String? listingId,
   }) async {
     final params = <String, dynamic>{
       'targetOwnerId': targetOwnerId,
       'text': text,
       if (attachments != null && attachments.isNotEmpty)
         'attachments': attachments,
+      if (listingId != null && listingId.isNotEmpty) 'listingId': listingId,
     };
     return await _client.call('sendChat', params) as Map<String, dynamic>;
   }

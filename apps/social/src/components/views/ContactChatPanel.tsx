@@ -748,6 +748,68 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     void dismissDraft(latestDraft.draftId);
   };
 
+  const latestListingInquiry = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i]!;
+      if (isOutgoing(msg)) continue;
+      const listingId = msg.content.listingId?.trim() ?? "";
+      const text = msg.content.text?.trim() ?? "";
+      if (listingId && text) {
+        return { listingId, text, messageId: msg.messageId };
+      }
+    }
+    return null;
+  }, [messages, isOutgoing]);
+
+  const [sellerListingReply, setSellerListingReply] = useState<{
+    listingId: string;
+    reply: string;
+    title: string;
+    sourceMessageId: string;
+  } | null>(null);
+  const [sellerListingReplyLoading, setSellerListingReplyLoading] = useState(false);
+
+  useEffect(() => {
+    setSellerListingReply(null);
+    if (!latestListingInquiry) return;
+    let cancelled = false;
+    setSellerListingReplyLoading(true);
+    void nodeService
+      .marketSuggestSellerReply({
+        listingId: latestListingInquiry.listingId,
+        buyerMessage: latestListingInquiry.text,
+      })
+      .then((result) => {
+        if (cancelled) return;
+        if (result.ok) {
+          setSellerListingReply({
+            listingId: result.listingId,
+            reply: result.reply,
+            title: result.title,
+            sourceMessageId: latestListingInquiry.messageId,
+          });
+        } else {
+          setSellerListingReply(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSellerListingReply(null);
+      })
+      .finally(() => {
+        if (!cancelled) setSellerListingReplyLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [latestListingInquiry, nodeService]);
+
+  const handleUseSellerListingReply = () => {
+    if (!sellerListingReply) return;
+    draftRef.current?.setPlainText(sellerListingReply.reply);
+    setChatInput(sellerListingReply.reply);
+    setSellerListingReply(null);
+  };
+
   const fileToBase64 = async (file: File): Promise<string> => {
     const buf = await file.arrayBuffer();
     const bytes = new Uint8Array(buf);
@@ -1373,6 +1435,11 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                             <MmxMediaResultBlock result={mmxPreviewById.get(msg.messageId)!} />
                           ) : (
                             <>
+                              {msg.content.listingId ? (
+                                <p className="chat-listing-chip" data-testid="chat-listing-chip">
+                                  {t("market.listingChip", "Listing")} · {msg.content.listingId}
+                                </p>
+                              ) : null}
                               <ChatMessageText text={msg.content.text} identity={aiIdentity} />
                               {isExtAgentContact && msg.content.attachments?.length ? (
                                 <AgentAttachmentChips
@@ -1440,6 +1507,56 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
             </div>
           </div>
         )}
+        {!latestDraft && sellerListingReply && (
+          <div
+            className="chat-draft-suggestion"
+            role="region"
+            aria-label={t(
+              "market.sellerSuggestedReplyAria",
+              "Suggested seller reply for this listing",
+            )}
+            data-testid="market-seller-suggested-reply"
+          >
+            <div className="chat-draft-suggestion-body">
+              <span className="chat-draft-suggestion-label">
+                {t("market.sellerSuggestedReply", "Suggested reply from listing")}
+                {sellerListingReply.title
+                  ? ` · ${sellerListingReply.title}`
+                  : ""}
+              </span>
+              <p className="chat-draft-suggestion-hint">
+                {t(
+                  "market.sellerSuggestedReplyHint",
+                  "Review before sending — you’re still the seller.",
+                )}
+              </p>
+              <p className="chat-draft-suggestion-text">{sellerListingReply.reply}</p>
+            </div>
+            <div className="chat-draft-suggestion-actions">
+              <button
+                type="button"
+                className="secondary chat-draft-dismiss-btn"
+                onClick={() => setSellerListingReply(null)}
+              >
+                {t("market.sellerSuggestedReplyDismiss", "Dismiss")}
+              </button>
+              <button
+                type="button"
+                className="chat-draft-use-btn"
+                onClick={handleUseSellerListingReply}
+              >
+                {t("market.sellerSuggestedReplyUse", "Use")}
+              </button>
+            </div>
+          </div>
+        )}
+        {!latestDraft && !sellerListingReply && sellerListingReplyLoading ? (
+          <div className="chat-draft-suggestion" data-testid="market-seller-suggested-reply-loading">
+            <span className="chat-draft-suggestion-label">
+              {t("market.sellerSuggestedReply", "Suggested reply from listing")}…
+            </span>
+          </div>
+        ) : null}
       <footer className="chat-input">
         {shareOpen && (
           <ShareFileDialog

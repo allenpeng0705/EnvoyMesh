@@ -36,6 +36,213 @@ class AppLocalizationsFr extends AppLocalizations {
   String get contentExplore => 'Explorer';
 
   @override
+  String get marketTitle => 'Marché';
+
+  @override
+  String get marketPaneBrowse => 'Parcourir';
+
+  @override
+  String get marketPaneShop => 'Ma boutique';
+
+  @override
+  String get marketBrowseEmptyTitle => 'Aucune annonce d’autres pour l’instant';
+
+  @override
+  String get marketBrowseEmptyDesc =>
+      'Les annonces d’amis liés apparaissent ici après publication.';
+
+  @override
+  String get marketSearchPlaceholder => 'Chercher livres, électronique, tags…';
+
+  @override
+  String get marketSearchSubmit => 'Rechercher';
+
+  @override
+  String get marketSearchIdleHint =>
+      'Saisissez un mot-clé, ou touchez une suggestion.';
+
+  @override
+  String marketSearchNoResults(String query) {
+    return 'Aucune annonce pour « $query ».';
+  }
+
+  @override
+  String get marketChipBooks => 'Livres';
+
+  @override
+  String get marketChipElectronics => 'Électronique';
+
+  @override
+  String get marketChipClothing => 'Vêtements';
+
+  @override
+  String get marketChipHome => 'Maison';
+
+  @override
+  String get marketChipDigital => 'Numérique';
+
+  @override
+  String get marketClearHistory => 'Effacer l’historique';
+
+  @override
+  String get marketHistoryCleared => 'Historique de recherche effacé.';
+
+  @override
+  String get marketMessageSeller => 'Contacter le vendeur';
+
+  @override
+  String get marketSellerLabel => 'Vendeur';
+
+  @override
+  String get marketShareLink => 'Copier le lien';
+
+  @override
+  String get marketShareCopied => 'Lien de partage copié.';
+
+  @override
+  String marketInquireDefault(String title) {
+    return 'Bonjour — intéressé(e) par « $title ». Est-ce encore disponible ?';
+  }
+
+  @override
+  String get marketInquireSent => 'Message envoyé. Ouverture du chat…';
+
+  @override
+  String get marketNotConnected =>
+      'Non connecté au nœud home — associez pour voir la boutique.';
+
+  @override
+  String get marketNoListings =>
+      'Aucune annonce. Appuyez sur « Ajouter depuis une photo », ou modifiez dans Social.';
+
+  @override
+  String get marketUntitled => 'Annonce sans titre';
+
+  @override
+  String get marketVisibilityPublicShort => 'Public';
+
+  @override
+  String get marketVisibilityBondsShort => 'Liens seulement';
+
+  @override
+  String get marketStatusActive => 'En vente';
+
+  @override
+  String get marketStatusReserved => 'Réservé';
+
+  @override
+  String get marketStatusSold => 'Vendu';
+
+  @override
+  String get marketStatusWithdrawn => 'Retiré';
+
+  @override
+  String get marketTagsLabel => 'Tags';
+
+  @override
+  String get marketEditOnSocialHint =>
+      'Créez et modifiez les annonces pour l’instant dans l’onglet Marché Social du nœud home.';
+
+  @override
+  String get marketCaptureAddFromPhoto => 'Ajouter depuis une photo';
+
+  @override
+  String get marketCaptureCamera => 'Prendre une photo';
+
+  @override
+  String get marketCaptureGallery => 'Choisir dans la galerie';
+
+  @override
+  String get marketCaptureNotesTitle => 'Décrire l’article';
+
+  @override
+  String get marketCaptureNotesHint =>
+      'Titre sur la première ligne, puis les détails…';
+
+  @override
+  String get marketCaptureContinue => 'Continuer';
+
+  @override
+  String get marketCaptureReviewTitle => 'Vérifier l’annonce';
+
+  @override
+  String get marketCaptureTitleLabel => 'Titre';
+
+  @override
+  String get marketCaptureDescriptionLabel => 'Description';
+
+  @override
+  String get marketCapturePriceLabel => 'Prix';
+
+  @override
+  String get marketCaptureCurrencyLabel => 'Devise';
+
+  @override
+  String get marketCaptureVisibilityLabel => 'Qui peut trouver ceci';
+
+  @override
+  String get marketCapturePublish => 'Publier';
+
+  @override
+  String get marketCapturePublished =>
+      'Annonce publiée sur votre nœud domestique.';
+
+  @override
+  String get marketCaptureTitleRequired => 'Ajoutez un titre avant de publier.';
+
+  @override
+  String get marketSellerSuggestedReply =>
+      'Réponse suggérée à partir de l’annonce';
+
+  @override
+  String get marketMarkReserved => 'Marquer comme réservé';
+
+  @override
+  String get marketMarkSold => 'Marquer comme vendu';
+
+  @override
+  String get marketMarkAvailable => 'Marquer comme disponible';
+
+  @override
+  String get marketRelist => 'Remettre en vente';
+
+  @override
+  String get marketStatusUpdated => 'Statut de l’annonce mis à jour.';
+
+  @override
+  String get marketPaymentHint =>
+      'Convenez du paiement avec le vendeur en dehors d’EnvoyMesh — Envoy ne détient pas d’argent.';
+
+  @override
+  String get marketBlockSeller => 'Bloquer';
+
+  @override
+  String get marketReportSeller => 'Signaler';
+
+  @override
+  String get marketConfirmBlock =>
+      'Bloquer ce vendeur ? Ses annonces disparaîtront de Parcourir.';
+
+  @override
+  String get marketConfirmReport =>
+      'Signaler et bloquer ce vendeur ? Cela reste sur votre nœud (pas encore d’examen central).';
+
+  @override
+  String get marketFilterCategory => 'Catégorie';
+
+  @override
+  String get marketFilterAnyCategory => 'Toutes les catégories';
+
+  @override
+  String get marketFilterMinPrice => 'Prix min.';
+
+  @override
+  String get marketFilterMaxPrice => 'Prix max.';
+
+  @override
+  String get marketFilterCurrency => 'Devise';
+
+  @override
   String get termEmptyHint =>
       'Démarrez une session Pi ou un terminal shell sur votre nœud domicile.';
 
@@ -138,6 +345,13 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get meBrowserHint =>
       'Ouvrir des pages envoy:// — ou l\'onglet Contenu pour Mon site';
+
+  @override
+  String get meMyShop => 'Ma boutique';
+
+  @override
+  String get meMyShopHint =>
+      'Voir les annonces sur le nœud home (édition sur Social pour l’instant)';
 
   @override
   String get meAiEngine => 'Moteur IA';
@@ -616,7 +830,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get knowledgeSetupEmbeddingHint =>
-      'Embeddings use Envoy Local on this device. For OpenAI or Ollama, open Settings → AI on your home computer.';
+      'Embeddings pour la recherche dans le coffre. Sans modèle, la recherche par mots-clés reste disponible.';
 
   @override
   String get knowledgeSetupEnabled => 'Activer la base de connaissances';
@@ -721,22 +935,21 @@ class AppLocalizationsFr extends AppLocalizations {
   String get knowledgeFileMakePrivate => 'Rendre privé';
 
   @override
-  String get knowledgeBrowseImportAndPublish => 'Import and publish';
+  String get knowledgeBrowseImportAndPublish => 'Importer et publier';
 
   @override
-  String get knowledgeBrowsePublishImportOnly =>
-      'Import this note into the vault first, then you can publish it.';
+  String get knowledgeBrowsePublishImportOnly => 'Publier uniquement l’import';
 
   @override
   String get knowledgeBrowsePublishImportNoDoc =>
-      'Imported, but could not publish yet — try Publish again from the imported note.';
+      'Importé — publication ignorée sans ID de document.';
 
   @override
-  String get knowledgeBrowseImportedAndPublished => 'Imported and published';
+  String get knowledgeBrowseImportedAndPublished => 'Importé et publié.';
 
   @override
   String get knowledgeBrowsePublishImportHint =>
-      'Import into vault and publish for mesh discovery';
+      'Après l’import, publier éventuellement pour vos contacts.';
 
   @override
   String get knowledgeFileMore => 'Plus d\'actions';
@@ -1375,19 +1588,19 @@ class AppLocalizationsFr extends AppLocalizations {
   String get chatVoiceSendFailed => 'Échec de l\'envoi de la note vocale';
 
   @override
-  String get chatSentFile => 'Sent a file';
+  String get chatSentFile => 'Fichier envoyé';
 
   @override
-  String get chatSentVoice => 'Sent a voice message';
+  String get chatSentVoice => 'Message vocal envoyé';
 
   @override
-  String get chatDeliverySent => 'Sent';
+  String get chatDeliverySent => 'Envoyé';
 
   @override
-  String get chatDeliveryDelivered => 'Delivered';
+  String get chatDeliveryDelivered => 'Distribué';
 
   @override
-  String get chatDeliveryFailed => 'Not delivered';
+  String get chatDeliveryFailed => 'Non distribué';
 
   @override
   String get chatMicDenied => 'Autorisation du micro refusée';
@@ -2371,35 +2584,35 @@ class AppLocalizationsFr extends AppLocalizations {
       'Chaque étape privilégie un rôle (PM, développeur, …).';
 
   @override
-  String get chainsStartTeamStrategy => 'Team strategy';
+  String get chainsStartTeamStrategy => 'Stratégie d’équipe';
 
   @override
   String get chainsStartTeamStrategyHint =>
-      'How workers are ranked. Hedged / verify-only are policy labels — a second worker runs on the wire only when immediate-dual gates pass (critical step, budget, independent workers).';
+      'Comment les workers sont choisis pour cette tâche.';
 
   @override
-  String get chainsStrategyBalanced => 'Balanced';
+  String get chainsStrategyBalanced => 'Équilibrée';
 
   @override
-  String get chainsStrategyFastest => 'Fastest';
+  String get chainsStrategyFastest => 'La plus rapide';
 
   @override
-  String get chainsStrategyCheapest => 'Cheapest';
+  String get chainsStrategyCheapest => 'La moins chère';
 
   @override
-  String get chainsStrategyHighestConfidence => 'Highest confidence';
+  String get chainsStrategyHighestConfidence => 'Confiance la plus élevée';
 
   @override
-  String get chainsStrategyPrivacyLocal => 'Privacy (local)';
+  String get chainsStrategyPrivacyLocal => 'Confidentialité (local)';
 
   @override
-  String get chainsStrategyDiverseModel => 'Diverse models';
+  String get chainsStrategyDiverseModel => 'Diversité de modèles';
 
   @override
-  String get chainsStartAvailLease => 'Lease';
+  String get chainsStartAvailLease => 'Bail prêt';
 
   @override
-  String get chainsStartAvailLegacy => 'Legacy';
+  String get chainsStartAvailLegacy => 'Disponibilité héritée';
 
   @override
   String chainsStartReliabilityPct(int pct) {
@@ -2512,20 +2725,20 @@ class AppLocalizationsFr extends AppLocalizations {
       'Aucun worker Agent Network joignable. Liez d\'abord des contacts avec des agents sur le nœud domicile.';
 
   @override
-  String get chainsTestNetworkTitle => 'Test Agent Network';
+  String get chainsTestNetworkTitle => 'Tester le réseau d’agents';
 
   @override
   String get chainsTestNetworkHint =>
-      'Simulation — no work sent, no model spend, no reputation changes. Dry-plan ranks for real; failover and recovery are label-only previews.';
+      'Court test labo des chemins du réseau d’agents sur ce nœud.';
 
   @override
-  String get chainsTestNetworkRun => 'Check readiness';
+  String get chainsTestNetworkRun => 'Lancer le test';
 
   @override
-  String get chainsTestNetworkRunning => 'Checking…';
+  String get chainsTestNetworkRunning => 'Test en cours…';
 
   @override
-  String get chainsTestNetworkFailed => 'Could not run diagnostics';
+  String get chainsTestNetworkFailed => 'Échec du test réseau.';
 
   @override
   String get chainsSpeculationReviewTitle =>
@@ -2834,16 +3047,15 @@ class AppLocalizationsFr extends AppLocalizations {
       'Ce job est terminé et a publié un rapport.';
 
   @override
-  String get chainsDetailRecovering =>
-      'Recovering after restart — confirming worker progress';
+  String get chainsDetailRecovering => 'Récupération';
 
   @override
   String chainsAttemptCount(int count) {
-    return '$count attempt(s)';
+    return 'Tentatives : $count';
   }
 
   @override
-  String get chainsExecutionDetails => 'Execution details';
+  String get chainsExecutionDetails => 'Détails d’exécution';
 
   @override
   String chainsProvenanceSummaryLine(
@@ -2851,22 +3063,22 @@ class AppLocalizationsFr extends AppLocalizations {
     String worker,
     String state,
   ) {
-    return '$attempts attempt(s) · $worker · $state';
+    return '$attempts tentative(s) · $worker · $state';
   }
 
   @override
   String chainsLastReason(String reason) {
-    return 'Last reason: $reason';
+    return 'Dernière raison : $reason';
   }
 
   @override
-  String get chainsTechnicalDetails => 'Technical details';
+  String get chainsTechnicalDetails => 'Détails techniques';
 
   @override
-  String get chainsProvenanceEmpty => 'No journal events for this step yet.';
+  String get chainsProvenanceEmpty => 'Aucune donnée de provenance.';
 
   @override
-  String get chainsProvenanceFailed => 'Could not load execution history.';
+  String get chainsProvenanceFailed => 'Impossible de charger la provenance.';
 
   @override
   String get chainsRebalanceHeading => 'Ajouter du budget';
@@ -3622,7 +3834,7 @@ class AppLocalizationsFr extends AppLocalizations {
   String get chainsStatusPublished => 'Publié';
 
   @override
-  String get chainsStatusRecovering => 'Recovering';
+  String get chainsStatusRecovering => 'Récupération…';
 
   @override
   String get chainsStatusSynthesizing => 'Synthèse';

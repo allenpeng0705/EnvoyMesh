@@ -35,6 +35,8 @@
   "meUnpair": "Dissocier",
   "meBrowser": "Navigateur",
   "meBrowserHint": "Ouvrir des pages envoy:// — ou l'onglet Contenu pour Mon site",
+  "meMyShop": "Ma boutique",
+  "meMyShopHint": "Voir les annonces sur le nœud home (édition sur Social pour l’instant)",
   "meAiEngine": "Moteur IA",
   "meAiEngineHint": "Pont + OpenClaw. Appuyez pour configurer.",
   "meRecentTeamJobs": "Jobs d'équipe récents",
@@ -85,6 +87,42 @@
   "contentFeed": "Fil",
   "contentBlog": "Blog",
   "contentExplore": "Explorer",
+  "marketTitle": "Marché",
+  "marketPaneBrowse": "Parcourir",
+  "marketPaneShop": "Ma boutique",
+  "marketChipDigital": "Numérique",
+  "marketInquireSent": "Message envoyé. Ouverture du chat…",
+  "marketInquireDefault": "Bonjour — intéressé(e) par « {title} ». Est-ce encore disponible ?",
+  "marketShareCopied": "Lien de partage copié.",
+  "marketShareLink": "Copier le lien",
+  "marketSellerLabel": "Vendeur",
+  "marketMessageSeller": "Contacter le vendeur",
+  "marketChipHome": "Maison",
+  "marketChipClothing": "Vêtements",
+  "marketChipElectronics": "Électronique",
+  "marketChipBooks": "Livres",
+  "marketSearchNoResults": "Aucune annonce pour « {query} ».",
+  "@marketSearchNoResults": {
+    "placeholders": {
+      "query": { "type": "String" }
+    }
+  },
+  "marketSearchIdleHint": "Saisissez un mot-clé, ou touchez une suggestion.",
+  "marketSearchSubmit": "Rechercher",
+  "marketSearchPlaceholder": "Chercher livres, électronique, tags…",
+  "marketBrowseEmptyTitle": "Aucune annonce d’autres pour l’instant",
+  "marketBrowseEmptyDesc": "Les annonces d’amis liés apparaissent ici après publication.",
+  "marketNotConnected": "Non connecté au nœud home — associez pour voir la boutique.",
+  "marketNoListings": "Aucune annonce. Appuyez sur « Ajouter depuis une photo », ou modifiez dans Social.",
+  "marketUntitled": "Annonce sans titre",
+  "marketVisibilityPublicShort": "Public",
+  "marketVisibilityBondsShort": "Liens seulement",
+  "marketStatusActive": "En vente",
+  "marketStatusReserved": "Réservé",
+  "marketStatusSold": "Vendu",
+  "marketStatusWithdrawn": "Retiré",
+  "marketTagsLabel": "Tags",
+  "marketEditOnSocialHint": "Créez et modifiez les annonces pour l’instant dans l’onglet Marché Social du nœud home.",
   "contentPeople": "Personnes",
   "contentMyFiles": "Mes fichiers",
   "contentNewPost": "Nouvelle publication",
@@ -1209,5 +1247,100 @@
   "settingsEhAutoRunSaved": "Auto-exécution Envoy Harness mise à jour",
   "settingsEhActiveBadge": "actif",
   "settingsUseForCodingChat": "Utiliser pour le chat de code",
-  "settingsUseForCodingChatHint": "Obsolète — le chat de code utilise toujours Envoy Harness."
+  "settingsUseForCodingChatHint": "Obsolète — le chat de code utilise toujours Envoy Harness.",
+  "marketClearHistory": "Effacer l’historique",
+  "marketHistoryCleared": "Historique de recherche effacé.",
+  "marketCaptureAddFromPhoto": "Ajouter depuis une photo",
+  "marketCaptureCamera": "Prendre une photo",
+  "marketCaptureGallery": "Choisir dans la galerie",
+  "marketCaptureNotesTitle": "Décrire l’article",
+  "marketCaptureNotesHint": "Titre sur la première ligne, puis les détails…",
+  "marketCaptureContinue": "Continuer",
+  "marketCaptureReviewTitle": "Vérifier l’annonce",
+  "marketCaptureTitleLabel": "Titre",
+  "marketCaptureDescriptionLabel": "Description",
+  "marketCapturePriceLabel": "Prix",
+  "marketCaptureCurrencyLabel": "Devise",
+  "marketCaptureVisibilityLabel": "Qui peut trouver ceci",
+  "marketCapturePublish": "Publier",
+  "marketCapturePublished": "Annonce publiée sur votre nœud domestique.",
+  "marketCaptureTitleRequired": "Ajoutez un titre avant de publier.",
+  "marketSellerSuggestedReply": "Réponse suggérée à partir de l’annonce",
+  "marketMarkReserved": "Marquer comme réservé",
+  "marketMarkSold": "Marquer comme vendu",
+  "marketMarkAvailable": "Marquer comme disponible",
+  "marketRelist": "Remettre en vente",
+  "marketStatusUpdated": "Statut de l’annonce mis à jour.",
+  "marketPaymentHint": "Convenez du paiement avec le vendeur en dehors d’EnvoyMesh — Envoy ne détient pas d’argent.",
+  "marketBlockSeller": "Bloquer",
+  "marketReportSeller": "Signaler",
+  "marketConfirmBlock": "Bloquer ce vendeur ? Ses annonces disparaîtront de Parcourir.",
+  "marketConfirmReport": "Signaler et bloquer ce vendeur ? Cela reste sur votre nœud (pas encore d’examen central).",
+  "marketFilterCategory": "Catégorie",
+  "marketFilterAnyCategory": "Toutes les catégories",
+  "marketFilterMinPrice": "Prix min.",
+  "marketFilterMaxPrice": "Prix max.",
+  "marketFilterCurrency": "Devise",
+  "knowledgeSetupEmbeddingHint": "Embeddings pour la recherche dans le coffre. Sans modèle, la recherche par mots-clés reste disponible.",
+  "knowledgeBrowseImportAndPublish": "Importer et publier",
+  "knowledgeBrowsePublishImportOnly": "Publier uniquement l’import",
+  "knowledgeBrowsePublishImportNoDoc": "Importé — publication ignorée sans ID de document.",
+  "knowledgeBrowseImportedAndPublished": "Importé et publié.",
+  "knowledgeBrowsePublishImportHint": "Après l’import, publier éventuellement pour vos contacts.",
+  "chatSentFile": "Fichier envoyé",
+  "chatSentVoice": "Message vocal envoyé",
+  "chatDeliverySent": "Envoyé",
+  "chatDeliveryDelivered": "Distribué",
+  "chatDeliveryFailed": "Non distribué",
+  "chainsStartTeamStrategy": "Stratégie d’équipe",
+  "chainsStartTeamStrategyHint": "Comment les workers sont choisis pour cette tâche.",
+  "chainsStrategyBalanced": "Équilibrée",
+  "chainsStrategyFastest": "La plus rapide",
+  "chainsStrategyCheapest": "La moins chère",
+  "chainsStrategyHighestConfidence": "Confiance la plus élevée",
+  "chainsStrategyPrivacyLocal": "Confidentialité (local)",
+  "chainsStrategyDiverseModel": "Diversité de modèles",
+  "chainsStartAvailLease": "Bail prêt",
+  "chainsStartAvailLegacy": "Disponibilité héritée",
+  "chainsTestNetworkTitle": "Tester le réseau d’agents",
+  "chainsTestNetworkHint": "Court test labo des chemins du réseau d’agents sur ce nœud.",
+  "chainsTestNetworkRun": "Lancer le test",
+  "chainsTestNetworkRunning": "Test en cours…",
+  "chainsTestNetworkFailed": "Échec du test réseau.",
+  "chainsDetailRecovering": "Récupération",
+  "chainsAttemptCount": "Tentatives : {count}",
+  "@chainsAttemptCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chainsExecutionDetails": "Détails d’exécution",
+  "chainsProvenanceSummaryLine": "{attempts} tentative(s) · {worker} · {state}",
+  "@chainsProvenanceSummaryLine": {
+    "placeholders": {
+      "attempts": {
+        "type": "int"
+      },
+      "worker": {
+        "type": "String"
+      },
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "chainsLastReason": "Dernière raison : {reason}",
+  "@chainsLastReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "chainsTechnicalDetails": "Détails techniques",
+  "chainsProvenanceEmpty": "Aucune donnée de provenance.",
+  "chainsProvenanceFailed": "Impossible de charger la provenance.",
+  "chainsStatusRecovering": "Récupération…"
 }

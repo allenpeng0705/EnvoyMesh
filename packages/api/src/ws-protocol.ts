@@ -373,6 +373,21 @@ export type RpcMethods =
   | "listFamilyRooms"
   | "createFamilyRoom"
   | "sendFamilyRoomMessage"
+  | "shopGetProfile"
+  | "shopUpdateProfile"
+  | "shopListListings"
+  | "shopUpsertListing"
+  | "shopSetListingStatus"
+  | "shopDeleteListing"
+  | "shopDraftListing"
+  | "shopSaveListingMedia"
+  | "shopGetListingMedia"
+  | "marketSearch"
+  | "marketBrowseSuggestions"
+  | "marketClearSearchHistory"
+  | "marketReportSeller"
+  | "marketSuggestSellerReply"
+  | "marketShareListing"
   | "syncPairingKioskFromConfig"
   | "getPairingKioskStatus"
   | "importFleetManifest"
@@ -1472,6 +1487,8 @@ export interface SendChatParams {
     sensitivity: "public" | "friends" | "private";
     vaultRelativePath?: string;
   }>;
+  /** Phase 63B — listing-scoped inquire (Envoy Market). */
+  listingId?: string;
 }
 
 export interface MarkReadParams {

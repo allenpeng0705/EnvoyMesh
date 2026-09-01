@@ -72,6 +72,11 @@ const capabilityRequirements: Partial<Record<EnvoyIntent, Capability[][]>> = {
   "chat.message": [["message.send"]],
   "chat.room.sync": [["message.send"]],
   "chat.room.message": [["message.send"]],
+  "feed.notify": [["message.send"]],
+  "feed.engage": [["message.send"]],
+  "market.announce": [["message.send"]],
+  "market.search": [["message.send"]],
+  "market.search.result": [["message.send"]],
   "knowledge.query": [["vault.retrieve"]],
   "knowledge.response": [["message.send"]],
   // Phase 45 — Web Content Browsing. library.read serves raw content
@@ -80,9 +85,6 @@ const capabilityRequirements: Partial<Record<EnvoyIntent, Capability[][]>> = {
   // entry here — evaluateCapability returns "allow" for intents not in
   // the table, which is correct (the response just echoes bytes back).
   "library.read": [["vault.retrieve"]],
-  // Phase 45E — bonded fan-out notify (messaging capability only).
-  "feed.notify": [["message.send"]],
-  "feed.engage": [["message.send"]],
   "task.mandate": [["message.send"]],
   "task.propose": [["message.send"]],
   "task.negotiate": [["message.send"]],
@@ -163,6 +165,11 @@ function evaluatePublicPolicy(intent: EnvoyIntent): PolicyDecision {
     return { action: "allow", maxSensitivity: "public" };
   }
 
+  // Phase 63C — strangers may search public market listings (rate-limited inbound).
+  if (intent === "market.search" || intent === "market.search.result") {
+    return { action: "allow", maxSensitivity: "public" };
+  }
+
   // Phase 45 — Web Content Browsing. Public-tier readers can fetch
   // public-visibility items; the per-item visibility is checked in the
   // inbound handler against this maxSensitivity.
@@ -196,6 +203,16 @@ function evaluateReferredPolicy(request: PolicyRequest): PolicyDecision {
 
   // Phase 45E — referred bonds may receive publish notify (metadata only).
   if (request.intent === "feed.notify" || request.intent === "feed.engage") {
+    return { action: "allow", maxSensitivity: "public" };
+  }
+
+  // Phase 63 — referred bonds may receive market.announce (listing metadata).
+  if (request.intent === "market.announce") {
+    return { action: "allow", maxSensitivity: "public" };
+  }
+
+  // Phase 63C — referred peers may search / answer market listings.
+  if (request.intent === "market.search" || request.intent === "market.search.result") {
     return { action: "allow", maxSensitivity: "public" };
   }
 

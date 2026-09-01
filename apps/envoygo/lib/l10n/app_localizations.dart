@@ -162,6 +162,390 @@ abstract class AppLocalizations {
   /// **'Explore'**
   String get contentExplore;
 
+  /// No description provided for @marketTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Market'**
+  String get marketTitle;
+
+  /// No description provided for @marketPaneBrowse.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse'**
+  String get marketPaneBrowse;
+
+  /// No description provided for @marketPaneShop.
+  ///
+  /// In en, this message translates to:
+  /// **'My Shop'**
+  String get marketPaneShop;
+
+  /// No description provided for @marketBrowseEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No peer listings yet'**
+  String get marketBrowseEmptyTitle;
+
+  /// No description provided for @marketBrowseEmptyDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Listings from friends and strangers appear when peers answer your search, or after bonded friends publish. Try a keyword, or open My Shop.'**
+  String get marketBrowseEmptyDesc;
+
+  /// No description provided for @marketSearchPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Search books, electronics, tags…'**
+  String get marketSearchPlaceholder;
+
+  /// No description provided for @marketSearchSubmit.
+  ///
+  /// In en, this message translates to:
+  /// **'Search'**
+  String get marketSearchSubmit;
+
+  /// No description provided for @marketSearchIdleHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Try a keyword, or tap a suggestion below.'**
+  String get marketSearchIdleHint;
+
+  /// No description provided for @marketSearchNoResults.
+  ///
+  /// In en, this message translates to:
+  /// **'No listings matched “{query}”.'**
+  String marketSearchNoResults(String query);
+
+  /// No description provided for @marketChipBooks.
+  ///
+  /// In en, this message translates to:
+  /// **'Books'**
+  String get marketChipBooks;
+
+  /// No description provided for @marketChipElectronics.
+  ///
+  /// In en, this message translates to:
+  /// **'Electronics'**
+  String get marketChipElectronics;
+
+  /// No description provided for @marketChipClothing.
+  ///
+  /// In en, this message translates to:
+  /// **'Clothing'**
+  String get marketChipClothing;
+
+  /// No description provided for @marketChipHome.
+  ///
+  /// In en, this message translates to:
+  /// **'Home'**
+  String get marketChipHome;
+
+  /// No description provided for @marketChipDigital.
+  ///
+  /// In en, this message translates to:
+  /// **'Digital'**
+  String get marketChipDigital;
+
+  /// No description provided for @marketClearHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear history'**
+  String get marketClearHistory;
+
+  /// No description provided for @marketHistoryCleared.
+  ///
+  /// In en, this message translates to:
+  /// **'Search history cleared.'**
+  String get marketHistoryCleared;
+
+  /// No description provided for @marketMessageSeller.
+  ///
+  /// In en, this message translates to:
+  /// **'Message seller'**
+  String get marketMessageSeller;
+
+  /// No description provided for @marketSellerLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Seller'**
+  String get marketSellerLabel;
+
+  /// No description provided for @marketShareLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy link'**
+  String get marketShareLink;
+
+  /// No description provided for @marketShareCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Share link copied.'**
+  String get marketShareCopied;
+
+  /// No description provided for @marketInquireDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Hi — interested in “{title}”. Is it still available?'**
+  String marketInquireDefault(String title);
+
+  /// No description provided for @marketInquireSent.
+  ///
+  /// In en, this message translates to:
+  /// **'Message sent. Opening chat…'**
+  String get marketInquireSent;
+
+  /// No description provided for @marketNotConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Not connected to home — pair to view your shop.'**
+  String get marketNotConnected;
+
+  /// No description provided for @marketNoListings.
+  ///
+  /// In en, this message translates to:
+  /// **'No listings yet. Tap Add from photo to create one, or edit on Social.'**
+  String get marketNoListings;
+
+  /// No description provided for @marketUntitled.
+  ///
+  /// In en, this message translates to:
+  /// **'Untitled listing'**
+  String get marketUntitled;
+
+  /// No description provided for @marketVisibilityPublicShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Public'**
+  String get marketVisibilityPublicShort;
+
+  /// No description provided for @marketVisibilityBondsShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Bonds only'**
+  String get marketVisibilityBondsShort;
+
+  /// No description provided for @marketStatusActive.
+  ///
+  /// In en, this message translates to:
+  /// **'For sale'**
+  String get marketStatusActive;
+
+  /// No description provided for @marketStatusReserved.
+  ///
+  /// In en, this message translates to:
+  /// **'Reserved'**
+  String get marketStatusReserved;
+
+  /// No description provided for @marketStatusSold.
+  ///
+  /// In en, this message translates to:
+  /// **'Sold'**
+  String get marketStatusSold;
+
+  /// No description provided for @marketStatusWithdrawn.
+  ///
+  /// In en, this message translates to:
+  /// **'Withdrawn'**
+  String get marketStatusWithdrawn;
+
+  /// No description provided for @marketTagsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Tags'**
+  String get marketTagsLabel;
+
+  /// No description provided for @marketEditOnSocialHint.
+  ///
+  /// In en, this message translates to:
+  /// **'You can also create and edit listings on the home-node Social Market tab.'**
+  String get marketEditOnSocialHint;
+
+  /// No description provided for @marketCaptureAddFromPhoto.
+  ///
+  /// In en, this message translates to:
+  /// **'Add from photo'**
+  String get marketCaptureAddFromPhoto;
+
+  /// No description provided for @marketCaptureCamera.
+  ///
+  /// In en, this message translates to:
+  /// **'Take photo'**
+  String get marketCaptureCamera;
+
+  /// No description provided for @marketCaptureGallery.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose from gallery'**
+  String get marketCaptureGallery;
+
+  /// No description provided for @marketCaptureNotesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Describe the item'**
+  String get marketCaptureNotesTitle;
+
+  /// No description provided for @marketCaptureNotesHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Title on the first line, then details…'**
+  String get marketCaptureNotesHint;
+
+  /// No description provided for @marketCaptureContinue.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get marketCaptureContinue;
+
+  /// No description provided for @marketCaptureReviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Review listing'**
+  String get marketCaptureReviewTitle;
+
+  /// No description provided for @marketCaptureTitleLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get marketCaptureTitleLabel;
+
+  /// No description provided for @marketCaptureDescriptionLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Description'**
+  String get marketCaptureDescriptionLabel;
+
+  /// No description provided for @marketCapturePriceLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Price'**
+  String get marketCapturePriceLabel;
+
+  /// No description provided for @marketCaptureCurrencyLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Currency'**
+  String get marketCaptureCurrencyLabel;
+
+  /// No description provided for @marketCaptureVisibilityLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Who can find this'**
+  String get marketCaptureVisibilityLabel;
+
+  /// No description provided for @marketCapturePublish.
+  ///
+  /// In en, this message translates to:
+  /// **'Publish'**
+  String get marketCapturePublish;
+
+  /// No description provided for @marketCapturePublished.
+  ///
+  /// In en, this message translates to:
+  /// **'Listing published on your home node.'**
+  String get marketCapturePublished;
+
+  /// No description provided for @marketCaptureTitleRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a title before publishing.'**
+  String get marketCaptureTitleRequired;
+
+  /// No description provided for @marketSellerSuggestedReply.
+  ///
+  /// In en, this message translates to:
+  /// **'Suggested reply from listing'**
+  String get marketSellerSuggestedReply;
+
+  /// No description provided for @marketMarkReserved.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark reserved'**
+  String get marketMarkReserved;
+
+  /// No description provided for @marketMarkSold.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark sold'**
+  String get marketMarkSold;
+
+  /// No description provided for @marketMarkAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark available'**
+  String get marketMarkAvailable;
+
+  /// No description provided for @marketRelist.
+  ///
+  /// In en, this message translates to:
+  /// **'Relist'**
+  String get marketRelist;
+
+  /// No description provided for @marketStatusUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Listing status updated.'**
+  String get marketStatusUpdated;
+
+  /// No description provided for @marketPaymentHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Agree payment with the seller outside EnvoyMesh — Envoy doesn’t hold money.'**
+  String get marketPaymentHint;
+
+  /// No description provided for @marketBlockSeller.
+  ///
+  /// In en, this message translates to:
+  /// **'Block'**
+  String get marketBlockSeller;
+
+  /// No description provided for @marketReportSeller.
+  ///
+  /// In en, this message translates to:
+  /// **'Report'**
+  String get marketReportSeller;
+
+  /// No description provided for @marketConfirmBlock.
+  ///
+  /// In en, this message translates to:
+  /// **'Block this seller? Their listings will hide from your Browse.'**
+  String get marketConfirmBlock;
+
+  /// No description provided for @marketConfirmReport.
+  ///
+  /// In en, this message translates to:
+  /// **'Report and block this seller? This stays on your node (no central review yet).'**
+  String get marketConfirmReport;
+
+  /// No description provided for @marketFilterCategory.
+  ///
+  /// In en, this message translates to:
+  /// **'Category'**
+  String get marketFilterCategory;
+
+  /// No description provided for @marketFilterAnyCategory.
+  ///
+  /// In en, this message translates to:
+  /// **'Any category'**
+  String get marketFilterAnyCategory;
+
+  /// No description provided for @marketFilterMinPrice.
+  ///
+  /// In en, this message translates to:
+  /// **'Min price'**
+  String get marketFilterMinPrice;
+
+  /// No description provided for @marketFilterMaxPrice.
+  ///
+  /// In en, this message translates to:
+  /// **'Max price'**
+  String get marketFilterMaxPrice;
+
+  /// No description provided for @marketFilterCurrency.
+  ///
+  /// In en, this message translates to:
+  /// **'Currency'**
+  String get marketFilterCurrency;
+
   /// No description provided for @termEmptyHint.
   ///
   /// In en, this message translates to:
@@ -365,6 +749,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open envoy:// pages — or use the Content tab for My Site'**
   String get meBrowserHint;
+
+  /// No description provided for @meMyShop.
+  ///
+  /// In en, this message translates to:
+  /// **'My Shop'**
+  String get meMyShop;
+
+  /// No description provided for @meMyShopHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse listings and add from photo on your phone'**
+  String get meMyShopHint;
 
   /// No description provided for @meAiEngine.
   ///

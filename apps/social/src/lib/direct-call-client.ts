@@ -381,8 +381,13 @@ export class DirectCallClient implements NodeServiceClient {
   // Messaging
   // -----------------------------------------------------------------------
 
-  async sendChat(targetOwnerId: string, text: string, attachments?: Parameters<typeof this._ns.sendChat>[2]) {
-    return this._ns.sendChat(targetOwnerId, text, attachments as any);
+  async sendChat(
+    targetOwnerId: string,
+    text: string,
+    attachments?: Parameters<NodeService["sendChat"]>[2],
+    listingId?: string,
+  ) {
+    return this._ns.sendChat(targetOwnerId, text, attachments as any, listingId);
   }
 
   async sendAgentChat(targetOwnerId: string, text: string) {
@@ -1119,6 +1124,68 @@ export class DirectCallClient implements NodeServiceClient {
     params: Parameters<NodeService["sendFamilyRoomMessage"]>[0],
   ) {
     return this._ns.sendFamilyRoomMessage(params);
+  }
+
+  async shopGetProfile() {
+    return this._ns.shopGetProfile();
+  }
+
+  async shopUpdateProfile(params: Parameters<NodeService["shopUpdateProfile"]>[0]) {
+    return this._ns.shopUpdateProfile(params);
+  }
+
+  async shopListListings(params?: Parameters<NodeService["shopListListings"]>[0]) {
+    return this._ns.shopListListings(params);
+  }
+
+  async shopUpsertListing(params: Parameters<NodeService["shopUpsertListing"]>[0]) {
+    return this._ns.shopUpsertListing(params);
+  }
+
+  async shopSetListingStatus(params: Parameters<NodeService["shopSetListingStatus"]>[0]) {
+    return this._ns.shopSetListingStatus(params);
+  }
+
+  async shopDeleteListing(params: Parameters<NodeService["shopDeleteListing"]>[0]) {
+    return this._ns.shopDeleteListing(params);
+  }
+
+  async shopDraftListing(params?: Parameters<NodeService["shopDraftListing"]>[0]) {
+    return this._ns.shopDraftListing(params);
+  }
+
+  async shopSaveListingMedia(params: Parameters<NodeService["shopSaveListingMedia"]>[0]) {
+    return this._ns.shopSaveListingMedia(params);
+  }
+
+  async shopGetListingMedia(params: Parameters<NodeService["shopGetListingMedia"]>[0]) {
+    return this._ns.shopGetListingMedia(params);
+  }
+
+  async marketSearch(params?: Parameters<NodeService["marketSearch"]>[0]) {
+    return this._ns.marketSearch(params);
+  }
+
+  async marketBrowseSuggestions() {
+    return this._ns.marketBrowseSuggestions();
+  }
+
+  async marketClearSearchHistory() {
+    return this._ns.marketClearSearchHistory();
+  }
+
+  async marketReportSeller(params: Parameters<NodeService["marketReportSeller"]>[0]) {
+    return this._ns.marketReportSeller(params);
+  }
+
+  async marketSuggestSellerReply(
+    params: Parameters<NodeService["marketSuggestSellerReply"]>[0],
+  ) {
+    return this._ns.marketSuggestSellerReply(params);
+  }
+
+  async marketShareListing(params: Parameters<NodeService["marketShareListing"]>[0]) {
+    return this._ns.marketShareListing(params);
   }
 
   async syncPairingKioskFromConfig() {

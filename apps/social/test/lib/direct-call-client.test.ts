@@ -215,7 +215,7 @@ describe("DirectCallClient", () => {
       await client.sendChat("target", "hello");
       // `attachments` is an optional 3rd arg (added with audio-message support);
       // omitting it still works — NodeService just receives `undefined`.
-      expect(mockNode.sendChat).toHaveBeenCalledWith("target", "hello", undefined);
+      expect(mockNode.sendChat).toHaveBeenCalledWith("target", "hello", undefined, undefined);
     });
 
     it("listChatHistory delegates to NodeService", async () => {

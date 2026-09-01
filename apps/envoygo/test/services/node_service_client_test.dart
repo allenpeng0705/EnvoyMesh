@@ -928,4 +928,143 @@ void main() {
       expect(result['reverted'], isTrue);
     });
   });
+
+  group('NodeServiceClient shop RPCs (Phase 63A)', () {
+    test('shopGetProfile and shopListListings call home methods', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final profileFuture = client.shopGetProfile();
+      await Future.delayed(Duration.zero);
+      final sentProfile = _lastSent(mock);
+      expect(sentProfile['method'], 'shopGetProfile');
+      mock.simulateMessage({
+        'id': sentProfile['id'],
+        'result': {
+          'profile': {'shopId': 'shop_1', 'displayName': 'Campus'},
+        },
+      });
+      final profile = await profileFuture;
+      expect(profile['profile']['shopId'], 'shop_1');
+
+      final listFuture = client.shopListListings(status: 'active');
+      await Future.delayed(Duration.zero);
+      final sentList = _lastSent(mock);
+      expect(sentList['method'], 'shopListListings');
+      mock.simulateMessage({
+        'id': sentList['id'],
+        'result': {
+          'listings': [
+            {'listingId': 'listing_1', 'title': 'Book'},
+          ],
+        },
+      });
+      final listed = await listFuture;
+      expect(listed['listings'], hasLength(1));
+    });
+
+    test('marketSearch and sendChat listingId (Phase 63B)', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final searchFuture = client.marketSearch(query: 'books');
+      await Future.delayed(Duration.zero);
+      final sentSearch = _lastSent(mock);
+      expect(sentSearch['method'], 'marketSearch');
+      expect(sentSearch['params']['query'], 'books');
+      mock.simulateMessage({
+        'id': sentSearch['id'],
+        'result': {
+          'cards': [
+            {'listingId': 'listing_1', 'title': 'Calc'},
+          ],
+        },
+      });
+      final search = await searchFuture;
+      expect(search['cards'], hasLength(1));
+
+      final clearFuture = client.marketClearSearchHistory();
+      await Future.delayed(Duration.zero);
+      final sentClear = _lastSent(mock);
+      expect(sentClear['method'], 'marketClearSearchHistory');
+      mock.simulateMessage({
+        'id': sentClear['id'],
+        'result': {'ok': true},
+      });
+      final cleared = await clearFuture;
+      expect(cleared['ok'], true);
+
+      final chatFuture = client.sendChat(
+        'envoy:owner:seller',
+        'hi',
+        listingId: 'listing_1',
+      );
+      await Future.delayed(Duration.zero);
+      final sentChat = _lastSent(mock);
+      expect(sentChat['method'], 'sendChat');
+      expect(sentChat['params']['listingId'], 'listing_1');
+      mock.simulateMessage({
+        'id': sentChat['id'],
+        'result': {'ok': true},
+      });
+      await chatFuture;
+    });
+
+    test('shopDraftListing / shopSaveListingMedia / marketSuggestSellerReply (Phase 63E)', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final draftFuture = client.shopDraftListing(
+        notes: 'Used textbook',
+        photoFileName: 'book.jpg',
+      );
+      await Future.delayed(Duration.zero);
+      final sentDraft = _lastSent(mock);
+      expect(sentDraft['method'], 'shopDraftListing');
+      expect(sentDraft['params']['notes'], 'Used textbook');
+      mock.simulateMessage({
+        'id': sentDraft['id'],
+        'result': {
+          'ok': true,
+          'draft': {'title': 'Used textbook', 'category': 'books'},
+        },
+      });
+      final draft = await draftFuture;
+      expect(draft['ok'], true);
+
+      final mediaFuture = client.shopSaveListingMedia(
+        filename: 'book.jpg',
+        contentBase64: 'aGVsbG8=',
+        mimeType: 'image/jpeg',
+      );
+      await Future.delayed(Duration.zero);
+      final sentMedia = _lastSent(mock);
+      expect(sentMedia['method'], 'shopSaveListingMedia');
+      mock.simulateMessage({
+        'id': sentMedia['id'],
+        'result': {'mediaPath': 'shop-media/listing_abc.jpg'},
+      });
+      final media = await mediaFuture;
+      expect(media['mediaPath'], 'shop-media/listing_abc.jpg');
+
+      final suggestFuture = client.marketSuggestSellerReply(
+        listingId: 'listing_1',
+        buyerMessage: 'How much?',
+      );
+      await Future.delayed(Duration.zero);
+      final sentSuggest = _lastSent(mock);
+      expect(sentSuggest['method'], 'marketSuggestSellerReply');
+      expect(sentSuggest['params']['listingId'], 'listing_1');
+      mock.simulateMessage({
+        'id': sentSuggest['id'],
+        'result': {'ok': true, 'reply': '120 CNY', 'listingId': 'listing_1'},
+      });
+      final suggest = await suggestFuture;
+      expect(suggest['ok'], true);
+      expect(suggest['reply'], '120 CNY');
+    });
+  });
 }

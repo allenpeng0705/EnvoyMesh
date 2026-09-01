@@ -36,6 +36,210 @@ class AppLocalizationsEn extends AppLocalizations {
   String get contentExplore => 'Explore';
 
   @override
+  String get marketTitle => 'Market';
+
+  @override
+  String get marketPaneBrowse => 'Browse';
+
+  @override
+  String get marketPaneShop => 'My Shop';
+
+  @override
+  String get marketBrowseEmptyTitle => 'No peer listings yet';
+
+  @override
+  String get marketBrowseEmptyDesc =>
+      'Listings from friends and strangers appear when peers answer your search, or after bonded friends publish. Try a keyword, or open My Shop.';
+
+  @override
+  String get marketSearchPlaceholder => 'Search books, electronics, tags…';
+
+  @override
+  String get marketSearchSubmit => 'Search';
+
+  @override
+  String get marketSearchIdleHint =>
+      'Try a keyword, or tap a suggestion below.';
+
+  @override
+  String marketSearchNoResults(String query) {
+    return 'No listings matched “$query”.';
+  }
+
+  @override
+  String get marketChipBooks => 'Books';
+
+  @override
+  String get marketChipElectronics => 'Electronics';
+
+  @override
+  String get marketChipClothing => 'Clothing';
+
+  @override
+  String get marketChipHome => 'Home';
+
+  @override
+  String get marketChipDigital => 'Digital';
+
+  @override
+  String get marketClearHistory => 'Clear history';
+
+  @override
+  String get marketHistoryCleared => 'Search history cleared.';
+
+  @override
+  String get marketMessageSeller => 'Message seller';
+
+  @override
+  String get marketSellerLabel => 'Seller';
+
+  @override
+  String get marketShareLink => 'Copy link';
+
+  @override
+  String get marketShareCopied => 'Share link copied.';
+
+  @override
+  String marketInquireDefault(String title) {
+    return 'Hi — interested in “$title”. Is it still available?';
+  }
+
+  @override
+  String get marketInquireSent => 'Message sent. Opening chat…';
+
+  @override
+  String get marketNotConnected =>
+      'Not connected to home — pair to view your shop.';
+
+  @override
+  String get marketNoListings =>
+      'No listings yet. Tap Add from photo to create one, or edit on Social.';
+
+  @override
+  String get marketUntitled => 'Untitled listing';
+
+  @override
+  String get marketVisibilityPublicShort => 'Public';
+
+  @override
+  String get marketVisibilityBondsShort => 'Bonds only';
+
+  @override
+  String get marketStatusActive => 'For sale';
+
+  @override
+  String get marketStatusReserved => 'Reserved';
+
+  @override
+  String get marketStatusSold => 'Sold';
+
+  @override
+  String get marketStatusWithdrawn => 'Withdrawn';
+
+  @override
+  String get marketTagsLabel => 'Tags';
+
+  @override
+  String get marketEditOnSocialHint =>
+      'You can also create and edit listings on the home-node Social Market tab.';
+
+  @override
+  String get marketCaptureAddFromPhoto => 'Add from photo';
+
+  @override
+  String get marketCaptureCamera => 'Take photo';
+
+  @override
+  String get marketCaptureGallery => 'Choose from gallery';
+
+  @override
+  String get marketCaptureNotesTitle => 'Describe the item';
+
+  @override
+  String get marketCaptureNotesHint => 'Title on the first line, then details…';
+
+  @override
+  String get marketCaptureContinue => 'Continue';
+
+  @override
+  String get marketCaptureReviewTitle => 'Review listing';
+
+  @override
+  String get marketCaptureTitleLabel => 'Title';
+
+  @override
+  String get marketCaptureDescriptionLabel => 'Description';
+
+  @override
+  String get marketCapturePriceLabel => 'Price';
+
+  @override
+  String get marketCaptureCurrencyLabel => 'Currency';
+
+  @override
+  String get marketCaptureVisibilityLabel => 'Who can find this';
+
+  @override
+  String get marketCapturePublish => 'Publish';
+
+  @override
+  String get marketCapturePublished => 'Listing published on your home node.';
+
+  @override
+  String get marketCaptureTitleRequired => 'Add a title before publishing.';
+
+  @override
+  String get marketSellerSuggestedReply => 'Suggested reply from listing';
+
+  @override
+  String get marketMarkReserved => 'Mark reserved';
+
+  @override
+  String get marketMarkSold => 'Mark sold';
+
+  @override
+  String get marketMarkAvailable => 'Mark available';
+
+  @override
+  String get marketRelist => 'Relist';
+
+  @override
+  String get marketStatusUpdated => 'Listing status updated.';
+
+  @override
+  String get marketPaymentHint =>
+      'Agree payment with the seller outside EnvoyMesh — Envoy doesn’t hold money.';
+
+  @override
+  String get marketBlockSeller => 'Block';
+
+  @override
+  String get marketReportSeller => 'Report';
+
+  @override
+  String get marketConfirmBlock =>
+      'Block this seller? Their listings will hide from your Browse.';
+
+  @override
+  String get marketConfirmReport =>
+      'Report and block this seller? This stays on your node (no central review yet).';
+
+  @override
+  String get marketFilterCategory => 'Category';
+
+  @override
+  String get marketFilterAnyCategory => 'Any category';
+
+  @override
+  String get marketFilterMinPrice => 'Min price';
+
+  @override
+  String get marketFilterMaxPrice => 'Max price';
+
+  @override
+  String get marketFilterCurrency => 'Currency';
+
+  @override
   String get termEmptyHint =>
       'Start a Pi coding session or a shell terminal on your home node.';
 
@@ -138,6 +342,12 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get meBrowserHint =>
       'Open envoy:// pages — or use the Content tab for My Site';
+
+  @override
+  String get meMyShop => 'My Shop';
+
+  @override
+  String get meMyShopHint => 'Browse listings and add from photo on your phone';
 
   @override
   String get meAiEngine => 'AI Engine';
