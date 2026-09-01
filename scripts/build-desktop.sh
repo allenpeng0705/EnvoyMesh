@@ -94,7 +94,11 @@
 # Apple Developer ID signing + notarization (macOS DMG — direct download, not App Store):
 #   Fill the exports in apply_apple_signing_env() below, or copy
 #   scripts/sign-macos-release.env.example → scripts/sign-macos-release.env
-#   (gitignored). Tauri signs + notarizes during `tauri build` when set.
+#   (gitignored). Tauri notarizes during bundle when APPLE_ID is set.
+#   Default TAURI_DEFER_APP_SIGN=1 builds an unsigned .app first, then
+#   scripts/sign-macos-app-bundle.sh signs with timestamp retry/fallback
+#   (survives flaky timestamp.apple.com). Set TAURI_DEFER_APP_SIGN=0 to
+#   let Tauri codesign inline (fails hard when timestamp server is down).
 #   Full operator guide: docs/macos-mirror-signing.md
 #
 # Mac App Store (experimental — separate pipeline, not the website DMG):
@@ -617,11 +621,13 @@ run_tauri_build() {
     fi
     cd "${PROJECT_DIR}/apps/tauri"
 
-    local tauri_inv
+    local tauri_build_inv tauri_bundle_inv
     if command -v cargo-tauri &> /dev/null; then
-      tauri_inv=(cargo tauri build)
+      tauri_build_inv=(cargo tauri build)
+      tauri_bundle_inv=(cargo tauri bundle)
     else
-      tauri_inv=(npx tauri build)
+      tauri_build_inv=(npx tauri build)
+      tauri_bundle_inv=(npx tauri bundle)
     fi
 
     # Mac App Store: sandbox + .app only (overrides slim/full/DMG).
@@ -632,14 +638,28 @@ run_tauri_build() {
         exit 1
       fi
       echo "  Using Mac App Store config: ${appstore_conf} (--bundles app, sandbox)"
-      "${tauri_inv[@]}" --config "${appstore_conf}" --bundles app "$@"
+      "${tauri_build_inv[@]}" --config "${appstore_conf}" --bundles app "$@"
       return $?
     fi
 
-    # Config selection (mirrors build-desktop.ps1 -SkipPi / -Full):
-    #   SKIP_PI=1     → tauri.conf.slim.json
-    #   USE_FULL=1    → tauri.conf.full.json (Kubo + Pi)
-    #   default       → tauri.conf.json (Pi, no Kubo)
+    # When Apple timestamp.apple.com flakes, Tauri's inline codesign fails the whole
+    # bundle. Build an unsigned .app, deep-sign with retry/fallback, then package DMG.
+    local defer_sign=0
+    local saved_identity=""
+    if [ "$(uname -s)" = "Darwin" ] && [ -n "${APPLE_SIGNING_IDENTITY:-}" ] && [ "${TAURI_DEFER_APP_SIGN:-1}" = "1" ]; then
+      defer_sign=1
+      saved_identity="$APPLE_SIGNING_IDENTITY"
+      unset APPLE_SIGNING_IDENTITY
+      echo "  Tauri: deferring app codesign (sign-macos-app-bundle.sh handles timestamp fallback)"
+    fi
+
+    local unsigned_conf="src-tauri/tauri.conf.unsigned-build.json"
+    if [ "$defer_sign" = "1" ] && [ ! -f "${unsigned_conf}" ]; then
+      echo "error: missing ${unsigned_conf} (required for TAURI_DEFER_APP_SIGN)" >&2
+      return 1
+    fi
+
+    local config_args=()
     if [ "${SKIP_PI:-0}" = "1" ]; then
       local slim_conf="src-tauri/tauri.conf.slim.json"
       if [ ! -f "${slim_conf}" ]; then
@@ -647,7 +667,7 @@ run_tauri_build() {
         exit 1
       fi
       echo "  Using slim config: ${slim_conf} (Pi omitted)"
-      "${tauri_inv[@]}" --config "${slim_conf}" "$@"
+      config_args=(--config "${slim_conf}")
     elif [ "${USE_FULL:-0}" = "1" ]; then
       local full_conf="src-tauri/tauri.conf.full.json"
       if [ ! -f "${full_conf}" ]; then
@@ -655,11 +675,59 @@ run_tauri_build() {
         exit 1
       fi
       echo "  Using full config: ${full_conf} (Pi + Kubo)"
-      "${tauri_inv[@]}" --config "${full_conf}" "$@"
+      config_args=(--config "${full_conf}")
     else
       echo "  Using default config: tauri.conf.json (Pi + OpenClaw; no Kubo)"
-      "${tauri_inv[@]}" "$@"
     fi
+
+    # macOS /bin/bash 3.2 + set -u: "${empty[@]}" is an unbound variable — build argv without empty arrays.
+    local -a build_cmd=("${tauri_build_inv[@]}")
+    if [ "${#config_args[@]}" -gt 0 ]; then
+      build_cmd+=("${config_args[@]}")
+    fi
+    if [ "$defer_sign" = "1" ]; then
+      build_cmd+=(--config "${unsigned_conf}" --bundles app)
+    fi
+    if [ "$#" -gt 0 ]; then
+      build_cmd+=("$@")
+    fi
+
+    "${build_cmd[@]}"
+    local rc=$?
+
+    if [ "$defer_sign" = "1" ]; then
+      export APPLE_SIGNING_IDENTITY="$saved_identity"
+      if [ "$rc" -ne 0 ]; then
+        return "$rc"
+      fi
+      local app
+      app="$(newest_dir '*/release/bundle/macos/EnvoyMesh.app')"
+      if [ -z "$app" ]; then
+        echo "error: deferred codesign enabled but EnvoyMesh.app not found under target/" >&2
+        return 1
+      fi
+      echo ""
+      echo "Signing EnvoyMesh.app (deferred from Tauri)..."
+      bash "${SCRIPT_DIR}/sign-macos-app-bundle.sh" "$app" || return 1
+      echo ""
+      echo "Packaging DMG from signed .app..."
+      # App is already signed; force unsigned bundle config so Tauri does not re-codesign
+      # (keychain auto-detect would still pick Developer ID from env unset alone).
+      unset APPLE_SIGNING_IDENTITY
+      local -a bundle_cmd=("${tauri_bundle_inv[@]}")
+      if [ "${#config_args[@]}" -gt 0 ]; then
+        bundle_cmd+=("${config_args[@]}")
+      fi
+      bundle_cmd+=(--config "${unsigned_conf}" --bundles dmg)
+      if [ "$#" -gt 0 ]; then
+        bundle_cmd+=("$@")
+      fi
+      "${bundle_cmd[@]}"
+      rc=$?
+      export APPLE_SIGNING_IDENTITY="$saved_identity"
+    fi
+
+    return "$rc"
 }
 
 PUBLISHED=""
