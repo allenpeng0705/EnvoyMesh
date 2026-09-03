@@ -1829,6 +1829,30 @@ export class EnvoyMesh {
   }
 
   /**
+   * Live-update the circuit-relay server reservation store cap (auto-capacity).
+   * libp2p init uses the hardware ceiling; runtime adaptive budget shrinks/grows
+   * effective admission between floor and ceiling.
+   */
+  setCircuitRelayServerMaxReservations(limit: number): boolean {
+    const node = this.node;
+    if (!node || !this.options.enableRelayServer) return false;
+    const n = Math.max(1, Math.floor(limit));
+    const relay = (node.services as Record<string, unknown> | undefined)?.relay as
+      | { reservationStore?: { maxReservations?: number; reservations?: { size?: number } } }
+      | undefined;
+    const store = relay?.reservationStore;
+    if (!store || typeof store !== "object") return false;
+    const live = store.reservations?.size;
+    if (typeof live === "number" && n < live) {
+      // Keep renewals working for active homes; block only new slots until count drops.
+      store.maxReservations = live;
+      return true;
+    }
+    store.maxReservations = n;
+    return true;
+  }
+
+  /**
    * Snapshot the live circuit-relay-v2 reservation store. Each entry
    * corresponds to a peer that has an active RESERVE on this node.
    *

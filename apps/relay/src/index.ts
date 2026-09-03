@@ -31,6 +31,19 @@ import {
 } from "./relay-health.js";
 import { startRelayHttpLivenessWatchdog } from "./http-liveness-watchdog.js";
 import {
+  applyRelayAutoCapacity,
+  formatRelayCapacityStartupLog,
+  formatRelayCapacityIgnoredOverridesLog,
+  type RelayCapacityPublicSnapshot,
+} from "./relay-capacity-profile.js";
+import {
+  createInitialRelayCapacityRuntimeState,
+  relayCapacityPruneTargetPeers,
+  relayCapacityPruneTriggerPeers,
+  tickRelayCapacityController,
+  type RelayCapacityRuntimeState,
+} from "./relay-capacity-controller.js";
+import {
   parseRendezvousRegisterPayload,
   parseRendezvousQueryPayload,
   createRendezvousResponsePayload,
@@ -95,6 +108,22 @@ import {
 // ============================================================================
 
 const args = parseRelayArgs(process.argv.slice(2));
+const relayCapacitySetup = applyRelayAutoCapacity({ args, env: process.env });
+const relayCapacityMaxRssMb = relayCapacitySetup.maxRssMb;
+let relayCapacitySnapshot: RelayCapacityPublicSnapshot = {
+  ...relayCapacitySetup.snapshot,
+  effectiveMaxPeers: relayCapacitySetup.profile.initialEffectiveMaxPeers,
+};
+let relayCapacityRuntimeState: RelayCapacityRuntimeState =
+  createInitialRelayCapacityRuntimeState({
+    initialEffectiveMaxPeers: relayCapacitySetup.profile.initialEffectiveMaxPeers,
+    initialAdaptiveConnectionBudget: relayCapacitySetup.profile.initialAdaptiveConnectionBudget,
+    initialAdaptiveReservationBudget: relayCapacitySetup.profile.initialAdaptiveReservationBudget,
+  });
+const capacityStartupLog = formatRelayCapacityStartupLog(relayCapacitySnapshot);
+const capacityIgnoredLog = formatRelayCapacityIgnoredOverridesLog(
+  relayCapacitySetup.ignoredManualOverrides,
+);
 const startedAtMs = Date.now();
 const adminCreds = adminCredentialsConfigured(args);
 
@@ -187,6 +216,12 @@ process.on("unhandledRejection", (reason: unknown) => {
 // ============================================================================
 
 console.log(`[relay] Starting EnvoyMesh Relay Server`);
+if (capacityStartupLog) {
+  console.log(capacityStartupLog);
+}
+if (capacityIgnoredLog) {
+  console.warn(capacityIgnoredLog);
+}
 console.log(`[relay] Profile: ${args.profileDir}`);
 console.log(`[relay] Listen: ${args.listen.join(", ")}`);
 console.log(`[relay] DHT: ${args.enableDht ? (args.dhtClientMode ? "client mode" : "server mode") : "disabled"}`);
@@ -396,7 +431,30 @@ function writeRelayProbeResponse(res: ServerResponse, kind: "health" | "readyz")
   const snapshot = currentRelayHealthSnapshot();
   if (kind === "health") {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: true, ...snapshot }));
+    res.end(
+      JSON.stringify({
+        ok: true,
+        ...snapshot,
+        relayCapacity: relayCapacitySnapshot.autoCapacityEnabled
+          ? {
+              capacityScore: relayCapacitySnapshot.capacityScore,
+              tier: relayCapacitySnapshot.tier,
+              reservationsBottleneck: relayCapacitySnapshot.breakdown.reservationsBottleneck,
+              connectionsBottleneck: relayCapacitySnapshot.breakdown.connectionsBottleneck,
+              hardwareConnectionFloor: relayCapacitySnapshot.hardwareConnectionFloor,
+              hardwareConnectionCeiling: relayCapacitySnapshot.hardwareConnectionCeiling,
+              hardwareReservationFloor: relayCapacitySnapshot.hardwareReservationFloor,
+              hardwareReservationCeiling: relayCapacitySnapshot.hardwareReservationCeiling,
+              maxConnections: relayCapacitySnapshot.maxConnections,
+              maxReservations: relayCapacitySnapshot.maxReservations,
+              effectiveMaxPeers: relayCapacitySnapshot.effectiveMaxPeers,
+              adaptiveConnectionBudget: relayCapacitySnapshot.adaptiveConnectionBudget,
+              adaptiveReservationBudget: relayCapacitySnapshot.adaptiveReservationBudget,
+              autoCapacity: true,
+            }
+          : undefined,
+      }),
+    );
     return;
   }
   const ready =
@@ -687,6 +745,7 @@ async function runRelayHealthCycle(source: "startup" | "periodic"): Promise<void
     rssBytes: process.memoryUsage().rss,
     recentFatalErrors,
     previous: relayHealthState,
+    maxRssBytesOverride: relayCapacityMaxRssMb * 1024 * 1024,
   });
   relayHealthState = result.state;
   relayHealthSnapshot = result.snapshot;
@@ -889,6 +948,18 @@ function startSiblingHintsGossip(): void {
 try {
   await mesh.start();
   started = true;
+
+  if (relayCapacitySnapshot.autoCapacityEnabled) {
+    const applied = mesh.setCircuitRelayServerMaxReservations(
+      relayCapacityRuntimeState.adaptiveReservationBudget,
+    );
+    if (!applied) {
+      console.warn(
+        "[relay-capacity] could not apply initial adaptive reservation cap — " +
+          "will retry on next stats tick",
+      );
+    }
+  }
 
   const listenAddrs = mesh.multiaddrs;
   console.log(`[relay] Relay server started.`);
@@ -1955,26 +2026,70 @@ try {
         .inspectCircuitRelayReservations()
         .map((r) => r.peerId)
         .filter(Boolean);
+      const reservationCount = mesh.getCircuitRelayReservationCount();
       console.log(
         `[relay-stats] circuitPeers=${conn.circuitPeerIds.length} totalPeers=${conn.totalPeerIds} ` +
-          `totalConns=${conn.totalConnections} reservations=${mesh.getCircuitRelayReservationCount()}` +
+          `totalConns=${conn.totalConnections} reservations=${reservationCount}` +
           `${dialPart} roster=${relayRoster.size()} lagMs=${lastEventLoopLagMs} ` +
           `rssMB=${Math.floor(mem.rss / 1024 / 1024)}`,
       );
+      const maxReservations =
+        circuitRelayServerConfig.maxReservations ??
+        (args.relayPublicMode ? PUBLIC_RELAY_V2_DEFAULTS.maxReservations : 15);
+      if (relayCapacitySnapshot.autoCapacityEnabled) {
+        const capacityTick = tickRelayCapacityController(relayCapacityRuntimeState, {
+          eventLoopLagMs: lastEventLoopLagMs,
+          dialQueueLength: conn.dialQueueLength ?? null,
+          totalPeerIds: conn.totalPeerIds,
+          reservationCount,
+          maxConnections: relayCapacitySnapshot.hardwareConnectionCeiling,
+          connectionBudgetFloor: relayCapacitySnapshot.hardwareConnectionFloor,
+          adaptiveConnectionBudget: relayCapacityRuntimeState.adaptiveConnectionBudget,
+          maxReservations: relayCapacitySnapshot.hardwareReservationCeiling,
+          reservationBudgetFloor: relayCapacitySnapshot.hardwareReservationFloor,
+          adaptiveReservationBudget: relayCapacityRuntimeState.adaptiveReservationBudget,
+          rssMb: Math.floor(mem.rss / 1024 / 1024),
+          maxRssMb: relayCapacitySnapshot.maxRssMb,
+        });
+        const prevAdaptiveRes = relayCapacityRuntimeState.adaptiveReservationBudget;
+        relayCapacityRuntimeState = capacityTick.state;
+        relayCapacitySnapshot = {
+          ...relayCapacitySnapshot,
+          effectiveMaxPeers: capacityTick.state.effectiveMaxPeers,
+          adaptiveConnectionBudget: capacityTick.state.adaptiveConnectionBudget,
+          adaptiveReservationBudget: capacityTick.state.adaptiveReservationBudget,
+        };
+        if (capacityTick.state.adaptiveReservationBudget !== prevAdaptiveRes) {
+          mesh.setCircuitRelayServerMaxReservations(
+            capacityTick.state.adaptiveReservationBudget,
+          );
+        }
+        if (capacityTick.logLine) {
+          console.log(capacityTick.logLine);
+        }
+      }
       if (conn.dialQueueLength != null && conn.dialQueueLength > 50) {
         console.warn(
           `[relay-stats] WARNING: dialQueue=${conn.dialQueueLength} (>50) — event-loop wedge risk`,
         );
       }
       // Protect live reservation holders; drop anonymous DHT/bootstrap churn.
-      // Relays must stay hoppable even under public DHT pressure (stricter than home).
+      const pruneTriggerPeers = relayCapacitySnapshot.autoCapacityEnabled
+        ? relayCapacityPruneTriggerPeers(
+            relayCapacityRuntimeState.effectiveMaxPeers,
+            resolvedMaxConnections,
+          )
+        : Math.max(256, Math.floor(resolvedMaxConnections * 0.75));
+      const pruneTargetPeers = relayCapacitySnapshot.autoCapacityEnabled
+        ? relayCapacityPruneTargetPeers(relayCapacityRuntimeState.effectiveMaxPeers)
+        : Math.max(128, Math.floor(resolvedMaxConnections * 0.6));
       if (
         (conn.dialQueueLength != null && conn.dialQueueLength > 20) ||
-        conn.totalPeerIds > Math.max(256, Math.floor(resolvedMaxConnections * 0.75))
+        conn.totalPeerIds > pruneTriggerPeers
       ) {
         void mesh
           .pruneExcessSwarmConnections({
-            maxPeers: Math.max(128, Math.floor(resolvedMaxConnections * 0.6)),
+            maxPeers: pruneTargetPeers,
             dialQueueThreshold: 20,
             protectPeerIds: reservationPeerIds,
           })
