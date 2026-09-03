@@ -1,3 +1,15 @@
+/**
+ * Discovery seed store — global mesh dial pool (`{profileDir}/discovery-seeds.json`).
+ *
+ * Dual-store contract (do not merge with peer directory):
+ * - **Seeds** (this file) = how to reach someone on the mesh: anonymous /
+ *   bootstrap / `relay.lookup` circuit addrs / capability-topic finds.
+ *   Cap 256; tagged by `source`; fed into bootstrap + speculative dials.
+ * - **Peer directory** (`@envoymesh/local-store`) = contact book: owner↔peerId
+ *   mapping + `listenAddrs` for known/bonded peers.
+ * Outbound dials merge both in `outbound-dial-hints.ts` (directory first,
+ * then seed circuit paths for the recipient peerId).
+ */
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";

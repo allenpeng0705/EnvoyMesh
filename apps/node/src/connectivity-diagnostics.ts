@@ -1,5 +1,6 @@
 import type { ConnectivityDiagnostics } from "@envoymesh/api";
 import type { EnvoyMesh } from "@envoymesh/network";
+import { assessDialBudget } from "@envoymesh/network";
 import {
   analyzeConnectivityStageD,
   analyzeWanConnectivityAxes,
@@ -95,7 +96,8 @@ export function buildConnectivityDiagnostics(
   const dhtStillOn = connectivityMode !== "quietWan" && connectivityMode !== "aggressive";
   const bootstrapFailing =
     axes.bootstrapReachability.state === "fail" || axes.bootstrapReachability.state === "degraded";
-  const churnSymptom = (connStats?.totalPeerIds ?? 0) > 32 || (connStats?.dialQueueLength ?? 0) > 20;
+  const churnSymptom =
+    (connStats?.totalPeerIds ?? 0) > 32 || assessDialBudget(connStats?.dialQueueLength).busy;
   if (dhtStillOn && bootstrapFailing && churnSymptom) {
     hints.push(
       "High connection churn with the public DHT unreachable — your node may be behind CGNAT or a restrictive NAT. " +

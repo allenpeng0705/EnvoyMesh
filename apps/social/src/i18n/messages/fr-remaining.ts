@@ -1433,6 +1433,16 @@ export const frRemainingMessages = {
       },
       resourceTuning: {
         autoAppliedCgnat: "WAN calme a été appliqué automatiquement car ce nœud semble être derrière un CGNAT. Changer le mode ici verrouille votre choix.",
+        effectiveQuietWanCgnat:
+          "Exécution en WAN calme (réseau limité détecté). Bootstrap via relais uniquement.",
+        effectiveQuietWanUser:
+          "Exécution en WAN calme. DHT public désactivé ; bootstrap via relais uniquement.",
+        effectiveAggressive:
+          "Exécution en mode agressif. DHT public désactivé ; bootstrap via relais uniquement.",
+        leanBootstrapPendingSponsor:
+          "Bootstrap via relais uniquement jusqu’à la fin de la liaison ami sponsor.",
+        leanBootstrapActive:
+          "Bootstrap via relais uniquement (pas de swarm libp2p public).",
         lazyDhtFind: "Recherche DHT paresseuse",
         mode: "Mode",
         modeAggressive: "Agressif — CPU/réseau les plus bas",

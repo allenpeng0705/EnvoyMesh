@@ -55,6 +55,29 @@ export const CONNECTIVITY_MODES: readonly ConnectivityMode[] = [
   "quietWan",
 ] as const;
 
+/**
+ * Why lean (relay-only) bootstrap is active at runtime. Ephemeral — not persisted.
+ * `null` / omit when lean bootstrap is off.
+ */
+export type LeanBootstrapReason =
+  | "cgnat"
+  | "pending-sponsor"
+  | "user-quietWan"
+  | "user-aggressive";
+
+/**
+ * Live connectivity snapshot after node start (effective mode may differ from
+ * the Settings preference when CGNAT auto-applied quietWan or lean bootstrap
+ * forced relay-only). Returned on `getNodeConfig`; never written to disk.
+ */
+export interface ConnectivityRuntimeSnapshot {
+  effectiveConnectivityMode: ConnectivityMode;
+  leanBootstrapActive: boolean;
+  leanBootstrapReason: LeanBootstrapReason | null;
+  enableDht: boolean;
+  enableMdns: boolean;
+}
+
 /** Default for new nodes and unset config. */
 export const DEFAULT_CONNECTIVITY_MODE: ConnectivityMode = "optimized";
 

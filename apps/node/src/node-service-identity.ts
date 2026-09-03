@@ -45,7 +45,7 @@ import type {
   ReputationAnchorStore,
 } from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";
-import { isPrivateLanTcpDialHint } from "@envoymesh/network";
+import { isPrivateLanTcpDialHint, assessDialBudget } from "@envoymesh/network";
 import {
   createRendezvousRegisterPayload,
   createUnsignedEnvelope,
@@ -1297,10 +1297,10 @@ export async function _advertisePublicDiscoveryTopics(
   }
   if (!skipPublishThisCycle && timedOutCount > 0) {
     const dq = ctx.requireMesh().getConnectionStats().dialQueueLength;
-    const dqHint =
-      dq != null && dq > 50
-        ? ` dialQueue=${dq} (congested — provides deferred)`
-        : " DHT cold or unreachable";
+    const budget = assessDialBudget(dq);
+    const dqHint = budget.deferBackgroundWork
+      ? ` dialQueue=${budget.dialQueueLength} (congested — provides deferred)`
+      : " DHT cold or unreachable";
     console.warn(
       `[node-service] Discovery advertise: ${advertisedTopics.length} ok, ` +
         `${timedOutCount} timed out/deferred${failedCount > 0 ? `, ${failedCount} failed` : ""}.` +

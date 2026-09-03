@@ -1486,6 +1486,33 @@ export function SettingsNodeTab() {
               {t("settings.network.resourceTuning.autoAppliedCgnat")}
             </p>
           )}
+        {(() => {
+          const preferred = nodeConfig?.connectivityMode ?? "optimized";
+          const effective = nodeConfig?.effectiveConnectivityMode;
+          const leanReason = nodeConfig?.leanBootstrapReason;
+          const leanActive = nodeConfig?.leanBootstrapActive === true;
+          let effectiveHint: string | null = null;
+          if (leanReason === "pending-sponsor") {
+            effectiveHint = t("settings.network.resourceTuning.leanBootstrapPendingSponsor");
+          } else if (leanReason === "cgnat" || (effective === "quietWan" && preferred !== "quietWan")) {
+            effectiveHint = t("settings.network.resourceTuning.effectiveQuietWanCgnat");
+          } else if (leanReason === "user-quietWan" && leanActive) {
+            effectiveHint = t("settings.network.resourceTuning.effectiveQuietWanUser");
+          } else if (
+            leanReason === "user-aggressive" ||
+            (effective === "aggressive" && preferred !== "aggressive")
+          ) {
+            effectiveHint = t("settings.network.resourceTuning.effectiveAggressive");
+          } else if (leanActive) {
+            effectiveHint = t("settings.network.resourceTuning.leanBootstrapActive");
+          }
+          // Do not invent Quiet WAN copy for unrelated preferred/effective mismatches.
+          return effectiveHint ? (
+            <p className="section-desc" data-testid="connectivity-mode-effective">
+              {effectiveHint}
+            </p>
+          ) : null;
+        })()}
         <p className="section-desc" data-testid="connectivity-mode-summary">
           {formatConnectivityPresetSummary(
             resolveConnectivityPreset(nodeConfig?.connectivityMode ?? "optimized"),

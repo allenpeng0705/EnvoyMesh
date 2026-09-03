@@ -201,13 +201,28 @@ const NO_RESERVATION_LOG_INTERVAL_MS = 60_000;
  * Must stay below DEFAULT_CLIENT_MAX_DIAL_QUEUE_LENGTH — otherwise libp2p
  * rejects with "Dial queue is full" before we soft-defer.
  */
-export const ENSURE_PEER_DIAL_QUEUE_DEFER_THRESHOLD = 48;
-/** When dialQueue is this high, skip DHT provide / interest advertise fanout. */
-export const DHT_PROVIDE_DIAL_QUEUE_DEFER_THRESHOLD = 50;
+export {
+  ENSURE_PEER_DIAL_QUEUE_DEFER_THRESHOLD,
+  DHT_PROVIDE_DIAL_QUEUE_DEFER_THRESHOLD,
+  DEFAULT_CLIENT_MAX_DIAL_QUEUE_LENGTH,
+  BOND_SPONSOR_DIAL_QUEUE_SETTLE_TARGET,
+  DIAL_BUDGET,
+  assessDialBudget,
+  shouldDeferEnsurePeerForDialQueue,
+  isDialQueueLengthCongested,
+  type DialBudgetSnapshot,
+} from "./dial-budget.js";
+import {
+  DHT_PROVIDE_DIAL_QUEUE_DEFER_THRESHOLD,
+  ENSURE_PEER_DIAL_QUEUE_DEFER_THRESHOLD,
+  DEFAULT_CLIENT_MAX_DIAL_QUEUE_LENGTH,
+  assessDialBudget,
+  shouldDeferEnsurePeerForDialQueue,
+  isDialQueueLengthCongested,
+  type DialBudgetSnapshot,
+} from "./dial-budget.js";
 /** Home-node default: keep DHT/bootstrap from opening 100 parallel dials. */
 export const DEFAULT_CLIENT_MAX_PARALLEL_DIALS = 12;
-/** Home-node default: refuse to enqueue hundreds of pending dials. */
-export const DEFAULT_CLIENT_MAX_DIAL_QUEUE_LENGTH = 64;
 /** Home-node default: fewer multiaddrs per peer before giving up. */
 export const DEFAULT_CLIENT_MAX_PEER_ADDRS_TO_DIAL = 8;
 /** Rate-limit identical "Dial queue is full" ensurePeerReachable warnings. */
@@ -216,31 +231,6 @@ const DIAL_QUEUE_FULL_LOG_INTERVAL_MS = 10_000;
 const ENSURE_PEER_SOFT_FAIL_LOG_INTERVAL_MS = 15_000;
 /** Rate-limit provideCapabilityTopic dial-queue deferral lines. */
 const PROVIDE_DEFER_LOG_INTERVAL_MS = 15_000;
-
-/** Speculative ensurePeerReachable should wait when the dial queue is flooded. */
-export function shouldDeferEnsurePeerForDialQueue(input: {
-  dialQueueLength: number | undefined;
-  forceFreshDial?: boolean;
-  priorityDial?: boolean;
-  threshold?: number;
-  /** Soft-defer everyone (incl. priority) at/above this — libp2p would reject. */
-  hardCap?: number;
-}): boolean {
-  const len = input.dialQueueLength ?? 0;
-  const hardCap = input.hardCap ?? DEFAULT_CLIENT_MAX_DIAL_QUEUE_LENGTH;
-  // Queue already at capacity: dialing will throw "Dial queue is full". Soft-defer.
-  if (len >= hardCap) return true;
-  if (input.forceFreshDial === true || input.priorityDial === true) return false;
-  return len > (input.threshold ?? ENSURE_PEER_DIAL_QUEUE_DEFER_THRESHOLD);
-}
-
-/** DHT provide / interest advertise should wait when the dial queue is flooded. */
-export function isDialQueueLengthCongested(
-  dialQueueLength: number | undefined,
-  threshold: number = DHT_PROVIDE_DIAL_QUEUE_DEFER_THRESHOLD,
-): boolean {
-  return (dialQueueLength ?? 0) > threshold;
-}
 
 /**
  * circuit-relay-v2 reservation-protocol timeout.
@@ -2502,6 +2492,11 @@ export class EnvoyMesh {
    */
   isDialQueueCongested(threshold: number = DHT_PROVIDE_DIAL_QUEUE_DEFER_THRESHOLD): boolean {
     return isDialQueueLengthCongested(this.getConnectionStats().dialQueueLength, threshold);
+  }
+
+  /** Unified dial-queue pressure snapshot (busy / congested / saturated). */
+  getDialBudget(): DialBudgetSnapshot {
+    return assessDialBudget(this.getConnectionStats().dialQueueLength);
   }
 
   async provideSelf(): Promise<{ advertised: number; timedOut: boolean }> {

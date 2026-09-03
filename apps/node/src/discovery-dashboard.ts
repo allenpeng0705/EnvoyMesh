@@ -3,7 +3,7 @@ import "./dom-event-polyfill.js";
 import { loadOrCreateNodeProfile } from "@envoymesh/local-store";
 import type { DiscoveryProfile } from "@envoymesh/api";
 import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
-import { EnvoyMesh, type DiscoveredMeshPeer } from "@envoymesh/network";
+import { EnvoyMesh, type DiscoveredMeshPeer, assessDialBudget } from "@envoymesh/network";
 import {
   createRelayCheckinPayload,
   createRelayLookupPayload,
@@ -200,9 +200,11 @@ Examples:
     if (storeAddrs.length > 0) {
       await discoverySeedStore.upsertMany(storeAddrs, "relay-peers");
     }
-    const dialQueue = mesh.getConnectionStats?.()?.dialQueueLength ?? 0;
-    if (dialQueue > 50) {
-      console.log(`[auto-relay-query] dial deferred (dialQueue=${dialQueue} > 50)`);
+    const dialBudget = assessDialBudget(mesh.getConnectionStats?.()?.dialQueueLength);
+    if (dialBudget.deferBackgroundWork) {
+      console.log(
+        `[auto-relay-query] dial deferred (dialQueue=${dialBudget.dialQueueLength} congested)`,
+      );
       return;
     }
     // Cap speculative discovery dials — only public-hop circuits, one try each.

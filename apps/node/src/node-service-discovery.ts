@@ -184,6 +184,8 @@ export interface NodeDiscoveryRuntimeDeps {
     peerId: string;
     displayName: string;
   } | undefined>;
+  /** Allow a peer under strictDialPolicy before dial (Discover / search). */
+  noteStrictDialPeer?(peerId: string, seedAddr?: string): void;
 }
 
 /**
@@ -456,6 +458,15 @@ export class NodeDiscoveryRuntime {
       if (!mesh) {
         console.warn("[searchPeers] Node not initialized");
         return [];
+      }
+
+      // Upsert before dial so strictDialPolicy allow-set includes this peer.
+      const seedAddr = `/p2p/${peerId}`;
+      this.deps.noteStrictDialPeer?.(peerId, seedAddr);
+      try {
+        await this.deps.discoverySeedStore?.upsertMany([seedAddr], "manual-bootstrap");
+      } catch {
+        /* non-fatal */
       }
 
       try {

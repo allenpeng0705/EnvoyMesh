@@ -201,6 +201,7 @@ export interface NodeConfigContextDeps {
   loadBridgeConfigWebSearchEnabled: NodeConfigContext["loadBridgeConfigWebSearchEnabled"];
   loadBridgeExtAgentSettings: NodeConfigContext["loadBridgeExtAgentSettings"];
   getProfile: NodeConfigContext["getProfile"];
+  getConnectivityRuntimeSnapshot: NodeConfigContext["getConnectivityRuntimeSnapshot"];
 }
 
 export interface CapabilityDiscoveryContextDeps {
@@ -286,6 +287,8 @@ export interface StartNodeContextDeps {
   setStopRelayClientScheduler: StartNodeContext["setStopRelayClientScheduler"];
   setRelayClientCycleDeps: StartNodeContext["setRelayClientCycleDeps"];
   setStopNodeStatsLogging: StartNodeContext["setStopNodeStatsLogging"];
+  setStopBootstrapReprobe: StartNodeContext["setStopBootstrapReprobe"];
+  setStopPublicAddrDiscovery: StartNodeContext["setStopPublicAddrDiscovery"];
   setCapabilityDiscoveryTimer: StartNodeContext["setCapabilityDiscoveryTimer"];
   setAdvertiseInterestsStartupTimeout: StartNodeContext["setAdvertiseInterestsStartupTimeout"];
   setAgentCardRefreshStartupTimeout: StartNodeContext["setAgentCardRefreshStartupTimeout"];
@@ -306,6 +309,9 @@ export interface StartNodeContextDeps {
   runCapabilityDiscoveryCycle: StartNodeContext["runCapabilityDiscoveryCycle"];
   startCapabilityDiscoveryScheduler: StartNodeContext["startCapabilityDiscoveryScheduler"];
   setBootstrapPeerIds: StartNodeContext["setBootstrapPeerIds"];
+  setConnectivityRuntimeSnapshot: StartNodeContext["setConnectivityRuntimeSnapshot"];
+  setStrictDialAllowCache: StartNodeContext["setStrictDialAllowCache"];
+  listBondedTransportPeerIds: StartNodeContext["listBondedTransportPeerIds"];
 }
 
 export interface WireMeshEventsContextDeps {
@@ -792,6 +798,7 @@ export function buildNodeConfigContext(deps: NodeConfigContextDeps): NodeConfigC
     loadBridgeConfigWebSearchEnabled: async () => Boolean(await deps.loadBridgeConfigWebSearchEnabled()),
     loadBridgeExtAgentSettings: () => deps.loadBridgeExtAgentSettings(),
     getProfile: () => deps.getProfile(),
+    getConnectivityRuntimeSnapshot: () => deps.getConnectivityRuntimeSnapshot(),
   };
 }
 
@@ -973,6 +980,12 @@ export function buildStartNodeContext(deps: StartNodeContextDeps): StartNodeCont
     setStopNodeStatsLogging: (fn) => {
       deps.setStopNodeStatsLogging(fn);
     },
+    setStopBootstrapReprobe: (fn) => {
+      deps.setStopBootstrapReprobe(fn);
+    },
+    setStopPublicAddrDiscovery: (fn) => {
+      deps.setStopPublicAddrDiscovery(fn);
+    },
     setCapabilityDiscoveryTimer: (t) => {
       deps.setCapabilityDiscoveryTimer(t);
     },
@@ -1009,6 +1022,13 @@ export function buildStartNodeContext(deps: StartNodeContextDeps): StartNodeCont
     startCapabilityDiscoveryScheduler: (runtime) =>
       deps.startCapabilityDiscoveryScheduler(runtime),
     setBootstrapPeerIds: (ids) => { deps.setBootstrapPeerIds(ids); },
+    setConnectivityRuntimeSnapshot: (snap) => {
+      deps.setConnectivityRuntimeSnapshot(snap);
+    },
+    setStrictDialAllowCache: (cache) => {
+      deps.setStrictDialAllowCache(cache);
+    },
+    listBondedTransportPeerIds: () => deps.listBondedTransportPeerIds(),
   };
 }
 

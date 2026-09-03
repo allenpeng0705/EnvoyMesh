@@ -29,6 +29,7 @@ import type { BridgeIdentity } from "./bridge/pipe.js";
 import { recordMeshActivity } from "./connectivity-runtime.js";
 import type { LocalPeerDirectoryStore } from "@envoymesh/local-store";
 import {
+  BOND_SPONSOR_DIAL_QUEUE_SETTLE_TARGET,
   ENVOY_CHAT_PROTOCOL,
   isPrivateLanTcpDialHint,
   isPrivateRelayHopCircuitDialHint,
@@ -734,7 +735,7 @@ export async function deliverCallEnvelopeViaRuntime(
             const queued = stats?.dialQueueLength ?? 0;
             // Bootstrap presets can leave 100+ pending dials; wait briefly so
             // the sponsor circuit CONNECT is not stuck behind DHT churn.
-            if (kind === "public-circuit" && queued > 16) {
+            if (kind === "public-circuit" && queued > BOND_SPONSOR_DIAL_QUEUE_SETTLE_TARGET) {
               bondTrace(3, "WAIT", "dial queue congested — settling before circuit dial", {
                 dialQueue: queued,
                 totalConns: stats?.totalConnections,
@@ -742,7 +743,7 @@ export async function deliverCallEnvelopeViaRuntime(
               const settleDeadline = Date.now() + 8_000;
               while (Date.now() < settleDeadline) {
                 const q = mesh.getConnectionStats()?.dialQueueLength ?? 0;
-                if (q <= 16) break;
+                if (q <= BOND_SPONSOR_DIAL_QUEUE_SETTLE_TARGET) break;
                 await new Promise<void>((r) => setTimeout(r, 250));
               }
             }

@@ -1117,6 +1117,16 @@ export const jaRemainingMessages = {
       },
       resourceTuning: {
         autoAppliedCgnat: "このノードが CGNAT 背後のように見えるため Quiet WAN を自動適用しました。ここでモードを変えると選択がロックされます。",
+        effectiveQuietWanCgnat:
+          "Quiet WAN で実行中（制限されたネットワークを検出）。Bootstrap はリレーのみです。",
+        effectiveQuietWanUser:
+          "Quiet WAN で実行中。公開 DHT はオフ；Bootstrap はリレーのみです。",
+        effectiveAggressive:
+          "Aggressive で実行中。公開 DHT はオフ；Bootstrap はリレーのみです。",
+        leanBootstrapPendingSponsor:
+          "スポンサー友だちのボンド完了まで Bootstrap はリレーのみです。",
+        leanBootstrapActive:
+          "Bootstrap はリレーのみです（公開 libp2p スウォームなし）。",
         mode: "モード",
         modeAggressive: "Aggressive — CPU/ネットワーク最小",
         modeNormal: "Normal — 最速応答（レガシー既定）",

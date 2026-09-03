@@ -1423,6 +1423,16 @@ export const deRemainingMessages = {
       },
       resourceTuning: {
         autoAppliedCgnat: "Quiet WAN wurde automatisch angewendet, weil dieser Knoten hinter CGNAT zu sein scheint. Modus hier ändern sperrt Ihre Wahl.",
+        effectiveQuietWanCgnat:
+          "Läuft als Quiet WAN (eingeschränktes Netzwerk erkannt). Bootstrap nutzt nur Relays.",
+        effectiveQuietWanUser:
+          "Läuft als Quiet WAN. Öffentliches DHT aus; Bootstrap nutzt nur Relays.",
+        effectiveAggressive:
+          "Läuft als Aggressive. Öffentliches DHT aus; Bootstrap nutzt nur Relays.",
+        leanBootstrapPendingSponsor:
+          "Bootstrap nutzt nur Relays, bis die Sponsor-Freund-Bindung abgeschlossen ist.",
+        leanBootstrapActive:
+          "Bootstrap nutzt nur Relays (kein öffentlicher libp2p-Swarm).",
         mode: "Modus",
         modeAggressive: "Aggressiv — niedrigste CPU/Netzwerk",
         modeNormal: "Normal — am reaktionsfähigsten (Legacy-Defaults)",

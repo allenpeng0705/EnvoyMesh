@@ -25,6 +25,7 @@ import {
   resolveLazyCapabilityDiscovery,
   type AiBotDefinition,
   type ConnectivityMode,
+  type ConnectivityRuntimeSnapshot,
   type ExtAgentDefinition,
   type ModelProviderConfig,
   type NodeConfig,
@@ -54,6 +55,8 @@ export interface NodeConfigContext {
   }>;
   /** Current node profile (or undefined) — needed for friend-matching validation. */
   getProfile(): { owner: { ownerId: string } } | undefined;
+  /** Live connectivity snapshot after start (ephemeral). */
+  getConnectivityRuntimeSnapshot(): ConnectivityRuntimeSnapshot | undefined;
 }
 
 function applyModelProviderEnvOverrides(
@@ -76,12 +79,34 @@ function applyModelProviderEnvOverrides(
   };
 }
 
+function mergeConnectivityRuntimeFields(
+  ctx: NodeConfigContext,
+): Pick<
+  NodeConfig,
+  | "effectiveConnectivityMode"
+  | "leanBootstrapActive"
+  | "leanBootstrapReason"
+  | "runtimeEnableDht"
+  | "runtimeEnableMdns"
+> {
+  const snap = ctx.getConnectivityRuntimeSnapshot();
+  if (!snap) return {};
+  return {
+    effectiveConnectivityMode: snap.effectiveConnectivityMode,
+    leanBootstrapActive: snap.leanBootstrapActive,
+    leanBootstrapReason: snap.leanBootstrapReason,
+    runtimeEnableDht: snap.enableDht,
+    runtimeEnableMdns: snap.enableMdns,
+  };
+}
+
 export async function getNodeConfigViaRuntime(
   ctx: NodeConfigContext,
 ): Promise<NodeConfig> {
   const config = await ctx.loadNodeConfig();
   const modelProviders = applyModelProviderEnvOverrides(config?.modelProviders);
   const extAgentSettings = await ctx.loadBridgeExtAgentSettings();
+  const runtimeFields = mergeConnectivityRuntimeFields(ctx);
 
   if (config) {
     const tuning = resolveConnectivityTuning({
@@ -161,6 +186,7 @@ export async function getNodeConfigViaRuntime(
       connectivityMode: (tuning.connectivityMode ?? "optimized") as ConnectivityMode,
       connectivityModeExplicit: config.connectivityModeExplicit === true,
       connectivityModeAutoAppliedReason: config.connectivityModeAutoAppliedReason,
+      ...runtimeFields,
       maxConnections: tuning.maxConnections,
       mdnsIntervalMs: tuning.mdnsIntervalMs,
       capabilityDiscoveryIntervalMs: tuning.capabilityDiscoveryIntervalMs,
@@ -251,6 +277,7 @@ export async function getNodeConfigViaRuntime(
     friendMatchingPreferencesText: undefined,
     externalPublish: { allowIpfs: false },
     connectivityMode: "optimized",
+    ...runtimeFields,
     maxConnections: 48,
     mdnsIntervalMs: 45_000,
     capabilityDiscoveryIntervalMs: 120_000,
@@ -303,6 +330,11 @@ export async function updateNodeConfigViaRuntime(
     bridgeStatus: _bridgeStatus,
     skillApiKeys: _skillApiKeys,
     webSearchEnabled: _webSearchEnabled,
+    effectiveConnectivityMode: _effectiveConnectivityMode,
+    leanBootstrapActive: _leanBootstrapActive,
+    leanBootstrapReason: _leanBootstrapReason,
+    runtimeEnableDht: _runtimeEnableDht,
+    runtimeEnableMdns: _runtimeEnableMdns,
     ...persistedPatch
   } = config;
 

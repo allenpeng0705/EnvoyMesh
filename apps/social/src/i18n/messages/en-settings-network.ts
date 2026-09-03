@@ -118,6 +118,16 @@ export const networkSettingsMessages = {
     modeQuietWan: "Quiet WAN — relay discovery only (no public DHT)",
     autoAppliedCgnat:
       "Quiet WAN was auto-applied because this node looks like it is behind CGNAT. Changing the mode here locks your choice.",
+    effectiveQuietWanCgnat:
+      "Running as Quiet WAN (detected limited network). Bootstrap uses relays only.",
+    effectiveQuietWanUser:
+      "Running as Quiet WAN. Public DHT is off; bootstrap uses relays only.",
+    effectiveAggressive:
+      "Running as Aggressive. Public DHT is off; bootstrap uses relays only.",
+    leanBootstrapPendingSponsor:
+      "Bootstrap uses relays only until your sponsor friend bond completes.",
+    leanBootstrapActive:
+      "Bootstrap uses relays only (no public libp2p swarm).",
     restartHint: "Restart the node (or fully quit and reopen the app) for mesh timers and DHT/mDNS options to apply.",
     maxConnections: "Max connections",
     capabilityCycle: "Capability cycle (seconds)",

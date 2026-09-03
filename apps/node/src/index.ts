@@ -240,10 +240,22 @@ import {
   shouldPersistPeerDiscoverySeeds,
   shouldRecordPeerDiscoveryAudit,
   seedAddrsForDiscoveryProfile,
+  seedAddrsForStrictDialAllow,
 } from "./peer-discovery-telemetry.js";
 import { resolveBootstrapAddresses } from "./bootstrap-resolver.js";
-import { raceStunServers } from "./stun.js";
-import { upnpDiscoverAndMap, DEFAULT_LIBP2P_PORT } from "./upnp.js";
+import { startPublicAddrDiscoveryScheduler } from "./public-addr-discovery.js";
+import {
+  startBootstrapReprobeScheduler,
+  MAX_BOOTSTRAP_PROBE_RESULTS,
+  type BootstrapReprobeHandle,
+} from "./bootstrap-reprobe.js";
+import { maybeAutoApplyQuietWanForCgnat } from "./node-service-start.js";
+import {
+  buildAllowedDialPeerIds,
+  createStrictDialAllowCache,
+  shouldEnableStrictDialPolicy,
+  warnIfStrictDialAllowSetTooSmall,
+} from "./allowed-dial-peer-ids.js";
 import {
   addRelayCandidates,
   createRelayClientState,
@@ -897,6 +909,57 @@ configureBondWarmFromConnectivity({
   eventDriven: connectivityRuntime.bondWarmEventDriven,
   maxConnections: connectivityRuntime.maxConnections,
 });
+const cliConfiguredRelayAddrs = collectRelayControlTargets({
+  bootstrapPeers: effectiveBootstrapPeers,
+  configuredRelays: persistedNodeConfig?.configuredRelays,
+  bootstrapPresets: persistedNodeConfig?.bootstrapPresets,
+});
+/** Mutable CLI strict-dial state (reload / CGNAT can flip enable before mesh.start). */
+const cliStrictDial = {
+  enabled: shouldEnableStrictDialPolicy({
+    connectivityMode: connectivityRuntime.connectivityMode,
+    discoveryProfile: args.discoveryProfile,
+    relayServerEnabled: args.enableRelayServer,
+  }),
+  configuredRelayAddrs: [...cliConfiguredRelayAddrs] as string[],
+  cache: createStrictDialAllowCache(),
+};
+for (const addr of effectiveBootstrapPeers) cliStrictDial.cache.seedAddrs.add(addr);
+for (const addr of cliStrictDial.configuredRelayAddrs) cliStrictDial.cache.seedAddrs.add(addr);
+// Hydrate bonded contacts + non-DHT seeds so quietWan/contacts-only can dial friends.
+void (async () => {
+  try {
+    if (nodeService instanceof NodeServiceImpl) {
+      const bonds = await nodeService.getBonds();
+      for (const b of bonds) {
+        if (b.libp2pPeerId) cliStrictDial.cache.bondedTransportPeerIds.add(b.libp2pPeerId);
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    for (const addr of seedAddrsForStrictDialAllow(await discoverySeedStore.listSeedRecords())) {
+      cliStrictDial.cache.seedAddrs.add(addr);
+    }
+  } catch {
+    /* ignore */
+  }
+})();
+let cliMeshRef: EnvoyMesh | undefined;
+const cliAllowedDialPeerIds = (): Set<string> | undefined => {
+  if (!cliStrictDial.enabled) return undefined;
+  return buildAllowedDialPeerIds({
+    selfPeerId: cliMeshRef?.peerId,
+    bootstrapPeerIds: bootstrapPeerIdSet,
+    preferredRelayPeerIds: cliMeshRef?.getPreferredRelayPeerIds() ?? [],
+    configuredRelayAddrs: cliStrictDial.configuredRelayAddrs,
+    bondedTransportPeerIds: cliStrictDial.cache.bondedTransportPeerIds,
+    seedAddrs: cliStrictDial.cache.seedAddrs,
+    nearbyOrConnectedPeerIds: [...cliStrictDial.cache.nearbyPeerIds],
+    extraPeerIds: cliStrictDial.cache.extraPeerIds,
+  });
+};
 const mesh = new EnvoyMesh({
   listen: args.listen,
   advertiseAddrs: args.advertiseAddrs,
@@ -908,11 +971,7 @@ const mesh = new EnvoyMesh({
   bootstrapPeers: effectiveBootstrapPeers,
   enableRelay: args.enableRelay,
   enableRelayServer: args.enableRelayServer,
-  configuredRelayAddrs: collectRelayControlTargets({
-    bootstrapPeers: effectiveBootstrapPeers,
-    configuredRelays: persistedNodeConfig?.configuredRelays,
-    bootstrapPresets: persistedNodeConfig?.bootstrapPresets,
-  }),
+  configuredRelayAddrs: cliConfiguredRelayAddrs,
   enableAutoNat: args.enableAutoNat,
   enableDcutr: args.enableDcutr,
   enableQuic: args.enableQuic,
@@ -923,7 +982,28 @@ const mesh = new EnvoyMesh({
   onP2pDebug: (event) => {
     void appendP2pTrace(event);
   },
+  // Always attach the callback so a pre-start reload can flip strictDialPolicy on.
+  allowedDialPeerIds: cliAllowedDialPeerIds,
+  ...(cliStrictDial.enabled ? { strictDialPolicy: true } : {}),
 });
+cliMeshRef = mesh;
+if (nodeService instanceof NodeServiceImpl) {
+  nodeService._strictDialAllowCache = cliStrictDial.cache;
+}
+if (cliStrictDial.enabled) {
+  warnIfStrictDialAllowSetTooSmall(
+    buildAllowedDialPeerIds({
+      selfPeerId: mesh.peerId,
+      bootstrapPeerIds: bootstrapPeerIdSet,
+      configuredRelayAddrs: cliStrictDial.configuredRelayAddrs,
+      seedAddrs: cliStrictDial.cache.seedAddrs,
+      bondedTransportPeerIds: cliStrictDial.cache.bondedTransportPeerIds,
+    }),
+  );
+  console.log(
+    `[node] strictDialPolicy ON mode=${connectivityRuntime.connectivityMode} profile=${args.discoveryProfile}`,
+  );
+}
 {
   const { evaluateHomeWanReady } = await import("./home-wan-ready.js");
   wsServer.setReadyzProbe(() =>
@@ -966,9 +1046,8 @@ const agentCardAutoFetcher = createAgentCardAutoFetcher({
 });
 const connectivityWarnings: string[] = [];
 const bootstrapProbeResults: Array<{ peer: string; ok: boolean; latencyMs?: number; error?: string }> = [];
-const MAX_BOOTSTRAP_PROBE_RESULTS = 512;
-const BOOTSTRAP_REPROBE_INTERVAL_MS = 60_000;
-const BOOTSTRAP_REPROBE_JITTER_MS = 15_000;
+let bootstrapReprobeHandle: BootstrapReprobeHandle | undefined;
+let stopPublicAddrDiscovery: (() => void) | undefined;
 const RELAY_PEERS_QUERY_INTERVAL_MS = 30_000;
 const RELAY_PEERS_QUERY_JITTER_MS = 7_500;
 const RELAY_CHECKIN_INTERVAL_MS = 30_000;
@@ -1059,8 +1138,6 @@ function checkInboundPairRateLimit(peerId: string): boolean {
 const lastListenAddrMergeByPeer = new Map<string, number>();
 const LISTEN_ADDR_MERGE_MIN_MS = INBOUND_LISTEN_ADDR_MERGE_MIN_MS;
 
-let bootstrapReprobeTimer: ReturnType<typeof setTimeout> | undefined;
-let bootstrapReprobeCursor = 0;
 let capabilityDiscoveryTimer: ReturnType<typeof setTimeout> | undefined;
 let relayPeersQueryTimer: ReturnType<typeof setTimeout> | undefined;
 let relayCheckinTimer: ReturnType<typeof setTimeout> | undefined;
@@ -3072,78 +3149,7 @@ mesh.onMessage(async (params) => {
   scheduleMeshInboundDrain();
 });
 
-// ── Public IP discovery ────────────────────────────────────────────────────────
-// Priority: UPnP → STUN → autoNAT → relay-observed
-// First valid result wins; we inject it into mesh so provideSelf() advertises
-// it to DHT and the node becomes discoverable by mobile clients on the go.
-async function discoverAndSetPublicAddr(mesh: EnvoyMesh, args: NodeArgs): Promise<void> {
-  let discovered = false;
-
-  // Method 1: UPnP (automatic port forwarding, if enabled and available).
-  // UPnP runs first because it can give us a directly reachable address
-  // without relying on STUN or relay. It also configures port forwarding
-  // so external peers can dial us directly.
-  if (args.enableUpnp) {
-    // Get our actual libp2p listen port from getMultiaddrs.
-    const listenAddrs = mesh.multiaddrs;
-    let internalPort: number | null = null;
-    for (const maStr of listenAddrs ?? []) {
-      const tcpMatch = maStr.match(/\/tcp\/(\d+)/);
-      if (tcpMatch) {
-        internalPort = parseInt(tcpMatch[1], 10);
-        break;
-      }
-    }
-    if (internalPort != null) {
-      console.log(`[node] UPnP: attempting to map external port ${DEFAULT_LIBP2P_PORT} -> internal ${internalPort}...`);
-      const upnpResult = await upnpDiscoverAndMap(internalPort, DEFAULT_LIBP2P_PORT, 5000);
-      if (upnpResult) {
-        const multiaddr = `/ip4/${upnpResult.ip}/tcp/${upnpResult.port}`;
-        mesh.setAdvertisedAddress(multiaddr);
-        console.log(`[node] public addr discovered via UPnP: ${multiaddr}`);
-        discovered = true;
-      } else {
-        console.log(`[node] UPnP: no gateway available or mapping failed`);
-      }
-    } else {
-      console.log(`[node] UPnP: could not determine internal listen port`);
-    }
-  }
-
-  // Method 2: STUN (parallel to all configured servers).
-  if (args.stunServers.length > 0 && !discovered) {
-    console.log(`[node] STUN: querying ${args.stunServers.length} server(s)...`);
-    const result = await raceStunServers(args.stunServers, 3000);
-    if (result) {
-      const multiaddr = `/ip4/${result.ip}/tcp/${result.port}`;
-      mesh.setAdvertisedAddress(multiaddr);
-      console.log(`[node] public addr discovered via STUN: ${multiaddr}`);
-      discovered = true;
-    } else {
-      console.log(`[node] STUN: all servers failed or timed out`);
-    }
-  }
-
-  // Method 3: autoNAT (passive — subscribe to self:reachable events).
-  // This fires when libp2p's autonat service determines our external address.
-  if (args.enableAutoNat && !discovered) {
-    console.log(`[node] autoNAT: subscribing to self:reachable events`);
-    let unsub = () => {};
-    const wrapper = (addr: string) => {
-      if (discovered) { unsub(); return; }
-      discovered = true;
-      unsub();
-      mesh.setAdvertisedAddress(addr);
-      console.log(`[node] public addr discovered via autoNAT: ${addr}`);
-    };
-    unsub = mesh.onAutoNATReachable(wrapper);
-  }
-
-  // Method 4: relay-observed addr — wired via relay-tunnel-client.ts callback.
-  // The callback calls mesh.setAdvertisedAddress() directly when it receives the
-  // observed-addr frame from the relay.
-  console.log(`[node] relay-observed addr: wired via relay-tunnel-client callback`);
-}
+// ── Public IP discovery (shared module) ──────────────────────────────────────
 
 let clientProxyHandlerRegistered = false;
 
@@ -3217,14 +3223,37 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
         if (!config) {
           throw new Error("No node config found. Complete setup first.");
         }
+        // CGNAT parity with NodeService start: auto-apply quietWan when detected.
+        const cgnat = await maybeAutoApplyQuietWanForCgnat({
+          profileDir: config.profileDir,
+          connectivityMode: config.connectivityMode,
+          connectivityModeExplicit: config.connectivityModeExplicit,
+          enableUpnp: args.enableUpnp,
+        });
+        if (cgnat.applied && cgnat.detectedMode) {
+          args.connectivityTuning = {
+            ...args.connectivityTuning,
+            connectivityMode: cgnat.detectedMode,
+          };
+        } else if (cgnat.revertedVpn || cgnat.effectiveConnectivityMode) {
+          args.connectivityTuning = {
+            ...args.connectivityTuning,
+            connectivityMode: (cgnat.effectiveConnectivityMode ?? "optimized") as
+              | "optimized"
+              | "quietWan"
+              | "normal"
+              | "smart"
+              | "aggressive",
+          };
+        }
         applyPersistedDiscoveryConfig(args, config);
-        const connectivityRuntime = resolveConnectivityRuntime({
+        const connectivityRuntimeReloaded = resolveConnectivityRuntime({
           profile: args.discoveryProfile,
           enableMdns: args.enableMdnsExplicit ? args.enableMdns : undefined,
           tuning: args.connectivityTuning,
         });
-        args.enableMdns = connectivityRuntime.enableMdns;
-        args.enableDht = connectivityRuntime.enableDht;
+        args.enableMdns = connectivityRuntimeReloaded.enableMdns;
+        args.enableDht = connectivityRuntimeReloaded.enableDht;
 
         const resolvedBootstrapResults = await resolveBootstrapAddresses(args.bootstrapPeers);
         const resolvedBootstrapPeers = resolvedBootstrapResults.flatMap((r) => r.resolved);
@@ -3241,37 +3270,85 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
         relayConfiguredRelays = config.configuredRelays;
         relayBootstrapPresets = config.bootstrapPresets ?? args.bootstrapPresets;
 
+        // Keep bootstrapPeerIdSet + strict-dial caches aligned with reloaded peers.
+        bootstrapPeerIdSet.clear();
+        for (const addr of effectivePeers) {
+          const p2pIdx = addr.lastIndexOf("/p2p/");
+          if (p2pIdx >= 0) bootstrapPeerIdSet.add(addr.substring(p2pIdx + 5));
+        }
+        if (nodeService instanceof NodeServiceImpl) {
+          nodeService._bootstrapPeerIdSet = bootstrapPeerIdSet;
+        }
+        const reloadedRelayAddrs = collectRelayControlTargets({
+          bootstrapPeers: effectivePeers,
+          configuredRelays: config.configuredRelays,
+          bootstrapPresets: relayBootstrapPresets,
+        });
+        cliStrictDial.configuredRelayAddrs = [...reloadedRelayAddrs];
+        for (const addr of effectivePeers) cliStrictDial.cache.seedAddrs.add(addr);
+        for (const addr of reloadedRelayAddrs) cliStrictDial.cache.seedAddrs.add(addr);
+        try {
+          for (const addr of seedAddrsForStrictDialAllow(await discoverySeedStore.listSeedRecords())) {
+            cliStrictDial.cache.seedAddrs.add(addr);
+          }
+        } catch {
+          /* ignore */
+        }
+        try {
+          if (nodeService instanceof NodeServiceImpl) {
+            const bonds = await nodeService.getBonds();
+            for (const b of bonds) {
+              if (b.libp2pPeerId) cliStrictDial.cache.bondedTransportPeerIds.add(b.libp2pPeerId);
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+        cliStrictDial.enabled = shouldEnableStrictDialPolicy({
+          connectivityMode: connectivityRuntimeReloaded.connectivityMode,
+          discoveryProfile: args.discoveryProfile,
+          relayServerEnabled: args.enableRelayServer,
+        });
+
         const meshOpts = (mesh as unknown as { options: EnvoyMeshOptions }).options;
         meshOpts.bootstrapPeers = effectivePeers;
-        meshOpts.enableMdns = connectivityRuntime.enableMdns;
-        meshOpts.mdnsIntervalMs = connectivityRuntime.mdnsIntervalMs;
+        meshOpts.configuredRelayAddrs = reloadedRelayAddrs;
+        meshOpts.enableMdns = connectivityRuntimeReloaded.enableMdns;
+        meshOpts.mdnsIntervalMs = connectivityRuntimeReloaded.mdnsIntervalMs;
         meshOpts.connectionMonitorPingIntervalMs =
-          connectivityRuntime.connectionMonitorPingIntervalMs;
-        meshOpts.enableDht = connectivityRuntime.enableDht;
+          connectivityRuntimeReloaded.connectionMonitorPingIntervalMs;
+        meshOpts.enableDht = connectivityRuntimeReloaded.enableDht;
         meshOpts.enableRelay = args.enableRelay;
         meshOpts.enableRelayServer = args.enableRelayServer;
-        if (connectivityRuntime.maxConnections != null) {
-          meshOpts.maxConnections = connectivityRuntime.maxConnections;
+        meshOpts.allowedDialPeerIds = cliAllowedDialPeerIds;
+        meshOpts.strictDialPolicy = cliStrictDial.enabled;
+        if (connectivityRuntimeReloaded.maxConnections != null) {
+          meshOpts.maxConnections = connectivityRuntimeReloaded.maxConnections;
         }
         configureBondWarmFromConnectivity({
-          intervalMs: connectivityRuntime.bondWarmIntervalMs,
-          perContactCooldownMs: connectivityRuntime.bondWarmPerContactCooldownMs,
-          eventDriven: connectivityRuntime.bondWarmEventDriven,
-          maxConnections: connectivityRuntime.maxConnections,
+          intervalMs: connectivityRuntimeReloaded.bondWarmIntervalMs,
+          perContactCooldownMs: connectivityRuntimeReloaded.bondWarmPerContactCooldownMs,
+          eventDriven: connectivityRuntimeReloaded.bondWarmEventDriven,
+          maxConnections: connectivityRuntimeReloaded.maxConnections,
         });
+        if (cliStrictDial.enabled) {
+          console.log(
+            `[node] strictDialPolicy ON after reload mode=${connectivityRuntimeReloaded.connectivityMode} profile=${args.discoveryProfile}`,
+          );
+        }
       }
 
       await mesh.start();
       meshStarted = true;
       lastKnownLibp2pPeerId = mesh.peerId;
 
-      void discoverAndSetPublicAddr(mesh, args);
-      if (!publicAddrPeriodicDiscoveryStarted) {
-        publicAddrPeriodicDiscoveryStarted = true;
-        setInterval(() => {
-          void discoverAndSetPublicAddr(mesh, args);
-        }, 10 * 60 * 1000);
-      }
+      stopPublicAddrDiscovery?.();
+      stopPublicAddrDiscovery = startPublicAddrDiscoveryScheduler(mesh, {
+        enableUpnp: args.enableUpnp,
+        stunServers: args.stunServers,
+        enableAutoNat: args.enableAutoNat,
+      });
+      publicAddrPeriodicDiscoveryStarted = true;
 
       if (args.enableDht) {
         let advertiseAttempt = 0;
@@ -4451,7 +4528,7 @@ if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length > 
       "connectivity-strict enabled: all bootstrap probes failed in wan-default profile.",
     );
   }
-  scheduleBootstrapReprobe(effectiveBootstrapPeers);
+  scheduleBootstrapReprobeShared(effectiveBootstrapPeers);
 }
 if (args.enableDht && autoCapabilityTopics.length > 0) {
   // Fire-and-forget: DHT startup cycle can take 30s+ when behind NAT (per-topic
@@ -4825,10 +4902,10 @@ async function shutdown(): Promise<void> {
     relayTunnelClient = null;
     terminalWsServer.stop();
     await wsServer.stop();
-  if (bootstrapReprobeTimer) {
-    clearTimeout(bootstrapReprobeTimer);
-    bootstrapReprobeTimer = undefined;
-  }
+  bootstrapReprobeHandle?.stop();
+  bootstrapReprobeHandle = undefined;
+  stopPublicAddrDiscovery?.();
+  stopPublicAddrDiscovery = undefined;
   if (capabilityDiscoveryTimer) {
     clearTimeout(capabilityDiscoveryTimer);
     capabilityDiscoveryTimer = undefined;
@@ -6532,96 +6609,15 @@ function pushBootstrapProbeResult(entry: {
   }
 }
 
-let bootstrapReprobeRunning = false;
-
-function scheduleBootstrapReprobe(peers: string[]): void {
-  if (peers.length === 0) {
-    return;
-  }
-  const jitterMs = Math.floor(Math.random() * BOOTSTRAP_REPROBE_JITTER_MS);
-  bootstrapReprobeTimer = setTimeout(() => {
-    void runBootstrapReprobe(peers);
-  }, connectivityRuntime.bootstrapReprobeIntervalMs() + jitterMs);
-}
-
-async function runBootstrapReprobe(peers: string[]): Promise<void> {
-  if (peers.length === 0) {
-    return;
-  }
-  if (bootstrapReprobeRunning) {
-    scheduleBootstrapReprobe(peers);
-    return;
-  }
-  bootstrapReprobeRunning = true;
-
-  try {
-    // Skip while dial queue is congested — probing only feeds the storm.
-    const dialQueue = mesh.getConnectionStats().dialQueueLength ?? 0;
-    if (dialQueue > 50) {
-      console.warn(
-        `[connectivity] bootstrap reprobe deferred (dialQueue=${dialQueue} > 50)`,
-      );
-      return;
-    }
-
-    // Walk until we find a probeable addr (skip circuit/self without burning a slot).
-    let peer: string | undefined;
-    for (let i = 0; i < peers.length; i++) {
-      const candidate = peers[bootstrapReprobeCursor % peers.length];
-      bootstrapReprobeCursor = (bootstrapReprobeCursor + 1) % peers.length;
-      if (!candidate) continue;
-      if (candidate.includes("/p2p-circuit/")) continue;
-      const selfId = mesh.peerId;
-      if (candidate === selfId || candidate.includes(`/p2p/${selfId}`)) continue;
-      peer = candidate;
-      break;
-    }
-    if (!peer) {
-      return;
-    }
-
-    try {
-      const latencyMs = await mesh.probePeer(peer);
-      pushBootstrapProbeResult({ peer, ok: true, latencyMs });
-      await discoverySeedStore.upsertSuccess(peer, "bootstrap-probe");
-      void taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "p2p.trace",
-          direction: "outbound",
-          protocol: "connectivity.reprobe.ok",
-          remotePeerId: peer,
-          latencyMs,
-          outcome: "record",
-          summary: `bootstrap reprobe ok peer=${peer} latencyMs=${latencyMs}`,
-        }),
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.startsWith("probePeer skipped:")) {
-        return;
-      }
-      pushBootstrapProbeResult({ peer, ok: false, error: message });
-      console.warn(`[connectivity] bootstrap reprobe FAILED for ${peer.slice(0, 60)}…: ${message.slice(0, 80)}`);
-      // Aggregate diagnostic: warn when the last N results (one per peer)
-      // are all failures — helps operators distinguish "all peers
-      // unreachable" from a single-peer transient error.
-      const recent = bootstrapProbeResults.slice(-peers.length);
-      if (recent.length >= peers.length && recent.every((r) => !r.ok)) {
-        console.warn(`[connectivity] ALL bootstrap reprobe peers failed this cycle (${peers.length}/${peers.length})`);
-      }
-      void taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "p2p.trace",
-          direction: "outbound",
-          protocol: "connectivity.reprobe.fail",
-          remotePeerId: peer,
-          outcome: "record",
-          summary: `bootstrap reprobe failed peer=${peer} error=${message}`,
-        }),
-      );
-    }
-  } finally {
-    bootstrapReprobeRunning = false;
-    scheduleBootstrapReprobe(peers);
-  }
+function scheduleBootstrapReprobeShared(peers: string[]): void {
+  bootstrapReprobeHandle?.stop();
+  bootstrapReprobeHandle = undefined;
+  if (peers.length === 0) return;
+  bootstrapReprobeHandle = startBootstrapReprobeScheduler(peers, {
+    mesh,
+    getIntervalMs: () => connectivityRuntime.bootstrapReprobeIntervalMs(),
+    upsertSeedSuccess: (peer, source) => discoverySeedStore.upsertSuccess(peer, source),
+    appendAuditEvent: (event) => taskStore.appendAuditEvent(event),
+    probeResults: bootstrapProbeResults,
+  });
 }

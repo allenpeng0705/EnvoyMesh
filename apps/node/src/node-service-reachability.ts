@@ -24,7 +24,7 @@ import {
   isPeerPathConnectionCapReached,
   PEER_PATH_SOFT_CONNECTION_CAP,
 } from "./peer-path.js";
-import { PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD } from "@envoymesh/network";
+import { PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD, assessDialBudget } from "@envoymesh/network";
 
 /** @deprecated Prefer {@link getPeerPathSoftConnectionCap} — soft cap tracks maxConnections. */
 export const BOND_WARM_MAX_CONNECTIONS = PEER_PATH_SOFT_CONNECTION_CAP;
@@ -193,6 +193,8 @@ export interface ReachabilityContext {
   getLastBondWarmAt(): Map<string, number>;
   /** Set of bootstrap peer IDs that should be excluded from discovery UI. */
   getBootstrapPeerIds(): Set<string>;
+  /** Allow a peer under strictDialPolicy (Discover / mDNS) before dial. */
+  noteStrictDialPeer?(peerId: string, seedAddr?: string): void;
   /** Timestamp of last nearby-profile probe per peerId (shared with identity module). */
   getNearbyProfileProbeLastAt(): Map<string, number>;
   /** Cooldown ms for nearby-profile probes (shared with identity module). */
@@ -236,6 +238,7 @@ export function buildReachabilityContext(host: any): ReachabilityContext {
     },
     getLastBondWarmAt: () => host._lastBondWarmAt,
     getBootstrapPeerIds: () => host._bootstrapPeerIdSet ?? new Set<string>(),
+    noteStrictDialPeer: (peerId, seedAddr) => host.noteStrictDialPeer(peerId, seedAddr),
     getNearbyProfileProbeLastAt: () => host._nearbyProfileProbeLastAt,
     getNearbyProfileProbeCooldownMs: () => NEARBY_PROFILE_PROBE_COOLDOWN_MS,
     isNonEnvoyPeerSuppressed: (peerId) => host._isNonEnvoyPeerSuppressed(peerId),
@@ -287,6 +290,14 @@ export async function handleMeshPeerDiscoveredViaRuntime(
     // (below), but we skip UI emission and probing.
     const bootstrapPeerIds = ctx.getBootstrapPeerIds();
     const isInfrastructure = bootstrapPeerIds.has(peerId) || source === "relay";
+    // Strict-dial allow-set: only LAN/mDNS (and forced nearby refresh) — never
+    // anonymous DHT "unknown" sightings, or the gater allow-list grows with the swarm.
+    if (opts?.force === true || source === "mdns") {
+      ctx.noteStrictDialPeer?.(peerId);
+      if (multiaddrs.length > 0) {
+        for (const addr of multiaddrs) ctx.noteStrictDialPeer?.(peerId, addr);
+      }
+    }
     if (
       shouldPersistPeerDiscoverySeeds(discoveryProfile, source) &&
       multiaddrs.length > 0 &&
@@ -509,10 +520,10 @@ export async function warmAllBondedContactsViaRuntime(ctx: ReachabilityContext):
   // has a chance to refuse.
   const softCap = getPeerPathSoftConnectionCap();
   const connStats = mesh.getConnectionStats();
-  const dialQueue = connStats.dialQueueLength ?? 0;
-  if (dialQueue > PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD) {
+  const dialBudget = assessDialBudget(connStats.dialQueueLength);
+  if (dialBudget.deferBondWarm) {
     console.warn(
-      `[bond-warm] skipped: dialQueue=${dialQueue} (>${PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD}) — deferring until congestion clears`,
+      `[bond-warm] skipped: dialQueue=${dialBudget.dialQueueLength} (>${PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD}) — deferring until congestion clears`,
     );
     return;
   }

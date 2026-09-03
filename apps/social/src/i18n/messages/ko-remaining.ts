@@ -1116,6 +1116,16 @@ export const koRemainingMessages = {
       },
       resourceTuning: {
         autoAppliedCgnat: "이 노드가 CGNAT 뒤에 있는 것으로 보여 Quiet WAN이 자동 적용되었습니다. 여기서 모드를 바꾸면 선택이 고정됩니다.",
+        effectiveQuietWanCgnat:
+          "Quiet WAN으로 실행 중(제한된 네트워크 감지). Bootstrap은 릴레이만 사용합니다.",
+        effectiveQuietWanUser:
+          "Quiet WAN으로 실행 중. 공개 DHT 꺼짐; Bootstrap은 릴레이만 사용합니다.",
+        effectiveAggressive:
+          "Aggressive로 실행 중. 공개 DHT 꺼짐; Bootstrap은 릴레이만 사용합니다.",
+        leanBootstrapPendingSponsor:
+          "스폰서 친구 본드가 완료될 때까지 Bootstrap은 릴레이만 사용합니다.",
+        leanBootstrapActive:
+          "Bootstrap은 릴레이만 사용합니다(공개 libp2p 스웜 없음).",
         mode: "모드",
         modeAggressive: "공격적 — 최저 CPU/네트워크",
         modeNormal: "보통 — 가장 반응적 (레거시 기본값)",

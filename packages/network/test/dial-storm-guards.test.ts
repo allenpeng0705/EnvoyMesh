@@ -1,13 +1,14 @@
-import { describe, expect, it } from "vitest";
 import {
+  assessDialBudget,
+  DHT_PROVIDE_DIAL_QUEUE_DEFER_THRESHOLD,
   DEFAULT_CLIENT_MAX_DIAL_QUEUE_LENGTH,
   DEFAULT_CLIENT_MAX_PARALLEL_DIALS,
   DEFAULT_CLIENT_MAX_PEER_ADDRS_TO_DIAL,
-  DHT_PROVIDE_DIAL_QUEUE_DEFER_THRESHOLD,
   ENSURE_PEER_DIAL_QUEUE_DEFER_THRESHOLD,
   isDialQueueLengthCongested,
   shouldDeferEnsurePeerForDialQueue,
 } from "../src/index.js";
+import { describe, expect, it } from "vitest";
 
 describe("dial storm guards", () => {
   it("caps home-node dial parallelism well below libp2p defaults", () => {
@@ -66,5 +67,16 @@ describe("dial storm guards", () => {
     expect(isDialQueueLengthCongested(DHT_PROVIDE_DIAL_QUEUE_DEFER_THRESHOLD)).toBe(false);
     expect(isDialQueueLengthCongested(DHT_PROVIDE_DIAL_QUEUE_DEFER_THRESHOLD + 1)).toBe(true);
     expect(isDialQueueLengthCongested(undefined)).toBe(false);
+  });
+
+  it("assessDialBudget preserves tier boundaries", () => {
+    expect(assessDialBudget(0).busy).toBe(false);
+    expect(assessDialBudget(21).busy).toBe(true);
+    expect(assessDialBudget(21).deferBondWarm).toBe(true);
+    expect(assessDialBudget(48).deferBackgroundWork).toBe(false);
+    expect(assessDialBudget(51).deferBackgroundWork).toBe(true);
+    expect(assessDialBudget(48).deferSpeculativeEnsure).toBe(false);
+    expect(assessDialBudget(49).deferSpeculativeEnsure).toBe(true);
+    expect(assessDialBudget(64).saturated).toBe(true);
   });
 });

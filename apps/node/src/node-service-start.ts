@@ -23,11 +23,21 @@ import { resolveConnectivityRuntime, type ResolvedConnectivityRuntime } from "./
 import { configureBondWarmFromConnectivity } from "./node-service-reachability.js";
 import { resolveBootstrapAddresses } from "./bootstrap-resolver.js";
 import { EnvoyMesh, filterBootstrapMultiaddrs, capBootstrapPeersForCircuitHoppability, isPrivateLanTcpDialHint, type EnvoyMeshOptions } from "@envoymesh/network";
-import { seedAddrsForDiscoveryProfile } from "./peer-discovery-telemetry.js";
+import { seedAddrsForDiscoveryProfile, seedAddrsForStrictDialAllow } from "./peer-discovery-telemetry.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { runRelayClientCycle, startRelayClientScheduler, type RelayClientCycleDeps } from "./relay-client-cycle.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { warmAndWatchRelayReservations, collectRelayControlTargets } from "./relay-reservation-health.js";
+import { startBootstrapReprobeScheduler } from "./bootstrap-reprobe.js";
+import { startPublicAddrDiscoveryScheduler } from "./public-addr-discovery.js";
+import { DEFAULT_STUN_SERVERS } from "./stun.js";
+import {
+  buildAllowedDialPeerIds,
+  createStrictDialAllowCache,
+  shouldEnableStrictDialPolicy,
+  warnIfStrictDialAllowSetTooSmall,
+  type StrictDialAllowCache,
+} from "./allowed-dial-peer-ids.js";
 import {
   normalizeBootstrapPresetsForContactsOnly,
   type NodeProfile,
@@ -65,7 +75,7 @@ export function shouldLeanBootstrapForDhtOffMode(connectivityMode: string | unde
  * carrier-grade NAT, override connectivityMode → quietWan. Only fires when
  * {@link shouldAllowCgnatQuietWanAutoApply} permits it. See cgnat-detection.ts.
  */
-async function maybeAutoApplyQuietWanForCgnat(
+export async function maybeAutoApplyQuietWanForCgnat(
   config: {
     profileDir: string;
     connectivityMode?: string;
@@ -206,6 +216,15 @@ export interface StartNodeContext {
 
   /** Set bootstrap peer IDs so the reachability layer can filter them from discovery UI. */
   setBootstrapPeerIds(ids: Set<string>): void;
+  /** Store live connectivity snapshot for getNodeConfig / Settings. */
+  setConnectivityRuntimeSnapshot(
+    snap: import("@envoymesh/api").ConnectivityRuntimeSnapshot | undefined,
+  ): void;
+
+  /** Mutable allow-set cache when strictDialPolicy is on. */
+  setStrictDialAllowCache(cache: StrictDialAllowCache | undefined): void;
+  /** Bonded contact libp2p peer IDs (trust + peer directory), for strict dial. */
+  listBondedTransportPeerIds(): Promise<string[]>;
 
   // Mesh + lifecycle wiring
   getMesh(): unknown | undefined;
@@ -214,6 +233,8 @@ export interface StartNodeContext {
   setRelayBootstrapPeers(addrs: string[]): void;
   setStopRelayClientScheduler(fn: (() => void) | undefined): void;
   setStopNodeStatsLogging(fn: (() => void) | undefined): void;
+  setStopBootstrapReprobe(fn: (() => void) | undefined): void;
+  setStopPublicAddrDiscovery(fn: (() => void) | undefined): void;
   setCapabilityDiscoveryTimer(timer: NodeJS.Timeout | undefined): void;
   setAdvertiseInterestsStartupTimeout(timer: NodeJS.Timeout | undefined): void;
   /** Track the startup agent-card refresh timer so it can be cleared on stop. */
@@ -429,6 +450,29 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
       `[node-service] Creating EnvoyMesh mode=${connectivityRuntime.connectivityMode} enableDht=${connectivityRuntime.enableDht}`,
     );
 
+    const leanBootstrapReason = !leanBootstrap
+      ? null
+      : leanForSponsor
+        ? ("pending-sponsor" as const)
+        : effectiveConnectivityMode === "aggressive"
+          ? ("user-aggressive" as const)
+          : quietWanJustApplied ||
+              (config.connectivityModeAutoAppliedReason === "cgnat" &&
+                config.connectivityModeExplicit !== true)
+            ? ("cgnat" as const)
+            : ("user-quietWan" as const);
+    const effectiveMode =
+      (connectivityRuntime.connectivityMode ??
+        effectiveConnectivityMode ??
+        "optimized") as import("@envoymesh/api").ConnectivityMode;
+    ctx.setConnectivityRuntimeSnapshot({
+      effectiveConnectivityMode: effectiveMode,
+      leanBootstrapActive: leanBootstrap,
+      leanBootstrapReason,
+      enableDht: connectivityRuntime.enableDht,
+      enableMdns: connectivityRuntime.enableMdns,
+    });
+
     configureBondWarmFromConnectivity({
       intervalMs: connectivityRuntime.bondWarmIntervalMs,
       perContactCooldownMs: connectivityRuntime.bondWarmPerContactCooldownMs,
@@ -441,6 +485,19 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
       bootstrapPeers,
       bootstrapPresets: config.bootstrapPresets,
     });
+
+    const strictDialEnabled = shouldEnableStrictDialPolicy({
+      connectivityMode: effectiveMode,
+      discoveryProfile: config.discoveryProfile,
+      relayServerEnabled: config.relayServerEnabled ?? false,
+    });
+    const strictDialCache = strictDialEnabled ? createStrictDialAllowCache() : undefined;
+    ctx.setStrictDialAllowCache(strictDialCache);
+    if (strictDialCache) {
+      for (const addr of bootstrapPeers) strictDialCache.seedAddrs.add(addr);
+      for (const addr of configuredRelayAddrs) strictDialCache.seedAddrs.add(addr);
+    }
+    let meshRef: EnvoyMesh | undefined;
 
     const meshOptions: EnvoyMeshOptions = {
       listen: ["/ip4/0.0.0.0/tcp/0"],
@@ -462,10 +519,45 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
       libp2pPrivateKey: await loadOrCreateLibp2pPrivateKey(
         join(config.profileDir, "libp2p-private.key"),
       ),
+      ...(strictDialEnabled && strictDialCache
+        ? {
+            strictDialPolicy: true,
+            allowedDialPeerIds: () => {
+              const allowed = buildAllowedDialPeerIds({
+                selfPeerId: meshRef?.peerId,
+                bootstrapPeerIds: bootstrapPeerIdSet,
+                preferredRelayPeerIds: meshRef?.getPreferredRelayPeerIds() ?? [],
+                configuredRelayAddrs,
+                bondedTransportPeerIds: strictDialCache.bondedTransportPeerIds,
+                seedAddrs: strictDialCache.seedAddrs,
+                nearbyOrConnectedPeerIds: [
+                  ...strictDialCache.nearbyPeerIds,
+                ],
+                extraPeerIds: strictDialCache.extraPeerIds,
+              });
+              return allowed;
+            },
+          }
+        : {}),
     };
 
     const mesh = new EnvoyMesh(meshOptions);
+    meshRef = mesh;
     ctx.setMesh(mesh);
+
+    if (strictDialEnabled && strictDialCache) {
+      const initial = buildAllowedDialPeerIds({
+        selfPeerId: mesh.peerId,
+        bootstrapPeerIds: bootstrapPeerIdSet,
+        preferredRelayPeerIds: mesh.getPreferredRelayPeerIds(),
+        configuredRelayAddrs,
+        seedAddrs: strictDialCache.seedAddrs,
+      });
+      warnIfStrictDialAllowSetTooSmall(initial);
+      console.log(
+        `[node-service] strictDialPolicy ON mode=${effectiveMode} profile=${config.discoveryProfile} allow≈${initial.size}`,
+      );
+    }
 
     // Wire mesh events
     ctx.wireMeshEvents();
@@ -474,6 +566,60 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     await mesh.start();
     ctx.setLastNodeError(undefined);
     ctx.setLastNodeErrorAt(undefined);
+
+    // Refresh strict-dial caches from bonded contacts + non-DHT seeds (async).
+    if (strictDialCache) {
+      void (async () => {
+        try {
+          const records = await ctx.getDiscoverySeedStore()?.listSeedRecords();
+          if (records) {
+            for (const addr of seedAddrsForStrictDialAllow(records)) {
+              strictDialCache.seedAddrs.add(addr);
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+        try {
+          const peerIds = await ctx.listBondedTransportPeerIds();
+          for (const id of peerIds) strictDialCache.bondedTransportPeerIds.add(id);
+        } catch {
+          /* ignore */
+        }
+      })();
+    }
+
+    // Public-addr discovery + bootstrap reprobe (parity with CLI).
+    const warrantPublicAddr =
+      connectivityRuntime.enableDht ||
+      config.discoveryProfile === "wan-default" ||
+      config.discoveryProfile === "relay-only" ||
+      config.discoveryProfile === "contacts-only";
+    ctx.setStopPublicAddrDiscovery(undefined);
+    if (warrantPublicAddr) {
+      const stopPublic = startPublicAddrDiscoveryScheduler(mesh, {
+        enableUpnp: (config as { enableUpnp?: boolean }).enableUpnp === true,
+        stunServers: DEFAULT_STUN_SERVERS,
+        enableAutoNat: true,
+        logPrefix: "[node-service]",
+      });
+      ctx.setStopPublicAddrDiscovery(stopPublic);
+    }
+    ctx.setStopBootstrapReprobe(undefined);
+    if (bootstrapPeers.length > 0) {
+      const handle = startBootstrapReprobeScheduler(bootstrapPeers, {
+        mesh,
+        getIntervalMs: () => connectivityRuntime.bootstrapReprobeIntervalMs(),
+        upsertSeedSuccess: async (peer, source) => {
+          await ctx.getDiscoverySeedStore()?.upsertSuccess(peer, source);
+        },
+        appendAuditEvent: async (event) => {
+          await ctx.getTaskStore()?.appendAuditEvent(event);
+        },
+        logPrefix: "[connectivity]",
+      });
+      ctx.setStopBootstrapReprobe(() => handle.stop());
+    }
 
     // Circuit-relay reservation warmup (parity with CLI activateCliMesh).
     // Without this, NodeService/Tauri hubs never call requestRelayReservation

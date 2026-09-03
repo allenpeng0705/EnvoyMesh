@@ -105,6 +105,16 @@ export const zhNetworkSettingsMessages = {
     modeQuietWan: "静默 WAN — 仅中继发现（无公共 DHT）",
     autoAppliedCgnat:
       "检测到本节点可能处于 CGNAT，已自动应用静默 WAN。在此更改模式将锁定你的选择。",
+    effectiveQuietWanCgnat:
+      "当前以静默 WAN 运行（检测到受限网络）。Bootstrap 仅使用中继。",
+    effectiveQuietWanUser:
+      "当前以静默 WAN 运行。公共 DHT 已关闭；Bootstrap 仅使用中继。",
+    leanBootstrapPendingSponsor:
+      "在赞助好友绑定完成前，Bootstrap 仅使用中继。",
+    effectiveAggressive:
+      "当前以激进模式运行。公共 DHT 已关闭；Bootstrap 仅使用中继。",
+    leanBootstrapActive:
+      "Bootstrap 仅使用中继（无公共 libp2p swarm）。",
     restartHint: "请重启节点（或完全退出并重新打开应用），网格定时器与 DHT/mDNS 选项才会生效。",
     maxConnections: "最大连接数",
     capabilityCycle: "能力周期（秒）",

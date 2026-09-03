@@ -218,6 +218,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
               }
             },
             getProfile: () => host._profile,
+            getConnectivityRuntimeSnapshot: () => host._connectivityRuntimeSnapshot,
           },
       capabilityDiscovery: {
             getMesh: () => host._mesh,
@@ -422,6 +423,12 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             setStopNodeStatsLogging: (fn) => {
               host._stopNodeStatsLogging = fn;
             },
+            setStopBootstrapReprobe: (fn) => {
+              host._stopBootstrapReprobe = fn;
+            },
+            setStopPublicAddrDiscovery: (fn) => {
+              host._stopPublicAddrDiscovery = fn;
+            },
             setCapabilityDiscoveryTimer: (t) => {
               host._capabilityDiscoveryTimer = t;
             },
@@ -458,6 +465,18 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             startCapabilityDiscoveryScheduler: (runtime) =>
               host._startCapabilityDiscoveryScheduler(runtime),
             setBootstrapPeerIds: (ids) => { host._bootstrapPeerIdSet = ids; },
+            setConnectivityRuntimeSnapshot: (snap) => {
+              host._connectivityRuntimeSnapshot = snap;
+            },
+            setStrictDialAllowCache: (cache) => {
+              host._strictDialAllowCache = cache;
+            },
+            listBondedTransportPeerIds: async () => {
+              const bonds = await host.getBonds();
+              return bonds
+                .map((b: { libp2pPeerId?: string }) => b.libp2pPeerId)
+                .filter((id: string | undefined): id is string => Boolean(id));
+            },
           },
       wireMeshEvents: {
             mesh: host._mesh as never,

@@ -27,6 +27,7 @@ function makeCtx(
       bridgeListenPort: 3031,
     }),
     getProfile: () => undefined,
+    getConnectivityRuntimeSnapshot: () => undefined,
     ...overrides,
   };
 }
@@ -84,6 +85,25 @@ describe("getNodeConfigViaRuntime", () => {
     expect(out.lanAutoBondEnabled).toBe(true);
     expect(out.lanAutoBondFleetToken).toBe("office-token-xyz");
     expect(out.lanAutoBondAutoJoinAgentNetwork).toBe(true);
+  });
+
+  it("merges ephemeral connectivity runtime snapshot into getNodeConfig", async () => {
+    const out = await getNodeConfigViaRuntime(
+      makeCtx({
+        getConnectivityRuntimeSnapshot: () => ({
+          effectiveConnectivityMode: "quietWan",
+          leanBootstrapActive: true,
+          leanBootstrapReason: "cgnat",
+          enableDht: false,
+          enableMdns: true,
+        }),
+      }),
+    );
+    expect(out.effectiveConnectivityMode).toBe("quietWan");
+    expect(out.leanBootstrapActive).toBe(true);
+    expect(out.leanBootstrapReason).toBe("cgnat");
+    expect(out.runtimeEnableDht).toBe(false);
+    expect(out.runtimeEnableMdns).toBe(true);
   });
 });
 

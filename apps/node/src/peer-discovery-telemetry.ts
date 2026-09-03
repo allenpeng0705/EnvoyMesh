@@ -93,6 +93,19 @@ const CONTACTS_ONLY_EXCLUDED_SEED_SOURCES = new Set<DiscoverySeedSource>([
   "capability-topic",
 ]);
 
+/**
+ * Seeds safe to put in a strictDial allow-set.
+ * Excludes capability-topic (DHT provider finds) so old swarm sightings do not
+ * permanently widen the gater. Keeps bootstrap / relay / manual / LAN peer.discovery.
+ */
+export function seedAddrsForStrictDialAllow(
+  records: ReadonlyArray<{ addr: string; source: DiscoverySeedSource }>,
+): string[] {
+  return records
+    .filter((record) => record.source !== "capability-topic")
+    .map((record) => record.addr);
+}
+
 export function seedAddrsForDiscoveryProfile(
   profile: DiscoveryProfile,
   records: ReadonlyArray<{ addr: string; source: DiscoverySeedSource }>,

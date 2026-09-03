@@ -37,6 +37,11 @@ const RELAY_TARGET_CONCURRENCY = 3;
  * Maintained as two replaceable scopes so identity interests and
  * capability/publish topics coexist without unbounded union growth:
  * removing an interest or publish tag shrinks that scope on the next cycle.
+ *
+ * When DHT provide is skipped (empty routing table / dial-queue congested),
+ * this relay mirror is the cross-NAT source of truth — keep identity and
+ * capability scopes updated via {@link syncDiscoveryTopics} even if DHT
+ * fan-out is deferred.
  */
 export type RelayClientAdvertisementScope = "identity" | "capability";
 
@@ -74,6 +79,33 @@ export function replaceRelayClientAdvertisedTopics(
 }
 
 /**
+ * Single entry point for identity + capability topic mirrors used by
+ * `relay.checkin`. Prefer this over calling {@link replaceRelayClientAdvertisedTopics}
+ * directly so both scopes stay coordinated.
+ *
+ * - `clearAll: true` — private profile: wipe both scopes
+ * - `identityTopics` set — replace identity scope only
+ * - `capabilityTopics` set — replace capability scope only
+ * Either or both scope fields may be provided in one call.
+ */
+export function syncDiscoveryTopics(input: {
+  identityTopics?: readonly string[];
+  capabilityTopics?: readonly string[];
+  clearAll?: boolean;
+}): void {
+  if (input.clearAll) {
+    setRelayClientAdvertisedTopics([]);
+    return;
+  }
+  if (input.identityTopics !== undefined) {
+    replaceRelayClientAdvertisedTopics("identity", input.identityTopics);
+  }
+  if (input.capabilityTopics !== undefined) {
+    replaceRelayClientAdvertisedTopics("capability", input.capabilityTopics);
+  }
+}
+
+/**
  * Full reset of both scopes. Empty list = private-profile clear.
  * Non-empty = replace entire roster via the identity scope (test / legacy).
  */
@@ -85,10 +117,10 @@ export function setRelayClientAdvertisedTopics(topics: string[]): void {
 
 /**
  * Replace the capability/publish scope (identity interests preserved).
- * Prefer `replaceRelayClientAdvertisedTopics("capability", …)` at new call sites.
+ * Prefer `syncDiscoveryTopics({ capabilityTopics })` at new call sites.
  */
 export function mergeRelayClientAdvertisedTopics(topics: readonly string[]): void {
-  replaceRelayClientAdvertisedTopics("capability", topics);
+  syncDiscoveryTopics({ capabilityTopics: topics });
 }
 
 export function getRelayClientAdvertisedTopics(): string[] {

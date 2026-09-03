@@ -1373,6 +1373,16 @@ export const itRemainingMessages = {
       },
       resourceTuning: {
         autoAppliedCgnat: "Quiet WAN è stato applicato automaticamente perché questo nodo sembra dietro CGNAT. Cambiare la modalità qui blocca la tua scelta.",
+        effectiveQuietWanCgnat:
+          "In esecuzione come Quiet WAN (rete limitata rilevata). Bootstrap solo via relay.",
+        effectiveQuietWanUser:
+          "In esecuzione come Quiet WAN. DHT pubblico disattivato; bootstrap solo via relay.",
+        effectiveAggressive:
+          "In esecuzione come Aggressive. DHT pubblico disattivato; bootstrap solo via relay.",
+        leanBootstrapPendingSponsor:
+          "Bootstrap solo via relay fino al completamento del bond amico sponsor.",
+        leanBootstrapActive:
+          "Bootstrap solo via relay (nessuno swarm libp2p pubblico).",
         lazyDhtFind: "DHT find lazy",
         mode: "Modalità",
         modeAggressive: "Aggressiva — CPU/rete più basse",

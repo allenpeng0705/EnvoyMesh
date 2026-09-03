@@ -803,6 +803,19 @@ export interface NodeConfig {
    * Present when `quietWan` was persisted by CGNAT auto-apply (not a user choice).
    */
   connectivityModeAutoAppliedReason?: "cgnat";
+  /**
+   * Live mesh mode after start (may differ from {@link connectivityMode} when
+   * CGNAT auto-applied quietWan). Ephemeral — not persisted.
+   */
+  effectiveConnectivityMode?: import("./connectivity-tuning.js").ConnectivityMode;
+  /** True when bootstrap was narrowed to relays (no public-libp2p swarm). */
+  leanBootstrapActive?: boolean;
+  /** Why lean bootstrap is on; null when inactive. */
+  leanBootstrapReason?: import("./connectivity-tuning.js").LeanBootstrapReason | null;
+  /** Runtime DHT enable from resolved connectivity (after start). */
+  runtimeEnableDht?: boolean;
+  /** Runtime mDNS enable from resolved connectivity (after start). */
+  runtimeEnableMdns?: boolean;
   /** libp2p connection cap (client nodes). Default 50. */
   maxConnections?: number;
   /** mDNS interval in ms. Default 10_000. */

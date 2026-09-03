@@ -1,7 +1,7 @@
 import {
-  PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD,
   PRUNE_EXCESS_SWARM_MAX_PEERS,
   pruneThresholdForMaxConnections,
+  assessDialBudget,
   type EnvoyMesh,
 } from "@envoymesh/network";
 
@@ -87,21 +87,18 @@ export function logNodeRuntimeStats(mesh: EnvoyMesh, context: NodeStatsLogContex
   }
 
   // Operator signal: prune kicks in at dialQueue>20, but a sustained queue
-  // above 50 means something is still storming (reprobe/bond-warm/DHT).
-  if (conn.dialQueueLength != null && conn.dialQueueLength > 50) {
+  // above background threshold means something is still storming (reprobe/bond-warm/DHT).
+  const dialBudget = assessDialBudget(conn.dialQueueLength);
+  if (dialBudget.deferBackgroundWork) {
     console.warn(
-      `[node-stats] WARNING: dialQueue=${conn.dialQueueLength} (>50) — dial/microtask storm risk; check bootstrap pollution and liveReservation`,
+      `[node-stats] WARNING: dialQueue=${dialBudget.dialQueueLength} (congested) — dial/microtask storm risk; check bootstrap pollution and liveReservation`,
     );
   }
 
   // Protect circuit-relay hoppability: prune anonymous DHT/bootstrap peers
   // when the dial queue or peer count crosses the (preset-scaled) threshold.
   const pruneMaxPeers = pruneThresholdForMaxConnections(context.maxConnections);
-  if (
-    (conn.dialQueueLength != null &&
-      conn.dialQueueLength > PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD) ||
-    conn.totalPeerIds > pruneMaxPeers
-  ) {
+  if (dialBudget.shouldPrune || conn.totalPeerIds > pruneMaxPeers) {
     void mesh
       .pruneExcessSwarmConnections({ maxPeers: pruneMaxPeers })
       .catch((err) => {

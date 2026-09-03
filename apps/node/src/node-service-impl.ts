@@ -1077,6 +1077,7 @@ import {
   runRelayClientCycle,
   setRelayClientAdvertisedTopics,
   replaceRelayClientAdvertisedTopics,
+  syncDiscoveryTopics,
   queryRelayLookupWithDeps,
   resolveRelayClientControlTargets,
   type RelayClientCycleDeps,
@@ -1755,6 +1756,10 @@ class NodeServiceImpl implements NodeService {
 
   /** Bootstrap peer IDs to exclude from discovery UI (set during start). */
   _bootstrapPeerIdSet: Set<string> = new Set();
+  /** Ephemeral connectivity snapshot from last successful startNode. */
+  _connectivityRuntimeSnapshot: import("@envoymesh/api").ConnectivityRuntimeSnapshot | undefined;
+  /** Strict-dial allow-set cache (quietWan / aggressive / contacts-only). */
+  _strictDialAllowCache: import("./allowed-dial-peer-ids.js").StrictDialAllowCache | undefined;
 
   private _nodeStatus: NodeStatus = "offline";
   private _bridgeStatus: BridgeStatus | null = null;
@@ -2732,6 +2737,15 @@ class NodeServiceImpl implements NodeService {
     return handleMeshPeerDiscoveredViaRuntime(this._reachabilityContext(), peerId, multiaddrs, opts);
   }
 
+  /** Expand strictDialPolicy allow-set before an intentional dial (Discover / search / mDNS). */
+  noteStrictDialPeer(peerId: string, seedAddr?: string): void {
+    const cache = this._strictDialAllowCache;
+    if (!cache || !peerId) return;
+    cache.extraPeerIds.add(peerId);
+    cache.nearbyPeerIds.add(peerId);
+    if (seedAddr) cache.seedAddrs.add(seedAddr);
+  }
+
   private _reachableMesh(): EnvoyMesh | undefined {
     return this._mesh ?? this._externalMesh;
   }
@@ -3310,6 +3324,8 @@ class NodeServiceImpl implements NodeService {
   private _vouchedHintReloadTimer?: ReturnType<typeof setTimeout>;
   private _capabilityDiscoveryTimer?: ReturnType<typeof setTimeout>;
   private _stopNodeStatsLogging?: () => void;
+  _stopBootstrapReprobe?: () => void;
+  _stopPublicAddrDiscovery?: () => void;
   private _nodeProcessStartedAtMs = Date.now();
   private _relayBootstrapPeers: string[] = [];
 
@@ -3351,16 +3367,16 @@ class NodeServiceImpl implements NodeService {
     // the identity scope only so capability/publish topics are preserved
     // and removed interests actually shrink the roster.
     if (topics.length === 0) {
-      setRelayClientAdvertisedTopics([]);
+      syncDiscoveryTopics({ clearAll: true });
     } else {
-      replaceRelayClientAdvertisedTopics("identity", topics);
+      syncDiscoveryTopics({ identityTopics: topics });
     }
     this._kickEarlyRelayClientCheckin("identity-advertise");
   }
 
   private _mergeAdvertisedDiscoveryTopics(topics: string[]): void {
     // Capability/publish cycle: replace that scope (not unbounded union).
-    replaceRelayClientAdvertisedTopics("capability", topics);
+    syncDiscoveryTopics({ capabilityTopics: topics });
     // Same early checkin as identity — otherwise publish/capability tags
     // stay invisible to NAT peers until the ~30s periodic scheduler runs.
     this._kickEarlyRelayClientCheckin("capability-advertise");
@@ -9658,6 +9674,7 @@ class NodeServiceImpl implements NodeService {
         loadHumanProfile: () => this._humanProfileStore.loadHumanProfile(),
         queryRelayLookupByTopic: (params) => this._queryRelayLookupByTopic(params),
         queryRelayLookupByPeerId: (params) => this._queryRelayLookupByPeerId(params),
+        noteStrictDialPeer: (peerId, seedAddr) => this.noteStrictDialPeer(peerId, seedAddr),
         // Bundled sponsor identity (displayName + ownerId + peerId) from
         // the DMG-shipped `bundled-sponsor-friend.json`. Used by
         // `searchLocalPeers` as a fallback name source when the local
@@ -12622,6 +12639,12 @@ class NodeServiceImpl implements NodeService {
       /* ignore — tracked promises already catch */
     }
     this._agentNetworkRefreshInflight = Promise.resolve();
+    this._connectivityRuntimeSnapshot = undefined;
+    this._strictDialAllowCache = undefined;
+    this._stopBootstrapReprobe?.();
+    this._stopBootstrapReprobe = undefined;
+    this._stopPublicAddrDiscovery?.();
+    this._stopPublicAddrDiscovery = undefined;
     return stopNodeViaRuntime(this._stopNodeContext());
   }
 

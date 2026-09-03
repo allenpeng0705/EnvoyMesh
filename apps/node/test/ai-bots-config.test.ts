@@ -53,6 +53,7 @@ describe("AI character bots — config + thread keys", () => {
         bridgeListenPort: 3031,
       }),
       getProfile: () => undefined,
+      getConnectivityRuntimeSnapshot: () => undefined,
     };
 
     // Seed a valid default config first.
