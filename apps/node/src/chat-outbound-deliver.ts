@@ -964,11 +964,14 @@ export async function deliverMessageEnvelopeWithRetry(input: {
           peerListenAddrs: input.peerListenAddrs,
         });
         if (!ready && !input.mesh.getPeerConnectionInfo(input.transportPeerId).connected) {
-          lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`);
+          const prepareErr = new Error(
+            `No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`,
+          );
+          lastErr = prepareErr;
           logOutboundPrepareFailed(
             "[send] prepare-failed",
             input.transportPeerId,
-            `attempt ${attempt + 1}/${maxAttempts} for ${input.transportPeerId.slice(0, 24)}…: ${lastErr.message}`,
+            `attempt ${attempt + 1}/${maxAttempts} for ${input.transportPeerId.slice(0, 24)}…: ${prepareErr.message}`,
           );
           continue;
         }
@@ -988,11 +991,14 @@ export async function deliverMessageEnvelopeWithRetry(input: {
           peerListenAddrs: input.peerListenAddrs,
         });
         if (!ready) {
-          lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`);
+          const prepareErr = new Error(
+            `No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`,
+          );
+          lastErr = prepareErr;
           logOutboundPrepareFailed(
             "[send] retry-prepare-failed",
             input.transportPeerId,
-            `attempt ${attempt + 1}/${maxAttempts} for ${input.transportPeerId.slice(0, 24)}…: ${lastErr.message}`,
+            `attempt ${attempt + 1}/${maxAttempts} for ${input.transportPeerId.slice(0, 24)}…: ${prepareErr.message}`,
           );
           continue;
         }
