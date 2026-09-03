@@ -56,6 +56,8 @@ export interface ProxyChannelState {
   /** Frames from the mobile received before the first `open-ack` or
    *  while orphaned; flushed on the next `open-ack`. */
   earlyBuffer: string[];
+  /** Sum of UTF-8 byte lengths in `earlyBuffer` (for byte-cap eviction). */
+  earlyBufferBytes: number;
   /** Timestamp (Date.now()) when the channel was last marked orphaned. */
   orphanedAt?: number;
 }
@@ -170,6 +172,25 @@ const ORPHAN_CHANNEL_TIMEOUT_MS = 60_000;
  * an extended period.
  */
 const MAX_EARLY_BUFFER_FRAMES = 100;
+/** Total early-buffer cap — mirrors client-proxy path in index.ts. */
+export const MAX_EARLY_BUFFER_BYTES = 2 * 1024 * 1024;
+
+export function pushProxyEarlyBuffer(state: ProxyChannelState, text: string): void {
+  const byteLen = Buffer.byteLength(text, "utf8");
+  state.earlyBuffer.push(text);
+  state.earlyBufferBytes += byteLen;
+  while (
+    state.earlyBuffer.length > MAX_EARLY_BUFFER_FRAMES ||
+    state.earlyBufferBytes > MAX_EARLY_BUFFER_BYTES
+  ) {
+    const dropped = state.earlyBuffer.shift();
+    if (dropped === undefined) {
+      state.earlyBufferBytes = 0;
+      break;
+    }
+    state.earlyBufferBytes -= Buffer.byteLength(dropped, "utf8");
+  }
+}
 
 /**
  * M3: Maximum in-flight proxied HTTP requests. Each entry holds a Promise
@@ -484,6 +505,7 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
               } catch { /* ignore */ }
             }
             state.earlyBuffer.length = 0;
+            state.earlyBufferBytes = 0;
           }
           sendToMobile(state.mobile, JSON.stringify({
             event: "connected",
@@ -632,6 +654,7 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
       active: false,
       orphaned: false,
       earlyBuffer: [],
+      earlyBufferBytes: 0,
     };
     proxyChannels.set(proxyKey, state);
 
@@ -690,21 +713,14 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
       // forwarded to the new tunnel when the re-claim's open-ack
       // arrives (see `handleHomeTunnel`'s `open-ack` branch).
       if (!state.active || state.orphaned) {
-        if (state.earlyBuffer.length >= MAX_EARLY_BUFFER_FRAMES) {
-          // Drop oldest frame to prevent unbounded growth
-          state.earlyBuffer.shift();
-        }
-        state.earlyBuffer.push(text);
+        pushProxyEarlyBuffer(state, text);
         return;
       }
       const t = homeTunnels.get(targetPeerId);
       if (!t || t.readyState !== WebSocket.OPEN) {
         // Tunnel died between open-ack and now; buffer and let the
         // re-claim flush.
-        if (state.earlyBuffer.length >= MAX_EARLY_BUFFER_FRAMES) {
-          state.earlyBuffer.shift();
-        }
-        state.earlyBuffer.push(text);
+        pushProxyEarlyBuffer(state, text);
         return;
       }
       try {

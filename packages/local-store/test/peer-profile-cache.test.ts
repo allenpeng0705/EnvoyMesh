@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createPeerProfileCacheStore } from "../src/peer-profile-cache.js";
+import { createPeerProfileCacheStore, MAX_PEER_PROFILE_CACHE_RECORDS } from "../src/peer-profile-cache.js";
 
 describe("peer-profile-cache", () => {
   let dir = "";
@@ -68,5 +68,26 @@ describe("peer-profile-cache", () => {
     };
     const row = await store.upsert(profileV2, { contentBase64: "bmV3", mimeType: "image/jpeg" });
     expect(row.thumbnail?.contentBase64).toBe("bmV3");
+  });
+
+  it("evicts oldest records when cache exceeds MAX_PEER_PROFILE_CACHE_RECORDS", async () => {
+    dir = await mkdtemp(join(tmpdir(), "envoy-peer-profile-cap-"));
+    const store = createPeerProfileCacheStore(dir);
+    for (let i = 0; i < MAX_PEER_PROFILE_CACHE_RECORDS + 5; i++) {
+      await store.upsert({
+        version: "0.1" as const,
+        ownerId: `envoy:owner:peer-${i}`,
+        displayName: `Peer ${i}`,
+        username: `peer${i}`,
+        updatedAt: new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString(),
+        signature: `sig-${i}`,
+      });
+    }
+    const all = await store.list();
+    expect(all.length).toBe(MAX_PEER_PROFILE_CACHE_RECORDS);
+    expect(all.some((r) => r.ownerId === "envoy:owner:peer-0")).toBe(false);
+    expect(all.some((r) => r.ownerId === `envoy:owner:peer-${MAX_PEER_PROFILE_CACHE_RECORDS + 4}`)).toBe(
+      true,
+    );
   });
 });

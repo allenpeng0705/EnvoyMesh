@@ -78,6 +78,27 @@ describe("relay capacity runtime controller (adaptive feedback)", () => {
     expect(r.state.adaptiveReservationBudget).toBeLessThan(500);
   });
 
+  it("emergency shrink triggers on high RSS after 2 critical ticks", () => {
+    let state = createInitialRelayCapacityRuntimeState({
+      initialEffectiveMaxPeers: 400,
+      initialAdaptiveConnectionBudget: 700,
+      initialAdaptiveReservationBudget: 500,
+    });
+    const rssHot = sample({
+      eventLoopLagMs: 10,
+      rssMb: 920,
+      maxRssMb: 1000,
+    });
+    let r = tickRelayCapacityController(state, rssHot);
+    expect(r.state.lastAction).not.toBe("emergency-shrink");
+    r = tickRelayCapacityController(r.state, {
+      ...rssHot,
+      adaptiveConnectionBudget: r.state.adaptiveConnectionBudget,
+      adaptiveReservationBudget: r.state.adaptiveReservationBudget,
+    });
+    expect(r.state.lastAction).toBe("emergency-shrink");
+  });
+
   it("grows connection and reservation budgets after sustained health", () => {
     let state = createInitialRelayCapacityRuntimeState({
       initialEffectiveMaxPeers: 300,

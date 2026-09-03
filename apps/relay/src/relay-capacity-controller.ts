@@ -39,6 +39,8 @@ const MIN_SWARM_PEERS = 64;
 const FLEET_HEADROOM = 48;
 const CRITICAL_LAG_MS = 1_200;
 const CRITICAL_DIAL_QUEUE = 50;
+/** RSS at or above this fraction of maxRssMb triggers critical load (emergency shrink). */
+const CRITICAL_RSS_FRACTION = 0.92;
 const CRITICAL_TICKS_NEEDED = 2;
 const EMERGENCY_SHRINK_FACTOR = 0.75;
 const HEALTHY_LAG_MS = 500;
@@ -100,9 +102,14 @@ function isHealthySample(sample: RelayCapacityRuntimeSample): boolean {
 }
 
 function isCriticalSample(sample: RelayCapacityRuntimeSample): boolean {
+  const rssCritical =
+    sample.rssMb != null &&
+    sample.maxRssMb != null &&
+    sample.rssMb >= sample.maxRssMb * CRITICAL_RSS_FRACTION;
   return (
     sample.eventLoopLagMs >= CRITICAL_LAG_MS ||
-    (sample.dialQueueLength != null && sample.dialQueueLength >= CRITICAL_DIAL_QUEUE)
+    (sample.dialQueueLength != null && sample.dialQueueLength >= CRITICAL_DIAL_QUEUE) ||
+    rssCritical
   );
 }
 

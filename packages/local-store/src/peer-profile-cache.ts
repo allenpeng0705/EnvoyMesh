@@ -6,6 +6,18 @@ import { dirname, join } from "node:path";
 
 const PEER_PROFILE_CACHE_FILE = "peer-profile-cache.json";
 
+/** Match market-cache-store card cap — profiles are re-fetchable via profile.request. */
+export const MAX_PEER_PROFILE_CACHE_RECORDS = 500;
+
+function trimPeerProfileCacheRecords(records: CachedPeerProfile[]): CachedPeerProfile[] {
+  if (records.length <= MAX_PEER_PROFILE_CACHE_RECORDS) {
+    return records;
+  }
+  return [...records]
+    .sort((a, b) => Date.parse(b.cachedAt) - Date.parse(a.cachedAt))
+    .slice(0, MAX_PEER_PROFILE_CACHE_RECORDS);
+}
+
 export interface CachedPeerProfileThumbnail {
   contentBase64: string;
   mimeType: ProfilePhotoMime;
@@ -98,6 +110,7 @@ export function createPeerProfileCacheStore(profileDir: string): PeerProfileCach
       };
       if (idx >= 0) file.records[idx] = row;
       else file.records.push(row);
+      file.records = trimPeerProfileCacheRecords(file.records);
       await saveFile(file);
       return row;
     },

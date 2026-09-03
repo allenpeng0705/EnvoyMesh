@@ -1002,10 +1002,6 @@ const RATE_LIMIT_MAX_REGISTRATIONS = 30; // max inbound messages per peer per wi
 const PAIR_RATE_LIMIT_MAX = 5;
 const MAX_RATE_LIMIT_ENTRIES = 10_000; // Prevent memory exhaustion
 
-// Message deduplication to prevent replay attacks
-const seenMessageIds = new Set<string>();
-const MAX_SEEN_MESSAGE_IDS = 100_000;
-
 // Maximum payload size to prevent memory exhaustion (1MB)
 function checkInboundRateLimit(
   peerId: string,
@@ -1057,30 +1053,6 @@ function isPairingIntent(intent: string): boolean {
 
 function checkInboundPairRateLimit(peerId: string): boolean {
   return checkInboundRateLimit(peerId, peerPairRequestCount, PAIR_RATE_LIMIT_MAX);
-}
-
-function isMessageSeen(messageId: string): boolean {
-  if (!messageId || typeof messageId !== "string") {
-    return true; // Treat invalid IDs as "seen" to reject them
-  }
-  return seenMessageIds.has(messageId);
-}
-
-function markMessageSeen(messageId: string): void {
-  if (!messageId || typeof messageId !== "string") {
-    return;
-  }
-
-  if (seenMessageIds.size >= MAX_SEEN_MESSAGE_IDS) {
-    const targetSize = Math.floor(MAX_SEEN_MESSAGE_IDS * 0.1);
-    let removed = 0;
-    for (const id of seenMessageIds) {
-      if (removed >= targetSize) break;
-      seenMessageIds.delete(id);
-      removed++;
-    }
-  }
-  seenMessageIds.add(messageId);
 }
 
 /** Throttle peer-directory listen-addr merges — each merge rewrites the whole JSON file. */
@@ -3064,9 +3036,6 @@ function scheduleMeshInboundDrain(): void {
 
 mesh.onMessage(async (params) => {
   const { envelope: inboundEnvelope, remotePeerId, replyWithEnvelope } = params;
-  if (isMessageSeen(inboundEnvelope.messageId)) {
-    return;
-  }
   const isRateLimitExemptIntent =
     inboundEnvelope.intent === "profile.sync" ||
     inboundEnvelope.intent === "profile.request" ||
@@ -3090,7 +3059,7 @@ mesh.onMessage(async (params) => {
   } else if (!isRateLimitExemptIntent && !checkInboundRateLimit(remotePeerId)) {
     return;
   }
-  markMessageSeen(inboundEnvelope.messageId);
+  // Replay dedup lives in inboundGuard.inspect() inside handleInboundMeshMessage.
   // Same-stream replies must run before the inbound handler closes the libp2p stream.
   if (replyWithEnvelope) {
     await handleInboundMeshMessage(params);
