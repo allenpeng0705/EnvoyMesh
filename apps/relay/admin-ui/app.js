@@ -4,6 +4,8 @@ const POLL_MS = 3000;
 
 const el = {
   statusChip: document.getElementById("statusChip"),
+  fleetGrid: document.getElementById("fleetGrid"),
+  fleetBody: document.getElementById("fleetBody"),
   statusGrid: document.getElementById("statusGrid"),
   peersGrid: document.getElementById("peersGrid"),
   peersBody: document.getElementById("peersBody"),
@@ -78,12 +80,26 @@ async function api(path, options) {
 async function refreshStatus() {
   const s = await api("/admin/api/status");
   setChip(s.health && s.health.status);
+  const cap = s.relayCapacity;
+  const lag =
+    s.health && typeof s.health.eventLoopLagMs === "number"
+      ? `${Math.round(s.health.eventLoopLagMs)} ms`
+      : "—";
   fillDl(el.statusGrid, [
     ["Uptime", fmtMs(s.uptimeMs)],
     ["Peer ID", s.peerId],
     ["Public mode", s.publicMode ? "yes" : "no"],
     ["Reservations", `${s.reservationCount ?? "—"} / ${s.maxReservations ?? "—"}`],
-    ["Roster", s.rosterSize],
+    ["Home tunnels", s.homeTunnels ?? "—"],
+    ["Roster (homes)", s.rosterSize],
+    ["Event-loop lag", lag],
+    ...(cap
+      ? [
+          ["Capacity tier", cap.tier],
+          ["Conn budget", `${cap.adaptiveConnectionBudget} / ${cap.maxConnections}`],
+          ["Resv budget", `${cap.adaptiveReservationBudget} / ${cap.maxReservations}`],
+        ]
+      : []),
     ["Lookups", s.metrics ? `${s.metrics.lookupHits}/${s.metrics.lookups} hit` : "—"],
     ["Checkins", s.metrics ? s.metrics.checkins : "—"],
     ["Listen", (s.listenAddrs || []).join("\n") || "—"],
@@ -91,6 +107,59 @@ async function refreshStatus() {
     ["Network", s.versions && s.versions.network],
     ["Node", s.versions && s.versions.node],
   ]);
+}
+
+async function refreshFleet() {
+  if (!el.fleetGrid || !el.fleetBody) return;
+  const f = await api("/admin/api/fleet");
+  const doc = f.fleetDocument;
+  fillDl(el.fleetGrid, [
+    ["This relay", shortPeer(f.selfPeerId)],
+    ["Fleet doc", doc ? `${doc.fleetId} (${doc.relayCount} relays)` : "not loaded"],
+    ["Doc issued", doc ? doc.issuedAt : "—"],
+    ["Doc expires", doc ? doc.expiresAt : "—"],
+    ["Known relays", (f.relays || []).length],
+    ["Checked at", f.checkedAt],
+  ]);
+  el.fleetBody.innerHTML = "";
+  for (const row of f.relays || []) {
+    const tr = document.createElement("tr");
+    if (row.isSelf) tr.className = "row-self";
+
+    const tdLabel = document.createElement("td");
+    if (row.httpUrl && !row.isSelf) {
+      const a = document.createElement("a");
+      a.className = "link-quiet";
+      a.href = row.httpUrl.replace(/\/relay-roster\.json$/, "/admin/");
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.textContent = row.label || shortPeer(row.peerId);
+      a.title = row.httpUrl;
+      tdLabel.append(a);
+    } else {
+      tdLabel.textContent = row.isSelf ? `${row.label} (you)` : row.label || shortPeer(row.peerId);
+    }
+
+    const tdRegion = document.createElement("td");
+    tdRegion.textContent = row.region || "—";
+
+    const tdConn = document.createElement("td");
+    tdConn.textContent = row.connected ? "yes" : "no";
+    tdConn.className = row.connected ? "cell-yes" : "cell-no";
+
+    const tdRole = document.createElement("td");
+    tdRole.textContent = row.bookState ? `${row.role || "—"} (${row.bookState})` : row.role || "—";
+
+    const tdSource = document.createElement("td");
+    tdSource.textContent = row.source;
+
+    const tdPeer = document.createElement("td");
+    tdPeer.textContent = shortPeer(row.peerId);
+    tdPeer.title = row.peerId;
+
+    tr.append(tdLabel, tdRegion, tdConn, tdRole, tdSource, tdPeer);
+    el.fleetBody.append(tr);
+  }
 }
 
 async function refreshPeers() {
@@ -209,6 +278,7 @@ async function refreshAll() {
   try {
     await Promise.all([
       refreshStatus(),
+      refreshFleet(),
       refreshPeers(),
       refreshReservations(),
       refreshRoster(),

@@ -200,6 +200,11 @@ describe("admin-http", () => {
         topicHashes: [{ topicHash: "bafytest", peerCount: 1 }],
         checkedAt: "2026-07-20T10:00:00.000Z",
       }),
+      buildFleet: () => ({
+        selfPeerId: "peer-test",
+        relays: [{ label: "CN community", peerId: "12D3KooWCN", isSelf: false, connected: true }],
+        checkedAt: "2026-07-20T10:00:00.000Z",
+      }),
       buildMetrics: () => ({ checkins: 3, lookups: 5, lookupHits: 2 }),
     });
     await withServer(deps, async (base) => {
@@ -216,6 +221,12 @@ describe("admin-http", () => {
       expect(roster.size).toBe(1);
       expect(roster.entries[0]?.hasHopSlot).toBe(true);
       expect(roster.topicHashes[0]?.topicHash).toBe("bafytest");
+
+      const fleetRes = await fetch(`${base}/admin/api/fleet`, { headers: auth });
+      expect(fleetRes.status).toBe(200);
+      const fleet = (await fleetRes.json()) as { selfPeerId: string; relays: unknown[] };
+      expect(fleet.selfPeerId).toBe("peer-test");
+      expect(fleet.relays.length).toBe(1);
 
       const metricsRes = await fetch(`${base}/admin/api/metrics`, { headers: auth });
       expect(metricsRes.status).toBe(200);

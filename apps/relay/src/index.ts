@@ -88,12 +88,14 @@ import {
 } from "./admin-auth.js";
 import { createRelayLogBuffer } from "./relay-log-buffer.js";
 import { handleAdminRequest, type AdminHttpDeps } from "./admin-http.js";
+import { buildRelayAdminFleetSnapshot } from "./relay-admin-fleet.js";
 import { attachStandaloneRelayControl, ingestSiblingHints } from "./standalone-relay-control.js";
 import { startCommunityRelayJoinRetry } from "./community-relay-join.js";
 import {
   handleRelayRosterHttpRequest,
   resolveRelayRosterFilePath,
   ensureRelayRosterSeeded,
+  loadRelayRosterDocument,
 } from "./relay-roster-http.js";
 import {
   buildSelfRosterEntry,
@@ -1192,6 +1194,16 @@ try {
           versions,
           metrics,
           topicHashes: relayRoster.topicHashSummary(32),
+          relayCapacity: relayCapacitySnapshot.autoCapacityEnabled
+            ? {
+                tier: relayCapacitySnapshot.tier,
+                adaptiveConnectionBudget: relayCapacitySnapshot.adaptiveConnectionBudget,
+                adaptiveReservationBudget: relayCapacitySnapshot.adaptiveReservationBudget,
+                maxConnections: relayCapacitySnapshot.maxConnections,
+                maxReservations: relayCapacitySnapshot.maxReservations,
+                effectiveMaxPeers: relayCapacitySnapshot.effectiveMaxPeers,
+              }
+            : undefined,
         };
       },
       buildReservations: () => {
@@ -1241,6 +1253,25 @@ try {
           entries,
           checkedAt: new Date().toISOString(),
         };
+      },
+      buildFleet: async () => {
+        const conn = mesh.getConnectionStats();
+        const fleetDocument = await loadRelayRosterDocument(rosterFilePath);
+        return buildRelayAdminFleetSnapshot({
+          selfPeerId: mesh.peerId,
+          advertiseAddrs: args.advertiseAddrs,
+          listenAddrs: mesh.multiaddrs.map(String),
+          publicMode: args.relayPublicMode,
+          httpPort: args.httpPort,
+          connectedPeerIds: conn.connectedPeerIds,
+          fleetDocument,
+          relayBook: relayRoster.relayBook(),
+          rosterRegion: process.env.ENVOYMESH_RELAY_ROSTER_REGION?.trim() || undefined,
+          health: currentRelayHealthSnapshot(),
+          relayCapacity: relayCapacitySnapshot.autoCapacityEnabled
+            ? relayCapacitySnapshot
+            : undefined,
+        });
       },
       buildMetrics: () => ({
         ...relayMetrics.snapshot(),

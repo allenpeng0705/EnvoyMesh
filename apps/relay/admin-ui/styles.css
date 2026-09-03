@@ -181,6 +181,25 @@ select {
   font: inherit;
 }
 
+.table-wrap-tall {
+  max-height: 280px;
+}
+
+tr.row-self td {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+td.cell-yes { color: var(--ok); }
+td.cell-no { color: var(--muted); }
+
+a.link-quiet {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.78rem;
+}
+
+a.link-quiet:hover { text-decoration: underline; }
+
 .table-wrap {
   margin-top: 0.75rem;
   overflow-x: auto;

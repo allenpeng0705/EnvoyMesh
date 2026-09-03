@@ -19,6 +19,27 @@
   </header>
 
   <main>
+    <section class="panel" id="fleetPanel">
+      <h2>Relay fleet</h2>
+      <p class="hint">This relay plus community and fleet siblings from <code>/relay-roster.json</code>.</p>
+      <dl id="fleetGrid" class="grid"></dl>
+      <div class="table-wrap table-wrap-tall">
+        <table>
+          <thead>
+            <tr>
+              <th>Label</th>
+              <th>Region</th>
+              <th>Connected</th>
+              <th>Role</th>
+              <th>Source</th>
+              <th>Peer ID</th>
+            </tr>
+          </thead>
+          <tbody id="fleetBody"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="panel" id="statusPanel">
       <h2>Status</h2>
       <dl id="statusGrid" class="grid"></dl>
