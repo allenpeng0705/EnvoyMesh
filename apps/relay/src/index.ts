@@ -1262,7 +1262,7 @@ try {
           advertiseAddrs: args.advertiseAddrs,
           listenAddrs: mesh.multiaddrs.map(String),
           publicMode: args.relayPublicMode,
-          httpPort: args.httpPort,
+          httpPort: args.httpPort ?? undefined,
           connectedPeerIds: conn.connectedPeerIds,
           fleetDocument,
           relayBook: relayRoster.relayBook(),

@@ -9,6 +9,7 @@ import {
   checkBasicAuth,
   sendUnauthorized,
 } from "./admin-auth.js";
+import type { RelayAdminFleetSnapshot } from "./relay-admin-fleet.js";
 import type { RelayLogBuffer, RelayLogLevel } from "./relay-log-buffer.js";
 
 const MIME: Record<string, string> = {
@@ -28,7 +29,7 @@ export interface AdminHttpDeps {
   buildReservations: () => Record<string, unknown>;
   buildPeers: () => Record<string, unknown>;
   buildRoster?: () => Record<string, unknown>;
-  buildFleet?: () => Record<string, unknown> | Promise<Record<string, unknown>>;
+  buildFleet?: () => RelayAdminFleetSnapshot | Promise<RelayAdminFleetSnapshot>;
   buildMetrics?: () => Record<string, unknown>;
   restartLibp2p: (reason: string) => Promise<void>;
   restartProcess: () => void;
