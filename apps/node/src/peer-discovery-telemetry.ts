@@ -84,6 +84,7 @@ export function shouldPersistPeerDiscoverySeeds(
   // wan-default / lan-fast: persist LAN + relay hops only. Public DHT "unknown"
   // peers churn by the thousands and rewriting discovery-seeds.json on every
   // sighting starved the event loop on long-running home nodes.
+  // The same gate applies to peer-directory merges (see handleMeshPeerDiscovered).
   return source === "relay" || source === "mdns";
 }
 

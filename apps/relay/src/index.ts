@@ -1788,9 +1788,11 @@ try {
               );
               relayMetrics.recordCheckin();
               const topicCount = checkinPayload.advertisements.filter((a) => a.topicHash).length;
-              console.log(
-                `[relay] direct-client checkin peer=${checkinPayload.peerId} topics=${topicCount} roster=${relayRoster.size()} hop=${liveResv ? "live" : "none"}`,
-              );
+              if (process.env.ENVOYMESH_RELAY_VERBOSE === "1" || process.env.ENVOYMESH_RELAY_VERBOSE === "true") {
+                console.log(
+                  `[relay] direct-client checkin peer=${checkinPayload.peerId} topics=${topicCount} roster=${relayRoster.size()} hop=${liveResv ? "live" : "none"}`,
+                );
+              }
             } catch (err) {
               console.warn(`[relay] direct-client: failed to parse relay.checkin for roster:`, err);
             }

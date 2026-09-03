@@ -1,7 +1,31 @@
 /**
  * Global PeerPath dial concurrency (no imports from warm/outbound — avoids cycles).
+ *
+ * Soft connection cap is separate from dial-slot concurrency:
+ * - Dial slots: at most PEER_PATH_MAX_IN_FLIGHT_DIALS concurrent background dials
+ * - Soft connection cap: skip background warm/keepalive when open libp2p
+ *   connections are near the configured maxConnections (headroom of 4)
  */
-export const PEER_PATH_SOFT_CONNECTION_CAP = 64;
+import { DEFAULT_CLIENT_MAX_CONNECTIONS } from "@envoymesh/api";
+
+/** Headroom below libp2p maxConnections before background warm refuses new dials. */
+export const PEER_PATH_SOFT_CONNECTION_HEADROOM = 4;
+
+export function softConnectionCapForMaxConnections(maxConnections: number): number {
+  return Math.max(8, Math.round(maxConnections) - PEER_PATH_SOFT_CONNECTION_HEADROOM);
+}
+
+/** Default soft cap when maxConnections is unknown (optimized client: 48 − 4). */
+export const PEER_PATH_SOFT_CONNECTION_CAP_DEFAULT = softConnectionCapForMaxConnections(
+  DEFAULT_CLIENT_MAX_CONNECTIONS,
+);
+
+/**
+ * @deprecated Prefer {@link getPeerPathSoftConnectionCap} — the live soft cap is
+ * configured from connectivity `maxConnections` at startup.
+ */
+export const PEER_PATH_SOFT_CONNECTION_CAP = PEER_PATH_SOFT_CONNECTION_CAP_DEFAULT;
+
 export const PEER_PATH_MAX_IN_FLIGHT_DIALS = 3;
 export const PEER_PATH_USER_SLOT_WAIT_MS = 8_000;
 
@@ -14,6 +38,23 @@ type SlotWaiter = {
 
 let inFlightDials = 0;
 const waitQueue: SlotWaiter[] = [];
+
+let configuredSoftConnectionCap = PEER_PATH_SOFT_CONNECTION_CAP_DEFAULT;
+
+/**
+ * Align PeerPath soft connection cap with libp2p maxConnections − headroom
+ * so background warm short-circuits before the connection manager is full.
+ */
+export function configurePeerPathSoftConnectionCap(maxConnections: number | undefined): void {
+  configuredSoftConnectionCap =
+    typeof maxConnections === "number" && Number.isFinite(maxConnections) && maxConnections > 0
+      ? softConnectionCapForMaxConnections(maxConnections)
+      : PEER_PATH_SOFT_CONNECTION_CAP_DEFAULT;
+}
+
+export function getPeerPathSoftConnectionCap(): number {
+  return configuredSoftConnectionCap;
+}
 
 export function inferPeerPathIntent(options?: {
   verifyOnly?: boolean;
@@ -79,7 +120,7 @@ export function releasePeerPathDialSlot(intent: PeerPathIntent = "warm"): void {
 }
 
 export function isPeerPathConnectionCapReached(totalConnections: number): boolean {
-  return totalConnections >= PEER_PATH_SOFT_CONNECTION_CAP;
+  return totalConnections >= configuredSoftConnectionCap;
 }
 
 export function getPeerPathDialStatsForTests(): {
@@ -96,4 +137,5 @@ export function resetPeerPathDialSlotsForTests(): void {
   }
   waitQueue.length = 0;
   inFlightDials = 0;
+  configuredSoftConnectionCap = PEER_PATH_SOFT_CONNECTION_CAP_DEFAULT;
 }

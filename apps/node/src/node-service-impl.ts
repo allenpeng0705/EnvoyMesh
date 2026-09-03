@@ -585,7 +585,9 @@ import {
   agentCardRefreshTimeoutMs,
   mapPoolSettled,
 } from "./agent-card-refresh.js";
-import { isOutboundPeerRecentlyVerified, markOutboundPeerVerified } from "./outbound-peer-freshness.js";
+import { isOutboundPeerRecentlyVerified, markOutboundPeerVerified, pruneOutboundPeerFreshness } from "./outbound-peer-freshness.js";
+import { pruneOwnerWarmCoordinator } from "./bond-warm-coordinator.js";
+import { BOND_WARM_PER_CONTACT_COOLDOWN_MS } from "./node-service-reachability.js";
 import { deliverOutboundEnvelope, dialHintsForTransportTarget } from "./mesh-outbound-helper.js";
 import { withOutboundSendLock } from "./outbound-send-lock.js";
 import { pickBestLibp2pPeerDirectoryRecord, pickConnectedTransportForOwner, pickLibp2pFromConnectedPeers, resolveRecipientEnvelopePeerId } from "./peer-transport-resolve.js";
@@ -2369,15 +2371,24 @@ class NodeServiceImpl implements NodeService {
         const probeCutoff = now - NodeServiceImpl._NEARBY_PROFILE_PROBE_COOLDOWN_MS * 120;
         const mergeCutoff = now - 2 * 60 * 60 * 1000; // 2 hours (dial-hint throttle)
         const nonEnvoyCutoff = now - NON_ENVOY_PEER_SUPPRESS_COOLDOWN_MS * 2; // 10 minutes
+        const bondWarmCutoff = now - BOND_WARM_PER_CONTACT_COOLDOWN_MS * 2;
         let pruned = 0;
         for (const [k, v] of this._profileRequestLastAt) if (v < profileCutoff) { this._profileRequestLastAt.delete(k); pruned++; }
         for (const [k, v] of this._nearbyProfileProbeLastAt) if (v < probeCutoff) { this._nearbyProfileProbeLastAt.delete(k); pruned++; }
         for (const [k, v] of this._nonEnvoyPeerLastFailedAt) if (v < nonEnvoyCutoff) { this._nonEnvoyPeerLastFailedAt.delete(k); this._nonEnvoyPeerFailCount.delete(k); pruned++; }
-        for (const k of this._lastLibp2pTransportByOwner.keys()) {
-          // Owner entries don't have timestamps — limit by total count instead.
-          // 1000 unique owners is generous for a personal node.
-        }
         for (const [k, v] of this._inboundListenAddrMergeByPeer) if (v < mergeCutoff) { this._inboundListenAddrMergeByPeer.delete(k); pruned++; }
+        for (const [k, v] of this._lastBondWarmAt) {
+          if (v < bondWarmCutoff) {
+            this._lastBondWarmAt.delete(k);
+            pruned++;
+          }
+        }
+        pruned += pruneOutboundPeerFreshness(undefined, now);
+        pruned += pruneOwnerWarmCoordinator(undefined, now);
+        const mesh = this._mesh;
+        if (mesh && typeof mesh.pruneNoReservationBackoffMaps === "function") {
+          pruned += mesh.pruneNoReservationBackoffMaps(now);
+        }
         // Cap _lastLibp2pTransportByOwner at 1000 entries (oldest evicted).
         if (this._lastLibp2pTransportByOwner.size > 1000) {
           const entries = [...this._lastLibp2pTransportByOwner.entries()];

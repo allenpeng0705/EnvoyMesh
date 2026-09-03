@@ -49,4 +49,19 @@ describe("createRelayJoinRateLimiter", () => {
     const limiter = createRelayJoinRateLimiter();
     expect(limiter.allow("")).toBe(false);
   });
+
+  it("evicts oldest entries when at maxEntries under unique-peer flood", () => {
+    const limiter = createRelayJoinRateLimiter({
+      windowMs: 60_000,
+      maxAttempts: 10,
+      maxEntries: 3,
+    });
+    expect(limiter.allow("p1")).toBe(true);
+    expect(limiter.allow("p2")).toBe(true);
+    expect(limiter.allow("p3")).toBe(true);
+    // Fourth unique peer must not grow past maxEntries — oldest is evicted.
+    expect(limiter.allow("p4")).toBe(true);
+    // p1 was oldest; after eviction a fresh window starts if reinserted.
+    expect(limiter.allow("p1")).toBe(true);
+  });
 });

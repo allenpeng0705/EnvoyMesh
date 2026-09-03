@@ -28,6 +28,11 @@ export function buildRelayCircuitMultiaddrs(relayMultiaddrs: string[], targetPee
   return [...new Set(circuitAddrs)];
 }
 
+/** Defensive caps on checkin arrays (relay-side; avoids protocol Zod breakage). */
+export const MAX_CHECKIN_CAPABILITIES = 64;
+export const MAX_CHECKIN_ADVERTISEMENTS = 64;
+export const MAX_CHECKIN_REACHABLE_ADDRS = 16;
+
 export interface RelayRosterEntry {
   peerId: string;
   ownerId?: string;
@@ -124,17 +129,30 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
     for (const [relayId, entry] of relayBook) {
       if (entry.expiresAt <= current) relayBook.delete(relayId);
     }
-    if (entries.size > maxRosterEntries) {
-      const ordered = [...entries.values()].sort((left, right) => left.lastSeenAt - right.lastSeenAt);
-      for (const entry of ordered.slice(0, entries.size - maxRosterEntries)) {
-        entries.delete(entry.peerId);
+    // O(n) single-oldest eviction (avoid full sort on every checkin).
+    while (entries.size > maxRosterEntries) {
+      let oldestId: string | null = null;
+      let oldestSeen = Infinity;
+      for (const [peerId, entry] of entries) {
+        if (entry.lastSeenAt < oldestSeen) {
+          oldestSeen = entry.lastSeenAt;
+          oldestId = peerId;
+        }
       }
+      if (!oldestId) break;
+      entries.delete(oldestId);
     }
-    if (relayBook.size > maxRelayBookEntries) {
-      const ordered = [...relayBook.values()].sort((a, b) => a.lastVerifiedAt - b.lastVerifiedAt);
-      for (const entry of ordered.slice(0, relayBook.size - maxRelayBookEntries)) {
-        relayBook.delete(entry.relayId);
+    while (relayBook.size > maxRelayBookEntries) {
+      let oldestId: string | null = null;
+      let oldestVerified = Infinity;
+      for (const [relayId, entry] of relayBook) {
+        if (entry.lastVerifiedAt < oldestVerified) {
+          oldestVerified = entry.lastVerifiedAt;
+          oldestId = relayId;
+        }
       }
+      if (!oldestId) break;
+      relayBook.delete(oldestId);
     }
   }
 
@@ -210,7 +228,7 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
         current,
         rosterTtlMs,
       );
-      const newAddrs = dedupe(payload.relayReachableAddrs);
+      const newAddrs = dedupe(payload.relayReachableAddrs).slice(0, MAX_CHECKIN_REACHABLE_ADDRS);
       const existing = entries.get(peerId);
       const reconnect = existing !== undefined && existing.lastSeenAt < current - 60_000;
       const addrChanged =
@@ -224,8 +242,8 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
         addrChangedAt: addrChanged ? current : existing?.addrChangedAt,
         firstSeenAt: existing?.firstSeenAt ?? current,
         lastReconnectedAt: reconnect ? current : existing?.lastReconnectedAt,
-        capabilities: dedupe(payload.capabilities),
-        advertisements: payload.advertisements,
+        capabilities: dedupe(payload.capabilities).slice(0, MAX_CHECKIN_CAPABILITIES),
+        advertisements: payload.advertisements.slice(0, MAX_CHECKIN_ADVERTISEMENTS),
         relayHints: payload.relayHints.slice(0, maxRelayHints),
         lastSeenAt: current,
         expiresAt,

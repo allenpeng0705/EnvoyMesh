@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  configurePeerPathSoftConnectionCap,
   ensureContactPath,
   getPeerPathDialStatsForTests,
+  getPeerPathSoftConnectionCap,
   PEER_PATH_MAX_IN_FLIGHT_DIALS,
+  PEER_PATH_SOFT_CONNECTION_CAP_DEFAULT,
   releasePeerPathDialSlot,
   resetPeerPathDialSlotsForTests,
+  softConnectionCapForMaxConnections,
   tryAcquirePeerPathDialSlot,
 } from "../src/peer-path.js";
 import * as outbound from "../src/node-service-outbound-messaging.js";
@@ -12,6 +16,22 @@ import * as outbound from "../src/node-service-outbound-messaging.js";
 afterEach(() => {
   resetPeerPathDialSlotsForTests();
   vi.restoreAllMocks();
+});
+
+describe("PeerPath soft connection cap", () => {
+  it("derives soft cap as maxConnections - 4", () => {
+    expect(softConnectionCapForMaxConnections(48)).toBe(44);
+    expect(softConnectionCapForMaxConnections(40)).toBe(36);
+    expect(softConnectionCapForMaxConnections(24)).toBe(20);
+    expect(PEER_PATH_SOFT_CONNECTION_CAP_DEFAULT).toBe(44);
+  });
+
+  it("configurePeerPathSoftConnectionCap updates the live gate", () => {
+    configurePeerPathSoftConnectionCap(48);
+    expect(getPeerPathSoftConnectionCap()).toBe(44);
+    configurePeerPathSoftConnectionCap(24);
+    expect(getPeerPathSoftConnectionCap()).toBe(20);
+  });
 });
 
 describe("PeerPath dial slots", () => {
@@ -47,6 +67,7 @@ describe("PeerPath dial slots", () => {
 
 describe("ensureContactPath", () => {
   it("skips background warm when soft connection cap reached", async () => {
+    configurePeerPathSoftConnectionCap(48);
     const warmSpy = vi
       .spyOn(outbound, "warmContactConnectionViaRuntime")
       .mockResolvedValue({ connected: true, direct: false });
@@ -57,7 +78,7 @@ describe("ensureContactPath", () => {
     const ctx = {
       getReachableMesh: () =>
         ({
-          getConnectionStats: () => ({ totalConnections: 64, dialQueueLength: 0 }),
+          getConnectionStats: () => ({ totalConnections: 44, dialQueueLength: 0 }),
         }) as never,
     } as outbound.OutboundMessagingContext;
 
@@ -85,6 +106,7 @@ describe("ensureContactPath", () => {
   });
 
   it("upgradeRelayToDirect bypasses soft connection cap (Online-Relay→Direct)", async () => {
+    configurePeerPathSoftConnectionCap(48);
     const warmSpy = vi
       .spyOn(outbound, "warmContactConnectionViaRuntime")
       .mockResolvedValue({ connected: true, direct: true });
@@ -93,7 +115,7 @@ describe("ensureContactPath", () => {
     const ctx = {
       getReachableMesh: () =>
         ({
-          getConnectionStats: () => ({ totalConnections: 64, dialQueueLength: 0 }),
+          getConnectionStats: () => ({ totalConnections: 44, dialQueueLength: 0 }),
         }) as never,
     } as outbound.OutboundMessagingContext;
 

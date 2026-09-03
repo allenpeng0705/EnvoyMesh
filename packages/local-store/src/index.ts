@@ -950,7 +950,11 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
     maxAgeMs: 7 * 24 * 60 * 60 * 1000,
   });
   const appendAuditIndexQueued = createJsonlIndexAppender(auditIndexPath);
-  const appendDiscoveryQueued = createSerialJsonlAppender(discoveryEventsPath);
+  // Discovery events: match audit retention (24MB / 7d) so 24/7 homes do not retain DHT floods.
+  const appendDiscoveryQueued = createSerialJsonlAppender(discoveryEventsPath, {
+    maxSizeBytes: 24 * 1024 * 1024,
+    maxAgeMs: 7 * 24 * 60 * 60 * 1000,
+  });
   const appendShareQueued = createSerialJsonlAppender(shareEventsPath);
   const taskResultsStore = createLocalTaskResultsStore(profileDir);
   const companyInviteStore = createLocalCompanyInviteStore(profileDir);
@@ -1534,7 +1538,7 @@ export interface LocalPeerDirectoryStore {
   compactListenAddrs(maxPerRecord?: number): Promise<{ recordsTouched: number; addrsRemoved: number }>;
   /** Strip ephemeral inbound TCP snapshots from every peer row. */
   sanitizeListenAddrs(): Promise<{ recordsTouched: number; addrsRemoved: number }>;
-  /** Drop oldest peer rows when the directory grows too large (repairs WAN discovery bloat). */
+  /** Drop oldest peer rows when the directory grows too large (repairs WAN discovery bloat). Prefers stub/placeholder rows before bonded contacts. */
   capPeerRecordCount(maxRecords?: number): Promise<{ recordsRemoved: number }>;
   /**
    * Learn device signing key from a verified inbound human envelope (`senderPublicKey`).
@@ -1563,6 +1567,9 @@ export interface LocalPeerDirectoryStore {
    * Ensure a peer record exists for a given libp2p peerId, creating a stub if absent.
    * Used by `updateMyListenAddrs` when a mobile shares its UPnP address before any
    * inbound message has created the peer's directory entry.
+   *
+   * Requires at least one listen addr — bare peerId stubs from DHT sightings are
+   * not created here (discovery must not call this for anonymous swarm peers).
    */
   ensurePeerByPeerId(input: {
     peerId: string;
@@ -2086,9 +2093,24 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         if (file.records.length <= maxRecords) {
           return;
         }
-        file.records.sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
-        recordsRemoved = file.records.length - maxRecords;
-        file.records = file.records.slice(0, maxRecords);
+        // Prefer dropping discovery stubs before real owner-bound contacts, then
+        // oldest lastSeenAt within each class.
+        const isStub = (r: PeerDirectoryRecord): boolean => {
+          const owner = r.ownerId?.trim() ?? "";
+          const peer = r.peerId?.trim() ?? "";
+          if (!owner || owner === peer) return true;
+          if (r.deviceId === "mobile-upnp" || r.deviceId === "chat-inbound") return true;
+          return false;
+        };
+        const byRecencyAsc = (a: PeerDirectoryRecord, b: PeerDirectoryRecord) =>
+          a.lastSeenAt.localeCompare(b.lastSeenAt);
+        const stubs = file.records.filter(isStub).sort(byRecencyAsc);
+        const real = file.records.filter((r) => !isStub(r)).sort(byRecencyAsc);
+        const overflow = file.records.length - maxRecords;
+        const drop = [...stubs, ...real].slice(0, overflow);
+        const dropSet = new Set(drop);
+        recordsRemoved = drop.length;
+        file.records = file.records.filter((r) => !dropSet.has(r));
         await writePeerDirectoryFileAtomic(directoryPath, file);
       });
       return { recordsRemoved };
@@ -2195,6 +2217,11 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
             existing.listenAddrs = filterDialableListenAddrs([...existing.listenAddrs, ...extra]).slice(-8);
           }
           await writePeerDirectoryFileAtomic(directoryPath, file);
+          return;
+        }
+        // Refuse empty stubs — DHT/swarm callers must not grow the directory
+        // without dialable addrs (mobile UPnP always supplies listenAddrs).
+        if (extra.length === 0) {
           return;
         }
         // Create a stub record. ownerId will be filled in by ensurePeerFromInboundChat

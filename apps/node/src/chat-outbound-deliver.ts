@@ -42,12 +42,49 @@ const CHAT_SEND_RETRY_BASE_MS = 800;
 /** Collapse identical expect-reply failure spam (protocol selection / DHT peers). */
 const EXPECT_REPLY_FAIL_LOG_INTERVAL_MS = 15_000;
 
+/** Per-peer cooldown for prepare-failed / no-route spam on 24/7 offline bonds. */
+const PREPARE_FAILED_LOG_INTERVAL_MS = 120_000;
+
 type ExpectReplyFailBucket = {
   lastLogAt: number;
   suppressed: number;
 };
 
 const expectReplyFailBuckets = new Map<string, ExpectReplyFailBucket>();
+const prepareFailedLogBuckets = new Map<string, ExpectReplyFailBucket>();
+
+function logRateLimitedPeerWarn(
+  buckets: Map<string, ExpectReplyFailBucket>,
+  key: string,
+  intervalMs: number,
+  line: string,
+): void {
+  const now = Date.now();
+  const bucket = buckets.get(key) ?? { lastLogAt: 0, suppressed: 0 };
+  if (now - bucket.lastLogAt < intervalMs) {
+    bucket.suppressed += 1;
+    buckets.set(key, bucket);
+    return;
+  }
+  const suppressed = bucket.suppressed;
+  buckets.set(key, { lastLogAt: now, suppressed: 0 });
+  const suffix = suppressed > 0 ? ` (+${suppressed} similar suppressed)` : "";
+  console.warn(`${line}${suffix}`);
+}
+
+/** Rate-limited `[send] prepare-failed` / retry-prepare-failed (exported for profile.sync reuse). */
+export function logOutboundPrepareFailed(
+  tag: string,
+  peerOrOwnerId: string,
+  detail: string,
+): void {
+  logRateLimitedPeerWarn(
+    prepareFailedLogBuckets,
+    `${tag}:${peerOrOwnerId}`,
+    PREPARE_FAILED_LOG_INTERVAL_MS,
+    `${tag} ${detail}`,
+  );
+}
 
 /** Classify common expect-reply failures for rate-limited logging (exported for tests). */
 export function classifyExpectReplyFailure(message: string): string {
@@ -99,6 +136,7 @@ function logExpectReplyAttemptFailure(
 /** Test helper — clear expect-reply log rate-limit state. */
 export function resetExpectReplyFailLogBucketsForTests(): void {
   expectReplyFailBuckets.clear();
+  prepareFailedLogBuckets.clear();
 }
 
 function meshLocalListenAddrs(mesh: unknown): string[] | undefined {
@@ -927,7 +965,11 @@ export async function deliverMessageEnvelopeWithRetry(input: {
         });
         if (!ready && !input.mesh.getPeerConnectionInfo(input.transportPeerId).connected) {
           lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`);
-          console.warn(`[send] prepare-failed attempt ${attempt + 1}/${maxAttempts} for ${input.transportPeerId.slice(0, 24)}…: ${lastErr instanceof Error ? lastErr.message : lastErr}`);
+          logOutboundPrepareFailed(
+            "[send] prepare-failed",
+            input.transportPeerId,
+            `attempt ${attempt + 1}/${maxAttempts} for ${input.transportPeerId.slice(0, 24)}…: ${lastErr.message}`,
+          );
           continue;
         }
       }
@@ -947,7 +989,11 @@ export async function deliverMessageEnvelopeWithRetry(input: {
         });
         if (!ready) {
           lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`);
-          console.warn(`[send] retry-prepare-failed attempt ${attempt + 1}/${maxAttempts} for ${input.transportPeerId.slice(0, 24)}…: ${lastErr instanceof Error ? lastErr.message : lastErr}`);
+          logOutboundPrepareFailed(
+            "[send] retry-prepare-failed",
+            input.transportPeerId,
+            `attempt ${attempt + 1}/${maxAttempts} for ${input.transportPeerId.slice(0, 24)}…: ${lastErr.message}`,
+          );
           continue;
         }
       }

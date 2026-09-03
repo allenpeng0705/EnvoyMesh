@@ -18,17 +18,24 @@ import {
 import { isOutboundPeerRecentlyVerified } from "./outbound-peer-freshness.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
 import { NEARBY_PROFILE_PROBE_COOLDOWN_MS } from "./node-service-identity.js";
-import { PEER_PATH_SOFT_CONNECTION_CAP, isPeerPathConnectionCapReached } from "./peer-path.js";
+import {
+  configurePeerPathSoftConnectionCap,
+  getPeerPathSoftConnectionCap,
+  isPeerPathConnectionCapReached,
+  PEER_PATH_SOFT_CONNECTION_CAP,
+} from "./peer-path.js";
+import { PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD } from "@envoymesh/network";
 
-/** @deprecated Prefer {@link PEER_PATH_SOFT_CONNECTION_CAP} — shared with PeerPath facade. */
+/** @deprecated Prefer {@link getPeerPathSoftConnectionCap} — soft cap tracks maxConnections. */
 export const BOND_WARM_MAX_CONNECTIONS = PEER_PATH_SOFT_CONNECTION_CAP;
 export const BOND_WARM_PER_CONTACT_COOLDOWN_MS = 300_000;
 /**
  * After a *failed* warm, stay cool only this long so startup reconnect is not
  * stuck waiting for the full {@link BOND_WARM_PER_CONTACT_COOLDOWN_MS} (5 min)
  * — that matched the Win→Mac "Offline until Online-Relay ~5 min" report.
+ * Raised 20s → 120s so offline bonds do not redial every few seconds on 24/7 homes.
  */
-export const BOND_WARM_FAILURE_COOLDOWN_MS = 20_000;
+export const BOND_WARM_FAILURE_COOLDOWN_MS = 120_000;
 /**
  * After an Online-Relay warm that did not upgrade to Direct, become eligible
  * again quickly. Applying the full 5‑minute success cooldown here was why
@@ -62,10 +69,12 @@ export function configureBondWarmFromConnectivity(input: {
   intervalMs: number;
   perContactCooldownMs: number;
   eventDriven: boolean;
+  maxConnections?: number;
 }): void {
   configuredBondWarmIntervalMs = input.intervalMs;
   configuredBondWarmCooldownMs = input.perContactCooldownMs;
   configuredBondWarmEventDriven = input.eventDriven;
+  configurePeerPathSoftConnectionCap(input.maxConnections);
 }
 
 /** Test helper */
@@ -73,6 +82,7 @@ export function resetBondWarmConnectivityConfigForTests(): void {
   configuredBondWarmIntervalMs = BOND_WARM_INTERVAL_MS;
   configuredBondWarmCooldownMs = BOND_WARM_PER_CONTACT_COOLDOWN_MS;
   configuredBondWarmEventDriven = false;
+  configurePeerPathSoftConnectionCap(undefined);
   for (const ownerId of [...relayUpgradeRetryTimers.keys()]) {
     clearRelayUpgradeRetryTimers(ownerId);
   }
@@ -284,7 +294,13 @@ export async function handleMeshPeerDiscoveredViaRuntime(
     ) {
       await discoverySeedStore.upsertMany(multiaddrs, "peer.discovery");
     }
-    if (multiaddrs.length > 0) {
+    // Same gate as discovery-seeds: do not rewrite peer-directory from anonymous
+    // DHT ("unknown") sightings — that refreshed stub lastSeenAt forever and
+    // defeated directory caps. LAN (mdns) + relay hops still merge.
+    if (
+      multiaddrs.length > 0 &&
+      shouldPersistPeerDiscoverySeeds(discoveryProfile, source)
+    ) {
       await ctx.peerDirectoryStore.mergeListenAddrsForPeerId(peerId, multiaddrs);
     }
     const mesh = ctx.getReachableMesh();
@@ -484,16 +500,25 @@ export async function warmAllBondedContactsViaRuntime(ctx: ReachabilityContext):
   const selfOwnerId = ctx.getProfile()?.owner.ownerId?.trim();
 
   // The cap is enforced INSIDE the loop too. The pre-loop check is just a
-  // fast-path that lets us skip the entire cycle when the cap is already
-  // blown (e.g. 178 bonds but only 64 connection slots); without it we'd
-  // walk every bond just to bail per-iteration. Each `warmContactConnection`
-  // call below can ADD a connection (when the peer isn't already
-  // connected), so the cap must also be re-checked before each warm call —
-  // otherwise a single cycle can push totalConnections well past the cap
-  // before the next cycle's pre-check has a chance to refuse.
-  if (isPeerPathConnectionCapReached(mesh.getConnectionStats().totalConnections)) {
+  // fast-path that lets us skip the entire cycle when the soft cap is already
+  // reached (near libp2p maxConnections); without it we'd walk every bond just
+  // to bail per-iteration. Each `warmContactConnection` call below can ADD a
+  // connection (when the peer isn't already connected), so the cap must also
+  // be re-checked before each warm call — otherwise a single cycle can push
+  // totalConnections well past the soft cap before the next cycle's pre-check
+  // has a chance to refuse.
+  const softCap = getPeerPathSoftConnectionCap();
+  const connStats = mesh.getConnectionStats();
+  const dialQueue = connStats.dialQueueLength ?? 0;
+  if (dialQueue > PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD) {
     console.warn(
-      `[bond-warm] skipped: ${mesh.getConnectionStats().totalConnections} open connections (cap ${BOND_WARM_MAX_CONNECTIONS}). ` +
+      `[bond-warm] skipped: dialQueue=${dialQueue} (>${PRUNE_EXCESS_SWARM_DIAL_QUEUE_THRESHOLD}) — deferring until congestion clears`,
+    );
+    return;
+  }
+  if (isPeerPathConnectionCapReached(connStats.totalConnections)) {
+    console.warn(
+      `[bond-warm] skipped: ${connStats.totalConnections} open connections (cap ${softCap}). ` +
         `PeerPath soft cap — reduce bonded contacts or wait for idle.`,
     );
     return;
@@ -514,7 +539,7 @@ export async function warmAllBondedContactsViaRuntime(ctx: ReachabilityContext):
     // evaluate when the cap headroom grows.
     if (isPeerPathConnectionCapReached(mesh.getConnectionStats().totalConnections)) {
       console.warn(
-        `[bond-warm] cap ${BOND_WARM_MAX_CONNECTIONS} reached mid-cycle at bond ${bond.peerOwnerId.slice(0, 12)}… — deferring remaining ${bonds.length - (bonds.indexOf(bond))} bonds to next cycle`,
+        `[bond-warm] cap ${softCap} reached mid-cycle at bond ${bond.peerOwnerId.slice(0, 12)}… — deferring remaining ${bonds.length - (bonds.indexOf(bond))} bonds to next cycle`,
       );
       break;
     }

@@ -62,14 +62,17 @@ export function createRelayJoinRateLimiter(opts?: {
   const maxEntries = opts?.maxEntries ?? 10_000;
   const counts = new Map<string, { count: number; resetAt: number }>();
 
-  function evictExpired(now: number): void {
+  function evictOldest(now: number): void {
     if (counts.size < maxEntries) return;
     let oldest: string | null = null;
     let oldestExpiry = Infinity;
     for (const [id, entry] of counts) {
-      if (entry.resetAt < now && entry.resetAt < oldestExpiry) {
+      // Prefer expired windows first, otherwise any oldest resetAt so the map
+      // cannot grow without bound under a unique-peerId flood.
+      const score = entry.resetAt < now ? entry.resetAt - 1e15 : entry.resetAt;
+      if (score < oldestExpiry) {
         oldest = id;
-        oldestExpiry = entry.resetAt;
+        oldestExpiry = score;
       }
     }
     if (oldest) counts.delete(oldest);
@@ -78,14 +81,20 @@ export function createRelayJoinRateLimiter(opts?: {
   return {
     allow(peerId: string, now = Date.now()): boolean {
       if (!peerId || typeof peerId !== "string") return false;
-      evictExpired(now);
-      const entry = counts.get(peerId);
-      if (!entry || entry.resetAt < now) {
-        counts.set(peerId, { count: 1, resetAt: now + windowMs });
+      const existing = counts.get(peerId);
+      if (existing && existing.resetAt >= now) {
+        if (existing.count >= maxAttempts) return false;
+        existing.count += 1;
         return true;
       }
-      if (entry.count >= maxAttempts) return false;
-      entry.count += 1;
+      if (!existing) {
+        while (counts.size >= maxEntries) {
+          const before = counts.size;
+          evictOldest(now);
+          if (counts.size >= before) break;
+        }
+      }
+      counts.set(peerId, { count: 1, resetAt: now + windowMs });
       return true;
     },
   };

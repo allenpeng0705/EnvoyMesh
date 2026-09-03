@@ -26,12 +26,17 @@ import {
 export {
   PEER_PATH_MAX_IN_FLIGHT_DIALS,
   PEER_PATH_SOFT_CONNECTION_CAP,
+  PEER_PATH_SOFT_CONNECTION_CAP_DEFAULT,
+  PEER_PATH_SOFT_CONNECTION_HEADROOM,
   PEER_PATH_USER_SLOT_WAIT_MS,
+  configurePeerPathSoftConnectionCap,
   getPeerPathDialStatsForTests,
+  getPeerPathSoftConnectionCap,
   inferPeerPathIntent,
   isPeerPathConnectionCapReached,
   releasePeerPathDialSlot,
   resetPeerPathDialSlotsForTests,
+  softConnectionCapForMaxConnections,
   tryAcquirePeerPathDialSlot,
   type PeerPathIntent,
 } from "./peer-path-slots.js";

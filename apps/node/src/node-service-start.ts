@@ -433,6 +433,7 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
       intervalMs: connectivityRuntime.bondWarmIntervalMs,
       perContactCooldownMs: connectivityRuntime.bondWarmPerContactCooldownMs,
       eventDriven: connectivityRuntime.bondWarmEventDriven,
+      maxConnections: connectivityRuntime.maxConnections,
     });
 
     const configuredRelayAddrs = collectRelayControlTargets({

@@ -40,6 +40,7 @@ import {
   deliverChatEnvelopeWithRetry,
   deliverMessageEnvelopeWithRetry,
   isChatProtocolIntent,
+  logOutboundPrepareFailed,
   type ChatDeliverResult,
 } from "./chat-outbound-deliver.js";
 import { markOutboundPeerVerified, isOutboundPeerRecentlyVerified } from "./outbound-peer-freshness.js";
@@ -573,8 +574,10 @@ export async function resolveLibp2pPeerForBondOwnerViaRuntime(
       }
       return { transportPeerId: libp2p.peerId, listenAddrs };
     }
-    console.warn(
-      `[profile.sync] no libp2p route to ${ownerId.slice(0, 20)}…: Peer not found for owner (ask contact to message you once, or re-save their profile photo)`,
+    logOutboundPrepareFailed(
+      "[profile.sync] no libp2p route",
+      ownerId,
+      `to ${ownerId.slice(0, 20)}…: Peer not found for owner (ask contact to message you once, or re-save their profile photo)`,
     );
     return undefined;
   }

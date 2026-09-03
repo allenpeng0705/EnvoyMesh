@@ -12,6 +12,7 @@ import { derivePeerId } from "@envoymesh/identity";
 import {
   sendEnvelopeWithRetry,
   sendExpectReplyWithRetry,
+  logOutboundPrepareFailed,
   type OutboundDeliverMesh,
   type OutboundExpectReplyMesh,
 } from "./chat-outbound-deliver.js";
@@ -73,7 +74,11 @@ export async function sendProfileSyncToBonds(input: {
     try {
       const resolved = await input.resolveLibp2pPeer(ownerId);
       if (!resolved?.peerId || !isLibp2pPeerId(resolved.peerId)) {
-        console.warn(`[profile.sync] skip bond ${ownerId.slice(0, 20)}…: no libp2p peer id`);
+        logOutboundPrepareFailed(
+          "[profile.sync]",
+          ownerId,
+          `skip bond ${ownerId.slice(0, 20)}…: no libp2p peer id`,
+        );
         continue;
       }
 
@@ -81,9 +86,19 @@ export async function sendProfileSyncToBonds(input: {
       try {
         dialHints = await input.dialHintsFor(resolved.peerId, resolved.listenAddrs);
       } catch (hintErr) {
-        console.warn(
-          `[profile.sync] dial hints failed for ${ownerId.slice(0, 16)}…:`,
-          hintErr instanceof Error ? hintErr.message : hintErr,
+        logOutboundPrepareFailed(
+          "[profile.sync]",
+          ownerId,
+          `dial hints failed for ${ownerId.slice(0, 16)}…: ${hintErr instanceof Error ? hintErr.message : hintErr}`,
+        );
+        continue;
+      }
+
+      if (dialHints.length === 0 && !(resolved.listenAddrs && resolved.listenAddrs.length > 0)) {
+        logOutboundPrepareFailed(
+          "[profile.sync]",
+          ownerId,
+          `skip bond ${ownerId.slice(0, 20)}…: empty dial hints`,
         );
         continue;
       }
@@ -104,15 +119,17 @@ export async function sendProfileSyncToBonds(input: {
           rebuildDialHints: () => input.dialHintsFor(resolved.peerId, resolved.listenAddrs),
         });
       } catch (err) {
-        console.warn(
-          `[profile.sync] send to ${ownerId.slice(0, 16)}… failed after retry:`,
-          err instanceof Error ? err.message : err,
+        logOutboundPrepareFailed(
+          "[profile.sync]",
+          ownerId,
+          `send to ${ownerId.slice(0, 16)}… failed after retry: ${err instanceof Error ? err.message : err}`,
         );
       }
     } catch (bondErr) {
-      console.warn(
-        `[profile.sync] bond ${ownerId.slice(0, 20)}… failed:`,
-        bondErr instanceof Error ? bondErr.message : bondErr,
+      logOutboundPrepareFailed(
+        "[profile.sync]",
+        ownerId,
+        `bond ${ownerId.slice(0, 20)}… failed: ${bondErr instanceof Error ? bondErr.message : bondErr}`,
       );
     }
   }

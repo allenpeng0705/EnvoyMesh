@@ -53,6 +53,7 @@ function isForwardableState(state: RelayBookState): boolean {
 }
 
 const MAX_SEEN_QUERIES = 50_000;
+const MAX_NEGATIVE_CACHE = 20_000;
 
 export function createRelayLookupRouter(options: RelayLookupRouterOptions = {}) {
   const now = options.now ?? Date.now;
@@ -69,6 +70,17 @@ export function createRelayLookupRouter(options: RelayLookupRouterOptions = {}) 
     collectedForwardResponseCount: 0,
   };
 
+  function dropOldestKeys(map: Map<string, number>, maxSize: number): void {
+    if (map.size <= maxSize) return;
+    const overflow = map.size - maxSize;
+    let dropped = 0;
+    for (const key of map.keys()) {
+      map.delete(key);
+      dropped += 1;
+      if (dropped >= overflow) break;
+    }
+  }
+
   function prune(): void {
     const current = now();
     for (const [key, expiresAt] of seenQueries) {
@@ -77,16 +89,9 @@ export function createRelayLookupRouter(options: RelayLookupRouterOptions = {}) 
     for (const [key, expiresAt] of negativeCache) {
       if (expiresAt <= current) negativeCache.delete(key);
     }
-    // Hard cap against unique-queryId flood (TTL alone is not enough).
-    if (seenQueries.size > MAX_SEEN_QUERIES) {
-      const overflow = seenQueries.size - MAX_SEEN_QUERIES;
-      let dropped = 0;
-      for (const key of seenQueries.keys()) {
-        seenQueries.delete(key);
-        dropped += 1;
-        if (dropped >= overflow) break;
-      }
-    }
+    // Hard cap against unique-queryId / negative-key flood (TTL alone is not enough).
+    dropOldestKeys(seenQueries, MAX_SEEN_QUERIES);
+    dropOldestKeys(negativeCache, MAX_NEGATIVE_CACHE);
   }
 
   return {

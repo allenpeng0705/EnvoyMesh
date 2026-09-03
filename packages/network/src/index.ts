@@ -3199,6 +3199,28 @@ export class EnvoyMesh {
   }
 
   /**
+   * Drop expired no-reservation backoff / rate-limit log entries (24/7 memory hygiene).
+   */
+  pruneNoReservationBackoffMaps(now = Date.now()): number {
+    let pruned = 0;
+    for (const [peerId, until] of this.noReservationBackoffUntil) {
+      if (until <= now) {
+        this.noReservationBackoffUntil.delete(peerId);
+        pruned++;
+      }
+    }
+    // Log throttle map: drop entries idle > 1 hour
+    const logCutoff = now - 60 * 60 * 1000;
+    for (const [peerId, at] of this.noReservationLastLogAt) {
+      if (at < logCutoff) {
+        this.noReservationLastLogAt.delete(peerId);
+        pruned++;
+      }
+    }
+    return pruned;
+  }
+
+  /**
    * Close non-essential swarm peers when connection/dial-queue pressure
    * threatens circuit-relay hoppability. Keeps preferred relays and
    * Envoy-tagged contacts; drops anonymous DHT/bootstrap churn peers.

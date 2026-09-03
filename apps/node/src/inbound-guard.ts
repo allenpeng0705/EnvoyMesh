@@ -36,7 +36,7 @@ export interface InboundMessageGuardOptions {
 const defaultMaxEnvelopeBytes = 64 * 1024;
 /** profile.sync may include inline thumbnail bytes (up to 512 KiB image + base64 overhead). */
 const profileMaxEnvelopeBytes = 1024 * 1024;
-const defaultMaxReplayEntries = 100_000;
+const defaultMaxReplayEntries = 25_000;
 
 const PROFILE_INTENTS = new Set(["profile.sync", "profile.request", "profile.response"]);
 

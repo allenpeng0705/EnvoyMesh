@@ -20,6 +20,25 @@ export function isOutboundPeerRecentlyVerified(
   return at !== undefined && now - at < maxAgeMs;
 }
 
+/**
+ * Drop freshness entries older than maxAgeMs (default 2× freshness window).
+ * Returns number of entries removed.
+ */
+export function pruneOutboundPeerFreshness(
+  maxAgeMs = OUTBOUND_PEER_FRESHNESS_MS * 2,
+  now = Date.now(),
+): number {
+  const cutoff = now - maxAgeMs;
+  let pruned = 0;
+  for (const [peerId, at] of lastVerifiedAt) {
+    if (at < cutoff) {
+      lastVerifiedAt.delete(peerId);
+      pruned++;
+    }
+  }
+  return pruned;
+}
+
 /** Test helper */
 export function resetOutboundPeerFreshnessForTests(): void {
   lastVerifiedAt.clear();

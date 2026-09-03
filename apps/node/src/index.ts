@@ -895,6 +895,7 @@ configureBondWarmFromConnectivity({
   intervalMs: connectivityRuntime.bondWarmIntervalMs,
   perContactCooldownMs: connectivityRuntime.bondWarmPerContactCooldownMs,
   eventDriven: connectivityRuntime.bondWarmEventDriven,
+  maxConnections: connectivityRuntime.maxConnections,
 });
 const mesh = new EnvoyMesh({
   listen: args.listen,
@@ -3287,6 +3288,7 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
           intervalMs: connectivityRuntime.bondWarmIntervalMs,
           perContactCooldownMs: connectivityRuntime.bondWarmPerContactCooldownMs,
           eventDriven: connectivityRuntime.bondWarmEventDriven,
+          maxConnections: connectivityRuntime.maxConnections,
         });
       }
 
@@ -3544,15 +3546,16 @@ setInterval(() => {
   }
 }, DIAL_HINT_THROTTLE_PRUNE_INTERVAL_MS);
 
-// Weekly re-prune of peer directory records and cost-rollup retention.
-// These are also run at startup, but on 30-day runs without restart the
-// directory can grow past 500 records and cost rows can accumulate.
-const PERIODIC_DATA_PRUNE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
+// Daily re-prune of peer directory records; weekly cost-rollup retention.
+// Peer directory also runs at startup; without periodic prune, 24/7 homes
+// accumulate DHT stubs past MAX_PEER_DIRECTORY_RECORDS between restarts.
+const PEER_DIRECTORY_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000; // 1 day
+const COST_ROLLUP_PRUNE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
 setInterval(() => {
   try {
     void peerDirectoryStore.capPeerRecordCount().then((result) => {
       if (result.recordsRemoved > 0) {
-        console.log(`[peer-directory] periodic prune: removed ${result.recordsRemoved} oldest record(s)`);
+        console.log(`[peer-directory] periodic prune: removed ${result.recordsRemoved} record(s)`);
       }
     });
     void peerDirectoryStore.compactListenAddrs().then((result) => {
@@ -3560,13 +3563,19 @@ setInterval(() => {
         console.log(`[peer-directory] periodic compact: removed ${result.addrsRemoved} stale listen addrs`);
       }
     });
+  } catch (err) {
+    console.error("[node] peer-directory periodic prune error:", err);
+  }
+}, PEER_DIRECTORY_PRUNE_INTERVAL_MS);
+setInterval(() => {
+  try {
     void taskStore.runCostRollupRetention().catch((err) => {
       console.warn("[cost-rollup] periodic retention failed:", err);
     });
   } catch (err) {
-    console.error("[node] periodic data prune error:", err);
+    console.error("[node] cost-rollup periodic prune error:", err);
   }
-}, PERIODIC_DATA_PRUNE_INTERVAL_MS);
+}, COST_ROLLUP_PRUNE_INTERVAL_MS);
 
 startEventLoopLagMonitor();
 

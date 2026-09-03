@@ -21,11 +21,6 @@ export interface CapabilityRegistryOptions {
   verbosity?: CapabilityRegistryVerbosity;
   /** Maximum entries in the registry. Default: 10,000. 0 = no limit. */
   maxEntries?: number;
-  /**
-   * How many entries to evict when at capacity (fraction of maxEntries).
-   * Default: 0.1 (10%). Set to 0 to disable LRU eviction.
-   */
-  evictFraction?: number;
 }
 
 interface RegistryEntry {
@@ -48,7 +43,6 @@ export class CapabilityRegistry {
   private readonly logPrefix: string;
   private readonly fullLogs: boolean;
   private readonly maxEntries: number;
-  private readonly evictFraction: number;
   private _insertOrderCounter = 0;
 
   constructor(opts: CapabilityRegistryOptions = {}) {
@@ -56,7 +50,6 @@ export class CapabilityRegistry {
     const v = opts.verbosity ?? "minimal";
     this.fullLogs = v === "full";
     this.maxEntries = opts.maxEntries ?? 10_000;
-    this.evictFraction = opts.evictFraction ?? 0.1;
   }
 
   private p(msg: string): string {
@@ -64,18 +57,21 @@ export class CapabilityRegistry {
   }
 
   register(payload: RendezvousRegisterPayload): void {
-    // Evict oldest entries if at capacity (LRU)
-    if (this.maxEntries > 0 && this.fullIndex.size >= this.maxEntries) {
-      const evictCount = Math.max(1, Math.floor(this.maxEntries * this.evictFraction));
-      // Sort entries by insertOrder ascending and evict the oldest
-      const entries = Array.from(this.fullIndex.values())
-        .sort((a, b) => a.insertOrder - b.insertOrder);
-      for (let i = 0; i < evictCount && i < entries.length; i++) {
-        this.unregister(entries[i].peerId);
+    // Evict oldest entries if at capacity (O(n) min-insertOrder, one slot at a time)
+    let evicted = 0;
+    while (this.maxEntries > 0 && this.fullIndex.size >= this.maxEntries) {
+      let oldest: RegistryEntry | undefined;
+      for (const entry of this.fullIndex.values()) {
+        if (!oldest || entry.insertOrder < oldest.insertOrder) {
+          oldest = entry;
+        }
       }
-      if (this.fullLogs) {
-        console.log(this.p(`Evicted ${Math.min(evictCount, entries.length)} entries to make room`));
-      }
+      if (!oldest) break;
+      this.unregister(oldest.peerId);
+      evicted += 1;
+    }
+    if (evicted > 0 && this.fullLogs) {
+      console.log(this.p(`Evicted ${evicted} oldest entr${evicted === 1 ? "y" : "ies"} to make room`));
     }
 
     this.unregister(payload.peerId);

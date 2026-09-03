@@ -591,4 +591,35 @@ describe("peer directory store", () => {
     expect(row?.lastSuccessfulDialHint).toBe(direct);
     expect(row?.lastSuccessfulDialPath).toBe("direct");
   });
+
+  it("capPeerRecordCount prefers stubs before real owner-bound contacts", async () => {
+    const store = createLocalPeerDirectoryStore(profileDir);
+    for (let i = 0; i < 5; i++) {
+      await store.ensurePeerByPeerId({
+        peerId: `12D3KooWStub${i}`,
+        listenAddrs: [`/ip4/10.0.0.${i}/tcp/4001/p2p/12D3KooWStub${i}`],
+      });
+    }
+    await store.ensurePeerFromInboundChat({
+      ownerId: "envoy:owner:keep-me",
+      peerId: "12D3KooWRealContact",
+      listenAddrs: ["/ip4/10.0.0.2/tcp/4001/p2p/12D3KooWRealContact"],
+    });
+    const result = await store.capPeerRecordCount(3);
+    expect(result.recordsRemoved).toBe(3);
+    const rows = await store.listPeerRecords();
+    expect(rows).toHaveLength(3);
+    expect(rows.some((r) => r.ownerId === "envoy:owner:keep-me")).toBe(true);
+  });
+
+  it("ensurePeerByPeerId refuses empty stubs (no DHT stranger inflation)", async () => {
+    const store = createLocalPeerDirectoryStore(profileDir);
+    await store.ensurePeerByPeerId({ peerId: "12D3KooWEmptyStub" });
+    expect(await store.listPeerRecords()).toHaveLength(0);
+    await store.ensurePeerByPeerId({
+      peerId: "12D3KooWWithAddr",
+      listenAddrs: ["/ip4/10.0.0.9/tcp/4001/p2p/12D3KooWWithAddr"],
+    });
+    expect(await store.listPeerRecords()).toHaveLength(1);
+  });
 });

@@ -101,7 +101,7 @@ describe("warmAllBondedContactsViaRuntime failure cooldown", () => {
       .mockResolvedValueOnce({ connected: false, direct: false })
       .mockResolvedValueOnce({ connected: true, direct: false });
     const mesh = {
-      getConnectionStats: () => ({ totalConnections: 0 }),
+      getConnectionStats: () => ({ totalConnections: 0, dialQueueLength: 0 }),
     };
     const ctx = {
       getNodeStatus: () => "running",
@@ -148,7 +148,7 @@ describe("warmAllBondedContactsViaRuntime failure cooldown", () => {
     });
     let connectionInfo = { connected: true, direct: false };
     const mesh = {
-      getConnectionStats: () => ({ totalConnections: 0 }),
+      getConnectionStats: () => ({ totalConnections: 0, dialQueueLength: 0 }),
     };
     const ctx = {
       getNodeStatus: () => "running",

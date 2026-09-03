@@ -225,6 +225,8 @@ export function attachStandaloneRelayControl(deps: StandaloneRelayControlDeps): 
   const bookTtlMs = deps.bookTtlMs ?? 35 * 60_000;
   const log = deps.log ?? console.log;
   const warn = deps.warn ?? console.warn;
+  const verbose =
+    process.env.ENVOYMESH_RELAY_VERBOSE === "1" || process.env.ENVOYMESH_RELAY_VERBOSE === "true";
 
   return deps.mesh.onMessage(async (message) => {
     const intent = message.envelope.intent;
@@ -257,9 +259,12 @@ export function attachStandaloneRelayControl(deps: StandaloneRelayControlDeps): 
           hasLiveHop: !!liveResv,
           note,
         });
-        log(
-          `[relay] checkin peer=${payload.peerId} topics=${topicCount} cap=${entry.capabilities.length} roster=${deps.roster.size()} hop=${liveResv ? "live" : "none"} ${note}`,
-        );
+        // Steady-state checkins are high volume — only log anomalies unless verbose.
+        if (verbose || note !== "ok") {
+          log(
+            `[relay] checkin peer=${payload.peerId} topics=${topicCount} cap=${entry.capabilities.length} roster=${deps.roster.size()} hop=${liveResv ? "live" : "none"} ${note}`,
+          );
+        }
       } catch (error) {
         warn(`[relay] Failed to handle relay.checkin: ${error instanceof Error ? error.message : error}`);
       }
@@ -270,7 +275,9 @@ export function attachStandaloneRelayControl(deps: StandaloneRelayControlDeps): 
       try {
         const payload = parseRelayLookupPayload(message.envelope.payload);
         if (!deps.router.markSeen(payload.queryId)) {
-          log(`[relay] lookup duplicate dropped query=${payload.queryId}`);
+          if (verbose) {
+            log(`[relay] lookup duplicate dropped query=${payload.queryId}`);
+          }
           if (message.replyWithEnvelope) {
             await message.replyWithEnvelope(
               placeholderReply(
@@ -335,9 +342,11 @@ export function attachStandaloneRelayControl(deps: StandaloneRelayControlDeps): 
           targetPeerId: payload.targetPeerId,
           capability: payload.capability,
         });
-        log(
-          `[relay] lookup query=${payload.queryId} peers=${merged.peers.length} local=${localResponse.peers.length} forwards=${routeDecision.forwardTargets.length} roster=${deps.roster.size()} hopLive=${[...livePeerIds].length}`,
-        );
+        if (verbose) {
+          log(
+            `[relay] lookup query=${payload.queryId} peers=${merged.peers.length} local=${localResponse.peers.length} forwards=${routeDecision.forwardTargets.length} roster=${deps.roster.size()} hopLive=${[...livePeerIds].length}`,
+          );
+        }
         if (message.replyWithEnvelope) {
           await message.replyWithEnvelope(
             placeholderReply(

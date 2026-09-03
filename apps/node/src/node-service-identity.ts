@@ -9,6 +9,7 @@
  */
 import {
   buildOwnerDidPresentation,
+  DEFAULT_CLIENT_MAX_CONNECTIONS,
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
   DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR,
   deriveLocationDiscoveryTopics,
@@ -60,8 +61,8 @@ import { probeNearbyPeerProfile } from "./nearby-profile-probe.js";
 import { displayNameTopicFor, interestTopicFor } from "./capability-discovery.js";
 import { raceWithTimeout } from "./node-service-outbound-messaging.js";
 import {
+  getPeerPathSoftConnectionCap,
   isPeerPathConnectionCapReached,
-  PEER_PATH_SOFT_CONNECTION_CAP,
 } from "./peer-path-slots.js";
 import {
   importProfilePhotoBytes,
@@ -133,8 +134,8 @@ async function mapWithConcurrency<T, R>(
 }
 
 export const NEARBY_PROFILE_PROBE_COOLDOWN_MS = 30_000;
-/** @deprecated Prefer {@link PEER_PATH_SOFT_CONNECTION_CAP} — shared with PeerPath. */
-export const BOND_WARM_MAX_CONNECTIONS = PEER_PATH_SOFT_CONNECTION_CAP;
+/** @deprecated Prefer {@link getPeerPathSoftConnectionCap} — soft cap tracks maxConnections. */
+export const BOND_WARM_MAX_CONNECTIONS = DEFAULT_CLIENT_MAX_CONNECTIONS - 4;
 
 export interface IdentityContext {
   getProfile(): NodeProfile | null | undefined;
@@ -468,7 +469,7 @@ export async function refreshBondPeerProfilesViaRuntime(
   const mesh = ctx.reachableMesh();
   if (mesh && isPeerPathConnectionCapReached(mesh.getConnectionStats().totalConnections)) {
     console.warn(
-      `[profile] refreshBondPeerProfiles skipped: ${mesh.getConnectionStats().totalConnections} open libp2p connections (PeerPath soft cap ${PEER_PATH_SOFT_CONNECTION_CAP})`,
+      `[profile] refreshBondPeerProfiles skipped: ${mesh.getConnectionStats().totalConnections} open libp2p connections (PeerPath soft cap ${getPeerPathSoftConnectionCap()})`,
     );
     return { requested: 0, failed: 0 };
   }

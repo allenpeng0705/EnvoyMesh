@@ -38,6 +38,13 @@ describe("peer-discovery-telemetry", () => {
     expect(shouldPersistPeerDiscoverySeeds("relay-only", "relay")).toBe(true);
   });
 
+  it("documents that DHT unknown must not refresh peer-directory (same gate as seeds)", () => {
+    // handleMeshPeerDiscovered uses shouldPersistPeerDiscoverySeeds before
+    // mergeListenAddrsForPeerId — keep this assertion as a contract for that gate.
+    expect(shouldPersistPeerDiscoverySeeds("wan-default", "unknown")).toBe(false);
+    expect(shouldPersistPeerDiscoverySeeds("lan-fast", "unknown")).toBe(false);
+  });
+
   it("filters persisted seeds for contacts-only profile", () => {
     const addrs = seedAddrsForDiscoveryProfile("contacts-only", [
       { addr: "/ip4/1.1.1.1/tcp/4001/p2p/relay", source: "relay-peers" },
