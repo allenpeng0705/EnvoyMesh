@@ -211,7 +211,7 @@ export class OpenClawRuntime {
       const handshake = JSON.stringify({
         type: "hello",
         protocol: "envoy-openclaw/1.0",
-        envoyVersion: "0.4.0",
+        envoyVersion: "0.4.2",
         tools: "ENVOY_TOOL_CATALOG",
         // Inherit EnvoyMesh's LLM config so user only configures once
         modelConfig: this.config.modelConfig ?? null,

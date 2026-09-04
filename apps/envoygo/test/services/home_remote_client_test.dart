@@ -97,17 +97,36 @@ void main() {
     final future = client.ensureConnected();
     await Future.delayed(Duration.zero);
     createdSockets[0].simulateOpen();
-    await future;
-    // Now the onMessage handler is installed — send 'connected'.
+    // Home-ready signal is required before ensureConnected completes.
     createdSockets[0].simulateMessage({
       'event': 'connected',
     });
-    await Future.delayed(Duration.zero);
+    await future;
     return client;
   }
 
   group('HomeRemoteClient', () {
     group('connect', () {
+      test('waits for connected event before finishing ensureConnected', () async {
+        candidates = [
+          const HomeRemoteCandidate(name: 'lan', url: 'ws://10.0.0.1:3030/ws'),
+        ];
+        final client = HomeRemoteClient(createOptions(perCandidateTimeoutMs: 500));
+        final future = client.ensureConnected();
+        var completed = false;
+        future.then((_) => completed = true);
+        await Future.delayed(Duration.zero);
+        createdSockets[0].simulateOpen();
+        await Future.delayed(const Duration(milliseconds: 20));
+        expect(completed, isFalse);
+        expect(client.homeOnline, isFalse);
+        createdSockets[0].simulateMessage({'event': 'connected'});
+        await future;
+        expect(completed, isTrue);
+        expect(client.homeOnline, isTrue);
+        expect(client.isConnected, isTrue);
+      });
+
       test('connects to first available candidate', () async {
         candidates = [
           const HomeRemoteCandidate(name: 'lan', url: 'ws://10.0.0.1:3030/ws'),
@@ -133,12 +152,10 @@ void main() {
         // LAN fails.
         createdSockets[0].simulateError();
         await Future.delayed(Duration.zero);
-        // Relay opens.
+        // Relay opens and home signals ready.
         createdSockets[1].simulateOpen();
-        await future;
-        // Send 'connected' event after handler installed.
         createdSockets[1].simulateMessage({'event': 'connected'});
-        await Future.delayed(Duration.zero);
+        await future;
 
         expect(client.isConnected, isTrue);
         expect(client.activeCandidate?.name, 'relay');

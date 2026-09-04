@@ -544,6 +544,9 @@
   "chatAiDisabledAskOwner": "Chiedi al proprietario di casa di abilitare un modello IA per la chat famiglia.",
   "pairingLoadProfilesFailed": "Impossibile caricare i profili esistenti: {error}",
   "pairingFailed": "Associazione non riuscita: {error}",
+  "pairingFailedHomeTimeout": "Associazione non completata — il computer di casa non ha risposto in tempo. Tieni EnvoyAI aperto e online, poi scansiona un nuovo QR.",
+  "pairingFailedHomeUnreachable": "Impossibile raggiungere il computer di casa. Usa la stessa Wi‑Fi di casa, o attendi che l'app di casa mostri il relay, poi scansiona un nuovo QR.",
+  "pairingFailedTokenExpired": "Questo QR è scaduto o non valido. Chiedi al proprietario un nuovo QR di associazione.",
   "pairingInProgressTitle": "Associazione al nodo di casa",
   "pairingInProgressSubtitle": "Connessione a {owner} in corso",
   "@pairingInProgressSubtitle": {

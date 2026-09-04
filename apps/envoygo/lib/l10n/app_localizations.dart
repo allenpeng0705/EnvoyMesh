@@ -5784,6 +5784,24 @@ abstract class AppLocalizations {
   /// **'Pairing failed: {error}'**
   String pairingFailed(String error);
 
+  /// No description provided for @pairingFailedHomeTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t finish pairing — your home computer didn\'t respond in time. Keep EnvoyAI open and online, then scan a fresh QR.'**
+  String get pairingFailedHomeTimeout;
+
+  /// No description provided for @pairingFailedHomeUnreachable.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t reach your home computer. Join the same Wi‑Fi as the home, or wait until the home shows it\'s connected to the relay, then scan a fresh QR.'**
+  String get pairingFailedHomeUnreachable;
+
+  /// No description provided for @pairingFailedTokenExpired.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR has expired or is invalid. Ask the home owner to show a new pairing QR and scan again.'**
+  String get pairingFailedTokenExpired;
+
   /// No description provided for @pairingInviteAlreadyUsed.
   ///
   /// In en, this message translates to:

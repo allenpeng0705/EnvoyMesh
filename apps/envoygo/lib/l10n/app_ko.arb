@@ -544,6 +544,9 @@
   "chatAiDisabledAskOwner": "가족 채팅용 AI 모델을 홈 소유자에게 요청하세요.",
   "pairingLoadProfilesFailed": "기존 프로필을 불러올 수 없음: {error}",
   "pairingFailed": "페어링 실패: {error}",
+  "pairingFailedHomeTimeout": "페어링을 끝내지 못했습니다 — 홈 컴퓨터가 제때 응답하지 않았습니다. EnvoyAI를 열어 두고 온라인 상태로 유지한 뒤 새 QR을 스캔하세요.",
+  "pairingFailedHomeUnreachable": "홈 컴퓨터에 연결할 수 없습니다. 홈과 같은 Wi‑Fi에 연결하거나, 홈 앱에 릴레이 연결이 표시될 때까지 기다린 뒤 새 QR을 스캔하세요.",
+  "pairingFailedTokenExpired": "이 QR은 만료되었거나 유효하지 않습니다. 홈 소유자에게 새 페어링 QR을 요청하세요.",
   "pairingInProgressTitle": "홈 노드와 페어링 중",
   "pairingInProgressSubtitle": "{owner}에 연결 중",
   "@pairingInProgressSubtitle": {

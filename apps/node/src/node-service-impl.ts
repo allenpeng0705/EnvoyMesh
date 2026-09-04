@@ -928,8 +928,10 @@ import {
   type NodeConfigContext,
 } from "./node-service-config.js";
 import {
+  persistSetupSponsorFriendAlreadyBonded,
   resolveEffectiveSetupSponsorFriend,
   runSetupSponsorFriendOnService,
+  setupSponsorFriendNeedsAlreadyBondedHeal,
 } from "./node-service-setup-sponsor-friend.js";
 import {
   runCapabilityDiscoveryCycleViaRuntime,
@@ -2751,6 +2753,10 @@ class NodeServiceImpl implements NodeService {
   }
 
   private async _tagBondedContactReachability(libp2pPeerId: string): Promise<void> {
+    // Keep strictDial allow-set current for bonds formed after start.
+    if (libp2pPeerId) {
+      this._strictDialAllowCache?.bondedTransportPeerIds.add(libp2pPeerId);
+    }
     return tagBondedContactReachabilityViaRuntime(this._reachabilityContext(), libp2pPeerId);
   }
 
@@ -11983,15 +11989,58 @@ class NodeServiceImpl implements NodeService {
    * last-attempt state plus a flag telling the UI whether the sponsor side
    * needs to set `bondAutonomy.sponsorProofToken` to match. Backs the
    * "Sponsor setup" tile in the discover view.
+   *
+   * **Side effect:** when the resolved sponsor is already a direct/referred
+   * bond but auto-setup still looks pending (missing `completedAt` and/or a
+   * stale `lastError`), this method persists the already-bonded heal and may
+   * emit `home:config-updated`. Callers that only need a read should tolerate
+   * that write; it is intentional so Settings/Discover do not keep showing a
+   * failed auto-attempt after a manual bond.
    */
   async getSetupSponsorFriendStatus(): Promise<
     import("@envoymesh/api").SetupSponsorFriendStatus
   > {
-    const persisted = await this._configStore.load();
+    let persisted = await this._configStore.load();
     const config = await resolveEffectiveSetupSponsorFriend({
       persisted: persisted ?? undefined,
       nodeBundleDir: process.env.ENVOYMESH_NODE_BUNDLE_DIR,
     });
+
+    // Heal: if the sponsor is already a contact but auto-setup still looks
+    // "pending" (failed attempts left lastError / never set completedAt),
+    // mark complete so Settings and Discover stop showing the stale prompt.
+    if (config.ownerId) {
+      const bonds = await this.getBonds().catch(() => []);
+      const peerId = config.peerId?.trim();
+      const bonded = bonds.some((b) => {
+        const idMatch =
+          b.peerOwnerId === config.ownerId ||
+          (Boolean(peerId) && b.libp2pPeerId === peerId);
+        return idMatch && (b.level === "direct" || b.level === "referred");
+      });
+      if (
+        bonded &&
+        setupSponsorFriendNeedsAlreadyBondedHeal(persisted ?? undefined)
+      ) {
+        persisted = await persistSetupSponsorFriendAlreadyBonded(
+          {
+            saveNodeConfig: (c) => this._configStore.save(c),
+            getProfileDir: () => this._profileDir,
+          },
+          persisted ?? undefined,
+        );
+        try {
+          const full = await this.getNodeConfig();
+          this.emit("home:config-updated", { config: full });
+        } catch (err) {
+          console.warn(
+            "[getSetupSponsorFriendStatus] config emit after already-bonded heal failed:",
+            err,
+          );
+        }
+      }
+    }
+
     const state: import("@envoymesh/api").SetupSponsorFriendState = {
       completedAt: persisted?.setupSponsorFriendCompletedAt,
       lastAttemptAt: persisted?.setupSponsorFriendLastAttemptAt,
@@ -12015,7 +12064,28 @@ class NodeServiceImpl implements NodeService {
       this,
       {
         loadNodeConfig: () => this._configStore.load(),
-        saveNodeConfig: (config) => this._configStore.save(config),
+        saveNodeConfig: async (config) => {
+          const prev = await this._configStore.load().catch(() => undefined);
+          await this._configStore.save(config);
+          // Notify Social when auto-setup is marked complete (e.g. already
+          // bonded) so Settings stops showing a stale "pending" + lastError.
+          const completedNow = Boolean(config.setupSponsorFriendCompletedAt);
+          const wasPending =
+            !prev?.setupSponsorFriendCompletedAt ||
+            Boolean(prev.setupSponsorFriendLastError) ||
+            Boolean(prev.setupSponsorFriendLastErrorKind);
+          if (completedNow && wasPending && !config.setupSponsorFriendLastError) {
+            try {
+              const full = await this.getNodeConfig();
+              this.emit("home:config-updated", { config: full });
+            } catch (err) {
+              console.warn(
+                "[runSetupSponsorFriend] config emit after complete failed:",
+                err,
+              );
+            }
+          }
+        },
         getProfileDir: () => this._profileDir,
         nodeBundleDir: process.env.ENVOYMESH_NODE_BUNDLE_DIR,
         assertOnline: () => this._assertOnline(),
@@ -14978,12 +15048,15 @@ class NodeServiceImpl implements NodeService {
 
     const ownerId = this._profile?.owner.ownerId ?? "";
     const familyProfiles = (await this._familyProfileStore.list()).map(toFamilyProfile);
-    try {
-      const full = await this.getNodeConfig();
-      this.emit("home:config-updated", { config: full });
-    } catch {
-      /* ignore */
-    }
+    // Do not block the pairing response on getNodeConfig — a slow/hung
+    // config read used to leave EnvoyGo waiting until pairThinClientTimeout.
+    void this.getNodeConfig()
+      .then((full) => {
+        this.emit("home:config-updated", { config: full });
+      })
+      .catch(() => {
+        /* ignore */
+      });
 
     return {
       sessionToken,

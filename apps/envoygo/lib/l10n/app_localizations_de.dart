@@ -3179,6 +3179,18 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
+  String get pairingFailedHomeTimeout =>
+      'Kopplung nicht abgeschlossen — der Heimcomputer hat nicht rechtzeitig geantwortet. EnvoyAI offen und online lassen, dann einen neuen QR-Code scannen.';
+
+  @override
+  String get pairingFailedHomeUnreachable =>
+      'Heimcomputer nicht erreichbar. Dieselbe Wi‑Fi wie zu Hause nutzen, oder warten bis die Heim-App den Relay zeigt, dann einen neuen QR scannen.';
+
+  @override
+  String get pairingFailedTokenExpired =>
+      'Dieser QR-Code ist abgelaufen oder ungültig. Bitten Sie den Besitzer um einen neuen Pairing-QR.';
+
+  @override
   String get pairingInviteAlreadyUsed =>
       'Dieser Einladungs-QR wurde bereits verwendet. Bitte den Home-Besitzer Familie → Einladungs-QR anzeigen erneut öffnen lassen, den neuen Code scannen und unter Ich bin zurück Ihr Profil (z. B. Dad) wählen.';
 

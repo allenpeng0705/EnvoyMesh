@@ -222,6 +222,59 @@ function fieldsFromContactUri(contactUri: string): Pick<
 }
 
 /**
+ * Resolve the sponsor's libp2p peer id from an explicit field or `envoy://contact?…`.
+ * Used at mesh start for strict-dial allow-listing when `setupSponsorFriendPeerId`
+ * was never persisted (common: only `setupSponsorFriendContactUri` is set).
+ */
+export function extractSponsorPeerId(input: {
+  peerId?: string | null;
+  contactUri?: string | null;
+}): string | undefined {
+  const direct = typeof input.peerId === "string" ? input.peerId.trim() : "";
+  if (direct) return direct;
+  const uri = typeof input.contactUri === "string" ? input.contactUri.trim() : "";
+  if (!uri) return undefined;
+  try {
+    return fieldsFromContactUri(uri).peerId?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Map persisted `setupSponsorFriend*` node-config fields into the merge shape
+ * used by {@link resolveSetupSponsorFriendConfig}.
+ */
+export function persistedNodeConfigToSponsorFriendConfig(config: {
+  setupSponsorFriendEnabled?: boolean;
+  setupSponsorFriendContactUri?: string;
+  setupSponsorFriendOwnerId?: string;
+  setupSponsorFriendPeerId?: string;
+  setupSponsorFriendJoinToken?: string;
+  setupSponsorFriendDisplayName?: string;
+  setupSponsorFriendHelloMessage?: string;
+  setupSponsorFriendProofOfContext?: string;
+  setupSponsorFriendMaxAttempts?: number;
+  setupSponsorFriendRetryDelayMs?: number;
+  setupSponsorFriendCooldownMs?: number;
+} | null | undefined): SetupSponsorFriendConfig | null {
+  if (!config?.setupSponsorFriendEnabled) return null;
+  return {
+    enabled: true,
+    contactUri: config.setupSponsorFriendContactUri,
+    ownerId: config.setupSponsorFriendOwnerId,
+    peerId: config.setupSponsorFriendPeerId,
+    joinToken: config.setupSponsorFriendJoinToken,
+    displayName: config.setupSponsorFriendDisplayName,
+    helloMessage: config.setupSponsorFriendHelloMessage,
+    proofOfContext: config.setupSponsorFriendProofOfContext,
+    maxAttempts: config.setupSponsorFriendMaxAttempts,
+    retryDelayMs: config.setupSponsorFriendRetryDelayMs,
+    cooldownMs: config.setupSponsorFriendCooldownMs,
+  };
+}
+
+/**
  * Merge bundled defaults with persisted overrides (persisted wins on conflict).
  * Returns `source: none` when disabled or missing sponsor owner id.
  */

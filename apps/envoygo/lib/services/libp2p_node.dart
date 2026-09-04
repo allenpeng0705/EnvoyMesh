@@ -374,8 +374,15 @@ class Libp2pStreamTransport implements WebSocketLike {
     _pendingMessages.clear();
 
     _handshakeCompleter!.complete();
-    // Fire onOpen so HomeRemoteClient knows the transport is ready.
-    Future.microtask(() => onOpen?.call());
+    // Fire onOpen, then re-emit `connected` so HomeRemoteClient can gate
+    // RPCs (handshake already consumed the home/relay ready signal).
+    Future.microtask(() {
+      onOpen?.call();
+      onMessage?.call(WsMessageEvent(jsonEncode({
+        'event': 'connected',
+        'data': {'libp2pProxied': true},
+      })));
+    });
 
     // Start the normal message dispatch loop.
     _readLoop();

@@ -10,7 +10,7 @@
  * i18n keys: settings.agentNetwork.* (unchanged — only the render location
  * moved from Settings → Agent Network tab to Team jobs → Manage workers).
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNodeState } from "../../../context/NodeStateContext.js";
 import { useT } from "../../../context/I18nContext.js";
 import { useNodeService } from "../../../hooks/useNodeService.js";
@@ -19,6 +19,7 @@ import type {
   FleetManifest,
   FleetManifestRecord,
   PairingKioskStatus,
+  SetupSponsorFriendStatus,
 } from "@envoymesh/api";
 import { FleetMemberSchema } from "@envoymesh/protocol";
 import { AgentNetworkProfilePanel } from "./AgentNetworkProfilePanel.js";
@@ -1568,11 +1569,12 @@ export function BondAutonomySection() {
 export function SetupSponsorFriendSection() {
   const t = useT();
   const nodeService = useNodeService();
-  const { nodeConfig, refreshNodeConfig } = useNodeState();
+  const { nodeConfig, refreshNodeConfig, bonds } = useNodeState();
   const [resolvedSource, setResolvedSource] = useState<string>("none");
   const [enabled, setEnabled] = useState(false);
   const [contactUri, setContactUri] = useState("");
   const [ownerId, setOwnerId] = useState("");
+  const [peerId, setPeerId] = useState("");
   const [helloMessage, setHelloMessage] = useState("Hello!");
   const [proofOfContext, setProofOfContext] = useState("");
   const [maxAttempts, setMaxAttempts] = useState("12");
@@ -1582,26 +1584,87 @@ export function SetupSponsorFriendSection() {
   const [saved, setSaved] = useState(false);
   const [runMsg, setRunMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [statusCompletedAt, setStatusCompletedAt] = useState<string | undefined>();
+  const [showConfig, setShowConfig] = useState(false);
 
-  const refreshResolved = useCallback(async () => {
-    try {
-      const resolved = await nodeService.getSetupSponsorFriendConfig();
-      setResolvedSource(resolved.source);
-      setEnabled(resolved.enabled);
-      setContactUri(resolved.contactUri ?? "");
-      setOwnerId(resolved.ownerId ?? "");
-      setHelloMessage(resolved.helloMessage || "Hello!");
-      setProofOfContext(resolved.proofOfContext ?? "");
-      setMaxAttempts(String(resolved.maxAttempts || 12));
-      setRetryDelayMs(String(resolved.retryDelayMs || 5000));
-    } catch {
-      setResolvedSource("none");
-    }
-  }, [nodeService]);
+  const sponsorAlreadyBonded = useMemo(() => {
+    const oid = ownerId.trim() || nodeConfig?.setupSponsorFriendOwnerId?.trim();
+    const pid = peerId.trim() || nodeConfig?.setupSponsorFriendPeerId?.trim();
+    return bonds.some((b) => {
+      const idMatch =
+        (Boolean(oid) && b.peerOwnerId === oid) ||
+        (Boolean(pid) && b.libp2pPeerId === pid);
+      return idMatch && (b.level === "direct" || b.level === "referred");
+    });
+  }, [
+    bonds,
+    ownerId,
+    peerId,
+    nodeConfig?.setupSponsorFriendOwnerId,
+    nodeConfig?.setupSponsorFriendPeerId,
+  ]);
 
+  const completedAt =
+    nodeConfig?.setupSponsorFriendCompletedAt ?? statusCompletedAt;
+  const showCompleted = Boolean(completedAt) || sponsorAlreadyBonded;
+  const showForm = !showCompleted || showConfig;
+
+  const applyStatus = useCallback((status: SetupSponsorFriendStatus) => {
+    const resolved = status.config;
+    setResolvedSource(resolved.source);
+    setEnabled(resolved.enabled);
+    setContactUri(resolved.contactUri ?? "");
+    setOwnerId(resolved.ownerId ?? "");
+    setPeerId(resolved.peerId ?? "");
+    setHelloMessage(resolved.helloMessage || "Hello!");
+    setProofOfContext(resolved.proofOfContext ?? "");
+    setMaxAttempts(String(resolved.maxAttempts || 12));
+    setRetryDelayMs(String(resolved.retryDelayMs || 5000));
+    setStatusCompletedAt(status.state.completedAt);
+  }, []);
+
+  // One load on mount / service change. Status may heal already-bonded state
+  // and emit home:config-updated; refresh nodeConfig once afterward.
   useEffect(() => {
-    void refreshResolved();
-  }, [nodeConfig, refreshResolved]);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const status = await nodeService.getSetupSponsorFriendStatus();
+        if (cancelled) return;
+        applyStatus(status);
+        await refreshNodeConfig();
+      } catch {
+        if (!cancelled) setResolvedSource("none");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [nodeService, applyStatus, refreshNodeConfig]);
+
+  // If the sponsor becomes bonded while this section is open, re-poll status
+  // so completedAt/lastError heal without remounting.
+  useEffect(() => {
+    if (!sponsorAlreadyBonded) return;
+    if (completedAt && !nodeConfig?.setupSponsorFriendLastError) return;
+    let cancelled = false;
+    void nodeService
+      .getSetupSponsorFriendStatus()
+      .then((status) => {
+        if (cancelled) return;
+        applyStatus(status);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    sponsorAlreadyBonded,
+    completedAt,
+    nodeConfig?.setupSponsorFriendLastError,
+    nodeService,
+    applyStatus,
+  ]);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -1618,7 +1681,8 @@ export function SetupSponsorFriendSection() {
         setupSponsorFriendRetryDelayMs: Number.parseInt(retryDelayMs, 10) || undefined,
       } as Parameters<typeof nodeService.updateNodeConfig>[0]);
       await refreshNodeConfig();
-      await refreshResolved();
+      const status = await nodeService.getSetupSponsorFriendStatus();
+      applyStatus(status);
       setSaved(true);
       window.setTimeout(() => setSaved(false), 3000);
     } catch (err) {
@@ -1627,6 +1691,7 @@ export function SetupSponsorFriendSection() {
       setSaving(false);
     }
   }, [
+    applyStatus,
     contactUri,
     enabled,
     helloMessage,
@@ -1635,7 +1700,6 @@ export function SetupSponsorFriendSection() {
     ownerId,
     proofOfContext,
     refreshNodeConfig,
-    refreshResolved,
     retryDelayMs,
   ]);
 
@@ -1650,124 +1714,174 @@ export function SetupSponsorFriendSection() {
       } else if (result.skipped) {
         setRunMsg(result.reason ?? "skipped");
       } else {
-        setRunMsg(t("settings.agentNetwork.setupSponsorFriend.runFailed", { error: result.reason ?? "unknown" }));
+        setRunMsg(
+          t("settings.agentNetwork.setupSponsorFriend.runFailed", {
+            error: result.reason ?? "unknown",
+          }),
+        );
       }
       await refreshNodeConfig();
-      await refreshResolved();
+      const status = await nodeService.getSetupSponsorFriendStatus();
+      applyStatus(status);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setRunning(false);
     }
-  }, [nodeService, refreshNodeConfig, refreshResolved, t]);
+  }, [applyStatus, nodeService, refreshNodeConfig, t]);
 
   return (
     <section className="settings-section">
       <h4>{t("settings.agentNetwork.setupSponsorFriend.heading")}</h4>
-      <p className="section-desc">{t("settings.agentNetwork.setupSponsorFriend.desc")}</p>
-      <p className="settings-hint">
-        {t("settings.agentNetwork.setupSponsorFriend.resolvedLabel", {
-          source:
-            t(
-              `settings.agentNetwork.setupSponsorFriend.source${
-                resolvedSource.charAt(0).toUpperCase() + resolvedSource.slice(1)
-              }`,
-            ) || resolvedSource,
-        })}
-      </p>
-      {resolvedSource === "bundled" ? (
+      {showCompleted ? (
         <p className="settings-hint">
-          {t("settings.agentNetwork.setupSponsorFriend.bundledReadonlyHint")}
-        </p>
-      ) : null}
-      {nodeConfig?.setupSponsorFriendCompletedAt ? (
-        <p className="settings-hint">
-          {t("settings.agentNetwork.setupSponsorFriend.statusCompleted", {
-            at: nodeConfig.setupSponsorFriendCompletedAt,
-          })}
+          {completedAt
+            ? t("settings.agentNetwork.setupSponsorFriend.statusCompleted", {
+                at: completedAt,
+              })
+            : t("settings.agentNetwork.setupSponsorFriend.statusAlreadyBonded")}
         </p>
       ) : (
-        <p className="settings-hint">{t("settings.agentNetwork.setupSponsorFriend.statusPending")}</p>
+        <>
+          <p className="section-desc">{t("settings.agentNetwork.setupSponsorFriend.desc")}</p>
+          <p className="settings-hint">{t("settings.agentNetwork.setupSponsorFriend.statusPending")}</p>
+        </>
       )}
-      {nodeConfig?.setupSponsorFriendLastError ? (
+      {!showCompleted && nodeConfig?.setupSponsorFriendLastError ? (
         <p className="library-view-error">
           {t("settings.agentNetwork.setupSponsorFriend.statusLastError", {
             error: nodeConfig.setupSponsorFriendLastError,
           })}
         </p>
       ) : null}
-      <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-        <input
-          type="checkbox"
-          checked={enabled}
-          onChange={(e) => setEnabled(e.target.checked)}
-          disabled={saving || running}
-        />
-        <span>{t("settings.agentNetwork.setupSponsorFriend.enableLabel")}</span>
-      </label>
-      <div className="form-group">
-        <label>{t("settings.agentNetwork.setupSponsorFriend.contactUriLabel")}</label>
-        <input
-          type="text"
-          value={contactUri}
-          onChange={(e) => setContactUri(e.target.value)}
-          placeholder={t("settings.agentNetwork.setupSponsorFriend.contactUriPlaceholder")}
-          disabled={saving || running}
-        />
-      </div>
-      <div className="form-group">
-        <label>{t("settings.agentNetwork.setupSponsorFriend.ownerIdLabel")}</label>
-        <input type="text" value={ownerId} onChange={(e) => setOwnerId(e.target.value)} disabled={saving || running} />
-      </div>
-      <div className="form-group">
-        <label>{t("settings.agentNetwork.setupSponsorFriend.helloMessageLabel")}</label>
-        <input
-          type="text"
-          value={helloMessage}
-          onChange={(e) => setHelloMessage(e.target.value)}
-          disabled={saving || running}
-        />
-      </div>
-      <div className="form-group">
-        <label>{t("settings.agentNetwork.setupSponsorFriend.proofLabel")}</label>
-        <input
-          type="text"
-          value={proofOfContext}
-          onChange={(e) => setProofOfContext(e.target.value)}
-          disabled={saving || running}
-        />
-      </div>
-      <div className="form-group">
-        <label>{t("settings.agentNetwork.setupSponsorFriend.maxAttemptsLabel")}</label>
-        <input
-          type="number"
-          min={1}
-          value={maxAttempts}
-          onChange={(e) => setMaxAttempts(e.target.value)}
-          disabled={saving || running}
-        />
-      </div>
-      <div className="form-group">
-        <label>{t("settings.agentNetwork.setupSponsorFriend.retryDelayLabel")}</label>
-        <input
-          type="number"
-          min={1000}
-          value={retryDelayMs}
-          onChange={(e) => setRetryDelayMs(e.target.value)}
-          disabled={saving || running}
-        />
-      </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-        <button type="button" className="settings-button" onClick={() => { void handleSave(); }} disabled={saving || running}>
-          {saving ? t("settings.agentNetwork.setupSponsorFriend.saving") : t("settings.agentNetwork.setupSponsorFriend.save")}
+      {showCompleted ? (
+        <button
+          type="button"
+          className="settings-button"
+          onClick={() => setShowConfig((v) => !v)}
+          style={{ marginTop: 8 }}
+        >
+          {showConfig
+            ? t("settings.agentNetwork.setupSponsorFriend.hideConfig")
+            : t("settings.agentNetwork.setupSponsorFriend.showConfig")}
         </button>
-        <button type="button" className="settings-button" onClick={() => { void handleRun(); }} disabled={saving || running}>
-          {running ? t("settings.agentNetwork.setupSponsorFriend.running") : t("settings.agentNetwork.setupSponsorFriend.runNow")}
-        </button>
-        {saved ? <span className="settings-hint">{t("settings.agentNetwork.setupSponsorFriend.saved")}</span> : null}
-        {runMsg ? <span className="settings-hint">{runMsg}</span> : null}
-      </div>
-      {error ? <p className="library-view-error">{error}</p> : null}
+      ) : null}
+      {showForm ? (
+        <>
+          <p className="settings-hint" style={{ marginTop: 12 }}>
+            {t("settings.agentNetwork.setupSponsorFriend.resolvedLabel", {
+              source:
+                t(
+                  `settings.agentNetwork.setupSponsorFriend.source${
+                    resolvedSource.charAt(0).toUpperCase() + resolvedSource.slice(1)
+                  }`,
+                ) || resolvedSource,
+            })}
+          </p>
+          {resolvedSource === "bundled" ? (
+            <p className="settings-hint">
+              {t("settings.agentNetwork.setupSponsorFriend.bundledReadonlyHint")}
+            </p>
+          ) : null}
+          <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => setEnabled(e.target.checked)}
+              disabled={saving || running}
+            />
+            <span>{t("settings.agentNetwork.setupSponsorFriend.enableLabel")}</span>
+          </label>
+          <div className="form-group">
+            <label>{t("settings.agentNetwork.setupSponsorFriend.contactUriLabel")}</label>
+            <input
+              type="text"
+              value={contactUri}
+              onChange={(e) => setContactUri(e.target.value)}
+              placeholder={t("settings.agentNetwork.setupSponsorFriend.contactUriPlaceholder")}
+              disabled={saving || running}
+            />
+          </div>
+          <div className="form-group">
+            <label>{t("settings.agentNetwork.setupSponsorFriend.ownerIdLabel")}</label>
+            <input
+              type="text"
+              value={ownerId}
+              onChange={(e) => setOwnerId(e.target.value)}
+              disabled={saving || running}
+            />
+          </div>
+          <div className="form-group">
+            <label>{t("settings.agentNetwork.setupSponsorFriend.helloMessageLabel")}</label>
+            <input
+              type="text"
+              value={helloMessage}
+              onChange={(e) => setHelloMessage(e.target.value)}
+              disabled={saving || running}
+            />
+          </div>
+          <div className="form-group">
+            <label>{t("settings.agentNetwork.setupSponsorFriend.proofLabel")}</label>
+            <input
+              type="text"
+              value={proofOfContext}
+              onChange={(e) => setProofOfContext(e.target.value)}
+              disabled={saving || running}
+            />
+          </div>
+          <div className="form-group">
+            <label>{t("settings.agentNetwork.setupSponsorFriend.maxAttemptsLabel")}</label>
+            <input
+              type="number"
+              min={1}
+              value={maxAttempts}
+              onChange={(e) => setMaxAttempts(e.target.value)}
+              disabled={saving || running}
+            />
+          </div>
+          <div className="form-group">
+            <label>{t("settings.agentNetwork.setupSponsorFriend.retryDelayLabel")}</label>
+            <input
+              type="number"
+              min={1000}
+              value={retryDelayMs}
+              onChange={(e) => setRetryDelayMs(e.target.value)}
+              disabled={saving || running}
+            />
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+            <button
+              type="button"
+              className="settings-button"
+              onClick={() => {
+                void handleSave();
+              }}
+              disabled={saving || running}
+            >
+              {saving
+                ? t("settings.agentNetwork.setupSponsorFriend.saving")
+                : t("settings.agentNetwork.setupSponsorFriend.save")}
+            </button>
+            <button
+              type="button"
+              className="settings-button"
+              onClick={() => {
+                void handleRun();
+              }}
+              disabled={saving || running}
+            >
+              {running
+                ? t("settings.agentNetwork.setupSponsorFriend.running")
+                : t("settings.agentNetwork.setupSponsorFriend.runNow")}
+            </button>
+            {saved ? (
+              <span className="settings-hint">{t("settings.agentNetwork.setupSponsorFriend.saved")}</span>
+            ) : null}
+            {runMsg ? <span className="settings-hint">{runMsg}</span> : null}
+          </div>
+          {error ? <p className="library-view-error">{error}</p> : null}
+        </>
+      ) : null}
     </section>
   );
 }

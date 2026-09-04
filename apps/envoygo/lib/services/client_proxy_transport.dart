@@ -140,8 +140,16 @@ class ClientProxyTransport implements WebSocketLike {
 
     // Proxy accepted — already in JSON-RPC mode from the listener above.
 
-    // Fire onOpen after the microtask so callers can install handlers.
-    Future.microtask(() => transport.onOpen?.call());
+    // Fire onOpen, then re-emit `connected` so HomeRemoteClient can gate
+    // RPCs on the home-ready signal (this transport consumes the relay's
+    // original `connected` during handshake).
+    Future.microtask(() {
+      transport.onOpen?.call();
+      transport.onMessage?.call(WsMessageEvent(jsonEncode({
+        'event': 'connected',
+        'data': {'relayProxied': true},
+      })));
+    });
     return transport;
   }
 

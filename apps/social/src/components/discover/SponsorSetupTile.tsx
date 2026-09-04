@@ -127,17 +127,23 @@ export function SponsorSetupTile() {
   // so persisted lastError/cooldown don't resurrect the tile later.
   useEffect(() => {
     const sponsorId = status?.config.ownerId;
-    if (!sponsorId) return;
-    const bonded = bonds.some(
-      (b) => b.peerOwnerId === sponsorId && b.level !== "blocked",
-    );
+    const sponsorPeerId = status?.config.peerId;
+    if (!sponsorId && !sponsorPeerId) return;
+    const bonded = bonds.some((b) => {
+      const idMatch =
+        (Boolean(sponsorId) && b.peerOwnerId === sponsorId) ||
+        (Boolean(sponsorPeerId) && b.libp2pPeerId === sponsorPeerId);
+      return idMatch && b.level !== "blocked";
+    });
     if (!bonded) return;
     if (status.state?.completedAt && !status.state.lastError) return;
-    void nodeService.runSetupSponsorFriend({}).catch(() => undefined);
+    // Prefer status RPC (heals completedAt + clears lastError) over run.
+    void nodeService.getSetupSponsorFriendStatus().catch(() => undefined);
   }, [
     bonds,
     nodeService,
     status?.config.ownerId,
+    status?.config.peerId,
     status?.state?.completedAt,
     status?.state?.lastError,
   ]);

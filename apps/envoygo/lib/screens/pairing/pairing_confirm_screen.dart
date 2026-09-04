@@ -148,26 +148,47 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
       if (!mounted) return;
       setState(() {
         _loadingProfiles = false;
-        _profilesError = _friendlyInviteError(e) ??
-            AppLocalizations.of(context).pairingLoadProfilesFailed(
-              e
-                  .toString()
-                  .replaceFirst('Bad state: ', '')
-                  .replaceFirst('Exception: ', ''),
-            );
+        _profilesError = _friendlyPairingError(e, forProfileLoad: true);
       });
     }
   }
 
-  /// Maps known family-invite failures to a short actionable message.
-  /// Returns null when the caller should use the generic formatter.
-  String? _friendlyInviteError(Object e) {
+  /// End-user pairing failure copy. Avoids dumping QR bootstrap diagnostics
+  /// (empty bootstrapPeers is normal — community relays are built into EnvoyGo).
+  String _friendlyPairingError(Object e, {bool forProfileLoad = false}) {
+    final l10n = AppLocalizations.of(context);
     final raw = e.toString();
+    final lower = raw.toLowerCase();
     if (raw.contains('already used by another device') ||
         raw.contains('Ask the home owner to show a new family invite QR')) {
-      return AppLocalizations.of(context).pairingInviteAlreadyUsed;
+      return l10n.pairingInviteAlreadyUsed;
     }
-    return null;
+    if (lower.contains('invalid or expired') ||
+        (lower.contains('pairingtoken') && lower.contains('required'))) {
+      return l10n.pairingFailedTokenExpired;
+    }
+    if (raw.contains('pairThinClientTimeout') ||
+        raw.contains('previewFamilyInviteTimeout')) {
+      return l10n.pairingFailedHomeTimeout;
+    }
+    if (raw.contains('homeRemote.connectFailed') ||
+        raw.contains('homeRemote.connectTimeout') ||
+        raw.contains('homeRemote.unreachable') ||
+        raw.contains('homeRemote.notConfigured')) {
+      return l10n.pairingFailedHomeUnreachable;
+    }
+    var detail = raw
+        .replaceFirst(RegExp(r'^Exception:\s*'), '')
+        .replaceFirst(RegExp(r'^Error:\s*'), '')
+        .replaceFirst('Bad state: ', '')
+        .trim();
+    if (detail.length > 160) {
+      detail = '${detail.substring(0, 157)}…';
+    }
+    if (forProfileLoad) {
+      return l10n.pairingLoadProfilesFailed(detail);
+    }
+    return l10n.pairingFailed(detail);
   }
 
   @override
@@ -665,26 +686,7 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
       return;
     }
     if (result.error != null) {
-      final friendly = _friendlyInviteError(result.error!);
-      if (friendly != null) {
-        setState(() => _error = friendly);
-        return;
-      }
-      final bpList = <String>[];
-      if (widget.data.bootstrapPeers != null &&
-          widget.data.bootstrapPeers!.isNotEmpty) {
-        bpList.addAll(widget.data.bootstrapPeers!);
-      } else if (widget.data.bootstrapPresetNames != null &&
-          widget.data.bootstrapPresetNames!.isNotEmpty) {
-        bpList.addAll(CandidateResolver.resolveBootstrapPresets(
-            widget.data.bootstrapPresetNames!));
-      }
-      setState(() => _error = AppLocalizations.of(context).pairingFailed(
-            '${result.error}\n'
-            'bootstrapPeers (from QR): $bpList\n'
-            'homePeerId: ${widget.data.homeNodePeerId}\n'
-            'bootstrapPresetNames (from QR): ${widget.data.bootstrapPresetNames}',
-          ));
+      setState(() => _error = _friendlyPairingError(result.error!));
       return;
     }
 

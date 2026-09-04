@@ -39,6 +39,7 @@ import {
   type StrictDialAllowCache,
 } from "./allowed-dial-peer-ids.js";
 import {
+  extractSponsorPeerId,
   normalizeBootstrapPresetsForContactsOnly,
   type NodeProfile,
   type NodeStatus,
@@ -47,13 +48,28 @@ import {
 import type { AgentSetupContext } from "./node-service-agent-setup.js";
 import type { CapabilityDiscoveryContext } from "./node-service-capability-discovery.js";
 import type { RecordNodeErrorAccess } from "./node-service-connection-status.js";
+import { resolveEffectiveSetupSponsorFriend } from "./node-service-setup-sponsor-friend.js";
 
 /** True when first-launch auto-bond still needs a lean dial queue. */
 export function shouldLeanBootstrapForPendingSponsorBond(config: {
   setupSponsorFriendEnabled?: boolean;
   setupSponsorFriendCompletedAt?: string;
+  /** When true, treat as pending even if `setupSponsorFriendEnabled` is unset (bundled). */
+  effectiveSponsorEnabled?: boolean;
 }): boolean {
-  return Boolean(config.setupSponsorFriendEnabled) && !config.setupSponsorFriendCompletedAt;
+  if (config.setupSponsorFriendCompletedAt) return false;
+  return Boolean(config.setupSponsorFriendEnabled || config.effectiveSponsorEnabled);
+}
+
+/** Prefer persisted peerId, then peerId embedded in contactUri. */
+export function sponsorPeerIdForStrictDial(config: {
+  setupSponsorFriendPeerId?: string;
+  setupSponsorFriendContactUri?: string;
+}): string | undefined {
+  return extractSponsorPeerId({
+    peerId: config.setupSponsorFriendPeerId,
+    contactUri: config.setupSponsorFriendContactUri,
+  });
 }
 
 /**
@@ -212,6 +228,8 @@ export interface StartNodeContext {
     relayReservationEnabled?: boolean;
     setupSponsorFriendEnabled?: boolean;
     setupSponsorFriendCompletedAt?: string;
+    setupSponsorFriendPeerId?: string;
+    setupSponsorFriendContactUri?: string;
   } | undefined>;
 
   /** Set bootstrap peer IDs so the reachability layer can filter them from discovery UI. */
@@ -304,7 +322,17 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
 
     // CGNAT auto-detection FIRST — before bootstrap resolution — so quietWan
     // also narrows public-libp2p presets (lean bootstrap). See design A1.1.
-    const leanForSponsor = shouldLeanBootstrapForPendingSponsorBond(config);
+    // Prefer effective (bundled ∪ persisted) sponsor config so first-launch
+    // lean bootstrap runs even when only bundled-sponsor-friend.json enables it.
+    const effectiveSponsor = await resolveEffectiveSetupSponsorFriend({
+      persisted: config,
+      nodeBundleDir: process.env.ENVOYMESH_NODE_BUNDLE_DIR,
+    }).catch(() => null);
+    const leanForSponsor = shouldLeanBootstrapForPendingSponsorBond({
+      setupSponsorFriendEnabled: config.setupSponsorFriendEnabled,
+      setupSponsorFriendCompletedAt: config.setupSponsorFriendCompletedAt,
+      effectiveSponsorEnabled: Boolean(effectiveSponsor?.enabled && effectiveSponsor.ownerId),
+    });
     let effectiveConnectivityMode = config.connectivityMode;
     let vpnQuietWanReverted = false;
     if (!leanForSponsor) {
@@ -496,6 +524,13 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     if (strictDialCache) {
       for (const addr of bootstrapPeers) strictDialCache.seedAddrs.add(addr);
       for (const addr of configuredRelayAddrs) strictDialCache.seedAddrs.add(addr);
+      // Pending first-launch sponsor must be dialable before the bond exists.
+      // Prefer explicit peerId, then contactUri, then effective (bundled) resolve.
+      const sponsorPeerId =
+        sponsorPeerIdForStrictDial(config) ??
+        effectiveSponsor?.peerId?.trim() ??
+        undefined;
+      if (sponsorPeerId) strictDialCache.extraPeerIds.add(sponsorPeerId);
     }
     let meshRef: EnvoyMesh | undefined;
 

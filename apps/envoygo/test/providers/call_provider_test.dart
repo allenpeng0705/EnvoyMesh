@@ -103,9 +103,8 @@ Future<HomeRemoteClient> connectWithTrackedMock(MockWebSocket tracked) async {
   final future = client.ensureConnected();
   await Future<void>.delayed(Duration.zero);
   tracked.simulateOpen();
-  await future;
   tracked.simulateMessage({'event': 'connected'});
-  await Future<void>.delayed(Duration.zero);
+  await future;
   return client;
 }
 

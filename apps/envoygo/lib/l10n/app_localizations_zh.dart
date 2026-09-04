@@ -3020,6 +3020,17 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get pairingFailedHomeTimeout =>
+      '配对未能完成 — 家庭电脑没有及时响应。请保持电脑上的 EnvoyAI 已打开且在线，然后重新扫描新的二维码。';
+
+  @override
+  String get pairingFailedHomeUnreachable =>
+      '无法连接到家庭电脑。请让手机与家庭电脑在同一 Wi‑Fi，或等电脑显示已连上中继后再扫描新的二维码。';
+
+  @override
+  String get pairingFailedTokenExpired => '此二维码已过期或无效。请让家庭节点所有者重新显示配对二维码后再扫。';
+
+  @override
   String get pairingInviteAlreadyUsed =>
       '此邀请二维码已被使用。请让家庭节点所有者重新打开「家庭 → 显示邀请二维码」，扫描新码后选择「我回来了」并选中你的档案（例如 Dad）。';
 

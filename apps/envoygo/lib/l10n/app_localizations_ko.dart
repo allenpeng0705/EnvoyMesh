@@ -3045,6 +3045,18 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get pairingFailedHomeTimeout =>
+      '페어링을 끝내지 못했습니다 — 홈 컴퓨터가 제때 응답하지 않았습니다. EnvoyAI를 열어 두고 온라인 상태로 유지한 뒤 새 QR을 스캔하세요.';
+
+  @override
+  String get pairingFailedHomeUnreachable =>
+      '홈 컴퓨터에 연결할 수 없습니다. 홈과 같은 Wi‑Fi에 연결하거나, 홈 앱에 릴레이 연결이 표시될 때까지 기다린 뒤 새 QR을 스캔하세요.';
+
+  @override
+  String get pairingFailedTokenExpired =>
+      '이 QR은 만료되었거나 유효하지 않습니다. 홈 소유자에게 새 페어링 QR을 요청하세요.';
+
+  @override
   String get pairingInviteAlreadyUsed =>
       '이 초대 QR은 이미 사용되었습니다. 홈 소유자에게 가족 → 초대 QR 다시 표시를 요청한 뒤, 새 코드를 스캔하고 \'돌아왔어요\'에서 프로필(예: Dad)을 선택하세요.';
 

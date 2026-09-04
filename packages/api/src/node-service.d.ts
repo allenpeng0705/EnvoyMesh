@@ -102,6 +102,11 @@ export interface SendHelloOptions {
     proofOfContext?: string;
     /** Known libp2p peer id when owner directory lookup is not seeded yet (e.g. setup sponsor friend). */
     targetPeerId?: string;
+    /**
+     * Extra multiaddrs to try first (e.g. sponsor join-token circuit addrs).
+     * Merged ahead of peer-directory / dialHintsForChat results.
+     */
+    extraDialHints?: string[];
 }
 import type { BondLevel } from "./bond-trust-rank.js";
 export type { BondLevel } from "./bond-trust-rank.js";

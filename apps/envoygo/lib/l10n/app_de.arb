@@ -544,6 +544,9 @@
   "chatAiDisabledAskOwner": "Bitten Sie den Heimbesitzer, ein KI-Modell für den Familienchat zu aktivieren.",
   "pairingLoadProfilesFailed": "Vorhandene Profile konnten nicht geladen werden: {error}",
   "pairingFailed": "Kopplung fehlgeschlagen: {error}",
+  "pairingFailedHomeTimeout": "Kopplung nicht abgeschlossen — der Heimcomputer hat nicht rechtzeitig geantwortet. EnvoyAI offen und online lassen, dann einen neuen QR-Code scannen.",
+  "pairingFailedHomeUnreachable": "Heimcomputer nicht erreichbar. Dieselbe Wi‑Fi wie zu Hause nutzen, oder warten bis die Heim-App den Relay zeigt, dann einen neuen QR scannen.",
+  "pairingFailedTokenExpired": "Dieser QR-Code ist abgelaufen oder ungültig. Bitten Sie den Besitzer um einen neuen Pairing-QR.",
   "pairingInProgressTitle": "Kopplung mit Heimknoten",
   "pairingInProgressSubtitle": "Verbindung mit {owner} wird aufgebaut",
   "@pairingInProgressSubtitle": {

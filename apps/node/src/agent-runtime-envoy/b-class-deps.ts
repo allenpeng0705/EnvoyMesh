@@ -222,11 +222,14 @@ export function createBClassSponsorFriendDeps(
     probeHumanProfileReady: async () => Boolean(await svc.getHumanProfile()),
     isAlreadyBondedWith: async (sponsorOwnerId: string) => {
       const bonds = await svc.getBonds();
-      return bonds.some(
-        (b) =>
-          b.peerOwnerId === sponsorOwnerId &&
-          (b.level === "direct" || b.level === "referred"),
-      );
+      const persisted = await svc._configStore!.load().catch(() => undefined);
+      const peerId = persisted?.setupSponsorFriendPeerId?.trim();
+      return bonds.some((b) => {
+        const idMatch =
+          b.peerOwnerId === sponsorOwnerId ||
+          (Boolean(peerId) && b.libp2pPeerId === peerId);
+        return idMatch && (b.level === "direct" || b.level === "referred");
+      });
     },
   };
 

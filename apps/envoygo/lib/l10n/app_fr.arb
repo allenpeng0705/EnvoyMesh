@@ -544,6 +544,9 @@
   "chatAiDisabledAskOwner": "Demandez au propriétaire d'activer un modèle IA pour le chat familial.",
   "pairingLoadProfilesFailed": "Impossible de charger les profils : {error}",
   "pairingFailed": "Échec de l'association : {error}",
+  "pairingFailedHomeTimeout": "Association interrompue — l'ordinateur domestique n'a pas répondu à temps. Gardez EnvoyAI ouvert et en ligne, puis scannez un nouveau QR.",
+  "pairingFailedHomeUnreachable": "Impossible d'atteindre l'ordinateur domestique. Utilisez le même Wi‑Fi, ou attendez que l'appli domestique affiche le relais, puis scannez un nouveau QR.",
+  "pairingFailedTokenExpired": "Ce QR a expiré ou est invalide. Demandez au propriétaire un nouveau QR d'association.",
   "pairingInProgressTitle": "Association au nœud domicile",
   "pairingInProgressSubtitle": "Connexion à {owner}…",
   "@pairingInProgressSubtitle": {

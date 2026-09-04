@@ -67,9 +67,8 @@ Future<NodeServiceClient> _connectClient(_MockWs tracked) async {
   final future = client.ensureConnected();
   await Future.delayed(Duration.zero);
   tracked.simulateOpen();
-  await future;
   tracked.simulateMessage({'event': 'connected'});
-  await Future.delayed(Duration.zero);
+  await future;
   return NodeServiceClient(client);
 }
 

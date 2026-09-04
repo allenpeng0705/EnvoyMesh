@@ -1,6 +1,6 @@
 {
   "name": "@envoymesh/identity",
-  "version": "0.4.0",
+  "version": "0.4.2",
   "type": "module",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
@@ -11,6 +11,6 @@
     }
   },
   "dependencies": {
-    "@envoymesh/protocol": "0.4.0"
+    "@envoymesh/protocol": "0.4.2"
   }
 }

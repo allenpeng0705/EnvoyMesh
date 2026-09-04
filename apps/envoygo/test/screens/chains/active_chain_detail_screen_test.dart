@@ -146,9 +146,8 @@ Future<ScreenHandle> mountDetail(WidgetTester tester) async {
     final future = client.ensureConnected();
     await Future<void>.delayed(Duration.zero);
     mock.simulateOpen();
-    await future;
     mock.simulateMessage({'event': 'connected'});
-    await Future<void>.delayed(Duration.zero);
+    await future;
 
     late _StubNodeNotifier stub;
     final container = ProviderContainer(

@@ -150,11 +150,20 @@ export async function sendHelloViaRuntime(
   );
 
   try {
-    const dialHints = await ctx.dialHintsForChat(
+    const fromChat = await ctx.dialHintsForChat(
       targetPeerId,
       matchedRecord?.listenAddrs,
       options?.addressFilter,
     );
+    // Sponsor / join-token circuits first — peer-directory may be empty on first launch.
+    const extra = (options?.extraDialHints ?? []).map((h) => h.trim()).filter(Boolean);
+    const seen = new Set<string>();
+    const dialHints: string[] = [];
+    for (const h of [...extra, ...fromChat]) {
+      if (seen.has(h)) continue;
+      seen.add(h);
+      dialHints.push(h);
+    }
     const publicCircuits = dialHints.filter((h) => classifyBondDialTarget(h) === "public-circuit");
     const privateCircuits = dialHints.filter((h) => classifyBondDialTarget(h) === "private-circuit");
     console.log(`[node-service] sendHello dialHints count=${dialHints.length}: ${dialHints.map((h) => h.slice(0, 100)).join(" | ")}`);

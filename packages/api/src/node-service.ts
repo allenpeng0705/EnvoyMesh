@@ -386,6 +386,11 @@ export interface SendHelloOptions {
    * the recipient). Pass `"lan-paired"` to keep LAN only.
    */
   addressFilter?: DialableAddrMode;
+  /**
+   * Extra multiaddrs to try first (e.g. sponsor join-token circuit addrs).
+   * Merged ahead of peer-directory / dialHintsForChat results.
+   */
+  extraDialHints?: string[];
 }
 
 // ============================================
@@ -2802,6 +2807,10 @@ export interface NodeService {
    * plus the last-attempt state from persisted config. The fresh-install UX
    * surfaces this so the user can see "we tried to add <sponsor> and here's
    * why it didn't work", not just the badge.
+   *
+   * May persist an already-bonded heal (clear stale lastError / set
+   * completedAt) when the sponsor is already a contact — intentional so
+   * Settings/Discover do not keep showing a failed auto-attempt.
    */
   getSetupSponsorFriendStatus(): Promise<import("./setup-sponsor-friend.js").SetupSponsorFriendStatus>;
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  extractSponsorPeerId,
   parseSetupSponsorFriendConfig,
   resolveSetupSponsorFriendConfig,
 } from "../src/setup-sponsor-friend.js";
@@ -93,5 +94,16 @@ describe("setup-sponsor-friend", () => {
     // No proofOfContext → no auto-accept gate on the sponsor side, so
     // the UI should NOT surface the "configure sponsorProofToken" hint.
     expect(Boolean(resolved.proofOfContext)).toBe(false);
+  });
+
+  it("extractSponsorPeerId reads peerId from contactUri when peerId field missing", () => {
+    expect(
+      extractSponsorPeerId({
+        contactUri:
+          "envoy://contact?v=1&peerId=12D3KooWfromUri&join=tok&ownerId=envoy:owner:x",
+      }),
+    ).toBe("12D3KooWfromUri");
+    expect(extractSponsorPeerId({ peerId: " 12D3KooWdirect " })).toBe("12D3KooWdirect");
+    expect(extractSponsorPeerId({})).toBeUndefined();
   });
 });

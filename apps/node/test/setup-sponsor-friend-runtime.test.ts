@@ -162,6 +162,121 @@ describe("runSetupSponsorFriendViaRuntime", () => {
     expect(sendHello).not.toHaveBeenCalled();
   });
 
+  it("marks completed and clears lastError when already bonded after a failed auto-run", async () => {
+    const saveNodeConfig = vi.fn(async () => {});
+    const sendHello = vi.fn(async () => ({ messageId: "msg-1" }));
+
+    const result = await runSetupSponsorFriendViaRuntime({
+      loadNodeConfig: async () => ({
+        version: "0.1" as const,
+        profileDir: "/tmp/profile",
+        discoveryProfile: "wan-default" as const,
+        enableMdns: true,
+        relayEnabled: true,
+        relayServerEnabled: false,
+        advertiseAddrs: [],
+        bootstrapPeers: [],
+        bootstrapPresets: [],
+        configuredRelays: [],
+        modelProviders: { mode: "disabled" as const },
+        chatAssistEnabled: false,
+        contactAiPreferences: [],
+        updatedAt: new Date().toISOString(),
+        setupSponsorFriendEnabled: true,
+        setupSponsorFriendOwnerId: "envoy:owner:already-friend",
+        setupSponsorFriendMaxAttempts: 3,
+        setupSponsorFriendRetryDelayMs: 0,
+        setupSponsorFriendLastError: "Failed to send hello: No reachable path",
+        setupSponsorFriendLastErrorKind: "network-unreachable",
+        setupSponsorFriendAttempts: 12,
+      }),
+      saveNodeConfig,
+      getProfileDir: () => "/tmp/profile",
+      nodeBundleDir: "/tmp/bundle",
+      applyWanJoinInvite: vi.fn(async () => ({})),
+      searchPeers: vi.fn(async () => []),
+      sendHello,
+      loadHelloProfile: async () => ({
+        displayName: "New User",
+        bio: "",
+        interests: [],
+        whatShares: [],
+      }),
+      loadNodeProfile: async () => undefined,
+      isAlreadyBondedWith: async (ownerId) => ownerId === "envoy:owner:already-friend",
+      assertOnline: () => {},
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      skipped: true,
+      reason: "already-bonded",
+      ownerId: "envoy:owner:already-friend",
+    });
+    expect(saveNodeConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        setupSponsorFriendCompletedAt: expect.any(String),
+        setupSponsorFriendLastError: undefined,
+        setupSponsorFriendLastErrorKind: undefined,
+      }),
+    );
+    await flushSponsorLoop();
+    expect(sendHello).not.toHaveBeenCalled();
+  });
+
+  it("heals stale lastError when already bonded even if completedAt was set", async () => {
+    const saveNodeConfig = vi.fn(async () => {});
+    const completedAt = "2026-08-01T00:00:00.000Z";
+
+    const result = await runSetupSponsorFriendViaRuntime({
+      loadNodeConfig: async () => ({
+        version: "0.1" as const,
+        profileDir: "/tmp/profile",
+        discoveryProfile: "wan-default" as const,
+        enableMdns: true,
+        relayEnabled: true,
+        relayServerEnabled: false,
+        advertiseAddrs: [],
+        bootstrapPeers: [],
+        bootstrapPresets: [],
+        configuredRelays: [],
+        modelProviders: { mode: "disabled" as const },
+        chatAssistEnabled: false,
+        contactAiPreferences: [],
+        updatedAt: new Date().toISOString(),
+        setupSponsorFriendEnabled: true,
+        setupSponsorFriendOwnerId: "envoy:owner:already-friend",
+        setupSponsorFriendCompletedAt: completedAt,
+        setupSponsorFriendLastError: "stale mesh error",
+        setupSponsorFriendLastErrorKind: "network-unreachable",
+      }),
+      saveNodeConfig,
+      getProfileDir: () => "/tmp/profile",
+      nodeBundleDir: "/tmp/bundle",
+      applyWanJoinInvite: vi.fn(async () => ({})),
+      searchPeers: vi.fn(async () => []),
+      sendHello: vi.fn(async () => ({ messageId: "msg-1" })),
+      loadHelloProfile: async () => ({
+        displayName: "New User",
+        bio: "",
+        interests: [],
+        whatShares: [],
+      }),
+      loadNodeProfile: async () => undefined,
+      isAlreadyBondedWith: async (ownerId) => ownerId === "envoy:owner:already-friend",
+      assertOnline: () => {},
+    });
+
+    expect(result.reason).toBe("already-bonded");
+    expect(saveNodeConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        setupSponsorFriendCompletedAt: completedAt,
+        setupSponsorFriendLastError: undefined,
+        setupSponsorFriendLastErrorKind: undefined,
+      }),
+    );
+  });
+
   it("single-flights concurrent setup calls for the same sponsor", async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => {

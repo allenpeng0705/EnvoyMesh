@@ -249,7 +249,12 @@ import {
   MAX_BOOTSTRAP_PROBE_RESULTS,
   type BootstrapReprobeHandle,
 } from "./bootstrap-reprobe.js";
-import { maybeAutoApplyQuietWanForCgnat } from "./node-service-start.js";
+import {
+  maybeAutoApplyQuietWanForCgnat,
+  shouldLeanBootstrapForDhtOffMode,
+  shouldLeanBootstrapForPendingSponsorBond,
+  sponsorPeerIdForStrictDial,
+} from "./node-service-start.js";
 import {
   buildAllowedDialPeerIds,
   createStrictDialAllowCache,
@@ -926,6 +931,10 @@ const cliStrictDial = {
 };
 for (const addr of effectiveBootstrapPeers) cliStrictDial.cache.seedAddrs.add(addr);
 for (const addr of cliStrictDial.configuredRelayAddrs) cliStrictDial.cache.seedAddrs.add(addr);
+{
+  const sponsorPeerId = sponsorPeerIdForStrictDial(persistedNodeConfig ?? {});
+  if (sponsorPeerId) cliStrictDial.cache.extraPeerIds.add(sponsorPeerId);
+}
 // Hydrate bonded contacts + non-DHT seeds so quietWan/contacts-only can dial friends.
 void (async () => {
   try {
@@ -1004,6 +1013,39 @@ if (cliStrictDial.enabled) {
     `[node] strictDialPolicy ON mode=${connectivityRuntime.connectivityMode} profile=${args.discoveryProfile}`,
   );
 }
+
+function publishCliConnectivityRuntimeSnapshot(
+  runtime: ResolvedConnectivityRuntime,
+  configLike: {
+    setupSponsorFriendEnabled?: boolean;
+    setupSponsorFriendCompletedAt?: string;
+    connectivityModeAutoAppliedReason?: "cgnat";
+    connectivityModeExplicit?: boolean;
+  },
+): void {
+  if (!(nodeService instanceof NodeServiceImpl)) return;
+  const leanForSponsor = shouldLeanBootstrapForPendingSponsorBond(configLike);
+  const leanForDhtOff = shouldLeanBootstrapForDhtOffMode(runtime.connectivityMode);
+  const leanBootstrap = leanForSponsor || leanForDhtOff;
+  const leanBootstrapReason = !leanBootstrap
+    ? null
+    : leanForSponsor
+      ? ("pending-sponsor" as const)
+      : runtime.connectivityMode === "aggressive"
+        ? ("user-aggressive" as const)
+        : configLike.connectivityModeAutoAppliedReason === "cgnat" &&
+            configLike.connectivityModeExplicit !== true
+          ? ("cgnat" as const)
+          : ("user-quietWan" as const);
+  nodeService._connectivityRuntimeSnapshot = {
+    effectiveConnectivityMode: runtime.connectivityMode,
+    leanBootstrapActive: leanBootstrap,
+    leanBootstrapReason,
+    enableDht: runtime.enableDht,
+    enableMdns: runtime.enableMdns,
+  };
+}
+publishCliConnectivityRuntimeSnapshot(connectivityRuntime, persistedNodeConfig ?? {});
 {
   const { evaluateHomeWanReady } = await import("./home-wan-ready.js");
   wsServer.setReadyzProbe(() =>
@@ -3309,6 +3351,10 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
           discoveryProfile: args.discoveryProfile,
           relayServerEnabled: args.enableRelayServer,
         });
+        {
+          const sponsorPeerId = sponsorPeerIdForStrictDial(config);
+          if (sponsorPeerId) cliStrictDial.cache.extraPeerIds.add(sponsorPeerId);
+        }
 
         const meshOpts = (mesh as unknown as { options: EnvoyMeshOptions }).options;
         meshOpts.bootstrapPeers = effectivePeers;
@@ -3336,6 +3382,7 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
             `[node] strictDialPolicy ON after reload mode=${connectivityRuntimeReloaded.connectivityMode} profile=${args.discoveryProfile}`,
           );
         }
+        publishCliConnectivityRuntimeSnapshot(connectivityRuntimeReloaded, config);
       }
 
       await mesh.start();

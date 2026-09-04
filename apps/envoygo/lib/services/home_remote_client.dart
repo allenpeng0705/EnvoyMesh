@@ -209,13 +209,16 @@ class HomeRemoteClient {
   // -- Connection lifecycle --
 
   /// Ensure the client is connected. Reuses an in-flight connection attempt.
+  ///
+  /// "Connected" means the WebSocket is open **and** the home (or relay
+  /// proxy) has emitted `event: connected` — RPC is safe only then.
   Future<void> ensureConnected() {
     if (_disposed) {
       final stack = StackTrace.current;
       debugPrint('[HomeRemoteClient] ensureConnected: ALREADY DISPOSED!\n$stack');
       return Future.error(Exception('homeRemote.disposed'));
     }
-    if (_ws?.readyState == wsOpen) return Future.value();
+    if (_ws?.readyState == wsOpen && _homeOnline) return Future.value();
     if (_connectCompleter != null) return _connectCompleter!.future;
     final completer = Completer<void>();
     _connectCompleter = completer;
@@ -307,10 +310,13 @@ class HomeRemoteClient {
 
   /// Open a WebSocket to a candidate with timeout.
   ///
-  /// [perTimeoutMs] — total connect timeout. [fastFailMs] — if the socket
-  /// errors/closes within this window, abort immediately and throw instead
-  /// of waiting for [perTimeoutMs]. This avoids wasting 8 seconds on a
-  /// candidate that is unreachable (e.g. LAN IP when on mobile data).
+  /// [perTimeoutMs] — total budget for open + home `connected` event.
+  /// [fastFailMs] — if the socket errors/closes within this window before
+  /// open, abort immediately (e.g. LAN IP unreachable on cellular).
+  ///
+  /// Completes only after `event: connected` so RPCs are not sent while a
+  /// relay is still dialing the home (that path used to surface as
+  /// `homeRemote.pairThinClientTimeout` with an open-but-useless socket).
   Future<void> _openSocket(
     HomeRemoteCandidate candidate,
     int perTimeoutMs, {
@@ -325,66 +331,56 @@ class HomeRemoteClient {
     final completer = Completer<void>();
     Timer? fastFailTimer;
     Timer? slowTimer;
+    var opened = false;
+    var ready = false;
+
+    void fail(Object error) {
+      if (completer.isCompleted) return;
+      fastFailTimer?.cancel();
+      slowTimer?.cancel();
+      try {
+        ws.close();
+      } catch (_) {}
+      completer.completeError(error);
+    }
+
+    void succeed() {
+      if (completer.isCompleted) return;
+      ready = true;
+      fastFailTimer?.cancel();
+      slowTimer?.cancel();
+      _setHomeOnline(true);
+      _reconnectDelayMs = _options.initialReconnectDelayMs;
+      completer.complete();
+    }
 
     if (fastFailMs > 0) {
       fastFailTimer = Timer(Duration(milliseconds: fastFailMs), () {
-        if (!completer.isCompleted) {
-          try {
-            ws.close();
-          } catch (_) {}
-          // Fast-fail: candidate is unreachable — abort immediately.
-          completer.completeError(Exception('homeRemote.unreachable'));
+        if (!opened && !completer.isCompleted) {
+          fail(Exception('homeRemote.unreachable'));
         }
       });
     }
 
     slowTimer = Timer(Duration(milliseconds: perTimeoutMs), () {
-      if (!completer.isCompleted) {
-        try {
-          ws.close();
-        } catch (_) {}
-        completer.completeError(Exception('homeRemote.connectTimeout'));
-      }
+      fail(Exception('homeRemote.connectTimeout'));
     });
 
-    ws.onOpen = () {
-      if (!completer.isCompleted) {
-        fastFailTimer?.cancel();
-        slowTimer?.cancel();
-        completer.complete();
-      }
-    };
-
-    ws.onError = () {
-      if (!completer.isCompleted) {
-        fastFailTimer?.cancel();
-        slowTimer?.cancel();
-        try {
-          ws.close();
-        } catch (_) {}
-        completer.completeError(Exception('homeRemote.connectFailed'));
-      }
-    };
-
-    await completer.future;
-
-    // Socket opened — install message handler.
+    // Install handlers before yielding so a fast `connected` is not lost.
     ws.onMessage = (event) {
       try {
         final msg = jsonDecode(event.data) as Map<String, dynamic>?;
         if (msg == null) return;
 
-        // Push event.
         if (msg.containsKey('event')) {
-          if (msg['event'] == 'connected') {
-            _setHomeOnline(true);
-            _reconnectDelayMs = _options.initialReconnectDelayMs;
+          final name = msg['event'] as String;
+          if (name == 'connected' || name == 'tunnel-up') {
+            succeed();
           }
-          _emit(msg['event'] as String, msg['data']);
+          _emit(name, msg['data']);
           return;
         }
 
-        // RPC response.
         final id = msg['id'] as String?;
         if (id == null) return;
         final pending = _pending.remove(id);
@@ -408,7 +404,17 @@ class HomeRemoteClient {
       }
     };
 
+    ws.onOpen = () {
+      opened = true;
+      fastFailTimer?.cancel();
+      // Do not succeed yet — wait for `connected` / `tunnel-up`.
+    };
+
     ws.onClose = () {
+      if (!ready) {
+        fail(Exception('homeRemote.connectFailed'));
+        return;
+      }
       _setHomeOnline(false);
       _ws = null;
       for (final entry in _pending.entries) {
@@ -422,8 +428,14 @@ class HomeRemoteClient {
     };
 
     ws.onError = () {
+      if (!ready) {
+        fail(Exception('homeRemote.connectFailed'));
+        return;
+      }
       _setHomeOnline(false);
     };
+
+    await completer.future;
   }
 
   // -- RPC --

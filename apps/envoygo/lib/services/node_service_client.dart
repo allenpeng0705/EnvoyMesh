@@ -98,18 +98,22 @@ class NodeServiceClient {
     String? profileName,
     String? profileAvatarColor,
   }) async {
-    return await _client.call('pairThinClient', {
-          'pairingToken': pairingToken,
-          'deviceName': deviceName,
-          'platform': platform,
-          if (deviceId != null && deviceId.isNotEmpty) 'deviceId': deviceId,
-          if (profileId != null && profileId.isNotEmpty) 'profileId': profileId,
-          if (profileName != null && profileName.isNotEmpty)
-            'profileName': profileName,
-          if (profileAvatarColor != null && profileAvatarColor.isNotEmpty)
-            'profileAvatarColor': profileAvatarColor,
-        })
-        as Map<String, dynamic>;
+    return await _client.call(
+          'pairThinClient',
+          {
+            'pairingToken': pairingToken,
+            'deviceName': deviceName,
+            'platform': platform,
+            if (deviceId != null && deviceId.isNotEmpty) 'deviceId': deviceId,
+            if (profileId != null && profileId.isNotEmpty) 'profileId': profileId,
+            if (profileName != null && profileName.isNotEmpty)
+              'profileName': profileName,
+            if (profileAvatarColor != null && profileAvatarColor.isNotEmpty)
+              'profileAvatarColor': profileAvatarColor,
+          },
+          // Pairing can involve family-store + session writes on a busy home.
+          const Duration(seconds: 60),
+        ) as Map<String, dynamic>;
   }
 
   /// Re-bind session to a family profile when home thought we were owner.

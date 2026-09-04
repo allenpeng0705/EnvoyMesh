@@ -389,29 +389,29 @@
     "@leichtgewicht/ip-codec" "^2.0.4"
     utf8-codec "^1.0.0"
 
-"@envoymesh/agent-adapter@0.4.0", "@envoymesh/agent-adapter@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/agent-adapter":
-  version "0.4.0"
+"@envoymesh/agent-adapter@0.4.2", "@envoymesh/agent-adapter@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/agent-adapter":
+  version "0.4.2"
   resolved "file:packages/agent-adapter"
   dependencies:
-    "@envoymesh/protocol" "0.3.0"
+    "@envoymesh/protocol" "0.4.2"
 
-"@envoymesh/api@0.4.0", "@envoymesh/api@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/api":
-  version "0.4.0"
+"@envoymesh/api@0.4.2", "@envoymesh/api@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/api":
+  version "0.4.2"
   resolved "file:packages/api"
   dependencies:
-    "@envoymesh/identity" "0.3.0"
-    "@envoymesh/protocol" "0.3.0"
+    "@envoymesh/identity" "0.4.2"
+    "@envoymesh/protocol" "0.4.2"
     "@noble/hashes" "^1.8.0"
     zod "^4.3.6"
 
-"@envoymesh/bonds@0.4.0", "@envoymesh/bonds@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/bonds":
-  version "0.4.0"
+"@envoymesh/bonds@0.4.2", "@envoymesh/bonds@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/bonds":
+  version "0.4.2"
   resolved "file:packages/bonds"
   dependencies:
-    "@envoymesh/protocol" "0.3.0"
+    "@envoymesh/protocol" "0.4.2"
 
 "@envoymesh/cli@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/cli":
-  version "0.4.0"
+  version "0.4.2"
   resolved "file:apps/cli"
 
 "@envoymesh/envoy-harness-adapter@file:../../../envoy-harness/packages/envoy-harness-adapter":
@@ -460,58 +460,58 @@
     "@envoymesh/envoy-sandbox-win" "file:../envoy-sandbox-win"
     node-pty "^1.0.0"
 
-"@envoymesh/identity@0.4.0", "@envoymesh/identity@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/identity":
-  version "0.4.0"
+"@envoymesh/identity@0.4.2", "@envoymesh/identity@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/identity":
+  version "0.4.2"
   resolved "file:packages/identity"
   dependencies:
-    "@envoymesh/protocol" "0.4.0"
+    "@envoymesh/protocol" "0.4.2"
 
-"@envoymesh/ipfs-helia@0.4.0", "@envoymesh/ipfs-helia@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/ipfs-helia":
-  version "0.4.0"
+"@envoymesh/ipfs-helia@0.4.2", "@envoymesh/ipfs-helia@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/ipfs-helia":
+  version "0.4.2"
   resolved "file:packages/ipfs-helia"
   dependencies:
     "@helia/unixfs" "^7.2.1"
     blockstore-core "^7.0.1"
     helia "^6.1.4"
 
-"@envoymesh/kb-obsidian@0.4.0", "@envoymesh/kb-obsidian@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/kb-obsidian":
-  version "0.4.0"
+"@envoymesh/kb-obsidian@0.4.2", "@envoymesh/kb-obsidian@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/kb-obsidian":
+  version "0.4.2"
   resolved "file:packages/kb-obsidian"
   dependencies:
-    "@envoymesh/api" "0.3.0"
+    "@envoymesh/api" "0.4.2"
 
-"@envoymesh/local-store@0.4.0", "@envoymesh/local-store@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/local-store":
-  version "0.4.0"
+"@envoymesh/local-store@0.4.2", "@envoymesh/local-store@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/local-store":
+  version "0.4.2"
   resolved "file:packages/local-store"
   dependencies:
-    "@envoymesh/bonds" "0.3.0"
-    "@envoymesh/identity" "0.3.0"
-    "@envoymesh/protocol" "0.3.0"
+    "@envoymesh/bonds" "0.4.2"
+    "@envoymesh/identity" "0.4.2"
+    "@envoymesh/protocol" "0.4.2"
 
 "@envoymesh/mobile-identity@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/mobile-identity":
-  version "0.4.0"
+  version "0.4.2"
   resolved "file:packages/mobile-identity"
   dependencies:
-    "@envoymesh/protocol" "0.3.0"
+    "@envoymesh/protocol" "0.4.2"
     "@noble/curves" "^1.9.0"
     "@noble/hashes" "^1.8.0"
 
-"@envoymesh/models@0.4.0", "@envoymesh/models@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/models":
-  version "0.4.0"
+"@envoymesh/models@0.4.2", "@envoymesh/models@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/models":
+  version "0.4.2"
   resolved "file:packages/models"
   dependencies:
-    "@envoymesh/api" "0.3.0"
-    "@envoymesh/protocol" "0.3.0"
+    "@envoymesh/api" "0.4.2"
+    "@envoymesh/protocol" "0.4.2"
     zod "^4.3.6"
 
-"@envoymesh/network@0.4.0", "@envoymesh/network@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/network":
-  version "0.4.0"
+"@envoymesh/network@0.4.2", "@envoymesh/network@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/network":
+  version "0.4.2"
   resolved "file:packages/network"
   dependencies:
     "@chainsafe/libp2p-noise" "^17.0.0"
     "@chainsafe/libp2p-quic" "^2.0.1"
     "@chainsafe/libp2p-yamux" "^8.0.0"
-    "@envoymesh/protocol" "0.3.0"
+    "@envoymesh/protocol" "0.4.2"
     "@libp2p/autonat" "^3.0.18"
     "@libp2p/bootstrap" "^12.0.19"
     "@libp2p/circuit-relay-v2" "^4.2.3"
@@ -534,27 +534,27 @@
     uint8arrays "^5.1.0"
 
 "@envoymesh/node@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/node":
-  version "0.4.0"
+  version "0.4.2"
   resolved "file:apps/node"
   dependencies:
     "@anthropic-ai/claude-agent-sdk" "^0.3.156"
-    "@envoymesh/agent-adapter" "0.3.0"
-    "@envoymesh/api" "0.3.0"
-    "@envoymesh/bonds" "0.3.0"
+    "@envoymesh/agent-adapter" "0.4.2"
+    "@envoymesh/api" "0.4.2"
+    "@envoymesh/bonds" "0.4.2"
     "@envoymesh/envoy-harness" "file:../../../envoy-harness/packages/envoy-harness"
     "@envoymesh/envoy-harness-adapter" "file:../../../envoy-harness/packages/envoy-harness-adapter"
     "@envoymesh/envoy-harness-client" "file:../../../envoy-harness/packages/envoy-harness-client"
     "@envoymesh/envoy-harness-peer" "file:../../../envoy-harness/packages/envoy-harness-peer"
-    "@envoymesh/identity" "0.3.0"
-    "@envoymesh/ipfs-helia" "0.3.0"
-    "@envoymesh/kb-obsidian" "0.3.0"
-    "@envoymesh/local-store" "0.3.0"
-    "@envoymesh/models" "0.3.0"
-    "@envoymesh/network" "0.3.0"
-    "@envoymesh/openclaw-runtime" "0.3.0"
-    "@envoymesh/protocol" "0.3.0"
-    "@envoymesh/rag" "0.3.0"
-    "@envoymesh/vault" "0.3.0"
+    "@envoymesh/identity" "0.4.2"
+    "@envoymesh/ipfs-helia" "0.4.2"
+    "@envoymesh/kb-obsidian" "0.4.2"
+    "@envoymesh/local-store" "0.4.2"
+    "@envoymesh/models" "0.4.2"
+    "@envoymesh/network" "0.4.2"
+    "@envoymesh/openclaw-runtime" "0.4.2"
+    "@envoymesh/protocol" "0.4.2"
+    "@envoymesh/rag" "0.4.2"
+    "@envoymesh/vault" "0.4.2"
     "@libp2p/utils" "^7.0.0"
     "@modelcontextprotocol/sdk" "^1.29.0"
     nat-upnp "^1.1.1"
@@ -563,40 +563,41 @@
     ws "^8.20.0"
     yaml "^2.8.1"
 
-"@envoymesh/openclaw-runtime@0.4.0", "@envoymesh/openclaw-runtime@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/openclaw-runtime":
-  version "0.4.0"
+"@envoymesh/openclaw-runtime@0.4.2", "@envoymesh/openclaw-runtime@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/openclaw-runtime":
+  version "0.4.2"
   resolved "file:packages/openclaw-runtime"
 
-"@envoymesh/protocol@0.4.0", "@envoymesh/protocol@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/protocol":
-  version "0.4.0"
+"@envoymesh/protocol@0.4.2", "@envoymesh/protocol@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/protocol":
+  version "0.4.2"
   resolved "file:packages/protocol"
   dependencies:
     zod "^4.3.6"
 
-"@envoymesh/rag@0.4.0", "@envoymesh/rag@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/rag":
-  version "0.4.0"
+"@envoymesh/rag@0.4.2", "@envoymesh/rag@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/rag":
+  version "0.4.2"
   resolved "file:packages/rag"
   dependencies:
-    "@envoymesh/api" "0.4.0"
+    "@envoymesh/api" "0.4.2"
     hnswlib-node "^3.0.0"
 
 "@envoymesh/relay@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/relay":
-  version "0.4.0"
+  version "0.4.2"
   resolved "file:apps/relay"
   dependencies:
-    "@envoymesh/identity" "0.3.0"
-    "@envoymesh/network" "0.3.0"
+    "@envoymesh/api" "0.4.2"
+    "@envoymesh/identity" "0.4.2"
+    "@envoymesh/network" "0.4.2"
     "@libp2p/utils" "^7.0.0"
     ws "^8.20.0"
 
 "@envoymesh/social@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social":
-  version "0.4.0"
+  version "0.4.2"
   resolved "file:apps/social"
   dependencies:
-    "@envoymesh/api" "0.3.0"
+    "@envoymesh/api" "0.4.2"
     "@envoymesh/envoy-harness-client" "file:../../../envoy-harness/packages/envoy-harness-client"
     "@envoymesh/envoy-harness-ehui" "file:../../../envoy-harness/packages/envoy-harness-ehui"
-    "@envoymesh/rag" "0.3.0"
+    "@envoymesh/rag" "0.4.2"
     "@tauri-apps/plugin-process" "^2.3.1"
     "@tauri-apps/plugin-updater" "^2.10.1"
     "@xterm/addon-fit" "^0.11.0"
@@ -611,13 +612,13 @@
     yjs "^13.6.30"
 
 "@envoymesh/tauri@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/tauri":
-  version "0.4.0"
+  version "0.4.2"
   resolved "file:apps/tauri"
   dependencies:
     "@tauri-apps/cli" "^2.11.0"
 
-"@envoymesh/vault@0.4.0", "@envoymesh/vault@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/vault":
-  version "0.4.0"
+"@envoymesh/vault@0.4.2", "@envoymesh/vault@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/vault":
+  version "0.4.2"
   resolved "file:packages/vault"
   dependencies:
     "@firecrawl/anydoc" "^0.1.8"

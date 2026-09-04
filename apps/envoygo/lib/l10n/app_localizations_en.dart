@@ -3136,6 +3136,18 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get pairingFailedHomeTimeout =>
+      'Couldn\'t finish pairing — your home computer didn\'t respond in time. Keep EnvoyAI open and online, then scan a fresh QR.';
+
+  @override
+  String get pairingFailedHomeUnreachable =>
+      'Couldn\'t reach your home computer. Join the same Wi‑Fi as the home, or wait until the home shows it\'s connected to the relay, then scan a fresh QR.';
+
+  @override
+  String get pairingFailedTokenExpired =>
+      'This QR has expired or is invalid. Ask the home owner to show a new pairing QR and scan again.';
+
+  @override
   String get pairingInviteAlreadyUsed =>
       'This invite QR was already used. Ask the home owner to open Family → Show invite QR again, then scan the new code and choose I\'m back to select your profile (e.g. Dad).';
 

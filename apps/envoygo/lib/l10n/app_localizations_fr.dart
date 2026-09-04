@@ -3180,6 +3180,18 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
+  String get pairingFailedHomeTimeout =>
+      'Association interrompue — l\'ordinateur domestique n\'a pas répondu à temps. Gardez EnvoyAI ouvert et en ligne, puis scannez un nouveau QR.';
+
+  @override
+  String get pairingFailedHomeUnreachable =>
+      'Impossible d\'atteindre l\'ordinateur domestique. Utilisez le même Wi‑Fi, ou attendez que l\'appli domestique affiche le relais, puis scannez un nouveau QR.';
+
+  @override
+  String get pairingFailedTokenExpired =>
+      'Ce QR a expiré ou est invalide. Demandez au propriétaire un nouveau QR d\'association.';
+
+  @override
   String get pairingInviteAlreadyUsed =>
       'Ce QR d\'invitation a déjà été utilisé. Demandez au propriétaire d\'ouvrir Famille → Afficher le QR d\'invitation, scannez le nouveau code, puis choisissez Je suis de retour et votre profil (ex. Dad).';
 

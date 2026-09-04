@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   shouldLeanBootstrapForDhtOffMode,
   shouldLeanBootstrapForPendingSponsorBond,
+  sponsorPeerIdForStrictDial,
 } from "../src/node-service-start.js";
 
 describe("shouldLeanBootstrapForPendingSponsorBond", () => {
@@ -28,6 +29,44 @@ describe("shouldLeanBootstrapForPendingSponsorBond", () => {
         setupSponsorFriendEnabled: false,
       }),
     ).toBe(false);
+  });
+
+  it("is true when only effective (bundled) sponsor is enabled", () => {
+    expect(
+      shouldLeanBootstrapForPendingSponsorBond({
+        effectiveSponsorEnabled: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("is false when completed even if effective sponsor enabled", () => {
+    expect(
+      shouldLeanBootstrapForPendingSponsorBond({
+        effectiveSponsorEnabled: true,
+        setupSponsorFriendCompletedAt: "2026-08-04T00:00:00.000Z",
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("sponsorPeerIdForStrictDial", () => {
+  it("prefers explicit peerId", () => {
+    expect(
+      sponsorPeerIdForStrictDial({
+        setupSponsorFriendPeerId: "12D3KooWexplicit",
+        setupSponsorFriendContactUri:
+          "envoy://contact?v=1&peerId=12D3KooWfromUri&join=tok",
+      }),
+    ).toBe("12D3KooWexplicit");
+  });
+
+  it("falls back to peerId from contactUri", () => {
+    expect(
+      sponsorPeerIdForStrictDial({
+        setupSponsorFriendContactUri:
+          "envoy://contact?v=1&peerId=12D3KooWfromUri&join=tok",
+      }),
+    ).toBe("12D3KooWfromUri");
   });
 });
 

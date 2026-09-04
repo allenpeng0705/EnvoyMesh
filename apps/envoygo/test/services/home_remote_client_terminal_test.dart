@@ -78,11 +78,9 @@ Future<HomeRemoteClient> _connectedClient(_FakeWebSocket fake,
   // before we fire `open` on the fake.
   await Future<void>.delayed(Duration.zero);
   fake.simulateOpen();
-  await future;
-  // The client treats the transport as fully usable only after the
-  // home's `connected` push event arrives.
+  // ensureConnected waits for the home `connected` push event.
   fake.simulateConnected();
-  await Future<void>.delayed(Duration.zero);
+  await future;
   return client;
 }
 

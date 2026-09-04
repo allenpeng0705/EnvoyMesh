@@ -64,6 +64,7 @@
 
 import {
   resolveSetupSponsorFriendConfig,
+  persistedNodeConfigToSponsorFriendConfig,
   type ResolvedSetupSponsorFriend,
   type RunSetupSponsorFriendResult,
   type SetupSponsorFriendConfig,
@@ -203,31 +204,18 @@ export function classifySponsorError(message: string | undefined): SponsorFailur
 export function persistedSetupSponsorFriendConfig(
   config: PersistedNodeConfig | undefined,
 ): SetupSponsorFriendConfig | null {
-  if (!config?.setupSponsorFriendEnabled) return null;
-  return {
-    enabled: true,
-    contactUri: config.setupSponsorFriendContactUri,
-    ownerId: config.setupSponsorFriendOwnerId,
-    peerId: config.setupSponsorFriendPeerId,
-    joinToken: config.setupSponsorFriendJoinToken,
-    displayName: config.setupSponsorFriendDisplayName,
-    helloMessage: config.setupSponsorFriendHelloMessage,
-    proofOfContext: config.setupSponsorFriendProofOfContext,
-    maxAttempts: config.setupSponsorFriendMaxAttempts,
-    retryDelayMs: config.setupSponsorFriendRetryDelayMs,
-    cooldownMs: config.setupSponsorFriendCooldownMs,
-    forceBypassGuards: undefined,
-  };
+  return persistedNodeConfigToSponsorFriendConfig(config);
 }
 
 export async function resolveEffectiveSetupSponsorFriend(input: {
-  persisted?: PersistedNodeConfig;
+  /** Full persisted config or any object carrying `setupSponsorFriend*` fields. */
+  persisted?: Parameters<typeof persistedNodeConfigToSponsorFriendConfig>[0];
   nodeBundleDir?: string;
 }): Promise<ResolvedSetupSponsorFriend> {
   const bundled = await loadBundledSponsorFriendConfig(input.nodeBundleDir);
   return resolveSetupSponsorFriendConfig({
     bundled,
-    persisted: persistedSetupSponsorFriendConfig(input.persisted),
+    persisted: persistedNodeConfigToSponsorFriendConfig(input.persisted),
   });
 }
 
@@ -363,6 +351,9 @@ function buildBridgeDeps(
         }
         if (options?.preferredOwnerId) {
           sendOpts.targetPeerId = options.preferredOwnerId;
+        }
+        if (options?.dialHints && options.dialHints.length > 0) {
+          sendOpts.extraDialHints = options.dialHints;
         }
         return deps.sendHello(
           targetOwnerId,
@@ -545,6 +536,58 @@ function mapBridgeResultToWire(
  * is the bridge's `runSponsorFriendBridge` instead
  * of the inlined `runSetupSponsorFriendRetryLoop`.
  */
+/**
+ * Persist "setup complete" when the sponsor is already a contact — including
+ * clearing stale lastError/cooldown left by a failed auto-attempt before the
+ * user bonded via Discover / LAN / QR. Shared by the run RPC and status heal.
+ */
+export async function persistSetupSponsorFriendAlreadyBonded(
+  deps: Pick<SetupSponsorFriendRuntimeDeps, "saveNodeConfig" | "getProfileDir">,
+  existing: PersistedNodeConfig | undefined,
+): Promise<PersistedNodeConfig> {
+  const nowIso = new Date().toISOString();
+  const base = existing ?? {
+    version: "0.1" as const,
+    profileDir: deps.getProfileDir(),
+    discoveryProfile: "wan-default" as const,
+    enableMdns: true,
+    relayEnabled: true,
+    relayServerEnabled: false,
+    advertiseAddrs: [],
+    bootstrapPeers: [],
+    bootstrapPresets: [],
+    configuredRelays: [],
+    modelProviders: { mode: "disabled" as const },
+    chatAssistEnabled: false,
+    contactAiPreferences: [],
+    updatedAt: nowIso,
+  };
+  const next: PersistedNodeConfig = {
+    ...base,
+    setupSponsorFriendCompletedAt: base.setupSponsorFriendCompletedAt ?? nowIso,
+    setupSponsorFriendLastError: undefined,
+    setupSponsorFriendLastErrorKind: undefined,
+    setupSponsorFriendCooldownUntil: undefined,
+    setupSponsorFriendSkipReason: undefined,
+    updatedAt: nowIso,
+  };
+  await deps.saveNodeConfig(next);
+  return next;
+}
+
+export function setupSponsorFriendNeedsAlreadyBondedHeal(
+  existing: PersistedNodeConfig | undefined,
+): boolean {
+  if (!existing) return true;
+  return (
+    !existing.setupSponsorFriendCompletedAt ||
+    Boolean(existing.setupSponsorFriendLastError) ||
+    Boolean(existing.setupSponsorFriendLastErrorKind) ||
+    Boolean(existing.setupSponsorFriendCooldownUntil) ||
+    Boolean(existing.setupSponsorFriendSkipReason)
+  );
+}
+
 export async function runSetupSponsorFriendViaRuntime(
   deps: SetupSponsorFriendRuntimeDeps,
   input: RunSetupSponsorFriendInput = {},
@@ -552,63 +595,58 @@ export async function runSetupSponsorFriendViaRuntime(
   const now = deps.now ? deps.now() : Date.now();
   const existing = await deps.loadNodeConfig();
 
-  // 1. Already-completed guard.
-  if (existing?.setupSponsorFriendCompletedAt && input.forceBypassGuards !== true) {
-    return { ok: true, skipped: true, reason: "already-completed" };
-  }
-
-  // 2. Resolve effective config.
+  // Resolve first so already-bonded can run before already-completed and clear
+  // stale lastError even when completedAt was set earlier without clearing it.
   const resolved = await resolveEffectiveSetupSponsorFriend({
     persisted: existing,
     nodeBundleDir: deps.nodeBundleDir,
   });
+
+  // Persist resolved peerId so mesh restart / strict-dial can allow-list without
+  // re-parsing contactUri (and so Settings shows a concrete peer id).
+  let configSnapshot = existing;
+  if (resolved.peerId?.trim() && existing) {
+    const want = resolved.peerId.trim();
+    if (existing.setupSponsorFriendPeerId?.trim() !== want) {
+      configSnapshot = {
+        ...existing,
+        setupSponsorFriendPeerId: want,
+        updatedAt: new Date().toISOString(),
+      };
+      await deps.saveNodeConfig(configSnapshot);
+    }
+  }
+
+  const forceBypass = input.forceBypassGuards === true;
+
+  // Trust store guard (already-bonded) — before already-completed so a manual
+  // bond after a failed auto-run still heals completedAt + clears lastError.
+  if (resolved.ownerId && deps.isAlreadyBondedWith) {
+    const ownerId = resolved.ownerId;
+    const alreadyBonded = await deps.isAlreadyBondedWith(ownerId);
+    if (alreadyBonded) {
+      bondTrace(1, "PASS", "skip auto-bond — already bonded with sponsor", {
+        ownerId: ownerId.slice(0, 20),
+      });
+      if (setupSponsorFriendNeedsAlreadyBondedHeal(configSnapshot)) {
+        await persistSetupSponsorFriendAlreadyBonded(deps, configSnapshot);
+      }
+      return { ok: true, skipped: true, reason: "already-bonded", ownerId };
+    }
+  }
+
+  // Already-completed guard (only when not already-bonded above).
+  if (configSnapshot?.setupSponsorFriendCompletedAt && forceBypass !== true) {
+    return { ok: true, skipped: true, reason: "already-completed" };
+  }
 
   if (!resolved.enabled || !resolved.ownerId) {
     return { ok: true, skipped: true, reason: "disabled-or-incomplete" };
   }
 
   const ownerId: string = resolved.ownerId;
-  const forceBypass = input.forceBypassGuards === true;
 
-  // 3. Trust store guard (already-bonded).
-  if (deps.isAlreadyBondedWith) {
-    const alreadyBonded = await deps.isAlreadyBondedWith(ownerId);
-    if (alreadyBonded) {
-      bondTrace(1, "PASS", "skip auto-bond — already bonded with sponsor", {
-        ownerId: ownerId.slice(0, 20),
-      });
-      if (!existing?.setupSponsorFriendCompletedAt) {
-        const base = existing ?? {
-          version: "0.1" as const,
-          profileDir: deps.getProfileDir(),
-          discoveryProfile: "wan-default" as const,
-          enableMdns: true,
-          relayEnabled: true,
-          relayServerEnabled: false,
-          advertiseAddrs: [],
-          bootstrapPeers: [],
-          bootstrapPresets: [],
-          configuredRelays: [],
-          modelProviders: { mode: "disabled" as const },
-          chatAssistEnabled: false,
-          contactAiPreferences: [],
-          updatedAt: new Date().toISOString(),
-        };
-        await deps.saveNodeConfig({
-          ...base,
-          setupSponsorFriendCompletedAt: new Date().toISOString(),
-          setupSponsorFriendLastError: undefined,
-          setupSponsorFriendLastErrorKind: undefined,
-          setupSponsorFriendCooldownUntil: undefined,
-          setupSponsorFriendSkipReason: undefined,
-          updatedAt: new Date().toISOString(),
-        });
-      }
-      return { ok: true, skipped: true, reason: "already-bonded", ownerId };
-    }
-  }
-
-  // 4. Cooldown + readiness guards.
+  // Cooldown + readiness guards.
   if (!forceBypass) {
     if (existing?.setupSponsorFriendCooldownUntil) {
       const untilMs = Date.parse(existing.setupSponsorFriendCooldownUntil);
@@ -776,11 +814,14 @@ export async function runSetupSponsorFriendOnService(
       probeHumanProfileReady: async () => Boolean(await ns.getHumanProfile()),
       isAlreadyBondedWith: async (sponsorOwnerId) => {
         const bonds = await ns.getBonds();
-        return bonds.some(
-          (b) =>
-            b.peerOwnerId === sponsorOwnerId &&
-            (b.level === "direct" || b.level === "referred"),
-        );
+        const persisted = await deps.loadNodeConfig();
+        const peerId = persisted?.setupSponsorFriendPeerId?.trim();
+        return bonds.some((b) => {
+          const idMatch =
+            b.peerOwnerId === sponsorOwnerId ||
+            (Boolean(peerId) && b.libp2pPeerId === peerId);
+          return idMatch && (b.level === "direct" || b.level === "referred");
+        });
       },
       loadNodeProfile: async () => {
         try {
