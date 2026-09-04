@@ -250,4 +250,20 @@ else
   warn "No push-config.json in resources/node/ — desktop push will need env vars or a profile-dir config"
 fi
 
+# Root-owned staged natives make codesign fail with errSecInternalComponent
+# ("unable to build chain" is a red herring). Usually caused by running a
+# staging step under sudo. Do NOT auto-sudo here — require an explicit fix.
+# Check the whole resources/ tree (node, openclaw-envoymesh, etc.).
+if [ "$(uname -s)" = "Darwin" ] && [ -d "$RES" ]; then
+  root_sample="$(find "$RES" -user root 2>/dev/null | head -1 || true)"
+  if [ -n "$root_sample" ]; then
+    echo "error: staged Tauri resources include root-owned files — Apple codesign / re-stage will fail." >&2
+    echo "  Example: $root_sample" >&2
+    echo "  Fix once (never run build-desktop.sh / stage-*.sh with sudo):" >&2
+    echo "    sudo chown -R \"\$(whoami):staff\" \"$RES\"" >&2
+    echo "  Then re-run: ./scripts/build-desktop.sh macos" >&2
+    exit 1
+  fi
+fi
+
 echo "  ✓ Tauri resources look complete"

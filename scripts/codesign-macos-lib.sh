@@ -100,12 +100,15 @@ codesign_macos_sign_bundle_container() {
   local bundle="$1"
   local err=""
   local attempt=1
+  # Under `set -u`, empty `"${ent_args[@]}"` is an unbound-variable error on
+  # some bash builds — use ${arr[@]+"${arr[@]}"} so a missing entitlements
+  # file still signs the container.
   local ent_args=()
   if [ -n "${CODESIGN_ENTITLEMENTS:-}" ] && [ -f "${CODESIGN_ENTITLEMENTS}" ]; then
     ent_args=(--entitlements "${CODESIGN_ENTITLEMENTS}")
   fi
   while [ "$attempt" -le "$CODESIGN_MAX_ATTEMPTS" ]; do
-    if err=$(codesign --force --sign "$CODESIGN_IDENTITY" --options runtime --timestamp "${ent_args[@]}" "$bundle" 2>&1); then
+    if err=$(codesign --force --sign "$CODESIGN_IDENTITY" --options runtime --timestamp ${ent_args[@]+"${ent_args[@]}"} "$bundle" 2>&1); then
       CODESIGN_SIGNED=$((CODESIGN_SIGNED + 1))
       return 0
     fi
@@ -130,7 +133,7 @@ codesign_macos_sign_bundle_container() {
   if [ "$CODESIGN_ALLOW_NO_TIMESTAMP" = "1" ]; then
     echo "  ⚠ signing bundle without timestamp: $(basename "$bundle")" >&2
     codesign_macos_remove_signature "$bundle"
-    if err=$(codesign --force --sign "$CODESIGN_IDENTITY" --options runtime --timestamp=none "${ent_args[@]}" "$bundle" 2>&1); then
+    if err=$(codesign --force --sign "$CODESIGN_IDENTITY" --options runtime --timestamp=none ${ent_args[@]+"${ent_args[@]}"} "$bundle" 2>&1); then
       CODESIGN_NO_TIMESTAMP=$((CODESIGN_NO_TIMESTAMP + 1))
       CODESIGN_SIGNED=$((CODESIGN_SIGNED + 1))
       return 0

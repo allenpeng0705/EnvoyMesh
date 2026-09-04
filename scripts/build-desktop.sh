@@ -16,6 +16,10 @@
 #     missing when push-config.json is present (so installed home nodes can
 #     notify EnvoyGo). Set REQUIRE_PUSH_CREDENTIALS=0 to allow packaging
 #     without push (CI / machines without keys).
+#   - Never run this script (or stage-*.sh) with sudo. Root-owned files under
+#     apps/tauri/src-tauri/resources/ make re-stage (rm) and codesign fail.
+#     If that happens:
+#       sudo chown -R "$(whoami):staff" apps/tauri/src-tauri/resources
 #   - EnvoyGo localization is Flutter-only (apps/envoygo) — not part of this
 #     desktop bundle; Social i18n locales are included via npm run social:build.
 #

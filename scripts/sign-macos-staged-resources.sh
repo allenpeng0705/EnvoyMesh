@@ -26,6 +26,16 @@ if [ ! -d "$RESOURCES" ]; then
   exit 0
 fi
 
+# Fail fast: root-owned natives → errSecInternalComponent (not a cert problem).
+# Cover the whole resources/ tree (openclaw-envoymesh, node-runtime, etc.).
+root_sample="$(find "$RESOURCES" -user root 2>/dev/null | head -1 || true)"
+if [ -n "$root_sample" ]; then
+  echo "error: cannot codesign root-owned staged resources (errSecInternalComponent)." >&2
+  echo "  Example: $root_sample" >&2
+  echo "  Fix: sudo chown -R \"\$(whoami):staff\" \"$RESOURCES\"" >&2
+  exit 1
+fi
+
 codesign_macos_init
 codesign_macos_unlock_keychain
 
