@@ -19,6 +19,41 @@ import { wireClientProxyPushEvents } from "./client-proxy-push.js";
 import { rpcErrorCode } from "./rpc-error-code.js";
 
 /**
+ * Device-scoped registry of live client-proxy (relay) streams, so revocation
+ * can actively close them (not just on the next per-RPC token recheck).
+ */
+const proxyStreamCloseRegistry = new Map<string, Set<() => void>>();
+
+export function registerClientProxyStream(
+  deviceId: string | undefined,
+  close: () => void,
+): () => void {
+  if (!deviceId) return () => {};
+  let set = proxyStreamCloseRegistry.get(deviceId);
+  if (!set) {
+    set = new Set();
+    proxyStreamCloseRegistry.set(deviceId, set);
+  }
+  set.add(close);
+  return () => {
+    set.delete(close);
+    if (set.size === 0) proxyStreamCloseRegistry.delete(deviceId);
+  };
+}
+
+export function closeClientProxyStreamsForDevice(deviceId: string): number {
+  const set = proxyStreamCloseRegistry.get(deviceId);
+  if (!set) return 0;
+  let closed = 0;
+  for (const close of [...set]) {
+    close();
+    closed += 1;
+  }
+  proxyStreamCloseRegistry.delete(deviceId);
+  return closed;
+}
+
+/**
  * Creates a libp2p protocol handler for the client-proxy relay bridge.
  *
  * Flow:
@@ -33,6 +68,9 @@ export function createClientProxyHandler(
   return async (stream, _connection) => {
     const streamIo = byteStream(stream);
     const companion = {};
+    // Hoisted so the finally can always unregister, even if registration ran
+    // inside a nested branch.
+    let unregisterProxyStream: () => void = () => {};
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
 
@@ -87,6 +125,10 @@ export function createClientProxyHandler(
           /* keep heuristic from profileId === "owner" */
         }
       }
+
+      unregisterProxyStream = registerClientProxyStream(tokenRecord?.deviceId, () => {
+        void stream.close().catch(() => {});
+      });
 
       const PROXY_AUDIT_METHODS = new Set([
         "runOwnerAgentTurn",
@@ -227,6 +269,7 @@ export function createClientProxyHandler(
         }
       }
     } finally {
+      unregisterProxyStream();
       unwirePush();
       closeHomeTerminalWsForCompanion(companion);
       try {

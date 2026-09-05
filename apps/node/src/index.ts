@@ -291,7 +291,10 @@ import {
   type NodeHealthSnapshot,
   type NodeHealthState,
 } from "./node-health.js";
-import { createClientProxyHandler } from "./client-proxy-handler.js";
+import {
+  closeClientProxyStreamsForDevice,
+  createClientProxyHandler,
+} from "./client-proxy-handler.js";
 import { RelayTunnelClient } from "./relay-tunnel-client.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { recordRelayCheckinCycle, recordRelayLookupResult } from "./relay-diagnostics-state.js";
@@ -524,7 +527,8 @@ if (nodeService instanceof NodeServiceImpl) {
     wsServerForEvents?.disconnectClientsForProfile(profileId) ?? 0,
   );
   nodeService.bindDisconnectClientsForDevice((deviceId) =>
-    wsServerForEvents?.disconnectClientsForDevice(deviceId) ?? 0,
+    (wsServerForEvents?.disconnectClientsForDevice(deviceId) ?? 0) +
+      closeClientProxyStreamsForDevice(deviceId),
   );
   nodeService.bindCliTaskStore(taskStore);
   nodeService.bindApprovalQueue(approvalQueue);
